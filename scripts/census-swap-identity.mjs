@@ -122,7 +122,10 @@ export function beliefOfTrade(trade, battle) {
   const beliefs = [...new Set(joined.map((e) => e.symbolOut))];
   if (beliefs.length > 1) return { caller: fallbackCaller, belief: null, ambiguous: true };
   if (beliefs.length === 1) return { caller: joined[0].decision === 'PROPOSAL' ? 'proposal' : 'model', belief: beliefs[0], ambiguous: false };
+  // A launch-guard clear never executed (integrity build, review I1-4): its row
+  // carries a client-written proposal's ids and symbols, so it is no belief.
   const proposals = (Array.isArray(battle?.proposalHistory) ? battle.proposalHistory : [])
+    .filter((p) => p?.systemNote !== 'launch_guard_clear')
     .filter((p) => (p?.evaluationMetadata?.evaluationId === trade.evaluationId || p?.evalId === trade.evaluationId)
       && p.symbolIn === trade.symbolIn && typeof p.symbolOut === 'string' && p.symbolOut);
   const proposalBeliefs = [...new Set(proposals.map((p) => p.symbolOut))];
@@ -254,7 +257,9 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
 export function renderCensus(result, { readAt = null } = {}) {
   const L = [];
   const p = (s = '') => L.push(s);
-  const tbl = (head, rows) => { p(`| ${head.join(' | ')} |`); p(`|${head.map(() => '---').join('|')}|`); for (const r of rows) p(`| ${r.join(' | ')} |`); };
+  // Cells are escaped: a value read off a battle can carry a pipe or a newline (review I1-9).
+  const esc = (v) => String(v).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  const tbl = (head, rows) => { p(`| ${head.join(' | ')} |`); p(`|${head.map(() => '---').join('|')}|`); for (const r of rows) p(`| ${r.map(esc).join(' | ')} |`); };
   p('# Swap identity census (Pilot P6, G01)');
   p();
   p(`Read at: ${readAt ?? 'n/a'} · battles read: ${result.battles} · trade rows counted: ${result.tradeRows}${result.sinceMs != null ? ` · since ${new Date(result.sinceMs).toISOString()}` : ' · every retained row'}`);

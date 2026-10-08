@@ -64,15 +64,18 @@ export function clientToken(value) {
 /**
  * The executor metadata: the allowlisted keys of `fields`, in `fields`' own
  * order. A key outside the allowlist is dropped (the guard test fails CI on
- * the call site that wrote it).
+ * the call site that wrote it). Frozen: the executor only reads it, and a
+ * later `Object.assign` / member write onto it — the shape that reopens the
+ * exploit (review IV4-I4-2) — throws instead of reaching the row.
  */
 export function executorMetadata(fields) {
   const out = {};
-  if (!isPlainObject(fields)) return out;
-  for (const key of Object.keys(fields)) {
-    if (ALLOWED.has(key)) out[key] = fields[key];
+  if (isPlainObject(fields)) {
+    for (const key of Object.keys(fields)) {
+      if (ALLOWED.has(key)) out[key] = fields[key];
+    }
   }
-  return out;
+  return Object.freeze(out);
 }
 
 /** The next trade id, from the battle's own trade counter — the form every caller mints. */
@@ -88,13 +91,22 @@ export function serverTradeId(battle) {
  * evaluation id, and P6 derives no verification id from it.
  */
 export function serverProposalEvaluationId(battle, proposal) {
+  return serverProposalDecision(battle, proposal)?.evalId ?? null;
+}
+
+/**
+ * The server's own record of the decision behind a pending proposal: the
+ * retained `evaluations[]` entry (server-written) that decided PROPOSAL for the
+ * same pair under the id the proposal names — or null. Its fields (the id, the
+ * decision instant) are the server's, never the proposal's.
+ */
+export function serverProposalDecision(battle, proposal) {
   const claimed = proposal?.evaluationMetadata?.evaluationId ?? proposal?.evalId;
   if (typeof claimed !== 'string' || !claimed) return null;
   const entries = Array.isArray(battle?.evaluations) ? battle.evaluations : [];
-  const entry = entries.find((e) => e?.evalId === claimed && e.decision === 'PROPOSAL'
+  return entries.find((e) => e?.evalId === claimed && e.decision === 'PROPOSAL'
     && typeof e.symbolIn === 'string' && e.symbolIn === proposal?.symbolIn
-    && typeof e.symbolOut === 'string' && e.symbolOut === proposal?.symbolOut);
-  return entry ? entry.evalId : null;
+    && typeof e.symbolOut === 'string' && e.symbolOut === proposal?.symbolOut) ?? null;
 }
 
 /** The model's structured reasoning from a client-writable record: its strings only (no conviction number). */

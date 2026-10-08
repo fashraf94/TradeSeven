@@ -67,15 +67,30 @@ export function expectedOutOfPosition(position) {
   return { symbol: typeof position.symbol === 'string' ? position.symbol : null, swappedInAt: position.swappedInAt ?? null };
 }
 
+/** The longest symbol a stored belief may name (a ticker or a crypto pair is far shorter). */
+export const BELIEF_SYMBOL_MAX = 64;
+/** The longest entry instant a stored belief may carry (an ISO timestamp is 24). */
+export const BELIEF_INSTANT_MAX = 40;
+
 /**
  * A belief stored at creation. `record[key]` present (null included — a
  * creation-time position) → symbol AND entry instant; absent (a legacy or
  * client-written record) → symbol only. A missing symbol stays null, so the
  * executor reads it as a mismatch — a malformed belief never passes.
+ *
+ * The record is owner-writable (a pending proposal, a meeting leg), and the
+ * executor records the belief on the trade row as `verification.expected`
+ * (integrity build, review I3-1 / I1-6 / I4-4): the symbol is a string of at
+ * most BELIEF_SYMBOL_MAX, and the instant counts only as a string of at most
+ * BELIEF_INSTANT_MAX or null — anything else is treated as absent (symbol only),
+ * never carried onto the row.
  */
 export function expectedOutOfStored(symbol, record, key) {
-  const belief = { symbol: typeof symbol === 'string' && symbol ? symbol : null };
-  if (record && typeof record === 'object' && Object.hasOwn(record, key)) belief.swappedInAt = record[key] ?? null;
+  const belief = { symbol: typeof symbol === 'string' && symbol && symbol.length <= BELIEF_SYMBOL_MAX ? symbol : null };
+  if (record && typeof record === 'object' && Object.hasOwn(record, key)) {
+    const instant = record[key] ?? null;
+    if (instant === null || (typeof instant === 'string' && instant.length <= BELIEF_INSTANT_MAX)) belief.swappedInAt = instant;
+  }
   return belief;
 }
 

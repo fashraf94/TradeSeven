@@ -16,7 +16,7 @@ import { dirname, resolve } from 'node:path';
 import { describe, it, expect, vi as viS5 } from 'vitest';
 import {
   SWAP_IDENTITY_OFF, currentSwapIdentityMode, swapIdentityActive, swapIdentityOptions,
-  expectedOutOfPosition, expectedOutOfStored, storedIdentityOf, isSwapRefusal,
+  expectedOutOfPosition, expectedOutOfStored, storedIdentityOf, isSwapRefusal, BELIEF_SYMBOL_MAX, BELIEF_INSTANT_MAX,
   REFUSAL_LINES, REFUSAL_KINDS, PROTECTIVE_SOURCES, PROFIT_TARGET_EXIT_REASON, refusalKindOf, refusalLine, refusalRecord, departedLegRecord, refusalFeedFields,
 } from './swapIdentity.js';
 import { SwapRefusalError, SWAP_REFUSAL_REASONS } from './agentSwapExecution.js';
@@ -230,6 +230,16 @@ describe('the beliefs', () => {
     expect(expectedOutOfStored('KO', {}, 'outgoingSwappedInAt')).toEqual({ symbol: 'KO' });
     expect(Object.hasOwn(expectedOutOfStored('KO', {}, 'swappedInAt'), 'swappedInAt')).toBe(false);
     expect(expectedOutOfStored(undefined, { swappedInAt: null }, 'swappedInAt')).toEqual({ symbol: null, swappedInAt: null }); // a malformed record never passes
+  });
+
+  it('integrity build (review I3-1 / I1-6): a stored belief is type-checked — the instant only as a string ≤ 40 or null, the symbol only as a string ≤ 64; anything else is dropped (symbol only), never carried onto the row', () => {
+    for (const planted of [9999, { lockedPoints: 9999 }, 'S'.repeat(BELIEF_INSTANT_MAX + 1), true, ['x']]) {
+      expect(expectedOutOfStored('KO', { swappedInAt: planted }, 'swappedInAt'), JSON.stringify(planted).slice(0, 20)).toEqual({ symbol: 'KO' });
+    }
+    expect(expectedOutOfStored('KO', { swappedInAt: 'S'.repeat(BELIEF_INSTANT_MAX) }, 'swappedInAt')).toEqual({ symbol: 'KO', swappedInAt: 'S'.repeat(BELIEF_INSTANT_MAX) });
+    expect(expectedOutOfStored('K'.repeat(BELIEF_SYMBOL_MAX + 1), { swappedInAt: null }, 'swappedInAt')).toEqual({ symbol: null, swappedInAt: null });
+    expect(expectedOutOfStored('K'.repeat(BELIEF_SYMBOL_MAX), {}, 'swappedInAt')).toEqual({ symbol: 'K'.repeat(BELIEF_SYMBOL_MAX) });
+    expect([BELIEF_SYMBOL_MAX, BELIEF_INSTANT_MAX]).toEqual([64, 40]);
   });
 
   it('what a creation site stores: the entry instant of the position it read, null for a creation-time one', () => {

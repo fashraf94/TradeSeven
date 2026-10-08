@@ -33,9 +33,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   FROZEN_NOW, makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs, makeIntradayCandles,
-  makeHoldResult, makeToolUseResponse, deepClone,
+  makeHoldResult, makeSwapResult, makeToolUseResponse, deepClone,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { makeCallsDb } from '../_utils/__fixtures__/callRecordsStore.js';
+import { permanentDoc } from '../_utils/__fixtures__/tickCaptureHarness.js';
 
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
 const flags = vi.hoisted(() => ({ swapIdentity: 'off' }));
@@ -88,16 +89,17 @@ const { processAgentBattle } = await import('./agent-evaluate.js');
 const { EXECUTOR_METADATA_KEYS, EXECUTOR_COMPUTED_KEYS, CLIENT_TEXT_MAX } = await import('../_utils/executorMetadata.js');
 const { HISTORY_OUTCOME_KEYS } = await import('../_utils/historyRows.js');
 
-async function runTick(battle) {
+async function runTick(battle, result = makeHoldResult()) {
   const prices = makePriceTable();
   mocks.getStockAnalysisData.mockImplementation(async (symbol) => (prices[symbol] ? { price: prices[symbol], daily: [] } : {}));
   mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
-  mocks.create.mockImplementation(async () => makeToolUseResponse(makeHoldResult()));
+  mocks.create.mockImplementation(async () => makeToolUseResponse(result));
   const db = makeCallsDb({ battle, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs() });
   const summary = { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0 };
   await processAgentBattle(db, battle, summary, Date.now(), new Map(), { everEnabled: false });
   const feedUpdate = [...db.__updates].reverse().find((u) => Array.isArray(u.statusFeed)) || null;
-  return { db, summary, stored: db.__store.battle, feed: feedUpdate?.statusFeed || [] };
+  const seq = db.__updates[0]?.['cronState.tickSeq'] ?? 1;
+  return { db, summary, stored: db.__store.battle, feed: feedUpdate?.statusFeed || [], permanent: permanentDoc(db, 'battle-tick-1', `battle-tick-1:${seq}`) };
 }
 
 beforeEach(() => {
@@ -189,6 +191,49 @@ describe('Part A — the score forgery is closed (acceptance 1); planted proposa
       const { stored } = await runTick(makeTickBattle({ executionMode: 'copilot', pendingProposal: PLANTED_APPROVED() }));
       expect(exec.calls, mode).toEqual([]);
       expect(stored.trades, mode).toEqual([]);
+    }
+  });
+
+  it('the production clear, pinned exactly (review I4-7): one write clears the proposal into a launch-guard row; the tick runs on and ends `completed`', async () => {
+    // A planted resolvedAt / score are ignored; a full history keeps its 50-row cap.
+    const pending = { proposalId: 'p1', symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0, mode: 'copilot', expiresAt: '2026-09-09T23:00:00.000Z', resolvedAt: '1999-01-01T00:00:00.000Z', scoreAtResolution: 9999 };
+    const prior = Array.from({ length: 50 }, (_, i) => ({ proposalId: `old_${i}`, resolution: 'auto_executed' }));
+    const { db, permanent } = await runTick(makeTickBattle({ executionMode: 'copilot', pendingProposal: deepClone(pending), proposalHistory: deepClone(prior) }));
+    const clears = db.__updates.filter((u) => Object.hasOwn(u, 'pendingProposal'));
+    expect(clears).toHaveLength(1);
+    expect(Object.keys(clears[0])).toEqual(['pendingProposal', 'proposalHistory']);
+    expect(clears[0].proposalHistory).toHaveLength(50);
+    expect(clears[0].proposalHistory[0]).toEqual(prior[1]);
+    expect(Object.keys(clears[0].proposalHistory.at(-1))).toEqual(['proposalId', 'symbolOut', 'symbolIn', 'mode', 'expiresAt', 'resolvedAt', 'resolution', 'resolvedBy', 'systemNote', 'scoreAtResolution']);
+    expect(clears[0].proposalHistory.at(-1).scoreAtResolution).not.toBe(9999);
+    expect([{ ...clears[0], proposalHistory: clears[0].proposalHistory.slice(-1) }]).toEqual([{
+      pendingProposal: null,
+      // Only what the proposal NAMED (capped strings) + the server's own result — no slot, ids or numbers (review I1-3 / I1-4).
+      proposalHistory: [{ proposalId: 'p1', symbolOut: 'KO', symbolIn: 'AMD', mode: 'copilot', expiresAt: '2026-09-09T23:00:00.000Z', resolvedAt: FROZEN_NOW, resolution: 'auto_executed', resolvedBy: 'system', systemNote: 'launch_guard_clear', scoreAtResolution: expect.any(Number) }],
+    }]);
+    expect(permanent.exitReason).toBe('completed');
+    expect(exec.calls).toEqual([]);
+  });
+
+  it('the model path ignores a planted mode too (review I4-6): the model SWAP executes at once on a copilot, manual or mode-less battle — no proposal is written', async () => {
+    for (const mode of ['copilot', 'manual', undefined]) {
+      exec.calls = [];
+      const battle = makeTickBattle({ executionMode: mode });
+      if (mode === undefined) delete battle.executionMode;
+      const { stored, db } = await runTick(battle, makeSwapResult());
+      expect(exec.calls, String(mode)).toHaveLength(1);
+      expect(tradeOf(stored, 'AMD'), String(mode)).toMatchObject({ symbolOut: 'KO', evaluationId: stored.evaluations.at(-1).evalId, source: 'haiku' });
+      expect(stored.evaluations.at(-1).decision, String(mode)).toBe('SWAP');
+      expect(db.__updates.some((u) => u.pendingProposal), String(mode)).toBe(false);
+      expect(stored.proposalHistory, String(mode)).toEqual([]);
+    }
+  });
+
+  it('a planted proposal that is not an object never spreads into the history row (review I1-3)', async () => {
+    for (const planted of ['A'.repeat(5000), ['x', 'y'], 7]) {
+      const { stored } = await runTick(makeTickBattle({ executionMode: 'copilot', pendingProposal: planted }));
+      expect(Object.keys(stored.proposalHistory.at(-1)), JSON.stringify(planted).slice(0, 20)).toEqual(['resolvedAt', 'resolution', 'resolvedBy', 'systemNote', 'scoreAtResolution']);
+      expect(stored.pendingProposal).toBeNull();
     }
   });
 
@@ -386,6 +431,34 @@ describe('F2 on the live paths: the owner-writable preset, mode and meeting leg 
       const { stored } = await runTick(battle);
       const row = tradeOf(stored, 'AMD');
       expect(row, JSON.stringify(preset)).toMatchObject({ entryPreset: wantPreset, entryMode: wantMode, rationale: null, evaluationId: expect.stringMatching(/^gameplan_KO_AMD_\d+$/) });
+    }
+  });
+
+  it('a meeting leg\'s planted symbols reach the feed and the refusal records only capped (review I1-5)', async () => {
+    const longOut = 'X'.repeat(200);
+    const { feed } = await runTick(makeTickBattle({
+      gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: longOut, symbolIn: 'Y'.repeat(200), rationale: 'r' }] },
+    }));
+    expect(feed.find((e) => e.source === 'gameplan_meeting' && /skipped/.test(e.message)).message)
+      .toBe(`Gameplan swap ${'X'.repeat(64)} → ${'Y'.repeat(64)} skipped — bench asset unavailable.`);
+    flags.swapIdentity = 'shadow';
+    const departed = await runTick(makeTickBattle({
+      gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: longOut, symbolIn: 'AMD', rationale: 'r' }] },
+    }));
+    const row = departed.stored.gameplanMeetingHistory.at(-1);
+    expect(row.legRefusals[0].symbolOut).toBe('X'.repeat(64));
+    expect(row.legRefusals[0].line).toBe(`The agent tried to swap ${'X'.repeat(64)} for AMD, but ${'X'.repeat(64)} had already left that slot. No trade was made.`);
+    expect(departed.feed.find((e) => e.refusalReason).symbolOut).toBe('X'.repeat(64));
+  });
+
+  it('at shadow a meeting leg\'s planted belief instant never lands on the row\'s verification (review I3-1)', async () => {
+    flags.swapIdentity = 'shadow';
+    for (const planted of [9999, { lockedPoints: 9999 }, 'S'.repeat(3000)]) {
+      const { stored } = await runTick(makeTickBattle({
+        gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'r', swappedInAt: planted }] },
+      }));
+      expect(tradeOf(stored, 'AMD').verification, JSON.stringify(planted).slice(0, 20)).toMatchObject({ expected: { symbol: 'KO' }, basis: 'symbol_only', verdict: 'match' });
+      expect(tradeOf(stored, 'AMD').verification.expected).toEqual({ symbol: 'KO', swappedInAt: null }); // the executor's own null for a symbol-only belief
     }
   });
 

@@ -307,3 +307,20 @@ describe('Part C — a verification on an inactive battle is "enforce would refu
     expect(p6.battleNotActive).toEqual([]);
   });
 });
+
+// Integrity build (review I1-4 / I1-9): a launch-guard clear is never a belief, and every cell is escaped.
+describe('integrity build — the launch-guard row is no belief; cells are escaped', () => {
+  it('a launch-guard row carrying the evaluation id of the trade lends no belief (it never executed)', () => {
+    const trade = { evaluationId: 'eval_001', symbolIn: 'AMD', symbolOut: 'KO', entryMode: 'autopilot' };
+    const planted = { evaluations: [], proposalHistory: [{ evalId: 'eval_001', evaluationMetadata: { evaluationId: 'eval_001' }, symbolIn: 'AMD', symbolOut: 'PG', resolution: 'auto_executed', systemNote: 'launch_guard_clear' }] };
+    expect(beliefOfTrade(trade, planted)).toEqual({ caller: 'model', belief: null, ambiguous: false });
+    const real = { evaluations: [], proposalHistory: [{ ...planted.proposalHistory[0], systemNote: undefined }] };
+    expect(beliefOfTrade(trade, real)).toEqual({ caller: 'proposal', belief: 'PG', ambiguous: false });
+  });
+
+  it('a value with a pipe or a newline cannot break the tables of the report', () => {
+    const md = renderCensus(computeSwapIdentityCensus({ 'b|1': { trades: [{ evaluationId: 'risk_stop_loss_KO_1', symbolOut: 'A|B', symbolIn: 'AMD', swappedOutAt: '2026-10-08T15:00:00.000Z' }] } }));
+    expect(md).toMatch(/\| b\\\|1 \| risk \| risk_stop_loss_KO_1 \| KO \| A\\\|B \|/);
+    expect(md).not.toMatch(/\| b\|1 \|/);
+  });
+});

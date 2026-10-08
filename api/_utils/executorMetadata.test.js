@@ -34,6 +34,14 @@ describe('executorMetadata', () => {
   it('returns {} for a non-object', () => {
     for (const v of [null, undefined, 5, 'x', []]) expect(executorMetadata(v)).toEqual({});
   });
+
+  it('is frozen: a write after construction throws instead of reaching the row (review IV4-I4-2)', () => {
+    const meta = executorMetadata({ id: 'trade_001' });
+    expect(Object.isFrozen(meta)).toBe(true);
+    expect(() => { Object.assign(meta, { lockedPoints: 9999 }); }).toThrow(TypeError);
+    expect(() => { meta.entryMode = 'copilot'; }).toThrow(TypeError);
+    expect(meta).toEqual({ id: 'trade_001' });
+  });
 });
 
 describe('clientText / clientToken', () => {
@@ -78,7 +86,7 @@ describe('serverProposalEvaluationId', () => {
   });
 
   it('the returned value is the LOG\'s string, never the claim object', () => {
-    const claim = new String('eval_007'); // eslint-disable-line no-new-wrappers
+    const claim = Object('eval_007'); // a String object, not a string
     expect(serverProposalEvaluationId({ evaluations: [entry] }, { ...proposal, evaluationMetadata: { evaluationId: claim } })).toBeNull();
   });
 });

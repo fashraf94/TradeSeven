@@ -18,37 +18,48 @@
 // therefore written by a client. (A proposal still pending at the deploy could
 // resolve minutes after it — read rows on 20 May with that in mind.)
 //
-// TWO READS, per battle:
-//   1. PROPOSAL EXECUTIONS AFTER THE GUARD — the server's own record that a
-//      proposal ran: a `statusFeed` beat with source 'proposal_system' and
-//      action 'swap' ("Coach approved: Swap …" / "Auto-executed: Swap …"), and
-//      a `proposalHistory` row resolved 'approved' (no executionFailed) or
-//      'auto_executed' WITHOUT the launch guard's systemNote; each with the
-//      trade rows it matches (same incoming symbol, swapped out within five
-//      minutes of the beat). A beat with no matching row still counts — a
-//      forged row can carry another symbol and time. The beat's timestamp is the
-//      server's; an APPROVED row's resolvedAt was written by the client (it can be
-//      backdated), so the beats are the stronger evidence. Also listed: proposals the
-//      launch guard CLEARED after it landed (systemNote 'launch_guard_clear') —
-//      a planted proposal that did not get through, or a pre-guard leftover.
+// WHAT AN EXPLOIT LEAVES, AND WHAT THE ATTACKER COULD SHAPE (base code before
+// this build): the executed proposal's `statusFeed` beat — source
+// 'proposal_system', action 'swap', "Coach approved: Swap …" / "Auto-executed:
+// Swap …" — is the SERVER's (its timestamp too); the `proposalHistory` row was
+// the client's own record copied whole (approved: the record itself; expired:
+// the record with the server's resolution/resolvedAt on top), so its
+// `systemNote`, `executionFailed`, `resolvedAt` (approved) and ids could all be
+// planted; the trade row's every field could be overridden by the metadata.
+// So the census reads:
+//   1. PROPOSAL EXECUTIONS AFTER THE GUARD — every proposal_system swap beat
+//      (the strongest evidence), and every history row resolved 'approved' or
+//      'auto_executed' — INCLUDING rows that claim a launch-guard clear or a
+//      failed execution: those are listed as executions when a same-pair trade
+//      sits beside them (a planted note cannot hide a trade that happened), and
+//      as clears / failures otherwise. A row whose time cannot be read is listed
+//      (time unknown), never skipped. Each with the trade rows it matches (same
+//      incoming symbol, swapped out within five minutes).
 //   2. TRADE ROWS CARRYING A FOREIGN KEY — any key outside the executor's
-//      computed fields plus the metadata allowlist (api/_utils/executorMetadata.js),
-//      by key, with the battles and rows that carry it. A forged row may also
-//      carry only known keys with forged VALUES: read 1 is the signal for those.
-//
-// RETENTION: `trades[]` keeps 50 rows, the feed 100 beats, `proposalHistory[]`
-// 50 rows — the census covers what the battle documents still hold.
+//      computed fields plus the metadata allowlist (api/_utils/executorMetadata.js).
+//   2b. TRADE ROWS THAT CONTRADICT THEMSELVES — a gain that does not follow from
+//      the row's own prices, or a row swapped out before the row it follows.
+//      (A careful forger can keep a row consistent: read 1 is the main signal.)
+// Since no server path creates proposals, ANY proposal row after the date —
+// an execution, a clear, a failure — means a client planted one, so every read
+// sets the verdict.
+// LIMITS: the beat is the only server-owned evidence and the feed keeps 100
+// beats on an agent battle (50 without an agentId) — about one to two trading
+// days; `trades[]` keeps 50 rows and `proposalHistory[]` 50, and every planted
+// proposal appends a launch-guard row, so an attacker can push older rows out
+// (a planted proposal on an auto-pilot battle could already do so before this
+// build). Run it promptly; it covers what the battle documents still hold.
 //
 // READ-ONLY BY CONSTRUCTION — `.select()`, `.get()`, `getAll()` only;
-// scripts/census-planted-proposals.test.js pins every member call in this file
-// to a reviewed allowlist. The only files it writes are --out and --json.
-// Credentials (scripts/loadLocalEnv.js + getFirebaseAdmin()) load only inside
-// main(); importing the module touches nothing. The founder runs it.
+// scripts/census-planted-proposals.test.js walks this file's syntax tree and
+// pins every member call to a reviewed allowlist. The only files it writes are
+// --out and --json. Credentials (scripts/loadLocalEnv.js + getFirebaseAdmin())
+// load only inside main(); importing the module touches nothing. The founder runs it.
 //
 // USAGE (repo root):
 //   node scripts/census-planted-proposals.mjs [--since=<ISO>] [--out <report.md>] [--json <data.json>]
 //     --since=<ISO> (or `--since <ISO>`): count executions at/after this instant
-//     instead of the guard's merge. Exit code 2 when read 1 or read 2 finds anything.
+//     instead of the guard's merge. Exit code 2 when any read finds anything.
 
 import { writeFileSync } from 'node:fs';
 import { EXECUTOR_COMPUTED_KEYS, EXECUTOR_METADATA_KEYS } from '../api/_utils/executorMetadata.js';
@@ -57,8 +68,10 @@ import { EXECUTOR_COMPUTED_KEYS, EXECUTOR_METADATA_KEYS } from '../api/_utils/ex
 export const LAUNCH_GUARD_LANDED = '2026-05-20T17:17:29.000Z';
 /** A trade row may carry these keys and nothing else. */
 export const TRADE_ROW_KEYS = Object.freeze([...EXECUTOR_COMPUTED_KEYS, ...EXECUTOR_METADATA_KEYS]);
-/** How close a trade's swappedOutAt must sit to a proposal beat to be its row. */
+/** How close a trade's swappedOutAt must sit to a proposal beat or row to be its trade. */
 export const MATCH_WINDOW_MS = 5 * 60 * 1000;
+/** How far a row's gain may sit from the one its own prices imply (the executor rounds to 0.001). */
+export const GAIN_TOLERANCE_PCT = 0.01;
 
 const KNOWN = new Set(TRADE_ROW_KEYS);
 
@@ -76,23 +89,40 @@ export function isProposalExecutionBeat(beat) {
   return beat?.source === 'proposal_system' && beat?.action === 'swap';
 }
 
-/** Is this history row a proposal the server filed as executed (not a launch-guard clear, not a failure)? */
-export function isExecutedProposalRow(row) {
-  if (!row || typeof row !== 'object') return false;
-  if (row.systemNote === 'launch_guard_clear' || row.executionFailed === true) return false;
-  return row.resolution === 'approved' || row.resolution === 'auto_executed';
+/** Is this history row resolved as executed (whatever note or marker it also carries)? */
+export function isExecutedResolution(row) {
+  return !!row && typeof row === 'object' && (row.resolution === 'approved' || row.resolution === 'auto_executed');
+}
+
+/** The trades with this incoming symbol swapped out within the window of `atMs`. */
+function tradesNear(symbolIn, atMs, trades) {
+  if (atMs == null) return [];
+  return (Array.isArray(trades) ? trades : []).filter((t) => t?.symbolIn === symbolIn
+    && toMs(t?.swappedOutAt) != null && Math.abs(toMs(t.swappedOutAt) - atMs) <= MATCH_WINDOW_MS);
 }
 
 /** The trade rows a proposal beat matches: the same incoming symbol, swapped out within the window. */
 export function tradesForBeat(beat, trades) {
-  const at = toMs(beat?.timestamp);
-  return (Array.isArray(trades) ? trades : []).filter((t) => t?.symbolIn === beat?.symbolIn
-    && at != null && toMs(t?.swappedOutAt) != null && Math.abs(toMs(t.swappedOutAt) - at) <= MATCH_WINDOW_MS);
+  return tradesNear(beat?.symbolIn, toMs(beat?.timestamp), trades);
 }
 
 /** The keys of a trade row outside TRADE_ROW_KEYS. */
 export function foreignKeysOf(trade) {
   return trade && typeof trade === 'object' && !Array.isArray(trade) ? Object.keys(trade).filter((k) => !KNOWN.has(k)) : [];
+}
+
+/**
+ * Does the row's gain contradict its own prices? The executor writes
+ * `lockedGainPct` as the move from entryPrice to exitPrice (negated for a
+ * short; either sign accepted, for rows written before the C-2 sign fix).
+ */
+export function gainContradictsPrices(trade) {
+  const entry = trade?.entryPrice;
+  const exit = trade?.exitPrice;
+  const gain = trade?.lockedGainPct;
+  if (!(typeof entry === 'number' && entry > 0) || !Number.isFinite(exit) || !Number.isFinite(gain)) return false;
+  const implied = ((exit - entry) / entry) * 100;
+  return Math.min(Math.abs(gain - implied), Math.abs(gain + implied)) > GAIN_TOLERANCE_PCT;
 }
 
 const short = (t) => ({
@@ -106,10 +136,12 @@ export function computePlantedProposalCensus(battles, { sinceMs = Date.parse(LAU
   const entries = battles instanceof Map ? [...battles.entries()] : Object.entries(battles || {});
   const executions = [];
   const guardClears = [];
+  const failedApprovals = [];
   const foreignKeys = {};
+  const contradictions = [];
   const windows = [];
   let tradeRows = 0;
-  const after = (ms) => ms != null && ms >= sinceMs;
+  const after = (ms) => ms == null || ms >= sinceMs; // an unreadable time is listed, never skipped
 
   for (const [battleId, battle] of entries) {
     const trades = Array.isArray(battle?.trades) ? battle.trades : [];
@@ -125,23 +157,36 @@ export function computePlantedProposalCensus(battles, { sinceMs = Date.parse(LAU
     });
 
     for (const beat of feed) {
-      if (!isProposalExecutionBeat(beat) || !after(toMs(beat.timestamp))) continue;
+      if (!isProposalExecutionBeat(beat)) continue;
+      const at = toMs(beat.timestamp);
+      if (!after(at)) continue;
       executions.push({
-        battleId, kind: 'feed beat', at: beat.timestamp, symbolOut: beat.symbolOut ?? null, symbolIn: beat.symbolIn ?? null,
+        battleId, kind: 'feed beat', at: at == null ? 'time unknown' : beat.timestamp, symbolOut: beat.symbolOut ?? null, symbolIn: beat.symbolIn ?? null,
         message: String(beat.message ?? ''), trades: tradesForBeat(beat, trades).map(short),
       });
     }
     for (const row of history) {
-      const at = toMs(row?.resolvedAt) ?? toMs(row?.createdAt);
-      if (!after(at)) continue;
-      if (row?.systemNote === 'launch_guard_clear') {
-        guardClears.push({ battleId, at: row.resolvedAt ?? null, proposalId: row.proposalId ?? null, symbolOut: row.symbolOut ?? null, symbolIn: row.symbolIn ?? null });
-        continue;
-      }
-      if (isExecutedProposalRow(row)) {
-        executions.push({ battleId, kind: 'history row', at: row.resolvedAt ?? null, symbolOut: row.symbolOut ?? null, symbolIn: row.symbolIn ?? null, message: `resolution '${row.resolution}'`, trades: [] });
+      if (!isExecutedResolution(row)) continue;
+      const atMs = toMs(row.resolvedAt) ?? toMs(row.createdAt);
+      if (!after(atMs)) continue;
+      const at = atMs == null ? 'time unknown' : (row.resolvedAt ?? row.createdAt);
+      const near = tradesNear(row.symbolIn, atMs, trades).map(short);
+      const base = { battleId, at, proposalId: row.proposalId ?? null, symbolOut: row.symbolOut ?? null, symbolIn: row.symbolIn ?? null };
+      if (row.systemNote === 'launch_guard_clear') {
+        // The guard itself writes exactly resolution 'auto_executed' by 'system';
+        // its note on any other resolution was planted (review IV4-I4-5).
+        const genuine = row.resolution === 'auto_executed' && row.resolvedBy === 'system';
+        if (near.length) executions.push({ ...base, kind: 'history row — claims a launch-guard clear, but a same-pair trade sits beside it', message: `resolution '${row.resolution}'`, trades: near });
+        else if (!genuine) executions.push({ ...base, kind: 'history row — carries the launch guard\'s note on a resolution the guard never writes', message: `resolution '${row.resolution}'`, trades: near });
+        else guardClears.push(base);
+      } else if (row.executionFailed === true) {
+        if (near.length) executions.push({ ...base, kind: 'history row — marked failed, but a same-pair trade sits beside it', message: `resolution '${row.resolution}'`, trades: near });
+        else failedApprovals.push(base);
+      } else {
+        executions.push({ ...base, kind: 'history row', message: `resolution '${row.resolution}'`, trades: near });
       }
     }
+    let prevMs = null;
     trades.forEach((trade, index) => {
       for (const key of foreignKeysOf(trade)) {
         const slot = (foreignKeys[key] ||= { rows: 0, battles: [], samples: [] });
@@ -149,12 +194,17 @@ export function computePlantedProposalCensus(battles, { sinceMs = Date.parse(LAU
         if (!slot.battles.includes(battleId)) slot.battles.push(battleId);
         if (slot.samples.length < 5) slot.samples.push({ battleId, index, ...short(trade), value: JSON.stringify(trade[key])?.slice(0, 120) ?? 'undefined' });
       }
+      const ms = toMs(trade?.swappedOutAt);
+      if (gainContradictsPrices(trade)) contradictions.push({ battleId, index, why: 'gain does not follow from its prices', ...short(trade), lockedGainPct: trade.lockedGainPct });
+      if (ms != null && prevMs != null && ms < prevMs) contradictions.push({ battleId, index, why: 'swapped out before the row it follows', ...short(trade), lockedGainPct: trade?.lockedGainPct ?? null });
+      if (ms != null) prevMs = ms;
     });
   }
 
   return {
-    battles: entries.length, tradeRows, sinceMs, executions, guardClears, foreignKeys, windows,
-    flagged: executions.length > 0 || Object.keys(foreignKeys).length > 0,
+    battles: entries.length, tradeRows, sinceMs, executions, guardClears, failedApprovals, foreignKeys, contradictions, windows,
+    flagged: executions.length > 0 || guardClears.length > 0 || failedApprovals.length > 0
+      || Object.keys(foreignKeys).length > 0 || contradictions.length > 0,
   };
 }
 
@@ -162,22 +212,24 @@ export function computePlantedProposalCensus(battles, { sinceMs = Date.parse(LAU
 export function renderPlantedProposalCensus(result, { readAt = null } = {}) {
   const L = [];
   const p = (s = '') => L.push(s);
-  const tbl = (head, rows) => { p(`| ${head.join(' | ')} |`); p(`|${head.map(() => '---').join('|')}|`); for (const r of rows) p(`| ${r.join(' | ')} |`); };
-  const cell = (v) => String(v ?? '—').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  const cell = (v) => String(v ?? '—').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  const tbl = (head, rows) => { p(`| ${head.join(' | ')} |`); p(`|${head.map(() => '---').join('|')}|`); for (const r of rows) p(`| ${r.map(cell).join(' | ')} |`); };
+  const tradesCell = (e) => (e.trades.length
+    ? e.trades.map((t) => `${t.lockedPoints} · ${t.entryPrice} → ${t.exitPrice} · ${t.evaluationId}`).join('; ')
+    : (e.kind === 'feed beat' ? 'none matched (forged symbol/time, or aged out)' : '—'));
   p('# Planted-proposal census (integrity build — client-forged proposal data)');
   p();
   p(`Read at: ${readAt ?? 'n/a'} · battles read: ${result.battles} · trade rows: ${result.tradeRows} · executions counted from ${new Date(result.sinceMs).toISOString()} (the launch guard landed ${LAUNCH_GUARD_LANDED} — PR #421, fcbd71c5 / 84254065)`);
   p();
-  p(`**Verdict:** ${result.flagged ? 'FOUND — read §1 and §2.' : 'nothing found in the retained window.'}`);
+  p(`**Verdict:** ${result.flagged ? 'FOUND — read §1, §1b, §1c, §2 and §2b.' : 'nothing found in the retained window.'}`);
   p();
   p('## 1. Proposals that executed after the launch guard landed');
   p();
-  p('No server path has created a proposal since the guard landed, so each row below is a client-written proposal that reached the executor (or, on 20 May only, a pre-guard leftover). The matched trade rows show what landed on `trades[]` — compare `lockedPoints` and the prices with the market at that time.');
+  p('No server path has created a proposal since the guard landed, so each row below is a client-written proposal the cron acted on (or, on 20 May only, a pre-guard leftover). The feed beat is the server\'s own record; a history row was the client\'s record copied whole, so its notes and times can be planted — a row that claims a launch-guard clear or a failure is listed here when a same-pair trade sits beside it. The matched trade rows show what landed on `trades[]` — compare `lockedPoints` and the prices with the market at that time. (An approved proposal that lapsed because its bench stock was gone also files `approved`: its beat says "could not execute" and no trade matches.)');
   p();
   if (result.executions.length) {
     tbl(['Battle', 'Evidence', 'At', 'Out → In', 'Message', 'Matched trade rows (lockedPoints · entry → exit · evaluationId)'],
-      result.executions.map((e) => [cell(e.battleId), e.kind, cell(e.at), `${cell(e.symbolOut)} → ${cell(e.symbolIn)}`, cell(e.message.slice(0, 80)),
-        e.trades.length ? e.trades.map((t) => `${t.lockedPoints} · ${t.entryPrice} → ${t.exitPrice} · ${t.evaluationId}`).join('; ') : (e.kind === 'feed beat' ? 'none matched (forged symbol/time, or aged out)' : '—')]));
+      result.executions.map((e) => [e.battleId, e.kind, e.at, `${e.symbolOut ?? '—'} → ${e.symbolIn ?? '—'}`, e.message.slice(0, 80), tradesCell(e)]));
   } else {
     p('None in the retained window.');
   }
@@ -185,9 +237,19 @@ export function renderPlantedProposalCensus(result, { readAt = null } = {}) {
   p('### 1b. Proposals the launch guard cleared after it landed (not executed)');
   p();
   if (result.guardClears.length) {
-    tbl(['Battle', 'At', 'proposalId', 'Out → In'], result.guardClears.map((g) => [cell(g.battleId), cell(g.at), cell(g.proposalId), `${cell(g.symbolOut)} → ${cell(g.symbolIn)}`]));
+    tbl(['Battle', 'At', 'proposalId', 'Out → In'], result.guardClears.map((g) => [g.battleId, g.at, g.proposalId, `${g.symbolOut ?? '—'} → ${g.symbolIn ?? '—'}`]));
     p();
-    p('Each is a proposal on a battle the guard treated as auto-pilot — written by a client after the guard landed, or a leftover pending at the deploy. Nothing executed.');
+    p('Each is a proposal written by a client after the guard landed (or a leftover pending at the deploy), cleared without a trade beside it — an attempt that did not get through. Many of them on one battle can also be an attempt to push older rows out of the 50-row history.');
+  } else {
+    p('None.');
+  }
+  p();
+  p('### 1c. Approved proposals marked failed, with no trade beside them');
+  p();
+  if (result.failedApprovals.length) {
+    tbl(['Battle', 'At', 'proposalId', 'Out → In'], result.failedApprovals.map((g) => [g.battleId, g.at, g.proposalId, `${g.symbolOut ?? '—'} → ${g.symbolIn ?? '—'}`]));
+    p();
+    p('Still a planted proposal (no server path creates one); the failure marker itself may have been planted — check the feed for a "Coach approved" / "Auto-executed" beat on that day.');
   } else {
     p('None.');
   }
@@ -197,17 +259,26 @@ export function renderPlantedProposalCensus(result, { readAt = null } = {}) {
   const keys = Object.entries(result.foreignKeys);
   if (keys.length) {
     tbl(['Key', 'Rows', 'Battles', 'Samples (battle #row: value · out → in · lockedPoints)'],
-      keys.map(([k, v]) => [cell(k), String(v.rows), cell(v.battles.join(', ')), v.samples.map((s) => `${s.battleId} #${s.index}: ${cell(s.value)} · ${s.symbolOut} → ${s.symbolIn} · ${s.lockedPoints}`).join('; ')]));
+      keys.map(([k, v]) => [k, String(v.rows), v.battles.join(', '), v.samples.map((s) => `${s.battleId} #${s.index}: ${s.value} · ${s.symbolOut} → ${s.symbolIn} · ${s.lockedPoints}`).join('; ')]));
     p();
     p('A key here reached the row through the executor\'s metadata spread — before the integrity build only the proposal paths spread a client-written object there. A key older code wrote legitimately would show on many rows across many battles; a planted one on few.');
   } else {
     p('None — every retained row carries only the executor\'s fields and allowlisted metadata keys.');
   }
   p();
+  p('### 2b. Trade rows that contradict themselves');
+  p();
+  if (result.contradictions.length) {
+    tbl(['Battle', '#row', 'Why', 'Out → In', 'entry → exit', 'lockedGainPct', 'lockedPoints', 'swappedOutAt'],
+      result.contradictions.map((c) => [c.battleId, String(c.index), c.why, `${c.symbolOut} → ${c.symbolIn}`, `${c.entryPrice} → ${c.exitPrice}`, String(c.lockedGainPct), String(c.lockedPoints), c.swappedOutAt]));
+  } else {
+    p('None.');
+  }
+  p();
   p('## 3. Retained windows');
   p();
   tbl(['Battle', 'Status', 'executionMode', 'Trade rows', 'Trades from', 'Feed beats', 'Beats from', 'proposalHistory rows'],
-    result.windows.map((w) => [cell(w.battleId), cell(w.status), cell(w.executionMode), String(w.trades), cell(w.tradesFrom), String(w.beats), cell(w.beatsFrom), String(w.proposalHistory)]));
+    result.windows.map((w) => [w.battleId, w.status, w.executionMode, String(w.trades), w.tradesFrom, String(w.beats), w.beatsFrom, String(w.proposalHistory)]));
   return L.join('\n');
 }
 
@@ -256,7 +327,7 @@ async function main() {
   if (outPath) writeFileSync(outPath, md + '\n');
   else console.log(md);
   if (jsonPath) writeFileSync(jsonPath, JSON.stringify({ readAt, ...result }, null, 2));
-  console.error(`[census-planted-proposals] battles=${result.battles} rows=${result.tradeRows} executions=${result.executions.length} guard-clears=${result.guardClears.length} foreign-keys=${Object.keys(result.foreignKeys).length}`);
+  console.error(`[census-planted-proposals] battles=${result.battles} rows=${result.tradeRows} executions=${result.executions.length} guard-clears=${result.guardClears.length} foreign-keys=${Object.keys(result.foreignKeys).length} contradictions=${result.contradictions.length}`);
   if (result.flagged) process.exitCode = 2;
 }
 

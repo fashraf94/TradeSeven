@@ -519,7 +519,9 @@ describe('agent-evaluate cron — Corpus Capture Patch W1/W2 L1 capture wiring',
     // gameplan class
     expect(joined).toMatch(/source: 'gameplan_meeting',\s*\n\s*exitReason: 'gameplan_rotation',/);
     // proposal class ×2 (approved + expired): source haiku, exitReason from metadata
-    const proposalPairs = joined.match(/source: 'haiku',\s*\n\s*exitReason: proposal\.evaluationMetadata\?\.exitReason \?\? 'haiku_decision',/g) || [];
+    // Integrity F2 (review I2-1): the exit reason is the row's own — the stored one is owner-writable.
+    const proposalPairs = joined.match(/source: 'haiku',\s*\n\s*exitReason: 'haiku_decision',/g) || [];
+    expect(joined).not.toMatch(/proposal\.evaluationMetadata\?\.exitReason/);
     expect(proposalPairs.length).toBe(2);
     // R11 suppression-pass class (Ask 3): source guardrail, exitReason from the
     // guardrail sourceNote — a member of the closed enum by construction.
@@ -661,8 +663,9 @@ describe('agent-evaluate cron — adversarial-review fixes (#3/#8/#9/#10)', () =
     expect(classifierCalls.length).toBe(6); // 5 new + 1 autopilot
   });
 
-  it('#9: both proposal captures pass decisionAtMs = proposal.createdAt (predicate instant ≠ execution timestamp)', () => {
-    const overrides = source.match(/decisionAtMs: proposal\.createdAt \?\? null,/g) || [];
+  it('#9: both proposal captures pass a decision instant ≠ the execution timestamp — integrity F2: the server\'s own (the deciding evaluation entry), never the owner-writable proposal.createdAt', () => {
+    expect(source).not.toMatch(/decisionAtMs: proposal\.createdAt/);
+    const overrides = source.match(/decisionAtMs: serverDecision\?\.timestamp \?\? null,/g) || [];
     expect(overrides.length).toBe(2);
     // receipt.timestamp stays the execution instant at both proposal sites.
     expect(source).toMatch(/timestamp: approvedSwapResult\.closedTrade\?\.swappedOutAt \|\| null,/);

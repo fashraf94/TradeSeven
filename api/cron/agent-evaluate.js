@@ -61,8 +61,8 @@ import { currentSwapIdentityMode, swapIdentityActive, swapIdentityOptions, expec
 // launch mode both guards read, the executor-metadata allowlist, and the
 // history rows built from the server's own results.
 import { LAUNCH_EXECUTION_MODE } from '../_utils/executionAuthority.js';
-import { executorMetadata, clientText, clientToken, serverTradeId, serverProposalEvaluationId, proposalDescriptiveMetadata } from '../_utils/executorMetadata.js';
-import { proposalHistoryBase, meetingHistoryBase } from '../_utils/historyRows.js';
+import { executorMetadata, clientText, clientToken, serverTradeId, serverProposalEvaluationId, serverProposalDecision, proposalDescriptiveMetadata } from '../_utils/executorMetadata.js';
+import { proposalHistoryBase, launchGuardRecord, meetingHistoryBase } from '../_utils/historyRows.js';
 // P2 League Tournament — agent-market exclusivity (Spec §1.2). Every use is
 // tournament-conditional: resolveTournamentContext returns null for regular
 // battles from in-memory fields alone (zero Firestore I/O), so the
@@ -3918,12 +3918,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               exitReason: 'haiku_decision',
               // Swap Motive Observability (Tier 1) — declared model judgment sibling
               // (see the autopilot metadata above). Rides onto trades[] when the
-              // proposal resolves, via the ...(proposal.evaluationMetadata) merge.
+              // proposal resolves — as a capped string (integrity F2,
+              // proposalDescriptiveMetadata: the stored proposal is owner-writable).
               swapMotive: haikuResult?.swap_type ?? null,
               // Phase 6 (§4.6) — receipt source. Dormant under the autopilot launch
               // guard; stamped for forward-compat (mirrors how Phase 4 stamped
-              // exitReason here). Rides onto trades[] when the proposal is later
-              // resolved (executeSwapServer is passed proposal.evaluationMetadata).
+              // exitReason here). Integrity F2: at resolution the server's own floor
+              // supplies the receipt source — the stored copy is never read back.
               ...buildSwapReceiptSource({ source: 'haiku', archetype: ctx.archetype }),
               // Release 2 PR-b — the §14 provenance sibling.
               ...buildSwapProvenance(dialClamp.provenance),
@@ -4856,11 +4857,12 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
   // that reached the executor). No server path has created a proposal since
   // this guard landed (84254065, merged in PR #421 on 2026-05-20), so every
   // proposal that reaches it is cleared here, never executed. F3: the history
-  // row is the record minus its outcome fields, plus this branch's own result.
+  // row keeps only what the (client-written) record NAMED, capped, plus this
+  // branch's own result (launchGuardRecord; review I1-3 / I1-4).
   if (LAUNCH_EXECUTION_MODE === 'autopilot') {
-    console.warn(`${LOG_PREFIX} LAUNCH GUARD: pendingProposal exists on autopilot battle ${battle.id} (proposalId=${proposal.proposalId}). Resolving as auto_executed without execution.`);
+    console.warn(`${LOG_PREFIX} LAUNCH GUARD: pendingProposal exists on autopilot battle ${battle.id} (proposalId=${clientToken(proposal?.proposalId)}). Resolving as auto_executed without execution.`);
     const resolvedProposal = {
-      ...proposalHistoryBase(proposal),
+      ...launchGuardRecord(proposal),
       resolvedAt: new Date().toISOString(),
       resolution: 'auto_executed',
       resolvedBy: 'system',
@@ -4882,8 +4884,15 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
   // own, the trade id comes from the battle's counter, the evaluation id only
   // when the server's own evaluation log made this proposal, the exit reason and
   // receipt source are the server's, and the stored snapshot (technical numbers)
-  // is not forwarded. The stored descriptive text rides as capped strings.
+  // is not forwarded. The stored descriptive text rides as capped strings. The
+  // capture action and the learning receipt take the same server values (review
+  // I2-1 / I3-4). Still read from the proposal, by design until the authority arc
+  // (P6 D6) stores proposals server-side: WHICH slot and bench asset it names
+  // (`tier` / `slotIndex` / `symbolIn` — the executor reads that slot from the
+  // live book, and the row records the slot actually traded), its `mode` at
+  // expiry, and P6's stored belief (type-checked, expectedOutOfStored).
   const serverDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
+  const serverDecision = serverProposalDecision(battle, proposal);
 
   // Already resolved by client — execute or clear
   if (proposal.resolvedAt && proposal.resolution) {
@@ -4965,7 +4974,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           );
           captureStep(captureFor(), () => {
             captureFor().action({
-              kind: 'swap', source: 'haiku', exitReason: proposal.evaluationMetadata?.exitReason ?? 'haiku_decision',
+              kind: 'swap', source: 'haiku', exitReason: 'haiku_decision', // integrity F2: the row's own exit reason
               symbolOut: approvedSwapResult.closedTrade?.symbolOut ?? null,
               symbolIn: approvedSwapResult.closedTrade?.symbolIn ?? null,
               swappedOutAt: approvedSwapResult.closedTrade?.swappedOutAt ?? null,
@@ -5026,11 +5035,12 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
                 battleId: battle.id,
                 battleDay: serverDay, // integrity F2: the server's own day, never the stored record's
                 timestamp: approvedSwapResult.closedTrade?.swappedOutAt || null,
-                // #9 (adversarial review): predicates below are proposal-creation
-                // -time (proposal.snapshot), so the predicate/decision instant is
-                // proposal.createdAt — NOT the execution timestamp above. Keeps
-                // the up-to-TTL staleness computable instead of collapsed.
-                decisionAtMs: proposal.createdAt ?? null,
+                // #9 (adversarial review): the predicate/decision instant is the
+                // proposal's creation — NOT the execution timestamp above — so the
+                // up-to-TTL staleness stays computable. Integrity F2: read from the
+                // server's own deciding evaluation entry, never the owner-writable
+                // proposal.createdAt; null (→ the execution instant) without one.
+                decisionAtMs: serverDecision?.timestamp ?? null, // integrity F2: the server's decision instant, else the execution's
                 // /code-review fix: receiptSeq is the CONVENTION itself —
                 // scoreState.tradeCount+1 at EXECUTION time (battle.* is
                 // pre-refresh here). Deliberately NOT parsed from the
@@ -5043,8 +5053,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
                 symbolIn: approvedSwapResult.closedTrade?.symbolIn ?? proposal.symbolIn,
                 symbolOut: approvedSwapResult.closedTrade?.symbolOut ?? proposal.symbolOut,
                 source: 'haiku',
-                exitReason: proposal.evaluationMetadata?.exitReason ?? 'haiku_decision',
-                haikuSwapReason: proposal.evaluationMetadata?.exitReason ?? 'haiku_decision',
+                exitReason: 'haiku_decision',
+                haikuSwapReason: 'haiku_decision',
                 resolvedTier: proposal.tier ?? null,
                 resolvedSlotIndex: proposal.slotIndex ?? null,
                 entryMark: approvedSwapResult.incomingAsset?.swapPrice ?? null,
@@ -5058,9 +5068,9 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
                 archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
                 // Proposal-time predicate snapshots (frozen at proposal
                 // creation — the decision instant for this class).
-                snapshotIn: proposal.snapshot?.symbolIn ?? null,
-                snapshotOut: proposal.snapshot?.symbolOut ?? null,
-                regimeOut: proposal.regime ?? null,
+                snapshotIn: null, // integrity F2: the stored snapshot is owner-writable (recorded honestly null)
+                snapshotOut: null,
+                regimeOut: null,
                 tradeCountAtDecision: battle.scoreState?.tradeCount ?? null,
                 tradesLenAtDecision: battle.trades?.length ?? null,
                 capturedAt: new Date().toISOString(),
@@ -5207,7 +5217,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         );
         captureStep(captureFor(), () => {
           captureFor().action({
-            kind: 'swap', source: 'haiku', exitReason: proposal.evaluationMetadata?.exitReason ?? 'haiku_decision',
+            kind: 'swap', source: 'haiku', exitReason: 'haiku_decision', // integrity F2: the row's own exit reason
             symbolOut: expiredSwapResult.closedTrade?.symbolOut ?? null,
             symbolIn: expiredSwapResult.closedTrade?.symbolIn ?? null,
             swappedOutAt: expiredSwapResult.closedTrade?.swappedOutAt ?? null,
@@ -5259,9 +5269,9 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
               battleId: battle.id,
               battleDay: serverDay, // integrity F2: the server's own day, never the stored record's
               timestamp: expiredSwapResult.closedTrade?.swappedOutAt || null,
-              // #9: predicate/decision instant is proposal.createdAt (creation-
-              // time snapshots), not the execution timestamp above.
-              decisionAtMs: proposal.createdAt ?? null,
+              // #9: the decision instant is the proposal's creation, not the
+              // execution timestamp above — from the server's deciding entry (F2).
+              decisionAtMs: serverDecision?.timestamp ?? null, // integrity F2: the server's decision instant, else the execution's
               // /code-review fix: receiptSeq = scoreState.tradeCount+1 at
               // EXECUTION time, never the stale creation-time metadata id
               // (same collision rationale as the 'approved' branch above).
@@ -5269,8 +5279,8 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
               symbolIn: expiredSwapResult.closedTrade?.symbolIn ?? proposal.symbolIn,
               symbolOut: expiredSwapResult.closedTrade?.symbolOut ?? proposal.symbolOut,
               source: 'haiku',
-              exitReason: proposal.evaluationMetadata?.exitReason ?? 'haiku_decision',
-              haikuSwapReason: proposal.evaluationMetadata?.exitReason ?? 'haiku_decision',
+              exitReason: 'haiku_decision',
+              haikuSwapReason: 'haiku_decision',
               resolvedTier: proposal.tier ?? null,
               resolvedSlotIndex: proposal.slotIndex ?? null,
               entryMark: expiredSwapResult.incomingAsset?.swapPrice ?? null,
@@ -5283,9 +5293,9 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
               outgoingSwappedInDay: l1ExpiredOutgoingPosition?.swappedInDay ?? null,
               archetypeIntegrityMode: ARCHETYPE_INTEGRITY_MODE,
               // Proposal-time predicate snapshots (the decision instant).
-              snapshotIn: proposal.snapshot?.symbolIn ?? null,
-              snapshotOut: proposal.snapshot?.symbolOut ?? null,
-              regimeOut: proposal.regime ?? null,
+              snapshotIn: null, // integrity F2: the stored snapshot is owner-writable (recorded honestly null)
+              snapshotOut: null,
+              regimeOut: null,
               tradeCountAtDecision: battle.scoreState?.tradeCount ?? null,
               tradesLenAtDecision: battle.trades?.length ?? null,
               capturedAt: new Date().toISOString(),
@@ -5827,6 +5837,12 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
     const legRefusals = [];
     // Execute suggested swaps
     for (const swap of (meeting.suggestedSwaps || [])) {
+      // Integrity build (review I1-5): the meeting is owner-writable, so the
+      // leg's symbols reach the feed, the history row and the refusal records
+      // only as capped strings (a real leg's symbols are unchanged). The
+      // lookups below still key on the leg's own values.
+      const legOut = clientToken(swap?.symbolOut);
+      const legIn = clientToken(swap?.symbolIn);
       // P2: set after a successful reserve; the per-iteration catch runs
       // the compensating release.
       let reservedSymbolIn = null;
@@ -5835,7 +5851,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         if (!benchAsset) {
           statusFeedEntries.push({
             timestamp: new Date().toISOString(),
-            message: `Gameplan swap ${swap.symbolOut} → ${swap.symbolIn} skipped — bench asset unavailable.`,
+            message: `Gameplan swap ${legOut} → ${legIn} skipped — bench asset unavailable.`,
             action: 'hold', source: 'gameplan_meeting',
           });
           continue;
@@ -5845,13 +5861,13 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
           // P6: the leg's outgoing symbol left the book — held, and (mode ≠ off)
           // recorded on the history row and shown in the feed (review S2-5).
           if (swapIdentityActive(swapIdentityMode)) {
-            const departed = departedLegRecord(swap);
-            legRefusals.push({ symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null, ...departed });
+            const departed = departedLegRecord({ symbolOut: legOut, symbolIn: legIn });
+            legRefusals.push({ symbolOut: legOut, symbolIn: legIn, ...departed });
             statusFeedEntries.push({
               timestamp: new Date().toISOString(),
               message: departed.line ?? 'A gameplan swap was skipped — the stock it named is no longer held.',
               action: 'hold', source: 'gameplan_meeting',
-              symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null,
+              symbolOut: legOut, symbolIn: legIn,
               refusalReason: departed.reason, verificationId: null,
             });
           }
@@ -5865,9 +5881,9 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
           console.warn(`${LOG_PREFIX} Reserve failed for ${swap.symbolIn} (${reservation.reason}) — gameplan swap skipped`);
           statusFeedEntries.push({
             timestamp: new Date().toISOString(),
-            message: `Gameplan swap ${swap.symbolOut} → ${swap.symbolIn} skipped — ${swap.symbolIn} is already taken in the group's agent market.`,
+            message: `Gameplan swap ${legOut} → ${legIn} skipped — ${legIn} is already taken in the group's agent market.`,
             action: 'hold', source: 'gameplan_meeting',
-            symbolOut: swap.symbolOut, symbolIn: swap.symbolIn,
+            symbolOut: legOut, symbolIn: legIn,
           });
           continue;
         }
@@ -5883,7 +5899,8 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         // leg's string by construction, so the id is unchanged for a real leg).
         const gameplanEvalId = `gameplan_${battle.portfolio[slot.tier][slot.slotIndex].symbol}_${benchAsset.symbol}_${Date.now()}`;
         // [VWAP Floor B1b] In-memory counter reset skipped here too (separate
-        // fn, launch-guarded path) — tick-start prune covers by next tick.
+        // fn; a LIVE path — meeting approval has no launch guard) — tick-start
+        // prune covers by next tick.
         // Corpus Capture Patch W2 — snapshot the outgoing position BEFORE the
         // swap closes it (mirrors the autopilot site's l1OutgoingPosition).
         const l1GameplanOutgoingPosition = LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
@@ -5900,7 +5917,8 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
           executorMetadata({ id: tradeId, action: 'SWAP', trigger: 'gameplan_rotation', rationale: clientText(swap.rationale), tradingDay: currentDay,
             entryRegime: null, entryMarketPosture: null, entryConviction: 0,
             entryPreset: clientToken(battle.strategyPreset) || 'balanced', entryMode: clientToken(battle.executionMode) || 'autopilot', exitReason: 'gameplan_rotation',
-            // Phase 6 (§4.6) — receipt source. Dormant (gameplan approval is launch-guarded).
+            // Phase 6 (§4.6) — receipt source. LIVE: meeting approval has no launch
+            // guard (only its client card is unmounted — integrity build report §5).
             // NB: this is handleGameplanMeeting (separate fn) — `ctx` is not in scope
             // here; read archetype off battle.agentContext directly.
             ...buildSwapReceiptSource({ source: 'gameplan_meeting', archetype: battle.agentContext?.archetype }),
@@ -5946,9 +5964,9 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         }
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
-          message: `Gameplan approved: ${swap.symbolOut} → ${swap.symbolIn}`,
+          message: `Gameplan approved: ${legOut} → ${legIn}`,
           action: 'swap', source: 'gameplan_meeting',
-          symbolOut: swap.symbolOut, symbolIn: swap.symbolIn,
+          symbolOut: legOut, symbolIn: legIn,
         });
         summary.swapped++;
         // Corpus Capture Patch W2 — L1 capture, gameplan-meeting class.
@@ -6028,14 +6046,14 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         console.error(`${LOG_PREFIX} Gameplan swap failed for ${swap.symbolOut}:`, err.message);
         if (swapIdentityActive(swapIdentityMode) && isSwapRefusal(err)) {
           const legKind = refusalKindOf('gameplan_meeting');
-          legRefusals.push({ symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null, ...refusalRecord(err, { kind: legKind, symbolIn: swap.symbolIn ?? null }) });
+          legRefusals.push({ symbolOut: legOut, symbolIn: legIn, ...refusalRecord(err, { kind: legKind, symbolIn: legIn }) });
           // P6 (review S2-5): the meeting card is gone once approved — the feed says what happened.
           statusFeedEntries.push({
             timestamp: new Date().toISOString(),
             message: 'A gameplan swap was refused.', // replaced by the table F line whenever the record fills it
             action: 'hold', source: 'gameplan_meeting',
-            symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null,
-            ...refusalFeedFields(err, { kind: legKind, symbolIn: swap.symbolIn ?? null }),
+            symbolOut: legOut, symbolIn: legIn,
+            ...refusalFeedFields(err, { kind: legKind, symbolIn: legIn }),
           });
         }
         // P2: compensating release (no-op unless the reserve had landed).
