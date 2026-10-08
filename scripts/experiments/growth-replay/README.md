@@ -37,6 +37,20 @@ node scripts/experiments/growth-replay/growthReplay.js selftest      # synthetic
 
 Every command except `plan` and `selftest` acts on the newest run that passed its gate; pass `--run <runId>` for another.
 
+## The batch-effect check (Fable ruling, 2026-10-08)
+
+A derived run on the same arm-2 moments: a fresh baseline and a fresh "learning removed" at equal repeats (the largest count in 5–10 that fits **$50 planned / $68 worst**, enforced in code at plan and at submit), shuffled together across the same batches. It reports three comparisons on the frozen bars: fresh vs original baseline (batch effect), fresh learning-removed vs fresh baseline (learning, batches controlled), and fresh vs original learning-removed (replication).
+
+```
+node scripts/experiments/growth-replay/growthReplay.js batchcheck-plan --from <original runId>   # refuses an unfinished or unanalysed original
+node scripts/experiments/growth-replay/growthReplay.js submit --go --run <original runId>-batchcheck
+node scripts/experiments/growth-replay/growthReplay.js status --wait --run <original runId>-batchcheck
+node scripts/experiments/growth-replay/growthReplay.js collect --run <original runId>-batchcheck
+node scripts/experiments/growth-replay/growthReplay.js batchcheck-analyze --run <original runId>-batchcheck
+```
+
+`batchcheck-plan` makes the derived run the default target of later commands. `batchcheck-analyze` writes `addendum.json` in the derived folder and a dated section, between `batchcheck` markers, at the end of the original run's local exhibits file. A later `analyze` of the original keeps that section.
+
 ## Recovery rules
 
 - **One command at a time per run.** `pilot`, `submit` and `collect` take an exclusive `run.lock` in the run folder. `status` only reads. If a crashed command left the lock behind, delete the file.

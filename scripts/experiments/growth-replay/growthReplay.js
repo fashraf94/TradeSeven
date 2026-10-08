@@ -1107,6 +1107,7 @@ async function pilot(flags) {
   const manifest = readJson(manifestPath);
   // A new pilot replaces the run plan, whose task indices the batches' custom ids point into (review C2).
   if (manifest.batches?.length) stop('this run already has batches — a new pilot would remap their custom ids. Start a new run with `plan`.');
+  if (manifest.derivedFrom) stop('a derived batch-check run has no pilot: its request shapes were proven by the original run.');
   if ((manifest.pilot || manifest.pilotInProgress) && !flags.force) stop('this run already has a pilot record (complete or interrupted). Pass --force to run another, which spends again.');
   const priorPilotSpendUsd = (manifest.pilot?.pilotSpendUsdTotal ?? manifest.pilot?.pilotSpendUsd ?? 0) + (manifest.pilotInProgress?.spendUsd ?? 0);
   stampCommand(manifest, 'pilot');
@@ -1388,6 +1389,22 @@ async function createRecordedBatch(apiKey, manifest, manifestPath, chunk, kind) 
   console.log(`[growth-replay] created ${r.json.id} (${kind}, ${chunk.length} requests)`);
 }
 
+/**
+ * The spend-time cap check (delta review E1/E2): never looser than the global caps,
+ * a derived batch-check run always held to BATCHCHECK_CAPS even if its stored caps are
+ * missing, and fail-closed on any non-finite figure or a worst case below the plan
+ * (a null max_tokens would price the worst case at zero output).
+ */
+export function capCheck(cost, pilotUsd = 0, { runCaps = null, derived = false } = {}) {
+  const layers = [CAPS, ...(derived ? [BATCHCHECK_CAPS] : []), ...(runCaps ? [runCaps] : [])];
+  const caps = { plannedUsd: Math.min(...layers.map((c) => c.plannedUsd)), worstUsd: Math.min(...layers.map((c) => c.worstUsd)) };
+  const planned = cost.planned + pilotUsd;
+  const worst = cost.worst + pilotUsd;
+  const ok = [planned, worst, caps.plannedUsd, caps.worstUsd].every(Number.isFinite)
+    && worst >= planned - 1e-9 && planned <= caps.plannedUsd && worst <= caps.worstUsd;
+  return { ok, caps, planned, worst };
+}
+
 /** Planned and worst-case USD of the stored plan, RE-COMPUTED from its tasks at the current prices (review C2). */
 function planCost(manifest) {
   const rp = manifest.runPlan;
@@ -1411,8 +1428,8 @@ async function submit(flags) {
   const cost = planCost(manifest);
   const pilotUsd = manifest.pilot?.pilotSpendUsdTotal ?? manifest.pilot?.pilotSpendUsd ?? 0;
   // A run may carry tighter caps of its own (the batch-effect check: $50 / $68); never looser ones.
-  const caps = rp.caps ? { plannedUsd: Math.min(rp.caps.plannedUsd, CAPS.plannedUsd), worstUsd: Math.min(rp.caps.worstUsd, CAPS.worstUsd) } : CAPS;
-  if (cost.planned + pilotUsd > caps.plannedUsd || cost.worst + pilotUsd > caps.worstUsd) stop(`plan over cap: planned $${(cost.planned + pilotUsd).toFixed(2)}, worst $${(cost.worst + pilotUsd).toFixed(2)} (pilot included; caps $${caps.plannedUsd} / $${caps.worstUsd})`);
+  const chk = capCheck(cost, pilotUsd, { runCaps: rp.caps, derived: Boolean(manifest.derivedFrom) });
+  if (!chk.ok) stop(`plan over cap or malformed: planned $${chk.planned.toFixed(2)}, worst $${chk.worst.toFixed(2)} (pilot included; caps $${chk.caps.plannedUsd} / $${chk.caps.worstUsd})`);
   stampCommand(manifest, 'submit');
   const { env } = loadEnv();
   const apiKey = anthropicKey(env);
@@ -1585,13 +1602,17 @@ function buildKeys(dir, manifest, sources = loadSources(dir)) {
   const keysStrict = {};
   const usage = {};
   const requested = {}; const got = {};
+  const perTick = {}; // perTick[k][cond] = { requested, got } — completeness over any tick subset
   rp.tasks.forEach((task, i) => {
     const [k, arm, variant, model] = task;
     const cond = arm === 'ladder' ? `ladder:${model}` : arm === 'memory' ? `memory:${variant}` : 'base';
     inc(requested, cond);
+    const pt = (perTick[k] || (perTick[k] = {}))[cond] || (perTick[k][cond] = { requested: 0, got: 0 });
+    pt.requested += 1;
     const r = results[i];
     if (!r?.message) return;
     inc(got, cond);
+    pt.got += 1;
     ((keys[k] || (keys[k] = {}))[cond] || (keys[k][cond] = [])).push(decisionKey(r.message, schemaOf(k)));
     ((keysStrict[k] || (keysStrict[k] = {}))[cond] || (keysStrict[k][cond] = [])).push(decisionKey(r.message, schemaOf(k), { strict: true }));
     const u = usage[cond] || (usage[cond] = { input: [], output: [], model: arm === 'ladder' ? model : 'prod', stopReasons: {}, thinkingTokens: 0, cacheTokens: 0 });
@@ -1603,9 +1624,10 @@ function buildKeys(dir, manifest, sources = loadSources(dir)) {
   const responseDiagnostics = Object.fromEntries(Object.entries(usage).map(([c, u]) => [c, { stopReasons: u.stopReasons, thinkingTokens: u.thinkingTokens, cacheTokens: u.cacheTokens }]));
   const completeness = Object.fromEntries(Object.keys(requested).map((c) => {
     const missing = 1 - (got[c] || 0) / requested[c];
-    return [c, { requested: requested[c], returned: got[c] || 0, missingShare: missing, status: missing > 0.05 ? 'INCOMPLETE' : 'complete' }];
+    // "More than 5%", with a tolerance so exactly 5% is not flagged by floating error (delta review D5).
+    return [c, { requested: requested[c], returned: got[c] || 0, missingShare: missing, status: missing > 0.05 + 1e-9 ? 'INCOMPLETE' : 'complete' }];
   }));
-  return { keys, keysStrict, usage, responseDiagnostics, completeness };
+  return { keys, keysStrict, usage, responseDiagnostics, completeness, perTick };
 }
 
 async function analyze(flags) {
@@ -1613,6 +1635,7 @@ async function analyze(flags) {
   if (!st.pass) stop(`selftest failed — not analyzing: ${JSON.stringify(st)}`);
   const { dir, manifestPath } = resolveRun(flags);
   const manifest = readJson(manifestPath);
+  if (manifest.derivedFrom) stop('this is a derived batch-check run — use batchcheck-analyze (delta review D3).');
   const rp = manifest.runPlan;
   const sources = loadSources(dir);
   const tickMeta = Object.fromEntries(manifest.sample.ticks.map((t) => [t.k, t]));
@@ -1818,7 +1841,11 @@ function writeExhibits(dir, manifest, sources, donorTexts, keys, perTickMove) {
       out.push('Standing-leans block removed from the live context:', '', '```text', src.messages[2].content.slice(leans.span.start, leans.span.end), '```', '');
     }
   }
-  writeFileSync(path.join(dir, 'GROWTH_REPLAY_EXHIBITS.local.md'), out.join('\n'));
+  // Carry the batch-check addendum over (delta review D1): re-running analyze never erases it.
+  const exFile = path.join(dir, 'GROWTH_REPLAY_EXHIBITS.local.md');
+  const kept = existsSync(exFile) ? extractBatchcheckBlock(readFileSync(exFile, 'utf8')) : { ok: true, block: '' };
+  if (!kept.ok) stop(`${exFile} has malformed batch-check markers — fix them by hand; nothing was rewritten`);
+  writeFileSync(exFile, kept.block ? `${out.join('\n').replace(/\n*$/, '\n\n')}${kept.block}\n` : out.join('\n'));
 }
 
 // ---------------------------------------------------------------- batch-effect check (addendum; Fable ruling 2026-10-08)
@@ -1843,12 +1870,15 @@ export function batchCheckTasks(tickKeys, repeats) {
 
 /** The largest equal repeat count in [min, max] whose planned AND worst-case cost fit the caps; null if none does. */
 export function fitRepeats(tickKeys, { est, priceOf, caps = BATCHCHECK_CAPS, min = BATCHCHECK_REPEATS.min, max = BATCHCHECK_REPEATS.max }) {
+  // Every estimate must be a real number, with a positive max_tokens for the worst case (review E2).
+  const sane = (e) => e && [e.input, e.output, e.maxTokens, e.cacheMultiplier].every(Number.isFinite) && e.maxTokens > 0 && e.cacheMultiplier >= 1;
+  if (!sane(est?.pilot?.prod) || !sane(est?.conservative?.prod)) return null;
   for (let r = max; r >= min; r -= 1) {
     const tasks = batchCheckTasks(tickKeys, r).map(([k, arm, variant, model, rep]) => ({ k, arm, variant, model, rep }));
     const a = costOf(tasks, est.pilot, priceOf);
     const b = costOf(tasks, est.conservative, priceOf);
     const cost = { planned: Math.max(a.planned, b.planned), worst: Math.max(a.worst, b.worst) };
-    if (cost.planned <= caps.plannedUsd && cost.worst <= caps.worstUsd) return { repeats: r, cost };
+    if (capCheck(cost, 0, { runCaps: caps }).ok) return { repeats: r, cost };
   }
   return null;
 }
@@ -1856,10 +1886,16 @@ export function fitRepeats(tickKeys, { est, priceOf, caps = BATCHCHECK_CAPS, min
 /** Derive the batch-check run from an analysed original run (no Firestore read, no spend). */
 async function batchcheckPlan(flags) {
   if (!flags.from) stop('batchcheck-plan needs --from <runId> (the original run).');
+  if (!/^gr-\d{8}T\d{6}$/.test(flags.from)) stop('--from must name an original run folder (gr-YYYYMMDDTHHMMSS)');
   const odir = runDir(flags.from);
   if (!existsSync(path.join(odir, 'manifest.json'))) stop(`no run folder ${odir}`);
   const om = readJson(path.join(odir, 'manifest.json'));
   if (!om.runPlan || !om.pilot) stop('the original run has no run plan');
+  // Only a finished, analysed original (delta review E3/E4): never a derived run, an over-cap
+  // plan, or a run with work left to recover, which a moved latest.txt would hide.
+  if (om.derivedFrom || om.runPlan.over) stop('the source must be an original, in-cap run');
+  if (om.pendingCreate || !(om.batches || []).length || !om.batches.every((b) => b.resultsSaved && b.deleted)) stop('the original run is not finished (uncollected, undeleted or pending batches)');
+  if (!existsSync(path.join(odir, 'analysis.json'))) stop('the original run has not been analysed');
   const ticks = om.sample.ticks.filter((t) => om.runPlan.sampleKeys.includes(t.k) && t.learned === 'learned');
   const tickKeys = ticks.map((t) => t.k);
   const priceOf = (key) => PRICES[key === 'prod' ? om.pilot.prodPriceKey : key];
@@ -1869,8 +1905,9 @@ async function batchcheckPlan(flags) {
   const runId = `${flags.from}-batchcheck`;
   const dir = runDir(runId);
   if (existsSync(dir)) stop(`${dir} already exists — this check is planned once`);
-  mkdirSync(dir, { recursive: true });
   const sources = loadSources(odir);
+  if (!tickKeys.every((k) => sources[k])) stop('the original run is missing source requests for its arm-2 ticks');
+  mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, 'source-requests.jsonl'), `${tickKeys.map((k) => JSON.stringify(sources[k])).join('\n')}\n`);
   writeFileSync(path.join(dir, 'donor-learned-texts.json'), '{}');
   const manifest = {
@@ -1891,6 +1928,32 @@ async function batchcheckPlan(flags) {
   console.log(JSON.stringify({ runId, dir, ticks: ticks.length, repeats: fit.repeats, requests: manifest.runPlan.tasks.length, plannedUsd: round(fit.cost.planned, 2), worstUsd: round(fit.cost.worst, 2), caps: BATCHCHECK_CAPS }, null, 1));
 }
 
+/** The three comparisons of the ruling, as data (delta review D2: asserted by the selftest). */
+export const BATCHCHECK_COMPARISONS = Object.freeze([
+  Object.freeze({ name: 'batchEffect', title: 'fresh baseline vs original baseline (the batch-effect test)', base: Object.freeze(['original', 'base']), variant: Object.freeze(['fresh', 'base']), seed: SEED + 61 }),
+  Object.freeze({ name: 'learning', title: 'fresh learning-removed vs fresh baseline (the learning test, batches controlled)', base: Object.freeze(['fresh', 'base']), variant: Object.freeze(['fresh', 'memory:strip']), seed: SEED + 64 }),
+  Object.freeze({ name: 'replication', title: 'fresh learning-removed vs original learning-removed (replication)', base: Object.freeze(['original', 'memory:strip']), variant: Object.freeze(['fresh', 'memory:strip']), seed: SEED + 67 }),
+]);
+
+const BATCHCHECK_START = '<!-- batchcheck:start -->';
+const BATCHCHECK_END = '<!-- batchcheck:end -->';
+
+/**
+ * Split an exhibits file into the batch-check block and everything else (delta review
+ * D1/D7). ok:false when the markers are malformed — the caller then refuses to rewrite
+ * the file rather than guess where user text ends.
+ */
+export function extractBatchcheckBlock(text) {
+  const s = String(text ?? '');
+  const nS = countOf(s, BATCHCHECK_START); const nE = countOf(s, BATCHCHECK_END);
+  if (nS === 0 && nE === 0) return { ok: true, block: '', rest: s };
+  const a = s.indexOf(BATCHCHECK_START); const b = s.indexOf(BATCHCHECK_END);
+  if (nS !== 1 || nE !== 1 || b < a) return { ok: false, block: '', rest: s };
+  const block = s.slice(a, b + BATCHCHECK_END.length);
+  const rest = (s.slice(0, a) + s.slice(b + BATCHCHECK_END.length).replace(/^\n+/, '')).replace(/\n+$/, '\n');
+  return { ok: true, block, rest };
+}
+
 /** The three comparisons, the descriptive context, and the exhibits addendum. */
 async function batchcheckAnalyze(flags) {
   const st = runSelftest();
@@ -1898,32 +1961,41 @@ async function batchcheckAnalyze(flags) {
   const { dir, manifestPath } = resolveRun(flags);
   const m = readJson(manifestPath);
   if (!m.derivedFrom) stop('this is not a batch-check run (no derivedFrom)');
+  // Only a fully collected run is analysed, so a partial pass can never replace a good one (delta review D4).
+  if (m.pendingCreate || !(m.batches || []).length || !m.batches.every((b) => b.resultsSaved)) stop('the batch-check run is not fully collected — run status --wait, then collect');
   const odir = runDir(m.derivedFrom);
   const om = readJson(path.join(odir, 'manifest.json'));
-  const fresh = buildKeys(dir, m);
-  const orig = buildKeys(odir, om);
+  const src = { fresh: buildKeys(dir, m), original: buildKeys(odir, om) };
+  const plannedRepeats = { fresh: m.runPlan.repeats, original: om.runPlan.repeats };
+  const repeatsOf = (which, cond) => (cond === 'base' ? plannedRepeats[which].base : plannedRepeats[which].memory);
   const tickKeys = m.runPlan.sampleKeys;
   const meta = Object.fromEntries(m.sample.ticks.map((t) => [t.k, t]));
-  const isIncomplete = (src, cond) => src.completeness[cond]?.status === 'INCOMPLETE';
   const share = (lists, pred) => mean(lists.map((l) => l.filter(pred).length / l.length));
-  const typical = (lists) => Math.round(mean(lists.map((l) => l.length)));
+  // Completeness over the ticks actually compared (delta review D5), with a tolerance so exactly 5% is not "above 5%".
+  const missingOver = (which, cond) => {
+    let requested = 0; let got = 0;
+    for (const k of tickKeys) { const c = src[which].perTick[k]?.[cond]; requested += c?.requested ?? 0; got += c?.got ?? 0; }
+    return requested ? 1 - got / requested : 1;
+  };
 
-  const compare = (baseSrc, baseCond, varSrc, varCond, seed) => {
+  const compare = ({ base: [bw, bc], variant: [vw, vc], seed }) => {
     const rows = tickKeys.map((k) => ({
       k, archetype: meta[k].archetype,
-      base: (baseSrc.keys[k]?.[baseCond] || []).map((x) => x.fine),
-      variant: (varSrc.keys[k]?.[varCond] || []).map((x) => x.fine),
+      base: (src[bw].keys[k]?.[bc] || []).map((x) => x.fine),
+      variant: (src[vw].keys[k]?.[vc] || []).map((x) => x.fine),
     })).filter((r) => r.base.length && r.variant.length);
     const res = permutationTest(rows, { seed });
     if (!res) return null;
-    const incomplete = isIncomplete(baseSrc, baseCond) || isIncomplete(varSrc, varCond);
+    res.missing = { base: missingOver(bw, bc), variant: missingOver(vw, vc) };
+    const incomplete = res.missing.base > 0.05 + 1e-9 || res.missing.variant > 0.05 + 1e-9;
     res.label = incomplete ? `INCOMPLETE (${arm2Label(res)})` : arm2Label(res);
     const perTickTv = res.perTickTv;
     delete res.perTickTv;
     const c = permutationTest(rows.map((r) => ({ base: r.base.map(toCoarse), variant: r.variant.map(toCoarse) })), { seed: seed + 1 });
     if (c) { c.label = arm2Label(c); delete c.perTickTv; }
     res.coarse = c;
-    res.repeats = { base: typical(rows.map((r) => r.base)), variant: typical(rows.map((r) => r.variant)) };
+    // The noise floor at the PLANNED repeats of each side (delta review D6).
+    res.repeats = { base: repeatsOf(bw, bc), variant: repeatsOf(vw, vc) };
     res.noEffectFlipFloor = noEffectFlipFloor(rows.map((r) => r.base), { nA: res.repeats.base, nB: res.repeats.variant });
     res.flipsBeyondNoEffectFloor = res.flipRate - res.noEffectFlipFloor;
     const tie = permutationTest(rows, { seed, tieLargest: true });
@@ -1944,46 +2016,45 @@ async function batchcheckAnalyze(flags) {
     return res;
   };
 
-  const comparisons = {
-    batchEffect: { title: 'fresh baseline vs original baseline (the batch-effect test)', ...compare(orig, 'base', fresh, 'base', SEED + 61) },
-    learning: { title: 'fresh learning-removed vs fresh baseline (the learning test, batches controlled)', ...compare(fresh, 'base', fresh, 'memory:strip', SEED + 64) },
-    replication: { title: 'fresh learning-removed vs original learning-removed (replication)', ...compare(orig, 'memory:strip', fresh, 'memory:strip', SEED + 67) },
-  };
+  const comparisons = {};
+  for (const spec of BATCHCHECK_COMPARISONS) {
+    const res = compare(spec);
+    if (!res) stop(`comparison ${spec.name} could not be measured (no ticks with results on both sides)`);
+    comparisons[spec.name] = { title: spec.title, ...res };
+  }
 
   const spend = { byCondition: {}, totalUsd: 0 };
-  for (const [cond, u] of Object.entries(fresh.usage)) {
+  for (const [cond, u] of Object.entries(src.fresh.usage)) {
     const p = PRICES[m.pilot.prodPriceKey];
     const usd = (u.input.reduce((s, x) => s + x, 0) * p.batchIn + u.output.reduce((s, x) => s + x, 0) * p.batchOut) / 1e6;
     spend.byCondition[cond] = round(usd, 4); spend.totalUsd += usd;
   }
   const batches = m.batches || [];
-  const mixedBatches = batches.filter((b) => {
-    const conds = new Set(b.taskIdx.map((i) => m.runPlan.tasks[i][1]));
-    return conds.size === 2;
-  }).length;
+  const mixedBatches = batches.filter((b) => new Set(b.taskIdx.map((i) => m.runPlan.tasks[i][1])).size === 2).length;
 
   const out = {
     runId: m.runId, derivedFrom: m.derivedFrom, at: new Date().toISOString(), selftest: { pass: st.pass },
-    ticks: tickKeys.length, repeats: m.runPlan.repeats, completeness: fresh.completeness, responseDiagnostics: fresh.responseDiagnostics,
+    ticks: tickKeys.length, repeats: m.runPlan.repeats, completeness: src.fresh.completeness, responseDiagnostics: src.fresh.responseDiagnostics,
     batches: { count: batches.length, withBothConditions: mixedBatches },
-    comparisons: Object.fromEntries(Object.entries(comparisons).map(([k, v]) => [k, { ...v, flipped: v.flipped?.length ?? 0 }])),
+    comparisons: Object.fromEntries(Object.entries(comparisons).map(([k, v]) => [k, { ...v, flipped: v.flipped.length }])),
     spend,
   };
+  writeBatchcheckExhibits(odir, m, src.fresh, src.original, comparisons.learning);
   writeJsonAtomic(path.join(dir, 'addendum.json'), out);
-  writeBatchcheckExhibits(odir, m, fresh, orig, comparisons.learning);
   console.log(JSON.stringify(out, null, 1));
 }
 
 /** Append (or replace) the dated section of the LOCAL-ONLY exhibits file: the moments that changed in the fresh learning test. */
 function writeBatchcheckExhibits(odir, m, fresh, orig, learning) {
   const file = path.join(odir, 'GROWTH_REPLAY_EXHIBITS.local.md');
-  const START = '<!-- batchcheck:start -->';
-  const END = '<!-- batchcheck:end -->';
+  const prior = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  const split = extractBatchcheckBlock(prior);
+  if (!split.ok) stop(`${file} has malformed batch-check markers — fix them by hand; nothing was rewritten`);
   const sources = loadSources(runDir(m.runId));
   const meta = Object.fromEntries(m.sample.ticks.map((t) => [t.k, t]));
   const dist = (list) => (list?.length ? Object.entries(counts(list.map((x) => x.fine))).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k}×${n}`).join(', ') : '—');
-  const rows = [...(learning.flipped || [])].sort((a, b) => b.tv - a.tv);
-  const lines = [START, '', `## Addendum ${m.createdAt.slice(0, 10)} — the moments that changed in the fresh learning test`, '',
+  const rows = [...learning.flipped].sort((a, b) => b.tv - a.tv);
+  const lines = [BATCHCHECK_START, '', `## Addendum ${m.createdAt.slice(0, 10)} — the moments that changed in the fresh learning test`, '',
     `Run ${m.runId} (derived from ${m.derivedFrom}). Fresh baseline and fresh learning-removed, ${m.runPlan.repeats.base} repeats each, shuffled together across the same batches. ${rows.length} of ${learning.ticks} moments changed their usual call.`, ''];
   for (const [i, r] of rows.entries()) {
     const t = meta[r.k];
@@ -1993,11 +2064,8 @@ function writeBatchcheckExhibits(odir, m, fresh, orig, learning) {
       `- original baseline: ${dist(orig.keys[r.k]?.base)}`, `- original learning-removed: ${dist(orig.keys[r.k]?.['memory:strip'])}`, '');
     lines.push('What the agent had learned (the LEARNED section as sent):', '', '```text', learnedPartText(sources[r.k].request) ?? '(none)', '```', '');
   }
-  lines.push(END, '');
-  const prior = existsSync(file) ? readFileSync(file, 'utf8') : '';
-  const a = prior.indexOf(START); const b = prior.indexOf(END);
-  const kept = a >= 0 && b > a ? prior.slice(0, a) + prior.slice(b + END.length).replace(/^\n+/, '') : prior;
-  writeFileSync(file, `${kept.replace(/\n*$/, '\n\n')}${lines.join('\n')}`);
+  lines.push(BATCHCHECK_END, '');
+  writeFileSync(file, `${split.rest.replace(/\n*$/, '\n\n')}${lines.join('\n')}`);
 }
 
 // ---------------------------------------------------------------- selftest
@@ -2111,11 +2179,38 @@ export function runSelftest() {
   const cutCase = (evaluate) => fitToCaps({ fullN: 300, hasOpus: true, evaluate }, { caps: { plannedUsd: 100, worstUsd: 200 } });
   const priced = (cfg) => ({ cost: { planned: (cfg.loadout ? 60 : 40) + (cfg.opus ? (cfg.opusRepeats ? 30 : 50) : 0) + cfg.n / 10, worst: 150 } });
   // The batch-effect check's repeats: the largest equal count in [5, 10] under both caps, else none.
-  const flat = { prod: { input: 1000, output: 0, maxTokens: 0, cacheMultiplier: 1 } };
+  const flat = { prod: { input: 1000, output: 0, maxTokens: 1, cacheMultiplier: 1 } };
   const tenTicks = Array.from({ length: 10 }, (_, i) => `t${i}`);
   const fitArgs = (planned) => ({ est: { pilot: flat, conservative: flat }, priceOf: () => ({ batchIn: 1, batchOut: 1 }), caps: { plannedUsd: planned, worstUsd: 1 } });
   checks.batchCheckRepeats = batchCheckTasks(tenTicks, 3).length === 60
     && fitRepeats(tenTicks, fitArgs(0.15)).repeats === 7 && fitRepeats(tenTicks, fitArgs(1)).repeats === 10 && fitRepeats(tenTicks, fitArgs(0.05)) === null;
+  // Delta review E1: a case where only the WORST cap binds, and one where the conservative estimate is the larger.
+  const worstOnly = { prod: { input: 1000, output: 0, maxTokens: 1000, cacheMultiplier: 1 } }; // $0.02 planned / $0.04 worst per repeat
+  const unit = () => ({ batchIn: 1, batchOut: 1 });
+  checks.batchCheckWorstCap = fitRepeats(tenTicks, { est: { pilot: worstOnly, conservative: worstOnly }, priceOf: unit, caps: { plannedUsd: 1, worstUsd: 0.3 } })?.repeats === 7;
+  const lowPilot = { prod: { input: 1000, output: 0, maxTokens: 1, cacheMultiplier: 1 } };
+  const highCons = { prod: { input: 2000, output: 0, maxTokens: 1, cacheMultiplier: 1 } };
+  checks.batchCheckConservative = fitRepeats(tenTicks, { est: { pilot: lowPilot, conservative: highCons }, priceOf: unit, caps: { plannedUsd: 0.15, worstUsd: 1 } }) === null;
+  checks.batchCheckNullMaxTokens = fitRepeats(tenTicks, { est: { pilot: { prod: { ...flat.prod, maxTokens: null } }, conservative: flat }, priceOf: unit, caps: { plannedUsd: 1, worstUsd: 1 } }) === null;
+  // The spend-time check: the real r = 10 plan is blocked under {50, 68}; r = 8 passes; malformed figures fail closed.
+  checks.capCheck = capCheck({ planned: 57.69, worst: 82.81 }, 0, { runCaps: { plannedUsd: 50, worstUsd: 68 } }).ok === false
+    && capCheck({ planned: 46.15, worst: 66.25 }, 0, { runCaps: { plannedUsd: 50, worstUsd: 68 } }).ok === true
+    && capCheck({ planned: 57.69, worst: 82.81 }, 0, { derived: true }).ok === false
+    && capCheck({ planned: 46.15, worst: 66.25 }, 0, { runCaps: { plannedUsd: 50 } }).ok === false
+    && capCheck({ planned: 46.15, worst: 31.84 }, 0, { runCaps: { plannedUsd: 50, worstUsd: 68 } }).ok === false
+    && capCheck({ planned: 100, worst: 150 }, 0).ok === true && capCheck({ planned: 100, worst: 150 }, 60).ok === false;
+  // The ruling's three comparisons, the batch-check caps, the repeat bounds and the task shape (delta review D2).
+  checks.batchCheckSpec = JSON.stringify(BATCHCHECK_COMPARISONS.map((c) => [c.name, c.base, c.variant])) === JSON.stringify([['batchEffect', ['original', 'base'], ['fresh', 'base']], ['learning', ['fresh', 'base'], ['fresh', 'memory:strip']], ['replication', ['original', 'memory:strip'], ['fresh', 'memory:strip']]])
+    && BATCHCHECK_CAPS.plannedUsd === 50 && BATCHCHECK_CAPS.worstUsd === 68;
+  const shape = batchCheckTasks(['a', 'b'], 3);
+  checks.batchCheckShape = shape.length === 12 && ['a', 'b'].every((k) => shape.filter((t) => t[0] === k && t[1] === 'base' && t[2] === 'verbatim' && t[3] === 'prod').length === 3
+    && shape.filter((t) => t[0] === k && t[1] === 'memory' && t[2] === 'strip' && t[3] === 'prod').length === 3);
+  checks.batchCheckBounds = fitRepeats(tenTicks, fitArgs(0.11))?.repeats === 5 && fitRepeats(tenTicks, fitArgs(0.09)) === null;
+  // The exhibits block survives a rewrite, and malformed markers are refused (delta review D1/D7).
+  const blk = extractBatchcheckBlock('main\n\n<!-- batchcheck:start -->\nX\n<!-- batchcheck:end -->\n');
+  checks.exhibitsBlock = blk.ok && blk.block === '<!-- batchcheck:start -->\nX\n<!-- batchcheck:end -->' && blk.rest === 'main\n'
+    && extractBatchcheckBlock('main\n<!-- batchcheck:start -->\nuser text').ok === false
+    && extractBatchcheckBlock('plain').ok && extractBatchcheckBlock('plain').block === '';
   checks.cutOrder = cutCase(priced).cuts.join('|') === 'dropped the loadout variant|Opus repeats reduced to 3'
     && cutCase(() => ({ cost: { planned: 10, worst: 10 } })).cuts.length === 0
     && cutCase(() => ({ cost: { planned: 1e9, worst: 1e9 } })).over === true;
