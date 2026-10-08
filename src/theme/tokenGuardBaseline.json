@@ -93,6 +93,7 @@
     "src/screens/filmRoomV2/filmRoomData.js": {},
     "src/screens/filmRoomV2/FilmRoomKit.jsx": {},
     "src/screens/filmRoomV2/FilmRoomCheckDetail.jsx": {},
-    "src/screens/filmRoomV2/FilmRoomGlance.jsx": {}
+    "src/screens/filmRoomV2/FilmRoomGlance.jsx": {},
+    "src/screens/filmRoomV2/FilmRoomStudy.jsx": {}
   }
 }

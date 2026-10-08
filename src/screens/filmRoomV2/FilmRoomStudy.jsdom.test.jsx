@@ -1,0 +1,309 @@
+// @vitest-environment jsdom
+//
+// src/screens/filmRoomV2/FilmRoomStudy.jsdom.test.jsx
+//
+// Film Room A2 item 7 — STUDY (V1.2 §7; Amendment E BA-41 F1–F4, BA-45,
+// BA-46, BA-47). Mounted from the A1 passes' own tapes.
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import React from 'react';
+import FilmRoomStudy from './FilmRoomStudy';
+import { REPLAY_SENTENCE, LOCKED_BASIS_NOTE } from './filmRoomCopy';
+import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
+import { mounter, sep23Tape, emptyTape, clone, sweepNumbers, sweepWords, sweepSigns, parseNumeral } from './__fixtures__/filmRoomHarness';
+
+// Whole-section mounts with every collapsible opened: CI headroom (the A1 suites' precedent).
+vi.setConfig({ testTimeout: 20_000 });
+
+const m = mounter();
+beforeEach(() => m.setup());
+afterEach(() => m.teardown());
+
+const deeps = [];
+function Harness({ tape }) {
+  const [selected, setSelected] = React.useState(null);
+  return <FilmRoomStudy tape={tape} selected={selected} onSelect={setSelected} onDeep={(s) => deeps.push(s)} jump={() => {}} />;
+}
+const card = (i) => m.q(`[data-swap-card="${i}"]`);
+const before = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+describe('BA-45 — holdings at the day\'s start and end', () => {
+  it('derived from the first and last risk records and the swaps, labelled derived; each changed slot shows who entered it and when', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    const sec = m.q('#holdings');
+    expect(sec.textContent).toContain('derived from recorded values');
+    expect(sec.querySelector('[data-coverage]').getAttribute('data-coverage')).toBe('partial');   // the checks section is partial
+    const text = m.q('[data-region="holdings"]').textContent;
+    for (const s of ['MSFT', 'DE', 'ETN', 'CRWD', 'PLTR', 'PANW', 'INTC', 'AMD', 'META', 'BTC']) expect(text).toContain(s);
+    expect(text).toContain('12:45');
+    expect(text).toContain('rule');
+    expect(text).toContain('agent');
+  });
+
+  it('a record that does not reconcile: the grid is omitted behind its coverage line', () => {
+    const t = clone(sep23Tape);
+    delete t.checks[22].risk.PANW;
+    m.render(<Harness tape={t} />);
+    expect(m.q('[data-region="holdings"]')).toBeNull();
+    expect(m.q('#holdings [data-coverage]').getAttribute('data-coverage')).toBe('unavailable');
+    expect(m.q('#holdings').textContent).toContain('do not reconcile');
+  });
+});
+
+describe('the swap cards (BA-6, BA-11, BA-38, BA-47; F1)', () => {
+  it('one card per swap, addressable as #swap-n', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    expect(m.qa('article[data-swap-card]').map((a) => a.id)).toEqual(['swap-1', 'swap-2', 'swap-3']);
+    expect(m.q('#swap-2 a[href="#swap-2"]')).toBeTruthy();
+  });
+
+  it('the exit maker\'s label precedes the result on every card', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    const want = ['Exit by platform rule · stagnation', 'Exit by the agent · its own decision', 'Exit by platform rule · stagnation'];
+    sep23Tape.actions.forEach((_, i) => {
+      const maker = card(i).querySelector('[data-exit-maker]');
+      expect(maker.textContent).toBe(want[i]);
+      for (const row of card(i).querySelectorAll('[data-result-row], [data-split]')) expect(before(maker, row), `card ${i}`).toBe(true);
+    });
+  });
+
+  it('F1: the split always shows the SOLD leg\'s sale — recorded exit, the bar at the swap, rescore, inputs part, price part — and the fill as its own rows, for every swap', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    sep23Tape.actions.forEach((a, i) => {
+      const sale = card(i).querySelector('[data-split="sale"]');
+      const fill = card(i).querySelector('[data-split="fill"]');
+      expect(sale.getAttribute('data-split-symbol')).toBe(a.symbolOut);
+      expect(fill.getAttribute('data-split-symbol')).toBe(a.symbolIn);
+      const base = `actions[${i}].replay.reconciliation`;
+      const cls = { recordedPx: 'recorded', rebuiltPx: 'market', pxDelta: 'rebuilt', rescoredAtRecordedPx: 'derived', inputsDelta: 'derived', priceDelta: 'rebuilt' };
+      for (const [k, c] of Object.entries(cls)) {
+        const el = sale.querySelector(`[data-num="${base}.soldAtSale.${k}"]`);
+        expect(el, `${i} sale ${k}`).toBeTruthy();
+        expect(el.getAttribute('data-num-class')).toBe(c);
+      }
+      for (const [k, c] of Object.entries({ recordedPx: 'recorded', rebuiltPx: 'market', pxDelta: 'rebuilt' })) {
+        const el = fill.querySelector(`[data-num="${base}.boughtAtSale.${k}"]`);
+        expect(el, `${i} fill ${k}`).toBeTruthy();
+        expect(el.getAttribute('data-num-class')).toBe(c);
+      }
+      expect(sale.querySelector('[data-num*="boughtAtSale"]')).toBeNull();
+      expect(fill.querySelector('[data-num*="soldAtSale"]')).toBeNull();
+      expect(sale.textContent).toContain(`Recorded exit · ${a.symbolOut}`);
+      expect(fill.textContent).toContain(`Recorded fill · ${a.symbolIn}`);
+    });
+  });
+
+  it('a swap whose fill and sale differ in sign shows each with its own sign, in its own group', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    const i = sep23Tape.actions.findIndex((a) => Math.sign(a.replay.reconciliation.soldAtSale.pxDelta) !== Math.sign(a.replay.reconciliation.boughtAtSale.pxDelta));
+    expect(i).toBeGreaterThanOrEqual(0);
+    const r = sep23Tape.actions[i].replay.reconciliation;
+    const sale = parseNumeral(card(i).querySelector(`[data-split="sale"] [data-num$="soldAtSale.pxDelta"] [data-num-text]`).textContent);
+    const fill = parseNumeral(card(i).querySelector(`[data-split="fill"] [data-num$="boughtAtSale.pxDelta"] [data-num-text]`).textContent);
+    expect(sale).toBe(r.soldAtSale.pxDelta);
+    expect(fill).toBe(r.boughtAtSale.pxDelta);
+    expect(Math.sign(sale)).not.toBe(Math.sign(fill));
+  });
+
+  it('BA-11: both rebuilt lines are dashed and labelled rebuilt; the gap and the agreement at the sale are shown, rebuilt; banked points recorded', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    sep23Tape.actions.forEach((a, i) => {
+      for (const line of ['hold', 'swap']) {
+        const p = card(i).querySelector(`[data-line="${line}"]`);
+        expect(p.hasAttribute('data-rebuilt')).toBe(true);
+        expect(p.getAttribute('style')).toContain('stroke-dasharray');
+      }
+      expect(card(i).textContent).toContain('dashed · rebuilt from 1-minute bars');
+      expect(card(i).querySelector(`[data-num="actions[${i}].replay.gapPoints"]`).getAttribute('data-num-class')).toBe('rebuilt');
+      expect(card(i).querySelector(`[data-num="actions[${i}].replay.reconciliation.closedLegDelta"]`).getAttribute('data-num-class')).toBe('rebuilt');
+      expect(card(i).querySelector(`[data-num="actions[${i}].lockedPoints"]`).getAttribute('data-num-class')).toBe('recorded');
+      const holdEnd = card(i).querySelector(`[data-path-label="hold"] [data-num]`).getAttribute('data-num');
+      expect(holdEnd).toBe(`actions[${i}].replay.holdPath[${a.replay.holdPath.length - 1}].points`);
+    });
+  });
+
+  it('the one-step-hypothetical sentence and the basis note appear on every swap card — the replay\'s own stored words', () => {
+    expect(REPLAY_SENTENCE).toBe(sep23Tape.actions[0].replay.label);
+    expect(LOCKED_BASIS_NOTE).toBe(sep23Tape.actions[0].replay.lockedBasisNote);
+    m.render(<Harness tape={sep23Tape} />);
+    sep23Tape.actions.forEach((_, i) => {
+      expect(card(i).querySelector('[data-replay-sentence]').textContent).toBe(REPLAY_SENTENCE);
+      expect(card(i).querySelector('[data-basis-note]').textContent).toBe(LOCKED_BASIS_NOTE);
+    });
+  });
+
+  it('a swap with no replay yet still carries the sentence and the note, and says it has no replay', () => {
+    const t = clone(sep23Tape);
+    t.actions[1].replay = null;
+    m.render(<Harness tape={t} />);
+    expect(card(1).textContent).toContain('No replay for this swap.');
+    expect(card(1).querySelector('[data-replay-sentence]').textContent).toBe(REPLAY_SENTENCE);
+    expect(card(1).querySelector('[data-basis-note]').textContent).toBe(LOCKED_BASIS_NOTE);
+    expect(card(1).querySelector('[data-line]')).toBeNull();
+  });
+
+  it('subsequentTradesInSlot > 0 marks both continued lines hypothetical, with the derived count; 0 does not', () => {
+    const t = clone(sep23Tape);
+    t.actions[0].subsequentTradesInSlot = 1;
+    t.actions[0].replay.subsequentTradesInSlot = 1;
+    m.render(<Harness tape={t} />);
+    const c = card(0);
+    expect(c.querySelector('[data-hypothetical]')).toBeTruthy();
+    expect(c.querySelector('[data-hypothetical] [data-num]').getAttribute('data-num')).toBe('actions[0].replay.subsequentTradesInSlot');
+    expect(c.querySelector('[data-hypothetical] [data-num]').getAttribute('data-num-class')).toBe('derived');
+    expect(c.querySelector('[data-path-label="hold"]').textContent).toContain('hypothetical');
+    expect(c.querySelector('[data-path-label="swap"]').textContent).toContain('hypothetical');
+    expect(card(1).querySelector('[data-hypothetical]')).toBeNull();
+  });
+
+  it('the empty day: the swaps section says none were recorded, under its coverage line', () => {
+    m.render(<Harness tape={emptyTape} />);
+    expect(m.q('#swaps').textContent).toContain('No swaps were recorded this day.');
+    expect(m.q('#swaps [data-coverage]')).toBeTruthy();
+  });
+});
+
+describe('BA-9 / F6 — directive cards from the tape\'s rows; the explainer\'s fixtures labelled', () => {
+  it('committed (filed, heard), no change (retained), not filed — the player\'s words and the filed text two fields; the reply labelled', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    const cards = m.qa('[data-directive-card]:not([data-directive-card^="example"])');
+    expect(cards.map((c) => c.getAttribute('data-card-state'))).toEqual(['committed', 'no_change', 'not_filed']);
+    expect(cards[0].textContent).toContain('You asked');
+    expect(cards[0].textContent).toContain('“Protect the lead into the close.”');
+    expect(cards[0].textContent).toContain('Directive filed');
+    expect(cards[0].textContent).toContain('Tighten the downside stop.');
+    expect(cards[0].querySelector('[data-heard]').textContent).toBe("Reached the agent's inputs at 1:45 PM");
+    expect(cards[0].textContent).toContain('Chat reply at the time · not verified');
+    expect(cards[1].textContent).toContain('No new directive filed');
+    expect(cards[1].textContent).toContain('Retained: Tighten the downside stop.');
+    expect(cards[2].textContent).toContain('No new directive filed');
+    expect(cards[2].textContent).not.toContain('Directive filed');
+    expect(cards[2].textContent).toContain('the reply at the time does not match it');
+    expect(m.container.textContent).not.toMatch(/PARAPHRASE-OF-PLAYER|COUNTER-OFFER-TEXT|REJECTION-REASON-TEXT/);
+    for (const k of ['checks', 'holds', 'swaps']) expect(cards[0].querySelector(`[data-num="directives[0].after.${k}"]`).getAttribute('data-num-class')).toBe('derived');
+  });
+
+  it('the explainer ("How a directive card reads") shows the three states as clearly labelled fixtures, not this battle', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    expect(m.q('[data-region="directive-explainer"]')).toBeNull();
+    m.click(m.buttons('How a directive card reads')[0]);
+    const ex = m.q('[data-region="directive-explainer"]');
+    expect(ex.textContent).toContain('Example cards · a fixture, not this battle');
+    expect([...ex.querySelectorAll('[data-directive-card]')].map((c) => c.getAttribute('data-card-state'))).toEqual(['committed', 'no_change', 'not_filed']);
+    expect(ex.querySelector('[data-num]')).toBeNull();
+  });
+});
+
+describe('BA-10 — plans: verbatim, the two market prices, the horizon note, no verdict', () => {
+  it('every plan with its symbol, direction, signal, threshold and both prices (market); the note from the tape', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    expect(m.qa('[data-plan]')).toHaveLength(sep23Tape.plans.length);
+    expect(m.q('#plans').textContent).toContain("prices shown to the day's close, which is not the plan's horizon");
+    sep23Tape.plans.forEach((p, i) => {
+      const row = m.q(`[data-plan="${i}"]`);
+      expect(row.textContent).toContain(p.signalSummary);
+      expect(row.textContent).toContain(p.threshold);
+      expect(row.querySelector(`[data-num="plans[${i}].price.atPlan.value"]`).getAttribute('data-num-class')).toBe('market');
+      expect(row.querySelector(`[data-num="plans[${i}].price.atClose.value"]`).getAttribute('data-num-class')).toBe('market');
+    });
+  });
+
+  it('the symbol chips filter the plans', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    const chip = m.qa('[data-region="plan-chips"] button').find((b) => b.textContent === 'MU');
+    m.click(chip);
+    const shown = m.qa('[data-plan]').map((r) => sep23Tape.plans[Number(r.getAttribute('data-plan'))].symbol);
+    expect(shown.length).toBeGreaterThan(0);
+    expect(new Set(shown)).toEqual(new Set(['MU']));
+  });
+});
+
+describe('BA-46 / F3 — the rationale timeline', () => {
+  it('recorded rationale is labelled and collapsed by default; opening shows the agent\'s words', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    const entries = m.qa('[data-rationale]');
+    expect(entries).toHaveLength(sep23Tape.rationale.length);
+    expect(entries[0].textContent).toContain("Recorded rationale at 12:00 PM · the agent's words at the time · not verified");
+    expect(m.q('[data-rationale-body]')).toBeNull();
+    m.click(entries[0].querySelector('button'));
+    expect(m.q('[data-rationale-body="0"]').textContent).toContain(sep23Tape.rationale[0].rationale);
+  });
+
+  it('a model-failure check is a check STATE in the timeline — the platform\'s record, never agent words, never under Diagnostic', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    const states = m.qa('[data-state-entry]');
+    expect(states.map((s) => Number(s.getAttribute('data-state-entry')))).toEqual([8, 12]);
+    for (const s of states) {
+      expect(s.textContent).toContain('no usable model result · the system held by default');
+      expect(s.textContent).toContain("the platform's record of the check · not the agent's words");
+      expect(s.textContent).not.toContain("the agent's words at the time");
+    }
+    m.expandAll();
+    expect(m.container.textContent).not.toMatch(/Haiku call failed|defaulting to HOLD/);
+    expect(m.q('#diagnostics').textContent).not.toContain('held by default');
+    expect(m.q('#rationale').textContent).toContain("2 entr(y/ies) carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied");
+  });
+
+  it('tapping a state entry opens that check\'s record (BA-44)', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    m.click(m.q('[data-state-entry="8"]'));
+    expect(m.q('[data-check-detail="8"]')).toBeTruthy();
+  });
+});
+
+describe('checks and diagnostics', () => {
+  it('each check with its recorded risk decision; the protections note exactly once in Study, a check open too', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    expect(m.qa('[data-check-row]')).toHaveLength(sep23Tape.checks.length);
+    expect(m.q('[data-check-row="10"]').textContent).toContain('Risk decision recorded: MSFT SWAP_OUT · stagnation');
+    m.click(m.q('[data-check-row="10"]'));
+    expect(m.q('[data-check-detail="10"]')).toBeTruthy();
+    expect(m.container.textContent.split('This does not show which protections were armed or checked.').length - 1).toBe(1);
+  });
+
+  it('F4: the Diagnostic area appears only when diagnostics.intradayViews is present, under its own label', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    expect(m.q('[data-region="diagnostics"]').textContent).toContain(INTRADAY_DIAGNOSTIC_HEADER);
+    expect(INTRADAY_DIAGNOSTIC_HEADER).toBe('Diagnostic · recorded at the check · not seen by the agent');
+    for (const v of ['absent', 'unknown', undefined]) {
+      const t = clone(sep23Tape);
+      t.diagnostics = v === undefined ? undefined : { intradayViews: v };
+      m.render(<Harness tape={t} />);
+      expect(m.q('#diagnostics'), String(v)).toBeNull();
+    }
+  });
+});
+
+describe('BA-20 — coverage lines at every section, in all three states', () => {
+  it.each(['complete', 'partial', 'unavailable'])('every Study section opens with its coverage line, %s', (status) => {
+    const t = clone(sep23Tape);
+    for (const k of Object.keys(t.coverage)) t.coverage[k] = { ...t.coverage[k], status, note: `${status} note for ${k}` };
+    m.render(<Harness tape={t} />);
+    for (const [id, key] of [['swaps', 'actions'], ['directives', 'directives'], ['plans', 'plans'], ['rationale', 'rationale'], ['checks', 'checks']]) {
+      const line = m.q(`#${id} [data-coverage]`);
+      expect(line.getAttribute('data-coverage'), id).toBe(status);
+      expect(line.textContent, id).toContain(`${status} note for ${key}`);
+    }
+    expect(m.q('[data-coverage-of="replay"] [data-coverage]').getAttribute('data-coverage')).toBe(status);
+    expect(m.q('#holdings [data-coverage]').getAttribute('data-coverage')).toBe(status);
+  });
+});
+
+describe('the sweeps (BA-42, BA-41)', () => {
+  it.each([['Sep-23', sep23Tape], ['empty', emptyTape]])('%s, everything opened: every number marked by its own class; no stray digit; no misplaced sign colour; no forbidden word', (_l, tape) => {
+    m.render(<Harness tape={tape} />);
+    m.expandAll();
+    if (tape.checks.length) m.click(m.q('[data-check-row="15"]'));
+    expect(sweepNumbers(m.container, { tape })).toEqual([]);
+    expect(sweepSigns(m.container)).toEqual([]);
+    expect(sweepWords(m.container)).toEqual([]);
+  });
+
+  it('BA-48: a tape whose stored declaration predates the reclass is labelled by its OWN declaration', () => {
+    const t = clone(sep23Tape);
+    t.numberClasses['actions[].replay.reconciliation.soldAtSale.inputsDelta'] = 'rebuilt';
+    m.render(<Harness tape={t} />);
+    expect(card(0).querySelector('[data-num="actions[0].replay.reconciliation.soldAtSale.inputsDelta"]').getAttribute('data-num-class')).toBe('rebuilt');
+    expect(sweepNumbers(m.container, { tape: t })).toEqual([]);
+  });
+});
