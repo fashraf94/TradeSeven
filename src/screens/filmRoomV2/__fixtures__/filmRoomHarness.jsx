@@ -115,6 +115,80 @@ export const SPEC_AGGREGATE_CLASSES = Object.freeze({
   'axis(% from the session open)': 'market',
 });
 
+/**
+ * Where each computed number may sit (review A2P2-1): a declared aggregate anywhere else would be a recorded number
+ * shown under a computed class, which the class check alone cannot see.
+ */
+export const SPEC_AGGREGATE_SITES = Object.freeze({
+  'count(checks[] in a run)': '[data-region="check-runs"]',
+  'count(slots of the derived held set)': '#holdings [data-section-count]',
+  'count(actions[])': '#swaps [data-section-count]',
+  'count(checks[] with a record)': '[data-section-count] [data-check-count]',
+  'count(tickSeqs in the minted range)': '[data-section-count] [data-check-count]',
+  'count(rationale[])': '#rationale [data-section-count]',
+  'count(plans[] of the symbol)': '[data-region="plan-chips"] button',
+  'ordinal(actions[] in time order)': '[data-swap-card] [data-swap-title]',
+  'change(sessionOpen.value to bars[last].c)': '[data-region="symbol-facts"]',
+  'sum(bars[].v)': '[data-region="symbol-facts"]',
+});
+
+/** What a computed number's text says, and how far its format may round it: a count exactly, "+0.53%" to 0.005 %, "604K" to 500, "1.2M" to 50,000. */
+function readShown(text) {
+  const n = parseNumeral(text.replace(/[KM]$/, ''));
+  if (/%$/.test(text)) return { value: n / 100, tolerance: 0.0000501 };
+  if (/K$/.test(text)) return { value: n * 1e3, tolerance: 500.01 };
+  if (/M$/.test(text)) return { value: n * 1e6, tolerance: 50_000.01 };
+  return { value: n, tolerance: /\./.test(text) ? 0.0051 : 0 };
+}
+
+const NO_RECORD_STATES = ['deferred', 'no_record'];
+const msOf = (v) => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null);
+const seriesDocAt = (el, docs) => docs[`series:${el.closest('[data-region="symbol-facts"]')?.getAttribute('data-symbol')}`] || null;
+
+/**
+ * Each computed number's value, recomputed HERE from the documents by what its name says it counts (review A2P2-1,
+ * A2P2-5) — an independent oracle, never the screen's own helper. undefined → no oracle for this name (a run's count:
+ * its rows bind it), null → the name has no value in these documents.
+ */
+function aggregateOracle(name, el, docs) {
+  const tape = docs.tape;
+  if (!tape) return undefined;
+  const checks = Array.isArray(tape.checks) ? tape.checks : [];
+  const actions = Array.isArray(tape.actions) ? tape.actions : [];
+  switch (name) {
+    case 'count(actions[])': return actions.length;
+    case 'count(rationale[])': return Array.isArray(tape.rationale) ? tape.rationale.length : 0;
+    case 'count(checks[] with a record)': return checks.filter((r) => !NO_RECORD_STATES.includes(r.state)).length;
+    case 'count(tickSeqs in the minted range)': {
+      const close = tape.passes?.close || {};
+      const seqs = [...(Array.isArray(close.tickSeqRange) ? close.tickSeqRange : []), ...(Array.isArray(close.gaps) ? close.gaps : [])];
+      return seqs.length ? Math.max(...seqs) - Math.min(...seqs) + 1 : null;
+    }
+    case 'count(slots of the derived held set)': {
+      const first = checks.find((c) => c.risk && typeof c.risk === 'object' && Object.keys(c.risk).length);
+      return first ? Object.keys(first.risk).length : null;
+    }
+    case 'count(plans[] of the symbol)': {
+      const sym = el.closest('button')?.querySelector('[data-record-text]')?.textContent;
+      return (Array.isArray(tape.plans) ? tape.plans : []).filter((p) => p.symbol === sym).length;
+    }
+    case 'ordinal(actions[] in time order)': {
+      const i = Number(el.closest('[data-swap-card]')?.getAttribute('data-swap-card'));
+      const order = actions.map((a, k) => ({ k, ms: msOf(a.at) })).sort((x, y) => (x.ms === y.ms ? x.k - y.k : x.ms === null ? 1 : y.ms === null ? -1 : x.ms - y.ms));
+      return order.findIndex((o) => o.k === i) + 1;
+    }
+    case 'change(sessionOpen.value to bars[last].c)': {
+      const doc = seriesDocAt(el, docs);
+      return doc ? doc.bars[doc.bars.length - 1].c / doc.sessionOpen.value - 1 : null;
+    }
+    case 'sum(bars[].v)': {
+      const doc = seriesDocAt(el, docs);
+      return doc ? doc.bars.reduce((sum, b) => sum + b.v, 0) : null;
+    }
+    default: return undefined;
+  }
+}
+
 /** R4(d): a display name is exempt only as the directory's own entry for its symbol, letter for letter. */
 const isDirectoryName = (el) => {
   const host = el.closest('[data-display-name]');
@@ -173,9 +247,18 @@ export function sweepNumbers(container, docs) {
     if (!(typeof value === 'number' && Math.abs(shown - value) < 0.0051)) bad.push(`${where}: shows ${shown}, the document holds ${value}`);
   }
   for (const el of container.querySelectorAll('[data-num-aggregate]')) {
-    const want = SPEC_AGGREGATE_CLASSES[el.getAttribute('data-num-aggregate')];
+    const name = el.getAttribute('data-num-aggregate');
+    const want = SPEC_AGGREGATE_CLASSES[name];
     const mark = el.querySelector('[data-kind-mark]')?.getAttribute('data-kind-mark');
-    if (!want || el.getAttribute('data-num-class') !== want || mark !== want) bad.push(`aggregate ${el.getAttribute('data-num-aggregate')}: marker ${mark}, declared ${want}`);
+    if (!want || el.getAttribute('data-num-class') !== want || mark !== want) bad.push(`aggregate ${name}: marker ${mark}, declared ${want}`);
+    // its own site, the value it shows, and the value the documents give it (review A2P2-1, A2P2-5)
+    if (!SPEC_AGGREGATE_SITES[name] || !el.closest(SPEC_AGGREGATE_SITES[name])) bad.push(`aggregate ${name}: outside its site`);
+    const computed = Number(el.getAttribute('data-agg-value'));
+    const text = el.querySelector('[data-num-text]')?.textContent || '';
+    const shown = readShown(text);
+    if (!(Math.abs(shown.value - computed) <= shown.tolerance)) bad.push(`aggregate ${name}: shows ${text}, computed ${computed}`);
+    const oracle = aggregateOracle(name, el, docs);
+    if (oracle !== undefined && !(typeof oracle === 'number' && Math.abs(oracle - computed) <= 1e-9 * Math.max(1, Math.abs(oracle)))) bad.push(`aggregate ${name}: computed ${computed}, the documents give ${oracle}`);
   }
   const stored = storedStrings(allDocs);
   const axes = axisDefects(container, docs);
@@ -220,12 +303,12 @@ export const SPEC_FORBIDDEN_WORDS = Object.freeze(['biggest', 'best', 'worst', '
 
 /**
  * Every text node and every aria-label / title, each its own span of text: an element's edge is a word boundary
- * (review A2L4-1). A company's name from the directory is a proper noun, not the screen's words (R4(d): "Best Buy").
+ * (review A2L4-1). No exemption for a company's name: the forbidden list stands as written (R5; review A2P1-2).
  */
 export function renderedText(container) {
   const parts = [];
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (!isDirectoryName(node.parentElement)) parts.push(node.textContent);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) parts.push(node.textContent);
   for (const el of container.querySelectorAll('[aria-label], [title]')) parts.push(el.getAttribute('aria-label') || '', el.getAttribute('title') || '');
   return parts.join(' \n ');
 }

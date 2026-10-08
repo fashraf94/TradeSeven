@@ -79,19 +79,23 @@ const LENGTH_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'ei
  * The header's subtitle (design of record): archetype · BaggerBomb · one-day
  * battle · date — each part only where the record carries it. The archetype
  * is the app's canonical display name (src/data/archetypeDisplay.js) for the
- * battle's archetype, else the tape's; "BaggerBomb" unless the tape says the
- * battle's mode is not one the tape covers; the length is the battle's own
- * trading-day timeline, else the tape's day number on its final day, and is
- * omitted when neither carries it (never the one-day fallback battleDays uses).
+ * battle's archetype, else the tape's — never the writer's 'unknown' sentinel
+ * (review A2P1-6). "BaggerBomb" is every agent battle's game: both agent modes
+ * are BaggerBomb modes, and an unknown mode resolves to the tiered one
+ * (src/constants/agentGameModes.js resolveModeConfig) — so it never depends on
+ * whether the tape has loaded (review A2P1-9, A2P3-4). The length is the
+ * battle's own trading-day timeline, else the tape's day number on its final
+ * day, and is omitted when neither carries it (never the one-day fallback
+ * battleDays uses).
  */
 export function headerParts(battle, tape, etDate) {
-  const code = [battle?.agentContext?.archetype, battle?.archetype, tape?.archetype].find((a) => typeof a === 'string' && a);
+  const code = [battle?.agentContext?.archetype, battle?.archetype, tape?.archetype].find((a) => typeof a === 'string' && a && a.toLowerCase() !== 'unknown');
   const timing = battle?.timing?.tradingDays;
   const length = Array.isArray(timing) && timing.length ? timing.length
     : (tape?.isFinalDay === true && Number.isInteger(tape?.dayNumber) ? tape.dayNumber : null);
   return {
     archetype: code ? getArchetypeDisplayName(code) : null,
-    game: tape?.passes?.close?.status === 'skipped_mode' ? null : COPY.gameName,
+    game: COPY.gameName,
     length: length >= 1 && length <= LENGTH_WORDS.length ? COPY.battleLength(LENGTH_WORDS[length - 1]) : null,
     date: etDateLabel(etDate),
   };
@@ -207,11 +211,13 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
               <h1 style={{ margin: 0, fontSize: desktop ? 18 : 16, fontWeight: 800, letterSpacing: '-0.01em', color: C.ink, lineHeight: 1.1, whiteSpace: 'nowrap' }}>{COPY.title}</h1>
               {/* One line on the phone, as the design of record; on desktop it wraps rather than cutting off the length or the date. */}
               <span data-header-subtitle="" style={mono(9.5, C.ink3, { letterSpacing: '0.06em', textTransform: 'uppercase', lineHeight: 1.35, ...(desktop ? { whiteSpace: 'normal' } : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }) })}>
-                {subtitle.map((p, i) => <React.Fragment key={i}>{i ? ' · ' : null}<span style={{ whiteSpace: 'nowrap' }}>{p}</span></React.Fragment>)}
+                {/* a separator travels with the part after it, so a wrapped line never starts or ends on " · " (review A2P3-3) */}
+                {subtitle.map((p, i) => <React.Fragment key={i}>{i ? ' ' : null}<span style={{ whiteSpace: 'nowrap' }}>{i ? '· ' : null}{p}</span></React.Fragment>)}
               </span>
             </div>
           </div>
-          <div style={{ width: desktop ? 400 : 'auto', marginLeft: desktop ? 24 : 0, flexShrink: 0 }}>
+          {/* The design of record's 400 px depth control gives way first on a narrow desktop (down to 280 px), so the subtitle keeps its room (review A2P3-3). */}
+          <div style={desktop ? { flex: '0 1 400px', minWidth: 280, marginLeft: 24 } : { width: 'auto', flexShrink: 0 }}>
             <Segmented value={depth} onChange={setDepth} options={COPY.depths} />
           </div>
           <KindLegend style={desktop ? { marginLeft: 'auto', justifyContent: 'flex-end', maxWidth: 340, flexShrink: 0 } : undefined} />

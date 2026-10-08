@@ -6,7 +6,7 @@
 // BA-46, BA-47). Mounted from the A1 passes' own tapes.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import React from 'react';
+import React, { act } from 'react';
 import FilmRoomStudy from './FilmRoomStudy';
 import { REPLAY_SENTENCE, LOCKED_BASIS_NOTE } from './filmRoomCopy';
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
@@ -91,6 +91,16 @@ describe('the swap cards (BA-6, BA-11, BA-38, BA-47; F1)', () => {
       expect(card(i).id).toBe(`swap-${i + 1}`);
     });
     expect(card(0).querySelector('[data-swap-title]').textContent).toMatch(/^Swap 1\s?D?\s*· 12:45 PM$/);
+  });
+
+  it('review A2P2-1: the slot index is the tape\'s own number, by its path, recorded — never a computed count', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    sep23Tape.actions.forEach((a, i) => {
+      const el = card(i).querySelector(`[data-num="actions[${i}].slotIndex"]`);
+      expect(el, `${i}`).toBeTruthy();
+      expect(el.getAttribute('data-num-class')).toBe('recorded');
+    });
+    expect(m.qa('[data-swap-card] [data-num-aggregate]').map((e) => e.getAttribute('data-num-aggregate'))).toEqual(sep23Tape.actions.map(() => 'ordinal(actions[] in time order)'));
   });
 
   it('addendum R4(a): the ordinal is the TIME order, not the tape\'s row order — and the anchor follows it', () => {
@@ -235,6 +245,7 @@ describe('the swap card at desktop width — each path\'s end value beside the f
       const row = card(i).querySelector(`[data-fork-row="${i}"]`);
       const ends = row.querySelector('[data-fork-ends]');
       expect(ends.previousElementSibling.getAttribute('data-region')).toBe(`fork-${i}`);
+      expect([ends.style.display, ends.style.width]).toEqual(['grid', '']);   // sized by its tags, never a fixed width they outgrow (review A2P3-2)
       for (const [k, key, label] of [['hold', 'holdPath', `Hold path · ${a.symbolOut}`], ['swap', 'swapPath', `Swap path · ${a.symbolIn}`]]) {
         const tag = ends.querySelector(`[data-fork-end="${k}"]`);
         const n = tag.querySelector('[data-num]');
@@ -244,7 +255,7 @@ describe('the swap card at desktop width — each path\'s end value beside the f
         expect(card(i).querySelector(`[data-path-label="${k}"] [data-num]`), `${i} ${k}`).toBeNull();
         expect(card(i).querySelector(`[data-path-label="${k}"]`)).toBeTruthy();   // the legend stays, without the number
       }
-      const top = (k) => parseFloat(ends.querySelector(`[data-fork-end="${k}"]`).style.top) + 8;
+      const top = (k) => parseFloat(ends.querySelector(`[data-fork-end="${k}"]`).style.marginTop) + 8;
       const [yH, yS] = [lastY(row, 'hold'), lastY(row, 'swap')];
       if (Math.abs(yH - yS) >= 16) {
         expect(Math.abs(top('hold') - yH), `${i} hold`).toBeLessThan(0.06);
@@ -265,9 +276,39 @@ describe('the swap card at desktop width — each path\'s end value beside the f
     r.swapPath[r.swapPath.length - 1].points = 5.1;   // the same height on the fork's scale, within a hair
     m.render(<Desk tape={t} />);
     const ends = card(0).querySelector('[data-fork-ends]');
-    const top = (k) => parseFloat(ends.querySelector(`[data-fork-end="${k}"]`).style.top);
+    const top = (k) => parseFloat(ends.querySelector(`[data-fork-end="${k}"]`).style.marginTop);
     expect(Math.abs(top('hold') - top('swap'))).toBeCloseTo(16, 6);
     expect(top('swap')).toBeLessThan(top('hold'));   // the swap path ends higher, so it stays above
+  });
+
+  it('review A2P2-9: two overlapping end values spread about THEIR own midpoint', () => {
+    const t = clone(sep23Tape);
+    const r = t.actions[0].replay;
+    r.holdPath[r.holdPath.length - 1].points = 5;
+    r.swapPath[r.swapPath.length - 1].points = 5.1;
+    m.render(<Desk tape={t} />);
+    const row = card(0).querySelector('[data-fork-row="0"]');
+    const top = (k) => parseFloat(row.querySelector(`[data-fork-end="${k}"]`).style.marginTop) + 8;
+    expect(Math.abs((top('hold') + top('swap')) / 2 - (lastY(row, 'hold') + lastY(row, 'swap')) / 2)).toBeLessThan(0.06);
+  });
+
+  it('review A2P2-9: at desktop, a replay with no fork drawn (no instants) keeps its end values, under where the fork would be', () => {
+    const t = clone(sep23Tape);
+    for (const p of [...t.actions[0].replay.holdPath, ...t.actions[0].replay.swapPath]) p.at = null;
+    m.render(<Desk tape={t} />);
+    const r = t.actions[0].replay;
+    expect(card(0).querySelector('[data-fork-row]')).toBeNull();
+    expect(card(0).querySelector(`[data-path-label="hold"] [data-num="actions[0].replay.holdPath[${r.holdPath.length - 1}].points"]`)).toBeTruthy();
+    expect(card(0).querySelector(`[data-path-label="swap"] [data-num="actions[0].replay.swapPath[${r.swapPath.length - 1}].points"]`)).toBeTruthy();
+  });
+
+  it.each([['Sep-23', sep23Tape], ['empty', emptyTape]])('%s at desktop width, everything opened (review A2P2-3): every number marked, no sign colour astray, no forbidden word', (_l, tape) => {
+    m.render(<Desk tape={tape} />);
+    m.expandAll();
+    if (tape.checks.length) m.click(m.q('[data-check-row="15"]'));
+    expect(sweepNumbers(m.container, { tape })).toEqual([]);
+    expect(sweepSigns(m.container)).toEqual([]);
+    expect(sweepWords(m.container)).toEqual([]);
   });
 
   it('the phone keeps the end values under the fork (no column beside it)', () => {
@@ -360,6 +401,44 @@ describe('BA-46 / F3 — the rationale timeline', () => {
       expect(first.querySelector('[data-collapsed]').getAttribute('data-collapsed')).toBe('yes');
     } finally {
       for (const [k, d] of saved) if (d) Object.defineProperty(Element.prototype, k, d); else delete Element.prototype[k];
+    }
+  });
+
+  it('review A2P3-1 / A2P3-5: a preview that comes to overflow when its box narrows gets its "Read more" — a disclosure button', () => {
+    const observers = [];
+    const hadRO = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class { constructor(cb) { this.cb = cb; observers.push(this); } observe() {} disconnect() { this.gone = true; } };
+    let narrow = false;
+    const saved = ['scrollHeight', 'clientHeight'].map((k) => [k, Object.getOwnPropertyDescriptor(Element.prototype, k)]);
+    Object.defineProperty(Element.prototype, 'scrollHeight', { configurable: true, get() { return narrow && this.getAttribute('data-collapsed') === 'yes' ? 120 : 40; } });
+    Object.defineProperty(Element.prototype, 'clientHeight', { configurable: true, get() { return 40; } });
+    try {
+      m.render(<Harness tape={sep23Tape} />);
+      const e = m.q('[data-rationale="0"]');
+      expect(e.querySelector('button')).toBeNull();          // at first the words fit their two lines
+      narrow = true;                                           // the phone is turned: now they run past them
+      act(() => { for (const o of observers.filter((x) => !x.gone)) o.cb([]); });
+      const b = e.querySelector('button');
+      expect(b.textContent).toBe('Read more');
+      expect(b.getAttribute('aria-expanded')).toBe('false');
+      expect(b.getAttribute('aria-controls')).toBe(e.querySelector('[data-collapsed]').id);
+      m.click(b);
+      expect(e.querySelector('button').getAttribute('aria-expanded')).toBe('true');
+      expect(e.querySelector('[data-collapsed]').getAttribute('data-collapsed')).toBe('no');
+    } finally {
+      for (const [k, d] of saved) if (d) Object.defineProperty(Element.prototype, k, d); else delete Element.prototype[k];
+      globalThis.ResizeObserver = hadRO;
+    }
+  });
+
+  it('addendum R6 (review A2P2-7): the collapsed preview is clamped — two lines', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    const previews = m.qa('[data-rationale-body] [data-collapsed="yes"]');
+    expect(previews).toHaveLength(sep23Tape.rationale.filter((r) => r.rationale).length);
+    for (const p of previews) {
+      expect(p.style.display).toBe('-webkit-box');
+      expect(p.style.webkitLineClamp).toBe('2');
+      expect(p.style.overflow).toBe('hidden');
     }
   });
 
@@ -467,6 +546,20 @@ describe('addendum R4(a) — the section counts, each a marked count of its own 
     expect(aggValue(agg('rationale', 'count(rationale[])'))).toBe(sep23Tape.rationale.length);
     m.render(<Harness tape={emptyTape} />);
     expect(count('rationale')).toBeNull();
+  });
+
+  it('review A2P2-6: each count is its own list even where the lists part — two plans at one time, a swap with no replay, an entry with no words', () => {
+    const t = clone(sep23Tape);
+    t.plans[1].symbol = t.plans[0].symbol;            // a second plan at the same check time
+    t.actions[1].replay = null;                        // a swap not yet replayed still counts
+    t.rationale[3].rationale = null;                   // an entry with a hypothesis and no words still counts
+    m.render(<Harness tape={t} />);
+    const s = t.plans[0].symbol;
+    expect(t.plans[0].at).toBe(t.plans[1].at);
+    expect(aggValue(planChip(s).querySelector('[data-num-aggregate]'))).toBe(t.plans.filter((p) => p.symbol === s).length);
+    expect(aggValue(agg('swaps', 'count(actions[])'))).toBe(3);
+    expect(aggValue(agg('rationale', 'count(rationale[])'))).toBe(t.rationale.length);
+    expect(sweepNumbers(m.container, { tape: t })).toEqual([]);
   });
 
   it('the plan filter chips: each symbol\'s own plan count, marked derived; "All" carries none', () => {

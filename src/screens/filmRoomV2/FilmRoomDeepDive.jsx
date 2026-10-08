@@ -26,7 +26,7 @@ import React, { useMemo, useState } from 'react';
 import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
 import { classOfNumber } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
-import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
+import { FILM_ROOM_COPY as COPY, FORBIDDEN_WORDS } from './filmRoomCopy';
 import { C, card, eyebrow, foot, mono, tint, plain, TapeNum, AggNum, When, Rec, Section, Row, Chip, KindMark, TextButton, Coverage } from './FilmRoomKit';
 import { EvidenceStamp } from './FilmRoomCheckDetail';
 
@@ -34,10 +34,18 @@ function seriesOf(series, sym) {
   return (series || []).find((s) => s?.symbol === sym) || null;
 }
 
-/** A symbol's company name from the app's existing symbol directory (R4(d)); null when it has none but the symbol. */
+const FORBIDDEN = FORBIDDEN_WORDS.map((w) => new RegExp(`\\b${w.replace(/ /g, '\\s+')}(s|es|d|ed|ing)?\\b`, 'i'));
+
+/**
+ * A symbol's company name from the app's existing symbol directory (R4(d));
+ * null when it has none but the symbol. The forbidden list stands as written
+ * (R5), so a name that holds one of its words ("Best Buy") is shown as the
+ * symbol alone — R4(d)'s own fallback (review A2P1-2).
+ */
 export function displayNameOf(sym) {
   const name = typeof sym === 'string' ? COMPANY_NAMES[sym] : null;
-  return typeof name === 'string' && name && name !== sym ? name : null;
+  if (typeof name !== 'string' || !name || name === sym) return null;
+  return FORBIDDEN.some((re) => re.test(name)) ? null : name;
 }
 function DisplayName({ sym, style }) {
   const name = displayNameOf(sym);
@@ -45,7 +53,7 @@ function DisplayName({ sym, style }) {
 }
 
 const PCT_AXIS = 'axis(% from the session open)';
-const PAD_L = 52;            // the price axis's gutter
+const PAD_L = 64;            // the price axis's gutter — wide enough for the record's marked session open
 const PAD_R = 46;            // the % axis's gutter
 const TICK_EVERY_MS = 90 * 60_000;
 /** A chart tick's clock, without AM/PM (the design of record's ticks). */
@@ -110,13 +118,14 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
         {ticks.map((v) => (
           <React.Fragment key={`tick${v}`}>
             {/* The 0 step's price is the session open, which the record's own marked label carries — never an unmarked twin of it. */}
-            {v !== 0 ? <span data-axis-scaffolding="price" style={{ ...tickLabel, right: 'calc(100% + 6px)', top: y(open * (1 + v)) - 5 }}>{fmtPrice(open * (1 + v))}</span> : null}
-            <span data-axis-scaffolding="percent" style={{ ...tickLabel, left: 'calc(100% + 6px)', top: y(open * (1 + v)) - 5 }}>{fmtPercent(v)}</span>
+            {v !== 0 ? <span data-axis-scaffolding="price" aria-hidden="true" style={{ ...tickLabel, right: 'calc(100% + 6px)', top: y(open * (1 + v)) - 5 }}>{fmtPrice(open * (1 + v))}</span> : null}
+            <span data-axis-scaffolding="percent" aria-hidden="true" style={{ ...tickLabel, left: 'calc(100% + 6px)', top: y(open * (1 + v)) - 5 }}>{fmtPercent(v)}</span>
           </React.Fragment>
         ))}
         {/* the record's own numbers, as axis labels */}
         {/* No session high or low is shown: hindsight after a plan or an exit (spec §13, BA-10; review A2L1-4). The axis carries the open and the last close. */}
-        {isNum(open) ? <span style={{ position: 'absolute', left: 2, top: y(open) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['sessionOpen', 'value']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
+        {/* The record's session open sits ON the price axis, at its 0 step — off the lines that all start there (review A2P3-7). */}
+        {isNum(open) ? <span data-axis-record="sessionOpen" style={{ position: 'absolute', right: 'calc(100% + 4px)', top: y(open) - 6 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['sessionOpen', 'value']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
         {isNum(bars[bars.length - 1]?.c) ? <span style={{ position: 'absolute', right: 2, top: y(bars[bars.length - 1].c) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
         {/* the evidence overlay (BA-43) */}
         {marks.map((m) => {
@@ -193,7 +202,7 @@ function SymbolFacts({ tape, doc, sym, holdings, sectorEtf }) {
   // R4(a): computed from THIS symbol's own bars — market operands only, declared `market`.
   const { change, volume } = seriesFacts(doc, tape);
   return (
-    <div data-region="symbol-facts" style={{ ...card, gap: 0, padding: '10px 14px 6px' }}>
+    <div data-region="symbol-facts" data-symbol={sym} style={{ ...card, gap: 0, padding: '10px 14px 6px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, paddingBottom: 8, minWidth: 0 }}>
         <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', color: C.ink, lineHeight: 1 }}><Rec>{sym}</Rec></span>
         <DisplayName sym={sym} style={mono(10.5, C.ink3, { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })} />

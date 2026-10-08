@@ -13,7 +13,7 @@
 // its marker come from one source (BUILD_RULES §9). Sign colours belong to
 // recorded scores only (BA-41).
 
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 import { cssVar } from '../../theme/cssTokens';
 import { MONO } from '../../components/Dashboard/commandUI';
 import { numberAt, isRecordedScore, fmtPoints, SCREEN_AGGREGATE_CLASSES, checkCounts } from './filmRoomModel';
@@ -220,19 +220,30 @@ export function Quote({ label, children, labelColor = C.ink3 }) {
   );
 }
 
-/** Long recorded text, collapsed to a few lines; "Read more" appears only when the text is clamped. */
+/**
+ * Long recorded text, collapsed to a few lines; "Read more" appears only when the text is clamped. The clamp is
+ * measured again whenever the text's box changes size — a phone turned, a window narrowed — so a preview that
+ * comes to overflow always gets its "Read more" (review A2P3-1).
+ */
 export function Collapsible({ text, lines = 2, color = C.ink2 }) {
   const [open, setOpen] = useState(false);
   const [clamped, setClamped] = useState(false);
   const ref = useRef(null);
+  const id = useId();
   useLayoutEffect(() => {
     const el = ref.current;
-    if (el && !open) setClamped(el.scrollHeight > el.clientHeight + 1);
+    if (!el || open) return undefined;
+    const measure = () => setClamped(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver !== 'function') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [text, lines, open]);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-      <p ref={ref} data-collapsed={open ? 'no' : 'yes'} style={{ ...body, color, display: open ? 'block' : '-webkit-box', WebkitLineClamp: open ? 'unset' : lines, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}><Rec>{text}</Rec></p>
-      {clamped || open ? <TextButton onClick={() => setOpen(!open)}>{open ? COPY.showLess : COPY.readMore}</TextButton> : null}
+      <p ref={ref} id={id} data-collapsed={open ? 'no' : 'yes'} style={{ ...body, color, display: open ? 'block' : '-webkit-box', WebkitLineClamp: open ? 'unset' : lines, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}><Rec>{text}</Rec></p>
+      {clamped || open ? <TextButton onClick={() => setOpen(!open)} expanded={open} controls={id}>{open ? COPY.showLess : COPY.readMore}</TextButton> : null}
     </div>
   );
 }
@@ -276,8 +287,9 @@ export function Segmented({ value, onChange, options }) {
   );
 }
 
-export function TextButton({ children, onClick, color = C.teal }) {
-  return <button type="button" onClick={onClick} style={{ ...plain, color, textDecoration: 'underline', minHeight: 24, alignSelf: 'flex-start' }}><Label>{children}</Label></button>;
+/** A text-styled button; `expanded` / `controls` make it a disclosure (aria-expanded, aria-controls — review A2P3-5). */
+export function TextButton({ children, onClick, color = C.teal, expanded, controls }) {
+  return <button type="button" onClick={onClick} aria-expanded={expanded} aria-controls={controls} style={{ ...plain, color, textDecoration: 'underline', minHeight: 24, alignSelf: 'flex-start' }}><Label>{children}</Label></button>;
 }
 
 export function PrimaryButton({ children, onClick }) {

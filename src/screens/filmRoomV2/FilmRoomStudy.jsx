@@ -109,7 +109,10 @@ function forkScale(tape, index, height = FORK_HEIGHT) {
 /**
  * The paths' end values beside the fork, each at its own height on the fork's
  * scale (the design of record's desktop card); two that would overlap are
- * spread apart about their midpoint, keeping their order.
+ * spread apart about their midpoint, keeping their order. Both tags share one
+ * grid cell, so the column is exactly as wide as the wider of them and the
+ * fork gives way — a long symbol or value never runs into the split beside it
+ * (review A2P3-2).
  */
 function ForkEnds({ tape, scale, ends, height }) {
   const at = (path) => { const v = path ? valueAt(tape, path) : null; return isNum(v) ? scale.y(v) : height / 2; };
@@ -117,9 +120,9 @@ function ForkEnds({ tape, scale, ends, height }) {
   let yS = at(ends.swap.path);
   if (Math.abs(yH - yS) < 16) { const mid = (yH + yS) / 2; const holdFirst = yH <= yS; yH = mid + (holdFirst ? -8 : 8); yS = mid + (holdFirst ? 8 : -8); }
   return (
-    <div data-fork-ends="" style={{ position: 'relative', width: 150, flexShrink: 0, height }}>
+    <div data-fork-ends="" style={{ display: 'grid', alignItems: 'start', justifyItems: 'start', flexShrink: 0, height, paddingLeft: 12 }}>
       {[['hold', ends.hold, yH, C.ink2], ['swap', ends.swap, yS, C.teal]].map(([k, e, top, color]) => (e.path ? (
-        <span key={k} data-fork-end={k} style={{ position: 'absolute', left: 12, top: top - 8, display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+        <span key={k} data-fork-end={k} style={{ gridArea: '1 / 1', marginTop: top - 8, display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
           <span style={mono(9.5, color)}>{e.label} · <Rec>{e.symbol}</Rec></span>
           <TapeNum doc={tape} path={e.path} size={12} />
         </span>

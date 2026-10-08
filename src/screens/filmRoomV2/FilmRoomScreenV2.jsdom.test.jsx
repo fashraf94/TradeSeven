@@ -15,7 +15,7 @@ import FilmRoomScreenV2, { noTapeLine, defaultDay, battleDays, headerParts } fro
 import { FIRST_OPEN_KEY } from './filmRoomSeen';
 import { FORBIDDEN_WORDS } from './filmRoomCopy';
 import {
-  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, SPEC_FORBIDDEN_WORDS,
+  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, SPEC_FORBIDDEN_WORDS, SPEC_AGGREGATE_CLASSES,
 } from './__fixtures__/filmRoomHarness';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -41,6 +41,8 @@ describe('the header (BA-41, BA-42)', () => {
     expect(text).toContain('Film Room');
     expect(text).toContain('Sep 23 · battle complete');
     expect(m.q('[data-header-subtitle]').textContent).toBe('Trend Follower · BaggerBomb · one-day battle · Wed, Sep 23, 2026');
+    // a separator travels with the part after it: a wrapped line never starts or ends on " · " (review A2P3-3)
+    expect([...m.q('[data-header-subtitle]').children].map((s) => s.textContent)).toEqual(['Trend Follower', '· BaggerBomb', '· one-day battle', '· Wed, Sep 23, 2026']);
     expect(m.qa('[role="tab"]').map((t) => t.textContent)).toEqual(['Glance', 'Study', 'Deep dive']);
     const legends = m.qa('[data-legend]');
     expect(legends).toHaveLength(1);
@@ -101,8 +103,12 @@ describe('the header (BA-41, BA-42)', () => {
     expect(headerParts({}, null, D)).toEqual({ archetype: null, game: 'BaggerBomb', length: null, date: 'Wed, Sep 23, 2026' });
     // the archetype: the battle's, else the tape's (a code the directory does not name is humanised by the directory itself)
     expect(headerParts({}, sep23Tape, D).archetype).toBe('Momentum');
-    // a mode the tape does not cover is not called BaggerBomb
-    expect(headerParts(base, { passes: { close: { status: 'skipped_mode' } } }, D).game).toBeNull();
+    // review A2P1-9 / A2P3-4: every agent battle is a BaggerBomb game (the tournament mode too) — it never waits on the tape
+    expect(headerParts(base, null, D).game).toBe('BaggerBomb');
+    expect(headerParts({ ...base, gameMode: 'baggerbomb_tournament' }, { passes: { close: { status: 'skipped_mode' } } }, D).game).toBe('BaggerBomb');
+    // review A2P1-6: the writer's 'unknown' sentinel is not an archetype
+    expect(headerParts({ agentContext: { archetype: 'unknown' } }, { ...sep23Tape, archetype: 'unknown' }, D).archetype).toBeNull();
+    expect(headerParts({ agentContext: { archetype: 'unknown' } }, sep23Tape, D).archetype).toBe('Momentum');
   });
 
   it('a Deep dive door on a swap card opens that symbol', async () => {
@@ -223,15 +229,26 @@ describe('the whole screen through the sweeps — every depth, both days, everyt
     }
   });
 
-  it('desktop (≥ 1024 px) lays every depth out and passes the same sweeps', async () => {
+  it('desktop (≥ 1024 px) lays every depth out and passes the same sweeps — every depth, everything opened (review A2P2-2)', async () => {
     const had = window.matchMedia;
     window.matchMedia = () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} });
     try {
       await open();
       expect(m.qa('[data-region="all-symbols"]')).toHaveLength(0);
-      await depth('Deep dive');
+      const docs = docsFor(sep23Tape, sep23Series);
+      for (const label of ['Glance', 'Study', 'Deep dive']) {
+        await depth(label);
+        m.expandAll();
+        const pip = m.q('[data-check-pip="9"]') || m.q('[data-check-row="9"]');
+        if (pip) m.click(pip);
+        const mark = m.qa('[data-evidence-marker]')[0];
+        if (mark) m.click(mark);
+        expect(sweepNumbers(m.container, docs), label).toEqual([]);
+        expect(sweepSigns(m.container), label).toEqual([]);
+        expect(sweepWords(m.container), label).toEqual([]);
+      }
       expect(m.q('[data-region="all-symbols"]')).toBeTruthy();
-      expect(sweepNumbers(m.container, docsFor(sep23Tape, sep23Series))).toEqual([]);
+      expect(m.qa('[data-fork-ends]')).toHaveLength(0);   // the Deep dive is showing; the Study's desktop fork ends were swept above
     } finally {
       window.matchMedia = had;
     }
@@ -283,12 +300,38 @@ describe('the sweeps bite (a guard that cannot fail guards nothing)', () => {
     expect(sweepNumbers(inChart('<span data-axis-scaffolding="price">500.00</span><span data-axis-caption="price" data-axis-aggregate="nope">Price axis<span data-kind-mark="market">M</span></span>'), docs))
       .toEqual(['axis price: caption marker market, declared null', 'stray digit: “500.00”']);
     const names = document.createElement('div');
-    names.innerHTML = '<span data-display-name="PSX">Phillips 66</span><span data-display-name="BBY">Best Buy</span>';
+    names.innerHTML = '<span data-display-name="PSX">Phillips 66</span>';
     expect(sweepNumbers(names, docs)).toEqual([]);
-    expect(sweepWords(names)).toEqual([]);
-    names.innerHTML = '<span data-display-name="MSFT">Microsoft 365</span><span data-display-name="MSFT">the best</span>';
-    expect(sweepNumbers(names, docs)).toEqual(['stray digit: “Microsoft 365”']);
+    names.innerHTML = '<span data-display-name="MSFT">Microsoft 365</span><span data-display-name="MSFT">Phillips 66</span>';   // not ITS entry (review A2P2-10)
+    expect(sweepNumbers(names, docs)).toEqual(['stray digit: “Microsoft 365”', 'stray digit: “Phillips 66”']);
+    // a directory name is not exempt from the word sweep: the forbidden list stands as written (R5; review A2P1-2)
+    names.innerHTML = '<span data-display-name="BBY">Best Buy</span>';
     expect(sweepWords(names)).toEqual(['best']);
+  });
+
+  it('review A2P2-1 / A2P2-5 / A2P2-10: a computed number bites outside its site, when its text and value differ, or off the documents\' value', () => {
+    const agg = (name, value, text, cls = SPEC_AGGREGATE_CLASSES[name]) => `<span data-num-aggregate="${name}" data-num-class="${cls}" data-agg-value="${value}"><span data-num-text>${text}</span><span data-kind-mark="${cls}">X</span></span>`;
+    const at = (html) => { const box = document.createElement('div'); box.innerHTML = html; return box; };
+    const n = sep23Tape.actions.length;
+    // the recorded slot index shown as a computed count, outside the swaps' count pill (M10)
+    expect(sweepNumbers(at(`<div data-swap-card="0">slot ${agg('count(actions[])', 1, '1')}</div>`), { tape: sep23Tape })).toEqual(['aggregate count(actions[]): outside its site', `aggregate count(actions[]): computed 1, the documents give ${n}`]);
+    // in its site, showing another number than it computed (M20)
+    expect(sweepNumbers(at(`<section id="swaps"><span data-section-count>${agg('count(actions[])', n, String(n + 1))}</span></section>`), { tape: sep23Tape })).toEqual([`aggregate count(actions[]): shows ${n + 1}, computed ${n}`]);
+    // in its site, computed from another list (the oracle recomputes it from the tape)
+    expect(sweepNumbers(at(`<section id="swaps"><span data-section-count>${agg('count(actions[])', 7, '7')}</span></section>`), { tape: sep23Tape })).toEqual([`aggregate count(actions[]): computed 7, the documents give ${n}`]);
+    // the clean case
+    expect(sweepNumbers(at(`<section id="swaps"><span data-section-count>${agg('count(actions[])', n, String(n))}</span></section>`), { tape: sep23Tape })).toEqual([]);
+    // the class check stands (M14)
+    expect(sweepNumbers(at(`<section id="swaps"><span data-section-count>${agg('count(actions[])', n, String(n), 'market')}</span></section>`), { tape: sep23Tape })).toEqual(['aggregate count(actions[]): marker market, declared derived']);
+  });
+
+  it('review A2P2-10: a caption with two markers, and scaffolding that wraps a marked number, are defects', () => {
+    const docs = { tape: sep23Tape, 'series:MSFT': sep23Series.find((s) => s.symbol === 'MSFT') };
+    const box = document.createElement('div');
+    box.innerHTML = '<div data-region="price-chart"><span data-axis-scaffolding="price">500.00</span><span data-axis-caption="price" data-axis-doc="series:MSFT" data-axis-path="bars[0].c">Price axis<span data-kind-mark="market">M</span><span data-kind-mark="derived">D</span></span></div>';
+    expect(sweepNumbers(box, docs)).toEqual(['axis price: caption marker market+derived, declared market', 'stray digit: “500.00”']);
+    box.innerHTML = '<div data-region="price-chart"><span data-axis-scaffolding="price">500.00<span data-num="sessionOpen.value" data-num-doc="series:MSFT" data-num-class="market"><span data-num-text>500.60</span><span data-kind-mark="market">M</span></span></span><span data-axis-caption="price" data-axis-doc="series:MSFT" data-axis-path="bars[0].c">Price axis<span data-kind-mark="market">M</span></span></div>';
+    expect(sweepNumbers(box, docs)).toEqual(['axis scaffolding holds a marked number: “500.00500.60M”']);
   });
 
   it('review A2L4-7: the production word list is the build prompt\'s, pinned by the oracle (not the other way round)', () => {

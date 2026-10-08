@@ -139,6 +139,18 @@ describe('addendum R4(a) — "Checks · n of m", a marked count of the record\'s
     m.render(<Harness tape={t} />);
     expect(agg('count(checks[] with a record)').getAttribute('data-agg-value')).toBe('21');
     expect(agg('count(tickSeqs in the minted range)').getAttribute('data-agg-value')).toBe('23');
+    expect(m.q('#glance-checks [data-section-count]').textContent).toMatch(/^21\s?D?\s*of\s*23\s?D?$/);   // n first (review A2P2-4)
+    expect(sweepNumbers(m.container, { tape: t })).toEqual([]);
+  });
+
+  it('review A2P1-1: a check known only by its evaluation entry cannot be placed in the range — "n recorded", never "n of n"', () => {
+    const t = clone(sep23Tape);
+    t.checks[0] = { ...t.checks[0], tickSeq: null, rowSource: 'entry' };
+    t.checks[10] = { ...t.checks[10], state: 'no_record', rowSource: 'gap' };
+    Object.assign(t.passes.close, { tickSeqRange: [2, 23], gaps: [11], unattributedGaps: [1] });
+    m.render(<Harness tape={t} />);
+    expect(m.q('#glance-checks [data-check-count]').getAttribute('data-check-count')).toBe('recorded');
+    expect(m.q('#glance-checks [data-section-count]').textContent).toMatch(/^22\s?D?\s*recorded$/);
   });
 
   it('the empty day: no minted range recorded → "0 recorded", never a made-up "of"', () => {
@@ -224,6 +236,14 @@ describe('the sweeps (BA-42, BA-41)', () => {
   it.each([['Sep-23', sep23Tape], ['empty', emptyTape]])('%s: every number marked by its own class; no stray digit; no sign colour off a recorded score; no forbidden word', (_l, tape) => {
     m.render(<Harness tape={tape} />);
     if (tape.checks.length) m.click(m.q('[data-check-pip="12"]'));
+    expect(sweepNumbers(m.container, { tape })).toEqual([]);
+    expect(sweepSigns(m.container)).toEqual([]);
+    expect(sweepWords(m.container)).toEqual([]);
+  });
+
+  it.each([['Sep-23', sep23Tape], ['empty', emptyTape]])('%s at desktop width (review A2P2-2): the same sweeps', (_l, tape) => {
+    m.render(<FilmRoomGlance tape={tape} desktop selected={tape.checks.length ? 12 : null} onSelect={() => {}} />);
+    expect(m.q('[data-depth="glance"]').style.display).toBe('grid');
     expect(sweepNumbers(m.container, { tape })).toEqual([]);
     expect(sweepSigns(m.container)).toEqual([]);
     expect(sweepWords(m.container)).toEqual([]);

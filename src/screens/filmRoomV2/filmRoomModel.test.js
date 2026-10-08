@@ -103,6 +103,20 @@ describe('checks (BA-8, BA-44; F3, F5)', () => {
     expect(checkCounts(over)).toEqual({ n: 23, m: null });        // never a fraction the record does not support
   });
 
+  it('review A2P1-1: a row with a record but no tickSeq (an evaluation entry) cannot be placed in the range — "n recorded"', () => {
+    // the writer's shape: the first check known only by its entry, its number unattributed; an interior gap row
+    const t = clone(sep23Tape);
+    t.checks[0] = { ...t.checks[0], tickSeq: null, rowSource: 'entry' };
+    t.checks[10] = { ...t.checks[10], state: 'no_record', rowSource: 'gap' };
+    t.passes.close.tickSeqRange = [2, 23];
+    t.passes.close.gaps = [11];
+    t.passes.close.unattributedGaps = [1];
+    expect(checkCounts(t)).toEqual({ n: 22, m: null });          // never "22 of 22" beside a no-record row
+    const placed = clone(t);
+    placed.checks[0].state = 'deferred';                          // a deferral is not a check with a record
+    expect(checkCounts(placed)).toEqual({ n: 21, m: 22 });
+  });
+
   it('BA-7 risk rows: "Risk decision recorded: HOLD", the action with its reason, or none recorded', () => {
     const swapCheck = sep23Tape.checks.find((c) => c.risk?.MSFT?.action === 'SWAP_OUT');
     expect(riskLines(swapCheck).find((l) => l.symbol === 'MSFT').text).toBe('Risk decision recorded: SWAP_OUT · stagnation');

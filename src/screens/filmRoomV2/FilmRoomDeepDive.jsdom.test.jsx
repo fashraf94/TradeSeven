@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
-import FilmRoomDeepDive from './FilmRoomDeepDive';
+import FilmRoomDeepDive, { displayNameOf } from './FilmRoomDeepDive';
 import { mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, sweepNumbers, sweepWords, sweepSigns, parseNumeral } from './__fixtures__/filmRoomHarness';
 import { fmtVolume } from './filmRoomModel';
 import { COMPANY_NAMES } from '../../config/stockData';
@@ -145,7 +145,7 @@ describe('addendum R4(a)/(b)/(d) — the restored facts, axes and name', () => {
     expect(chart.querySelectorAll('[data-gridline]').length).toBe(prices.length);   // the 0 step is the session open's own line
     expect(pcts.length).toBe(prices.length + 1);
     // the chart's own price scale, from the record's two marked labels (the A2L4-2 method)
-    const yOf = (path) => parseFloat(chart.querySelector(`[data-num="${path}"]`).parentElement.style.top) + 16;
+    const yOf = (path) => parseFloat(chart.querySelector(`[data-num="${path}"]`).parentElement.style.top) + (path === 'sessionOpen.value' ? 6 : 16);   // the open sits on the axis (A2P3-7)
     const last = doc.bars.length - 1;
     const [p0, y0, p1, y1] = [doc.sessionOpen.value, yOf('sessionOpen.value'), doc.bars[last].c, yOf(`bars[${last}].c`)];
     const yAt = (price) => y0 + ((price - p0) * (y1 - y0)) / (p1 - p0);
@@ -182,12 +182,43 @@ describe('addendum R4(a)/(b)/(d) — the restored facts, axes and name', () => {
     expect(sweepNumbers(m.container, docsFor(sep23Tape, series))).toEqual([]);
   });
 
-  it('R4(b): intermediate time ticks every 90 minutes from the session open, before the close', () => {
+  it('R4(b): intermediate time ticks every 90 minutes from the session open, before the close — each AT its instant (review A2P1-4, A2P2-8)', () => {
     m.render(<Harness tape={sep23Tape} series={sep23Series} start="MSFT" />);
+    const doc = docOf('MSFT');
     const axis = m.q('[data-time-axis]');
-    expect([...axis.querySelectorAll('[data-time-tick]')].map((t) => t.textContent)).toEqual(['11:00', '12:30', '2:00']);
+    const ticks = [...axis.querySelectorAll('[data-time-tick]')];
+    expect(ticks.map((t) => t.textContent)).toEqual(['11:00', '12:30', '2:00']);
     expect(axis.firstElementChild.textContent).toBe('9:30');
     expect(axis.lastElementChild.textContent).toBe('close');
+    const startMs = Date.parse(doc.sessionOpen.at);
+    const endMs = Date.parse(doc.bars[doc.bars.length - 1].t) + 600_000;
+    ticks.forEach((t, k) => {
+      const at = startMs + (k + 1) * 90 * 60_000;   // 11:00, 12:30, 2:00 ET on the chart's own time scale
+      expect(Math.abs(parseFloat(t.parentElement.style.left) - ((at - startMs) / (endMs - startMs)) * 100), t.textContent).toBeLessThan(0.002);
+    });
+  });
+
+  it('R4(b) (review A2P2-8): each gridline is drawn at its own price tick label', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} start="MSFT" />);
+    const grid = m.qa('[data-gridline]').map((g) => Number(g.getAttribute('y1'))).sort((a, b) => a - b);
+    const labels = m.qa('[data-axis-scaffolding="price"]').map((e) => parseFloat(e.style.top) + 5).sort((a, b) => a - b);
+    expect(grid.length).toBeGreaterThan(0);
+    expect(grid.length).toBe(labels.length);
+    grid.forEach((y, k) => expect(Math.abs(y - labels[k])).toBeLessThan(0.01));
+  });
+
+  it('desktop minis (review A2P2-1): every mini with bars carries ITS OWN last close, by path, marked market', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} desktop />);
+    const minis = m.qa('[data-mini]').filter((b) => (docOf(b.getAttribute('data-mini'))?.bars || []).length);
+    expect(minis.length).toBeGreaterThan(5);
+    for (const b of minis) {
+      const doc = docOf(b.getAttribute('data-mini'));
+      const n = b.querySelector('[data-num]');
+      expect(n.getAttribute('data-num'), doc.symbol).toBe(`bars[${doc.bars.length - 1}].c`);
+      expect(n.getAttribute('data-num-doc')).toBe(`series:${doc.symbol}`);
+      expect(n.getAttribute('data-num-class')).toBe('market');
+    }
+    expect(m.q('[data-region="all-symbols"] [data-num-aggregate]')).toBeNull();
   });
 
   it('R4(d): the company name from the app\'s symbol directory beside the symbol and on the chart; a symbol it does not name shows alone', () => {
@@ -199,6 +230,19 @@ describe('addendum R4(a)/(b)/(d) — the restored facts, axes and name', () => {
     expect(COMPANY_NAMES.ETN).toBeUndefined();
     expect(m.q('[data-display-name]')).toBeNull();
     expect(m.q('[data-region="symbol-facts"]').textContent.startsWith('ETN')).toBe(true);
+  });
+
+  it('review A2P1-2: a directory name holding a forbidden word ("Best Buy") is shown as the symbol alone', () => {
+    expect(COMPANY_NAMES.BBY).toBe('Best Buy');
+    expect(displayNameOf('BBY')).toBeNull();
+    expect(displayNameOf('MSFT')).toBe('Microsoft');
+    const t = clone(sep23Tape);
+    t.actions[0].symbolOut = 'BBY';
+    const series = [...sep23Series, { ...clone(sep23Series.find((s) => s.symbol === 'MSFT')), symbol: 'BBY' }];
+    m.render(<Harness tape={t} series={series} start="BBY" />);
+    expect(m.q('[data-region="price-chart"]').getAttribute('data-symbol')).toBe('BBY');
+    expect(m.q('[data-display-name]')).toBeNull();
+    expect(sweepWords(m.container)).toEqual([]);
   });
 });
 
@@ -221,7 +265,7 @@ describe('BA-43 — the evidence overlay', () => {
     const series = sep23Series.find((s) => s.symbol === sym);
     const chart = m.q('[data-region="price-chart"]');
     // two points of the chart's price scale, from its own axis labels: the session open and the last close
-    const yOf = (path) => parseFloat(chart.querySelector(`[data-num="${path}"]`).parentElement.style.top) + 16;
+    const yOf = (path) => parseFloat(chart.querySelector(`[data-num="${path}"]`).parentElement.style.top) + (path === 'sessionOpen.value' ? 6 : 16);   // the open sits on the axis (A2P3-7)
     const last = series.bars.length - 1;
     const [p0, y0] = [series.sessionOpen.value, yOf('sessionOpen.value')];
     const [p1, y1] = [series.bars[last].c, yOf(`bars[${last}].c`)];

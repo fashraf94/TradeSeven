@@ -77,17 +77,21 @@ export const SCREEN_AGGREGATE_CLASSES = Object.freeze({
  * every row but a deferral and a missing record (NON_CHECK_STATES, the tape's
  * own "known checks"). `m` is the minted tickSeq range passes.close records:
  * its recorded range and the gaps it attributes to this day. `m` is null when
- * the close pass records no range, or when it would be smaller than `n` — the
- * screen then says "n recorded" and never states a fraction the record does
- * not support.
+ * the close pass records no range, when it would be smaller than `n`, or when
+ * any row with a record carries no tickSeq (an evaluation entry with no tick
+ * record: its minted number may lie outside the range, so it cannot be placed
+ * in `m` — review A2P1-1) — the screen then says "n recorded" and never states
+ * a fraction the record does not support.
  */
 export function checkCounts(tape) {
   const rows = Array.isArray(tape?.checks) ? tape.checks : [];
-  const n = rows.filter((r) => !NON_CHECK_STATES.includes(r?.state)).length;
+  const recorded = rows.filter((r) => !NON_CHECK_STATES.includes(r?.state));
+  const n = recorded.length;
+  const unplaced = recorded.some((r) => !Number.isInteger(r?.tickSeq));
   const close = tape?.passes?.close;
   const range = Array.isArray(close?.tickSeqRange) && close.tickSeqRange.length === 2 && close.tickSeqRange.every(Number.isInteger) ? close.tickSeqRange : [];
   const seqs = [...range, ...(Array.isArray(close?.gaps) ? close.gaps.filter(Number.isInteger) : [])];
-  const m = seqs.length ? Math.max(...seqs) - Math.min(...seqs) + 1 : null;
+  const m = seqs.length && !unplaced ? Math.max(...seqs) - Math.min(...seqs) + 1 : null;
   return { n, m: m !== null && m >= n ? m : null };
 }
 
