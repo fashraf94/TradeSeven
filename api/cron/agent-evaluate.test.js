@@ -166,6 +166,10 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
     expect((source.match(/null, \/\/ F2: the stored snapshot is owner-writable — never a trade row's numbers/g) || []).length).toBe(2);
   });
 
+  it('ER5 — threads the check’s governingPreset into handleGameplanMeeting (the meeting leg stamps the key the check resolved once — review ER1-1)', () => {
+    expect(source).toMatch(/handleGameplanMeeting\([^)]*pendingNarrations, tournamentCtx, swapIdentityMode, governingPreset\)/);
+  });
+
   it('threads currentScore into handlePendingProposal and captures scoreAtVeto / scoreAtResolution', () => {
     // Function signature receives currentScore
     expect(source).toMatch(/async function handlePendingProposal\([^)]*currentScore[^)]*\)/);

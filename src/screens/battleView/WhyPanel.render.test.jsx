@@ -850,6 +850,38 @@ describe('table G (V1.4) — an outcome that could not be confirmed', () => {
   }
 });
 
+// ER5 — the Why? panel's own colour map (WhyPanel.jsx LABEL_COLOR, not exported
+// and separate from TapeCards'): both table G labels wear amber — never teal (the
+// swapped colour) and never the default.
+describe('ER5 — table G labels wear amber in the Why? panel', () => {
+  const UNKNOWN = { ...DOWNGRADED, validationErrors: [], executionOutcome: 'unknown' };
+  const UNKNOWN_FORCED = {
+    ...UNKNOWN,
+    rationale: 'Guardrail override (guardrail_stopLoss): Guardrail override: stop-loss at 8% breached on SLB (-9.24%). Forcing exit → DVN.',
+    guardrailSourceNote: 'guardrail_stopLoss',
+    guardrailOverrides: [{ type: 'stopLoss', symbol: 'SLB', action: 'forced_exit', replacementSymbol: 'DVN' }],
+  };
+  for (const [name, render] of [['row', renderRow], ['book', renderBook]]) {
+    it(`${name} panel: the agent variant and the guardrail variant are both amber`, () => {
+      expect(render(UNKNOWN)).toMatch(/color:var\(--ft-amber\)">Argued for a swap · its outcome could not be confirmed</);
+      expect(render(UNKNOWN_FORCED)).toMatch(/color:var\(--ft-amber\)">A guardrail called for a swap · its outcome could not be confirmed</);
+    });
+  }
+});
+
+// ER5 — a state with no footer renders no footer ELEMENT: an empty caption div is
+// a blank element and one more 6px gap in the panel's flex column.
+describe('ER5 — no footer, no footer element', () => {
+  it('Held / Swapped in the agent’s own words (footer null): no empty caption div, row or book', () => {
+    for (const ev of [HELD, SWAPPED]) {
+      expect(selectWhyState(ev, 'SLB', LAST).footer).toBeNull();
+      for (const html of [renderRow(ev), renderBook(ev)]) {
+        expect(html).not.toMatch(/letter-spacing:0\.02em"><\/div>/);
+      }
+    }
+  });
+});
+
 // Enforce readiness (review ER4-6): table G's footer is an AUTHOR line only, so it
 // shows only where words do — a row whose sentences never name the piece shows
 // the not-named line and no caption under it.
@@ -867,6 +899,21 @@ describe('table G (V1.4) — the author-only footer shows only under words', () 
   it('a row that names the piece, and the book panel with words: the footer is there', () => {
     expect(rowFor(UNKNOWN, 'SLB')).toContain('The agent&#x27;s own words');
     expect(renderBook(UNKNOWN)).toContain('The agent&#x27;s own words');
+  });
+
+  it('ER5 — the guardrail variant too: a row its rationale never names shows no bare `The system’s reason` caption', () => {
+    const forced = {
+      ...UNKNOWN,
+      rationale: 'Guardrail override (guardrail_stopLoss): Guardrail override: stop-loss at 8% breached on SLB (-9.24%). Forcing exit → DVN.',
+      guardrailSourceNote: 'guardrail_stopLoss',
+      guardrailOverrides: [{ type: 'stopLoss', symbol: 'SLB', action: 'forced_exit', replacementSymbol: 'DVN' }],
+    };
+    const html = rowFor(forced, 'PG');
+    expect(html).toContain('A guardrail called for a swap · its outcome could not be confirmed');
+    expect(html).toMatch(/Not named at the/);
+    expect(html).not.toContain('The system&#x27;s reason');
+    // The control: the row that names the piece keeps its author line.
+    expect(rowFor(forced, 'SLB')).toContain('The system&#x27;s reason');
   });
 
   it('a book panel with no words at all: no footer', () => {

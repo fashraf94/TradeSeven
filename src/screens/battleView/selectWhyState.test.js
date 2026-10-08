@@ -858,6 +858,19 @@ describe('table G (V1.4) — a record whose outcome could not be confirmed', () 
     }
   });
 
+  it('ER5 — the guardrail variant is read before every decision state too, whatever else it carries (the subject stays the guardrail)', () => {
+    const variants = [
+      { ...UNKNOWN_FORCED, downgraded: false },
+      { ...UNKNOWN_FORCED, downgraded: false, decision: 'SWAP', symbolOut: 'SLB', symbolIn: 'DVN' },
+      { ...UNKNOWN_FORCED, validationErrors: ['Swap execution failed: x'] },
+    ];
+    for (const v of variants) {
+      const s = selectWhyState(v, 'SLB', LAST);
+      expect(s.kind, JSON.stringify(v)).toBe(WHY_KIND.GUARDRAIL_UNCONFIRMED);
+      expect(s.label).toBe(COPY.guardrailForcedUnconfirmedLabel);
+    }
+  });
+
   it('an engine-authored rationale on the agent variant names the system as its author (the one motive-author rule, raw text)', () => {
     const s = selectWhyState({ ...UNKNOWN, rationale: 'Risk manager: stop hit on SLB.' }, 'SLB', LAST);
     expect(s.kind).toBe(WHY_KIND.UNCONFIRMED);

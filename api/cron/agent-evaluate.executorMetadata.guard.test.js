@@ -686,6 +686,25 @@ describe('BEHAVIOURAL — every owner-writable field planted; the six callers th
     expect(stored.trades.map((t) => t.entryPreset)).toEqual(['defensive', 'defensive']);
   });
 
+  it('ER5 — the approved meeting leg stamps the governing preset after a risk exit’s refresh merged an owner change (C6, review ER1-1)', async () => {
+    // One risk exit (KO busts) under 'defensive'; the owner switches the battle to
+    // 'aggressive' as soon as it lands, and refreshBattleFromDoc merges that into
+    // `battle`. The approved meeting's leg runs later in the SAME check, under the
+    // check's presetConfig, so its row says 'defensive' too.
+    let flipped = false;
+    exec.afterCall = (db) => { if (flipped) return; flipped = true; db.__store.battle.strategyPreset = 'aggressive'; };
+    const prices = makePriceTable();
+    prices.KO = { ...prices.KO, current: 61.578 };
+    const { stored } = await runTick({ prices, battle: plantedBattle({
+      strategyPreset: 'defensive',
+      ...serverMeetingOverrides({ id: ID, status: 'approved', diagnosis: DESC, expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [plantedLeg('PG', 'JPM')] }, { legs: [{ symbolOut: 'PG', symbolIn: 'JPM', swappedInAt: null }] }),
+    }) });
+    expect(flipped, 'the owner’s change was written (non-vacuous)').toBe(true);
+    expect(exec.calls.map((c) => `${c.site}:${c.args[2]?.symbol}`)).toEqual(['processAgentBattle:AMD', 'handleGameplanMeeting:JPM']);
+    expect(stored.strategyPreset).toBe('aggressive');
+    expect(stored.trades.map((t) => t.entryPreset)).toEqual(['defensive', 'defensive']);
+  });
+
   it('enforce readiness (review ER1-1): statically — the key is resolved once beside presetConfig, and every executor call stamps that one key', () => {
     expect(CRON_SOURCE).toMatch(/const governingPreset = presetKeyOf\(battle\.strategyPreset\);\s*\n\s*const presetConfig = getPresetConfig\(governingPreset\);/);
     expect(CRON_SOURCE.match(/entryPreset: governingPreset,/g)).toHaveLength(CALLS.length);
