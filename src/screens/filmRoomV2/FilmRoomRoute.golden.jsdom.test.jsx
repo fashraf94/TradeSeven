@@ -48,7 +48,7 @@ const legacy = vi.hoisted(() => ({ mounts: 0 }));
 vi.mock('../../hooks/useAgentBattle', async () => {
   const { HOOK_RESULT } = await import('../__golden__/filmRoomGoldenFixture');
   const { useRef } = await import('react');
-  return { default: () => { const seen = useRef(false); if (!seen.current) { seen.current = true; legacy.mounts += 1; } return HOOK_RESULT; } };
+  return { default: function useAgentBattle() { const seen = useRef(false); if (!seen.current) { seen.current = true; legacy.mounts += 1; } return HOOK_RESULT; } };
 });
 // The legacy screen itself, passed through untouched: the wrapper adds no element and no prop, and records the
 // props it is given so a row can hold them to App's own (a changed prop the mocked hooks ignore would not move the DOM).
