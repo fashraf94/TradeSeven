@@ -278,14 +278,41 @@ describe('BA-10 — plans: verbatim, the two market prices, the horizon note, no
 });
 
 describe('BA-46 / F3 — the rationale timeline', () => {
-  it('recorded rationale is labelled and collapsed by default; opening shows the agent\'s words', () => {
+  it('addendum R6: recorded rationale is labelled and collapsed by default as a clamped preview — the hypothesis, the first lines, "Read more"', () => {
+    // jsdom lays nothing out: while a preview is clamped, report it as running past its box, as a browser does for these words
+    const saved = ['scrollHeight', 'clientHeight'].map((k) => [k, Object.getOwnPropertyDescriptor(Element.prototype, k)]);
+    Object.defineProperty(Element.prototype, 'scrollHeight', { configurable: true, get() { return this.getAttribute('data-collapsed') === 'yes' ? 120 : 40; } });
+    Object.defineProperty(Element.prototype, 'clientHeight', { configurable: true, get() { return 40; } });
+    try {
+      m.render(<Harness tape={sep23Tape} />);
+      const entries = m.qa('[data-rationale]');
+      expect(entries).toHaveLength(sep23Tape.rationale.length);
+      entries.forEach((e, i) => {
+        const r = sep23Tape.rationale[i];
+        expect(e.textContent).toContain(`Recorded rationale at ${etClock(r.at)} · the agent's words at the time · not verified`);
+        const words = e.querySelector('[data-rationale-body] [data-collapsed]');
+        expect(words.textContent).toBe(r.rationale);
+        expect(words.getAttribute('data-collapsed'), `entry ${i}`).toBe('yes');   // collapsed by default
+        expect(e.querySelector('[data-rationale-body]').textContent.startsWith(r.hypothesis)).toBe(true);
+        expect([...e.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Read more']);
+      });
+      const first = entries[0];
+      m.click(first.querySelector('button'));
+      expect(first.querySelector('[data-collapsed]').getAttribute('data-collapsed')).toBe('no');
+      expect(first.querySelector('button').textContent).toBe('Show less');
+      expect(entries[1].querySelector('[data-collapsed]').getAttribute('data-collapsed')).toBe('yes');   // one entry opens, not all
+      m.click(first.querySelector('button'));
+      expect(first.querySelector('[data-collapsed]').getAttribute('data-collapsed')).toBe('yes');
+    } finally {
+      for (const [k, d] of saved) if (d) Object.defineProperty(Element.prototype, k, d); else delete Element.prototype[k];
+    }
+  });
+
+  it('addendum R6: words that fit their preview carry no "Read more" — the preview is the whole of them', () => {
     m.render(<Harness tape={sep23Tape} />);
-    const entries = m.qa('[data-rationale]');
-    expect(entries).toHaveLength(sep23Tape.rationale.length);
-    expect(entries[0].textContent).toContain("Recorded rationale at 12:00 PM · the agent's words at the time · not verified");
-    expect(m.q('[data-rationale-body]')).toBeNull();
-    m.click(entries[0].querySelector('button'));
-    expect(m.q('[data-rationale-body="0"]').textContent).toContain(sep23Tape.rationale[0].rationale);
+    const e = m.q('[data-rationale="0"]');
+    expect(e.querySelector('[data-collapsed]').getAttribute('data-collapsed')).toBe('yes');
+    expect(e.querySelector('button')).toBeNull();
   });
 
   it('a model-failure check is a check STATE in the timeline — the platform\'s record, never agent words, never under Diagnostic', () => {

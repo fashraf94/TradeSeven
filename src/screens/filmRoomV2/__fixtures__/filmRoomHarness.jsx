@@ -57,7 +57,7 @@ export function mounter() {
   m.buttons = (text) => m.qa('button').filter((b) => b.textContent.trim() === text);
   /** Open everything that opens: collapsed text, the recorded words, the explainer. */
   m.expandAll = () => {
-    for (const label of ['Read more', 'Show the recorded words', 'How a directive card reads']) {
+    for (const label of ['Read more', 'How a directive card reads']) {
       for (const b of m.buttons(label)) m.click(b);
     }
   };

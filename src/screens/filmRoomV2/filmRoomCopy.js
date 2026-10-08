@@ -193,8 +193,6 @@ export const FILM_ROOM_COPY = Object.freeze({
   rationale: 'Rationale',
   rationaleNone: 'No rationale was recorded this day.',
   rationaleLabel: (clock) => `Recorded rationale at ${clock} · the agent's words at the time · not verified`,
-  rationaleOpen: 'Show the recorded words',
-  rationaleClose: 'Hide',
   stateEntry: (clock, label) => `Check at ${clock} · ${label}`,
   stateEntryNote: "the platform's record of the check · not the agent's words",
   checksNone: 'No checks were recorded this day.',

@@ -368,19 +368,21 @@ function PlansSection({ tape }) {
 
 // ── rationale (BA-46, BA-22; F3) ────────────────────────────────────────────
 
+/**
+ * BA-46 under addendum R6: collapsed by default as a CLAMPED PREVIEW — the
+ * hypothesis, then the first lines of the recorded words, with "Read more"
+ * when they run past the preview (the design of record's Collapsible).
+ */
+const RATIONALE_PREVIEW_LINES = 2;
 function RationaleEntry({ tape, index }) {
-  const [open, setOpen] = useState(false);
   const r = tape.rationale[index];
   return (
     <div data-rationale={index} style={{ ...card, gap: 6, borderLeft: `2px solid ${C.ink2}` }}>
       <span style={mono(10, C.ink2, { fontWeight: 600, lineHeight: 1.4 })}><When>{COPY.rationaleLabel(etClock(r.at) ?? '')}</When></span>
-      {open ? (
-        <div data-rationale-body={index} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {r.hypothesis ? <p style={{ ...body, fontWeight: 600 }}><Rec>{r.hypothesis}</Rec></p> : null}
-          {r.rationale ? <p style={{ ...body, color: C.ink2 }}><Rec>{r.rationale}</Rec></p> : null}
-        </div>
-      ) : null}
-      <TextButton onClick={() => setOpen(!open)}>{open ? COPY.rationaleClose : COPY.rationaleOpen}</TextButton>
+      <div data-rationale-body={index} style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+        {r.hypothesis ? <p style={{ ...body, fontWeight: 600 }}><Rec>{r.hypothesis}</Rec></p> : null}
+        {r.rationale ? <Collapsible text={r.rationale} lines={RATIONALE_PREVIEW_LINES} color={C.ink2} /> : null}
+      </div>
     </div>
   );
 }
