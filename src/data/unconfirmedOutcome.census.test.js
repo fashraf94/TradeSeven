@@ -41,30 +41,65 @@ const readersOf = (re) => [...CODE].filter(([, code]) => re.test(code)).map(([f]
  * something true or nothing without a change.
  */
 const FEED_READERS = {
-  'src/adapters/baggerbombAdapter.js': 'Desk line: carries `message` as is (null) — AgentDesk renders no line; alert feed is time-bounded only',
-  'src/components/Agent/AgentActivityFeed.jsx': 'FIXED: a line-less marked beat is not a card; a marked beat never takes its action’s label',
+  'src/adapters/baggerbombAdapter.js': 'FIXED: the Desk line is null when the newest beat is marked — AgentDesk renders no line (never an older line standing in); alert feed is time-bounded only',
+  'src/components/Agent/AgentActivityFeed.jsx': 'FIXED: a marked beat is not a card — line-less (was an empty `Update` card) or worded (words written before the swap ran)',
   'src/components/Agent/AgentChat.jsx': 'flag-off trade line admits swap actions only; tape joins read directive ids — nothing rendered for it',
   'src/components/Agent/AgentFilmRoom.ARCHIVED.jsx': 'DEAD — no importer',
   'src/components/Agent/AgentStrategyTab.ARCHIVED.jsx': 'DEAD — no importer',
   'src/components/Agent/ForgeCitationCard.jsx': 'dormant under the pane; counts citedRules (the rule did call for the exit) — no line',
-  'src/components/Agent/GameTapeView.jsx': 'FIXED (dormant under the pane): bookmarks skip a line-less beat; a marked beat is headed `Update`, never its action',
+  'src/components/Agent/GameTapeView.jsx': 'FIXED (dormant under the pane): bookmarks skip a marked beat (was a raw-action header over `No details available`)',
   'src/components/Agent/HypothesisTicker.jsx': 'DEAD — imported, never rendered; reads hypothesis entries only',
-  'src/components/Agent/LiveActivityPanel.jsx': 'pulse (dormant): `Agent is active.` fallback; breakthrough alerts admit gameplan_meeting only',
+  'src/components/Agent/LiveActivityPanel.jsx': 'FIXED (pulse dormant): a marked newest beat lends no words — the neutral `Agent is active.`; breakthrough alerts admit gameplan_meeting only',
   'src/components/Agent/StatusFeedTimeline.jsx': 'DEAD — only importer is AgentStrategyTab.ARCHIVED.jsx',
   'src/components/AgentPresence/presenceBinding.js': 'swap actions only — a marked beat is no event',
   'src/components/AgentPresence/useAgentPresence.js': 'pass-through to statusFeedToEvents',
   'src/components/Dashboard/desk/AgentDesk.jsx': 'renders the latest line only when it has a message — nothing for a line-less beat',
-  'src/components/League/battleArena/statusFeedToVoice.js': 'drops a beat with no text — nothing for a line-less beat',
-  'src/components/Tournament/Flat6BattleView.jsx': 'FIXED: a line-less beat is dropped before the window (was its raw action `risk_swap_failed`, to spectators too)',
+  'src/components/League/battleArena/statusFeedToVoice.js': 'FIXED: a marked beat is no line in the agent’s voice, dropped before the six-line window',
+  'src/components/Tournament/Flat6BattleView.jsx': 'FIXED: a marked beat is dropped before the window (was its raw action `risk_swap_failed`, or pre-execution words; spectators too — the projection carries the marker)',
   'src/hooks/useAgentBattle.js': 'pass-through',
   'src/screens/AgentBattleScreen.jsx': 'pass-through; flag-off unread dot counts feed length (dormant)',
   'src/screens/agentBattleScreenGoldenFixture.js': 'test data',
   'src/screens/battleView/ArenaHeader.jsx': 'passes `statusFeed: null` — not a reader',
   'src/screens/battleView/CharacterAvatar.jsx': 'passes `statusFeed: null` — not a reader',
   'src/screens/battleView/CharacterPane.jsx': 'passes `statusFeed: null` — not a reader',
-  'src/screens/battleView/PaneTape.jsx': 'FIXED: bookmarks skip a line-less beat; mounts the log',
+  'src/screens/battleView/PaneTape.jsx': 'FIXED: bookmarks skip a marked beat; mounts the log',
   'src/screens/battleView/buildTape.js': 'joins trades / deferred checks by id and pair — renders no beat message or action',
   'src/screens/battleView/shadowCpuQuoteIntegrity.js': 'returns `statusFeed: null` — not a reader',
+};
+/**
+ * Every client file whose code names `evaluations` (review ER3-1). A decision
+ * LABEL for an entry comes only from selectWhyState (WhyPanel, the tape's
+ * check cards, the bubble, the peek line and Bench all take its state), and
+ * selectWhyState takes ONE entry — it never names the array — so a new reader
+ * that labelled entries from `decision` / `downgraded` itself would land here.
+ */
+const EVALUATION_READERS = {
+  'src/components/Agent/AgentActivityFeed.jsx': 'the word only — the group pill’s aria-label (`N grouped evaluations`)',
+  'src/components/Season/SeasonLeaderboard.jsx': 'the word only — Season copy (another product)',
+  'src/components/Tournament/Flat6BattleView.jsx': '`recentWhy`: the motive and hypothesis through renderMotive / renderHypothesis — no decision label',
+  'src/data/decisionRecord.js': 'heardStamps: reads each entry’s `heard` stamp only',
+  'src/data/forgeCollections.js': 'the word only — Forge rule copy',
+  'src/data/forgeKnowledgeBase.js': 'the word only — Forge rule copy',
+  'src/screens/AgentBattleScreen.jsx': 'pass-through to buildTape, deriveHeard, the cockpit and the Why? selectors',
+  'src/screens/agentBattleScreenGoldenFixture.js': 'test data',
+  'src/screens/battleView/buildTape.js': 'check cards take their label from selectWhyState',
+  'src/screens/battleView/cockpitModel.js': 'promptBuiltAt by evalId — no decision field',
+  'src/screens/battleView/deriveHeard.js': 'heard stamps via decisionRecord.heardStamps',
+  'src/screens/battleView/deriveTurnLine.js': 'the latest check’s timestamp for the turn line’s decided dot — no label',
+  'src/screens/battleView/selectBench.js': 'the newest entry with words, labelled through selectWhyState',
+  'src/services/forgeStatsService.js': 'Forge citation counts from the model’s own cited rules — no decision label',
+};
+/**
+ * Every client file whose code reads a DECISION field itself — the fields a
+ * label is chosen from (review ERV3, the direct form of ER3-1's risk). Only the
+ * selector and the shared vocabulary may choose a label from them; the tape
+ * reads `downgraded` for its quiet-run fold, never for a label.
+ */
+const DECISION_FIELD_READERS = {
+  'src/data/decisionRecord.js': 'the thrown-swap prefix and the D-70 gate (validationErrors, guardrailSourceNote, guardrailOverrides) — the predicates the selector uses',
+  'src/screens/battleView/selectWhyState.js': 'THE label: absence, table G, then the decision states',
+  'src/screens/battleView/buildTape.js': '`quiet` (no-change fold) excludes downgraded and outage entries — no label',
+  'src/screens/agentBattleScreenGoldenFixture.js': 'test data',
 };
 /** Every client file whose code names `proposalHistory`. */
 const PROPOSAL_READERS = {
@@ -79,15 +114,26 @@ const MARKER_READERS = {
 /** Every client file that decides on the marker through that module. */
 const MARKER_MODULE_IMPORTERS = {
   'src/screens/battleView/selectWhyState.js': 'the Why? state: the marker before every decision state (table G labels)',
-  'src/components/Agent/AgentActivityFeed.jsx': 'FIXED: a line-less marked beat is not a card; a marked beat takes the neutral label',
-  'src/components/Agent/GameTapeView.jsx': 'FIXED (dormant): bookmarks skip a line-less beat; a marked beat is never headed by its action',
-  'src/components/Tournament/Flat6BattleView.jsx': 'FIXED: a line-less beat is dropped before the live feed’s window',
-  'src/screens/battleView/PaneTape.jsx': 'FIXED: bookmarks skip a line-less beat',
+  'src/components/Agent/AgentActivityFeed.jsx': 'FIXED: a marked beat is not a card',
+  'src/adapters/baggerbombAdapter.js': 'FIXED: the Desk line is null when the newest beat is marked',
+  'src/components/Agent/LiveActivityPanel.jsx': 'FIXED (dormant): the pulse takes no words from a marked newest beat',
+  'src/components/League/battleArena/statusFeedToVoice.js': 'FIXED: a marked beat is no voice line',
+  'src/components/Agent/GameTapeView.jsx': 'FIXED (dormant): bookmarks skip a marked beat',
+  'src/components/Tournament/Flat6BattleView.jsx': 'FIXED: a marked beat is dropped before the live feed’s window',
+  'src/screens/battleView/PaneTape.jsx': 'FIXED: bookmarks skip a marked beat',
 };
 
 describe('the census is complete — a new reader fails here until it is ruled', () => {
   it('every client file that names the feed is in the census, and every census entry still names it', () => {
     expect(readersOf(/\bstatusFeed\b/)).toEqual(Object.keys(FEED_READERS).sort());
+  });
+
+  it('every client file that names evaluations is in the census (review ER3-1) — a decision label comes only through selectWhyState', () => {
+    expect(readersOf(/\bevaluations\b/)).toEqual(Object.keys(EVALUATION_READERS).sort());
+  });
+
+  it('only the ruled files read a decision field — a new surface labelling from `downgraded` or `decision` lands here (review ERV3)', () => {
+    expect(readersOf(/\bdowngraded\b|decision\s*===\s*'(HOLD|SWAP|PROPOSAL)'|\bhaikuError\b|\bguardrailOverrides\b|\bguardrailSourceNote\b|\.validationErrors\b/)).toEqual(Object.keys(DECISION_FIELD_READERS).sort());
   });
 
   it('every client file that names proposalHistory is in the census', () => {
@@ -116,10 +162,17 @@ const MODEL_STATUS = { timestamp: '2026-09-09T15:04:00.000Z', message: 'Rotating
 const LANDED = { timestamp: '2026-09-09T15:05:00.000Z', message: 'Emergency exit: KO → AMD', action: 'emergency_swap', symbolOut: 'KO', symbolIn: 'AMD', executionLanded: 'confirmed_after_error' };
 
 describe('the arena voice lane (statusFeedToVoice)', () => {
-  it('a line-less beat is no line; a marked beat with words keeps them; nothing is "null" or "undefined"', () => {
-    const { live } = statusFeedToVoice({ statusFeed: [RISK_UNKNOWN, PASS_UNKNOWN, PUBLIC_UNKNOWN, MODEL_STATUS] }, '2026-09-09T15:10:00.000Z', 'Aurora');
-    expect(live.map((l) => l.text)).toEqual(['Rotating KO into AMD.']);
-    expect(JSON.stringify(live)).not.toMatch(/risk_swap_failed|null|undefined/);
+  it('a marked beat is no line in the agent’s voice — line-less or worded; nothing is "null" or "undefined"', () => {
+    const GUARDRAIL = { timestamp: '2026-09-09T15:04:30.000Z', message: 'Guardrail override: stop-loss … Forcing exit → AMD.', action: 'guardrail_forced_swap', executionOutcome: 'unknown' };
+    const { live } = statusFeedToVoice({ statusFeed: [RISK_UNKNOWN, PASS_UNKNOWN, PUBLIC_UNKNOWN, MODEL_STATUS, GUARDRAIL] }, '2026-09-09T15:10:00.000Z', 'Aurora');
+    expect(live).toEqual([]);
+  });
+
+  it('marked beats are dropped BEFORE the six-line window — they never cost a real line (review ER3-8)', () => {
+    const real = Array.from({ length: 6 }, (_, i) => ({ timestamp: `2026-09-09T14:0${i}:00.000Z`, message: `Line ${i}.`, action: 'hold' }));
+    const { live } = statusFeedToVoice({ statusFeed: [...real, RISK_UNKNOWN, PASS_UNKNOWN, MODEL_STATUS] }, '2026-09-09T15:10:00.000Z', 'Aurora');
+    expect(live.map((l) => l.text)).toEqual(real.map((r) => r.message));
+    expect(JSON.stringify(live)).not.toMatch(/risk_swap_failed|Rotating|null|undefined/);
   });
 });
 

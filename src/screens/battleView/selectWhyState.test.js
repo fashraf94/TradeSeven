@@ -829,13 +829,20 @@ describe('table G (V1.4) — a record whose outcome could not be confirmed', () 
     expect(selectWhyState({ ...UNKNOWN_FORCED, executionOutcome: undefined }, 'SLB', LAST).label).toBe(COPY.guardrailForcedFailedLabel);
   });
 
-  it('a `reinforced_haiku` swap (the guardrail agreed with the agent) keeps the AGENT variant — the third conjunct fails, as for the fourth state', () => {
-    const s = selectWhyState({ ...UNKNOWN, guardrailSourceNote: 'reinforced_haiku', guardrailOverrides: [{ action: 'forced_exit', symbol: 'SLB' }] }, 'SLB', LAST);
+  it('MUTATION ROW (review ER3-2) — a `reinforced_haiku` swap (the guardrail agreed with the agent) keeps the AGENT variant: the third conjunct fails, as for the fourth state', () => {
+    // The shape agentGuardrails.js writes (~468-497): the SAME `guardrail_${type}`
+    // sourceNote as a forced exit, with the override action `reinforced_haiku`.
+    // A gate on the sourceNote prefix alone would retitle the agent's own swap
+    // as the guardrail's — this row is the one that fails if it does.
+    const reinforced = { ...UNKNOWN, guardrailSourceNote: 'guardrail_stopLoss', guardrailOverrides: [{ symbol: 'SLB', action: 'reinforced_haiku', replacementSymbol: 'DVN' }] };
+    const s = selectWhyState(reinforced, 'SLB', LAST);
     expect(s.kind).toBe(WHY_KIND.UNCONFIRMED);
     expect(s.label).toBe(COPY.unconfirmedLabel);
+    expect(s.footer).toBe(COPY.motiveAgent);
+    expect(s.symbolOut).toBeNull();
   });
 
-  it('the marker is read BEFORE every decision state — no other label can render for a marked entry, whatever else it carries', () => {
+  it('the marker is read BEFORE every decision state — no decision label can render for a marked entry, whatever else it carries', () => {
     const variants = [
       UNKNOWN,
       { ...UNKNOWN, validationErrors: ['Swap execution failed: x'] }, // the fourth state's prefix too
@@ -857,11 +864,31 @@ describe('table G (V1.4) — a record whose outcome could not be confirmed', () 
     expect(s.footer).toBe(COPY.motiveSystem);
   });
 
-  it('the absence states still come first: an outage entry is never relabelled by a marker', () => {
-    const s = selectWhyState({ ...UNKNOWN, haikuError: { failureClass: 'timeout' } }, 'SLB', LAST);
-    expect(s.kind).toBe(WHY_KIND.ABSENT);
+  it('an entry that does not belong to the check comes first (the stale `>=` join) — a marker on it changes nothing', () => {
     const stale = selectWhyState({ ...UNKNOWN, timestamp: '2026-09-01T16:30:00.000Z' }, 'SLB', LAST);
     expect(stale.kind).toBe(WHY_KIND.ABSENT);
+    expect(stale.label).toBe(COPY.noDecision);
+  });
+
+  it('MUTATION ROW (reviews ER3-3 / ER4-4) — an engine outage with a guardrail-forced swap whose outcome could not be confirmed renders table G, not the outage line', () => {
+    // The shape the cron writes when the model call failed, applyGuardrails ran on
+    // the null result, a stop breach forced KO → DVN, the executor threw and the
+    // read-back failed: haikuError + the marker + the D-70 gate.
+    for (const failureClass of ['timeout', '529', 'budget_skipped']) {
+      const s = selectWhyState({ ...UNKNOWN_FORCED, haikuError: { failureClass } }, 'SLB', LAST);
+      expect(s.kind, failureClass).toBe(WHY_KIND.GUARDRAIL_UNCONFIRMED);
+      expect(s.label).toBe('A guardrail called for a swap · its outcome could not be confirmed');
+      expect(s.footer).toBe(COPY.motiveSystem);
+      expect([s.symbolOut, s.symbolIn]).toEqual(['SLB', 'DVN']);
+    }
+    // Base rendered the outage line for it — the guardrail's swap hidden behind "No decision recorded".
+    expect(selectWhyState({ ...UNKNOWN_FORCED, executionOutcome: undefined, haikuError: { failureClass: 'timeout' } }, 'SLB', LAST).kind).toBe(WHY_KIND.ABSENT);
+  });
+
+  it('an outage entry WITHOUT the guardrail gate keeps the outage line — never credits the agent with an argument (not a shape the cron writes: no model, no agent swap)', () => {
+    const s = selectWhyState({ ...UNKNOWN, haikuError: { failureClass: 'timeout' } }, 'SLB', LAST);
+    expect(s.kind).toBe(WHY_KIND.ABSENT);
+    expect(s.label).toBe(COPY.noDecisionOutage);
   });
 
   it('only the exact marker value counts — another executionOutcome (or none) leaves every state as it was', () => {

@@ -28,6 +28,8 @@ import { classifyBattleType, battleTypeLabel } from '../utils/commandCenterLiveB
 // the gate below and the label it protects cannot drift apart (D-83, §9).
 // `deskCopy` is a leaf: it imports nothing, so there is no cycle.
 import { SLOT_MS } from '../components/Dashboard/desk/deskCopy';
+// Table G (V1.4): the unconfirmed-outcome marker, as data (zero-import).
+import { feedBeatUnconfirmed } from '../data/executionOutcome';
 
 export const PHASE = Object.freeze({
   PRE_OPEN: 'PRE_OPEN',
@@ -268,7 +270,11 @@ function buildStatusFeedLatest(battle) {
   const feed = battle?.statusFeed;
   if (!Array.isArray(feed) || feed.length === 0) return null;
   const latest = feed[feed.length - 1];
-  if (!latest) return null;
+  // Table G (V1.4): when the newest beat is one whose outcome could not be
+  // confirmed, the Desk shows NO line — never that beat's words (written
+  // before the swap ran), and never an older line standing in as the current
+  // one (review ERV4: a superseded line read as the state after the check).
+  if (!latest || feedBeatUnconfirmed(latest)) return null;
   return {
     message: latest.message ?? null,
     timestamp: toIso(latest.timestamp),

@@ -640,3 +640,36 @@ describe('enforce readiness — the model route’s status beat carries the entr
     });
   }
 });
+
+// Enforce readiness (review ERV4-1): on a check whose swap a GUARDRAIL forced over
+// the model's hold, the model route writes the guardrail's own beat too
+// ("… Forcing exit → AMD.", `guardrail_forced_swap`). When that swap's outcome
+// could not be confirmed it carries the entry's marker, so no client renders its
+// pre-execution words; when the swap landed, it does not.
+describe('enforce readiness — the guardrail\u2019s own beat on a forced swap carries the marker only on an unknown outcome', () => {
+  const FORCED_EXIT = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_stopLoss', statusMessage: 'Guardrail override: stop-loss at 1% breached on KO. Forcing exit → AMD.', overrides: [{ type: 'stopLoss', symbol: 'KO', action: 'forced_exit', replacementSymbol: 'AMD' }] };
+  const guardrailBeat = (r) => r.feed.find((e) => e.action === 'guardrail_forced_swap' && e.evalId === r.entry?.evalId) ?? null;
+  for (const mode of ['off', 'shadow', 'enforce']) {
+    it(`${mode}: unknown → the guardrail beat carries \`executionOutcome: 'unknown'\`; the entry is the table G guardrail shape`, async () => {
+      flags.swapIdentity = mode;
+      guardrailHook.result = FORCED_EXIT;
+      exec.mode = 'ambiguous';
+      exec.failReadAfterThrow = true;
+      // A deployed stop: applyGuardrails runs only when the strategy deploys guardrails.
+      const r = await runTick({ battle: withStop({}) });
+      expect(r.entry).toMatchObject({ executionOutcome: 'unknown', downgraded: true, guardrailSourceNote: 'guardrail_stopLoss' });
+      expect(r.entry.guardrailOverrides.some((o) => o.action === 'forced_exit')).toBe(true);
+      expect(guardrailBeat(r)).toMatchObject({ executionOutcome: 'unknown', symbolOut: 'KO', symbolIn: 'AMD' });
+    });
+
+    it(`${mode}: landed → the guardrail beat carries no marker key`, async () => {
+      flags.swapIdentity = mode;
+      guardrailHook.result = FORCED_EXIT;
+      exec.mode = 'ambiguous';
+      // A deployed stop: applyGuardrails runs only when the strategy deploys guardrails.
+      const r = await runTick({ battle: withStop({}) });
+      expect(guardrailBeat(r)).not.toBeNull();
+      expect(guardrailBeat(r)).not.toHaveProperty('executionOutcome');
+    });
+  }
+});

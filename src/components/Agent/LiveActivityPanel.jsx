@@ -18,6 +18,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronUp, X, Users } from 'lucide-react';
+// Table G (V1.4): the unconfirmed-outcome marker, as data (zero-import).
+import { feedBeatUnconfirmed } from '../../data/executionOutcome';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -96,8 +98,10 @@ const entryKey = (entry, fallbackIndex) =>
 
 function AgentStatusIndicator({ latestEntry }) {
   const isActive = !!latestEntry;
+  // Table G (V1.4): a newest beat whose outcome could not be confirmed lends
+  // the pulse no words — it keeps the long-shipped neutral line instead.
   const statusText = latestEntry
-    ? truncate(extractMessage(latestEntry)) || 'Agent is active.'
+    ? truncate(feedBeatUnconfirmed(latestEntry) ? '' : extractMessage(latestEntry)) || 'Agent is active.'
     : 'Your agent will start analyzing when the market opens.';
 
   const dotColor = isActive ? PALETTE.teal : PALETTE.gray;

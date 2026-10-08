@@ -256,6 +256,14 @@ export default function WhyPanel({
   const notNamed = !isBook && hasWords && sentences.length === 0
     ? COPY.notNamedAtCheck(state.checkedAt)
     : null;
+  // Table G's two states carry an AUTHOR-ONLY footer (`The agent's own words`
+  // / `The system's reason`) — no outcome clause, by rule. An author line with
+  // no words under it captions nothing, so it shows only where words do: the
+  // book's paragraph, or a row's own sentences (review ER4-6; TapeCards gates
+  // its footer on the rationale the same way).
+  const authorOnlyFooter = state.kind === WHY_KIND.UNCONFIRMED || state.kind === WHY_KIND.GUARDRAIL_UNCONFIRMED;
+  const showFooter = Boolean(state.footer)
+    && (!authorOnlyFooter || (isBook ? Boolean(bookFull) : sentences.length > 0));
 
   // The plan's label carries the deploy date (D-76 gate c). Null when the doc
   // has no usable date, and the section is then absent whole rather than
@@ -456,7 +464,7 @@ export default function WhyPanel({
           {notNamed && (
             <div style={{ fontSize: 12.5, color: cssVar('text-muted') }}>{notNamed}</div>
           )}
-          {state.footer && (
+          {showFooter && (
             <div style={{ fontSize: 10.5, color: cssVar('text-muted'), letterSpacing: '0.02em' }}>
               {state.footer}
             </div>

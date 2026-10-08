@@ -7,9 +7,10 @@
 // join in deriveTurnLine.js — applied again here, so a caller that hands in a
 // stale entry still gets the absence state). `rationale` is rendered verbatim.
 //
-// THE ORDER OF THE BRANCHES IS THE RULE (hazard 2, Phase 0 V2 §Q1). One
-// state precedes it: an entry whose outcome could not be confirmed (table G —
-// see the branch). Then: seven
+// THE ORDER OF THE BRANCHES IS THE RULE (hazard 2, Phase 0 V2 §Q1). After the
+// absence states, an entry whose outcome could not be confirmed (table G) is
+// read before every decision state — see the branch for the one shape it also
+// reads ahead of the outage line. Then: seven
 // sites in agent-evaluate.js downgrade a SWAP to HOLD without rewriting the
 // rationale, so an entry with `downgraded === true` carries a swap argument
 // under a HOLD decision. Rendering that rationale under "Held" would put the
@@ -151,6 +152,51 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
     ? evaluation.triggers.filter((t) => typeof t === 'string' && t)
     : null;
 
+  // The DISPLAY text (D-80) — and the authorship below is read from the RAW
+  // field, not from this one. The translation preserves the `Guardrail
+  // override` prefix in both of its branches, so the two agree today; deriving
+  // "whose words" from a string this module has already rewritten is the
+  // drift BUILD_RULES §9 exists to forbid, so it does not.
+  const rationale = renderMotive(evaluation.rationale);
+
+  // AN OUTCOME THAT COULD NOT BE CONFIRMED (table G, V1.4 — founder decision
+  // Q3, option (a)). The cron stamps `executionOutcome: 'unknown'` when the
+  // executor threw and its own fresh read of the battle failed (integrity
+  // follow-up 2, Part D): the entry is a downgraded HOLD WITHOUT the
+  // thrown-swap prefix, so the decision branches below would call it `held by
+  // a guardrail` — or, guardrail-forced, `it did not go through`. Neither is
+  // known. The subject follows the D-70 gate exactly as the fourth and fifth
+  // states do; the footer names only whose words follow (the one motive-author
+  // rule, read from the RAW rationale), because the other footers' outcome
+  // clauses are unproven here.
+  //
+  // THE ORDER (reviews ER3-3 / ER4-4). The marker is read before every
+  // DECISION state — `Held` and `Swapped` included — and the guardrail-forced
+  // shape is read before the outage line too. That shape is the one an engine
+  // outage can carry: the model call failed, applyGuardrails still ran on the
+  // null result, and a stop or trailing breach forced a swap (a `guardrail_`
+  // source note with a `forced_exit` override) whose executor threw and whose
+  // read-back failed. The founder's rule is that a marked record renders table
+  // G, and "A guardrail called for a swap · its outcome could not be
+  // confirmed" is true of it, where the outage line hid the guardrail's swap
+  // behind "No decision recorded". A marked outage entry WITHOUT that gate is
+  // not a shape the cron writes (with no model there is no agent swap); it
+  // keeps the outage line rather than credit the agent with an argument.
+  const unconfirmed = executionOutcomeUnconfirmed(evaluation);
+  const unconfirmedAuthor = () => (isEngineAuthoredMotive(evaluation.rationale) ? COPY.motiveSystem : COPY.motiveAgent);
+  const unconfirmedForced = unconfirmed ? guardrailForcedExit(evaluation) : null;
+  if (unconfirmedForced) {
+    return {
+      ...base,
+      kind: WHY_KIND.GUARDRAIL_UNCONFIRMED,
+      label: COPY.guardrailForcedUnconfirmedLabel,
+      rationale,
+      footer: unconfirmedAuthor(),
+      symbolOut: cleanText(unconfirmedForced.symbol),
+      symbolIn: cleanText(unconfirmedForced.replacementSymbol),
+    };
+  }
+
   if (evaluation.haikuError) {
     const timedOut = evaluation.haikuError?.failureClass === 'timeout';
     return {
@@ -160,40 +206,8 @@ export function selectWhyState(evaluation, symbol, lastScoredAt) {
     };
   }
 
-  // The DISPLAY text (D-80) — and the authorship below is read from the RAW
-  // field, not from this one. The translation preserves the `Guardrail
-  // override` prefix in both of its branches, so the two agree today; deriving
-  // "whose words" from a string this module has already rewritten is the
-  // drift BUILD_RULES §9 exists to forbid, so it does not.
-  const rationale = renderMotive(evaluation.rationale);
-
-  // AN OUTCOME THAT COULD NOT BE CONFIRMED comes before every decision state
-  // (table G, V1.4 — founder decision Q3, option (a)). The cron stamps
-  // `executionOutcome: 'unknown'` when the executor threw and its own fresh
-  // read of the battle failed (integrity follow-up 2, Part D): the entry is a
-  // downgraded HOLD WITHOUT the thrown-swap prefix, so the branches below
-  // would call it `held by a guardrail` — or, guardrail-forced, `it did not go
-  // through`. Neither is known. Checked ahead of `downgraded` rather than
-  // inside it, so no state below — `Held` and `Swapped` included — can ever
-  // render for a marked entry. The subject follows the D-70 gate exactly as
-  // the fourth and fifth states do; the footer names only whose words follow
-  // (the one motive-author rule, read from the RAW rationale), because the
-  // other footers' outcome clauses are unproven here.
-  if (executionOutcomeUnconfirmed(evaluation)) {
-    const forcedExit = guardrailForcedExit(evaluation);
-    const author = isEngineAuthoredMotive(evaluation.rationale) ? COPY.motiveSystem : COPY.motiveAgent;
-    if (forcedExit) {
-      return {
-        ...base,
-        kind: WHY_KIND.GUARDRAIL_UNCONFIRMED,
-        label: COPY.guardrailForcedUnconfirmedLabel,
-        rationale,
-        footer: author,
-        symbolOut: cleanText(forcedExit.symbol),
-        symbolIn: cleanText(forcedExit.replacementSymbol),
-      };
-    }
-    return { ...base, kind: WHY_KIND.UNCONFIRMED, label: COPY.unconfirmedLabel, rationale, footer: author };
+  if (unconfirmed) {
+    return { ...base, kind: WHY_KIND.UNCONFIRMED, label: COPY.unconfirmedLabel, rationale, footer: unconfirmedAuthor() };
   }
 
   // Downgraded FIRST — see the header. Two reasons carry the same flag

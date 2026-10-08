@@ -410,19 +410,27 @@ describe('the live feed — a beat whose outcome could not be confirmed (table G
     for (let i = 0; i < 8; i += 1) expect(text).toContain(`Move ${i} on the book.`);
   });
 
-  it('a spectator’s copy (the real public projection, marker stripped) reads the same', () => {
-    const projected = projectTournamentBattle({ ...battleWith([]), ownerId: 'someone-else', statusFeed: [beat(1), UNKNOWN] }, { isOwner: false });
-    expect(projected.statusFeed[1]).not.toHaveProperty('executionOutcome');
+  it('a spectator’s copy (the real public projection, which carries the marker) reads the same — words and all', () => {
+    const MARKED_HOLD = { timestamp: '2026-09-09T15:31:00.000Z', message: 'Rotating GILD into MOS.', action: 'hold', source: 'haiku', executionOutcome: 'unknown' };
+    const projected = projectTournamentBattle({ ...battleWith([]), ownerId: 'someone-else', statusFeed: [beat(1), UNKNOWN, MARKED_HOLD] }, { isOwner: false });
+    expect(projected.statusFeed.map((e) => e.executionOutcome ?? null)).toEqual([null, 'unknown', 'unknown']);
     mountWith(projected.statusFeed);
     const text = feedText();
     expect(text).not.toContain('risk_swap_failed');
+    expect(text).not.toContain('Rotating GILD into MOS.');
     expect(text).toContain('Move 1 on the book.');
   });
 
-  it('a real failure keeps its line, and a beat with words keeps them (the filter takes line-less beats only)', () => {
-    mountWith([beat(1), { ...UNKNOWN, message: 'Risk exit of GILD failed: quote unavailable', executionOutcome: undefined }, { timestamp: '2026-09-09T15:40:00.000Z', message: 'Rotating GILD into MOS.', action: 'hold', executionOutcome: 'unknown' }]);
+  it('a real failure keeps its line; a marked beat with words is dropped too (review ER4-3 — its words were written before the swap ran)', () => {
+    mountWith([
+      beat(1),
+      { ...UNKNOWN, message: 'Risk exit of GILD failed: quote unavailable', executionOutcome: undefined },
+      { timestamp: '2026-09-09T15:40:00.000Z', message: 'Rotating GILD into MOS.', action: 'hold', executionOutcome: 'unknown' },
+      { timestamp: '2026-09-09T15:40:01.000Z', message: 'Guardrail override: stop-loss … Forcing exit → MOS.', action: 'guardrail_forced_swap', executionOutcome: 'unknown' },
+    ]);
     const text = feedText();
     expect(text).toContain('Risk exit of GILD failed: quote unavailable');
-    expect(text).toContain('Rotating GILD into MOS.');
+    expect(text).not.toContain('Rotating GILD into MOS.');
+    expect(text).not.toContain('Forcing exit');
   });
 });

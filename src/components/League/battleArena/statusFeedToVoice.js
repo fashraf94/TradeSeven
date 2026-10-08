@@ -13,6 +13,8 @@
 // VoiceLane line shape: { kind, t, text, ticker?, _k }.
 
 import { tsToMillis } from '../../../utils/leagueBeats';
+// Table G (V1.4): the unconfirmed-outcome marker, as data (zero-import, Node-clean).
+import { feedBeatUnconfirmed } from '../../../data/executionOutcome';
 
 // The greeting/awaiting copy is design-authored (not in the feed); keep the
 // Phase-2 fixture copy as the default so the awaiting/initial render is unchanged.
@@ -50,7 +52,11 @@ function entryKind(action) {
  * @param {string} [archName] the agent's archetype label, for the lane header
  */
 export function statusFeedToVoice(battle, now, archName) {
-  const feed = Array.isArray(battle?.statusFeed) ? battle.statusFeed : [];
+  // Table G (V1.4): a beat whose outcome could not be confirmed is no line in
+  // the agent's voice — a line-less one has nothing to say, and a worded one
+  // was written before the swap ran. Dropped before the window, so it never
+  // costs one of the lane's lines.
+  const feed = (Array.isArray(battle?.statusFeed) ? battle.statusFeed : []).filter((e) => !feedBeatUnconfirmed(e));
   const live = feed
     .slice(-MAX_LIVE_LINES) // the recent window, oldest-first (seedVoiceLines reverses for display)
     .map((e, i) => ({

@@ -47,22 +47,21 @@ const hasLine = (beat) => typeof beat?.message === 'string' && beat.message.trim
 
 /**
  * A feed beat whose outcome could not be confirmed: it carries the marker —
- * or, on the public projection, which keeps a beat's `message` and `action`
- * but not its marker (api/_utils/tournamentBattleView.js PUBLIC_STATUSFEED),
- * it has the shape only the marker's two message-less writers produce: a
- * `risk_swap_failed` beat with no line.
+ * or, on a copy of the feed that dropped the marker, it has the shape only the
+ * marker's two message-less writers produce: a `risk_swap_failed` beat with no
+ * line. (The public projection, api/_utils/tournamentBattleView.js
+ * PUBLIC_STATUSFEED, dropped it until enforce readiness added the key; the
+ * shape rule stays for any copy that still does.)
  *
- * Such a beat names no outcome on any surface: its `action` is never rendered
- * as a word (`risk_swap_failed`, `hold`), and a surface that labels beats by
- * action gives it its neutral label instead. Its own words, when it has any
- * (the model route's status beat), are still the speaker's own words.
+ * NO LINE SURFACE RENDERS SUCH A BEAT (review ER4-3). The risk loop's and the
+ * R11 pass's carry no line at all (they were an empty card, or their raw
+ * action); the model route's two — its status line and the guardrail's own —
+ * carry words written BEFORE the swap ran ("Rotating KO → AMD…", "Forcing exit
+ * → AMD."), which the record cannot vouch for. The check's own words stay
+ * where the record is labelled: the Why? panel and the tape's check card,
+ * under table G's label.
  */
 export function feedBeatUnconfirmed(beat) {
   if (!beat || typeof beat !== 'object') return false;
   return executionOutcomeUnconfirmed(beat) || (beat.action === RISK_SWAP_FAILED_ACTION && !hasLine(beat));
-}
-
-/** An unconfirmed beat with no line of its own: no surface renders it at all — never a blank card. */
-export function feedBeatWithoutLine(beat) {
-  return feedBeatUnconfirmed(beat) && !hasLine(beat);
 }

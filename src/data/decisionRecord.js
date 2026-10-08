@@ -143,7 +143,9 @@ export function swapDidNotGoThrough(evaluation) {
 // the thrown-swap prefix, so before table G it fell to the guardrail label
 // ("held by a guardrail") — or, guardrail-forced, to the fifth state's "it did
 // not go through". Neither is true of it. The selector checks the marker
-// before every other decision state, so no other label can ever render for it.
+// before every decision state, so no decision label can render for it (only
+// the absence of an entry for the check comes first; a guardrail-forced
+// marked swap is read ahead of the engine-outage line too — selectWhyState.js).
 //
 // The LABELS live here, with the other states. The marker's value and the
 // record-shape predicates live in src/data/executionOutcome.js: its wire value

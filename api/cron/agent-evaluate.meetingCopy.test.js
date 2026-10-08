@@ -113,7 +113,7 @@ describe('the copy is written with the meeting — one update, server values onl
     return b;
   };
 
-  for (const mode of ['off', 'shadow']) {
+  for (const mode of MODES) {
     it(`${mode}: the update that writes \`gameplanMeeting\` also writes \`cronState.gameplanMeeting\` = { meetingId, createdAt, expiresAt, legs }`, async () => {
       flags.swapIdentity = mode;
       const { db } = await runTick(armed());

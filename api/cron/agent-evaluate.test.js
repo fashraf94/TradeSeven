@@ -170,8 +170,9 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
     // Function signature receives currentScore
     expect(source).toMatch(/async function handlePendingProposal\([^)]*currentScore[^)]*\)/);
     // Call site passes it (P2 appended tournamentCtx after it, Pilot P6 the
-    // check's swapIdentityMode — lock all three)
-    expect(source).toMatch(/handlePendingProposal\([^)]*currentScore, tournamentCtx, swapIdentityMode\)/);
+    // check's swapIdentityMode, enforce readiness the check's governingPreset
+    // — lock all four)
+    expect(source).toMatch(/handlePendingProposal\([^)]*currentScore, tournamentCtx, swapIdentityMode, governingPreset\)/);
 
     // Veto site captures scoreAtVeto
     expect(source).toMatch(/scoreAtVeto:\s*typeof currentScore === 'number'/);

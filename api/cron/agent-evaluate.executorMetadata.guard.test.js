@@ -86,7 +86,10 @@ vi.mock('../_utils/agentSwapExecution.js', async (importOriginal) => {
     executeSwapServer: async (...args) => {
       const { fn, line } = callerOf(new Error().stack);
       exec.calls.push({ site: fn, line, args: deepClone(args.slice(3)) });
-      return runReal(...args);
+      const result = await runReal(...args);
+      // Enforce readiness (review ER1-1): a hook that writes the store between calls (args[0] is the db).
+      if (typeof exec.afterCall === 'function') exec.afterCall(args[0]);
+      return result;
     },
   };
 });
@@ -572,6 +575,7 @@ beforeEach(() => {
   authority.mode = 'autopilot';
   flags.swapIdentity = 'off';
   exec.calls = [];
+  exec.afterCall = null;
   guardrailHook.result = null;
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -666,6 +670,25 @@ describe('BEHAVIOURAL — every owner-writable field planted; the six callers th
       for (const c of exec.calls) if (c.site === caller.site && caller.is(c.args[5])) hit.add(c.line);
     }
     expect([...hit].sort((a, b) => a - b)).toEqual(CALLS.map((c) => c.line).sort((a, b) => a - b));
+  });
+
+  it('enforce readiness (review ER1-1): the preset is resolved ONCE — an owner\u2019s mid-tick change never relabels a later row', async () => {
+    // Two risk exits under 'defensive' (KO, then PG); the owner switches the
+    // battle to 'aggressive' as soon as the first lands. The second exit was
+    // decided on defensive's verdict (the check's presetConfig), so its row
+    // says so — before the fix it read the refreshed 'aggressive'.
+    let flipped = false;
+    exec.afterCall = (db) => { if (flipped) return; flipped = true; db.__store.battle.strategyPreset = 'aggressive'; };
+    const { stored } = await runTick({ battle: plantedBattle({ strategyPreset: 'defensive' }), prices: bustingPrices() });
+    expect(flipped, 'the owner\u2019s change was written (non-vacuous)').toBe(true);
+    expect(stored.strategyPreset).toBe('aggressive');
+    expect(stored.trades.length, 'both exits traded').toBe(2);
+    expect(stored.trades.map((t) => t.entryPreset)).toEqual(['defensive', 'defensive']);
+  });
+
+  it('enforce readiness (review ER1-1): statically — the key is resolved once beside presetConfig, and every executor call stamps that one key', () => {
+    expect(CRON_SOURCE).toMatch(/const governingPreset = presetKeyOf\(battle\.strategyPreset\);\s*\n\s*const presetConfig = getPresetConfig\(governingPreset\);/);
+    expect(CRON_SOURCE.match(/entryPreset: governingPreset,/g)).toHaveLength(CALLS.length);
   });
 
   it('at the launch mode the planted proposal never reaches the executor at all (F1)', async () => {

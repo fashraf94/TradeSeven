@@ -308,7 +308,17 @@ describe('the latest feed line — a beat whose outcome could not be confirmed (
     const html = desk([{ timestamp: '2026-09-02T14:45:00.000Z', message: 'Holding PLTR into the close.', action: 'hold' }, UNKNOWN]);
     expect(html).not.toContain('Holding PLTR into the close.');
     for (const bad of ['risk_swap_failed', '>null<', '>undefined<', 'undefined']) expect(html, bad).not.toContain(bad);
-    // The adapter carries the beat as it is — the Desk's own gate is what renders nothing.
-    expect(buildBaggerbombAdapter(doc([UNKNOWN]), null, null, '2026-09-02T15:02:00.000Z', market).statusFeedLatest.message).toBeNull();
+    // The adapter yields no latest line for it — never an older line standing in as the current one.
+    expect(buildBaggerbombAdapter(doc([UNKNOWN]), null, null, '2026-09-02T15:02:00.000Z', market).statusFeedLatest).toBeNull();
+  });
+
+  it('a marked beat WITH words (the model route’s status line, the guardrail’s) is no line either — its words were written before the swap ran (review ER4-3)', () => {
+    const words = { timestamp: '2026-09-02T15:01:30.000Z', message: 'Rotating KO into AMD.', action: 'hold', source: 'haiku', executionOutcome: 'unknown' };
+    const html = desk([{ timestamp: '2026-09-02T14:45:00.000Z', message: 'Holding PLTR into the close.', action: 'hold' }, words]);
+    expect(html).not.toContain('Rotating KO into AMD.');
+    expect(html).not.toContain('Holding PLTR into the close.');
+    expect(buildBaggerbombAdapter(doc([words]), null, null, '2026-09-02T15:02:00.000Z', market).statusFeedLatest).toBeNull();
+    // The control: an unmarked newest beat is the line, as before.
+    expect(desk([words, { timestamp: '2026-09-02T15:01:45.000Z', message: 'Holding PLTR into the close.', action: 'hold' }])).toContain('Holding PLTR into the close.');
   });
 });

@@ -849,3 +849,33 @@ describe('table G (V1.4) — an outcome that could not be confirmed', () => {
     });
   }
 });
+
+// Enforce readiness (review ER4-6): table G's footer is an AUTHOR line only, so it
+// shows only where words do — a row whose sentences never name the piece shows
+// the not-named line and no caption under it.
+describe('table G (V1.4) — the author-only footer shows only under words', () => {
+  const UNKNOWN = { ...DOWNGRADED, validationErrors: [], executionOutcome: 'unknown' };
+  const rowFor = (evaluation, symbol) => renderRow(evaluation, { symbol, state: selectWhyState(evaluation, symbol, LAST) });
+
+  it('a row the rationale never names: the not-named line, and no bare author caption', () => {
+    const html = rowFor(UNKNOWN, 'PG');
+    expect(html).toContain('Argued for a swap · its outcome could not be confirmed');
+    expect(html).toMatch(/Not named at the/);
+    expect(html).not.toContain('The agent&#x27;s own words');
+  });
+
+  it('a row that names the piece, and the book panel with words: the footer is there', () => {
+    expect(rowFor(UNKNOWN, 'SLB')).toContain('The agent&#x27;s own words');
+    expect(renderBook(UNKNOWN)).toContain('The agent&#x27;s own words');
+  });
+
+  it('a book panel with no words at all: no footer', () => {
+    expect(renderBook({ ...UNKNOWN, rationale: '   ' })).not.toContain('The agent&#x27;s own words');
+  });
+
+  it('the other states keep their footers exactly as before, words or not (the gate is table G\u2019s only)', () => {
+    const down = rowFor(DOWNGRADED, 'PG');
+    expect(down).toMatch(/Not named at the/);
+    expect(down).toContain('The agent&#x27;s own words · the system held it');
+  });
+});
