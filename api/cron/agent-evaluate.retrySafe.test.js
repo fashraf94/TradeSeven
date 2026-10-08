@@ -50,7 +50,8 @@ const flags = vi.hoisted(() => ({ swapIdentity: 'off' }));
  *                 retry first — the read-back ignores the error's type, so the
  *                 rows hold (review K4-6);
  *   'refuse'    — throws `refusal` without committing anything.
- * `failReadAfterThrow`: the first battle read after an executor throw fails.
+ * `failReadAfterThrow`: the first battle read after an executor throw fails
+ * (a number n: the first n reads).
  */
 const exec = vi.hoisted(() => ({ mode: 'real', refusal: null, calls: 0, threw: false, failReadAfterThrow: false, queue: [], returned: false, failReadAfterReturn: false }));
 const guardrailHook = vi.hoisted(() => ({ result: null }));
@@ -168,7 +169,10 @@ async function runTick({ battle, result = makeHoldResult(), prices = makePriceTa
         return {
           ...ref,
           get: async () => {
-            if (exec.failReadAfterThrow && exec.threw) { exec.failReadAfterThrow = false; throw new Error('14 UNAVAILABLE: read failed (injected)'); }
+            if (exec.failReadAfterThrow && exec.threw) {
+              exec.failReadAfterThrow = typeof exec.failReadAfterThrow === 'number' && exec.failReadAfterThrow > 1 ? exec.failReadAfterThrow - 1 : false;
+              throw new Error('14 UNAVAILABLE: read failed (injected)');
+            }
             if (exec.failReadAfterReturn && exec.returned) { exec.failReadAfterReturn = false; throw new Error('14 UNAVAILABLE: read failed after the executor returned (injected)'); }
             return ref.get();
           },
@@ -497,17 +501,38 @@ describe('review fixes — no failure record and no release once a trade landed;
     expect(permanent.guardrail.faultClass).toBe('guardrail_error'); // P6's S4-8 pin: the refresh fault stays the pass's own
   });
 
-  it('C6 (review K3-4): a leg whose outcome is unknown stops the meeting — the next leg does not run from a stale book', async () => {
+  const twoLegMeeting = (extraLegs = []) => makeTickBattle(serverMeetingOverrides(
+    { status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'r' }, { symbolOut: 'PG', symbolIn: 'JPM', rationale: 'r' }, ...extraLegs] },
+    { legs: [{ symbolOut: 'KO', symbolIn: 'AMD' }, { symbolOut: 'PG', symbolIn: 'JPM' }] },
+  ));
+
+  it('C6 (review K3-4 / KV3): a leg whose outcome is unknown — the book is read afresh and the next leg runs from it (its own trade id, never a duplicate)', async () => {
     exec.queue = ['ambiguous', 'real'];
-    exec.failReadAfterThrow = true;
-    const battle = makeTickBattle(serverMeetingOverrides({ status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'r' }, { symbolOut: 'PG', symbolIn: 'JPM', rationale: 'r' }] }));
-    const { stored, feed } = await runTick({ battle });
-    expect(exec.calls).toBe(1);
-    expect(stored.trades.map((t) => [t.id, t.symbolOut, t.symbolIn])).toEqual([['trade_001', 'KO', 'AMD']]);
+    exec.failReadAfterThrow = true; // the read-back fails; the refresh after it does not
+    const { stored, feed } = await runTick({ battle: twoLegMeeting() });
+    expect(exec.calls).toBe(2);
+    expect(stored.trades.map((t) => [t.id, t.symbolOut, t.symbolIn])).toEqual([['trade_001', 'KO', 'AMD'], ['trade_002', 'PG', 'JPM']]);
     const legs = stored.gameplanMeetingHistory.at(-1).suggestedSwaps;
     expect(legs[0]).toMatchObject({ executionOutcome: 'unknown' });
     expect(legs[1]).not.toHaveProperty('executionOutcome');
     expect(legs[1]).not.toHaveProperty('executionFailed');
+    // No line either way for the unknown leg; the leg that ran has its own beat.
+    expect(feed.filter((e) => e.source === 'gameplan_meeting').map((e) => e.message)).toEqual(['Gameplan approved: PG → JPM']);
+    expect(ledger.releases).toEqual([]);
+  });
+
+  it('C6 (review K3-4 / KV3): …and when that read fails too, no later leg runs from a book that may be gone — each stored leg is marked `not_run`; a held leg is still recorded', async () => {
+    exec.queue = ['ambiguous', 'real'];
+    exec.failReadAfterThrow = 2; // the read-back and the refresh both fail
+    const { stored, feed } = await runTick({ battle: twoLegMeeting([{ symbolOut: 'XOM', symbolIn: 'NVDA', rationale: 'planted' }]) });
+    expect(exec.calls).toBe(1);
+    expect(stored.trades.map((t) => [t.id, t.symbolOut, t.symbolIn])).toEqual([['trade_001', 'KO', 'AMD']]);
+    const row = stored.gameplanMeetingHistory.at(-1);
+    expect(row.suggestedSwaps[0]).toMatchObject({ executionOutcome: 'unknown' });
+    expect(row.suggestedSwaps[1]).toMatchObject({ executionOutcome: 'not_run' });
+    expect(row.suggestedSwaps[1]).not.toHaveProperty('executionFailed');
+    expect(row.suggestedSwaps[2]).not.toHaveProperty('executionOutcome');
+    expect(row).toMatchObject({ heldLegCount: 1, heldLegs: [{ symbolOut: 'XOM', symbolIn: 'NVDA', reason: 'leg_not_proposed' }] });
     expect(feed.filter((e) => e.source === 'gameplan_meeting')).toEqual([]);
     expect(ledger.releases).toEqual([]);
   });

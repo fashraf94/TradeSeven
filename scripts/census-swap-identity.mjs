@@ -178,12 +178,13 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
   // Integrity follow-up 2 (Part D; review K3-9): the retry-safe markers, per
   // channel — how often an executor throw was read back as landed
   // (`executionLanded`), could not be read (`executionOutcome: 'unknown'`),
-  // or — on a meeting leg — confirmed as no trade (`executionFailed`); and the
+  // or — on a meeting leg — confirmed as no trade (`executionFailed`) or not
+  // attempted after an unreadable one (`executionOutcome: 'not_run'`); and the
   // meeting legs the server's copy held (Part A).
   const retrySafe = {
     outcomeUnknown: { entries: 0, feedBeats: 0, proposalHistory: 0, meetingLegs: 0 },
     landedAfterError: { entries: 0, feedBeats: 0, proposalHistory: 0, meetingLegs: 0 },
-    autoExecutionUnknown: 0, meetingLegExecutionFailed: 0, heldMeetingLegs: 0,
+    autoExecutionUnknown: 0, meetingLegExecutionFailed: 0, meetingLegNotRun: 0, heldMeetingLegs: 0,
   };
   const markers = (record, channel) => {
     if (record?.executionOutcome === 'unknown') retrySafe.outcomeUnknown[channel] += 1;
@@ -266,6 +267,7 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
       for (const leg of Array.isArray(m?.legRefusals) ? m.legRefusals : []) inc(refusals.meetingLegs, `${leg?.reason}${leg?.verification ? '' : ' (departed)'}`);
       for (const leg of Array.isArray(m?.suggestedSwaps) ? m.suggestedSwaps : []) {
         if (leg?.executionFailed === true) retrySafe.meetingLegExecutionFailed += 1;
+        if (leg?.executionOutcome === 'not_run') retrySafe.meetingLegNotRun += 1;
         markers(leg, 'meetingLegs');
       }
       if (typeof m?.heldLegCount === 'number' && m.heldLegCount > 0 && m.heldLegCount < Infinity) retrySafe.heldMeetingLegs += m.heldLegCount; // (no member call: the read-only allowlist)
@@ -347,7 +349,7 @@ export function renderCensus(result, { readAt = null } = {}) {
   p();
   p('### 3b. Retry-safe records (integrity follow-up 2, Part D) and held meeting legs (Part A)');
   p();
-  p('An executor call that threw is read back before anything is recorded: `executionLanded` marks a trade that landed but whose incoming position was already gone; `executionOutcome: \'unknown\'` marks a read-back that failed (no line either way); a meeting leg `executionFailed` is a confirmed no-trade. Watch these through the shadow period: each is an executor throw the enforce flip will meet.');
+  p('An executor call that threw is read back before anything is recorded: `executionLanded` marks a trade that landed but whose incoming position was already gone; `executionOutcome: \'unknown\'` marks a read-back that failed (no line either way); a meeting leg `executionFailed` is a confirmed no-trade, and `executionOutcome: \'not_run\'` a leg not attempted because the book could not be read after an earlier leg of unknown outcome. Watch these through the shadow period: each is an executor throw the enforce flip will meet.');
   p();
   const ch = (o) => `evaluations ${o.entries}, feed beats ${o.feedBeats}, proposal history ${o.proposalHistory}, meeting legs ${o.meetingLegs}`;
   tbl(['Marker', 'Count'], [
@@ -355,6 +357,7 @@ export function renderCensus(result, { readAt = null } = {}) {
     ['`executionLanded`', ch(result.retrySafe.landedAfterError)],
     ["proposal history `resolution: 'auto_execution_unknown'`", String(result.retrySafe.autoExecutionUnknown)],
     ['meeting legs `executionFailed`', String(result.retrySafe.meetingLegExecutionFailed)],
+    ["meeting legs `executionOutcome: 'not_run'`", String(result.retrySafe.meetingLegNotRun)],
     ['meeting legs held (`heldLegCount`)', String(result.retrySafe.heldMeetingLegs)],
   ]);
   p();

@@ -796,8 +796,10 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     // names mid-tick (review finding). refreshBattleFromDoc is the single
     // re-read chokepoint — exactly 9 call sites, zero raw re-assigns left.
     // 9 → 10: the R11 suppression pass re-reads after its swap (Ask 3).
+    // 10 → 11: an approved meeting leg of unknown outcome re-reads the book
+    // before the next leg (integrity follow-up 2, review K3-4 / KV3).
     const refreshCalls = source.match(/await refreshBattleFromDoc\(battleRef, battle, tournamentCtx\);/g) || [];
-    expect(refreshCalls.length).toBe(10);
+    expect(refreshCalls.length).toBe(11);
     // The chokepoint now reads the snapshot once into `refreshedData` and
     // returns false when it is empty (Astra F1b — an empty re-read is not a
     // refresh), so the assign names that local rather than `…Doc.data()`

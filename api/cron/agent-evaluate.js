@@ -69,7 +69,7 @@ import { proposalHistoryBase, launchGuardRecord, meetingHistoryBase } from '../_
 // read of an owner-writable field through a reader that type-checks it;
 // Part D — the fresh read after an executor throw (a trade that landed is
 // never recorded as refused or failed).
-import { serverMeetingCopy, meetingCopyOf, meetingMatchesCopy, planApprovedLegs, heldLegRecord, meetingWaitUntilMs, HELD_LEG_RECORD_MAX } from '../_utils/meetingCopy.js';
+import { serverMeetingCopy, meetingCopyOf, meetingMatchesCopy, planApprovedLegs, heldLegRecord, meetingWaitUntilMs, HELD_LEG_RECORD_MAX, LEG_NOT_RUN } from '../_utils/meetingCopy.js';
 import { presetKeyOf, meetingOf, meetingLegsOf, historyListOf } from '../_utils/playerFieldReaders.js';
 import { executorCallOf, swapResultAfterThrow, executionOutcomeOf, executionOutcomeUnknown, landedAfterErrorOf, landedAfterErrorFields, EXECUTION_OUTCOME_UNKNOWN, EXECUTION_NOT_LANDED } from '../_utils/landedTrade.js';
 // P2 League Tournament — agent-market exclusivity (Spec §1.2). Every use is
@@ -6037,11 +6037,18 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
     // Part D / table F V1.3: per-leg outcome markers for the history row,
     // keyed by the leg's position in `suggestedSwaps`.
     const legMarks = new Map();
+    // Set when a leg's outcome could not be read and neither could the book
+    // after it: every later stored leg is marked `not_run` (review K3-4 / KV3).
+    let bookUnreadable = false;
     // Execute the suggested swaps the server's copy holds
     for (const { index: legIndex, leg: swap, run } of planApprovedLegs(meeting, meetingLegsOf(meeting), copy)) {
       if (!run) {
         heldLegCount += 1;
         if (heldLegs.length < HELD_LEG_RECORD_MAX) heldLegs.push(heldLegRecord(swap));
+        continue;
+      }
+      if (bookUnreadable) {
+        legMarks.set(legIndex, { executionOutcome: LEG_NOT_RUN });
         continue;
       }
       // Integrity build (review I1-5): the leg's symbols reach the feed, the
@@ -6270,10 +6277,20 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         if (legOutcome === EXECUTION_OUTCOME_UNKNOWN) {
           // Whether the leg traded is unknown: the leg carries the typed
           // marker and no line; the reservation is kept (it expires by TTL).
-          // No later leg runs from a picture that may no longer exist (the C1
-          // stop; review K3-4) — those legs are filed as they stand.
+          // The next leg runs only from the battle read afresh — its trade id
+          // and its slot come from the book as it now stands. When that read
+          // fails too, no later leg runs from a picture that may no longer
+          // exist (the C1 stop): each is marked `not_run` (review K3-4 / KV3 —
+          // stopping outright dropped the approved legs that follow, unrecorded).
           legMarks.set(legIndex, { executionOutcome: EXECUTION_OUTCOME_UNKNOWN });
-          break;
+          let bookRead = false;
+          try {
+            bookRead = await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
+          } catch (refreshErr) {
+            console.error(`${LOG_PREFIX} Re-read after a gameplan leg of unknown outcome failed: ${refreshErr?.message || refreshErr}`);
+          }
+          if (!bookRead) bookUnreadable = true;
+          continue;
         }
         const legRefused = swapIdentityActive(swapIdentityMode) && isSwapRefusal(err);
         if (legRefused) {

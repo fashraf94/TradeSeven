@@ -469,3 +469,24 @@ describe('a meeting created at off and approved after a flip is checked as befor
     for (const call of exec.calls) expect(call[7].expectedOut).not.toHaveProperty('swappedInAt');
   });
 });
+
+// Review KV3 (on KV1's proposal for K1-1): the copy bounds WHICH legs run, never
+// WHEN. The detector's deadline is 16:00 server-local (UTC) = noon ET in summer,
+// so a meeting filed in the afternoon is born past its deadline: the next check
+// expires it unless the player approved first — and that approval runs, today
+// and here. So does one approved after the day's last check and reached the next
+// morning. A deadline on approvals would hold both (report §3, founder question).
+describe('no deadline on approval — a server meeting approved past its expiresAt runs, as today (review KV3)', () => {
+  const DEADLINE = '2026-09-09T16:00:00.000Z';
+
+  it('born past its deadline (filed 18:00Z) and approved before the next check — or reached the next morning: the stored leg runs', async () => {
+    for (const iso of ['2026-09-09T16:15:00.000Z', '2026-09-09T18:15:00.000Z', '2026-09-10T13:45:00.000Z']) {
+      exec.calls = [];
+      vi.setSystemTime(new Date(iso));
+      const { stored } = await runTick(withCopy(approvedMeeting([{ ...KO_AMD }], { createdAt: '2026-09-09T18:00:00.000Z', expiresAt: DEADLINE })));
+      expect(exec.calls, iso).toHaveLength(1);
+      expect(stored.trades.map((t) => t.symbolIn), iso).toEqual(['AMD']);
+      expect(meetingRow(stored), iso).not.toHaveProperty('heldLegs');
+    }
+  });
+});

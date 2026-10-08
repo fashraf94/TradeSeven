@@ -355,7 +355,7 @@ describe('follow-up 2 — the retry-safe markers and held legs are counted', () 
     proposalHistory: [{ resolvedAt: T, resolution: 'auto_execution_unknown', executionOutcome: 'unknown' }, { resolvedAt: T, resolution: 'approved', executionLanded: 'confirmed_after_error' }],
     gameplanMeetingHistory: [{
       resolvedAt: T, heldLegCount: 3, heldLegs: [],
-      suggestedSwaps: [{ symbolOut: 'KO', executionFailed: true }, { symbolOut: 'PG', executionOutcome: 'unknown' }, { symbolOut: 'MSFT', executionLanded: 'confirmed_after_error' }, { symbolOut: 'X', executionFailed: true, refusalReason: 'battle_not_active' }],
+      suggestedSwaps: [{ symbolOut: 'KO', executionFailed: true }, { symbolOut: 'PG', executionOutcome: 'unknown' }, { symbolOut: 'MSFT', executionLanded: 'confirmed_after_error' }, { symbolOut: 'X', executionFailed: true, refusalReason: 'battle_not_active' }, { symbolOut: 'Y', executionOutcome: 'not_run' }],
     }],
   };
   it('per marker and channel', () => {
@@ -363,11 +363,12 @@ describe('follow-up 2 — the retry-safe markers and held legs are counted', () 
     expect(out.retrySafe).toEqual({
       outcomeUnknown: { entries: 1, feedBeats: 1, proposalHistory: 1, meetingLegs: 1 },
       landedAfterError: { entries: 1, feedBeats: 1, proposalHistory: 1, meetingLegs: 1 },
-      autoExecutionUnknown: 1, meetingLegExecutionFailed: 2, heldMeetingLegs: 3,
+      autoExecutionUnknown: 1, meetingLegExecutionFailed: 2, meetingLegNotRun: 1, heldMeetingLegs: 3,
     });
     const md = renderCensus(out);
     expect(md).toContain('### 3b. Retry-safe records');
     expect(md).toContain("| `executionOutcome: 'unknown'` | evaluations 1, feed beats 1, proposal history 1, meeting legs 1 |");
+    expect(md).toContain("| meeting legs `executionOutcome: 'not_run'` | 1 |");
     expect(md).toContain('| meeting legs held (`heldLegCount`) | 3 |');
   });
   it('--since applies (a row before the instant is not counted)', () => {

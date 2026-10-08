@@ -25,7 +25,12 @@
 //     and the copy's `expiresAt` has not passed. A meeting with no matching
 //     copy — planted, or created before this build — never runs and never
 //     makes the agent wait.
-// The cron clears the copy whenever it clears the meeting.
+// The cron clears the copy whenever it clears the meeting, and retires it the
+// moment the meeting it was stored for has gone from the battle (deleted,
+// replaced or renamed — review K1-1 / K3-1). An approval of the server's
+// meeting runs whenever the cron reaches it, as today: the copy bounds WHICH
+// legs run, never WHEN (review KV3 — most meetings are created after their
+// own deadline, so a deadline on approvals would hold real ones; report §3).
 //
 // One product import: the pure capping helper.
 
@@ -35,6 +40,14 @@ const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArr
 
 /** The typed reason a held leg is recorded with on the meeting's history row. */
 export const LEG_NOT_PROPOSED = 'leg_not_proposed';
+
+/**
+ * The typed marker (`executionOutcome`) on an approved leg the cron did not
+ * attempt: an earlier leg's outcome could not be read, and neither could the
+ * book after it, so no later leg ran from a picture that may no longer exist
+ * (review K3-4 / KV3). No line — the leg simply did not run.
+ */
+export const LEG_NOT_RUN = 'not_run';
 
 /**
  * At most this many held legs are recorded on one history row (with the total
