@@ -250,7 +250,8 @@ describe('Part A — the score forgery is closed (acceptance 1); planted proposa
 describe('F3 — history rows carry only the server\'s own outcome fields (acceptance 5; intended off change 2)', () => {
   const plantedOutcomes = (record) => ({ ...record, ...deepClone(PLANTED_OUTCOMES) });
   const assertNoPlantedOutcome = (row, own = {}) => {
-    for (const key of HISTORY_OUTCOME_KEYS) {
+    // Both lists (review I5-5): the module's own, and every key this suite plants — removing a key from the module cannot remove its assertion.
+    for (const key of new Set([...HISTORY_OUTCOME_KEYS, ...Object.keys(PLANTED_OUTCOMES)])) {
       if (Object.hasOwn(own, key)) expect(row[key], key).toEqual(own[key]);
       else expect(row, key).not.toHaveProperty(key);
     }
@@ -468,5 +469,30 @@ describe('F2 on the live paths: the owner-writable preset, mode and meeting leg 
     });
     const { stored } = await runTick(battle);
     expect(tradeOf(stored, 'AMD').rationale).toBe('L'.repeat(CLIENT_TEXT_MAX));
+  });
+});
+
+// ── I5 (mutation lens) proposed rows ─────────────────────────────────────────
+describe('I5 — mutation-lens rows', () => {
+  it('I5-A: the dormant capture action and L1 receipt take the server values — never the proposal\'s day, exit reason, createdAt, snapshot or regime', async () => {
+    const { captureSwapReceipt } = await import('../_utils/learning/captureReceipt.js');
+    authority.mode = 'copilot';
+    for (const make of [PLANTED_APPROVED, PLANTED_EXPIRED]) {
+      captureSwapReceipt.mockClear();
+      const { permanent } = await runTick(makeTickBattle({ pendingProposal: { ...make(), regime: 'planted_regime' } }));
+      expect(permanent.actions, make.name).toHaveLength(1);
+      expect(permanent.actions[0].exitReason, make.name).toBe('haiku_decision');
+      expect(captureSwapReceipt, make.name).toHaveBeenCalledTimes(1);
+      expect(captureSwapReceipt.mock.calls[0][0], make.name).toMatchObject({
+        battleDay: 1, decisionAtMs: null, exitReason: 'haiku_decision', haikuSwapReason: 'haiku_decision',
+        snapshotIn: null, snapshotOut: null, regimeOut: null,
+      });
+    }
+  });
+
+  it('I5-B: the launch-guard log names a planted proposal id only capped', async () => {
+    await runTick(makeTickBattle({ pendingProposal: { ...PLANTED_APPROVED(), proposalId: 'p'.repeat(5000) } }));
+    const line = console.warn.mock.calls.map((c) => String(c[0])).find((s) => s.includes('LAUNCH GUARD: pendingProposal'));
+    expect(line).toContain(`proposalId=${'p'.repeat(64)})`);
   });
 });

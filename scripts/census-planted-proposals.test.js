@@ -252,3 +252,35 @@ describe('the read and the arguments', () => {
     }
   });
 });
+
+// ── I5 (mutation lens) proposed rows ─────────────────────────────────────────
+describe('I5 — mutation-lens rows', () => {
+  const AFTER = '2026-09-01T15:00:00.000Z';
+  const hist = (rows) => ({ b: { proposalHistory: rows } });
+
+  it('I5-G: each read ALONE sets the verdict — a lone execution beat, a lone foreign key, a lone self-contradicting row', () => {
+    expect(computePlantedProposalCensus({ b: { statusFeed: [{ source: 'proposal_system', action: 'swap', timestamp: AFTER, symbolOut: 'KO', symbolIn: 'AMD', message: 'Coach approved: Swap KO → AMD' }] } }).flagged).toBe(true);
+    expect(computePlantedProposalCensus({ b: { trades: [{ symbolIn: 'AMD', swappedOutAt: AFTER, bonusPoints: 1 }] } }).flagged).toBe(true);
+    expect(computePlantedProposalCensus({ b: { trades: [{ symbolIn: 'AMD', swappedOutAt: AFTER, entryPrice: 10, exitPrice: 20, lockedGainPct: 0 }] } }).flagged).toBe(true);
+  });
+
+  it('I5-H: a launch-guard note is genuine only on `auto_executed` resolved BY `system`', () => {
+    const row = (resolution, resolvedBy) => hist([{ proposalId: 'p', symbolOut: 'KO', symbolIn: 'AMD', resolution, resolvedBy, systemNote: 'launch_guard_clear', resolvedAt: AFTER }]);
+    expect(computePlantedProposalCensus(row('auto_executed', 'owner')).guardClears).toEqual([]);
+    expect(computePlantedProposalCensus(row('approved', 'system')).guardClears).toEqual([]);
+    expect(computePlantedProposalCensus(row('auto_executed', 'system')).guardClears).toHaveLength(1);
+  });
+
+  it('I5-I: the window boundary, the createdAt fallback, an equal instant, a non-boolean failure marker, a non-executed row, the window width', () => {
+    expect(computePlantedProposalCensus(hist([{ resolution: 'approved', resolvedAt: LAUNCH_GUARD_LANDED }])).executions).toHaveLength(1);
+    expect(computePlantedProposalCensus(hist([{ resolution: 'approved', createdAt: '2026-05-01T00:00:00.000Z' }])).executions).toEqual([]);
+    expect(computePlantedProposalCensus(hist([{ resolution: 'approved', createdAt: AFTER }])).executions[0].at).toBe(AFTER);
+    expect(computePlantedProposalCensus({ b: { trades: [{ symbolIn: 'AMD', swappedOutAt: AFTER }, { symbolIn: 'JPM', swappedOutAt: AFTER }] } }).contradictions).toEqual([]);
+    const odd = computePlantedProposalCensus(hist([{ resolution: 'approved', resolvedAt: AFTER, executionFailed: 'yes' }]));
+    expect([odd.executions.length, odd.failedApprovals.length]).toEqual([1, 0]);
+    for (const resolution of ['vetoed', 'lapsed', 'auto_execution_failed']) {
+      expect(computePlantedProposalCensus(hist([{ resolution, resolvedAt: AFTER }])).executions, resolution).toEqual([]);
+    }
+    expect(MATCH_WINDOW_MS).toBe(5 * 60 * 1000);
+  });
+});

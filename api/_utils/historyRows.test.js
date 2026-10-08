@@ -67,3 +67,15 @@ describe('launchGuardRecord — the launch-guard row keeps only what the proposa
     for (const v of [null, 'A'.repeat(1000), ['a'], 3]) expect(launchGuardRecord(v)).toEqual({});
   });
 });
+
+// ── I5 (mutation lens) proposed rows ─────────────────────────────────────────
+describe('I5 — mutation-lens rows', () => {
+  it('I5-E: the outcome list is pinned whole; a planted closedTrade never rides on a proposal or meeting row', () => {
+    expect([...HISTORY_OUTCOME_KEYS].sort()).toEqual([
+      'executionFailed', 'executionRefusal', 'verification', 'legRefusals', 'systemNote', 'scoreAtResolution', 'scoreAtVeto',
+      'vetoedAtPrice', 'vetoedAtTimestamp', 'counterfactualPoints', 'outcomePoints', 'lockedPoints', 'closedTrade',
+    ].sort());
+    expect(proposalHistoryBase({ proposalId: 'p', closedTrade: { lockedPoints: 9999 } })).toEqual({ proposalId: 'p' });
+    expect(meetingHistoryBase({ id: 'm', suggestedSwaps: [{ symbolOut: 'KO', closedTrade: { lockedPoints: 9999 } }] })).toEqual({ id: 'm', suggestedSwaps: [{ symbolOut: 'KO' }] });
+  });
+});

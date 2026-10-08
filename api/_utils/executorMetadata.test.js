@@ -125,3 +125,15 @@ describe('proposalDescriptiveMetadata', () => {
     expect(many.trade_reasoning.indicators[0]).toHaveLength(200);
   });
 });
+
+// ── I5 (mutation lens) proposed rows ─────────────────────────────────────────
+describe('I5 — mutation-lens rows', () => {
+  it('I5-C: the caps are pinned (text 1000, token 64)', () => {
+    expect([CLIENT_TEXT_MAX, CLIENT_TOKEN_MAX]).toEqual([1000, 64]);
+  });
+
+  it('I5-D: the reasoning\'s thesis / strategy ride as strings only, capped', () => {
+    expect(proposalDescriptiveMetadata({ evaluationMetadata: { trade_reasoning: { thesis: 9999, strategy: 'S'.repeat(CLIENT_TEXT_MAX + 5) } } }))
+      .toEqual({ trade_reasoning: { strategy: 'S'.repeat(CLIENT_TEXT_MAX) } });
+  });
+});

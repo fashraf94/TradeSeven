@@ -272,3 +272,12 @@ describe('S5 — rows the mutation lens proved', () => {
     }
   });
 });
+
+// ── I5 (mutation lens) proposed rows ─────────────────────────────────────────
+describe('I5 — mutation-lens rows', () => {
+  it('I5-F: a stored belief symbol is a string — an array or a length-bearing object names no symbol', () => {
+    for (const planted of [['KO'], { length: 2 }]) {
+      expect(expectedOutOfStored(planted, { outgoingSwappedInAt: null }, 'outgoingSwappedInAt')).toEqual({ symbol: null, swappedInAt: null });
+    }
+  });
+});
