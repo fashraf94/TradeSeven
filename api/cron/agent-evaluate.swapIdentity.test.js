@@ -36,10 +36,12 @@ import { permanentDoc } from '../_utils/__fixtures__/tickCaptureHarness.js';
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
 const flags = vi.hoisted(() => ({ swapIdentity: 'off', calls: 'off' }));
 /** The executor wrapper's per-row behaviour (see the header). */
-const exec = vi.hoisted(() => ({ calls: [], before: null, throws: null }));
+const exec = vi.hoisted(() => ({ calls: [], before: null, throws: null, committed: 0 }));
 /** A canned guardrail verdict for the suppression pass (the fenced evaluator wrapped, never edited). */
 const guardrailHook = vi.hoisted(() => ({ result: null, throws: null }));
 const carry = vi.hoisted(() => ({ calls: 0 }));
+/** Forces an archetype STAGNATION verdict for the named held symbols; the real evaluator runs otherwise. */
+const riskHook = vi.hoisted(() => ({ stagnant: [] }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicMock { constructor() { this.messages = { create: (...args) => mocks.create(...args) }; } },
@@ -59,7 +61,9 @@ vi.mock('../_utils/agentSwapExecution.js', async (importOriginal) => {
       exec.calls.push(args);
       if (exec.before) exec.before(args);
       if (exec.throws) throw exec.throws;
-      return runReal(...args);
+      const out = await runReal(...args);
+      exec.committed += 1;
+      return out;
     },
   };
 });
@@ -72,6 +76,17 @@ vi.mock('../_utils/agentGuardrails.js', async (importOriginal) => {
       if (guardrailHook.result) return deepClone(guardrailHook.result);
       return real.applyGuardrails(...args);
     },
+  };
+});
+vi.mock('../_utils/agentRiskManager.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return {
+    ...real,
+    evaluateRisk: (position, ...rest) => (
+      riskHook.stagnant.includes(position?.symbol)
+        ? { action: 'SWAP_OUT', reason: 'stagnation', source: 'archetype', detail: `${position.symbol} stagnant (test)` }
+        : real.evaluateRisk(position, ...rest)
+    ),
   };
 });
 vi.mock('../_utils/callRecords/observe.js', async (importOriginal) => {
@@ -140,12 +155,28 @@ const APPROVED_PROPOSAL = (overrides = {}) => ({
 });
 const EXPIRED_PROPOSAL = (overrides = {}) => APPROVED_PROPOSAL({ resolvedAt: null, resolution: null, resolvedBy: null, ...overrides });
 
-async function runTick({ battle = makeTickBattle(), result = makeHoldResult(), prices = makePriceTable(), mutateStore = null } = {}) {
+async function runTick({ battle = makeTickBattle(), result = makeHoldResult(), prices = makePriceTable(), mutateStore = null, throwReadsAfterCommit = false } = {}) {
   mocks.getStockAnalysisData.mockImplementation(async (symbol) => (prices[symbol] ? { price: prices[symbol], daily: [] } : {}));
   mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
   mocks.create.mockImplementation(async () => makeToolUseResponse(result));
   const db = makeCallsDb({ battle, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs() });
   if (mutateStore) mutateStore(db.__store.battle);
+  if (throwReadsAfterCommit) {
+    // Once a swap has committed, every read of the battle doc throws (a
+    // refresh that fails AFTER the trade landed — review S4-8).
+    const baseCollection = db.collection.bind(db);
+    db.collection = (col) => {
+      const c = baseCollection(col);
+      if (col !== 'agentBattles') return c;
+      return {
+        ...c,
+        doc: (id) => {
+          const ref = c.doc(id);
+          return { ...ref, get: async () => { if (exec.committed > 0) throw new Error('battle read failed (injected)'); return ref.get(); } };
+        },
+      };
+    };
+  }
   const summary = { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0 };
   let thrown = null;
   try {
@@ -174,9 +205,11 @@ beforeEach(() => {
   exec.calls = [];
   exec.before = null;
   exec.throws = null;
+  exec.committed = 0;
   guardrailHook.result = null;
   guardrailHook.throws = null;
   carry.calls = 0;
+  riskHook.stagnant = [];
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -573,29 +606,220 @@ describe('A10 — shadow changes no behaviour: a full tick writes what off write
     return value;
   });
 
-  for (const [label, args] of [
-    ['two risk exits, then a model HOLD', () => ({ prices: bustingPrices() })],
-    ['a model SWAP', () => ({ result: makeSwapResult() })],
-    ['a HOLD', () => ({})],
-  ]) {
+  const copilotWith = (proposal) => makeTickBattle({ executionMode: 'copilot', pendingProposal: proposal });
+  const pendingMeetingWithStop = () => makeTickBattle({
+    gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] },
+    agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'stopLoss', value: 1, unit: '%', enforcement: 'hard' }] },
+  });
+  // Every caller that can commit, at calls off AND calls shadow (review S3-2:
+  // the existing off goldens never drive the proposal, meeting or pass paths).
+  const SCENARIOS = [
+    ['two risk exits, then a model HOLD', 'off', () => ({ prices: bustingPrices() })],
+    ['a model SWAP', 'off', () => ({ result: makeSwapResult() })],
+    ['a HOLD', 'off', () => ({})],
+    ['an approved proposal (C3)', 'off', () => ({ battle: copilotWith(APPROVED_PROPOSAL()) })],
+    ['an expired co-pilot proposal (C4)', 'off', () => ({ battle: copilotWith(EXPIRED_PROPOSAL()) })],
+    ['an approved meeting (C6)', 'off', () => ({ battle: makeTickBattle({ gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging' }] } }) })],
+    ['the suppression pass forcing an exit (C5)', 'off', () => { guardrailHook.result = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_stopLoss', statusMessage: 'Stop hit on KO.', overrides: [] }; return { battle: pendingMeetingWithStop() }; }],
+    ['two risk exits, then a model SWAP — calls shadow', 'shadow', () => ({ prices: bustingPrices(), result: makeSwapResult({ symbolOut: 'MSFT', symbolIn: 'JPM', tier: 'core' }) })],
+    ['a model SWAP — calls shadow', 'shadow', () => ({ result: makeSwapResult() })],
+    ['an approved meeting (C6) — calls shadow', 'shadow', () => ({ battle: makeTickBattle({ gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging' }] } }) })],
+  ];
+
+  for (const [label, calls, args] of SCENARIOS) {
     it(label, async () => {
+      flags.calls = calls;
       const off = await runTick(args());
       const offUpdates = deepClone(off.db.__updates);
       const offCapture = deepClone(off.db.__captureWrites);
       exec.calls = [];
+      exec.committed = 0;
       flags.swapIdentity = 'shadow';
       const shadow = await runTick(args());
+      expect(off.stored.trades.length + (off.entry ? 1 : 0), `${label}: the scenario must trade or write an entry`).toBeGreaterThan(0);
       expect(JSON.stringify(strip(shadow.db.__updates))).toBe(JSON.stringify(offUpdates));
       expect(JSON.stringify(shadow.db.__captureWrites)).toBe(JSON.stringify(offCapture));
       // …and the difference is exactly those keys: one verification per committed trade, the key on the entry.
       const shadowJson = JSON.stringify(shadow.db.__updates);
       expect(JSON.stringify(offUpdates)).not.toMatch(/verification|executionRefusal/);
-      expect(shadow.entry).toHaveProperty('executionRefusal', null);
+      if (shadow.entry) expect(shadow.entry).toHaveProperty('executionRefusal', null);
       expect(shadow.stored.trades).toHaveLength(off.stored.trades.length);
       for (const trade of shadow.stored.trades) expect(trade.verification).toMatchObject({ mode: 'shadow', verdict: 'match' });
       expect((shadowJson.match(/"verdict":"match"/g) || []).length).toBeGreaterThanOrEqual(shadow.stored.trades.length);
     });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('review fixes — the speaker, the slot, the belief, the beats', () => {
+  const guarded = (over = {}) => makeTickBattle({
+    agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'stopLoss', value: 1, unit: '%', enforcement: 'hard' }] },
+    ...over,
+  });
+  const FORCED_KO = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_stopLoss', statusMessage: 'Stop hit on KO.', overrides: [] };
+
+  it('S2-1: a guardrail-FORCED exit on the model route that is refused speaks the PROTECTIVE line — the same as the suppression pass', async () => {
+    flags.swapIdentity = 'enforce';
+    guardrailHook.result = FORCED_KO;
+    exec.before = once(moveKoSlot);
+    const { entry } = await runTick({ battle: guarded(), result: makeHoldResult() });
+    expect(entry.guardrailSourceNote).toBe('guardrail_stopLoss');
+    expect(entry.decision).toBe('HOLD');
+    expect(entry.executionRefusal.line).toBe(PROTECTIVE_KO);
+  });
+
+  it("S2-1: the model's OWN refused swap still speaks the agent line", async () => {
+    flags.swapIdentity = 'enforce';
+    exec.before = once(moveKoSlot);
+    const { entry } = await runTick({ result: makeSwapResult() });
+    expect(entry.executionRefusal.line).toBe(AGENT_KO_AMD);
+  });
+
+  it('S2-1: a refused archetype (stagnation) exit on the risk route speaks the AGENT line, not "Protection"', async () => {
+    flags.swapIdentity = 'enforce';
+    riskHook.stagnant = ['KO'];
+    exec.before = once(moveKoSlot);
+    const { feed } = await runTick();
+    const beat = feed.findLast((e) => e.action === 'risk_swap_failed');
+    expect(beat.triggeredBy).toBe('risk_stagnation');
+    expect(beat.refusalReason).toBe('outgoing_identity_mismatch');
+    expect(beat.message).toMatch(/^The agent tried to swap KO for [A-Z]+, but KO had already left that slot. No trade was made.$/);
+  });
+
+  it('S2-2: an owner-written proposal with no tier or slot is refused at enforce and CLEARED — no undefined reaches the write', async () => {
+    flags.swapIdentity = 'enforce';
+    const slotless = APPROVED_PROPOSAL();
+    delete slotless.tier;
+    delete slotless.slotIndex;
+    const { stored, thrown } = await runTick({ battle: makeTickBattle({ executionMode: 'copilot', pendingProposal: slotless }) });
+    expect(thrown).toBeNull();
+    expect(stored.pendingProposal).toBeNull();
+    const row = stored.proposalHistory.at(-1);
+    expect(row.executionFailed).toBe(true);
+    expect(row.executionRefusal.verification.slot).toEqual({ tier: null, slotIndex: null });
+  });
+
+  it('S2-3: the risk loop\'s SECOND exit is checked against the position its verdict was computed on — a returned symbol is refused, never sold', async () => {
+    flags.swapIdentity = 'enforce';
+    // Before the first exit reads, a competing commit swaps PG out and back in (a new entry instant).
+    exec.before = once((args) => {
+      const stored = args[0].__store.battle;
+      stored.portfolio.support[1] = { ...stored.portfolio.support[1], swapPrice: 170, swappedInAt: '2026-09-09T14:55:00.000Z' };
+    });
+    const { stored, feed } = await runTick({ prices: bustingPrices() });
+    expect(exec.calls.map((a) => a[10]?.expectedOut)).toEqual([{ symbol: 'KO', swappedInAt: null }, { symbol: 'PG', swappedInAt: null }]);
+    expect(stored.trades.map((t) => t.symbolOut)).toEqual(['KO']); // PG′ was not sold under the original PG's verdict
+    expect(feed.findLast((e) => e.action === 'risk_swap_failed')).toMatchObject({
+      refusalReason: 'outgoing_identity_mismatch',
+      message: 'Protection was set to sell PG, but PG had already left that slot. No trade was made.',
+      verification: expect.objectContaining({ found: { symbol: 'PG', swappedInAt: '2026-09-09T14:55:00.000Z' } }),
+    });
+  });
+
+  it("S2-4: a new meeting's legs store the identity from the trigger's OWN picture, even when an earlier execution this tick moved the book", async () => {
+    flags.swapIdentity = 'shadow';
+    const battle = makeTickBattle({
+      executionMode: 'copilot',
+      cronState: { ...makeTickBattle().cronState, lastGameplanDate: null },
+      pendingProposal: APPROVED_PROPOSAL({ symbolOut: 'TSLA', symbolIn: 'AMD', tier: 'star', slotIndex: 1, outgoingSwappedInAt: '2026-09-09T14:10:00.000Z' }),
+    });
+    battle.portfolio.star[1] = { ...battle.portfolio.star[1], swapPrice: 251, swappedInAt: '2026-09-09T14:10:00.000Z' };
+    const { db, stored } = await runTick({ battle });
+    expect(stored.portfolio.star[1].symbol).toBe('AMD'); // C3 committed TSLA → AMD before the meeting was diagnosed
+    const meeting = db.__updates.find((u) => u.gameplanMeeting)?.gameplanMeeting;
+    const tslaLeg = meeting?.suggestedSwaps?.find((l) => l.symbolOut === 'TSLA');
+    expect(tslaLeg).toBeDefined();
+    expect(tslaLeg.swappedInAt).toBe('2026-09-09T14:10:00.000Z'); // the picture's TSLA — not dropped because the refreshed book no longer holds it
+  });
+
+  it('S2-5: an approved meeting\'s refused and departed legs show in the FEED at enforce (the card is gone once approved)', async () => {
+    flags.swapIdentity = 'enforce';
+    const battle = makeTickBattle({
+      gameplanMeeting: {
+        id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z',
+        suggestedSwaps: [
+          { symbolOut: 'INTC', symbolIn: 'JPM', rationale: 'INTC lagging', swappedInAt: null },
+          { symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging', swappedInAt: '2026-09-09T13:45:00.000Z' },
+        ],
+      },
+    });
+    const { feed } = await runTick({ battle });
+    const beats = feed.filter((e) => e.source === 'gameplan_meeting' && e.refusalReason);
+    expect(beats.map((b) => b.message)).toEqual([
+      'The agent tried to swap INTC for JPM, but INTC had already left that slot. No trade was made.',
+      AGENT_KO_AMD,
+    ]);
+    expect(beats[1].verification).toMatchObject({ verdict: 'mismatch' });
+  });
+
+  it('S2-5: an expired co-pilot proposal refused at enforce shows in the feed too', async () => {
+    flags.swapIdentity = 'enforce';
+    exec.before = once(moveKoSlot);
+    const { feed } = await runTick({ battle: makeTickBattle({ executionMode: 'copilot', pendingProposal: EXPIRED_PROPOSAL() }) });
+    expect(feed.findLast((e) => e.source === 'proposal_system')).toMatchObject({ message: AGENT_KO_AMD, refusalReason: 'outgoing_identity_mismatch', action: 'hold' });
+  });
+
+  it('S2-5: none of those beats exists at off', async () => {
+    const battle = makeTickBattle({
+      gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'INTC', symbolIn: 'JPM', rationale: 'x' }] },
+    });
+    const { feed } = await runTick({ battle });
+    expect(feed.some((e) => e.refusalReason)).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('A8 / C3–C4 — the slot ALREADY moved before the tick (the P02 shape on a fresh read — review S4-3)', () => {
+  // The in-memory battle and the store both hold XOM in support[0] from the
+  // start: a belief read off the slot would be XOM and "match". Only the
+  // belief STORED on the proposal (KO) names the stale position.
+  const xomBook = (over) => {
+    const b = makeTickBattle({ executionMode: 'copilot', ...over });
+    b.portfolio.support = [{ ...XOM }, ...b.portfolio.support.slice(1)];
+    return b;
+  };
+  const legacy = (p) => { delete p.outgoingSwappedInAt; return p; };
+  /** XOM is held from the start here, so it needs a quote (else the tick exits on degraded quotes). */
+  const withXomQuote = () => ({ ...makePriceTable(), XOM: { ...makePriceTable().KO, current: 113, previousClose: 112, changePercent: 0.9 } });
+
+  for (const [label, proposal] of [
+    ['approved, stored identity', () => APPROVED_PROPOSAL()],
+    ['approved, legacy (symbol only)', () => legacy(APPROVED_PROPOSAL())],
+    ['expired, stored identity', () => EXPIRED_PROPOSAL()],
+    ['expired, legacy (symbol only)', () => legacy(EXPIRED_PROPOSAL())],
+  ]) {
+    it(`${label}: enforce refuses on the stored KO; XOM is never sold`, async () => {
+      flags.swapIdentity = 'enforce';
+      const { stored } = await runTick({ battle: xomBook({ pendingProposal: proposal() }), prices: withXomQuote() });
+      expect(exec.calls[0][10].expectedOut.symbol).toBe('KO');
+      expect(stored.trades).toEqual([]);
+      expect(stored.portfolio.support[0].symbol).toBe('XOM');
+      expect(stored.proposalHistory.at(-1).executionRefusal).toMatchObject({ reason: 'outgoing_identity_mismatch', verification: { found: { symbol: 'XOM' }, expected: { symbol: 'KO' } } });
+    });
+
+    it(`${label}: shadow trades as today (XOM goes out) and the row says mismatch`, async () => {
+      flags.swapIdentity = 'shadow';
+      const { stored } = await runTick({ battle: xomBook({ pendingProposal: proposal() }), prices: withXomQuote() });
+      expect(stored.trades.at(-1)).toMatchObject({ symbolOut: 'XOM', verification: { verdict: 'mismatch', expected: { symbol: 'KO' } } });
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('C5 — a fault AFTER the pass\'s swap committed is the pass\'s own fault, not an execution failure (review S4-8)', () => {
+  const pending = () => makeTickBattle({
+    gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] },
+    agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'stopLoss', value: 1, unit: '%', enforcement: 'hard' }] },
+  });
+
+  it('the post-commit refresh throws: the trade stands; capture files guardrail_error as before, and the execution check is untouched', async () => {
+    guardrailHook.result = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_stopLoss', statusMessage: 'Stop hit on KO.', overrides: [] };
+    const { permanent, stored } = await runTick({ battle: pending(), throwReadsAfterCommit: true });
+    expect(exec.committed).toBe(1);
+    expect(stored.trades.map((t) => t.symbolOut)).toEqual(['KO']);
+    expect(permanent.guardrail.faultClass).toBe('guardrail_error');
+    expect(permanent.checks.execution.status).not.toBe('failed');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -633,9 +857,11 @@ describe('A11 — the creation sites store the identity (mode ≠ off only)', ()
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('one resolution per check', () => {
-  it('the cron reads the flag through ONE call, never the constant itself', () => {
+  it('the cron reads the flag through the resolver only — once per check, plus the exported pass\'s own default — never the constant itself', () => {
     const code = CRON_SOURCE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-    expect(code.match(/currentSwapIdentityMode\(\)/g)).toHaveLength(1);
+    expect(code.match(/currentSwapIdentityMode\(\)/g)).toHaveLength(2);
+    expect(code).toMatch(/const swapIdentityMode = currentSwapIdentityMode\(\);/);
+    expect(code).toMatch(/swapIdentityMode = currentSwapIdentityMode\(\),\s*\}\) \{\s*if \(!PROFIT_TARGET_EXECUTOR_ENABLED\) return;/);
     expect(code).not.toMatch(/\bSWAP_IDENTITY_MODE\b/);
   });
 

@@ -3117,13 +3117,15 @@ export const PILOT_JOURNEY_MODES = Object.freeze(['off', 'advisory', 'live']);
  * resolveSwapIdentityMode) and resolved ONCE per evaluation check by the cron,
  * which hands that resolution to every executor call it makes:
  *   'off'     — nothing is computed: every executor call is made with exactly
- *               the ten arguments it had before P6, the executor's write and
- *               return value are byte-identical, no proposal or meeting leg
- *               stores an identity, and no refusal is recorded. Pinned by
- *               every existing golden (callRecords offGolden, the flag-off
- *               entry golden, tickCoherence noSwap, the guardrail pre-fix
- *               golden, the rollback golden) and the executor-level golden in
- *               api/_utils/agentSwapExecution.identity.test.js.
+ *               the arguments it had before P6 (ten, or nine for a meeting
+ *               leg), the executor's write and return value are
+ *               byte-identical, no proposal or meeting leg stores an
+ *               identity, and no refusal is recorded. Pinned by every
+ *               existing golden (callRecords offGolden, the flag-off entry
+ *               golden, tickCoherence noSwap, the guardrail pre-fix golden,
+ *               the rollback golden) and the executor-level golden in
+ *               api/_utils/agentSwapExecution.offGolden.test.js. Three
+ *               honest-record fixes ship at every mode (the P6 build report).
  *   'shadow'  — inside the transaction the executor compares the slot's live
  *               occupant `{ symbol, swappedInAt }` with the caller's belief and
  *               reads the battle's status; the trade proceeds EXACTLY as today

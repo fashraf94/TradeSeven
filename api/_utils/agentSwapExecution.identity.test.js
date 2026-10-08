@@ -246,6 +246,38 @@ describe('A2 — the changed slot (DCR-002 P02): the belief names KO, support[0]
   });
 });
 
+describe('the verification never carries undefined, and never a shared id (reviews S2-2, S1-2)', () => {
+  it('a caller with no tier or slot (an owner-written proposal): enforce refuses with slot {null, null} — Firestore would reject undefined', async () => {
+    const { db, commits } = makeDb(book());
+    let error = null;
+    try {
+      // tier and slot positionally undefined — exactly what `proposal.tier` / `proposal.slotIndex` hand over when absent
+      await executeSwap(db, BATTLE_ID, book(), undefined, undefined, AMD, 3, PRICES, META, null, { now: makeClock(), identityMode: 'enforce', expectedOut: KO_BELIEF });
+    } catch (err) {
+      error = err;
+    }
+    expect(error.reason).toBe('outgoing_identity_mismatch');
+    expect(error.verification.slot).toEqual({ tier: null, slotIndex: null });
+    const undefinedPaths = [];
+    const walk = (v, path) => {
+      if (v === undefined) undefinedPaths.push(path);
+      else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, `${path}.${k}`);
+    };
+    walk(error.verification, 'verification');
+    expect(undefinedPaths).toEqual([]);
+    expect(commits).toEqual([]);
+  });
+
+  it('a caller with no evaluation id gets verificationId null — not "<battle>:undefined:verify", which every such call would share', async () => {
+    for (const meta of [{ id: 'trade_x', action: 'SWAP' }, { ...META, evaluationId: '' }]) {
+      const { commits } = await swapAt('shadow', book(), { expectedOut: KO_BELIEF, meta });
+      expect(lastTrade(commits[0]).verification.verificationId).toBeNull();
+    }
+    const { error } = await swapAt('enforce', movedBook(), { expectedOut: KO_BELIEF, meta: { id: 'trade_y' } });
+    expect(error.verification.verificationId).toBeNull();
+  });
+});
+
 describe('A3 — the symbol left and came back: the same symbol, a different entry instant', () => {
   const returned = () => {
     const b = book();
@@ -418,6 +450,60 @@ describe('the seams (Phase 0 §8): one injected clock, one injected fetch', () =
     expect(fetchDailyReference).toHaveBeenCalledTimes(1);
     expect(fetchDailyReference).toHaveBeenCalledWith('NVDA', { forceRefresh: true, fields: ['daily', 'price'] });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('a crypto held from the start takes its Guard 2 reference by the UTC day OF THE INJECTED CLOCK (review S1-1)', async () => {
+    // Injected: 8 Oct 02:00 UTC (= 7 Oct 22:00 ET). A crypto settles on the UTC
+    // day, so the cutoff is 8 Oct and the prior-session bar is 7 Oct's. The
+    // system clock is set to 7 Oct 03:00 UTC: a utcToday read off it would cut
+    // at 7 Oct and pick 6 Oct's bar; an ET-day cutoff would too; a broken one
+    // picks none. Only the right read substitutes 70000.
+    const doc = book();
+    doc.portfolio.support = [{ symbol: 'BTC', name: 'Bitcoin', baseATR: 5, isCrypto: true }]; // creation-time, no swapPrice
+    doc.portfolio.bench.crypto = { symbol: 'ETH', name: 'Ethereum', baseATR: 6, isCrypto: true };
+    doc.portfolio.startingPrices.BTC = 60000;
+    const fetchDailyReference = vi.fn(async () => ({ daily: [
+      { date: '2026-10-07', rawClose: 70000, close: 70000 },
+      { date: '2026-10-06', rawClose: 60000, close: 60000 },
+    ] }));
+    const prices = { ...PRICES, BTC: { current: 69500, previousClose: 50000 }, ETH: { current: 3000, previousClose: 3010 } };
+    const store = makeDb(doc);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-07T03:00:00.000Z'));
+    try {
+      await executeSwap(store.db, BATTLE_ID, doc, 'support', 0, doc.portfolio.bench.crypto, 3, prices, META, null,
+        { now: () => new Date('2026-10-08T02:00:00.000Z'), fetchDailyReference, identityMode: 'off' });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(fetchDailyReference).toHaveBeenCalledTimes(1);
+    const notes = console.warn.mock.calls.map((c) => String(c[0])).filter((s) => s.startsWith('[guard3]'));
+    expect(notes).toEqual([expect.stringMatching(/^\[guard3\] BTC previousClose=50000 \(.*\); substituted 70000$/)]);
+    expect(store.commits).toHaveLength(1);
+  });
+
+  it('a stock held from the start takes its Guard 2 reference by the ET day OF THE INJECTED CLOCK (verifier SV1 side note)', async () => {
+    // Injected: 7 Oct 15:00 UTC (11:00 ET) — the ET cutoff is 7 Oct, so the
+    // prior-session bar is 6 Oct's (120). The bars run NEWEST-first, so a
+    // cutoff read off any later day picks 7 Oct's (130); the system clock is
+    // set years ahead to make every bypass land there.
+    const doc = book();
+    const fetchDailyReference = vi.fn(async () => ({ daily: [
+      { date: '2026-10-07', rawClose: 130, close: 130 },
+      { date: '2026-10-06', rawClose: 120, close: 120 },
+    ] }));
+    const prices = { ...PRICES, NVDA: { current: 121, previousClose: 160 } }; // a glitched previousClose
+    const store = makeDb(doc);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2031-03-09T07:00:00.000Z'));
+    try {
+      await executeSwap(store.db, BATTLE_ID, doc, 'core', 0, AMD, 3, prices, META, null,
+        { now: () => new Date(T0), fetchDailyReference, identityMode: 'off' });
+    } finally {
+      vi.useRealTimers();
+    }
+    const notes = console.warn.mock.calls.map((c) => String(c[0])).filter((s) => s.startsWith('[guard3]'));
+    expect(notes).toEqual([expect.stringMatching(/^\[guard3\] NVDA previousClose=160 \(.*\); substituted 120$/)]);
   });
 
   it('without the options bag the defaults are the system clock and the module fetch (the pre-P6 call)', async () => {

@@ -1,6 +1,6 @@
 # Mode-Truth Language Tables — V1 (Companion 2 to the Pilot Spec)
 
-**Date:** 23 September 2026 · **Author:** Fable (per R3) · **Status:** **Blessed by founder, 24 Sep 2026** (all five tables, walked through with Fable, no edits) — the only source player-facing strings ship from. · **Destination:** `docs/specs/`.
+**Date:** 23 September 2026 · **Author:** Fable (per R3) · **Status:** **Blessed by founder, 24 Sep 2026** (all five tables, walked through with Fable, no edits) — the only source player-facing strings ship from. **V1.1 — 7 Oct 2026:** table F added (founder decision D5); A–E unchanged. · **Destination:** `docs/specs/`.
 **Scope:** BaggerBomb v1 — every player-facing sentence the agent, tiles, and Film Room use for protective outcomes, intent, hypothesis lifecycle, and evidence availability. **The typed fields govern; these lines render them.** A rendered line that claims beyond its typed fields is a loggable divergence. Placeholders in `[brackets]` are filled from the record, never invented.
 
 ## A. Protective-action outcomes (wire enum → player line)
@@ -64,6 +64,6 @@ The executor's typed refusals: the trade reached the book after the belief it wa
 | `outgoing_identity_mismatch` (protective) | "Protection was set to sell [SYM], but [SYM] had already left that slot. No trade was made." |
 | `battle_not_active` | "This trade arrived after the battle ended. No trade was made." |
 
-Rules: the protective line renders refusals from the risk route and the suppression-path guardrail pass; every other caller renders the agent line. The server writes these lines (feed beats, history rows) only at `SWAP_IDENTITY_MODE ≠ off`; client labels are unchanged by V1.1. None of §E's words appear.
+Rules: the speaker follows the trade's own provenance (its receipt `source`), never the route that ran it. The **protective** line renders refusals of the deterministic exits — the risk manager's protective exits and the equipped guardrails (stop, trailing stop, profit target), on the model route and the suppression pass alike. The **agent** line renders every swap the agent itself decided — a model swap, an archetype (stagnation) exit, a proposal, a meeting leg. The server writes these lines (feed beats, history rows, the evaluation entry's refusal record) only at `SWAP_IDENTITY_MODE ≠ off`; a line whose placeholder the record cannot fill is not written. Client labels are unchanged by V1.1. None of §E's words appear.
 
 *V1 — wording blessed by the founder 24 Sep 2026. Amendments version-bump; only the blessed version ships. V1.1 — 7 Oct 2026: table F (founder decision D5).*

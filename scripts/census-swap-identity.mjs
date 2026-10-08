@@ -14,28 +14,36 @@
 //        risk        `trades[].evaluationId = risk_<reason>_<SYM>_<ms>`
 //        suppression `trades[].evaluationId = guardrail_<type>_<SYM>_<ms>`
 //        meeting     `trades[].evaluationId = gameplan_<OUT>_<IN>_<ms>`
-//        model       `evaluations[].symbolOut` where evalId = trades[].evaluationId
-//        proposal    the same join (entryMode copilot/manual), else
+//        model       `evaluations[].symbolOut` of the SWAP entry with the row's
+//                    evalId AND incoming symbol (evalIds repeat on battles
+//                    older than the Sep 21 evaluation counter)
+//        proposal    the same join on a PROPOSAL entry, else
 //                    `proposalHistory[].symbolOut` by its evaluationMetadata.evaluationId
 //      A row whose belief cannot be joined (an evaluation that aged out of the
-//      150-entry cap) is counted as `unknown`, never as a match.
+//      150-entry cap) is counted as `unknown`, never as a match; one whose join
+//      finds conflicting beliefs is `ambiguous`, never a mismatch.
 //   2. THE SHADOW READ (once SWAP_IDENTITY_MODE ≠ 'off'): every
 //      `trades[].verification` the executor wrote, by caller × verdict × basis;
 //      a cross-check that the executor's verdict agrees with the symbol
 //      comparison above; and the refusals the callers recorded at 'enforce'
 //      (evaluation `executionRefusal`, proposal / meeting history rows, feed
 //      beats), plus the honest-record markers (`executionFailed`,
-//      `auto_execution_failed`).
+//      `auto_execution_failed`). A `verification` the executor did not write
+//      (wrong mode or id — e.g. planted through a client-written proposal) is
+//      counted apart as invalid, never as a verdict.
 //
-// RETENTION: `trades[]` keeps the last 50 rows per battle and `evaluations[]`
-// the last 150, so the census covers a retained window, not all history — the
-// report prints each window. Run it at least weekly during the shadow period.
+// RETENTION: `trades[]` keeps the last 50 rows per battle, `evaluations[]` the
+// last 150, `proposalHistory[]` the last 50, the feed the last 100 beats — so
+// the census covers a retained window, not all history. The report prints each
+// battle's trade and evaluation windows. Run it at least weekly during the
+// shadow period.
 //
 // READ-ONLY BY CONSTRUCTION. The Firestore calls in this file are `.select()`,
 // `.get()` and `getAll()` reads only. There is no `set`, `update`, `delete`,
-// `create`, `runTransaction`, `batch` or `bulkWriter` call — grep it before
-// running it (scripts/census-swap-identity.test.js does). The only files it
-// writes are the local report named by --out and the JSON named by --json.
+// `create`, `add`, `commit`, `runTransaction`, `batch`, `bulkWriter` or
+// `recursiveDelete` call — scripts/census-swap-identity.test.js pins every
+// member call in this file to a reviewed allowlist. The only files it writes
+// are the local report named by --out and the JSON named by --json.
 //
 // CREDENTIALS — the existing loaders only, loaded LAZILY inside main() so that
 // importing this module (the test does) reads no environment and touches no
@@ -45,8 +53,10 @@
 //
 // USAGE (repo root):
 //   node scripts/census-swap-identity.mjs [--since=<ISO>] [--out <report.md>] [--json <data.json>]
-//     --since=<ISO>  count only trades committed at/after this instant (e.g. the
-//                    shadow flip's production deploy); battles that expired
+//     --since=<ISO>  (or `--since <ISO>`) count only what happened at/after this
+//                    instant (e.g. the shadow flip's production deploy): trades
+//                    by swappedOutAt, entries and beats by timestamp, history
+//                    rows by resolvedAt (else createdAt); battles that expired
 //                    before it are not read. Omitted: every retained row.
 
 import { writeFileSync } from 'node:fs';
@@ -84,26 +94,60 @@ export function beliefFromEvaluationId(evaluationId) {
 }
 
 /**
- * The caller and belief behind one retained trade row: `{ caller, belief }`,
- * belief null when it cannot be joined (never guessed).
+ * The caller and belief behind one retained trade row:
+ * `{ caller, belief, ambiguous }` — belief null when it cannot be joined
+ * (never guessed). An evaluation id is NOT unique on every battle (battles
+ * that passed 150 entries before `evalSeq`, Sep 21, repeat `eval_151`), so a
+ * model or proposal row joins the entries that share its id AND its incoming
+ * symbol AND decided SWAP or PROPOSAL; more than one such entry with
+ * different beliefs → ambiguous (counted apart, never as a mismatch). The
+ * caller comes from the joined entry's decision (PROPOSAL → proposal), not
+ * the trade's entryMode, which a co-pilot battle's model swaps also carry
+ * (review S4-2).
  */
 export function beliefOfTrade(trade, battle) {
   const structured = beliefFromEvaluationId(trade?.evaluationId);
-  if (structured) return structured;
-  const caller = PROPOSAL_MODES.has(trade?.entryMode) ? 'proposal' : (typeof trade?.evaluationId === 'string' ? 'model' : 'unknown');
-  if (typeof trade?.evaluationId !== 'string') return { caller, belief: null };
-  const entry = (Array.isArray(battle?.evaluations) ? battle.evaluations : []).find((e) => e?.evalId === trade.evaluationId);
-  if (entry && typeof entry.symbolOut === 'string' && entry.symbolOut) return { caller, belief: entry.symbolOut };
-  const proposal = (Array.isArray(battle?.proposalHistory) ? battle.proposalHistory : [])
-    .find((p) => p?.evaluationMetadata?.evaluationId === trade.evaluationId || p?.evalId === trade.evaluationId);
-  if (proposal && typeof proposal.symbolOut === 'string' && proposal.symbolOut) return { caller: 'proposal', belief: proposal.symbolOut };
-  return { caller, belief: null };
+  if (structured) return { ...structured, ambiguous: false };
+  const fallbackCaller = PROPOSAL_MODES.has(trade?.entryMode) ? 'proposal' : (typeof trade?.evaluationId === 'string' ? 'model' : 'unknown');
+  if (typeof trade?.evaluationId !== 'string') return { caller: fallbackCaller, belief: null, ambiguous: false };
+  const joined = (Array.isArray(battle?.evaluations) ? battle.evaluations : []).filter((e) => e?.evalId === trade.evaluationId
+    && (e.decision === 'SWAP' || e.decision === 'PROPOSAL')
+    && e.symbolIn === trade.symbolIn
+    && typeof e.symbolOut === 'string' && e.symbolOut);
+  const beliefs = [...new Set(joined.map((e) => e.symbolOut))];
+  if (beliefs.length > 1) return { caller: fallbackCaller, belief: null, ambiguous: true };
+  if (beliefs.length === 1) return { caller: joined[0].decision === 'PROPOSAL' ? 'proposal' : 'model', belief: beliefs[0], ambiguous: false };
+  const proposals = (Array.isArray(battle?.proposalHistory) ? battle.proposalHistory : [])
+    .filter((p) => (p?.evaluationMetadata?.evaluationId === trade.evaluationId || p?.evalId === trade.evaluationId)
+      && p.symbolIn === trade.symbolIn && typeof p.symbolOut === 'string' && p.symbolOut);
+  const proposalBeliefs = [...new Set(proposals.map((p) => p.symbolOut))];
+  if (proposalBeliefs.length > 1) return { caller: 'proposal', belief: null, ambiguous: true };
+  if (proposalBeliefs.length === 1) return { caller: 'proposal', belief: proposalBeliefs[0], ambiguous: false };
+  return { caller: fallbackCaller, belief: null, ambiguous: false };
+}
+
+/**
+ * Is this a verification the executor wrote? Its mode is shadow or enforce
+ * and its id is the one the executor derives from the row's own evaluation id
+ * (null when the row has none). Anything else — e.g. an object an owner
+ * planted in a proposal's evaluationMetadata, which the executor spreads into
+ * the row and does not replace at 'off' — is counted apart as invalid, never
+ * as a verdict (review S3-3).
+ */
+export function isExecutorVerification(v, trade, battleId) {
+  if (!v || typeof v !== 'object' || (v.mode !== 'shadow' && v.mode !== 'enforce')) return false;
+  const evaluationId = trade?.evaluationId;
+  const expectedId = typeof evaluationId === 'string' && evaluationId ? `${battleId}:${evaluationId}:verify` : null;
+  return v.verificationId === expectedId;
 }
 
 const emptyCallerRow = () => ({
-  trades: 0, beliefKnown: 0, beliefUnknown: 0, mismatches: 0,
-  verification: { present: 0, match: 0, mismatch: 0, not_checked: 0, other: 0, symbol_and_entry: 0, symbol_only: 0 },
+  trades: 0, beliefKnown: 0, beliefUnknown: 0, beliefAmbiguous: 0, mismatches: 0,
+  verification: { present: 0, match: 0, mismatch: 0, not_checked: 0, other: 0, symbol_and_entry: 0, symbol_only: 0, invalid: 0 },
 });
+
+/** When a history row happened: its resolution, else its creation. */
+const rowMs = (row) => toMs(row?.resolvedAt) ?? toMs(row?.createdAt);
 
 /**
  * The census over a set of battles (`{ [battleId]: battleDoc }` or a Map).
@@ -116,6 +160,7 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
   const disagreements = [];
   const verificationMismatches = [];
   const windows = [];
+  const invalidVerifications = [];
   const refusals = { entries: {}, proposalHistory: {}, meetingLegs: {}, feedBeats: {} };
   const honest = { proposalExecutionFailed: 0, autoExecutionFailed: 0 };
   const modesSeen = {};
@@ -127,16 +172,26 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
   for (const [battleId, battle] of entries) {
     const trades = Array.isArray(battle?.trades) ? battle.trades : [];
     const times = trades.map((t) => toMs(t?.swappedOutAt)).filter((ms) => ms != null);
-    if (trades.length) windows.push({ battleId, rows: trades.length, from: times.length ? new Date(Math.min(...times)).toISOString() : null, to: times.length ? new Date(Math.max(...times)).toISOString() : null });
+    const evals = Array.isArray(battle?.evaluations) ? battle.evaluations : [];
+    const evalTimes = evals.map((e) => toMs(e?.timestamp)).filter((ms) => ms != null);
+    const iso = (list, pick) => (list.length ? new Date(pick(...list)).toISOString() : null);
+    if (trades.length || evals.length) {
+      windows.push({
+        battleId,
+        rows: trades.length, from: iso(times, Math.min), to: iso(times, Math.max),
+        evaluations: evals.length, evaluationsFrom: iso(evalTimes, Math.min),
+      });
+    }
 
     for (const trade of trades) {
       if (!counted(toMs(trade?.swappedOutAt))) continue;
       tradeRows += 1;
-      const { caller, belief } = beliefOfTrade(trade, battle);
+      const { caller, belief, ambiguous } = beliefOfTrade(trade, battle);
       const row = byCaller[caller] || byCaller.unknown;
       row.trades += 1;
       const committed = trade?.symbolOut ?? null;
-      if (belief == null) row.beliefUnknown += 1;
+      if (ambiguous) row.beliefAmbiguous += 1;
+      else if (belief == null) row.beliefUnknown += 1;
       else {
         row.beliefKnown += 1;
         if (belief !== committed) {
@@ -145,7 +200,10 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
         }
       }
       const v = trade?.verification;
-      if (v && typeof v === 'object') {
+      if (v != null && !isExecutorVerification(v, trade, battleId)) {
+        row.verification.invalid += 1;
+        invalidVerifications.push({ battleId, caller, evaluationId: trade.evaluationId ?? null, verificationId: v?.verificationId ?? null, mode: v?.mode ?? null });
+      } else if (v) {
         row.verification.present += 1;
         if (VERDICTS.includes(v.verdict)) row.verification[v.verdict] += 1; else row.verification.other += 1;
         if (v.basis === 'symbol_and_entry' || v.basis === 'symbol_only') row.verification[v.basis] += 1;
@@ -163,11 +221,13 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
       if (e?.executionRefusal && counted(toMs(e.timestamp))) inc(refusals.entries, String(e.executionRefusal.reason));
     }
     for (const p of Array.isArray(battle?.proposalHistory) ? battle.proposalHistory : []) {
+      if (!counted(rowMs(p))) continue;
       if (p?.executionRefusal) inc(refusals.proposalHistory, String(p.executionRefusal.reason));
       if (p?.executionFailed === true) honest.proposalExecutionFailed += 1;
       if (p?.resolution === 'auto_execution_failed') honest.autoExecutionFailed += 1;
     }
     for (const m of Array.isArray(battle?.gameplanMeetingHistory) ? battle.gameplanMeetingHistory : []) {
+      if (!counted(rowMs(m))) continue;
       for (const leg of Array.isArray(m?.legRefusals) ? m.legRefusals : []) inc(refusals.meetingLegs, `${leg?.reason}${leg?.verification ? '' : ' (departed)'}`);
     }
     for (const beat of Array.isArray(battle?.statusFeed) ? battle.statusFeed : []) {
@@ -175,7 +235,7 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
     }
   }
 
-  return { battles: entries.length, tradeRows, byCaller, mismatches, verificationMismatches, disagreements, refusals, honest, modesSeen, windows, sinceMs };
+  return { battles: entries.length, tradeRows, byCaller, mismatches, verificationMismatches, disagreements, invalidVerifications, refusals, honest, modesSeen, windows, sinceMs };
 }
 
 /** The census as a Markdown report. */
@@ -189,8 +249,10 @@ export function renderCensus(result, { readAt = null } = {}) {
   p();
   p('## 1. Believed vs committed outgoing symbol (any mode)');
   p();
-  tbl(['Caller', 'Trades', 'Belief joined', 'Belief unknown', 'Believed ≠ committed'],
-    CALLERS.map((c) => { const r = result.byCaller[c]; return [c, String(r.trades), String(r.beliefKnown), String(r.beliefUnknown), String(r.mismatches)]; }));
+  tbl(['Caller', 'Trades', 'Belief joined', 'Belief unknown', 'Belief ambiguous', 'Believed ≠ committed'],
+    CALLERS.map((c) => { const r = result.byCaller[c]; return [c, String(r.trades), String(r.beliefKnown), String(r.beliefUnknown), String(r.beliefAmbiguous), String(r.mismatches)]; }));
+  p();
+  p('*Belief unknown*: the row\'s evaluation (or proposal) has aged out of the battle\'s retained entries, so its belief cannot be read — never counted as a match. *Belief ambiguous*: more than one retained entry shares the row\'s evaluation id and incoming symbol with different beliefs (battles older than the Sep 21 evaluation counter repeat ids) — never counted as a mismatch.');
   p();
   if (result.mismatches.length) {
     tbl(['Battle', 'Caller', 'evaluationId', 'Believed', 'Committed', 'swappedOutAt'],
@@ -202,9 +264,16 @@ export function renderCensus(result, { readAt = null } = {}) {
   }
   p('## 2. `trades[].verification` (shadow / enforce)');
   p();
-  tbl(['Caller', 'Rows with verification', 'match', 'mismatch', 'not_checked', 'symbol_and_entry', 'symbol_only'],
-    CALLERS.map((c) => { const v = result.byCaller[c].verification; return [c, String(v.present), String(v.match), String(v.mismatch), String(v.not_checked), String(v.symbol_and_entry), String(v.symbol_only)]; }));
+  tbl(['Caller', 'Rows with verification', 'match', 'mismatch', 'not_checked', 'symbol_and_entry', 'symbol_only', 'invalid (not the executor\'s)'],
+    CALLERS.map((c) => { const v = result.byCaller[c].verification; return [c, String(v.present), String(v.match), String(v.mismatch), String(v.not_checked), String(v.symbol_and_entry), String(v.symbol_only), String(v.invalid)]; }));
   p();
+  if (result.invalidVerifications.length) {
+    p('Rows carrying a `verification` the executor did not write (wrong mode or id — e.g. planted through a client-written proposal). Excluded from every count above:');
+    p();
+    tbl(['Battle', 'Caller', 'evaluationId', 'verificationId', 'mode'],
+      result.invalidVerifications.map((x) => [x.battleId, x.caller, String(x.evaluationId), String(x.verificationId), String(x.mode)]));
+    p();
+  }
   p(`Modes seen on rows: ${Object.keys(result.modesSeen).length ? Object.entries(result.modesSeen).map(([k, n]) => `${k} ${n}`).join(', ') : 'none (SWAP_IDENTITY_MODE off for every retained row)'}`);
   p();
   p(`Verdict disagrees with the symbol comparison (must be 0): **${result.disagreements.length}**`);
@@ -226,9 +295,12 @@ export function renderCensus(result, { readAt = null } = {}) {
     ["proposal history `resolution: 'auto_execution_failed'`", String(result.honest.autoExecutionFailed)],
   ]);
   p();
-  p('## 4. Retained windows (trades[] keeps the last 50 rows per battle)');
+  p('## 4. Retained windows');
   p();
-  tbl(['Battle', 'Rows', 'From', 'To'], result.windows.map((w) => [w.battleId, String(w.rows), String(w.from), String(w.to)]));
+  p('Every count above covers what the battle documents still hold: `trades[]` keeps the last 50 rows, `evaluations[]` the last 150 entries, `proposalHistory[]` the last 50 rows, and the feed the last 100 beats; `gameplanMeetingHistory[]` is not capped. A trade older than its battle\'s oldest retained evaluation reads *belief unknown*.');
+  p();
+  tbl(['Battle', 'Trade rows', 'Trades from', 'Trades to', 'Evaluations', 'Evaluations from'],
+    result.windows.map((w) => [w.battleId, String(w.rows), String(w.from), String(w.to), String(w.evaluations), String(w.evaluationsFrom)]));
   return L.join('\n');
 }
 
@@ -265,9 +337,12 @@ export function firestoreReader(db) {
 
 export function parseArgs(argv) {
   const argOf = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
-  const sinceArg = argv.find((a) => a.startsWith('--since='));
-  const sinceMs = sinceArg ? Date.parse(sinceArg.slice('--since='.length)) : null;
-  if (sinceArg && !Number.isFinite(sinceMs)) throw new Error(`--since needs an ISO instant, got "${sinceArg}"`);
+  // `--since=<ISO>` or `--since <ISO>` — never silently ignored (review S4-6).
+  const inline = argv.find((a) => a.startsWith('--since='));
+  const sinceText = inline ? inline.slice('--since='.length) : (argv.includes('--since') ? argOf('--since') : null);
+  if ((inline || argv.includes('--since')) && !sinceText) throw new Error('--since needs an ISO instant');
+  const sinceMs = sinceText != null ? Date.parse(sinceText) : null;
+  if (sinceText != null && !Number.isFinite(sinceMs)) throw new Error(`--since needs an ISO instant, got "${sinceText}"`);
   return { outPath: argOf('--out'), jsonPath: argOf('--json'), sinceMs };
 }
 

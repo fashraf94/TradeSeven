@@ -34,7 +34,7 @@ const GUARD = readFileSync(path.join(HERE, 'flagPinGuard.test.js'), 'utf8');
 const EXECUTOR = readFileSync(path.join(HERE, '..', '..', 'api', '_utils', 'agentSwapExecution.js'), 'utf8');
 
 describe('SWAP_IDENTITY_MODE — the dedicated pin (BUILD_RULES §2; spec §7)', () => {
-  it("ships 'off' — the executor computes nothing and every caller passes its pre-P6 ten arguments", () => {
+  it('the pin: the live value (it moves with the walk, off → shadow → enforce)', () => {
     // THE ROW THAT MOVES WITH THE WALK. 'off' → 'shadow' → 'enforce', each in
     // its own founder PR, each updating this literal in the same commit.
     expect(SWAP_IDENTITY_MODE).toBe('off');
@@ -79,8 +79,9 @@ describe('the resolver — unknown values resolve to off (fail closed)', () => {
     expect(resolveSwapIdentityMode(value)).toBe('off');
   });
 
-  it("the executor's default reads THIS flag, and normalizes it through the resolver before anything branches on it", () => {
-    expect(EXECUTOR).toMatch(/identityMode = SWAP_IDENTITY_MODE,/);
+  it("the executor's default reads THIS flag (guarded — a hermetic mock that omits it reads 'off', review S3-1) and normalizes it before anything branches on it", () => {
+    expect(EXECUTOR).toMatch(/identityMode = flagSwapIdentityMode\(\), \/\/ SWAP_IDENTITY_MODE/);
+    expect(EXECUTOR.replace(/\r\n/g, '\n')).toContain("function flagSwapIdentityMode() {\n  try {\n    return SWAP_IDENTITY_MODE;\n  } catch {\n    return 'off';\n  }\n}");
     expect(EXECUTOR).toMatch(/const mode = resolveSwapIdentityMode\(identityMode\);/);
     // Nothing in the executor branches on the raw option.
     expect(EXECUTOR).not.toMatch(/\bidentityMode\s*[!=]==/);

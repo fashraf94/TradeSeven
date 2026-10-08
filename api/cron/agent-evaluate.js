@@ -56,7 +56,7 @@ import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExe
 // read once per check; the executor's trailing options (none at 'off', so every
 // call keeps its pre-P6 arguments); the belief each caller hands it; and the
 // refusal records and table F lines each caller writes at mode ≠ off.
-import { currentSwapIdentityMode, swapIdentityActive, swapIdentityOptions, expectedOutOfPosition, expectedOutOfStored, storedIdentityOf, isSwapRefusal, refusalRecord, refusalFeedFields, departedLegRecord } from '../_utils/swapIdentity.js';
+import { currentSwapIdentityMode, swapIdentityActive, swapIdentityOptions, expectedOutOfPosition, expectedOutOfStored, storedIdentityOf, isSwapRefusal, refusalKindOf, refusalRecord, refusalFeedFields, departedLegRecord } from '../_utils/swapIdentity.js';
 // P2 League Tournament — agent-market exclusivity (Spec §1.2). Every use is
 // tournament-conditional: resolveTournamentContext returns null for regular
 // battles from in-memory fields alone (zero Firestore I/O), so the
@@ -2031,8 +2031,12 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           db, battle.id, battle,
           slot.tier, slot.slotIndex,
           replacement, currentDay, prices, evaluationMetadata, snapshot,
-          // P6: the belief — the position this loop resolved by symbol just above.
-          ...swapIdentityOptions(swapIdentityMode, expectedOutOfPosition(battle.portfolio?.[slot.tier]?.[slot.slotIndex]))
+          // P6: the belief — the position the risk verdict was computed on
+          // (`asset`, this tick's own picture), not the book as refreshed
+          // after an earlier exit: an occupant that changed underneath this
+          // loop is named, never sold under another position's verdict
+          // (review S2-3).
+          ...swapIdentityOptions(swapIdentityMode, expectedOutOfPosition(asset))
         );
         // Capture (C-10): the COMMITTED action, read off the executor's own
         // return before any later await, identified INSIDE the record only.
@@ -2253,7 +2257,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // tick's risk pass judges it on its own numbers). The beat renders
           // table F and carries the typed reason.
           ...(swapIdentityActive(swapIdentityMode) && isSwapRefusal(err)
-            ? refusalFeedFields(err, { kind: 'protective', symbolIn: replacement?.symbol ?? null })
+            ? refusalFeedFields(err, { kind: refusalKindOf(riskResult.reason === 'stagnation' ? 'archetype' : 'risk_manager'), symbolIn: replacement?.symbol ?? null })
             : {}),
         });
         // P2: compensating release (the reserve landed but the swap didn't).
@@ -2413,10 +2417,15 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // was about (a departed or returned symbol is named, never traded as if
       // it were the original). Mode ≠ off only; a leg without it is checked by
       // symbol only.
+      // Read from the detector's OWN picture (`flatPortfolio`), the one each
+      // leg was chosen from — never the book as refreshed by an earlier
+      // execution this tick (review S2-4). A leg the picture cannot place
+      // stores nothing and is checked by symbol only — never null, which
+      // would claim a creation-time position (verifier SV2-S2-4).
       if (gameplanTrigger && swapIdentityActive(swapIdentityMode)) {
         gameplanTrigger.suggestedSwaps = gameplanTrigger.suggestedSwaps.map((leg) => {
-          const legSlot = findPortfolioSlot(battle.portfolio, leg.symbolOut);
-          return legSlot ? { ...leg, swappedInAt: storedIdentityOf(battle.portfolio[legSlot.tier]?.[legSlot.slotIndex]) } : leg;
+          const held = flatPortfolio.find((a) => a.symbol === leg.symbolOut);
+          return held ? { ...leg, swappedInAt: storedIdentityOf(held) } : leg;
         });
       }
       // R11: the tick that CREATES a meeting is a suppression tick too ("gameplan
@@ -2425,7 +2434,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // referencing the departed symbol resolves at approval time via
       // handleGameplanMeeting's per-leg slot re-resolve: findPortfolioSlot on the
       // refreshed doc returns null for a departed symbolOut and the leg is
-      // SILENTLY skipped (`if (!slot) continue;`), while a taken symbolIn gets
+      // skipped (`if (!slot)`; silently at SWAP_IDENTITY_MODE 'off', recorded
+      // as a refusal at shadow/enforce — Pilot P6), while a taken symbolIn gets
       // the visible reserve-fail hold. The same staleness class risk swaps
       // already create for pending meetings today (they run before this gate on
       // every tick); the pass widens its frequency, never its mechanism.
@@ -3825,7 +3835,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               });
             });
             validationErrors.push(`Swap execution failed: ${swapErr.message}`);
-            if (swapRefused) executionRefusal = refusalRecord(swapErr, { kind: 'agent', symbolIn: haikuResult?.symbolIn ?? null });
+            // The speaker follows the trade's provenance: a guardrail-forced
+            // exit on this route is protective, a model swap is the agent's.
+            if (swapRefused) executionRefusal = refusalRecord(swapErr, { kind: refusalKindOf(haikuSwapReason === 'haiku_decision' ? 'haiku' : 'guardrail'), symbolIn: haikuResult?.symbolIn ?? null });
             decision = 'HOLD';
             downgraded = true;
             // P2: compensating release (no-op unless the reserve had landed).
@@ -5035,13 +5047,13 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         console.error(`${LOG_PREFIX} Approved proposal execution failed:`, err.message);
         approvedExecutionFailed = true;
         const approvedRefused = swapIdentityActive(swapIdentityMode) && isSwapRefusal(err);
-        if (approvedRefused) approvedRefusal = refusalRecord(err, { kind: 'agent', symbolIn: proposal.symbolIn ?? null });
+        if (approvedRefused) approvedRefusal = refusalRecord(err, { kind: refusalKindOf('haiku'), symbolIn: proposal.symbolIn ?? null });
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
           message: `Approved swap failed: ${err.message}`,
           action: 'hold', source: 'proposal_system',
           // P6: a typed refusal renders its table F line and carries its reason.
-          ...(approvedRefused ? refusalFeedFields(err, { kind: 'agent', symbolIn: proposal.symbolIn ?? null }) : {}),
+          ...(approvedRefused ? refusalFeedFields(err, { kind: refusalKindOf('haiku'), symbolIn: proposal.symbolIn ?? null }) : {}),
         });
         // P2: compensating release (no-op unless the reserve had landed).
         await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
@@ -5253,7 +5265,15 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
       console.error(`${LOG_PREFIX} Expired copilot proposal execution failed:`, err.message);
       expiredExecutionFailed = true;
       if (swapIdentityActive(swapIdentityMode) && isSwapRefusal(err)) {
-        expiredRefusal = refusalRecord(err, { kind: 'agent', symbolIn: proposal.symbolIn ?? null });
+        expiredRefusal = refusalRecord(err, { kind: refusalKindOf('haiku'), symbolIn: proposal.symbolIn ?? null });
+        // P6 (review S2-5): the player sees it — this path had no beat at all.
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: 'Proposal expired; its swap was refused.', // replaced by the table F line whenever the record fills it
+          action: 'hold', source: 'proposal_system',
+          symbolOut: proposal.symbolOut ?? null, symbolIn: proposal.symbolIn ?? null,
+          ...refusalFeedFields(err, { kind: refusalKindOf('haiku'), symbolIn: proposal.symbolIn ?? null }),
+        });
       }
       // P2: compensating release (no-op unless the reserve had landed).
       await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
@@ -5343,8 +5363,8 @@ export async function runSuppressionDeterministicPass({
   currentDay, currentScore, marketPosture, dialClamp, momentumData,
   technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks,
   callsCtx = null,
-  // P6: the check's swap identity mode (resolved once per check by the caller).
-  swapIdentityMode,
+  // P6: the check's mode (both call sites pass it; a direct caller reads the flag — S3-1).
+  swapIdentityMode = currentSwapIdentityMode(),
 }) {
   if (!PROFIT_TARGET_EXECUTOR_ENABLED) return;
 
@@ -5741,7 +5761,7 @@ export async function runSuppressionDeterministicPass({
       symbolOut: deterministicResult?.symbolOut || null,
       symbolIn: deterministicResult?.symbolIn || null,
       // P6 (D2): a typed refusal HOLDS and renders its table F line.
-      ...(passRefused ? refusalFeedFields(err, { kind: 'protective', symbolIn: deterministicResult?.symbolIn ?? null }) : {}),
+      ...(passRefused ? refusalFeedFields(err, { kind: refusalKindOf('guardrail'), symbolIn: deterministicResult?.symbolIn ?? null }) : {}),
     });
     // P2: compensating release (the reserve landed but the swap didn't).
     await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
@@ -5784,9 +5804,18 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         }
         const slot = findPortfolioSlot(battle.portfolio, swap.symbolOut);
         if (!slot) {
-          // P6: the leg's outgoing symbol left the book — held, and (mode ≠ off) recorded.
+          // P6: the leg's outgoing symbol left the book — held, and (mode ≠ off)
+          // recorded on the history row and shown in the feed (review S2-5).
           if (swapIdentityActive(swapIdentityMode)) {
-            legRefusals.push({ symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null, ...departedLegRecord(swap) });
+            const departed = departedLegRecord(swap);
+            legRefusals.push({ symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null, ...departed });
+            statusFeedEntries.push({
+              timestamp: new Date().toISOString(),
+              message: departed.line ?? 'A gameplan swap was skipped — the stock it named is no longer held.',
+              action: 'hold', source: 'gameplan_meeting',
+              symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null,
+              refusalReason: departed.reason, verificationId: null,
+            });
           }
           continue;
         }
@@ -5953,7 +5982,16 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
       } catch (err) {
         console.error(`${LOG_PREFIX} Gameplan swap failed for ${swap.symbolOut}:`, err.message);
         if (swapIdentityActive(swapIdentityMode) && isSwapRefusal(err)) {
-          legRefusals.push({ symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null, ...refusalRecord(err, { kind: 'agent', symbolIn: swap.symbolIn ?? null }) });
+          const legKind = refusalKindOf('gameplan_meeting');
+          legRefusals.push({ symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null, ...refusalRecord(err, { kind: legKind, symbolIn: swap.symbolIn ?? null }) });
+          // P6 (review S2-5): the meeting card is gone once approved — the feed says what happened.
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: 'A gameplan swap was refused.', // replaced by the table F line whenever the record fills it
+            action: 'hold', source: 'gameplan_meeting',
+            symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null,
+            ...refusalFeedFields(err, { kind: legKind, symbolIn: swap.symbolIn ?? null }),
+          });
         }
         // P2: compensating release (no-op unless the reserve had landed).
         await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);

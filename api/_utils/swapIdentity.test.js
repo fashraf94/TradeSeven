@@ -17,7 +17,7 @@ import { describe, it, expect } from 'vitest';
 import {
   SWAP_IDENTITY_OFF, currentSwapIdentityMode, swapIdentityActive, swapIdentityOptions,
   expectedOutOfPosition, expectedOutOfStored, storedIdentityOf, isSwapRefusal,
-  REFUSAL_LINES, REFUSAL_KINDS, refusalLine, refusalRecord, departedLegRecord, refusalFeedFields,
+  REFUSAL_LINES, REFUSAL_KINDS, PROTECTIVE_SOURCES, refusalKindOf, refusalLine, refusalRecord, departedLegRecord, refusalFeedFields,
 } from './swapIdentity.js';
 import { SwapRefusalError, SWAP_REFUSAL_REASONS } from './agentSwapExecution.js';
 import { SWAP_IDENTITY_MODE } from '../../src/config/featureFlags.js';
@@ -137,13 +137,23 @@ describe('the refusal records', () => {
     });
   });
 
-  it('refusalFeedFields: the line as the message, the typed reason, the id — and no message key when the line cannot be filled', () => {
+  it('refusalFeedFields: the line as the message, the typed reason, the id, the verification itself — and no message key when the line cannot be filled', () => {
     expect(refusalFeedFields(refusal(), { kind: 'agent', symbolIn: 'AMD' })).toEqual({
       message: 'The agent tried to swap KO for AMD, but KO had already left that slot. No trade was made.',
       refusalReason: 'outgoing_identity_mismatch',
       verificationId: 'b1:eval_7:verify',
+      verification: VERIFICATION,
     });
-    expect(refusalFeedFields(refusal(), { kind: 'agent', symbolIn: null })).toEqual({ refusalReason: 'outgoing_identity_mismatch', verificationId: 'b1:eval_7:verify' });
+    expect(refusalFeedFields(refusal(), { kind: 'agent', symbolIn: null })).toEqual({ refusalReason: 'outgoing_identity_mismatch', verificationId: 'b1:eval_7:verify', verification: VERIFICATION });
+  });
+
+  it('the speaker follows the trade\'s provenance (its receipt source), never the route that ran it (review S2-1 / S4-1)', () => {
+    expect(PROTECTIVE_SOURCES).toEqual(['risk_manager', 'guardrail']);
+    expect(refusalKindOf('risk_manager')).toBe('protective');
+    expect(refusalKindOf('guardrail')).toBe('protective'); // an equipped stop, trailing stop or profit target — model route or suppression pass
+    for (const source of ['haiku', 'archetype', 'gameplan_meeting', 'proposal_system', undefined, null]) {
+      expect(refusalKindOf(source)).toBe('agent');
+    }
   });
 
   it('isSwapRefusal: only the executor\'s typed refusal (a reason it can raise, with its verification)', () => {

@@ -10,7 +10,7 @@ import {
 } from './agentScoring.js';
 import { resolveThresholdBaseline } from './baselineValidation.js';
 import { getStockAnalysisData } from './marketDataCache.js';
-import { formatDateString } from './marketSchedule.js';
+import { getETDate, formatDateString } from './marketSchedule.js';
 // P4 mode config (founder ruling D1) — Node-clean src import under the revised
 // June 2026 import rule (BUILD_RULES §4); the co-located test's import of this
 // module is the dependency-surface guard.
@@ -111,6 +111,15 @@ export class SwapRefusalError extends Error {
   }
 }
 
+/** The flag's value, or 'off' when it cannot be read (a hermetic test mock that omits it). Never throws. */
+function flagSwapIdentityMode() {
+  try {
+    return SWAP_IDENTITY_MODE;
+  } catch {
+    return 'off';
+  }
+}
+
 /** The mode `value` names, or 'off' for anything that is not one of the walked states. Never throws. */
 export function resolveSwapIdentityMode(value) {
   try {
@@ -140,15 +149,18 @@ function buildVerification({ battleId, evaluationMetadata, mode, expectedOut, ou
     const sameEntry = basis === 'symbol_only' || expected.swappedInAt === found.swappedInAt;
     verdict = sameSymbol && sameEntry ? 'match' : 'mismatch';
   }
+  // A caller without an evaluation identity (a client-written proposal) gets
+  // no id rather than one every such call on the battle would share.
+  const evaluationId = evaluationMetadata?.evaluationId;
   return {
-    verificationId: `${battleId}:${evaluationMetadata?.evaluationId}:verify`,
+    verificationId: typeof evaluationId === 'string' && evaluationId ? `${battleId}:${evaluationId}:verify` : null,
     mode,
     expected,
     found,
     verdict,
     basis,
     battleStatus: liveData.status ?? null,
-    slot: { tier: resolvedTier, slotIndex: resolvedSlotIndex },
+    slot: { tier: resolvedTier ?? null, slotIndex: resolvedSlotIndex ?? null }, // never undefined (Firestore)
     tradeSeq: liveData.scoreState?.tradeCount || 0,
     checkedAt,
   };
@@ -195,7 +207,8 @@ function refusalOf(verification) {
  * @param {Object} currentPrices - { symbol: { current, previousClose, ... } }
  * @param {Object} evaluationMetadata - { id, action, trigger, rationale, hypothesis, evaluationId, tradingDay }
  * @param {Object|null} snapshot - Phase 4: per-symbol technical snapshot { symbolOut, symbolIn }, persisted on trades[i].snapshot for Sprint 2 replay. Null when not provided.
- * @param {Object} [opts] - P6 (pilot spec §7). Omitted, every default reproduces the pre-P6 behaviour.
+ * @param {Object} [opts] - P6 (pilot spec §7). Omitted while the flag is 'off', every default reproduces the
+ *   pre-P6 behaviour exactly; with the flag on, an omitted belief is recorded 'not_checked'.
  * @param {() => Date} [opts.now] - the clock; read once before the transaction and once per transaction attempt.
  * @param {Function} [opts.fetchDailyReference] - the Guard 3 daily-reference fetch (getStockAnalysisData's signature).
  * @param {{symbol: string, swappedInAt?: string|null}|null} [opts.expectedOut] - the caller's belief about the
@@ -211,7 +224,7 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
     now: clock = () => new Date(),
     fetchDailyReference = getStockAnalysisData,
     expectedOut = null,
-    identityMode = SWAP_IDENTITY_MODE,
+    identityMode = flagSwapIdentityMode(), // SWAP_IDENTITY_MODE
   } = opts;
   const mode = resolveSwapIdentityMode(identityMode);
   const battleRef = db.collection('agentBattles').doc(battleId);
@@ -223,12 +236,11 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
   // missing), pre-fetch its daily series as the Guard 2 reference. swapPrice and
   // validated day-1 startingPrice need no reference, so those paths fetch nothing.
   // Fetched here — before the transaction — so no network I/O runs inside it.
-  // P6 §8: one clock reading for every pre-transaction date (getETDate's own
-  // conversion, applied to the injected instant).
+  // P6 §8: one clock reading for every pre-transaction date.
   const startedAt = clock();
-  const todayET = formatDateString(new Date(startedAt.toLocaleString('en-US', { timeZone: 'America/New_York' })));
+  const todayET = formatDateString(getETDate(startedAt));
   const activationDateET = battle?.activatedAt
-    ? formatDateString(new Date(new Date(battle.activatedAt).toLocaleString('en-US', { timeZone: 'America/New_York' })))
+    ? formatDateString(getETDate(new Date(battle.activatedAt)))
     : todayET;
   const isActivationDay = todayET === activationDateET;
   const utcToday = startedAt.toISOString().slice(0, 10);

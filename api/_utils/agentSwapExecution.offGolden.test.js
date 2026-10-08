@@ -24,10 +24,12 @@
 //      'off' compares nothing, so the belief changes nothing;
 //   3. an unknown mode ('ENFORCE') — resolves to 'off';
 //   4. the seams: the clock and the Guard 3 fetch INJECTED, with the system
-//      clock left REAL — the injected instant reproduces the frozen one, so a
-//      clock read that bypassed the seam would move a stamp, and the injected
-//      fetch must see exactly the calls the fixture recorded (the module's own
-//      fetch is never touched).
+//      clock set years away (SYSTEM_ELSEWHERE) — the injected instant
+//      reproduces the frozen one, so a clock read that bypassed the seam would
+//      move a stamp or a date gate on whatever day the suite runs (review
+//      S1-1: a REAL system clock is the frozen date on the fixture's own day),
+//      and the injected fetch must see exactly the calls the fixture recorded
+//      (the module's own fetch is never touched).
 //
 // `executeSwapServer` is imported under another name so the literal call
 // string never appears here (the repo-level census in agent-evaluate.test.js).
@@ -56,6 +58,8 @@ const GENERATE = ENV.GENERATE_SWAP_OFF_GOLDEN === '1';
 if (GENERATE && ENV.CI) throw new Error('GENERATE_SWAP_OFF_GOLDEN is a local, deliberate act — never on CI');
 
 const FROZEN = '2026-10-07T15:00:00.000Z'; // Wed 7 Oct 2026, 11:00 ET — day 3 of a Monday battle
+/** Way 4's SYSTEM clock: a different ET day, UTC day, hour and beacon age from FROZEN, so no bypass can agree by accident. */
+const SYSTEM_ELSEWHERE = '2031-03-09T07:00:00.000Z';
 const BATTLE_ID = 'battle-golden-1';
 
 const DAILY = Object.freeze([
@@ -251,8 +255,8 @@ describe('the executor at SWAP_IDENTITY_MODE off — byte-identical to the froze
         expect(JSON.stringify(out)).toBe(JSON.stringify(golden.scenarios[name]));
       });
 
-      it('4 — the seams injected, the system clock REAL: the same bytes, the same fetches, through the injected fetch only', async () => {
-        vi.useRealTimers();
+      it('4 — the seams injected, the system clock years away: the same bytes, the same fetches, through the injected fetch only', async () => {
+        vi.setSystemTime(new Date(SYSTEM_ELSEWHERE));
         const seamFetch = vi.fn(fetchAnswer);
         const clock = vi.fn(() => new Date(FROZEN));
         const out = await run(name, [{ now: clock, fetchDailyReference: seamFetch }], { fetchCalls: () => seamFetch.mock.calls });
