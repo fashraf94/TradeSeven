@@ -118,10 +118,22 @@ const BATTLE_FOR = {
   dailyGrades: (v) => makeTickBattle({ dailyGrades: v }),
 };
 
+/**
+ * Review K4-4: these fields already passed every shape at the base — the rows
+ * are regression guards for them, not defect rows (the defect rows are the
+ * meeting, its legs, the history and the preset: 26 of them fail at c1822e39).
+ */
+const REGRESSION_GUARD = {
+  battleLedger: 'regression guard: the check reads it only in the migration',
+  dailyGrades: 'regression guard: the check reads it only in the migration',
+  executionMode: 'regression guard: safe at the base, read only by a log line',
+  pendingProposal: 'regression guard: safe since the launch guard of the integrity build',
+};
+
 describe('every owner-writable field, every shape: the check completes and saves its score (acceptance 2)', () => {
   for (const [field, shapes] of Object.entries(SHAPES)) {
     for (const [label, value] of Object.entries(shapes)) {
-      it(`${field} = ${label}`, async () => {
+      it(`${field} = ${label}${REGRESSION_GUARD[field] ? ` (${REGRESSION_GUARD[field]})` : ''}`, async () => {
         const { thrown, db, summary } = await runTick(BATTLE_FOR[field](value));
         expect(thrown, String(thrown?.stack || thrown).slice(0, 400)).toBeNull();
         expect(summary.evaluated).toBe(1);

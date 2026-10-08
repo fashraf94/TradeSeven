@@ -614,6 +614,31 @@ describe('A9 — a duplicated approval: the same approved proposal processed twi
     expect(second.stored.proposalHistory.at(-1).executionFailed).toBe(true);
     expect(second.stored.trades).toHaveLength(1);
   });
+
+  // Integrity follow-up 2 (review K4-2) — the read-back's residual, pinned rather
+  // than hidden by the clock. When the overlapping worker's executor call starts
+  // NO LATER than the first worker's commit (truly concurrent), nothing on the
+  // row tells the two calls apart (the same deciding evaluation id, slot and
+  // incoming stock), so the replay adopts the landed trade as its own: the
+  // approval is filed as executed — true of the approval — with no failure
+  // marker and no release, and still ONE trade. (Before follow-up 2 it filed
+  // "failed" and released the reservation of a stock the battle held.)
+  // Dormant (the launch guard); the report lists it under what is not yet safe.
+  for (const mode of ['enforce', 'off']) {
+    it(`${mode} — the overlap: a replay whose call starts at the first run's commit instant adopts that trade (no failure, no release, one trade)`, async () => {
+      flags.swapIdentity = mode;
+      const first = await runTick({ battle: approved() });
+      exec.calls = [];
+      const second = await runTick({ battle: approved(), mutateStore: (s) => { for (const k of Object.keys(s)) delete s[k]; Object.assign(s, deepClone(first.stored)); } });
+      expect(exec.calls).toHaveLength(1);
+      expect(second.stored.trades).toHaveLength(1);
+      const row = second.stored.proposalHistory.at(-1);
+      expect(row).toMatchObject({ resolution: 'approved' });
+      expect(row).not.toHaveProperty('executionFailed');
+      expect(row).not.toHaveProperty('executionRefusal');
+      expect(second.feed.findLast((e) => e.source === 'proposal_system').message).toBe('Coach approved: Swap KO → AMD');
+    });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

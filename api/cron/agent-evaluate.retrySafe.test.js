@@ -45,11 +45,14 @@ const flags = vi.hoisted(() => ({ swapIdentity: 'off' }));
  *   'ambiguous' — the SDK retry rule: the transaction commits once, then its
  *                 callback runs again on the committed state and throws;
  *   'partial'   — commits once, another writer then moves the slot, and the
- *                 call throws (the read back finds the row but not its position);
+ *                 call throws (the read back finds the row but not its position).
+ *                 It surfaces the commit error itself, which the SDK would
+ *                 retry first — the read-back ignores the error's type, so the
+ *                 rows hold (review K4-6);
  *   'refuse'    — throws `refusal` without committing anything.
  * `failReadAfterThrow`: the first battle read after an executor throw fails.
  */
-const exec = vi.hoisted(() => ({ mode: 'real', refusal: null, calls: 0, threw: false, failReadAfterThrow: false }));
+const exec = vi.hoisted(() => ({ mode: 'real', refusal: null, calls: 0, threw: false, failReadAfterThrow: false, queue: [], returned: false, failReadAfterReturn: false }));
 const guardrailHook = vi.hoisted(() => ({ result: null }));
 const authority = vi.hoisted(() => ({ mode: 'autopilot' }));
 const ledger = vi.hoisted(() => ({ releases: [], confirms: [], reserves: [] }));
@@ -93,9 +96,13 @@ vi.mock('../_utils/agentSwapExecution.js', async (importOriginal) => {
     ...real,
     executeSwapServer: async (db, ...rest) => {
       exec.calls += 1;
+      // `queue`: a mode per call, in order (then `mode` for the rest).
+      if (exec.queue.length) exec.mode = exec.queue.shift();
       try {
         if (exec.mode === 'refuse') throw exec.refusal;
-        return await runReal(exec.mode === 'real' ? db : doubled(db), ...rest);
+        const out = await runReal(exec.mode === 'real' ? db : doubled(db), ...rest);
+        exec.returned = true;
+        return out;
       } catch (err) {
         exec.threw = true;
         throw err;
@@ -162,6 +169,7 @@ async function runTick({ battle, result = makeHoldResult(), prices = makePriceTa
           ...ref,
           get: async () => {
             if (exec.failReadAfterThrow && exec.threw) { exec.failReadAfterThrow = false; throw new Error('14 UNAVAILABLE: read failed (injected)'); }
+            if (exec.failReadAfterReturn && exec.returned) { exec.failReadAfterReturn = false; throw new Error('14 UNAVAILABLE: read failed after the executor returned (injected)'); }
             return ref.get();
           },
         };
@@ -189,7 +197,7 @@ beforeEach(() => {
   mocks.create.mockReset();
   flags.swapIdentity = 'off';
   authority.mode = 'autopilot';
-  Object.assign(exec, { mode: 'real', refusal: null, calls: 0, threw: false, failReadAfterThrow: false });
+  Object.assign(exec, { mode: 'real', refusal: null, calls: 0, threw: false, failReadAfterThrow: false, queue: [], returned: false, failReadAfterReturn: false });
   guardrailHook.result = null;
   ledger.releases = []; ledger.confirms = []; ledger.reserves = [];
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -451,7 +459,8 @@ describe('table F V1.3 — the approved-meeting failure line is written only whe
     expect(beats.map((b) => b.message)).toEqual(['This trade arrived after the battle ended. No trade was made.']);
     const row = stored.gameplanMeetingHistory.at(-1);
     expect(row.legRefusals).toHaveLength(1);
-    expect(row.suggestedSwaps[0]).toMatchObject({ executionFailed: true });
+    // Review K3-8: the leg names its refusal, so a reader tells it from the V1.3 failure without a join.
+    expect(row.suggestedSwaps[0]).toEqual(expect.objectContaining({ executionFailed: true, refusalReason: 'battle_not_active' }));
   });
 
   it('never when the read finds the trade, never when the read fails', async () => {
@@ -471,5 +480,35 @@ describe('table F V1.3 — the approved-meeting failure line is written only whe
     expect(exec.calls).toBe(0);
     expect(stored.gameplanMeetingHistory.at(-1).suggestedSwaps[0]).not.toHaveProperty('executionFailed');
     expect(feed.some((e) => e.message === V13_KO_AMD)).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('review fixes — no failure record and no release once a trade landed; no leg runs on a book that may be gone', () => {
+  it('C5 (review K3-3): the post-commit refresh fails — the trade stands, no "Guardrail exit failed" beat, no release; capture still files the pass\'s own fault', async () => {
+    guardrailHook.result = FORCED;
+    exec.failReadAfterReturn = true;
+    const { stored, feed, permanent } = await runTick({ battle: withStop(serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] })) });
+    expect(stored.trades.map((t) => t.symbolIn)).toEqual(['AMD']);
+    expect(feed.filter((e) => e.action === 'risk_swap_failed')).toEqual([]);
+    expect(feed.some((e) => e.action === 'guardrail_forced_swap')).toBe(true);
+    expect(ledger.releases).toEqual([]);
+    expect(ledger.confirms).toEqual(['AMD']);
+    expect(permanent.guardrail.faultClass).toBe('guardrail_error'); // P6's S4-8 pin: the refresh fault stays the pass's own
+  });
+
+  it('C6 (review K3-4): a leg whose outcome is unknown stops the meeting — the next leg does not run from a stale book', async () => {
+    exec.queue = ['ambiguous', 'real'];
+    exec.failReadAfterThrow = true;
+    const battle = makeTickBattle(serverMeetingOverrides({ status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'r' }, { symbolOut: 'PG', symbolIn: 'JPM', rationale: 'r' }] }));
+    const { stored, feed } = await runTick({ battle });
+    expect(exec.calls).toBe(1);
+    expect(stored.trades.map((t) => [t.id, t.symbolOut, t.symbolIn])).toEqual([['trade_001', 'KO', 'AMD']]);
+    const legs = stored.gameplanMeetingHistory.at(-1).suggestedSwaps;
+    expect(legs[0]).toMatchObject({ executionOutcome: 'unknown' });
+    expect(legs[1]).not.toHaveProperty('executionOutcome');
+    expect(legs[1]).not.toHaveProperty('executionFailed');
+    expect(feed.filter((e) => e.source === 'gameplan_meeting')).toEqual([]);
+    expect(ledger.releases).toEqual([]);
   });
 });

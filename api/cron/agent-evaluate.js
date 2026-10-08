@@ -69,7 +69,7 @@ import { proposalHistoryBase, launchGuardRecord, meetingHistoryBase } from '../_
 // read of an owner-writable field through a reader that type-checks it;
 // Part D — the fresh read after an executor throw (a trade that landed is
 // never recorded as refused or failed).
-import { serverMeetingCopy, meetingCopyOf, planApprovedLegs, heldLegRecord, meetingWaitUntilMs, HELD_LEG_RECORD_MAX } from '../_utils/meetingCopy.js';
+import { serverMeetingCopy, meetingCopyOf, meetingMatchesCopy, planApprovedLegs, heldLegRecord, meetingWaitUntilMs, HELD_LEG_RECORD_MAX } from '../_utils/meetingCopy.js';
 import { presetKeyOf, meetingOf, meetingLegsOf, historyListOf } from '../_utils/playerFieldReaders.js';
 import { executorCallOf, swapResultAfterThrow, executionOutcomeOf, executionOutcomeUnknown, landedAfterErrorOf, landedAfterErrorFields, EXECUTION_OUTCOME_UNKNOWN, EXECUTION_NOT_LANDED } from '../_utils/landedTrade.js';
 // P2 League Tournament — agent-market exclusivity (Spec §1.2). Every use is
@@ -2512,9 +2512,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // Integrity follow-up 2 (Part A, founder Q1 — M1 plus the deadline):
         // the server's own copy, in the SAME update, where no player can write
         // it. Only the copy decides which legs an approval runs, P6's belief,
-        // and how long the model waits (api/_utils/meetingCopy.js). Read from
-        // the detector's own picture, like the legs' P6 identity above.
-        scoreUpdate['cronState.gameplanMeeting'] = serverMeetingCopy(gameplanTrigger, flatPortfolio);
+        // and how long the model waits (api/_utils/meetingCopy.js). Its legs
+        // are the meeting's own, as stamped above (instants at mode ≠ off only).
+        scoreUpdate['cronState.gameplanMeeting'] = serverMeetingCopy(gameplanTrigger);
         scoreUpdate['cronState.lastGameplanDate'] = todayET;
         // Write and skip Haiku — gameplan IS the evaluation
         finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
@@ -5555,6 +5555,12 @@ export async function runSuppressionDeterministicPass({
   // P6 — the honest record: true only while the EXECUTOR call is in flight, so
   // the catch can tell an executor refusal from the pass's own fault.
   let passExecutorInFlight = false;
+  // Integrity follow-up 2 (review K3-3): set once the executor's trade landed
+  // (returned, or read back after a throw) — a later fault in this pass (the
+  // post-commit refresh) is still the pass's own fault in capture, but it no
+  // longer writes a failure beat or releases the reservation for a trade that
+  // landed.
+  let passLanded = false;
   try {
     // Same construction as the main call site (C2 injector included) so stop
     // semantics are identical; the observe shadow is meaningless with no
@@ -5778,6 +5784,7 @@ export async function runSuppressionDeterministicPass({
       passSwapResult = await swapResultAfterThrow(battleRef, passCall, passExecErr);
     }
     passExecutorInFlight = false;
+    passLanded = true;
     captureStep(captureFor(), () => {
       captureFor().action({
         kind: 'swap', source: 'guardrail', exitReason: deterministicExitReason,
@@ -5945,7 +5952,8 @@ export async function runSuppressionDeterministicPass({
       });
     });
     // [VWAP Floor B7] parity: a deterministically-failing exit must not go unobserved.
-    statusFeedEntries.push({
+    // (Not once the trade landed: the success beat already says what happened.)
+    if (!passLanded) statusFeedEntries.push({
       timestamp: new Date().toISOString(),
       message: passOutcomeUnknown ? null : `Guardrail exit failed during gameplan suppression: ${String(err?.message || err).slice(0, 140)}`,
       pvpContext: null,
@@ -5965,7 +5973,7 @@ export async function runSuppressionDeterministicPass({
         : passRefused ? refusalFeedFields(err, { kind: refusalKindOf('guardrail', deterministicResult?.sourceNote ?? null), symbolIn: deterministicResult?.symbolIn ?? null }) : {}),
     });
     // P2: compensating release (the reserve landed but the swap didn't).
-    if (!passOutcomeUnknown) await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
+    if (!passOutcomeUnknown && !passLanded) await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
   }
 }
 
@@ -5994,8 +6002,19 @@ export async function runSuppressionDeterministicPass({
  */
 async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations, tournamentCtx = null, swapIdentityMode) {
   const meeting = meetingOf(battle.gameplanMeeting);
+  let copy = meetingCopyOf(battle.cronState);
+  // The copy lives exactly as long as the meeting it was stored for sits in the
+  // battle (review K1-1 / K3-1): once the player has deleted, replaced or
+  // renamed it, the copy is retired in one write — a re-planted meeting can
+  // then never bring the server's legs back at a time the player picks. A
+  // server meeting the player leaves in place never takes this branch.
+  const serverMeetingInPlace = meetingMatchesCopy(meeting, copy);
+  if (battle.cronState?.gameplanMeeting != null && !serverMeetingInPlace) {
+    await battleRef.update({ 'cronState.gameplanMeeting': null });
+    battle.cronState = { ...battle.cronState, gameplanMeeting: null };
+    copy = null;
+  }
   if (!meeting) return 'continue';
-  const copy = meetingCopyOf(battle.cronState);
   // Each resolution's write: the meeting cleared, the row appended to the
   // stored history (a fresh list when the stored value is not one — Part B),
   // and the server's copy cleared with it (only written when one is stored).
@@ -6251,8 +6270,10 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         if (legOutcome === EXECUTION_OUTCOME_UNKNOWN) {
           // Whether the leg traded is unknown: the leg carries the typed
           // marker and no line; the reservation is kept (it expires by TTL).
+          // No later leg runs from a picture that may no longer exist (the C1
+          // stop; review K3-4) — those legs are filed as they stand.
           legMarks.set(legIndex, { executionOutcome: EXECUTION_OUTCOME_UNKNOWN });
-          continue;
+          break;
         }
         const legRefused = swapIdentityActive(swapIdentityMode) && isSwapRefusal(err);
         if (legRefused) {
@@ -6273,7 +6294,9 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
           // exists, so the leg is marked failed — and, unless P6's typed
           // refusal already rendered its own table F line, the feed says so
           // in table F V1.3's words (every mode; the symbols are the copy's).
-          legMarks.set(legIndex, { executionFailed: true });
+          // (A leg P6 refused also names its refusal, so a reader can tell it
+          // from the V1.3 failure without joining legRefusals — review K3-8.)
+          legMarks.set(legIndex, legRefused ? { executionFailed: true, refusalReason: err.reason } : { executionFailed: true });
           const failedLine = legRefused ? null : meetingLegFailedLine({ symbol: legOut, symbolIn: legIn });
           if (failedLine) {
             statusFeedEntries.push({
@@ -6303,12 +6326,17 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
     return 'continue';
   }
 
+  // A meeting the server's copy does not name is filed without a feed beat:
+  // the server never proposed it, so the feed does not narrate its rejection
+  // or expiry (review K1-3; its approved legs are held without one already).
   if (meeting.status === 'rejected') {
-    statusFeedEntries.push({
-      timestamp: new Date().toISOString(),
-      message: 'Gameplan rejected by Coach. Holding current positions.',
-      action: 'hold', source: 'gameplan_meeting',
-    });
+    if (serverMeetingInPlace) {
+      statusFeedEntries.push({
+        timestamp: new Date().toISOString(),
+        message: 'Gameplan rejected by Coach. Holding current positions.',
+        action: 'hold', source: 'gameplan_meeting',
+      });
+    }
     await battleRef.update(resolutionWrite(meetingHistoryBase(meeting))); // integrity F3
     await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
     return 'continue';
@@ -6329,11 +6357,13 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
   if (now >= expiresAt) {
     // Expired
     const expired = { ...meetingHistoryBase(meeting), status: 'expired', resolvedAt: new Date().toISOString(), resolvedBy: 'system' };
-    statusFeedEntries.push({
-      timestamp: new Date().toISOString(),
-      message: 'Gameplan meeting expired. Continuing with current strategy.',
-      action: 'hold', source: 'gameplan_meeting',
-    });
+    if (serverMeetingInPlace) {
+      statusFeedEntries.push({
+        timestamp: new Date().toISOString(),
+        message: 'Gameplan meeting expired. Continuing with current strategy.',
+        action: 'hold', source: 'gameplan_meeting',
+      });
+    }
     await battleRef.update(resolutionWrite(expired));
     await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
     return 'continue';

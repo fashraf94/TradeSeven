@@ -509,7 +509,8 @@ describe('calls OFF — byte-identical to the frozen pre-change fixture on every
       expect(Object.keys(copy)).toEqual(['meetingId', 'createdAt', 'expiresAt', 'legs']);
       expect(copy).toEqual({
         meetingId: meeting.id, createdAt: meeting.createdAt, expiresAt: meeting.expiresAt,
-        legs: meeting.suggestedSwaps.map((leg) => ({ symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, swappedInAt: null })),
+        // At off P6 stamps no entry instant on a leg, so the copy stores none (review K2-2).
+        legs: meeting.suggestedSwaps.map((leg) => ({ symbolOut: leg.symbolOut, symbolIn: leg.symbolIn })),
       });
       // The frozen fixture's own creation write carries no copy (it predates it).
       expect(serialize(golden.scenarios[name].updates)).not.toMatch(/cronState\.gameplanMeeting/);

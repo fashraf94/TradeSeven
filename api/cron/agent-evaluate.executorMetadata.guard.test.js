@@ -485,7 +485,10 @@ const DESC = 'DESC';           // planted descriptive text — may ride, capped
  */
 function plantedBattle(overrides = {}) {
   return makeTickBattle({
-    executionMode: N,
+    // A STRING carrying the symbol sentinel (review K4-1): a number would read as 'autopilot'
+    // through clientToken anyway, so a caller that stamped entryMode from the
+    // battle again would pass; a sentinel string on any row fails plantedIn.
+    executionMode: `${SYM}_MODE`,
     pendingProposal: plantedProposal(),
     gameplanMeeting: { id: ID, status: 'rejected', diagnosis: DESC.repeat(600), lockedPoints: N, expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [plantedLeg('KO', 'AMD')] },
     strategyPreset: DESC.repeat(40),
@@ -499,6 +502,7 @@ function plantedBattle(overrides = {}) {
 }
 const plantedMetadata = () => ({
   lockedPoints: N, entryPrice: N, exitPrice: N, lockedGainPct: N, symbolOut: SYM, symbolIn: SYM, swapDay: N, tradingDay: N,
+  entryMode: `${SYM}_MODE`, // review K4-1: the stored mode never reaches a row (proposalDescriptiveMetadata drops it)
   swappedOutAt: ID, evaluationId: ID, id: ID, entryConviction: N, source: ID, exitReason: ID, archetype: ID, hftKnobsSource: ID,
   swapProvenance: { dialBandVersion: N }, verification: { verificationId: ID, mode: 'shadow' }, snapshot: { n: N },
   rationale: DESC.repeat(600), hypothesis: DESC, trigger: DESC, entryRegime: DESC.repeat(40), swapMotive: DESC,
@@ -606,7 +610,7 @@ describe('BEHAVIOURAL — every owner-writable field planted; the six callers th
           expect(plantedIn(row), caller.name).toEqual([]);
           expect(overlong(row), caller.name).toEqual([]);
           if (mode !== 'off') expect(row.verification?.mode, caller.name).toBe(mode);
-          // Integrity follow-up 2 (Q4): the mode that GOVERNED (the planted executionMode is a number here).
+          // Integrity follow-up 2 (Q4): the mode that GOVERNED — never the planted string (review K4-1).
           expect(row.entryMode, caller.name).toBe(caller.dormant ? 'copilot' : 'autopilot');
         }
       });

@@ -45,24 +45,22 @@ export const LEG_NOT_PROPOSED = 'leg_not_proposed';
 export const HELD_LEG_RECORD_MAX = 20;
 
 /**
- * The copy the cron stores beside a meeting it creates. `picture` is the
- * detector's own flattened portfolio (the one each leg was chosen from): each
- * leg carries its outgoing position's entry instant (null for a creation-time
- * position), and a leg the picture cannot place carries none (checked by
- * symbol only) — the rule P6 applies to the meeting's own legs.
+ * The copy the cron stores beside a meeting it creates: the meeting's own id,
+ * times and legs exactly as the server built them — each leg's pair, and its
+ * outgoing position's entry instant exactly when P6 stamped one on the leg
+ * (at SWAP_IDENTITY_MODE ≠ off, from the detector's own picture; null for a
+ * creation-time position). A leg without one is checked by symbol only, as it
+ * always was — so a meeting created at off and approved after a flip is
+ * checked exactly as before this build (review K2-2).
  */
-export function serverMeetingCopy(meeting, picture) {
-  const held = Array.isArray(picture) ? picture : [];
+export function serverMeetingCopy(meeting) {
   return {
     meetingId: meeting.id,
     createdAt: meeting.createdAt,
     expiresAt: meeting.expiresAt,
-    legs: meeting.suggestedSwaps.map((leg) => {
-      const position = held.find((a) => a?.symbol === leg.symbolOut);
-      return position
-        ? { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, swappedInAt: position.swappedInAt ?? null }
-        : { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn };
-    }),
+    legs: meeting.suggestedSwaps.map((leg) => (Object.hasOwn(leg, 'swappedInAt')
+      ? { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, swappedInAt: leg.swappedInAt }
+      : { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn })),
   };
 }
 

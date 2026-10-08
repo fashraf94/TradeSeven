@@ -12,9 +12,11 @@ import '../_utils/__fixtures__/pinTimezoneUtc.js';
 // build's cron the same battle (the meeting AND the copy a server-created
 // meeting carries since this build — the base cron ignores the copy). The
 // base cron's every battle write, executor argument, prompt and summary is the
-// fixture; this build's must equal it byte for byte once the ONE intended
-// change is lifted: the `cronState.gameplanMeeting` key (the copy written with
-// a new meeting, cleared with a resolved one). Its SHA-256 is pinned below.
+// fixture; this build's must equal it byte for byte once the intended changes
+// are lifted — the `cronState.gameplanMeeting` key (the copy written with a new
+// meeting, cleared with a resolved one) and Part D's marker on a leg whose
+// executor call threw with no trade (see lift(); review K2-5). Each lifted value
+// is pinned by its own row. Its SHA-256 is pinned below.
 //
 // SELF-CONTAINED on purpose: it imports only fixtures that exist at the base
 // (no follow-up-2 helper), so the same bytes run on both trees.
@@ -145,8 +147,9 @@ async function runScenario(name) {
  *   - Part A: `cronState.gameplanMeeting` (the copy written with a new meeting,
  *     cleared with a resolved one);
  *   - Part D: `executionFailed: true` on a leg whose executor call threw and
- *     whose fresh read found no trade (here: the leg P6 refused at enforce —
- *     P6's own refusal record and table F line are unchanged).
+ *     whose fresh read found no trade, with `refusalReason` when P6 refused it
+ *     (here: the leg P6 refused at enforce — P6's own refusal record and table
+ *     F line are unchanged).
  */
 function lift(snapshot) {
   const lifted = [];
@@ -163,8 +166,8 @@ function lift(snapshot) {
         ...row,
         suggestedSwaps: row.suggestedSwaps.map((leg, i) => {
           if (leg?.executionFailed !== true) return leg;
-          failedLegs.push({ index: i, symbolOut: leg.symbolOut, symbolIn: leg.symbolIn });
-          const { executionFailed: _failed, ...rest } = leg;
+          failedLegs.push({ index: i, symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, ...(Object.hasOwn(leg, 'refusalReason') ? { refusalReason: leg.refusalReason } : {}) });
+          const { executionFailed: _failed, refusalReason: _reason, ...rest } = leg;
           return rest;
         }),
       } : row));
@@ -239,7 +242,7 @@ describe('a server-created meeting runs byte-identical to the base tree (accepta
     for (const name of Object.keys(SCENARIOS)) {
       const { lifted, failedLegs } = lift(JSON.parse(serialize(await runScenario(name))));
       // Part D's leg marker appears exactly where an executor call threw and nothing landed: the KO leg P6 refused at enforce.
-      expect(failedLegs, name).toEqual(name === 'approved_two_legs_enforce' ? [{ index: 1, symbolOut: 'KO', symbolIn: 'AMD' }] : []);
+      expect(failedLegs, name).toEqual(name === 'approved_two_legs_enforce' ? [{ index: 1, symbolOut: 'KO', symbolIn: 'AMD', refusalReason: 'outgoing_identity_mismatch' }] : []);
       if (name.startsWith('created_')) {
         expect(lifted, name).toHaveLength(1);
         expect(Object.keys(lifted[0])).toEqual(['meetingId', 'createdAt', 'expiresAt', 'legs']);

@@ -157,6 +157,33 @@ describe('Q4 — the governing mode, never the battle\'s own field', () => {
       expect(patterns.writes, JSON.stringify(ledger)).toHaveLength(1);
       expect(patterns.writes[0].payload.executionMode.start).toBe(LAUNCH_EXECUTION_MODE);
       expect(patterns.writes[0].payload.strategyPreset.start).toBe('balanced');
+      // Review K4-8: only plain-object entries count as engagement.
+      expect(patterns.writes[0].payload.engagementCount).toBe(Array.isArray(ledger) ? ledger.filter((e) => e && typeof e === 'object').length : 0);
     }
+  });
+
+  it('review K1-4: an owner-written preset change with no timestamp, overlong or object fields, or hundreds of them, still logs — every value a capped string or null, never undefined', async () => {
+    const ledger = [
+      { type: 'preset_change', toPreset: 'defensive' },
+      { type: 'preset_change', timestamp: { toString: 1 }, fromPreset: 'F'.repeat(200_000), toPreset: { a: 1 } },
+      ...Array.from({ length: 300 }, (_, i) => ({ type: 'preset_change', timestamp: '2026-09-09T15:00:00.000Z', fromPreset: 'balanced', toPreset: i % 2 ? 'aggressive' : 'defensive' })),
+    ];
+    patterns.writes = [];
+    await logBattlePattern('agent-1', 'battle-1', { battleLedger: ledger, scoreState: {} });
+    expect(patterns.writes).toHaveLength(1);
+    const { changes } = patterns.writes[0].payload.strategyPreset;
+    expect(changes).toHaveLength(50);
+    const undefinedAt = [];
+    const walk = (v, path) => { if (v === undefined) undefinedAt.push(path); else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, path + '.' + k); };
+    walk(patterns.writes[0].payload, 'root');
+    expect(undefinedAt).toEqual([]);
+    for (const c of changes) for (const v of Object.values(c)) expect(v === null || (typeof v === 'string' && v.length <= 64)).toBe(true);
+    // The first (malformed) entries, kept when they fit the window, read as null / capped.
+    patterns.writes = [];
+    await logBattlePattern('agent-1', 'battle-1', { battleLedger: ledger.slice(0, 2), scoreState: {} });
+    expect(patterns.writes[0].payload.strategyPreset.changes).toEqual([
+      { timestamp: null, from: null, to: 'defensive' },
+      { timestamp: null, from: 'F'.repeat(64), to: null },
+    ]);
   });
 });

@@ -100,15 +100,23 @@ function extractExecutionMode() {
   return { start: LAUNCH_EXECUTION_MODE, changes: [] };
 }
 
+/** At most this many owner-written preset changes are logged per battle. */
+const PRESET_CHANGES_MAX = 50;
+
 function extractStrategyPreset(battle) {
   const start = clientToken(battle.strategyPreset) || 'balanced';
   const ledger = battleLedgerOf(battle.battleLedger);
+  // The ledger is owner-written: each change keeps only capped strings (a
+  // missing timestamp is null — `undefined` makes the Admin SDK reject the
+  // whole record), and at most the last PRESET_CHANGES_MAX changes
+  // (integrity follow-up 2, review K1-4).
   const changes = ledger
     .filter(e => e.type === 'preset_change')
+    .slice(-PRESET_CHANGES_MAX)
     .map(e => ({
-      timestamp: e.timestamp,
-      from: e.fromPreset || e.details?.fromPreset || null,
-      to: e.toPreset || e.details?.toPreset || null,
+      timestamp: clientToken(e.timestamp),
+      from: clientToken(e.fromPreset || e.details?.fromPreset) || null,
+      to: clientToken(e.toPreset || e.details?.toPreset) || null,
     }));
   return { start, changes };
 }

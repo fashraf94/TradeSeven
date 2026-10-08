@@ -2206,7 +2206,9 @@ describe('agent/chat — Cockpit Build 1a: the calls block is read and rendered 
 // allowlist). Every shape an owner can store answers 200, and the prompt
 // builder receives the reader's value — the stored value itself when it is
 // well formed (a map, or a list of objects), the old default ([]) otherwise.
-describe('agent/chat — follow-up 2: an owner-written dailyGrades never breaks the turn', () => {
+// (The prompt builder is mocked in this file; the REAL builder's tolerance of
+// every reader output is pinned in api/_utils/playerFieldReaders.test.js — review K4-5.)
+describe('agent/chat — follow-up 2: an owner-written dailyGrades reaches the prompt builder only through the reader', () => {
   const MAP = { '2026-09-09': { trades: [{ tradeIndex: 0, grade: 'A', symbolOut: 'KO', symbolIn: 'AMD' }], submittedAt: '2026-09-09T20:00:00.000Z' } };
   const run = async (dailyGrades) => {
     voiceLayerArgs.current = [];

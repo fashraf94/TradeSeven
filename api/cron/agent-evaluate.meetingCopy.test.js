@@ -124,11 +124,15 @@ describe('the copy is written with the meeting — one update, server values onl
       expect(meeting.suggestedSwaps.length).toBeGreaterThan(0);
       expect(u['cronState.gameplanMeeting']).toEqual({
         meetingId: meeting.id, createdAt: meeting.createdAt, expiresAt: meeting.expiresAt,
-        // The detector's own picture: the fixture's positions are creation-time (null).
-        legs: meeting.suggestedSwaps.map((l) => ({ symbolOut: l.symbolOut, symbolIn: l.symbolIn, swappedInAt: null })),
+        // The meeting's own legs as the server built them: P6 stamps the entry instant only at
+        // mode ≠ off (the fixture's positions are creation-time: null) — review K2-2.
+        legs: meeting.suggestedSwaps.map((l) => (mode === 'off'
+          ? { symbolOut: l.symbolOut, symbolIn: l.symbolIn }
+          : { symbolOut: l.symbolOut, symbolIn: l.symbolIn, swappedInAt: null })),
       });
       // No player value can be in it: every leg string is a ticker the server proposed.
-      expect(Object.keys(u['cronState.gameplanMeeting'].legs[0])).toEqual(['symbolOut', 'symbolIn', 'swappedInAt']);
+      expect(Object.keys(u['cronState.gameplanMeeting'].legs[0])).toEqual(mode === 'off' ? ['symbolOut', 'symbolIn'] : ['symbolOut', 'symbolIn', 'swappedInAt']);
+      expect(u['cronState.gameplanMeeting'].legs).toEqual(meeting.suggestedSwaps.map((l) => (Object.hasOwn(l, 'swappedInAt') ? { symbolOut: l.symbolOut, symbolIn: l.symbolIn, swappedInAt: l.swappedInAt } : { symbolOut: l.symbolOut, symbolIn: l.symbolIn })));
     });
   }
 
@@ -375,5 +379,93 @@ describe('the integrity build\'s +497 eviction probe (its §5, reviewers I1 / IV
     expect(meetingRow(first.stored).heldLegCount).toBe(49);
     const second = await runTick(deepClone(first.stored));
     expect(second.stored.scoreState.bankedScore).toBeLessThan(-480);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Review K1-1 / K3-1 / K2-3: the copy lives exactly as long as its meeting sits
+// in the battle. A player who deletes, replaces or renames the meeting retires
+// the copy at the next check — the server's legs can then never be brought back
+// at a time the player picks.
+describe('the copy is retired once its meeting is gone (review K1-1 / K3-1)', () => {
+  const LATE = '2026-09-11T15:00:00.000Z';
+  const created = () => withCopy({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T16:00:00.000Z', suggestedSwaps: [{ ...KO_AMD }] });
+
+  for (const [label, edit] of [
+    ['deleted (null)', (b) => { b.gameplanMeeting = null; }],
+    ['deleted (the key removed)', (b) => { delete b.gameplanMeeting; }],
+    ['replaced by a non-object', (b) => { b.gameplanMeeting = 'x'; }],
+    ['renamed, with a far deadline of its own', (b) => { b.gameplanMeeting = { ...b.gameplanMeeting, id: 'gpm_renamed', expiresAt: '2099-01-01T00:00:00.000Z' }; }],
+  ]) {
+    it(`${label}: the next check retires the copy (one write), and the meeting written back approved later runs nothing`, async () => {
+      const battle = created();
+      edit(battle);
+      const first = await runTick(battle);
+      expect(first.stored.cronState.gameplanMeeting).toBeNull();
+      expect(first.db.__updates.filter((u) => Object.hasOwn(u, 'cronState.gameplanMeeting'))).toEqual([{ 'cronState.gameplanMeeting': null }]);
+      expect(first.modelCalls).toBe(1);
+      // Two days later the player writes the server's meeting back, approved.
+      vi.setSystemTime(new Date(LATE));
+      const replay = deepClone(first.stored);
+      replay.gameplanMeeting = { id: FIXTURE_MEETING_ID, ...approvedMeeting([{ ...KO_AMD }]) };
+      exec.calls = [];
+      const second = await runTick(replay);
+      expect(exec.calls).toEqual([]);
+      expect(second.stored.trades).toEqual([]);
+      expect(meetingRow(second.stored)).toMatchObject({ heldLegCount: 1 });
+    });
+  }
+
+  it('a server meeting left in place keeps its copy (no extra write) while it waits', async () => {
+    const battle = withCopy({ status: 'pending', diagnosis: 'drag', expiresAt: LATER, suggestedSwaps: [{ ...KO_AMD }] });
+    const { db, stored } = await runTick(battle);
+    expect(db.__updates.some((u) => Object.hasOwn(u, 'cronState.gameplanMeeting'))).toBe(false);
+    expect(stored.cronState.gameplanMeeting.meetingId).toBe(FIXTURE_MEETING_ID);
+  });
+});
+
+// Review K1-3: a meeting the server never created is filed without a feed beat.
+describe('a meeting the copy does not name writes no feed beat (review K1-3)', () => {
+  for (const [label, meeting] of [
+    ['rejected', { id: 'gpm_planted', status: 'rejected', diagnosis: 'drag', expiresAt: LATER, suggestedSwaps: [] }],
+    ['pending past its own deadline', { id: 'gpm_planted', status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T14:00:00.000Z', suggestedSwaps: [] }],
+  ]) {
+    it(`${label}: filed into the history, no beat — re-planting it every check adds none`, async () => {
+      let battle = makeTickBattle({ gameplanMeeting: deepClone(meeting) });
+      for (let i = 0; i < 3; i++) {
+        const { stored, feed } = await runTick(battle);
+        expect(gameplanBeats(feed)).toEqual([]);
+        expect(stored.gameplanMeeting).toBeNull();
+        battle = { ...deepClone(stored), gameplanMeeting: deepClone(meeting) };
+      }
+    });
+  }
+
+  it('the server\'s own rejected and expired meetings keep their beats', async () => {
+    const rejected = await runTick(withCopy({ ...approvedMeeting([{ ...KO_AMD }]), status: 'rejected' }));
+    expect(gameplanBeats(rejected.feed).map((b) => b.message)).toEqual(['Gameplan rejected by Coach. Holding current positions.']);
+    const expired = await runTick(withCopy({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T14:00:00.000Z', suggestedSwaps: [] }));
+    expect(gameplanBeats(expired.feed).map((b) => b.message)).toEqual(['Gameplan meeting expired. Continuing with current strategy.']);
+  });
+});
+
+// Review K2-2: the copy stores a leg's entry instant exactly when P6 stamped one
+// on the leg (mode ≠ off), so a meeting created at off is checked by symbol only
+// after a flip — as it was before this build.
+describe('a meeting created at off and approved after a flip is checked as before (review K2-2)', () => {
+  it('created at off → approved at enforce: the copy holds no instant, the belief is symbol-only, the returned stock trades as at the base', async () => {
+    const armed = makeTickBattle();
+    delete armed.cronState.lastGameplanDate;
+    flags.swapIdentity = 'off';
+    const created = await runTick(armed);
+    const copy = created.stored.cronState.gameplanMeeting;
+    expect(copy.legs.every((l) => !Object.hasOwn(l, 'swappedInAt'))).toBe(true);
+    flags.swapIdentity = 'enforce';
+    const approvedBattle = deepClone(created.stored);
+    approvedBattle.gameplanMeeting = { ...approvedBattle.gameplanMeeting, status: 'approved' };
+    exec.calls = [];
+    const approved = await runTick(approvedBattle);
+    expect(exec.calls.length).toBeGreaterThan(0);
+    for (const call of exec.calls) expect(call[7].expectedOut).not.toHaveProperty('swappedInAt');
   });
 });

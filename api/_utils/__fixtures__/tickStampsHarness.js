@@ -272,24 +272,17 @@ export const FIXTURE_MEETING_ID = `gpm_${Date.parse(FROZEN_NOW)}`;
  * in `cronState.gameplanMeeting`, the copy only the server can write. Only a
  * meeting its copy names runs legs or makes the model wait, so every fixture
  * that stands for a server-created meeting carries one. The copy's legs are
- * the meeting's own pairs, each with its outgoing position's entry instant —
- * the leg's own `swappedInAt` when it carries one (P6 stamps the same instant
- * on both at creation), else the position's in `battle.portfolio` (null for a
- * creation-time position; none for a leg the book cannot place) — the shape
- * serverMeetingCopy (api/_utils/meetingCopy.js) writes. `legs` stores other
- * legs (a meeting the player edited after the server wrote its copy).
- * Mirrored, not imported: this module has zero product imports.
+ * the meeting's own, as the server built them: each leg's pair, and its
+ * `swappedInAt` exactly when the leg carries one (P6 stamps it at mode ≠ off)
+ * — the shape serverMeetingCopy (api/_utils/meetingCopy.js) writes. `legs`
+ * stores other legs (a meeting the player edited after the server wrote its
+ * copy). Mirrored, not imported: this module has zero product imports.
  */
 export function serverMeetingOverrides(meeting, { battle = makeTickBattle(), legs = null } = {}) {
   const stored = { id: FIXTURE_MEETING_ID, ...meeting };
-  const held = ['star', 'core', 'support'].flatMap((tier) => battle.portfolio?.[tier] || []);
-  const copyLegs = legs ?? (Array.isArray(stored.suggestedSwaps) ? stored.suggestedSwaps : []).map((leg) => {
-    if (leg && Object.hasOwn(leg, 'swappedInAt')) return { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, swappedInAt: leg.swappedInAt };
-    const position = held.find((a) => a?.symbol === leg?.symbolOut);
-    return position
-      ? { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, swappedInAt: position.swappedInAt ?? null }
-      : { symbolOut: leg?.symbolOut, symbolIn: leg?.symbolIn };
-  });
+  const copyLegs = legs ?? (Array.isArray(stored.suggestedSwaps) ? stored.suggestedSwaps : []).map((leg) => (leg && Object.hasOwn(leg, 'swappedInAt')
+    ? { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, swappedInAt: leg.swappedInAt }
+    : { symbolOut: leg?.symbolOut, symbolIn: leg?.symbolIn }));
   return {
     gameplanMeeting: stored,
     cronState: {
