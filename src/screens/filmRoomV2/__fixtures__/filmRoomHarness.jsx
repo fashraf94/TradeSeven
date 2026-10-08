@@ -28,7 +28,7 @@ export const clone = (v) => JSON.parse(JSON.stringify(v));
 export const NOW = Date.parse('2026-10-08T15:00:00.000Z');
 
 export function battleOf(tape, over = {}) {
-  return { id: tape.battleId, status: 'completed', completedAt: tape.battle?.completedAt ?? null, timing: { tradingDays: [tape.etDate] }, agentContext: { agentName: 'Momentum chaser' }, ...over };
+  return { id: tape.battleId, status: 'completed', completedAt: tape.battle?.completedAt ?? null, timing: { tradingDays: [tape.etDate] }, agentContext: { agentName: 'Momentum chaser', archetype: 'momentum_chaser' }, ...over };
 }
 
 export function readersOf(tapesByDate, series = []) {

@@ -16,14 +16,16 @@
 //             scheduled pass only when one is actually scheduled (§7)
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { FILM_TAPE_WRITE_ENABLED } from '../../config/featureFlags';
+import { FILM_TAPE_WRITE_ENABLED, isAgentPresenceOn } from '../../config/featureFlags';
+import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
+import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { filmRoomBattleId } from '../../utils/filmRoomGate';
 import { isSessionDate, isBattleDay, closePassStartMs, closePassEndMs, closePassWillTape, validFinalTradingDay, etDateOf } from '../../utils/tapeSchedule';
 import { etClock, etDateLabel } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { useTapeDay, useSeriesDay, firestoreReaders } from './filmRoomData';
 import { hasSeenFirstOpen, markFirstOpenSeen } from './filmRoomSeen';
-import { C, card, eyebrow, body, mono, plain, Label, KindLegend, Segmented, Chip, PrimaryButton, When, Rec, EmptyCard } from './FilmRoomKit';
+import { C, card, eyebrow, body, mono, plain, tint, Label, KindLegend, Segmented, Chip, PrimaryButton, When, Rec, EmptyCard } from './FilmRoomKit';
 import FilmRoomGlance from './FilmRoomGlance';
 import FilmRoomStudy from './FilmRoomStudy';
 import FilmRoomDeepDive from './FilmRoomDeepDive';
@@ -69,6 +71,47 @@ export function noTapeLine(battle, etDate, nowMs) {
   }
   if (validFinalTradingDay(battle) === etDate && closePassWillTape(battle, nowMs)) return COPY.noTapeLater;
   return COPY.noTapeUnavailable;
+}
+
+const LENGTH_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+
+/**
+ * The header's subtitle (design of record): archetype · BaggerBomb · one-day
+ * battle · date — each part only where the record carries it. The archetype
+ * is the app's canonical display name (src/data/archetypeDisplay.js) for the
+ * battle's archetype, else the tape's; "BaggerBomb" unless the tape says the
+ * battle's mode is not one the tape covers; the length is the battle's own
+ * trading-day timeline, else the tape's day number on its final day, and is
+ * omitted when neither carries it (never the one-day fallback battleDays uses).
+ */
+export function headerParts(battle, tape, etDate) {
+  const code = [battle?.agentContext?.archetype, battle?.archetype, tape?.archetype].find((a) => typeof a === 'string' && a);
+  const timing = battle?.timing?.tradingDays;
+  const length = Array.isArray(timing) && timing.length ? timing.length
+    : (tape?.isFinalDay === true && Number.isInteger(tape?.dayNumber) ? tape.dayNumber : null);
+  return {
+    archetype: code ? getArchetypeDisplayName(code) : null,
+    game: tape?.passes?.close?.status === 'skipped_mode' ? null : COPY.gameName,
+    length: length >= 1 && length <= LENGTH_WORDS.length ? COPY.battleLength(LENGTH_WORDS[length - 1]) : null,
+    date: etDateLabel(etDate),
+  };
+}
+
+/**
+ * The agent's mark: the cockpit's own avatar — AgentPresenceMount at 'static',
+ * as ArenaHeader and CharacterAvatar mount it: one painted frame, no motion,
+ * its events withheld. NO SCORE IS PASSED, so its standing is neutral (the
+ * CharacterAvatar "comparison unavailable" path): the face carries no mood
+ * about the day. Presence off → CharacterAvatar's still disc.
+ */
+function AgentMark({ battle, size }) {
+  return (
+    <div data-agent-mark="" aria-hidden="true" style={{ width: size, height: size, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', overflow: 'hidden', background: C.surface, boxShadow: `0 0 0 1px ${tint('teal', 0.35)}` }}>
+      {isAgentPresenceOn() && battle
+        ? <AgentPresenceMount surface="duel" agent={battle} duel={{ statusFeed: null }} size={Math.round(size * 0.9)} enableEnvironment={false} reactivityLevel="static" />
+        : <span data-agent-mark-still="" style={{ width: size, height: size, borderRadius: '50%', background: tint('teal', 0.16), border: `1px solid ${tint('teal', 0.45)}`, boxSizing: 'border-box' }} />}
+    </div>
+  );
 }
 
 function Reserved({ names, region }) {
@@ -123,7 +166,8 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
     if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const agentName = battle?.agentContext?.agentName || battle?.agentName || null;
+  const parts = headerParts(battle, tape, day);
+  const subtitle = [parts.archetype, parts.game, parts.length, parts.date ? <When key="date">{parts.date}</When> : null].filter(Boolean);
   // The battle's status, not the day's: an earlier day's tape was written while the battle was live (review A2L1-3).
   const complete = battle?.status === 'completed' || tape?.battle?.status === 'completed';
   const lastDay = days.length ? days[days.length - 1] : null;
@@ -157,16 +201,20 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
         </div>
         <Reserved region="header" names={COPY.reservedHeader} />
         <div style={{ display: 'flex', alignItems: desktop ? 'center' : 'stretch', flexDirection: desktop ? 'row' : 'column', gap: desktop ? 16 : 10 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-            <h1 style={{ margin: 0, fontSize: desktop ? 18 : 16, fontWeight: 800, letterSpacing: '-0.01em', color: C.ink, lineHeight: 1.1 }}>{COPY.title}</h1>
-            <span style={mono(9.5, C.ink3, { letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })}>
-              {agentName ? <><Rec>{agentName}</Rec> · </> : null}<When>{etDateLabel(day) ?? ''}</When>
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: desktop ? 16 : 10, minWidth: 0, flex: desktop ? '0 1 auto' : undefined }}>
+            <AgentMark battle={battle} size={desktop ? 40 : 34} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 }}>
+              <h1 style={{ margin: 0, fontSize: desktop ? 18 : 16, fontWeight: 800, letterSpacing: '-0.01em', color: C.ink, lineHeight: 1.1, whiteSpace: 'nowrap' }}>{COPY.title}</h1>
+              {/* One line on the phone, as the design of record; on desktop it wraps rather than cutting off the length or the date. */}
+              <span data-header-subtitle="" style={mono(9.5, C.ink3, { letterSpacing: '0.06em', textTransform: 'uppercase', lineHeight: 1.35, ...(desktop ? { whiteSpace: 'normal' } : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }) })}>
+                {subtitle.map((p, i) => <React.Fragment key={i}>{i ? ' · ' : null}<span style={{ whiteSpace: 'nowrap' }}>{p}</span></React.Fragment>)}
+              </span>
+            </div>
           </div>
           <div style={{ width: desktop ? 400 : 'auto', marginLeft: desktop ? 24 : 0, flexShrink: 0 }}>
             <Segmented value={depth} onChange={setDepth} options={COPY.depths} />
           </div>
-          <KindLegend style={desktop ? { marginLeft: 'auto', justifyContent: 'flex-end', maxWidth: 520 } : undefined} />
+          <KindLegend style={desktop ? { marginLeft: 'auto', justifyContent: 'flex-end', maxWidth: 340, flexShrink: 0 } : undefined} />
         </div>
         {days.length > 1 ? (
           <div data-region="day-picker" style={{ display: 'flex', alignItems: 'center', gap: 6, overflowX: 'auto' }}>

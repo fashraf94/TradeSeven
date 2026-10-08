@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
-import FilmRoomScreenV2, { noTapeLine, defaultDay, battleDays } from './FilmRoomScreenV2';
+import FilmRoomScreenV2, { noTapeLine, defaultDay, battleDays, headerParts } from './FilmRoomScreenV2';
 import { FIRST_OPEN_KEY } from './filmRoomSeen';
 import { FORBIDDEN_WORDS } from './filmRoomCopy';
 import {
@@ -39,7 +39,7 @@ describe('the header (BA-41, BA-42)', () => {
     const text = m.container.textContent;
     expect(text).toContain('Film Room');
     expect(text).toContain('Sep 23 · battle complete');
-    expect(text).toContain('Momentum chaser · Wed, Sep 23, 2026');
+    expect(m.q('[data-header-subtitle]').textContent).toBe('Trend Follower · BaggerBomb · one-day battle · Wed, Sep 23, 2026');
     expect(m.qa('[role="tab"]').map((t) => t.textContent)).toEqual(['Glance', 'Study', 'Deep dive']);
     const legends = m.qa('[data-legend]');
     expect(legends).toHaveLength(1);
@@ -54,6 +54,34 @@ describe('the header (BA-41, BA-42)', () => {
       expect(m.q(`[data-depth="${d}"]`), d).toBeTruthy();
       expect(m.qa('[data-legend]'), d).toHaveLength(1);
     }
+  });
+
+  it('the design of record\'s header: the agent\'s mark (the cockpit\'s still avatar, no score passed), "Battles" back', async () => {
+    const onBack = vi.fn();
+    m.render(<FilmRoomScreenV2 battle={battleOf(sep23Tape)} onBack={onBack} viewerId="viewer-1" readers={readersOf({ [sep23Tape.etDate]: sep23Tape }, sep23Series)} nowMs={NOW} />);
+    await m.flush();
+    const back = m.qa('header button')[0];
+    expect(back.textContent).toBe('‹ Battles');
+    m.click(back);
+    expect(onBack).toHaveBeenCalledTimes(1);
+    const mark = m.q('header [data-agent-mark]');
+    expect(mark.getAttribute('aria-hidden')).toBe('true');
+    expect(mark.querySelector('svg')).toBeTruthy();   // the presence face (AGENT_PRESENCE_ENABLED), painted once
+    expect(mark.compareDocumentPosition(m.q('header h1')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('the subtitle names only what the record carries: archetype · BaggerBomb · length · date', () => {
+    const D = sep23Tape.etDate;
+    const base = { agentContext: { archetype: 'momentum_chaser' }, timing: { tradingDays: ['2026-09-22', D] } };
+    expect(headerParts(base, sep23Tape, D)).toEqual({ archetype: 'Trend Follower', game: 'BaggerBomb', length: 'two-day battle', date: 'Wed, Sep 23, 2026' });
+    // no timeline: the tape's day number on its final day; on another day, no length at all (never battleDays' one-day fallback)
+    expect(headerParts({ agentContext: {} }, sep23Tape, D).length).toBe('one-day battle');
+    expect(headerParts({ agentContext: {} }, { ...sep23Tape, isFinalDay: false, dayNumber: 1 }, D).length).toBeNull();
+    expect(headerParts({}, null, D)).toEqual({ archetype: null, game: 'BaggerBomb', length: null, date: 'Wed, Sep 23, 2026' });
+    // the archetype: the battle's, else the tape's (a code the directory does not name is humanised by the directory itself)
+    expect(headerParts({}, sep23Tape, D).archetype).toBe('Momentum');
+    // a mode the tape does not cover is not called BaggerBomb
+    expect(headerParts(base, { passes: { close: { status: 'skipped_mode' } } }, D).game).toBeNull();
   });
 
   it('a Deep dive door on a swap card opens that symbol', async () => {

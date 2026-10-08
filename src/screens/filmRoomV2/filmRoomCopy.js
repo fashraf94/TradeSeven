@@ -25,7 +25,9 @@ export const REPLAY_SENTENCE = "one-step hypothetical through the day's close; l
 
 export const FILM_ROOM_COPY = Object.freeze({
   title: 'Film Room',
-  back: 'Back',
+  back: 'Battles',
+  gameName: 'BaggerBomb',
+  battleLength: (word) => `${word}-day battle`,   // the design of record's "one-day battle"
   battleComplete: 'battle complete',
   battleActive: 'battle in progress',
   depths: [{ id: 'glance', label: 'Glance' }, { id: 'study', label: 'Study' }, { id: 'deep', label: 'Deep dive' }],
