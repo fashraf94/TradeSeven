@@ -1,0 +1,378 @@
+{
+  "_about": "Pilot P6 census fixture (scripts/census-swap-identity.test.js). b-shadow: rows written at SWAP_IDENTITY_MODE shadow/enforce (with verification), every caller shape of Phase 0 §6.3, and one deliberate executor/census DISAGREEMENT (a bug signal the report must surface). b-off: pre-P6 rows (no verification). b-dup: a battle older than the Sep 21 evaluation counter (repeated eval ids), an ambiguous join, a co-pilot battle's MODEL swap, and a verification the executor did not write (planted).",
+  "b-shadow": {
+    "status": "active",
+    "expiresAt": "2026-10-10T00:00:00.000Z",
+    "trades": [
+      {
+        "evaluationId": "risk_stop_loss_KO_1791385200000",
+        "symbolOut": "KO",
+        "symbolIn": "AMD",
+        "swappedOutAt": "2026-10-08T15:00:00.000Z",
+        "entryMode": "autopilot",
+        "verification": {
+          "verificationId": "b-shadow:risk_stop_loss_KO_1791385200000:verify",
+          "mode": "shadow",
+          "verdict": "match",
+          "basis": "symbol_and_entry",
+          "expected": {
+            "symbol": "KO",
+            "swappedInAt": null
+          },
+          "found": {
+            "symbol": "KO",
+            "swappedInAt": null
+          }
+        }
+      },
+      {
+        "evaluationId": "risk_vwap_failure_PG_1791385260000",
+        "symbolOut": "XOM",
+        "symbolIn": "JPM",
+        "swappedOutAt": "2026-10-08T15:01:00.000Z",
+        "entryMode": "autopilot",
+        "verification": {
+          "verificationId": "b-shadow:risk_vwap_failure_PG_1791385260000:verify",
+          "mode": "shadow",
+          "verdict": "mismatch",
+          "basis": "symbol_and_entry",
+          "expected": {
+            "symbol": "PG",
+            "swappedInAt": null
+          },
+          "found": {
+            "symbol": "XOM",
+            "swappedInAt": "2026-10-08T14:50:00.000Z"
+          }
+        }
+      },
+      {
+        "evaluationId": "eval_004",
+        "symbolOut": "MSFT",
+        "symbolIn": "NVDA",
+        "swappedOutAt": "2026-10-08T15:15:00.000Z",
+        "entryMode": "autopilot",
+        "verification": {
+          "verificationId": "b-shadow:eval_004:verify",
+          "mode": "shadow",
+          "verdict": "match",
+          "basis": "symbol_and_entry",
+          "expected": {
+            "symbol": "MSFT",
+            "swappedInAt": null
+          },
+          "found": {
+            "symbol": "MSFT",
+            "swappedInAt": null
+          }
+        }
+      },
+      {
+        "evaluationId": "eval_001",
+        "symbolOut": "TSLA",
+        "symbolIn": "AMZN",
+        "swappedOutAt": "2026-10-06T15:00:00.000Z",
+        "entryMode": "autopilot"
+      },
+      {
+        "evaluationId": "gameplan_KO_AMD_1791386100000",
+        "symbolOut": "KO",
+        "symbolIn": "AMD",
+        "swappedOutAt": "2026-10-08T15:20:00.000Z",
+        "entryMode": "autopilot",
+        "verification": {
+          "verificationId": "b-shadow:gameplan_KO_AMD_1791386100000:verify",
+          "mode": "shadow",
+          "verdict": "match",
+          "basis": "symbol_only",
+          "expected": {
+            "symbol": "KO",
+            "swappedInAt": null
+          },
+          "found": {
+            "symbol": "KO",
+            "swappedInAt": "2026-10-08T15:00:00.000Z"
+          }
+        }
+      },
+      {
+        "evaluationId": "guardrail_stopLoss_TSLA_1791386400000",
+        "symbolOut": "NVDA",
+        "symbolIn": "JPM",
+        "swappedOutAt": "2026-10-08T15:25:00.000Z",
+        "entryMode": "autopilot",
+        "verification": {
+          "verificationId": "b-shadow:guardrail_stopLoss_TSLA_1791386400000:verify",
+          "mode": "shadow",
+          "verdict": "match",
+          "basis": "symbol_and_entry",
+          "expected": {
+            "symbol": "TSLA",
+            "swappedInAt": null
+          },
+          "found": {
+            "symbol": "TSLA",
+            "swappedInAt": null
+          }
+        }
+      },
+      {
+        "evaluationId": "eval_prev",
+        "symbolOut": "AMZN",
+        "symbolIn": "AMD",
+        "swappedOutAt": "2026-10-08T15:30:00.000Z",
+        "entryMode": "copilot",
+        "verification": {
+          "verificationId": "b-shadow:eval_prev:verify",
+          "mode": "enforce",
+          "verdict": "not_checked",
+          "basis": null,
+          "expected": null,
+          "found": {
+            "symbol": "AMZN",
+            "swappedInAt": null
+          }
+        }
+      }
+    ],
+    "evaluations": [
+      {
+        "evalId": "eval_004",
+        "timestamp": "2026-10-08T15:15:00.000Z",
+        "decision": "SWAP",
+        "symbolOut": "MSFT",
+        "symbolIn": "NVDA",
+        "executionRefusal": null
+      },
+      {
+        "evalId": "eval_005",
+        "timestamp": "2026-10-08T15:45:00.000Z",
+        "decision": "HOLD",
+        "symbolOut": "KO",
+        "symbolIn": "AMD",
+        "executionRefusal": {
+          "reason": "outgoing_identity_mismatch",
+          "verificationId": "b-shadow:eval_005:verify"
+        }
+      }
+    ],
+    "proposalHistory": [
+      {
+        "proposalId": "prop_000",
+        "symbolOut": "MU",
+        "symbolIn": "JPM",
+        "resolution": "auto_execution_failed",
+        "executionFailed": true,
+        "resolvedAt": "2026-10-01T15:00:00.000Z"
+      },
+      {
+        "proposalId": "prop_001",
+        "symbolOut": "AMZN",
+        "symbolIn": "AMD",
+        "resolution": "approved",
+        "evaluationMetadata": {
+          "evaluationId": "eval_prev"
+        },
+        "resolvedAt": "2026-10-08T15:30:00.000Z"
+      },
+      {
+        "proposalId": "prop_002",
+        "symbolOut": "KO",
+        "symbolIn": "JPM",
+        "resolution": "auto_execution_failed",
+        "executionFailed": true,
+        "executionRefusal": {
+          "reason": "battle_not_active",
+          "verificationId": "b-shadow:eval_x:verify"
+        },
+        "resolvedAt": "2026-10-08T15:35:00.000Z"
+      },
+      {
+        "proposalId": "prop_003",
+        "symbolOut": "PG",
+        "symbolIn": "JPM",
+        "resolution": "approved",
+        "executionFailed": true,
+        "resolvedAt": "2026-10-08T15:36:00.000Z"
+      }
+    ],
+    "gameplanMeetingHistory": [
+      {
+        "id": "gpm_0",
+        "resolvedAt": "2026-10-01T15:00:00.000Z",
+        "legRefusals": [
+          {
+            "symbolOut": "AMZN",
+            "symbolIn": "JPM",
+            "reason": "battle_not_active",
+            "verificationId": "b-shadow:gameplan_AMZN_JPM_1:verify",
+            "verification": {
+              "verdict": "match"
+            }
+          }
+        ]
+      },
+      {
+        "id": "gpm_1",
+        "legRefusals": [
+          {
+            "symbolOut": "INTC",
+            "symbolIn": "JPM",
+            "reason": "outgoing_identity_mismatch",
+            "verificationId": null,
+            "verification": null
+          },
+          {
+            "symbolOut": "KO",
+            "symbolIn": "AMD",
+            "reason": "outgoing_identity_mismatch",
+            "verificationId": "b-shadow:gameplan_KO_AMD_1:verify",
+            "verification": {
+              "verdict": "mismatch"
+            }
+          }
+        ],
+        "resolvedAt": "2026-10-08T15:50:00.000Z"
+      }
+    ],
+    "statusFeed": [
+      {
+        "timestamp": "2026-10-08T15:40:00.000Z",
+        "source": "risk_manager",
+        "action": "risk_swap_failed",
+        "refusalReason": "outgoing_identity_mismatch"
+      },
+      {
+        "timestamp": "2026-10-08T15:41:00.000Z",
+        "source": "haiku",
+        "action": "hold"
+      }
+    ]
+  },
+  "b-off": {
+    "status": "completed",
+    "expiresAt": "2026-10-03T00:00:00.000Z",
+    "trades": [
+      {
+        "evaluationId": "risk_bust_avoidance_BRK.B_1790000000000",
+        "symbolOut": "BRK.B",
+        "symbolIn": "AMD",
+        "swappedOutAt": "2026-10-01T15:00:00.000Z",
+        "entryMode": "autopilot"
+      },
+      {
+        "evaluationId": "gameplan_TSLA_JPM_1790000060000",
+        "symbolOut": "MSFT",
+        "symbolIn": "JPM",
+        "swappedOutAt": "2026-10-01T15:01:00.000Z",
+        "entryMode": "autopilot"
+      }
+    ],
+    "evaluations": [],
+    "proposalHistory": [],
+    "gameplanMeetingHistory": [],
+    "statusFeed": []
+  },
+  "b-dup": {
+    "status": "active",
+    "expiresAt": "2026-10-10T00:00:00.000Z",
+    "executionMode": "copilot",
+    "trades": [
+      {
+        "evaluationId": "eval_151",
+        "symbolOut": "MSFT",
+        "symbolIn": "JPM",
+        "swappedOutAt": "2026-10-08T16:00:00.000Z",
+        "entryMode": "autopilot"
+      },
+      {
+        "evaluationId": "eval_151",
+        "symbolOut": "AAPL",
+        "symbolIn": "AMD",
+        "swappedOutAt": "2026-10-08T16:01:00.000Z",
+        "entryMode": "autopilot"
+      },
+      {
+        "evaluationId": "eval_152",
+        "symbolOut": "KO",
+        "symbolIn": "AMD",
+        "swappedOutAt": "2026-10-08T16:02:00.000Z",
+        "entryMode": "autopilot"
+      },
+      {
+        "evaluationId": "eval_010",
+        "symbolOut": "NVDA",
+        "symbolIn": "XOM",
+        "swappedOutAt": "2026-10-08T16:03:00.000Z",
+        "entryMode": "copilot"
+      },
+      {
+        "evaluationId": "eval_011",
+        "symbolOut": "TSLA",
+        "symbolIn": "AMD",
+        "swappedOutAt": "2026-10-08T16:04:00.000Z",
+        "entryMode": "copilot",
+        "verification": {
+          "verificationId": "planted",
+          "mode": "shadow",
+          "verdict": "match",
+          "basis": "symbol_and_entry"
+        }
+      }
+    ],
+    "evaluations": [
+      {
+        "evalId": "eval_151",
+        "timestamp": "2026-10-08T15:00:00.000Z",
+        "decision": "SWAP",
+        "symbolOut": "AAPL",
+        "symbolIn": "AMD"
+      },
+      {
+        "evalId": "eval_151",
+        "timestamp": "2026-10-08T15:15:00.000Z",
+        "decision": "HOLD",
+        "symbolOut": null,
+        "symbolIn": null
+      },
+      {
+        "evalId": "eval_151",
+        "timestamp": "2026-10-08T15:30:00.000Z",
+        "decision": "SWAP",
+        "symbolOut": "MSFT",
+        "symbolIn": "JPM"
+      },
+      {
+        "evalId": "eval_152",
+        "timestamp": "2026-10-08T15:45:00.000Z",
+        "decision": "SWAP",
+        "symbolOut": "KO",
+        "symbolIn": "AMD"
+      },
+      {
+        "evalId": "eval_152",
+        "timestamp": "2026-10-08T15:46:00.000Z",
+        "decision": "SWAP",
+        "symbolOut": "PG",
+        "symbolIn": "AMD"
+      },
+      {
+        "evalId": "eval_010",
+        "timestamp": "2026-10-08T16:00:00.000Z",
+        "decision": "SWAP",
+        "symbolOut": "NVDA",
+        "symbolIn": "XOM"
+      },
+      {
+        "evalId": "eval_011",
+        "timestamp": "2026-10-08T16:01:00.000Z",
+        "decision": "SWAP",
+        "symbolOut": "TSLA",
+        "symbolIn": "AMD"
+      }
+    ],
+    "proposalHistory": [],
+    "gameplanMeetingHistory": [],
+    "statusFeed": []
+  }
+}

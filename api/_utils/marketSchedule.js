@@ -57,8 +57,9 @@ const SERVER_TTL = {
 // TIMEZONE HELPERS
 // ============================================
 
-export function getETDate() {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+/** The ET wall-clock date for `at` (now, by default) — Pilot P6 passes its injected clock's instant. */
+export function getETDate(at = new Date()) {
+  return new Date(at.toLocaleString('en-US', { timeZone: 'America/New_York' }));
 }
 
 export function formatDateString(date) {

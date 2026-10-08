@@ -15,6 +15,9 @@ import { getETDate, formatDateString } from './marketSchedule.js';
 // June 2026 import rule (BUILD_RULES §4); the co-located test's import of this
 // module is the dependency-surface guard.
 import { resolveModeConfig } from '../../src/constants/agentGameModes.js';
+// P6 swap identity check (pilot spec §7) — the same Node-clean src import rule;
+// the same co-located guard.
+import { SWAP_IDENTITY_MODE, SWAP_IDENTITY_MODES } from '../../src/config/featureFlags.js';
 
 // ==================== VALIDATION ====================
 
@@ -89,6 +92,98 @@ export function validateTradeDecision(decision, battle) {
   return { valid: errors.length === 0, errors, resolvedTier, resolvedSlotIndex };
 }
 
+// ==================== P6 — THE SWAP IDENTITY CHECK (G01) ====================
+
+/** The typed refusals the executor raises at SWAP_IDENTITY_MODE 'enforce' (spec §7; founder decisions D2, D3). */
+export const SWAP_REFUSAL_REASONS = Object.freeze(['outgoing_identity_mismatch', 'battle_not_active']);
+
+/**
+ * A swap the executor refused at 'enforce' — nothing was written. The message
+ * stays readable for the callers' existing `err.message` catches; `reason` and
+ * `verification` carry the typed outcome.
+ */
+export class SwapRefusalError extends Error {
+  constructor(reason, verification, message) {
+    super(message);
+    this.name = 'SwapRefusalError';
+    this.reason = reason;
+    this.verification = verification;
+  }
+}
+
+/** The flag's value, or 'off' when it cannot be read (a hermetic test mock that omits it). Never throws. */
+function flagSwapIdentityMode() {
+  try {
+    return SWAP_IDENTITY_MODE;
+  } catch {
+    return 'off';
+  }
+}
+
+/** The mode `value` names, or 'off' for anything that is not one of the walked states. Never throws. */
+export function resolveSwapIdentityMode(value) {
+  try {
+    return SWAP_IDENTITY_MODES.includes(value) ? value : 'off';
+  } catch {
+    return 'off';
+  }
+}
+
+/**
+ * The verification evidence (Phase 0 §7.1), built from the transaction's own
+ * read. `expected` is the caller's belief about the outgoing position, `found`
+ * the slot's occupant at this attempt. The id derives from inputs only, so a
+ * transaction retry re-derives the same one.
+ */
+function buildVerification({ battleId, evaluationMetadata, mode, expectedOut, outAsset, liveData, resolvedTier, resolvedSlotIndex, checkedAt }) {
+  const found = { symbol: outAsset?.symbol ?? null, swappedInAt: outAsset?.swappedInAt ?? null };
+  let expected = null;
+  let basis = null;
+  let verdict = 'not_checked';
+  if (expectedOut) {
+    expected = { symbol: expectedOut.symbol ?? null, swappedInAt: expectedOut.swappedInAt ?? null };
+    // A stored belief without the entry instant (a legacy proposal, a client-
+    // written record) can only be checked by symbol, and says so.
+    basis = expectedOut.swappedInAt !== undefined ? 'symbol_and_entry' : 'symbol_only';
+    const sameSymbol = expected.symbol !== null && expected.symbol === found.symbol;
+    const sameEntry = basis === 'symbol_only' || expected.swappedInAt === found.swappedInAt;
+    verdict = sameSymbol && sameEntry ? 'match' : 'mismatch';
+  }
+  // A caller without an evaluation identity (a client-written proposal) gets
+  // no id rather than one every such call on the battle would share.
+  const evaluationId = evaluationMetadata?.evaluationId;
+  return {
+    verificationId: typeof evaluationId === 'string' && evaluationId ? `${battleId}:${evaluationId}:verify` : null,
+    mode,
+    expected,
+    found,
+    verdict,
+    basis,
+    battleStatus: liveData.status ?? null,
+    slot: { tier: resolvedTier ?? null, slotIndex: resolvedSlotIndex ?? null }, // never undefined (Firestore)
+    tradeSeq: liveData.scoreState?.tradeCount || 0,
+    checkedAt,
+  };
+}
+
+/** The refusal `verification` calls for at 'enforce', or null. An ended battle outranks a moved slot. */
+function refusalOf(verification) {
+  if (verification.battleStatus !== 'active') {
+    return {
+      reason: 'battle_not_active',
+      message: `Swap refused (battle_not_active): the battle's status is ${verification.battleStatus ?? 'missing'}`,
+    };
+  }
+  if (verification.verdict === 'mismatch') {
+    const { expected, found, slot } = verification;
+    return {
+      reason: 'outgoing_identity_mismatch',
+      message: `Swap refused (outgoing_identity_mismatch): expected ${expected.symbol} in ${slot.tier}[${slot.slotIndex}], found ${found.symbol ?? 'an empty slot'}`,
+    };
+  }
+  return null;
+}
+
 // ==================== EXECUTION ====================
 
 /**
@@ -112,9 +207,26 @@ export function validateTradeDecision(decision, battle) {
  * @param {Object} currentPrices - { symbol: { current, previousClose, ... } }
  * @param {Object} evaluationMetadata - { id, action, trigger, rationale, hypothesis, evaluationId, tradingDay }
  * @param {Object|null} snapshot - Phase 4: per-symbol technical snapshot { symbolOut, symbolIn }, persisted on trades[i].snapshot for Sprint 2 replay. Null when not provided.
+ * @param {Object} [opts] - P6 (pilot spec §7). Omitted while the flag is 'off', every default reproduces the
+ *   pre-P6 behaviour exactly; with the flag on, an omitted belief is recorded 'not_checked'.
+ * @param {() => Date} [opts.now] - the clock; read once before the transaction and once per transaction attempt.
+ * @param {Function} [opts.fetchDailyReference] - the Guard 3 daily-reference fetch (getStockAnalysisData's signature).
+ * @param {{symbol: string, swappedInAt?: string|null}|null} [opts.expectedOut] - the caller's belief about the
+ *   outgoing position. `swappedInAt` present (null for a creation-time position) → checked by symbol AND entry
+ *   instant; absent → by symbol only. Null → 'not_checked'.
+ * @param {string} [opts.identityMode] - 'off' | 'shadow' | 'enforce' (anything else → 'off'). 'off' computes
+ *   nothing; 'shadow' records `verification` on the trade row; 'enforce' also refuses a moved slot or an
+ *   inactive battle with a SwapRefusalError and writes nothing.
  * @returns {Object} { closedTrade, incomingAsset }
  */
-export async function executeSwapServer(db, battleId, battle, resolvedTier, resolvedSlotIndex, benchAsset, currentDay, currentPrices, evaluationMetadata = {}, snapshot = null) {
+export async function executeSwapServer(db, battleId, battle, resolvedTier, resolvedSlotIndex, benchAsset, currentDay, currentPrices, evaluationMetadata = {}, snapshot = null, opts = {}) {
+  const {
+    now: clock = () => new Date(),
+    fetchDailyReference = getStockAnalysisData,
+    expectedOut = null,
+    identityMode = flagSwapIdentityMode(), // SWAP_IDENTITY_MODE
+  } = opts;
+  const mode = resolveSwapIdentityMode(identityMode);
   const battleRef = db.collection('agentBattles').doc(battleId);
 
   // ---- Guard 3 (parity with the live-eval badge baseline) ----
@@ -124,12 +236,14 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
   // missing), pre-fetch its daily series as the Guard 2 reference. swapPrice and
   // validated day-1 startingPrice need no reference, so those paths fetch nothing.
   // Fetched here — before the transaction — so no network I/O runs inside it.
-  const todayET = formatDateString(getETDate());
+  // P6 §8: one clock reading for every pre-transaction date.
+  const startedAt = clock();
+  const todayET = formatDateString(getETDate(startedAt));
   const activationDateET = battle?.activatedAt
-    ? formatDateString(new Date(new Date(battle.activatedAt).toLocaleString('en-US', { timeZone: 'America/New_York' })))
+    ? formatDateString(getETDate(new Date(battle.activatedAt)))
     : todayET;
   const isActivationDay = todayET === activationDateET;
-  const utcToday = new Date().toISOString().slice(0, 10);
+  const utcToday = startedAt.toISOString().slice(0, 10);
 
   const preOut = battle?.portfolio?.[resolvedTier]?.[resolvedSlotIndex];
   const preStartingPrice = battle?.portfolio?.startingPrices?.[preOut?.symbol];
@@ -141,7 +255,7 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
   if (guard3NeedsRef) {
     guard3Symbol = preOut.symbol;
     try {
-      const refData = await getStockAnalysisData(preOut.symbol, { forceRefresh: true, fields: ['daily', 'price'] });
+      const refData = await fetchDailyReference(preOut.symbol, { forceRefresh: true, fields: ['daily', 'price'] });
       if (Array.isArray(refData?.daily)) guard3Daily = refData.daily;
     } catch (err) {
       // No reference → Guard 2 accepts previousClose unchanged (err toward not intervening).
@@ -157,12 +271,31 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
 
     const liveData = battleSnap.data();
     const outAsset = liveData.portfolio[resolvedTier]?.[resolvedSlotIndex];
+    // P6 §8: one clock reading per attempt — the stamps, the beacon's age and
+    // the bench cooldown all derive from it; a retry reads it afresh.
+    const attemptAt = clock();
+
+    // ---- P6: the swap identity check (G01, pilot spec §7) ----
+    // From THIS attempt's read: the occupant against the caller's belief, and
+    // the battle's status. Computed before every other refusal, so a stale
+    // belief is named as such even where the older checks below would also
+    // throw (a slot that now holds the incoming symbol reads as a self-swap).
+    // 'off' computes nothing.
+    let verification = null;
+    if (mode !== 'off') {
+      verification = buildVerification({
+        battleId, evaluationMetadata, mode, expectedOut, outAsset, liveData,
+        resolvedTier, resolvedSlotIndex, checkedAt: attemptAt.toISOString(),
+      });
+      const refusal = mode === 'enforce' ? refusalOf(verification) : null;
+      if (refusal) throw new SwapRefusalError(refusal.reason, verification, refusal.message);
+    }
 
     if (!outAsset) {
       throw new Error('Asset no longer available in slot');
     }
 
-    const now = new Date().toISOString();
+    const now = attemptAt.toISOString();
     const outSymbol = outAsset.symbol;
     const inSymbol = benchAsset.symbol;
 
@@ -180,7 +313,7 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
     // Prefer live beacon prices over REST-fetched (15-min delayed) prices
     const beacon = liveData.livePriceBeacon;
     const beaconFresh = beacon?.updatedAt &&
-      (Date.now() - new Date(beacon.updatedAt).getTime()) < 120000; // < 2 min
+      (attemptAt.getTime() - new Date(beacon.updatedAt).getTime()) < 120000; // < 2 min
 
     const getPrice = (symbol) => {
       if (beaconFresh && beacon.prices?.[symbol] > 0) return beacon.prices[symbol];
@@ -270,6 +403,8 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
       ...evaluationMetadata,
       // Phase 4: per-symbol technical snapshot at decision time (null if caller did not provide one)
       snapshot,
+      // P6: the identity verification, on the row it verified (absent at 'off').
+      ...(verification ? { verification } : {}),
     };
 
     // ---- Build incoming asset ----
@@ -317,7 +452,7 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
       baseATR: outAsset.baseATR,
       isCrypto: outAsset.isCrypto || false,
       direction: outAsset.direction || null,
-      cooldownUntil: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      cooldownUntil: new Date(attemptAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
     };
 
     let updatedBenchStocks;

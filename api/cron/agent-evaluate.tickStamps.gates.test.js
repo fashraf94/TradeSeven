@@ -71,7 +71,8 @@ vi.mock('../_utils/shadowLogger.js', async (importOriginal) => ({
 }));
 // Cockpit Build 0: the call records are pinned OFF here explicitly (this suite's exact
 // entry-key lists are the off shape), so the shadow flip moves no line here.
-vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({ ...(await importOriginal()), TICK_STAMPS_ENABLED: true, CALL_RECORDS_MODE: 'off' }));
+// Pilot P6: SWAP_IDENTITY_MODE pinned 'off' too — this suite's fixture is the off shape (writer arguments, trade rows, entry keys), so the founder's flip moves no line here.
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({ ...(await importOriginal()), TICK_STAMPS_ENABLED: true, CALL_RECORDS_MODE: 'off', SWAP_IDENTITY_MODE: 'off' }));
 // FAULT 1 — the composer.
 vi.mock('../_utils/tickStamps.js', async (importOriginal) => {
   const real = await importOriginal();

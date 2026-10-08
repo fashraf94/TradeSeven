@@ -52,6 +52,11 @@ import { runCallFlips, runExitCallsHook } from '../_utils/callRecords/flip.js';
 import { validateTradeToolResult, INVALID_TOOL_RESULT_CLASS } from '../_utils/agentEvalToolResultValidation.js';
 import { evaluateTriggers, fetchRecentNews, MAX_STORY_WAKE_ATTEMPTS, SEEN_STORY_ID_CAP } from '../_utils/agentTriggerGate.js';
 import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExecution.js';
+// Pilot P6 (spec §7) — the caller side of the swap identity check: the mode,
+// read once per check; the executor's trailing options (none at 'off', so every
+// call keeps its pre-P6 arguments); the belief each caller hands it; and the
+// refusal records and table F lines each caller writes at mode ≠ off.
+import { currentSwapIdentityMode, swapIdentityActive, swapIdentityOptions, expectedOutOfPosition, expectedOutOfStored, storedIdentityOf, isSwapRefusal, refusalKindOf, refusalRecord, refusalFeedFields, departedLegRecord } from '../_utils/swapIdentity.js';
 // P2 League Tournament — agent-market exclusivity (Spec §1.2). Every use is
 // tournament-conditional: resolveTournamentContext returns null for regular
 // battles from in-memory fields alone (zero Firestore I/O), so the
@@ -923,6 +928,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
   captureStep(tickCapture, () => {
     tickCapture.schema(resolveCaptureSchema({ callsEnabled: callsActive(callsCtx.mode), pilotEnabled: false }));
   });
+  // PILOT P6 (spec §7) — the swap identity mode, resolved ONCE per check and
+  // handed to every executor call this check makes and to the proposal and
+  // meeting creation sites. Never re-read mid-check.
+  const swapIdentityMode = currentSwapIdentityMode();
 
   // Phase 2 Voice Layer Rework — trade narrations queued during this tick.
   // Declared outside the try so the finally block can dispatch them
@@ -2021,7 +2030,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         const riskSwapResult = await executeSwapServer(
           db, battle.id, battle,
           slot.tier, slot.slotIndex,
-          replacement, currentDay, prices, evaluationMetadata, snapshot
+          replacement, currentDay, prices, evaluationMetadata, snapshot,
+          // P6: the belief — the position the risk verdict was computed on
+          // (`asset`, this tick's own picture), not the book as refreshed
+          // after an earlier exit: an occupant that changed underneath this
+          // loop is named, never sold under another position's verdict
+          // (review S2-3).
+          ...swapIdentityOptions(swapIdentityMode, expectedOutOfPosition(asset))
         );
         // Capture (C-10): the COMMITTED action, read off the executor's own
         // return before any later await, identified INSIDE the record only.
@@ -2237,6 +2252,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           evalId: null,
           symbolOut: score.symbol,
           symbolIn: replacement?.symbol || null,
+          // P6 (D2): a typed refusal HOLDS — the stock this exit protected has
+          // left the slot; the new occupant is never sold here (the next
+          // tick's risk pass judges it on its own numbers). The beat renders
+          // table F and carries the typed reason.
+          ...(swapIdentityActive(swapIdentityMode) && isSwapRefusal(err)
+            ? refusalFeedFields(err, { kind: refusalKindOf(riskResult.reason === 'stagnation' ? 'archetype' : 'risk_manager'), symbolIn: replacement?.symbol ?? null })
+            : {}),
         });
         // P2: compensating release (the reserve landed but the swap didn't).
         await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
@@ -2316,7 +2338,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // ---- Proposal lifecycle check (after risk evaluation, before triggers/Haiku) ----
     const proposalHandled = refreshFailure
       ? null // F1b — discretionary; the book we would act on cannot be read
-      : await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore, tournamentCtx);
+      : await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore, tournamentCtx, swapIdentityMode);
     if (proposalHandled === 'skip_haiku') {
       // Proposal is pending and not expired — write scores/risk but skip trigger gate + Haiku
       finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
@@ -2352,13 +2374,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // 'continue' keeps the tick falling through to that record.
     const gameplanHandled = refreshFailure
       ? 'continue'
-      : await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations, tournamentCtx);
+      : await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations, tournamentCtx, swapIdentityMode);
     // R11 (Exit-Behavior Tier 2): a pending-and-unexpired meeting suppresses
     // DISCRETIONARY trading, never the user's standing deterministic orders —
     // the pass below runs the guardrail stops + profit target before the
     // early return that used to silently swallow them (Phase-0 item 2).
     if (gameplanHandled === 'skip_haiku') {
-      await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, callsCtx });
+      await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, callsCtx, swapIdentityMode });
       finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -2389,18 +2411,36 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // persist that diagnosis.
     if (!refreshFailure && !battle.gameplanMeeting) {
       const gameplanTrigger = detectGameplanMeetingTrigger(battle, assetScores, prices, flatPortfolio, benchAssets, technicalScoresMap);
+      // P6 (spec §7; D6): each leg stores its outgoing position's identity AT
+      // BELIEF TIME — read here, before the pass below can trade — so an
+      // approval executed later is checked against the position the meeting
+      // was about (a departed or returned symbol is named, never traded as if
+      // it were the original). Mode ≠ off only; a leg without it is checked by
+      // symbol only.
+      // Read from the detector's OWN picture (`flatPortfolio`), the one each
+      // leg was chosen from — never the book as refreshed by an earlier
+      // execution this tick (review S2-4). A leg the picture cannot place
+      // stores nothing and is checked by symbol only — never null, which
+      // would claim a creation-time position (verifier SV2-S2-4).
+      if (gameplanTrigger && swapIdentityActive(swapIdentityMode)) {
+        gameplanTrigger.suggestedSwaps = gameplanTrigger.suggestedSwaps.map((leg) => {
+          const held = flatPortfolio.find((a) => a.symbol === leg.symbolOut);
+          return held ? { ...leg, swappedInAt: storedIdentityOf(held) } : leg;
+        });
+      }
       // R11: the tick that CREATES a meeting is a suppression tick too ("gameplan
       // IS the evaluation" returns below) — deterministic orders run first. The
       // meeting trigger was computed pre-pass; if the pass swaps, a proposal leg
       // referencing the departed symbol resolves at approval time via
       // handleGameplanMeeting's per-leg slot re-resolve: findPortfolioSlot on the
       // refreshed doc returns null for a departed symbolOut and the leg is
-      // SILENTLY skipped (`if (!slot) continue;`), while a taken symbolIn gets
+      // skipped (`if (!slot)`; silently at SWAP_IDENTITY_MODE 'off', recorded
+      // as a refusal at shadow/enforce — Pilot P6), while a taken symbolIn gets
       // the visible reserve-fail hold. The same staleness class risk swaps
       // already create for pending meetings today (they run before this gate on
       // every tick); the pass widens its frequency, never its mechanism.
       if (gameplanTrigger) {
-        await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, callsCtx });
+        await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, callsCtx, swapIdentityMode });
         const todayET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
@@ -3175,6 +3215,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     let decision = haikuResult?.decision || 'HOLD';
     let downgraded = false;
     let validationErrors = [];
+    // P6 (spec §7.2): the executor's typed refusal of this check's swap, if
+    // any — the entry's conditional `executionRefusal` (mode ≠ off only).
+    let executionRefusal = null;
     let guardrailOverrides = [];
     let guardrailStatusMessage = null;
     let guardrailSourceNote = null;
@@ -3589,7 +3632,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             const swapResult = await executeSwapServer(
               db, battle.id, battle,
               validation.resolvedTier, validation.resolvedSlotIndex,
-              benchAsset, currentDay, prices, evaluationMetadata, snapshot
+              benchAsset, currentDay, prices, evaluationMetadata, snapshot,
+              // P6: the belief — the position validateTradeDecision resolved
+              // from the model's symbolOut on this same snapshot.
+              ...swapIdentityOptions(swapIdentityMode, expectedOutOfPosition(battle.portfolio?.[validation.resolvedTier]?.[validation.resolvedSlotIndex]))
             );
             // Calls (§3.4): the committed executor result, carried apart from capture.
             callsStep(callsCtx, () => carryExecutorResult(callsCtx, swapResult));
@@ -3757,6 +3803,12 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             stagnationTicks[haikuInSymbol] = 0;
           } catch (swapErr) {
             console.error(`${LOG_PREFIX} Swap execution failed for battle ${battle.id}:`, swapErr.message);
+            // P6 (spec §7.2): a typed refusal is a VERDICT — the executor ran
+            // its check and blocked the swap — so capture records it
+            // `evaluated / blocked` with the reason, and the entry carries it.
+            // The decision stays a downgraded HOLD with the existing prefix;
+            // nothing is carried to the cockpit (no committed result).
+            const swapRefused = swapIdentityActive(swapIdentityMode) && isSwapRefusal(swapErr);
             // F5: the execution check RAN and produced no verdict. Leaving it
             // `not_evaluated` made a failed trade indistinguishable from a tick
             // that never tried to trade.
@@ -3764,6 +3816,17 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             // denied precondition keeps the `bypassed` the gate already wrote.
             captureStep(tickCapture, () => {
               if (tickCapture.state?.executorAdmitted !== true) return;
+              if (swapRefused) {
+                tickCapture.check('execution', {
+                  status: 'evaluated',
+                  result: 'blocked',
+                  stage: 'decision_resolved',
+                  symbolOut: haikuResult?.symbolOut ?? null,
+                  symbolIn: haikuResult?.symbolIn ?? null,
+                  reason: swapErr.reason,
+                });
+                return;
+              }
               tickCapture.check('execution', {
                 status: 'failed',
                 stage: 'decision_resolved',
@@ -3772,6 +3835,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               });
             });
             validationErrors.push(`Swap execution failed: ${swapErr.message}`);
+            // The speaker follows the trade's provenance: a guardrail-forced
+            // exit on this route is protective, a model swap is the agent's.
+            if (swapRefused) executionRefusal = refusalRecord(swapErr, { kind: refusalKindOf(haikuSwapReason === 'haiku_decision' ? 'haiku' : 'guardrail'), symbolIn: haikuResult?.symbolIn ?? null });
             decision = 'HOLD';
             downgraded = true;
             // P2: compensating release (no-op unless the reserve had landed).
@@ -3857,6 +3923,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               // when this proposal is later resolved into an executed swap).
               trade_reasoning: haikuResult?.trade_reasoning || null,
             },
+            // P6 (spec §7; D6): the outgoing position's identity at belief
+            // time — its entry instant, null for a creation-time position — so
+            // the approved / expired execution can be checked against it.
+            // Stored at mode ≠ off only; a proposal without it is checked by
+            // symbol only, and its verification says so.
+            ...(swapIdentityActive(swapIdentityMode)
+              ? { outgoingSwappedInAt: storedIdentityOf(battle.portfolio?.[validation.resolvedTier]?.[validation.resolvedSlotIndex]) }
+              : {}),
           };
 
           decision = 'PROPOSAL';
@@ -4160,6 +4234,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       callsCtx.exit = classifyEntryExit({ refreshFailure, haikuFailure, promptBuilt });
       evaluation.declarationsPhase = callsCtx.exit === 'model_result' && callsCtx.declarations?.phase === 'expected' ? 'expected' : 'none';
     });
+
+    // ---- Pilot P6 (spec §7.2) — the entry's execution refusal ----
+    // Present on EVERY entry this cron writes at SWAP_IDENTITY_MODE ≠ 'off' —
+    // the executor's typed refusal of this check's swap ({ reason,
+    // verificationId, verification, line }), or null — and ABSENT at off, so
+    // the off goldens keep their keys (the `declarationsPhase` precedent;
+    // tickStampsHarness SWAP_IDENTITY_ENTRY_KEYS).
+    if (swapIdentityActive(swapIdentityMode)) evaluation.executionRefusal = executionRefusal;
 
     // ---- Tick capture: the tick's own facts, read off what it already has --
     // The CONTROLS come from the in-memory slots the prompt was rendered from,
@@ -4747,8 +4829,10 @@ async function fetchPricesForProposal(proposal) {
  * @param {number} currentScore - Phase 4: live score at evaluation time, captured
  *   onto resolved proposals as scoreAtVeto (vetoed) or scoreAtResolution
  *   (auto_executed / lapsed) for Sprint 2 conviction analysis.
+ * @param {string} swapIdentityMode - P6: the check's swap identity mode (required;
+ *   resolved once per check by the caller).
  */
-async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore, tournamentCtx = null) {
+async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore, tournamentCtx = null, swapIdentityMode) {
   const proposal = battle.pendingProposal;
   if (!proposal) return 'continue';
 
@@ -4782,6 +4866,10 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
       // Execute the approved swap
       // P2: dormant path wrapped now — cheap and correct forever.
       let reservedSymbolIn = null;
+      // P6 — the honest record (every mode): did the execution throw, and was
+      // it the executor's typed refusal (mode ≠ off)?
+      let approvedExecutionFailed = false;
+      let approvedRefusal = null;
       try {
         const freshPrices = await fetchPricesForProposal(proposal);
         // Verify bench asset still exists
@@ -4843,7 +4931,10 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
               exitReason: 'haiku_decision',
               ...(proposal.evaluationMetadata || {}),
             },
-            proposal.snapshot || null
+            proposal.snapshot || null,
+            // P6: the belief stored at proposal creation (symbol-only when the
+            // proposal predates the stored identity or was client-written).
+            ...swapIdentityOptions(swapIdentityMode, expectedOutOfStored(proposal.symbolOut, proposal, 'outgoingSwappedInAt'))
           );
           captureStep(captureFor(), () => {
             captureFor().action({
@@ -4954,16 +5045,26 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         }
       } catch (err) {
         console.error(`${LOG_PREFIX} Approved proposal execution failed:`, err.message);
+        approvedExecutionFailed = true;
+        const approvedRefused = swapIdentityActive(swapIdentityMode) && isSwapRefusal(err);
+        if (approvedRefused) approvedRefusal = refusalRecord(err, { kind: refusalKindOf('haiku'), symbolIn: proposal.symbolIn ?? null });
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
           message: `Approved swap failed: ${err.message}`,
           action: 'hold', source: 'proposal_system',
+          // P6: a typed refusal renders its table F line and carries its reason.
+          ...(approvedRefused ? refusalFeedFields(err, { kind: refusalKindOf('haiku'), symbolIn: proposal.symbolIn ?? null }) : {}),
         });
         // P2: compensating release (no-op unless the reserve had landed).
         await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
       }
-      // Move to history and clear (cap at 50)
-      const history = [...(battle.proposalHistory || []), proposal].slice(-50);
+      // Move to history and clear (cap at 50). P6 — the honest record (every
+      // mode): an approval whose execution threw says so instead of standing
+      // as a bare `approved`; a typed refusal (mode ≠ off) rides beside it.
+      const approvedHistoryRow = approvedExecutionFailed
+        ? { ...proposal, executionFailed: true, ...(approvedRefusal ? { executionRefusal: approvedRefusal } : {}) }
+        : proposal;
+      const history = [...(battle.proposalHistory || []), approvedHistoryRow].slice(-50);
       await battleRef.update({ pendingProposal: null, proposalHistory: history });
       await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
       return 'continue';
@@ -5004,6 +5105,11 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
     console.log(`${LOG_PREFIX} Battle ${battle.id} has pending proposal (${proposal.proposalId}) — skipping Haiku`);
     return 'skip_haiku';
   }
+
+  // P6 — the honest record (every mode): did the expiry's auto-execution
+  // throw, and was it the executor's typed refusal (mode ≠ off)?
+  let expiredExecutionFailed = false;
+  let expiredRefusal = null;
 
   // Expired — handle based on mode
   if (proposal.mode === 'copilot') {
@@ -5060,7 +5166,10 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
             exitReason: 'haiku_decision',
             ...(proposal.evaluationMetadata || {}),
           },
-          proposal.snapshot || null
+          proposal.snapshot || null,
+          // P6: the belief stored at proposal creation — the expiry tick hands
+          // the executor a tier and slot stored up to a TTL earlier (DCR-002 P02).
+          ...swapIdentityOptions(swapIdentityMode, expectedOutOfStored(proposal.symbolOut, proposal, 'outgoingSwappedInAt'))
         );
         captureStep(captureFor(), () => {
           captureFor().action({
@@ -5154,6 +5263,18 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
       }
     } catch (err) {
       console.error(`${LOG_PREFIX} Expired copilot proposal execution failed:`, err.message);
+      expiredExecutionFailed = true;
+      if (swapIdentityActive(swapIdentityMode) && isSwapRefusal(err)) {
+        expiredRefusal = refusalRecord(err, { kind: refusalKindOf('haiku'), symbolIn: proposal.symbolIn ?? null });
+        // P6 (review S2-5): the player sees it — this path had no beat at all.
+        statusFeedEntries.push({
+          timestamp: new Date().toISOString(),
+          message: 'Proposal expired; its swap was refused.', // replaced by the table F line whenever the record fills it
+          action: 'hold', source: 'proposal_system',
+          symbolOut: proposal.symbolOut ?? null, symbolIn: proposal.symbolIn ?? null,
+          ...refusalFeedFields(err, { kind: refusalKindOf('haiku'), symbolIn: proposal.symbolIn ?? null }),
+        });
+      }
       // P2: compensating release (no-op unless the reserve had landed).
       await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
     }
@@ -5168,14 +5289,17 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
     summary.held++;
   }
 
-  // Move expired proposal to history and clear
+  // Move expired proposal to history and clear. P6 — the honest record (every
+  // mode): an auto-execution that threw is never filed `auto_executed`.
   const resolvedProposal = {
     ...proposal,
     resolvedAt: new Date().toISOString(),
-    resolution: proposal.mode === 'copilot' ? 'auto_executed' : 'lapsed',
+    resolution: proposal.mode === 'copilot' ? (expiredExecutionFailed ? 'auto_execution_failed' : 'auto_executed') : 'lapsed',
     resolvedBy: 'system',
     // Phase 4: numeric resolution-time score for Sprint 2 conviction analysis
     scoreAtResolution: typeof currentScore === 'number' ? Math.round(currentScore * 100) / 100 : null,
+    ...(expiredExecutionFailed ? { executionFailed: true } : {}),
+    ...(expiredRefusal ? { executionRefusal: expiredRefusal } : {}),
   };
   const history = [...(battle.proposalHistory || []), resolvedProposal].slice(-50);
   await battleRef.update({ pendingProposal: null, proposalHistory: history });
@@ -5239,11 +5363,16 @@ export async function runSuppressionDeterministicPass({
   currentDay, currentScore, marketPosture, dialClamp, momentumData,
   technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks,
   callsCtx = null,
+  // P6: the check's mode (both call sites pass it; a direct caller reads the flag — S3-1).
+  swapIdentityMode = currentSwapIdentityMode(),
 }) {
   if (!PROFIT_TARGET_EXECUTOR_ENABLED) return;
 
   let reservedSymbolIn = null;
   let deterministicResult = null;
+  // P6 — the honest record: true only while the EXECUTOR call is in flight, so
+  // the catch can tell an executor refusal from the pass's own fault.
+  let passExecutorInFlight = false;
   try {
     // Same construction as the main call site (C2 injector included) so stop
     // semantics are identical; the observe shadow is meaningless with no
@@ -5447,11 +5576,15 @@ export async function runSuppressionDeterministicPass({
       ? (battle.portfolio?.[slot.tier]?.[slot.slotIndex] || null)
       : null;
 
+    passExecutorInFlight = true;
     const passSwapResult = await executeSwapServer(
       db, battle.id, battle,
       slot.tier, slot.slotIndex,
-      benchAsset, currentDay, prices, evaluationMetadata, snapshot
+      benchAsset, currentDay, prices, evaluationMetadata, snapshot,
+      // P6: the belief — the position this pass resolved by symbol just above.
+      ...swapIdentityOptions(swapIdentityMode, expectedOutOfPosition(battle.portfolio?.[slot.tier]?.[slot.slotIndex]))
     );
+    passExecutorInFlight = false;
     captureStep(captureFor(), () => {
       captureFor().action({
         kind: 'swap', source: 'guardrail', exitReason: deterministicExitReason,
@@ -5582,11 +5715,30 @@ export async function runSuppressionDeterministicPass({
     await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
   } catch (err) {
     console.error(`${LOG_PREFIX} R11 deterministic pass failed for ${battle.id}:`, err?.message);
+    // P6 — the honest record (every mode): a throw from the EXECUTOR is an
+    // execution outcome, not the pass's own fault, so it is no longer filed as
+    // `guardrail_error`. It is recorded as the execution check the pass ran:
+    // `failed` (no verdict), or — the executor's typed refusal, mode ≠ off —
+    // `evaluated / blocked` with the reason (the capture schema's existing id
+    // field; the guardrail fault-class enum is untouched).
+    const passExecutorFailed = passExecutorInFlight;
+    const passRefused = passExecutorFailed && swapIdentityActive(swapIdentityMode) && isSwapRefusal(err);
     // G2 (Astra round 2): the pass's OWN fault, recorded where it is caught.
     // It is separate from the main-path guardrail fault by construction — a
     // suppression tick never runs that one — and its message is free text, so
     // it lives in the TTL body like every other message.
     captureStep(captureFor(), () => {
+      if (passExecutorFailed) {
+        captureFor().check('execution', {
+          status: passRefused ? 'evaluated' : 'failed',
+          result: passRefused ? 'blocked' : null,
+          stage: 'gameplan_handled',
+          symbolOut: deterministicResult?.symbolOut ?? null,
+          symbolIn: deterministicResult?.symbolIn ?? null,
+          reason: passRefused ? err.reason : null,
+        });
+        return;
+      }
       captureFor().guardrail({
         suppressionPassRan: true,
         suppressionPassFaulted: true,
@@ -5608,6 +5760,8 @@ export async function runSuppressionDeterministicPass({
       evalId: null,
       symbolOut: deterministicResult?.symbolOut || null,
       symbolIn: deterministicResult?.symbolIn || null,
+      // P6 (D2): a typed refusal HOLDS and renders its table F line.
+      ...(passRefused ? refusalFeedFields(err, { kind: refusalKindOf('guardrail'), symbolIn: deterministicResult?.symbolIn ?? null }) : {}),
     });
     // P2: compensating release (the reserve landed but the swap didn't).
     await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
@@ -5620,13 +5774,19 @@ export async function runSuppressionDeterministicPass({
  * Handle existing gameplan meeting lifecycle: approved, rejected, expired.
  * Mirrors handlePendingProposal pattern.
  * Returns 'skip_haiku' if a pending meeting blocks evaluation, 'continue' otherwise.
+ * `swapIdentityMode` (P6) is the check's swap identity mode — required, resolved
+ * once per check by the caller.
  */
-async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations, tournamentCtx = null) {
+async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations, tournamentCtx = null, swapIdentityMode) {
   const meeting = battle.gameplanMeeting;
   if (!meeting) return 'continue';
 
   // Already resolved by client
   if (meeting.status === 'approved') {
+    // P6 (spec §7.2): each leg's refusal, recorded on the meeting's history row
+    // at mode ≠ off — the executor's typed refusals AND a leg whose outgoing
+    // symbol has left the book (skipped silently before P6). Empty at off.
+    const legRefusals = [];
     // Execute suggested swaps
     for (const swap of (meeting.suggestedSwaps || [])) {
       // P2: set after a successful reserve; the per-iteration catch runs
@@ -5643,7 +5803,22 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
           continue;
         }
         const slot = findPortfolioSlot(battle.portfolio, swap.symbolOut);
-        if (!slot) continue;
+        if (!slot) {
+          // P6: the leg's outgoing symbol left the book — held, and (mode ≠ off)
+          // recorded on the history row and shown in the feed (review S2-5).
+          if (swapIdentityActive(swapIdentityMode)) {
+            const departed = departedLegRecord(swap);
+            legRefusals.push({ symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null, ...departed });
+            statusFeedEntries.push({
+              timestamp: new Date().toISOString(),
+              message: departed.line ?? 'A gameplan swap was skipped — the stock it named is no longer held.',
+              action: 'hold', source: 'gameplan_meeting',
+              symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null,
+              refusalReason: departed.reason, verificationId: null,
+            });
+          }
+          continue;
+        }
 
         // P2 phase 1: reserve before executing this rotation step. No-op
         // (always reserved) for regular battles.
@@ -5688,7 +5863,12 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
             // has no dialClamp in scope; resolveTempoDial is pure, so this
             // resolution is identical to the tick's for the same battle+flags.
             ...buildSwapProvenance(resolveTempoDial({ desiredTempo: desiredTempoOf(battle), dialEnabled: TEMPO_DIAL_ENABLED }).provenance),
-            evaluationId: gameplanEvalId }
+            evaluationId: gameplanEvalId },
+          // P6: the leg's belief stored at meeting creation — the slot was
+          // re-resolved by symbol above, so only the stored entry instant can
+          // tell a symbol that left and came back from the original position.
+          // This call passes no snapshot, so the options take the eleventh place.
+          ...swapIdentityOptions(swapIdentityMode, expectedOutOfStored(swap.symbolOut, swap, 'swappedInAt'), { padSnapshot: true })
         );
         captureStep(captureFor(), () => {
           captureFor().action({
@@ -5801,12 +5981,24 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
       } catch (err) {
         console.error(`${LOG_PREFIX} Gameplan swap failed for ${swap.symbolOut}:`, err.message);
+        if (swapIdentityActive(swapIdentityMode) && isSwapRefusal(err)) {
+          const legKind = refusalKindOf('gameplan_meeting');
+          legRefusals.push({ symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null, ...refusalRecord(err, { kind: legKind, symbolIn: swap.symbolIn ?? null }) });
+          // P6 (review S2-5): the meeting card is gone once approved — the feed says what happened.
+          statusFeedEntries.push({
+            timestamp: new Date().toISOString(),
+            message: 'A gameplan swap was refused.', // replaced by the table F line whenever the record fills it
+            action: 'hold', source: 'gameplan_meeting',
+            symbolOut: swap.symbolOut ?? null, symbolIn: swap.symbolIn ?? null,
+            ...refusalFeedFields(err, { kind: legKind, symbolIn: swap.symbolIn ?? null }),
+          });
+        }
         // P2: compensating release (no-op unless the reserve had landed).
         await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
       }
     }
-    // Move to history and clear
-    const history = [...(battle.gameplanMeetingHistory || []), meeting];
+    // Move to history and clear (P6: with the legs' refusals, when there are any).
+    const history = [...(battle.gameplanMeetingHistory || []), legRefusals.length > 0 ? { ...meeting, legRefusals } : meeting];
     await battleRef.update({ gameplanMeeting: null, gameplanMeetingHistory: history });
     await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
     return 'continue';

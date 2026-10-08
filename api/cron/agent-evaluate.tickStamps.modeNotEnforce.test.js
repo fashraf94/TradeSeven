@@ -62,6 +62,8 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   // Cockpit Build 0: the call records are pinned OFF here explicitly (this suite's
   // exact entry-key lists are the off shape), so the shadow flip moves no line here.
   CALL_RECORDS_MODE: 'off',
+  // Pilot P6: SWAP_IDENTITY_MODE pinned 'off' too — this suite's fixture is the off shape (writer arguments, trade rows, entry keys), so the founder's flip moves no line here.
+  SWAP_IDENTITY_MODE: 'off',
 }));
 
 const { processAgentBattle } = await import('./agent-evaluate.js');

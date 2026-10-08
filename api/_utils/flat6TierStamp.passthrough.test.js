@@ -148,6 +148,9 @@ describe('flat6 stamp pass-through — the caller-supply class guard (static)', 
 
 function makeFlat6BattleData() {
   return {
+    // Every agentBattles doc is created active (agentBattleService); the P6
+    // identity check refuses a battle that is not (founder decision D3).
+    status: 'active',
     gameMode: TOURNAMENT_GAME_MODE,
     portfolio: {
       // D2: flat6 doc assets carry the creation-time stamp.

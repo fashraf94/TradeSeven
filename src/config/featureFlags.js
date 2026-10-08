@@ -3108,3 +3108,47 @@ export const PILOT_JOURNEY_MODE = 'off';
 
 /** The three spec states, in walk order. */
 export const PILOT_JOURNEY_MODES = Object.freeze(['off', 'advisory', 'live']);
+
+/**
+ * SWAP_IDENTITY_MODE — Pilot P6, the swap identity check (G01; pilot spec
+ * §7; Phase 0 docs/audits/20261007_PHASE0_PILOT_P6_SWAP_IDENTITY.md). A STRING
+ * TRI-STATE read by the fenced executor (api/_utils/agentSwapExecution.js —
+ * the default of its `identityMode` option, normalized by its exported
+ * resolveSwapIdentityMode) and resolved ONCE per evaluation check by the cron,
+ * which hands that resolution to every executor call it makes:
+ *   'off'     — nothing is computed: every executor call is made with exactly
+ *               the arguments it had before P6 (ten, or nine for a meeting
+ *               leg), the executor's write and return value are
+ *               byte-identical, no proposal or meeting leg stores an
+ *               identity, and no refusal is recorded. Pinned by every
+ *               existing golden (callRecords offGolden, the flag-off entry
+ *               golden, tickCoherence noSwap, the guardrail pre-fix golden,
+ *               the rollback golden) and the executor-level golden in
+ *               api/_utils/agentSwapExecution.offGolden.test.js. Three
+ *               honest-record fixes ship at every mode (the P6 build report).
+ *   'shadow'  — inside the transaction the executor compares the slot's live
+ *               occupant `{ symbol, swappedInAt }` with the caller's belief and
+ *               reads the battle's status; the trade proceeds EXACTLY as today
+ *               and its row carries `trades[i].verification`. The census.
+ *   'enforce' — as shadow, but a mismatch or an inactive battle refuses the
+ *               swap with a typed error (`reason: 'outgoing_identity_mismatch'
+ *               | 'battle_not_active'`) and writes nothing; each caller holds
+ *               and records the refusal (spec §7, founder decisions D2/D3).
+ *
+ * RUNWAY: 'off' ships with the P6 build PR. 'off' → 'shadow' is the founder's
+ * own one-line PR after it merges — never a build PR. 'shadow' → 'enforce'
+ * follows after at least five full trading sessions AND a shadow read
+ * (scripts/census-swap-identity.mjs) — again one line. EACH step moves the pin
+ * row in src/config/swapIdentityFlags.test.js in the SAME commit (BUILD_RULES
+ * §2); a rollback is the same line back. Rolling back never rewrites a
+ * recorded `verification` or refusal.
+ *
+ * Unknown values resolve to 'off' (fail closed). A string tri-state, so it is
+ * pinned DIRECTLY — never a DARK_BY_DESIGN key (the flag-pin guard scans
+ * `*_ENABLED = true|false` only; the CALL_RECORDS_MODE precedent).
+ */
+// Pinned by: swapIdentityFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
+export const SWAP_IDENTITY_MODE = 'off';
+
+/** The three founder-walked states, in walk order. */
+export const SWAP_IDENTITY_MODES = Object.freeze(['off', 'shadow', 'enforce']);

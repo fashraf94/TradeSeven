@@ -1,0 +1,1822 @@
+{
+  "capturedFrom": "an LF checkout of origin/main @ 3f784e8d (a private Linux clone, detached; before any P6 source) running this file with GENERATE_SWAP_OFF_GOLDEN=1",
+  "frozenNow": "2026-10-07T15:00:00.000Z",
+  "scenarios": {
+    "star_swapped_in_position": {
+      "updates": [
+        {
+          "portfolio.star": [
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "isCrypto": false,
+              "baseATR": 3.6,
+              "swapPrice": 150,
+              "swappedInAt": "2026-10-07T15:00:00.000Z",
+              "swappedInDay": 3
+            },
+            {
+              "symbol": "TSLA",
+              "name": "Tesla",
+              "baseATR": 4,
+              "isCrypto": false,
+              "sector": "Consumer Cyclical"
+            }
+          ],
+          "portfolio.bench.stocks": [
+            {
+              "symbol": "JPM",
+              "name": "JPMorgan",
+              "baseATR": 1.6,
+              "isCrypto": false,
+              "sector": "Financial Services"
+            },
+            {
+              "symbol": "MU",
+              "name": "Micron",
+              "baseATR": 2.5,
+              "isCrypto": false,
+              "direction": null,
+              "cooldownUntil": "2026-10-08T15:00:00.000Z"
+            }
+          ],
+          "portfolio.bench.crypto": {
+            "symbol": "ETH",
+            "name": "Ethereum",
+            "baseATR": 6,
+            "isCrypto": true,
+            "direction": "short"
+          },
+          "thresholdHistory": {
+            "MU": {
+              "maxMultiplier": 1,
+              "minMultiplier": 0,
+              "badges": [
+                "spark"
+              ]
+            },
+            "NVDA": {
+              "maxMultiplier": 0,
+              "minMultiplier": -1,
+              "badges": []
+            },
+            "AMD": {
+              "maxMultiplier": 0,
+              "minMultiplier": 0,
+              "badges": []
+            }
+          },
+          "trades": [
+            {
+              "symbolOut": "PG",
+              "symbolIn": "KO",
+              "lockedPoints": 1.5,
+              "swappedOutAt": "2026-10-05T16:00:00.000Z"
+            },
+            {
+              "symbolOut": "MU",
+              "symbolIn": "AMD",
+              "name": "Micron",
+              "tier": "star",
+              "slotIndex": 0,
+              "entryPrice": 100,
+              "exitPrice": 110,
+              "lockedPoints": 295,
+              "lockedGainPct": 10,
+              "swappedOutAt": "2026-10-07T15:00:00.000Z",
+              "swapDay": 3,
+              "isCrypto": false,
+              "direction": null,
+              "id": "t1",
+              "action": "SWAP",
+              "trigger": "golden",
+              "rationale": "golden row",
+              "hypothesis": null,
+              "evaluationId": "golden_t1",
+              "tradingDay": 3,
+              "exitReason": "golden",
+              "snapshot": {
+                "symbolOut": {
+                  "symbol": "X",
+                  "capturedAt": "2026-10-07T15:00:00.000Z"
+                },
+                "symbolIn": {
+                  "symbol": "Y",
+                  "capturedAt": "2026-10-07T15:00:00.000Z"
+                }
+              }
+            }
+          ],
+          "scoreState.tradeCount": 5,
+          "updatedAt": "2026-10-07T15:00:00.000Z"
+        }
+      ],
+      "returned": {
+        "closedTrade": {
+          "symbolOut": "MU",
+          "symbolIn": "AMD",
+          "name": "Micron",
+          "tier": "star",
+          "slotIndex": 0,
+          "entryPrice": 100,
+          "exitPrice": 110,
+          "lockedPoints": 295,
+          "lockedGainPct": 10,
+          "swappedOutAt": "2026-10-07T15:00:00.000Z",
+          "swapDay": 3,
+          "isCrypto": false,
+          "direction": null,
+          "id": "t1",
+          "action": "SWAP",
+          "trigger": "golden",
+          "rationale": "golden row",
+          "hypothesis": null,
+          "evaluationId": "golden_t1",
+          "tradingDay": 3,
+          "exitReason": "golden",
+          "snapshot": {
+            "symbolOut": {
+              "symbol": "X",
+              "capturedAt": "2026-10-07T15:00:00.000Z"
+            },
+            "symbolIn": {
+              "symbol": "Y",
+              "capturedAt": "2026-10-07T15:00:00.000Z"
+            }
+          }
+        },
+        "incomingAsset": {
+          "symbol": "AMD",
+          "name": "AMD",
+          "isCrypto": false,
+          "baseATR": 3.6,
+          "swapPrice": 150,
+          "swappedInAt": "2026-10-07T15:00:00.000Z",
+          "swappedInDay": 3
+        }
+      },
+      "thrown": null,
+      "fetchCalls": []
+    },
+    "core_held_from_start_guard3_fetch": {
+      "updates": [
+        {
+          "portfolio.core": [
+            {
+              "symbol": "JPM",
+              "name": "JPMorgan",
+              "isCrypto": false,
+              "baseATR": 1.6,
+              "swapPrice": 200,
+              "swappedInAt": "2026-10-07T15:00:00.000Z",
+              "swappedInDay": 3
+            }
+          ],
+          "portfolio.bench.stocks": [
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "baseATR": 3.4,
+              "isCrypto": false,
+              "sector": "Technology"
+            },
+            {
+              "symbol": "NVDA",
+              "name": "NVIDIA",
+              "baseATR": 3.1,
+              "isCrypto": false,
+              "direction": null,
+              "cooldownUntil": "2026-10-08T15:00:00.000Z"
+            }
+          ],
+          "portfolio.bench.crypto": {
+            "symbol": "ETH",
+            "name": "Ethereum",
+            "baseATR": 6,
+            "isCrypto": true,
+            "direction": "short"
+          },
+          "thresholdHistory": {
+            "MU": {
+              "maxMultiplier": 1,
+              "minMultiplier": 0,
+              "badges": [
+                "spark"
+              ]
+            },
+            "NVDA": {
+              "maxMultiplier": 0,
+              "minMultiplier": -1,
+              "badges": []
+            },
+            "JPM": {
+              "maxMultiplier": 0,
+              "minMultiplier": 0,
+              "badges": []
+            }
+          },
+          "trades": [
+            {
+              "symbolOut": "PG",
+              "symbolIn": "KO",
+              "lockedPoints": 1.5,
+              "swappedOutAt": "2026-10-05T16:00:00.000Z"
+            },
+            {
+              "symbolOut": "NVDA",
+              "symbolIn": "JPM",
+              "name": "NVIDIA",
+              "tier": "core",
+              "slotIndex": 0,
+              "entryPrice": 120,
+              "exitPrice": 121,
+              "lockedPoints": 3,
+              "lockedGainPct": 0.833,
+              "swappedOutAt": "2026-10-07T15:00:00.000Z",
+              "swapDay": 3,
+              "isCrypto": false,
+              "direction": null,
+              "id": "t2",
+              "action": "SWAP",
+              "trigger": "golden",
+              "rationale": "golden row",
+              "hypothesis": null,
+              "evaluationId": "golden_t2",
+              "tradingDay": 3,
+              "exitReason": "golden",
+              "snapshot": null
+            }
+          ],
+          "scoreState.tradeCount": 5,
+          "updatedAt": "2026-10-07T15:00:00.000Z"
+        }
+      ],
+      "returned": {
+        "closedTrade": {
+          "symbolOut": "NVDA",
+          "symbolIn": "JPM",
+          "name": "NVIDIA",
+          "tier": "core",
+          "slotIndex": 0,
+          "entryPrice": 120,
+          "exitPrice": 121,
+          "lockedPoints": 3,
+          "lockedGainPct": 0.833,
+          "swappedOutAt": "2026-10-07T15:00:00.000Z",
+          "swapDay": 3,
+          "isCrypto": false,
+          "direction": null,
+          "id": "t2",
+          "action": "SWAP",
+          "trigger": "golden",
+          "rationale": "golden row",
+          "hypothesis": null,
+          "evaluationId": "golden_t2",
+          "tradingDay": 3,
+          "exitReason": "golden",
+          "snapshot": null
+        },
+        "incomingAsset": {
+          "symbol": "JPM",
+          "name": "JPMorgan",
+          "isCrypto": false,
+          "baseATR": 1.6,
+          "swapPrice": 200,
+          "swappedInAt": "2026-10-07T15:00:00.000Z",
+          "swappedInDay": 3
+        }
+      },
+      "thrown": null,
+      "fetchCalls": [
+        [
+          "NVDA",
+          {
+            "forceRefresh": true,
+            "fields": [
+              "daily",
+              "price"
+            ]
+          }
+        ]
+      ]
+    },
+    "activation_day_starting_price_no_fetch": {
+      "updates": [
+        {
+          "portfolio.core": [
+            {
+              "symbol": "JPM",
+              "name": "JPMorgan",
+              "isCrypto": false,
+              "baseATR": 1.6,
+              "swapPrice": 200,
+              "swappedInAt": "2026-10-07T15:00:00.000Z",
+              "swappedInDay": 1
+            }
+          ],
+          "portfolio.bench.stocks": [
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "baseATR": 3.4,
+              "isCrypto": false,
+              "sector": "Technology"
+            },
+            {
+              "symbol": "NVDA",
+              "name": "NVIDIA",
+              "baseATR": 3.1,
+              "isCrypto": false,
+              "direction": null,
+              "cooldownUntil": "2026-10-08T15:00:00.000Z"
+            }
+          ],
+          "portfolio.bench.crypto": {
+            "symbol": "ETH",
+            "name": "Ethereum",
+            "baseATR": 6,
+            "isCrypto": true,
+            "direction": "short"
+          },
+          "thresholdHistory": {
+            "MU": {
+              "maxMultiplier": 1,
+              "minMultiplier": 0,
+              "badges": [
+                "spark"
+              ]
+            },
+            "NVDA": {
+              "maxMultiplier": 0,
+              "minMultiplier": -1,
+              "badges": []
+            },
+            "JPM": {
+              "maxMultiplier": 0,
+              "minMultiplier": 0,
+              "badges": []
+            }
+          },
+          "trades": [
+            {
+              "symbolOut": "PG",
+              "symbolIn": "KO",
+              "lockedPoints": 1.5,
+              "swappedOutAt": "2026-10-05T16:00:00.000Z"
+            },
+            {
+              "symbolOut": "NVDA",
+              "symbolIn": "JPM",
+              "name": "NVIDIA",
+              "tier": "core",
+              "slotIndex": 0,
+              "entryPrice": 120,
+              "exitPrice": 121,
+              "lockedPoints": 3,
+              "lockedGainPct": 0.833,
+              "swappedOutAt": "2026-10-07T15:00:00.000Z",
+              "swapDay": 1,
+              "isCrypto": false,
+              "direction": null,
+              "id": "t3",
+              "action": "SWAP",
+              "trigger": "golden",
+              "rationale": "golden row",
+              "hypothesis": null,
+              "evaluationId": "golden_t3",
+              "tradingDay": 3,
+              "exitReason": "golden",
+              "snapshot": null
+            }
+          ],
+          "scoreState.tradeCount": 5,
+          "updatedAt": "2026-10-07T15:00:00.000Z"
+        }
+      ],
+      "returned": {
+        "closedTrade": {
+          "symbolOut": "NVDA",
+          "symbolIn": "JPM",
+          "name": "NVIDIA",
+          "tier": "core",
+          "slotIndex": 0,
+          "entryPrice": 120,
+          "exitPrice": 121,
+          "lockedPoints": 3,
+          "lockedGainPct": 0.833,
+          "swappedOutAt": "2026-10-07T15:00:00.000Z",
+          "swapDay": 1,
+          "isCrypto": false,
+          "direction": null,
+          "id": "t3",
+          "action": "SWAP",
+          "trigger": "golden",
+          "rationale": "golden row",
+          "hypothesis": null,
+          "evaluationId": "golden_t3",
+          "tradingDay": 3,
+          "exitReason": "golden",
+          "snapshot": null
+        },
+        "incomingAsset": {
+          "symbol": "JPM",
+          "name": "JPMorgan",
+          "isCrypto": false,
+          "baseATR": 1.6,
+          "swapPrice": 200,
+          "swappedInAt": "2026-10-07T15:00:00.000Z",
+          "swappedInDay": 1
+        }
+      },
+      "thrown": null,
+      "fetchCalls": []
+    },
+    "no_activated_at": {
+      "updates": [
+        {
+          "portfolio.star": [
+            {
+              "symbol": "MU",
+              "name": "Micron",
+              "baseATR": 2.5,
+              "isCrypto": false,
+              "sector": "Technology",
+              "swapPrice": 100,
+              "swappedInAt": "2026-10-06T15:00:00.000Z",
+              "swappedInDay": 2
+            },
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "isCrypto": false,
+              "baseATR": 3.6,
+              "swapPrice": 150,
+              "swappedInAt": "2026-10-07T15:00:00.000Z",
+              "swappedInDay": 3
+            }
+          ],
+          "portfolio.bench.stocks": [
+            {
+              "symbol": "JPM",
+              "name": "JPMorgan",
+              "baseATR": 1.6,
+              "isCrypto": false,
+              "sector": "Financial Services"
+            },
+            {
+              "symbol": "TSLA",
+              "name": "Tesla",
+              "baseATR": 4,
+              "isCrypto": false,
+              "direction": null,
+              "cooldownUntil": "2026-10-08T15:00:00.000Z"
+            }
+          ],
+          "portfolio.bench.crypto": {
+            "symbol": "ETH",
+            "name": "Ethereum",
+            "baseATR": 6,
+            "isCrypto": true,
+            "direction": "short"
+          },
+          "thresholdHistory": {
+            "MU": {
+              "maxMultiplier": 1,
+              "minMultiplier": 0,
+              "badges": [
+                "spark"
+              ]
+            },
+            "NVDA": {
+              "maxMultiplier": 0,
+              "minMultiplier": -1,
+              "badges": []
+            },
+            "AMD": {
+              "maxMultiplier": 0,
+              "minMultiplier": 0,
+              "badges": []
+            }
+          },
+          "trades": [
+            {
+              "symbolOut": "PG",
+              "symbolIn": "KO",
+              "lockedPoints": 1.5,
+              "swappedOutAt": "2026-10-05T16:00:00.000Z"
+            },
+            {
+              "symbolOut": "TSLA",
+              "symbolIn": "AMD",
+              "name": "Tesla",
+              "tier": "star",
+              "slotIndex": 1,
+              "entryPrice": 250,
+              "exitPrice": 251,
+              "lockedPoints": 8,
+              "lockedGainPct": 0.4,
+              "swappedOutAt": "2026-10-07T15:00:00.000Z",
+              "swapDay": 3,
+              "isCrypto": false,
+              "direction": null,
+              "id": "t4",
+              "action": "SWAP",
+              "trigger": "golden",
+              "rationale": "golden row",
+              "hypothesis": null,
+              "evaluationId": "golden_t4",
+              "tradingDay": 3,
+              "exitReason": "golden",
+              "snapshot": null
+            }
+          ],
+          "scoreState.tradeCount": 5,
+          "updatedAt": "2026-10-07T15:00:00.000Z"
+        }
+      ],
+      "returned": {
+        "closedTrade": {
+          "symbolOut": "TSLA",
+          "symbolIn": "AMD",
+          "name": "Tesla",
+          "tier": "star",
+          "slotIndex": 1,
+          "entryPrice": 250,
+          "exitPrice": 251,
+          "lockedPoints": 8,
+          "lockedGainPct": 0.4,
+          "swappedOutAt": "2026-10-07T15:00:00.000Z",
+          "swapDay": 3,
+          "isCrypto": false,
+          "direction": null,
+          "id": "t4",
+          "action": "SWAP",
+          "trigger": "golden",
+          "rationale": "golden row",
+          "hypothesis": null,
+          "evaluationId": "golden_t4",
+          "tradingDay": 3,
+          "exitReason": "golden",
+          "snapshot": null
+        },
+        "incomingAsset": {
+          "symbol": "AMD",
+          "name": "AMD",
+          "isCrypto": false,
+          "baseATR": 3.6,
+          "swapPrice": 150,
+          "swappedInAt": "2026-10-07T15:00:00.000Z",
+          "swappedInDay": 3
+        }
+      },
+      "thrown": null,
+      "fetchCalls": []
+    },
+    "crypto_short_round_trip": {
+      "updates": [
+        {
+          "portfolio.support": [
+            {
+              "symbol": "KO",
+              "name": "Coca-Cola",
+              "baseATR": 1.1,
+              "isCrypto": false,
+              "sector": "Consumer Defensive",
+              "previousSwapPrice": 61,
+              "swappedInAt": "2026-10-05T16:00:00.000Z",
+              "previousSwapDay": 1
+            },
+            {
+              "symbol": "ETH",
+              "name": "Ethereum",
+              "isCrypto": true,
+              "baseATR": 6,
+              "swapPrice": 3050,
+              "swappedInAt": "2026-10-07T15:00:00.000Z",
+              "swappedInDay": 3,
+              "direction": "short"
+            }
+          ],
+          "portfolio.bench.stocks": [
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "baseATR": 3.4,
+              "isCrypto": false,
+              "sector": "Technology"
+            },
+            {
+              "symbol": "JPM",
+              "name": "JPMorgan",
+              "baseATR": 1.6,
+              "isCrypto": false,
+              "sector": "Financial Services"
+            }
+          ],
+          "portfolio.bench.crypto": {
+            "symbol": "BTC",
+            "name": "Bitcoin",
+            "baseATR": 5,
+            "isCrypto": true,
+            "direction": "short",
+            "cooldownUntil": "2026-10-08T15:00:00.000Z"
+          },
+          "thresholdHistory": {
+            "MU": {
+              "maxMultiplier": 1,
+              "minMultiplier": 0,
+              "badges": [
+                "spark"
+              ]
+            },
+            "NVDA": {
+              "maxMultiplier": 0,
+              "minMultiplier": -1,
+              "badges": []
+            },
+            "ETH": {
+              "maxMultiplier": 0,
+              "minMultiplier": 0,
+              "badges": []
+            }
+          },
+          "trades": [
+            {
+              "symbolOut": "PG",
+              "symbolIn": "KO",
+              "lockedPoints": 1.5,
+              "swappedOutAt": "2026-10-05T16:00:00.000Z"
+            },
+            {
+              "symbolOut": "BTC",
+              "symbolIn": "ETH",
+              "name": "Bitcoin",
+              "tier": "support",
+              "slotIndex": 1,
+              "entryPrice": 64000,
+              "exitPrice": 62000,
+              "lockedPoints": 31,
+              "lockedGainPct": 3.125,
+              "swappedOutAt": "2026-10-07T15:00:00.000Z",
+              "swapDay": 3,
+              "isCrypto": true,
+              "direction": "short",
+              "id": "t5",
+              "action": "SWAP",
+              "trigger": "golden",
+              "rationale": "golden row",
+              "hypothesis": null,
+              "evaluationId": "golden_t5",
+              "tradingDay": 3,
+              "exitReason": "golden",
+              "snapshot": {
+                "symbolOut": {
+                  "symbol": "X",
+                  "capturedAt": "2026-10-07T15:00:00.000Z"
+                },
+                "symbolIn": {
+                  "symbol": "Y",
+                  "capturedAt": "2026-10-07T15:00:00.000Z"
+                }
+              }
+            }
+          ],
+          "scoreState.tradeCount": 5,
+          "updatedAt": "2026-10-07T15:00:00.000Z"
+        }
+      ],
+      "returned": {
+        "closedTrade": {
+          "symbolOut": "BTC",
+          "symbolIn": "ETH",
+          "name": "Bitcoin",
+          "tier": "support",
+          "slotIndex": 1,
+          "entryPrice": 64000,
+          "exitPrice": 62000,
+          "lockedPoints": 31,
+          "lockedGainPct": 3.125,
+          "swappedOutAt": "2026-10-07T15:00:00.000Z",
+          "swapDay": 3,
+          "isCrypto": true,
+          "direction": "short",
+          "id": "t5",
+          "action": "SWAP",
+          "trigger": "golden",
+          "rationale": "golden row",
+          "hypothesis": null,
+          "evaluationId": "golden_t5",
+          "tradingDay": 3,
+          "exitReason": "golden",
+          "snapshot": {
+            "symbolOut": {
+              "symbol": "X",
+              "capturedAt": "2026-10-07T15:00:00.000Z"
+            },
+            "symbolIn": {
+              "symbol": "Y",
+              "capturedAt": "2026-10-07T15:00:00.000Z"
+            }
+          }
+        },
+        "incomingAsset": {
+          "symbol": "ETH",
+          "name": "Ethereum",
+          "isCrypto": true,
+          "baseATR": 6,
+          "swapPrice": 3050,
+          "swappedInAt": "2026-10-07T15:00:00.000Z",
+          "swappedInDay": 3,
+          "direction": "short"
+        }
+      },
+      "thrown": null,
+      "fetchCalls": []
+    },
+    "bench_replace_existing_entry": {
+      "updates": [
+        {
+          "portfolio.support": [
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "isCrypto": false,
+              "baseATR": 3.6,
+              "swapPrice": 150,
+              "swappedInAt": "2026-10-07T15:00:00.000Z",
+              "swappedInDay": 3
+            },
+            {
+              "symbol": "BTC",
+              "name": "Bitcoin",
+              "baseATR": 5,
+              "isCrypto": true,
+              "sector": "Crypto",
+              "direction": "short",
+              "swapPrice": 64000,
+              "swappedInAt": "2026-10-06T14:00:00.000Z",
+              "swappedInDay": 2
+            }
+          ],
+          "portfolio.bench.stocks": [
+            {
+              "symbol": "KO",
+              "name": "Coca-Cola",
+              "baseATR": 1.1,
+              "isCrypto": false,
+              "direction": null,
+              "cooldownUntil": "2026-10-08T15:00:00.000Z"
+            }
+          ],
+          "portfolio.bench.crypto": null,
+          "thresholdHistory": {
+            "MU": {
+              "maxMultiplier": 1,
+              "minMultiplier": 0,
+              "badges": [
+                "spark"
+              ]
+            },
+            "NVDA": {
+              "maxMultiplier": 0,
+              "minMultiplier": -1,
+              "badges": []
+            },
+            "AMD": {
+              "maxMultiplier": 0,
+              "minMultiplier": 0,
+              "badges": []
+            }
+          },
+          "trades": [
+            {
+              "symbolOut": "PG",
+              "symbolIn": "KO",
+              "lockedPoints": 1.5,
+              "swappedOutAt": "2026-10-05T16:00:00.000Z"
+            },
+            {
+              "symbolOut": "KO",
+              "symbolIn": "AMD",
+              "name": "Coca-Cola",
+              "tier": "support",
+              "slotIndex": 0,
+              "entryPrice": 62,
+              "exitPrice": 63,
+              "lockedPoints": -49,
+              "lockedGainPct": 1.613,
+              "swappedOutAt": "2026-10-07T15:00:00.000Z",
+              "swapDay": 3,
+              "isCrypto": false,
+              "direction": null,
+              "id": "t6",
+              "action": "SWAP",
+              "trigger": "golden",
+              "rationale": "golden row",
+              "hypothesis": null,
+              "evaluationId": "golden_t6",
+              "tradingDay": 3,
+              "exitReason": "golden",
+              "snapshot": null
+            }
+          ],
+          "scoreState.tradeCount": 5,
+          "updatedAt": "2026-10-07T15:00:00.000Z"
+        }
+      ],
+      "returned": {
+        "closedTrade": {
+          "symbolOut": "KO",
+          "symbolIn": "AMD",
+          "name": "Coca-Cola",
+          "tier": "support",
+          "slotIndex": 0,
+          "entryPrice": 62,
+          "exitPrice": 63,
+          "lockedPoints": -49,
+          "lockedGainPct": 1.613,
+          "swappedOutAt": "2026-10-07T15:00:00.000Z",
+          "swapDay": 3,
+          "isCrypto": false,
+          "direction": null,
+          "id": "t6",
+          "action": "SWAP",
+          "trigger": "golden",
+          "rationale": "golden row",
+          "hypothesis": null,
+          "evaluationId": "golden_t6",
+          "tradingDay": 3,
+          "exitReason": "golden",
+          "snapshot": null
+        },
+        "incomingAsset": {
+          "symbol": "AMD",
+          "name": "AMD",
+          "isCrypto": false,
+          "baseATR": 3.6,
+          "swapPrice": 150,
+          "swappedInAt": "2026-10-07T15:00:00.000Z",
+          "swappedInDay": 3
+        }
+      },
+      "thrown": null,
+      "fetchCalls": [
+        [
+          "KO",
+          {
+            "forceRefresh": true,
+            "fields": [
+              "daily",
+              "price"
+            ]
+          }
+        ]
+      ]
+    },
+    "fresh_beacon_preferred": {
+      "updates": [
+        {
+          "portfolio.star": [
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "isCrypto": false,
+              "baseATR": 3.6,
+              "swapPrice": 149.25,
+              "swappedInAt": "2026-10-07T15:00:00.000Z",
+              "swappedInDay": 3
+            },
+            {
+              "symbol": "TSLA",
+              "name": "Tesla",
+              "baseATR": 4,
+              "isCrypto": false,
+              "sector": "Consumer Cyclical"
+            }
+          ],
+          "portfolio.bench.stocks": [
+            {
+              "symbol": "JPM",
+              "name": "JPMorgan",
+              "baseATR": 1.6,
+              "isCrypto": false,
+              "sector": "Financial Services"
+            },
+            {
+              "symbol": "MU",
+              "name": "Micron",
+              "baseATR": 2.5,
+              "isCrypto": false,
+              "direction": null,
+              "cooldownUntil": "2026-10-08T15:00:00.000Z"
+            }
+          ],
+          "portfolio.bench.crypto": {
+            "symbol": "ETH",
+            "name": "Ethereum",
+            "baseATR": 6,
+            "isCrypto": true,
+            "direction": "short"
+          },
+          "thresholdHistory": {
+            "MU": {
+              "maxMultiplier": 1,
+              "minMultiplier": 0,
+              "badges": [
+                "spark"
+              ]
+            },
+            "NVDA": {
+              "maxMultiplier": 0,
+              "minMultiplier": -1,
+              "badges": []
+            },
+            "AMD": {
+              "maxMultiplier": 0,
+              "minMultiplier": 0,
+              "badges": []
+            }
+          },
+          "trades": [
+            {
+              "symbolOut": "PG",
+              "symbolIn": "KO",
+              "lockedPoints": 1.5,
+              "swappedOutAt": "2026-10-05T16:00:00.000Z"
+            },
+            {
+              "symbolOut": "MU",
+              "symbolIn": "AMD",
+              "name": "Micron",
+              "tier": "star",
+              "slotIndex": 0,
+              "entryPrice": 100,
+              "exitPrice": 111.5,
+              "lockedPoints": 325,
+              "lockedGainPct": 11.5,
+              "swappedOutAt": "2026-10-07T15:00:00.000Z",
+              "swapDay": 3,
+              "isCrypto": false,
+              "direction": null,
+              "id": "t7",
+              "action": "SWAP",
+              "trigger": "golden",
+              "rationale": "golden row",
+              "hypothesis": null,
+              "evaluationId": "golden_t7",
+              "tradingDay": 3,
+              "exitReason": "golden",
+              "snapshot": null
+            }
+          ],
+          "scoreState.tradeCount": 5,
+          "updatedAt": "2026-10-07T15:00:00.000Z"
+        }
+      ],
+      "returned": {
+        "closedTrade": {
+          "symbolOut": "MU",
+          "symbolIn": "AMD",
+          "name": "Micron",
+          "tier": "star",
+          "slotIndex": 0,
+          "entryPrice": 100,
+          "exitPrice": 111.5,
+          "lockedPoints": 325,
+          "lockedGainPct": 11.5,
+          "swappedOutAt": "2026-10-07T15:00:00.000Z",
+          "swapDay": 3,
+          "isCrypto": false,
+          "direction": null,
+          "id": "t7",
+          "action": "SWAP",
+          "trigger": "golden",
+          "rationale": "golden row",
+          "hypothesis": null,
+          "evaluationId": "golden_t7",
+          "tradingDay": 3,
+          "exitReason": "golden",
+          "snapshot": null
+        },
+        "incomingAsset": {
+          "symbol": "AMD",
+          "name": "AMD",
+          "isCrypto": false,
+          "baseATR": 3.6,
+          "swapPrice": 149.25,
+          "swappedInAt": "2026-10-07T15:00:00.000Z",
+          "swappedInDay": 3
+        }
+      },
+      "thrown": null,
+      "fetchCalls": []
+    },
+    "stale_beacon_ignored": {
+      "updates": [
+        {
+          "portfolio.star": [
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "isCrypto": false,
+              "baseATR": 3.6,
+              "swapPrice": 150,
+              "swappedInAt": "2026-10-07T15:00:00.000Z",
+              "swappedInDay": 3
+            },
+            {
+              "symbol": "TSLA",
+              "name": "Tesla",
+              "baseATR": 4,
+              "isCrypto": false,
+              "sector": "Consumer Cyclical"
+            }
+          ],
+          "portfolio.bench.stocks": [
+            {
+              "symbol": "JPM",
+              "name": "JPMorgan",
+              "baseATR": 1.6,
+              "isCrypto": false,
+              "sector": "Financial Services"
+            },
+            {
+              "symbol": "MU",
+              "name": "Micron",
+              "baseATR": 2.5,
+              "isCrypto": false,
+              "direction": null,
+              "cooldownUntil": "2026-10-08T15:00:00.000Z"
+            }
+          ],
+          "portfolio.bench.crypto": {
+            "symbol": "ETH",
+            "name": "Ethereum",
+            "baseATR": 6,
+            "isCrypto": true,
+            "direction": "short"
+          },
+          "thresholdHistory": {
+            "MU": {
+              "maxMultiplier": 1,
+              "minMultiplier": 0,
+              "badges": [
+                "spark"
+              ]
+            },
+            "NVDA": {
+              "maxMultiplier": 0,
+              "minMultiplier": -1,
+              "badges": []
+            },
+            "AMD": {
+              "maxMultiplier": 0,
+              "minMultiplier": 0,
+              "badges": []
+            }
+          },
+          "trades": [
+            {
+              "symbolOut": "PG",
+              "symbolIn": "KO",
+              "lockedPoints": 1.5,
+              "swappedOutAt": "2026-10-05T16:00:00.000Z"
+            },
+            {
+              "symbolOut": "MU",
+              "symbolIn": "AMD",
+              "name": "Micron",
+              "tier": "star",
+              "slotIndex": 0,
+              "entryPrice": 100,
+              "exitPrice": 110,
+              "lockedPoints": 295,
+              "lockedGainPct": 10,
+              "swappedOutAt": "2026-10-07T15:00:00.000Z",
+              "swapDay": 3,
+              "isCrypto": false,
+              "direction": null,
+              "id": "t8",
+              "action": "SWAP",
+              "trigger": "golden",
+              "rationale": "golden row",
+              "hypothesis": null,
+              "evaluationId": "golden_t8",
+              "tradingDay": 3,
+              "exitReason": "golden",
+              "snapshot": null
+            }
+          ],
+          "scoreState.tradeCount": 5,
+          "updatedAt": "2026-10-07T15:00:00.000Z"
+        }
+      ],
+      "returned": {
+        "closedTrade": {
+          "symbolOut": "MU",
+          "symbolIn": "AMD",
+          "name": "Micron",
+          "tier": "star",
+          "slotIndex": 0,
+          "entryPrice": 100,
+          "exitPrice": 110,
+          "lockedPoints": 295,
+          "lockedGainPct": 10,
+          "swappedOutAt": "2026-10-07T15:00:00.000Z",
+          "swapDay": 3,
+          "isCrypto": false,
+          "direction": null,
+          "id": "t8",
+          "action": "SWAP",
+          "trigger": "golden",
+          "rationale": "golden row",
+          "hypothesis": null,
+          "evaluationId": "golden_t8",
+          "tradingDay": 3,
+          "exitReason": "golden",
+          "snapshot": null
+        },
+        "incomingAsset": {
+          "symbol": "AMD",
+          "name": "AMD",
+          "isCrypto": false,
+          "baseATR": 3.6,
+          "swapPrice": 150,
+          "swappedInAt": "2026-10-07T15:00:00.000Z",
+          "swappedInDay": 3
+        }
+      },
+      "thrown": null,
+      "fetchCalls": []
+    },
+    "flat6_tournament_mode": {
+      "updates": [
+        {
+          "portfolio.star": [
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "isCrypto": false,
+              "baseATR": 3.6,
+              "swapPrice": 150,
+              "swappedInAt": "2026-10-07T15:00:00.000Z",
+              "swappedInDay": 3,
+              "tierMultiplier": 1
+            },
+            {
+              "symbol": "TSLA",
+              "name": "Tesla",
+              "baseATR": 4,
+              "isCrypto": false,
+              "sector": "Consumer Cyclical"
+            }
+          ],
+          "portfolio.bench.stocks": [
+            {
+              "symbol": "JPM",
+              "name": "JPMorgan",
+              "baseATR": 1.6,
+              "isCrypto": false,
+              "sector": "Financial Services"
+            },
+            {
+              "symbol": "MU",
+              "name": "Micron",
+              "baseATR": 2.5,
+              "isCrypto": false,
+              "direction": null,
+              "cooldownUntil": "2026-10-08T15:00:00.000Z"
+            }
+          ],
+          "portfolio.bench.crypto": {
+            "symbol": "ETH",
+            "name": "Ethereum",
+            "baseATR": 6,
+            "isCrypto": true,
+            "direction": "short"
+          },
+          "thresholdHistory": {
+            "MU": {
+              "maxMultiplier": 1,
+              "minMultiplier": 0,
+              "badges": [
+                "spark"
+              ]
+            },
+            "NVDA": {
+              "maxMultiplier": 0,
+              "minMultiplier": -1,
+              "badges": []
+            },
+            "AMD": {
+              "maxMultiplier": 0,
+              "minMultiplier": 0,
+              "badges": []
+            }
+          },
+          "trades": [
+            {
+              "symbolOut": "PG",
+              "symbolIn": "KO",
+              "lockedPoints": 1.5,
+              "swappedOutAt": "2026-10-05T16:00:00.000Z"
+            },
+            {
+              "symbolOut": "MU",
+              "symbolIn": "AMD",
+              "name": "Micron",
+              "tier": "star",
+              "slotIndex": 0,
+              "entryPrice": 100,
+              "exitPrice": 110,
+              "lockedPoints": 195,
+              "lockedGainPct": 10,
+              "swappedOutAt": "2026-10-07T15:00:00.000Z",
+              "swapDay": 3,
+              "isCrypto": false,
+              "direction": null,
+              "id": "t9",
+              "action": "SWAP",
+              "trigger": "golden",
+              "rationale": "golden row",
+              "hypothesis": null,
+              "evaluationId": "golden_t9",
+              "tradingDay": 3,
+              "exitReason": "golden",
+              "snapshot": null
+            }
+          ],
+          "scoreState.tradeCount": 5,
+          "updatedAt": "2026-10-07T15:00:00.000Z"
+        }
+      ],
+      "returned": {
+        "closedTrade": {
+          "symbolOut": "MU",
+          "symbolIn": "AMD",
+          "name": "Micron",
+          "tier": "star",
+          "slotIndex": 0,
+          "entryPrice": 100,
+          "exitPrice": 110,
+          "lockedPoints": 195,
+          "lockedGainPct": 10,
+          "swappedOutAt": "2026-10-07T15:00:00.000Z",
+          "swapDay": 3,
+          "isCrypto": false,
+          "direction": null,
+          "id": "t9",
+          "action": "SWAP",
+          "trigger": "golden",
+          "rationale": "golden row",
+          "hypothesis": null,
+          "evaluationId": "golden_t9",
+          "tradingDay": 3,
+          "exitReason": "golden",
+          "snapshot": null
+        },
+        "incomingAsset": {
+          "symbol": "AMD",
+          "name": "AMD",
+          "isCrypto": false,
+          "baseATR": 3.6,
+          "swapPrice": 150,
+          "swappedInAt": "2026-10-07T15:00:00.000Z",
+          "swappedInDay": 3,
+          "tierMultiplier": 1
+        }
+      },
+      "thrown": null,
+      "fetchCalls": []
+    },
+    "trades_capped_at_fifty": {
+      "updates": [
+        {
+          "portfolio.star": [
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "isCrypto": false,
+              "baseATR": 3.6,
+              "swapPrice": 150,
+              "swappedInAt": "2026-10-07T15:00:00.000Z",
+              "swappedInDay": 3
+            },
+            {
+              "symbol": "TSLA",
+              "name": "Tesla",
+              "baseATR": 4,
+              "isCrypto": false,
+              "sector": "Consumer Cyclical"
+            }
+          ],
+          "portfolio.bench.stocks": [
+            {
+              "symbol": "JPM",
+              "name": "JPMorgan",
+              "baseATR": 1.6,
+              "isCrypto": false,
+              "sector": "Financial Services"
+            },
+            {
+              "symbol": "MU",
+              "name": "Micron",
+              "baseATR": 2.5,
+              "isCrypto": false,
+              "direction": null,
+              "cooldownUntil": "2026-10-08T15:00:00.000Z"
+            }
+          ],
+          "portfolio.bench.crypto": {
+            "symbol": "ETH",
+            "name": "Ethereum",
+            "baseATR": 6,
+            "isCrypto": true,
+            "direction": "short"
+          },
+          "thresholdHistory": {
+            "MU": {
+              "maxMultiplier": 1,
+              "minMultiplier": 0,
+              "badges": [
+                "spark"
+              ]
+            },
+            "NVDA": {
+              "maxMultiplier": 0,
+              "minMultiplier": -1,
+              "badges": []
+            },
+            "AMD": {
+              "maxMultiplier": 0,
+              "minMultiplier": 0,
+              "badges": []
+            }
+          },
+          "trades": [
+            {
+              "symbolOut": "S1",
+              "symbolIn": "T1",
+              "lockedPoints": 1
+            },
+            {
+              "symbolOut": "S2",
+              "symbolIn": "T2",
+              "lockedPoints": 2
+            },
+            {
+              "symbolOut": "S3",
+              "symbolIn": "T3",
+              "lockedPoints": 3
+            },
+            {
+              "symbolOut": "S4",
+              "symbolIn": "T4",
+              "lockedPoints": 4
+            },
+            {
+              "symbolOut": "S5",
+              "symbolIn": "T5",
+              "lockedPoints": 5
+            },
+            {
+              "symbolOut": "S6",
+              "symbolIn": "T6",
+              "lockedPoints": 6
+            },
+            {
+              "symbolOut": "S7",
+              "symbolIn": "T7",
+              "lockedPoints": 7
+            },
+            {
+              "symbolOut": "S8",
+              "symbolIn": "T8",
+              "lockedPoints": 8
+            },
+            {
+              "symbolOut": "S9",
+              "symbolIn": "T9",
+              "lockedPoints": 9
+            },
+            {
+              "symbolOut": "S10",
+              "symbolIn": "T10",
+              "lockedPoints": 10
+            },
+            {
+              "symbolOut": "S11",
+              "symbolIn": "T11",
+              "lockedPoints": 11
+            },
+            {
+              "symbolOut": "S12",
+              "symbolIn": "T12",
+              "lockedPoints": 12
+            },
+            {
+              "symbolOut": "S13",
+              "symbolIn": "T13",
+              "lockedPoints": 13
+            },
+            {
+              "symbolOut": "S14",
+              "symbolIn": "T14",
+              "lockedPoints": 14
+            },
+            {
+              "symbolOut": "S15",
+              "symbolIn": "T15",
+              "lockedPoints": 15
+            },
+            {
+              "symbolOut": "S16",
+              "symbolIn": "T16",
+              "lockedPoints": 16
+            },
+            {
+              "symbolOut": "S17",
+              "symbolIn": "T17",
+              "lockedPoints": 17
+            },
+            {
+              "symbolOut": "S18",
+              "symbolIn": "T18",
+              "lockedPoints": 18
+            },
+            {
+              "symbolOut": "S19",
+              "symbolIn": "T19",
+              "lockedPoints": 19
+            },
+            {
+              "symbolOut": "S20",
+              "symbolIn": "T20",
+              "lockedPoints": 20
+            },
+            {
+              "symbolOut": "S21",
+              "symbolIn": "T21",
+              "lockedPoints": 21
+            },
+            {
+              "symbolOut": "S22",
+              "symbolIn": "T22",
+              "lockedPoints": 22
+            },
+            {
+              "symbolOut": "S23",
+              "symbolIn": "T23",
+              "lockedPoints": 23
+            },
+            {
+              "symbolOut": "S24",
+              "symbolIn": "T24",
+              "lockedPoints": 24
+            },
+            {
+              "symbolOut": "S25",
+              "symbolIn": "T25",
+              "lockedPoints": 25
+            },
+            {
+              "symbolOut": "S26",
+              "symbolIn": "T26",
+              "lockedPoints": 26
+            },
+            {
+              "symbolOut": "S27",
+              "symbolIn": "T27",
+              "lockedPoints": 27
+            },
+            {
+              "symbolOut": "S28",
+              "symbolIn": "T28",
+              "lockedPoints": 28
+            },
+            {
+              "symbolOut": "S29",
+              "symbolIn": "T29",
+              "lockedPoints": 29
+            },
+            {
+              "symbolOut": "S30",
+              "symbolIn": "T30",
+              "lockedPoints": 30
+            },
+            {
+              "symbolOut": "S31",
+              "symbolIn": "T31",
+              "lockedPoints": 31
+            },
+            {
+              "symbolOut": "S32",
+              "symbolIn": "T32",
+              "lockedPoints": 32
+            },
+            {
+              "symbolOut": "S33",
+              "symbolIn": "T33",
+              "lockedPoints": 33
+            },
+            {
+              "symbolOut": "S34",
+              "symbolIn": "T34",
+              "lockedPoints": 34
+            },
+            {
+              "symbolOut": "S35",
+              "symbolIn": "T35",
+              "lockedPoints": 35
+            },
+            {
+              "symbolOut": "S36",
+              "symbolIn": "T36",
+              "lockedPoints": 36
+            },
+            {
+              "symbolOut": "S37",
+              "symbolIn": "T37",
+              "lockedPoints": 37
+            },
+            {
+              "symbolOut": "S38",
+              "symbolIn": "T38",
+              "lockedPoints": 38
+            },
+            {
+              "symbolOut": "S39",
+              "symbolIn": "T39",
+              "lockedPoints": 39
+            },
+            {
+              "symbolOut": "S40",
+              "symbolIn": "T40",
+              "lockedPoints": 40
+            },
+            {
+              "symbolOut": "S41",
+              "symbolIn": "T41",
+              "lockedPoints": 41
+            },
+            {
+              "symbolOut": "S42",
+              "symbolIn": "T42",
+              "lockedPoints": 42
+            },
+            {
+              "symbolOut": "S43",
+              "symbolIn": "T43",
+              "lockedPoints": 43
+            },
+            {
+              "symbolOut": "S44",
+              "symbolIn": "T44",
+              "lockedPoints": 44
+            },
+            {
+              "symbolOut": "S45",
+              "symbolIn": "T45",
+              "lockedPoints": 45
+            },
+            {
+              "symbolOut": "S46",
+              "symbolIn": "T46",
+              "lockedPoints": 46
+            },
+            {
+              "symbolOut": "S47",
+              "symbolIn": "T47",
+              "lockedPoints": 47
+            },
+            {
+              "symbolOut": "S48",
+              "symbolIn": "T48",
+              "lockedPoints": 48
+            },
+            {
+              "symbolOut": "S49",
+              "symbolIn": "T49",
+              "lockedPoints": 49
+            },
+            {
+              "symbolOut": "MU",
+              "symbolIn": "AMD",
+              "name": "Micron",
+              "tier": "star",
+              "slotIndex": 0,
+              "entryPrice": 100,
+              "exitPrice": 110,
+              "lockedPoints": 295,
+              "lockedGainPct": 10,
+              "swappedOutAt": "2026-10-07T15:00:00.000Z",
+              "swapDay": 3,
+              "isCrypto": false,
+              "direction": null,
+              "id": "t10",
+              "action": "SWAP",
+              "trigger": "golden",
+              "rationale": "golden row",
+              "hypothesis": null,
+              "evaluationId": "golden_t10",
+              "tradingDay": 3,
+              "exitReason": "golden",
+              "snapshot": null
+            }
+          ],
+          "scoreState.tradeCount": 5,
+          "updatedAt": "2026-10-07T15:00:00.000Z"
+        }
+      ],
+      "returned": {
+        "closedTrade": {
+          "symbolOut": "MU",
+          "symbolIn": "AMD",
+          "name": "Micron",
+          "tier": "star",
+          "slotIndex": 0,
+          "entryPrice": 100,
+          "exitPrice": 110,
+          "lockedPoints": 295,
+          "lockedGainPct": 10,
+          "swappedOutAt": "2026-10-07T15:00:00.000Z",
+          "swapDay": 3,
+          "isCrypto": false,
+          "direction": null,
+          "id": "t10",
+          "action": "SWAP",
+          "trigger": "golden",
+          "rationale": "golden row",
+          "hypothesis": null,
+          "evaluationId": "golden_t10",
+          "tradingDay": 3,
+          "exitReason": "golden",
+          "snapshot": null
+        },
+        "incomingAsset": {
+          "symbol": "AMD",
+          "name": "AMD",
+          "isCrypto": false,
+          "baseATR": 3.6,
+          "swapPrice": 150,
+          "swappedInAt": "2026-10-07T15:00:00.000Z",
+          "swappedInDay": 3
+        }
+      },
+      "thrown": null,
+      "fetchCalls": []
+    },
+    "no_evaluation_metadata": {
+      "updates": [
+        {
+          "portfolio.star": [
+            {
+              "symbol": "AMD",
+              "name": "AMD",
+              "isCrypto": false,
+              "baseATR": 3.6,
+              "swapPrice": 150,
+              "swappedInAt": "2026-10-07T15:00:00.000Z",
+              "swappedInDay": 3
+            },
+            {
+              "symbol": "TSLA",
+              "name": "Tesla",
+              "baseATR": 4,
+              "isCrypto": false,
+              "sector": "Consumer Cyclical"
+            }
+          ],
+          "portfolio.bench.stocks": [
+            {
+              "symbol": "JPM",
+              "name": "JPMorgan",
+              "baseATR": 1.6,
+              "isCrypto": false,
+              "sector": "Financial Services"
+            },
+            {
+              "symbol": "MU",
+              "name": "Micron",
+              "baseATR": 2.5,
+              "isCrypto": false,
+              "direction": null,
+              "cooldownUntil": "2026-10-08T15:00:00.000Z"
+            }
+          ],
+          "portfolio.bench.crypto": {
+            "symbol": "ETH",
+            "name": "Ethereum",
+            "baseATR": 6,
+            "isCrypto": true,
+            "direction": "short"
+          },
+          "thresholdHistory": {
+            "MU": {
+              "maxMultiplier": 1,
+              "minMultiplier": 0,
+              "badges": [
+                "spark"
+              ]
+            },
+            "NVDA": {
+              "maxMultiplier": 0,
+              "minMultiplier": -1,
+              "badges": []
+            },
+            "AMD": {
+              "maxMultiplier": 0,
+              "minMultiplier": 0,
+              "badges": []
+            }
+          },
+          "trades": [
+            {
+              "symbolOut": "PG",
+              "symbolIn": "KO",
+              "lockedPoints": 1.5,
+              "swappedOutAt": "2026-10-05T16:00:00.000Z"
+            },
+            {
+              "symbolOut": "MU",
+              "symbolIn": "AMD",
+              "name": "Micron",
+              "tier": "star",
+              "slotIndex": 0,
+              "entryPrice": 100,
+              "exitPrice": 110,
+              "lockedPoints": 295,
+              "lockedGainPct": 10,
+              "swappedOutAt": "2026-10-07T15:00:00.000Z",
+              "swapDay": 3,
+              "isCrypto": false,
+              "direction": null,
+              "snapshot": null
+            }
+          ],
+          "scoreState.tradeCount": 5,
+          "updatedAt": "2026-10-07T15:00:00.000Z"
+        }
+      ],
+      "returned": {
+        "closedTrade": {
+          "symbolOut": "MU",
+          "symbolIn": "AMD",
+          "name": "Micron",
+          "tier": "star",
+          "slotIndex": 0,
+          "entryPrice": 100,
+          "exitPrice": 110,
+          "lockedPoints": 295,
+          "lockedGainPct": 10,
+          "swappedOutAt": "2026-10-07T15:00:00.000Z",
+          "swapDay": 3,
+          "isCrypto": false,
+          "direction": null,
+          "snapshot": null
+        },
+        "incomingAsset": {
+          "symbol": "AMD",
+          "name": "AMD",
+          "isCrypto": false,
+          "baseATR": 3.6,
+          "swapPrice": 150,
+          "swappedInAt": "2026-10-07T15:00:00.000Z",
+          "swappedInDay": 3
+        }
+      },
+      "thrown": null,
+      "fetchCalls": []
+    },
+    "refuses_self_swap": {
+      "updates": [],
+      "returned": null,
+      "thrown": "Invalid swap: MU cannot replace itself",
+      "fetchCalls": []
+    },
+    "refuses_duplicate_incoming": {
+      "updates": [],
+      "returned": null,
+      "thrown": "Invalid swap: NVDA already occupies an active core slot",
+      "fetchCalls": []
+    },
+    "refuses_empty_slot": {
+      "updates": [],
+      "returned": null,
+      "thrown": "Asset no longer available in slot",
+      "fetchCalls": []
+    },
+    "refuses_no_incoming_price": {
+      "updates": [],
+      "returned": null,
+      "thrown": "Cannot complete swap: no valid price for AMD",
+      "fetchCalls": []
+    },
+    "refuses_missing_battle": {
+      "updates": [],
+      "returned": null,
+      "thrown": "Agent battle not found",
+      "fetchCalls": []
+    }
+  }
+}
