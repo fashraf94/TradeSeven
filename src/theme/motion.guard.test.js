@@ -123,6 +123,9 @@ const GUARDED_FILES = [
   'src/screens/filmRoomV2/FilmRoomStudy.jsx',
   // Film Room A2 — Deep dive (BA-43): token-only and motion-token-only from birth, registered in the commit that introduces it.
   'src/screens/filmRoomV2/FilmRoomDeepDive.jsx',
+  // Film Room A2 — the shell and its first-open record (BA-41, BA-49): token-only and motion-token-only from birth, registered in the commit that introduces them.
+  'src/screens/filmRoomV2/FilmRoomScreenV2.jsx',
+  'src/screens/filmRoomV2/filmRoomSeen.js',
 ];
 
 /**

@@ -196,6 +196,14 @@
     "src/screens/filmRoomV2/FilmRoomDeepDive.jsx": {
       "count": 0,
       "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
+    },
+    "src/screens/filmRoomV2/FilmRoomScreenV2.jsx": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
+    },
+    "src/screens/filmRoomV2/filmRoomSeen.js": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
     }
   }
 }

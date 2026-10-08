@@ -49,7 +49,7 @@ export function mounter() {
   };
   m.teardown = () => { act(() => m.root.unmount()); m.container.remove(); };
   m.render = (el) => act(() => { m.root.render(el); });
-  m.flush = async (n = 6) => { for (let i = 0; i < n; i += 1) await act(async () => { await Promise.resolve(); }); };
+  m.flush = async (n = 6) => { for (let i = 0; i < n; i += 1) await act(async () => { await new Promise((r) => setTimeout(r, 0)); }); };
   m.click = (el) => act(() => { el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
   m.q = (sel) => m.container.querySelector(sel);
   m.qa = (sel) => [...m.container.querySelectorAll(sel)];
