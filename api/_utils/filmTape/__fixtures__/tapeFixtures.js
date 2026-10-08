@@ -61,7 +61,7 @@ export async function makeTick({
   return permanent;
 }
 
-const STAGES_TO = {
+export const STAGES_TO = {
   degraded_quotes: ['quotes_checked'],
   no_trigger: ['quotes_checked', 'scores_marked', 'risk_evaluated', 'proposal_handled', 'gameplan_handled', 'trigger_evaluated'],
   gameplan_pending: ['quotes_checked', 'scores_marked', 'risk_evaluated', 'proposal_handled', 'gameplan_handled'],
@@ -82,7 +82,7 @@ function evidenceFor(held, pxBase = 100) {
 }
 
 /** An evaluation entry in the evaluator's envelope (agent-evaluate.js:3922-3991). */
-function makeEntry({ evalId, timestampMs, decision = 'HOLD', total = 0, held = [], candidates = null, heardThread = null, budgetSkipped = false, rationale = 'Momentum intact; holding.', declarationsPhase = undefined, symbolOut = null, symbolIn = null }) {
+export function makeEntry({ evalId, timestampMs, decision = 'HOLD', total = 0, held = [], candidates = null, heardThread = null, budgetSkipped = false, rationale = 'Momentum intact; holding.', declarationsPhase = undefined, symbolOut = null, symbolIn = null }) {
   const promptBuiltAt = budgetSkipped ? null : iso(timestampMs - 8_000);
   const e = {
     evalId,
@@ -113,11 +113,11 @@ function makeEntry({ evalId, timestampMs, decision = 'HOLD', total = 0, held = [
   return e;
 }
 
-function tradeOf({ out, inn, tier, slotIndex, entryPrice, exitPrice, lockedPoints, lockedGainPct, swappedOutAt, source, exitReason, isCrypto = false }) {
+export function tradeOf({ out, inn, tier, slotIndex, entryPrice, exitPrice, lockedPoints, lockedGainPct, swappedOutAt, source, exitReason, isCrypto = false }) {
   return { symbolOut: out, symbolIn: inn, name: out, tier, slotIndex, entryPrice, exitPrice, lockedPoints, lockedGainPct, swappedOutAt, swapDay: 1, isCrypto, direction: null, id: `trade_x`, source, exitReason, snapshot: null };
 }
 
-function receiptOf({ battleId, out, inn, tier, slotIndex, swappedOutAt, source, exitReason, outgoingEntryPrice, outgoingBaseATR, thresholdHistory, entryMark, entryATR, outgoingSwappedInAt = null, outgoingSwappedInDay = null, seq }) {
+export function receiptOf({ battleId, out, inn, tier, slotIndex, swappedOutAt, source, exitReason, outgoingEntryPrice, outgoingBaseATR, thresholdHistory, entryMark, entryATR, outgoingSwappedInAt = null, outgoingSwappedInDay = null, seq }) {
   return {
     schemaVersion: 1, capturedAt: swappedOutAt, evidenceClass: 'live_agent', archetype: 'speculator',
     agentId: AGENT, battleId, battleDay: 1, timestamp: swappedOutAt, receiptSeq: seq,
@@ -128,7 +128,7 @@ function receiptOf({ battleId, out, inn, tier, slotIndex, swappedOutAt, source, 
   };
 }
 
-function battleDoc(over) {
+export function battleDoc(over) {
   return {
     ownerId: OWNER, agentId: AGENT, status: 'active', gameMode: 'baggerbomb_agent',
     duration: 'fullday', createdAt: '2026-09-24T12:00:00.000Z', activatedAt: '2026-09-24T12:00:00.000Z', completedAt: null,
