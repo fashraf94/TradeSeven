@@ -70,30 +70,39 @@ afterEach(() => {
 });
 
 describe('the answer — the server\'s own resolution, for the owner alone', () => {
-  it('on: CALL_RECORDS_MODE on and the owner allowlisted → 200 { on: true }, Cache-Control: no-store, one read', async () => {
+  it('on: CALL_RECORDS_MODE on and the owner allowlisted → 200 { on: true, allowlisted: true }, Cache-Control: no-store, one read', async () => {
     const res = await get();
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ on: true });
+    expect(res.body).toEqual({ on: true, allowlisted: true });
     expect(res.headers['cache-control']).toBe('no-store');
     expect(state.reads).toEqual([`agentBattles/${BATTLE}`]);
   });
 
-  it('off: global off, global shadow, or an owner not on the allowlist → 200 { on: false }', async () => {
-    for (const [mode, allow] of [['off', 'owner-uid-1'], ['shadow', 'owner-uid-1'], ['on', 'someone-else'], ['on', '']]) {
+  it('off: global off, global shadow, or an owner not on the allowlist → 200 { on: false } — `allowlisted` is the allowlist alone, never the calls mode', async () => {
+    for (const [mode, allow, allowlisted] of [['off', 'owner-uid-1', true], ['shadow', 'owner-uid-1', true], ['on', 'someone-else', false], ['on', '', false]]) {
       state.callsMode = mode;
       process.env.COCKPIT_ALLOWLIST_UIDS = allow;
       resetCockpitStatusRateLimit();
       const res = await get();
       expect(res.statusCode, `${mode}/${allow}`).toBe(200);
-      expect(res.body, `${mode}/${allow}`).toEqual({ on: false });
+      expect(res.body, `${mode}/${allow}`).toEqual({ on: false, allowlisted });
       expect(res.headers['cache-control']).toBe('no-store');
     }
   });
 
   it('a rollback (the uid removed from the environment the instance sees) is visible on the very next ask — no cache', async () => {
-    expect((await get()).body).toEqual({ on: true });
+    expect((await get()).body).toEqual({ on: true, allowlisted: true });
     process.env.COCKPIT_ALLOWLIST_UIDS = '';
-    expect((await get()).body).toEqual({ on: false });
+    expect((await get()).body).toEqual({ on: false, allowlisted: false });
+  });
+
+  it('BA-40: the one added field — exactly `on` and `allowlisted`, both booleans; a malformed owner reads not allowlisted', async () => {
+    const res = await get();
+    expect(Object.keys(res.body).sort()).toEqual(['allowlisted', 'on']);
+    state.battles[BATTLE] = { ownerId: 42, status: 'active' };
+    state.uid = 42;
+    resetCockpitStatusRateLimit();
+    expect((await get()).body).toEqual({ on: false, allowlisted: false });
   });
 });
 
@@ -111,6 +120,7 @@ describe('the refusals, in order', () => {
     expect(res.statusCode).toBe(403);
     expect(res.body).toEqual({ error: 'forbidden' });
     expect(res.body).not.toHaveProperty('on');
+    expect(res.body).not.toHaveProperty('allowlisted');
     expect(res.headers['cache-control']).toBe('no-store');
   });
 
@@ -123,7 +133,7 @@ describe('the refusals, in order', () => {
     await handler({ method: 'GET' }, bare);
     expect(bare.statusCode).toBe(400);
     expect(state.reads).toEqual([]);
-    expect((await get({ battleId: [BATTLE] })).body).toEqual({ on: true });
+    expect((await get({ battleId: [BATTLE] })).body).toEqual({ on: true, allowlisted: true });
   });
 
   it('404 for a battle that does not exist; 500 when the read fails (the client reads both as off)', async () => {
@@ -132,6 +142,7 @@ describe('the refusals, in order', () => {
     const res = await get();
     expect(res.statusCode).toBe(500);
     expect(res.body).not.toHaveProperty('on');
+    expect(res.body).not.toHaveProperty('allowlisted');
   });
 
   it('the per-user window: the limit-th + 1 ask in a minute → 429, before any read', async () => {
@@ -159,6 +170,7 @@ describe('the route is read-only and never decides on the client\'s word', () =>
     expect(src.match(/\.get\(\)/g)).toHaveLength(1);
     expect(src).not.toMatch(/req\.body/);
     expect(src).toContain("resolveCallRecordsMode(battle) === 'on'");
+    expect(src).toContain('allowlisted: isCockpitOwnerAllowlisted(battle?.ownerId)');
     expect(src).toMatch(/requireAuth\(req, res\)/);
   });
 });

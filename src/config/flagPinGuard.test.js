@@ -182,7 +182,8 @@ const DARK_BY_DESIGN = {
   // it here in the same commit, per the guard's own "if DELIBERATE"
   // instruction. Its pin in filmTapeFlags.test.js now asserts the live true
   // value AND, turned around, that this entry is gone — a rollback moves both
-  // lines back together. FILM_ROOM_V2_ENABLED (below) stays dark.
+  // lines back together. The Film Room screen gate (FILM_ROOM_V2_MODE, below)
+  // stays dark.
   RESPONSE_FORK_ATTRIBUTION_ENABLED:
     'Cockpit Build 1a (spec §11, Astra B1R2-9) — the response-fork hook\'s CAUSAL attribution ("In response to …"). Build 1a records prompt inclusion only; the causal field needs the round-3 declarations schema + nudge and its replay gate, then flips in the founder\'s own one-line PR, never a build PR. The flip moves the pin in cockpitFlags.test.js to true AND removes this entry in the same commit',
   // COCKPIT_UI_ENABLED intentionally ABSENT: the cockpit screen flipped true in
@@ -191,8 +192,21 @@ const DARK_BY_DESIGN = {
   // "if DELIBERATE" instruction. Its pin in cockpitUiFlags.test.js asserts the
   // live true value AND, turned around, that this entry is gone — a rollback
   // moves both lines back together.
-  FILM_ROOM_V2_ENABLED:
-    'Film Room Build A — the screen flag (spec §7, A2): in A1 it gates only the Stage 3 branch of the hub helper getReviewAvailability (src/utils/reviewAvailability.js); A2 adds FilmRoomScreenV2 behind it. Flips only after A2 builds and Flash has read five real tape days through scripts/export-film-tape.js (spec §10 flip 2), in its own founder PR, never a build PR. The flip moves the pin in filmTapeFlags.test.js to true AND turns that file\'s registration row around to assert this entry is gone',
+  // FILM_ROOM_V2_MODE intentionally ABSENT, and it must stay absent: Amendment
+  // E (BA-40) replaced the boolean FILM_ROOM_V2_ENABLED, which was registered
+  // here, with a STRING TRI-STATE ('off' | 'allowlist' | 'on'), so buildFlagMap
+  // above never sees it (the scan is `*_ENABLED = true|false`) and the
+  // integrity test below would fail the key outright. Noted HERE so a flip is
+  // loud in the place a reader looks for the dark runway — the
+  // ANTICIPATION_THRESHOLD_LINT_MODE precedent; filmTapeFlags.test.js asserts
+  // both halves.
+  //   Runway: the Film Room v2 screen (A2) and the hub helper's Stage 3, per
+  //   battle owner. Ships 'off' (the legacy screen byte-identical, Stage 1).
+  //   'allowlist' admits only owners the cockpit's server-side allowlist
+  //   admits (GET /api/agent/cockpit-status); it is the founder's own two-line
+  //   PR after A2 merges and the tape's owner-read rules are published. 'on' is
+  //   a later founder decision. Never a build PR; each step moves the pin row
+  //   in filmTapeFlags.test.js in the same commit (BUILD_RULES §2).
   SHADOW_CPU_QUOTE_INTEGRITY_ENABLED:
     'Shadow vs CPU quote integrity (SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md; build record docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md) — built dark; the producer metadata (quoteOrigin, the stock isFallback marker) ships live while this stays false. Flips only in the founder\'s own PR, never a build PR, and no earlier than the first regular US market open after the founder confirms the complete additive metadata path is live in production (R-11). The flip moves the pin in shadowCpuQuoteIntegrityFlags.test.js to true and drops this entry in the same commit; no URL, localStorage or environment override exists',
   HYPOTHESIS_RECORDS_ENABLED:

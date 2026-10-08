@@ -21,7 +21,8 @@ const flags = vi.hoisted(() => ({ writer: true, v2: false }));
 vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_TAPE_WRITE_ENABLED() { return flags.writer; },
-  get FILM_ROOM_V2_ENABLED() { return flags.v2; },
+  // Amendment E BA-40: the boolean became FILM_ROOM_V2_MODE; v2 true reads 'on' (every owner, no verdict).
+  get FILM_ROOM_V2_MODE() { return flags.v2 ? 'on' : 'off'; },
 }));
 
 import { writeTapeDay, markCloseFailed } from './writeTapeDay.js';

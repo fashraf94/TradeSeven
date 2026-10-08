@@ -2941,8 +2941,8 @@ export function isCockpitUiOn() {
  * FLIPPED true 2026-10-01 — founder-cited (Flash, 2026-10-01), in its own flip
  * PR: the pin in filmTapeFlags.test.js moved to true, its registration row now
  * asserts the DARK_BY_DESIGN entry is gone, and the entry was dropped from
- * flagPinGuard.test.js, all in the flip commit. FILM_ROOM_V2_ENABLED below
- * stays false, so the screen and the hub helper's Stage 3 stay dark. ROLLBACK:
+ * flagPinGuard.test.js, all in the flip commit. FILM_ROOM_V2_MODE below
+ * stays 'off', so the screen and the hub helper's Stage 3 stay dark. ROLLBACK:
  * set this back to false (with the pin and the DARK_BY_DESIGN entry moving
  * back in the same commit) — both crons then answer `flag_off` again, and the
  * tapes already written stay where they are, unread.
@@ -2951,22 +2951,42 @@ export function isCockpitUiOn() {
 export const FILM_TAPE_WRITE_ENABLED = true;
 
 /**
- * FILM_ROOM_V2_ENABLED — the screen flag (spec §7, A2). In A1 it gates ONE
- * thing: the Stage 3 branch of the hub helper `getReviewAvailability`
- * (src/utils/reviewAvailability.js, spec §11), which reads
- * `tape/{finalEtDate}` instead of the legacy `dailyReviews[]`. Off → the
- * helper resolves Stage 1 from the battle document alone, with no read. The
- * A2 build (its own later slot) adds FilmRoomScreenV2 behind the same flag;
- * nothing player-visible exists behind it in A1.
+ * FILM_ROOM_V2_MODE — the Film Room v2 screen gate (A2), a STRING TRI-STATE
+ * that replaced the boolean FILM_ROOM_V2_ENABLED (Amendment E BA-40,
+ * docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_AMENDMENT_E_20261008.md). It
+ * resolves PER BATTLE OWNER (src/utils/filmRoomGate.js):
+ *   'off'       — v2 resolves on for nobody: the 'filmRoom' route renders the
+ *                 legacy FilmRoomScreen byte for byte (the golden captured at
+ *                 the pre-build commit), and the hub helper
+ *                 getReviewAvailability (src/utils/reviewAvailability.js,
+ *                 spec §11) resolves Stage 1 from the battle document alone,
+ *                 with no read.
+ *   'allowlist' — v2 resolves on only for a battle whose owner the cockpit's
+ *                 SERVER-SIDE allowlist admits, answered by the existing
+ *                 GET /api/agent/cockpit-status verdict (its `allowlisted`
+ *                 field) for the caller's own battle; the client holds no uid.
+ *                 Everyone else gets the legacy screen and Stage 1.
+ *   'on'        — v2 for every battle: FilmRoomScreenV2 at the same route and
+ *                 entry points, and the hub helper's Stage 3 (one bounded read
+ *                 of the final day's tape).
+ * Unknown values resolve to 'off' (fail closed).
  *
- * FLIP: after A2 builds and Flash has read five real tape days through
- * scripts/export-film-tape.js (spec §10 flip 2), in the sequence's screen-flip
- * slot — its own founder PR, never a build PR. The flip moves the pin in
- * src/config/filmTapeFlags.test.js to true, turns the registration row around,
- * and drops the DARK_BY_DESIGN entry in the same commit (BUILD_RULES §2).
+ * RUNWAY: 'off' → 'allowlist' is its own two-line founder PR (this value and
+ * its pin row) after the A2 build merges AND the Firestore rules are published
+ * so the tape's owner-read block is live; the founder and the QA tester then
+ * open five real battle days. 'allowlist' → 'on' is a later founder decision,
+ * its own PR, never a build PR. Each step moves the pin row in
+ * src/config/filmTapeFlags.test.js in the same commit (BUILD_RULES §2). A
+ * string tri-state, so it is pinned DIRECTLY — never a DARK_BY_DESIGN key (the
+ * flag-pin guard scans `*_ENABLED = true|false` only; the CALL_RECORDS_MODE /
+ * ANTICIPATION_THRESHOLD_LINT_MODE precedent) — and noted, by name, in the
+ * DARK_BY_DESIGN block where a reader looks for the dark runway.
  */
-// Pinned by: filmTapeFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const FILM_ROOM_V2_ENABLED = false;
+// Pinned by: filmTapeFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
+export const FILM_ROOM_V2_MODE = 'off';
+
+/** The three walked states, in walk order. */
+export const FILM_ROOM_V2_MODES = Object.freeze(['off', 'allowlist', 'on']);
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
