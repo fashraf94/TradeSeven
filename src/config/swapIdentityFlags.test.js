@@ -37,7 +37,7 @@ describe('SWAP_IDENTITY_MODE — the dedicated pin (BUILD_RULES §2; spec §7)',
   it('the pin: the live value (it moves with the walk, off → shadow → enforce)', () => {
     // THE ROW THAT MOVES WITH THE WALK. 'off' → 'shadow' → 'enforce', each in
     // its own founder PR, each updating this literal in the same commit.
-    expect(SWAP_IDENTITY_MODE).toBe('off');
+    expect(SWAP_IDENTITY_MODE).toBe('shadow');
   });
 
   it('the allowed values are exactly the three walked states, in walk order, frozen — and hold the live value', () => {

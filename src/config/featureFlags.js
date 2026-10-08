@@ -3148,7 +3148,7 @@ export const PILOT_JOURNEY_MODES = Object.freeze(['off', 'advisory', 'live']);
  * `*_ENABLED = true|false` only; the CALL_RECORDS_MODE precedent).
  */
 // Pinned by: swapIdentityFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
-export const SWAP_IDENTITY_MODE = 'off';
+export const SWAP_IDENTITY_MODE = 'shadow';
 
 /** The three founder-walked states, in walk order. */
 export const SWAP_IDENTITY_MODES = Object.freeze(['off', 'shadow', 'enforce']);
