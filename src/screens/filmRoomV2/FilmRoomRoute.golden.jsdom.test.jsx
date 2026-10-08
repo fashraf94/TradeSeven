@@ -50,6 +50,15 @@ vi.mock('../../hooks/useAgentBattle', async () => {
   const { useRef } = await import('react');
   return { default: () => { const seen = useRef(false); if (!seen.current) { seen.current = true; legacy.mounts += 1; } return HOOK_RESULT; } };
 });
+// The legacy screen itself, passed through untouched: the wrapper adds no element and no prop, and records the
+// props it is given so a row can hold them to App's own (a changed prop the mocked hooks ignore would not move the DOM).
+const received = vi.hoisted(() => ({ props: [] }));
+vi.mock('../FilmRoomScreen', async (importOriginal) => {
+  const real = await importOriginal();
+  const { createElement } = await import('react');
+  const Legacy = real.default;
+  return { ...real, default: function FilmRoomScreen(props) { received.props.push(props); return createElement(Legacy, props); } };
+});
 // v2's Firestore reads, should v2 mount: a tape that does not exist (denied, as the rules answer).
 vi.mock('firebase/firestore', () => ({
   doc: (_db, ...s) => ({ path: s.join('/') }),
@@ -76,6 +85,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date(PINNED_NOW));
   resetFilmRoomVerdicts();
   legacy.mounts = 0;
+  received.props = [];
   flags.mode = 'off';
   auth.user = { uid: 'golden-owner', getIdToken: async () => 'token' };
   fetches = [];
@@ -164,6 +174,27 @@ describe('BA-40 — the legacy Film Room, byte for byte, wherever v2 does not re
     release({ ok: true, status: 200, json: async () => ({ on: false, allowlisted: false }) });
     await settle();
     expect(container.innerHTML).toBe(golden('filmRoom.legacy.mounted.html'));
+  });
+
+  it("the legacy screen gets App's props THEMSELVES — the same battle object and the same onBack, nothing added or rebuilt ('off' and not admitted)", async () => {
+    const onBack = () => {};
+    for (const [mode, body] of [['off', null], ['allowlist', { on: true, allowlisted: false }]]) {
+      act(() => root.unmount());
+      root = createRoot(container);
+      resetFilmRoomVerdicts();
+      received.props = [];
+      flags.mode = mode;
+      if (body) answer(body);
+      act(() => root.render(<FilmRoomRoute battle={BATTLE_PROP} onBack={onBack} />));
+      await settle();
+      expect(container.innerHTML, mode).toBe(golden('filmRoom.legacy.mounted.html'));
+      expect(received.props.length, mode).toBeGreaterThan(0);
+      for (const p of received.props) {
+        expect(Object.keys(p).sort(), mode).toEqual(['battle', 'onBack']);
+        expect(p.battle, mode).toBe(BATTLE_PROP);
+        expect(p.onBack, mode).toBe(onBack);
+      }
+    }
   });
 
   it("'allowlist', an owner the server admits: v2 at the same route — the legacy screen is gone", async () => {
