@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
+import { renderToString } from 'react-dom/server';
 import FilmRoomScreenV2, { noTapeLine, defaultDay, battleDays, headerParts } from './FilmRoomScreenV2';
 import { FIRST_OPEN_KEY } from './filmRoomSeen';
 import { FORBIDDEN_WORDS } from './filmRoomCopy';
@@ -70,6 +71,24 @@ describe('the header (BA-41, BA-42)', () => {
     expect(mark.compareDocumentPosition(m.q('header h1')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it('the mark is the cockpit\'s still avatar given NO score — static, its environment off, its standing neutral (no mood about the day)', async () => {
+    vi.resetModules();
+    const seen = [];
+    vi.doMock('../../components/AgentPresence/AgentPresenceMount', () => ({ default: function MockPresenceMount(props) { seen.push(props); return null; } }));
+    try {
+      const Fresh = (await import('./FilmRoomScreenV2')).default;
+      const battle = battleOf(sep23Tape);
+      renderToString(<Fresh battle={battle} onBack={() => {}} viewerId="viewer-1" readers={readersOf({})} nowMs={NOW} />);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ surface: 'duel', reactivityLevel: 'static', enableEnvironment: false });
+      expect(seen[0].agent).toBe(battle);
+      expect(seen[0].duel).toEqual({ statusFeed: null });   // no playerScore / opponentScore
+    } finally {
+      vi.doUnmock('../../components/AgentPresence/AgentPresenceMount');
+      vi.resetModules();
+    }
+  });
+
   it('the subtitle names only what the record carries: archetype · BaggerBomb · length · date', () => {
     const D = sep23Tape.etDate;
     const base = { agentContext: { archetype: 'momentum_chaser' }, timing: { tradingDays: ['2026-09-22', D] } };
@@ -77,6 +96,8 @@ describe('the header (BA-41, BA-42)', () => {
     // no timeline: the tape's day number on its final day; on another day, no length at all (never battleDays' one-day fallback)
     expect(headerParts({ agentContext: {} }, sep23Tape, D).length).toBe('one-day battle');
     expect(headerParts({ agentContext: {} }, { ...sep23Tape, isFinalDay: false, dayNumber: 1 }, D).length).toBeNull();
+    expect(battleDays({ completedAt: sep23Tape.battle.completedAt })).toEqual([D]);   // the screen's own one-day fallback…
+    expect(headerParts({ completedAt: sep23Tape.battle.completedAt }, { ...sep23Tape, isFinalDay: false }, D).length).toBeNull();   // …never states a length
     expect(headerParts({}, null, D)).toEqual({ archetype: null, game: 'BaggerBomb', length: null, date: 'Wed, Sep 23, 2026' });
     // the archetype: the battle's, else the tape's (a code the directory does not name is humanised by the directory itself)
     expect(headerParts({}, sep23Tape, D).archetype).toBe('Momentum');
