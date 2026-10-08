@@ -21,7 +21,7 @@
 
 import React, { useState } from 'react';
 import {
-  valueAt, etClock, checkStateOf, riskSummary, exitMakerOf, swapAnchor, lastPointPath, deriveHoldings,
+  valueAt, etClock, checkStateOf, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, lastPointPath, deriveHoldings,
   directiveCardOf, rationaleTimeline, planGroups, PLAN_DIRECTIONS, EXIT_MAKER_WORDS, fmtPrice, fmtPriceDelta, fmtCount, isNum, toMs, etDateLabel,
 } from './filmRoomModel';
 // The replay's own coverage line sits under the swaps' (BA-20: every section its coverage).
@@ -29,7 +29,7 @@ import { FILM_ROOM_COPY as COPY, REPLAY_SENTENCE, LOCKED_BASIS_NOTE, REPLAY_VERS
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
 import { etDateOf } from '../../utils/tapeSchedule';
 import {
-  C, card, eyebrow, foot, body, mono, tint, plain, TapeNum, CountNum, CheckCount, When, Rec, Section, Row, EmptyCard, Collapsible, StateTag, Door, Chip, TextButton, KindMark, Coverage,
+  C, card, eyebrow, foot, body, mono, tint, plain, TapeNum, AggNum, CountNum, CheckCount, When, Rec, Section, Row, EmptyCard, Collapsible, StateTag, Door, Chip, TextButton, KindMark, Coverage,
 } from './FilmRoomKit';
 import CheckDetail from './FilmRoomCheckDetail';
 import { Pip } from './FilmRoomGlance';
@@ -171,7 +171,7 @@ function splitAbsent(tape, index) {
   return r.note || REPLAY_VERSION_NOTE;
 }
 
-function SwapCard({ tape, index, desktop, onDeep }) {
+function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
   const a = tape.actions[index];
   const who = exitMakerOf(a);
   const color = who.by === 'agent' ? C.teal : C.ink2;
@@ -184,11 +184,14 @@ function SwapCard({ tape, index, desktop, onDeep }) {
   const hypothetical = (isNum(rowN) && rowN > 0) || (isNum(replayN) && replayN > 0);
   const holdEnd = lastPointPath(tape, index, 'holdPath');
   const swapEnd = lastPointPath(tape, index, 'swapPath');
-  const anchor = swapAnchor(index);
+  // "Swap n" and #swap-n read one sequence: the swap's place in time order (addendum R4(a); BA-47).
+  const anchor = swapAnchor(ordinal - 1);
   return (
     <article id={anchor} data-swap-card={index} style={{ ...card, gap: 10, borderLeft: `3px solid ${color}` }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ ...eyebrow, color: C.ink2 }}><When>{COPY.swapAt(etClock(a.at) ?? '')}</When></span>
+        <span data-swap-title="" style={{ ...eyebrow, color: C.ink2, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          {COPY.swapWord} <AggNum value={ordinal} aggregate="ordinal(actions[] in time order)" size={9.5} weight={700} /> · {etClock(a.at) ? <When>{etClock(a.at)}</When> : COPY.notRecorded}
+        </span>
         <a href={`#${anchor}`} data-anchor={anchor} style={mono(9.5, C.ink3, { textDecoration: 'none' })}><span data-identifier="">{`#${anchor}`}</span></a>
       </div>
       <span data-exit-maker={who.by} style={{ display: 'flex' }}><StateTag color={color}>{who.label}</StateTag></span>
@@ -254,11 +257,12 @@ function SwapCard({ tape, index, desktop, onDeep }) {
 
 function SwapsSection({ tape, desktop, onDeep }) {
   const actions = Array.isArray(tape.actions) ? tape.actions : [];
+  const ordinals = swapOrdinals(tape);
   return (
     <Section id="swaps" title={COPY.swaps} count={actions.length ? <CountNum value={actions.length} aggregate="count(actions[])" size={10} /> : null} coverage={tape.coverage?.actions}>
       <div data-coverage-of="replay"><Coverage label={COPY.replayCoverage} coverage={tape.coverage?.replay} style={{ padding: '0 2px' }} /></div>
       {actions.length
-        ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{actions.map((a, i) => <SwapCard key={a.key || i} tape={tape} index={i} desktop={desktop} onDeep={onDeep} />)}</div>
+        ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{actions.map((a, i) => <SwapCard key={a.key || i} tape={tape} index={i} ordinal={ordinals[i]} desktop={desktop} onDeep={onDeep} />)}</div>
         : <EmptyCard>{COPY.swapsNone}</EmptyCard>}
     </Section>
   );

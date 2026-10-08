@@ -65,6 +65,7 @@ export const SCREEN_AGGREGATE_CLASSES = Object.freeze({
   'count(tickSeqs in the minted range)': 'derived',
   'count(rationale[])': 'derived',
   'count(plans[] of the symbol)': 'derived',
+  'ordinal(actions[] in time order)': 'derived',
 });
 
 /**
@@ -252,8 +253,24 @@ export function riskSummary(row) {
 
 // ── actions (BA-6, BA-11, BA-38; Amendment E F1, BA-47) ─────────────────────
 
-/** The anchor every swap card is addressable by (BA-47): `swap-1`, `swap-2`, … in the tape's order. */
+/** The anchor every swap card is addressable by (BA-47): `swap-1`, `swap-2`, … for the 0-based place `i` in time order. */
 export const swapAnchor = (i) => `swap-${i + 1}`;
+
+/**
+ * Each swap's place in time order, 1-based, by tape index — sequence only
+ * (addendum R4(a)): the card's "Swap n" and its #swap-n anchor both read this
+ * one sequence, so they never disagree (BUILD_RULES §9). The writer stores
+ * actions in time order, so it is the tape's order whenever the tape is the
+ * writer's; an action with no recorded instant goes after the timed ones.
+ */
+export function swapOrdinals(tape) {
+  const actions = Array.isArray(tape?.actions) ? tape.actions : [];
+  const order = actions.map((a, i) => ({ i, ms: toMs(a?.at) }))
+    .sort((x, y) => (x.ms === y.ms ? 0 : x.ms === null ? 1 : y.ms === null ? -1 : x.ms - y.ms) || x.i - y.i);
+  const out = new Array(actions.length);
+  order.forEach((o, k) => { out[o.i] = k + 1; });
+  return out;
+}
 
 /**
  * Who made the exit (BA-6), from the recorded mechanism — the line that fired

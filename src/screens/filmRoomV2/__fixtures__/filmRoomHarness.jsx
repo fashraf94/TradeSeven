@@ -108,6 +108,7 @@ export const SPEC_AGGREGATE_CLASSES = Object.freeze({
   'count(tickSeqs in the minted range)': 'derived',
   'count(rationale[])': 'derived',
   'count(plans[] of the symbol)': 'derived',
+  'ordinal(actions[] in time order)': 'derived',
 });
 
 /**

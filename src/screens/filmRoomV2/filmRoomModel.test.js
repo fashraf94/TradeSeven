@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import sep23Tape from './__fixtures__/sep23.tape.json';
 import emptyTape from './__fixtures__/empty.tape.json';
 import {
-  valueAt, classAt, numberAt, checkStateOf, checkRuns, riskLines, riskSummary, exitMakerOf, swapAnchor, deriveHoldings,
+  valueAt, classAt, numberAt, checkStateOf, checkRuns, riskLines, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, deriveHoldings,
   directiveCardOf, rationaleTimeline, planGroups, evidenceMarkers, roleOf, deepSymbols, extremeBars, lastPointPath,
   fmtPoints, fmtPrice, fmtPriceDelta, etClock, etDateLabel, isRecordedScore, SCREEN_AGGREGATE_CLASSES, checkCounts,
 } from './filmRoomModel';
@@ -126,6 +126,15 @@ describe('actions (BA-6, BA-47)', () => {
     const p = lastPointPath(sep23Tape, 0, 'swapPath');
     expect(valueAt(sep23Tape, p)).toBe(sep23Tape.actions[0].replay.swapPath.at(-1).points);
     expect(lastPointPath(emptyTape, 0, 'swapPath')).toBeNull();
+  });
+  it('addendum R4(a): a swap\'s ordinal is its place in TIME order — sequence only; an untimed action goes last, in the tape\'s order', () => {
+    expect(swapOrdinals(sep23Tape)).toEqual([1, 2, 3]);
+    const t = clone(sep23Tape);
+    t.actions.reverse();                      // tape order no longer time order
+    expect(swapOrdinals(t)).toEqual([3, 2, 1]);
+    t.actions[1].at = null;
+    expect(swapOrdinals(t)).toEqual([2, 3, 1]);
+    expect(swapOrdinals(emptyTape)).toEqual([]);
   });
 });
 

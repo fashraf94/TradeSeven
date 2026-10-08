@@ -127,7 +127,7 @@ export const FILM_ROOM_COPY = Object.freeze({
   tapForDeep: 'tap a name for its Deep dive',
   swaps: 'Swaps',
   swapsNone: 'No swaps were recorded this day.',
-  swapAt: (clock) => `Swap · ${clock}`,
+  swapWord: 'Swap',   // "Swap 1 · 12:45 PM" — the ordinal is a marked number (addendum R4(a))
   slot: 'slot',
   banked: 'Banked',
   platformQuote: "the platform's quote",

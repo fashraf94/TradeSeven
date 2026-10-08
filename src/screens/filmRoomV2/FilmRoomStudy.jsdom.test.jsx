@@ -79,6 +79,29 @@ describe('the swap cards (BA-6, BA-11, BA-38, BA-47; F1)', () => {
     expect(m.q('#swap-2 a[href="#swap-2"]')).toBeTruthy();
   });
 
+  it('addendum R4(a): "Swap 1 · 12:45 PM" — the ordinal is a marked number, derived, and #swap-n carries the same n', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    sep23Tape.actions.forEach((a, i) => {
+      const title = card(i).querySelector('[data-swap-title]');
+      const n = title.querySelector('[data-num-aggregate="ordinal(actions[] in time order)"]');
+      expect(Number(n.getAttribute('data-agg-value'))).toBe(i + 1);
+      expect(n.getAttribute('data-num-class')).toBe('derived');
+      expect(n.querySelector('[data-kind-mark]').getAttribute('data-kind-mark')).toBe('derived');
+      expect(title.textContent).toMatch(new RegExp(`^Swap ${i + 1}\\s?D?\\s*· ${etClock(a.at)}$`));
+      expect(card(i).id).toBe(`swap-${i + 1}`);
+    });
+    expect(card(0).querySelector('[data-swap-title]').textContent).toMatch(/^Swap 1\s?D?\s*· 12:45 PM$/);
+  });
+
+  it('addendum R4(a): the ordinal is the TIME order, not the tape\'s row order — and the anchor follows it', () => {
+    const t = clone(sep23Tape);
+    t.actions.reverse();
+    m.render(<Harness tape={t} />);
+    const ordinalOf = (i) => Number(card(i).querySelector('[data-swap-title] [data-num-aggregate]').getAttribute('data-agg-value'));
+    expect([0, 1, 2].map(ordinalOf)).toEqual([3, 2, 1]);
+    expect([0, 1, 2].map((i) => card(i).id)).toEqual(['swap-3', 'swap-2', 'swap-1']);
+  });
+
   it('the exit maker\'s label precedes the result on every card', () => {
     m.render(<Harness tape={sep23Tape} />);
     const want = ['Exit by platform rule · stagnation', 'Exit by the agent · its own decision', 'Exit by platform rule · stagnation'];
