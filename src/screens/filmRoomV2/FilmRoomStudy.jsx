@@ -54,8 +54,8 @@ function HoldingsSection({ tape, onDeep }) {
   const lab = (t) => <span style={mono(9, C.ink3, { letterSpacing: '0.04em', textTransform: 'uppercase' })}>{t}</span>;
   // A changed slot's tone is who made the swap's exit, as recorded: the agent, a platform rule, the gameplan meeting, or not recorded (review A2L1-1).
   const edge = (tone) => (tone === 'agent' ? `1px solid ${C.teal}` : tone === 'platform' ? `1px solid ${C.ink2}` : tone === 'gameplan' || tone === 'unrecorded' ? `1px dashed ${C.ink2}` : `1px solid ${C.hair}`);
-  const chip = (sym, tone) => (
-    <button key={`${sym}-${tone || ''}`} type="button" data-holding-tone={tone || 'held'} onClick={() => onDeep(sym)} title={COPY.deepDoor(sym)} style={{ ...plain, minHeight: 30, minWidth: 0, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', color: tone === 'out' ? C.ink2 : C.ink, background: tone === 'agent' ? tint('teal', 0.12) : tone === 'platform' ? C.wash : 'transparent', border: edge(tone) }}>
+  const chip = (sym, tone, slot = null) => (
+    <button key={`${sym}-${tone || ''}`} type="button" data-holding-tone={tone || 'held'} data-slot={slot ?? undefined} onClick={() => onDeep(sym)} title={COPY.deepDoor(sym)} style={{ ...plain, minHeight: 30, minWidth: 0, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', color: tone === 'out' ? C.ink2 : C.ink, background: tone === 'agent' ? tint('teal', 0.12) : tone === 'platform' ? C.wash : 'transparent', border: edge(tone) }}>
       <Rec style={mono(cols > 6 ? 9.5 : 11, tone === 'out' ? C.ink2 : C.ink, { fontWeight: 700, letterSpacing: '-0.02em' })}>{sym}</Rec>
     </button>
   );
@@ -64,10 +64,10 @@ function HoldingsSection({ tape, onDeep }) {
       <div data-region="holdings" style={{ ...card, gap: 6 }}>
         <span style={mono(9.5, C.ink3)}><When>{COPY.holdingsAt(etClock(h.start.at), etClock(h.end.at))}</When></span>
         <div style={grid}>{lab(COPY.holdingsStart)}{h.slots.map((s) => chip(s.start, s.change ? 'out' : null))}</div>
-        <div style={grid}>{lab(COPY.holdingsEnd)}{h.slots.map((s) => chip(s.end, s.change ? s.change.by : null))}</div>
+        <div style={grid}>{lab(COPY.holdingsEnd)}{h.slots.map((s, k) => chip(s.end, s.change ? s.change.by : null, k))}</div>
         <div style={grid}>
           <span />
-          {h.slots.map((s, i) => <span key={i} style={mono(8.5, C.ink3, { textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })}>{s.change ? <><When>{(etClock(s.change.at) || '').replace(/ [AP]M$/, '')}</When><br />{EXIT_MAKER_WORDS[s.change.by].short}</> : ''}</span>)}
+          {h.slots.map((s, i) => <span key={i} data-slot-label={i} style={mono(8.5, C.ink3, { textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })}>{s.change ? <><When>{(etClock(s.change.at) || '').replace(/ [AP]M$/, '')}</When><br />{EXIT_MAKER_WORDS[s.change.by].short}</> : ''}</span>)}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', paddingTop: 2 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: tint('teal', 0.5), border: `1px solid ${C.teal}` }} /><span style={mono(9, C.ink3)}>{COPY.swapByMaker.agent}</span></span>
@@ -176,9 +176,12 @@ function SwapCard({ tape, index, desktop, onDeep }) {
   const who = exitMakerOf(a);
   const color = who.by === 'agent' ? C.teal : C.ink2;
   const r = a.replay || null;
-  const later = isNum(r?.subsequentTradesInSlot) ? ['actions', index, 'replay', 'subsequentTradesInSlot'] : ['actions', index, 'subsequentTradesInSlot'];
-  const laterN = valueAt(tape, later);
-  const hypothetical = isNum(laterN) && laterN > 0;
+  // BA-11: both continued lines are marked hypothetical when later trades share the slot. The action row's count is the
+  // merge's recount (current); the replay's is the count it was built with — either above zero marks it (review A2L4-9).
+  const rowN = valueAt(tape, ['actions', index, 'subsequentTradesInSlot']);
+  const replayN = valueAt(tape, ['actions', index, 'replay', 'subsequentTradesInSlot']);
+  const later = isNum(rowN) && (rowN > 0 || !(isNum(replayN) && replayN > 0)) ? ['actions', index, 'subsequentTradesInSlot'] : ['actions', index, 'replay', 'subsequentTradesInSlot'];
+  const hypothetical = (isNum(rowN) && rowN > 0) || (isNum(replayN) && replayN > 0);
   const holdEnd = lastPointPath(tape, index, 'holdPath');
   const swapEnd = lastPointPath(tape, index, 'swapPath');
   const anchor = swapAnchor(index);

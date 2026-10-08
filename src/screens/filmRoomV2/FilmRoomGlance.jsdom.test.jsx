@@ -140,3 +140,19 @@ describe('the sweeps (BA-42, BA-41)', () => {
     expect(m.q('[data-num="score.dayChange.value"]').getAttribute('style')).not.toMatch(/var\(--ft-(success|danger)\)/);
   });
 });
+
+describe('review A2L4-10 — the Glance checks section opens with the tape\'s coverage line in all three states', () => {
+  it.each(['complete', 'partial', 'unavailable'])('%s', (status) => {
+    const t = clone(sep23Tape);
+    t.coverage.checks = { ...t.coverage.checks, status, note: `${status} checks note` };
+    m.render(<Harness tape={t} />);
+    const line = m.q('#glance-checks [data-coverage]');
+    expect(line.getAttribute('data-coverage')).toBe(status);
+    expect(line.textContent).toContain(`${status} checks note`);
+  });
+
+  it('the empty day: the checks section still opens with its coverage line, unavailable', () => {
+    m.render(<Harness tape={emptyTape} />);
+    expect(m.q('#glance-checks [data-coverage]').getAttribute('data-coverage')).toBe('unavailable');
+  });
+});

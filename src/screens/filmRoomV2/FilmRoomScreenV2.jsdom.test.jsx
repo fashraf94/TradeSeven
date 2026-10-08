@@ -12,8 +12,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
 import FilmRoomScreenV2, { noTapeLine, defaultDay, battleDays } from './FilmRoomScreenV2';
 import { FIRST_OPEN_KEY } from './filmRoomSeen';
+import { FORBIDDEN_WORDS } from './filmRoomCopy';
 import {
-  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns,
+  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, SPEC_FORBIDDEN_WORDS,
 } from './__fixtures__/filmRoomHarness';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -142,10 +143,13 @@ describe('the day picker and the days with no tape (§7)', () => {
 
   it('the empty day renders every depth, honestly', async () => {
     await open(emptyTape, { series: emptySeries });
-    for (const label of ['Glance', 'Study', 'Deep dive']) {
+    for (const [label, d] of [['Glance', 'glance'], ['Study', 'study'], ['Deep dive', 'deep']]) {
       await depth(label);
-      expect(m.q('[data-screen="film-room-v2"]').textContent.length, label).toBeGreaterThan(100);
+      expect(m.q(`[data-depth="${d}"]`), label).toBeTruthy();
     }
+    await depth('Glance');
+    expect(m.q('[data-region="recorded-score"]')).toBeTruthy();
+    expect(m.q('[data-region="final-result"] [data-result="unavailable"]')).toBeTruthy();
     await depth('Study');
     for (const id of ['holdings', 'swaps', 'directives', 'plans', 'rationale', 'checks']) expect(m.q(`#${id} [data-coverage]`), id).toBeTruthy();
   });
@@ -165,7 +169,8 @@ describe('the whole screen through the sweeps — every depth, both days, everyt
       expect(sweepNumbers(m.container, docs), label).toEqual([]);
       expect(sweepSigns(m.container), label).toEqual([]);
       expect(sweepWords(m.container), label).toEqual([]);
-      expect(m.container.textContent.split('This does not show which protections were armed or checked.').length - 1, label).toBeLessThanOrEqual(1);
+      const notes = m.container.textContent.split('This does not show which protections were armed or checked.').length - 1;
+      expect(notes, label).toBe(label === 'Deep dive' && !m.q('[data-region="evidence-overlay"]') ? 0 : 1);
     }
   });
 
@@ -195,6 +200,26 @@ describe('the sweeps bite (a guard that cannot fail guards nothing)', () => {
     box.innerHTML = '<p>Swaps 3</p><span data-num="x" data-num-class="rebuilt" style="color: var(--ft-success)"><span data-num-text>1</span></span><h3>Why?</h3><p>the best trade</p>';
     expect(sweepNumbers(box, { tape: sep23Tape }).some((b) => b.includes('stray digit'))).toBe(true);
     expect(sweepSigns(box)).toEqual(['x: sign colour on a rebuilt number']);
-    expect(sweepWords(box)).toEqual(['best', 'Why?']);
+    expect(sweepWords(box)).toEqual(['best', 'Why?', 'heading: Why?']);
+  });
+
+  it('review A2L4-1 / A2L4-6 / A2L4-8: a word at an element\'s edge or inflected, a "Why" heading, a digit in an attribute or a bare numeral, a sign colour on a wrapper, a line or through the rgb triplet', () => {
+    const box = document.createElement('div');
+    box.innerHTML = '<section><h3>Rationale · the best</h3><div>Coverage</div></section><h3>Swaps · biggest</h3><span>Coverage</span><p>two lessons</p><p>graded</p>';
+    expect(sweepWords(box)).toEqual(expect.arrayContaining(['best', 'biggest', 'lesson', 'grade']));
+    const why = document.createElement('div');
+    why.innerHTML = '<h3>Why it happened</h3>';
+    expect(sweepWords(why)).toEqual(['heading: Why it happened']);
+    const attr = document.createElement('div');
+    attr.innerHTML = '<button aria-label="Check at 10:15 AM · score 47"></button><span title="the worst"></span><span data-num-text>12</span>';
+    expect(sweepNumbers(attr, { tape: sep23Tape })).toEqual(['stray digit: “12”', 'stray digit in aria-label: “Check at 10:15 AM · score 47”']);
+    expect(sweepWords(attr)).toEqual(['worst']);
+    const signs = document.createElement('div');
+    signs.innerHTML = '<div style="background: var(--ft-success)"><span data-num="plans[0].price.atPlan.value" data-num-class="market" style="color: rgba(var(--ft-success-rgb), 1)"><span data-num-text>1</span></span></div><svg><path data-line="hold" style="stroke: var(--ft-danger)"></path></svg>';
+    expect(sweepSigns(signs)).toEqual(['sign colour on a div', 'plans[0].price.atPlan.value: sign colour on a market number', 'sign colour on a path line hold']);
+  });
+
+  it('review A2L4-7: the production word list is the build prompt\'s, pinned by the oracle (not the other way round)', () => {
+    expect([...FORBIDDEN_WORDS]).toEqual([...SPEC_FORBIDDEN_WORDS]);
   });
 });

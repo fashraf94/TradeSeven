@@ -14,7 +14,6 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { classOfNumber } from '../../../constants/filmTape';
-import { FORBIDDEN_WORDS } from '../filmRoomCopy';
 import { SCREEN_AGGREGATE_CLASSES, valueAt } from '../filmRoomModel';
 import sep23Tape from './sep23.tape.json';
 import sep23Series from './sep23.series.json';
@@ -129,36 +128,67 @@ export function sweepNumbers(container, docs) {
     let text = node.textContent;
     if (!/\d/.test(text)) continue;
     const host = node.parentElement;
-    if (host.closest('[data-num-text]') || host.closest('[data-num-aggregate]')) continue;
+    // A numeral is exempt only inside a MARKED number (review A2L4-6: a bare data-num-text span is not one).
+    if (host.closest('[data-num-text]') && (host.closest('[data-num]') || host.closest('[data-num-aggregate]'))) continue;
     if (host.closest('[data-time]')) for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
     if (host.closest('[data-identifier]')) text = text.replace(/#swap-\d+/g, ' ');
     if (host.closest('[data-record-text]')) for (const s of stored) text = text.split(s).join(' ');
     for (const s of FIXED_DIGIT_COPY) text = text.split(s).join(' ');
     if (/\d/.test(text)) bad.push(`stray digit: “${node.textContent.trim().slice(0, 80)}”`);
   }
+  // Attributes a screen reader or a hover shows are rendered output too (review A2L4-6).
+  for (const el of container.querySelectorAll('[aria-label], [title]')) {
+    for (const attr of ['aria-label', 'title']) {
+      let text = el.getAttribute(attr);
+      if (!text || !/\d/.test(text)) continue;
+      for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
+      for (const s of stored) text = text.split(s).join(' ');
+      for (const s of FIXED_DIGIT_COPY) text = text.split(s).join(' ');
+      if (/\d/.test(text)) bad.push(`stray digit in ${attr}: “${el.getAttribute(attr).slice(0, 80)}”`);
+    }
+  }
   return bad;
 }
 
-/** No verdict, ranking or forbidden word, and no "Why?" heading, anywhere in the rendered text. */
+/**
+ * The build prompt's forbidden words, PINNED HERE — never read from the production copy, so the oracle
+ * cannot drift with the thing it checks (review A2L4-7). filmRoomCopy's list is pinned equal to it.
+ */
+export const SPEC_FORBIDDEN_WORDS = Object.freeze(['biggest', 'best', 'worst', 'mistake', 'should have', 'missed', 'good trade', 'bad trade', 'lesson', 'grade']);
+
+/** Every text node and every aria-label / title, each its own span of text: an element's edge is a word boundary (review A2L4-1). */
+export function renderedText(container) {
+  const parts = [];
+  const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) parts.push(node.textContent);
+  for (const el of container.querySelectorAll('[aria-label], [title]')) parts.push(el.getAttribute('aria-label') || '', el.getAttribute('title') || '');
+  return parts.join(' \n ');
+}
+
+/** No verdict, ranking or forbidden word (or its inflection), and no "Why" heading, anywhere in the rendered output. */
 export function sweepWords(container) {
-  const text = container.textContent.toLowerCase();
-  const hits = FORBIDDEN_WORDS.filter((w) => new RegExp(`\\b${w.replace(/ /g, '\\s+')}\\b`).test(text));
-  if (/why\?/i.test(container.textContent)) hits.push('Why?');
+  const text = renderedText(container).toLowerCase();
+  const hits = SPEC_FORBIDDEN_WORDS.filter((w) => new RegExp(`\\b${w.replace(/ /g, '\\s+')}(s|es|d|ed|ing)?\\b`).test(text));
+  if (/\bwhy\s*\?/i.test(text)) hits.push('Why?');
+  for (const h of container.querySelectorAll('h1, h2, h3, h4, h5, h6')) if (/^\s*why\b/i.test(h.textContent)) hits.push(`heading: ${h.textContent.trim()}`);
   return hits;
 }
 
-/** Sign colours only on recorded scores; never on another class, a plan price, or a marker. */
+/**
+ * Sign colours only on recorded scores (BA-41): ANY element whose style carries the success or danger
+ * token, in any form (var(), the -rgb triplet, a background, an SVG stroke), must be a recorded score's
+ * own number — never another class, a plan price, a wrapper, a line or a marker (review A2L4-8).
+ */
 export function sweepSigns(container) {
   const bad = [];
-  for (const el of container.querySelectorAll('[data-num]')) {
+  for (const el of container.querySelectorAll('[style]')) {
     const style = el.getAttribute('style') || '';
-    const signColoured = /var\(--ft-(success|danger)\)/.test(style);
+    if (!/--ft-(success|danger)/.test(style)) continue;
     const where = el.getAttribute('data-num');
-    if (signColoured && el.getAttribute('data-num-class') !== 'recorded') bad.push(`${where}: sign colour on a ${el.getAttribute('data-num-class')} number`);
-    if (signColoured && /^plans\[/.test(where)) bad.push(`${where}: sign colour on a plan price`);
-  }
-  for (const el of container.querySelectorAll('[data-kind-mark]')) {
-    if (/var\(--ft-(success|danger)\)/.test(el.getAttribute('style') || '') && el.getAttribute('data-kind-mark') !== 'none') bad.push('a marker in a sign colour');
+    if (!where) { bad.push(`sign colour on a ${el.tagName.toLowerCase()}${el.hasAttribute('data-kind-mark') ? ' marker' : ''}${el.getAttribute('data-line') ? ` line ${el.getAttribute('data-line')}` : ''}`); continue; }
+    if (el.getAttribute('data-num-class') !== 'recorded') bad.push(`${where}: sign colour on a ${el.getAttribute('data-num-class')} number`);
+    else if (/^plans\[/.test(where)) bad.push(`${where}: sign colour on a plan price`);
+    else if (el.getAttribute('data-sign-color') !== 'yes') bad.push(`${where}: sign colour on a recorded number that is not a score`);
   }
   return bad;
 }

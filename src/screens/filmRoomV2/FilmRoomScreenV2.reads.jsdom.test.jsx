@@ -55,8 +55,17 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); });
 
-// Macrotask turns: the readers import the Firebase SDK lazily (import()), which settles over several.
-const flush = async (n = 8) => { for (let i = 0; i < n; i += 1) await act(async () => { await new Promise((r) => setTimeout(r, 0)); }); };
+// Macrotask turns: the readers import the Firebase SDK lazily (import()), which settles over several — and under
+// load over more. Poll until the reads settle (bounded), never a fixed count (review A2L4-14).
+const flush = async (limitMs = 5_000) => {
+  const until = performance.now() + limitMs;
+  let quiet = 0;
+  let seen = fs.calls.length;
+  while (performance.now() < until && quiet < 6) {
+    await act(async () => { await new Promise((r) => setTimeout(r, 5)); });
+    if (fs.calls.length === seen && !container.querySelector('[data-state="loading"]') && !container.textContent.includes('Loading the tape')) quiet += 1; else { quiet = 0; seen = fs.calls.length; }
+  }
+};
 const click = (el) => act(() => { el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
 const tab = (label) => [...container.querySelectorAll('[role="tab"]')].find((b) => b.textContent === label);
 

@@ -66,6 +66,10 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     const paths = [...facts.querySelectorAll('[data-num]')].map((e) => e.getAttribute('data-num'));
     const de = sep23Series.find((s) => s.symbol === 'DE');
     expect(paths).toEqual(['sessionOpen.value', `bars[${de.bars.length - 1}].c`]);
+    // review A2L4-4: each fact's label is bound to ITS path
+    const rowOf = (label) => [...facts.children].find((r) => r.firstElementChild?.textContent === label);
+    expect(rowOf('Session open').querySelector('[data-num]').getAttribute('data-num')).toBe('sessionOpen.value');
+    expect(rowOf('Close · the last 10-minute bar').querySelector('[data-num]').getAttribute('data-num')).toBe(`bars[${de.bars.length - 1}].c`);
     expect(m.container.querySelector('[data-num$=".h"], [data-num$=".l"]')).toBeNull();
     expect(m.container.textContent).not.toMatch(/session high|session low/i);
     for (const e of facts.querySelectorAll('[data-num]')) expect(e.getAttribute('data-num-class')).toBe('market');
@@ -100,6 +104,46 @@ describe('BA-43 — the evidence overlay', () => {
       expect(Number(e.getAttribute('data-marker-px'))).toBe(stamped[k].c.evidence[sym].px);
       expect(e.getAttribute('data-marker-at')).toBe(stamped[k].c.evidenceAt);
     });
+  });
+
+  it('review A2L4-2: each marker is DRAWN at the stamp\'s px on the chart\'s own price scale, at evidenceAt on its time scale — never at the bar price', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} start={sym} />);
+    const series = sep23Series.find((s) => s.symbol === sym);
+    const chart = m.q('[data-region="price-chart"]');
+    // two points of the chart's price scale, from its own axis labels: the session open and the last close
+    const yOf = (path) => parseFloat(chart.querySelector(`[data-num="${path}"]`).parentElement.style.top) + 16;
+    const last = series.bars.length - 1;
+    const [p0, y0] = [series.sessionOpen.value, yOf('sessionOpen.value')];
+    const [p1, y1] = [series.bars[last].c, yOf(`bars[${last}].c`)];
+    const yAt = (price) => y0 + ((price - p0) * (y1 - y0)) / (p1 - p0);
+    const startMs = Date.parse(series.sessionOpen.at);
+    const endMs = Date.parse(series.bars[last].t) + 600_000;
+    const atChecks = new Map(series.atChecks.map((a) => [a.at, a.price]));
+    let offLine = 0;
+    for (const { c, i } of stamped) {
+      const el = m.q(`[data-evidence-marker="${i}"]`);
+      const y = parseFloat(el.style.top) + 12;
+      expect(Math.abs(y - yAt(c.evidence[sym].px)), `y of ${i}`).toBeLessThan(0.01);
+      const pct = Number(el.style.left.match(/calc\(([-\d.]+)%/)[1]);
+      expect(Math.abs(pct - ((Date.parse(c.evidenceAt) - startMs) / (endMs - startMs)) * 100), `x of ${i}`).toBeLessThan(0.002);
+      const bar = atChecks.get(c.at);
+      if (typeof bar === 'number' && Math.abs(yAt(bar) - y) > 0.5) offLine += 1;
+    }
+    expect(offLine).toBeGreaterThan(0);   // the quote delay shows — markers off the bar line, not smoothed onto it
+  });
+
+  it('review A2L4-2: the opened stamp lists only that check\'s recorded stamp — no series price and no replay value stands for the price behind it', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} start={sym} />);
+    for (const { i } of stamped.slice(0, 4)) {
+      m.click(m.q(`[data-evidence-marker="${i}"]`));
+      const panel = m.q(`[data-evidence-panel="${i}"]`);
+      const nums = [...panel.querySelectorAll('[data-num]')];
+      expect(nums.length).toBe(5);
+      for (const n of nums) {
+        expect(n.getAttribute('data-num-doc')).toBe('tape');
+        expect(n.getAttribute('data-num').startsWith(`checks[${i}].evidence.${sym}.`), n.getAttribute('data-num')).toBe(true);
+      }
+    }
   });
 
   it('a marker may sit off the bar line: the stamp\'s px is the quote, not the bar — and the delay is stated, not smoothed', () => {

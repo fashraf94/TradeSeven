@@ -6,8 +6,8 @@
 // getDoc of tape/{etDate} per selected day, never repeated for a day already
 // read; series/* only when the Deep dive opens, one owner-constrained query
 // per day; never a subscription. Driven through the real Firestore readers
-// against a recording firebase/firestore double, and through the mounted
-// screen with recording readers.
+// against a recording firebase/firestore double; the mounted screen's reads
+// are FilmRoomScreenV2.reads.jsdom.test.jsx.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';

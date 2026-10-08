@@ -11,6 +11,7 @@ import FilmRoomStudy from './FilmRoomStudy';
 import { REPLAY_SENTENCE, LOCKED_BASIS_NOTE } from './filmRoomCopy';
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
 import { mounter, sep23Tape, emptyTape, clone, sweepNumbers, sweepWords, sweepSigns, parseNumeral } from './__fixtures__/filmRoomHarness';
+import { deriveHoldings, etClock } from './filmRoomModel';
 
 // Whole-section mounts with every collapsible opened: CI headroom (the A1 suites' precedent).
 vi.setConfig({ testTimeout: 20_000 });
@@ -40,6 +41,21 @@ describe('BA-45 — holdings at the day\'s start and end', () => {
     expect(text).toContain('agent');
   });
 
+  it('review A2L4-3: each changed slot shows ITS maker and ITS time — bound slot by slot, not satisfied by the legend', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    const h = deriveHoldings(sep23Tape);
+    const words = { agent: 'agent', platform: 'rule', gameplan: 'meeting', unrecorded: 'not recorded' };
+    h.slots.forEach((s, k) => {
+      const chipEl = m.q(`[data-region="holdings"] [data-slot="${k}"]`);
+      const label = m.q(`[data-slot-label="${k}"]`);
+      expect(chipEl.textContent, `slot ${k}`).toBe(s.end);
+      if (!s.change) { expect(chipEl.getAttribute('data-holding-tone')).toBe('held'); expect(label.textContent).toBe(''); return; }
+      expect(chipEl.getAttribute('data-holding-tone'), `slot ${k}`).toBe(s.change.by);
+      expect(label.textContent, `slot ${k}`).toBe(`${etClock(s.change.at).replace(/ [AP]M$/, '')}${words[s.change.by]}`);
+    });
+    expect(h.changes.map((c) => [c.symbolIn, c.by])).toEqual([['CRWD', 'platform'], ['PLTR', 'agent'], ['PANW', 'platform']]);
+  });
+
   it('a record that does not reconcile: the grid is omitted behind its coverage line', () => {
     const t = clone(sep23Tape);
     delete t.checks[22].risk.PANW;
@@ -64,6 +80,10 @@ describe('the swap cards (BA-6, BA-11, BA-38, BA-47; F1)', () => {
       const maker = card(i).querySelector('[data-exit-maker]');
       expect(maker.textContent).toBe(want[i]);
       for (const row of card(i).querySelectorAll('[data-result-row], [data-split]')) expect(before(maker, row), `card ${i}`).toBe(true);
+      // every result NUMBER, wherever it sits, comes after the maker (review A2L4-9)
+      for (const n of card(i).querySelectorAll(`[data-num="actions[${i}].lockedPoints"], [data-num*="replay"]`)) expect(before(maker, n), `card ${i} ${n.getAttribute('data-num')}`).toBe(true);
+      expect(card(i).querySelector('[data-split="sale"]').textContent.startsWith('Split by cause · the sale')).toBe(true);
+      expect(card(i).querySelector('[data-split="fill"]').textContent.startsWith('The fill')).toBe(true);
     });
   });
 
@@ -111,7 +131,7 @@ describe('the swap cards (BA-6, BA-11, BA-38, BA-47; F1)', () => {
       for (const line of ['hold', 'swap']) {
         const p = card(i).querySelector(`[data-line="${line}"]`);
         expect(p.hasAttribute('data-rebuilt')).toBe(true);
-        expect(p.getAttribute('style')).toContain('stroke-dasharray');
+        expect(p.style.strokeDasharray, `${i} ${line}`).toMatch(/^\d/);   // a dash pattern, never 'none' (review A2L4-9)
       }
       expect(card(i).textContent).toContain('dashed · rebuilt from 1-minute bars');
       expect(card(i).querySelector(`[data-num="actions[${i}].replay.gapPoints"]`).getAttribute('data-num-class')).toBe('rebuilt');
@@ -119,6 +139,8 @@ describe('the swap cards (BA-6, BA-11, BA-38, BA-47; F1)', () => {
       expect(card(i).querySelector(`[data-num="actions[${i}].lockedPoints"]`).getAttribute('data-num-class')).toBe('recorded');
       const holdEnd = card(i).querySelector(`[data-path-label="hold"] [data-num]`).getAttribute('data-num');
       expect(holdEnd).toBe(`actions[${i}].replay.holdPath[${a.replay.holdPath.length - 1}].points`);
+      const swapEnd = card(i).querySelector(`[data-path-label="swap"] [data-num]`).getAttribute('data-num');
+      expect(swapEnd).toBe(`actions[${i}].replay.swapPath[${a.replay.swapPath.length - 1}].points`);   // review A2L4-11
     });
   });
 
@@ -143,13 +165,21 @@ describe('the swap cards (BA-6, BA-11, BA-38, BA-47; F1)', () => {
   });
 
   it('subsequentTradesInSlot > 0 marks both continued lines hypothetical, with the derived count; 0 does not', () => {
+    // each count on its own, so the row cannot pass by reading only one of them (review A2L4-9)
+    for (const [rowN, replayN] of [[1, 0], [0, 1]]) {
+      const v = clone(sep23Tape);
+      v.actions[0].subsequentTradesInSlot = rowN;
+      v.actions[0].replay.subsequentTradesInSlot = replayN;
+      m.render(<Harness tape={v} />);
+      expect(card(0).querySelector('[data-hypothetical]'), `${rowN}/${replayN}`).toBeTruthy();
+    }
     const t = clone(sep23Tape);
     t.actions[0].subsequentTradesInSlot = 1;
     t.actions[0].replay.subsequentTradesInSlot = 1;
     m.render(<Harness tape={t} />);
     const c = card(0);
     expect(c.querySelector('[data-hypothetical]')).toBeTruthy();
-    expect(c.querySelector('[data-hypothetical] [data-num]').getAttribute('data-num')).toBe('actions[0].replay.subsequentTradesInSlot');
+    expect(c.querySelector('[data-hypothetical] [data-num]').getAttribute('data-num')).toBe('actions[0].subsequentTradesInSlot');
     expect(c.querySelector('[data-hypothetical] [data-num]').getAttribute('data-num-class')).toBe('derived');
     expect(c.querySelector('[data-path-label="hold"]').textContent).toContain('hypothetical');
     expect(c.querySelector('[data-path-label="swap"]').textContent).toContain('hypothetical');
@@ -240,7 +270,8 @@ describe('BA-46 / F3 — the rationale timeline', () => {
     }
     m.expandAll();
     expect(m.container.textContent).not.toMatch(/Haiku call failed|defaulting to HOLD/);
-    expect(m.q('#diagnostics').textContent).not.toContain('held by default');
+    // the Diagnostic area holds only its label and the presence statement — no check state, no failure (review A2L4-9)
+    expect(m.q('[data-region="diagnostics"]').textContent).toBe(`${INTRADAY_DIAGNOSTIC_HEADER}Intraday diagnostic views were recorded for this battle-day.`);
     expect(m.q('#rationale').textContent).toContain("2 entr(y/ies) carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied");
   });
 
@@ -255,6 +286,8 @@ describe('checks and diagnostics', () => {
   it('each check with its recorded risk decision; the protections note exactly once in Study, a check open too', () => {
     m.render(<Harness tape={sep23Tape} />);
     expect(m.qa('[data-check-row]')).toHaveLength(sep23Tape.checks.length);
+    // each row's score is ITS check's (review A2L4-11)
+    sep23Tape.checks.forEach((c, i) => { if (c.scores) expect(m.q(`[data-check-row="${i}"] [data-num]`).getAttribute('data-num'), `row ${i}`).toBe(`checks[${i}].scores.total`); });
     expect(m.q('[data-check-row="10"]').textContent).toContain('Risk decision recorded: MSFT SWAP_OUT · stagnation');
     m.click(m.q('[data-check-row="10"]'));
     expect(m.q('[data-check-detail="10"]')).toBeTruthy();

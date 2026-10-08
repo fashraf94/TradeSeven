@@ -330,3 +330,25 @@ describe('review A2L2-1 / A2L2-5 — three keys even when Stage 3 throws; the de
     }
   });
 });
+
+describe('review A2L4-5 — exactly three keys, none undefined, in EVERY branch of both stages', () => {
+  it.each(['off', 'allowlist', 'on'])('mode %s: written, unwritten and absent tapes; before and after the pass; admitted and not', async (mode) => {
+    flags.mode = mode;
+    for (const writer of [true, false]) {
+      flags.writer = writer;
+      for (const tape of [{ passes: { close: { status: 'written' } } }, { passes: { close: { status: 'failed' } } }, null]) {
+        for (const admitted of [true, false]) {
+          for (const now of [MON_1900_EDT, THU]) {
+            for (const b of [base(), base({ dailyReviews: [{ d: 1 }] }), base({ reviewPending: true }), base({ status: 'active', completedAt: null }), base({ completedAt: 1e16 }), {}, null]) {
+              resetFilmRoomVerdicts();
+              const out = await getReviewAvailability(b, { readTape: async () => tape, now, readVerdict: async () => admitted });
+              expect(Object.keys(out).sort()).toEqual(KEYS);
+              expect(Object.values(out).every((v) => v !== undefined)).toBe(true);
+              expect(out.ready).toBe(out.availability === 'ready');
+            }
+          }
+        }
+      }
+    }
+  });
+});
