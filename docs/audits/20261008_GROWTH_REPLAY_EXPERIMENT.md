@@ -32,6 +32,14 @@ We took 300 real moments where the Trading Brain made a call in a real battle an
   - **Claude Sonnet 5.5 and Claude Opus 5.5 could not be tested.** Both refuse the "must answer with the decision form" setting the brain uses. The founder ruled to leave them out rather than relax it.
 - **Spend:** $116.34 in total, against a $150 cap.
 
+**Addendum, 8 Oct 2026 (the batch-effect check).**
+- **No batch effect.** Running the same moments again in fresh, mixed batches changed nothing measurable.
+- **Learning removed, with batches controlled:** **measurable but small**. Its excess figure is 4.0 points, against 5.0 in the main run. The raw change was identical: 29 of 280 moments, with trades again rising from 14% to 19%.
+- **The learning-removed result replicates.**
+- **Spend** $45.64, so $161.98 in all.
+
+See the addendum near the end.
+
 This measures whether decisions change, not whether they improve. It is design input, not qualification evidence.
 
 ---
@@ -548,6 +556,107 @@ There are 21 known-answer rows, all passing:
 
 ---
 
+## Addendum — 8 Oct 2026: the batch-effect check (Fable ruling)
+
+**Why.** §5 item 10: in the main run each kind of request ran in its own batches, so a batch-level difference could have looked like an edit effect. Fable ruled a check, and Flash relayed it the same day.
+
+### Design
+
+**The run:**
+- **Moments.** The same 280 moments that have learning.
+- **Two kinds of request.** A fresh baseline (verbatim) and a fresh "learning removed" (`strip`).
+- **Repeats.** **8 each.** Ten would have cost $57.69 planned / $82.81 worst, over the caps; 8 is the largest equal count under both, at $46.15 / $66.25.
+- **Batches.** 4,480 requests **shuffled together across the same 5 batches**. Every batch holds both kinds (463/475, 470/466, 474/466, 457/478, 376/355).
+- **Caps.** $50 planned / $68 worst, enforced in code at plan and at submit. Same submission deadline as before. No checkpoint, as ruled.
+
+**The three comparisons** use the frozen bars and statistic unchanged (§4.2): fresh baseline vs original baseline, fresh learning-removed vs fresh baseline, and fresh learning-removed vs original learning-removed. The original run has 10 repeats per tick and the fresh run 8; the within-tick permutation null keeps those group sizes.
+
+**What happened when:**
+- **19:48Z: refused.** The first batch create was refused: *"You have reached your specified API usage limits"*. The prompt's rule is to stop and not retry, so the session stopped; nothing was created or spent.
+- **20:08Z: resumed.** Flash raised the limit, and the session resumed. Reconciliation confirmed the refused attempt had created no batch.
+- **By 20:19Z: done.** All 4,480 requests succeeded, results were collected, and all 5 batches were deleted on Anthropic's side.
+
+**Which code ran.** `batchcheck-plan`, `submit` and `collect` ran the script of commit `6e7d566d`. The manifest logs its SHA-256 prefix `72529539` on each command, and it matches the commit.
+
+**The analysis of record** ran from the final commit, after the delta review below. None of those fixes changes a frozen statistic: no result was missing, so the completeness scope and the floor's group sizes are moot.
+
+### In plain terms
+
+| Question | Answer (frozen label) |
+|---|---|
+| Did running in different batches change the brain's calls? | **No measurable effect.** |
+| With batches controlled, does removing what the agent learned change its calls? | **Measurable but small.** |
+| Does the learning-removed result replicate? | **No measurable effect.** |
+
+- **Batches.** Asked again in fresh batches, the brain's baseline calls matched the original run's. Only 5 of 280 moments changed, the level noise alone produces. The main run's results were not a batch effect.
+- **Learning removed.** This compares a grown agent with a brand-new one, including the new agent's "trade carefully" line.
+  - With batches controlled, it changed the usual call on **29 of 280 moments**: exactly as many as in the main run, against about 2% from noise. The agent again traded more, from 14% to 19% of calls.
+  - The frozen excess figure is **4.0 points** this time, against 5.0 in the main run. So the label lands just under the 5-point bar instead of just over it, as §4.2 warned it might.
+  - The Contrarian moved strongly (**moves decisions**, 12 of 49 moments). The Trend Follower moved a little (measurable but small, 17 of 231).
+- **Replication.** The fresh learning-removed calls are indistinguishable from the original learning-removed calls (p = 0.98). The main run's learning-removed result replicates.
+
+### Results
+
+| Comparison | T | Null mean | Null p95 | p | Flips | Null flip | **Excess flip** | **Label** |
+|---|---|---|---|---|---|---|---|---|
+| Fresh baseline vs original baseline (batch effect) | 0.057 | 0.058 | 0.062 | 0.61 | 5 / 280 (1.8%) | 1.6% | **+0.2 pts** | **no measurable effect** |
+| Fresh learning-removed vs fresh baseline (learning, batches controlled) | 0.137 | 0.070 | 0.077 | 0.0005 | 29 / 280 (10.4%) | 6.4% | **+4.0 pts** | **measurable but small** |
+| Fresh learning-removed vs original learning-removed (replication) | 0.055 | 0.061 | 0.066 | 0.98 | 4 / 280 (1.4%) | 2.1% | **−0.7 pts** | **no measurable effect** |
+
+| Descriptive (no label) | Batch effect | Learning | Replication |
+|---|---|---|---|
+| Coarse key: excess / p / label | +0.1 / 0.32 / no measurable effect | +3.1 / 0.0005 / measurable but small | −0.1 / 0.88 / no measurable effect |
+| No-effect flip floor (planned repeats) | 2.1% (10 v 8) | 1.8% (8 v 8) | 2.2% (10 v 8) |
+| Flips beyond that floor | −0.3 pts | **+8.6 pts** | −0.8 pts |
+| Opposite tie rule: excess / label | +0.2 / no measurable effect | +3.9 / measurable but small | −1.0 / no measurable effect |
+| Action rate, base → variant | 13.9% → 13.8% | **13.8% → 19.1%** | 19.1% → 19.1% |
+| Malformed, base → variant | 2.6% → 2.1% | 2.1% → 2.3% | 2.7% → 2.3% |
+| Contrarian (49 ticks): flips / excess / label | 2 / +1.6 / no measurable effect | **12 / +12.9 / moves decisions** | 2 / +0.6 / no measurable effect |
+| Trend Follower (231 ticks): flips / excess / label | 3 / +0.0 / no measurable effect | 17 / +2.1 / measurable but small | 2 / −0.9 / no measurable effect |
+
+**Reading.**
+- **Batches are ruled out.** The main run's edit effects are not batch artifacts, and §5 item 10 is closed.
+- **The learning-removed effect is real and reproducible.** About one moment in ten changes its usual call, and trades rise from about 14% to 19% of calls. In both runs it is concentrated in the Contrarian.
+- **Its frozen label straddles the bar:** "moves decisions" at 5.0 points in the main run, "measurable but small" at 4.0 here. As §4.2 says, read it as a real effect of moderate size, not as a verdict on which side of the bar it falls.
+
+All 4,480 responses stopped on `tool_use`, with no thinking tokens and no cache tokens.
+
+**Spend: $45.64** at batch prices ($22.92 baseline + $22.72 learning-removed), against a plan of $46.15. **Experiment total: $161.98** ($116.34 + $45.64).
+
+**Exhibits.** The 29 moments that changed in the fresh learning test are added, as a dated section, to the local-only `GROWTH_REPLAY_EXHIBITS.local.md`. Each entry has the archetype, the original decision, the fresh and original distributions for both conditions, and the learned text that was present.
+
+### BUILD_RULES §2 review of the delta
+
+**Why a review was required.** The branch was already over the threshold, so the code added for this check got its own adversarial review before push.
+
+**How it was run.**
+- **Lenses.** Two lenses, each on its own LF `git archive` snapshot of `6e7d566d`:
+  - **D**, analysis correctness;
+  - **E**, spend, caps and run derivation.
+- **Verification.** One refuting verifier on a third snapshot.
+
+**Result:** **10 CONFIRMED / 1 REFUTED.** Severities are after verification.
+
+| ID | Finding | Verdict | Disposition |
+|---|---|---|---|
+| D1 | Re-running the main `analyze` erased the batch-check section of the exhibits file | CONFIRMED, low (recoverable) | Fixed: `analyze` carries the section over. Verified on the real files: byte-identical after a main re-analysis, and re-analysis is idempotent. |
+| D2 | The new selftest row could not fail under most defects it names | CONFIRMED, medium | Fixed with new rows: the comparison spec, the caps, the task shape, the repeat bounds, a worst-cap-only case, a conservative-estimate case, null `max_tokens`, and the spend-time cap check. Mutation check: 8 of 8 lens-D mutants and 7 of 8 lens-E mutants killed. The survivor (the NaN guard removed) is equivalent, because every comparison against NaN is already false. |
+| D3 | A bare `analyze` on the derived run wrote a misleading file, then threw | CONFIRMED, low | Fixed: `analyze` refuses a derived run. |
+| D4 | An unmeasurable comparison had no label and could replace a good exhibits section | CONFIRMED, low | Fixed: it refuses unless fully collected, and stops on any unmeasurable comparison. |
+| D5 | Completeness was scoped to all 300 ticks, not the 280 compared; exactly 5% missing was flagged by floating error | CONFIRMED, low | Fixed: completeness over the compared ticks, with a tolerance. |
+| D6 | The noise floor used observed rather than planned group sizes | **REFUTED**: neither is exact, the gap is about 0.01 in opposite directions, and the floor sets no label | Planned sizes kept for consistency with the main analysis. Identical here (no result missing). |
+| D7 | A START marker without END could delete user text | CONFIRMED, low | Fixed: malformed markers are refused, and nothing is rewritten. |
+| E1 | The spend-time cap check had no test | CONFIRMED, low | Fixed: `capCheck` is exported and tested against the real r = 10 plan ($57.69 / $82.81 blocked under $50 / $68). |
+| E2 | Malformed caps or a null `max_tokens` could pass the cap check | CONFIRMED, low | Fixed: fail-closed `capCheck`; a derived run is always held to $50 / $68; estimates are sanity-checked. |
+| E3 | `batchcheck-plan` accepted a derived, over-cap, unfinished or path-like source | CONFIRMED, low | Fixed: `--from` must name an original run; the original must be in cap, finished and analysed. |
+| E4 | `latest.txt` could hide recovery work on the original; the README did not mention the check | CONFIRMED, low | Fixed: the same guard, and the README documents the check. |
+
+**Builds and checks at the pushed head:**
+- the selftest passes 30 of 30 rows;
+- ESLint and the CI lint gate are clean;
+- the three repo tests that walk `scripts/` pass;
+- `vite build` passes on the LF `git archive` (see the PR).
+
 ## Appendix — files and re-checks
 
 - **Committed:**
@@ -555,7 +664,7 @@ There are 21 known-answer rows, all passing:
   - `scripts/experiments/growth-replay/README.md`
   - this report
   - its row in `docs/README.md`
-- **Run folder, outside git:** `%USERPROFILE%/growth-replay-runs/gr-20261008T181724/`. Contents: `manifest.json`, `source-requests.jsonl`, `donor-learned-texts.json`, `pilot-responses.jsonl`, `requests/`, `results/`, `analysis.json` (of record), `analysis.pre-review.json`, `analysis.first-pass-strict-key.json`, `GROWTH_REPLAY_REPORT.md` (a copy of this report) and `GROWTH_REPLAY_EXHIBITS.local.md`. **The exhibits file contains player text and is never committed.**
+- **Run folders, outside git:** `%USERPROFILE%/growth-replay-runs/gr-20261008T181724/`, and `gr-20261008T181724-batchcheck/` for the addendum (manifest, source requests, requests, results, `addendum.json`). Contents: `manifest.json`, `source-requests.jsonl`, `donor-learned-texts.json`, `pilot-responses.jsonl`, `requests/`, `results/`, `analysis.json` (of record), `analysis.pre-review.json`, `analysis.first-pass-strict-key.json`, `GROWTH_REPLAY_REPORT.md` (a copy of this report) and `GROWTH_REPLAY_EXHIBITS.local.md`. **The exhibits file contains player text and is never committed.**
 - **Re-check of the G5 schema equality** (A5). From the repo root, with the run folder present, this prints the counts. It reads the run's own source requests; the schema module it imports has no imports of its own.
 
   ```
