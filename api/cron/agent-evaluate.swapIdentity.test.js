@@ -945,3 +945,43 @@ describe('S5-7 (hardening): at off the mode gates every record on C3–C6 too', 
     expect(feed.filter((e) => e.refusalReason)).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrity build, Part C item 2 — table F V1.2 (founder sign-off Q2 on PR #940):
+// an equipped PROFIT TARGET whose swap is refused speaks the profit-target line —
+// on the model route (the entry's refusal record) and the suppression pass (the
+// feed beat) alike. The stops keep the protective line (S2-1 above).
+describe('V1.2 — a refused profit-target exit speaks the profit-target line on either route', () => {
+  const PROFIT_TARGET_KO = 'Your profit target was set to sell KO, but KO had already left that slot. No trade was made.';
+  const withProfitTarget = (over = {}) => makeTickBattle({
+    agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'profitTarget', value: 1, unit: '%', enforcement: 'hard' }] },
+    ...over,
+  });
+  const FORCED_PT = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_profitTarget', statusMessage: 'Target hit on KO.', overrides: [] };
+
+  it('the model route: the entry\'s refusal record carries the profit-target line', async () => {
+    flags.swapIdentity = 'enforce';
+    guardrailHook.result = FORCED_PT;
+    exec.before = once(moveKoSlot);
+    const { entry } = await runTick({ battle: withProfitTarget(), result: makeHoldResult() });
+    expect(entry.guardrailSourceNote).toBe('guardrail_profitTarget');
+    expect(entry.decision).toBe('HOLD');
+    expect(entry.executionRefusal).toMatchObject({ reason: 'outgoing_identity_mismatch', line: PROFIT_TARGET_KO });
+  });
+
+  it('the suppression pass: the beat carries the profit-target line', async () => {
+    flags.swapIdentity = 'enforce';
+    guardrailHook.result = FORCED_PT;
+    exec.before = once(moveKoSlot);
+    const { feed } = await runTick({ battle: withProfitTarget({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] } }) });
+    expect(feed.findLast((e) => e.action === 'risk_swap_failed')).toMatchObject({ message: PROFIT_TARGET_KO, refusalReason: 'outgoing_identity_mismatch', triggeredBy: 'guardrail_profitTarget' });
+  });
+
+  it('a refused STOP on the same routes still speaks the protective line', async () => {
+    flags.swapIdentity = 'enforce';
+    guardrailHook.result = { ...FORCED_PT, sourceNote: 'guardrail_stopLoss' };
+    exec.before = once(moveKoSlot);
+    const { feed } = await runTick({ battle: withProfitTarget({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] } }) });
+    expect(feed.findLast((e) => e.action === 'risk_swap_failed').message).toBe(PROTECTIVE_KO);
+  });
+});

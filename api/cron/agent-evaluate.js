@@ -3844,8 +3844,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             });
             validationErrors.push(`Swap execution failed: ${swapErr.message}`);
             // The speaker follows the trade's provenance: a guardrail-forced
-            // exit on this route is protective, a model swap is the agent's.
-            if (swapRefused) executionRefusal = refusalRecord(swapErr, { kind: refusalKindOf(haikuSwapReason === 'haiku_decision' ? 'haiku' : 'guardrail'), symbolIn: haikuResult?.symbolIn ?? null });
+            // exit on this route is protective (table F V1.2: an equipped profit
+            // target speaks its own line), a model swap is the agent's.
+            if (swapRefused) executionRefusal = refusalRecord(swapErr, { kind: refusalKindOf(haikuSwapReason === 'haiku_decision' ? 'haiku' : 'guardrail', haikuSwapReason), symbolIn: haikuResult?.symbolIn ?? null });
             decision = 'HOLD';
             downgraded = true;
             // P2: compensating release (no-op unless the reserve had landed).
@@ -5797,7 +5798,8 @@ export async function runSuppressionDeterministicPass({
       symbolOut: deterministicResult?.symbolOut || null,
       symbolIn: deterministicResult?.symbolIn || null,
       // P6 (D2): a typed refusal HOLDS and renders its table F line.
-      ...(passRefused ? refusalFeedFields(err, { kind: refusalKindOf('guardrail'), symbolIn: deterministicResult?.symbolIn ?? null }) : {}),
+      // (table F V1.2: an equipped profit target speaks its own line.)
+      ...(passRefused ? refusalFeedFields(err, { kind: refusalKindOf('guardrail', deterministicResult?.sourceNote ?? null), symbolIn: deterministicResult?.symbolIn ?? null }) : {}),
     });
     // P2: compensating release (the reserve landed but the swap didn't).
     await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);

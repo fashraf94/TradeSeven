@@ -24,6 +24,11 @@
 //      finds conflicting beliefs is `ambiguous`, never a mismatch.
 //   2. THE SHADOW READ (once SWAP_IDENTITY_MODE ≠ 'off'): every
 //      `trades[].verification` the executor wrote, by caller × verdict × basis;
+//      a verification whose `battleStatus` is not exactly 'active' (null — a
+//      missing status — included: the executor fails closed) is counted apart
+//      as "enforce would refuse: battle_not_active", never under its verdict —
+//      enforce refuses it before the identity comparison, so a matching
+//      identity on an ended battle is not a clean match (integrity build, Part C);
 //      a cross-check that the executor's verdict agrees with the symbol
 //      comparison above; and the refusals the callers recorded at 'enforce'
 //      (evaluation `executionRefusal`, proposal / meeting history rows, feed
@@ -143,7 +148,7 @@ export function isExecutorVerification(v, trade, battleId) {
 
 const emptyCallerRow = () => ({
   trades: 0, beliefKnown: 0, beliefUnknown: 0, beliefAmbiguous: 0, mismatches: 0,
-  verification: { present: 0, match: 0, mismatch: 0, not_checked: 0, other: 0, symbol_and_entry: 0, symbol_only: 0, invalid: 0 },
+  verification: { present: 0, match: 0, mismatch: 0, not_checked: 0, other: 0, battle_not_active: 0, symbol_and_entry: 0, symbol_only: 0, invalid: 0 },
 });
 
 /** When a history row happened: its resolution, else its creation. */
@@ -159,6 +164,7 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
   const mismatches = [];
   const disagreements = [];
   const verificationMismatches = [];
+  const battleNotActive = [];
   const windows = [];
   const invalidVerifications = [];
   const refusals = { entries: {}, proposalHistory: {}, meetingLegs: {}, feedBeats: {} };
@@ -205,10 +211,16 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
         invalidVerifications.push({ battleId, caller, evaluationId: trade.evaluationId ?? null, verificationId: v?.verificationId ?? null, mode: v?.mode ?? null });
       } else if (v) {
         row.verification.present += 1;
-        if (VERDICTS.includes(v.verdict)) row.verification[v.verdict] += 1; else row.verification.other += 1;
+        // Enforce refuses a battle that is not exactly 'active' BEFORE it compares
+        // the identity (refusalOf: battle_not_active outranks a mismatch), so such
+        // a row is counted apart, whatever its verdict — never as a clean match.
+        if (v.battleStatus !== 'active') {
+          row.verification.battle_not_active += 1;
+          battleNotActive.push({ battleId, caller, verificationId: v.verificationId ?? null, battleStatus: v.battleStatus ?? null, verdict: v.verdict ?? null });
+        } else if (VERDICTS.includes(v.verdict)) row.verification[v.verdict] += 1; else row.verification.other += 1;
         if (v.basis === 'symbol_and_entry' || v.basis === 'symbol_only') row.verification[v.basis] += 1;
         inc(modesSeen, String(v.mode));
-        if (v.verdict === 'mismatch') verificationMismatches.push({ battleId, caller, verificationId: v.verificationId ?? null, expected: v.expected ?? null, found: v.found ?? null, basis: v.basis ?? null });
+        if (v.verdict === 'mismatch' && v.battleStatus === 'active') verificationMismatches.push({ battleId, caller, verificationId: v.verificationId ?? null, expected: v.expected ?? null, found: v.found ?? null, basis: v.basis ?? null });
         // The executor's verdict must agree with the symbol comparison: a
         // symbol that differs can never be a `match` (a disagreement is a bug).
         if (belief != null && belief !== committed && v.verdict === 'match') {
@@ -235,7 +247,7 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
     }
   }
 
-  return { battles: entries.length, tradeRows, byCaller, mismatches, verificationMismatches, disagreements, invalidVerifications, refusals, honest, modesSeen, windows, sinceMs };
+  return { battles: entries.length, tradeRows, byCaller, mismatches, verificationMismatches, battleNotActive, disagreements, invalidVerifications, refusals, honest, modesSeen, windows, sinceMs };
 }
 
 /** The census as a Markdown report. */
@@ -264,9 +276,16 @@ export function renderCensus(result, { readAt = null } = {}) {
   }
   p('## 2. `trades[].verification` (shadow / enforce)');
   p();
-  tbl(['Caller', 'Rows with verification', 'match', 'mismatch', 'not_checked', 'symbol_and_entry', 'symbol_only', 'invalid (not the executor\'s)'],
-    CALLERS.map((c) => { const v = result.byCaller[c].verification; return [c, String(v.present), String(v.match), String(v.mismatch), String(v.not_checked), String(v.symbol_and_entry), String(v.symbol_only), String(v.invalid)]; }));
+  tbl(['Caller', 'Rows with verification', 'match', 'mismatch', 'not_checked', 'enforce would refuse: battle_not_active', 'symbol_and_entry', 'symbol_only', 'invalid (not the executor\'s)'],
+    CALLERS.map((c) => { const v = result.byCaller[c].verification; return [c, String(v.present), String(v.match), String(v.mismatch), String(v.not_checked), String(v.battle_not_active), String(v.symbol_and_entry), String(v.symbol_only), String(v.invalid)]; }));
   p();
+  p('*match / mismatch / not_checked* count verifications on a battle whose `battleStatus` was exactly `active`. Any other status — a missing one included — is counted under *battle_not_active*, whatever its verdict: at enforce the executor refuses such a swap before it compares the identity, so a matching identity on an ended battle is not a clean match.');
+  p();
+  if (result.battleNotActive.length) {
+    tbl(['Battle', 'Caller', 'verificationId', 'battleStatus', 'Verdict (not counted)'],
+      result.battleNotActive.map((x) => [x.battleId, x.caller, String(x.verificationId), String(x.battleStatus), String(x.verdict)]));
+    p();
+  }
   if (result.invalidVerifications.length) {
     p('Rows carrying a `verification` the executor did not write (wrong mode or id — e.g. planted through a client-written proposal). Excluded from every count above:');
     p();

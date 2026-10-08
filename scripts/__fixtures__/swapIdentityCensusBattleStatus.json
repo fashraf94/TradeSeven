@@ -1,0 +1,72 @@
+{
+  "_about": "Integrity build Part C (scripts/census-swap-identity.test.js, 'battle status' rows). Executor-written verifications on a battle whose status at the transaction's read was not 'active': a MATCHING identity on a completed battle, a mismatch with a missing status (null — the executor fails closed), a verification with no battleStatus key, and one on an active battle for contrast. Enforce refuses the first three as battle_not_active before it compares the identity.",
+  "b-ended": {
+    "status": "completed",
+    "expiresAt": "2026-10-08T20:00:00.000Z",
+    "trades": [
+      {
+        "evaluationId": "risk_stop_loss_KO_1791385200000",
+        "symbolOut": "KO",
+        "symbolIn": "AMD",
+        "swappedOutAt": "2026-10-08T15:00:00.000Z",
+        "entryMode": "autopilot",
+        "verification": {
+          "verificationId": "b-ended:risk_stop_loss_KO_1791385200000:verify",
+          "mode": "shadow",
+          "battleStatus": "completed",
+          "verdict": "match",
+          "basis": "symbol_and_entry",
+          "expected": { "symbol": "KO", "swappedInAt": null },
+          "found": { "symbol": "KO", "swappedInAt": null }
+        }
+      },
+      {
+        "evaluationId": "gameplan_PG_JPM_1791385300000",
+        "symbolOut": "XOM",
+        "symbolIn": "JPM",
+        "swappedOutAt": "2026-10-08T15:02:00.000Z",
+        "entryMode": "autopilot",
+        "verification": {
+          "verificationId": "b-ended:gameplan_PG_JPM_1791385300000:verify",
+          "mode": "shadow",
+          "battleStatus": null,
+          "verdict": "mismatch",
+          "basis": "symbol_only",
+          "expected": { "symbol": "PG" },
+          "found": { "symbol": "XOM", "swappedInAt": "2026-10-08T15:01:00.000Z" }
+        }
+      },
+      {
+        "evaluationId": "risk_vwap_failure_NVDA_1791385400000",
+        "symbolOut": "NVDA",
+        "symbolIn": "MSFT",
+        "swappedOutAt": "2026-10-08T15:04:00.000Z",
+        "entryMode": "autopilot",
+        "verification": {
+          "verificationId": "b-ended:risk_vwap_failure_NVDA_1791385400000:verify",
+          "mode": "shadow",
+          "verdict": "match",
+          "basis": "symbol_and_entry",
+          "expected": { "symbol": "NVDA", "swappedInAt": null },
+          "found": { "symbol": "NVDA", "swappedInAt": null }
+        }
+      },
+      {
+        "evaluationId": "guardrail_stopLoss_TSLA_1791385500000",
+        "symbolOut": "TSLA",
+        "symbolIn": "AMD",
+        "swappedOutAt": "2026-10-08T14:58:00.000Z",
+        "entryMode": "autopilot",
+        "verification": {
+          "verificationId": "b-ended:guardrail_stopLoss_TSLA_1791385500000:verify",
+          "mode": "shadow",
+          "battleStatus": "active",
+          "verdict": "match",
+          "basis": "symbol_and_entry",
+          "expected": { "symbol": "TSLA", "swappedInAt": null },
+          "found": { "symbol": "TSLA", "swappedInAt": null }
+        }
+      }
+    ]
+  }
+}

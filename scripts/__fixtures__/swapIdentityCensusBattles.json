@@ -13,6 +13,7 @@
         "verification": {
           "verificationId": "b-shadow:risk_stop_loss_KO_1791385200000:verify",
           "mode": "shadow",
+          "battleStatus": "active",
           "verdict": "match",
           "basis": "symbol_and_entry",
           "expected": {
@@ -34,6 +35,7 @@
         "verification": {
           "verificationId": "b-shadow:risk_vwap_failure_PG_1791385260000:verify",
           "mode": "shadow",
+          "battleStatus": "active",
           "verdict": "mismatch",
           "basis": "symbol_and_entry",
           "expected": {
@@ -55,6 +57,7 @@
         "verification": {
           "verificationId": "b-shadow:eval_004:verify",
           "mode": "shadow",
+          "battleStatus": "active",
           "verdict": "match",
           "basis": "symbol_and_entry",
           "expected": {
@@ -83,6 +86,7 @@
         "verification": {
           "verificationId": "b-shadow:gameplan_KO_AMD_1791386100000:verify",
           "mode": "shadow",
+          "battleStatus": "active",
           "verdict": "match",
           "basis": "symbol_only",
           "expected": {
@@ -104,6 +108,7 @@
         "verification": {
           "verificationId": "b-shadow:guardrail_stopLoss_TSLA_1791386400000:verify",
           "mode": "shadow",
+          "battleStatus": "active",
           "verdict": "match",
           "basis": "symbol_and_entry",
           "expected": {
@@ -125,6 +130,7 @@
         "verification": {
           "verificationId": "b-shadow:eval_prev:verify",
           "mode": "enforce",
+          "battleStatus": "active",
           "verdict": "not_checked",
           "basis": null,
           "expected": null,
