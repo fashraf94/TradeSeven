@@ -222,6 +222,61 @@ describe('the swap cards (BA-6, BA-11, BA-38, BA-47; F1)', () => {
   });
 });
 
+describe('the swap card at desktop width — each path\'s end value beside the fork (design of record)', () => {
+  function Desk({ tape }) {
+    const [selected, setSelected] = React.useState(null);
+    return <FilmRoomStudy tape={tape} desktop selected={selected} onSelect={setSelected} onDeep={() => {}} jump={() => {}} />;
+  }
+  const lastY = (row, k) => { const d = row.querySelector(`[data-line="${k}"]`).getAttribute('d').trim().split(/\s+/); return parseFloat(d[d.length - 1]); };
+
+  it('beside the fork, in its row, each at its own end point\'s height — the same rebuilt number, by its path; none left under the fork', () => {
+    m.render(<Desk tape={sep23Tape} />);
+    sep23Tape.actions.forEach((a, i) => {
+      const row = card(i).querySelector(`[data-fork-row="${i}"]`);
+      const ends = row.querySelector('[data-fork-ends]');
+      expect(ends.previousElementSibling.getAttribute('data-region')).toBe(`fork-${i}`);
+      for (const [k, key, label] of [['hold', 'holdPath', `Hold path · ${a.symbolOut}`], ['swap', 'swapPath', `Swap path · ${a.symbolIn}`]]) {
+        const tag = ends.querySelector(`[data-fork-end="${k}"]`);
+        const n = tag.querySelector('[data-num]');
+        expect(n.getAttribute('data-num'), `${i} ${k}`).toBe(`actions[${i}].replay.${key}[${a.replay[key].length - 1}].points`);
+        expect(n.getAttribute('data-num-class')).toBe('rebuilt');
+        expect(tag.textContent.startsWith(label), `${i} ${k}`).toBe(true);
+        expect(card(i).querySelector(`[data-path-label="${k}"] [data-num]`), `${i} ${k}`).toBeNull();
+        expect(card(i).querySelector(`[data-path-label="${k}"]`)).toBeTruthy();   // the legend stays, without the number
+      }
+      const top = (k) => parseFloat(ends.querySelector(`[data-fork-end="${k}"]`).style.top) + 8;
+      const [yH, yS] = [lastY(row, 'hold'), lastY(row, 'swap')];
+      if (Math.abs(yH - yS) >= 16) {
+        expect(Math.abs(top('hold') - yH), `${i} hold`).toBeLessThan(0.06);
+        expect(Math.abs(top('swap') - yS), `${i} swap`).toBeLessThan(0.06);
+      } else {
+        expect(Math.abs(Math.abs(top('hold') - top('swap')) - 16), `${i} spread`).toBeLessThan(1e-6);
+        expect(Math.sign(top('hold') - top('swap')), `${i} order`).toBe(Math.sign(yH - yS) || -1);
+      }
+    });
+    expect(sweepNumbers(m.container, { tape: sep23Tape })).toEqual([]);
+    expect(sweepSigns(m.container)).toEqual([]);
+  });
+
+  it('two end values that would overlap are spread apart, keeping their order', () => {
+    const t = clone(sep23Tape);
+    const r = t.actions[0].replay;
+    r.holdPath[r.holdPath.length - 1].points = 5;
+    r.swapPath[r.swapPath.length - 1].points = 5.1;   // the same height on the fork's scale, within a hair
+    m.render(<Desk tape={t} />);
+    const ends = card(0).querySelector('[data-fork-ends]');
+    const top = (k) => parseFloat(ends.querySelector(`[data-fork-end="${k}"]`).style.top);
+    expect(Math.abs(top('hold') - top('swap'))).toBeCloseTo(16, 6);
+    expect(top('swap')).toBeLessThan(top('hold'));   // the swap path ends higher, so it stays above
+  });
+
+  it('the phone keeps the end values under the fork (no column beside it)', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    expect(m.q('[data-fork-ends]')).toBeNull();
+    expect(card(0).querySelector('[data-path-label="hold"] [data-num]')).toBeTruthy();
+  });
+});
+
 describe('BA-9 / F6 — directive cards from the tape\'s rows; the explainer\'s fixtures labelled', () => {
   it('committed (filed, heard), no change (retained), not filed — the player\'s words and the filed text two fields; the reply labelled', () => {
     m.render(<Harness tape={sep23Tape} />);

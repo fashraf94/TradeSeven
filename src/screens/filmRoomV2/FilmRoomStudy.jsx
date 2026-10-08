@@ -84,7 +84,10 @@ function HoldingsSection({ tape, onDeep }) {
 // ── swaps (BA-6, BA-11, BA-38, BA-47; F1) ───────────────────────────────────
 
 /** The fork: the hold path and the swap path from the swap to the close, both rebuilt and dashed; a null point is a visible gap. */
-function ForkChart({ tape, index, height = 112 }) {
+const FORK_HEIGHT = 112;
+
+/** The fork's scale — null when it has no point to draw, or no recorded instant to place one at (review A2L3-11). */
+function forkScale(tape, index, height = FORK_HEIGHT) {
   const r = valueAt(tape, ['actions', index, 'replay']);
   const hold = Array.isArray(r?.holdPath) ? r.holdPath : [];
   const swap = Array.isArray(r?.swapPath) ? r.swapPath : [];
@@ -92,12 +95,43 @@ function ForkChart({ tape, index, height = 112 }) {
   if (!all.length) return null;
   const t0 = Math.min(...[...hold, ...swap].map((p) => toMs(p.at)).filter((v) => v !== null));
   const t1 = Math.max(...[...hold, ...swap].map((p) => toMs(p.at)).filter((v) => v !== null));
-  if (!Number.isFinite(t0) || !Number.isFinite(t1)) return null;   // no recorded instant to place a point at (review A2L3-11)
+  if (!Number.isFinite(t0) || !Number.isFinite(t1)) return null;
   const vs = all.map((p) => p.points);
   let lo = Math.min(...vs); let hi = Math.max(...vs);
   const span = Math.max(2, hi - lo); lo -= span * 0.15; hi += span * 0.15;
-  const x = (at) => ((toMs(at) - t0) / Math.max(1, t1 - t0)) * 1000;
-  const y = (v) => 8 + ((hi - v) / (hi - lo)) * (height - 16);
+  return {
+    hold, swap, t0,
+    x: (at) => ((toMs(at) - t0) / Math.max(1, t1 - t0)) * 1000,
+    y: (v) => 8 + ((hi - v) / (hi - lo)) * (height - 16),
+  };
+}
+
+/**
+ * The paths' end values beside the fork, each at its own height on the fork's
+ * scale (the design of record's desktop card); two that would overlap are
+ * spread apart about their midpoint, keeping their order.
+ */
+function ForkEnds({ tape, scale, ends, height }) {
+  const at = (path) => { const v = path ? valueAt(tape, path) : null; return isNum(v) ? scale.y(v) : height / 2; };
+  let yH = at(ends.hold.path);
+  let yS = at(ends.swap.path);
+  if (Math.abs(yH - yS) < 16) { const mid = (yH + yS) / 2; const holdFirst = yH <= yS; yH = mid + (holdFirst ? -8 : 8); yS = mid + (holdFirst ? 8 : -8); }
+  return (
+    <div data-fork-ends="" style={{ position: 'relative', width: 150, flexShrink: 0, height }}>
+      {[['hold', ends.hold, yH, C.ink2], ['swap', ends.swap, yS, C.teal]].map(([k, e, top, color]) => (e.path ? (
+        <span key={k} data-fork-end={k} style={{ position: 'absolute', left: 12, top: top - 8, display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+          <span style={mono(9.5, color)}>{e.label} · <Rec>{e.symbol}</Rec></span>
+          <TapeNum doc={tape} path={e.path} size={12} />
+        </span>
+      ) : null))}
+    </div>
+  );
+}
+
+function ForkChart({ tape, index, height = FORK_HEIGHT, ends = null }) {
+  const scale = forkScale(tape, index, height);
+  if (!scale) return null;
+  const { hold, swap, t0, x, y } = scale;
   const d = (list) => {
     let s = ''; let pen = false;
     for (const p of list) {
@@ -108,15 +142,18 @@ function ForkChart({ tape, index, height = 112 }) {
     return s.trim();
   };
   return (
-    <div data-region={`fork-${index}`} style={{ position: 'relative', width: '100%', height }}>
-      <svg width="100%" height={height} viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-label={COPY.fork} style={{ display: 'block', overflow: 'visible', width: '100%', height }}>
-        <path data-line="hold" data-rebuilt="" d={d(hold)} style={{ fill: 'none', stroke: C.ink2, strokeWidth: 1.6, strokeDasharray: '5 4' }} vectorEffect="non-scaling-stroke" />
-        <path data-line="swap" data-rebuilt="" d={d(swap)} style={{ fill: 'none', stroke: C.teal, strokeWidth: 1.6, strokeDasharray: '5 4' }} vectorEffect="non-scaling-stroke" />
-      </svg>
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: -14, display: 'flex', justifyContent: 'space-between', ...mono(9, C.ink3) }}>
-        <When>{etClock(new Date(t0).toISOString())}</When>
-        <span>{COPY.close10}</span>
+    <div data-fork-row={index} style={{ display: 'flex', alignItems: 'flex-start', width: '100%', minWidth: 0 }}>
+      <div data-region={`fork-${index}`} style={{ position: 'relative', flex: 1, minWidth: 0, height }}>
+        <svg width="100%" height={height} viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-label={COPY.fork} style={{ display: 'block', overflow: 'visible', width: '100%', height }}>
+          <path data-line="hold" data-rebuilt="" d={d(hold)} style={{ fill: 'none', stroke: C.ink2, strokeWidth: 1.6, strokeDasharray: '5 4' }} vectorEffect="non-scaling-stroke" />
+          <path data-line="swap" data-rebuilt="" d={d(swap)} style={{ fill: 'none', stroke: C.teal, strokeWidth: 1.6, strokeDasharray: '5 4' }} vectorEffect="non-scaling-stroke" />
+        </svg>
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: -14, display: 'flex', justifyContent: 'space-between', ...mono(9, C.ink3) }}>
+          <When>{etClock(new Date(t0).toISOString())}</When>
+          <span>{COPY.close10}</span>
+        </div>
       </div>
+      {ends ? <ForkEnds tape={tape} scale={scale} ends={ends} height={height} /> : null}
     </div>
   );
 }
@@ -184,6 +221,9 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
   const hypothetical = (isNum(rowN) && rowN > 0) || (isNum(replayN) && replayN > 0);
   const holdEnd = lastPointPath(tape, index, 'holdPath');
   const swapEnd = lastPointPath(tape, index, 'swapPath');
+  // The design of record's desktop card puts each path's end value beside the fork, at its height; the phone keeps them under it.
+  const beside = Boolean(desktop && forkScale(tape, index));
+  const ends = beside ? { hold: { path: holdEnd, label: COPY.holdPath, symbol: a.symbolOut }, swap: { path: swapEnd, label: COPY.swapPath, symbol: a.symbolIn } } : null;
   // "Swap n" and #swap-n read one sequence: the swap's place in time order (addendum R4(a); BA-47).
   const anchor = swapAnchor(ordinal - 1);
   return (
@@ -215,17 +255,17 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
           </div>
           {r ? (
             <>
-              <div style={{ paddingBottom: 14 }}><ForkChart tape={tape} index={index} /></div>
+              <div style={{ paddingBottom: 14 }}><ForkChart tape={tape} index={index} ends={ends} /></div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'center' }}>
                 <span data-path-label="hold" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <svg width="20" height="6" aria-hidden="true"><line x1="0" x2="20" y1="3" y2="3" style={{ stroke: C.ink2, strokeWidth: 1.6, strokeDasharray: '5 3' }} /></svg>
                   <span style={mono(9.5, C.ink2)}>{COPY.holdPath} · <Rec>{COPY.heldLine(a.symbolOut)}</Rec>{hypothetical ? ` · ${COPY.hypothetical}` : ''}</span>
-                  {holdEnd ? <TapeNum doc={tape} path={holdEnd} size={12} /> : null}
+                  {holdEnd && !beside ? <TapeNum doc={tape} path={holdEnd} size={12} /> : null}
                 </span>
                 <span data-path-label="swap" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <svg width="20" height="6" aria-hidden="true"><line x1="0" x2="20" y1="3" y2="3" style={{ stroke: C.teal, strokeWidth: 1.6, strokeDasharray: '5 3' }} /></svg>
                   <span style={mono(9.5, C.ink2)}>{COPY.swapPath} · <Rec>{COPY.boughtLine(a.symbolIn)}</Rec>{hypothetical ? ` · ${COPY.hypothetical}` : ''}</span>
-                  {swapEnd ? <TapeNum doc={tape} path={swapEnd} size={12} /> : null}
+                  {swapEnd && !beside ? <TapeNum doc={tape} path={swapEnd} size={12} /> : null}
                 </span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={mono(9.5, C.ink3)}>{COPY.rebuiltDashed}</span><KindMark cls="rebuilt" /></span>
               </div>
