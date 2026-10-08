@@ -263,6 +263,35 @@ export function makeTickBattle(overrides = {}) {
   };
 }
 
+/** The id the server gives a fixture meeting (`gpm_<ms>`, at FROZEN_NOW). */
+export const FIXTURE_MEETING_ID = `gpm_${Date.parse(FROZEN_NOW)}`;
+
+/**
+ * Integrity follow-up 2 (Part A): the makeTickBattle overrides for a gameplan
+ * meeting as the SERVER creates it — the meeting with an id, and beside it,
+ * in `cronState.gameplanMeeting`, the copy only the server can write. Only a
+ * meeting its copy names runs legs or makes the model wait, so every fixture
+ * that stands for a server-created meeting carries one. The copy's legs are
+ * the meeting's own, as the server built them: each leg's pair, and its
+ * `swappedInAt` exactly when the leg carries one (P6 stamps it at mode ≠ off)
+ * — the shape serverMeetingCopy (api/_utils/meetingCopy.js) writes. `legs`
+ * stores other legs (a meeting the player edited after the server wrote its
+ * copy). Mirrored, not imported: this module has zero product imports.
+ */
+export function serverMeetingOverrides(meeting, { battle = makeTickBattle(), legs = null } = {}) {
+  const stored = { id: FIXTURE_MEETING_ID, ...meeting };
+  const copyLegs = legs ?? (Array.isArray(stored.suggestedSwaps) ? stored.suggestedSwaps : []).map((leg) => (leg && Object.hasOwn(leg, 'swappedInAt')
+    ? { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, swappedInAt: leg.swappedInAt }
+    : { symbolOut: leg?.symbolOut, symbolIn: leg?.symbolIn }));
+  return {
+    gameplanMeeting: stored,
+    cronState: {
+      ...battle.cronState,
+      gameplanMeeting: { meetingId: stored.id, createdAt: stored.createdAt ?? null, expiresAt: stored.expiresAt ?? null, legs: copyLegs },
+    },
+  };
+}
+
 /**
  * The quote table this tick fetched (getStockAnalysisData(...).price per
  * symbol). NVDA sits at +2.41 % from entry = +0.78x ATR (0.22x from the 1.0x

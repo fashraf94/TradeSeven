@@ -37,18 +37,24 @@ describe('LAUNCH_EXECUTION_MODE — the one server-owned execution mode', () => 
     expect(start).toBeGreaterThan(0);
     expect(fn.length).toBeGreaterThan(1000);
     expect(fn).toMatch(/if \(LAUNCH_EXECUTION_MODE === 'autopilot'\) \{/);
-    // The handler reads executionMode only as a capped label on the dormant metadata.
-    for (const m of fn.matchAll(/battle\.executionMode/g)) {
-      expect(fn.slice(m.index - 'clientToken('.length, m.index)).toBe('clientToken(');
-    }
+    // Integrity follow-up 2 (Q4): the handler no longer reads executionMode at
+    // all — even the dormant rows' `entryMode` is the mode that governed.
+    expect(fn).not.toMatch(/battle\.executionMode/);
   });
 
   it('nothing else in the cron branches on the battle\'s executionMode', () => {
     const reads = CODE.split('\n').filter((line) => line.includes('battle.executionMode'));
-    expect(reads.length).toBeGreaterThan(5);
+    expect(reads.length).toBeGreaterThan(0);
     for (const r of reads) {
-      // Allowed: the migration default, the capped entryMode label, the launch-guard log line.
-      expect(r, r).toMatch(/battle\.executionMode === undefined|clientToken\(battle\.executionMode\)|\(battle\.executionMode \|\| 'autopilot'\) !== mode|mode='\$\{battle\.executionMode\}'/);
+      // Allowed (integrity follow-up 2, Q4): only the model path's launch-guard log line.
+      // (The log names the value only capped — an owner-written object can make a template throw.)
+      expect(r, r).toMatch(/\(battle\.executionMode \|\| 'autopilot'\) !== mode|mode='\$\{clientToken\(battle\.executionMode\)\}'/);
     }
+  });
+
+  it('follow-up 2 (Q4): every executor call stamps the governing mode as entryMode, and the migration writes no mode', () => {
+    expect(CODE.match(/entryMode: LAUNCH_EXECUTION_MODE/g)).toHaveLength(6);
+    expect(CODE).not.toMatch(/entryMode: clientToken\(battle\.executionMode\)/);
+    expect(CODE).not.toMatch(/migrationFields\.executionMode/);
   });
 });

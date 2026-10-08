@@ -324,3 +324,69 @@ describe('integrity build — the launch-guard row is no belief; cells are escap
     expect(md).not.toMatch(/\| b\|1 \|/);
   });
 });
+
+// Integrity follow-up 2 (Part C, founder Q2): the launch guard's rows now
+// resolve 'launch_guard_cleared' (older rows keep 'auto_executed' with the
+// note). Either marker keeps the row out of the belief join.
+describe('follow-up 2 — a launch-guard row is no belief under either label', () => {
+  const trade = { evaluationId: 'eval_001', symbolIn: 'AMD', symbolOut: 'KO', entryMode: 'autopilot' };
+  const row = (over) => ({ evalId: 'eval_001', evaluationMetadata: { evaluationId: 'eval_001' }, symbolIn: 'AMD', symbolOut: 'PG', ...over });
+  it('the new label (with or without the note), the old label with the note: no belief', () => {
+    for (const over of [{ resolution: 'launch_guard_cleared', systemNote: 'launch_guard_clear' }, { resolution: 'launch_guard_cleared' }, { resolution: 'auto_executed', systemNote: 'launch_guard_clear' }]) {
+      expect(beliefOfTrade(trade, { evaluations: [], proposalHistory: [row(over)] }), JSON.stringify(over)).toEqual({ caller: 'model', belief: null, ambiguous: false });
+    }
+  });
+  it('a real executed proposal row still lends its belief', () => {
+    expect(beliefOfTrade(trade, { evaluations: [], proposalHistory: [row({ resolution: 'approved' })] })).toEqual({ caller: 'proposal', belief: 'PG', ambiguous: false });
+  });
+  it('the caller fallback reads the stamped mode: new rows carry the governing mode (follow-up 2, Q4) and fall back to model', () => {
+    expect(beliefOfTrade({ evaluationId: 'eval_x', symbolIn: 'AMD', entryMode: 'autopilot' }, { evaluations: [], proposalHistory: [] }).caller).toBe('model');
+    expect(beliefOfTrade({ evaluationId: 'eval_x', symbolIn: 'AMD', entryMode: 'copilot' }, { evaluations: [], proposalHistory: [] }).caller).toBe('proposal');
+  });
+});
+
+// Integrity follow-up 2 (review K3-9): the pre-enforce read counts Part D's
+// retry-safe markers and Part A's held meeting legs, per channel.
+describe('follow-up 2 — the retry-safe markers and held legs are counted', () => {
+  const T = '2026-10-08T15:00:00.000Z';
+  const battle = {
+    evaluations: [{ evalId: 'eval_001', timestamp: T, executionOutcome: 'unknown' }, { evalId: 'eval_002', timestamp: T, executionLanded: 'confirmed_after_error' }, { evalId: 'eval_003', timestamp: T }],
+    statusFeed: [{ timestamp: T, action: 'risk_swap_failed', executionOutcome: 'unknown', message: null }, { timestamp: T, action: 'guardrail_forced_swap', executionLanded: 'confirmed_after_error' }],
+    proposalHistory: [{ resolvedAt: T, resolution: 'auto_execution_unknown', executionOutcome: 'unknown' }, { resolvedAt: T, resolution: 'approved', executionLanded: 'confirmed_after_error' }],
+    gameplanMeetingHistory: [{
+      resolvedAt: T, heldLegCount: 3, heldLegs: [],
+      suggestedSwaps: [{ symbolOut: 'KO', executionFailed: true }, { symbolOut: 'PG', executionOutcome: 'unknown' }, { symbolOut: 'MSFT', executionLanded: 'confirmed_after_error' }, { symbolOut: 'X', executionFailed: true, refusalReason: 'battle_not_active' }, { symbolOut: 'Y', executionOutcome: 'not_run' }],
+    }],
+  };
+  it('per marker and channel', () => {
+    const out = computeSwapIdentityCensus({ b1: battle });
+    expect(out.retrySafe).toEqual({
+      outcomeUnknown: { entries: 1, feedBeats: 1, proposalHistory: 1, meetingLegs: 1 },
+      landedAfterError: { entries: 1, feedBeats: 1, proposalHistory: 1, meetingLegs: 1 },
+      autoExecutionUnknown: 1, meetingLegExecutionFailed: 2, meetingLegNotRun: 1, heldMeetingLegs: 3,
+    });
+    const md = renderCensus(out);
+    expect(md).toContain('### 3b. Retry-safe records');
+    expect(md).toContain("| `executionOutcome: 'unknown'` | evaluations 1, feed beats 1, proposal history 1, meeting legs 1 |");
+    expect(md).toContain("| meeting legs `executionOutcome: 'not_run'` | 1 |");
+    expect(md).toContain('| meeting legs held (`heldLegCount`) | 3 |');
+  });
+  it('--since applies (a row before the instant is not counted)', () => {
+    const out = computeSwapIdentityCensus({ b1: battle }, { sinceMs: Date.parse(T) + 1 });
+    expect(out.retrySafe.outcomeUnknown).toEqual({ entries: 0, feedBeats: 0, proposalHistory: 0, meetingLegs: 0 });
+    expect(out.retrySafe.heldMeetingLegs).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrity follow-up 2, review K5 (the mutation lens): rows that kill mutants
+// the rows above let survive (report §12.3; the M5-n ids are its mutant table).
+describe('K5 — the census counts only a positive, finite heldLegCount (M5-144)', () => {
+  it('a planted Infinity, NaN or negative count on an (owner-writable) meeting history row adds nothing', () => {
+    const T = '2026-10-08T15:00:00.000Z';
+    for (const bad of [Infinity, NaN, -5]) {
+      const out = computeSwapIdentityCensus({ b1: { gameplanMeetingHistory: [{ resolvedAt: T, heldLegCount: bad, suggestedSwaps: [] }, { resolvedAt: T, heldLegCount: 2, suggestedSwaps: [] }] } });
+      expect(out.retrySafe.heldMeetingLegs, String(bad)).toBe(2);
+    }
+  });
+});

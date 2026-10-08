@@ -59,6 +59,27 @@ import { renderLegacyDirectives } from '../_utils/legacyDirectiveSanitize.js';
 // agent. arrayUnion is merge-safe, so a simple target re-key suffices; non-casual
 // resolves to battle.agentId with no read (byte-identical).
 import { resolveAttributionAgentId } from '../_utils/casualClone.js';
+// Integrity follow-up 2 (Part B — docs/audits/20261008_BUILD_INTEGRITY_FOLLOWUP_2.md):
+// `battleLedger` and `dailyGrades` are owner-writable (firestore.rules, the
+// agentBattles update allowlist); they are read through type-checking
+// readers, and the text they put into this review's prompt is capped.
+import { battleLedgerOf, dailyGradesOf, dailyGradeEntryOf, gradedTradesOf } from '../_utils/playerFieldReaders.js';
+
+/**
+ * Owner-written text in the review prompt: its string form (what a template
+ * rendered), capped. An object whose toString is not a function makes that
+ * conversion throw; it renders as an ordinary object does.
+ */
+const PROMPT_TEXT_MAX = 1000;
+const promptText = (value) => {
+  try {
+    return String(value).slice(0, PROMPT_TEXT_MAX);
+  } catch {
+    return '[object Object]';
+  }
+};
+/** At most this many owner-written debate and grade lines reach the review prompt. */
+export const REVIEW_PLAYER_LINE_MAX = 50;
 
 export const config = { maxDuration: 60 };
 
@@ -107,7 +128,8 @@ const BATCH_REVIEW_TOOL = {
 };
 
 function isToday(isoStr, todayStr) {
-  if (!isoStr) return false;
+  // A non-string timestamp (an owner-written ledger entry) is never today.
+  if (typeof isoStr !== 'string' || !isoStr) return false;
   return isoStr.slice(0, 10) === todayStr;
 }
 
@@ -190,7 +212,7 @@ export async function processBattleReview(db, battle, { clearReviewPending = fal
   const todayVetoes = (battle.proposalHistory || []).filter(
     p => p.resolution === 'vetoed' && p.vetoedAtTimestamp && isToday(p.vetoedAtTimestamp, todayStr)
   );
-  const todayDebates = (battle.battleLedger || []).filter(
+  const todayDebates = battleLedgerOf(battle.battleLedger).filter(
     e => e.type === 'debate' && isToday(e.timestamp, todayStr)
   );
 
@@ -201,8 +223,9 @@ export async function processBattleReview(db, battle, { clearReviewPending = fal
     return { status: 'skipped', reason: 'no_activity' };
   }
 
-  // Read user grades
-  const grades = battle.dailyGrades?.[todayStr];
+  // Read user grades (the map's own entry for today; Part B)
+  const grades = dailyGradeEntryOf(battle.dailyGrades, todayStr);
+  const gradedTrades = gradedTradesOf(grades);
 
   // Compute counterfactuals for vetoed proposals
   const counterfactuals = [];
@@ -242,18 +265,19 @@ export async function processBattleReview(db, battle, { clearReviewPending = fal
     `- ${v.symbolOut} → ${v.symbolIn}: reason=${v.userReason || 'none given'}`
   ).join('\n');
 
-  const debateLines = todayDebates.map(d =>
-    `- ${d.targetSymbol}: stance=${d.userStance}, outcome=${d.outcome}`
+  const debateLines = todayDebates.slice(-REVIEW_PLAYER_LINE_MAX).map(d =>
+    `- ${promptText(d.targetSymbol)}: stance=${promptText(d.userStance)}, outcome=${promptText(d.outcome)}`
   ).join('\n');
 
   const counterfactualLines = counterfactuals.map(c =>
     `- Vetoed ${c.symbolIn}: veto price $${c.vetoPrice}, close $${c.closePrice}, delta ${c.deltaPct}%`
   ).join('\n');
 
-  const gradeLines = grades?.trades?.length
-    ? grades.trades.map(g => {
-        const note = g.note ? ` — Note: "${g.note}"` : '';
-        return `- Trade ${(g.tradeIndex ?? 0) + 1} (${g.symbolOut || '?'} → ${g.symbolIn || '?'}): ${g.grade || 'no_opinion'}${note}`;
+  const gradeLines = gradedTrades.length
+    ? gradedTrades.slice(0, REVIEW_PLAYER_LINE_MAX).map(g => {
+        const note = g.note ? ` — Note: "${promptText(g.note)}"` : '';
+        const tradeIndex = Number.isInteger(g.tradeIndex) ? g.tradeIndex : 0;
+        return `- Trade ${tradeIndex + 1} (${promptText(g.symbolOut || '?')} → ${promptText(g.symbolIn || '?')}): ${promptText(g.grade || 'no_opinion')}${note}`;
       }).join('\n')
     : 'No grades submitted';
 
@@ -371,7 +395,7 @@ ${directiveLines}`;
           marketSnapshot: null,
           mode: 'review',
           dailyReviews: updatedDailyReviews,
-          dailyGrades: battle.dailyGrades || {},
+          dailyGrades: dailyGradesOf(battle.dailyGrades, {}),
         });
 
         // 15s timeout via AbortController, matching api/agent/chat.js pattern.

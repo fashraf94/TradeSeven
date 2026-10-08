@@ -67,6 +67,8 @@ import { fileDirectiveTransactional } from '../_utils/directiveWriter.js';
 // Cockpit Build 1a (spec §9): the chat calls block — three bounded reads at
 // resolved 'on' only; null everywhere else (the prompt is byte-identical).
 import { buildCallsBlockForChat } from '../_utils/callRecords/callsBlock.js';
+// Integrity follow-up 2 (Part B): the owner-writable `dailyGrades`, type-checked.
+import { dailyGradesOf } from '../_utils/playerFieldReaders.js';
 
 export const config = { maxDuration: 30 };
 
@@ -725,7 +727,9 @@ export default async function handler(req, res) {
       marketSnapshot,
       mode,
       dailyReviews: battle.dailyReviews || [],
-      dailyGrades: battle.dailyGrades || [],
+      // Integrity follow-up 2 (Part B): owner-writable — through the reader
+      // (a list keeps its object entries, capped; a non-list non-map → []).
+      dailyGrades: dailyGradesOf(battle.dailyGrades, []),
       capabilitiesManifest,
       grounded: g,
       // Cockpit Build 1a (spec §3): the resolved calls mode, for the grounded

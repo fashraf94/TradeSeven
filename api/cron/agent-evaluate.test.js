@@ -149,7 +149,9 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
     expect(inScopeSites.length).toBe(5);
     // The gameplan rotation passes no snapshot (nine arguments): its options
     // are padded into the eleventh place, the snapshot's own default in the tenth.
-    const gameplanSites = code.match(/evaluationId: gameplanEvalId \}\),\s*\.\.\.swapIdentityOptions\(swapIdentityMode, expectedOutOfStored\(swap\.symbolOut, swap, 'swappedInAt'\), \{ padSnapshot: true \}\)\s*\)/g) || [];
+    // Integrity follow-up 2 (Part A): its belief is the server's COPY of the
+    // leg (`run`), never the owner-writable meeting leg.
+    const gameplanSites = code.match(/evaluationId: gameplanEvalId \}\),\s*\.\.\.swapIdentityOptions\(swapIdentityMode, expectedOutOfStored\(run\.symbolOut, run, 'swappedInAt'\), \{ padSnapshot: true \}\)\s*\)/g) || [];
     expect(gameplanSites.length).toBe(1);
     // One options spread per call site — every one of the six hands the executor its belief.
     expect((code.match(/\.\.\.swapIdentityOptions\(swapIdentityMode, /g) || []).length).toBe(6);
@@ -756,7 +758,9 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
   it('every one of the 6 call sites confirms on success (two-phase, phase 2) and releases in its catch (compensating action)', () => {
     const sites = [...source.matchAll(/executeSwapServer\(\s*\n?\s*db,/g)].map(m => m.index);
     for (const idx of sites) {
-      const windowAfter = source.slice(idx, idx + 3000);
+      // 3000 → 4000 (integrity follow-up 2): each call now sits in its own
+      // try, with the read-back catch (Part D) between it and the confirm.
+      const windowAfter = source.slice(idx, idx + 4000);
       expect(windowAfter).toContain('await confirmTournamentSwap(db, tournamentCtx, battle,');
     }
     // Ask 3 (R11): the suppression-pass site carries the same two-phase
@@ -792,8 +796,10 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
     // names mid-tick (review finding). refreshBattleFromDoc is the single
     // re-read chokepoint — exactly 9 call sites, zero raw re-assigns left.
     // 9 → 10: the R11 suppression pass re-reads after its swap (Ask 3).
+    // 10 → 11: an approved meeting leg of unknown outcome re-reads the book
+    // before the next leg (integrity follow-up 2, review K3-4 / KV3).
     const refreshCalls = source.match(/await refreshBattleFromDoc\(battleRef, battle, tournamentCtx\);/g) || [];
-    expect(refreshCalls.length).toBe(10);
+    expect(refreshCalls.length).toBe(11);
     // The chokepoint now reads the snapshot once into `refreshedData` and
     // returns false when it is empty (Astra F1b — an empty re-read is not a
     // refresh), so the assign names that local rather than `…Doc.data()`

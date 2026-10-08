@@ -74,8 +74,16 @@ describe('I5 — mutation-lens rows', () => {
     expect([...HISTORY_OUTCOME_KEYS].sort()).toEqual([
       'executionFailed', 'executionRefusal', 'verification', 'legRefusals', 'systemNote', 'scoreAtResolution', 'scoreAtVeto',
       'vetoedAtPrice', 'vetoedAtTimestamp', 'counterfactualPoints', 'outcomePoints', 'lockedPoints', 'closedTrade',
+      // Integrity follow-up 2: the meeting's held legs (Part A) and the retry-safe markers (Part D).
+      'heldLegs', 'heldLegCount', 'executionOutcome', 'executionLanded', 'refusalReason',
     ].sort());
     expect(proposalHistoryBase({ proposalId: 'p', closedTrade: { lockedPoints: 9999 } })).toEqual({ proposalId: 'p' });
     expect(meetingHistoryBase({ id: 'm', suggestedSwaps: [{ symbolOut: 'KO', closedTrade: { lockedPoints: 9999 } }] })).toEqual({ id: 'm', suggestedSwaps: [{ symbolOut: 'KO' }] });
+  });
+
+  it('follow-up 2: a planted held-leg record or retry-safe marker never rides on a meeting row, its legs or a proposal row', () => {
+    const planted = { heldLegs: [{ reason: 'planted' }], heldLegCount: 9999, executionOutcome: 'unknown', executionLanded: 'confirmed_after_error', refusalReason: 'planted' };
+    expect(meetingHistoryBase({ id: 'm', ...planted, suggestedSwaps: [{ symbolOut: 'KO', ...planted }] })).toEqual({ id: 'm', suggestedSwaps: [{ symbolOut: 'KO' }] });
+    expect(proposalHistoryBase({ proposalId: 'p', ...planted })).toEqual({ proposalId: 'p' });
   });
 });

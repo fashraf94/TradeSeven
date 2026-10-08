@@ -1,0 +1,4367 @@
+{
+ "capturedFrom": "c1822e39 (origin/main, PR #942) — git archive, LF",
+ "scenarios": {
+  "approved_one_leg_off": {
+   "thrown": null,
+   "summary": {
+    "evaluated": 1,
+    "held": 1,
+    "triggered": 1,
+    "skipped": 0,
+    "swapped": 1,
+    "modelCalls": 1,
+    "captureTotalMs": 0,
+    "captureTicks": 1
+   },
+   "updates": [
+    {
+     "cronState.evaluatingAt": "2026-09-09T15:00:00.000Z",
+     "cronState.tickSeq": 1
+    },
+    {
+     "controlEpochLog": {
+      "elements": [
+       {
+        "epochKey": "integrity=enforce|leans=on|dial=on",
+        "modes": {
+         "archetypeIntegrityMode": "enforce",
+         "standingLeansEnabled": true,
+         "tempoDialEnabled": true
+        },
+        "suppressedDirectiveIds": [],
+        "suppressedLeanIds": [],
+        "at": "2026-09-09T15:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "portfolio.support": [
+      {
+       "symbol": "AMD",
+       "name": "AMD",
+       "isCrypto": false,
+       "baseATR": 3.4,
+       "swapPrice": 162,
+       "swappedInAt": "2026-09-09T15:00:00.000Z",
+       "swappedInDay": 1
+      },
+      {
+       "symbol": "PG",
+       "name": "P&G",
+       "baseATR": 1,
+       "isCrypto": false,
+       "sector": "Consumer Defensive"
+      },
+      {
+       "symbol": "BTC",
+       "name": "Bitcoin",
+       "baseATR": 5,
+       "isCrypto": true,
+       "sector": "Crypto"
+      }
+     ],
+     "portfolio.bench.stocks": [
+      {
+       "symbol": "JPM",
+       "name": "JPMorgan",
+       "baseATR": 1.6,
+       "isCrypto": false,
+       "sector": "Financial Services"
+      },
+      {
+       "symbol": "KO",
+       "name": "Coca-Cola",
+       "baseATR": 1.1,
+       "isCrypto": false,
+       "direction": null,
+       "cooldownUntil": "2026-09-10T15:00:00.000Z"
+      }
+     ],
+     "portfolio.bench.crypto": null,
+     "thresholdHistory": {
+      "AMD": {
+       "maxMultiplier": 0,
+       "minMultiplier": 0,
+       "badges": []
+      }
+     },
+     "trades": [
+      {
+       "symbolOut": "KO",
+       "symbolIn": "AMD",
+       "name": "Coca-Cola",
+       "tier": "support",
+       "slotIndex": 0,
+       "entryPrice": 62.2,
+       "exitPrice": 62,
+       "lockedPoints": -3,
+       "lockedGainPct": -0.322,
+       "swappedOutAt": "2026-09-09T15:00:00.000Z",
+       "swapDay": 1,
+       "isCrypto": false,
+       "direction": null,
+       "id": "trade_001",
+       "action": "SWAP",
+       "trigger": "gameplan_rotation",
+       "rationale": "KO down 1.2%, AMD (Technology) has tech score 80.",
+       "tradingDay": 1,
+       "entryRegime": null,
+       "entryMarketPosture": null,
+       "entryConviction": 0,
+       "entryPreset": "balanced",
+       "entryMode": "autopilot",
+       "exitReason": "gameplan_rotation",
+       "source": "gameplan_meeting",
+       "archetype": null,
+       "hftKnobsSource": "archetype",
+       "swapProvenance": {
+        "tempoDesired": "standard",
+        "tempoEffective": "standard",
+        "selectionSource": "default",
+        "dialBandVersion": 2,
+        "knobConfigVersion": 2
+       },
+       "evaluationId": "gameplan_KO_AMD_1788966000000",
+       "snapshot": null
+      }
+     ],
+     "scoreState.tradeCount": 1,
+     "updatedAt": "2026-09-09T15:00:00.000Z"
+    },
+    {
+     "gameplanMeeting": null,
+     "gameplanMeetingHistory": [
+      {
+       "id": "gpm_1757430000000",
+       "createdAt": "2026-09-09T14:00:00.000Z",
+       "status": "approved",
+       "diagnosis": "drag",
+       "opportunity": "tech",
+       "proposedAction": "rotate_sector",
+       "fromSector": "Consumer Defensive",
+       "toSectors": [
+        "Technology"
+       ],
+       "suggestedSwaps": [
+        {
+         "symbolOut": "KO",
+         "symbolIn": "AMD",
+         "rationale": "KO down 1.2%, AMD (Technology) has tech score 80.",
+         "swappedInAt": null
+        }
+       ],
+       "expiresAt": "2026-09-09T20:00:00.000Z",
+       "resolvedAt": "2026-09-09T14:55:00.000Z",
+       "resolvedBy": "owner-uid-1"
+      }
+     ]
+    },
+    {
+     "scoreState.activeScore": 33,
+     "scoreState.bankedScore": 0,
+     "scoreState.currentScore": 33,
+     "scoreState.opponentScore": 0,
+     "scoreState.lastScoredAt": "2026-09-09T15:00:00.000Z",
+     "scoreState.peakScore": 33,
+     "scoreState.peakScoreAt": "2026-09-09T15:00:00.000Z",
+     "thresholdHistory.NVDA": {
+      "maxMultiplier": 0.776335162628833,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.TSLA": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.5197920831667322
+     },
+     "thresholdHistory.MSFT": {
+      "maxMultiplier": 0.29525032092426334,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.AMZN": {
+      "maxMultiplier": 0.29484029484029206,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.KO": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.29231218941830284
+     },
+     "thresholdHistory.PG": {
+      "maxMultiplier": 0.4839685420447567,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.BTC": {
+      "maxMultiplier": 0.13432835820895522,
+      "minMultiplier": 0
+     },
+     "evaluations": [
+      {
+       "evalId": "eval_001",
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "day": 1,
+       "battlePhase": "EARLY",
+       "decision": "HOLD",
+       "symbolOut": null,
+       "symbolIn": null,
+       "tier": null,
+       "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+       "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+       "conviction": 58,
+       "riskAssessment": "low",
+       "ignoredDirectiveIds": [],
+       "directiveThreadId": null,
+       "trade_reasoning": null,
+       "citedForgeRules": [],
+       "overriddenForgeRules": [],
+       "triggers": [
+        "forced_open"
+       ],
+       "scores": {
+        "active": 33,
+        "banked": 0,
+        "total": 33
+       },
+       "validationErrors": [],
+       "downgraded": false,
+       "marketPosture": "selective",
+       "guardrailOverrides": [],
+       "guardrailSourceNote": null,
+       "haikuError": null,
+       "promptBuiltAt": "2026-09-09T15:00:00.000Z",
+       "buildMs": 0,
+       "callMs": 0,
+       "tickMs": 0,
+       "holdKind": null,
+       "guardrailFault": null,
+       "heard": {
+        "directiveThreadId": "thread-tf02-0001",
+        "suppressed": null
+       },
+       "evidence": {
+        "NVDA": {
+         "px": 123.4,
+         "chg": 2.41,
+         "atrX": 0.78,
+         "vwapDev": 0.95,
+         "bbPct": 15,
+         "nr7": true,
+         "regime": "directional_expansion",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "TSLA": {
+         "px": 244.9,
+         "chg": -2.08,
+         "atrX": -0.52,
+         "vwapDev": null,
+         "bbPct": 88,
+         "nr7": false,
+         "regime": "distressed",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "MSFT": {
+         "px": 412.3,
+         "chg": 0.56,
+         "atrX": 0.3,
+         "vwapDev": null,
+         "bbPct": 42,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "AMZN": {
+         "px": 186.2,
+         "chg": 0.65,
+         "atrX": 0.29,
+         "vwapDev": null,
+         "bbPct": 55,
+         "nr7": false,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "KO": {
+         "px": 62,
+         "chg": -0.32,
+         "atrX": -0.29,
+         "vwapDev": null,
+         "bbPct": 12,
+         "nr7": true,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "PG": {
+         "px": 166.1,
+         "chg": 0.48,
+         "atrX": 0.48,
+         "vwapDev": null,
+         "bbPct": 30,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "BTC": {
+         "px": 67450,
+         "chg": 0.67,
+         "atrX": 0.13,
+         "vwapDev": null,
+         "bbPct": null,
+         "nr7": null,
+         "regime": null,
+         "risk": {
+          "action": "HOLD"
+         }
+        }
+       },
+       "vintages": {
+        "quote": "tick",
+        "vwap": "tick",
+        "techAt": "2026-09-09T14:29:55.000Z",
+        "fundAsOf": "2026-09-04",
+        "rankingsAt": "2026-09-09T14:30:00.000Z"
+       }
+      }
+     ],
+     "statusFeed": [
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Gameplan approved: KO → AMD",
+       "action": "swap",
+       "source": "gameplan_meeting",
+       "symbolOut": "KO",
+       "symbolIn": "AMD"
+      },
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Holding the book — NVDA leading, TSLA on watch.",
+       "pvpContext": null,
+       "action": "hold",
+       "regime": null,
+       "score": 33,
+       "citedRules": [],
+       "citedForgeRules": [],
+       "triggeredBy": "forced_open",
+       "source": "haiku",
+       "evalId": "eval_001",
+       "symbolOut": null,
+       "symbolIn": null,
+       "directiveThreadId": null,
+       "trade_reasoning": null
+      }
+     ],
+     "scoreState.evaluationCount": 1,
+     "scoreState.holdCount": 1,
+     "cronState.lastTriggeredAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalHaikuCalls": 1,
+     "cronState.lastEvalStartedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalTokens.input": 4321,
+     "cronState.totalTokens.output": 210,
+     "cronState.consecutiveHolds": 1,
+     "cronState.consecutiveEvalFailures": 0,
+     "cronState.evalSeq": 1,
+     "cronState.lastEvaluatedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.evaluatingAt": null,
+     "cronState.vwapTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.intradayMomentum": {
+      "NVDA": {
+       "vwap": 122.2435,
+       "currentPrice": 123.4,
+       "vwapDeviation": 0.946,
+       "sma20_5m": null,
+       "sessionDate": "2026-09-09"
+      }
+     },
+     "cronState.stagnationTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.lastTickPrice": {
+      "NVDA": 123.4,
+      "TSLA": 244.9,
+      "MSFT": 412.3,
+      "AMZN": 186.2,
+      "KO": 62,
+      "PG": 166.1,
+      "BTC": 67450
+     },
+     "cronState.lastTickTimestamp": {
+      "NVDA": 1788966000000,
+      "TSLA": 1788966000000,
+      "MSFT": 1788966000000,
+      "AMZN": 1788966000000,
+      "KO": 1788966000000,
+      "PG": 1788966000000,
+      "BTC": 1788966000000
+     },
+     "cronState.vwapFireGuard": {
+      "date": "2026-09-09",
+      "count": 0
+     }
+    }
+   ],
+   "executor": [
+    [
+     "support",
+     0,
+     {
+      "symbol": "AMD",
+      "name": "AMD",
+      "baseATR": 3.4,
+      "isCrypto": false,
+      "sector": "Technology"
+     },
+     1,
+     {
+      "NVDA": {
+       "current": 123.4,
+       "previousClose": 121,
+       "changePercent": 1.98
+      },
+      "TSLA": {
+       "current": 244.9,
+       "previousClose": 249,
+       "changePercent": -1.65
+      },
+      "MSFT": {
+       "current": 412.3,
+       "previousClose": 409.5,
+       "changePercent": 0.68
+      },
+      "AMZN": {
+       "current": 186.2,
+       "previousClose": 184,
+       "changePercent": 1.2
+      },
+      "KO": {
+       "current": 62,
+       "previousClose": 62.3,
+       "changePercent": -0.48
+      },
+      "PG": {
+       "current": 166.1,
+       "previousClose": 165,
+       "changePercent": 0.67
+      },
+      "BTC": {
+       "current": 67450,
+       "previousClose": 66800,
+       "changePercent": 0.97
+      },
+      "AMD": {
+       "current": 162,
+       "previousClose": 159.5,
+       "changePercent": 1.57
+      },
+      "JPM": {
+       "current": 201.1,
+       "previousClose": 200.2,
+       "changePercent": 0.45
+      },
+      "SPY": {
+       "current": 560.2,
+       "previousClose": 556,
+       "changePercent": 0.76
+      },
+      "QQQ": {
+       "current": 480.1,
+       "previousClose": 477.3,
+       "changePercent": 0.59
+      },
+      "BTC-USD.CC": {
+       "current": 67450,
+       "previousClose": 66800,
+       "changePercent": 0.97
+      }
+     },
+     {
+      "id": "trade_001",
+      "action": "SWAP",
+      "trigger": "gameplan_rotation",
+      "rationale": "KO down 1.2%, AMD (Technology) has tech score 80.",
+      "tradingDay": 1,
+      "entryRegime": null,
+      "entryMarketPosture": null,
+      "entryConviction": 0,
+      "entryPreset": "balanced",
+      "entryMode": "autopilot",
+      "exitReason": "gameplan_rotation",
+      "source": "gameplan_meeting",
+      "archetype": null,
+      "hftKnobsSource": "archetype",
+      "swapProvenance": {
+       "tempoDesired": "standard",
+       "tempoEffective": "standard",
+       "selectionSource": "default",
+       "dialBandVersion": 2,
+       "knobConfigVersion": 2
+      },
+      "evaluationId": "gameplan_KO_AMD_1788966000000"
+     }
+    ]
+   ],
+   "prompts": [
+    "fbc14c718c797f128f32e1653fcd07ca0cb6644eebb50edc0b36b117500d3972"
+   ]
+  },
+  "approved_two_legs_off": {
+   "thrown": null,
+   "summary": {
+    "evaluated": 1,
+    "held": 1,
+    "triggered": 1,
+    "skipped": 0,
+    "swapped": 1,
+    "modelCalls": 1,
+    "captureTotalMs": 0,
+    "captureTicks": 1
+   },
+   "updates": [
+    {
+     "cronState.evaluatingAt": "2026-09-09T15:00:00.000Z",
+     "cronState.tickSeq": 1
+    },
+    {
+     "controlEpochLog": {
+      "elements": [
+       {
+        "epochKey": "integrity=enforce|leans=on|dial=on",
+        "modes": {
+         "archetypeIntegrityMode": "enforce",
+         "standingLeansEnabled": true,
+         "tempoDialEnabled": true
+        },
+        "suppressedDirectiveIds": [],
+        "suppressedLeanIds": [],
+        "at": "2026-09-09T15:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "portfolio.support": [
+      {
+       "symbol": "AMD",
+       "name": "AMD",
+       "isCrypto": false,
+       "baseATR": 3.4,
+       "swapPrice": 162,
+       "swappedInAt": "2026-09-09T15:00:00.000Z",
+       "swappedInDay": 1
+      },
+      {
+       "symbol": "PG",
+       "name": "P&G",
+       "baseATR": 1,
+       "isCrypto": false,
+       "sector": "Consumer Defensive"
+      },
+      {
+       "symbol": "BTC",
+       "name": "Bitcoin",
+       "baseATR": 5,
+       "isCrypto": true,
+       "sector": "Crypto"
+      }
+     ],
+     "portfolio.bench.stocks": [
+      {
+       "symbol": "JPM",
+       "name": "JPMorgan",
+       "baseATR": 1.6,
+       "isCrypto": false,
+       "sector": "Financial Services"
+      },
+      {
+       "symbol": "KO",
+       "name": "Coca-Cola",
+       "baseATR": 1.1,
+       "isCrypto": false,
+       "direction": null,
+       "cooldownUntil": "2026-09-10T15:00:00.000Z"
+      }
+     ],
+     "portfolio.bench.crypto": null,
+     "thresholdHistory": {
+      "AMD": {
+       "maxMultiplier": 0,
+       "minMultiplier": 0,
+       "badges": []
+      }
+     },
+     "trades": [
+      {
+       "symbolOut": "KO",
+       "symbolIn": "AMD",
+       "name": "Coca-Cola",
+       "tier": "support",
+       "slotIndex": 0,
+       "entryPrice": 62.2,
+       "exitPrice": 62,
+       "lockedPoints": -3,
+       "lockedGainPct": -0.322,
+       "swappedOutAt": "2026-09-09T15:00:00.000Z",
+       "swapDay": 1,
+       "isCrypto": false,
+       "direction": null,
+       "id": "trade_001",
+       "action": "SWAP",
+       "trigger": "gameplan_rotation",
+       "rationale": "KO lagging",
+       "tradingDay": 1,
+       "entryRegime": null,
+       "entryMarketPosture": null,
+       "entryConviction": 0,
+       "entryPreset": "balanced",
+       "entryMode": "autopilot",
+       "exitReason": "gameplan_rotation",
+       "source": "gameplan_meeting",
+       "archetype": null,
+       "hftKnobsSource": "archetype",
+       "swapProvenance": {
+        "tempoDesired": "standard",
+        "tempoEffective": "standard",
+        "selectionSource": "default",
+        "dialBandVersion": 2,
+        "knobConfigVersion": 2
+       },
+       "evaluationId": "gameplan_KO_AMD_1788966000000",
+       "snapshot": null
+      }
+     ],
+     "scoreState.tradeCount": 1,
+     "updatedAt": "2026-09-09T15:00:00.000Z"
+    },
+    {
+     "gameplanMeeting": null,
+     "gameplanMeetingHistory": [
+      {
+       "id": "gpm_1757430000000",
+       "createdAt": "2026-09-09T14:00:00.000Z",
+       "status": "approved",
+       "diagnosis": "drag",
+       "opportunity": "tech",
+       "proposedAction": "rotate_sector",
+       "fromSector": "Consumer Defensive",
+       "toSectors": [
+        "Technology"
+       ],
+       "suggestedSwaps": [
+        {
+         "symbolOut": "INTC",
+         "symbolIn": "JPM",
+         "rationale": "INTC lagging",
+         "swappedInAt": null
+        },
+        {
+         "symbolOut": "KO",
+         "symbolIn": "AMD",
+         "rationale": "KO lagging",
+         "swappedInAt": "2026-09-09T13:45:00.000Z"
+        }
+       ],
+       "expiresAt": "2026-09-09T20:00:00.000Z",
+       "resolvedAt": "2026-09-09T14:55:00.000Z",
+       "resolvedBy": "owner-uid-1"
+      }
+     ]
+    },
+    {
+     "scoreState.activeScore": 33,
+     "scoreState.bankedScore": 0,
+     "scoreState.currentScore": 33,
+     "scoreState.opponentScore": 0,
+     "scoreState.lastScoredAt": "2026-09-09T15:00:00.000Z",
+     "scoreState.peakScore": 33,
+     "scoreState.peakScoreAt": "2026-09-09T15:00:00.000Z",
+     "thresholdHistory.NVDA": {
+      "maxMultiplier": 0.776335162628833,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.TSLA": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.5197920831667322
+     },
+     "thresholdHistory.MSFT": {
+      "maxMultiplier": 0.29525032092426334,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.AMZN": {
+      "maxMultiplier": 0.29484029484029206,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.KO": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.29231218941830284
+     },
+     "thresholdHistory.PG": {
+      "maxMultiplier": 0.4839685420447567,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.BTC": {
+      "maxMultiplier": 0.13432835820895522,
+      "minMultiplier": 0
+     },
+     "evaluations": [
+      {
+       "evalId": "eval_001",
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "day": 1,
+       "battlePhase": "EARLY",
+       "decision": "HOLD",
+       "symbolOut": null,
+       "symbolIn": null,
+       "tier": null,
+       "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+       "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+       "conviction": 58,
+       "riskAssessment": "low",
+       "ignoredDirectiveIds": [],
+       "directiveThreadId": null,
+       "trade_reasoning": null,
+       "citedForgeRules": [],
+       "overriddenForgeRules": [],
+       "triggers": [
+        "forced_open"
+       ],
+       "scores": {
+        "active": 33,
+        "banked": 0,
+        "total": 33
+       },
+       "validationErrors": [],
+       "downgraded": false,
+       "marketPosture": "selective",
+       "guardrailOverrides": [],
+       "guardrailSourceNote": null,
+       "haikuError": null,
+       "promptBuiltAt": "2026-09-09T15:00:00.000Z",
+       "buildMs": 0,
+       "callMs": 0,
+       "tickMs": 0,
+       "holdKind": null,
+       "guardrailFault": null,
+       "heard": {
+        "directiveThreadId": "thread-tf02-0001",
+        "suppressed": null
+       },
+       "evidence": {
+        "NVDA": {
+         "px": 123.4,
+         "chg": 2.41,
+         "atrX": 0.78,
+         "vwapDev": 0.95,
+         "bbPct": 15,
+         "nr7": true,
+         "regime": "directional_expansion",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "TSLA": {
+         "px": 244.9,
+         "chg": -2.08,
+         "atrX": -0.52,
+         "vwapDev": null,
+         "bbPct": 88,
+         "nr7": false,
+         "regime": "distressed",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "MSFT": {
+         "px": 412.3,
+         "chg": 0.56,
+         "atrX": 0.3,
+         "vwapDev": null,
+         "bbPct": 42,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "AMZN": {
+         "px": 186.2,
+         "chg": 0.65,
+         "atrX": 0.29,
+         "vwapDev": null,
+         "bbPct": 55,
+         "nr7": false,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "KO": {
+         "px": 62,
+         "chg": -0.32,
+         "atrX": -0.29,
+         "vwapDev": null,
+         "bbPct": 12,
+         "nr7": true,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "PG": {
+         "px": 166.1,
+         "chg": 0.48,
+         "atrX": 0.48,
+         "vwapDev": null,
+         "bbPct": 30,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "BTC": {
+         "px": 67450,
+         "chg": 0.67,
+         "atrX": 0.13,
+         "vwapDev": null,
+         "bbPct": null,
+         "nr7": null,
+         "regime": null,
+         "risk": {
+          "action": "HOLD"
+         }
+        }
+       },
+       "vintages": {
+        "quote": "tick",
+        "vwap": "tick",
+        "techAt": "2026-09-09T14:29:55.000Z",
+        "fundAsOf": "2026-09-04",
+        "rankingsAt": "2026-09-09T14:30:00.000Z"
+       }
+      }
+     ],
+     "statusFeed": [
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Gameplan approved: KO → AMD",
+       "action": "swap",
+       "source": "gameplan_meeting",
+       "symbolOut": "KO",
+       "symbolIn": "AMD"
+      },
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Holding the book — NVDA leading, TSLA on watch.",
+       "pvpContext": null,
+       "action": "hold",
+       "regime": null,
+       "score": 33,
+       "citedRules": [],
+       "citedForgeRules": [],
+       "triggeredBy": "forced_open",
+       "source": "haiku",
+       "evalId": "eval_001",
+       "symbolOut": null,
+       "symbolIn": null,
+       "directiveThreadId": null,
+       "trade_reasoning": null
+      }
+     ],
+     "scoreState.evaluationCount": 1,
+     "scoreState.holdCount": 1,
+     "cronState.lastTriggeredAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalHaikuCalls": 1,
+     "cronState.lastEvalStartedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalTokens.input": 4321,
+     "cronState.totalTokens.output": 210,
+     "cronState.consecutiveHolds": 1,
+     "cronState.consecutiveEvalFailures": 0,
+     "cronState.evalSeq": 1,
+     "cronState.lastEvaluatedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.evaluatingAt": null,
+     "cronState.vwapTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.intradayMomentum": {
+      "NVDA": {
+       "vwap": 122.2435,
+       "currentPrice": 123.4,
+       "vwapDeviation": 0.946,
+       "sma20_5m": null,
+       "sessionDate": "2026-09-09"
+      }
+     },
+     "cronState.stagnationTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.lastTickPrice": {
+      "NVDA": 123.4,
+      "TSLA": 244.9,
+      "MSFT": 412.3,
+      "AMZN": 186.2,
+      "KO": 62,
+      "PG": 166.1,
+      "BTC": 67450
+     },
+     "cronState.lastTickTimestamp": {
+      "NVDA": 1788966000000,
+      "TSLA": 1788966000000,
+      "MSFT": 1788966000000,
+      "AMZN": 1788966000000,
+      "KO": 1788966000000,
+      "PG": 1788966000000,
+      "BTC": 1788966000000
+     },
+     "cronState.vwapFireGuard": {
+      "date": "2026-09-09",
+      "count": 0
+     }
+    }
+   ],
+   "executor": [
+    [
+     "support",
+     0,
+     {
+      "symbol": "AMD",
+      "name": "AMD",
+      "baseATR": 3.4,
+      "isCrypto": false,
+      "sector": "Technology"
+     },
+     1,
+     {
+      "NVDA": {
+       "current": 123.4,
+       "previousClose": 121,
+       "changePercent": 1.98
+      },
+      "TSLA": {
+       "current": 244.9,
+       "previousClose": 249,
+       "changePercent": -1.65
+      },
+      "MSFT": {
+       "current": 412.3,
+       "previousClose": 409.5,
+       "changePercent": 0.68
+      },
+      "AMZN": {
+       "current": 186.2,
+       "previousClose": 184,
+       "changePercent": 1.2
+      },
+      "KO": {
+       "current": 62,
+       "previousClose": 62.3,
+       "changePercent": -0.48
+      },
+      "PG": {
+       "current": 166.1,
+       "previousClose": 165,
+       "changePercent": 0.67
+      },
+      "BTC": {
+       "current": 67450,
+       "previousClose": 66800,
+       "changePercent": 0.97
+      },
+      "AMD": {
+       "current": 162,
+       "previousClose": 159.5,
+       "changePercent": 1.57
+      },
+      "JPM": {
+       "current": 201.1,
+       "previousClose": 200.2,
+       "changePercent": 0.45
+      },
+      "SPY": {
+       "current": 560.2,
+       "previousClose": 556,
+       "changePercent": 0.76
+      },
+      "QQQ": {
+       "current": 480.1,
+       "previousClose": 477.3,
+       "changePercent": 0.59
+      },
+      "BTC-USD.CC": {
+       "current": 67450,
+       "previousClose": 66800,
+       "changePercent": 0.97
+      }
+     },
+     {
+      "id": "trade_001",
+      "action": "SWAP",
+      "trigger": "gameplan_rotation",
+      "rationale": "KO lagging",
+      "tradingDay": 1,
+      "entryRegime": null,
+      "entryMarketPosture": null,
+      "entryConviction": 0,
+      "entryPreset": "balanced",
+      "entryMode": "autopilot",
+      "exitReason": "gameplan_rotation",
+      "source": "gameplan_meeting",
+      "archetype": null,
+      "hftKnobsSource": "archetype",
+      "swapProvenance": {
+       "tempoDesired": "standard",
+       "tempoEffective": "standard",
+       "selectionSource": "default",
+       "dialBandVersion": 2,
+       "knobConfigVersion": 2
+      },
+      "evaluationId": "gameplan_KO_AMD_1788966000000"
+     }
+    ]
+   ],
+   "prompts": [
+    "fbc14c718c797f128f32e1653fcd07ca0cb6644eebb50edc0b36b117500d3972"
+   ]
+  },
+  "approved_one_leg_shadow": {
+   "thrown": null,
+   "summary": {
+    "evaluated": 1,
+    "held": 1,
+    "triggered": 1,
+    "skipped": 0,
+    "swapped": 1,
+    "modelCalls": 1,
+    "captureTotalMs": 0,
+    "captureTicks": 1
+   },
+   "updates": [
+    {
+     "cronState.evaluatingAt": "2026-09-09T15:00:00.000Z",
+     "cronState.tickSeq": 1
+    },
+    {
+     "controlEpochLog": {
+      "elements": [
+       {
+        "epochKey": "integrity=enforce|leans=on|dial=on",
+        "modes": {
+         "archetypeIntegrityMode": "enforce",
+         "standingLeansEnabled": true,
+         "tempoDialEnabled": true
+        },
+        "suppressedDirectiveIds": [],
+        "suppressedLeanIds": [],
+        "at": "2026-09-09T15:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "portfolio.support": [
+      {
+       "symbol": "AMD",
+       "name": "AMD",
+       "isCrypto": false,
+       "baseATR": 3.4,
+       "swapPrice": 162,
+       "swappedInAt": "2026-09-09T15:00:00.000Z",
+       "swappedInDay": 1
+      },
+      {
+       "symbol": "PG",
+       "name": "P&G",
+       "baseATR": 1,
+       "isCrypto": false,
+       "sector": "Consumer Defensive"
+      },
+      {
+       "symbol": "BTC",
+       "name": "Bitcoin",
+       "baseATR": 5,
+       "isCrypto": true,
+       "sector": "Crypto"
+      }
+     ],
+     "portfolio.bench.stocks": [
+      {
+       "symbol": "JPM",
+       "name": "JPMorgan",
+       "baseATR": 1.6,
+       "isCrypto": false,
+       "sector": "Financial Services"
+      },
+      {
+       "symbol": "KO",
+       "name": "Coca-Cola",
+       "baseATR": 1.1,
+       "isCrypto": false,
+       "direction": null,
+       "cooldownUntil": "2026-09-10T15:00:00.000Z"
+      }
+     ],
+     "portfolio.bench.crypto": null,
+     "thresholdHistory": {
+      "AMD": {
+       "maxMultiplier": 0,
+       "minMultiplier": 0,
+       "badges": []
+      }
+     },
+     "trades": [
+      {
+       "symbolOut": "KO",
+       "symbolIn": "AMD",
+       "name": "Coca-Cola",
+       "tier": "support",
+       "slotIndex": 0,
+       "entryPrice": 62.2,
+       "exitPrice": 62,
+       "lockedPoints": -3,
+       "lockedGainPct": -0.322,
+       "swappedOutAt": "2026-09-09T15:00:00.000Z",
+       "swapDay": 1,
+       "isCrypto": false,
+       "direction": null,
+       "id": "trade_001",
+       "action": "SWAP",
+       "trigger": "gameplan_rotation",
+       "rationale": "KO down 1.2%, AMD (Technology) has tech score 80.",
+       "tradingDay": 1,
+       "entryRegime": null,
+       "entryMarketPosture": null,
+       "entryConviction": 0,
+       "entryPreset": "balanced",
+       "entryMode": "autopilot",
+       "exitReason": "gameplan_rotation",
+       "source": "gameplan_meeting",
+       "archetype": null,
+       "hftKnobsSource": "archetype",
+       "swapProvenance": {
+        "tempoDesired": "standard",
+        "tempoEffective": "standard",
+        "selectionSource": "default",
+        "dialBandVersion": 2,
+        "knobConfigVersion": 2
+       },
+       "evaluationId": "gameplan_KO_AMD_1788966000000",
+       "snapshot": null,
+       "verification": {
+        "verificationId": "battle-tick-1:gameplan_KO_AMD_1788966000000:verify",
+        "mode": "shadow",
+        "expected": {
+         "symbol": "KO",
+         "swappedInAt": null
+        },
+        "found": {
+         "symbol": "KO",
+         "swappedInAt": null
+        },
+        "verdict": "match",
+        "basis": "symbol_and_entry",
+        "battleStatus": "active",
+        "slot": {
+         "tier": "support",
+         "slotIndex": 0
+        },
+        "tradeSeq": 0,
+        "checkedAt": "2026-09-09T15:00:00.000Z"
+       }
+      }
+     ],
+     "scoreState.tradeCount": 1,
+     "updatedAt": "2026-09-09T15:00:00.000Z"
+    },
+    {
+     "gameplanMeeting": null,
+     "gameplanMeetingHistory": [
+      {
+       "id": "gpm_1757430000000",
+       "createdAt": "2026-09-09T14:00:00.000Z",
+       "status": "approved",
+       "diagnosis": "drag",
+       "opportunity": "tech",
+       "proposedAction": "rotate_sector",
+       "fromSector": "Consumer Defensive",
+       "toSectors": [
+        "Technology"
+       ],
+       "suggestedSwaps": [
+        {
+         "symbolOut": "KO",
+         "symbolIn": "AMD",
+         "rationale": "KO down 1.2%, AMD (Technology) has tech score 80.",
+         "swappedInAt": null
+        }
+       ],
+       "expiresAt": "2026-09-09T20:00:00.000Z",
+       "resolvedAt": "2026-09-09T14:55:00.000Z",
+       "resolvedBy": "owner-uid-1"
+      }
+     ]
+    },
+    {
+     "scoreState.activeScore": 33,
+     "scoreState.bankedScore": 0,
+     "scoreState.currentScore": 33,
+     "scoreState.opponentScore": 0,
+     "scoreState.lastScoredAt": "2026-09-09T15:00:00.000Z",
+     "scoreState.peakScore": 33,
+     "scoreState.peakScoreAt": "2026-09-09T15:00:00.000Z",
+     "thresholdHistory.NVDA": {
+      "maxMultiplier": 0.776335162628833,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.TSLA": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.5197920831667322
+     },
+     "thresholdHistory.MSFT": {
+      "maxMultiplier": 0.29525032092426334,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.AMZN": {
+      "maxMultiplier": 0.29484029484029206,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.KO": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.29231218941830284
+     },
+     "thresholdHistory.PG": {
+      "maxMultiplier": 0.4839685420447567,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.BTC": {
+      "maxMultiplier": 0.13432835820895522,
+      "minMultiplier": 0
+     },
+     "evaluations": [
+      {
+       "evalId": "eval_001",
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "day": 1,
+       "battlePhase": "EARLY",
+       "decision": "HOLD",
+       "symbolOut": null,
+       "symbolIn": null,
+       "tier": null,
+       "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+       "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+       "conviction": 58,
+       "riskAssessment": "low",
+       "ignoredDirectiveIds": [],
+       "directiveThreadId": null,
+       "trade_reasoning": null,
+       "citedForgeRules": [],
+       "overriddenForgeRules": [],
+       "triggers": [
+        "forced_open"
+       ],
+       "scores": {
+        "active": 33,
+        "banked": 0,
+        "total": 33
+       },
+       "validationErrors": [],
+       "downgraded": false,
+       "marketPosture": "selective",
+       "guardrailOverrides": [],
+       "guardrailSourceNote": null,
+       "haikuError": null,
+       "promptBuiltAt": "2026-09-09T15:00:00.000Z",
+       "buildMs": 0,
+       "callMs": 0,
+       "tickMs": 0,
+       "holdKind": null,
+       "guardrailFault": null,
+       "heard": {
+        "directiveThreadId": "thread-tf02-0001",
+        "suppressed": null
+       },
+       "evidence": {
+        "NVDA": {
+         "px": 123.4,
+         "chg": 2.41,
+         "atrX": 0.78,
+         "vwapDev": 0.95,
+         "bbPct": 15,
+         "nr7": true,
+         "regime": "directional_expansion",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "TSLA": {
+         "px": 244.9,
+         "chg": -2.08,
+         "atrX": -0.52,
+         "vwapDev": null,
+         "bbPct": 88,
+         "nr7": false,
+         "regime": "distressed",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "MSFT": {
+         "px": 412.3,
+         "chg": 0.56,
+         "atrX": 0.3,
+         "vwapDev": null,
+         "bbPct": 42,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "AMZN": {
+         "px": 186.2,
+         "chg": 0.65,
+         "atrX": 0.29,
+         "vwapDev": null,
+         "bbPct": 55,
+         "nr7": false,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "KO": {
+         "px": 62,
+         "chg": -0.32,
+         "atrX": -0.29,
+         "vwapDev": null,
+         "bbPct": 12,
+         "nr7": true,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "PG": {
+         "px": 166.1,
+         "chg": 0.48,
+         "atrX": 0.48,
+         "vwapDev": null,
+         "bbPct": 30,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "BTC": {
+         "px": 67450,
+         "chg": 0.67,
+         "atrX": 0.13,
+         "vwapDev": null,
+         "bbPct": null,
+         "nr7": null,
+         "regime": null,
+         "risk": {
+          "action": "HOLD"
+         }
+        }
+       },
+       "vintages": {
+        "quote": "tick",
+        "vwap": "tick",
+        "techAt": "2026-09-09T14:29:55.000Z",
+        "fundAsOf": "2026-09-04",
+        "rankingsAt": "2026-09-09T14:30:00.000Z"
+       },
+       "executionRefusal": null
+      }
+     ],
+     "statusFeed": [
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Gameplan approved: KO → AMD",
+       "action": "swap",
+       "source": "gameplan_meeting",
+       "symbolOut": "KO",
+       "symbolIn": "AMD"
+      },
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Holding the book — NVDA leading, TSLA on watch.",
+       "pvpContext": null,
+       "action": "hold",
+       "regime": null,
+       "score": 33,
+       "citedRules": [],
+       "citedForgeRules": [],
+       "triggeredBy": "forced_open",
+       "source": "haiku",
+       "evalId": "eval_001",
+       "symbolOut": null,
+       "symbolIn": null,
+       "directiveThreadId": null,
+       "trade_reasoning": null
+      }
+     ],
+     "scoreState.evaluationCount": 1,
+     "scoreState.holdCount": 1,
+     "cronState.lastTriggeredAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalHaikuCalls": 1,
+     "cronState.lastEvalStartedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalTokens.input": 4321,
+     "cronState.totalTokens.output": 210,
+     "cronState.consecutiveHolds": 1,
+     "cronState.consecutiveEvalFailures": 0,
+     "cronState.evalSeq": 1,
+     "cronState.lastEvaluatedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.evaluatingAt": null,
+     "cronState.vwapTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.intradayMomentum": {
+      "NVDA": {
+       "vwap": 122.2435,
+       "currentPrice": 123.4,
+       "vwapDeviation": 0.946,
+       "sma20_5m": null,
+       "sessionDate": "2026-09-09"
+      }
+     },
+     "cronState.stagnationTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.lastTickPrice": {
+      "NVDA": 123.4,
+      "TSLA": 244.9,
+      "MSFT": 412.3,
+      "AMZN": 186.2,
+      "KO": 62,
+      "PG": 166.1,
+      "BTC": 67450
+     },
+     "cronState.lastTickTimestamp": {
+      "NVDA": 1788966000000,
+      "TSLA": 1788966000000,
+      "MSFT": 1788966000000,
+      "AMZN": 1788966000000,
+      "KO": 1788966000000,
+      "PG": 1788966000000,
+      "BTC": 1788966000000
+     },
+     "cronState.vwapFireGuard": {
+      "date": "2026-09-09",
+      "count": 0
+     }
+    }
+   ],
+   "executor": [
+    [
+     "support",
+     0,
+     {
+      "symbol": "AMD",
+      "name": "AMD",
+      "baseATR": 3.4,
+      "isCrypto": false,
+      "sector": "Technology"
+     },
+     1,
+     {
+      "NVDA": {
+       "current": 123.4,
+       "previousClose": 121,
+       "changePercent": 1.98
+      },
+      "TSLA": {
+       "current": 244.9,
+       "previousClose": 249,
+       "changePercent": -1.65
+      },
+      "MSFT": {
+       "current": 412.3,
+       "previousClose": 409.5,
+       "changePercent": 0.68
+      },
+      "AMZN": {
+       "current": 186.2,
+       "previousClose": 184,
+       "changePercent": 1.2
+      },
+      "KO": {
+       "current": 62,
+       "previousClose": 62.3,
+       "changePercent": -0.48
+      },
+      "PG": {
+       "current": 166.1,
+       "previousClose": 165,
+       "changePercent": 0.67
+      },
+      "BTC": {
+       "current": 67450,
+       "previousClose": 66800,
+       "changePercent": 0.97
+      },
+      "AMD": {
+       "current": 162,
+       "previousClose": 159.5,
+       "changePercent": 1.57
+      },
+      "JPM": {
+       "current": 201.1,
+       "previousClose": 200.2,
+       "changePercent": 0.45
+      },
+      "SPY": {
+       "current": 560.2,
+       "previousClose": 556,
+       "changePercent": 0.76
+      },
+      "QQQ": {
+       "current": 480.1,
+       "previousClose": 477.3,
+       "changePercent": 0.59
+      },
+      "BTC-USD.CC": {
+       "current": 67450,
+       "previousClose": 66800,
+       "changePercent": 0.97
+      }
+     },
+     {
+      "id": "trade_001",
+      "action": "SWAP",
+      "trigger": "gameplan_rotation",
+      "rationale": "KO down 1.2%, AMD (Technology) has tech score 80.",
+      "tradingDay": 1,
+      "entryRegime": null,
+      "entryMarketPosture": null,
+      "entryConviction": 0,
+      "entryPreset": "balanced",
+      "entryMode": "autopilot",
+      "exitReason": "gameplan_rotation",
+      "source": "gameplan_meeting",
+      "archetype": null,
+      "hftKnobsSource": "archetype",
+      "swapProvenance": {
+       "tempoDesired": "standard",
+       "tempoEffective": "standard",
+       "selectionSource": "default",
+       "dialBandVersion": 2,
+       "knobConfigVersion": 2
+      },
+      "evaluationId": "gameplan_KO_AMD_1788966000000"
+     },
+     null,
+     {
+      "identityMode": "shadow",
+      "expectedOut": {
+       "symbol": "KO",
+       "swappedInAt": null
+      }
+     }
+    ]
+   ],
+   "prompts": [
+    "fbc14c718c797f128f32e1653fcd07ca0cb6644eebb50edc0b36b117500d3972"
+   ]
+  },
+  "approved_two_legs_shadow": {
+   "thrown": null,
+   "summary": {
+    "evaluated": 1,
+    "held": 1,
+    "triggered": 1,
+    "skipped": 0,
+    "swapped": 1,
+    "modelCalls": 1,
+    "captureTotalMs": 0,
+    "captureTicks": 1
+   },
+   "updates": [
+    {
+     "cronState.evaluatingAt": "2026-09-09T15:00:00.000Z",
+     "cronState.tickSeq": 1
+    },
+    {
+     "controlEpochLog": {
+      "elements": [
+       {
+        "epochKey": "integrity=enforce|leans=on|dial=on",
+        "modes": {
+         "archetypeIntegrityMode": "enforce",
+         "standingLeansEnabled": true,
+         "tempoDialEnabled": true
+        },
+        "suppressedDirectiveIds": [],
+        "suppressedLeanIds": [],
+        "at": "2026-09-09T15:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "portfolio.support": [
+      {
+       "symbol": "AMD",
+       "name": "AMD",
+       "isCrypto": false,
+       "baseATR": 3.4,
+       "swapPrice": 162,
+       "swappedInAt": "2026-09-09T15:00:00.000Z",
+       "swappedInDay": 1
+      },
+      {
+       "symbol": "PG",
+       "name": "P&G",
+       "baseATR": 1,
+       "isCrypto": false,
+       "sector": "Consumer Defensive"
+      },
+      {
+       "symbol": "BTC",
+       "name": "Bitcoin",
+       "baseATR": 5,
+       "isCrypto": true,
+       "sector": "Crypto"
+      }
+     ],
+     "portfolio.bench.stocks": [
+      {
+       "symbol": "JPM",
+       "name": "JPMorgan",
+       "baseATR": 1.6,
+       "isCrypto": false,
+       "sector": "Financial Services"
+      },
+      {
+       "symbol": "KO",
+       "name": "Coca-Cola",
+       "baseATR": 1.1,
+       "isCrypto": false,
+       "direction": null,
+       "cooldownUntil": "2026-09-10T15:00:00.000Z"
+      }
+     ],
+     "portfolio.bench.crypto": null,
+     "thresholdHistory": {
+      "AMD": {
+       "maxMultiplier": 0,
+       "minMultiplier": 0,
+       "badges": []
+      }
+     },
+     "trades": [
+      {
+       "symbolOut": "KO",
+       "symbolIn": "AMD",
+       "name": "Coca-Cola",
+       "tier": "support",
+       "slotIndex": 0,
+       "entryPrice": 62.2,
+       "exitPrice": 62,
+       "lockedPoints": -3,
+       "lockedGainPct": -0.322,
+       "swappedOutAt": "2026-09-09T15:00:00.000Z",
+       "swapDay": 1,
+       "isCrypto": false,
+       "direction": null,
+       "id": "trade_001",
+       "action": "SWAP",
+       "trigger": "gameplan_rotation",
+       "rationale": "KO lagging",
+       "tradingDay": 1,
+       "entryRegime": null,
+       "entryMarketPosture": null,
+       "entryConviction": 0,
+       "entryPreset": "balanced",
+       "entryMode": "autopilot",
+       "exitReason": "gameplan_rotation",
+       "source": "gameplan_meeting",
+       "archetype": null,
+       "hftKnobsSource": "archetype",
+       "swapProvenance": {
+        "tempoDesired": "standard",
+        "tempoEffective": "standard",
+        "selectionSource": "default",
+        "dialBandVersion": 2,
+        "knobConfigVersion": 2
+       },
+       "evaluationId": "gameplan_KO_AMD_1788966000000",
+       "snapshot": null,
+       "verification": {
+        "verificationId": "battle-tick-1:gameplan_KO_AMD_1788966000000:verify",
+        "mode": "shadow",
+        "expected": {
+         "symbol": "KO",
+         "swappedInAt": "2026-09-09T13:45:00.000Z"
+        },
+        "found": {
+         "symbol": "KO",
+         "swappedInAt": "2026-09-09T14:40:00.000Z"
+        },
+        "verdict": "mismatch",
+        "basis": "symbol_and_entry",
+        "battleStatus": "active",
+        "slot": {
+         "tier": "support",
+         "slotIndex": 0
+        },
+        "tradeSeq": 0,
+        "checkedAt": "2026-09-09T15:00:00.000Z"
+       }
+      }
+     ],
+     "scoreState.tradeCount": 1,
+     "updatedAt": "2026-09-09T15:00:00.000Z"
+    },
+    {
+     "gameplanMeeting": null,
+     "gameplanMeetingHistory": [
+      {
+       "id": "gpm_1757430000000",
+       "createdAt": "2026-09-09T14:00:00.000Z",
+       "status": "approved",
+       "diagnosis": "drag",
+       "opportunity": "tech",
+       "proposedAction": "rotate_sector",
+       "fromSector": "Consumer Defensive",
+       "toSectors": [
+        "Technology"
+       ],
+       "suggestedSwaps": [
+        {
+         "symbolOut": "INTC",
+         "symbolIn": "JPM",
+         "rationale": "INTC lagging",
+         "swappedInAt": null
+        },
+        {
+         "symbolOut": "KO",
+         "symbolIn": "AMD",
+         "rationale": "KO lagging",
+         "swappedInAt": "2026-09-09T13:45:00.000Z"
+        }
+       ],
+       "expiresAt": "2026-09-09T20:00:00.000Z",
+       "resolvedAt": "2026-09-09T14:55:00.000Z",
+       "resolvedBy": "owner-uid-1",
+       "legRefusals": [
+        {
+         "symbolOut": "INTC",
+         "symbolIn": "JPM",
+         "reason": "outgoing_identity_mismatch",
+         "verificationId": null,
+         "verification": null,
+         "line": "The agent tried to swap INTC for JPM, but INTC had already left that slot. No trade was made."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "scoreState.activeScore": 33,
+     "scoreState.bankedScore": 0,
+     "scoreState.currentScore": 33,
+     "scoreState.opponentScore": 0,
+     "scoreState.lastScoredAt": "2026-09-09T15:00:00.000Z",
+     "scoreState.peakScore": 33,
+     "scoreState.peakScoreAt": "2026-09-09T15:00:00.000Z",
+     "thresholdHistory.NVDA": {
+      "maxMultiplier": 0.776335162628833,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.TSLA": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.5197920831667322
+     },
+     "thresholdHistory.MSFT": {
+      "maxMultiplier": 0.29525032092426334,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.AMZN": {
+      "maxMultiplier": 0.29484029484029206,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.KO": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.29231218941830284
+     },
+     "thresholdHistory.PG": {
+      "maxMultiplier": 0.4839685420447567,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.BTC": {
+      "maxMultiplier": 0.13432835820895522,
+      "minMultiplier": 0
+     },
+     "evaluations": [
+      {
+       "evalId": "eval_001",
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "day": 1,
+       "battlePhase": "EARLY",
+       "decision": "HOLD",
+       "symbolOut": null,
+       "symbolIn": null,
+       "tier": null,
+       "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+       "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+       "conviction": 58,
+       "riskAssessment": "low",
+       "ignoredDirectiveIds": [],
+       "directiveThreadId": null,
+       "trade_reasoning": null,
+       "citedForgeRules": [],
+       "overriddenForgeRules": [],
+       "triggers": [
+        "forced_open"
+       ],
+       "scores": {
+        "active": 33,
+        "banked": 0,
+        "total": 33
+       },
+       "validationErrors": [],
+       "downgraded": false,
+       "marketPosture": "selective",
+       "guardrailOverrides": [],
+       "guardrailSourceNote": null,
+       "haikuError": null,
+       "promptBuiltAt": "2026-09-09T15:00:00.000Z",
+       "buildMs": 0,
+       "callMs": 0,
+       "tickMs": 0,
+       "holdKind": null,
+       "guardrailFault": null,
+       "heard": {
+        "directiveThreadId": "thread-tf02-0001",
+        "suppressed": null
+       },
+       "evidence": {
+        "NVDA": {
+         "px": 123.4,
+         "chg": 2.41,
+         "atrX": 0.78,
+         "vwapDev": 0.95,
+         "bbPct": 15,
+         "nr7": true,
+         "regime": "directional_expansion",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "TSLA": {
+         "px": 244.9,
+         "chg": -2.08,
+         "atrX": -0.52,
+         "vwapDev": null,
+         "bbPct": 88,
+         "nr7": false,
+         "regime": "distressed",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "MSFT": {
+         "px": 412.3,
+         "chg": 0.56,
+         "atrX": 0.3,
+         "vwapDev": null,
+         "bbPct": 42,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "AMZN": {
+         "px": 186.2,
+         "chg": 0.65,
+         "atrX": 0.29,
+         "vwapDev": null,
+         "bbPct": 55,
+         "nr7": false,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "KO": {
+         "px": 62,
+         "chg": -0.32,
+         "atrX": -0.29,
+         "vwapDev": null,
+         "bbPct": 12,
+         "nr7": true,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "PG": {
+         "px": 166.1,
+         "chg": 0.48,
+         "atrX": 0.48,
+         "vwapDev": null,
+         "bbPct": 30,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "BTC": {
+         "px": 67450,
+         "chg": 0.67,
+         "atrX": 0.13,
+         "vwapDev": null,
+         "bbPct": null,
+         "nr7": null,
+         "regime": null,
+         "risk": {
+          "action": "HOLD"
+         }
+        }
+       },
+       "vintages": {
+        "quote": "tick",
+        "vwap": "tick",
+        "techAt": "2026-09-09T14:29:55.000Z",
+        "fundAsOf": "2026-09-04",
+        "rankingsAt": "2026-09-09T14:30:00.000Z"
+       },
+       "executionRefusal": null
+      }
+     ],
+     "statusFeed": [
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "The agent tried to swap INTC for JPM, but INTC had already left that slot. No trade was made.",
+       "action": "hold",
+       "source": "gameplan_meeting",
+       "symbolOut": "INTC",
+       "symbolIn": "JPM",
+       "refusalReason": "outgoing_identity_mismatch",
+       "verificationId": null
+      },
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Gameplan approved: KO → AMD",
+       "action": "swap",
+       "source": "gameplan_meeting",
+       "symbolOut": "KO",
+       "symbolIn": "AMD"
+      },
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Holding the book — NVDA leading, TSLA on watch.",
+       "pvpContext": null,
+       "action": "hold",
+       "regime": null,
+       "score": 33,
+       "citedRules": [],
+       "citedForgeRules": [],
+       "triggeredBy": "forced_open",
+       "source": "haiku",
+       "evalId": "eval_001",
+       "symbolOut": null,
+       "symbolIn": null,
+       "directiveThreadId": null,
+       "trade_reasoning": null
+      }
+     ],
+     "scoreState.evaluationCount": 1,
+     "scoreState.holdCount": 1,
+     "cronState.lastTriggeredAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalHaikuCalls": 1,
+     "cronState.lastEvalStartedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalTokens.input": 4321,
+     "cronState.totalTokens.output": 210,
+     "cronState.consecutiveHolds": 1,
+     "cronState.consecutiveEvalFailures": 0,
+     "cronState.evalSeq": 1,
+     "cronState.lastEvaluatedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.evaluatingAt": null,
+     "cronState.vwapTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.intradayMomentum": {
+      "NVDA": {
+       "vwap": 122.2435,
+       "currentPrice": 123.4,
+       "vwapDeviation": 0.946,
+       "sma20_5m": null,
+       "sessionDate": "2026-09-09"
+      }
+     },
+     "cronState.stagnationTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.lastTickPrice": {
+      "NVDA": 123.4,
+      "TSLA": 244.9,
+      "MSFT": 412.3,
+      "AMZN": 186.2,
+      "KO": 62,
+      "PG": 166.1,
+      "BTC": 67450
+     },
+     "cronState.lastTickTimestamp": {
+      "NVDA": 1788966000000,
+      "TSLA": 1788966000000,
+      "MSFT": 1788966000000,
+      "AMZN": 1788966000000,
+      "KO": 1788966000000,
+      "PG": 1788966000000,
+      "BTC": 1788966000000
+     },
+     "cronState.vwapFireGuard": {
+      "date": "2026-09-09",
+      "count": 0
+     }
+    }
+   ],
+   "executor": [
+    [
+     "support",
+     0,
+     {
+      "symbol": "AMD",
+      "name": "AMD",
+      "baseATR": 3.4,
+      "isCrypto": false,
+      "sector": "Technology"
+     },
+     1,
+     {
+      "NVDA": {
+       "current": 123.4,
+       "previousClose": 121,
+       "changePercent": 1.98
+      },
+      "TSLA": {
+       "current": 244.9,
+       "previousClose": 249,
+       "changePercent": -1.65
+      },
+      "MSFT": {
+       "current": 412.3,
+       "previousClose": 409.5,
+       "changePercent": 0.68
+      },
+      "AMZN": {
+       "current": 186.2,
+       "previousClose": 184,
+       "changePercent": 1.2
+      },
+      "KO": {
+       "current": 62,
+       "previousClose": 62.3,
+       "changePercent": -0.48
+      },
+      "PG": {
+       "current": 166.1,
+       "previousClose": 165,
+       "changePercent": 0.67
+      },
+      "BTC": {
+       "current": 67450,
+       "previousClose": 66800,
+       "changePercent": 0.97
+      },
+      "AMD": {
+       "current": 162,
+       "previousClose": 159.5,
+       "changePercent": 1.57
+      },
+      "JPM": {
+       "current": 201.1,
+       "previousClose": 200.2,
+       "changePercent": 0.45
+      },
+      "SPY": {
+       "current": 560.2,
+       "previousClose": 556,
+       "changePercent": 0.76
+      },
+      "QQQ": {
+       "current": 480.1,
+       "previousClose": 477.3,
+       "changePercent": 0.59
+      },
+      "BTC-USD.CC": {
+       "current": 67450,
+       "previousClose": 66800,
+       "changePercent": 0.97
+      }
+     },
+     {
+      "id": "trade_001",
+      "action": "SWAP",
+      "trigger": "gameplan_rotation",
+      "rationale": "KO lagging",
+      "tradingDay": 1,
+      "entryRegime": null,
+      "entryMarketPosture": null,
+      "entryConviction": 0,
+      "entryPreset": "balanced",
+      "entryMode": "autopilot",
+      "exitReason": "gameplan_rotation",
+      "source": "gameplan_meeting",
+      "archetype": null,
+      "hftKnobsSource": "archetype",
+      "swapProvenance": {
+       "tempoDesired": "standard",
+       "tempoEffective": "standard",
+       "selectionSource": "default",
+       "dialBandVersion": 2,
+       "knobConfigVersion": 2
+      },
+      "evaluationId": "gameplan_KO_AMD_1788966000000"
+     },
+     null,
+     {
+      "identityMode": "shadow",
+      "expectedOut": {
+       "symbol": "KO",
+       "swappedInAt": "2026-09-09T13:45:00.000Z"
+      }
+     }
+    ]
+   ],
+   "prompts": [
+    "fbc14c718c797f128f32e1653fcd07ca0cb6644eebb50edc0b36b117500d3972"
+   ]
+  },
+  "approved_one_leg_enforce": {
+   "thrown": null,
+   "summary": {
+    "evaluated": 1,
+    "held": 1,
+    "triggered": 1,
+    "skipped": 0,
+    "swapped": 1,
+    "modelCalls": 1,
+    "captureTotalMs": 0,
+    "captureTicks": 1
+   },
+   "updates": [
+    {
+     "cronState.evaluatingAt": "2026-09-09T15:00:00.000Z",
+     "cronState.tickSeq": 1
+    },
+    {
+     "controlEpochLog": {
+      "elements": [
+       {
+        "epochKey": "integrity=enforce|leans=on|dial=on",
+        "modes": {
+         "archetypeIntegrityMode": "enforce",
+         "standingLeansEnabled": true,
+         "tempoDialEnabled": true
+        },
+        "suppressedDirectiveIds": [],
+        "suppressedLeanIds": [],
+        "at": "2026-09-09T15:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "portfolio.support": [
+      {
+       "symbol": "AMD",
+       "name": "AMD",
+       "isCrypto": false,
+       "baseATR": 3.4,
+       "swapPrice": 162,
+       "swappedInAt": "2026-09-09T15:00:00.000Z",
+       "swappedInDay": 1
+      },
+      {
+       "symbol": "PG",
+       "name": "P&G",
+       "baseATR": 1,
+       "isCrypto": false,
+       "sector": "Consumer Defensive"
+      },
+      {
+       "symbol": "BTC",
+       "name": "Bitcoin",
+       "baseATR": 5,
+       "isCrypto": true,
+       "sector": "Crypto"
+      }
+     ],
+     "portfolio.bench.stocks": [
+      {
+       "symbol": "JPM",
+       "name": "JPMorgan",
+       "baseATR": 1.6,
+       "isCrypto": false,
+       "sector": "Financial Services"
+      },
+      {
+       "symbol": "KO",
+       "name": "Coca-Cola",
+       "baseATR": 1.1,
+       "isCrypto": false,
+       "direction": null,
+       "cooldownUntil": "2026-09-10T15:00:00.000Z"
+      }
+     ],
+     "portfolio.bench.crypto": null,
+     "thresholdHistory": {
+      "AMD": {
+       "maxMultiplier": 0,
+       "minMultiplier": 0,
+       "badges": []
+      }
+     },
+     "trades": [
+      {
+       "symbolOut": "KO",
+       "symbolIn": "AMD",
+       "name": "Coca-Cola",
+       "tier": "support",
+       "slotIndex": 0,
+       "entryPrice": 62.2,
+       "exitPrice": 62,
+       "lockedPoints": -3,
+       "lockedGainPct": -0.322,
+       "swappedOutAt": "2026-09-09T15:00:00.000Z",
+       "swapDay": 1,
+       "isCrypto": false,
+       "direction": null,
+       "id": "trade_001",
+       "action": "SWAP",
+       "trigger": "gameplan_rotation",
+       "rationale": "KO down 1.2%, AMD (Technology) has tech score 80.",
+       "tradingDay": 1,
+       "entryRegime": null,
+       "entryMarketPosture": null,
+       "entryConviction": 0,
+       "entryPreset": "balanced",
+       "entryMode": "autopilot",
+       "exitReason": "gameplan_rotation",
+       "source": "gameplan_meeting",
+       "archetype": null,
+       "hftKnobsSource": "archetype",
+       "swapProvenance": {
+        "tempoDesired": "standard",
+        "tempoEffective": "standard",
+        "selectionSource": "default",
+        "dialBandVersion": 2,
+        "knobConfigVersion": 2
+       },
+       "evaluationId": "gameplan_KO_AMD_1788966000000",
+       "snapshot": null,
+       "verification": {
+        "verificationId": "battle-tick-1:gameplan_KO_AMD_1788966000000:verify",
+        "mode": "enforce",
+        "expected": {
+         "symbol": "KO",
+         "swappedInAt": null
+        },
+        "found": {
+         "symbol": "KO",
+         "swappedInAt": null
+        },
+        "verdict": "match",
+        "basis": "symbol_and_entry",
+        "battleStatus": "active",
+        "slot": {
+         "tier": "support",
+         "slotIndex": 0
+        },
+        "tradeSeq": 0,
+        "checkedAt": "2026-09-09T15:00:00.000Z"
+       }
+      }
+     ],
+     "scoreState.tradeCount": 1,
+     "updatedAt": "2026-09-09T15:00:00.000Z"
+    },
+    {
+     "gameplanMeeting": null,
+     "gameplanMeetingHistory": [
+      {
+       "id": "gpm_1757430000000",
+       "createdAt": "2026-09-09T14:00:00.000Z",
+       "status": "approved",
+       "diagnosis": "drag",
+       "opportunity": "tech",
+       "proposedAction": "rotate_sector",
+       "fromSector": "Consumer Defensive",
+       "toSectors": [
+        "Technology"
+       ],
+       "suggestedSwaps": [
+        {
+         "symbolOut": "KO",
+         "symbolIn": "AMD",
+         "rationale": "KO down 1.2%, AMD (Technology) has tech score 80.",
+         "swappedInAt": null
+        }
+       ],
+       "expiresAt": "2026-09-09T20:00:00.000Z",
+       "resolvedAt": "2026-09-09T14:55:00.000Z",
+       "resolvedBy": "owner-uid-1"
+      }
+     ]
+    },
+    {
+     "scoreState.activeScore": 33,
+     "scoreState.bankedScore": 0,
+     "scoreState.currentScore": 33,
+     "scoreState.opponentScore": 0,
+     "scoreState.lastScoredAt": "2026-09-09T15:00:00.000Z",
+     "scoreState.peakScore": 33,
+     "scoreState.peakScoreAt": "2026-09-09T15:00:00.000Z",
+     "thresholdHistory.NVDA": {
+      "maxMultiplier": 0.776335162628833,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.TSLA": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.5197920831667322
+     },
+     "thresholdHistory.MSFT": {
+      "maxMultiplier": 0.29525032092426334,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.AMZN": {
+      "maxMultiplier": 0.29484029484029206,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.KO": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.29231218941830284
+     },
+     "thresholdHistory.PG": {
+      "maxMultiplier": 0.4839685420447567,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.BTC": {
+      "maxMultiplier": 0.13432835820895522,
+      "minMultiplier": 0
+     },
+     "evaluations": [
+      {
+       "evalId": "eval_001",
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "day": 1,
+       "battlePhase": "EARLY",
+       "decision": "HOLD",
+       "symbolOut": null,
+       "symbolIn": null,
+       "tier": null,
+       "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+       "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+       "conviction": 58,
+       "riskAssessment": "low",
+       "ignoredDirectiveIds": [],
+       "directiveThreadId": null,
+       "trade_reasoning": null,
+       "citedForgeRules": [],
+       "overriddenForgeRules": [],
+       "triggers": [
+        "forced_open"
+       ],
+       "scores": {
+        "active": 33,
+        "banked": 0,
+        "total": 33
+       },
+       "validationErrors": [],
+       "downgraded": false,
+       "marketPosture": "selective",
+       "guardrailOverrides": [],
+       "guardrailSourceNote": null,
+       "haikuError": null,
+       "promptBuiltAt": "2026-09-09T15:00:00.000Z",
+       "buildMs": 0,
+       "callMs": 0,
+       "tickMs": 0,
+       "holdKind": null,
+       "guardrailFault": null,
+       "heard": {
+        "directiveThreadId": "thread-tf02-0001",
+        "suppressed": null
+       },
+       "evidence": {
+        "NVDA": {
+         "px": 123.4,
+         "chg": 2.41,
+         "atrX": 0.78,
+         "vwapDev": 0.95,
+         "bbPct": 15,
+         "nr7": true,
+         "regime": "directional_expansion",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "TSLA": {
+         "px": 244.9,
+         "chg": -2.08,
+         "atrX": -0.52,
+         "vwapDev": null,
+         "bbPct": 88,
+         "nr7": false,
+         "regime": "distressed",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "MSFT": {
+         "px": 412.3,
+         "chg": 0.56,
+         "atrX": 0.3,
+         "vwapDev": null,
+         "bbPct": 42,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "AMZN": {
+         "px": 186.2,
+         "chg": 0.65,
+         "atrX": 0.29,
+         "vwapDev": null,
+         "bbPct": 55,
+         "nr7": false,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "KO": {
+         "px": 62,
+         "chg": -0.32,
+         "atrX": -0.29,
+         "vwapDev": null,
+         "bbPct": 12,
+         "nr7": true,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "PG": {
+         "px": 166.1,
+         "chg": 0.48,
+         "atrX": 0.48,
+         "vwapDev": null,
+         "bbPct": 30,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "BTC": {
+         "px": 67450,
+         "chg": 0.67,
+         "atrX": 0.13,
+         "vwapDev": null,
+         "bbPct": null,
+         "nr7": null,
+         "regime": null,
+         "risk": {
+          "action": "HOLD"
+         }
+        }
+       },
+       "vintages": {
+        "quote": "tick",
+        "vwap": "tick",
+        "techAt": "2026-09-09T14:29:55.000Z",
+        "fundAsOf": "2026-09-04",
+        "rankingsAt": "2026-09-09T14:30:00.000Z"
+       },
+       "executionRefusal": null
+      }
+     ],
+     "statusFeed": [
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Gameplan approved: KO → AMD",
+       "action": "swap",
+       "source": "gameplan_meeting",
+       "symbolOut": "KO",
+       "symbolIn": "AMD"
+      },
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Holding the book — NVDA leading, TSLA on watch.",
+       "pvpContext": null,
+       "action": "hold",
+       "regime": null,
+       "score": 33,
+       "citedRules": [],
+       "citedForgeRules": [],
+       "triggeredBy": "forced_open",
+       "source": "haiku",
+       "evalId": "eval_001",
+       "symbolOut": null,
+       "symbolIn": null,
+       "directiveThreadId": null,
+       "trade_reasoning": null
+      }
+     ],
+     "scoreState.evaluationCount": 1,
+     "scoreState.holdCount": 1,
+     "cronState.lastTriggeredAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalHaikuCalls": 1,
+     "cronState.lastEvalStartedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalTokens.input": 4321,
+     "cronState.totalTokens.output": 210,
+     "cronState.consecutiveHolds": 1,
+     "cronState.consecutiveEvalFailures": 0,
+     "cronState.evalSeq": 1,
+     "cronState.lastEvaluatedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.evaluatingAt": null,
+     "cronState.vwapTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.intradayMomentum": {
+      "NVDA": {
+       "vwap": 122.2435,
+       "currentPrice": 123.4,
+       "vwapDeviation": 0.946,
+       "sma20_5m": null,
+       "sessionDate": "2026-09-09"
+      }
+     },
+     "cronState.stagnationTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.lastTickPrice": {
+      "NVDA": 123.4,
+      "TSLA": 244.9,
+      "MSFT": 412.3,
+      "AMZN": 186.2,
+      "KO": 62,
+      "PG": 166.1,
+      "BTC": 67450
+     },
+     "cronState.lastTickTimestamp": {
+      "NVDA": 1788966000000,
+      "TSLA": 1788966000000,
+      "MSFT": 1788966000000,
+      "AMZN": 1788966000000,
+      "KO": 1788966000000,
+      "PG": 1788966000000,
+      "BTC": 1788966000000
+     },
+     "cronState.vwapFireGuard": {
+      "date": "2026-09-09",
+      "count": 0
+     }
+    }
+   ],
+   "executor": [
+    [
+     "support",
+     0,
+     {
+      "symbol": "AMD",
+      "name": "AMD",
+      "baseATR": 3.4,
+      "isCrypto": false,
+      "sector": "Technology"
+     },
+     1,
+     {
+      "NVDA": {
+       "current": 123.4,
+       "previousClose": 121,
+       "changePercent": 1.98
+      },
+      "TSLA": {
+       "current": 244.9,
+       "previousClose": 249,
+       "changePercent": -1.65
+      },
+      "MSFT": {
+       "current": 412.3,
+       "previousClose": 409.5,
+       "changePercent": 0.68
+      },
+      "AMZN": {
+       "current": 186.2,
+       "previousClose": 184,
+       "changePercent": 1.2
+      },
+      "KO": {
+       "current": 62,
+       "previousClose": 62.3,
+       "changePercent": -0.48
+      },
+      "PG": {
+       "current": 166.1,
+       "previousClose": 165,
+       "changePercent": 0.67
+      },
+      "BTC": {
+       "current": 67450,
+       "previousClose": 66800,
+       "changePercent": 0.97
+      },
+      "AMD": {
+       "current": 162,
+       "previousClose": 159.5,
+       "changePercent": 1.57
+      },
+      "JPM": {
+       "current": 201.1,
+       "previousClose": 200.2,
+       "changePercent": 0.45
+      },
+      "SPY": {
+       "current": 560.2,
+       "previousClose": 556,
+       "changePercent": 0.76
+      },
+      "QQQ": {
+       "current": 480.1,
+       "previousClose": 477.3,
+       "changePercent": 0.59
+      },
+      "BTC-USD.CC": {
+       "current": 67450,
+       "previousClose": 66800,
+       "changePercent": 0.97
+      }
+     },
+     {
+      "id": "trade_001",
+      "action": "SWAP",
+      "trigger": "gameplan_rotation",
+      "rationale": "KO down 1.2%, AMD (Technology) has tech score 80.",
+      "tradingDay": 1,
+      "entryRegime": null,
+      "entryMarketPosture": null,
+      "entryConviction": 0,
+      "entryPreset": "balanced",
+      "entryMode": "autopilot",
+      "exitReason": "gameplan_rotation",
+      "source": "gameplan_meeting",
+      "archetype": null,
+      "hftKnobsSource": "archetype",
+      "swapProvenance": {
+       "tempoDesired": "standard",
+       "tempoEffective": "standard",
+       "selectionSource": "default",
+       "dialBandVersion": 2,
+       "knobConfigVersion": 2
+      },
+      "evaluationId": "gameplan_KO_AMD_1788966000000"
+     },
+     null,
+     {
+      "identityMode": "enforce",
+      "expectedOut": {
+       "symbol": "KO",
+       "swappedInAt": null
+      }
+     }
+    ]
+   ],
+   "prompts": [
+    "fbc14c718c797f128f32e1653fcd07ca0cb6644eebb50edc0b36b117500d3972"
+   ]
+  },
+  "approved_two_legs_enforce": {
+   "thrown": null,
+   "summary": {
+    "evaluated": 1,
+    "held": 1,
+    "triggered": 1,
+    "skipped": 0,
+    "swapped": 0,
+    "modelCalls": 1,
+    "captureTotalMs": 0,
+    "captureTicks": 1
+   },
+   "updates": [
+    {
+     "cronState.evaluatingAt": "2026-09-09T15:00:00.000Z",
+     "cronState.tickSeq": 1
+    },
+    {
+     "controlEpochLog": {
+      "elements": [
+       {
+        "epochKey": "integrity=enforce|leans=on|dial=on",
+        "modes": {
+         "archetypeIntegrityMode": "enforce",
+         "standingLeansEnabled": true,
+         "tempoDialEnabled": true
+        },
+        "suppressedDirectiveIds": [],
+        "suppressedLeanIds": [],
+        "at": "2026-09-09T15:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "gameplanMeeting": null,
+     "gameplanMeetingHistory": [
+      {
+       "id": "gpm_1757430000000",
+       "createdAt": "2026-09-09T14:00:00.000Z",
+       "status": "approved",
+       "diagnosis": "drag",
+       "opportunity": "tech",
+       "proposedAction": "rotate_sector",
+       "fromSector": "Consumer Defensive",
+       "toSectors": [
+        "Technology"
+       ],
+       "suggestedSwaps": [
+        {
+         "symbolOut": "INTC",
+         "symbolIn": "JPM",
+         "rationale": "INTC lagging",
+         "swappedInAt": null
+        },
+        {
+         "symbolOut": "KO",
+         "symbolIn": "AMD",
+         "rationale": "KO lagging",
+         "swappedInAt": "2026-09-09T13:45:00.000Z"
+        }
+       ],
+       "expiresAt": "2026-09-09T20:00:00.000Z",
+       "resolvedAt": "2026-09-09T14:55:00.000Z",
+       "resolvedBy": "owner-uid-1",
+       "legRefusals": [
+        {
+         "symbolOut": "INTC",
+         "symbolIn": "JPM",
+         "reason": "outgoing_identity_mismatch",
+         "verificationId": null,
+         "verification": null,
+         "line": "The agent tried to swap INTC for JPM, but INTC had already left that slot. No trade was made."
+        },
+        {
+         "symbolOut": "KO",
+         "symbolIn": "AMD",
+         "reason": "outgoing_identity_mismatch",
+         "verificationId": "battle-tick-1:gameplan_KO_AMD_1788966000000:verify",
+         "verification": {
+          "verificationId": "battle-tick-1:gameplan_KO_AMD_1788966000000:verify",
+          "mode": "enforce",
+          "expected": {
+           "symbol": "KO",
+           "swappedInAt": "2026-09-09T13:45:00.000Z"
+          },
+          "found": {
+           "symbol": "KO",
+           "swappedInAt": "2026-09-09T14:40:00.000Z"
+          },
+          "verdict": "mismatch",
+          "basis": "symbol_and_entry",
+          "battleStatus": "active",
+          "slot": {
+           "tier": "support",
+           "slotIndex": 0
+          },
+          "tradeSeq": 0,
+          "checkedAt": "2026-09-09T15:00:00.000Z"
+         },
+         "line": "The agent tried to swap KO for AMD, but KO had already left that slot. No trade was made."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "scoreState.activeScore": 33,
+     "scoreState.bankedScore": 0,
+     "scoreState.currentScore": 33,
+     "scoreState.opponentScore": 0,
+     "scoreState.lastScoredAt": "2026-09-09T15:00:00.000Z",
+     "scoreState.peakScore": 33,
+     "scoreState.peakScoreAt": "2026-09-09T15:00:00.000Z",
+     "thresholdHistory.NVDA": {
+      "maxMultiplier": 0.776335162628833,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.TSLA": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.5197920831667322
+     },
+     "thresholdHistory.MSFT": {
+      "maxMultiplier": 0.29525032092426334,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.AMZN": {
+      "maxMultiplier": 0.29484029484029206,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.KO": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.29231218941830284
+     },
+     "thresholdHistory.PG": {
+      "maxMultiplier": 0.4839685420447567,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.BTC": {
+      "maxMultiplier": 0.13432835820895522,
+      "minMultiplier": 0
+     },
+     "evaluations": [
+      {
+       "evalId": "eval_001",
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "day": 1,
+       "battlePhase": "EARLY",
+       "decision": "HOLD",
+       "symbolOut": null,
+       "symbolIn": null,
+       "tier": null,
+       "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+       "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+       "conviction": 58,
+       "riskAssessment": "low",
+       "ignoredDirectiveIds": [],
+       "directiveThreadId": null,
+       "trade_reasoning": null,
+       "citedForgeRules": [],
+       "overriddenForgeRules": [],
+       "triggers": [
+        "forced_open"
+       ],
+       "scores": {
+        "active": 33,
+        "banked": 0,
+        "total": 33
+       },
+       "validationErrors": [],
+       "downgraded": false,
+       "marketPosture": "selective",
+       "guardrailOverrides": [],
+       "guardrailSourceNote": null,
+       "haikuError": null,
+       "promptBuiltAt": "2026-09-09T15:00:00.000Z",
+       "buildMs": 0,
+       "callMs": 0,
+       "tickMs": 0,
+       "holdKind": null,
+       "guardrailFault": null,
+       "heard": {
+        "directiveThreadId": "thread-tf02-0001",
+        "suppressed": null
+       },
+       "evidence": {
+        "NVDA": {
+         "px": 123.4,
+         "chg": 2.41,
+         "atrX": 0.78,
+         "vwapDev": 0.95,
+         "bbPct": 15,
+         "nr7": true,
+         "regime": "directional_expansion",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "TSLA": {
+         "px": 244.9,
+         "chg": -2.08,
+         "atrX": -0.52,
+         "vwapDev": null,
+         "bbPct": 88,
+         "nr7": false,
+         "regime": "distressed",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "MSFT": {
+         "px": 412.3,
+         "chg": 0.56,
+         "atrX": 0.3,
+         "vwapDev": null,
+         "bbPct": 42,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "AMZN": {
+         "px": 186.2,
+         "chg": 0.65,
+         "atrX": 0.29,
+         "vwapDev": null,
+         "bbPct": 55,
+         "nr7": false,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "KO": {
+         "px": 62,
+         "chg": -0.32,
+         "atrX": -0.29,
+         "vwapDev": null,
+         "bbPct": 12,
+         "nr7": true,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "PG": {
+         "px": 166.1,
+         "chg": 0.48,
+         "atrX": 0.48,
+         "vwapDev": null,
+         "bbPct": 30,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "BTC": {
+         "px": 67450,
+         "chg": 0.67,
+         "atrX": 0.13,
+         "vwapDev": null,
+         "bbPct": null,
+         "nr7": null,
+         "regime": null,
+         "risk": {
+          "action": "HOLD"
+         }
+        }
+       },
+       "vintages": {
+        "quote": "tick",
+        "vwap": "tick",
+        "techAt": "2026-09-09T14:29:55.000Z",
+        "fundAsOf": "2026-09-08",
+        "rankingsAt": "2026-09-09T14:30:00.000Z"
+       },
+       "executionRefusal": null
+      }
+     ],
+     "statusFeed": [
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "The agent tried to swap INTC for JPM, but INTC had already left that slot. No trade was made.",
+       "action": "hold",
+       "source": "gameplan_meeting",
+       "symbolOut": "INTC",
+       "symbolIn": "JPM",
+       "refusalReason": "outgoing_identity_mismatch",
+       "verificationId": null
+      },
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "The agent tried to swap KO for AMD, but KO had already left that slot. No trade was made.",
+       "action": "hold",
+       "source": "gameplan_meeting",
+       "symbolOut": "KO",
+       "symbolIn": "AMD",
+       "refusalReason": "outgoing_identity_mismatch",
+       "verificationId": "battle-tick-1:gameplan_KO_AMD_1788966000000:verify",
+       "verification": {
+        "verificationId": "battle-tick-1:gameplan_KO_AMD_1788966000000:verify",
+        "mode": "enforce",
+        "expected": {
+         "symbol": "KO",
+         "swappedInAt": "2026-09-09T13:45:00.000Z"
+        },
+        "found": {
+         "symbol": "KO",
+         "swappedInAt": "2026-09-09T14:40:00.000Z"
+        },
+        "verdict": "mismatch",
+        "basis": "symbol_and_entry",
+        "battleStatus": "active",
+        "slot": {
+         "tier": "support",
+         "slotIndex": 0
+        },
+        "tradeSeq": 0,
+        "checkedAt": "2026-09-09T15:00:00.000Z"
+       }
+      },
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Holding the book — NVDA leading, TSLA on watch.",
+       "pvpContext": null,
+       "action": "hold",
+       "regime": null,
+       "score": 33,
+       "citedRules": [],
+       "citedForgeRules": [],
+       "triggeredBy": "forced_open",
+       "source": "haiku",
+       "evalId": "eval_001",
+       "symbolOut": null,
+       "symbolIn": null,
+       "directiveThreadId": null,
+       "trade_reasoning": null
+      }
+     ],
+     "scoreState.evaluationCount": 1,
+     "scoreState.holdCount": 1,
+     "cronState.lastTriggeredAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalHaikuCalls": 1,
+     "cronState.lastEvalStartedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalTokens.input": 4321,
+     "cronState.totalTokens.output": 210,
+     "cronState.consecutiveHolds": 1,
+     "cronState.consecutiveEvalFailures": 0,
+     "cronState.evalSeq": 1,
+     "cronState.lastEvaluatedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.evaluatingAt": null,
+     "cronState.vwapTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.intradayMomentum": {
+      "NVDA": {
+       "vwap": 122.2435,
+       "currentPrice": 123.4,
+       "vwapDeviation": 0.946,
+       "sma20_5m": null,
+       "sessionDate": "2026-09-09"
+      }
+     },
+     "cronState.stagnationTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.lastTickPrice": {
+      "NVDA": 123.4,
+      "TSLA": 244.9,
+      "MSFT": 412.3,
+      "AMZN": 186.2,
+      "KO": 62,
+      "PG": 166.1,
+      "BTC": 67450
+     },
+     "cronState.lastTickTimestamp": {
+      "NVDA": 1788966000000,
+      "TSLA": 1788966000000,
+      "MSFT": 1788966000000,
+      "AMZN": 1788966000000,
+      "KO": 1788966000000,
+      "PG": 1788966000000,
+      "BTC": 1788966000000
+     },
+     "cronState.vwapFireGuard": {
+      "date": "2026-09-09",
+      "count": 0
+     }
+    }
+   ],
+   "executor": [
+    [
+     "support",
+     0,
+     {
+      "symbol": "AMD",
+      "name": "AMD",
+      "baseATR": 3.4,
+      "isCrypto": false,
+      "sector": "Technology"
+     },
+     1,
+     {
+      "NVDA": {
+       "current": 123.4,
+       "previousClose": 121,
+       "changePercent": 1.98
+      },
+      "TSLA": {
+       "current": 244.9,
+       "previousClose": 249,
+       "changePercent": -1.65
+      },
+      "MSFT": {
+       "current": 412.3,
+       "previousClose": 409.5,
+       "changePercent": 0.68
+      },
+      "AMZN": {
+       "current": 186.2,
+       "previousClose": 184,
+       "changePercent": 1.2
+      },
+      "KO": {
+       "current": 62,
+       "previousClose": 62.3,
+       "changePercent": -0.48
+      },
+      "PG": {
+       "current": 166.1,
+       "previousClose": 165,
+       "changePercent": 0.67
+      },
+      "BTC": {
+       "current": 67450,
+       "previousClose": 66800,
+       "changePercent": 0.97
+      },
+      "AMD": {
+       "current": 162,
+       "previousClose": 159.5,
+       "changePercent": 1.57
+      },
+      "JPM": {
+       "current": 201.1,
+       "previousClose": 200.2,
+       "changePercent": 0.45
+      },
+      "SPY": {
+       "current": 560.2,
+       "previousClose": 556,
+       "changePercent": 0.76
+      },
+      "QQQ": {
+       "current": 480.1,
+       "previousClose": 477.3,
+       "changePercent": 0.59
+      },
+      "BTC-USD.CC": {
+       "current": 67450,
+       "previousClose": 66800,
+       "changePercent": 0.97
+      }
+     },
+     {
+      "id": "trade_001",
+      "action": "SWAP",
+      "trigger": "gameplan_rotation",
+      "rationale": "KO lagging",
+      "tradingDay": 1,
+      "entryRegime": null,
+      "entryMarketPosture": null,
+      "entryConviction": 0,
+      "entryPreset": "balanced",
+      "entryMode": "autopilot",
+      "exitReason": "gameplan_rotation",
+      "source": "gameplan_meeting",
+      "archetype": null,
+      "hftKnobsSource": "archetype",
+      "swapProvenance": {
+       "tempoDesired": "standard",
+       "tempoEffective": "standard",
+       "selectionSource": "default",
+       "dialBandVersion": 2,
+       "knobConfigVersion": 2
+      },
+      "evaluationId": "gameplan_KO_AMD_1788966000000"
+     },
+     null,
+     {
+      "identityMode": "enforce",
+      "expectedOut": {
+       "symbol": "KO",
+       "swappedInAt": "2026-09-09T13:45:00.000Z"
+      }
+     }
+    ]
+   ],
+   "prompts": [
+    "0d9024509c9ba2a1c0d9cf937d967c2b132733a1a39a710f4ccd21aa1b6b94a7"
+   ]
+  },
+  "pending_wait": {
+   "thrown": null,
+   "summary": {
+    "evaluated": 1,
+    "held": 1,
+    "triggered": 0,
+    "skipped": 0,
+    "swapped": 0,
+    "captureTotalMs": 0,
+    "captureTicks": 1
+   },
+   "updates": [
+    {
+     "cronState.evaluatingAt": "2026-09-09T15:00:00.000Z",
+     "cronState.tickSeq": 1
+    },
+    {
+     "controlEpochLog": {
+      "elements": [
+       {
+        "epochKey": "integrity=enforce|leans=on|dial=on",
+        "modes": {
+         "archetypeIntegrityMode": "enforce",
+         "standingLeansEnabled": true,
+         "tempoDialEnabled": true
+        },
+        "suppressedDirectiveIds": [],
+        "suppressedLeanIds": [],
+        "at": "2026-09-09T15:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "scoreState.activeScore": 33,
+     "scoreState.bankedScore": 0,
+     "scoreState.currentScore": 33,
+     "scoreState.opponentScore": 0,
+     "scoreState.lastScoredAt": "2026-09-09T15:00:00.000Z",
+     "scoreState.peakScore": 33,
+     "scoreState.peakScoreAt": "2026-09-09T15:00:00.000Z",
+     "thresholdHistory.NVDA": {
+      "maxMultiplier": 0.776335162628833,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.TSLA": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.5197920831667322
+     },
+     "thresholdHistory.MSFT": {
+      "maxMultiplier": 0.29525032092426334,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.AMZN": {
+      "maxMultiplier": 0.29484029484029206,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.KO": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.29231218941830284
+     },
+     "thresholdHistory.PG": {
+      "maxMultiplier": 0.4839685420447567,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.BTC": {
+      "maxMultiplier": 0.13432835820895522,
+      "minMultiplier": 0
+     },
+     "cronState.lastEvaluatedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.evaluatingAt": null,
+     "cronState.vwapTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.intradayMomentum": {
+      "NVDA": {
+       "vwap": 122.2435,
+       "currentPrice": 123.4,
+       "vwapDeviation": 0.946,
+       "sma20_5m": null,
+       "sessionDate": "2026-09-09"
+      }
+     },
+     "cronState.stagnationTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.lastTickPrice": {
+      "NVDA": 123.4,
+      "TSLA": 244.9,
+      "MSFT": 412.3,
+      "AMZN": 186.2,
+      "KO": 62,
+      "PG": 166.1,
+      "BTC": 67450
+     },
+     "cronState.lastTickTimestamp": {
+      "NVDA": 1788966000000,
+      "TSLA": 1788966000000,
+      "MSFT": 1788966000000,
+      "AMZN": 1788966000000,
+      "KO": 1788966000000,
+      "PG": 1788966000000,
+      "BTC": 1788966000000
+     },
+     "cronState.vwapFireGuard": {
+      "date": "2026-09-09",
+      "count": 0
+     },
+     "statusFeed": []
+    }
+   ],
+   "executor": [],
+   "prompts": []
+  },
+  "pending_expired": {
+   "thrown": null,
+   "summary": {
+    "evaluated": 1,
+    "held": 1,
+    "triggered": 1,
+    "skipped": 0,
+    "swapped": 0,
+    "modelCalls": 1,
+    "captureTotalMs": 0,
+    "captureTicks": 1
+   },
+   "updates": [
+    {
+     "cronState.evaluatingAt": "2026-09-09T15:00:00.000Z",
+     "cronState.tickSeq": 1
+    },
+    {
+     "controlEpochLog": {
+      "elements": [
+       {
+        "epochKey": "integrity=enforce|leans=on|dial=on",
+        "modes": {
+         "archetypeIntegrityMode": "enforce",
+         "standingLeansEnabled": true,
+         "tempoDialEnabled": true
+        },
+        "suppressedDirectiveIds": [],
+        "suppressedLeanIds": [],
+        "at": "2026-09-09T15:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "gameplanMeeting": null,
+     "gameplanMeetingHistory": [
+      {
+       "id": "gpm_1757430000000",
+       "createdAt": "2026-09-09T14:00:00.000Z",
+       "status": "expired",
+       "diagnosis": "drag",
+       "suggestedSwaps": [
+        {
+         "symbolOut": "KO",
+         "symbolIn": "AMD",
+         "rationale": "KO down 1.2%, AMD (Technology) has tech score 80.",
+         "swappedInAt": null
+        }
+       ],
+       "expiresAt": "2026-09-09T14:30:00.000Z",
+       "resolvedAt": "2026-09-09T15:00:00.000Z",
+       "resolvedBy": "system"
+      }
+     ]
+    },
+    {
+     "scoreState.activeScore": 33,
+     "scoreState.bankedScore": 0,
+     "scoreState.currentScore": 33,
+     "scoreState.opponentScore": 0,
+     "scoreState.lastScoredAt": "2026-09-09T15:00:00.000Z",
+     "scoreState.peakScore": 33,
+     "scoreState.peakScoreAt": "2026-09-09T15:00:00.000Z",
+     "thresholdHistory.NVDA": {
+      "maxMultiplier": 0.776335162628833,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.TSLA": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.5197920831667322
+     },
+     "thresholdHistory.MSFT": {
+      "maxMultiplier": 0.29525032092426334,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.AMZN": {
+      "maxMultiplier": 0.29484029484029206,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.KO": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.29231218941830284
+     },
+     "thresholdHistory.PG": {
+      "maxMultiplier": 0.4839685420447567,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.BTC": {
+      "maxMultiplier": 0.13432835820895522,
+      "minMultiplier": 0
+     },
+     "evaluations": [
+      {
+       "evalId": "eval_001",
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "day": 1,
+       "battlePhase": "EARLY",
+       "decision": "HOLD",
+       "symbolOut": null,
+       "symbolIn": null,
+       "tier": null,
+       "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+       "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+       "conviction": 58,
+       "riskAssessment": "low",
+       "ignoredDirectiveIds": [],
+       "directiveThreadId": null,
+       "trade_reasoning": null,
+       "citedForgeRules": [],
+       "overriddenForgeRules": [],
+       "triggers": [
+        "forced_open"
+       ],
+       "scores": {
+        "active": 33,
+        "banked": 0,
+        "total": 33
+       },
+       "validationErrors": [],
+       "downgraded": false,
+       "marketPosture": "selective",
+       "guardrailOverrides": [],
+       "guardrailSourceNote": null,
+       "haikuError": null,
+       "promptBuiltAt": "2026-09-09T15:00:00.000Z",
+       "buildMs": 0,
+       "callMs": 0,
+       "tickMs": 0,
+       "holdKind": null,
+       "guardrailFault": null,
+       "heard": {
+        "directiveThreadId": "thread-tf02-0001",
+        "suppressed": null
+       },
+       "evidence": {
+        "NVDA": {
+         "px": 123.4,
+         "chg": 2.41,
+         "atrX": 0.78,
+         "vwapDev": 0.95,
+         "bbPct": 15,
+         "nr7": true,
+         "regime": "directional_expansion",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "TSLA": {
+         "px": 244.9,
+         "chg": -2.08,
+         "atrX": -0.52,
+         "vwapDev": null,
+         "bbPct": 88,
+         "nr7": false,
+         "regime": "distressed",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "MSFT": {
+         "px": 412.3,
+         "chg": 0.56,
+         "atrX": 0.3,
+         "vwapDev": null,
+         "bbPct": 42,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "AMZN": {
+         "px": 186.2,
+         "chg": 0.65,
+         "atrX": 0.29,
+         "vwapDev": null,
+         "bbPct": 55,
+         "nr7": false,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "KO": {
+         "px": 62,
+         "chg": -0.32,
+         "atrX": -0.29,
+         "vwapDev": null,
+         "bbPct": 12,
+         "nr7": true,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "PG": {
+         "px": 166.1,
+         "chg": 0.48,
+         "atrX": 0.48,
+         "vwapDev": null,
+         "bbPct": 30,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "BTC": {
+         "px": 67450,
+         "chg": 0.67,
+         "atrX": 0.13,
+         "vwapDev": null,
+         "bbPct": null,
+         "nr7": null,
+         "regime": null,
+         "risk": {
+          "action": "HOLD"
+         }
+        }
+       },
+       "vintages": {
+        "quote": "tick",
+        "vwap": "tick",
+        "techAt": "2026-09-09T14:29:55.000Z",
+        "fundAsOf": "2026-09-08",
+        "rankingsAt": "2026-09-09T14:30:00.000Z"
+       }
+      }
+     ],
+     "statusFeed": [
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Gameplan meeting expired. Continuing with current strategy.",
+       "action": "hold",
+       "source": "gameplan_meeting"
+      },
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Holding the book — NVDA leading, TSLA on watch.",
+       "pvpContext": null,
+       "action": "hold",
+       "regime": null,
+       "score": 33,
+       "citedRules": [],
+       "citedForgeRules": [],
+       "triggeredBy": "forced_open",
+       "source": "haiku",
+       "evalId": "eval_001",
+       "symbolOut": null,
+       "symbolIn": null,
+       "directiveThreadId": null,
+       "trade_reasoning": null
+      }
+     ],
+     "scoreState.evaluationCount": 1,
+     "scoreState.holdCount": 1,
+     "cronState.lastTriggeredAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalHaikuCalls": 1,
+     "cronState.lastEvalStartedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalTokens.input": 4321,
+     "cronState.totalTokens.output": 210,
+     "cronState.consecutiveHolds": 1,
+     "cronState.consecutiveEvalFailures": 0,
+     "cronState.evalSeq": 1,
+     "cronState.lastEvaluatedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.evaluatingAt": null,
+     "cronState.vwapTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.intradayMomentum": {
+      "NVDA": {
+       "vwap": 122.2435,
+       "currentPrice": 123.4,
+       "vwapDeviation": 0.946,
+       "sma20_5m": null,
+       "sessionDate": "2026-09-09"
+      }
+     },
+     "cronState.stagnationTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.lastTickPrice": {
+      "NVDA": 123.4,
+      "TSLA": 244.9,
+      "MSFT": 412.3,
+      "AMZN": 186.2,
+      "KO": 62,
+      "PG": 166.1,
+      "BTC": 67450
+     },
+     "cronState.lastTickTimestamp": {
+      "NVDA": 1788966000000,
+      "TSLA": 1788966000000,
+      "MSFT": 1788966000000,
+      "AMZN": 1788966000000,
+      "KO": 1788966000000,
+      "PG": 1788966000000,
+      "BTC": 1788966000000
+     },
+     "cronState.vwapFireGuard": {
+      "date": "2026-09-09",
+      "count": 0
+     }
+    }
+   ],
+   "executor": [],
+   "prompts": [
+    "0d9024509c9ba2a1c0d9cf937d967c2b132733a1a39a710f4ccd21aa1b6b94a7"
+   ]
+  },
+  "rejected": {
+   "thrown": null,
+   "summary": {
+    "evaluated": 1,
+    "held": 1,
+    "triggered": 1,
+    "skipped": 0,
+    "swapped": 0,
+    "modelCalls": 1,
+    "captureTotalMs": 0,
+    "captureTicks": 1
+   },
+   "updates": [
+    {
+     "cronState.evaluatingAt": "2026-09-09T15:00:00.000Z",
+     "cronState.tickSeq": 1
+    },
+    {
+     "controlEpochLog": {
+      "elements": [
+       {
+        "epochKey": "integrity=enforce|leans=on|dial=on",
+        "modes": {
+         "archetypeIntegrityMode": "enforce",
+         "standingLeansEnabled": true,
+         "tempoDialEnabled": true
+        },
+        "suppressedDirectiveIds": [],
+        "suppressedLeanIds": [],
+        "at": "2026-09-09T15:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "gameplanMeeting": null,
+     "gameplanMeetingHistory": [
+      {
+       "id": "gpm_1757430000000",
+       "createdAt": "2026-09-09T14:00:00.000Z",
+       "status": "rejected",
+       "diagnosis": "drag",
+       "opportunity": "tech",
+       "proposedAction": "rotate_sector",
+       "fromSector": "Consumer Defensive",
+       "toSectors": [
+        "Technology"
+       ],
+       "suggestedSwaps": [
+        {
+         "symbolOut": "KO",
+         "symbolIn": "AMD",
+         "rationale": "KO down 1.2%, AMD (Technology) has tech score 80.",
+         "swappedInAt": null
+        }
+       ],
+       "expiresAt": "2026-09-09T20:00:00.000Z",
+       "resolvedAt": "2026-09-09T14:55:00.000Z",
+       "resolvedBy": "owner-uid-1"
+      }
+     ]
+    },
+    {
+     "scoreState.activeScore": 33,
+     "scoreState.bankedScore": 0,
+     "scoreState.currentScore": 33,
+     "scoreState.opponentScore": 0,
+     "scoreState.lastScoredAt": "2026-09-09T15:00:00.000Z",
+     "scoreState.peakScore": 33,
+     "scoreState.peakScoreAt": "2026-09-09T15:00:00.000Z",
+     "thresholdHistory.NVDA": {
+      "maxMultiplier": 0.776335162628833,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.TSLA": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.5197920831667322
+     },
+     "thresholdHistory.MSFT": {
+      "maxMultiplier": 0.29525032092426334,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.AMZN": {
+      "maxMultiplier": 0.29484029484029206,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.KO": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.29231218941830284
+     },
+     "thresholdHistory.PG": {
+      "maxMultiplier": 0.4839685420447567,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.BTC": {
+      "maxMultiplier": 0.13432835820895522,
+      "minMultiplier": 0
+     },
+     "evaluations": [
+      {
+       "evalId": "eval_001",
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "day": 1,
+       "battlePhase": "EARLY",
+       "decision": "HOLD",
+       "symbolOut": null,
+       "symbolIn": null,
+       "tier": null,
+       "rationale": "NVDA is pressing its first ATR line with the sector leading; nothing on the bench outranks what I hold. Holding the book as it stands.",
+       "hypothesis": "Hypothesis: NVDA clears +1x ATR before the close and holds the star slot.",
+       "conviction": 58,
+       "riskAssessment": "low",
+       "ignoredDirectiveIds": [],
+       "directiveThreadId": null,
+       "trade_reasoning": null,
+       "citedForgeRules": [],
+       "overriddenForgeRules": [],
+       "triggers": [
+        "forced_open"
+       ],
+       "scores": {
+        "active": 33,
+        "banked": 0,
+        "total": 33
+       },
+       "validationErrors": [],
+       "downgraded": false,
+       "marketPosture": "selective",
+       "guardrailOverrides": [],
+       "guardrailSourceNote": null,
+       "haikuError": null,
+       "promptBuiltAt": "2026-09-09T15:00:00.000Z",
+       "buildMs": 0,
+       "callMs": 0,
+       "tickMs": 0,
+       "holdKind": null,
+       "guardrailFault": null,
+       "heard": {
+        "directiveThreadId": "thread-tf02-0001",
+        "suppressed": null
+       },
+       "evidence": {
+        "NVDA": {
+         "px": 123.4,
+         "chg": 2.41,
+         "atrX": 0.78,
+         "vwapDev": 0.95,
+         "bbPct": 15,
+         "nr7": true,
+         "regime": "directional_expansion",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "TSLA": {
+         "px": 244.9,
+         "chg": -2.08,
+         "atrX": -0.52,
+         "vwapDev": null,
+         "bbPct": 88,
+         "nr7": false,
+         "regime": "distressed",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "MSFT": {
+         "px": 412.3,
+         "chg": 0.56,
+         "atrX": 0.3,
+         "vwapDev": null,
+         "bbPct": 42,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "AMZN": {
+         "px": 186.2,
+         "chg": 0.65,
+         "atrX": 0.29,
+         "vwapDev": null,
+         "bbPct": 55,
+         "nr7": false,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "KO": {
+         "px": 62,
+         "chg": -0.32,
+         "atrX": -0.29,
+         "vwapDev": null,
+         "bbPct": 12,
+         "nr7": true,
+         "regime": "choppy",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "PG": {
+         "px": 166.1,
+         "chg": 0.48,
+         "atrX": 0.48,
+         "vwapDev": null,
+         "bbPct": 30,
+         "nr7": false,
+         "regime": "directional_contraction",
+         "risk": {
+          "action": "HOLD"
+         }
+        },
+        "BTC": {
+         "px": 67450,
+         "chg": 0.67,
+         "atrX": 0.13,
+         "vwapDev": null,
+         "bbPct": null,
+         "nr7": null,
+         "regime": null,
+         "risk": {
+          "action": "HOLD"
+         }
+        }
+       },
+       "vintages": {
+        "quote": "tick",
+        "vwap": "tick",
+        "techAt": "2026-09-09T14:29:55.000Z",
+        "fundAsOf": "2026-09-08",
+        "rankingsAt": "2026-09-09T14:30:00.000Z"
+       }
+      }
+     ],
+     "statusFeed": [
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Gameplan rejected by Coach. Holding current positions.",
+       "action": "hold",
+       "source": "gameplan_meeting"
+      },
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Holding the book — NVDA leading, TSLA on watch.",
+       "pvpContext": null,
+       "action": "hold",
+       "regime": null,
+       "score": 33,
+       "citedRules": [],
+       "citedForgeRules": [],
+       "triggeredBy": "forced_open",
+       "source": "haiku",
+       "evalId": "eval_001",
+       "symbolOut": null,
+       "symbolIn": null,
+       "directiveThreadId": null,
+       "trade_reasoning": null
+      }
+     ],
+     "scoreState.evaluationCount": 1,
+     "scoreState.holdCount": 1,
+     "cronState.lastTriggeredAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalHaikuCalls": 1,
+     "cronState.lastEvalStartedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.totalTokens.input": 4321,
+     "cronState.totalTokens.output": 210,
+     "cronState.consecutiveHolds": 1,
+     "cronState.consecutiveEvalFailures": 0,
+     "cronState.evalSeq": 1,
+     "cronState.lastEvaluatedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.evaluatingAt": null,
+     "cronState.vwapTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.intradayMomentum": {
+      "NVDA": {
+       "vwap": 122.2435,
+       "currentPrice": 123.4,
+       "vwapDeviation": 0.946,
+       "sma20_5m": null,
+       "sessionDate": "2026-09-09"
+      }
+     },
+     "cronState.stagnationTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.lastTickPrice": {
+      "NVDA": 123.4,
+      "TSLA": 244.9,
+      "MSFT": 412.3,
+      "AMZN": 186.2,
+      "KO": 62,
+      "PG": 166.1,
+      "BTC": 67450
+     },
+     "cronState.lastTickTimestamp": {
+      "NVDA": 1788966000000,
+      "TSLA": 1788966000000,
+      "MSFT": 1788966000000,
+      "AMZN": 1788966000000,
+      "KO": 1788966000000,
+      "PG": 1788966000000,
+      "BTC": 1788966000000
+     },
+     "cronState.vwapFireGuard": {
+      "date": "2026-09-09",
+      "count": 0
+     }
+    }
+   ],
+   "executor": [],
+   "prompts": [
+    "0d9024509c9ba2a1c0d9cf937d967c2b132733a1a39a710f4ccd21aa1b6b94a7"
+   ]
+  },
+  "created_off": {
+   "thrown": null,
+   "summary": {
+    "evaluated": 1,
+    "held": 0,
+    "triggered": 0,
+    "skipped": 0,
+    "swapped": 0,
+    "captureTotalMs": 0,
+    "captureTicks": 1
+   },
+   "updates": [
+    {
+     "cronState.evaluatingAt": "2026-09-09T15:00:00.000Z",
+     "cronState.tickSeq": 1
+    },
+    {
+     "controlEpochLog": {
+      "elements": [
+       {
+        "epochKey": "integrity=enforce|leans=on|dial=on",
+        "modes": {
+         "archetypeIntegrityMode": "enforce",
+         "standingLeansEnabled": true,
+         "tempoDialEnabled": true
+        },
+        "suppressedDirectiveIds": [],
+        "suppressedLeanIds": [],
+        "at": "2026-09-09T15:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "scoreState.activeScore": 33,
+     "scoreState.bankedScore": 0,
+     "scoreState.currentScore": 33,
+     "scoreState.opponentScore": 0,
+     "scoreState.lastScoredAt": "2026-09-09T15:00:00.000Z",
+     "scoreState.peakScore": 33,
+     "scoreState.peakScoreAt": "2026-09-09T15:00:00.000Z",
+     "thresholdHistory.NVDA": {
+      "maxMultiplier": 0.776335162628833,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.TSLA": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.5197920831667322
+     },
+     "thresholdHistory.MSFT": {
+      "maxMultiplier": 0.29525032092426334,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.AMZN": {
+      "maxMultiplier": 0.29484029484029206,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.KO": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.29231218941830284
+     },
+     "thresholdHistory.PG": {
+      "maxMultiplier": 0.4839685420447567,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.BTC": {
+      "maxMultiplier": 0.13432835820895522,
+      "minMultiplier": 0
+     },
+     "gameplanMeeting": {
+      "id": "gpm_1788966000000",
+      "createdAt": "2026-09-09T15:00:00.000Z",
+      "diagnosis": "Consumer Cyclical sector dragging performance (2.1% loss, 87% of total negative P&L).",
+      "opportunity": "Technology and Financial Services showing strength. Top bench candidates: AMD (Technology, Score 0), JPM (Financial Services, Score 0).",
+      "proposedAction": "rotate_sector",
+      "fromSector": "Consumer Cyclical",
+      "toSectors": [
+       "Technology",
+       "Financial Services"
+      ],
+      "suggestedSwaps": [
+       {
+        "symbolOut": "TSLA",
+        "symbolIn": "AMD",
+        "rationale": "TSLA down -2.1%, AMD (Technology) has tech score 0."
+       },
+       {
+        "symbolOut": "AMZN",
+        "symbolIn": "JPM",
+        "rationale": "AMZN down 0.6%, JPM (Financial Services) has tech score 0."
+       }
+      ],
+      "status": "pending",
+      "expiresAt": "2026-09-09T16:00:00.000Z",
+      "resolvedAt": null,
+      "resolvedBy": null
+     },
+     "cronState.lastGameplanDate": "9/9/2026",
+     "cronState.lastEvaluatedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.evaluatingAt": null,
+     "cronState.vwapTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.intradayMomentum": {
+      "NVDA": {
+       "vwap": 122.2435,
+       "currentPrice": 123.4,
+       "vwapDeviation": 0.946,
+       "sma20_5m": null,
+       "sessionDate": "2026-09-09"
+      }
+     },
+     "cronState.stagnationTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.lastTickPrice": {
+      "NVDA": 123.4,
+      "TSLA": 244.9,
+      "MSFT": 412.3,
+      "AMZN": 186.2,
+      "KO": 62,
+      "PG": 166.1,
+      "BTC": 67450
+     },
+     "cronState.lastTickTimestamp": {
+      "NVDA": 1788966000000,
+      "TSLA": 1788966000000,
+      "MSFT": 1788966000000,
+      "AMZN": 1788966000000,
+      "KO": 1788966000000,
+      "PG": 1788966000000,
+      "BTC": 1788966000000
+     },
+     "cronState.vwapFireGuard": {
+      "date": "2026-09-09",
+      "count": 0
+     },
+     "statusFeed": [
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Gameplan Meeting: Consumer Cyclical sector dragging performance (2.1% loss, 87% of total negative P&L). Proposing rotation to Technology/Financial Services.",
+       "action": "gameplan_meeting",
+       "source": "gameplan_meeting"
+      }
+     ]
+    }
+   ],
+   "executor": [],
+   "prompts": []
+  },
+  "created_shadow": {
+   "thrown": null,
+   "summary": {
+    "evaluated": 1,
+    "held": 0,
+    "triggered": 0,
+    "skipped": 0,
+    "swapped": 0,
+    "captureTotalMs": 0,
+    "captureTicks": 1
+   },
+   "updates": [
+    {
+     "cronState.evaluatingAt": "2026-09-09T15:00:00.000Z",
+     "cronState.tickSeq": 1
+    },
+    {
+     "controlEpochLog": {
+      "elements": [
+       {
+        "epochKey": "integrity=enforce|leans=on|dial=on",
+        "modes": {
+         "archetypeIntegrityMode": "enforce",
+         "standingLeansEnabled": true,
+         "tempoDialEnabled": true
+        },
+        "suppressedDirectiveIds": [],
+        "suppressedLeanIds": [],
+        "at": "2026-09-09T15:00:00.000Z"
+       }
+      ]
+     }
+    },
+    {
+     "scoreState.activeScore": 33,
+     "scoreState.bankedScore": 0,
+     "scoreState.currentScore": 33,
+     "scoreState.opponentScore": 0,
+     "scoreState.lastScoredAt": "2026-09-09T15:00:00.000Z",
+     "scoreState.peakScore": 33,
+     "scoreState.peakScoreAt": "2026-09-09T15:00:00.000Z",
+     "thresholdHistory.NVDA": {
+      "maxMultiplier": 0.776335162628833,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.TSLA": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.5197920831667322
+     },
+     "thresholdHistory.MSFT": {
+      "maxMultiplier": 0.29525032092426334,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.AMZN": {
+      "maxMultiplier": 0.29484029484029206,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.KO": {
+      "maxMultiplier": 0,
+      "minMultiplier": -0.29231218941830284
+     },
+     "thresholdHistory.PG": {
+      "maxMultiplier": 0.4839685420447567,
+      "minMultiplier": 0
+     },
+     "thresholdHistory.BTC": {
+      "maxMultiplier": 0.13432835820895522,
+      "minMultiplier": 0
+     },
+     "gameplanMeeting": {
+      "id": "gpm_1788966000000",
+      "createdAt": "2026-09-09T15:00:00.000Z",
+      "diagnosis": "Consumer Cyclical sector dragging performance (2.1% loss, 87% of total negative P&L).",
+      "opportunity": "Technology and Financial Services showing strength. Top bench candidates: AMD (Technology, Score 0), JPM (Financial Services, Score 0).",
+      "proposedAction": "rotate_sector",
+      "fromSector": "Consumer Cyclical",
+      "toSectors": [
+       "Technology",
+       "Financial Services"
+      ],
+      "suggestedSwaps": [
+       {
+        "symbolOut": "TSLA",
+        "symbolIn": "AMD",
+        "rationale": "TSLA down -2.1%, AMD (Technology) has tech score 0.",
+        "swappedInAt": null
+       },
+       {
+        "symbolOut": "AMZN",
+        "symbolIn": "JPM",
+        "rationale": "AMZN down 0.6%, JPM (Financial Services) has tech score 0.",
+        "swappedInAt": null
+       }
+      ],
+      "status": "pending",
+      "expiresAt": "2026-09-09T16:00:00.000Z",
+      "resolvedAt": null,
+      "resolvedBy": null
+     },
+     "cronState.lastGameplanDate": "9/9/2026",
+     "cronState.lastEvaluatedAt": "2026-09-09T15:00:00.000Z",
+     "cronState.evaluatingAt": null,
+     "cronState.vwapTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.intradayMomentum": {
+      "NVDA": {
+       "vwap": 122.2435,
+       "currentPrice": 123.4,
+       "vwapDeviation": 0.946,
+       "sma20_5m": null,
+       "sessionDate": "2026-09-09"
+      }
+     },
+     "cronState.stagnationTicks": {
+      "NVDA": 0,
+      "TSLA": 0,
+      "MSFT": 0,
+      "AMZN": 0,
+      "KO": 0,
+      "PG": 0,
+      "BTC": 0
+     },
+     "cronState.lastTickPrice": {
+      "NVDA": 123.4,
+      "TSLA": 244.9,
+      "MSFT": 412.3,
+      "AMZN": 186.2,
+      "KO": 62,
+      "PG": 166.1,
+      "BTC": 67450
+     },
+     "cronState.lastTickTimestamp": {
+      "NVDA": 1788966000000,
+      "TSLA": 1788966000000,
+      "MSFT": 1788966000000,
+      "AMZN": 1788966000000,
+      "KO": 1788966000000,
+      "PG": 1788966000000,
+      "BTC": 1788966000000
+     },
+     "cronState.vwapFireGuard": {
+      "date": "2026-09-09",
+      "count": 0
+     },
+     "statusFeed": [
+      {
+       "timestamp": "2026-09-09T15:00:00.000Z",
+       "message": "Gameplan Meeting: Consumer Cyclical sector dragging performance (2.1% loss, 87% of total negative P&L). Proposing rotation to Technology/Financial Services.",
+       "action": "gameplan_meeting",
+       "source": "gameplan_meeting"
+      }
+     ]
+    }
+   ],
+   "executor": [],
+   "prompts": []
+  }
+ }
+}

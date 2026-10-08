@@ -19,6 +19,7 @@ import {
   FROZEN_NOW, HELD, BASE_ENTRY_KEYS, TIMING_ENTRY_KEYS, CALLS_ENTRY_KEYS,
   makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs, makeIntradayCandles,
   makeHoldResult, makeSwapResult, makeToolUseResponse, makeDeclarations, makeObservation, undefinedPaths,
+  serverMeetingOverrides,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { buildMintCandidate } from '../_utils/callRecords/candidate.js';
 import { NON_MODEL_FLIP_EXITS } from '../_utils/callRecords/flip.js';
@@ -249,7 +250,7 @@ const NO_ENTRY_PATHS = {
     prices: flatPrices(), rankingsDoc: quietRankingsDoc(),
   }),
   proposal_pending: () => ({ battle: makeTickBattle({ executionMode: 'copilot', pendingProposal: { proposalId: 'p1', symbolOut: 'KO', symbolIn: 'AMD', tier: 'support', slotIndex: 0, mode: 'copilot', expiresAt: '2026-09-09T23:00:00.000Z' } }), dormantProposalPath: true }),
-  gameplan_pending: () => ({ battle: makeTickBattle({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] } }) }),
+  gameplan_pending: () => ({ battle: makeTickBattle(serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] })) }),
   gameplan_created: () => ({ battle: makeTickBattle({ cronState: { ...makeTickBattle().cronState, lastGameplanDate: null } }) }),
   cpu_passive: () => ({ battle: makeTickBattle({ isCpu: true }) }),
   degraded_quotes: () => { const prices = makePriceTable(); delete prices.NVDA; return { prices }; },
@@ -632,7 +633,7 @@ describe('§3.12 row 6 — a late exit with narration queued (R3-3)', () => {
       const { db, swaps } = await runTick(withStop({
         mode: 'shadow', seed: seedOf([call]), prices: bustingPrices(), onSwap,
         cronStartTime: Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 60_000),
-        battle: makeTickBattle({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] } }),
+        battle: makeTickBattle(serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] })),
       }));
       expect(swaps).toBeGreaterThan(0);
       expect(generateTradeNarration).toHaveBeenCalled();

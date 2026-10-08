@@ -18,7 +18,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   FROZEN_NOW,
   makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs, makeIntradayCandles,
-  makeHoldResult, makeToolUseResponse, makeTickDb,
+  makeHoldResult, makeToolUseResponse, makeTickDb, serverMeetingOverrides,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 
 const mocks = vi.hoisted(() => ({
@@ -525,9 +525,13 @@ describe('N1 — the validator is schema-DRIVEN over top-level fields, not "full
 // stage (which can force a protective exit). The fixture masked both: it
 // suppresses the detector via `lastGameplanDate` and ships no deployed
 // guardrail. These rows remove that masking.
+// Integrity follow-up 2 (review K2-1): a meeting the SERVER created, so it carries
+// its copy and a deadline — since follow-up 2 only such a meeting makes the model
+// wait, and without it this row would pass with the refresh-failure stop removed.
 const PENDING_MEETING = Object.freeze({
   status: 'pending',
   createdAt: FROZEN_NOW,
+  expiresAt: '2026-09-09T23:00:00.000Z',
   diagnosis: 'Consumer Cyclical is dragging.',
   toSectors: ['Technology'],
   suggestedSwaps: [],
@@ -558,7 +562,7 @@ describe('E1 — a tick that cannot re-read the book does NOTHING that depends o
     const base = makeTickBattle();
     const battle = {
       ...base,
-      gameplanMeeting: { ...PENDING_MEETING },
+      ...serverMeetingOverrides({ ...PENDING_MEETING }, { battle: base }),
       agentContext: { ...base.agentContext, deployedGuardrails: [TIGHT_STOP] },
     };
     const db = makeDb(battle, { failBattleGetAfter: 1 });
