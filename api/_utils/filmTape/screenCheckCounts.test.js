@@ -56,6 +56,18 @@ describe('"Checks · n of m" on writer tapes', () => {
     expect(checkCounts(tape)).toEqual({ n: withRecord(tape).length, m: null });
   });
 
+  it('refuter A2PV1-1: as above with a second interior gap — the old count read "38 of 39" against 37 records in the range; now "n recorded"', async () => {
+    const fx = await multiDay({ full: true });
+    const D2 = '2026-09-22';
+    const ticks = fx.ticks.filter((tk) => ![41, 50, 51].includes(tk.tickSeq));
+    const evaluations = fx.battle.evaluations.filter((e) => ![`${fx.battleId}:e50`, `${fx.battleId}:e51`].includes(e.evalId));
+    const tape = await written({ ...fx, ticks, battle: { ...fx.battle, evaluations } }, D2, '2026-09-23T02:15:30.000Z');
+    const [lo, hi] = tape.passes.close.tickSeqRange;
+    const inRange = tape.checks.filter((r) => Number.isInteger(r.tickSeq) && r.tickSeq >= lo && r.tickSeq <= hi && !NON_CHECK_STATES.includes(r.state)).length;
+    expect(withRecord(tape).length).toBeGreaterThan(inRange);    // the entry-only row is not one of the range's records
+    expect(checkCounts(tape)).toEqual({ n: withRecord(tape).length, m: null });
+  });
+
   it('ticks lost at the start of a one-day battle, an entry kept: "n recorded" (the entry cannot be placed)', async () => {
     const fx = await capturedDay();
     const tape = await written({ ...fx, ticks: fx.ticks.filter((tk) => ![1, 2, 3, 4, 5].includes(tk.tickSeq)) }, '2026-09-24', '2026-09-25T02:15:30.000Z');
