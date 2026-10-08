@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import {
   FROZEN_NOW, SWAP_IDENTITY_ENTRY_KEYS,
   makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs, makeIntradayCandles,
-  makeHoldResult, makeSwapResult, makeToolUseResponse, deepClone,
+  makeHoldResult, makeSwapResult, makeToolUseResponse, deepClone, serverMeetingOverrides,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { makeCallsDb } from '../_utils/__fixtures__/callRecordsStore.js';
 import { permanentDoc } from '../_utils/__fixtures__/tickCaptureHarness.js';
@@ -462,7 +462,7 @@ describe('A8 / C4 — a co-pilot proposal auto-executed at expiry', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 describe('A8 / C5 — the suppression pass (a pending meeting, a guardrail-forced exit)', () => {
   const pending = () => makeTickBattle({
-    gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] },
+    ...serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] }),
     agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'stopLoss', value: 1, unit: '%', enforcement: 'hard' }] },
   });
   const FORCED = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_stopLoss', statusMessage: 'Stop hit on KO.', overrides: [] };
@@ -509,15 +509,13 @@ describe('A8 / C6 — an approved meeting with a departed leg and a returned leg
   const KO_NOW = '2026-09-09T14:40:00.000Z';   // KO's current entry instant (it left and came back)
   const KO_THEN = '2026-09-09T13:45:00.000Z';  // the instant the meeting stored for KO
   const meetingBattle = () => {
-    const b = makeTickBattle({
-      gameplanMeeting: {
+    const b = makeTickBattle(serverMeetingOverrides({
         id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z',
         suggestedSwaps: [
           { symbolOut: 'INTC', symbolIn: 'JPM', rationale: 'INTC lagging', swappedInAt: null }, // INTC is no longer held
           { symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging', swappedInAt: KO_THEN },
         ],
-      },
-    });
+    }));
     b.portfolio.support[0] = { ...b.portfolio.support[0], swapPrice: 62.2, swappedInAt: KO_NOW };
     return b;
   };
@@ -572,11 +570,19 @@ describe('A9 — a duplicated approval: the same approved proposal processed twi
   // second worker holding a snapshot taken BEFORE the first run committed (an
   // overlapping invocation after the lock ages out, Phase 0 §3.1): its stale
   // book still shows KO in the slot and AMD on the bench, while the live slot
-  // already holds AMD.
+  // already holds AMD. The rows that use `staleReplay` start that worker's
+  // executor call AFTER the first commit (a stale, sequential replay); the
+  // truly overlapping shape — the call starting no later than that commit —
+  // is pinned separately at the end of this block (review K4-2 / KV4).
   const approved = () => makeTickBattle({ executionMode: 'copilot', pendingProposal: APPROVED_PROPOSAL() });
   /** Run tick 2 on a STALE in-memory battle (the pre-tick-1 snapshot) against the store tick 1 committed. */
   async function staleReplay(first) {
     exec.calls = [];
+    // The replay runs LATER than the first run's commit (real time passes):
+    // integrity follow-up 2's read-back after an executor throw matches only a
+    // row swapped out at or after its own call began, so under the frozen
+    // clock the first run's row would pass for the replay's own.
+    vi.setSystemTime(new Date(Date.parse(FROZEN_NOW) + 60_000));
     return runTick({ battle: approved(), mutateStore: (s) => { for (const k of Object.keys(s)) delete s[k]; Object.assign(s, deepClone(first.stored)); } });
   }
 
@@ -611,6 +617,31 @@ describe('A9 — a duplicated approval: the same approved proposal processed twi
     expect(second.stored.proposalHistory.at(-1).executionFailed).toBe(true);
     expect(second.stored.trades).toHaveLength(1);
   });
+
+  // Integrity follow-up 2 (review K4-2) — the read-back's residual, pinned rather
+  // than hidden by the clock. When the overlapping worker's executor call starts
+  // NO LATER than the first worker's commit (truly concurrent), nothing on the
+  // row tells the two calls apart (the same deciding evaluation id, slot and
+  // incoming stock), so the replay adopts the landed trade as its own: the
+  // approval is filed as executed — true of the approval — with no failure
+  // marker and no release, and still ONE trade. (Before follow-up 2 it filed
+  // "failed" and released the reservation of a stock the battle held.)
+  // Dormant (the launch guard); the report lists it under what is not yet safe.
+  for (const mode of ['enforce', 'off']) {
+    it(`${mode} — the overlap: a replay whose call starts at the first run's commit instant adopts that trade (no failure, no release, one trade)`, async () => {
+      flags.swapIdentity = mode;
+      const first = await runTick({ battle: approved() });
+      exec.calls = [];
+      const second = await runTick({ battle: approved(), mutateStore: (s) => { for (const k of Object.keys(s)) delete s[k]; Object.assign(s, deepClone(first.stored)); } });
+      expect(exec.calls).toHaveLength(1);
+      expect(second.stored.trades).toHaveLength(1);
+      const row = second.stored.proposalHistory.at(-1);
+      expect(row).toMatchObject({ resolution: 'approved' });
+      expect(row).not.toHaveProperty('executionFailed');
+      expect(row).not.toHaveProperty('executionRefusal');
+      expect(second.feed.findLast((e) => e.source === 'proposal_system').message).toBe('Coach approved: Swap KO → AMD');
+    });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -622,7 +653,7 @@ describe('A10 — shadow changes no behaviour: a full tick writes what off write
 
   const copilotWith = (proposal) => makeTickBattle({ executionMode: 'copilot', pendingProposal: proposal });
   const pendingMeetingWithStop = () => makeTickBattle({
-    gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] },
+    ...serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] }),
     agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'stopLoss', value: 1, unit: '%', enforcement: 'hard' }] },
   });
   // Every caller that can commit, at calls off AND calls shadow (review S3-2:
@@ -633,11 +664,11 @@ describe('A10 — shadow changes no behaviour: a full tick writes what off write
     ['a HOLD', 'off', () => ({})],
     ['an approved proposal (C3)', 'off', () => ({ battle: copilotWith(APPROVED_PROPOSAL()) })],
     ['an expired co-pilot proposal (C4)', 'off', () => ({ battle: copilotWith(EXPIRED_PROPOSAL()) })],
-    ['an approved meeting (C6)', 'off', () => ({ battle: makeTickBattle({ gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging' }] } }) })],
+    ['an approved meeting (C6)', 'off', () => ({ battle: makeTickBattle(serverMeetingOverrides({ id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging' }] })) })],
     ['the suppression pass forcing an exit (C5)', 'off', () => { guardrailHook.result = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_stopLoss', statusMessage: 'Stop hit on KO.', overrides: [] }; return { battle: pendingMeetingWithStop() }; }],
     ['two risk exits, then a model SWAP — calls shadow', 'shadow', () => ({ prices: bustingPrices(), result: makeSwapResult({ symbolOut: 'MSFT', symbolIn: 'JPM', tier: 'core' }) })],
     ['a model SWAP — calls shadow', 'shadow', () => ({ result: makeSwapResult() })],
-    ['an approved meeting (C6) — calls shadow', 'shadow', () => ({ battle: makeTickBattle({ gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging' }] } }) })],
+    ['an approved meeting (C6) — calls shadow', 'shadow', () => ({ battle: makeTickBattle(serverMeetingOverrides({ id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging' }] })) })],
   ];
 
   for (const [label, calls, args] of SCENARIOS) {
@@ -748,15 +779,13 @@ describe('review fixes — the speaker, the slot, the belief, the beats', () => 
 
   it('S2-5: an approved meeting\'s refused and departed legs show in the FEED at enforce (the card is gone once approved)', async () => {
     flags.swapIdentity = 'enforce';
-    const battle = makeTickBattle({
-      gameplanMeeting: {
+    const battle = makeTickBattle(serverMeetingOverrides({
         id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z',
         suggestedSwaps: [
           { symbolOut: 'INTC', symbolIn: 'JPM', rationale: 'INTC lagging', swappedInAt: null },
           { symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging', swappedInAt: '2026-09-09T13:45:00.000Z' },
         ],
-      },
-    });
+    }));
     const { feed } = await runTick({ battle });
     const beats = feed.filter((e) => e.source === 'gameplan_meeting' && e.refusalReason);
     expect(beats.map((b) => b.message)).toEqual([
@@ -774,9 +803,7 @@ describe('review fixes — the speaker, the slot, the belief, the beats', () => 
   });
 
   it('S2-5: none of those beats exists at off', async () => {
-    const battle = makeTickBattle({
-      gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'INTC', symbolIn: 'JPM', rationale: 'x' }] },
-    });
+    const battle = makeTickBattle(serverMeetingOverrides({ id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'INTC', symbolIn: 'JPM', rationale: 'x' }] }));
     const { feed } = await runTick({ battle });
     expect(feed.some((e) => e.refusalReason)).toBe(false);
   });
@@ -822,7 +849,7 @@ describe('A8 / C3–C4 — the slot ALREADY moved before the tick (the P02 shape
 // ─────────────────────────────────────────────────────────────────────────────
 describe('C5 — a fault AFTER the pass\'s swap committed is the pass\'s own fault, not an execution failure (review S4-8)', () => {
   const pending = () => makeTickBattle({
-    gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] },
+    ...serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] }),
     agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'stopLoss', value: 1, unit: '%', enforcement: 'hard' }] },
   });
 
@@ -922,7 +949,7 @@ describe('S5-7 (hardening): at off the mode gates every record on C3–C6 too', 
     exec.throws = TYPED();
     guardrailHook.result = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_stopLoss', statusMessage: 'Stop hit on KO.', overrides: [] };
     const battle = makeTickBattle({
-      gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] },
+      ...serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] }),
       agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'stopLoss', value: 1, unit: '%', enforcement: 'hard' }] },
     });
     const { permanent, feed } = await runTick({ battle });
@@ -930,19 +957,20 @@ describe('S5-7 (hardening): at off the mode gates every record on C3–C6 too', 
     expect(feed.find((e) => e.action === 'risk_swap_failed')).not.toHaveProperty('refusalReason');
   });
 
-  it('S5-7d C6: off — a typed error on a leg records no legRefusals and no refusal beat', async () => {
+  it('S5-7d C6: off — a typed error on a leg records no legRefusals and no refusal beat (follow-up 2: the read-back confirms no trade, so the leg is marked failed and table F V1.3 renders it)', async () => {
     exec.throws = TYPED();
-    const battle = makeTickBattle({
-      gameplanMeeting: {
-        id: 'gpm_s5', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z',
-        suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging' }],
-      },
-    });
+    const battle = makeTickBattle(serverMeetingOverrides({
+      id: 'gpm_s5', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z',
+      suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging' }],
+    }));
     const meeting = deepClone(battle.gameplanMeeting);
     const { stored, feed } = await runTick({ battle });
     expect(exec.calls).toHaveLength(1);
-    expect(stored.gameplanMeetingHistory.at(-1)).toEqual(meeting);
+    expect(stored.gameplanMeetingHistory.at(-1)).toEqual({ ...meeting, suggestedSwaps: [{ ...meeting.suggestedSwaps[0], executionFailed: true }] });
     expect(feed.filter((e) => e.refusalReason)).toEqual([]);
+    expect(feed.findLast((e) => e.source === 'gameplan_meeting')).toMatchObject({
+      message: 'The swap of KO for AMD you approved did not go through. No trade was made.', action: 'hold', symbolOut: 'KO', symbolIn: 'AMD',
+    });
   });
 });
 
@@ -973,7 +1001,7 @@ describe('V1.2 — a refused profit-target exit speaks the profit-target line on
     flags.swapIdentity = 'enforce';
     guardrailHook.result = FORCED_PT;
     exec.before = once(moveKoSlot);
-    const { feed } = await runTick({ battle: withProfitTarget({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] } }) });
+    const { feed } = await runTick({ battle: withProfitTarget(serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] })) });
     expect(feed.findLast((e) => e.action === 'risk_swap_failed')).toMatchObject({ message: PROFIT_TARGET_KO, refusalReason: 'outgoing_identity_mismatch', triggeredBy: 'guardrail_profitTarget' });
   });
 
@@ -981,7 +1009,7 @@ describe('V1.2 — a refused profit-target exit speaks the profit-target line on
     flags.swapIdentity = 'enforce';
     guardrailHook.result = { ...FORCED_PT, sourceNote: 'guardrail_stopLoss' };
     exec.before = once(moveKoSlot);
-    const { feed } = await runTick({ battle: withProfitTarget({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] } }) });
+    const { feed } = await runTick({ battle: withProfitTarget(serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] })) });
     expect(feed.findLast((e) => e.action === 'risk_swap_failed').message).toBe(PROTECTIVE_KO);
   });
 });

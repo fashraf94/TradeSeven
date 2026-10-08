@@ -102,11 +102,14 @@ describe('proposalDescriptiveMetadata', () => {
         trade_reasoning: { thesis: 't', strategy: 's', indicators: ['a', 1, 'b'], citedRules: ['C1'], conviction: 99, extra: 'x' },
       },
     });
+    // Integrity follow-up 2 (Q4): the stored `entryMode` is never read — the
+    // row's mode is the one that governed (the caller's LAUNCH_EXECUTION_MODE).
     expect(out).toEqual({
       trigger: 't', rationale: 'r'.repeat(CLIENT_TEXT_MAX), hypothesis: null, entryRegime: 'trending', entryMarketPosture: 'risk_on', swapMotive: 'conviction',
-      entryPreset: 'aggressive', entryMode: 'copilot',
+      entryPreset: 'aggressive',
       trade_reasoning: { thesis: 't', strategy: 's', indicators: ['a', 'b'], citedRules: ['C1'] },
     });
+    expect(out).not.toHaveProperty('entryMode');
   });
 
   it('an absent key stays absent; an empty or non-string preset/mode does not override the caller\'s floor', () => {

@@ -15,6 +15,7 @@ import {
   LAUNCH_GUARD_LANDED, TRADE_ROW_KEYS, MATCH_WINDOW_MS,
   isProposalExecutionBeat, isExecutedResolution, tradesForBeat, foreignKeysOf, gainContradictsPrices,
   computePlantedProposalCensus, renderPlantedProposalCensus, runPlantedProposalCensus, parseArgs,
+  LAUNCH_GUARD_RESOLUTIONS, claimsLaunchGuardClear, isGenuineLaunchGuardRow,
 } from './census-planted-proposals.mjs';
 import { EXECUTOR_COMPUTED_KEYS, EXECUTOR_METADATA_KEYS } from '../api/_utils/executorMetadata.js';
 
@@ -282,5 +283,43 @@ describe('I5 — mutation-lens rows', () => {
       expect(computePlantedProposalCensus(hist([{ resolution, resolvedAt: AFTER }])).executions, resolution).toEqual([]);
     }
     expect(MATCH_WINDOW_MS).toBe(5 * 60 * 1000);
+  });
+});
+
+// Integrity follow-up 2 (Part C, founder Q2): the launch guard now files its
+// rows `resolution: 'launch_guard_cleared'` (the note is kept). Rows written
+// before keep 'auto_executed'. The census counts a clear under either value.
+describe('follow-up 2 — a launch-guard clear is counted under either label', () => {
+  const AFTER = '2026-10-08T15:00:00.000Z';
+  const hist = (rows, trades = []) => ({ b: { proposalHistory: rows, trades } });
+  const guardRow = (resolution, over = {}) => ({ proposalId: 'p', symbolOut: 'KO', symbolIn: 'AMD', resolution, resolvedBy: 'system', systemNote: 'launch_guard_clear', resolvedAt: AFTER, ...over });
+
+  it('the guard\'s two labels', () => {
+    expect(LAUNCH_GUARD_RESOLUTIONS).toEqual(['auto_executed', 'launch_guard_cleared']);
+  });
+
+  it('a new row (`launch_guard_cleared`) and an old row (`auto_executed`) are each one guard clear, never an execution', () => {
+    for (const resolution of ['launch_guard_cleared', 'auto_executed']) {
+      const out = computePlantedProposalCensus(hist([guardRow(resolution)]));
+      expect(out.guardClears, resolution).toHaveLength(1);
+      expect(out.executions, resolution).toEqual([]);
+      expect(claimsLaunchGuardClear(guardRow(resolution))).toBe(true);
+      expect(isGenuineLaunchGuardRow(guardRow(resolution))).toBe(true);
+    }
+  });
+
+  it('a new-label row with a same-pair trade beside it is still listed as an execution (a label cannot hide a trade)', () => {
+    const out = computePlantedProposalCensus(hist([guardRow('launch_guard_cleared')], [{ symbolOut: 'KO', symbolIn: 'AMD', swappedOutAt: AFTER }]));
+    expect(out.executions).toHaveLength(1);
+    expect(out.executions[0].kind).toMatch(/claims a launch-guard clear/);
+  });
+
+  it('the new label without the guard\'s note, or not by `system`, is not genuine — it is listed', () => {
+    for (const row of [guardRow('launch_guard_cleared', { systemNote: undefined }), guardRow('launch_guard_cleared', { resolvedBy: 'owner' })]) {
+      const out = computePlantedProposalCensus(hist([row]));
+      expect(out.guardClears).toEqual([]);
+      expect(out.executions).toHaveLength(1);
+      expect(isGenuineLaunchGuardRow(row)).toBe(false);
+    }
   });
 });

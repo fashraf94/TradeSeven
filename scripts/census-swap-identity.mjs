@@ -124,8 +124,11 @@ export function beliefOfTrade(trade, battle) {
   if (beliefs.length === 1) return { caller: joined[0].decision === 'PROPOSAL' ? 'proposal' : 'model', belief: beliefs[0], ambiguous: false };
   // A launch-guard clear never executed (integrity build, review I1-4): its row
   // carries a client-written proposal's ids and symbols, so it is no belief.
+  // Integrity follow-up 2 (Q2): the guard's rows now resolve
+  // 'launch_guard_cleared' (older rows keep 'auto_executed' with the note) —
+  // either marker excludes the row.
   const proposals = (Array.isArray(battle?.proposalHistory) ? battle.proposalHistory : [])
-    .filter((p) => p?.systemNote !== 'launch_guard_clear')
+    .filter((p) => p?.systemNote !== 'launch_guard_clear' && p?.resolution !== 'launch_guard_cleared')
     .filter((p) => (p?.evaluationMetadata?.evaluationId === trade.evaluationId || p?.evalId === trade.evaluationId)
       && p.symbolIn === trade.symbolIn && typeof p.symbolOut === 'string' && p.symbolOut);
   const proposalBeliefs = [...new Set(proposals.map((p) => p.symbolOut))];
@@ -172,6 +175,21 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
   const invalidVerifications = [];
   const refusals = { entries: {}, proposalHistory: {}, meetingLegs: {}, feedBeats: {} };
   const honest = { proposalExecutionFailed: 0, autoExecutionFailed: 0 };
+  // Integrity follow-up 2 (Part D; review K3-9): the retry-safe markers, per
+  // channel — how often an executor throw was read back as landed
+  // (`executionLanded`), could not be read (`executionOutcome: 'unknown'`),
+  // or — on a meeting leg — confirmed as no trade (`executionFailed`) or not
+  // attempted after an unreadable one (`executionOutcome: 'not_run'`); and the
+  // meeting legs the server's copy held (Part A).
+  const retrySafe = {
+    outcomeUnknown: { entries: 0, feedBeats: 0, proposalHistory: 0, meetingLegs: 0 },
+    landedAfterError: { entries: 0, feedBeats: 0, proposalHistory: 0, meetingLegs: 0 },
+    autoExecutionUnknown: 0, meetingLegExecutionFailed: 0, meetingLegNotRun: 0, heldMeetingLegs: 0,
+  };
+  const markers = (record, channel) => {
+    if (record?.executionOutcome === 'unknown') retrySafe.outcomeUnknown[channel] += 1;
+    if (typeof record?.executionLanded === 'string') retrySafe.landedAfterError[channel] += 1;
+  };
   const modesSeen = {};
   let tradeRows = 0;
 
@@ -234,23 +252,33 @@ export function computeSwapIdentityCensus(battles, { sinceMs = null } = {}) {
 
     for (const e of Array.isArray(battle?.evaluations) ? battle.evaluations : []) {
       if (e?.executionRefusal && counted(toMs(e.timestamp))) inc(refusals.entries, String(e.executionRefusal.reason));
+      if (counted(toMs(e?.timestamp))) markers(e, 'entries');
     }
     for (const p of Array.isArray(battle?.proposalHistory) ? battle.proposalHistory : []) {
       if (!counted(rowMs(p))) continue;
       if (p?.executionRefusal) inc(refusals.proposalHistory, String(p.executionRefusal.reason));
       if (p?.executionFailed === true) honest.proposalExecutionFailed += 1;
       if (p?.resolution === 'auto_execution_failed') honest.autoExecutionFailed += 1;
+      if (p?.resolution === 'auto_execution_unknown') retrySafe.autoExecutionUnknown += 1;
+      markers(p, 'proposalHistory');
     }
     for (const m of Array.isArray(battle?.gameplanMeetingHistory) ? battle.gameplanMeetingHistory : []) {
       if (!counted(rowMs(m))) continue;
       for (const leg of Array.isArray(m?.legRefusals) ? m.legRefusals : []) inc(refusals.meetingLegs, `${leg?.reason}${leg?.verification ? '' : ' (departed)'}`);
+      for (const leg of Array.isArray(m?.suggestedSwaps) ? m.suggestedSwaps : []) {
+        if (leg?.executionFailed === true) retrySafe.meetingLegExecutionFailed += 1;
+        if (leg?.executionOutcome === 'not_run') retrySafe.meetingLegNotRun += 1;
+        markers(leg, 'meetingLegs');
+      }
+      if (typeof m?.heldLegCount === 'number' && m.heldLegCount > 0 && m.heldLegCount < Infinity) retrySafe.heldMeetingLegs += m.heldLegCount; // (no member call: the read-only allowlist)
     }
     for (const beat of Array.isArray(battle?.statusFeed) ? battle.statusFeed : []) {
       if (beat?.refusalReason && counted(toMs(beat.timestamp))) inc(refusals.feedBeats, `${beat.source}:${beat.refusalReason}`);
+      if (counted(toMs(beat?.timestamp))) markers(beat, 'feedBeats');
     }
   }
 
-  return { battles: entries.length, tradeRows, byCaller, mismatches, verificationMismatches, battleNotActive, disagreements, invalidVerifications, refusals, honest, modesSeen, windows, sinceMs };
+  return { battles: entries.length, tradeRows, byCaller, mismatches, verificationMismatches, battleNotActive, disagreements, invalidVerifications, refusals, honest, retrySafe, modesSeen, windows, sinceMs };
 }
 
 /** The census as a Markdown report. */
@@ -317,6 +345,20 @@ export function renderCensus(result, { readAt = null } = {}) {
     ['feed beats `refusalReason`', kv(result.refusals.feedBeats)],
     ['proposal history `executionFailed`', String(result.honest.proposalExecutionFailed)],
     ["proposal history `resolution: 'auto_execution_failed'`", String(result.honest.autoExecutionFailed)],
+  ]);
+  p();
+  p('### 3b. Retry-safe records (integrity follow-up 2, Part D) and held meeting legs (Part A)');
+  p();
+  p('An executor call that threw is read back before anything is recorded: `executionLanded` marks a trade that landed but whose incoming position was already gone; `executionOutcome: \'unknown\'` marks a read-back that failed (no line either way); a meeting leg `executionFailed` is a confirmed no-trade, and `executionOutcome: \'not_run\'` a leg not attempted because the book could not be read after an earlier leg of unknown outcome. Watch these through the shadow period: each is an executor throw the enforce flip will meet.');
+  p();
+  const ch = (o) => `evaluations ${o.entries}, feed beats ${o.feedBeats}, proposal history ${o.proposalHistory}, meeting legs ${o.meetingLegs}`;
+  tbl(['Marker', 'Count'], [
+    ["`executionOutcome: 'unknown'`", ch(result.retrySafe.outcomeUnknown)],
+    ['`executionLanded`', ch(result.retrySafe.landedAfterError)],
+    ["proposal history `resolution: 'auto_execution_unknown'`", String(result.retrySafe.autoExecutionUnknown)],
+    ['meeting legs `executionFailed`', String(result.retrySafe.meetingLegExecutionFailed)],
+    ["meeting legs `executionOutcome: 'not_run'`", String(result.retrySafe.meetingLegNotRun)],
+    ['meeting legs held (`heldLegCount`)', String(result.retrySafe.heldMeetingLegs)],
   ]);
   p();
   p('## 4. Retained windows');

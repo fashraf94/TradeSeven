@@ -5,6 +5,14 @@
 
 import { getFirebaseAdmin } from './firebaseAdmin.js';
 import { FieldValue } from 'firebase-admin/firestore';
+// Integrity follow-up 2 (docs/audits/20261008_BUILD_INTEGRITY_FOLLOWUP_2.md):
+// Part C (founder Q4) — the pattern records the mode that governed the battle,
+// never its owner-writable `executionMode`; Part B — the owner-writable ledger
+// and preset are read through type-checking readers (a malformed ledger used
+// to make the whole record fail, silently).
+import { LAUNCH_EXECUTION_MODE } from './executionAuthority.js';
+import { battleLedgerOf } from './playerFieldReaders.js';
+import { clientToken } from './executorMetadata.js';
 
 /**
  * Log a battle pattern record to the agent's battlePatterns subcollection.
@@ -84,34 +92,37 @@ function extractBundleId(battle) {
   return null;
 }
 
-function extractExecutionMode(battle) {
-  const start = battle.executionMode || 'copilot';
-  const ledger = battle.battleLedger || [];
-  const changes = ledger
-    .filter(e => e.type === 'mode_change')
-    .map(e => ({
-      timestamp: e.timestamp,
-      from: e.fromMode || e.details?.fromMode || null,
-      to: e.toMode || e.details?.toMode || null,
-    }));
-  return { start, changes };
+// The mode that governed: every battle runs LAUNCH_EXECUTION_MODE from start
+// to end (no server path changes it), so there are no changes to record. The
+// battle's own `executionMode` — and any `mode_change` ledger entry — is
+// owner-writable and governed nothing.
+function extractExecutionMode() {
+  return { start: LAUNCH_EXECUTION_MODE, changes: [] };
 }
 
+/** At most this many owner-written preset changes are logged per battle. */
+const PRESET_CHANGES_MAX = 50;
+
 function extractStrategyPreset(battle) {
-  const start = battle.strategyPreset || 'balanced';
-  const ledger = battle.battleLedger || [];
+  const start = clientToken(battle.strategyPreset) || 'balanced';
+  const ledger = battleLedgerOf(battle.battleLedger);
+  // The ledger is owner-written: each change keeps only capped strings (a
+  // missing timestamp is null — `undefined` makes the Admin SDK reject the
+  // whole record), and at most the last PRESET_CHANGES_MAX changes
+  // (integrity follow-up 2, review K1-4).
   const changes = ledger
     .filter(e => e.type === 'preset_change')
+    .slice(-PRESET_CHANGES_MAX)
     .map(e => ({
-      timestamp: e.timestamp,
-      from: e.fromPreset || e.details?.fromPreset || null,
-      to: e.toPreset || e.details?.toPreset || null,
+      timestamp: clientToken(e.timestamp),
+      from: clientToken(e.fromPreset || e.details?.fromPreset) || null,
+      to: clientToken(e.toPreset || e.details?.toPreset) || null,
     }));
   return { start, changes };
 }
 
 function countEngagement(battle) {
-  const ledger = battle.battleLedger || [];
+  const ledger = battleLedgerOf(battle.battleLedger);
   return ledger.length;
 }
 
@@ -122,7 +133,7 @@ function binEngagement(count) {
 }
 
 function detectPresetSwitchPattern(battle) {
-  const ledger = battle.battleLedger || [];
+  const ledger = battleLedgerOf(battle.battleLedger);
   const presetChanges = ledger.filter(e => e.type === 'preset_change');
 
   if (presetChanges.length === 0) return null;
@@ -130,7 +141,8 @@ function detectPresetSwitchPattern(battle) {
 
   // Single switch — classify by time of day
   const change = presetChanges[0];
-  const ts = change.timestamp ? new Date(change.timestamp) : null;
+  // A string only: an owner-written object can make `new Date(...)` throw (follow-up 2, Part B).
+  const ts = typeof change.timestamp === 'string' && change.timestamp ? new Date(change.timestamp) : null;
   if (!ts || isNaN(ts.getTime())) return 'single-switch';
 
   // Convert to ET hour (approximate: UTC-4 for EDT, UTC-5 for EST)

@@ -33,7 +33,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   FROZEN_NOW, makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs, makeIntradayCandles,
-  makeHoldResult, makeSwapResult, makeToolUseResponse, deepClone,
+  makeHoldResult, makeSwapResult, makeToolUseResponse, deepClone, serverMeetingOverrides,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { makeCallsDb } from '../_utils/__fixtures__/callRecordsStore.js';
 import { permanentDoc } from '../_utils/__fixtures__/tickCaptureHarness.js';
@@ -158,8 +158,9 @@ describe('Part A — the score forgery is closed (acceptance 1); planted proposa
     expect(first.stored.trades).toEqual([]);
     expect(first.stored.portfolio.support[0].symbol).toBe('KO');
     expect(first.stored.pendingProposal).toBeNull();
-    // It lapses through the EXISTING launch-guard branch.
-    expect(first.stored.proposalHistory.at(-1)).toMatchObject({ proposalId: 'prop_x', resolution: 'auto_executed', resolvedBy: 'system', systemNote: 'launch_guard_clear' });
+    // It lapses through the EXISTING launch-guard branch (filed 'launch_guard_cleared'
+    // since integrity follow-up 2 — founder Q2; the note is kept).
+    expect(first.stored.proposalHistory.at(-1)).toMatchObject({ proposalId: 'prop_x', resolution: 'launch_guard_cleared', resolvedBy: 'system', systemNote: 'launch_guard_clear' });
     const second = await runTick(deepClone(first.stored));
     expect(second.stored.scoreState.bankedScore).toBe(0);
     expect(second.stored.trades).toEqual([]);
@@ -169,7 +170,7 @@ describe('Part A — the score forgery is closed (acceptance 1); planted proposa
     const { stored } = await runTick(makeTickBattle({ executionMode: 'copilot', pendingProposal: PLANTED_EXPIRED() }));
     expect(exec.calls).toEqual([]);
     expect(stored.trades).toEqual([]);
-    expect(stored.proposalHistory.at(-1)).toMatchObject({ resolution: 'auto_executed', systemNote: 'launch_guard_clear' });
+    expect(stored.proposalHistory.at(-1)).toMatchObject({ resolution: 'launch_guard_cleared', systemNote: 'launch_guard_clear' });
   });
 
   it('a deleted executionMode (the migration writes `copilot` for it) and any other planted mode lapse the same way', async () => {
@@ -209,7 +210,7 @@ describe('Part A — the score forgery is closed (acceptance 1); planted proposa
     expect([{ ...clears[0], proposalHistory: clears[0].proposalHistory.slice(-1) }]).toEqual([{
       pendingProposal: null,
       // Only what the proposal NAMED (capped strings) + the server's own result — no slot, ids or numbers (review I1-3 / I1-4).
-      proposalHistory: [{ proposalId: 'p1', symbolOut: 'KO', symbolIn: 'AMD', mode: 'copilot', expiresAt: '2026-09-09T23:00:00.000Z', resolvedAt: FROZEN_NOW, resolution: 'auto_executed', resolvedBy: 'system', systemNote: 'launch_guard_clear', scoreAtResolution: expect.any(Number) }],
+      proposalHistory: [{ proposalId: 'p1', symbolOut: 'KO', symbolIn: 'AMD', mode: 'copilot', expiresAt: '2026-09-09T23:00:00.000Z', resolvedAt: FROZEN_NOW, resolution: 'launch_guard_cleared', resolvedBy: 'system', systemNote: 'launch_guard_clear', scoreAtResolution: expect.any(Number) }],
     }]);
     expect(permanent.exitReason).toBe('completed');
     expect(exec.calls).toEqual([]);
@@ -305,14 +306,14 @@ describe('F3 — history rows carry only the server\'s own outcome fields (accep
     assertNoPlantedOutcome(row, { executionFailed: true, scoreAtResolution: row.scoreAtResolution });
   });
 
-  const meetingWith = (status, extra = {}) => makeTickBattle({
-    gameplanMeeting: {
-      id: 'gpm_1', status, diagnosis: 'drag', expiresAt: '2026-09-09T14:00:00.000Z',
-      suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging', ...deepClone(PLANTED_OUTCOMES) }],
-      ...deepClone(PLANTED_OUTCOMES),
-      ...extra,
-    },
-  });
+  // A meeting the SERVER created (its copy in cronState — integrity follow-up 2,
+  // Part A), with outcome fields the owner then planted on it and its legs.
+  const meetingWith = (status, extra = {}) => makeTickBattle(serverMeetingOverrides({
+    id: 'gpm_1', status, diagnosis: 'drag', expiresAt: '2026-09-09T14:00:00.000Z',
+    suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging', ...deepClone(PLANTED_OUTCOMES) }],
+    ...deepClone(PLANTED_OUTCOMES),
+    ...extra,
+  }));
 
   it('meeting history — approved, rejected, expired: no planted outcome on the row or on any leg', async () => {
     for (const status of ['approved', 'rejected', 'pending']) {
@@ -417,17 +418,17 @@ describe('F2 on the dormant proposal paths (defense in depth: the launch mode mo
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('F2 on the live paths: the owner-writable preset, mode and meeting leg reach a row only as capped strings', () => {
-  it('a planted numeric / object / overlong strategyPreset and executionMode never land on the row as such', async () => {
+  it('a planted numeric / object / overlong strategyPreset and executionMode never land on the row as such (follow-up 2, Q4: the row\'s mode is always the one that governed)', async () => {
     for (const [preset, mode, wantPreset, wantMode] of [
       [9999, 7, 'balanced', 'autopilot'],
       [{ lockedPoints: 9999 }, ['copilot'], 'balanced', 'autopilot'],
-      ['P'.repeat(500), 'M'.repeat(500), 'P'.repeat(64), 'M'.repeat(64)],
+      ['P'.repeat(500), 'M'.repeat(500), 'P'.repeat(64), 'autopilot'],
     ]) {
       exec.calls = [];
       const battle = makeTickBattle({
         strategyPreset: preset,
         executionMode: mode,
-        gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: { lockedPoints: 9999 } }] },
+        ...serverMeetingOverrides({ id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: { lockedPoints: 9999 } }] }),
       });
       const { stored } = await runTick(battle);
       const row = tradeOf(stored, 'AMD');
@@ -435,38 +436,41 @@ describe('F2 on the live paths: the owner-writable preset, mode and meeting leg 
     }
   });
 
-  it('a meeting leg\'s planted symbols reach the feed and the refusal records only capped (review I1-5)', async () => {
+  it('a meeting leg\'s planted symbols never reach the feed; the held-leg record keeps them only capped (review I1-5; follow-up 2, Part A)', async () => {
+    // Before follow-up 2 the planted leg reached a feed beat (capped). Now a leg
+    // the server's copy does not hold is never traded and writes no beat: it is
+    // held, and its history record keeps what it named, capped.
     const longOut = 'X'.repeat(200);
-    const { feed } = await runTick(makeTickBattle({
-      gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: longOut, symbolIn: 'Y'.repeat(200), rationale: 'r' }] },
-    }));
-    expect(feed.find((e) => e.source === 'gameplan_meeting' && /skipped/.test(e.message)).message)
-      .toBe(`Gameplan swap ${'X'.repeat(64)} → ${'Y'.repeat(64)} skipped — bench asset unavailable.`);
-    flags.swapIdentity = 'shadow';
-    const departed = await runTick(makeTickBattle({
-      gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: longOut, symbolIn: 'AMD', rationale: 'r' }] },
-    }));
-    const row = departed.stored.gameplanMeetingHistory.at(-1);
-    expect(row.legRefusals[0].symbolOut).toBe('X'.repeat(64));
-    expect(row.legRefusals[0].line).toBe(`The agent tried to swap ${'X'.repeat(64)} for AMD, but ${'X'.repeat(64)} had already left that slot. No trade was made.`);
-    expect(departed.feed.find((e) => e.refusalReason).symbolOut).toBe('X'.repeat(64));
+    for (const mode of ['off', 'shadow']) {
+      flags.swapIdentity = mode;
+      const { feed, stored } = await runTick(makeTickBattle(serverMeetingOverrides(
+        { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: longOut, symbolIn: 'Y'.repeat(200), rationale: 'r' }] },
+        { legs: [{ symbolOut: 'KO', symbolIn: 'AMD', swappedInAt: null }] },
+      )));
+      expect(feed.filter((e) => e.source === 'gameplan_meeting'), mode).toEqual([]);
+      expect(JSON.stringify(feed), mode).not.toContain('X'.repeat(65));
+      const row = stored.gameplanMeetingHistory.at(-1);
+      expect(row.heldLegs, mode).toEqual([{ symbolOut: 'X'.repeat(64), symbolIn: 'Y'.repeat(64), reason: 'leg_not_proposed' }]);
+      expect(row.heldLegCount, mode).toBe(1);
+      expect(row).not.toHaveProperty('legRefusals');
+      expect(stored.trades, mode).toEqual([]);
+    }
   });
 
-  it('at shadow a meeting leg\'s planted belief instant never lands on the row\'s verification (review I3-1)', async () => {
+  it('at shadow a meeting leg\'s planted belief instant never lands on the row\'s verification (review I3-1; follow-up 2: the belief is the server copy\'s)', async () => {
     flags.swapIdentity = 'shadow';
-    for (const planted of [9999, { lockedPoints: 9999 }, 'S'.repeat(3000)]) {
-      const { stored } = await runTick(makeTickBattle({
-        gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'r', swappedInAt: planted }] },
-      }));
-      expect(tradeOf(stored, 'AMD').verification, JSON.stringify(planted).slice(0, 20)).toMatchObject({ expected: { symbol: 'KO' }, basis: 'symbol_only', verdict: 'match' });
-      expect(tradeOf(stored, 'AMD').verification.expected).toEqual({ symbol: 'KO', swappedInAt: null }); // the executor's own null for a symbol-only belief
+    for (const planted of [9999, { lockedPoints: 9999 }, 'S'.repeat(3000), '2026-09-09T14:59:00.000Z']) {
+      // The server stored KO's own entry instant (null — a creation-time position); the owner then planted another on the leg.
+      const { stored } = await runTick(makeTickBattle(serverMeetingOverrides(
+        { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'r', swappedInAt: planted }] },
+        { legs: [{ symbolOut: 'KO', symbolIn: 'AMD', swappedInAt: null }] },
+      )));
+      expect(tradeOf(stored, 'AMD').verification, JSON.stringify(planted).slice(0, 20)).toMatchObject({ expected: { symbol: 'KO', swappedInAt: null }, basis: 'symbol_and_entry', verdict: 'match' });
     }
   });
 
   it('a meeting leg\'s overlong rationale is capped', async () => {
-    const battle = makeTickBattle({
-      gameplanMeeting: { id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'L'.repeat(3000) }] },
-    });
+    const battle = makeTickBattle(serverMeetingOverrides({ id: 'gpm_1', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'L'.repeat(3000) }] }));
     const { stored } = await runTick(battle);
     expect(tradeOf(stored, 'AMD').rationale).toBe('L'.repeat(CLIENT_TEXT_MAX));
   });

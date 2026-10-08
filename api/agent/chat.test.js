@@ -2200,3 +2200,46 @@ describe('agent/chat — Cockpit Build 1a: the calls block is read and rendered 
     expect(voiceLayerArgs.current[0].callsBlock).toBeNull();
   });
 });
+
+// Integrity follow-up 2 (Part B — docs/audits/20261008_BUILD_INTEGRITY_FOLLOWUP_2.md):
+// `dailyGrades` is owner-writable (firestore.rules, the agentBattles update
+// allowlist). Every shape an owner can store answers 200, and the prompt
+// builder receives the reader's value — the stored value itself when it is
+// well formed (a map, or a list of objects), the old default ([]) otherwise.
+// (The prompt builder is mocked in this file; the REAL builder's tolerance of
+// every reader output is pinned in api/_utils/playerFieldReaders.test.js — review K4-5.)
+describe('agent/chat — follow-up 2: an owner-written dailyGrades reaches the prompt builder only through the reader', () => {
+  const MAP = { '2026-09-09': { trades: [{ tradeIndex: 0, grade: 'A', symbolOut: 'KO', symbolIn: 'AMD' }], submittedAt: '2026-09-09T20:00:00.000Z' } };
+  const run = async (dailyGrades) => {
+    voiceLayerArgs.current = [];
+    callGemmaVoiceImpl.current = async () => '{"response":"ok"}';
+    const fixture = makeFakeFirestore({ agent: VALID_AGENT, battle: { ...VALID_BATTLE, dailyGrades } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ agentId: 'agent-1', battleId: 'battle-1', message: 'hi' });
+    await handler(req, res);
+    return res;
+  };
+
+  it('well formed: the map (the stored shape) and a list of objects reach the prompt builder as they are', async () => {
+    for (const shape of [MAP, [{ symbol: 'KO', grade: 'A' }], {}]) {
+      const res = await run(shape);
+      expect(res.statusCode).toBe(200);
+      expect(voiceLayerArgs.current[0].dailyGrades).toEqual(shape);
+    }
+    expect((await run(undefined)).statusCode).toBe(200);
+    expect(voiceLayerArgs.current[0].dailyGrades).toEqual([]);
+  });
+
+  it('malformed: null, a number, a string, a list holding non-objects, a huge list → 200, and the builder never sees a non-object entry', async () => {
+    for (const [shape, want] of [
+      [null, []], [7, []], ['x'.repeat(100_000), []], [true, []],
+      [[null, 7, 'x', { symbol: 'KO', grade: 'A' }], [{ symbol: 'KO', grade: 'A' }]],
+      [Array.from({ length: 5000 }, (_, i) => ({ symbol: `S${i}`, grade: 'B' })), Array.from({ length: 50 }, (_, i) => ({ symbol: `S${4950 + i}`, grade: 'B' }))],
+      [[{ symbol: 'KO', note: 'n'.repeat(5000) }], [{ symbol: 'KO', note: 'n'.repeat(1000) }]],
+    ]) {
+      const res = await run(shape);
+      expect(res.statusCode, JSON.stringify(shape).slice(0, 40)).toBe(200);
+      expect(voiceLayerArgs.current[0].dailyGrades).toEqual(want);
+    }
+  });
+});

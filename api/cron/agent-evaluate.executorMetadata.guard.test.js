@@ -52,7 +52,7 @@ import { fileURLToPath } from 'node:url';
 import { parse } from 'acorn';
 import {
   FROZEN_NOW, makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs, makeIntradayCandles,
-  makeHoldResult, makeSwapResult, makeToolUseResponse, deepClone,
+  makeHoldResult, makeSwapResult, makeToolUseResponse, deepClone, serverMeetingOverrides,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { makeCallsDb } from '../_utils/__fixtures__/callRecordsStore.js';
 
@@ -136,8 +136,9 @@ function ownerWritableBattleFields() {
  * Names whose arguments are laundered: lookups / verifiers against server state.
  * (`getPresetConfig` maps the owner's preset string onto the server's preset
  * table; what flows on from it — risk verdicts, trigger types — is the server's
- * own vocabulary. An INHERITED key ('constructor') returns a non-table and the
- * tick throws instead — a crash, filed as its own task, never a planted value.)
+ * own vocabulary. Since integrity follow-up 2 the cron hands it
+ * `presetKeyOf(battle.strategyPreset)` — an own key of the table, else
+ * 'balanced' — so an inherited name like 'constructor' no longer throws.)
  */
 const SERVER_LOOKUPS = ['findPortfolioSlot', 'findBenchAsset', 'fetchPricesForProposal', 'serverProposalEvaluationId', 'serverProposalDecision', 'serverTradeId', 'getPresetConfig'];
 /** The text sanitizers (a capped string, or nothing). */
@@ -484,7 +485,10 @@ const DESC = 'DESC';           // planted descriptive text — may ride, capped
  */
 function plantedBattle(overrides = {}) {
   return makeTickBattle({
-    executionMode: N,
+    // A STRING carrying the symbol sentinel (review K4-1): a number would read as 'autopilot'
+    // through clientToken anyway, so a caller that stamped entryMode from the
+    // battle again would pass; a sentinel string on any row fails plantedIn.
+    executionMode: `${SYM}_MODE`,
     pendingProposal: plantedProposal(),
     gameplanMeeting: { id: ID, status: 'rejected', diagnosis: DESC.repeat(600), lockedPoints: N, expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [plantedLeg('KO', 'AMD')] },
     strategyPreset: DESC.repeat(40),
@@ -498,6 +502,7 @@ function plantedBattle(overrides = {}) {
 }
 const plantedMetadata = () => ({
   lockedPoints: N, entryPrice: N, exitPrice: N, lockedGainPct: N, symbolOut: SYM, symbolIn: SYM, swapDay: N, tradingDay: N,
+  entryMode: `${SYM}_MODE`, // review K4-1: the stored mode never reaches a row (proposalDescriptiveMetadata drops it)
   swappedOutAt: ID, evaluationId: ID, id: ID, entryConviction: N, source: ID, exitReason: ID, archetype: ID, hftKnobsSource: ID,
   swapProvenance: { dialBandVersion: N }, verification: { verificationId: ID, mode: 'shadow' }, snapshot: { n: N },
   rationale: DESC.repeat(600), hypothesis: DESC, trigger: DESC, entryRegime: DESC.repeat(40), swapMotive: DESC,
@@ -510,6 +515,8 @@ const plantedProposal = (extra = {}) => ({
   outgoingSwappedInAt: N, // P6's stored belief, planted as a number: dropped by expectedOutOfStored (symbol only)
   evaluationMetadata: plantedMetadata(), snapshot: { symbolOut: { rsi: N }, symbolIn: { rsi: N } }, ...extra,
 });
+/** The legs the server stored in its copy of a meeting it created (integrity follow-up 2, Part A) — server values only. */
+const SERVER_LEGS = Object.freeze([{ symbolOut: 'KO', symbolIn: 'AMD', swappedInAt: null }]);
 const plantedLeg = (symbolOut, symbolIn) => ({ symbolOut, symbolIn, rationale: DESC.repeat(600), tier: N, slotIndex: N, id: ID, evaluationId: ID, lockedPoints: N, tradingDay: N, swappedInAt: N });
 
 /** Every planted number, id or symbol found anywhere in `value` (descriptive text excepted). */
@@ -568,13 +575,15 @@ const CALLERS = [
     name: 'C5 suppression pass', site: 'runSuppressionDeterministicPass', is: () => true,
     run: () => {
       guardrailHook.result = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_stopLoss', statusMessage: 'Stop hit on KO.', overrides: [] };
+      // Integrity follow-up 2 (Part A): the meeting the SERVER created (its copy
+      // holds the one leg it proposed), every other field of it then planted.
       return runTick({ battle: plantedBattle({
-        gameplanMeeting: { id: ID, status: 'pending', diagnosis: DESC, expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [plantedLeg('KO', 'AMD')] },
+        ...serverMeetingOverrides({ id: ID, status: 'pending', diagnosis: DESC, expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [plantedLeg('KO', 'AMD')] }, { legs: SERVER_LEGS }),
         agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'stopLoss', value: 1, unit: '%', enforcement: 'hard' }] },
       }) });
     },
   },
-  { name: 'C6 approved meeting', site: 'handleGameplanMeeting', is: () => true, run: () => runTick({ battle: plantedBattle({ gameplanMeeting: { id: ID, status: 'approved', diagnosis: DESC, expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [plantedLeg('KO', 'AMD')] } }) }) },
+  { name: 'C6 approved meeting', site: 'handleGameplanMeeting', is: () => true, run: () => runTick({ battle: plantedBattle(serverMeetingOverrides({ id: ID, status: 'approved', diagnosis: DESC, expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [plantedLeg('KO', 'AMD')] }, { legs: SERVER_LEGS })) }) },
 ];
 
 describe('BEHAVIOURAL — every owner-writable field planted; the six callers through processAgentBattle at off, shadow and enforce', () => {
@@ -601,6 +610,8 @@ describe('BEHAVIOURAL — every owner-writable field planted; the six callers th
           expect(plantedIn(row), caller.name).toEqual([]);
           expect(overlong(row), caller.name).toEqual([]);
           if (mode !== 'off') expect(row.verification?.mode, caller.name).toBe(mode);
+          // Integrity follow-up 2 (Q4): the mode that GOVERNED — never the planted string (review K4-1).
+          expect(row.entryMode, caller.name).toBe(caller.dormant ? 'copilot' : 'autopilot');
         }
       });
     }

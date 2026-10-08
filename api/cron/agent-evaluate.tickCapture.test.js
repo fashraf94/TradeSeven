@@ -30,6 +30,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   FROZEN_NOW, FROZEN_DAY_ET, makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs,
   makeIntradayCandles, makeHoldResult, makeSwapResult, makeToolUseResponse, undefinedPaths,
+  serverMeetingOverrides,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { makeCaptureDb, permanentDoc, bodyDoc, containsText } from '../_utils/__fixtures__/tickCaptureHarness.js';
 import { claimTickCaptureContext, newTickCaptureScope, runInTickCaptureScope } from '../_utils/tickCapture/captureContext.js';
@@ -291,7 +292,7 @@ describe('C-8 — every exit in the Phase 0 exit map, flag OFF and ON', () => {
     {
       name: 'gameplan_pending', stage: 'gameplan_handled',
       run: () => ({
-        battle: makeTickBattle({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] } }),
+        battle: makeTickBattle(serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] })),
       }),
     },
     {
@@ -731,7 +732,7 @@ describe('G2 (Astra round 2) — the suppression pass is recorded where it runs'
   const suppressed = (over = {}) => makeTickBattle({
     // A pending, unexpired meeting: the R11 suppression pass runs and the tick
     // returns early through `gameplan_pending`.
-    gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] },
+    ...serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] }),
     agentContext: {
       ...makeTickBattle().agentContext,
       deployedGuardrails: [{ type: 'stopLoss', value: 25, unit: '%', enforcement: 'hard' }],
@@ -764,7 +765,7 @@ describe('G2 (Astra round 2) — the suppression pass is recorded where it runs'
 
   it('a battle with NO deployed guardrails records a pass that did not run', async () => {
     const { permanent } = await runTick({
-      battle: makeTickBattle({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] } }),
+      battle: makeTickBattle(serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] })),
     });
     expect(permanent.guardrail.suppressionPassRan).toBe(false);
     expect(permanent.guardrail.suppressionPassFaulted).toBe(false);

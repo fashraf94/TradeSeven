@@ -42,7 +42,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   FROZEN_NOW, makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs,
-  makeIntradayCandles, makeHoldResult, makeSwapResult, makeToolUseResponse, deepClone,
+  makeIntradayCandles, makeHoldResult, makeSwapResult, makeToolUseResponse, deepClone, serverMeetingOverrides,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { makeCallsDb, callsTouches, storedCollection, storedDoc, CALL_SUBCOLLECTIONS } from '../_utils/__fixtures__/callRecordsStore.js';
 
@@ -241,8 +241,11 @@ const SCENARIOS = {
     }),
     dormantProposalPath: true,
   }),
-  gameplan_pending: () => ({ battle: makeTickBattle({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] } }) }),
-  gameplan_pending_with_pass: () => ({ battle: withGuardrail({ gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] } }) }),
+  // Integrity follow-up 2 (Part A): a pending meeting the SERVER created carries
+  // its copy in cronState (only such a meeting makes the model wait) — the
+  // frozen writes of these two exits are unchanged by it.
+  gameplan_pending: () => ({ battle: makeTickBattle(serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] })) }),
+  gameplan_pending_with_pass: () => ({ battle: withGuardrail(serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] })) }),
   gameplan_created: () => ({ battle: makeTickBattle({ cronState: { ...makeTickBattle().cronState, lastGameplanDate: null } }) }),
   gameplan_created_with_pass: () => ({ battle: withGuardrail({ cronState: { ...makeTickBattle().cronState, lastGameplanDate: null } }) }),
   cpu_passive: () => ({ battle: makeTickBattle({ isCpu: true }) }),
@@ -352,6 +355,28 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 const serialize = (v) => JSON.stringify(v);
 
+/**
+ * Integrity follow-up 2 (Part A) — the ONE intended change on these exits:
+ * the write that creates a meeting also writes the server's copy,
+ * `cronState.gameplanMeeting`. It is lifted out here (and pinned by its own
+ * row below) so everything else the exit writes is still compared, byte for
+ * byte, with the frozen pre-change fixture. Any other moved byte still fails.
+ */
+const INTENDED_CHANGES = {
+  gameplan_created: liftMeetingCopy,
+  gameplan_created_with_pass: liftMeetingCopy,
+};
+function liftMeetingCopy(updates) {
+  const lifted = [];
+  const rest = updates.map((u) => {
+    if (!Object.hasOwn(u, 'cronState.gameplanMeeting')) return u;
+    lifted.push({ copy: u['cronState.gameplanMeeting'], meeting: u.gameplanMeeting });
+    const { 'cronState.gameplanMeeting': _copy, ...others } = u;
+    return others;
+  });
+  return { rest, lifted };
+}
+
 describe('calls OFF — byte-identical to the frozen pre-change fixture on every exit', () => {
   it('GENERATE (local only) or load the frozen fixture', async () => {
     if (!GENERATE) {
@@ -451,6 +476,12 @@ describe('calls OFF — byte-identical to the frozen pre-change fixture on every
       const { snapshot, db, seed } = await runScenario(name);
       const live = JSON.parse(serialize(snapshot));
       const frozen = golden.scenarios[name];
+      if (INTENDED_CHANGES[name]) {
+        const { rest, lifted } = INTENDED_CHANGES[name](live.updates);
+        // Exactly one write carries the copy — the one that writes the meeting — and nothing else moved.
+        expect(lifted, `${name}: the creation write carries the server's copy`).toHaveLength(1);
+        live.updates = rest;
+      }
       expect(serialize(live.updates), `${name}: battle writes moved`).toBe(serialize(frozen.updates));
       expect(serialize(live.prompts), `${name}: prompt bytes moved`).toBe(serialize(frozen.prompts));
       expect(serialize(live.capture), `${name}: capture documents moved`).toBe(serialize(frozen.capture));
@@ -465,6 +496,24 @@ describe('calls OFF — byte-identical to the frozen pre-change fixture on every
       expect(storedDoc(db, 'callSweepQueue')).toEqual(seed.queue);
       // No calls key rides any battle write or cronState at off.
       expect(serialize(live.updates)).not.toMatch(/declarationsPhase|callFlips|callsDiag/);
+    });
+  }
+
+  for (const name of Object.keys(INTENDED_CHANGES)) {
+    it(`${name} — follow-up 2 (Part A), the intended change: the creation write adds exactly \`cronState.gameplanMeeting\`, the server's copy of the meeting it writes, built from server values`, async () => {
+      const { snapshot } = await runScenario(name);
+      const { lifted } = liftMeetingCopy(JSON.parse(serialize(snapshot.updates)));
+      expect(lifted).toHaveLength(1);
+      const [{ copy, meeting }] = lifted;
+      expect(meeting.status).toBe('pending');
+      expect(Object.keys(copy)).toEqual(['meetingId', 'createdAt', 'expiresAt', 'legs']);
+      expect(copy).toEqual({
+        meetingId: meeting.id, createdAt: meeting.createdAt, expiresAt: meeting.expiresAt,
+        // At off P6 stamps no entry instant on a leg, so the copy stores none (review K2-2).
+        legs: meeting.suggestedSwaps.map((leg) => ({ symbolOut: leg.symbolOut, symbolIn: leg.symbolIn })),
+      });
+      // The frozen fixture's own creation write carries no copy (it predates it).
+      expect(serialize(golden.scenarios[name].updates)).not.toMatch(/cronState\.gameplanMeeting/);
     });
   }
 });
