@@ -210,6 +210,11 @@ export const FILM_ROOM_COPY = Object.freeze({
   sessionHigh: 'Session high',
   sessionLow: 'Session low',
   lastBarClose: 'Close · the last 10-minute bar',
+  changeOpenToClose: 'Change · open to close',
+  volumeSession: 'Volume · session',
+  // R4(b): each axis names its class once, in its caption (the ticks carry no marker)
+  axisPrice: 'Price axis',
+  axisPercent: '% from the session open',
   market: 'Market · SPY',
   sector: (etf) => `Sector · ${etf}`,
   sectorNone: 'Sector · none',

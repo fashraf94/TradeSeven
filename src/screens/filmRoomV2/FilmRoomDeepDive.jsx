@@ -11,20 +11,45 @@
 // on a price chart, and a replay point is never presented as the price behind
 // a check.
 //
-// Axis labels are the record's own numbers — the session open, the session's
-// high and low bar, the last bar's close — each by its path in the series
-// document with its marker; the chart draws no number of its own.
+// The record's own numbers on the chart — the session open and the last bar's
+// close — are labelled by their paths in the series document, with markers.
+// The axes are scaffolding (Amendment E addendum R4(b)): gridlines at round
+// steps of the % move from the session open, the price at each on the left and
+// the % on the right, and intermediate time ticks — no per-tick marker; each
+// axis names its class ONCE, in its caption (the price axis by the series
+// document's own declaration for its closes, the % axis by the screen's
+// declaration). The side facts add the open-to-close change and the session's
+// volume, computed from the bars and declared `market` (R4(a)), and the
+// company name from the app's existing symbol directory (R4(d)).
 
 import React, { useMemo, useState } from 'react';
-import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtVolume, isNum, toMs } from './filmRoomModel';
+import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
 import { classOfNumber } from '../../constants/filmTape';
+import { COMPANY_NAMES } from '../../config/stockData';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
-import { C, card, eyebrow, foot, mono, tint, plain, TapeNum, When, Rec, Section, Row, Chip, KindMark, TextButton, Coverage } from './FilmRoomKit';
+import { C, card, eyebrow, foot, mono, tint, plain, TapeNum, AggNum, When, Rec, Section, Row, Chip, KindMark, TextButton, Coverage } from './FilmRoomKit';
 import { EvidenceStamp } from './FilmRoomCheckDetail';
 
 function seriesOf(series, sym) {
   return (series || []).find((s) => s?.symbol === sym) || null;
 }
+
+/** A symbol's company name from the app's existing symbol directory (R4(d)); null when it has none but the symbol. */
+export function displayNameOf(sym) {
+  const name = typeof sym === 'string' ? COMPANY_NAMES[sym] : null;
+  return typeof name === 'string' && name && name !== sym ? name : null;
+}
+function DisplayName({ sym, style }) {
+  const name = displayNameOf(sym);
+  return name ? <span data-display-name={sym} style={style}>{name}</span> : null;
+}
+
+const PCT_AXIS = 'axis(% from the session open)';
+const PAD_L = 52;            // the price axis's gutter
+const PAD_R = 46;            // the % axis's gutter
+const TICK_EVERY_MS = 90 * 60_000;
+/** A chart tick's clock, without AM/PM (the design of record's ticks). */
+const tickClock = (ms) => (etClock(new Date(ms).toISOString()) || '').replace(/ [AP]M$/, '');
 
 /** A line of closes rebased to `base` (another series drawn on this symbol's price scale), or null. */
 function rebased(doc, base) {
@@ -64,56 +89,78 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   const vols = bars.map((b) => b.v).filter(isNum);
   const volMax = vols.length ? Math.max(...vols) : 0;
   const pct = (ms) => `${(x(ms) / 10).toFixed(3)}%`;
+  // R4(b) scaffolding: gridlines at round % steps from the session open; the session open's own line is the 0 step.
+  const ticks = isNum(open) && open > 0 ? pctTicks(lo / open - 1, hi / open - 1) : [];
+  const timeTicks = [];
+  for (let t = startMs + TICK_EVERY_MS; t < endMs - TICK_EVERY_MS / 2; t += TICK_EVERY_MS) timeTicks.push(t);
+  const tickLabel = { position: 'absolute', ...mono(9, C.ink3, { whiteSpace: 'nowrap', lineHeight: 1 }) };
   return (
-    <div data-region="price-chart" data-symbol={sym} style={{ position: 'relative', width: '100%', height, marginLeft: 0 }}>
-      <svg width="100%" height={height} viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-label={`${sym} · ${COPY.deepPrice}`} style={{ display: 'block', overflow: 'visible', width: '100%', height }}>
-        {isNum(open) ? <line data-line="session-open" x1="0" x2="1000" y1={y(open)} y2={y(open)} style={{ stroke: C.ink3, strokeDasharray: '1.5 3' }} vectorEffect="non-scaling-stroke" /> : null}
-        {mk ? <path data-line="market" d={line(mk.map((p) => ({ ...p, t: p.t + 10 * 60_000 })))} style={{ fill: 'none', stroke: C.ink3, strokeWidth: 1.1 }} vectorEffect="non-scaling-stroke" /> : null}
-        {sc ? <path data-line="sector" d={line(sc.map((p) => ({ ...p, t: p.t + 10 * 60_000 })))} style={{ fill: 'none', stroke: C.purple, strokeWidth: 1.1, opacity: 0.9 }} vectorEffect="non-scaling-stroke" /> : null}
-        <path data-line="price" d={line(closes)} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.6 }} vectorEffect="non-scaling-stroke" />
-        {actions.map(({ a, i }) => (toMs(a.at) !== null ? <line key={i} data-swap-mark={i} x1={x(toMs(a.at))} x2={x(toMs(a.at))} y1={padT - 4} y2={padT + ih} style={{ stroke: exitMakerOf(a).by === 'agent' ? C.teal : C.ink2, strokeWidth: 1, strokeDasharray: '3 2' }} vectorEffect="non-scaling-stroke" /> : null))}
-        {show.volume && volMax > 0 ? bars.map((b, i) => (isNum(b.v) && toMs(b.t) !== null ? <rect key={i} data-volume-bar={i} x={x(toMs(b.t)) + 2} width={Math.max(2, (10 * 60_000 / (endMs - startMs)) * 1000 - 4)} y={padT + ih + gap + volH - (b.v / volMax) * volH} height={(b.v / volMax) * volH} style={{ fill: tint('scrim', 0.18) }} /> : null)) : null}
-      </svg>
-      {/* the record's own numbers, as axis labels */}
-      {/* No session high or low is shown: hindsight after a plan or an exit (spec §13, BA-10; review A2L1-4). The axis carries the open and the last close. */}
-      {isNum(open) ? <span style={{ position: 'absolute', left: 2, top: y(open) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['sessionOpen', 'value']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
-      {isNum(bars[bars.length - 1]?.c) ? <span style={{ position: 'absolute', right: 2, top: y(bars[bars.length - 1].c) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
-      {/* the evidence overlay (BA-43) */}
-      {marks.map((m) => {
-        const px = valueAt(tape, ['checks', m.index, 'evidence', sym, 'px']);
-        const ms = toMs(m.at);
-        if (!isNum(px) || ms === null) return null;
-        const on = selectedMark === m.index;
-        return (
-          <button
-            key={m.index}
-            type="button"
-            data-evidence-marker={m.index}
-            data-marker-px={px}
-            data-marker-at={m.at}
-            aria-label={`${COPY.evidenceLabel} · ${etClock(m.at) ?? ''}`}
-            aria-pressed={on}
-            onClick={() => onMark(on ? null : m.index)}
-            style={{ ...plain, position: 'absolute', left: `calc(${pct(ms)} - 12px)`, top: y(px) - 12, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <span style={{ width: 8, height: 8, transform: 'rotate(45deg)', background: on ? C.gold : 'transparent', boxShadow: `inset 0 0 0 1.5px ${C.gold}` }} />
-          </button>
-        );
-      })}
-      {actions.map(({ a, i }) => {
-        const ms = toMs(a.at);
-        if (ms === null) return null;
-        const who = exitMakerOf(a);
-        const right = x(ms) > 600;
-        return (
-          <span key={`l${i}`} data-swap-label={i} style={{ position: 'absolute', top: 0, ...(right ? { right: `calc(${100 - x(ms) / 10}% + 6px)` } : { left: `calc(${pct(ms)} + 6px)` }), display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', ...mono(9.5, who.by === 'agent' ? C.teal : C.ink2, { fontWeight: 600 }) }}>
-            {a.symbolOut === sym ? COPY.exitMark : COPY.entryMark} · <When>{etClock(a.at)}</When> · {who.label}
-          </span>
-        );
-      })}
-      <div style={{ position: 'absolute', left: 0, right: 0, bottom: -16, display: 'flex', justifyContent: 'space-between', ...mono(9, C.ink3) }}>
-        <When>{etClock(new Date(startMs).toISOString())}</When>
-        <span>{COPY.close10}</span>
+    <div data-region="price-chart" data-symbol={sym} style={{ position: 'relative', width: '100%', boxSizing: 'border-box', padding: `0 ${PAD_R}px 0 ${PAD_L}px` }}>
+      <div data-plot="" style={{ position: 'relative', width: '100%', height }}>
+        <svg width="100%" height={height} viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-label={`${sym} · ${COPY.deepPrice}`} style={{ display: 'block', overflow: 'visible', width: '100%', height }}>
+          {ticks.filter((v) => v !== 0).map((v) => <line key={v} data-gridline="" x1="0" x2="1000" y1={y(open * (1 + v))} y2={y(open * (1 + v))} style={{ stroke: C.hair }} vectorEffect="non-scaling-stroke" />)}
+          {isNum(open) ? <line data-line="session-open" x1="0" x2="1000" y1={y(open)} y2={y(open)} style={{ stroke: C.ink3, strokeDasharray: '1.5 3' }} vectorEffect="non-scaling-stroke" /> : null}
+          {mk ? <path data-line="market" d={line(mk.map((p) => ({ ...p, t: p.t + 10 * 60_000 })))} style={{ fill: 'none', stroke: C.ink3, strokeWidth: 1.1 }} vectorEffect="non-scaling-stroke" /> : null}
+          {sc ? <path data-line="sector" d={line(sc.map((p) => ({ ...p, t: p.t + 10 * 60_000 })))} style={{ fill: 'none', stroke: C.purple, strokeWidth: 1.1, opacity: 0.9 }} vectorEffect="non-scaling-stroke" /> : null}
+          <path data-line="price" d={line(closes)} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.6 }} vectorEffect="non-scaling-stroke" />
+          {actions.map(({ a, i }) => (toMs(a.at) !== null ? <line key={i} data-swap-mark={i} x1={x(toMs(a.at))} x2={x(toMs(a.at))} y1={padT - 4} y2={padT + ih} style={{ stroke: exitMakerOf(a).by === 'agent' ? C.teal : C.ink2, strokeWidth: 1, strokeDasharray: '3 2' }} vectorEffect="non-scaling-stroke" /> : null))}
+          {show.volume && volMax > 0 ? bars.map((b, i) => (isNum(b.v) && toMs(b.t) !== null ? <rect key={i} data-volume-bar={i} x={x(toMs(b.t)) + 2} width={Math.max(2, (10 * 60_000 / (endMs - startMs)) * 1000 - 4)} y={padT + ih + gap + volH - (b.v / volMax) * volH} height={(b.v / volMax) * volH} style={{ fill: tint('scrim', 0.18) }} /> : null)) : null}
+        </svg>
+        {/* R4(b): the axes' tick labels — scaffolding, no per-tick marker; each axis's class is named once, in its caption below. */}
+        {ticks.map((v) => (
+          <React.Fragment key={`tick${v}`}>
+            {/* The 0 step's price is the session open, which the record's own marked label carries — never an unmarked twin of it. */}
+            {v !== 0 ? <span data-axis-scaffolding="price" style={{ ...tickLabel, right: 'calc(100% + 6px)', top: y(open * (1 + v)) - 5 }}>{fmtPrice(open * (1 + v))}</span> : null}
+            <span data-axis-scaffolding="percent" style={{ ...tickLabel, left: 'calc(100% + 6px)', top: y(open * (1 + v)) - 5 }}>{fmtPercent(v)}</span>
+          </React.Fragment>
+        ))}
+        {/* the record's own numbers, as axis labels */}
+        {/* No session high or low is shown: hindsight after a plan or an exit (spec §13, BA-10; review A2L1-4). The axis carries the open and the last close. */}
+        {isNum(open) ? <span style={{ position: 'absolute', left: 2, top: y(open) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['sessionOpen', 'value']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
+        {isNum(bars[bars.length - 1]?.c) ? <span style={{ position: 'absolute', right: 2, top: y(bars[bars.length - 1].c) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
+        {/* the evidence overlay (BA-43) */}
+        {marks.map((m) => {
+          const px = valueAt(tape, ['checks', m.index, 'evidence', sym, 'px']);
+          const ms = toMs(m.at);
+          if (!isNum(px) || ms === null) return null;
+          const on = selectedMark === m.index;
+          return (
+            <button
+              key={m.index}
+              type="button"
+              data-evidence-marker={m.index}
+              data-marker-px={px}
+              data-marker-at={m.at}
+              aria-label={`${COPY.evidenceLabel} · ${etClock(m.at) ?? ''}`}
+              aria-pressed={on}
+              onClick={() => onMark(on ? null : m.index)}
+              style={{ ...plain, position: 'absolute', left: `calc(${pct(ms)} - 12px)`, top: y(px) - 12, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <span style={{ width: 8, height: 8, transform: 'rotate(45deg)', background: on ? C.gold : 'transparent', boxShadow: `inset 0 0 0 1.5px ${C.gold}` }} />
+            </button>
+          );
+        })}
+        {actions.map(({ a, i }) => {
+          const ms = toMs(a.at);
+          if (ms === null) return null;
+          const who = exitMakerOf(a);
+          const right = x(ms) > 600;
+          return (
+            <span key={`l${i}`} data-swap-label={i} style={{ position: 'absolute', top: 0, ...(right ? { right: `calc(${100 - x(ms) / 10}% + 6px)` } : { left: `calc(${pct(ms)} + 6px)` }), display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', ...mono(9.5, who.by === 'agent' ? C.teal : C.ink2, { fontWeight: 600 }) }}>
+              {a.symbolOut === sym ? COPY.exitMark : COPY.entryMark} · <When>{etClock(a.at)}</When> · {who.label}
+            </span>
+          );
+        })}
+      </div>
+      {/* the time axis: the session open, the intermediate ticks, the close — instants, as the design of record writes them */}
+      <div data-time-axis="" style={{ position: 'relative', height: 12, marginTop: 4, ...mono(9, C.ink3) }}>
+        <When style={{ ...tickLabel, left: 0 }}>{tickClock(startMs)}</When>
+        {timeTicks.map((t) => <When key={t} style={{ ...tickLabel, left: pct(t), transform: 'translateX(-50%)' }}><span data-time-tick="">{tickClock(t)}</span></When>)}
+        <span style={{ ...tickLabel, right: 0 }}>{COPY.close10}</span>
+      </div>
+      <div data-region="axis-captions" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px 12px', margin: `6px -${PAD_R}px 0 -${PAD_L}px`, ...mono(9, C.ink3) }}>
+        <span data-axis-caption="price" data-axis-doc={`series:${sym}`} data-axis-path="bars[0].c" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{COPY.axisPrice}<LineMark doc={doc} path={['bars', 0, 'c']} /></span>
+        <span data-axis-caption="percent" data-axis-aggregate={PCT_AXIS} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{COPY.axisPercent}<KindMark cls={SCREEN_AGGREGATE_CLASSES[PCT_AXIS] ?? null} /></span>
       </div>
     </div>
   );
@@ -143,12 +190,19 @@ function SymbolFacts({ tape, doc, sym, holdings, sectorEtf }) {
   const bars = Array.isArray(doc?.bars) ? doc.bars : [];
   const role = roleOf(tape, sym, holdings);
   const sp = (path) => <TapeNum doc={doc} docLabel={`series:${sym}`} path={path} fmt={fmtPrice} size={12} />;
+  // R4(a): computed from THIS symbol's own bars — market operands only, declared `market`.
+  const { change, volume } = seriesFacts(doc, tape);
   return (
     <div data-region="symbol-facts" style={{ ...card, gap: 0, padding: '10px 14px 6px' }}>
-      <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', color: C.ink, lineHeight: 1, paddingBottom: 8 }}><Rec>{sym}</Rec></span>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, paddingBottom: 8, minWidth: 0 }}>
+        <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', color: C.ink, lineHeight: 1 }}><Rec>{sym}</Rec></span>
+        <DisplayName sym={sym} style={mono(10.5, C.ink3, { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })} />
+      </div>
       <Row k={COPY.inTheBook} v={<span style={mono(10.5, C.ink, { textAlign: 'right' })}><When>{role.text}</When></span>} />
       <Row k={COPY.sessionOpen} v={sp(['sessionOpen', 'value'])} />
       {bars.length ? <Row k={COPY.lastBarClose} v={sp(['bars', bars.length - 1, 'c'])} /> : null}
+      {change !== null ? <Row k={COPY.changeOpenToClose} v={<AggNum value={change} aggregate="change(sessionOpen.value to bars[last].c)" fmt={fmtPercent} size={12} weight={700} color={C.ink} />} /> : null}
+      {volume !== null ? <Row k={COPY.volumeSession} v={<AggNum value={volume} aggregate="sum(bars[].v)" fmt={fmtVolume} size={12} weight={700} color={C.ink} />} /> : null}
       <Row k={COPY.sectorLine} v={<span style={mono(10.5, sectorEtf ? C.ink : C.ink3)}>{sectorEtf ? <Rec>{sectorEtf}</Rec> : COPY.sectorLineNone}</span>} />
     </div>
   );
@@ -206,7 +260,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
     chartBody = (
       <>
         <ChartLegend sym={current} sectorEtf={sectorEtf} show={show} onToggle={toggle} doc={doc} marketDoc={marketDoc} sectorDoc={sectorDoc} />
-        <div style={{ paddingBottom: 18 }}>
+        <div>
           <PriceChart tape={tape} doc={doc} sym={current} show={show} marketDoc={marketDoc} sectorDoc={sectorDoc} selectedMark={mark} onMark={setMark} height={desktop ? 340 : 250} />
         </div>
       </>
@@ -231,7 +285,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
     </div>
   ) : null;
   const chart = (
-    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} coverage={tape.coverage?.series}>
+    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} coverage={tape.coverage?.series}>
       <div style={{ ...card, gap: 10 }}>
         {chartBody}
         {evidence}

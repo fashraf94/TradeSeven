@@ -66,6 +66,10 @@ export const SCREEN_AGGREGATE_CLASSES = Object.freeze({
   'count(rationale[])': 'derived',
   'count(plans[] of the symbol)': 'derived',
   'ordinal(actions[] in time order)': 'derived',
+  // The Deep dive's facts and its percent axis, computed from a series document's bars: market operands only.
+  'change(sessionOpen.value to bars[last].c)': 'market',
+  'sum(bars[].v)': 'market',
+  'axis(% from the session open)': 'market',
 });
 
 /**
@@ -146,6 +150,16 @@ export function fmtPlain(v) {
 /** A whole count. */
 export function fmtCount(v) {
   return isNum(v) ? String(Math.round(v)) : '—';
+}
+
+/** A ratio as a signed percent, two decimals ("+0.53%"), the true minus sign; the sign is the shown digits'. */
+export function fmtPercent(v) {
+  if (!isNum(v)) return '—';
+  const r = Math.round(v * 10000) / 100;
+  const s = `${Math.abs(r).toFixed(2)}%`;
+  if (r > 0) return `+${s}`;
+  if (r < 0) return `${MINUS}${s}`;
+  return s;
 }
 
 /** Volume, compact (12.3K / 4.1M). */
@@ -462,6 +476,36 @@ export function roleOf(tape, symbol, holdings) {
   const planned = (Array.isArray(tape?.plans) ? tape.plans : []).some((p) => p.symbol === symbol);
   if (planned) return { kind: 'planned', text: 'named in a plan', action: null };
   return { kind: 'series', text: 'price series', action: null };
+}
+
+/**
+ * The Deep dive's two computed facts (addendum R4(a)), from ONE series
+ * document's own bars — market operands only, so `market`. Each is null when
+ * the document cannot carry it whole: no session open or last close for the
+ * change; a bar without a volume for the session's volume; and neither when
+ * the candle pass lists the symbol as incomplete (the last bar may not be the
+ * close, and the sum would undercount).
+ */
+export function seriesFacts(doc, tape = null) {
+  const bars = Array.isArray(doc?.bars) ? doc.bars : [];
+  const incomplete = (Array.isArray(tape?.passes?.candles?.symbolsIncomplete) ? tape.passes.candles.symbolsIncomplete : [])
+    .some((s) => s === doc?.symbol || s?.symbol === doc?.symbol);
+  if (!bars.length || incomplete) return { change: null, volume: null };
+  const open = doc?.sessionOpen?.value;
+  const close = bars[bars.length - 1]?.c;
+  const change = isNum(open) && open > 0 && isNum(close) ? close / open - 1 : null;
+  const volume = bars.every((b) => isNum(b?.v)) ? bars.reduce((sum, b) => sum + b.v, 0) : null;
+  return { change, volume };
+}
+
+/** R4(b) scaffolding: gridline steps of the % move from the session open — at most five lines across the chart's span. */
+const PCT_STEPS = [0.001, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2];
+export function pctTicks(lo, hi) {
+  if (!isNum(lo) || !isNum(hi) || !(hi > lo)) return [];
+  const step = PCT_STEPS.find((s) => (hi - lo) / s <= 5) ?? PCT_STEPS[PCT_STEPS.length - 1];
+  const out = [];
+  for (let k = Math.ceil(lo / step - 1e-9); k * step <= hi + 1e-9; k += 1) out.push(Number((k * step).toFixed(6)));
+  return out;
 }
 
 /** Indices of the bars that carry the session's high and low (for axis labels at real bar values). */

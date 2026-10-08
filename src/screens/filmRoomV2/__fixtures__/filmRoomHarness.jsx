@@ -14,6 +14,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { classOfNumber } from '../../../constants/filmTape';
+import { COMPANY_NAMES } from '../../../config/stockData';
 import { valueAt } from '../filmRoomModel';
 import sep23Tape from './sep23.tape.json';
 import sep23Series from './sep23.series.json';
@@ -109,7 +110,45 @@ export const SPEC_AGGREGATE_CLASSES = Object.freeze({
   'count(rationale[])': 'derived',
   'count(plans[] of the symbol)': 'derived',
   'ordinal(actions[] in time order)': 'derived',
+  'change(sessionOpen.value to bars[last].c)': 'market',
+  'sum(bars[].v)': 'market',
+  'axis(% from the session open)': 'market',
 });
+
+/** R4(d): a display name is exempt only as the directory's own entry for its symbol, letter for letter. */
+const isDirectoryName = (el) => {
+  const host = el.closest('[data-display-name]');
+  return Boolean(host) && COMPANY_NAMES[host.getAttribute('data-display-name')] === host.textContent;
+};
+
+/**
+ * R4(b): the axes whose tick labels may go unmarked — those with EXACTLY ONE caption, carrying ONE marker of the
+ * class the axis's source declares (the series document's declaration for its path, or the oracle's for a computed
+ * axis). Tick labels are scaffolding only when explicitly marked [data-axis-scaffolding] inside the price chart.
+ */
+export function axisDefects(container, docs) {
+  const bad = [];
+  const ok = new Set();
+  const axes = new Set();
+  for (const el of container.querySelectorAll('[data-axis-scaffolding]')) {
+    axes.add(el.getAttribute('data-axis-scaffolding'));
+    if (!el.closest('[data-region="price-chart"]')) bad.push(`axis scaffolding outside the chart: “${el.textContent}”`);
+    if (el.querySelector('[data-num], [data-num-aggregate], [data-kind-mark]')) bad.push(`axis scaffolding holds a marked number: “${el.textContent}”`);
+  }
+  for (const axis of axes) {
+    const caps = [...container.querySelectorAll(`[data-axis-caption="${axis}"]`)];
+    if (caps.length !== 1) { bad.push(`axis ${axis}: ${caps.length} captions`); continue; }
+    const cap = caps[0];
+    const marks = [...cap.querySelectorAll('[data-kind-mark]')].map((k) => k.getAttribute('data-kind-mark'));
+    const doc = docs[cap.getAttribute('data-axis-doc')];
+    const want = cap.hasAttribute('data-axis-aggregate')
+      ? SPEC_AGGREGATE_CLASSES[cap.getAttribute('data-axis-aggregate')] ?? null
+      : (doc ? classOfNumber(doc.numberClasses, parsePath(cap.getAttribute('data-axis-path') || '')) : null);
+    if (marks.length !== 1 || !want || marks[0] !== want) { bad.push(`axis ${axis}: caption marker ${marks.join('+') || 'none'}, declared ${want}`); continue; }
+    ok.add(axis);
+  }
+  return { bad, ok };
+}
 
 /**
  * BA-42 sweep over a mounted container. `docs` maps a `data-num-doc` label to
@@ -139,6 +178,8 @@ export function sweepNumbers(container, docs) {
     if (!want || el.getAttribute('data-num-class') !== want || mark !== want) bad.push(`aggregate ${el.getAttribute('data-num-aggregate')}: marker ${mark}, declared ${want}`);
   }
   const stored = storedStrings(allDocs);
+  const axes = axisDefects(container, docs);
+  bad.push(...axes.bad);
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     let text = node.textContent;
@@ -146,6 +187,11 @@ export function sweepNumbers(container, docs) {
     const host = node.parentElement;
     // A numeral is exempt only inside a MARKED number (review A2L4-6: a bare data-num-text span is not one).
     if (host.closest('[data-num-text]') && (host.closest('[data-num]') || host.closest('[data-num-aggregate]'))) continue;
+    // R4(b): an axis tick label, explicitly marked as scaffolding, of an axis whose one caption names its declared class.
+    const tick = host.closest('[data-axis-scaffolding]');
+    if (tick && axes.ok.has(tick.getAttribute('data-axis-scaffolding'))) continue;
+    // R4(d): the directory's own name for the symbol (“Phillips 66”), never anything else in a display-name element.
+    if (isDirectoryName(host)) continue;
     if (host.closest('[data-time]')) for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
     if (host.closest('[data-identifier]')) text = text.replace(/#swap-\d+/g, ' ');
     if (host.closest('[data-record-text]')) for (const s of stored) text = text.split(s).join(' ');
@@ -172,11 +218,14 @@ export function sweepNumbers(container, docs) {
  */
 export const SPEC_FORBIDDEN_WORDS = Object.freeze(['biggest', 'best', 'worst', 'mistake', 'should have', 'missed', 'good trade', 'bad trade', 'lesson', 'grade']);
 
-/** Every text node and every aria-label / title, each its own span of text: an element's edge is a word boundary (review A2L4-1). */
+/**
+ * Every text node and every aria-label / title, each its own span of text: an element's edge is a word boundary
+ * (review A2L4-1). A company's name from the directory is a proper noun, not the screen's words (R4(d): "Best Buy").
+ */
 export function renderedText(container) {
   const parts = [];
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) parts.push(node.textContent);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (!isDirectoryName(node.parentElement)) parts.push(node.textContent);
   for (const el of container.querySelectorAll('[aria-label], [title]')) parts.push(el.getAttribute('aria-label') || '', el.getAttribute('title') || '');
   return parts.join(' \n ');
 }

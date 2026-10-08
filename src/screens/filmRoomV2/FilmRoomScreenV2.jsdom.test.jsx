@@ -219,6 +219,29 @@ describe('the sweeps bite (a guard that cannot fail guards nothing)', () => {
     expect(sweepSigns(signs)).toEqual(['sign colour on a div', 'plans[0].price.atPlan.value: sign colour on a market number', 'sign colour on a path line hold']);
   });
 
+  it('addendum R4(b)/(d): a tick label is exempt only as marked scaffolding of an axis captioned ONCE with its declared class; a name only as the directory\'s own', () => {
+    const docs = { tape: sep23Tape, 'series:MSFT': sep23Series.find((s) => s.symbol === 'MSFT') };
+    const inChart = (html) => { const box = document.createElement('div'); box.innerHTML = `<div data-region="price-chart">${html}</div>`; return box; };
+    const tick = '<span data-axis-scaffolding="price">500.00</span>';
+    const caption = (cls) => `<span data-axis-caption="price" data-axis-doc="series:MSFT" data-axis-path="bars[0].c">Price axis<span data-kind-mark="${cls}">M</span></span>`;
+    expect(sweepNumbers(inChart(tick + caption('market')), docs)).toEqual([]);
+    expect(sweepNumbers(inChart(tick), docs)).toEqual(['axis price: 0 captions', 'stray digit: “500.00”']);
+    expect(sweepNumbers(inChart(tick + caption('derived')), docs)).toEqual(['axis price: caption marker derived, declared market', 'stray digit: “500.00”']);
+    expect(sweepNumbers(inChart(tick + caption('market') + caption('market')), docs)).toEqual(['axis price: 2 captions', 'stray digit: “500.00”']);
+    const outside = document.createElement('div');
+    outside.innerHTML = tick + caption('market');
+    expect(sweepNumbers(outside, docs)).toEqual(['axis scaffolding outside the chart: “500.00”']);
+    expect(sweepNumbers(inChart('<span data-axis-scaffolding="price">500.00</span><span data-axis-caption="price" data-axis-aggregate="nope">Price axis<span data-kind-mark="market">M</span></span>'), docs))
+      .toEqual(['axis price: caption marker market, declared null', 'stray digit: “500.00”']);
+    const names = document.createElement('div');
+    names.innerHTML = '<span data-display-name="PSX">Phillips 66</span><span data-display-name="BBY">Best Buy</span>';
+    expect(sweepNumbers(names, docs)).toEqual([]);
+    expect(sweepWords(names)).toEqual([]);
+    names.innerHTML = '<span data-display-name="MSFT">Microsoft 365</span><span data-display-name="MSFT">the best</span>';
+    expect(sweepNumbers(names, docs)).toEqual(['stray digit: “Microsoft 365”']);
+    expect(sweepWords(names)).toEqual(['best']);
+  });
+
   it('review A2L4-7: the production word list is the build prompt\'s, pinned by the oracle (not the other way round)', () => {
     expect([...FORBIDDEN_WORDS]).toEqual([...SPEC_FORBIDDEN_WORDS]);
   });

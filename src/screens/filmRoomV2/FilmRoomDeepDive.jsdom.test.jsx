@@ -12,7 +12,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
 import FilmRoomDeepDive from './FilmRoomDeepDive';
-import { mounter, sep23Tape, sep23Series, emptyTape, emptySeries, sweepNumbers, sweepWords, sweepSigns } from './__fixtures__/filmRoomHarness';
+import { mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, sweepNumbers, sweepWords, sweepSigns, parseNumeral } from './__fixtures__/filmRoomHarness';
+import { fmtVolume } from './filmRoomModel';
+import { COMPANY_NAMES } from '../../config/stockData';
 
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -89,6 +91,114 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     for (const e of m.qa('[data-region="all-symbols"] [data-num]')) expect(e.getAttribute('data-num-class')).toBe('market');
     m.click(m.q('[data-mini="PANW"]'));
     expect(m.q('[data-region="price-chart"]').getAttribute('data-symbol')).toBe('PANW');
+  });
+});
+
+describe('addendum R4(a)/(b)/(d) — the restored facts, axes and name', () => {
+  const docOf = (s) => sep23Series.find((d) => d.symbol === s);
+  const factRow = (label) => [...m.q('[data-region="symbol-facts"]').children].find((r) => r.firstElementChild?.textContent === label);
+
+  it('"Change · open to close" and "Volume · session": from THIS symbol\'s own bars, marked market by the screen\'s declaration', () => {
+    for (const s of ['MSFT', 'DE']) {
+      m.render(<Harness key={s} tape={sep23Tape} series={sep23Series} start={s} />);
+      const doc = docOf(s);
+      const change = doc.bars[doc.bars.length - 1].c / doc.sessionOpen.value - 1;
+      const volume = doc.bars.reduce((sum, b) => sum + b.v, 0);
+      const ch = factRow('Change · open to close').querySelector('[data-num-aggregate]');
+      expect(ch.getAttribute('data-num-aggregate'), s).toBe('change(sessionOpen.value to bars[last].c)');
+      expect(Number(ch.getAttribute('data-agg-value')), s).toBe(change);
+      expect(Math.abs(parseNumeral(ch.querySelector('[data-num-text]').textContent) - change * 100), s).toBeLessThanOrEqual(0.0051);
+      const vol = factRow('Volume · session').querySelector('[data-num-aggregate]');
+      expect(vol.getAttribute('data-num-aggregate'), s).toBe('sum(bars[].v)');
+      expect(Number(vol.getAttribute('data-agg-value')), s).toBe(volume);
+      expect(vol.querySelector('[data-num-text]').textContent, s).toBe(fmtVolume(volume));
+      for (const el of [ch, vol]) {
+        expect(el.getAttribute('data-num-class')).toBe('market');
+        expect(el.querySelector('[data-kind-mark]').getAttribute('data-kind-mark')).toBe('market');
+      }
+    }
+    // the market line's bars would give other values: a fact read from the wrong document cannot pass
+    const spy = docOf('SPY');
+    expect(spy.bars[spy.bars.length - 1].c / spy.sessionOpen.value).not.toBe(docOf('MSFT').bars[docOf('MSFT').bars.length - 1].c / docOf('MSFT').sessionOpen.value);
+  });
+
+  it('a symbol the candle pass lists as incomplete shows neither computed fact; a bar with no volume drops the volume only', () => {
+    const t = clone(sep23Tape);
+    t.passes.candles.symbolsIncomplete = ['MSFT'];
+    m.render(<Harness tape={t} series={sep23Series} start="MSFT" />);
+    expect(factRow('Change · open to close')).toBeUndefined();
+    expect(factRow('Volume · session')).toBeUndefined();
+    const series = clone(sep23Series);
+    series.find((d) => d.symbol === 'MSFT').bars[3].v = null;
+    m.render(<Harness key="gap" tape={sep23Tape} series={series} start="MSFT" />);
+    expect(factRow('Change · open to close')).toBeTruthy();
+    expect(factRow('Volume · session')).toBeUndefined();
+  });
+
+  it('R4(b): gridlines at round % steps — each price tick at its own price on the chart\'s scale, its % beside it, no per-tick marker', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} start="MSFT" />);
+    const doc = docOf('MSFT');
+    const chart = m.q('[data-region="price-chart"]');
+    const prices = [...chart.querySelectorAll('[data-axis-scaffolding="price"]')];
+    const pcts = [...chart.querySelectorAll('[data-axis-scaffolding="percent"]')];
+    expect(prices.length).toBeGreaterThanOrEqual(2);
+    expect(chart.querySelectorAll('[data-gridline]').length).toBe(prices.length);   // the 0 step is the session open's own line
+    expect(pcts.length).toBe(prices.length + 1);
+    // the chart's own price scale, from the record's two marked labels (the A2L4-2 method)
+    const yOf = (path) => parseFloat(chart.querySelector(`[data-num="${path}"]`).parentElement.style.top) + 16;
+    const last = doc.bars.length - 1;
+    const [p0, y0, p1, y1] = [doc.sessionOpen.value, yOf('sessionOpen.value'), doc.bars[last].c, yOf(`bars[${last}].c`)];
+    const yAt = (price) => y0 + ((price - p0) * (y1 - y0)) / (p1 - p0);
+    const steps = [];
+    for (const el of prices) {
+      const p = parseNumeral(el.textContent);
+      const y = parseFloat(el.style.top) + 5;
+      expect(Math.abs(y - yAt(p)), el.textContent).toBeLessThanOrEqual(Math.abs(yAt(p + 0.005) - yAt(p)) + 0.01);
+      const twin = pcts.find((q) => q.style.top === el.style.top);
+      const pct = parseNumeral(twin.textContent);
+      expect(Math.abs(pct - (p / doc.sessionOpen.value - 1) * 100), twin.textContent).toBeLessThanOrEqual(0.0051 + (0.005 / doc.sessionOpen.value) * 100);
+      steps.push(pct);
+      expect(el.querySelector('[data-kind-mark]')).toBeNull();
+      expect(twin.querySelector('[data-kind-mark]')).toBeNull();
+    }
+    const zero = pcts.find((q) => parseNumeral(q.textContent) === 0);
+    expect(Math.abs(parseFloat(zero.style.top) + 5 - y0)).toBeLessThan(0.01);   // 0% is the session open
+    const sorted = [...steps, 0].sort((a, b) => a - b);
+    const gaps = sorted.slice(1).map((v, i) => Math.round((v - sorted[i]) * 1000) / 1000);
+    expect(new Set(gaps).size).toBe(1);   // one round step
+    expect([0.1, 0.25, 0.5, 1, 2, 5, 10, 20]).toContain(gaps[0]);
+  });
+
+  it('R4(b): each axis names its class ONCE, in its caption — the price axis by the series document\'s own declaration, the % axis by the screen\'s', () => {
+    const series = clone(sep23Series);
+    series.find((d) => d.symbol === 'MSFT').numberClasses['bars[].c'] = 'rebuilt';   // the caption follows the document, not a constant
+    m.render(<Harness tape={sep23Tape} series={series} start="MSFT" />);
+    const caps = m.qa('[data-axis-caption]');
+    expect(caps.map((c) => c.getAttribute('data-axis-caption'))).toEqual(['price', 'percent']);
+    expect(caps[0].textContent).toMatch(/^Price axis/);
+    expect(caps[1].textContent).toMatch(/^% from the session open/);
+    expect([...caps[0].querySelectorAll('[data-kind-mark]')].map((k) => k.getAttribute('data-kind-mark'))).toEqual(['rebuilt']);
+    expect([...caps[1].querySelectorAll('[data-kind-mark]')].map((k) => k.getAttribute('data-kind-mark'))).toEqual(['market']);
+    expect(sweepNumbers(m.container, docsFor(sep23Tape, series))).toEqual([]);
+  });
+
+  it('R4(b): intermediate time ticks every 90 minutes from the session open, before the close', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} start="MSFT" />);
+    const axis = m.q('[data-time-axis]');
+    expect([...axis.querySelectorAll('[data-time-tick]')].map((t) => t.textContent)).toEqual(['11:00', '12:30', '2:00']);
+    expect(axis.firstElementChild.textContent).toBe('9:30');
+    expect(axis.lastElementChild.textContent).toBe('close');
+  });
+
+  it('R4(d): the company name from the app\'s symbol directory beside the symbol and on the chart; a symbol it does not name shows alone', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} start="MSFT" />);
+    expect(COMPANY_NAMES.MSFT).toBe('Microsoft');
+    expect(m.q('[data-region="symbol-facts"] [data-display-name="MSFT"]').textContent).toBe('Microsoft');
+    expect(m.q('#deep-chart [data-display-name="MSFT"]').textContent).toBe('Microsoft');
+    m.click(chip('ETN'));
+    expect(COMPANY_NAMES.ETN).toBeUndefined();
+    expect(m.q('[data-display-name]')).toBeNull();
+    expect(m.q('[data-region="symbol-facts"]').textContent.startsWith('ETN')).toBe(true);
   });
 });
 

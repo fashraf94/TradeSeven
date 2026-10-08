@@ -11,7 +11,9 @@ import {
   valueAt, classAt, numberAt, checkStateOf, checkRuns, riskLines, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, deriveHoldings,
   directiveCardOf, rationaleTimeline, planGroups, evidenceMarkers, roleOf, deepSymbols, extremeBars, lastPointPath,
   fmtPoints, fmtPrice, fmtPriceDelta, etClock, etDateLabel, isRecordedScore, SCREEN_AGGREGATE_CLASSES, checkCounts,
+  fmtPercent, seriesFacts, pctTicks,
 } from './filmRoomModel';
+import sep23Series from './__fixtures__/sep23.series.json';
 import { SPEC_AGGREGATE_CLASSES } from './__fixtures__/filmRoomHarness';
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -199,6 +201,38 @@ describe('directives, rationale, plans, the deep dive', () => {
     expect(roleOf(sep23Tape, 'PLTR', h).text).toBe('entered at 2:00 PM · a swap by the agent');
     expect(roleOf(sep23Tape, 'CRWD', h).text).toBe('entered at 12:45 PM · a swap by a platform rule · stagnation');
     expect(extremeBars([{ h: 2, l: 1 }, { h: 5, l: 0.5 }, { h: 3, l: 2 }])).toEqual({ hi: 1, lo: 1 });
+  });
+});
+
+describe('addendum R4(a)/(b) — the Deep dive\'s computed facts and its percent gridlines', () => {
+  const msft = sep23Series.find((s) => s.symbol === 'MSFT');
+
+  it('open-to-close change and session volume come from the ONE document\'s own bars', () => {
+    const f = seriesFacts(msft, sep23Tape);
+    expect(f.change).toBe(msft.bars[msft.bars.length - 1].c / msft.sessionOpen.value - 1);
+    expect(f.volume).toBe(msft.bars.reduce((sum, b) => sum + b.v, 0));
+    const spy = seriesFacts(sep23Series.find((s) => s.symbol === 'SPY'), sep23Tape);
+    expect(spy.change).not.toBe(f.change);
+    expect(spy.volume).not.toBe(f.volume);
+  });
+
+  it('a document that cannot carry a fact whole carries none of it: a bar with no volume; a symbol the candle pass lists incomplete; no bars', () => {
+    const gap = clone(msft);
+    gap.bars[5].v = null;
+    expect(seriesFacts(gap, sep23Tape)).toEqual({ change: seriesFacts(msft, sep23Tape).change, volume: null });
+    const t = clone(sep23Tape);
+    t.passes.candles.symbolsIncomplete = ['MSFT'];
+    expect(seriesFacts(msft, t)).toEqual({ change: null, volume: null });
+    expect(seriesFacts({ ...msft, bars: [] }, sep23Tape)).toEqual({ change: null, volume: null });
+    expect(seriesFacts({ ...msft, sessionOpen: { value: null } }, sep23Tape).change).toBeNull();
+  });
+
+  it('percent formats with its shown sign; gridline steps are round and at most five across the span', () => {
+    expect([fmtPercent(0.0053), fmtPercent(-0.0125), fmtPercent(0), fmtPercent(0.00004), fmtPercent(null)]).toEqual(['+0.53%', '−1.25%', '0.00%', '0.00%', '—']);
+    expect(pctTicks(-0.004, 0.006)).toEqual([-0.0025, 0, 0.0025, 0.005]);
+    expect(pctTicks(-0.03, 0.05)).toEqual([-0.02, 0, 0.02, 0.04]);
+    expect(pctTicks(0.01, 0.01)).toEqual([]);
+    for (const [lo, hi] of [[-0.004, 0.006], [-0.03, 0.05], [-0.0011, 0.0009]]) expect(pctTicks(lo, hi).length).toBeLessThanOrEqual(6);
   });
 });
 
