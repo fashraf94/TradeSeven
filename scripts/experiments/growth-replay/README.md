@@ -35,4 +35,12 @@ node scripts/experiments/growth-replay/growthReplay.js analyze       # runs the 
 node scripts/experiments/growth-replay/growthReplay.js selftest      # synthetic: noise → no effect; planted 30% shift → moves decisions
 ```
 
-Every command except `plan` and `selftest` acts on the newest run; pass `--run <runId>` for another.
+Every command except `plan` and `selftest` acts on the newest run that passed its gate; pass `--run <runId>` for another.
+
+## Recovery rules
+
+- **One command at a time per run.** `pilot`, `submit` and `collect` take an exclusive `run.lock` in the run folder. `status` only reads. If a crashed command left the lock behind, delete the file.
+- **No orphaned batches.** The intent (task indices, size, time) is written to the manifest *before* every batch is created. If a command dies between creating a batch and recording it, the next `submit` or `collect` lists recent batches and adopts the one that attempt made, so nothing is sent twice. More than one candidate stops the command for a human to decide.
+- **Spend limit.** A spend-limit error stops the command (exit 3). A spend-limit *result* inside a batch still lets `collect` save and delete what was paid for, but no retry batch is created.
+- **Deletes are retried.** Every `collect` retries deleting any batch whose results are on disk.
+- **A new pilot is refused once batches exist.** It would remap their custom ids; start a new run with `plan` instead.

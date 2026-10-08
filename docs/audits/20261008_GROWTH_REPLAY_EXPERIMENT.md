@@ -468,7 +468,7 @@ There are 21 known-answer rows, all passing:
 
 ## 9. BUILD_RULES §2 review record
 
-**Why a review was required.** The cumulative branch diff is 4 files and about 2,400 lines, over the 1,500-line threshold.
+**Why a review was required.** The cumulative branch diff is 4 files and about 2,600 lines, over the 1,500-line threshold.
 
 **How it was run:**
 - **Lenses.** Three independent reviewers, each on its own LF `git archive` snapshot of `7010a1df` and read-only on git and on the shared tree:
