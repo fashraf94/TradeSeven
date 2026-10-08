@@ -1410,7 +1410,9 @@ async function submit(flags) {
   // plan's cost bounds cumulative batch spend; the pilot's spend is added on top.
   const cost = planCost(manifest);
   const pilotUsd = manifest.pilot?.pilotSpendUsdTotal ?? manifest.pilot?.pilotSpendUsd ?? 0;
-  if (cost.planned + pilotUsd > CAPS.plannedUsd || cost.worst + pilotUsd > CAPS.worstUsd) stop(`plan over cap: planned $${(cost.planned + pilotUsd).toFixed(2)}, worst $${(cost.worst + pilotUsd).toFixed(2)} (pilot included)`);
+  // A run may carry tighter caps of its own (the batch-effect check: $50 / $68); never looser ones.
+  const caps = rp.caps ? { plannedUsd: Math.min(rp.caps.plannedUsd, CAPS.plannedUsd), worstUsd: Math.min(rp.caps.worstUsd, CAPS.worstUsd) } : CAPS;
+  if (cost.planned + pilotUsd > caps.plannedUsd || cost.worst + pilotUsd > caps.worstUsd) stop(`plan over cap: planned $${(cost.planned + pilotUsd).toFixed(2)}, worst $${(cost.worst + pilotUsd).toFixed(2)} (pilot included; caps $${caps.plannedUsd} / $${caps.worstUsd})`);
   stampCommand(manifest, 'submit');
   const { env } = loadEnv();
   const apiKey = anthropicKey(env);
@@ -1569,19 +1571,16 @@ function loadResults(dir) {
   return out;
 }
 
-async function analyze(flags) {
-  const st = runSelftest();
-  if (!st.pass) stop(`selftest failed — not analyzing: ${JSON.stringify(st)}`);
-  const { dir, manifestPath } = resolveRun(flags);
-  const manifest = readJson(manifestPath);
+/**
+ * Every returned decision of a run, keyed by tick and condition:
+ * keys[k][cond] = [{coarse, fine}] under the key of record (production's validator
+ * semantics); keysStrict under the stricter request-schema key. Also per-condition
+ * usage, response diagnostics and completeness (INCOMPLETE above 5% missing).
+ */
+function buildKeys(dir, manifest, sources = loadSources(dir)) {
   const rp = manifest.runPlan;
-  const sources = loadSources(dir);
   const results = loadResults(dir);
-  const tickMeta = Object.fromEntries(manifest.sample.ticks.map((t) => [t.k, t]));
   const schemaOf = (k) => sources[k].request.tools[0].input_schema;
-
-  // keys[k][condition] = [{coarse, fine}] under the key of record (production's
-  // validator semantics); keysStrict under the stricter request-schema key.
   const keys = {};
   const keysStrict = {};
   const usage = {};
@@ -1606,6 +1605,18 @@ async function analyze(flags) {
     const missing = 1 - (got[c] || 0) / requested[c];
     return [c, { requested: requested[c], returned: got[c] || 0, missingShare: missing, status: missing > 0.05 ? 'INCOMPLETE' : 'complete' }];
   }));
+  return { keys, keysStrict, usage, responseDiagnostics, completeness };
+}
+
+async function analyze(flags) {
+  const st = runSelftest();
+  if (!st.pass) stop(`selftest failed — not analyzing: ${JSON.stringify(st)}`);
+  const { dir, manifestPath } = resolveRun(flags);
+  const manifest = readJson(manifestPath);
+  const rp = manifest.runPlan;
+  const sources = loadSources(dir);
+  const tickMeta = Object.fromEntries(manifest.sample.ticks.map((t) => [t.k, t]));
+  const { keys, keysStrict, usage, responseDiagnostics, completeness } = buildKeys(dir, manifest, sources);
 
   const sampleKeys = rp.sampleKeys;
   // An arm with more than 5% of its requests missing carries INCOMPLETE on its label (review C8/B10).
@@ -1810,6 +1821,185 @@ function writeExhibits(dir, manifest, sources, donorTexts, keys, perTickMove) {
   writeFileSync(path.join(dir, 'GROWTH_REPLAY_EXHIBITS.local.md'), out.join('\n'));
 }
 
+// ---------------------------------------------------------------- batch-effect check (addendum; Fable ruling 2026-10-08)
+//
+// One new run on the same arm-2 moments: a fresh baseline and a fresh `strip`,
+// shuffled together across the same batches (submit's seeded interleave), with
+// equal repeats — 10 if the caps allow, never fewer than 5. Three comparisons on
+// the frozen bars: fresh baseline vs original baseline (the batch-effect test),
+// fresh strip vs fresh baseline (the learning test, batches controlled), and
+// fresh strip vs original strip (replication).
+
+export const BATCHCHECK_CAPS = Object.freeze({ plannedUsd: 50, worstUsd: 68 });
+const BATCHCHECK_REPEATS = Object.freeze({ max: 10, min: 5 });
+
+/** Equal repeats of a fresh baseline and a fresh strip per tick, as runPlan task tuples. */
+export function batchCheckTasks(tickKeys, repeats) {
+  const tasks = [];
+  for (const k of tickKeys) for (let r = 1; r <= repeats; r += 1) tasks.push([k, 'base', 'verbatim', 'prod', r]);
+  for (const k of tickKeys) for (let r = 1; r <= repeats; r += 1) tasks.push([k, 'memory', 'strip', 'prod', r]);
+  return tasks;
+}
+
+/** The largest equal repeat count in [min, max] whose planned AND worst-case cost fit the caps; null if none does. */
+export function fitRepeats(tickKeys, { est, priceOf, caps = BATCHCHECK_CAPS, min = BATCHCHECK_REPEATS.min, max = BATCHCHECK_REPEATS.max }) {
+  for (let r = max; r >= min; r -= 1) {
+    const tasks = batchCheckTasks(tickKeys, r).map(([k, arm, variant, model, rep]) => ({ k, arm, variant, model, rep }));
+    const a = costOf(tasks, est.pilot, priceOf);
+    const b = costOf(tasks, est.conservative, priceOf);
+    const cost = { planned: Math.max(a.planned, b.planned), worst: Math.max(a.worst, b.worst) };
+    if (cost.planned <= caps.plannedUsd && cost.worst <= caps.worstUsd) return { repeats: r, cost };
+  }
+  return null;
+}
+
+/** Derive the batch-check run from an analysed original run (no Firestore read, no spend). */
+async function batchcheckPlan(flags) {
+  if (!flags.from) stop('batchcheck-plan needs --from <runId> (the original run).');
+  const odir = runDir(flags.from);
+  if (!existsSync(path.join(odir, 'manifest.json'))) stop(`no run folder ${odir}`);
+  const om = readJson(path.join(odir, 'manifest.json'));
+  if (!om.runPlan || !om.pilot) stop('the original run has no run plan');
+  const ticks = om.sample.ticks.filter((t) => om.runPlan.sampleKeys.includes(t.k) && t.learned === 'learned');
+  const tickKeys = ticks.map((t) => t.k);
+  const priceOf = (key) => PRICES[key === 'prod' ? om.pilot.prodPriceKey : key];
+  const est = { pilot: { prod: om.runPlan.est.pilot.prod }, conservative: { prod: om.runPlan.est.conservative.prod } };
+  const fit = fitRepeats(tickKeys, { est, priceOf });
+  if (!fit) stop(`even ${BATCHCHECK_REPEATS.min} repeats exceed the caps ($${BATCHCHECK_CAPS.plannedUsd} planned / $${BATCHCHECK_CAPS.worstUsd} worst)`);
+  const runId = `${flags.from}-batchcheck`;
+  const dir = runDir(runId);
+  if (existsSync(dir)) stop(`${dir} already exists — this check is planned once`);
+  mkdirSync(dir, { recursive: true });
+  const sources = loadSources(odir);
+  writeFileSync(path.join(dir, 'source-requests.jsonl'), `${tickKeys.map((k) => JSON.stringify(sources[k])).join('\n')}\n`);
+  writeFileSync(path.join(dir, 'donor-learned-texts.json'), '{}');
+  const manifest = {
+    runId, createdAt: new Date().toISOString(), derivedFrom: flags.from, purpose: 'batch-effect check (Fable ruling, 2026-10-08)',
+    seed: SEED, headSha: headSha(),
+    gate: { shape: { cacheControl: om.gate.shape.cacheControl } },
+    sample: { n: ticks.length, ticks },
+    pilot: { prodId: om.pilot.prodId, prodPriceKey: om.pilot.prodPriceKey, pilotSpendUsd: 0, pilotSpendUsdTotal: 0, ladder: [], note: 'no pilot: the request shapes were proven by the original run' },
+    runPlan: {
+      tasks: batchCheckTasks(tickKeys, fit.repeats), est, repeats: { base: fit.repeats, memory: fit.repeats, ladder: 0 },
+      sampleKeys: tickKeys, variants: ['strip'], ladder: [], ladderIds: {}, prodId: om.pilot.prodId,
+      over: false, caps: BATCHCHECK_CAPS, cost: fit.cost, cfg: { n: ticks.length },
+    },
+  };
+  stampCommand(manifest, 'batchcheck-plan');
+  writeJsonAtomic(path.join(dir, 'manifest.json'), manifest);
+  writeFileSync(path.join(RUNS_ROOT, 'latest.txt'), runId);
+  console.log(JSON.stringify({ runId, dir, ticks: ticks.length, repeats: fit.repeats, requests: manifest.runPlan.tasks.length, plannedUsd: round(fit.cost.planned, 2), worstUsd: round(fit.cost.worst, 2), caps: BATCHCHECK_CAPS }, null, 1));
+}
+
+/** The three comparisons, the descriptive context, and the exhibits addendum. */
+async function batchcheckAnalyze(flags) {
+  const st = runSelftest();
+  if (!st.pass) stop(`selftest failed — not analyzing: ${JSON.stringify(st)}`);
+  const { dir, manifestPath } = resolveRun(flags);
+  const m = readJson(manifestPath);
+  if (!m.derivedFrom) stop('this is not a batch-check run (no derivedFrom)');
+  const odir = runDir(m.derivedFrom);
+  const om = readJson(path.join(odir, 'manifest.json'));
+  const fresh = buildKeys(dir, m);
+  const orig = buildKeys(odir, om);
+  const tickKeys = m.runPlan.sampleKeys;
+  const meta = Object.fromEntries(m.sample.ticks.map((t) => [t.k, t]));
+  const isIncomplete = (src, cond) => src.completeness[cond]?.status === 'INCOMPLETE';
+  const share = (lists, pred) => mean(lists.map((l) => l.filter(pred).length / l.length));
+  const typical = (lists) => Math.round(mean(lists.map((l) => l.length)));
+
+  const compare = (baseSrc, baseCond, varSrc, varCond, seed) => {
+    const rows = tickKeys.map((k) => ({
+      k, archetype: meta[k].archetype,
+      base: (baseSrc.keys[k]?.[baseCond] || []).map((x) => x.fine),
+      variant: (varSrc.keys[k]?.[varCond] || []).map((x) => x.fine),
+    })).filter((r) => r.base.length && r.variant.length);
+    const res = permutationTest(rows, { seed });
+    if (!res) return null;
+    const incomplete = isIncomplete(baseSrc, baseCond) || isIncomplete(varSrc, varCond);
+    res.label = incomplete ? `INCOMPLETE (${arm2Label(res)})` : arm2Label(res);
+    const perTickTv = res.perTickTv;
+    delete res.perTickTv;
+    const c = permutationTest(rows.map((r) => ({ base: r.base.map(toCoarse), variant: r.variant.map(toCoarse) })), { seed: seed + 1 });
+    if (c) { c.label = arm2Label(c); delete c.perTickTv; }
+    res.coarse = c;
+    res.repeats = { base: typical(rows.map((r) => r.base)), variant: typical(rows.map((r) => r.variant)) };
+    res.noEffectFlipFloor = noEffectFlipFloor(rows.map((r) => r.base), { nA: res.repeats.base, nB: res.repeats.variant });
+    res.flipsBeyondNoEffectFloor = res.flipRate - res.noEffectFlipFloor;
+    const tie = permutationTest(rows, { seed, tieLargest: true });
+    res.tieRuleSensitivity = { excessFlip: tie.excessFlip, flipRate: tie.flipRate, label: arm2Label(tie) };
+    res.actionRateBase = share(rows.map((r) => r.base), (x) => x.startsWith('SWAP'));
+    res.actionRateVariant = share(rows.map((r) => r.variant), (x) => x.startsWith('SWAP'));
+    res.malformedBase = share(rows.map((r) => r.base), (x) => x === MALFORMED);
+    res.malformedVariant = share(rows.map((r) => r.variant), (x) => x === MALFORMED);
+    res.agreementBase = mean(rows.map((r) => { const cc = counts(r.base); return cc[modal(cc)] / r.base.length; }));
+    res.agreementVariant = mean(rows.map((r) => { const cc = counts(r.variant); return cc[modal(cc)] / r.variant.length; }));
+    res.byArchetype = {};
+    for (const [arch, list] of Object.entries(groupBy(rows, (r) => r.archetype))) {
+      const sub = permutationTest(list, { seed: seed + 2 });
+      if (sub) { sub.label = arm2Label(sub); delete sub.perTickTv; }
+      res.byArchetype[arch] = sub;
+    }
+    res.flipped = rows.map((r, i) => ({ k: r.k, tv: perTickTv[i], from: modal(counts(r.base)), to: modal(counts(r.variant)) })).filter((x) => x.from !== x.to);
+    return res;
+  };
+
+  const comparisons = {
+    batchEffect: { title: 'fresh baseline vs original baseline (the batch-effect test)', ...compare(orig, 'base', fresh, 'base', SEED + 61) },
+    learning: { title: 'fresh learning-removed vs fresh baseline (the learning test, batches controlled)', ...compare(fresh, 'base', fresh, 'memory:strip', SEED + 64) },
+    replication: { title: 'fresh learning-removed vs original learning-removed (replication)', ...compare(orig, 'memory:strip', fresh, 'memory:strip', SEED + 67) },
+  };
+
+  const spend = { byCondition: {}, totalUsd: 0 };
+  for (const [cond, u] of Object.entries(fresh.usage)) {
+    const p = PRICES[m.pilot.prodPriceKey];
+    const usd = (u.input.reduce((s, x) => s + x, 0) * p.batchIn + u.output.reduce((s, x) => s + x, 0) * p.batchOut) / 1e6;
+    spend.byCondition[cond] = round(usd, 4); spend.totalUsd += usd;
+  }
+  const batches = m.batches || [];
+  const mixedBatches = batches.filter((b) => {
+    const conds = new Set(b.taskIdx.map((i) => m.runPlan.tasks[i][1]));
+    return conds.size === 2;
+  }).length;
+
+  const out = {
+    runId: m.runId, derivedFrom: m.derivedFrom, at: new Date().toISOString(), selftest: { pass: st.pass },
+    ticks: tickKeys.length, repeats: m.runPlan.repeats, completeness: fresh.completeness, responseDiagnostics: fresh.responseDiagnostics,
+    batches: { count: batches.length, withBothConditions: mixedBatches },
+    comparisons: Object.fromEntries(Object.entries(comparisons).map(([k, v]) => [k, { ...v, flipped: v.flipped?.length ?? 0 }])),
+    spend,
+  };
+  writeJsonAtomic(path.join(dir, 'addendum.json'), out);
+  writeBatchcheckExhibits(odir, m, fresh, orig, comparisons.learning);
+  console.log(JSON.stringify(out, null, 1));
+}
+
+/** Append (or replace) the dated section of the LOCAL-ONLY exhibits file: the moments that changed in the fresh learning test. */
+function writeBatchcheckExhibits(odir, m, fresh, orig, learning) {
+  const file = path.join(odir, 'GROWTH_REPLAY_EXHIBITS.local.md');
+  const START = '<!-- batchcheck:start -->';
+  const END = '<!-- batchcheck:end -->';
+  const sources = loadSources(runDir(m.runId));
+  const meta = Object.fromEntries(m.sample.ticks.map((t) => [t.k, t]));
+  const dist = (list) => (list?.length ? Object.entries(counts(list.map((x) => x.fine))).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k}×${n}`).join(', ') : '—');
+  const rows = [...(learning.flipped || [])].sort((a, b) => b.tv - a.tv);
+  const lines = [START, '', `## Addendum ${m.createdAt.slice(0, 10)} — the moments that changed in the fresh learning test`, '',
+    `Run ${m.runId} (derived from ${m.derivedFrom}). Fresh baseline and fresh learning-removed, ${m.runPlan.repeats.base} repeats each, shuffled together across the same batches. ${rows.length} of ${learning.ticks} moments changed their usual call.`, ''];
+  for (const [i, r] of rows.entries()) {
+    const t = meta[r.k];
+    lines.push(`### ${i + 1}. ${t.archetype} — originally ${t.original.fine} — ${r.from} → ${r.to} (distance ${r.tv.toFixed(2)})`, '');
+    lines.push(`- battle/tick: \`${r.k}\``,
+      `- fresh baseline: ${dist(fresh.keys[r.k]?.base)}`, `- fresh learning-removed: ${dist(fresh.keys[r.k]?.['memory:strip'])}`,
+      `- original baseline: ${dist(orig.keys[r.k]?.base)}`, `- original learning-removed: ${dist(orig.keys[r.k]?.['memory:strip'])}`, '');
+    lines.push('What the agent had learned (the LEARNED section as sent):', '', '```text', learnedPartText(sources[r.k].request) ?? '(none)', '```', '');
+  }
+  lines.push(END, '');
+  const prior = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  const a = prior.indexOf(START); const b = prior.indexOf(END);
+  const kept = a >= 0 && b > a ? prior.slice(0, a) + prior.slice(b + END.length).replace(/^\n+/, '') : prior;
+  writeFileSync(file, `${kept.replace(/\n*$/, '\n\n')}${lines.join('\n')}`);
+}
+
 // ---------------------------------------------------------------- selftest
 
 /**
@@ -1920,6 +2110,12 @@ export function runSelftest() {
   // The cut order: loadout first, then Opus repeats, then N, then Opus — stopping as soon as both caps hold.
   const cutCase = (evaluate) => fitToCaps({ fullN: 300, hasOpus: true, evaluate }, { caps: { plannedUsd: 100, worstUsd: 200 } });
   const priced = (cfg) => ({ cost: { planned: (cfg.loadout ? 60 : 40) + (cfg.opus ? (cfg.opusRepeats ? 30 : 50) : 0) + cfg.n / 10, worst: 150 } });
+  // The batch-effect check's repeats: the largest equal count in [5, 10] under both caps, else none.
+  const flat = { prod: { input: 1000, output: 0, maxTokens: 0, cacheMultiplier: 1 } };
+  const tenTicks = Array.from({ length: 10 }, (_, i) => `t${i}`);
+  const fitArgs = (planned) => ({ est: { pilot: flat, conservative: flat }, priceOf: () => ({ batchIn: 1, batchOut: 1 }), caps: { plannedUsd: planned, worstUsd: 1 } });
+  checks.batchCheckRepeats = batchCheckTasks(tenTicks, 3).length === 60
+    && fitRepeats(tenTicks, fitArgs(0.15)).repeats === 7 && fitRepeats(tenTicks, fitArgs(1)).repeats === 10 && fitRepeats(tenTicks, fitArgs(0.05)) === null;
   checks.cutOrder = cutCase(priced).cuts.join('|') === 'dropped the loadout variant|Opus repeats reduced to 3'
     && cutCase(() => ({ cost: { planned: 10, worst: 10 } })).cuts.length === 0
     && cutCase(() => ({ cost: { planned: 1e9, worst: 1e9 } })).over === true;
@@ -1941,10 +2137,11 @@ export function runSelftest() {
 // ---------------------------------------------------------------- CLI
 
 export function parseArgs(argv) {
-  const flags = { cmd: argv[2] || 'help', run: null, go: false, wait: false, force: false, noRetry: false };
+  const flags = { cmd: argv[2] || 'help', run: null, from: null, go: false, wait: false, force: false, noRetry: false };
   for (let i = 3; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--run') flags.run = argv[++i];
+    else if (a === '--from') flags.from = argv[++i];
     else if (a === '--go') flags.go = true;
     else if (a === '--wait') flags.wait = true;
     else if (a === '--force') flags.force = true;
@@ -1962,6 +2159,8 @@ async function main() {
     case 'status': return status(flags);
     case 'collect': return collect(flags);
     case 'analyze': return analyze(flags);
+    case 'batchcheck-plan': return batchcheckPlan(flags);
+    case 'batchcheck-analyze': return batchcheckAnalyze(flags);
     case 'selftest': {
       const r = runSelftest();
       console.log(JSON.stringify(r, null, 1));
@@ -1969,7 +2168,7 @@ async function main() {
       return undefined;
     }
     default:
-      console.log('growthReplay — subcommands: plan | pilot | submit --go | status [--wait] | collect | analyze | selftest  (options: --run <runId>)');
+      console.log('growthReplay — subcommands: plan | pilot | submit --go | status [--wait] | collect | analyze | selftest | batchcheck-plan --from <runId> | batchcheck-analyze  (options: --run <runId>)');
       return undefined;
   }
 }
