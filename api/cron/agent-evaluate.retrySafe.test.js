@@ -51,9 +51,10 @@ const flags = vi.hoisted(() => ({ swapIdentity: 'off' }));
  *                 rows hold (review K4-6);
  *   'refuse'    — throws `refusal` without committing anything.
  * `failReadAfterThrow`: the first battle read after an executor throw fails
- * (a number n: the first n reads).
+ * (a number n: the first n reads). `emptyReadAfterUnknown`: the read after
+ * those comes back with no document.
  */
-const exec = vi.hoisted(() => ({ mode: 'real', refusal: null, calls: 0, threw: false, failReadAfterThrow: false, queue: [], returned: false, failReadAfterReturn: false }));
+const exec = vi.hoisted(() => ({ mode: 'real', refusal: null, calls: 0, threw: false, failReadAfterThrow: false, emptyReadAfterUnknown: false, queue: [], returned: false, failReadAfterReturn: false }));
 const guardrailHook = vi.hoisted(() => ({ result: null }));
 const authority = vi.hoisted(() => ({ mode: 'autopilot' }));
 const ledger = vi.hoisted(() => ({ releases: [], confirms: [], reserves: [] }));
@@ -173,6 +174,8 @@ async function runTick({ battle, result = makeHoldResult(), prices = makePriceTa
               exec.failReadAfterThrow = typeof exec.failReadAfterThrow === 'number' && exec.failReadAfterThrow > 1 ? exec.failReadAfterThrow - 1 : false;
               throw new Error('14 UNAVAILABLE: read failed (injected)');
             }
+            // Review K5: once the read-back has failed, the next read returns no document.
+            if (exec.emptyReadAfterUnknown && exec.threw && exec.failReadAfterThrow === false) { exec.emptyReadAfterUnknown = false; return { exists: false, data: () => undefined }; }
             if (exec.failReadAfterReturn && exec.returned) { exec.failReadAfterReturn = false; throw new Error('14 UNAVAILABLE: read failed after the executor returned (injected)'); }
             return ref.get();
           },
@@ -201,7 +204,7 @@ beforeEach(() => {
   mocks.create.mockReset();
   flags.swapIdentity = 'off';
   authority.mode = 'autopilot';
-  Object.assign(exec, { mode: 'real', refusal: null, calls: 0, threw: false, failReadAfterThrow: false, queue: [], returned: false, failReadAfterReturn: false });
+  Object.assign(exec, { mode: 'real', refusal: null, calls: 0, threw: false, failReadAfterThrow: false, emptyReadAfterUnknown: false, queue: [], returned: false, failReadAfterReturn: false });
   guardrailHook.result = null;
   ledger.releases = []; ledger.confirms = []; ledger.reserves = [];
   vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -535,5 +538,63 @@ describe('review fixes — no failure record and no release once a trade landed;
     expect(row).toMatchObject({ heldLegCount: 1, heldLegs: [{ symbolOut: 'XOM', symbolIn: 'NVDA', reason: 'leg_not_proposed' }] });
     expect(feed.filter((e) => e.source === 'gameplan_meeting')).toEqual([]);
     expect(ledger.releases).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrity follow-up 2, review K5 (the mutation lens): rows that kill mutants
+// the rows above let survive (report §12.3; the M5-n ids are its mutant table).
+describe('K5 — every caller files the partial-landing marker (M5-92 / M5-100 / M5-109)', () => {
+  it('C3 approved / C4 expired co-pilot proposal (dormant): filed as executed, marked `confirmed_after_error`, no failure, no release', async () => {
+    authority.mode = 'copilot';
+    exec.mode = 'partial';
+    const c3 = await CALLERS[2].run();
+    expect(c3.stored.trades.map((t) => t.symbolIn)).toEqual(['AMD']);
+    expect(c3.stored.proposalHistory.at(-1)).toMatchObject({ resolution: 'approved', executionLanded: 'confirmed_after_error' });
+    expect(c3.stored.proposalHistory.at(-1)).not.toHaveProperty('executionFailed');
+    expect(ledger.releases).toEqual([]);
+    Object.assign(exec, { threw: false, returned: false });
+    ledger.releases = []; ledger.confirms = [];
+    const c4 = await CALLERS[3].run();
+    expect(c4.stored.trades.map((t) => t.symbolIn)).toEqual(['AMD']);
+    expect(c4.stored.proposalHistory.at(-1)).toMatchObject({ resolution: 'auto_executed', executionLanded: 'confirmed_after_error' });
+    expect(c4.stored.proposalHistory.at(-1)).not.toHaveProperty('executionFailed');
+    expect(ledger.releases).toEqual([]);
+  });
+
+  it('C5 unknown at enforce (the retry throws P6\'s typed refusal, then the read fails): capture files no verdict — `failed`, never `evaluated / blocked` (M5-108)', async () => {
+    flags.swapIdentity = 'enforce';
+    exec.mode = 'ambiguous';
+    exec.failReadAfterThrow = true;
+    const r = await CALLERS[4].run();
+    expect(exec.threw).toBe(true);
+    expect(CALLERS[4].unknown(r)).not.toBeNull();
+    expect(r.permanent.checks.execution).toMatchObject({ status: 'failed', result: null, reason: null });
+  });
+
+  it('C5 suppression pass: the guardrail success beat carries the marker', async () => {
+    exec.mode = 'partial';
+    const r = await CALLERS[4].run();
+    expect(r.stored.trades.map((t) => t.symbolIn)).toEqual(['AMD']);
+    expect(r.feed.find((e) => e.action === 'guardrail_forced_swap' && e.symbolIn === 'AMD')).toMatchObject({ executionLanded: 'confirmed_after_error' });
+    expect(ledger.releases).toEqual([]);
+  });
+});
+
+describe('K5 — C6: a refresh that comes back with NO document is no read (M5-215)', () => {
+  it('the read-back fails, then the refresh returns no document: later stored legs are marked `not_run`, never run from the stale book', async () => {
+    exec.queue = ['ambiguous', 'real'];
+    exec.failReadAfterThrow = 1;      // the read-back fails …
+    exec.emptyReadAfterUnknown = true; // … and the refresh after it finds no document
+    const battle = makeTickBattle(serverMeetingOverrides(
+      { status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'r' }, { symbolOut: 'PG', symbolIn: 'JPM', rationale: 'r' }] },
+      { legs: [{ symbolOut: 'KO', symbolIn: 'AMD' }, { symbolOut: 'PG', symbolIn: 'JPM' }] },
+    ));
+    const { stored } = await runTick({ battle });
+    expect(exec.calls).toBe(1);
+    expect(stored.trades.map((t) => t.symbolIn)).toEqual(['AMD']);
+    const legs = stored.gameplanMeetingHistory.at(-1).suggestedSwaps;
+    expect(legs[0]).toMatchObject({ executionOutcome: 'unknown' });
+    expect(legs[1]).toMatchObject({ executionOutcome: 'not_run' });
   });
 });

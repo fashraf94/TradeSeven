@@ -140,3 +140,16 @@ describe('swapResultAfterThrow — the catch around the executor call', () => {
     expect(landedAfterErrorOf({ closedTrade: row(), incomingAsset: incoming() })).toBeNull(); // the executor's own return
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrity follow-up 2, review K5 (the mutation lens): rows that kill mutants
+// the rows above let survive (report §12.3; the M5-n ids are its mutant table).
+describe('K5 — the read-back looks at THIS call\'s slot (M5-202)', () => {
+  it('slotIndex 1: the incoming position is read from support[1], never support[0]', async () => {
+    const call = executorCallOf({ evaluationId: 'eval_007', tier: 'support', slotIndex: 1, symbolIn: 'AMD' });
+    const row = { symbolOut: 'PG', symbolIn: 'AMD', tier: 'support', slotIndex: 1, evaluationId: 'eval_007', swappedOutAt: AT };
+    const incoming = { symbol: 'AMD', swapPrice: 160, swappedInAt: AT };
+    const ref = { get: async () => ({ exists: true, data: () => ({ trades: [row], portfolio: { support: [{ symbol: 'KO', swappedInAt: null }, incoming] } }) }) };
+    expect(await readLandedTrade(ref, call)).toEqual({ outcome: 'landed', closedTrade: row, incomingAsset: incoming });
+  });
+});

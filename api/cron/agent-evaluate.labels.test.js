@@ -10,7 +10,9 @@
 //        planted proposal naming a real trade's pair no longer relabels it.
 //   Q4 — every trade row's `entryMode` is the mode that governed
 //        (LAUNCH_EXECUTION_MODE; the six callers are pinned by the guard's
-//        behavioural half), the cron's migration writes no mode, and the
+//        behavioural half, which plants a string mode, and statically by
+//        api/_utils/executionAuthority.test.js), the cron's migration writes
+//        no mode, and the
 //        battle-pattern record logs the governing mode.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -185,5 +187,18 @@ describe('Q4 — the governing mode, never the battle\'s own field', () => {
       { timestamp: null, from: null, to: 'defensive' },
       { timestamp: null, from: 'F'.repeat(64), to: null },
     ]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrity follow-up 2, review K5 (the mutation lens): rows that kill mutants
+// the rows above let survive (report §12.3; the M5-n ids are its mutant table).
+describe('K5 — the battle-pattern record keeps the LAST 50 preset changes (M5-212)', () => {
+  it('60 owner-written changes: the 50 most recent are logged, in order', async () => {
+    const ledger = Array.from({ length: 60 }, (_, i) => ({ type: 'preset_change', timestamp: `2026-09-09T15:${String(i).padStart(2, '0')}:00.000Z`, fromPreset: 'balanced', toPreset: `p${i}` }));
+    patterns.writes = [];
+    await logBattlePattern('agent-1', 'battle-1', { battleLedger: ledger, scoreState: {} });
+    expect(patterns.writes).toHaveLength(1);
+    expect(patterns.writes[0].payload.strategyPreset.changes.map((c) => c.to)).toEqual(Array.from({ length: 50 }, (_, i) => `p${i + 10}`));
   });
 });

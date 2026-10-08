@@ -200,3 +200,18 @@ describe('what the malformed values become', () => {
     expect(created['cronState.gameplanMeeting'].meetingId).toBe(created.gameplanMeeting.id);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrity follow-up 2, review K5 (the mutation lens): rows that kill mutants
+// the rows above let survive (report §12.3; the M5-n ids are its mutant table).
+describe('K5 — the meeting\'s own id is owner-writable too (M5-174)', () => {
+  it('a pending meeting the copy does not name, whose id no template can convert (the "not waiting" log line names it): the check completes and saves its score', async () => {
+    for (const id of [{ toString: 1, valueOf: 2 }, 'I'.repeat(300_000)]) {
+      const { thrown, db, summary } = await runTick(makeTickBattle({ gameplanMeeting: { id, status: 'pending', diagnosis: 'drag', expiresAt: '2099-01-01T00:00:00.000Z', suggestedSwaps: [] } }));
+      expect(thrown, String(thrown?.stack || thrown).slice(0, 400)).toBeNull();
+      expect(summary.evaluated).toBe(1);
+      expect(db.__updates.some((u) => Object.hasOwn(u, 'scoreState.currentScore'))).toBe(true);
+      expect(db.__updates.some((u) => Object.hasOwn(u, 'cronState.cronErrors') && !u.evaluations)).toBe(false);
+    }
+  });
+});

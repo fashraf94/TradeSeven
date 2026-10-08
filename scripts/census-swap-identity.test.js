@@ -377,3 +377,16 @@ describe('follow-up 2 — the retry-safe markers and held legs are counted', () 
     expect(out.retrySafe.heldMeetingLegs).toBe(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrity follow-up 2, review K5 (the mutation lens): rows that kill mutants
+// the rows above let survive (report §12.3; the M5-n ids are its mutant table).
+describe('K5 — the census counts only a positive, finite heldLegCount (M5-144)', () => {
+  it('a planted Infinity, NaN or negative count on an (owner-writable) meeting history row adds nothing', () => {
+    const T = '2026-10-08T15:00:00.000Z';
+    for (const bad of [Infinity, NaN, -5]) {
+      const out = computeSwapIdentityCensus({ b1: { gameplanMeetingHistory: [{ resolvedAt: T, heldLegCount: bad, suggestedSwaps: [] }, { resolvedAt: T, heldLegCount: 2, suggestedSwaps: [] }] } });
+      expect(out.retrySafe.heldMeetingLegs, String(bad)).toBe(2);
+    }
+  });
+});

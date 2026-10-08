@@ -158,3 +158,47 @@ describe('well-formed values: the review prompt is byte-identical to what it ren
     expect(userMessage).toContain('USER GRADES:\nNo grades submitted');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrity follow-up 2, review K5 (the mutation lens): rows that kill mutants
+// the rows above let survive (report §12.3; the M5-n ids are its mutant table).
+describe('K5 — every owner-written value in a debate or grade line goes through promptText (M5-207 / M5-208)', () => {
+  it('an unconvertible stance and incoming symbol render as an ordinary object does; overlong ones are capped', async () => {
+    const { out, writes, userMessage } = await review({
+      battleLedger: [
+        { type: 'debate', timestamp: `${TODAY}T15:00:00.000Z`, targetSymbol: 'AAPL', userStance: UNCONVERTIBLE, outcome: 'right' },
+        { type: 'debate', timestamp: `${TODAY}T15:00:00.000Z`, targetSymbol: 'MSFT', userStance: 's'.repeat(5000), outcome: 'right' },
+      ],
+      dailyGrades: { [TODAY]: { trades: [{ tradeIndex: 0, symbolOut: 'KO', symbolIn: UNCONVERTIBLE, grade: 'great' }, { tradeIndex: 1, symbolOut: 'KO', symbolIn: 'I'.repeat(5000), grade: 'ok' }] } },
+    });
+    expect(out?.status ?? 'reviewed').not.toBe('error');
+    expect(writes.some((w) => Array.isArray(w.payload.dailyReviews))).toBe(true);
+    expect(userMessage).toContain('- AAPL: stance=[object Object], outcome=right\n');
+    expect(userMessage).toContain(`- MSFT: stance=${'s'.repeat(1000)}, outcome=right\n`);
+    expect(userMessage).toContain('- Trade 1 (KO → [object Object]): great\n');
+    expect(userMessage).toContain(`- Trade 2 (KO → ${'I'.repeat(1000)}): ok`);
+  });
+});
+
+describe('K5 — which lines the caps keep (M5-179 / M5-186 / M5-213 / M5-214)', () => {
+  it('the cap is 50 lines', () => {
+    expect(REVIEW_PLAYER_LINE_MAX).toBe(50);
+  });
+
+  it('debates: the LAST 50 of the day are rendered', async () => {
+    const { userMessage } = await review({ battleLedger: SHAPES.huge });
+    expect(userMessage).toContain('- S19999: stance=agree');
+    expect(userMessage).toContain('- S19950: stance=agree');
+    expect(userMessage).not.toContain('- S19949: stance=agree');
+    expect(userMessage).not.toContain('- S0: stance=agree');
+  });
+
+  it('grades: at most 50 lines, the FIRST 50 of the day', async () => {
+    const trades = Array.from({ length: 60 }, (_, i) => ({ tradeIndex: i, symbolOut: 'KO', symbolIn: 'AMD', grade: 'great' }));
+    const { userMessage } = await review({ dailyGrades: { [TODAY]: { trades } } });
+    expect(userMessage.match(/^- Trade \d+ \(KO → AMD\): great$/gm)).toHaveLength(50);
+    expect(userMessage).toContain('- Trade 1 (KO → AMD): great\n');
+    expect(userMessage).toContain('- Trade 50 (KO → AMD): great');
+    expect(userMessage).not.toContain('- Trade 51 (KO → AMD)');
+  });
+});

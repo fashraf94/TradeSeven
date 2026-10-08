@@ -141,3 +141,13 @@ describe('dailyGrades — the map, its own entry for a day, the day\'s graded tr
     expect(buildReviewContext({}, [], dailyGradesOf(list, []))).toBe(buildReviewContext({}, [], list));
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrity follow-up 2, review K5 (the mutation lens): rows that kill mutants
+// the rows above let survive (report §12.3; the M5-n ids are its mutant table).
+describe('K5 — dailyGradeEntryOf reads an OWN entry only, even when an inherited one is a plain object (nit: M5-163)', () => {
+  it('an inherited plain-object entry for the day is absent', () => {
+    const grades = Object.create({ '2026-09-09': { trades: [{ grade: 'A' }] } });
+    expect(dailyGradeEntryOf(grades, '2026-09-09')).toBeUndefined();
+  });
+});

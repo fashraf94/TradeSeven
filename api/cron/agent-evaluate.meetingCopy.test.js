@@ -490,3 +490,44 @@ describe('no deadline on approval — a server meeting approved past its expires
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrity follow-up 2, review K5 (the mutation lens): rows that kill mutants
+// the rows above let survive (report §12.3; the M5-n ids are its mutant table).
+describe('K5 — the PAIR must match, not either half (M5-8 / M5-9)', () => {
+  for (const mode of MODES) {
+    it(`${mode}: a leg sharing only its incoming, or only its outgoing, stock with the stored leg is held — never run as the stored leg`, async () => {
+      flags.swapIdentity = mode;
+      for (const planted of [{ symbolOut: 'PG', symbolIn: 'AMD', rationale: 'same incoming' }, { symbolOut: 'KO', symbolIn: 'JPM', rationale: 'same outgoing' }]) {
+        exec.calls = [];
+        const { stored } = await runTick(withCopy(approvedMeeting([planted])));
+        expect(exec.calls, planted.rationale).toEqual([]);
+        expect(stored.trades, planted.rationale).toEqual([]);
+        expect(meetingRow(stored), planted.rationale).toMatchObject({ heldLegCount: 1, heldLegs: [{ symbolOut: planted.symbolOut, symbolIn: planted.symbolIn, reason: LEG_NOT_PROPOSED }] });
+      }
+    });
+  }
+});
+
+describe('K5 — a suggestedSwaps that is not a list holds no legs (M5-152)', () => {
+  it('an array-LIKE map (`{ length, 0: leg }`) naming the stored pair runs nothing — the reader accepts only a real list', async () => {
+    const { stored } = await runTick(withCopy(approvedMeeting({ length: 1, 0: { ...KO_AMD } })));
+    expect(exec.calls).toEqual([]);
+    expect(stored.trades).toEqual([]);
+  });
+});
+
+describe('K5 — meetingCopy.js pins each layer of the match on its own (nit: M5-5 / M5-10 / M5-12 / M5-15)', () => {
+  it('a copy that does not name the meeting plans nothing and waits for nothing, even when handed in directly; malformed shapes never match or throw', async () => {
+    const { planApprovedLegs, meetingWaitUntilMs, meetingMatchesCopy } = await import('../_utils/meetingCopy.js');
+    const copy = { meetingId: 'gpm_1', expiresAt: '2099-01-01T00:00:00.000Z', legs: [null, { symbolOut: 'KO', symbolIn: 'AMD' }] };
+    const forged = { id: 'gpm_2', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD' }] };
+    const legs = [{ index: 0, leg: forged.suggestedSwaps[0] }];
+    expect(planApprovedLegs(forged, legs, copy)).toEqual([{ index: 0, leg: forged.suggestedSwaps[0], run: null }]);
+    expect(meetingWaitUntilMs(forged, copy)).toBeNull();
+    const real = { ...forged, id: 'gpm_1' };
+    expect(planApprovedLegs(real, legs, copy)).toEqual([{ index: 0, leg: forged.suggestedSwaps[0], run: copy.legs[1] }]);
+    expect(meetingWaitUntilMs(real, copy)).toBe(Date.parse('2099-01-01T00:00:00.000Z'));
+    expect(meetingMatchesCopy(Object.assign([], { id: 'gpm_1' }), copy)).toBe(false);
+  });
+});

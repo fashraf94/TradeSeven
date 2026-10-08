@@ -570,7 +570,10 @@ describe('A9 — a duplicated approval: the same approved proposal processed twi
   // second worker holding a snapshot taken BEFORE the first run committed (an
   // overlapping invocation after the lock ages out, Phase 0 §3.1): its stale
   // book still shows KO in the slot and AMD on the bench, while the live slot
-  // already holds AMD.
+  // already holds AMD. The rows that use `staleReplay` start that worker's
+  // executor call AFTER the first commit (a stale, sequential replay); the
+  // truly overlapping shape — the call starting no later than that commit —
+  // is pinned separately at the end of this block (review K4-2 / KV4).
   const approved = () => makeTickBattle({ executionMode: 'copilot', pendingProposal: APPROVED_PROPOSAL() });
   /** Run tick 2 on a STALE in-memory battle (the pre-tick-1 snapshot) against the store tick 1 committed. */
   async function staleReplay(first) {
