@@ -7,7 +7,7 @@
 // touched here — and that passing load is itself the BUILD_RULES §4
 // dependency-surface guard for this script.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi as viS5 } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -221,5 +221,43 @@ describe('the read — scoped, read-only', () => {
     expect(code).not.toMatch(/^import .*firebaseAdmin/m);
     expect(code).toMatch(/await import\('\.\/loadLocalEnv\.js'\)/);
     expect(code).toMatch(/if \(invokedDirectly\) main\(\)/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rows the §2 mutation lens (S5) proved necessary: each fails under the named
+// surviving mutant and passes on the code as built.
+describe('S5 — rows the mutation lens proved', () => {
+  it('S5-4: the proposal-history join keys on the incoming symbol too, and conflicting proposal beliefs are AMBIGUOUS', () => {
+    const trade = { evaluationId: 'eval_151', symbolIn: 'AMD', symbolOut: 'KO', entryMode: 'copilot' };
+    const filtered = { evaluations: [], proposalHistory: [
+      { evaluationMetadata: { evaluationId: 'eval_151' }, symbolIn: 'AMD', symbolOut: 'KO' },
+      { evaluationMetadata: { evaluationId: 'eval_151' }, symbolIn: 'JPM', symbolOut: 'XOM' }, // same repeated id, another swap
+    ] };
+    expect(beliefOfTrade(trade, filtered)).toEqual({ caller: 'proposal', belief: 'KO', ambiguous: false });
+    const conflicting = { evaluations: [], proposalHistory: [
+      { evaluationMetadata: { evaluationId: 'eval_151' }, symbolIn: 'AMD', symbolOut: 'KO' },
+      { evaluationMetadata: { evaluationId: 'eval_151' }, symbolIn: 'AMD', symbolOut: 'XOM' },
+    ] };
+    expect(beliefOfTrade(trade, conflicting)).toEqual({ caller: 'proposal', belief: null, ambiguous: true });
+  });
+
+  it('S5-5: --since still reads an ACTIVE battle whose expiresAt has passed (its status not yet flipped — it can still trade)', async () => {
+    const reader = makeReader({ 'b-overdue': { status: 'active', expiresAt: '2026-10-03T00:00:00.000Z', trades: [] } });
+    await runCensus(reader, { sinceMs: SINCE_7_OCT });
+    expect(reader.reads).toEqual([['list'], ['read', 'b-overdue']]);
+  });
+
+  it('S5-6: importing the module runs no env loader — it is reached only through main()', async () => {
+    viS5.resetModules();
+    const loaded = viS5.fn();
+    viS5.doMock('./loadLocalEnv.js', () => { loaded(); return {}; });
+    try {
+      await import('./census-swap-identity.mjs');
+      expect(loaded).not.toHaveBeenCalled();
+    } finally {
+      viS5.doUnmock('./loadLocalEnv.js');
+      viS5.resetModules();
+    }
   });
 });

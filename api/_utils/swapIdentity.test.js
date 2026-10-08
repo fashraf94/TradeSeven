@@ -13,7 +13,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi as viS5 } from 'vitest';
 import {
   SWAP_IDENTITY_OFF, currentSwapIdentityMode, swapIdentityActive, swapIdentityOptions,
   expectedOutOfPosition, expectedOutOfStored, storedIdentityOf, isSwapRefusal,
@@ -209,5 +209,29 @@ describe('the beliefs', () => {
     expect(storedIdentityOf({ symbol: 'KO', swappedInAt: '2026-10-07T14:00:00.000Z' })).toBe('2026-10-07T14:00:00.000Z');
     expect(storedIdentityOf({ symbol: 'NVDA' })).toBeNull();
     expect(storedIdentityOf(undefined)).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rows the §2 mutation lens (S5) proved necessary: each fails under the named
+// surviving mutant and passes on the code as built.
+describe('S5 — rows the mutation lens proved', () => {
+  it('S5-3: an empty stored symbol is no symbol — the belief carries null, never ""', () => {
+    expect(expectedOutOfStored('', { outgoingSwappedInAt: null }, 'outgoingSwappedInAt')).toEqual({ symbol: null, swappedInAt: null });
+  });
+
+  it('S5-8 (optional hardening): the caller-side mode falls back to off when the flag cannot be read (a hermetic mock that omits it)', async () => {
+    viS5.resetModules();
+    viS5.doMock('../../src/config/featureFlags.js', async (importOriginal) => {
+      const actual = await importOriginal();
+      return { ...actual, get SWAP_IDENTITY_MODE() { throw new Error('omitted by a hermetic mock'); } };
+    });
+    try {
+      const fresh = await import('./swapIdentity.js');
+      expect(fresh.currentSwapIdentityMode()).toBe('off');
+    } finally {
+      viS5.doUnmock('../../src/config/featureFlags.js');
+      viS5.resetModules();
+    }
   });
 });

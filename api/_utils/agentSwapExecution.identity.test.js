@@ -514,3 +514,35 @@ describe('the seams (Phase 0 §8): one injected clock, one injected fetch', () =
     expect(Date.parse(store.commits[0].updatedAt)).toBeGreaterThan(Date.parse('2026-01-01T00:00:00.000Z'));
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rows the §2 mutation lens (S5) proved necessary: each fails under the named
+// surviving mutant and passes on the code as built.
+describe('S5 — rows the mutation lens proved', () => {
+  it('S5-1: Guard 3 activation day is the ET calendar day of activatedAt — an evening-ET activation is not activation day on the next ET day; a just-after-midnight-ET one is', async () => {
+    const at = () => new Date('2026-10-07T14:00:00.000Z'); // 7 Oct 10:00 ET
+    // (a) activated 6 Oct 21:30 ET (= 7 Oct 01:30 UTC): 7 Oct is day 2 → the held-from-start NVDA fetches its reference.
+    const a = book({ activatedAt: '2026-10-07T01:30:00.000Z' });
+    const fetchA = vi.fn(async () => ({ daily: [] }));
+    await executeSwap(makeDb(a).db, BATTLE_ID, a, 'core', 0, AMD, 2, PRICES, META, null, { now: at, fetchDailyReference: fetchA, identityMode: 'off' });
+    expect(fetchA).toHaveBeenCalledTimes(1);
+    // (b) activated 7 Oct 00:30 ET (= 7 Oct 04:30 UTC; still 6 Oct west of ET): 7 Oct IS activation day → no fetch.
+    const b = book({ activatedAt: '2026-10-07T04:30:00.000Z' });
+    const fetchB = vi.fn(async () => ({ daily: [] }));
+    await executeSwap(makeDb(b).db, BATTLE_ID, b, 'core', 0, AMD, 1, PRICES, META, null, { now: at, fetchDailyReference: fetchB, identityMode: 'off' });
+    expect(fetchB).not.toHaveBeenCalled();
+  });
+
+  it('S5-2: a belief with no symbol never passes — enforce refuses it typed, on an occupied slot AND on an emptied one', async () => {
+    const NO_SYMBOL = { symbol: null, swappedInAt: null };
+    const occupied = await swapAt('enforce', book(), { expectedOut: NO_SYMBOL });
+    expect(occupied.error?.reason).toBe('outgoing_identity_mismatch');
+    expect(occupied.error.verification).toMatchObject({ verdict: 'mismatch', expected: { symbol: null }, found: { symbol: 'KO' } });
+    expect(occupied.commits).toEqual([]);
+    const emptiedBook = book();
+    emptiedBook.portfolio.support = [];
+    const emptied = await swapAt('enforce', emptiedBook, { expectedOut: NO_SYMBOL });
+    expect(emptied.error?.reason).toBe('outgoing_identity_mismatch');
+    expect(emptied.error.verification).toMatchObject({ verdict: 'mismatch', found: { symbol: null, swappedInAt: null } });
+  });
+});

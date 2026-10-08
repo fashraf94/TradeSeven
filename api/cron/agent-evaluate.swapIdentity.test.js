@@ -878,3 +878,55 @@ describe('one resolution per check', () => {
     expect(AGENT_KO_AMD).toBe(REFUSAL_LINES.outgoing_identity_mismatch.agent.replaceAll('[SYM2]', 'AMD').replaceAll('[SYM]', 'KO'));
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rows the §2 mutation lens (S5) proved necessary: each fails under the named
+// surviving mutant and passes on the code as built.
+describe('S5-7 (hardening): at off the mode gates every record on C3–C6 too', () => {
+  const TYPED = () => new SwapRefusalError('outgoing_identity_mismatch', { verificationId: 'v', expected: { symbol: 'KO' } }, 'Swap refused (outgoing_identity_mismatch): x');
+
+  it('S5-7a C3: off — a typed error (impossible from the executor at off) files no executionRefusal and no refusal beat', async () => {
+    exec.throws = TYPED();
+    const { stored, feed } = await runTick({ battle: makeTickBattle({ executionMode: 'copilot', pendingProposal: APPROVED_PROPOSAL() }) });
+    const row = stored.proposalHistory.at(-1);
+    expect(row.executionFailed).toBe(true);
+    expect(row).not.toHaveProperty('executionRefusal');
+    expect(feed.find((e) => e.source === 'proposal_system')).not.toHaveProperty('refusalReason');
+  });
+
+  it('S5-7b C4: off — a typed error files no executionRefusal and no refusal beat', async () => {
+    exec.throws = TYPED();
+    const { stored, feed } = await runTick({ battle: makeTickBattle({ executionMode: 'copilot', pendingProposal: EXPIRED_PROPOSAL() }) });
+    const row = stored.proposalHistory.at(-1);
+    expect(row.resolution).toBe('auto_execution_failed');
+    expect(row).not.toHaveProperty('executionRefusal');
+    expect(feed.filter((e) => e.refusalReason)).toEqual([]);
+  });
+
+  it('S5-7c C5: off — a typed error is an execution failure (no verdict), with today\'s beat', async () => {
+    exec.throws = TYPED();
+    guardrailHook.result = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_stopLoss', statusMessage: 'Stop hit on KO.', overrides: [] };
+    const battle = makeTickBattle({
+      gameplanMeeting: { status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [] },
+      agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'stopLoss', value: 1, unit: '%', enforcement: 'hard' }] },
+    });
+    const { permanent, feed } = await runTick({ battle });
+    expect(permanent.checks.execution).toMatchObject({ status: 'failed', result: null, reason: null });
+    expect(feed.find((e) => e.action === 'risk_swap_failed')).not.toHaveProperty('refusalReason');
+  });
+
+  it('S5-7d C6: off — a typed error on a leg records no legRefusals and no refusal beat', async () => {
+    exec.throws = TYPED();
+    const battle = makeTickBattle({
+      gameplanMeeting: {
+        id: 'gpm_s5', status: 'approved', diagnosis: 'drag', expiresAt: '2026-09-09T20:00:00.000Z',
+        suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'AMD', rationale: 'KO lagging' }],
+      },
+    });
+    const meeting = deepClone(battle.gameplanMeeting);
+    const { stored, feed } = await runTick({ battle });
+    expect(exec.calls).toHaveLength(1);
+    expect(stored.gameplanMeetingHistory.at(-1)).toEqual(meeting);
+    expect(feed.filter((e) => e.refusalReason)).toEqual([]);
+  });
+});
