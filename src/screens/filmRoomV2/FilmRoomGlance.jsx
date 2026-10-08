@@ -7,7 +7,7 @@
 // from the day, only for a completed battle, with the platform's own words.
 
 import React from 'react';
-import { valueAt, etClock, checkStateOf, checkRuns, isNum, exitMakerOf, toMs } from './filmRoomModel';
+import { valueAt, etClock, checkStateOf, checkRuns, checkStateLegend, isNum, exitMakerOf, toMs } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, card, eyebrow, foot, mono, plain, TapeNum, CountNum, CheckCount, When, Rec, Section, Row, Quote, StateTag, Door } from './FilmRoomKit';
 import CheckDetail from './FilmRoomCheckDetail';
@@ -160,7 +160,15 @@ export function CheckStrip({ tape, selected, onSelect }) {
         <When>{n ? etClock(checks[0].at) : ''}</When>
         <When>{n ? etClock(checks[n - 1].at) : ''}</When>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 10px', alignItems: 'center' }}>
+      {/* The design of record's legend under the strip: the six states' swatches (and any other state this day shows), then the carets. */}
+      <div data-region="strip-legend" style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 10px', alignItems: 'center', paddingTop: 2 }}>
+        {checkStateLegend(tape).map((s) => (
+          <span key={s.key} data-legend-state={s.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 9, height: 9, display: 'inline-block', flexShrink: 0 }}><Pip tone={s.tone} /></span>
+            <span style={mono(9, C.ink3)}>{s.label}</span>
+          </span>
+        ))}
+        <span aria-hidden="true" style={{ width: 1, height: 10, background: C.hair2 }} />
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SwapCaret by="agent" size={9} /><span style={mono(9, C.ink3)}>{COPY.swapByAgent}</span></span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SwapCaret by="platform" size={9} /><span style={mono(9, C.ink3)}>{COPY.swapByRule}</span></span>
         {actions.some((a) => ['gameplan', 'unrecorded'].includes(exitMakerOf(a).by)) ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SwapCaret by="unrecorded" size={9} /><span style={mono(9, C.ink3)}>{COPY.swapByOther}</span></span> : null}

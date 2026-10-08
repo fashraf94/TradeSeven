@@ -149,6 +149,47 @@ describe('addendum R4(a) — "Checks · n of m", a marked count of the record\'s
   });
 });
 
+describe('the six check-state swatches as a legend under the strip (design of record)', () => {
+  // the design of record's six, in its order — with the screen's adopted words for a default hold (addendum R2)
+  const SIX = [
+    ['gameplan_created', 'plan', 'plan created'],
+    ['gameplan_pending', 'planPending', 'plan pending · awaiting approval'],
+    ['hold', 'hold', 'completed · HOLD'],
+    ['swap', 'swap', 'completed · SWAP'],
+    ['default_hold', 'failed', 'no usable model result · the system held by default'],
+    ['no_trigger', 'quiet', 'no trigger · no check woke'],
+  ];
+  const legend = () => m.qa('[data-region="check-strip"] [data-region="strip-legend"] [data-legend-state]')
+    .map((e) => [e.getAttribute('data-legend-state'), e.querySelector('[data-pip]').getAttribute('data-pip'), e.textContent]);
+
+  it('under the strip, after its time ends: the six swatches in order, each with its state\'s words and its pip\'s look', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    expect(legend()).toEqual(SIX);
+    const strip = m.q('[data-region="check-strip"]');
+    const pips = strip.querySelector('[data-check-pip]').parentElement;
+    expect(pips.compareDocumentPosition(strip.querySelector('[data-region="strip-legend"]')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('every pip on the strip has its swatch: the same look and the same words as its own state', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    const byLabel = new Map(legend().map(([, tone, label]) => [label, tone]));
+    for (const b of m.qa('[data-check-pip]')) {
+      const label = b.getAttribute('aria-label').split(' · ').slice(1).join(' · ');
+      expect(byLabel.get(label), label).toBe(b.querySelector('[data-pip]').getAttribute('data-pip'));
+    }
+  });
+
+  it('a state outside the six that the day shows adds its own swatch, by its own words; the empty day keeps the six', () => {
+    const t = clone(sep23Tape);
+    t.checks[20].state = 'budget_skipped';
+    t.checks[21].state = 'no_record';
+    m.render(<Harness tape={t} />);
+    expect(legend().slice(6)).toEqual([['budget_skipped', 'skipped', 'check skipped · budget'], ['no_record', 'gap', 'no record for this check']]);
+    m.render(<Harness tape={emptyTape} />);
+    expect(legend()).toEqual(SIX);
+  });
+});
+
 describe('the final result, apart from the day (BA-4, BA-39)', () => {
   it('a completed battle: the result word, both recorded final scores, the platform\'s completion message labelled as the platform\'s', () => {
     m.render(<Harness tape={sep23Tape} />);

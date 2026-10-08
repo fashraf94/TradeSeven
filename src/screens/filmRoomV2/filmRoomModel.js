@@ -219,6 +219,31 @@ export function checkStateOf(row) {
   return { key: 'unknown', label: 'state not recorded', group: 'unknown', tone: 'gap' };
 }
 
+/** The six check states the design of record's strip legend names — as rows, read by checkStateOf (its words, its tones). */
+const LEGEND_STATE_ROWS = Object.freeze([
+  { state: 'gameplan_created' },
+  { state: 'gameplan_pending' },
+  { state: 'completed', decision: { final: 'HOLD' } },
+  { state: 'completed', decision: { final: 'SWAP' } },
+  { state: 'completed', decision: { final: 'HOLD', holdKind: 'default_failure' } },
+  { state: 'no_trigger' },
+]);
+
+/**
+ * The check strip's legend: the six states the design of record names, then
+ * any other state the day's rows show, each by its own words, in the order
+ * first seen — so every pip on the strip has its swatch.
+ */
+export function checkStateLegend(tape) {
+  const out = LEGEND_STATE_ROWS.map(checkStateOf);
+  const seen = new Set(out.map((s) => s.key));
+  for (const row of Array.isArray(tape?.checks) ? tape.checks : []) {
+    const st = checkStateOf(row);
+    if (!seen.has(st.key)) { seen.add(st.key); out.push(st); }
+  }
+  return out;
+}
+
 /** Is this row a check the battle actually ran (not a deferral or a missing record)? */
 export const ranCheck = (row) => !['deferred', 'no_record'].includes(row?.state);
 
