@@ -123,6 +123,8 @@ const GUARDED_FILES = [
   // Film Room A2 — the shell and its first-open record (BA-41, BA-49): token-only and motion-token-only from birth, registered in the commit that introduces them.
   'src/screens/filmRoomV2/FilmRoomScreenV2.jsx',
   'src/screens/filmRoomV2/filmRoomSeen.js',
+  // Film Room A2 — the 'filmRoom' route's v2 gate (BA-40): token-only and motion-token-only from birth, registered in the commit that introduces it.
+  'src/screens/filmRoomV2/FilmRoomRoute.jsx',
 ];
 
 /**

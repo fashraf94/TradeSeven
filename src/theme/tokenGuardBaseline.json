@@ -97,6 +97,7 @@
     "src/screens/filmRoomV2/FilmRoomStudy.jsx": {},
     "src/screens/filmRoomV2/FilmRoomDeepDive.jsx": {},
     "src/screens/filmRoomV2/FilmRoomScreenV2.jsx": {},
-    "src/screens/filmRoomV2/filmRoomSeen.js": {}
+    "src/screens/filmRoomV2/filmRoomSeen.js": {},
+    "src/screens/filmRoomV2/FilmRoomRoute.jsx": {}
   }
 }

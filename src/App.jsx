@@ -91,7 +91,11 @@ import { safePortfolioArray, getUserPortfolioFlat, getOpponentPortfolioFlat, get
 import { flattenPortfolio, flattenBench, calculateAssetScoreV3 } from './utils/baggerBombUtils';
 import { createInitialFreeAgents } from './services/freeAgentRotationService';
 // Extracted Screens - Batch 1
-import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, TrainingDraftRoomScreen, LeagueTrainingBattleView, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen, FilmRoomScreen } from './screens';
+import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen, DraftSetupScreen, DraftJoinScreen, DraftTrainingScreen, TrainingDraftRoomScreen, LeagueTrainingBattleView, DraftLobbyScreen, PreviousBattlesScreen, BattleHistoryScreen, FreeAgencyScreen, FreeAgencyScreenV2, DraftResultsScreen, BattleViewScreen, DraftBattleScreen, DraftBattleScreenV2, DraftRoomScreen, HomeScreen, EarningsGameScreen, BuilderScreen } from './screens';
+// Film Room A2 (Amendment E BA-40): the 'filmRoom' route renders through the
+// v2 gate — the legacy FilmRoomScreen, byte for byte, wherever
+// FILM_ROOM_V2_MODE does not resolve on for the battle's owner.
+import FilmRoomRoute from './screens/filmRoomV2/FilmRoomRoute';
 // Season Mode screens + components
 import SeasonHub from './screens/SeasonHub';
 import SeasonDashboard from './screens/SeasonDashboard';
@@ -9466,7 +9470,7 @@ export default function PortfolioDuel() {
     return (
       <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
         <ErrorBoundary name="Film Room" onNavigateDashboard={() => setScreen('dashboard')}>
-          <FilmRoomScreen
+          <FilmRoomRoute
             battle={currentBattle}
             onBack={() => setScreen('dashboard')}
           />
