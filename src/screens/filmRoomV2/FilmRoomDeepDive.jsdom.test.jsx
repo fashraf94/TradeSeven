@@ -163,6 +163,11 @@ describe('addendum R4(a)/(b)/(d) — the restored facts, axes and name', () => {
     }
     const zero = pcts.find((q) => parseNumeral(q.textContent) === 0);
     expect(Math.abs(parseFloat(zero.style.top) + 5 - y0)).toBeLessThan(0.01);   // 0% is the session open
+    // scaffolding states no claim: hidden from screen readers (review A2P3-6); the record's own open sits ON the price axis (A2P3-7)
+    for (const el of [...prices, ...pcts]) expect(el.getAttribute('aria-hidden')).toBe('true');
+    const openLabel = chart.querySelector('[data-num="sessionOpen.value"]').parentElement;
+    expect([openLabel.style.right, openLabel.style.left]).toEqual(['calc(100% + 4px)', '']);
+    expect(openLabel.getAttribute('aria-hidden')).toBeNull();
     const sorted = [...steps, 0].sort((a, b) => a - b);
     const gaps = sorted.slice(1).map((v, i) => Math.round((v - sorted[i]) * 1000) / 1000);
     expect(new Set(gaps).size).toBe(1);   // one round step
