@@ -18,6 +18,7 @@ import {
   SWAP_IDENTITY_OFF, currentSwapIdentityMode, swapIdentityActive, swapIdentityOptions,
   expectedOutOfPosition, expectedOutOfStored, storedIdentityOf, isSwapRefusal, BELIEF_SYMBOL_MAX, BELIEF_INSTANT_MAX,
   REFUSAL_LINES, REFUSAL_KINDS, PROTECTIVE_SOURCES, PROFIT_TARGET_EXIT_REASON, refusalKindOf, refusalLine, refusalRecord, departedLegRecord, refusalFeedFields,
+  MEETING_LEG_FAILED_LINE, meetingLegFailedLine,
 } from './swapIdentity.js';
 import { SwapRefusalError, SWAP_REFUSAL_REASONS } from './agentSwapExecution.js';
 import { SWAP_IDENTITY_MODE } from '../../src/config/featureFlags.js';
@@ -49,13 +50,21 @@ const refusal = (reason = 'outgoing_identity_mismatch', verification = VERIFICAT
 describe('table F, verbatim (V1.1, founder decision D5; V1.2, founder Q2 on PR #940)', () => {
   const F = tableF();
 
-  it('the spec\'s table F has exactly the four rows the server ships', () => {
+  it('the spec\'s table F has exactly the rows the server ships: the four refusals and the V1.3 meeting failure', () => {
     expect(Object.keys(F)).toEqual([
       '`outgoing_identity_mismatch` (agent, proposal or meeting)',
       '`outgoing_identity_mismatch` (protective)',
       '`outgoing_identity_mismatch` (profit target)',
       '`battle_not_active`',
+      '`executionFailed` (approved meeting leg)',
     ]);
+  });
+
+  it('V1.3 (integrity follow-up 2, founder Q3): the approved-meeting failure line equals its table row byte for byte', () => {
+    expect(MEETING_LEG_FAILED_LINE).toBe(F['`executionFailed` (approved meeting leg)']);
+    expect(MEETING_LEG_FAILED_LINE).toBe('The swap of [SYM] for [SYM2] you approved did not go through. No trade was made.');
+    // It renders a failure record, not a refusal: the refusal table keeps exactly the executor's reasons.
+    expect(Object.values(REFUSAL_LINES)).not.toContain(MEETING_LEG_FAILED_LINE);
   });
 
   it('each shipped line equals its table row byte for byte', () => {
@@ -74,10 +83,13 @@ describe('table F, verbatim (V1.1, founder decision D5; V1.2, founder Q2 on PR #
     expect(Object.keys(REFUSAL_LINES.outgoing_identity_mismatch)).toEqual(REFUSAL_KINDS);
   });
 
-  it('the V1.1 and V1.2 notes are dated and tables A–E keep their places', () => {
+  it('the V1.1, V1.2 and V1.3 notes are dated and tables A–E keep their places', () => {
     expect(TABLES).toContain('**V1.1 — 7 Oct 2026:**');
     expect(TABLES).toContain('**V1.2 — 7 Oct 2026:** the profit-target row added');
     expect(TABLES).toContain('**V1.2 — 7 Oct 2026:** table F gains the profit-target line');
+    expect(TABLES).toContain('**V1.3 — 8 Oct 2026:** the approved-meeting failure row added');
+    expect(TABLES).toContain('**V1.3 — 8 Oct 2026:** table F gains the approved-meeting failure line');
+    expect(TABLES).toContain('## F. Execution refusals (V1.1, V1.2 — 7 Oct 2026; V1.3 — 8 Oct 2026)');
     const order = ['## A.', '## B.', '## C.', '## D.', '## E.', '## F.'].map((h) => TABLES.indexOf(h));
     expect(order.every((i) => i > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -97,6 +109,9 @@ describe('table E — no forbidden vocabulary in table F, filled or not', () => 
       refusalLine('outgoing_identity_mismatch', { kind: 'protective', symbol: 'KO' }),
       refusalLine('outgoing_identity_mismatch', { kind: 'profit_target', symbol: 'KO' }),
       refusalLine('battle_not_active'),
+      // V1.3 — the approved-meeting failure line, template and rendering.
+      MEETING_LEG_FAILED_LINE,
+      meetingLegFailedLine({ symbol: 'KO', symbolIn: 'AMD' }),
     ];
     const hits = all.flatMap((s) => FORBIDDEN.filter((re) => re.test(s)).map((re) => `${re} in "${s}"`));
     expect(hits).toEqual([]);
@@ -117,6 +132,13 @@ describe('placeholders are filled from the record, never invented', () => {
       .toBe('Your profit target was set to sell KO, but KO had already left that slot. No trade was made.');
     expect(refusalLine('outgoing_identity_mismatch', { kind: 'profit_target', symbol: null })).toBeNull();
     expect(refusalLine('battle_not_active', { kind: 'profit_target' })).toBe('This trade arrived after the battle ended. No trade was made.');
+  });
+
+  it('V1.3: the meeting failure line names the leg\'s outgoing and incoming stocks; a missing one → no line', () => {
+    expect(meetingLegFailedLine({ symbol: 'KO', symbolIn: 'AMD' })).toBe('The swap of KO for AMD you approved did not go through. No trade was made.');
+    expect(meetingLegFailedLine({ symbol: 'KO', symbolIn: null })).toBeNull();
+    expect(meetingLegFailedLine({ symbol: '  ', symbolIn: 'AMD' })).toBeNull();
+    expect(meetingLegFailedLine()).toBeNull();
   });
 
   it('a missing value → null (no line), never a blank or a guess', () => {

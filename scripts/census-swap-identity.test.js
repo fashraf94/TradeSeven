@@ -324,3 +324,23 @@ describe('integrity build — the launch-guard row is no belief; cells are escap
     expect(md).not.toMatch(/\| b\|1 \|/);
   });
 });
+
+// Integrity follow-up 2 (Part C, founder Q2): the launch guard's rows now
+// resolve 'launch_guard_cleared' (older rows keep 'auto_executed' with the
+// note). Either marker keeps the row out of the belief join.
+describe('follow-up 2 — a launch-guard row is no belief under either label', () => {
+  const trade = { evaluationId: 'eval_001', symbolIn: 'AMD', symbolOut: 'KO', entryMode: 'autopilot' };
+  const row = (over) => ({ evalId: 'eval_001', evaluationMetadata: { evaluationId: 'eval_001' }, symbolIn: 'AMD', symbolOut: 'PG', ...over });
+  it('the new label (with or without the note), the old label with the note: no belief', () => {
+    for (const over of [{ resolution: 'launch_guard_cleared', systemNote: 'launch_guard_clear' }, { resolution: 'launch_guard_cleared' }, { resolution: 'auto_executed', systemNote: 'launch_guard_clear' }]) {
+      expect(beliefOfTrade(trade, { evaluations: [], proposalHistory: [row(over)] }), JSON.stringify(over)).toEqual({ caller: 'model', belief: null, ambiguous: false });
+    }
+  });
+  it('a real executed proposal row still lends its belief', () => {
+    expect(beliefOfTrade(trade, { evaluations: [], proposalHistory: [row({ resolution: 'approved' })] })).toEqual({ caller: 'proposal', belief: 'PG', ambiguous: false });
+  });
+  it('the caller fallback reads the stamped mode: new rows carry the governing mode (follow-up 2, Q4) and fall back to model', () => {
+    expect(beliefOfTrade({ evaluationId: 'eval_x', symbolIn: 'AMD', entryMode: 'autopilot' }, { evaluations: [], proposalHistory: [] }).caller).toBe('model');
+    expect(beliefOfTrade({ evaluationId: 'eval_x', symbolIn: 'AMD', entryMode: 'copilot' }, { evaluations: [], proposalHistory: [] }).caller).toBe('proposal');
+  });
+});

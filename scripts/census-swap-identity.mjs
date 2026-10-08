@@ -124,8 +124,11 @@ export function beliefOfTrade(trade, battle) {
   if (beliefs.length === 1) return { caller: joined[0].decision === 'PROPOSAL' ? 'proposal' : 'model', belief: beliefs[0], ambiguous: false };
   // A launch-guard clear never executed (integrity build, review I1-4): its row
   // carries a client-written proposal's ids and symbols, so it is no belief.
+  // Integrity follow-up 2 (Q2): the guard's rows now resolve
+  // 'launch_guard_cleared' (older rows keep 'auto_executed' with the note) —
+  // either marker excludes the row.
   const proposals = (Array.isArray(battle?.proposalHistory) ? battle.proposalHistory : [])
-    .filter((p) => p?.systemNote !== 'launch_guard_clear')
+    .filter((p) => p?.systemNote !== 'launch_guard_clear' && p?.resolution !== 'launch_guard_cleared')
     .filter((p) => (p?.evaluationMetadata?.evaluationId === trade.evaluationId || p?.evalId === trade.evaluationId)
       && p.symbolIn === trade.symbolIn && typeof p.symbolOut === 'string' && p.symbolOut);
   const proposalBeliefs = [...new Set(proposals.map((p) => p.symbolOut))];

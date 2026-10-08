@@ -127,8 +127,9 @@ function clientReasoning(value) {
  * The descriptive fields a pending proposal's stored metadata may contribute —
  * the proposal is owner-writable, so ONLY strings, type-checked and capped
  * (and the reasoning's strings). Ids, the day, the conviction number, the
- * receipt source, the exit reason, the dial provenance and every executor
- * field are never read from it: the caller supplies them from the server.
+ * receipt source, the exit reason, the dial provenance, the execution mode and
+ * every executor field are never read from it: the caller supplies them from
+ * the server.
  */
 export function proposalDescriptiveMetadata(proposal) {
   const meta = isPlainObject(proposal?.evaluationMetadata) ? proposal.evaluationMetadata : {};
@@ -139,10 +140,10 @@ export function proposalDescriptiveMetadata(proposal) {
   for (const key of ['entryRegime', 'entryMarketPosture', 'swapMotive']) {
     if (Object.hasOwn(meta, key)) out[key] = clientToken(meta[key]);
   }
-  for (const key of ['entryPreset', 'entryMode']) {
-    const token = clientToken(meta[key]);
-    if (token) out[key] = token;
-  }
+  // `entryMode` is never read from the record (integrity follow-up 2, founder
+  // Q4): the row carries the mode that governed, LAUNCH_EXECUTION_MODE.
+  const preset = clientToken(meta.entryPreset);
+  if (preset) out.entryPreset = preset;
   if (Object.hasOwn(meta, 'trade_reasoning')) out.trade_reasoning = clientReasoning(meta.trade_reasoning);
   return out;
 }

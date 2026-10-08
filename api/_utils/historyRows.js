@@ -26,11 +26,14 @@ import { clientToken } from './executorMetadata.js';
  * launch guard's note, the resolution-time scores and veto prices), plus the
  * result fields history readers consume as outcomes (the voice layer's
  * counterfactual and outcome points, api/_utils/voiceLayerPrompt.js).
+ * Integrity follow-up 2 adds the meeting's held legs (Part A) and the
+ * retry-safe markers (Part D) — written by the server only.
  */
 export const HISTORY_OUTCOME_KEYS = Object.freeze([
   'executionFailed', 'executionRefusal', 'verification', 'legRefusals',
   'systemNote', 'scoreAtResolution', 'scoreAtVeto', 'vetoedAtPrice', 'vetoedAtTimestamp',
   'counterfactualPoints', 'outcomePoints', 'lockedPoints', 'closedTrade',
+  'heldLegs', 'heldLegCount', 'executionOutcome', 'executionLanded',
 ]);
 
 const OUTCOME = new Set(HISTORY_OUTCOME_KEYS);

@@ -29,8 +29,10 @@
 // So the census reads:
 //   1. PROPOSAL EXECUTIONS AFTER THE GUARD — every proposal_system swap beat
 //      (the strongest evidence), and every history row resolved 'approved' or
-//      'auto_executed' — INCLUDING rows that claim a launch-guard clear or a
-//      failed execution: those are listed as executions when a same-pair trade
+//      'auto_executed' — INCLUDING rows that claim a launch-guard clear (from
+//      integrity follow-up 2, 8 Oct 2026, the guard files its rows
+//      'launch_guard_cleared'; rows written before keep 'auto_executed', and
+//      both are read as clears) or a failed execution: those are listed as executions when a same-pair trade
 //      sits beside them (a planted note cannot hide a trade that happened), and
 //      as clears / failures otherwise. A row whose time cannot be read is listed
 //      (time unknown), never skipped. Each with the trade rows it matches (same
@@ -66,6 +68,13 @@ import { EXECUTOR_COMPUTED_KEYS, EXECUTOR_METADATA_KEYS } from '../api/_utils/ex
 
 /** The model path's launch guard landed on main: PR #421's merge commit fcbd71c5 (carrying 84254065). */
 export const LAUNCH_GUARD_LANDED = '2026-05-20T17:17:29.000Z';
+/**
+ * The resolutions the launch guard itself writes: 'auto_executed' before
+ * integrity follow-up 2 (8 Oct 2026), 'launch_guard_cleared' since (founder
+ * Q2). Existing rows keep the old value, so a reader that counts clears
+ * accepts both.
+ */
+export const LAUNCH_GUARD_RESOLUTIONS = Object.freeze(['auto_executed', 'launch_guard_cleared']);
 /** A trade row may carry these keys and nothing else. */
 export const TRADE_ROW_KEYS = Object.freeze([...EXECUTOR_COMPUTED_KEYS, ...EXECUTOR_METADATA_KEYS]);
 /** How close a trade's swappedOutAt must sit to a proposal beat or row to be its trade. */
@@ -92,6 +101,17 @@ export function isProposalExecutionBeat(beat) {
 /** Is this history row resolved as executed (whatever note or marker it also carries)? */
 export function isExecutedResolution(row) {
   return !!row && typeof row === 'object' && (row.resolution === 'approved' || row.resolution === 'auto_executed');
+}
+
+/** Does this history row claim a launch-guard clear — the guard's note, or its follow-up-2 resolution? */
+export function claimsLaunchGuardClear(row) {
+  return !!row && typeof row === 'object' && (row.systemNote === 'launch_guard_clear' || row.resolution === 'launch_guard_cleared');
+}
+
+/** Is it exactly a row the guard writes: its note, one of its two resolutions, by 'system'? */
+export function isGenuineLaunchGuardRow(row) {
+  return claimsLaunchGuardClear(row) && row.systemNote === 'launch_guard_clear'
+    && LAUNCH_GUARD_RESOLUTIONS.includes(row.resolution) && row.resolvedBy === 'system';
 }
 
 /** The trades with this incoming symbol swapped out within the window of `atMs`. */
@@ -166,16 +186,17 @@ export function computePlantedProposalCensus(battles, { sinceMs = Date.parse(LAU
       });
     }
     for (const row of history) {
-      if (!isExecutedResolution(row)) continue;
+      if (!isExecutedResolution(row) && !claimsLaunchGuardClear(row)) continue;
       const atMs = toMs(row.resolvedAt) ?? toMs(row.createdAt);
       if (!after(atMs)) continue;
       const at = atMs == null ? 'time unknown' : (row.resolvedAt ?? row.createdAt);
       const near = tradesNear(row.symbolIn, atMs, trades).map(short);
       const base = { battleId, at, proposalId: row.proposalId ?? null, symbolOut: row.symbolOut ?? null, symbolIn: row.symbolIn ?? null };
-      if (row.systemNote === 'launch_guard_clear') {
-        // The guard itself writes exactly resolution 'auto_executed' by 'system';
+      if (claimsLaunchGuardClear(row)) {
+        // The guard itself writes exactly its note with resolution 'auto_executed'
+        // (before follow-up 2) or 'launch_guard_cleared' (since), by 'system';
         // its note on any other resolution was planted (review IV4-I4-5).
-        const genuine = row.resolution === 'auto_executed' && row.resolvedBy === 'system';
+        const genuine = isGenuineLaunchGuardRow(row);
         if (near.length) executions.push({ ...base, kind: 'history row — claims a launch-guard clear, but a same-pair trade sits beside it', message: `resolution '${row.resolution}'`, trades: near });
         else if (!genuine) executions.push({ ...base, kind: 'history row — carries the launch guard\'s note on a resolution the guard never writes', message: `resolution '${row.resolution}'`, trades: near });
         else guardClears.push(base);

@@ -16,7 +16,9 @@
 //     a record stored without it is checked by symbol only, and says so;
 //   - the refusal record and the player lines (MODE_TRUTH_LANGUAGE_TABLES V1.2
 //     table F). [SYM] is ALWAYS the belief — verification.expected.symbol —
-//     never the slot's current occupant.
+//     never the slot's current occupant;
+//   - table F V1.3 (integrity follow-up 2): the approved meeting leg that did
+//     not go through, written only when a fresh read confirms no trade.
 
 import { SWAP_IDENTITY_MODE } from '../../src/config/featureFlags.js';
 import { resolveSwapIdentityMode, SWAP_REFUSAL_REASONS } from './agentSwapExecution.js';
@@ -118,6 +120,22 @@ export const REFUSAL_LINES = Object.freeze({
   }),
   battle_not_active: 'This trade arrived after the battle ended. No trade was made.',
 });
+
+/**
+ * Table F V1.3 (8 Oct 2026, integrity follow-up 2 — founder Q3): an approved
+ * meeting leg whose executor call threw, when the server's fresh read of the
+ * battle confirms that no trade was made (api/_utils/landedTrade.js). Written
+ * at every mode — it renders the leg's `executionFailed: true`, not a P6
+ * refusal (a typed refusal keeps its own line above). [SYM] / [SYM2] come from
+ * the server's copy of the meeting (the leg as the cron proposed it).
+ */
+export const MEETING_LEG_FAILED_LINE = 'The swap of [SYM] for [SYM2] you approved did not go through. No trade was made.';
+
+/** The V1.3 line, filled from the record — or null when either symbol is missing (no line). */
+export function meetingLegFailedLine({ symbol = null, symbolIn = null } = {}) {
+  if (!filled(symbol) || !filled(symbolIn)) return null;
+  return MEETING_LEG_FAILED_LINE.replaceAll('[SYM2]', symbolIn).replaceAll('[SYM]', symbol);
+}
 
 /** The three speakers of table F's mismatch line. */
 export const REFUSAL_KINDS = Object.freeze(['agent', 'protective', 'profit_target']);
