@@ -14,7 +14,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { classOfNumber } from '../../../constants/filmTape';
-import { SCREEN_AGGREGATE_CLASSES, valueAt } from '../filmRoomModel';
+import { valueAt } from '../filmRoomModel';
 import sep23Tape from './sep23.tape.json';
 import sep23Series from './sep23.series.json';
 import emptyTape from './empty.tape.json';
@@ -96,6 +96,21 @@ const TIME_PATTERNS = [/\b\d{1,2}:\d{2}( (AM|PM))?\b/g, /\b(Mon|Tue|Wed|Thu|Fri|
 export const FIXED_DIGIT_COPY = ['1-minute', '10-minute', '15–20 minutes', 'nr7'];
 
 /**
+ * The class of every number the screen computes, PINNED HERE from Amendment E's addendum R4(a) — never read
+ * from production's SCREEN_AGGREGATE_CLASSES, so a wrong declaration there cannot pass by agreeing with
+ * itself (the SPEC_FORBIDDEN_WORDS precedent, review A2L4-7). filmRoomModel's table is pinned equal to it.
+ */
+export const SPEC_AGGREGATE_CLASSES = Object.freeze({
+  'count(checks[] in a run)': 'derived',
+  'count(slots of the derived held set)': 'derived',
+  'count(actions[])': 'derived',
+  'count(checks[] with a record)': 'derived',
+  'count(tickSeqs in the minted range)': 'derived',
+  'count(rationale[])': 'derived',
+  'count(plans[] of the symbol)': 'derived',
+});
+
+/**
  * BA-42 sweep over a mounted container. `docs` maps a `data-num-doc` label to
  * its document ('tape', 'series:SYM'). Returns the list of defects (empty when
  * every number is marked by its own path's class and no digit strays).
@@ -118,7 +133,7 @@ export function sweepNumbers(container, docs) {
     if (!(typeof value === 'number' && Math.abs(shown - value) < 0.0051)) bad.push(`${where}: shows ${shown}, the document holds ${value}`);
   }
   for (const el of container.querySelectorAll('[data-num-aggregate]')) {
-    const want = SCREEN_AGGREGATE_CLASSES[el.getAttribute('data-num-aggregate')];
+    const want = SPEC_AGGREGATE_CLASSES[el.getAttribute('data-num-aggregate')];
     const mark = el.querySelector('[data-kind-mark]')?.getAttribute('data-kind-mark');
     if (!want || el.getAttribute('data-num-class') !== want || mark !== want) bad.push(`aggregate ${el.getAttribute('data-num-aggregate')}: marker ${mark}, declared ${want}`);
   }

@@ -27,6 +27,12 @@ function Harness({ tape }) {
 }
 const card = (i) => m.q(`[data-swap-card="${i}"]`);
 const before = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+/** A plan chip by its symbol (the chip also carries its count). */
+const planChip = (s) => m.qa('[data-region="plan-chips"] button').find((b) => b.querySelector('[data-record-text]')?.textContent === s);
+/** A section's count pill, and one named aggregate in it. */
+const count = (id) => m.q(`#${id} [data-section-count]`);
+const agg = (id, name) => m.q(`#${id} [data-section-count] [data-num-aggregate="${name}"]`);
+const aggValue = (el) => Number(el.getAttribute('data-agg-value'));
 
 describe('BA-45 — holdings at the day\'s start and end', () => {
   it('derived from the first and last risk records and the swaps, labelled derived; each changed slot shows who entered it and when', () => {
@@ -240,7 +246,7 @@ describe('BA-10 — plans: verbatim, the two market prices, the horizon note, no
 
   it('the symbol chips filter the plans', () => {
     m.render(<Harness tape={sep23Tape} />);
-    const chip = m.qa('[data-region="plan-chips"] button').find((b) => b.textContent === 'MU');
+    const chip = planChip('MU');
     m.click(chip);
     const shown = m.qa('[data-plan]').map((r) => sep23Tape.plans[Number(r.getAttribute('data-plan'))].symbol);
     expect(shown.length).toBeGreaterThan(0);
@@ -304,6 +310,69 @@ describe('checks and diagnostics', () => {
       m.render(<Harness tape={t} />);
       expect(m.q('#diagnostics'), String(v)).toBeNull();
     }
+  });
+});
+
+describe('addendum R4(a) — the section counts, each a marked count of its own list', () => {
+  it('"Holdings · 7 slots": the slots of the derived held set — the first risk record\'s names — marked derived', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    const firstRisk = sep23Tape.checks.find((c) => c.risk && Object.keys(c.risk).length);
+    const el = agg('holdings', 'count(slots of the derived held set)');
+    expect(aggValue(el)).toBe(Object.keys(firstRisk.risk).length);
+    expect(el.getAttribute('data-num-class')).toBe('derived');
+    expect(count('holdings').textContent).toMatch(/^7\s?D?\s*slots$/);
+  });
+
+  it('the grid omitted → no slot count', () => {
+    const t = clone(sep23Tape);
+    delete t.checks[22].risk.PANW;
+    m.render(<Harness tape={t} />);
+    expect(count('holdings')).toBeNull();
+  });
+
+  it('"Swaps · n": the day\'s actions — not its directives or plans; none on a day with no swap', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    expect(aggValue(agg('swaps', 'count(actions[])'))).toBe(sep23Tape.actions.length);
+    const t = clone(sep23Tape);
+    t.actions = t.actions.slice(0, 2);   // two swaps against three directives
+    m.render(<Harness tape={t} />);
+    expect(aggValue(agg('swaps', 'count(actions[])'))).toBe(2);
+    expect(agg('swaps', 'count(actions[])').getAttribute('data-num-class')).toBe('derived');
+    m.render(<Harness tape={emptyTape} />);
+    expect(count('swaps')).toBeNull();
+  });
+
+  it('"Checks · n of m": rows with a record of the minted range — the range\'s size, widened by the gaps the close pass attributes', () => {
+    const t = clone(sep23Tape);
+    t.checks[0].state = 'no_record'; t.checks[1].state = 'no_record';
+    t.passes.close.tickSeqRange = [3, 23];
+    m.render(<Harness tape={t} />);
+    expect(aggValue(agg('checks', 'count(checks[] with a record)'))).toBe(21);
+    expect(aggValue(agg('checks', 'count(tickSeqs in the minted range)'))).toBe(21);
+    t.passes.close.gaps = [1, 2];
+    m.render(<Harness tape={clone(t)} />);
+    expect(aggValue(agg('checks', 'count(tickSeqs in the minted range)'))).toBe(23);
+    m.render(<Harness tape={emptyTape} />);
+    expect(count('checks').textContent).toMatch(/^0\s?D?\s*recorded$/);
+  });
+
+  it('"Rationale · n": the recorded rationale entries — not the check states beside them in the timeline', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    expect(m.qa('[data-state-entry]').length).toBeGreaterThan(0);
+    expect(aggValue(agg('rationale', 'count(rationale[])'))).toBe(sep23Tape.rationale.length);
+    m.render(<Harness tape={emptyTape} />);
+    expect(count('rationale')).toBeNull();
+  });
+
+  it('the plan filter chips: each symbol\'s own plan count, marked derived; "All" carries none', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    for (const s of new Set(sep23Tape.plans.map((p) => p.symbol))) {
+      const el = planChip(s).querySelector('[data-num-aggregate="count(plans[] of the symbol)"]');
+      expect(aggValue(el), s).toBe(sep23Tape.plans.filter((p) => p.symbol === s).length);
+      expect(el.getAttribute('data-num-class')).toBe('derived');
+    }
+    expect(aggValue(planChip('PLTR').querySelector('[data-num-aggregate]'))).toBe(2);
+    expect(m.qa('[data-region="plan-chips"] button')[0].querySelector('[data-num-aggregate]')).toBeNull();
   });
 });
 

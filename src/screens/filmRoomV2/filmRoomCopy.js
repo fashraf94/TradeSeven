@@ -49,6 +49,11 @@ export const FILM_ROOM_COPY = Object.freeze({
   skippedMode: 'This battle mode is not taped.',
   closeNotWritten: (status) => `The close pass for this day did not write a tape (${status}).`,
 
+  // section counts (Amendment E addendum R4(a)) — "Checks · 23 of 23", "Holdings · 7 slots"
+  countOf: 'of',
+  countRecorded: 'recorded',
+  slots: 'slots',
+
   // coverage (BA-20)
   coverage: 'Coverage',
   replayCoverage: 'Replay coverage',

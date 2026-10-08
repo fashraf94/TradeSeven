@@ -10,7 +10,7 @@
 // Spec: docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_20260927.md §7, §8 and
 // Amendment E (docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_AMENDMENT_E_20261008.md).
 
-import { classOfNumber, PROVENANCE_CLASSES } from '../../constants/filmTape';
+import { classOfNumber, PROVENANCE_CLASSES, NON_CHECK_STATES } from '../../constants/filmTape';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -54,9 +54,37 @@ export { PROVENANCE_CLASSES };
 // ("aftermath counts" are its own example). It is not a leaf of the document,
 // so it has no path in `numberClasses`; this ONE declaration names each such
 // count the screen renders, by what it counts, so no widget picks a class.
+// Amendment E addendum R4(a): each number the screen computes is declared here
+// with the class of its least-certain operand — the section counts and "n of
+// m" are counts of recorded rows, so `derived`.
 export const SCREEN_AGGREGATE_CLASSES = Object.freeze({
   'count(checks[] in a run)': 'derived',
+  'count(slots of the derived held set)': 'derived',
+  'count(actions[])': 'derived',
+  'count(checks[] with a record)': 'derived',
+  'count(tickSeqs in the minted range)': 'derived',
+  'count(rationale[])': 'derived',
+  'count(plans[] of the symbol)': 'derived',
 });
+
+/**
+ * "Checks · n of m" (R4(a)). `n` is the day's check rows that carry a record —
+ * every row but a deferral and a missing record (NON_CHECK_STATES, the tape's
+ * own "known checks"). `m` is the minted tickSeq range passes.close records:
+ * its recorded range and the gaps it attributes to this day. `m` is null when
+ * the close pass records no range, or when it would be smaller than `n` — the
+ * screen then says "n recorded" and never states a fraction the record does
+ * not support.
+ */
+export function checkCounts(tape) {
+  const rows = Array.isArray(tape?.checks) ? tape.checks : [];
+  const n = rows.filter((r) => !NON_CHECK_STATES.includes(r?.state)).length;
+  const close = tape?.passes?.close;
+  const range = Array.isArray(close?.tickSeqRange) && close.tickSeqRange.length === 2 && close.tickSeqRange.every(Number.isInteger) ? close.tickSeqRange : [];
+  const seqs = [...range, ...(Array.isArray(close?.gaps) ? close.gaps.filter(Number.isInteger) : [])];
+  const m = seqs.length ? Math.max(...seqs) - Math.min(...seqs) + 1 : null;
+  return { n, m: m !== null && m >= n ? m : null };
+}
 
 // ── time (ET wall clock; instants stay the tape's strings) ──────────────────
 

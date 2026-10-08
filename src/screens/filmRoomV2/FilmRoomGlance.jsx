@@ -9,7 +9,7 @@
 import React from 'react';
 import { valueAt, etClock, checkStateOf, checkRuns, isNum, exitMakerOf, toMs } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
-import { C, card, eyebrow, foot, mono, plain, TapeNum, CountNum, When, Rec, Section, Row, Quote, StateTag, Door } from './FilmRoomKit';
+import { C, card, eyebrow, foot, mono, plain, TapeNum, CountNum, CheckCount, When, Rec, Section, Row, Quote, StateTag, Door } from './FilmRoomKit';
 import CheckDetail from './FilmRoomCheckDetail';
 
 // ── the pips: one per check row, by tone ───────────────────────────────────
@@ -231,7 +231,7 @@ export function ResultCard({ tape, finalDay = null }) {
 
 export default function FilmRoomGlance({ tape, desktop, selected, onSelect, finalDay = null }) {
   const checksBlock = (
-    <Section id="glance-checks" title={COPY.checks} coverage={tape.coverage?.checks} note={COPY.riskNote}>
+    <Section id="glance-checks" title={COPY.checks} count={<CheckCount tape={tape} />} coverage={tape.coverage?.checks} note={COPY.riskNote}>
       <div style={{ ...card, gap: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ ...eyebrow, color: C.ink2 }}>{COPY.scorePath}</span>

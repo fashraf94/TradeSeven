@@ -185,7 +185,7 @@ describe('lens 3 — reads and lifecycle', () => {
     m.click(chips()[1]); await m.flush();
     expect(m.q('[data-evidence-panel]')).toBeNull();
     await depth('Study');
-    m.click(m.qa('[data-region="plan-chips"] button').find((x) => x.textContent === 'ZZZZ'));
+    m.click(m.qa('[data-region="plan-chips"] button').find((x) => x.querySelector('[data-record-text]')?.textContent === 'ZZZZ'));
     m.click(chips()[0]); await m.flush();
     expect(m.qa('[data-plan]')).toHaveLength(sep23Tape.plans.length);
   });

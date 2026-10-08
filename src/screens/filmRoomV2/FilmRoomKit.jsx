@@ -16,7 +16,7 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { cssVar } from '../../theme/cssTokens';
 import { MONO } from '../../components/Dashboard/commandUI';
-import { numberAt, isRecordedScore, fmtPoints, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
+import { numberAt, isRecordedScore, fmtPoints, SCREEN_AGGREGATE_CLASSES, checkCounts } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY, CLASS_LETTER, PROVENANCE_LABELS } from './filmRoomCopy';
 import { formatNumberPath } from '../../constants/filmTape';
 
@@ -102,13 +102,31 @@ export function TapeNum({ doc, path, fmt = fmtPoints, size = 13, weight = 700, c
   );
 }
 
-/** A count the screen makes of the tape's own rows — its class from the one screen declaration. */
-export function CountNum({ value, aggregate, size = 10.5, color = C.ink2 }) {
+/**
+ * A number the screen computes from the record (Amendment E addendum R4(a)) —
+ * its class from the one screen declaration, SCREEN_AGGREGATE_CLASSES, by the
+ * name of what it computes; never a widget's own.
+ */
+export function AggNum({ value, aggregate, fmt = String, size = 10.5, weight = 600, color = C.ink2 }) {
   const cls = SCREEN_AGGREGATE_CLASSES[aggregate] ?? null;
   return (
-    <span data-num-aggregate={aggregate} data-num-class={cls || 'none'} data-count={value} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: MONO, fontSize: size, fontWeight: 600, color, whiteSpace: 'nowrap' }}>
-      <span data-num-text="">{String(value)}</span>
+    <span data-num-aggregate={aggregate} data-num-class={cls || 'none'} data-agg-value={value} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: MONO, fontSize: size, fontWeight: weight, color, whiteSpace: 'nowrap' }}>
+      <span data-num-text="">{fmt(value)}</span>
       <KindMark cls={cls} />
+    </span>
+  );
+}
+
+/** A count the screen makes of the tape's own rows — its class from the one screen declaration. */
+export const CountNum = ({ value, aggregate, size, color }) => <AggNum value={value} aggregate={aggregate} size={size} color={color} />;
+
+/** "Checks · n of m", or "n recorded" when the close pass records no minted range (R4(a); checkCounts). */
+export function CheckCount({ tape }) {
+  const { n, m } = checkCounts(tape);
+  return (
+    <span data-check-count={m === null ? 'recorded' : 'of'} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+      <CountNum value={n} aggregate="count(checks[] with a record)" size={10} />
+      {m === null ? COPY.countRecorded : <>{COPY.countOf} <CountNum value={m} aggregate="count(tickSeqs in the minted range)" size={10} /></>}
     </span>
   );
 }
@@ -161,12 +179,15 @@ export function Coverage({ coverage, fallbackNote, style, label = COPY.coverage 
   );
 }
 
-/** A section: its title, its coverage line, an optional note, its body. */
-export function Section({ id, title, coverage, coverageNote, note, right, children, label }) {
+/** A section: its title (with its count, when it has one), its coverage line, an optional note, its body. */
+export function Section({ id, title, count, coverage, coverageNote, note, right, children, label }) {
   return (
     <section id={id} data-section={id || label || title} style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10, padding: '4px 2px 0', flexWrap: 'wrap' }}>
-        <h3 style={{ margin: 0, ...mono(10.5, C.ink2, { letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 700 }) }}>{title}</h3>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
+          <h3 style={{ margin: 0, ...mono(10.5, C.ink2, { letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 700 }) }}>{title}</h3>
+          {count != null ? <span data-section-count="" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '1px 7px', borderRadius: 6, background: tint('scrim', 0.06), whiteSpace: 'nowrap', ...mono(10, C.ink2, { fontWeight: 700 }) }}>{count}</span> : null}
+        </div>
         {right}
       </div>
       {(coverage !== undefined || coverageNote) && <Coverage coverage={coverage} fallbackNote={coverageNote} style={{ padding: '0 2px' }} />}

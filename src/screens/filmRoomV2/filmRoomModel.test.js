@@ -10,8 +10,9 @@ import emptyTape from './__fixtures__/empty.tape.json';
 import {
   valueAt, classAt, numberAt, checkStateOf, checkRuns, riskLines, riskSummary, exitMakerOf, swapAnchor, deriveHoldings,
   directiveCardOf, rationaleTimeline, planGroups, evidenceMarkers, roleOf, deepSymbols, extremeBars, lastPointPath,
-  fmtPoints, fmtPrice, fmtPriceDelta, etClock, etDateLabel, isRecordedScore, SCREEN_AGGREGATE_CLASSES,
+  fmtPoints, fmtPrice, fmtPriceDelta, etClock, etDateLabel, isRecordedScore, SCREEN_AGGREGATE_CLASSES, checkCounts,
 } from './filmRoomModel';
+import { SPEC_AGGREGATE_CLASSES } from './__fixtures__/filmRoomHarness';
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
@@ -38,8 +39,9 @@ describe('a number and its class come from the document, by path (BA-42, F2)', (
     expect(valueAt(sep23Tape, ['actions', 9, 'x'])).toBeUndefined();
   });
 
-  it('the screen\'s own counts have ONE declaration, derived (BA-21: counts of recorded rows)', () => {
-    expect(SCREEN_AGGREGATE_CLASSES).toEqual({ 'count(checks[] in a run)': 'derived' });
+  it('the screen\'s own numbers have ONE declaration, equal to the addendum\'s (R4(a)), pinned by the harness oracle', () => {
+    expect(SCREEN_AGGREGATE_CLASSES).toEqual(SPEC_AGGREGATE_CLASSES);
+    expect(SPEC_AGGREGATE_CLASSES['count(checks[] in a run)']).toBe('derived');
   });
 
   it('sign colours: recorded scores only', () => {
@@ -79,6 +81,24 @@ describe('checks (BA-8, BA-44; F3, F5)', () => {
     expect(runs[2].from).toBe(sep23Tape.checks[7].at);
     expect(runs[2].to).toBe(sep23Tape.checks[18].at);
     expect(checkRuns(emptyTape)).toEqual([]);
+  });
+
+  it('addendum R4(a) — "n of m": n is the rows with a record, m the minted range passes.close records (its range and the gaps it attributes)', () => {
+    expect(checkCounts(sep23Tape)).toEqual({ n: 23, m: 23 });
+    expect(checkCounts(emptyTape)).toEqual({ n: 0, m: null });   // no range recorded → "0 recorded"
+    const t = clone(sep23Tape);
+    t.checks[20].state = 'no_record';
+    t.checks[21].state = 'deferred';
+    expect(checkCounts(t)).toEqual({ n: 21, m: 23 });             // a deferral and a missing record are not checks with a record
+    const r = clone(sep23Tape);
+    r.checks[0].state = 'no_record'; r.checks[1].state = 'no_record';
+    r.passes.close.tickSeqRange = [3, 23];
+    expect(checkCounts(r)).toEqual({ n: 21, m: 21 });             // the range's size, not its last number
+    r.passes.close.gaps = [1, 2];
+    expect(checkCounts(r)).toEqual({ n: 21, m: 23 });             // the gaps the close pass attributes to the day are minted too
+    const over = clone(sep23Tape);
+    over.passes.close.tickSeqRange = [1, 20];
+    expect(checkCounts(over)).toEqual({ n: 23, m: null });        // never a fraction the record does not support
   });
 
   it('BA-7 risk rows: "Risk decision recorded: HOLD", the action with its reason, or none recorded', () => {

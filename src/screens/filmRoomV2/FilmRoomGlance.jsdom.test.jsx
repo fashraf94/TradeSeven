@@ -94,6 +94,37 @@ describe('F5 — the score path with the check runs', () => {
   });
 });
 
+describe('addendum R4(a) — "Checks · n of m", a marked count of the record\'s own rows', () => {
+  const agg = (name) => m.q(`#glance-checks [data-section-count] [data-num-aggregate="${name}"]`);
+  it('Sep-23: "Checks · 23 of 23" — the rows with a record of the minted range passes.close records, each count marked derived', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    expect(m.q('#glance-checks [data-section-count]').textContent).toMatch(/^23\s?D?\s*of\s*23\s?D?$/);
+    expect(Number(agg('count(checks[] with a record)').getAttribute('data-agg-value'))).toBe(sep23Tape.checks.length);
+    const [lo, hi] = sep23Tape.passes.close.tickSeqRange;
+    expect(Number(agg('count(tickSeqs in the minted range)').getAttribute('data-agg-value'))).toBe(hi - lo + 1);
+    for (const name of ['count(checks[] with a record)', 'count(tickSeqs in the minted range)']) {
+      expect(agg(name).getAttribute('data-num-class')).toBe('derived');
+      expect(agg(name).querySelector('[data-kind-mark]').getAttribute('data-kind-mark')).toBe('derived');
+    }
+  });
+
+  it('a missing record and a deferral are not counted; the minted range is its size', () => {
+    const t = clone(sep23Tape);
+    t.checks[20].state = 'no_record';
+    t.checks[21].state = 'deferred';
+    m.render(<Harness tape={t} />);
+    expect(agg('count(checks[] with a record)').getAttribute('data-agg-value')).toBe('21');
+    expect(agg('count(tickSeqs in the minted range)').getAttribute('data-agg-value')).toBe('23');
+  });
+
+  it('the empty day: no minted range recorded → "0 recorded", never a made-up "of"', () => {
+    m.render(<Harness tape={emptyTape} />);
+    expect(m.q('#glance-checks [data-check-count]').getAttribute('data-check-count')).toBe('recorded');
+    expect(m.q('#glance-checks [data-section-count]').textContent).toMatch(/^0\s?D?\s*recorded$/);
+    expect(agg('count(tickSeqs in the minted range)')).toBeNull();
+  });
+});
+
 describe('the final result, apart from the day (BA-4, BA-39)', () => {
   it('a completed battle: the result word, both recorded final scores, the platform\'s completion message labelled as the platform\'s', () => {
     m.render(<Harness tape={sep23Tape} />);

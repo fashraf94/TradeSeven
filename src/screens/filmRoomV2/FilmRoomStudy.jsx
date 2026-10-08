@@ -29,7 +29,7 @@ import { FILM_ROOM_COPY as COPY, REPLAY_SENTENCE, LOCKED_BASIS_NOTE, REPLAY_VERS
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
 import { etDateOf } from '../../utils/tapeSchedule';
 import {
-  C, card, eyebrow, foot, body, mono, tint, plain, TapeNum, When, Rec, Section, Row, EmptyCard, Collapsible, StateTag, Door, Chip, TextButton, KindMark, Coverage,
+  C, card, eyebrow, foot, body, mono, tint, plain, TapeNum, CountNum, CheckCount, When, Rec, Section, Row, EmptyCard, Collapsible, StateTag, Door, Chip, TextButton, KindMark, Coverage,
 } from './FilmRoomKit';
 import CheckDetail from './FilmRoomCheckDetail';
 import { Pip } from './FilmRoomGlance';
@@ -60,7 +60,7 @@ function HoldingsSection({ tape, onDeep }) {
     </button>
   );
   return (
-    <Section id="holdings" title={COPY.holdings} coverage={{ status, note: h.note }}>
+    <Section id="holdings" title={COPY.holdings} count={<><CountNum value={h.slots.length} aggregate="count(slots of the derived held set)" size={10} /> {COPY.slots}</>} coverage={{ status, note: h.note }}>
       <div data-region="holdings" style={{ ...card, gap: 6 }}>
         <span style={mono(9.5, C.ink3)}><When>{COPY.holdingsAt(etClock(h.start.at), etClock(h.end.at))}</When></span>
         <div style={grid}>{lab(COPY.holdingsStart)}{h.slots.map((s) => chip(s.start, s.change ? 'out' : null))}</div>
@@ -255,7 +255,7 @@ function SwapCard({ tape, index, desktop, onDeep }) {
 function SwapsSection({ tape, desktop, onDeep }) {
   const actions = Array.isArray(tape.actions) ? tape.actions : [];
   return (
-    <Section id="swaps" title={COPY.swaps} coverage={tape.coverage?.actions}>
+    <Section id="swaps" title={COPY.swaps} count={actions.length ? <CountNum value={actions.length} aggregate="count(actions[])" size={10} /> : null} coverage={tape.coverage?.actions}>
       <div data-coverage-of="replay"><Coverage label={COPY.replayCoverage} coverage={tape.coverage?.replay} style={{ padding: '0 2px' }} /></div>
       {actions.length
         ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{actions.map((a, i) => <SwapCard key={a.key || i} tape={tape} index={i} desktop={desktop} onDeep={onDeep} />)}</div>
@@ -331,7 +331,7 @@ function PlansSection({ tape }) {
     <Section id="plans" title={COPY.plans} coverage={tape.coverage?.plans} note={note ? <Rec>{note}</Rec> : null}>
       <div data-region="plan-chips" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
         <Chip on={filter === null} onClick={() => setFilter(null)}>{COPY.plansAll}</Chip>
-        {syms.map((s) => <Chip key={s} on={filter === s} onClick={() => setFilter(s)}><Rec>{s}</Rec></Chip>)}
+        {syms.map((s) => <Chip key={s} on={filter === s} onClick={() => setFilter(s)}><Rec>{s}</Rec><CountNum value={plans.filter((p) => p.symbol === s).length} aggregate="count(plans[] of the symbol)" size={9.5} color={C.ink3} /></Chip>)}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {planGroups(tape, filter).map((g) => (
@@ -383,8 +383,9 @@ function RationaleEntry({ tape, index }) {
 
 function RationaleSection({ tape, onCheck }) {
   const rows = rationaleTimeline(tape);
+  const recorded = Array.isArray(tape.rationale) ? tape.rationale : [];
   return (
-    <Section id="rationale" title={COPY.rationale} coverage={tape.coverage?.rationale}>
+    <Section id="rationale" title={COPY.rationale} count={recorded.length ? <CountNum value={recorded.length} aggregate="count(rationale[])" size={10} /> : null} coverage={tape.coverage?.rationale}>
       {rows.length ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {rows.map((row) => (row.kind === 'rationale'
@@ -406,7 +407,7 @@ function RationaleSection({ tape, onCheck }) {
 function ChecksSection({ tape, selected, onSelect }) {
   const checks = Array.isArray(tape.checks) ? tape.checks : [];
   return (
-    <Section id="checks" title={COPY.checks} coverage={tape.coverage?.checks} note={COPY.riskNote}>
+    <Section id="checks" title={COPY.checks} count={<CheckCount tape={tape} />} coverage={tape.coverage?.checks} note={COPY.riskNote}>
       {selected != null && checks[selected] ? <CheckDetail tape={tape} index={selected} onClose={() => onSelect(null)} /> : null}
       {checks.length ? (
         <div style={{ ...card, gap: 0, padding: '2px 14px' }}>
