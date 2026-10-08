@@ -57,6 +57,12 @@ import { validateTradeDecision, executeSwapServer } from '../_utils/agentSwapExe
 // call keeps its pre-P6 arguments); the belief each caller hands it; and the
 // refusal records and table F lines each caller writes at mode ≠ off.
 import { currentSwapIdentityMode, swapIdentityActive, swapIdentityOptions, expectedOutOfPosition, expectedOutOfStored, storedIdentityOf, isSwapRefusal, refusalKindOf, refusalRecord, refusalFeedFields, departedLegRecord } from '../_utils/swapIdentity.js';
+// Integrity build (client-forged proposal data, F1/F2/F3): the server-owned
+// launch mode both guards read, the executor-metadata allowlist, and the
+// history rows built from the server's own results.
+import { LAUNCH_EXECUTION_MODE } from '../_utils/executionAuthority.js';
+import { executorMetadata, clientText, clientToken, serverTradeId, serverProposalEvaluationId, proposalDescriptiveMetadata } from '../_utils/executorMetadata.js';
+import { proposalHistoryBase, meetingHistoryBase } from '../_utils/historyRows.js';
 // P2 League Tournament — agent-market exclusivity (Spec §1.2). Every use is
 // tournament-conditional: resolveTournamentContext returns null for regular
 // battles from in-memory fields alone (zero Firestore I/O), so the
@@ -1958,7 +1964,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // everything else here is a protective risk-manager exit. EXACT same mapping
         // as the statusFeed push below.
         const swapSource = riskResult.reason === 'stagnation' ? 'archetype' : 'risk_manager';
-        const evaluationMetadata = {
+        // F2: built through the allowlist; the battle's preset and mode are
+        // owner-writable, so they reach the row only as capped strings.
+        const evaluationMetadata = executorMetadata({
           id: riskTradeId,
           action: 'SWAP',
           trigger: riskResult.reason,
@@ -1975,14 +1983,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           entryRegime: stockRegimes[score.symbol] || null,
           entryMarketPosture: marketPosture,
           entryConviction: 0,
-          entryPreset: battle.strategyPreset || 'balanced',
-          entryMode: battle.executionMode || 'autopilot',
+          entryPreset: clientToken(battle.strategyPreset) || 'balanced',
+          entryMode: clientToken(battle.executionMode) || 'autopilot',
           exitReason: riskResult.reason,
           ...buildSwapReceiptSource({ source: swapSource, archetype: ctx.archetype }),
           // Release 2 PR-b — the §14 provenance sibling (one nested key;
           // the receipt's shape-locked return is untouched).
           ...buildSwapProvenance(dialClamp.provenance),
-        };
+        });
 
         // Phase 4: snapshot risk-triggered swaps onto trades[i]. Replacement
         // bench symbols may not have full data — buildTechnicalSnapshot
@@ -3436,14 +3444,13 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         downgraded = true;
         console.warn(`${LOG_PREFIX} SWAP downgraded to HOLD for battle ${battle.id}:`, validation.errors);
       } else {
-        let mode = battle.executionMode || 'autopilot';
-
         // LAUNCH GUARD (2026-05-19): Auto-pilot only. See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md.
-        // This branch should never execute in normal operation. If it does, something
-        // has set a battle's mode to copilot or manual outside the sanctioned flow.
-        if (mode !== 'autopilot') {
-          console.warn(`${LOG_PREFIX} LAUNCH GUARD: battle ${battle.id} has unexpected mode='${mode}'. Forcing autopilot.`);
-          mode = 'autopilot';
+        // The mode is the server-owned LAUNCH_EXECUTION_MODE — the same value the
+        // proposal handler's guard reads (integrity build F1) — never the battle's
+        // owner-writable `executionMode`, which is only logged when it disagrees.
+        const mode = LAUNCH_EXECUTION_MODE;
+        if ((battle.executionMode || 'autopilot') !== mode) {
+          console.warn(`${LOG_PREFIX} LAUNCH GUARD: battle ${battle.id} has unexpected mode='${battle.executionMode}'. Forcing ${mode}.`);
         }
 
         // Forge Enforcement Keystone V1.4 §4.3 (Knob B) — hurdle floor on the
@@ -3532,7 +3539,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             // source:'haiku'. haikuSwapReason's only non-'haiku_decision' values are
             // the two guardrail_* reasons (computed above).
             const swapSource = haikuSwapReason === 'haiku_decision' ? 'haiku' : 'guardrail';
-            const evaluationMetadata = {
+            // F2: built through the allowlist (the preset and mode as capped strings).
+            const evaluationMetadata = executorMetadata({
               id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
               action: 'SWAP',
               trigger: triggers.map(t => t.type).join(', '),
@@ -3543,8 +3551,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               entryRegime: stockRegimes[haikuResult.symbolOut] || null,
               entryMarketPosture: marketPosture,
               entryConviction: haikuResult.conviction || 0,
-              entryPreset: battle.strategyPreset || 'balanced',
-              entryMode: battle.executionMode || 'autopilot',
+              entryPreset: clientToken(battle.strategyPreset) || 'balanced',
+              entryMode: clientToken(battle.executionMode) || 'autopilot',
               // §3.1 A2: guardrail-forced swaps stamp their true guardrail_* reason
               // (computed above), so trades[].exitReason carries the protective
               // origin for Phase 5 Knob C / Phase 7. Discretionary → 'haiku_decision'.
@@ -3572,7 +3580,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               // Phase 8: structured reasoning carried onto battle.trades[] via
               // the ...evaluationMetadata spread in executeSwapServer.
               trade_reasoning: haikuResult?.trade_reasoning || null,
-            };
+            });
             // Phase 4: snapshot autopilot decisions onto trades[i] for parity
             // with co-pilot/manual proposalHistory[i].snapshot.
             const snapshot = {
@@ -3947,7 +3955,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
 
     // ---- Build status feed entry from Haiku result ----
     if (decision === 'PROPOSAL' && pendingProposalUpdate) {
-      const mode = battle.executionMode || 'autopilot';
+      const mode = LAUNCH_EXECUTION_MODE; // F1: the server-owned mode the proposal was made under
       const ttl = mode === 'copilot' ? '10' : '15';
       statusFeedEntries.push({
         timestamp: now,
@@ -4841,10 +4849,17 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
   // has set a battle's mode to copilot or manual outside the sanctioned flow.
   // Resolve the proposal gracefully as auto_executed (safest non-action) without
   // running execution, log a warning, and clear pendingProposal.
-  if ((battle.executionMode || 'autopilot') === 'autopilot') {
+  // Integrity build F1: the guard reads the server-owned LAUNCH_EXECUTION_MODE —
+  // the same value that forces autopilot on the model path — never the battle's
+  // `executionMode`, which the owner may write (with a planted approved proposal
+  // that reached the executor). No server path has created a proposal since
+  // this guard landed (84254065, merged in PR #421 on 2026-05-20), so every
+  // proposal that reaches it is cleared here, never executed. F3: the history
+  // row is the record minus its outcome fields, plus this branch's own result.
+  if (LAUNCH_EXECUTION_MODE === 'autopilot') {
     console.warn(`${LOG_PREFIX} LAUNCH GUARD: pendingProposal exists on autopilot battle ${battle.id} (proposalId=${proposal.proposalId}). Resolving as auto_executed without execution.`);
     const resolvedProposal = {
-      ...proposal,
+      ...proposalHistoryBase(proposal),
       resolvedAt: new Date().toISOString(),
       resolution: 'auto_executed',
       resolvedBy: 'system',
@@ -4859,6 +4874,15 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
 
   // PRESERVED FOR POST-LAUNCH (2026-05-19): proposal lifecycle (approved/vetoed/expired).
   // Unreachable under the launch guard above while modes are autopilot. Kept for revival.
+  //
+  // Integrity build F2 (defense in depth for the day it returns): the proposal
+  // is owner-writable, so the executor never receives a value from it as a
+  // number, price, points, count, symbol or id. The trading day is the server's
+  // own, the trade id comes from the battle's counter, the evaluation id only
+  // when the server's own evaluation log made this proposal, the exit reason and
+  // receipt source are the server's, and the stored snapshot (technical numbers)
+  // is not forwarded. The stored descriptive text rides as capped strings.
+  const serverDay = getCurrentTradingDayServer(battle.timing?.tradingDays);
 
   // Already resolved by client — execute or clear
   if (proposal.resolvedAt && proposal.resolution) {
@@ -4914,24 +4938,26 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
           const approvedSwapResult = await executeSwapServer(
             db, battle.id, battle,
             proposal.tier, proposal.slotIndex,
-            benchAsset, proposal.evaluationMetadata?.tradingDay || 1,
+            benchAsset, serverDay,
             // Corpus Capture Patch W2 (P2 flag #4 hardening, founder-approved):
-            // a metadata-less proposal must never persist a SOURCELESS swap.
-            // #5 (adversarial review): PER-KEY merge, not `|| {}` — an empty or
-            // partial metadata object is TRUTHY and would bypass a whole-object
-            // fallback, so spread the synthesized floor FIRST and let any present
-            // real keys override it (spreading a nullish/legacy metadata is a
-            // no-op, so this also covers the fully-absent case). Required floor:
-            // { source, archetype, hftKnobsSource, entryPreset, entryMode,
-            // exitReason }. buildSwapReceiptSource is the fenced helper (called).
-            freshPrices, {
+            // a metadata-less proposal must never persist a SOURCELESS swap —
+            // the synthesized floor below is always present. Integrity build F2:
+            // the floor is no longer overridable by the stored metadata (that
+            // per-key merge put a planted `lockedPoints` on the row); only its
+            // descriptive strings ride, capped, and the server supplies the
+            // ids and the day. buildSwapReceiptSource is the fenced helper (called).
+            freshPrices, executorMetadata({
               ...buildSwapReceiptSource({ source: 'haiku', archetype: null }),
-              entryPreset: battle.strategyPreset || 'balanced',
-              entryMode: battle.executionMode || 'autopilot',
+              entryPreset: clientToken(battle.strategyPreset) || 'balanced',
+              entryMode: clientToken(battle.executionMode) || 'autopilot',
               exitReason: 'haiku_decision',
-              ...(proposal.evaluationMetadata || {}),
-            },
-            proposal.snapshot || null,
+              ...proposalDescriptiveMetadata(proposal),
+              id: serverTradeId(battle),
+              action: 'SWAP',
+              evaluationId: serverProposalEvaluationId(battle, proposal),
+              tradingDay: serverDay,
+            }),
+            null, // F2: the stored snapshot is owner-writable — never a trade row's numbers
             // P6: the belief stored at proposal creation (symbol-only when the
             // proposal predates the stored identity or was client-written).
             ...swapIdentityOptions(swapIdentityMode, expectedOutOfStored(proposal.symbolOut, proposal, 'outgoingSwappedInAt'))
@@ -4997,7 +5023,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
                 archetype: battle.agentContext?.archetype ?? null,
                 isCpu: battle.isCpu,
                 battleId: battle.id,
-                battleDay: proposal.evaluationMetadata?.tradingDay ?? null,
+                battleDay: serverDay, // integrity F2: the server's own day, never the stored record's
                 timestamp: approvedSwapResult.closedTrade?.swappedOutAt || null,
                 // #9 (adversarial review): predicates below are proposal-creation
                 // -time (proposal.snapshot), so the predicate/decision instant is
@@ -5061,9 +5087,11 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
       // Move to history and clear (cap at 50). P6 — the honest record (every
       // mode): an approval whose execution threw says so instead of standing
       // as a bare `approved`; a typed refusal (mode ≠ off) rides beside it.
+      // Integrity F3: the markers come from THIS execution only — a planted
+      // `executionFailed` / `executionRefusal` / `verification` never rides along.
       const approvedHistoryRow = approvedExecutionFailed
-        ? { ...proposal, executionFailed: true, ...(approvedRefusal ? { executionRefusal: approvedRefusal } : {}) }
-        : proposal;
+        ? { ...proposalHistoryBase(proposal), executionFailed: true, ...(approvedRefusal ? { executionRefusal: approvedRefusal } : {}) }
+        : proposalHistoryBase(proposal);
       const history = [...(battle.proposalHistory || []), approvedHistoryRow].slice(-50);
       await battleRef.update({ pendingProposal: null, proposalHistory: history });
       await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
@@ -5077,9 +5105,10 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         action: 'hold', source: 'proposal_system',
         symbolOut: proposal.symbolOut, symbolIn: proposal.symbolIn,
       });
-      // Enrich with veto-time prices for counterfactual tracking
+      // Enrich with veto-time prices for counterfactual tracking (F3: on the
+      // record minus its outcome fields — the veto-time values are the server's).
       const vetoEnriched = {
-        ...proposal,
+        ...proposalHistoryBase(proposal),
         vetoedAtPrice: {
           [proposal.symbolIn]: prices[proposal.symbolIn]?.current || null,
           [proposal.symbolOut]: prices[proposal.symbolOut]?.current || null,
@@ -5154,19 +5183,23 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
         const expiredSwapResult = await executeSwapServer(
           db, battle.id, battle,
           proposal.tier, proposal.slotIndex,
-          benchAsset, proposal.evaluationMetadata?.tradingDay || 1,
-          // Corpus Capture Patch W2 (P2 flag #4 hardening) — same PER-KEY merge
-          // as the 'approved' branch (#5): synthesized floor first, present
-          // metadata keys override; a truthy empty/partial object no longer
-          // bypasses the floor. Never persist a sourceless swap.
-          freshPrices, {
+          benchAsset, serverDay,
+          // Corpus Capture Patch W2 (P2 flag #4 hardening) — the same floor as
+          // the 'approved' branch: never persist a sourceless swap. Integrity
+          // build F2: the same allowlist — descriptive strings only from the
+          // stored metadata, the ids and the day from the server.
+          freshPrices, executorMetadata({
             ...buildSwapReceiptSource({ source: 'haiku', archetype: null }),
-            entryPreset: battle.strategyPreset || 'balanced',
-            entryMode: battle.executionMode || 'autopilot',
+            entryPreset: clientToken(battle.strategyPreset) || 'balanced',
+            entryMode: clientToken(battle.executionMode) || 'autopilot',
             exitReason: 'haiku_decision',
-            ...(proposal.evaluationMetadata || {}),
-          },
-          proposal.snapshot || null,
+            ...proposalDescriptiveMetadata(proposal),
+            id: serverTradeId(battle),
+            action: 'SWAP',
+            evaluationId: serverProposalEvaluationId(battle, proposal),
+            tradingDay: serverDay,
+          }),
+          null, // F2: the stored snapshot is owner-writable — never a trade row's numbers
           // P6: the belief stored at proposal creation — the expiry tick hands
           // the executor a tier and slot stored up to a TTL earlier (DCR-002 P02).
           ...swapIdentityOptions(swapIdentityMode, expectedOutOfStored(proposal.symbolOut, proposal, 'outgoingSwappedInAt'))
@@ -5223,7 +5256,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
               archetype: battle.agentContext?.archetype ?? null,
               isCpu: battle.isCpu,
               battleId: battle.id,
-              battleDay: proposal.evaluationMetadata?.tradingDay ?? null,
+              battleDay: serverDay, // integrity F2: the server's own day, never the stored record's
               timestamp: expiredSwapResult.closedTrade?.swappedOutAt || null,
               // #9: predicate/decision instant is proposal.createdAt (creation-
               // time snapshots), not the execution timestamp above.
@@ -5291,8 +5324,10 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
 
   // Move expired proposal to history and clear. P6 — the honest record (every
   // mode): an auto-execution that threw is never filed `auto_executed`.
+  // Integrity F3: built on the record minus its outcome fields; every outcome
+  // below is this resolution's own.
   const resolvedProposal = {
-    ...proposal,
+    ...proposalHistoryBase(proposal),
     resolvedAt: new Date().toISOString(),
     resolution: proposal.mode === 'copilot' ? (expiredExecutionFailed ? 'auto_execution_failed' : 'auto_executed') : 'lapsed',
     resolvedBy: 'system',
@@ -5520,7 +5555,8 @@ export async function runSuppressionDeterministicPass({
     }
 
     // F3 provenance purity: constructed from scratch — nothing model-side.
-    const evaluationMetadata = {
+    // Integrity F2: through the allowlist (the preset and mode as capped strings).
+    const evaluationMetadata = executorMetadata({
       id: `trade_${String((battle.scoreState?.tradeCount || 0) + 1).padStart(3, '0')}`,
       action: 'SWAP',
       trigger: deterministicExitReason,
@@ -5531,14 +5567,14 @@ export async function runSuppressionDeterministicPass({
       entryRegime: stockRegimes[deterministicResult.symbolOut] || null,
       entryMarketPosture: marketPosture,
       entryConviction: 0,
-      entryPreset: battle.strategyPreset || 'balanced',
-      entryMode: battle.executionMode || 'autopilot',
+      entryPreset: clientToken(battle.strategyPreset) || 'balanced',
+      entryMode: clientToken(battle.executionMode) || 'autopilot',
       exitReason: deterministicExitReason,
       swapMotive: null,
       ...buildSwapReceiptSource({ source: 'guardrail', archetype: ctx.archetype }),
       ...buildSwapProvenance(dialClamp.provenance),
       trade_reasoning: null,
-    };
+    });
 
     const snapshot = {
       symbolOut: buildTechnicalSnapshot(deterministicResult.symbolOut, {
@@ -5840,7 +5876,10 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         // Append _${Date.now()} to keep the evaluationId unique across
         // repeated gameplan swaps on the same symbol pair (mirrors the
         // risk-triggered evalId suffix pattern).
-        const gameplanEvalId = `gameplan_${swap.symbolOut}_${swap.symbolIn}_${Date.now()}`;
+        // Integrity F2: from the server's own symbols — the occupant findPortfolioSlot
+        // matched and the bench asset findBenchAsset returned (each equal to the
+        // leg's string by construction, so the id is unchanged for a real leg).
+        const gameplanEvalId = `gameplan_${battle.portfolio[slot.tier][slot.slotIndex].symbol}_${benchAsset.symbol}_${Date.now()}`;
         // [VWAP Floor B1b] In-memory counter reset skipped here too (separate
         // fn, launch-guarded path) — tick-start prune covers by next tick.
         // Corpus Capture Patch W2 — snapshot the outgoing position BEFORE the
@@ -5848,13 +5887,17 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
         const l1GameplanOutgoingPosition = LEARNING_L1_CAPTURE_ENABLED && LEARNING_L1_CAPTURE_EXPANSION_ENABLED
           ? (battle.portfolio?.[slot.tier]?.[slot.slotIndex] || null)
           : null;
+        // Integrity F2: the meeting is owner-writable — the leg's rationale rides
+        // as a capped string; the evaluation id is built from the server's own
+        // symbols (the slot's occupant and the bench asset the lookups above
+        // returned — the same strings the leg named, by construction).
         const gameplanSwapResult = await executeSwapServer(
           db, battle.id, battle,
           slot.tier, slot.slotIndex,
           benchAsset, currentDay, prices,
-          { id: tradeId, action: 'SWAP', trigger: 'gameplan_rotation', rationale: swap.rationale, tradingDay: currentDay,
+          executorMetadata({ id: tradeId, action: 'SWAP', trigger: 'gameplan_rotation', rationale: clientText(swap.rationale), tradingDay: currentDay,
             entryRegime: null, entryMarketPosture: null, entryConviction: 0,
-            entryPreset: battle.strategyPreset || 'balanced', entryMode: battle.executionMode || 'autopilot', exitReason: 'gameplan_rotation',
+            entryPreset: clientToken(battle.strategyPreset) || 'balanced', entryMode: clientToken(battle.executionMode) || 'autopilot', exitReason: 'gameplan_rotation',
             // Phase 6 (§4.6) — receipt source. Dormant (gameplan approval is launch-guarded).
             // NB: this is handleGameplanMeeting (separate fn) — `ctx` is not in scope
             // here; read archetype off battle.agentContext directly.
@@ -5863,7 +5906,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
             // has no dialClamp in scope; resolveTempoDial is pure, so this
             // resolution is identical to the tick's for the same battle+flags.
             ...buildSwapProvenance(resolveTempoDial({ desiredTempo: desiredTempoOf(battle), dialEnabled: TEMPO_DIAL_ENABLED }).provenance),
-            evaluationId: gameplanEvalId },
+            evaluationId: gameplanEvalId }),
           // P6: the leg's belief stored at meeting creation — the slot was
           // re-resolved by symbol above, so only the stored entry instant can
           // tell a symbol that left and came back from the original position.
@@ -5998,7 +6041,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
       }
     }
     // Move to history and clear (P6: with the legs' refusals, when there are any).
-    const history = [...(battle.gameplanMeetingHistory || []), legRefusals.length > 0 ? { ...meeting, legRefusals } : meeting];
+    const history = [...(battle.gameplanMeetingHistory || []), legRefusals.length > 0 ? { ...meetingHistoryBase(meeting), legRefusals } : meetingHistoryBase(meeting)]; // integrity F3
     await battleRef.update({ gameplanMeeting: null, gameplanMeetingHistory: history });
     await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
     return 'continue';
@@ -6010,7 +6053,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
       message: 'Gameplan rejected by Coach. Holding current positions.',
       action: 'hold', source: 'gameplan_meeting',
     });
-    const history = [...(battle.gameplanMeetingHistory || []), meeting];
+    const history = [...(battle.gameplanMeetingHistory || []), meetingHistoryBase(meeting)]; // integrity F3
     await battleRef.update({ gameplanMeeting: null, gameplanMeetingHistory: history });
     await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
     return 'continue';
@@ -6022,7 +6065,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
 
   if (now >= expiresAt) {
     // Expired
-    const expired = { ...meeting, status: 'expired', resolvedAt: new Date().toISOString(), resolvedBy: 'system' };
+    const expired = { ...meetingHistoryBase(meeting), status: 'expired', resolvedAt: new Date().toISOString(), resolvedBy: 'system' };
     const history = [...(battle.gameplanMeetingHistory || []), expired];
     statusFeedEntries.push({
       timestamp: new Date().toISOString(),

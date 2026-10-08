@@ -1,0 +1,68 @@
+{
+  "_about": "Fixture for scripts/census-planted-proposals.test.js (integrity build, 7 Oct 2026). Hand-built battle documents: a clean auto-pilot battle; a planted APPROVED proposal that executed after the launch guard landed (a forged row: lockedPoints 9999, a foreign key); a planted EXPIRED co-pilot proposal whose forged row carries another time (the beat alone shows it); a legitimate pre-guard execution (May 2026); a planted proposal the launch guard cleared; an approved proposal whose execution failed.",
+  "b-clean": {
+    "status": "active", "executionMode": "autopilot",
+    "trades": [
+      { "symbolOut": "KO", "symbolIn": "AMD", "name": "Coca-Cola", "tier": "support", "slotIndex": 0, "entryPrice": 62.2, "exitPrice": 61.5, "lockedPoints": -1.2, "lockedGainPct": -1.125, "swappedOutAt": "2026-09-01T15:00:00.000Z", "swapDay": 1, "isCrypto": false, "direction": null, "id": "trade_001", "action": "SWAP", "trigger": "forced_open", "rationale": "rotate", "hypothesis": null, "evaluationId": "eval_004", "tradingDay": 1, "entryRegime": null, "entryMarketPosture": "selective", "entryConviction": 80, "entryPreset": "balanced", "entryMode": "autopilot", "exitReason": "haiku_decision", "swapMotive": null, "source": "haiku", "archetype": null, "hftKnobsSource": "archetype", "swapProvenance": { "tempoDesired": "standard" }, "trade_reasoning": null, "snapshot": null },
+      { "symbolOut": "PG", "symbolIn": "JPM", "name": "P&G", "tier": "support", "slotIndex": 1, "entryPrice": 165.3, "exitPrice": 163.6, "lockedPoints": -2.4, "lockedGainPct": -1.0, "swappedOutAt": "2026-09-01T16:00:00.000Z", "swapDay": 1, "isCrypto": false, "direction": null, "id": "trade_002", "action": "SWAP", "trigger": "stop_loss", "rationale": "Risk manager: stop", "hypothesis": null, "evaluationId": "risk_stop_loss_PG_1756742400000", "tradingDay": 1, "entryRegime": null, "entryMarketPosture": "selective", "entryConviction": 0, "entryPreset": "balanced", "entryMode": "autopilot", "exitReason": "stop_loss", "source": "risk_manager", "archetype": null, "hftKnobsSource": "archetype", "snapshot": null, "verification": { "mode": "shadow" } }
+    ],
+    "statusFeed": [
+      { "timestamp": "2026-09-01T15:00:00.000Z", "source": "haiku", "action": "swap", "message": "Swapped KO for AMD", "symbolOut": "KO", "symbolIn": "AMD" }
+    ],
+    "proposalHistory": []
+  },
+  "b-planted-approved": {
+    "status": "active", "executionMode": "copilot",
+    "trades": [
+      { "symbolOut": "FAKE", "symbolIn": "AMD", "name": "Coca-Cola", "tier": "support", "slotIndex": 0, "entryPrice": 0.01, "exitPrice": 777, "lockedPoints": 9999, "lockedGainPct": 0, "swappedOutAt": "2026-09-02T15:00:30.000Z", "swapDay": 42, "isCrypto": false, "direction": null, "evaluationId": "forged", "entryMode": "copilot", "source": "haiku", "exitReason": "haiku_decision", "bonusPoints": 50, "snapshot": null }
+    ],
+    "statusFeed": [
+      { "timestamp": "2026-09-02T15:00:00.000Z", "source": "proposal_system", "action": "swap", "message": "Coach approved: Swap KO → AMD", "symbolOut": "KO", "symbolIn": "AMD" }
+    ],
+    "proposalHistory": [
+      { "proposalId": "prop_x", "symbolOut": "KO", "symbolIn": "AMD", "resolution": "approved", "resolvedAt": "2026-09-02T14:59:00.000Z", "resolvedBy": "owner" }
+    ]
+  },
+  "b-planted-expired": {
+    "status": "completed", "executionMode": "copilot",
+    "trades": [
+      { "symbolOut": "KO", "symbolIn": "JPM", "name": "Coca-Cola", "tier": "support", "slotIndex": 0, "entryPrice": 62.2, "exitPrice": 60, "lockedPoints": 500, "lockedGainPct": 0, "swappedOutAt": "1999-01-01T00:00:00.000Z", "swapDay": 1, "isCrypto": false, "direction": null, "source": "haiku", "exitReason": "haiku_decision", "snapshot": null }
+    ],
+    "statusFeed": [
+      { "timestamp": "2026-08-15T18:00:00.000Z", "source": "proposal_system", "action": "swap", "message": "Auto-executed: Swap KO → JPM (proposal expired, Co-Pilot mode)", "symbolOut": "KO", "symbolIn": "JPM" }
+    ],
+    "proposalHistory": [
+      { "proposalId": "prop_y", "symbolOut": "KO", "symbolIn": "JPM", "resolution": "auto_executed", "resolvedBy": "system", "resolvedAt": "2026-08-15T18:00:00.000Z" }
+    ]
+  },
+  "b-pre-guard": {
+    "status": "completed", "executionMode": "copilot",
+    "trades": [
+      { "symbolOut": "MSFT", "symbolIn": "AMD", "name": "Microsoft", "tier": "core", "slotIndex": 0, "entryPrice": 410, "exitPrice": 412, "lockedPoints": 1.1, "lockedGainPct": 0.5, "swappedOutAt": "2026-05-01T15:00:10.000Z", "swapDay": 2, "isCrypto": false, "direction": null, "id": "trade_003", "action": "SWAP", "evaluationId": "eval_009", "tradingDay": 2, "entryMode": "copilot", "source": "haiku", "exitReason": "haiku_decision", "snapshot": null }
+    ],
+    "statusFeed": [
+      { "timestamp": "2026-05-01T15:00:00.000Z", "source": "proposal_system", "action": "swap", "message": "Coach approved: Swap MSFT → AMD", "symbolOut": "MSFT", "symbolIn": "AMD" }
+    ],
+    "proposalHistory": [
+      { "proposalId": "prop_001", "symbolOut": "MSFT", "symbolIn": "AMD", "resolution": "approved", "resolvedAt": "2026-05-01T14:59:00.000Z" }
+    ]
+  },
+  "b-guard-cleared": {
+    "status": "active", "executionMode": "autopilot",
+    "trades": [],
+    "statusFeed": [],
+    "proposalHistory": [
+      { "proposalId": "prop_z", "symbolOut": "KO", "symbolIn": "AMD", "resolution": "auto_executed", "resolvedBy": "system", "systemNote": "launch_guard_clear", "resolvedAt": "2026-09-05T15:00:00.000Z" }
+    ]
+  },
+  "b-failed": {
+    "status": "active", "executionMode": "copilot",
+    "trades": [],
+    "statusFeed": [
+      { "timestamp": "2026-09-06T15:00:00.000Z", "source": "proposal_system", "action": "hold", "message": "Approved swap failed: Asset no longer available in slot" }
+    ],
+    "proposalHistory": [
+      { "proposalId": "prop_f", "symbolOut": "KO", "symbolIn": "AMD", "resolution": "approved", "resolvedAt": "2026-09-06T15:00:00.000Z", "executionFailed": true }
+    ]
+  }
+}
