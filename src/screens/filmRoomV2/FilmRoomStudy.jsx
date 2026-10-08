@@ -22,11 +22,12 @@
 import React, { useState } from 'react';
 import {
   valueAt, etClock, checkStateOf, riskSummary, exitMakerOf, swapAnchor, lastPointPath, deriveHoldings,
-  directiveCardOf, rationaleTimeline, planGroups, PLAN_DIRECTIONS, fmtPrice, fmtPriceDelta, fmtCount, isNum, toMs,
+  directiveCardOf, rationaleTimeline, planGroups, PLAN_DIRECTIONS, EXIT_MAKER_WORDS, fmtPrice, fmtPriceDelta, fmtCount, isNum, toMs, etDateLabel,
 } from './filmRoomModel';
 // The replay's own coverage line sits under the swaps' (BA-20: every section its coverage).
-import { FILM_ROOM_COPY as COPY, REPLAY_SENTENCE, LOCKED_BASIS_NOTE, DIRECTIVE_EXPLAINER } from './filmRoomCopy';
+import { FILM_ROOM_COPY as COPY, REPLAY_SENTENCE, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE, DIRECTIVE_EXPLAINER } from './filmRoomCopy';
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
+import { etDateOf } from '../../utils/tapeSchedule';
 import {
   C, card, eyebrow, foot, body, mono, tint, plain, TapeNum, When, Rec, Section, Row, EmptyCard, Collapsible, StateTag, Door, Chip, TextButton, KindMark, Coverage,
 } from './FilmRoomKit';
@@ -51,8 +52,10 @@ function HoldingsSection({ tape, onDeep }) {
   const cols = h.slots.length;
   const grid = { display: 'grid', gridTemplateColumns: `38px repeat(${cols}, minmax(0,1fr))`, gap: 3, alignItems: 'center' };
   const lab = (t) => <span style={mono(9, C.ink3, { letterSpacing: '0.04em', textTransform: 'uppercase' })}>{t}</span>;
+  // A changed slot's tone is who made the swap's exit, as recorded: the agent, a platform rule, the gameplan meeting, or not recorded (review A2L1-1).
+  const edge = (tone) => (tone === 'agent' ? `1px solid ${C.teal}` : tone === 'platform' ? `1px solid ${C.ink2}` : tone === 'gameplan' || tone === 'unrecorded' ? `1px dashed ${C.ink2}` : `1px solid ${C.hair}`);
   const chip = (sym, tone) => (
-    <button key={`${sym}-${tone || ''}`} type="button" onClick={() => onDeep(sym)} title={COPY.deepDoor(sym)} style={{ ...plain, minHeight: 30, minWidth: 0, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', color: tone === 'out' ? C.ink2 : C.ink, background: tone === 'agent' ? tint('teal', 0.12) : tone === 'platform' ? C.wash : 'transparent', border: `1px solid ${tone === 'agent' ? C.teal : tone === 'platform' ? C.ink2 : C.hair}` }}>
+    <button key={`${sym}-${tone || ''}`} type="button" data-holding-tone={tone || 'held'} onClick={() => onDeep(sym)} title={COPY.deepDoor(sym)} style={{ ...plain, minHeight: 30, minWidth: 0, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', color: tone === 'out' ? C.ink2 : C.ink, background: tone === 'agent' ? tint('teal', 0.12) : tone === 'platform' ? C.wash : 'transparent', border: edge(tone) }}>
       <Rec style={mono(cols > 6 ? 9.5 : 11, tone === 'out' ? C.ink2 : C.ink, { fontWeight: 700, letterSpacing: '-0.02em' })}>{sym}</Rec>
     </button>
   );
@@ -61,14 +64,16 @@ function HoldingsSection({ tape, onDeep }) {
       <div data-region="holdings" style={{ ...card, gap: 6 }}>
         <span style={mono(9.5, C.ink3)}><When>{COPY.holdingsAt(etClock(h.start.at), etClock(h.end.at))}</When></span>
         <div style={grid}>{lab(COPY.holdingsStart)}{h.slots.map((s) => chip(s.start, s.change ? 'out' : null))}</div>
-        <div style={grid}>{lab(COPY.holdingsEnd)}{h.slots.map((s) => chip(s.end, s.change ? (s.change.by === 'agent' ? 'agent' : 'platform') : null))}</div>
+        <div style={grid}>{lab(COPY.holdingsEnd)}{h.slots.map((s) => chip(s.end, s.change ? s.change.by : null))}</div>
         <div style={grid}>
           <span />
-          {h.slots.map((s, i) => <span key={i} style={mono(8.5, C.ink3, { textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })}>{s.change ? <><When>{(etClock(s.change.at) || '').replace(/ [AP]M$/, '')}</When><br />{s.change.by === 'agent' ? COPY.byAgentShort : COPY.byRuleShort}</> : ''}</span>)}
+          {h.slots.map((s, i) => <span key={i} style={mono(8.5, C.ink3, { textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })}>{s.change ? <><When>{(etClock(s.change.at) || '').replace(/ [AP]M$/, '')}</When><br />{EXIT_MAKER_WORDS[s.change.by].short}</> : ''}</span>)}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', paddingTop: 2 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: tint('teal', 0.5), border: `1px solid ${C.teal}` }} /><span style={mono(9, C.ink3)}>{COPY.enteredByAgent}</span></span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: C.wash, border: `1px solid ${C.ink2}` }} /><span style={mono(9, C.ink3)}>{COPY.enteredByRule}</span></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: tint('teal', 0.5), border: `1px solid ${C.teal}` }} /><span style={mono(9, C.ink3)}>{COPY.swapByMaker.agent}</span></span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: C.wash, border: `1px solid ${C.ink2}` }} /><span style={mono(9, C.ink3)}>{COPY.swapByMaker.platform}</span></span>
+          {h.changes.some((c) => c.by === 'gameplan' || c.by === 'unrecorded') ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 8, height: 8, borderRadius: 2, border: `1px dashed ${C.ink2}` }} /><span style={mono(9, C.ink3)}>{COPY.swapByMaker.other}</span></span> : null}
+          <span style={mono(9, C.ink3)}>· {COPY.swapMakerNote}</span>
           <span style={mono(9, C.ink3)}>· {COPY.tapForDeep}</span>
         </div>
       </div>
@@ -87,6 +92,7 @@ function ForkChart({ tape, index, height = 112 }) {
   if (!all.length) return null;
   const t0 = Math.min(...[...hold, ...swap].map((p) => toMs(p.at)).filter((v) => v !== null));
   const t1 = Math.max(...[...hold, ...swap].map((p) => toMs(p.at)).filter((v) => v !== null));
+  if (!Number.isFinite(t0) || !Number.isFinite(t1)) return null;   // no recorded instant to place a point at (review A2L3-11)
   const vs = all.map((p) => p.points);
   let lo = Math.min(...vs); let hi = Math.max(...vs);
   const span = Math.max(2, hi - lo); lo -= span * 0.15; hi += span * 0.15;
@@ -136,7 +142,7 @@ function SplitRows({ tape, index, a }) {
             <Row k={COPY.splitRows.pricePart} v={n(s('priceDelta'))} />
             {Array.isArray(sold.missingInputs) && sold.missingInputs.length ? <span style={foot}><Rec>{COPY.missing(sold.missingInputs)}</Rec></span> : null}
           </>
-        ) : <span style={foot}><Rec>{valueAt(tape, ['actions', index, 'replay', 'note']) || COPY.replayNone}</Rec></span>}
+        ) : <span data-split-missing="sale" style={foot}><Rec>{splitAbsent(tape, index)}</Rec></span>}
       </div>
       <div data-split="fill" data-split-symbol={a.symbolIn} style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <span style={{ ...eyebrow, color: C.ink2, paddingBottom: 4 }}>{COPY.fill}</span>
@@ -147,10 +153,22 @@ function SplitRows({ tape, index, a }) {
             <Row k={COPY.fillRows.barMinusFill} v={n(f('pxDelta'), fmtPriceDelta)} />
             {Array.isArray(fill.missingInputs) && fill.missingInputs.length ? <span style={foot}><Rec>{COPY.missing(fill.missingInputs)}</Rec></span> : null}
           </>
-        ) : <span style={foot}>{COPY.replayNone}</span>}
+        ) : <span data-split-missing="fill" style={foot}><Rec>{splitAbsent(tape, index)}</Rec></span>}
       </div>
     </div>
   );
+}
+
+/**
+ * Why a split group is absent: no replay at all, or a replay an earlier replay
+ * logic built — Amendment D's split was never computed for it. The replay's
+ * own stored note when it carries one, else the same fixed words (BA-38;
+ * review A2L3-1: never "No replay" beside a replay that is drawn).
+ */
+function splitAbsent(tape, index) {
+  const r = valueAt(tape, ['actions', index, 'replay']);
+  if (!r) return COPY.replayNone;
+  return r.note || REPLAY_VERSION_NOTE;
 }
 
 function SwapCard({ tape, index, desktop, onDeep }) {
@@ -245,6 +263,13 @@ function SwapsSection({ tape, desktop, onDeep }) {
 
 // ── directives (BA-9; F6) ───────────────────────────────────────────────────
 
+/** A filing's time; with its date when it was filed before the tape's own day (review A2L1-14). */
+function filedLabel(filedAt, etDate) {
+  const clock = etClock(filedAt) ?? '';
+  const day = etDateOf(filedAt);
+  return day && etDate && day !== etDate ? `${etDateLabel(day, { short: true })}, ${clock}` : clock;
+}
+
 function DirectiveCard({ tape, index, example }) {
   const d = example || tape.directives[index];
   const s = directiveCardOf(d);
@@ -253,7 +278,7 @@ function DirectiveCard({ tape, index, example }) {
   return (
     <div data-directive-card={example ? `example-${d.cardState}` : index} data-card-state={d.cardState} style={{ ...card, borderLeft: `3px solid ${C.purple}`, gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ ...eyebrow, color: C.purple }}>{example ? COPY.explainerLabels[d.cardState] : <When>{COPY.directiveAt(etClock(d.filedAt) ?? '')}</When>}</span>
+        <span style={{ ...eyebrow, color: C.purple }}>{example ? COPY.explainerLabels[d.cardState] : <When>{COPY.directiveAt(filedLabel(d.filedAt, tape.etDate))}</When>}</span>
       </div>
       {row(COPY.youAsked, <Collapsible text={`“${d.playerText ?? ''}”`} lines={3} color={C.ink} />)}
       {row(s.title, s.filed
@@ -263,12 +288,12 @@ function DirectiveCard({ tape, index, example }) {
         ? <span style={{ fontSize: 12.5, color: C.teal, fontWeight: 600 }}>{COPY.reached(d.heardClock)}</span>
         : (d.heard ? <span data-heard="" style={{ fontSize: 12.5, color: C.teal, fontWeight: 600 }}><When>{COPY.reached(etClock(d.heard.at))}</When></span> : <span style={{ fontSize: 12.5, color: C.ink2 }}>{COPY.unconfirmed}</span>)) : null}
       {d.agentReply ? row(COPY.reply, <Collapsible text={`“${d.agentReply}”`} lines={2} color={C.ink2} />) : null}
-      {!example && d.agentReplyDiffers ? <span style={foot}>{COPY.replyDiffers}</span> : null}
+      {d.agentReplyDiffers ? <span data-reply-differs="" style={foot}>{COPY.replyDiffers}</span> : null}
       {!example && d.after ? row(COPY.after, (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', ...mono(11, C.ink2) }}>
-          <TapeNum doc={tape} path={[...base, 'checks']} fmt={fmtCount} size={11} weight={600} /> {COPY.afterChecks}
-          <TapeNum doc={tape} path={[...base, 'holds']} fmt={fmtCount} size={11} weight={600} /> {COPY.afterHolds} ·
-          <TapeNum doc={tape} path={[...base, 'swaps']} fmt={fmtCount} size={11} weight={600} /> {COPY.afterSwaps}
+          <TapeNum doc={tape} path={[...base, 'checks']} fmt={fmtCount} size={11} weight={600} /> {COPY.afterChecks(d.after.checks)}
+          <TapeNum doc={tape} path={[...base, 'holds']} fmt={fmtCount} size={11} weight={600} /> {COPY.afterHolds(d.after.holds)} ·
+          <TapeNum doc={tape} path={[...base, 'swaps']} fmt={fmtCount} size={11} weight={600} /> {COPY.afterSwaps(d.after.swaps)}
         </span>
       )) : null}
     </div>

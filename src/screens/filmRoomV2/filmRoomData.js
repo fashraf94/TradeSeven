@@ -44,6 +44,9 @@ export const firestoreReaders = Object.freeze({
         collection(db, 'agentBattles', battleId, TAPE_SUBCOLLECTION, etDate, SERIES_SUBCOLLECTION),
         where('ownerId', '==', ownerId),
       ));
+      // Offline, getDocs answers from the local cache — possibly nothing — without an error. A
+      // cache answer is not the record: it reads as a failed read, never as "no series" (review A2V3-2).
+      if (snap?.metadata?.fromCache) return { status: 'error', series: [] };
       return { status: 'ready', series: (snap?.docs || []).map((d) => d.data()) };
     } catch {
       return { status: 'error', series: [] };
@@ -73,7 +76,8 @@ export function useTapeDay(battleId, etDate, readers = firestoreReaders) {
   const [, bump] = useState(0);
   const alive = useAlive();
   useEffect(() => {
-    if (!key || cache.current.has(key)) return;
+    // A failed read is not kept: returning to the day asks again (review A2L3-6). A read that succeeded — the tape, or a definite "no tape" — is.
+    if (!key || (cache.current.has(key) && cache.current.get(key).status !== 'error')) return;
     cache.current.set(key, { status: 'loading', tape: null });
     Promise.resolve(readers.readTape(battleId, etDate))
       .catch(() => ({ status: 'error', tape: null }))
@@ -98,7 +102,7 @@ export function useSeriesDay(battleId, etDate, ownerId, enabled, readers = fires
   const [, bump] = useState(0);
   const alive = useAlive();
   useEffect(() => {
-    if (!enabled || !key || cache.current.has(key)) return;
+    if (!enabled || !key || (cache.current.has(key) && cache.current.get(key).status !== 'error')) return;
     cache.current.set(key, { status: 'loading', series: [] });
     Promise.resolve(readers.readSeries(battleId, etDate, ownerId))
       .catch(() => ({ status: 'error', series: [] }))

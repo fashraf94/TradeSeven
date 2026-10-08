@@ -2942,7 +2942,7 @@ export function isCockpitUiOn() {
  * PR: the pin in filmTapeFlags.test.js moved to true, its registration row now
  * asserts the DARK_BY_DESIGN entry is gone, and the entry was dropped from
  * flagPinGuard.test.js, all in the flip commit. FILM_ROOM_V2_MODE below
- * stays 'off', so the screen and the hub helper's Stage 3 stay dark. ROLLBACK:
+ * gates the screen and the hub helper's Stage 3 (pinned in filmTapeFlags.test.js). ROLLBACK:
  * set this back to false (with the pin and the DARK_BY_DESIGN entry moving
  * back in the same commit) — both crons then answer `flag_off` again, and the
  * tapes already written stay where they are, unread.
@@ -2976,7 +2976,10 @@ export const FILM_TAPE_WRITE_ENABLED = true;
  * so the tape's owner-read block is live; the founder and the QA tester then
  * open five real battle days. 'allowlist' → 'on' is a later founder decision,
  * its own PR, never a build PR. Each step moves the pin row in
- * src/config/filmTapeFlags.test.js in the same commit (BUILD_RULES §2). A
+ * src/config/filmTapeFlags.test.js in the same commit (BUILD_RULES §2); the
+ * step to 'on' also turns around the hub-helper row of
+ * api/cron/film-tape-flip.live.test.js — that file's deliberate tripwire for a
+ * screen flip, which asserts Stage 1 under the real flags. A
  * string tri-state, so it is pinned DIRECTLY — never a DARK_BY_DESIGN key (the
  * flag-pin guard scans `*_ENABLED = true|false` only; the CALL_RECORDS_MODE /
  * ANTICIPATION_THRESHOLD_LINT_MODE precedent) — and noted, by name, in the

@@ -121,6 +121,14 @@ describe('the rule reads the document itself', () => {
     await assertFails(getDocs(collection(asOwner(), `${BATTLE}/tape`)));
     await assertFails(getDocs(query(collection(asOther(), `${BATTLE}/tape`), where('ownerId', '==', OWNER_UID))));
   });
+  it('Film Room A2: the screen series list — one query constrained to the owner — succeeds; an unconstrained list or another user list is denied (review A2L3-7)', async () => {
+    // filmRoomData.js readSeries: collection(tape/{etDate}/series) where ownerId == the tape's ownerId.
+    const SERIES_COL = SERIES.slice(0, SERIES.lastIndexOf('/'));
+    const snap = await assertSucceeds(getDocs(query(collection(asOwner(), SERIES_COL), where('ownerId', '==', OWNER_UID))));
+    expect(snap.docs.length).toBeGreaterThan(0);
+    await assertFails(getDocs(collection(asOwner(), SERIES_COL)));
+    await assertFails(getDocs(query(collection(asOther(), SERIES_COL), where('ownerId', '==', OWNER_UID))));
+  });
   it('the parent battle\'s own execution-control update still works for the owner (sibling rule untouched)', async () => {
     await assertSucceeds(updateDoc(doc(asOwner(), BATTLE), { executionMode: 'autopilot' }));
   });

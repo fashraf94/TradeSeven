@@ -21,7 +21,8 @@ export function EvidenceStamp({ tape, index, symbol }) {
   const e = valueAt(tape, ['checks', index, 'evidence', symbol]);
   if (!e) return null;
   const at = valueAt(tape, ['checks', index, 'evidenceAt']);
-  const risk = e.risk ? (e.risk.action === 'HOLD' ? 'HOLD' : `${e.risk.action}${e.risk.reason ? ` · ${e.risk.reason}` : ''}`) : COPY.notRecorded;
+  // BA-7's words for a recorded risk decision, here as the stamp recorded it (review A2L1-7).
+  const risk = e.risk ? (e.risk.action === 'HOLD' ? 'Risk decision recorded: HOLD' : `Risk decision recorded: ${e.risk.action}${e.risk.reason ? ` · ${e.risk.reason}` : ''}`) : COPY.notRecorded;
   return (
     <div data-evidence={`${index}:${symbol}`} style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0' }}>

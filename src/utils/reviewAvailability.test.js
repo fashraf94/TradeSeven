@@ -21,7 +21,7 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
 }));
 
 import { getReviewAvailability, closePassStillScheduled, owningPassDate } from './reviewAvailability';
-import { resetFilmRoomVerdicts } from './filmRoomGate';
+import { resetFilmRoomVerdicts, readFilmRoomVerdict } from './filmRoomGate';
 
 const MON_1605_EDT = '2026-09-28T20:05:00.000Z';   // Monday, 16:05 ET — a fullday battle's completion
 const MON_1900_EDT = Date.parse('2026-09-28T23:00:00.000Z');
@@ -297,5 +297,36 @@ describe("BA-40 — FILM_ROOM_V2_MODE 'allowlist': Stage 3 for an admitted owner
     expect(await readFilmRoomVerdict('battle-1', { request })).toBe(true);
     expect(await readFilmRoomVerdict('battle-1', { request })).toBe(true);
     expect(requests).toBe(1);
+  });
+});
+
+// ── the §2 review's rows (docs/audits/20261008_BUILD_FILM_ROOM_A2.md §3) ─────
+
+describe('review A2L2-1 / A2L2-5 — three keys even when Stage 3 throws; the default reader is the shared cache', () => {
+  it('A2L2-1: a completion instant the schedule cannot place answers unavailable — three keys, never a rejection', async () => {
+    flags.mode = 'on'; flags.writer = true;
+    const r = recorder(null);
+    for (const completedAt of [1e16, -1e16]) {
+      const out = await getReviewAvailability(base({ completedAt }), { readTape: r.readTape, now: THU });
+      expect(Object.keys(out).sort()).toEqual(KEYS);
+      expect(out.availability).toBe('unavailable');
+    }
+  });
+
+  it('A2L2-5: with no reader passed, the hub asks through the shared cache — a verdict the route already holds is not asked again', async () => {
+    flags.mode = 'allowlist'; flags.writer = true;
+    const request = vi.fn(async () => ({ ok: true, allowlisted: true }));
+    expect(await readFilmRoomVerdict('battle-1', { ownerId: 'u1', request })).toBe(true);   // the route's ask
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn();
+    try {
+      const r = recorder({ passes: { close: { status: 'written' } } });
+      const out = await getReviewAvailability(base(), { readTape: r.readTape, now: THU });
+      expect(out).toEqual({ ready: true, target: 'filmRoom', availability: 'ready' });
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(request).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });

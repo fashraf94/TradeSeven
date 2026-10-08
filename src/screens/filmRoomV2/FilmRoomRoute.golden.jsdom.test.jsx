@@ -43,9 +43,12 @@ vi.mock('../../contexts/ThemeContext', () => {
   return { useTheme: () => ({ tokens }), ThemeProvider: ({ children }) => children };
 });
 vi.mock('../../hooks/useMasteryProfile', () => ({ default: () => null }));
+// Counts legacy MOUNTS (not renders): a ref set on a component's first render is new only on a mount.
+const legacy = vi.hoisted(() => ({ mounts: 0 }));
 vi.mock('../../hooks/useAgentBattle', async () => {
   const { HOOK_RESULT } = await import('../__golden__/filmRoomGoldenFixture');
-  return { default: () => HOOK_RESULT };
+  const { useRef } = await import('react');
+  return { default: () => { const seen = useRef(false); if (!seen.current) { seen.current = true; legacy.mounts += 1; } return HOOK_RESULT; } };
 });
 // v2's Firestore reads, should v2 mount: a tape that does not exist (denied, as the rules answer).
 vi.mock('firebase/firestore', () => ({
@@ -72,6 +75,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(PINNED_NOW));
   resetFilmRoomVerdicts();
+  legacy.mounts = 0;
   flags.mode = 'off';
   auth.user = { uid: 'golden-owner', getIdToken: async () => 'token' };
   fetches = [];
@@ -122,17 +126,43 @@ describe('BA-40 — the legacy Film Room, byte for byte, wherever v2 does not re
     expect(fetches).toEqual(['/api/agent/cockpit-status?battleId=golden-film-battle']);
   });
 
-  it("'allowlist', a verdict that fails (403, 500, a malformed body, no user): the legacy screen", async () => {
+  it("'allowlist', a verdict that fails (403, 500, a malformed body, no user): the legacy screen — each case its own mount and its own ask (review A2L2-2)", async () => {
     flags.mode = 'allowlist';
-    for (const [body, status] of [[{ error: 'forbidden' }, 403], [{}, 500], [{ on: true }, 200]]) {
+    for (const [label, body, status, user] of [['403', { error: 'forbidden' }, 403, true], ['500', {}, 500, true], ['malformed', { on: true }, 200, true], ['no user', { allowlisted: true }, 200, false]]) {
+      act(() => root.unmount());
+      root = createRoot(container);
       resetFilmRoomVerdicts();
+      fetches = [];
+      auth.user = user ? { uid: 'golden-owner', getIdToken: async () => 'token' } : null;
       answer(body, status);
       await mountRoute();
-      expect(container.innerHTML, String(status)).toBe(golden('filmRoom.legacy.mounted.html'));
+      expect(container.innerHTML, label).toBe(golden('filmRoom.legacy.mounted.html'));
+      expect(fetches.length, label).toBe(user ? 1 : 0);
     }
-    resetFilmRoomVerdicts();
-    auth.user = null;
+  });
+
+  it("'allowlist', not admitted: the legacy screen is MOUNTED ONCE — the verdict landing never remounts it (review A2L2-3)", async () => {
+    flags.mode = 'allowlist';
+    answer({ on: false, allowlisted: false });
     await mountRoute();
+    await settle();
+    expect(container.innerHTML).toBe(golden('filmRoom.legacy.mounted.html'));
+    expect(legacy.mounts).toBe(1);
+  });
+
+  it("the verdict belongs to one battle: another battle's pending verdict never shows v2 (review A2L2-8)", async () => {
+    flags.mode = 'allowlist';
+    answer({ on: false, allowlisted: true });
+    await mountRoute();
+    expect(await waitForV2()).toBeTruthy();
+    let release;
+    globalThis.fetch = vi.fn(() => new Promise((r) => { release = r; }));
+    act(() => root.render(<FilmRoomRoute battle={{ ...BATTLE_PROP, id: 'golden-other', agentBattleId: 'golden-other', ownerId: 'other-owner' }} onBack={() => {}} />));
+    await settle(3);
+    expect(container.querySelector('[data-screen="film-room-v2"]')).toBeNull();
+    expect(container.innerHTML).toBe(golden('filmRoom.legacy.mounted.html'));   // pending for this battle → the legacy screen
+    release({ ok: true, status: 200, json: async () => ({ on: false, allowlisted: false }) });
+    await settle();
     expect(container.innerHTML).toBe(golden('filmRoom.legacy.mounted.html'));
   });
 

@@ -31,7 +31,7 @@ vi.mock('firebase/firestore', () => ({
   }),
   getDocs: vi.fn(async (q) => {
     fs.calls.push(['getDocs', q.path, q.cons]);
-    return { docs: (fs.docs[q.path] || []).map((d) => ({ data: () => d })) };
+    return { metadata: { fromCache: fs.offline === true }, docs: fs.offline ? [] : (fs.docs[q.path] || []).map((d) => ({ data: () => d })) };
   }),
   onSnapshot: vi.fn(() => { fs.calls.push(['onSnapshot']); return () => {}; }),
 }));
@@ -85,5 +85,18 @@ describe('the Firestore readers', () => {
     expect(r.status).toBe('ready');
     expect(r.series).toHaveLength(sep23Series.length);
     expect(fs.calls).toEqual([['getDocs', SERIES_PATH, [{ field: 'ownerId', op: '==', value: sep23Tape.ownerId }]]]);
+  });
+});
+
+describe('review A2V3-2 — a series answer from the offline cache is not the record', () => {
+  it('offline, getDocs answers from the cache without an error: that reads as a failed read, never "no series"', async () => {
+    fs.docs[SERIES_PATH] = sep23Series;
+    fs.offline = true;
+    try {
+      expect(await firestoreReaders.readSeries(BID, D, sep23Tape.ownerId)).toEqual({ status: 'error', series: [] });
+    } finally {
+      fs.offline = false;
+    }
+    expect((await firestoreReaders.readSeries(BID, D, sep23Tape.ownerId)).status).toBe('ready');
   });
 });

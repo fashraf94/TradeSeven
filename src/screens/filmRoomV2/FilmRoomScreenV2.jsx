@@ -124,7 +124,12 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
   };
 
   const agentName = battle?.agentContext?.agentName || battle?.agentName || null;
-  const complete = (tape?.battle?.status ?? battle?.status) === 'completed';
+  // The battle's status, not the day's: an earlier day's tape was written while the battle was live (review A2L1-3).
+  const complete = battle?.status === 'completed' || tape?.battle?.status === 'completed';
+  const lastDay = days.length ? days[days.length - 1] : null;
+  const finalDay = complete && lastDay && day !== lastDay && tape?.battle?.status !== 'completed'
+    ? { label: etDateLabel(lastDay, { short: true }), open: () => changeDay(lastDay) }
+    : null;
 
   let content;
   if (!battleId || !day) content = <EmptyCard>{COPY.noTape} · {COPY.noTapeUnavailable}</EmptyCard>;
@@ -133,13 +138,14 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
   else if (tapeState.status === 'missing') content = <div data-state="missing"><EmptyCard>{COPY.noTape} · {noTapeLine(battle, day, now)}</EmptyCard></div>;
   else if (tape?.passes?.close?.status === 'skipped_mode') content = <div data-state="skipped-mode"><EmptyCard>{COPY.skippedMode}</EmptyCard></div>;
   else if (!written) content = <div data-state="not-written"><EmptyCard><Rec>{COPY.closeNotWritten(tape?.passes?.close?.status || 'unknown')}</Rec></EmptyCard></div>;
-  else if (depth === 'glance') content = <FilmRoomGlance tape={tape} desktop={desktop} selected={selected} onSelect={setSelected} />;
+  else if (depth === 'glance') content = <FilmRoomGlance tape={tape} desktop={desktop} selected={selected} onSelect={setSelected} finalDay={finalDay} />;
   else if (depth === 'study') content = <FilmRoomStudy tape={tape} desktop={desktop} onDeep={openDeep} selected={selected} onSelect={setSelected} jump={jump} />;
   else content = <FilmRoomDeepDive tape={tape} seriesState={seriesState} sym={sym} onSym={setSym} desktop={desktop} />;
 
   return (
     <div data-screen="film-room-v2" style={{ minHeight: '100vh', background: C.bg, color: C.ink, display: 'flex', flexDirection: 'column' }}>
-      <header style={{ background: C.raised, display: 'flex', flexDirection: 'column', gap: 10, padding: desktop ? '8px 24px 12px' : '6px 12px 10px' }}>
+      <header style={{ background: C.raised }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: desktop ? '8px 24px 12px' : '6px 12px 10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <button type="button" onClick={onBack} style={{ ...plain, display: 'flex', alignItems: 'center', gap: 4, color: C.teal, padding: '8px 6px', minHeight: 44, borderRadius: 8 }}>
             <Label size={13}><span aria-hidden="true">‹</span> {COPY.back}</Label>
@@ -168,10 +174,12 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
             {days.map((d) => <Chip key={d} on={d === day} onClick={() => changeDay(d)}><When>{etDateLabel(d, { short: true })}</When></Chip>)}
           </div>
         ) : null}
+        </div>
       </header>
       <main style={{ flex: 1, width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: desktop ? '18px 24px 48px' : '12px 12px 40px', display: 'flex', flexDirection: 'column', gap: desktop ? 18 : 14 }}>
         {notice ? <FirstOpenNotice onDismiss={() => setNotice(false)} /> : null}
-        {content}
+        {/* Keyed by the day: a depth's own state (an opened marker, a plan filter, an opened rationale) never carries into another day's tape (review A2L3-3, A2L3-4). */}
+        <div key={day || 'none'} role="tabpanel" aria-label={COPY.depths.find((d) => d.id === depth)?.label} style={{ display: 'flex', flexDirection: 'column', gap: desktop ? 18 : 14 }}>{content}</div>
       </main>
       <footer style={{ padding: 0 }}>
         <Reserved region="footer" names={COPY.reservedFooter} />

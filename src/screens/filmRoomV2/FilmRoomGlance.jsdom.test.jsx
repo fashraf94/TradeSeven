@@ -40,7 +40,8 @@ describe('BA-4 — the recorded score, its time, the day change with its basis',
     m.render(<Harness tape={t} />);
     const score = m.q('[data-region="recorded-score"]');
     expect(score.querySelector('[data-num="score.dayChange.value"]')).toBeNull();
-    expect(score.textContent).toContain('Day change · unavailable');
+    expect(score.textContent).toContain('Day changeunavailable');
+    expect(score.textContent.split('unavailable').length - 1).toBe(1);   // said once, not twice (review A2L1-16)
   });
 
   it('the empty day: no recorded score, no checks, honest dashes', () => {

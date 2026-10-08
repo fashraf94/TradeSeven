@@ -229,8 +229,18 @@ export const swapAnchor = (i) => `swap-${i + 1}`;
 
 /**
  * Who made the exit (BA-6), from the recorded mechanism — the line that fired
- * by name. `by` is 'agent' only for the agent's own decision.
+ * by name. `by` is 'agent' for the agent's own decision, 'platform' for a
+ * platform rule (risk manager, rotation, guardrail), 'gameplan' for the
+ * gameplan meeting (the agent's proposal with the player's approval — not a
+ * platform rule), and 'unrecorded' when the tape names no mechanism: never
+ * folded into another maker (review A2L1-1).
  */
+export const EXIT_MAKER_WORDS = Object.freeze({
+  agent: { short: 'agent', swap: 'the agent' },
+  platform: { short: 'rule', swap: 'a platform rule' },
+  gameplan: { short: 'meeting', swap: 'the gameplan meeting' },
+  unrecorded: { short: 'not recorded', swap: 'a maker not recorded' },
+});
 export function exitMakerOf(action) {
   const m = action?.mechanism;
   const reason = str(action?.exitReason);
@@ -238,7 +248,7 @@ export function exitMakerOf(action) {
   if (m === 'platform_risk_manager' || m === 'archetype_rotation' || m === 'guardrail') {
     return { by: 'platform', label: `Exit by platform rule · ${reason ?? 'rule not recorded'}` };
   }
-  if (m === 'gameplan_meeting') return { by: 'platform', label: `Exit by the gameplan meeting · ${reason ?? 'rule not recorded'}` };
+  if (m === 'gameplan_meeting') return { by: 'gameplan', label: `Exit by the gameplan meeting${reason ? ` · ${reason}` : ''}` };
   return { by: 'unrecorded', label: `Exit maker not recorded${reason ? ` · ${reason}` : ''}` };
 }
 
@@ -380,8 +390,9 @@ export function evidenceMarkers(tape, symbol) {
   const out = [];
   (Array.isArray(tape?.checks) ? tape.checks : []).forEach((c, index) => {
     const e = isObj(c.evidence) ? c.evidence[symbol] : null;
-    if (!isObj(e) || !isNum(e.px)) return;
-    out.push({ index, at: c.evidenceAt ?? c.at, stampedAt: c.evidenceAt ?? null });
+    // BA-43: a marker sits AT evidenceAt — a stamp whose instant was not recorded gets no marker (review A2L1-8).
+    if (!isObj(e) || !isNum(e.px) || toMs(c.evidenceAt) === null) return;
+    out.push({ index, at: c.evidenceAt, stampedAt: c.evidenceAt });
   });
   return out;
 }
@@ -391,16 +402,17 @@ export function roleOf(tape, symbol, holdings) {
   const actions = Array.isArray(tape?.actions) ? tape.actions : [];
   const exited = actions.map((a, i) => ({ a, i })).find(({ a }) => a.symbolOut === symbol);
   const entered = actions.map((a, i) => ({ a, i })).find(({ a }) => a.symbolIn === symbol);
-  if (holdings?.status === 'derived') {
-    const s = holdings.start.symbols.includes(symbol);
-    const e = holdings.end.symbols.includes(symbol);
-    if (s && e) return { kind: 'held', text: 'held at the first and the last check', action: null };
-  }
+  // A recorded swap is stated before "held": a name bought before the first risk record is in the
+  // start set too, and must never read as held all along (review A2V1-11).
   if (exited) return { kind: 'exited', text: `exited at ${etClock(exited.a.at) ?? 'an unrecorded time'} · ${exitMakerOf(exited.a).label}`, action: exited.i };
   if (entered) {
+    // The tape records who made the EXIT of the swap that brought the name in, not who chose it (review A2L1-12).
     const who = exitMakerOf(entered.a);
-    const by = who.by === 'agent' ? 'swapped in by the agent' : `swapped in by a platform rule${entered.a.exitReason ? ` · ${entered.a.exitReason}` : ''}`;
+    const by = `a swap by ${EXIT_MAKER_WORDS[who.by].swap}${who.by === 'platform' && entered.a.exitReason ? ` · ${entered.a.exitReason}` : ''}`;
     return { kind: 'entered', text: `entered at ${etClock(entered.a.at) ?? 'an unrecorded time'} · ${by}`, action: entered.i };
+  }
+  if (holdings?.status === 'derived' && holdings.start.symbols.includes(symbol) && holdings.end.symbols.includes(symbol)) {
+    return { kind: 'held', text: 'held at the first and the last risk record', action: null };
   }
   const planned = (Array.isArray(tape?.plans) ? tape.plans : []).some((p) => p.symbol === symbol);
   if (planned) return { kind: 'planned', text: 'named in a plan', action: null };

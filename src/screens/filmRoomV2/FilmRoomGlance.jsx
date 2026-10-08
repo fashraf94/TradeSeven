@@ -9,7 +9,7 @@
 import React from 'react';
 import { valueAt, etClock, checkStateOf, checkRuns, isNum, exitMakerOf, toMs } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
-import { C, card, eyebrow, foot, mono, plain, TapeNum, CountNum, When, Rec, Section, Row, Quote, StateTag } from './FilmRoomKit';
+import { C, card, eyebrow, foot, mono, plain, TapeNum, CountNum, When, Rec, Section, Row, Quote, StateTag, Door } from './FilmRoomKit';
 import CheckDetail from './FilmRoomCheckDetail';
 
 // ── the pips: one per check row, by tone ───────────────────────────────────
@@ -28,12 +28,17 @@ export function Pip({ tone, selected, size }) {
   return <span aria-hidden="true" data-pip={tone} style={{ display: 'block', width: size || '100%', height: size || '100%', borderRadius: 2, boxSizing: 'border-box', background: t.fill ? t.color : 'transparent', border: `1.5px ${t.dashed ? 'dashed' : 'solid'} ${t.color}`, boxShadow: selected ? `0 0 0 2px ${C.surface}, 0 0 0 3px ${C.ink}` : 'none' }} />;
 }
 
-/** The cockpit rail's caret: solid teal for the agent's swap, hollow grey for a platform rule's. */
+/**
+ * The cockpit rail's caret: solid teal for the agent's swap, hollow grey for a
+ * platform rule's, hollow DASHED for the gameplan meeting's or a maker the tape
+ * does not record — never folded into "a platform rule" (review A2L1-1).
+ */
 export function SwapCaret({ by, size = 11 }) {
   const agent = by === 'agent';
+  const other = by === 'gameplan' || by === 'unrecorded';
   return (
     <svg width={size} height={size * 0.8} viewBox="0 0 14 11" aria-hidden="true" style={{ display: 'block' }}>
-      <path d="M1.5 1.5h11L7 9.5z" style={{ fill: agent ? C.teal : 'none', stroke: agent ? C.teal : C.ink2, strokeWidth: 1.6, strokeLinejoin: 'round' }} />
+      <path d="M1.5 1.5h11L7 9.5z" style={{ fill: agent ? C.teal : 'none', stroke: agent ? C.teal : C.ink2, strokeWidth: 1.6, strokeLinejoin: 'round', strokeDasharray: other ? '2 1.5' : undefined }} />
     </svg>
   );
 }
@@ -48,7 +53,8 @@ export function checkIndexOfAction(tape, action) {
   const ms = toMs(action?.at);
   if (ms === null) return -1;
   const i = checks.findIndex((c) => (toMs(c.at) ?? -Infinity) >= ms);
-  return i >= 0 ? i : checks.length - 1;
+  // After the last recorded check: past the strip's end, never on a check it was not made in (review A2L1-15).
+  return i >= 0 ? i : checks.length;
 }
 
 function ScoreCard({ tape, big = 44 }) {
@@ -63,7 +69,7 @@ function ScoreCard({ tape, big = 44 }) {
         <Row
           border={false}
           k={COPY.dayChange}
-          sub={COPY.dayChangeBasis[basis] || COPY.dayChangeBasis.unavailable}
+          sub={basis !== 'unavailable' && COPY.dayChangeBasis[basis] ? COPY.dayChangeBasis[basis] : null}
           v={isNum(tape.score?.dayChange?.value) ? <TapeNum doc={tape} path={['score', 'dayChange', 'value']} size={13} /> : <span style={mono(11, C.ink3)}>{COPY.dayChangeBasis.unavailable}</span>}
         />
         <Row
@@ -103,7 +109,7 @@ function ScorePath({ tape, selected, onSelect, height = 130 }) {
           data-score-point={p.i}
           aria-label={`${COPY.checkAt(etClock(checks[p.i].at))}`}
           onClick={() => onSelect(selected === p.i ? null : p.i)}
-          style={{ ...plain, position: 'absolute', left: `calc(${xPct(p.i)}% - 6px)`, top: y(p.v) - 6, width: 12, height: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ ...plain, position: 'absolute', left: `calc(${xPct(p.i)}% - 12px)`, top: y(p.v) - 12, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           <span style={{ width: p.i === pts[pts.length - 1].i ? 8 : 5, height: p.i === pts[pts.length - 1].i ? 8 : 5, borderRadius: '50%', background: p.i === pts[pts.length - 1].i ? C.surface : C.ink, boxShadow: selected === p.i ? `0 0 0 2px ${C.surface}, 0 0 0 3px ${C.ink2}` : `inset 0 0 0 1.5px ${C.ink}` }} />
         </button>
@@ -124,7 +130,8 @@ export function CheckStrip({ tape, selected, onSelect }) {
           const i = checkIndexOfAction(tape, a);
           if (i < 0) return null;
           const who = exitMakerOf(a);
-          return <div key={a.key || k} data-swap-caret={who.by} title={`${etClock(a.at) ?? ''} · ${a.symbolOut} → ${a.symbolIn}`} style={{ position: 'absolute', left: `calc(${((i + 0.5) / n) * 100}% - 5px)`, top: 0 }}><SwapCaret by={who.by} /></div>;
+          const after = i >= n;
+          return <div key={a.key || k} data-swap-caret={who.by} data-after-last-check={after ? 'yes' : 'no'} title={`${etClock(a.at) ?? ''} · ${a.symbolOut} → ${a.symbolIn}${after ? ` · ${COPY.afterLastCheck}` : ''}`} style={{ position: 'absolute', left: after ? 'calc(100% + 2px)' : `calc(${((i + 0.5) / n) * 100}% - 5px)`, top: 0 }}><SwapCaret by={who.by} /></div>;
         })}
       </div>
       <div style={{ position: 'relative', height: 14 }}>
@@ -152,6 +159,7 @@ export function CheckStrip({ tape, selected, onSelect }) {
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 10px', alignItems: 'center' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SwapCaret by="agent" size={9} /><span style={mono(9, C.ink3)}>{COPY.swapByAgent}</span></span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SwapCaret by="platform" size={9} /><span style={mono(9, C.ink3)}>{COPY.swapByRule}</span></span>
+        {actions.some((a) => ['gameplan', 'unrecorded'].includes(exitMakerOf(a).by)) ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SwapCaret by="unrecorded" size={9} /><span style={mono(9, C.ink3)}>{COPY.swapByOther}</span></span> : null}
         <span style={mono(9, C.ink3)}>· {COPY.tapForDetail}</span>
       </div>
     </div>
@@ -183,8 +191,18 @@ function RunList({ tape }) {
 }
 
 /** The battle's final result, apart from the day; only for a completed battle (BA-4, BA-39). */
-export function ResultCard({ tape }) {
+export function ResultCard({ tape, finalDay = null }) {
   const b = tape.battle;
+  if (finalDay) {
+    // BA-4: on an earlier day of a completed battle the result is shown apart — here, where it is recorded: the last day's tape.
+    return (
+      <div data-region="final-result" data-result-elsewhere="" style={{ ...card, background: C.raised, gap: 8 }}>
+        <span style={{ ...eyebrow, color: C.ink2 }}>{COPY.finalResult}</span>
+        <span style={mono(10.5, C.ink3, { lineHeight: 1.5 })}>{COPY.earlierDay}</span>
+        <div style={{ display: 'flex' }}><Door label={<When>{COPY.openLastDay(finalDay.label)}</When>} onClick={finalDay.open} /></div>
+      </div>
+    );
+  }
   if (!b || b.status !== 'completed') return null;
   const value = b.result?.value ?? null;
   const basis = b.result?.basis ?? 'unavailable';
@@ -211,7 +229,7 @@ export function ResultCard({ tape }) {
   );
 }
 
-export default function FilmRoomGlance({ tape, desktop, selected, onSelect }) {
+export default function FilmRoomGlance({ tape, desktop, selected, onSelect, finalDay = null }) {
   const checksBlock = (
     <Section id="glance-checks" title={COPY.checks} coverage={tape.coverage?.checks} note={COPY.riskNote}>
       <div style={{ ...card, gap: 12 }}>
@@ -232,7 +250,7 @@ export default function FilmRoomGlance({ tape, desktop, selected, onSelect }) {
       <div data-depth="glance" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,2.3fr) minmax(0,1.1fr)', gap: 16, alignItems: 'start' }}>
         <ScoreCard tape={tape} big={56} />
         {checksBlock}
-        <ResultCard tape={tape} />
+        <ResultCard tape={tape} finalDay={finalDay} />
       </div>
     );
   }
@@ -240,7 +258,7 @@ export default function FilmRoomGlance({ tape, desktop, selected, onSelect }) {
     <div data-depth="glance" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <ScoreCard tape={tape} />
       {checksBlock}
-      <ResultCard tape={tape} />
+      <ResultCard tape={tape} finalDay={finalDay} />
     </div>
   );
 }

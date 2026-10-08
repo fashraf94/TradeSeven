@@ -11,8 +11,8 @@
 //     a non-admitted owner sees the legacy screen at every paint, mounted once,
 //     never swapped. The wrapper adds no DOM of its own: the page is the
 //     pre-build page byte for byte (FilmRoomRoute.golden.jsdom.test.jsx).
-//   v2 resolves on → FilmRoomScreenV2, loaded lazily so a dark build costs the
-//     main chunk nothing.
+//   v2 resolves on → FilmRoomScreenV2, loaded lazily: a dark build adds to the
+//     main chunk only this gate, the copy table and the kit its fallback uses.
 
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { getAuth } from 'firebase/auth';
@@ -35,13 +35,16 @@ function viewerUid() {
 export default function FilmRoomRoute({ battle, onBack }) {
   const mode = resolveFilmRoomV2Mode();
   const battleId = filmRoomBattleId(battle);
-  const [verdict, setVerdict] = useState(() => (mode === 'allowlist' && battleId ? cachedFilmRoomVerdict(battleId) : undefined));
+  const ownerId = typeof battle?.ownerId === 'string' ? battle.ownerId : null;
+  // The answer belongs to ONE battle: a verdict for another battle never stands for this one (review A2L2-8, the useCockpitStatus precedent).
+  const [answer, setAnswer] = useState(() => ({ battleId, verdict: mode === 'allowlist' && battleId ? cachedFilmRoomVerdict(battleId, { ownerId }) : undefined }));
   useEffect(() => {
     if (mode !== 'allowlist' || !battleId) return undefined;
     let live = true;
-    readFilmRoomVerdict(battleId).then((v) => { if (live) setVerdict(v === true); });
+    readFilmRoomVerdict(battleId, { ownerId }).then((v) => { if (live) setAnswer({ battleId, verdict: v === true }); });
     return () => { live = false; };
-  }, [mode, battleId]);
+  }, [mode, battleId, ownerId]);
+  const verdict = answer.battleId === battleId ? answer.verdict : undefined;
 
   if (!filmRoomV2On(mode, verdict)) return <FilmRoomScreen battle={battle} onBack={onBack} />;
   return (

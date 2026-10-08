@@ -16,9 +16,10 @@
 // document with its marker; the chart draws no number of its own.
 
 import React, { useMemo, useState } from 'react';
-import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, extremeBars, exitMakerOf, fmtPrice, fmtVolume, isNum, toMs } from './filmRoomModel';
+import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtVolume, isNum, toMs } from './filmRoomModel';
+import { classOfNumber } from '../../constants/filmTape';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
-import { C, card, eyebrow, foot, mono, tint, plain, TapeNum, When, Rec, Section, Row, Chip, KindMark, TextButton } from './FilmRoomKit';
+import { C, card, eyebrow, foot, mono, tint, plain, TapeNum, When, Rec, Section, Row, Chip, KindMark, TextButton, Coverage } from './FilmRoomKit';
 import { EvidenceStamp } from './FilmRoomCheckDetail';
 
 function seriesOf(series, sym) {
@@ -62,7 +63,6 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   const closes = bars.map((b) => ({ t: (toMs(b.t) ?? 0) + 10 * 60_000, v: b.c }));
   const vols = bars.map((b) => b.v).filter(isNum);
   const volMax = vols.length ? Math.max(...vols) : 0;
-  const { hi: hiIdx, lo: loIdx } = extremeBars(bars);
   const pct = (ms) => `${(x(ms) / 10).toFixed(3)}%`;
   return (
     <div data-region="price-chart" data-symbol={sym} style={{ position: 'relative', width: '100%', height, marginLeft: 0 }}>
@@ -75,8 +75,9 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
         {show.volume && volMax > 0 ? bars.map((b, i) => (isNum(b.v) && toMs(b.t) !== null ? <rect key={i} data-volume-bar={i} x={x(toMs(b.t)) + 2} width={Math.max(2, (10 * 60_000 / (endMs - startMs)) * 1000 - 4)} y={padT + ih + gap + volH - (b.v / volMax) * volH} height={(b.v / volMax) * volH} style={{ fill: tint('scrim', 0.18) }} /> : null)) : null}
       </svg>
       {/* the record's own numbers, as axis labels */}
-      {hiIdx >= 0 ? <span style={{ position: 'absolute', left: 2, top: y(bars[hiIdx].h) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', hiIdx, 'h']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
-      {loIdx >= 0 ? <span style={{ position: 'absolute', left: 2, top: y(bars[loIdx].l) + 2 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', loIdx, 'l']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
+      {/* No session high or low is shown: hindsight after a plan or an exit (spec §13, BA-10; review A2L1-4). The axis carries the open and the last close. */}
+      {isNum(open) ? <span style={{ position: 'absolute', left: 2, top: y(open) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['sessionOpen', 'value']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
+      {isNum(bars[bars.length - 1]?.c) ? <span style={{ position: 'absolute', right: 2, top: y(bars[bars.length - 1].c) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
       {/* the evidence overlay (BA-43) */}
       {marks.map((m) => {
         const px = valueAt(tape, ['checks', m.index, 'evidence', sym, 'px']);
@@ -93,7 +94,7 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
             aria-label={`${COPY.evidenceLabel} · ${etClock(m.at) ?? ''}`}
             aria-pressed={on}
             onClick={() => onMark(on ? null : m.index)}
-            style={{ ...plain, position: 'absolute', left: `calc(${pct(ms)} - 6px)`, top: y(px) - 6, width: 12, height: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            style={{ ...plain, position: 'absolute', left: `calc(${pct(ms)} - 12px)`, top: y(px) - 12, width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <span style={{ width: 8, height: 8, transform: 'rotate(45deg)', background: on ? C.gold : 'transparent', boxShadow: `inset 0 0 0 1.5px ${C.gold}` }} />
           </button>
@@ -118,15 +119,21 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   );
 }
 
-function ChartLegend({ sym, sectorEtf, show, onToggle }) {
+/** A line's marker: the class its own series document declares for the numbers it draws (F2; review A2L1-9). No document → no marker. */
+function LineMark({ doc, path }) {
+  if (!doc) return null;
+  return <KindMark cls={classOfNumber(doc.numberClasses, path)} />;
+}
+
+function ChartLegend({ sym, sectorEtf, show, onToggle, doc, marketDoc, sectorDoc }) {
   const sw = (color, dotted) => <svg width="16" height="6" aria-hidden="true" style={{ display: 'block' }}><line x1="0" x2="16" y1="3" y2="3" style={{ stroke: color, strokeWidth: 1.6, strokeDasharray: dotted ? '1.5 2.5' : undefined }} /></svg>;
   return (
     <div data-region="chart-legend" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 8px' }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{sw(C.ink)}<span style={mono(9.5, C.ink3)}>{COPY.deepPrice} · <Rec>{sym}</Rec></span><KindMark cls="market" /></span>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{sw(C.ink3, true)}<span style={mono(9.5, C.ink3)}>{COPY.sessionOpen}</span><KindMark cls="market" /></span>
-      <Chip on={show.market} onClick={() => onToggle('market')}>{sw(C.ink3)}{COPY.market}<KindMark cls="market" /></Chip>
-      <Chip on={show.sector} onClick={() => onToggle('sector')}>{sw(C.purple)}{sectorEtf ? <Rec>{COPY.sector(sectorEtf)}</Rec> : COPY.sectorNone}<KindMark cls="market" /></Chip>
-      <Chip on={show.volume} onClick={() => onToggle('volume')}><span style={{ width: 10, height: 8, background: tint('scrim', 0.3), display: 'inline-block', borderRadius: 1 }} />{COPY.volume}<KindMark cls="market" /></Chip>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{sw(C.ink)}<span style={mono(9.5, C.ink3)}>{COPY.deepPrice} · <Rec>{sym}</Rec></span><LineMark doc={doc} path={['bars', 0, 'c']} /></span>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{sw(C.ink3, true)}<span style={mono(9.5, C.ink3)}>{COPY.sessionOpen}</span><LineMark doc={doc} path={['sessionOpen', 'value']} /></span>
+      <Chip on={show.market} onClick={() => onToggle('market')}>{sw(C.ink3)}{COPY.market}<LineMark doc={marketDoc} path={['bars', 0, 'c']} /></Chip>
+      <Chip on={show.sector} onClick={() => onToggle('sector')}>{sw(C.purple)}{sectorEtf ? <Rec>{COPY.sector(sectorEtf)}</Rec> : COPY.sectorNone}<LineMark doc={sectorDoc} path={['bars', 0, 'c']} /></Chip>
+      <Chip on={show.volume} onClick={() => onToggle('volume')}><span style={{ width: 10, height: 8, background: tint('scrim', 0.3), display: 'inline-block', borderRadius: 1 }} />{COPY.volume}<LineMark doc={doc} path={['bars', 0, 'v']} /></Chip>
       <span style={mono(9.5, C.ink3)}>· {COPY.rebased}</span>
     </div>
   );
@@ -134,7 +141,6 @@ function ChartLegend({ sym, sectorEtf, show, onToggle }) {
 
 function SymbolFacts({ tape, doc, sym, holdings, sectorEtf }) {
   const bars = Array.isArray(doc?.bars) ? doc.bars : [];
-  const { hi, lo } = extremeBars(bars);
   const role = roleOf(tape, sym, holdings);
   const sp = (path) => <TapeNum doc={doc} docLabel={`series:${sym}`} path={path} fmt={fmtPrice} size={12} />;
   return (
@@ -142,8 +148,6 @@ function SymbolFacts({ tape, doc, sym, holdings, sectorEtf }) {
       <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em', color: C.ink, lineHeight: 1, paddingBottom: 8 }}><Rec>{sym}</Rec></span>
       <Row k={COPY.inTheBook} v={<span style={mono(10.5, C.ink, { textAlign: 'right' })}><When>{role.text}</When></span>} />
       <Row k={COPY.sessionOpen} v={sp(['sessionOpen', 'value'])} />
-      {hi >= 0 ? <Row k={COPY.sessionHigh} v={sp(['bars', hi, 'h'])} /> : null}
-      {lo >= 0 ? <Row k={COPY.sessionLow} v={sp(['bars', lo, 'l'])} /> : null}
       {bars.length ? <Row k={COPY.lastBarClose} v={sp(['bars', bars.length - 1, 'c'])} /> : null}
       <Row k={COPY.sectorLine} v={<span style={mono(10.5, sectorEtf ? C.ink : C.ink3)}>{sectorEtf ? <Rec>{sectorEtf}</Rec> : COPY.sectorLineNone}</span>} />
     </div>
@@ -194,12 +198,14 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
   );
   let chartBody;
   if (seriesState?.status === 'loading' || seriesState?.status === 'idle') chartBody = <span style={foot}>{COPY.loading}</span>;
-  else if (!current) chartBody = <span style={foot}>{COPY.deepNoSeries('')}</span>;
+  // A failed read is said as a failed read — never as "no series" (review A2L3-2).
+  else if (seriesState?.status === 'error') chartBody = <span data-state="series-error" style={foot}>{COPY.seriesReadError}</span>;
+  else if (!current) chartBody = <span style={foot}>{COPY.deepNoSymbols}</span>;
   else if (!doc) chartBody = <span data-no-series={current} style={foot}><Rec>{COPY.deepNoSeries(current)}</Rec></span>;
   else {
     chartBody = (
       <>
-        <ChartLegend sym={current} sectorEtf={sectorEtf} show={show} onToggle={toggle} />
+        <ChartLegend sym={current} sectorEtf={sectorEtf} show={show} onToggle={toggle} doc={doc} marketDoc={marketDoc} sectorDoc={sectorDoc} />
         <div style={{ paddingBottom: 18 }}>
           <PriceChart tape={tape} doc={doc} sym={current} show={show} marketDoc={marketDoc} sectorDoc={sectorDoc} selectedMark={mark} onMark={setMark} height={desktop ? 340 : 250} />
         </div>
@@ -209,9 +215,10 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
   const evidence = current && evidenceMarkers(tape, current).length ? (
     <div data-region="evidence-overlay" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span style={{ ...eyebrow, color: C.gold }}>{COPY.evidenceOverlay}</span>
+      <Coverage label={COPY.evidenceCoverage} coverage={tape.coverage?.evidence} />
       <span style={foot}>{COPY.evidenceOverlayNote}</span>
       <span style={foot}>{COPY.riskNote}</span>
-      {mark != null ? (
+      {mark != null && tape.checks?.[mark] ? (
         <div data-evidence-panel={mark} style={{ ...card, background: C.wash, gap: 6 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
             <span style={{ ...eyebrow, color: C.ink2 }}>{COPY.evidenceLabel}</span>

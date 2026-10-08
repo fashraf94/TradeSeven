@@ -139,7 +139,13 @@ export async function getReviewAvailability(battle, { readTape = defaultReadTape
   let v2 = false;
   try { v2 = (await resolveFilmRoomV2ForBattle(battle, { readVerdict })) === true; } catch { v2 = false; }
   if (!v2) return stageOne(battle, target);
-  return stageThree(battle, target, { readTape, nowMs: typeof now === 'function' ? now() : toMs(now) });
+  // Exactly three keys in every branch: a Stage 3 that throws (a malformed instant, a calendar
+  // the schedule cannot walk) answers 'unavailable', never a rejection (review A2L2-1).
+  try {
+    return await stageThree(battle, target, { readTape, nowMs: typeof now === 'function' ? now() : toMs(now) });
+  } catch {
+    return result(false, target, 'unavailable');
+  }
 }
 
 export default getReviewAvailability;

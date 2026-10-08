@@ -59,14 +59,15 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     expect(m.q('[data-swap-label="1"]').textContent).toBe('Entry · 2:00 PM · Exit by the agent · its own decision');
   });
 
-  it('side facts: the record\'s own prices (session open, high, low, last close), market class; the role from the tape', () => {
+  it('side facts: the record\'s own prices (the session open, the last close), market class; the role from the tape — no session high or low (A2L1-4)', () => {
     m.render(<Harness tape={sep23Tape} series={sep23Series} start="DE" />);
     const facts = m.q('[data-region="symbol-facts"]');
     expect(facts.textContent).toContain('exited at 2:00 PM · Exit by the agent · its own decision');
     const paths = [...facts.querySelectorAll('[data-num]')].map((e) => e.getAttribute('data-num'));
-    expect(paths[0]).toBe('sessionOpen.value');
-    expect(paths.some((p) => /^bars\[\d+\]\.h$/.test(p))).toBe(true);
-    expect(paths.some((p) => /^bars\[\d+\]\.l$/.test(p))).toBe(true);
+    const de = sep23Series.find((s) => s.symbol === 'DE');
+    expect(paths).toEqual(['sessionOpen.value', `bars[${de.bars.length - 1}].c`]);
+    expect(m.container.querySelector('[data-num$=".h"], [data-num$=".l"]')).toBeNull();
+    expect(m.container.textContent).not.toMatch(/session high|session low/i);
     for (const e of facts.querySelectorAll('[data-num]')) expect(e.getAttribute('data-num-class')).toBe('market');
     expect(facts.textContent).toContain('XLI');
   });

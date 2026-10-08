@@ -115,7 +115,7 @@ describe('resolveFilmRoomV2ForBattle — per battle owner', () => {
     expect(readVerdict).not.toHaveBeenCalled();
     flags.mode = 'allowlist';
     expect(await resolveFilmRoomV2ForBattle({ id: 'b1', agentBattleId: 'ab1' }, { readVerdict })).toBe(true);
-    expect(readVerdict).toHaveBeenCalledWith('ab1');
+    expect(readVerdict).toHaveBeenCalledWith('ab1', { ownerId: null });
     expect(await resolveFilmRoomV2ForBattle({ id: 'b2' }, { readVerdict: async () => false })).toBe(false);
     expect(await resolveFilmRoomV2ForBattle({}, { readVerdict })).toBe(false);
   });
@@ -125,5 +125,36 @@ describe('resolveFilmRoomV2ForBattle — per battle owner', () => {
     expect(filmRoomBattleId({ id: 'b' })).toBe('b');
     expect(filmRoomBattleId({})).toBeNull();
     expect(filmRoomBattleId(null)).toBeNull();
+  });
+});
+
+// ── the §2 review's rows (docs/audits/20261008_BUILD_FILM_ROOM_A2.md §3) ─────
+
+describe('review A2L2-6 / A2L2-10 — one verdict per OWNER; the bound covers the whole ask', () => {
+  it('A2L2-6: two battles of one owner ask the server once; another owner is asked separately; no owner → per battle', async () => {
+    const request = vi.fn(async () => ({ ok: true, allowlisted: true }));
+    expect(await readFilmRoomVerdict('b1', { ownerId: 'u1', request })).toBe(true);
+    expect(await readFilmRoomVerdict('b2', { ownerId: 'u1', request })).toBe(true);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(cachedFilmRoomVerdict('b9', { ownerId: 'u1' })).toBe(true);
+    expect(await readFilmRoomVerdict('b3', { ownerId: 'u2', request })).toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(await readFilmRoomVerdict('b4', { request })).toBe(true);
+    expect(await readFilmRoomVerdict('b5', { request })).toBe(true);
+    expect(request).toHaveBeenCalledTimes(4);
+  });
+
+  it('A2L2-10: a token that never arrives reads false at the bound — the bound covers the token, not only the fetch', async () => {
+    vi.useFakeTimers();
+    try {
+      auth.user = { getIdToken: () => new Promise(() => {}) };
+      globalThis.fetch = vi.fn();
+      const p = requestFilmRoomVerdict('b1');
+      await vi.advanceTimersByTimeAsync(8_001);
+      await expect(p).resolves.toEqual({ ok: false, allowlisted: false });
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

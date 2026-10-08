@@ -2,8 +2,12 @@
 //
 // The legacy Film Room's golden fixture (Film Room A2, Amendment E BA-40): a
 // completed two-day battle shaped the way the legacy screen reads it — daily
-// reviews, trades, an auto-debrief, anticipation lines, a Film Room chat turn
-// — so the photograph exercises every legacy section. Invented ids and words
+// reviews, trades, an auto-debrief, an anticipation line and a review-chat
+// turn (FilmRoomChat renders mode 'review' only). The photograph is the
+// screen's default view (the last day); day 1's review is not selected, and
+// the theme mock maps every token to one colour, so a token swap inside a
+// legacy component would not show — byte-identity of the legacy subtree also
+// rests on its files being untouched (review A2L2-4). Invented ids and words
 // only; no production data.
 
 export const PINNED_NOW = '2026-09-26T15:00:00.000Z';
@@ -56,7 +60,7 @@ export const AGENT_BATTLE = {
 export const CHAT_EXCHANGES = [
   { userMessage: null, agentResponse: 'Watching NFLX for a breakout above 700.', messageType: 'anticipation', anticipationSource: 'haiku', timestamp: '2026-09-25T15:00:00.000Z', mode: 'battle' },
   { userMessage: null, agentResponse: 'Day 2 debrief: the NFLX rotation carried the score.', isAutoDebrief: true, messageType: 'auto_debrief', timestamp: '2026-09-26T01:05:00.000Z', mode: 'filmroom' },
-  { userMessage: 'Why did you sell MSFT?', agentResponse: 'MSFT stalled while NFLX broke out on volume.', timestamp: '2026-09-26T02:00:00.000Z', mode: 'filmroom' },
+  { userMessage: 'What happened with MSFT?', agentResponse: 'MSFT stalled while NFLX broke out on volume.', timestamp: '2026-09-26T02:00:00.000Z', mode: 'review' },
 ];
 
 export const HOOK_RESULT = Object.freeze({ battle: AGENT_BATTLE, chatExchanges: CHAT_EXCHANGES, loading: false });

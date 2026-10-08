@@ -13,11 +13,15 @@
 //                client holds no uid and never recomputes the list — the
 //                useCockpitStatus precedent ("the client never decides").
 //
-// ONE CACHED VERDICT per battle: the route and the hub helper share this
-// module's cache, so a battle is asked about at most once per page life. Every
-// error, timeout, non-200 and malformed body reads `false` — the legacy screen
-// and Stage 1, never a guess. A failed ask is NOT cached (the next open asks
-// again); a definite answer is.
+// ONE CACHED VERDICT per owner: the server's `allowlisted` answers for the
+// battle's OWNER, so a definite answer is kept under the owner's uid when the
+// battle names one (else under the battle id) — an owner with many battles is
+// asked about once per page life, well inside cockpit-status's per-user window
+// (review A2L2-6). The route and the hub helper share this cache. Every error,
+// timeout, non-200 and malformed body reads `false` — the legacy screen and
+// Stage 1, never a guess. A failed ask is NOT cached (the next open asks
+// again); a definite answer is. The bound covers the WHOLE ask — the token,
+// the request and the body (review A2L2-10).
 //
 // The mode is read at CALL time (the isCharacterPaneOn rule): a consumer never
 // holds it in a module-scope const, so a featureFlags mock reaches every read.
@@ -57,7 +61,18 @@ export const filmRoomBattleId = (battle) => {
  */
 export async function requestFilmRoomVerdict(battleId) {
   const abort = typeof AbortController === 'function' ? new AbortController() : null;
-  const timer = abort ? setTimeout(() => abort.abort(), FILM_ROOM_VERDICT_TIMEOUT_MS) : null;
+  let timer = null;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => { if (abort) abort.abort(); resolve({ ok: false, allowlisted: false }); }, FILM_ROOM_VERDICT_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([askVerdict(battleId, abort), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function askVerdict(battleId, abort) {
   try {
     const user = getAuth().currentUser;
     if (!user) return { ok: false, allowlisted: false };
@@ -74,41 +89,45 @@ export async function requestFilmRoomVerdict(battleId) {
     return { ok: true, allowlisted: body.allowlisted };
   } catch {
     return { ok: false, allowlisted: false };
-  } finally {
-    if (timer) clearTimeout(timer);
   }
 }
 
-const verdicts = new Map();     // battleId → boolean (definite answers only)
-const inFlight = new Map();     // battleId → Promise<boolean>
+const verdicts = new Map();     // cache key → boolean (definite answers only)
+const inFlight = new Map();     // cache key → Promise<boolean>
 
-/** The cached verdict for a battle, or undefined when none has come in yet. */
-export function cachedFilmRoomVerdict(battleId) {
-  return verdicts.has(battleId) ? verdicts.get(battleId) : undefined;
+/** Where an answer is kept: the owner's uid when the battle names one, else the battle id. */
+const cacheKey = (battleId, ownerId) => (typeof ownerId === 'string' && ownerId ? `owner:${ownerId}` : `battle:${battleId}`);
+
+/** The cached verdict for a battle (by its owner when known), or undefined when none has come in yet. */
+export function cachedFilmRoomVerdict(battleId, { ownerId = null } = {}) {
+  const k = cacheKey(battleId, ownerId);
+  return verdicts.has(k) ? verdicts.get(k) : undefined;
 }
 
 /**
- * Is this battle's owner allowlisted? One request per battle per page life;
- * concurrent callers share it. Resolves false on anything but a definite yes.
+ * Is this battle's owner allowlisted? One request per owner (or per battle
+ * when no owner is named) per page life; concurrent callers share it.
+ * Resolves false on anything but a definite yes.
  *
  * @param {string} battleId
- * @param {{ request?: (id: string) => Promise<{ok: boolean, allowlisted: boolean}> }} [opts]  test seam
+ * @param {{ ownerId?: string|null, request?: (id: string) => Promise<{ok: boolean, allowlisted: boolean}> }} [opts]  `request` is a test seam
  * @returns {Promise<boolean>}
  */
-export function readFilmRoomVerdict(battleId, { request = requestFilmRoomVerdict } = {}) {
+export function readFilmRoomVerdict(battleId, { ownerId = null, request = requestFilmRoomVerdict } = {}) {
   if (typeof battleId !== 'string' || !battleId) return Promise.resolve(false);
-  if (verdicts.has(battleId)) return Promise.resolve(verdicts.get(battleId));
-  if (inFlight.has(battleId)) return inFlight.get(battleId);
+  const k = cacheKey(battleId, ownerId);
+  if (verdicts.has(k)) return Promise.resolve(verdicts.get(k));
+  if (inFlight.has(k)) return inFlight.get(k);
   const p = Promise.resolve()
     .then(() => request(battleId))
     .then((v) => {
       const yes = Boolean(v && v.ok === true && v.allowlisted === true);
-      if (v && v.ok === true) verdicts.set(battleId, yes);
+      if (v && v.ok === true) verdicts.set(k, yes);
       return yes;
     })
     .catch(() => false)
-    .finally(() => { inFlight.delete(battleId); });
-  inFlight.set(battleId, p);
+    .finally(() => { inFlight.delete(k); });
+  inFlight.set(k, p);
   return p;
 }
 
@@ -141,6 +160,6 @@ export async function resolveFilmRoomV2ForBattle(battle, { readVerdict = readFil
   const id = filmRoomBattleId(battle);
   if (!id) return false;
   let verdict = false;
-  try { verdict = (await readVerdict(id)) === true; } catch { verdict = false; }
+  try { verdict = (await readVerdict(id, { ownerId: typeof battle?.ownerId === 'string' ? battle.ownerId : null })) === true; } catch { verdict = false; }
   return filmRoomV2On(mode, verdict);
 }

@@ -67,7 +67,8 @@ describe('checks (BA-8, BA-44; F3, F5)', () => {
     expect(checkStateOf({ state: 'budget_skipped' }).label).toBe('check skipped · budget');
     expect(checkStateOf({ state: 'deferred' }).label).toBe('check deferred · budget');
     expect(checkStateOf({ state: 'no_record' }).label).toBe('no record for this check');
-    expect(checkStateOf({ state: 'gameplan_pending' }).label).toBe('plan pending · awaiting approval');
+    expect(checkStateOf({ state: 'gameplan_pending' }).label).toBe('plan pending · awaiting approval');   // the design of record's words
+    expect(checkStateOf({ state: 'gameplan_created' }).label).toBe('plan created');
     expect(checkStateOf({ state: 'bogus' }).label).toBe('state not recorded');
   });
 
@@ -164,10 +165,10 @@ describe('directives, rationale, plans, the deep dive', () => {
     expect(deepSymbols(sep23Tape, [{ symbol: 'SPY', role: 'market' }, { symbol: 'MU', role: 'plan' }], h).slice(0, 7)).toEqual(h.start.symbols);
     expect(deepSymbols(sep23Tape, [{ symbol: 'SPY', role: 'market' }, { symbol: 'MU', role: 'plan' }], h)).toContain('MU');
     expect(deepSymbols(sep23Tape, [{ symbol: 'SPY', role: 'market' }], h)).not.toContain('SPY');
-    expect(roleOf(sep23Tape, 'META', h).kind).toBe('held');
+    expect(roleOf(sep23Tape, 'META', h)).toMatchObject({ kind: 'held', text: 'held at the first and the last risk record' });
     expect(roleOf(sep23Tape, 'MSFT', h).text).toBe('exited at 12:45 PM · Exit by platform rule · stagnation');
-    expect(roleOf(sep23Tape, 'PLTR', h).text).toBe('entered at 2:00 PM · swapped in by the agent');
-    expect(roleOf(sep23Tape, 'CRWD', h).text).toBe('entered at 12:45 PM · swapped in by a platform rule · stagnation');
+    expect(roleOf(sep23Tape, 'PLTR', h).text).toBe('entered at 2:00 PM · a swap by the agent');
+    expect(roleOf(sep23Tape, 'CRWD', h).text).toBe('entered at 12:45 PM · a swap by a platform rule · stagnation');
     expect(extremeBars([{ h: 2, l: 1 }, { h: 5, l: 0.5 }, { h: 3, l: 2 }])).toEqual({ hi: 1, lo: 1 });
   });
 });
