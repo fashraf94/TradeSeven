@@ -134,67 +134,25 @@ export function swapDidNotGoThrough(evaluation) {
   return typeof first === 'string' && first.startsWith(SWAP_FAILED_PREFIX);
 }
 
-// ── An outcome that could not be confirmed (table G, V1.4) ──────────────────
+/// ── An outcome that could not be confirmed (table G, V1.4) ──────────────────
 // docs/specs/MODE_TRUTH_LANGUAGE_TABLES_V1.md table G (founder decision Q3,
-// option (a), 8 Oct 2026 — enforce readiness). The cron writes
-// `executionOutcome: 'unknown'` when the executor THREW and the server's own
-// fresh read of the battle then failed (integrity follow-up 2, Part D;
-// api/_utils/landedTrade.js): whether the swap landed is not known, and the
-// record claims neither. A model-route entry so marked is a downgraded HOLD
-// WITHOUT the thrown-swap prefix, so before table G it fell to the guardrail
-// label ("held by a guardrail") — or, guardrail-forced, to the fifth state's
-// "it did not go through". Neither is true of it. The marker is checked
+// option (a), 8 Oct 2026 — enforce readiness). The cron marks a record whose
+// executor THREW and whose fresh read of the battle then failed (integrity
+// follow-up 2, Part D): whether the swap landed is not known, and the record
+// claims neither. A model-route entry so marked is a downgraded HOLD WITHOUT
+// the thrown-swap prefix, so before table G it fell to the guardrail label
+// ("held by a guardrail") — or, guardrail-forced, to the fifth state's "it did
+// not go through". Neither is true of it. The selector checks the marker
 // before every other decision state, so no other label can ever render for it.
+//
+// The LABELS live here, with the other states. The marker's value and the
+// record-shape predicates live in src/data/executionOutcome.js: its wire value
+// is a resolver word this vocabulary module may not carry (deskHonesty.test.js).
 
-/**
- * The marker's value — the server's `EXECUTION_OUTCOME_UNKNOWN`
- * (api/_utils/landedTrade.js), pinned equal to it by a row in
- * decisionRecord.test.js. Declared here, not imported: this module is
- * zero-import (hazard 26).
- */
-export const EXECUTION_OUTCOME_UNKNOWN = 'unknown';
 /** Table G: the agent argued for the swap; its outcome could not be confirmed. */
 export const UNCONFIRMED_LABEL = 'Argued for a swap · its outcome could not be confirmed';
 /** Table G: a guardrail forced the swap (the D-70 gate); its outcome could not be confirmed. */
 export const GUARDRAIL_FORCED_UNCONFIRMED_LABEL = 'A guardrail called for a swap · its outcome could not be confirmed';
-
-/** Whether a record (an evaluation entry, a feed beat, a history row) carries the table G marker. */
-export function executionOutcomeUnconfirmed(record) {
-  return record?.executionOutcome === EXECUTION_OUTCOME_UNKNOWN;
-}
-
-/**
- * The action the risk loop and the R11 pass stamp on a beat for an exit that
- * threw (agent-evaluate.js). Since Part D, such a beat whose outcome could not
- * be confirmed carries `message: null` — no line either way — and every other
- * one carries its failure line; a source row in decisionRecord.test.js pins
- * both writers.
- */
-export const RISK_SWAP_FAILED_ACTION = 'risk_swap_failed';
-
-const hasLine = (beat) => typeof beat?.message === 'string' && beat.message.trim() !== '';
-
-/**
- * A feed beat whose outcome could not be confirmed: it carries the marker —
- * or, on the public projection, which keeps a beat's `message` and `action`
- * but not its marker (api/_utils/tournamentBattleView.js PUBLIC_STATUSFEED),
- * it has the shape only the marker's two message-less writers produce: a
- * `risk_swap_failed` beat with no line.
- *
- * Such a beat names no outcome on any surface: its `action` is never rendered
- * as a word (`risk_swap_failed`, `hold`), and a surface that labels beats by
- * action gives it its neutral label instead. Its own words, when it has any
- * (the model route's status beat), are still the speaker's own words.
- */
-export function feedBeatUnconfirmed(beat) {
-  if (!beat || typeof beat !== 'object') return false;
-  return executionOutcomeUnconfirmed(beat) || (beat.action === RISK_SWAP_FAILED_ACTION && !hasLine(beat));
-}
-
-/** An unconfirmed beat with no line of its own: no surface renders it at all — never a blank card. */
-export function feedBeatWithoutLine(beat) {
-  return feedBeatUnconfirmed(beat) && !hasLine(beat);
-}
 
 /** A tier key as the word a player reads on the tier header. */
 export function tierLabel(tier) {

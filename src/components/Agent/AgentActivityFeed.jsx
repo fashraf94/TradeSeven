@@ -19,7 +19,8 @@ import GameplanMeetingCard from './GameplanMeetingCard';
 // key, so `regime: 'constructor'` resolved to a function and threw in
 // `hexToRgba` before any fallback could fire. The accessor tests the closed
 // list, so the feeds and the Why? panel now agree on which tokens are ruled.
-import { regimeLabel, feedBeatUnconfirmed, feedBeatWithoutLine } from '../../data/decisionRecord';
+import { regimeLabel } from '../../data/decisionRecord';
+import { feedBeatUnconfirmed, feedBeatWithoutLine } from '../../data/executionOutcome';
 
 // ── Label Maps (strategy + colours; regime is shared) ─────────────────────────
 

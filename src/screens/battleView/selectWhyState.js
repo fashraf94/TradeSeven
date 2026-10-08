@@ -35,8 +35,10 @@ import {
   GUARDRAIL_FORCED_EXIT,
   guardrailForcedExit,
   renderMotive,
-  executionOutcomeUnconfirmed,
 } from '../../data/decisionRecord';
+// Table G (V1.4): the marker is DATA, read from its own zero-import module —
+// its wire value is a word the vocabulary module may not carry (see there).
+import { executionOutcomeUnconfirmed } from '../../data/executionOutcome';
 
 export {
   SWAP_FAILED_PREFIX, ENGINE_MOTIVE_PREFIXES, TEXT_DECIDES_SOURCES, isEngineAuthoredMotive,

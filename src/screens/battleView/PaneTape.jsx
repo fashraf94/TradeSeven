@@ -39,7 +39,7 @@ import { cssVar } from '../../theme/cssTokens';
 import { TAPE_KIND } from './buildTape';
 import { TradeCard } from './TapeCards';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
-import { feedBeatWithoutLine } from '../../data/decisionRecord';
+import { feedBeatWithoutLine } from '../../data/executionOutcome';
 
 const mono = {
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',

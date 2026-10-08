@@ -72,10 +72,17 @@ const PROPOSAL_READERS = {
   'src/screens/AgentBattleScreen.jsx': 'pass-through to AgentChat',
   'src/screens/agentBattleScreenGoldenFixture.js': 'test data',
 };
-/** Every client file whose code reads a marker by name. */
+/** Every client file whose code reads a marker FIELD by name — one module, by design. */
 const MARKER_READERS = {
-  'src/data/decisionRecord.js': 'the table G vocabulary: executionOutcomeUnconfirmed, feedBeatUnconfirmed, feedBeatWithoutLine',
-  'src/screens/battleView/selectWhyState.js': 'the Why? state: the marker before every decision state',
+  'src/data/executionOutcome.js': 'the marker as data: executionOutcomeUnconfirmed, feedBeatUnconfirmed, feedBeatWithoutLine',
+};
+/** Every client file that decides on the marker through that module. */
+const MARKER_MODULE_IMPORTERS = {
+  'src/screens/battleView/selectWhyState.js': 'the Why? state: the marker before every decision state (table G labels)',
+  'src/components/Agent/AgentActivityFeed.jsx': 'FIXED: a line-less marked beat is not a card; a marked beat takes the neutral label',
+  'src/components/Agent/GameTapeView.jsx': 'FIXED (dormant): bookmarks skip a line-less beat; a marked beat is never headed by its action',
+  'src/components/Tournament/Flat6BattleView.jsx': 'FIXED: a line-less beat is dropped before the live feed’s window',
+  'src/screens/battleView/PaneTape.jsx': 'FIXED: bookmarks skip a line-less beat',
 };
 
 describe('the census is complete — a new reader fails here until it is ruled', () => {
@@ -91,8 +98,12 @@ describe('the census is complete — a new reader fails here until it is ruled',
     expect(readersOf(/\bgameplanMeetingHistory\b|\bheldLegs\b|\bheldLegCount\b|'not_run'|\bexecutionFailed\b|\blegRefusals\b/)).toEqual([]);
   });
 
-  it('only the ruled modules read a marker by name', () => {
-    expect(readersOf(/executionOutcome|executionLanded|auto_execution_unknown|confirmed_after_error|risk_swap_failed/)).toEqual(Object.keys(MARKER_READERS).sort());
+  it('only the marker module reads a marker field by name (a module path or a predicate name is not a field read)', () => {
+    expect(readersOf(/(?<![\w/])executionOutcome\b|executionLanded|auto_execution_unknown|confirmed_after_error|risk_swap_failed/)).toEqual(Object.keys(MARKER_READERS).sort());
+  });
+
+  it('every client file that imports the marker module is ruled', () => {
+    expect(readersOf(/from\s+['"][./]+(?:data\/)?executionOutcome(?:\.js)?['"]/)).toEqual(Object.keys(MARKER_MODULE_IMPORTERS).sort());
   });
 });
 

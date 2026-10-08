@@ -43,7 +43,8 @@ import { BAGGER_TIERS } from '../../constants/baggerBombScoring';
 // The persisted record's SHARED renderer (BUILD_RULES §9) — the same functions
 // the Battle View's check card and the narrator's YOUR RECORD block render a
 // check through, so this pane cannot show one check a second way.
-import { renderMotive, renderHypothesis, HYPOTHESIS_LABEL, feedBeatWithoutLine } from '../../data/decisionRecord';
+import { renderMotive, renderHypothesis, HYPOTHESIS_LABEL } from '../../data/decisionRecord';
+import { feedBeatWithoutLine } from '../../data/executionOutcome';
 
 const PRICE_POLL_INTERVAL = 60000;
 const FEED_LIMIT = 8;

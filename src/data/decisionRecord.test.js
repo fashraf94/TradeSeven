@@ -64,14 +64,17 @@ import {
   displayHypothesis,
   renderHypothesis,
   renderMotive,
-  EXECUTION_OUTCOME_UNKNOWN,
   UNCONFIRMED_LABEL,
   GUARDRAIL_FORCED_UNCONFIRMED_LABEL,
+} from './decisionRecord.js';
+// Table G's marker, as data (its own zero-import module — see its header).
+import {
+  EXECUTION_OUTCOME_UNKNOWN,
   executionOutcomeUnconfirmed,
   RISK_SWAP_FAILED_ACTION,
   feedBeatUnconfirmed,
   feedBeatWithoutLine,
-} from './decisionRecord.js';
+} from './executionOutcome.js';
 import { BATTLE_VIEW_COPY } from '../screens/battleView/battleViewCopy';
 // Table G (V1.4): the server's marker value, read from the module that writes it
 // (zero product imports — landedTrade.js), so the two constants cannot drift.
@@ -377,6 +380,12 @@ describe('decisionRecord — the hypothesis field (D-99 / §3.2a)', () => {
 
 // ── Table G (V1.4) — the unconfirmed-outcome vocabulary ─────────────────────
 describe('decisionRecord — table G (V1.4): an outcome that could not be confirmed', () => {
+  it('the marker module is zero-import and Node-clean like this one, and its value never enters the vocabulary module (deskHonesty bans the word there)', () => {
+    const source = read('src/data/executionOutcome.js');
+    expect(source).not.toMatch(/^\s*import\s/m);
+    expect(read('src/data/decisionRecord.js')).not.toContain("= 'unknown'");
+  });
+
   it('the marker is the server’s own value (api/_utils/landedTrade.js), and the two labels are these bytes', () => {
     expect(EXECUTION_OUTCOME_UNKNOWN).toBe(SERVER_OUTCOME_UNKNOWN);
     expect(EXECUTION_OUTCOME_UNKNOWN).toBe('unknown');
