@@ -34,6 +34,29 @@ describe('BA-4 — the recorded score, its time, the day change with its basis',
     expect(score.textContent).toContain('First check 10:15 AM');
   });
 
+  it('addendum R4(c): the basis names its stored reference — "from the battle start (0)" — with that value\'s own marker', () => {
+    m.render(<Harness tape={sep23Tape} />);
+    const ref = m.q('[data-region="recorded-score"] [data-day-change-reference] [data-num]');
+    expect(ref.getAttribute('data-num')).toBe('score.dayChange.reference');
+    expect(ref.getAttribute('data-num-class')).toBe(sep23Tape.numberClasses['score.dayChange.reference']);
+    expect(ref.querySelector('[data-kind-mark]').getAttribute('data-kind-mark')).toBe('recorded');
+    expect(ref.querySelector('[data-num-text]').textContent).toBe('0');
+    expect(m.q('[data-region="recorded-score"]').textContent).toMatch(/Day change · from the battle start \(0R?\)/);
+    expect(ref.getAttribute('data-sign-color')).toBe('no');
+  });
+
+  it('addendum R4(c): a prior-day basis shows ITS reference, marked by the tape\'s own declaration for the reference path', () => {
+    const t = clone(sep23Tape);
+    t.score.dayChange = { value: -34, basis: 'prior_day_tape', reference: -13 };
+    t.numberClasses['score.dayChange.reference'] = 'derived';   // a tape declaring it otherwise is labelled by its own declaration
+    m.render(<Harness tape={t} />);
+    const ref = m.q('[data-day-change-reference] [data-num]');
+    expect(ref.querySelector('[data-num-text]').textContent).toBe('−13');
+    expect(ref.querySelector('[data-kind-mark]').getAttribute('data-kind-mark')).toBe('derived');
+    expect(m.q('[data-region="recorded-score"]').textContent).toContain("from the prior day's last recorded check (−13");
+    expect(sweepNumbers(m.container, { tape: t })).toEqual([]);
+  });
+
   it('a day change with no basis reads "unavailable" — never a silent substitute', () => {
     const t = clone(sep23Tape);
     t.score.dayChange = { value: null, basis: 'unavailable', reference: null };
@@ -42,6 +65,7 @@ describe('BA-4 — the recorded score, its time, the day change with its basis',
     expect(score.querySelector('[data-num="score.dayChange.value"]')).toBeNull();
     expect(score.textContent).toContain('Day changeunavailable');
     expect(score.textContent.split('unavailable').length - 1).toBe(1);   // said once, not twice (review A2L1-16)
+    expect(score.querySelector('[data-day-change-reference]')).toBeNull();
   });
 
   it('the empty day: no recorded score, no checks, honest dashes', () => {

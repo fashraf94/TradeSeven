@@ -61,6 +61,10 @@ function ScoreCard({ tape, big = 44 }) {
   const last = tape.score?.lastCheck || null;
   const first = tape.score?.firstCheck || null;
   const basis = tape.score?.dayChange?.basis || 'unavailable';
+  // R4(c): the basis names its stored reference value, with that value's own marker — "from the battle start (0)".
+  const reference = isNum(tape.score?.dayChange?.reference)
+    ? <span data-day-change-reference="" style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>(<TapeNum doc={tape} path={['score', 'dayChange', 'reference']} size={10.5} weight={500} color={C.ink3} />)</span>
+    : null;
   return (
     <div data-region="recorded-score" style={{ ...card, gap: 8 }}>
       <span style={{ ...eyebrow, color: C.ink2 }}>{last ? <When>{COPY.recordedScoreAt(etClock(last.at))}</When> : COPY.recordedScore}</span>
@@ -69,7 +73,7 @@ function ScoreCard({ tape, big = 44 }) {
         <Row
           border={false}
           k={COPY.dayChange}
-          sub={basis !== 'unavailable' && COPY.dayChangeBasis[basis] ? COPY.dayChangeBasis[basis] : null}
+          sub={basis !== 'unavailable' && COPY.dayChangeBasis[basis] ? <>{COPY.dayChangeBasis[basis]}{reference ? <> {reference}</> : null}</> : null}
           v={isNum(tape.score?.dayChange?.value) ? <TapeNum doc={tape} path={['score', 'dayChange', 'value']} size={13} /> : <span style={mono(11, C.ink3)}>{COPY.dayChangeBasis.unavailable}</span>}
         />
         <Row
