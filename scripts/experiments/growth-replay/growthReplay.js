@@ -2039,13 +2039,13 @@ async function batchcheckAnalyze(flags) {
     comparisons: Object.fromEntries(Object.entries(comparisons).map(([k, v]) => [k, { ...v, flipped: v.flipped.length }])),
     spend,
   };
-  writeBatchcheckExhibits(odir, m, src.fresh, src.original, comparisons.learning);
+  appendBatchcheckExhibits(odir, m, src.fresh, src.original, comparisons.learning);
   writeJsonAtomic(path.join(dir, 'addendum.json'), out);
   console.log(JSON.stringify(out, null, 1));
 }
 
 /** Append (or replace) the dated section of the LOCAL-ONLY exhibits file: the moments that changed in the fresh learning test. */
-function writeBatchcheckExhibits(odir, m, fresh, orig, learning) {
+function appendBatchcheckExhibits(odir, m, fresh, orig, learning) {
   const file = path.join(odir, 'GROWTH_REPLAY_EXHIBITS.local.md');
   const prior = existsSync(file) ? readFileSync(file, 'utf8') : '';
   const split = extractBatchcheckBlock(prior);
