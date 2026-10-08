@@ -117,6 +117,8 @@ const GUARDED_FILES = [
   'src/screens/filmRoomV2/filmRoomData.js',
   'src/screens/filmRoomV2/FilmRoomKit.jsx',
   'src/screens/filmRoomV2/FilmRoomCheckDetail.jsx',
+  // Film Room A2 — Glance (F5): token-only and motion-token-only from birth, registered in the commit that introduces it.
+  'src/screens/filmRoomV2/FilmRoomGlance.jsx',
 ];
 
 /**
