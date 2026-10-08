@@ -19,6 +19,7 @@
 | `lint:gate` / `vite build` | **`lint:gate`:** exit 0 on LF snapshots of `e54b8309` and `144828b0`. It failed once, at `d4d51791`; the cause and fix are in §3.7. <br>**`vite build`:** exit 0 on `144828b0`. `FilmRoomScreenV2` is its own lazy chunk (58.6 kB, 15.9 kB gzip). The pushed head (this report's docs-only commit) is rebuilt from its LF archive before the PR is opened. |
 | Visual check | 12 screenshots plus 11 of the mock-up, saved outside the repo; no horizontal overflow at 390 or 1440. Deviations are listed in §4; none is a correctness defect. |
 | Rulings requested | Three. Each is recorded, and none blocks: <br>• **R1 (A2L1-5):** digits inside stored notes <br>• **R2 (F3 wording):** the tape records that the system held by default, not that the model call failed <br>• **R3 (A2L2-12):** `FILM_ROOM_V2_MODE` cannot be a `DARK_BY_DESIGN` key |
+| Polish pass (2026-10-08) | The addendum's eight restorations, one commit each. Then the BUILD_RULES §2 review of the pass: 28 findings, 2 confirmed blocking, both fixed. One §2.3 baseline line was added. 150 mutants, all killed. Full suite 0 failing at `74259c60`. See §6; §4 now shows each restored element as matching. |
 
 ---
 
@@ -337,39 +338,34 @@ Items 6, 5 and 4 landed out of the prompt's numeric order. Each commit's suites 
 - Saved outside the repo, in the session scratchpad under `shots/final/` and `shots/mock/`.
 - Horizontal overflow: 0 px in all 12.
 - Console: one 404 for a preview-only static asset (390, Glance). It is not from the screen.
+- **Re-run for the polish pass (§6)** at `74259c60`: the same 12 shots, in the polish session's scratchpad under `shots/polish-final/`, plus the header at 1024 and the swap card and strip legend at both widths. Horizontal overflow: 0 px in all 12. Console: the same preview-only 404 (390, Glance), not from the screen.
 
 **Expected deviations (F1–F6, BA rules):**
 1. **F1:** the swap card's "Split by cause" is the sold leg's sale (recorded exit vs bar, rescore, inputs part, price part), and the fill is its own group. The mock-up has four other rows ("Scoring inputs", "Platform's delayed quote").
-2. **F3:** a held-by-default check reads "no usable model result · the system held by default" (see R2). The mock-up's rationale shows the platform's placeholder sentence, which the tape does not store.
+2. **F3:** a held-by-default check reads "no usable model result · the system held by default" (ruling R2 adopts it). The mock-up's rationale shows the platform's placeholder sentence, which the tape does not store.
 3. **F5:** Glance has the score path above the check strip and the runs list. The mock-up's Glance A has the strip only.
 4. **BA-43:** the Deep dive draws evidence markers, with an evidence coverage line and the delay sentence.
 
-**Deviations from data the tape does not carry, or numbers with no declared class (BA-42):**
+**The elements the build left out, after the polish pass** (status at `74259c60`):
 
-5. **No section counts** in headings ("Holdings 7 slots", "Swaps 3", "Checks 23 of 23", "Rationale 10"). These are screen-computed counts with no declared class. The tape's coverage notes carry what it records.
-6. **Glance score card:** no "Coverage · complete · the last recorded check · 23 of 23" line. The tape has no score coverage section. "Day change · from the battle start" omits the "(0)".
-7. **Deep dive facts:** "Change · open to close" and "Volume · session" are omitted (computed, no class), and so are session high and low (A2L1-4). The facts are: on the day, Session open, Close · the last 10-minute bar, Sector line.
-8. **Deep dive axes:** no intermediate price gridlines, no percent axis, and no intermediate time ticks (computed values). The axis labels are the series' session open and last close, and the time labels are 9:30 AM and close. The mock-up's company name ("Microsoft") is absent; the series carries no name.
-9. **Holdings coverage** reads "partial · derived from recorded values: the first and last checks' risk decisions …". The mock-up says "recorded at the start and the end". There is no stored field (BA-45).
-
-**Other deviations:**
-
-10. **Header:**
-    - no avatar;
-    - "Back" for "Battles";
-    - the subtitle is archetype and date, and omits the mock-up's "BaggerBomb · one-day battle";
-    - at 1440 the subtitle truncates ("WED, SEP 23, 20…"). The mock-up truncates its longer subtitle the same way.
-11. **The number-kinds legend** spells out the rebuilt and market sources ("rebuilt from 1-minute bars at the battle's check times", "market data · EODHD 1-minute bars, aggregated").
-12. **Check-strip legend:** the strip's legend holds the swap carets and "tap a check". The state swatches are in the runs list beneath it, one per run. The mock-up lists the six states under the strip.
-13. **Rationale entries** are fully collapsed to their label and a "Show the recorded words" control (BA-46, collapsed by default). The mock-up shows a clamped first lines plus "Read more".
-14. **Study jump chips** include Holdings and Checks. The mock-up's set starts at Swaps.
-15. **Swap cards:**
-    - "Swap · 12:45 PM" with `#swap-n` on the right; the mock-up reads "Swap 1 · 12:45 PM";
-    - the hold and swap path end values sit under the fork, not beside it;
-    - the "Deep dive · SYMBOL" links match.
-16. **Empty day:**
-    - the Study holdings reason appears both in its coverage line and in the empty card;
-    - the Glance result reads "unavailable · opponent score never recorded" above the platform's "Result: Draw." message, as the prompt asks.
+| # | Element | Mock-up | Screen now | Status |
+|---|---|---|---|---|
+| 5 | Section counts | "Holdings 7 slots", "Swaps 3", "Checks 23 of 23", "Rationale 10", chip counts | "Holdings · 7 slots", "Swaps · 3", "Checks · 23 of 23" (Glance and Study), "Rationale · 10", each plan chip's count; every count marked `derived` | **matches** (§6 item 1) |
+| 6a | Day change reference | "from the battle start (0)" | "from the battle start (0 R)" — the stored reference with its own marker | **matches** (item 3) |
+| 6b | Score card coverage line | "Coverage · complete · the last recorded check · 23 of 23" | none | deviation, kept: the tape has no score coverage section, and the prompt does not restore it |
+| 7a | "Change · open to close", "Volume · session" | both | both, computed from the symbol's own bars, marked `market` | **matches** (item 4) |
+| 7b | Session high and low | not in the mock-up's facts | none | unchanged (A2L1-4: hindsight) |
+| 8a | Chart axes | price gridlines, a price axis, a % axis, time ticks 9:30 … 3:30, close | gridlines at round % steps, the price at each (left), the % (right), ticks 9:30, 11:00, 12:30, 2:00, close; each axis captioned once with its class | **matches** (item 4). The 3:30 tick is left out: at 390 px it would print over "close". |
+| 8b | Company name | "Microsoft" | the app's directory name ("Microsoft") beside the symbol and on the chart; none for a symbol the directory does not name, or names only by its symbol (AMD) | **matches** (item 4) |
+| 9 | Holdings coverage | "recorded at the start and the end" | "partial · derived from recorded values …" | deviation, kept: no stored field (BA-45) |
+| 10 | Header | the agent's mark, "Battles", "archetype · BaggerBomb · one-day battle · date" | the cockpit's still avatar (neutral), "‹ Battles", "Trend Follower · BaggerBomb · one-day battle · Wed, Sep 23, 2026" | **matches** (item 5). On desktop the subtitle wraps between its parts instead of truncating (the mock-up cuts its year at 1440; at 1024 the cut would hide the length and the date). |
+| 11 | Number-kinds legend | short labels | the tape's own class labels, spelled out | deviation, kept; its box narrows to 340 px on desktop so the subtitle has room |
+| 12 | Check-strip legend | six state swatches, then the carets | the six swatches with the screen's words (the default hold in R2's wording), then the carets; a state outside the six that the day shows adds its own | **matches** (item 8) |
+| 13 | Rationale entries | clamped first lines, "Read more" | the hypothesis, two clamped lines, "Read more" / "Show less" | **matches** (item 6) |
+| 14 | Study jump chips | start at Swaps | include Holdings and Checks | deviation, kept |
+| 15a | Swap card title | "Swap 1 · 12:45 PM" | "Swap 1 D · 12:45 PM" — the ordinal marked `derived`; `#swap-n` carries the same n | **matches** (item 2) |
+| 15b | Path end values | beside the fork | beside the fork at desktop width, each at its end point's height; under it on the phone | **matches** (item 7) |
+| 16 | Empty day | — | unchanged | deviation, kept (as before) |
 
 ---
 
@@ -386,3 +382,167 @@ Items 6, 5 and 4 landed out of the prompt's numeric order. Each commit's suites 
 5. **The founder and the QA tester open five real battle days** in v2, across Glance, Study and Deep dive, including an earlier day of a multi-day battle and a day whose replays predate Amendment D (2026-09-21/22). Note anything that reads wrong against the tape.
 6. **`'on'` is a later founder decision,** its own PR. That step also turns around the hub-helper tripwire row in `api/cron/film-tape-flip.live.test.js:125`.
 7. **Rollback** at any step is the same one line back to `'off'` with its pin. The legacy screen is untouched.
+
+---
+
+## §6 Polish pass (Amendment E addendum, 2026-10-08)
+
+**Prompt:** "Build prompt — Film Room A2: polish pass on the draft PR (Amendment E addendum)" (Fable, 2026-10-08).
+**Branch:** `git fetch origin` first. PR #944 was open and still a draft at `d31e09cf`. The session's worktree branch (`claude/film-room-a2-polish-a24b09`, the app's name for it) was reset to `origin/claude/film-room-a2-screen` and pushed back to `claude/film-room-a2-screen` by refspec, a fast-forward. `origin/main` was still `7631c9e6`, so there was nothing to merge.
+**Fence and flags:**
+- Zero BUILD_RULES §1 edits.
+- `FILM_ROOM_V2_MODE` stays `'off'`.
+- The pass changed files only under `src/screens/filmRoomV2/`, plus one new test (`api/_utils/filmTape/screenCheckCounts.test.js`), one line in the §2.3 import baseline (`api/_utils/archetypeImportBoundaryBaseline.json`, 6.6), the Amendment E spec and this report.
+- The route, the gate, the data layer, the hub helper and the legacy screen are untouched, so the off path is still the legacy screen byte for byte. The golden suite re-ran green.
+
+### 6.1 Executive verdict
+
+| Question | Answer |
+|---|---|
+| What changed | The eight elements you asked back, under the addendum's narrowed BA-42 (R4): section counts, swap ordinals, the day change's reference, the Deep dive's computed facts, axes and company name, the header, the rationale preview, the fork's end values beside it, and the strip's six-state legend. Nothing else changed, apart from fixes to these elements that the review asked for (6.5). |
+| The rule that governs them | Every restored number is a marked number. Its class comes from its document's declaration (the day change's reference, the fork's end values) or from `SCREEN_AGGREGATE_CLASSES` (the counts, the ordinal, the change, the volume, the % axis). Chart ticks are scaffolding: no marker on the tick, and each axis names its class once, in its caption. |
+| Mutants | **150 run, 150 killed.** <br>• At `47190681` (before review): 58, one per defect class per item (6.2). Two malformed mutants (a syntax error, not a survivor) were rewritten and rerun. <br>• At `505596a7` (after the review fixes): 92 — the 57 still applicable, 13 for the review fixes, lens 2's 21 (M6 re-aimed after the column fix) and lens 1's time-tick mutant. None killed by a timeout. |
+| Review (BUILD_RULES §2; the pass alone is 15 files) | 3 lenses and 3 refuters: 28 findings. **2 confirmed BLOCKING, both fixed:** A2P1-1 ("Checks · n of m" could overstate on a day-2 tape) and A2P1-2 ("Best Buy" brought a forbidden word into reach). Refuters downgraded the two other blocking claims to backlog (A2P2-1, A2P2-2: guard gaps that predate the pass, with no wrong number shipping). **None open:** all 28 are fixed or recorded with a reason (6.5). |
+| Full suite (Linux, `TZ=UTC`, CI-shaped) | **`74259c60`:** 928 test files, **0 failing**; 19,683 tests (19,595 passed, 0 failed, 88 skipped). Private WSL clone, `--maxWorkers=2`. <br>The run before it, at `c70769a0`, failed 1 row: the §2.3 import ratchet, fixed in `74259c60` (6.6). |
+| Rules suite | **`74259c60`:** 23 files, 404 tests, all passing (Windows, Java 21, LF snapshot; WSL has no Java). No rules file changed in the pass. |
+| `lint:gate` / `vite build` | exit 0 on an LF snapshot of `74259c60` / exit 0 on `74259c60`. The lazy v2 chunk is 65.31 kB (18.09 kB gzip), up from 58.57 kB. The pushed head (this report's docs-only commit) is rebuilt from its LF archive before the push |
+| Visual check | §4 re-run: 12 shots at `74259c60`, 0 px horizontal overflow; each restored element moves from "deviation" to "matches" |
+| CI | Runs on the pushed head; its result is reported with the head SHA |
+
+### 6.2 One row per item
+
+| # | Item | Commit | Tests (rows) | Mutants |
+|---|---|---|---|---|
+| 0 | The addendum, verbatim, at the end of Amendment E (`cmp`-identical to the prompt's text) | `099adf9f` | — | — |
+| 1 | Section counts. Holdings: "· 7 slots". Swaps: "· 3". Checks: "· 23 of 23" on Glance and Study, or "n recorded". Rationale: "· 10". Each plan chip carries its count. | `60a415ea` (review fix `1bcdcf3f`, row `c70769a0`) | The model's `checkCounts` rows (writer shapes included). Glance "n of m" rows: n before m, the empty day's "0 recorded", the evaluation-entry case. Study rows: each count bound to its own list, plus a variant tape where the lists differ in length. The production table is pinned equal to the harness oracle. **Writer-built rows:** `screenCheckCounts.test.js` (5 cases). | 20 at `47190681`, all killed. These are wrong class, missing marker and wrong list for each of the six aggregates, plus the gaps rule and the guard. Re-run at `505596a7`: see 6.6. |
+| 2 | "Swap 1 · 12:45 PM": the ordinal is marked `derived` and is time order. `#swap-n` reads the same sequence. | `50e993e2` | Model: `swapOrdinals`, with time order taken over tape order and an action with no time last. Study: the ordinal and the anchor on every card; a reversed tape; the slot index stays the tape's recorded number. | 4, all killed: class, marker, tape-order list, and the anchor reading another sequence. |
+| 3 | "Day change · from the battle start (0 R)" | `e5c17264` | Glance: the reference's path, value and marker; a prior-day basis with a non-default declaration; none when the basis is unavailable. | 3, all killed: marker, path, and a class taken from a constant. |
+| 4 | Deep dive. Facts: "Change · open to close" and "Volume · session" (`market`). Axes: gridlines at round % steps, the price on the left, the % on the right, ticks 9:30 / 11:00 / 12:30 / 2:00 / close, one caption per axis. The company name from `COMPANY_NAMES`. | `bee45f5e` (review fixes `1bcdcf3f`, `505596a7`) | Model: `seriesFacts`, `pctTicks`, `fmtPercent`. Deep dive: each fact from its own series document; incomplete symbols and missing volumes; each tick at its price on the chart's own scale, each gridline at its label; each time tick at its instant; the captions' classes from their sources; the name, or the symbol alone (including "Best Buy" → BBY); the desktop minis. Screen: the sweeps' exemptions bite. | 16, all killed: the facts' class, marker and list; incomplete or missing data; the % axis class; caption missing or a constant; a tick off its gridline; the time step; the name's source; both harness exemptions widened. |
+| 5 | Header. The agent's mark is the cockpit's still `AgentPresenceMount` with no score passed, so its standing is neutral. Back label "‹ Battles". Subtitle "Trend Follower · BaggerBomb · one-day battle · Wed, Sep 23, 2026". | `b33eb0f7`, `47190681` (review fix `1bcdcf3f`; §2.3 baseline line `74259c60`) | Screen: the subtitle, separators that travel with the part after them, the mark (static, environment off, duel with no scores), the back button; `headerParts` (length source, never the one-day fallback, the 'unknown' sentinel, BaggerBomb for both agent modes). | 6 at `47190681`, all killed: back label, scores passed, reactive face, the one-day fallback, archetype precedence, the game word. The last is retired in the re-run, because the word is now constant. |
+| 6 | Rationale: the hypothesis, then a two-line clamped preview with "Read more" / "Show less", collapsed by default. | `a315b1cc` (review fix `1bcdcf3f`) | Study: every entry starts collapsed with its own words, one "Read more", opening and closing alone; words that fit get no button; the clamp style; a preview that comes to overflow after a resize gains its button, which is a disclosure (`aria-expanded`, `aria-controls`). | 2, all killed: open by default, no clamp. Review mutants: no re-measure, no `aria`. |
+| 7 | At desktop width, the hold and swap paths' end values sit beside the fork, each at its end point's height; on the phone they stay under it. | `7cdf1b53` (review fix `1bcdcf3f`) | Study at desktop: path, class and label of each end value; its height against the fork's last drawn point; the overlap spread, its order and its midpoint; a fork that can't be drawn keeps its values under it; the column is sized by its tags; the desktop Study passes all sweeps. | 4, all killed: never beside, wrong height, wrong path, no spread. |
+| 8 | The six check-state swatches under the strip, then the carets. A state outside the six adds its own swatch. | `522df7a3` | Glance: the six in order, with words and looks pinned; every pip has its swatch with the same look and words; extra states; the empty day. | 3, all killed: a constant look, extras dropped, the default hold missing. |
+
+### 6.3 The addendum's rulings, and how this pass applies them
+
+- **R1 (digits in stored notes):** unchanged. Stored notes and missing-input lists stay quotation (`Rec`) with no marker. Backlog for the cards build.
+- **R2 (held by default):** the wording stands. The new strip legend uses it for the default hold's swatch.
+- **R3 (the mode and `DARK_BY_DESIGN`):** adopted as built; nothing changed.
+- **R4(a):** `SCREEN_AGGREGATE_CLASSES` now declares eleven computed numbers; it declared one before the pass. The harness pins the addendum's classes as its own oracle, `SPEC_AGGREGATE_CLASSES`. The number sweep checks every aggregate four ways:
+  - its class and marker against that oracle;
+  - that it sits in its own site;
+  - that its text equals its computed value;
+  - that its value matches one recomputed from the documents by an independent oracle.
+  The model test pins production's table equal to the oracle.
+- **R4(b):** the sweep exempts a tick label only when both hold:
+  - it is marked `data-axis-scaffolding` inside the price chart;
+  - its axis has exactly one caption, carrying one marker of the class the axis's source declares (the series document's own declaration for the price axis; the screen's for the % axis).
+  Anything else is a stray digit. Tick labels are `aria-hidden`.
+- **R4(c):** the reference is a `TapeNum` by its path, `score.dayChange.reference`, so its marker is the tape's declaration (recorded in every written tape).
+- **R4(d):** the directory is `COMPANY_NAMES` (`src/config/stockData.js`, 140 names), the app's lookup table for company names.
+  - A name is shown only when it differs from the symbol.
+  - A name holding a forbidden word ("Best Buy") is shown as the symbol alone. This is R4(d)'s own fallback; R5's list stands.
+  - The number sweep exempts a name's digits ("Phillips 66") only as that symbol's own entry, letter for letter.
+- **R5 ("takeaway"):** no change. The word sweep's list is the prompt's, with no exemptions.
+- **R6 (rationale preview):** the clamped preview is the design of record's `Collapsible`, and it is collapsed by default.
+- **The admitted owner's first open:** accepted; nothing changed.
+
+### 6.4 Choices the prompt left open (stated, not silent)
+
+1. **"n of m".**
+   - n is the rows with a record. That is every row except deferrals and missing records: the tape's own `NON_CHECK_STATES`, the writer's "known checks".
+   - m is the minted range `passes.close` records: its `tickSeqRange` widened by the gaps it attributes to the day.
+   - The screen says "n recorded" when:
+     - there is no range;
+     - m would be smaller than n;
+     - or any row with a record has no tickSeq, i.e. a check known only by its evaluation entry, whose number may lie outside the range (review A2P1-1).
+   - Writer-built cases show the count is honest in every one (6.5).
+2. **Ordinals.** "Swap n" is time order. The `#swap-n` anchor reads the same sequence, so label and anchor cannot disagree. For every writer-written tape the anchor is unchanged, because the writer stores actions in time order.
+3. **Battle length.** It is spelled as a word ("one-day battle"), as the design of record writes it, for one to ten days, and it carries no marker.
+   - Its source is the battle's `timing.tradingDays`, or else the tape's `dayNumber` on its final day.
+   - It is never `battleDays`' one-day fallback.
+   - Refuter A2PV1-6 confirms it matches the prompt's wording. **For your ruling if you want it marked.**
+4. **The subtitle's first part is the archetype, not the agent's name**, as the prompt's subtitle reads. The agent's own name is no longer shown in v2 (A2P1-11 e). The archetype comes from `getArchetypeDisplayName` for the battle's archetype, else the tape's; the writer's `'unknown'` sentinel is omitted.
+5. **"BaggerBomb"** is shown for every battle: both agent game modes are BaggerBomb modes (`src/constants/agentGameModes.js`).
+6. **The agent's mark** is `AgentPresenceMount` at `'static'` with no scores, as ArenaHeader and CharacterAvatar mount it. Its standing is neutral, so the face carries no mood about the day. With presence off, it is CharacterAvatar's still disc.
+7. **Header layout.**
+   - On desktop the subtitle wraps between its parts rather than truncating. The design of record truncates; at 1024 that would hide the length and the date.
+   - The depth control gives way first, from 400 px down to a 280 px floor.
+   - The legend's box is 340 px.
+8. **Axes.**
+   - Gridlines at round steps of the % move from the session open, at most five across the chart.
+   - Time ticks every 90 minutes from the open, stopping 45 minutes before the close. The design of record's 3:30 tick would print over "close" at 390 px.
+   - Tick clocks drop AM/PM, as the design of record writes them, including the session open's "9:30".
+   - The 0 step's price is the record's own marked session open, placed on the axis, so it has no unmarked twin. The price gutter is 64 px.
+9. **The computed facts** show only when the series document carries them whole. A bar without a volume drops the volume; a symbol the candle pass lists as incomplete shows neither fact.
+10. **Count pills** appear where the mock-up has them:
+    - Swaps and Rationale show no "0";
+    - Holdings shows a count only when its grid is drawn;
+    - Checks always shows one.
+11. **The rationale preview** shows the hypothesis whole (the design of record's bold line) and clamps the words to two lines.
+12. **The fork's end-value column** is sized by its own tags. The fork gives way, so a long symbol or value never runs into the split.
+
+### 6.5 Review record (BUILD_RULES §2)
+
+**Setup.**
+- Three lenses ran on separate LF `git archive` snapshots of `47190681`, with node_modules linked. They were read-only on git and the shared tree, ran targeted vitest files only, and restored every mutation byte for byte (checked with `cmp`).
+  - lens 1: domain honesty;
+  - lens 2: test integrity;
+  - lens 3: wiring and layout.
+- Each lens's findings went to a refuter on a fresh snapshot, told to refute them with a concrete repro.
+- **Ids:** A2P*n*-*k* for lens findings; A2PV*n*-*k* for refuter verdicts, which reuse the lens's *k*. They never collide with the build's A2L / A2V ids.
+- **Severity** follows Amendment E's exit criterion.
+
+| id | Finding | Refuter | Disposition |
+|---|---|---|---|
+| A2P1-1 | "Checks · n of m" counted a check known only by its evaluation entry in n but not in m. A day-2 tape read "39 of 39" beside a no-record row; another read "38 of 39" against 37 records. | **CONFIRMED BLOCKING** (16 writer cases; reachable when a check's capture is skipped or times out on day 2+) | **Fixed** `1bcdcf3f`: "n recorded" whenever such a row exists. Rows: `screenCheckCounts.test.js` (case A and refuter case I), the model and the Glance. |
+| A2P1-2 | "Best Buy" (BBY) brings "best" into reach, and the harness exempted display names from the word sweep without a ruling. | **CONFIRMED** (blocking under a literal reading). BBY is outside the battle universe but reachable by a model-named plan symbol or an equipped watchlist. | **Fixed** `1bcdcf3f`: such a name shows the symbol alone, and the word-sweep exemption is gone. |
+| A2P1-3 | The strip legend's extra states share swatches with listed ones (e.g. "decision not recorded" looks like HOLD). | CONFIRMED, BACKLOG (the tones predate the pass) | Open, backlog: every such state is listed by its own words, so nothing is false. |
+| A2P1-4 | Time-tick positions unguarded. | CONFIRMED, BACKLOG | **Fixed:** a row binds each tick to its instant. |
+| A2P1-5 | "‹ Battles" goes to the dashboard. | CONFIRMED, BACKLOG | Open: the label is the mock-up's and the prompt's. **For your ruling.** |
+| A2P1-6 | (a) The length is an unmarked word. (b) The writer's `'unknown'` archetype was stated as "Unknown". | CONFIRMED, BACKLOG | (a) Recorded in 6.4 #3. (b) **Fixed** `1bcdcf3f`. |
+| A2P1-7 | The writer stores `v: 0` for a missing volume, so "Volume · session" can undercount. | CONFIRMED, BACKLOG | Open, writer backlog. The screen is faithful to the document. |
+| A2P1-8 | Some directory names are dated or are brands (RTX "Raytheon", TJX "TJ Maxx"). | CONFIRMED, BACKLOG | Open. This is the app's directory, which R4(d) names. |
+| A2P1-9 | "BaggerBomb" depended on the tape's load state. | CONFIRMED, BACKLOG | **Fixed** `1bcdcf3f`: constant for every agent battle. |
+| A2P1-10 | The phone subtitle truncates its date. | PARTLY, BACKLOG: the mock-up truncates the same way | Open; it matches the design of record. The date also shows in the pill. |
+| A2P1-11 | Behaviour changes beyond the eight items (anchor order; "not recorded" for an untimed swap; tick clocks; gutters; the agent's name; legend width; desktop wrap; the rationale toggle; chip text; `data-agg-value`; fork width; the empty-day legend; Section DOM). | CONFIRMED (spot-checked), BACKLOG | Recorded here and in 6.4. Each follows from an item or its review fix. |
+| A2P2-1 | The sweep accepted any declared aggregate name anywhere: a recorded number shown under a computed class passed. | PARTLY: the mutants reproduce. BLOCKING refuted: no shipped number has a wrong class, and the gap predates the pass (BASE-M10 survives at `d31e09cf`). | **Fixed** `1bcdcf3f`: each aggregate is checked for its site, its text against its value, and its value against an independent oracle. |
+| A2P2-2 | The "desktop … same sweeps" row swept only the Deep dive's numbers. | PARTLY: BLOCKING refuted. The row predates the pass (`746f19a9`), and the desktop depths are clean. | **Fixed** `1bcdcf3f`: every depth, all three sweeps, everything opened. |
+| A2P2-3 | The desktop Study (the fork's end tags) was never word-swept. | CONFIRMED, BACKLOG | **Fixed**: desktop Study sweeps on both days. |
+| A2P2-4 | Nothing bound "n" before "m". | CONFIRMED, BACKLOG | **Fixed**: a text row on a variant tape. |
+| A2P2-5 | A count's text was never compared with its value. | CONFIRMED, BACKLOG | **Fixed** in the sweep. |
+| A2P2-6 | Three wrong-list mutants the fixture could not tell apart. | CONFIRMED (M17 only barely live) | **Fixed**: one variant tape parts all three lists. |
+| A2P2-7 | The clamp itself was never asserted. | CONFIRMED, BACKLOG | **Fixed**: the clamp-style row. |
+| A2P2-8 | Time-tick and gridline positions unbound. | CONFIRMED, BACKLOG | **Fixed**: both rows. |
+| A2P2-9 | Desktop fork paths (no-instant replay; spread midpoint). | CONFIRMED, BACKLOG | **Fixed**: both rows. |
+| A2P2-10 | The harness's new branches had no bite rows. | CONFIRMED, BACKLOG | **Fixed**: bite rows for the site, value, text, two-marker caption, scaffolding wrapping a record, and another symbol's name. |
+| A2P3-1 | The rationale preview did not re-measure after a resize. A phone turned from landscape to portrait showed clipped words with no "Read more". | CONFIRMED, BACKLOG | **Fixed** `1bcdcf3f`: `ResizeObserver`, with a row. |
+| A2P3-2 | The fork's end column was a fixed 150 px; a long symbol or value overflowed into the split. | CONFIRMED (every desktop width), BACKLOG | **Fixed**: the column is sized by its tags. |
+| A2P3-3 | The header at 1024 squeezed the subtitle to 4 lines, with a dangling " · ". | CONFIRMED, BACKLOG | **Fixed**: the depth control gives way first, and separators travel with the part after them (2 lines at 1024). |
+| A2P3-4 | "BaggerBomb" appeared, then disappeared. | CONFIRMED, BACKLOG | **Fixed** (= A2P1-9). |
+| A2P3-5 | "Read more" carried no disclosure state. | CONFIRMED, BACKLOG | **Fixed**: `aria-expanded` and `aria-controls`. |
+| A2P3-6 | Tick labels were read aloud as a bare run. | CONFIRMED, BACKLOG | **Fixed**: `aria-hidden`. (KindMark's role-less `aria-label` predates the build's screen; backlog.) |
+| A2P3-7 | The session-open label sat on the lines. This existed at `d31e09cf`; the pass's gutter left a gap at the 0 step. | CONFIRMED, BACKLOG | **Fixed** `1bcdcf3f`: the record's open sits on the price axis at its 0 step. |
+
+**Refuted outright:** none. **Downgraded** from BLOCKING to backlog by the refuters: A2P2-1 and A2P2-2 (both fixed anyway).
+
+**Outside the pass (reported, not changed):** writer case C. When `cronState.tickSeq` is absent, the stored checks note says "their sequence numbers are among the gaps" for a number listed in neither `gaps` nor `unattributedGaps`. Per R1 the screen quotes that note verbatim. This is writer backlog.
+
+### 6.6 Verification
+
+- **Full suite** (Linux, `TZ=UTC`, CI-shaped `--maxWorkers=2`, in a private WSL clone `~/pd-a2p` used only by this pass):
+  - **`c70769a0` (the first full run): 928 test files, 1 failing row.** It was the §2.3 import-boundary ratchet (`api/_utils/archetypeRegistry.test.js`).
+    - Item 5 (`b33eb0f7`) imports `getArchetypeDisplayName` from `src/data/archetypeDisplay`, a legacy archetype table, and did not record the new importer.
+    - Every targeted run had been scoped to the screen's own suites. That is the trap the CharacterPane precedent (`0705c073`) describes.
+  - **The fix is `74259c60`:** the baseline line, per BUILD_RULES §1 (the ratchet is a separate gate; a new direct importer is recorded in the same change). The test's "import through archetypeRegistry" route serves `api/` consumers; that registry is node-only and a React screen cannot load it.
+  - **`74259c60`: 928 test files, 0 failing;** 19,683 tests (19,595 passed, 0 failed, 88 skipped). The off-path goldens (`FilmRoomRoute.golden.jsdom.test.jsx`) pass, so the off path is still byte-identical to legacy.
+- **Rules suite:** `74259c60`, 23 files, 404 tests, all passing. This is the Firestore emulator on Windows (Java 21, LF `git archive` snapshot); WSL has no Java. `firestore.rules` and `test/rules/` are unchanged by the pass.
+- **`lint:gate`:** exit 0 on an LF snapshot of `74259c60`.
+- **`vite build`:** exit 0 on `74259c60`.
+  - `FilmRoomScreenV2` is still its own lazy chunk: 65.31 kB (18.09 kB gzip), up from 58.57 kB (15.88 kB).
+  - The main chunk grew by 3.99 kB: the kit, model and copy that the route's fallback imports.
+  - AgentPresence, `archetypeDisplay` and `stockData` were already in the main chunk (lens 3 checked this).
+  - The pushed head, this report's docs-only commit, is rebuilt from its own LF archive before the push.
+- **Mutants:** 58 run at `47190681` and 92 at `505596a7`, all killed (6.1). Each ran in its own LF snapshot and was restored byte for byte (`cmp`).
+- **Visual check:** §4, re-run at `74259c60`. Also checked: the header at 1024 and 1440 (subtitle on 2 lines; no overflow), the swap card and the strip legend at both widths, and the rationale preview opening and closing.
+- **CI:** runs on the pushed head. Its result is reported with the head SHA. The PR stays a draft.
