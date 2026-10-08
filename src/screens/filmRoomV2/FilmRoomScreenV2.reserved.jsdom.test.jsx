@@ -7,7 +7,10 @@
 // case", "Your call" and "Receipt" content, and every swap card addressable
 // as #swap-n. No later-release content ships in A2.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// Whole-screen mounts: the sibling suites' bound, so a busy machine cannot trip vitest's default 5 s (review A2V4-14).
+vi.setConfig({ testTimeout: 30_000 });
 import React from 'react';
 import FilmRoomScreenV2 from './FilmRoomScreenV2';
 import { mounter, sep23Tape, sep23Series, emptyTape, emptySeries, battleOf, readersOf, NOW } from './__fixtures__/filmRoomHarness';

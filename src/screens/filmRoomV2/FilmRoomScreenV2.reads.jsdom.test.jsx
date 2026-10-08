@@ -10,6 +10,9 @@
 // screen with recording readers.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// Whole-screen mounts with a flush that may poll up to 5 s: the sibling suites' bound (review A2V4-14).
+vi.setConfig({ testTimeout: 30_000 });
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import sep23Tape from './__fixtures__/sep23.tape.json';
