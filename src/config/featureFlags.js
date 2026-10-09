@@ -3067,9 +3067,11 @@ export function isShadowCpuQuoteIntegrityOn() {
  * FLIP: its own founder PR, never a build PR, after the hypothesisVersions
  * collection-group index and the researchWork composite (firestore.indexes.json)
  * and the rules blocks are deployed (the P2 report's flip checklist covers both
- * builds). The flip moves the pin in src/config/hypothesisRecordsFlags.test.js
- * to true and drops the DARK_BY_DESIGN entry in src/config/flagPinGuard.test.js
- * in the same commit (BUILD_RULES §2). Rollback is the same line back to false:
+ * builds). The flip is FOUR edits in one commit (BUILD_RULES §2; dry-run in the
+ * P1b report §10): this line; the pin in src/config/hypothesisRecordsFlags.test.js
+ * to true; that file's registration row turned around to assert the
+ * DARK_BY_DESIGN entry is gone; and the entry dropped in
+ * src/config/flagPinGuard.test.js. Rollback is the same line back to false:
  * nothing new is read or written; what was written stays — the versions
  * (still owner-readable under the rules, read by no app code) and the two
  * pointer fields on the lists that got one, which the existing owner GETs
