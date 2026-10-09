@@ -22,15 +22,21 @@ import {
 } from './swapIdentity.js';
 import { SwapRefusalError, SWAP_REFUSAL_REASONS } from './agentSwapExecution.js';
 import { SWAP_IDENTITY_MODE } from '../../src/config/featureFlags.js';
+// Table G (V1.4, enforce readiness): the client labels for an outcome that
+// could not be confirmed live in the zero-import decision record the client
+// renders from; their spec rows are checked here beside table F's, with the
+// same parser and the same §E sweep.
+import { UNCONFIRMED_LABEL, GUARDRAIL_FORCED_UNCONFIRMED_LABEL } from '../../src/data/decisionRecord.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TABLES = readFileSync(resolve(HERE, '../../docs/specs/MODE_TRUTH_LANGUAGE_TABLES_V1.md'), 'utf8').replace(/\r\n/g, '\n');
 
-/** Table F's rows: { wire-value cell → the quoted player line }. */
-function tableF() {
-  const start = TABLES.indexOf('## F. Execution refusals');
+/** One table's rows: { first cell → the quoted line }, from its heading to the next `## ` heading (or the end). */
+function tableRows(heading) {
+  const start = TABLES.indexOf(heading);
   expect(start).toBeGreaterThan(0);
-  const section = TABLES.slice(start);
+  const next = TABLES.indexOf('\n## ', start + heading.length);
+  const section = TABLES.slice(start, next < 0 ? undefined : next);
   const rows = {};
   for (const line of section.split('\n')) {
     const m = /^\| (.+?) \| "(.+)" \|$/.exec(line);
@@ -38,6 +44,10 @@ function tableF() {
   }
   return rows;
 }
+/** Table F's rows: { wire-value cell → the quoted player line } — table F's own section only (V1.4 added G after it). */
+const tableF = () => tableRows('## F. Execution refusals');
+/** Table G's rows (V1.4): { record cell → the quoted client label }. */
+const tableG = () => tableRows('## G. Unconfirmed execution outcomes');
 
 const VERIFICATION = Object.freeze({
   verificationId: 'b1:eval_7:verify', mode: 'enforce', verdict: 'mismatch', basis: 'symbol_and_entry',
@@ -90,13 +100,43 @@ describe('table F, verbatim (V1.1, founder decision D5; V1.2, founder Q2 on PR #
     expect(TABLES).toContain('**V1.3 — 8 Oct 2026:** the approved-meeting failure row added');
     expect(TABLES).toContain('**V1.3 — 8 Oct 2026:** table F gains the approved-meeting failure line');
     expect(TABLES).toContain('## F. Execution refusals (V1.1, V1.2 — 7 Oct 2026; V1.3 — 8 Oct 2026)');
-    const order = ['## A.', '## B.', '## C.', '## D.', '## E.', '## F.'].map((h) => TABLES.indexOf(h));
+    const order = ['## A.', '## B.', '## C.', '## D.', '## E.', '## F.', '## G.'].map((h) => TABLES.indexOf(h));
     expect(order.every((i) => i > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 });
 
-describe('table E — no forbidden vocabulary in table F, filled or not', () => {
+describe('table G, verbatim (V1.4 — founder decision Q3, option (a); enforce readiness)', () => {
+  const G = tableG();
+
+  it('the spec has exactly the two client labels in table G, and table F did not absorb them', () => {
+    expect(Object.keys(G)).toEqual([
+      "`executionOutcome: 'unknown'` (the agent's swap)",
+      "`executionOutcome: 'unknown'` (a guardrail-forced swap)",
+    ]);
+    expect(Object.values(tableF())).not.toContain(UNCONFIRMED_LABEL);
+    expect(Object.values(tableF())).not.toContain(GUARDRAIL_FORCED_UNCONFIRMED_LABEL);
+  });
+
+  it('each shipped label equals its table row byte for byte', () => {
+    expect(UNCONFIRMED_LABEL).toBe(G["`executionOutcome: 'unknown'` (the agent's swap)"]);
+    expect(GUARDRAIL_FORCED_UNCONFIRMED_LABEL).toBe(G["`executionOutcome: 'unknown'` (a guardrail-forced swap)"]);
+    expect(UNCONFIRMED_LABEL).toBe('Argued for a swap · its outcome could not be confirmed');
+    expect(GUARDRAIL_FORCED_UNCONFIRMED_LABEL).toBe('A guardrail called for a swap · its outcome could not be confirmed');
+  });
+
+  it('the V1.4 note is dated in the header, on the table and in the footer; A–F keep their headings', () => {
+    expect(TABLES).toContain('**V1.4 — 8 Oct 2026:** table G added — the client labels for an execution outcome that could not be confirmed');
+    expect(TABLES).toContain('**V1.4 — 8 Oct 2026:** table G added (founder decision Q3, option (a)');
+    expect(TABLES).toContain('V1.4 — 8 Oct 2026: table G, the unconfirmed-outcome client labels (founder decision Q3, option (a)).*');
+    expect(TABLES).toContain('## G. Unconfirmed execution outcomes — client labels (V1.4 — 8 Oct 2026)');
+    for (const h of ['## A. Protective-action outcomes', '## B. Intent', '## C. Hypothesis lifecycle', '## D. Evidence availability', '## E. Forbidden vocabulary', '## F. Execution refusals']) {
+      expect(TABLES).toContain(h);
+    }
+  });
+});
+
+describe('table E — no forbidden vocabulary in table F (filled or not) or table G', () => {
   const FORBIDDEN = [
     /\bhedge/i, /\btrim/i, /\bpartial/i, /\bscale (in|out)\b/i, /take some off/i, /cash position/i, /move to cash/i,
     /sit in cash/i, /wait for the market to/i, /probably|likely fine/i, /guaranteed/i, /can'?t lose/i, /chose to hold/i,
@@ -112,7 +152,12 @@ describe('table E — no forbidden vocabulary in table F, filled or not', () => 
       // V1.3 — the approved-meeting failure line, template and rendering.
       MEETING_LEG_FAILED_LINE,
       meetingLegFailedLine({ symbol: 'KO', symbolIn: 'AMD' }),
+      // V1.4 — table G's two client labels, and its rows as the spec states them.
+      UNCONFIRMED_LABEL,
+      GUARDRAIL_FORCED_UNCONFIRMED_LABEL,
+      ...Object.values(tableG()),
     ];
+    expect(all).toHaveLength(14);
     const hits = all.flatMap((s) => FORBIDDEN.filter((re) => re.test(s)).map((re) => `${re} in "${s}"`));
     expect(hits).toEqual([]);
   });

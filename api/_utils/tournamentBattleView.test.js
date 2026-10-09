@@ -209,3 +209,25 @@ describe('pickCurrentBattlesByOwner', () => {
     expect(Object.keys(out).sort()).toEqual(['o1', 'o2']);
   });
 });
+
+// Enforce readiness (table G, V1.4; review ER4-3): the typed marker that a swap's
+// outcome could not be confirmed is WHAT, not WHY — a spectator's pane drops a
+// marked beat exactly as the owner's does, so the projection must carry it.
+describe('enforce readiness — the public statusFeed carries the unconfirmed-outcome marker', () => {
+  it('kept when present, absent when not; still no attribution', () => {
+    const battle = {
+      id: 'b', ownerId: 'owner', status: 'active',
+      statusFeed: [
+        { timestamp: 't1', message: null, action: 'risk_swap_failed', source: 'risk_manager', triggeredBy: 'risk_bust', executionOutcome: 'unknown', symbolOut: 'KO', symbolIn: 'AMD' },
+        { timestamp: 't2', message: 'Swapped OLD → NVDA', action: 'swap', source: 'haiku', symbolOut: 'OLD', symbolIn: 'NVDA' },
+      ],
+    };
+    const projected = projectTournamentBattle(battle, { isOwner: false });
+    expect(projected.statusFeed[0]).toEqual({ timestamp: 't1', message: null, action: 'risk_swap_failed', symbolOut: 'KO', symbolIn: 'AMD', executionOutcome: 'unknown' });
+    expect(projected.statusFeed[1]).not.toHaveProperty('executionOutcome');
+    for (const e of projected.statusFeed) {
+      expect(e).not.toHaveProperty('source');
+      expect(e).not.toHaveProperty('triggeredBy');
+    }
+  });
+});

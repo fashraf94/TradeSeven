@@ -104,17 +104,20 @@ describe('proposalDescriptiveMetadata', () => {
     });
     // Integrity follow-up 2 (Q4): the stored `entryMode` is never read — the
     // row's mode is the one that governed (the caller's LAUNCH_EXECUTION_MODE).
+    // Enforce readiness (Q4): nor the stored `entryPreset` — the row's preset is
+    // the one that governed (the caller's presetKeyOf(battle.strategyPreset)).
     expect(out).toEqual({
       trigger: 't', rationale: 'r'.repeat(CLIENT_TEXT_MAX), hypothesis: null, entryRegime: 'trending', entryMarketPosture: 'risk_on', swapMotive: 'conviction',
-      entryPreset: 'aggressive',
       trade_reasoning: { thesis: 't', strategy: 's', indicators: ['a', 'b'], citedRules: ['C1'] },
     });
     expect(out).not.toHaveProperty('entryMode');
+    expect(out).not.toHaveProperty('entryPreset');
   });
 
-  it('an absent key stays absent; an empty or non-string preset/mode does not override the caller\'s floor', () => {
+  it('an absent key stays absent; a stored preset/mode — empty, non-string or well formed — never overrides the caller\'s floor', () => {
     expect(proposalDescriptiveMetadata({ evaluationMetadata: {} })).toEqual({});
     expect(proposalDescriptiveMetadata({ evaluationMetadata: { entryPreset: '', entryMode: 7 } })).toEqual({});
+    expect(proposalDescriptiveMetadata({ evaluationMetadata: { entryPreset: 'defensive', entryMode: 'copilot' } })).toEqual({});
     expect(proposalDescriptiveMetadata({})).toEqual({});
     expect(proposalDescriptiveMetadata(null)).toEqual({});
     expect(proposalDescriptiveMetadata({ evaluationMetadata: [1, 2] })).toEqual({});

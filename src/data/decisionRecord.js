@@ -134,6 +134,28 @@ export function swapDidNotGoThrough(evaluation) {
   return typeof first === 'string' && first.startsWith(SWAP_FAILED_PREFIX);
 }
 
+/// ── An outcome that could not be confirmed (table G, V1.4) ──────────────────
+// docs/specs/MODE_TRUTH_LANGUAGE_TABLES_V1.md table G (founder decision Q3,
+// option (a), 8 Oct 2026 — enforce readiness). The cron marks a record whose
+// executor THREW and whose fresh read of the battle then failed (integrity
+// follow-up 2, Part D): whether the swap landed is not known, and the record
+// claims neither. A model-route entry so marked is a downgraded HOLD WITHOUT
+// the thrown-swap prefix, so before table G it fell to the guardrail label
+// ("held by a guardrail") — or, guardrail-forced, to the fifth state's "it did
+// not go through". Neither is true of it. The selector checks the marker
+// before every decision state, so no decision label can render for it (only
+// the absence of an entry for the check comes first; a guardrail-forced
+// marked swap is read ahead of the engine-outage line too — selectWhyState.js).
+//
+// The LABELS live here, with the other states. The marker's value and the
+// record-shape predicates live in src/data/executionOutcome.js: its wire value
+// is a resolver word this vocabulary module may not carry (deskHonesty.test.js).
+
+/** Table G: the agent argued for the swap; its outcome could not be confirmed. */
+export const UNCONFIRMED_LABEL = 'Argued for a swap · its outcome could not be confirmed';
+/** Table G: a guardrail forced the swap (the D-70 gate); its outcome could not be confirmed. */
+export const GUARDRAIL_FORCED_UNCONFIRMED_LABEL = 'A guardrail called for a swap · its outcome could not be confirmed';
+
 /** A tier key as the word a player reads on the tier header. */
 export function tierLabel(tier) {
   if (tier === 'star') return 'Star';

@@ -64,8 +64,21 @@ import {
   displayHypothesis,
   renderHypothesis,
   renderMotive,
+  UNCONFIRMED_LABEL,
+  GUARDRAIL_FORCED_UNCONFIRMED_LABEL,
 } from './decisionRecord.js';
+// Table G's marker, as data (its own zero-import module — see its header).
+import {
+  EXECUTION_OUTCOME_UNKNOWN,
+  executionOutcomeUnconfirmed,
+  RISK_SWAP_FAILED_ACTION,
+  feedBeatUnconfirmed,
+} from './executionOutcome.js';
 import { BATTLE_VIEW_COPY } from '../screens/battleView/battleViewCopy';
+// Table G (V1.4): the server's marker value, read from the module that writes it
+// (zero product imports — landedTrade.js), so the two constants cannot drift.
+import { EXECUTION_OUTCOME_UNKNOWN as SERVER_OUTCOME_UNKNOWN } from '../../api/_utils/landedTrade.js';
+import { projectTournamentBattle } from '../../api/_utils/tournamentBattleView.js';
 import * as whyState from '../screens/battleView/selectWhyState';
 import * as deployPlan from '../screens/battleView/selectDeployPlan';
 
@@ -361,5 +374,77 @@ describe('decisionRecord — the hypothesis field (D-99 / §3.2a)', () => {
     expect(renderMotive(`Guardrail override (guardrail_stopLoss): ${status}`)).toBe(status);
     expect(renderMotive('Guardrail override (guardrail_max_sector_weight): Sector cap reached on energy.'))
       .toBe('Guardrail override: Sector cap reached on energy.');
+  });
+});
+
+// ── Table G (V1.4) — the unconfirmed-outcome vocabulary ─────────────────────
+describe('decisionRecord — table G (V1.4): an outcome that could not be confirmed', () => {
+  it('the marker module is zero-import and Node-clean like this one, and its value never enters the vocabulary module (deskHonesty bans the word there)', () => {
+    const source = read('src/data/executionOutcome.js');
+    expect(source).not.toMatch(/^\s*import\s/m);
+    expect(read('src/data/decisionRecord.js')).not.toContain("= 'unknown'");
+  });
+
+  it('the marker is the server’s own value (api/_utils/landedTrade.js), and the two labels are these bytes', () => {
+    expect(EXECUTION_OUTCOME_UNKNOWN).toBe(SERVER_OUTCOME_UNKNOWN);
+    expect(EXECUTION_OUTCOME_UNKNOWN).toBe('unknown');
+    expect(UNCONFIRMED_LABEL).toBe('Argued for a swap · its outcome could not be confirmed');
+    expect(GUARDRAIL_FORCED_UNCONFIRMED_LABEL).toBe('A guardrail called for a swap · its outcome could not be confirmed');
+    expect(BATTLE_VIEW_COPY.unconfirmedLabel).toBe(UNCONFIRMED_LABEL);
+    expect(BATTLE_VIEW_COPY.guardrailForcedUnconfirmedLabel).toBe(GUARDRAIL_FORCED_UNCONFIRMED_LABEL);
+  });
+
+  it('battleViewCopy re-exposes the table G labels, never re-declares them (one source)', () => {
+    const copySource = read('src/screens/battleView/battleViewCopy.js');
+    expect(copySource).not.toContain('its outcome could not be confirmed');
+    expect(copySource).toContain('unconfirmedLabel: UNCONFIRMED_LABEL');
+    expect(copySource).toContain('guardrailForcedUnconfirmedLabel: GUARDRAIL_FORCED_UNCONFIRMED_LABEL');
+  });
+
+  it('executionOutcomeUnconfirmed: the exact marker only', () => {
+    expect(executionOutcomeUnconfirmed({ executionOutcome: 'unknown' })).toBe(true);
+    for (const v of [undefined, null, 'not_run', 'not_landed', 'Unknown', ' unknown', 1, true, {}]) {
+      expect(executionOutcomeUnconfirmed({ executionOutcome: v }), String(v)).toBe(false);
+    }
+    expect(executionOutcomeUnconfirmed(null)).toBe(false);
+    expect(executionOutcomeUnconfirmed(undefined)).toBe(false);
+    expect(executionOutcomeUnconfirmed('unknown')).toBe(false);
+  });
+
+  it('feedBeatUnconfirmed: the marker, or (on a copy that dropped it) the line-less `risk_swap_failed` shape — words or none', () => {
+    const riskUnknown = { action: 'risk_swap_failed', message: null, executionOutcome: 'unknown', symbolOut: 'KO', symbolIn: 'AMD' };
+    const riskFailed = { action: 'risk_swap_failed', message: 'Risk exit of KO failed: quote unavailable', symbolOut: 'KO' };
+    const modelHold = { action: 'hold', message: 'Rotating KO into AMD.', executionOutcome: 'unknown', source: 'haiku' };
+    const guardrailBeat = { action: 'guardrail_forced_swap', message: 'Guardrail override: stop-loss … Forcing exit → AMD.', executionOutcome: 'unknown', source: 'guardrail' };
+    const plainHold = { action: 'hold', message: 'Holding.' };
+    const swap = { action: 'swap', message: null, symbolOut: 'KO', symbolIn: 'AMD' }; // a legal swap beat may carry no message
+    expect(RISK_SWAP_FAILED_ACTION).toBe('risk_swap_failed');
+    expect([riskUnknown, riskFailed, modelHold, guardrailBeat, plainHold, swap].map(feedBeatUnconfirmed)).toEqual([true, false, true, true, false, false]);
+    // A copy that dropped the marker: the line-less risk beat is still recognised by its shape
+    // (blank / whitespace message = no line); a worded beat without the marker is not.
+    const { executionOutcome: _drop, ...stripped } = riskUnknown;
+    expect(feedBeatUnconfirmed(stripped)).toBe(true);
+    expect(feedBeatUnconfirmed({ ...stripped, message: '   ' })).toBe(true);
+    expect(feedBeatUnconfirmed({ ...stripped, message: 'Risk exit of KO failed: x' })).toBe(false);
+    for (const v of [null, undefined, 'x', 3]) expect(feedBeatUnconfirmed(v)).toBe(false);
+    // The spectator's copy (the real projection) keeps the marker since enforce readiness (review ER4-3).
+    const projected = projectTournamentBattle({ status: 'active', ownerId: 'owner', statusFeed: [riskUnknown, riskFailed, modelHold, guardrailBeat] }, { isOwner: false });
+    expect(projected.statusFeed.map((e) => e.executionOutcome ?? null)).toEqual(['unknown', null, 'unknown', 'unknown']);
+    expect(projected.statusFeed.map(feedBeatUnconfirmed)).toEqual([true, false, true, true]);
+    expect(projected.statusFeed[2]).not.toHaveProperty('source');
+  });
+
+  it('TRIPWIRE — the cron writes a message-less `risk_swap_failed` beat ONLY for the marker (both writers), and stamps the marker on the model route’s own status beat (read from its source)', () => {
+    const cron = read('api/cron/agent-evaluate.js');
+    // The two writers of the action, each nulling its line on the marker alone.
+    expect(cron.match(/action: 'risk_swap_failed'/g)).toHaveLength(2);
+    expect(cron).toContain('message: riskOutcomeUnknown ? null : `Risk exit of ${score.symbol} failed: ');
+    expect(cron).toContain('message: passOutcomeUnknown ? null : `Guardrail exit failed during gameplan suppression: ');
+    expect(cron).toContain('? { executionOutcome: EXECUTION_OUTCOME_UNKNOWN }');
+    // Enforce readiness: the model route's own status beat carries the entry's marker.
+    // …and on the guardrail's own beat of the same check (review ERV4-1): two stamps.
+    expect(cron.split('...(executionOutcome ? { executionOutcome } : {}),')).toHaveLength(3);
+    // No other beat writes a null message literal.
+    expect(cron.match(/message: null/g) ?? []).toEqual([]);
   });
 });

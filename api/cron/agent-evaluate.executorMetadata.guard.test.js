@@ -86,7 +86,10 @@ vi.mock('../_utils/agentSwapExecution.js', async (importOriginal) => {
     executeSwapServer: async (...args) => {
       const { fn, line } = callerOf(new Error().stack);
       exec.calls.push({ site: fn, line, args: deepClone(args.slice(3)) });
-      return runReal(...args);
+      const result = await runReal(...args);
+      // Enforce readiness (review ER1-1): a hook that writes the store between calls (args[0] is the db).
+      if (typeof exec.afterCall === 'function') exec.afterCall(args[0]);
+      return result;
     },
   };
 });
@@ -138,17 +141,25 @@ function ownerWritableBattleFields() {
  * table; what flows on from it — risk verdicts, trigger types — is the server's
  * own vocabulary. Since integrity follow-up 2 the cron hands it
  * `presetKeyOf(battle.strategyPreset)` — an own key of the table, else
- * 'balanced' — so an inherited name like 'constructor' no longer throws.)
+ * 'balanced' — so an inherited name like 'constructor' no longer throws.
+ * `presetKeyOf` is a lookup itself: what it returns is one of the server
+ * table's own keys, never the owner's string — the value every trade row's
+ * `entryPreset` carries since enforce readiness, founder Q4.)
  */
-const SERVER_LOOKUPS = ['findPortfolioSlot', 'findBenchAsset', 'fetchPricesForProposal', 'serverProposalEvaluationId', 'serverProposalDecision', 'serverTradeId', 'getPresetConfig'];
+const SERVER_LOOKUPS = ['findPortfolioSlot', 'findBenchAsset', 'fetchPricesForProposal', 'serverProposalEvaluationId', 'serverProposalDecision', 'serverTradeId', 'getPresetConfig', 'presetKeyOf'];
 /** The text sanitizers (a capped string, or nothing). */
 const TEXT_SANITIZERS = ['clientText', 'clientToken', 'proposalDescriptiveMetadata'];
 /** P6's belief sanitizers (expectedOutOfStored type-checks a stored belief). */
 const BELIEF_SANITIZERS = ['expectedOutOfStored', 'expectedOutOfPosition'];
 /** Reviewed helpers that may receive the whole battle (each reads server fields only). */
 const BATTLE_HELPERS = ['desiredTempoOf'];
-/** Metadata keys that must hold the server's own value — never text from an owner-writable record, not even capped. */
-const SERVER_ONLY_KEYS = ['id', 'action', 'evaluationId', 'tradingDay', 'entryConviction', 'exitReason', 'source', 'archetype', 'hftKnobsSource', 'swapProvenance'];
+/**
+ * Metadata keys that must hold the server's own value — never text from an
+ * owner-writable record, not even capped. `entryPreset` joined at enforce
+ * readiness (founder Q4): the preset that governed, `presetKeyOf(…)`, at every
+ * call — a capped owner string (`clientToken(battle.strategyPreset)`) now fails.
+ */
+const SERVER_ONLY_KEYS = ['id', 'action', 'evaluationId', 'tradingDay', 'entryConviction', 'entryPreset', 'exitReason', 'source', 'archetype', 'hftKnobsSource', 'swapProvenance'];
 /** The builders a metadata object may spread. */
 const METADATA_SPREADS = ['buildSwapReceiptSource', 'buildSwapProvenance', 'proposalDescriptiveMetadata'];
 
@@ -436,6 +447,14 @@ describe('STATIC — every production executor call builds its metadata from the
       expect(p.join('\n')).toMatch(/spread of a non-builder/);
     });
 
+    it('enforce readiness (Q4): the preset is the governing key — the owner\u2019s capped string bites, presetKeyOf is clean', () => {
+      const [capped, governing] = check(`
+        ${CALL(`executorMetadata({ id: 'x', entryPreset: clientToken(battle.strategyPreset) || 'balanced' })`)}
+        ${CALL(`executorMetadata({ id: 'y', entryPreset: presetKeyOf(battle.strategyPreset) })`)}`);
+      expect(capped.join('\n')).toMatch(/entryPreset reads battle\.strategyPreset/);
+      expect(governing).toEqual([]);
+    });
+
     it('an alias, destructuring, a computed member, a let reassignment, a for-of leg, an unreviewed helper (I4-2)', () => {
       const [p] = check(`
         const b = battle;
@@ -491,7 +510,11 @@ function plantedBattle(overrides = {}) {
     executionMode: `${SYM}_MODE`,
     pendingProposal: plantedProposal(),
     gameplanMeeting: { id: ID, status: 'rejected', diagnosis: DESC.repeat(600), lockedPoints: N, expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [plantedLeg('KO', 'AMD')] },
-    strategyPreset: DESC.repeat(40),
+    // A STRING carrying the symbol sentinel (enforce readiness, founder Q4): the
+    // row's preset is the one that GOVERNED — `presetKeyOf` reads an unknown
+    // string as 'balanced' — so a caller that stamped the owner's capped
+    // string again would carry the sentinel onto its row, and plantedIn fails.
+    strategyPreset: `${SYM}_PRESET`,
     battleLedger: [{ type: 'debate', targetSymbol: SYM, lockedPoints: N, id: ID }],
     dailyGrades: { '2026-09-09': { trades: [{ tradeIndex: N, grade: 'A', symbolOut: SYM }] } },
     feedBookmarks: [ID],
@@ -503,6 +526,7 @@ function plantedBattle(overrides = {}) {
 const plantedMetadata = () => ({
   lockedPoints: N, entryPrice: N, exitPrice: N, lockedGainPct: N, symbolOut: SYM, symbolIn: SYM, swapDay: N, tradingDay: N,
   entryMode: `${SYM}_MODE`, // review K4-1: the stored mode never reaches a row (proposalDescriptiveMetadata drops it)
+  entryPreset: `${SYM}_PRESET`, // enforce readiness (Q4): nor the stored preset — C3 / C4 stamp the governing one
   swappedOutAt: ID, evaluationId: ID, id: ID, entryConviction: N, source: ID, exitReason: ID, archetype: ID, hftKnobsSource: ID,
   swapProvenance: { dialBandVersion: N }, verification: { verificationId: ID, mode: 'shadow' }, snapshot: { n: N },
   rationale: DESC.repeat(600), hypothesis: DESC, trigger: DESC, entryRegime: DESC.repeat(40), swapMotive: DESC,
@@ -551,6 +575,7 @@ beforeEach(() => {
   authority.mode = 'autopilot';
   flags.swapIdentity = 'off';
   exec.calls = [];
+  exec.afterCall = null;
   guardrailHook.result = null;
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -567,23 +592,24 @@ function bustingPrices() {
 
 /** Each caller, the cron function that must make its call, and a test that the call is that caller's. */
 const CALLERS = [
-  { name: 'C1 risk loop', site: 'processAgentBattle', is: (m) => /^risk_/.test(m.evaluationId), run: () => runTick({ battle: plantedBattle(), prices: bustingPrices() }) },
-  { name: 'C2 model route', site: 'processAgentBattle', is: (m) => /^eval_/.test(m.evaluationId), run: () => runTick({ battle: plantedBattle(), result: makeSwapResult() }) },
-  { name: 'C3 approved proposal (dormant, mode mocked copilot)', site: 'handlePendingProposal', dormant: true, is: () => true, after: (s) => s.proposalHistory.at(-1)?.resolution === 'approved', run: () => runTick({ battle: plantedBattle({ pendingProposal: plantedProposal() }) }) },
-  { name: 'C4 expired co-pilot proposal (dormant, mode mocked copilot)', site: 'handlePendingProposal', dormant: true, is: () => true, after: (s) => s.proposalHistory.at(-1)?.resolution === 'auto_executed', run: () => runTick({ battle: plantedBattle({ pendingProposal: plantedProposal({ resolvedAt: null, resolution: null }) }) }) },
+  { name: 'C1 risk loop', site: 'processAgentBattle', is: (m) => /^risk_/.test(m.evaluationId), run: (extra = {}) => runTick({ battle: plantedBattle(extra), prices: bustingPrices() }) },
+  { name: 'C2 model route', site: 'processAgentBattle', is: (m) => /^eval_/.test(m.evaluationId), run: (extra = {}) => runTick({ battle: plantedBattle(extra), result: makeSwapResult() }) },
+  { name: 'C3 approved proposal (dormant, mode mocked copilot)', site: 'handlePendingProposal', dormant: true, is: () => true, after: (s) => s.proposalHistory.at(-1)?.resolution === 'approved', run: (extra = {}) => runTick({ battle: plantedBattle({ pendingProposal: plantedProposal(), ...extra }) }) },
+  { name: 'C4 expired co-pilot proposal (dormant, mode mocked copilot)', site: 'handlePendingProposal', dormant: true, is: () => true, after: (s) => s.proposalHistory.at(-1)?.resolution === 'auto_executed', run: (extra = {}) => runTick({ battle: plantedBattle({ pendingProposal: plantedProposal({ resolvedAt: null, resolution: null }), ...extra }) }) },
   {
     name: 'C5 suppression pass', site: 'runSuppressionDeterministicPass', is: () => true,
-    run: () => {
+    run: (extra = {}) => {
       guardrailHook.result = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_stopLoss', statusMessage: 'Stop hit on KO.', overrides: [] };
       // Integrity follow-up 2 (Part A): the meeting the SERVER created (its copy
       // holds the one leg it proposed), every other field of it then planted.
       return runTick({ battle: plantedBattle({
         ...serverMeetingOverrides({ id: ID, status: 'pending', diagnosis: DESC, expiresAt: '2026-09-09T23:00:00.000Z', suggestedSwaps: [plantedLeg('KO', 'AMD')] }, { legs: SERVER_LEGS }),
         agentContext: { ...makeTickBattle().agentContext, deployedGuardrails: [{ type: 'stopLoss', value: 1, unit: '%', enforcement: 'hard' }] },
+        ...extra,
       }) });
     },
   },
-  { name: 'C6 approved meeting', site: 'handleGameplanMeeting', is: () => true, run: () => runTick({ battle: plantedBattle(serverMeetingOverrides({ id: ID, status: 'approved', diagnosis: DESC, expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [plantedLeg('KO', 'AMD')] }, { legs: SERVER_LEGS })) }) },
+  { name: 'C6 approved meeting', site: 'handleGameplanMeeting', is: () => true, run: (extra = {}) => runTick({ battle: plantedBattle({ ...serverMeetingOverrides({ id: ID, status: 'approved', diagnosis: DESC, expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [plantedLeg('KO', 'AMD')] }, { legs: SERVER_LEGS }), ...extra }) }) },
 ];
 
 describe('BEHAVIOURAL — every owner-writable field planted; the six callers through processAgentBattle at off, shadow and enforce', () => {
@@ -612,7 +638,23 @@ describe('BEHAVIOURAL — every owner-writable field planted; the six callers th
           if (mode !== 'off') expect(row.verification?.mode, caller.name).toBe(mode);
           // Integrity follow-up 2 (Q4): the mode that GOVERNED — never the planted string (review K4-1).
           expect(row.entryMode, caller.name).toBe(caller.dormant ? 'copilot' : 'autopilot');
+          // Enforce readiness (Q4): the preset that GOVERNED — the planted string is no table key, so 'balanced'.
+          expect(row.entryPreset, caller.name).toBe('balanced');
         }
+      });
+    }
+  }
+
+  // Enforce readiness (founder Q4) — acceptance 4, the other half: a
+  // well-formed preset is the one that governed, so its rows are unchanged —
+  // each caller stamps exactly the battle's own preset key.
+  for (const preset of ['aggressive', 'defensive']) {
+    for (const caller of CALLERS) {
+      it(`a well-formed preset (${preset}) · ${caller.name}: the row's entryPreset is the battle's own key, as before`, async () => {
+        if (caller.dormant) authority.mode = 'copilot';
+        const { stored } = await caller.run({ strategyPreset: preset });
+        expect(stored.trades.length, `${caller.name}: nothing committed`).toBeGreaterThan(0);
+        for (const row of stored.trades) expect(row.entryPreset, caller.name).toBe(preset);
       });
     }
   }
@@ -628,6 +670,44 @@ describe('BEHAVIOURAL — every owner-writable field planted; the six callers th
       for (const c of exec.calls) if (c.site === caller.site && caller.is(c.args[5])) hit.add(c.line);
     }
     expect([...hit].sort((a, b) => a - b)).toEqual(CALLS.map((c) => c.line).sort((a, b) => a - b));
+  });
+
+  it('enforce readiness (review ER1-1): the preset is resolved ONCE — an owner\u2019s mid-tick change never relabels a later row', async () => {
+    // Two risk exits under 'defensive' (KO, then PG); the owner switches the
+    // battle to 'aggressive' as soon as the first lands. The second exit was
+    // decided on defensive's verdict (the check's presetConfig), so its row
+    // says so — before the fix it read the refreshed 'aggressive'.
+    let flipped = false;
+    exec.afterCall = (db) => { if (flipped) return; flipped = true; db.__store.battle.strategyPreset = 'aggressive'; };
+    const { stored } = await runTick({ battle: plantedBattle({ strategyPreset: 'defensive' }), prices: bustingPrices() });
+    expect(flipped, 'the owner\u2019s change was written (non-vacuous)').toBe(true);
+    expect(stored.strategyPreset).toBe('aggressive');
+    expect(stored.trades.length, 'both exits traded').toBe(2);
+    expect(stored.trades.map((t) => t.entryPreset)).toEqual(['defensive', 'defensive']);
+  });
+
+  it('ER5 — the approved meeting leg stamps the governing preset after a risk exit’s refresh merged an owner change (C6, review ER1-1)', async () => {
+    // One risk exit (KO busts) under 'defensive'; the owner switches the battle to
+    // 'aggressive' as soon as it lands, and refreshBattleFromDoc merges that into
+    // `battle`. The approved meeting's leg runs later in the SAME check, under the
+    // check's presetConfig, so its row says 'defensive' too.
+    let flipped = false;
+    exec.afterCall = (db) => { if (flipped) return; flipped = true; db.__store.battle.strategyPreset = 'aggressive'; };
+    const prices = makePriceTable();
+    prices.KO = { ...prices.KO, current: 61.578 };
+    const { stored } = await runTick({ prices, battle: plantedBattle({
+      strategyPreset: 'defensive',
+      ...serverMeetingOverrides({ id: ID, status: 'approved', diagnosis: DESC, expiresAt: '2026-09-09T20:00:00.000Z', suggestedSwaps: [plantedLeg('PG', 'JPM')] }, { legs: [{ symbolOut: 'PG', symbolIn: 'JPM', swappedInAt: null }] }),
+    }) });
+    expect(flipped, 'the owner’s change was written (non-vacuous)').toBe(true);
+    expect(exec.calls.map((c) => `${c.site}:${c.args[2]?.symbol}`)).toEqual(['processAgentBattle:AMD', 'handleGameplanMeeting:JPM']);
+    expect(stored.strategyPreset).toBe('aggressive');
+    expect(stored.trades.map((t) => t.entryPreset)).toEqual(['defensive', 'defensive']);
+  });
+
+  it('enforce readiness (review ER1-1): statically — the key is resolved once beside presetConfig, and every executor call stamps that one key', () => {
+    expect(CRON_SOURCE).toMatch(/const governingPreset = presetKeyOf\(battle\.strategyPreset\);\s*\n\s*const presetConfig = getPresetConfig\(governingPreset\);/);
+    expect(CRON_SOURCE.match(/entryPreset: governingPreset,/g)).toHaveLength(CALLS.length);
   });
 
   it('at the launch mode the planted proposal never reaches the executor at all (F1)', async () => {

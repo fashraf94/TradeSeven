@@ -43,6 +43,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HYPOTHESIS_LABEL, renderMotive } from '../../data/decisionRecord';
+// Enforce readiness: the real public projection a spectator's pane is fed from.
+import { projectTournamentBattle } from '../../../api/_utils/tournamentBattleView.js';
 
 // React 19 wants this declared before `act` will drive a root without warning.
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -377,5 +379,58 @@ describe('D-99 — the hypothesis renders once, or not at all', () => {
       <LeagueBattleViewRender group={GROUP} battle={globalThis.__FLAT6_TEST_BATTLE__} mode="ranked" uid={UID} compositeContext={null} isDesktop={false} />,
     );
     expect(recordCardText()).toBe(" The agent's read" + 'No reasoning recorded yet.');
+  });
+});
+
+// ── Enforce readiness — table G (V1.4): the live feed never prints a raw action ──
+// The risk loop's / R11 pass's exit whose outcome could not be confirmed is a
+// beat with `message: null` (agent-evaluate.js, Part D). This pane printed
+// `e.message || e.action`, so a League owner — and, through the public
+// projection, which keeps `message` and `action` but strips the marker, every
+// spectator — read the raw token `risk_swap_failed`: a failure nobody can vouch
+// for. Report: docs/audits/20261008_BUILD_ENFORCE_READINESS.md §2.
+describe('the live feed — a beat whose outcome could not be confirmed (table G, V1.4)', () => {
+  const beat = (i, over = {}) => ({ timestamp: `2026-09-09T15:${String(10 + i).padStart(2, '0')}:00.000Z`, message: `Move ${i} on the book.`, action: 'swap', ...over });
+  const UNKNOWN = { timestamp: '2026-09-09T15:30:00.000Z', message: null, action: 'risk_swap_failed', source: 'risk_manager', executionOutcome: 'unknown', symbolOut: 'GILD', symbolIn: 'MOS' };
+  const feedText = () => {
+    const nodes = [...container.querySelectorAll('div')].filter((d) => (d.textContent || '').trim() === 'Live feed');
+    expect(nodes.length, 'the live feed did not render').toBeGreaterThan(0);
+    return nodes[nodes.length - 1].parentElement.textContent;
+  };
+  const mountWith = (statusFeed) => {
+    globalThis.__FLAT6_TEST_BATTLE__ = battleWith([], { statusFeed });
+    mount(<LeagueBattleViewRender group={GROUP} battle={globalThis.__FLAT6_TEST_BATTLE__} mode="ranked" uid={UID} compositeContext={null} isDesktop={false} />);
+  };
+
+  it('the owner’s copy: no `risk_swap_failed`, no dash, no blank — and the window still shows eight real lines', () => {
+    mountWith([...Array.from({ length: 8 }, (_, i) => beat(i)), UNKNOWN]);
+    const text = feedText();
+    expect(text).not.toContain('risk_swap_failed');
+    expect(text).not.toContain('—');
+    for (let i = 0; i < 8; i += 1) expect(text).toContain(`Move ${i} on the book.`);
+  });
+
+  it('a spectator’s copy (the real public projection, which carries the marker) reads the same — words and all', () => {
+    const MARKED_HOLD = { timestamp: '2026-09-09T15:31:00.000Z', message: 'Rotating GILD into MOS.', action: 'hold', source: 'haiku', executionOutcome: 'unknown' };
+    const projected = projectTournamentBattle({ ...battleWith([]), ownerId: 'someone-else', statusFeed: [beat(1), UNKNOWN, MARKED_HOLD] }, { isOwner: false });
+    expect(projected.statusFeed.map((e) => e.executionOutcome ?? null)).toEqual([null, 'unknown', 'unknown']);
+    mountWith(projected.statusFeed);
+    const text = feedText();
+    expect(text).not.toContain('risk_swap_failed');
+    expect(text).not.toContain('Rotating GILD into MOS.');
+    expect(text).toContain('Move 1 on the book.');
+  });
+
+  it('a real failure keeps its line; a marked beat with words is dropped too (review ER4-3 — its words were written before the swap ran)', () => {
+    mountWith([
+      beat(1),
+      { ...UNKNOWN, message: 'Risk exit of GILD failed: quote unavailable', executionOutcome: undefined },
+      { timestamp: '2026-09-09T15:40:00.000Z', message: 'Rotating GILD into MOS.', action: 'hold', executionOutcome: 'unknown' },
+      { timestamp: '2026-09-09T15:40:01.000Z', message: 'Guardrail override: stop-loss … Forcing exit → MOS.', action: 'guardrail_forced_swap', executionOutcome: 'unknown' },
+    ]);
+    const text = feedText();
+    expect(text).toContain('Risk exit of GILD failed: quote unavailable');
+    expect(text).not.toContain('Rotating GILD into MOS.');
+    expect(text).not.toContain('Forcing exit');
   });
 });

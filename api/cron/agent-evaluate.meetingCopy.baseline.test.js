@@ -90,11 +90,15 @@ const KO_NOW = '2026-09-09T14:40:00.000Z';
  * instants as the server stamped them — the same on the leg and in the copy)
  * and the copy beside it. The base cron reads only the meeting.
  */
-function serverMeeting(meeting, base = makeTickBattle()) {
+function serverMeeting(meeting, base = makeTickBattle(), { withRationale = false } = {}) {
   const stored = { id: MEETING_ID, createdAt: '2026-09-09T14:00:00.000Z', ...meeting };
+  // `withRationale` (enforce readiness, founder Q4): the copy as the server writes
+  // it since that build — each leg's rationale beside its pair (the meeting's own
+  // server string; every fixture rationale is under the 1000-character cap).
+  const words = (leg) => (withRationale ? { rationale: leg.rationale } : {});
   const legs = (stored.suggestedSwaps || []).map((leg) => (Object.hasOwn(leg, 'swappedInAt')
-    ? { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, swappedInAt: leg.swappedInAt }
-    : { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn }));
+    ? { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, ...words(leg), swappedInAt: leg.swappedInAt }
+    : { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, ...words(leg) }));
   return { gameplanMeeting: stored, cronState: { ...base.cronState, gameplanMeeting: { meetingId: stored.id, createdAt: stored.createdAt, expiresAt: stored.expiresAt, legs } } };
 }
 const approved = (legs) => ({ status: 'approved', diagnosis: 'drag', opportunity: 'tech', proposedAction: 'rotate_sector', fromSector: 'Consumer Defensive', toSectors: ['Technology'], suggestedSwaps: legs, expiresAt: '2026-09-09T20:00:00.000Z', resolvedAt: '2026-09-09T14:55:00.000Z', resolvedBy: 'owner-uid-1' });
@@ -117,8 +121,21 @@ for (const mode of ['off', 'shadow']) {
   SCENARIOS[`created_${mode}`] = { mode, battle: () => { const b = makeTickBattle(); delete b.cronState.lastGameplanDate; return b; } };
 }
 
-async function runScenario(name) {
-  const { mode, battle: make } = SCENARIOS[name];
+/**
+ * Enforce readiness (founder Q4) — acceptance 3, "a server meeting approved
+ * without edits stays byte-identical": the same approvals, the copy now
+ * carrying each leg's rationale as the server writes it since that build. The
+ * base cron ignores the copy, so each is held to its base scenario's frozen
+ * bytes — no recapture.
+ */
+const NEW_COPY_SCENARIOS = {};
+for (const mode of ['off', 'shadow', 'enforce']) {
+  NEW_COPY_SCENARIOS[`approved_one_leg_${mode}`] = { mode, battle: () => makeTickBattle(serverMeeting(approved(ONE_LEG()), makeTickBattle(), { withRationale: true })) };
+  NEW_COPY_SCENARIOS[`approved_two_legs_${mode}`] = { mode, battle: () => returnedKo(makeTickBattle(serverMeeting(approved(TWO_LEGS()), makeTickBattle(), { withRationale: true }))) };
+}
+
+async function runScenario(name, table = SCENARIOS) {
+  const { mode, battle: make } = table[name];
   flags.swapIdentity = mode;
   exec.calls = [];
   mocks.create.mockClear();
@@ -228,6 +245,22 @@ describe('a server-created meeting runs byte-identical to the base tree (accepta
   for (const name of Object.keys(SCENARIOS)) {
     it(`${name}: every battle write, executor argument, prompt (its SHA-256) and the summary equal the base's, once the copy key is lifted`, async () => {
       const live = await runScenario(name);
+      const { snapshot } = lift(JSON.parse(serialize(live)));
+      const frozen = golden.scenarios[name];
+      expect(serialize(snapshot.updates), `${name}: battle writes moved`).toBe(serialize(frozen.updates));
+      expect(serialize(snapshot.executor), `${name}: executor arguments moved`).toBe(serialize(frozen.executor));
+      expect(serialize(snapshot.prompts), `${name}: prompt bytes moved`).toBe(serialize(frozen.prompts));
+      expect(serialize(snapshot.summary)).toBe(serialize(frozen.summary));
+      expect(snapshot.thrown).toBe(frozen.thrown);
+    });
+  }
+
+  for (const name of Object.keys(NEW_COPY_SCENARIOS)) {
+    it(`${name}, the copy carrying each leg's rationale (enforce readiness, Q4): byte-identical to the base's ${name} once the copy key is lifted`, async () => {
+      const battle = NEW_COPY_SCENARIOS[name].battle();
+      // Non-vacuous: the copy really carries the words, and they are the meeting's.
+      expect(battle.cronState.gameplanMeeting.legs.map((l) => l.rationale)).toEqual(battle.gameplanMeeting.suggestedSwaps.map((l) => l.rationale));
+      const live = await runScenario(name, NEW_COPY_SCENARIOS);
       const { snapshot } = lift(JSON.parse(serialize(live)));
       const frozen = golden.scenarios[name];
       expect(serialize(snapshot.updates), `${name}: battle writes moved`).toBe(serialize(frozen.updates));

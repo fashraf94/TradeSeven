@@ -598,3 +598,78 @@ describe('K5 — C6: a refresh that comes back with NO document is no read (M5-2
     expect(legs[1]).toMatchObject({ executionOutcome: 'not_run' });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enforce readiness (table G, V1.4): the model route's OWN status beat on a
+// check whose outcome could not be confirmed is `action: 'hold'` with the
+// model's words — it now carries the entry's marker, so no client reads that
+// `hold` as a hold anyone can vouch for (the Why? panel says "its outcome could
+// not be confirmed" for the same check; BUILD_RULES §9). The key is absent on
+// every other beat, so every other record keeps its bytes.
+describe('enforce readiness — the model route’s status beat carries the entry’s marker, and only on an unknown outcome', () => {
+  const statusBeat = (r) => r.feed.find((e) => e.source === 'haiku' && e.evalId === r.entry?.evalId) ?? null;
+  for (const mode of ['off', 'shadow', 'enforce']) {
+    it(`${mode}: unknown → the beat keeps the model's words and carries \`executionOutcome: 'unknown'\``, async () => {
+      flags.swapIdentity = mode;
+      exec.mode = 'ambiguous';
+      exec.failReadAfterThrow = true;
+      const r = await runTick({ battle: makeTickBattle(), result: makeSwapResult() });
+      expect(r.entry.executionOutcome).toBe('unknown');
+      const beat = statusBeat(r);
+      expect(beat, 'the model route wrote its status beat').not.toBeNull();
+      expect(beat).toMatchObject({ action: 'hold', message: makeSwapResult().status_feed_update, executionOutcome: 'unknown' });
+    });
+
+    it(`${mode}: a trade read back as landed → no marker key on the beat`, async () => {
+      flags.swapIdentity = mode;
+      exec.mode = 'ambiguous';
+      const landed = await runTick({ battle: makeTickBattle(), result: makeSwapResult() });
+      expect(landed.entry.decision).toBe('SWAP');
+      expect(statusBeat(landed)).not.toBeNull();
+      expect(statusBeat(landed)).not.toHaveProperty('executionOutcome');
+    });
+
+    it(`${mode}: a real failure (nothing committed) → the thrown-swap prefix, and no marker key on the beat`, async () => {
+      flags.swapIdentity = mode;
+      exec.mode = 'refuse';
+      exec.refusal = new Error('Asset no longer available in slot');
+      const failed = await runTick({ battle: makeTickBattle(), result: makeSwapResult() });
+      expect(failed.entry.validationErrors[0]).toMatch(/^Swap execution failed/);
+      expect(statusBeat(failed)).not.toBeNull();
+      expect(statusBeat(failed)).not.toHaveProperty('executionOutcome');
+    });
+  }
+});
+
+// Enforce readiness (review ERV4-1): on a check whose swap a GUARDRAIL forced over
+// the model's hold, the model route writes the guardrail's own beat too
+// ("… Forcing exit → AMD.", `guardrail_forced_swap`). When that swap's outcome
+// could not be confirmed it carries the entry's marker, so no client renders its
+// pre-execution words; when the swap landed, it does not.
+describe('enforce readiness — the guardrail\u2019s own beat on a forced swap carries the marker only on an unknown outcome', () => {
+  const FORCED_EXIT = { decision: 'SWAP', symbolOut: 'KO', symbolIn: 'AMD', sourceNote: 'guardrail_stopLoss', statusMessage: 'Guardrail override: stop-loss at 1% breached on KO. Forcing exit → AMD.', overrides: [{ type: 'stopLoss', symbol: 'KO', action: 'forced_exit', replacementSymbol: 'AMD' }] };
+  const guardrailBeat = (r) => r.feed.find((e) => e.action === 'guardrail_forced_swap' && e.evalId === r.entry?.evalId) ?? null;
+  for (const mode of ['off', 'shadow', 'enforce']) {
+    it(`${mode}: unknown → the guardrail beat carries \`executionOutcome: 'unknown'\`; the entry is the table G guardrail shape`, async () => {
+      flags.swapIdentity = mode;
+      guardrailHook.result = FORCED_EXIT;
+      exec.mode = 'ambiguous';
+      exec.failReadAfterThrow = true;
+      // A deployed stop: applyGuardrails runs only when the strategy deploys guardrails.
+      const r = await runTick({ battle: withStop({}) });
+      expect(r.entry).toMatchObject({ executionOutcome: 'unknown', downgraded: true, guardrailSourceNote: 'guardrail_stopLoss' });
+      expect(r.entry.guardrailOverrides.some((o) => o.action === 'forced_exit')).toBe(true);
+      expect(guardrailBeat(r)).toMatchObject({ executionOutcome: 'unknown', symbolOut: 'KO', symbolIn: 'AMD' });
+    });
+
+    it(`${mode}: landed → the guardrail beat carries no marker key`, async () => {
+      flags.swapIdentity = mode;
+      guardrailHook.result = FORCED_EXIT;
+      exec.mode = 'ambiguous';
+      // A deployed stop: applyGuardrails runs only when the strategy deploys guardrails.
+      const r = await runTick({ battle: withStop({}) });
+      expect(guardrailBeat(r)).not.toBeNull();
+      expect(guardrailBeat(r)).not.toHaveProperty('executionOutcome');
+    });
+  }
+});
