@@ -16,6 +16,9 @@
 //   Plans       verbatim, with the two market prices and the horizon note (BA-10)
 //   Rationale   recorded words, collapsed, beside the checks that carry no agent
 //               text, in time order (BA-46)
+// Every recorded word — the player's, the agent's, the stored directive's and
+// the stored plan's — reaches the screen only as a Quotation (Amendment E
+// addendum 2, R7): read at its tape path, verbatim, attributed.
 //   Checks      each check with its recorded risk decision (BA-7), tap for detail
 //   Diagnostics only when diagnostics.intradayViews is 'present' (F4)
 
@@ -29,7 +32,7 @@ import { FILM_ROOM_COPY as COPY, REPLAY_SENTENCE, LOCKED_BASIS_NOTE, REPLAY_VERS
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
 import { etDateOf } from '../../utils/tapeSchedule';
 import {
-  C, card, eyebrow, foot, body, mono, tint, plain, TapeNum, AggNum, CountNum, CheckCount, When, Rec, Section, Row, EmptyCard, Collapsible, StateTag, Door, Chip, TextButton, KindMark, Coverage,
+  C, card, eyebrow, foot, body, mono, tint, plain, TapeNum, AggNum, CountNum, CheckCount, When, Rec, Section, Row, EmptyCard, Quotation, StateTag, Door, Chip, TextButton, KindMark, Coverage,
 } from './FilmRoomKit';
 import CheckDetail from './FilmRoomCheckDetail';
 import { Pip } from './FilmRoomGlance';
@@ -320,24 +323,54 @@ function filedLabel(filedAt, etDate) {
   return day && etDate && day !== etDate ? `${etDateLabel(day, { short: true })}, ${clock}` : clock;
 }
 
+/**
+ * F6's explainer cards hold FIXTURE words — the screen's own copy, laid out as a card's quotation is (the words,
+ * then whose they would be), under the screen's boundary like any other copy. Never a Quotation: a quotation
+ * reads only the tape, at its path (R7).
+ */
+function ExampleWords({ text, by, color = C.ink2, weight = 400 }) {
+  return (
+    <div data-example-words={by} style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+      <p style={{ ...body, fontSize: 12.5, fontWeight: weight, color }}>{text}</p>
+      <span style={mono(9.5, C.ink3, { lineHeight: 1.4 })}>— {COPY.quoteBy[by]}</span>
+    </div>
+  );
+}
+
 function DirectiveCard({ tape, index, example }) {
   const d = example || tape.directives[index];
   const s = directiveCardOf(d);
   const row = (k, v) => <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}><span style={mono(9.5, C.ink3, { letterSpacing: '0.12em', textTransform: 'uppercase', lineHeight: 1.3 })}>{k}</span>{v}</div>;
   const base = ['directives', index, 'after'];
+  // R7: every word this card shows from the record is a quotation of the directive row, at the row's own filing time.
+  const quote = (key, by, opts) => <Quotation doc={tape} path={['directives', index, key]} by={by} at={['directives', index, 'filedAt']} {...opts} />;
+  const filedWords = { size: 12.5, weight: 600, color: C.ink };
+  const retainedWords = { size: 12.5, color: C.ink2 };
+  let filed = <span />;
+  if (s.filed) filed = example ? <ExampleWords text={d.canonicalText} by="directive" color={C.ink} weight={600} /> : quote('canonicalText', 'directive', filedWords);
+  else if (d.cardState === 'no_change') {
+    filed = d.retainedDirectiveText
+      ? (
+        <div data-retained="" style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+          <span style={{ fontSize: 12.5, color: C.ink2 }}>{COPY.retainedLabel}</span>
+          {example ? <ExampleWords text={d.retainedDirectiveText} by="directive" /> : quote('retainedDirectiveText', 'directive', retainedWords)}
+        </div>
+      )
+      : <span style={{ fontSize: 12.5, color: C.ink2 }}>{COPY.noneInForce}</span>;
+  }
   return (
     <div data-directive-card={example ? `example-${d.cardState}` : index} data-card-state={d.cardState} style={{ ...card, borderLeft: `3px solid ${C.purple}`, gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ ...eyebrow, color: C.purple }}>{example ? COPY.explainerLabels[d.cardState] : <When>{COPY.directiveAt(filedLabel(d.filedAt, tape.etDate))}</When>}</span>
       </div>
-      {row(COPY.youAsked, <Collapsible text={`“${d.playerText ?? ''}”`} lines={3} color={C.ink} />)}
-      {row(s.title, s.filed
-        ? <span style={{ fontSize: 12.5, lineHeight: 1.45, color: C.ink, fontWeight: 600 }}><Rec>{s.text}</Rec></span>
-        : (d.cardState === 'no_change' ? <span style={{ fontSize: 12.5, color: C.ink2 }}><Rec>{d.retainedDirectiveText ? COPY.retained(d.retainedDirectiveText) : COPY.noneInForce}</Rec></span> : <span />))}
+      {row(COPY.youAsked, example
+        ? <ExampleWords text={d.playerText} by="player" color={C.ink} />
+        : (typeof d.playerText === 'string' && d.playerText ? quote('playerText', 'player', { lines: 3, color: C.ink }) : <span style={foot}>{COPY.notRecorded}</span>))}
+      {row(s.title, filed)}
       {s.filed ? row(COPY.receipt, example
         ? <span style={{ fontSize: 12.5, color: C.teal, fontWeight: 600 }}>{COPY.reached(d.heardClock)}</span>
         : (d.heard ? <span data-heard="" style={{ fontSize: 12.5, color: C.teal, fontWeight: 600 }}><When>{COPY.reached(etClock(d.heard.at))}</When></span> : <span style={{ fontSize: 12.5, color: C.ink2 }}>{COPY.unconfirmed}</span>)) : null}
-      {d.agentReply ? row(COPY.reply, <Collapsible text={`“${d.agentReply}”`} lines={2} color={C.ink2} />) : null}
+      {d.agentReply ? row(COPY.reply, example ? <ExampleWords text={d.agentReply} by="agent" /> : quote('agentReply', 'agent', { lines: 2 })) : null}
       {d.agentReplyDiffers ? <span data-reply-differs="" style={foot}>{COPY.replyDiffers}</span> : null}
       {!example && d.after ? row(COPY.after, (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', ...mono(11, C.ink2) }}>
@@ -392,8 +425,14 @@ function PlansSection({ tape }) {
                     <span style={{ fontSize: 14, fontWeight: 700, color: C.ink }}><Rec>{p.symbol}</Rec></span>
                     <StateTag dim>{PLAN_DIRECTIONS[p.direction] || <Rec>{p.direction || ''}</Rec>}</StateTag>
                   </div>
-                  {p.signalSummary ? <p style={{ ...body, fontSize: 12.5, color: C.ink2 }}><Rec>{p.signalSummary}</Rec></p> : null}
-                  {p.threshold ? <span style={mono(10.5, C.ink2)}><span style={{ color: C.ink3 }}>{COPY.threshold} · </span><Rec>{p.threshold}</Rec></span> : null}
+                  {/* R7: the plan's prose is the stored plan's words — the tape records no author for it */}
+                  <Quotation doc={tape} path={['plans', i, 'signalSummary']} by="plan" at={['plans', i, 'at']} size={12.5} />
+                  {p.threshold ? (
+                    <div data-plan-threshold="" style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                      <span style={mono(10.5, C.ink3)}>{COPY.threshold}</span>
+                      <Quotation doc={tape} path={['plans', i, 'threshold']} by="plan" at={['plans', i, 'at']} size={12} />
+                    </div>
+                  ) : null}
                   <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={mono(10, C.ink3)}>{COPY.atPlan}</span><TapeNum doc={tape} path={['plans', i, 'price', 'atPlan', 'value']} fmt={fmtPrice} size={12} /></span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={mono(10, C.ink3)}>{COPY.atClose}</span><TapeNum doc={tape} path={['plans', i, 'price', 'atClose', 'value']} fmt={fmtPrice} size={12} /></span>
@@ -414,17 +453,20 @@ function PlansSection({ tape }) {
 /**
  * BA-46 under addendum R6: collapsed by default as a CLAMPED PREVIEW — the
  * hypothesis, then the first lines of the recorded words, with "Read more"
- * when they run past the preview (the design of record's Collapsible).
+ * when they run past the preview (the design of record's Collapsible). Both
+ * are the agent's recorded words, so both are quotations of the entry, at its
+ * own time (R7); the preview clamps the full stored value with CSS.
  */
 const RATIONALE_PREVIEW_LINES = 2;
 function RationaleEntry({ tape, index }) {
   const r = tape.rationale[index];
+  const at = ['rationale', index, 'at'];
   return (
     <div data-rationale={index} style={{ ...card, gap: 6, borderLeft: `2px solid ${C.ink2}` }}>
       <span style={mono(10, C.ink2, { fontWeight: 600, lineHeight: 1.4 })}><When>{COPY.rationaleLabel(etClock(r.at) ?? '')}</When></span>
       <div data-rationale-body={index} style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-        {r.hypothesis ? <p style={{ ...body, fontWeight: 600 }}><Rec>{r.hypothesis}</Rec></p> : null}
-        {r.rationale ? <Collapsible text={r.rationale} lines={RATIONALE_PREVIEW_LINES} color={C.ink2} /> : null}
+        <Quotation doc={tape} path={['rationale', index, 'hypothesis']} by="agent" at={at} weight={600} color={C.ink} />
+        <Quotation doc={tape} path={['rationale', index, 'rationale']} by="agent" at={at} lines={RATIONALE_PREVIEW_LINES} />
       </div>
     </div>
   );

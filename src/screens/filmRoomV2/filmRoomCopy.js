@@ -167,7 +167,7 @@ export const FILM_ROOM_COPY = Object.freeze({
   youAsked: 'You asked',
   directiveFiled: 'Directive filed',
   noNewDirective: 'No new directive filed',
-  retained: (text) => `Retained: ${text}`,
+  retainedLabel: 'Retained:',   // followed by the stored directive text, as a quotation (R7)
   noneInForce: 'Retained: none in force',
   receipt: 'Receipt',
   reached: (clock) => `Reached the agent's inputs at ${clock}`,
@@ -184,6 +184,9 @@ export const FILM_ROOM_COPY = Object.freeze({
   explainerLabels: { committed: 'Example · filed', no_change: 'Example · no change', not_filed: 'Example · not filed' },
   readMore: 'Read more',
   showLess: 'Show less',
+  // R7: who a quotation's words are, as the tape records it; a stored record with no recorded author is named as
+  // the record ("the stored plan"), never given a guessed one
+  quoteBy: { agent: 'the agent', player: 'the player', platform: 'the platform', plan: 'the stored plan', directive: 'the stored directive' },
   plans: 'Plans',
   plansNone: 'No plan entries were recorded this day.',
   plansAll: 'All',

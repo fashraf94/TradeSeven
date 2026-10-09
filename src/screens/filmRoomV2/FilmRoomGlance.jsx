@@ -9,7 +9,7 @@
 import React from 'react';
 import { valueAt, etClock, checkStateOf, checkRuns, checkStateLegend, isNum, exitMakerOf, toMs } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
-import { C, card, eyebrow, foot, mono, plain, TapeNum, CountNum, CheckCount, When, Rec, Section, Row, Quote, StateTag, Door } from './FilmRoomKit';
+import { C, card, eyebrow, foot, mono, plain, TapeNum, CountNum, CheckCount, When, Rec, Section, Row, Quotation, StateTag, Door } from './FilmRoomKit';
 import CheckDetail from './FilmRoomCheckDetail';
 
 // ── the pips: one per check row, by tone ───────────────────────────────────
@@ -236,7 +236,13 @@ export function ResultCard({ tape, finalDay = null }) {
           ) : null}
         </div>
       ) : <span data-result="unavailable" style={{ fontSize: 15, fontWeight: 600, color: C.ink2 }}>{COPY.resultBasis.unavailable}</span>}
-      {b.completionMessage?.text ? <Quote label={<>{COPY.platformAtCompletion}{b.completionMessage.at ? <> · <When>{etClock(b.completionMessage.at)}</When></> : null}</>}>{b.completionMessage.text}</Quote> : null}
+      {/* The platform's own words at completion, as a quotation of the tape (R7) — never the agent's. */}
+      {b.completionMessage?.text ? (
+        <div data-region="completion-message" style={{ borderLeft: `2px solid ${C.ink3}`, paddingLeft: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ ...eyebrow, color: C.ink3 }}>{COPY.platformAtCompletion}</span>
+          <Quotation doc={tape} path={['battle', 'completionMessage', 'text']} by="platform" at={['battle', 'completionMessage', 'at']} size={12} />
+        </div>
+      ) : null}
     </div>
   );
 }

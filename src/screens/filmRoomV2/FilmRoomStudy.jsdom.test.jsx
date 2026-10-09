@@ -10,7 +10,7 @@ import React, { act } from 'react';
 import FilmRoomStudy from './FilmRoomStudy';
 import { REPLAY_SENTENCE, LOCKED_BASIS_NOTE } from './filmRoomCopy';
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
-import { mounter, sep23Tape, emptyTape, clone, sweepNumbers, sweepWords, sweepSigns, parseNumeral } from './__fixtures__/filmRoomHarness';
+import { mounter, sep23Tape, emptyTape, clone, sweepNumbers, sweepWords, sweepSigns, quoteDefects, parseNumeral } from './__fixtures__/filmRoomHarness';
 import { deriveHoldings, etClock } from './filmRoomModel';
 
 // Whole-section mounts with every collapsible opened: CI headroom (the A1 suites' precedent).
@@ -308,7 +308,8 @@ describe('the swap card at desktop width — each path\'s end value beside the f
     if (tape.checks.length) m.click(m.q('[data-check-row="15"]'));
     expect(sweepNumbers(m.container, { tape })).toEqual([]);
     expect(sweepSigns(m.container)).toEqual([]);
-    expect(sweepWords(m.container)).toEqual([]);
+    expect(sweepWords(m.container, { tape })).toEqual([]);
+    expect(quoteDefects(m.container, { tape })).toEqual([]);
   });
 
   it('the phone keeps the end values under the fork (no column beside it)', () => {
@@ -324,13 +325,20 @@ describe('BA-9 / F6 — directive cards from the tape\'s rows; the explainer\'s 
     const cards = m.qa('[data-directive-card]:not([data-directive-card^="example"])');
     expect(cards.map((c) => c.getAttribute('data-card-state'))).toEqual(['committed', 'no_change', 'not_filed']);
     expect(cards[0].textContent).toContain('You asked');
-    expect(cards[0].textContent).toContain('“Protect the lead into the close.”');
+    // R7: the player's words, the stored directive and the reply are quotations of the row, each bound to its path
+    const quoted = (c, key) => c.querySelector(`[data-quote-path$=".${key}"]`);
+    expect(quoted(cards[0], 'playerText').textContent).toBe('Protect the lead into the close.');
+    expect(quoted(cards[0], 'playerText').getAttribute('data-quote-path')).toBe('directives[0].playerText');
     expect(cards[0].textContent).toContain('Directive filed');
-    expect(cards[0].textContent).toContain('Tighten the downside stop.');
+    expect(quoted(cards[0], 'canonicalText').textContent).toBe('Tighten the downside stop.');
+    expect(quoted(cards[0], 'agentReply').textContent).toBe(sep23Tape.directives[0].agentReply);
+    expect(quoteDefects(m.container, { tape: sep23Tape })).toEqual([]);
     expect(cards[0].querySelector('[data-heard]').textContent).toBe("Reached the agent's inputs at 1:45 PM");
     expect(cards[0].textContent).toContain('Chat reply at the time · not verified');
     expect(cards[1].textContent).toContain('No new directive filed');
-    expect(cards[1].textContent).toContain('Retained: Tighten the downside stop.');
+    expect(cards[1].querySelector('[data-retained]').firstElementChild.textContent).toBe('Retained:');
+    expect(quoted(cards[1], 'retainedDirectiveText').textContent).toBe('Tighten the downside stop.');
+    expect(quoted(cards[1], 'retainedDirectiveText').parentElement.querySelector('[data-quote-attribution]').textContent).toBe('— the stored directive · 2:20 PM');
     expect(cards[2].textContent).toContain('No new directive filed');
     expect(cards[2].textContent).not.toContain('Directive filed');
     expect(cards[2].textContent).toContain('the reply at the time does not match it');
@@ -346,6 +354,9 @@ describe('BA-9 / F6 — directive cards from the tape\'s rows; the explainer\'s 
     expect(ex.textContent).toContain('Example cards · a fixture, not this battle');
     expect([...ex.querySelectorAll('[data-directive-card]')].map((c) => c.getAttribute('data-card-state'))).toEqual(['committed', 'no_change', 'not_filed']);
     expect(ex.querySelector('[data-num]')).toBeNull();
+    // F6 fixtures are the screen's own copy, never a quotation of the tape (R7)
+    expect(ex.querySelector('[data-quotation], [data-quote-path]')).toBeNull();
+    expect(ex.querySelectorAll('[data-example-words]').length).toBeGreaterThan(0);
   });
 });
 
@@ -596,7 +607,8 @@ describe('the sweeps (BA-42, BA-41)', () => {
     if (tape.checks.length) m.click(m.q('[data-check-row="15"]'));
     expect(sweepNumbers(m.container, { tape })).toEqual([]);
     expect(sweepSigns(m.container)).toEqual([]);
-    expect(sweepWords(m.container)).toEqual([]);
+    expect(sweepWords(m.container, { tape })).toEqual([]);
+    expect(quoteDefects(m.container, { tape })).toEqual([]);
   });
 
   it('BA-48: a tape whose stored declaration predates the reclass is labelled by its OWN declaration', () => {

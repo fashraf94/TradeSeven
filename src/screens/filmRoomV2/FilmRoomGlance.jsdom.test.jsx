@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import FilmRoomGlance from './FilmRoomGlance';
-import { mounter, sep23Tape, emptyTape, clone, sweepNumbers, sweepWords, sweepSigns } from './__fixtures__/filmRoomHarness';
+import { mounter, sep23Tape, emptyTape, clone, sweepNumbers, sweepWords, sweepSigns, quoteDefects } from './__fixtures__/filmRoomHarness';
 
 const m = mounter();
 beforeEach(() => m.setup());
@@ -212,7 +212,12 @@ describe('the final result, apart from the day (BA-4, BA-39)', () => {
     expect(r.querySelector('[data-num="battle.final.total"]').getAttribute('data-num-class')).toBe('recorded');
     expect(r.querySelector('[data-num="battle.final.opponent"]').getAttribute('data-num-class')).toBe('recorded');
     expect(r.textContent).toContain('Platform recorded at completion');
-    expect(r.textContent).toContain('“Battle complete. Agent: -47.0 pts vs CPU: -93.0 pts. Result: Win.”');
+    // R7: the platform's words, a quotation bound to their tape path, attributed to the platform at their own time
+    const q = r.querySelector('[data-quote-path="battle.completionMessage.text"]');
+    expect(q.textContent).toBe('Battle complete. Agent: -47.0 pts vs CPU: -93.0 pts. Result: Win.');
+    expect(q.parentElement.getAttribute('data-quotation')).toBe('platform');
+    expect(q.parentElement.querySelector('[data-quote-attribution]').textContent).toBe('— the platform · 4:05 PM');
+    expect(quoteDefects(m.container, { tape: sep23Tape })).toEqual([]);
   });
 
   it('the empty day: result unavailable, the missing score named, the platform\'s "Result: Draw." beside it', () => {
@@ -220,7 +225,8 @@ describe('the final result, apart from the day (BA-4, BA-39)', () => {
     const r = m.q('[data-region="final-result"]');
     expect(r.querySelector('[data-result]').getAttribute('data-result')).toBe('unavailable');
     expect(r.textContent).toContain('opponent score never recorded');
-    expect(r.textContent).toContain('“Result: Draw.”');
+    expect(r.querySelector('[data-quote-path="battle.completionMessage.text"]').textContent).toBe('Result: Draw.');
+    expect(quoteDefects(m.container, { tape: emptyTape })).toEqual([]);
     expect(r.querySelector('[data-num]')).toBeNull();
   });
 
@@ -238,7 +244,8 @@ describe('the sweeps (BA-42, BA-41)', () => {
     if (tape.checks.length) m.click(m.q('[data-check-pip="12"]'));
     expect(sweepNumbers(m.container, { tape })).toEqual([]);
     expect(sweepSigns(m.container)).toEqual([]);
-    expect(sweepWords(m.container)).toEqual([]);
+    expect(sweepWords(m.container, { tape })).toEqual([]);
+    expect(quoteDefects(m.container, { tape })).toEqual([]);
   });
 
   it.each([['Sep-23', sep23Tape], ['empty', emptyTape]])('%s at desktop width (review A2P2-2): the same sweeps', (_l, tape) => {
@@ -246,7 +253,8 @@ describe('the sweeps (BA-42, BA-41)', () => {
     expect(m.q('[data-depth="glance"]').style.display).toBe('grid');
     expect(sweepNumbers(m.container, { tape })).toEqual([]);
     expect(sweepSigns(m.container)).toEqual([]);
-    expect(sweepWords(m.container)).toEqual([]);
+    expect(sweepWords(m.container, { tape })).toEqual([]);
+    expect(quoteDefects(m.container, { tape })).toEqual([]);
   });
 
   it('recorded scores carry sign colour; the derived day change never does', () => {

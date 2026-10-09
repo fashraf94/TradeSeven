@@ -12,11 +12,16 @@
 // value passed beside a class, never a per-widget constant — so a number and
 // its marker come from one source (BUILD_RULES §9). Sign colours belong to
 // recorded scores only (BA-41).
+//
+// RECORDED WORDS (Amendment E addendum 2, R7): <Quotation doc path by at /> is
+// the one way a stored sentence someone wrote reaches the screen — read at its
+// path, verbatim, attributed. Everything outside a quotation is the screen's
+// own voice, under the forbidden-word boundary.
 
 import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 import { cssVar } from '../../theme/cssTokens';
 import { MONO } from '../../components/Dashboard/commandUI';
-import { numberAt, isRecordedScore, fmtPoints, SCREEN_AGGREGATE_CLASSES, checkCounts } from './filmRoomModel';
+import { numberAt, valueAt, etClock, isRecordedScore, fmtPoints, SCREEN_AGGREGATE_CLASSES, checkCounts } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY, CLASS_LETTER, PROVENANCE_LABELS } from './filmRoomCopy';
 import { formatNumberPath } from '../../constants/filmTape';
 
@@ -210,29 +215,30 @@ export function EmptyCard({ children }) {
   return <div style={{ ...card, border: `1px dashed ${C.hair2}`, background: 'transparent', padding: '12px 14px' }}><p style={{ ...body, color: C.ink2 }}>{children}</p></div>;
 }
 
-/** Recorded text in someone else's voice: a grey rule, its label, the words quoted. */
-export function Quote({ label, children, labelColor = C.ink3 }) {
-  return (
-    <div style={{ borderLeft: `2px solid ${C.ink3}`, paddingLeft: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ ...eyebrow, color: labelColor }}>{label}</span>
-      <span style={mono(12, C.ink2, { lineHeight: 1.5 })}>“<Rec>{children}</Rec>”</span>
-    </div>
-  );
-}
+// ── recorded words (Amendment E addendum 2, R7) ─────────────────────────────
 
 /**
- * Long recorded text, collapsed to a few lines; "Read more" appears only when the text is clamped. The clamp is
- * measured again whenever the text's box changes size — a phone turned, a window narrowed — so a preview that
- * comes to overflow always gets its "Read more" (review A2P3-1).
+ * RECORDED WORDS — the ONE component every recorded-text channel renders through (R7): the agent's rationale and
+ * hypothesis, the player's directive text, the stored directive text, the agent's replies, plan prose, and the
+ * platform's words at completion. It takes a document and a PATH, never a string: it reads the value stored at that
+ * path and renders it verbatim — the element that carries `data-quote-path` holds that value and nothing else, byte
+ * for byte, so the screen composes nothing inside a quotation — with the attribution beside it: who, as the tape
+ * records it (COPY.quoteBy; "the stored plan" / "the stored directive" where the tape records no author, never a
+ * guess), and when, the record's own instant read from the document at `at`, marked as an instant. A clamped
+ * preview (`lines`) clamps the FULL value with CSS (R6), measured again whenever its box changes size, so "Read
+ * more" appears exactly when the value runs past it (review A2P3-1). Recorded words go nowhere else: no other
+ * element's text, no aria-label, no title. A path that holds no text renders nothing.
  */
-export function Collapsible({ text, lines = 2, color = C.ink2 }) {
+export function Quotation({ doc, path, by, at, lines = 0, color = C.ink2, weight = 400, size = 13, docLabel = 'tape' }) {
+  const stored = valueAt(doc, path);
+  const text = typeof stored === 'string' && stored ? stored : null;
   const [open, setOpen] = useState(false);
   const [clamped, setClamped] = useState(false);
   const ref = useRef(null);
   const id = useId();
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el || open) return undefined;
+    if (!lines || !el || open) return undefined;
     const measure = () => setClamped(el.scrollHeight > el.clientHeight + 1);
     measure();
     if (typeof ResizeObserver !== 'function') return undefined;
@@ -240,10 +246,16 @@ export function Collapsible({ text, lines = 2, color = C.ink2 }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [text, lines, open]);
+  if (text === null) return null;
+  const clock = at ? etClock(valueAt(doc, at)) : null;
+  const clamp = lines ? { display: open ? 'block' : '-webkit-box', WebkitLineClamp: open ? 'unset' : lines, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : null;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-      <p ref={ref} id={id} data-collapsed={open ? 'no' : 'yes'} style={{ ...body, color, display: open ? 'block' : '-webkit-box', WebkitLineClamp: open ? 'unset' : lines, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}><Rec>{text}</Rec></p>
-      {clamped || open ? <TextButton onClick={() => setOpen(!open)} expanded={open} controls={id}>{open ? COPY.showLess : COPY.readMore}</TextButton> : null}
+    <div data-quotation={by} style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+      <p ref={ref} id={id} data-quote-path={formatNumberPath(path)} data-quote-doc={docLabel} data-collapsed={lines ? (open ? 'no' : 'yes') : undefined} style={{ ...body, fontSize: size, fontWeight: weight, color, ...clamp }}>{text}</p>
+      {lines && (clamped || open) ? <TextButton onClick={() => setOpen(!open)} expanded={open} controls={id}>{open ? COPY.showLess : COPY.readMore}</TextButton> : null}
+      <span data-quote-attribution="" data-quote-at={at ? formatNumberPath(at) : undefined} style={mono(9.5, C.ink3, { lineHeight: 1.4 })}>
+        — {COPY.quoteBy[by]} · {clock ? <When>{clock}</When> : COPY.notRecorded}
+      </span>
     </div>
   );
 }

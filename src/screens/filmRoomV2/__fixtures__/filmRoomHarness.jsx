@@ -7,7 +7,11 @@
 //                  document's numberClasses), its text is the document's value,
 //                  and no digit appears outside a marked number, an instant, an
 //                  identifier or the record's own stored text
-//   sweepWords     no verdict, ranking or forbidden word; no "Why?" heading
+//   sweepWords     the screen's own voice — everything outside a bound
+//                  quotation (Amendment E addendum 2, R7): no verdict, ranking
+//                  or forbidden word; no "Why?" heading
+//   quoteDefects   R7's guard: every quotation bound to its tape path (text =
+//                  the stored value) and attributed as the record says
 //   sweepSigns     sign colours on recorded scores only
 // The fixtures are the A1 passes' own output (screenFixtures.test.js).
 
@@ -15,7 +19,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { classOfNumber } from '../../../constants/filmTape';
 import { COMPANY_NAMES } from '../../../config/stockData';
-import { valueAt } from '../filmRoomModel';
+import { valueAt, etClock } from '../filmRoomModel';
 import sep23Tape from './sep23.tape.json';
 import sep23Series from './sep23.series.json';
 import emptyTape from './empty.tape.json';
@@ -275,6 +279,8 @@ export function sweepNumbers(container, docs) {
     if (tick && axes.ok.has(tick.getAttribute('data-axis-scaffolding'))) continue;
     // R4(d): the directory's own name for the symbol (“Phillips 66”), never anything else in a display-name element.
     if (isDirectoryName(host)) continue;
+    // R1 / R7: a bound quotation's numbers are the record's own words, never a marked number's.
+    if (boundQuotationOf(host, docs)) continue;
     if (host.closest('[data-time]')) for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
     if (host.closest('[data-identifier]')) text = text.replace(/#swap-\d+/g, ' ');
     if (host.closest('[data-record-text]')) for (const s of stored) text = text.split(s).join(' ');
@@ -302,20 +308,84 @@ export function sweepNumbers(container, docs) {
 export const SPEC_FORBIDDEN_WORDS = Object.freeze(['biggest', 'best', 'worst', 'mistake', 'should have', 'missed', 'good trade', 'bad trade', 'lesson', 'grade']);
 
 /**
+ * Amendment E addendum 2, R7 — the recorded-words channels, PINNED HERE from the ruling (never read from the
+ * screen): which tape paths hold someone's words, who they are as the tape records it ("the stored plan" /
+ * "the stored directive" where it records no author), and the path of the record's own instant.
+ */
+const within = (p, key) => [...p.slice(0, 2), key];
+export const SPEC_QUOTE_CHANNELS = Object.freeze([
+  { re: /^rationale\[\d+\]\.(rationale|hypothesis)$/, by: 'the agent', at: (p) => within(p, 'at') },
+  { re: /^directives\[\d+\]\.playerText$/, by: 'the player', at: (p) => within(p, 'filedAt') },
+  { re: /^directives\[\d+\]\.agentReply$/, by: 'the agent', at: (p) => within(p, 'filedAt') },
+  { re: /^directives\[\d+\]\.(canonicalText|retainedDirectiveText)$/, by: 'the stored directive', at: (p) => within(p, 'filedAt') },
+  { re: /^plans\[\d+\]\.(signalSummary|threshold)$/, by: 'the stored plan', at: (p) => within(p, 'at') },
+  { re: /^battle\.completionMessage\.text$/, by: 'the platform', at: () => ['battle', 'completionMessage', 'at'] },
+]);
+
+/**
+ * R7's guard: the BOUND quotation `node` sits in, or null. Bound means all three — it is the quotation component
+ * (its element carries `data-quote-path` directly under a `data-quotation` root), and its text equals, byte for
+ * byte, the value its document stores at that path. A forged path, screen copy inside a quotation, or a quotation
+ * of another value is not bound, so its words stay under the sweeps.
+ */
+export function boundQuotationOf(node, docs = {}) {
+  const el = node?.nodeType === 1 ? node : node?.parentElement;
+  const q = el?.closest('[data-quote-path]');
+  if (!q || !q.parentElement?.hasAttribute('data-quotation')) return null;
+  const doc = docs[q.getAttribute('data-quote-doc') || 'tape'];
+  if (!doc) return null;
+  const value = valueAt(doc, parsePath(q.getAttribute('data-quote-path')));
+  return typeof value === 'string' && value !== '' && q.textContent === value ? q : null;
+}
+
+/**
+ * Every bound-quotation defect in a container (R7): a quote path whose text is not the stored value, a quotation
+ * root without exactly one bound text, a path outside the recorded-words channels, an attribution missing, naming
+ * the wrong author or the wrong time — each checked against the channel table above, never the screen's own.
+ */
+export function quoteDefects(container, docs = {}) {
+  const bad = [];
+  for (const q of container.querySelectorAll('[data-quote-path]')) {
+    const where = q.getAttribute('data-quote-path');
+    if (!boundQuotationOf(q, docs)) bad.push(`${where}: not bound — its text is not the stored value`);
+  }
+  for (const root of container.querySelectorAll('[data-quotation]')) {
+    const texts = [...root.children].filter((c) => c.hasAttribute('data-quote-path'));
+    if (texts.length !== 1) { bad.push(`a quotation with ${texts.length} quoted texts`); continue; }
+    const where = texts[0].getAttribute('data-quote-path');
+    const channel = SPEC_QUOTE_CHANNELS.find((c) => c.re.test(where));
+    if (!channel) { bad.push(`${where}: not a recorded-words channel`); continue; }
+    const attr = [...root.children].find((c) => c.hasAttribute('data-quote-attribution'));
+    if (!attr) { bad.push(`${where}: no attribution`); continue; }
+    const doc = docs[texts[0].getAttribute('data-quote-doc') || 'tape'];
+    const clock = doc ? etClock(valueAt(doc, channel.at(parsePath(where)))) : null;
+    const want = `— ${channel.by} · ${clock ?? 'not recorded'}`;
+    if (attr.textContent !== want) bad.push(`${where}: attributed “${attr.textContent}”, the record says “${want}”`);
+    else if (clock && attr.querySelector('[data-time]')?.textContent !== clock) bad.push(`${where}: its time is not marked as an instant`);
+  }
+  return bad;
+}
+
+/**
  * Every text node and every aria-label / title, each its own span of text: an element's edge is a word boundary
  * (review A2L4-1). No exemption for a company's name: the forbidden list stands as written (R5; review A2P1-2).
+ * R7: the words of a BOUND quotation are the record's, not the screen's voice, so they are left out — and nothing
+ * else is: an attribute is always the screen's.
  */
-export function renderedText(container) {
+export function renderedText(container, docs = {}) {
   const parts = [];
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) parts.push(node.textContent);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (!boundQuotationOf(node, docs)) parts.push(node.textContent);
   for (const el of container.querySelectorAll('[aria-label], [title]')) parts.push(el.getAttribute('aria-label') || '', el.getAttribute('title') || '');
   return parts.join(' \n ');
 }
 
-/** No verdict, ranking or forbidden word (or its inflection), and no "Why" heading, anywhere in the rendered output. */
-export function sweepWords(container) {
-  const text = renderedText(container).toLowerCase();
+/**
+ * The screen's own voice (R7: everything outside a bound quotation): no verdict, ranking or forbidden word (or its
+ * inflection), and no "Why" heading. `docs` names the documents a quotation may be bound to (as sweepNumbers).
+ */
+export function sweepWords(container, docs = {}) {
+  const text = renderedText(container, docs).toLowerCase();
   const hits = SPEC_FORBIDDEN_WORDS.filter((w) => new RegExp(`\\b${w.replace(/ /g, '\\s+')}(s|es|d|ed|ing)?\\b`).test(text));
   if (/\bwhy\s*\?/i.test(text)) hits.push('Why?');
   for (const h of container.querySelectorAll('h1, h2, h3, h4, h5, h6')) if (/^\s*why\b/i.test(h.textContent)) hits.push(`heading: ${h.textContent.trim()}`);

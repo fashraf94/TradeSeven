@@ -15,7 +15,7 @@ import FilmRoomScreenV2, { noTapeLine, defaultDay, battleDays, headerParts } fro
 import { FIRST_OPEN_KEY } from './filmRoomSeen';
 import { FORBIDDEN_WORDS } from './filmRoomCopy';
 import {
-  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, SPEC_FORBIDDEN_WORDS, SPEC_AGGREGATE_CLASSES,
+  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, SPEC_FORBIDDEN_WORDS, SPEC_AGGREGATE_CLASSES,
 } from './__fixtures__/filmRoomHarness';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -223,7 +223,8 @@ describe('the whole screen through the sweeps — every depth, both days, everyt
       if (mark) m.click(mark);
       expect(sweepNumbers(m.container, docs), label).toEqual([]);
       expect(sweepSigns(m.container), label).toEqual([]);
-      expect(sweepWords(m.container), label).toEqual([]);
+      expect(sweepWords(m.container, docs), label).toEqual([]);
+      expect(quoteDefects(m.container, docs), label).toEqual([]);
       const notes = m.container.textContent.split('This does not show which protections were armed or checked.').length - 1;
       expect(notes, label).toBe(label === 'Deep dive' && !m.q('[data-region="evidence-overlay"]') ? 0 : 1);
     }
@@ -245,7 +246,8 @@ describe('the whole screen through the sweeps — every depth, both days, everyt
         if (mark) m.click(mark);
         expect(sweepNumbers(m.container, docs), label).toEqual([]);
         expect(sweepSigns(m.container), label).toEqual([]);
-        expect(sweepWords(m.container), label).toEqual([]);
+        expect(sweepWords(m.container, docs), label).toEqual([]);
+        expect(quoteDefects(m.container, docs), label).toEqual([]);
       }
       expect(m.q('[data-region="all-symbols"]')).toBeTruthy();
       expect(m.qa('[data-fork-ends]')).toHaveLength(0);   // the Deep dive is showing; the Study's desktop fork ends were swept above

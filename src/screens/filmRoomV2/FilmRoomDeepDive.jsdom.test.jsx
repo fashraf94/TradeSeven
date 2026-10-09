@@ -247,7 +247,7 @@ describe('addendum R4(a)/(b)/(d) — the restored facts, axes and name', () => {
     m.render(<Harness tape={t} series={series} start="BBY" />);
     expect(m.q('[data-region="price-chart"]').getAttribute('data-symbol')).toBe('BBY');
     expect(m.q('[data-display-name]')).toBeNull();
-    expect(sweepWords(m.container)).toEqual([]);
+    expect(sweepWords(m.container, docsFor(t, series))).toEqual([]);
   });
 });
 
@@ -366,6 +366,6 @@ describe('coverage, the empty day, the sweeps', () => {
     if (first) m.click(first);
     expect(sweepNumbers(m.container, docsFor(sep23Tape, sep23Series))).toEqual([]);
     expect(sweepSigns(m.container)).toEqual([]);
-    expect(sweepWords(m.container)).toEqual([]);
+    expect(sweepWords(m.container, docsFor(sep23Tape, sep23Series))).toEqual([]);
   });
 });

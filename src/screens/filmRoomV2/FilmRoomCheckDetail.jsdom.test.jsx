@@ -38,7 +38,7 @@ describe('BA-44 — a check\'s record', () => {
     expect(text).toContain("Recorded at the check · what the agent was given · the platform's quote");
     expect(sweepNumbers(m.container, { tape: sep23Tape })).toEqual([]);
     expect(sweepSigns(m.container)).toEqual([]);
-    expect(sweepWords(m.container)).toEqual([]);
+    expect(sweepWords(m.container, { tape: sep23Tape })).toEqual([]);
   });
 
   it('BA-7: each symbol\'s recorded risk decision — "Risk decision recorded: HOLD", or the action with its reason', () => {
