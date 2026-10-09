@@ -62,6 +62,19 @@ function makeDb(docs = {}) {
     const c = collection(name);
     return { ...c, doc: (id) => c.doc(id ?? `auto-wl-${++n}`) };
   };
+  // The Admin SDK's Transaction.getAll refuses zero arguments (@google-cloud/firestore
+  // validateMinNumberOfArguments('Transaction.getAll', …, 1)); the double does not — so it is
+  // enforced here (Pilot P1b mutation lens, ST03: a reaffirm of a CURRENT due version reads no
+  // newer version and must never call getAll()).
+  const runTx = db.runTransaction.bind(db);
+  db.runTransaction = (cb, opts) => runTx(async (tx) => {
+    const getAll = tx.getAll;
+    tx.getAll = (...refs) => {
+      if (refs.length < 1) throw new Error('Function "Transaction.getAll()" requires at least 1 argument.');
+      return getAll(...refs);
+    };
+    return cb(tx);
+  }, opts);
   activeDb = db;
   return db;
 }
@@ -768,5 +781,35 @@ describe('the list and read routes', () => {
     const res = await call(versionsHandler, { method: 'GET', id: 'a/b' });
     expect([res.statusCode, res.body.error]).toEqual([400, 'invalid_watchlist_id']);
     expect(db.__access.reads).toEqual([]);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// The BUILD_RULES §2 mutation lens (L5, the versions GET and reaffirm): each row below kills a mutant that survived
+// the first pass; the mutant ids are the lens's (review report §9.2).
+
+describe('mutation lens rows — the versions GET and reaffirm (H02, H07, ST07)', () => {
+  const SIB = (n) => ({ watchlistId: 'wl-1', hypothesisVersion: n });
+  const bdoc = (n, name) => ({ ownerId: OWNER, status: 'completed', agentContext: { equippedWatchlist: { watchlistId: 'wl-1', name, tickers: ['NVDA', 'AMD'], snapshotAt: NOW }, equippedHypothesis: SIB(n) } });
+  const DUE = (battleId) => ({ status: 'review_due', stateReason: 'horizon_elapsed', firstDeployedAt: NOW, lastDeployedAt: NOW, lastDeployedBattleId: battleId, reviewDueAt: NOW });
+  it('H07 — a superseded due version (newer draft) still gets its frozen list', async () => {
+    const db = seedList({}, [DUE('battle-9'), { status: 'draft' }]);
+    db.__docs.set('agentBattles/battle-9', bdoc(1, 'AI capex'));
+    const res = await versions({ method: 'GET' });
+    expect(res.body.deployedLists).toEqual({ 1: { battleId: 'battle-9', name: 'AI capex', tickers: ['NVDA', 'AMD'] } });
+  });
+  it('H02 — two due versions: the NEWEST one is named', async () => {
+    const db = seedList({}, [DUE('battle-8'), DUE('battle-9')]);
+    db.__docs.set('agentBattles/battle-8', bdoc(1, 'Old list'));
+    db.__docs.set('agentBattles/battle-9', bdoc(2, 'AI capex'));
+    const res = await versions({ method: 'GET' });
+    expect(res.body.deployedLists).toEqual({ 2: { battleId: 'battle-9', name: 'AI capex', tickers: ['NVDA', 'AMD'] } });
+  });
+  it('ST07 — a hole in the numbering (a newer version missing) refuses the reaffirmation (409, nothing written), never a crash', async () => {
+    const db = seedList({}, [{ status: 'review_due', stateReason: 'horizon_elapsed', firstDeployedAt: NOW, lastDeployedBattleId: 'b-1', reviewDueAt: NOW }, { status: 'draft' }, { status: 'draft' }]);
+    db.__docs.delete(vPath(2));
+    const res = await transition({ version: 1, action: 'reaffirm', opId: 'op-hole', expectedVersion: 3 });
+    expect([res.statusCode, res.body.error]).toEqual([409, 'illegal_transition']);
+    expect(db.__access.writes).toEqual([]);
   });
 });

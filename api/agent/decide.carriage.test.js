@@ -457,3 +457,27 @@ describe('the §2 review fixes, through the endpoint', () => {
     expect(serialized(withoutRecords(cap))).toBe(serialized(withoutRecords(off)));
   }, 20_000);
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// The BUILD_RULES §2 mutation lens (L5, the endpoint): each row below kills a mutant that survived
+// the first pass; the mutant ids are the lens's (review report §9.2).
+
+describe('mutation lens rows — the endpoint (DC01, DC13, DC19)', () => {
+  it('DC01 — a client body naming a watchlistId cannot dodge the due refusal', async () => {
+    const s = SCENARIOS.self_select_due_no_ready();
+    s.req.body = { ...s.req.body, watchlistId: 'wl-forged' };
+    const { cap } = await run(s);
+    expect(cap.response.status).toBe(409);
+  }, 20_000);
+  it('DC19 — a NON-carriage battle failure keeps the cooldown stamp (as on main)', async () => {
+    const { cap } = await run(SCENARIOS.self_select_no_equip(), {
+      beforeHandler: (d) => { d.__hooks.beforeCommit = ({ writes }) => { if (writes.some((w) => w.op === 'create' && w.path.startsWith('agentBattles/'))) throw new Error('ABORTED: unrelated'); }; },
+    });
+    expect(cap.response.status).toBe(500);
+    expect(cap.docs[`agents/${H.AGENT_ID}`].lastDeployedAt).toBe(H.FROZEN_NOW);
+  }, 20_000);
+  it('DC13 — the refusal stamps deployProgress.updatedAt', async () => {
+    const { cap } = await run(SCENARIOS.self_select_due_no_ready());
+    expect(cap.store.writes.at(-1).data['deployProgress.updatedAt']).toBe(H.FROZEN_NOW);
+  }, 20_000);
+});

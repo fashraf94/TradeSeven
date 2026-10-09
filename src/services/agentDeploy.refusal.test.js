@@ -45,8 +45,10 @@ describe('the deploy refusal reaches the ceremony verbatim', () => {
     globalThis.fetch = vi.fn(async () => respond(503, { error: 'pricing_unavailable', details: undefined }));
     expect((await deployAgent('agent-1', vi.fn())).details).toBeUndefined();
   });
-  it('a refusal body without a string message forwards no invented words', async () => {
+  it('a refusal body without a string message forwards no invented words (AD02: a non-string message is not forwarded)', async () => {
     globalThis.fetch = vi.fn(async () => respond(409, { error: DEPLOY_REFUSAL_CODE }));
+    expect((await deployAgent('agent-1', vi.fn())).details).toBeUndefined();
+    globalThis.fetch = vi.fn(async () => respond(409, { error: DEPLOY_REFUSAL_CODE, message: 42 }));
     expect((await deployAgent('agent-1', vi.fn())).details).toBeUndefined();
   });
 });

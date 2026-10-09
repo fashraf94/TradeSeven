@@ -154,3 +154,23 @@ describe('B4 — a superseded due version is offered Reaffirm exactly when every
     expect(q('idea-history-v1').textContent).not.toContain(ACTION_LABELS.reaffirm);
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// The BUILD_RULES §2 mutation lens (L5, the panel): each row below kills a mutant that survived
+// the first pass; the mutant ids are the lens's (review report §9.2).
+
+describe('mutation lens rows — the panel (P01, P07, P13)', () => {
+  it('P07 — Reaffirm v1 opens the editor on v1\'s statement, not the current draft\'s', async () => {
+    await mount(answer([due(1), v(2, { status: 'draft', stateReason: 'player_authored' })], { deployedLists: { 1: FROZEN_MANY } }));
+    await click(button(`${ACTION_LABELS.reaffirm} v1`));
+    expect(q('idea-editor').querySelector('textarea').value).toBe('Idea number 1');
+  });
+  it('P01 — a CURRENT due version shows no superseded block (one Reaffirm)', async () => {
+    await mount(answer([due(1)], { deployedLists: { 1: FROZEN_MANY } }));
+    expect(q('idea-superseded-due')).toBeNull();
+  });
+  it('P13 — two due versions under a draft: the NEWEST due one is offered', async () => {
+    await mount(answer([due(1), due(2), v(3, { status: 'draft', stateReason: 'player_authored' })]));
+    expect(button(`${ACTION_LABELS.reaffirm} v2`)).toBeDefined();
+  });
+});

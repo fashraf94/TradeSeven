@@ -106,6 +106,9 @@ describe('placeholders are filled from the record, never invented', () => {
     // A list's live tickers in the old shape are not a source.
     expect(ideaSymbolOf({ activation: [], invalidation: [] }, [{ symbol: 'IWM' }])).toBeNull();
   });
+  it('I01 (mutation lens) — a blank condition symbol is no symbol: the frozen one-ticker snapshot decides', () => {
+    expect(ideaSymbolOf({ activation: [{ symbol: '  ', side: 'above', level: 1, basis: 'daily_close' }], invalidation: [] }, { name: 'Chips', tickers: ['NVDA'] })).toBe('NVDA');
+  });
   it('[LIST] (founder ruling B3): the frozen list NAME, else null', () => {
     expect(ideaListOf({ name: 'AI capex', tickers: ['NVDA', 'AMD'] })).toBe('AI capex');
     expect(ideaListOf({ name: '  ', tickers: [] })).toBeNull();

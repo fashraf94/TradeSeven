@@ -625,3 +625,76 @@ describe('the census — who names agentContext.equippedHypothesis', () => {
     expect(buildAgentIdentityBlock(carried)).toBe(buildAgentIdentityBlock(plain));
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// The BUILD_RULES §2 mutation lens (L5, carriage): each row below kills a mutant that survived
+// the first pass; the mutant ids are the lens's (review report §9.2).
+
+const L5act1 = (over = {}) => version(1, { status: 'activated', ...DEPLOYED('b-old', '2026-10-12T20:00:00.000Z'), ...over });
+const L5row = (over = {}) => ({ userId: OWNER, watchlistId: WL, version: 1, battleId: 'b-old', dueAtMs: Date.parse('2026-10-12T20:00:00.000Z'), armedAt: 1, ...over });
+const L5beforeTx = (db, fn) => { const real = db.runTransaction; let once = false; db.runTransaction = async (cb) => { if (!once) { once = true; fn(); } return real.call(db, cb); }; };
+describe('mutation lens rows — carriage (C09, C15, C18, C19, C22, C33, C36, C41, C42, R27, T06, A03, A28, R13, R23)', () => {
+  it('C18/C19/R27 — already_due: the pass judged it between the walk read and the judgment -> still refused', async () => {
+    const db = seed([L5act1()], { [rowPath(1)]: L5row() });
+    L5beforeTx(db, () => { db.__docs.set(vPath(1), { ...db.__docs.get(vPath(1)), status: 'review_due', stateSource: 'review_pass', stateReason: 'horizon_elapsed' }); db.__docs.delete(rowPath(1)); });
+    expect(await resolve(db)).toMatchObject({ outcome: 'refuse', version: 1 });
+  });
+  it('C22 — not_due inside the judgment: the row was re-armed after the walk read -> carried, nothing written', async () => {
+    const db = seed([L5act1()], { [rowPath(1)]: L5row() });
+    L5beforeTx(db, () => { db.__docs.set(rowPath(1), L5row({ dueAtMs: Date.parse('2026-10-20T20:00:00.000Z') })); });
+    expect(await resolve(db)).toMatchObject({ outcome: 'carry', version: 1, status: 'activated' });
+    expect(stored(db, vPath(1)).status).toBe('activated');
+  });
+  it('C09 — expiresAt exactly at the instant is ended', () => {
+    const at = Date.parse(NOW);
+    expect(C.activatedReviewDue({ row: L5row({ dueAtMs: null }), battle: { status: 'active', expiresAt: NOW }, atMs: at })).toBe('battle_ended');
+  });
+  it('C36 — an unknown horizon (hash recomputed) is corrupt -> nothing, never a broken deploy', async () => {
+    const bad = { ...version(1), horizonEnum: 'weekly' };
+    bad.contentHash = contentHashOf(bad);
+    expect(await resolve(seed([bad]))).toEqual({ outcome: 'none', reason: 'corrupt_version' });
+  });
+  it('C41/C42 — an activated version with no / a malformed firstDeployedAt is corrupt', async () => {
+    expect(await resolve(seed([L5act1({ firstDeployedAt: null })]))).toEqual({ outcome: 'none', reason: 'corrupt_version' });
+    expect(await resolve(seed([L5act1({ firstDeployedAt: 'not a date' })]))).toEqual({ outcome: 'none', reason: 'corrupt_version' });
+  });
+  it('C33/T06 — race: the fresh doc names another list, or another version number', async () => {
+    for (const patch of [{ watchlistId: 'wl-elsewhere' }, { version: 7 }]) {
+      const db = seed([version(1)]);
+      const { equippedHypothesis } = await resolve(db);
+      db.__docs.set(vPath(1), { ...db.__docs.get(vPath(1)), ...patch });
+      const err = await deploy(db, { sibling: equippedHypothesis }).catch((e) => e);
+      expect(err, JSON.stringify(patch)).toMatchObject({ reason: 'version_not_carriable' });
+    }
+  });
+  it('A03/A28 — anchors: the clock moves before the creation transaction -> reviewDueAt and armedAt anchored at the battle createdAt', async () => {
+    const db = seed([version(1)]);
+    const { equippedHypothesis } = await resolve(db);
+    L5beforeTx(db, () => { vi.setSystemTime(new Date('2026-10-13T21:00:00.000Z')); });
+    const { id } = await deploy(db, { sibling: equippedHypothesis });
+    expect(stored(db, `agentBattles/${id}`).createdAt).toBe(NOW);
+    expect(stored(db, vPath(1)).reviewDueAt).toBe(new Date(computeReviewDueAt('swing', Date.parse(NOW))).toISOString());
+    expect(stored(db, rowPath(1)).armedAt).toBe(Date.parse(NOW));
+  });
+  it('C15 — a timed row never reads its old battle (B6 redeploy)', async () => {
+    const db = seed([L5act1({ reviewDueAt: '2026-10-20T20:00:00.000Z' })], { [rowPath(1)]: L5row({ dueAtMs: Date.parse('2026-10-20T20:00:00.000Z') }), 'agentBattles/b-old': { ownerId: OWNER, status: 'active' } });
+    const { equippedHypothesis } = await resolve(db);
+    await deploy(db, { sibling: equippedHypothesis });
+    expect(db.__access.reads.filter((p) => p === 'agentBattles/b-old')).toEqual([]);
+  });
+  it('R13 — a full page whose last document has no usable version ends the read (no later numeric version can follow it in descending order): the due version on the page still refuses', async () => {
+    const versions = [version(1, { status: 'review_due', ...DEPLOYED('b-1') })];
+    for (let n = 2; n <= 99; n++) versions.push(version(n, { status: 'draft' }));
+    const db = seed(versions);
+    db.__docs.set(`watchlists/${WL}/hypothesisVersions/vnull`, { ...version(1, { status: 'draft' }), version: null });
+    expect(await resolve(db)).toMatchObject({ outcome: 'refuse', version: 1 });
+    expect(db.__access.queries).toHaveLength(1);
+  });
+  it('R23 — the review row cannot be read: nothing carried (never an active idea carried unjudged)', async () => {
+    const db = seed([L5act1()], { [rowPath(1)]: L5row() });
+    const base = db.collection;
+    db.collection = (name) => (name === 'hypothesisReviewQueue' ? { doc: () => ({ get: async () => { throw new Error('UNAVAILABLE'); } }) } : base(name));
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'read_failed' });
+    expect(stored(db, vPath(1)).status).toBe('activated');
+  });
+});
