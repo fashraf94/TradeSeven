@@ -79,6 +79,36 @@ export function ideaListOf(frozen = null) {
   return typeof frozen?.name === 'string' && frozen.name.trim() !== '' ? frozen.name : null;
 }
 
+/**
+ * The table-C sentence for a version's state, or null when none applies or a
+ * placeholder has no recorded value. `invalidated` renders nothing in P1a:
+ * [typed condition] is the MET condition on the record, which P3/P4 define —
+ * a raw reason code is never put into a blessed sentence (review L1-6).
+ *
+ * Pilot P1b (founder ruling B3): [SYM] when the idea names exactly one symbol
+ * (ideaSymbolOf), else the [LIST] row with the frozen list's name
+ * (`frozen` = the server's deployedLists[version]); neither known → no line.
+ * The battle-ended row is table C's `review_due (battle ended, unspecified)`:
+ * it says "still open-ended", so it renders only for an `unspecified`
+ * horizon — a version whose clock fell back to a battle-end review (ruling B5,
+ * `reviewClockFault`) shows its status chip alone.
+ */
+export function lifecycleLineFor(version, frozen = null) {
+  if (!version || version.status !== 'review_due') return null;
+  const sym = ideaSymbolOf(version, frozen);
+  const list = sym ? null : ideaListOf(frozen);
+  if (version.stateReason === 'horizon_elapsed') {
+    const window = windowTextOf(version.horizonEnum);
+    if (sym) return fillLine(LIFECYCLE_LINES.reviewDueHorizon, { sym, window });
+    return list ? fillLine(LIFECYCLE_LINES.reviewDueHorizonList, { list, window }) : null;
+  }
+  if (version.stateReason === 'battle_ended' && version.horizonEnum === 'unspecified') {
+    if (sym) return fillLine(LIFECYCLE_LINES.reviewDueBattleEnded, { sym });
+    return list ? fillLine(LIFECYCLE_LINES.reviewDueBattleEndedList, { list }) : null;
+  }
+  return null;
+}
+
 export const HORIZON_LABELS = Object.freeze({
   intraday: 'Intraday', swing: 'Swing', positional: 'Positional', longterm: 'Long-term', unspecified: 'No time-frame',
 });

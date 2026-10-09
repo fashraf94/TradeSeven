@@ -50,10 +50,14 @@ import {
   listHypothesisVersions, createHypothesisVersion, transitionHypothesis, reaffirmHypothesis, newOpId,
 } from '../../../services/hypothesisVersionService';
 import {
-  LIFECYCLE_LINES, fillLine, ideaSymbolOf, ideaListOf, windowTextOf, formatIdeaDate,
+  LIFECYCLE_LINES, lifecycleLineFor, formatIdeaDate,
   STATUS_LABELS, ACTION_LABELS, HORIZON_LABELS, HORIZON_SOURCE_LABELS, PANEL_COPY, RESEARCH_COPY, researchLinesOf, noResearchRecorded,
 } from './ideaCopy';
 import SectionLabel from './SectionLabel';
+
+// The table-C sentence for a version lives in ideaCopy.js (pure — the P1b
+// end-to-end suite renders it in Node); re-exported for the panel's suites.
+export { lifecycleLineFor };
 
 const STATEMENT_MAX = 1000;
 const MISSING_EVIDENCE_MAX = 300;
@@ -64,36 +68,6 @@ const FORWARD = ['ready', 'reaffirm', 'mark_researched'];
 const POST_GATE_ERRORS = new Set(['not_found', 'forbidden', 'server_error', 'pointer_corrupt', 'invalid_watchlist_id', 'invalid_version']);
 /** Refusals that mean the editor's request can no longer apply as opened. */
 const STALE_REQUEST = new Set(['version_conflict', 'op_conflict', 'illegal_transition']);
-
-/**
- * The table-C sentence for a version's state, or null when none applies or a
- * placeholder has no recorded value. `invalidated` renders nothing in P1a:
- * [typed condition] is the MET condition on the record, which P3/P4 define —
- * a raw reason code is never put into a blessed sentence (review L1-6).
- *
- * Pilot P1b (founder ruling B3): [SYM] when the idea names exactly one symbol
- * (ideaSymbolOf), else the [LIST] row with the frozen list's name
- * (`frozen` = the server's deployedLists[version]); neither known → no line.
- * The battle-ended row is table C's `review_due (battle ended, unspecified)`:
- * it says "still open-ended", so it renders only for an `unspecified`
- * horizon — a version whose clock fell back to a battle-end review (ruling B5,
- * `reviewClockFault`) shows its status chip alone.
- */
-export function lifecycleLineFor(version, frozen = null) {
-  if (!version || version.status !== 'review_due') return null;
-  const sym = ideaSymbolOf(version, frozen);
-  const list = sym ? null : ideaListOf(frozen);
-  if (version.stateReason === 'horizon_elapsed') {
-    const window = windowTextOf(version.horizonEnum);
-    if (sym) return fillLine(LIFECYCLE_LINES.reviewDueHorizon, { sym, window });
-    return list ? fillLine(LIFECYCLE_LINES.reviewDueHorizonList, { list, window }) : null;
-  }
-  if (version.stateReason === 'battle_ended' && version.horizonEnum === 'unspecified') {
-    if (sym) return fillLine(LIFECYCLE_LINES.reviewDueBattleEnded, { sym });
-    return list ? fillLine(LIFECYCLE_LINES.reviewDueBattleEndedList, { list }) : null;
-  }
-  return null;
-}
 
 /** The statuses of every listed version newer than `v` (the list read is newest first and bounded; see the route). */
 function newerStatusesOf(versions, v) {

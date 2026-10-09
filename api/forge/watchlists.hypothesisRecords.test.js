@@ -665,6 +665,53 @@ describe('row 5 — reaffirmation', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// Pilot P1b — founder ruling B3: the GET names the FROZEN list the newest due
+// version rode in (its deploying battle's own snapshot), for the Forge's
+// [SYM] / [LIST] line. Only when the page holds a due version; a battle that
+// cannot prove it (another owner, another version, unreadable) gives {}.
+describe('P1b — the frozen list on the versions GET (deployedLists)', () => {
+  const SIB = (n) => ({ watchlistId: 'wl-1', hypothesisVersion: n });
+  const battleDoc = (over = {}) => ({
+    ownerId: OWNER, status: 'completed',
+    agentContext: { equippedWatchlist: { watchlistId: 'wl-1', name: 'AI capex', tickers: ['NVDA', 'AMD'], snapshotAt: NOW }, equippedHypothesis: SIB(1) },
+    ...over,
+  });
+  const DUE_V = { status: 'review_due', stateReason: 'horizon_elapsed', firstDeployedAt: NOW, lastDeployedAt: NOW, lastDeployedBattleId: 'battle-9', reviewDueAt: NOW };
+  it('no due version in the page → the P1a body exactly (no deployedLists key, no battle read)', async () => {
+    const db = seedList({}, [{ status: 'activated', firstDeployedAt: NOW, lastDeployedBattleId: 'battle-9' }]);
+    const res = await versions({ method: 'GET' });
+    expect(Object.keys(res.body).sort()).toEqual(['currentVersion', 'research', 'versions', 'watchlistId']);
+    expect(db.__access.reads.filter((r) => r.startsWith('agentBattles/'))).toEqual([]);
+  });
+  it('a due version deployed in the owner\'s battle that carried it → { [version]: { battleId, name, tickers } } from the battle, not the live list', async () => {
+    const db = seedList({ name: 'Renamed live', tickers: [{ symbol: 'TSLA' }] }, [DUE_V]);
+    db.__docs.set('agentBattles/battle-9', battleDoc());
+    const res = await versions({ method: 'GET' });
+    expect(res.body.deployedLists).toEqual({ 1: { battleId: 'battle-9', name: 'AI capex', tickers: ['NVDA', 'AMD'] } });
+  });
+  it('a battle that cannot prove it — another owner, another version, no snapshot, missing — gives {} (the line is then not rendered)', async () => {
+    for (const battle of [battleDoc({ ownerId: 'someone-else' }), battleDoc({ agentContext: { ...battleDoc().agentContext, equippedHypothesis: SIB(2) } }),
+      battleDoc({ agentContext: { equippedHypothesis: SIB(1) } }), null]) {
+      const db = seedList({}, [DUE_V]);
+      if (battle) db.__docs.set('agentBattles/battle-9', battle);
+      const res = await versions({ method: 'GET' });
+      expect([res.statusCode, res.body.deployedLists]).toEqual([200, {}]);
+    }
+  });
+  it('an unreadable battle never fails the GET: {} and a 200', async () => {
+    const db = seedList({}, [DUE_V]);
+    const base = db.collection;
+    db.collection = (name) => (name === 'agentBattles'
+      ? { doc: () => ({ get: async () => { throw new Error('UNAVAILABLE'); } }) }
+      : base(name));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const res = await versions({ method: 'GET' });
+    expect([res.statusCode, res.body.deployedLists]).toEqual([200, {}]);
+    expect(res.body.versions).toHaveLength(1);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 describe('the list and read routes', () => {
   it('GET → the list\'s versions newest first, with the parent pointer', async () => {
     seedList({}, [{ status: 'retired', successorVersion: 2 }, { status: 'retired', successorVersion: 3 }, { status: 'draft' }]);
