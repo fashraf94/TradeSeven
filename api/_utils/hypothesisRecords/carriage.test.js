@@ -577,3 +577,51 @@ describe('L2-3 / L2-4 — the read: paged past 100, bounded, and only documents 
     expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'nothing_carriable' });
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// "The agent reads none of this" — a census of every non-test source file that
+// names the sibling (BUILD_RULES §2 review, verifier V3: no row planted the
+// sibling into the evaluation cron's prompt path). Each entry is a writer, the
+// provenance reader, the privacy strip or a comment; a NEW reader — a prompt
+// module, the evaluation cron, a capture writer — fails here and must be
+// reviewed against spec §2.4 / §9 before it is added.
+describe('the census — who names agentContext.equippedHypothesis', () => {
+  it('exactly the P1b writers, the provenance reader, the privacy strip and comments — no prompt module, no evaluation cron, no capture', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs');
+    const { join, relative, sep } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const REPO = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..');
+    const files = [];
+    const walk = (abs) => {
+      for (const ent of readdirSync(abs, { withFileTypes: true })) {
+        if (ent.name === 'node_modules' || ent.name.startsWith('.') || ent.name === '__fixtures__') continue;
+        const child = join(abs, ent.name);
+        if (ent.isDirectory()) walk(child);
+        else if (/\.(js|jsx|mjs)$/.test(ent.name) && !/\.test\.(js|jsx|mjs)$/.test(ent.name)) files.push(child);
+      }
+    };
+    walk(join(REPO, 'api'));
+    walk(join(REPO, 'src'));
+    const naming = files.filter((f) => readFileSync(f, 'utf8').includes('equippedHypothesis'))
+      .map((f) => relative(REPO, f).split(sep).join('/')).sort();
+    expect(naming).toEqual([
+      'api/_utils/agentBattleService.js', // the fenced writer (the 11 keys)
+      'api/_utils/callRecords/candidate.js', // P1a's resolveProvenance — {watchlistId, hypothesisVersion} only
+      'api/_utils/compositionGenerationFence.js', // a comment; the creation transaction calls carriage.js
+      'api/_utils/hypothesisRecords/carriage.js', // the resolver, the fresh read, the frozen-list read
+      'api/_utils/tournamentBattleView.js', // the privacy strip
+      'api/agent/decide.js', // the fenced call site (passes the resolver's sibling through)
+      'api/tournament/battle-view.js', // a comment
+      'src/config/featureFlags.js', // the flag's docstring
+    ]);
+  });
+  it('and the evaluation prompt\'s identity block is byte-identical with and without a sibling', async () => {
+    const { buildAgentIdentityBlock } = await import('../agentEvalPromptAssembly.js');
+    const db = seed([version(1)]);
+    const { equippedHypothesis } = await resolve(db);
+    const plain = stored(db, `agentBattles/${(await deploy(db)).id}`);
+    const carried = stored(db, `agentBattles/${(await deploy(db, { sibling: equippedHypothesis })).id}`);
+    expect('equippedHypothesis' in carried.agentContext).toBe(true);
+    expect(buildAgentIdentityBlock(carried)).toBe(buildAgentIdentityBlock(plain));
+  });
+});
