@@ -25,7 +25,7 @@
 //                  made (fixture key `scenariosFenceDark`).
 // Limits, stated: with the clock frozen every timestamp is the same instant,
 // so swapping one timestamp source for another is invisible here; un-awaited
-// work is captured after ten macrotask turns.
+// work is captured after ten macrotask turns and a 25 ms wait.
 //
 // THE FIXTURE (api/_utils/__fixtures__/deployCarriageOffGolden.json) IS
 // CAPTURED FROM `main`'S OWN CODE: this same file (every line but the SHA pin

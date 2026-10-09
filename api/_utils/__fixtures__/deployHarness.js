@@ -153,9 +153,14 @@ export function makeDeployDb(docs) {
   return db;
 }
 
-/** Let un-awaited work land: several macrotask turns (the shadow logger, the opener, any late write — review L1-3). */
-export async function settle(turns = 10) {
+/**
+ * Let un-awaited work land: several macrotask turns, then a 25 ms wait (the
+ * shadow logger, the opener, any late write on a short timer — review L1-3;
+ * verifier V1's planted 5 ms write lands inside it).
+ */
+export async function settle(turns = 10, waitMs = 25) {
   for (let i = 0; i < turns; i++) await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, waitMs));
 }
 
 /** A deterministic Math.random (mulberry32). */
