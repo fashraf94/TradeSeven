@@ -23,6 +23,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makeCallsFirestore, stored } from '../_utils/__fixtures__/callsFirestore.js';
 import {
   HYPOTHESIS_STATUSES, LIFECYCLE_FIELDS, CONTENT_FIELDS, contentHashOf, PLAYER_TRANSITIONS, legalTransition,
+  REAFFIRM_SUCCESSOR_STATUSES,
 } from '../_utils/hypothesisRecords/model.js';
 
 const state = vi.hoisted(() => ({ flagOn: true, user: { uid: 'owner-1' }, authCalls: 0 }));
@@ -595,28 +596,57 @@ describe('row 5 — reaffirmation', () => {
     expect(stored(db, vPath(2))).toMatchObject({ statement: 'the sharper idea', horizonEnum: 'positional', horizonSource: 'player', status: 'ready' });
     expect(stored(db, vPath(1))).toEqual({ ...before, successorVersion: 2 });
   });
-  it('only a CURRENT review_due without a successor reaffirms: from any other status, or twice → 409 illegal_transition, nothing written', async () => {
+  it('only a review_due version reaffirms: from any other status → 409 illegal_transition, nothing written', async () => {
     for (const status of HYPOTHESIS_STATUSES.filter((s) => s !== 'review_due')) {
       const db = seedList({}, [{ status }]);
       const res = await reaffirm();
       expect([res.statusCode, res.body.error]).toEqual([409, 'illegal_transition']);
       expect(db.__access.writes).toEqual([]);
     }
+  });
+  // Pilot P1b — founder ruling B4 (P1a carry-forward 2, review L2-3) replaces P1a's "current and
+  // successor-free only": a due version may be reaffirmed when EVERY newer version is pre-deploy.
+  it('P1b acceptance row 7 (B4) — a superseded due version reaffirms when every newer version is pre-deploy: v{current+1} in ready from the DUE content, on the pointer; the chain pointer lands on the current version; the due version is untouched', async () => {
+    expect([...REAFFIRM_SUCCESSOR_STATUSES].sort()).toEqual(['cancelled', 'draft', 'ready', 'rejected', 'researched', 'waiting_for_evidence']);
+    for (const newer of REAFFIRM_SUCCESSOR_STATUSES) {
+      const db = seedList({}, [{ ...DUE, successorVersion: 2 }, { status: newer, statement: 'an edit made while it ran' }]);
+      const dueBefore = stored(db, vPath(1));
+      const newerBefore = stored(db, vPath(2));
+      const res = await transition({ version: 1, action: 'reaffirm', opId: `op-b4-${newer}`, expectedVersion: 2 });
+      expect([res.statusCode, newer]).toEqual([200, newer]);
+      const v3 = stored(db, vPath(3));
+      for (const k of [...CONTENT_FIELDS, 'contentHash']) expect(v3[k], `${newer} · ${k}`).toEqual(dueBefore[k]);
+      expect(v3).toMatchObject({ version: 3, status: 'ready', stateReason: 'reaffirmed', firstDeployedAt: null, reviewDueAt: null });
+      expect(stored(db, 'watchlists/wl-1')).toMatchObject({ currentHypothesisVersion: 3, hypothesisVersionCount: 3 });
+      expect(stored(db, vPath(1)), newer).toEqual(dueBefore); // successorVersion 2 kept — never rewritten
+      expect(stored(db, vPath(2)), newer).toEqual({ ...newerBefore, successorVersion: 3 });
+    }
+  });
+  it('P1b acceptance row 7 (B4) — refused (409 illegal_transition, naming the blocker, nothing written) when ANY newer version is not pre-deploy; a stale pointer is a version_conflict', async () => {
+    for (const blocker of HYPOTHESIS_STATUSES.filter((st) => !REAFFIRM_SUCCESSOR_STATUSES.includes(st))) {
+      const db = seedList({}, [DUE, { status: 'draft' }, { status: blocker }]);
+      const res = await transition({ version: 1, action: 'reaffirm', opId: 'op-x', expectedVersion: 3 });
+      expect([res.statusCode, res.body.error, blocker]).toEqual([409, 'illegal_transition', blocker]);
+      expect(res.body.blockedBy).toEqual({ version: 3, status: blocker });
+      expect(db.__access.writes).toEqual([]);
+    }
+    expect(HYPOTHESIS_STATUSES.filter((st) => !REAFFIRM_SUCCESSOR_STATUSES.includes(st)).sort()).toEqual(['activated', 'invalidated', 'retired', 'review_due']);
+    const db = seedList({}, [DUE, { status: 'draft' }]);
+    const stale = await transition({ version: 1, action: 'reaffirm', opId: 'op-y', expectedVersion: 1 });
+    expect(stale.body).toMatchObject({ error: 'version_conflict', currentVersion: 2 });
+    const beyond = await transition({ version: 3, action: 'reaffirm', opId: 'op-z', expectedVersion: 2 });
+    expect([beyond.statusCode, beyond.body.error]).toEqual([404, 'version_not_found']);
+    expect(db.__access.writes).toEqual([]);
+  });
+  it('B4 — reaffirming the same due version again is legal (its newer version is the ready one it made) and mints the next version; the current-version-due case keeps P1a\'s shape', async () => {
     const db = seedList({}, [DUE]);
     await reaffirm();
+    expect(stored(db, vPath(1)).successorVersion).toBe(2);
     const second = await transition({ version: 1, action: 'reaffirm', opId: 'op-re-2', expectedVersion: 2 });
-    expect([second.statusCode, second.body.error]).toEqual([409, 'illegal_transition']);
-    expect(stored(db, vPath(3))).toBeNull();
-  });
-  it('each reaffirm guard holds ALONE (review L5-7): a due version that already has a successor, and a due version that is not current, are refused', async () => {
-    let db = seedList({ currentHypothesisVersion: 1, hypothesisVersionCount: 1 }, [{ ...DUE, successorVersion: 2 }]);
-    let res = await reaffirm();
-    expect([res.statusCode, res.body.error]).toEqual([409, 'illegal_transition']);
-    expect(db.__access.writes).toEqual([]);
-    db = seedList({}, [DUE, { status: 'draft' }]);
-    res = await transition({ version: 1, action: 'reaffirm', opId: 'op-re', expectedVersion: 2 });
-    expect([res.statusCode, res.body.error]).toEqual([409, 'illegal_transition']);
-    expect(db.__access.writes).toEqual([]);
+    expect(second.statusCode).toBe(200);
+    expect(stored(db, vPath(3))).toMatchObject({ status: 'ready', stateReason: 'reaffirmed' });
+    expect(stored(db, vPath(1)).successorVersion).toBe(2);
+    expect(stored(db, vPath(2)).successorVersion).toBe(3);
   });
   it('allocation rules hold for reaffirm: replay → idempotent; same opId other payload → op_conflict; stale pointer → version_conflict', async () => {
     const db = seedList({}, [DUE]);

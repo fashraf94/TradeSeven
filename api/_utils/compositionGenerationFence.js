@@ -42,6 +42,12 @@ import {
   readActivationDescriptor, sameActivationDescriptor,
 } from './compositionProductionLoader.js';
 import { validateWriteEpochInTx } from './compositionWriteEpoch.js';
+// Pilot P1b — deploy carriage: a battle that carries a hypothesis version
+// activates it in THIS creation transaction (Phase 0 §5.1; the logic lives in
+// the hypothesis module, this file only threads it).
+import {
+  carriedSiblingOf, readCarriedVersionInTx, activateCarriedVersionInTx, HypothesisCarriageError,
+} from './hypothesisRecords/carriage.js';
 
 export class ProjectionStaleError extends Error {
   constructor(detail) {
@@ -144,10 +150,23 @@ export function manifestGenerationStamp(pin) {
  * activation/rollback ABORTS with nothing created (wholly-A or wholly-B;
  * the caller's retry is a fresh deploy that re-pins and re-resolves).
  *
+ * Pilot P1b — DEPLOY CARRIAGE rides the lit transaction: when the battle
+ * carries a hypothesis version (`agentContext.equippedHypothesis`), the
+ * transaction also FRESH-reads that version after the descriptor check (all
+ * reads before any write), and — once the battle is created — activates it
+ * (ready → activated, or an active idea's redeploy) and arms its review row,
+ * in the same commit. A fresh read that disagrees with what the deploy froze
+ * throws HypothesisCarriageError: no battle, no version change, no row. A
+ * battle carrying nothing does exactly what it did before (no extra read).
+ * Carriage requires this transactional path: the deploy resolver never hands
+ * a sibling to a dark pin, and the dark branch refuses one outright rather
+ * than create a battle whose idea was never activated.
+ *
  * @returns {Promise<{id: string}>} the created battle ref.
  */
 export async function commitBattleDocWithPin(db, battleDoc, pin) {
   if (!pin || pin.dark) {
+    if (carriedSiblingOf(battleDoc)) throw new HypothesisCarriageError('carriage_requires_transaction');
     return db.collection('agentBattles').add(battleDoc);
   }
   const ref = db.collection('agentBattles').doc();
@@ -159,7 +178,9 @@ export async function commitBattleDocWithPin(db, battleDoc, pin) {
         `battle resolved at generation ${pin.descriptor?.activationGeneration ?? 'none'}, record now at ${current?.activationGeneration ?? 'none'}`,
       );
     }
+    const carried = await readCarriedVersionInTx(tx, db, battleDoc); // P1b: null, zero reads, when nothing is carried
     await tx.create(ref, battleDoc);
+    if (carried) activateCarriedVersionInTx(tx, db, carried, { battleId: ref.id, battleDoc });
   });
   return ref;
 }

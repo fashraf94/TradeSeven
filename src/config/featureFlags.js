@@ -3042,6 +3042,14 @@ export function isShadowCpuQuoteIntegrityOn() {
  * abandon route), the analysis sessions and the watchlist create/save paths;
  * the `researchWorkId` stamp on those hosts and on new lists; the research
  * refs on new versions; `mark_researched`; and the panel's research line.
+ * Pilot P1b (build report docs/audits/20261009_BUILD_PILOT_P1B_DEPLOY_CARRIAGE.md;
+ * founder ruling B1, spec Amendment D) puts DEPLOY CARRIAGE behind the same
+ * switch, resolved for the battle's OWNER: a self-select deploy carries a
+ * frozen copy of the equipped list's newest ready/activated version
+ * (`agentContext.equippedHypothesis`), activates it and arms its review row in
+ * the battle-creation transaction, and refuses a deploy whose idea is due for
+ * review with no ready version (409 `hypothesis_review_due`, table C's line);
+ * the Forge's review lines name [SYM] or the frozen [LIST].
  * Nothing the agent sees or trades reads any of it.
  *
  * TRUE is not enough on its own: the gate resolves ON only for owners on the
@@ -3069,7 +3077,12 @@ export function isShadowCpuQuoteIntegrityOn() {
  * the research records (owner-readable, read by no app code once off; an open
  * one simply stays open) and the `researchWorkId` stamp on the sessions and
  * lists that got one (the screener-linked lists also keep their
- * `sourceSessionId`).
+ * `sourceSessionId`). P1b adds: battles already created keep their frozen
+ * `equippedHypothesis` (read only by the call writer's provenance and the
+ * owner's own battle reads); versions already activated stay `activated`
+ * and their armed review rows stay in the queue — UNREVIEWED while off (the
+ * review pass returns before any read), and judged on the next tick after a
+ * re-flip. No new deploy carries, activates or refuses anything.
  *
  * Read it at RENDER/CALL scope through isHypothesisRecordsOn(), never as a
  * module-scope const in a consumer (the featureFlags vi.mock hazard).
@@ -3092,9 +3105,12 @@ export function isHypothesisRecordsOn() {
  *                pilot path against an injected namespace; zero ordinary live
  *                writes.
  *   'live'     — ordinary paths, allowlist-gated per mode (spec §9.5).
- * NOTHING READS IT IN P1a. P1b (deploy carriage behind this flag — founder
- * decision D3, 7 Oct 2026) is its first reader. Unknown values must resolve to
- * 'off' at every future reader (fail closed).
+ * NOTHING READS IT. Founder ruling B1 (8 Oct 2026, spec Amendment D) amends
+ * decision D3: P1b's deploy carriage is record-only and runs under
+ * HYPOTHESIS_RECORDS_ENABLED + the cockpit allowlist, so this flag stays
+ * reserved for what the agent consumes (P4) and the harness (P7) — its first
+ * readers. Unknown values must resolve to 'off' at every future reader (fail
+ * closed).
  *
  * RUNWAY: 'off' → 'advisory' → 'live', each its own founder PR after the
  * package that reads it lands, never a build PR; each step moves the pin row

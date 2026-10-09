@@ -55,6 +55,8 @@ import { TIERED_GAME_MODE, FLAT6_GAME_MODE, resolveModeConfig } from '../../src/
 import { COMPILER_ENABLED } from '../../src/config/featureFlags.js';
 import { ensureDeployableCompiledBuild } from '../_utils/deployBuildValidation.js';
 import { pinActivationDescriptor, commitActiveRulesProjection } from '../_utils/compositionGenerationFence.js';
+// Pilot P1b — deploy carriage (founder-sanctioned fence entry, 8 Oct 2026); the logic lives there.
+import { resolveDeployCarriage } from '../_utils/hypothesisRecords/carriage.js';
 
 // Vercel Pro timeout — two-call AI chain needs breathing room
 export const config = { maxDuration: 60 };
@@ -372,6 +374,26 @@ export default async function handler(req, res) {
       } catch (wlErr) {
         console.warn(`[Phase5B1] Equipped watchlist read failed for agent ${agentId}: ${wlErr.message} — degrading to no equip`);
       }
+    }
+
+    // 3d. [Pilot P1b] Deploy carriage: which version of the equipped idea this
+    //     battle carries, from the list's server-written versions (gate off →
+    //     nothing, before any read). A due idea is refused here, before any
+    //     battle work, with table C's line.
+    const carriage = await resolveDeployCarriage(db, {
+      ownerUid: agent.ownerId, watchlistId: agent.equippedWatchlistId ?? null,
+      watchlist: equippedWatchlistData, snapshot: equippedWatchlistSnapshot, pin: projectionPin,
+    });
+    if (carriage.outcome === 'refuse') {
+      await agentRef.update({
+        deployingAt: null,
+        ...(progressInitialized && {
+          'deployProgress.stage': 'error',
+          'deployProgress.errorPhase': 'pre_decision',
+          'deployProgress.updatedAt': new Date().toISOString(),
+        }),
+      });
+      return res.status(carriage.status).json(carriage.body);
     }
 
     // 4. Fetch recent FantasyTimes stories.
@@ -917,6 +939,8 @@ export default async function handler(req, res) {
         opponent,
         // [Phase5B1] Frozen snapshot of the equipped watchlist (null when none).
         equippedWatchlist: equippedWatchlistSnapshot,
+        // [Pilot P1b] The carried hypothesis version (absent unless carried).
+        ...(carriage.outcome === 'carry' ? { equippedHypothesis: carriage.equippedHypothesis } : {}),
         // P2.5 (§7-signed): the P2.4b-validated build feeds the manifest
         // block. Dark: the gate returns no build and nothing is passed.
         compiledBuild: buildGate.compiledBuild ?? null,

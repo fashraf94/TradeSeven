@@ -1,20 +1,29 @@
 // src/components/Forge/Watchlist/ideaCopy.test.js
 //
 // Pilot P1a — the panel's words against the blessed language tables
-// (docs/specs/MODE_TRUTH_LANGUAGE_TABLES_V1.md): table C's five lines are
-// shipped VERBATIM (read from the spec file, compared byte for byte), the
+// (docs/specs/MODE_TRUTH_LANGUAGE_TABLES_V1.md): table C's lines are shipped
+// VERBATIM (read from the spec file, compared byte for byte), the
 // placeholders are filled only from the record, and nothing the panel says
 // uses table E's forbidden vocabulary.
+//
+// Pilot P1b (P1b acceptance row 9): table C V1.1 adds the two [LIST] review
+// rows (founder ruling B3) — seven rows, each pinned here against the spec;
+// the due-deploy line the deploy endpoint answers with is the SAME string
+// (src/constants/hypothesisRecords.js DUE_DEPLOY_LINE, re-exported as
+// LIFECYCLE_LINES.dueDeploy); and the §E sweep covers the server-side
+// player strings P1b adds (the refusal and the race message).
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
-  LIFECYCLE_LINES, fillLine, ideaSymbolOf, windowTextOf, formatIdeaDate,
+  LIFECYCLE_LINES, fillLine, ideaSymbolOf, ideaListOf, windowTextOf, formatIdeaDate,
   STATUS_LABELS, ACTION_LABELS, HORIZON_LABELS, HORIZON_SOURCE_LABELS, PANEL_COPY,
 } from './ideaCopy';
-import { HYPOTHESIS_STATUSES, HORIZON_ENUMS, HORIZON_SOURCES, PLAYER_ACTIONS } from '../../../constants/hypothesisRecords';
+import {
+  HYPOTHESIS_STATUSES, HORIZON_ENUMS, HORIZON_SOURCES, PLAYER_ACTIONS, DUE_DEPLOY_LINE, CARRIAGE_RACE_MESSAGE, DEPLOY_REFUSAL_CODE,
+} from '../../../constants/hypothesisRecords';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TABLES = readFileSync(resolve(HERE, '../../../../docs/specs/MODE_TRUTH_LANGUAGE_TABLES_V1.md'), 'utf8').replace(/\r\n/g, '\n');
@@ -32,9 +41,10 @@ function tableC() {
 
 describe('table C, verbatim', () => {
   const C = tableC();
-  it('the spec\'s table C has exactly the five rows the panel ships', () => {
+  it('the spec\'s table C has exactly the seven rows the panel ships (V1\'s five, then table C V1.1\'s two [LIST] rows)', () => {
     expect(Object.keys(C)).toEqual([
       '`review_due` (horizon elapsed)', '`review_due` (battle ended, `unspecified`)', '`invalidated`', 'reaffirmation', 'deploy of a due version attempted',
+      '`review_due` (horizon elapsed), `[LIST]`', '`review_due` (battle ended, `unspecified`), `[LIST]`',
     ]);
   });
   it('each shipped line equals its table row byte for byte', () => {
@@ -43,7 +53,22 @@ describe('table C, verbatim', () => {
     expect(LIFECYCLE_LINES.invalidated).toBe(C['`invalidated`']);
     expect(LIFECYCLE_LINES.reaffirmed).toBe(C.reaffirmation);
     expect(LIFECYCLE_LINES.dueDeploy).toBe(C['deploy of a due version attempted']);
-    expect(Object.keys(LIFECYCLE_LINES)).toHaveLength(5);
+    expect(LIFECYCLE_LINES.reviewDueHorizonList).toBe(C['`review_due` (horizon elapsed), `[LIST]`']);
+    expect(LIFECYCLE_LINES.reviewDueBattleEndedList).toBe(C['`review_due` (battle ended, `unspecified`), `[LIST]`']);
+    expect(Object.keys(LIFECYCLE_LINES)).toHaveLength(7);
+  });
+  it('the [LIST] rows are the V1 rows with [SYM] → [LIST] and nothing else (B3: "the existing rows stay unchanged")', () => {
+    expect(LIFECYCLE_LINES.reviewDueHorizonList).toBe(LIFECYCLE_LINES.reviewDueHorizon.replace('[SYM]', '[LIST]'));
+    expect(LIFECYCLE_LINES.reviewDueBattleEndedList).toBe(LIFECYCLE_LINES.reviewDueBattleEnded.replace('[SYM]', '[LIST]'));
+  });
+  it('the deploy refusal answers with the SAME due-deploy string the Forge ships (one source — BUILD_RULES §9)', () => {
+    expect(DUE_DEPLOY_LINE).toBe(C['deploy of a due version attempted']);
+    expect(LIFECYCLE_LINES.dueDeploy).toBe(DUE_DEPLOY_LINE);
+    expect(DEPLOY_REFUSAL_CODE).toBe('hypothesis_review_due');
+  });
+  it('the table C V1.1 note is dated and the header names the version (V1.5)', () => {
+    expect(TABLES).toContain('**Table C V1.1 — 8 Oct 2026 (founder ruling B3, Pilot P1b):**');
+    expect(TABLES).toContain('**V1.5 — 8 Oct 2026:** table C gains its V1.1');
   });
 });
 
@@ -62,16 +87,33 @@ describe('placeholders are filled from the record, never invented', () => {
   it('a line with no placeholder is returned unchanged', () => {
     expect(fillLine(LIFECYCLE_LINES.reaffirmed)).toBe(LIFECYCLE_LINES.reaffirmed);
   });
-  it('[SYM]: ONLY the version\'s own condition symbols (one to three), else null — never the parent list\'s tickers (review L1-2 / L4-6)', () => {
+  it('[SYM] (founder ruling B3): ONLY when the idea names exactly one symbol — its own conditions, else a ONE-ticker frozen snapshot — never the live list (review L1-2 / L4-6)', () => {
     const cond = (symbol) => ({ symbol, side: 'above', level: 1, basis: 'daily_close' });
+    const one = { name: 'Chips', tickers: ['NVDA'] };
+    const many = { name: 'AI capex', tickers: ['NVDA', 'AMD', 'PLTR'] };
+    // Its own conditions decide when it has any.
     expect(ideaSymbolOf({ activation: [cond('NVDA')], invalidation: [cond('NVDA')] })).toBe('NVDA');
-    expect(ideaSymbolOf({ activation: [cond('NVDA'), cond('AMD')], invalidation: [] })).toBe('NVDA / AMD');
-    expect(ideaSymbolOf({ activation: ['A', 'B', 'C', 'D'].map(cond), invalidation: [] })).toBeNull();
+    expect(ideaSymbolOf({ activation: [cond('NVDA')], invalidation: [] }, many)).toBe('NVDA');
+    expect(ideaSymbolOf({ activation: [cond('NVDA'), cond('AMD')], invalidation: [] })).toBeNull();
+    expect(ideaSymbolOf({ activation: [cond('NVDA'), cond('AMD')], invalidation: [] }, one)).toBeNull(); // the idea names two
+    // No conditions: the frozen snapshot, exactly one ticker.
+    expect(ideaSymbolOf({ activation: [], invalidation: [] }, one)).toBe('NVDA');
+    expect(ideaSymbolOf({ activation: [], invalidation: [] }, { name: 'x', tickers: ['NVDA', 'NVDA'] })).toBe('NVDA');
+    expect(ideaSymbolOf({ activation: [], invalidation: [] }, many)).toBeNull();
+    expect(ideaSymbolOf({ activation: [], invalidation: [] }, { name: 'x', tickers: [] })).toBeNull();
     expect(ideaSymbolOf({ activation: [], invalidation: [] })).toBeNull();
     expect(ideaSymbolOf({})).toBeNull();
-    // A second argument (a list's tickers) is not a source at all.
+    // A list's live tickers in the old shape are not a source.
     expect(ideaSymbolOf({ activation: [], invalidation: [] }, [{ symbol: 'IWM' }])).toBeNull();
-    expect(ideaSymbolOf.length).toBe(1);
+  });
+  it('[LIST] (founder ruling B3): the frozen list NAME, else null', () => {
+    expect(ideaListOf({ name: 'AI capex', tickers: ['NVDA', 'AMD'] })).toBe('AI capex');
+    expect(ideaListOf({ name: '  ', tickers: [] })).toBeNull();
+    expect(ideaListOf(null)).toBeNull();
+    expect(ideaListOf()).toBeNull();
+    expect(fillLine(LIFECYCLE_LINES.reviewDueBattleEndedList, { list: 'AI capex' }))
+      .toBe("The battle ended with your AI capex idea still open-ended. It's flagged for review — reaffirm or retire when you're ready.");
+    expect(fillLine(LIFECYCLE_LINES.reviewDueHorizonList, { list: 'AI capex', window: null })).toBeNull();
   });
   it('[window]: the companion §6 window for the recorded enum; null for unspecified', () => {
     expect(windowTextOf('intraday')).toBe('Intraday, 2 trading sessions');
@@ -104,6 +146,8 @@ describe('table E — forbidden vocabulary appears nowhere the panel speaks', ()
   const ALL = [
     ...Object.values(LIFECYCLE_LINES), ...Object.values(STATUS_LABELS), ...Object.values(ACTION_LABELS),
     ...Object.values(HORIZON_LABELS), ...Object.values(HORIZON_SOURCE_LABELS), ...Object.values(PANEL_COPY),
+    // Pilot P1b — the server's player-facing deploy strings (the refusal and the race).
+    DUE_DEPLOY_LINE, CARRIAGE_RACE_MESSAGE,
   ];
   it('no string matches a forbidden term', () => {
     const hits = ALL.flatMap((s) => FORBIDDEN.filter((re) => re.test(s)).map((re) => `${re} in "${s}"`));
