@@ -108,6 +108,14 @@ function storedStrings(docs, keep = (s) => /\d/.test(s)) {
   return [...out].filter(keep).sort((a, b) => b.length - a.length);
 }
 
+/**
+ * Every attribute whose text a reader is shown or read aloud — a hover title, an accessible name or description, an
+ * image's alt, a field's placeholder. The sweeps read all of them, and recorded words may sit in none of them (R7's
+ * guard: "copies recorded text into no other element or attribute"; review A2AV1-N1).
+ */
+export const TEXT_ATTRIBUTES = Object.freeze(['aria-label', 'title', 'aria-description', 'aria-roledescription', 'aria-valuetext', 'aria-placeholder', 'alt', 'placeholder']);
+const TEXT_ATTRIBUTE_SELECTOR = TEXT_ATTRIBUTES.map((a) => `[${a}]`).join(', ');
+
 const TIME_PATTERNS = [/\b\d{1,2}:\d{2}( (AM|PM))?\b/g, /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/g, /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}\b/g, /\d{4}-\d{2}-\d{2}T[\d:.]+Z/g];
 /** The fixed copy that spells a digit: the class labels' bar widths, the quote-delay note, an evidence field's name. */
 export const FIXED_DIGIT_COPY = ['1-minute', '10-minute', '15–20 minutes', 'nr7'];
@@ -322,9 +330,9 @@ export function sweepNumbers(container, docs) {
     for (const s of FIXED_DIGIT_COPY) text = text.split(s).join(' ');
     if (/\d/.test(text)) bad.push(`stray digit: “${node.textContent.trim().slice(0, 80)}”`);
   }
-  // Attributes a screen reader or a hover shows are rendered output too (review A2L4-6).
-  for (const el of container.querySelectorAll('[aria-label], [title]')) {
-    for (const attr of ['aria-label', 'title']) {
+  // Attributes a screen reader or a hover shows are rendered output too (review A2L4-6; every one of them, A2AV1-N1).
+  for (const el of container.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) {
+    for (const attr of TEXT_ATTRIBUTES) {
       let text = el.getAttribute(attr);
       if (!text || !/\d/.test(text)) continue;
       for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
@@ -433,7 +441,7 @@ export function renderedText(container, docs = {}) {
   const parts = [];
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) if (!boundQuotationOf(node, docs)) parts.push(node.textContent);
-  for (const el of container.querySelectorAll('[aria-label], [title]')) parts.push(el.getAttribute('aria-label') || '', el.getAttribute('title') || '');
+  for (const el of container.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) for (const attr of TEXT_ATTRIBUTES) parts.push(el.getAttribute(attr) || '');
   return parts.join(' \n ');
 }
 
@@ -458,8 +466,8 @@ function numberWordHits(container, docs) {
     const m = text.match(NUMBER_WORD);
     if (m) hits.push(`number word “${m[0]}”: ${node.textContent.trim().slice(0, 80)}`);
   }
-  for (const el of container.querySelectorAll('[aria-label], [title]')) {
-    for (const attr of ['aria-label', 'title']) {
+  for (const el of container.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) {
+    for (const attr of TEXT_ATTRIBUTES) {
       const m = (el.getAttribute(attr) || '').match(NUMBER_WORD);
       if (m) hits.push(`number word “${m[0]}” in ${attr}: ${el.getAttribute(attr).slice(0, 80)}`);
     }

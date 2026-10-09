@@ -103,6 +103,22 @@ describe('F2 — the time axis is the trading session; "close" is the calendar\'
     expect(m.q('[data-region="symbol-facts"]').textContent).toContain('Close · the last 10-minute bar');
   });
 
+  it('(a″) review A2AV2-2: the last close\'s label takes the inner side of its line\'s end — after it left of the middle (12:00 PM), before it right of the middle (3:00 PM)', async () => {
+    for (const [rows, end, side] of [[151, '2026-09-23T16:00:00.000Z', 'after'], [331, '2026-09-23T19:00:00.000Z', 'before']]) {
+      const bars = sep23Bars();
+      bars.INTC = bars.INTC.slice(0, rows);   // the pre-market row and the session's first rows − 1 minutes
+      const { tape, series } = await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars });
+      expect(Date.parse(series.find((s) => s.symbol === 'INTC').bars.at(-1).t) + 600_000, end).toBe(Date.parse(end));
+      m.render(null);
+      mount(tape, series, 'INTC');
+      const a = axisOf();
+      expect(a.end.at, end).toBe('2026-09-23T20:00:00.000Z');
+      const anchor = lastCloseAnchor();
+      expect(anchor.side, end).toBe(side);
+      expect(anchor.at, end).toBeCloseTo(xOn(end, ...a.domain) / 10, 2);
+    }
+  });
+
   it('(a′) a missing HEAD stays blank too: INTC\'s series starts at 10:00 AM — the axis still opens at 9:30', async () => {
     const bars = sep23Bars();
     bars.INTC = bars.INTC.filter((r) => r.timestamp * 1000 >= Date.parse('2026-09-23T14:00:00.000Z'));   // no rows before 10:00 AM ET

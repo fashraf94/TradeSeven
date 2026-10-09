@@ -35,7 +35,7 @@ import CheckDetail from './FilmRoomCheckDetail';
 import { ResultCard } from './FilmRoomGlance';
 import { deepSymbols, deriveHoldings } from './filmRoomModel';
 import { sep23Day, sep23Bars, buildTapeDay, SEP23_NIGHT, SEP23_MORNING } from '../../../api/_utils/filmTape/__fixtures__/screenFixtures.js';
-import { mounter, sweepWords, quoteDefects, boundQuotationOf, parsePath, battleOf, readersOf, NOW, SPEC_FORBIDDEN_WORDS } from './__fixtures__/filmRoomHarness';
+import { mounter, sweepWords, quoteDefects, boundQuotationOf, parsePath, battleOf, readersOf, NOW, SPEC_FORBIDDEN_WORDS, TEXT_ATTRIBUTES } from './__fixtures__/filmRoomHarness';
 
 vi.setConfig({ testTimeout: 90_000 });
 
@@ -85,13 +85,13 @@ async function plantedDay(phrase) {
 const valueAt = (doc, path) => path.reduce((n, k) => (n == null ? undefined : n[k]), doc);
 const pathText = (path) => path.reduce((acc, s) => (typeof s === 'number' ? `${acc}[${s}]` : (acc ? `${acc}.${s}` : s)), '');
 
-/** Every place `text` reaches the rendered output outside a bound quotation: a text node, an aria-label, a title. */
+/** Every place `text` reaches the rendered output outside a bound quotation: a text node, or any text-bearing attribute (review A2AV1-N1). */
 function strayCopies(container, docs, text) {
   const out = [];
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.textContent.includes(text) && !boundQuotationOf(n, docs)) out.push(`text: ${n.textContent.slice(0, 80)}`);
-  for (const el of container.querySelectorAll('[aria-label], [title]')) {
-    for (const a of ['aria-label', 'title']) if ((el.getAttribute(a) || '').includes(text)) out.push(`${a}: ${el.getAttribute(a).slice(0, 80)}`);
+  for (const el of container.querySelectorAll(TEXT_ATTRIBUTES.map((a) => `[${a}]`).join(', '))) {
+    for (const a of TEXT_ATTRIBUTES) if ((el.getAttribute(a) || '').includes(text)) out.push(`${a}: ${el.getAttribute(a).slice(0, 80)}`);
   }
   return out;
 }
@@ -286,8 +286,17 @@ describe('R7\'s guard bites — only a bound quotation is exempt, and it must be
   });
 
   it('a path that is not the quotation component (no quotation root) is swept', () => {
-    const el = box('<div><p data-quote-path="rationale[0].rationale">This is the best entry.</p></div>');
+    // bound, attributed, of a recorded-words channel — everything but the quotation root (the A2A1-4 checks cannot mask it)
+    const el = box(`<div><p data-quote-path="rationale[0].rationale">This is the best entry.</p>${attribution('the agent', '12:00 PM')}</div>`);
     expect(sweepWords(el, docs)).toEqual(['best']);
+  });
+
+  it('review A2AV1-N1: recorded words copied into ANY text-bearing attribute are the screen\'s voice', () => {
+    for (const attr of ['aria-description', 'aria-roledescription', 'aria-valuetext', 'aria-placeholder', 'alt', 'placeholder']) {
+      const el = box(`<div ${attr}="This is the best entry.">${quotation('agent', 'rationale[0].rationale', 'This is the best entry.', attribution('the agent', '12:00 PM'))}</div>`);
+      expect(sweepWords(el, docs), attr).toEqual(['best']);
+      expect(strayCopies(el, docs, 'This is the best entry.'), attr).toEqual([`${attr}: This is the best entry.`]);
+    }
   });
 
   it('recorded words copied into an aria-label or a title are the screen\'s voice', () => {
