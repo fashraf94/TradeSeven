@@ -949,7 +949,13 @@ export default async function handler(req, res) {
         // commit's re-validation covers the build-gate window too.
         activationPin: projectionPin,
       }
-    );
+    ).catch(async (battleErr) => {
+      // [Pilot P1b] The carriage race (no battle was created): restore the
+      // cooldown, as the baseline gate does, so the deploy is retriable at
+      // once; the catch below releases the lock and answers.
+      if (battleErr?.hypothesisCarriage) await agentRef.update({ lastDeployedAt: agent.lastDeployedAt ?? null }).catch(() => {});
+      throw battleErr;
+    });
 
     // 17. Write activeBattleId back to agent doc
     await agentRef.update({ activeBattleId: battleResult.id });

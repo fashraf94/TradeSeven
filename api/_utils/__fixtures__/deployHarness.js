@@ -122,16 +122,40 @@ export function seedDeploy({ watchlist = watchlistDoc(), versions = [], agent = 
   return docs;
 }
 
-/** The callsFirestore double with deterministic auto-ids for `collection(x).doc()`. */
+/**
+ * The callsFirestore double with deterministic auto-ids for `collection(x).doc()`
+ * and `collection(x).add()` (the composition fence's DARK battle write is an
+ * `add`), plus ONE SEQUENCED access log, `db.__sequence`: every read, query
+ * and write in the order the store saw them (a transaction's writes land at its
+ * commit, as Firestore applies them) — so a reordering between kinds is visible
+ * (P1b review L1-3), not only the order within each kind.
+ */
 export function makeDeployDb(docs) {
   const db = makeCallsFirestore({ docs });
+  const sequence = [];
+  const tag = { reads: (p) => ({ read: p }), queries: (q) => ({ query: q.collectionPath }), writes: (w) => ({ write: `${w.op}:${w.path}` }) };
+  for (const kind of Object.keys(tag)) {
+    const arr = db.__access[kind];
+    const push = arr.push.bind(arr);
+    Object.defineProperty(arr, 'push', {
+      value: (...items) => { for (const it of items) sequence.push(tag[kind](it)); return push(...items); },
+      enumerable: false, configurable: true, writable: true,
+    });
+  }
+  db.__sequence = sequence;
   let n = 0;
   const baseCollection = db.collection;
   db.collection = (name) => {
     const col = baseCollection(name);
-    return { ...col, doc: (id) => col.doc(id === undefined ? `auto-${(n += 1)}` : id) };
+    const doc = (id) => col.doc(id === undefined ? `auto-${(n += 1)}` : id);
+    return { ...col, doc, add: async (data) => { const ref = doc(); await ref.create(data); return ref; } };
   };
   return db;
+}
+
+/** Let un-awaited work land: several macrotask turns (the shadow logger, the opener, any late write — review L1-3). */
+export async function settle(turns = 10) {
+  for (let i = 0; i < turns; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
 /** A deterministic Math.random (mulberry32). */
@@ -227,6 +251,7 @@ export function captureDeploy({ db, res, anthropic, gemmaCalls, shadow }) {
       reads: a.reads,
       queries: a.queries,
       writes: a.writes,
+      sequence: db.__sequence,
       txAttempts: db.__txAttempts,
     },
     docs: finalDocs(db),

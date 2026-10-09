@@ -44,7 +44,8 @@
 //     base-layer group-week, found through the rank history's applied groups,
 //     and its battles projected through the same `projectTournamentBattle` the
 //     spectator read path uses — a completed battle projects to itself (the
-//     Film Room unlock), so no live WHY can leak from here even by accident.
+//     Film Room unlock) minus the player's frozen idea (Pilot P1b, spec §2.7),
+//     so no live WHY can leak from here even by accident.
 //     FACTS ON THE WIRE, WORDS IN THE COPY MODULE: each pick carries what was
 //     recorded (held / flipped / swapped, the day, the counterpart symbol),
 //     and the client renders the sentence, so every user-facing string sits
@@ -265,8 +266,9 @@ async function completedBattlesFor(db, groupId, odUserId) {
     raw.push({ id: doc.id, ...data });
   });
   raw.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
-  // Projected for a NON-owner: a completed battle projects to itself, and
-  // anything not completed would come back WHAT-only. Both are what the card
+  // Projected for a NON-owner: a completed battle projects to itself (minus
+  // the player's frozen idea — Pilot P1b), and anything not completed would come
+  // back WHAT-only. Both are what the card
   // may show — the projector is the one seam, so it is called here too.
   return raw.map((b) => projectTournamentBattle(b, { isOwner: false }));
 }

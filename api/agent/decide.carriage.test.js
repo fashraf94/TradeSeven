@@ -22,6 +22,11 @@
 //     version change, no row, the lock released;
 //   · the attacker lens: a client body naming a version is ignored; an equip
 //     pointer to a list the owner does not own carries nothing.
+//   · the §2 review's fixes, through the endpoint: an activated idea whose
+//     review is already due is judged at deploy and refused (L2-1); a newer
+//     due version is never bypassed by an older one (L4-1); the race restores
+//     the cooldown (L2-2); a document whose id disagrees with its version is
+//     no version (L2-4); the fence dark carries nothing (L1-1).
 
 process.env.TZ = 'UTC';
 
@@ -30,7 +35,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const state = vi.hoisted(() => ({ db: null, anthropic: null, gemmaCalls: [], shadow: { decisions: [], firstMessages: [] }, flag: false }));
+const state = vi.hoisted(() => ({ db: null, anthropic: null, gemmaCalls: [], shadow: { decisions: [], firstMessages: [] }, flag: false, fence: true }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicDouble {
@@ -63,6 +68,10 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   const real = await importOriginal();
   return { ...real, get HYPOTHESIS_RECORDS_ENABLED() { return state.flag; } };
 });
+vi.mock('../_utils/compositionConfig.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, get COMPOSITION_EPOCH_FENCE_ENABLED() { return state.fence; } };
+});
 
 const H = await import('../_utils/__fixtures__/deployHarness.js');
 const { SCENARIOS, version, DEPLOYED } = await import('../_utils/__fixtures__/deployScenarios.js');
@@ -80,11 +89,13 @@ const GOLDEN = JSON.parse(readFileSync(resolve(HERE, '../_utils/__fixtures__/dep
 const ALLOWLIST_ENV = 'COCKPIT_ALLOWLIST_UIDS';
 const vPath = (n) => `watchlists/${H.WATCHLIST_ID}/hypothesisVersions/v${n}`;
 const rowPath = (n) => `hypothesisReviewQueue/${H.WATCHLIST_ID}:${n}`;
+const serialized = (v) => JSON.stringify(v, null, 2);
 const isHyp = (p) => typeof p === 'string' && /hypothesisVersions|hypothesisReviewQueue|hypothesisReviewState/.test(p);
 
 /** Run one deploy with the gate ON (flag true, the owner allowlisted) or OFF. */
-async function run({ docs, req }, { gate = 'on', beforeHandler = null } = {}) {
-  state.db = H.makeDeployDb(docs);
+async function run({ docs, req }, { gate = 'on', fence = true, beforeHandler = null, db = null } = {}) {
+  state.fence = fence;
+  state.db = db || H.makeDeployDb(docs);
   state.anthropic = H.makeAnthropicDouble();
   state.gemmaCalls = [];
   state.shadow = { decisions: [], firstMessages: [] };
@@ -94,7 +105,7 @@ async function run({ docs, req }, { gate = 'on', beforeHandler = null } = {}) {
   if (beforeHandler) beforeHandler(state.db);
   const res = H.makeRes();
   await handler(req, res);
-  await new Promise((r) => setTimeout(r, 0));
+  await H.settle();
   return { cap: H.captureDeploy({ db: state.db, res, anthropic: state.anthropic, gemmaCalls: state.gemmaCalls, shadow: state.shadow }), db: state.db };
 }
 const stripSibling = (battle) => {
@@ -117,6 +128,7 @@ function withoutRecords(cap) {
       reads: cap.store.reads.filter((p) => !isHyp(p)),
       queries: cap.store.queries.filter((q) => !isHyp(`${q.collectionPath}/`)),
       writes: cap.store.writes.filter((w) => !isHyp(w.path)).map((w) => (w.op === 'create' && isBattle(w.path) ? { ...w, data: stripSibling(w.data) } : w)),
+      sequence: cap.store.sequence.filter((e) => !isHyp(e.read ?? (e.query ? `${e.query}/` : e.write))),
       txAttempts: cap.store.txAttempts,
     },
     docs,
@@ -159,7 +171,7 @@ describe('acceptance row 2 — gate ON, carried: everything the agent and the ma
     expect(battle.agentContext.equippedHypothesis).toMatchObject({ watchlistId: H.WATCHLIST_ID, hypothesisVersion: 2, statement: 'Idea version 2' });
     expect(battle.agentContext.equippedWatchlist).toEqual(offBattle.agentContext.equippedWatchlist); // the snapshot is untouched
     expect(cap.docs[`agents/${H.AGENT_ID}`]).toEqual(off.docs[`agents/${H.AGENT_ID}`]);
-    expect(withoutRecords(cap)).toEqual(withoutRecords(off));
+    expect(serialized(withoutRecords(cap))).toBe(serialized(withoutRecords(off)));
     // What the record slice added: one bounded version read before the battle work, the fresh read inside the
     // creation transaction, and — in that same commit — the activation and the armed row.
     expect(cap.store.queries.filter((q) => isHyp(`${q.collectionPath}/`))).toHaveLength(1);
@@ -218,14 +230,14 @@ describe('acceptance row 3 — B2 through the endpoint', () => {
     expect(H.hypothesisAccess(off)).toEqual({ reads: [], queries: [], writes: [] });
     expect(H.hypothesisAccess(on).queries).toHaveLength(1);
     expect(H.hypothesisAccess(on).writes).toEqual([]);
-    expect(withoutRecords(on)).toEqual(withoutRecords(off));
+    expect(serialized(withoutRecords(on))).toBe(serialized(withoutRecords(off)));
     expect('equippedHypothesis' in on.docs[`agentBattles/${on.response.body.agentBattleId}`].agentContext).toBe(false);
   }, 30_000);
   it('an existing ACTIVE battle (the portfolio refresh): no battle is created, so nothing is activated — equal to main except the version read', async () => {
     const { cap } = await run(SCENARIOS.self_select_existing_active_battle());
     const off = GOLDEN.scenarios.self_select_existing_active_battle;
     expect(H.hypothesisAccess(cap).writes).toEqual([]);
-    expect(withoutRecords(cap)).toEqual(withoutRecords(off));
+    expect(serialized(withoutRecords(cap))).toBe(serialized(withoutRecords(off)));
     expect(cap.docs[vPath(1)]).toEqual(off.docs[vPath(1)]);
   }, 20_000);
 });
@@ -357,5 +369,91 @@ describe('acceptance row 6 — end to end: deploy → the armed row → the revi
     const v = res.body.versions[0];
     expect(v).toMatchObject({ status: 'review_due', stateReason: 'battle_ended', reviewClockFault: 'calendar_unavailable', horizonEnum: 'longterm' });
     expect(lifecycleLineFor(v, res.body.deployedLists[1])).toBeNull();
+  }, 20_000);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+describe('the §2 review fixes, through the endpoint', () => {
+  const rowDoc = (over = {}) => ({ userId: H.OWNER, watchlistId: H.WATCHLIST_ID, version: 1, battleId: 'battle-old-1', dueAtMs: Date.parse('2026-10-12T20:00:00.000Z'), armedAt: Date.parse('2026-10-05T15:00:00.000Z'), ...over });
+
+  it('L2-1 — an ACTIVATED idea whose clock has passed (the pass has not run yet) is judged AT DEPLOY: review_due (stateSource deploy, horizon_elapsed), its row deleted, and the deploy refused before any battle work', async () => {
+    const v1 = version(1, { status: 'activated', ...DEPLOYED('battle-old-1'), reviewDueAt: '2026-10-12T20:00:00.000Z' });
+    const docs = H.seedDeploy({ versions: [v1], extra: { [rowPath(1)]: rowDoc() } });
+    const { cap } = await run({ docs, req: H.clientRequest() });
+    expect(cap.response).toEqual({ status: 409, body: { error: 'hypothesis_review_due', message: DUE_DEPLOY_LINE } });
+    expect(cap.modelRequests).toEqual([]);
+    expect(cap.docs[vPath(1)]).toEqual({ ...v1, status: 'review_due', stateChangedAt: H.FROZEN_NOW, stateSource: 'deploy', stateReason: 'horizon_elapsed' });
+    expect(cap.docs[rowPath(1)]).toBeUndefined();
+    expect(Object.keys(cap.docs).filter((p2) => p2.startsWith('agentBattles/'))).toEqual([]);
+  }, 20_000);
+  it('L2-1 — an open-ended idea whose battle is OVER (expired, still marked active — the battle this very deploy would close) is judged battle_ended and refused; its review is never moved onto a new battle', async () => {
+    const v1 = version(1, { status: 'activated', ...DEPLOYED('battle-old-1'), reviewDueAt: null }, { horizonEnum: 'unspecified', horizonSource: 'default' });
+    const docs = H.seedDeploy({
+      versions: [v1],
+      extra: {
+        [rowPath(1)]: rowDoc({ dueAtMs: null }),
+        'agentBattles/battle-old-1': { agentId: H.AGENT_ID, ownerId: H.OWNER, status: 'active', expiresAt: '2026-10-12T20:00:00.000Z' },
+      },
+    });
+    const { cap } = await run({ docs, req: H.clientRequest() });
+    expect(cap.response.status).toBe(409);
+    expect(cap.docs[vPath(1)]).toMatchObject({ status: 'review_due', stateSource: 'deploy', stateReason: 'battle_ended' });
+    expect(cap.docs[rowPath(1)]).toBeUndefined();
+  }, 20_000);
+  it('L2-1 — the same idea whose row points at a battle still LIVE (another agent\'s, unexpired) is carried (B6): no restamp, the row re-armed to the new battle', async () => {
+    const v1 = version(1, { status: 'activated', ...DEPLOYED('battle-old-1'), reviewDueAt: null }, { horizonEnum: 'unspecified', horizonSource: 'default' });
+    const docs = H.seedDeploy({
+      versions: [v1],
+      extra: {
+        [rowPath(1)]: rowDoc({ dueAtMs: null }),
+        'agentBattles/battle-old-1': { agentId: 'casual-agent-p1b-owner-1', ownerId: H.OWNER, status: 'active', expiresAt: '2026-10-13T20:00:00.000Z' },
+      },
+    });
+    const { cap } = await run({ docs, req: H.clientRequest() });
+    const id = cap.response.body.agentBattleId;
+    expect(cap.response.status).toBe(200);
+    expect(cap.docs[vPath(1)]).toEqual({ ...v1, lastDeployedAt: H.FROZEN_NOW, lastDeployedBattleId: id });
+    expect(cap.docs[rowPath(1)]).toMatchObject({ battleId: id, dueAtMs: null });
+  }, 20_000);
+  it('L4-1 — a NEWER due version is never bypassed by an older ready or activated one: refused, the older ones untouched', async () => {
+    for (const older of [version(1, { status: 'ready', successorVersion: 2 }), version(1, { status: 'activated', ...DEPLOYED('battle-old-0'), reviewDueAt: '2026-12-31T21:00:00.000Z', successorVersion: 2 })]) {
+      const v2 = version(2, { status: 'review_due', ...DEPLOYED('battle-old-1'), stateSource: 'review_pass', stateReason: 'horizon_elapsed' });
+      const { cap } = await run({ docs: H.seedDeploy({ versions: [older, v2] }), req: H.clientRequest() });
+      expect([cap.response.status, older.status]).toEqual([409, older.status]);
+      expect(cap.docs[vPath(1)]).toEqual(older);
+    }
+  }, 30_000);
+  it('L2-2 — the race restores the cooldown: the deploy is retriable AT ONCE (the retry is not a 429)', async () => {
+    const scenario = SCENARIOS.self_select_ready_over_activated();
+    let raced = false;
+    const { cap, db } = await run(scenario, {
+      beforeHandler: (d) => {
+        d.__hooks.afterQuery = async ({ collectionPath }) => {
+          if (raced || !collectionPath.endsWith('/hypothesisVersions')) return;
+          raced = true;
+          d.__docs.set(vPath(2), { ...d.__docs.get(vPath(2)), status: 'retired', stateSource: 'player', stateReason: 'player_retired' });
+        };
+      },
+    });
+    expect(cap.response.status).toBe(500);
+    expect(cap.docs[`agents/${H.AGENT_ID}`].lastDeployedAt).toBe('2026-10-12T15:00:00.000Z'); // the prior value, restored
+    const retry = await run({ docs: null, req: H.clientRequest() }, { db });
+    expect(retry.cap.response.status).toBe(200);
+    expect(retry.cap.response.body.battleCreated).toBe(true);
+  }, 30_000);
+  it('L2-4 — a document whose id disagrees with its version field is no version: nothing carried, the deploy succeeds', async () => {
+    const docs = H.seedDeploy();
+    docs[vPath(2)] = version(5);
+    const { cap } = await run({ docs, req: H.clientRequest() });
+    expect(cap.response.status).toBe(200);
+    expect('equippedHypothesis' in cap.docs[`agentBattles/${cap.response.body.agentBattleId}`].agentContext).toBe(false);
+    expect(cap.docs[vPath(2)].status).toBe('ready');
+  }, 20_000);
+  it('L1-1 — the fence DARK (no creation transaction): a ready idea carries nothing and the deploy equals main\'s dark capture except the one version read', async () => {
+    const { cap } = await run(SCENARIOS.self_select_ready_over_activated(), { fence: false });
+    const off = GOLDEN.scenariosFenceDark.self_select_ready_over_activated;
+    expect(H.hypothesisAccess(cap).writes).toEqual([]);
+    expect(H.hypothesisAccess(cap).queries).toHaveLength(1);
+    expect(serialized(withoutRecords(cap))).toBe(serialized(withoutRecords(off)));
   }, 20_000);
 });

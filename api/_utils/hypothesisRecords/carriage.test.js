@@ -315,8 +315,11 @@ describe('activation — in the REAL creation transaction (createAgentBattle →
     expect(db.__access.writes).toEqual([]);
     const added = [];
     const plain = { collection: () => ({ add: async (d) => { added.push(d); return { id: 'x' }; } }) };
-    await commitBattleDocWithPin(plain, { ownerId: OWNER, agentContext: { equippedWatchlist: snapshot() } }, DARK);
+    const plainDoc = { ownerId: OWNER, agentContext: { equippedWatchlist: snapshot() } };
+    await commitBattleDocWithPin(plain, plainDoc, DARK);
     expect(added).toHaveLength(1);
+    expect(added[0]).toBe(plainDoc); // the very object, unchanged (review L1-1)
+    expect(JSON.stringify(added[0])).toBe(JSON.stringify({ ownerId: OWNER, agentContext: { equippedWatchlist: snapshot() } }));
   });
 });
 
@@ -452,5 +455,125 @@ describe('the frozen list (B3) — deployedListOf', () => {
     const plain = await deploy(db);
     expect(await C.deployedListOf(db, { uid: OWNER, version: { ...v2, lastDeployedBattleId: plain.id } })).toBeNull();
     expect(await C.deployedListOf(db, { uid: OWNER, version: v2 })).toMatchObject({ battleId: id });
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// The BUILD_RULES §2 review's fixes (L2-1, L2-3, L2-4, L4-1).
+const rowPathOf = (n) => rowPath(n);
+const armedRow = (over = {}) => ({ userId: OWNER, watchlistId: WL, version: 1, battleId: 'b-old', dueAtMs: Date.parse('2026-10-12T20:00:00.000Z'), armedAt: 1, ...over });
+
+describe('L2-1 — activatedReviewDue: the review pass\'s own rule, from the armed row', () => {
+  const at = Date.parse(NOW);
+  it('a timed row is due once the instant reaches dueAtMs (the pass\'s >=)', () => {
+    expect(C.activatedReviewDue({ row: armedRow({ dueAtMs: at }), battle: null, atMs: at })).toBe('horizon_elapsed');
+    expect(C.activatedReviewDue({ row: armedRow({ dueAtMs: at + 1 }), battle: null, atMs: at })).toBeNull();
+  });
+  it('a battle-end row is due once its battle is terminal, or past its own expiresAt (ISO or Timestamp); a live battle, a missing battle or no row is never due', () => {
+    const row = armedRow({ dueAtMs: null });
+    expect(C.activatedReviewDue({ row, battle: { status: 'completed' }, atMs: at })).toBe('battle_ended');
+    expect(C.activatedReviewDue({ row, battle: { status: 'active', expiresAt: '2026-10-13T14:59:59.000Z' }, atMs: at })).toBe('battle_ended');
+    expect(C.activatedReviewDue({ row, battle: { status: 'active', expiresAt: { toDate: () => new Date(at - 1) } }, atMs: at })).toBe('battle_ended');
+    expect(C.activatedReviewDue({ row, battle: { status: 'active', expiresAt: '2026-10-13T20:00:00.000Z' }, atMs: at })).toBeNull();
+    expect(C.activatedReviewDue({ row, battle: { status: 'active' }, atMs: at })).toBeNull();
+    expect(C.activatedReviewDue({ row, battle: null, atMs: at })).toBeNull();
+    expect(C.activatedReviewDue({ row: null, battle: { status: 'completed' }, atMs: at })).toBeNull();
+  });
+});
+
+describe('L2-1 — an activated version whose review is already due is judged AT DEPLOY (judged once), then B2 applies to what remains', () => {
+  const act1 = (over = {}) => version(1, { status: 'activated', ...DEPLOYED('b-old', '2026-10-12T20:00:00.000Z'), ...over });
+  it('a passed clock → review_due (stateSource deploy, horizon_elapsed), the row deleted in the same commit, and the deploy refused', async () => {
+    const db = seed([act1()], { [rowPathOf(1)]: armedRow() });
+    const before = stored(db, vPath(1));
+    expect(await resolve(db)).toMatchObject({ outcome: 'refuse', version: 1 });
+    expect(stored(db, vPath(1))).toEqual({ ...before, status: 'review_due', stateChangedAt: NOW, stateSource: 'deploy', stateReason: 'horizon_elapsed' });
+    expect(stored(db, rowPathOf(1))).toBeNull();
+  });
+  it('an ended battle (terminal, or past expiresAt) → battle_ended; a live one → carried with its clock untouched (B6)', async () => {
+    for (const [battle, outcome] of [
+      [{ ownerId: OWNER, status: 'completed' }, 'refuse'],
+      [{ ownerId: OWNER, status: 'active', expiresAt: '2026-10-12T20:00:00.000Z' }, 'refuse'],
+      [{ ownerId: OWNER, status: 'active', expiresAt: '2026-10-13T20:00:00.000Z' }, 'carry'],
+    ]) {
+      const db = seed([act1({ reviewDueAt: null })], { [rowPathOf(1)]: armedRow({ dueAtMs: null }), 'agentBattles/b-old': battle });
+      expect((await resolve(db)).outcome, JSON.stringify(battle)).toBe(outcome);
+      expect(stored(db, vPath(1)).status).toBe(outcome === 'refuse' ? 'review_due' : 'activated');
+      if (outcome === 'refuse') expect(stored(db, vPath(1)).stateReason).toBe('battle_ended');
+    }
+  });
+  it('after judging, an OLDER ready version still cannot ride past the newer due one (L4-1); a NEWER ready one (reaffirmed) carries', async () => {
+    let db = seed([version(1), act1({ version: 2 })], {});
+    db.__docs.set(vPath(2), { ...version(2, { status: 'activated', ...DEPLOYED('b-old', '2026-10-12T20:00:00.000Z') }) });
+    db.__docs.set(rowPathOf(2), armedRow({ version: 2 }));
+    expect(await resolve(db)).toMatchObject({ outcome: 'refuse', version: 2 });
+    db = seed([act1(), version(2, { stateReason: 'reaffirmed' })], { [rowPathOf(1)]: armedRow() });
+    expect(await resolve(db)).toMatchObject({ outcome: 'carry', version: 2 });
+    expect(stored(db, vPath(1)).status).toBe('activated'); // a newer ready version decides before the older one is looked at
+  });
+  it('no armed row, or a clock not yet passed → carried as an active idea (no judgment, no write)', async () => {
+    for (const extra of [{}, { [rowPathOf(1)]: armedRow({ dueAtMs: Date.parse('2026-10-20T20:00:00.000Z') }) }]) {
+      const db = seed([act1()], extra);
+      expect(await resolve(db)).toMatchObject({ outcome: 'carry', version: 1, status: 'activated' });
+      expect(db.__access.writes).toEqual([]);
+    }
+  });
+  it('the judgment loses a race (the version moved): carry nothing; a judgment that cannot commit refuses (a due idea never rides unjudged)', async () => {
+    let db = seed([act1()], { [rowPathOf(1)]: armedRow() });
+    db.__hooks.afterQuery = async () => { db.__docs.set(vPath(1), { ...db.__docs.get(vPath(1)), status: 'retired' }); };
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'state_moved' });
+    db = seed([act1()], { [rowPathOf(1)]: armedRow() });
+    const realTx = db.runTransaction;
+    db.runTransaction = async () => { throw new Error('ABORTED'); };
+    expect(await resolve(db)).toMatchObject({ outcome: 'refuse', version: 1 });
+    db.runTransaction = realTx;
+    expect(stored(db, vPath(1)).status).toBe('activated');
+  });
+  it('the creation transaction re-checks: an active idea that became due between the deploy\'s read and the battle → the typed race error, nothing written', async () => {
+    const db = seed([act1({ reviewDueAt: '2026-10-13T16:00:00.000Z' })], { [rowPathOf(1)]: armedRow({ dueAtMs: Date.parse('2026-10-13T16:00:00.000Z') }) });
+    const { equippedHypothesis } = await resolve(db);
+    vi.setSystemTime(new Date('2026-10-13T16:30:00.000Z')); // the battle is created after the clock passed
+    const err = await deploy(db, { sibling: equippedHypothesis }).catch((e) => e);
+    expect(err).toMatchObject({ code: 'hypothesis_carriage_stale', reason: 'review_due_now' });
+    expect(battlesIn(db)).toEqual([]);
+    expect(stored(db, vPath(1)).status).toBe('activated');
+  });
+});
+
+describe('L4-1 — the newest DEPLOYED version decides: a due one admits only a NEWER carriable version', () => {
+  const due2 = () => version(2, { status: 'review_due', ...DEPLOYED('b-2'), stateSource: 'review_pass', stateReason: 'horizon_elapsed' });
+  it('an older READY version under a newer due one → refuse (never a superseded idea riding with a fresh clock)', async () => {
+    expect(await resolve(seed([version(1, { successorVersion: 2 }), due2()]))).toMatchObject({ outcome: 'refuse', version: 2 });
+  });
+  it('an older ACTIVATED version under a newer due one → refuse', async () => {
+    expect(await resolve(seed([version(1, { status: 'activated', ...DEPLOYED('b-1', '2026-12-31T21:00:00.000Z') }), due2()]))).toMatchObject({ outcome: 'refuse', version: 2 });
+  });
+  it('an older ready version under a newer deployed version that is NOT due (retired, invalidated) → carried (B2 as written)', async () => {
+    for (const status of ['retired', 'invalidated']) {
+      expect(await resolve(seed([version(1), version(2, { status, ...DEPLOYED('b-2') })])), status).toMatchObject({ outcome: 'carry', version: 1 });
+    }
+  });
+});
+
+describe('L2-3 / L2-4 — the read: paged past 100, bounded, and only documents whose id is their version', () => {
+  it('a due version below 120 newer drafts is still found (two pages): refused', async () => {
+    const versions = [version(1, { status: 'review_due', ...DEPLOYED('b-1') })];
+    for (let n = 2; n <= 121; n++) versions.push(version(n, { status: 'draft' }));
+    const db = seed(versions);
+    expect(await resolve(db)).toMatchObject({ outcome: 'refuse', version: 1 });
+    expect(db.__access.queries).toHaveLength(2);
+    expect(db.__access.queries[1].startAfter).toEqual([22]);
+  });
+  it('more than CARRIAGE_SCAN_LIMIT × CARRIAGE_SCAN_MAX_PAGES versions → nothing carried (bounded, logged)', async () => {
+    const versions = [];
+    for (let n = 1; n <= C.CARRIAGE_SCAN_LIMIT * C.CARRIAGE_SCAN_MAX_PAGES + 1; n++) versions.push({ ...version(1, { status: 'draft' }), version: n });
+    const db = seed(versions);
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'scan_cap' });
+    expect(db.__access.queries).toHaveLength(C.CARRIAGE_SCAN_MAX_PAGES);
+  });
+  it('a document whose id disagrees with its version field is no version (never frozen, so never a failed creation)', async () => {
+    const db = seed([]);
+    db.__docs.set(vPath(2), version(5));
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'nothing_carriable' });
   });
 });

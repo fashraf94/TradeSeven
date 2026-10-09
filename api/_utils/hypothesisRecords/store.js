@@ -183,8 +183,12 @@ export async function createPlayerVersion(db, { uid, watchlistId, opId, expected
   });
 }
 
-/** The most newer versions a reaffirmation will read to prove founder ruling B4 (the list read's own bound). */
-export const REAFFIRM_NEWER_MAX = LIST_LIMIT;
+/**
+ * The most newer versions a reaffirmation will read to prove founder ruling B4: one fewer than the
+ * Forge's list read (LIST_LIMIT), so a due version the route would reaffirm is always on the page the
+ * Forge shows — the panel offers exactly what the route accepts (BUILD_RULES §9; review L2-3).
+ */
+export const REAFFIRM_NEWER_MAX = LIST_LIMIT - 1;
 
 /**
  * Reaffirm a `review_due` version (spec §2.5 last row): creates v{current+1}

@@ -638,6 +638,17 @@ describe('row 5 — reaffirmation', () => {
     expect([beyond.statusCode, beyond.body.error]).toEqual([404, 'version_not_found']);
     expect(db.__access.writes).toEqual([]);
   });
+  it('B4 / review L2-3 — the bound matches the page the Forge shows: 99 newer versions → reaffirmable (the due version is on the 100-version page); 100 newer → refused, fail closed, nothing written', async () => {
+    const drafts = (k) => Array.from({ length: k }, () => ({ status: 'draft' }));
+    let db = seedList({}, [DUE, ...drafts(99)]);
+    let res = await transition({ version: 1, action: 'reaffirm', opId: 'op-99', expectedVersion: 100 });
+    expect(res.statusCode).toBe(200);
+    expect(stored(db, vPath(101))).toMatchObject({ status: 'ready', stateReason: 'reaffirmed' });
+    db = seedList({}, [DUE, ...drafts(100)]);
+    res = await transition({ version: 1, action: 'reaffirm', opId: 'op-100', expectedVersion: 101 });
+    expect([res.statusCode, res.body.error]).toEqual([409, 'illegal_transition']);
+    expect(db.__access.writes).toEqual([]);
+  });
   it('B4 — reaffirming the same due version again is legal (its newer version is the ready one it made) and mints the next version; the current-version-due case keeps P1a\'s shape', async () => {
     const db = seedList({}, [DUE]);
     await reaffirm();

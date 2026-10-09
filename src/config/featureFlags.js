@@ -3078,7 +3078,7 @@ export function isShadowCpuQuoteIntegrityOn() {
  * one simply stays open) and the `researchWorkId` stamp on the sessions and
  * lists that got one (the screener-linked lists also keep their
  * `sourceSessionId`). P1b adds: battles already created keep their frozen
- * `equippedHypothesis` (read only by the call writer's provenance and the
+ * `equippedHypothesis` (read only by the call writer's provenance, the versions GET's frozen-list read, and the
  * owner's own battle reads); versions already activated stay `activated`
  * and their armed review rows stay in the queue — UNREVIEWED while off (the
  * review pass returns before any read), and judged on the next tick after a

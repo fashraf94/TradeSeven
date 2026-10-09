@@ -27,7 +27,7 @@ import { createHash } from 'node:crypto';
 import { beforeAll, afterAll, beforeEach, describe, it, expect } from 'vitest';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import {
-  doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, getDocs, query, where,
+  doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, collectionGroup, getDocs, query, where,
 } from 'firebase/firestore';
 import { RULES_TEXT, ruleBlocks } from './callRecordsRulesSuite.mjs';
 
@@ -82,10 +82,16 @@ describe('agentBattles carrying equippedHypothesis — READ: the owner only', ()
     const snap = await assertSucceeds(getDoc(doc(asOwner(), CARRIED)));
     expect(snap.data().agentContext.equippedHypothesis).toEqual(SIBLING);
   });
+  it('the owner LISTS their own battles by ownerId (positive control for the query rows below; review L3-2)', async () => {
+    const snap = await assertSucceeds(getDocs(query(collection(asOwner(), 'agentBattles'), where('ownerId', '==', OWNER_UID))));
+    expect(snap.size).toBe(2);
+  });
   for (const [who, ctx] of NON_OWNERS) {
-    it(`${who} cannot read it — by get, or by a query naming the owner`, async () => {
+    it(`${who} cannot read it — by get, by a query naming the owner, or by a collection-group query`, async () => {
       await assertFails(getDoc(doc(ctx(), CARRIED)));
       await assertFails(getDocs(query(collection(ctx(), 'agentBattles'), where('ownerId', '==', OWNER_UID))));
+      await assertFails(getDocs(collectionGroup(ctx(), 'agentBattles')));
+      await assertFails(getDocs(query(collectionGroup(ctx(), 'agentBattles'), where('ownerId', '==', OWNER_UID))));
     });
   }
 });

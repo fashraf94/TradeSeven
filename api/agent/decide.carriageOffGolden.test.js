@@ -5,15 +5,27 @@
 // byte-identical to `main`: the response, the prompt bytes (every model
 // request: system, messages, tools, model, temperature), the voice-model
 // opener's prompt, the shadow-log arguments, every store read, query and
-// write IN ORDER (so the creation transaction's reads and writes too), the
-// transaction attempt count, and the final documents — the battle (its
-// agentContext, the manifest and its equippedConfigHash) and the agent
-// document. And no hypothesis record is read or written: zero version reads.
+// write — each kind in its own order AND one sequence across the kinds (a
+// transaction's writes as committed), so the creation transaction's reads and
+// writes too — the transaction attempt count, and the final documents — the
+// battle (its agentContext, the manifest and its equippedConfigHash) and the
+// agent document. And no hypothesis record is read or written: zero version
+// reads. The comparison is of the SERIALIZED capture (JSON text), so key order
+// counts as well as values (P1b review L1-2).
 //
 // The gate is off in TWO ways, each of which must reproduce the fixture:
 //   · flag_off_allowlisted    HYPOTHESIS_RECORDS_ENABLED false, the owner ON
 //                             the cockpit allowlist;
 //   · flag_on_not_allowlisted the flag true, the owner OFF the allowlist.
+// And the battle-creation path runs BOTH ways (P1b review L1-1):
+//   · fence lit  — COMPOSITION_EPOCH_FENCE_ENABLED true (HEAD's value): the
+//                  battle is created inside commitBattleDocWithPin's
+//                  transaction (fixture key `scenarios`);
+//   · fence dark — the flag false: the same plain `add` the pre-fence world
+//                  made (fixture key `scenariosFenceDark`).
+// Limits, stated: with the clock frozen every timestamp is the same instant,
+// so swapping one timestamp source for another is invisible here; un-awaited
+// work is captured after ten macrotask turns.
 //
 // THE FIXTURE (api/_utils/__fixtures__/deployCarriageOffGolden.json) IS
 // CAPTURED FROM `main`'S OWN CODE: this same file (every line but the SHA pin
@@ -27,11 +39,10 @@
 // api/_utils/agentSwapExecution.offGolden.test.js.)
 //
 // Everything real except the edges: decide.js, createAgentBattle, the manifest
-// and its hash, the projection splice and the creation transaction
-// (COMPOSITION_EPOCH_FENCE_ENABLED is true at HEAD, so the battle is created
-// inside commitBattleDocWithPin's transaction), the prompt assemblers, the
-// first-message prompt builder. Doubles: the model SDK, the voice model,
-// pricing, auth, the shadow logger, the store (callsFirestore + auto-ids).
+// and its hash, the projection splice and the creation path (both fence
+// states), the prompt assemblers, the first-message prompt builder. Doubles:
+// the model SDK, the voice model, pricing, auth, the shadow logger, the store
+// (callsFirestore + auto-ids + the sequenced log).
 //
 // Dependency-surface guard (BUILD_RULES §4): decide.js, the battle writer and
 // the prompt modules are imported for real here — never mock them away, or
@@ -45,7 +56,7 @@ import { createHash } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const state = vi.hoisted(() => ({ db: null, anthropic: null, gemmaCalls: [], shadow: { decisions: [], firstMessages: [] }, flag: false }));
+const state = vi.hoisted(() => ({ db: null, anthropic: null, gemmaCalls: [], shadow: { decisions: [], firstMessages: [] }, flag: false, fence: true }));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class AnthropicDouble {
@@ -79,6 +90,11 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   const real = await importOriginal();
   return { ...real, get HYPOTHESIS_RECORDS_ENABLED() { return state.flag; } };
 });
+// The composition fence, walked by the suite (the creation path lit and dark).
+vi.mock('../_utils/compositionConfig.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, get COMPOSITION_EPOCH_FENCE_ENABLED() { return state.fence; } };
+});
 
 const H = await import('../_utils/__fixtures__/deployHarness.js');
 const { SCENARIOS } = await import('../_utils/__fixtures__/deployScenarios.js');
@@ -87,7 +103,7 @@ const { default: handler } = await import('./decide.js');
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_PATH = resolve(HERE, '../_utils/__fixtures__/deployCarriageOffGolden.json');
 /** SHA-256 of the fixture's LF bytes, as captured from origin/main @ 4b28cd84. */
-const GOLDEN_SHA256 = 'fbcc7496054910aa115ff727b4461d51b8adb2a7ab8a1aaa8722914796488fb6';
+const GOLDEN_SHA256 = 'dc03ce3632734b677d62296cdf936dd281cde070116cf2b27f84fa8d19e13bc4';
 const ENV = globalThis.process?.env || {};
 const GENERATE = ENV.GENERATE_DEPLOY_CARRIAGE_OFF_GOLDEN === '1';
 if (GENERATE && ENV.CI) throw new Error('GENERATE_DEPLOY_CARRIAGE_OFF_GOLDEN is a local, deliberate act — never on CI');
@@ -98,9 +114,13 @@ const MODES = {
   flag_off_allowlisted: { flag: false, allowlist: H.OWNER },
   flag_on_not_allowlisted: { flag: true, allowlist: 'someone-else-1' },
 };
+/** The creation path's two states → the fixture key each one's captures live under. */
+const FENCES = { lit: { fence: true, key: 'scenarios' }, dark: { fence: false, key: 'scenariosFenceDark' } };
+const serialized = (v) => JSON.stringify(v, null, 2);
 
-/** Run one scenario under one gate-off mode and return its capture. */
-async function runScenario(name, mode) {
+/** Run one scenario under one gate-off mode and one fence state, and return its capture. */
+async function runScenario(name, mode, fence = 'lit') {
+  state.fence = FENCES[fence].fence;
   const { docs, req } = SCENARIOS[name]();
   // Every scenario starts from the same random stream and the same instant, however it is run.
   Math.random.mockImplementation(H.seededRandom());
@@ -114,7 +134,7 @@ async function runScenario(name, mode) {
   const res = H.makeRes();
   await handler(req, res);
   // The shadow logger and the first message ride un-awaited promise chains; let them land.
-  await new Promise((r) => setTimeout(r, 0));
+  await H.settle();
   return H.captureDeploy({ db: state.db, res, anthropic: state.anthropic, gemmaCalls: state.gemmaCalls, shadow: state.shadow });
 }
 
@@ -144,15 +164,18 @@ describe('deploy with the record slice OFF — byte-identical to main (P1b accep
       expect(existsSync(GOLDEN_PATH), 'frozen fixture missing — it is captured once, from main').toBe(true);
       return;
     }
-    const scenarios = {};
-    for (const name of Object.keys(SCENARIOS)) scenarios[name] = await runScenario(name, 'flag_off_allowlisted');
+    const sets = {};
+    for (const [fence, { key }] of Object.entries(FENCES)) {
+      sets[key] = {};
+      for (const name of Object.keys(SCENARIOS)) sets[key][name] = await runScenario(name, 'flag_off_allowlisted', fence);
+    }
     writeFileSync(GOLDEN_PATH, `${JSON.stringify({
       capturedFrom: 'an LF checkout of origin/main @ 4b28cd84 (a private Linux clone, detached; before any P1b source) running this file with GENERATE_DEPLOY_CARRIAGE_OFF_GOLDEN=1',
       frozenNow: H.FROZEN_NOW,
-      scenarios,
+      ...sets,
     }, null, 2)}\n`);
     throw new Error(`frozen fixture written to ${GOLDEN_PATH} — this generating run fails on purpose; re-run WITHOUT GENERATE_DEPLOY_CARRIAGE_OFF_GOLDEN to verify`);
-  }, 60_000);
+  }, 120_000);
 
   const golden = existsSync(GOLDEN_PATH) ? JSON.parse(lf(GOLDEN_PATH)) : null;
 
@@ -184,12 +207,29 @@ describe('deploy with the record slice OFF — byte-identical to main (P1b accep
     expect(tour.docs[`agentBattles/${tour.response.body.agentBattleId}`].agentContext.equippedWatchlist).toBeNull();
   });
 
-  for (const mode of Object.keys(MODES)) {
+  it('the fixture covers BOTH creation paths: lit creates the battle inside a transaction that re-reads the activation descriptor; dark makes the plain add with no descriptor read; the sequence log is present', () => {
+    expect(Object.keys(golden.scenariosFenceDark).sort()).toEqual(Object.keys(SCENARIOS).sort());
     for (const name of Object.keys(SCENARIOS)) {
-      it(`${mode} · ${name} — reproduces main's capture exactly`, async () => {
-        const cap = await runScenario(name, mode);
-        expect(cap).toEqual(golden.scenarios[name]);
-      }, 20_000);
+      const lit = golden.scenarios[name];
+      const dark = golden.scenariosFenceDark[name];
+      expect(lit.store.sequence.length, name).toBeGreaterThan(0);
+      expect(lit.store.sequence.some((e) => e.read === 'composition/activation'), name).toBe(true);
+      expect(dark.store.sequence.some((e) => e.read === 'composition/activation'), name).toBe(false);
+      expect(H.hypothesisAccess(dark), name).toEqual({ reads: [], queries: [], writes: [] });
+      if (name !== 'self_select_existing_active_battle') {
+        expect(dark.store.writes.some((w) => w.op === 'create' && w.path.startsWith('agentBattles/')), name).toBe(true);
+      }
+    }
+  });
+
+  for (const [fence, { key }] of Object.entries(FENCES)) {
+    for (const mode of Object.keys(MODES)) {
+      for (const name of Object.keys(SCENARIOS)) {
+        it(`fence ${fence} · ${mode} · ${name} — reproduces main's capture exactly (serialized)`, async () => {
+          const cap = await runScenario(name, mode, fence);
+          expect(serialized(cap)).toBe(serialized(golden[key][name]));
+        }, 20_000);
+      }
     }
   }
 });
