@@ -21,9 +21,14 @@
 // declaration). The side facts add the open-to-close change and the session's
 // volume, computed from the bars and declared `market` (R4(a)), and the
 // company name from the app's existing symbol directory (R4(d)).
+//
+// The time axis spans the tape day's trading session from the calendar the
+// tape writers use — open to the calendar's close, an early close included —
+// so an incomplete series ends where its bars end, with the tail blank, and
+// "close" always names the session-close instant (Amendment E addendum 2, F2).
 
 import React, { useMemo, useState } from 'react';
-import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
+import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, sessionOf, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
 import { classOfNumber } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
 import { FILM_ROOM_COPY as COPY, FORBIDDEN_WORDS } from './filmRoomCopy';
@@ -69,9 +74,14 @@ function rebased(doc, base) {
 function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, onMark, height = 250 }) {
   const bars = Array.isArray(doc.bars) ? doc.bars : [];
   const open = doc.sessionOpen?.value;
-  const startMs = toMs(doc.sessionOpen?.at) ?? toMs(bars[0]?.t);
+  // The time domain is the tape day's TRADING SESSION from the calendar the writers use — never the bars' extent:
+  // bars sit where they exist, a missing head or tail stays blank, and "close" is the calendar's session-close
+  // instant, early or regular (Amendment E addendum 2, F2). Only a date the calendar does not know as a session
+  // falls back to the bars' extent, and then its right end is the last bar's end time — never "close".
+  const session = sessionOf(tape?.etDate);
   const lastMs = toMs(bars[bars.length - 1]?.t);
-  const endMs = lastMs !== null ? lastMs + 10 * 60_000 : null;
+  const startMs = session ? session.openMs : (toMs(doc.sessionOpen?.at) ?? toMs(bars[0]?.t));
+  const endMs = session ? session.closeMs : (lastMs !== null ? lastMs + 10 * 60_000 : null);
   const marks = evidenceMarkers(tape, sym);
   const actions = (Array.isArray(tape.actions) ? tape.actions : []).map((a, i) => ({ a, i })).filter(({ a }) => a.symbolOut === sym || a.symbolIn === sym);
   const mk = show.market ? rebased(marketDoc, open) : null;
@@ -94,6 +104,7 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
     return s.trim();
   };
   const closes = bars.map((b) => ({ t: (toMs(b.t) ?? 0) + 10 * 60_000, v: b.c }));
+  const lastEndX = lastMs !== null ? x(lastMs + 10 * 60_000) : 1000;
   const vols = bars.map((b) => b.v).filter(isNum);
   const volMax = vols.length ? Math.max(...vols) : 0;
   const pct = (ms) => `${(x(ms) / 10).toFixed(3)}%`;
@@ -104,7 +115,7 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   const tickLabel = { position: 'absolute', ...mono(9, C.ink3, { whiteSpace: 'nowrap', lineHeight: 1 }) };
   return (
     <div data-region="price-chart" data-symbol={sym} style={{ position: 'relative', width: '100%', boxSizing: 'border-box', padding: `0 ${PAD_R}px 0 ${PAD_L}px` }}>
-      <div data-plot="" style={{ position: 'relative', width: '100%', height }}>
+      <div data-plot="" data-domain-start={new Date(startMs).toISOString()} data-domain-end={new Date(endMs).toISOString()} style={{ position: 'relative', width: '100%', height }}>
         <svg width="100%" height={height} viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-label={`${sym} · ${COPY.deepPrice}`} style={{ display: 'block', overflow: 'visible', width: '100%', height }}>
           {ticks.filter((v) => v !== 0).map((v) => <line key={v} data-gridline="" x1="0" x2="1000" y1={y(open * (1 + v))} y2={y(open * (1 + v))} style={{ stroke: C.hair }} vectorEffect="non-scaling-stroke" />)}
           {isNum(open) ? <line data-line="session-open" x1="0" x2="1000" y1={y(open)} y2={y(open)} style={{ stroke: C.ink3, strokeDasharray: '1.5 3' }} vectorEffect="non-scaling-stroke" /> : null}
@@ -126,7 +137,8 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
         {/* No session high or low is shown: hindsight after a plan or an exit (spec §13, BA-10; review A2L1-4). The axis carries the open and the last close. */}
         {/* The record's session open sits ON the price axis, at its 0 step — off the lines that all start there (review A2P3-7). */}
         {isNum(open) ? <span data-axis-record="sessionOpen" style={{ position: 'absolute', right: 'calc(100% + 4px)', top: y(open) - 6 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['sessionOpen', 'value']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
-        {isNum(bars[bars.length - 1]?.c) ? <span style={{ position: 'absolute', right: 2, top: y(bars[bars.length - 1].c) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
+        {/* The last close sits at the end of its own line — where the bars end, never out in a blank tail (F2). */}
+        {isNum(bars[bars.length - 1]?.c) ? <span data-axis-record="lastClose" style={{ position: 'absolute', right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)`, top: y(bars[bars.length - 1].c) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
         {/* the evidence overlay (BA-43) */}
         {marks.map((m) => {
           const px = valueAt(tape, ['checks', m.index, 'evidence', sym, 'px']);
@@ -164,8 +176,10 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
       {/* the time axis: the session open, the intermediate ticks, the close — instants, as the design of record writes them */}
       <div data-time-axis="" style={{ position: 'relative', height: 12, marginTop: 4, ...mono(9, C.ink3) }}>
         <When style={{ ...tickLabel, left: 0 }}>{tickClock(startMs)}</When>
-        {timeTicks.map((t) => <When key={t} style={{ ...tickLabel, left: pct(t), transform: 'translateX(-50%)' }}><span data-time-tick="">{tickClock(t)}</span></When>)}
-        <span style={{ ...tickLabel, right: 0 }}>{COPY.close10}</span>
+        {timeTicks.map((t) => <When key={t} style={{ ...tickLabel, left: pct(t), transform: 'translateX(-50%)' }}><span data-time-tick="" data-at={new Date(t).toISOString()}>{tickClock(t)}</span></When>)}
+        {session
+          ? <span data-axis-end="close" data-at={new Date(endMs).toISOString()} style={{ ...tickLabel, right: 0 }}>{COPY.close10}</span>
+          : <span data-axis-end="last-bar" data-at={new Date(endMs).toISOString()} style={{ ...tickLabel, right: 0 }}><When>{tickClock(endMs)}</When></span>}
       </div>
       <div data-region="axis-captions" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px 12px', margin: `6px -${PAD_R}px 0 -${PAD_L}px`, ...mono(9, C.ink3) }}>
         <span data-axis-caption="price" data-axis-doc={`series:${sym}`} data-axis-path="bars[0].c" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{COPY.axisPrice}<LineMark doc={doc} path={['bars', 0, 'c']} /></span>

@@ -11,6 +11,7 @@
 // Amendment E (docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_AMENDMENT_E_20261008.md).
 
 import { classOfNumber, PROVENANCE_CLASSES, NON_CHECK_STATES } from '../../constants/filmTape';
+import { getSessionForDate } from '../../utils/marketCalendar';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -105,6 +106,17 @@ const ET_DAY_SHORT = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 
 export function etClock(instant) {
   const ms = toMs(instant);
   return ms === null ? null : ET_CLOCK.format(new Date(ms));
+}
+
+/**
+ * The trading session of an ET date, from the calendar of record the tape writers use
+ * (src/utils/marketCalendar.js — api/_utils/filmTape/tapeTime.js sessionFor reads the same tables): its open and
+ * its close, an early close where the calendar lists one. Null when the calendar does not know the date as a
+ * session (a holiday, a weekend, a year outside its maintained horizon) — the screen then names no close.
+ */
+export function sessionOf(etDate) {
+  const s = getSessionForDate(etDate);
+  return s && s.isTradingDay && isNum(s.openMs) && isNum(s.closeMs) ? { openMs: s.openMs, closeMs: s.closeMs, early: s.isEarlyClose } : null;
 }
 
 /** "Tue, Sep 23, 2026" / "Sep 23" for an ET trading date `YYYY-MM-DD`. */
