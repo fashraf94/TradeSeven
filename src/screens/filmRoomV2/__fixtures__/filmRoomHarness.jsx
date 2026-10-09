@@ -169,6 +169,12 @@ const seriesDocAt = (el, docs) => docs[`series:${el.closest('[data-region="symbo
  * its rows bind it), null → the name has no value in these documents.
  */
 function aggregateOracle(name, el, docs) {
+  if (name === 'count(timing.tradingDays)') {
+    // the battle document's own timeline, the days it names — read before any tape, since the header shows the length
+    // while a day's tape is loading, missing or unreadable too (review A2A3-4, A2A3-8)
+    const days = docs.battle?.timing?.tradingDays;
+    return Array.isArray(days) ? days.filter((d) => typeof d === 'string').length : null;
+  }
   const tape = docs.tape;
   if (!tape) return undefined;
   const checks = Array.isArray(tape.checks) ? tape.checks : [];
@@ -203,13 +209,19 @@ function aggregateOracle(name, el, docs) {
       const doc = seriesDocAt(el, docs);
       return doc ? doc.bars.reduce((sum, b) => sum + b.v, 0) : null;
     }
-    case 'count(timing.tradingDays)': {
-      // the battle document's own timeline — a sweep that renders the header passes it as docs.battle
-      const days = docs.battle?.timing?.tradingDays;
-      return Array.isArray(days) ? days.length : null;
-    }
     default: return undefined;
   }
+}
+
+/**
+ * The marked number's own text `host` sits in, or null: a `data-num-text` inside a marked number (`data-num` or
+ * `data-num-aggregate`) that holds exactly ONE such text — a second one, or words beside the number, stay swept
+ * (review A2A3-1).
+ */
+function markedNumberText(host) {
+  const t = host.closest('[data-num-text]');
+  const owner = t?.closest('[data-num], [data-num-aggregate]');
+  return owner && owner.querySelectorAll('[data-num-text]').length === 1 ? t : null;
 }
 
 /** R4(d): a display name is exempt only as the directory's own entry for its symbol, letter for letter. */
@@ -265,6 +277,8 @@ export function sweepNumbers(container, docs) {
     const mark = el.querySelector('[data-kind-mark]')?.getAttribute('data-kind-mark');
     if (!want) bad.push(`${where}: no declared class`);
     if (got !== want || mark !== want) bad.push(`${where}: shows ${got}/${mark}, declared ${want}`);
+    const texts = el.querySelectorAll('[data-num-text]').length;
+    if (texts !== 1) bad.push(`${where}: ${texts} number texts — a marked number holds exactly one (review A2A3-1)`);
     const value = valueAt(doc, path);
     const shown = parseNumeral(el.querySelector('[data-num-text]')?.textContent);
     if (!(typeof value === 'number' && Math.abs(shown - value) < 0.0051)) bad.push(`${where}: shows ${shown}, the document holds ${value}`);
@@ -276,6 +290,8 @@ export function sweepNumbers(container, docs) {
     if (!want || el.getAttribute('data-num-class') !== want || mark !== want) bad.push(`aggregate ${name}: marker ${mark}, declared ${want}`);
     // its own site, the value it shows, and the value the documents give it (review A2P2-1, A2P2-5)
     if (!SPEC_AGGREGATE_SITES[name] || !el.closest(SPEC_AGGREGATE_SITES[name])) bad.push(`aggregate ${name}: outside its site`);
+    const texts = el.querySelectorAll('[data-num-text]').length;
+    if (texts !== 1) bad.push(`aggregate ${name}: ${texts} number texts — a marked number holds exactly one (review A2A3-1)`);
     const computed = Number(el.getAttribute('data-agg-value'));
     const text = el.querySelector('[data-num-text]')?.textContent || '';
     const shown = readShown(text);
@@ -291,8 +307,8 @@ export function sweepNumbers(container, docs) {
     let text = node.textContent;
     if (!/\d/.test(text)) continue;
     const host = node.parentElement;
-    // A numeral is exempt only inside a MARKED number (review A2L4-6: a bare data-num-text span is not one).
-    if (host.closest('[data-num-text]') && (host.closest('[data-num]') || host.closest('[data-num-aggregate]'))) continue;
+    // A numeral is exempt only as a MARKED number's one text (review A2L4-6: a bare data-num-text span is not one; A2A3-1).
+    if (markedNumberText(host)) continue;
     // R4(b): an axis tick label, explicitly marked as scaffolding, of an axis whose one caption names its declared class.
     const tick = host.closest('[data-axis-scaffolding]');
     if (tick && axes.ok.has(tick.getAttribute('data-axis-scaffolding'))) continue;
@@ -342,12 +358,12 @@ export const SPEC_QUOTE_CHANNELS = Object.freeze([
 ]);
 
 /**
- * R7's guard: the BOUND quotation `node` sits in, or null. Bound means all three — it is the quotation component
- * (its element carries `data-quote-path` directly under a `data-quotation` root), and its text equals, byte for
- * byte, the value its document stores at that path. A forged path, screen copy inside a quotation, or a quotation
- * of another value is not bound, so its words stay under the sweeps.
+ * The quotation element `node` sits in when it is BOUND to its path: it is the quotation component (its element
+ * carries `data-quote-path` directly under a `data-quotation` root), and its text equals, byte for byte, the value
+ * its document stores at that path. A forged path, screen copy inside a quotation, or a quotation of another value
+ * is not bound.
  */
-export function boundQuotationOf(node, docs = {}) {
+function boundTextOf(node, docs) {
   const el = node?.nodeType === 1 ? node : node?.parentElement;
   const q = el?.closest('[data-quote-path]');
   if (!q || !q.parentElement?.hasAttribute('data-quotation')) return null;
@@ -355,6 +371,28 @@ export function boundQuotationOf(node, docs = {}) {
   if (!doc) return null;
   const value = valueAt(doc, parsePath(q.getAttribute('data-quote-path')));
   return typeof value === 'string' && value !== '' && q.textContent === value ? q : null;
+}
+
+/**
+ * R7's guard — what the sweeps exempt: an ATTRIBUTED quotation bound to a tape path. All of: bound (above), a path
+ * in the recorded-words channels, and an attribution beside it (review A2A1-4: a bound quotation with no attribution,
+ * or of a path that holds no one's words, stays under the sweeps). Whether the attribution names the right author
+ * and time is quoteDefects' check.
+ */
+export function boundQuotationOf(node, docs = {}) {
+  const q = boundTextOf(node, docs);
+  if (!q || !SPEC_QUOTE_CHANNELS.some((c) => c.re.test(q.getAttribute('data-quote-path')))) return null;
+  return [...q.parentElement.children].some((c) => c.hasAttribute('data-quote-attribution')) ? q : null;
+}
+
+const ET_DAY_KEY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
+const MONTH_DAY = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+/** The record's time as its attribution must read it: the ET clock, with the date when it is not the tape's day. */
+function recordTime(instant, etDate) {
+  const clock = etClock(instant);
+  if (clock === null) return null;
+  const day = ET_DAY_KEY.format(new Date(Date.parse(instant)));
+  return etDate && day !== etDate ? `${MONTH_DAY.format(new Date(`${day}T12:00:00.000Z`))}, ${clock}` : clock;
 }
 
 /**
@@ -366,7 +404,7 @@ export function quoteDefects(container, docs = {}) {
   const bad = [];
   for (const q of container.querySelectorAll('[data-quote-path]')) {
     const where = q.getAttribute('data-quote-path');
-    if (!boundQuotationOf(q, docs)) bad.push(`${where}: not bound — its text is not the stored value`);
+    if (!boundTextOf(q, docs)) bad.push(`${where}: not bound — its text is not the stored value`);
   }
   for (const root of container.querySelectorAll('[data-quotation]')) {
     const texts = [...root.children].filter((c) => c.hasAttribute('data-quote-path'));
@@ -377,7 +415,7 @@ export function quoteDefects(container, docs = {}) {
     const attr = [...root.children].find((c) => c.hasAttribute('data-quote-attribution'));
     if (!attr) { bad.push(`${where}: no attribution`); continue; }
     const doc = docs[texts[0].getAttribute('data-quote-doc') || 'tape'];
-    const clock = doc ? etClock(valueAt(doc, channel.at(parsePath(where)))) : null;
+    const clock = doc ? recordTime(valueAt(doc, channel.at(parsePath(where))), doc.etDate) : null;
     const want = `— ${channel.by} · ${clock ?? 'not recorded'}`;
     if (attr.textContent !== want) bad.push(`${where}: attributed “${attr.textContent}”, the record says “${want}”`);
     else if (clock && attr.querySelector('[data-time]')?.textContent !== clock) bad.push(`${where}: its time is not marked as an instant`);
@@ -414,7 +452,7 @@ function numberWordHits(container, docs) {
     if (!NUMBER_WORD.test(text)) continue;
     const host = node.parentElement;
     if (boundQuotationOf(node, docs)) continue;
-    if (host.closest('[data-num-text]') && (host.closest('[data-num]') || host.closest('[data-num-aggregate]'))) continue;
+    if (markedNumberText(host)) continue;
     if (isDirectoryName(host)) continue;
     if (host.closest('[data-record-text]')) for (const s of stored) text = text.split(s).join(' ');
     const m = text.match(NUMBER_WORD);

@@ -394,6 +394,38 @@ describe('Amendment E addendum 2, R8 (Astra A2 F3) — the battle length is a ma
     }
   });
 
+  it('review A2A3-2: words up to "ten"; a longer timeline omits the length — never a bare "-day battle"', async () => {
+    const before = (n) => Array.from({ length: n }, (_, k) => `2026-09-${String(23 - n + 1 + k).padStart(2, '0')}`);
+    const ten = battleOf(sep23Tape, { timing: { tradingDays: before(10) } });
+    expect(ten.timing.tradingDays.at(-1)).toBe(D);
+    await open(sep23Tape, { battle: ten });
+    expect([lengthEl().getAttribute('data-agg-value'), lengthEl().textContent]).toEqual(['10', 'ten-day battleD']);
+    expect(sweepNumbers(m.container, { tape: sep23Tape, battle: ten })).toEqual([]);
+    m.teardown(); m.setup();
+    await open(sep23Tape, { battle: battleOf(sep23Tape, { timing: { tradingDays: before(11) } }) });
+    expect(lengthEl()).toBeNull();
+    expect(m.q('[data-header-subtitle]').textContent).not.toMatch(/day battle/);
+  });
+
+  it('review A2A3-4: with no tape for the day (missing, unreadable), the length still shows, marked — and its oracle still recounts it', async () => {
+    const battle = battleOf(sep23Tape);
+    await open(sep23Tape, { battle, readers: { readTape: async () => ({ status: 'missing', tape: null }), readSeries: async () => ({ status: 'ready', series: [] }) } });
+    expect(m.q('[data-state="missing"]')).toBeTruthy();
+    expect(lengthEl().textContent).toBe('one-day battleD');
+    expect(sweepNumbers(m.container, { battle })).toEqual([]);
+    expect(sweepWords(m.container, { battle })).toEqual([]);
+    expect(sweepNumbers(m.container, { battle: { ...battle, timing: { tradingDays: ['2026-09-21', '2026-09-22', D] } } }))
+      .toEqual(['aggregate count(timing.tradingDays): computed 1, the documents give 3']);
+  });
+
+  it('review A2A3-8: the length counts the days the timeline names, as the day picker reads them', async () => {
+    const battle = battleOf(sep23Tape, { timing: { tradingDays: [D, null, 7] } });
+    await open(sep23Tape, { battle });
+    expect(lengthEl().textContent).toBe('one-day battleD');
+    expect(m.q('[data-region="day-picker"]')).toBeNull();
+    expect(sweepNumbers(m.container, { tape: sep23Tape, battle })).toEqual([]);
+  });
+
   it('neither source: the length is omitted', async () => {
     await open({ ...clone(sep23Tape), isFinalDay: false }, { battle: { ...battleOf(sep23Tape), timing: undefined } });
     expect(lengthEl()).toBeNull();
@@ -432,6 +464,20 @@ describe('R8 — the screen\'s own voice spells no number as a word outside a ma
     expect(sweepWords(box(`<span data-record-text>${label}</span>`), docs)).toEqual([]);
     expect(sweepWords(box(`<span data-record-text>${label} · one more</span>`), docs)).toEqual(['number word “one”: ' + `${label} · one more`.slice(0, 80)]);
     expect(sweepWords(box(`<span>${label}</span>`), docs)).toEqual([`number word “one”: ${label}`.slice(0, 'number word “one”: '.length + 80)]);
+  });
+
+  it('review A2A3-3: EVERY word on the pinned list bites, singular and plural', () => {
+    for (const w of SPEC_NUMBER_WORDS) {
+      expect(sweepWords(box(`<p>a ${w} thing</p>`)), w).toEqual([`number word “${w}”: a ${w} thing`]);
+      expect(sweepWords(box(`<p>the ${w}s</p>`)), `${w}s`).toEqual([`number word “${w}s”: the ${w}s`]);
+    }
+  });
+
+  it('review A2A3-1: a marked number holds ONE number text — a second one is neither exempt nor a number', () => {
+    const two = '<span data-header-subtitle><span data-num-aggregate="count(timing.tradingDays)" data-num-class="derived" data-agg-value="1"><span data-num-text>one</span><span data-num-text>-day battle, twelve checks</span><span data-kind-mark="derived">D</span></span></span>';
+    const battle = battleOf(sep23Tape);
+    expect(sweepWords(box(two))).toEqual(['number word “one”: one', 'number word “twelve”: -day battle, twelve checks']);
+    expect(sweepNumbers(box(two), { battle })).toEqual(['aggregate count(timing.tradingDays): 2 number texts — a marked number holds exactly one (review A2A3-1)']);
   });
 
   it('the production word list for the sweep is the fix prompt\'s, pinned in the harness', () => {

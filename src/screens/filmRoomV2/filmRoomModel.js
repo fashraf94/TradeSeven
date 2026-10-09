@@ -12,6 +12,7 @@
 
 import { classOfNumber, PROVENANCE_CLASSES, NON_CHECK_STATES } from '../../constants/filmTape';
 import { getSessionForDate } from '../../utils/marketCalendar';
+import { etDateOf } from '../../utils/tapeSchedule';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -109,6 +110,17 @@ const ET_DAY_SHORT = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 
 export function etClock(instant) {
   const ms = toMs(instant);
   return ms === null ? null : ET_CLOCK.format(new Date(ms));
+}
+
+/**
+ * An instant as a record's time on the tape day `etDate`: its ET clock, with its date when it fell on another
+ * day ("Sep 22, 8:30 PM" — review A2L1-14, and the quotation's attribution, A2A1-3); null for no instant.
+ */
+export function etWhen(instant, etDate) {
+  const clock = etClock(instant);
+  if (clock === null) return null;
+  const day = etDateOf(instant);
+  return day && etDate && day !== etDate ? `${etDateLabel(day, { short: true })}, ${clock}` : clock;
 }
 
 /**
@@ -431,11 +443,14 @@ export function deriveHoldings(tape) {
 
 // ── directives (BA-9) ───────────────────────────────────────────────────────
 
-/** The card's state words, from the tape's cardState. */
+/**
+ * The card's state words, from the tape's cardState — the screen's own words only. The directive's recorded text
+ * (canonicalText, retainedDirectiveText) is never composed into them: it renders as a quotation of its own path
+ * (Amendment E addendum 2, R7; review A2A1-5).
+ */
 export function directiveCardOf(d) {
-  if (d?.cardState === 'committed') return { filed: true, title: 'Directive filed', text: str(d.canonicalText) };
-  if (d?.cardState === 'no_change') return { filed: false, title: 'No new directive filed', text: str(d.retainedDirectiveText) ? `Retained: ${d.retainedDirectiveText}` : 'Retained: none in force' };
-  return { filed: false, title: 'No new directive filed', text: null };
+  if (d?.cardState === 'committed') return { filed: true, title: 'Directive filed' };
+  return { filed: false, title: 'No new directive filed' };
 }
 
 // ── rationale timeline (BA-46) ──────────────────────────────────────────────

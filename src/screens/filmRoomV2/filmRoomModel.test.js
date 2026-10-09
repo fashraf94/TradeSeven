@@ -179,9 +179,10 @@ describe('BA-45 — holdings at the day\'s start and end, derived', () => {
 describe('directives, rationale, plans, the deep dive', () => {
   it('BA-9 card states from the tape rows', () => {
     expect(sep23Tape.directives.map((d) => directiveCardOf(d))).toEqual([
-      { filed: true, title: 'Directive filed', text: 'Tighten the downside stop.' },
-      { filed: false, title: 'No new directive filed', text: 'Retained: Tighten the downside stop.' },
-      { filed: false, title: 'No new directive filed', text: null },
+      // the screen's own words only — the recorded text is a quotation of its own path (R7; review A2A1-5)
+      { filed: true, title: 'Directive filed' },
+      { filed: false, title: 'No new directive filed' },
+      { filed: false, title: 'No new directive filed' },
     ]);
   });
 

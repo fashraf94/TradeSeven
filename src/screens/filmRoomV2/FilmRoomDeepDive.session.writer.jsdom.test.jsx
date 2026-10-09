@@ -43,8 +43,15 @@ afterEach(() => m.teardown());
 const mount = (tape, series, sym) => m.render(<FilmRoomDeepDive tape={tape} seriesState={{ status: 'ready', series }} sym={sym} onSym={() => {}} />);
 /** The chart's drawn points, from an SVG path. */
 const points = (d) => [...d.matchAll(/[ML](-?[\d.]+) (-?[\d.]+)/g)].map((p) => ({ x: Number(p[1]), y: Number(p[2]) }));
-/** The last close label's distance from the plot's right edge, in % of its width (its `right: calc(p% + 2px)`). */
-const lastCloseRight = () => Number(m.q('[data-axis-record="lastClose"]').style.right.match(/^calc\((-?[\d.]+)% \+ 2px\)$/)[1]);
+/**
+ * Where the last close's label is anchored: the % of the plot's width its anchoring edge sits at, and which side of
+ * the line's end it takes (`right: calc(p% + 2px)` → ends before the line's end; `left: calc(p% + 4px)` → starts after it).
+ */
+function lastCloseAnchor() {
+  const s = m.q('[data-axis-record="lastClose"]').style;
+  if (s.right) return { side: 'before', at: 100 - Number(s.right.match(/^calc\((-?[\d.]+)% \+ 2px\)$/)[1]) };
+  return { side: 'after', at: Number(s.left.match(/^calc\((-?[\d.]+)% \+ 4px\)$/)[1]) };
+}
 /** Where an instant sits on a [start, end] domain, in the chart's 0–1000 units. */
 const xOn = (iso, start, end) => ((Date.parse(iso) - Date.parse(start)) / (Date.parse(end) - Date.parse(start))) * 1000;
 
@@ -84,8 +91,11 @@ describe('F2 — the time axis is the trading session; "close" is the calendar\'
     expect(xs).toHaveLength(3);
     expect(Math.max(...xs)).toBeCloseTo(tenAm, 0);
     for (const r of m.qa('[data-volume-bar]')) expect(Number(r.getAttribute('x')) + Number(r.getAttribute('width'))).toBeLessThanOrEqual(tenAm);
-    // its last close sits at the end of its own line, not out in the blank tail beside "close"
-    expect(lastCloseRight()).toBeCloseTo(100 - tenAm / 10, 2);
+    // its last close sits at the end of its own line — not out at the far right beside "close", and (the line ending
+    // left of the middle) just after its end, never back over the price axis's gutter (review A2A2-2)
+    const anchor = lastCloseAnchor();
+    expect(anchor.side).toBe('after');
+    expect(anchor.at).toBeCloseTo(tenAm / 10, 2);
     // "close" is not at the 10:00 AM position: the only "close" on the axis is at the calendar's close
     expect(m.qa('[data-time-axis] > *').filter((el) => el.textContent === 'close').map((el) => el.getAttribute('data-at'))).toEqual(['2026-09-23T20:00:00.000Z']);
     // the incomplete series' session facts stay suppressed (unchanged)
@@ -132,6 +142,26 @@ describe('F2 — the time axis is the trading session; "close" is the calendar\'
     expect(Math.max(...points(m.q('[data-line="price"]').getAttribute('d')).map((p) => p.x))).toBeCloseTo(1000, 0);
   });
 
+  it('(b′) review A2A2-1: an INCOMPLETE series on the early-close day — "close" still at 1:00 PM, never at the series\' 10:00 AM end', async () => {
+    const fx = await earlyCloseDay();
+    const synth = (sym, i) => Math.round((100 + sym.charCodeAt(0) + sym.length) * (1 + 0.002 * Math.sin(i / 23)) * 100) / 100;
+    const rows = (sym) => sessionRows(fx.etDate, (i) => synth(sym, i), { openUtc: '14:30' });
+    const bars = new Proxy({}, { get: (_, sym) => (typeof sym !== 'string' ? undefined : sym === 'AAPL' ? rows(sym).slice(0, 30) : rows(sym)) });
+    const { tape, series } = await buildTapeDay(fx, { night: Date.parse('2026-11-28T02:15:30.000Z'), morning: Date.parse('2026-11-28T11:00:30.000Z'), bars });
+    const doc = series.find((s) => s.symbol === 'AAPL');
+    expect(doc.bars.map((b) => b.t)).toEqual(['2026-11-27T14:30:00.000Z', '2026-11-27T14:40:00.000Z', '2026-11-27T14:50:00.000Z']);
+    expect(tape.passes.candles.symbolsIncomplete.some((s) => (s?.symbol ?? s) === 'AAPL')).toBe(true);
+    mount(tape, series, 'AAPL');
+    const a = axisOf();
+    expect(a.domain).toEqual(['2026-11-27T14:30:00.000Z', '2026-11-27T18:00:00.000Z']);
+    expect(a.end).toEqual({ kind: 'close', text: 'close', at: '2026-11-27T18:00:00.000Z', right: '0px' });
+    expect(etClock(a.end.at)).toBe('1:00 PM');
+    expect(a.text).toBe('9:3011:00close');
+    const tenAm = xOn('2026-11-27T15:00:00.000Z', ...a.domain);
+    expect(Math.max(...points(m.q('[data-line="price"]').getAttribute('d')).map((p) => p.x))).toBeCloseTo(tenAm, 0);
+    expect(lastCloseAnchor()).toEqual({ side: 'after', at: Number((tenAm / 10).toFixed(3)) });
+  });
+
   it('(c) the full session (the committed Sep-23 fixture): unchanged — the session is the bars\' own span, the line reaches "close"', () => {
     for (const sym of ['MSFT', 'INTC', 'PANW']) {
       mount(sep23Tape, sep23Series, sym);
@@ -141,7 +171,7 @@ describe('F2 — the time axis is the trading session; "close" is the calendar\'
       expect(a.end, sym).toEqual({ kind: 'close', text: 'close', at: '2026-09-23T20:00:00.000Z', right: '0px' });
       expect(a.text, sym).toBe('9:3011:0012:302:00close');
       expect(Math.max(...points(m.q('[data-line="price"]').getAttribute('d')).map((p) => p.x)), sym).toBeCloseTo(1000, 0);
-      expect(lastCloseRight(), sym).toBeCloseTo(0, 6);
+      expect(lastCloseAnchor(), sym).toEqual({ side: 'before', at: 100 });   // unchanged: right: 2px
     }
   });
 

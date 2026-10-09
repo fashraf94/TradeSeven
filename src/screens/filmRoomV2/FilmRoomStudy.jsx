@@ -25,12 +25,11 @@
 import React, { useState } from 'react';
 import {
   valueAt, etClock, checkStateOf, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, lastPointPath, deriveHoldings,
-  directiveCardOf, rationaleTimeline, planGroups, PLAN_DIRECTIONS, EXIT_MAKER_WORDS, fmtPrice, fmtPriceDelta, fmtCount, isNum, toMs, etDateLabel,
+  directiveCardOf, rationaleTimeline, planGroups, PLAN_DIRECTIONS, EXIT_MAKER_WORDS, fmtPrice, fmtPriceDelta, fmtCount, isNum, toMs, etWhen,
 } from './filmRoomModel';
 // The replay's own coverage line sits under the swaps' (BA-20: every section its coverage).
 import { FILM_ROOM_COPY as COPY, REPLAY_SENTENCE, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE, DIRECTIVE_EXPLAINER } from './filmRoomCopy';
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
-import { etDateOf } from '../../utils/tapeSchedule';
 import {
   C, card, eyebrow, foot, body, mono, tint, plain, TapeNum, AggNum, CountNum, CheckCount, When, Rec, Section, Row, EmptyCard, Quotation, StateTag, Door, Chip, TextButton, KindMark, Coverage,
 } from './FilmRoomKit';
@@ -319,9 +318,7 @@ function SwapsSection({ tape, desktop, onDeep }) {
 
 /** A filing's time; with its date when it was filed before the tape's own day (review A2L1-14). */
 function filedLabel(filedAt, etDate) {
-  const clock = etClock(filedAt) ?? '';
-  const day = etDateOf(filedAt);
-  return day && etDate && day !== etDate ? `${etDateLabel(day, { short: true })}, ${clock}` : clock;
+  return etWhen(filedAt, etDate) ?? '';
 }
 
 /**

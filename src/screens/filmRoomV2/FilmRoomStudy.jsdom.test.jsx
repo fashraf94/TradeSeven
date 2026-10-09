@@ -360,6 +360,17 @@ describe('BA-9 / F6 — directive cards from the tape\'s rows; the explainer\'s 
     for (const k of ['checks', 'holds', 'swaps']) expect(cards[0].querySelector(`[data-num="directives[0].after.${k}"]`).getAttribute('data-num-class')).toBe('derived');
   });
 
+  it('review A2A1-3: a card filed before the tape\'s day dates its quotations\' attributions, as its header does (A2L1-14)', () => {
+    const t = clone(sep23Tape);
+    t.directives[0].filedAt = '2026-09-23T00:30:00.000Z';   // 8:30 PM ET on Sep 22
+    m.render(<Harness tape={t} />);
+    const c = m.q('[data-directive-card="0"]');
+    expect(c.textContent).toContain('Directive · Sep 22, 8:30 PM');
+    expect([...c.querySelectorAll('[data-quote-attribution]')].map((a) => a.textContent))
+      .toEqual(['— the player · Sep 22, 8:30 PM', '— the stored directive · Sep 22, 8:30 PM', '— the agent · Sep 22, 8:30 PM']);
+    expect(quoteDefects(m.container, { tape: t })).toEqual([]);
+  });
+
   it('the explainer ("How a directive card reads") shows the three states as clearly labelled fixtures, not this battle', () => {
     m.render(<Harness tape={sep23Tape} />);
     expect(m.q('[data-region="directive-explainer"]')).toBeNull();

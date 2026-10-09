@@ -137,8 +137,9 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
         {/* No session high or low is shown: hindsight after a plan or an exit (spec §13, BA-10; review A2L1-4). The axis carries the open and the last close. */}
         {/* The record's session open sits ON the price axis, at its 0 step — off the lines that all start there (review A2P3-7). */}
         {isNum(open) ? <span data-axis-record="sessionOpen" style={{ position: 'absolute', right: 'calc(100% + 4px)', top: y(open) - 6 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['sessionOpen', 'value']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
-        {/* The last close sits at the end of its own line — where the bars end, never out in a blank tail (F2). */}
-        {isNum(bars[bars.length - 1]?.c) ? <span data-axis-record="lastClose" style={{ position: 'absolute', right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)`, top: y(bars[bars.length - 1].c) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
+        {/* The last close sits at the end of its own line — where the bars end, never out in a blank tail (F2): */}
+        {/* just before that end when it lies right of the middle, just after it otherwise, so it never runs into the axis gutter (review A2A2-2). */}
+        {isNum(bars[bars.length - 1]?.c) ? <span data-axis-record="lastClose" style={{ position: 'absolute', ...(lastEndX > 500 ? { right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)` } : { left: `calc(${(lastEndX / 10).toFixed(3)}% + 4px)` }), top: y(bars[bars.length - 1].c) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
         {/* the evidence overlay (BA-43) */}
         {marks.map((m) => {
           const px = valueAt(tape, ['checks', m.index, 'evidence', sym, 'px']);

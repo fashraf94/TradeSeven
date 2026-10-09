@@ -93,8 +93,9 @@ const LENGTH_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'ei
  */
 export function headerParts(battle, tape, etDate) {
   const code = [battle?.agentContext?.archetype, battle?.archetype, tape?.archetype].find((a) => typeof a === 'string' && a && a.toLowerCase() !== 'unknown');
-  const timing = battle?.timing?.tradingDays;
-  const length = Array.isArray(timing) && timing.length ? { days: timing.length, source: 'timing' }
+  // the days the timeline names — counted as battleDays (the day picker) reads them (BUILD_RULES §9; review A2A3-8)
+  const timing = Array.isArray(battle?.timing?.tradingDays) ? battle.timing.tradingDays.filter((d) => typeof d === 'string') : null;
+  const length = timing && timing.length ? { days: timing.length, source: 'timing' }
     : (tape?.isFinalDay === true && Number.isInteger(tape?.dayNumber) ? { days: tape.dayNumber, source: 'dayNumber' } : null);
   return {
     archetype: code ? getArchetypeDisplayName(code) : null,

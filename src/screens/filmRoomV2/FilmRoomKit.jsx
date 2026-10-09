@@ -21,7 +21,7 @@
 import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 import { cssVar } from '../../theme/cssTokens';
 import { MONO } from '../../components/Dashboard/commandUI';
-import { numberAt, valueAt, etClock, isRecordedScore, fmtPoints, SCREEN_AGGREGATE_CLASSES, checkCounts } from './filmRoomModel';
+import { numberAt, valueAt, etWhen, isRecordedScore, fmtPoints, SCREEN_AGGREGATE_CLASSES, checkCounts } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY, CLASS_LETTER, PROVENANCE_LABELS } from './filmRoomCopy';
 import { formatNumberPath } from '../../constants/filmTape';
 
@@ -251,7 +251,8 @@ export function Quotation({ doc, path, by, at, lines = 0, color = C.ink2, weight
     return () => ro.disconnect();
   }, [text, lines, open]);
   if (text === null) return null;
-  const clock = at ? etClock(valueAt(doc, at)) : null;
+  // the record's own instant, with its date when it fell before the tape's day (review A2A1-3)
+  const clock = at ? etWhen(valueAt(doc, at), doc?.etDate) : null;
   const clamp = lines ? { display: open ? 'block' : '-webkit-box', WebkitLineClamp: open ? 'unset' : lines, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : null;
   return (
     <div data-quotation={by} style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>

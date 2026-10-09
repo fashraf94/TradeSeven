@@ -28,12 +28,16 @@ vi.mock('../../config/featureFlags.js', async (importOriginal) => ({
   get FILM_TAPE_WRITE_ENABLED() { return true; },
 }));
 
+import FilmRoomScreenV2 from './FilmRoomScreenV2';
 import FilmRoomStudy from './FilmRoomStudy';
+import FilmRoomDeepDive from './FilmRoomDeepDive';
+import CheckDetail from './FilmRoomCheckDetail';
 import { ResultCard } from './FilmRoomGlance';
+import { deepSymbols, deriveHoldings } from './filmRoomModel';
 import { sep23Day, sep23Bars, buildTapeDay, SEP23_NIGHT, SEP23_MORNING } from '../../../api/_utils/filmTape/__fixtures__/screenFixtures.js';
-import { mounter, sweepWords, quoteDefects, boundQuotationOf, parsePath, SPEC_FORBIDDEN_WORDS } from './__fixtures__/filmRoomHarness';
+import { mounter, sweepWords, quoteDefects, boundQuotationOf, parsePath, battleOf, readersOf, NOW, SPEC_FORBIDDEN_WORDS } from './__fixtures__/filmRoomHarness';
 
-vi.setConfig({ testTimeout: 60_000 });
+vi.setConfig({ testTimeout: 90_000 });
 
 const m = mounter();
 beforeEach(() => m.setup());
@@ -93,13 +97,25 @@ function strayCopies(container, docs, text) {
 }
 
 /** jsdom lays nothing out: report a clamped preview as running past its box, as a browser does for these words. */
-function withOverflowingPreviews(fn) {
+async function withOverflowingPreviews(fn) {
   const saved = ['scrollHeight', 'clientHeight'].map((k) => [k, Object.getOwnPropertyDescriptor(Element.prototype, k)]);
   Object.defineProperty(Element.prototype, 'scrollHeight', { configurable: true, get() { return this.getAttribute('data-collapsed') === 'yes' ? 120 : 40; } });
   Object.defineProperty(Element.prototype, 'clientHeight', { configurable: true, get() { return 40; } });
-  try { return fn(); } finally {
+  try { return await fn(); } finally {
     for (const [k, d] of saved) if (d) Object.defineProperty(Element.prototype, k, d); else delete Element.prototype[k];
   }
+}
+
+/** Each phrase's day, written once through the real passes and shared by the describes below. */
+const days = new Map();
+function dayOf(phrase) {
+  if (!days.has(phrase)) {
+    days.set(phrase, plantedDay(phrase).then(async ({ fx, planted }) => ({
+      ...(await buildTapeDay(fx, { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sep23Bars() })),
+      planted,
+    })));
+  }
+  return days.get(phrase);
 }
 
 /** (a) and (b) over one mounted state. */
@@ -123,8 +139,7 @@ function expectQuotedAndSilent(tape, planted, phrase, state) {
 
 describe('R7 / F1 — each forbidden phrase in every recorded-words channel, written by the real passes, renders as attributed quotation', () => {
   it.each(SPEC_FORBIDDEN_WORDS)('“%s”', async (phrase) => {
-    const { fx, planted } = await plantedDay(phrase);
-    const { tape } = await buildTapeDay(fx, { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sep23Bars() });
+    const { tape, planted } = await dayOf(phrase);
 
     // (c) the tape keeps every planted string exactly as the source wrote it
     expect(planted.length).toBeGreaterThan(30);
@@ -140,7 +155,7 @@ describe('R7 / F1 — each forbidden phrase in every recorded-words channel, wri
       'plans.signalSummary', 'plans.threshold', 'rationale.hypothesis', 'rationale.rationale',
     ]);
 
-    withOverflowingPreviews(() => {
+    await withOverflowingPreviews(() => {
       // collapsed: every long quotation is a clamped preview of the FULL stored value
       m.render(<FilmRoomStudy tape={tape} selected={null} onSelect={() => {}} onDeep={() => {}} jump={() => {}} />);
       const previews = m.qa('[data-quote-path][data-collapsed="yes"]');
@@ -174,10 +189,66 @@ describe('R7 / F1 — each forbidden phrase in every recorded-words channel, wri
   });
 });
 
+/** Over the whole container: no forbidden word in the screen's own voice, every quotation bound and attributed, no planted string outside one. */
+function expectSilentEverywhere(tape, planted, state) {
+  const docs = { tape };
+  expect(sweepWords(m.container, docs), state).toEqual([]);
+  expect(quoteDefects(m.container, docs), state).toEqual([]);
+  for (const s of new Set(planted.map((x) => x.source))) expect(strayCopies(m.container, docs, s), `${state}: ${s}`).toEqual([]);
+}
+
+describe('R7 / F1 (review A2A1-1) — the WHOLE screen, on the same writer days: every depth at both widths, every check\'s record, every Deep dive symbol', () => {
+  it.each(SPEC_FORBIDDEN_WORDS)('“%s”', async (phrase) => {
+    const { tape, series, planted } = await dayOf(phrase);
+    for (const desktop of [false, true]) {
+      const had = window.matchMedia;
+      if (desktop) window.matchMedia = () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} });
+      try {
+        await withOverflowingPreviews(async () => {
+          m.render(<FilmRoomScreenV2 battle={battleOf(tape)} onBack={() => {}} viewerId="r7" readers={readersOf({ [tape.etDate]: tape }, series)} nowMs={NOW} />);
+          await m.flush();
+          for (const label of ['Glance', 'Study', 'Deep dive']) {
+            m.click(m.tab(label));
+            await m.flush();
+            m.expandAll();
+            const pip = m.q('[data-check-pip="9"]') || m.q('[data-check-row="9"]');
+            if (pip) m.click(pip);
+            const mark = m.qa('[data-evidence-marker]')[0];
+            if (mark) m.click(mark);
+            expectSilentEverywhere(tape, planted, `${desktop ? 'desktop' : 'phone'} · ${label}`);
+          }
+        });
+      } finally {
+        window.matchMedia = had;
+      }
+      m.teardown();
+      m.setup();
+    }
+    // every check's record at once (the depths open one at a time)
+    m.render(<>{tape.checks.map((_, i) => <CheckDetail key={i} tape={tape} index={i} onClose={() => {}} />)}</>);
+    expect(m.qa('[data-check-detail]')).toHaveLength(tape.checks.length);
+    expectSilentEverywhere(tape, planted, 'every check detail');
+    // every Deep dive symbol: its facts, its chart's labels, its first evidence stamp opened
+    const symbols = deepSymbols(tape, series, deriveHoldings(tape));
+    expect(symbols.length).toBeGreaterThan(8);
+    for (const sym of symbols) {
+      m.render(<FilmRoomDeepDive tape={tape} seriesState={{ status: 'ready', series }} sym={sym} onSym={() => {}} />);
+      const mark = m.qa('[data-evidence-marker]')[0];
+      if (mark) m.click(mark);
+      expectSilentEverywhere(tape, planted, `deep dive · ${sym}`);
+    }
+  });
+});
+
 describe('R7\'s guard bites — only a bound quotation is exempt, and it must be attributed as the record says', () => {
   const tape = {
+    etDate: '2026-09-23',
     rationale: [{ at: '2026-09-23T16:00:15.000Z', rationale: 'This is the best entry.', hypothesis: null }],
-    directives: [{ filedAt: '2026-09-23T17:40:00.000Z', playerText: 'Sell the worst name.' }],
+    directives: [
+      { filedAt: '2026-09-23T17:40:00.000Z', playerText: 'Sell the worst name.' },
+      { filedAt: '2026-09-23T00:30:00.000Z', playerText: 'Filed the evening before.' },   // 8:30 PM ET on Sep 22
+    ],
+    coverage: { checks: { note: 'the worst gap' } },
   };
   const docs = { tape };
   const box = (html) => { const el = document.createElement('div'); el.innerHTML = html; return el; };
@@ -201,6 +272,17 @@ describe('R7\'s guard bites — only a bound quotation is exempt, and it must be
     const el = box(quotation('agent', 'rationale[0].rationale', 'This is the best entry. · not verified', attribution('the agent', '12:00 PM')));
     expect(sweepWords(el, docs)).toEqual(['best']);
     expect(quoteDefects(el, docs)[0]).toMatch(/not bound/);
+  });
+
+  it('review A2A1-4: an UNATTRIBUTED quotation, or one bound to a path that holds no one\'s words, is not exempt', () => {
+    expect(sweepWords(box(quotation('agent', 'rationale[0].rationale', 'This is the best entry.', '')), docs)).toEqual(['best']);
+    expect(sweepWords(box(quotation('platform', 'coverage.checks.note', 'the worst gap', attribution('the platform', '12:00 PM'))), docs)).toEqual(['worst']);
+  });
+
+  it('review A2A1-3: a record from before the tape\'s day is attributed with its date', () => {
+    expect(quoteDefects(box(quotation('player', 'directives[1].playerText', 'Filed the evening before.', attribution('the player', 'Sep 22, 8:30 PM'))), docs)).toEqual([]);
+    expect(quoteDefects(box(quotation('player', 'directives[1].playerText', 'Filed the evening before.', attribution('the player', '8:30 PM'))), docs))
+      .toEqual(['directives[1].playerText: attributed “— the player · 8:30 PM”, the record says “— the player · Sep 22, 8:30 PM”']);
   });
 
   it('a path that is not the quotation component (no quotation root) is swept', () => {
