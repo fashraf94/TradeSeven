@@ -288,7 +288,8 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
               {r.note ? <span style={foot}><Rec>{r.note}</Rec></span> : null}
             </>
           ) : <span style={foot}>{COPY.replayNone}{a.replayReason === 'crypto_not_supported' ? ` · ${COPY.replayCrypto}` : ''} · <Rec>{tape.coverage?.replay?.note || ''}</Rec></span>}
-          <span data-replay-sentence="" style={foot}><Rec>{r?.label || REPLAY_SENTENCE}</Rec></span>
+          {/* The replay's own stored label, verbatim (R1); the screen's own sentence only where none is stored. */}
+          <span data-replay-sentence="" style={foot}>{r?.label ? <Rec>{r.label}</Rec> : REPLAY_SENTENCE}</span>
         </div>
         <SplitRows tape={tape} index={index} a={a} />
       </div>

@@ -5,8 +5,9 @@
 // (V1.2 BA-4, BA-7, BA-9, BA-10, BA-11, BA-21, BA-22; Amendment D BA-38;
 // Amendment E BA-41 … BA-49) and the design of record's otherwise
 // (docs/design/20261008_FILM_ROOM_A2_MOCKUP.html). No verdict, no ranking, no
-// lesson, no advice, no new agent voice, and never a "Why?" heading — the
-// screen suites sweep the rendered output for the forbidden words.
+// lesson, no advice, no new agent voice, never a "Why?" heading, and no
+// number spelled as a word outside a marked number (Amendment E addendum 2,
+// R8) — the screen suites sweep the rendered output for all of them.
 
 import { PROVENANCE_LABELS, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE } from '../../constants/filmTape';
 
@@ -16,18 +17,20 @@ export { PROVENANCE_LABELS, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE };
 export const CLASS_LETTER = Object.freeze({ recorded: 'R', derived: 'D', rebuilt: 'B', market: 'M' });
 
 /**
- * BA-11's one-step-hypothetical sentence — the same words the candle pass
- * stores on every replay as `label` (api/_utils/filmTape/tapeReplay.js
- * REPLAY_LABEL; the screen suites pin the two equal). A card shows the
- * replay's own stored label when it has one, and this when it has none.
+ * BA-11's sentence, in the SCREEN's own words — shown only on a card whose
+ * replay stores no `label` of its own. A card with a stored label shows that
+ * label verbatim, as the tape's own words (R1: api/_utils/filmTape/tapeReplay.js
+ * REPLAY_LABEL, "one-step hypothetical …"). The screen's own voice spells no
+ * number as a word (Amendment E addendum 2, R8), so its sentence says "this
+ * swap alone" where the stored label says "one-step".
  */
-export const REPLAY_SENTENCE = "one-step hypothetical through the day's close; later trades in this slot are not replayed; not the effect of the swap on the battle";
+export const REPLAY_SENTENCE = "a hypothetical of this swap alone, through the day's close; later trades in this slot are not replayed; not the effect of the swap on the battle";
 
 export const FILM_ROOM_COPY = Object.freeze({
   title: 'Film Room',
   back: 'Battles',
   gameName: 'BaggerBomb',
-  battleLength: (word) => `${word}-day battle`,   // the design of record's "one-day battle"
+  battleLengthSuffix: '-day battle',   // the design of record's "one-day battle" — the word is a marked number (R8)
   battleComplete: 'battle complete',
   battleActive: 'battle in progress',
   depths: [{ id: 'glance', label: 'Glance' }, { id: 'study', label: 'Study' }, { id: 'deep', label: 'Deep dive' }],
@@ -180,7 +183,7 @@ export const FILM_ROOM_COPY = Object.freeze({
   afterSwaps: (n) => (n === 1 ? 'swap' : 'swaps'),
   explainerOpen: 'How a directive card reads',
   explainerClose: 'Hide the card states',
-  explainerNote: 'Example cards · a fixture, not this battle · the three states a card can take.',
+  explainerNote: 'Example cards · a fixture, not this battle · each state a card can take.',
   explainerLabels: { committed: 'Example · filed', no_change: 'Example · no change', not_filed: 'Example · not filed' },
   readMore: 'Read more',
   showLess: 'Show less',

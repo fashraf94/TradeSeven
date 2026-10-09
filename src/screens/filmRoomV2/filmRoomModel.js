@@ -67,6 +67,9 @@ export const SCREEN_AGGREGATE_CLASSES = Object.freeze({
   'count(rationale[])': 'derived',
   'count(plans[] of the symbol)': 'derived',
   'ordinal(actions[] in time order)': 'derived',
+  // Addendum 2, R8: a spelled-out quantity is a number. The subtitle's battle length ("one-day battle") is the
+  // count of the battle's own timeline, timing.tradingDays — a count of recorded rows, so `derived`.
+  'count(timing.tradingDays)': 'derived',
   // The Deep dive's facts and its percent axis, computed from a series document's bars: market operands only.
   'change(sessionOpen.value to bars[last].c)': 'market',
   'sum(bars[].v)': 'market',
@@ -414,7 +417,7 @@ export function deriveHoldings(tape) {
   }
   const agrees = expectAtLast.size === lastKeys.size && [...expectAtLast].every((s) => lastKeys.has(s));
   if (!consistent || !agrees) {
-    return { status: 'unavailable', note: 'the recorded risk decisions and swaps of this day do not reconcile into one held set, so the grid is not drawn', start: null, end: null, changes: [] };
+    return { status: 'unavailable', note: 'the recorded risk decisions and swaps of this day do not reconcile into a held set, so the grid is not drawn', start: null, end: null, changes: [] };
   }
   return {
     status: 'derived',

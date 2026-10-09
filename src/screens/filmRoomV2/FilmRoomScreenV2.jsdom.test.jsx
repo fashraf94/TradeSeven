@@ -15,8 +15,9 @@ import FilmRoomScreenV2, { noTapeLine, defaultDay, battleDays, headerParts } fro
 import { FIRST_OPEN_KEY } from './filmRoomSeen';
 import { FORBIDDEN_WORDS } from './filmRoomCopy';
 import {
-  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, SPEC_FORBIDDEN_WORDS, SPEC_AGGREGATE_CLASSES,
+  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, SPEC_FORBIDDEN_WORDS, SPEC_AGGREGATE_CLASSES, SPEC_NUMBER_WORDS,
 } from './__fixtures__/filmRoomHarness';
+import { COMPANY_NAMES } from '../../config/stockData';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -40,9 +41,10 @@ describe('the header (BA-41, BA-42)', () => {
     const text = m.container.textContent;
     expect(text).toContain('Film Room');
     expect(text).toContain('Sep 23 · battle complete');
-    expect(m.q('[data-header-subtitle]').textContent).toBe('Trend Follower · BaggerBomb · one-day battle · Wed, Sep 23, 2026');
+    // the battle length is a marked number (R8): "one-day battle" with its marker, D
+    expect(m.q('[data-header-subtitle]').textContent).toBe('Trend Follower · BaggerBomb · one-day battleD · Wed, Sep 23, 2026');
     // a separator travels with the part after it: a wrapped line never starts or ends on " · " (review A2P3-3)
-    expect([...m.q('[data-header-subtitle]').children].map((s) => s.textContent)).toEqual(['Trend Follower', '· BaggerBomb', '· one-day battle', '· Wed, Sep 23, 2026']);
+    expect([...m.q('[data-header-subtitle]').children].map((s) => s.textContent)).toEqual(['Trend Follower', '· BaggerBomb', '· one-day battleD', '· Wed, Sep 23, 2026']);
     expect(m.qa('[role="tab"]').map((t) => t.textContent)).toEqual(['Glance', 'Study', 'Deep dive']);
     const legends = m.qa('[data-legend]');
     expect(legends).toHaveLength(1);
@@ -94,9 +96,9 @@ describe('the header (BA-41, BA-42)', () => {
   it('the subtitle names only what the record carries: archetype · BaggerBomb · length · date', () => {
     const D = sep23Tape.etDate;
     const base = { agentContext: { archetype: 'momentum_chaser' }, timing: { tradingDays: ['2026-09-22', D] } };
-    expect(headerParts(base, sep23Tape, D)).toEqual({ archetype: 'Trend Follower', game: 'BaggerBomb', length: 'two-day battle', date: 'Wed, Sep 23, 2026' });
+    expect(headerParts(base, sep23Tape, D)).toEqual({ archetype: 'Trend Follower', game: 'BaggerBomb', length: { days: 2, source: 'timing' }, date: 'Wed, Sep 23, 2026' });
     // no timeline: the tape's day number on its final day; on another day, no length at all (never battleDays' one-day fallback)
-    expect(headerParts({ agentContext: {} }, sep23Tape, D).length).toBe('one-day battle');
+    expect(headerParts({ agentContext: {} }, sep23Tape, D).length).toEqual({ days: 1, source: 'dayNumber' });
     expect(headerParts({ agentContext: {} }, { ...sep23Tape, isFinalDay: false, dayNumber: 1 }, D).length).toBeNull();
     expect(battleDays({ completedAt: sep23Tape.battle.completedAt })).toEqual([D]);   // the screen's own one-day fallback…
     expect(headerParts({ completedAt: sep23Tape.battle.completedAt }, { ...sep23Tape, isFinalDay: false }, D).length).toBeNull();   // …never states a length
@@ -213,7 +215,7 @@ describe('the day picker and the days with no tape (§7)', () => {
 describe('the whole screen through the sweeps — every depth, both days, everything opened', () => {
   it.each([['Sep-23', sep23Tape, sep23Series], ['empty', emptyTape, emptySeries]])('%s', async (_l, tape, series) => {
     await open(tape, { series });
-    const docs = docsFor(tape, series);
+    const docs = { ...docsFor(tape, series), battle: battleOf(tape) };
     for (const label of ['Glance', 'Study', 'Deep dive']) {
       await depth(label);
       m.expandAll();
@@ -236,7 +238,7 @@ describe('the whole screen through the sweeps — every depth, both days, everyt
     try {
       await open();
       expect(m.qa('[data-region="all-symbols"]')).toHaveLength(0);
-      const docs = docsFor(sep23Tape, sep23Series);
+      const docs = { ...docsFor(sep23Tape, sep23Series), battle: battleOf(sep23Tape) };
       for (const label of ['Glance', 'Study', 'Deep dive']) {
         await depth(label);
         m.expandAll();
@@ -338,5 +340,101 @@ describe('the sweeps bite (a guard that cannot fail guards nothing)', () => {
 
   it('review A2L4-7: the production word list is the build prompt\'s, pinned by the oracle (not the other way round)', () => {
     expect([...FORBIDDEN_WORDS]).toEqual([...SPEC_FORBIDDEN_WORDS]);
+  });
+});
+
+describe('Amendment E addendum 2, R8 (Astra A2 F3) — the battle length is a marked number', () => {
+  const D = sep23Tape.etDate;
+  /** The subtitle's one number: the battle length, a declared aggregate or the tape's own field. */
+  const lengthEl = () => m.q('[data-header-subtitle] [data-num-aggregate], [data-header-subtitle] [data-num]');
+
+  it('Astra\'s setup — the complete Sep-23 tape, timing.tradingDays holding its one session: "one-day battle" is the count of the timeline, derived, with its marker', async () => {
+    const battle = battleOf(sep23Tape);
+    expect(battle.timing.tradingDays).toEqual([D]);
+    await open(sep23Tape, { battle });
+    const el = lengthEl();
+    expect(el.getAttribute('data-num-aggregate')).toBe('count(timing.tradingDays)');
+    expect(SPEC_AGGREGATE_CLASSES['count(timing.tradingDays)']).toBe('derived');
+    expect(el.getAttribute('data-num-class')).toBe('derived');
+    expect([...el.querySelectorAll('[data-kind-mark]')].map((k) => k.getAttribute('data-kind-mark'))).toEqual(['derived']);
+    expect(el.getAttribute('data-agg-value')).toBe('1');
+    expect(el.querySelector('[data-num-text]').textContent).toBe('one');
+    expect(el.textContent).toBe('one-day battleD');   // the word styling stays; the marker follows it
+    const docs = { tape: sep23Tape, battle };
+    expect(sweepNumbers(m.container, docs)).toEqual([]);
+    expect(sweepWords(m.container, docs)).toEqual([]);
+  });
+
+  it('the count is the battle\'s own timeline — two trading days read "two", whatever the tape\'s day number says; the oracle recounts it', async () => {
+    const battle = battleOf(sep23Tape, { timing: { tradingDays: ['2026-09-22', D] } });
+    expect(sep23Tape.dayNumber).toBe(1);
+    await open(sep23Tape, { battle });
+    const el = lengthEl();
+    expect([el.getAttribute('data-agg-value'), el.querySelector('[data-num-text]').textContent]).toEqual(['2', 'two']);
+    expect(sweepNumbers(m.container, { tape: sep23Tape, battle })).toEqual([]);
+    // another timeline in the documents: the oracle's count disagrees with the shown one
+    const other = { ...battle, timing: { tradingDays: ['2026-09-21', '2026-09-22', D] } };
+    expect(sweepNumbers(m.container, { tape: sep23Tape, battle: other })).toEqual(['aggregate count(timing.tradingDays): computed 2, the documents give 3']);
+  });
+
+  it('no timeline: the final tape\'s dayNumber, by its path, with THAT document\'s declared class and marker', async () => {
+    const battle = { ...battleOf(sep23Tape), timing: undefined };
+    for (const cls of ['derived', 'recorded']) {
+      const tape = clone(sep23Tape);
+      tape.numberClasses.dayNumber = cls;   // the marker follows the document, never a constant
+      m.teardown(); m.setup(); globalThis.localStorage.clear();
+      await open(tape, { battle });
+      const el = lengthEl();
+      expect(el.getAttribute('data-num'), cls).toBe('dayNumber');
+      expect(el.getAttribute('data-num-class'), cls).toBe(cls);
+      expect(el.querySelector('[data-kind-mark]').getAttribute('data-kind-mark'), cls).toBe(cls);
+      expect(el.textContent, cls).toBe(`one-day battle${cls === 'derived' ? 'D' : 'R'}`);
+      expect(m.q('[data-num-aggregate="count(timing.tradingDays)"]')).toBeNull();
+      expect(sweepNumbers(m.container, { tape })).toEqual([]);
+    }
+  });
+
+  it('neither source: the length is omitted', async () => {
+    await open({ ...clone(sep23Tape), isFinalDay: false }, { battle: { ...battleOf(sep23Tape), timing: undefined } });
+    expect(lengthEl()).toBeNull();
+    expect(m.q('[data-header-subtitle]').textContent).not.toMatch(/day battle/);
+  });
+});
+
+describe('R8 — the screen\'s own voice spells no number as a word outside a marked number (the class, not the instance)', () => {
+  const box = (html) => { const el = document.createElement('div'); el.innerHTML = html; return el; };
+
+  it('a cardinal word in copy, a label or an attribute bites — zero through twenty, "single", "dozen", inflected', () => {
+    expect(sweepWords(box('<p>Holdings · seven slots</p>'))).toEqual(['number word “seven”: Holdings · seven slots']);
+    expect(sweepWords(box('<h3>Twenty checks</h3>'))).toEqual(['number word “Twenty”: Twenty checks']);
+    expect(sweepWords(box('<span title="a single check"></span><button aria-label="dozens of swaps"></button>'))).toEqual(['number word “single” in title: a single check', 'number word “dozens” in aria-label: dozens of swaps']);
+    expect(sweepWords(box('<p>a one-step hypothetical</p>'))).toEqual(['number word “one”: a one-step hypothetical']);
+    expect(sweepWords(box('<p>someone, often, none, ninety</p>'))).toEqual([]);   // whole words only
+  });
+
+  it('a marked number\'s own text is exempt — the words beside it are not', () => {
+    const agg = (rest) => `<span data-header-subtitle><span data-num-aggregate="count(timing.tradingDays)" data-num-class="derived" data-agg-value="1"><span><span data-num-text>one</span>${rest}</span><span data-kind-mark="derived">D</span></span></span>`;
+    expect(sweepWords(box(agg('-day battle')))).toEqual([]);
+    expect(sweepWords(box(agg('-day battle, twelve checks')))).toEqual(['number word “twelve”: -day battle, twelve checks']);
+    expect(sweepWords(box('<span><span data-num-text>one</span>-day battle</span>'))).toEqual(['number word “one”: one']);   // unmarked: a bare data-num-text is not a marked number
+  });
+
+  it('R4(d): the directory\'s own name for its symbol ("Capital One") is exempt — the same words anywhere else are not', () => {
+    expect(COMPANY_NAMES.COF).toBe('Capital One');
+    expect(sweepWords(box('<span data-display-name="COF">Capital One</span>'))).toEqual([]);
+    expect(sweepWords(box('<span data-display-name="MSFT">Capital One</span>'))).toEqual(['number word “One”: Capital One']);
+  });
+
+  it('R1: the tape\'s own stored text, verbatim and marked as the record\'s, is exempt — screen words around it, or the same words unmarked, are not', () => {
+    const label = sep23Tape.actions[0].replay.label;
+    expect(label).toMatch(/^one-step hypothetical/);
+    const docs = { tape: sep23Tape };
+    expect(sweepWords(box(`<span data-record-text>${label}</span>`), docs)).toEqual([]);
+    expect(sweepWords(box(`<span data-record-text>${label} · one more</span>`), docs)).toEqual(['number word “one”: ' + `${label} · one more`.slice(0, 80)]);
+    expect(sweepWords(box(`<span>${label}</span>`), docs)).toEqual([`number word “one”: ${label}`.slice(0, 'number word “one”: '.length + 80)]);
+  });
+
+  it('the production word list for the sweep is the fix prompt\'s, pinned in the harness', () => {
+    expect([...SPEC_NUMBER_WORDS]).toEqual(['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty', 'single', 'dozen']);
   });
 });

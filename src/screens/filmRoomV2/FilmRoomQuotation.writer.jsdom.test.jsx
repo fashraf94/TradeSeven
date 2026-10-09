@@ -177,7 +177,7 @@ describe('R7 / F1 — each forbidden phrase in every recorded-words channel, wri
 describe('R7\'s guard bites — only a bound quotation is exempt, and it must be attributed as the record says', () => {
   const tape = {
     rationale: [{ at: '2026-09-23T16:00:15.000Z', rationale: 'This is the best entry.', hypothesis: null }],
-    directives: [{ filedAt: '2026-09-23T17:40:00.000Z', playerText: 'Sell the worst one.' }],
+    directives: [{ filedAt: '2026-09-23T17:40:00.000Z', playerText: 'Sell the worst name.' }],
   };
   const docs = { tape };
   const box = (html) => { const el = document.createElement('div'); el.innerHTML = html; return el; };
@@ -209,7 +209,7 @@ describe('R7\'s guard bites — only a bound quotation is exempt, and it must be
   });
 
   it('recorded words copied into an aria-label or a title are the screen\'s voice', () => {
-    const el = box(`<div aria-label="This is the best entry.">${quotation('player', 'directives[0].playerText', 'Sell the worst one.', attribution('the player', '1:40 PM'))}</div><span title="Sell the worst one."></span>`);
+    const el = box(`<div aria-label="This is the best entry.">${quotation('player', 'directives[0].playerText', 'Sell the worst name.', attribution('the player', '1:40 PM'))}</div><span title="Sell the worst name."></span>`);
     expect(sweepWords(el, docs)).toEqual(['best', 'worst']);
   });
 
@@ -217,9 +217,9 @@ describe('R7\'s guard bites — only a bound quotation is exempt, and it must be
     expect(quoteDefects(box(quotation('agent', 'rationale[0].rationale', 'This is the best entry.', '')), docs)).toEqual(['rationale[0].rationale: no attribution']);
     expect(quoteDefects(box(quotation('agent', 'rationale[0].rationale', 'This is the best entry.', attribution('the platform', '12:00 PM'))), docs))
       .toEqual(['rationale[0].rationale: attributed “— the platform · 12:00 PM”, the record says “— the agent · 12:00 PM”']);
-    expect(quoteDefects(box(quotation('player', 'directives[0].playerText', 'Sell the worst one.', attribution('the player', '1:45 PM'))), docs))
+    expect(quoteDefects(box(quotation('player', 'directives[0].playerText', 'Sell the worst name.', attribution('the player', '1:45 PM'))), docs))
       .toEqual(['directives[0].playerText: attributed “— the player · 1:45 PM”, the record says “— the player · 1:40 PM”']);
-    expect(quoteDefects(box(quotation('player', 'directives[0].playerText', 'Sell the worst one.', '<span data-quote-attribution="">— the player · 1:40 PM</span>')), docs))
+    expect(quoteDefects(box(quotation('player', 'directives[0].playerText', 'Sell the worst name.', '<span data-quote-attribution="">— the player · 1:40 PM</span>')), docs))
       .toEqual(['directives[0].playerText: its time is not marked as an instant']);
     expect(quoteDefects(box(quotation('agent', 'rationale[0].hypothesis', 'This is the best entry.', attribution('the agent', '12:00 PM'))), docs)[0]).toMatch(/not bound/);
   });

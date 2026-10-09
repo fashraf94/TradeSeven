@@ -25,7 +25,7 @@ import { etClock, etDateLabel } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { useTapeDay, useSeriesDay, firestoreReaders } from './filmRoomData';
 import { hasSeenFirstOpen, markFirstOpenSeen } from './filmRoomSeen';
-import { C, card, eyebrow, body, mono, plain, tint, Label, KindLegend, Segmented, Chip, PrimaryButton, When, Rec, EmptyCard } from './FilmRoomKit';
+import { C, card, eyebrow, body, mono, plain, tint, Label, KindLegend, Segmented, Chip, PrimaryButton, When, Rec, EmptyCard, AggNum, TapeNum } from './FilmRoomKit';
 import FilmRoomGlance from './FilmRoomGlance';
 import FilmRoomStudy from './FilmRoomStudy';
 import FilmRoomDeepDive from './FilmRoomDeepDive';
@@ -86,19 +86,36 @@ const LENGTH_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'ei
  * whether the tape has loaded (review A2P1-9, A2P3-4). The length is the
  * battle's own trading-day timeline, else the tape's day number on its final
  * day, and is omitted when neither carries it (never the one-day fallback
- * battleDays uses).
+ * battleDays uses). It is a NUMBER, spelled as a word (Amendment E addendum 2,
+ * R8), so it says where it comes from: `{ days, source }` — 'timing', the
+ * count of timing.tradingDays (the screen's declared `derived` aggregate), or
+ * 'dayNumber', the tape's own field (that document's declared class).
  */
 export function headerParts(battle, tape, etDate) {
   const code = [battle?.agentContext?.archetype, battle?.archetype, tape?.archetype].find((a) => typeof a === 'string' && a && a.toLowerCase() !== 'unknown');
   const timing = battle?.timing?.tradingDays;
-  const length = Array.isArray(timing) && timing.length ? timing.length
-    : (tape?.isFinalDay === true && Number.isInteger(tape?.dayNumber) ? tape.dayNumber : null);
+  const length = Array.isArray(timing) && timing.length ? { days: timing.length, source: 'timing' }
+    : (tape?.isFinalDay === true && Number.isInteger(tape?.dayNumber) ? { days: tape.dayNumber, source: 'dayNumber' } : null);
   return {
     archetype: code ? getArchetypeDisplayName(code) : null,
     game: COPY.gameName,
-    length: length >= 1 && length <= LENGTH_WORDS.length ? COPY.battleLength(LENGTH_WORDS[length - 1]) : null,
+    length: length && length.days >= 1 && length.days <= LENGTH_WORDS.length ? length : null,
     date: etDateLabel(etDate),
   };
+}
+
+const lengthWord = (n) => LENGTH_WORDS[n - 1];
+
+/**
+ * R8 — the battle length, "one-day battle", as a MARKED number: the count of the battle's timeline through the
+ * screen's one declaration, or the tape's own dayNumber by its path and that document's declaration. The word
+ * styling stays; the marker follows the words.
+ */
+function BattleLength({ length, tape }) {
+  const look = { size: 9.5, weight: 500, color: C.ink3, suffix: COPY.battleLengthSuffix };
+  return length.source === 'timing'
+    ? <AggNum value={length.days} aggregate="count(timing.tradingDays)" fmt={lengthWord} style={{ letterSpacing: 'inherit' }} {...look} />
+    : <TapeNum doc={tape} path={['dayNumber']} fmt={lengthWord} style={{ letterSpacing: 'inherit' }} {...look} />;
 }
 
 /**
@@ -171,7 +188,7 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
   };
 
   const parts = headerParts(battle, tape, day);
-  const subtitle = [parts.archetype, parts.game, parts.length, parts.date ? <When key="date">{parts.date}</When> : null].filter(Boolean);
+  const subtitle = [parts.archetype, parts.game, parts.length ? <BattleLength key="length" length={parts.length} tape={tape} /> : null, parts.date ? <When key="date">{parts.date}</When> : null].filter(Boolean);
   // The battle's status, not the day's: an earlier day's tape was written while the battle was live (review A2L1-3).
   const complete = battle?.status === 'completed' || tape?.battle?.status === 'completed';
   const lastDay = days.length ? days[days.length - 1] : null;

@@ -80,12 +80,15 @@ export function KindMark({ cls, size = 12 }) {
   );
 }
 
+/** A number's text and the words that read with it ("one" + "-day battle"), joined, before the marker. */
+const withSuffix = (text, suffix) => (suffix ? <span style={{ whiteSpace: 'nowrap' }}>{text}{suffix}</span> : text);
+
 /**
  * A number from a tape or series document, by path, with the marker of the
  * class that document declares for that path. A missing value renders '—'
  * (no number, so no marker).
  */
-export function TapeNum({ doc, path, fmt = fmtPoints, size = 13, weight = 700, color, docLabel = 'tape', style }) {
+export function TapeNum({ doc, path, fmt = fmtPoints, size = 13, weight = 700, color, docLabel = 'tape', style, suffix = null }) {
   const n = numberAt(doc, path);
   const where = formatNumberPath(path);
   if (!n) {
@@ -101,7 +104,7 @@ export function TapeNum({ doc, path, fmt = fmtPoints, size = 13, weight = 700, c
       data-sign-color={signed ? 'yes' : 'no'}
       style={{ display: 'inline-flex', alignItems: 'center', gap: Math.max(4, Math.round(size * 0.14)), fontFamily: MONO, fontSize: size, fontWeight: weight, color: ink, fontVariantNumeric: 'tabular-nums', letterSpacing: size > 20 ? '-0.02em' : 'normal', lineHeight: 1, whiteSpace: 'nowrap', ...style }}
     >
-      <span data-num-text="">{fmt(n.value)}</span>
+      {withSuffix(<span data-num-text="">{fmt(n.value)}</span>, suffix)}
       <KindMark cls={n.cls} size={Math.max(12, Math.round(size * 0.4))} />
     </span>
   );
@@ -110,13 +113,14 @@ export function TapeNum({ doc, path, fmt = fmtPoints, size = 13, weight = 700, c
 /**
  * A number the screen computes from the record (Amendment E addendum R4(a)) —
  * its class from the one screen declaration, SCREEN_AGGREGATE_CLASSES, by the
- * name of what it computes; never a widget's own.
+ * name of what it computes; never a widget's own. `suffix` is the words that
+ * read with the number before its marker ("one" + "-day battle", R8).
  */
-export function AggNum({ value, aggregate, fmt = String, size = 10.5, weight = 600, color = C.ink2 }) {
+export function AggNum({ value, aggregate, fmt = String, size = 10.5, weight = 600, color = C.ink2, suffix = null, style }) {
   const cls = SCREEN_AGGREGATE_CLASSES[aggregate] ?? null;
   return (
-    <span data-num-aggregate={aggregate} data-num-class={cls || 'none'} data-agg-value={value} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: MONO, fontSize: size, fontWeight: weight, color, whiteSpace: 'nowrap' }}>
-      <span data-num-text="">{fmt(value)}</span>
+    <span data-num-aggregate={aggregate} data-num-class={cls || 'none'} data-agg-value={value} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: MONO, fontSize: size, fontWeight: weight, color, whiteSpace: 'nowrap', ...style }}>
+      {withSuffix(<span data-num-text="">{fmt(value)}</span>, suffix)}
       <KindMark cls={cls} />
     </span>
   );

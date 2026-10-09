@@ -9,7 +9,8 @@
 //                  identifier or the record's own stored text
 //   sweepWords     the screen's own voice — everything outside a bound
 //                  quotation (Amendment E addendum 2, R7): no verdict, ranking
-//                  or forbidden word; no "Why?" heading
+//                  or forbidden word; no "Why?" heading; no number spelled
+//                  as a word outside a marked number (R8)
 //   quoteDefects   R7's guard: every quotation bound to its tape path (text =
 //                  the stored value) and attributed as the record says
 //   sweepSigns     sign colours on recorded scores only
@@ -79,13 +80,24 @@ export function parsePath(s) {
   return out;
 }
 
-/** The number a rendered numeral stands for ('−1.5' → -1.5, '+9' → 9, '1,234.50' → 1234.5). */
+/**
+ * Amendment E addendum 2, R8 — a spelled-out quantity is a number. The cardinal words the screen's own voice may
+ * not spell outside a marked number, PINNED HERE from the fix prompt (zero through twenty, "single", "dozen"),
+ * with the value each stands for.
+ */
+export const SPEC_NUMBER_WORDS = Object.freeze(['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty', 'single', 'dozen']);
+const NUMBER_WORD_VALUE = Object.freeze({ ...Object.fromEntries(SPEC_NUMBER_WORDS.slice(0, 21).map((w, i) => [w, i])), single: 1, dozen: 12 });
+const NUMBER_WORD = new RegExp(`\\b(${SPEC_NUMBER_WORDS.join('|')})s?\\b`, 'i');
+
+/** The number a rendered numeral stands for ('−1.5' → -1.5, '+9' → 9, '1,234.50' → 1234.5, 'one' → 1). */
 export function parseNumeral(text) {
+  const word = String(text).trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(NUMBER_WORD_VALUE, word)) return NUMBER_WORD_VALUE[word];
   return Number(String(text).replace(/−/g, '-').replace(/[+,%\s]/g, ''));
 }
 
-/** Every string a document stores (values and map keys) — what the record's own text may be. */
-function storedStrings(docs) {
+/** Every string a document stores (values and map keys) that `keep` accepts — what the record's own text may be. */
+function storedStrings(docs, keep = (s) => /\d/.test(s)) {
   const out = new Set();
   const walk = (v) => {
     if (typeof v === 'string') out.add(v);
@@ -93,7 +105,7 @@ function storedStrings(docs) {
     else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { out.add(k); walk(x); }
   };
   docs.forEach(walk);
-  return [...out].filter((s) => /\d/.test(s)).sort((a, b) => b.length - a.length);
+  return [...out].filter(keep).sort((a, b) => b.length - a.length);
 }
 
 const TIME_PATTERNS = [/\b\d{1,2}:\d{2}( (AM|PM))?\b/g, /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/g, /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}\b/g, /\d{4}-\d{2}-\d{2}T[\d:.]+Z/g];
@@ -114,6 +126,7 @@ export const SPEC_AGGREGATE_CLASSES = Object.freeze({
   'count(rationale[])': 'derived',
   'count(plans[] of the symbol)': 'derived',
   'ordinal(actions[] in time order)': 'derived',
+  'count(timing.tradingDays)': 'derived',   // addendum 2, R8: the subtitle's battle length
   'change(sessionOpen.value to bars[last].c)': 'market',
   'sum(bars[].v)': 'market',
   'axis(% from the session open)': 'market',
@@ -132,6 +145,7 @@ export const SPEC_AGGREGATE_SITES = Object.freeze({
   'count(rationale[])': '#rationale [data-section-count]',
   'count(plans[] of the symbol)': '[data-region="plan-chips"] button',
   'ordinal(actions[] in time order)': '[data-swap-card] [data-swap-title]',
+  'count(timing.tradingDays)': '[data-header-subtitle]',
   'change(sessionOpen.value to bars[last].c)': '[data-region="symbol-facts"]',
   'sum(bars[].v)': '[data-region="symbol-facts"]',
 });
@@ -188,6 +202,11 @@ function aggregateOracle(name, el, docs) {
     case 'sum(bars[].v)': {
       const doc = seriesDocAt(el, docs);
       return doc ? doc.bars.reduce((sum, b) => sum + b.v, 0) : null;
+    }
+    case 'count(timing.tradingDays)': {
+      // the battle document's own timeline — a sweep that renders the header passes it as docs.battle
+      const days = docs.battle?.timing?.tradingDays;
+      return Array.isArray(days) ? days.length : null;
     }
     default: return undefined;
   }
@@ -381,14 +400,46 @@ export function renderedText(container, docs = {}) {
 }
 
 /**
+ * R8 — every cardinal word in the screen's own voice that is not a marked number: a text node outside a bound
+ * quotation (R7), outside a marked number's own text, outside the directory's own name for a symbol (R4(d), as the
+ * digit sweep), and — inside the record's own stored text — not part of a string a document stores (R1: stored
+ * notes render verbatim, as the tape's own words; ruled for words as for digits); and every aria-label and title.
+ */
+function numberWordHits(container, docs) {
+  const hits = [];
+  const stored = storedStrings(Object.values(docs), (s) => NUMBER_WORD.test(s));
+  const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    let text = node.textContent;
+    if (!NUMBER_WORD.test(text)) continue;
+    const host = node.parentElement;
+    if (boundQuotationOf(node, docs)) continue;
+    if (host.closest('[data-num-text]') && (host.closest('[data-num]') || host.closest('[data-num-aggregate]'))) continue;
+    if (isDirectoryName(host)) continue;
+    if (host.closest('[data-record-text]')) for (const s of stored) text = text.split(s).join(' ');
+    const m = text.match(NUMBER_WORD);
+    if (m) hits.push(`number word “${m[0]}”: ${node.textContent.trim().slice(0, 80)}`);
+  }
+  for (const el of container.querySelectorAll('[aria-label], [title]')) {
+    for (const attr of ['aria-label', 'title']) {
+      const m = (el.getAttribute(attr) || '').match(NUMBER_WORD);
+      if (m) hits.push(`number word “${m[0]}” in ${attr}: ${el.getAttribute(attr).slice(0, 80)}`);
+    }
+  }
+  return hits;
+}
+
+/**
  * The screen's own voice (R7: everything outside a bound quotation): no verdict, ranking or forbidden word (or its
- * inflection), and no "Why" heading. `docs` names the documents a quotation may be bound to (as sweepNumbers).
+ * inflection), no "Why" heading, and no number spelled as a word outside a marked number (R8). `docs` names the
+ * documents a quotation may be bound to (as sweepNumbers).
  */
 export function sweepWords(container, docs = {}) {
   const text = renderedText(container, docs).toLowerCase();
   const hits = SPEC_FORBIDDEN_WORDS.filter((w) => new RegExp(`\\b${w.replace(/ /g, '\\s+')}(s|es|d|ed|ing)?\\b`).test(text));
   if (/\bwhy\s*\?/i.test(text)) hits.push('Why?');
   for (const h of container.querySelectorAll('h1, h2, h3, h4, h5, h6')) if (/^\s*why\b/i.test(h.textContent)) hits.push(`heading: ${h.textContent.trim()}`);
+  hits.push(...numberWordHits(container, docs));
   return hits;
 }
 
