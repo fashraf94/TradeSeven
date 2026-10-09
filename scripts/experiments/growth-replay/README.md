@@ -1,0 +1,60 @@
+# Growth Replay
+
+An offline experiment: does what an agent has learned change the trading calls it makes?
+
+It takes Trading Brain requests that production already sent (the tick capture:
+`agentBattles/{battleId}/ticks` and `tickBodies`) and sends them to the Anthropic API again:
+
+| Arm | What is sent | Question |
+|---|---|---|
+| 1 — noise floor | the recorded request, unchanged, on the production model, repeated | how often does the brain repeat itself? |
+| 2 — memory | the same request with the agent's learned section emptied (`strip`), replaced by another agent's (`swap`), or with the player's equipped sections emptied (`loadout`) | do those edits move decisions more than the noise does? |
+| 3 — model ladder | the recorded request with only the model changed | would another model decide differently, and at what cost? |
+
+It measures whether decisions change, not whether they improve. The report is
+`docs/audits/20261008_GROWTH_REPLAY_EXPERIMENT.md`.
+
+## Safety properties
+
+- **Read-only on Firestore.** Only `.get()`, `.select()` and `getAll()` are called. There is no write call in the file.
+- **No product code is imported.** Nothing that initializes Firebase or reads a feature flag. The facts it needs (section headers, the decision tool's validation order) are re-derived and cited in the report.
+- **Model calls never touch a product handler.** Plain `fetch` to `api.anthropic.com`, so no capture record, cron state or battle document is written.
+- **Secrets.** `CLAUDE_API_KEY` (the variable the production brain reads) and `FIREBASE_ADMIN_CREDENTIALS` are read from the environment, then this tree's `.env.local`, then the primary checkout's `.env.local`. Nothing is copied, printed or written.
+- **Player text stays local.** Request bodies, responses and the exhibits file are written only to `%USERPROFILE%/growth-replay-runs/<runId>/`, outside the repo.
+- **Spend is capped in code** at submit time: planned ≤ $150, worst case ≤ $185, and no batch is created after 2026-10-10T23:00:00Z.
+
+## Commands (from the repo root, Windows PowerShell or any shell)
+
+```
+node scripts/experiments/growth-replay/growthReplay.js plan          # gate, corpus counts, seeded sample (no spend)
+node scripts/experiments/growth-replay/growthReplay.js pilot         # ≤10 billable synchronous calls; prints the run plan and its cost
+node scripts/experiments/growth-replay/growthReplay.js submit --go   # creates the batches (after the founder's "go")
+node scripts/experiments/growth-replay/growthReplay.js status --wait # polls every 5 minutes for up to 2 hours
+node scripts/experiments/growth-replay/growthReplay.js collect       # saves results, retries server errors once, deletes the batches
+node scripts/experiments/growth-replay/growthReplay.js analyze       # runs the selftest first, then the measures
+node scripts/experiments/growth-replay/growthReplay.js selftest      # synthetic: noise → no effect; planted 30% shift → moves decisions
+```
+
+Every command except `plan` and `selftest` acts on the newest run that passed its gate; pass `--run <runId>` for another.
+
+## The batch-effect check (Fable ruling, 2026-10-08)
+
+A derived run on the same arm-2 moments: a fresh baseline and a fresh "learning removed" at equal repeats (the largest count in 5–10 that fits **$50 planned / $68 worst**, enforced in code at plan and at submit), shuffled together across the same batches. It reports three comparisons on the frozen bars: fresh vs original baseline (batch effect), fresh learning-removed vs fresh baseline (learning, batches controlled), and fresh vs original learning-removed (replication).
+
+```
+node scripts/experiments/growth-replay/growthReplay.js batchcheck-plan --from <original runId>   # refuses an unfinished or unanalysed original
+node scripts/experiments/growth-replay/growthReplay.js submit --go --run <original runId>-batchcheck
+node scripts/experiments/growth-replay/growthReplay.js status --wait --run <original runId>-batchcheck
+node scripts/experiments/growth-replay/growthReplay.js collect --run <original runId>-batchcheck
+node scripts/experiments/growth-replay/growthReplay.js batchcheck-analyze --run <original runId>-batchcheck
+```
+
+`batchcheck-plan` makes the derived run the default target of later commands. `batchcheck-analyze` writes `addendum.json` in the derived folder and a dated section, between `batchcheck` markers, at the end of the original run's local exhibits file. A later `analyze` of the original keeps that section.
+
+## Recovery rules
+
+- **One command at a time per run.** `pilot`, `submit` and `collect` take an exclusive `run.lock` in the run folder. `status` only reads. If a crashed command left the lock behind, delete the file.
+- **No orphaned batches.** The intent (task indices, size, time) is written to the manifest *before* every batch is created. If a command dies between creating a batch and recording it, the next `submit` or `collect` lists recent batches and adopts the one that attempt made, so nothing is sent twice. More than one candidate stops the command for a human to decide.
+- **Spend limit.** A spend-limit error stops the command (exit 3). A spend-limit *result* inside a batch still lets `collect` save and delete what was paid for, but no retry batch is created.
+- **Deletes are retried.** Every `collect` retries deleting any batch whose results are on disk.
+- **A new pilot is refused once batches exist.** It would remap their custom ids; start a new run with `plan` instead.
