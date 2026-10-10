@@ -27,7 +27,7 @@
 // so an incomplete series ends where its bars end, with the tail blank, and
 // "close" always names the session-close instant (Amendment E addendum 2, F2).
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, seriesDomain, closePoints, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
 import { classOfNumber } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
@@ -75,13 +75,14 @@ export const lastCloseLabelPx = (text) => Math.ceil(String(text).length * 6.2) +
 /**
  * The last close's label's top, in px. Its usual place — just above the line's end — when that is clear; else the
  * nearest clear band above or below it; else under the price area, where no marker reaches. A marker is NEAR when
- * the label's box and the marker's box share columns at SOME plot width the screen lays out (≥ MIN_PLOT_PX): `before`
+ * the label's box and the marker's box share columns at the plot's MEASURED width (`plotPx`), or — before it is
+ * measured, or where nothing lays it out — at SOME plot width the screen lays out (≥ MIN_PLOT_PX; review A2F2-2): `before`
  * puts the label's right edge 2 px before the line's end, otherwise its left edge 4 px after it. Heights are exact
  * px (the chart's height is fixed), so a band clear of every near marker is clear at every width. The swap labels'
  * row is a band too when the symbol has one. Positions are in the chart's 0–1000 domain (x) and px (y).
  */
-export function lastCloseTop({ endX, endY, before, labelPx, markers = [], swapRow = false, maxTop, floorTop }) {
-  const k = 1000 / MIN_PLOT_PX;   // domain units per px at the narrowest plot
+export function lastCloseTop({ endX, endY, before, labelPx, markers = [], swapRow = false, maxTop, floorTop, plotPx = 0 }) {
+  const k = 1000 / (plotPx > 0 ? plotPx : MIN_PLOT_PX);   // domain units per px: at the measured plot, else the narrowest
   const near = markers.filter((mk) => (before
     ? endX - mk.x > -(MARKER_HALF - 2) * k && endX - mk.x < (labelPx + 2 + MARKER_HALF) * k
     : mk.x - endX > -(MARKER_HALF - 4) * k && mk.x - endX < (labelPx + 4 + MARKER_HALF) * k));
@@ -104,7 +105,22 @@ function rebased(doc, base) {
   return (doc.bars || []).map((b) => ({ t: toMs(b.t), v: isNum(b.c) ? base * (b.c / open) : null }));
 }
 
+/** The plot's laid-out width in px (0 until measured, and where nothing lays it out): a ref and a ResizeObserver. */
+function usePlotWidth() {
+  const [px, setPx] = useState(0);
+  const watch = useRef(null);
+  const ref = useCallback((el) => {
+    if (watch.current) { watch.current.disconnect(); watch.current = null; }
+    if (!el) return;
+    const measure = () => { const w = el.getBoundingClientRect().width; setPx(w > 0 ? w : 0); };
+    measure();
+    if (typeof ResizeObserver === 'function') { watch.current = new ResizeObserver(measure); watch.current.observe(el); }
+  }, []);
+  return [px, ref];
+}
+
 function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, onMark, height = 250 }) {
+  const [plotPx, plotRef] = usePlotWidth();
   const bars = Array.isArray(doc.bars) ? doc.bars : [];
   const open = doc.sessionOpen?.value;
   // The time domain is the tape day's TRADING SESSION from the calendar the writers use — never the bars' extent:
@@ -126,7 +142,10 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   let lo = Math.min(...ys); let hi = Math.max(...ys);
   const span = Math.max(hi * 0.002, hi - lo); lo -= span * 0.08; hi += span * 0.08;
   const volH = show.volume ? 40 : 0; const gap = show.volume ? 8 : 0; const padT = 18;
-  const ih = height - padT - volH - gap - 4;
+  // With the volume hidden, a strip under the price area stays free of every marker's box, so the last close's
+  // label always has a clear place (review A2F2-1); with it shown, the volume band is that strip.
+  const floorRoom = show.volume ? 0 : LABEL_H + MARKER_HALF + 2;
+  const ih = height - padT - volH - gap - 4 - floorRoom;
   const x = (ms) => ((ms - startMs) / (endMs - startMs)) * 1000;
   const y = (v) => padT + ((hi - v) / (hi - lo)) * ih;
   // Every line breaks where a 10-minute bucket is missing between its first and last bar — never a straight line
@@ -147,17 +166,17 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   const markerPoints = marks.map((mk) => ({ x: x(toMs(mk.at)), y: y(valueAt(tape, ['checks', mk.index, 'evidence', sym, 'px'])) })).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
   const lastTop = isNum(lastClose) ? lastCloseTop({
     endX: lastEndX, endY: y(lastClose), before: lastEndX > 500, labelPx: lastCloseLabelPx(fmtPrice(lastClose)),
-    markers: markerPoints, swapRow: actions.some(({ a }) => toMs(a.at) !== null), maxTop: height - LABEL_H, floorTop: padT + ih + MARKER_HALF + 2,
+    markers: markerPoints, swapRow: actions.some(({ a }) => toMs(a.at) !== null), maxTop: height - LABEL_H, floorTop: padT + ih + MARKER_HALF + 2, plotPx,
   }) : null;
   return (
     <div data-region="price-chart" data-symbol={sym} style={{ position: 'relative', width: '100%', boxSizing: 'border-box', padding: `0 ${PAD_R}px 0 ${PAD_L}px` }}>
-      <div data-plot="" data-domain-start={new Date(startMs).toISOString()} data-domain-end={new Date(endMs).toISOString()} style={{ position: 'relative', width: '100%', height }}>
+      <div ref={plotRef} data-plot="" data-plot-px={plotPx || undefined} data-domain-start={new Date(startMs).toISOString()} data-domain-end={new Date(endMs).toISOString()} style={{ position: 'relative', width: '100%', height }}>
         <svg width="100%" height={height} viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-label={`${sym} · ${COPY.deepPrice}`} style={{ display: 'block', overflow: 'visible', width: '100%', height }}>
           {ticks.filter((v) => v !== 0).map((v) => <line key={v} data-gridline="" x1="0" x2="1000" y1={y(open * (1 + v))} y2={y(open * (1 + v))} style={{ stroke: C.hair }} vectorEffect="non-scaling-stroke" />)}
           {isNum(open) ? <line data-line="session-open" x1="0" x2="1000" y1={y(open)} y2={y(open)} style={{ stroke: C.ink3, strokeDasharray: '1.5 3' }} vectorEffect="non-scaling-stroke" /> : null}
-          {mk ? <path data-line="market" d={line(mk.map((p) => ({ ...p, t: p.t === null ? null : p.t + SERIES_STEP_MS })))} style={{ fill: 'none', stroke: C.ink3, strokeWidth: 1.1 }} vectorEffect="non-scaling-stroke" /> : null}
-          {sc ? <path data-line="sector" d={line(sc.map((p) => ({ ...p, t: p.t === null ? null : p.t + SERIES_STEP_MS })))} style={{ fill: 'none', stroke: C.purple, strokeWidth: 1.1, opacity: 0.9 }} vectorEffect="non-scaling-stroke" /> : null}
-          <path data-line="price" d={line(closes)} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.6 }} vectorEffect="non-scaling-stroke" />
+          {mk ? <path data-line="market" d={line(mk.map((p) => ({ ...p, t: p.t === null ? null : p.t + SERIES_STEP_MS })))} style={{ fill: 'none', stroke: C.ink3, strokeWidth: 1.1, strokeLinecap: 'round' }} vectorEffect="non-scaling-stroke" /> : null}
+          {sc ? <path data-line="sector" d={line(sc.map((p) => ({ ...p, t: p.t === null ? null : p.t + SERIES_STEP_MS })))} style={{ fill: 'none', stroke: C.purple, strokeWidth: 1.1, opacity: 0.9, strokeLinecap: 'round' }} vectorEffect="non-scaling-stroke" /> : null}
+          <path data-line="price" d={line(closes)} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.6, strokeLinecap: 'round' }} vectorEffect="non-scaling-stroke" />
           {actions.map(({ a, i }) => (toMs(a.at) !== null ? <line key={i} data-swap-mark={i} x1={x(toMs(a.at))} x2={x(toMs(a.at))} y1={padT - 4} y2={padT + ih} style={{ stroke: exitMakerOf(a).by === 'agent' ? C.teal : C.ink2, strokeWidth: 1, strokeDasharray: '3 2' }} vectorEffect="non-scaling-stroke" /> : null))}
           {show.volume && volMax > 0 ? bars.map((b, i) => (isNum(b.v) && toMs(b.t) !== null ? <rect key={i} data-volume-bar={i} x={x(toMs(b.t)) + 2} width={Math.max(2, (10 * 60_000 / (endMs - startMs)) * 1000 - 4)} y={padT + ih + gap + volH - (b.v / volMax) * volH} height={(b.v / volMax) * volH} style={{ fill: tint('scrim', 0.18) }} /> : null)) : null}
         </svg>

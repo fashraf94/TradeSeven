@@ -31,7 +31,7 @@ vi.mock('../../config/featureFlags.js', async (importOriginal) => ({
 
 import FilmRoomDeepDive, { lastCloseTop, lastCloseLabelPx } from './FilmRoomDeepDive';
 import { sep23Day, sep23Bars, buildTapeDay, SEP23_NIGHT, SEP23_MORNING } from '../../../api/_utils/filmTape/__fixtures__/screenFixtures.js';
-import { mounter, sep23Tape, sep23Series, sweepNumbers } from './__fixtures__/filmRoomHarness';
+import { mounter, sep23Tape, sep23Series, sweepNumbers, clone } from './__fixtures__/filmRoomHarness';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 
@@ -117,6 +117,59 @@ describe('the last-close label never shares a box with an evidence marker (write
   });
 });
 
+describe('review A2F2-1 / A2F2-2 / A2F2-3 — volume hidden, the measured width, a lone bar', () => {
+  /**
+   * ETN's stamps from 1:00 PM on — the ones near the line's end — planted as a ladder from the session's high down to
+   * its low, about 33 px apart: no band in the price area is clear of them, and the swap row (ETN's 3:00 PM exit)
+   * closes the top, so the label falls to its floor.
+   */
+  function ladder() {
+    const t = clone(sep23Tape);
+    const doc = sep23Series.find((s) => s.symbol === 'ETN');
+    const hi = Math.max(...doc.bars.map((b) => b.h)); const lo = Math.min(...doc.bars.map((b) => b.l));
+    const ks = t.checks.map((c, i) => i).filter((i) => t.checks[i].evidence?.ETN && t.checks[i].evidenceAt >= '2026-09-23T17:00:00.000Z');
+    ks.forEach((i, j) => { t.checks[i].evidence.ETN.px = Math.round((hi - ((hi - lo) * j) / (ks.length - 1)) * 100) / 100; });
+    return { t, n: ks.length };
+  }
+
+  it('volume hidden: the floor under the price area stays clear of every marker — the label meets none, at 156 and 226 px (the ladder that met one before)', () => {
+    const { t, n } = ladder();
+    expect(n).toBeGreaterThanOrEqual(6);
+    m.render(<FilmRoomDeepDive tape={t} seriesState={{ status: 'ready', series: sep23Series }} sym="ETN" onSym={() => {}} />);
+    // volume hidden — and the comparables too, so the price scale is ETN's own and the ladder spans it from top to bottom
+    for (const name of ['Volume', 'Market', 'Sector']) m.click([...m.container.querySelectorAll('[data-region="chart-legend"] button')].find((b) => b.textContent.startsWith(name)));
+    expect(m.qa('[data-volume-bar], [data-line="market"], [data-line="sector"]')).toHaveLength(0);
+    // the scenario is real: no band in the price area is clear of the near stamps — the label sits under them, on its floor
+    const { label: floor, markers: all } = boxes(226);
+    expect(floor.top).toBeGreaterThan(Math.max(...all.map((mk) => mk.bottom)));
+    for (const w of [156, 226]) {
+      const { label, markers } = boxes(w);
+      for (const mk of markers) expect(meets(label, mk), `${w} marker ${mk.id}`).toBe(false);
+      expect(label.bottom, w).toBeLessThanOrEqual(250);
+    }
+  });
+
+  it('the chart judges "near" at its MEASURED width when it has one (data-plot-px), else at the narrowest plot', () => {
+    const stub = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function rect() {
+      return { width: this.hasAttribute?.('data-plot') ? 116 : 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON() {} };
+    });
+    try {
+      m.render(<FilmRoomDeepDive tape={sep23Tape} seriesState={{ status: 'ready', series: sep23Series }} sym="ETN" onSym={() => {}} />);
+      expect(m.q('[data-plot]').getAttribute('data-plot-px')).toBe('116');
+    } finally {
+      stub.mockRestore();
+    }
+    m.render(null);
+    m.render(<FilmRoomDeepDive tape={sep23Tape} seriesState={{ status: 'ready', series: sep23Series }} sym="ETN" onSym={() => {}} />);
+    expect(m.q('[data-plot]').hasAttribute('data-plot-px')).toBe(false);   // jsdom lays nothing out: the narrowest plot
+  });
+
+  it('a lone bar\'s tick shows at phone widths: the lines draw round caps', () => {
+    m.render(<FilmRoomDeepDive tape={sep23Tape} seriesState={{ status: 'ready', series: sep23Series }} sym="INTC" onSym={() => {}} />);
+    for (const line of ['price', 'market', 'sector']) expect(m.q(`[data-line="${line}"]`).style.strokeLinecap, line).toBe('round');
+  });
+});
+
 describe('lastCloseTop — the band it chooses', () => {
   const base = { endX: 1000, endY: 100, before: true, labelPx: 60, maxTop: 237, floorTop: 214 };
   it('no marker near: the usual place, 16 px above the line\'s end', () => {
@@ -146,5 +199,12 @@ describe('lastCloseTop — the band it chooses', () => {
     const after = { ...base, endX: 300, before: false };
     expect(lastCloseTop({ ...after, markers: [{ x: 300 + 500, y: 100 }] })).not.toBe(84);
     expect(lastCloseTop({ ...after, markers: [{ x: 300 + 510, y: 100 }] })).toBe(84);
+  });
+  it('review A2F2-2: at a MEASURED plot width "near" is exact — a marker 600 units off is clear at 150 px but near at 116 px (a 280 px phone)', () => {
+    const mk = [{ x: 1000 - 600, y: 100 }];
+    expect(lastCloseTop({ ...base, markers: mk })).toBe(84);
+    expect(lastCloseTop({ ...base, markers: mk, plotPx: 150 })).toBe(84);
+    expect(lastCloseTop({ ...base, markers: mk, plotPx: 116 })).not.toBe(84);
+    expect(lastCloseTop({ ...base, markers: [{ x: 1000 - 300, y: 100 }], plotPx: 712 })).toBe(84);   // wide: 300 units is ~214 px away
   });
 });
