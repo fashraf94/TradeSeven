@@ -15,7 +15,7 @@
 //             Study or Deep dive; a day with no tape says so, and names a
 //             scheduled pass only when one is actually scheduled (§7)
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { FILM_TAPE_WRITE_ENABLED, isAgentPresenceOn } from '../../config/featureFlags';
 import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
@@ -25,7 +25,7 @@ import { etClock, etDateLabel, tradingTimeline } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { useTapeDay, useSeriesDay, firestoreReaders } from './filmRoomData';
 import { hasSeenFirstOpen, markFirstOpenSeen } from './filmRoomSeen';
-import { C, card, eyebrow, body, mono, plain, tint, Label, KindLegend, Segmented, Chip, PrimaryButton, When, StoredNote, EmptyCard, AggNum, TapeNum } from './FilmRoomKit';
+import { C, card, eyebrow, body, mono, plain, tint, Label, KindLegend, Segmented, tabIdOf, panelIdOf, Chip, PrimaryButton, When, StoredNote, EmptyCard, AggNum, TapeNum } from './FilmRoomKit';
 import FilmRoomGlance from './FilmRoomGlance';
 import FilmRoomStudy from './FilmRoomStudy';
 import FilmRoomDeepDive from './FilmRoomDeepDive';
@@ -190,6 +190,7 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
   const [sym, setSym] = useState(null);
   const [notice, setNotice] = useState(() => !hasSeenFirstOpen(viewerId));
   const desktop = useDesktop();
+  const idBase = `film-room${useId().replace(/[^A-Za-z0-9_-]/g, '')}`;   // the depth tabs' and panels' ids
   useEffect(() => { if (notice) markFirstOpenSeen(viewerId); }, [notice, viewerId]);
 
   const tapeState = useTapeDay(battleId, day, readers);
@@ -256,7 +257,7 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
           </div>
           {/* The design of record's 400 px depth control gives way first on a narrow desktop (down to 280 px), so the subtitle keeps its room (review A2P3-3). */}
           <div style={desktop ? { flex: '0 1 400px', minWidth: 280, marginLeft: 24 } : { width: 'auto', flexShrink: 0 }}>
-            <Segmented value={depth} onChange={setDepth} options={COPY.depths} />
+            <Segmented value={depth} onChange={setDepth} options={COPY.depths} idBase={idBase} />
           </div>
           <KindLegend style={desktop ? { marginLeft: 'auto', justifyContent: 'flex-end', maxWidth: 340, flexShrink: 0 } : undefined} />
         </div>
@@ -270,8 +271,12 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
       </header>
       <main style={{ flex: 1, width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: desktop ? '18px 24px 48px' : '12px 12px 40px', display: 'flex', flexDirection: 'column', gap: desktop ? 18 : 14 }}>
         {notice ? <FirstOpenNotice onDismiss={() => setNotice(false)} /> : null}
-        {/* Keyed by the day: a depth's own state (an opened marker, a plan filter, an opened rationale) never carries into another day's tape (review A2L3-3, A2L3-4). */}
-        <div key={day || 'none'} role="tabpanel" aria-label={COPY.depths.find((d) => d.id === depth)?.label} style={{ display: 'flex', flexDirection: 'column', gap: desktop ? 18 : 14 }}>{content}</div>
+        {/* One tabpanel per depth, each the one its tab controls (aria-controls / aria-labelledby); the others hidden and empty.
+            The shown panel is keyed by the day: a depth's own state (an opened marker, a plan filter, an opened rationale) never
+            carries into another day's tape (review A2L3-3, A2L3-4). */}
+        {COPY.depths.map((d) => (d.id === depth
+          ? <div key={`${d.id}:${day || 'none'}`} id={panelIdOf(idBase, d.id)} role="tabpanel" aria-labelledby={tabIdOf(idBase, d.id)} style={{ display: 'flex', flexDirection: 'column', gap: desktop ? 18 : 14 }}>{content}</div>
+          : <div key={d.id} id={panelIdOf(idBase, d.id)} role="tabpanel" aria-labelledby={tabIdOf(idBase, d.id)} hidden />))}
       </main>
       <footer style={{ padding: 0 }}>
         <Reserved region="footer" names={COPY.reservedFooter} />

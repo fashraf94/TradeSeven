@@ -9,7 +9,7 @@
 // fixture days, everything opened, through the sweeps.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import React from 'react';
+import React, { act } from 'react';
 import { renderToString } from 'react-dom/server';
 import FilmRoomScreenV2, { noTapeLine, defaultDay, battleDays, headerParts } from './FilmRoomScreenV2';
 import { FIRST_OPEN_KEY } from './filmRoomSeen';
@@ -51,6 +51,44 @@ describe('the header (BA-41, BA-42)', () => {
     expect(legends).toHaveLength(1);
     expect([...legends[0].querySelectorAll('[data-kind-mark]')].map((k) => k.getAttribute('data-kind-mark'))).toEqual(['recorded', 'derived', 'rebuilt', 'market']);
     expect(legends[0].textContent).toContain("rebuilt from 1-minute bars at the battle's check times");
+  });
+
+  it('the depths are a tab list: each tab controls its own tabpanel by id; only the selected tab is in the tab order; the other panels are hidden and empty', async () => {
+    await open();
+    const tabs = m.qa('[role="tab"]');
+    expect(m.q('[role="tablist"]').contains(tabs[0])).toBe(true);
+    for (const [i, t] of tabs.entries()) {
+      const panel = document.getElementById(t.getAttribute('aria-controls'));
+      expect(panel?.getAttribute('role'), t.textContent).toBe('tabpanel');
+      expect(panel.getAttribute('aria-labelledby'), t.textContent).toBe(t.id);
+      expect(document.getElementById(t.id)).toBe(t);
+      expect(t.getAttribute('aria-selected'), t.textContent).toBe(String(i === 0));
+      expect(t.getAttribute('tabindex'), t.textContent).toBe(i === 0 ? '0' : '-1');
+      expect(panel.hidden, t.textContent).toBe(i !== 0);
+      if (i) expect(panel.childNodes, t.textContent).toHaveLength(0);
+    }
+    expect(m.qa('[role="tabpanel"]')).toHaveLength(3);
+    expect(new Set(tabs.map((t) => t.getAttribute('aria-controls'))).size).toBe(3);
+    expect(document.getElementById(tabs[0].getAttribute('aria-controls')).querySelector('[data-depth="glance"]')).toBeTruthy();
+  });
+
+  it('arrow keys, Home and End move the selection along the tabs (wrapping) — and focus follows it', async () => {
+    await open();
+    const key = async (k) => { act(() => { document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); }); await m.flush(); };
+    const selected = () => m.qa('[role="tab"]').find((t) => t.getAttribute('aria-selected') === 'true');
+    m.tab('Glance').focus();
+    for (const [k, label, d] of [['ArrowRight', 'Study', 'study'], ['ArrowRight', 'Deep dive', 'deep'], ['ArrowRight', 'Glance', 'glance'], ['ArrowLeft', 'Deep dive', 'deep'], ['Home', 'Glance', 'glance'], ['End', 'Deep dive', 'deep'], ['ArrowLeft', 'Study', 'study']]) {
+      await key(k);
+      expect(selected().textContent, k).toBe(label);
+      expect(document.activeElement, `${k} → focus`).toBe(selected());
+      expect(selected().getAttribute('tabindex'), k).toBe('0');
+      const panel = document.getElementById(selected().getAttribute('aria-controls'));
+      expect(panel.hidden, k).toBe(false);
+      expect(panel.getAttribute('aria-labelledby'), k).toBe(selected().id);   // the shown panel names ITS tab (TABS-M7)
+      expect(panel.querySelector(`[data-depth="${d}"]`), k).toBeTruthy();
+    }
+    await key('a');   // any other key leaves the selection alone
+    expect(selected().textContent).toBe('Study');
   });
 
   it('the tabs switch depths; the legend stays one per screen at every depth', async () => {

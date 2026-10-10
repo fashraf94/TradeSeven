@@ -328,11 +328,31 @@ export function Chip({ on, onClick, children, title }) {
   );
 }
 
-export function Segmented({ value, onChange, options }) {
+/** The ids a tab list and its panels share: tab `${idBase}-tab-${id}` controls panel `${idBase}-panel-${id}`. */
+export const tabIdOf = (idBase, id) => `${idBase}-tab-${id}`;
+export const panelIdOf = (idBase, id) => `${idBase}-panel-${id}`;
+
+/**
+ * The depth control as an ARIA TAB LIST (the WAI-ARIA tabs pattern, selection follows focus): each tab names the
+ * tabpanel it controls (aria-controls → panelIdOf), only the selected tab is in the tab order (roving tabindex),
+ * ← / → move to the previous / next tab (wrapping), Home and End to the first and the last — each move selects that
+ * tab, and focus follows the selection.
+ */
+export function Segmented({ value, onChange, options, idBase }) {
+  const tabs = useRef({});
+  const onKeyDown = (e) => {
+    const at = options.findIndex((o) => o.id === value);
+    const to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: options.length - 1 }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    const next = options[(to + options.length) % options.length].id;
+    onChange(next);
+    tabs.current[next]?.focus();
+  };
   return (
-    <div role="tablist" style={{ display: 'grid', gridTemplateColumns: `repeat(${options.length}, 1fr)`, padding: 3, borderRadius: 11, background: C.shade, border: `1px solid ${C.hair}`, minWidth: 0 }}>
+    <div role="tablist" aria-orientation="horizontal" onKeyDown={onKeyDown} style={{ display: 'grid', gridTemplateColumns: `repeat(${options.length}, 1fr)`, padding: 3, borderRadius: 11, background: C.shade, border: `1px solid ${C.hair}`, minWidth: 0 }}>
       {options.map((o) => (
-        <button key={o.id} type="button" role="tab" aria-selected={o.id === value} onClick={() => onChange(o.id)} style={{ ...plain, minHeight: 34, padding: '0 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, color: o.id === value ? C.ink : C.ink3, background: o.id === value ? tint('teal', 0.14) : 'transparent', boxShadow: o.id === value ? `inset 0 0 0 1px ${tint('teal', 0.35)}` : 'none', whiteSpace: 'nowrap' }}>
+        <button key={o.id} ref={(el) => { tabs.current[o.id] = el; }} id={tabIdOf(idBase, o.id)} type="button" role="tab" aria-selected={o.id === value} aria-controls={panelIdOf(idBase, o.id)} tabIndex={o.id === value ? 0 : -1} onClick={() => onChange(o.id)} style={{ ...plain, minHeight: 34, padding: '0 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, color: o.id === value ? C.ink : C.ink3, background: o.id === value ? tint('teal', 0.14) : 'transparent', boxShadow: o.id === value ? `inset 0 0 0 1px ${tint('teal', 0.35)}` : 'none', whiteSpace: 'nowrap' }}>
           <Label size={12.5} weight={o.id === value ? 700 : 500}>{o.label}</Label>
         </button>
       ))}
