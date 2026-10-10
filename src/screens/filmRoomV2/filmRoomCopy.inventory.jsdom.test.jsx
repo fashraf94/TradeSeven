@@ -43,7 +43,7 @@ const COPY_KEYS = [
   'title', 'back', 'gameName', 'battleLengthSuffix', 'battleComplete', 'battleActive',
   'depths[0].id', 'depths[0].label', 'depths[1].id', 'depths[1].label', 'depths[2].id', 'depths[2].label',
   'legend', 'dayPicker', 'firstOpenEyebrow', 'firstOpen', 'gotIt',
-  'loading', 'noTape', 'noTapeScheduled()', 'noTapeLater', 'noTapeUnavailable', 'readError', 'earlierDay', 'openLastDay()', 'skippedMode', 'closeNotWritten', 'statusUnknown',
+  'loading', 'noTape', 'noTapeScheduled.before', 'noTapeScheduled.after', 'noTapeLater', 'noTapeUnavailable', 'readError', 'earlierDay', 'openLastDay()', 'skippedMode', 'closeNotWritten', 'statusUnknown',
   'countOf', 'countRecorded', 'slots',
   'coverage', 'replayCoverage', 'coverageLabel.complete', 'coverageLabel.partial', 'coverageLabel.unavailable', 'preservedFrom',
   'recordedScoreAt()', 'recordedScore', 'dayChange', 'dayChangeBasis.battle_start', 'dayChangeBasis.prior_day_tape', 'dayChangeBasis.unavailable',
@@ -76,7 +76,6 @@ const COPY_KEYS = [
 
 /** Every function key's sample calls — each tuple is one call; every one is swept. */
 const SAMPLE_CALLS = {
-  'noTapeScheduled()': [['10:15 PM']],
   'openLastDay()': [['Sep 24']],
   'recordedScoreAt()': [['3:45 PM']],
   'firstCheckAt()': [['10:15 AM']],
@@ -177,9 +176,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 231 copy keys, 318 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(231);
-    expect(inventory()).toHaveLength(318);
+  it('the inventory\'s size is pinned (the build report states it): 232 copy keys, 319 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(232);
+    expect(inventory()).toHaveLength(319);
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {

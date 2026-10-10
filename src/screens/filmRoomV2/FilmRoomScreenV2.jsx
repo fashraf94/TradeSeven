@@ -67,14 +67,24 @@ export function defaultDay(battle, days, nowMs) {
   return begun.length ? begun[begun.length - 1] : days[0];
 }
 
-/** §7: when a day has no tape, name its close pass only when one is actually scheduled. */
+/**
+ * §7: when a day has no tape, name its close pass only when one is actually scheduled — `{ line: 'scheduled',
+ * clock }`, `{ line: 'later' }` or `{ line: 'unavailable' }`. The clock stays apart from the words so it renders
+ * through the instant treatment every clock on the screen gets (NoTapeLine; review A2A3-7).
+ */
 export function noTapeLine(battle, etDate, nowMs) {
-  if (!FILM_TAPE_WRITE_ENABLED || !etDate) return COPY.noTapeUnavailable;
+  if (!FILM_TAPE_WRITE_ENABLED || !etDate) return { line: 'unavailable' };
   if (isSessionDate(etDate) && isBattleDay(battle, etDate) && nowMs < closePassEndMs(etDate)) {
-    return COPY.noTapeScheduled(etClock(new Date(closePassStartMs(etDate)).toISOString()));
+    return { line: 'scheduled', clock: etClock(new Date(closePassStartMs(etDate)).toISOString()) };
   }
-  if (validFinalTradingDay(battle) === etDate && closePassWillTape(battle, nowMs)) return COPY.noTapeLater;
-  return COPY.noTapeUnavailable;
+  if (validFinalTradingDay(battle) === etDate && closePassWillTape(battle, nowMs)) return { line: 'later' };
+  return { line: 'unavailable' };
+}
+
+/** The no-tape line's words; a scheduled pass's clock is an instant, marked as every other clock is (When). */
+function NoTapeLine({ state }) {
+  if (state.line === 'scheduled') return <>{COPY.noTapeScheduled.before}<When>{state.clock}</When>{COPY.noTapeScheduled.after}</>;
+  return state.line === 'later' ? COPY.noTapeLater : COPY.noTapeUnavailable;
 }
 
 const LENGTH_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
@@ -204,10 +214,10 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
     : null;
 
   let content;
-  if (!battleId || !day) content = <EmptyCard>{COPY.noTape} · {COPY.noTapeUnavailable}</EmptyCard>;
+  if (!battleId || !day) content = <div data-state="no-day"><EmptyCard>{COPY.noTape} · {COPY.noTapeUnavailable}</EmptyCard></div>;
   else if (tapeState.status === 'loading') content = <div data-state="loading" style={mono(12, C.ink3, { padding: 24, textAlign: 'center' })}>{COPY.loading}</div>;
   else if (tapeState.status === 'error') content = <div data-state="error"><EmptyCard>{COPY.readError}</EmptyCard></div>;
-  else if (tapeState.status === 'missing') content = <div data-state="missing"><EmptyCard>{COPY.noTape} · {noTapeLine(battle, day, now)}</EmptyCard></div>;
+  else if (tapeState.status === 'missing') content = <div data-state="missing"><EmptyCard>{COPY.noTape} · <NoTapeLine state={noTapeLine(battle, day, now)} /></EmptyCard></div>;
   else if (tape?.passes?.close?.status === 'skipped_mode') content = <div data-state="skipped-mode"><EmptyCard>{COPY.skippedMode}</EmptyCard></div>;
   else if (!written) {
     // the pass's own stored status, bound by its path (Astra B2) — the screen's words around it

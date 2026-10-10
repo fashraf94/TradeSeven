@@ -45,7 +45,7 @@ export const FILM_ROOM_COPY = Object.freeze({
   // states of the day (§7)
   loading: 'Loading the tape…',
   noTape: 'No tape for this day',
-  noTapeScheduled: (clock) => `The close pass for this day is scheduled at ${clock} ET.`,
+  noTapeScheduled: { before: 'The close pass for this day is scheduled at ', after: ' ET.' },   // the clock between, as an instant (review A2A3-7)
   noTapeLater: 'The close pass that tapes this day has not run yet.',
   noTapeUnavailable: 'Not available.',
   readError: 'The tape for this day could not be read.',

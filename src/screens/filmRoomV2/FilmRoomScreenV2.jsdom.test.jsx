@@ -176,11 +176,20 @@ describe('the day picker and the days with no tape (§7)', () => {
 
   it('names the close pass only when one is actually scheduled for the day', () => {
     const active = { id: 'b', status: 'active', timing: { tradingDays: ['2026-10-08'] } };
-    expect(noTapeLine(active, '2026-10-08', Date.parse('2026-10-08T18:00:00.000Z'))).toBe('The close pass for this day is scheduled at 10:15 PM ET.');
-    expect(noTapeLine(active, '2026-10-08', Date.parse('2026-10-09T03:00:00.000Z'))).toBe('Not available.');
-    expect(noTapeLine({ ...active, timing: { tradingDays: ['2026-09-23'] } }, '2026-09-23', NOW)).toBe('Not available.');
+    expect(noTapeLine(active, '2026-10-08', Date.parse('2026-10-08T18:00:00.000Z'))).toEqual({ line: 'scheduled', clock: '10:15 PM' });
+    expect(noTapeLine(active, '2026-10-08', Date.parse('2026-10-09T03:00:00.000Z'))).toEqual({ line: 'unavailable' });
+    expect(noTapeLine({ ...active, timing: { tradingDays: ['2026-09-23'] } }, '2026-09-23', NOW)).toEqual({ line: 'unavailable' });
     const lateCompletion = { id: 'b', status: 'completed', completedAt: '2026-10-08T03:30:00.000Z', timing: { tradingDays: ['2026-10-07'] } };
-    expect(noTapeLine(lateCompletion, '2026-10-07', Date.parse('2026-10-08T15:00:00.000Z'))).toBe('The close pass that tapes this day has not run yet.');
+    expect(noTapeLine(lateCompletion, '2026-10-07', Date.parse('2026-10-08T15:00:00.000Z'))).toEqual({ line: 'later' });
+  });
+
+  it('review A2A3-7: the scheduled pass\'s clock renders as an instant, like every other clock on the screen', async () => {
+    const battle = { id: 'b-sched', status: 'active', timing: { tradingDays: ['2026-10-08'] }, agentContext: { archetype: 'momentum_chaser' } };
+    await open(sep23Tape, { battle, readers: readersOf({}), nowMs: Date.parse('2026-10-08T18:00:00.000Z') });
+    const line = m.q('[data-state="missing"]');
+    expect(line.textContent).toBe('No tape for this day · The close pass for this day is scheduled at 10:15 PM ET.');
+    expect([...line.querySelectorAll('[data-time]')].map((t) => t.textContent)).toEqual(['10:15 PM']);
+    expect(sweepNumbers(m.container, { battle })).toEqual([]);
   });
 
   it('the opening day: a completed battle\'s last day; an active battle\'s latest begun day; a battle without a timeline its own instant\'s day', () => {
@@ -210,6 +219,59 @@ describe('the day picker and the days with no tape (§7)', () => {
     expect(m.q('[data-region="final-result"] [data-result="unavailable"]')).toBeTruthy();
     await depth('Study');
     for (const id of ['holdings', 'swaps', 'directives', 'plans', 'rationale', 'checks']) expect(m.q(`#${id} [data-coverage]`), id).toBeTruthy();
+  });
+});
+
+describe('review A2A3-7 — every sweep mounts every no-tape state: missing, error, loading, skipped mode, not written, no id', () => {
+  const series = { readSeries: async () => ({ status: 'ready', series: [] }) };
+  const active = { id: 'b-none', status: 'active', timing: { tradingDays: ['2026-10-08'] }, agentContext: { archetype: 'momentum_chaser', agentName: 'Momentum chaser' } };
+  const late = { id: 'b-late', status: 'completed', completedAt: '2026-10-08T03:30:00.000Z', timing: { tradingDays: ['2026-10-07'] }, agentContext: { archetype: 'momentum_chaser' } };
+  const unwritten = (status) => { const t = clone(sep23Tape); delete t.checks; t.passes = { close: status ? { status } : {}, candles: { status: 'skipped' } }; return t; };
+  const skipped = unwritten('skipped_mode');
+  const CASES = [
+    ['missing · a pass scheduled', { battle: active, readers: readersOf({}), nowMs: Date.parse('2026-10-08T18:00:00.000Z') }, 'missing', 'No tape for this day · The close pass for this day is scheduled at 10:15 PM ET.'],
+    ['missing · the pass has not run yet', { battle: late, readers: readersOf({}), nowMs: Date.parse('2026-10-08T15:00:00.000Z') }, 'missing', 'No tape for this day · The close pass that tapes this day has not run yet.'],
+    ['missing · not available', { battle: battleOf(sep23Tape), readers: readersOf({}) }, 'missing', 'No tape for this day · Not available.'],
+    ['error', { readers: { readTape: async () => ({ status: 'error', tape: null }), ...series } }, 'error', 'The tape for this day could not be read.'],
+    ['loading', { readers: { readTape: () => new Promise(() => {}), ...series } }, 'loading', 'Loading the tape…'],
+    ['skipped mode', { tape: skipped }, 'skipped-mode', 'This battle mode is not taped.'],
+    ['not written', { tape: unwritten('failed') }, 'not-written', 'The close pass for this day did not write a tape (failed).'],
+    ['not written · no status recorded', { tape: unwritten(null) }, 'not-written', 'The close pass for this day did not write a tape (unknown).'],
+    ['no id', { battle: { ...battleOf(sep23Tape), id: undefined } }, 'no-day', 'No tape for this day · Not available.'],
+  ];
+
+  it.each(CASES)('%s — every sweep, every depth, at phone and desktop width', async (_label, opts, state, words) => {
+    const tape = opts.tape || sep23Tape;
+    const battle = opts.battle || battleOf(tape);
+    const readers = opts.readers || readersOf({ [tape.etDate]: tape }, []);
+    const docs = { battle, ...(opts.tape ? { tape: opts.tape } : {}) };
+    const had = window.matchMedia;
+    try {
+      for (const desktop of [false, true]) {
+        window.matchMedia = () => ({ matches: desktop, addEventListener: () => {}, removeEventListener: () => {} });
+        m.teardown(); m.setup(); globalThis.localStorage.clear();
+        await open(tape, { battle, readers, nowMs: opts.nowMs ?? NOW });
+        for (const label of ['Glance', 'Study', 'Deep dive']) {
+          await depth(label);
+          const where = `${desktop ? 'desktop' : 'phone'} · ${label}`;
+          expect(m.q(`[data-state="${state}"]`)?.textContent, where).toBe(words);
+          expect(sweepNumbers(m.container, docs), where).toEqual([]);
+          expect(sweepWords(m.container, docs), where).toEqual([]);
+          expect(sweepSigns(m.container), where).toEqual([]);
+          expect(quoteDefects(m.container, docs), where).toEqual([]);
+          expect(storedNoteDefects(m.container, docs), where).toEqual([]);
+        }
+      }
+    } finally {
+      window.matchMedia = had;
+    }
+  });
+
+  it('the not-written status is the tape\'s own word, bound to its path', async () => {
+    const tape = unwritten('failed');
+    await open(tape);
+    const note = m.q('[data-state="not-written"] [data-stored-note]');
+    expect([note.getAttribute('data-stored-note'), note.textContent]).toEqual(['passes.close.status', 'failed']);
   });
 });
 
