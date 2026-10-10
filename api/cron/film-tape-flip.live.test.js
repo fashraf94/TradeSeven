@@ -8,9 +8,11 @@
 //      handle and writes the day's tape (and the admin backfill entry runs);
 //   2. the candle handler no longer answers flag_off — it takes the handle and
 //      selects the waiting tape;
-//   3. the hub helper still answers from Stage 1: Stage 3 needs
-//      FILM_ROOM_V2_ENABLED, which stays false — the lit writer changes nothing
-//      a player sees.
+//   3. the hub helper still answers from Stage 1: Stage 3 needs Film Room v2
+//      to resolve on for the owner (FILM_ROOM_V2_MODE, Amendment E BA-40) —
+//      the lit writer changes nothing a player sees. Under 'allowlist' with no
+//      signed-in owner it is still Stage 1; the flip to 'on' turns this row
+//      around in its own commit (the runway in featureFlags.js says so).
 // A rollback (the writer back to false) reds the three handler rows; an accidental
 // screen flip reds the helper row. The value pins live in src/config/filmTapeFlags.test.js
 // alone: this file asserts BEHAVIOUR, never `expect(FLAG).toBe(…)`, so the
@@ -122,7 +124,7 @@ describe('the flip, with the REAL flag values (no flag mock in this file)', () =
     expect(fetches.calls.length).toBeGreaterThan(0);
   });
 
-  it('the hub helper stays on Stage 1: Stage 3 still needs FILM_ROOM_V2_ENABLED — no tape read, the legacy answer', async () => {
+  it('the hub helper stays on Stage 1: Stage 3 still needs v2 on for the owner (FILM_ROOM_V2_MODE) — no tape read, the legacy answer', async () => {
     const calls = [];
     const readTape = async (battleId, etDate) => { calls.push([battleId, etDate]); return { passes: { close: { status: 'written' } } }; };
     const completedNoReview = {

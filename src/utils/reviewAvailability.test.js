@@ -10,14 +10,18 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const flags = vi.hoisted(() => ({ v2: false, writer: false }));
+// FILM_ROOM_V2_MODE (Amendment E BA-40): `flags.v2` true reads 'on' — v2 for
+// every owner, no verdict asked — and false reads 'off'; `flags.mode`, when
+// set, is the mode itself (the 'allowlist' rows at the end of this file).
+const flags = vi.hoisted(() => ({ v2: false, writer: false, mode: null }));
 vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
-  get FILM_ROOM_V2_ENABLED() { return flags.v2; },
+  get FILM_ROOM_V2_MODE() { return flags.mode ?? (flags.v2 ? 'on' : 'off'); },
   get FILM_TAPE_WRITE_ENABLED() { return flags.writer; },
 }));
 
 import { getReviewAvailability, closePassStillScheduled, owningPassDate } from './reviewAvailability';
+import { resetFilmRoomVerdicts, readFilmRoomVerdict } from './filmRoomGate';
 
 const MON_1605_EDT = '2026-09-28T20:05:00.000Z';   // Monday, 16:05 ET — a fullday battle's completion
 const MON_1900_EDT = Date.parse('2026-09-28T23:00:00.000Z');
@@ -38,7 +42,7 @@ function recorder(tape) {
   return { readTape, calls };
 }
 
-beforeEach(() => { flags.v2 = false; flags.writer = false; });
+beforeEach(() => { flags.v2 = false; flags.writer = false; flags.mode = null; resetFilmRoomVerdicts(); });
 
 describe('the returned object — exactly { ready, target, availability } (BA-17, invariant 8)', () => {
   it.each([
@@ -62,7 +66,7 @@ describe('the returned object — exactly { ready, target, availability } (BA-17
   });
 });
 
-describe('Stage 1 — FILM_ROOM_V2_ENABLED off: from the battle document, no read', () => {
+describe('Stage 1 — FILM_ROOM_V2_MODE off: from the battle document, no read', () => {
   it('ready: completed AND the legacy review exists', async () => {
     const r = recorder(null);
     expect(await getReviewAvailability(base({ dailyReviews: [{ date: '2026-09-28' }] }), { readTape: r.readTape }))
@@ -105,7 +109,7 @@ describe('Stage 1 — FILM_ROOM_V2_ENABLED off: from the battle document, no rea
   });
 });
 
-describe('Stage 3 — FILM_ROOM_V2_ENABLED on: one bounded read of tape/{finalEtDate}', () => {
+describe('Stage 3 — FILM_ROOM_V2_MODE on: one bounded read of tape/{finalEtDate}', () => {
   beforeEach(() => { flags.v2 = true; flags.writer = true; });
 
   it('ready: completed AND the final-day tape\'s close pass is written — read once, at the last trading day', async () => {
@@ -211,5 +215,140 @@ describe('closePassStillScheduled — the pass that tapes the completion, by the
     expect(owningPassDate(late)).toBe('2026-09-29');
     expect(closePassStillScheduled(late, late + 60_000)).toBe(true);
     expect(closePassStillScheduled(late, Date.parse('2026-09-30T02:20:00.000Z'))).toBe(false);
+  });
+});
+
+// ── Amendment E BA-40 — Stage 3 only when v2 resolves on for the battle's owner ──
+
+describe("BA-40 — FILM_ROOM_V2_MODE 'allowlist': Stage 3 for an admitted owner only, from one cached verdict", () => {
+  const written = () => recorder({ passes: { close: { status: 'written' } } });
+  const verdicts = (answer) => {
+    const asked = [];
+    return { asked, readVerdict: async (id) => { asked.push(id); return answer; } };
+  };
+
+  it('an admitted owner: Stage 3 — the final-day tape read once, and `ready` from it', async () => {
+    flags.mode = 'allowlist'; flags.writer = true;
+    const r = written();
+    const v = verdicts(true);
+    const out = await getReviewAvailability(base(), { readTape: r.readTape, now: THU, readVerdict: v.readVerdict });
+    expect(out).toEqual({ ready: true, target: 'filmRoom', availability: 'ready' });
+    expect(r.calls).toEqual([['battle-1', '2026-09-28']]);
+    expect(v.asked).toEqual(['battle-1']);
+  });
+
+  it('an owner the allowlist does not admit: Stage 1 — no tape read, the legacy answer', async () => {
+    flags.mode = 'allowlist'; flags.writer = true;
+    const r = written();
+    const v = verdicts(false);
+    expect(await getReviewAvailability(base(), { readTape: r.readTape, now: THU, readVerdict: v.readVerdict }))
+      .toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
+    expect(await getReviewAvailability(base({ dailyReviews: [{ day: 1 }] }), { readTape: r.readTape, now: THU, readVerdict: v.readVerdict }))
+      .toEqual({ ready: true, target: 'filmRoom', availability: 'ready' });
+    expect(r.calls).toEqual([]);
+  });
+
+  it('a verdict that fails or throws reads not admitted (Stage 1), never a guess', async () => {
+    flags.mode = 'allowlist'; flags.writer = true;
+    const r = written();
+    const boom = async () => { throw new Error('network'); };
+    expect(await getReviewAvailability(base(), { readTape: r.readTape, now: THU, readVerdict: boom }))
+      .toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
+    expect(r.calls).toEqual([]);
+  });
+
+  it("'off' and 'on' never ask for a verdict; 'on' is Stage 3 for every owner", async () => {
+    flags.writer = true;
+    for (const [mode, ready] of [['off', false], ['on', true]]) {
+      flags.mode = mode;
+      const r = written();
+      const v = verdicts(true);
+      const out = await getReviewAvailability(base(), { readTape: r.readTape, now: THU, readVerdict: v.readVerdict });
+      expect(out.ready, mode).toBe(ready);
+      expect(v.asked, mode).toEqual([]);
+      expect(r.calls.length, mode).toBe(mode === 'on' ? 1 : 0);
+    }
+  });
+
+  it('an unknown mode value fails closed to off', async () => {
+    flags.mode = 'ON'; flags.writer = true;
+    const r = written();
+    const v = verdicts(true);
+    expect((await getReviewAvailability(base(), { readTape: r.readTape, now: THU, readVerdict: v.readVerdict })).ready).toBe(false);
+    expect(v.asked).toEqual([]);
+    expect(r.calls).toEqual([]);
+  });
+
+  it.each(['off', 'allowlist', 'on'])("exactly the three keys in every branch, mode %s, admitted or not", async (mode) => {
+    flags.mode = mode; flags.writer = true;
+    for (const answer of [true, false]) {
+      const r = written();
+      for (const b of [base({ dailyReviews: [{ date: 'x' }] }), base({ reviewPending: true }), base(), base({ status: 'active', completedAt: null }), null, {}]) {
+        const out = await getReviewAvailability(b, { readTape: r.readTape, now: MON_1900_EDT, readVerdict: async () => answer });
+        expect(Object.keys(out).sort()).toEqual(KEYS);
+      }
+    }
+  });
+
+  it('the default verdict reader is the shared cached one: two calls for one battle ask the server once', async () => {
+    const { readFilmRoomVerdict } = await import('./filmRoomGate');
+    let requests = 0;
+    const request = async () => { requests += 1; return { ok: true, allowlisted: true }; };
+    expect(await readFilmRoomVerdict('battle-1', { request })).toBe(true);
+    expect(await readFilmRoomVerdict('battle-1', { request })).toBe(true);
+    expect(requests).toBe(1);
+  });
+});
+
+// ── the §2 review's rows (docs/audits/20261008_BUILD_FILM_ROOM_A2.md §3) ─────
+
+describe('review A2L2-1 / A2L2-5 — three keys even when Stage 3 throws; the default reader is the shared cache', () => {
+  it('A2L2-1: a completion instant the schedule cannot place answers unavailable — three keys, never a rejection', async () => {
+    flags.mode = 'on'; flags.writer = true;
+    const r = recorder(null);
+    for (const completedAt of [1e16, -1e16]) {
+      const out = await getReviewAvailability(base({ completedAt }), { readTape: r.readTape, now: THU });
+      expect(Object.keys(out).sort()).toEqual(KEYS);
+      expect(out.availability).toBe('unavailable');
+    }
+  });
+
+  it('A2L2-5: with no reader passed, the hub asks through the shared cache — a verdict the route already holds is not asked again', async () => {
+    flags.mode = 'allowlist'; flags.writer = true;
+    const request = vi.fn(async () => ({ ok: true, allowlisted: true }));
+    expect(await readFilmRoomVerdict('battle-1', { ownerId: 'u1', request })).toBe(true);   // the route's ask
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn();
+    try {
+      const r = recorder({ passes: { close: { status: 'written' } } });
+      const out = await getReviewAvailability(base(), { readTape: r.readTape, now: THU });
+      expect(out).toEqual({ ready: true, target: 'filmRoom', availability: 'ready' });
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(request).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});
+
+describe('review A2L4-5 — exactly three keys, none undefined, in EVERY branch of both stages', () => {
+  it.each(['off', 'allowlist', 'on'])('mode %s: written, unwritten and absent tapes; before and after the pass; admitted and not', async (mode) => {
+    flags.mode = mode;
+    for (const writer of [true, false]) {
+      flags.writer = writer;
+      for (const tape of [{ passes: { close: { status: 'written' } } }, { passes: { close: { status: 'failed' } } }, null]) {
+        for (const admitted of [true, false]) {
+          for (const now of [MON_1900_EDT, THU]) {
+            for (const b of [base(), base({ dailyReviews: [{ d: 1 }] }), base({ reviewPending: true }), base({ status: 'active', completedAt: null }), base({ completedAt: 1e16 }), {}, null]) {
+              resetFilmRoomVerdicts();
+              const out = await getReviewAvailability(b, { readTape: async () => tape, now, readVerdict: async () => admitted });
+              expect(Object.keys(out).sort()).toEqual(KEYS);
+              expect(Object.values(out).every((v) => v !== undefined)).toBe(true);
+              expect(out.ready).toBe(out.availability === 'ready');
+            }
+          }
+        }
+      }
+    }
   });
 });

@@ -1,0 +1,3690 @@
+{
+  "tapeVersion": 2,
+  "battleId": "b-sep23-fixture",
+  "ownerId": "owner-1",
+  "agentId": "agent-1",
+  "archetype": "momentum",
+  "gameMode": "baggerbomb_agent",
+  "etDate": "2026-09-23",
+  "dayNumber": 1,
+  "isFinalDay": true,
+  "battleStatusAtWrite": "completed",
+  "writtenAt": "2026-09-24T02:15:30.000Z",
+  "firstWrittenAt": "2026-09-24T02:15:30.000Z",
+  "runCount": 1,
+  "passes": {
+    "close": {
+      "status": "written",
+      "writtenAt": "2026-09-24T02:15:30.000Z",
+      "capture": "present",
+      "tickSeqRange": [
+        1,
+        23
+      ],
+      "gaps": [],
+      "unattributedGaps": [],
+      "deferralsTruncated": false,
+      "ticksReadMethod": "capturedAt_range",
+      "sources": {
+        "ticks": 23,
+        "evaluations": 12,
+        "receipts": 3,
+        "trades": 3,
+        "calls": 0,
+        "runs": 0,
+        "declarations": 0
+      },
+      "lastError": null
+    },
+    "candles": {
+      "status": "written",
+      "writtenAt": "2026-09-24T11:00:30.000Z",
+      "attempts": 1,
+      "reason": null,
+      "source": "eodhd_1m",
+      "symbolsRequested": [
+        "AMD",
+        "CRWD",
+        "DE",
+        "ETN",
+        "INTC",
+        "META",
+        "MSFT",
+        "MU",
+        "PANW",
+        "PLTR",
+        "RSP",
+        "SPY",
+        "XLC",
+        "XLI",
+        "XLK"
+      ],
+      "symbolsMissing": [],
+      "symbolsIncomplete": [],
+      "inputFingerprint": {
+        "checks": "9fac5ae68c1e847c",
+        "evidence": "5860ce1b3ef2217e",
+        "actions": "f837e966966de47a",
+        "salePrices": "7d77217ce2902bf3",
+        "plans": "3760397d72291a3b",
+        "symbols": "24c58d789c7368b7"
+      }
+    }
+  },
+  "coverage": {
+    "checks": {
+      "status": "partial",
+      "span": {
+        "from": "2026-09-23T14:15:20.000Z",
+        "to": "2026-09-23T19:45:20.000Z"
+      },
+      "sources": [
+        "ticks",
+        "agentEvalRuns",
+        "evaluations"
+      ],
+      "preservedFrom": null,
+      "note": "no evaluation-run records exist for this day — deferrals cannot be listed",
+      "caveats": [
+        "no evaluation-run records exist for this day — deferrals cannot be listed"
+      ],
+      "dependsOn": "ef38aabb83d82e0e"
+    },
+    "actions": {
+      "status": "complete",
+      "span": {
+        "from": "2026-09-23T16:45:08.000Z",
+        "to": "2026-09-23T19:00:10.000Z"
+      },
+      "sources": [
+        "ticks.actions",
+        "trades",
+        "learningReceipts"
+      ],
+      "preservedFrom": null,
+      "note": null,
+      "caveats": [],
+      "dependsOn": "4e9931f0edd54d48"
+    },
+    "directives": {
+      "status": "complete",
+      "span": {
+        "from": "2026-09-23T17:40:00.000Z",
+        "to": "2026-09-23T18:50:00.000Z"
+      },
+      "sources": [
+        "chatExchanges",
+        "evaluations.heard",
+        "ticks.controls"
+      ],
+      "preservedFrom": null,
+      "note": null,
+      "caveats": [],
+      "unknownChecks": 0,
+      "dependsOn": "26e685edb3afcb2d"
+    },
+    "plans": {
+      "status": "complete",
+      "span": {
+        "from": "2026-09-23T16:00:15.000Z",
+        "to": "2026-09-23T18:45:15.000Z"
+      },
+      "sources": [
+        "evaluations.candidates"
+      ],
+      "preservedFrom": null,
+      "note": null,
+      "caveats": [],
+      "unknownChecks": 0,
+      "dependsOn": "66e4975f1b9c2a06"
+    },
+    "rationale": {
+      "status": "complete",
+      "span": {
+        "from": "2026-09-23T16:00:15.000Z",
+        "to": "2026-09-23T18:45:15.000Z"
+      },
+      "sources": [
+        "evaluations"
+      ],
+      "preservedFrom": null,
+      "note": "2 entr(y/ies) carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied",
+      "caveats": [],
+      "unknownChecks": 0,
+      "dependsOn": "a99aa2cd955d267b"
+    },
+    "evidence": {
+      "status": "complete",
+      "span": {
+        "from": "2026-09-23T16:00:07.000Z",
+        "to": "2026-09-23T18:45:07.000Z"
+      },
+      "sources": [
+        "evaluations.evidence"
+      ],
+      "preservedFrom": null,
+      "note": null,
+      "caveats": [],
+      "unknownChecks": 0,
+      "dependsOn": "4a34214b932f958b"
+    },
+    "calls": {
+      "status": "complete",
+      "span": null,
+      "sources": [
+        "calls",
+        "declarations"
+      ],
+      "preservedFrom": null,
+      "note": "state as observed at copiedAt, not a reconstruction of the day",
+      "caveats": [],
+      "unknownChecks": 0,
+      "dependsOn": "92dcec663465ac2e"
+    },
+    "replay": {
+      "status": "complete",
+      "span": {
+        "from": "2026-09-23T16:45:08.000Z",
+        "to": "2026-09-23T20:00:00.000Z"
+      },
+      "sources": [
+        "eodhd_1m",
+        "actions[].replayInputs"
+      ],
+      "preservedFrom": null,
+      "note": "one-step hypothetical through the day's close; later trades in this slot are not replayed; not the effect of the swap on the battle"
+    },
+    "series": {
+      "status": "complete",
+      "span": {
+        "from": "2026-09-23T13:30:00.000Z",
+        "to": "2026-09-23T20:00:00.000Z"
+      },
+      "sources": [
+        "eodhd_1m"
+      ],
+      "preservedFrom": null,
+      "note": null
+    }
+  },
+  "score": {
+    "lastCheck": {
+      "at": "2026-09-23T19:45:20.000Z",
+      "tickSeq": 23,
+      "active": -41,
+      "banked": -6,
+      "total": -47,
+      "opponent": -83,
+      "bankedBadgePoints": 0
+    },
+    "firstCheck": {
+      "at": "2026-09-23T14:15:20.000Z",
+      "tickSeq": 1,
+      "total": 11
+    },
+    "dayChange": {
+      "value": -47,
+      "basis": "battle_start",
+      "reference": 0
+    }
+  },
+  "battle": {
+    "status": "completed",
+    "completedAt": "2026-09-23T20:05:00.000Z",
+    "final": {
+      "total": -47,
+      "opponent": -93,
+      "at": "2026-09-23T20:05:00.000Z"
+    },
+    "result": {
+      "value": "win",
+      "basis": "derived"
+    },
+    "completionMessage": {
+      "text": "Battle complete. Agent: -47.0 pts vs CPU: -93.0 pts. Result: Win.",
+      "at": "2026-09-23T20:05:00.000Z"
+    }
+  },
+  "checks": [
+    {
+      "tickSeq": 1,
+      "tickId": "b-sep23-fixture:1",
+      "evalId": null,
+      "runId": null,
+      "at": "2026-09-23T14:15:20.000Z",
+      "state": "gameplan_created",
+      "exitReason": "gameplan_created",
+      "stageReached": "gameplan_handled",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "MSFT": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": null,
+      "scores": {
+        "active": 17,
+        "banked": -6,
+        "total": 11
+      },
+      "tickMs": null,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:1",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 2,
+      "tickId": "b-sep23-fixture:2",
+      "evalId": null,
+      "runId": null,
+      "at": "2026-09-23T14:30:20.000Z",
+      "state": "gameplan_pending",
+      "exitReason": "gameplan_pending",
+      "stageReached": "gameplan_handled",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "MSFT": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": null,
+      "scores": {
+        "active": -73,
+        "banked": -6,
+        "total": -79
+      },
+      "tickMs": null,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:2",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 3,
+      "tickId": "b-sep23-fixture:3",
+      "evalId": null,
+      "runId": null,
+      "at": "2026-09-23T14:45:20.000Z",
+      "state": "gameplan_pending",
+      "exitReason": "gameplan_pending",
+      "stageReached": "gameplan_handled",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "MSFT": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": null,
+      "scores": {
+        "active": -83,
+        "banked": -6,
+        "total": -89
+      },
+      "tickMs": null,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:3",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 4,
+      "tickId": "b-sep23-fixture:4",
+      "evalId": null,
+      "runId": null,
+      "at": "2026-09-23T15:00:20.000Z",
+      "state": "gameplan_pending",
+      "exitReason": "gameplan_pending",
+      "stageReached": "gameplan_handled",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "MSFT": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": null,
+      "scores": {
+        "active": -77,
+        "banked": -6,
+        "total": -83
+      },
+      "tickMs": null,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:4",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 5,
+      "tickId": "b-sep23-fixture:5",
+      "evalId": null,
+      "runId": null,
+      "at": "2026-09-23T15:15:20.000Z",
+      "state": "gameplan_pending",
+      "exitReason": "gameplan_pending",
+      "stageReached": "gameplan_handled",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "MSFT": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": null,
+      "scores": {
+        "active": -43,
+        "banked": -6,
+        "total": -49
+      },
+      "tickMs": null,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:5",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 6,
+      "tickId": "b-sep23-fixture:6",
+      "evalId": null,
+      "runId": null,
+      "at": "2026-09-23T15:30:20.000Z",
+      "state": "gameplan_pending",
+      "exitReason": "gameplan_pending",
+      "stageReached": "gameplan_handled",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "MSFT": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": null,
+      "scores": {
+        "active": -35,
+        "banked": -6,
+        "total": -41
+      },
+      "tickMs": null,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:6",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 7,
+      "tickId": "b-sep23-fixture:7",
+      "evalId": null,
+      "runId": null,
+      "at": "2026-09-23T15:45:20.000Z",
+      "state": "gameplan_pending",
+      "exitReason": "gameplan_pending",
+      "stageReached": "gameplan_handled",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "MSFT": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": null,
+      "scores": {
+        "active": -29,
+        "banked": -6,
+        "total": -35
+      },
+      "tickMs": null,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:7",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 8,
+      "tickId": "b-sep23-fixture:8",
+      "evalId": "b-sep23-fixture:e8",
+      "runId": null,
+      "at": "2026-09-23T16:00:20.000Z",
+      "state": "completed",
+      "exitReason": "completed",
+      "stageReached": "finalized",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "MSFT": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": {
+        "original": "HOLD",
+        "final": "HOLD",
+        "holdKind": null
+      },
+      "scores": {
+        "active": -31,
+        "banked": -6,
+        "total": -37
+      },
+      "tickMs": 6100,
+      "evidence": {
+        "INTC": {
+          "px": 31.28,
+          "chg": 0.13,
+          "atrX": 0.2,
+          "vwapDev": 0.1,
+          "bbPct": 30,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "AMD": {
+          "px": 164.46,
+          "chg": 0.1,
+          "atrX": 0.3,
+          "vwapDev": 0.15,
+          "bbPct": 37,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "META": {
+          "px": 613.53,
+          "chg": 0.18,
+          "atrX": 0.4,
+          "vwapDev": 0.2,
+          "bbPct": 44,
+          "nr7": true,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "ETN": {
+          "px": 386.6,
+          "chg": -0.13,
+          "atrX": 0.5,
+          "vwapDev": 0.25,
+          "bbPct": 51,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "DE": {
+          "px": 467.67,
+          "chg": 0.32,
+          "atrX": 0.6,
+          "vwapDev": 0.3,
+          "bbPct": 58,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "MSFT": {
+          "px": 499.58,
+          "chg": -0.2,
+          "atrX": 0.7,
+          "vwapDev": 0.35,
+          "bbPct": 65,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        }
+      },
+      "evidenceAt": "2026-09-23T16:00:07.000Z",
+      "key": "seq:8",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 9,
+      "tickId": "b-sep23-fixture:9",
+      "evalId": "b-sep23-fixture:e9",
+      "runId": null,
+      "at": "2026-09-23T16:15:20.000Z",
+      "state": "completed",
+      "exitReason": "completed",
+      "stageReached": "finalized",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "MSFT": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": {
+        "original": null,
+        "final": "HOLD",
+        "holdKind": "default_failure"
+      },
+      "scores": {
+        "active": -49,
+        "banked": -6,
+        "total": -55
+      },
+      "tickMs": 6100,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:9",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 10,
+      "tickId": "b-sep23-fixture:10",
+      "evalId": "b-sep23-fixture:e10",
+      "runId": null,
+      "at": "2026-09-23T16:30:20.000Z",
+      "state": "completed",
+      "exitReason": "completed",
+      "stageReached": "finalized",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "MSFT": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": {
+        "original": "HOLD",
+        "final": "HOLD",
+        "holdKind": null
+      },
+      "scores": {
+        "active": -50,
+        "banked": -6,
+        "total": -56
+      },
+      "tickMs": 6100,
+      "evidence": {
+        "INTC": {
+          "px": 31.26,
+          "chg": 0.06,
+          "atrX": 0.2,
+          "vwapDev": 0.1,
+          "bbPct": 30,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "AMD": {
+          "px": 164.2,
+          "chg": -0.06,
+          "atrX": 0.3,
+          "vwapDev": 0.15,
+          "bbPct": 37,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "META": {
+          "px": 612.97,
+          "chg": 0.09,
+          "atrX": 0.4,
+          "vwapDev": 0.2,
+          "bbPct": 44,
+          "nr7": true,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "ETN": {
+          "px": 386.09,
+          "chg": -0.26,
+          "atrX": 0.5,
+          "vwapDev": 0.25,
+          "bbPct": 51,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "DE": {
+          "px": 467.87,
+          "chg": 0.36,
+          "atrX": 0.6,
+          "vwapDev": 0.3,
+          "bbPct": 58,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "MSFT": {
+          "px": 499.03,
+          "chg": -0.31,
+          "atrX": 0.7,
+          "vwapDev": 0.35,
+          "bbPct": 65,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        }
+      },
+      "evidenceAt": "2026-09-23T16:30:07.000Z",
+      "key": "seq:10",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 11,
+      "tickId": "b-sep23-fixture:11",
+      "evalId": "b-sep23-fixture:e11",
+      "runId": null,
+      "at": "2026-09-23T16:45:20.000Z",
+      "state": "completed",
+      "exitReason": "completed",
+      "stageReached": "finalized",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "MSFT": {
+          "action": "SWAP_OUT",
+          "reason": "stagnation"
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": {
+        "original": "HOLD",
+        "final": "HOLD",
+        "holdKind": null
+      },
+      "scores": {
+        "active": -49,
+        "banked": -6,
+        "total": -55
+      },
+      "tickMs": 6100,
+      "evidence": {
+        "INTC": {
+          "px": 31.26,
+          "chg": 0.06,
+          "atrX": 0.2,
+          "vwapDev": 0.1,
+          "bbPct": 30,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "AMD": {
+          "px": 164.14,
+          "chg": -0.1,
+          "atrX": 0.3,
+          "vwapDev": 0.15,
+          "bbPct": 37,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "META": {
+          "px": 612.68,
+          "chg": 0.05,
+          "atrX": 0.4,
+          "vwapDev": 0.2,
+          "bbPct": 44,
+          "nr7": true,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "ETN": {
+          "px": 385.85,
+          "chg": -0.32,
+          "atrX": 0.5,
+          "vwapDev": 0.25,
+          "bbPct": 51,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "DE": {
+          "px": 467.96,
+          "chg": 0.38,
+          "atrX": 0.6,
+          "vwapDev": 0.3,
+          "bbPct": 58,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "MSFT": {
+          "px": 498.79,
+          "chg": -0.36,
+          "atrX": 0.7,
+          "vwapDev": 0.35,
+          "bbPct": 65,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        }
+      },
+      "evidenceAt": "2026-09-23T16:45:07.000Z",
+      "key": "seq:11",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 12,
+      "tickId": "b-sep23-fixture:12",
+      "evalId": "b-sep23-fixture:e12",
+      "runId": null,
+      "at": "2026-09-23T17:00:20.000Z",
+      "state": "completed",
+      "exitReason": "completed",
+      "stageReached": "finalized",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "CRWD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": {
+        "original": "HOLD",
+        "final": "HOLD",
+        "holdKind": null
+      },
+      "scores": {
+        "active": -54,
+        "banked": -6,
+        "total": -60
+      },
+      "tickMs": 6100,
+      "evidence": {
+        "INTC": {
+          "px": 31.28,
+          "chg": 0.13,
+          "atrX": 0.2,
+          "vwapDev": 0.1,
+          "bbPct": 30,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "AMD": {
+          "px": 164.13,
+          "chg": -0.1,
+          "atrX": 0.3,
+          "vwapDev": 0.15,
+          "bbPct": 37,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "META": {
+          "px": 612.4,
+          "chg": 0,
+          "atrX": 0.4,
+          "vwapDev": 0.2,
+          "bbPct": 44,
+          "nr7": true,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "ETN": {
+          "px": 385.65,
+          "chg": -0.37,
+          "atrX": 0.5,
+          "vwapDev": 0.25,
+          "bbPct": 51,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "DE": {
+          "px": 468.05,
+          "chg": 0.4,
+          "atrX": 0.6,
+          "vwapDev": 0.3,
+          "bbPct": 58,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "CRWD": {
+          "px": 403.02,
+          "chg": -0.04,
+          "atrX": 0.7,
+          "vwapDev": 0.35,
+          "bbPct": 65,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        }
+      },
+      "evidenceAt": "2026-09-23T17:00:07.000Z",
+      "key": "seq:12",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 13,
+      "tickId": "b-sep23-fixture:13",
+      "evalId": "b-sep23-fixture:e13",
+      "runId": null,
+      "at": "2026-09-23T17:15:20.000Z",
+      "state": "completed",
+      "exitReason": "completed",
+      "stageReached": "finalized",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "CRWD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": {
+        "original": null,
+        "final": "HOLD",
+        "holdKind": "default_failure"
+      },
+      "scores": {
+        "active": -69,
+        "banked": -6,
+        "total": -75
+      },
+      "tickMs": 6100,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:13",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 14,
+      "tickId": "b-sep23-fixture:14",
+      "evalId": "b-sep23-fixture:e14",
+      "runId": null,
+      "at": "2026-09-23T17:30:20.000Z",
+      "state": "completed",
+      "exitReason": "completed",
+      "stageReached": "finalized",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "CRWD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": {
+        "original": "HOLD",
+        "final": "HOLD",
+        "holdKind": null
+      },
+      "scores": {
+        "active": -86,
+        "banked": -6,
+        "total": -92
+      },
+      "tickMs": 6100,
+      "evidence": {
+        "INTC": {
+          "px": 31.33,
+          "chg": 0.29,
+          "atrX": 0.2,
+          "vwapDev": 0.1,
+          "bbPct": 30,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "AMD": {
+          "px": 164.32,
+          "chg": 0.01,
+          "atrX": 0.3,
+          "vwapDev": 0.15,
+          "bbPct": 37,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "META": {
+          "px": 612.02,
+          "chg": -0.06,
+          "atrX": 0.4,
+          "vwapDev": 0.2,
+          "bbPct": 44,
+          "nr7": true,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "ETN": {
+          "px": 385.41,
+          "chg": -0.44,
+          "atrX": 0.5,
+          "vwapDev": 0.25,
+          "bbPct": 51,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "DE": {
+          "px": 468.22,
+          "chg": 0.43,
+          "atrX": 0.6,
+          "vwapDev": 0.3,
+          "bbPct": 58,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "CRWD": {
+          "px": 403.48,
+          "chg": 0.07,
+          "atrX": 0.7,
+          "vwapDev": 0.35,
+          "bbPct": 65,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        }
+      },
+      "evidenceAt": "2026-09-23T17:30:07.000Z",
+      "key": "seq:14",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 15,
+      "tickId": "b-sep23-fixture:15",
+      "evalId": "b-sep23-fixture:e15",
+      "runId": null,
+      "at": "2026-09-23T17:45:20.000Z",
+      "state": "completed",
+      "exitReason": "completed",
+      "stageReached": "finalized",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "CRWD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": {
+        "original": "HOLD",
+        "final": "HOLD",
+        "holdKind": null
+      },
+      "scores": {
+        "active": -85,
+        "banked": -6,
+        "total": -91
+      },
+      "tickMs": 6100,
+      "evidence": {
+        "INTC": {
+          "px": 31.37,
+          "chg": 0.42,
+          "atrX": 0.2,
+          "vwapDev": 0.1,
+          "bbPct": 30,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "AMD": {
+          "px": 164.49,
+          "chg": 0.12,
+          "atrX": 0.3,
+          "vwapDev": 0.15,
+          "bbPct": 37,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "META": {
+          "px": 611.95,
+          "chg": -0.07,
+          "atrX": 0.4,
+          "vwapDev": 0.2,
+          "bbPct": 44,
+          "nr7": true,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "ETN": {
+          "px": 385.37,
+          "chg": -0.45,
+          "atrX": 0.5,
+          "vwapDev": 0.25,
+          "bbPct": 51,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "DE": {
+          "px": 468.32,
+          "chg": 0.45,
+          "atrX": 0.6,
+          "vwapDev": 0.3,
+          "bbPct": 58,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "CRWD": {
+          "px": 403.82,
+          "chg": 0.15,
+          "atrX": 0.7,
+          "vwapDev": 0.35,
+          "bbPct": 65,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        }
+      },
+      "evidenceAt": "2026-09-23T17:45:07.000Z",
+      "key": "seq:15",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 16,
+      "tickId": "b-sep23-fixture:16",
+      "evalId": "b-sep23-fixture:e16",
+      "runId": null,
+      "at": "2026-09-23T18:00:20.000Z",
+      "state": "completed",
+      "exitReason": "completed",
+      "stageReached": "finalized",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "DE": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "CRWD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": {
+        "original": "SWAP",
+        "final": "SWAP",
+        "holdKind": null
+      },
+      "scores": {
+        "active": -59,
+        "banked": -6,
+        "total": -65
+      },
+      "tickMs": 6100,
+      "evidence": {
+        "INTC": {
+          "px": 31.4,
+          "chg": 0.51,
+          "atrX": 0.2,
+          "vwapDev": 0.1,
+          "bbPct": 30,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "AMD": {
+          "px": 164.68,
+          "chg": 0.23,
+          "atrX": 0.3,
+          "vwapDev": 0.15,
+          "bbPct": 37,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "META": {
+          "px": 611.98,
+          "chg": -0.07,
+          "atrX": 0.4,
+          "vwapDev": 0.2,
+          "bbPct": 44,
+          "nr7": true,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "ETN": {
+          "px": 385.39,
+          "chg": -0.44,
+          "atrX": 0.5,
+          "vwapDev": 0.25,
+          "bbPct": 51,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "DE": {
+          "px": 468.43,
+          "chg": 0.48,
+          "atrX": 0.6,
+          "vwapDev": 0.3,
+          "bbPct": 58,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "CRWD": {
+          "px": 404.17,
+          "chg": 0.24,
+          "atrX": 0.7,
+          "vwapDev": 0.35,
+          "bbPct": 65,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        }
+      },
+      "evidenceAt": "2026-09-23T18:00:07.000Z",
+      "key": "seq:16",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 17,
+      "tickId": "b-sep23-fixture:17",
+      "evalId": "b-sep23-fixture:e17",
+      "runId": null,
+      "at": "2026-09-23T18:15:20.000Z",
+      "state": "completed",
+      "exitReason": "completed",
+      "stageReached": "finalized",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "PLTR": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "CRWD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": {
+        "original": "HOLD",
+        "final": "HOLD",
+        "holdKind": null
+      },
+      "scores": {
+        "active": -55,
+        "banked": -6,
+        "total": -61
+      },
+      "tickMs": 6100,
+      "evidence": {
+        "INTC": {
+          "px": 31.42,
+          "chg": 0.58,
+          "atrX": 0.2,
+          "vwapDev": 0.1,
+          "bbPct": 30,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "AMD": {
+          "px": 164.89,
+          "chg": 0.36,
+          "atrX": 0.3,
+          "vwapDev": 0.15,
+          "bbPct": 37,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "META": {
+          "px": 612.1,
+          "chg": -0.05,
+          "atrX": 0.4,
+          "vwapDev": 0.2,
+          "bbPct": 44,
+          "nr7": true,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "ETN": {
+          "px": 385.46,
+          "chg": -0.42,
+          "atrX": 0.5,
+          "vwapDev": 0.25,
+          "bbPct": 51,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "PLTR": {
+          "px": 158.95,
+          "chg": -0.9,
+          "atrX": 0.6,
+          "vwapDev": 0.3,
+          "bbPct": 58,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "CRWD": {
+          "px": 404.5,
+          "chg": 0.32,
+          "atrX": 0.7,
+          "vwapDev": 0.35,
+          "bbPct": 65,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        }
+      },
+      "evidenceAt": "2026-09-23T18:15:07.000Z",
+      "key": "seq:17",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 18,
+      "tickId": "b-sep23-fixture:18",
+      "evalId": "b-sep23-fixture:e18",
+      "runId": null,
+      "at": "2026-09-23T18:30:20.000Z",
+      "state": "completed",
+      "exitReason": "completed",
+      "stageReached": "finalized",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "PLTR": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "CRWD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": {
+        "original": "HOLD",
+        "final": "HOLD",
+        "holdKind": null
+      },
+      "scores": {
+        "active": -69,
+        "banked": -6,
+        "total": -75
+      },
+      "tickMs": 6100,
+      "evidence": {
+        "INTC": {
+          "px": 31.44,
+          "chg": 0.64,
+          "atrX": 0.2,
+          "vwapDev": 0.1,
+          "bbPct": 30,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "AMD": {
+          "px": 165.07,
+          "chg": 0.47,
+          "atrX": 0.3,
+          "vwapDev": 0.15,
+          "bbPct": 37,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "META": {
+          "px": 612.31,
+          "chg": -0.01,
+          "atrX": 0.4,
+          "vwapDev": 0.2,
+          "bbPct": 44,
+          "nr7": true,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "ETN": {
+          "px": 385.55,
+          "chg": -0.4,
+          "atrX": 0.5,
+          "vwapDev": 0.25,
+          "bbPct": 51,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "PLTR": {
+          "px": 158.87,
+          "chg": -0.95,
+          "atrX": 0.6,
+          "vwapDev": 0.3,
+          "bbPct": 58,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "CRWD": {
+          "px": 404.76,
+          "chg": 0.39,
+          "atrX": 0.7,
+          "vwapDev": 0.35,
+          "bbPct": 65,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        }
+      },
+      "evidenceAt": "2026-09-23T18:30:07.000Z",
+      "key": "seq:18",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 19,
+      "tickId": "b-sep23-fixture:19",
+      "evalId": "b-sep23-fixture:e19",
+      "runId": null,
+      "at": "2026-09-23T18:45:20.000Z",
+      "state": "completed",
+      "exitReason": "completed",
+      "stageReached": "finalized",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "PLTR": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "CRWD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": {
+        "original": "HOLD",
+        "final": "HOLD",
+        "holdKind": null
+      },
+      "scores": {
+        "active": -63,
+        "banked": -6,
+        "total": -69
+      },
+      "tickMs": 6100,
+      "evidence": {
+        "INTC": {
+          "px": 31.44,
+          "chg": 0.64,
+          "atrX": 0.2,
+          "vwapDev": 0.1,
+          "bbPct": 30,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "AMD": {
+          "px": 165.22,
+          "chg": 0.56,
+          "atrX": 0.3,
+          "vwapDev": 0.15,
+          "bbPct": 37,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "META": {
+          "px": 612.61,
+          "chg": 0.03,
+          "atrX": 0.4,
+          "vwapDev": 0.2,
+          "bbPct": 44,
+          "nr7": true,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "ETN": {
+          "px": 385.66,
+          "chg": -0.37,
+          "atrX": 0.5,
+          "vwapDev": 0.25,
+          "bbPct": 51,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "PLTR": {
+          "px": 158.8,
+          "chg": -1,
+          "atrX": 0.6,
+          "vwapDev": 0.3,
+          "bbPct": 58,
+          "nr7": false,
+          "regime": "ranging",
+          "risk": {
+            "action": "HOLD"
+          }
+        },
+        "CRWD": {
+          "px": 404.92,
+          "chg": 0.43,
+          "atrX": 0.7,
+          "vwapDev": 0.35,
+          "bbPct": 65,
+          "nr7": false,
+          "regime": "trending",
+          "risk": {
+            "action": "HOLD"
+          }
+        }
+      },
+      "evidenceAt": "2026-09-23T18:45:07.000Z",
+      "key": "seq:19",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 20,
+      "tickId": "b-sep23-fixture:20",
+      "evalId": null,
+      "runId": null,
+      "at": "2026-09-23T19:00:20.000Z",
+      "state": "no_trigger",
+      "exitReason": "no_trigger",
+      "stageReached": "trigger_evaluated",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "ETN": {
+          "action": "SWAP_OUT",
+          "reason": "stagnation"
+        },
+        "PLTR": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "CRWD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": null,
+      "scores": {
+        "active": -67,
+        "banked": -6,
+        "total": -73
+      },
+      "tickMs": null,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:20",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 21,
+      "tickId": "b-sep23-fixture:21",
+      "evalId": null,
+      "runId": null,
+      "at": "2026-09-23T19:15:20.000Z",
+      "state": "no_trigger",
+      "exitReason": "no_trigger",
+      "stageReached": "trigger_evaluated",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "PANW": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "PLTR": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "CRWD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": null,
+      "scores": {
+        "active": -48,
+        "banked": -6,
+        "total": -54
+      },
+      "tickMs": null,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:21",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 22,
+      "tickId": "b-sep23-fixture:22",
+      "evalId": null,
+      "runId": null,
+      "at": "2026-09-23T19:30:20.000Z",
+      "state": "no_trigger",
+      "exitReason": "no_trigger",
+      "stageReached": "trigger_evaluated",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "PANW": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "PLTR": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "CRWD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": null,
+      "scores": {
+        "active": -40,
+        "banked": -6,
+        "total": -46
+      },
+      "tickMs": null,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:22",
+      "rowSource": "tick"
+    },
+    {
+      "tickSeq": 23,
+      "tickId": "b-sep23-fixture:23",
+      "evalId": null,
+      "runId": null,
+      "at": "2026-09-23T19:45:20.000Z",
+      "state": "no_trigger",
+      "exitReason": "no_trigger",
+      "stageReached": "trigger_evaluated",
+      "risk": {
+        "INTC": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "AMD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "META": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "PANW": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "PLTR": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "CRWD": {
+          "action": "HOLD",
+          "reason": null
+        },
+        "BTC": {
+          "action": "HOLD",
+          "reason": null
+        }
+      },
+      "guardrail": {
+        "evaluated": false,
+        "deployedCount": 0
+      },
+      "decision": null,
+      "scores": {
+        "active": -41,
+        "banked": -6,
+        "total": -47
+      },
+      "tickMs": null,
+      "evidence": null,
+      "evidenceAt": null,
+      "key": "seq:23",
+      "rowSource": "tick"
+    }
+  ],
+  "actions": [
+    {
+      "key": "swap:2026-09-23T16:45:08.000Z|MSFT|CRWD",
+      "rowSource": "tick",
+      "actionId": "b-sep23-fixture:11:1",
+      "tickSeq": 11,
+      "at": "2026-09-23T16:45:08.000Z",
+      "source": "risk_manager",
+      "exitReason": "stagnation",
+      "mechanism": "archetype_rotation",
+      "symbolOut": "MSFT",
+      "symbolIn": "CRWD",
+      "tier": "support",
+      "slotIndex": 1,
+      "entryPrice": 500.6,
+      "exitPrice": 498.79,
+      "lockedPoints": -13,
+      "lockedGainPct": -0.36,
+      "inBasis": {
+        "price": 402.95,
+        "at": "2026-09-23T16:45:08.000Z"
+      },
+      "holdingMs": 17108000,
+      "holdingBasis": "battle_activated_at",
+      "committed": true,
+      "tradeMatched": true,
+      "receiptMatched": true,
+      "subsequentTradesInSlot": 0,
+      "replayInputs": {
+        "ghost": {
+          "entryPrice": 500.6,
+          "atr": 4.1,
+          "tier": "support",
+          "direction": null,
+          "thresholdHistory": {
+            "maxMultiplier": 0.12,
+            "minMultiplier": -0.31
+          },
+          "thresholdBaseline": {
+            "value": 500.6,
+            "basis": "starting_price"
+          },
+          "sources": {
+            "entryPrice": "trades.entryPrice",
+            "atr": "receipt.guardrailReplay.outgoingBaseATR",
+            "tier": "trades.tier",
+            "thresholdHistory": "receipt.guardrailReplay.thresholdHistory",
+            "thresholdBaseline": "battle.activatedAt (activation day)"
+          }
+        },
+        "bought": {
+          "entryPrice": 402.95,
+          "atr": 6.8,
+          "tier": "support",
+          "direction": null,
+          "thresholdHistory": {
+            "maxMultiplier": 0,
+            "minMultiplier": 0
+          },
+          "thresholdBaseline": {
+            "value": 402.95,
+            "basis": "swap_price"
+          },
+          "sources": {
+            "entryPrice": "receipt.entryMark",
+            "atr": "receipt.entryATR (scored_threshold)",
+            "tier": "trades.tier",
+            "thresholdHistory": "executor reset at the swap (agentSwapExecution.js:307-311)",
+            "thresholdBaseline": "receipt.entryMark (the swap price)"
+          }
+        }
+      },
+      "replayMissing": [],
+      "replayReason": null,
+      "replay": {
+        "basis": "rebuilt_1m_at_checks",
+        "horizon": "close",
+        "hypothetical": true,
+        "label": "one-step hypothetical through the day's close; later trades in this slot are not replayed; not the effect of the swap on the battle",
+        "closeAt": "2026-09-23T20:00:00.000Z",
+        "lockedPoints": -13,
+        "lockedBasis": "eodhd_realtime_delayed",
+        "lockedBasisNote": "Banked points and the bought entry use the platform's quote, delayed about 15–20 minutes; rebuilt values use completed 1-minute bars.",
+        "subsequentTradesInSlot": 0,
+        "ghost": {
+          "atSwap": -4,
+          "atClose": -6,
+          "series": [
+            {
+              "tickSeq": 12,
+              "at": "2026-09-23T17:00:20.000Z",
+              "points": -4
+            },
+            {
+              "tickSeq": 13,
+              "at": "2026-09-23T17:15:20.000Z",
+              "points": -4
+            },
+            {
+              "tickSeq": 14,
+              "at": "2026-09-23T17:30:20.000Z",
+              "points": -4
+            },
+            {
+              "tickSeq": 15,
+              "at": "2026-09-23T17:45:20.000Z",
+              "points": -4
+            },
+            {
+              "tickSeq": 16,
+              "at": "2026-09-23T18:00:20.000Z",
+              "points": -4
+            },
+            {
+              "tickSeq": 17,
+              "at": "2026-09-23T18:15:20.000Z",
+              "points": -4
+            },
+            {
+              "tickSeq": 18,
+              "at": "2026-09-23T18:30:20.000Z",
+              "points": -4
+            },
+            {
+              "tickSeq": 19,
+              "at": "2026-09-23T18:45:20.000Z",
+              "points": -4
+            },
+            {
+              "tickSeq": 20,
+              "at": "2026-09-23T19:00:20.000Z",
+              "points": -4
+            },
+            {
+              "tickSeq": 21,
+              "at": "2026-09-23T19:15:20.000Z",
+              "points": -4
+            },
+            {
+              "tickSeq": 22,
+              "at": "2026-09-23T19:30:20.000Z",
+              "points": -5
+            },
+            {
+              "tickSeq": 23,
+              "at": "2026-09-23T19:45:20.000Z",
+              "points": -5
+            }
+          ]
+        },
+        "bought": {
+          "atClose": 3,
+          "series": [
+            {
+              "tickSeq": 12,
+              "at": "2026-09-23T17:00:20.000Z",
+              "points": 1
+            },
+            {
+              "tickSeq": 13,
+              "at": "2026-09-23T17:15:20.000Z",
+              "points": 1
+            },
+            {
+              "tickSeq": 14,
+              "at": "2026-09-23T17:30:20.000Z",
+              "points": 2
+            },
+            {
+              "tickSeq": 15,
+              "at": "2026-09-23T17:45:20.000Z",
+              "points": 3
+            },
+            {
+              "tickSeq": 16,
+              "at": "2026-09-23T18:00:20.000Z",
+              "points": 4
+            },
+            {
+              "tickSeq": 17,
+              "at": "2026-09-23T18:15:20.000Z",
+              "points": 4
+            },
+            {
+              "tickSeq": 18,
+              "at": "2026-09-23T18:30:20.000Z",
+              "points": 5
+            },
+            {
+              "tickSeq": 19,
+              "at": "2026-09-23T18:45:20.000Z",
+              "points": 5
+            },
+            {
+              "tickSeq": 20,
+              "at": "2026-09-23T19:00:20.000Z",
+              "points": 5
+            },
+            {
+              "tickSeq": 21,
+              "at": "2026-09-23T19:15:20.000Z",
+              "points": 4
+            },
+            {
+              "tickSeq": 22,
+              "at": "2026-09-23T19:30:20.000Z",
+              "points": 4
+            },
+            {
+              "tickSeq": 23,
+              "at": "2026-09-23T19:45:20.000Z",
+              "points": 3
+            }
+          ]
+        },
+        "holdPath": [
+          {
+            "tickSeq": 11,
+            "at": "2026-09-23T16:45:08.000Z",
+            "points": -4
+          },
+          {
+            "tickSeq": 12,
+            "at": "2026-09-23T17:00:20.000Z",
+            "points": -4
+          },
+          {
+            "tickSeq": 13,
+            "at": "2026-09-23T17:15:20.000Z",
+            "points": -4
+          },
+          {
+            "tickSeq": 14,
+            "at": "2026-09-23T17:30:20.000Z",
+            "points": -4
+          },
+          {
+            "tickSeq": 15,
+            "at": "2026-09-23T17:45:20.000Z",
+            "points": -4
+          },
+          {
+            "tickSeq": 16,
+            "at": "2026-09-23T18:00:20.000Z",
+            "points": -4
+          },
+          {
+            "tickSeq": 17,
+            "at": "2026-09-23T18:15:20.000Z",
+            "points": -4
+          },
+          {
+            "tickSeq": 18,
+            "at": "2026-09-23T18:30:20.000Z",
+            "points": -4
+          },
+          {
+            "tickSeq": 19,
+            "at": "2026-09-23T18:45:20.000Z",
+            "points": -4
+          },
+          {
+            "tickSeq": 20,
+            "at": "2026-09-23T19:00:20.000Z",
+            "points": -4
+          },
+          {
+            "tickSeq": 21,
+            "at": "2026-09-23T19:15:20.000Z",
+            "points": -4
+          },
+          {
+            "tickSeq": 22,
+            "at": "2026-09-23T19:30:20.000Z",
+            "points": -5
+          },
+          {
+            "tickSeq": 23,
+            "at": "2026-09-23T19:45:20.000Z",
+            "points": -5
+          },
+          {
+            "tickSeq": null,
+            "at": "2026-09-23T20:00:00.000Z",
+            "points": -6
+          }
+        ],
+        "swapPath": [
+          {
+            "tickSeq": 11,
+            "at": "2026-09-23T16:45:08.000Z",
+            "points": -13
+          },
+          {
+            "tickSeq": 12,
+            "at": "2026-09-23T17:00:20.000Z",
+            "points": -12
+          },
+          {
+            "tickSeq": 13,
+            "at": "2026-09-23T17:15:20.000Z",
+            "points": -12
+          },
+          {
+            "tickSeq": 14,
+            "at": "2026-09-23T17:30:20.000Z",
+            "points": -11
+          },
+          {
+            "tickSeq": 15,
+            "at": "2026-09-23T17:45:20.000Z",
+            "points": -10
+          },
+          {
+            "tickSeq": 16,
+            "at": "2026-09-23T18:00:20.000Z",
+            "points": -9
+          },
+          {
+            "tickSeq": 17,
+            "at": "2026-09-23T18:15:20.000Z",
+            "points": -9
+          },
+          {
+            "tickSeq": 18,
+            "at": "2026-09-23T18:30:20.000Z",
+            "points": -8
+          },
+          {
+            "tickSeq": 19,
+            "at": "2026-09-23T18:45:20.000Z",
+            "points": -8
+          },
+          {
+            "tickSeq": 20,
+            "at": "2026-09-23T19:00:20.000Z",
+            "points": -8
+          },
+          {
+            "tickSeq": 21,
+            "at": "2026-09-23T19:15:20.000Z",
+            "points": -9
+          },
+          {
+            "tickSeq": 22,
+            "at": "2026-09-23T19:30:20.000Z",
+            "points": -9
+          },
+          {
+            "tickSeq": 23,
+            "at": "2026-09-23T19:45:20.000Z",
+            "points": -10
+          },
+          {
+            "tickSeq": null,
+            "at": "2026-09-23T20:00:00.000Z",
+            "points": -10
+          }
+        ],
+        "gapPoints": -4,
+        "reconciliation": {
+          "closedLegDelta": 9,
+          "boughtVsEvidence": {
+            "tickSeq": 12,
+            "evalId": "b-sep23-fixture:e12",
+            "at": "2026-09-23T17:00:20.000Z",
+            "recordedPx": 403.02,
+            "rebuiltPx": 403.2,
+            "pxDelta": 0.18,
+            "recordedChg": -0.04,
+            "rebuiltChg": 0.06,
+            "chgDelta": 0.1
+          },
+          "soldAtSale": {
+            "recordedPx": 498.79,
+            "rebuiltPx": 498.62,
+            "barClosedAt": "2026-09-23T16:45:00.000Z",
+            "pxDelta": -0.17,
+            "rescoredAtRecordedPx": -4,
+            "inputsDelta": 9,
+            "priceDelta": 0,
+            "missingInputs": []
+          },
+          "boughtAtSale": {
+            "recordedPx": 402.95,
+            "rebuiltPx": 403.02,
+            "barClosedAt": "2026-09-23T16:45:00.000Z",
+            "pxDelta": 0.07,
+            "missingInputs": []
+          }
+        },
+        "marketChangeAfter": {
+          "SPY": 0.062,
+          "RSP": 0.049
+        },
+        "sectorChangeAfter": {
+          "XLK": 0.293
+        },
+        "missingInputs": [],
+        "retryableInputs": [],
+        "builtFrom": "replay-v2:8db3bbe1b7e2e8b2"
+      }
+    },
+    {
+      "key": "swap:2026-09-23T18:00:05.000Z|DE|PLTR",
+      "rowSource": "tick",
+      "actionId": "b-sep23-fixture:16:1",
+      "tickSeq": 16,
+      "at": "2026-09-23T18:00:05.000Z",
+      "source": "haiku",
+      "exitReason": "haiku_decision",
+      "mechanism": "agent_decision",
+      "symbolOut": "DE",
+      "symbolIn": "PLTR",
+      "tier": "support",
+      "slotIndex": 0,
+      "entryPrice": 466.2,
+      "exitPrice": 468.43,
+      "lockedPoints": -9,
+      "lockedGainPct": 0.48,
+      "inBasis": {
+        "price": 159.03,
+        "at": "2026-09-23T18:00:05.000Z"
+      },
+      "holdingMs": 21605000,
+      "holdingBasis": "battle_activated_at",
+      "committed": true,
+      "tradeMatched": true,
+      "receiptMatched": true,
+      "subsequentTradesInSlot": 0,
+      "replayInputs": {
+        "ghost": {
+          "entryPrice": 466.2,
+          "atr": 6.2,
+          "tier": "support",
+          "direction": null,
+          "thresholdHistory": {
+            "maxMultiplier": 0.12,
+            "minMultiplier": -0.31
+          },
+          "thresholdBaseline": {
+            "value": 466.2,
+            "basis": "starting_price"
+          },
+          "sources": {
+            "entryPrice": "trades.entryPrice",
+            "atr": "receipt.guardrailReplay.outgoingBaseATR",
+            "tier": "trades.tier",
+            "thresholdHistory": "receipt.guardrailReplay.thresholdHistory",
+            "thresholdBaseline": "battle.activatedAt (activation day)"
+          }
+        },
+        "bought": {
+          "entryPrice": 159.03,
+          "atr": 3.9,
+          "tier": "support",
+          "direction": null,
+          "thresholdHistory": {
+            "maxMultiplier": 0,
+            "minMultiplier": 0
+          },
+          "thresholdBaseline": {
+            "value": 159.03,
+            "basis": "swap_price"
+          },
+          "sources": {
+            "entryPrice": "receipt.entryMark",
+            "atr": "receipt.entryATR (scored_threshold)",
+            "tier": "trades.tier",
+            "thresholdHistory": "executor reset at the swap (agentSwapExecution.js:307-311)",
+            "thresholdBaseline": "receipt.entryMark (the swap price)"
+          }
+        }
+      },
+      "replayMissing": [],
+      "replayReason": null,
+      "replay": {
+        "basis": "rebuilt_1m_at_checks",
+        "horizon": "close",
+        "hypothetical": true,
+        "label": "one-step hypothetical through the day's close; later trades in this slot are not replayed; not the effect of the swap on the battle",
+        "closeAt": "2026-09-23T20:00:00.000Z",
+        "lockedPoints": -9,
+        "lockedBasis": "eodhd_realtime_delayed",
+        "lockedBasisNote": "Banked points and the bought entry use the platform's quote, delayed about 15–20 minutes; rebuilt values use completed 1-minute bars.",
+        "subsequentTradesInSlot": 0,
+        "ghost": {
+          "atSwap": 5,
+          "atClose": 8,
+          "series": [
+            {
+              "tickSeq": 17,
+              "at": "2026-09-23T18:15:20.000Z",
+              "points": 5
+            },
+            {
+              "tickSeq": 18,
+              "at": "2026-09-23T18:30:20.000Z",
+              "points": 6
+            },
+            {
+              "tickSeq": 19,
+              "at": "2026-09-23T18:45:20.000Z",
+              "points": 6
+            },
+            {
+              "tickSeq": 20,
+              "at": "2026-09-23T19:00:20.000Z",
+              "points": 6
+            },
+            {
+              "tickSeq": 21,
+              "at": "2026-09-23T19:15:20.000Z",
+              "points": 7
+            },
+            {
+              "tickSeq": 22,
+              "at": "2026-09-23T19:30:20.000Z",
+              "points": 7
+            },
+            {
+              "tickSeq": 23,
+              "at": "2026-09-23T19:45:20.000Z",
+              "points": 8
+            }
+          ]
+        },
+        "bought": {
+          "atClose": -3,
+          "series": [
+            {
+              "tickSeq": 17,
+              "at": "2026-09-23T18:15:20.000Z",
+              "points": -1
+            },
+            {
+              "tickSeq": 18,
+              "at": "2026-09-23T18:30:20.000Z",
+              "points": -1
+            },
+            {
+              "tickSeq": 19,
+              "at": "2026-09-23T18:45:20.000Z",
+              "points": -2
+            },
+            {
+              "tickSeq": 20,
+              "at": "2026-09-23T19:00:20.000Z",
+              "points": -2
+            },
+            {
+              "tickSeq": 21,
+              "at": "2026-09-23T19:15:20.000Z",
+              "points": -2
+            },
+            {
+              "tickSeq": 22,
+              "at": "2026-09-23T19:30:20.000Z",
+              "points": -3
+            },
+            {
+              "tickSeq": 23,
+              "at": "2026-09-23T19:45:20.000Z",
+              "points": -3
+            }
+          ]
+        },
+        "holdPath": [
+          {
+            "tickSeq": 16,
+            "at": "2026-09-23T18:00:05.000Z",
+            "points": 5
+          },
+          {
+            "tickSeq": 17,
+            "at": "2026-09-23T18:15:20.000Z",
+            "points": 5
+          },
+          {
+            "tickSeq": 18,
+            "at": "2026-09-23T18:30:20.000Z",
+            "points": 6
+          },
+          {
+            "tickSeq": 19,
+            "at": "2026-09-23T18:45:20.000Z",
+            "points": 6
+          },
+          {
+            "tickSeq": 20,
+            "at": "2026-09-23T19:00:20.000Z",
+            "points": 6
+          },
+          {
+            "tickSeq": 21,
+            "at": "2026-09-23T19:15:20.000Z",
+            "points": 7
+          },
+          {
+            "tickSeq": 22,
+            "at": "2026-09-23T19:30:20.000Z",
+            "points": 7
+          },
+          {
+            "tickSeq": 23,
+            "at": "2026-09-23T19:45:20.000Z",
+            "points": 8
+          },
+          {
+            "tickSeq": null,
+            "at": "2026-09-23T20:00:00.000Z",
+            "points": 8
+          }
+        ],
+        "swapPath": [
+          {
+            "tickSeq": 16,
+            "at": "2026-09-23T18:00:05.000Z",
+            "points": -9
+          },
+          {
+            "tickSeq": 17,
+            "at": "2026-09-23T18:15:20.000Z",
+            "points": -10
+          },
+          {
+            "tickSeq": 18,
+            "at": "2026-09-23T18:30:20.000Z",
+            "points": -10
+          },
+          {
+            "tickSeq": 19,
+            "at": "2026-09-23T18:45:20.000Z",
+            "points": -11
+          },
+          {
+            "tickSeq": 20,
+            "at": "2026-09-23T19:00:20.000Z",
+            "points": -11
+          },
+          {
+            "tickSeq": 21,
+            "at": "2026-09-23T19:15:20.000Z",
+            "points": -11
+          },
+          {
+            "tickSeq": 22,
+            "at": "2026-09-23T19:30:20.000Z",
+            "points": -12
+          },
+          {
+            "tickSeq": 23,
+            "at": "2026-09-23T19:45:20.000Z",
+            "points": -12
+          },
+          {
+            "tickSeq": null,
+            "at": "2026-09-23T20:00:00.000Z",
+            "points": -12
+          }
+        ],
+        "gapPoints": -20,
+        "reconciliation": {
+          "closedLegDelta": 14,
+          "boughtVsEvidence": {
+            "tickSeq": 17,
+            "evalId": "b-sep23-fixture:e17",
+            "at": "2026-09-23T18:15:20.000Z",
+            "recordedPx": 158.95,
+            "rebuiltPx": 158.87,
+            "pxDelta": -0.08,
+            "recordedChg": -0.9,
+            "rebuiltChg": -0.1,
+            "chgDelta": 0.8
+          },
+          "soldAtSale": {
+            "recordedPx": 468.43,
+            "rebuiltPx": 468.55,
+            "barClosedAt": "2026-09-23T18:00:00.000Z",
+            "pxDelta": 0.12,
+            "rescoredAtRecordedPx": 5,
+            "inputsDelta": 14,
+            "priceDelta": 0,
+            "missingInputs": []
+          },
+          "boughtAtSale": {
+            "recordedPx": 159.03,
+            "rebuiltPx": 158.95,
+            "barClosedAt": "2026-09-23T18:00:00.000Z",
+            "pxDelta": -0.08,
+            "missingInputs": []
+          }
+        },
+        "marketChangeAfter": {
+          "SPY": 0.083,
+          "RSP": 0.082
+        },
+        "sectorChangeAfter": {
+          "XLI": 0.007,
+          "XLK": 0.304
+        },
+        "missingInputs": [],
+        "retryableInputs": [],
+        "builtFrom": "replay-v2:b91f93143bfb78cd"
+      }
+    },
+    {
+      "key": "swap:2026-09-23T19:00:10.000Z|ETN|PANW",
+      "rowSource": "tick",
+      "actionId": "b-sep23-fixture:20:1",
+      "tickSeq": 20,
+      "at": "2026-09-23T19:00:10.000Z",
+      "source": "risk_manager",
+      "exitReason": "stagnation",
+      "mechanism": "archetype_rotation",
+      "symbolOut": "ETN",
+      "symbolIn": "PANW",
+      "tier": "core",
+      "slotIndex": 1,
+      "entryPrice": 387.1,
+      "exitPrice": 385.77,
+      "lockedPoints": -2,
+      "lockedGainPct": -0.34,
+      "inBasis": {
+        "price": 390.02,
+        "at": "2026-09-23T19:00:10.000Z"
+      },
+      "holdingMs": 25210000,
+      "holdingBasis": "battle_activated_at",
+      "committed": true,
+      "tradeMatched": true,
+      "receiptMatched": true,
+      "subsequentTradesInSlot": 0,
+      "replayInputs": {
+        "ghost": {
+          "entryPrice": 387.1,
+          "atr": 5.3,
+          "tier": "core",
+          "direction": null,
+          "thresholdHistory": {
+            "maxMultiplier": 0.12,
+            "minMultiplier": -0.31
+          },
+          "thresholdBaseline": {
+            "value": 387.1,
+            "basis": "starting_price"
+          },
+          "sources": {
+            "entryPrice": "trades.entryPrice",
+            "atr": "receipt.guardrailReplay.outgoingBaseATR",
+            "tier": "trades.tier",
+            "thresholdHistory": "receipt.guardrailReplay.thresholdHistory",
+            "thresholdBaseline": "battle.activatedAt (activation day)"
+          }
+        },
+        "bought": {
+          "entryPrice": 390.02,
+          "atr": 7.1,
+          "tier": "core",
+          "direction": null,
+          "thresholdHistory": {
+            "maxMultiplier": 0,
+            "minMultiplier": 0
+          },
+          "thresholdBaseline": {
+            "value": 390.02,
+            "basis": "swap_price"
+          },
+          "sources": {
+            "entryPrice": "receipt.entryMark",
+            "atr": "receipt.entryATR (scored_threshold)",
+            "tier": "trades.tier",
+            "thresholdHistory": "executor reset at the swap (agentSwapExecution.js:307-311)",
+            "thresholdBaseline": "receipt.entryMark (the swap price)"
+          }
+        }
+      },
+      "replayMissing": [],
+      "replayReason": null,
+      "replay": {
+        "basis": "rebuilt_1m_at_checks",
+        "horizon": "close",
+        "hypothetical": true,
+        "label": "one-step hypothetical through the day's close; later trades in this slot are not replayed; not the effect of the swap on the battle",
+        "closeAt": "2026-09-23T20:00:00.000Z",
+        "lockedPoints": -2,
+        "lockedBasis": "eodhd_realtime_delayed",
+        "lockedBasisNote": "Banked points and the bought entry use the platform's quote, delayed about 15–20 minutes; rebuilt values use completed 1-minute bars.",
+        "subsequentTradesInSlot": 0,
+        "ghost": {
+          "atSwap": -5,
+          "atClose": -5,
+          "series": [
+            {
+              "tickSeq": 21,
+              "at": "2026-09-23T19:15:20.000Z",
+              "points": -5
+            },
+            {
+              "tickSeq": 22,
+              "at": "2026-09-23T19:30:20.000Z",
+              "points": -5
+            },
+            {
+              "tickSeq": 23,
+              "at": "2026-09-23T19:45:20.000Z",
+              "points": -5
+            }
+          ]
+        },
+        "bought": {
+          "atClose": 6,
+          "series": [
+            {
+              "tickSeq": 21,
+              "at": "2026-09-23T19:15:20.000Z",
+              "points": 3
+            },
+            {
+              "tickSeq": 22,
+              "at": "2026-09-23T19:30:20.000Z",
+              "points": 4
+            },
+            {
+              "tickSeq": 23,
+              "at": "2026-09-23T19:45:20.000Z",
+              "points": 5
+            }
+          ]
+        },
+        "holdPath": [
+          {
+            "tickSeq": 20,
+            "at": "2026-09-23T19:00:10.000Z",
+            "points": -5
+          },
+          {
+            "tickSeq": 21,
+            "at": "2026-09-23T19:15:20.000Z",
+            "points": -5
+          },
+          {
+            "tickSeq": 22,
+            "at": "2026-09-23T19:30:20.000Z",
+            "points": -5
+          },
+          {
+            "tickSeq": 23,
+            "at": "2026-09-23T19:45:20.000Z",
+            "points": -5
+          },
+          {
+            "tickSeq": null,
+            "at": "2026-09-23T20:00:00.000Z",
+            "points": -5
+          }
+        ],
+        "swapPath": [
+          {
+            "tickSeq": 20,
+            "at": "2026-09-23T19:00:10.000Z",
+            "points": -2
+          },
+          {
+            "tickSeq": 21,
+            "at": "2026-09-23T19:15:20.000Z",
+            "points": 1
+          },
+          {
+            "tickSeq": 22,
+            "at": "2026-09-23T19:30:20.000Z",
+            "points": 2
+          },
+          {
+            "tickSeq": 23,
+            "at": "2026-09-23T19:45:20.000Z",
+            "points": 3
+          },
+          {
+            "tickSeq": null,
+            "at": "2026-09-23T20:00:00.000Z",
+            "points": 4
+          }
+        ],
+        "gapPoints": 9,
+        "reconciliation": {
+          "closedLegDelta": -3,
+          "boughtVsEvidence": null,
+          "soldAtSale": {
+            "recordedPx": 385.77,
+            "rebuiltPx": 385.85,
+            "barClosedAt": "2026-09-23T19:00:00.000Z",
+            "pxDelta": 0.08,
+            "rescoredAtRecordedPx": -5,
+            "inputsDelta": -3,
+            "priceDelta": 0,
+            "missingInputs": []
+          },
+          "boughtAtSale": {
+            "recordedPx": 390.02,
+            "rebuiltPx": 390.4,
+            "barClosedAt": "2026-09-23T19:00:00.000Z",
+            "pxDelta": 0.38,
+            "missingInputs": []
+          }
+        },
+        "marketChangeAfter": {
+          "SPY": 0.068,
+          "RSP": 0.066
+        },
+        "sectorChangeAfter": {
+          "XLI": 0.033,
+          "XLK": 0.182
+        },
+        "missingInputs": [],
+        "retryableInputs": [],
+        "builtFrom": "replay-v2:813d416bd9f57cb0"
+      }
+    }
+  ],
+  "directives": [
+    {
+      "key": "th-sep23",
+      "threadId": "th-sep23",
+      "filedAt": "2026-09-23T17:40:00.000Z",
+      "expiry": "end_of_battle",
+      "playerText": "Protect the lead into the close.",
+      "canonicalText": "Tighten the downside stop.",
+      "adjustmentId": "MC-tighten-stop",
+      "canonicalTextVersion": 1,
+      "gateStatus": "committed",
+      "classification": "in_archetype",
+      "cardState": "committed",
+      "retainedDirectiveText": null,
+      "agentReply": "Heard. I will tighten the downside stop for the rest of the session.",
+      "agentReplyDiffers": false,
+      "heard": {
+        "at": "2026-09-23T17:45:15.000Z",
+        "tickSeq": 15,
+        "source": "entry"
+      },
+      "after": {
+        "checks": 9,
+        "holds": 4,
+        "swaps": 2
+      }
+    },
+    {
+      "key": "exchange:2026-09-23T18:20:00.000Z",
+      "threadId": null,
+      "filedAt": "2026-09-23T18:20:00.000Z",
+      "expiry": null,
+      "playerText": "Sell everything right now.",
+      "canonicalText": null,
+      "adjustmentId": null,
+      "canonicalTextVersion": null,
+      "gateStatus": "no_change",
+      "classification": "core_conflict",
+      "cardState": "no_change",
+      "retainedDirectiveText": "Tighten the downside stop.",
+      "agentReply": "That runs against how I trade; the plan stays as it is.",
+      "agentReplyDiffers": false,
+      "heard": null,
+      "after": {
+        "checks": 6,
+        "holds": 2,
+        "swaps": 1
+      }
+    },
+    {
+      "key": "exchange:2026-09-23T18:50:00.000Z",
+      "threadId": null,
+      "filedAt": "2026-09-23T18:50:00.000Z",
+      "expiry": null,
+      "playerText": "Tilt into chips for the last hour.",
+      "canonicalText": null,
+      "adjustmentId": null,
+      "canonicalTextVersion": null,
+      "gateStatus": "fit_mismatch",
+      "classification": "in_archetype",
+      "cardState": "not_filed",
+      "retainedDirectiveText": null,
+      "agentReply": "Done — a chip tilt is filed.",
+      "agentReplyDiffers": true,
+      "heard": null,
+      "after": {
+        "checks": 4,
+        "holds": 0,
+        "swaps": 1
+      }
+    }
+  ],
+  "plans": [
+    {
+      "key": "b-sep23-fixture:e8:0",
+      "evalId": "b-sep23-fixture:e8",
+      "tickSeq": 8,
+      "at": "2026-09-23T16:00:15.000Z",
+      "symbol": "PLTR",
+      "direction": "potential_entry",
+      "signalSummary": "PLTR is leading software on volume into midday.",
+      "threshold": "holds above 158.00 at the next check",
+      "signalSource": "relative_strength",
+      "price": {
+        "atPlan": {
+          "value": 159.74,
+          "at": "2026-09-23T16:00:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "atClose": {
+          "value": 158.52,
+          "at": "2026-09-23T20:00:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "note": "prices shown to the day's close, which is not the plan's horizon",
+        "missingInputs": [],
+        "retryableInputs": [],
+        "builtFrom": "627f61c0a7713a68"
+      }
+    },
+    {
+      "key": "b-sep23-fixture:e8:1",
+      "evalId": "b-sep23-fixture:e8",
+      "tickSeq": 8,
+      "at": "2026-09-23T16:00:15.000Z",
+      "symbol": "MSFT",
+      "direction": "potential_exit",
+      "signalSummary": "MSFT has gone flat since the open while the rest of the book moves.",
+      "threshold": "loses 497.50",
+      "signalSource": "stagnation",
+      "price": {
+        "atPlan": {
+          "value": 499.29,
+          "at": "2026-09-23T16:00:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "atClose": {
+          "value": 497.79,
+          "at": "2026-09-23T20:00:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "note": "prices shown to the day's close, which is not the plan's horizon",
+        "missingInputs": [],
+        "retryableInputs": [],
+        "builtFrom": "eed78f46d525efd0"
+      }
+    },
+    {
+      "key": "b-sep23-fixture:e10:0",
+      "evalId": "b-sep23-fixture:e10",
+      "tickSeq": 10,
+      "at": "2026-09-23T16:30:15.000Z",
+      "symbol": "PLTR",
+      "direction": "potential_entry",
+      "signalSummary": "PLTR pulled back from 158 and is holding the pullback on lighter volume.",
+      "threshold": "holds above 158.00 at the next check",
+      "signalSource": "relative_strength",
+      "price": {
+        "atPlan": {
+          "value": 159.53,
+          "at": "2026-09-23T16:30:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "atClose": {
+          "value": 158.52,
+          "at": "2026-09-23T20:00:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "note": "prices shown to the day's close, which is not the plan's horizon",
+        "missingInputs": [],
+        "retryableInputs": [],
+        "builtFrom": "1ac4217625345552"
+      }
+    },
+    {
+      "key": "b-sep23-fixture:e10:1",
+      "evalId": "b-sep23-fixture:e10",
+      "tickSeq": 10,
+      "at": "2026-09-23T16:30:15.000Z",
+      "symbol": "CRWD",
+      "direction": "potential_entry",
+      "signalSummary": "CRWD pushing toward its morning high with volume rising into it.",
+      "threshold": "above 406.50",
+      "signalSource": "breakout",
+      "price": {
+        "atPlan": {
+          "value": 402.95,
+          "at": "2026-09-23T16:30:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "atClose": {
+          "value": 403.99,
+          "at": "2026-09-23T20:00:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "note": "prices shown to the day's close, which is not the plan's horizon",
+        "missingInputs": [],
+        "retryableInputs": [],
+        "builtFrom": "f1628f32fddac285"
+      }
+    },
+    {
+      "key": "b-sep23-fixture:e12:0",
+      "evalId": "b-sep23-fixture:e12",
+      "tickSeq": 12,
+      "at": "2026-09-23T17:00:15.000Z",
+      "symbol": "MU",
+      "direction": "potential_entry",
+      "signalSummary": "MU is bid with the memory group.",
+      "threshold": "close above 128.00",
+      "signalSource": "sector",
+      "price": {
+        "atPlan": {
+          "value": 126.8,
+          "at": "2026-09-23T17:00:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "atClose": {
+          "value": 126.65,
+          "at": "2026-09-23T20:00:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "note": "prices shown to the day's close, which is not the plan's horizon",
+        "missingInputs": [],
+        "retryableInputs": [],
+        "builtFrom": "35a902307dca3b79"
+      }
+    },
+    {
+      "key": "b-sep23-fixture:e17:0",
+      "evalId": "b-sep23-fixture:e17",
+      "tickSeq": 17,
+      "at": "2026-09-23T18:15:15.000Z",
+      "symbol": "PANW",
+      "direction": "potential_entry",
+      "signalSummary": "PANW holding over 385 after the push.",
+      "threshold": "holds above 386.00",
+      "signalSource": "breakout",
+      "price": {
+        "atPlan": {
+          "value": 389.2,
+          "at": "2026-09-23T18:15:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "atClose": {
+          "value": 391.52,
+          "at": "2026-09-23T20:00:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "note": "prices shown to the day's close, which is not the plan's horizon",
+        "missingInputs": [],
+        "retryableInputs": [],
+        "builtFrom": "069df12e3e91e226"
+      }
+    },
+    {
+      "key": "b-sep23-fixture:e17:1",
+      "evalId": "b-sep23-fixture:e17",
+      "tickSeq": 17,
+      "at": "2026-09-23T18:15:15.000Z",
+      "symbol": "ETN",
+      "direction": "potential_exit",
+      "signalSummary": "ETN flat for the session while the market moved.",
+      "threshold": "loses 385.00",
+      "signalSource": "stagnation",
+      "price": {
+        "atPlan": {
+          "value": 385.55,
+          "at": "2026-09-23T18:15:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "atClose": {
+          "value": 385.7,
+          "at": "2026-09-23T20:00:00.000Z",
+          "basis": "last_completed_minute"
+        },
+        "note": "prices shown to the day's close, which is not the plan's horizon",
+        "missingInputs": [],
+        "retryableInputs": [],
+        "builtFrom": "3a6647fd0ba395a0"
+      }
+    }
+  ],
+  "calls": [],
+  "rationale": [
+    {
+      "key": "b-sep23-fixture:e8",
+      "evalId": "b-sep23-fixture:e8",
+      "tickSeq": 8,
+      "at": "2026-09-23T16:00:15.000Z",
+      "rationale": "The plan from the open is still waiting on an approval, so the book is held as it stands. PLTR leads the names tracked by five-day move and sits just under 158. MSFT has not moved since the open and is the slot to free first.",
+      "hypothesis": "Software strength should carry PLTR through 158 by the early afternoon.",
+      "holdKind": null
+    },
+    {
+      "key": "b-sep23-fixture:e10",
+      "evalId": "b-sep23-fixture:e10",
+      "tickSeq": 10,
+      "at": "2026-09-23T16:30:15.000Z",
+      "rationale": "Nothing in the book has crossed a threshold since the last check. PLTR pulled back from 158 and is holding the pullback on lighter volume.",
+      "hypothesis": "A hold above 158 at the next check is the trigger for PLTR; MSFT stays the exit candidate.",
+      "holdKind": null
+    },
+    {
+      "key": "b-sep23-fixture:e11",
+      "evalId": "b-sep23-fixture:e11",
+      "tickSeq": 11,
+      "at": "2026-09-23T16:45:15.000Z",
+      "rationale": "The platform rule exited MSFT before this check ran and placed CRWD in the slot. PLTR tagged 158 and pulled back again; a 15-minute close above it comes before rotating DE out.",
+      "hypothesis": "With MSFT gone by rule, CRWD is now a holding; PLTR remains the entry being waited on.",
+      "holdKind": null
+    },
+    {
+      "key": "b-sep23-fixture:e12",
+      "evalId": "b-sep23-fixture:e12",
+      "tickSeq": 12,
+      "at": "2026-09-23T17:00:15.000Z",
+      "rationale": "ETN and DE are the two names not moving with the market. Both have held their levels, so there is no exit trigger yet.",
+      "hypothesis": "PLTR above 158.50 into the afternoon would confirm; MU is a second candidate.",
+      "holdKind": null
+    },
+    {
+      "key": "b-sep23-fixture:e14",
+      "evalId": "b-sep23-fixture:e14",
+      "tickSeq": 14,
+      "at": "2026-09-23T17:30:15.000Z",
+      "rationale": "The midday range is tightening in PLTR. CRWD is consolidating under 407. DE has not moved in three checks.",
+      "hypothesis": "PLTR is building a base; one more check without a break and the plan acts on a hold above it.",
+      "holdKind": null
+    },
+    {
+      "key": "b-sep23-fixture:e15",
+      "evalId": "b-sep23-fixture:e15",
+      "tickSeq": 15,
+      "at": "2026-09-23T17:45:15.000Z",
+      "rationale": "PLTR is pressing 159 with volume building into the hour, and DE has still not moved.",
+      "hypothesis": "A hold above 159 at 2:00 is the trigger: DE out, PLTR in.",
+      "holdKind": null
+    },
+    {
+      "key": "b-sep23-fixture:e16",
+      "evalId": "b-sep23-fixture:e16",
+      "tickSeq": 16,
+      "at": "2026-09-23T18:00:15.000Z",
+      "rationale": "PLTR held into the check, so DE goes out and PLTR comes in, on the plan carried since noon. PANW sits at 385.",
+      "hypothesis": "PLTR took the slot; PANW is next in line if it holds over 386.",
+      "holdKind": null
+    },
+    {
+      "key": "b-sep23-fixture:e17",
+      "evalId": "b-sep23-fixture:e17",
+      "tickSeq": 17,
+      "at": "2026-09-23T18:15:15.000Z",
+      "rationale": "PANW is holding over 385 after the push. ETN is flat for the session while the market has moved.",
+      "hypothesis": "PANW is one level away; ETN is the slot it would take.",
+      "holdKind": null
+    },
+    {
+      "key": "b-sep23-fixture:e18",
+      "evalId": "b-sep23-fixture:e18",
+      "tickSeq": 18,
+      "at": "2026-09-23T18:30:15.000Z",
+      "rationale": "PANW printed through 386 on the platform quote this check. Confirmation comes on the next check rather than a single print.",
+      "hypothesis": "PANW through 386 on the quote; confirm on the next check before rotating ETN.",
+      "holdKind": null
+    },
+    {
+      "key": "b-sep23-fixture:e19",
+      "evalId": "b-sep23-fixture:e19",
+      "tickSeq": 19,
+      "at": "2026-09-23T18:45:15.000Z",
+      "rationale": "PANW held 386 into this check and ETN is still flat, so the plan for 3:00 is ETN out and PANW in.",
+      "hypothesis": "If PANW holds 386 at 3:00, ETN goes out for it.",
+      "holdKind": null
+    }
+  ],
+  "comparables": {
+    "market": [
+      "SPY",
+      "RSP"
+    ],
+    "sectors": {
+      "AMD": "XLK",
+      "CRWD": "XLK",
+      "DE": "XLI",
+      "ETN": "XLI",
+      "INTC": "XLK",
+      "META": "XLC",
+      "MSFT": "XLK",
+      "MU": "XLK",
+      "PANW": "XLK",
+      "PLTR": "XLK"
+    }
+  },
+  "diagnostics": {
+    "intradayViews": "present"
+  },
+  "numberClasses": {
+    "tapeVersion": "recorded",
+    "runCount": "derived",
+    "dayNumber": "derived",
+    "passes.close.tickSeqRange[]": "recorded",
+    "passes.close.gaps[]": "recorded",
+    "passes.close.unattributedGaps[]": "recorded",
+    "passes.close.sources.*": "derived",
+    "passes.candles.attempts": "derived",
+    "coverage.*.unknownChecks": "derived",
+    "score.lastCheck.tickSeq": "recorded",
+    "score.lastCheck.active": "recorded",
+    "score.lastCheck.banked": "recorded",
+    "score.lastCheck.total": "recorded",
+    "score.lastCheck.opponent": "recorded",
+    "score.lastCheck.bankedBadgePoints": "recorded",
+    "score.firstCheck.tickSeq": "recorded",
+    "score.firstCheck.total": "recorded",
+    "score.dayChange.value": "derived",
+    "score.dayChange.reference": "recorded",
+    "battle.final.total": "recorded",
+    "battle.final.opponent": "recorded",
+    "checks[].tickSeq": "recorded",
+    "checks[].scores.active": "recorded",
+    "checks[].scores.banked": "recorded",
+    "checks[].scores.total": "recorded",
+    "checks[].tickMs": "recorded",
+    "checks[].guardrail.deployedCount": "recorded",
+    "checks[].evidence.*.px": "recorded",
+    "checks[].evidence.*.chg": "recorded",
+    "checks[].evidence.*.atrX": "recorded",
+    "checks[].evidence.*.vwapDev": "recorded",
+    "checks[].evidence.*.bbPct": "recorded",
+    "actions[].tickSeq": "recorded",
+    "actions[].slotIndex": "recorded",
+    "actions[].entryPrice": "recorded",
+    "actions[].exitPrice": "recorded",
+    "actions[].lockedPoints": "recorded",
+    "actions[].lockedGainPct": "recorded",
+    "actions[].inBasis.price": "recorded",
+    "actions[].holdingMs": "derived",
+    "actions[].subsequentTradesInSlot": "derived",
+    "actions[].replayInputs.ghost.entryPrice": "recorded",
+    "actions[].replayInputs.ghost.atr": "recorded",
+    "actions[].replayInputs.ghost.thresholdHistory.maxMultiplier": "recorded",
+    "actions[].replayInputs.ghost.thresholdHistory.minMultiplier": "recorded",
+    "actions[].replayInputs.ghost.thresholdBaseline.value": "recorded",
+    "actions[].replayInputs.bought.entryPrice": "recorded",
+    "actions[].replayInputs.bought.atr": "recorded",
+    "actions[].replayInputs.bought.thresholdHistory.maxMultiplier": "recorded",
+    "actions[].replayInputs.bought.thresholdHistory.minMultiplier": "recorded",
+    "actions[].replayInputs.bought.thresholdBaseline.value": "recorded",
+    "actions[].replay.ghost.atSwap": "rebuilt",
+    "actions[].replay.ghost.atClose": "rebuilt",
+    "actions[].replay.ghost.series[].tickSeq": "recorded",
+    "actions[].replay.ghost.series[].points": "rebuilt",
+    "actions[].replay.bought.atClose": "rebuilt",
+    "actions[].replay.bought.series[].tickSeq": "recorded",
+    "actions[].replay.bought.series[].points": "rebuilt",
+    "actions[].replay.holdPath[].tickSeq": "recorded",
+    "actions[].replay.holdPath[].points": "rebuilt",
+    "actions[].replay.swapPath[].tickSeq": "recorded",
+    "actions[].replay.swapPath[].points": "rebuilt",
+    "actions[].replay.gapPoints": "rebuilt",
+    "actions[].replay.lockedPoints": "recorded",
+    "actions[].replay.subsequentTradesInSlot": "derived",
+    "actions[].replay.reconciliation.closedLegDelta": "rebuilt",
+    "actions[].replay.reconciliation.boughtVsEvidence.tickSeq": "recorded",
+    "actions[].replay.reconciliation.boughtVsEvidence.recordedPx": "recorded",
+    "actions[].replay.reconciliation.boughtVsEvidence.recordedChg": "recorded",
+    "actions[].replay.reconciliation.boughtVsEvidence.rebuiltPx": "market",
+    "actions[].replay.reconciliation.boughtVsEvidence.rebuiltChg": "rebuilt",
+    "actions[].replay.reconciliation.boughtVsEvidence.pxDelta": "rebuilt",
+    "actions[].replay.reconciliation.boughtVsEvidence.chgDelta": "rebuilt",
+    "actions[].replay.reconciliation.soldAtSale.recordedPx": "recorded",
+    "actions[].replay.reconciliation.soldAtSale.rebuiltPx": "market",
+    "actions[].replay.reconciliation.soldAtSale.pxDelta": "rebuilt",
+    "actions[].replay.reconciliation.soldAtSale.rescoredAtRecordedPx": "derived",
+    "actions[].replay.reconciliation.soldAtSale.inputsDelta": "derived",
+    "actions[].replay.reconciliation.soldAtSale.priceDelta": "rebuilt",
+    "actions[].replay.reconciliation.boughtAtSale.recordedPx": "recorded",
+    "actions[].replay.reconciliation.boughtAtSale.rebuiltPx": "market",
+    "actions[].replay.reconciliation.boughtAtSale.pxDelta": "rebuilt",
+    "actions[].replay.marketChangeAfter.*": "market",
+    "actions[].replay.sectorChangeAfter.*": "market",
+    "directives[].canonicalTextVersion": "recorded",
+    "directives[].heard.tickSeq": "recorded",
+    "directives[].after.checks": "derived",
+    "directives[].after.holds": "derived",
+    "directives[].after.swaps": "derived",
+    "plans[].tickSeq": "recorded",
+    "plans[].price.atPlan.value": "market",
+    "plans[].price.atClose.value": "market",
+    "calls[].mintedAt": "recorded",
+    "calls[].expiresAt": "recorded",
+    "calls[].resolvedAt": "recorded",
+    "calls[].horizon.expiresAt": "recorded",
+    "calls[].hypothesisRef.hypothesisVersion": "recorded",
+    "rationale[].tickSeq": "recorded"
+  }
+}

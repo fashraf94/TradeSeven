@@ -111,6 +111,23 @@ const GUARDED_FILES = [
   'src/screens/battleView/CockpitFeed.jsx',
   'src/screens/battleView/CockpitSheet.jsx',
   'src/screens/battleView/BoardCockpit.jsx',
+  // Film Room A2 (Amendment E) — the v2 screen's model, copy, reads, kit and check detail; token-only and motion-token-only from birth, registered in the commit that introduces them (filmRoomData.js came one commit earlier).
+  'src/screens/filmRoomV2/filmRoomModel.js',
+  'src/screens/filmRoomV2/filmRoomCopy.js',
+  'src/screens/filmRoomV2/filmRoomData.js',
+  'src/screens/filmRoomV2/FilmRoomKit.jsx',
+  'src/screens/filmRoomV2/FilmRoomCheckDetail.jsx',
+  // Film Room A2 — Glance (F5): token-only and motion-token-only from birth, registered in the commit that introduces it.
+  'src/screens/filmRoomV2/FilmRoomGlance.jsx',
+  // Film Room A2 — Study (F1–F4, BA-45 … BA-47): token-only and motion-token-only from birth, registered in the commit that introduces it.
+  'src/screens/filmRoomV2/FilmRoomStudy.jsx',
+  // Film Room A2 — Deep dive (BA-43): token-only and motion-token-only from birth, registered in the commit that introduces it.
+  'src/screens/filmRoomV2/FilmRoomDeepDive.jsx',
+  // Film Room A2 — the shell and its first-open record (BA-41, BA-49): token-only and motion-token-only from birth, registered in the commit that introduces them.
+  'src/screens/filmRoomV2/FilmRoomScreenV2.jsx',
+  'src/screens/filmRoomV2/filmRoomSeen.js',
+  // Film Room A2 — the 'filmRoom' route's v2 gate (BA-40): token-only and motion-token-only from birth, registered in the commit that introduces it.
+  'src/screens/filmRoomV2/FilmRoomRoute.jsx',
 ];
 
 /**

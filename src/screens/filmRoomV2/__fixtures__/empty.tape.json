@@ -1,0 +1,315 @@
+{
+  "tapeVersion": 2,
+  "battleId": "b-empty-fixture",
+  "ownerId": "owner-1",
+  "agentId": "agent-1",
+  "archetype": "momentum",
+  "gameMode": "baggerbomb_agent",
+  "etDate": "2026-09-28",
+  "dayNumber": 1,
+  "isFinalDay": true,
+  "battleStatusAtWrite": "completed",
+  "writtenAt": "2026-09-29T02:15:30.000Z",
+  "firstWrittenAt": "2026-09-29T02:15:30.000Z",
+  "runCount": 1,
+  "passes": {
+    "close": {
+      "status": "written",
+      "writtenAt": "2026-09-29T02:15:30.000Z",
+      "capture": "absent",
+      "tickSeqRange": null,
+      "gaps": [],
+      "unattributedGaps": [],
+      "deferralsTruncated": false,
+      "ticksReadMethod": "capturedAt_range",
+      "sources": {
+        "ticks": 0,
+        "evaluations": 0,
+        "receipts": 0,
+        "trades": 0,
+        "calls": 0,
+        "runs": 0,
+        "declarations": 0
+      },
+      "lastError": null
+    },
+    "candles": {
+      "status": "written",
+      "writtenAt": "2026-09-29T11:00:30.000Z",
+      "attempts": 1,
+      "reason": null,
+      "source": "eodhd_1m",
+      "symbolsRequested": [
+        "RSP",
+        "SPY"
+      ],
+      "symbolsMissing": [],
+      "symbolsIncomplete": [],
+      "inputFingerprint": {
+        "checks": "4f53cda18c2baa0c",
+        "evidence": "4f53cda18c2baa0c",
+        "actions": "4f53cda18c2baa0c",
+        "salePrices": "4f53cda18c2baa0c",
+        "plans": "4f53cda18c2baa0c",
+        "symbols": "b2a8586fe6a33a1c"
+      }
+    }
+  },
+  "coverage": {
+    "checks": {
+      "status": "unavailable",
+      "span": null,
+      "sources": [
+        "ticks",
+        "agentEvalRuns"
+      ],
+      "preservedFrom": null,
+      "note": "capture absent: no tick records for this battle-day — checks shown from evaluation entries only; no evaluation-run records exist for this day — deferrals cannot be listed",
+      "caveats": [
+        "capture absent: no tick records for this battle-day — checks shown from evaluation entries only",
+        "no evaluation-run records exist for this day — deferrals cannot be listed"
+      ],
+      "dependsOn": "eb974a7f5ec1b337"
+    },
+    "actions": {
+      "status": "complete",
+      "span": null,
+      "sources": [
+        "ticks.actions",
+        "trades",
+        "learningReceipts"
+      ],
+      "preservedFrom": null,
+      "note": null,
+      "caveats": [],
+      "dependsOn": "7d357b0ef1f85ba7"
+    },
+    "directives": {
+      "status": "complete",
+      "span": null,
+      "sources": [
+        "chatExchanges",
+        "evaluations.heard",
+        "ticks.controls"
+      ],
+      "preservedFrom": null,
+      "note": null,
+      "caveats": [],
+      "unknownChecks": 0,
+      "dependsOn": "d1ad97df1f5805ce"
+    },
+    "plans": {
+      "status": "complete",
+      "span": null,
+      "sources": [
+        "evaluations.candidates"
+      ],
+      "preservedFrom": null,
+      "note": null,
+      "caveats": [],
+      "unknownChecks": 0,
+      "dependsOn": "d001a7f5831bb5e6"
+    },
+    "rationale": {
+      "status": "complete",
+      "span": null,
+      "sources": [
+        "evaluations"
+      ],
+      "preservedFrom": null,
+      "note": null,
+      "caveats": [],
+      "unknownChecks": 0,
+      "dependsOn": "454b65e1c58c7472"
+    },
+    "evidence": {
+      "status": "complete",
+      "span": null,
+      "sources": [
+        "evaluations.evidence"
+      ],
+      "preservedFrom": null,
+      "note": null,
+      "caveats": [],
+      "unknownChecks": 0,
+      "dependsOn": "6bf7e605a02b7921"
+    },
+    "calls": {
+      "status": "complete",
+      "span": null,
+      "sources": [
+        "calls",
+        "declarations"
+      ],
+      "preservedFrom": null,
+      "note": "no model check recorded among the 0 known check(s); state as observed at copiedAt, not a reconstruction of the day",
+      "caveats": [],
+      "unknownChecks": 0,
+      "dependsOn": "cb1bac19b4471727"
+    },
+    "replay": {
+      "status": "complete",
+      "span": null,
+      "sources": [
+        "eodhd_1m"
+      ],
+      "preservedFrom": null,
+      "note": "no actions this day · one-step hypothetical through the day's close; later trades in this slot are not replayed; not the effect of the swap on the battle"
+    },
+    "series": {
+      "status": "complete",
+      "span": {
+        "from": "2026-09-28T13:30:00.000Z",
+        "to": "2026-09-28T20:00:00.000Z"
+      },
+      "sources": [
+        "eodhd_1m"
+      ],
+      "preservedFrom": null,
+      "note": null
+    }
+  },
+  "score": {
+    "lastCheck": null,
+    "firstCheck": null,
+    "dayChange": {
+      "value": null,
+      "basis": "unavailable",
+      "reference": null
+    }
+  },
+  "battle": {
+    "status": "completed",
+    "completedAt": "2026-09-28T20:05:00.000Z",
+    "final": {
+      "total": 0,
+      "opponent": null,
+      "at": "2026-09-28T20:05:00.000Z"
+    },
+    "result": {
+      "value": null,
+      "basis": "unavailable",
+      "note": "opponent score never recorded"
+    },
+    "completionMessage": {
+      "text": "Result: Draw.",
+      "at": "2026-09-28T20:05:00.000Z"
+    }
+  },
+  "checks": [],
+  "actions": [],
+  "directives": [],
+  "plans": [],
+  "calls": [],
+  "rationale": [],
+  "comparables": {
+    "market": [
+      "SPY",
+      "RSP"
+    ],
+    "sectors": {}
+  },
+  "diagnostics": {
+    "intradayViews": "absent"
+  },
+  "numberClasses": {
+    "tapeVersion": "recorded",
+    "runCount": "derived",
+    "dayNumber": "derived",
+    "passes.close.tickSeqRange[]": "recorded",
+    "passes.close.gaps[]": "recorded",
+    "passes.close.unattributedGaps[]": "recorded",
+    "passes.close.sources.*": "derived",
+    "passes.candles.attempts": "derived",
+    "coverage.*.unknownChecks": "derived",
+    "score.lastCheck.tickSeq": "recorded",
+    "score.lastCheck.active": "recorded",
+    "score.lastCheck.banked": "recorded",
+    "score.lastCheck.total": "recorded",
+    "score.lastCheck.opponent": "recorded",
+    "score.lastCheck.bankedBadgePoints": "recorded",
+    "score.firstCheck.tickSeq": "recorded",
+    "score.firstCheck.total": "recorded",
+    "score.dayChange.value": "derived",
+    "score.dayChange.reference": "recorded",
+    "battle.final.total": "recorded",
+    "battle.final.opponent": "recorded",
+    "checks[].tickSeq": "recorded",
+    "checks[].scores.active": "recorded",
+    "checks[].scores.banked": "recorded",
+    "checks[].scores.total": "recorded",
+    "checks[].tickMs": "recorded",
+    "checks[].guardrail.deployedCount": "recorded",
+    "checks[].evidence.*.px": "recorded",
+    "checks[].evidence.*.chg": "recorded",
+    "checks[].evidence.*.atrX": "recorded",
+    "checks[].evidence.*.vwapDev": "recorded",
+    "checks[].evidence.*.bbPct": "recorded",
+    "actions[].tickSeq": "recorded",
+    "actions[].slotIndex": "recorded",
+    "actions[].entryPrice": "recorded",
+    "actions[].exitPrice": "recorded",
+    "actions[].lockedPoints": "recorded",
+    "actions[].lockedGainPct": "recorded",
+    "actions[].inBasis.price": "recorded",
+    "actions[].holdingMs": "derived",
+    "actions[].subsequentTradesInSlot": "derived",
+    "actions[].replayInputs.ghost.entryPrice": "recorded",
+    "actions[].replayInputs.ghost.atr": "recorded",
+    "actions[].replayInputs.ghost.thresholdHistory.maxMultiplier": "recorded",
+    "actions[].replayInputs.ghost.thresholdHistory.minMultiplier": "recorded",
+    "actions[].replayInputs.ghost.thresholdBaseline.value": "recorded",
+    "actions[].replayInputs.bought.entryPrice": "recorded",
+    "actions[].replayInputs.bought.atr": "recorded",
+    "actions[].replayInputs.bought.thresholdHistory.maxMultiplier": "recorded",
+    "actions[].replayInputs.bought.thresholdHistory.minMultiplier": "recorded",
+    "actions[].replayInputs.bought.thresholdBaseline.value": "recorded",
+    "actions[].replay.ghost.atSwap": "rebuilt",
+    "actions[].replay.ghost.atClose": "rebuilt",
+    "actions[].replay.ghost.series[].tickSeq": "recorded",
+    "actions[].replay.ghost.series[].points": "rebuilt",
+    "actions[].replay.bought.atClose": "rebuilt",
+    "actions[].replay.bought.series[].tickSeq": "recorded",
+    "actions[].replay.bought.series[].points": "rebuilt",
+    "actions[].replay.holdPath[].tickSeq": "recorded",
+    "actions[].replay.holdPath[].points": "rebuilt",
+    "actions[].replay.swapPath[].tickSeq": "recorded",
+    "actions[].replay.swapPath[].points": "rebuilt",
+    "actions[].replay.gapPoints": "rebuilt",
+    "actions[].replay.lockedPoints": "recorded",
+    "actions[].replay.subsequentTradesInSlot": "derived",
+    "actions[].replay.reconciliation.closedLegDelta": "rebuilt",
+    "actions[].replay.reconciliation.boughtVsEvidence.tickSeq": "recorded",
+    "actions[].replay.reconciliation.boughtVsEvidence.recordedPx": "recorded",
+    "actions[].replay.reconciliation.boughtVsEvidence.recordedChg": "recorded",
+    "actions[].replay.reconciliation.boughtVsEvidence.rebuiltPx": "market",
+    "actions[].replay.reconciliation.boughtVsEvidence.rebuiltChg": "rebuilt",
+    "actions[].replay.reconciliation.boughtVsEvidence.pxDelta": "rebuilt",
+    "actions[].replay.reconciliation.boughtVsEvidence.chgDelta": "rebuilt",
+    "actions[].replay.reconciliation.soldAtSale.recordedPx": "recorded",
+    "actions[].replay.reconciliation.soldAtSale.rebuiltPx": "market",
+    "actions[].replay.reconciliation.soldAtSale.pxDelta": "rebuilt",
+    "actions[].replay.reconciliation.soldAtSale.rescoredAtRecordedPx": "derived",
+    "actions[].replay.reconciliation.soldAtSale.inputsDelta": "derived",
+    "actions[].replay.reconciliation.soldAtSale.priceDelta": "rebuilt",
+    "actions[].replay.reconciliation.boughtAtSale.recordedPx": "recorded",
+    "actions[].replay.reconciliation.boughtAtSale.rebuiltPx": "market",
+    "actions[].replay.reconciliation.boughtAtSale.pxDelta": "rebuilt",
+    "actions[].replay.marketChangeAfter.*": "market",
+    "actions[].replay.sectorChangeAfter.*": "market",
+    "directives[].canonicalTextVersion": "recorded",
+    "directives[].heard.tickSeq": "recorded",
+    "directives[].after.checks": "derived",
+    "directives[].after.holds": "derived",
+    "directives[].after.swaps": "derived",
+    "plans[].tickSeq": "recorded",
+    "plans[].price.atPlan.value": "market",
+    "plans[].price.atClose.value": "market",
+    "calls[].mintedAt": "recorded",
+    "calls[].expiresAt": "recorded",
+    "calls[].resolvedAt": "recorded",
+    "calls[].horizon.expiresAt": "recorded",
+    "calls[].hypothesisRef.hypothesisVersion": "recorded",
+    "rationale[].tickSeq": "recorded"
+  }
+}

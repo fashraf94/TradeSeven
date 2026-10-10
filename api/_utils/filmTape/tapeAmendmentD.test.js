@@ -283,8 +283,9 @@ describe('BA-38 (Q1) — the tape carries the split, its classes and its read-ou
       'actions[].replay.reconciliation.soldAtSale.recordedPx': 'recorded',
       'actions[].replay.reconciliation.soldAtSale.rebuiltPx': 'market',
       'actions[].replay.reconciliation.soldAtSale.pxDelta': 'rebuilt',
-      'actions[].replay.reconciliation.soldAtSale.rescoredAtRecordedPx': 'rebuilt',
-      'actions[].replay.reconciliation.soldAtSale.inputsDelta': 'rebuilt',
+      // BA-48 (Amendment E): every operand recorded → derived
+      'actions[].replay.reconciliation.soldAtSale.rescoredAtRecordedPx': 'derived',
+      'actions[].replay.reconciliation.soldAtSale.inputsDelta': 'derived',
       'actions[].replay.reconciliation.soldAtSale.priceDelta': 'rebuilt',
       'actions[].replay.reconciliation.boughtAtSale.recordedPx': 'recorded',
       'actions[].replay.reconciliation.boughtAtSale.rebuiltPx': 'market',
@@ -303,7 +304,7 @@ describe('BA-38 (Q1) — the tape carries the split, its classes and its read-ou
       const s = r.reconciliation.soldAtSale;
       const b = r.reconciliation.boughtAtSale;
       expect(md).toContain(`    - the sale, split by cause: recorded exit ${s.recordedPx} (recorded) vs rebuilt ${s.rebuiltPx} (market) (bar closed `);
-      expect(md).toContain(` · rescored at the recorded exit ${s.rescoredAtRecordedPx} (rebuilt) · inputsDelta ${s.inputsDelta} (rebuilt) + priceDelta ${s.priceDelta} (rebuilt) = closedLegDelta ${r.reconciliation.closedLegDelta} (rebuilt)`);
+      expect(md).toContain(` · rescored at the recorded exit ${s.rescoredAtRecordedPx} (derived) · inputsDelta ${s.inputsDelta} (derived) + priceDelta ${s.priceDelta} (rebuilt) = closedLegDelta ${r.reconciliation.closedLegDelta} (rebuilt)`);
       expect(md).toContain(`    - the fill: recorded ${b.recordedPx} (recorded) vs rebuilt ${b.rebuiltPx} (market) (bar closed `);
       expect(md).toContain(`    - gap at the close (banked + bought − sold): ${r.gapPoints} (rebuilt) — “${BASIS_NOTE}”`);
     }
@@ -808,10 +809,43 @@ describe('§2 review — AD4-3, AD4-8 and AD4-2: a split\'s missing parts, merge
     for (const line of [
       '    - the sale, split by cause: recorded exit — vs rebuilt 144 (market) (bar closed 10:30 AM ET), delta — · rescored at the recorded exit — · inputsDelta — + priceDelta — = closedLegDelta -57.5 (rebuilt) · missing inputs: `exitPrice`',
       '    - the fill: recorded 240 (recorded) vs rebuilt 242 (market) (bar closed 10:30 AM ET), delta 2 (rebuilt)',
-      '    - the sale, split by cause: recorded exit 423.1 (recorded) vs rebuilt — (last bar closed 12:15 PM ET), delta — · rescored at the recorded exit 15 (rebuilt) · inputsDelta 6.75 (rebuilt) + priceDelta — = closedLegDelta — · missing inputs: `price:MSFT@swap`',
+      '    - the sale, split by cause: recorded exit 423.1 (recorded) vs rebuilt — (last bar closed 12:15 PM ET), delta — · rescored at the recorded exit 15 (derived) · inputsDelta 6.75 (derived) + priceDelta — = closedLegDelta — · missing inputs: `price:MSFT@swap`',
       '    - the fill: recorded 700 (recorded) vs rebuilt — (last bar closed 12:15 PM ET), delta — · missing inputs: `price:NFLX@swap`',
       '    - missing inputs: `exitPrice`',
       '    - missing inputs: `price:MSFT@swap`, `price:NFLX@swap`',
     ]) expect(lines, line).toContain(line);
+  });
+});
+
+// ── BA-48 (Amendment E — AD4-10 resolved) ────────────────────────────────────
+
+describe('BA-48 — the rescore and the inputs part are derived; every reader labels by the tape\'s own declaration', () => {
+  const RESCORE = 'actions[].replay.reconciliation.soldAtSale.rescoredAtRecordedPx';
+  const INPUTS = 'actions[].replay.reconciliation.soldAtSale.inputsDelta';
+
+  it('BA-48: a tape the passes write now declares both derived, and the price part, the gap and the bar price keep their classes', async () => {
+    const { fx, t } = await enrichedDay();
+    const tape = tapeOf(t, fx.battleId);
+    expect(tape.numberClasses[RESCORE]).toBe('derived');
+    expect(tape.numberClasses[INPUTS]).toBe('derived');
+    expect(tape.numberClasses['actions[].replay.reconciliation.soldAtSale.priceDelta']).toBe('rebuilt');
+    expect(tape.numberClasses['actions[].replay.reconciliation.soldAtSale.pxDelta']).toBe('rebuilt');
+    expect(tape.numberClasses['actions[].replay.reconciliation.soldAtSale.rebuiltPx']).toBe('market');
+    expect(tape.numberClasses['actions[].replay.gapPoints']).toBe('rebuilt');
+    const leaves = numbersWithClasses(tape, tape.numberClasses).filter((n) => n.path.includes('soldAtSale'));
+    expect(leaves.length).toBeGreaterThan(0);
+    for (const n of leaves.filter((x) => ['rescoredAtRecordedPx', 'inputsDelta'].includes(x.path.at(-1)))) expect(n.cls, formatNumberPath(n.path)).toBe('derived');
+  });
+
+  it('BA-48 GUARD: a tape stored with the earlier declaration keeps it — the read-out labels those two numbers rebuilt, by the document, not by the code', async () => {
+    const { fx, t } = await enrichedDay();
+    const now = tapeOf(t, fx.battleId);
+    const before = { ...now, numberClasses: { ...now.numberClasses, [RESCORE]: 'rebuilt', [INPUTS]: 'rebuilt' } };
+    const s = now.actions.find((a) => a.replay).replay.reconciliation.soldAtSale;
+    const mdNow = formatTapeMarkdown(now, []);
+    const mdBefore = formatTapeMarkdown(before, []);
+    expect(mdNow).toContain(`rescored at the recorded exit ${s.rescoredAtRecordedPx} (derived) · inputsDelta ${s.inputsDelta} (derived)`);
+    expect(mdBefore).toContain(`rescored at the recorded exit ${s.rescoredAtRecordedPx} (rebuilt) · inputsDelta ${s.inputsDelta} (rebuilt)`);
+    expect(mdBefore).not.toContain('UNCLASSIFIED');
   });
 });

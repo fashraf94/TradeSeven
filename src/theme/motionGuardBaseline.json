@@ -164,6 +164,50 @@
     "src/screens/battleView/BoardCockpit.jsx": {
       "count": 0,
       "authority": "Cockpit Build 2a (spec \u00a76, ruling R2A-4) \u2014 the phone's Board \u00b7 Cockpit switch and track: the sliding thumb is a Framer layoutId on transition={motionToken('smooth', { reducedMotion })} (instant under reduced motion), and the track scrolls natively (scroll-snap, never a CSS transition); zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
+    },
+    "src/screens/filmRoomV2/filmRoomModel.js": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
+    },
+    "src/screens/filmRoomV2/filmRoomCopy.js": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
+    },
+    "src/screens/filmRoomV2/filmRoomData.js": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
+    },
+    "src/screens/filmRoomV2/FilmRoomKit.jsx": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
+    },
+    "src/screens/filmRoomV2/FilmRoomCheckDetail.jsx": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
+    },
+    "src/screens/filmRoomV2/FilmRoomGlance.jsx": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
+    },
+    "src/screens/filmRoomV2/FilmRoomStudy.jsx": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
+    },
+    "src/screens/filmRoomV2/FilmRoomDeepDive.jsx": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
+    },
+    "src/screens/filmRoomV2/FilmRoomScreenV2.jsx": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
+    },
+    "src/screens/filmRoomV2/filmRoomSeen.js": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
+    },
+    "src/screens/filmRoomV2/FilmRoomRoute.jsx": {
+      "count": 0,
+      "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."
     }
   }
 }

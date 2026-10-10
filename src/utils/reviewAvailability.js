@@ -17,7 +17,14 @@
 //                 when a scheduled process will actually produce the review;
 //                 otherwise `unavailable` — never a promise nothing keeps.
 //
-// STAGE 1 (FILM_ROOM_V2_ENABLED off — today, whatever the writer flag says):
+// WHICH STAGE (Amendment E BA-40): Stage 3 only when Film Room v2 resolves on
+// for THIS battle's owner — FILM_ROOM_V2_MODE 'on', or 'allowlist' with the
+// server's verdict that the owner is admitted (src/utils/filmRoomGate.js: the
+// existing cockpit-status answer, asked at most once per battle and cached).
+// Otherwise Stage 1. The output is EXACTLY the three keys in every branch: at
+// most one bounded tape read and one cached verdict, never a fourth key.
+//
+// STAGE 1 (v2 not on for the owner — today, whatever the writer flag says):
 // synchronous from the battle document, NO read. ready = completed AND the
 // legacy review exists (`dailyReviews[]` non-empty — presence only, never
 // content). pending = completed, no review yet, and `reviewPending === true`
@@ -25,7 +32,7 @@
 // api/cron/agent-batch-review.js). Stated honestly: the legacy review arrives
 // on that cron's schedule (H-2 unchanged).
 //
-// STAGE 3 (FILM_ROOM_V2_ENABLED on — after A2): ONE bounded read of
+// STAGE 3 (v2 on for the owner — after A2's flips): ONE bounded read of
 // `agentBattles/{id}/tape/{finalEtDate}` (finalEtDate = the last
 // `timing.tradingDays`, when it is a real date). ready = completed AND that
 // tape's `passes.close.status === 'written'`. pending = not ready, the writer
@@ -45,13 +52,15 @@
 // never "pending". Stage 3 guarantees a written close pass, not candles: the
 // hub's copy is "Open battle tape".
 //
-// Both flags are read at CALL time. The Stage 3 reader is injectable (tests)
-// and the Firebase client SDK is imported lazily, only on that branch.
+// Both flags are read at CALL time. The Stage 3 reader and the verdict reader
+// are injectable (tests); the Firebase client SDK is imported lazily, only on
+// the Stage 3 branch.
 
-import { FILM_ROOM_V2_ENABLED, FILM_TAPE_WRITE_ENABLED } from '../config/featureFlags';
+import { FILM_TAPE_WRITE_ENABLED } from '../config/featureFlags';
 import { FILM_ROOM_ROUTE, TAPE_SUBCOLLECTION } from '../constants/filmTape';
 import { resolveModeConfig } from '../constants/agentGameModes';
 import { toMs, isEtDate, owningPassDate, closePassEndMs, closePassWillTape } from './tapeSchedule';
+import { resolveFilmRoomV2ForBattle, readFilmRoomVerdict } from './filmRoomGate';
 
 /** The bound on the Stage 3 tape read. */
 export const TAPE_READ_TIMEOUT_MS = 4_000;
@@ -118,15 +127,25 @@ async function stageThree(battle, target, { readTape, nowMs }) {
 
 /**
  * @param {object} battle   the agentBattles document (with its `id`)
- * @param {object} [opts]   test seams: `readTape(battleId, etDate)`, `now` (ms)
+ * @param {object} [opts]   test seams: `readTape(battleId, etDate)`, `now` (ms),
+ *                          `readVerdict(battleId)` (the cached allowlist verdict)
  * @returns {Promise<{ ready: boolean, target: string|null, availability: 'ready'|'pending'|'unavailable' }>}
  */
-export async function getReviewAvailability(battle, { readTape = defaultReadTape, now = Date.now } = {}) {
+export async function getReviewAvailability(battle, { readTape = defaultReadTape, now = Date.now, readVerdict = readFilmRoomVerdict } = {}) {
   if (!battle || typeof battle !== 'object') return result(false, null, 'unavailable');
   const target = typeof battle.id === 'string' && battle.id ? FILM_ROOM_ROUTE : null;
   if (!target) return result(false, null, 'unavailable');
-  if (!FILM_ROOM_V2_ENABLED) return stageOne(battle, target);
-  return stageThree(battle, target, { readTape, nowMs: typeof now === 'function' ? now() : toMs(now) });
+  // BA-40: Stage 3 only when v2 resolves on for THIS battle's owner.
+  let v2 = false;
+  try { v2 = (await resolveFilmRoomV2ForBattle(battle, { readVerdict })) === true; } catch { v2 = false; }
+  if (!v2) return stageOne(battle, target);
+  // Exactly three keys in every branch: a Stage 3 that throws (a malformed instant, a calendar
+  // the schedule cannot walk) answers 'unavailable', never a rejection (review A2L2-1).
+  try {
+    return await stageThree(battle, target, { readTape, nowMs: typeof now === 'function' ? now() : toMs(now) });
+  } catch {
+    return result(false, target, 'unavailable');
+  }
 }
 
 export default getReviewAvailability;

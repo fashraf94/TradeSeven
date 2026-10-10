@@ -6,13 +6,14 @@
 // pointer the flag-pin guard keeps honest, and a DARK_BY_DESIGN registration a
 // deliberate flip drops in the same commit.
 //
-// Both flags were built FALSE. FILM_TAPE_WRITE_ENABLED is the writer (close
-// pass, candle pass, backfill) — flipped true 2026-10-01 (founder-cited, Flash);
-// FILM_ROOM_V2_ENABLED is the screen flag, still false,
-// which in A1 gates only the hub helper's Stage 3 branch. An accidental flip
-// fails the guard loudly with its runway note; a DELIBERATE flip moves the
-// flag's first row below to `true` and turns its registration row around, in
-// the same commit.
+// FILM_TAPE_WRITE_ENABLED is the writer (close pass, candle pass, backfill),
+// built false and flipped true 2026-10-01 (founder-cited, Flash). An accidental
+// flip fails the guard loudly with its runway note; a DELIBERATE flip moves the
+// flag's first row below and turns its registration row around, in the same
+// commit. FILM_ROOM_V2_MODE is the screen gate (Amendment E BA-40), a STRING
+// TRI-STATE that replaced the boolean FILM_ROOM_V2_ENABLED: it ships 'off' and
+// is pinned directly here (pin, allowed values, literal + pointer), never a
+// DARK_BY_DESIGN key — the guard notes it by name in that block instead.
 //
 // This file is the pin, not a behaviour test: the flag-off zero-write rows
 // live in api/cron/film-tape-close.test.js and film-tape-candles.test.js, and
@@ -23,7 +24,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import { FILM_TAPE_WRITE_ENABLED, FILM_ROOM_V2_ENABLED } from './featureFlags.js';
+import * as flagModule from './featureFlags.js';
+import { FILM_TAPE_WRITE_ENABLED, FILM_ROOM_V2_MODE, FILM_ROOM_V2_MODES } from './featureFlags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
@@ -71,27 +73,40 @@ describe('FILM_TAPE_WRITE_ENABLED — the pin (BUILD_RULES §2)', () => {
   });
 });
 
-describe('FILM_ROOM_V2_ENABLED — the pin (BUILD_RULES §2)', () => {
-  it('ships DARK: FILM_ROOM_V2_ENABLED is false — flips only after A2, in its own PR', () => {
-    // THE ROW THAT MOVES WITH THE FLIP, in the flip PR's own commit.
-    expect(FILM_ROOM_V2_ENABLED).toBe(false);
+describe('FILM_ROOM_V2_MODE — the pin (BUILD_RULES §2; Amendment E BA-40)', () => {
+  it("ships the dark state: FILM_ROOM_V2_MODE is 'off' — each step is its own founder PR", () => {
+    // THE ROW THAT MOVES WITH A FLIP ('off' → 'allowlist' → 'on'), in the flip PR's own commit.
+    expect(FILM_ROOM_V2_MODE).toBe('off');
   });
 
-  it('is a plain boolean export the flag-pin guard can scan, with a Pinned-by pointer naming this file', () => {
-    expect(SRC).toMatch(/^export const FILM_ROOM_V2_ENABLED = (true|false);$/m);
-    const idx = SRC.indexOf('export const FILM_ROOM_V2_ENABLED = ');
+  it('the allowed values: exactly off · allowlist · on, frozen, in walk order, and the shipped value is one of them', () => {
+    expect(FILM_ROOM_V2_MODES).toEqual(['off', 'allowlist', 'on']);
+    expect(Object.isFrozen(FILM_ROOM_V2_MODES)).toBe(true);
+    expect(FILM_ROOM_V2_MODES).toContain(FILM_ROOM_V2_MODE);
+    expect(typeof FILM_ROOM_V2_MODE).toBe('string');
+  });
+
+  it('is a plain string literal with a Pinned-by pointer naming this file, and its runway is written beside it', () => {
+    expect(SRC).toMatch(/^export const FILM_ROOM_V2_MODE = '(off|allowlist|on)';$/m);
+    const idx = SRC.indexOf('export const FILM_ROOM_V2_MODE = ');
     const preceding = SRC.slice(0, idx).split('\n').slice(-2).join('\n');
     expect(preceding).toContain('Pinned by: filmTapeFlags.test.js');
-  });
-
-  it('is registered DARK_BY_DESIGN in the guard', () => {
-    expect(GUARD).toMatch(/^\s*FILM_ROOM_V2_ENABLED:/m);
-  });
-
-  it('its docstring says what it gates in A1 (the helper Stage 3 branch only) and names the flip map', () => {
-    const doc = docstringOf('FILM_ROOM_V2_ENABLED');
+    const doc = docstringOf('FILM_ROOM_V2_MODE');
+    expect(doc).toContain('RUNWAY:');
+    expect(doc).toContain('never a build PR');
+    expect(doc).toContain('PER BATTLE OWNER');
+    expect(doc).toContain('cockpit-status');
     expect(doc).toContain('Stage 3');
-    expect(doc).toContain('reviewAvailability');
-    expect(doc).toContain('registration row around');
+  });
+
+  it('the boolean it replaced is gone — no FILM_ROOM_V2_ENABLED export, no pin, no DARK_BY_DESIGN key', () => {
+    expect('FILM_ROOM_V2_ENABLED' in flagModule).toBe(false);
+    expect(SRC).not.toMatch(/^export const FILM_ROOM_V2_ENABLED\b/m);
+    expect(GUARD).not.toMatch(/^\s*FILM_ROOM_V2_ENABLED:/m);
+  });
+
+  it('never a DARK_BY_DESIGN key (the guard scans *_ENABLED booleans only), but noted by name in that block', () => {
+    expect(GUARD).not.toMatch(/^\s*FILM_ROOM_V2_MODE\s*:/m);
+    expect(GUARD).toContain('FILM_ROOM_V2_MODE intentionally ABSENT');
   });
 });

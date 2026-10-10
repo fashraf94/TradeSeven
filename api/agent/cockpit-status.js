@@ -17,7 +17,13 @@
 //   5  the per-user limiter, before any read                 → 429
 //   6  read the battle — missing                             → 404
 //   7  the caller is not the owner                           → 403
-//   8  200 { on } with Cache-Control: no-store
+//   8  200 { on, allowlisted } with Cache-Control: no-store
+//
+// `allowlisted` (Film Room A2, Amendment E BA-40 — the one added field) is the
+// allowlist verdict ALONE for this battle's owner: isCockpitOwnerAllowlisted,
+// never conflated with the calls mode `on` folds in. FILM_ROOM_V2_MODE
+// 'allowlist' reads it (src/utils/filmRoomGate.js); no new endpoint, and no uid
+// ever reaches the client.
 //
 // It answers for the caller's own battle only, so it is no oracle on who is
 // admitted: a non-owner learns nothing but 403. One document read; no write.
@@ -29,7 +35,7 @@
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { applySecurityMiddleware } from '../_utils/security.js';
 import { requireAuth } from '../_utils/authMiddleware.js';
-import { resolveCallRecordsMode } from '../_utils/callRecords/mode.js';
+import { resolveCallRecordsMode, isCockpitOwnerAllowlisted } from '../_utils/callRecords/mode.js';
 
 export const config = { maxDuration: 5 };
 
@@ -81,7 +87,10 @@ export default async function handler(req, res) {
     if (!snap.exists) return res.status(404).json({ error: 'not_found' });
     const battle = snap.data();
     if (battle?.ownerId !== user.uid) return res.status(403).json({ error: 'forbidden' });
-    return res.status(200).json({ on: resolveCallRecordsMode(battle) === 'on' });
+    return res.status(200).json({
+      on: resolveCallRecordsMode(battle) === 'on',
+      allowlisted: isCockpitOwnerAllowlisted(battle?.ownerId),
+    });
   } catch (error) {
     console.error('[CockpitStatus] Error:', error?.message || error);
     return res.status(500).json({ error: 'Could not read the battle.' });
