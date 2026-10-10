@@ -7,6 +7,9 @@
 // §3), each closed with the exact bypass Astra reproduced as its first row:
 //   B1  a bound quotation inside a heading is neither exempt from the sweeps
 //       nor valid: the heading is the screen's voice
+//   B3  the quantity words are a closed list (zero to ninety, hundred,
+//       thousand, million, billion, dozen, single, half, double, triple,
+//       twice); the copy inventory is filmRoomCopy.inventory.jsdom.test.jsx
 //   B2  the stored-note number exemption (R1 / R9) is a BINDING — an element
 //       bound to an R1 / R9 path whose text is the value stored there — never
 //       a string found anywhere in the document; the forbidden-word scan stays
@@ -112,6 +115,30 @@ describe('Astra B2 — the stored-note number exemption is bound by path, never 
     m.render(<Coverage coverage={{ status: 'unavailable', note: 'one 73' }} />);
     expect(m.q('[data-stored-note]')).toBeNull();
     expect(sweepNumbers(m.container, { tape: noted('one 73') })).toEqual(['stray digit: “one 73”']);
+  });
+});
+
+describe('Astra B3 — the quantity words are a closed list: zero to ninety, hundred, thousand, million, billion, dozen, single, half, double, triple, twice', () => {
+  it('Astra\'s bypass: screen-authored "ninety checks", "a hundred checks", "a thousand checks" each bite', () => {
+    expect(sweepWords(box('<p>ninety checks</p>'))).toEqual(['number word “ninety”: ninety checks']);
+    expect(sweepWords(box('<p>a hundred checks</p>'))).toEqual(['number word “hundred”: a hundred checks']);
+    expect(sweepWords(box('<p>a thousand checks</p>'))).toEqual(['number word “thousand”: a thousand checks']);
+  });
+
+  it('every new word bites in text and in an attribute, and in its inflected forms', () => {
+    for (const w of ['thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety', 'hundred', 'thousand', 'million', 'billion', 'half', 'double', 'triple', 'twice']) {
+      expect(sweepWords(box(`<p>a ${w} of it</p>`)), w).toEqual([`number word “${w}”: a ${w} of it`]);
+      expect(sweepWords(box(`<span aria-label="the ${w} mark"></span>`)), `${w} attr`).toEqual([`number word “${w}” in aria-label: the ${w} mark`]);
+    }
+    expect(sweepWords(box('<p>hundreds of checks</p>'))).toEqual(['number word “hundreds”: hundreds of checks']);
+    expect(sweepWords(box('<p>in halves</p>'))).toEqual(['number word “halves”: in halves']);
+    expect(sweepWords(box('<p>at sixes and sevens</p>'))).toEqual(['number word “sixes”: at sixes and sevens']);
+    expect(sweepWords(box('<p>twenty-one checks</p>'))).toEqual(['number word “twenty”: twenty-one checks']);   // a compound is two listed words
+    expect(sweepWords(box('<p>Doubled down</p>'))).toEqual([]);   // whole words only: "doubled" is not "double"
+  });
+
+  it('R12\'s "shown once", and positional words, are not quantity words', () => {
+    expect(sweepWords(box('<p>Film Room · shown once</p><p>the first check · the last bar</p>'))).toEqual([]);
   });
 });
 

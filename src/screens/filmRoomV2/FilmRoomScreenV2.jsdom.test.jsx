@@ -438,12 +438,13 @@ describe('Amendment E addendum 2, R8 (Astra A2 F3) — the battle length is a ma
 describe('R8 — the screen\'s own voice spells no number as a word outside a marked number (the class, not the instance)', () => {
   const box = (html) => { const el = document.createElement('div'); el.innerHTML = html; return el; };
 
-  it('a cardinal word in copy, a label or an attribute bites — zero through twenty, "single", "dozen", inflected', () => {
+  it('a quantity word in copy, a label or an attribute bites — the closed list (Astra B3), inflected', () => {
     expect(sweepWords(box('<p>Holdings · seven slots</p>'))).toEqual(['number word “seven”: Holdings · seven slots']);
     expect(sweepWords(box('<h3>Twenty checks</h3>'))).toEqual(['number word “Twenty”: Twenty checks']);
     expect(sweepWords(box('<span title="a single check"></span><button aria-label="dozens of swaps"></button>'))).toEqual(['number word “single” in title: a single check', 'number word “dozens” in aria-label: dozens of swaps']);
     expect(sweepWords(box('<p>a one-step hypothetical</p>'))).toEqual(['number word “one”: a one-step hypothetical']);
-    expect(sweepWords(box('<p>someone, often, none, ninety</p>'))).toEqual([]);   // whole words only
+    expect(sweepWords(box('<p>someone, often, none, tenth</p>'))).toEqual([]);   // whole words only
+    expect(sweepWords(box('<p>someone, often, none, ninety</p>'))).toEqual(['number word “ninety”: someone, often, none, ninety']);   // Astra B3: on the list now
   });
 
   it('a marked number\'s own text is exempt — the words beside it are not', () => {
@@ -484,7 +485,10 @@ describe('R8 — the screen\'s own voice spells no number as a word outside a ma
     expect(sweepNumbers(box(two), { battle })).toEqual(['aggregate count(timing.tradingDays): 2 number texts — a marked number holds exactly one (review A2A3-1)']);
   });
 
-  it('the production word list for the sweep is the fix prompt\'s, pinned in the harness', () => {
-    expect([...SPEC_NUMBER_WORDS]).toEqual(['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty', 'single', 'dozen']);
+  it('the word list for the sweep is the follow-up prompt\'s closed list (Astra B3), pinned in the harness', () => {
+    expect([...SPEC_NUMBER_WORDS]).toEqual([
+      'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
+      'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety', 'hundred', 'thousand', 'million', 'billion', 'dozen', 'single', 'half', 'double', 'triple', 'twice',
+    ]);
   });
 });

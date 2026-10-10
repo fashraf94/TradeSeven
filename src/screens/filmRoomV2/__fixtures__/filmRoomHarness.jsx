@@ -84,13 +84,21 @@ export function parsePath(s) {
 }
 
 /**
- * Amendment E addendum 2, R8 — a spelled-out quantity is a number. The cardinal words the screen's own voice may
- * not spell outside a marked number, PINNED HERE from the fix prompt (zero through twenty, "single", "dozen"),
- * with the value each stands for.
+ * Amendment E addendum 2, R8 — a spelled-out quantity is a number. The quantity words the screen's own voice may
+ * not spell outside a marked number, PINNED HERE from the follow-up prompt (Astra B3, a CLOSED list): the cardinals
+ * zero to ninety (zero to twenty and the tens — a compound like "twenty-one" is two of them), hundred, thousand,
+ * million, billion, dozen, single, half, double, triple, twice; with the value each stands for. Inflected forms
+ * bite too ("dozens", "sixes", "halves"). R12's "shown once" is not a quantity claim and is not on the list.
  */
-export const SPEC_NUMBER_WORDS = Object.freeze(['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty', 'single', 'dozen']);
-const NUMBER_WORD_VALUE = Object.freeze({ ...Object.fromEntries(SPEC_NUMBER_WORDS.slice(0, 21).map((w, i) => [w, i])), single: 1, dozen: 12 });
-const NUMBER_WORD = new RegExp(`\\b(${SPEC_NUMBER_WORDS.join('|')})s?\\b`, 'i');
+const CARDINALS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+const TENS = ['thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+export const SPEC_NUMBER_WORDS = Object.freeze([...CARDINALS, ...TENS, 'hundred', 'thousand', 'million', 'billion', 'dozen', 'single', 'half', 'double', 'triple', 'twice']);
+const NUMBER_WORD_VALUE = Object.freeze({
+  ...Object.fromEntries(CARDINALS.map((w, i) => [w, i])),
+  ...Object.fromEntries(TENS.map((w, i) => [w, 30 + 10 * i])),
+  hundred: 100, thousand: 1e3, million: 1e6, billion: 1e9, dozen: 12, single: 1, half: 0.5, double: 2, triple: 3, twice: 2,
+});
+const NUMBER_WORD = new RegExp(`\\b(${SPEC_NUMBER_WORDS.join('|')}|halves)(s|es)?\\b`, 'i');
 
 /** The number a rendered numeral stands for ('−1.5' → -1.5, '+9' → 9, '1,234.50' → 1234.5, 'one' → 1). */
 export function parseNumeral(text) {
