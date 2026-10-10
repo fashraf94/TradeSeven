@@ -11,7 +11,7 @@ import {
   valueAt, classAt, numberAt, checkStateOf, checkRuns, riskLines, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, deriveHoldings,
   directiveCardOf, rationaleTimeline, planGroups, evidenceMarkers, roleOf, deepSymbols, extremeBars, lastPointPath,
   fmtPoints, fmtPrice, fmtPriceDelta, etClock, etDateLabel, isRecordedScore, SCREEN_AGGREGATE_CLASSES, checkCounts,
-  fmtPercent, seriesFacts, pctTicks,
+  fmtPercent, seriesFacts, pctTicks, tradingTimeline,
 } from './filmRoomModel';
 import sep23Series from './__fixtures__/sep23.series.json';
 import { SPEC_AGGREGATE_CLASSES } from './__fixtures__/filmRoomHarness';
@@ -248,6 +248,32 @@ describe('addendum R4(a)/(b) — the Deep dive\'s computed facts and its percent
     expect(pctTicks(-0.03, 0.05)).toEqual([-0.02, 0, 0.02, 0.04]);
     expect(pctTicks(0.01, 0.01)).toEqual([]);
     for (const [lo, hi] of [[-0.004, 0.006], [-0.03, 0.05], [-0.0011, 0.0009]]) expect(pctTicks(lo, hi).length).toBeLessThanOrEqual(6);
+  });
+});
+
+describe('Astra B4 — one validated timeline (the day picker, the battle length and the oracle share it)', () => {
+  const of = (days) => tradingTimeline({ timing: { tradingDays: days } });
+
+  it('Astra\'s repro: [\'not-a-date\', \'2026-09-23\'] is ONE day', () => {
+    expect(of(['not-a-date', '2026-09-23'])).toEqual(['2026-09-23']);
+  });
+
+  it('keeps only real YYYY-MM-DD dates that, inside the calendar\'s horizon, are trading sessions', () => {
+    // not dates: a malformed string, an impossible date, an unpadded one, a non-string
+    expect(of(['2026-02-30', '2026-9-24', '2026-09-23T00:00:00Z', 20260923, null, {}, '2026-09-23'])).toEqual(['2026-09-23']);
+    // dates, not sessions: a Saturday, Thanksgiving 2026, Christmas 2027
+    expect(of(['2026-09-26', '2026-11-26', '2027-12-24', '2026-09-22', '2026-09-23'])).toEqual(['2026-09-22', '2026-09-23']);
+    // an early close is a session
+    expect(of(['2026-11-27'])).toEqual(['2026-11-27']);
+    // beyond the maintained horizon nothing can say it was not a session: a real date is kept, a non-date is not
+    expect(of(['2030-01-02', '2030-02-31', '2025-12-31'])).toEqual(['2030-01-02', '2025-12-31']);
+  });
+
+  it('no timeline array → null (the screen then falls back as before); an empty array → []', () => {
+    expect(tradingTimeline({})).toBeNull();
+    expect(tradingTimeline({ timing: { tradingDays: '2026-09-23' } })).toBeNull();
+    expect(tradingTimeline(null)).toBeNull();
+    expect(of([])).toEqual([]);
   });
 });
 

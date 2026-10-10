@@ -18,6 +18,7 @@ import {
   mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, storedNoteDefects, SPEC_FORBIDDEN_WORDS, SPEC_AGGREGATE_CLASSES, SPEC_NUMBER_WORDS,
 } from './__fixtures__/filmRoomHarness';
 import { COMPANY_NAMES } from '../../config/stockData';
+import { getPreviousSessionDate } from '../../utils/marketCalendar';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -397,7 +398,9 @@ describe('Amendment E addendum 2, R8 (Astra A2 F3) — the battle length is a ma
   });
 
   it('review A2A3-2: words up to "ten"; a longer timeline omits the length — never a bare "-day battle"', async () => {
-    const before = (n) => Array.from({ length: n }, (_, k) => `2026-09-${String(23 - n + 1 + k).padStart(2, '0')}`);
+    // the n trading sessions ending on the tape's day (B4: a timeline names sessions; weekends would be dropped)
+    const before = (n) => { const out = [D]; while (out.length < n) out.unshift(getPreviousSessionDate(out[0])); return out; };
+    expect(before(10)).toEqual(['2026-09-10', '2026-09-11', '2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18', '2026-09-21', '2026-09-22', D]);
     const ten = battleOf(sep23Tape, { timing: { tradingDays: before(10) } });
     expect(ten.timing.tradingDays.at(-1)).toBe(D);
     await open(sep23Tape, { battle: ten });
@@ -426,6 +429,31 @@ describe('Amendment E addendum 2, R8 (Astra A2 F3) — the battle length is a ma
     expect(lengthEl().textContent).toBe('one-day battleD');
     expect(m.q('[data-region="day-picker"]')).toBeNull();
     expect(sweepNumbers(m.container, { tape: sep23Tape, battle })).toEqual([]);
+  });
+
+  it('Astra B4: [\'not-a-date\', \'2026-09-23\'] reads "one-day battle" — the picker, the count and the oracle read one validated timeline', async () => {
+    const battle = battleOf(sep23Tape, { timing: { tradingDays: ['not-a-date', D] } });
+    await open(sep23Tape, { battle });
+    expect(lengthEl().textContent).toBe('one-day battleD');
+    expect(lengthEl().getAttribute('data-agg-value')).toBe('1');
+    expect(m.q('[data-region="day-picker"]')).toBeNull();
+    expect(sweepNumbers(m.container, { tape: sep23Tape, battle })).toEqual([]);
+    expect(battleDays(battle)).toEqual([D]);
+    expect(headerParts(battle, sep23Tape, D).length).toEqual({ days: 1, source: 'timing' });
+  });
+
+  it('Astra B4: a weekend, a holiday and an impossible date leave the picker and the length — the days that remain are counted', async () => {
+    const battle = battleOf(sep23Tape, { timing: { tradingDays: ['2026-09-19', '2026-09-22', '2026-11-26', '2026-02-30', D] } });
+    await open(sep23Tape, { battle });
+    expect(m.qa('[data-region="day-picker"] button').map((b) => b.textContent)).toEqual(['Sep 22', 'Sep 23']);
+    expect(lengthEl().textContent).toBe('two-day battleD');
+    expect(sweepNumbers(m.container, { tape: sep23Tape, battle })).toEqual([]);
+  });
+
+  it('a recorded timeline with no valid day yields no day and no length, as before — never a day the record did not name', () => {
+    const battle = { status: 'completed', completedAt: sep23Tape.battle.completedAt, timing: { tradingDays: ['not-a-date'] } };
+    expect(battleDays(battle)).toEqual([]);
+    expect(headerParts(battle, { ...sep23Tape, isFinalDay: false }, D).length).toBeNull();
   });
 
   it('neither source: the length is omitted', async () => {

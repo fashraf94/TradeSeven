@@ -21,7 +21,7 @@ import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMoun
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { filmRoomBattleId } from '../../utils/filmRoomGate';
 import { isSessionDate, isBattleDay, closePassStartMs, closePassEndMs, closePassWillTape, validFinalTradingDay, etDateOf } from '../../utils/tapeSchedule';
-import { etClock, etDateLabel } from './filmRoomModel';
+import { etClock, etDateLabel, tradingTimeline } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { useTapeDay, useSeriesDay, firestoreReaders } from './filmRoomData';
 import { hasSeenFirstOpen, markFirstOpenSeen } from './filmRoomSeen';
@@ -46,10 +46,14 @@ function useDesktop() {
   return desktop;
 }
 
-/** The battle's trading days: the timeline it records, else the one day its own instants name. */
+/**
+ * The battle's trading days: the timeline it records, VALIDATED (tradingTimeline — the one reading the length and
+ * the oracle share, Astra B4), else the one day its own instants name. A recorded timeline with no valid day yields
+ * no day, as before: the screen never puts a day in the picker the record did not name.
+ */
 export function battleDays(battle) {
-  const days = battle?.timing?.tradingDays;
-  if (Array.isArray(days) && days.length) return days.filter((d) => typeof d === 'string');
+  const days = tradingTimeline(battle);
+  if (days && battle.timing.tradingDays.length) return days;
   const one = etDateOf(battle?.completedAt ?? battle?.activatedAt ?? battle?.createdAt);
   return one ? [one] : [];
 }
@@ -93,8 +97,9 @@ const LENGTH_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'ei
  */
 export function headerParts(battle, tape, etDate) {
   const code = [battle?.agentContext?.archetype, battle?.archetype, tape?.archetype].find((a) => typeof a === 'string' && a && a.toLowerCase() !== 'unknown');
-  // the days the timeline names — counted as battleDays (the day picker) reads them (BUILD_RULES §9; review A2A3-8)
-  const timing = Array.isArray(battle?.timing?.tradingDays) ? battle.timing.tradingDays.filter((d) => typeof d === 'string') : null;
+  // the days the timeline names — counted as battleDays (the day picker) reads them, through the one validated
+  // reading (BUILD_RULES §9; review A2A3-8; Astra B4)
+  const timing = tradingTimeline(battle);
   const length = timing && timing.length ? { days: timing.length, source: 'timing' }
     : (tape?.isFinalDay === true && Number.isInteger(tape?.dayNumber) ? { days: tape.dayNumber, source: 'dayNumber' } : null);
   return {

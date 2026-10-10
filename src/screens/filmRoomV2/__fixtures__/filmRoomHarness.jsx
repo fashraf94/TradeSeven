@@ -23,7 +23,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { classOfNumber } from '../../../constants/filmTape';
 import { COMPANY_NAMES } from '../../../config/stockData';
-import { valueAt, etClock } from '../filmRoomModel';
+import { valueAt, etClock, tradingTimeline } from '../filmRoomModel';
 import sep23Tape from './sep23.tape.json';
 import sep23Series from './sep23.series.json';
 import emptyTape from './empty.tape.json';
@@ -218,9 +218,12 @@ const seriesDocAt = (el, docs) => docs[`series:${el.closest('[data-region="symbo
 function aggregateOracle(name, el, docs) {
   if (name === 'count(timing.tradingDays)') {
     // the battle document's own timeline, the days it names — read before any tape, since the header shows the length
-    // while a day's tape is loading, missing or unreadable too (review A2A3-4, A2A3-8)
-    const days = docs.battle?.timing?.tradingDays;
-    return Array.isArray(days) ? days.filter((d) => typeof d === 'string').length : null;
+    // while a day's tape is loading, missing or unreadable too (review A2A3-4, A2A3-8). Astra B4: through the ONE
+    // validated reading the day picker and the count use (tradingTimeline) — by the prompt's instruction the oracle
+    // shares that helper, a stated departure from this harness's "never read production" rule; the helper itself is
+    // pinned by its own rows (filmRoomModel.test.js).
+    const days = tradingTimeline(docs.battle);
+    return days ? days.length : null;
   }
   const tape = docs.tape;
   if (!tape) return undefined;

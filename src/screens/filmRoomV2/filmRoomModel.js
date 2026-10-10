@@ -12,7 +12,7 @@
 
 import { classOfNumber, PROVENANCE_CLASSES, NON_CHECK_STATES } from '../../constants/filmTape';
 import { getSessionForDate } from '../../utils/marketCalendar';
-import { etDateOf } from '../../utils/tapeSchedule';
+import { etDateOf, isEtDate } from '../../utils/tapeSchedule';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -132,6 +132,23 @@ export function etWhen(instant, etDate) {
 export function sessionOf(etDate) {
   const s = getSessionForDate(etDate);
   return s && s.isTradingDay && isNum(s.openMs) && isNum(s.closeMs) ? { openMs: s.openMs, closeMs: s.closeMs, early: s.isEarlyClose } : null;
+}
+
+/**
+ * The battle's trading-day timeline, VALIDATED (Astra B4) — the ONE reading of `timing.tradingDays` the day picker,
+ * the subtitle's battle length and the harness's oracle all share: the entries that are real `YYYY-MM-DD` dates and,
+ * where the maintained calendar knows the year, sessions of it — a weekend, a holiday, "not-a-date" or 2026-02-30 is
+ * dropped; a real date beyond the calendar's horizon is kept, since nothing can say it was not a session. Null when
+ * the battle records no timeline array.
+ */
+export function tradingTimeline(battle) {
+  const days = battle?.timing?.tradingDays;
+  if (!Array.isArray(days)) return null;
+  return days.filter((d) => {
+    if (!isEtDate(d)) return false;
+    const s = getSessionForDate(d);
+    return s === null || s.isTradingDay === true;
+  });
 }
 
 /** "Tue, Sep 23, 2026" / "Sep 23" for an ET trading date `YYYY-MM-DD`. */
