@@ -86,6 +86,45 @@ describe('projectTournamentBattle — owner / completion = full WHY', () => {
   });
 });
 
+// Pilot P1b (pilot spec §2.7; Phase 0 row #15; acceptance row 8): the player's
+// frozen idea (agentContext.equippedHypothesis — statement, conditions,
+// evidence refs) is owner-only at completion too: "owner sees full, others none".
+const SIBLING = {
+  watchlistId: 'wl-1', hypothesisVersion: 2, contentHash: 'c'.repeat(64), statement: 'PLANTED-IDEA: AI capex compounds',
+  horizonEnum: 'swing', horizonSource: 'player', activation: [{ symbol: 'NVDA', side: 'above', level: 100, basis: 'daily_close' }],
+  invalidation: [], evidenceRefs: [{ kind: 'researchWork', id: 'ws_planted' }], publishedAt: null, origin: 'signaldrop',
+};
+
+describe('projectTournamentBattle — P1b: the frozen idea is the OWNER\'s, at completion too', () => {
+  it('a COMPLETED battle shown to a NON-owner carries everything EXCEPT equippedHypothesis (a copy — the input is not mutated)', () => {
+    const b = whyBattle({ status: 'completed' });
+    b.agentContext.equippedHypothesis = SIBLING;
+    const out = projectTournamentBattle(b, { isOwner: false });
+    expect(out).not.toBe(b);
+    expect('equippedHypothesis' in out.agentContext).toBe(false);
+    expect(JSON.stringify(out)).not.toContain('PLANTED-IDEA');
+    const { equippedHypothesis: _dropped, ...rest } = b.agentContext;
+    expect(out.agentContext).toEqual(rest);
+    expect({ ...out, agentContext: b.agentContext }).toEqual(b);
+    expect(b.agentContext.equippedHypothesis).toBe(SIBLING);
+    expect(out._whyConcealed).toBeUndefined();
+  });
+  it('the OWNER sees it in full, live and after completion (the same object)', () => {
+    for (const status of ['active', 'completed']) {
+      const b = whyBattle({ status });
+      b.agentContext.equippedHypothesis = SIBLING;
+      expect(projectTournamentBattle(b, { isOwner: true })).toBe(b);
+    }
+  });
+  it('an ACTIVE battle shown to a non-owner never carried it (the allowlist), and a battle with none is returned as the same object', () => {
+    const b = whyBattle();
+    b.agentContext.equippedHypothesis = SIBLING;
+    expect('equippedHypothesis' in projectTournamentBattle(b, { isOwner: false }).agentContext).toBe(false);
+    const plain = whyBattle({ status: 'completed' });
+    expect(projectTournamentBattle(plain, { isOwner: false })).toBe(plain);
+  });
+});
+
 describe('projectTournamentBattle — non-owner active = WHAT only', () => {
   const projected = projectTournamentBattle(whyBattle(), { isOwner: false });
 

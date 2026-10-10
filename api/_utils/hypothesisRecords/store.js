@@ -30,7 +30,7 @@
 
 import {
   WATCHLISTS_COLLECTION, VERSIONS_SUBCOLLECTION, CLOSING_ACTIONS, STATE_REASONS,
-  versionDocId, legalTransition, contentOf, buildVersionDoc,
+  versionDocId, legalTransition, contentOf, buildVersionDoc, reaffirmableGiven,
   currentVersionOf, originOf, sessionHorizonOf, opFingerprintOf, isDialogueList, mergeEvidenceRefs,
 } from './model.js';
 // Pilot P2 — a version the player creates cites every research record already
@@ -184,10 +184,28 @@ export async function createPlayerVersion(db, { uid, watchlistId, opId, expected
 }
 
 /**
- * Reaffirm a `review_due` version (spec §2.5 last row): creates v{n+1} in
- * `ready` with the same or edited content, sets `successorVersion` on the
- * due version and touches nothing else on it — its status, reason, content
- * and clock (firstDeployedAt, reviewDueAt) stay exactly as they were.
+ * The most newer versions a reaffirmation will read to prove founder ruling B4: one fewer than the
+ * Forge's list read (LIST_LIMIT), so a due version the route would reaffirm is always on the page the
+ * Forge shows — the panel offers exactly what the route accepts (BUILD_RULES §9; review L2-3).
+ */
+export const REAFFIRM_NEWER_MAX = LIST_LIMIT - 1;
+
+/**
+ * Reaffirm a `review_due` version (spec §2.5 last row): creates v{current+1}
+ * in `ready` with the same or edited content, on a pointer compare-and-set.
+ * The due version keeps its status, reason, content and clock
+ * (firstDeployedAt, reviewDueAt) exactly as they were.
+ *
+ * Pilot P1b — founder ruling B4 (P1a carry-forward 2, review L2-3): the due
+ * version need not be the current one. It may be reaffirmed when EVERY newer
+ * version is pre-deploy (`reaffirmableGiven`: draft, researched,
+ * waiting_for_evidence, ready, rejected or cancelled) — so an idea edited
+ * into a draft while it ran, whose clock then elapsed, can still be
+ * reaffirmed. The new version supersedes the CURRENT one: the chain pointer
+ * `successorVersion` is set on the current version when it has none (for a
+ * current due version that is the due version itself, as before); a pointer
+ * already set is never rewritten. More than REAFFIRM_NEWER_MAX newer versions
+ * → illegal_transition (fail closed: the rule cannot be proven).
  */
 export async function reaffirmVersion(db, { uid, watchlistId, version, opId, expectedVersion, payload, nowIso }) {
   const research = await attachedResearchOf(db, { uid, watchlistId });
@@ -198,15 +216,26 @@ export async function reaffirmVersion(db, { uid, watchlistId, version, opId, exp
     const current = pointerOf(parent);
     const opSnap = await tx.get(versionsColOf(db, watchlistId).where('opId', '==', opId).limit(1));
     const dueSnap = await tx.get(versionRefOf(db, watchlistId, version));
+    // Ruling B4: every version newer than the due one, read in this transaction (none when it is current).
+    const newerCount = current - version;
+    const newerSnaps = newerCount > 0 && newerCount <= REAFFIRM_NEWER_MAX
+      ? await tx.getAll(...Array.from({ length: newerCount }, (_, i) => versionRefOf(db, watchlistId, version + 1 + i)))
+      : [];
 
     const replay = replayOf(opSnap, opFingerprint);
     if (replay) return { idempotent: true, version: replay };
     if (!dueSnap?.exists) throw fail(404, 'version_not_found');
     if (expectedVersion !== current) throw fail(409, 'version_conflict', { currentVersion: current });
     const due = dueSnap.data();
-    if (due.status !== 'review_due' || due.successorVersion != null || version !== current) {
+    if (newerCount < 0 || newerCount > REAFFIRM_NEWER_MAX || newerSnaps.some((sn) => !sn?.exists)) {
       throw fail(409, 'illegal_transition', { status: due.status });
     }
+    const newer = newerSnaps.map((sn) => sn.data());
+    if (!reaffirmableGiven(due.status, newer.map((v) => v.status))) {
+      const blockedBy = newer.find((v) => !reaffirmableGiven('review_due', [v.status]));
+      throw fail(409, 'illegal_transition', { status: due.status, ...(blockedBy ? { blockedBy: { version: blockedBy.version, status: blockedBy.status } } : {}) });
+    }
+    const currentDoc = newerCount === 0 ? due : newer[newer.length - 1];
 
     const next = current + 1;
     const inherited = applyOverrides(contentOf(due), payload);
@@ -216,7 +245,7 @@ export async function reaffirmVersion(db, { uid, watchlistId, version, opId, exp
       status: 'ready', stateSource: 'player', stateReason: STATE_REASONS.reaffirmed,
     });
     tx.create(versionRefOf(db, watchlistId, next), doc);
-    tx.update(versionRefOf(db, watchlistId, version), { successorVersion: next });
+    if (currentDoc.successorVersion == null) tx.update(versionRefOf(db, watchlistId, current), { successorVersion: next });
     tx.update(parentRef, { currentHypothesisVersion: next, hypothesisVersionCount: next });
     return { idempotent: false, version: doc };
   });

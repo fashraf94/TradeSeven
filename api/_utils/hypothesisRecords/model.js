@@ -33,6 +33,8 @@ import { canonicalContentHash } from '../canonicalHash.js';
 import {
   HYPOTHESIS_STATUSES, TERMINAL_STATUSES, PRE_DEPLOY_STATUSES, HORIZON_ENUMS, HORIZON_SOURCES, STATE_REASONS,
   PLAYER_TRANSITIONS, PLAYER_ACTIONS, CLOSING_ACTIONS, legalTransition, legalActionsFor,
+  // Pilot P1b (founder rulings B2, B4).
+  REAFFIRM_SUCCESSOR_STATUSES, CARRIABLE_STATUSES, reaffirmableGiven,
 } from '../../../src/constants/hypothesisRecords.js';
 
 // Pilot P2: a version cites the research behind it as a typed evidence ref
@@ -42,6 +44,8 @@ import { RESEARCH_EVIDENCE_KIND, isResearchWorkId, researchRefOf } from '../rese
 export {
   HYPOTHESIS_STATUSES, TERMINAL_STATUSES, PRE_DEPLOY_STATUSES, HORIZON_ENUMS, HORIZON_SOURCES, STATE_REASONS,
   PLAYER_TRANSITIONS, PLAYER_ACTIONS, CLOSING_ACTIONS, legalTransition, legalActionsFor,
+  // Pilot P1b (founder rulings B2, B4).
+  REAFFIRM_SUCCESSOR_STATUSES, CARRIABLE_STATUSES, reaffirmableGiven,
 };
 
 export const WATCHLISTS_COLLECTION = 'watchlists';

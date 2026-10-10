@@ -156,6 +156,11 @@ function seedWorld() {
           support: [{ symbol: 'VST', sector: 'utilities' }, { symbol: 'META', sector: 'technology' }],
         },
         innerMonologue: 'PRIVATE', strategyBrief: 'PRIVATE', activeRules: [{ ruleId: 'r-1' }],
+        // Pilot P1b (spec §2.7): a planted frozen idea — the card must never carry it (see PROJECTION ONLY).
+        // Defence in depth, not a guard on the strip: the card extracts named fields only, and tournament
+        // battles never carry a sibling; the strip itself is pinned by tournamentBattleView.test.js and
+        // battle-view.test.js (BUILD_RULES §2 review, verifier V3).
+        equippedHypothesis: { watchlistId: 'wl-a', hypothesisVersion: 1, contentHash: 'c'.repeat(64), statement: 'PLANTED-IDEA', horizonEnum: 'swing', horizonSource: 'player', activation: [], invalidation: [], evidenceRefs: [], publishedAt: null, origin: 'manual' },
       },
       portfolio: { star: [{ symbol: 'NVDA' }, { symbol: 'AMD' }], core: [{ symbol: 'AVGO' }, { symbol: 'ANET' }], support: [{ symbol: 'VST' }, { symbol: 'META' }] },
       trades: [],
@@ -213,6 +218,8 @@ const FORBIDDEN_KEYS = [
   'consolidatedInsight', 'deployedGuardrails', 'equippedWatchlist', 'watchlist', 'memory', 'params',
   'hardness', 'ruleId', 'traitId', 'trade_reasoning', 'citedRules', 'evaluations', 'statusFeed',
   'compositePoints', 'closeScores', 'dailyScores',
+  // Pilot P1b — the player's frozen idea (spec §2.7: others see none).
+  'equippedHypothesis', 'hypothesisVersion', 'contentHash',
 ];
 
 beforeEach(() => {
@@ -372,6 +379,7 @@ describe('the veteran card — the team leads, from real completed data', () => 
   it('PROJECTION ONLY — no rule contents, trait contents, bundle ids, config or strategy WHY anywhere in the body (walked by key)', () => {
     const keys = allKeys(body);
     for (const k of FORBIDDEN_KEYS) expect(keys.has(k), `leaked key: ${k}`).toBe(false);
+    expect(JSON.stringify(body)).not.toContain('PLANTED-IDEA'); // P1b: nor the frozen idea's words
   });
 });
 

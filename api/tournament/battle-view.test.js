@@ -124,6 +124,25 @@ describe('scoping + projection', () => {
     expect(rival._whyConcealed).toBe(true);
   });
 
+  it('P1b (spec §2.7): a completed rival battle unlocks its WHY but NEVER the rival\'s frozen idea; the viewer\'s own seat keeps theirs', async () => {
+    const sibling = {
+  watchlistId: 'wl-1', hypothesisVersion: 2, contentHash: 'c'.repeat(64), statement: 'PLANTED-IDEA: AI capex compounds',
+  horizonEnum: 'swing', horizonSource: 'player', activation: [{ symbol: 'NVDA', side: 'above', level: 100, basis: 'daily_close' }],
+  invalidation: [], evidenceRefs: [{ kind: 'researchWork', id: 'ws_planted' }], publishedAt: null, origin: 'signaldrop',
+};
+    h.db = makeDb([
+      tournamentBattle('rival2', { status: 'completed', agentContext: { agentName: 'B', innerMonologue: { strategy: 'plan' }, equippedHypothesis: sibling } }),
+      tournamentBattle('owner1', { status: 'completed', agentContext: { agentName: 'A', equippedHypothesis: sibling } }),
+    ]);
+    const { req, res } = makeReqRes();
+    await handler(req, res);
+    const rival = res.body.battles.rival2;
+    expect(rival.agentContext.innerMonologue).toBeDefined();
+    expect('equippedHypothesis' in rival.agentContext).toBe(false);
+    expect(JSON.stringify(rival)).not.toContain('PLANTED-IDEA');
+    expect(res.body.battles.owner1.agentContext.equippedHypothesis).toEqual(sibling);
+  });
+
   it('unlocks a rival\'s WHY once the battle is completed', async () => {
     h.db = makeDb([tournamentBattle('rival2', { status: 'completed' })]);
     const { req, res } = makeReqRes();

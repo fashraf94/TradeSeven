@@ -70,7 +70,7 @@ describe('PILOT_JOURNEY_MODE — the dedicated pin (BUILD_RULES §2; spec §10.1
     expect(GUARD).not.toMatch(/PILOT_JOURNEY_MODE\s*:/);
   });
 
-  it('nothing under api/ or src/ reads it yet — P1b is its first reader (the pin moves only by a founder PR)', () => {
+  it('nothing under api/ or src/ reads it yet — P1b runs on the record slice\'s gate instead (founder ruling B1); P4 and P7 are its first readers (the pin moves only by a founder PR)', () => {
     const readers = [...sourceFiles('api'), ...sourceFiles('src')]
       .filter((f) => path.basename(f) !== 'featureFlags.js')
       .filter((f) => /\bPILOT_JOURNEY_MODES?\b/.test(readFileSync(f, 'utf8')))

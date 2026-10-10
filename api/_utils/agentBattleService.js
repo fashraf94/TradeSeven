@@ -198,6 +198,27 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
       equippedWatchlist: options.equippedWatchlist
         ? { ...options.equippedWatchlist, snapshotAt: now }
         : null,
+      // Pilot P1b (founder-sanctioned fence entry, 8 Oct 2026; spec §2.4):
+      // the frozen hypothesis version, a SIBLING of equippedWatchlist — never
+      // inside it, never in the manifest hash. Written only when decide.js
+      // passes one, only beside a non-null snapshot, never on a tournament
+      // battle; otherwise absent (no key). compositionGenerationFence.js
+      // activates the version in the creation transaction.
+      ...(options.equippedHypothesis && options.equippedWatchlist && !isTournament ? {
+        equippedHypothesis: {
+          watchlistId: options.equippedHypothesis.watchlistId,
+          hypothesisVersion: options.equippedHypothesis.hypothesisVersion,
+          contentHash: options.equippedHypothesis.contentHash,
+          statement: options.equippedHypothesis.statement,
+          horizonEnum: options.equippedHypothesis.horizonEnum,
+          horizonSource: options.equippedHypothesis.horizonSource,
+          activation: options.equippedHypothesis.activation,
+          invalidation: options.equippedHypothesis.invalidation,
+          evidenceRefs: options.equippedHypothesis.evidenceRefs,
+          publishedAt: options.equippedHypothesis.publishedAt,
+          origin: options.equippedHypothesis.origin,
+        },
+      } : {}),
       // Release 2 PR-a (fenced site 1, SHA-bound authorization @ 4a0f43e) —
       // the four ADDITIVE customization-snapshot keys (standingLeans
       // post-revalidation, standingLeansInvalidated, dials, settingsRev),

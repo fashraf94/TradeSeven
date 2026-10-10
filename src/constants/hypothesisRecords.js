@@ -21,6 +21,22 @@ export const TERMINAL_STATUSES = Object.freeze(['retired', 'rejected', 'cancelle
 /** Statuses a version can hold before its first deploy (spec §2.5 "any pre-deploy"). */
 export const PRE_DEPLOY_STATUSES = Object.freeze(['draft', 'researched', 'ready', 'waiting_for_evidence']);
 
+/**
+ * Pilot P1b — founder ruling B4 (8 Oct 2026; P1a carry-forward 2, review
+ * L2-3): a `review_due` version may be reaffirmed when EVERY newer version
+ * holds one of these statuses — the pre-deploy statuses plus the two
+ * pre-deploy terminals. Not PRE_DEPLOY_STATUSES: `rejected` and `cancelled`
+ * are here, and nothing a deploy ever touched (activated, invalidated,
+ * review_due, retired) is.
+ */
+export const REAFFIRM_SUCCESSOR_STATUSES = Object.freeze(['draft', 'researched', 'waiting_for_evidence', 'ready', 'rejected', 'cancelled']);
+
+/**
+ * Pilot P1b — founder ruling B2: the statuses a deploy may CARRY (the newest
+ * version holding one of these, from the list's server-written versions).
+ */
+export const CARRIABLE_STATUSES = Object.freeze(['ready', 'activated']);
+
 export const HORIZON_ENUMS = Object.freeze(['intraday', 'swing', 'positional', 'longterm', 'unspecified']);
 export const HORIZON_SOURCES = Object.freeze(['parse', 'theme_default', 'default', 'player']);
 
@@ -50,6 +66,9 @@ export const STATE_REASONS = Object.freeze({
   playerMarkedResearched: 'player_marked_researched',
   horizonElapsed: 'horizon_elapsed',
   battleEnded: 'battle_ended',
+  // Pilot P1b: ready → activated at the version's first deploy (spec §2.5,
+  // stateSource 'deploy'), written by the battle-creation transaction.
+  deployed: 'deployed',
 });
 
 const NON_TERMINAL = HYPOTHESIS_STATUSES.filter((s) => !TERMINAL_STATUSES.includes(s));
@@ -84,9 +103,48 @@ export function legalTransition(status, action) {
   return { to: t.to, reason: t.from[status] };
 }
 
-/** The actions legal from a status — exactly what the Forge offers. */
-export function legalActionsFor(status, { isCurrent = true, hasSuccessor = false } = {}) {
+/**
+ * Pilot P1b — founder ruling B4: may a version in `status` be reaffirmed,
+ * given the statuses of EVERY version newer than it (none, for the current
+ * version)? The one predicate the reaffirm route and the Forge both use.
+ *
+ * @param {string} status
+ * @param {string[]} newerStatuses  one entry per newer version, in any order
+ */
+export function reaffirmableGiven(status, newerStatuses) {
+  return status === 'review_due' && Array.isArray(newerStatuses)
+    && newerStatuses.every((s) => REAFFIRM_SUCCESSOR_STATUSES.includes(s));
+}
+
+/**
+ * The actions legal from a status — exactly what the Forge offers. `reaffirm`
+ * follows founder ruling B4 and is offered only when the caller names the
+ * statuses of every newer version (`newerStatuses`; `[]` for the current
+ * version): a superseded version without them is offered its closing moves
+ * only, never a reaffirmation it cannot prove legal.
+ */
+export function legalActionsFor(status, { isCurrent = true, newerStatuses = isCurrent ? [] : null } = {}) {
   const out = Object.keys(PLAYER_TRANSITIONS).filter((a) => legalTransition(status, a) && (isCurrent || CLOSING_ACTIONS.includes(a)));
-  if (status === 'review_due' && isCurrent && !hasSuccessor) out.push('reaffirm');
+  if (reaffirmableGiven(status, newerStatuses)) out.push('reaffirm');
   return out;
 }
+
+/**
+ * Pilot P1b — the deploy refusal (founder ruling B2): the typed error the
+ * deploy endpoint answers when the equipped idea's newest deployed version is
+ * due for review and no version is ready to carry. Its words are table C's
+ * due-deploy line, verbatim (MODE_TRUTH_LANGUAGE_TABLES_V1.md §C — the Forge's
+ * ideaCopy.js re-exports this one string, and its spec-vs-constants byte test
+ * pins it).
+ */
+export const DEPLOY_REFUSAL_CODE = 'hypothesis_review_due';
+export const DUE_DEPLOY_LINE = 'This idea is due for review — reaffirm it first (one tap, same content if you want), and the fresh version deploys.';
+
+/**
+ * Pilot P1b — the words a deploy shows when the carried version changed state
+ * between the deploy's read and the battle's creation transaction (the race:
+ * no battle, no version change, no review row; the deploy fails cleanly and
+ * can be retried). Not a table-C line — a failure message, scanned for table E
+ * by ideaCopy.test.js.
+ */
+export const CARRIAGE_RACE_MESSAGE = 'Your idea changed while this battle was being set up, so no battle was created. Check the idea in the Forge, then deploy again.';
