@@ -667,3 +667,154 @@ Items 6, 5 and 4 landed out of the prompt's numeric order. Each commit's suites 
 - **What this round supersedes in earlier sections:** §6.4 #3 (the unmarked length, "for your ruling") is answered by R8: the length is now marked. §4's header row (#10) now reads "ONE-DAY BATTLE [D]".
 - **Outside the round (reported, not changed):** A2A2-3 (a gap inside a series is bridged by a line), A2A2-4 (the desktop sparklines space points by index), A2A3-7 (the scheduled-pass clock has no instant mark and the no-tape states are not swept), an evidence marker that can sit over the last-close label. All four predate the round.
 - **CI:** runs on the pushed head. Its result is reported with the head SHA. The PR stays a draft.
+
+---
+
+## §8 Merge prep (2026-10-10)
+
+**Prompt:** "Merge-prep prompt — Film Room A2: the CI census failure, and the docs for the merge" (Fable, 2026-10-10).
+**Branch:** `git fetch origin` first. PR #944 was open and still a draft at `39422435`, the prompt's head, and `origin/claude/film-room-a2-screen` was that SHA. The session's worktree branch (`claude/film-room-a2-census-ci-78256f`) sat at `main`. The session's permission guard refused `git reset --hard` onto the PR head, so a new local branch, `claude/film-room-a2-screen-78256f`, was cut from `origin/claude/film-room-a2-screen` with `git switch -c`. The tree was clean, and the old branch has no commits of its own. The work is pushed to `claude/film-room-a2-screen` by refspec, a fast-forward.
+**Fence and flags:**
+- Zero BUILD_RULES §1 edits by this pass. `git diff --name-only origin/main HEAD` names none of the eleven fenced paths. The merge does carry #947's own edits to `api/agent/decide.js` and `api/_utils/agentBattleService.js`, which are already on `main`.
+- No writer source changed: nothing under `api/` is in this pass's commits other than what the merge brings from `main`.
+- `FILM_ROOM_V2_MODE` is `'off'` at both merge parents and at every commit of this pass, with its pin row unchanged (`src/config/filmTapeFlags.test.js:79`).
+- The census is untouched: `git diff origin/main HEAD -- src/data/unconfirmedOutcome.census.test.js` is empty. No reader was added, and nothing was ruled.
+- The PR stays a draft. No merge, no flip, no rules deploy.
+
+### 8.1 Executive verdict
+
+| Question | Answer |
+|---|---|
+| Docs | `2ec10854`. Addendum 3 (R9–R12) is appended verbatim to Amendment E, and Astra's confirmation review is committed verbatim as `docs/audits/20261009_ASTRA_CONFIRMATION_FILM_ROOM_A2_SCREEN.md`. |
+| Merge | `origin/main` at **`9850851c`** (#947) merged at **`60b4a8db`**. **No conflicts.** Two files changed on both sides, and git merged both without overlap (8.2). |
+| The CI failure | Reproduced on the merged tree exactly as in CI: 25 readers against the census's 24, with `src/screens/filmRoomV2/FilmRoomScreenV2.jsx` the only extra one. |
+| Cause | `FilmRoomScreenV2.jsx:133` passed `duel={{ statusFeed: null }}` to the agent's avatar. That is a key holding `null`, **not a read of the feed**. The census scans source text, so the name alone counts. |
+| Fix | `9ddb6831`: the prop is dropped. The avatar's inputs are unchanged (standing 0, no events), shown by an equivalence probe; both mutants are killed. The census stays at 24 readers, untouched. |
+| Full suite (Linux, `TZ=UTC`, CI-shaped) | **`9ddb6831`** (the merged head with the fix): 938 test files, **0 failing** (931 passed, 7 skipped); 20,003 tests (19,915 passed, 0 failed, 88 skipped). Private WSL clone, `--maxWorkers=2`. The five files more than CI's 933 are #947's new tests. |
+| Rules suite | **`9ddb6831`:** 24 files, 417 tests, all passing (Windows, Java 21, LF snapshot; WSL has no Java). #947 added one rules file. |
+| `lint:gate` / `vite build` | exit 0 / exit 0, both on an LF snapshot of `9ddb6831`. The lazy v2 chunk is 64.95 kB (17.73 kB gzip), from 64.97 kB. The pushed head (this report's docs-only commit) gets the full Linux suite, `lint:gate` and `vite build` again from its own LF archive before the push. |
+| CI | Runs on the pushed head. One read after the push; its state is reported with the head SHA. Nothing watches it (BUILD_RULES §2). |
+
+### 8.2 The merge
+
+- **Merged:** `origin/main` at `9850851cf21fd3eebe9352a0a0db899dff832693`, after a fresh fetch. The merge base was `7631c9e6` (#943), where the branch last took `main`. `main` had gained three PRs since: #945 (growth replay), #946 (enforce readiness, which added the census) and #947 (Pilot P1b, deploy carriage).
+- **Merge commit:** `60b4a8db`, made by git's `ort` strategy with **no conflicts**. No conflicted path existed, so neither STOP condition (a §1 path or the legacy Film Room; a changed flag value or meaning) arose.
+- **Files changed on both sides** (`comm -12` of the two sides' file lists): two. git merged each without a conflict, and the hunks don't touch:
+
+| File | This branch | `main` | Merged |
+|---|---|---|---|
+| `src/config/featureFlags.js` | `FILM_ROOM_V2_ENABLED` replaced by `FILM_ROOM_V2_MODE = 'off'` and `FILM_ROOM_V2_MODES` (lines 2941–2992) | #947: `HYPOTHESIS_RECORDS_ENABLED`'s and `PILOT_JOURNEY_MODE`'s docstrings (P1b's deploy carriage, the four-edit flip, D3 amended by B1); no value changed | both: `FILM_ROOM_V2_MODE = 'off'` (`:2989`), `HYPOTHESIS_RECORDS_ENABLED = false` (`:3116`), `PILOT_JOURNEY_MODE = 'off'` (`:3148`), each the value it had on its own side |
+| `src/config/flagPinGuard.test.js` | the `FILM_ROOM_V2_ENABLED` `DARK_BY_DESIGN` entry replaced by the `FILM_ROOM_V2_MODE` "intentionally ABSENT" note | #947: the `HYPOTHESIS_RECORDS_ENABLED` entry's text (the four-edit flip) | both |
+
+- **The flag after the merge:** `FILM_ROOM_V2_MODE` is `'off'` at the branch parent, `main` has no such flag (it still had the boolean this branch retired), and the merge has `'off'`. Its pin row (`filmTapeFlags.test.js:79`) and the "the boolean it replaced is gone" row (`:102`) are unchanged. No file from `main` reads `FILM_ROOM_V2_ENABLED`.
+
+### 8.3 What the census protects, and why v2 tripped it
+
+**What it protects.** #946 marks a beat whose execution could not be confirmed (`executionOutcome: 'unknown'` and its kin), so that no surface shows a false label for it. `src/data/unconfirmedOutcome.census.test.js` pins every client file that can see such a record (the `statusFeed`, `evaluations`, `proposalHistory`, the marker fields, the decision fields), each with its ruled disposition. It scans `src/` with comments stripped, so a new reader fails CI until someone rules it. Source: `a9e2184c`, `4362d035`, `f8af644d`; `docs/audits/20261008_BUILD_ENFORCE_READINESS.md` §2.
+
+**The classes a feed reader can be ruled into** (`FEED_READERS`): **FIXED** (changed by #946 so that a marked beat renders nothing); **pass-through**; **DEAD** (no importer, or never rendered); **test data**; **passes `statusFeed: null` — not a reader** (`ArenaHeader`, `CharacterAvatar`, `CharacterPane`; `shadowCpuQuoteIntegrity` returns it); and **renders something true or nothing without a change** (swap actions only, a line only when the beat has a message, joins by id).
+
+**Why v2 tripped it.** The polish pass's header (`b33eb0f7`, 2026-10-08) mounted the agent's still avatar the way `CharacterAvatar` mounts it on its "comparison unavailable" path, `duel={{ statusFeed: null }}`. That source line contains the identifier, and the census matches `\bstatusFeed\b` in the code. #946 merged at 02:45 UTC on 2026-10-09; this branch had last taken `main` at `7631c9e6` (#943). So the branch-alone Linux run at `7dee5dc6` never had the census, and GitHub's run on the merge ref did.
+
+**What this pass did not do.** v2's line has the same shape as the "passes `statusFeed: null` — not a reader" class, but adding it to that class is a ruling. The fence rules that out here, and the pass doesn't need it: the line goes, and the census is unchanged.
+
+### 8.4 Every `statusFeed` under `src/screens/filmRoomV2/` (at `60b4a8db`)
+
+| Site | What it does | Census |
+|---|---|---|
+| `FilmRoomScreenV2.jsx:133` | `AgentMark` passes `duel={{ statusFeed: null }}` to `AgentPresenceMount`. The value is a literal `null`; nothing reads the battle's feed. | scanned: the failure |
+| `FilmRoomScreenV2.jsdom.test.jsx:89` | the header row pins the props the mark passes: `expect(seen[0].duel).toEqual({ statusFeed: null })` | not scanned (`.test.` files are excluded) |
+| `FilmRoomQuotation.writer.jsdom.test.jsx:79` | the R7 writer test finds the `battle_complete` beat in the writer fixture's SOURCE battle, to plant a phrase in it before the real close pass copies it to the tape's `battle.completionMessage`. The screen reads that tape path, never the feed. | not scanned |
+
+**Decision: the "no runtime read" branch.** The screen's only use is a prop key holding `null`. It is removed. The census stays at 24.
+
+### 8.5 The fix: `9ddb6831`, complete diff
+
+```diff
+diff --git a/src/screens/filmRoomV2/FilmRoomScreenV2.jsdom.test.jsx b/src/screens/filmRoomV2/FilmRoomScreenV2.jsdom.test.jsx
+index cb9d7f13..536f3c94 100644
+--- a/src/screens/filmRoomV2/FilmRoomScreenV2.jsdom.test.jsx
++++ b/src/screens/filmRoomV2/FilmRoomScreenV2.jsdom.test.jsx
+@@ -86,7 +86,7 @@ describe('the header (BA-41, BA-42)', () => {
+       expect(seen).toHaveLength(1);
+       expect(seen[0]).toMatchObject({ surface: 'duel', reactivityLevel: 'static', enableEnvironment: false });
+       expect(seen[0].agent).toBe(battle);
+-      expect(seen[0].duel).toEqual({ statusFeed: null });   // no playerScore / opponentScore
++      expect(seen[0].duel).toBeUndefined();   // no duel record at all: no playerScore / opponentScore, no feed
+     } finally {
+       vi.doUnmock('../../components/AgentPresence/AgentPresenceMount');
+       vi.resetModules();
+diff --git a/src/screens/filmRoomV2/FilmRoomScreenV2.jsx b/src/screens/filmRoomV2/FilmRoomScreenV2.jsx
+index e3cb599e..82ffd126 100644
+--- a/src/screens/filmRoomV2/FilmRoomScreenV2.jsx
++++ b/src/screens/filmRoomV2/FilmRoomScreenV2.jsx
+@@ -122,15 +122,16 @@ function BattleLength({ length, tape }) {
+ /**
+  * The agent's mark: the cockpit's own avatar — AgentPresenceMount at 'static',
+  * as ArenaHeader and CharacterAvatar mount it: one painted frame, no motion,
+- * its events withheld. NO SCORE IS PASSED, so its standing is neutral (the
+- * CharacterAvatar "comparison unavailable" path): the face carries no mood
++ * its events withheld. NO DUEL RECORD IS PASSED — no score and no feed; the
++ * screen reads only the tape — so its standing is neutral (as on
++ * CharacterAvatar's "comparison unavailable" path): the face carries no mood
+  * about the day. Presence off → CharacterAvatar's still disc.
+  */
+ function AgentMark({ battle, size }) {
+   return (
+     <div data-agent-mark="" aria-hidden="true" style={{ width: size, height: size, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', overflow: 'hidden', background: C.surface, boxShadow: `0 0 0 1px ${tint('teal', 0.35)}` }}>
+       {isAgentPresenceOn() && battle
+-        ? <AgentPresenceMount surface="duel" agent={battle} duel={{ statusFeed: null }} size={Math.round(size * 0.9)} enableEnvironment={false} reactivityLevel="static" />
++        ? <AgentPresenceMount surface="duel" agent={battle} size={Math.round(size * 0.9)} enableEnvironment={false} reactivityLevel="static" />
+         : <span data-agent-mark-still="" style={{ width: size, height: size, borderRadius: '50%', background: tint('teal', 0.16), border: `1px solid ${tint('teal', 0.45)}`, boxSizing: 'border-box' }} />}
+     </div>
+   );
+```
+
+**Why the face is unchanged:**
+- `AgentPresenceMount` defaults `duel = null` (`src/components/AgentPresence/AgentPresenceMount.jsx:38`).
+- Standing is `standingFromDuel(duel?.playerScore, duel?.opponentScore)` (`useAgentPresence.js:42`). With either form both scores are `undefined`, and a non-finite score returns 0 (`presenceBinding.js:93`).
+- The duel events are `statusFeedToEvents(duel?.statusFeed)` (`useAgentPresence.js:59`, `:62`). `undefined` and `null` both return `[]` (`presenceBinding.js:160`).
+- At `'static'` the mount passes `events={null}` whatever the events are (`AgentPresenceMount.jsx:49`, `:55`).
+
+**The test row.** The header row pinned the removed prop's exact value. It now pins that no duel object is passed at all, which still fails if a score is passed (the polish pass's "scores passed" mutant). It is a v2 suite row, not the census or a guard, and it moves because the prop it pinned is gone. It is named here so the founder's chat sees it.
+
+**Evidence** (LF snapshot of `9ddb6831`, Windows, `TZ=UTC`):
+- **Equivalence probe** (a scratch file, never committed), 5/5: `useAgentPresence` returns the same four inputs without `duel`, with `duel: null` and with `duel: { statusFeed: null }` (standing 0, events `[]`); `renderToString` of the mount is byte-identical both ways; the mounted, painted face (effects run, `<svg>` present) is identical once React's per-mount `useId` suffix (`_r_0_`, `_r_1_` …) is normalised. That suffix differs between two mounts of identical props too. Control: a passed score does change the standing.
+- **Mutants,** each restored byte for byte (`cmp` against the `9ddb6831` blob):
+
+| Mutant | Census file | v2 header row |
+|---|---|---|
+| M1: `duel={{ statusFeed: null }}` put back | **fails** (1 failed, 9 passed) | **fails**: "expected { statusFeed: null } to be undefined" |
+| M2: `duel={{ playerScore: 1, opponentScore: 0 }}` | passes (10/10; no feed named) | **fails**: "expected { playerScore: 1, opponentScore: +0 } to be undefined" |
+| none (control) | passes 10/10 | passes |
+
+### 8.6 Results, on the merged head
+
+- **Census on the merged tree, before the fix** (`60b4a8db`, Windows LF snapshot): 1 failed, 9 passed. The failing row is the feed row, 25 readers against 24, `FilmRoomScreenV2.jsx` the only extra: CI's failure exactly. **After the fix** (`9ddb6831`): 10/10.
+- **Full suite** (Linux, `TZ=UTC`, CI-shaped `--maxWorkers=2`, in a private WSL clone `~/pd-a2merge` used only by this pass, `npm ci` from the merged lockfile): **`9ddb6831`: 938 test files, 0 failing** (931 passed, 7 skipped); 20,003 tests (19,915 passed, 0 failed, 88 skipped), 333 s. GitHub's failing run on `39422435` had 933 files. The five more are #947's new test files (`carriage.test.js`, `decide.carriage.test.js`, `decide.carriageOffGolden.test.js`, `IdeaPanel.carriage.jsdom.test.jsx`, `agentDeploy.refusal.test.js`).
+  - In that run: the census 10/10. The v2 suites, 13 files, all pass. Among them are the off-path goldens (`FilmRoomRoute.golden.jsdom.test.jsx` 9/9), the screen 38/38, the writer-to-screen sweeps (`FilmRoomQuotation.writer` 29/29, `FilmRoomDeepDive.session.writer` 7/7), Study 49/49, Glance 28/28 and Deep dive 29/29. Also passing: the gate 19/19, the hub helper 38/38, `filmTapeFlags` 9/9, `flagPinGuard` 6/6 and `film-tape-flip.live` 4/4.
+- **Rules suite:** `9ddb6831`, 24 files, 417 tests, all passing. #947 added `test/rules/agentBattlesHypothesisCarriage.rules.mjs`; `7dee5dc6` had 23 files and 404 tests. This ran on the Firestore emulator on Windows (Java 21, LF `git archive` snapshot), because WSL has no Java.
+- **`lint:gate`:** exit 0 on an LF snapshot of `9ddb6831`.
+- **`vite build`:** exit 0 on `9ddb6831`. `FilmRoomScreenV2` is still its own lazy chunk: 64.95 kB (17.73 kB gzip), from 64.97 kB.
+- **The pushed head** (this report's commit, docs only): the full Linux suite, `lint:gate` and `vite build` are re-run on its own LF archive before the push, and their results go with the head SHA in the hand-off.
+- **CI:** runs on the pushed head. This session reads it once after the push and reports it with the head SHA. Nothing watches it (BUILD_RULES §2).
+
+### 8.7 The follow-up list: the pass before `'on'`
+
+The report had no list under this name; this one gathers what is scheduled for the pass before `'on'`. **None of it is fixed here.** Astra's B1–B4 are test-guard and hardening items, not pre-allowlist requirements (confirmation §3).
+
+| id | Item | Source |
+|---|---|---|
+| **B1** | The quotation exemption survives nesting in a heading: a bound `Quotation` inside an `<h2>` passes `sweepWords` and `quoteDefects`. No shipped heading holds one. Fix: reject heading ancestry in the exemption and the validator, with a guard row. | Astra confirmation §3 (`__fixtures__/filmRoomHarness.jsx:390`, `:487`) |
+| **B2** | The stored-note number exemption has no path binding: screen copy rendered as a record (`Rec`) whose text equals any string stored anywhere in the document passes both number sweeps. No shipped screen quantity uses it. Fix: bind the exempt text to an allowed stored-note path and value, or to its renderer; keep the forbidden-word scan. | Astra confirmation §3 (`filmRoomHarness.jsx:100`, `:329`, `:465`) |
+| **B3** | The cardinal guard's vocabulary is finite: zero to twenty, "single" and "dozen" (`filmRoomHarness.jsx:88`). "ninety", "a hundred" and "a thousand" pass. None is in shipped copy. Fix: wider quantity detection, or a complete copy inventory with a guard for additions. **Correction:** §7.1's F3 row says the sweep "fails on any spelled-out number". It fails on the pinned vocabulary. | Astra confirmation §3 |
+| **B4** | The timeline filter is type-only: `['not-a-date', '2026-09-23']` reads "two-day battle". The picker (`FilmRoomScreenV2.jsx:52`), the count (`:97`) and the oracle (`filmRoomHarness.jsx:184`) accept any string. Fix: one validated-date timeline shared by all three. | Astra confirmation §3 |
+| R11 | A swap card shows the screen's replay sentence only beside a drawn replay; a card without one shows its replay coverage line alone (no duplicated crypto caveat). | Amendment E Addendum 3, R11: "The follow-up pass does this." |
+| A2A2-3 | A gap inside a series is bridged by a straight line. | §7.6 |
+| A2A2-4 | The desktop "All symbols" sparklines space points by index, not time. | §7.6 |
+| A2A3-7 | The missing-tape "scheduled at 10:15 PM ET." clock has no instant mark, and no sweep mounts that state. | §7.6 |
+| — | An evidence marker can sit over the last-close label. | §7.6 refuters |
+
+### 8.8 State
+
+PR #944 stays a **draft**. Head: this report's commit; its SHA is posted with the hand-off (a commit cannot name its own SHA). Nothing is merged, flipped or deployed.
