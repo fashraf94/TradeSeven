@@ -27,10 +27,12 @@
 //
 // USAGE (repo root):
 //   COCKPIT_ALLOWLIST_UIDS=<founder>,<FT_QA> node scripts/cockpit-week1-read.mjs \
-//     [--out <tables.md>] [--raw reads-raw/cockpit-week1]
+//     [--out <tables.md>] [--raw reads-raw/cockpit-week1] [--ref <rev>]
+//   --ref: the git revision whose first-parent merges section A lists (default HEAD;
+//   on a report branch pass origin/main so the branch's own commits are not read as main's).
 //
-// DETERMINISTIC: the same Firestore state and the same git HEAD print the same
-// bytes, except the "Read at" line (and any figure the line says depends on it).
+// DETERMINISTIC: the same Firestore state and the same --ref print the same bytes,
+// except the read instant and the sweep cursor's own clock (`callSweepState`).
 
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -199,19 +201,19 @@ export function areasOf(files) {
 
 const git = (args) => execFileSync('git', args, { cwd: PROJECT_ROOT, encoding: 'utf8' }).trim();
 
-function readGit() {
-  const head = git(['rev-parse', 'HEAD']);
-  const all = git(['log', '--merges', '--first-parent', '--format=%H%x09%cI%x09%s', 'HEAD']).split('\n').filter(Boolean)
+function readGit(ref) {
+  const head = git(['rev-parse', ref]);
+  const all = git(['log', '--merges', '--first-parent', '--format=%H%x09%cI%x09%s', head]).split('\n').filter(Boolean)
     .map((l) => { const [sha, at, subject] = l.split('\t'); return { sha, at, subject, pr: Number((/#(\d+)/.exec(subject) || [])[1]) }; });
   const idx = all.findIndex((m) => m.pr === FLIP_PR && subjectIsPr(m.subject, FLIP_PR));
-  if (idx < 0) throw new Error(`no first-parent merge of PR #${FLIP_PR} in HEAD's history`);
+  if (idx < 0) throw new Error(`no first-parent merge of PR #${FLIP_PR} in ${ref}'s history`);
   const detail = (m) => {
     const files = git(['diff', '--name-only', `${m.sha}^1`, m.sha]).split('\n').filter(Boolean);
     const flags = git(['diff', `${m.sha}^1`, m.sha, '--', 'src/config/featureFlags.js']).split('\n')
       .map((l) => /^([-+])export const (\w+) = (.+);$/.exec(l)).filter(Boolean).map(([, sign, name, value]) => `${sign}${name} = ${value}`);
     return { ...m, files, codeFiles: files.filter((f) => !NOT_CODE.test(f)), areas: areasOf(files), flags };
   };
-  const direct = git(['log', '--first-parent', '--no-merges', '--format=%h %cI %s', `${all[idx].sha}..HEAD`]).split('\n').filter(Boolean);
+  const direct = git(['log', '--first-parent', '--no-merges', '--format=%h %cI %s', `${all[idx].sha}..${head}`]).split('\n').filter(Boolean);
   return { head, flip: detail(all[idx]), merges: all.slice(0, idx).reverse().map(detail), direct };
 }
 const subjectIsPr = (subject, n) => new RegExp(`^Merge pull request #${n} `).test(subject);
@@ -255,7 +257,8 @@ async function main() {
   const argOf = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
   const uids = (process.env.COCKPIT_ALLOWLIST_UIDS || '').split(',').map((s) => s.trim()).filter(Boolean);
   if (uids.length !== 2) throw new Error('COCKPIT_ALLOWLIST_UIDS must hold exactly two uids for this run: <founder>,<FT_QA>');
-  const G = readGit();
+  const ref = argOf('--ref') ?? 'HEAD';
+  const G = readGit(ref);
   const flipMs = Date.parse(G.flip.at);
   const db = getFirebaseAdmin();
   const readAtMs = Date.now();
@@ -300,7 +303,7 @@ async function main() {
 
   p('## Generated tables (`scripts/cockpit-week1-read.mjs`)');
   p();
-  p(`Read at ${new Date(readAtMs).toISOString()} (${etClock(readAtMs)}) · HEAD \`${G.head.slice(0, 8)}\` · #${FLIP_PR} merged ${G.flip.at} (\`${G.flip.sha.slice(0, 8)}\`). Battles owned by the two accounts: ${F.total} (founder ${F.totalBy[0]}, FT_QA ${F.totalBy[1]}); read in full (expiry on/after ${PRE_FLIP_FIRST_DAY}, or active): ${F.inScope.length}. Week = ET sessions ${WEEK_DAYS.join(', ')}; pre-flip = ${PRE_FLIP_FIRST_DAY} up to the #${FLIP_PR} merge instant, split by whether the entry carries \`declarationsPhase\` (the shadow era) or not.`);
+  p(`Read at ${new Date(readAtMs).toISOString()} (${etClock(readAtMs)}) · git \`${ref}\` = \`${G.head.slice(0, 8)}\` · #${FLIP_PR} merged ${G.flip.at} (\`${G.flip.sha.slice(0, 8)}\`). Battles owned by the two accounts: ${F.total} (founder ${F.totalBy[0]}, FT_QA ${F.totalBy[1]}); read in full (expiry on/after ${PRE_FLIP_FIRST_DAY}, or active): ${F.inScope.length}. Week = ET sessions ${WEEK_DAYS.join(', ')}; pre-flip = ${PRE_FLIP_FIRST_DAY} up to the #${FLIP_PR} merge instant, split by whether the entry carries \`declarationsPhase\` (the shadow era) or not.`);
   p();
   tbl(['Account · archetype', 'Window', 'Battles', 'Battle-days', 'Evaluation entries', 'ET days'], groups.flatMap((g) => ['week', 'pre-flip · shadow', 'pre-flip · off'].map((w) => {
     const xs = entries.filter((x) => x.group === g && x.window === w);
@@ -589,7 +592,7 @@ async function main() {
   const actedThenClosed = calls.filter((c) => c.outcome?.actedEvalId && c.state !== 'hit');
   p(`7. **Acted, then resolved some other way** (the tile tags a terminal state first, so these read by their state, not "Acted" — \`cockpitModel.js\` \`callTag\`): ${actedThenClosed.length ? actedThenClosed.map((c) => `${c.b.acct} \`${short(c.callId)}\` ${c.symbol} ${c.direction} ${c.condition?.side} ${c.condition?.level}, acted at ${c.outcome.actedEvalId} (${etClock(toMs((c.b.doc.evaluations || []).find((e) => e.evalId === c.outcome.actedEvalId)?.promptBuiltAt))}), now \`${c.state}\``).join('; ') : 'none'}.`);
   const goneSymbol = directives.filter((c) => (c.b.doc.trades || []).some((t) => t.symbolOut === c.symbol && toMs(t.swappedOutAt) > toMs(c.playerResponse.filedAt) && toMs(t.swappedOutAt) < toMs(c.horizon?.expiresAt)));
-  p(`8. **A live directive about a symbol that left the book** (no rule retires a \`call_go\` when its symbol is sold by another path; B.13 retires only a pick's): ${goneSymbol.length ? goneSymbol.map((c) => { const t = (c.b.doc.trades || []).find((x) => x.symbolOut === c.symbol && toMs(x.swappedOutAt) > toMs(c.playerResponse.filedAt)); const after = (c.b.doc.evaluations || []).filter((e) => e.heard?.directiveThreadId === c.playerResponse.directiveThreadId && toMs(e.promptBuiltAt) > toMs(t.swappedOutAt)).length; return `${c.b.acct} \`${short(c.b.id)}\` ${c.symbol}: sold ${c.symbol}→${t.symbolIn} at ${etHm(toMs(t.swappedOutAt))} ET (${t.trigger ?? t.source}); the directive was in ${after} later checks' prompts`; }).join('; ') : 'none'}.`);
+  p(`8. **A live directive about a symbol that left the book** (the flip stamps \`acted\` only from the model's own executor result, \`flip.js:42\`; an exit with a stored counterpart matches only a trade that brings that counterpart in, \`flip.js:159-160\`; Amendment B.13's swap-out retirement covers a pick's directive only): ${goneSymbol.length ? goneSymbol.map((c) => { const t = (c.b.doc.trades || []).find((x) => x.symbolOut === c.symbol && toMs(x.swappedOutAt) > toMs(c.playerResponse.filedAt)); const after = (c.b.doc.evaluations || []).filter((e) => e.heard?.directiveThreadId === c.playerResponse.directiveThreadId && toMs(e.promptBuiltAt) > toMs(t.swappedOutAt)).length; return `${c.b.acct} \`${short(c.b.id)}\` ${c.symbol}: sold ${c.symbol}→${t.symbolIn} at ${etHm(toMs(t.swappedOutAt))} ET (${t.trigger ?? t.source}); the directive was in ${after} later checks' prompts`; }).join('; ') : 'none'}.`);
   p();
 
   const md = L.join('\n');
