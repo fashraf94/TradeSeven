@@ -3113,7 +3113,7 @@ export function isShadowCpuQuoteIntegrityOn() {
  * module-scope const in a consumer (the featureFlags vi.mock hazard).
  */
 // Pinned by: hypothesisRecordsFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const HYPOTHESIS_RECORDS_ENABLED = false;
+export const HYPOTHESIS_RECORDS_ENABLED = true;
 
 /** The ONE consumer seam for the hypothesis-records flag (the allowlist half is server-only). */
 export function isHypothesisRecordsOn() {

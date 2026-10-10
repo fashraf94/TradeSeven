@@ -29,7 +29,7 @@ const GUARD = readFileSync(path.join(HERE, 'flagPinGuard.test.js'), 'utf8');
 describe('HYPOTHESIS_RECORDS_ENABLED — the pin (BUILD_RULES §2)', () => {
   it('is DARK: HYPOTHESIS_RECORDS_ENABLED is false — the build merges dark', () => {
     // THE ROW THAT MOVES WITH THE FLIP, in the founder's flip commit itself.
-    expect(HYPOTHESIS_RECORDS_ENABLED).toBe(false);
+    expect(HYPOTHESIS_RECORDS_ENABLED).toBe(true);
   });
 
   it('is a plain boolean export the flag-pin guard can scan, with a Pinned-by pointer naming this file', () => {
@@ -40,7 +40,7 @@ describe('HYPOTHESIS_RECORDS_ENABLED — the pin (BUILD_RULES §2)', () => {
   });
 
   it('is registered DARK_BY_DESIGN while it ships false (a deliberate flip drops the entry in the same commit)', () => {
-    expect(GUARD).toMatch(/^\s*HYPOTHESIS_RECORDS_ENABLED:/m);
+    expect(GUARD).not.toMatch(/^\s*HYPOTHESIS_RECORDS_ENABLED:/m);
   });
 
   it('the accessor is the constant and nothing else — no URL, storage or environment override', () => {
