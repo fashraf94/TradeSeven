@@ -118,6 +118,31 @@ This directory is the version-controlled source of truth for the League Tourname
 
 **Audit provenance note:** the three audit reports were delivered as session output (never saved as files at the time). The files here are **transcriptions of the founder's verbatim pastes** of that output, produced with the founder's approval, each carrying a transcription-note header and verified by anchor spot-checks (HEAD SHAs, commit hashes, verdict strings, section counts). They are the best extant source and are treated as the citation baseline; their in-text `file:line` anchors refer to repo code at the named HEAD, and the standing rule holds — re-verify anchors at your HEAD before relying on them. True regeneration of any record from model memory remains forbidden: if a record is missing, report it, don't reconstruct it.
 
+## Film Room
+
+The Film Room's governing documents, its build reports and Astra's reviews of it, in reading order. Build A is the tape (A1: the close and candle passes, the hub contract) and the screen (A2). Where an amendment and an earlier document differ, the later one governs.
+
+| File | What it is |
+|---|---|
+| `FILM_ROOM_REVIEW_LOOP_DESIGN_NOTE_V1_2_20260915.md` | Film Room review loop design note V1.2 (Film Room chat, Sep 15, 2026; supersedes V1.1). Not a spec and not build-governing: Fable's honesty review of V1.1 and the founder's Sep 15 rulings (R11–R13: the headline score, three depths, a tape for every battle). |
+| `FILM_ROOM_REVIEW_LOOP_DESIGN_NOTE_V1_3_20260915.md` | Film Room review loop design note V1.3 (Film Room chat, Sep 15, 2026; supersedes V1.2). Not a spec and not build-governing: Phase 0's facts replace document claims, rulings R14–R16 are added, and it carries the handback to the Command Center chat. |
+| `specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_20260927.md` | Film Room Build A — the tape, spec V1.2 (Fable, Sep 27, 2026; supersedes V1.1). The close pass, the candle pass, the hub contract (§11) and the screen (§7, §8). It folds every finding of Astra's V1.1 review. Build-governing with Amendments A–E. |
+| `specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_AMENDMENT_A_20260928.md` | Amendment A (Fable, Sep 28, 2026). Answers Astra's A1 branch review (F1–F9): BA-23 to BA-30 (write-path validation, sample freshness, nothing shrinks on retry, coverage is evidence, completion is terminal, one calendar, expiry as a sweep, aftermath counts). |
+| `specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_AMENDMENT_B_20260929.md` | Amendment B (Fable, Sep 29, 2026). Answers Astra's A1 delta review (DF1–DF8): BA-31 to BA-35 (provenance of candle outputs, the sweep's clock, series merge by fact, malformed targets), with BA-26, BA-27 and BA-29 amended. |
+| `specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_AMENDMENT_C_20260928.md` | Amendment C (Fable; dated Sep 28, 2026, the round after Amendment B). Answers the round-2 executor review: BA-36 (per-point merge) and BA-37 (the writer assembles from the battle it re-reads), BA-25 amended (outside the window), BA-24 confirmed, and the founder's round-3 rulings. |
+| `specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_AMENDMENT_D_20261002.md` | Amendment D (Fable, Oct 2, 2026). Answers the first smoke's discovery: BA-38 (the reconciliation names its two causes: the sale's inputs part and its price part) and BA-39 (no result from a missing score). |
+| `specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_AMENDMENT_E_20261008.md` | Amendment E, A2: the screen (Fable, Oct 8, 2026). BA-40 to BA-49 (the off / allowlist / on gate, the design of record with six fidelity fixes, a marker on every number, the evidence overlay, check detail, holdings, the rationale timeline, reserved slots, first open) and the fixed exit criterion. Its four addenda carry the founder's rulings R1–R13. Addendum 4 (Oct 10, 2026) is R13, the agent's name. |
+| `design/20261008_FILM_ROOM_A2_MOCKUP.html` | The A2 screen's design of record (BA-41): the Claude Design mock-up. Structure, behavior and vocabulary come from it; its data are placeholders. |
+| `audits/20260927_BUILD_FILM_TAPE_A1.md` | Build report, Film Room Build A1: the tape (Claude Code, Sep 27, 2026, with rounds through Oct 6). Gate results, what each stage built, the §2 adversarial review, the fixes for Astra's findings (Amendments A–C) and the smoke fixes (Amendment D). |
+| `audits/20261008_BUILD_FILM_ROOM_A2.md` | Build report, Film Room A2: the screen (Claude Code, Oct 8, 2026). The build, its polish pass (§6), Astra round 1 (§7), the merge prep (§8, PR #944) and the follow-up pass before `'on'` (§9). |
+| `audits/20260927_ASTRA_REVIEW_FILM_ROOM_SPEC_V1_1.md` | Astra's review of spec V1.1 (Sep 27, 2026; spec only). Verdict: revise before build. Every finding was folded into V1.2. |
+| `audits/20260928_ASTRA_REVIEW_FILM_TAPE_A1_BRANCH.md` | Astra's adversarial branch review of A1 (Sep 28, 2026). Verdict: DO NOT MERGE (F1–F9). Answered by Amendment A. |
+| `audits/20260929_ASTRA_DELTA_REVIEW_FILM_TAPE_A1.md` | Astra's delta review of A1 after the fix round (Sep 29, 2026). Verdict: DO NOT MERGE this tip (DF1–DF8). Answered by Amendment B. |
+| `audits/20260929_ASTRA_CLOSURE_REVIEW_FILM_TAPE_A1.md` | Astra's closure verification of A1 (Sep 29, 2026). Verdict: MERGE. |
+| `audits/20261008_ASTRA_REVIEW_FILM_ROOM_A2_SCREEN.md` | Astra's review of the A2 screen (Oct 8, 2026; PR #944 at `819b5fb5`). Verdict: DO NOT MERGE (F1 recorded words, F2 the session close, F3 an unmarked duration). Answered by Amendment E Addendum 2 and build report §7. |
+| `audits/20261009_ASTRA_CONFIRMATION_FILM_ROOM_A2_SCREEN.md` | Astra's confirmation review of A2 after round 1 (Oct 9, 2026; PR #944 at `39422435`). Verdict: MERGE. Its backlog (B1–B4) is cleared by the follow-up pass, build report §9. |
+| `design/20261010_FILM_ROOM_TO_PRACTICE_FIELD_HANDOVER.md` | The Film Room chat's handover to the Practice Field (Oct 10, 2026). Its full entry is in Contents above. |
+
 ## Maintenance rules
 
 - Documents here are **records**, not living files: superseding happens by adding a new versioned document, never by editing a locked one. (Exception: this README's table and `BUILD_RULES.md`, which track current state.)
