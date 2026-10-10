@@ -122,15 +122,16 @@ function BattleLength({ length, tape }) {
 /**
  * The agent's mark: the cockpit's own avatar — AgentPresenceMount at 'static',
  * as ArenaHeader and CharacterAvatar mount it: one painted frame, no motion,
- * its events withheld. NO SCORE IS PASSED, so its standing is neutral (the
- * CharacterAvatar "comparison unavailable" path): the face carries no mood
+ * its events withheld. NO DUEL RECORD IS PASSED — no score and no feed; the
+ * screen reads only the tape — so its standing is neutral (as on
+ * CharacterAvatar's "comparison unavailable" path): the face carries no mood
  * about the day. Presence off → CharacterAvatar's still disc.
  */
 function AgentMark({ battle, size }) {
   return (
     <div data-agent-mark="" aria-hidden="true" style={{ width: size, height: size, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', overflow: 'hidden', background: C.surface, boxShadow: `0 0 0 1px ${tint('teal', 0.35)}` }}>
       {isAgentPresenceOn() && battle
-        ? <AgentPresenceMount surface="duel" agent={battle} duel={{ statusFeed: null }} size={Math.round(size * 0.9)} enableEnvironment={false} reactivityLevel="static" />
+        ? <AgentPresenceMount surface="duel" agent={battle} size={Math.round(size * 0.9)} enableEnvironment={false} reactivityLevel="static" />
         : <span data-agent-mark-still="" style={{ width: size, height: size, borderRadius: '50%', background: tint('teal', 0.16), border: `1px solid ${tint('teal', 0.45)}`, boxSizing: 'border-box' }} />}
     </div>
   );

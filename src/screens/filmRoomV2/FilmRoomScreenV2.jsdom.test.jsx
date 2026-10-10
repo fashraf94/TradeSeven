@@ -86,7 +86,7 @@ describe('the header (BA-41, BA-42)', () => {
       expect(seen).toHaveLength(1);
       expect(seen[0]).toMatchObject({ surface: 'duel', reactivityLevel: 'static', enableEnvironment: false });
       expect(seen[0].agent).toBe(battle);
-      expect(seen[0].duel).toEqual({ statusFeed: null });   // no playerScore / opponentScore
+      expect(seen[0].duel).toBeUndefined();   // no duel record at all: no playerScore / opponentScore, no feed
     } finally {
       vi.doUnmock('../../components/AgentPresence/AgentPresenceMount');
       vi.resetModules();
