@@ -145,9 +145,36 @@ export function When({ children, style }) {
   return <span data-time="" style={style}>{children}</span>;
 }
 
-/** A string the record carries verbatim (a symbol, an id, a stored note) — exempt from the number sweep as the record's own words. */
+/**
+ * An identifier the record carries (a symbol, a tier, a stored state word), shown as the record's. It carries NO
+ * exemption from the sweeps (Astra B2): a stored note's words are the record's only through StoredNote, bound by path.
+ */
 export function Rec({ children, style }) {
   return <span data-record-text="" style={style}>{children}</span>;
+}
+
+/**
+ * A STORED NOTE — the tape's own words (a coverage note, a missing input's name, a replay's label, any stored note):
+ * read at its PATH and rendered verbatim, the R7 discipline (Astra B2). The element carrying `data-stored-note` holds
+ * the stored value and nothing else; screen words go beside it, never inside. The sweeps exempt the numbers inside it
+ * (R1 / R9) only on that binding — its text equals the value at its path, and the path is one R1 / R9 names — and
+ * the forbidden-word scan reads it like any other text. A path that holds no text renders nothing.
+ */
+export function StoredNote({ doc, path, docLabel = 'tape', style }) {
+  const stored = valueAt(doc, path);
+  if (typeof stored !== 'string' || !stored) return null;
+  return <span data-stored-note={formatNumberPath(path)} data-stored-doc={docLabel} style={style}>{stored}</span>;
+}
+
+/** "missing: a, b" — the screen's word, then each stored input name bound to its own path (`…missingInputs[k]`). */
+export function MissingInputs({ doc, path, style }) {
+  const names = valueAt(doc, path);
+  if (!Array.isArray(names) || !names.length) return null;
+  return (
+    <span data-missing-inputs={formatNumberPath(path)} style={style}>
+      {COPY.missingLabel} {names.map((n, k) => <React.Fragment key={k}>{k ? ', ' : null}<StoredNote doc={doc} path={[...path, k]} /></React.Fragment>)}
+    </span>
+  );
 }
 
 /** One legend per screen (BA-42): the four classes and their labels. */
@@ -169,11 +196,17 @@ export function KindLegend({ style }) {
 
 const COVERAGE_COLOR = { complete: C.ink2, partial: C.gold, unavailable: C.ink3 };
 
-/** The coverage line every section opens with: the tape's own status and note. */
-export function Coverage({ coverage, fallbackNote, style, label = COPY.coverage }) {
+/**
+ * The coverage line every section opens with: the tape's own status and note. `doc` + `at` name the tape's coverage
+ * section by its path, so its stored note renders bound to `[...at, 'note']` (Astra B2); `coverage` is a coverage
+ * the SCREEN made (the derived holdings), whose note is the screen's own words.
+ */
+export function Coverage({ doc = null, at = null, coverage: made = null, fallbackNote, style, label = COPY.coverage }) {
+  const coverage = at ? valueAt(doc, at) : made;
   const status = coverage && COVERAGE_COLOR[coverage.status] ? coverage.status : 'unavailable';
   const c = COVERAGE_COLOR[status];
-  const note = coverage?.note || fallbackNote || null;
+  const stored = at && typeof coverage?.note === 'string' && coverage.note;
+  const note = stored ? <StoredNote doc={doc} path={[...at, 'note']} /> : (coverage?.note || fallbackNote || null);
   return (
     <div data-coverage={status} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, minWidth: 0, ...style }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', height: 15 }}>
@@ -181,15 +214,18 @@ export function Coverage({ coverage, fallbackNote, style, label = COPY.coverage 
       </span>
       <span style={mono(10.5, C.ink3, { lineHeight: 1.45 })}>
         {label} · <span style={{ color: c, fontWeight: 600 }}>{COPY.coverageLabel[status]}</span>
-        {note ? <> · <Rec>{note}</Rec></> : null}
+        {note ? <> · {note}</> : null}
         {coverage?.preservedFrom ? <> · {COPY.preservedFrom} <When>{coverage.preservedFrom}</When></> : null}
       </span>
     </div>
   );
 }
 
-/** A section: its title (with its count, when it has one), its coverage line, an optional note, its body. */
-export function Section({ id, title, count, coverage, coverageNote, note, right, children, label }) {
+/**
+ * A section: its title (with its count, when it has one), its coverage line, an optional note, its body. The coverage
+ * line is the tape's section at `coverageAt` in `doc` (its note bound by path), or a `coverage` the screen made.
+ */
+export function Section({ id, title, count, doc = null, coverageAt = null, coverage, coverageNote, note, right, children, label }) {
   return (
     <section id={id} data-section={id || label || title} style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10, padding: '4px 2px 0', flexWrap: 'wrap' }}>
@@ -199,7 +235,7 @@ export function Section({ id, title, count, coverage, coverageNote, note, right,
         </div>
         {right}
       </div>
-      {(coverage !== undefined || coverageNote) && <Coverage coverage={coverage} fallbackNote={coverageNote} style={{ padding: '0 2px' }} />}
+      {(coverageAt || coverage !== undefined || coverageNote) && <Coverage doc={doc} at={coverageAt} coverage={coverage} fallbackNote={coverageNote} style={{ padding: '0 2px' }} />}
       {note && <span style={{ ...foot, padding: '0 2px', display: 'block' }}>{note}</span>}
       {children}
     </section>

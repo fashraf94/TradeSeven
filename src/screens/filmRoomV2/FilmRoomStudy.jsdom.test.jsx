@@ -191,7 +191,8 @@ describe('the swap cards (BA-6, BA-11, BA-38, BA-47; F1)', () => {
       // the replay's stored label, verbatim, as the tape's own words (R1) — never the screen's sentence in its place
       const sentence = card(i).querySelector('[data-replay-sentence]');
       expect(sentence.textContent).toBe(a.replay.label);
-      expect(sentence.querySelector('[data-record-text]').textContent).toBe(a.replay.label);
+      const note = sentence.querySelector('[data-stored-note]');   // bound to its own path (Astra B2)
+      expect([note.getAttribute('data-stored-note'), note.textContent]).toEqual([`actions[${i}].replay.label`, a.replay.label]);
       expect(card(i).querySelector('[data-basis-note]').textContent).toBe(LOCKED_BASIS_NOTE);
     });
   });
@@ -202,7 +203,7 @@ describe('the swap cards (BA-6, BA-11, BA-38, BA-47; F1)', () => {
     m.render(<Harness tape={t} />);
     const sentence = card(0).querySelector('[data-replay-sentence]');
     expect(sentence.textContent).toBe(REPLAY_SENTENCE);
-    expect(sentence.querySelector('[data-record-text]')).toBeNull();   // the screen's words, never marked as the record's
+    expect(sentence.querySelector('[data-record-text], [data-stored-note]')).toBeNull();   // the screen's words, never marked as the record's
     expect(REPLAY_SENTENCE).not.toMatch(/\b(one|single)\b/i);
     expect(sweepWords(m.container, { tape: t })).toEqual([]);
   });

@@ -25,7 +25,7 @@ import { etClock, etDateLabel } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { useTapeDay, useSeriesDay, firestoreReaders } from './filmRoomData';
 import { hasSeenFirstOpen, markFirstOpenSeen } from './filmRoomSeen';
-import { C, card, eyebrow, body, mono, plain, tint, Label, KindLegend, Segmented, Chip, PrimaryButton, When, Rec, EmptyCard, AggNum, TapeNum } from './FilmRoomKit';
+import { C, card, eyebrow, body, mono, plain, tint, Label, KindLegend, Segmented, Chip, PrimaryButton, When, StoredNote, EmptyCard, AggNum, TapeNum } from './FilmRoomKit';
 import FilmRoomGlance from './FilmRoomGlance';
 import FilmRoomStudy from './FilmRoomStudy';
 import FilmRoomDeepDive from './FilmRoomDeepDive';
@@ -204,7 +204,11 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
   else if (tapeState.status === 'error') content = <div data-state="error"><EmptyCard>{COPY.readError}</EmptyCard></div>;
   else if (tapeState.status === 'missing') content = <div data-state="missing"><EmptyCard>{COPY.noTape} · {noTapeLine(battle, day, now)}</EmptyCard></div>;
   else if (tape?.passes?.close?.status === 'skipped_mode') content = <div data-state="skipped-mode"><EmptyCard>{COPY.skippedMode}</EmptyCard></div>;
-  else if (!written) content = <div data-state="not-written"><EmptyCard><Rec>{COPY.closeNotWritten(tape?.passes?.close?.status || 'unknown')}</Rec></EmptyCard></div>;
+  else if (!written) {
+    // the pass's own stored status, bound by its path (Astra B2) — the screen's words around it
+    const status = typeof tape?.passes?.close?.status === 'string' && tape.passes.close.status ? <StoredNote doc={tape} path={['passes', 'close', 'status']} /> : COPY.statusUnknown;
+    content = <div data-state="not-written"><EmptyCard>{COPY.closeNotWritten} ({status}).</EmptyCard></div>;
+  }
   else if (depth === 'glance') content = <FilmRoomGlance tape={tape} desktop={desktop} selected={selected} onSelect={setSelected} finalDay={finalDay} />;
   else if (depth === 'study') content = <FilmRoomStudy tape={tape} desktop={desktop} onDeep={openDeep} selected={selected} onSelect={setSelected} jump={jump} />;
   else content = <FilmRoomDeepDive tape={tape} seriesState={seriesState} sym={sym} onSym={setSym} desktop={desktop} />;

@@ -15,7 +15,7 @@ import FilmRoomScreenV2, { noTapeLine, defaultDay, battleDays, headerParts } fro
 import { FIRST_OPEN_KEY } from './filmRoomSeen';
 import { FORBIDDEN_WORDS } from './filmRoomCopy';
 import {
-  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, SPEC_FORBIDDEN_WORDS, SPEC_AGGREGATE_CLASSES, SPEC_NUMBER_WORDS,
+  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, storedNoteDefects, SPEC_FORBIDDEN_WORDS, SPEC_AGGREGATE_CLASSES, SPEC_NUMBER_WORDS,
 } from './__fixtures__/filmRoomHarness';
 import { COMPANY_NAMES } from '../../config/stockData';
 
@@ -227,6 +227,7 @@ describe('the whole screen through the sweeps — every depth, both days, everyt
       expect(sweepSigns(m.container), label).toEqual([]);
       expect(sweepWords(m.container, docs), label).toEqual([]);
       expect(quoteDefects(m.container, docs), label).toEqual([]);
+      expect(storedNoteDefects(m.container, docs), label).toEqual([]);   // every stored note bound to its path (Astra B2)
       const notes = m.container.textContent.split('This does not show which protections were armed or checked.').length - 1;
       expect(notes, label).toBe(label === 'Deep dive' && !m.q('[data-region="evidence-overlay"]') ? 0 : 1);
     }
@@ -250,6 +251,7 @@ describe('the whole screen through the sweeps — every depth, both days, everyt
         expect(sweepSigns(m.container), label).toEqual([]);
         expect(sweepWords(m.container, docs), label).toEqual([]);
         expect(quoteDefects(m.container, docs), label).toEqual([]);
+        expect(storedNoteDefects(m.container, docs), label).toEqual([]);
       }
       expect(m.q('[data-region="all-symbols"]')).toBeTruthy();
       expect(m.qa('[data-fork-ends]')).toHaveLength(0);   // the Deep dive is showing; the Study's desktop fork ends were swept above
@@ -457,13 +459,15 @@ describe('R8 — the screen\'s own voice spells no number as a word outside a ma
     expect(sweepWords(box('<span data-display-name="MSFT">Capital One</span>'))).toEqual(['number word “One”: Capital One']);
   });
 
-  it('R1: the tape\'s own stored text, verbatim and marked as the record\'s, is exempt — screen words around it, or the same words unmarked, are not', () => {
+  it('R1 / R9: the tape\'s own stored text, verbatim and BOUND to its path, is exempt — screen words inside it, the same words as a bare record, or unmarked, are not (Astra B2)', () => {
     const label = sep23Tape.actions[0].replay.label;
     expect(label).toMatch(/^one-step hypothetical/);
     const docs = { tape: sep23Tape };
-    expect(sweepWords(box(`<span data-record-text>${label}</span>`), docs)).toEqual([]);
-    expect(sweepWords(box(`<span data-record-text>${label} · one more</span>`), docs)).toEqual(['number word “one”: ' + `${label} · one more`.slice(0, 80)]);
-    expect(sweepWords(box(`<span>${label}</span>`), docs)).toEqual([`number word “one”: ${label}`.slice(0, 'number word “one”: '.length + 80)]);
+    const hit = (text) => `number word “one”: ${text}`.slice(0, 'number word “one”: '.length + 80);
+    expect(sweepWords(box(`<span data-stored-note="actions[0].replay.label">${label}</span>`), docs)).toEqual([]);
+    expect(sweepWords(box(`<span data-stored-note="actions[0].replay.label">${label} · one more</span>`), docs)).toEqual([hit(`${label} · one more`)]);
+    expect(sweepWords(box(`<span data-record-text>${label}</span>`), docs)).toEqual([hit(label)]);   // a string match exempts nothing (B2)
+    expect(sweepWords(box(`<span>${label}</span>`), docs)).toEqual([hit(label)]);
   });
 
   it('review A2A3-3: EVERY word on the pinned list bites, singular and plural', () => {

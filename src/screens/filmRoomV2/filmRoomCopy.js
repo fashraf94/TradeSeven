@@ -52,7 +52,8 @@ export const FILM_ROOM_COPY = Object.freeze({
   earlierDay: "This day's tape was written while the battle was in progress; the battle's final result is recorded on its last day.",
   openLastDay: (label) => `Open ${label}`,
   skippedMode: 'This battle mode is not taped.',
-  closeNotWritten: (status) => `The close pass for this day did not write a tape (${status}).`,
+  closeNotWritten: 'The close pass for this day did not write a tape',   // then "(" the stored passes.close.status, bound by path (B2) ")."
+  statusUnknown: 'unknown',
 
   // section counts (Amendment E addendum R4(a)) — "Checks · 23 of 23", "Holdings · 7 slots"
   countOf: 'of',
@@ -162,7 +163,7 @@ export const FILM_ROOM_COPY = Object.freeze({
   barClosedAt: (clock) => `bar closed ${clock}`,
   fill: 'The fill',
   fillRows: { recordedFill: (sym) => `Recorded fill · ${sym}`, barAtSwap: '1-minute bar at the swap', barMinusFill: 'Bar minus recorded fill' },
-  missing: (names) => `missing: ${names.join(', ')}`,
+  missingLabel: 'missing:',   // then each stored input name, bound to its own path (Astra B2)
   deepDoor: (sym) => `Deep dive · ${sym}`,
   directives: 'Directives',
   directivesNone: 'No directive was filed this day.',

@@ -31,7 +31,7 @@ import {
 import { FILM_ROOM_COPY as COPY, REPLAY_SENTENCE, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE, DIRECTIVE_EXPLAINER } from './filmRoomCopy';
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
 import {
-  C, card, eyebrow, foot, body, mono, tint, plain, TapeNum, AggNum, CountNum, CheckCount, When, Rec, Section, Row, EmptyCard, Quotation, StateTag, Door, Chip, TextButton, KindMark, Coverage,
+  C, card, eyebrow, foot, body, mono, tint, plain, TapeNum, AggNum, CountNum, CheckCount, When, Rec, StoredNote, MissingInputs, Section, Row, EmptyCard, Quotation, StateTag, Door, Chip, TextButton, KindMark, Coverage,
 } from './FilmRoomKit';
 import CheckDetail from './FilmRoomCheckDetail';
 import { Pip } from './FilmRoomGlance';
@@ -182,9 +182,9 @@ function SplitRows({ tape, index, a }) {
             <Row k={COPY.splitRows.rescored} v={n(s('rescoredAtRecordedPx'))} />
             <Row k={COPY.splitRows.inputsPart} v={n(s('inputsDelta'))} />
             <Row k={COPY.splitRows.pricePart} v={n(s('priceDelta'))} />
-            {Array.isArray(sold.missingInputs) && sold.missingInputs.length ? <span style={foot}><Rec>{COPY.missing(sold.missingInputs)}</Rec></span> : null}
+            <MissingInputs doc={tape} path={s('missingInputs')} style={foot} />
           </>
-        ) : <span data-split-missing="sale" style={foot}><Rec>{splitAbsent(tape, index)}</Rec></span>}
+        ) : <span data-split-missing="sale" style={foot}>{splitAbsent(tape, index)}</span>}
       </div>
       <div data-split="fill" data-split-symbol={a.symbolIn} style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <span style={{ ...eyebrow, color: C.ink2, paddingBottom: 4 }}>{COPY.fill}</span>
@@ -193,9 +193,9 @@ function SplitRows({ tape, index, a }) {
             <Row border={false} k={<Rec>{COPY.fillRows.recordedFill(a.symbolIn)}</Rec>} v={n(f('recordedPx'), fmtPrice)} />
             <Row k={COPY.fillRows.barAtSwap} sub={fill.barClosedAt ? <When>{COPY.barClosedAt(etClock(fill.barClosedAt))}</When> : null} v={n(f('rebuiltPx'), fmtPrice)} />
             <Row k={COPY.fillRows.barMinusFill} v={n(f('pxDelta'), fmtPriceDelta)} />
-            {Array.isArray(fill.missingInputs) && fill.missingInputs.length ? <span style={foot}><Rec>{COPY.missing(fill.missingInputs)}</Rec></span> : null}
+            <MissingInputs doc={tape} path={f('missingInputs')} style={foot} />
           </>
-        ) : <span data-split-missing="fill" style={foot}><Rec>{splitAbsent(tape, index)}</Rec></span>}
+        ) : <span data-split-missing="fill" style={foot}>{splitAbsent(tape, index)}</span>}
       </div>
     </div>
   );
@@ -204,13 +204,14 @@ function SplitRows({ tape, index, a }) {
 /**
  * Why a split group is absent: no replay at all, or a replay an earlier replay
  * logic built — Amendment D's split was never computed for it. The replay's
- * own stored note when it carries one, else the same fixed words (BA-38;
- * review A2L3-1: never "No replay" beside a replay that is drawn).
+ * own stored note when it carries one (bound by its path, Astra B2), else the
+ * same fixed words (BA-38; review A2L3-1: never "No replay" beside a replay
+ * that is drawn).
  */
 function splitAbsent(tape, index) {
   const r = valueAt(tape, ['actions', index, 'replay']);
   if (!r) return COPY.replayNone;
-  return r.note || REPLAY_VERSION_NOTE;
+  return typeof r.note === 'string' && r.note ? <StoredNote doc={tape} path={['actions', index, 'replay', 'note']} /> : REPLAY_VERSION_NOTE;
 }
 
 function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
@@ -284,15 +285,15 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
                 <TapeNum doc={tape} path={['actions', index, 'replay', 'reconciliation', 'closedLegDelta']} size={12} />
                 <span style={mono(10, C.ink3)}>{COPY.closedLegNote}</span>
               </div>
-              {r.note ? <span style={foot}><Rec>{r.note}</Rec></span> : null}
+              {r.note ? <span style={foot}><StoredNote doc={tape} path={['actions', index, 'replay', 'note']} /></span> : null}
             </>
-          ) : <span style={foot}>{COPY.replayNone}{a.replayReason === 'crypto_not_supported' ? ` · ${COPY.replayCrypto}` : ''} · <Rec>{tape.coverage?.replay?.note || ''}</Rec></span>}
-          {/* The replay's own stored label, verbatim (R1); the screen's own sentence only where none is stored. */}
-          <span data-replay-sentence="" style={foot}>{r?.label ? <Rec>{r.label}</Rec> : REPLAY_SENTENCE}</span>
+          ) : <span style={foot}>{COPY.replayNone}{a.replayReason === 'crypto_not_supported' ? ` · ${COPY.replayCrypto}` : ''} · <StoredNote doc={tape} path={['coverage', 'replay', 'note']} /></span>}
+          {/* The replay's own stored label, verbatim and bound by its path (R1, R9, Astra B2); the screen's own sentence only where none is stored. */}
+          <span data-replay-sentence="" style={foot}>{r?.label ? <StoredNote doc={tape} path={['actions', index, 'replay', 'label']} /> : REPLAY_SENTENCE}</span>
         </div>
         <SplitRows tape={tape} index={index} a={a} />
       </div>
-      <span data-basis-note="" style={{ ...foot, borderTop: `1px solid ${C.hair}`, paddingTop: 8 }}><Rec>{r?.lockedBasisNote || LOCKED_BASIS_NOTE}</Rec></span>
+      <span data-basis-note="" style={{ ...foot, borderTop: `1px solid ${C.hair}`, paddingTop: 8 }}>{typeof r?.lockedBasisNote === 'string' && r.lockedBasisNote ? <StoredNote doc={tape} path={['actions', index, 'replay', 'lockedBasisNote']} /> : LOCKED_BASIS_NOTE}</span>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Door label={COPY.deepDoor(a.symbolOut)} onClick={() => onDeep(a.symbolOut)} />
         <Door label={COPY.deepDoor(a.symbolIn)} onClick={() => onDeep(a.symbolIn)} />
@@ -305,8 +306,8 @@ function SwapsSection({ tape, desktop, onDeep }) {
   const actions = Array.isArray(tape.actions) ? tape.actions : [];
   const ordinals = swapOrdinals(tape);
   return (
-    <Section id="swaps" title={COPY.swaps} count={actions.length ? <CountNum value={actions.length} aggregate="count(actions[])" size={10} /> : null} coverage={tape.coverage?.actions}>
-      <div data-coverage-of="replay"><Coverage label={COPY.replayCoverage} coverage={tape.coverage?.replay} style={{ padding: '0 2px' }} /></div>
+    <Section id="swaps" title={COPY.swaps} count={actions.length ? <CountNum value={actions.length} aggregate="count(actions[])" size={10} /> : null} doc={tape} coverageAt={['coverage', 'actions']}>
+      <div data-coverage-of="replay"><Coverage label={COPY.replayCoverage} doc={tape} at={['coverage', 'replay']} style={{ padding: '0 2px' }} /></div>
       {actions.length
         ? <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{actions.map((a, i) => <SwapCard key={a.key || i} tape={tape} index={i} ordinal={ordinals[i]} desktop={desktop} onDeep={onDeep} />)}</div>
         : <EmptyCard>{COPY.swapsNone}</EmptyCard>}
@@ -385,7 +386,7 @@ function DirectivesSection({ tape }) {
   const [open, setOpen] = useState(false);
   const list = Array.isArray(tape.directives) ? tape.directives : [];
   return (
-    <Section id="directives" title={COPY.directives} coverage={tape.coverage?.directives} right={<TextButton onClick={() => setOpen(!open)}>{open ? COPY.explainerClose : COPY.explainerOpen}</TextButton>}>
+    <Section id="directives" title={COPY.directives} doc={tape} coverageAt={['coverage', 'directives']} right={<TextButton onClick={() => setOpen(!open)}>{open ? COPY.explainerClose : COPY.explainerOpen}</TextButton>}>
       {list.length ? list.map((d, i) => <DirectiveCard key={d.key || i} tape={tape} index={i} />) : <EmptyCard>{COPY.directivesNone}</EmptyCard>}
       {open ? (
         <div data-region="directive-explainer" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -402,11 +403,12 @@ function DirectivesSection({ tape }) {
 function PlansSection({ tape }) {
   const [filter, setFilter] = useState(null);
   const plans = Array.isArray(tape.plans) ? tape.plans : [];
-  const note = plans.find((p) => p?.price?.note)?.price?.note || null;
-  if (!plans.length) return <Section id="plans" title={COPY.plans} coverage={tape.coverage?.plans}><EmptyCard>{COPY.plansNone}</EmptyCard></Section>;
+  // the horizon note the plans store (the first plan that carries one), bound by its path (Astra B2)
+  const noteAt = plans.findIndex((p) => typeof p?.price?.note === 'string' && p.price.note);
+  if (!plans.length) return <Section id="plans" title={COPY.plans} doc={tape} coverageAt={['coverage', 'plans']}><EmptyCard>{COPY.plansNone}</EmptyCard></Section>;
   const syms = [...new Set(plans.map((p) => p.symbol))];
   return (
-    <Section id="plans" title={COPY.plans} coverage={tape.coverage?.plans} note={note ? <Rec>{note}</Rec> : null}>
+    <Section id="plans" title={COPY.plans} doc={tape} coverageAt={['coverage', 'plans']} note={noteAt >= 0 ? <StoredNote doc={tape} path={['plans', noteAt, 'price', 'note']} /> : null}>
       <div data-region="plan-chips" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
         <Chip on={filter === null} onClick={() => setFilter(null)}>{COPY.plansAll}</Chip>
         {syms.map((s) => <Chip key={s} on={filter === s} onClick={() => setFilter(s)}><Rec>{s}</Rec><CountNum value={plans.filter((p) => p.symbol === s).length} aggregate="count(plans[] of the symbol)" size={9.5} color={C.ink3} /></Chip>)}
@@ -435,7 +437,7 @@ function PlansSection({ tape }) {
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={mono(10, C.ink3)}>{COPY.atPlan}</span><TapeNum doc={tape} path={['plans', i, 'price', 'atPlan', 'value']} fmt={fmtPrice} size={12} /></span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span style={mono(10, C.ink3)}>{COPY.atClose}</span><TapeNum doc={tape} path={['plans', i, 'price', 'atClose', 'value']} fmt={fmtPrice} size={12} /></span>
                   </div>
-                  {Array.isArray(p.price?.missingInputs) && p.price.missingInputs.length ? <span style={foot}><Rec>{COPY.missing(p.price.missingInputs)}</Rec></span> : null}
+                  <MissingInputs doc={tape} path={['plans', i, 'price', 'missingInputs']} style={foot} />
                 </div>
               );
             })}
@@ -474,7 +476,7 @@ function RationaleSection({ tape, onCheck }) {
   const rows = rationaleTimeline(tape);
   const recorded = Array.isArray(tape.rationale) ? tape.rationale : [];
   return (
-    <Section id="rationale" title={COPY.rationale} count={recorded.length ? <CountNum value={recorded.length} aggregate="count(rationale[])" size={10} /> : null} coverage={tape.coverage?.rationale}>
+    <Section id="rationale" title={COPY.rationale} count={recorded.length ? <CountNum value={recorded.length} aggregate="count(rationale[])" size={10} /> : null} doc={tape} coverageAt={['coverage', 'rationale']}>
       {rows.length ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {rows.map((row) => (row.kind === 'rationale'
@@ -496,7 +498,7 @@ function RationaleSection({ tape, onCheck }) {
 function ChecksSection({ tape, selected, onSelect }) {
   const checks = Array.isArray(tape.checks) ? tape.checks : [];
   return (
-    <Section id="checks" title={COPY.checks} count={<CheckCount tape={tape} />} coverage={tape.coverage?.checks} note={COPY.riskNote}>
+    <Section id="checks" title={COPY.checks} count={<CheckCount tape={tape} />} doc={tape} coverageAt={['coverage', 'checks']} note={COPY.riskNote}>
       {selected != null && checks[selected] ? <CheckDetail tape={tape} index={selected} onClose={() => onSelect(null)} /> : null}
       {checks.length ? (
         <div style={{ ...card, gap: 0, padding: '2px 14px' }}>

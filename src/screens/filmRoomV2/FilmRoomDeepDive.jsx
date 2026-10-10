@@ -293,7 +293,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
   const evidence = current && evidenceMarkers(tape, current).length ? (
     <div data-region="evidence-overlay" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span style={{ ...eyebrow, color: C.gold }}>{COPY.evidenceOverlay}</span>
-      <Coverage label={COPY.evidenceCoverage} coverage={tape.coverage?.evidence} />
+      <Coverage label={COPY.evidenceCoverage} doc={tape} at={['coverage', 'evidence']} />
       <span style={foot}>{COPY.evidenceOverlayNote}</span>
       <span style={foot}>{COPY.riskNote}</span>
       {mark != null && tape.checks?.[mark] ? (
@@ -309,7 +309,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
     </div>
   ) : null;
   const chart = (
-    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} coverage={tape.coverage?.series}>
+    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} doc={tape} coverageAt={['coverage', 'series']}>
       <div style={{ ...card, gap: 10 }}>
         {chartBody}
         {evidence}
@@ -324,7 +324,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
           {chart}
           <div style={{ paddingTop: 22 }}>{doc ? <SymbolFacts tape={tape} doc={doc} sym={current} holdings={holdings} sectorEtf={sectorEtf} /> : null}</div>
         </div>
-        <Section id="deep-all" title={COPY.allSymbols} coverage={tape.coverage?.series}>
+        <Section id="deep-all" title={COPY.allSymbols} doc={tape} coverageAt={['coverage', 'series']}>
           <SmallMultiples series={series} symbols={symbols} sym={current} onSym={(s) => { setMark(null); onSym(s); }} />
         </Section>
       </div>
