@@ -96,6 +96,7 @@ import { ProfileScreen, WinsScreen, LossesScreen, DraftHistoryScreen, JoinScreen
 // v2 gate — the legacy FilmRoomScreen, byte for byte, wherever
 // FILM_ROOM_V2_MODE does not resolve on for the battle's owner.
 import FilmRoomRoute from './screens/filmRoomV2/FilmRoomRoute';
+import { filmRoomBackOf } from './screens/filmRoomV2/filmRoomBack';
 // Season Mode screens + components
 import SeasonHub from './screens/SeasonHub';
 import SeasonDashboard from './screens/SeasonDashboard';
@@ -5009,6 +5010,14 @@ export default function PortfolioDuel() {
     }
   }, [user, screen]);
 
+  // Film Room v2 "back goes back": the screen the Film Room is opened from — and, from the battle view, the battle it
+  // showed — recorded whenever the app shows any OTHER screen, read while it shows the Film Room
+  // (src/screens/filmRoomV2/filmRoomBack.js maps it; an unknown origin returns to the dashboard).
+  const filmRoomFromRef = useRef({ screen: null, battle: null });
+  useEffect(() => {
+    if (screen !== 'filmRoom') filmRoomFromRef.current = { screen, battle: currentBattle };
+  }, [screen, currentBattle]);
+
   // Load challenges for current battle
   useEffect(() => {
     if (screen === 'battle' && currentBattle && user) {
@@ -9467,12 +9476,20 @@ export default function PortfolioDuel() {
 
   // FILM ROOM SCREEN - Phase 4 Voice Layer Rework: post-battle review surface
   if (screen === 'filmRoom' && currentBattle) {
+    // v2's back returns where the Film Room was opened from; the legacy screen keeps onBack, unchanged
+    const filmRoomFrom = filmRoomFromRef.current;
+    const filmRoomBack = filmRoomBackOf(filmRoomFrom.screen);
     return (
       <div style={{ marginLeft: isDesktop ? (sidebarCollapsed ? '64px' : '220px') : 0, transition: 'margin-left 0.2s ease' }}>
         <ErrorBoundary name="Film Room" onNavigateDashboard={() => setScreen('dashboard')}>
           <FilmRoomRoute
             battle={currentBattle}
             onBack={() => setScreen('dashboard')}
+            origin={filmRoomBack.origin}
+            onReturn={() => {
+              if (filmRoomBack.screen === 'battle' && filmRoomFrom.battle) setCurrentBattle(filmRoomFrom.battle);
+              setScreen(filmRoomBack.screen);
+            }}
           />
         </ErrorBoundary>
       </div>

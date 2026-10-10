@@ -191,12 +191,14 @@ const pill = (accent) => ({ display: 'inline-flex', alignItems: 'center', gap: 6
 
 /**
  * @param {object}   props.battle    the battle the route opened (never re-read here)
- * @param {Function} props.onBack
+ * @param {Function} props.onBack    returns to the surface the Film Room was opened from
+ * @param {string}   [props.backTo]  that surface (filmRoomBack.js: 'battle' | 'battleHistory' | 'dashboard' |
+ *                                   'unknown') — the back control's label names it; unknown → "Dashboard"
  * @param {string}   [props.viewerId] the signed-in viewer's uid (the first-open notice is per viewer)
  * @param {object}   [props.readers]  test seam: { readTape, readSeries }
  * @param {number}   [props.nowMs]    test seam: the instant "scheduled" is judged at
  */
-export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, readers = firestoreReaders, nowMs }) {
+export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', viewerId = null, readers = firestoreReaders, nowMs }) {
   const now = useMemo(() => (Number.isFinite(nowMs) ? nowMs : Date.now()), [nowMs]);
   const battleId = filmRoomBattleId(battle);
   const days = useMemo(() => battleDays(battle), [battle]);
@@ -251,7 +253,7 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: desktop ? '8px 24px 12px' : '6px 12px 10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <button type="button" onClick={onBack} style={{ ...plain, display: 'flex', alignItems: 'center', gap: 4, color: C.teal, padding: '8px 6px', minHeight: 44, borderRadius: 8 }}>
-            <Label size={13}><span aria-hidden="true">‹</span> {COPY.back}</Label>
+            <Label size={13}><span aria-hidden="true">‹</span> {COPY.backTo[backTo] ?? COPY.backTo.unknown}</Label>
           </button>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <span style={pill(C.teal)}>{COPY.title}</span>

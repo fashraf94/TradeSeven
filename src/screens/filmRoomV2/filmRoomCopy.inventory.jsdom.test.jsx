@@ -40,7 +40,7 @@ const leaf = (obj, key) => key.replace(/\(\)$/, '').split(/\.|\[|\]/).filter(Boo
 
 // ── the inventory, PINNED BY HAND — a new key fails until it is listed here (and swept below) ─────────────────────
 const COPY_KEYS = [
-  'title', 'back', 'gameName', 'battleLengthSuffix', 'battleComplete', 'battleActive',
+  'title', 'backTo.battle', 'backTo.battleHistory', 'backTo.dashboard', 'backTo.unknown', 'gameName', 'battleLengthSuffix', 'battleComplete', 'battleActive',
   'depths[0].id', 'depths[0].label', 'depths[1].id', 'depths[1].label', 'depths[2].id', 'depths[2].label',
   'legend', 'dayPicker', 'firstOpenEyebrow', 'firstOpen', 'gotIt',
   'loading', 'noTape', 'noTapeScheduled.before', 'noTapeScheduled.after', 'noTapeLater', 'noTapeUnavailable', 'readError', 'earlierDay', 'openLastDay()', 'skippedMode', 'closeNotWritten', 'statusUnknown',
@@ -176,9 +176,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 232 copy keys, 319 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(232);
-    expect(inventory()).toHaveLength(319);
+  it('the inventory\'s size is pinned (the build report states it): 235 copy keys, 322 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(235);
+    expect(inventory()).toHaveLength(322);
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {

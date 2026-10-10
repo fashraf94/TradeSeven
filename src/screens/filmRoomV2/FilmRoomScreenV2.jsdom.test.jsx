@@ -100,12 +100,12 @@ describe('the header (BA-41, BA-42)', () => {
     }
   });
 
-  it('the design of record\'s header: the agent\'s mark (the cockpit\'s still avatar, no score passed), "Battles" back', async () => {
+  it('the design of record\'s header: the agent\'s mark (the cockpit\'s still avatar, no score passed), the back control first', async () => {
     const onBack = vi.fn();
     m.render(<FilmRoomScreenV2 battle={battleOf(sep23Tape)} onBack={onBack} viewerId="viewer-1" readers={readersOf({ [sep23Tape.etDate]: sep23Tape }, sep23Series)} nowMs={NOW} />);
     await m.flush();
     const back = m.qa('header button')[0];
-    expect(back.textContent).toBe('‹ Battles');
+    expect(back.textContent).toBe('‹ Dashboard');   // no origin given: unknown → "Dashboard" (back goes back)
     m.click(back);
     expect(onBack).toHaveBeenCalledTimes(1);
     const mark = m.q('header [data-agent-mark]');
@@ -158,6 +158,22 @@ describe('the header (BA-41, BA-42)', () => {
     m.click(m.buttons('Deep dive · PLTR›')[0] || m.qa('button').find((b) => b.textContent.startsWith('Deep dive · PLTR')));
     await m.flush();
     expect(m.q('[data-region="price-chart"]').getAttribute('data-symbol')).toBe('PLTR');
+  });
+});
+
+describe('back goes back — the back control names the surface the Film Room was opened from, and returns there', () => {
+  it('each origin\'s label: the in-battle banner → "Battle", Battle History → "Battle History", the Review station → "Dashboard"; unknown → "Dashboard"', async () => {
+    for (const [backTo, label] of [['battle', 'Battle'], ['battleHistory', 'Battle History'], ['dashboard', 'Dashboard'], ['unknown', 'Dashboard'], [undefined, 'Dashboard'], ['somewhere', 'Dashboard']]) {
+      const onBack = vi.fn();
+      m.teardown(); m.setup(); globalThis.localStorage.clear();
+      m.render(<FilmRoomScreenV2 battle={battleOf(sep23Tape)} onBack={onBack} backTo={backTo} viewerId="viewer-1" readers={readersOf({ [sep23Tape.etDate]: sep23Tape }, sep23Series)} nowMs={NOW} />);
+      await m.flush();
+      const back = m.qa('header button')[0];
+      expect(back.textContent, String(backTo)).toBe(`‹ ${label}`);
+      m.click(back);
+      expect(onBack, String(backTo)).toHaveBeenCalledTimes(1);
+      expect(sweepWords(m.container, { tape: sep23Tape, battle: battleOf(sep23Tape) }), String(backTo)).toEqual([]);
+    }
   });
 });
 

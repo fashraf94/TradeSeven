@@ -1,7 +1,9 @@
 // src/screens/filmRoomV2/FilmRoomRoute.jsx
 //
-// The 'filmRoom' route (src/App.jsx), Amendment E BA-40. Route id, entry
-// points and props are unchanged; this wrapper only chooses the screen:
+// The 'filmRoom' route (src/App.jsx), Amendment E BA-40. Route id and entry
+// points are unchanged, and so are the legacy screen's props; v2 alone also
+// gets where it was opened from, so its back goes back (filmRoomBack.js).
+// This wrapper only chooses the screen:
 //
 //   v2 does NOT resolve on for this battle's owner → the legacy FilmRoomScreen
 //     with exactly the props App gave it — FILM_ROOM_V2_MODE 'off' (no request
@@ -32,7 +34,13 @@ function viewerUid() {
   }
 }
 
-export default function FilmRoomRoute({ battle, onBack }) {
+/**
+ * @param {object}   props.battle
+ * @param {Function} props.onBack    App's back for the LEGACY screen — passed to it unchanged, its only other prop the battle
+ * @param {string}   [props.origin]  v2 only: where the Film Room was opened from (filmRoomBack.js), the back label's destination
+ * @param {Function} [props.onReturn] v2 only: returns there; absent → v2 uses onBack
+ */
+export default function FilmRoomRoute({ battle, onBack, origin = 'unknown', onReturn = null }) {
   const mode = resolveFilmRoomV2Mode();
   const battleId = filmRoomBattleId(battle);
   const ownerId = typeof battle?.ownerId === 'string' ? battle.ownerId : null;
@@ -49,7 +57,7 @@ export default function FilmRoomRoute({ battle, onBack }) {
   if (!filmRoomV2On(mode, verdict)) return <FilmRoomScreen battle={battle} onBack={onBack} />;
   return (
     <Suspense fallback={<div data-state="loading-v2" style={{ minHeight: '100vh', background: C.bg, ...mono(12, C.ink3, { padding: 40, textAlign: 'center' }) }}>{COPY.loading}</div>}>
-      <FilmRoomScreenV2 battle={battle} onBack={onBack} viewerId={viewerUid()} />
+      <FilmRoomScreenV2 battle={battle} onBack={onReturn || onBack} backTo={origin} viewerId={viewerUid()} />
     </Suspense>
   );
 }

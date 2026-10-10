@@ -28,7 +28,8 @@ export const REPLAY_SENTENCE = "a hypothetical of this swap alone, through the d
 
 export const FILM_ROOM_COPY = Object.freeze({
   title: 'Film Room',
-  back: 'Battles',
+  // the back control names where it returns: the surface the Film Room was opened from (filmRoomBack.js)
+  backTo: { battle: 'Battle', battleHistory: 'Battle History', dashboard: 'Dashboard', unknown: 'Dashboard' },
   gameName: 'BaggerBomb',
   battleLengthSuffix: '-day battle',   // the design of record's "one-day battle" — the word is a marked number (R8)
   battleComplete: 'battle complete',
