@@ -7,8 +7,10 @@
 // The label never shares a box with an evidence marker, the swap labels' row
 // or an axis gutter. lastCloseTop chooses its band; this file checks the
 // chart's own geometry at the two plot widths the visual check lays out —
-//   390 × 844   the plot is 228 px wide (390 − 2 × 12 main − 2 × 14 card − 64 − 46)
-//   1440 × 900  the plot is 714 px wide (1240 − 2 × 24 main − 320 facts − 20 gap − 2 × 14 card − 64 − 46)
+//   390 × 844   the plot is 226 px wide (measured in headless Edge; 390 − 2 × 12 main − 2 × 14 card
+//               − 2 × 1 border − 64 − 46)
+//   1440 × 900  the plot is 712 px wide (measured; 1240 − 2 × 24 main − 320 facts − 20 gap − 2 × 14 card
+//               − 2 × 1 border − 64 − 46)
 // — on a writer-built day (the REAL close and candle passes) where INTC's
 // 2:45 PM evidence quote is planted at its own last close, so a marker falls
 // beside the close at the label's height. jsdom has no layout: the boxes come
@@ -37,7 +39,7 @@ const m = mounter();
 beforeEach(() => m.setup());
 afterEach(() => m.teardown());
 
-const WIDTHS = { 390: 228, 1440: 714 };
+const WIDTHS = { 390: 226, 1440: 712 };
 const HEIGHT = { 390: 250, 1440: 340 };
 
 /** The label's box and every marker's box, in px, on a plot `w` wide. */
@@ -95,6 +97,12 @@ describe('the last-close label never shares a box with an evidence marker (write
       expect(sweepNumbers(m.container, { tape: planted.tape, ...Object.fromEntries(planted.series.map((s) => [`series:${s.symbol}`, s])) })).toEqual([]);
     });
   }
+
+  it('the label\'s box is the box the chooser places: exactly 13 px from its top — flex, line-height 1 — never a line box the page\'s font sets (found by the real-layout measurement: an inline box stood 21 px tall, its figures 8 px down)', () => {
+    m.render(<FilmRoomDeepDive tape={planted.tape} seriesState={{ status: 'ready', series: planted.series }} sym="INTC" onSym={() => {}} />);
+    const lab = m.q('[data-axis-record="lastClose"]');
+    expect([lab.style.display, lab.style.alignItems, lab.style.height, lab.style.lineHeight]).toEqual(['flex', 'center', '13px', '1']);
+  });
 
   it('every symbol of the committed Sep-23 day, at both widths: no label meets a marker, or the swap labels\' row', () => {
     for (const sym of sep23Series.map((s) => s.symbol).filter((s) => !['SPY', 'RSP'].includes(s) && !s.startsWith('XL'))) {

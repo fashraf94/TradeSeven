@@ -176,7 +176,8 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
         {/* The last close sits at the end of its own line — where the bars end, never out in a blank tail (F2): */}
         {/* just before that end when it lies right of the middle, just after it otherwise, so it never runs into the axis gutter (review A2A2-2). */}
         {/* …above its line's end when that is clear, else the nearest clear band — never over a marker or the swap labels' row. */}
-        {lastTop !== null ? <span data-axis-record="lastClose" style={{ position: 'absolute', ...(lastEndX > 500 ? { right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)` } : { left: `calc(${(lastEndX / 10).toFixed(3)}% + 4px)` }), top: lastTop }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
+        {/* Its box is exactly LABEL_H tall from `top` (flex, line-height 1) — the box lastCloseTop places, never a line box the page's font sets. */}
+        {lastTop !== null ? <span data-axis-record="lastClose" style={{ position: 'absolute', display: 'flex', alignItems: 'center', height: LABEL_H, lineHeight: 1, ...(lastEndX > 500 ? { right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)` } : { left: `calc(${(lastEndX / 10).toFixed(3)}% + 4px)` }), top: lastTop }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
         {/* the evidence overlay (BA-43) */}
         {marks.map((m) => {
           const px = valueAt(tape, ['checks', m.index, 'evidence', sym, 'px']);
