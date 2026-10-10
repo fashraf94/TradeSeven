@@ -106,3 +106,7 @@ scripts/composition/out/
 # Declarations wording experiment (scripts/declarations-wording-experiment.mjs): raw
 # requests/responses can carry player text, which never goes into git.
 experiments/declarations-wording/raw/
+
+# Cockpit week-1 read (scripts/cockpit-week1-read.mjs --raw): raw Firestore dumps,
+# never committed.
+/reads-raw/
