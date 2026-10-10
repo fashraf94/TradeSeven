@@ -28,7 +28,7 @@
 // "close" always names the session-close instant (Amendment E addendum 2, F2).
 
 import React, { useMemo, useState } from 'react';
-import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, sessionOf, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
+import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, seriesDomain, closePoints, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
 import { classOfNumber } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
 import { FILM_ROOM_COPY as COPY, FORBIDDEN_WORDS } from './filmRoomCopy';
@@ -77,11 +77,9 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   // The time domain is the tape day's TRADING SESSION from the calendar the writers use — never the bars' extent:
   // bars sit where they exist, a missing head or tail stays blank, and "close" is the calendar's session-close
   // instant, early or regular (Amendment E addendum 2, F2). Only a date the calendar does not know as a session
-  // falls back to the bars' extent, and then its right end is the last bar's end time — never "close".
-  const session = sessionOf(tape?.etDate);
-  const lastMs = toMs(bars[bars.length - 1]?.t);
-  const startMs = session ? session.openMs : (toMs(doc.sessionOpen?.at) ?? toMs(bars[0]?.t));
-  const endMs = session ? session.closeMs : (lastMs !== null ? lastMs + 10 * 60_000 : null);
+  // falls back to the bars' extent, and then its right end is the last bar's end time — never "close". The one rule
+  // the sparklines share (seriesDomain; review A2A2-4).
+  const { session, startMs, endMs, lastMs } = seriesDomain(tape?.etDate, doc);
   const marks = evidenceMarkers(tape, sym);
   const actions = (Array.isArray(tape.actions) ? tape.actions : []).map((a, i) => ({ a, i })).filter(({ a }) => a.symbolOut === sym || a.symbolIn === sym);
   const mk = show.market ? rebased(marketDoc, open) : null;
@@ -101,7 +99,7 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   // Every line breaks where a 10-minute bucket is missing between its first and last bar — never a straight line
   // across the gap, nothing interpolated (review A2A2-3): one subpath per run of consecutive bars.
   const line = (pts) => linePath(pts, x, y);
-  const closes = bars.map((b) => ({ t: toMs(b.t) === null ? null : toMs(b.t) + SERIES_STEP_MS, v: b.c }));
+  const closes = closePoints(bars);
   const lastEndX = lastMs !== null ? x(lastMs + 10 * 60_000) : 1000;
   const vols = bars.map((b) => b.v).filter(isNum);
   const volMax = vols.length ? Math.max(...vols) : 0;
@@ -230,8 +228,12 @@ function SymbolFacts({ tape, doc, sym, holdings, sectorEtf }) {
   );
 }
 
-/** Desktop: every symbol's price at a glance; click to select. */
-function SmallMultiples({ series, symbols, sym, onSym }) {
+/**
+ * Desktop: every symbol's price at a glance; click to select. Each sparkline places its closes BY TIME on the same
+ * session domain as the Deep dive's chart (seriesDomain, from the shared calendar) — never spaced by index — and
+ * breaks where a bucket is missing, as the chart does (review A2A2-4, A2A2-3).
+ */
+function SmallMultiples({ tape, series, symbols, sym, onSym }) {
   return (
     <div data-region="all-symbols" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0,1fr))', gap: 10 }}>
       {symbols.map((s) => {
@@ -239,7 +241,9 @@ function SmallMultiples({ series, symbols, sym, onSym }) {
         const bars = Array.isArray(doc?.bars) ? doc.bars : [];
         const cs = bars.map((b) => b.c).filter(isNum);
         const lo = cs.length ? Math.min(...cs) : 0; const hi = cs.length ? Math.max(...cs) : 1; const sp = Math.max(hi * 0.001, hi - lo);
-        const d = cs.map((v, i) => `${i ? 'L' : 'M'}${((i / Math.max(1, cs.length - 1)) * 100).toFixed(1)} ${(((hi - v) / sp) * 36 + 2).toFixed(1)}`).join(' ');
+        const { startMs, endMs } = seriesDomain(tape?.etDate, doc);
+        const timed = startMs !== null && endMs !== null && endMs > startMs;
+        const d = timed ? linePath(closePoints(bars), (ms) => ((ms - startMs) / (endMs - startMs)) * 100, (v) => ((hi - v) / sp) * 36 + 2) : '';
         const on = s === sym;
         return (
           <button key={s} type="button" data-mini={s} aria-pressed={on} onClick={() => onSym(s)} style={{ ...plain, borderRadius: 12, padding: '8px 10px', background: on ? tint('teal', 0.07) : C.surface, border: `1px solid ${on ? tint('teal', 0.4) : C.hair2}`, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
@@ -247,7 +251,7 @@ function SmallMultiples({ series, symbols, sym, onSym }) {
               <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}><Rec>{s}</Rec></span>
               {bars.length ? <TapeNum doc={doc} docLabel={`series:${s}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={10.5} weight={500} color={C.ink2} /> : null}
             </span>
-            {cs.length ? <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width: '100%', height: 40, display: 'block' }} aria-hidden="true"><path d={d} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.3 }} vectorEffect="non-scaling-stroke" /></svg> : <span style={mono(9, C.ink3)}>{COPY.deepNoSeries(s)}</span>}
+            {cs.length ? <svg viewBox="0 0 100 40" preserveAspectRatio="none" data-mini-domain-start={timed ? new Date(startMs).toISOString() : undefined} data-mini-domain-end={timed ? new Date(endMs).toISOString() : undefined} style={{ width: '100%', height: 40, display: 'block' }} aria-hidden="true"><path data-mini-line={s} d={d} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.3 }} vectorEffect="non-scaling-stroke" /></svg> : <span style={mono(9, C.ink3)}>{COPY.deepNoSeries(s)}</span>}
           </button>
         );
       })}
@@ -323,7 +327,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
           <div style={{ paddingTop: 22 }}>{doc ? <SymbolFacts tape={tape} doc={doc} sym={current} holdings={holdings} sectorEtf={sectorEtf} /> : null}</div>
         </div>
         <Section id="deep-all" title={COPY.allSymbols} doc={tape} coverageAt={['coverage', 'series']}>
-          <SmallMultiples series={series} symbols={symbols} sym={current} onSym={(s) => { setMark(null); onSym(s); }} />
+          <SmallMultiples tape={tape} series={series} symbols={symbols} sym={current} onSym={(s) => { setMark(null); onSym(s); }} />
         </Section>
       </div>
     );

@@ -604,6 +604,25 @@ export function linePath(points, x, y, stepMs = SERIES_STEP_MS) {
     : run.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' '))).join(' ');
 }
 
+/**
+ * A series chart's TIME DOMAIN — the one rule the Deep dive's price chart and the desktop "All symbols" sparklines
+ * share (review A2A2-4): the tape day's trading session from the calendar the writers use (sessionOf: open to the
+ * calendar's close, an early close included — Amendment E addendum 2, F2); only a date the calendar does not know as
+ * a session falls back to the bars' own extent, ending at the last bar's end. `startMs` / `endMs` null when neither
+ * gives a span. A bar's close sits at its bar's END (`t` + one step) on this domain.
+ */
+export function seriesDomain(etDate, doc) {
+  const bars = Array.isArray(doc?.bars) ? doc.bars : [];
+  const session = sessionOf(etDate);
+  const lastMs = toMs(bars[bars.length - 1]?.t);
+  const startMs = session ? session.openMs : (toMs(doc?.sessionOpen?.at) ?? toMs(bars[0]?.t));
+  const endMs = session ? session.closeMs : (lastMs !== null ? lastMs + SERIES_STEP_MS : null);
+  return { session, startMs, endMs, lastMs };
+}
+
+/** Each bar's close at its bar's end, as a line's points `{ t, v }` on a series domain. */
+export const closePoints = (bars) => (Array.isArray(bars) ? bars : []).map((b) => ({ t: toMs(b?.t) === null ? null : toMs(b.t) + SERIES_STEP_MS, v: b?.c }));
+
 /** R4(b) scaffolding: gridline steps of the % move from the session open — at most five lines across the chart's span. */
 const PCT_STEPS = [0.001, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2];
 export function pctTicks(lo, hi) {
