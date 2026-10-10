@@ -14,7 +14,8 @@
 //                  or forbidden word; no "Why?" heading; no number spelled
 //                  as a word outside a marked number (R8)
 //   quoteDefects   R7's guard: every quotation bound to its tape path (text =
-//                  the stored value) and attributed as the record says
+//                  the stored value), attributed as the record says, and never
+//                  inside a heading (Astra B1)
 //   sweepSigns     sign colours on recorded scores only
 // The fixtures are the A1 passes' own output (screenFixtures.test.js).
 
@@ -412,13 +413,16 @@ function boundTextOf(node, docs) {
 
 /**
  * R7's guard — what the sweeps exempt: an ATTRIBUTED quotation bound to a tape path. All of: bound (above), a path
- * in the recorded-words channels, and an attribution beside it (review A2A1-4: a bound quotation with no attribution,
- * or of a path that holds no one's words, stays under the sweeps). Whether the attribution names the right author
- * and time is quoteDefects' check.
+ * in the recorded-words channels, an attribution beside it (review A2A1-4: a bound quotation with no attribution,
+ * or of a path that holds no one's words, stays under the sweeps), and NO heading around it (Astra B1: a heading is
+ * the screen's own voice — recorded words inside one would read as the screen's title). Whether the attribution
+ * names the right author and time is quoteDefects' check.
  */
+const HEADINGS = 'h1, h2, h3, h4, h5, h6, [role="heading"]';
 export function boundQuotationOf(node, docs = {}) {
   const q = boundTextOf(node, docs);
   if (!q || !SPEC_QUOTE_CHANNELS.some((c) => c.re.test(q.getAttribute('data-quote-path')))) return null;
+  if (q.closest(HEADINGS)) return null;
   return [...q.parentElement.children].some((c) => c.hasAttribute('data-quote-attribution')) ? q : null;
 }
 
@@ -447,6 +451,8 @@ export function quoteDefects(container, docs = {}) {
     const texts = [...root.children].filter((c) => c.hasAttribute('data-quote-path'));
     if (texts.length !== 1) { bad.push(`a quotation with ${texts.length} quoted texts`); continue; }
     const where = texts[0].getAttribute('data-quote-path');
+    // Astra B1: a quotation never sits inside a heading — the heading is the screen's voice
+    if (root.closest(HEADINGS)) { bad.push(`${where}: inside a heading`); continue; }
     const channel = SPEC_QUOTE_CHANNELS.find((c) => c.re.test(where));
     if (!channel) { bad.push(`${where}: not a recorded-words channel`); continue; }
     const attr = [...root.children].find((c) => c.hasAttribute('data-quote-attribution'));

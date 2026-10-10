@@ -5,6 +5,8 @@
 // The follow-up pass before 'on' — the guard limits Astra's confirmation
 // review found in the sweeps (docs/audits/20261009_ASTRA_CONFIRMATION_FILM_ROOM_A2_SCREEN.md
 // §3), each closed with the exact bypass Astra reproduced as its first row:
+//   B1  a bound quotation inside a heading is neither exempt from the sweeps
+//       nor valid: the heading is the screen's voice
 //   B2  the stored-note number exemption (R1 / R9) is a BINDING — an element
 //       bound to an R1 / R9 path whose text is the value stored there — never
 //       a string found anywhere in the document; the forbidden-word scan stays
@@ -13,8 +15,8 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { Coverage, MissingInputs, StoredNote } from './FilmRoomKit';
-import { mounter, sep23Tape, clone, sweepNumbers, sweepWords, storedNoteDefects, boundStoredNoteOf, SPEC_STORED_NOTE_PATHS } from './__fixtures__/filmRoomHarness';
+import { Coverage, MissingInputs, StoredNote, Quotation } from './FilmRoomKit';
+import { mounter, sep23Tape, clone, sweepNumbers, sweepWords, quoteDefects, boundQuotationOf, storedNoteDefects, boundStoredNoteOf, SPEC_STORED_NOTE_PATHS } from './__fixtures__/filmRoomHarness';
 
 const box = (html) => { const el = document.createElement('div'); el.innerHTML = html; return el; };
 const m = mounter();
@@ -110,5 +112,42 @@ describe('Astra B2 — the stored-note number exemption is bound by path, never 
     m.render(<Coverage coverage={{ status: 'unavailable', note: 'one 73' }} />);
     expect(m.q('[data-stored-note]')).toBeNull();
     expect(sweepNumbers(m.container, { tape: noted('one 73') })).toEqual(['stray digit: “one 73”']);
+  });
+});
+
+describe('Astra B1 — a quotation inside a heading is the screen\'s voice: neither exempt nor valid', () => {
+  const said = (words) => { const t = clone(sep23Tape); t.rationale[0].rationale = words; return t; };
+  const quote = (tape) => <Quotation doc={tape} path={['rationale', 0, 'rationale']} by="agent" at={['rationale', 0, 'at']} />;
+
+  it('Astra\'s repro: <h2><Quotation …/></h2> on a valid rationale reading "best one 73" — every sweep sees the words, the validator names the heading', () => {
+    const tape = said('best one 73');
+    m.render(<h2>{quote(tape)}</h2>);
+    const docs = { tape };
+    expect(m.q('h2 [data-quote-path]').textContent).toBe('best one 73');   // bound: the stored value, verbatim
+    expect(sweepWords(m.container, docs)).toEqual(['best', 'number word “one”: best one 73']);
+    expect(sweepNumbers(m.container, docs)).toEqual(['stray digit: “best one 73”']);
+    expect(quoteDefects(m.container, docs)).toEqual(['rationale[0].rationale: inside a heading']);
+    expect(boundQuotationOf(m.q('h2 [data-quote-path]'), docs)).toBeNull();
+  });
+
+  it('every heading level, and a role="heading" element, the same', () => {
+    const tape = said('best one 73');
+    for (const Tag of ['h1', 'h3', 'h4', 'h5', 'h6']) {
+      m.render(<Tag>{quote(tape)}</Tag>);
+      expect(quoteDefects(m.container, { tape }), Tag).toEqual(['rationale[0].rationale: inside a heading']);
+      expect(sweepWords(m.container, { tape }), Tag).toContain('best');
+    }
+    m.render(<div role="heading" aria-level={2}>{quote(tape)}</div>);
+    expect(quoteDefects(m.container, { tape })).toEqual(['rationale[0].rationale: inside a heading']);
+    expect(sweepWords(m.container, { tape })).toContain('best');
+  });
+
+  it('the control: the same quotation outside a heading is the record\'s words — exempt and valid', () => {
+    const tape = said('best one 73');
+    m.render(<section><h2>Rationale</h2>{quote(tape)}</section>);
+    const docs = { tape };
+    expect(sweepWords(m.container, docs)).toEqual([]);
+    expect(sweepNumbers(m.container, docs)).toEqual([]);
+    expect(quoteDefects(m.container, docs)).toEqual([]);
   });
 });
