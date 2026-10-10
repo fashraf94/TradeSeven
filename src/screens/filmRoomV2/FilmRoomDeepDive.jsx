@@ -64,6 +64,39 @@ const TICK_EVERY_MS = 90 * 60_000;
 /** A chart tick's clock, without AM/PM (the design of record's ticks). */
 const tickClock = (ms) => (etClock(new Date(ms).toISOString()) || '').replace(/ [AP]M$/, '');
 
+// ── the last close's label against the chart's other marks (A2A2-2's refuters: a marker could sit over it) ──────
+const LABEL_H = 13;          // the label's box: 9.5 px figures beside its 12 px class marker
+const MARKER_HALF = 12;      // an evidence marker's button: 24 × 24 px about its point
+const SWAP_ROW = 15;         // the swap labels' row along the plot's top edge
+const MIN_PLOT_PX = 150;     // the narrowest plot the screen lays out (a 320 px phone) — the width "near" is judged at
+/** An upper bound of the label's width in px: its figures at 9.5 px mono (≤ 6.2 px each), then the gap and the marker. */
+export const lastCloseLabelPx = (text) => Math.ceil(String(text).length * 6.2) + 20;
+
+/**
+ * The last close's label's top, in px. Its usual place — just above the line's end — when that is clear; else the
+ * nearest clear band above or below it; else under the price area, where no marker reaches. A marker is NEAR when
+ * the label's box and the marker's box share columns at SOME plot width the screen lays out (≥ MIN_PLOT_PX): `before`
+ * puts the label's right edge 2 px before the line's end, otherwise its left edge 4 px after it. Heights are exact
+ * px (the chart's height is fixed), so a band clear of every near marker is clear at every width. The swap labels'
+ * row is a band too when the symbol has one. Positions are in the chart's 0–1000 domain (x) and px (y).
+ */
+export function lastCloseTop({ endX, endY, before, labelPx, markers = [], swapRow = false, maxTop, floorTop }) {
+  const k = 1000 / MIN_PLOT_PX;   // domain units per px at the narrowest plot
+  const near = markers.filter((mk) => (before
+    ? endX - mk.x > -(MARKER_HALF - 2) * k && endX - mk.x < (labelPx + 2 + MARKER_HALF) * k
+    : mk.x - endX > -(MARKER_HALF - 4) * k && mk.x - endX < (labelPx + 4 + MARKER_HALF) * k));
+  const bands = near.map((mk) => [mk.y - MARKER_HALF - 1, mk.y + MARKER_HALF + 1]);
+  if (swapRow) bands.push([-Infinity, SWAP_ROW]);
+  const clear = (t) => t >= 0 && t <= maxTop && bands.every(([a, b]) => t + LABEL_H <= a || t >= b);
+  const above = endY - 16;
+  const below = endY + 4;
+  for (let d = 0; d <= maxTop + 16; d += 2) {
+    if (clear(above - d)) return above - d;
+    if (clear(below + d)) return below + d;
+  }
+  return Math.min(floorTop, maxTop);
+}
+
 /** A line of closes rebased to `base` (another series drawn on this symbol's price scale), or null. */
 function rebased(doc, base) {
   const open = doc?.sessionOpen?.value;
@@ -109,6 +142,13 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   const timeTicks = [];
   for (let t = startMs + TICK_EVERY_MS; t < endMs - TICK_EVERY_MS / 2; t += TICK_EVERY_MS) timeTicks.push(t);
   const tickLabel = { position: 'absolute', ...mono(9, C.ink3, { whiteSpace: 'nowrap', lineHeight: 1 }) };
+  // The last close's label keeps clear of every evidence marker near it and of the swap labels' row (lastCloseTop).
+  const lastClose = bars[bars.length - 1]?.c;
+  const markerPoints = marks.map((mk) => ({ x: x(toMs(mk.at)), y: y(valueAt(tape, ['checks', mk.index, 'evidence', sym, 'px'])) })).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  const lastTop = isNum(lastClose) ? lastCloseTop({
+    endX: lastEndX, endY: y(lastClose), before: lastEndX > 500, labelPx: lastCloseLabelPx(fmtPrice(lastClose)),
+    markers: markerPoints, swapRow: actions.some(({ a }) => toMs(a.at) !== null), maxTop: height - LABEL_H, floorTop: padT + ih + MARKER_HALF + 2,
+  }) : null;
   return (
     <div data-region="price-chart" data-symbol={sym} style={{ position: 'relative', width: '100%', boxSizing: 'border-box', padding: `0 ${PAD_R}px 0 ${PAD_L}px` }}>
       <div data-plot="" data-domain-start={new Date(startMs).toISOString()} data-domain-end={new Date(endMs).toISOString()} style={{ position: 'relative', width: '100%', height }}>
@@ -135,7 +175,8 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
         {isNum(open) ? <span data-axis-record="sessionOpen" style={{ position: 'absolute', right: 'calc(100% + 4px)', top: y(open) - 6 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['sessionOpen', 'value']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
         {/* The last close sits at the end of its own line — where the bars end, never out in a blank tail (F2): */}
         {/* just before that end when it lies right of the middle, just after it otherwise, so it never runs into the axis gutter (review A2A2-2). */}
-        {isNum(bars[bars.length - 1]?.c) ? <span data-axis-record="lastClose" style={{ position: 'absolute', ...(lastEndX > 500 ? { right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)` } : { left: `calc(${(lastEndX / 10).toFixed(3)}% + 4px)` }), top: y(bars[bars.length - 1].c) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
+        {/* …above its line's end when that is clear, else the nearest clear band — never over a marker or the swap labels' row. */}
+        {lastTop !== null ? <span data-axis-record="lastClose" style={{ position: 'absolute', ...(lastEndX > 500 ? { right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)` } : { left: `calc(${(lastEndX / 10).toFixed(3)}% + 4px)` }), top: lastTop }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
         {/* the evidence overlay (BA-43) */}
         {marks.map((m) => {
           const px = valueAt(tape, ['checks', m.index, 'evidence', sym, 'px']);
