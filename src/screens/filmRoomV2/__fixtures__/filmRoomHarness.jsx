@@ -132,6 +132,33 @@ function storedNoteTextOf(node, docs) {
   return typeof value === 'string' && value !== '' && s.textContent === value ? s : null;
 }
 
+/**
+ * Amendment E addendum 4, R13 — the agent's name, PINNED HERE from the ruling: the stored display name at
+ * agentContext.agentName on the battle document. It is exempt from the sweeps — forbidden words and number words, and
+ * (as a bound quotation is, R7) digits — on its BINDING alone: an element carrying `data-agent-name` at exactly that
+ * path whose text equals, byte for byte, the value the battle document stores there.
+ */
+export const SPEC_AGENT_NAME_PATH = 'agentContext.agentName';
+export function boundAgentNameOf(node, docs = {}) {
+  const el = node?.nodeType === 1 ? node : node?.parentElement;
+  const n = el?.closest('[data-agent-name]');
+  if (!n || n.getAttribute('data-agent-name') !== SPEC_AGENT_NAME_PATH) return null;
+  const doc = docs[n.getAttribute('data-agent-name-doc') || 'battle'];
+  const value = doc ? valueAt(doc, parsePath(SPEC_AGENT_NAME_PATH)) : undefined;
+  return typeof value === 'string' && value !== '' && n.textContent === value ? n : null;
+}
+
+/** R13's guard: every agent-name element is bound to the stored name; and the name sits in no text-bearing attribute. */
+export function agentNameDefects(container, docs = {}) {
+  const bad = [];
+  for (const n of container.querySelectorAll('[data-agent-name]')) if (!boundAgentNameOf(n, docs)) bad.push(`agent name “${n.textContent}”: not bound to ${SPEC_AGENT_NAME_PATH}`);
+  const name = docs.battle ? valueAt(docs.battle, parsePath(SPEC_AGENT_NAME_PATH)) : null;
+  if (typeof name === 'string' && name) {
+    for (const el of container.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) for (const attr of TEXT_ATTRIBUTES) if ((el.getAttribute(attr) || '').includes(name)) bad.push(`agent name in ${attr}: “${el.getAttribute(attr).slice(0, 80)}”`);
+  }
+  return bad;
+}
+
 /** B2 — the numbers of a stored note are exempt only when it is bound (above) AND its path is one R1 / R9 names. */
 export function boundStoredNoteOf(node, docs = {}) {
   const s = storedNoteTextOf(node, docs);
@@ -366,6 +393,8 @@ export function sweepNumbers(container, docs) {
     if (boundQuotationOf(host, docs)) continue;
     // R1 / R9, Astra B2: a stored note's numbers are the tape's own words — only bound to an R1 / R9 path.
     if (boundStoredNoteOf(host, docs)) continue;
+    // R13: the agent’s name, bound to its stored field, is a stored display name — not a number the screen states.
+    if (boundAgentNameOf(host, docs)) continue;
     if (host.closest('[data-time]')) for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
     if (host.closest('[data-identifier]')) text = text.replace(/#swap-\d+/g, ' ');
     for (const s of FIXED_DIGIT_COPY) text = text.split(s).join(' ');
@@ -486,7 +515,7 @@ export function quoteDefects(container, docs = {}) {
 export function renderedText(container, docs = {}) {
   const parts = [];
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (!boundQuotationOf(node, docs)) parts.push(node.textContent);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (!boundQuotationOf(node, docs) && !boundAgentNameOf(node, docs)) parts.push(node.textContent);
   for (const el of container.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) for (const attr of TEXT_ATTRIBUTES) parts.push(el.getAttribute(attr) || '');
   return parts.join(' \n ');
 }
@@ -509,6 +538,7 @@ function numberWordHits(container, docs) {
     if (markedNumberText(host)) continue;
     if (isDirectoryName(host)) continue;
     if (boundStoredNoteOf(node, docs)) continue;
+    if (boundAgentNameOf(node, docs)) continue;   // R13
     const m = text.match(NUMBER_WORD);
     if (m) hits.push(`number word “${m[0]}”: ${node.textContent.trim().slice(0, 80)}`);
   }

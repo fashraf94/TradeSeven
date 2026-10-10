@@ -15,7 +15,7 @@ import FilmRoomScreenV2, { noTapeLine, defaultDay, battleDays, headerParts } fro
 import { FIRST_OPEN_KEY } from './filmRoomSeen';
 import { FORBIDDEN_WORDS } from './filmRoomCopy';
 import {
-  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, storedNoteDefects, SPEC_FORBIDDEN_WORDS, SPEC_AGGREGATE_CLASSES, SPEC_NUMBER_WORDS,
+  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, storedNoteDefects, agentNameDefects, SPEC_FORBIDDEN_WORDS, SPEC_AGGREGATE_CLASSES, SPEC_NUMBER_WORDS,
 } from './__fixtures__/filmRoomHarness';
 import { COMPANY_NAMES } from '../../config/stockData';
 import { getPreviousSessionDate } from '../../utils/marketCalendar';
@@ -43,9 +43,9 @@ describe('the header (BA-41, BA-42)', () => {
     expect(text).toContain('Film Room');
     expect(text).toContain('Sep 23 · battle complete');
     // the battle length is a marked number (R8): "one-day battle" with its marker, D
-    expect(m.q('[data-header-subtitle]').textContent).toBe('Trend Follower · BaggerBomb · one-day battleD · Wed, Sep 23, 2026');
+    expect(m.q('[data-header-subtitle]').textContent).toBe('Momentum chaser · Trend Follower · BaggerBomb · one-day battleD · Wed, Sep 23, 2026');   // the agent's name first (R13)
     // a separator travels with the part after it: a wrapped line never starts or ends on " · " (review A2P3-3)
-    expect([...m.q('[data-header-subtitle]').children].map((s) => s.textContent)).toEqual(['Trend Follower', '· BaggerBomb', '· one-day battleD', '· Wed, Sep 23, 2026']);
+    expect([...m.q('[data-header-subtitle]').children].map((s) => s.textContent)).toEqual(['Momentum chaser', '· Trend Follower', '· BaggerBomb', '· one-day battleD', '· Wed, Sep 23, 2026']);
     expect(m.qa('[role="tab"]').map((t) => t.textContent)).toEqual(['Glance', 'Study', 'Deep dive']);
     const legends = m.qa('[data-legend]');
     expect(legends).toHaveLength(1);
@@ -135,13 +135,13 @@ describe('the header (BA-41, BA-42)', () => {
   it('the subtitle names only what the record carries: archetype · BaggerBomb · length · date', () => {
     const D = sep23Tape.etDate;
     const base = { agentContext: { archetype: 'momentum_chaser' }, timing: { tradingDays: ['2026-09-22', D] } };
-    expect(headerParts(base, sep23Tape, D)).toEqual({ archetype: 'Trend Follower', game: 'BaggerBomb', length: { days: 2, source: 'timing' }, date: 'Wed, Sep 23, 2026' });
+    expect(headerParts(base, sep23Tape, D)).toEqual({ name: null, archetype: 'Trend Follower', game: 'BaggerBomb', length: { days: 2, source: 'timing' }, date: 'Wed, Sep 23, 2026' });
     // no timeline: the tape's day number on its final day; on another day, no length at all (never battleDays' one-day fallback)
     expect(headerParts({ agentContext: {} }, sep23Tape, D).length).toEqual({ days: 1, source: 'dayNumber' });
     expect(headerParts({ agentContext: {} }, { ...sep23Tape, isFinalDay: false, dayNumber: 1 }, D).length).toBeNull();
     expect(battleDays({ completedAt: sep23Tape.battle.completedAt })).toEqual([D]);   // the screen's own one-day fallback…
     expect(headerParts({ completedAt: sep23Tape.battle.completedAt }, { ...sep23Tape, isFinalDay: false }, D).length).toBeNull();   // …never states a length
-    expect(headerParts({}, null, D)).toEqual({ archetype: null, game: 'BaggerBomb', length: null, date: 'Wed, Sep 23, 2026' });
+    expect(headerParts({}, null, D)).toEqual({ name: null, archetype: null, game: 'BaggerBomb', length: null, date: 'Wed, Sep 23, 2026' });
     // the archetype: the battle's, else the tape's (a code the directory does not name is humanised by the directory itself)
     expect(headerParts({}, sep23Tape, D).archetype).toBe('Momentum');
     // review A2P1-9 / A2P3-4: every agent battle is a BaggerBomb game (the tournament mode too) — it never waits on the tape
@@ -158,6 +158,82 @@ describe('the header (BA-41, BA-42)', () => {
     m.click(m.buttons('Deep dive · PLTR›')[0] || m.qa('button').find((b) => b.textContent.startsWith('Deep dive · PLTR')));
     await m.flush();
     expect(m.q('[data-region="price-chart"]').getAttribute('data-symbol')).toBe('PLTR');
+  });
+});
+
+describe('Amendment E addendum 4, R13 — the agent\'s name leads the subtitle, exactly as stored, bound to its field', () => {
+  const OCT9 = '2026-10-09';
+  /** A Friday-Oct-9 day: the Sep-23 tape re-dated, and a battle whose timeline names that day. */
+  async function openNamed(agentName, { tape = { ...clone(sep23Tape), etDate: OCT9 } } = {}) {
+    const battle = battleOf(tape, { timing: { tradingDays: [tape.etDate] }, agentContext: { archetype: 'momentum_chaser', ...(agentName === undefined ? {} : { agentName }) } });
+    await open(tape, { battle, readers: readersOf({ [tape.etDate]: tape }, sep23Series) });
+    return { battle, tape, docs: { battle, tape, ...Object.fromEntries(sep23Series.map((s) => [`series:${s.symbol}`, s])) } };
+  }
+  const subtitle = () => m.q('[data-header-subtitle]');
+
+  it('the prompt\'s subtitle: "Cipher · Trend Follower · BaggerBomb · one-day battle · Fri, Oct 9, 2026" — the name first, bound to agentContext.agentName', async () => {
+    const { docs } = await openNamed('Cipher');
+    expect(subtitle().textContent).toBe('Cipher · Trend Follower · BaggerBomb · one-day battleD · Fri, Oct 9, 2026');
+    const name = subtitle().querySelector('[data-agent-name]');
+    expect([name.getAttribute('data-agent-name'), name.getAttribute('data-agent-name-doc'), name.textContent]).toEqual(['agentContext.agentName', 'battle', 'Cipher']);
+    expect(subtitle().firstElementChild.contains(name)).toBe(true);
+    expect(name.style.textTransform).toBe('none');   // never altered: the subtitle's capitals do not reach it
+    expect(agentNameDefects(m.container, docs)).toEqual([]);
+    expect(headerParts(docs.battle, docs.tape, OCT9).name).toBe('Cipher');
+  });
+
+  it('no stored name: the subtitle starts with the archetype, as before', async () => {
+    for (const absent of [undefined, '', null, 7]) {
+      m.teardown(); m.setup(); globalThis.localStorage.clear();
+      await openNamed(absent);
+      expect(subtitle().textContent, String(absent)).toBe('Trend Follower · BaggerBomb · one-day battleD · Fri, Oct 9, 2026');
+      expect(subtitle().querySelector('[data-agent-name]'), String(absent)).toBeNull();
+    }
+  });
+
+  it('a name with a forbidden word, a name with a number word, a name with digits: exempt on the binding alone — the whole screen sweeps clean', async () => {
+    for (const agentName of ['Best Buddy', 'One Eyed Twelve', 'R2-D2 47']) {
+      m.teardown(); m.setup(); globalThis.localStorage.clear();
+      const { docs } = await openNamed(agentName);
+      for (const label of ['Glance', 'Study', 'Deep dive']) {
+        await depth(label);
+        expect(sweepWords(m.container, docs), `${agentName} · ${label}`).toEqual([]);
+        expect(sweepNumbers(m.container, docs), `${agentName} · ${label}`).toEqual([]);
+        expect(agentNameDefects(m.container, docs), `${agentName} · ${label}`).toEqual([]);
+      }
+    }
+  });
+
+  it('the binding bites: the same words unbound, a name not the stored one, a forged path, no battle document — all swept', async () => {
+    const { docs } = await openNamed('Best Buddy');
+    const name = subtitle().querySelector('[data-agent-name]');
+    // another stored name: the element no longer equals the record
+    expect(sweepWords(m.container, { ...docs, battle: { ...docs.battle, agentContext: { agentName: 'Cipher' } } })).toEqual(['best']);
+    expect(agentNameDefects(m.container, { ...docs, battle: { ...docs.battle, agentContext: { agentName: 'Cipher' } } })).toEqual(['agent name “Best Buddy”: not bound to agentContext.agentName']);
+    // no battle document to bind it to
+    expect(sweepWords(m.container, { tape: docs.tape })).toEqual(['best']);
+    // a forged path
+    name.setAttribute('data-agent-name', 'agentContext.archetype');
+    expect(sweepWords(m.container, docs)).toEqual(['best']);
+    name.setAttribute('data-agent-name', 'agentContext.agentName');
+    // the same words anywhere else are the screen's voice
+    const box = document.createElement('div');
+    box.innerHTML = '<span>Best Buddy</span><span data-agent-name="agentContext.agentName">One Eyed Twelve</span>';
+    expect(sweepWords(box, docs)).toEqual(['best', 'number word “One”: One Eyed Twelve']);   // unbound words, and a name that is not the stored one
+  });
+
+  it('never composed into other copy, never in an attribute: a distinctive name appears in exactly one text node — its own — at every depth', async () => {
+    const { docs } = await openNamed('Zyx Best Twelve 47');
+    for (const label of ['Glance', 'Study', 'Deep dive']) {
+      await depth(label);
+      m.expandAll();
+      const holders = [];
+      const walker = document.createTreeWalker(m.container, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.textContent.includes('Zyx')) holders.push(n.parentElement);
+      expect(holders.map((h) => h.getAttribute('data-agent-name')), label).toEqual(['agentContext.agentName']);
+      for (const el of m.qa('*')) for (const a of el.getAttributeNames()) expect(el.getAttribute(a).includes('Zyx'), `${label} ${a}`).toBe(false);
+      expect(agentNameDefects(m.container, docs), label).toEqual([]);
+    }
   });
 });
 
@@ -329,6 +405,7 @@ describe('the whole screen through the sweeps — every depth, both days, everyt
       expect(sweepWords(m.container, docs), label).toEqual([]);
       expect(quoteDefects(m.container, docs), label).toEqual([]);
       expect(storedNoteDefects(m.container, docs), label).toEqual([]);   // every stored note bound to its path (Astra B2)
+      expect(agentNameDefects(m.container, docs), label).toEqual([]);   // the agent's name bound to its field (R13)
       const notes = m.container.textContent.split('This does not show which protections were armed or checked.').length - 1;
       expect(notes, label).toBe(label === 'Deep dive' && !m.q('[data-region="evidence-overlay"]') ? 0 : 1);
     }
@@ -353,6 +430,7 @@ describe('the whole screen through the sweeps — every depth, both days, everyt
         expect(sweepWords(m.container, docs), label).toEqual([]);
         expect(quoteDefects(m.container, docs), label).toEqual([]);
         expect(storedNoteDefects(m.container, docs), label).toEqual([]);
+        expect(agentNameDefects(m.container, docs), label).toEqual([]);
       }
       expect(m.q('[data-region="all-symbols"]')).toBeTruthy();
       expect(m.qa('[data-fork-ends]')).toHaveLength(0);   // the Deep dive is showing; the Study's desktop fork ends were swept above

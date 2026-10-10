@@ -90,8 +90,9 @@ function NoTapeLine({ state }) {
 const LENGTH_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
 
 /**
- * The header's subtitle (design of record): archetype · BaggerBomb · one-day
- * battle · date — each part only where the record carries it. The archetype
+ * The header's subtitle (design of record): the agent's name (R13) · archetype ·
+ * BaggerBomb · one-day battle · date — each part only where the record carries
+ * it. The archetype
  * is the app's canonical display name (src/data/archetypeDisplay.js) for the
  * battle's archetype, else the tape's — never the writer's 'unknown' sentinel
  * (review A2P1-6). "BaggerBomb" is every agent battle's game: both agent modes
@@ -112,7 +113,9 @@ export function headerParts(battle, tape, etDate) {
   const timing = tradingTimeline(battle);
   const length = timing && timing.length ? { days: timing.length, source: 'timing' }
     : (tape?.isFinalDay === true && Number.isInteger(tape?.dayNumber) ? { days: tape.dayNumber, source: 'dayNumber' } : null);
+  const name = battle?.agentContext?.agentName;
   return {
+    name: typeof name === 'string' && name ? name : null,   // R13: shown only through AgentName, bound to its field
     archetype: code ? getArchetypeDisplayName(code) : null,
     game: COPY.gameName,
     length: length && length.days >= 1 && length.days <= LENGTH_WORDS.length ? length : null,
@@ -121,6 +124,19 @@ export function headerParts(battle, tape, etDate) {
 }
 
 const lengthWord = (n) => LENGTH_WORDS[n - 1];
+
+/**
+ * R13 (Amendment E addendum 4) — the agent's name: a stored display name chosen for the agent, not the screen's
+ * voice. It renders EXACTLY as stored, bound to its field — the element's text is the value at
+ * battle.agentContext.agentName, the name the app already passes — with no case transform (the subtitle's capitals
+ * would alter it), never composed into other copy, never in an aria-label or title. No stored name → nothing, and
+ * the subtitle starts with the archetype, as before.
+ */
+function AgentName({ battle }) {
+  const name = battle?.agentContext?.agentName;
+  if (typeof name !== 'string' || !name) return null;
+  return <span data-agent-name="agentContext.agentName" data-agent-name-doc="battle" style={{ textTransform: 'none' }}>{name}</span>;
+}
 
 /**
  * R8 — the battle length, "one-day battle", as a MARKED number: the count of the battle's timeline through the
@@ -206,7 +222,7 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
   };
 
   const parts = headerParts(battle, tape, day);
-  const subtitle = [parts.archetype, parts.game, parts.length ? <BattleLength key="length" length={parts.length} tape={tape} /> : null, parts.date ? <When key="date">{parts.date}</When> : null].filter(Boolean);
+  const subtitle = [parts.name ? <AgentName key="name" battle={battle} /> : null, parts.archetype, parts.game, parts.length ? <BattleLength key="length" length={parts.length} tape={tape} /> : null, parts.date ? <When key="date">{parts.date}</When> : null].filter(Boolean);
   // The battle's status, not the day's: an earlier day's tape was written while the battle was live (review A2L1-3).
   const complete = battle?.status === 'completed' || tape?.battle?.status === 'completed';
   const lastDay = days.length ? days[days.length - 1] : null;
