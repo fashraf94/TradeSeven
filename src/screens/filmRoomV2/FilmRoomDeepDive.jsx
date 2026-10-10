@@ -28,7 +28,7 @@
 // "close" always names the session-close instant (Amendment E addendum 2, F2).
 
 import React, { useMemo, useState } from 'react';
-import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, sessionOf, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
+import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, sessionOf, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
 import { classOfNumber } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
 import { FILM_ROOM_COPY as COPY, FORBIDDEN_WORDS } from './filmRoomCopy';
@@ -98,12 +98,10 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   const ih = height - padT - volH - gap - 4;
   const x = (ms) => ((ms - startMs) / (endMs - startMs)) * 1000;
   const y = (v) => padT + ((hi - v) / (hi - lo)) * ih;
-  const line = (pts) => {
-    let s = ''; let pen = false;
-    for (const p of pts) { if (!isNum(p.v) || p.t === null) { pen = false; continue; } s += `${pen ? 'L' : 'M'}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)} `; pen = true; }
-    return s.trim();
-  };
-  const closes = bars.map((b) => ({ t: (toMs(b.t) ?? 0) + 10 * 60_000, v: b.c }));
+  // Every line breaks where a 10-minute bucket is missing between its first and last bar — never a straight line
+  // across the gap, nothing interpolated (review A2A2-3): one subpath per run of consecutive bars.
+  const line = (pts) => linePath(pts, x, y);
+  const closes = bars.map((b) => ({ t: toMs(b.t) === null ? null : toMs(b.t) + SERIES_STEP_MS, v: b.c }));
   const lastEndX = lastMs !== null ? x(lastMs + 10 * 60_000) : 1000;
   const vols = bars.map((b) => b.v).filter(isNum);
   const volMax = vols.length ? Math.max(...vols) : 0;
@@ -119,8 +117,8 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
         <svg width="100%" height={height} viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-label={`${sym} · ${COPY.deepPrice}`} style={{ display: 'block', overflow: 'visible', width: '100%', height }}>
           {ticks.filter((v) => v !== 0).map((v) => <line key={v} data-gridline="" x1="0" x2="1000" y1={y(open * (1 + v))} y2={y(open * (1 + v))} style={{ stroke: C.hair }} vectorEffect="non-scaling-stroke" />)}
           {isNum(open) ? <line data-line="session-open" x1="0" x2="1000" y1={y(open)} y2={y(open)} style={{ stroke: C.ink3, strokeDasharray: '1.5 3' }} vectorEffect="non-scaling-stroke" /> : null}
-          {mk ? <path data-line="market" d={line(mk.map((p) => ({ ...p, t: p.t + 10 * 60_000 })))} style={{ fill: 'none', stroke: C.ink3, strokeWidth: 1.1 }} vectorEffect="non-scaling-stroke" /> : null}
-          {sc ? <path data-line="sector" d={line(sc.map((p) => ({ ...p, t: p.t + 10 * 60_000 })))} style={{ fill: 'none', stroke: C.purple, strokeWidth: 1.1, opacity: 0.9 }} vectorEffect="non-scaling-stroke" /> : null}
+          {mk ? <path data-line="market" d={line(mk.map((p) => ({ ...p, t: p.t === null ? null : p.t + SERIES_STEP_MS })))} style={{ fill: 'none', stroke: C.ink3, strokeWidth: 1.1 }} vectorEffect="non-scaling-stroke" /> : null}
+          {sc ? <path data-line="sector" d={line(sc.map((p) => ({ ...p, t: p.t === null ? null : p.t + SERIES_STEP_MS })))} style={{ fill: 'none', stroke: C.purple, strokeWidth: 1.1, opacity: 0.9 }} vectorEffect="non-scaling-stroke" /> : null}
           <path data-line="price" d={line(closes)} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.6 }} vectorEffect="non-scaling-stroke" />
           {actions.map(({ a, i }) => (toMs(a.at) !== null ? <line key={i} data-swap-mark={i} x1={x(toMs(a.at))} x2={x(toMs(a.at))} y1={padT - 4} y2={padT + ih} style={{ stroke: exitMakerOf(a).by === 'agent' ? C.teal : C.ink2, strokeWidth: 1, strokeDasharray: '3 2' }} vectorEffect="non-scaling-stroke" /> : null))}
           {show.volume && volMax > 0 ? bars.map((b, i) => (isNum(b.v) && toMs(b.t) !== null ? <rect key={i} data-volume-bar={i} x={x(toMs(b.t)) + 2} width={Math.max(2, (10 * 60_000 / (endMs - startMs)) * 1000 - 4)} y={padT + ih + gap + volH - (b.v / volMax) * volH} height={(b.v / volMax) * volH} style={{ fill: tint('scrim', 0.18) }} /> : null)) : null}

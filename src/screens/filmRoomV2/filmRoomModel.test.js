@@ -11,7 +11,7 @@ import {
   valueAt, classAt, numberAt, checkStateOf, checkRuns, riskLines, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, deriveHoldings,
   directiveCardOf, rationaleTimeline, planGroups, evidenceMarkers, roleOf, deepSymbols, extremeBars, lastPointPath,
   fmtPoints, fmtPrice, fmtPriceDelta, etClock, etDateLabel, isRecordedScore, SCREEN_AGGREGATE_CLASSES, checkCounts,
-  fmtPercent, seriesFacts, pctTicks, tradingTimeline,
+  fmtPercent, seriesFacts, pctTicks, tradingTimeline, lineRuns, linePath,
 } from './filmRoomModel';
 import sep23Series from './__fixtures__/sep23.series.json';
 import { SPEC_AGGREGATE_CLASSES } from './__fixtures__/filmRoomHarness';
@@ -274,6 +274,21 @@ describe('Astra B4 — one validated timeline (the day picker, the battle length
     expect(tradingTimeline({ timing: { tradingDays: '2026-09-23' } })).toBeNull();
     expect(tradingTimeline(null)).toBeNull();
     expect(of([])).toEqual([]);
+  });
+});
+
+describe('A2A2-3 — a line\'s runs break at a missing bucket', () => {
+  const T = (min) => Date.parse('2026-09-23T13:30:00.000Z') + min * 60_000;
+  it('consecutive 10-minute points are one run; a missing bucket, a null value or a null instant starts another', () => {
+    expect(lineRuns([{ t: T(10), v: 1 }, { t: T(20), v: 2 }, { t: T(30), v: 3 }]).map((r) => r.length)).toEqual([3]);
+    expect(lineRuns([{ t: T(10), v: 1 }, { t: T(20), v: 2 }, { t: T(40), v: 4 }, { t: T(50), v: 5 }]).map((r) => r.map((p) => p.v))).toEqual([[1, 2], [4, 5]]);
+    expect(lineRuns([{ t: T(10), v: 1 }, { t: T(20), v: null }, { t: T(30), v: 3 }, { t: null, v: 4 }, { t: T(50), v: 5 }]).map((r) => r.map((p) => p.v))).toEqual([[1], [3], [5]]);
+    expect(lineRuns([])).toEqual([]);
+  });
+  it('the path lifts the pen at each gap; a lone point is a short tick at its own value', () => {
+    const x = (t) => (t - T(0)) / 60_000; const y = (v) => 100 - v;
+    expect(linePath([{ t: T(10), v: 1 }, { t: T(20), v: 2 }, { t: T(40), v: 4 }], x, y)).toBe('M10.0 99.0 L20.0 98.0 M39.0 96.0 L41.0 96.0');
+    expect(linePath([{ t: T(10), v: 1 }, { t: T(20), v: 2 }], x, y)).toBe('M10.0 99.0 L20.0 98.0');   // unbroken: the old form, byte for byte
   });
 });
 

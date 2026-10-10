@@ -574,6 +574,36 @@ export function seriesFacts(doc, tape = null) {
   return { change, volume };
 }
 
+/** The series documents' bar width: the candle pass's 10-minute buckets (api/_utils/filmTape/bars.js aggregate10m). */
+export const SERIES_STEP_MS = 10 * 60_000;
+
+/**
+ * A drawn line's RUNS (review A2A2-3): the points in order, split wherever the next point lies more than one bar step
+ * after the last — a 10-minute bucket missing between the first and the last bar — or carries no value or no
+ * instant. A line never crosses a gap and nothing is interpolated across one: each run is drawn on its own.
+ * Points are `{ t, v }`, `t` in epoch ms.
+ */
+export function lineRuns(points, stepMs = SERIES_STEP_MS) {
+  const runs = [];
+  let run = null;
+  for (const p of points || []) {
+    if (!isNum(p?.v) || !isNum(p?.t)) { run = null; continue; }
+    if (!run || p.t - run[run.length - 1].t > stepMs) { run = []; runs.push(run); }
+    run.push(p);
+  }
+  return runs;
+}
+
+/**
+ * An SVG path through `points`, one subpath per run (lineRuns) — the pen lifts at every gap. A run of one point is
+ * a short tick at that point (its own value, nothing interpolated), so a lone bar between two gaps still shows.
+ */
+export function linePath(points, x, y, stepMs = SERIES_STEP_MS) {
+  return lineRuns(points, stepMs).map((run) => (run.length === 1
+    ? `M${(x(run[0].t) - 1).toFixed(1)} ${y(run[0].v).toFixed(1)} L${(x(run[0].t) + 1).toFixed(1)} ${y(run[0].v).toFixed(1)}`
+    : run.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(' '))).join(' ');
+}
+
 /** R4(b) scaffolding: gridline steps of the % move from the session open — at most five lines across the chart's span. */
 const PCT_STEPS = [0.001, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2];
 export function pctTicks(lo, hi) {
