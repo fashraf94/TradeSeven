@@ -198,6 +198,26 @@ describe('Amendment E addendum 4, R13 — the agent\'s name leads the subtitle, 
     expect(headerParts(docs.battle, docs.tape, OCT9).name).toBe('Cipher');
   });
 
+  it('the subtitle wraps between whole parts at every width — never an ellipsis that could cut the marked length from its marker (found by the real-layout check at 390)', async () => {
+    const had = window.matchMedia;
+    try {
+      for (const desktop of [false, true]) {
+        window.matchMedia = () => ({ matches: desktop, addEventListener: () => {}, removeEventListener: () => {} });
+        m.teardown(); m.setup(); globalThis.localStorage.clear();
+        await openNamed('A Rather Long Agent Name Indeed');
+        const s = subtitle();
+        expect([s.style.whiteSpace, s.style.textOverflow, s.style.overflow], desktop ? 'desktop' : 'phone').toEqual(['normal', '', '']);
+        for (const part of s.children) expect(part.style.whiteSpace, part.textContent).toBe('nowrap');
+        const length = s.querySelector('[data-num-aggregate]');
+        expect(length.closest('[data-header-subtitle] > span').contains(length.querySelector('[data-kind-mark]'))).toBe(true);   // the number and its marker in one unbreakable part
+        // the back control's label never breaks
+        expect(m.qa('header button')[0].querySelector('span').style.whiteSpace).toBe('nowrap');
+      }
+    } finally {
+      window.matchMedia = had;
+    }
+  });
+
   it('no stored name: the subtitle starts with the archetype, as before', async () => {
     for (const absent of [undefined, '', null, 7]) {
       m.teardown(); m.setup(); globalThis.localStorage.clear();

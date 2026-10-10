@@ -252,8 +252,9 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
       <header style={{ background: C.raised }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: desktop ? '8px 24px 12px' : '6px 12px 10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <button type="button" onClick={onBack} style={{ ...plain, display: 'flex', alignItems: 'center', gap: 4, color: C.teal, padding: '8px 6px', minHeight: 44, borderRadius: 8 }}>
-            <Label size={13}><span aria-hidden="true">‹</span> {COPY.backTo[backTo] ?? COPY.backTo.unknown}</Label>
+          {/* The back control names its destination on one line ("Battle History" never breaks); the pills beside it wrap instead. */}
+          <button type="button" onClick={onBack} style={{ ...plain, display: 'flex', alignItems: 'center', gap: 4, color: C.teal, padding: '8px 6px', minHeight: 44, borderRadius: 8, flexShrink: 0 }}>
+            <Label size={13} style={{ whiteSpace: 'nowrap' }}><span aria-hidden="true">‹</span> {COPY.backTo[backTo] ?? COPY.backTo.unknown}</Label>
           </button>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <span style={pill(C.teal)}>{COPY.title}</span>
@@ -266,8 +267,9 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
             <AgentMark battle={battle} size={desktop ? 40 : 34} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 }}>
               <h1 style={{ margin: 0, fontSize: desktop ? 18 : 16, fontWeight: 800, letterSpacing: '-0.01em', color: C.ink, lineHeight: 1.1, whiteSpace: 'nowrap' }}>{COPY.title}</h1>
-              {/* One line on the phone, as the design of record; on desktop it wraps rather than cutting off the length or the date. */}
-              <span data-header-subtitle="" style={mono(9.5, C.ink3, { letterSpacing: '0.06em', textTransform: 'uppercase', lineHeight: 1.35, ...(desktop ? { whiteSpace: 'normal' } : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }) })}>
+              {/* It wraps between its parts, at every width — never an ellipsis: with the agent's name in front (R13) a phone's
+                  one line would cut the marked length, and a cut could leave its number word without its marker (BA-42). */}
+              <span data-header-subtitle="" style={mono(9.5, C.ink3, { letterSpacing: '0.06em', textTransform: 'uppercase', lineHeight: 1.35, whiteSpace: 'normal' })}>
                 {/* a separator travels with the part after it, so a wrapped line never starts or ends on " · " (review A2P3-3) */}
                 {subtitle.map((p, i) => <React.Fragment key={i}>{i ? ' ' : null}<span style={{ whiteSpace: 'nowrap' }}>{i ? '· ' : null}{p}</span></React.Fragment>)}
               </span>
