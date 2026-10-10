@@ -144,8 +144,10 @@ describe('baseline gate — parity + sanitization invariants', () => {
     // D1 (adversarial review): lastDeployedAt is stamped upstream of the gate; a
     // battle-less abort must restore the prior value so the advertised retriable
     // outcome is not throttled behind the 2-minute cooldown.
+    // Pilot P1b (BUILD_RULES §2 review L2-2) adds a THIRD battle-less abort that rolls the cooldown back:
+    // the deploy-carriage race (the creation transaction threw HypothesisCarriageError, no battle exists).
     const matches = SOURCE.match(/lastDeployedAt: agent\.lastDeployedAt \?\? null/g);
-    expect(matches).toHaveLength(2);
+    expect(matches).toHaveLength(3);
   });
 
   it('createAgentBattle is still called with the same (db, agentData, thresholds, startingPrices) payload in both paths', () => {

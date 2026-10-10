@@ -9,6 +9,11 @@
 //        → { watchlistId, currentVersion, versions[], research[] }   newest first
 //        (Pilot P2: research[] = the list's research-record summaries —
 //        api/_utils/researchRecords/model.js recordSummaryOf)
+//        (Pilot P1b, founder ruling B3: when the page holds a review_due
+//        version, `deployedLists: { [version]: { battleId, name, tickers } }`
+//        names the FROZEN list the newest one rode in — its deploying
+//        battle's own snapshot, never the live list — so the Forge's review
+//        line can say [SYM] or [LIST]; `{}` when that cannot be proven)
 //   GET  /api/forge/watchlists/{id}/hypothesis-versions?version=n
 //        → { watchlistId, currentVersion, version }
 //   POST /api/forge/watchlists/{id}/hypothesis-versions
@@ -29,6 +34,7 @@ import {
   gateHypothesisRoute, requireOpId, requireExpectedVersion, requireVersion, parseContentPayload, sendHypothesisError,
 } from '../../../_utils/hypothesisRecords/http.js';
 import { createPlayerVersion, listVersions, readVersion } from '../../../_utils/hypothesisRecords/store.js';
+import { deployedListOf } from '../../../_utils/hypothesisRecords/carriage.js';
 
 export const config = { maxDuration: 10 };
 
@@ -49,7 +55,17 @@ export default async function handler(req, res) {
         return res.status(200).json({ watchlistId, ...out });
       }
       const out = await listVersions(db, { uid: user.uid, watchlistId, withResearch: true });
-      return res.status(200).json({ watchlistId, ...out });
+      // Pilot P1b (ruling B3): the newest due version's frozen list — the only one the Forge renders a line for.
+      const due = out.versions.find((v) => v?.status === 'review_due');
+      if (!due) return res.status(200).json({ watchlistId, ...out });
+      const deployedLists = {};
+      try {
+        const frozen = await deployedListOf(db, { uid: user.uid, version: due });
+        if (frozen) deployedLists[due.version] = frozen;
+      } catch (err) {
+        console.warn(`[hypothesis] frozen list read failed for ${watchlistId} v${due.version}: ${String(err?.message || err).slice(0, 200)}`);
+      }
+      return res.status(200).json({ watchlistId, ...out, deployedLists });
     } catch (err) {
       return sendHypothesisError(res, err, 'list');
     }

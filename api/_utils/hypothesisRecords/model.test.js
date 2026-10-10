@@ -133,9 +133,14 @@ describe('the player transition table (spec §2.5; acceptance row 4)', () => {
   it('pre-deploy statuses are draft, researched, ready, waiting_for_evidence', () => {
     expect([...PRE_DEPLOY_STATUSES].sort()).toEqual(['draft', 'ready', 'researched', 'waiting_for_evidence']);
   });
-  it('the Forge\'s legal actions: reaffirm only for a current review_due without a successor; a superseded version can only be closed', () => {
+  it('the Forge\'s legal actions: reaffirm for a review_due version exactly when founder ruling B4 holds over its newer versions (none, for the current one); a superseded version without them can only be closed', () => {
     expect(legalActionsFor('review_due')).toEqual(['retire', 'reaffirm']);
-    expect(legalActionsFor('review_due', { hasSuccessor: true })).toEqual(['retire']);
+    expect(legalActionsFor('review_due', { isCurrent: false })).toEqual(['retire']);
+    expect(legalActionsFor('review_due', { isCurrent: false, newerStatuses: ['draft', 'ready', 'rejected', 'cancelled', 'researched', 'waiting_for_evidence'] })).toEqual(['retire', 'reaffirm']);
+    for (const blocker of ['activated', 'invalidated', 'review_due', 'retired']) {
+      expect(legalActionsFor('review_due', { isCurrent: false, newerStatuses: ['draft', blocker] }), blocker).toEqual(['retire']);
+    }
+    expect(legalActionsFor('activated', { isCurrent: true })).toEqual(['retire']);
     expect(legalActionsFor('researched')).toEqual(['ready', 'wait', 'reject', 'cancel', 'retire']);
     expect(legalActionsFor('researched', { isCurrent: false })).toEqual(['reject', 'cancel', 'retire']);
     // P2 / D4: a current draft can be marked researched; a superseded one can only be closed.

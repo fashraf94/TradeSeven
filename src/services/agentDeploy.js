@@ -14,6 +14,8 @@ import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../config/featureFlags';
 // Record-only deploy instrumentation (console; no writes, nothing gates on it).
 // Every export is throw-proof, so these calls cannot affect the deploy contract.
 import * as ceremonyTiming from '../components/Dashboard/deployCeremony/ceremonyTiming';
+// Pilot P1b — the deploy refusal's typed code (founder ruling B2).
+import { DEPLOY_REFUSAL_CODE } from '../constants/hypothesisRecords';
 
 export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetResolved) {
   if (!agentId) return { success: false, postIssued: false, error: 'no-agent' };
@@ -148,10 +150,15 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
     }
     // [Deploy Ceremony §10] Forward `details`/`errorPhase` (previously dropped)
     // plus the HTTP status so the ceremony error surface can show something useful.
-    console.error('[Deploy] Failed:', status, data.error, data.details || '');
+    // Pilot P1b: a deploy refused because the equipped idea is due for review
+    // carries its words in `message` — table C's due-deploy line, verbatim —
+    // and the ceremony shows `details`, so that one refusal forwards its line
+    // there. Every other failure forwards exactly what it did before.
+    const refusalLine = data.error === DEPLOY_REFUSAL_CODE && typeof data.message === 'string' ? data.message : null;
+    console.error('[Deploy] Failed:', status, data.error, refusalLine || data.details || '');
     return {
       success: false, status, postIssued: true, httpStatus: status,
-      error: data.error, details: data.details, errorPhase: data.errorPhase,
+      error: data.error, details: refusalLine ?? data.details, errorPhase: data.errorPhase,
     };
   }
 

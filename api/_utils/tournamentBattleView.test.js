@@ -86,6 +86,45 @@ describe('projectTournamentBattle — owner / completion = full WHY', () => {
   });
 });
 
+// Pilot P1b (pilot spec §2.7; Phase 0 row #15; acceptance row 8): the player's
+// frozen idea (agentContext.equippedHypothesis — statement, conditions,
+// evidence refs) is owner-only at completion too: "owner sees full, others none".
+const SIBLING = {
+  watchlistId: 'wl-1', hypothesisVersion: 2, contentHash: 'c'.repeat(64), statement: 'PLANTED-IDEA: AI capex compounds',
+  horizonEnum: 'swing', horizonSource: 'player', activation: [{ symbol: 'NVDA', side: 'above', level: 100, basis: 'daily_close' }],
+  invalidation: [], evidenceRefs: [{ kind: 'researchWork', id: 'ws_planted' }], publishedAt: null, origin: 'signaldrop',
+};
+
+describe('projectTournamentBattle — P1b: the frozen idea is the OWNER\'s, at completion too', () => {
+  it('a COMPLETED battle shown to a NON-owner carries everything EXCEPT equippedHypothesis (a copy — the input is not mutated)', () => {
+    const b = whyBattle({ status: 'completed' });
+    b.agentContext.equippedHypothesis = SIBLING;
+    const out = projectTournamentBattle(b, { isOwner: false });
+    expect(out).not.toBe(b);
+    expect('equippedHypothesis' in out.agentContext).toBe(false);
+    expect(JSON.stringify(out)).not.toContain('PLANTED-IDEA');
+    const { equippedHypothesis: _dropped, ...rest } = b.agentContext;
+    expect(out.agentContext).toEqual(rest);
+    expect({ ...out, agentContext: b.agentContext }).toEqual(b);
+    expect(b.agentContext.equippedHypothesis).toBe(SIBLING);
+    expect(out._whyConcealed).toBeUndefined();
+  });
+  it('the OWNER sees it in full, live and after completion (the same object)', () => {
+    for (const status of ['active', 'completed']) {
+      const b = whyBattle({ status });
+      b.agentContext.equippedHypothesis = SIBLING;
+      expect(projectTournamentBattle(b, { isOwner: true })).toBe(b);
+    }
+  });
+  it('an ACTIVE battle shown to a non-owner never carried it (the allowlist), and a battle with none is returned as the same object', () => {
+    const b = whyBattle();
+    b.agentContext.equippedHypothesis = SIBLING;
+    expect('equippedHypothesis' in projectTournamentBattle(b, { isOwner: false }).agentContext).toBe(false);
+    const plain = whyBattle({ status: 'completed' });
+    expect(projectTournamentBattle(plain, { isOwner: false })).toBe(plain);
+  });
+});
+
 describe('projectTournamentBattle — non-owner active = WHAT only', () => {
   const projected = projectTournamentBattle(whyBattle(), { isOwner: false });
 
@@ -207,5 +246,27 @@ describe('pickCurrentBattlesByOwner', () => {
       { id: 'b', ownerId: 'o2', status: 'active', createdAt: '2026-06-12T00:00:00Z' },
     ]);
     expect(Object.keys(out).sort()).toEqual(['o1', 'o2']);
+  });
+});
+
+// Enforce readiness (table G, V1.4; review ER4-3): the typed marker that a swap's
+// outcome could not be confirmed is WHAT, not WHY — a spectator's pane drops a
+// marked beat exactly as the owner's does, so the projection must carry it.
+describe('enforce readiness — the public statusFeed carries the unconfirmed-outcome marker', () => {
+  it('kept when present, absent when not; still no attribution', () => {
+    const battle = {
+      id: 'b', ownerId: 'owner', status: 'active',
+      statusFeed: [
+        { timestamp: 't1', message: null, action: 'risk_swap_failed', source: 'risk_manager', triggeredBy: 'risk_bust', executionOutcome: 'unknown', symbolOut: 'KO', symbolIn: 'AMD' },
+        { timestamp: 't2', message: 'Swapped OLD → NVDA', action: 'swap', source: 'haiku', symbolOut: 'OLD', symbolIn: 'NVDA' },
+      ],
+    };
+    const projected = projectTournamentBattle(battle, { isOwner: false });
+    expect(projected.statusFeed[0]).toEqual({ timestamp: 't1', message: null, action: 'risk_swap_failed', symbolOut: 'KO', symbolIn: 'AMD', executionOutcome: 'unknown' });
+    expect(projected.statusFeed[1]).not.toHaveProperty('executionOutcome');
+    for (const e of projected.statusFeed) {
+      expect(e).not.toHaveProperty('source');
+      expect(e).not.toHaveProperty('triggeredBy');
+    }
   });
 });

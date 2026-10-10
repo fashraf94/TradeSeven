@@ -15,12 +15,16 @@
 // THE COPY: in the same update that writes `gameplanMeeting`, the cron writes
 // `cronState.gameplanMeeting` — a field no player can write — holding only
 // server values: `{ meetingId, createdAt, expiresAt, legs: [{ symbolOut,
-// symbolIn, swappedInAt? }] }`. From then on only the copy decides:
+// symbolIn, rationale, swappedInAt? }] }`. From then on only the copy decides:
 //   - a leg runs only when the meeting's id matches the copy and its pair
 //     matches a stored leg; each stored leg runs at most once, so at most the
 //     stored number of legs run; every other leg is held and recorded
 //     (`leg_not_proposed`);
 //   - P6's belief is the copy's `swappedInAt`, never the meeting's;
+//   - a matched leg's trade row carries the copy's `rationale`, never the
+//     meeting's (enforce readiness, founder Q4 — review K1-2 of follow-up 2).
+//     A copy stored before that build has no `rationale` key: its legs keep
+//     the meeting's own rationale, capped, as before (`legRationaleSource`);
 //   - the model waits for a pending meeting only while its id matches the copy
 //     and the copy's `expiresAt` has not passed. A meeting with no matching
 //     copy — planted, or created before this build — never runs and never
@@ -32,9 +36,9 @@
 // legs run, never WHEN (review KV3 — most meetings are created after their
 // own deadline, so a deadline on approvals would hold real ones; report §3).
 //
-// One product import: the pure capping helper.
+// One product import: the pure capping helpers.
 
-import { clientToken } from './executorMetadata.js';
+import { clientText, clientToken } from './executorMetadata.js';
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -65,6 +69,10 @@ export const HELD_LEG_RECORD_MAX = 20;
  * creation-time position). A leg without one is checked by symbol only, as it
  * always was — so a meeting created at off and approved after a flip is
  * checked exactly as before this build (review K2-2).
+ *
+ * Each leg also stores its rationale, capped exactly as the trade row has
+ * always capped it (`clientText`), so a server meeting approved unedited
+ * writes the same row bytes (enforce readiness, founder Q4).
  */
 export function serverMeetingCopy(meeting) {
   return {
@@ -72,9 +80,20 @@ export function serverMeetingCopy(meeting) {
     createdAt: meeting.createdAt,
     expiresAt: meeting.expiresAt,
     legs: meeting.suggestedSwaps.map((leg) => (Object.hasOwn(leg, 'swappedInAt')
-      ? { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, swappedInAt: leg.swappedInAt }
-      : { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn })),
+      ? { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, rationale: clientText(leg.rationale), swappedInAt: leg.swappedInAt }
+      : { symbolOut: leg.symbolOut, symbolIn: leg.symbolIn, rationale: clientText(leg.rationale) })),
   };
+}
+
+/**
+ * Where a matched leg's rationale comes from: the stored leg (`run`) when the
+ * copy carries one — the server's own words, never the owner-writable
+ * meeting's — and the meeting's leg only for a copy stored before the copy
+ * held rationales. The caller caps the value (`clientText`), as the trade row
+ * always has: a no-op on the copy's already-capped string.
+ */
+export function legRationaleSource(run, leg) {
+  return Object.hasOwn(run, 'rationale') ? run.rationale : leg?.rationale;
 }
 
 /** The stored copy (`battle.cronState.gameplanMeeting`) when it is well formed, else null. */

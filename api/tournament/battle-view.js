@@ -7,7 +7,9 @@
 // Admin SDK (rule-exempt) and returns each one PROJECTED for the requester:
 // full WHY for the owner or for completed battles, WHAT-only for a non-owner's
 // view of an active battle (founder ruling, P7 Stage A — conceal live WHY
-// server-side, never by client non-render). See api/_utils/tournamentBattleView.js.
+// server-side, never by client non-render) — and never another player's frozen
+// idea (Pilot P1b, spec §2.7: a completed battle's `agentContext.equippedHypothesis`
+// is stripped for non-owners). See api/_utils/tournamentBattleView.js.
 //
 // Read-only: no writes, no cron, no new firestore rule (the projection at the
 // boundary is what the rule relaxation could never do). Participant mode does

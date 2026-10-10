@@ -23,6 +23,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makeCallsFirestore, stored } from '../_utils/__fixtures__/callsFirestore.js';
 import {
   HYPOTHESIS_STATUSES, LIFECYCLE_FIELDS, CONTENT_FIELDS, contentHashOf, PLAYER_TRANSITIONS, legalTransition,
+  REAFFIRM_SUCCESSOR_STATUSES,
 } from '../_utils/hypothesisRecords/model.js';
 
 const state = vi.hoisted(() => ({ flagOn: true, user: { uid: 'owner-1' }, authCalls: 0 }));
@@ -61,6 +62,19 @@ function makeDb(docs = {}) {
     const c = collection(name);
     return { ...c, doc: (id) => c.doc(id ?? `auto-wl-${++n}`) };
   };
+  // The Admin SDK's Transaction.getAll refuses zero arguments (@google-cloud/firestore
+  // validateMinNumberOfArguments('Transaction.getAll', …, 1)); the double does not — so it is
+  // enforced here (Pilot P1b mutation lens, ST03: a reaffirm of a CURRENT due version reads no
+  // newer version and must never call getAll()).
+  const runTx = db.runTransaction.bind(db);
+  db.runTransaction = (cb, opts) => runTx(async (tx) => {
+    const getAll = tx.getAll;
+    tx.getAll = (...refs) => {
+      if (refs.length < 1) throw new Error('Function "Transaction.getAll()" requires at least 1 argument.');
+      return getAll(...refs);
+    };
+    return cb(tx);
+  }, opts);
   activeDb = db;
   return db;
 }
@@ -595,28 +609,68 @@ describe('row 5 — reaffirmation', () => {
     expect(stored(db, vPath(2))).toMatchObject({ statement: 'the sharper idea', horizonEnum: 'positional', horizonSource: 'player', status: 'ready' });
     expect(stored(db, vPath(1))).toEqual({ ...before, successorVersion: 2 });
   });
-  it('only a CURRENT review_due without a successor reaffirms: from any other status, or twice → 409 illegal_transition, nothing written', async () => {
+  it('only a review_due version reaffirms: from any other status → 409 illegal_transition, nothing written', async () => {
     for (const status of HYPOTHESIS_STATUSES.filter((s) => s !== 'review_due')) {
       const db = seedList({}, [{ status }]);
       const res = await reaffirm();
       expect([res.statusCode, res.body.error]).toEqual([409, 'illegal_transition']);
       expect(db.__access.writes).toEqual([]);
     }
+  });
+  // Pilot P1b — founder ruling B4 (P1a carry-forward 2, review L2-3) replaces P1a's "current and
+  // successor-free only": a due version may be reaffirmed when EVERY newer version is pre-deploy.
+  it('P1b acceptance row 7 (B4) — a superseded due version reaffirms when every newer version is pre-deploy: v{current+1} in ready from the DUE content, on the pointer; the chain pointer lands on the current version; the due version is untouched', async () => {
+    expect([...REAFFIRM_SUCCESSOR_STATUSES].sort()).toEqual(['cancelled', 'draft', 'ready', 'rejected', 'researched', 'waiting_for_evidence']);
+    for (const newer of REAFFIRM_SUCCESSOR_STATUSES) {
+      const db = seedList({}, [{ ...DUE, successorVersion: 2 }, { status: newer, statement: 'an edit made while it ran' }]);
+      const dueBefore = stored(db, vPath(1));
+      const newerBefore = stored(db, vPath(2));
+      const res = await transition({ version: 1, action: 'reaffirm', opId: `op-b4-${newer}`, expectedVersion: 2 });
+      expect([res.statusCode, newer]).toEqual([200, newer]);
+      const v3 = stored(db, vPath(3));
+      for (const k of [...CONTENT_FIELDS, 'contentHash']) expect(v3[k], `${newer} · ${k}`).toEqual(dueBefore[k]);
+      expect(v3).toMatchObject({ version: 3, status: 'ready', stateReason: 'reaffirmed', firstDeployedAt: null, reviewDueAt: null });
+      expect(stored(db, 'watchlists/wl-1')).toMatchObject({ currentHypothesisVersion: 3, hypothesisVersionCount: 3 });
+      expect(stored(db, vPath(1)), newer).toEqual(dueBefore); // successorVersion 2 kept — never rewritten
+      expect(stored(db, vPath(2)), newer).toEqual({ ...newerBefore, successorVersion: 3 });
+    }
+  });
+  it('P1b acceptance row 7 (B4) — refused (409 illegal_transition, naming the blocker, nothing written) when ANY newer version is not pre-deploy; a stale pointer is a version_conflict', async () => {
+    for (const blocker of HYPOTHESIS_STATUSES.filter((st) => !REAFFIRM_SUCCESSOR_STATUSES.includes(st))) {
+      const db = seedList({}, [DUE, { status: 'draft' }, { status: blocker }]);
+      const res = await transition({ version: 1, action: 'reaffirm', opId: 'op-x', expectedVersion: 3 });
+      expect([res.statusCode, res.body.error, blocker]).toEqual([409, 'illegal_transition', blocker]);
+      expect(res.body.blockedBy).toEqual({ version: 3, status: blocker });
+      expect(db.__access.writes).toEqual([]);
+    }
+    expect(HYPOTHESIS_STATUSES.filter((st) => !REAFFIRM_SUCCESSOR_STATUSES.includes(st)).sort()).toEqual(['activated', 'invalidated', 'retired', 'review_due']);
+    const db = seedList({}, [DUE, { status: 'draft' }]);
+    const stale = await transition({ version: 1, action: 'reaffirm', opId: 'op-y', expectedVersion: 1 });
+    expect(stale.body).toMatchObject({ error: 'version_conflict', currentVersion: 2 });
+    const beyond = await transition({ version: 3, action: 'reaffirm', opId: 'op-z', expectedVersion: 2 });
+    expect([beyond.statusCode, beyond.body.error]).toEqual([404, 'version_not_found']);
+    expect(db.__access.writes).toEqual([]);
+  });
+  it('B4 / review L2-3 — the bound matches the page the Forge shows: 99 newer versions → reaffirmable (the due version is on the 100-version page); 100 newer → refused, fail closed, nothing written', async () => {
+    const drafts = (k) => Array.from({ length: k }, () => ({ status: 'draft' }));
+    let db = seedList({}, [DUE, ...drafts(99)]);
+    let res = await transition({ version: 1, action: 'reaffirm', opId: 'op-99', expectedVersion: 100 });
+    expect(res.statusCode).toBe(200);
+    expect(stored(db, vPath(101))).toMatchObject({ status: 'ready', stateReason: 'reaffirmed' });
+    db = seedList({}, [DUE, ...drafts(100)]);
+    res = await transition({ version: 1, action: 'reaffirm', opId: 'op-100', expectedVersion: 101 });
+    expect([res.statusCode, res.body.error]).toEqual([409, 'illegal_transition']);
+    expect(db.__access.writes).toEqual([]);
+  });
+  it('B4 — reaffirming the same due version again is legal (its newer version is the ready one it made) and mints the next version; the current-version-due case keeps P1a\'s shape', async () => {
     const db = seedList({}, [DUE]);
     await reaffirm();
+    expect(stored(db, vPath(1)).successorVersion).toBe(2);
     const second = await transition({ version: 1, action: 'reaffirm', opId: 'op-re-2', expectedVersion: 2 });
-    expect([second.statusCode, second.body.error]).toEqual([409, 'illegal_transition']);
-    expect(stored(db, vPath(3))).toBeNull();
-  });
-  it('each reaffirm guard holds ALONE (review L5-7): a due version that already has a successor, and a due version that is not current, are refused', async () => {
-    let db = seedList({ currentHypothesisVersion: 1, hypothesisVersionCount: 1 }, [{ ...DUE, successorVersion: 2 }]);
-    let res = await reaffirm();
-    expect([res.statusCode, res.body.error]).toEqual([409, 'illegal_transition']);
-    expect(db.__access.writes).toEqual([]);
-    db = seedList({}, [DUE, { status: 'draft' }]);
-    res = await transition({ version: 1, action: 'reaffirm', opId: 'op-re', expectedVersion: 2 });
-    expect([res.statusCode, res.body.error]).toEqual([409, 'illegal_transition']);
-    expect(db.__access.writes).toEqual([]);
+    expect(second.statusCode).toBe(200);
+    expect(stored(db, vPath(3))).toMatchObject({ status: 'ready', stateReason: 'reaffirmed' });
+    expect(stored(db, vPath(1)).successorVersion).toBe(2);
+    expect(stored(db, vPath(2)).successorVersion).toBe(3);
   });
   it('allocation rules hold for reaffirm: replay → idempotent; same opId other payload → op_conflict; stale pointer → version_conflict', async () => {
     const db = seedList({}, [DUE]);
@@ -631,6 +685,53 @@ describe('row 5 — reaffirmation', () => {
     const stale = await transition({ version: 1, action: 'reaffirm', opId: 'op-x', expectedVersion: 0 });
     expect(stale.body).toMatchObject({ error: 'version_conflict', currentVersion: 1 });
     expect(fresh.__access.writes).toEqual([]);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Pilot P1b — founder ruling B3: the GET names the FROZEN list the newest due
+// version rode in (its deploying battle's own snapshot), for the Forge's
+// [SYM] / [LIST] line. Only when the page holds a due version; a battle that
+// cannot prove it (another owner, another version, unreadable) gives {}.
+describe('P1b — the frozen list on the versions GET (deployedLists)', () => {
+  const SIB = (n) => ({ watchlistId: 'wl-1', hypothesisVersion: n });
+  const battleDoc = (over = {}) => ({
+    ownerId: OWNER, status: 'completed',
+    agentContext: { equippedWatchlist: { watchlistId: 'wl-1', name: 'AI capex', tickers: ['NVDA', 'AMD'], snapshotAt: NOW }, equippedHypothesis: SIB(1) },
+    ...over,
+  });
+  const DUE_V = { status: 'review_due', stateReason: 'horizon_elapsed', firstDeployedAt: NOW, lastDeployedAt: NOW, lastDeployedBattleId: 'battle-9', reviewDueAt: NOW };
+  it('no due version in the page → the P1a body exactly (no deployedLists key, no battle read)', async () => {
+    const db = seedList({}, [{ status: 'activated', firstDeployedAt: NOW, lastDeployedBattleId: 'battle-9' }]);
+    const res = await versions({ method: 'GET' });
+    expect(Object.keys(res.body).sort()).toEqual(['currentVersion', 'research', 'versions', 'watchlistId']);
+    expect(db.__access.reads.filter((r) => r.startsWith('agentBattles/'))).toEqual([]);
+  });
+  it('a due version deployed in the owner\'s battle that carried it → { [version]: { battleId, name, tickers } } from the battle, not the live list', async () => {
+    const db = seedList({ name: 'Renamed live', tickers: [{ symbol: 'TSLA' }] }, [DUE_V]);
+    db.__docs.set('agentBattles/battle-9', battleDoc());
+    const res = await versions({ method: 'GET' });
+    expect(res.body.deployedLists).toEqual({ 1: { battleId: 'battle-9', name: 'AI capex', tickers: ['NVDA', 'AMD'] } });
+  });
+  it('a battle that cannot prove it — another owner, another version, no snapshot, missing — gives {} (the line is then not rendered)', async () => {
+    for (const battle of [battleDoc({ ownerId: 'someone-else' }), battleDoc({ agentContext: { ...battleDoc().agentContext, equippedHypothesis: SIB(2) } }),
+      battleDoc({ agentContext: { equippedHypothesis: SIB(1) } }), null]) {
+      const db = seedList({}, [DUE_V]);
+      if (battle) db.__docs.set('agentBattles/battle-9', battle);
+      const res = await versions({ method: 'GET' });
+      expect([res.statusCode, res.body.deployedLists]).toEqual([200, {}]);
+    }
+  });
+  it('an unreadable battle never fails the GET: {} and a 200', async () => {
+    const db = seedList({}, [DUE_V]);
+    const base = db.collection;
+    db.collection = (name) => (name === 'agentBattles'
+      ? { doc: () => ({ get: async () => { throw new Error('UNAVAILABLE'); } }) }
+      : base(name));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const res = await versions({ method: 'GET' });
+    expect([res.statusCode, res.body.deployedLists]).toEqual([200, {}]);
+    expect(res.body.versions).toHaveLength(1);
   });
 });
 
@@ -680,5 +781,35 @@ describe('the list and read routes', () => {
     const res = await call(versionsHandler, { method: 'GET', id: 'a/b' });
     expect([res.statusCode, res.body.error]).toEqual([400, 'invalid_watchlist_id']);
     expect(db.__access.reads).toEqual([]);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// The BUILD_RULES §2 mutation lens (L5, the versions GET and reaffirm): each row below kills a mutant that survived
+// the first pass; the mutant ids are the lens's (review report §9.2).
+
+describe('mutation lens rows — the versions GET and reaffirm (H02, H07, ST07)', () => {
+  const SIB = (n) => ({ watchlistId: 'wl-1', hypothesisVersion: n });
+  const bdoc = (n, name) => ({ ownerId: OWNER, status: 'completed', agentContext: { equippedWatchlist: { watchlistId: 'wl-1', name, tickers: ['NVDA', 'AMD'], snapshotAt: NOW }, equippedHypothesis: SIB(n) } });
+  const DUE = (battleId) => ({ status: 'review_due', stateReason: 'horizon_elapsed', firstDeployedAt: NOW, lastDeployedAt: NOW, lastDeployedBattleId: battleId, reviewDueAt: NOW });
+  it('H07 — a superseded due version (newer draft) still gets its frozen list', async () => {
+    const db = seedList({}, [DUE('battle-9'), { status: 'draft' }]);
+    db.__docs.set('agentBattles/battle-9', bdoc(1, 'AI capex'));
+    const res = await versions({ method: 'GET' });
+    expect(res.body.deployedLists).toEqual({ 1: { battleId: 'battle-9', name: 'AI capex', tickers: ['NVDA', 'AMD'] } });
+  });
+  it('H02 — two due versions: the NEWEST one is named', async () => {
+    const db = seedList({}, [DUE('battle-8'), DUE('battle-9')]);
+    db.__docs.set('agentBattles/battle-8', bdoc(1, 'Old list'));
+    db.__docs.set('agentBattles/battle-9', bdoc(2, 'AI capex'));
+    const res = await versions({ method: 'GET' });
+    expect(res.body.deployedLists).toEqual({ 2: { battleId: 'battle-9', name: 'AI capex', tickers: ['NVDA', 'AMD'] } });
+  });
+  it('ST07 — a hole in the numbering (a newer version missing) refuses the reaffirmation (409, nothing written), never a crash', async () => {
+    const db = seedList({}, [{ status: 'review_due', stateReason: 'horizon_elapsed', firstDeployedAt: NOW, lastDeployedBattleId: 'b-1', reviewDueAt: NOW }, { status: 'draft' }, { status: 'draft' }]);
+    db.__docs.delete(vPath(2));
+    const res = await transition({ version: 1, action: 'reaffirm', opId: 'op-hole', expectedVersion: 3 });
+    expect([res.statusCode, res.body.error]).toEqual([409, 'illegal_transition']);
+    expect(db.__access.writes).toEqual([]);
   });
 });

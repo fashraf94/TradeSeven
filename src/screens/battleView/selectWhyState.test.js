@@ -775,3 +775,161 @@ describe('parseEmphasis — the model\'s own `**…**`, and C1 (flip-prep item 3
     expect(stripEmphasisMarkers(t)).toBe(t.split('**').join(''));
   });
 });
+
+// ── Table G (V1.4) — an outcome that could not be confirmed ─────────────────
+// Enforce readiness (founder decision Q3, option (a)); the integrity follow-up
+// 2 report's STOP item (§8 row 4). The cron's model route writes a marked entry
+// as a downgraded HOLD WITHOUT the thrown-swap prefix (agent-evaluate.js, Part
+// D): before table G it fell to `held by a guardrail`, and — guardrail-forced —
+// to `it did not go through`. Neither is known.
+describe('table G (V1.4) — a record whose outcome could not be confirmed', () => {
+  // The model route's own shape for the marker (agent-evaluate.js: decision
+  // HOLD, downgraded, NO `Swap execution failed:` error, executionOutcome).
+  const UNKNOWN = Object.freeze({
+    evalId: 'eval_044', timestamp: TS, decision: 'HOLD', downgraded: true, rationale: RATIONALE_SWAP,
+    symbolOut: null, symbolIn: null, validationErrors: [], executionOutcome: 'unknown',
+  });
+  const FORCED_RATIONALE = 'Guardrail override (guardrail_stopLoss): SLB breached the -8% stop; forcing exit to DVN.';
+  const UNKNOWN_FORCED = Object.freeze({
+    ...UNKNOWN,
+    rationale: FORCED_RATIONALE,
+    guardrailSourceNote: 'guardrail_stopLoss',
+    guardrailOverrides: [{ type: 'stopLoss', symbol: 'SLB', action: 'forced_exit', replacementSymbol: 'DVN' }],
+  });
+  // Every label that claims an outcome the marker does not prove.
+  const CLAIMS = ['held by a guardrail', 'did not go through', 'the system held it', 'stayed as it was'];
+  const claimsIn = (s) => CLAIMS.filter((c) => `${s.label} ${s.footer ?? ''}`.includes(c));
+
+  it('MUTATION ROW — the agent’s swap: `Argued for a swap · its outcome could not be confirmed`, with the author line only', () => {
+    const s = selectWhyState(UNKNOWN, 'SLB', LAST);
+    expect(s.kind).toBe(WHY_KIND.UNCONFIRMED);
+    expect(s.label).toBe('Argued for a swap · its outcome could not be confirmed');
+    expect(s.label).toBe(COPY.unconfirmedLabel);
+    expect(s.footer).toBe(COPY.motiveAgent);
+    expect(s.footer).toBe('The agent\'s own words');
+    expect(s.rationale).toBe(RATIONALE_SWAP);
+    expect(claimsIn(s)).toEqual([]);
+    // Base rendered the guardrail label for exactly this entry.
+    expect(selectWhyState({ ...UNKNOWN, executionOutcome: undefined }, 'SLB', LAST).label).toBe(COPY.downgradedLabel);
+  });
+
+  it('MUTATION ROW — a guardrail-forced swap (the D-70 gate): `A guardrail called for a swap · its outcome could not be confirmed`, the system’s author line', () => {
+    const s = selectWhyState(UNKNOWN_FORCED, 'SLB', LAST);
+    expect(s.kind).toBe(WHY_KIND.GUARDRAIL_UNCONFIRMED);
+    expect(s.label).toBe('A guardrail called for a swap · its outcome could not be confirmed');
+    expect(s.label).toBe(COPY.guardrailForcedUnconfirmedLabel);
+    expect(s.footer).toBe(COPY.motiveSystem);
+    expect(s.footer).toBe('The system\'s reason');
+    // The pair from the override, as the fifth state reads it.
+    expect(s.symbolOut).toBe('SLB');
+    expect(s.symbolIn).toBe('DVN');
+    expect(s.rationale).toBe(renderMotive(FORCED_RATIONALE));
+    expect(claimsIn(s)).toEqual([]);
+    // Base rendered the fifth state's failure for exactly this entry.
+    expect(selectWhyState({ ...UNKNOWN_FORCED, executionOutcome: undefined }, 'SLB', LAST).label).toBe(COPY.guardrailForcedFailedLabel);
+  });
+
+  it('MUTATION ROW (review ER3-2) — a `reinforced_haiku` swap (the guardrail agreed with the agent) keeps the AGENT variant: the third conjunct fails, as for the fourth state', () => {
+    // The shape agentGuardrails.js writes (~468-497): the SAME `guardrail_${type}`
+    // sourceNote as a forced exit, with the override action `reinforced_haiku`.
+    // A gate on the sourceNote prefix alone would retitle the agent's own swap
+    // as the guardrail's — this row is the one that fails if it does.
+    const reinforced = { ...UNKNOWN, guardrailSourceNote: 'guardrail_stopLoss', guardrailOverrides: [{ symbol: 'SLB', action: 'reinforced_haiku', replacementSymbol: 'DVN' }] };
+    const s = selectWhyState(reinforced, 'SLB', LAST);
+    expect(s.kind).toBe(WHY_KIND.UNCONFIRMED);
+    expect(s.label).toBe(COPY.unconfirmedLabel);
+    expect(s.footer).toBe(COPY.motiveAgent);
+    expect(s.symbolOut).toBeNull();
+  });
+
+  it('the marker is read BEFORE every decision state — no decision label can render for a marked entry, whatever else it carries', () => {
+    const variants = [
+      UNKNOWN,
+      { ...UNKNOWN, validationErrors: ['Swap execution failed: x'] }, // the fourth state's prefix too
+      { ...UNKNOWN, downgraded: false },                               // not downgraded: was `Held`
+      { ...UNKNOWN, downgraded: false, decision: 'SWAP', symbolOut: 'SLB', symbolIn: 'DVN' }, // was `Swapped`
+      { ...UNKNOWN, decision: 'PROPOSAL', downgraded: false },
+    ];
+    for (const v of variants) {
+      const s = selectWhyState(v, 'SLB', LAST);
+      expect(s.kind, JSON.stringify(v)).toBe(WHY_KIND.UNCONFIRMED);
+      expect([COPY.heldLabel, COPY.downgradedLabel, COPY.failedLabel, COPY.guardrailForcedFailedLabel]).not.toContain(s.label);
+      expect(s.label).not.toMatch(/^Swapped/);
+    }
+  });
+
+  it('ER5 — the guardrail variant is read before every decision state too, whatever else it carries (the subject stays the guardrail)', () => {
+    const variants = [
+      { ...UNKNOWN_FORCED, downgraded: false },
+      { ...UNKNOWN_FORCED, downgraded: false, decision: 'SWAP', symbolOut: 'SLB', symbolIn: 'DVN' },
+      { ...UNKNOWN_FORCED, validationErrors: ['Swap execution failed: x'] },
+    ];
+    for (const v of variants) {
+      const s = selectWhyState(v, 'SLB', LAST);
+      expect(s.kind, JSON.stringify(v)).toBe(WHY_KIND.GUARDRAIL_UNCONFIRMED);
+      expect(s.label).toBe(COPY.guardrailForcedUnconfirmedLabel);
+    }
+  });
+
+  it('an engine-authored rationale on the agent variant names the system as its author (the one motive-author rule, raw text)', () => {
+    const s = selectWhyState({ ...UNKNOWN, rationale: 'Risk manager: stop hit on SLB.' }, 'SLB', LAST);
+    expect(s.kind).toBe(WHY_KIND.UNCONFIRMED);
+    expect(s.footer).toBe(COPY.motiveSystem);
+  });
+
+  it('an entry that does not belong to the check comes first (the stale `>=` join) — a marker on it changes nothing', () => {
+    const stale = selectWhyState({ ...UNKNOWN, timestamp: '2026-09-01T16:30:00.000Z' }, 'SLB', LAST);
+    expect(stale.kind).toBe(WHY_KIND.ABSENT);
+    expect(stale.label).toBe(COPY.noDecision);
+  });
+
+  it('MUTATION ROW (reviews ER3-3 / ER4-4) — an engine outage with a guardrail-forced swap whose outcome could not be confirmed renders table G, not the outage line', () => {
+    // The shape the cron writes when the model call failed, applyGuardrails ran on
+    // the null result, a stop breach forced KO → DVN, the executor threw and the
+    // read-back failed: haikuError + the marker + the D-70 gate.
+    for (const failureClass of ['timeout', '529', 'budget_skipped']) {
+      const s = selectWhyState({ ...UNKNOWN_FORCED, haikuError: { failureClass } }, 'SLB', LAST);
+      expect(s.kind, failureClass).toBe(WHY_KIND.GUARDRAIL_UNCONFIRMED);
+      expect(s.label).toBe('A guardrail called for a swap · its outcome could not be confirmed');
+      expect(s.footer).toBe(COPY.motiveSystem);
+      expect([s.symbolOut, s.symbolIn]).toEqual(['SLB', 'DVN']);
+    }
+    // Base rendered the outage line for it — the guardrail's swap hidden behind "No decision recorded".
+    expect(selectWhyState({ ...UNKNOWN_FORCED, executionOutcome: undefined, haikuError: { failureClass: 'timeout' } }, 'SLB', LAST).kind).toBe(WHY_KIND.ABSENT);
+  });
+
+  it('an outage entry WITHOUT the guardrail gate keeps the outage line — never credits the agent with an argument (not a shape the cron writes: no model, no agent swap)', () => {
+    const s = selectWhyState({ ...UNKNOWN, haikuError: { failureClass: 'timeout' } }, 'SLB', LAST);
+    expect(s.kind).toBe(WHY_KIND.ABSENT);
+    expect(s.label).toBe(COPY.noDecisionOutage);
+  });
+
+  it('only the exact marker value counts — another executionOutcome (or none) leaves every state as it was', () => {
+    for (const value of ['not_run', 'UNKNOWN', 'unknown ', null, 1, { unknown: true }]) {
+      expect(selectWhyState({ ...UNKNOWN, executionOutcome: value }, 'SLB', LAST).kind, String(value)).toBe(WHY_KIND.DOWNGRADED);
+    }
+  });
+
+  it('acceptance 1, the other half — SWAP, a real HOLD, a guardrail hold and a real refusal / failure keep their labels exactly', () => {
+    const swap = { timestamp: TS, decision: 'SWAP', downgraded: false, rationale: RATIONALE_SWAP, symbolOut: 'SLB', symbolIn: 'DVN' };
+    expect(selectWhyState(swap, 'SLB', LAST).label).toBe('Swapped · SLB → DVN');
+    // A swap that landed after an executor error (Part D) is a swap — `executionLanded` changes nothing here.
+    expect(selectWhyState({ ...swap, executionLanded: 'confirmed_after_error' }, 'SLB', LAST).label).toBe('Swapped · SLB → DVN');
+    const hold = { timestamp: TS, decision: 'HOLD', downgraded: false, rationale: RATIONALE_HOLD };
+    expect(selectWhyState(hold, 'SLB', LAST).label).toBe('Held');
+    const guardrailHold = { ...UNKNOWN, executionOutcome: undefined };
+    expect(selectWhyState(guardrailHold, 'SLB', LAST).label).toBe('Argued for a swap · held by a guardrail');
+    // A real refusal (P6, typed) and a real failure both carry the thrown-swap prefix: the fourth state.
+    const refused = { ...UNKNOWN, executionOutcome: undefined, validationErrors: ['Swap execution failed: Swap refused (outgoing_identity_mismatch): …'], executionRefusal: { reason: 'outgoing_identity_mismatch' } };
+    expect(selectWhyState(refused, 'SLB', LAST).label).toBe('Argued for a swap · it did not go through');
+    const forcedFailed = { ...UNKNOWN_FORCED, executionOutcome: undefined, validationErrors: ['Swap execution failed: x'] };
+    expect(selectWhyState(forcedFailed, 'SLB', LAST).label).toBe('A guardrail called for a swap · it did not go through');
+  });
+
+  it('TRIPWIRE — the cron writes the marker on this route exactly where it drops the thrown-swap prefix (read from its source)', () => {
+    const cron = readFileSync(new URL('../../../api/cron/agent-evaluate.js', import.meta.url), 'utf8');
+    expect(cron).toContain('if (swapOutcomeUnknown) executionOutcome = EXECUTION_OUTCOME_UNKNOWN;');
+    expect(cron).toContain('else validationErrors.push(`' + SWAP_FAILED_PREFIX + ': ${swapErr.message}`)');
+    expect(cron).toContain('if (executionOutcome) evaluation.executionOutcome = executionOutcome;');
+  });
+});

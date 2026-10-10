@@ -11,17 +11,21 @@
 // The labels below (status, horizon, actions) are UI labels, not table
 // sentences; none uses table E's forbidden vocabulary (ideaCopy.test.js scans).
 
-import { HORIZON_WINDOW_SESSIONS } from '../../../constants/hypothesisRecords';
+import { HORIZON_WINDOW_SESSIONS, DUE_DEPLOY_LINE } from '../../../constants/hypothesisRecords';
 import { RESEARCH_STAGES } from '../../../constants/researchRecords';
 
-/** Table C, verbatim. */
+/** Table C, verbatim (V1 rows, and the two [LIST] rows of table C V1.1 — founder ruling B3, 8 Oct 2026). */
 export const LIFECYCLE_LINES = Object.freeze({
   reviewDueHorizon: "Your [SYM] idea reached its time-frame ([window]). Nothing was sold and nothing was deleted — it's flagged for your review. Reaffirm it to make a fresh version, or retire it.",
   reviewDueBattleEnded: "The battle ended with your [SYM] idea still open-ended. It's flagged for review — reaffirm or retire when you're ready.",
   invalidated: "Your [SYM] idea hit its invalidation: [typed condition]. That's recorded on the idea itself — what happens next is your call.",
   reaffirmed: "Reaffirmed — that's a fresh version of the same idea with a new clock. The old one stays in the record exactly as it was.",
-  // For P1b's deploy admission (a due version cannot deploy); exported now, rendered by P1b.
-  dueDeploy: 'This idea is due for review — reaffirm it first (one tap, same content if you want), and the fresh version deploys.',
+  // Pilot P1b's deploy admission (a due version cannot deploy): ONE string, shared with the
+  // deploy endpoint's refusal (src/constants/hypothesisRecords.js DUE_DEPLOY_LINE).
+  dueDeploy: DUE_DEPLOY_LINE,
+  // Table C V1.1 (founder ruling B3): the review lines for an idea that names more than one symbol.
+  reviewDueHorizonList: "Your [LIST] idea reached its time-frame ([window]). Nothing was sold and nothing was deleted — it's flagged for your review. Reaffirm it to make a fresh version, or retire it.",
+  reviewDueBattleEndedList: "The battle ended with your [LIST] idea still open-ended. It's flagged for review — reaffirm or retire when you're ready.",
 });
 
 /**
@@ -30,10 +34,10 @@ export const LIFECYCLE_LINES = Object.freeze({
  * blank slot.
  *
  * @param {string} line  a LIFECYCLE_LINES value
- * @param {{ sym?: string|null, window?: string|null, condition?: string|null }} values
+ * @param {{ sym?: string|null, list?: string|null, window?: string|null, condition?: string|null }} values
  */
-export function fillLine(line, { sym = null, window = null, condition = null } = {}) {
-  const slots = { '[SYM]': sym, '[window]': window, '[typed condition]': condition };
+export function fillLine(line, { sym = null, list = null, window = null, condition = null } = {}) {
+  const slots = { '[SYM]': sym, '[LIST]': list, '[window]': window, '[typed condition]': condition };
   let out = line;
   for (const [slot, value] of Object.entries(slots)) {
     if (!out.includes(slot)) continue;
@@ -43,20 +47,66 @@ export function fillLine(line, { sym = null, window = null, condition = null } =
   return out;
 }
 
+const distinctSymbols = (list) => [...new Set((Array.isArray(list) ? list : []).filter((s) => typeof s === 'string' && s.trim() !== ''))];
+
 /**
- * [SYM] from the RECORD — the version's own typed conditions, and nothing
- * else: one to three distinct symbols, else null (the line is not rendered).
- * Never the parent list's tickers: they are mutable, not part of the version,
- * and in the editor they are the live, unsaved input (spec §2.6 "no reader
- * resolves the current saved list as historical meaning"; BUILD_RULES §9;
- * review L1-2 / L4-6). P1a writes no conditions, so the review lines wait for
- * P1b to supply a frozen source (the deploying battle's snapshot).
+ * [SYM] — founder ruling B3 (table C V1.1, 8 Oct 2026): filled ONLY when the
+ * idea names exactly one symbol — its own typed conditions when it has any,
+ * else the deploying battle's FROZEN snapshot (`frozen`, the server's
+ * `deployedLists[version]`) when that froze exactly one ticker. Otherwise
+ * null, and the line takes its [LIST] variant (ideaListOf). Never the parent
+ * list's live tickers: they are mutable, not part of the version, and in the
+ * editor they are the live, unsaved input (spec §2.6 "no reader resolves the
+ * current saved list as historical meaning"; BUILD_RULES §9; P1a reviews
+ * L1-2 / L4-6).
+ *
+ * @param {object} version  the version record
+ * @param {{ name: string, tickers: string[] }|null} [frozen]  the frozen list it was deployed in
  */
-export function ideaSymbolOf(version) {
-  const fromConditions = [...(version?.activation || []), ...(version?.invalidation || [])]
-    .map((c) => c?.symbol).filter((s) => typeof s === 'string' && s);
-  const distinct = [...new Set(fromConditions)];
-  return distinct.length >= 1 && distinct.length <= 3 ? distinct.join(' / ') : null;
+export function ideaSymbolOf(version, frozen = null) {
+  const own = distinctSymbols([...(version?.activation || []), ...(version?.invalidation || [])].map((c) => c?.symbol));
+  if (own.length > 0) return own.length === 1 ? own[0] : null;
+  const froze = distinctSymbols(frozen?.tickers);
+  return froze.length === 1 ? froze[0] : null;
+}
+
+/**
+ * [LIST] — founder ruling B3: the FROZEN list name from the deploying battle's
+ * snapshot (via the version's lastDeployedBattleId, resolved by the server),
+ * never the live list's name. Null when no frozen list is known.
+ */
+export function ideaListOf(frozen = null) {
+  return typeof frozen?.name === 'string' && frozen.name.trim() !== '' ? frozen.name : null;
+}
+
+/**
+ * The table-C sentence for a version's state, or null when none applies or a
+ * placeholder has no recorded value. `invalidated` renders nothing in P1a:
+ * [typed condition] is the MET condition on the record, which P3/P4 define —
+ * a raw reason code is never put into a blessed sentence (review L1-6).
+ *
+ * Pilot P1b (founder ruling B3): [SYM] when the idea names exactly one symbol
+ * (ideaSymbolOf), else the [LIST] row with the frozen list's name
+ * (`frozen` = the server's deployedLists[version]); neither known → no line.
+ * The battle-ended row is table C's `review_due (battle ended, unspecified)`:
+ * it says "still open-ended", so it renders only for an `unspecified`
+ * horizon — a version whose clock fell back to a battle-end review (ruling B5,
+ * `reviewClockFault`) shows its status chip alone.
+ */
+export function lifecycleLineFor(version, frozen = null) {
+  if (!version || version.status !== 'review_due') return null;
+  const sym = ideaSymbolOf(version, frozen);
+  const list = sym ? null : ideaListOf(frozen);
+  if (version.stateReason === 'horizon_elapsed') {
+    const window = windowTextOf(version.horizonEnum);
+    if (sym) return fillLine(LIFECYCLE_LINES.reviewDueHorizon, { sym, window });
+    return list ? fillLine(LIFECYCLE_LINES.reviewDueHorizonList, { list, window }) : null;
+  }
+  if (version.stateReason === 'battle_ended' && version.horizonEnum === 'unspecified') {
+    if (sym) return fillLine(LIFECYCLE_LINES.reviewDueBattleEnded, { sym });
+    return list ? fillLine(LIFECYCLE_LINES.reviewDueBattleEndedList, { list }) : null;
+  }
+  return null;
 }
 
 export const HORIZON_LABELS = Object.freeze({

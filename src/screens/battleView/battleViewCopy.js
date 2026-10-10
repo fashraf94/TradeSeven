@@ -80,6 +80,8 @@ import {
   researchFailureLine as recordResearchFailureLine,
   filingFailureLine as recordFilingFailureLine,
   GUARDRAIL_FORCED_FAILED_LABEL,
+  UNCONFIRMED_LABEL,
+  GUARDRAIL_FORCED_UNCONFIRMED_LABEL,
 } from '../../data/decisionRecord';
 
 /**
@@ -258,6 +260,17 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // and the footer names whose reason follows.
   guardrailForcedFailedLabel: GUARDRAIL_FORCED_FAILED_LABEL,
   guardrailForcedFailedFooter: 'The guardrail\'s reason · the position stayed as it was',
+
+  // The UNCONFIRMED states (table G, V1.4 — founder decision Q3, option (a)).
+  // The entry carries `executionOutcome: 'unknown'`: the executor threw and
+  // the server's own read-back failed, so whether the swap landed is not
+  // known. The label says exactly that, with the same subject the fourth and
+  // fifth states use (the agent, or the guardrail under the D-70 gate). There
+  // is no outcome footer — `the system held it` and `the position stayed as it
+  // was` are both unproven here — only the author line (`motiveAgent` /
+  // `motiveSystem`, by the one motive-author rule).
+  unconfirmedLabel: UNCONFIRMED_LABEL,
+  guardrailForcedUnconfirmedLabel: GUARDRAIL_FORCED_UNCONFIRMED_LABEL,
   heldLabel: HELD_LABEL,
   swappedLabel: (symbolOut, symbolIn) => recordSwappedLabel(symbolOut, symbolIn),
 

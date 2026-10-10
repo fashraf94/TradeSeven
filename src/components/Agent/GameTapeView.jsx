@@ -18,6 +18,7 @@ import {
   Layers,
 } from 'lucide-react';
 import AgentActivityFeed from './AgentActivityFeed';
+import { feedBeatUnconfirmed } from '../../data/executionOutcome';
 import { addFeedBookmark, removeFeedBookmark } from '../../services/agentService';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -491,7 +492,8 @@ const GameTapeView = ({
     const bookmarkSet = new Set(feedBookmarks);
     const matched = [];
     statusFeed.forEach((entry, index) => {
-      if (bookmarkSet.has(getEntryId(entry, index))) matched.push(entry);
+      // Table G (V1.4): a beat whose outcome could not be confirmed is never a row.
+      if (bookmarkSet.has(getEntryId(entry, index)) && !feedBeatUnconfirmed(entry)) matched.push(entry);
     });
     return matched.reverse(); // newest first
   }, [feedBookmarks, statusFeed]);

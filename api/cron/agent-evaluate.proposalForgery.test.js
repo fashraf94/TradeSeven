@@ -418,11 +418,12 @@ describe('F2 on the dormant proposal paths (defense in depth: the launch mode mo
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('F2 on the live paths: the owner-writable preset, mode and meeting leg reach a row only as capped strings', () => {
-  it('a planted numeric / object / overlong strategyPreset and executionMode never land on the row as such (follow-up 2, Q4: the row\'s mode is always the one that governed)', async () => {
+  it('a planted numeric / object / overlong strategyPreset and executionMode never land on the row as such (follow-up 2 and enforce readiness, Q4: the row\'s mode and preset are always the ones that governed)', async () => {
     for (const [preset, mode, wantPreset, wantMode] of [
       [9999, 7, 'balanced', 'autopilot'],
       [{ lockedPoints: 9999 }, ['copilot'], 'balanced', 'autopilot'],
-      ['P'.repeat(500), 'M'.repeat(500), 'P'.repeat(64), 'autopilot'],
+      // Enforce readiness (Q4): an unknown string is no table key — it governed as balanced, and is stamped so (was its first 64 characters).
+      ['P'.repeat(500), 'M'.repeat(500), 'balanced', 'autopilot'],
     ]) {
       exec.calls = [];
       const battle = makeTickBattle({

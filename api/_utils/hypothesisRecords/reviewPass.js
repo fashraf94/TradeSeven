@@ -9,8 +9,10 @@
 // terminal status, so every way a battle ends is covered, at most one
 // 15-minute tick late, on a state that grants no authority (R6).
 //
-// INERT UNTIL P1b: P1b arms queue rows at activation. This build ships the
-// pass, the queue shape and `armReviewRow` (used only by tests here).
+// P1b (deploy carriage) arms the queue rows at activation, in the battle's
+// creation transaction (api/_utils/hypothesisRecords/carriage.js
+// activateCarriedVersionInTx → armReviewRow). P1a shipped the pass, the queue
+// shape and `armReviewRow`.
 //
 // THE GATE: the flag off, or no owner admitted at all → return BEFORE ANY
 // READ (the gate is off for everyone). Otherwise each row's
@@ -89,7 +91,8 @@ export function normalizeReviewRow(data) {
 }
 
 /**
- * Arm a review row (P1b calls this at activation; this build's tests only).
+ * Arm a review row — P1b's activation calls this in the battle's creation
+ * transaction (carriage.js activateCarriedVersionInTx).
  * Buffers ONE `tx.set` on the caller's transaction. Throws on a malformed row
  * — arming is a programming contract, never a guess.
  */

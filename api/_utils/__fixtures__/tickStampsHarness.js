@@ -274,9 +274,15 @@ export const FIXTURE_MEETING_ID = `gpm_${Date.parse(FROZEN_NOW)}`;
  * that stands for a server-created meeting carries one. The copy's legs are
  * the meeting's own, as the server built them: each leg's pair, and its
  * `swappedInAt` exactly when the leg carries one (P6 stamps it at mode ≠ off)
- * — the shape serverMeetingCopy (api/_utils/meetingCopy.js) writes. `legs`
- * stores other legs (a meeting the player edited after the server wrote its
- * copy). Mirrored, not imported: this module has zero product imports.
+ * — the shape serverMeetingCopy (api/_utils/meetingCopy.js) wrote until the
+ * enforce readiness build. Since that build the server's copy also stores each
+ * leg's `rationale`; this default deliberately keeps the PRE-build shape (no
+ * `rationale` key), so the suites that use it run the legacy fallback — a
+ * matched leg takes the meeting's own rationale, capped. The new shape is
+ * built explicitly, through `legs`, by the rows that test it
+ * (agent-evaluate.meetingCopy.test.js, agent-evaluate.meetingCopy.baseline.test.js).
+ * `legs` also stores other legs (a meeting the player edited after the server
+ * wrote its copy). Mirrored, not imported: this module has zero product imports.
  */
 export function serverMeetingOverrides(meeting, { battle = makeTickBattle(), legs = null } = {}) {
   const stored = { id: FIXTURE_MEETING_ID, ...meeting };

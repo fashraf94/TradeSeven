@@ -24,6 +24,17 @@
 // Lifecycle sentences are table C verbatim (ideaCopy.js), filled only from
 // the version's own record. Colors are the existing theme tokens only.
 //
+// Pilot P1b: an idea now rides a battle (deploy carriage). The panel shows
+// an activated version that is not the current one as running (its chip and
+// its first-deploy / review-due dates — existing copy only); renders the
+// review line from table C with [SYM] or, for an idea naming more than one
+// symbol, [LIST] — the FROZEN list name the server read from the deploying
+// battle (`deployedLists`), never the live list (founder ruling B3); renders
+// the battle-ended line only for an open-ended (`unspecified`) idea; and
+// offers Reaffirm on a superseded due version exactly when founder ruling B4
+// allows it (every newer version pre-deploy — reaffirmableGiven, the same
+// predicate the route enforces).
+//
 // Pilot P2: the panel also says what research stands behind the list — the
 // research it came from, and its newest analysis session the agent worked on
 // (ideaCopy.js researchLinesOf), every number a
@@ -34,15 +45,19 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { isHypothesisRecordsOn } from '../../../config/featureFlags';
-import { HORIZON_ENUMS, TERMINAL_STATUSES, STATE_REASONS, legalActionsFor } from '../../../constants/hypothesisRecords';
+import { HORIZON_ENUMS, TERMINAL_STATUSES, STATE_REASONS, legalActionsFor, reaffirmableGiven } from '../../../constants/hypothesisRecords';
 import {
   listHypothesisVersions, createHypothesisVersion, transitionHypothesis, reaffirmHypothesis, newOpId,
 } from '../../../services/hypothesisVersionService';
 import {
-  LIFECYCLE_LINES, fillLine, ideaSymbolOf, windowTextOf, formatIdeaDate,
+  LIFECYCLE_LINES, lifecycleLineFor, formatIdeaDate,
   STATUS_LABELS, ACTION_LABELS, HORIZON_LABELS, HORIZON_SOURCE_LABELS, PANEL_COPY, RESEARCH_COPY, researchLinesOf, noResearchRecorded,
 } from './ideaCopy';
 import SectionLabel from './SectionLabel';
+
+// The table-C sentence for a version lives in ideaCopy.js (pure — the P1b
+// end-to-end suite renders it in Node); re-exported for the panel's suites.
+export { lifecycleLineFor };
 
 const STATEMENT_MAX = 1000;
 const MISSING_EVIDENCE_MAX = 300;
@@ -54,18 +69,9 @@ const POST_GATE_ERRORS = new Set(['not_found', 'forbidden', 'server_error', 'poi
 /** Refusals that mean the editor's request can no longer apply as opened. */
 const STALE_REQUEST = new Set(['version_conflict', 'op_conflict', 'illegal_transition']);
 
-/**
- * The table-C sentence for a version's state, or null when none applies or a
- * placeholder has no recorded value. `invalidated` renders nothing in P1a:
- * [typed condition] is the MET condition on the record, which P3/P4 define —
- * a raw reason code is never put into a blessed sentence (review L1-6).
- */
-export function lifecycleLineFor(version) {
-  if (!version || version.status !== 'review_due') return null;
-  const sym = ideaSymbolOf(version);
-  if (version.stateReason === 'horizon_elapsed') return fillLine(LIFECYCLE_LINES.reviewDueHorizon, { sym, window: windowTextOf(version.horizonEnum) });
-  if (version.stateReason === 'battle_ended') return fillLine(LIFECYCLE_LINES.reviewDueBattleEnded, { sym });
-  return null;
+/** The statuses of every listed version newer than `v` (the list read is newest first and bounded; see the route). */
+function newerStatusesOf(versions, v) {
+  return versions.filter((x) => x.version > v.version).map((x) => x.status);
 }
 
 /** A refusal's words: the server's typed message, else the panel's fallback (never a raw browser string). */
@@ -85,7 +91,7 @@ export default function IdeaPanel({ watchlistId, tokens }) {
   const enabled = isHypothesisRecordsOn();
   // pending (first answer not in) | hidden | ready | error (only once the gate is known on)
   const [phase, setPhase] = useState(enabled ? 'pending' : 'hidden');
-  const [record, setRecord] = useState({ currentVersion: 0, versions: [], research: null });
+  const [record, setRecord] = useState({ currentVersion: 0, versions: [], research: null, deployedLists: {} });
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null); // { tone: 'ok' | 'error', text }
   const [editor, setEditor] = useState(null); // { mode, opId, expectedVersion, targetVersion, baseStatement, statement, horizonEnum }
@@ -95,6 +101,8 @@ export default function IdeaPanel({ watchlistId, tokens }) {
     currentVersion: data.currentVersion || 0,
     versions: Array.isArray(data.versions) ? data.versions : [],
     research: Array.isArray(data.research) ? data.research : null, // absent = not known, never "none"
+    // P1b (ruling B3): the frozen list a due version rode in, by version number; absent = unknown.
+    deployedLists: data.deployedLists && typeof data.deployedLists === 'object' ? data.deployedLists : {},
   });
 
   /** Reload after a move (the gate is already known on): a failure now is said, not hidden. */
@@ -152,12 +160,13 @@ export default function IdeaPanel({ watchlistId, tokens }) {
     }
   };
 
-  const openEditor = (mode) => {
+  // A reaffirmation may target a superseded due version (ruling B4); everything else targets the current one.
+  const openEditor = (mode, target = current) => {
     setPending(null);
     setNotice(null);
-    const base = current?.statement || '';
+    const base = target?.statement || '';
     setEditor({
-      mode, opId: newOpId(), expectedVersion: record.currentVersion, targetVersion: current?.version ?? null,
+      mode, opId: newOpId(), expectedVersion: record.currentVersion, targetVersion: target?.version ?? null,
       baseStatement: base, statement: base, horizonEnum: '',
     });
   };
@@ -177,9 +186,17 @@ export default function IdeaPanel({ watchlistId, tokens }) {
   }));
   const askAction = (action, v) => setPending({ action, version: v.version, expectedStatus: v.status, missingEvidence: '' });
 
-  const actions = current ? legalActionsFor(current.status, { isCurrent: true, hasSuccessor: current.successorVersion != null }) : [];
+  const actions = current ? legalActionsFor(current.status, { isCurrent: true }) : [];
   const canSaveNew = !current || current.status !== 'review_due';
-  const line = lifecycleLineFor(current);
+  const line = lifecycleLineFor(current, current ? record.deployedLists[current.version] : null);
+  // P1b — the newest due version, when it is NOT the current one and ruling B4 lets it be reaffirmed.
+  const newestDue = record.versions.find((v) => v.status === 'review_due') || null;
+  const supersededDue = newestDue && newestDue !== current && reaffirmableGiven(newestDue.status, newerStatusesOf(record.versions, newestDue))
+    ? newestDue : null;
+  const supersededLine = supersededDue ? lifecycleLineFor(supersededDue, record.deployedLists[supersededDue.version]) : null;
+  // P1b — the running idea: the newest activated version, shown here when it is not the current one.
+  const newestActivated = record.versions.find((v) => v.status === 'activated') || null;
+  const running = newestActivated && newestActivated !== current ? newestActivated : null;
   const researchLines = researchLinesOf(record.research, { watchlistId });
   const showNoResearch = researchLines.length === 0 && noResearchRecorded(record.research, current);
   const playerMarked = current?.stateReason === STATE_REASONS.playerMarkedResearched;
@@ -226,6 +243,36 @@ export default function IdeaPanel({ watchlistId, tokens }) {
               <div style={meta(tokens)}>{PANEL_COPY.waitingOn}: {current.missingEvidence}</div>
             )}
             {line && <div style={banner(tokens, tokens.amber)} data-testid="idea-lifecycle-line">{line}</div>}
+          </div>
+        )}
+
+        {phase === 'ready' && running && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }} data-testid="idea-running">
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+              <span style={chip(tokens, statusColor(tokens, running.status))}>v{running.version} · {STATUS_LABELS[running.status]}</span>
+            </div>
+            <div style={meta(tokens)} data-testid="idea-running-dates">
+              {[
+                [PANEL_COPY.firstDeployed, formatIdeaDate(running.firstDeployedAt)],
+                [PANEL_COPY.reviewDue, formatIdeaDate(running.reviewDueAt)],
+              ].filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(' · ')}
+            </div>
+          </div>
+        )}
+
+        {phase === 'ready' && supersededDue && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }} data-testid="idea-superseded-due">
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+              <span style={chip(tokens, statusColor(tokens, supersededDue.status))}>v{supersededDue.version} · {STATUS_LABELS[supersededDue.status]}</span>
+            </div>
+            {supersededLine && <div style={banner(tokens, tokens.amber)} data-testid="idea-superseded-line">{supersededLine}</div>}
+            {!editor && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" disabled={busy} onClick={() => openEditor('reaffirm', supersededDue)} style={btn(tokens.teal, tokens.teal, busy)}>
+                  {ACTION_LABELS.reaffirm} v{supersededDue.version}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

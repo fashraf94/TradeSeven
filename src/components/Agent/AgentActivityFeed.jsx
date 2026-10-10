@@ -20,6 +20,7 @@ import GameplanMeetingCard from './GameplanMeetingCard';
 // `hexToRgba` before any fallback could fire. The accessor tests the closed
 // list, so the feeds and the Why? panel now agree on which tokens are ruled.
 import { regimeLabel } from '../../data/decisionRecord';
+import { feedBeatUnconfirmed } from '../../data/executionOutcome';
 
 // ── Label Maps (strategy + colours; regime is shared) ─────────────────────────
 
@@ -656,11 +657,14 @@ const AgentActivityFeed = ({
   // Reverse feed: newest first. Exclude trade_narration entries — they
   // are rendered as Gemma chat messages in AgentChat. Showing them as
   // generic 'Update' cards here too duplicates content next to the
-  // existing swap row.
+  // existing swap row. Table G (V1.4): a beat whose outcome could not be
+  // confirmed is not rendered at all — the risk loop's / R11 pass's carry no
+  // line (they were 'Update' cards with no body), and the model route's carry
+  // words written before the swap ran, which the record cannot vouch for.
   const reversedFeed = useMemo(() =>
     [...statusFeed]
       .reverse()
-      .filter(e => (e.message || e.action || e.type) && e.action !== 'trade_narration'),
+      .filter(e => (e.message || e.action || e.type) && e.action !== 'trade_narration' && !feedBeatUnconfirmed(e)),
     [statusFeed]
   );
 

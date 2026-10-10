@@ -55,7 +55,13 @@ const PUBLIC_AGENT_CONTEXT = ['agentName', 'archetype', 'tournament', 'initialPo
 // mid-battle while the trade record said nothing: one posture, two lists,
 // disagreeing. They stay out until completion, when the whole doc is returned
 // unchanged and the Film Room shows everything.
-const PUBLIC_STATUSFEED = ['timestamp', 'message', 'action', 'regime', 'score', 'symbolOut', 'symbolIn'];
+//
+// `executionOutcome` is WHAT, not WHY (enforce readiness, table G V1.4): the
+// typed marker that the swap's outcome could not be confirmed. A spectator's
+// pane drops a marked beat exactly as the owner's does — without the marker it
+// rendered the beat's pre-execution words (or its raw action) as if the record
+// vouched for them. It names no mechanism and no reasoning.
+const PUBLIC_STATUSFEED = ['timestamp', 'message', 'action', 'regime', 'score', 'symbolOut', 'symbolIn', 'executionOutcome'];
 // PUBLIC trade entry — execution facts (drives the banked-score WHAT); NOT
 // rationale / hypothesis / trade_reasoning / snapshot / Forge citations.
 const PUBLIC_TRADE = ['symbolOut', 'symbolIn', 'name', 'slotIndex', 'entryPrice', 'exitPrice', 'lockedPoints', 'lockedGainPct', 'swappedOutAt', 'swapDay', 'action', 'tier', 'isCrypto'];
@@ -72,7 +78,12 @@ function pick(obj, keys) {
  *
  * - Owner (ownerId === viewerUid) OR completed battle → returned UNCHANGED
  *   (full WHY: the owner sees their own reasoning live; everyone gets it at
- *   completion via the Film Room).
+ *   completion via the Film Room) — with ONE exception, Pilot P1b (pilot spec
+ *   §2.7, Phase 0 row #15): a completed battle shown to a NON-owner never
+ *   carries the player's frozen idea (`agentContext.equippedHypothesis` — the
+ *   statement, conditions and evidence refs). "Owner sees full, others none."
+ *   It is stripped from a shallow copy; a battle that carries none is returned
+ *   as the same object, exactly as before.
  * - Non-owner viewing an ACTIVE battle → WHAT-only projection built from the
  *   allowlists above. Stamped `_whyConcealed: true` so the client renders the
  *   honest "reasoning unlocks at completion" note rather than mistaking
@@ -85,8 +96,13 @@ function pick(obj, keys) {
  */
 export function projectTournamentBattle(battle, { isOwner = false } = {}) {
   if (!battle) return battle;
-  if (isOwner || battle.status === 'completed') {
-    return battle; // full transparency: owner live, or anyone at completion
+  if (isOwner) return battle; // full transparency: the owner, live and after
+  if (battle.status === 'completed') {
+    // Anyone at completion — minus the player's frozen idea (P1b, spec §2.7).
+    if (!battle.agentContext || typeof battle.agentContext !== 'object' || !('equippedHypothesis' in battle.agentContext)) return battle;
+    const agentContext = { ...battle.agentContext };
+    delete agentContext.equippedHypothesis;
+    return { ...battle, agentContext };
   }
 
   // Non-owner, active → WHAT-only (allowlist; nothing leaks by default).
