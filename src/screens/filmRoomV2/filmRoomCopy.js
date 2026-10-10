@@ -151,6 +151,8 @@ export const FILM_ROOM_COPY = Object.freeze({
   closedLeg: 'At the sale · rebuilt minus banked',
   closedLegNote: 'agreement at the sale, not accuracy afterward',
   replayNone: 'No replay for this swap.',
+  replayNotDrawn: 'No replay drawn for this swap',   // a replay written with no point to draw — then its stored reasons (R11)
+  replayNoneSeeCoverage: 'the replay coverage line above says why',   // once a candle pass has written the day's note (R11)
   replayCrypto: 'crypto legs are not replayed',
   split: 'Split by cause · the sale',
   splitRows: {

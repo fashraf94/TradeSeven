@@ -118,6 +118,7 @@ export const SPEC_STORED_NOTE_PATHS = Object.freeze([
   /^coverage\.[A-Za-z]+\.note$/,
   /^actions\[\d+\]\.replay\.reconciliation\.(soldAtSale|boughtAtSale)\.missingInputs\[\d+\]$/,
   /^plans\[\d+\]\.price\.missingInputs\[\d+\]$/,
+  /^actions\[\d+\]\.replay\.missingInputs\[\d+\]$/,   // a replay's own missing-input list (R1; review A2F1-3)
   /^actions\[\d+\]\.replay\.label$/,
 ]);
 
@@ -136,25 +137,31 @@ function storedNoteTextOf(node, docs) {
  * Amendment E addendum 4, R13 — the agent's name, PINNED HERE from the ruling: the stored display name at
  * agentContext.agentName on the battle document. It is exempt from the sweeps — forbidden words and number words, and
  * (as a bound quotation is, R7) digits — on its BINDING alone: an element carrying `data-agent-name` at exactly that
- * path whose text equals, byte for byte, the value the battle document stores there.
+ * path whose text equals, byte for byte, the value the battle document stores there — and never inside a heading (the
+ * screen's own voice; as B1 rules for a quotation — review A2F1-5).
  */
 export const SPEC_AGENT_NAME_PATH = 'agentContext.agentName';
 export function boundAgentNameOf(node, docs = {}) {
   const el = node?.nodeType === 1 ? node : node?.parentElement;
   const n = el?.closest('[data-agent-name]');
-  if (!n || n.getAttribute('data-agent-name') !== SPEC_AGENT_NAME_PATH) return null;
+  if (!n || n.getAttribute('data-agent-name') !== SPEC_AGENT_NAME_PATH || n.closest(HEADINGS)) return null;
   const doc = docs[n.getAttribute('data-agent-name-doc') || 'battle'];
   const value = doc ? valueAt(doc, parsePath(SPEC_AGENT_NAME_PATH)) : undefined;
   return typeof value === 'string' && value !== '' && n.textContent === value ? n : null;
 }
 
-/** R13's guard: every agent-name element is bound to the stored name; and the name sits in no text-bearing attribute. */
+/**
+ * R13's guard: the screen shows the name ONCE, bound to the stored name, outside any heading. (That it sits in no
+ * attribute and in no other text is proved with a distinctive name in the screen suite — a substring scan for a real
+ * name would match the screen's own words: "Check", "Hold", "Deep" — review A2F1-4.)
+ */
 export function agentNameDefects(container, docs = {}) {
   const bad = [];
-  for (const n of container.querySelectorAll('[data-agent-name]')) if (!boundAgentNameOf(n, docs)) bad.push(`agent name “${n.textContent}”: not bound to ${SPEC_AGENT_NAME_PATH}`);
-  const name = docs.battle ? valueAt(docs.battle, parsePath(SPEC_AGENT_NAME_PATH)) : null;
-  if (typeof name === 'string' && name) {
-    for (const el of container.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) for (const attr of TEXT_ATTRIBUTES) if ((el.getAttribute(attr) || '').includes(name)) bad.push(`agent name in ${attr}: “${el.getAttribute(attr).slice(0, 80)}”`);
+  const names = [...container.querySelectorAll('[data-agent-name]')];
+  if (names.length > 1) bad.push(`agent name shown ${names.length} times`);
+  for (const n of names) {
+    if (n.closest(HEADINGS)) bad.push(`agent name “${n.textContent}”: inside a heading`);
+    else if (!boundAgentNameOf(n, docs)) bad.push(`agent name “${n.textContent}”: not bound to ${SPEC_AGENT_NAME_PATH}`);
   }
   return bad;
 }

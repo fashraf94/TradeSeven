@@ -19,7 +19,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { Coverage, MissingInputs, StoredNote, Quotation } from './FilmRoomKit';
-import { mounter, sep23Tape, clone, sweepNumbers, sweepWords, quoteDefects, boundQuotationOf, storedNoteDefects, boundStoredNoteOf, SPEC_STORED_NOTE_PATHS } from './__fixtures__/filmRoomHarness';
+import { mounter, sep23Tape, clone, sweepNumbers, sweepWords, quoteDefects, boundQuotationOf, storedNoteDefects, boundStoredNoteOf, agentNameDefects, boundAgentNameOf, SPEC_STORED_NOTE_PATHS } from './__fixtures__/filmRoomHarness';
 
 const box = (html) => { const el = document.createElement('div'); el.innerHTML = html; return el; };
 const m = mounter();
@@ -82,7 +82,7 @@ describe('Astra B2 — the stored-note number exemption is bound by path, never 
   });
 
   it('the rulings\' paths, pinned: coverage notes, each missing input by its index, each replay\'s label — nothing else', () => {
-    const named = ['coverage.checks.note', 'coverage.replay.note', 'actions[2].replay.reconciliation.soldAtSale.missingInputs[0]', 'actions[0].replay.reconciliation.boughtAtSale.missingInputs[3]', 'plans[4].price.missingInputs[1]', 'actions[1].replay.label'];
+    const named = ['coverage.checks.note', 'coverage.replay.note', 'actions[2].replay.reconciliation.soldAtSale.missingInputs[0]', 'actions[0].replay.reconciliation.boughtAtSale.missingInputs[3]', 'plans[4].price.missingInputs[1]', 'actions[3].replay.missingInputs[1]', 'actions[1].replay.label'];
     const not = ['coverage.checks.status', 'coverage.checks', 'actions[0].replay.note', 'actions[0].replay.lockedBasisNote', 'plans[0].price.note', 'battle.result.note', 'actions[0].replay.reconciliation.soldAtSale.missingInputs', 'actions[0].symbolOut', 'passes.close.status', 'xcoverage.checks.note'];
     for (const p of named) expect(SPEC_STORED_NOTE_PATHS.some((re) => re.test(p)), p).toBe(true);
     for (const p of not) expect(SPEC_STORED_NOTE_PATHS.some((re) => re.test(p)), p).toBe(false);
@@ -139,6 +139,27 @@ describe('Astra B3 — the quantity words are a closed list: zero to ninety, hun
 
   it('R12\'s "shown once", and positional words, are not quantity words', () => {
     expect(sweepWords(box('<p>Film Room · shown once</p><p>the first check · the last bar</p>'))).toEqual([]);
+  });
+});
+
+describe('R13\'s guard (review A2F1-5) — the agent\'s name, like a quotation, is exempt only outside a heading, and shown once', () => {
+  const docs = { battle: { agentContext: { agentName: 'Best Twelve 47' } } };
+  const named = (wrap) => box(wrap('<span data-agent-name="agentContext.agentName" data-agent-name-doc="battle">Best Twelve 47</span>'));
+
+  it('a bound name in a heading (h1–h6, role="heading") is the screen\'s voice: swept, and a defect', () => {
+    for (const wrap of [(s) => `<h1>${s}</h1>`, (s) => `<h4>${s}</h4>`, (s) => `<div role="heading" aria-level="2">${s}</div>`]) {
+      const el = named(wrap);
+      expect(sweepWords(el, docs)).toEqual(['best', 'number word “Twelve”: Best Twelve 47']);
+      expect(sweepNumbers(el, docs)).toEqual(['stray digit: “Best Twelve 47”']);
+      expect(agentNameDefects(el, docs)).toEqual(['agent name “Best Twelve 47”: inside a heading']);
+      expect(boundAgentNameOf(el.querySelector('[data-agent-name]'), docs)).toBeNull();
+    }
+  });
+
+  it('shown twice is a defect; the control — once, in a paragraph — is exempt and clean', () => {
+    expect(agentNameDefects(named((s) => `<p>${s}</p><p>${s}</p>`), docs)).toEqual(['agent name shown 2 times']);
+    const once = named((s) => `<p>${s}</p>`);
+    expect([sweepWords(once, docs), sweepNumbers(once, docs), agentNameDefects(once, docs)]).toEqual([[], [], []]);
   });
 });
 

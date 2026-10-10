@@ -138,14 +138,15 @@ export function sessionOf(etDate) {
  * The battle's trading-day timeline, VALIDATED (Astra B4) — the ONE reading of `timing.tradingDays` the day picker,
  * the subtitle's battle length and the harness's oracle all share: the entries that are real `YYYY-MM-DD` dates and,
  * where the maintained calendar knows the year, sessions of it — a weekend, a holiday, "not-a-date" or 2026-02-30 is
- * dropped; a real date beyond the calendar's horizon is kept, since nothing can say it was not a session. Null when
- * the battle records no timeline array.
+ * dropped; a real date beyond the calendar's horizon is kept, since nothing can say it was not a session; a day named
+ * twice is kept once. Null when the battle records no timeline array.
  */
 export function tradingTimeline(battle) {
   const days = battle?.timing?.tradingDays;
   if (!Array.isArray(days)) return null;
-  return days.filter((d) => {
-    if (!isEtDate(d)) return false;
+  // each day once: a timeline naming a day twice is still that one day (the writer's dayNumber counts it once — review A2F1-6)
+  return days.filter((d, i) => {
+    if (!isEtDate(d) || days.indexOf(d) !== i) return false;
     const s = getSessionForDate(d);
     return s === null || s.isTradingDay === true;
   });

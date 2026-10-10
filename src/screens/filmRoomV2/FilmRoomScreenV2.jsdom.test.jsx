@@ -258,6 +258,20 @@ describe('Amendment E addendum 4, R13 — the agent\'s name leads the subtitle, 
     expect(sweepWords(box, docs)).toEqual(['best', 'number word “One”: One Eyed Twelve']);   // unbound words, and a name that is not the stored one
   });
 
+  it('review A2F1-4: short real names that are also the screen\'s own words ("Agent", "Check", "Hold", "Deep", "D") — the guard sees no false defect, and every sweep is clean', async () => {
+    for (const agentName of ['Agent', 'Check', 'Hold', 'Deep', 'D']) {
+      m.teardown(); m.setup(); globalThis.localStorage.clear();
+      const { docs } = await openNamed(agentName);
+      for (const label of ['Glance', 'Study', 'Deep dive']) {
+        await depth(label);
+        m.expandAll();
+        expect(agentNameDefects(m.container, docs), `${agentName} · ${label}`).toEqual([]);
+        expect(sweepWords(m.container, docs), `${agentName} · ${label}`).toEqual([]);
+        expect(m.qa('[data-agent-name]'), `${agentName} · ${label}`).toHaveLength(1);
+      }
+    }
+  });
+
   it('never composed into other copy, never in an attribute: a distinctive name appears in exactly one text node — its own — at every depth', async () => {
     const { docs } = await openNamed('Zyx Best Twelve 47');
     for (const label of ['Glance', 'Study', 'Deep dive']) {
@@ -661,6 +675,16 @@ describe('Amendment E addendum 2, R8 (Astra A2 F3) — the battle length is a ma
     await open(sep23Tape, { battle });
     expect(m.qa('[data-region="day-picker"] button').map((b) => b.textContent)).toEqual(['Sep 22', 'Sep 23']);
     expect(lengthEl().textContent).toBe('two-day battleD');
+    expect(sweepNumbers(m.container, { tape: sep23Tape, battle })).toEqual([]);
+  });
+
+  it('review A2F1-6: a timeline naming its day twice is one day — "one-day battle", no picker, as the final tape\'s dayNumber says', async () => {
+    const battle = battleOf(sep23Tape, { timing: { tradingDays: [D, D] } });
+    await open(sep23Tape, { battle });
+    expect(lengthEl().textContent).toBe('one-day battleD');
+    expect(sep23Tape.dayNumber).toBe(1);
+    expect(m.q('[data-region="day-picker"]')).toBeNull();
+    expect(battleDays(battle)).toEqual([D]);
     expect(sweepNumbers(m.container, { tape: sep23Tape, battle })).toEqual([]);
   });
 

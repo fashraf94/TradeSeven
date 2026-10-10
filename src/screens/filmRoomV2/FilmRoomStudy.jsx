@@ -231,10 +231,17 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
   // The design of record's desktop card puts each path's end value beside the fork, at its height; the phone keeps them under it.
   // R11: a replay is DRAWN when it is written and its fork has a point to draw at a recorded instant (forkScale).
   const drawn = Boolean(r) && forkScale(tape, index) !== null;
+  // A written replay with a point that has a value shows its values (its end values, the gap — review A2P2-9), drawn
+  // or not; one with no such point has nothing to state but its reasons (review A2F1-3).
+  const valued = Boolean(r) && [...(Array.isArray(r.holdPath) ? r.holdPath : []), ...(Array.isArray(r.swapPath) ? r.swapPath : [])].some((p) => isNum(p?.points));
   // A card with no written replay says why: a crypto leg by its own stored reason, once (the day's coverage note,
   // which also names crypto legs after the candle pass, stays at the section's head — R11's "caveat once"); any other
   // by the day's replay coverage note (the close pass's "awaiting the candle pass", or outside the candle window).
   const crypto = a.replayReason === 'crypto_not_supported';
+  // The day's replay coverage note is the card's reason only while no candle pass has written it: before one, it is
+  // the close pass's reason (awaiting the candle pass; outside the candle window); once one has, it opens with the
+  // replay's own one-step sentence (review A2F1-2) — so the card points to the coverage line above instead.
+  const dayNote = !tape.passes?.candles?.writtenAt && typeof tape.coverage?.replay?.note === 'string' && Boolean(tape.coverage.replay.note);
   const beside = Boolean(desktop && drawn);
   const ends = beside ? { hold: { path: holdEnd, label: COPY.holdPath, symbol: a.symbolOut }, swap: { path: swapEnd, label: COPY.swapPath, symbol: a.symbolIn } } : null;
   // "Swap n" and #swap-n read one sequence: the swap's place in time order (addendum R4(a); BA-47).
@@ -264,9 +271,9 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ ...eyebrow, color: C.ink2 }}>{COPY.fork}</span>
-            {hypothetical ? <span data-hypothetical="" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><StateTag color={C.gold}>{COPY.hypothetical}</StateTag><TapeNum doc={tape} path={later} fmt={fmtCount} size={10.5} weight={600} /><span style={mono(9.5, C.ink3)}>{COPY.laterTrades}</span></span> : null}
+            {valued && hypothetical ? <span data-hypothetical="" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><StateTag color={C.gold}>{COPY.hypothetical}</StateTag><TapeNum doc={tape} path={later} fmt={fmtCount} size={10.5} weight={600} /><span style={mono(9.5, C.ink3)}>{COPY.laterTrades}</span></span> : null}
           </div>
-          {r ? (
+          {valued ? (
             <>
               <div style={{ paddingBottom: 14 }}><ForkChart tape={tape} index={index} ends={ends} /></div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'center' }}>
@@ -294,9 +301,16 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
               </div>
               {r.note ? <span style={foot}><StoredNote doc={tape} path={['actions', index, 'replay', 'note']} /></span> : null}
             </>
+          ) : r ? (
+            // written, with no point that has a value: its own stored reasons — the missing inputs, a version note — and no fork, lines or sentence
+            <span data-replay-none="not-drawn" style={foot}>
+              {COPY.replayNotDrawn}
+              {Array.isArray(r.missingInputs) && r.missingInputs.length ? <> · <MissingInputs doc={tape} path={['actions', index, 'replay', 'missingInputs']} /></> : null}
+              {typeof r.note === 'string' && r.note ? <> · <StoredNote doc={tape} path={['actions', index, 'replay', 'note']} /></> : null}
+            </span>
           ) : (
             <span data-replay-none={crypto ? 'crypto' : 'not-written'} style={foot}>
-              {COPY.replayNone}{crypto ? <> · {COPY.replayCrypto}</> : (typeof tape.coverage?.replay?.note === 'string' && tape.coverage.replay.note ? <> · <StoredNote doc={tape} path={['coverage', 'replay', 'note']} /></> : null)}
+              {COPY.replayNone}{crypto ? <> · {COPY.replayCrypto}</> : dayNote ? <> · <StoredNote doc={tape} path={['coverage', 'replay', 'note']} /></> : <> · {COPY.replayNoneSeeCoverage}</>}
             </span>
           )}
           {/* R11: the sentence only BESIDE A DRAWN REPLAY — the replay's own stored label, verbatim and bound by its path

@@ -212,7 +212,17 @@ describe('the swap cards (BA-6, BA-11, BA-38, BA-47; F1)', () => {
     const t = clone(sep23Tape);
     t.actions[1].replay = null;
     m.render(<Harness tape={t} />);
-    expect(card(1).querySelector('[data-replay-none="not-written"]').textContent).toBe(`No replay for this swap. · ${t.coverage.replay.note}`);
+    // a candle pass has written this day's coverage (its note opens with the one-step sentence): the card points to it (review A2F1-2)
+    expect(t.passes.candles.writtenAt).toBeTruthy();
+    expect(card(1).querySelector('[data-replay-none="not-written"]').textContent).toBe('No replay for this swap. · the replay coverage line above says why');
+    // before any candle pass, the day's note is the close pass's reason, and the card carries it, bound
+    const before = clone(t);
+    before.passes.candles = { status: 'pending', writtenAt: null };
+    before.coverage.replay.note = 'awaiting the candle pass';
+    m.render(<Harness tape={before} />);
+    expect(card(1).querySelector('[data-replay-none="not-written"]').textContent).toBe('No replay for this swap. · awaiting the candle pass');
+    expect(card(1).querySelector('[data-replay-none] [data-stored-note]').getAttribute('data-stored-note')).toBe('coverage.replay.note');
+    m.render(<Harness tape={t} />);
     expect(card(1).querySelector('[data-replay-sentence]')).toBeNull();   // never the sentence without a replay (R11)
     expect(card(1).textContent).not.toContain(REPLAY_SENTENCE);
     expect(card(1).querySelector('[data-basis-note]').textContent).toBe(LOCKED_BASIS_NOTE);

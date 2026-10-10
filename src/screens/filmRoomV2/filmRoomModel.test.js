@@ -265,6 +265,8 @@ describe('Astra B4 — one validated timeline (the day picker, the battle length
     expect(of(['2026-09-26', '2026-11-26', '2027-12-24', '2026-09-22', '2026-09-23'])).toEqual(['2026-09-22', '2026-09-23']);
     // an early close is a session
     expect(of(['2026-11-27'])).toEqual(['2026-11-27']);
+    // a day named twice is that one day (review A2F1-6: the writer's dayNumber counts it once)
+    expect(of(['2026-09-23', '2026-09-22', '2026-09-23', '2026-09-22'])).toEqual(['2026-09-23', '2026-09-22']);
     // beyond the maintained horizon nothing can say it was not a session: a real date is kept, a non-date is not
     expect(of(['2030-01-02', '2030-02-31', '2025-12-31'])).toEqual(['2030-01-02', '2025-12-31']);
   });

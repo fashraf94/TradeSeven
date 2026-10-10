@@ -37,6 +37,8 @@ import { sep23Day, sep23Bars, buildTapeDay, SEP23_NIGHT, SEP23_MORNING } from '.
 import { seedDay, OWNER } from '../../../api/_utils/filmTape/__fixtures__/tapeFixtures.js';
 import { makeTapeDb } from '../../../api/_utils/filmTape/__fixtures__/tapeFirestore.js';
 import { writeTapeDay } from '../../../api/_utils/filmTape/writeTapeDay.js';
+import { runCandlePass } from '../../../api/_utils/filmTape/candlePass.js';
+import { fetcherOf } from '../../../api/_utils/filmTape/__fixtures__/tapeBars.js';
 import { mounter, sweepNumbers, sweepWords, sweepSigns, quoteDefects, storedNoteDefects } from './__fixtures__/filmRoomHarness';
 
 vi.setConfig({ testTimeout: 90_000, hookTimeout: 120_000 });
@@ -64,9 +66,42 @@ async function cryptoDay() {
   return fx;
 }
 
+/** The Sep-23 day with swap 3 (ETN → PANW) traded in support slot 1 too — the slot swap 1 (MSFT → CRWD) traded first. */
+async function slotTwiceDay() {
+  const fx = await sep23Day();
+  const k = fx.battle.trades.findIndex((t) => t.symbolOut === 'ETN');
+  fx.battle.trades[k] = { ...fx.battle.trades[k], tier: 'support', slotIndex: 1 };
+  fx.receipts[k] = { ...fx.receipts[k], resolvedTier: 'support', resolvedSlotIndex: 1 };
+  return fx;
+}
+
+/**
+ * A day that GREW after its candle pass: the close and candle passes run on the Sep-23 sources without swap 3, then
+ * swap 3's sources arrive and the close pass runs again at `secondNight` (its re-merge of a written day).
+ */
+async function grownDay(secondNight) {
+  const full = await sep23Day();
+  const less = await sep23Day();
+  less.battle.trades = less.battle.trades.filter((t) => t.symbolOut !== 'ETN');
+  less.receipts = less.receipts.filter((r) => r.symbolOut !== 'ETN');
+  less.ticks = less.ticks.map((t) => (t.tickSeq === 20 ? { ...t, actions: [] } : t));
+  const store = seedDay({}, less);
+  for (const v of less.intradayViews || []) store[`agentBattles/${less.battleId}/intradayViews/${v.id}`] = { evaluatedAt: v.evaluatedAt, ownerId: OWNER };
+  const t = makeTapeDb(store);
+  await writeTapeDay(less.battleId, less.etDate, { db: t.db, now: SEP23_NIGHT });
+  await runCandlePass({ db: t.db, fetchCandles: fetcherOf(sep23Bars()).fetchCandles, clock: () => SEP23_MORNING, startMs: SEP23_MORNING });
+  for (const [key, v] of Object.entries(seedDay({}, full))) t.store.set(key, JSON.parse(JSON.stringify(v)));
+  await writeTapeDay(full.battleId, full.etDate, { db: t.db, now: secondNight });
+  return t.store.get(`agentBattles/${full.battleId}/tape/${full.etDate}`);
+}
+
 const OUTSIDE_NIGHT = Date.parse('2026-10-20T02:15:30.000Z');   // four weeks on: the Sep-23 day is outside the candle window
 const days = {};
 beforeAll(async () => {
+  days.twiceClose = await closePassOnly(await slotTwiceDay(), SEP23_NIGHT);
+  days.twiceFull = (await buildTapeDay(await slotTwiceDay(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sep23Bars() })).tape;
+  days.grownIn = await grownDay(Date.parse('2026-09-25T02:15:30.000Z'));
+  days.grownOut = await grownDay(OUTSIDE_NIGHT);
   days.closeOnly = await closePassOnly(await sep23Day(), SEP23_NIGHT);
   days.outside = await closePassOnly(await sep23Day(), OUTSIDE_NIGHT);
   days.crypto = (await buildTapeDay(await cryptoDay(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sep23Bars() })).tape;
@@ -159,9 +194,40 @@ describe('R11 — the replay sentence only beside a drawn replay (writer to scre
     expect(points).toEqual([]);   // …with no point to draw
     mount(tape);
     expect(card(k).querySelector('[data-replay-sentence]')).toBeNull();
-    expect(card(k).querySelector('[data-replay-none]')).toBeNull();   // a replay IS written: never "No replay"
-    expect(card(k).querySelector('[data-line]')).toBeNull();
+    // a replay IS written: never "No replay for this swap." — its line says none was drawn, with its OWN stored reasons, bound (review A2F1-3)
+    const line = card(k).querySelector('[data-replay-none="not-drawn"]');
+    expect(line.textContent).toBe(`No replay drawn for this swap · missing: ${r.missingInputs.join(', ')}`);
+    expect([...line.querySelectorAll('[data-stored-note]')].map((s) => s.getAttribute('data-stored-note'))).toEqual(r.missingInputs.map((_, j) => `actions[${k}].replay.missingInputs[${j}]`));
+    expect(card(k).textContent).not.toContain('No replay for this swap.');
+    // nothing describes lines that are not there: no fork, no path labels, no gap rows, no hypothetical tag
+    for (const sel of ['[data-line]', '[data-path-label]', '[data-result-row="gap"]', '[data-result-row="closed-leg"]', '[data-hypothetical]']) expect(card(k).querySelector(sel), sel).toBeNull();
     for (const i of tape.actions.map((_, j) => j).filter((j) => j !== k)) expect(card(i).querySelector('[data-replay-sentence]'), `card ${i}`).toBeTruthy();
     expect(swept(tape)).toEqual(CLEAN);
+  });
+
+  it('(f) review A2F1-1: a slot traded twice — the "hypothetical" tag only beside a DRAWN replay: absent on the close pass\'s cards, present once the replay is drawn', () => {
+    for (const [tape, drawnAlready] of [[days.twiceClose, false], [days.twiceFull, true]]) {
+      expect(tape.actions[0].subsequentTradesInSlot).toBe(1);
+      mount(tape);
+      expect(Boolean(card(0).querySelector('[data-hypothetical]')), drawnAlready ? 'drawn' : 'close pass only').toBe(drawnAlready);
+      if (!drawnAlready) expect(card(0).querySelector('[data-replay-none="not-written"]').textContent).toBe('No replay for this swap. · awaiting the candle pass');
+      expect(swept(tape)).toEqual(CLEAN);
+    }
+  });
+
+  it('(g) review A2F1-2: a swap that reached the tape after the candle pass (the close pass re-merging a grown day) — its card never carries the day\'s note, which opens with the one-step sentence; it points to the coverage line above', () => {
+    for (const [tape, status] of [[days.grownIn, 'pending'], [days.grownOut, 'expired']]) {
+      expect(tape.passes.candles.status, status).toBe(status);
+      expect(tape.passes.candles.writtenAt, status).toBeTruthy();   // a candle pass HAS written this day's replay coverage
+      expect(tape.coverage.replay.note, status).toMatch(/^one-step hypothetical/);
+      const k = tape.actions.findIndex((a) => a.symbolOut === 'ETN');
+      expect(tape.actions[k].replay, status).toBeNull();
+      mount(tape);
+      expect(card(k).querySelector('[data-replay-none="not-written"]').textContent, status).toBe('No replay for this swap. · the replay coverage line above says why');
+      expect(card(k).textContent, status).not.toMatch(/hypothetical through the day's close/);
+      expect(card(k).querySelector('[data-replay-sentence]'), status).toBeNull();
+      expect(m.q('[data-coverage-of="replay"] [data-stored-note="coverage.replay.note"]').textContent, status).toBe(tape.coverage.replay.note);
+      expect(swept(tape), status).toEqual(CLEAN);
+    }
   });
 });
