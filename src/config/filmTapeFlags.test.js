@@ -76,7 +76,7 @@ describe('FILM_TAPE_WRITE_ENABLED — the pin (BUILD_RULES §2)', () => {
 describe('FILM_ROOM_V2_MODE — the pin (BUILD_RULES §2; Amendment E BA-40)', () => {
   it("ships the dark state: FILM_ROOM_V2_MODE is 'off' — each step is its own founder PR", () => {
     // THE ROW THAT MOVES WITH A FLIP ('off' → 'allowlist' → 'on'), in the flip PR's own commit.
-    expect(FILM_ROOM_V2_MODE).toBe('off');
+    expect(FILM_ROOM_V2_MODE).toBe('allowlist');
   });
 
   it('the allowed values: exactly off · allowlist · on, frozen, in walk order, and the shipped value is one of them', () => {

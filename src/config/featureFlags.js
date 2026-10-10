@@ -2986,7 +2986,7 @@ export const FILM_TAPE_WRITE_ENABLED = true;
  * DARK_BY_DESIGN block where a reader looks for the dark runway.
  */
 // Pinned by: filmTapeFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
-export const FILM_ROOM_V2_MODE = 'off';
+export const FILM_ROOM_V2_MODE = 'allowlist';
 
 /** The three walked states, in walk order. */
 export const FILM_ROOM_V2_MODES = Object.freeze(['off', 'allowlist', 'on']);
