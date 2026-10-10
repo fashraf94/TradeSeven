@@ -159,7 +159,7 @@ export function restatements(calls) {
   return { restated, threads: [...groups.values()].filter((g) => g.length > 1) };
 }
 
-/** One CSV block's rows by its header (scripts/build2-discovery-counts.mjs:157-166, csvSymbols; :863-874, benchRows). */
+/** One CSV block's rows by its header (scripts/build2-discovery-counts.mjs:165-173, csvSymbols; :863-870, benchRows' CSV part). */
 export function benchRowsOf(text) {
   const i = typeof text === 'string' ? text.indexOf(`${BENCH_HEADER}\n`) : -1;
   if (i < 0) return null;
