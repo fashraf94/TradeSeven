@@ -10,8 +10,9 @@
 //               points; the hold-vs-swap fork, rebuilt and dashed, with the gap
 //               and the agreement at the sale (BA-11); the sale split by cause
 //               — always the SOLD leg's sale — and the fill as its own group
-//               (F1, BA-38); the one-step-hypothetical sentence and the basis
-//               note on every card
+//               (F1, BA-38); the basis note on every card, and the replay
+//               sentence only beside a drawn replay — a card with no written
+//               replay says why, alone (Amendment E addendum 3, R11)
 //   Directives  the card per BA-9, its three states from the tape's rows (F6)
 //   Plans       verbatim, with the two market prices and the horizon note (BA-10)
 //   Rationale   recorded words, collapsed, beside the checks that carry no agent
@@ -228,7 +229,13 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
   const holdEnd = lastPointPath(tape, index, 'holdPath');
   const swapEnd = lastPointPath(tape, index, 'swapPath');
   // The design of record's desktop card puts each path's end value beside the fork, at its height; the phone keeps them under it.
-  const beside = Boolean(desktop && forkScale(tape, index));
+  // R11: a replay is DRAWN when it is written and its fork has a point to draw at a recorded instant (forkScale).
+  const drawn = Boolean(r) && forkScale(tape, index) !== null;
+  // A card with no written replay says why: a crypto leg by its own stored reason, once (the day's coverage note,
+  // which also names crypto legs after the candle pass, stays at the section's head — R11's "caveat once"); any other
+  // by the day's replay coverage note (the close pass's "awaiting the candle pass", or outside the candle window).
+  const crypto = a.replayReason === 'crypto_not_supported';
+  const beside = Boolean(desktop && drawn);
   const ends = beside ? { hold: { path: holdEnd, label: COPY.holdPath, symbol: a.symbolOut }, swap: { path: swapEnd, label: COPY.swapPath, symbol: a.symbolIn } } : null;
   // "Swap n" and #swap-n read one sequence: the swap's place in time order (addendum R4(a); BA-47).
   const anchor = swapAnchor(ordinal - 1);
@@ -287,9 +294,15 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
               </div>
               {r.note ? <span style={foot}><StoredNote doc={tape} path={['actions', index, 'replay', 'note']} /></span> : null}
             </>
-          ) : <span style={foot}>{COPY.replayNone}{a.replayReason === 'crypto_not_supported' ? ` · ${COPY.replayCrypto}` : ''} · <StoredNote doc={tape} path={['coverage', 'replay', 'note']} /></span>}
-          {/* The replay's own stored label, verbatim and bound by its path (R1, R9, Astra B2); the screen's own sentence only where none is stored. */}
-          <span data-replay-sentence="" style={foot}>{r?.label ? <StoredNote doc={tape} path={['actions', index, 'replay', 'label']} /> : REPLAY_SENTENCE}</span>
+          ) : (
+            <span data-replay-none={crypto ? 'crypto' : 'not-written'} style={foot}>
+              {COPY.replayNone}{crypto ? <> · {COPY.replayCrypto}</> : (typeof tape.coverage?.replay?.note === 'string' && tape.coverage.replay.note ? <> · <StoredNote doc={tape} path={['coverage', 'replay', 'note']} /></> : null)}
+            </span>
+          )}
+          {/* R11: the sentence only BESIDE A DRAWN REPLAY — the replay's own stored label, verbatim and bound by its path
+              (R1, R9, Astra B2), else the screen's own R9 sentence. A card with no written replay says why in its line
+              above, alone; a replay that draws nothing carries no sentence either. */}
+          {drawn ? <span data-replay-sentence="" style={foot}>{r.label ? <StoredNote doc={tape} path={['actions', index, 'replay', 'label']} /> : REPLAY_SENTENCE}</span> : null}
         </div>
         <SplitRows tape={tape} index={index} a={a} />
       </div>
