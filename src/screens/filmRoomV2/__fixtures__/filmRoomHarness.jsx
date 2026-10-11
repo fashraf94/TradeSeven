@@ -17,9 +17,10 @@
 //   quoteDefects   R7's guard: every quotation bound to its tape path (text =
 //                  the stored value), attributed as the record says, and never
 //                  inside a heading nor holding one (Astra B1, B5)
-// Every exemption — a bound quotation's, a stored note's, the agent's name's —
-// is lost to a heading anywhere on its text's ancestry (headingAt).
 //   sweepSigns     sign colours on recorded scores only
+// Every exemption — a bound quotation's, a stored note's, the agent's name's —
+// is lost to a heading around its bound element or anywhere inside it
+// (headingAt; Astra B1, B5).
 // The fixtures are the A1 passes' own output (screenFixtures.test.js).
 
 import React, { act } from 'react';
@@ -155,9 +156,8 @@ export function boundAgentNameOf(node, docs = {}) {
 
 /**
  * R13's guard: the screen shows the name ONCE, bound to the stored name, with no heading around it or inside it (Astra
- * B5; headingAt). (That it sits in no
- * attribute and in no other text is proved with a distinctive name in the screen suite — a substring scan for a real
- * name would match the screen's own words: "Check", "Hold", "Deep" — review A2F1-4.)
+ * B5; headingAt). That it sits in no attribute and in no other text is proved with a distinctive name in the screen
+ * suite — a substring scan for a real name would match the screen's own words: "Check", "Hold", "Deep" (review A2F1-4).
  */
 export function agentNameDefects(container, docs = {}) {
   const bad = [];

@@ -312,6 +312,14 @@ describe('Astra B5 — a heading INSIDE the bound element is the screen\'s voice
       expect(validator(el, docs)).toEqual([`${prefix}a heading inside it`]);
     });
 
+    it.each(KINDS)('%s: review A2GV-3 — an EMPTY heading beside the text, or an aria-hidden one, inside the bound element still costs it the exemption', (_k, B, validator, prefix) => {
+      for (const inner of [`<h2></h2>${T}`, `${T}<span role="heading" aria-level="2"></span>`, `<h2 aria-hidden="true">${T}</h2>`]) {
+        const el = box(`<div>${B(inner)}</div>`);
+        expect(el.querySelector('[data-quote-path], [data-stored-note], [data-agent-name]').textContent).toBe(T);
+        expect([sweepNumbers(el, docs), validator(el, docs)], inner).toEqual([[`stray digit: “${T}”`], [`${prefix}a heading inside it`]]);
+      }
+    });
+
     it.each(KINDS)('%s: role="heading" with no aria-level, inside and around', (_k, B, validator, prefix) => {
       const inside = box(`<div>${B(`<span role="heading">${T}</span>`)}</div>`);
       expect([sweepNumbers(inside, docs), validator(inside, docs)]).toEqual([[`stray digit: “${T}”`], [`${prefix}a heading inside it`]]);

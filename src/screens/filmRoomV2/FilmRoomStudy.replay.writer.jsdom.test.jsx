@@ -142,6 +142,10 @@ beforeAll(async () => {
   // both legs' only bar the session's first minute: no sample after the sale is fresh — the swap path's opening sample
   // (the banked points at the sale, tapeReplay.js composeLegs) is the replay's one placeable value (review A2G1-1)
   days.saleOnly = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ MSFT: ['2026-09-23T13:30:00Z'], CRWD: ['2026-09-23T13:30:00Z'] }) })).tape;
+  // a slot traded twice, the bought leg's bars deleted: a hypothetical replay drawn on the hold path alone (review A2GV-2)
+  const holdOnly = sep23Bars();
+  delete holdOnly.CRWD;
+  days.twiceHoldOnly = (await buildTapeDay(await slotTwiceDay(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: holdOnly })).tape;
   // a slot traded twice, its swap 1 cut to the 3:59 PM minute: a hypothetical replay drawn as points only (review A2G1-4)
   days.twicePoints = (await buildTapeDay(await slotTwiceDay(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ MSFT: [LAST_MINUTE], CRWD: [LAST_MINUTE] }) })).tape;
   // the bought leg's bars before the two checks after the swap, and the close's: a segment and an isolated point on one path
@@ -353,8 +357,10 @@ describe('Astra F1 — a replay is drawn only when it emits visible geometry: a 
           const at = glyphAt(g);
           expect(Math.abs(at.xPct - place.xPct(want[j].at)), `${w} ${leg} ${j} x`).toBeLessThan(0.02);
           expect(Math.abs(at.y - place.y(want[j].points)), `${w} ${leg} ${j} y`).toBeLessThan(0.06);
-          // a visible mark: a 7 px ring with a solid stroke, inside the fork's own region
+          // a visible mark: a 7 px ring with a solid stroke of real width (its fill is the card's own surface, so the stroke
+          // is all that shows — review A2GV-1), inside the fork's own region
           expect([g.style.width, g.style.height, g.style.borderStyle || g.style.border.split(' ')[1]], `${w} ${leg} ${j}`).toEqual(['7px', '7px', 'solid']);
+          expect(parseFloat(g.style.borderWidth || g.style.border), `${w} ${leg} ${j} stroke`).toBeGreaterThanOrEqual(1);
           expect(g.closest(`[data-region="fork-${k}"]`)).toBeTruthy();
           expect(g.getAttribute('aria-hidden')).toBe('true');
         });
@@ -434,6 +440,13 @@ describe('Astra F1 — a replay is drawn only when it emits visible geometry: a 
     expect(card(0).querySelectorAll('[data-fork-point]')).toHaveLength(3);
     expect(card(0).querySelector('[data-hypothetical] [data-num]').getAttribute('data-num')).toBe('actions[0].subsequentTradesInSlot');
     expect(swept(tape)).toEqual(CLEAN);
+    // review A2GV-2: the same slot with only its hold path drawn (the bought leg's bars deleted) keeps the tag too
+    const hold = days.twiceHoldOnly;
+    expect([runsOf(hold.actions[0].replay.holdPath).length > 0, hold.actions[0].replay.swapPath]).toEqual([true, null]);
+    mount(hold);
+    expect(card(0).querySelector('[data-path-label="swap"]')).toBeNull();
+    expect(card(0).querySelector('[data-hypothetical] [data-num]').getAttribute('data-num')).toBe('actions[0].subsequentTradesInSlot');
+    expect(swept(hold)).toEqual(CLEAN);
   });
 
   it('review A2G1-1: the swap path\'s opening sample alone (both legs stale after the sale) — as the founder\'s rule reads, a value at a recorded instant: one ring at the sale, the swap path\'s label alone, the points legend, the sentence (an open founder question, build report §10)', () => {
