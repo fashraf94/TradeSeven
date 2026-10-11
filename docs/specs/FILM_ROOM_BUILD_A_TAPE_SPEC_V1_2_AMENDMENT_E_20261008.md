@@ -78,3 +78,7 @@ One review of the draft PR. A finding blocks the merge only if: a rendered numbe
 ## Addendum 4 — founder ruling for the follow-up pass (2026-10-10)
 
 - **R13 — The agent's name.** The agent's name is a stored display name chosen for the agent, not the screen's voice. It renders exactly as stored, bound to its stored field (its text equals the stored value), and is exempt from the forbidden-word and number-word sweeps on that binding alone, as a bound quotation is under R7. The screen never composes it into other copy, never alters it, and never uses it in an `aria-label` or `title` other than its own element's. When no name is stored, the subtitle starts with the archetype, as before.
+
+## Addendum 5 — founder ruling on the follow-up pass (2026-10-11)
+
+- **R14 — Absence is not a quantity.** Words that say the tape holds no record of something ("No swaps were recorded this day", "no checks recorded", BA-9's "none in force", "nothing") state absence, not a count. R8 does not apply, and they take no marker. Each one is still a stated fact: it must match the tape's section and its coverage, or it breaches criterion 3. "No" or "none" never stands in for a number the tape records.

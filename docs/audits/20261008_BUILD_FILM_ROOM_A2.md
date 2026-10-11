@@ -876,7 +876,7 @@ Appended verbatim to the end of Amendment E (`36477560`). Item 12 applies it; 9.
    - for a crypto leg, the screen's caveat from the row's own stored `replayReason`, once;
    - before any candle pass has written (`passes.candles.writtenAt` unset), the day's stored replay coverage note ("awaiting the candle pass", or the outside-window note), bound;
    - after one has, a pointer: "the replay coverage line above says why". That note now opens with the replay's one-step sentence, and copying it would put the sentence beside no replay.
-   
+
    The day's note always shows once, at the swaps section's head. The split groups keep "No replay for this swap." (F1: the split is always shown). A replay written with no point that has a value shows "No replay drawn for this swap" and its own stored missing inputs. A replay whose points have values but no instants keeps its values (A2P2-9) and gets no sentence.
 3. **B2's allowed paths** (`SPEC_STORED_NOTE_PATHS`, pinned in the harness from R1 and R9):
    - exempt: `coverage.*.note`, each missing-input name by index (the sale's, the fill's, a plan price's, a replay's), and `actions[].replay.label`;
