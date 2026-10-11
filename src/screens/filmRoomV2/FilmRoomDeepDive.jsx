@@ -27,8 +27,8 @@
 // so an incomplete series ends where its bars end, with the tail blank, and
 // "close" always names the session-close instant (Amendment E addendum 2, F2).
 
-import React, { useMemo, useState } from 'react';
-import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, sessionOf, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, seriesDomain, closePoints, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
 import { classOfNumber } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
 import { FILM_ROOM_COPY as COPY, FORBIDDEN_WORDS } from './filmRoomCopy';
@@ -64,6 +64,40 @@ const TICK_EVERY_MS = 90 * 60_000;
 /** A chart tick's clock, without AM/PM (the design of record's ticks). */
 const tickClock = (ms) => (etClock(new Date(ms).toISOString()) || '').replace(/ [AP]M$/, '');
 
+// ── the last close's label against the chart's other marks (A2A2-2's refuters: a marker could sit over it) ──────
+const LABEL_H = 13;          // the label's box: 9.5 px figures beside its 12 px class marker
+const MARKER_HALF = 12;      // an evidence marker's button: 24 × 24 px about its point
+const SWAP_ROW = 15;         // the swap labels' row along the plot's top edge
+const MIN_PLOT_PX = 150;     // the narrowest plot the screen lays out (a 320 px phone) — the width "near" is judged at
+/** An upper bound of the label's width in px: its figures at 9.5 px mono (≤ 6.2 px each), then the gap and the marker. */
+export const lastCloseLabelPx = (text) => Math.ceil(String(text).length * 6.2) + 20;
+
+/**
+ * The last close's label's top, in px. Its usual place — just above the line's end — when that is clear; else the
+ * nearest clear band above or below it; else under the price area, where no marker reaches. A marker is NEAR when
+ * the label's box and the marker's box share columns at the plot's MEASURED width (`plotPx`), or — before it is
+ * measured, or where nothing lays it out — at SOME plot width the screen lays out (≥ MIN_PLOT_PX; review A2F2-2): `before`
+ * puts the label's right edge 2 px before the line's end, otherwise its left edge 4 px after it. Heights are exact
+ * px (the chart's height is fixed), so a band clear of every near marker is clear at every width. The swap labels'
+ * row is a band too when the symbol has one. Positions are in the chart's 0–1000 domain (x) and px (y).
+ */
+export function lastCloseTop({ endX, endY, before, labelPx, markers = [], swapRow = false, maxTop, floorTop, plotPx = 0 }) {
+  const k = 1000 / (plotPx > 0 ? plotPx : MIN_PLOT_PX);   // domain units per px: at the measured plot, else the narrowest
+  const near = markers.filter((mk) => (before
+    ? endX - mk.x > -(MARKER_HALF - 2) * k && endX - mk.x < (labelPx + 2 + MARKER_HALF) * k
+    : mk.x - endX > -(MARKER_HALF - 4) * k && mk.x - endX < (labelPx + 4 + MARKER_HALF) * k));
+  const bands = near.map((mk) => [mk.y - MARKER_HALF - 1, mk.y + MARKER_HALF + 1]);
+  if (swapRow) bands.push([-Infinity, SWAP_ROW]);
+  const clear = (t) => t >= 0 && t <= maxTop && bands.every(([a, b]) => t + LABEL_H <= a || t >= b);
+  const above = endY - 16;
+  const below = endY + 4;
+  for (let d = 0; d <= maxTop + 16; d += 2) {
+    if (clear(above - d)) return above - d;
+    if (clear(below + d)) return below + d;
+  }
+  return Math.min(floorTop, maxTop);
+}
+
 /** A line of closes rebased to `base` (another series drawn on this symbol's price scale), or null. */
 function rebased(doc, base) {
   const open = doc?.sessionOpen?.value;
@@ -71,17 +105,30 @@ function rebased(doc, base) {
   return (doc.bars || []).map((b) => ({ t: toMs(b.t), v: isNum(b.c) ? base * (b.c / open) : null }));
 }
 
+/** The plot's laid-out width in px (0 until measured, and where nothing lays it out): a ref and a ResizeObserver. */
+function usePlotWidth() {
+  const [px, setPx] = useState(0);
+  const watch = useRef(null);
+  const ref = useCallback((el) => {
+    if (watch.current) { watch.current.disconnect(); watch.current = null; }
+    if (!el) return;
+    const measure = () => { const w = el.getBoundingClientRect().width; setPx(w > 0 ? w : 0); };
+    measure();
+    if (typeof ResizeObserver === 'function') { watch.current = new ResizeObserver(measure); watch.current.observe(el); }
+  }, []);
+  return [px, ref];
+}
+
 function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, onMark, height = 250 }) {
+  const [plotPx, plotRef] = usePlotWidth();
   const bars = Array.isArray(doc.bars) ? doc.bars : [];
   const open = doc.sessionOpen?.value;
   // The time domain is the tape day's TRADING SESSION from the calendar the writers use — never the bars' extent:
   // bars sit where they exist, a missing head or tail stays blank, and "close" is the calendar's session-close
   // instant, early or regular (Amendment E addendum 2, F2). Only a date the calendar does not know as a session
-  // falls back to the bars' extent, and then its right end is the last bar's end time — never "close".
-  const session = sessionOf(tape?.etDate);
-  const lastMs = toMs(bars[bars.length - 1]?.t);
-  const startMs = session ? session.openMs : (toMs(doc.sessionOpen?.at) ?? toMs(bars[0]?.t));
-  const endMs = session ? session.closeMs : (lastMs !== null ? lastMs + 10 * 60_000 : null);
+  // falls back to the bars' extent, and then its right end is the last bar's end time — never "close". The one rule
+  // the sparklines share (seriesDomain; review A2A2-4).
+  const { session, startMs, endMs, lastMs } = seriesDomain(tape?.etDate, doc);
   const marks = evidenceMarkers(tape, sym);
   const actions = (Array.isArray(tape.actions) ? tape.actions : []).map((a, i) => ({ a, i })).filter(({ a }) => a.symbolOut === sym || a.symbolIn === sym);
   const mk = show.market ? rebased(marketDoc, open) : null;
@@ -95,15 +142,16 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   let lo = Math.min(...ys); let hi = Math.max(...ys);
   const span = Math.max(hi * 0.002, hi - lo); lo -= span * 0.08; hi += span * 0.08;
   const volH = show.volume ? 40 : 0; const gap = show.volume ? 8 : 0; const padT = 18;
-  const ih = height - padT - volH - gap - 4;
+  // With the volume hidden, a strip under the price area stays free of every marker's box, so the last close's
+  // label always has a clear place (review A2F2-1); with it shown, the volume band is that strip.
+  const floorRoom = show.volume ? 0 : LABEL_H + MARKER_HALF + 2;
+  const ih = height - padT - volH - gap - 4 - floorRoom;
   const x = (ms) => ((ms - startMs) / (endMs - startMs)) * 1000;
   const y = (v) => padT + ((hi - v) / (hi - lo)) * ih;
-  const line = (pts) => {
-    let s = ''; let pen = false;
-    for (const p of pts) { if (!isNum(p.v) || p.t === null) { pen = false; continue; } s += `${pen ? 'L' : 'M'}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)} `; pen = true; }
-    return s.trim();
-  };
-  const closes = bars.map((b) => ({ t: (toMs(b.t) ?? 0) + 10 * 60_000, v: b.c }));
+  // Every line breaks where a 10-minute bucket is missing between its first and last bar — never a straight line
+  // across the gap, nothing interpolated (review A2A2-3): one subpath per run of consecutive bars.
+  const line = (pts) => linePath(pts, x, y);
+  const closes = closePoints(bars);
   const lastEndX = lastMs !== null ? x(lastMs + 10 * 60_000) : 1000;
   const vols = bars.map((b) => b.v).filter(isNum);
   const volMax = vols.length ? Math.max(...vols) : 0;
@@ -113,15 +161,22 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   const timeTicks = [];
   for (let t = startMs + TICK_EVERY_MS; t < endMs - TICK_EVERY_MS / 2; t += TICK_EVERY_MS) timeTicks.push(t);
   const tickLabel = { position: 'absolute', ...mono(9, C.ink3, { whiteSpace: 'nowrap', lineHeight: 1 }) };
+  // The last close's label keeps clear of every evidence marker near it and of the swap labels' row (lastCloseTop).
+  const lastClose = bars[bars.length - 1]?.c;
+  const markerPoints = marks.map((mk) => ({ x: x(toMs(mk.at)), y: y(valueAt(tape, ['checks', mk.index, 'evidence', sym, 'px'])) })).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  const lastTop = isNum(lastClose) ? lastCloseTop({
+    endX: lastEndX, endY: y(lastClose), before: lastEndX > 500, labelPx: lastCloseLabelPx(fmtPrice(lastClose)),
+    markers: markerPoints, swapRow: actions.some(({ a }) => toMs(a.at) !== null), maxTop: height - LABEL_H, floorTop: padT + ih + MARKER_HALF + 2, plotPx,
+  }) : null;
   return (
     <div data-region="price-chart" data-symbol={sym} style={{ position: 'relative', width: '100%', boxSizing: 'border-box', padding: `0 ${PAD_R}px 0 ${PAD_L}px` }}>
-      <div data-plot="" data-domain-start={new Date(startMs).toISOString()} data-domain-end={new Date(endMs).toISOString()} style={{ position: 'relative', width: '100%', height }}>
+      <div ref={plotRef} data-plot="" data-plot-px={plotPx || undefined} data-domain-start={new Date(startMs).toISOString()} data-domain-end={new Date(endMs).toISOString()} style={{ position: 'relative', width: '100%', height }}>
         <svg width="100%" height={height} viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-label={`${sym} · ${COPY.deepPrice}`} style={{ display: 'block', overflow: 'visible', width: '100%', height }}>
           {ticks.filter((v) => v !== 0).map((v) => <line key={v} data-gridline="" x1="0" x2="1000" y1={y(open * (1 + v))} y2={y(open * (1 + v))} style={{ stroke: C.hair }} vectorEffect="non-scaling-stroke" />)}
           {isNum(open) ? <line data-line="session-open" x1="0" x2="1000" y1={y(open)} y2={y(open)} style={{ stroke: C.ink3, strokeDasharray: '1.5 3' }} vectorEffect="non-scaling-stroke" /> : null}
-          {mk ? <path data-line="market" d={line(mk.map((p) => ({ ...p, t: p.t + 10 * 60_000 })))} style={{ fill: 'none', stroke: C.ink3, strokeWidth: 1.1 }} vectorEffect="non-scaling-stroke" /> : null}
-          {sc ? <path data-line="sector" d={line(sc.map((p) => ({ ...p, t: p.t + 10 * 60_000 })))} style={{ fill: 'none', stroke: C.purple, strokeWidth: 1.1, opacity: 0.9 }} vectorEffect="non-scaling-stroke" /> : null}
-          <path data-line="price" d={line(closes)} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.6 }} vectorEffect="non-scaling-stroke" />
+          {mk ? <path data-line="market" d={line(mk.map((p) => ({ ...p, t: p.t === null ? null : p.t + SERIES_STEP_MS })))} style={{ fill: 'none', stroke: C.ink3, strokeWidth: 1.1, strokeLinecap: 'round' }} vectorEffect="non-scaling-stroke" /> : null}
+          {sc ? <path data-line="sector" d={line(sc.map((p) => ({ ...p, t: p.t === null ? null : p.t + SERIES_STEP_MS })))} style={{ fill: 'none', stroke: C.purple, strokeWidth: 1.1, opacity: 0.9, strokeLinecap: 'round' }} vectorEffect="non-scaling-stroke" /> : null}
+          <path data-line="price" d={line(closes)} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.6, strokeLinecap: 'round' }} vectorEffect="non-scaling-stroke" />
           {actions.map(({ a, i }) => (toMs(a.at) !== null ? <line key={i} data-swap-mark={i} x1={x(toMs(a.at))} x2={x(toMs(a.at))} y1={padT - 4} y2={padT + ih} style={{ stroke: exitMakerOf(a).by === 'agent' ? C.teal : C.ink2, strokeWidth: 1, strokeDasharray: '3 2' }} vectorEffect="non-scaling-stroke" /> : null))}
           {show.volume && volMax > 0 ? bars.map((b, i) => (isNum(b.v) && toMs(b.t) !== null ? <rect key={i} data-volume-bar={i} x={x(toMs(b.t)) + 2} width={Math.max(2, (10 * 60_000 / (endMs - startMs)) * 1000 - 4)} y={padT + ih + gap + volH - (b.v / volMax) * volH} height={(b.v / volMax) * volH} style={{ fill: tint('scrim', 0.18) }} /> : null)) : null}
         </svg>
@@ -139,7 +194,9 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
         {isNum(open) ? <span data-axis-record="sessionOpen" style={{ position: 'absolute', right: 'calc(100% + 4px)', top: y(open) - 6 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['sessionOpen', 'value']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
         {/* The last close sits at the end of its own line — where the bars end, never out in a blank tail (F2): */}
         {/* just before that end when it lies right of the middle, just after it otherwise, so it never runs into the axis gutter (review A2A2-2). */}
-        {isNum(bars[bars.length - 1]?.c) ? <span data-axis-record="lastClose" style={{ position: 'absolute', ...(lastEndX > 500 ? { right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)` } : { left: `calc(${(lastEndX / 10).toFixed(3)}% + 4px)` }), top: y(bars[bars.length - 1].c) - 16 }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
+        {/* …above its line's end when that is clear, else the nearest clear band — never over a marker or the swap labels' row. */}
+        {/* Its box is exactly LABEL_H tall from `top` (flex, line-height 1) — the box lastCloseTop places, never a line box the page's font sets. */}
+        {lastTop !== null ? <span data-axis-record="lastClose" style={{ position: 'absolute', display: 'flex', alignItems: 'center', height: LABEL_H, lineHeight: 1, ...(lastEndX > 500 ? { right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)` } : { left: `calc(${(lastEndX / 10).toFixed(3)}% + 4px)` }), top: lastTop }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
         {/* the evidence overlay (BA-43) */}
         {marks.map((m) => {
           const px = valueAt(tape, ['checks', m.index, 'evidence', sym, 'px']);
@@ -232,8 +289,12 @@ function SymbolFacts({ tape, doc, sym, holdings, sectorEtf }) {
   );
 }
 
-/** Desktop: every symbol's price at a glance; click to select. */
-function SmallMultiples({ series, symbols, sym, onSym }) {
+/**
+ * Desktop: every symbol's price at a glance; click to select. Each sparkline places its closes BY TIME on the same
+ * session domain as the Deep dive's chart (seriesDomain, from the shared calendar) — never spaced by index — and
+ * breaks where a bucket is missing, as the chart does (review A2A2-4, A2A2-3).
+ */
+function SmallMultiples({ tape, series, symbols, sym, onSym }) {
   return (
     <div data-region="all-symbols" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0,1fr))', gap: 10 }}>
       {symbols.map((s) => {
@@ -241,7 +302,9 @@ function SmallMultiples({ series, symbols, sym, onSym }) {
         const bars = Array.isArray(doc?.bars) ? doc.bars : [];
         const cs = bars.map((b) => b.c).filter(isNum);
         const lo = cs.length ? Math.min(...cs) : 0; const hi = cs.length ? Math.max(...cs) : 1; const sp = Math.max(hi * 0.001, hi - lo);
-        const d = cs.map((v, i) => `${i ? 'L' : 'M'}${((i / Math.max(1, cs.length - 1)) * 100).toFixed(1)} ${(((hi - v) / sp) * 36 + 2).toFixed(1)}`).join(' ');
+        const { startMs, endMs } = seriesDomain(tape?.etDate, doc);
+        const timed = startMs !== null && endMs !== null && endMs > startMs;
+        const d = timed ? linePath(closePoints(bars), (ms) => ((ms - startMs) / (endMs - startMs)) * 100, (v) => ((hi - v) / sp) * 36 + 2) : '';
         const on = s === sym;
         return (
           <button key={s} type="button" data-mini={s} aria-pressed={on} onClick={() => onSym(s)} style={{ ...plain, borderRadius: 12, padding: '8px 10px', background: on ? tint('teal', 0.07) : C.surface, border: `1px solid ${on ? tint('teal', 0.4) : C.hair2}`, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
@@ -249,7 +312,7 @@ function SmallMultiples({ series, symbols, sym, onSym }) {
               <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}><Rec>{s}</Rec></span>
               {bars.length ? <TapeNum doc={doc} docLabel={`series:${s}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={10.5} weight={500} color={C.ink2} /> : null}
             </span>
-            {cs.length ? <svg viewBox="0 0 100 40" preserveAspectRatio="none" style={{ width: '100%', height: 40, display: 'block' }} aria-hidden="true"><path d={d} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.3 }} vectorEffect="non-scaling-stroke" /></svg> : <span style={mono(9, C.ink3)}>{COPY.deepNoSeries(s)}</span>}
+            {cs.length ? <svg viewBox="0 0 100 40" preserveAspectRatio="none" data-mini-domain-start={timed ? new Date(startMs).toISOString() : undefined} data-mini-domain-end={timed ? new Date(endMs).toISOString() : undefined} style={{ width: '100%', height: 40, display: 'block' }} aria-hidden="true"><path data-mini-line={s} d={d} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.3 }} vectorEffect="non-scaling-stroke" /></svg> : <span style={mono(9, C.ink3)}>{COPY.deepNoSeries(s)}</span>}
           </button>
         );
       })}
@@ -293,7 +356,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
   const evidence = current && evidenceMarkers(tape, current).length ? (
     <div data-region="evidence-overlay" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span style={{ ...eyebrow, color: C.gold }}>{COPY.evidenceOverlay}</span>
-      <Coverage label={COPY.evidenceCoverage} coverage={tape.coverage?.evidence} />
+      <Coverage label={COPY.evidenceCoverage} doc={tape} at={['coverage', 'evidence']} />
       <span style={foot}>{COPY.evidenceOverlayNote}</span>
       <span style={foot}>{COPY.riskNote}</span>
       {mark != null && tape.checks?.[mark] ? (
@@ -309,7 +372,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
     </div>
   ) : null;
   const chart = (
-    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} coverage={tape.coverage?.series}>
+    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} doc={tape} coverageAt={['coverage', 'series']}>
       <div style={{ ...card, gap: 10 }}>
         {chartBody}
         {evidence}
@@ -324,8 +387,8 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
           {chart}
           <div style={{ paddingTop: 22 }}>{doc ? <SymbolFacts tape={tape} doc={doc} sym={current} holdings={holdings} sectorEtf={sectorEtf} /> : null}</div>
         </div>
-        <Section id="deep-all" title={COPY.allSymbols} coverage={tape.coverage?.series}>
-          <SmallMultiples series={series} symbols={symbols} sym={current} onSym={(s) => { setMark(null); onSym(s); }} />
+        <Section id="deep-all" title={COPY.allSymbols} doc={tape} coverageAt={['coverage', 'series']}>
+          <SmallMultiples tape={tape} series={series} symbols={symbols} sym={current} onSym={(s) => { setMark(null); onSym(s); }} />
         </Section>
       </div>
     );

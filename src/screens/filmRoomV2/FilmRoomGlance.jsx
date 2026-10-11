@@ -9,7 +9,7 @@
 import React from 'react';
 import { valueAt, etClock, checkStateOf, checkRuns, checkStateLegend, isNum, exitMakerOf, toMs } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
-import { C, card, eyebrow, foot, mono, plain, TapeNum, CountNum, CheckCount, When, Rec, Section, Row, Quotation, StateTag, Door } from './FilmRoomKit';
+import { C, card, eyebrow, foot, mono, plain, TapeNum, CountNum, CheckCount, When, StoredNote, Section, Row, Quotation, StateTag, Door } from './FilmRoomKit';
 import CheckDetail from './FilmRoomCheckDetail';
 
 // ── the pips: one per check row, by tone ───────────────────────────────────
@@ -224,7 +224,7 @@ export function ResultCard({ tape, finalDay = null }) {
         <span style={{ ...eyebrow, color: C.ink2 }}>{COPY.finalResult}</span>
         <span style={mono(9.5, C.ink3)}>{COPY.apartFromDay}</span>
       </div>
-      <span style={mono(10.5, C.ink3)}>{COPY.resultBasis[basis] || COPY.resultBasis.unavailable}{b.result?.note ? <> · <Rec>{b.result.note}</Rec></> : null}</span>
+      <span style={mono(10.5, C.ink3)}>{COPY.resultBasis[basis] || COPY.resultBasis.unavailable}{typeof b.result?.note === 'string' && b.result.note ? <> · <StoredNote doc={tape} path={['battle', 'result', 'note']} /></> : null}</span>
       {value ? (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
           <span data-result={value} style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', color: C.ink, lineHeight: 1 }}>{COPY.resultWord[value] || value}</span>
@@ -249,7 +249,7 @@ export function ResultCard({ tape, finalDay = null }) {
 
 export default function FilmRoomGlance({ tape, desktop, selected, onSelect, finalDay = null }) {
   const checksBlock = (
-    <Section id="glance-checks" title={COPY.checks} count={<CheckCount tape={tape} />} coverage={tape.coverage?.checks} note={COPY.riskNote}>
+    <Section id="glance-checks" title={COPY.checks} count={<CheckCount tape={tape} />} doc={tape} coverageAt={['coverage', 'checks']} note={COPY.riskNote}>
       <div style={{ ...card, gap: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ ...eyebrow, color: C.ink2 }}>{COPY.scorePath}</span>
