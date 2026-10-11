@@ -56,17 +56,19 @@ function getAnthropicClient() {
  * Called from the cron after completeBattle() finishes.
  *
  * Returns what happened, for the cron to record on the battle:
- *   { outcome: 'ok', record }      — the lesson is in memory (exactly as before);
+ *   { outcome: 'ok', record }      — the lesson is in memory (exactly as before;
+ *                                    or already was: reason 'already_recorded');
  *   { outcome: 'failed', record }  — NOTHING was written (no memory entry, no
  *                                    consolidation); record.failureClass says why;
- *   { outcome: 'skipped', reason } — nothing to reflect (battle or agent gone,
- *                                    or this game's lesson is already recorded).
+ *   { outcome: 'skipped', reason } — nothing to reflect (battle or agent gone).
  *
  * @param {FirebaseFirestore.Firestore} db - Firebase Admin Firestore instance
  * @param {string} battleId - The agentBattles document ID
- * @param {{ attempt?: number }} [opts] - the attempt number the cron claimed
+ * @param {{ attempt?: number, modelCall?: boolean }} [opts] - the attempt number
+ *   the cron claimed; modelCall false = the cron's recovery pass for a battle
+ *   whose attempts are spent (look for a landed lesson, never call the model)
  */
-export async function generateReflection(db, battleId, { attempt = 1 } = {}) {
+export async function generateReflection(db, battleId, { attempt = 1, modelCall = true } = {}) {
   console.log(`${LOG_PREFIX} Starting reflection for battle ${battleId} (attempt ${attempt})`);
 
   // 1. Read battle document
@@ -114,65 +116,75 @@ export async function generateReflection(db, battleId, { attempt = 1 } = {}) {
   }
   const isCasualForward = learningRef !== agentRef;
 
-  // A retry after a success whose battle write was lost: this game's lesson is
-  // already in the window, so a second call would only duplicate it.
-  if ((learningDoc.memory || []).some((m) => m?.gameId === battleId)) {
+  // A retry after a success whose battle write was lost (or whose memory write
+  // committed but reported an error): this game's lesson is already in the
+  // window. No second call — it would only duplicate the lesson — but the
+  // attempt is a success, and the consolidation gate below still runs (the
+  // milestone claim keeps it to one run per milestone).
+  const alreadyRecorded = (learningDoc.memory || []).some((m) => m?.gameId === battleId);
+  let record;
+  if (alreadyRecorded) {
     console.log(`${LOG_PREFIX} Battle ${battleId}: lesson already recorded on agent ${learningDoc.id} — no new call`);
-    return { outcome: 'skipped', reason: 'already_recorded' };
-  }
+    record = buildReflectionOutcome({ outcome: 'ok', model: null, attempt, at: new Date().toISOString() });
+  } else if (!modelCall) {
+    // The cron's recovery pass for a battle whose attempts are all spent and
+    // whose last attempt left no record: no new call, and no lesson exists.
+    console.warn(`${LOG_PREFIX} Battle ${battleId}: attempts spent and no lesson recorded — no new call`);
+    return { outcome: 'failed', record: buildReflectionOutcome({ outcome: 'failed', failureClass: 'unknown', model: null, attempt, at: new Date().toISOString() }) };
+  } else {
+    // 3. Call Sonnet for reflection. Never throws: a failure comes back named.
+    const call = await callSonnetReflection(battleDoc, agentDoc);
+    let failure = call.ok ? null : { failureClass: call.failureClass, errorName: call.errorName };
 
-  // 3. Call Sonnet for reflection. Never throws: a failure comes back named.
-  const call = await callSonnetReflection(battleDoc, agentDoc);
-  let failure = call.ok ? null : { failureClass: call.failureClass, errorName: call.errorName };
-
-  // 4. Write self-reflection to agent.memory[] (rolling 5-game window) — ONLY on
-  //    a usable answer; a failure writes nothing (O3). Casual forward → the
-  //    PARENT's window (transactional merge); else → this agent. A write that
-  //    throws leaves no lesson, so it is a failed attempt the cron retries.
-  if (!failure) {
-    try {
-      if (isCasualForward) {
-        await appendMemoryReflectionForwardTx(db, learningRef, buildMemoryEntry(battleDoc, call.selfReflection));
-      } else {
-        await writeMemoryReflection(db, agentRef, agentDoc, battleDoc, call.selfReflection);
+    // 4. Write self-reflection to agent.memory[] (rolling 5-game window) — ONLY on
+    //    a usable answer; a failure writes nothing (O3). Casual forward → the
+    //    PARENT's window (transactional merge); else → this agent. A write that
+    //    throws leaves no lesson, so it is a failed attempt the cron retries.
+    if (!failure) {
+      try {
+        if (isCasualForward) {
+          await appendMemoryReflectionForwardTx(db, learningRef, buildMemoryEntry(battleDoc, call.selfReflection));
+        } else {
+          await writeMemoryReflection(db, agentRef, agentDoc, battleDoc, call.selfReflection);
+        }
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Failed to write memory for agent ${battleDoc.agentId}:`, err.message);
+        failure = { failureClass: 'unknown', errorName: errorNameOf(err) };
       }
-    } catch (err) {
-      console.error(`${LOG_PREFIX} Failed to write memory for agent ${battleDoc.agentId}:`, err.message);
-      failure = { failureClass: 'unknown', errorName: errorNameOf(err) };
     }
-  }
 
-  const record = buildReflectionOutcome({
-    outcome: failure ? 'failed' : 'ok',
-    failureClass: failure?.failureClass ?? null,
-    errorName: failure?.errorName ?? null,
-    ...call.meta,
-    attempt,
-    at: new Date().toISOString(),
-  });
+    record = buildReflectionOutcome({
+      outcome: failure ? 'failed' : 'ok',
+      failureClass: failure?.failureClass ?? null,
+      errorName: failure?.errorName ?? null,
+      ...call.meta,
+      attempt,
+      at: new Date().toISOString(),
+    });
 
-  // Shadow log (fire-and-forget), mirroring the outcome record (O4). The
-  // lesson travels only with a success; a failure line carries no agent text.
-  logReflection({
-    battleId,
-    agentId: battleDoc.agentId,
-    userId: battleDoc.ownerId || null,
-    archetype: agentDoc.archetype || null,
-    gameMode: battleDoc.gameMode || null,
-    score: {
-      current: battleDoc.scoreState?.currentScore || 0,
-      opponent: battleDoc.scoreState?.opponentScore || 0,
-    },
-    turnCount: (battleDoc.chatExchanges || []).length,
-    tradeCount: (battleDoc.trades || []).length,
-    evaluationCount: (battleDoc.evaluations || []).length,
-    selfReflection: failure ? null : call.selfReflection,
-    ...record,
-  }).catch(() => {});
+    // Shadow log (fire-and-forget), mirroring the outcome record (O4). The
+    // lesson travels only with a success; a failure line carries no agent text.
+    logReflection({
+      battleId,
+      agentId: battleDoc.agentId,
+      userId: battleDoc.ownerId || null,
+      archetype: agentDoc.archetype || null,
+      gameMode: battleDoc.gameMode || null,
+      score: {
+        current: battleDoc.scoreState?.currentScore || 0,
+        opponent: battleDoc.scoreState?.opponentScore || 0,
+      },
+      turnCount: (battleDoc.chatExchanges || []).length,
+      tradeCount: (battleDoc.trades || []).length,
+      evaluationCount: (battleDoc.evaluations || []).length,
+      selfReflection: failure ? null : call.selfReflection,
+      ...record,
+    }).catch(() => {});
 
-  if (failure) {
-    console.error(`${LOG_PREFIX} Reflection failed for battle ${battleId} (attempt ${attempt}): ${record.failureClass}${record.errorName ? ` (${record.errorName})` : ''} after ${record.elapsedMs ?? '?'}ms — nothing written`);
-    return { outcome: 'failed', record };
+    if (failure) {
+      console.error(`${LOG_PREFIX} Reflection failed for battle ${battleId} (attempt ${attempt}): ${record.failureClass}${record.errorName ? ` (${record.errorName})` : ''} after ${record.elapsedMs ?? '?'}ms — nothing written`);
+      return { outcome: 'failed', record };
+    }
   }
 
   // 5. Check if consolidation is due (every 5 games). Sprint 1 — Dossier funnel:
@@ -227,7 +239,7 @@ export async function generateReflection(db, battleId, { attempt = 1 } = {}) {
   }
 
   console.log(`${LOG_PREFIX} Reflection complete for battle ${battleId}`);
-  return { outcome: 'ok', record };
+  return alreadyRecorded ? { outcome: 'ok', record, reason: 'already_recorded' } : { outcome: 'ok', record };
 }
 
 // ==================== SONNET CALL ====================
@@ -245,9 +257,10 @@ class ReflectionDeadlineError extends Error {
  * where meta = { elapsedMs, stopReason, usage, model }.
  *
  * The deadline both ABORTS the request (so an abandoned call is cancelled, not
- * left running and billed) and settles the race: the SDK only observes the
- * signal at an attempt boundary, so during a retry backoff the race is what
- * returns on time. A timeout is classified by our own fired flag.
+ * left running and billed) and settles the race: the SDK links the signal into
+ * the in-flight fetch and its body read, but not into a retry's backoff sleep,
+ * so during a backoff the race is what returns on time. A timeout is
+ * classified by our own fired flag.
  */
 async function callSonnetReflection(battleDoc, agentDoc) {
   const meta = { elapsedMs: null, stopReason: null, usage: null, model: REFLECTION_MODEL };
@@ -298,6 +311,14 @@ async function callSonnetReflection(battleDoc, agentDoc) {
   // An answer cut off at the token ceiling is a named failure — never parsed.
   if (meta.stopReason === 'max_tokens') {
     return { ok: false, failureClass: 'max_tokens', errorName: null, meta };
+  }
+
+  // Under the forced tool choice a completed answer IS stop_reason 'tool_use'.
+  // Anything else (refusal, end_turn, pause_turn, a context cut …) is not a
+  // completed tool call, even if a tool block came back: named no_tool_use,
+  // with the stop reason on the record, and never parsed.
+  if (meta.stopReason !== 'tool_use') {
+    return { ok: false, failureClass: 'no_tool_use', errorName: null, meta };
   }
 
   // Extract tool use result

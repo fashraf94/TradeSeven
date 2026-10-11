@@ -53,6 +53,7 @@ export function computeReflectionOutcomeReadout(rows, { fromDay, toDay }) {
     latestAttempt: {},
     noLesson: 0,
     retrying: 0,
+    endedOtherwise: 0,
     okElapsedMs: { max: null, total: 0, n: 0 },
     maxOutputTokens: null,
   };
@@ -75,6 +76,7 @@ export function computeReflectionOutcomeReadout(rows, { fromDay, toDay }) {
       bump(out.failedByClass, cls); bump(d.classes, cls);
       if (row.reflectionNoLesson === true) out.noLesson += 1;
       else if (row.pendingReflection === true) out.retrying += 1;
+      else out.endedOtherwise += 1; // e.g. the agent was deleted after a failed attempt
     }
     bump(out.latestAttempt, Number.isInteger(rec.attempt) ? String(rec.attempt) : '?');
     const outTok = rec.usage?.output_tokens;
@@ -89,7 +91,7 @@ export function renderReflectionOutcomeReadout(r, { readAt }) {
   const p = (s = '') => L.push(s);
   p(`Reflection outcomes, latest attempt per battle — ${r.fromDay} to ${r.toDay} (UTC days), read ${readAt}`);
   p('');
-  p(`Battles: ${r.battles}   ok: ${r.ok}   failed: ${r.failed}   (of the failed: finished without a lesson ${r.noLesson}, still retrying ${r.retrying})`);
+  p(`Battles: ${r.battles}   ok: ${r.ok}   failed: ${r.failed}   (of the failed: finished without a lesson ${r.noLesson}, still retrying ${r.retrying}, ended otherwise ${r.endedOtherwise})`);
   if (r.okElapsedMs.n > 0) p(`Successful calls: slowest ${(r.okElapsedMs.max / 1000).toFixed(1)} s, average ${(r.okElapsedMs.total / r.okElapsedMs.n / 1000).toFixed(1)} s`);
   if (r.maxOutputTokens != null) p(`Largest answer: ${r.maxOutputTokens} output tokens`);
   p('');

@@ -181,6 +181,17 @@ describe('every other failure class is named and writes nothing', () => {
     expect(result.record).toMatchObject({ stopReason: 'max_tokens', usage: { input_tokens: 3_800, output_tokens: 900 }, errorName: null });
   });
 
+  it.each(['refusal', 'end_turn', 'pause_turn', 'model_context_window_exceeded'])(
+    'stop_reason %s is not a completed tool call: no_tool_use, never parsed, even with a lesson in the block (review RV-1)',
+    async (stopReason) => {
+      sdk.create = async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION }, { stop_reason: stopReason });
+      const { db, writes } = seed();
+      const result = await generateReflection(db, BATTLE_ID);
+      expectNamedFailure(result, writes, 'no_tool_use');
+      expect(result.record.stopReason).toBe(stopReason);
+    },
+  );
+
   it('no tool call is no_tool_use', async () => {
     sdk.create = async () => ({ model: 'claude-sonnet-4-6', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Here is my reflection.' }], usage: { input_tokens: 10, output_tokens: 5 } });
     const { db, writes } = seed();
@@ -364,15 +375,67 @@ describe('the casual-clone forward obeys the same rules', () => {
   });
 });
 
-describe('nothing to reflect is a skip, never a call', () => {
-  it('a lesson already recorded for this game (a retry after a lost battle write) makes no second call', async () => {
+describe('a lesson already recorded is a success without a second call (review RV-4, RV-7, RV-8)', () => {
+  const recordedMemory = () => [...priorMemory(2), { ...priorMemory(1)[0], gameId: BATTLE_ID }];
+
+  it('a retry after a lost battle write makes no call, writes nothing, and reports ok with no call metrics', async () => {
     sdk.create = vi.fn(async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION }));
-    const { db, writes } = seed({ agent: { ...AGENT, memory: [...priorMemory(2), { ...priorMemory(1)[0], gameId: BATTLE_ID }] } });
-    expect(await generateReflection(db, BATTLE_ID)).toEqual({ outcome: 'skipped', reason: 'already_recorded' });
+    const { db, writes } = seed({ agent: { ...AGENT, memory: recordedMemory() } });
+    const result = await generateReflection(db, BATTLE_ID, { attempt: 2 });
+    expect(result).toMatchObject({ outcome: 'ok', reason: 'already_recorded' });
+    expect(result.record).toMatchObject({ outcome: 'ok', failureClass: null, elapsedMs: null, stopReason: null, usage: null, model: null, attempt: 2 });
+    expect(sdk.calls).toEqual([]);
+    expect(writes).toEqual([]);
+    expect(shadow.lines).toEqual([]); // no call, no shadow line
+  });
+
+  it('an ambiguous memory write (committed, then reported failed) still consolidates at its milestone on the retry', async () => {
+    sdk.create = async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION });
+    const { db, store } = seed({ agent: { ...AGENT, stats: { gamesPlayed: 5 } } });
+    // The agent update APPLIES, then throws once — as a DEADLINE_EXCEEDED on a committed write would.
+    const realCollection = db.collection;
+    let thrown = false;
+    db.collection = (name) => {
+      const c = realCollection(name);
+      if (name !== 'agents') return c;
+      return { ...c, doc: (id) => { const ref = c.doc(id); return { ...ref, update: async (patch) => { await ref.update(patch); if (!thrown) { thrown = true; const e = new Error('DEADLINE_EXCEEDED'); e.name = 'FirebaseError'; throw e; } } }; } };
+    };
+    const first = await generateReflection(db, BATTLE_ID, { attempt: 1 });
+    expect(first).toMatchObject({ outcome: 'failed', record: { failureClass: 'unknown', errorName: 'FirebaseError' } });
+    expect(consolidation.calls).toEqual([]);
+    expect(store.get(`agents/${AGENT_ID}`).memory.filter((m) => m.gameId === BATTLE_ID)).toHaveLength(1);
+
+    const second = await generateReflection(db, BATTLE_ID, { attempt: 2 });
+    expect(second).toMatchObject({ outcome: 'ok', reason: 'already_recorded' });
+    expect(consolidation.calls).toHaveLength(1); // the milestone is not lost
+    expect(store.get(`agents/${AGENT_ID}`).memory.filter((m) => m.gameId === BATTLE_ID)).toHaveLength(1); // never duplicated
+  });
+
+  it('a casual retry checks the PARENT\'s window (where the lesson lands), not the clone\'s', async () => {
+    sdk.create = vi.fn(async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION }));
+    const { db, writes } = makeDb({
+      [`agentBattles/${BATTLE_ID}`]: { ...BATTLE, agentId: 'casual-agent-owner-1', gameMode: 'baggerbomb' },
+      [`agents/casual-agent-owner-1`]: { ...AGENT, rankedAgentId: 'ranked-1', memory: [] },
+      [`agents/ranked-1`]: { ...AGENT, memory: recordedMemory() },
+    });
+    expect(await generateReflection(db, BATTLE_ID, { attempt: 2 })).toMatchObject({ outcome: 'ok', reason: 'already_recorded' });
     expect(sdk.calls).toEqual([]);
     expect(writes).toEqual([]);
   });
 
+  it('the recovery pass (modelCall false) never calls: a landed lesson is ok, a missing one is failed/unknown', async () => {
+    sdk.create = vi.fn(async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION }));
+    const landed = seed({ agent: { ...AGENT, memory: recordedMemory() } });
+    expect(await generateReflection(landed.db, BATTLE_ID, { attempt: 3, modelCall: false })).toMatchObject({ outcome: 'ok', reason: 'already_recorded' });
+    const missing = seed();
+    const result = await generateReflection(missing.db, BATTLE_ID, { attempt: 3, modelCall: false });
+    expect(result).toMatchObject({ outcome: 'failed', record: { outcome: 'failed', failureClass: 'unknown', errorName: null, model: null, attempt: 3 } });
+    expect(sdk.calls).toEqual([]);
+    expect([...landed.writes, ...missing.writes]).toEqual([]);
+  });
+});
+
+describe('nothing to reflect is a skip, never a call', () => {
   it.each([
     ['the battle is gone', 'battle_missing', () => makeDb({ [`agents/${AGENT_ID}`]: AGENT })],
     ['the agent is gone', 'agent_missing', () => makeDb({ [`agentBattles/${BATTLE_ID}`]: BATTLE })],

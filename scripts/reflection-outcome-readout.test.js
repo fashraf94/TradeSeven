@@ -38,7 +38,7 @@ describe('computeReflectionOutcomeReadout', () => {
   const r = computeReflectionOutcomeReadout(ROWS, { fromDay: '2026-10-12', toDay: '2026-10-13' });
 
   it('counts the latest attempt per battle in range: ok / failed, failed by class, the end states', () => {
-    expect(r).toMatchObject({ battles: 4, ok: 2, failed: 2, noLesson: 1, retrying: 1 });
+    expect(r).toMatchObject({ battles: 4, ok: 2, failed: 2, noLesson: 1, retrying: 1, endedOtherwise: 0 });
     expect(r.failedByClass).toEqual({ timeout: 1, http_529: 1 });
     expect(r.latestAttempt).toEqual({ 1: 2, 2: 1, 3: 1 });
     expect(r.okElapsedMs).toEqual({ max: 21_000, total: 39_000, n: 2 });
@@ -50,6 +50,13 @@ describe('computeReflectionOutcomeReadout', () => {
       '2026-10-12': { ok: 1, failed: 0, classes: {} },
       '2026-10-13': { ok: 1, failed: 2, classes: { timeout: 1, http_529: 1 } },
     });
+  });
+
+  it('a failed latest attempt that is neither retrying nor finished without a lesson is counted, so the failed total reconciles (review RV-6)', () => {
+    const rows = [{ reflectionOutcome: rec({ at: '2026-10-12T21:00:00.000Z' }), pendingReflection: false }];
+    const r2 = computeReflectionOutcomeReadout(rows, { fromDay: '2026-10-12', toDay: '2026-10-12' });
+    expect(r2).toMatchObject({ failed: 1, noLesson: 0, retrying: 0, endedOtherwise: 1 });
+    expect(r2.noLesson + r2.retrying + r2.endedOtherwise).toBe(r2.failed);
   });
 
   it('the range is inclusive at both ends and ignores rows with no record', () => {
@@ -64,7 +71,7 @@ describe('the rendered readout', () => {
   const text = renderReflectionOutcomeReadout(r, { readAt: '2026-10-14T00:00:00.000Z' });
 
   it('prints the counts by class and by day', () => {
-    expect(text).toContain('Battles: 4   ok: 2   failed: 2   (of the failed: finished without a lesson 1, still retrying 1)');
+    expect(text).toContain('Battles: 4   ok: 2   failed: 2   (of the failed: finished without a lesson 1, still retrying 1, ended otherwise 0)');
     expect(text).toMatch(/timeout\s+1/);
     expect(text).toMatch(/http_529\s+1/);
     expect(text).toContain('2026-10-13  ok 1  failed 2  (http_529 1, timeout 1)');

@@ -13,6 +13,7 @@
 //   • one slow reflection does not starve the tenants that follow it.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createFirestoreFake } from '../_utils/__fixtures__/wireFirestoreFake.js';
 
 const flagState = { metricsEnabled: false, writesEnabled: true, continuityEnabled: false };
@@ -143,31 +144,71 @@ describe('a failure is retried with a cap, never saved, never looped (O3)', () =
     expect(b.reflectionOutcome).toMatchObject({ outcome: 'failed', failureClass: 'unknown', attempt: 1 });
   });
 
-  it('an unexpected THROW still spends the attempt (claimed before the call), so the cap bounds it', async () => {
+  it('an unexpected THROW still spends the attempt (claimed before the call) and is recorded failed/unknown; the third finishes the battle', async () => {
     await seedPending('b1');
     reflectMock.mockRejectedValue(new Error('5 NOT_FOUND: agent read failed'));
-    for (let tick = 1; tick <= 3; tick++) await handler(cronReq(), makeRes());
-    expect(reflectMock).toHaveBeenCalledTimes(3);
+    await handler(cronReq(), makeRes());
     let b = await battle('b1');
-    expect(b.pendingReflection).toBe(true);
-    expect(b.reflectionAttempts).toBe(3);
+    expect(b).toMatchObject({ pendingReflection: true, reflectionAttempts: 1 });
+    expect(b.reflectionOutcome).toMatchObject({ outcome: 'failed', failureClass: 'unknown', errorName: 'Error', model: null, attempt: 1 });
 
-    // The fourth tick finds every attempt spent: the battle leaves the queue, with no call.
+    await handler(cronReq(), makeRes());
     await handler(cronReq(), makeRes());
     expect(reflectMock).toHaveBeenCalledTimes(3);
     b = await battle('b1');
-    expect(b.pendingReflection).toBe(false);
-    expect(b.reflectionNoLesson).toBe(true);
+    expect(b).toMatchObject({ pendingReflection: false, reflectionNoLesson: true, reflectionAttempts: 3 });
+    expect(b.reflectionOutcome).toMatchObject({ outcome: 'failed', failureClass: 'unknown', attempt: 3 });
+
+    await handler(cronReq(), makeRes());
+    expect(reflectMock).toHaveBeenCalledTimes(3); // gone from the queue
   });
 
-  it('a run that died inside its third attempt (count 3, flag set) is finished on the next tick without a call', async () => {
+  it('a throw from the OUTCOME write after an ok never records a failure; the next attempt finds the lesson and clears', async () => {
+    await seedPending('b1');
+    answer((attempt) => (attempt === 1 ? okResult(1) : { outcome: 'ok', reason: 'already_recorded', record: buildReflectionOutcome({ outcome: 'ok', model: null, attempt, at: NOW.toISOString() }) }));
+    const realCollection = fakeDb.collection.bind(fakeDb);
+    let outcomeWrites = 0;
+    fakeDb.collection = (name) => {
+      const c = realCollection(name);
+      if (name !== 'agentBattles') return c;
+      return { ...c, where: c.where.bind(c), doc: (id) => { const ref = c.doc(id); return Object.assign(Object.create(Object.getPrototypeOf(ref)), ref, { update: async (patch) => { if ('reflectionOutcome' in patch && outcomeWrites++ === 0) throw new Error('DEADLINE_EXCEEDED'); return ref.update(patch); } }); } };
+    };
+    await handler(cronReq(), makeRes());
+    let b = await battle('b1');
+    expect(b).toMatchObject({ pendingReflection: true, reflectionAttempts: 1 });
+    expect(b).not.toHaveProperty('reflectionOutcome'); // NOT a failed/unknown record over a landed success
+
+    await handler(cronReq(), makeRes());
+    b = await battle('b1');
+    expect(b).toMatchObject({ pendingReflection: false, reflectionAttempts: 2, reflectionOutcome: { outcome: 'ok', attempt: 2 } });
+    expect(b.reflectedAt).toEqual(expect.any(String));
+    expect(b).not.toHaveProperty('reflectionNoLesson');
+  });
+
+  it('a run that died inside its third attempt gets a recovery pass with NO model call; no lesson → finished without one, with a record', async () => {
     await seedPending('b1', { reflectionAttempts: 3 });
+    // The real generateReflection answers a modelCall:false pass like this when no lesson landed.
+    reflectMock.mockImplementation(async (_db, _id, { attempt, modelCall }) => ({
+      outcome: 'failed', record: buildReflectionOutcome({ outcome: 'failed', failureClass: 'unknown', model: null, attempt, at: NOW.toISOString() }), modelCall,
+    }));
     const res = makeRes();
     await handler(cronReq(), res);
-    expect(reflectMock).not.toHaveBeenCalled();
+    expect(reflectMock).toHaveBeenCalledTimes(1);
+    expect(reflectMock).toHaveBeenCalledWith(fakeDb, 'b1', { attempt: 3, modelCall: false });
     const b = await battle('b1');
-    expect(b).toMatchObject({ pendingReflection: false, reflectionNoLesson: true, reflectionAttempts: 3 });
+    expect(b).toMatchObject({ pendingReflection: false, reflectionNoLesson: true, reflectionAttempts: 3, reflectionOutcome: { failureClass: 'unknown', attempt: 3 } });
     expect(res.body).toMatchObject({ processed: 1, failed: 1 });
+  });
+
+  it('the recovery pass finds a lesson that DID land (attempt 3 ok, battle write lost): cleared as a success, never marked no-lesson (review RV-4)', async () => {
+    await seedPending('b1', { reflectionAttempts: 3, reflectionOutcome: failedResult(2).record });
+    reflectMock.mockResolvedValue({ outcome: 'ok', reason: 'already_recorded', record: buildReflectionOutcome({ outcome: 'ok', model: null, attempt: 3, at: NOW.toISOString() }) });
+    await handler(cronReq(), makeRes());
+    expect(reflectMock).toHaveBeenCalledWith(fakeDb, 'b1', { attempt: 3, modelCall: false });
+    const b = await battle('b1');
+    expect(b).toMatchObject({ pendingReflection: false, reflectionAttempts: 3, reflectionOutcome: { outcome: 'ok', attempt: 3 } });
+    expect(b.reflectedAt).toEqual(expect.any(String));
+    expect(b).not.toHaveProperty('reflectionNoLesson');
   });
 });
 
@@ -233,6 +274,49 @@ describe('the budget — one slow reflection does not starve the tenants (O2)', 
     await handler(cronReq(), res);
     expect(reflectMock).toHaveBeenCalledTimes(1);
     expect(res.body).toMatchObject({ processed: 1, succeeded: 1 });
+  });
+
+  // Review RV-2: rows that pin the phase and the write reserve themselves.
+  // A first reflection that ends at t seconds lets a second start only if
+  // t + 35 s (deadline) + 3 s (reserve) <= 40 s (phase), i.e. t <= 2 s.
+  const runTick = async (firstMs) => {
+    vi.useFakeTimers({ now: NOW });
+    await seedPending('b1', {}, '2026-10-12T19:00:00Z');
+    await seedPending('b2', {}, '2026-10-12T19:30:00Z');
+    let n = 0;
+    answer((attempt) => { n += 1; vi.setSystemTime(new Date(Date.now() + (n === 1 ? firstMs : REFLECTION_TIMEOUT_MS))); return okResult(attempt); });
+    const res = makeRes();
+    await handler(cronReq(), res);
+    return res;
+  };
+
+  it('a realistic 10 s first reflection: no second start, and every tenant keeps room', async () => {
+    const res = await runTick(10_000);
+    expect(reflectMock).toHaveBeenCalledTimes(1);
+    expect(res.body).toMatchObject({ processed: 1, succeeded: 1, skipped: 1 });
+    const cs = tenantCalls.callSweep[0];
+    expect(sweepDeadline({ nowMs: cs.calledAtMs, handlerStartMs: cs.handlerStartMs }) - cs.calledAtMs).toBeGreaterThanOrEqual(SWEEP_STARVATION_MS);
+    const rp = tenantCalls.review[0];
+    expect(reviewDeadline({ nowMs: rp.calledAtMs, handlerStartMs: rp.handlerStartMs }) - rp.calledAtMs).toBeGreaterThanOrEqual(REVIEW_STARVATION_MS);
+  });
+
+  it('a first reflection ending at 3 s: no second start (the 3 s write reserve is part of the rule)', async () => {
+    await runTick(3_000);
+    expect(reflectMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('a first reflection ending at 1.5 s: the second DOES start — the rule is the whole deadline fitting, not "one per tick"', async () => {
+    const res = await runTick(1_500);
+    expect(reflectMock).toHaveBeenCalledTimes(2);
+    expect(res.body).toMatchObject({ processed: 2, succeeded: 2, skipped: 0 });
+  });
+
+  it('the ceiling covers the worst path: a full-deadline reflection, then its own 30 s consolidation call, then the writes', async () => {
+    const { config } = await import('./process-pending-reflections.js');
+    const CONSOLIDATION_RACE_MS = 30_000; // agentConsolidationApply.js SONNET_TIMEOUT_MS
+    expect(config.maxDuration).toBe(120);
+    expect(config.maxDuration * 1000).toBeGreaterThanOrEqual(5_000 + REFLECTION_TIMEOUT_MS + CONSOLIDATION_RACE_MS + 10_000);
+    expect(readFileSync(new URL('../_utils/agentConsolidationApply.js', import.meta.url), 'utf8')).toMatch(/const SONNET_TIMEOUT_MS = 30_000;/);
   });
 
   it('fast reflections still share a tick: a second one starts while its whole deadline fits the phase', async () => {

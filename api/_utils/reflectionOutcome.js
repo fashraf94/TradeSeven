@@ -71,7 +71,9 @@ export function buildReflectionOutcome({ outcome, failureClass = null, errorName
     elapsedMs: Number.isFinite(elapsedMs) ? elapsedMs : null,
     stopReason: typeof stopReason === 'string' ? stopReason : null,
     usage: usage ?? null,
-    model: typeof model === 'string' && model ? model : REFLECTION_MODEL,
+    // An explicit null = no call was made on this attempt (a lesson already
+    // recorded, or the recovery pass for a spent battle).
+    model: model === null ? null : (typeof model === 'string' && model ? model : REFLECTION_MODEL),
     attempt: Number.isInteger(attempt) && attempt > 0 ? attempt : 1,
     at: typeof at === 'string' ? at : new Date().toISOString(),
   };
@@ -79,9 +81,10 @@ export function buildReflectionOutcome({ outcome, failureClass = null, errorName
 
 /**
  * The battle fields the cron writes after an attempt (pure — unit-tested).
- *   ok       → the flag clears and reflectedAt is stamped, as a success always did;
- *   skipped  → nothing to reflect (battle/agent gone, lesson already recorded):
- *              the flag clears and reflectedAt is stamped, as before this fix;
+ *   ok       → the flag clears and reflectedAt is stamped, as a success always did
+ *              (also when the lesson was already recorded by an earlier attempt);
+ *   skipped  → nothing to reflect (battle or agent gone): the flag clears and
+ *              reflectedAt is stamped, as before this fix;
  *   failed   → the flag STAYS set so the cron retries; at the cap the flag
  *              clears and the battle is marked finished without a lesson.
  * Anything else (a malformed result) is a failed attempt of class `unknown`.
