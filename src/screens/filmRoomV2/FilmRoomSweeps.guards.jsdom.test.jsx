@@ -67,13 +67,14 @@ describe('Astra B2 — the stored-note number exemption is bound by path, never 
     expect(sweepNumbers(box('<span data-stored-note="coverage.checks.note">one 73</span>'), {})).toEqual(['stray digit: “one 73”']);
   });
 
-  it('review A2F3-5: byte for byte — the stored value with padding around it is not bound', () => {
+  it('review A2F3-5 / A2FV3-N1: byte for byte — padding, a part of the stored value, another case or nothing is not bound', () => {
     const tape = noted('one 73');
-    for (const padded of [' one 73', 'one 73 ', '\none 73']) {
+    for (const padded of [' one 73', 'one 73 ', '\none 73', '73', 'one', 'ONE 73', '']) {
       const el = box('<span data-stored-note="coverage.checks.note"></span>');
       el.firstChild.textContent = padded;
       expect(storedNoteDefects(el, { tape }), JSON.stringify(padded)).toEqual(['coverage.checks.note: not bound — its text is not the stored value']);
-      expect(sweepNumbers(el, { tape }).length, JSON.stringify(padded)).toBe(1);
+      expect(sweepNumbers(el, { tape }).length, JSON.stringify(padded)).toBe(/\d/.test(padded) ? 1 : 0);
+      if (padded) expect(boundStoredNoteOf(el.firstChild.firstChild, { tape }), JSON.stringify(padded)).toBeNull();
     }
   });
 

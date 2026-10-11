@@ -103,6 +103,9 @@ beforeAll(async () => {
   const oneLegBars = sep23Bars();
   delete oneLegBars.MSFT;   // swap 1's SOLD name only: its hold leg has no bars, its swap leg (CRWD) does
   days.oneLeg = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: oneLegBars })).tape;
+  const otherLegBars = sep23Bars();
+  delete otherLegBars.CRWD;   // swap 1's BOUGHT name only: its swap leg has no bars, its hold leg (MSFT) does
+  days.otherLeg = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: otherLegBars })).tape;
   days.twiceFull = (await buildTapeDay(await slotTwiceDay(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sep23Bars() })).tape;
   days.grownIn = await grownDay(Date.parse('2026-09-25T02:15:30.000Z'));
   days.grownOut = await grownDay(OUTSIDE_NIGHT);
@@ -180,6 +183,7 @@ describe('R11 — the replay sentence only beside a drawn replay (writer to scre
     const c = card(k);
     expect(c.querySelector('[data-replay-none="crypto"]').textContent).toBe('No replay for this swap. · crypto legs are not replayed');
     expect(c.textContent.match(/crypto/gi)).toHaveLength(1);
+    expect([...c.querySelectorAll('[data-split-missing]')].map((s) => s.textContent)).toEqual(['No replay for this swap.', 'No replay for this swap.']);   // A2FV3-2
     expect(c.querySelector('[data-replay-sentence]')).toBeNull();
     expect(c.querySelector('[data-stored-note="coverage.replay.note"]')).toBeNull();
     // the day's replay coverage line, once, at the section's head
@@ -224,16 +228,18 @@ describe('R11 — the replay sentence only beside a drawn replay (writer to scre
     expect(swept(tape)).toEqual(CLEAN);
   });
 
-  it('(e′) review A2F3-4: a replay with values on ONE leg (the sold name\'s bars missing) shows its values — never "No replay drawn"', () => {
-    const tape = days.oneLeg;
-    const k = tape.actions.findIndex((a) => a.symbolOut === 'MSFT');
-    const r = tape.actions[k].replay;
+  it('(e′) review A2F3-4 / A2FV3-4: a replay with values on ONE leg — either one — shows its values, never "No replay drawn"', () => {
     const valued = (p) => (Array.isArray(p) ? p : []).some((x) => Number.isFinite(x?.points));
-    expect([valued(r.holdPath), valued(r.swapPath)]).toEqual([false, true]);
-    mount(tape);
-    expect(card(k).querySelector('[data-replay-none]')).toBeNull();
-    expect(card(k).querySelector(`[data-path-label="swap"] [data-num="actions[${k}].replay.swapPath[${r.swapPath.length - 1}].points"]`)).toBeTruthy();
-    expect(swept(tape)).toEqual(CLEAN);
+    for (const [tape, legs, leg] of [[days.oneLeg, [false, true], 'swap'], [days.otherLeg, [true, false], 'hold']]) {
+      const k = tape.actions.findIndex((a) => a.symbolOut === 'MSFT');
+      const r = tape.actions[k].replay;
+      expect([valued(r.holdPath), valued(r.swapPath)], leg).toEqual(legs);
+      mount(tape);
+      expect(card(k).querySelector('[data-replay-none]'), leg).toBeNull();
+      const path = leg === 'swap' ? r.swapPath : r.holdPath;
+      expect(card(k).querySelector(`[data-path-label="${leg}"] [data-num="actions[${k}].replay.${leg}Path[${path.length - 1}].points"]`), leg).toBeTruthy();
+      expect(swept(tape), leg).toEqual(CLEAN);
+    }
   });
 
   it('(f) review A2F1-1: a slot traded twice — the "hypothetical" tag only beside a DRAWN replay: absent on the close pass\'s cards, present once the replay is drawn', () => {
@@ -257,6 +263,7 @@ describe('R11 — the replay sentence only beside a drawn replay (writer to scre
       expect(card(k).querySelector('[data-replay-none="not-written"]').textContent, status).toBe('No replay for this swap. · the replay coverage line above says why');
       expect(card(k).textContent, status).not.toMatch(/hypothetical through the day's close/);
       expect(card(k).querySelector('[data-replay-sentence]'), status).toBeNull();
+      expect([...card(k).querySelectorAll('[data-split-missing]')].map((s) => s.textContent), status).toEqual(['No replay for this swap.', 'No replay for this swap.']);   // A2FV3-2
       expect(m.q('[data-coverage-of="replay"] [data-stored-note="coverage.replay.note"]').textContent, status).toBe(tape.coverage.replay.note);
       expect(swept(tape), status).toEqual(CLEAN);
     }

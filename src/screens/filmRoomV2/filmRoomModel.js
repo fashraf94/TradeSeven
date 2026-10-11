@@ -236,6 +236,41 @@ export function isRecordedScore(doc, path) {
 // ── checks (BA-8, BA-44; Amendment E F3, F5) ────────────────────────────────
 
 /**
+ * Every check state's words — the screen's own copy, as a table the copy inventory pins key by key (review
+ * A2FV3-7: a new state fails until it is listed and swept). The completed check's four readings come first.
+ */
+export const CHECK_STATE_WORDS = Object.freeze({
+  default_hold: 'no usable model result · the system held by default',
+  swap: 'completed · SWAP',
+  hold: 'completed · HOLD',
+  completed: 'completed · decision not recorded',
+  no_trigger: 'no trigger · no check woke',
+  budget_skipped: 'check skipped · budget',
+  deferred: 'check deferred · budget',
+  gameplan_created: 'plan created',
+  gameplan_pending: 'plan pending · awaiting approval',
+  proposal_pending: 'proposal pending',
+  degraded_quotes: 'degraded quotes',
+  cpu_passive: 'CPU passive',
+  tick_error: 'tick error',
+  no_record: 'no record for this check',
+  unknown: 'state not recorded',
+});
+/** The pip family of each state that is not a completed check (its words are CHECK_STATE_WORDS'). */
+export const CHECK_STATE_TONES = Object.freeze({
+  no_trigger: 'quiet',
+  budget_skipped: 'skipped',
+  deferred: 'skipped',
+  gameplan_created: 'plan',
+  gameplan_pending: 'planPending',
+  proposal_pending: 'planPending',
+  degraded_quotes: 'skipped',
+  cpu_passive: 'quiet',
+  tick_error: 'skipped',
+  no_record: 'gap',
+});
+
+/**
  * What a check row's state reads as. `tone` is the pip family: completed rows
  * are solid, plan rows gold, the platform's non-decisions hollow. A completed
  * check whose HOLD was not the model's (decision.holdKind 'default_failure')
@@ -243,29 +278,17 @@ export function isRecordedScore(doc, path) {
  * default, not which failure caused it, so the screen never names one (F3).
  */
 export function checkStateOf(row) {
+  const W = CHECK_STATE_WORDS;
   const s = row?.state;
   const final = row?.decision?.final ?? null;
   if (s === 'completed') {
-    if (row?.decision?.holdKind === 'default_failure') return { key: 'default_hold', label: 'no usable model result · the system held by default', group: 'completed', tone: 'failed' };
-    if (final === 'SWAP') return { key: 'swap', label: 'completed · SWAP', group: 'completed', tone: 'swap' };
-    if (final === 'HOLD') return { key: 'hold', label: 'completed · HOLD', group: 'completed', tone: 'hold' };
-    return { key: 'completed', label: 'completed · decision not recorded', group: 'completed', tone: 'hold' };
+    if (row?.decision?.holdKind === 'default_failure') return { key: 'default_hold', label: W.default_hold, group: 'completed', tone: 'failed' };
+    if (final === 'SWAP') return { key: 'swap', label: W.swap, group: 'completed', tone: 'swap' };
+    if (final === 'HOLD') return { key: 'hold', label: W.hold, group: 'completed', tone: 'hold' };
+    return { key: 'completed', label: W.completed, group: 'completed', tone: 'hold' };
   }
-  const table = {
-    no_trigger: ['no trigger · no check woke', 'quiet'],
-    budget_skipped: ['check skipped · budget', 'skipped'],
-    deferred: ['check deferred · budget', 'skipped'],
-    gameplan_created: ['plan created', 'plan'],
-    gameplan_pending: ['plan pending · awaiting approval', 'planPending'],
-    proposal_pending: ['proposal pending', 'planPending'],
-    degraded_quotes: ['degraded quotes', 'skipped'],
-    cpu_passive: ['CPU passive', 'quiet'],
-    tick_error: ['tick error', 'skipped'],
-    no_record: ['no record for this check', 'gap'],
-  };
-  const hit = table[s];
-  if (hit) return { key: s, label: hit[0], group: s, tone: hit[1] };
-  return { key: 'unknown', label: 'state not recorded', group: 'unknown', tone: 'gap' };
+  if (typeof s === 'string' && Object.prototype.hasOwnProperty.call(CHECK_STATE_TONES, s)) return { key: s, label: W[s], group: s, tone: CHECK_STATE_TONES[s] };
+  return { key: 'unknown', label: W.unknown, group: 'unknown', tone: 'gap' };
 }
 
 /** The six check states the design of record's strip legend names — as rows, read by checkStateOf (its words, its tones). */
@@ -369,20 +392,22 @@ export function swapOrdinals(tape) {
  * folded into another maker (review A2L1-1).
  */
 export const EXIT_MAKER_WORDS = Object.freeze({
-  agent: { short: 'agent', swap: 'the agent' },
-  platform: { short: 'rule', swap: 'a platform rule' },
-  gameplan: { short: 'meeting', swap: 'the gameplan meeting' },
-  unrecorded: { short: 'not recorded', swap: 'a maker not recorded' },
+  agent: Object.freeze({ short: 'agent', swap: 'the agent', exit: 'Exit by the agent · its own decision' }),
+  platform: Object.freeze({ short: 'rule', swap: 'a platform rule', exit: 'Exit by platform rule', noReason: 'rule not recorded' }),
+  gameplan: Object.freeze({ short: 'meeting', swap: 'the gameplan meeting', exit: 'Exit by the gameplan meeting' }),
+  unrecorded: Object.freeze({ short: 'not recorded', swap: 'a maker not recorded', exit: 'Exit maker not recorded' }),
 });
+/** The recorded mechanisms that are platform rules (each says "Exit by platform rule · <reason>"). */
+const PLATFORM_MECHANISMS = Object.freeze(['platform_risk_manager', 'archetype_rotation', 'guardrail']);
 export function exitMakerOf(action) {
+  const W = EXIT_MAKER_WORDS;
   const m = action?.mechanism;
   const reason = str(action?.exitReason);
-  if (m === 'agent_decision') return { by: 'agent', label: "Exit by the agent · its own decision" };
-  if (m === 'platform_risk_manager' || m === 'archetype_rotation' || m === 'guardrail') {
-    return { by: 'platform', label: `Exit by platform rule · ${reason ?? 'rule not recorded'}` };
-  }
-  if (m === 'gameplan_meeting') return { by: 'gameplan', label: `Exit by the gameplan meeting${reason ? ` · ${reason}` : ''}` };
-  return { by: 'unrecorded', label: `Exit maker not recorded${reason ? ` · ${reason}` : ''}` };
+  const withReason = (exit) => (reason ? `${exit} · ${reason}` : exit);
+  if (m === 'agent_decision') return { by: 'agent', label: W.agent.exit };
+  if (PLATFORM_MECHANISMS.includes(m)) return { by: 'platform', label: `${W.platform.exit} · ${reason ?? W.platform.noReason}` };
+  if (m === 'gameplan_meeting') return { by: 'gameplan', label: withReason(W.gameplan.exit) };
+  return { by: 'unrecorded', label: withReason(W.unrecorded.exit) };
 }
 
 /** The last point of a path array (the close), as a concrete path into the tape, or null. */

@@ -23,7 +23,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import * as copyModule from './filmRoomCopy';
 import { FILM_ROOM_COPY, REPLAY_SENTENCE, DIRECTIVE_EXPLAINER, PROVENANCE_LABELS, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE, CLASS_LETTER } from './filmRoomCopy';
-import { EXIT_MAKER_WORDS, PLAN_DIRECTIONS, checkStateOf, exitMakerOf, riskLines, riskSummary, deriveHoldings, roleOf, directiveCardOf } from './filmRoomModel';
+import { EXIT_MAKER_WORDS, PLAN_DIRECTIONS, CHECK_STATE_WORDS, CHECK_STATE_TONES, checkStateOf, exitMakerOf, riskLines, riskSummary, deriveHoldings, roleOf, directiveCardOf } from './filmRoomModel';
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
 import { KindMark } from './FilmRoomKit';
 import { sweepWords, sep23Tape, clone } from './__fixtures__/filmRoomHarness';
@@ -100,14 +100,16 @@ const SAMPLE_CALLS = {
 };
 
 const COPY_EXPORTS = ['CLASS_LETTER', 'DIRECTIVE_EXPLAINER', 'FILM_ROOM_COPY', 'FORBIDDEN_WORDS', 'LOCKED_BASIS_NOTE', 'PROVENANCE_LABELS', 'REPLAY_SENTENCE', 'REPLAY_VERSION_NOTE'];
-const EXIT_MAKER_KEYS = ['agent.short', 'agent.swap', 'platform.short', 'platform.swap', 'gameplan.short', 'gameplan.swap', 'unrecorded.short', 'unrecorded.swap'];
+const EXIT_MAKER_KEYS = ['agent.short', 'agent.swap', 'agent.exit', 'platform.short', 'platform.swap', 'platform.exit', 'platform.noReason', 'gameplan.short', 'gameplan.swap', 'gameplan.exit', 'unrecorded.short', 'unrecorded.swap', 'unrecorded.exit'];
+// review A2FV3-7: the check states' words, a keyed table — pinned like the copy
+const CHECK_STATE_KEYS = ['default_hold', 'swap', 'hold', 'completed', 'no_trigger', 'budget_skipped', 'deferred', 'gameplan_created', 'gameplan_pending', 'proposal_pending', 'degraded_quotes', 'cpu_passive', 'tick_error', 'no_record', 'unknown'];
 const PLAN_DIRECTION_KEYS = ['potential_entry', 'potential_exit'];
 
 // ── the model's composed words, from every branch of each reader ──────────────────────────────────────────────────
 const CHECK_ROWS = [
   { state: 'completed', decision: { final: 'HOLD' } }, { state: 'completed', decision: { final: 'SWAP' } }, { state: 'completed' },
   { state: 'completed', decision: { final: 'HOLD', holdKind: 'default_failure' } },
-  ...['no_trigger', 'budget_skipped', 'deferred', 'gameplan_created', 'gameplan_pending', 'proposal_pending', 'degraded_quotes', 'cpu_passive', 'tick_error', 'no_record', 'not-a-state'].map((state) => ({ state })),
+  ...Object.keys(CHECK_STATE_TONES).map((state) => ({ state })), { state: 'not-a-state' }, { state: 'toString' },
 ];
 const MECHANISMS = ['agent_decision', 'platform_risk_manager', 'archetype_rotation', 'guardrail', 'gameplan_meeting', undefined];
 function modelWords() {
@@ -142,6 +144,7 @@ function inventory() {
   for (const k of keysOf(DIRECTIVE_EXPLAINER)) { const v = leaf(DIRECTIVE_EXPLAINER, k); if (typeof v === 'string') out.push([`DIRECTIVE_EXPLAINER${k}`, v]); }
   for (const k of EXIT_MAKER_KEYS) out.push([`EXIT_MAKER_WORDS.${k}`, leaf(EXIT_MAKER_WORDS, k)]);
   for (const k of PLAN_DIRECTION_KEYS) out.push([`PLAN_DIRECTIONS.${k}`, PLAN_DIRECTIONS[k]]);
+  for (const k of CHECK_STATE_KEYS) out.push([`CHECK_STATE_WORDS.${k}`, CHECK_STATE_WORDS[k]]);
   out.push(...modelWords());
   out.push(['INTRADAY_DIAGNOSTIC_HEADER', INTRADAY_DIAGNOSTIC_HEADER]);
   out.push(['KindMark(undeclared)', new DOMParser().parseFromString(renderToStaticMarkup(<KindMark cls={null} />), 'text/html').body.firstChild.getAttribute('title')]);
@@ -166,6 +169,10 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     expect(Object.keys(copyModule).sort()).toEqual(COPY_EXPORTS);
     expect(keysOf(EXIT_MAKER_WORDS)).toEqual(EXIT_MAKER_KEYS);
     expect(keysOf(PLAN_DIRECTIONS)).toEqual(PLAN_DIRECTION_KEYS);
+    expect(keysOf(CHECK_STATE_WORDS)).toEqual(CHECK_STATE_KEYS);
+    // every state a check row can be read as has its words: each tone's state, and each word's state is read
+    for (const s of Object.keys(CHECK_STATE_TONES)) expect(CHECK_STATE_WORDS[s], s).toBe(checkStateOf({ state: s }).label);
+    expect(CHECK_ROWS.map((r) => checkStateOf(r).key).filter((k, i, a) => a.indexOf(k) === i).sort()).toEqual([...CHECK_STATE_KEYS].sort());
   });
 
   it('every entry is a non-empty string and passes the screen\'s own-voice sweep — no forbidden word, no quantity word', () => {
@@ -176,9 +183,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 237 copy keys, 324 swept entries', () => {
+  it('the inventory\'s size is pinned (the build report states it): 237 copy keys, 345 swept entries', () => {
     expect(COPY_KEYS).toHaveLength(237);
-    expect(inventory()).toHaveLength(324);
+    expect(inventory()).toHaveLength(345);
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {
