@@ -137,14 +137,14 @@ function storedNoteTextOf(node, docs) {
  * Amendment E addendum 4, R13 — the agent's name, PINNED HERE from the ruling: the stored display name at
  * agentContext.agentName on the battle document. It is exempt from the sweeps — forbidden words and number words, and
  * (as a bound quotation is, R7) digits — on its BINDING alone: an element carrying `data-agent-name` at exactly that
- * path whose text equals, byte for byte, the value the battle document stores there — and never inside a heading (the
- * screen's own voice; as B1 rules for a quotation — review A2F1-5).
+ * path whose text equals, byte for byte, the value the battle document stores there — and never inside a heading or
+ * holding one (the screen's own voice; as B1 rules for a quotation — review A2F1-5, Astra B5).
  */
 export const SPEC_AGENT_NAME_PATH = 'agentContext.agentName';
 export function boundAgentNameOf(node, docs = {}) {
   const el = node?.nodeType === 1 ? node : node?.parentElement;
   const n = el?.closest('[data-agent-name]');
-  if (!n || n.getAttribute('data-agent-name') !== SPEC_AGENT_NAME_PATH || n.closest(HEADINGS)) return null;
+  if (!n || n.getAttribute('data-agent-name') !== SPEC_AGENT_NAME_PATH || headingAt(n)) return null;
   const doc = docs[n.getAttribute('data-agent-name-doc') || 'battle'];
   const value = doc ? valueAt(doc, parsePath(SPEC_AGENT_NAME_PATH)) : undefined;
   return typeof value === 'string' && value !== '' && n.textContent === value ? n : null;
@@ -160,23 +160,30 @@ export function agentNameDefects(container, docs = {}) {
   const names = [...container.querySelectorAll('[data-agent-name]')];
   if (names.length > 1) bad.push(`agent name shown ${names.length} times`);
   for (const n of names) {
-    if (n.closest(HEADINGS)) bad.push(`agent name “${n.textContent}”: inside a heading`);
+    const heading = headingAt(n);
+    if (heading) bad.push(`agent name “${n.textContent}”: ${HEADING_DEFECT[heading]}`);
     else if (!boundAgentNameOf(n, docs)) bad.push(`agent name “${n.textContent}”: not bound to ${SPEC_AGENT_NAME_PATH}`);
   }
   return bad;
 }
 
-/** B2 — the numbers of a stored note are exempt only when it is bound (above) AND its path is one R1 / R9 names. */
+/**
+ * B2 — the numbers of a stored note are exempt only when it is bound (above) AND its path is one R1 / R9 names, and
+ * no heading sits around it or inside it (Astra B5: a heading is the screen's voice, as for a quotation).
+ */
 export function boundStoredNoteOf(node, docs = {}) {
   const s = storedNoteTextOf(node, docs);
-  return s && SPEC_STORED_NOTE_PATHS.some((re) => re.test(s.getAttribute('data-stored-note'))) ? s : null;
+  return s && SPEC_STORED_NOTE_PATHS.some((re) => re.test(s.getAttribute('data-stored-note'))) && !headingAt(s) ? s : null;
 }
 
-/** Every stored note whose text is not the value at its path — screen words inside it, or a forged path. */
+/** Every stored note whose text is not the value at its path — screen words inside it, or a forged path — or that a heading holds or sits in. */
 export function storedNoteDefects(container, docs = {}) {
   const bad = [];
   for (const s of container.querySelectorAll('[data-stored-note]')) {
-    if (!storedNoteTextOf(s, docs)) bad.push(`${s.getAttribute('data-stored-note')}: not bound — its text is not the stored value`);
+    const where = s.getAttribute('data-stored-note');
+    if (!storedNoteTextOf(s, docs)) bad.push(`${where}: not bound — its text is not the stored value`);
+    const heading = headingAt(s);
+    if (heading) bad.push(`${where}: ${HEADING_DEFECT[heading]}`);
   }
   return bad;
 }
@@ -466,10 +473,20 @@ function boundTextOf(node, docs) {
  * names the right author and time is quoteDefects' check.
  */
 const HEADINGS = 'h1, h2, h3, h4, h5, h6, [role="heading"]';
+/**
+ * Astra B1, B5 — where a heading sits on an exempt text's ancestry: 'around' the bound element (it or an ancestor
+ * is one), 'inside' it (a heading in its subtree, between the element and its text), or null. Either way the words
+ * are the screen's voice, so no exemption stands: the quotation's (R7), the stored note's (R1 / R9), the name's (R13).
+ */
+function headingAt(el) {
+  if (el.closest(HEADINGS)) return 'around';
+  return el.querySelector(HEADINGS) ? 'inside' : null;
+}
+const HEADING_DEFECT = { around: 'inside a heading', inside: 'a heading inside it' };
 export function boundQuotationOf(node, docs = {}) {
   const q = boundTextOf(node, docs);
   if (!q || !SPEC_QUOTE_CHANNELS.some((c) => c.re.test(q.getAttribute('data-quote-path')))) return null;
-  if (q.closest(HEADINGS)) return null;
+  if (headingAt(q)) return null;
   return [...q.parentElement.children].some((c) => c.hasAttribute('data-quote-attribution')) ? q : null;
 }
 
@@ -498,8 +515,9 @@ export function quoteDefects(container, docs = {}) {
     const texts = [...root.children].filter((c) => c.hasAttribute('data-quote-path'));
     if (texts.length !== 1) { bad.push(`a quotation with ${texts.length} quoted texts`); continue; }
     const where = texts[0].getAttribute('data-quote-path');
-    // Astra B1: a quotation never sits inside a heading — the heading is the screen's voice
-    if (root.closest(HEADINGS)) { bad.push(`${where}: inside a heading`); continue; }
+    // Astra B1, B5: a quotation never sits inside a heading, nor holds one — the heading is the screen's voice
+    const heading = headingAt(texts[0]);
+    if (heading) { bad.push(`${where}: ${HEADING_DEFECT[heading]}`); continue; }
     const channel = SPEC_QUOTE_CHANNELS.find((c) => c.re.test(where));
     if (!channel) { bad.push(`${where}: not a recorded-words channel`); continue; }
     const attr = [...root.children].find((c) => c.hasAttribute('data-quote-attribution'));

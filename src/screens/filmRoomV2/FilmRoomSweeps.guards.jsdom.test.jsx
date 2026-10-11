@@ -14,6 +14,10 @@
 //       bound to an R1 / R9 path whose text is the value stored there — never
 //       a string found anywhere in the document; the forbidden-word scan stays
 //       on stored notes
+//   B5  (Astra's follow-up review §3) a heading anywhere on an exempt text's
+//       ancestry — around the bound element or inside it — leaves no
+//       exemption: the quotation's (R7), the stored note's (R1 / R9) and the
+//       agent's name's (R13)
 // A guard that cannot fail guards nothing: every exemption row has its bite.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -208,5 +212,89 @@ describe('Astra B1 — a quotation inside a heading is the screen\'s voice: neit
     expect(sweepWords(m.container, docs)).toEqual([]);
     expect(sweepNumbers(m.container, docs)).toEqual([]);
     expect(quoteDefects(m.container, docs)).toEqual([]);
+  });
+});
+
+describe('Astra B5 — a heading INSIDE the bound element is the screen\'s voice too: no exemption stands, for a quotation, a stored note or the agent\'s name', () => {
+  const said = (words) => { const t = clone(sep23Tape); t.rationale[0].rationale = words; return t; };
+  const noted = (note) => { const t = clone(sep23Tape); t.coverage.checks.note = note; return t; };
+  const named = { battle: { agentContext: { agentName: 'best one 73' } } };
+  // every heading form, as a wrapper placed INSIDE the bound element, around its text
+  const INSIDE = [...['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].map((h) => [h, (s) => `<${h}>${s}</${h}>`]), ['role="heading"', (s) => `<span role="heading" aria-level="2">${s}</span>`]];
+  /** A rendered quotation of the stored words, its quoted text then wrapped from the inside (the DOM the guard must see through). */
+  const quotedWith = (tape, wrap) => {
+    m.render(<Quotation doc={tape} path={['rationale', 0, 'rationale']} by="agent" at={['rationale', 0, 'at']} />);
+    const q = m.q('[data-quote-path]');
+    q.innerHTML = wrap(q.textContent);
+    return q;
+  };
+
+  it('Astra\'s repro: "best one 73" in an h2 nested inside the element carrying data-quote-path — every sweep sees the words, the validator names the heading', () => {
+    const tape = said('best one 73');
+    const q = quotedWith(tape, (s) => `<h2>${s}</h2>`);
+    const docs = { tape };
+    expect(q.textContent).toBe('best one 73');   // the text still equals the stored value, byte for byte
+    expect(sweepWords(m.container, docs)).toEqual(['best', 'number word “one”: best one 73']);
+    expect(sweepNumbers(m.container, docs)).toEqual(['stray digit: “best one 73”']);
+    expect(quoteDefects(m.container, docs)).toEqual(['rationale[0].rationale: a heading inside it']);
+    expect(boundQuotationOf(q.querySelector('h2').firstChild, docs)).toBeNull();
+  });
+
+  it('Astra\'s repro: the same inside data-agent-name — swept, and a defect', () => {
+    const el = box('<div><span data-agent-name="agentContext.agentName" data-agent-name-doc="battle"><h2>best one 73</h2></span></div>');
+    expect(el.querySelector('[data-agent-name]').textContent).toBe('best one 73');
+    expect(sweepWords(el, named)).toEqual(['best', 'number word “one”: best one 73']);
+    expect(sweepNumbers(el, named)).toEqual(['stray digit: “best one 73”']);
+    expect(agentNameDefects(el, named)).toEqual(['agent name “best one 73”: a heading inside it']);
+    expect(boundAgentNameOf(el.querySelector('h2').firstChild, named)).toBeNull();
+  });
+
+  it('every heading form inside each bound element (h1–h6, role="heading"): the quotation, the stored note and the name all lose their exemption', () => {
+    for (const [form, wrap] of INSIDE) {
+      const tape = said('best one 73');
+      quotedWith(tape, wrap);
+      expect(quoteDefects(m.container, { tape }), `quotation ${form}`).toEqual(['rationale[0].rationale: a heading inside it']);
+      expect(sweepNumbers(m.container, { tape }), `quotation ${form}`).toEqual(['stray digit: “best one 73”']);
+      expect(sweepWords(m.container, { tape }), `quotation ${form}`).toEqual(['best', 'number word “one”: best one 73']);
+
+      const noteTape = noted('one 73');
+      const note = box(`<div><span data-stored-note="coverage.checks.note">${wrap('one 73')}</span></div>`);
+      expect(storedNoteDefects(note, { tape: noteTape }), `stored note ${form}`).toEqual(['coverage.checks.note: a heading inside it']);
+      expect(sweepNumbers(note, { tape: noteTape }), `stored note ${form}`).toEqual(['stray digit: “one 73”']);
+      expect(sweepWords(note, { tape: noteTape }), `stored note ${form}`).toEqual(['number word “one”: one 73']);
+      expect(boundStoredNoteOf(note.querySelector('[data-stored-note]').firstChild.firstChild, { tape: noteTape }), `stored note ${form}`).toBeNull();
+
+      const name = box(`<div><span data-agent-name="agentContext.agentName" data-agent-name-doc="battle">${wrap('best one 73')}</span></div>`);
+      expect(agentNameDefects(name, named), `name ${form}`).toEqual(['agent name “best one 73”: a heading inside it']);
+      expect(sweepNumbers(name, named), `name ${form}`).toEqual(['stray digit: “best one 73”']);
+      expect(sweepWords(name, named), `name ${form}`).toEqual(['best', 'number word “one”: best one 73']);
+    }
+  });
+
+  it('a stored note under a heading (B1\'s rule, now for stored notes too): every heading form around it is the screen\'s voice', () => {
+    const tape = noted('one 73');
+    for (const [form, wrap] of INSIDE) {
+      const el = box(`<div>${wrap('<span data-stored-note="coverage.checks.note">one 73</span>')}</div>`);
+      expect(storedNoteDefects(el, { tape }), form).toEqual(['coverage.checks.note: inside a heading']);
+      expect(sweepNumbers(el, { tape }), form).toEqual(['stray digit: “one 73”']);
+      expect(sweepWords(el, { tape }), form).toEqual(['number word “one”: one 73']);
+    }
+  });
+
+  it('the controls: an element inside the bound text that is NOT a heading (a span, an emphasis, a role other than heading) keeps each exemption — exempt and valid', () => {
+    const plain = [['span', (s) => `<span>${s}</span>`], ['em', (s) => `<em>${s}</em>`], ['role="note"', (s) => `<span role="note">${s}</span>`]];
+    for (const [form, wrap] of plain) {
+      const tape = said('one 73');
+      quotedWith(tape, wrap);
+      expect([quoteDefects(m.container, { tape }), sweepNumbers(m.container, { tape }), sweepWords(m.container, { tape })], `quotation ${form}`).toEqual([[], [], []]);
+
+      const noteTape = noted('one 73');
+      const note = box(`<div><span data-stored-note="coverage.checks.note">${wrap('one 73')}</span></div>`);
+      expect([storedNoteDefects(note, { tape: noteTape }), sweepNumbers(note, { tape: noteTape }), sweepWords(note, { tape: noteTape })], `stored note ${form}`).toEqual([[], [], []]);
+
+      const docs = { battle: { agentContext: { agentName: 'Twelve 47' } } };
+      const name = box(`<div><span data-agent-name="agentContext.agentName" data-agent-name-doc="battle">${wrap('Twelve 47')}</span></div>`);
+      expect([agentNameDefects(name, docs), sweepNumbers(name, docs), sweepWords(name, docs)], `name ${form}`).toEqual([[], [], []]);
+    }
   });
 });
