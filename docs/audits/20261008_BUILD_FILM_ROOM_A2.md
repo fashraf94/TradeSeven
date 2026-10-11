@@ -877,7 +877,7 @@ Appended verbatim to the end of Amendment E (`36477560`). Item 12 applies it; 9.
    - before any candle pass has written (`passes.candles.writtenAt` unset), the day's stored replay coverage note ("awaiting the candle pass", or the outside-window note), bound;
    - after one has, a pointer: "the replay coverage line above says why". That note now opens with the replay's one-step sentence, and copying it would put the sentence beside no replay.
 
-   The day's note always shows once, at the swaps section's head. The split groups keep "No replay for this swap." (F1: the split is always shown). A replay written with no point that has a value shows "No replay drawn for this swap" and its own stored missing inputs. A replay whose points have values but no instants keeps its values (A2P2-9) and gets no sentence.
+   The day's note always shows once, at the swaps section's head. The split groups keep "No replay for this swap." (F1: the split is always shown). A replay written with no point that has a value shows "No replay drawn for this swap" and its own stored missing inputs. ~~A replay whose points have values but no instants keeps its values (A2P2-9) and gets no sentence.~~ **Corrected 2026-10-11 (Astra F1, §10):** a replay that emits no visible geometry, values with no recorded instant included, gets "No replay drawn for this swap" (10.4 #5).
 3. **B2's allowed paths** (`SPEC_STORED_NOTE_PATHS`, pinned in the harness from R1 and R9):
    - exempt: `coverage.*.note`, each missing-input name by index (the sale's, the fill's, a plan price's, a replay's), and `actions[].replay.label`;
    - bound but not exempt: the other stored notes (`replay.note`, `lockedBasisNote`, `price.note`, `result.note`, `passes.close.status`);
@@ -977,3 +977,1277 @@ Appended verbatim to the end of Amendment E (`36477560`). Item 12 applies it; 9.
 ### 9.8 State
 
 The PR is a **draft**, titled "Film Room A2: follow-up pass before 'on'". Head: this report's commit; its SHA is posted with the hand-off. Nothing is merged, flipped or deployed. The flip to `'on'` is its own PR after this one. It still turns around the hub-helper row in `api/cron/film-tape-flip.live.test.js` and reconciles the stale prose PR #950 flagged.
+
+## §10 Astra follow-up round (2026-10-11)
+
+**Prompt:** "Fix prompt — Film Room A2 follow-up pass: Astra's F1 (and B5)" (Fable, 2026-10-11). Astra's review of the follow-up pass (`docs/audits/20261011_ASTRA_REVIEW_FILM_ROOM_A2_FOLLOWUPS.md`, PR #952 at `f931f339`) returned DO NOT MERGE on one finding, F1. This round fixes F1 and B5, a test-only guard gap. B6 (the wide last-close label) and the earlier backlog wait for the card build.
+**Branch:** `git fetch origin` first. `origin/claude/film-room-a2-followups` was `f931f339`, as the prompt expected. The session's worktree branch is `claude/film-room-a2-followups-218894` (the app's name for it); it was moved to `f931f339` and is pushed back to `claude/film-room-a2-followups` by refspec. PR #952 was open and a draft at setup and again before the push.
+**`main` moved during the round.** `origin/main` went from `a06c2a75` to `434fab64` (#953, the reflection outage fix), and was merged in at `ebfa5dc8` with the app's merge tool. The only file both sides touched is `docs/README.md`, in different rows, so the merge was clean. The final checks ran on the merged tree, and `origin/main` was re-fetched before the push.
+**Fences:**
+- Zero BUILD_RULES §1 edits, and nothing under `api/`. This round's own commits (10.2) change only `docs/` (4 files) and `src/screens/filmRoomV2/` (9 files). Against `main` (`git diff --name-only origin/main...HEAD`), the PR adds `src/App.jsx` from §9 and nothing else outside those two directories.
+- `FILM_ROOM_V2_MODE` stays `'allowlist'` (`src/config/featureFlags.js:2989`). `src/config/`, `firestore.rules` and the goldens are not in the diff.
+- The goldens' original rows pass unchanged (`FilmRoomRoute.golden.jsdom.test.jsx`, 12/12).
+- The PR stays a draft. No merge, no flip.
+
+### 10.1 Executive verdict
+
+| Question | Answer |
+|---|---|
+| F1 (blocking, criterion 3 under R11) | **Fixed** `418bfb08`. A replay is drawn only when its fork emits visible geometry: a dashed segment, or a ring at an isolated sample. Astra's repro now draws three rings (the hold path's close, the swap path's sale and close), joins none of them, and its legend reads "points · rebuilt from 1-minute bars". The sentence, each path's label and the legend all follow the same geometry, path by path. A card that emits nothing gets "No replay drawn for this swap" with its stored missing inputs. The new rows fail at `f931f339`; the controls pass there. |
+| B5 (test-only) | **Fixed** `8ad2950a`, hardened `ad6fbded`. A heading anywhere on an exempt text's ancestry, around the bound element or inside it, removes the quotation, stored-note and agent-name exemptions. A heading is h1–h6, or any `role` that names `heading`. |
+| The full-candle day | **Unchanged, byte for byte.** The whole Study's HTML at phone and desktop width is identical to `f931f339`'s, on the committed fixture and on the writer-built day. A row pins the fork paths' SHA-256. |
+| **Founder question** (review A2G1-1) | **Does the swap path's opening sample, on its own, make a drawn replay?** The writer opens every swap path at the sale with the points the sale banked (`api/_utils/filmTape/tapeReplay.js:107–108`). When both legs have only stale bars after the sale, that sample is the replay's one placeable value. Your F1 rule reads "a value with a finite instant … renders as a visible point glyph", so the card draws one ring at the sale and shows the swap path's label, the points legend and the stored sentence. Its twin with the bars *deleted* gets "No replay drawn". The stricter alternative is: drawn requires a placeable sample after the sale, on either path. The rule as built is pinned by a row (10.2, F1) and laid out in 10.5. The refuter's facts: every number and stored sentence on the card matches the tape. The legend's "rebuilt from 1-minute bars" matches the tape's declared class, but no bar went into the value drawn. Before F1 this card was already "drawn", with an invisible `M`. |
+| The exit criterion's six classes | None found. Two lenses and a refuter found no rendered number without its class, no forbidden word in the screen's own voice, no stated fact against the tape, no non-owner read, no change to the off or non-allowlisted path, and no fourth hub key. The one open question is A2G1-1 above. |
+| Mutants | **60 of the builder's (74 runs), every one killed in the end, none by a timeout** (10.2). Two survived their first run (F1-M4c, F1-M4d, the desktop end tags) until their rows were added. The lenses ran 17 of their own on the reviewed head; 12 survived, and all 12 are killed by `ad6fbded`'s rows. The refuter ran 28 on `ad6fbded`; 4 survived, and all 4 are killed by `f126fde4`'s rows. |
+| Review (BUILD_RULES §2) | Two lenses (A2G1 for F1's domain and geometry, A2G2 for B5's guard boundary and the round's integrity) and one refuter (A2GV), each on its own LF snapshot. 10 lens findings and 3 from the refuter. **None blocking, none refuted;** 3 PARTLY. 10 are fixed or closed (rows, the harness, this section); 3 are recorded (10.4, 10.5, 10.9). |
+| Real browser (headless Edge, 390 and 1440) | 36 swap cards on six writer-built days. **14 rings, each 7 × 7 px with ink** (96 of its 256 device pixels at scale 2), and 56 dashed paths, each with length. **No replay wording on a card without geometry, and every label, swatch and end tag matches what its path drew** (10.6). No horizontal overflow; JetBrains Mono loaded. |
+| Full suite (Linux, `TZ=UTC`, CI-shaped) | **`f126fde4`** (the code head, merged with `origin/main` `434fab64`; re-fetched before the push, unmoved): **949 test files, 0 failing** (942 passed, 7 skipped); 20,214 tests (20,126 passed, 0 failed, 88 skipped). Private WSL clone `~/pd-a2g`, `--maxWorkers=2`, 347 s. In that run, all of these pass: the Film Room folder (20 files, 374 tests), the goldens (12/12), the census (`unconfirmedOutcome.census`), the flag-pin guard, the theme and motion guards, the gate (19) and the hub helper (38). #953's new suites pass too. |
+| Rules suite | **`f126fde4`:** 24 files, 417 tests, all passing (Firestore emulator on Windows, Java 21, LF `git archive` snapshot; WSL has no Java). `firestore.rules` and `test/rules/` are unchanged. |
+| `lint:gate` / `vite build` | Run from the LF archive of the pushed head, this report's commit, before the push. Results are posted with the head SHA. |
+| CI | Runs on the pushed head. It is read once and reported with the head SHA; nothing watches it (BUILD_RULES §2). For the record: at `f931f339`, the head Astra reviewed, `vitest (unit)` passed (01:05:57–01:16:59 UTC, Oct 11), as did both Socket checks and the Vercel preview. Astra could not read that result. |
+
+### 10.2 One row per fix
+
+| Fix | Commits | What the tests prove | Mutants (all killed) |
+|---|---|---|---|
+| **§0 Docs** | `37906b05` | Astra's review is committed verbatim. Addendum 5 (R14) is appended verbatim to Amendment E, after Addendum 4. The trailing whitespace at this report's former line 879 is gone. The Film Room index (`docs/README.md`) has the review's row, and its Amendment E and A2 build-report rows name Addendum 5 and §10. | — |
+| **F1: "drawn" means visible geometry** | `418bfb08`; rows `ad6fbded`, `f126fde4` | `FilmRoomStudy.replay.writer.jsdom.test.jsx`, the real close and candle passes.<br>**Astra's repro** (MSFT and CRWD cut to the minute starting `2026-09-23T19:59:00Z`, `buildTapeDay` at `SEP23_NIGHT` / `SEP23_MORNING`), at phone and desktop width:<br>• a ring at each isolated sample, placed where an independent oracle puts it (x to 0.02 %, y to 0.06 px), 7 px with a solid stroke of real width;<br>• no `<path>` at all, so nothing is joined across a gap;<br>• both labels, each with a ring swatch and never a dashed one;<br>• the legend "points · rebuilt from 1-minute bars", and "dashed" nowhere on the card;<br>• the stored sentence;<br>• at desktop, both end tags.<br>**A path that emits nothing** has no label, swatch, line, ring or end tag, path by path. Cases: the sold leg without bars, or with stale bars only (a list of nulls); the bought leg without bars; a planted swap path of nulls.<br>**A mixed path** (a segment and a ring) has both swatches, and its legend reads "dashed lines and points · rebuilt from 1-minute bars".<br>**Each path keeps its own colour** for its ring, swatches and line.<br>**A slot traded twice** keeps its hypothetical tag beside points only, and beside the hold path alone.<br>**Planted:** a run whose samples coincide is a ring. A replay with values but none placeable gets the no-drawn treatment, with no sentence, label, legend or tag.<br>**The anchor-only card** (A2G1-1) is pinned as the rule reads.<br>**Controls:** the full-candle day's fork paths match the SHA-256 of `f931f339`'s, and the no-value day keeps "No replay drawn".<br>`filmRoomModel.test.js` pins `forkRuns`. `FilmRoomStudy.jsdom.test.jsx`'s A2P2-9 desktop row now expects the no-drawn line (10.4 #5). The copy inventory holds 239 keys and 347 entries.<br>**At `f931f339`** the four F1 rows fail and the two controls pass. | F1-M1–M9 (14: the old gate; the ring omitted; the legend always "dashed", or never naming both; a label or end tag for a path that drew nothing, ×4; joined across a gap; a dashed swatch for points; no ring swatch; the ring misplaced; the tag beside an undrawn replay; a lone sample as a segment); R-G1-M1–M8 (8); V-F1a, V-F1b (2) |
+| **B5: a heading inside bound text** | `8ad2950a`; predicate and rows `ad6fbded`; rows `f126fde4` | `FilmRoomSweeps.guards.jsdom.test.jsx`.<br>**Astra's repro first:** at `f931f339`'s harness, "best one 73" in an `h2` nested inside the element carrying `data-quote-path` returns `[]` from all three sweeps and the validator, and the same holds inside `data-agent-name` and for a stored note. Now every sweep sees the words, and each validator says "a heading inside it".<br>**Rows for each of the three exemptions:**<br>• every heading form inside (h1–h6, `role="heading"`) and around;<br>• a stored note under a heading (B1's rule, now for notes);<br>• a heading deeper than the first child;<br>• the bound element itself a heading;<br>• a heading over part of the text (the whole element loses its exemption);<br>• `role="heading"` with no level;<br>• role spellings a browser reads as a heading ("Heading", " heading", "heading presentation", "heading\tnone", "foo heading");<br>• an empty heading, or an aria-hidden one.<br>**Controls:** a span, an emphasis or `role="note"` keeps each exemption. | B5-M1–M5 (11, on `8ad2950a`); R-B5 (23, on `ad6fbded`: ancestor-only and inside-only per site and per validator; the role ignored, matched by case, by exact value or split on spaces, or needing a level; direct children only; the element itself skipped; the text node's path only; any descendant); V-B5a, V-B5b (2) |
+
+Each mutant ran in an LF snapshot of the commit it tests: `d8646d79` (F1's first form, before its end-tag rows were folded in), `418bfb08`, `8ad2950a`, `ad6fbded` and `f126fde4`. Every file was restored byte for byte (sha256). Specs and results are in the session scratchpad (`mut-*.json`, `res-*.json`).
+
+### 10.3 Addendum 5 (R14)
+
+Appended verbatim to the end of Amendment E (`37906b05`). It settles §9.7's "B3 zero-count wording" question: "No swaps were recorded this day.", "no checks recorded" and "Retained: none in force" state absence, take no marker, and must match their section's coverage. No copy changed for it.
+
+### 10.4 Choices the prompt left open (stated, not silent)
+
+1. **The glyph.** It is a ring 7 px across, with a 1.6 px stroke in its path's colour (hold ink, swap teal) and the card's surface as its fill. It is an HTML element over the fork, placed at the sample's own x and y. The fork's SVG stretches its x (`preserveAspectRatio="none"`), so a circle inside it would not stay round. A short tick on the dashed path can be swallowed by the dash pattern (A2F2-3's lesson). The ring is `aria-hidden` and carries no text attribute and no sign colour.
+2. **"Isolated".** `forkRuns` splits a path only where a sample has no value or no recorded instant, never by a time step: the fork's samples are the checks'. A run of one is a ring. A run whose points render at one place (two samples at one instant, planted) is a ring too, never a zero-length segment.
+3. **The legend's words.** There are three keys:
+   - "dashed · rebuilt from 1-minute bars" (unchanged) beside segments only;
+   - "points · rebuilt from 1-minute bars" beside rings only;
+   - "dashed lines and points · rebuilt from 1-minute bars" beside both.
+
+   "points" is the prompt's word. A2G1-3 notes that on the same card the stored basis note uses "points" for score ("Banked points …"). The screen's own copy never does, so "rings" or "dots" would remove the overlap. Your call.
+4. **Path by path.** A path that emits nothing has no label, no swatch and no end tag, so its end value is not shown. Each label's swatch shows what its path drew: a dash, a ring, or both. The hypothetical tag, the gap row and the closed-leg row stand only beside a drawn replay.
+5. **"Nothing drawn" includes values with no recorded instant.** Review A2P2-9 (§6) kept such a replay's end values beside no fork. The prompt's rule gives it the no-drawn treatment, so that row now expects "No replay drawn for this swap". §9.4 #2 is corrected in place, struck through and dated. The writer always stamps an instant (`tapeReplay.js:86`), so only a planted tape reaches this case.
+6. **B5's reach.**
+   - The stored-note exemption had no heading check at all, and now has both halves.
+   - The validators name "a heading inside it" beside "inside a heading".
+   - A role names a heading when any of its tokens is `heading`, in any case or spacing. "presentation heading", which a browser does not read as a heading, is counted too: stricter, never laxer.
+7. **Docs.** Astra's file runs from "DO NOT MERGE" to its last sentence and ends in one newline: the paste's trailing blank lines are dropped, so `git diff --check` stays clean. The Film Room index gained the review's row; the prompt did not ask for it.
+8. **The diffs in 10.8** are the four code commits of the round: F1, B5 and the two review commits, all of the code the round changed. A blank context line is written empty rather than as a single space, so this report carries no trailing whitespace; `git apply` reads an empty line as an empty context line.
+
+### 10.5 The founder question, laid out (A2G1-1)
+
+**Repro, through the real passes:** `sparseBars({ MSFT: ['2026-09-23T13:30:00Z'], CRWD: ['2026-09-23T13:30:00Z'] })`, the session's first minute only, then `buildTapeDay` at `SEP23_NIGHT` / `SEP23_MORNING`. Row: `review A2G1-1` in `FilmRoomStudy.replay.writer.jsdom.test.jsx`.
+
+**What the tape stores for swap 1 (MSFT → CRWD).** These are the refuter's facts, read from the stored document:
+- `holdPath` has 14 samples, all null, each with its stale `barClosedAt` of 9:31 AM.
+- `swapPath[0]` is `{ tickSeq 11, at 12:45:08 PM, points −13 }`; the other 13 samples are null.
+- `gapPoints` and `closedLegDelta` are null.
+- `missingInputs` names 28 prices, every MSFT and CRWD sample, the two at the swap included.
+- `actions[0].lockedPoints` is −13, declared `recorded`.
+- `actions[].replay.swapPath[].points` is declared `rebuilt` (`src/constants/filmTape.js:223`).
+
+**What the card shows** (headless Edge, 390 and 1440):
+- one teal ring at the fork's left edge, the sale;
+- "Swap path · CRWD bought —", with a ring swatch;
+- no hold label;
+- "points · rebuilt from 1-minute bars";
+- "Gap —" and "At the sale · rebuilt minus banked —";
+- the stored sentence;
+- at desktop, the swap path's end tag "—".
+
+**Against the tape.** Every number and stored sentence on the card is bound to its path, or is "—" where the tape stores null. The one statement in the screen's own voice that makes a provenance claim is the legend:
+- (a) It matches the tape's declared class for that path.
+- (b) The value drawn is `composeLegs`' copy of the banked points, which the tape declares `recorded` at `lockedPoints`. No bar went into it, and the tape names both swap-instant prices missing.
+- (c) The same labelling predates F1: on the full-candle day `swapPath[0]` is the same −13, the first vertex of the line under "dashed · rebuilt from 1-minute bars". F1 only made it the sole thing drawn.
+
+**The twin.** With the bars deleted, the writer builds no swap path (`legOf` returns null, `tapeReplay.js:239`), and the card says "No replay drawn for this swap · missing: bars:MSFT, bars:CRWD".
+
+**The ruling asked:**
+- **(i) As built:** the opening sample is a value at a recorded instant, so it is drawn.
+- **(ii) The alternative:** a replay is drawn only with a placeable sample after the sale. The anchor-only card would then get the no-drawn line. A screen-side change, with no writer change, would do it.
+
+Either way the tape's stored class for the opening sample is a writer question for the card build.
+
+### 10.6 Real-browser measurements
+
+Headless Edge 155 (`playwright-core`, device scale 2), on a scratch preview page in an LF snapshot of the code, never committed. It renders the real `FilmRoomScreenV2` at the Study depth from six days built by the real close and candle passes:
+
+| Day (swap 1's bars) | 390 px | 1440 px |
+|---|---|---|
+| Astra's repro (MSFT, CRWD: the 3:59 PM minute) | 3 rings (hold 1, swap 2), each 7 × 7, 96 ink pixels; no path; labels hold [ring], swap [ring]; the points legend; the sentence | the same, fork 239 px wide; end tags hold, swap |
+| Sold leg deleted, bought leg the 3:59 PM minute | 2 swap rings; no hold label; the points legend | the same; end tag swap only |
+| Bought leg before two checks and the close | swap: one dashed segment (51.8 × 8.2 px) and a ring; hold: a dashed line; "dashed lines and points" | the same (37.1 × 8.2 px segment) |
+| Both legs the 9:31 AM minute only (A2G1-1) | 1 swap ring at the sale; the swap label alone; the points legend; the sentence | the same; end tag swap only |
+| Both legs deleted | no fork, no ring, no label; "No replay drawn for this swap · missing: bars:MSFT, bars:CRWD" | the same |
+| The full session | dashed lines only; legend "dashed · rebuilt from 1-minute bars" | the same |
+
+Across the 36 cards (six days × three swaps × two widths):
+- **Violations: 0.** There are no replay words without geometry, no label for a path that drew nothing, no swatch unlike its path's drawing, no "dashed" without a dashed path, no ring outside its fork, and no ring without a box or ink.
+- **Horizontal overflow:** 0 px everywhere.
+- **Console:** one 404, which no page response carried: the browser's own request, not the screen.
+- Shots and the report are in the session scratchpad (`edge/shots/`, `edge/edge-f1.json`).
+
+### 10.7 Review record (BUILD_RULES §2)
+
+**Setup.**
+- Lens A2G1 (F1: domain honesty and geometry) and lens A2G2 (B5's guard boundary, and the round's integrity) worked on separate LF snapshots of `8ad2950a`.
+- The refuter A2GV worked on a fresh snapshot of `ad6fbded`. It was told to refute each finding with a repro, re-apply the lenses' surviving mutants, and test the anchor-only card against the tape.
+- All three were read-only on git and the shared tree, and restored every mutation byte for byte.
+- **Ids:** `A2G1-n`, `A2G2-n`, `A2GV-n`. They never collide with A2L, A2V, A2P, A2PV, A2A, A2AV, A2F or A2FV.
+- A2G1 checked 78 card renders over 13 days (real-pass and planted) against an independent oracle and found 0 mismatches. It also found the full day's whole Study HTML identical to `f931f339`'s.
+
+| id | Finding | Refuter | Disposition |
+|---|---|---|---|
+| A2G1-1 | A replay whose only placeable sample is the swap path's opening sample (the banked points) is drawn, while its bars-deleted twin is not. | CONFIRMED; facts in 10.5 | **Founder question** (10.1, 10.5). The rule as built is pinned by a row. |
+| A2G1-2 | The end value is the path's last element even when null: "—" beside a drawn path whose close is null (writer-reachable; matches the tape under R14). A planted undrawn last sample shows its number. | CONFIRMED | Recorded (10.9); predates the round. |
+| A2G1-3 | "points" in the legend can read as the score. | PARTLY: the screen's own copy never uses "points" for score; the stored basis note does | Recorded (10.4 #3); your call. |
+| A2G1-4 | Five rules unpinned: the legend on a swap-only line; the hypothetical tag beside points; three colours. | CONFIRMED (all five survive at `8ad2950a`) | **Rows** `ad6fbded`; all killed. |
+| A2G1-5 | A coinciding run as a zero-length segment (planted). | CONFIRMED | **Row** `ad6fbded`; killed. |
+| A2G2-1 | `[role="heading"]` matched the exact value only; "heading presentation", " heading" and "Heading" kept the exemptions. | PARTLY: 42 of 48 cases kept it (jsdom matched the case variants inside) | **Fixed** `ad6fbded`: the `isHeading` predicate; rows for eight spellings. |
+| A2G2-2 | No row pinned "inside the bound element" as distinct from the text node's own path. | CONFIRMED (rows only; the guard was right) | **Rows** `ad6fbded` (split text); killed. |
+| A2G2-3 | No row for a heading below the first child, the element itself a heading, or `role="heading"` with no level. | CONFIRMED (rows only) | **Rows** `ad6fbded`; killed. |
+| A2G2-4 | The README cites §10, and the inventory row cites 239 / 347, before this report states them. | CONFIRMED | **Closed** by this section. |
+| A2G2-5 | The harness docstrings named only the heading "around". | PARTLY closed at `ad6fbded` | **Fixed** `f126fde4`. |
+| A2GV-1 | The ring's stroke width was unpinned. With the card's own surface as its fill, a zero-width border would paint nothing (F1's defect class). | — (found by the refuter) | **Row** `f126fde4`; killed. |
+| A2GV-2 | No row for a hypothetical slot drawn on the hold path alone. | — | **Row** `f126fde4`; killed. |
+| A2GV-3 | No row for an empty or aria-hidden heading inside the bound element. | — | **Rows** `f126fde4`; killed. |
+
+**Refuted outright:** none. **Blocking:** none.
+
+The refuter also found that the review commit touches only test files and the harness, and that the folder runs 20 files and 371 tests, all passing, at `ad6fbded`.
+
+### 10.8 The complete diffs of the round's code commits
+
+`git -c core.autocrlf=false show --format= <sha>`; blank context lines written empty (10.4 #8). Checked: each block, applied with `git apply --cached` to its commit's parent, reproduces that commit's tree exactly.
+
+#### `418bfb08` — F1 — "drawn" means visible geometry
+
+```diff
+diff --git a/src/screens/filmRoomV2/FilmRoomStudy.jsdom.test.jsx b/src/screens/filmRoomV2/FilmRoomStudy.jsdom.test.jsx
+index d5a7b2d7..2964b7ab 100644
+--- a/src/screens/filmRoomV2/FilmRoomStudy.jsdom.test.jsx
++++ b/src/screens/filmRoomV2/FilmRoomStudy.jsdom.test.jsx
+@@ -319,14 +319,15 @@ describe('the swap card at desktop width — each path\'s end value beside the f
+     expect(Math.abs((top('hold') + top('swap')) / 2 - (lastY(row, 'hold') + lastY(row, 'swap')) / 2)).toBeLessThan(0.06);
+   });
+
+-  it('review A2P2-9: at desktop, a replay with no fork drawn (no instants) keeps its end values, under where the fork would be', () => {
++  it('review A2P2-9, under Astra F1: at desktop, a replay whose values carry no instant draws nothing — the no-drawn line, never a path label, an end value or a legend for lines that are not there', () => {
+     const t = clone(sep23Tape);
+     for (const p of [...t.actions[0].replay.holdPath, ...t.actions[0].replay.swapPath]) p.at = null;
+     m.render(<Desk tape={t} />);
+-    const r = t.actions[0].replay;
+     expect(card(0).querySelector('[data-fork-row]')).toBeNull();
+-    expect(card(0).querySelector(`[data-path-label="hold"] [data-num="actions[0].replay.holdPath[${r.holdPath.length - 1}].points"]`)).toBeTruthy();
+-    expect(card(0).querySelector(`[data-path-label="swap"] [data-num="actions[0].replay.swapPath[${r.swapPath.length - 1}].points"]`)).toBeTruthy();
++    expect(card(0).querySelector('[data-replay-none="not-drawn"]').textContent).toBe('No replay drawn for this swap');
++    expect(card(0).querySelector('[data-path-label], [data-fork-end], [data-replay-sentence]')).toBeNull();
++    expect(card(0).textContent).not.toContain('rebuilt from 1-minute bars');
++    expect(card(1).querySelector('[data-path-label="hold"]')).toBeTruthy();   // the other cards draw theirs
+   });
+
+   it.each([['Sep-23', sep23Tape], ['empty', emptyTape]])('%s at desktop width, everything opened (review A2P2-3): every number marked, no sign colour astray, no forbidden word', (_l, tape) => {
+diff --git a/src/screens/filmRoomV2/FilmRoomStudy.jsx b/src/screens/filmRoomV2/FilmRoomStudy.jsx
+index a2cdbefa..4bb5f8d7 100644
+--- a/src/screens/filmRoomV2/FilmRoomStudy.jsx
++++ b/src/screens/filmRoomV2/FilmRoomStudy.jsx
+@@ -12,7 +12,9 @@
+ //               — always the SOLD leg's sale — and the fill as its own group
+ //               (F1, BA-38); the basis note on every card, and the replay
+ //               sentence only beside a drawn replay — a card with no written
+-//               replay says why, alone (Amendment E addendum 3, R11)
++//               replay says why, alone (Amendment E addendum 3, R11). Drawn
++//               means visible geometry: a dashed segment, or a ring at an
++//               isolated sample; the labels and legend say which (Astra F1)
+ //   Directives  the card per BA-9, its three states from the tape's rows (F6)
+ //   Plans       verbatim, with the two market prices and the horizon note (BA-10)
+ //   Rationale   recorded words, collapsed, beside the checks that carry no agent
+@@ -26,7 +28,7 @@
+ import React, { useState } from 'react';
+ import {
+   valueAt, etClock, checkStateOf, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, lastPointPath, deriveHoldings,
+-  directiveCardOf, rationaleTimeline, planGroups, PLAN_DIRECTIONS, EXIT_MAKER_WORDS, fmtPrice, fmtPriceDelta, fmtCount, isNum, toMs, etWhen,
++  directiveCardOf, rationaleTimeline, planGroups, PLAN_DIRECTIONS, EXIT_MAKER_WORDS, fmtPrice, fmtPriceDelta, fmtCount, isNum, toMs, etWhen, forkRuns,
+ } from './filmRoomModel';
+ // The replay's own coverage line sits under the swaps' (BA-20: every section its coverage).
+ import { FILM_ROOM_COPY as COPY, REPLAY_SENTENCE, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE, DIRECTIVE_EXPLAINER } from './filmRoomCopy';
+@@ -88,8 +90,13 @@ function HoldingsSection({ tape, onDeep }) {
+
+ /** The fork: the hold path and the swap path from the swap to the close, both rebuilt and dashed; a null point is a visible gap. */
+ const FORK_HEIGHT = 112;
++/** An isolated sample's glyph: a ring this many px across, centred on the sample (Astra F1). */
++const POINT_GLYPH_PX = 7;
+
+-/** The fork's scale — null when it has no point to draw, or no recorded instant to place one at (review A2L3-11). */
++/**
++ * The fork's scale — null when it has no value to scale, or no recorded instant to place one at (review A2L3-11).
++ * A scale is not a drawing: what is drawn is forkGeometry's.
++ */
+ function forkScale(tape, index, height = FORK_HEIGHT) {
+   const r = valueAt(tape, ['actions', index, 'replay']);
+   const hold = Array.isArray(r?.holdPath) ? r.holdPath : [];
+@@ -109,6 +116,34 @@ function forkScale(tape, index, height = FORK_HEIGHT) {
+   };
+ }
+
++/**
++ * The fork's GEOMETRY — exactly what the chart emits, path by path (Astra F1): each run of samples with a value at a
++ * recorded instant (forkRuns) is a dashed SEGMENT when its points sit at two places or more, else a POINT glyph (an
++ * isolated sample, drawn as itself — never joined across the gap to fabricate a line). A path is drawn when it emits
++ * a segment or a glyph, and the fork when either path is. The chart draws from this object and the card's every
++ * replay word — the sentence, each path's label, the legend — reads it, so none can describe what is not drawn
++ * (BUILD_RULES §9). null when the fork has no scale.
++ */
++function forkGeometry(tape, index, height = FORK_HEIGHT) {
++  const scale = forkScale(tape, index, height);
++  if (!scale) return null;
++  const pathOf = (list) => {
++    const segments = []; const points = [];
++    for (const run of forkRuns(list)) {
++      const at = run.map((p) => [scale.x(p.at).toFixed(1), scale.y(p.points).toFixed(1)]);
++      if (new Set(at.map(([x, y]) => `${x} ${y}`)).size > 1) segments.push(at.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' '));
++      else points.push({ x: Number(at[0][0]), y: Number(at[0][1]) });
++    }
++    return { d: segments.join(' '), segments: segments.length, points, drawn: segments.length > 0 || points.length > 0 };
++  };
++  const hold = pathOf(scale.hold);
++  const swap = pathOf(scale.swap);
++  return { scale, hold, swap, drawn: hold.drawn || swap.drawn, dashed: hold.segments + swap.segments > 0, dotted: hold.points.length + swap.points.length > 0 };
++}
++
++/** A point glyph's ring, in a path's colour — on the fork at its sample, and as that path's legend swatch. */
++const ring = (color) => ({ width: POINT_GLYPH_PX, height: POINT_GLYPH_PX, boxSizing: 'border-box', borderRadius: '50%', border: `1.6px solid ${color}`, background: C.surface, flexShrink: 0 });
++
+ /**
+  * The paths' end values beside the fork, each at its own height on the fork's
+  * scale (the design of record's desktop card); two that would overlap are
+@@ -134,28 +169,23 @@ function ForkEnds({ tape, scale, ends, height }) {
+   );
+ }
+
+-function ForkChart({ tape, index, height = FORK_HEIGHT, ends = null }) {
+-  const scale = forkScale(tape, index, height);
+-  if (!scale) return null;
+-  const { hold, swap, t0, x, y } = scale;
+-  const d = (list) => {
+-    let s = ''; let pen = false;
+-    for (const p of list) {
+-      if (!isNum(p?.points) || toMs(p.at) === null) { pen = false; continue; }
+-      s += `${pen ? 'L' : 'M'}${x(p.at).toFixed(1)} ${y(p.points).toFixed(1)} `;
+-      pen = true;
+-    }
+-    return s.trim();
+-  };
++/** The fork as forkGeometry states it: each path's dashed segments, and a ring at each isolated sample. */
++function ForkChart({ tape, index, geo, height = FORK_HEIGHT, ends = null }) {
++  if (!geo?.drawn) return null;
++  const { scale } = geo;
++  const paths = [['hold', geo.hold, C.ink2], ['swap', geo.swap, C.teal]];
+   return (
+     <div data-fork-row={index} style={{ display: 'flex', alignItems: 'flex-start', width: '100%', minWidth: 0 }}>
+       <div data-region={`fork-${index}`} style={{ position: 'relative', flex: 1, minWidth: 0, height }}>
+         <svg width="100%" height={height} viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-label={COPY.fork} style={{ display: 'block', overflow: 'visible', width: '100%', height }}>
+-          <path data-line="hold" data-rebuilt="" d={d(hold)} style={{ fill: 'none', stroke: C.ink2, strokeWidth: 1.6, strokeDasharray: '5 4' }} vectorEffect="non-scaling-stroke" />
+-          <path data-line="swap" data-rebuilt="" d={d(swap)} style={{ fill: 'none', stroke: C.teal, strokeWidth: 1.6, strokeDasharray: '5 4' }} vectorEffect="non-scaling-stroke" />
++          {paths.map(([k, g, color]) => (g.segments ? <path key={k} data-line={k} data-rebuilt="" d={g.d} style={{ fill: 'none', stroke: color, strokeWidth: 1.6, strokeDasharray: '5 4' }} vectorEffect="non-scaling-stroke" /> : null))}
+         </svg>
++        {/* an isolated sample: a ring at its own place — the svg stretches its x, so a circle inside it would not stay round */}
++        {paths.flatMap(([k, g, color]) => g.points.map((p, j) => (
++          <span key={`${k}${j}`} data-fork-point={k} data-rebuilt="" aria-hidden="true" style={{ position: 'absolute', left: `calc(${(p.x / 10).toFixed(2)}% - ${POINT_GLYPH_PX / 2}px)`, top: p.y - POINT_GLYPH_PX / 2, ...ring(color) }} />
++        )))}
+         <div style={{ position: 'absolute', left: 0, right: 0, bottom: -14, display: 'flex', justifyContent: 'space-between', ...mono(9, C.ink3) }}>
+-          <When>{etClock(new Date(t0).toISOString())}</When>
++          <When>{etClock(new Date(scale.t0).toISOString())}</When>
+           <span>{COPY.close10}</span>
+         </div>
+       </div>
+@@ -229,11 +259,12 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
+   const holdEnd = lastPointPath(tape, index, 'holdPath');
+   const swapEnd = lastPointPath(tape, index, 'swapPath');
+   // The design of record's desktop card puts each path's end value beside the fork, at its height; the phone keeps them under it.
+-  // R11: a replay is DRAWN when it is written and its fork has a point to draw at a recorded instant (forkScale).
+-  const drawn = Boolean(r) && forkScale(tape, index) !== null;
+-  // A written replay with a point that has a value shows its values (its end values, the gap — review A2P2-9), drawn
+-  // or not; one with no such point has nothing to state but its reasons (review A2F1-3).
+-  const valued = Boolean(r) && [...(Array.isArray(r.holdPath) ? r.holdPath : []), ...(Array.isArray(r.swapPath) ? r.swapPath : [])].some((p) => isNum(p?.points));
++  // R11, Astra F1: a replay is DRAWN when its fork emits visible geometry — a dashed segment or a point glyph — on
++  // either path (forkGeometry, the one object the chart draws from). The sentence, the hypothetical tag, the legend,
++  // the values (the end values, the gap — review A2P2-9) and each path's label all follow it, the label path by path;
++  // a written replay that draws nothing states only its reasons (review A2F1-3).
++  const geo = r ? forkGeometry(tape, index) : null;
++  const drawn = Boolean(geo?.drawn);
+   // A card with no written replay says why: a crypto leg by its own stored reason, once (the day's coverage note,
+   // which also names crypto legs after the candle pass, stays at the section's head — R11's "caveat once"); any other
+   // by the day's replay coverage note (the close pass's "awaiting the candle pass", or outside the candle window).
+@@ -243,7 +274,16 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
+   // replay's own one-step sentence (review A2F1-2) — so the card points to the coverage line above instead.
+   const dayNote = !tape.passes?.candles?.writtenAt && typeof tape.coverage?.replay?.note === 'string' && Boolean(tape.coverage.replay.note);
+   const beside = Boolean(desktop && drawn);
+-  const ends = beside ? { hold: { path: holdEnd, label: COPY.holdPath, symbol: a.symbolOut }, swap: { path: swapEnd, label: COPY.swapPath, symbol: a.symbolIn } } : null;
++  // an end value beside the fork only for a path that drew something — never a label for a path that emitted nothing
++  const ends = beside ? { hold: { path: geo.hold.drawn ? holdEnd : null, label: COPY.holdPath, symbol: a.symbolOut }, swap: { path: geo.swap.drawn ? swapEnd : null, label: COPY.swapPath, symbol: a.symbolIn } } : null;
++  // the legend says what the fork shows: dashed only beside a drawn segment, points beside a point glyph
++  const legend = geo?.dashed ? (geo.dotted ? COPY.rebuiltDashedPoints : COPY.rebuiltDashed) : COPY.rebuiltPoints;
++  const swatch = (g, color) => (
++    <>
++      {g.segments ? <svg width="20" height="6" aria-hidden="true"><line x1="0" x2="20" y1="3" y2="3" style={{ stroke: color, strokeWidth: 1.6, strokeDasharray: '5 3' }} /></svg> : null}
++      {g.points.length ? <span data-swatch="point" aria-hidden="true" style={ring(color)} /> : null}
++    </>
++  );
+   // "Swap n" and #swap-n read one sequence: the swap's place in time order (addendum R4(a); BA-47).
+   const anchor = swapAnchor(ordinal - 1);
+   return (
+@@ -271,23 +311,27 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
+         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+             <span style={{ ...eyebrow, color: C.ink2 }}>{COPY.fork}</span>
+-            {valued && hypothetical ? <span data-hypothetical="" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><StateTag color={C.gold}>{COPY.hypothetical}</StateTag><TapeNum doc={tape} path={later} fmt={fmtCount} size={10.5} weight={600} /><span style={mono(9.5, C.ink3)}>{COPY.laterTrades}</span></span> : null}
++            {drawn && hypothetical ? <span data-hypothetical="" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><StateTag color={C.gold}>{COPY.hypothetical}</StateTag><TapeNum doc={tape} path={later} fmt={fmtCount} size={10.5} weight={600} /><span style={mono(9.5, C.ink3)}>{COPY.laterTrades}</span></span> : null}
+           </div>
+-          {valued ? (
++          {drawn ? (
+             <>
+-              <div style={{ paddingBottom: 14 }}><ForkChart tape={tape} index={index} ends={ends} /></div>
++              <div style={{ paddingBottom: 14 }}><ForkChart tape={tape} index={index} geo={geo} ends={ends} /></div>
+               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'center' }}>
+-                <span data-path-label="hold" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+-                  <svg width="20" height="6" aria-hidden="true"><line x1="0" x2="20" y1="3" y2="3" style={{ stroke: C.ink2, strokeWidth: 1.6, strokeDasharray: '5 3' }} /></svg>
+-                  <span style={mono(9.5, C.ink2)}>{COPY.holdPath} · <Rec>{COPY.heldLine(a.symbolOut)}</Rec>{hypothetical ? ` · ${COPY.hypothetical}` : ''}</span>
+-                  {holdEnd && !beside ? <TapeNum doc={tape} path={holdEnd} size={12} /> : null}
+-                </span>
+-                <span data-path-label="swap" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+-                  <svg width="20" height="6" aria-hidden="true"><line x1="0" x2="20" y1="3" y2="3" style={{ stroke: C.teal, strokeWidth: 1.6, strokeDasharray: '5 3' }} /></svg>
+-                  <span style={mono(9.5, C.ink2)}>{COPY.swapPath} · <Rec>{COPY.boughtLine(a.symbolIn)}</Rec>{hypothetical ? ` · ${COPY.hypothetical}` : ''}</span>
+-                  {swapEnd && !beside ? <TapeNum doc={tape} path={swapEnd} size={12} /> : null}
+-                </span>
+-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={mono(9.5, C.ink3)}>{COPY.rebuiltDashed}</span><KindMark cls="rebuilt" /></span>
++                {geo.hold.drawn ? (
++                  <span data-path-label="hold" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
++                    {swatch(geo.hold, C.ink2)}
++                    <span style={mono(9.5, C.ink2)}>{COPY.holdPath} · <Rec>{COPY.heldLine(a.symbolOut)}</Rec>{hypothetical ? ` · ${COPY.hypothetical}` : ''}</span>
++                    {holdEnd && !beside ? <TapeNum doc={tape} path={holdEnd} size={12} /> : null}
++                  </span>
++                ) : null}
++                {geo.swap.drawn ? (
++                  <span data-path-label="swap" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
++                    {swatch(geo.swap, C.teal)}
++                    <span style={mono(9.5, C.ink2)}>{COPY.swapPath} · <Rec>{COPY.boughtLine(a.symbolIn)}</Rec>{hypothetical ? ` · ${COPY.hypothetical}` : ''}</span>
++                    {swapEnd && !beside ? <TapeNum doc={tape} path={swapEnd} size={12} /> : null}
++                  </span>
++                ) : null}
++                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={mono(9.5, C.ink3)}>{legend}</span><KindMark cls="rebuilt" /></span>
+               </div>
+               <div data-result-row="gap" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                 <span style={mono(10.5, C.ink2)}>{COPY.gap}</span>
+@@ -302,7 +346,8 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
+               {r.note ? <span style={foot}><StoredNote doc={tape} path={['actions', index, 'replay', 'note']} /></span> : null}
+             </>
+           ) : r ? (
+-            // written, with no point that has a value: its own stored reasons — the missing inputs, a version note — and no fork, lines or sentence
++            // written, and drawing nothing (no value, or none at a recorded instant): its own stored reasons — the missing
++            // inputs, a version note — and no fork, labels, legend, values or sentence (Astra F1)
+             <span data-replay-none="not-drawn" style={foot}>
+               {COPY.replayNotDrawn}
+               {Array.isArray(r.missingInputs) && r.missingInputs.length ? <> · <MissingInputs doc={tape} path={['actions', index, 'replay', 'missingInputs']} /></> : null}
+@@ -313,9 +358,9 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
+               {COPY.replayNone}{crypto ? <> · {COPY.replayCrypto}</> : dayNote ? <> · <StoredNote doc={tape} path={['coverage', 'replay', 'note']} /></> : <> · {COPY.replayNoneSeeCoverage}</>}
+             </span>
+           )}
+-          {/* R11: the sentence only BESIDE A DRAWN REPLAY — the replay's own stored label, verbatim and bound by its path
+-              (R1, R9, Astra B2), else the screen's own R9 sentence. A card with no written replay says why in its line
+-              above, alone; a replay that draws nothing carries no sentence either. */}
++          {/* R11: the sentence only BESIDE A DRAWN REPLAY — visible geometry, a segment or a point (Astra F1) — the replay's
++              own stored label, verbatim and bound by its path (R1, R9, Astra B2), else the screen's own R9 sentence. A card
++              with no written replay says why in its line above, alone; a replay that draws nothing carries no sentence either. */}
+           {drawn ? <span data-replay-sentence="" style={foot}>{r.label ? <StoredNote doc={tape} path={['actions', index, 'replay', 'label']} /> : REPLAY_SENTENCE}</span> : null}
+         </div>
+         <SplitRows tape={tape} index={index} a={a} />
+diff --git a/src/screens/filmRoomV2/FilmRoomStudy.replay.writer.jsdom.test.jsx b/src/screens/filmRoomV2/FilmRoomStudy.replay.writer.jsdom.test.jsx
+index 9565d572..86c411f5 100644
+--- a/src/screens/filmRoomV2/FilmRoomStudy.replay.writer.jsdom.test.jsx
++++ b/src/screens/filmRoomV2/FilmRoomStudy.replay.writer.jsdom.test.jsx
+@@ -19,6 +19,10 @@
+ //       no sentence beside it.
+ // A written replay without a stored label shows the screen's R9 sentence
+ // (FilmRoomStudy.jsdom.test.jsx; the writer always stores one).
++// Astra F1 (the last block): DRAWN means visible geometry. Sparse bars leave
++// isolated samples — each drawn as a ring at its own place, never joined
++// across the gap — and the sentence, each path's label and the legend follow
++// what was emitted, path by path; a path that emits nothing has no label.
+ //
+ // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the REAL passes, never mocked;
+ // only the writer flag is mocked on (spreading the real module).
+@@ -31,6 +35,7 @@ vi.mock('../../config/featureFlags.js', async (importOriginal) => ({
+   get FILM_TAPE_WRITE_ENABLED() { return true; },
+ }));
+
++import { createHash } from 'node:crypto';
+ import FilmRoomStudy from './FilmRoomStudy';
+ import { REPLAY_SENTENCE } from './filmRoomCopy';
+ import { sep23Day, sep23Bars, buildTapeDay, SEP23_NIGHT, SEP23_MORNING } from '../../../api/_utils/filmTape/__fixtures__/screenFixtures.js';
+@@ -95,6 +100,14 @@ async function grownDay(secondNight) {
+   return t.store.get(`agentBattles/${full.battleId}/tape/${full.etDate}`);
+ }
+
++/** The Sep-23 bars with the named symbols' 1-minute bars cut to the minutes STARTING at the given instants. */
++const LAST_MINUTE = '2026-09-23T19:59:00Z';   // the session's last minute: its bar is the close's sample
++function sparseBars(keep) {
++  const bars = sep23Bars();
++  for (const [sym, starts] of Object.entries(keep)) bars[sym] = bars[sym].filter((row) => starts.some((s) => row.timestamp * 1000 === Date.parse(s)));
++  return bars;
++}
++
+ const OUTSIDE_NIGHT = Date.parse('2026-10-20T02:15:30.000Z');   // four weeks on: the Sep-23 day is outside the candle window
+ const days = {};
+ beforeAll(async () => {
+@@ -117,6 +130,16 @@ beforeAll(async () => {
+   delete bars.MSFT;
+   delete bars.CRWD;   // swap 1's two legs: the candle pass writes their replay with nothing to draw
+   days.undrawn = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars })).tape;
++  // Astra F1's repro: swap 1's two legs keep only the minute that starts at 3:59 PM ET — isolated samples, no segment
++  days.points = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ MSFT: [LAST_MINUTE], CRWD: [LAST_MINUTE] }) })).tape;
++  // the sold leg without bars, the bought leg sparse: the hold path emits nothing, the swap path only points
++  const pointsOneLeg = sparseBars({ CRWD: [LAST_MINUTE] });
++  delete pointsOneLeg.MSFT;
++  days.pointsOneLeg = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: pointsOneLeg })).tape;
++  // the sold leg's only bar the session's first minute: every sample after the swap is stale — a hold path of nulls
++  days.holdStale = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ MSFT: ['2026-09-23T13:30:00Z'] }) })).tape;
++  // the bought leg's bars before the two checks after the swap, and the close's: a segment and an isolated point on one path
++  days.mixed = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ CRWD: ['2026-09-23T16:59:00Z', '2026-09-23T17:14:00Z', LAST_MINUTE] }) })).tape;
+ });
+
+ const mount = (tape, desktop = false) => m.render(<FilmRoomStudy tape={tape} desktop={desktop} selected={null} onSelect={() => {}} onDeep={() => {}} jump={() => {}} />);
+@@ -269,3 +292,173 @@ describe('R11 — the replay sentence only beside a drawn replay (writer to scre
+     }
+   });
+ });
++
++// ── Astra F1: drawn means visible geometry ──────────────────────────────────
++
++/**
++ * The oracle, from the STORED paths alone (never the screen's helpers): a sample is placeable when it has a value at a
++ * recorded instant; a run of placeable samples with two or more is a segment, a run of one an isolated sample. Its
++ * place on the fork: the fork's documented scale (the swap to the close across 0–100 %, the values padded by 15 %).
++ */
++const placeable = (p) => Number.isFinite(p?.points) && Number.isFinite(Date.parse(p?.at));
++function runsOf(list) {
++  const out = []; let run = null;
++  for (const p of Array.isArray(list) ? list : []) { if (!placeable(p)) { run = null; continue; } if (!run) { run = []; out.push(run); } run.push(p); }
++  return out;
++}
++const isolatedOf = (list) => runsOf(list).filter((r) => r.length === 1).map((r) => r[0]);
++const segmentsOf = (list) => runsOf(list).filter((r) => r.length > 1);
++function placeOf(replay) {
++  const all = [...(replay.holdPath || []), ...(replay.swapPath || [])];
++  const ts = all.map((p) => Date.parse(p.at)).filter(Number.isFinite);
++  const vs = all.map((p) => p.points).filter(Number.isFinite);
++  const [t0, t1] = [Math.min(...ts), Math.max(...ts)];
++  const span = Math.max(2, Math.max(...vs) - Math.min(...vs));
++  const [lo, hi] = [Math.min(...vs) - span * 0.15, Math.max(...vs) + span * 0.15];
++  return { xPct: (at) => ((Date.parse(at) - t0) / Math.max(1, t1 - t0)) * 100, y: (v) => 8 + ((hi - v) / (hi - lo)) * (112 - 16) };
++}
++/** A glyph's centre as the page places it: `left: calc(X% - r px)`, `top: y - r`. */
++const glyphAt = (g) => ({ xPct: Number(g.style.left.match(/^calc\(([\d.]+)% - 3\.5px\)$/)[1]), y: parseFloat(g.style.top) + 3.5 });
++const LEGENDS = ['dashed · rebuilt from 1-minute bars', 'points · rebuilt from 1-minute bars', 'dashed lines and points · rebuilt from 1-minute bars'];
++/** The card's legend line: the words beside the fork's own rebuilt marker (the one outside every marked number). */
++const legendOf = (c) => { const k = [...c.querySelectorAll('[data-kind-mark="rebuilt"]')].filter((x) => !x.closest('[data-num]')); return k.length === 1 ? k[0].previousElementSibling.textContent : `${k.length} legends`; };
++/** Every replay word a card can carry — none may stand where nothing is drawn. */
++const REPLAY_WORDS = ['Hold path', 'Swap path', 'dashed', 'points · rebuilt', 'hypothetical through the day', REPLAY_SENTENCE];
++
++describe('Astra F1 — a replay is drawn only when it emits visible geometry: a dashed segment, or a ring at an isolated sample', () => {
++  it('Astra\'s repro (swap 1\'s legs cut to the 3:59 PM minute, the real passes): a ring at every isolated sample, where it lies; nothing joined; the sentence, both labels and a points legend', () => {
++    const tape = days.points;
++    const k = tape.actions.findIndex((a) => a.symbolOut === 'MSFT');
++    const r = tape.actions[k].replay;
++    // the stored replay: isolated samples only — the hold path's close, the swap path's sale and close
++    expect([isolatedOf(r.holdPath).length, isolatedOf(r.swapPath).length, segmentsOf(r.holdPath).length, segmentsOf(r.swapPath).length]).toEqual([1, 2, 0, 0]);
++    const place = placeOf(r);
++    for (const desktop of [false, true]) {
++      const w = desktop ? 'desktop' : 'phone';
++      mount(tape, desktop);
++      const c = card(k);
++      // no segment is emitted, and none is fabricated across the gaps
++      expect(c.querySelector('[data-line]'), w).toBeNull();
++      for (const [leg, list] of [['hold', r.holdPath], ['swap', r.swapPath]]) {
++        const glyphs = [...c.querySelectorAll(`[data-fork-point="${leg}"]`)];
++        const want = isolatedOf(list);
++        expect(glyphs, `${w} ${leg}`).toHaveLength(want.length);
++        glyphs.forEach((g, j) => {
++          const at = glyphAt(g);
++          expect(Math.abs(at.xPct - place.xPct(want[j].at)), `${w} ${leg} ${j} x`).toBeLessThan(0.02);
++          expect(Math.abs(at.y - place.y(want[j].points)), `${w} ${leg} ${j} y`).toBeLessThan(0.06);
++          // a visible mark: a 7 px ring with a solid stroke, inside the fork's own region
++          expect([g.style.width, g.style.height, g.style.borderStyle || g.style.border.split(' ')[1]], `${w} ${leg} ${j}`).toEqual(['7px', '7px', 'solid']);
++          expect(g.closest(`[data-region="fork-${k}"]`)).toBeTruthy();
++          expect(g.getAttribute('aria-hidden')).toBe('true');
++        });
++      }
++      // one condition for everything: both paths drew, so both labels — each with a ring swatch, never a dashed one
++      for (const leg of ['hold', 'swap']) {
++        const label = c.querySelector(`[data-path-label="${leg}"]`);
++        expect(label, `${w} ${leg}`).toBeTruthy();
++        expect(label.querySelector('[data-swatch="point"]'), `${w} ${leg}`).toBeTruthy();
++        expect(label.querySelector('svg line'), `${w} ${leg}`).toBeNull();
++      }
++      expect(legendOf(c), w).toBe('points · rebuilt from 1-minute bars');
++      expect(c.textContent, w).not.toMatch(/dashed/);
++      expect(c.querySelector('[data-replay-sentence] [data-stored-note]').textContent, w).toBe(r.label);
++      expect(c.querySelector('[data-replay-none]'), w).toBeNull();
++      if (desktop) expect([...c.querySelectorAll('[data-fork-end]')].map((e) => e.getAttribute('data-fork-end'))).toEqual(['hold', 'swap']);
++      expect(swept(tape), w).toEqual(CLEAN);
++    }
++  });
++
++  it('a path that emits nothing has no label, no end value and no swatch — path by path (a sold leg without bars or with only stale ones, a bought leg without bars; and a swap path of nulls)', () => {
++    // The writer's swap path, when it exists, always opens at the sale with the points the sale banked — so a swap
++    // path that is a LIST and draws nothing is planted: every point of the full day's swap 1 nulled.
++    const swapNulls = JSON.parse(JSON.stringify(days.full));
++    for (const p of swapNulls.actions[0].replay.swapPath) p.points = null;
++    for (const [name, tape, silent] of [['pointsOneLeg', days.pointsOneLeg, 'hold'], ['oneLeg', days.oneLeg, 'hold'], ['holdStale', days.holdStale, 'hold'], ['otherLeg', days.otherLeg, 'swap'], ['swapNulls', swapNulls, 'swap']]) {
++      const k = tape.actions.findIndex((a) => a.symbolOut === 'MSFT');
++      const r = tape.actions[k].replay;
++      const live = silent === 'hold' ? 'swap' : 'hold';
++      if (['holdStale', 'swapNulls'].includes(name)) expect(r[`${silent}Path`].length, name).toBeGreaterThan(1);   // a list of samples…
++      expect(runsOf(r[`${silent}Path`]), name).toEqual([]);   // …none placeable: the silent path has no placeable sample
++      expect(runsOf(r[`${live}Path`]).length, name).toBeGreaterThan(0);
++      for (const desktop of [false, true]) {
++        const w = `${name} ${desktop ? 'desktop' : 'phone'}`;
++        mount(tape, desktop);
++        const c = card(k);
++        expect(c.querySelector(`[data-path-label="${silent}"]`), w).toBeNull();
++        expect(c.querySelector(`[data-line="${silent}"], [data-fork-point="${silent}"], [data-fork-end="${silent}"]`), w).toBeNull();
++        expect(c.textContent, w).not.toContain(silent === 'hold' ? 'Hold path' : 'Swap path');
++        expect(c.querySelector(`[data-path-label="${live}"]`) || c.querySelector(`[data-fork-end="${live}"]`), w).toBeTruthy();
++        expect(c.querySelector('[data-replay-sentence]'), w).toBeTruthy();
++        expect(swept(tape), w).toEqual(CLEAN);
++      }
++    }
++    // the sparse leg drew points only: its legend says so
++    mount(days.pointsOneLeg);
++    expect(legendOf(card(0))).toBe('points · rebuilt from 1-minute bars');
++  });
++
++  it('a path with a segment and an isolated sample: the dashed segment, the ring, both swatches, and a legend naming both', () => {
++    const tape = days.mixed;
++    const r = tape.actions[0].replay;
++    expect([segmentsOf(r.swapPath).length, isolatedOf(r.swapPath).length]).toEqual([1, 1]);   // the case is truly mixed
++    expect([segmentsOf(r.holdPath).length, isolatedOf(r.holdPath).length]).toEqual([1, 0]);
++    for (const desktop of [false, true]) {
++      mount(tape, desktop);
++      const c = card(0);
++      const d = c.querySelector('[data-line="swap"]').getAttribute('d');
++      expect(d.split('M')).toHaveLength(2);   // one subpath: the segment, never joined to the isolated close
++      expect(d.split('L')).toHaveLength(segmentsOf(r.swapPath)[0].length);
++      expect(c.querySelectorAll('[data-fork-point="swap"]')).toHaveLength(1);
++      expect(c.querySelectorAll('[data-fork-point="hold"]')).toHaveLength(0);
++      const swap = c.querySelector('[data-path-label="swap"]');
++      expect([Boolean(swap.querySelector('svg line')), Boolean(swap.querySelector('[data-swatch="point"]'))]).toEqual([true, true]);
++      const hold = c.querySelector('[data-path-label="hold"]');
++      expect([Boolean(hold.querySelector('svg line')), Boolean(hold.querySelector('[data-swatch="point"]'))]).toEqual([true, false]);
++      expect(legendOf(c)).toBe('dashed lines and points · rebuilt from 1-minute bars');
++      expect(swept(tape)).toEqual(CLEAN);
++    }
++  });
++
++  it('control: the full-candle day is unchanged — every fork path one dashed subpath, byte-identical to the renderer before the fix; no ring; the dashed legend', () => {
++    for (const desktop of [false, true]) {
++      mount(days.full, desktop);
++      const ds = cards().map((c) => `${c.querySelector('[data-line="hold"]').getAttribute('d')}|${c.querySelector('[data-line="swap"]').getAttribute('d')}`).join('\n');
++      for (const d of ds.split(/[\n|]/)) expect(d).toMatch(/^M[\d.]+ [\d.]+( L[\d.]+ [\d.]+)+$/);
++      // the SHA-256 of the three cards' paths as f931f339's renderer drew them (captured from that commit, both widths)
++      expect(createHash('sha256').update(ds).digest('hex')).toBe('e96b5f384aa0690b1dc44fe2fa47d581f5528facf002ec106ea189bf65099d94');
++      expect(m.q('[data-fork-point], [data-swatch]')).toBeNull();
++      for (const c of cards()) expect(legendOf(c)).toBe('dashed · rebuilt from 1-minute bars');
++    }
++  });
++
++  it('control: a replay with no value keeps the no-drawn treatment — no ring, no legend, no label', () => {
++    const tape = days.undrawn;
++    const k = tape.actions.findIndex((a) => a.symbolOut === 'MSFT');
++    for (const desktop of [false, true]) {
++      mount(tape, desktop);
++      const c = card(k);
++      expect(c.querySelector('[data-replay-none="not-drawn"]').textContent.startsWith('No replay drawn for this swap')).toBe(true);
++      expect(c.querySelector('[data-fork-point], [data-swatch], [data-line], [data-path-label], [data-fork-end]')).toBeNull();
++      for (const words of [...REPLAY_WORDS, ...LEGENDS]) expect(c.textContent).not.toContain(words);
++    }
++  });
++
++  it('a replay with values whose scale exists but which emits nothing (each value\'s own instant unrecorded, its neighbours\' recorded): the no-drawn treatment — never the sentence, a label, the legend or the hypothetical tag', () => {
++    const tape = JSON.parse(JSON.stringify(days.full));
++    const a = tape.actions[0];
++    a.subsequentTradesInSlot = 1;   // a hypothetical replay — its tag, too, only beside a drawn one
++    for (const list of [a.replay.holdPath, a.replay.swapPath]) list.forEach((p, j) => { if (j === 1) p.at = null; else p.points = null; });
++    expect([...a.replay.holdPath, ...a.replay.swapPath].filter((p) => Number.isFinite(p.points))).toHaveLength(2);   // values remain…
++    expect(runsOf(a.replay.holdPath).concat(runsOf(a.replay.swapPath))).toEqual([]);   // …none placeable
++    for (const desktop of [false, true]) {
++      mount(tape, desktop);
++      const c = card(0);
++      expect(c.querySelector('[data-replay-none="not-drawn"]').textContent).toBe('No replay drawn for this swap');
++      expect(c.querySelector('[data-replay-sentence], [data-hypothetical], [data-fork-row], [data-path-label], [data-result-row="gap"]')).toBeNull();
++      for (const words of [...REPLAY_WORDS, ...LEGENDS]) expect(c.textContent).not.toContain(words);
++      expect(card(1).querySelector('[data-replay-sentence]')).toBeTruthy();   // the other cards keep theirs
++      expect(swept(tape)).toEqual(CLEAN);
++    }
++  });
++});
+diff --git a/src/screens/filmRoomV2/filmRoomCopy.inventory.jsdom.test.jsx b/src/screens/filmRoomV2/filmRoomCopy.inventory.jsdom.test.jsx
+index 6a8adb82..737ca852 100644
+--- a/src/screens/filmRoomV2/filmRoomCopy.inventory.jsdom.test.jsx
++++ b/src/screens/filmRoomV2/filmRoomCopy.inventory.jsdom.test.jsx
+@@ -58,7 +58,7 @@ const COPY_KEYS = [
+   'yes', 'no', 'notRecorded', 'close',
+   'jumps[0][0]', 'jumps[0][1]', 'jumps[1][0]', 'jumps[1][1]', 'jumps[2][0]', 'jumps[2][1]', 'jumps[3][0]', 'jumps[3][1]', 'jumps[4][0]', 'jumps[4][1]', 'jumps[5][0]', 'jumps[5][1]',
+   'holdings', 'holdingsStart', 'holdingsEnd', 'holdingsAt()', 'swapByMaker.agent', 'swapByMaker.platform', 'swapByMaker.other', 'swapMakerNote', 'tapForDeep',
+-  'swaps', 'swapsNone', 'swapWord', 'slot', 'banked', 'platformQuote', 'fork', 'holdPath', 'swapPath', 'heldLine()', 'boughtLine()', 'rebuiltDashed', 'hypothetical', 'laterTrades',
++  'swaps', 'swapsNone', 'swapWord', 'slot', 'banked', 'platformQuote', 'fork', 'holdPath', 'swapPath', 'heldLine()', 'boughtLine()', 'rebuiltDashed', 'rebuiltPoints', 'rebuiltDashedPoints', 'hypothetical', 'laterTrades',
+   'gap', 'gapNote', 'closedLeg', 'closedLegNote', 'replayNone', 'replayNotDrawn', 'replayNoneSeeCoverage', 'replayCrypto', 'split',
+   'splitRows.recordedExit()', 'splitRows.barAtSwap', 'splitRows.barMinusExit', 'splitRows.rescored', 'splitRows.inputsPart', 'splitRows.pricePart', 'barClosedAt()',
+   'fill', 'fillRows.recordedFill()', 'fillRows.barAtSwap', 'fillRows.barMinusFill', 'missingLabel', 'deepDoor()',
+@@ -183,9 +183,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy,
+     }
+   });
+
+-  it('the inventory\'s size is pinned (the build report states it): 237 copy keys, 345 swept entries', () => {
+-    expect(COPY_KEYS).toHaveLength(237);
+-    expect(inventory()).toHaveLength(345);
++  it('the inventory\'s size is pinned (the build report states it): 239 copy keys, 347 swept entries', () => {
++    expect(COPY_KEYS).toHaveLength(239);   // Astra F1: the two point legends (237 before)
++    expect(inventory()).toHaveLength(347);
+   });
+
+   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {
+diff --git a/src/screens/filmRoomV2/filmRoomCopy.js b/src/screens/filmRoomV2/filmRoomCopy.js
+index 6cacdb6e..09c09142 100644
+--- a/src/screens/filmRoomV2/filmRoomCopy.js
++++ b/src/screens/filmRoomV2/filmRoomCopy.js
+@@ -143,7 +143,9 @@ export const FILM_ROOM_COPY = Object.freeze({
+   swapPath: 'Swap path',
+   heldLine: (sym) => `${sym} held`,
+   boughtLine: (sym) => `${sym} bought`,
+-  rebuiltDashed: 'dashed · rebuilt from 1-minute bars',
++  rebuiltDashed: 'dashed · rebuilt from 1-minute bars',   // the legend beside drawn segments only (Astra F1)
++  rebuiltPoints: 'points · rebuilt from 1-minute bars',   // beside isolated points only: no segment is drawn
++  rebuiltDashedPoints: 'dashed lines and points · rebuilt from 1-minute bars',   // beside both
+   hypothetical: 'hypothetical',
+   laterTrades: 'later trades in this slot, not replayed',
+   gap: 'Gap',
+diff --git a/src/screens/filmRoomV2/filmRoomModel.js b/src/screens/filmRoomV2/filmRoomModel.js
+index ab588dc9..aab69126 100644
+--- a/src/screens/filmRoomV2/filmRoomModel.js
++++ b/src/screens/filmRoomV2/filmRoomModel.js
+@@ -417,6 +417,23 @@ export function lastPointPath(tape, actionIndex, pathKey) {
+   return ['actions', actionIndex, 'replay', pathKey, list.length - 1, 'points'];
+ }
+
++/**
++ * A replay path's RUNS (Astra F1): its samples in order, split wherever a sample has no value or no recorded
++ * instant — the only gaps a check-by-check path has (its samples are the checks', never a fixed bar step, so
++ * lineRuns' bucket rule does not apply). A run of one is an ISOLATED sample: no valid neighbour on either side.
++ * Nothing is joined across a gap.
++ */
++export function forkRuns(list) {
++  const runs = [];
++  let run = null;
++  for (const p of Array.isArray(list) ? list : []) {
++    if (!isNum(p?.points) || toMs(p?.at) === null) { run = null; continue; }
++    if (!run) { run = []; runs.push(run); }
++    run.push(p);
++  }
++  return runs;
++}
++
+ // ── holdings at the day's start and end (BA-45) ─────────────────────────────
+
+ /**
+diff --git a/src/screens/filmRoomV2/filmRoomModel.test.js b/src/screens/filmRoomV2/filmRoomModel.test.js
+index 2eaeacbd..f85004bd 100644
+--- a/src/screens/filmRoomV2/filmRoomModel.test.js
++++ b/src/screens/filmRoomV2/filmRoomModel.test.js
+@@ -11,7 +11,7 @@ import {
+   valueAt, classAt, numberAt, checkStateOf, checkRuns, riskLines, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, deriveHoldings,
+   directiveCardOf, rationaleTimeline, planGroups, evidenceMarkers, roleOf, deepSymbols, extremeBars, lastPointPath,
+   fmtPoints, fmtPrice, fmtPriceDelta, etClock, etDateLabel, isRecordedScore, SCREEN_AGGREGATE_CLASSES, checkCounts,
+-  fmtPercent, seriesFacts, pctTicks, tradingTimeline, lineRuns, linePath,
++  fmtPercent, seriesFacts, pctTicks, tradingTimeline, lineRuns, linePath, forkRuns,
+ } from './filmRoomModel';
+ import sep23Series from './__fixtures__/sep23.series.json';
+ import { SPEC_AGGREGATE_CLASSES } from './__fixtures__/filmRoomHarness';
+@@ -294,6 +294,16 @@ describe('A2A2-3 — a line\'s runs break at a missing bucket', () => {
+   });
+ });
+
++describe('Astra F1 — a replay path\'s runs break only where a sample has no value or no instant', () => {
++  const at = (min) => new Date(Date.parse('2026-09-23T16:45:00.000Z') + min * 60_000).toISOString();
++  it('consecutive placeable samples are one run, however far apart in time; a null value or an unrecorded instant starts another', () => {
++    expect(forkRuns([{ at: at(0), points: -13 }, { at: at(15), points: -12 }, { at: at(90), points: -9 }]).map((r) => r.length)).toEqual([3]);
++    expect(forkRuns([{ at: at(0), points: -13 }, { at: at(15), points: null }, { at: at(30), points: -9 }, { at: null, points: -8 }, { at: at(60), points: -7 }, { at: at(75), points: -6 }]).map((r) => r.map((p) => p.points))).toEqual([[-13], [-9], [-7, -6]]);
++    expect(forkRuns([{ at: 'not a time', points: 1 }, { at: at(0), points: Number.NaN }])).toEqual([]);
++    expect([forkRuns([]), forkRuns(null), forkRuns(undefined)]).toEqual([[], [], []]);
++  });
++});
++
+ describe('formats (display only; the value is the tape\'s)', () => {
+   it('points, prices, deltas, ET clock and dates', () => {
+     expect([fmtPoints(9), fmtPoints(-13), fmtPoints(0), fmtPoints(1.5), fmtPoints(null)]).toEqual(['+9', '−13', '0', '+1.5', '—']);
+```
+
+#### `8ad2950a` — B5 — a heading inside bound text leaves no exemption
+
+```diff
+diff --git a/src/screens/filmRoomV2/FilmRoomSweeps.guards.jsdom.test.jsx b/src/screens/filmRoomV2/FilmRoomSweeps.guards.jsdom.test.jsx
+index fbb11d49..4627581a 100644
+--- a/src/screens/filmRoomV2/FilmRoomSweeps.guards.jsdom.test.jsx
++++ b/src/screens/filmRoomV2/FilmRoomSweeps.guards.jsdom.test.jsx
+@@ -14,6 +14,10 @@
+ //       bound to an R1 / R9 path whose text is the value stored there — never
+ //       a string found anywhere in the document; the forbidden-word scan stays
+ //       on stored notes
++//   B5  (Astra's follow-up review §3) a heading anywhere on an exempt text's
++//       ancestry — around the bound element or inside it — leaves no
++//       exemption: the quotation's (R7), the stored note's (R1 / R9) and the
++//       agent's name's (R13)
+ // A guard that cannot fail guards nothing: every exemption row has its bite.
+
+ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+@@ -210,3 +214,87 @@ describe('Astra B1 — a quotation inside a heading is the screen\'s voice: neit
+     expect(quoteDefects(m.container, docs)).toEqual([]);
+   });
+ });
++
++describe('Astra B5 — a heading INSIDE the bound element is the screen\'s voice too: no exemption stands, for a quotation, a stored note or the agent\'s name', () => {
++  const said = (words) => { const t = clone(sep23Tape); t.rationale[0].rationale = words; return t; };
++  const noted = (note) => { const t = clone(sep23Tape); t.coverage.checks.note = note; return t; };
++  const named = { battle: { agentContext: { agentName: 'best one 73' } } };
++  // every heading form, as a wrapper placed INSIDE the bound element, around its text
++  const INSIDE = [...['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].map((h) => [h, (s) => `<${h}>${s}</${h}>`]), ['role="heading"', (s) => `<span role="heading" aria-level="2">${s}</span>`]];
++  /** A rendered quotation of the stored words, its quoted text then wrapped from the inside (the DOM the guard must see through). */
++  const quotedWith = (tape, wrap) => {
++    m.render(<Quotation doc={tape} path={['rationale', 0, 'rationale']} by="agent" at={['rationale', 0, 'at']} />);
++    const q = m.q('[data-quote-path]');
++    q.innerHTML = wrap(q.textContent);
++    return q;
++  };
++
++  it('Astra\'s repro: "best one 73" in an h2 nested inside the element carrying data-quote-path — every sweep sees the words, the validator names the heading', () => {
++    const tape = said('best one 73');
++    const q = quotedWith(tape, (s) => `<h2>${s}</h2>`);
++    const docs = { tape };
++    expect(q.textContent).toBe('best one 73');   // the text still equals the stored value, byte for byte
++    expect(sweepWords(m.container, docs)).toEqual(['best', 'number word “one”: best one 73']);
++    expect(sweepNumbers(m.container, docs)).toEqual(['stray digit: “best one 73”']);
++    expect(quoteDefects(m.container, docs)).toEqual(['rationale[0].rationale: a heading inside it']);
++    expect(boundQuotationOf(q.querySelector('h2').firstChild, docs)).toBeNull();
++  });
++
++  it('Astra\'s repro: the same inside data-agent-name — swept, and a defect', () => {
++    const el = box('<div><span data-agent-name="agentContext.agentName" data-agent-name-doc="battle"><h2>best one 73</h2></span></div>');
++    expect(el.querySelector('[data-agent-name]').textContent).toBe('best one 73');
++    expect(sweepWords(el, named)).toEqual(['best', 'number word “one”: best one 73']);
++    expect(sweepNumbers(el, named)).toEqual(['stray digit: “best one 73”']);
++    expect(agentNameDefects(el, named)).toEqual(['agent name “best one 73”: a heading inside it']);
++    expect(boundAgentNameOf(el.querySelector('h2').firstChild, named)).toBeNull();
++  });
++
++  it('every heading form inside each bound element (h1–h6, role="heading"): the quotation, the stored note and the name all lose their exemption', () => {
++    for (const [form, wrap] of INSIDE) {
++      const tape = said('best one 73');
++      quotedWith(tape, wrap);
++      expect(quoteDefects(m.container, { tape }), `quotation ${form}`).toEqual(['rationale[0].rationale: a heading inside it']);
++      expect(sweepNumbers(m.container, { tape }), `quotation ${form}`).toEqual(['stray digit: “best one 73”']);
++      expect(sweepWords(m.container, { tape }), `quotation ${form}`).toEqual(['best', 'number word “one”: best one 73']);
++
++      const noteTape = noted('one 73');
++      const note = box(`<div><span data-stored-note="coverage.checks.note">${wrap('one 73')}</span></div>`);
++      expect(storedNoteDefects(note, { tape: noteTape }), `stored note ${form}`).toEqual(['coverage.checks.note: a heading inside it']);
++      expect(sweepNumbers(note, { tape: noteTape }), `stored note ${form}`).toEqual(['stray digit: “one 73”']);
++      expect(sweepWords(note, { tape: noteTape }), `stored note ${form}`).toEqual(['number word “one”: one 73']);
++      expect(boundStoredNoteOf(note.querySelector('[data-stored-note]').firstChild.firstChild, { tape: noteTape }), `stored note ${form}`).toBeNull();
++
++      const name = box(`<div><span data-agent-name="agentContext.agentName" data-agent-name-doc="battle">${wrap('best one 73')}</span></div>`);
++      expect(agentNameDefects(name, named), `name ${form}`).toEqual(['agent name “best one 73”: a heading inside it']);
++      expect(sweepNumbers(name, named), `name ${form}`).toEqual(['stray digit: “best one 73”']);
++      expect(sweepWords(name, named), `name ${form}`).toEqual(['best', 'number word “one”: best one 73']);
++    }
++  });
++
++  it('a stored note under a heading (B1\'s rule, now for stored notes too): every heading form around it is the screen\'s voice', () => {
++    const tape = noted('one 73');
++    for (const [form, wrap] of INSIDE) {
++      const el = box(`<div>${wrap('<span data-stored-note="coverage.checks.note">one 73</span>')}</div>`);
++      expect(storedNoteDefects(el, { tape }), form).toEqual(['coverage.checks.note: inside a heading']);
++      expect(sweepNumbers(el, { tape }), form).toEqual(['stray digit: “one 73”']);
++      expect(sweepWords(el, { tape }), form).toEqual(['number word “one”: one 73']);
++    }
++  });
++
++  it('the controls: an element inside the bound text that is NOT a heading (a span, an emphasis, a role other than heading) keeps each exemption — exempt and valid', () => {
++    const plain = [['span', (s) => `<span>${s}</span>`], ['em', (s) => `<em>${s}</em>`], ['role="note"', (s) => `<span role="note">${s}</span>`]];
++    for (const [form, wrap] of plain) {
++      const tape = said('one 73');
++      quotedWith(tape, wrap);
++      expect([quoteDefects(m.container, { tape }), sweepNumbers(m.container, { tape }), sweepWords(m.container, { tape })], `quotation ${form}`).toEqual([[], [], []]);
++
++      const noteTape = noted('one 73');
++      const note = box(`<div><span data-stored-note="coverage.checks.note">${wrap('one 73')}</span></div>`);
++      expect([storedNoteDefects(note, { tape: noteTape }), sweepNumbers(note, { tape: noteTape }), sweepWords(note, { tape: noteTape })], `stored note ${form}`).toEqual([[], [], []]);
++
++      const docs = { battle: { agentContext: { agentName: 'Twelve 47' } } };
++      const name = box(`<div><span data-agent-name="agentContext.agentName" data-agent-name-doc="battle">${wrap('Twelve 47')}</span></div>`);
++      expect([agentNameDefects(name, docs), sweepNumbers(name, docs), sweepWords(name, docs)], `name ${form}`).toEqual([[], [], []]);
++    }
++  });
++});
+diff --git a/src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx b/src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx
+index c6290abf..54976751 100644
+--- a/src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx
++++ b/src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx
+@@ -137,14 +137,14 @@ function storedNoteTextOf(node, docs) {
+  * Amendment E addendum 4, R13 — the agent's name, PINNED HERE from the ruling: the stored display name at
+  * agentContext.agentName on the battle document. It is exempt from the sweeps — forbidden words and number words, and
+  * (as a bound quotation is, R7) digits — on its BINDING alone: an element carrying `data-agent-name` at exactly that
+- * path whose text equals, byte for byte, the value the battle document stores there — and never inside a heading (the
+- * screen's own voice; as B1 rules for a quotation — review A2F1-5).
++ * path whose text equals, byte for byte, the value the battle document stores there — and never inside a heading or
++ * holding one (the screen's own voice; as B1 rules for a quotation — review A2F1-5, Astra B5).
+  */
+ export const SPEC_AGENT_NAME_PATH = 'agentContext.agentName';
+ export function boundAgentNameOf(node, docs = {}) {
+   const el = node?.nodeType === 1 ? node : node?.parentElement;
+   const n = el?.closest('[data-agent-name]');
+-  if (!n || n.getAttribute('data-agent-name') !== SPEC_AGENT_NAME_PATH || n.closest(HEADINGS)) return null;
++  if (!n || n.getAttribute('data-agent-name') !== SPEC_AGENT_NAME_PATH || headingAt(n)) return null;
+   const doc = docs[n.getAttribute('data-agent-name-doc') || 'battle'];
+   const value = doc ? valueAt(doc, parsePath(SPEC_AGENT_NAME_PATH)) : undefined;
+   return typeof value === 'string' && value !== '' && n.textContent === value ? n : null;
+@@ -160,23 +160,30 @@ export function agentNameDefects(container, docs = {}) {
+   const names = [...container.querySelectorAll('[data-agent-name]')];
+   if (names.length > 1) bad.push(`agent name shown ${names.length} times`);
+   for (const n of names) {
+-    if (n.closest(HEADINGS)) bad.push(`agent name “${n.textContent}”: inside a heading`);
++    const heading = headingAt(n);
++    if (heading) bad.push(`agent name “${n.textContent}”: ${HEADING_DEFECT[heading]}`);
+     else if (!boundAgentNameOf(n, docs)) bad.push(`agent name “${n.textContent}”: not bound to ${SPEC_AGENT_NAME_PATH}`);
+   }
+   return bad;
+ }
+
+-/** B2 — the numbers of a stored note are exempt only when it is bound (above) AND its path is one R1 / R9 names. */
++/**
++ * B2 — the numbers of a stored note are exempt only when it is bound (above) AND its path is one R1 / R9 names, and
++ * no heading sits around it or inside it (Astra B5: a heading is the screen's voice, as for a quotation).
++ */
+ export function boundStoredNoteOf(node, docs = {}) {
+   const s = storedNoteTextOf(node, docs);
+-  return s && SPEC_STORED_NOTE_PATHS.some((re) => re.test(s.getAttribute('data-stored-note'))) ? s : null;
++  return s && SPEC_STORED_NOTE_PATHS.some((re) => re.test(s.getAttribute('data-stored-note'))) && !headingAt(s) ? s : null;
+ }
+
+-/** Every stored note whose text is not the value at its path — screen words inside it, or a forged path. */
++/** Every stored note whose text is not the value at its path — screen words inside it, or a forged path — or that a heading holds or sits in. */
+ export function storedNoteDefects(container, docs = {}) {
+   const bad = [];
+   for (const s of container.querySelectorAll('[data-stored-note]')) {
+-    if (!storedNoteTextOf(s, docs)) bad.push(`${s.getAttribute('data-stored-note')}: not bound — its text is not the stored value`);
++    const where = s.getAttribute('data-stored-note');
++    if (!storedNoteTextOf(s, docs)) bad.push(`${where}: not bound — its text is not the stored value`);
++    const heading = headingAt(s);
++    if (heading) bad.push(`${where}: ${HEADING_DEFECT[heading]}`);
+   }
+   return bad;
+ }
+@@ -466,10 +473,20 @@ function boundTextOf(node, docs) {
+  * names the right author and time is quoteDefects' check.
+  */
+ const HEADINGS = 'h1, h2, h3, h4, h5, h6, [role="heading"]';
++/**
++ * Astra B1, B5 — where a heading sits on an exempt text's ancestry: 'around' the bound element (it or an ancestor
++ * is one), 'inside' it (a heading in its subtree, between the element and its text), or null. Either way the words
++ * are the screen's voice, so no exemption stands: the quotation's (R7), the stored note's (R1 / R9), the name's (R13).
++ */
++function headingAt(el) {
++  if (el.closest(HEADINGS)) return 'around';
++  return el.querySelector(HEADINGS) ? 'inside' : null;
++}
++const HEADING_DEFECT = { around: 'inside a heading', inside: 'a heading inside it' };
+ export function boundQuotationOf(node, docs = {}) {
+   const q = boundTextOf(node, docs);
+   if (!q || !SPEC_QUOTE_CHANNELS.some((c) => c.re.test(q.getAttribute('data-quote-path')))) return null;
+-  if (q.closest(HEADINGS)) return null;
++  if (headingAt(q)) return null;
+   return [...q.parentElement.children].some((c) => c.hasAttribute('data-quote-attribution')) ? q : null;
+ }
+
+@@ -498,8 +515,9 @@ export function quoteDefects(container, docs = {}) {
+     const texts = [...root.children].filter((c) => c.hasAttribute('data-quote-path'));
+     if (texts.length !== 1) { bad.push(`a quotation with ${texts.length} quoted texts`); continue; }
+     const where = texts[0].getAttribute('data-quote-path');
+-    // Astra B1: a quotation never sits inside a heading — the heading is the screen's voice
+-    if (root.closest(HEADINGS)) { bad.push(`${where}: inside a heading`); continue; }
++    // Astra B1, B5: a quotation never sits inside a heading, nor holds one — the heading is the screen's voice
++    const heading = headingAt(texts[0]);
++    if (heading) { bad.push(`${where}: ${HEADING_DEFECT[heading]}`); continue; }
+     const channel = SPEC_QUOTE_CHANNELS.find((c) => c.re.test(where));
+     if (!channel) { bad.push(`${where}: not a recorded-words channel`); continue; }
+     const attr = [...root.children].find((c) => c.hasAttribute('data-quote-attribution'));
+```
+
+#### `ad6fbded` — review lenses A2G1 / A2G2 — rows for F1 and B5; a heading read by its role's tokens
+
+```diff
+diff --git a/src/screens/filmRoomV2/FilmRoomStudy.replay.writer.jsdom.test.jsx b/src/screens/filmRoomV2/FilmRoomStudy.replay.writer.jsdom.test.jsx
+index 86c411f5..50df98ad 100644
+--- a/src/screens/filmRoomV2/FilmRoomStudy.replay.writer.jsdom.test.jsx
++++ b/src/screens/filmRoomV2/FilmRoomStudy.replay.writer.jsdom.test.jsx
+@@ -37,6 +37,7 @@ vi.mock('../../config/featureFlags.js', async (importOriginal) => ({
+
+ import { createHash } from 'node:crypto';
+ import FilmRoomStudy from './FilmRoomStudy';
++import { C } from './FilmRoomKit';
+ import { REPLAY_SENTENCE } from './filmRoomCopy';
+ import { sep23Day, sep23Bars, buildTapeDay, SEP23_NIGHT, SEP23_MORNING } from '../../../api/_utils/filmTape/__fixtures__/screenFixtures.js';
+ import { seedDay, OWNER } from '../../../api/_utils/filmTape/__fixtures__/tapeFixtures.js';
+@@ -138,6 +139,11 @@ beforeAll(async () => {
+   days.pointsOneLeg = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: pointsOneLeg })).tape;
+   // the sold leg's only bar the session's first minute: every sample after the swap is stale — a hold path of nulls
+   days.holdStale = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ MSFT: ['2026-09-23T13:30:00Z'] }) })).tape;
++  // both legs' only bar the session's first minute: no sample after the sale is fresh — the swap path's opening sample
++  // (the banked points at the sale, tapeReplay.js composeLegs) is the replay's one placeable value (review A2G1-1)
++  days.saleOnly = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ MSFT: ['2026-09-23T13:30:00Z'], CRWD: ['2026-09-23T13:30:00Z'] }) })).tape;
++  // a slot traded twice, its swap 1 cut to the 3:59 PM minute: a hypothetical replay drawn as points only (review A2G1-4)
++  days.twicePoints = (await buildTapeDay(await slotTwiceDay(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ MSFT: [LAST_MINUTE], CRWD: [LAST_MINUTE] }) })).tape;
+   // the bought leg's bars before the two checks after the swap, and the close's: a segment and an isolated point on one path
+   days.mixed = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ CRWD: ['2026-09-23T16:59:00Z', '2026-09-23T17:14:00Z', LAST_MINUTE] }) })).tape;
+ });
+@@ -393,9 +399,79 @@ describe('Astra F1 — a replay is drawn only when it emits visible geometry: a
+         expect(swept(tape), w).toEqual(CLEAN);
+       }
+     }
+-    // the sparse leg drew points only: its legend says so
+-    mount(days.pointsOneLeg);
+-    expect(legendOf(card(0))).toBe('points · rebuilt from 1-minute bars');
++    // the legend reads what the drawn path drew, whichever path it is (review A2G1-4): the sparse leg's points; a full
++    // leg's dashed line — the swap path's alone, or the hold path's alone
++    for (const [tape, want] of [[days.pointsOneLeg, 'points · rebuilt from 1-minute bars'], [days.oneLeg, 'dashed · rebuilt from 1-minute bars'], [days.otherLeg, 'dashed · rebuilt from 1-minute bars']]) {
++      mount(tape);
++      expect(legendOf(card(0))).toBe(want);
++    }
++  });
++
++  it('review A2G1-4: each path in its own colour — its ring, its ring swatch and its dashed swatch (hold ink, swap teal)', () => {
++    const colour = { hold: C.ink2, swap: C.teal };
++    for (const tape of [days.points, days.mixed, days.full]) {
++      mount(tape);
++      const c = card(0);
++      for (const leg of ['hold', 'swap']) {
++        for (const g of c.querySelectorAll(`[data-fork-point="${leg}"]`)) expect(g.style.border, `${leg} ring`).toContain(colour[leg]);
++        const label = c.querySelector(`[data-path-label="${leg}"]`);
++        const ringSwatch = label.querySelector('[data-swatch="point"]');
++        if (ringSwatch) expect(ringSwatch.style.border, `${leg} ring swatch`).toContain(colour[leg]);
++        const dashSwatch = label.querySelector('svg line');
++        if (dashSwatch) expect(dashSwatch.style.stroke, `${leg} dashed swatch`).toBe(colour[leg]);
++        const line = c.querySelector(`[data-line="${leg}"]`);
++        if (line) expect(line.style.stroke, `${leg} line`).toBe(colour[leg]);
++      }
++    }
++  });
++
++  it('review A2G1-4: a slot traded twice whose replay is drawn as points only — the hypothetical tag and its count stand beside it', () => {
++    const tape = days.twicePoints;
++    const r = tape.actions[0].replay;
++    expect(tape.actions[0].subsequentTradesInSlot).toBe(1);
++    expect([segmentsOf(r.holdPath).length + segmentsOf(r.swapPath).length, isolatedOf(r.holdPath).length + isolatedOf(r.swapPath).length]).toEqual([0, 3]);
++    mount(tape);
++    expect(card(0).querySelectorAll('[data-fork-point]')).toHaveLength(3);
++    expect(card(0).querySelector('[data-hypothetical] [data-num]').getAttribute('data-num')).toBe('actions[0].subsequentTradesInSlot');
++    expect(swept(tape)).toEqual(CLEAN);
++  });
++
++  it('review A2G1-1: the swap path\'s opening sample alone (both legs stale after the sale) — as the founder\'s rule reads, a value at a recorded instant: one ring at the sale, the swap path\'s label alone, the points legend, the sentence (an open founder question, build report §10)', () => {
++    const tape = days.saleOnly;
++    const k = tape.actions.findIndex((a) => a.symbolOut === 'MSFT');
++    const r = tape.actions[k].replay;
++    expect(r.holdPath.length).toBeGreaterThan(1);
++    expect(runsOf(r.holdPath)).toEqual([]);   // the hold path: samples, none with a value
++    expect(runsOf(r.swapPath)).toEqual([[r.swapPath[0]]]);   // the swap path: its opening sample only…
++    expect([r.swapPath[0].at, r.swapPath[0].points]).toEqual([tape.actions[k].at, tape.actions[k].lockedPoints]);   // …the banked points at the sale
++    for (const desktop of [false, true]) {
++      const w = desktop ? 'desktop' : 'phone';
++      mount(tape, desktop);
++      const c = card(k);
++      expect(c.querySelector('[data-line]'), w).toBeNull();
++      const rings = [...c.querySelectorAll('[data-fork-point]')];
++      expect(rings.map((g) => [g.getAttribute('data-fork-point'), glyphAt(g).xPct]), w).toEqual([['swap', 0]]);   // at the sale: the fork's left edge
++      expect([Boolean(c.querySelector('[data-path-label="hold"]')), Boolean(c.querySelector('[data-path-label="swap"] [data-swatch="point"]'))], w).toEqual([false, true]);
++      expect(legendOf(c), w).toBe('points · rebuilt from 1-minute bars');
++      expect(c.querySelector('[data-replay-sentence] [data-stored-note]').textContent, w).toBe(r.label);
++      if (desktop) expect([...c.querySelectorAll('[data-fork-end]')].map((e) => e.getAttribute('data-fork-end'))).toEqual(['swap']);
++      expect(swept(tape), w).toEqual(CLEAN);
++    }
++  });
++
++  it('review A2G1-5: a run whose samples coincide (two at one instant, one value) is a ring, never a zero-length dashed segment', () => {
++    const tape = JSON.parse(JSON.stringify(days.full));
++    const hold = tape.actions[0].replay.holdPath;
++    hold.forEach((p, j) => { if (j !== 3 && j !== 4) p.points = null; });
++    hold[4].at = hold[3].at;
++    hold[4].points = hold[3].points;   // planted: the writer stamps each sample at its own check
++    expect(runsOf(hold).map((run) => run.length)).toEqual([2]);
++    mount(tape);
++    const c = card(0);
++    expect(c.querySelector('[data-line="hold"]')).toBeNull();
++    expect(c.querySelectorAll('[data-fork-point="hold"]')).toHaveLength(1);
++    expect(c.querySelector('[data-path-label="hold"] svg line')).toBeNull();
++    expect(legendOf(c)).toBe('dashed lines and points · rebuilt from 1-minute bars');   // the swap path's full line, and the hold ring
+   });
+
+   it('a path with a segment and an isolated sample: the dashed segment, the ring, both swatches, and a legend naming both', () => {
+diff --git a/src/screens/filmRoomV2/FilmRoomSweeps.guards.jsdom.test.jsx b/src/screens/filmRoomV2/FilmRoomSweeps.guards.jsdom.test.jsx
+index 4627581a..7faaa269 100644
+--- a/src/screens/filmRoomV2/FilmRoomSweeps.guards.jsdom.test.jsx
++++ b/src/screens/filmRoomV2/FilmRoomSweeps.guards.jsdom.test.jsx
+@@ -281,6 +281,54 @@ describe('Astra B5 — a heading INSIDE the bound element is the screen\'s voice
+     }
+   });
+
++  describe('review A2G2-1 / -2 / -3 — every structure that puts a heading on the text\'s path, for each of the three exemptions', () => {
++    const T = 'best one 73';
++    const docs = (() => { const t = clone(sep23Tape); t.rationale[0].rationale = T; t.coverage.checks.note = T; return { tape: t, battle: { agentContext: { agentName: T } } }; })();
++    // each bound element as a string (a div for the quotation's text: the HTML parser closes a <p> at an <h2>)
++    const QUOTE = (inner, tag = 'div') => `<div data-quotation="agent"><${tag} data-quote-path="rationale[0].rationale">${inner}</${tag}><span data-quote-attribution="">— the agent</span></div>`;
++    const NOTE = (inner, tag = 'span') => `<${tag} data-stored-note="coverage.checks.note">${inner}</${tag}>`;
++    const NAME = (inner, tag = 'span') => `<${tag} data-agent-name="agentContext.agentName" data-agent-name-doc="battle">${inner}</${tag}>`;
++    const KINDS = [['quotation', QUOTE, quoteDefects, 'rationale[0].rationale: '], ['stored note', NOTE, storedNoteDefects, 'coverage.checks.note: '], ['name', NAME, agentNameDefects, `agent name “${T}”: `]];
++    const ALL = ['best', 'number word “one”: best one 73'];
++
++    it.each(KINDS)('%s: a heading deeper than the first child (em > h2) — swept, and a defect', (_k, B, validator, prefix) => {
++      const el = box(`<div>${B(`<em><h2>${T}</h2></em>`)}</div>`);
++      expect(sweepNumbers(el, docs)).toEqual([`stray digit: “${T}”`]);
++      expect(validator(el, docs)).toEqual([`${prefix}a heading inside it`]);
++    });
++
++    it.each(KINDS)('%s: the bound element is itself the heading — swept, and a defect', (_k, B, validator, prefix) => {
++      const el = box(`<div>${B(T, 'h2')}</div>`);
++      expect(sweepNumbers(el, docs)).toEqual([`stray digit: “${T}”`]);
++      expect(sweepWords(el, docs)).toEqual(ALL);
++      expect(validator(el, docs)).toEqual([`${prefix}inside a heading`]);
++    });
++
++    it.each(KINDS)('%s: a heading over PART of the bound text costs the whole element its exemption — the words outside the heading are swept too', (_k, B, validator, prefix) => {
++      const el = box(`<div>${B('best <h2>one</h2> 73')}</div>`);
++      expect(el.querySelector('[data-quote-path], [data-stored-note], [data-agent-name]').textContent).toBe(T);   // still bound, byte for byte
++      expect(sweepNumbers(el, docs)).toEqual(['stray digit: “73”']);
++      expect(sweepWords(el, docs)).toEqual(['best', 'number word “one”: one']);   // the forbidden word too — no exemption covers it in a note either
++      expect(validator(el, docs)).toEqual([`${prefix}a heading inside it`]);
++    });
++
++    it.each(KINDS)('%s: role="heading" with no aria-level, inside and around', (_k, B, validator, prefix) => {
++      const inside = box(`<div>${B(`<span role="heading">${T}</span>`)}</div>`);
++      expect([sweepNumbers(inside, docs), validator(inside, docs)]).toEqual([[`stray digit: “${T}”`], [`${prefix}a heading inside it`]]);
++      const around = box(`<div role="heading">${B(T)}</div>`);
++      expect([sweepNumbers(around, docs), validator(around, docs)]).toEqual([[`stray digit: “${T}”`], [`${prefix}inside a heading`]]);
++    });
++
++    it.each(KINDS)('%s: role spelled as a browser still reads a heading — another case, spaces, a second token — inside and around', (_k, B, validator, prefix) => {
++      for (const role of ['Heading', 'HEADING', ' heading', 'heading ', 'heading presentation', 'heading\tnone', 'foo heading', 'presentation heading']) {
++        const inside = box(`<div>${B(`<span role="${role}" aria-level="2">${T}</span>`)}</div>`);
++        expect([sweepNumbers(inside, docs), validator(inside, docs)], `inside ${JSON.stringify(role)}`).toEqual([[`stray digit: “${T}”`], [`${prefix}a heading inside it`]]);
++        const around = box(`<div role="${role}" aria-level="2">${B(T)}</div>`);
++        expect([sweepNumbers(around, docs), validator(around, docs)], `around ${JSON.stringify(role)}`).toEqual([[`stray digit: “${T}”`], [`${prefix}inside a heading`]]);
++      }
++    });
++  });
++
+   it('the controls: an element inside the bound text that is NOT a heading (a span, an emphasis, a role other than heading) keeps each exemption — exempt and valid', () => {
+     const plain = [['span', (s) => `<span>${s}</span>`], ['em', (s) => `<em>${s}</em>`], ['role="note"', (s) => `<span role="note">${s}</span>`]];
+     for (const [form, wrap] of plain) {
+diff --git a/src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx b/src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx
+index 54976751..0b9c3bde 100644
+--- a/src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx
++++ b/src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx
+@@ -8,14 +8,17 @@
+ //                  and no digit appears outside a marked number, an instant, an
+ //                  #swap-n anchor or a stored note BOUND to an R1 / R9 path
+ //                  (Astra B2: by binding, never by a string match)
+-//   storedNoteDefects  every stored note's text is the value at its path
++//   storedNoteDefects  every stored note's text is the value at its path, and
++//                  no heading around it or inside it (Astra B5)
+ //   sweepWords     the screen's own voice — everything outside a bound
+ //                  quotation (Amendment E addendum 2, R7): no verdict, ranking
+ //                  or forbidden word; no "Why?" heading; no number spelled
+ //                  as a word outside a marked number (R8)
+ //   quoteDefects   R7's guard: every quotation bound to its tape path (text =
+ //                  the stored value), attributed as the record says, and never
+-//                  inside a heading (Astra B1)
++//                  inside a heading nor holding one (Astra B1, B5)
++// Every exemption — a bound quotation's, a stored note's, the agent's name's —
++// is lost to a heading anywhere on its text's ancestry (headingAt).
+ //   sweepSigns     sign colours on recorded scores only
+ // The fixtures are the A1 passes' own output (screenFixtures.test.js).
+
+@@ -151,7 +154,8 @@ export function boundAgentNameOf(node, docs = {}) {
+ }
+
+ /**
+- * R13's guard: the screen shows the name ONCE, bound to the stored name, outside any heading. (That it sits in no
++ * R13's guard: the screen shows the name ONCE, bound to the stored name, with no heading around it or inside it (Astra
++ * B5; headingAt). (That it sits in no
+  * attribute and in no other text is proved with a distinctive name in the screen suite — a substring scan for a real
+  * name would match the screen's own words: "Check", "Hold", "Deep" — review A2F1-4.)
+  */
+@@ -466,22 +470,31 @@ function boundTextOf(node, docs) {
+ }
+
+ /**
+- * R7's guard — what the sweeps exempt: an ATTRIBUTED quotation bound to a tape path. All of: bound (above), a path
+- * in the recorded-words channels, an attribution beside it (review A2A1-4: a bound quotation with no attribution,
+- * or of a path that holds no one's words, stays under the sweeps), and NO heading around it (Astra B1: a heading is
+- * the screen's own voice — recorded words inside one would read as the screen's title). Whether the attribution
+- * names the right author and time is quoteDefects' check.
++ * A heading, as a browser reads one: h1–h6, or an element whose role names `heading` among its tokens — in any case,
++ * with any spacing (review A2G2-1: `role="heading presentation"`, `" heading"` and `"Heading"` are headings in the
++ * accessibility tree). A token after another role (`"presentation heading"`) is counted too: stricter than a browser,
++ * never laxer, so the guard can only over-reject.
+  */
+-const HEADINGS = 'h1, h2, h3, h4, h5, h6, [role="heading"]';
++const isHeading = (el) => /^H[1-6]$/.test(el.tagName) || String(el.getAttribute('role') || '').trim().split(/\s+/).some((t) => t.toLowerCase() === 'heading');
+ /**
+- * Astra B1, B5 — where a heading sits on an exempt text's ancestry: 'around' the bound element (it or an ancestor
+- * is one), 'inside' it (a heading in its subtree, between the element and its text), or null. Either way the words
+- * are the screen's voice, so no exemption stands: the quotation's (R7), the stored note's (R1 / R9), the name's (R13).
++ * Astra B1, B5 — where a heading sits on an exempt text's ancestry: 'around' the bound element (it, or any ancestor,
++ * is one), 'inside' it (ANY heading in its subtree — between the element and its text, over part of the text, or an
++ * empty one beside it), or null. Either way the words are the screen's voice, so no exemption stands: the
++ * quotation's (R7), the stored note's (R1 / R9), the name's (R13). Decided for the bound element as a whole, never
++ * for one text node of it (review A2G2-2: a heading over one word costs the whole element its exemption).
+  */
+ function headingAt(el) {
+-  if (el.closest(HEADINGS)) return 'around';
+-  return el.querySelector(HEADINGS) ? 'inside' : null;
++  for (let e = el; e; e = e.parentElement) if (isHeading(e)) return 'around';
++  return [...el.querySelectorAll('*')].some(isHeading) ? 'inside' : null;
+ }
++
++/**
++ * R7's guard — what the sweeps exempt: an ATTRIBUTED quotation bound to a tape path. All of: bound (above), a path
++ * in the recorded-words channels, an attribution beside it (review A2A1-4: a bound quotation with no attribution,
++ * or of a path that holds no one's words, stays under the sweeps), and NO heading around it or inside it (Astra B1,
++ * B5: a heading is the screen's own voice — recorded words inside one would read as the screen's title; headingAt
++ * above). Whether the attribution names the right author and time is quoteDefects' check.
++ */
+ const HEADING_DEFECT = { around: 'inside a heading', inside: 'a heading inside it' };
+ export function boundQuotationOf(node, docs = {}) {
+   const q = boundTextOf(node, docs);
+```
+
+#### `f126fde4` — refuter A2GV — rows for the ring's stroke, a hold-only hypothetical slot, empty and hidden headings
+
+```diff
+diff --git a/src/screens/filmRoomV2/FilmRoomStudy.replay.writer.jsdom.test.jsx b/src/screens/filmRoomV2/FilmRoomStudy.replay.writer.jsdom.test.jsx
+index 50df98ad..45bda7ec 100644
+--- a/src/screens/filmRoomV2/FilmRoomStudy.replay.writer.jsdom.test.jsx
++++ b/src/screens/filmRoomV2/FilmRoomStudy.replay.writer.jsdom.test.jsx
+@@ -142,6 +142,10 @@ beforeAll(async () => {
+   // both legs' only bar the session's first minute: no sample after the sale is fresh — the swap path's opening sample
+   // (the banked points at the sale, tapeReplay.js composeLegs) is the replay's one placeable value (review A2G1-1)
+   days.saleOnly = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ MSFT: ['2026-09-23T13:30:00Z'], CRWD: ['2026-09-23T13:30:00Z'] }) })).tape;
++  // a slot traded twice, the bought leg's bars deleted: a hypothetical replay drawn on the hold path alone (review A2GV-2)
++  const holdOnly = sep23Bars();
++  delete holdOnly.CRWD;
++  days.twiceHoldOnly = (await buildTapeDay(await slotTwiceDay(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: holdOnly })).tape;
+   // a slot traded twice, its swap 1 cut to the 3:59 PM minute: a hypothetical replay drawn as points only (review A2G1-4)
+   days.twicePoints = (await buildTapeDay(await slotTwiceDay(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ MSFT: [LAST_MINUTE], CRWD: [LAST_MINUTE] }) })).tape;
+   // the bought leg's bars before the two checks after the swap, and the close's: a segment and an isolated point on one path
+@@ -353,8 +357,10 @@ describe('Astra F1 — a replay is drawn only when it emits visible geometry: a
+           const at = glyphAt(g);
+           expect(Math.abs(at.xPct - place.xPct(want[j].at)), `${w} ${leg} ${j} x`).toBeLessThan(0.02);
+           expect(Math.abs(at.y - place.y(want[j].points)), `${w} ${leg} ${j} y`).toBeLessThan(0.06);
+-          // a visible mark: a 7 px ring with a solid stroke, inside the fork's own region
++          // a visible mark: a 7 px ring with a solid stroke of real width (its fill is the card's own surface, so the stroke
++          // is all that shows — review A2GV-1), inside the fork's own region
+           expect([g.style.width, g.style.height, g.style.borderStyle || g.style.border.split(' ')[1]], `${w} ${leg} ${j}`).toEqual(['7px', '7px', 'solid']);
++          expect(parseFloat(g.style.borderWidth || g.style.border), `${w} ${leg} ${j} stroke`).toBeGreaterThanOrEqual(1);
+           expect(g.closest(`[data-region="fork-${k}"]`)).toBeTruthy();
+           expect(g.getAttribute('aria-hidden')).toBe('true');
+         });
+@@ -434,6 +440,13 @@ describe('Astra F1 — a replay is drawn only when it emits visible geometry: a
+     expect(card(0).querySelectorAll('[data-fork-point]')).toHaveLength(3);
+     expect(card(0).querySelector('[data-hypothetical] [data-num]').getAttribute('data-num')).toBe('actions[0].subsequentTradesInSlot');
+     expect(swept(tape)).toEqual(CLEAN);
++    // review A2GV-2: the same slot with only its hold path drawn (the bought leg's bars deleted) keeps the tag too
++    const hold = days.twiceHoldOnly;
++    expect([runsOf(hold.actions[0].replay.holdPath).length > 0, hold.actions[0].replay.swapPath]).toEqual([true, null]);
++    mount(hold);
++    expect(card(0).querySelector('[data-path-label="swap"]')).toBeNull();
++    expect(card(0).querySelector('[data-hypothetical] [data-num]').getAttribute('data-num')).toBe('actions[0].subsequentTradesInSlot');
++    expect(swept(hold)).toEqual(CLEAN);
+   });
+
+   it('review A2G1-1: the swap path\'s opening sample alone (both legs stale after the sale) — as the founder\'s rule reads, a value at a recorded instant: one ring at the sale, the swap path\'s label alone, the points legend, the sentence (an open founder question, build report §10)', () => {
+diff --git a/src/screens/filmRoomV2/FilmRoomSweeps.guards.jsdom.test.jsx b/src/screens/filmRoomV2/FilmRoomSweeps.guards.jsdom.test.jsx
+index 7faaa269..aed0ed86 100644
+--- a/src/screens/filmRoomV2/FilmRoomSweeps.guards.jsdom.test.jsx
++++ b/src/screens/filmRoomV2/FilmRoomSweeps.guards.jsdom.test.jsx
+@@ -312,6 +312,14 @@ describe('Astra B5 — a heading INSIDE the bound element is the screen\'s voice
+       expect(validator(el, docs)).toEqual([`${prefix}a heading inside it`]);
+     });
+
++    it.each(KINDS)('%s: review A2GV-3 — an EMPTY heading beside the text, or an aria-hidden one, inside the bound element still costs it the exemption', (_k, B, validator, prefix) => {
++      for (const inner of [`<h2></h2>${T}`, `${T}<span role="heading" aria-level="2"></span>`, `<h2 aria-hidden="true">${T}</h2>`]) {
++        const el = box(`<div>${B(inner)}</div>`);
++        expect(el.querySelector('[data-quote-path], [data-stored-note], [data-agent-name]').textContent).toBe(T);
++        expect([sweepNumbers(el, docs), validator(el, docs)], inner).toEqual([[`stray digit: “${T}”`], [`${prefix}a heading inside it`]]);
++      }
++    });
++
+     it.each(KINDS)('%s: role="heading" with no aria-level, inside and around', (_k, B, validator, prefix) => {
+       const inside = box(`<div>${B(`<span role="heading">${T}</span>`)}</div>`);
+       expect([sweepNumbers(inside, docs), validator(inside, docs)]).toEqual([[`stray digit: “${T}”`], [`${prefix}a heading inside it`]]);
+diff --git a/src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx b/src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx
+index 0b9c3bde..cc98fb30 100644
+--- a/src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx
++++ b/src/screens/filmRoomV2/__fixtures__/filmRoomHarness.jsx
+@@ -17,9 +17,10 @@
+ //   quoteDefects   R7's guard: every quotation bound to its tape path (text =
+ //                  the stored value), attributed as the record says, and never
+ //                  inside a heading nor holding one (Astra B1, B5)
+-// Every exemption — a bound quotation's, a stored note's, the agent's name's —
+-// is lost to a heading anywhere on its text's ancestry (headingAt).
+ //   sweepSigns     sign colours on recorded scores only
++// Every exemption — a bound quotation's, a stored note's, the agent's name's —
++// is lost to a heading around its bound element or anywhere inside it
++// (headingAt; Astra B1, B5).
+ // The fixtures are the A1 passes' own output (screenFixtures.test.js).
+
+ import React, { act } from 'react';
+@@ -155,9 +156,8 @@ export function boundAgentNameOf(node, docs = {}) {
+
+ /**
+  * R13's guard: the screen shows the name ONCE, bound to the stored name, with no heading around it or inside it (Astra
+- * B5; headingAt). (That it sits in no
+- * attribute and in no other text is proved with a distinctive name in the screen suite — a substring scan for a real
+- * name would match the screen's own words: "Check", "Hold", "Deep" — review A2F1-4.)
++ * B5; headingAt). That it sits in no attribute and in no other text is proved with a distinctive name in the screen
++ * suite — a substring scan for a real name would match the screen's own words: "Check", "Hold", "Deep" (review A2F1-4).
+  */
+ export function agentNameDefects(container, docs = {}) {
+   const bad = [];
+```
+
+### 10.9 Reported, not fixed (for separate tasking or your call)
+
+- **A2G1-1:** the founder question (10.5).
+- **A2G1-2:** a fork's end value is its path's last element. It shows "—" (the tape's null) beside a drawn path whose close sample is null; at desktop that tag floats at mid-height. It predates the round. Fix: place a null end tag at the last drawn sample, or omit it.
+- **A2G1-3:** the legend's "points" (10.4 #3).
+- **The drawn card does not list the replay's own missing inputs;** only the no-drawn line does. They do appear on the section's replay coverage line. This predates the round.
+- **`sweepWords`' "Why" heading scan reads h1–h6 only, not `role="heading"`.** This predates the round. No shipped role is a heading.
+- **Unchanged from the prompt:** B6 (the wide last-close label at 320 px) and §9.7's list wait for the card build. R14 settles §9.7's zero-count wording.
+
+### 10.10 State
+
+The PR is a **draft**. Head: this report's commit; its SHA is posted with the hand-off. Nothing is merged, flipped or deployed. The flip to `'on'` is its own PR after this one. R14 is already committed here (10.3), so that PR need not carry it; it still reconciles the checks §9.8 names.
