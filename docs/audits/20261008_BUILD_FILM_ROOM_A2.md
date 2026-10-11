@@ -818,3 +818,162 @@ The report had no list under this name; this one gathers what is scheduled for t
 ### 8.8 State
 
 PR #944 stays a **draft**. Head: this report's commit; its SHA is posted with the hand-off (a commit cannot name its own SHA). Nothing is merged, flipped or deployed.
+
+---
+
+## §9 Follow-up pass before `'on'` (2026-10-10)
+
+**Prompt:** "Build prompt — Film Room A2: the follow-up pass before `'on'`" (Fable, 2026-10-10). It clears what the A2 reports scheduled for the pass before `'on'` (§8.7, Astra's confirmation §3, Addendum 3's R11) and adds two founder items: the back button and the agent's name. No new features.
+**Branch:** `git fetch origin` first. `origin/main` was `a06c2a75` (#951). It contains #944 (`ab53f610`) and #950 (`93953d62`), with `FILM_ROOM_V2_MODE = 'allowlist'` (`src/config/featureFlags.js:2989`). The session's worktree branch is `claude/film-room-a2-followups-322f79` (the app's name for it), cut at `a06c2a75`, and is pushed to `claude/film-room-a2-followups` by refspec.
+**Fence and flags:**
+- Zero BUILD_RULES §1 edits: `git diff --name-only origin/main...HEAD` names none of the eleven fenced paths.
+- No writer source: nothing under `api/` is in the diff, the writer's own test fixtures included. The writer-to-screen tests run the real close and candle passes and never edit them.
+- `FILM_ROOM_V2_MODE` stays `'allowlist'`. `src/config/featureFlags.js`, `firestore.rules` and the goldens (`src/screens/__golden__/`) are not in the diff.
+- The PR is a draft. No merge, no flip, no rules deploy.
+
+### 9.1 Executive verdict
+
+| Question | Answer |
+|---|---|
+| What changed | The twelve items, each its own commit with its tests (9.2), plus Addendum 4 and the Film Room index (`36477560`). Two fixes found by the real-layout check (`66aef1e6`, `5738cccf`) and four review commits (`6cbc1c29`, `b5889b3c`, `b22ee39d`, `cb6c3178`) follow. 25 files: `src/screens/filmRoomV2/` (screen, kit, copy, model, harness, tests), `src/App.jsx` (the back origin), Amendment E, `docs/README.md` and this report. |
+| The exit criterion's six classes | None found. No lens or refuter found a rendered number without its class, a forbidden word in the screen's own voice, a stated fact against the tape, a non-owner read, a change to the off or non-allowlisted path, or a fourth hub key (9.5). |
+| The off and non-allowlisted paths | Byte-identical to legacy. The goldens' original rows pass unchanged, and new rows show that the legacy screen still receives exactly App's `{ battle, onBack }` when App passes an origin. |
+| Addendum 4 (R13) | Appended verbatim to Amendment E. The subtitle starts with the agent's name, exactly as stored and bound to `agentContext.agentName`. |
+| Copy inventory | **237 keys** of `FILM_ROOM_COPY`, plus the model's word tables (`EXIT_MAKER_WORDS` 13 keys, `PLAN_DIRECTIONS` 2, `CHECK_STATE_WORDS` 15) and `filmRoomCopy`'s 8 exports, all pinned; **345 entries** swept (every copy string, every copy function called with sample arguments, the model's composed words on every branch, and the two externals the screen prints in its own voice). |
+| Mutants | **112 of the builder's, all killed in the end, none by a timeout.** Two survived their first run and were killed once their rows were made non-vacuous (TABS-M7, RF2-M1). The reviewers ran 47 of their own: 17 survived; 12 of those are now killed by new rows or the pinned tables; 5 remain as recorded limits (9.5); 2 more were equivalent. |
+| Review (BUILD_RULES §2; 25 files, +2.4k lines) | 3 lenses and 3 refuters on separate LF snapshots. 20 lens findings, 6 more from the refuters. **None blocking, none refuted.** 19 fixed (one in part); 7 recorded as backlog, for separate tasking or for your call (9.5, 9.7). |
+| Real layout | Headless Edge at 280, 320, 390 and 1440 px. The last-close label: **0 overlaps in 600 measurements** (five days, every symbol, volume and comparables on and off). The measurement found two defects jsdom cannot see, now fixed (`66aef1e6`, `5738cccf`). |
+| Full suite (Linux, `TZ=UTC`, CI-shaped) | **`cb6c3178`** (the code head; `origin/main` re-fetched, still `a06c2a75`, an ancestor of the branch): **945 test files, 0 failing** (938 passed, 7 skipped); 20,100 tests (20,012 passed, 0 failed, 88 skipped). Private WSL clone, `--maxWorkers=2`, 332 s. The seven files more than #950's 938 are this pass's new suites. |
+| Rules suite | **`cb6c3178`:** 24 files, 417 tests, all passing (Windows, Java 21, LF snapshot; WSL has no Java). No rules file changed. |
+| `lint:gate` / `vite build` | exit 0 / exit 0, both on an LF snapshot of `cb6c3178`. The lazy v2 chunk is 67.95 kB (18.85 kB gzip), from 64.95 kB (17.73 kB gzip) at §8. The pushed head (this report's docs-only commit) is checked again from its own LF archive before the push. |
+| CI | Runs on the pushed head. Its result is reported with the head SHA; nothing watches it (BUILD_RULES §2). |
+
+### 9.2 One row per item
+
+| # | Item | Commits | What the tests prove | Mutants (all killed) |
+|---|---|---|---|---|
+| 1 | **R11: no replay, no replay sentence** | `9ad7eb18`; review `6cbc1c29`, `b22ee39d`, `cb6c3178` | `FilmRoomStudy.replay.writer.jsdom.test.jsx` runs the real close and candle passes. **(a)** Close pass only: every card shows "No replay for this swap. · awaiting the candle pass" (the day's note, bound) and no sentence; the split groups say "No replay" too. **(b)** Outside the candle window: the same, its "10-trading-day" digits the tape's own. **(c)** A crypto leg after the candle pass: "… · crypto legs are not replayed", the caveat once on the card, the day's note once at the section head. **(c′)** The same leg on the close pass's night. **(d)** Candle-written replays: each drawn, its stored label verbatim and bound. **(e)** A replay written with no point that has a value: "No replay drawn for this swap · missing: bars:MSFT, bars:CRWD", each name bound; no fork, path labels or gap rows. **(e′)** Values on either leg alone: values shown. **(f)** A slot traded twice: the "hypothetical" tag only beside values. **(g)** A day re-merged by the close pass after its candle pass, in and outside the window: the card points to the coverage line ("the replay coverage line above says why"), never copying the note that opens with the one-step sentence. A written replay without a stored label shows the R9 sentence (Study suite). | R11-M1–M6; RF1-M1–M4; ROW-A3M16–18; V3-V2a, V3-V4a (15) |
+| 2 | **A2A2-3: no line across a gap** | `f2891860`; caps `b5889b3c` | `FilmRoomDeepDive.gaps.writer.jsdom.test.jsx`, real passes with interior runs of minute rows missing (INTC three buckets, SPY two, INTC's sector ETF one). The candle pass leaves those buckets out; the price, market and sector lines break at their own gaps; no segment spans more than one bucket; no volume bar in a missing bucket; the full session is one unbroken run (its path byte-identical to before). Model rows pin `lineRuns` / `linePath`. | GAP-M1–M6; RF2-M4 (7) |
+| 3 | **A2A2-4: sparklines on time** | `55eb4bec` | `FilmRoomDeepDive.sparklines.writer.jsdom.test.jsx`. Astra's INTC repro (three bars) fills the first tenth of its sparkline, not all of it. Every sparkline's domain is the chart's (`seriesDomain`, the shared calendar) and each point sits where the chart puts it. A gap breaks it. The full session runs 9:40 → the 4:00 close. A non-session date takes the chart's fallback too. | SPARK-M1–M5 (5) |
+| 4 | **A2A3-7: the no-tape states** | `80d5c4f1` | The scheduled clock renders in `When` ("…scheduled at 10:15 PM ET."). A row mounts every no-tape state at phone and desktop width, at every depth, through every sweep: numbers, words and number words, signs, quotations, stored notes. The states: missing (a pass scheduled; the pass not run yet; not available), error, loading, skipped mode, not written (a stored status bound; none recorded), no id. | NOTAPE-M1–M5 (5) |
+| 5 | **The last-close label against the markers** | `b5bffe80`; real-layout fix `66aef1e6`; review `b5889b3c`, `b22ee39d` | `FilmRoomDeepDive.lastClose.writer.jsdom.test.jsx`, on a writer-built day with INTC's 2:45 PM quote planted at its own last close. At the 390 and 1440 plot widths (226 and 712 px, measured), the label's box meets no marker's box, where its old place met the planted one at 390. Every Sep-23 symbol at both widths; the label's box is the box the chooser places (flex, 13 px); volume hidden with a ladder of near stamps (the floor strip); the measured width reaches the placement (a 116 px plot); `lastCloseTop`'s bands. **Measured** in headless Edge: 0 overlaps in 600 measurements (9.6). | LABEL-M1–M7; VIS-M1; RF2-M1–M3; ROW-FV2N1 (12) |
+| 6 | **B1: no quotation inside a heading** | `cea572e9` | `FilmRoomSweeps.guards.jsdom.test.jsx`. Astra's repro `<h2><Quotation …/></h2>` on a valid rationale reading "best one 73": every sweep sees the words, and `quoteDefects` names the heading. Every heading level and `role="heading"` are covered; the same quotation outside a heading stays exempt and valid. | B1-M1–M4 (4) |
+| 7 | **B2: stored notes bound by path** | `1db91ccd`; path `6cbc1c29`; rows `b22ee39d`, `cb6c3178` | Astra's bypass first: `coverage.checks.note = 'one 73'` and an unbound `Rec` reading "one 73" are caught by both number sweeps. The rows also cover: the same words bound and exempt; screen words inside a note; a forged path; a path R1/R9 does not name; no document; padding, a part of the value, another case or nothing (byte for byte); a forbidden word in a bound note still swept; attributes never exempt; the kit rendering notes by path. The whole-screen sweeps run `storedNoteDefects`. | B2-M1–M9; RF1-M8; ROW-A3M8; V3-V5a, V3-V5b (13) |
+| 8 | **B3: quantity words, closed** | `406400f6`; tables `cb6c3178` | Astra's bypass ("ninety checks", "a hundred checks", "a thousand checks") bites. Every new word bites in text and attributes and inflected ("hundreds", "halves", "sixes"); "shown once" is exempt. The copy inventory, `filmRoomCopy.inventory.jsdom.test.jsx`: 237 copy keys pinned by hand, the model's word tables pinned too (`CHECK_STATE_WORDS`, `EXIT_MAKER_WORDS`, `PLAN_DIRECTIONS`), 345 entries swept; a new key, a new export, or a state with a tone and no words fails. §7.1's claim is corrected in place (struck through, dated). | B3-M1–M7; V3-V7a–V7d (11) |
+| 9 | **B4: one validated timeline** | `df81eb23`; de-dup `6cbc1c29` | `tradingTimeline` (`filmRoomModel.js`) is shared by the picker, the count and the oracle. `['not-a-date', '2026-09-23']` reads "one-day battle" with no picker. A weekend, a holiday and an impossible date leave both; a day named twice counts once; a real date beyond the calendar's horizon is kept. | B4-M1–M6; RF1-M7 (7) |
+| 10 | **Tabs** | `a3ea0001`; row `b22ee39d` | Each tab's `aria-controls` names its own tabpanel's id and the panel's `aria-labelledby` names its tab; only the selected tab is in the tab order; the other panels are hidden and empty. ← / → (wrapping), Home and End select, and focus follows; each key is `preventDefault`ed and any other key left to the page. Checked in a real browser too (9.6). | TABS-M1–M7; ROW-A3M9 (8) |
+| 11 | **Back goes back** | `11aa4aab`; label `5738cccf`; row `b22ee39d` | `filmRoomBack.test.js`: the mapping (the in-battle banner → "Battle", Battle History → "Battle History", the Review station → "Dashboard", unknown → "Dashboard"), and App's wiring pinned by its source (no test mounts App). Through the route at `'on'`: each origin's label and its return, never App's legacy back. The legacy screen's props and the goldens are unchanged with an origin given (new rows appended to `FilmRoomRoute.golden.jsdom.test.jsx`). The label never wraps. | BACK-M1–M10; VIS-M3; ROW-A3M1 (12) |
+| 12 | **The agent's name (R13)** | `7a594739`; wrap `5738cccf`; guard `6cbc1c29`; row `b22ee39d` | The prompt's subtitle, "Cipher · Trend Follower · BaggerBomb · one-day battle · Fri, Oct 9, 2026", with the name bound to `agentContext.agentName` and not case-transformed. No stored name → the archetype first. Names with a forbidden word ("Best Buddy"), number words ("One Eyed Twelve") and digits ("R2-D2 47") sweep clean at every depth. The binding bites (another stored name, no battle document, a forged path, the words unbound, a heading, twice). Short real names ("Agent", "Check") give no false defect. A distinctive name sits in exactly one text node and no attribute, at phone and desktop width. The subtitle wraps between whole parts. | R13-M1–M9; VIS-M2; RF1-M5–M6; ROW-FV1N2 (13) |
+
+### 9.3 Addendum 4 (R13)
+
+Appended verbatim to the end of Amendment E (`36477560`). Item 12 applies it; 9.4 #7 states how.
+
+### 9.4 Choices the prompt left open (stated, not silent)
+
+1. **"The two Oct 8 loop documents in `docs/design/`."** There are none. The only Film Room loop documents are `docs/FILM_ROOM_REVIEW_LOOP_DESIGN_NOTE_V1_2_20260915.md` and `…V1_3_20260915.md`. The index lists them under their real path and date. The Practice Field handover already had a Contents row, so the Film Room section points to it rather than repeating it.
+2. **R11 — "its replay coverage line alone".** A card with no written replay shows "No replay for this swap." followed by one reason:
+   - for a crypto leg, the screen's caveat from the row's own stored `replayReason`, once;
+   - before any candle pass has written (`passes.candles.writtenAt` unset), the day's stored replay coverage note ("awaiting the candle pass", or the outside-window note), bound;
+   - after one has, a pointer: "the replay coverage line above says why". That note now opens with the replay's one-step sentence, and copying it would put the sentence beside no replay.
+   
+   The day's note always shows once, at the swaps section's head. The split groups keep "No replay for this swap." (F1: the split is always shown). A replay written with no point that has a value shows "No replay drawn for this swap" and its own stored missing inputs. A replay whose points have values but no instants keeps its values (A2P2-9) and gets no sentence.
+3. **B2's allowed paths** (`SPEC_STORED_NOTE_PATHS`, pinned in the harness from R1 and R9):
+   - exempt: `coverage.*.note`, each missing-input name by index (the sale's, the fill's, a plan price's, a replay's), and `actions[].replay.label`;
+   - bound but not exempt: the other stored notes (`replay.note`, `lockedBasisNote`, `price.note`, `result.note`, `passes.close.status`);
+   - no exemption at all: `Rec` (identifiers), and attributes.
+4. **B3.** Inflected forms bite. A compound ("twenty-one") is two listed words. The check states' words and the exit makers' labels became exported tables the inventory pins (`cb6c3178`, A2F3-7); every label is byte-identical. The other composing functions (`roleOf`, `deriveHoldings`' notes, `riskLines`, `directiveCardOf`) are enumerated on every branch, their literals not key-pinned (9.7).
+5. **B4.**
+   - A real date beyond the maintained calendar's years is kept, since nothing can say it was not a session.
+   - A recorded timeline with no valid day yields no day, as before (no fallback to an instant).
+   - The oracle shares the production helper, as the prompt directs; this departs from the harness's "never read production" rule, so the helper has its own rows.
+   - The A2A3-2 row's "ten-day" timeline had counted two weekends; it now names ten real sessions.
+6. **Item 5.** The chooser treats a marker as "near" if the label's box and the marker's 24 px button could share columns at the plot's measured width, or at 150 px before measurement. Heights are exact px, so a band clear of every near marker is clear. The label's width is bounded by `ceil(len × 6.2) + 20` px (measured: at most 93% of it). With volume hidden, a strip under the price area stays free. A lone bar between two gaps is a short tick with round caps.
+7. **R13.**
+   - The name is exempt from the digit sweep too, on the same binding ("as a bound quotation is under R7").
+   - It carries `textTransform: 'none'`, because the subtitle's capitals would alter it.
+   - The subtitle now wraps between whole parts on phones as well (no ellipsis), because with the name in front the phone's one line cut the marked length.
+8. **Back.**
+   - App records the screen the Film Room is opened from, and from the battle view its battle, in a ref updated whenever another screen shows.
+   - No dashboard file changed: the Review station's own `setScreen('filmRoom')` is seen as origin `'dashboard'`.
+   - The in-battle label reads "Battle".
+
+### 9.5 Review record (BUILD_RULES §2)
+
+**Setup.**
+- **Snapshots:** each lens and refuter worked on its own LF `git archive` snapshot with `node_modules` linked, read-only on git and on the shared tree. Every mutation and probe was restored byte for byte, checked by hash.
+- **Lenses** (at `5738cccf`): A2F1, domain honesty; A2F2, geometry, layout and a11y. A2F3, integrity and mutation, ran last at `b5889b3c`.
+- **Refuters:** A2FV1 and A2FV2 at `b5889b3c`; A2FV3 at `b22ee39d`.
+- **Before the review:** the real-layout measurement ran first, so a code fix it found would be reviewed.
+- **Ids:** `A2F*n*-*k*`, `A2FV*n*-*k*`. They never collide with A2L, A2V, A2P, A2PV, A2A or A2AV.
+
+| id | Finding | Refuter | Disposition |
+|---|---|---|---|
+| A2F1-1 | The "hypothetical" tag showed beside "No replay" (a slot traded twice, close pass only). | CONFIRMED, BACKLOG | **Fixed** `6cbc1c29`; row (f). |
+| A2F1-2 | After a candle pass, a no-replay card copied the day's note, which opens with the stored one-step sentence (a day re-merged in and outside the window). | CONFIRMED, BACKLOG. The signal **over-approximates**: an expired-unprocessed or failed run sets `writtenAt` while the note is still "awaiting…", and the card then points to the line that carries it. The refuter calls this harmless. | **Fixed** `6cbc1c29`; row (g). The `writtenAt` signal is kept on purpose. The tighter `inputFingerprint` signal would copy the stale "awaiting the candle pass" onto every card of an expired tape (A2FV1-N1). |
+| A2F1-3 | A replay written with nothing to draw showed a legend for lines that were not there. | CONFIRMED, BACKLOG | **Fixed** `6cbc1c29`; row (e). |
+| A2F1-4 | `agentNameDefects`' substring scan matched the screen's own words for short real names ("Check": 46). | CONFIRMED (harness only) | **Fixed** `6cbc1c29`. |
+| A2F1-5 | The name's exemption had no heading exclusion and no once-only check. | CONFIRMED (guard only) | **Fixed** `6cbc1c29`. |
+| A2F1-6 | `tradingTimeline` kept duplicates (`[D, D]` read "two-day"). | CONFIRMED as code; unreachable from the battle writer | **Fixed** `6cbc1c29`. `['not-a-date', D]` crashes the fenced writer at `tapeAssemble.js:548`; reported (9.7). |
+| A2F1-7 | `FIXED_DIGIT_COPY` is a string-match exemption. | CONFIRMED; predates the pass (`6724e21e`); B2 does not cover it | Backlog (9.7). |
+| A2F1 (B3 note) | Zero-count wording ("No swaps were recorded") is outside the closed list. | CONFIRMED; no criterion | For your call (9.7). |
+| A2F2-1 | With volume hidden, the label's fallback fell onto a marker. | CONFIRMED; the fix is checked in real layout | **Fixed** `b5889b3c`. |
+| A2F2-2 | "Near" judged at 150 px failed on narrow phones (the refuter puts the cliff between 280 and 300 px). | CONFIRMED | **Fixed** `b5889b3c` (the measured width). The refuter's test gap (A2FV2-N1) is **fixed** `b22ee39d`. |
+| A2F2-3 | A lone bar's tick was invisible on phones. | CONFIRMED (0 ink pixels at 280–320 before, 4 after) | **Fixed** `b5889b3c`. |
+| A2F2-4 | Swap labels run off the viewport on phones, clipped by `overflow-x: hidden`. | CONFIRMED; predates the pass; misreadable, not false | Backlog (9.7). |
+| A2F2-5 | Focus is lost when a door inside the panel changes the day. | CONFIRMED; predates the pass; not item 10's | Backlog (9.7). |
+| A2F3-1 | App's back wiring: the ref read at render was unpinned (mutant survived 0/603). | CONFIRMED, BACKLOG. Its variant V1a (a reset inserted above the read) survives: the pin proves the line, not the ref's content — a source pin's limit, recorded. | **Row** `b22ee39d`; the mutant is killed. |
+| A2F3-2 | The split groups on a no-replay card were unguarded. | CONFIRMED, BACKLOG; under the mutant a no-replay card would state a replay the tape does not have. Variant V2a (the version note only after a candle pass) survived row (a). | **Rows** (a), (c), (g) `b22ee39d`, `cb6c3178`; V2a killed too. |
+| A2F3-3 | A crypto card before the candle pass was unguarded. | CONFIRMED, BACKLOG. Variant V3a (the day's note winning on an outside-window day only, keyed by a regex on the note) survives — contrived; recorded. | **Row** (c′); killed. |
+| A2F3-4 | A replay valued on one leg was unguarded. | CONFIRMED, BACKLOG. Variant V4a (the swap leg only, the mirror) survived row (e′). | **Row** (e′), both legs `cb6c3178`; V4a killed too. |
+| A2F3-5 | The stored-note binding accepted padded text. | PARTLY: trimming cannot let a number through, but the harness's byte-for-byte contract was untested; variants V5a (a substring binds — any part of a note, even empty) and V5b (case-insensitive) survived. | **Rows** `b22ee39d`, `cb6c3178` (padding, "73", "one", another case, nothing); V5a and V5b killed too. |
+| A2F3-6 | The tab keys' `preventDefault` was unasserted. | CONFIRMED, BACKLOG. Variant V6a (prevent only when the selection moves) survives — contrived; recorded. | **Row**; killed. |
+| A2F3-7 | The copy inventory cannot see a new model branch (the enumerated outputs are hand-kept). | PARTLY: BACKLOG, but only half structural — `checkStateOf`'s table is a keyed copy table (variant V7a, a new state "the best stop · a hundred checks", survived) and `exitMakerOf`'s labels could be one (V7b, a new inline branch, survived). | **Fixed in part** `cb6c3178`: `CHECK_STATE_WORDS` and `EXIT_MAKER_WORDS`' labels are exported tables the inventory pins (a new key, a tone without words, or a quantity word in a label fails). A new branch written as an inline literal is still invisible until a fixture renders it; the other composers (`roleOf`, `deriveHoldings`' notes, `riskLines`, `directiveCardOf`) are enumerated on every branch, not key-pinned. Backlog: structural (9.7). |
+| A2FV1-N1 | An expired tape keeps the close pass's "awaiting the candle pass" note (`markRetryWindowElapsed` changes only the pass fields). | — (found by the refuter; writer-side, predates the pass) | Reported for the writer (9.7). |
+| A2FV1-N2 | Dropping the substring scan left "never in an attribute" tested on the phone only. | — | **Fixed** `b22ee39d` (desktop too). |
+| A2FV2-N1 | No row checked that the measured width reaches the placement (that mutant survived). | — | **Fixed** `b22ee39d`. |
+| A2FV2-N2 | The Study's "Deep dive · SYM" doors drop focus. | — (predates the pass) | Backlog (9.7). |
+| A2FV2-N3 | Below 280 px a mid-session last close can leave the plot (a 240 px build). | — (the anchor rule predates the pass) | Backlog (9.7). |
+| A2FV3-N1 | Nothing pinned that a part of a stored note is unbound (`value.includes(text)` survived all 340 rows; an empty note bound too). | — | **Fixed** `cb6c3178` (row). |
+
+**Refuted outright:** none. **Blocking:** none. Each finding is either outside the six criteria or a test gap.
+
+### 9.6 Verification
+
+- **Full suite** (Linux, `TZ=UTC`, CI-shaped `--maxWorkers=2`, in a private WSL clone `~/pd-a2fu` used only by this pass): **`cb6c3178`: 945 test files, 0 failing** (938 passed, 7 skipped); 20,100 tests (20,012 passed, 0 failed, 88 skipped), 332 s. Before the run `origin/main` was re-fetched: still `a06c2a75`, an ancestor of the branch, so the branch is the merged tree. In that run: the off-path goldens (`FilmRoomRoute.golden.jsdom.test.jsx`), the census, the theme guards, the flag-pin guard, the gate and the hub helper all pass.
+- **Rules suite:** `cb6c3178`, 24 files, 417 tests, all passing (Firestore emulator on Windows, Java 21, LF `git archive` snapshot; WSL has no Java). `firestore.rules` and `test/rules/` are unchanged.
+- **`lint:gate`:** exit 0 on an LF snapshot of `cb6c3178` (and on `11aa4aab`, right after the App change).
+- **`vite build`:** exit 0 on `cb6c3178`. `FilmRoomScreenV2` is still its own lazy chunk: 67.95 kB (18.85 kB gzip).
+- **The pushed head** (this report's commit, docs only): `lint:gate` and `vite build` are re-run on its own LF archive before the push; the results go with the head SHA in the hand-off.
+- **Mutants:** 112 runs, each in its own LF snapshot of the commit it tests, every file restored byte for byte (sha256), none killed by a timeout.
+- **The writer-to-screen suites' cost** (lens A2F3, two workers): Study.replay 8.8 s, gaps 4.7 s, lastClose 5.2 s, sparklines 4.6 s, session 6.0 s, against 60–90 s limits; the A2 Quotation suite (71 s) predates this pass.
+- **Visual check** (headless Edge through `playwright-core`; a scratch preview page in an LF snapshot of the code, never committed, rendering `FilmRoomScreenV2` from the committed fixtures and from scenario days the real close and candle passes built: a planted marker, close pass only, outside the candle window, a crypto leg, a replay with nothing to draw, a gapped series, a partial series, a ladder of stamps). Shots and reports are in the session scratchpad (`shots/fu/`, `measure-report.json`, `measure2-report.json`).
+  - **390×844 and 1440×900, at the code head:**
+    - A swap card in each R11 state: close pass only → "No replay for this swap. · awaiting the candle pass" on all three cards; outside the window → the window note; a crypto leg → "… · crypto legs are not replayed", "crypto" once on the card; nothing to draw → "No replay drawn for this swap · missing: bars:MSFT, bars:CRWD"; the Sep-23 day → each drawn, its stored label beside it.
+    - A gapped series: INTC's line breaks at 11:00–11:40, SPY's at 1:00–1:30, no volume bars in the gap.
+    - The desktop sparklines on the session's time.
+    - Every no-tape state's words, the scheduled clock as "10:15 PM".
+    - The header: "Cipher · TREND FOLLOWER · BAGGERBOMB · ONE-DAY BATTLE [D] · WED, SEP 23, 2026", the name as stored; "‹ Battle" / "‹ Battle History" / "‹ Dashboard" by origin, on one line; at 390 the subtitle wraps after "BAGGERBOMB", the length whole with its marker.
+    - The tabs by keyboard: → → → End Home ← select Study, Deep dive, Glance, Deep dive, Glance, Deep dive, each focused, its panel shown.
+  - **The last-close label (item 5):** 80 measurements at 390 and 1440 (every symbol of four days), then 600 at 280, 320, 390 and 1440 with volume and comparables on and off on five days: **0** meets an evidence marker, a swap label or an axis label, or leaves the plot. Plot widths 116 / 156 / 226 / 712 px, each equal to the chart's `data-plot-px`. Every label within its width bound (at most 93%). JetBrains Mono loaded.
+  - **Found by the measurement, fixed:** the label's inline box (21 px, its figures 8 px down) met AMD's and ETN's 2:30 PM markers at 390 (`66aef1e6`); at 390 "‹ Battle History" broke onto two lines and the phone's one-line subtitle cut the marked length (`5738cccf`).
+  - Horizontal overflow: 0 px everywhere. Console: one 404 for a preview-only static asset, as in §4; not from the screen.
+- **What this pass supersedes:** §8.7's list is cleared (B1–B4, R11, A2A2-3, A2A2-4, A2A3-7, the marker over the last-close label). §4's header row (#10) now leads with the agent's name, and the back label names the origin.
+
+### 9.7 Reported, not fixed (for separate tasking or your call)
+
+- **A2F1-7:** `FIXED_DIGIT_COPY` exempts its four phrases anywhere, by string match. It predates this pass. Fix: bind the exemption to copy keys.
+- **B3 zero-count wording:** "No swaps were recorded this day.", "no checks recorded", "Retained: none in force" sit outside the closed list. None is a quantity claim the six criteria catch, and "none in force" is BA-9's own wording. Your call.
+- **A2F2-4:** on phones, right-anchored swap labels lose their leading "Exit ·" / "Entry ·" and clock off the screen's left edge. At 360 px, PANW reads "3:00 PM · Exit by platform rule · stagnation". It predates this pass. Fix: clamp the label inside the chart.
+- **A2F2-5 / A2FV2-N2:** a door inside the panel that changes the day or the depth drops keyboard focus to the page. Fix: focus the new panel. It predates this pass.
+- **A2FV2-N3:** below 280 px a last close that ends mid-session can sit outside the plot. The anchor rule predates this pass, and 320 is the narrowest phone the code names.
+- **A2F3-7 (the rest):** a model branch written as an inline literal, and the words of `roleOf`, `deriveHoldings`' notes, `riskLines` and `directiveCardOf`, are enumerated by the inventory but not key-pinned. Fix: move them into exported tables, as `CHECK_STATE_WORDS` now is.
+- **Accepted limits of the review's mutants** (each recorded, none a defect at head): App is pinned by its source text, so a reset inserted above the pinned read survives (A2FV3-1); a regex-keyed outside-window crypto variant (A2FV3-3) and "prevent only when the selection moves" (A2FV3-6) are contrived.
+- **Writer (fenced; for the writer's owner):**
+  - `['not-a-date', D]` throws at `tapeAssemble.js:548` (`etDayBounds(null)`). The production battle writer never produces such a timeline.
+  - An expired tape keeps "awaiting the candle pass" in its replay and series coverage notes (A2FV1-N1).
+- **Carried from earlier sections, unchanged:** A2A1-2 (the retained directive's time), and the census class for `statusFeed: null` (§8.2).
+
+### 9.8 State
+
+The PR is a **draft**, titled "Film Room A2: follow-up pass before 'on'". Head: this report's commit; its SHA is posted with the hand-off. Nothing is merged, flipped or deployed. The flip to `'on'` is its own PR after this one. It still turns around the hub-helper row in `api/cron/film-tape-flip.live.test.js` and reconciles the stale prose PR #950 flagged.
