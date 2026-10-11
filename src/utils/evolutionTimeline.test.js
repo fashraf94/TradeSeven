@@ -4,7 +4,10 @@
 // rendering — matches the convention in traitSlotSummary.test.js.
 
 import { describe, it, expect } from 'vitest';
-import { buildEvolutionTimeline, formatRelativeDate } from './evolutionTimeline.js';
+import {
+  buildEvolutionTimeline, formatRelativeDate,
+  LEGACY_REFLECTION_FAILURE_LESSON, NO_LESSON_RECORDED_LINE,
+} from './evolutionTimeline.js';
 
 describe('buildEvolutionTimeline', () => {
   it('returns [] for a null agent', () => {
@@ -92,5 +95,46 @@ describe('formatRelativeDate', () => {
     expect(formatRelativeDate(new Date('2020-03-15T12:00:00Z'))).toMatch(/Mar 1[45]/);
     expect(formatRelativeDate(null)).toBe('');
     expect(formatRelativeDate(new Date('nope'))).toBe('');
+  });
+});
+
+// Reflection outage fix (P-OUT-1, display line D): a memory entry saved by the
+// old failure path carries the literal failure line as its lesson. The
+// timeline shows the honest line instead; a real lesson is untouched.
+describe('legacy failure entries (P-OUT-1 display line D)', () => {
+  const gameRows = (memory) => buildEvolutionTimeline({ memory }).filter((e) => e.type === 'game');
+
+  it('the two lines are exactly the legacy literal and the founder-approved copy', () => {
+    expect(LEGACY_REFLECTION_FAILURE_LESSON).toBe('Reflection generation failed.');
+    expect(NO_LESSON_RECORDED_LINE).toBe('No lesson was recorded for this game.');
+  });
+
+  it('an entry whose lesson is the legacy failure line renders "No lesson was recorded for this game."', () => {
+    const [row] = gameRows([
+      { gameMode: 'baggerbomb_tournament', result: 'loss', score: -42, lesson: 'Reflection generation failed.', date: '2026-10-09T00:00:00Z' },
+    ]);
+    expect(row.subtitle).toBe('No lesson was recorded for this game.');
+    expect(row.title).toBe(buildEvolutionTimeline({ memory: [{ gameMode: 'baggerbomb_tournament', result: 'loss', score: -42, lesson: 'real', date: '2026-10-09T00:00:00Z' }] })[0].title);
+  });
+
+  it('a real lesson renders unchanged, beside a legacy entry, and an absent lesson stays empty', () => {
+    const rows = gameRows([
+      { gameMode: 'baggerbomb', result: 'win', score: 12, lesson: 'Trim winners into strength.', date: '2026-10-08T00:00:00Z' },
+      { gameMode: 'baggerbomb', result: 'loss', score: -3, lesson: 'Reflection generation failed.', date: '2026-10-07T00:00:00Z' },
+      { gameMode: 'baggerbomb', result: 'draw', score: 0, date: '2026-10-06T00:00:00Z' },
+    ]);
+    expect(rows.map((r) => r.subtitle)).toEqual([
+      'Trim winners into strength.',
+      'No lesson was recorded for this game.',
+      '',
+    ]);
+  });
+
+  it('only the exact legacy literal is replaced — a lesson that merely mentions failure is a real lesson', () => {
+    const rows = gameRows([
+      { gameMode: 'baggerbomb', result: 'loss', score: -1, lesson: 'Reflection generation failed. ', date: '2026-10-05T00:00:00Z' },
+      { gameMode: 'baggerbomb', result: 'loss', score: -1, lesson: 'My entry failed because I chased the gap.', date: '2026-10-04T00:00:00Z' },
+    ]);
+    expect(rows.map((r) => r.subtitle)).toEqual(['Reflection generation failed. ', 'My entry failed because I chased the gap.']);
   });
 });

@@ -17,9 +17,21 @@
 //   3. generateReflection() awaits the consolidation hook internally (Sprint 1
 //      Phase 2 fix), so reflection AND its conditional consolidation chain
 //      complete inside one cron iteration — not subject to the original race.
+//
+// Reflection outage fix (P-OUT-1, founder rulings O2–O4, 10 Oct 2026):
+//   • each attempt is CLAIMED on the battle (reflectionAttempts) before the
+//     model call, so a run that dies mid-attempt still counts toward the cap;
+//   • a failed reflection writes nothing: the flag stays set and the next tick
+//     retries; after MAX_REFLECTION_ATTEMPTS the flag clears and the battle is
+//     marked reflectionNoLesson — it leaves the queue, honestly;
+//   • every attempt's outcome lands on the battle (reflectionOutcome);
+//   • a reflection STARTS only when its whole deadline still fits the
+//     reflection phase, so the tenants below keep their slices.
+//   See docs/audits/20261010_BUILD_REFLECTION_OUTAGE_FIX.md.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { generateReflection } from '../agent/reflect.js';
+import { REFLECTION_TIMEOUT_MS, MAX_REFLECTION_ATTEMPTS, reflectionBattleUpdate } from '../_utils/reflectionOutcome.js';
 import { getWireFlags } from '../_utils/wireFlags.js';
 import { runWireReplaySweep } from '../_utils/wireReplaySweep.js';
 import { runEditorialReview, EDITORIAL_MIN_BUDGET_MS } from '../_utils/wireEditorialRun.js';
@@ -31,11 +43,22 @@ import { runCallSweep } from '../_utils/callRecords/sweep.js';
 // returns before any read and the response carries no new key.
 import { runHypothesisReviewPass } from '../_utils/hypothesisRecords/reviewPass.js';
 
-export const config = { maxDuration: 60 };
+// P-OUT-1: 60 → 120 s. The tenants' budget (TIME_BUDGET_MS) is unchanged; the
+// ceiling is raised so the rare consolidation path — a reflection at its full
+// 35 s deadline followed by its own 30 s consolidation call
+// (agentConsolidationApply.js) — can never be killed mid-write.
+export const config = { maxDuration: 120 };
 
 const LOG_PREFIX = '[ProcessPendingReflections]';
-const TIME_BUDGET_MS = 50_000; // 50s — leave 10s buffer for cleanup/response
+const TIME_BUDGET_MS = 50_000; // 50s — the tenants' budget, measured from the handler start
 const BATCH_LIMIT = 5;          // up to 5 battles per tick; remainder defers
+// The reflection phase: a reflection starts only if its full deadline plus the
+// writes around it end by REFLECTION_PHASE_MS, so the Wire sweep keeps its 5 s
+// floor under TIME_BUDGET_MS and the call sweep / review pass (capped at
+// handlerStart + 45 s / + 50 s) are not starved. The first reflection of a
+// tick always starts, so the queue always moves.
+const REFLECTION_PHASE_MS = 40_000;
+const REFLECTION_WRITE_RESERVE_MS = 3_000;
 
 export default async function handler(req, res) {
   // ---- 1. Auth (matches agent-batch-review.js pattern) ----
@@ -72,36 +95,63 @@ export default async function handler(req, res) {
     // ---- 3. Process each battle (synchronous-await loop) ----
     for (const doc of snapshot.docs) {
       const elapsed = Date.now() - startTime;
-      if (elapsed > TIME_BUDGET_MS) {
+      if (summary.processed > 0 && elapsed + REFLECTION_TIMEOUT_MS + REFLECTION_WRITE_RESERVE_MS > REFLECTION_PHASE_MS) {
         const remaining = snapshot.size - summary.processed;
-        console.log(`${LOG_PREFIX} Time budget exceeded (${elapsed}ms). ${remaining} deferred to next tick.`);
+        console.log(`${LOG_PREFIX} Reflection phase full (${elapsed}ms; one more could run ${REFLECTION_TIMEOUT_MS}ms). ${remaining} deferred to next tick.`);
         summary.skipped += remaining;
         break;
       }
 
       const battleId = doc.id;
+      const battleRef = db.collection('agentBattles').doc(battleId);
       summary.processed++;
 
       try {
-        await generateReflection(db, battleId);
-
-        // Clear the flag only on success. Reflection has its own internal
-        // try/catch around the memory write and gameDesignFeedback write —
-        // so a successful return here means writes landed (or at minimum
-        // didn't throw). On Sonnet failure, generateReflection writes a
-        // fallback reflection to memory[] (reflect.js:70-79) and still
-        // resolves successfully, which is the desired idempotent behavior.
-        await doc.ref.update({
-          pendingReflection: false,
-          reflectedAt: new Date().toISOString(),
+        // Claim this attempt BEFORE the model call (re-checking the flag), so
+        // an attempt is counted even if this run dies inside it. A battle that
+        // already used every attempt without a recorded end leaves the queue.
+        const claim = await db.runTransaction(async (tx) => {
+          const snap = await tx.get(battleRef);
+          const data = snap.exists ? snap.data() : null;
+          if (!data || data.status !== 'completed' || data.pendingReflection !== true) return { state: 'not_pending' };
+          const prior = Number.isInteger(data.reflectionAttempts) && data.reflectionAttempts > 0 ? data.reflectionAttempts : 0;
+          if (prior >= MAX_REFLECTION_ATTEMPTS) {
+            tx.update(battleRef, { pendingReflection: false, reflectionNoLesson: true });
+            return { state: 'exhausted' };
+          }
+          tx.update(battleRef, { reflectionAttempts: prior + 1 });
+          return { state: 'claimed', attempt: prior + 1 };
         });
+        if (claim.state === 'not_pending') {
+          summary.skipped++;
+          console.log(`${LOG_PREFIX} Battle ${battleId}: no longer pending — skipped`);
+          continue;
+        }
+        if (claim.state === 'exhausted') {
+          summary.failed++;
+          console.warn(`${LOG_PREFIX} Battle ${battleId}: ${MAX_REFLECTION_ATTEMPTS} attempts used — finished without a lesson`);
+          continue;
+        }
 
-        summary.succeeded++;
-        console.log(`${LOG_PREFIX} Battle ${battleId}: reflection complete, flag cleared`);
+        const result = await generateReflection(db, battleId, { attempt: claim.attempt });
+
+        // ok → flag cleared + outcome; skipped → flag cleared (nothing to
+        // reflect); failed → NOTHING was written by the reflection: the flag
+        // stays set for the next tick, or clears at the cap with the battle
+        // marked reflectionNoLesson (reflectionOutcome.js).
+        const update = reflectionBattleUpdate(result, { attempt: claim.attempt, at: new Date().toISOString() });
+        await battleRef.update(update);
+
+        if (result?.outcome === 'ok' || result?.outcome === 'skipped') {
+          summary.succeeded++;
+          console.log(`${LOG_PREFIX} Battle ${battleId}: reflection ${result.outcome}, flag cleared`);
+        } else {
+          summary.failed++;
+          console.warn(`${LOG_PREFIX} Battle ${battleId}: attempt ${claim.attempt}/${MAX_REFLECTION_ATTEMPTS} failed (${update.reflectionOutcome?.failureClass ?? 'unknown'})${update.reflectionNoLesson ? ' — finished without a lesson' : ' — retries next tick'}`);
+        }
       } catch (err) {
-        // Leave pendingReflection: true so the next cron tick retries.
-        // No exponential backoff in v1 — revisit if we observe a stuck-battle
-        // hot loop.
+        // An unexpected throw (a Firestore read or write): the flag stays set
+        // and the claimed attempt stays counted, so the cap still bounds it.
         console.error(`${LOG_PREFIX} Battle ${battleId} failed:`, err?.message || err);
         summary.failed++;
       }

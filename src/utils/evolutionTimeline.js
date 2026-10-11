@@ -18,6 +18,13 @@ import { getArchetypeDisplayName } from '../data/archetypeDisplay';
 // stays deliberately neutral so only real losses read as red.
 export const EMERALD = '#34D399';
 
+// Reflection outage fix (P-OUT-1, display line D, 10 Oct 2026): until then a
+// failed reflection was saved as a memory entry whose lesson was this literal
+// line. Entries already holding it render the honest line below instead; no
+// new entry can carry it (api/agent/reflect.js writes nothing on a failure).
+export const LEGACY_REFLECTION_FAILURE_LESSON = 'Reflection generation failed.';
+export const NO_LESSON_RECORDED_LINE = 'No lesson was recorded for this game.';
+
 export const parseDate = (val) => {
   if (!val) return new Date(0);
   if (val?._seconds) return new Date(val._seconds * 1000);
@@ -148,7 +155,7 @@ export function buildEvolutionTimeline(agent) {
     events.push({
       type: 'game',
       title: `${getGameModeDisplayName(m.gameMode)} — ${resultLabel}${scoreLabel}`,
-      subtitle: m.lesson || '',
+      subtitle: m.lesson === LEGACY_REFLECTION_FAILURE_LESSON ? NO_LESSON_RECORDED_LINE : (m.lesson || ''),
       date: parseDate(m.date),
       color: m.result === 'win' ? EMERALD : m.result === 'draw' ? CMD.ink2 : CMD.risk,
     });

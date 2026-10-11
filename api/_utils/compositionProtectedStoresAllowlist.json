@@ -277,6 +277,7 @@
     "api/cron/mandate-rollover.js::runRolloverSweep::call:acquireLease#1::unresolved": 1,
     "api/cron/mandate-rollover.js::runRolloverSweep::call:releaseLease#1::unresolved": 1,
     "api/cron/process-draft-claims.js::processClaimsForDraft::update::unresolved": 2,
+    "api/cron/process-pending-reflections.js::handler::update::unresolved": 2,
     "api/cron/promote-discover-themes.js::handler::update::unresolved": 1,
     "api/cron/season-daily-evaluate.js::handler::set::unresolved": 1,
     "api/cron/season-daily-evaluate.js::handler::update::unresolved": 2,
@@ -436,5 +437,8 @@
     "api/forge/watchlist-dialogue-abandon.js::handler::update (2)": "Pilot P2. Count 1 → 2: beside the EXISTING tx.update that abandons the session, ONE tx.update closing the session's research record `abandoned` (reason: the host's own `user_close`; open candidates `cancelled`) — only for a `user_close` abandon, with the gate on and an open record the caller owns. A `finalize_intent` writes no record. Not a protected store.",
     "api/forge/watchlists.js::handleSignalDerivedCreate::update (2)": "Pilot P2. Count 1 → 2: inside the EXISTING save transaction, beside the session's tx.update, ONE tx.update closing the session's research record completed / saved_to_list and attaching it to the new list and its v1 (subject set once). With the gate off, or a session with no record, the transaction writes what it wrote before. Not a protected store.",
     "api/forge/watchlists.js::handleCreateFromTickers::{set,update}": "Pilot P2 — the screener → list link. ONE runTransaction, used only when the gate is on for the caller AND the request names a screener session id: fresh reads of researchSessions/{id} and (when the session carries one) its researchWork record, then ONE tx.set of the new watchlists/{id} (the same document the plain path writes, plus sourceSessionId when the session is the caller's, and researchWorkId — the record id when THIS save closes the session's open record, else null: a record an earlier save already closed describes that list, reviews R1-1 / R4-4) and at most ONE tx.update closing the open record completed / saved_to_list against the screen whose results were saved (state, terminalReason, endedAt, the funnel, the subject set once, updatedAt). Otherwise the route makes its plain watchlistRef.set exactly as before (a resolved write, unlisted). Not a protected store."
+  },
+  "_notes_reflection_outage_fix": {
+    "api/cron/process-pending-reflections.js::handler::update::unresolved": "Reflection outage fix (P-OUT-1, founder ruling O3; build report docs/audits/20261010_BUILD_REFLECTION_OUTAGE_FIX.md). HUMAN REVIEW: the attempt CLAIM — ONE runTransaction per battle, before the model call, reading agentBattles/{battleId} (battleRef = db.collection('agentBattles').doc(battleId)) and making exactly ONE of two tx.update writes: reflectionAttempts = prior + 1 (the attempt), or — when the battle already used MAX_REFLECTION_ATTEMPTS (3) without a recorded end — pendingReflection false + reflectionNoLesson true (it leaves the queue). Handle-form writes are unresolved by construction; the target is the non-protected agentBattles collection, never agents. FOUNDER SIGN-OFF REQUESTED."
   }
 }

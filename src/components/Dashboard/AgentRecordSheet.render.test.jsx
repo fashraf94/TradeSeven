@@ -97,3 +97,44 @@ describe('lit rows (spec §10 cumulative cards)', () => {
     expect(html).not.toContain('battles counted');
   });
 });
+
+// Reflection outage fix (P-OUT-1, display line D): the sheet's timeline shows
+// "No lesson was recorded for this game." under a game whose memory entry
+// holds the legacy failure line; a real lesson renders as written, and the
+// "Strategic insight" paragraph is untouched.
+describe('timeline — legacy failure entries (P-OUT-1 display line D)', () => {
+  const renderAgent = (agent) => stripComments(renderToString(
+    <AgentRecordSheet
+      open
+      onClose={() => {}}
+      agent={agent}
+      loading={false}
+      accent="#5eead4"
+      levelConfig={LEVEL_CONFIG}
+      nextLevelInfo={NEXT_LEVEL}
+      masteryProfile={null}
+      dock="center"
+    />,
+  ));
+  const AGENT_WITH_MEMORY = {
+    ...AGENT,
+    consolidatedInsight: 'Most of my reflections failed, so I trade on instinct.',
+    memory: [
+      { gameId: 'g1', gameMode: 'baggerbomb_tournament', result: 'loss', score: -42, lesson: 'Reflection generation failed.', adjustment: 'N/A', date: '2026-10-08T00:00:00.000Z' },
+      { gameId: 'g2', gameMode: 'baggerbomb', result: 'win', score: 12, lesson: 'Trim winners into strength.', adjustment: 'Hold less cash.', date: '2026-10-09T00:00:00.000Z' },
+    ],
+  };
+
+  it('a legacy failure entry renders the honest line, never the failure line', () => {
+    const html = renderAgent(AGENT_WITH_MEMORY);
+    expect(html).toContain('No lesson was recorded for this game.');
+    expect(html).not.toContain('Reflection generation failed.');
+  });
+
+  it('a real lesson renders unchanged, and the Strategic insight paragraph is shown as stored', () => {
+    const html = renderAgent(AGENT_WITH_MEMORY);
+    expect(html).toContain('Trim winners into strength.');
+    expect(html).toContain('Strategic insight');
+    expect(html).toContain('Most of my reflections failed, so I trade on instinct.');
+  });
+});
