@@ -37,6 +37,7 @@ vi.mock('../../config/featureFlags.js', async (importOriginal) => ({
 
 import { createHash } from 'node:crypto';
 import FilmRoomStudy from './FilmRoomStudy';
+import { C } from './FilmRoomKit';
 import { REPLAY_SENTENCE } from './filmRoomCopy';
 import { sep23Day, sep23Bars, buildTapeDay, SEP23_NIGHT, SEP23_MORNING } from '../../../api/_utils/filmTape/__fixtures__/screenFixtures.js';
 import { seedDay, OWNER } from '../../../api/_utils/filmTape/__fixtures__/tapeFixtures.js';
@@ -138,6 +139,11 @@ beforeAll(async () => {
   days.pointsOneLeg = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: pointsOneLeg })).tape;
   // the sold leg's only bar the session's first minute: every sample after the swap is stale — a hold path of nulls
   days.holdStale = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ MSFT: ['2026-09-23T13:30:00Z'] }) })).tape;
+  // both legs' only bar the session's first minute: no sample after the sale is fresh — the swap path's opening sample
+  // (the banked points at the sale, tapeReplay.js composeLegs) is the replay's one placeable value (review A2G1-1)
+  days.saleOnly = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ MSFT: ['2026-09-23T13:30:00Z'], CRWD: ['2026-09-23T13:30:00Z'] }) })).tape;
+  // a slot traded twice, its swap 1 cut to the 3:59 PM minute: a hypothetical replay drawn as points only (review A2G1-4)
+  days.twicePoints = (await buildTapeDay(await slotTwiceDay(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ MSFT: [LAST_MINUTE], CRWD: [LAST_MINUTE] }) })).tape;
   // the bought leg's bars before the two checks after the swap, and the close's: a segment and an isolated point on one path
   days.mixed = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sparseBars({ CRWD: ['2026-09-23T16:59:00Z', '2026-09-23T17:14:00Z', LAST_MINUTE] }) })).tape;
 });
@@ -393,9 +399,79 @@ describe('Astra F1 — a replay is drawn only when it emits visible geometry: a 
         expect(swept(tape), w).toEqual(CLEAN);
       }
     }
-    // the sparse leg drew points only: its legend says so
-    mount(days.pointsOneLeg);
-    expect(legendOf(card(0))).toBe('points · rebuilt from 1-minute bars');
+    // the legend reads what the drawn path drew, whichever path it is (review A2G1-4): the sparse leg's points; a full
+    // leg's dashed line — the swap path's alone, or the hold path's alone
+    for (const [tape, want] of [[days.pointsOneLeg, 'points · rebuilt from 1-minute bars'], [days.oneLeg, 'dashed · rebuilt from 1-minute bars'], [days.otherLeg, 'dashed · rebuilt from 1-minute bars']]) {
+      mount(tape);
+      expect(legendOf(card(0))).toBe(want);
+    }
+  });
+
+  it('review A2G1-4: each path in its own colour — its ring, its ring swatch and its dashed swatch (hold ink, swap teal)', () => {
+    const colour = { hold: C.ink2, swap: C.teal };
+    for (const tape of [days.points, days.mixed, days.full]) {
+      mount(tape);
+      const c = card(0);
+      for (const leg of ['hold', 'swap']) {
+        for (const g of c.querySelectorAll(`[data-fork-point="${leg}"]`)) expect(g.style.border, `${leg} ring`).toContain(colour[leg]);
+        const label = c.querySelector(`[data-path-label="${leg}"]`);
+        const ringSwatch = label.querySelector('[data-swatch="point"]');
+        if (ringSwatch) expect(ringSwatch.style.border, `${leg} ring swatch`).toContain(colour[leg]);
+        const dashSwatch = label.querySelector('svg line');
+        if (dashSwatch) expect(dashSwatch.style.stroke, `${leg} dashed swatch`).toBe(colour[leg]);
+        const line = c.querySelector(`[data-line="${leg}"]`);
+        if (line) expect(line.style.stroke, `${leg} line`).toBe(colour[leg]);
+      }
+    }
+  });
+
+  it('review A2G1-4: a slot traded twice whose replay is drawn as points only — the hypothetical tag and its count stand beside it', () => {
+    const tape = days.twicePoints;
+    const r = tape.actions[0].replay;
+    expect(tape.actions[0].subsequentTradesInSlot).toBe(1);
+    expect([segmentsOf(r.holdPath).length + segmentsOf(r.swapPath).length, isolatedOf(r.holdPath).length + isolatedOf(r.swapPath).length]).toEqual([0, 3]);
+    mount(tape);
+    expect(card(0).querySelectorAll('[data-fork-point]')).toHaveLength(3);
+    expect(card(0).querySelector('[data-hypothetical] [data-num]').getAttribute('data-num')).toBe('actions[0].subsequentTradesInSlot');
+    expect(swept(tape)).toEqual(CLEAN);
+  });
+
+  it('review A2G1-1: the swap path\'s opening sample alone (both legs stale after the sale) — as the founder\'s rule reads, a value at a recorded instant: one ring at the sale, the swap path\'s label alone, the points legend, the sentence (an open founder question, build report §10)', () => {
+    const tape = days.saleOnly;
+    const k = tape.actions.findIndex((a) => a.symbolOut === 'MSFT');
+    const r = tape.actions[k].replay;
+    expect(r.holdPath.length).toBeGreaterThan(1);
+    expect(runsOf(r.holdPath)).toEqual([]);   // the hold path: samples, none with a value
+    expect(runsOf(r.swapPath)).toEqual([[r.swapPath[0]]]);   // the swap path: its opening sample only…
+    expect([r.swapPath[0].at, r.swapPath[0].points]).toEqual([tape.actions[k].at, tape.actions[k].lockedPoints]);   // …the banked points at the sale
+    for (const desktop of [false, true]) {
+      const w = desktop ? 'desktop' : 'phone';
+      mount(tape, desktop);
+      const c = card(k);
+      expect(c.querySelector('[data-line]'), w).toBeNull();
+      const rings = [...c.querySelectorAll('[data-fork-point]')];
+      expect(rings.map((g) => [g.getAttribute('data-fork-point'), glyphAt(g).xPct]), w).toEqual([['swap', 0]]);   // at the sale: the fork's left edge
+      expect([Boolean(c.querySelector('[data-path-label="hold"]')), Boolean(c.querySelector('[data-path-label="swap"] [data-swatch="point"]'))], w).toEqual([false, true]);
+      expect(legendOf(c), w).toBe('points · rebuilt from 1-minute bars');
+      expect(c.querySelector('[data-replay-sentence] [data-stored-note]').textContent, w).toBe(r.label);
+      if (desktop) expect([...c.querySelectorAll('[data-fork-end]')].map((e) => e.getAttribute('data-fork-end'))).toEqual(['swap']);
+      expect(swept(tape), w).toEqual(CLEAN);
+    }
+  });
+
+  it('review A2G1-5: a run whose samples coincide (two at one instant, one value) is a ring, never a zero-length dashed segment', () => {
+    const tape = JSON.parse(JSON.stringify(days.full));
+    const hold = tape.actions[0].replay.holdPath;
+    hold.forEach((p, j) => { if (j !== 3 && j !== 4) p.points = null; });
+    hold[4].at = hold[3].at;
+    hold[4].points = hold[3].points;   // planted: the writer stamps each sample at its own check
+    expect(runsOf(hold).map((run) => run.length)).toEqual([2]);
+    mount(tape);
+    const c = card(0);
+    expect(c.querySelector('[data-line="hold"]')).toBeNull();
+    expect(c.querySelectorAll('[data-fork-point="hold"]')).toHaveLength(1);
+    expect(c.querySelector('[data-path-label="hold"] svg line')).toBeNull();
+    expect(legendOf(c)).toBe('dashed lines and points · rebuilt from 1-minute bars');   // the swap path's full line, and the hold ring
   });
 
   it('a path with a segment and an isolated sample: the dashed segment, the ring, both swatches, and a legend naming both', () => {

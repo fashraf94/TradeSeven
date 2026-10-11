@@ -281,6 +281,54 @@ describe('Astra B5 — a heading INSIDE the bound element is the screen\'s voice
     }
   });
 
+  describe('review A2G2-1 / -2 / -3 — every structure that puts a heading on the text\'s path, for each of the three exemptions', () => {
+    const T = 'best one 73';
+    const docs = (() => { const t = clone(sep23Tape); t.rationale[0].rationale = T; t.coverage.checks.note = T; return { tape: t, battle: { agentContext: { agentName: T } } }; })();
+    // each bound element as a string (a div for the quotation's text: the HTML parser closes a <p> at an <h2>)
+    const QUOTE = (inner, tag = 'div') => `<div data-quotation="agent"><${tag} data-quote-path="rationale[0].rationale">${inner}</${tag}><span data-quote-attribution="">— the agent</span></div>`;
+    const NOTE = (inner, tag = 'span') => `<${tag} data-stored-note="coverage.checks.note">${inner}</${tag}>`;
+    const NAME = (inner, tag = 'span') => `<${tag} data-agent-name="agentContext.agentName" data-agent-name-doc="battle">${inner}</${tag}>`;
+    const KINDS = [['quotation', QUOTE, quoteDefects, 'rationale[0].rationale: '], ['stored note', NOTE, storedNoteDefects, 'coverage.checks.note: '], ['name', NAME, agentNameDefects, `agent name “${T}”: `]];
+    const ALL = ['best', 'number word “one”: best one 73'];
+
+    it.each(KINDS)('%s: a heading deeper than the first child (em > h2) — swept, and a defect', (_k, B, validator, prefix) => {
+      const el = box(`<div>${B(`<em><h2>${T}</h2></em>`)}</div>`);
+      expect(sweepNumbers(el, docs)).toEqual([`stray digit: “${T}”`]);
+      expect(validator(el, docs)).toEqual([`${prefix}a heading inside it`]);
+    });
+
+    it.each(KINDS)('%s: the bound element is itself the heading — swept, and a defect', (_k, B, validator, prefix) => {
+      const el = box(`<div>${B(T, 'h2')}</div>`);
+      expect(sweepNumbers(el, docs)).toEqual([`stray digit: “${T}”`]);
+      expect(sweepWords(el, docs)).toEqual(ALL);
+      expect(validator(el, docs)).toEqual([`${prefix}inside a heading`]);
+    });
+
+    it.each(KINDS)('%s: a heading over PART of the bound text costs the whole element its exemption — the words outside the heading are swept too', (_k, B, validator, prefix) => {
+      const el = box(`<div>${B('best <h2>one</h2> 73')}</div>`);
+      expect(el.querySelector('[data-quote-path], [data-stored-note], [data-agent-name]').textContent).toBe(T);   // still bound, byte for byte
+      expect(sweepNumbers(el, docs)).toEqual(['stray digit: “73”']);
+      expect(sweepWords(el, docs)).toEqual(['best', 'number word “one”: one']);   // the forbidden word too — no exemption covers it in a note either
+      expect(validator(el, docs)).toEqual([`${prefix}a heading inside it`]);
+    });
+
+    it.each(KINDS)('%s: role="heading" with no aria-level, inside and around', (_k, B, validator, prefix) => {
+      const inside = box(`<div>${B(`<span role="heading">${T}</span>`)}</div>`);
+      expect([sweepNumbers(inside, docs), validator(inside, docs)]).toEqual([[`stray digit: “${T}”`], [`${prefix}a heading inside it`]]);
+      const around = box(`<div role="heading">${B(T)}</div>`);
+      expect([sweepNumbers(around, docs), validator(around, docs)]).toEqual([[`stray digit: “${T}”`], [`${prefix}inside a heading`]]);
+    });
+
+    it.each(KINDS)('%s: role spelled as a browser still reads a heading — another case, spaces, a second token — inside and around', (_k, B, validator, prefix) => {
+      for (const role of ['Heading', 'HEADING', ' heading', 'heading ', 'heading presentation', 'heading\tnone', 'foo heading', 'presentation heading']) {
+        const inside = box(`<div>${B(`<span role="${role}" aria-level="2">${T}</span>`)}</div>`);
+        expect([sweepNumbers(inside, docs), validator(inside, docs)], `inside ${JSON.stringify(role)}`).toEqual([[`stray digit: “${T}”`], [`${prefix}a heading inside it`]]);
+        const around = box(`<div role="${role}" aria-level="2">${B(T)}</div>`);
+        expect([sweepNumbers(around, docs), validator(around, docs)], `around ${JSON.stringify(role)}`).toEqual([[`stray digit: “${T}”`], [`${prefix}inside a heading`]]);
+      }
+    });
+  });
+
   it('the controls: an element inside the bound text that is NOT a heading (a span, an emphasis, a role other than heading) keeps each exemption — exempt and valid', () => {
     const plain = [['span', (s) => `<span>${s}</span>`], ['em', (s) => `<em>${s}</em>`], ['role="note"', (s) => `<span role="note">${s}</span>`]];
     for (const [form, wrap] of plain) {

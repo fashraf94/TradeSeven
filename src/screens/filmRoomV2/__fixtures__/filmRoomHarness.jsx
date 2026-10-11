@@ -8,14 +8,17 @@
 //                  and no digit appears outside a marked number, an instant, an
 //                  #swap-n anchor or a stored note BOUND to an R1 / R9 path
 //                  (Astra B2: by binding, never by a string match)
-//   storedNoteDefects  every stored note's text is the value at its path
+//   storedNoteDefects  every stored note's text is the value at its path, and
+//                  no heading around it or inside it (Astra B5)
 //   sweepWords     the screen's own voice — everything outside a bound
 //                  quotation (Amendment E addendum 2, R7): no verdict, ranking
 //                  or forbidden word; no "Why?" heading; no number spelled
 //                  as a word outside a marked number (R8)
 //   quoteDefects   R7's guard: every quotation bound to its tape path (text =
 //                  the stored value), attributed as the record says, and never
-//                  inside a heading (Astra B1)
+//                  inside a heading nor holding one (Astra B1, B5)
+// Every exemption — a bound quotation's, a stored note's, the agent's name's —
+// is lost to a heading anywhere on its text's ancestry (headingAt).
 //   sweepSigns     sign colours on recorded scores only
 // The fixtures are the A1 passes' own output (screenFixtures.test.js).
 
@@ -151,7 +154,8 @@ export function boundAgentNameOf(node, docs = {}) {
 }
 
 /**
- * R13's guard: the screen shows the name ONCE, bound to the stored name, outside any heading. (That it sits in no
+ * R13's guard: the screen shows the name ONCE, bound to the stored name, with no heading around it or inside it (Astra
+ * B5; headingAt). (That it sits in no
  * attribute and in no other text is proved with a distinctive name in the screen suite — a substring scan for a real
  * name would match the screen's own words: "Check", "Hold", "Deep" — review A2F1-4.)
  */
@@ -466,22 +470,31 @@ function boundTextOf(node, docs) {
 }
 
 /**
- * R7's guard — what the sweeps exempt: an ATTRIBUTED quotation bound to a tape path. All of: bound (above), a path
- * in the recorded-words channels, an attribution beside it (review A2A1-4: a bound quotation with no attribution,
- * or of a path that holds no one's words, stays under the sweeps), and NO heading around it (Astra B1: a heading is
- * the screen's own voice — recorded words inside one would read as the screen's title). Whether the attribution
- * names the right author and time is quoteDefects' check.
+ * A heading, as a browser reads one: h1–h6, or an element whose role names `heading` among its tokens — in any case,
+ * with any spacing (review A2G2-1: `role="heading presentation"`, `" heading"` and `"Heading"` are headings in the
+ * accessibility tree). A token after another role (`"presentation heading"`) is counted too: stricter than a browser,
+ * never laxer, so the guard can only over-reject.
  */
-const HEADINGS = 'h1, h2, h3, h4, h5, h6, [role="heading"]';
+const isHeading = (el) => /^H[1-6]$/.test(el.tagName) || String(el.getAttribute('role') || '').trim().split(/\s+/).some((t) => t.toLowerCase() === 'heading');
 /**
- * Astra B1, B5 — where a heading sits on an exempt text's ancestry: 'around' the bound element (it or an ancestor
- * is one), 'inside' it (a heading in its subtree, between the element and its text), or null. Either way the words
- * are the screen's voice, so no exemption stands: the quotation's (R7), the stored note's (R1 / R9), the name's (R13).
+ * Astra B1, B5 — where a heading sits on an exempt text's ancestry: 'around' the bound element (it, or any ancestor,
+ * is one), 'inside' it (ANY heading in its subtree — between the element and its text, over part of the text, or an
+ * empty one beside it), or null. Either way the words are the screen's voice, so no exemption stands: the
+ * quotation's (R7), the stored note's (R1 / R9), the name's (R13). Decided for the bound element as a whole, never
+ * for one text node of it (review A2G2-2: a heading over one word costs the whole element its exemption).
  */
 function headingAt(el) {
-  if (el.closest(HEADINGS)) return 'around';
-  return el.querySelector(HEADINGS) ? 'inside' : null;
+  for (let e = el; e; e = e.parentElement) if (isHeading(e)) return 'around';
+  return [...el.querySelectorAll('*')].some(isHeading) ? 'inside' : null;
 }
+
+/**
+ * R7's guard — what the sweeps exempt: an ATTRIBUTED quotation bound to a tape path. All of: bound (above), a path
+ * in the recorded-words channels, an attribution beside it (review A2A1-4: a bound quotation with no attribution,
+ * or of a path that holds no one's words, stays under the sweeps), and NO heading around it or inside it (Astra B1,
+ * B5: a heading is the screen's own voice — recorded words inside one would read as the screen's title; headingAt
+ * above). Whether the attribution names the right author and time is quoteDefects' check.
+ */
 const HEADING_DEFECT = { around: 'inside a heading', inside: 'a heading inside it' };
 export function boundQuotationOf(node, docs = {}) {
   const q = boundTextOf(node, docs);
