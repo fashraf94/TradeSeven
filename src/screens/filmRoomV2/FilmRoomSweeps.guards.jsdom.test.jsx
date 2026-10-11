@@ -67,6 +67,16 @@ describe('Astra B2 — the stored-note number exemption is bound by path, never 
     expect(sweepNumbers(box('<span data-stored-note="coverage.checks.note">one 73</span>'), {})).toEqual(['stray digit: “one 73”']);
   });
 
+  it('review A2F3-5: byte for byte — the stored value with padding around it is not bound', () => {
+    const tape = noted('one 73');
+    for (const padded of [' one 73', 'one 73 ', '\none 73']) {
+      const el = box('<span data-stored-note="coverage.checks.note"></span>');
+      el.firstChild.textContent = padded;
+      expect(storedNoteDefects(el, { tape }), JSON.stringify(padded)).toEqual(['coverage.checks.note: not bound — its text is not the stored value']);
+      expect(sweepNumbers(el, { tape }).length, JSON.stringify(padded)).toBe(1);
+    }
+  });
+
   it('the forbidden-word scan reads stored notes: a bound note "best one 73" is exempt from the number sweeps only', () => {
     const tape = noted('best one 73');
     const bound = box('<span data-stored-note="coverage.checks.note">best one 73</span>');

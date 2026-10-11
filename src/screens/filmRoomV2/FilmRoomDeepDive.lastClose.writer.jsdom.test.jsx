@@ -164,6 +164,26 @@ describe('review A2F2-1 / A2F2-2 / A2F2-3 — volume hidden, the measured width,
     expect(m.q('[data-plot]').hasAttribute('data-plot-px')).toBe(false);   // jsdom lays nothing out: the narrowest plot
   });
 
+  it('review A2FV2-N1: the MEASURED width reaches the placement — a 116 px plot (a 280 px phone) places ETN\'s label clear of every marker there, where the 150 px judgement met two', () => {
+    const at = (px) => {
+      const stub = px ? vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function rect() {
+        return { width: this.hasAttribute?.('data-plot') ? px : 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON() {} };
+      }) : null;
+      try {
+        m.render(null);
+        m.render(<FilmRoomDeepDive tape={sep23Tape} seriesState={{ status: 'ready', series: sep23Series }} sym="ETN" onSym={() => {}} />);
+        return boxes(116);
+      } finally {
+        stub?.mockRestore();
+      }
+    };
+    const judgedAt150 = at(0);
+    expect(judgedAt150.markers.filter((mk) => meets(judgedAt150.label, mk)).length).toBeGreaterThan(0);   // the 280 px defect, in jsdom's geometry
+    const measured = at(116);
+    expect(measured.markers.filter((mk) => meets(measured.label, mk))).toEqual([]);
+    expect(measured.label.top).not.toBe(judgedAt150.label.top);
+  });
+
   it('a lone bar\'s tick shows at phone widths: the lines draw round caps', () => {
     m.render(<FilmRoomDeepDive tape={sep23Tape} seriesState={{ status: 'ready', series: sep23Series }} sym="INTC" onSym={() => {}} />);
     for (const line of ['price', 'market', 'sector']) expect(m.q(`[data-line="${line}"]`).style.strokeLinecap, line).toBe('round');

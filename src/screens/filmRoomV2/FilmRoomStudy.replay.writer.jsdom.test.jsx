@@ -99,6 +99,10 @@ const OUTSIDE_NIGHT = Date.parse('2026-10-20T02:15:30.000Z');   // four weeks on
 const days = {};
 beforeAll(async () => {
   days.twiceClose = await closePassOnly(await slotTwiceDay(), SEP23_NIGHT);
+  days.cryptoClose = await closePassOnly(await cryptoDay(), SEP23_NIGHT);
+  const oneLegBars = sep23Bars();
+  delete oneLegBars.MSFT;   // swap 1's SOLD name only: its hold leg has no bars, its swap leg (CRWD) does
+  days.oneLeg = (await buildTapeDay(await sep23Day(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: oneLegBars })).tape;
   days.twiceFull = (await buildTapeDay(await slotTwiceDay(), { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sep23Bars() })).tape;
   days.grownIn = await grownDay(Date.parse('2026-09-25T02:15:30.000Z'));
   days.grownOut = await grownDay(OUTSIDE_NIGHT);
@@ -136,9 +140,24 @@ describe('R11 — the replay sentence only beside a drawn replay (writer to scre
         expect(c.querySelector('[data-replay-sentence]')).toBeNull();
         expect(c.textContent).not.toContain(REPLAY_SENTENCE);
         expect(c.textContent).not.toMatch(/hypothetical through the day's close/);
+        // the split groups say so too — never another replay's words (review A2F3-2)
+        expect([...c.querySelectorAll('[data-split-missing]')].map((s) => s.textContent)).toEqual(['No replay for this swap.', 'No replay for this swap.']);
       }
       expect(swept(tape), desktop ? 'desktop' : 'phone').toEqual(CLEAN);
     }
+  });
+
+  it('(c′) review A2F3-3: a crypto leg on the close pass\'s night — its card gives the row\'s own reason, never "awaiting the candle pass" (a crypto leg is never replayed)', () => {
+    const tape = days.cryptoClose;
+    const k = tape.actions.findIndex((a) => a.symbolOut === 'BTC');
+    expect(tape.actions[k]).toMatchObject({ replayReason: 'crypto_not_supported', replay: null });
+    expect(tape.passes.candles.writtenAt ?? null).toBeNull();
+    expect(tape.coverage.replay.note).toBe('awaiting the candle pass');
+    mount(tape);
+    expect(card(k).querySelector('[data-replay-none="crypto"]').textContent).toBe('No replay for this swap. · crypto legs are not replayed');
+    expect(card(k).textContent).not.toContain('awaiting the candle pass');
+    for (const i of tape.actions.map((_, j) => j).filter((j) => j !== k)) expect(card(i).querySelector('[data-replay-none="not-written"]').textContent, `card ${i}`).toBe('No replay for this swap. · awaiting the candle pass');
+    expect(swept(tape)).toEqual(CLEAN);
   });
 
   it('(b) outside the candle window: the same, with that note — its digits the tape\'s own words, bound to their path', () => {
@@ -202,6 +221,18 @@ describe('R11 — the replay sentence only beside a drawn replay (writer to scre
     // nothing describes lines that are not there: no fork, no path labels, no gap rows, no hypothetical tag
     for (const sel of ['[data-line]', '[data-path-label]', '[data-result-row="gap"]', '[data-result-row="closed-leg"]', '[data-hypothetical]']) expect(card(k).querySelector(sel), sel).toBeNull();
     for (const i of tape.actions.map((_, j) => j).filter((j) => j !== k)) expect(card(i).querySelector('[data-replay-sentence]'), `card ${i}`).toBeTruthy();
+    expect(swept(tape)).toEqual(CLEAN);
+  });
+
+  it('(e′) review A2F3-4: a replay with values on ONE leg (the sold name\'s bars missing) shows its values — never "No replay drawn"', () => {
+    const tape = days.oneLeg;
+    const k = tape.actions.findIndex((a) => a.symbolOut === 'MSFT');
+    const r = tape.actions[k].replay;
+    const valued = (p) => (Array.isArray(p) ? p : []).some((x) => Number.isFinite(x?.points));
+    expect([valued(r.holdPath), valued(r.swapPath)]).toEqual([false, true]);
+    mount(tape);
+    expect(card(k).querySelector('[data-replay-none]')).toBeNull();
+    expect(card(k).querySelector(`[data-path-label="swap"] [data-num="actions[${k}].replay.swapPath[${r.swapPath.length - 1}].points"]`)).toBeTruthy();
     expect(swept(tape)).toEqual(CLEAN);
   });
 

@@ -45,6 +45,7 @@ describe('App wires it (src/App.jsx, by its source)', () => {
   });
 
   it('the route gets the origin and a return to it; the legacy screen\'s back is App\'s own, unchanged', () => {
+    expect(route).toContain('const filmRoomFrom = filmRoomFromRef.current;');   // review A2F3-1: the recorded origin is what is read
     expect(route).toContain('const filmRoomBack = filmRoomBackOf(filmRoomFrom.screen);');
     expect(route).toContain("onBack={() => setScreen('dashboard')}");
     expect(route).toContain('origin={filmRoomBack.origin}');

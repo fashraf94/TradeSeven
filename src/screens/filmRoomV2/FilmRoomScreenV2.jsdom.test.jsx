@@ -74,7 +74,8 @@ describe('the header (BA-41, BA-42)', () => {
 
   it('arrow keys, Home and End move the selection along the tabs (wrapping) — and focus follows it', async () => {
     await open();
-    const key = async (k) => { act(() => { document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); }); await m.flush(); };
+    const prevented = [];
+    const key = async (k) => { const e = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }); act(() => { document.activeElement.dispatchEvent(e); }); prevented.push([k, e.defaultPrevented]); await m.flush(); };
     const selected = () => m.qa('[role="tab"]').find((t) => t.getAttribute('aria-selected') === 'true');
     m.tab('Glance').focus();
     for (const [k, label, d] of [['ArrowRight', 'Study', 'study'], ['ArrowRight', 'Deep dive', 'deep'], ['ArrowRight', 'Glance', 'glance'], ['ArrowLeft', 'Deep dive', 'deep'], ['Home', 'Glance', 'glance'], ['End', 'Deep dive', 'deep'], ['ArrowLeft', 'Study', 'study']]) {
@@ -89,6 +90,8 @@ describe('the header (BA-41, BA-42)', () => {
     }
     await key('a');   // any other key leaves the selection alone
     expect(selected().textContent).toBe('Study');
+    // the tab keys are the tab list's: the page does not scroll with them; any other key is left to the page (review A2F3-6)
+    expect(prevented).toEqual([['ArrowRight', true], ['ArrowRight', true], ['ArrowRight', true], ['ArrowLeft', true], ['Home', true], ['End', true], ['ArrowLeft', true], ['a', false]]);
   });
 
   it('the tabs switch depths; the legend stays one per screen at every depth', async () => {
@@ -272,17 +275,27 @@ describe('Amendment E addendum 4, R13 — the agent\'s name leads the subtitle, 
     }
   });
 
-  it('never composed into other copy, never in an attribute: a distinctive name appears in exactly one text node — its own — at every depth', async () => {
-    const { docs } = await openNamed('Zyx Best Twelve 47');
-    for (const label of ['Glance', 'Study', 'Deep dive']) {
-      await depth(label);
-      m.expandAll();
-      const holders = [];
-      const walker = document.createTreeWalker(m.container, NodeFilter.SHOW_TEXT);
-      for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.textContent.includes('Zyx')) holders.push(n.parentElement);
-      expect(holders.map((h) => h.getAttribute('data-agent-name')), label).toEqual(['agentContext.agentName']);
-      for (const el of m.qa('*')) for (const a of el.getAttributeNames()) expect(el.getAttribute(a).includes('Zyx'), `${label} ${a}`).toBe(false);
-      expect(agentNameDefects(m.container, docs), label).toEqual([]);
+  it('never composed into other copy, never in an attribute: a distinctive name appears in exactly one text node — its own — at every depth, phone and desktop (review A2FV1-N2)', async () => {
+    const had = window.matchMedia;
+    try {
+      for (const desktop of [false, true]) {
+        window.matchMedia = () => ({ matches: desktop, addEventListener: () => {}, removeEventListener: () => {} });
+        m.teardown(); m.setup(); globalThis.localStorage.clear();
+        const { docs } = await openNamed('Zyx Best Twelve 47');
+        for (const label of ['Glance', 'Study', 'Deep dive']) {
+          await depth(label);
+          m.expandAll();
+          const where = `${desktop ? 'desktop' : 'phone'} · ${label}`;
+          const holders = [];
+          const walker = document.createTreeWalker(m.container, NodeFilter.SHOW_TEXT);
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.textContent.includes('Zyx')) holders.push(n.parentElement);
+          expect(holders.map((h) => h.getAttribute('data-agent-name')), where).toEqual(['agentContext.agentName']);
+          for (const el of m.qa('*')) for (const a of el.getAttributeNames()) expect(el.getAttribute(a).includes('Zyx'), `${where} ${a}`).toBe(false);
+          expect(agentNameDefects(m.container, docs), where).toEqual([]);
+        }
+      }
+    } finally {
+      window.matchMedia = had;
     }
   });
 });
