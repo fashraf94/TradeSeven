@@ -29,7 +29,9 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
 vi.mock('../_utils/wireFlags.js', () => ({ getWireFlags: () => ({ metricsEnabled: false, writesEnabled: false, continuityEnabled: false, editorialEnabled: false }) }));
 let db;
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => db }));
-const reflectMock = vi.fn(async () => {});
+// Reflection outage fix (P-OUT-1): generateReflection reports its outcome; 'ok' clears the flag.
+const OK_RESULT = { outcome: 'ok', record: { outcome: 'ok', failureClass: null, errorName: null, elapsedMs: 12_000, stopReason: 'tool_use', usage: { input_tokens: 3_800, output_tokens: 900 }, model: 'claude-sonnet-4-6', attempt: 1, at: '2026-10-21T21:00:00.000Z' } };
+const reflectMock = vi.fn(async () => OK_RESULT);
 vi.mock('../agent/reflect.js', () => ({ generateReflection: (...args) => reflectMock(...args) }));
 vi.mock('../_utils/hypothesisRecords/reviewPass.js', async (importOriginal) => {
   const real = await importOriginal();
@@ -119,7 +121,7 @@ describe('the fifth tenant — the hypothesis review pass', () => {
     state.flagOn = true;
     let passArgs = null;
     state.passImpl = async (args) => { passArgs = args; return { skipped: 'disabled', reads: 0 }; };
-    reflectMock.mockImplementationOnce(async () => { vi.setSystemTime(Date.now() + 30_000); }); // 30 s of the budget gone
+    reflectMock.mockImplementationOnce(async () => { vi.setSystemTime(Date.now() + 30_000); return OK_RESULT; }); // 30 s of the budget gone
     await handler(cronReq(), makeRes());
     expect(passArgs).not.toBeNull();
     expect(passArgs.handlerStartMs).toBe(NOW);
