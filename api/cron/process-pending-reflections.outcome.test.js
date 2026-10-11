@@ -210,6 +210,31 @@ describe('the budget — one slow reflection does not starve the tenants (O2)', 
     expect(reviewDeadline({ nowMs: rp.calledAtMs, handlerStartMs: rp.handlerStartMs }) - rp.calledAtMs).toBeGreaterThanOrEqual(REVIEW_STARVATION_MS);
   });
 
+  it('a slow queue read (a cold start) still starts the FIRST reflection — the queue always moves', async () => {
+    vi.useFakeTimers({ now: NOW });
+    await seedPending('b1');
+    answer((attempt) => okResult(attempt));
+    // The pending-reflections query takes 5 s: past the point where a full
+    // deadline would still end inside the phase.
+    const slowQuery = (q) => new Proxy(q, {
+      get(target, key) {
+        const v = target[key];
+        if (key === 'get') return async (...a) => { vi.setSystemTime(new Date(Date.now() + 5_000)); return v.apply(target, a); };
+        if (key === 'where' || key === 'orderBy' || key === 'limit') return (...a) => slowQuery(v.apply(target, a));
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    const realCollection = fakeDb.collection.bind(fakeDb);
+    fakeDb.collection = (name) => {
+      const c = realCollection(name);
+      return name === 'agentBattles' ? { ...c, doc: c.doc.bind(c), where: (...a) => slowQuery(c.where(...a)) } : c;
+    };
+    const res = makeRes();
+    await handler(cronReq(), res);
+    expect(reflectMock).toHaveBeenCalledTimes(1);
+    expect(res.body).toMatchObject({ processed: 1, succeeded: 1 });
+  });
+
   it('fast reflections still share a tick: a second one starts while its whole deadline fits the phase', async () => {
     vi.useFakeTimers({ now: NOW });
     await seedPending('b1', {}, '2026-10-12T19:00:00Z');
