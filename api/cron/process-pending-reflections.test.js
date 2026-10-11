@@ -31,6 +31,12 @@ const reflectMock = vi.fn();
 vi.mock('../agent/reflect.js', () => ({
   generateReflection: (...args) => reflectMock(...args),
 }));
+// Reflection outage fix (P-OUT-1): generateReflection reports its outcome, and
+// the host clears the flag only on 'ok' (or 'skipped') — a successful reflection.
+const OK_RESULT = {
+  outcome: 'ok',
+  record: { outcome: 'ok', failureClass: null, errorName: null, elapsedMs: 12_000, stopReason: 'tool_use', usage: { input_tokens: 3_800, output_tokens: 900 }, model: 'claude-sonnet-4-6', attempt: 1, at: '2026-07-24T18:00:00.000Z' },
+};
 
 // Passthrough with an override hook: null → the REAL sweep runs (the
 // integration under test); a function → that implementation (throw injection).
@@ -85,7 +91,7 @@ beforeEach(() => {
   fakeDb = createFirestoreFake();
   flagState.writesEnabled = true;
   sweepControl.impl = null;
-  reflectMock.mockReset().mockResolvedValue(undefined);
+  reflectMock.mockReset().mockResolvedValue(OK_RESULT);
 });
 
 afterEach(() => {
@@ -120,7 +126,7 @@ describe('the sweep rider runs on the steady-state tick (C1 regression)', () => 
     expect(res.statusCode).toBe(200);
     expect(res.body.succeeded).toBe(1);
     expect(res.body.message).toBeUndefined();
-    expect(reflectMock).toHaveBeenCalledWith(fakeDb, 'b1');
+    expect(reflectMock).toHaveBeenCalledWith(fakeDb, 'b1', { attempt: 1 });
     expect((await fakeDb.collection('agentBattles').doc('b1').get()).data().pendingReflection).toBe(false);
     expect(res.body.wireSweep.replayed).toBe(1);
     expect((await storyRef.get()).data().wirePending).toBe(false);
@@ -156,6 +162,7 @@ describe('budget floor + flag gate', () => {
     // The reflection consumes 46s of the 50s budget → 4s remain (< 5s floor).
     reflectMock.mockImplementation(async () => {
       vi.setSystemTime(new Date(Date.now() + 46_000));
+      return OK_RESULT;
     });
     await seedPendingBattle();
     const { storyRef } = await seedDeferredWireStory();

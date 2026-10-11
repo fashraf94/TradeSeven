@@ -1,9 +1,15 @@
 // api/agent/reflect.js
-// Post-battle reflection: Sonnet analyzes battle history and produces
-// self-reflection (→ agent.memory[]) and game design feedback (→ gameDesignFeedback collection).
+// Post-battle reflection: Sonnet analyzes battle history and produces a
+// self-reflection (→ agent.memory[]).
 //
-// Called directly from the cron via generateReflection(db, battleId).
+// Called directly from the cron via generateReflection(db, battleId, { attempt }).
 // Does NOT update agent stats (completeBattle handles that).
+//
+// Reflection outage fix (P-OUT-1, founder rulings O1–O4, 10 Oct 2026): the
+// game-design questionnaire is no longer requested or written (O1); the call
+// fits a measured budget and is CANCELLED when its deadline fires (O2); a
+// failed call is never saved as a lesson — nothing is written and the result
+// says why, so the cron can retry with a cap (O3) and record the outcome (O4).
 
 import Anthropic from '@anthropic-ai/sdk';
 import {
@@ -11,10 +17,17 @@ import {
   buildReflectionSystemPrompt,
   buildReflectionUserMessage,
 } from '../_utils/agentReflectionUtils.js';
-import { CURRENT_SCHEMA_VERSION, getCategoriesForMode } from '../_utils/gameDesignCategoryConfig.js';
 import { logReflection } from '../_utils/shadowLogger.js';
-import { flattenPortfolioServer } from '../_utils/agentScoring.js';
 import { consolidateAgentEvolution } from '../_utils/agentConsolidationApply.js';
+import {
+  REFLECTION_MODEL,
+  REFLECTION_TIMEOUT_MS,
+  REFLECTION_MAX_TOKENS,
+  classifyReflectionError,
+  errorNameOf,
+  usageOf,
+  buildReflectionOutcome,
+} from '../_utils/reflectionOutcome.js';
 // Per-Battle Loadout + Concurrency Phase 1 — learning attribution redirect: a
 // casual-clone battle's memory + consolidation belong to the PARENT ranked agent.
 // resolveRecordTargetId is pure (the clone doc is already read as agentDoc); the
@@ -42,24 +55,34 @@ function getAnthropicClient() {
  * Generate post-battle reflection for a completed agent battle.
  * Called from the cron after completeBattle() finishes.
  *
+ * Returns what happened, for the cron to record on the battle:
+ *   { outcome: 'ok', record }      — the lesson is in memory (exactly as before;
+ *                                    or already was: reason 'already_recorded');
+ *   { outcome: 'failed', record }  — NOTHING was written (no memory entry, no
+ *                                    consolidation); record.failureClass says why;
+ *   { outcome: 'skipped', reason } — nothing to reflect (battle or agent gone).
+ *
  * @param {FirebaseFirestore.Firestore} db - Firebase Admin Firestore instance
  * @param {string} battleId - The agentBattles document ID
+ * @param {{ attempt?: number, modelCall?: boolean }} [opts] - the attempt number
+ *   the cron claimed; modelCall false = the cron's recovery pass for a battle
+ *   whose attempts are spent (look for a landed lesson, never call the model)
  */
-export async function generateReflection(db, battleId) {
-  console.log(`${LOG_PREFIX} Starting reflection for battle ${battleId}`);
+export async function generateReflection(db, battleId, { attempt = 1, modelCall = true } = {}) {
+  console.log(`${LOG_PREFIX} Starting reflection for battle ${battleId} (attempt ${attempt})`);
 
   // 1. Read battle document
   const battleRef = db.collection('agentBattles').doc(battleId);
   const battleSnap = await battleRef.get();
   if (!battleSnap.exists) {
     console.warn(`${LOG_PREFIX} Battle ${battleId} not found, skipping reflection`);
-    return;
+    return { outcome: 'skipped', reason: 'battle_missing' };
   }
   const battleDoc = { id: battleSnap.id, ...battleSnap.data() };
 
   if (battleDoc.status !== 'completed') {
     console.warn(`${LOG_PREFIX} Battle ${battleId} is not completed (status: ${battleDoc.status}), skipping reflection`);
-    return;
+    return { outcome: 'skipped', reason: 'not_completed' };
   }
 
   // 2. Read agent document (for writing memory[] and checking gamesPlayed)
@@ -67,7 +90,7 @@ export async function generateReflection(db, battleId) {
   const agentSnap = await agentRef.get();
   if (!agentSnap.exists) {
     console.warn(`${LOG_PREFIX} Agent ${battleDoc.agentId} not found, skipping reflection`);
-    return;
+    return { outcome: 'skipped', reason: 'agent_missing' };
   }
   const agentDoc = { id: agentSnap.id, ...agentSnap.data() };
 
@@ -93,64 +116,78 @@ export async function generateReflection(db, battleId) {
   }
   const isCasualForward = learningRef !== agentRef;
 
-  // 3. Call Sonnet for reflection
-  let reflectionResult = null;
-  try {
-    reflectionResult = await callSonnetReflection(battleDoc, agentDoc);
-  } catch (err) {
-    console.error(`${LOG_PREFIX} Sonnet call failed for battle ${battleId}:`, err.message);
-    // Write minimal fallback reflection
-    reflectionResult = {
-      selfReflection: {
-        lesson: 'Reflection generation failed.',
-        adjustment: 'N/A',
-        hypothesisGrades: [],
-        confidenceCalibration: 'N/A',
+  // A retry after a success whose battle write was lost (or whose memory write
+  // committed but reported an error): this game's lesson is already in the
+  // window. No second call — it would only duplicate the lesson — but the
+  // attempt is a success, and the consolidation gate below still runs (the
+  // milestone claim keeps it to one run per milestone).
+  const alreadyRecorded = (learningDoc.memory || []).some((m) => m?.gameId === battleId);
+  let record;
+  if (alreadyRecorded) {
+    console.log(`${LOG_PREFIX} Battle ${battleId}: lesson already recorded on agent ${learningDoc.id} — no new call`);
+    record = buildReflectionOutcome({ outcome: 'ok', model: null, attempt, at: new Date().toISOString() });
+  } else if (!modelCall) {
+    // The cron's recovery pass for a battle whose attempts are all spent and
+    // whose last attempt left no record: no new call, and no lesson exists.
+    console.warn(`${LOG_PREFIX} Battle ${battleId}: attempts spent and no lesson recorded — no new call`);
+    return { outcome: 'failed', record: buildReflectionOutcome({ outcome: 'failed', failureClass: 'unknown', model: null, attempt, at: new Date().toISOString() }) };
+  } else {
+    // 3. Call Sonnet for reflection. Never throws: a failure comes back named.
+    const call = await callSonnetReflection(battleDoc, agentDoc);
+    let failure = call.ok ? null : { failureClass: call.failureClass, errorName: call.errorName };
+
+    // 4. Write self-reflection to agent.memory[] (rolling 5-game window) — ONLY on
+    //    a usable answer; a failure writes nothing (O3). Casual forward → the
+    //    PARENT's window (transactional merge); else → this agent. A write that
+    //    throws leaves no lesson, so it is a failed attempt the cron retries.
+    if (!failure) {
+      try {
+        if (isCasualForward) {
+          await appendMemoryReflectionForwardTx(db, learningRef, buildMemoryEntry(battleDoc, call.selfReflection));
+        } else {
+          await writeMemoryReflection(db, agentRef, agentDoc, battleDoc, call.selfReflection);
+        }
+      } catch (err) {
+        console.error(`${LOG_PREFIX} Failed to write memory for agent ${battleDoc.agentId}:`, err.message);
+        failure = { failureClass: 'unknown', errorName: errorNameOf(err) };
+      }
+    }
+
+    record = buildReflectionOutcome({
+      outcome: failure ? 'failed' : 'ok',
+      failureClass: failure?.failureClass ?? null,
+      errorName: failure?.errorName ?? null,
+      ...call.meta,
+      attempt,
+      at: new Date().toISOString(),
+    });
+
+    // Shadow log (fire-and-forget), mirroring the outcome record (O4). The
+    // lesson travels only with a success; a failure line carries no agent text.
+    logReflection({
+      battleId,
+      agentId: battleDoc.agentId,
+      userId: battleDoc.ownerId || null,
+      archetype: agentDoc.archetype || null,
+      gameMode: battleDoc.gameMode || null,
+      score: {
+        current: battleDoc.scoreState?.currentScore || 0,
+        opponent: battleDoc.scoreState?.opponentScore || 0,
       },
-      gameDesignFeedback: null,
-    };
-  }
+      turnCount: (battleDoc.chatExchanges || []).length,
+      tradeCount: (battleDoc.trades || []).length,
+      evaluationCount: (battleDoc.evaluations || []).length,
+      selfReflection: failure ? null : call.selfReflection,
+      ...record,
+    }).catch(() => {});
 
-  // Shadow log (fire-and-forget)
-  logReflection({
-    battleId,
-    agentId: battleDoc.agentId,
-    userId: battleDoc.ownerId || null,
-    archetype: agentDoc.archetype || null,
-    gameMode: battleDoc.gameMode || null,
-    score: {
-      current: battleDoc.scoreState?.currentScore || 0,
-      opponent: battleDoc.scoreState?.opponentScore || 0,
-    },
-    turnCount: (battleDoc.chatExchanges || []).length,
-    tradeCount: (battleDoc.trades || []).length,
-    evaluationCount: (battleDoc.evaluations || []).length,
-    selfReflection: reflectionResult.selfReflection || null,
-    gameDesignFeedback: reflectionResult.gameDesignFeedback || null,
-  }).catch(() => {});
-
-  // 4. Write self-reflection to agent.memory[] (rolling 5-game window). Casual
-  //    forward → the PARENT's window (transactional merge); else → this agent.
-  try {
-    if (isCasualForward) {
-      await appendMemoryReflectionForwardTx(db, learningRef, buildMemoryEntry(battleDoc, reflectionResult.selfReflection));
-    } else {
-      await writeMemoryReflection(db, agentRef, agentDoc, battleDoc, reflectionResult.selfReflection);
-    }
-  } catch (err) {
-    console.error(`${LOG_PREFIX} Failed to write memory for agent ${battleDoc.agentId}:`, err.message);
-  }
-
-  // 5. Write game design feedback to collection
-  if (reflectionResult.gameDesignFeedback) {
-    try {
-      await writeGameDesignFeedback(db, battleDoc, agentDoc, reflectionResult.gameDesignFeedback);
-    } catch (err) {
-      console.error(`${LOG_PREFIX} Failed to write game design feedback for battle ${battleId}:`, err.message);
+    if (failure) {
+      console.error(`${LOG_PREFIX} Reflection failed for battle ${battleId} (attempt ${attempt}): ${record.failureClass}${record.errorName ? ` (${record.errorName})` : ''} after ${record.elapsedMs ?? '?'}ms — nothing written`);
+      return { outcome: 'failed', record };
     }
   }
 
-  // 6. Check if consolidation is due (every 5 games). Sprint 1 — Dossier funnel:
+  // 5. Check if consolidation is due (every 5 games). Sprint 1 — Dossier funnel:
   //    consolidation is the ONLY writer of agent.disciplines. The driver re-reads
   //    the agent doc internally so it sees the just-written memory entry, then
   //    calls Sonnet, validates, and applies via a single atomic update.
@@ -186,8 +223,9 @@ export async function generateReflection(db, battleId) {
         await consolidateAgentEvolution(db, learningRef, { transactionalApply: isCasualForward });
       } catch (consolidationErr) {
         // Consolidation failure must not propagate up — reflection itself
-        // already succeeded (memory and gameDesignFeedback are written by
-        // this point). pendingConsolidation stays true; the next 5-game gate
+        // already succeeded (the memory entry is written by this point, so
+        // the outcome stays 'ok': a retry would only duplicate the lesson).
+        // pendingConsolidation stays true; the next 5-game gate
         // will retry. Logged for shadow-trace visibility.
         console.error(
           `${LOG_PREFIX} Consolidation failed for agent ${battleDoc.agentId}:`,
@@ -201,47 +239,102 @@ export async function generateReflection(db, battleId) {
   }
 
   console.log(`${LOG_PREFIX} Reflection complete for battle ${battleId}`);
+  return alreadyRecorded ? { outcome: 'ok', record, reason: 'already_recorded' } : { outcome: 'ok', record };
 }
 
 // ==================== SONNET CALL ====================
 
+class ReflectionDeadlineError extends Error {
+  constructor() {
+    super(`Sonnet reflection deadline (${REFLECTION_TIMEOUT_MS / 1000}s)`);
+    this.name = 'ReflectionDeadlineError';
+  }
+}
+
+/**
+ * One reflection call. NEVER throws — resolves to
+ *   { ok: true, selfReflection, meta } or { ok: false, failureClass, errorName, meta }
+ * where meta = { elapsedMs, stopReason, usage, model }.
+ *
+ * The deadline both ABORTS the request (so an abandoned call is cancelled, not
+ * left running and billed) and settles the race: the SDK links the signal into
+ * the in-flight fetch and its body read, but not into a retry's backoff sleep,
+ * so during a backoff the race is what returns on time. A timeout is
+ * classified by our own fired flag.
+ */
 async function callSonnetReflection(battleDoc, agentDoc) {
-  const anthropic = getAnthropicClient();
+  const meta = { elapsedMs: null, stopReason: null, usage: null, model: REFLECTION_MODEL };
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  let timedOut = false;
+  let timer = null;
+  let response;
+  try {
+    const anthropic = getAnthropicClient();
+    const systemPrompt = buildReflectionSystemPrompt();
+    const userMessage = buildReflectionUserMessage(battleDoc, agentDoc);
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        reject(new ReflectionDeadlineError()); // settles the race first …
+        controller.abort();                    // … then cancels the request
+      }, REFLECTION_TIMEOUT_MS);
+    });
+    response = await Promise.race([
+      anthropic.messages.create({
+        model: REFLECTION_MODEL,
+        max_tokens: REFLECTION_MAX_TOKENS,
+        temperature: 0.3,
+        // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+        // preserve the prior Sonnet-4 (no-thinking) latency profile.
+        thinking: { type: 'disabled' },
+        output_config: { effort: 'low' },
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+        tools: [REFLECTION_TOOL],
+        tool_choice: { type: 'tool', name: 'submit_reflection' },
+      }, { signal: controller.signal }),
+      deadline,
+    ]);
+  } catch (err) {
+    meta.elapsedMs = Date.now() - startedAt;
+    return { ok: false, failureClass: classifyReflectionError(err, { timedOut }), errorName: errorNameOf(err), meta };
+  } finally {
+    clearTimeout(timer);
+  }
 
-  const systemPrompt = buildReflectionSystemPrompt();
-  const userMessage = buildReflectionUserMessage(battleDoc, agentDoc);
+  meta.elapsedMs = Date.now() - startedAt;
+  meta.stopReason = typeof response?.stop_reason === 'string' ? response.stop_reason : null;
+  meta.usage = usageOf(response?.usage);
+  if (typeof response?.model === 'string' && response.model) meta.model = response.model;
 
-  const response = await Promise.race([
-    anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2048,
-      temperature: 0.3,
-      // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
-      // preserve the prior Sonnet-4 (no-thinking) latency profile.
-      thinking: { type: 'disabled' },
-      output_config: { effort: 'low' },
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-      tools: [REFLECTION_TOOL],
-      tool_choice: { type: 'tool', name: 'submit_reflection' },
-    }),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('Sonnet reflection timeout (30s)')), 30_000)),
-  ]);
+  // An answer cut off at the token ceiling is a named failure — never parsed.
+  if (meta.stopReason === 'max_tokens') {
+    return { ok: false, failureClass: 'max_tokens', errorName: null, meta };
+  }
+
+  // Under the forced tool choice a completed answer IS stop_reason 'tool_use'.
+  // Anything else (refusal, end_turn, pause_turn, a context cut …) is not a
+  // completed tool call, even if a tool block came back: named no_tool_use,
+  // with the stop reason on the record, and never parsed.
+  if (meta.stopReason !== 'tool_use') {
+    return { ok: false, failureClass: 'no_tool_use', errorName: null, meta };
+  }
 
   // Extract tool use result
-  const toolUse = response.content?.find(c => c.type === 'tool_use');
+  const toolUse = response?.content?.find?.(c => c.type === 'tool_use');
   if (!toolUse?.input) {
-    throw new Error('Sonnet did not use submit_reflection tool');
+    return { ok: false, failureClass: 'no_tool_use', errorName: null, meta };
   }
 
-  const result = toolUse.input;
-
-  // Validate required keys
-  if (!result.selfReflection || !result.gameDesignFeedback) {
-    throw new Error('Reflection response missing required keys (selfReflection or gameDesignFeedback)');
+  // Validate the required key: a self-reflection carrying a lesson.
+  const selfReflection = toolUse.input.selfReflection;
+  if (!selfReflection || typeof selfReflection !== 'object'
+    || typeof selfReflection.lesson !== 'string' || !selfReflection.lesson.trim()) {
+    return { ok: false, failureClass: 'missing_keys', errorName: null, meta };
   }
 
-  return result;
+  return { ok: true, selfReflection, meta };
 }
 
 // ==================== FIRESTORE WRITES ====================
@@ -310,60 +403,4 @@ export async function claimConsolidationMilestone(db, agentRef, gamesPlayed) {
     tx.update(agentRef, { lastConsolidatedGamesPlayed: gamesPlayed });
     return true;
   });
-}
-
-/**
- * Write game design feedback to the gameDesignFeedback collection.
- * Server-populated fields ensure data integrity.
- */
-async function writeGameDesignFeedback(db, battleDoc, agentDoc, feedback) {
-  const scoreState = battleDoc.scoreState || {};
-  const currentScore = scoreState.currentScore || 0;
-  const opponentScore = scoreState.opponentScore || 0;
-  const battleResult = currentScore > opponentScore ? 'win' : (currentScore < opponentScore ? 'loss' : 'draw');
-
-  const gameMode = battleDoc.gameMode || 'baggerbomb';
-  const categoryConfig = getCategoriesForMode(gameMode);
-
-  // Extract asset tickers from portfolio
-  const flatPortfolio = flattenPortfolioServer(battleDoc.portfolio);
-  const assetContext = flatPortfolio.map(a => a.symbol).filter(Boolean);
-
-  const feedbackDoc = {
-    // Server-populated metadata (not from AI response)
-    schemaVersion: CURRENT_SCHEMA_VERSION,
-    gameMode,
-    battleId: battleDoc.id,
-    agentId: battleDoc.agentId,
-    ownerId: battleDoc.ownerId,
-    agentArchetype: battleDoc.agentContext?.archetype || agentDoc?.archetype || 'unknown',
-    battleResult,
-    opponentType: 'bot_random',
-    assetContext,
-    duration: battleDoc.duration || 'unknown',
-    finalScore: Math.round(currentScore * 100) / 100,
-    finalOpponentScore: Math.round(opponentScore * 100) / 100,
-    createdAt: new Date().toISOString(),
-
-    // AI-generated category ratings (validated by Tool Use schema)
-    categories: {},
-    mechanicHighlight: feedback.mechanicHighlight || '',
-    mechanicFriction: feedback.mechanicFriction || '',
-    wouldPlayAgain: feedback.wouldPlayAgain ?? true,
-  };
-
-  // Extract category ratings from feedback
-  for (const categoryKey of categoryConfig.categories) {
-    const categoryData = feedback[categoryKey];
-    if (categoryData) {
-      feedbackDoc.categories[categoryKey] = {
-        rating: Math.max(1, Math.min(5, categoryData.rating || 3)),
-        observation: categoryData.observation || '',
-        suggestion: categoryData.suggestion || null,
-      };
-    }
-  }
-
-  await db.collection('gameDesignFeedback').add(feedbackDoc);
-  console.log(`${LOG_PREFIX} Wrote game design feedback for battle ${battleDoc.id}`);
 }

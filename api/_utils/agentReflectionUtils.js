@@ -2,22 +2,25 @@
 // Utilities for post-battle reflection: history truncation, prompt assembly,
 // Tool Use schema, and response parsing.
 
-import { getCategoriesForMode, CURRENT_SCHEMA_VERSION } from './gameDesignCategoryConfig.js';
 import { flattenPortfolioServer } from './agentScoring.js';
 
 // ==================== TOOL SCHEMA ====================
 
 /**
- * Forced Tool Use schema for the Sonnet reflection call.
- * Two-pass output: self-reflection (outcome-aware) + game design feedback (outcome-blind).
+ * Forced Tool Use schema for the Sonnet reflection call: the self-reflection
+ * only (outcome-aware). Reflection outage fix (P-OUT-1, founder ruling O1,
+ * 10 Oct 2026): the game-design questionnaire was dropped from this call — it
+ * was most of the answer, nothing in the product read it, and the answer no
+ * longer fit its deadline. Feedback documents already collected are kept;
+ * nothing new is written to that collection.
  */
 export const REFLECTION_TOOL = {
   name: 'submit_reflection',
   description:
-    'Submit your post-battle reflection and game design evaluation. The selfReflection section should reference the battle outcome. The gameDesignFeedback section must NOT reference whether you won or lost — evaluate mechanics purely on quality.',
+    'Submit your post-battle reflection. It should reference the battle outcome.',
   input_schema: {
     type: 'object',
-    required: ['selfReflection', 'gameDesignFeedback'],
+    required: ['selfReflection'],
     properties: {
       selfReflection: {
         type: 'object',
@@ -50,88 +53,6 @@ export const REFLECTION_TOOL = {
           confidenceCalibration: {
             type: 'string',
             description: 'Were you overconfident, underconfident, or well-calibrated? Max 30 words.',
-          },
-        },
-      },
-      gameDesignFeedback: {
-        type: 'object',
-        required: [
-          'threshold_calibration',
-          'tier_impact',
-          'swap_economy',
-          'scoring_tension',
-          'decision_density',
-          'information_value',
-          'mechanicHighlight',
-          'mechanicFriction',
-          'wouldPlayAgain',
-        ],
-        properties: {
-          threshold_calibration: {
-            type: 'object',
-            required: ['rating', 'observation'],
-            properties: {
-              rating: { type: 'integer', minimum: 1, maximum: 5 },
-              observation: { type: 'string', description: 'Specific observation from this battle. Max 100 words.' },
-              suggestion: { type: 'string', description: 'Actionable improvement or null.', nullable: true },
-            },
-          },
-          tier_impact: {
-            type: 'object',
-            required: ['rating', 'observation'],
-            properties: {
-              rating: { type: 'integer', minimum: 1, maximum: 5 },
-              observation: { type: 'string' },
-              suggestion: { type: 'string', nullable: true },
-            },
-          },
-          swap_economy: {
-            type: 'object',
-            required: ['rating', 'observation'],
-            properties: {
-              rating: { type: 'integer', minimum: 1, maximum: 5 },
-              observation: { type: 'string' },
-              suggestion: { type: 'string', nullable: true },
-            },
-          },
-          scoring_tension: {
-            type: 'object',
-            required: ['rating', 'observation'],
-            properties: {
-              rating: { type: 'integer', minimum: 1, maximum: 5 },
-              observation: { type: 'string' },
-              suggestion: { type: 'string', nullable: true },
-            },
-          },
-          decision_density: {
-            type: 'object',
-            required: ['rating', 'observation'],
-            properties: {
-              rating: { type: 'integer', minimum: 1, maximum: 5 },
-              observation: { type: 'string' },
-              suggestion: { type: 'string', nullable: true },
-            },
-          },
-          information_value: {
-            type: 'object',
-            required: ['rating', 'observation'],
-            properties: {
-              rating: { type: 'integer', minimum: 1, maximum: 5 },
-              observation: { type: 'string' },
-              suggestion: { type: 'string', nullable: true },
-            },
-          },
-          mechanicHighlight: {
-            type: 'string',
-            description: 'The single best moment or mechanic in this battle.',
-          },
-          mechanicFriction: {
-            type: 'string',
-            description: 'The single most frustrating or confusing mechanic.',
-          },
-          wouldPlayAgain: {
-            type: 'boolean',
-            description: 'Based purely on game quality, not outcome.',
           },
         },
       },
@@ -251,14 +172,10 @@ function truncateText(text, maxWords) {
  * Build the system prompt for the Sonnet reflection call.
  */
 export function buildReflectionSystemPrompt() {
-  return `You are analyzing a completed FantasyTrades agent battle. You will produce two separate analyses using the submit_reflection tool.
+  return `You are analyzing a completed FantasyTrades agent battle. You will produce a self-reflection using the submit_reflection tool.
 
-PASS 1 — SELF-REFLECTION (outcome-aware):
+SELF-REFLECTION (outcome-aware):
 You know the battle result. Analyze your strategy, grade your hypotheses, and identify what you'd change.
-
-PASS 2 — GAME DESIGN EVALUATION (outcome-blind):
-Evaluate the game mechanics as an automated playtester. Do NOT reference whether you won or lost.
-A mechanic can be excellent even if it hurt you. A mechanic can be flawed even if it benefited you.
 
 Use the submit_reflection tool to provide your analysis.`;
 }
@@ -275,7 +192,6 @@ export function buildReflectionUserMessage(battleDoc, agentDoc) {
   const result = currentScore > opponentScore ? 'WIN' : (currentScore < opponentScore ? 'LOSS' : 'DRAW');
 
   const truncated = truncateBattleHistory(battleDoc);
-  const categoryConfig = getCategoriesForMode(battleDoc.gameMode || 'baggerbomb');
 
   // --- Agent Identity ---
   const identityBlock = `AGENT IDENTITY:
@@ -348,17 +264,6 @@ Produce your selfReflection with:
 - hypothesisGrades: Grade each hypothesis from your evaluations as "correct", "incorrect", or "inconclusive"
 - confidenceCalibration: Were you overconfident, underconfident, or well-calibrated? (max 30 words)`;
 
-  const gameDesignInstructions = `--- GAME DESIGN EVALUATION INSTRUCTIONS ---
-Do NOT reference whether you won or lost in this section.
-Evaluate each category with a rating (1-5), a specific observation from THIS battle, and an optional suggestion.
-
-${categoryConfig.promptInstructions}
-
-Also provide:
-- mechanicHighlight: The single best moment/mechanic in this battle
-- mechanicFriction: The single most frustrating or confusing mechanic
-- wouldPlayAgain: Based purely on game quality, not outcome`;
-
   return [
     identityBlock,
     '',
@@ -375,7 +280,5 @@ Also provide:
     feedBlock,
     '',
     selfReflectionInstructions,
-    '',
-    gameDesignInstructions,
   ].join('\n');
 }
