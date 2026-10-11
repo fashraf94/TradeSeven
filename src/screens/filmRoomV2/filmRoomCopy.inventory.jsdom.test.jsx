@@ -58,7 +58,7 @@ const COPY_KEYS = [
   'yes', 'no', 'notRecorded', 'close',
   'jumps[0][0]', 'jumps[0][1]', 'jumps[1][0]', 'jumps[1][1]', 'jumps[2][0]', 'jumps[2][1]', 'jumps[3][0]', 'jumps[3][1]', 'jumps[4][0]', 'jumps[4][1]', 'jumps[5][0]', 'jumps[5][1]',
   'holdings', 'holdingsStart', 'holdingsEnd', 'holdingsAt()', 'swapByMaker.agent', 'swapByMaker.platform', 'swapByMaker.other', 'swapMakerNote', 'tapForDeep',
-  'swaps', 'swapsNone', 'swapWord', 'slot', 'banked', 'platformQuote', 'fork', 'holdPath', 'swapPath', 'heldLine()', 'boughtLine()', 'rebuiltDashed', 'hypothetical', 'laterTrades',
+  'swaps', 'swapsNone', 'swapWord', 'slot', 'banked', 'platformQuote', 'fork', 'holdPath', 'swapPath', 'heldLine()', 'boughtLine()', 'rebuiltDashed', 'rebuiltPoints', 'rebuiltDashedPoints', 'hypothetical', 'laterTrades',
   'gap', 'gapNote', 'closedLeg', 'closedLegNote', 'replayNone', 'replayNotDrawn', 'replayNoneSeeCoverage', 'replayCrypto', 'split',
   'splitRows.recordedExit()', 'splitRows.barAtSwap', 'splitRows.barMinusExit', 'splitRows.rescored', 'splitRows.inputsPart', 'splitRows.pricePart', 'barClosedAt()',
   'fill', 'fillRows.recordedFill()', 'fillRows.barAtSwap', 'fillRows.barMinusFill', 'missingLabel', 'deepDoor()',
@@ -183,9 +183,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 237 copy keys, 345 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(237);
-    expect(inventory()).toHaveLength(345);
+  it('the inventory\'s size is pinned (the build report states it): 239 copy keys, 347 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(239);   // Astra F1: the two point legends (237 before)
+    expect(inventory()).toHaveLength(347);
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {

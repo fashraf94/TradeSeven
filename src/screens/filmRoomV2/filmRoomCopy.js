@@ -143,7 +143,9 @@ export const FILM_ROOM_COPY = Object.freeze({
   swapPath: 'Swap path',
   heldLine: (sym) => `${sym} held`,
   boughtLine: (sym) => `${sym} bought`,
-  rebuiltDashed: 'dashed · rebuilt from 1-minute bars',
+  rebuiltDashed: 'dashed · rebuilt from 1-minute bars',   // the legend beside drawn segments only (Astra F1)
+  rebuiltPoints: 'points · rebuilt from 1-minute bars',   // beside isolated points only: no segment is drawn
+  rebuiltDashedPoints: 'dashed lines and points · rebuilt from 1-minute bars',   // beside both
   hypothetical: 'hypothetical',
   laterTrades: 'later trades in this slot, not replayed',
   gap: 'Gap',

@@ -11,7 +11,7 @@ import {
   valueAt, classAt, numberAt, checkStateOf, checkRuns, riskLines, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, deriveHoldings,
   directiveCardOf, rationaleTimeline, planGroups, evidenceMarkers, roleOf, deepSymbols, extremeBars, lastPointPath,
   fmtPoints, fmtPrice, fmtPriceDelta, etClock, etDateLabel, isRecordedScore, SCREEN_AGGREGATE_CLASSES, checkCounts,
-  fmtPercent, seriesFacts, pctTicks, tradingTimeline, lineRuns, linePath,
+  fmtPercent, seriesFacts, pctTicks, tradingTimeline, lineRuns, linePath, forkRuns,
 } from './filmRoomModel';
 import sep23Series from './__fixtures__/sep23.series.json';
 import { SPEC_AGGREGATE_CLASSES } from './__fixtures__/filmRoomHarness';
@@ -291,6 +291,16 @@ describe('A2A2-3 — a line\'s runs break at a missing bucket', () => {
     const x = (t) => (t - T(0)) / 60_000; const y = (v) => 100 - v;
     expect(linePath([{ t: T(10), v: 1 }, { t: T(20), v: 2 }, { t: T(40), v: 4 }], x, y)).toBe('M10.0 99.0 L20.0 98.0 M39.0 96.0 L41.0 96.0');
     expect(linePath([{ t: T(10), v: 1 }, { t: T(20), v: 2 }], x, y)).toBe('M10.0 99.0 L20.0 98.0');   // unbroken: the old form, byte for byte
+  });
+});
+
+describe('Astra F1 — a replay path\'s runs break only where a sample has no value or no instant', () => {
+  const at = (min) => new Date(Date.parse('2026-09-23T16:45:00.000Z') + min * 60_000).toISOString();
+  it('consecutive placeable samples are one run, however far apart in time; a null value or an unrecorded instant starts another', () => {
+    expect(forkRuns([{ at: at(0), points: -13 }, { at: at(15), points: -12 }, { at: at(90), points: -9 }]).map((r) => r.length)).toEqual([3]);
+    expect(forkRuns([{ at: at(0), points: -13 }, { at: at(15), points: null }, { at: at(30), points: -9 }, { at: null, points: -8 }, { at: at(60), points: -7 }, { at: at(75), points: -6 }]).map((r) => r.map((p) => p.points))).toEqual([[-13], [-9], [-7, -6]]);
+    expect(forkRuns([{ at: 'not a time', points: 1 }, { at: at(0), points: Number.NaN }])).toEqual([]);
+    expect([forkRuns([]), forkRuns(null), forkRuns(undefined)]).toEqual([[], [], []]);
   });
 });
 

@@ -319,14 +319,15 @@ describe('the swap card at desktop width — each path\'s end value beside the f
     expect(Math.abs((top('hold') + top('swap')) / 2 - (lastY(row, 'hold') + lastY(row, 'swap')) / 2)).toBeLessThan(0.06);
   });
 
-  it('review A2P2-9: at desktop, a replay with no fork drawn (no instants) keeps its end values, under where the fork would be', () => {
+  it('review A2P2-9, under Astra F1: at desktop, a replay whose values carry no instant draws nothing — the no-drawn line, never a path label, an end value or a legend for lines that are not there', () => {
     const t = clone(sep23Tape);
     for (const p of [...t.actions[0].replay.holdPath, ...t.actions[0].replay.swapPath]) p.at = null;
     m.render(<Desk tape={t} />);
-    const r = t.actions[0].replay;
     expect(card(0).querySelector('[data-fork-row]')).toBeNull();
-    expect(card(0).querySelector(`[data-path-label="hold"] [data-num="actions[0].replay.holdPath[${r.holdPath.length - 1}].points"]`)).toBeTruthy();
-    expect(card(0).querySelector(`[data-path-label="swap"] [data-num="actions[0].replay.swapPath[${r.swapPath.length - 1}].points"]`)).toBeTruthy();
+    expect(card(0).querySelector('[data-replay-none="not-drawn"]').textContent).toBe('No replay drawn for this swap');
+    expect(card(0).querySelector('[data-path-label], [data-fork-end], [data-replay-sentence]')).toBeNull();
+    expect(card(0).textContent).not.toContain('rebuilt from 1-minute bars');
+    expect(card(1).querySelector('[data-path-label="hold"]')).toBeTruthy();   // the other cards draw theirs
   });
 
   it.each([['Sep-23', sep23Tape], ['empty', emptyTape]])('%s at desktop width, everything opened (review A2P2-3): every number marked, no sign colour astray, no forbidden word', (_l, tape) => {

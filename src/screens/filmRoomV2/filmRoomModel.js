@@ -417,6 +417,23 @@ export function lastPointPath(tape, actionIndex, pathKey) {
   return ['actions', actionIndex, 'replay', pathKey, list.length - 1, 'points'];
 }
 
+/**
+ * A replay path's RUNS (Astra F1): its samples in order, split wherever a sample has no value or no recorded
+ * instant — the only gaps a check-by-check path has (its samples are the checks', never a fixed bar step, so
+ * lineRuns' bucket rule does not apply). A run of one is an ISOLATED sample: no valid neighbour on either side.
+ * Nothing is joined across a gap.
+ */
+export function forkRuns(list) {
+  const runs = [];
+  let run = null;
+  for (const p of Array.isArray(list) ? list : []) {
+    if (!isNum(p?.points) || toMs(p?.at) === null) { run = null; continue; }
+    if (!run) { run = []; runs.push(run); }
+    run.push(p);
+  }
+  return runs;
+}
+
 // ── holdings at the day's start and end (BA-45) ─────────────────────────────
 
 /**

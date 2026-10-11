@@ -12,7 +12,9 @@
 //               — always the SOLD leg's sale — and the fill as its own group
 //               (F1, BA-38); the basis note on every card, and the replay
 //               sentence only beside a drawn replay — a card with no written
-//               replay says why, alone (Amendment E addendum 3, R11)
+//               replay says why, alone (Amendment E addendum 3, R11). Drawn
+//               means visible geometry: a dashed segment, or a ring at an
+//               isolated sample; the labels and legend say which (Astra F1)
 //   Directives  the card per BA-9, its three states from the tape's rows (F6)
 //   Plans       verbatim, with the two market prices and the horizon note (BA-10)
 //   Rationale   recorded words, collapsed, beside the checks that carry no agent
@@ -26,7 +28,7 @@
 import React, { useState } from 'react';
 import {
   valueAt, etClock, checkStateOf, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, lastPointPath, deriveHoldings,
-  directiveCardOf, rationaleTimeline, planGroups, PLAN_DIRECTIONS, EXIT_MAKER_WORDS, fmtPrice, fmtPriceDelta, fmtCount, isNum, toMs, etWhen,
+  directiveCardOf, rationaleTimeline, planGroups, PLAN_DIRECTIONS, EXIT_MAKER_WORDS, fmtPrice, fmtPriceDelta, fmtCount, isNum, toMs, etWhen, forkRuns,
 } from './filmRoomModel';
 // The replay's own coverage line sits under the swaps' (BA-20: every section its coverage).
 import { FILM_ROOM_COPY as COPY, REPLAY_SENTENCE, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE, DIRECTIVE_EXPLAINER } from './filmRoomCopy';
@@ -88,8 +90,13 @@ function HoldingsSection({ tape, onDeep }) {
 
 /** The fork: the hold path and the swap path from the swap to the close, both rebuilt and dashed; a null point is a visible gap. */
 const FORK_HEIGHT = 112;
+/** An isolated sample's glyph: a ring this many px across, centred on the sample (Astra F1). */
+const POINT_GLYPH_PX = 7;
 
-/** The fork's scale — null when it has no point to draw, or no recorded instant to place one at (review A2L3-11). */
+/**
+ * The fork's scale — null when it has no value to scale, or no recorded instant to place one at (review A2L3-11).
+ * A scale is not a drawing: what is drawn is forkGeometry's.
+ */
 function forkScale(tape, index, height = FORK_HEIGHT) {
   const r = valueAt(tape, ['actions', index, 'replay']);
   const hold = Array.isArray(r?.holdPath) ? r.holdPath : [];
@@ -108,6 +115,34 @@ function forkScale(tape, index, height = FORK_HEIGHT) {
     y: (v) => 8 + ((hi - v) / (hi - lo)) * (height - 16),
   };
 }
+
+/**
+ * The fork's GEOMETRY — exactly what the chart emits, path by path (Astra F1): each run of samples with a value at a
+ * recorded instant (forkRuns) is a dashed SEGMENT when its points sit at two places or more, else a POINT glyph (an
+ * isolated sample, drawn as itself — never joined across the gap to fabricate a line). A path is drawn when it emits
+ * a segment or a glyph, and the fork when either path is. The chart draws from this object and the card's every
+ * replay word — the sentence, each path's label, the legend — reads it, so none can describe what is not drawn
+ * (BUILD_RULES §9). null when the fork has no scale.
+ */
+function forkGeometry(tape, index, height = FORK_HEIGHT) {
+  const scale = forkScale(tape, index, height);
+  if (!scale) return null;
+  const pathOf = (list) => {
+    const segments = []; const points = [];
+    for (const run of forkRuns(list)) {
+      const at = run.map((p) => [scale.x(p.at).toFixed(1), scale.y(p.points).toFixed(1)]);
+      if (new Set(at.map(([x, y]) => `${x} ${y}`)).size > 1) segments.push(at.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' '));
+      else points.push({ x: Number(at[0][0]), y: Number(at[0][1]) });
+    }
+    return { d: segments.join(' '), segments: segments.length, points, drawn: segments.length > 0 || points.length > 0 };
+  };
+  const hold = pathOf(scale.hold);
+  const swap = pathOf(scale.swap);
+  return { scale, hold, swap, drawn: hold.drawn || swap.drawn, dashed: hold.segments + swap.segments > 0, dotted: hold.points.length + swap.points.length > 0 };
+}
+
+/** A point glyph's ring, in a path's colour — on the fork at its sample, and as that path's legend swatch. */
+const ring = (color) => ({ width: POINT_GLYPH_PX, height: POINT_GLYPH_PX, boxSizing: 'border-box', borderRadius: '50%', border: `1.6px solid ${color}`, background: C.surface, flexShrink: 0 });
 
 /**
  * The paths' end values beside the fork, each at its own height on the fork's
@@ -134,28 +169,23 @@ function ForkEnds({ tape, scale, ends, height }) {
   );
 }
 
-function ForkChart({ tape, index, height = FORK_HEIGHT, ends = null }) {
-  const scale = forkScale(tape, index, height);
-  if (!scale) return null;
-  const { hold, swap, t0, x, y } = scale;
-  const d = (list) => {
-    let s = ''; let pen = false;
-    for (const p of list) {
-      if (!isNum(p?.points) || toMs(p.at) === null) { pen = false; continue; }
-      s += `${pen ? 'L' : 'M'}${x(p.at).toFixed(1)} ${y(p.points).toFixed(1)} `;
-      pen = true;
-    }
-    return s.trim();
-  };
+/** The fork as forkGeometry states it: each path's dashed segments, and a ring at each isolated sample. */
+function ForkChart({ tape, index, geo, height = FORK_HEIGHT, ends = null }) {
+  if (!geo?.drawn) return null;
+  const { scale } = geo;
+  const paths = [['hold', geo.hold, C.ink2], ['swap', geo.swap, C.teal]];
   return (
     <div data-fork-row={index} style={{ display: 'flex', alignItems: 'flex-start', width: '100%', minWidth: 0 }}>
       <div data-region={`fork-${index}`} style={{ position: 'relative', flex: 1, minWidth: 0, height }}>
         <svg width="100%" height={height} viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-label={COPY.fork} style={{ display: 'block', overflow: 'visible', width: '100%', height }}>
-          <path data-line="hold" data-rebuilt="" d={d(hold)} style={{ fill: 'none', stroke: C.ink2, strokeWidth: 1.6, strokeDasharray: '5 4' }} vectorEffect="non-scaling-stroke" />
-          <path data-line="swap" data-rebuilt="" d={d(swap)} style={{ fill: 'none', stroke: C.teal, strokeWidth: 1.6, strokeDasharray: '5 4' }} vectorEffect="non-scaling-stroke" />
+          {paths.map(([k, g, color]) => (g.segments ? <path key={k} data-line={k} data-rebuilt="" d={g.d} style={{ fill: 'none', stroke: color, strokeWidth: 1.6, strokeDasharray: '5 4' }} vectorEffect="non-scaling-stroke" /> : null))}
         </svg>
+        {/* an isolated sample: a ring at its own place — the svg stretches its x, so a circle inside it would not stay round */}
+        {paths.flatMap(([k, g, color]) => g.points.map((p, j) => (
+          <span key={`${k}${j}`} data-fork-point={k} data-rebuilt="" aria-hidden="true" style={{ position: 'absolute', left: `calc(${(p.x / 10).toFixed(2)}% - ${POINT_GLYPH_PX / 2}px)`, top: p.y - POINT_GLYPH_PX / 2, ...ring(color) }} />
+        )))}
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: -14, display: 'flex', justifyContent: 'space-between', ...mono(9, C.ink3) }}>
-          <When>{etClock(new Date(t0).toISOString())}</When>
+          <When>{etClock(new Date(scale.t0).toISOString())}</When>
           <span>{COPY.close10}</span>
         </div>
       </div>
@@ -229,11 +259,12 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
   const holdEnd = lastPointPath(tape, index, 'holdPath');
   const swapEnd = lastPointPath(tape, index, 'swapPath');
   // The design of record's desktop card puts each path's end value beside the fork, at its height; the phone keeps them under it.
-  // R11: a replay is DRAWN when it is written and its fork has a point to draw at a recorded instant (forkScale).
-  const drawn = Boolean(r) && forkScale(tape, index) !== null;
-  // A written replay with a point that has a value shows its values (its end values, the gap — review A2P2-9), drawn
-  // or not; one with no such point has nothing to state but its reasons (review A2F1-3).
-  const valued = Boolean(r) && [...(Array.isArray(r.holdPath) ? r.holdPath : []), ...(Array.isArray(r.swapPath) ? r.swapPath : [])].some((p) => isNum(p?.points));
+  // R11, Astra F1: a replay is DRAWN when its fork emits visible geometry — a dashed segment or a point glyph — on
+  // either path (forkGeometry, the one object the chart draws from). The sentence, the hypothetical tag, the legend,
+  // the values (the end values, the gap — review A2P2-9) and each path's label all follow it, the label path by path;
+  // a written replay that draws nothing states only its reasons (review A2F1-3).
+  const geo = r ? forkGeometry(tape, index) : null;
+  const drawn = Boolean(geo?.drawn);
   // A card with no written replay says why: a crypto leg by its own stored reason, once (the day's coverage note,
   // which also names crypto legs after the candle pass, stays at the section's head — R11's "caveat once"); any other
   // by the day's replay coverage note (the close pass's "awaiting the candle pass", or outside the candle window).
@@ -243,7 +274,16 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
   // replay's own one-step sentence (review A2F1-2) — so the card points to the coverage line above instead.
   const dayNote = !tape.passes?.candles?.writtenAt && typeof tape.coverage?.replay?.note === 'string' && Boolean(tape.coverage.replay.note);
   const beside = Boolean(desktop && drawn);
-  const ends = beside ? { hold: { path: holdEnd, label: COPY.holdPath, symbol: a.symbolOut }, swap: { path: swapEnd, label: COPY.swapPath, symbol: a.symbolIn } } : null;
+  // an end value beside the fork only for a path that drew something — never a label for a path that emitted nothing
+  const ends = beside ? { hold: { path: geo.hold.drawn ? holdEnd : null, label: COPY.holdPath, symbol: a.symbolOut }, swap: { path: geo.swap.drawn ? swapEnd : null, label: COPY.swapPath, symbol: a.symbolIn } } : null;
+  // the legend says what the fork shows: dashed only beside a drawn segment, points beside a point glyph
+  const legend = geo?.dashed ? (geo.dotted ? COPY.rebuiltDashedPoints : COPY.rebuiltDashed) : COPY.rebuiltPoints;
+  const swatch = (g, color) => (
+    <>
+      {g.segments ? <svg width="20" height="6" aria-hidden="true"><line x1="0" x2="20" y1="3" y2="3" style={{ stroke: color, strokeWidth: 1.6, strokeDasharray: '5 3' }} /></svg> : null}
+      {g.points.length ? <span data-swatch="point" aria-hidden="true" style={ring(color)} /> : null}
+    </>
+  );
   // "Swap n" and #swap-n read one sequence: the swap's place in time order (addendum R4(a); BA-47).
   const anchor = swapAnchor(ordinal - 1);
   return (
@@ -271,23 +311,27 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ ...eyebrow, color: C.ink2 }}>{COPY.fork}</span>
-            {valued && hypothetical ? <span data-hypothetical="" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><StateTag color={C.gold}>{COPY.hypothetical}</StateTag><TapeNum doc={tape} path={later} fmt={fmtCount} size={10.5} weight={600} /><span style={mono(9.5, C.ink3)}>{COPY.laterTrades}</span></span> : null}
+            {drawn && hypothetical ? <span data-hypothetical="" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><StateTag color={C.gold}>{COPY.hypothetical}</StateTag><TapeNum doc={tape} path={later} fmt={fmtCount} size={10.5} weight={600} /><span style={mono(9.5, C.ink3)}>{COPY.laterTrades}</span></span> : null}
           </div>
-          {valued ? (
+          {drawn ? (
             <>
-              <div style={{ paddingBottom: 14 }}><ForkChart tape={tape} index={index} ends={ends} /></div>
+              <div style={{ paddingBottom: 14 }}><ForkChart tape={tape} index={index} geo={geo} ends={ends} /></div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'center' }}>
-                <span data-path-label="hold" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <svg width="20" height="6" aria-hidden="true"><line x1="0" x2="20" y1="3" y2="3" style={{ stroke: C.ink2, strokeWidth: 1.6, strokeDasharray: '5 3' }} /></svg>
-                  <span style={mono(9.5, C.ink2)}>{COPY.holdPath} · <Rec>{COPY.heldLine(a.symbolOut)}</Rec>{hypothetical ? ` · ${COPY.hypothetical}` : ''}</span>
-                  {holdEnd && !beside ? <TapeNum doc={tape} path={holdEnd} size={12} /> : null}
-                </span>
-                <span data-path-label="swap" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <svg width="20" height="6" aria-hidden="true"><line x1="0" x2="20" y1="3" y2="3" style={{ stroke: C.teal, strokeWidth: 1.6, strokeDasharray: '5 3' }} /></svg>
-                  <span style={mono(9.5, C.ink2)}>{COPY.swapPath} · <Rec>{COPY.boughtLine(a.symbolIn)}</Rec>{hypothetical ? ` · ${COPY.hypothetical}` : ''}</span>
-                  {swapEnd && !beside ? <TapeNum doc={tape} path={swapEnd} size={12} /> : null}
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={mono(9.5, C.ink3)}>{COPY.rebuiltDashed}</span><KindMark cls="rebuilt" /></span>
+                {geo.hold.drawn ? (
+                  <span data-path-label="hold" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {swatch(geo.hold, C.ink2)}
+                    <span style={mono(9.5, C.ink2)}>{COPY.holdPath} · <Rec>{COPY.heldLine(a.symbolOut)}</Rec>{hypothetical ? ` · ${COPY.hypothetical}` : ''}</span>
+                    {holdEnd && !beside ? <TapeNum doc={tape} path={holdEnd} size={12} /> : null}
+                  </span>
+                ) : null}
+                {geo.swap.drawn ? (
+                  <span data-path-label="swap" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {swatch(geo.swap, C.teal)}
+                    <span style={mono(9.5, C.ink2)}>{COPY.swapPath} · <Rec>{COPY.boughtLine(a.symbolIn)}</Rec>{hypothetical ? ` · ${COPY.hypothetical}` : ''}</span>
+                    {swapEnd && !beside ? <TapeNum doc={tape} path={swapEnd} size={12} /> : null}
+                  </span>
+                ) : null}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={mono(9.5, C.ink3)}>{legend}</span><KindMark cls="rebuilt" /></span>
               </div>
               <div data-result-row="gap" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={mono(10.5, C.ink2)}>{COPY.gap}</span>
@@ -302,7 +346,8 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
               {r.note ? <span style={foot}><StoredNote doc={tape} path={['actions', index, 'replay', 'note']} /></span> : null}
             </>
           ) : r ? (
-            // written, with no point that has a value: its own stored reasons — the missing inputs, a version note — and no fork, lines or sentence
+            // written, and drawing nothing (no value, or none at a recorded instant): its own stored reasons — the missing
+            // inputs, a version note — and no fork, labels, legend, values or sentence (Astra F1)
             <span data-replay-none="not-drawn" style={foot}>
               {COPY.replayNotDrawn}
               {Array.isArray(r.missingInputs) && r.missingInputs.length ? <> · <MissingInputs doc={tape} path={['actions', index, 'replay', 'missingInputs']} /></> : null}
@@ -313,9 +358,9 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
               {COPY.replayNone}{crypto ? <> · {COPY.replayCrypto}</> : dayNote ? <> · <StoredNote doc={tape} path={['coverage', 'replay', 'note']} /></> : <> · {COPY.replayNoneSeeCoverage}</>}
             </span>
           )}
-          {/* R11: the sentence only BESIDE A DRAWN REPLAY — the replay's own stored label, verbatim and bound by its path
-              (R1, R9, Astra B2), else the screen's own R9 sentence. A card with no written replay says why in its line
-              above, alone; a replay that draws nothing carries no sentence either. */}
+          {/* R11: the sentence only BESIDE A DRAWN REPLAY — visible geometry, a segment or a point (Astra F1) — the replay's
+              own stored label, verbatim and bound by its path (R1, R9, Astra B2), else the screen's own R9 sentence. A card
+              with no written replay says why in its line above, alone; a replay that draws nothing carries no sentence either. */}
           {drawn ? <span data-replay-sentence="" style={foot}>{r.label ? <StoredNote doc={tape} path={['actions', index, 'replay', 'label']} /> : REPLAY_SENTENCE}</span> : null}
         </div>
         <SplitRows tape={tape} index={index} a={a} />
