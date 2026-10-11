@@ -6,13 +6,16 @@
 //                  the marker of ITS OWN path's declared class (read from the
 //                  document's numberClasses), its text is the document's value,
 //                  and no digit appears outside a marked number, an instant, an
-//                  identifier or the record's own stored text
+//                  #swap-n anchor or a stored note BOUND to an R1 / R9 path
+//                  (Astra B2: by binding, never by a string match)
+//   storedNoteDefects  every stored note's text is the value at its path
 //   sweepWords     the screen's own voice — everything outside a bound
 //                  quotation (Amendment E addendum 2, R7): no verdict, ranking
 //                  or forbidden word; no "Why?" heading; no number spelled
 //                  as a word outside a marked number (R8)
 //   quoteDefects   R7's guard: every quotation bound to its tape path (text =
-//                  the stored value) and attributed as the record says
+//                  the stored value), attributed as the record says, and never
+//                  inside a heading (Astra B1)
 //   sweepSigns     sign colours on recorded scores only
 // The fixtures are the A1 passes' own output (screenFixtures.test.js).
 
@@ -20,7 +23,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { classOfNumber } from '../../../constants/filmTape';
 import { COMPANY_NAMES } from '../../../config/stockData';
-import { valueAt, etClock } from '../filmRoomModel';
+import { valueAt, etClock, tradingTimeline } from '../filmRoomModel';
 import sep23Tape from './sep23.tape.json';
 import sep23Series from './sep23.series.json';
 import emptyTape from './empty.tape.json';
@@ -81,13 +84,21 @@ export function parsePath(s) {
 }
 
 /**
- * Amendment E addendum 2, R8 — a spelled-out quantity is a number. The cardinal words the screen's own voice may
- * not spell outside a marked number, PINNED HERE from the fix prompt (zero through twenty, "single", "dozen"),
- * with the value each stands for.
+ * Amendment E addendum 2, R8 — a spelled-out quantity is a number. The quantity words the screen's own voice may
+ * not spell outside a marked number, PINNED HERE from the follow-up prompt (Astra B3, a CLOSED list): the cardinals
+ * zero to ninety (zero to twenty and the tens — a compound like "twenty-one" is two of them), hundred, thousand,
+ * million, billion, dozen, single, half, double, triple, twice; with the value each stands for. Inflected forms
+ * bite too ("dozens", "sixes", "halves"). R12's "shown once" is not a quantity claim and is not on the list.
  */
-export const SPEC_NUMBER_WORDS = Object.freeze(['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty', 'single', 'dozen']);
-const NUMBER_WORD_VALUE = Object.freeze({ ...Object.fromEntries(SPEC_NUMBER_WORDS.slice(0, 21).map((w, i) => [w, i])), single: 1, dozen: 12 });
-const NUMBER_WORD = new RegExp(`\\b(${SPEC_NUMBER_WORDS.join('|')})s?\\b`, 'i');
+const CARDINALS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+const TENS = ['thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+export const SPEC_NUMBER_WORDS = Object.freeze([...CARDINALS, ...TENS, 'hundred', 'thousand', 'million', 'billion', 'dozen', 'single', 'half', 'double', 'triple', 'twice']);
+const NUMBER_WORD_VALUE = Object.freeze({
+  ...Object.fromEntries(CARDINALS.map((w, i) => [w, i])),
+  ...Object.fromEntries(TENS.map((w, i) => [w, 30 + 10 * i])),
+  hundred: 100, thousand: 1e3, million: 1e6, billion: 1e9, dozen: 12, single: 1, half: 0.5, double: 2, triple: 3, twice: 2,
+});
+const NUMBER_WORD = new RegExp(`\\b(${SPEC_NUMBER_WORDS.join('|')}|halves)(s|es)?\\b`, 'i');
 
 /** The number a rendered numeral stands for ('−1.5' → -1.5, '+9' → 9, '1,234.50' → 1234.5, 'one' → 1). */
 export function parseNumeral(text) {
@@ -96,16 +107,78 @@ export function parseNumeral(text) {
   return Number(String(text).replace(/−/g, '-').replace(/[+,%\s]/g, ''));
 }
 
-/** Every string a document stores (values and map keys) that `keep` accepts — what the record's own text may be. */
-function storedStrings(docs, keep = (s) => /\d/.test(s)) {
-  const out = new Set();
-  const walk = (v) => {
-    if (typeof v === 'string') out.add(v);
-    else if (Array.isArray(v)) v.forEach(walk);
-    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { out.add(k); walk(x); }
-  };
-  docs.forEach(walk);
-  return [...out].filter(keep).sort((a, b) => b.length - a.length);
+/**
+ * R1 / R9 — the stored-note paths whose numbers (digits and number words) are the tape's own words, PINNED HERE from
+ * the rulings (never read from the screen): the stored coverage notes, the missing-input lists (each name at its own
+ * index), and each replay's stored `label`. Astra B2: the exemption is a BINDING, the R7 discipline — an element
+ * carrying `data-stored-note` at one of these paths whose text equals, byte for byte, the value its document stores
+ * there. A string found anywhere else in the document exempts nothing.
+ */
+export const SPEC_STORED_NOTE_PATHS = Object.freeze([
+  /^coverage\.[A-Za-z]+\.note$/,
+  /^actions\[\d+\]\.replay\.reconciliation\.(soldAtSale|boughtAtSale)\.missingInputs\[\d+\]$/,
+  /^plans\[\d+\]\.price\.missingInputs\[\d+\]$/,
+  /^actions\[\d+\]\.replay\.missingInputs\[\d+\]$/,   // a replay's own missing-input list (R1; review A2F1-3)
+  /^actions\[\d+\]\.replay\.label$/,
+]);
+
+/** The stored-note element `node` sits in when its text is the value its document stores at its path, or null. */
+function storedNoteTextOf(node, docs) {
+  const el = node?.nodeType === 1 ? node : node?.parentElement;
+  const s = el?.closest('[data-stored-note]');
+  if (!s) return null;
+  const doc = docs[s.getAttribute('data-stored-doc') || 'tape'];
+  if (!doc) return null;
+  const value = valueAt(doc, parsePath(s.getAttribute('data-stored-note')));
+  return typeof value === 'string' && value !== '' && s.textContent === value ? s : null;
+}
+
+/**
+ * Amendment E addendum 4, R13 — the agent's name, PINNED HERE from the ruling: the stored display name at
+ * agentContext.agentName on the battle document. It is exempt from the sweeps — forbidden words and number words, and
+ * (as a bound quotation is, R7) digits — on its BINDING alone: an element carrying `data-agent-name` at exactly that
+ * path whose text equals, byte for byte, the value the battle document stores there — and never inside a heading (the
+ * screen's own voice; as B1 rules for a quotation — review A2F1-5).
+ */
+export const SPEC_AGENT_NAME_PATH = 'agentContext.agentName';
+export function boundAgentNameOf(node, docs = {}) {
+  const el = node?.nodeType === 1 ? node : node?.parentElement;
+  const n = el?.closest('[data-agent-name]');
+  if (!n || n.getAttribute('data-agent-name') !== SPEC_AGENT_NAME_PATH || n.closest(HEADINGS)) return null;
+  const doc = docs[n.getAttribute('data-agent-name-doc') || 'battle'];
+  const value = doc ? valueAt(doc, parsePath(SPEC_AGENT_NAME_PATH)) : undefined;
+  return typeof value === 'string' && value !== '' && n.textContent === value ? n : null;
+}
+
+/**
+ * R13's guard: the screen shows the name ONCE, bound to the stored name, outside any heading. (That it sits in no
+ * attribute and in no other text is proved with a distinctive name in the screen suite — a substring scan for a real
+ * name would match the screen's own words: "Check", "Hold", "Deep" — review A2F1-4.)
+ */
+export function agentNameDefects(container, docs = {}) {
+  const bad = [];
+  const names = [...container.querySelectorAll('[data-agent-name]')];
+  if (names.length > 1) bad.push(`agent name shown ${names.length} times`);
+  for (const n of names) {
+    if (n.closest(HEADINGS)) bad.push(`agent name “${n.textContent}”: inside a heading`);
+    else if (!boundAgentNameOf(n, docs)) bad.push(`agent name “${n.textContent}”: not bound to ${SPEC_AGENT_NAME_PATH}`);
+  }
+  return bad;
+}
+
+/** B2 — the numbers of a stored note are exempt only when it is bound (above) AND its path is one R1 / R9 names. */
+export function boundStoredNoteOf(node, docs = {}) {
+  const s = storedNoteTextOf(node, docs);
+  return s && SPEC_STORED_NOTE_PATHS.some((re) => re.test(s.getAttribute('data-stored-note'))) ? s : null;
+}
+
+/** Every stored note whose text is not the value at its path — screen words inside it, or a forged path. */
+export function storedNoteDefects(container, docs = {}) {
+  const bad = [];
+  for (const s of container.querySelectorAll('[data-stored-note]')) {
+    if (!storedNoteTextOf(s, docs)) bad.push(`${s.getAttribute('data-stored-note')}: not bound — its text is not the stored value`);
+  }
+  return bad;
 }
 
 /**
@@ -179,9 +252,12 @@ const seriesDocAt = (el, docs) => docs[`series:${el.closest('[data-region="symbo
 function aggregateOracle(name, el, docs) {
   if (name === 'count(timing.tradingDays)') {
     // the battle document's own timeline, the days it names — read before any tape, since the header shows the length
-    // while a day's tape is loading, missing or unreadable too (review A2A3-4, A2A3-8)
-    const days = docs.battle?.timing?.tradingDays;
-    return Array.isArray(days) ? days.filter((d) => typeof d === 'string').length : null;
+    // while a day's tape is loading, missing or unreadable too (review A2A3-4, A2A3-8). Astra B4: through the ONE
+    // validated reading the day picker and the count use (tradingTimeline) — by the prompt's instruction the oracle
+    // shares that helper, a stated departure from this harness's "never read production" rule; the helper itself is
+    // pinned by its own rows (filmRoomModel.test.js).
+    const days = tradingTimeline(docs.battle);
+    return days ? days.length : null;
   }
   const tape = docs.tape;
   if (!tape) return undefined;
@@ -274,7 +350,6 @@ export function axisDefects(container, docs) {
  */
 export function sweepNumbers(container, docs) {
   const bad = [];
-  const allDocs = Object.values(docs);
   for (const el of container.querySelectorAll('[data-num]')) {
     const doc = docs[el.getAttribute('data-num-doc')];
     const where = el.getAttribute('data-num');
@@ -307,7 +382,6 @@ export function sweepNumbers(container, docs) {
     const oracle = aggregateOracle(name, el, docs);
     if (oracle !== undefined && !(typeof oracle === 'number' && Math.abs(oracle - computed) <= 1e-9 * Math.max(1, Math.abs(oracle)))) bad.push(`aggregate ${name}: computed ${computed}, the documents give ${oracle}`);
   }
-  const stored = storedStrings(allDocs);
   const axes = axisDefects(container, docs);
   bad.push(...axes.bad);
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
@@ -324,9 +398,12 @@ export function sweepNumbers(container, docs) {
     if (isDirectoryName(host)) continue;
     // R1 / R7: a bound quotation's numbers are the record's own words, never a marked number's.
     if (boundQuotationOf(host, docs)) continue;
+    // R1 / R9, Astra B2: a stored note's numbers are the tape's own words — only bound to an R1 / R9 path.
+    if (boundStoredNoteOf(host, docs)) continue;
+    // R13: the agent’s name, bound to its stored field, is a stored display name — not a number the screen states.
+    if (boundAgentNameOf(host, docs)) continue;
     if (host.closest('[data-time]')) for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
     if (host.closest('[data-identifier]')) text = text.replace(/#swap-\d+/g, ' ');
-    if (host.closest('[data-record-text]')) for (const s of stored) text = text.split(s).join(' ');
     for (const s of FIXED_DIGIT_COPY) text = text.split(s).join(' ');
     if (/\d/.test(text)) bad.push(`stray digit: “${node.textContent.trim().slice(0, 80)}”`);
   }
@@ -336,7 +413,7 @@ export function sweepNumbers(container, docs) {
       let text = el.getAttribute(attr);
       if (!text || !/\d/.test(text)) continue;
       for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
-      for (const s of stored) text = text.split(s).join(' ');
+      // no stored-string exemption in an attribute: an attribute is always the screen's (R7; Astra B2)
       for (const s of FIXED_DIGIT_COPY) text = text.split(s).join(' ');
       if (/\d/.test(text)) bad.push(`stray digit in ${attr}: “${el.getAttribute(attr).slice(0, 80)}”`);
     }
@@ -383,13 +460,16 @@ function boundTextOf(node, docs) {
 
 /**
  * R7's guard — what the sweeps exempt: an ATTRIBUTED quotation bound to a tape path. All of: bound (above), a path
- * in the recorded-words channels, and an attribution beside it (review A2A1-4: a bound quotation with no attribution,
- * or of a path that holds no one's words, stays under the sweeps). Whether the attribution names the right author
- * and time is quoteDefects' check.
+ * in the recorded-words channels, an attribution beside it (review A2A1-4: a bound quotation with no attribution,
+ * or of a path that holds no one's words, stays under the sweeps), and NO heading around it (Astra B1: a heading is
+ * the screen's own voice — recorded words inside one would read as the screen's title). Whether the attribution
+ * names the right author and time is quoteDefects' check.
  */
+const HEADINGS = 'h1, h2, h3, h4, h5, h6, [role="heading"]';
 export function boundQuotationOf(node, docs = {}) {
   const q = boundTextOf(node, docs);
   if (!q || !SPEC_QUOTE_CHANNELS.some((c) => c.re.test(q.getAttribute('data-quote-path')))) return null;
+  if (q.closest(HEADINGS)) return null;
   return [...q.parentElement.children].some((c) => c.hasAttribute('data-quote-attribution')) ? q : null;
 }
 
@@ -418,6 +498,8 @@ export function quoteDefects(container, docs = {}) {
     const texts = [...root.children].filter((c) => c.hasAttribute('data-quote-path'));
     if (texts.length !== 1) { bad.push(`a quotation with ${texts.length} quoted texts`); continue; }
     const where = texts[0].getAttribute('data-quote-path');
+    // Astra B1: a quotation never sits inside a heading — the heading is the screen's voice
+    if (root.closest(HEADINGS)) { bad.push(`${where}: inside a heading`); continue; }
     const channel = SPEC_QUOTE_CHANNELS.find((c) => c.re.test(where));
     if (!channel) { bad.push(`${where}: not a recorded-words channel`); continue; }
     const attr = [...root.children].find((c) => c.hasAttribute('data-quote-attribution'));
@@ -440,7 +522,7 @@ export function quoteDefects(container, docs = {}) {
 export function renderedText(container, docs = {}) {
   const parts = [];
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (!boundQuotationOf(node, docs)) parts.push(node.textContent);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (!boundQuotationOf(node, docs) && !boundAgentNameOf(node, docs)) parts.push(node.textContent);
   for (const el of container.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) for (const attr of TEXT_ATTRIBUTES) parts.push(el.getAttribute(attr) || '');
   return parts.join(' \n ');
 }
@@ -448,21 +530,22 @@ export function renderedText(container, docs = {}) {
 /**
  * R8 — every cardinal word in the screen's own voice that is not a marked number: a text node outside a bound
  * quotation (R7), outside a marked number's own text, outside the directory's own name for a symbol (R4(d), as the
- * digit sweep), and — inside the record's own stored text — not part of a string a document stores (R1: stored
- * notes render verbatim, as the tape's own words; ruled for words as for digits); and every aria-label and title.
+ * digit sweep), and outside a stored note BOUND to an R1 / R9 path (R1, R9: stored notes render verbatim, as the
+ * tape's own words; ruled for words as for digits; Astra B2: by binding, never by a string match); and every
+ * text-bearing attribute.
  */
 function numberWordHits(container, docs) {
   const hits = [];
-  const stored = storedStrings(Object.values(docs), (s) => NUMBER_WORD.test(s));
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    let text = node.textContent;
+    const text = node.textContent;
     if (!NUMBER_WORD.test(text)) continue;
     const host = node.parentElement;
     if (boundQuotationOf(node, docs)) continue;
     if (markedNumberText(host)) continue;
     if (isDirectoryName(host)) continue;
-    if (host.closest('[data-record-text]')) for (const s of stored) text = text.split(s).join(' ');
+    if (boundStoredNoteOf(node, docs)) continue;
+    if (boundAgentNameOf(node, docs)) continue;   // R13
     const m = text.match(NUMBER_WORD);
     if (m) hits.push(`number word “${m[0]}”: ${node.textContent.trim().slice(0, 80)}`);
   }

@@ -11,7 +11,7 @@ import {
   valueAt, classAt, numberAt, checkStateOf, checkRuns, riskLines, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, deriveHoldings,
   directiveCardOf, rationaleTimeline, planGroups, evidenceMarkers, roleOf, deepSymbols, extremeBars, lastPointPath,
   fmtPoints, fmtPrice, fmtPriceDelta, etClock, etDateLabel, isRecordedScore, SCREEN_AGGREGATE_CLASSES, checkCounts,
-  fmtPercent, seriesFacts, pctTicks,
+  fmtPercent, seriesFacts, pctTicks, tradingTimeline, lineRuns, linePath,
 } from './filmRoomModel';
 import sep23Series from './__fixtures__/sep23.series.json';
 import { SPEC_AGGREGATE_CLASSES } from './__fixtures__/filmRoomHarness';
@@ -248,6 +248,49 @@ describe('addendum R4(a)/(b) — the Deep dive\'s computed facts and its percent
     expect(pctTicks(-0.03, 0.05)).toEqual([-0.02, 0, 0.02, 0.04]);
     expect(pctTicks(0.01, 0.01)).toEqual([]);
     for (const [lo, hi] of [[-0.004, 0.006], [-0.03, 0.05], [-0.0011, 0.0009]]) expect(pctTicks(lo, hi).length).toBeLessThanOrEqual(6);
+  });
+});
+
+describe('Astra B4 — one validated timeline (the day picker, the battle length and the oracle share it)', () => {
+  const of = (days) => tradingTimeline({ timing: { tradingDays: days } });
+
+  it('Astra\'s repro: [\'not-a-date\', \'2026-09-23\'] is ONE day', () => {
+    expect(of(['not-a-date', '2026-09-23'])).toEqual(['2026-09-23']);
+  });
+
+  it('keeps only real YYYY-MM-DD dates that, inside the calendar\'s horizon, are trading sessions', () => {
+    // not dates: a malformed string, an impossible date, an unpadded one, a non-string
+    expect(of(['2026-02-30', '2026-9-24', '2026-09-23T00:00:00Z', 20260923, null, {}, '2026-09-23'])).toEqual(['2026-09-23']);
+    // dates, not sessions: a Saturday, Thanksgiving 2026, Christmas 2027
+    expect(of(['2026-09-26', '2026-11-26', '2027-12-24', '2026-09-22', '2026-09-23'])).toEqual(['2026-09-22', '2026-09-23']);
+    // an early close is a session
+    expect(of(['2026-11-27'])).toEqual(['2026-11-27']);
+    // a day named twice is that one day (review A2F1-6: the writer's dayNumber counts it once)
+    expect(of(['2026-09-23', '2026-09-22', '2026-09-23', '2026-09-22'])).toEqual(['2026-09-23', '2026-09-22']);
+    // beyond the maintained horizon nothing can say it was not a session: a real date is kept, a non-date is not
+    expect(of(['2030-01-02', '2030-02-31', '2025-12-31'])).toEqual(['2030-01-02', '2025-12-31']);
+  });
+
+  it('no timeline array → null (the screen then falls back as before); an empty array → []', () => {
+    expect(tradingTimeline({})).toBeNull();
+    expect(tradingTimeline({ timing: { tradingDays: '2026-09-23' } })).toBeNull();
+    expect(tradingTimeline(null)).toBeNull();
+    expect(of([])).toEqual([]);
+  });
+});
+
+describe('A2A2-3 — a line\'s runs break at a missing bucket', () => {
+  const T = (min) => Date.parse('2026-09-23T13:30:00.000Z') + min * 60_000;
+  it('consecutive 10-minute points are one run; a missing bucket, a null value or a null instant starts another', () => {
+    expect(lineRuns([{ t: T(10), v: 1 }, { t: T(20), v: 2 }, { t: T(30), v: 3 }]).map((r) => r.length)).toEqual([3]);
+    expect(lineRuns([{ t: T(10), v: 1 }, { t: T(20), v: 2 }, { t: T(40), v: 4 }, { t: T(50), v: 5 }]).map((r) => r.map((p) => p.v))).toEqual([[1, 2], [4, 5]]);
+    expect(lineRuns([{ t: T(10), v: 1 }, { t: T(20), v: null }, { t: T(30), v: 3 }, { t: null, v: 4 }, { t: T(50), v: 5 }]).map((r) => r.map((p) => p.v))).toEqual([[1], [3], [5]]);
+    expect(lineRuns([])).toEqual([]);
+  });
+  it('the path lifts the pen at each gap; a lone point is a short tick at its own value', () => {
+    const x = (t) => (t - T(0)) / 60_000; const y = (v) => 100 - v;
+    expect(linePath([{ t: T(10), v: 1 }, { t: T(20), v: 2 }, { t: T(40), v: 4 }], x, y)).toBe('M10.0 99.0 L20.0 98.0 M39.0 96.0 L41.0 96.0');
+    expect(linePath([{ t: T(10), v: 1 }, { t: T(20), v: 2 }], x, y)).toBe('M10.0 99.0 L20.0 98.0');   // unbroken: the old form, byte for byte
   });
 });
 

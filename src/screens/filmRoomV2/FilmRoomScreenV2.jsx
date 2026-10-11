@@ -15,17 +15,17 @@
 //             Study or Deep dive; a day with no tape says so, and names a
 //             scheduled pass only when one is actually scheduled (§7)
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { FILM_TAPE_WRITE_ENABLED, isAgentPresenceOn } from '../../config/featureFlags';
 import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { filmRoomBattleId } from '../../utils/filmRoomGate';
 import { isSessionDate, isBattleDay, closePassStartMs, closePassEndMs, closePassWillTape, validFinalTradingDay, etDateOf } from '../../utils/tapeSchedule';
-import { etClock, etDateLabel } from './filmRoomModel';
+import { etClock, etDateLabel, tradingTimeline } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { useTapeDay, useSeriesDay, firestoreReaders } from './filmRoomData';
 import { hasSeenFirstOpen, markFirstOpenSeen } from './filmRoomSeen';
-import { C, card, eyebrow, body, mono, plain, tint, Label, KindLegend, Segmented, Chip, PrimaryButton, When, Rec, EmptyCard, AggNum, TapeNum } from './FilmRoomKit';
+import { C, card, eyebrow, body, mono, plain, tint, Label, KindLegend, Segmented, tabIdOf, panelIdOf, Chip, PrimaryButton, When, StoredNote, EmptyCard, AggNum, TapeNum } from './FilmRoomKit';
 import FilmRoomGlance from './FilmRoomGlance';
 import FilmRoomStudy from './FilmRoomStudy';
 import FilmRoomDeepDive from './FilmRoomDeepDive';
@@ -46,10 +46,14 @@ function useDesktop() {
   return desktop;
 }
 
-/** The battle's trading days: the timeline it records, else the one day its own instants name. */
+/**
+ * The battle's trading days: the timeline it records, VALIDATED (tradingTimeline — the one reading the length and
+ * the oracle share, Astra B4), else the one day its own instants name. A recorded timeline with no valid day yields
+ * no day, as before: the screen never puts a day in the picker the record did not name.
+ */
 export function battleDays(battle) {
-  const days = battle?.timing?.tradingDays;
-  if (Array.isArray(days) && days.length) return days.filter((d) => typeof d === 'string');
+  const days = tradingTimeline(battle);
+  if (days && battle.timing.tradingDays.length) return days;
   const one = etDateOf(battle?.completedAt ?? battle?.activatedAt ?? battle?.createdAt);
   return one ? [one] : [];
 }
@@ -63,21 +67,32 @@ export function defaultDay(battle, days, nowMs) {
   return begun.length ? begun[begun.length - 1] : days[0];
 }
 
-/** §7: when a day has no tape, name its close pass only when one is actually scheduled. */
+/**
+ * §7: when a day has no tape, name its close pass only when one is actually scheduled — `{ line: 'scheduled',
+ * clock }`, `{ line: 'later' }` or `{ line: 'unavailable' }`. The clock stays apart from the words so it renders
+ * through the instant treatment every clock on the screen gets (NoTapeLine; review A2A3-7).
+ */
 export function noTapeLine(battle, etDate, nowMs) {
-  if (!FILM_TAPE_WRITE_ENABLED || !etDate) return COPY.noTapeUnavailable;
+  if (!FILM_TAPE_WRITE_ENABLED || !etDate) return { line: 'unavailable' };
   if (isSessionDate(etDate) && isBattleDay(battle, etDate) && nowMs < closePassEndMs(etDate)) {
-    return COPY.noTapeScheduled(etClock(new Date(closePassStartMs(etDate)).toISOString()));
+    return { line: 'scheduled', clock: etClock(new Date(closePassStartMs(etDate)).toISOString()) };
   }
-  if (validFinalTradingDay(battle) === etDate && closePassWillTape(battle, nowMs)) return COPY.noTapeLater;
-  return COPY.noTapeUnavailable;
+  if (validFinalTradingDay(battle) === etDate && closePassWillTape(battle, nowMs)) return { line: 'later' };
+  return { line: 'unavailable' };
+}
+
+/** The no-tape line's words; a scheduled pass's clock is an instant, marked as every other clock is (When). */
+function NoTapeLine({ state }) {
+  if (state.line === 'scheduled') return <>{COPY.noTapeScheduled.before}<When>{state.clock}</When>{COPY.noTapeScheduled.after}</>;
+  return state.line === 'later' ? COPY.noTapeLater : COPY.noTapeUnavailable;
 }
 
 const LENGTH_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
 
 /**
- * The header's subtitle (design of record): archetype · BaggerBomb · one-day
- * battle · date — each part only where the record carries it. The archetype
+ * The header's subtitle (design of record): the agent's name (R13) · archetype ·
+ * BaggerBomb · one-day battle · date — each part only where the record carries
+ * it. The archetype
  * is the app's canonical display name (src/data/archetypeDisplay.js) for the
  * battle's archetype, else the tape's — never the writer's 'unknown' sentinel
  * (review A2P1-6). "BaggerBomb" is every agent battle's game: both agent modes
@@ -93,11 +108,14 @@ const LENGTH_WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'ei
  */
 export function headerParts(battle, tape, etDate) {
   const code = [battle?.agentContext?.archetype, battle?.archetype, tape?.archetype].find((a) => typeof a === 'string' && a && a.toLowerCase() !== 'unknown');
-  // the days the timeline names — counted as battleDays (the day picker) reads them (BUILD_RULES §9; review A2A3-8)
-  const timing = Array.isArray(battle?.timing?.tradingDays) ? battle.timing.tradingDays.filter((d) => typeof d === 'string') : null;
+  // the days the timeline names — counted as battleDays (the day picker) reads them, through the one validated
+  // reading (BUILD_RULES §9; review A2A3-8; Astra B4)
+  const timing = tradingTimeline(battle);
   const length = timing && timing.length ? { days: timing.length, source: 'timing' }
     : (tape?.isFinalDay === true && Number.isInteger(tape?.dayNumber) ? { days: tape.dayNumber, source: 'dayNumber' } : null);
+  const name = battle?.agentContext?.agentName;
   return {
+    name: typeof name === 'string' && name ? name : null,   // R13: shown only through AgentName, bound to its field
     archetype: code ? getArchetypeDisplayName(code) : null,
     game: COPY.gameName,
     length: length && length.days >= 1 && length.days <= LENGTH_WORDS.length ? length : null,
@@ -106,6 +124,19 @@ export function headerParts(battle, tape, etDate) {
 }
 
 const lengthWord = (n) => LENGTH_WORDS[n - 1];
+
+/**
+ * R13 (Amendment E addendum 4) — the agent's name: a stored display name chosen for the agent, not the screen's
+ * voice. It renders EXACTLY as stored, bound to its field — the element's text is the value at
+ * battle.agentContext.agentName, the name the app already passes — with no case transform (the subtitle's capitals
+ * would alter it), never composed into other copy, never in an aria-label or title. No stored name → nothing, and
+ * the subtitle starts with the archetype, as before.
+ */
+function AgentName({ battle }) {
+  const name = battle?.agentContext?.agentName;
+  if (typeof name !== 'string' || !name) return null;
+  return <span data-agent-name="agentContext.agentName" data-agent-name-doc="battle" style={{ textTransform: 'none' }}>{name}</span>;
+}
 
 /**
  * R8 — the battle length, "one-day battle", as a MARKED number: the count of the battle's timeline through the
@@ -160,12 +191,14 @@ const pill = (accent) => ({ display: 'inline-flex', alignItems: 'center', gap: 6
 
 /**
  * @param {object}   props.battle    the battle the route opened (never re-read here)
- * @param {Function} props.onBack
+ * @param {Function} props.onBack    returns to the surface the Film Room was opened from
+ * @param {string}   [props.backTo]  that surface (filmRoomBack.js: 'battle' | 'battleHistory' | 'dashboard' |
+ *                                   'unknown') — the back control's label names it; unknown → "Dashboard"
  * @param {string}   [props.viewerId] the signed-in viewer's uid (the first-open notice is per viewer)
  * @param {object}   [props.readers]  test seam: { readTape, readSeries }
  * @param {number}   [props.nowMs]    test seam: the instant "scheduled" is judged at
  */
-export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, readers = firestoreReaders, nowMs }) {
+export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', viewerId = null, readers = firestoreReaders, nowMs }) {
   const now = useMemo(() => (Number.isFinite(nowMs) ? nowMs : Date.now()), [nowMs]);
   const battleId = filmRoomBattleId(battle);
   const days = useMemo(() => battleDays(battle), [battle]);
@@ -175,6 +208,7 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
   const [sym, setSym] = useState(null);
   const [notice, setNotice] = useState(() => !hasSeenFirstOpen(viewerId));
   const desktop = useDesktop();
+  const idBase = `film-room${useId().replace(/[^A-Za-z0-9_-]/g, '')}`;   // the depth tabs' and panels' ids
   useEffect(() => { if (notice) markFirstOpenSeen(viewerId); }, [notice, viewerId]);
 
   const tapeState = useTapeDay(battleId, day, readers);
@@ -190,7 +224,7 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
   };
 
   const parts = headerParts(battle, tape, day);
-  const subtitle = [parts.archetype, parts.game, parts.length ? <BattleLength key="length" length={parts.length} tape={tape} /> : null, parts.date ? <When key="date">{parts.date}</When> : null].filter(Boolean);
+  const subtitle = [parts.name ? <AgentName key="name" battle={battle} /> : null, parts.archetype, parts.game, parts.length ? <BattleLength key="length" length={parts.length} tape={tape} /> : null, parts.date ? <When key="date">{parts.date}</When> : null].filter(Boolean);
   // The battle's status, not the day's: an earlier day's tape was written while the battle was live (review A2L1-3).
   const complete = battle?.status === 'completed' || tape?.battle?.status === 'completed';
   const lastDay = days.length ? days[days.length - 1] : null;
@@ -199,12 +233,16 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
     : null;
 
   let content;
-  if (!battleId || !day) content = <EmptyCard>{COPY.noTape} · {COPY.noTapeUnavailable}</EmptyCard>;
+  if (!battleId || !day) content = <div data-state="no-day"><EmptyCard>{COPY.noTape} · {COPY.noTapeUnavailable}</EmptyCard></div>;
   else if (tapeState.status === 'loading') content = <div data-state="loading" style={mono(12, C.ink3, { padding: 24, textAlign: 'center' })}>{COPY.loading}</div>;
   else if (tapeState.status === 'error') content = <div data-state="error"><EmptyCard>{COPY.readError}</EmptyCard></div>;
-  else if (tapeState.status === 'missing') content = <div data-state="missing"><EmptyCard>{COPY.noTape} · {noTapeLine(battle, day, now)}</EmptyCard></div>;
+  else if (tapeState.status === 'missing') content = <div data-state="missing"><EmptyCard>{COPY.noTape} · <NoTapeLine state={noTapeLine(battle, day, now)} /></EmptyCard></div>;
   else if (tape?.passes?.close?.status === 'skipped_mode') content = <div data-state="skipped-mode"><EmptyCard>{COPY.skippedMode}</EmptyCard></div>;
-  else if (!written) content = <div data-state="not-written"><EmptyCard><Rec>{COPY.closeNotWritten(tape?.passes?.close?.status || 'unknown')}</Rec></EmptyCard></div>;
+  else if (!written) {
+    // the pass's own stored status, bound by its path (Astra B2) — the screen's words around it
+    const status = typeof tape?.passes?.close?.status === 'string' && tape.passes.close.status ? <StoredNote doc={tape} path={['passes', 'close', 'status']} /> : COPY.statusUnknown;
+    content = <div data-state="not-written"><EmptyCard>{COPY.closeNotWritten} ({status}).</EmptyCard></div>;
+  }
   else if (depth === 'glance') content = <FilmRoomGlance tape={tape} desktop={desktop} selected={selected} onSelect={setSelected} finalDay={finalDay} />;
   else if (depth === 'study') content = <FilmRoomStudy tape={tape} desktop={desktop} onDeep={openDeep} selected={selected} onSelect={setSelected} jump={jump} />;
   else content = <FilmRoomDeepDive tape={tape} seriesState={seriesState} sym={sym} onSym={setSym} desktop={desktop} />;
@@ -214,8 +252,9 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
       <header style={{ background: C.raised }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: desktop ? '8px 24px 12px' : '6px 12px 10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <button type="button" onClick={onBack} style={{ ...plain, display: 'flex', alignItems: 'center', gap: 4, color: C.teal, padding: '8px 6px', minHeight: 44, borderRadius: 8 }}>
-            <Label size={13}><span aria-hidden="true">‹</span> {COPY.back}</Label>
+          {/* The back control names its destination on one line ("Battle History" never breaks); the pills beside it wrap instead. */}
+          <button type="button" onClick={onBack} style={{ ...plain, display: 'flex', alignItems: 'center', gap: 4, color: C.teal, padding: '8px 6px', minHeight: 44, borderRadius: 8, flexShrink: 0 }}>
+            <Label size={13} style={{ whiteSpace: 'nowrap' }}><span aria-hidden="true">‹</span> {COPY.backTo[backTo] ?? COPY.backTo.unknown}</Label>
           </button>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <span style={pill(C.teal)}>{COPY.title}</span>
@@ -228,8 +267,9 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
             <AgentMark battle={battle} size={desktop ? 40 : 34} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 }}>
               <h1 style={{ margin: 0, fontSize: desktop ? 18 : 16, fontWeight: 800, letterSpacing: '-0.01em', color: C.ink, lineHeight: 1.1, whiteSpace: 'nowrap' }}>{COPY.title}</h1>
-              {/* One line on the phone, as the design of record; on desktop it wraps rather than cutting off the length or the date. */}
-              <span data-header-subtitle="" style={mono(9.5, C.ink3, { letterSpacing: '0.06em', textTransform: 'uppercase', lineHeight: 1.35, ...(desktop ? { whiteSpace: 'normal' } : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }) })}>
+              {/* It wraps between its parts, at every width — never an ellipsis: with the agent's name in front (R13) a phone's
+                  one line would cut the marked length, and a cut could leave its number word without its marker (BA-42). */}
+              <span data-header-subtitle="" style={mono(9.5, C.ink3, { letterSpacing: '0.06em', textTransform: 'uppercase', lineHeight: 1.35, whiteSpace: 'normal' })}>
                 {/* a separator travels with the part after it, so a wrapped line never starts or ends on " · " (review A2P3-3) */}
                 {subtitle.map((p, i) => <React.Fragment key={i}>{i ? ' ' : null}<span style={{ whiteSpace: 'nowrap' }}>{i ? '· ' : null}{p}</span></React.Fragment>)}
               </span>
@@ -237,7 +277,7 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
           </div>
           {/* The design of record's 400 px depth control gives way first on a narrow desktop (down to 280 px), so the subtitle keeps its room (review A2P3-3). */}
           <div style={desktop ? { flex: '0 1 400px', minWidth: 280, marginLeft: 24 } : { width: 'auto', flexShrink: 0 }}>
-            <Segmented value={depth} onChange={setDepth} options={COPY.depths} />
+            <Segmented value={depth} onChange={setDepth} options={COPY.depths} idBase={idBase} />
           </div>
           <KindLegend style={desktop ? { marginLeft: 'auto', justifyContent: 'flex-end', maxWidth: 340, flexShrink: 0 } : undefined} />
         </div>
@@ -251,8 +291,12 @@ export default function FilmRoomScreenV2({ battle, onBack, viewerId = null, read
       </header>
       <main style={{ flex: 1, width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: desktop ? '18px 24px 48px' : '12px 12px 40px', display: 'flex', flexDirection: 'column', gap: desktop ? 18 : 14 }}>
         {notice ? <FirstOpenNotice onDismiss={() => setNotice(false)} /> : null}
-        {/* Keyed by the day: a depth's own state (an opened marker, a plan filter, an opened rationale) never carries into another day's tape (review A2L3-3, A2L3-4). */}
-        <div key={day || 'none'} role="tabpanel" aria-label={COPY.depths.find((d) => d.id === depth)?.label} style={{ display: 'flex', flexDirection: 'column', gap: desktop ? 18 : 14 }}>{content}</div>
+        {/* One tabpanel per depth, each the one its tab controls (aria-controls / aria-labelledby); the others hidden and empty.
+            The shown panel is keyed by the day: a depth's own state (an opened marker, a plan filter, an opened rationale) never
+            carries into another day's tape (review A2L3-3, A2L3-4). */}
+        {COPY.depths.map((d) => (d.id === depth
+          ? <div key={`${d.id}:${day || 'none'}`} id={panelIdOf(idBase, d.id)} role="tabpanel" aria-labelledby={tabIdOf(idBase, d.id)} style={{ display: 'flex', flexDirection: 'column', gap: desktop ? 18 : 14 }}>{content}</div>
+          : <div key={d.id} id={panelIdOf(idBase, d.id)} role="tabpanel" aria-labelledby={tabIdOf(idBase, d.id)} hidden />))}
       </main>
       <footer style={{ padding: 0 }}>
         <Reserved region="footer" names={COPY.reservedFooter} />

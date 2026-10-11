@@ -9,15 +9,16 @@
 // fixture days, everything opened, through the sweeps.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import React from 'react';
+import React, { act } from 'react';
 import { renderToString } from 'react-dom/server';
 import FilmRoomScreenV2, { noTapeLine, defaultDay, battleDays, headerParts } from './FilmRoomScreenV2';
 import { FIRST_OPEN_KEY } from './filmRoomSeen';
 import { FORBIDDEN_WORDS } from './filmRoomCopy';
 import {
-  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, SPEC_FORBIDDEN_WORDS, SPEC_AGGREGATE_CLASSES, SPEC_NUMBER_WORDS,
+  mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, storedNoteDefects, agentNameDefects, SPEC_FORBIDDEN_WORDS, SPEC_AGGREGATE_CLASSES, SPEC_NUMBER_WORDS,
 } from './__fixtures__/filmRoomHarness';
 import { COMPANY_NAMES } from '../../config/stockData';
+import { getPreviousSessionDate } from '../../utils/marketCalendar';
 
 vi.setConfig({ testTimeout: 30_000 });
 
@@ -42,14 +43,55 @@ describe('the header (BA-41, BA-42)', () => {
     expect(text).toContain('Film Room');
     expect(text).toContain('Sep 23 · battle complete');
     // the battle length is a marked number (R8): "one-day battle" with its marker, D
-    expect(m.q('[data-header-subtitle]').textContent).toBe('Trend Follower · BaggerBomb · one-day battleD · Wed, Sep 23, 2026');
+    expect(m.q('[data-header-subtitle]').textContent).toBe('Momentum chaser · Trend Follower · BaggerBomb · one-day battleD · Wed, Sep 23, 2026');   // the agent's name first (R13)
     // a separator travels with the part after it: a wrapped line never starts or ends on " · " (review A2P3-3)
-    expect([...m.q('[data-header-subtitle]').children].map((s) => s.textContent)).toEqual(['Trend Follower', '· BaggerBomb', '· one-day battleD', '· Wed, Sep 23, 2026']);
+    expect([...m.q('[data-header-subtitle]').children].map((s) => s.textContent)).toEqual(['Momentum chaser', '· Trend Follower', '· BaggerBomb', '· one-day battleD', '· Wed, Sep 23, 2026']);
     expect(m.qa('[role="tab"]').map((t) => t.textContent)).toEqual(['Glance', 'Study', 'Deep dive']);
     const legends = m.qa('[data-legend]');
     expect(legends).toHaveLength(1);
     expect([...legends[0].querySelectorAll('[data-kind-mark]')].map((k) => k.getAttribute('data-kind-mark'))).toEqual(['recorded', 'derived', 'rebuilt', 'market']);
     expect(legends[0].textContent).toContain("rebuilt from 1-minute bars at the battle's check times");
+  });
+
+  it('the depths are a tab list: each tab controls its own tabpanel by id; only the selected tab is in the tab order; the other panels are hidden and empty', async () => {
+    await open();
+    const tabs = m.qa('[role="tab"]');
+    expect(m.q('[role="tablist"]').contains(tabs[0])).toBe(true);
+    for (const [i, t] of tabs.entries()) {
+      const panel = document.getElementById(t.getAttribute('aria-controls'));
+      expect(panel?.getAttribute('role'), t.textContent).toBe('tabpanel');
+      expect(panel.getAttribute('aria-labelledby'), t.textContent).toBe(t.id);
+      expect(document.getElementById(t.id)).toBe(t);
+      expect(t.getAttribute('aria-selected'), t.textContent).toBe(String(i === 0));
+      expect(t.getAttribute('tabindex'), t.textContent).toBe(i === 0 ? '0' : '-1');
+      expect(panel.hidden, t.textContent).toBe(i !== 0);
+      if (i) expect(panel.childNodes, t.textContent).toHaveLength(0);
+    }
+    expect(m.qa('[role="tabpanel"]')).toHaveLength(3);
+    expect(new Set(tabs.map((t) => t.getAttribute('aria-controls'))).size).toBe(3);
+    expect(document.getElementById(tabs[0].getAttribute('aria-controls')).querySelector('[data-depth="glance"]')).toBeTruthy();
+  });
+
+  it('arrow keys, Home and End move the selection along the tabs (wrapping) — and focus follows it', async () => {
+    await open();
+    const prevented = [];
+    const key = async (k) => { const e = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }); act(() => { document.activeElement.dispatchEvent(e); }); prevented.push([k, e.defaultPrevented]); await m.flush(); };
+    const selected = () => m.qa('[role="tab"]').find((t) => t.getAttribute('aria-selected') === 'true');
+    m.tab('Glance').focus();
+    for (const [k, label, d] of [['ArrowRight', 'Study', 'study'], ['ArrowRight', 'Deep dive', 'deep'], ['ArrowRight', 'Glance', 'glance'], ['ArrowLeft', 'Deep dive', 'deep'], ['Home', 'Glance', 'glance'], ['End', 'Deep dive', 'deep'], ['ArrowLeft', 'Study', 'study']]) {
+      await key(k);
+      expect(selected().textContent, k).toBe(label);
+      expect(document.activeElement, `${k} → focus`).toBe(selected());
+      expect(selected().getAttribute('tabindex'), k).toBe('0');
+      const panel = document.getElementById(selected().getAttribute('aria-controls'));
+      expect(panel.hidden, k).toBe(false);
+      expect(panel.getAttribute('aria-labelledby'), k).toBe(selected().id);   // the shown panel names ITS tab (TABS-M7)
+      expect(panel.querySelector(`[data-depth="${d}"]`), k).toBeTruthy();
+    }
+    await key('a');   // any other key leaves the selection alone
+    expect(selected().textContent).toBe('Study');
+    // the tab keys are the tab list's: the page does not scroll with them; any other key is left to the page (review A2F3-6)
+    expect(prevented).toEqual([['ArrowRight', true], ['ArrowRight', true], ['ArrowRight', true], ['ArrowLeft', true], ['Home', true], ['End', true], ['ArrowLeft', true], ['a', false]]);
   });
 
   it('the tabs switch depths; the legend stays one per screen at every depth', async () => {
@@ -61,12 +103,12 @@ describe('the header (BA-41, BA-42)', () => {
     }
   });
 
-  it('the design of record\'s header: the agent\'s mark (the cockpit\'s still avatar, no score passed), "Battles" back', async () => {
+  it('the design of record\'s header: the agent\'s mark (the cockpit\'s still avatar, no score passed), the back control first', async () => {
     const onBack = vi.fn();
     m.render(<FilmRoomScreenV2 battle={battleOf(sep23Tape)} onBack={onBack} viewerId="viewer-1" readers={readersOf({ [sep23Tape.etDate]: sep23Tape }, sep23Series)} nowMs={NOW} />);
     await m.flush();
     const back = m.qa('header button')[0];
-    expect(back.textContent).toBe('‹ Battles');
+    expect(back.textContent).toBe('‹ Dashboard');   // no origin given: unknown → "Dashboard" (back goes back)
     m.click(back);
     expect(onBack).toHaveBeenCalledTimes(1);
     const mark = m.q('header [data-agent-mark]');
@@ -96,13 +138,13 @@ describe('the header (BA-41, BA-42)', () => {
   it('the subtitle names only what the record carries: archetype · BaggerBomb · length · date', () => {
     const D = sep23Tape.etDate;
     const base = { agentContext: { archetype: 'momentum_chaser' }, timing: { tradingDays: ['2026-09-22', D] } };
-    expect(headerParts(base, sep23Tape, D)).toEqual({ archetype: 'Trend Follower', game: 'BaggerBomb', length: { days: 2, source: 'timing' }, date: 'Wed, Sep 23, 2026' });
+    expect(headerParts(base, sep23Tape, D)).toEqual({ name: null, archetype: 'Trend Follower', game: 'BaggerBomb', length: { days: 2, source: 'timing' }, date: 'Wed, Sep 23, 2026' });
     // no timeline: the tape's day number on its final day; on another day, no length at all (never battleDays' one-day fallback)
     expect(headerParts({ agentContext: {} }, sep23Tape, D).length).toEqual({ days: 1, source: 'dayNumber' });
     expect(headerParts({ agentContext: {} }, { ...sep23Tape, isFinalDay: false, dayNumber: 1 }, D).length).toBeNull();
     expect(battleDays({ completedAt: sep23Tape.battle.completedAt })).toEqual([D]);   // the screen's own one-day fallback…
     expect(headerParts({ completedAt: sep23Tape.battle.completedAt }, { ...sep23Tape, isFinalDay: false }, D).length).toBeNull();   // …never states a length
-    expect(headerParts({}, null, D)).toEqual({ archetype: null, game: 'BaggerBomb', length: null, date: 'Wed, Sep 23, 2026' });
+    expect(headerParts({}, null, D)).toEqual({ name: null, archetype: null, game: 'BaggerBomb', length: null, date: 'Wed, Sep 23, 2026' });
     // the archetype: the battle's, else the tape's (a code the directory does not name is humanised by the directory itself)
     expect(headerParts({}, sep23Tape, D).archetype).toBe('Momentum');
     // review A2P1-9 / A2P3-4: every agent battle is a BaggerBomb game (the tournament mode too) — it never waits on the tape
@@ -119,6 +161,142 @@ describe('the header (BA-41, BA-42)', () => {
     m.click(m.buttons('Deep dive · PLTR›')[0] || m.qa('button').find((b) => b.textContent.startsWith('Deep dive · PLTR')));
     await m.flush();
     expect(m.q('[data-region="price-chart"]').getAttribute('data-symbol')).toBe('PLTR');
+  });
+});
+
+describe('back goes back — the back control names the surface the Film Room was opened from, and returns there', () => {
+  it('each origin\'s label: the in-battle banner → "Battle", Battle History → "Battle History", the Review station → "Dashboard"; unknown → "Dashboard"', async () => {
+    for (const [backTo, label] of [['battle', 'Battle'], ['battleHistory', 'Battle History'], ['dashboard', 'Dashboard'], ['unknown', 'Dashboard'], [undefined, 'Dashboard'], ['somewhere', 'Dashboard']]) {
+      const onBack = vi.fn();
+      m.teardown(); m.setup(); globalThis.localStorage.clear();
+      m.render(<FilmRoomScreenV2 battle={battleOf(sep23Tape)} onBack={onBack} backTo={backTo} viewerId="viewer-1" readers={readersOf({ [sep23Tape.etDate]: sep23Tape }, sep23Series)} nowMs={NOW} />);
+      await m.flush();
+      const back = m.qa('header button')[0];
+      expect(back.textContent, String(backTo)).toBe(`‹ ${label}`);
+      m.click(back);
+      expect(onBack, String(backTo)).toHaveBeenCalledTimes(1);
+      expect(sweepWords(m.container, { tape: sep23Tape, battle: battleOf(sep23Tape) }), String(backTo)).toEqual([]);
+    }
+  });
+});
+
+describe('Amendment E addendum 4, R13 — the agent\'s name leads the subtitle, exactly as stored, bound to its field', () => {
+  const OCT9 = '2026-10-09';
+  /** A Friday-Oct-9 day: the Sep-23 tape re-dated, and a battle whose timeline names that day. */
+  async function openNamed(agentName, { tape = { ...clone(sep23Tape), etDate: OCT9 } } = {}) {
+    const battle = battleOf(tape, { timing: { tradingDays: [tape.etDate] }, agentContext: { archetype: 'momentum_chaser', ...(agentName === undefined ? {} : { agentName }) } });
+    await open(tape, { battle, readers: readersOf({ [tape.etDate]: tape }, sep23Series) });
+    return { battle, tape, docs: { battle, tape, ...Object.fromEntries(sep23Series.map((s) => [`series:${s.symbol}`, s])) } };
+  }
+  const subtitle = () => m.q('[data-header-subtitle]');
+
+  it('the prompt\'s subtitle: "Cipher · Trend Follower · BaggerBomb · one-day battle · Fri, Oct 9, 2026" — the name first, bound to agentContext.agentName', async () => {
+    const { docs } = await openNamed('Cipher');
+    expect(subtitle().textContent).toBe('Cipher · Trend Follower · BaggerBomb · one-day battleD · Fri, Oct 9, 2026');
+    const name = subtitle().querySelector('[data-agent-name]');
+    expect([name.getAttribute('data-agent-name'), name.getAttribute('data-agent-name-doc'), name.textContent]).toEqual(['agentContext.agentName', 'battle', 'Cipher']);
+    expect(subtitle().firstElementChild.contains(name)).toBe(true);
+    expect(name.style.textTransform).toBe('none');   // never altered: the subtitle's capitals do not reach it
+    expect(agentNameDefects(m.container, docs)).toEqual([]);
+    expect(headerParts(docs.battle, docs.tape, OCT9).name).toBe('Cipher');
+  });
+
+  it('the subtitle wraps between whole parts at every width — never an ellipsis that could cut the marked length from its marker (found by the real-layout check at 390)', async () => {
+    const had = window.matchMedia;
+    try {
+      for (const desktop of [false, true]) {
+        window.matchMedia = () => ({ matches: desktop, addEventListener: () => {}, removeEventListener: () => {} });
+        m.teardown(); m.setup(); globalThis.localStorage.clear();
+        await openNamed('A Rather Long Agent Name Indeed');
+        const s = subtitle();
+        expect([s.style.whiteSpace, s.style.textOverflow, s.style.overflow], desktop ? 'desktop' : 'phone').toEqual(['normal', '', '']);
+        for (const part of s.children) expect(part.style.whiteSpace, part.textContent).toBe('nowrap');
+        const length = s.querySelector('[data-num-aggregate]');
+        expect(length.closest('[data-header-subtitle] > span').contains(length.querySelector('[data-kind-mark]'))).toBe(true);   // the number and its marker in one unbreakable part
+        // the back control's label never breaks
+        expect(m.qa('header button')[0].querySelector('span').style.whiteSpace).toBe('nowrap');
+      }
+    } finally {
+      window.matchMedia = had;
+    }
+  });
+
+  it('no stored name: the subtitle starts with the archetype, as before', async () => {
+    for (const absent of [undefined, '', null, 7]) {
+      m.teardown(); m.setup(); globalThis.localStorage.clear();
+      await openNamed(absent);
+      expect(subtitle().textContent, String(absent)).toBe('Trend Follower · BaggerBomb · one-day battleD · Fri, Oct 9, 2026');
+      expect(subtitle().querySelector('[data-agent-name]'), String(absent)).toBeNull();
+    }
+  });
+
+  it('a name with a forbidden word, a name with a number word, a name with digits: exempt on the binding alone — the whole screen sweeps clean', async () => {
+    for (const agentName of ['Best Buddy', 'One Eyed Twelve', 'R2-D2 47']) {
+      m.teardown(); m.setup(); globalThis.localStorage.clear();
+      const { docs } = await openNamed(agentName);
+      for (const label of ['Glance', 'Study', 'Deep dive']) {
+        await depth(label);
+        expect(sweepWords(m.container, docs), `${agentName} · ${label}`).toEqual([]);
+        expect(sweepNumbers(m.container, docs), `${agentName} · ${label}`).toEqual([]);
+        expect(agentNameDefects(m.container, docs), `${agentName} · ${label}`).toEqual([]);
+      }
+    }
+  });
+
+  it('the binding bites: the same words unbound, a name not the stored one, a forged path, no battle document — all swept', async () => {
+    const { docs } = await openNamed('Best Buddy');
+    const name = subtitle().querySelector('[data-agent-name]');
+    // another stored name: the element no longer equals the record
+    expect(sweepWords(m.container, { ...docs, battle: { ...docs.battle, agentContext: { agentName: 'Cipher' } } })).toEqual(['best']);
+    expect(agentNameDefects(m.container, { ...docs, battle: { ...docs.battle, agentContext: { agentName: 'Cipher' } } })).toEqual(['agent name “Best Buddy”: not bound to agentContext.agentName']);
+    // no battle document to bind it to
+    expect(sweepWords(m.container, { tape: docs.tape })).toEqual(['best']);
+    // a forged path
+    name.setAttribute('data-agent-name', 'agentContext.archetype');
+    expect(sweepWords(m.container, docs)).toEqual(['best']);
+    name.setAttribute('data-agent-name', 'agentContext.agentName');
+    // the same words anywhere else are the screen's voice
+    const box = document.createElement('div');
+    box.innerHTML = '<span>Best Buddy</span><span data-agent-name="agentContext.agentName">One Eyed Twelve</span>';
+    expect(sweepWords(box, docs)).toEqual(['best', 'number word “One”: One Eyed Twelve']);   // unbound words, and a name that is not the stored one
+  });
+
+  it('review A2F1-4: short real names that are also the screen\'s own words ("Agent", "Check", "Hold", "Deep", "D") — the guard sees no false defect, and every sweep is clean', async () => {
+    for (const agentName of ['Agent', 'Check', 'Hold', 'Deep', 'D']) {
+      m.teardown(); m.setup(); globalThis.localStorage.clear();
+      const { docs } = await openNamed(agentName);
+      for (const label of ['Glance', 'Study', 'Deep dive']) {
+        await depth(label);
+        m.expandAll();
+        expect(agentNameDefects(m.container, docs), `${agentName} · ${label}`).toEqual([]);
+        expect(sweepWords(m.container, docs), `${agentName} · ${label}`).toEqual([]);
+        expect(m.qa('[data-agent-name]'), `${agentName} · ${label}`).toHaveLength(1);
+      }
+    }
+  });
+
+  it('never composed into other copy, never in an attribute: a distinctive name appears in exactly one text node — its own — at every depth, phone and desktop (review A2FV1-N2)', async () => {
+    const had = window.matchMedia;
+    try {
+      for (const desktop of [false, true]) {
+        window.matchMedia = () => ({ matches: desktop, addEventListener: () => {}, removeEventListener: () => {} });
+        m.teardown(); m.setup(); globalThis.localStorage.clear();
+        const { docs } = await openNamed('Zyx Best Twelve 47');
+        for (const label of ['Glance', 'Study', 'Deep dive']) {
+          await depth(label);
+          m.expandAll();
+          const where = `${desktop ? 'desktop' : 'phone'} · ${label}`;
+          const holders = [];
+          const walker = document.createTreeWalker(m.container, NodeFilter.SHOW_TEXT);
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.textContent.includes('Zyx')) holders.push(n.parentElement);
+          expect(holders.map((h) => h.getAttribute('data-agent-name')), where).toEqual(['agentContext.agentName']);
+          for (const el of m.qa('*')) for (const a of el.getAttributeNames()) expect(el.getAttribute(a).includes('Zyx'), `${where} ${a}`).toBe(false);
+          expect(agentNameDefects(m.container, docs), where).toEqual([]);
+        }
+      }
+    } finally {
+      window.matchMedia = had;
+    }
   });
 });
 
@@ -175,11 +353,20 @@ describe('the day picker and the days with no tape (§7)', () => {
 
   it('names the close pass only when one is actually scheduled for the day', () => {
     const active = { id: 'b', status: 'active', timing: { tradingDays: ['2026-10-08'] } };
-    expect(noTapeLine(active, '2026-10-08', Date.parse('2026-10-08T18:00:00.000Z'))).toBe('The close pass for this day is scheduled at 10:15 PM ET.');
-    expect(noTapeLine(active, '2026-10-08', Date.parse('2026-10-09T03:00:00.000Z'))).toBe('Not available.');
-    expect(noTapeLine({ ...active, timing: { tradingDays: ['2026-09-23'] } }, '2026-09-23', NOW)).toBe('Not available.');
+    expect(noTapeLine(active, '2026-10-08', Date.parse('2026-10-08T18:00:00.000Z'))).toEqual({ line: 'scheduled', clock: '10:15 PM' });
+    expect(noTapeLine(active, '2026-10-08', Date.parse('2026-10-09T03:00:00.000Z'))).toEqual({ line: 'unavailable' });
+    expect(noTapeLine({ ...active, timing: { tradingDays: ['2026-09-23'] } }, '2026-09-23', NOW)).toEqual({ line: 'unavailable' });
     const lateCompletion = { id: 'b', status: 'completed', completedAt: '2026-10-08T03:30:00.000Z', timing: { tradingDays: ['2026-10-07'] } };
-    expect(noTapeLine(lateCompletion, '2026-10-07', Date.parse('2026-10-08T15:00:00.000Z'))).toBe('The close pass that tapes this day has not run yet.');
+    expect(noTapeLine(lateCompletion, '2026-10-07', Date.parse('2026-10-08T15:00:00.000Z'))).toEqual({ line: 'later' });
+  });
+
+  it('review A2A3-7: the scheduled pass\'s clock renders as an instant, like every other clock on the screen', async () => {
+    const battle = { id: 'b-sched', status: 'active', timing: { tradingDays: ['2026-10-08'] }, agentContext: { archetype: 'momentum_chaser' } };
+    await open(sep23Tape, { battle, readers: readersOf({}), nowMs: Date.parse('2026-10-08T18:00:00.000Z') });
+    const line = m.q('[data-state="missing"]');
+    expect(line.textContent).toBe('No tape for this day · The close pass for this day is scheduled at 10:15 PM ET.');
+    expect([...line.querySelectorAll('[data-time]')].map((t) => t.textContent)).toEqual(['10:15 PM']);
+    expect(sweepNumbers(m.container, { battle })).toEqual([]);
   });
 
   it('the opening day: a completed battle\'s last day; an active battle\'s latest begun day; a battle without a timeline its own instant\'s day', () => {
@@ -212,6 +399,59 @@ describe('the day picker and the days with no tape (§7)', () => {
   });
 });
 
+describe('review A2A3-7 — every sweep mounts every no-tape state: missing, error, loading, skipped mode, not written, no id', () => {
+  const series = { readSeries: async () => ({ status: 'ready', series: [] }) };
+  const active = { id: 'b-none', status: 'active', timing: { tradingDays: ['2026-10-08'] }, agentContext: { archetype: 'momentum_chaser', agentName: 'Momentum chaser' } };
+  const late = { id: 'b-late', status: 'completed', completedAt: '2026-10-08T03:30:00.000Z', timing: { tradingDays: ['2026-10-07'] }, agentContext: { archetype: 'momentum_chaser' } };
+  const unwritten = (status) => { const t = clone(sep23Tape); delete t.checks; t.passes = { close: status ? { status } : {}, candles: { status: 'skipped' } }; return t; };
+  const skipped = unwritten('skipped_mode');
+  const CASES = [
+    ['missing · a pass scheduled', { battle: active, readers: readersOf({}), nowMs: Date.parse('2026-10-08T18:00:00.000Z') }, 'missing', 'No tape for this day · The close pass for this day is scheduled at 10:15 PM ET.'],
+    ['missing · the pass has not run yet', { battle: late, readers: readersOf({}), nowMs: Date.parse('2026-10-08T15:00:00.000Z') }, 'missing', 'No tape for this day · The close pass that tapes this day has not run yet.'],
+    ['missing · not available', { battle: battleOf(sep23Tape), readers: readersOf({}) }, 'missing', 'No tape for this day · Not available.'],
+    ['error', { readers: { readTape: async () => ({ status: 'error', tape: null }), ...series } }, 'error', 'The tape for this day could not be read.'],
+    ['loading', { readers: { readTape: () => new Promise(() => {}), ...series } }, 'loading', 'Loading the tape…'],
+    ['skipped mode', { tape: skipped }, 'skipped-mode', 'This battle mode is not taped.'],
+    ['not written', { tape: unwritten('failed') }, 'not-written', 'The close pass for this day did not write a tape (failed).'],
+    ['not written · no status recorded', { tape: unwritten(null) }, 'not-written', 'The close pass for this day did not write a tape (unknown).'],
+    ['no id', { battle: { ...battleOf(sep23Tape), id: undefined } }, 'no-day', 'No tape for this day · Not available.'],
+  ];
+
+  it.each(CASES)('%s — every sweep, every depth, at phone and desktop width', async (_label, opts, state, words) => {
+    const tape = opts.tape || sep23Tape;
+    const battle = opts.battle || battleOf(tape);
+    const readers = opts.readers || readersOf({ [tape.etDate]: tape }, []);
+    const docs = { battle, ...(opts.tape ? { tape: opts.tape } : {}) };
+    const had = window.matchMedia;
+    try {
+      for (const desktop of [false, true]) {
+        window.matchMedia = () => ({ matches: desktop, addEventListener: () => {}, removeEventListener: () => {} });
+        m.teardown(); m.setup(); globalThis.localStorage.clear();
+        await open(tape, { battle, readers, nowMs: opts.nowMs ?? NOW });
+        for (const label of ['Glance', 'Study', 'Deep dive']) {
+          await depth(label);
+          const where = `${desktop ? 'desktop' : 'phone'} · ${label}`;
+          expect(m.q(`[data-state="${state}"]`)?.textContent, where).toBe(words);
+          expect(sweepNumbers(m.container, docs), where).toEqual([]);
+          expect(sweepWords(m.container, docs), where).toEqual([]);
+          expect(sweepSigns(m.container), where).toEqual([]);
+          expect(quoteDefects(m.container, docs), where).toEqual([]);
+          expect(storedNoteDefects(m.container, docs), where).toEqual([]);
+        }
+      }
+    } finally {
+      window.matchMedia = had;
+    }
+  });
+
+  it('the not-written status is the tape\'s own word, bound to its path', async () => {
+    const tape = unwritten('failed');
+    await open(tape);
+    const note = m.q('[data-state="not-written"] [data-stored-note]');
+    expect([note.getAttribute('data-stored-note'), note.textContent]).toEqual(['passes.close.status', 'failed']);
+  });
+});
+
 describe('the whole screen through the sweeps — every depth, both days, everything opened', () => {
   it.each([['Sep-23', sep23Tape, sep23Series], ['empty', emptyTape, emptySeries]])('%s', async (_l, tape, series) => {
     await open(tape, { series });
@@ -227,6 +467,8 @@ describe('the whole screen through the sweeps — every depth, both days, everyt
       expect(sweepSigns(m.container), label).toEqual([]);
       expect(sweepWords(m.container, docs), label).toEqual([]);
       expect(quoteDefects(m.container, docs), label).toEqual([]);
+      expect(storedNoteDefects(m.container, docs), label).toEqual([]);   // every stored note bound to its path (Astra B2)
+      expect(agentNameDefects(m.container, docs), label).toEqual([]);   // the agent's name bound to its field (R13)
       const notes = m.container.textContent.split('This does not show which protections were armed or checked.').length - 1;
       expect(notes, label).toBe(label === 'Deep dive' && !m.q('[data-region="evidence-overlay"]') ? 0 : 1);
     }
@@ -250,6 +492,8 @@ describe('the whole screen through the sweeps — every depth, both days, everyt
         expect(sweepSigns(m.container), label).toEqual([]);
         expect(sweepWords(m.container, docs), label).toEqual([]);
         expect(quoteDefects(m.container, docs), label).toEqual([]);
+        expect(storedNoteDefects(m.container, docs), label).toEqual([]);
+        expect(agentNameDefects(m.container, docs), label).toEqual([]);
       }
       expect(m.q('[data-region="all-symbols"]')).toBeTruthy();
       expect(m.qa('[data-fork-ends]')).toHaveLength(0);   // the Deep dive is showing; the Study's desktop fork ends were swept above
@@ -395,7 +639,9 @@ describe('Amendment E addendum 2, R8 (Astra A2 F3) — the battle length is a ma
   });
 
   it('review A2A3-2: words up to "ten"; a longer timeline omits the length — never a bare "-day battle"', async () => {
-    const before = (n) => Array.from({ length: n }, (_, k) => `2026-09-${String(23 - n + 1 + k).padStart(2, '0')}`);
+    // the n trading sessions ending on the tape's day (B4: a timeline names sessions; weekends would be dropped)
+    const before = (n) => { const out = [D]; while (out.length < n) out.unshift(getPreviousSessionDate(out[0])); return out; };
+    expect(before(10)).toEqual(['2026-09-10', '2026-09-11', '2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18', '2026-09-21', '2026-09-22', D]);
     const ten = battleOf(sep23Tape, { timing: { tradingDays: before(10) } });
     expect(ten.timing.tradingDays.at(-1)).toBe(D);
     await open(sep23Tape, { battle: ten });
@@ -426,6 +672,41 @@ describe('Amendment E addendum 2, R8 (Astra A2 F3) — the battle length is a ma
     expect(sweepNumbers(m.container, { tape: sep23Tape, battle })).toEqual([]);
   });
 
+  it('Astra B4: [\'not-a-date\', \'2026-09-23\'] reads "one-day battle" — the picker, the count and the oracle read one validated timeline', async () => {
+    const battle = battleOf(sep23Tape, { timing: { tradingDays: ['not-a-date', D] } });
+    await open(sep23Tape, { battle });
+    expect(lengthEl().textContent).toBe('one-day battleD');
+    expect(lengthEl().getAttribute('data-agg-value')).toBe('1');
+    expect(m.q('[data-region="day-picker"]')).toBeNull();
+    expect(sweepNumbers(m.container, { tape: sep23Tape, battle })).toEqual([]);
+    expect(battleDays(battle)).toEqual([D]);
+    expect(headerParts(battle, sep23Tape, D).length).toEqual({ days: 1, source: 'timing' });
+  });
+
+  it('Astra B4: a weekend, a holiday and an impossible date leave the picker and the length — the days that remain are counted', async () => {
+    const battle = battleOf(sep23Tape, { timing: { tradingDays: ['2026-09-19', '2026-09-22', '2026-11-26', '2026-02-30', D] } });
+    await open(sep23Tape, { battle });
+    expect(m.qa('[data-region="day-picker"] button').map((b) => b.textContent)).toEqual(['Sep 22', 'Sep 23']);
+    expect(lengthEl().textContent).toBe('two-day battleD');
+    expect(sweepNumbers(m.container, { tape: sep23Tape, battle })).toEqual([]);
+  });
+
+  it('review A2F1-6: a timeline naming its day twice is one day — "one-day battle", no picker, as the final tape\'s dayNumber says', async () => {
+    const battle = battleOf(sep23Tape, { timing: { tradingDays: [D, D] } });
+    await open(sep23Tape, { battle });
+    expect(lengthEl().textContent).toBe('one-day battleD');
+    expect(sep23Tape.dayNumber).toBe(1);
+    expect(m.q('[data-region="day-picker"]')).toBeNull();
+    expect(battleDays(battle)).toEqual([D]);
+    expect(sweepNumbers(m.container, { tape: sep23Tape, battle })).toEqual([]);
+  });
+
+  it('a recorded timeline with no valid day yields no day and no length, as before — never a day the record did not name', () => {
+    const battle = { status: 'completed', completedAt: sep23Tape.battle.completedAt, timing: { tradingDays: ['not-a-date'] } };
+    expect(battleDays(battle)).toEqual([]);
+    expect(headerParts(battle, { ...sep23Tape, isFinalDay: false }, D).length).toBeNull();
+  });
+
   it('neither source: the length is omitted', async () => {
     await open({ ...clone(sep23Tape), isFinalDay: false }, { battle: { ...battleOf(sep23Tape), timing: undefined } });
     expect(lengthEl()).toBeNull();
@@ -436,12 +717,13 @@ describe('Amendment E addendum 2, R8 (Astra A2 F3) — the battle length is a ma
 describe('R8 — the screen\'s own voice spells no number as a word outside a marked number (the class, not the instance)', () => {
   const box = (html) => { const el = document.createElement('div'); el.innerHTML = html; return el; };
 
-  it('a cardinal word in copy, a label or an attribute bites — zero through twenty, "single", "dozen", inflected', () => {
+  it('a quantity word in copy, a label or an attribute bites — the closed list (Astra B3), inflected', () => {
     expect(sweepWords(box('<p>Holdings · seven slots</p>'))).toEqual(['number word “seven”: Holdings · seven slots']);
     expect(sweepWords(box('<h3>Twenty checks</h3>'))).toEqual(['number word “Twenty”: Twenty checks']);
     expect(sweepWords(box('<span title="a single check"></span><button aria-label="dozens of swaps"></button>'))).toEqual(['number word “single” in title: a single check', 'number word “dozens” in aria-label: dozens of swaps']);
     expect(sweepWords(box('<p>a one-step hypothetical</p>'))).toEqual(['number word “one”: a one-step hypothetical']);
-    expect(sweepWords(box('<p>someone, often, none, ninety</p>'))).toEqual([]);   // whole words only
+    expect(sweepWords(box('<p>someone, often, none, tenth</p>'))).toEqual([]);   // whole words only
+    expect(sweepWords(box('<p>someone, often, none, ninety</p>'))).toEqual(['number word “ninety”: someone, often, none, ninety']);   // Astra B3: on the list now
   });
 
   it('a marked number\'s own text is exempt — the words beside it are not', () => {
@@ -457,13 +739,15 @@ describe('R8 — the screen\'s own voice spells no number as a word outside a ma
     expect(sweepWords(box('<span data-display-name="MSFT">Capital One</span>'))).toEqual(['number word “One”: Capital One']);
   });
 
-  it('R1: the tape\'s own stored text, verbatim and marked as the record\'s, is exempt — screen words around it, or the same words unmarked, are not', () => {
+  it('R1 / R9: the tape\'s own stored text, verbatim and BOUND to its path, is exempt — screen words inside it, the same words as a bare record, or unmarked, are not (Astra B2)', () => {
     const label = sep23Tape.actions[0].replay.label;
     expect(label).toMatch(/^one-step hypothetical/);
     const docs = { tape: sep23Tape };
-    expect(sweepWords(box(`<span data-record-text>${label}</span>`), docs)).toEqual([]);
-    expect(sweepWords(box(`<span data-record-text>${label} · one more</span>`), docs)).toEqual(['number word “one”: ' + `${label} · one more`.slice(0, 80)]);
-    expect(sweepWords(box(`<span>${label}</span>`), docs)).toEqual([`number word “one”: ${label}`.slice(0, 'number word “one”: '.length + 80)]);
+    const hit = (text) => `number word “one”: ${text}`.slice(0, 'number word “one”: '.length + 80);
+    expect(sweepWords(box(`<span data-stored-note="actions[0].replay.label">${label}</span>`), docs)).toEqual([]);
+    expect(sweepWords(box(`<span data-stored-note="actions[0].replay.label">${label} · one more</span>`), docs)).toEqual([hit(`${label} · one more`)]);
+    expect(sweepWords(box(`<span data-record-text>${label}</span>`), docs)).toEqual([hit(label)]);   // a string match exempts nothing (B2)
+    expect(sweepWords(box(`<span>${label}</span>`), docs)).toEqual([hit(label)]);
   });
 
   it('review A2A3-3: EVERY word on the pinned list bites, singular and plural', () => {
@@ -480,7 +764,10 @@ describe('R8 — the screen\'s own voice spells no number as a word outside a ma
     expect(sweepNumbers(box(two), { battle })).toEqual(['aggregate count(timing.tradingDays): 2 number texts — a marked number holds exactly one (review A2A3-1)']);
   });
 
-  it('the production word list for the sweep is the fix prompt\'s, pinned in the harness', () => {
-    expect([...SPEC_NUMBER_WORDS]).toEqual(['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty', 'single', 'dozen']);
+  it('the word list for the sweep is the follow-up prompt\'s closed list (Astra B3), pinned in the harness', () => {
+    expect([...SPEC_NUMBER_WORDS]).toEqual([
+      'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty',
+      'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety', 'hundred', 'thousand', 'million', 'billion', 'dozen', 'single', 'half', 'double', 'triple', 'twice',
+    ]);
   });
 });

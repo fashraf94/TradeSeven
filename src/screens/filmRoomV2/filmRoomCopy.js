@@ -28,7 +28,8 @@ export const REPLAY_SENTENCE = "a hypothetical of this swap alone, through the d
 
 export const FILM_ROOM_COPY = Object.freeze({
   title: 'Film Room',
-  back: 'Battles',
+  // the back control names where it returns: the surface the Film Room was opened from (filmRoomBack.js)
+  backTo: { battle: 'Battle', battleHistory: 'Battle History', dashboard: 'Dashboard', unknown: 'Dashboard' },
   gameName: 'BaggerBomb',
   battleLengthSuffix: '-day battle',   // the design of record's "one-day battle" — the word is a marked number (R8)
   battleComplete: 'battle complete',
@@ -45,14 +46,15 @@ export const FILM_ROOM_COPY = Object.freeze({
   // states of the day (§7)
   loading: 'Loading the tape…',
   noTape: 'No tape for this day',
-  noTapeScheduled: (clock) => `The close pass for this day is scheduled at ${clock} ET.`,
+  noTapeScheduled: { before: 'The close pass for this day is scheduled at ', after: ' ET.' },   // the clock between, as an instant (review A2A3-7)
   noTapeLater: 'The close pass that tapes this day has not run yet.',
   noTapeUnavailable: 'Not available.',
   readError: 'The tape for this day could not be read.',
   earlierDay: "This day's tape was written while the battle was in progress; the battle's final result is recorded on its last day.",
   openLastDay: (label) => `Open ${label}`,
   skippedMode: 'This battle mode is not taped.',
-  closeNotWritten: (status) => `The close pass for this day did not write a tape (${status}).`,
+  closeNotWritten: 'The close pass for this day did not write a tape',   // then "(" the stored passes.close.status, bound by path (B2) ")."
+  statusUnknown: 'unknown',
 
   // section counts (Amendment E addendum R4(a)) — "Checks · 23 of 23", "Holdings · 7 slots"
   countOf: 'of',
@@ -149,6 +151,8 @@ export const FILM_ROOM_COPY = Object.freeze({
   closedLeg: 'At the sale · rebuilt minus banked',
   closedLegNote: 'agreement at the sale, not accuracy afterward',
   replayNone: 'No replay for this swap.',
+  replayNotDrawn: 'No replay drawn for this swap',   // a replay written with no point to draw — then its stored reasons (R11)
+  replayNoneSeeCoverage: 'the replay coverage line above says why',   // once a candle pass has written the day's note (R11)
   replayCrypto: 'crypto legs are not replayed',
   split: 'Split by cause · the sale',
   splitRows: {
@@ -162,7 +166,7 @@ export const FILM_ROOM_COPY = Object.freeze({
   barClosedAt: (clock) => `bar closed ${clock}`,
   fill: 'The fill',
   fillRows: { recordedFill: (sym) => `Recorded fill · ${sym}`, barAtSwap: '1-minute bar at the swap', barMinusFill: 'Bar minus recorded fill' },
-  missing: (names) => `missing: ${names.join(', ')}`,
+  missingLabel: 'missing:',   // then each stored input name, bound to its own path (Astra B2)
   deepDoor: (sym) => `Deep dive · ${sym}`,
   directives: 'Directives',
   directivesNone: 'No directive was filed this day.',

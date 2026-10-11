@@ -213,3 +213,52 @@ describe('BA-40 — the legacy Film Room, byte for byte, wherever v2 does not re
     expect(fetches).toEqual([]);
   });
 });
+
+describe('back goes back — App passes where the Film Room was opened from; only v2 reads it', () => {
+  const remount = (mode) => { act(() => root.unmount()); root = createRoot(container); resetFilmRoomVerdicts(); received.props = []; flags.mode = mode; };
+
+  it("the legacy screen's props are unchanged with an origin given: App's battle and onBack THEMSELVES, nothing added — the photographs still match ('off' and not admitted)", async () => {
+    const onBack = () => {};
+    const onReturn = () => {};
+    for (const [mode, body] of [['off', null], ['allowlist', { on: true, allowlisted: false }]]) {
+      remount(mode);
+      if (body) answer(body);
+      expect(strip(renderToString(<FilmRoomRoute battle={BATTLE_PROP} onBack={onBack} origin="battleHistory" onReturn={onReturn} />)), mode).toBe(golden('filmRoom.legacy.firstPaint.html'));
+      act(() => root.render(<FilmRoomRoute battle={BATTLE_PROP} onBack={onBack} origin="battleHistory" onReturn={onReturn} />));
+      await settle();
+      expect(container.innerHTML, mode).toBe(golden('filmRoom.legacy.mounted.html'));
+      expect(received.props.length, mode).toBeGreaterThan(0);
+      for (const p of received.props) {
+        expect(Object.keys(p).sort(), mode).toEqual(['battle', 'onBack']);
+        expect(p.battle, mode).toBe(BATTLE_PROP);
+        expect(p.onBack, mode).toBe(onBack);
+      }
+    }
+  });
+
+  it("v2 ('on'): its back names the origin and returns there — never App's legacy back", async () => {
+    for (const [origin, label] of [['battle', 'Battle'], ['battleHistory', 'Battle History'], ['dashboard', 'Dashboard'], ['unknown', 'Dashboard']]) {
+      remount('on');
+      const onBack = vi.fn();
+      const onReturn = vi.fn();
+      act(() => root.render(<FilmRoomRoute battle={BATTLE_PROP} onBack={onBack} origin={origin} onReturn={onReturn} />));
+      const v2 = await waitForV2();
+      expect(v2, origin).toBeTruthy();
+      const back = v2.querySelector('header button');
+      expect(back.textContent, origin).toBe(`‹ ${label}`);
+      act(() => { back.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+      expect(onReturn, origin).toHaveBeenCalledTimes(1);
+      expect(onBack, origin).not.toHaveBeenCalled();
+    }
+  });
+
+  it("v2 with no origin given (an entry App does not know): \"Dashboard\", and App's onBack", async () => {
+    remount('on');
+    const onBack = vi.fn();
+    act(() => root.render(<FilmRoomRoute battle={BATTLE_PROP} onBack={onBack} />));
+    const back = (await waitForV2()).querySelector('header button');
+    expect(back.textContent).toBe('‹ Dashboard');
+    act(() => { back.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+});
