@@ -164,6 +164,7 @@ describe('a failure is retried with a cap, never saved, never looped (O3)', () =
   });
 
   it('a throw from the OUTCOME write after an ok never records a failure; the next attempt finds the lesson and clears', async () => {
+    vi.useFakeTimers({ now: NOW });
     await seedPending('b1');
     answer((attempt) => (attempt === 1 ? okResult(1) : { outcome: 'ok', reason: 'already_recorded', record: buildReflectionOutcome({ outcome: 'ok', model: null, attempt, at: NOW.toISOString() }) }));
     const realCollection = fakeDb.collection.bind(fakeDb);
@@ -178,6 +179,7 @@ describe('a failure is retried with a cap, never saved, never looped (O3)', () =
     expect(b).toMatchObject({ pendingReflection: true, reflectionAttempts: 1 });
     expect(b).not.toHaveProperty('reflectionOutcome'); // NOT a failed/unknown record over a landed success
 
+    vi.setSystemTime(new Date(NOW.getTime() + 15 * 60_000)); // the next tick: the lost write's lease has expired
     await handler(cronReq(), makeRes());
     b = await battle('b1');
     expect(b).toMatchObject({ pendingReflection: false, reflectionAttempts: 2, reflectionOutcome: { outcome: 'ok', attempt: 2 } });
@@ -209,6 +211,48 @@ describe('a failure is retried with a cap, never saved, never looped (O3)', () =
     expect(b).toMatchObject({ pendingReflection: false, reflectionAttempts: 3, reflectionOutcome: { outcome: 'ok', attempt: 3 } });
     expect(b.reflectedAt).toEqual(expect.any(String));
     expect(b).not.toHaveProperty('reflectionNoLesson');
+  });
+});
+
+describe('the claim is a lease — overlapping runs never call twice (review RV-5)', () => {
+  it('a second run that starts while the first is mid-reflection leaves the battle alone; the first run\'s success stands', async () => {
+    await seedPending('b1', { reflectionAttempts: 1, reflectionOutcome: failedResult(1).record });
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    let entered;
+    const inside = new Promise((r) => { entered = r; });
+    answer(async (attempt) => { entered(); await gate; return okResult(attempt); });
+
+    const resA = makeRes();
+    const runA = handler(cronReq(), resA);
+    await inside;                      // run A holds the claim and is inside the model call
+    const resB = makeRes();
+    await handler(cronReq(), resB);    // run B overlaps
+    expect(resB.body).toMatchObject({ processed: 1, succeeded: 0, failed: 0, skipped: 1 });
+    release();
+    await runA;
+
+    expect(reflectMock).toHaveBeenCalledTimes(1); // one model call, not two
+    const b = await battle('b1');
+    expect(b).toMatchObject({ pendingReflection: false, reflectionAttempts: 2, reflectionOutcome: { outcome: 'ok', attempt: 2 }, reflectionLeaseUntil: null });
+    expect(b).not.toHaveProperty('reflectionNoLesson');
+  });
+
+  it('a live lease is respected; an expired one (a run that died) is taken over on the next tick', async () => {
+    await seedPending('b1', { reflectionLeaseUntil: Date.now() + 60_000 });
+    await seedPending('b2', { reflectionLeaseUntil: Date.now() - 1 }, '2026-10-12T20:30:00Z');
+    answer((attempt) => okResult(attempt));
+    await handler(cronReq(), makeRes());
+    expect(reflectMock.mock.calls.map((c) => c[1])).toEqual(['b2']);
+    expect((await battle('b1')).pendingReflection).toBe(true);
+    expect(await battle('b2')).toMatchObject({ pendingReflection: false, reflectionLeaseUntil: null });
+  });
+
+  it('the lease outlives the function ceiling, so a live run always holds it', async () => {
+    const { config, REFLECTION_LEASE_MS } = await import('./process-pending-reflections.js');
+    expect(REFLECTION_LEASE_MS).toBe(150_000);
+    expect(REFLECTION_LEASE_MS).toBeGreaterThan(config.maxDuration * 1000);
+    expect(REFLECTION_LEASE_MS).toBeLessThan(15 * 60_000); // a dead run never blocks the next tick
   });
 });
 

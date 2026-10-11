@@ -21,6 +21,8 @@
 // Reflection outage fix (P-OUT-1, founder rulings O2–O4, 10 Oct 2026):
 //   • each attempt is CLAIMED on the battle (reflectionAttempts) before the
 //     model call, so a run that dies mid-attempt still counts toward the cap;
+//     the claim holds a short lease (reflectionLeaseUntil) so an overlapping
+//     run leaves the battle alone;
 //   • a failed reflection writes nothing: the flag stays set and the next tick
 //     retries; after MAX_REFLECTION_ATTEMPTS the flag clears and the battle is
 //     marked reflectionNoLesson — it leaves the queue, honestly;
@@ -63,6 +65,9 @@ const BATCH_LIMIT = 5;          // up to 5 battles read per tick; the start rule
 // error): in practice one model call per tick, 48 ticks a day (vercel.json).
 const REFLECTION_PHASE_MS = 40_000;
 const REFLECTION_WRITE_RESERVE_MS = 3_000;
+// The claim lease: longer than maxDuration, so a live run always holds it; a
+// run that died frees the battle long before the next 15-minute tick.
+export const REFLECTION_LEASE_MS = 150_000;
 
 export default async function handler(req, res) {
   // ---- 1. Auth (matches agent-batch-review.js pattern) ----
@@ -117,18 +122,26 @@ export default async function handler(req, res) {
         // an attempt is counted even if this run dies inside it. A battle that
         // already used every attempt without a recorded end gets a recovery
         // pass instead: no model call, the lesson looked up, then it leaves.
+        // The claim is also a LEASE (review RV-5): a second invocation that
+        // finds an unexpired lease leaves the battle alone, so overlapping runs
+        // (a manual run during a tick) never call twice or write contradicting
+        // end states. The lease outlives maxDuration; the outcome write clears it.
         claim = await db.runTransaction(async (tx) => {
           const snap = await tx.get(battleRef);
           const data = snap.exists ? snap.data() : null;
           if (!data || data.status !== 'completed' || data.pendingReflection !== true) return { state: 'not_pending' };
+          const nowMs = Date.now();
+          if (Number.isFinite(data.reflectionLeaseUntil) && data.reflectionLeaseUntil > nowMs) return { state: 'busy' };
           const prior = Number.isInteger(data.reflectionAttempts) && data.reflectionAttempts > 0 ? data.reflectionAttempts : 0;
-          if (prior >= MAX_REFLECTION_ATTEMPTS) return { state: 'exhausted', attempt: prior };
-          tx.update(battleRef, { reflectionAttempts: prior + 1 });
-          return { state: 'claimed', attempt: prior + 1 };
+          const exhausted = prior >= MAX_REFLECTION_ATTEMPTS;
+          tx.update(battleRef, exhausted
+            ? { reflectionLeaseUntil: nowMs + REFLECTION_LEASE_MS }
+            : { reflectionAttempts: prior + 1, reflectionLeaseUntil: nowMs + REFLECTION_LEASE_MS });
+          return exhausted ? { state: 'exhausted', attempt: prior } : { state: 'claimed', attempt: prior + 1 };
         });
-        if (claim.state === 'not_pending') {
+        if (claim.state === 'not_pending' || claim.state === 'busy') {
           summary.skipped++;
-          console.log(`${LOG_PREFIX} Battle ${battleId}: no longer pending — skipped`);
+          console.log(`${LOG_PREFIX} Battle ${battleId}: ${claim.state === 'busy' ? 'held by another run' : 'no longer pending'} — skipped`);
           continue;
         }
 
@@ -141,7 +154,7 @@ export default async function handler(req, res) {
         // stays set for the next tick, or clears at the cap with the battle
         // marked reflectionNoLesson (reflectionOutcome.js).
         const update = reflectionBattleUpdate(result, { attempt: claim.attempt, at: new Date().toISOString() });
-        await battleRef.update(update);
+        await battleRef.update({ ...update, reflectionLeaseUntil: null });
 
         if (result?.outcome === 'ok' || result?.outcome === 'skipped') {
           summary.succeeded++;
@@ -163,7 +176,7 @@ export default async function handler(req, res) {
           try {
             const at = new Date().toISOString();
             const record = buildReflectionOutcome({ outcome: 'failed', failureClass: 'unknown', errorName: errorNameOf(err), model: null, attempt: claim.attempt, at });
-            await battleRef.update(reflectionBattleUpdate({ outcome: 'failed', record }, { attempt: claim.attempt, at }));
+            await battleRef.update({ ...reflectionBattleUpdate({ outcome: 'failed', record }, { attempt: claim.attempt, at }), reflectionLeaseUntil: null });
           } catch (recordErr) {
             console.error(`${LOG_PREFIX} Battle ${battleId}: could not record the failed attempt:`, recordErr?.message || recordErr);
           }
