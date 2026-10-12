@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "classification": "archived_real_provider_fixture_not_current_market_evidence",
+  "sourceFile": "fixtures/daily/AAPL_eod_2018-01-01_2026-07-10.json",
+  "sourceSha256": "b84fcf7c2b73ee915a6ac79196f683f571b5de0baf4aa3dee57284281e1546df",
+  "providerSymbol": "AAPL.US",
+  "captureDate": "2026-07-10",
+  "captureTimeQualification": "manifest records date only; intraday capture/finality time unavailable",
+  "provenance": "fixtures/README.md capture manifest and docs/discovery/SESSION1_DATA_DISCOVERY_REPORT.md",
+  "calendarSource": "https://ir.theice.com/press/news-details/2019/NYSE-Group-Announces-2020-2021-and-2022-Holiday-and-Early-Closings-Calendar/default.aspx",
+  "calendarQualification": "independently enumerated weekdays; published NYSE 2020 holiday/early-close table has no exception in either selected window",
+  "corporateActionSource": "https://www.apple.com/newsroom/2020/07/apple-reports-third-quarter-results/",
+  "dividendSource": "https://investor.apple.com/dividend-history/default.aspx",
+  "windows": [
+    {
+      "name": "real_AAPL_four_for_one_split",
+      "event": "split-adjusted trading begins 2020-08-31",
+      "expectedSourceSession": "2020-09-04",
+      "sessions": ["2020-08-17", "2020-08-18", "2020-08-19", "2020-08-20", "2020-08-21", "2020-08-24", "2020-08-25", "2020-08-26", "2020-08-27", "2020-08-28", "2020-08-31", "2020-09-01", "2020-09-02", "2020-09-03", "2020-09-04"]
+    },
+    {
+      "name": "real_AAPL_august_dividend_adjustment",
+      "event": "0.82 dividend, record 2020-08-10, payable 2020-08-13; adjustment-factor change observed between 2020-08-06 and 2020-08-07",
+      "expectedSourceSession": "2020-08-14",
+      "sessions": ["2020-07-27", "2020-07-28", "2020-07-29", "2020-07-30", "2020-07-31", "2020-08-03", "2020-08-04", "2020-08-05", "2020-08-06", "2020-08-07", "2020-08-10", "2020-08-11", "2020-08-12", "2020-08-13", "2020-08-14"]
+    }
+  ]
+}
