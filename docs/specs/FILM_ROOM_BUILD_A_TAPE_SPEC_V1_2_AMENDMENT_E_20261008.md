@@ -82,3 +82,7 @@ One review of the draft PR. A finding blocks the merge only if: a rendered numbe
 ## Addendum 5 — founder ruling on the follow-up pass (2026-10-11)
 
 - **R14 — Absence is not a quantity.** Words that say the tape holds no record of something ("No swaps were recorded this day", "no checks recorded", BA-9's "none in force", "nothing") state absence, not a count. R8 does not apply, and they take no marker. Each one is still a stated fact: it must match the tape's section and its coverage, or it breaches criterion 3. "No" or "none" never stands in for a number the tape records.
+
+Addendum 6 — founder ruling before `'on'` (2026-10-11)
+
+* R15 — A replay is drawn only after the sale. A replay path counts as drawn only when it shows at least one visible mark at an instant after the sale. The point at the sale itself (the banked opening on the swap path, the sold name's value at the sale on the hold path) is where the two paths start, not a result. On its own it never makes a card drawn, and such a card takes the no-drawn-replay treatment. On a drawn card the sale point stays part of its path. In the legend, marks for isolated readings are called "dots", never "points", which the screen uses for score. The swap path keeps the class its tape declares (rebuilt); its legend follows that declaration.
