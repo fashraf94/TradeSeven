@@ -2971,22 +2971,24 @@ export const FILM_TAPE_WRITE_ENABLED = true;
  *                 of the final day's tape).
  * Unknown values resolve to 'off' (fail closed).
  *
- * RUNWAY: 'off' → 'allowlist' is its own two-line founder PR (this value and
- * its pin row) after the A2 build merges AND the Firestore rules are published
- * so the tape's owner-read block is live; the founder and the QA tester then
- * open five real battle days. 'allowlist' → 'on' is a later founder decision,
- * its own PR, never a build PR. Each step moves the pin row in
- * src/config/filmTapeFlags.test.js in the same commit (BUILD_RULES §2); the
- * step to 'on' also turns around the hub-helper row of
- * api/cron/film-tape-flip.live.test.js — that file's deliberate tripwire for a
- * screen flip, which asserts Stage 1 under the real flags. A
+ * RUNWAY: walked one founder PR per step, never a build PR. 'off' →
+ * 'allowlist' was PR #950 (2026-10-10). 'allowlist' → 'on' is the CURRENT
+ * value, its own PR (2026-10-11), after the follow-up pass (PR #952) and the
+ * founder's ruling R15 (Amendment E addendum 6): v2 for every battle, with no
+ * verdict request, so the allowlist's first-open wait of up to 8 s is gone,
+ * and the hub helper's Stage 3 for every battle. That flip moved the pin row
+ * in src/config/filmTapeFlags.test.js and turned around the hub-helper row of
+ * api/cron/film-tape-flip.live.test.js — that file's tripwire for a screen
+ * flip, which now asserts Stage 3 under the real flags — in the same commit
+ * (BUILD_RULES §2). ROLLBACK: one line, this value back to 'allowlist', with
+ * its pin row and the tripwire row moving back in the same commit. A
  * string tri-state, so it is pinned DIRECTLY — never a DARK_BY_DESIGN key (the
  * flag-pin guard scans `*_ENABLED = true|false` only; the CALL_RECORDS_MODE /
  * ANTICIPATION_THRESHOLD_LINT_MODE precedent) — and noted, by name, in the
  * DARK_BY_DESIGN block where a reader looks for the dark runway.
  */
 // Pinned by: filmTapeFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
-export const FILM_ROOM_V2_MODE = 'allowlist';
+export const FILM_ROOM_V2_MODE = 'on';
 
 /** The three walked states, in walk order. */
 export const FILM_ROOM_V2_MODES = Object.freeze(['off', 'allowlist', 'on']);

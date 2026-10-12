@@ -11,9 +11,12 @@
 // flip fails the guard loudly with its runway note; a DELIBERATE flip moves the
 // flag's first row below and turns its registration row around, in the same
 // commit. FILM_ROOM_V2_MODE is the screen gate (Amendment E BA-40), a STRING
-// TRI-STATE that replaced the boolean FILM_ROOM_V2_ENABLED: it ships 'off' and
-// is pinned directly here (pin, allowed values, literal + pointer), never a
-// DARK_BY_DESIGN key — the guard notes it by name in that block instead.
+// TRI-STATE that replaced the boolean FILM_ROOM_V2_ENABLED: built 'off', walked
+// to 'allowlist' (PR #950), and 'on' now — v2 for every battle, flipped
+// 2026-10-11 in its own founder PR; a rollback is one line back to 'allowlist'
+// with its pin row. It is pinned directly here (pin, allowed values, literal +
+// pointer), never a DARK_BY_DESIGN key — the guard notes it by name in that
+// block instead.
 //
 // This file is the pin, not a behaviour test: the flag-off zero-write rows
 // live in api/cron/film-tape-close.test.js and film-tape-candles.test.js, and
@@ -74,9 +77,10 @@ describe('FILM_TAPE_WRITE_ENABLED — the pin (BUILD_RULES §2)', () => {
 });
 
 describe('FILM_ROOM_V2_MODE — the pin (BUILD_RULES §2; Amendment E BA-40)', () => {
-  it("ships the dark state: FILM_ROOM_V2_MODE is 'off' — each step is its own founder PR", () => {
-    // THE ROW THAT MOVES WITH A FLIP ('off' → 'allowlist' → 'on'), in the flip PR's own commit.
-    expect(FILM_ROOM_V2_MODE).toBe('allowlist');
+  it("is ON: FILM_ROOM_V2_MODE is 'on' — v2 for every battle, flipped 2026-10-11 in its own founder PR", () => {
+    // THE ROW THAT MOVES WITH A FLIP ('off' → 'allowlist' → 'on'), in the flip PR's own commit; a rollback to
+    // 'allowlist' moves it back.
+    expect(FILM_ROOM_V2_MODE).toBe('on');
   });
 
   it('the allowed values: exactly off · allowlist · on, frozen, in walk order, and the shipped value is one of them', () => {

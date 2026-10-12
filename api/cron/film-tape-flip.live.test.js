@@ -8,13 +8,14 @@
 //      handle and writes the day's tape (and the admin backfill entry runs);
 //   2. the candle handler no longer answers flag_off — it takes the handle and
 //      selects the waiting tape;
-//   3. the hub helper still answers from Stage 1: Stage 3 needs Film Room v2
-//      to resolve on for the owner (FILM_ROOM_V2_MODE, Amendment E BA-40) —
-//      the lit writer changes nothing a player sees. Under 'allowlist' with no
-//      signed-in owner it is still Stage 1; the flip to 'on' turns this row
-//      around in its own commit (the runway in featureFlags.js says so).
-// A rollback (the writer back to false) reds the three handler rows; an accidental
-// screen flip reds the helper row. The value pins live in src/config/filmTapeFlags.test.js
+//   3. the hub helper answers from Stage 3: Film Room v2 resolves on for every
+//      owner (FILM_ROOM_V2_MODE 'on', Amendment E BA-40), so it spends one
+//      bounded read of the final day's tape, asks no allowlist verdict, and
+//      never answers from the legacy review (spec §11). The flip to 'on'
+//      turned this row around in its own commit; under 'allowlist' with no
+//      signed-in owner it answered from Stage 1.
+// A writer rollback (back to false) reds the three handler rows and the helper row's
+// `pending`; a screen rollback (back to 'allowlist') reds the helper row. The value pins live in src/config/filmTapeFlags.test.js
 // alone: this file asserts BEHAVIOUR, never `expect(FLAG).toBe(…)`, so the
 // flag-pin guard's one-pinning-suite pointer stays as it is.
 //
@@ -124,22 +125,30 @@ describe('the flip, with the REAL flag values (no flag mock in this file)', () =
     expect(fetches.calls.length).toBeGreaterThan(0);
   });
 
-  it('the hub helper stays on Stage 1: Stage 3 still needs v2 on for the owner (FILM_ROOM_V2_MODE) — no tape read, the legacy answer', async () => {
+  it("the hub helper answers from Stage 3: v2 is on for every owner (FILM_ROOM_V2_MODE 'on') — one bounded read of the final day's tape, no allowlist verdict, never the legacy review (spec §11)", async () => {
     const calls = [];
-    const readTape = async (battleId, etDate) => { calls.push([battleId, etDate]); return { passes: { close: { status: 'written' } } }; };
+    const verdicts = [];
+    let stored = { passes: { close: { status: 'written' } } };
+    const readTape = async (battleId, etDate) => { calls.push([battleId, etDate]); return stored; };
+    const readVerdict = async (battleId) => { verdicts.push(battleId); return false; };
     const completedNoReview = {
       id: 'battle-1', status: 'completed', completedAt: '2026-09-28T20:05:00.000Z', ownerId: 'u1',
       timing: { tradingDays: ['2026-09-28'] }, dailyReviews: [], reviewPending: false,
     };
-    // Stage 3 would read the written final-day tape and answer `ready`, or
-    // `pending` before tonight's pass (the writer is lit). Stage 1 reads
-    // nothing and answers from the battle document alone.
-    for (const now of [Date.parse('2026-09-28T23:00:00.000Z'), Date.parse('2026-10-01T15:00:00.000Z')]) {
-      expect(await getReviewAvailability(completedNoReview, { readTape, now }))
-        .toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
-    }
-    expect(await getReviewAvailability({ ...completedNoReview, dailyReviews: [{ day: 1 }] }, { readTape, now: Date.parse('2026-10-01T15:00:00.000Z') }))
-      .toEqual({ ready: true, target: 'filmRoom', availability: 'ready' });
-    expect(calls).toEqual([]);
+    const answer = (battle, now) => getReviewAvailability(battle, { readTape, readVerdict, now });
+    const TONIGHT = Date.parse('2026-09-28T23:00:00.000Z');   // 19:00 EDT, before the night's close pass
+    const LATER = Date.parse('2026-10-01T15:00:00.000Z');     // every pass that could tape the final day has run
+    // ready: the final day's tape has a written close pass — with no legacy review (Stage 1 would say unavailable)
+    expect(await answer(completedNoReview, LATER)).toEqual({ ready: true, target: 'filmRoom', availability: 'ready' });
+    // no tape yet: pending while the close pass that tapes the final day is still to run (the writer is lit)…
+    stored = null;
+    expect(await answer(completedNoReview, TONIGHT)).toEqual({ ready: false, target: 'filmRoom', availability: 'pending' });
+    // …and unavailable once it has run — even beside a legacy review, which Stage 1 would call ready
+    expect(await answer({ ...completedNoReview, dailyReviews: [{ day: 1 }] }, LATER)).toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
+    // active: not completed — unavailable, and no read spent
+    expect(await answer({ ...completedNoReview, status: 'active', completedAt: null }, LATER)).toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
+    // one bounded read per completed battle, of tape/{its last trading day}; 'on' never asks for the allowlist verdict
+    expect(calls).toEqual([['battle-1', '2026-09-28'], ['battle-1', '2026-09-28'], ['battle-1', '2026-09-28']]);
+    expect(verdicts).toEqual([]);
   });
 });
