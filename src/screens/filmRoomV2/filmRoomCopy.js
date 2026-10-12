@@ -144,8 +144,8 @@ export const FILM_ROOM_COPY = Object.freeze({
   heldLine: (sym) => `${sym} held`,
   boughtLine: (sym) => `${sym} bought`,
   rebuiltDashed: 'dashed · rebuilt from 1-minute bars',   // the legend beside drawn segments only (Astra F1)
-  rebuiltPoints: 'points · rebuilt from 1-minute bars',   // beside isolated points only: no segment is drawn
-  rebuiltDashedPoints: 'dashed lines and points · rebuilt from 1-minute bars',   // beside both
+  rebuiltDots: 'dots · rebuilt from 1-minute bars',   // beside rings only (isolated readings): no segment is drawn — "dots", never "points", the screen's word for score (R15)
+  rebuiltDashedDots: 'dashed lines and dots · rebuilt from 1-minute bars',   // beside both
   hypothetical: 'hypothetical',
   laterTrades: 'later trades in this slot, not replayed',
   gap: 'Gap',
@@ -153,7 +153,7 @@ export const FILM_ROOM_COPY = Object.freeze({
   closedLeg: 'At the sale · rebuilt minus banked',
   closedLegNote: 'agreement at the sale, not accuracy afterward',
   replayNone: 'No replay for this swap.',
-  replayNotDrawn: 'No replay drawn for this swap',   // a replay written with no point to draw — then its stored reasons (R11)
+  replayNotDrawn: 'No replay drawn for this swap',   // a replay written with no mark to draw after the sale — then its stored reasons (R11, R15)
   replayNoneSeeCoverage: 'the replay coverage line above says why',   // once a candle pass has written the day's note (R11)
   replayCrypto: 'crypto legs are not replayed',
   split: 'Split by cause · the sale',

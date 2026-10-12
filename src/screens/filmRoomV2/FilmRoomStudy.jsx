@@ -14,7 +14,9 @@
 //               sentence only beside a drawn replay — a card with no written
 //               replay says why, alone (Amendment E addendum 3, R11). Drawn
 //               means visible geometry: a dashed segment, or a ring at an
-//               isolated sample; the labels and legend say which (Astra F1)
+//               isolated sample; the labels and legend say which (Astra F1).
+//               A path is drawn only with a mark after the sale: the point
+//               at the sale alone draws nothing (addendum 6, R15)
 //   Directives  the card per BA-9, its three states from the tape's rows (F6)
 //   Plans       verbatim, with the two market prices and the horizon note (BA-10)
 //   Rationale   recorded words, collapsed, beside the checks that carry no agent
@@ -120,16 +122,23 @@ function forkScale(tape, index, height = FORK_HEIGHT) {
  * The fork's GEOMETRY — exactly what the chart emits, path by path (Astra F1): each run of samples with a value at a
  * recorded instant (forkRuns) is a dashed SEGMENT when its points sit at two places or more, else a POINT glyph (an
  * isolated sample, drawn as itself — never joined across the gap to fabricate a line). A path is drawn when it emits
- * a segment or a glyph, and the fork when either path is. The chart draws from this object and the card's every
- * replay word — the sentence, each path's label, the legend — reads it, so none can describe what is not drawn
- * (BUILD_RULES §9). null when the fork has no scale.
+ * a segment or a glyph, and the fork when either path is. R15 (Amendment E addendum 6): a path emits only when one of
+ * its samples sits at an instant AFTER the sale (the swap's recorded `at`). The point at the sale itself — the swap
+ * path's banked opening, the sold name's value at the sale — is where the paths start, not a result: alone it emits
+ * nothing, and on a drawn path it stays, as the start of its line or a ring. The chart draws from this object and the
+ * card's every replay word — the sentence, each path's label, the legend — reads it, so none can describe what is not
+ * drawn (BUILD_RULES §9). null when the fork has no scale.
  */
 function forkGeometry(tape, index, height = FORK_HEIGHT) {
   const scale = forkScale(tape, index, height);
   if (!scale) return null;
+  // an unrecorded sale instant places no mark after the sale (and `x > null` would read as `x > 0`)
+  const saleMs = toMs(valueAt(tape, ['actions', index, 'at']));
   const pathOf = (list) => {
     const segments = []; const points = [];
-    for (const run of forkRuns(list)) {
+    const runs = forkRuns(list);
+    const afterSale = saleMs !== null && runs.some((run) => run.some((p) => toMs(p.at) > saleMs));
+    for (const run of afterSale ? runs : []) {
       const at = run.map((p) => [scale.x(p.at).toFixed(1), scale.y(p.points).toFixed(1)]);
       if (new Set(at.map(([x, y]) => `${x} ${y}`)).size > 1) segments.push(at.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' '));
       else points.push({ x: Number(at[0][0]), y: Number(at[0][1]) });
@@ -260,7 +269,8 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
   const swapEnd = lastPointPath(tape, index, 'swapPath');
   // The design of record's desktop card puts each path's end value beside the fork, at its height; the phone keeps them under it.
   // R11, Astra F1: a replay is DRAWN when its fork emits visible geometry — a dashed segment or a point glyph — on
-  // either path (forkGeometry, the one object the chart draws from). The sentence, the hypothetical tag, the legend,
+  // either path (forkGeometry, the one object the chart draws from), and R15: only a path with a mark after the sale
+  // emits — the sale point alone takes the no-drawn treatment below. The sentence, the hypothetical tag, the legend,
   // the values (the end values, the gap — review A2P2-9) and each path's label all follow it, the label path by path;
   // a written replay that draws nothing states only its reasons (review A2F1-3).
   const geo = r ? forkGeometry(tape, index) : null;
@@ -276,8 +286,9 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
   const beside = Boolean(desktop && drawn);
   // an end value beside the fork only for a path that drew something — never a label for a path that emitted nothing
   const ends = beside ? { hold: { path: geo.hold.drawn ? holdEnd : null, label: COPY.holdPath, symbol: a.symbolOut }, swap: { path: geo.swap.drawn ? swapEnd : null, label: COPY.swapPath, symbol: a.symbolIn } } : null;
-  // the legend says what the fork shows: dashed only beside a drawn segment, points beside a point glyph
-  const legend = geo?.dashed ? (geo.dotted ? COPY.rebuiltDashedPoints : COPY.rebuiltDashed) : COPY.rebuiltPoints;
+  // the legend says what the fork shows: dashed only beside a drawn segment, dots beside a ring — "dots", never "points",
+  // the screen's word for score (R15)
+  const legend = geo?.dashed ? (geo.dotted ? COPY.rebuiltDashedDots : COPY.rebuiltDashed) : COPY.rebuiltDots;
   const swatch = (g, color) => (
     <>
       {g.segments ? <svg width="20" height="6" aria-hidden="true"><line x1="0" x2="20" y1="3" y2="3" style={{ stroke: color, strokeWidth: 1.6, strokeDasharray: '5 3' }} /></svg> : null}
@@ -346,8 +357,8 @@ function SwapCard({ tape, index, ordinal, desktop, onDeep }) {
               {r.note ? <span style={foot}><StoredNote doc={tape} path={['actions', index, 'replay', 'note']} /></span> : null}
             </>
           ) : r ? (
-            // written, and drawing nothing (no value, or none at a recorded instant): its own stored reasons — the missing
-            // inputs, a version note — and no fork, labels, legend, values or sentence (Astra F1)
+            // written, and drawing nothing (no value, none at a recorded instant, or none after the sale — R15): its own
+            // stored reasons — the missing inputs, a version note — and no fork, labels, legend, values or sentence (Astra F1)
             <span data-replay-none="not-drawn" style={foot}>
               {COPY.replayNotDrawn}
               {Array.isArray(r.missingInputs) && r.missingInputs.length ? <> · <MissingInputs doc={tape} path={['actions', index, 'replay', 'missingInputs']} /></> : null}

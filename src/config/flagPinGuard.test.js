@@ -202,12 +202,13 @@ const DARK_BY_DESIGN = {
   // both halves.
   //   Runway: the Film Room v2 screen (A2) and the hub helper's Stage 3, per
   //   battle owner. 'off' is the legacy screen byte-identical and Stage 1.
-  //   'allowlist' admits only owners the cockpit's server-side allowlist
-  //   admits (GET /api/agent/cockpit-status); it is the founder's own two-line
-  //   PR after A2 merges and the tape's owner-read rules are published. 'on' is
-  //   a later founder decision. Never a build PR; each step moves the pin row
-  //   in filmTapeFlags.test.js in the same commit (BUILD_RULES §2); 'on' also
-  //   turns around film-tape-flip.live.test.js's hub-helper tripwire row.
+  //   'allowlist' admitted only owners the cockpit's server-side allowlist
+  //   admits (GET /api/agent/cockpit-status) — PR #950. 'on' is CURRENT
+  //   (2026-10-11, its own founder PR): v2 and Stage 3 for every battle.
+  //   Never a build PR; each step moves the pin row in filmTapeFlags.test.js
+  //   in the same commit (BUILD_RULES §2), and the step to 'on' turned around
+  //   film-tape-flip.live.test.js's hub-helper tripwire row. Rollback: one
+  //   line back to 'allowlist', with the pin row and the tripwire row.
   SHADOW_CPU_QUOTE_INTEGRITY_ENABLED:
     'Shadow vs CPU quote integrity (SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md; build record docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md) — built dark; the producer metadata (quoteOrigin, the stock isFallback marker) ships live while this stays false. Flips only in the founder\'s own PR, never a build PR, and no earlier than the first regular US market open after the founder confirms the complete additive metadata path is live in production (R-11). The flip moves the pin in shadowCpuQuoteIntegrityFlags.test.js to true and drops this entry in the same commit; no URL, localStorage or environment override exists',
   // ANTICIPATION_THRESHOLD_LINT_MODE intentionally ABSENT, and it must stay
