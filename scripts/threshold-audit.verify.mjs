@@ -112,14 +112,15 @@ test('Archived real AAPL split/dividend fixture provenance, completeness and ind
   const output = process.env.THRESHOLD_VERIFICATION_OUT;
   if (output) { fs.mkdirSync(output, { recursive: true }); fs.writeFileSync(path.join(output, 'historical-fixture-results.json'), JSON.stringify(results, null, 2) + '\n'); }
 });
-test('Audit classifications reconcile dynamically and never pass absent persisted evidence', () => {
+test('Audit classifications reconcile dynamically and do not qualify arbitrary final attestations', () => {
   const unp = exportRow('UNP'); unp.stored = [receipt(unp)];
   const hum = exportRow('HUM'); hum.stored = [{ mode: 'legacy_agent', kind: 'legacy_percentile_proxy', valuePct: 7.52, atrPercentile: 0.94 }];
   const bad = exportRow('BAD'); bad.snapshot.rows[0].high = null;
   const zero = exportRow('ZERO', 0); zero.stored = [receipt(zero)];
   const report = auditExport(exported([zero, { symbol: 'OFF', eligible: false, exclusionReason: 'configured_not_ranked' }, bad, { symbol: 'ACN', eligible: true, providerSymbol: 'ACN.US' }, hum, unp]));
-  assert.deepEqual(report.counts, { total: 6, eligible: 5, passed: 2, failed: 1, unavailable: 2, excluded: 1 }); assert.deepEqual(report.rows.slice(0, 3).map(r => r.symbol), ['UNP', 'HUM', 'ACN']);
-  assert.equal(report.rows[1].comparisons[0].status, 'legacy_reproduction_only'); assert.equal(report.distribution.floorAffected[0].symbol, 'ZERO'); assert.equal(report.productionScoringCertified, false);
+  assert.deepEqual(report.counts, { total: 6, eligible: 5, passed: 0, failed: 1, unavailable: 4, excluded: 1 }); assert.deepEqual(report.rows.slice(0, 3).map(r => r.symbol), ['UNP', 'HUM', 'ACN']);
+  assert.equal(report.rows[0].persisted.status, 'matched'); assert.equal(report.rows[0].publication.reason, 'attested_only_provider_rule_unqualified');
+  assert.equal(report.rows[1].comparisons[0].status, 'legacy_reproduction_only'); assert.equal(report.distribution.provisionalArithmetic.floorAffected[0].symbol, 'ZERO'); assert.equal(report.productionScoringCertified, false);
   assert.equal(auditExport(exported([exportRow('ACN')])).counts.passed, 0);
   assert.throws(() => auditExport(exported([exportRow('ACN'), exportRow('ACN')])));
   assert.throws(() => auditExport(exported([{ symbol: 'ACN', eligible: false }])));
@@ -127,7 +128,7 @@ test('Audit classifications reconcile dynamically and never pass absent persiste
 });
 test('Audit reports cap effects, zero relative denominators, missing receipt identity and invalid stored values', () => {
   const cap = exportRow('CAP', 20); const zero = exportRow('ZERO', 0); zero.stored = [{ mode: 'legacy', kind: 'legacy_fixed', valuePct: 2.5 }];
-  const report = auditExport(exported([cap, zero])); assert.equal(report.distribution.capAffected[0].symbol, 'CAP'); assert.equal(report.distribution.median, 10); assert.equal(report.rows.find(r => r.symbol === 'ZERO').comparisons[0].relativeDifferencePct, null);
+  const report = auditExport(exported([cap, zero])); assert.equal(report.distribution.provisionalArithmetic.capAffected[0].symbol, 'CAP'); assert.equal(report.distribution.median, null); assert.equal(report.rows.find(r => r.symbol === 'ZERO').comparisons[0].relativeDifferencePct, null);
   for (const stored of [[{ kind: 'measurement_receipt', valuePct: 2 }], [{ kind: 'legacy', valuePct: null }]]) { const row = exportRow('UNP'); row.stored = stored; assert.equal(auditExport(exported([row])).counts.unavailable, 1); }
   const row = exportRow('UNP'); row.stored = [{ valuePct: -1 }]; assert.equal(auditExport(exported([row])).counts.failed, 1);
   const conflicted = exportRow('PARA', 20); conflicted.qualificationIssues = ['provider_identity_unresolved']; conflicted.stored = [receipt(conflicted)]; const conflictReport = auditExport(exported([conflicted])); assert.equal(conflictReport.counts.unavailable, 1); assert.equal(conflictReport.distribution.arithmeticValidCount, 1); assert.equal(conflictReport.distribution.boundsUsableArithmeticCount, 0); assert.equal(conflictReport.distribution.capAffected.length, 0); assert.equal(conflictReport.distribution.boundsExcluded[0].symbol, 'PARA');
