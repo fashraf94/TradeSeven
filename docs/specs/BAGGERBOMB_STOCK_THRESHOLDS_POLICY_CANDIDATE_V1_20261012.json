@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "approvalState": "owner_adoption_pending_not_implementation_authorization",
+  "reviewedHead": "4691ddb5dbadcf734a712c8480ca9e472a4ca201",
+  "sourceBaseline": "433a19a4ef2fdc804c002f755ca2ef3686e18a18",
+  "approvedPolicyRef": null,
+  "policy": {
+    "modelId": "stock_measured_atr14_fullday_v1",
+    "modelVersion": 1,
+    "scope": {
+      "creationGameMode": "baggerbomb_agent",
+      "creationDuration": "fullday",
+      "opponent": "embedded_cpu",
+      "assets": "stock",
+      "directions": "long_only",
+      "existingUnstampedGames": "legacy",
+      "crypto": "legacy_within_same_battle"
+    },
+    "measurement": {
+      "method": "sma_of_fourteen_daily_dollar_true_ranges",
+      "period": 14,
+      "requiredConsecutiveSessionBars": 15,
+      "basis": "fully_adjusted_ohlc_via_adjusted_close_over_raw_close",
+      "ohlcTolerance": 0,
+      "arithmetic": "binary64_unrounded_no_intermediate_rounding",
+      "calendar": "src/utils/marketCalendar.js@c05a5bf7697d12869f51f6bd7f4914f287e0f01f",
+      "calendarSourceSha256": "f03b061c7241fdc8b004c7fd616811457b488f29feb8bf618fa476c7b3ff14de",
+      "sourceSession": "independently_latest_completed_exchange_session_at_each_position_commit",
+      "formingSession": "excluded",
+      "rawSnapshot": "single_complete_capture_no_cached_fragments"
+    },
+    "publicationRule": {
+      "id": "eodhd_us_completed_session_observation_v1",
+      "provider": "EODHD",
+      "endpoint": "eod",
+      "exchanges": [
+        "NYSE",
+        "NASDAQ"
+      ],
+      "minimumMinutesAfterScheduledClose": 15,
+      "evidenceSource": "https://eodhd.com/financial-apis/api-for-historical-data-and-volumes",
+      "snapshotRequirement": "one_complete_response_with_all_fifteen_expected_sessions",
+      "revisionHandling": "new_full_snapshot_new_input_receipt_existing_admissions_keep_frozen_receipt",
+      "attestationAuthority": "owner_approved_server_collector_with_versioned_policy_and_input_hash",
+      "ohlcTolerance": 0
+    },
+    "gameplay": {
+      "bounds": "none",
+      "percentageQuantization": {
+        "decimalPlaces": 6,
+        "rounding": "decimal_half_even",
+        "inputRepresentation": "shortest_round_trip_decimal_of_binary64_measuredPct",
+        "when": "once_at_position_admission"
+      },
+      "zeroVolatility": "valid_measurement_ineligible_reward_divisor",
+      "positiveQuantizedToZero": "ineligible_no_epsilon_or_default",
+      "anchor": "validated_position_entry_or_swap_fill",
+      "freeze": "position_lifetime",
+      "reEntry": "new_identity_receipt_and_reward_history",
+      "rewardBoundaries": "theoretical_unrounded_target_from_frozen_effective_percentage",
+      "boundaryEquality": "crossed_at_equality_using_shared_underlying_contract",
+      "decisionPricePrecision": "retain_validated_quote_precision_no_cent_rounding_no_added_epsilon",
+      "constants": "src/constants/baggerBombScoring.js",
+      "basePointsAndConviction": "retain_canonical_existing_formula"
+    },
+    "display": {
+      "percentageSummaryDecimals": 2,
+      "effectivePercentageDetailDecimals": 6,
+      "currencySummaryDecimals": 2,
+      "currencyRounding": "decimal_half_even_presentation_only",
+      "exactBoundaryDetail": "shortest_round_trip_representation_of_unrounded_boundary",
+      "summaryMayControlAwards": false
+    },
+    "dispatch": {
+      "admissionSwitch": "new_battle_model_selection_only",
+      "existingGames": "immutable_modelId_and_policyHash_independent_of_admission_switch",
+      "rollbackNewBattles": "legacy_selection_when_switch_off",
+      "rollbackExistingCorrectedGameSwaps": "continue_pinned_model_require_current_qualified_incoming_measurement_and_fill",
+      "switchFlipBeforeCreationCommit": "refuse_attempt_retry_model_selection_no_silent_fallback",
+      "absentModelStamp": "legacy",
+      "presentMalformedUnknownUnsupportedOrHashMismatch": "unavailable_no_legacy_or_latest_model_fallback",
+      "modelRegistry": "retain_supported_pinned_versions_until_all_admitted_games_complete"
+    },
+    "riskAndHurdle": {
+      "baseATR": "retained_calibrated_trading_unit",
+      "trailingHistory": "matching_calibrated_history_separate_from_measured_reward_history",
+      "emergencyAndSteppedTrail": "retain_calibrated_divisor_reference_and_priority",
+      "hurdle": "retain_fresh_percentile_unit_or_frozen_calibrated_fallback",
+      "rewardLock": "measured_reward_context_only_at_existing_priority",
+      "bench": "retain_legacy_units"
+    },
+    "currentCatalogExceptions": {
+      "unavailableForCorrectedAdmission": [
+        "AVB",
+        "CTRA",
+        "EA",
+        "EQR",
+        "K",
+        "MMC",
+        "PARA",
+        "WBD"
+      ],
+      "dispositions": "separate_catalog_task_no_silent_alias_or_invented_bars"
+    },
+    "rollout": {
+      "activation": "separate_owner_authorization",
+      "existingGamesAndHistoricalResults": "no_migration_or_rescoring",
+      "admissionSwitchDefault": false
+    }
+  },
+  "policyContentHash": "baa2b39688b673c93190540f500307ae7ad4aba7a07228ca23ba1f2afe1bf9f8",
+  "publicationRuleContentHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+  "hashAlgorithm": "sha256_of_stableStringify_recursively_sorted_object_keys_preserved_array_order_UTF8",
+  "hashSource": "api/_utils/canonicalHash.js:20",
+  "stage1EvidenceOnly": {
+    "measurementPolicyHash": "1bcb8dc012c138d2383a9624c317bacd24454c26772cd53a7bfaa8ab76aacb55",
+    "offlineProposedPublicationRuleHash": "426ac957aedd0e4175451a0c50792e3193314b8d0a0a9b8034f00811b5ffcfa5",
+    "hashAlgorithm": "sha256_of_JSON_stringify_insertion_order_as_in_Stage1_not_runtime_policy_hash"
+  }
+}
