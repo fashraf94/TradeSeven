@@ -17,11 +17,16 @@
 //   - Model calls go from this script to api.anthropic.com with plain fetch
 //     (Message Batches), never through a product handler, so no capture
 //     record, battle document or cron state is written.
-//   - One product module is imported: api/_utils/evalIdentityBlocks.js, the
-//     frozen archetype charter constants (it imports only the zero-import
-//     src/config/featureFlags.js). It initializes nothing and writes nothing;
-//     the charter swap needs the Fundamental Investor render, which no
-//     captured record carries.
+//   - Two pure product modules are imported, and nothing they import touches
+//     Firebase or the network:
+//       api/_utils/evalIdentityBlocks.js — the frozen archetype charter
+//         constants (imports only the zero-import src/config/featureFlags.js);
+//         the charter swap needs the Fundamental Investor render, which no
+//         captured record carries;
+//       api/_utils/agentEvalToolResultValidation.js — production's own
+//         validateTradeToolResult (imports only the zero-import
+//         agentEvalToolSchema.js), so a reply is "malformed" exactly when
+//         production would fail it closed to HOLD.
 //   - Pure helpers are reused from the growth replay
 //     (scripts/experiments/growth-replay/growthReplay.js); importing it runs
 //     nothing.
@@ -54,9 +59,10 @@ import path from 'node:path';
 import {
   PRICES, WISDOM_HEADER, FRESH_LINE, sha256Utf8, countOf, toMs, rng, shuffle,
   parseEnvText, primaryCheckoutRoot, redactSecrets, parseIdentity, findLeans,
-  validateToolInput, validationSchema, isSpendLimitError,
+  isSpendLimitError,
 } from './growth-replay/growthReplay.js';
 import { EVAL_IDENTITY_BLOCKS, EVAL_IDENTITY_SUBORDINATION_CLAUSE, EVAL_IDENTITY_YIELD_CLAUSE } from '../../api/_utils/evalIdentityBlocks.js';
+import { validateTradeToolResult } from '../../api/_utils/agentEvalToolResultValidation.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(HERE, '..', '..');
@@ -268,14 +274,23 @@ function makeReader(db) {
 
 /**
  * The decision of one reply: the FIRST tool_use block (agent-evaluate.js:2944),
- * validated like production (agentEvalToolResultValidation.js) against the
- * request's own schema minus `declarations` — the growth replay's key of record.
+ * validated by production's own validateTradeToolResult (agent-evaluate.js:2945)
+ * — the declarations-off schema, the same checks in the same order — so a reply
+ * is "malformed" exactly when production would have failed it closed to HOLD.
  */
-export function replyTuple(message, schema) {
+export function replyTuple(message) {
   const block = Array.isArray(message?.content) ? message.content.find((b) => b?.type === 'tool_use') : null;
   if (!block) return { valid: false, action: 'malformed', why: 'no_tool_use' };
-  const v = validateToolInput(block.input, validationSchema(schema));
-  if (!v.valid) return { valid: false, action: 'malformed', why: `invalid:${v.field}` };
+  const v = validateTradeToolResult(block.input);
+  if (!v.valid) {
+    // What the structured output still carries in its decision fields (the sensitivity
+    // reading "as carried"); null when the decision itself is unusable.
+    const d = block.input?.decision;
+    const carried = d === 'HOLD' || d === 'SWAP'
+      ? { valid: true, action: d, out: d === 'SWAP' ? sym(block.input.symbolOut) : null, in: d === 'SWAP' ? sym(block.input.symbolIn) : null, swapType: d === 'SWAP' ? (block.input.swap_type ?? null) : null }
+      : null;
+    return { valid: false, action: 'malformed', why: `invalid:${v.invalidField}`, carried };
+  }
   const d = block.input.decision;
   return {
     valid: true,
@@ -771,7 +786,7 @@ async function census() {
           rec.reqModel = req.model; rec.reqTemperature = req.temperature; rec.reqMaxTokens = req.max_tokens;
           rec.toolSchemaSha = sha256Utf8(JSON.stringify(req.tools));
           const orig = capturedTuple(t, body);
-          const fromResp = replyTuple(resp, req.tools?.[0]?.input_schema);
+          const fromResp = replyTuple(resp);
           rec.origTuple = orig;
           rec.respAgrees = Boolean(orig && fromResp.valid && orig.action === fromResp.action && orig.out === fromResp.out && orig.in === fromResp.in && (orig.swapType ?? null) === (fromResp.swapType ?? null));
           sourcesOut.push({
@@ -1234,8 +1249,10 @@ function loadResults() {
 export function tabulate(rows) {
   const t = {};
   for (const r of rows) {
-    const c = t[`${r.arch}|${r.arm}`] || (t[`${r.arch}|${r.arm}`] = { n: 0, any: 0, action: 0, symbol: 0, reasonOnly: 0, malformed: 0, origSwaps: 0, replySwaps: 0 });
+    const c = t[`${r.arch}|${r.arm}`] || (t[`${r.arch}|${r.arm}`] = { n: 0, any: 0, action: 0, symbol: 0, reasonOnly: 0, malformed: 0, origSwaps: 0, replySwaps: 0, holdToSwap: 0, swapToHold: 0 });
     c.n += 1;
+    if (r.orig.action === 'HOLD' && r.reply.valid && r.reply.action === 'SWAP') c.holdToSwap += 1;
+    if (r.orig.action === 'SWAP' && r.reply.valid && r.reply.action === 'HOLD') c.swapToHold += 1;
     if (r.cmp.anyFlip) c.any += 1;
     if (r.cmp.actionFlip) c.action += 1;
     if (r.cmp.symbolFlip) c.symbol += 1;
@@ -1246,8 +1263,33 @@ export function tabulate(rows) {
   }
   for (const c of Object.values(t)) {
     c.anyPct = round(pct(c.any, c.n)); c.actionPct = round(pct(c.action, c.n)); c.symbolPct = round(pct(c.symbol, c.n));
+    const w = wilson(c.any, c.n);
+    c.anyCi95 = [round(w[0]), round(w[1])];
   }
   return t;
+}
+
+/** Exact two-sided sign (McNemar) test on discordant pairs b vs c. */
+export function signTestP(b, c) {
+  const n = b + c;
+  if (!n) return 1;
+  let tail = 0;
+  let coef = 1; // C(n, 0)
+  for (let i = 0; i <= Math.min(b, c); i += 1) {
+    if (i > 0) coef = (coef * (n - i + 1)) / i;
+    tail += coef;
+  }
+  return Math.min(1, (2 * tail) / 2 ** n);
+}
+
+/** Wilson 95% interval for a proportion, in percent (descriptive only; the bars use the point values). */
+export function wilson(k, n, z = 1.959964) {
+  if (!n) return [null, null];
+  const p = k / n;
+  const den = 1 + (z * z) / n;
+  const mid = (p + (z * z) / (2 * n)) / den;
+  const half = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / den;
+  return [100 * Math.max(0, mid - half), 100 * Math.min(1, mid + half)];
 }
 
 /** §7 bars, applied as written. */
@@ -1285,12 +1327,16 @@ async function analyze(flags = {}) {
   manifest.plan.tasks.forEach(([k, arch, arm], i) => {
     const res = results[i];
     if (!res?.message) { inc(missing, `${arch}|${arm}`); return; }
-    const schema = JSON.parse(sources[k].request).tools[0].input_schema;
-    const reply = replyTuple(res.message, schema);
+    const reply = replyTuple(res.message);
     const orig = records[k].origTuple;
     usageIn += res.message.usage?.input_tokens || 0;
     usageOut += res.message.usage?.output_tokens || 0;
-    rows.push({ i, k, arch, arm, ownerClass: records[k].ownerClass, orig, reply, cmp: compareTuples(orig, reply) });
+    // Residue (disclosed, not corrected): the rule-aware news block quotes rule
+    // excerpts (agentNewsContext.js:266-274), so on some records an A3 / A7 removal
+    // leaves "→ Relevant rules: S…/C…" lines behind. The split is reported beside the arm.
+    const live = JSON.parse(sources[k].request).messages[2].content;
+    const residue = arm === 'A3' ? /Relevant rules: S\d/.test(live) : arm === 'A7' ? /Relevant rules: C\d/.test(live) : null;
+    rows.push({ i, k, arch, arm, ownerClass: records[k].ownerClass, orig, reply, cmp: compareTuples(orig, reply), residue });
   });
   const archs = Object.keys(manifest.sample).filter((a) => manifest.sample[a].length >= SAMPLE_MIN);
   const pooled = tabulate(rows);
@@ -1306,10 +1352,52 @@ async function analyze(flags = {}) {
     at: new Date().toISOString(), scriptSha256: scriptSha(),
     calls: { planned: manifest.plan.tasks.length, returned: rows.length, missing },
     usage: { inputTokens: usageIn, outputTokens: usageOut, usd },
+    // Sensitivity of the malformed rule (the key of record counts a malformed reply as an
+    // action flip). "hold": production's fail-closed outcome (agent-evaluate.js:2993-3006 →
+    // holdKind default_failure, :4181). "carried": the decision fields the output still carries.
+    sensitivity: Object.fromEntries(['hold', 'carried'].map((mode) => {
+      const alt = rows.map((r) => {
+        if (r.reply.valid) return r;
+        const reply = mode === 'hold' ? { valid: true, action: 'HOLD', out: null, in: null, swapType: null } : (r.reply.carried ?? r.reply);
+        return { ...r, reply, cmp: compareTuples(r.orig, reply) };
+      });
+      const table = tabulate(alt);
+      return [mode, { pooled: table, bars: applyBars(table, archs) }];
+    })),
+    // Descriptive, beside the bars (which use the archetype's whole-sample A0, as written):
+    // the A0 flip rate on the SAME records an arm applied to, and the paired discordance
+    // (records where only the arm flipped vs only A0 flipped) with an exact two-sided sign test.
+    matched: (() => {
+      const byK = groupBy(rows, (r) => r.k);
+      const out = {};
+      for (const list of Object.values(byK)) {
+        const a0 = list.find((r) => r.arm === 'A0');
+        if (!a0) continue;
+        for (const r of list) {
+          if (r.arm === 'A0') continue;
+          const m = out[`${r.arch}|${r.arm}`] || (out[`${r.arch}|${r.arm}`] = { n: 0, a0Flips: 0, armFlips: 0, armOnly: 0, a0Only: 0 });
+          m.n += 1;
+          if (a0.cmp.anyFlip) m.a0Flips += 1;
+          if (r.cmp.anyFlip) m.armFlips += 1;
+          if (r.cmp.anyFlip && !a0.cmp.anyFlip) m.armOnly += 1;
+          if (!r.cmp.anyFlip && a0.cmp.anyFlip) m.a0Only += 1;
+        }
+      }
+      for (const m of Object.values(out)) {
+        m.a0PctSameRecords = round(pct(m.a0Flips, m.n));
+        m.excessSameRecords = round(pct(m.armFlips, m.n) - pct(m.a0Flips, m.n));
+        m.signTestP = round(signTestP(m.armOnly, m.a0Only), 3);
+      }
+      return out;
+    })(),
+    residueSplit: {
+      withRuleQuotes: tabulate(rows.filter((r) => r.residue === true)),
+      withoutRuleQuotes: tabulate(rows.filter((r) => r.residue === false)),
+    },
     ftqaExcluded: ftqa, pooled, human, humanN, bars: applyBars(pooled, archs), barsHuman: applyBars(human, archs.filter((a) => humanN[a] >= SAMPLE_MIN)),
   };
   writeJsonAtomic(P('analysis.json'), analysis);
-  writeJsonAtomic(P('partA-rows.json'), rows.map((r) => ({ k: r.k, arch: r.arch, arm: r.arm, ownerClass: r.ownerClass, orig: r.orig, reply: { valid: r.reply.valid, action: r.reply.action, out: r.reply.out ?? null, in: r.reply.in ?? null, swapType: r.reply.swapType ?? null, why: r.reply.why ?? null }, cmp: r.cmp })));
+  writeJsonAtomic(P('partA-rows.json'), rows.map((r) => ({ k: r.k, arch: r.arch, arm: r.arm, ownerClass: r.ownerClass, orig: r.orig, reply: { valid: r.reply.valid, action: r.reply.action, out: r.reply.out ?? null, in: r.reply.in ?? null, swapType: r.reply.swapType ?? null, why: r.reply.why ?? null }, cmp: r.cmp, residue: r.residue })));
   writeExhibits();
   console.log(JSON.stringify({ calls: analysis.calls, usage: analysis.usage, bars: analysis.bars }, null, 1));
   for (const [cell, c] of Object.entries(pooled).sort()) console.log(`  ${cell.padEnd(22)} n=${String(c.n).padStart(3)} any=${String(c.anyPct).padStart(5)}% action=${String(c.actionPct).padStart(5)}% symbol=${String(c.symbolPct).padStart(5)}% malformed=${c.malformed} reasonOnly=${c.reasonOnly}`);
@@ -1427,6 +1515,9 @@ export function runSelftest() {
   ok('B1 at +10 is load-bearing', bars.x.arms.A1.B1 === 'load-bearing');
   ok('B2 below +15 is not', bars.x.arms.A6.B2.startsWith('the charter is not'));
   ok('B3 at +15 is real', bars.x.arms.A7.B3.startsWith('the constraint text is doing'));
+  ok('sign test: 6 vs 1 → 0.125', Math.abs(signTestP(6, 1) - 0.125) < 1e-9 && signTestP(0, 0) === 1);
+  const wi = wilson(5, 60);
+  ok('wilson brackets the point value', wi[0] < 100 * 5 / 60 && wi[1] > 100 * 5 / 60 && wi[0] > 2 && wi[1] < 19);
   // Sample caps.
   const pool = []; for (let b = 0; b < 4; b += 1) for (let j = 0; j < 20; j += 1) pool.push({ k: `b${b}/t${j}`, battleId: `b${b}`, etDate: j < 10 ? '2026-10-10' : '2026-09-22' });
   const s = drawSample(pool, ['2026-10-10'], { target: 60, perBattle: 6 });
