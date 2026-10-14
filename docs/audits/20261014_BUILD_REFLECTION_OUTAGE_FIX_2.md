@@ -70,7 +70,7 @@ The four calls cost **$0.15**.
 
 ## 2. Gate facts (BUILD_RULES §2 / §3)
 
-- `git fetch origin` ran first: `origin/main` = `d5d8fa9b`. Re-fetched before the final checks (2026-10-14 17:07 UTC): `origin/main` was still `d5d8fa9b`, so the branch already contains it and the final checks ran on the tree CI tests.
+- `git fetch origin` ran first: `origin/main` = `d5d8fa9b`. Re-fetched before the first push (2026-10-14 17:07 UTC): `origin/main` was still `d5d8fa9b`. After your rulings, `main` moved to `6d75a324` (#961, the crypto-slot build). It touches no file of this branch. The branch merged with it LOCALLY (a throwaway merge in the private clone, not pushed) passes the full suite and `lint:gate` (§8).
 - The app made a worktree branch `claude/reflection-outage-fix-p2-c79d3e` at `d5d8fa9b` = `origin/main`. It was cut fresh by construction, with a clean tree at session start. It is pushed as `claude/reflection-outage-fix-2` by refspec.
 - **Fence:** no file in the BUILD_RULES §1 list is edited (`git diff --name-only d5d8fa9b HEAD` lists none of them; the reviewer and two verifiers re-checked).
   - **Fenced functions called:** in product code, none newly. In one test, `formatMemory` from `api/_utils/agentPromptAssembly.js` is CALLED to pin how the draft prompt renders a marker (`api/agent/reflect.generateReflection.test.js`); the file is not edited.
@@ -252,7 +252,8 @@ A marker takes one of the five slots, like any entry. So a game without a lesson
 | `src/utils/evolutionTimeline.test.js`, `src/components/Dashboard/AgentRecordSheet.render.test.jsx` | +3 (16), +1 (6) | A marker renders the honest line, and never stands in for a real lesson of the same game. The literal is the shared one. The rendered sheet shows the marker's row. |
 
 **Suites and gates:**
-- **Linux, CI-shaped, `d111ae7e` (final code, with the O6 gate)** (WSL Ubuntu, a private clone, `TZ=UTC`, `npm run test:run -- --maxWorkers=2`): exit 0, **Test Files 946 passed | 7 skipped (953)**, **Tests 20,252 passed | 88 skipped**, 426 s. That is 5 tests more than at `7ea1491e`, exactly the five new O6 rows. `origin/main` was unchanged, so this is the merged tree CI tests.
+- **Linux, CI-shaped, `d111ae7e` (final code, with the O6 gate)** (WSL Ubuntu, a private clone, `TZ=UTC`, `npm run test:run -- --maxWorkers=2`): exit 0, **Test Files 946 passed | 7 skipped (953)**, **Tests 20,252 passed | 88 skipped**, 426 s. That is 5 tests more than at `7ea1491e`, exactly the five new O6 rows.
+- **The tree CI tests:** the report head merged with current `main` `6d75a324` (#961). The merge was clean, done in the private clone and never pushed. Result: exit 0, **Test Files 948 passed | 7 skipped (955)**, **Tests 20,302 passed | 88 skipped**, 404 s. `lint:gate` exit 0 on the same tree.
 - **Linux, CI-shaped, `7ea1491e` (the reviewed code):** exit 0, Test Files 946 passed | 7 skipped (953), Tests 20,247 passed | 88 skipped, 516 s.
 - **`lint:gate`** on LF snapshots of `7ea1491e` and `d111ae7e`: exit 0 both times, 2,860 files, 0 errors, 0 warnings. Each snapshot was a mutation tree, and the mutated files were compared byte-for-byte with the commit first.
 - **`vite build`** ran on an LF archive of the exact pushed head before the push. A commit cannot carry its own build result, so the SHA and the result are in the PR description.
@@ -389,7 +390,7 @@ After your rulings it ran once more on `d111ae7e`: gate mutants (§9, round 3), 
   - Linux CI-shaped: exit 0, 946 files, 20,252 tests (§8).
   - `lint:gate`: 0 errors.
   - `vite build` on the pushed head: in the PR description.
-  - `origin/main` was still `d5d8fa9b`.
+  - `main` moved to `6d75a324` (#961) during this round. It has no file overlap with this branch, and the branch merged with it locally passes the full suite and `lint:gate` (§8).
 - **The smoke preview** stays at `7ea1491e`. The gate is server-only, so the record sheet it shows is unchanged.
 
 ---
