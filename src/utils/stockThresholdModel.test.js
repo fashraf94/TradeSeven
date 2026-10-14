@@ -158,6 +158,17 @@ describe('pinned stock context', () => {
     expect(row.startsWith('star,AAPL,Unknown,Day1,measured reward,fill $100,')).toBe(true);
     const missing = calculateAssetScoreServer(a, null, {}, {}, null, stockRewardContext(battle, a, 'agent', 'star', 0, { price: null }));
     expect(buildPortfolioCSV([missing], prices, battle).split('\n')[1]).toBe('star,AAPL,Unknown,Day1,measured reward unavailable:missing_post_entry_quote');
+    // Mutation lens KM-35/36: the held row's own sector and entry day, not only the fallbacks.
+    Object.assign(battle.portfolio.star[0], { sector: 'Technology', swappedInDay: 2 });
+    const held = { ...battle.portfolio.star[0], tier: 'star' };
+    const own = calculateAssetScoreServer(held, null, {}, {}, null, stockRewardContext(battle, held, 'agent', 'star', 0, quote(q)));
+    expect(buildPortfolioCSV([own], prices, battle).split('\n')[1].startsWith('star,AAPL,Technology,Day2,measured reward,fill $100,')).toBe(true);
+    // Mutation lens KM-37: a flat6 document names no tier column, stamped or not.
+    const flat6 = { ...battle, gameMode: 'baggerbomb_tournament' };
+    const outOfScope = calculateAssetScoreServer(held, null, {}, {}, null, stockRewardContext(flat6, held, 'agent', 'star', 0, quote(q)));
+    const [flatHeader, flatRow] = buildPortfolioCSV([outOfScope], prices, flat6).split('\n');
+    expect(flatHeader.startsWith('Symbol,Sector,Entry')).toBe(true);
+    expect(flatRow).toBe('AAPL,Technology,Day2,measured reward unavailable:unsupported_stock_scope');
     // Deterministic decision consumer: this asserts the changed fact's meaning,
     // not a prediction of a live stochastic model's trade or call cadence.
     expect(evaluateRisk(a, q, 100, a.baseATR, null, {}, {}, null, c).action).toBe('LOCK');

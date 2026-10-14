@@ -65,25 +65,28 @@ import { correctedScorePatch, scoreCorrectedPosition } from '../../api/_utils/st
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
 
-// Both sides hold AAPL (agent fill 100.75, CPU fill 99.5); scored at 101.
-async function committedBattle({ stamped = true } = {}) {
+
+// Agent holds AAPL at 100.75; the CPU holds `cpuSymbol` at 99.5; scored at 101.
+async function committedBattle({ stamped = true, cpuSymbol = 'AAPL' } = {}) {
   process.env.EODHD_API_KEY = 'isolated-key';
-  const { battle } = await correctedStockBattle({ fill: 100.75, cpuFill: 99.5 });
-  const prices = { AAPL: { current: 101, timestamp: Date.parse(STOCK_TEST_NOW) / 1000 } };
+  const { battle } = await correctedStockBattle({ fill: 100.75, cpuFill: 99.5, cpuSymbol });
+  const at = Date.parse(STOCK_TEST_NOW) / 1000;
+  const prices = { AAPL: { current: 101, timestamp: at }, MSFT: { current: 101, timestamp: at } };
   const scores = ['agent', 'cpu'].map(side => scoreCorrectedPosition(battle, { ...(side === 'agent' ? battle.portfolio : battle.opponent.portfolio).star[0], tier: 'star' }, side, prices, STOCK_TEST_NOW));
   const h = stockWriterDb({ battle }); await h.db.doc('battle').update(correctedScorePatch(battle, [scores[0]], [scores[1]], STOCK_TEST_NOW)); Object.assign(battle, h.store.get('battle'));
   delete process.env.EODHD_API_KEY;
-  const doc = { ...battle, agentContext: { agentName: 'Aurora', archetype: 'degen' }, timing: { tradingDays: ['d1'], currentTradingDay: 1 }, evaluations: [], statusFeed: [], chatExchanges: [], chatBudgetUsed: 0, scoring: { ...battle.scoring, thresholds: { AAPL: { threshold: 2.5 } } } };
+  const doc = { ...battle, agentContext: { agentName: 'Aurora', archetype: 'degen' }, timing: { tradingDays: ['d1'], currentTradingDay: 1 }, evaluations: [], statusFeed: [], chatExchanges: [], chatBudgetUsed: 0, scoring: { ...battle.scoring, thresholds: { AAPL: { threshold: 2.5 }, MSFT: { threshold: 2.5 } } } };
   if (!stamped) delete doc.scoring.stockThresholdModel;
   return doc;
 }
-const BATTLE = { agentId: 'agent', agentBattleId: 'stock-battle', creator: { portfolio: { star: [{ symbol: 'AAPL' }], core: [], support: [] } }, opponent: { portfolio: { star: [{ symbol: 'AAPL' }], core: [], support: [] } }, state: { startingPrices: { AAPL: 100.75 } } };
+const battleProp = cpuSymbol => ({ agentId: 'agent', agentBattleId: 'stock-battle', creator: { portfolio: { star: [{ symbol: 'AAPL' }], core: [], support: [] } }, opponent: { portfolio: { star: [{ symbol: cpuSymbol }], core: [], support: [] } }, state: { startingPrices: { AAPL: 100.75, [cpuSymbol]: 99.5 } } });
+const watch = watching => { FS.docs = { 'agentBattles/stock-battle/declarations': [{ id: 'd1', evalId: 'eval_001', evalSeq: 1, mintedAt: Date.parse('2026-10-14T14:30:00Z'), mintedMode: 'on', watching, watchingSource: 'top_level' }], 'agentBattles/stock-battle/calls': [], 'agentBattles/stock-battle/callEvents': [] }; };
 
 let container, root;
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-14T15:00:00.000Z'));
   OPENED.assets = [];
-  FS.docs = { 'agentBattles/stock-battle/declarations': [{ id: 'd1', evalId: 'eval_001', evalSeq: 1, mintedAt: Date.parse('2026-10-14T14:30:00Z'), mintedMode: 'on', watching: ['AAPL'], watchingSource: 'top_level' }], 'agentBattles/stock-battle/calls': [], 'agentBattles/stock-battle/callEvents': [] };
+  watch(['AAPL']);
   vi.stubGlobal('fetch', vi.fn(async (url) => ({ ok: String(url).startsWith('/api/agent/cockpit-status'), status: String(url).startsWith('/api/agent/cockpit-status') ? 200 : 404, json: async () => ({ on: true }) })));
   Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1600 });
   window.matchMedia = (query) => { const min = /min-width:\s*(\d+)px/.exec(String(query)); return { matches: min ? 1600 >= Number(min[1]) : !String(query).includes('prefers-reduced-motion'), addEventListener() {}, removeEventListener() {} }; };
@@ -91,27 +94,42 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 const settle = async () => { for (let i = 0; i < 12; i += 1) await act(async () => { await new Promise((r) => setTimeout(r, 0)); }); };
-const mount = async () => { await act(async () => { root.render(<AgentBattleScreen battle={BATTLE} user={{ uid: 'u1' }} onBack={() => {}} onOpenFilmRoom={null} />); }); await settle(); };
-const openBareName = async () => {
-  const chip = container.querySelector('[data-cockpit-monitoring-symbol="AAPL"]');
-  expect(chip).toBeTruthy();
-  await act(async () => { chip.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+const mount = async (cpuSymbol = 'AAPL') => { await act(async () => { root.render(<AgentBattleScreen battle={battleProp(cpuSymbol)} user={{ uid: 'u1' }} onBack={() => {}} onOpenFilmRoom={null} />); }); await settle(); };
+const open = async (el) => {
+  expect(el).toBeTruthy();
+  await act(async () => { el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
   await settle();
   return OPENED.assets.at(-1);
 };
+const chip = symbol => container.querySelector(`[data-cockpit-monitoring-symbol="${symbol}"]`);
 
 describe('K1-2: a bare held name opens research on the pinned row context', () => {
   it('a Monitoring chip for a held corrected AAPL opens the player row context, no legacy threshold', async () => {
     HOOK.doc = await committedBattle();
     await mount();
-    const asset = await openBareName();
+    const asset = await open(chip('AAPL'));
     expect(asset).toMatchObject({ symbol: 'AAPL', stockRewardRoute: true, threshold: null, positionId: 'position-agent', rewardContext: { status: 'valid', fill: 100.75, positionId: 'position-agent' } });
     expect(asset.rewardContext.targets.find(t => t.key === 'bagger').target).toBe(102.765);
+  });
+  // Mutation lens KM-28: an already-pinned row is never re-resolved — the
+  // CPU's own row on a shared ticker opens the CPU lifetime.
+  it('the CPU row of a shared ticker opens the CPU context', async () => {
+    HOOK.doc = await committedBattle();
+    await mount();
+    const asset = await open(container.querySelector('article[aria-label="CPU AAPL"] button'));
+    expect(asset).toMatchObject({ symbol: 'AAPL', stockRewardRoute: true, threshold: null, positionId: 'position-cpu', rewardContext: { fill: 99.5, positionId: 'position-cpu' } });
+  });
+  // Mutation lens KM-29: a bare name resolves to the held row OF THAT SYMBOL.
+  it('a bare CPU-only name resolves to that symbol\'s pinned row', async () => {
+    watch(['MSFT']); HOOK.doc = await committedBattle({ cpuSymbol: 'MSFT' });
+    await mount('MSFT');
+    const asset = await open(chip('MSFT'));
+    expect(asset).toMatchObject({ symbol: 'MSFT', stockRewardRoute: true, threshold: null, positionId: 'position-cpu', rewardContext: { status: 'valid', fill: 99.5, positionId: 'position-cpu' } });
   });
   it('legacy control: the same unstamped battle keeps the shipped calibrated research asset', async () => {
     HOOK.doc = await committedBattle({ stamped: false });
     await mount();
-    const asset = await openBareName();
+    const asset = await open(chip('AAPL'));
     expect(asset.stockRewardRoute).toBeUndefined();
     expect(asset.threshold).toBe(2.5);
   });

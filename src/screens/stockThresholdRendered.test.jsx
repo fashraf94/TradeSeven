@@ -47,6 +47,11 @@ describe('real rendered pinned stock detail integration', () => {
     expect(c.targets.find(t => t.key === 'meltdown').target).toBeLessThan(0);
     expect(html).toMatch(/Meltdown[^<]*unreachable \(target at or below \$0\)/);
     expect(html).toMatch(/BaggerBomb[^<]*unearned/);
+    // Mutation lens KM-40: exactly $0 (k = −2 at 50%) is unreachable too.
+    const { battle: atZero } = await correctedStockBattle({ fill: 10, scoringPct: 50 });
+    const z = stockRewardContext(atZero, { ...atZero.portfolio.star[0], tier: 'star' }, 'agent', 'star', 0, { price: 10, asOf: STOCK_TEST_NOW, observedAt: STOCK_TEST_NOW });
+    expect(z.targets.find(t => t.key === 'meltdown').target).toBe(0);
+    expect(renderToStaticMarkup(<StockRewardDetails context={z} />)).toMatch(/Meltdown[^<]*unreachable \(target at or below \$0\)/);
   });
   it('corrupt tuple/missing receipt remain unavailable through row and real tab', async () => {
     const { battle } = await renderedFacts(); battle.scoring.stockThresholdModel = null;

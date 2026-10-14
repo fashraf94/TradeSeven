@@ -104,8 +104,10 @@ describe('owner-approved prescribed tournament stock settlement refusal', () => 
     expect(state.db.__access.writes.some(w => w.path === BATTLE)).toBe(false);
     expect(f.res.statusCode).toBe(200); expect(f.res.body.battleCreated).toBe(true);
   });
-  it('K2-4: a corrected battle first seen by the legacy re-read is never expired by legacy GC', async () => {
-    const f = await fixture({ active: false });
+  // Mutation lens KM-52: supported AND present-but-invalid stamps (only an
+  // absent stamp is legacy).
+  it.each([STOCK_MODEL, null, {}])('K2-4: a stamped battle (%j) first seen by the legacy re-read is never expired by legacy GC', async stamp => {
+    const f = await fixture({ active: false, stamp });
     const injected = atRankingsRead(() => { state.db.__docs.get(BATTLE).status = 'active'; f.battle.status = 'active'; });
     await deploy(f);
     expect(injected()).toBe(true);

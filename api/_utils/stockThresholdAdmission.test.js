@@ -276,6 +276,31 @@ describe('R1: an outgoing corrected exit needs dated post-entry evidence', () =>
     const f = await freshLifetime(); const n = f.h.writes.length; f.q.MSFT = quote(f.q.MSFT);
     await expect(rotateOut(f)).rejects.toMatchObject({ reason: 'missing_exit_quote' }); expect(f.h.writes).toHaveLength(n);
   });
+  // Mutation lens KM-3: the marker is bound to ITS position. The agent's fresh
+  // MSFT marker never stands in for the CPU's MSFT lifetime whose own quote is
+  // missing in the swap tick: the CPU stays unavailable, never a fill-valued draw.
+  it('a marker for the agent lifetime never values the CPU lifetime of the same ticker', async () => {
+    const { battle, inputs } = await correctedStockBattle({ cpuSymbol: 'MSFT' });
+    const h = stockWriterDb({ [`agentBattles/${battle.id}`]: battle, ...inputs, 'indexIntelligence/stockRankings': { stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }] } });
+    const at = '2026-10-14T14:03:00Z';
+    const q = { AAPL: { current: 103.27, timestamp: ts(at) }, MSFT: { current: 106, timestamp: ts(at) - 1 } };
+    await executeSwapServer(h.db, battle.id, battle, 'star', 0, { symbol: 'MSFT', baseATR: 3 }, 1, q, {}, null, { now: () => new Date(at), collector: s => stockObservation(s) });
+    const live = h.store.get(`agentBattles/${battle.id}`); live.id = battle.id;
+    expect(q.MSFT.stockEntryCommit).toBeTruthy();
+    const cpu = scoreCorrectedPosition(live, { ...live.opponent.portfolio.star[0], tier: 'star' }, 'cpu', { ...q, MSFT: { stockEntryCommit: q.MSFT.stockEntryCommit } }, at);
+    expect(cpu.rewardContext).toMatchObject({ status: 'unavailable', reason: 'missing_post_entry_quote' });
+    expect(Number.isFinite(cpu.totalPoints)).toBe(false);
+  });
+  // Mutation lens KM-9: the bank component's exitQuoteAsOf is the accepted
+  // quote's provider time, not the swap instant (quote 30 s before the swap).
+  it('exitQuoteAsOf records the exit quote time, not the swap instant', async () => {
+    const { battle, inputs } = await correctedStockBattle({ fill: 100 });
+    const h = stockWriterDb({ [`agentBattles/${battle.id}`]: battle, ...inputs, 'indexIntelligence/stockRankings': { stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }] } });
+    const quoteAt = '2026-10-14T14:03:30.000Z';
+    const { closedTrade } = await executeSwapServer(h.db, battle.id, battle, 'star', 0, { symbol: 'MSFT', baseATR: 3 }, 1, { AAPL: { current: 103, timestamp: ts(quoteAt) } }, {}, null, { now: () => new Date(secondAt), collector: s => stockObservation(s, { price: 100, clock: () => new Date(secondAt) }) });
+    expect(closedTrade.rewardContext.quoteEvidence.providerAsOf).toBe(quoteAt);
+    expect(h.store.get(`agentBattles/${battle.id}`).scoring.stockScoreComponents['position-agent']).toMatchObject({ exitPrice: 103, exitQuoteAsOf: quoteAt, closedAt: secondAt });
+  });
   it('a contended retry banks the fresh lifetime once; a stale replay cannot bank it again', async () => {
     const f = await freshLifetime(); f.q.MSFT = { ...f.q.MSFT, timestamp: ts(secondAt) };
     let raced = false;
