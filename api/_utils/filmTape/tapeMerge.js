@@ -379,9 +379,14 @@ function battleWinner(stored, assembled, canonicalBattle) {
  *   imports no evaluator, so the candle pass, which imports this module for
  *   its serializers, does not load one (review AD3-2). A derivation without
  *   it throws.
+ *   `tagDay` (Film Room B1, spec §2): `(doc) => ({ tags, coverage })`, the
+ *   tagger over the MERGED day (writeTapeDay hands in tapeTags.js
+ *   tagTapeDay, which never throws), so `tags` is recomputed from the merged
+ *   checks and actions on every write. The merge imports no tagger, for the
+ *   same reason it imports no evaluator. Without one, a stored section stands.
  * @returns {{ doc: object, changed: boolean, carried: object }}
  */
-export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false, resolveResult = null }) {
+export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false, resolveResult = null, tagDay = null }) {
   // The read's limits (BA-26 amended) steer the coverage merge; they are never stored.
   const { readLimits = {}, ...assembled } = isObj(assembledIn) ? assembledIn : {};
   const isSkipped = assembled?.passes?.close?.status === 'skipped_mode';
@@ -394,6 +399,7 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
         if (isObj(doc.coverage[section])) doc.coverage[section] = { ...doc.coverage[section], dependsOn: sectionDependsOn(section, doc) };
       }
     }
+    if (!isSkipped) withTags(doc, null, tagDay);
     return { doc: sanitizeForFirestore(doc), changed: true, carried: {} };
   }
   if (isSkipped) {
@@ -528,12 +534,32 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
     if (section === 'replay' && outdated.length && isObj(cov) && cov.status !== 'unavailable') cov = versionLabelled(cov, outdated, withinWindow, merged.passes.candles?.status);
     merged.coverage[section] = cov;
   }
+  // B1 (spec §2): re-tagged from the merged rows and coverage, every write.
+  withTags(merged, stored, tagDay);
 
   merged.writtenAt = stored.writtenAt;
   merged.firstWrittenAt = stored.firstWrittenAt ?? stored.writtenAt ?? nowIso;
   merged.runCount = stored.runCount ?? 1;
   merged.passes.close.writtenAt = stored.passes?.close?.writtenAt ?? nowIso;
   return finish(stored, merged, nowIso, carried);
+}
+
+/**
+ * B1 (spec §2) — the `tags` section and `coverage.tags`, from the tagger the
+ * caller handed in, over `doc` as merged. Without a tagger, the stored
+ * section stands (a caller that only merges never drops it).
+ */
+function withTags(doc, stored, tagDay) {
+  if (typeof tagDay === 'function') {
+    const { tags, coverage } = tagDay(doc);
+    doc.tags = tags;
+    doc.coverage = { ...(isObj(doc.coverage) ? doc.coverage : {}), tags: coverage };
+    return;
+  }
+  if (isObj(stored?.tags)) {
+    doc.tags = stored.tags;
+    doc.coverage = { ...(isObj(doc.coverage) ? doc.coverage : {}), tags: stored.coverage?.tags ?? null };
+  }
 }
 
 /** BA-38 — was this replay built by an earlier replay logic than the one that builds replays now? */

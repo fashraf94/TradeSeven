@@ -27,7 +27,7 @@ import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import {
   seedDay, capturedDay, noTriggerDay, budgetDay, completedDay, multiDay, skippedModeDay, preCaptureDay,
 } from './__fixtures__/tapeFixtures.js';
-import { numbersWithClasses, formatNumberPath, COVERAGE_SECTIONS, CANDLE_COVERAGE_SECTIONS, PROVENANCE_CLASSES } from '../../../src/constants/filmTape.js';
+import { numbersWithClasses, formatNumberPath, COVERAGE_SECTIONS, CANDLE_COVERAGE_SECTIONS, B1_COVERAGE_SECTIONS, PROVENANCE_CLASSES } from '../../../src/constants/filmTape.js';
 import { stableStringify } from './tapeMerge.js';
 import { REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { readFileSync } from 'node:fs';
@@ -57,13 +57,18 @@ describe('the §4 document', () => {
     expect(r.status).toBe('written');
     for (const k of ['tapeVersion', 'battleId', 'ownerId', 'agentId', 'archetype', 'gameMode', 'etDate', 'dayNumber', 'isFinalDay', 'battleStatusAtWrite',
       'writtenAt', 'firstWrittenAt', 'runCount', 'passes', 'coverage', 'score', 'battle', 'checks', 'actions', 'directives', 'plans', 'calls', 'rationale',
-      'comparables', 'diagnostics', 'numberClasses']) expect(tape, k).toHaveProperty(k);
+      'comparables', 'diagnostics', 'numberClasses', 'tags']) expect(tape, k).toHaveProperty(k);
     expect(tape.tapeVersion).toBe(2);
     expect(tape.ownerId).toBe('owner-1');
     expect(Object.keys(tape.passes.close).sort()).toEqual(['capture', 'deferralsTruncated', 'gaps', 'lastError', 'sources', 'status', 'tickSeqRange', 'ticksReadMethod', 'unattributedGaps', 'writtenAt'].sort());
     expect(Object.keys(tape.passes.close.sources).sort()).toEqual(['calls', 'declarations', 'evaluations', 'receipts', 'runs', 'ticks', 'trades']);
     expect(Object.keys(tape.passes.candles).sort()).toEqual(['attempts', 'reason', 'source', 'status', 'symbolsMissing', 'symbolsRequested', 'writtenAt']);
-    expect(Object.keys(tape.coverage).sort()).toEqual([...COVERAGE_SECTIONS].sort());
+    // Film Room B1: the card build's sections beside A's (src/constants/filmTape.js B1_COVERAGE_SECTIONS) — BA-20's five keys each.
+    expect(Object.keys(tape.coverage).sort()).toEqual([...COVERAGE_SECTIONS, ...B1_COVERAGE_SECTIONS].sort());
+    for (const s of B1_COVERAGE_SECTIONS) {
+      expect(Object.keys(tape.coverage[s]).sort(), s).toEqual(['note', 'preservedFrom', 'sources', 'span', 'status']);
+      expect(['complete', 'partial', 'unavailable']).toContain(tape.coverage[s].status);
+    }
     // BA-20's five keys; a close-pass section also keeps its caveats (BA-26) and
     // the identity of what it depends on (dependsOn, BA-26 amended), and a
     // section that reads checks' evaluation entries counts its unknown checks.

@@ -39,6 +39,12 @@ export const COVERAGE_SECTIONS = Object.freeze([
 ]);
 /** The two sections only the candle pass writes (BA-19). */
 export const CANDLE_COVERAGE_SECTIONS = Object.freeze(['replay', 'series']);
+/**
+ * Film Room B1 — the coverage sections the card build's tape additions carry
+ * (Build B spec §2–§3), beside the sections above. The close pass writes them;
+ * the A2 screen and the export render none of them (B2 renders the card).
+ */
+export const B1_COVERAGE_SECTIONS = Object.freeze(['tags']);
 
 // ── BA-8: check states ──────────────────────────────────────────────────────
 // A tick-backed check takes its capture `exitReason`, except that a
@@ -269,6 +275,27 @@ export const TAPE_NUMBER_CLASSES = Object.freeze({
   'calls[].hypothesisRef.hypothesisVersion': 'recorded',
   // rationale
   'rationale[].tickSeq': 'recorded',
+  // Film Room B1 — the tags section (Build B spec §2; src/data/situationRegistry.js).
+  // `inputs.*` take their source's class: thresholds and slot values copied as
+  // the platform and the registry hold them are recorded; the dial's multiplier
+  // and the threshold it yields are computed, derived. Every count is derived.
+  'tags.registryVersion': 'recorded',
+  'tags.situations.*': 'recorded',
+  'tags.inputs.forcedRotation.pctThreshold': 'recorded',
+  'tags.inputs.forcedRotation.ticksThreshold': 'recorded',
+  'tags.inputs.forcedRotation.winnerThreshold': 'recorded',
+  'tags.inputs.forcedRotation.maxTickAgeMinutes': 'recorded',
+  'tags.inputs.slots.S1.checksBeforeRule': 'recorded',
+  'tags.inputs.slots.S2.checks': 'recorded',
+  'tags.inputs.slots.S2.pctThreshold': 'recorded',
+  'tags.inputs.perCheck[].tickSeq': 'recorded',
+  'tags.inputs.perCheck[].tempoMultiplier': 'derived',
+  'tags.inputs.perCheck[].effectiveTicksThreshold': 'derived',
+  'tags.items[].version': 'recorded',
+  'tags.items[].tickSeq': 'recorded',
+  'tags.items[].count': 'derived',
+  'tags.items[].effectiveTicksThreshold': 'derived',
+  'tags.exits[].tickSeq': 'recorded',
 });
 
 /** The same declaration for `tape/{etDate}/series/{symbol}`. */

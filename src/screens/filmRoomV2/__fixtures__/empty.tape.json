@@ -167,6 +167,18 @@
       ],
       "preservedFrom": null,
       "note": null
+    },
+    "tags": {
+      "status": "unavailable",
+      "span": null,
+      "sources": [
+        "checks",
+        "checks.evidence",
+        "checks.risk",
+        "actions"
+      ],
+      "preservedFrom": null,
+      "note": "stalled unavailable: unknown archetype (momentum)"
     }
   },
   "score": {
@@ -310,6 +322,34 @@
     "calls[].resolvedAt": "recorded",
     "calls[].horizon.expiresAt": "recorded",
     "calls[].hypothesisRef.hypothesisVersion": "recorded",
-    "rationale[].tickSeq": "recorded"
+    "rationale[].tickSeq": "recorded",
+    "tags.registryVersion": "recorded",
+    "tags.situations.*": "recorded",
+    "tags.inputs.forcedRotation.pctThreshold": "recorded",
+    "tags.inputs.forcedRotation.ticksThreshold": "recorded",
+    "tags.inputs.forcedRotation.winnerThreshold": "recorded",
+    "tags.inputs.forcedRotation.maxTickAgeMinutes": "recorded",
+    "tags.inputs.slots.S1.checksBeforeRule": "recorded",
+    "tags.inputs.slots.S2.checks": "recorded",
+    "tags.inputs.slots.S2.pctThreshold": "recorded",
+    "tags.inputs.perCheck[].tickSeq": "recorded",
+    "tags.inputs.perCheck[].tempoMultiplier": "derived",
+    "tags.inputs.perCheck[].effectiveTicksThreshold": "derived",
+    "tags.items[].version": "recorded",
+    "tags.items[].tickSeq": "recorded",
+    "tags.items[].count": "derived",
+    "tags.items[].effectiveTicksThreshold": "derived",
+    "tags.exits[].tickSeq": "recorded"
+  },
+  "tags": {
+    "registryVersion": 1,
+    "situations": {
+      "stalled": 1
+    },
+    "inputs": {
+      "archetypeCodeId": "momentum"
+    },
+    "items": null,
+    "exits": []
   }
 }
