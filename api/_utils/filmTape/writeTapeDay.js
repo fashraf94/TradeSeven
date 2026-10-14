@@ -34,6 +34,7 @@ import { assembleTape, assembleSkippedModeTape, dayEntries } from './tapeAssembl
 import { mergeTape, sanitizeForFirestore, stableStringify } from './tapeMerge.js';
 import { etDayBounds, previousSession, withinCandleWindow, toMs } from './tapeTime.js';
 import { resolveBattleResult } from './battleResult.js';
+import { tradingTimeline } from '../../../src/utils/tapeSchedule.js';
 import { tagTapeDay } from './tapeTags.js';
 
 const nowMsOf = (now) => {
@@ -83,7 +84,7 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
   if (!isTieredBattle(battle)) {
     assembled = assembleSkippedModeTape({ battle, etDate, nowMs });
   } else {
-    const days = Array.isArray(battle?.timing?.tradingDays) ? battle.timing.tradingDays : null;
+    const days = tradingTimeline(battle);
     const priorDay = days ? (days[days.indexOf(etDate) - 1] ?? null) : previousSession(etDate);
     const [ticksRead, receiptsRead, callsRead, runsRead, intradayViewsPresent, priorTape] = await Promise.all([
       readDayTicks(db, battleId, bounds),

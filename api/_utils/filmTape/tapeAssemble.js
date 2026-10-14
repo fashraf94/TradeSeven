@@ -19,6 +19,7 @@ import {
 } from '../../../src/constants/filmTape.js';
 import { toMs, inDay, etDateOf, etDayBounds, sessionFor, previousSession, withinCandleWindow } from './tapeTime.js';
 import { historyListOf, meetingLegsOf, meetingOf } from '../playerFieldReaders.js';
+import { tradingTimeline } from '../../../src/utils/tapeSchedule.js';
 
 /** `evaluations[]` is `slice(-150)` (api/cron/agent-evaluate.js:4257). */
 export const EVALUATIONS_CAP = 150;
@@ -555,13 +556,15 @@ export function afterOf({ filedAt, endMs, checkRows, actionRows }) {
  * time, so every card lands on exactly one tape.
  */
 export function directiveWindow({ battle, etDate, bounds }) {
-  const days = Array.isArray(battle?.timing?.tradingDays) ? battle.timing.tradingDays : null;
+  const days = tradingTimeline(battle);
   const i = days ? days.indexOf(etDate) : -1;
   if (i === 0) {
     const act = toMs(battle?.activatedAt) ?? toMs(battle?.createdAt);
     return { startMs: act !== null ? Math.min(act, bounds.startMs) : bounds.startMs, endMs: bounds.endMs };
   }
-  if (i > 0) return { startMs: Math.min(etDayBounds(days[i - 1]).endMs, bounds.startMs), endMs: bounds.endMs };
+  // W2: the timeline is validated (tradingTimeline); a real date past the calendar's horizon may still have no bounds.
+  const prev = i > 0 ? etDayBounds(days[i - 1]) : null;
+  if (prev) return { startMs: Math.min(prev.endMs, bounds.startMs), endMs: bounds.endMs };
   return { startMs: bounds.startMs, endMs: bounds.endMs };
 }
 
@@ -831,7 +834,7 @@ export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entry
     };
     firstCheck = { at: first.at, tickSeq: first.tickSeq, total: first.scores.total };
   }
-  const days = Array.isArray(battle?.timing?.tradingDays) ? battle.timing.tradingDays : null;
+  const days = tradingTimeline(battle);
   const isFirstDay = days ? days[0] === etDate : false;
   const priorDay = days ? (days[days.indexOf(etDate) - 1] ?? null) : previousSession(etDate);
   let dayChange = { value: null, basis: 'unavailable', reference: null };
@@ -952,7 +955,7 @@ export function assembleTape({
 }) {
   const nowIso = new Date(nowMs).toISOString();
   const battleId = battle.id;
-  const days = Array.isArray(battle?.timing?.tradingDays) ? battle.timing.tradingDays.filter((d) => typeof d === 'string') : null;
+  const days = tradingTimeline(battle);
   const entries = dayEntries(battle, bounds);
   const trades = dayTrades(battle, bounds);
   const dayTicks = [...(ticksRead.ticks || [])].filter((t) => Number.isInteger(t?.tickSeq)).sort((a, b) => a.tickSeq - b.tickSeq);
