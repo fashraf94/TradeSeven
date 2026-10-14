@@ -227,7 +227,7 @@ export async function executeCorrectedStockSwap(db, battleId, expected, tier, sl
     const outQuote = decisionQuote(prices[out.symbol], at);
     if (!positive(outQuote.price) || instantMs(outQuote.asOf) === null || instantMs(outQuote.asOf) > instantMs(at)) refuseStock('missing_exit_quote');
     const entry = out.stockThresholdReceipt?.fill ?? out.swapPrice ?? live.portfolio.startingPrices?.[out.symbol];
-    const score = isStock(out) ? scoreCorrectedPosition(live, { ...out, tier }, 'agent', prices, at) : calculateAssetScoreServer({ ...out, tier }, (outQuote.price - entry) / entry * 100, live.thresholdHistory?.[out.symbol] || {});
+    const score = isStock(out) ? scoreCorrectedPosition(live, { ...out, tier }, 'agent', prices, at) : calculateAssetScoreServer({ ...out, tier, tierMultiplier: out.tierMultiplier }, (outQuote.price - entry) / entry * 100, live.thresholdHistory?.[out.symbol] || {});
     if (!finite(score.totalPoints)) refuseStock(score.reason || 'missing_outgoing_score');
     const fill = inReceipt?.fill ?? prices[benchAsset.symbol]?.current;
     if (!positive(fill)) refuseStock('missing_incoming_fill');

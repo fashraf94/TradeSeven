@@ -41,6 +41,21 @@ describe('server stock admission and atomic writers', () => {
     selector.enabled = true; f.h.store.set('indexIntelligence/stockRankings', { stocks: [{ symbol: 'AAPL' }] });
     await expect(commitBattleDocWithPin(f.adapter, f.doc, { dark: true })).rejects.toMatchObject({ reason: 'current_ranked_membership_missing' }); expect(f.h.writes).toEqual([]);
   });
+  it.each([false, true])('the selected stock adapter executes the original full-descriptor fence; cutover=%s', async cutover => {
+    const f = await creationFixture();
+    const descriptor = { activeIdentityVersion: 3, boundaryStateVersion: 1, activeEpochId: 'ep-A', candidateStateId: 'run-A', semanticHash: 'sem-A', activationGeneration: 1, overrideRevision: 0 };
+    f.h.store.set('composition/activation', cutover ? { ...descriptor, activeEpochId: 'ep-B', semanticHash: 'sem-B', activationGeneration: 2 } : descriptor);
+    const commit = commitBattleDocWithPin(f.adapter, f.doc, { dark: false, descriptor });
+    if (cutover) {
+      await expect(commit).rejects.toMatchObject({ code: 'battle_cutover_interleaved' });
+      expect(f.h.writes).toEqual([]);
+    } else {
+      const ref = await commit;
+      expect(f.h.store.has(`agentBattles/${ref.id}`)).toBe(true);
+      expect(f.h.writes.filter(([, p]) => p.startsWith('stockThresholdInputs/'))).toHaveLength(2);
+    }
+    expect(f.h.reads).toContain('composition/activation');
+  });
   it('a warm true worker refuses a shared disable/epoch cutover before creation', async () => {
     const f = await creationFixture(); f.h.store.get('stockThresholdControl/admission').enabled = false;
     await expect(commitBattleDocWithPin(f.adapter, f.doc, { dark: true })).rejects.toMatchObject({ reason: 'creation_selection_changed' }); expect(f.h.writes).toEqual([]);
@@ -114,6 +129,28 @@ describe('server stock admission and atomic writers', () => {
     const { battle, inputs } = await correctedStockBattle(); battle.portfolio.bench.crypto = { symbol: 'BTC-USD.CC', isCrypto: true, baseATR: 5 };
     const h = inputStore(battle, inputs); const q = { ...prices(), 'BTC-USD.CC': { current: 50000, timestamp: Date.parse(STOCK_TEST_NOW) / 1000 } };
     await executeSwapServer(h.db, battle.id, battle, 'star', 0, battle.portfolio.bench.crypto, 1, q, {}, null, { now: stockTestClock }); expect(h.store.get(`agentBattles/${battle.id}`).portfolio.bench.crypto).toBe(null);
+  });
+  it.each([[1, 75], [undefined, 105]])('whole-asset corrected scorer retains the tier stamp %s and canonical points %s', async (stamp, expected) => {
+    const { battle } = await correctedStockBattle({ fill: 100 });
+    const asset = { ...battle.portfolio.star[0], tier: 'star', ...(stamp === undefined ? {} : { tierMultiplier: stamp }) };
+    const score = scoreCorrectedPosition(battle, asset, 'agent', prices(103), STOCK_TEST_NOW);
+    expect(score.tierMultiplier).toBe(stamp ?? 2);
+    expect(score.basePoints).toBe(stamp === undefined ? 60 : 30);
+    // The real measured fixture has a 2% unit: 3% crosses 1x and 1.5x,
+    // earning the existing cumulative 15 + 30 reward independent of tier.
+    expect(score.bonusPoints).toBe(45);
+    expect(score.totalPoints).toBe(expected);
+  });
+  it.each([[1, 45], [undefined, 75]])('corrected non-stock swap-out retains the stored stamp %s and banks canonical points %s with admission off', async (stamp, expected) => {
+    const { battle, inputs } = await correctedStockBattle();
+    battle.portfolio.star[0] = { symbol: 'BTC-USD.CC', isCrypto: true, baseATR: 2.5, swapPrice: 100, positionId: 'crypto-position', slotVersion: 1, ...(stamp === undefined ? {} : { tierMultiplier: stamp }) };
+    const incoming = { symbol: 'ETH-USD.CC', isCrypto: true, baseATR: 5 };
+    const h = inputStore(battle, inputs);
+    const quote = current => ({ current, timestamp: Date.parse(STOCK_TEST_NOW) / 1000 });
+    const result = await executeSwapServer(h.db, battle.id, battle, 'star', 0, incoming, 1, { 'BTC-USD.CC': quote(103), 'ETH-USD.CC': quote(200) }, {}, null, { now: stockTestClock });
+    expect(selector.enabled).toBe(false);
+    expect(result.closedTrade.lockedPoints).toBe(expected);
+    expect(h.store.get(`agentBattles/${battle.id}`).scoring.stockScoreComponents['crypto-position'].points).toBe(expected);
   });
   it('commits real zero/negative totals; missing score propagates and blocks completion', async () => {
     const { battle, inputs } = await correctedStockBattle(), h = inputStore(battle, inputs);
