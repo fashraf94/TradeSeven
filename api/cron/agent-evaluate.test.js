@@ -880,6 +880,10 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
       // Review K3-7: the same corrected-lifecycle harness with tick stamps on
       // wraps the real writer to inject the fixture collector — a test consumer.
       'api/cron/agent-evaluate.stockThresholds.stamps.test.js',
+      // Invalid real-time price fix (docs/audits/20261014_BUILD_NA_QUOTE_INVALID_PRICE.md):
+      // runs the real executor on prices built by the real producer to prove an
+      // unpriced swap-in commits nothing — a test consumer, not a new call site.
+      'api/_utils/agentSwapExecution.invalidQuote.test.js',
     ]);
     const apiRoot = resolve(__dirname, '..');
     const offenders = [];
