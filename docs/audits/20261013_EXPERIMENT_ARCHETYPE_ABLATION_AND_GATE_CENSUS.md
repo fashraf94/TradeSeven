@@ -63,6 +63,30 @@ Every `file:line` below was read at `433a19a4` in this session (VERIFIED) unless
 
 Decision of record for a replay reply: the first `tool_use` block (`agent-evaluate.js:2944`), judged by **production's own** `validateTradeToolResult` (`api/_utils/agentEvalToolResultValidation.js`, imported, not copied). A reply production would fail closed is "malformed".
 
+### 0.2 The capture record, field by field
+
+| What | Where it is | Source |
+|---|---|---|
+| Collection path | `agentBattles/{battleId}/ticks/{tickId}` (permanent, no free text) and `agentBattles/{battleId}/tickBodies/{tickId}` (all text, 120-day TTL), written in one batch | `captureWriter.js:540-544`; names `captureConfig.js:103-104` |
+| Document identity | `tickId = "${battleId}:${tickSeq}"`; `tickSeq` minted per battle in the admission transaction; `evalId` stamped at decision time | `captureContext.js:133`; `captureWriter.js:214-219` (permanent), `:181-186` (body); `agent-evaluate.js:3167-3168`, `:4362` |
+| Request | `tickBodies.request.{body, bytes, sha256, truncated}` — the exact string the SDK dispatched; `ticks.body.requestSha256` | `captureWriter.js:96-100`, `:189`, `:318` |
+| Response | `tickBodies.response.{body, bytes, sha256, truncated, status, returnedModel}` | `captureWriter.js:105-127`, `:190`, `:319` |
+| Archetype | not on the record — joined from the battle's `agentContext.archetype` | §0 correction 4 |
+| Decision, woken, body state | §0 corrections 5–7 | — |
+
+### 0.5 Archetype identifiers
+
+| Code id (on `agentContext.archetype`) | Constitution name | Label the prompt prints ("Your archetype is …", "Archetype: …") | Records in the window |
+|---|---|---|---:|
+| `momentum_chaser` | Trend Follower | Momentum chaser | 952 |
+| `contrarian` | Contrarian | Contrarian | 401 |
+| `diversifier` | Diversifier | Diversifier | 431 |
+| `degen` | Speculator | Degen | 390 |
+| `analyst` | Fundamental Investor | Analyst | 389 |
+| `guardian` | Capital Preserver | Guardian | 260 |
+
+Sources: the id → constitution map is at `evalIdentityBlocks.js:86-93`, and the renders are at `:99-143`. The printed label is the code id with underscores turned into spaces and the first letter capitalised (`agentEvalPromptAssembly.js:751`; `agent-evaluate.js:2691`). So the brain is told "Momentum chaser", "Degen", "Analyst" and "Guardian", never the constitution names, except inside the charter render itself. `'unknown'` is a value that can be persisted, not a seventh archetype (`evalIdentityBlocks.js:165-167`); 0 records in the window carry it.
+
 ---
 
 ## §1 In plain terms
@@ -371,6 +395,14 @@ The census of record ran before the review fixes. Those fixes change the census 
 **Refutation.** Every finding went to an independent refuter (R1–R4) instructed to disprove it with a concrete repro.
 
 **Result:** 32 CONFIRMED, 8 REFUTED. No finding changed a bar outcome or a Part B number.
+
+**Scope of the review, stated plainly.** The adversarial review and refutation covered `a59dd4c1`. The fix commits (`995771b4`, `98612ed6`, and the docs-only commits after them) were **not** put through a second reviewer-and-refuter pass. They were verified four ways:
+- the 63-row selftest;
+- the 18-mutant check on `98612ed6`;
+- `assertArmSemantics` re-run over all 714 submitted requests;
+- `analyze` re-run from the committed code, which reproduces every Part A number. Plus `vite build` on each commit.
+
+A second adversarial pass over that delta (mainly the safety hardening in `submit` / `collect` / `reconcilePending`, which no run has exercised since) has not been done.
 
 The finding ids below are the ones the script's comments cite.
 
