@@ -102,7 +102,7 @@ import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
 import { sessionBars, sampleAt, sampleCanExist, expectedSeriesBars, sessionOpenOf, aggregate10m } from './bars.js';
 import { replayAction, REPLAY_LABEL, mergeReplay, replayHasFact, replayCovers } from './tapeReplay.js';
 import { coverageOf } from './tapeAssemble.js';
-import { sanitizeForFirestore, stableStringify, versionLabel, rebuildOutlook } from './tapeMerge.js';
+import { sanitizeForFirestore, stableStringify, versionLabel, rebuildOutlook, closedOutNoteFields } from './tapeMerge.js';
 import { tapeRef } from './tapeSources.js';
 import {
   symbolPlan, candleInputFingerprint, replayBuiltFrom, replayBuiltFromV1, priceBuiltFrom, seriesBuiltFrom, replayLogicVersionOf, REPLAY_LOGIC_VERSION,
@@ -493,7 +493,9 @@ export async function markRetryWindowElapsed(db, { battleId, etDate }, nowIso) {
     marked = false;
     const snap = await tx.get(ref);
     if (!snap.exists || candlesTerminal(snap.data()?.passes?.candles)) return;
-    tx.update(ref, { 'passes.candles.status': 'expired', 'passes.candles.reason': 'retry_window_elapsed', 'passes.candles.writtenAt': nowIso });
+    const closed = { status: 'expired', reason: 'retry_window_elapsed' };
+    // B1 W1: the candle sections' notes stop saying a candle pass is coming, and say how it closed.
+    tx.update(ref, { 'passes.candles.status': closed.status, 'passes.candles.reason': closed.reason, 'passes.candles.writtenAt': nowIso, ...closedOutNoteFields(snap.data(), closed) });
     marked = true;
   });
   return marked;
@@ -796,6 +798,8 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
             'passes.candles.status': spent ? 'exhausted' : 'failed',
             'passes.candles.reason': spent ? 'attempts_exhausted' : `error: ${reason}`,
             'passes.candles.writtenAt': iso(clock()),
+            // B1 W1: an exhausted pass's sections stop saying a candle pass is coming.
+            ...(spent ? closedOutNoteFields(cur.data(), { status: 'exhausted', reason: 'attempts_exhausted' }) : {}),
           });
         });
       } catch (markErr) {

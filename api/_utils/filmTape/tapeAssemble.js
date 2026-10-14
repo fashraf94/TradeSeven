@@ -15,7 +15,7 @@ import { TICKER_TO_SECTOR } from '../rankingConfig.js';
 import { isCryptoSymbol } from '../marketDataCache.js';
 import {
   TAPE_VERSION, TAPE_NUMBER_CLASSES, TICK_EXIT_STATES, NON_CHECK_STATES, NO_CHANGE_GATE_STATUSES,
-  EXIT_MECHANISMS, MARKET_COMPARABLES, CALL_CONTRACT_VERSION,
+  EXIT_MECHANISMS, MARKET_COMPARABLES, CALL_CONTRACT_VERSION, AWAITING_CANDLES_NOTE,
 } from '../../../src/constants/filmTape.js';
 import { toMs, inDay, etDateOf, etDayBounds, sessionFor, previousSession, withinCandleWindow } from './tapeTime.js';
 import { historyListOf, meetingLegsOf, meetingOf } from '../playerFieldReaders.js';
@@ -1175,7 +1175,7 @@ export function assembleTape({
   coverage.meetings = meetings.coverage;
 
   const within = withinCandleWindow(etDate, nowMs);
-  const candleNote = within ? 'awaiting the candle pass' : 'no candle pass is scheduled for this day (outside the 10-trading-day window)';
+  const candleNote = within ? AWAITING_CANDLES_NOTE : 'no candle pass is scheduled for this day (outside the 10-trading-day window)';
   coverage.replay = coverageOf('unavailable', { note: candleNote });
   coverage.series = coverageOf('unavailable', { note: candleNote });
 

@@ -43,7 +43,7 @@
 //   · Nothing changed → no write at all, so the stored bytes stand.
 
 import { createHash } from 'node:crypto';
-import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE } from '../../../src/constants/filmTape.js';
+import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE, AWAITING_CANDLES_NOTE } from '../../../src/constants/filmTape.js';
 import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf } from './tapeAssemble.js';
 import { candleInputFingerprint, changedInputParts, replayLogicVersionOf, REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
@@ -547,6 +547,8 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
     const changed = merged.passes.candles?.changedInputs;
     if (Array.isArray(changed) && changed.length && isObj(cov) && cov.status !== 'unavailable') cov = builtBefore(cov, changed, withinWindow, merged.passes.candles?.status);
     if (section === 'replay' && outdated.length && isObj(cov) && cov.status !== 'unavailable') cov = versionLabelled(cov, outdated, withinWindow, merged.passes.candles?.status);
+    // B1 W1: a tape closed out before W1 still says a candle pass is coming — corrected on its next merge.
+    if (isObj(cov) && closedOutNote(cov.note, merged.passes.candles) !== cov.note) cov = { ...cov, note: closedOutNote(cov.note, merged.passes.candles) };
     merged.coverage[section] = cov;
   }
   // B1 T2: the meetings' coverage is the new read's — the history only grows
@@ -645,6 +647,40 @@ export function rebuildOutlook(withinWindow, status) {
   if (status === 'exhausted') return 'its attempts are spent, not rebuilt';
   if (status === 'expired' || !withinWindow) return 'outside its retry window, not rebuilt';
   return 'awaiting the next candle pass';
+}
+
+// ── Film Room B1 W1: a closed-out tape stops saying a candle pass is coming ──
+
+const AWAITING_CANDLES = AWAITING_CANDLES_NOTE;
+const AWAITING_NEXT = rebuildOutlook(true, 'pending');
+
+/** How a TERMINAL candle pass closed (BA-32), in the outlook's words, with its reason. */
+export function closedOutWords(candles) {
+  return candles?.status === 'exhausted'
+    ? `the candle pass did not complete: its attempts are spent (${candles.reason ?? 'attempts_exhausted'})`
+    : `the candle pass did not complete within its 10-trading-day window (${candles?.reason ?? 'retry_window_elapsed'})`;
+}
+
+/**
+ * B1 W1 — a candle section's note once its pass is terminal (expired or
+ * exhausted): "awaiting the candle pass" says how it closed, and a label's
+ * "awaiting the next candle pass" takes the terminal outlook. Any other note,
+ * or a pass still to come, is returned as it is.
+ */
+export function closedOutNote(note, candles) {
+  if (typeof note !== 'string' || !['expired', 'exhausted'].includes(candles?.status)) return note;
+  return note.split('; ').map((part) => (part === AWAITING_CANDLES ? closedOutWords(candles) : part.split(AWAITING_NEXT).join(rebuildOutlook(false, candles.status)))).join('; ');
+}
+
+/** The targeted fields a close-out writer adds: each candle section's note that closedOutNote changes. */
+export function closedOutNoteFields(tape, candles) {
+  const out = {};
+  for (const section of CANDLE_COVERAGE_SECTIONS) {
+    const note = tape?.coverage?.[section]?.note;
+    const next = closedOutNote(note, candles);
+    if (isObj(tape?.coverage?.[section]) && next !== note) out[`coverage.${section}.note`] = next;
+  }
+  return out;
 }
 
 /**

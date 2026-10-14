@@ -127,6 +127,8 @@ export const CANDLE_PASS_UTC_HOUR = 11;
 // the gap combines both bases.
 export const LOCKED_BASIS = 'eodhd_realtime_delayed';
 export const LOCKED_BASIS_NOTE = "Banked points and the bought entry use the platform's quote, delayed about 15–20 minutes; rebuilt values use completed 1-minute bars.";
+/** The close pass's note on a candle section no candle pass has written yet, inside the window (B1 W1 rewrites it at close-out). */
+export const AWAITING_CANDLES_NOTE = 'awaiting the candle pass';
 /** BA-38 — the note a replay built by an earlier replay logic carries where no candle pass will rebuild it. */
 export const REPLAY_VERSION_NOTE = 'built by an earlier replay version; the reconciliation split was not computed';
 
