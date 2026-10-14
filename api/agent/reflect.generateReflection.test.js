@@ -541,6 +541,13 @@ describe('the no-lesson marker (O9)', () => {
     expect(shadow.lines[0]).toMatchObject({ outcome: 'failed', selfReflection: null });
   });
 
+  it('the recovery pass leaves the row whatever attempt number it carries — it always finishes the game', async () => {
+    const { db, store } = seed();
+    expect(await generateReflection(db, BATTLE_ID, { modelCall: false })).toMatchObject({ outcome: 'failed', counted: true, record: { attempt: 1, model: null } });
+    expect(store.get(`agents/${AGENT_ID}`).memory.filter((m) => m.gameId === BATTLE_ID)).toEqual([expect.objectContaining({ noLesson: true })]);
+    expect(sdk.calls).toEqual([]);
+  });
+
   it('attempts 1 and 2 write no marker', async () => {
     sdk.create = async () => { throw new InternalServerError(529, {}, 'x', new Headers()); };
     for (const attempt of [1, 2]) {

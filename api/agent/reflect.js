@@ -395,7 +395,9 @@ async function callSonnetReflection(battleDoc, agentDoc) {
     return {
       ok: false,
       failureClass: classifyReflectionError(err, { timedOut }),
-      accountWide: !timedOut && isAccountWideRefusal(err),
+      // Our own deadline settles the race with ReflectionDeadlineError, which is
+      // never an API refusal — so a timeout is never account-wide.
+      accountWide: isAccountWideRefusal(err),
       errorName: errorNameOf(err),
       meta,
     };

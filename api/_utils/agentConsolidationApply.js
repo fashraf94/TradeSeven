@@ -498,7 +498,9 @@ async function callSonnetConsolidation(systemPrompt, userMessage) {
       ok: false,
       reason: 'sonnet_call_failed',
       failureClass: classifyReflectionError(err, { timedOut }),
-      accountWide: !timedOut && isAccountWideRefusal(err),
+      // Our deadline settles the race with ConsolidationDeadlineError, never an
+      // API refusal — so a timeout is never account-wide.
+      accountWide: isAccountWideRefusal(err),
       errorName: errorNameOf(err),
       meta,
     };
