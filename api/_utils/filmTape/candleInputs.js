@@ -84,7 +84,16 @@ export function symbolPlan(tape) {
   const named = [...roles.keys()];
   for (const s of named) add(TICKER_TO_SECTOR[s], 'sector');
   for (const s of MARKET_COMPARABLES) add(s, 'market');
-  const primary = (set) => (set.has('sold') ? 'sold' : set.has('held') ? 'held' : set.has('plan') ? 'plan' : set.has('market') ? 'market' : 'sector');
+  // Film Room B1 T2: every gameplan meeting leg's symbols, so a rejected or
+  // expired leg has bars — DEDUPLICATED against the set above: a symbol the
+  // day already holds keeps its roles (its series and this fingerprint do not
+  // move); only a new one is added, as `meeting`. No sector ETF is added for it.
+  for (const m of rows(tape.meetings)) {
+    for (const leg of Array.isArray(m.legs) ? m.legs : []) {
+      for (const s of [leg?.symbolOut, leg?.symbolIn]) if (typeof s === 'string' && !roles.has(s)) add(s, 'meeting');
+    }
+  }
+  const primary = (set) => (set.has('sold') ? 'sold' : set.has('held') ? 'held' : set.has('plan') ? 'plan' : set.has('market') ? 'market' : set.has('meeting') ? 'meeting' : 'sector');
   return [...roles.entries()].map(([symbol, set]) => ({ symbol, role: primary(set), roles: [...set].sort() }))
     .sort((a, b) => (a.symbol < b.symbol ? -1 : 1));
 }

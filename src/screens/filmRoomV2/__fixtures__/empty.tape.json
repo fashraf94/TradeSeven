@@ -147,6 +147,16 @@
       "unknownChecks": 0,
       "dependsOn": "cb1bac19b4471727"
     },
+    "meetings": {
+      "status": "complete",
+      "span": null,
+      "sources": [
+        "gameplanMeetingHistory",
+        "gameplanMeeting"
+      ],
+      "preservedFrom": null,
+      "note": null
+    },
     "replay": {
       "status": "complete",
       "span": null,
@@ -215,6 +225,7 @@
   "plans": [],
   "calls": [],
   "rationale": [],
+  "meetings": [],
   "comparables": {
     "market": [
       "SPY",

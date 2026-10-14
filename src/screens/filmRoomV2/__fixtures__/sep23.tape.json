@@ -181,6 +181,16 @@
       "unknownChecks": 0,
       "dependsOn": "92dcec663465ac2e"
     },
+    "meetings": {
+      "status": "complete",
+      "span": null,
+      "sources": [
+        "gameplanMeetingHistory",
+        "gameplanMeeting"
+      ],
+      "preservedFrom": null,
+      "note": null
+    },
     "replay": {
       "status": "complete",
       "span": {
@@ -3605,6 +3615,7 @@
       "holdKind": null
     }
   ],
+  "meetings": [],
   "comparables": {
     "market": [
       "SPY",

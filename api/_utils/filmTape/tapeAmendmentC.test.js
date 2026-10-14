@@ -697,7 +697,10 @@ describe('BA-37 (round-3 review L2-3) — the gap horizon is the minted count of
     const tape = tapeOf(t, fx.battleId);
     expect(tape.passes.close.gaps).toEqual([last]);
     expect(tape.passes.close.capture).toBe('partial');
-    expect(Object.entries(tape.coverage).filter(([k, c]) => !['replay', 'series'].includes(k) && c.status === 'complete').map(([k]) => k)).toEqual(['actions']);
+    // Film Room B1: `meetings` reads the meeting history, not the checks, so a missing check does not touch it;
+    // `tags` reads the checks and stays under this row (it reads unavailable over the gap).
+    expect(Object.entries(tape.coverage).filter(([k, c]) => !['replay', 'series', 'meetings'].includes(k) && c.status === 'complete').map(([k]) => k)).toEqual(['actions']);
+    expect(tape.coverage.tags.status).toBe('unavailable');
   });
 
   it('L2-3 (refuter of lens 4): a selected copy whose cronState counts nothing yet — no check minted at selection, as a new battle is written — sets no horizon: the re-read\'s first mint is no gap of day 1', async () => {

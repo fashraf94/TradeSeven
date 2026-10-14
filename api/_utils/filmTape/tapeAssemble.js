@@ -18,6 +18,7 @@ import {
   EXIT_MECHANISMS, MARKET_COMPARABLES, CALL_CONTRACT_VERSION,
 } from '../../../src/constants/filmTape.js';
 import { toMs, inDay, etDateOf, etDayBounds, sessionFor, previousSession, withinCandleWindow } from './tapeTime.js';
+import { historyListOf, meetingLegsOf, meetingOf } from '../playerFieldReaders.js';
 
 /** `evaluations[]` is `slice(-150)` (api/cron/agent-evaluate.js:4257). */
 export const EVALUATIONS_CAP = 150;
@@ -728,6 +729,87 @@ export function buildCalls({ calls, bounds, nowIso, callRecordsMode }) {
   return rows.sort((a, b) => (a.mintedAt ?? 0) - (b.mintedAt ?? 0) || (a.key < b.key ? -1 : 1));
 }
 
+// ── gameplan meetings (B1 T2) ──────────────────────────────────────────────
+
+/** The meeting outcomes the history records (agent-evaluate.js handleGameplanMeeting: approved, rejected, expired). */
+export const MEETING_STATUSES = Object.freeze(['approved', 'rejected', 'expired']);
+/** The server proposes at most two legs (agent-evaluate.js: `rankedSectors.slice(0, 2)`, one leg per candidate). */
+export const MEETING_LEGS_MAX = 2;
+/** At most one meeting per evaluator slot of a regular session (6.5 h ÷ 15 min). */
+export const MEETINGS_PER_DAY_MAX = 26;
+/** Bounds on the copied words and the resolver's name. */
+export const MEETING_DIAGNOSIS_MAX = 500;
+export const MEETING_RESOLVED_BY_MAX = 40;
+const TICKER = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
+const ticker = (v) => (typeof v === 'string' && TICKER.test(v) ? v : null);
+const instant = (v) => (str(v) && toMs(v) !== null ? v : null);
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * B1 T2 (Build B spec §3) — the gameplan meetings created on the tape day,
+ * copied from the battle's meeting history as typed facts. The history (and
+ * the pending meeting it is filed from) is owner-writable
+ * (api/_utils/playerFieldReaders.js), so it is read through the type-checking
+ * readers and every copied value is checked: an instant must be a real
+ * instant, a symbol a ticker, the status one of the three outcomes; the legs
+ * stop at the server's two, the day at MEETINGS_PER_DAY_MAX, and words longer
+ * than MEETING_DIAGNOSIS_MAX are not copied. What was not copied is counted in
+ * the section's coverage note. `diagnosis` is someone's words — stored text,
+ * no number class.
+ */
+export function buildMeetings({ battle, bounds }) {
+  const raw = battle?.gameplanMeetingHistory;
+  const notes = [];
+  if (raw !== undefined && raw !== null && !Array.isArray(raw)) {
+    return { rows: [], coverage: coverageOf('unavailable', { sources: ['gameplanMeetingHistory'], note: 'the meeting history is not a list — no meeting could be read' }) };
+  }
+  const history = historyListOf(raw).filter(isObj);
+  const ofDay = history.filter((m) => inDay(instant(m.createdAt), bounds));
+  const rows = [];
+  let unrecognised = 0;
+  let legsDropped = 0;
+  let wordsDropped = 0;
+  const seen = {};
+  for (const m of ofDay.sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt))) {
+    if (!MEETING_STATUSES.includes(m.status)) { unrecognised += 1; continue; }
+    const legs = meetingLegsOf(m).map(({ leg }) => ({ symbolOut: ticker(leg.symbolOut), symbolIn: ticker(leg.symbolIn) }));
+    legsDropped += Math.max(0, legs.length - MEETING_LEGS_MAX);
+    const diagnosis = str(m.diagnosis);
+    if (diagnosis && diagnosis.length > MEETING_DIAGNOSIS_MAX) wordsDropped += 1;
+    const resolvedBy = str(m.resolvedBy);
+    const base = `${str(m.id) ?? 'meeting'}|${m.createdAt}`;
+    seen[base] = (seen[base] ?? 0) + 1;
+    rows.push({
+      key: seen[base] === 1 ? base : `${base}#${seen[base]}`,
+      createdAt: instant(m.createdAt),
+      expiresAt: instant(m.expiresAt),
+      resolvedAt: instant(m.resolvedAt),
+      status: m.status,
+      resolvedBy: resolvedBy && resolvedBy.length <= MEETING_RESOLVED_BY_MAX ? resolvedBy : null,
+      legs: legs.slice(0, MEETING_LEGS_MAX),
+      diagnosis: diagnosis && diagnosis.length <= MEETING_DIAGNOSIS_MAX ? diagnosis : null,
+    });
+  }
+  const kept = rows.slice(0, MEETINGS_PER_DAY_MAX);
+  const overflow = rows.length - kept.length;
+  // The meeting on the battle is not filed yet, whatever its status says: the
+  // evaluator files it into the history at the next check (an unanswered one
+  // expires at its deadline but is filed the next morning; a player's answer
+  // waits for the next check). Only a later run of this day's close pass — a
+  // refresh — can copy it.
+  const unfiled = meetingOf(battle?.gameplanMeeting);
+  if (unfiled && inDay(instant(unfiled.createdAt), bounds)) notes.push('a meeting created this day was not yet filed in the meeting history when this tape was read — only a later run of this day\'s close pass (a refresh) copies it');
+  if (unrecognised) notes.push(`${plural(unrecognised, 'meeting record', 'meeting records')} of this day with an outcome other than approved, rejected or expired not copied`);
+  if (legsDropped) notes.push(`${plural(legsDropped, 'leg', 'legs')} past the ${MEETING_LEGS_MAX} a meeting proposes not copied`);
+  if (wordsDropped) notes.push(`${plural(wordsDropped, 'diagnosis', 'diagnoses')} longer than ${MEETING_DIAGNOSIS_MAX} characters not copied`);
+  if (overflow) notes.push(`${plural(overflow, 'meeting', 'meetings')} past ${MEETINGS_PER_DAY_MAX} in a day not copied`);
+  const span = spanOf(kept.map((m) => m.createdAt));
+  return {
+    rows: kept,
+    coverage: coverageOf(notes.length ? 'partial' : 'complete', { span, sources: ['gameplanMeetingHistory', 'gameplanMeeting'], note: notes.join('; ') || null }),
+  };
+}
+
 // ── score and battle (BA-4) ────────────────────────────────────────────────
 
 export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entryRowsScored, priorTape, opponentBasis = opponentBasisOf(battle) }) {
@@ -915,6 +997,7 @@ export function assembleTape({
   const plans = buildPlans({ entriesDay: entries.day, tickByEvalId });
   const rationale = buildRationale({ entriesDay: entries.day, tickByEvalId });
   const calls = callsRead.ok ? buildCalls({ calls: callsRead.calls, bounds, nowIso, callRecordsMode }) : [];
+  const meetings = buildMeetings({ battle, bounds });
 
   // ---- comparables (BA-13): TICKER_TO_SECTOR, never the stored sector string
   const heldSymbols = new Set();
@@ -1088,6 +1171,9 @@ export function assembleTape({
     caveats: caveatsOf(callReasons), unknownChecks,
   });
 
+  // B1 T2: the meetings' own coverage (Build B spec §3).
+  coverage.meetings = meetings.coverage;
+
   const within = withinCandleWindow(etDate, nowMs);
   const candleNote = within ? 'awaiting the candle pass' : 'no candle pass is scheduled for this day (outside the 10-trading-day window)';
   coverage.replay = coverageOf('unavailable', { note: candleNote });
@@ -1148,6 +1234,7 @@ export function assembleTape({
     plans,
     calls,
     rationale: rationale.rows,
+    meetings: meetings.rows,
     comparables: { market: [...MARKET_COMPARABLES], sectors },
     diagnostics: { intradayViews: intradayViewsPresent === true ? 'present' : (intradayViewsPresent === false ? 'absent' : 'unknown') },
     numberClasses: TAPE_NUMBER_CLASSES,

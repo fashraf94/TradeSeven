@@ -151,6 +151,12 @@ const SECTION_RULES = Object.freeze({
     candle: [],
     order: (rows) => [...rows].sort((a, b) => ((toMs(a.at) ?? 0) - (toMs(b.at) ?? 0)) || (a.key < b.key ? -1 : 1)),
   },
+  // B1 T2 — a meeting copied from the history, by its id and creation instant.
+  meetings: {
+    groups: [],
+    candle: [],
+    order: (rows) => [...rows].sort((a, b) => ((toMs(a.createdAt) ?? 0) - (toMs(b.createdAt) ?? 0)) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)),
+  },
 });
 
 const anchorEmpty = (v) => v === null || v === undefined || v === false;
@@ -410,7 +416,7 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
 
   const carried = {};
   const merged = { ...assembled };
-  for (const section of ['checks', 'actions', 'directives', 'plans', 'calls', 'rationale']) {
+  for (const section of ['checks', 'actions', 'directives', 'plans', 'calls', 'rationale', 'meetings']) {
     const { rows, carried: c } = mergeRows(section, stored[section], assembled[section]);
     merged[section] = rows;
     carried[section] = c;
@@ -542,6 +548,14 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
     if (Array.isArray(changed) && changed.length && isObj(cov) && cov.status !== 'unavailable') cov = builtBefore(cov, changed, withinWindow, merged.passes.candles?.status);
     if (section === 'replay' && outdated.length && isObj(cov) && cov.status !== 'unavailable') cov = versionLabelled(cov, outdated, withinWindow, merged.passes.candles?.status);
     merged.coverage[section] = cov;
+  }
+  // B1 T2: the meetings' coverage is the new read's — the history only grows
+  // (an append-only list) — preserved from the stored copy for any row it kept.
+  const meetingsCov = assembled.coverage?.meetings ?? stored.coverage?.meetings ?? null;
+  if (isObj(meetingsCov)) {
+    merged.coverage.meetings = carriedAny(carried.meetings)
+      ? { ...meetingsCov, preservedFrom: stored.coverage?.meetings?.preservedFrom ?? stored.writtenAt ?? null }
+      : meetingsCov;
   }
   // B1 (spec §2): re-tagged from the merged rows and coverage, every write.
   withTags(merged, stored, tagDay);

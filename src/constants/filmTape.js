@@ -44,7 +44,7 @@ export const CANDLE_COVERAGE_SECTIONS = Object.freeze(['replay', 'series']);
  * (Build B spec §2–§3), beside the sections above. The close pass writes them;
  * the A2 screen and the export render none of them (B2 renders the card).
  */
-export const B1_COVERAGE_SECTIONS = Object.freeze(['tags']);
+export const B1_COVERAGE_SECTIONS = Object.freeze(['tags', 'meetings']);
 
 // ── BA-8: check states ──────────────────────────────────────────────────────
 // A tick-backed check takes its capture `exitReason`, except that a
@@ -105,7 +105,8 @@ export const CANDLE_SOURCES = Object.freeze(['eodhd_1m', 'shared_cache']);
 export const MARKET_COMPARABLES = Object.freeze(['SPY', 'RSP']);
 /** Deep-dive bar width (BA-12). */
 export const SERIES_INTERVAL = '10m';
-export const SERIES_ROLES = Object.freeze(['held', 'sold', 'plan', 'market', 'sector']);
+/** `meeting` (Film Room B1 T2): a gameplan meeting leg's symbol the day's set did not already hold. */
+export const SERIES_ROLES = Object.freeze(['held', 'sold', 'plan', 'market', 'sector', 'meeting']);
 
 // ── The two schedules (vercel.json) — the hub helper reads the close pass's ─
 // UTC `15 2 * * 2-6`: 22:15 EDT / 21:15 EST, the SAME ET date as the session.
