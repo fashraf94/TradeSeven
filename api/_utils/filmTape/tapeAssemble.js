@@ -171,12 +171,43 @@ export const opponentBasisOf = (battle) => (isObj(battle?.opponent) ? 'cpu_portf
 
 /**
  * A check's scores. T1: the opponent's score is copied from the permanent
- * tick under basis `cpu_portfolio`; under `none` — and for a check rebuilt
- * from an evaluations entry, which never carried it — it is null, never 0.
+ * tick under basis `cpu_portfolio`, by `opponent` — read apart from the
+ * scores it rides with (Astra F4), so a failure reading it is that check's
+ * null and the T1 note's, never the row's or the day's; under `none` — and
+ * for a check rebuilt from an evaluations entry, which never carried it — it
+ * is null, never 0.
  */
-const scoresOf = (s, { opponent = false } = {}) => (isObj(s) && num(s.total) !== null
-  ? { active: num(s.active), banked: num(s.banked), total: num(s.total), opponent: opponent ? num(s.opponent) : null }
+const scoresOf = (s, { opponent = null } = {}) => (isObj(s) && num(s.total) !== null
+  ? { active: num(s.active), banked: num(s.banked), total: num(s.total), opponent: opponent ? opponent(s) : null }
   : null);
+
+/** An error's class for a note: its name when it is a plain identifier (40 characters at most), else 'Error'. */
+function errorClassOf(err) {
+  let name = null;
+  try { name = str(err?.name) ?? str(err?.constructor?.name); } catch { name = null; }
+  return name && /^[A-Za-z_$][A-Za-z0-9_$]{0,39}$/.test(name) ? name : 'Error';
+}
+
+/**
+ * B1 T1 (Astra F4) — the per-check opponent read, isolated: `read(scores)`
+ * returns the recorded number, or null when reading it throws; each failure's
+ * error class is kept in `failures` for the T1 note.
+ */
+export function opponentReader() {
+  const failures = [];
+  const read = (s) => {
+    try { return num(s.opponent); } catch (err) { failures.push(errorClassOf(err)); return null; }
+  };
+  return { read, failures };
+}
+
+/** The T1 note (`score.opponentNote`): how many checks' opponent scores could not be read, and the error classes (three at most). */
+export function opponentNoteOf(failures) {
+  if (!Array.isArray(failures) || !failures.length) return null;
+  const classes = [...new Set(failures)].sort();
+  const listed = classes.length > 3 ? `${classes.slice(0, 3).join(', ')} and others` : classes.join(', ');
+  return `the opponent's score could not be read at ${counted(failures.length, 'check', 'checks')} (${listed})`;
+}
 
 /** BA-8 — a tick-backed check's state. */
 export function tickState(tick, entry) {
@@ -189,7 +220,7 @@ const blankRow = () => ({
   risk: null, guardrail: null, decision: null, scores: null, tickMs: null, evidence: null, evidenceAt: null,
 });
 
-function tickRow(tick, entry, battleId, { opponentBasis = 'none' } = {}) {
+function tickRow(tick, entry, battleId, { opponentBasis = 'none', readOpponent = opponentReader().read } = {}) {
   const evidence = copyEvidence(entry?.evidence);
   return {
     ...blankRow(),
@@ -205,7 +236,7 @@ function tickRow(tick, entry, battleId, { opponentBasis = 'none' } = {}) {
     risk: riskOf(tick),
     guardrail: guardrailOf(tick),
     decision: decisionOf(tick),
-    scores: scoresOf(tick.scores, { opponent: opponentBasis === 'cpu_portfolio' }),
+    scores: scoresOf(tick.scores, { opponent: opponentBasis === 'cpu_portfolio' ? readOpponent : null }),
     tickMs: num(entry?.tickMs),
     evidence,
     evidenceAt: evidence ? str(entry?.promptBuiltAt) : null,
@@ -883,8 +914,9 @@ export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entry
     const raw = Number.isInteger(last.tickSeq) ? rawTickBySeq.get(last.tickSeq) : null;
     lastCheck = {
       at: last.at, tickSeq: last.tickSeq, active: last.scores.active, banked: last.scores.banked, total: last.scores.total,
-      // T1 (contract E): with no opponent the tick's 0 is no score — null, never readable as a tie.
-      opponent: opponentBasis === 'cpu_portfolio' ? num(raw?.scores?.opponent) : null, bankedBadgePoints: num(raw?.scores?.bankedBadgePoints),
+      // T1 (contract E): with no opponent the tick's 0 is no score — null, never readable as a tie. The check's own
+      // row read it, once, isolated (Astra F4): an entry-rebuilt check's is null.
+      opponent: opponentBasis === 'cpu_portfolio' ? (last.scores.opponent ?? null) : null, bankedBadgePoints: num(raw?.scores?.bankedBadgePoints),
     };
     firstCheck = { at: first.at, tickSeq: first.tickSeq, total: first.scores.total };
   }
@@ -1026,7 +1058,9 @@ export function assembleTape({
 
   // ---- checks
   const opponentBasis = opponentBasisOf(battle);
-  const tickRows = dayTicks.map((t) => tickRow(t, t.evalId ? entryByEvalId.get(t.evalId) : null, battleId, { opponentBasis }));
+  // B1 T1 (Astra F4): one isolated opponent read per check; its failures go to the T1 note, never the day's.
+  const t1 = opponentReader();
+  const tickRows = dayTicks.map((t) => tickRow(t, t.evalId ? entryByEvalId.get(t.evalId) : null, battleId, { opponentBasis, readOpponent: t1.read }));
   const entryOnly = entries.day.filter((e) => !(str(e.evalId) && tickByEvalId.has(e.evalId))).map(entryRow);
   const runs = runsRead.ok ? runsRead.runs : [];
   const deferredRuns = runs.filter((r) => Array.isArray(r.deferredBattleIds) && r.deferredBattleIds.includes(battleId));
@@ -1091,6 +1125,8 @@ export function assembleTape({
     priorTape,
     opponentBasis,
   });
+  const opponentNote = opponentNoteOf(t1.failures);
+  if (opponentNote) score.opponentNote = opponentNote;
 
   // ---- coverage (BA-20, BA-26) — computed from what this read could see.
   // Every reason is a CAVEAT, a fact about the day's record (a gap, a check

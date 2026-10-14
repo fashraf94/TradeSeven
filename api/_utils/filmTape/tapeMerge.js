@@ -450,7 +450,12 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
   // Contract E: with no opponent, a kept last check written before T1 (the tick's 0) is no score either.
   if (opponentBasis === 'none' && isObj(lastCheck) && lastCheck.opponent !== null && lastCheck.opponent !== undefined) lastCheck = { ...lastCheck, opponent: null };
   const firstCheck = mergeUnit(sScore.firstCheck, aScore.firstCheck, (u) => -(toMs(u?.at) ?? Infinity));
-  merged.score = { lastCheck, firstCheck, dayChange: mergeDayChange(sScore, aScore, lastCheck), ...(opponentBasis ? { opponentBasis } : {}) };
+  // B1 T1 (Astra F4): the T1 note is the new read's — a read that failed says so; a working refresh clears it.
+  merged.score = {
+    lastCheck, firstCheck, dayChange: mergeDayChange(sScore, aScore, lastCheck),
+    ...(opponentBasis ? { opponentBasis } : {}),
+    ...(typeof aScore.opponentNote === 'string' && aScore.opponentNote ? { opponentNote: aScore.opponentNote } : {}),
+  };
   // What followed each filing, recounted on every merge from the MERGED check
   // and action rows, each directive's aftermath ending at the next committed
   // filing among ALL merged directives — a preserved one included (BA-30,
