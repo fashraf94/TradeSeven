@@ -1757,6 +1757,9 @@ export function runSelftest() {
   ok('a wrong span passes verifyEdit but not assertArmSemantics', verifyFooled && semCaught);
   ok('bars use counts, not rounded percentages', applyBars({ 'x|A0': { n: 21, any: 2 }, 'x|A1': { n: 41, any: 8 } }, ['x']).x.arms.A1.B1 === 'not load-bearing');
   ok('a non-finite worst case never passes the cap', !planWithinCaps({ withinCap: true, estimate: { calls: 10, plannedUsd: 1, worstUsd: null } }) && planWithinCaps({ withinCap: true, estimate: { calls: 10, plannedUsd: 1, worstUsd: 2 } }));
+  const twoWisdoms = `ABOUT YOU:\nName: A${SEP}${WISDOM_HEADER}one${SEP}${WISDOM_HEADER}two${SEP}${RULES_HEADER}${S_HEADER}S1. Prefer leaders [Momentum]${SEP}When making trades:\n- x`;
+  ok('an ambiguous identity block makes the rules chunk ambiguous, not absent', findRulesChunk(twoWisdoms, S_HEADER, /^S\d+\. /).status === 'ambiguous');
+  ok('a non-finite planned spend never passes the cap', !planWithinCaps({ withinCap: true, estimate: { calls: 10, plannedUsd: null, worstUsd: 2 } }) && !planWithinCaps({ withinCap: false, estimate: { calls: 10, plannedUsd: 1, worstUsd: 2 } }));
   return { pass: checks.every((c) => c.pass), failed: checks.filter((c) => !c.pass).map((c) => c.name), count: checks.length };
 }
 
