@@ -166,6 +166,30 @@
 //    Beside it, the sale reconciliation (plan): over every recorded model
 //    swap on the 29 battle-days, tiered and flat6, the builder's lock, exit
 //    price and fill against the platform's recorded ones.
+//
+// ============================================================================
+// CHANGES AFTER THE RUN (the BUILD_RULES §2 review; M1–M9 above are unchanged)
+// ============================================================================
+// The run of record (cms-20261014T202814) used this file at SHA-256 bd6b7a3e.
+// The review's confirmed findings changed guards, records and tests only; the
+// re-run of known-answer and score from the same bar cache reproduces every
+// scored number. Ids are the review's (docs/audits/20261014_EXPERIMENT_CHANGED_MOMENTS_SCORE.md §8).
+//   B3   M7 now unscores the moment's points at every horizon when a verdict moves at
+//        any horizon, as M7 declares (it applied per horizon; no effect on the run).
+//   B7   layer 2's domain is every model-proposed swap (source 'haiku') plus any swap the
+//        check showed; a model swap without a body counts as unmatched.
+//   B13  layer 2 records exact equality beside the 1-point gate.
+//   B5   the series cross-check records every series read, compared, equal and skipped.
+//   B2   the sale reconciliation is a gate before any bar (≥ 90% lock / exit / fill, and a
+//        flat6 swap when flat6 battles exist); score stops if the lock and the replay
+//        disagree at the sale with the same ATR (a stamp mismatch).
+//   B6   the one-session rule (M5) is checked and gated in plan, known-answer and score.
+//   B16  score stops if known-answer ran another script; honest reasons for a cache miss
+//        and for a later check no path reached.
+//   B8   a bench record is "exact" only when it renders to the shown bench ATR%.
+//   A2 A3 B11 A6  descriptive additions to summary.postReview (none sets the label): the
+//        control split, the opposite tie rule, points-vs-price agreement, the lag window.
+//   B1 B9 B10 B11 B14 + the above: self-test rows S1–S22 added (78 rows).
 
 import { hash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -175,7 +199,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { decisionKey, counts, modal, MALFORMED, parseEnvText, primaryCheckoutRoot, redactSecrets } from './growthReplay.js';
-import { replayAction } from '../../../api/_utils/filmTape/tapeReplay.js';
+import { replayAction, composeLegs } from '../../../api/_utils/filmTape/tapeReplay.js';
 import { sessionBars, sampleAt, aggregate10m } from '../../../api/_utils/filmTape/bars.js';
 import { sessionFor, etDateOf, toMs } from '../../../api/_utils/filmTape/tapeTime.js';
 import { tickState, ghostBaseline } from '../../../api/_utils/filmTape/tapeAssemble.js';
@@ -198,6 +222,8 @@ export const MIN_SCORED = 15;
 export const KA_MATCH_SHARE = 0.9;
 export const KA_TOLERANCE_POINTS = 1;
 const FETCH_PAD_MS = 60 * 60 * 1000;
+/** The vintage lag search (descriptive): the minute, 0–40 back from the check, whose bar close best matches the shown price (review A6: stated, not widened — a wider window finds coincidental repeats). */
+export const LAG_WINDOW_MIN = 40;
 const EPS = 1e-9;
 const RUNS_ROOT = path.join(os.homedir(), 'growth-replay-runs');
 const RUN_PREFIX = 'cms-';
@@ -463,7 +489,9 @@ export function buildSwapInputs({ battle, check, body, out: x, in: y }) {
   if (px !== null && isNum(shown.current) && px.toFixed(2) !== shown.current.toFixed(2)) flags.push('evidence px differs from the shown $Current');
   // Y's ATR: executeSwapServer's incoming literal.
   const thrY = battle.thresholds?.[y];
-  const benchRec = (battle.bench || []).find((b) => b.symbol === y && isNum(b.baseATR));
+  // A persisted bench record is accepted only when it renders to the shown bench ATR% (review B8):
+  // a synthetic bench name's ATR is rebuilt at every check, so a later record may not be the shown one.
+  const benchRec = (battle.bench || []).find((b) => b.symbol === y && isNum(b.baseATR) && rendersAs(b.baseATR, benchY?.atrPct, 1));
   const boughtAtr = isNum(thrY) && thrY > 0 ? { value: thrY, source: 'scoring.thresholds[Y].threshold' }
     : (benchRec ? { value: benchRec.baseATR, source: 'bench baseATR' } : (isNum(benchY?.atrPct) ? { value: benchY.atrPct, source: 'body bench ATR% (1 dp)', coarse: true } : null));
   if (!boughtAtr) missing.push('bought.atr');
@@ -715,7 +743,8 @@ async function ensureBars(dir, manifest, manifestPath, stages, env, { allowFetch
       const c = readJson(file);
       if (p.days.every((d) => c.days.includes(d))) continue;
     }
-    if (!allowFetch) { why[p.symbol] = manifest.eodhd.failures[p.symbol] ? `fetch failed: ${manifest.eodhd.failures[p.symbol]}` : 'call cap reached'; continue; }
+    // A cache-only read names the real cause (review B16c): a recorded failure, the cap, or simply not fetched.
+    if (!allowFetch) { why[p.symbol] = manifest.eodhd.failures[p.symbol] ? `fetch failed: ${manifest.eodhd.failures[p.symbol]}` : (manifest.eodhd.calls >= CALL_CAP ? 'call cap reached' : 'not in the cache (not fetched)'); continue; }
     if (!env.EODHD_API_KEY) stop('EODHD_API_KEY is not set (checked the environment, this tree\'s .env.local, then the primary checkout\'s).');
     if (!counter.take(p.symbol)) { why[p.symbol] = 'call cap reached'; continue; }
     const r = await fetchSymbol(p, env.EODHD_API_KEY);
@@ -734,6 +763,12 @@ async function ensureBars(dir, manifest, manifestPath, stages, env, { allowFetch
     memo[k] = bars.length ? bars : null;
     return memo[k];
   };
+  // A fetch that returned no session bars for a needed day is named too (review B16, related gap).
+  for (const p of plans) {
+    if (why[p.symbol]) continue;
+    const empty = p.days.filter((d) => !barsOf(p.symbol, d));
+    if (empty.length) why[p.symbol] = `no session bars for ${empty.join(', ')}`;
+  }
   return { barsOf, why };
 }
 
@@ -850,6 +885,8 @@ function unitNeeds(meta, units) {
   });
 }
 const swapUnits = (rows) => rows.flatMap((r) => [r.withL, r.withoutL].filter(parseSwap).map((call) => ({ k: r.k, call })));
+/** Every swap call the run scores: the set of record's, the second set's, and both controls'. */
+const allUnits = (snap) => [...swapUnits(snap.moments.record), ...swapUnits(snap.moments.second), ...snap.control, ...snap.controlMain];
 /** The recorded, committed, non-crypto swaps on the tiered battle-days: the known-answer's bars. */
 function recordedSwapNeeds(battles) {
   const out = [];
@@ -871,6 +908,68 @@ function stagesOf(snap, extraKa = []) {
     unitNeeds(snap.meta, snap.control),
     unitNeeds(snap.meta, snap.controlMain),
   ];
+}
+
+/**
+ * The sale reconciliation (M9, beside the gate): over every committed, non-crypto recorded swap
+ * whose check showed its sold name, the builder's lock, exit price and fill against the
+ * platform's records. Inputs at the sale only — no later price.
+ */
+export function saleReconciliation(battles, bodies) {
+  const inc = (o, k) => { o[k] = (o[k] || 0) + 1; };
+  const recon = { swaps: 0, crypto: 0, bodyMissing: 0, built: 0, builtFlat6: 0, lockMatch: 0, lockDiffs: [], exitMatch: 0, exitOff: 0, fillMatch: 0, fillOff: 0, notBuilt: {} };
+  for (const b of Object.values(battles)) {
+    for (const t of b.ticks) {
+      const k = `${b.battleId}__${t.tickId}`;
+      for (const a of t.actions.filter((x) => x.committed)) {
+        recon.swaps += 1;
+        if (isCryptoSymbol(a.symbolOut) || isCryptoSymbol(a.symbolIn)) { recon.crypto += 1; continue; }
+        if (!bodies[k]) { recon.bodyMissing += 1; continue; }
+        const inp = buildSwapInputs({ battle: b, check: checkOf(b, t), body: parseBody(bodies[k].messages?.[2]?.content), out: a.symbolOut, in: a.symbolIn });
+        if (!inp.ok) { for (const w of inp.missing) inc(recon.notBuilt, w); continue; }
+        recon.built += 1;
+        if (b.gameMode === 'baggerbomb_tournament') recon.builtFlat6 += 1;
+        const trade = b.trades.find((x) => x.swappedOutAt === a.swappedOutAt && x.symbolOut === a.symbolOut);
+        if (isNum(a.lockedPoints) && Math.abs(a.lockedPoints - inp.action.lockedPoints) < EPS) recon.lockMatch += 1; else recon.lockDiffs.push(round((a.lockedPoints ?? NaN) - inp.action.lockedPoints, 2));
+        if (trade && isNum(trade.exitPrice) && trade.exitPrice.toFixed(2) === inp.shownPx.out.toFixed(2)) recon.exitMatch += 1; else recon.exitOff += 1;
+        if (isNum(a.entryPrice) && a.entryPrice.toFixed(2) === inp.shownPx.in.toFixed(2)) recon.fillMatch += 1; else recon.fillOff += 1;
+      }
+    }
+  }
+  return recon;
+}
+
+/** Review B2: the reconciliation as a gate — something built, ≥ 90% on each of lock / exit / fill, and a flat6 swap when flat6 battles exist. */
+export function reconGate(recon, hasFlat6) {
+  const share = (n) => (recon.built ? n / recon.built : 0);
+  if (!recon.built) return { pass: false, why: 'no recorded swap could be rebuilt' };
+  for (const [name, n] of [['lock', recon.lockMatch], ['exit', recon.exitMatch], ['fill', recon.fillMatch]]) {
+    if (share(n) < KA_MATCH_SHARE - EPS) return { pass: false, why: `${name} ${n}/${recon.built}` };
+  }
+  if (hasFlat6 && !recon.builtFlat6) return { pass: false, why: 'no flat6 recorded swap could be rebuilt' };
+  return { pass: true, why: null };
+}
+
+/**
+ * M5 (review B6): every battle is ONE session that is a real trading day with a close, completed at
+ * or after that close; and every unit's check falls on its battle's trading day.
+ */
+export function oneSessionCheck(battles, meta, units) {
+  const okBattle = (b) => {
+    const day = b.tradingDays?.length === 1 ? b.tradingDays[0] : null;
+    const s = day ? sessionFor(day) : null;
+    return Boolean(s?.isTradingDay) && Number.isFinite(s.closeMs) && toMs(b.completedAt) >= s.closeMs;
+  };
+  const list = Object.values(battles);
+  const ok = list.filter(okBattle).length;
+  const unitsOff = units.filter(({ k }) => { const m = meta[k]; const b = battles[m?.battleId]; return !b || b.tradingDays?.[0] !== m.day; }).length;
+  return { battles: list.length, ok, unitsOff, pass: ok === list.length && unitsOff === 0 };
+}
+
+/** The builder's domain for known-answer layer 2 (M9, review B7): every model-proposed swap, and any other swap the check showed. */
+export const MODEL_SWAP_SOURCE = 'haiku';
+export function kaInDomain(source, shown) {
+  return source === MODEL_SWAP_SOURCE || Boolean(shown);
 }
 
 /** The archetype's display name (the replay report's words). */
@@ -957,31 +1056,16 @@ async function plan() {
   }
 
   // Reconciliation over every recorded swap: the builder's sale against the platform's (inputs at the sale only — no later price).
-  const recon = { swaps: 0, crypto: 0, bodyMissing: 0, built: 0, lockMatch: 0, lockDiffs: [], exitMatch: 0, exitOff: 0, fillMatch: 0, fillOff: 0, notBuilt: {} };
-  for (const { b, t } of swapTicks) {
-    const k = `${b.battleId}__${t.tickId}`;
-    for (const a of t.actions.filter((x) => x.committed)) {
-      recon.swaps += 1;
-      if (isCryptoSymbol(a.symbolOut) || isCryptoSymbol(a.symbolIn)) { recon.crypto += 1; continue; }
-      if (!bodies[k]) { recon.bodyMissing += 1; continue; }
-      const inp = buildSwapInputs({ battle: b, check: checkOf(b, t), body: bodyOf(k), out: a.symbolOut, in: a.symbolIn });
-      if (!inp.ok) { for (const w of inp.missing) inc(recon.notBuilt, w); continue; }
-      recon.built += 1;
-      const trade = b.trades.find((x) => x.swappedOutAt === a.swappedOutAt && x.symbolOut === a.symbolOut);
-      if (isNum(a.lockedPoints) && Math.abs(a.lockedPoints - inp.action.lockedPoints) < EPS) recon.lockMatch += 1; else recon.lockDiffs.push(round((a.lockedPoints ?? NaN) - inp.action.lockedPoints, 2));
-      if (trade && isNum(trade.exitPrice) && trade.exitPrice.toFixed(2) === inp.shownPx.out.toFixed(2)) recon.exitMatch += 1; else recon.exitOff += 1;
-      if (isNum(a.entryPrice) && a.entryPrice.toFixed(2) === inp.shownPx.in.toFixed(2)) recon.fillMatch += 1; else recon.fillOff += 1;
-    }
-  }
-
-  // M5: every battle is one session, and it completed at or after that session's close.
-  const oneSession = Object.values(battles).map((b) => {
-    const day = b.tradingDays?.length === 1 ? b.tradingDays[0] : null;
-    return { ok: Boolean(day) && toMs(b.completedAt) >= sessionFor(day).closeMs, mode: MODE[b.gameMode] ?? b.gameMode };
-  });
+  const recon = saleReconciliation(battles, bodies);
 
   const moments = { record: record.map((r) => ({ ...r, kind: classify(r.withL, r.withoutL) })), second: second.map((r) => ({ ...r, kind: classify(r.withL, r.withoutL) })) };
   const snap = { battles, meta, moments, control, controlMain, bcCalls, mainCalls };
+  // M5 (review B6): every battle is one completed session, and every unit's check is on that session's day.
+  const oneSession = oneSessionCheck(battles, meta, [...swapUnits(record), ...swapUnits(second), ...control, ...controlMain]);
+  if (!oneSession.pass) stop(`M5: the end of the battle is not the session close for ${oneSession.battles - oneSession.ok} battle(s) / ${oneSession.unitsOff} unit(s)`);
+  // The sale reconciliation is a gate before any bar (review B2).
+  const rg = reconGate(recon, Object.values(battles).some((b) => b.gameMode === 'baggerbomb_tournament'));
+  if (!rg.pass) stop(`sale reconciliation gate failed: ${rg.why}`);
   // The requests each stage costs, cumulative, in M4 order.
   const stages = stagesOf(snap);
   const fetchCounts = STAGE_NAMES.map((name, i) => ({ stage: name, cumulativeRequests: fetchPlan(stages.slice(0, i + 1)).length }));
@@ -998,7 +1082,7 @@ async function plan() {
     crossCheck, kinds: { record: kindsOf(moments.record), second: kindsOf(moments.second) },
     controlUnits: control.length, controlMainUnits: controlMain.length,
     battles: Object.values(battles).reduce((o, b) => { inc(o, `${MODE[b.gameMode] ?? b.gameMode}|${b.duration}|days=${b.tradingDays?.length ?? '?'}`); return o; }, {}),
-    oneSession: { battles: oneSession.length, ok: oneSession.filter((x) => x.ok).length },
+    oneSession: { battles: oneSession.battles, ok: oneSession.ok, unitsOff: oneSession.unitsOff },
     extraBodies: Object.values(extra).reduce((o, v) => { inc(o, v.missing ?? 'read'); return o; }, {}),
     inputStatus, reconciliation: { ...recon, lockDiffs: recon.lockDiffs.slice(0, 60) }, fetchCounts,
     eodhd: { cap: CALL_CAP, calls: 0, log: [], failures: {} },
@@ -1025,7 +1109,7 @@ function scoreSwap({ battle, tick, body, call, barsOf }) {
   const check = checkOf(battle, tick);
   const inputs = buildSwapInputs({ battle, check, body, out: sw.out, in: sw.in });
   const etDate = etDateOf(tick.capturedAt);
-  const res = { call, inputs: { ok: inputs.ok, missing: inputs.missing, flags: inputs.flags, sources: inputs.sources ?? null, coarseAtr: inputs.coarseAtr ?? null, lockedPoints: inputs.action?.lockedPoints ?? null } };
+  const res = { call, inputs: { ok: inputs.ok, missing: inputs.missing, flags: inputs.flags, sources: inputs.sources ?? null, coarseAtr: inputs.coarseAtr ?? null, lockedPoints: inputs.action?.lockedPoints ?? null, lockAtr: inputs.lockParams?.atr ?? null, ghostAtr: inputs.action?.replayInputs?.ghost?.atr ?? null } };
   const bars = { [sw.out]: barsOf(sw.out, etDate), [sw.in]: barsOf(sw.in, etDate) };
   const session = sessionFor(etDate);
   // Price measure: from the shown prices, the X and Y moves (M2).
@@ -1056,7 +1140,8 @@ function scoreSwap({ battle, tick, body, call, barsOf }) {
   if (next && pv.next && toMs(pv.next.at) !== toMs(next.at)) throw new Error('the replay sampled a different next check');
   res.points = {
     close: { hold: pv.close.hold, swap: pv.close.swap, holdWhy: why('hold'), swapWhy: why('swap') },
-    next: pv.next ? { hold: pv.next.hold, swap: pv.next.swap, holdWhy: why('hold'), swapWhy: why('swap') } : null,
+    // A later check that no replayed path reached carries the replay's own reason, not "no later check" (review B16b).
+    next: pv.next ? { hold: pv.next.hold, swap: pv.next.swap, holdWhy: why('hold'), swapWhy: why('swap') } : (next ? { hold: null, swap: null, holdWhy: why('hold'), swapWhy: why('swap') } : null),
   };
   res.sale = replay.reconciliation?.soldAtSale ?? null;
   res.missingInputs = replay.missingInputs;
@@ -1084,11 +1169,11 @@ function differences(withL, withoutL, comps) {
   for (const h of ['close', 'next']) {
     out[h] = { points: at('points', h), price: at('price', h) };
   }
-  // M7: every combination of each coarse component's corners; a moved points verdict → not_scored.
-  for (const h of ['close', 'next']) {
-    if (out[h].points.status !== 'scored') continue;
-    if (!atrStable(withL, withoutL, comps, h, out[h].points.delta)) out[h].points = { status: 'not_scored', reason: 'ATR known to 0.1 only and the verdict depends on it' };
-  }
+  // M7: every combination of each coarse component's corners. A points verdict that moves at ANY
+  // horizon unscores the moment's points at EVERY horizon, as M7 declares (review B3: this
+  // applied per horizon before, which the declared text does not).
+  const unstable = ['close', 'next'].some((h) => out[h].points.status === 'scored' && !atrStable(withL, withoutL, comps, h, out[h].points.delta));
+  if (unstable) for (const h of ['close', 'next']) out[h].points = { status: 'not_scored', reason: 'ATR known to 0.1 only and the verdict depends on it' };
   return out;
 }
 
@@ -1119,7 +1204,14 @@ async function knownAnswer(flags) {
   if (!st.pass) stop(`selftest failed: ${JSON.stringify(st.failed)}`);
   const { dir, manifestPath, manifest, snap, bodies } = loadRun(flags);
   stamp(manifest, 'known-answer');
+  // Before any bar (reviews B2, B6): the one-session rule and the sale reconciliation, from this run's own snapshot.
+  const os = oneSessionCheck(snap.battles, snap.meta, allUnits(snap));
+  if (!os.pass) stop(`M5: the end of the battle is not the session close for ${os.battles - os.ok} battle(s) / ${os.unitsOff} unit(s)`);
+  const recon = saleReconciliation(snap.battles, bodies);
+  const rg = reconGate(recon, Object.values(snap.battles).some((b) => b.gameMode === 'baggerbomb_tournament'));
+  manifest.preBarGates = { oneSession: { battles: os.battles, ok: os.ok, unitsOff: os.unitsOff }, reconciliation: { built: recon.built, builtFlat6: recon.builtFlat6, lockMatch: recon.lockMatch, exitMatch: recon.exitMatch, fillMatch: recon.fillMatch }, pass: rg.pass };
   writeJsonAtomic(manifestPath, manifest);
+  if (!rg.pass) stop(`sale reconciliation gate failed: ${rg.why}`);
   const env = loadEnv();
   const db = await openFirestore(env);
   const battles = snap.battles;
@@ -1140,15 +1232,18 @@ async function knownAnswer(flags) {
   const kaNeeds = ka.flatMap((x) => [{ symbol: x.action.symbolOut, etDate: x.day }, { symbol: x.action.symbolIn, etDate: x.day }]);
   const { barsOf, why } = await ensureBars(dir, manifest, manifestPath, stagesOf(snap, kaNeeds), env);
 
-  // Bars cross-check against the stored 10-minute series (M4).
-  const seriesCheck = { compared: 0, equal: 0, differ: [] };
+  // Bars cross-check against the stored 10-minute series (M4). Descriptive, not part of the gate:
+  // a stored series is merged bucket by bucket across the candle pass's retries, so equality is
+  // expected, not guaranteed (review B5). Every series read is accounted for.
+  const seriesCheck = { read: series.length, compared: 0, equal: 0, differ: [], skipped: [] };
   for (const s of series) {
     const bars = barsOf(s.symbol, s.day);
-    if (!bars) continue;
+    if (!bars) { seriesCheck.skipped.push({ symbol: s.symbol, day: s.day, why: 'not fetched (no moment, control or known-answer swap needs it)' }); continue; }
     seriesCheck.compared += 1;
     const mine = aggregate10m(bars, sessionFor(s.day)).map((x) => [x.t, x.o, x.h, x.l, x.c, x.v].join('|'));
     const theirs = s.bars.map((x) => [x.t, x.o, x.h, x.l, x.c, x.v].join('|'));
-    if (JSON.stringify(mine) === JSON.stringify(theirs)) seriesCheck.equal += 1; else seriesCheck.differ.push({ symbol: s.symbol, mine: mine.length, theirs: theirs.length, firstDiff: mine.findIndex((m, i) => m !== theirs[i]) });
+    if (JSON.stringify(mine) === JSON.stringify(theirs)) seriesCheck.equal += 1;
+    else seriesCheck.differ.push({ symbol: s.symbol, mine: mine.length, theirs: theirs.length, firstDiff: [...Array(Math.max(mine.length, theirs.length)).keys()].find((i) => mine[i] !== theirs[i]) });
   }
 
   const pts = (list) => (Array.isArray(list) ? list.map((p) => (isNum(p?.points) ? p.points : null)) : null);
@@ -1172,24 +1267,32 @@ async function knownAnswer(flags) {
     // Layer 2: our builder (M3), our checks, our bars.
     const b = battles[x.battleId];
     const tick = b.ticks.find((t) => t.tickSeq === x.action.tickSeq) || b.ticks.find((t) => t.actions.some((a) => a.swappedOutAt === x.action.at && a.symbolOut === x.action.symbolOut));
-    // The builder's domain: the check showed the sold name (every model-proposed swap; M9).
+    // The builder's domain (M9): every model-proposed swap, and any other swap whose sold name the
+    // check showed. A model swap with no tick or no body is IN the domain and unmatched, so the gate
+    // fails loudly instead of the domain shrinking (review B7).
     const k = tick ? `${x.battleId}__${tick.tickId}` : null;
     const body = k && bodies[k] ? parseBody(bodies[k].messages?.[2]?.content) : null;
-    const inDomain = Boolean(body?.positions[x.action.symbolOut]);
-    let d2; let l2why = null; let built = null;
-    if (!inDomain) { d2 = ['outside the builder\'s domain: the check never showed the sold name']; l2why = !tick ? 'no tick' : (body ? 'not shown' : 'no body'); } else {
+    const shown = Boolean(body?.positions[x.action.symbolOut]);
+    const inDomain = kaInDomain(x.action.source, shown);
+    let d2; let l2why = null; let built = null; let exact = null;
+    if (!shown) {
+      l2why = !tick ? 'no tick' : (body ? 'not shown' : 'no body');
+      d2 = [inDomain ? `cannot build (${l2why}): a model swap the check did not show` : 'outside the builder\'s domain: a deterministic exit the check never showed'];
+    } else {
       const inp = buildSwapInputs({ battle: b, check: checkOf(b, tick), body, out: x.action.symbolOut, in: x.action.symbolIn });
       if (!inp.ok) { d2 = inp.missing.map((m) => `input: ${m}`); l2why = 'inputs'; } else {
         built = { lockedPoints: inp.action.lockedPoints, recordedLockedPoints: x.action.lockedPoints, sources: inp.sources, coarseAtr: inp.coarseAtr };
         const l2 = replayAction({ action: inp.action, checks: checkRows(b, x.day), barsBySymbol, session, sectors: {}, tierStamp: inp.tierStamp });
         d2 = compare(l2, x.action.replay, KA_TOLERANCE_POINTS);
+        // Recorded beside the 1-point gate: does every number agree exactly (review B13)?
+        exact = compare(l2, x.action.replay, 0).length === 0;
       }
     }
-    rows.push({ key: `${x.battleId}|${x.action.key}`, symbols: `${x.action.symbolOut}→${x.action.symbolIn}`, day: x.day, source: x.action.source ?? null, layer1: { match: d1.length === 0, diffs: d1 }, layer2: { inDomain, match: inDomain && d2.length === 0, diffs: d2, why: l2why, built } });
+    rows.push({ key: `${x.battleId}|${x.action.key}`, symbols: `${x.action.symbolOut}→${x.action.symbolIn}`, day: x.day, source: x.action.source ?? null, layer1: { match: d1.length === 0, diffs: d1 }, layer2: { inDomain, shown, match: inDomain && d2.length === 0, exact, diffs: d2, why: l2why, built } });
   }
-  const gate = { total: rows.length, ...kaGate(rows), barsMissing: why };
+  const gate = { total: rows.length, ...kaGate(rows), layer2Exact: rows.filter((r) => r.layer2.exact === true).length, barsMissing: why };
   writeJsonAtomic(path.join(dir, 'knownAnswer.local.json'), { gate, seriesCheck, rows, scriptSha256: scriptSha() });
-  manifest.knownAnswer = { ...gate, seriesCheck: { compared: seriesCheck.compared, equal: seriesCheck.equal }, scriptSha256: scriptSha() };
+  manifest.knownAnswer = { ...gate, seriesCheck: { read: seriesCheck.read, compared: seriesCheck.compared, equal: seriesCheck.equal, skipped: seriesCheck.skipped.length }, scriptSha256: scriptSha() };
   writeJsonAtomic(manifestPath, manifest);
   console.log(JSON.stringify({ gate, seriesCheck: { ...seriesCheck, differ: seriesCheck.differ.slice(0, 10) }, rows: rows.map((r) => ({ symbols: r.symbols, day: r.day, layer1: r.layer1, layer2: r.layer2 })), eodhdCalls: manifest.eodhd.calls }, null, 1));
   if (!gate.pass) stop(`known-answer gate failed (layer 1 ${gate.layer1.matched}/${gate.layer1.domain}, layer 2 ${gate.layer2.matched}/${gate.layer2.domain}; each needs ≥ ${KA_MATCH_SHARE * 100}%) — nothing is scored`, 4);
@@ -1202,6 +1305,11 @@ async function score(flags) {
   if (!st.pass) stop(`selftest failed: ${JSON.stringify(st.failed)}`);
   const { dir, manifestPath, manifest, snap, bodies } = loadRun(flags);
   if (!manifest.knownAnswer?.pass) stop('the known-answer gate has not passed on this run — run `known-answer` first');
+  // The gate must have been passed by THIS script (reviews B16a, B11): an edit after the gate re-runs it.
+  if (manifest.knownAnswer.scriptSha256 !== scriptSha()) stop('the known-answer gate was passed by a different script — run `known-answer` again');
+  // M5 (review B6): the end of the battle is the session close only for one-session battles.
+  const os = oneSessionCheck(snap.battles, snap.meta, allUnits(snap));
+  if (!os.pass) stop(`M5: the end of the battle is not the session close for ${os.battles - os.ok} battle(s) / ${os.unitsOff} unit(s)`);
   stamp(manifest, 'score');
   writeJsonAtomic(manifestPath, manifest);
   const { battles, meta, moments, control, controlMain } = snap;
@@ -1247,6 +1355,37 @@ async function score(flags) {
   const controlRows = control.map(controlRow);
   const controlMainRows = controlMain.map(controlRow);
 
+  // ---- Added after the run, at review (descriptive; none sets the label) ----
+  // Review A3 — the same set of record under the OPPOSITE modal tie rule (lexically largest key),
+  // as the replay's own review B9 reported for its labels.
+  const oppositeRecord = snap.bcCalls
+    .map((r) => ({ ...r, withL: modal(r.voteWith.dist, { largest: true }), withoutL: modal(r.voteWithout.dist, { largest: true }) }))
+    .filter((r) => r.withL !== r.withoutL)
+    .map((r) => ({ ...r, kind: classify(r.withL, r.withoutL), voteWith: { ...r.voteWith, modal: r.voteWith.dist[r.withL] }, voteWithout: { ...r.voteWithout, modal: r.voteWithout.dist[r.withoutL] } }));
+  const oppositeRows = ordered(oppositeRecord).map(momentRow);
+  const recordKeys = new Set(moments.record.map((r) => `${r.k}|${r.withL}|${r.withoutL}`));
+  const oppositeKeys = new Set(oppositeRecord.map((r) => `${r.k}|${r.withL}|${r.withoutL}`));
+  // Review A2 — the control split: the changed moments' own legs against the swaps both conditions made.
+  const flippedIn = (calls) => Object.fromEntries(calls.map((r) => [r.k, r.flipped]));
+  const split = (rows, calls) => {
+    const f = flippedIn(calls);
+    return { legsOfFlips: controlSummary(rows.filter((r) => f[r.k])), bothConditions: controlSummary(rows.filter((r) => !f[r.k])) };
+  };
+  // Review B11 — do the two measures agree, moment by moment (a sign error in one would show here)?
+  const agreement = (rows) => {
+    const both = rows.filter((r) => r.primary.points.status === 'scored' && r.primary.price.status === 'scored');
+    return { both: both.length, sameVerdict: both.filter((r) => verdict(r.primary.points.delta, TIE.points) === verdict(r.primary.price.delta, TIE.pricePp)).length };
+  };
+
+  // Review B2 — the lock and the replay must share the scorer's inputs: where the lock's ATR is the
+  // held leg's own, the replay's rescore at the recorded price must equal the lock exactly. A nonzero
+  // difference there is a stamp or input mismatch between the two paths; stop before writing anything.
+  const allComps = Object.values(memo);
+  const stampChecked = allComps.filter((c) => c.inputs.ok && isNum(c.sale?.inputsDelta) && c.inputs.lockAtr === c.inputs.ghostAtr);
+  const stampOff = stampChecked.filter((c) => Math.abs(c.sale.inputsDelta) > 0.005);
+  if (stampOff.length) stop(`the lock and the replay disagree at the sale on ${stampOff.length} swap call(s) (inputsDelta ≠ 0 with the same ATR) — a stamp or input mismatch`);
+  const stampCheck = { comps: allComps.filter((c) => c.inputs.ok).length, checked: stampChecked.length, nonzero: 0, otherNonzero: allComps.filter((c) => c.inputs.ok && isNum(c.sale?.inputsDelta) && Math.abs(c.sale.inputsDelta) > 0.005).length };
+
   const primaryOf = (rows) => rows.map((r) => ({ points: r.primary.points, price: r.primary.price }));
   const nextOf = (rows) => rows.map((r) => ({ points: r.next.points, price: r.next.price }));
   const summarize = (rows) => ({
@@ -1266,7 +1405,7 @@ async function score(flags) {
     if (!isNum(px) || !bars) return [];
     const at = toMs(r.capturedAt);
     let best = null;
-    for (let k = 0; k <= 40; k += 1) { const s = sampleAt(bars, at - k * 60_000); if (s?.valid) { const e = Math.abs(s.price - px); if (!best || e < best.e - EPS) best = { k, e }; } }
+    for (let k = 0; k <= LAG_WINDOW_MIN; k += 1) { const s = sampleAt(bars, at - k * 60_000); if (s?.valid) { const e = Math.abs(s.price - px); if (!best || e < best.e - EPS) best = { k, e }; } }
     return best ? [best.k] : [];
   });
   const quant = (xs) => { const s = [...xs].sort((a, b) => a - b); const q = (p) => (s.length ? s[Math.min(s.length - 1, Math.floor(p * (s.length - 1) + 0.5))] : null); return { n: s.length, min: round(s[0], 3), median: round(q(0.5), 3), max: round(s[s.length - 1], 3) }; };
@@ -1284,10 +1423,18 @@ async function score(flags) {
     second: summarize(secondRows),
     control: controlSummary(controlRows),
     controlMain: controlSummary(controlMainRows),
-    vintage: { shownMinusBarPct: quant(vintage), bestLagMinutes: quant(lagMinutes) },
+    vintage: { shownMinusBarPct: quant(vintage), bestLagMinutes: { ...quant(lagMinutes), windowMinutes: LAG_WINDOW_MIN, basis: 'the first swap call of each moment' } },
     table: recordRows.map((r) => tableRow(r)),
     secondTable: secondRows.map((r) => tableRow(r)),
     notScored,
+    postReview: {
+      note: 'added after the run, at review; descriptive; none sets the label',
+      tieRuleOpposite: { ...summarize(oppositeRows), shared: oppositeRecord.filter((r) => recordKeys.has(`${r.k}|${r.withL}|${r.withoutL}`)).length, onlyUnderOpposite: oppositeRecord.filter((r) => !recordKeys.has(`${r.k}|${r.withL}|${r.withoutL}`)).length, onlyUnderRecordRule: moments.record.filter((r) => !oppositeKeys.has(`${r.k}|${r.withL}|${r.withoutL}`)).length, byKind: byGroup(oppositeRows, (r) => r.kind) },
+      controlSplit: split(controlRows, snap.bcCalls),
+      controlMainSplit: split(controlMainRows, snap.mainCalls),
+      agreement: { record: agreement(recordRows), control: agreement(controlRows), controlMain: agreement(controlMainRows) },
+      stampCheck,
+    },
   };
   writeJsonAtomic(path.join(dir, 'summary.json'), summary);
   writeJsonAtomic(path.join(dir, 'results.local.json'), { recordRows, secondRows, controlRows, controlMainRows, why });
@@ -1414,6 +1561,90 @@ export function runSelftest() {
   check('S10 3 of 4 on layer 2 fails', ka(9, 9, 3, 4).pass === false);
   check('S10 9 of 10 (exactly 90%) passes', ka(9, 10, 9, 10).pass === true);
   check('S10 an empty layer-2 domain fails', ka(9, 9, 0, 0).pass === false);
+  // ---- Rows added at review (each kills a mutant the review found surviving) ----
+  // B9: the frozen tie bands; a points-only row; a missing hold leg; atrStable's exact and mixed cases; the coarse lock.
+  check('S1 the frozen tie bands', TIE.points === 1 && TIE.pricePp === 0.10);
+  const nsPrice = { points: { status: 'scored', delta: 5 }, price: { status: 'not_scored', reason: 'x' } };
+  const l6 = labelOf(set(10, 4, 0, [nsPrice]));
+  check('S2 a row scored on points only does not count toward 15', l6.label === 'too few to read' && l6.scoredBoth === 14);
+  const nsHold = callDifference('HOLD', 'SWAP:A>B', { 'SWAP:A>B': { hold: null, swap: 4, holdWhy: 'bars:A' } });
+  check('S4 a missing hold leg is not_scored with its reason', nsHold.status === 'not_scored' && nsHold.reason === 'bars:A');
+  check('S11 every component exact → stable', atrStable('HOLD', 'SWAP:A>B', { 'SWAP:A>B': { points: { close: { hold: 10, swap: 4 } } } }, 'close', 6) === true);
+  check('S11 one exact and one coarse component: the coarse corner still decides', atrStable('SWAP:A>B', 'SWAP:C>D', {
+    'SWAP:A>B': { points: { close: { hold: 1, swap: 5 } } },
+    'SWAP:C>D': { points: { close: { hold: 2, swap: 3 } }, atrVariants: [{ close: { hold: 2, swap: 3 } }, { close: { hold: 2, swap: 6 } }] },
+  }, 'close', 3) === false);
+  // px 10.402 straddles the bagger line between ATR 4 and 4.05 — do not simplify it.
+  const lp = { symbol: 'T', entryPrice: 10, baseline: 10, history: { maxMultiplier: 0, minMultiplier: 0 }, atr: 4, tier: 'core', direction: null, tierStamp: null, px: 10.402 };
+  const shIn = { coarseAtr: { ghost: true, bought: false, lock: true }, lockParams: lp, action: { lockedPoints: lockAt(lp), replayInputs: { ghost: { atr: 4 }, bought: { atr: 3 } } } };
+  const sh = withAtrShift(shIn, 0.05, 0);
+  check('S11 a coarse lock moves with the held name\'s corner', sh.action.replayInputs.ghost.atr === 4.05 && sh.action.lockedPoints === lockAt({ ...lp, atr: 4.05 }) && sh.action.lockedPoints !== shIn.action.lockedPoints);
+  // B3: a verdict that moves at the NEXT check unscores the moment's points at the close too (M7 as declared).
+  const m7 = differences('HOLD', 'SWAP:A>B', { 'SWAP:A>B': {
+    points: { close: { hold: 10, swap: -20 }, next: { hold: 10, swap: 5 } }, price: { close: { hold: 1, swap: -2 }, next: { hold: 1, swap: 0.5 } },
+    atrVariants: [{ close: { hold: 10, swap: -20 }, next: { hold: 10, swap: 9.5 } }],
+  } });
+  check('S11 M7 is moment-wide: a moved next-check verdict unscores the close points', m7.close.points.status === 'not_scored' && m7.next.points.status === 'not_scored' && m7.close.price.status === 'scored');
+  // B14 / B2: the flat6 positions table has no Tier column.
+  const body6 = ['ACTIVE POSITIONS:', 'Symbol,Sector,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%,LockNow(base/badges),NextBonus,Levels',
+    'AAA,Tech,Day1,$10.50,$11.00,+4.76%,+1.20x,[bagger],4.0%,+64(+19/+45),+1%,-', ''].join('\n');
+  const p6 = parseBody(body6).positions.AAA;
+  check('S8 flat6 positions parsed (no Tier column)', p6?.tier === null && p6.entry === 10.5 && p6.current === 11 && p6.badges.join() === 'bagger' && p6.atrPct === 4 && p6.lockNow === 64);
+  // B10: every key, every character, redacted.
+  check('S9 every EODHD key in a message is redacted whole', redactEodhd('x?api_token=Ab1.2c&fmt=json y?api_token=Zz9&q') === 'x?api_token=[REDACTED]&fmt=json y?api_token=[REDACTED]&q');
+  // B1: pathValues reads composeLegs' own paths — close = the last point, next = index 1.
+  const leg = (pts) => pts.map(([at, points]) => ({ tickSeq: null, at, points }));
+  const synth = (ghost, bought) => composeLegs({ ghostPts: leg(ghost), boughtPts: leg(bought), locked: 100, swap: { tickSeq: 1, at: 'a' } });
+  const pv4 = pathValues(synth([['a', 10], ['b', 20], ['c', 25], ['d', 30]], [['b', 5], ['c', 6], ['d', 8]]));
+  check('S12 close = the last point of each path', pv4.close.hold === 30 && pv4.close.swap === 108);
+  check('S12 next = the first later check of each path', pv4.next?.hold === 20 && pv4.next?.swap === 105 && pv4.next?.at === 'b');
+  check('S12 no later check → no next', pathValues(synth([['a', 10], ['d', 30]], [['d', 8]])).next === null);
+  // B10: one request per symbol, spanning its days, in stage order; the counter is taken before the request.
+  const fp = fetchPlan([[{ symbol: 'A', etDate: '2026-10-12' }, { symbol: 'A', etDate: '2026-10-13' }], [{ symbol: 'A', etDate: '2026-10-14' }, { symbol: 'B', etDate: '2026-10-13' }]]);
+  check('S13 one request per symbol, spanning its days, in stage order', fp.length === 2 && fp[0].symbol === 'A' && fp[0].stage === 0 && fp[0].days.join() === '2026-10-12,2026-10-13,2026-10-14' && fp[1].symbol === 'B' && fp[1].stage === 1
+    && fp[0].fromMs === sessionFor('2026-10-12').openMs - FETCH_PAD_MS && fp[0].toMs === sessionFor('2026-10-14').closeMs + FETCH_PAD_MS);
+  const eb = ensureBars.toString();
+  check('S14 ensureBars counts a request before making it', eb.indexOf('counter.take(') > -1 && eb.indexOf('counter.take(') < eb.indexOf('fetchSymbol('));
+  // B11: slotsAt undoes a later trade; checkRows keeps entry-only rows; the $Entry render check; moveAt's sign.
+  const sl = slotsAt({ finalSlots: [{ tier: 'core', slotIndex: 0, symbol: 'B', baseATR: 3 }], trades: [{ tier: 'core', slotIndex: 0, symbolOut: 'A', symbolIn: 'B', swappedOutAt: '2026-09-29T15:00:00.000Z' }] }, Date.parse('2026-09-29T14:59:00Z'));
+  const sl2 = slotsAt({ finalSlots: [{ tier: 'core', slotIndex: 0, symbol: 'B', baseATR: 3 }], trades: [{ tier: 'core', slotIndex: 0, symbolOut: 'A', symbolIn: 'B', swappedOutAt: '2026-09-29T15:00:00.000Z' }] }, Date.parse('2026-09-29T15:01:00Z'));
+  check('S15 slotsAt undoes a trade made after the instant, and only that', sl.slots[0].symbol === 'A' && sl.slots[0].asset === null && sl.problems.length === 0 && sl2.slots[0].symbol === 'B' && sl2.slots[0].asset !== null);
+  const cr = checkRows({ ticks: [{ tickSeq: 1, evalId: 'e1', capturedAt: '2026-09-29T15:00:00.000Z', state: 'completed', stageReached: 'finalized' }],
+    evaluations: [{ evalId: 'e1', timestamp: '2026-09-29T14:59:50.000Z', haikuFailureClass: null }, { evalId: 'e2', timestamp: '2026-09-29T15:10:00.000Z', haikuFailureClass: null }] }, '2026-09-29');
+  check('S16 checkRows keeps an evaluation entry with no tick', cr.length === 2 && cr[1].rowSource === 'entry' && cr[1].key === 'eval:e2');
+  const bodyT = ['ACTIVE POSITIONS:', 'Tier,Symbol,Sector,Entry,$Entry,$Current,Gain%,ATR Mult,Badges,ATR%,LockNow(base/badges),NextBonus,Levels',
+    'star,AAA,Tech,Day1,$10.50,$11.00,+4.76%,+1.20x,[],4.0%,+95(+95/+0),+1%,-', '', 'BENCH (available for swap):', 'Symbol,Sector,$Current,Daily%,ATR%,Status', 'BBB,Tech,$20.25,+1.00%,3.5%,available', ''].join('\n');
+  const synthBattle = (start) => ({ gameMode: 'baggerbomb_agent', activatedAt: '2026-09-29T13:00:00.000Z', startingPrices: { AAA: start }, thresholds: {},
+    finalSlots: [{ tier: 'star', slotIndex: 0, symbol: 'AAA', baseATR: 4 }], bench: [], trades: [], evaluations: [], ticks: [], receipts: [], tickActions: [] });
+  const chk = { tickSeq: 1, capturedAt: '2026-09-29T15:00:00.000Z', shownAt: '2026-09-29T14:59:40.000Z', evidence: { AAA: { px: 11 } } };
+  const okIn = buildSwapInputs({ battle: synthBattle(10.5), check: chk, body: parseBody(bodyT), out: 'AAA', in: 'BBB' });
+  const badIn = buildSwapInputs({ battle: synthBattle(10.4), check: chk, body: parseBody(bodyT), out: 'AAA', in: 'BBB' });
+  check('S17 an entry is accepted only when it renders to the shown $Entry', okIn.ok && okIn.sources.entry === 'portfolio.startingPrices' && !badIn.ok && badIn.missing.includes('X entry: no record renders to the shown $Entry'));
+  // B8: a later bench record that does not render to the shown bench ATR% is not "exact" — the 1-dp body value, under M7.
+  const benchLater = { ...synthBattle(10.5), bench: [{ symbol: 'BBB', baseATR: 3.92 }] };
+  const benchNow = { ...synthBattle(10.5), bench: [{ symbol: 'BBB', baseATR: 3.46 }] };
+  const bl = buildSwapInputs({ battle: benchLater, check: chk, body: parseBody(bodyT), out: 'AAA', in: 'BBB' });
+  const bn = buildSwapInputs({ battle: benchNow, check: chk, body: parseBody(bodyT), out: 'AAA', in: 'BBB' });
+  check('S17 a bench record is exact only when it renders to the shown ATR%', bl.sources.boughtAtr === 'body bench ATR% (1 dp)' && bl.coarseAtr.bought === true && bn.sources.boughtAtr === 'bench baseATR' && bn.coarseAtr.bought === false);
+  const mv = moveAt([{ t: Date.parse('2026-09-29T15:00:00Z'), o: 100, h: 101, l: 99, c: 101, v: 1 }], 100, Date.parse('2026-09-29T15:01:00Z'), 'A');
+  check('S18 moveAt: up from the shown price is positive', Math.abs(mv.v - 1) < 1e-9);
+  // B2: the flat6 stamp reaches the lock (the C-2 bug class): a flat6 star slot locks like a 1x slot, not 2x.
+  const lp6 = { symbol: 'T', entryPrice: 100, baseline: 100, history: { maxMultiplier: 0, minMultiplier: 0 }, atr: 8, tier: 'star', direction: null, px: 103 };
+  check('S19 the flat6 stamp reaches the lock', lockAt({ ...lp6, tierStamp: 1.0 }) === lockAt({ ...lp6, tier: 'support', tierStamp: null }) && lockAt({ ...lp6, tierStamp: null }) === 2 * lockAt({ ...lp6, tierStamp: 1.0 }));
+  // B7: every model-proposed swap is in layer 2's domain; another swap only when the check showed it.
+  check('S20 the layer-2 domain', kaInDomain('haiku', false) && kaInDomain('haiku', true) && kaInDomain('archetype', true) && !kaInDomain('archetype', false) && !kaInDomain('risk_manager', false));
+  // B6: one completed session, and every unit on its battle's day.
+  const osB = (days, completedAt) => ({ b1: { tradingDays: days, completedAt } });
+  const osM = { k1: { battleId: 'b1', day: '2026-09-29' } };
+  check('S21 one-session check passes a real one-session battle', oneSessionCheck(osB(['2026-09-29'], '2026-09-29T21:00:00.000Z'), osM, [{ k: 'k1' }]).pass === true);
+  check('S21 a weekend day, an early completion, two days, or a unit on another day fail', !oneSessionCheck(osB(['2026-09-27'], '2026-09-29T21:00:00.000Z'), { k1: { battleId: 'b1', day: '2026-09-27' } }, [{ k: 'k1' }]).pass
+    && !oneSessionCheck(osB(['2026-09-29'], '2026-09-29T18:00:00.000Z'), osM, [{ k: 'k1' }]).pass
+    && !oneSessionCheck(osB(['2026-09-29', '2026-09-30'], '2026-09-30T21:00:00.000Z'), osM, [{ k: 'k1' }]).pass
+    && !oneSessionCheck(osB(['2026-09-29'], '2026-09-29T21:00:00.000Z'), { k1: { battleId: 'b1', day: '2026-09-30' } }, [{ k: 'k1' }]).pass);
+  // B2: the reconciliation gate.
+  const rc = (o) => ({ built: 20, builtFlat6: 16, lockMatch: 20, exitMatch: 20, fillMatch: 20, ...o });
+  check('S22 the reconciliation gate', reconGate(rc({}), true).pass && reconGate(rc({ lockMatch: 18 }), true).pass && !reconGate(rc({ lockMatch: 17 }), true).pass
+    && !reconGate(rc({ builtFlat6: 0 }), true).pass && reconGate(rc({ builtFlat6: 0 }), false).pass && !reconGate(rc({ built: 0, lockMatch: 0, exitMatch: 0, fillMatch: 0 }), false).pass);
   const failed = rows.filter((r) => !r.pass).map((r) => r.name);
   return { pass: failed.length === 0, rows: rows.length, failed };
 }

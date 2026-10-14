@@ -70,8 +70,10 @@ node scripts/experiments/growth-replay/growthReplay.js batchcheck-analyze --run 
 - **Local only.** Everything is written to `%USERPROFILE%/growth-replay-runs/cms-<time>/`; files named `*.local.*` carry ids or player text and are never committed. `summary.json` carries neither.
 
 ```
-node scripts/experiments/growth-replay/changedMomentsScore.js selftest       # 54 rows; gates every other command
+node scripts/experiments/growth-replay/changedMomentsScore.js selftest       # 78 rows; gates every other command
 node scripts/experiments/growth-replay/changedMomentsScore.js plan           # Firestore reads, inputs, the sale reconciliation, the request count; no bars
-node scripts/experiments/growth-replay/changedMomentsScore.js known-answer   # fetches every bar (counted), checks the tape's series, the 90% gate
-node scripts/experiments/growth-replay/changedMomentsScore.js score          # refuses unless the gate passed; reads the bar cache only
+node scripts/experiments/growth-replay/changedMomentsScore.js known-answer   # pre-bar gates (one session, sale reconciliation), fetches every bar (counted), the series cross-check, the 90% gate
+node scripts/experiments/growth-replay/changedMomentsScore.js score          # refuses unless the gate passed under this same script; reads the bar cache only
 ```
+
+After the run, the BUILD_RULES §2 review changed guards, records and tests only (the script header lists them; the report's §8 records the review). Re-running `known-answer` and `score` on the same run from the bar cache reproduces every scored number and makes no EODHD request.
