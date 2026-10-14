@@ -6,6 +6,8 @@
 // volume: the tape's candle pass now asks it to keep one (keepMissingVolume),
 // and only the tape — every other caller's projection is unchanged. Tapes
 // already written keep their zeros (nothing rewrites a stored series' volume).
+// When a retry's bar ties a saved one on minutes and brings the volume the
+// saved bar lacks, only the volume moves: the saved prices stand (Astra F2).
 //
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the real fetcher and passes; only
 // the flag module is mocked, by spreading the real one, and the network
@@ -92,5 +94,43 @@ describe('review B-4 — the BA-34 series merge never keeps a missing volume ove
 
   it('more minutes still win, whatever the volume', () => {
     expect(keepSeries(doc([bar(9000, 9)]), doc([bar(null, 10)])).doc.bars[0]).toMatchObject({ v: null, m: 10 });
+  });
+});
+
+describe('Astra F2 — on the volume tie only the volume moves: the saved bar\'s prices stand', () => {
+  const bar = (p, v) => ({ t: '2026-09-24T13:30:00.000Z', o: p, h: p + 0.01, l: p - 0.01, c: p, v, n: 10, m: 10 });
+  const doc = (bars) => ({ symbol: 'ACN', bars, atChecks: [], sessionOpen: null });
+
+  it('equal minutes, the fresh bar priced differently: the saved bar with the fresh volume — and the merge is kept (it holds a saved fact)', () => {
+    const r = keepSeries(doc([bar(100, null)]), doc([bar(101, 10_000)]));
+    expect(r.doc.bars[0]).toEqual({ ...bar(100, null), v: 10_000 });
+    expect(r.kept).toBe(true);
+  });
+
+  it('through two real candle passes: a partial first response (one minute of the first bucket without its volume), then a retry that recovers the volume and the later bars while pricing the first bucket 101 — the saved 100s stand, the volume is recovered, the series says what it kept', async () => {
+    const fx = await stalledDay({ battleId: 'b-volume-retry' });
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT });
+    const priced = (first) => sessionRows(D, (i) => (i < 10 ? first : 100), { volume: 1000, extras: false });
+    // morning 1: ACN's response stops after its first bucket (09:30–09:39), and 09:33 lacks its volume
+    const partial = priced(100).slice(0, 10).map((r, i) => (i === 3 ? { ...r, volume: null } : r));
+    const others = (sym) => (typeof sym === 'string' ? flatRows(D, 100) : undefined);
+    const f1 = fetcherOf(new Proxy({}, { get: (_, sym) => (sym === 'ACN' ? partial : others(sym)) }));
+    await runCandlePass({ db: t.db, fetchCandles: f1.fetchCandles, clock: () => MORNING, startMs: MORNING });
+    const where = `agentBattles/${fx.battleId}/tape/${D}/series/ACN`;
+    const saved = structuredClone(t.store.get(where));
+    expect(saved.bars).toHaveLength(1);
+    expect(saved.bars[0]).toMatchObject({ o: 100, h: 100.01, l: 99.99, c: 100, v: null, m: 10, n: 10 });
+    expect(t.store.get(`agentBattles/${fx.battleId}/tape/${D}`).passes.candles).toMatchObject({ status: 'partial', attempts: 1 });
+    // morning 2: the whole session, every volume present, the first bucket priced 101
+    const next = Date.parse('2026-09-26T11:00:30.000Z');
+    const f2 = fetcherOf(new Proxy({}, { get: (_, sym) => (sym === 'ACN' ? priced(101) : others(sym)) }));
+    await runCandlePass({ db: t.db, fetchCandles: f2.fetchCandles, clock: () => next, startMs: next });
+    const series = t.store.get(where);
+    expect(series.bars).toHaveLength(39);
+    expect(series.bars[0]).toEqual({ ...saved.bars[0], v: 10_000 });                  // o/h/l/c/m/n as saved; only the volume moved
+    expect(series.bars[1]).toMatchObject({ t: '2026-09-24T13:40:00.000Z', v: 10_000, m: 10 });
+    expect(series.preservedFrom).toBe(saved.preservedFrom ?? saved.writtenAt);      // it keeps an earlier attempt's facts, and says from when
+    expect(t.store.get(`agentBattles/${fx.battleId}/tape/${D}`).passes.candles).toMatchObject({ status: 'written', attempts: 2 });
   });
 });

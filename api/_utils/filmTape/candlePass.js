@@ -320,8 +320,9 @@ export function keepSeries(saved, fresh) {
     const f = freshBars.get(t);
     if (!s || !f) return s ?? f;
     if (barMinutes(f) !== barMinutes(s)) return barMinutes(f) > barMinutes(s) ? f : s;
-    // B1 W3 (review B-4): on the same minutes, a bar with its volume beats one without — a missing volume never outlasts a later response that has it
-    return s.v === null && typeof f.v === 'number' ? f : s;
+    // B1 W3 (review B-4): on the same minutes a missing volume never outlasts a later response that has it — and
+    // only the volume moves (Astra F2): the saved bar's open, high, low and close stand, as BA-34's tie keeps them
+    return s.v === null && typeof f.v === 'number' ? { ...s, v: f.v } : s;
   });
   const keyOf = (a) => checkKey(a?.tickSeq, a?.at);
   const savedAt = new Map((Array.isArray(saved.atChecks) ? saved.atChecks : []).filter(isObj).map((a) => [keyOf(a), a]));
