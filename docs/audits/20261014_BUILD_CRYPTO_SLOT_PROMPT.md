@@ -14,9 +14,9 @@
 | Flag | `CRYPTO_SLOT_PROMPT_ENABLED = false`. With the flag off, every eval prompt is byte-identical to the pre-build text. This is tested against a capture from the clean tree, and a reviewer independently confirmed it over 604 renders. |
 | Fenced diff | `agentEvalPromptAssembly.js`: 10 lines added and 1 removed. That is an import with an 8-line comment, plus `${renderCryptoSlotBlock()}` in place of one blank line (§2). |
 | Tests | Full Linux suite, CI-shaped: the baseline had 949 files with 0 failing. The final run (`ac6ba27e`, after the review fixes) has 951 files with 0 failing. The two extra files are the new ones. No new reds. 50 new rows. Mutation check: 29 of my mutants were all killed, and the reviewers' surviving mutants are now killed too. `vite build` is green. |
-| Review (BUILD_RULES §2) | Four lenses and seven independent refuters. 19 distinct findings: 0 blockers, 1 major in the build (the probe's bar) — fixed — and 1 major-rated finding that predates the build. **11 CONFIRMED, 8 PARTLY. Refuted sub-claims are listed in §5.** Every in-scope finding is fixed. Two findings predate the build and are reported for separate tasking (F7, F8). **One of them is a question for Fable before the flip (§5.3).** |
+| Review (BUILD_RULES §2) | Four lenses and six independent refuters. 19 distinct findings: 0 blockers, 1 major in the build (the probe's bar) — fixed — and 1 major-rated finding that predates the build. **11 CONFIRMED, 8 PARTLY. Refuted sub-claims are listed in §5.** Every in-scope finding is fixed. Two findings predate the build and are reported for separate tasking (F7, F8). **One of them is a question for Fable before the flip (§5.3).** |
 | Replay probe (§6) | **The bar FAILED.** crypto → stock fell from 26 to **10 of 144** (bar ≤ 2), and from 26 to **9 of the 26** refused (bar 0). The 14 refused checks that switched to BTC → ETH would all be refused by the hurdle (ETH down on the day). 0 replies talk about shorting. The block costs 222 tokens. Spend: $1.64. Per prompt §6.5: no re-wording, PR stays draft, **STOP for Fable** (§6 "Reading it"). |
-| Flip | Not in this PR. §7 has the checklist and the dry run. |
+| Flip | Not in this PR. §7 has the checklist. The dry run passed: the control turned exactly the 10 expected rows red; the full checklist moved exactly 10 files and left 0 failing. |
 
 ---
 
@@ -237,10 +237,10 @@ The two added files are exactly the new ones (`evalCryptoSlotBlock.test.js`, `cr
 - **L3**: tests, goldens, pins, flip-proofing, and the probe.
 - **L4**: honesty.
 
-Then seven refuters, each told to refute with a concrete repro. Every major got its own refuter; the rest were batched by topic, each finding judged on its own.
+Then six refuters, each told to refute with a concrete repro and to judge every finding on its own. L2-1 (= L4-2) had a refuter to itself. The two probe majors (L3-1, L3-2) shared one. The rest were batched by topic: the probe minors, the test nits, the wording and backing findings, and L1's three.
 
 **Totals:**
-- 26 raw findings, which collapse to **19 distinct** (L2 and L4 overlapped on five).
+- 24 raw findings (L1 3, L2 6, L3 8, L4 7), which collapse to **19 distinct** (L2 and L4 overlapped on five).
 - **11 CONFIRMED, 8 PARTLY, 0 wholly refuted.**
 - The refuted sub-claims are listed in §5.2.
 
@@ -414,6 +414,11 @@ Then seven refuters, each told to refute with a concrete repro. Every major got 
 3. **Rule 5's framing.** "Support swaps are low-impact — safer to experiment": the Support tier or its 1.0x multiplier comes up in 16 of the 24. That is a mention count, not proof the rule drove the choice.
 4. **"Up on the day" is ignored when it is visible.** Every crypto → crypto reply saw ETH's negative Daily% and proposed it anyway.
 
+**Two different conflicts — not one item.**
+- The SWAP_OUT pressure here is the platform's risk line asking the model to sell the crypto when no legal swap exists.
+- §5.3 item 1 (F7) is a platform path that executes a crypto → stock swap the paragraph says is refused.
+- Each needs its own answer.
+
 **Limits of this read.**
 - One sample per request at temperature 0.4.
 - The 26 refused requests are not independent draws: they are repeated checks of a few battles, for example four consecutive checks of one Diversifier battle (all BTC → LLY).
@@ -442,7 +447,14 @@ The flip is its own small commit after Flash's sign-off on §2 and §6, never in
 
    Then run the full suite.
 
-**Dry run of this checklist** (my private clone, on the final code head): PENDING
+**Dry run of this checklist** (my private clone at `ac6ba27e`, the final code head; Linux, CI-shaped; the clone restored clean after each run):
+
+| Run | What changed | Result |
+|---|---|---|
+| **Control**: the flag line alone | `featureFlags.js` (module value printed: `true`) | 951 files, 20,269 tests, **exactly 10 failing in 4 files**: 6 DR-13 tiered snapshot rows, 1 P4 tiered snapshot row, the pin row, and 2 flag-pin-guard rows (the pin contradiction and the `DARK_BY_DESIGN` integrity row). Nothing else, so the six suites' pins hold. |
+| **Flip**: checklist steps 1–4 (flag, pin, guard entry, `-u`) | `-u` reported "7 updated". `git status` showed exactly 10 files: the 3 edited and the 7 snapshots. Each snapshot gained exactly the 8 lines of the block (banner, five paragraph lines, two blank lines) and lost none. | 951 files, 20,269 tests, **0 failing**. |
+
+The docstring rewording of steps 1–2 was not part of the dry run, since it is prose with no test effect.
 
 Two reviewers independently simulated the flip on Windows snapshots of `89774037`.
 - **Flag line alone:** exactly 10 rows went red across 4 files:
