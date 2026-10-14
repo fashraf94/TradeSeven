@@ -161,3 +161,36 @@ describe('a tape written before W4, re-merged after it: each fact once, in the n
     expect(stableStringify(contentOf(doc))).not.toMatch(/entr\(y\/ies\)/);
   });
 });
+
+describe('review C-6 — the old wording is pinned literally, never rebuilt from the product\'s own constants', () => {
+  it('the five "what is unknown" clauses the pre-W4 writer printed (tapeAssemble.js at 03993139), verbatim', () => {
+    const PRE_W4 = {
+      directives: 'a heard stamp, and the checks after a filing, are',
+      plans: 'plans they recorded are',
+      rationale: 'rationale they recorded is',
+      evidence: 'evidence stamps they recorded are',
+      calls: 'their declarations phase, and so an absent declarations record, is',
+    };
+    for (const [k, clause] of Object.entries(PRE_W4)) {
+      const old = `2 minted check(s) of this day have no record of what they read or produced (no tick record, or an evaluation entry that is absent) — ${clause} unknown for them`;
+      expect(modernNotes(old), k).toBe(NOTES.unknownChecks(2, UNKNOWN_WHAT[k]));
+      expect(modernNotes(old.replace('2 minted', '1 minted')), k).toBe(NOTES.unknownChecks(1, UNKNOWN_WHAT[k]));
+    }
+  });
+});
+
+describe('review B-6 — a merge with no tagger keeps the stored section', () => {
+  it('mergeTape without ctx.tagDay: the stored tags and coverage.tags stand', () => {
+    const stored = {
+      etDate: '2026-09-24', writtenAt: '2026-09-25T02:15:30.000Z', passes: { close: { status: 'written', gaps: [] }, candles: { status: 'skipped', reason: 'outside_candle_window' } },
+      score: {}, battle: { status: 'active', final: null, result: { value: null, basis: 'not_completed' }, completionMessage: null },
+      checks: [], actions: [], directives: [], plans: [], calls: [], rationale: [], meetings: [],
+      tags: { registryVersion: 1, situations: { stalled: 1 }, inputs: null, items: [], exits: [] },
+      coverage: { tags: { status: 'complete', span: null, sources: ['checks'], preservedFrom: null, note: null } },
+    };
+    const assembled = { ...structuredClone(stored), tags: undefined, coverage: {} };
+    const { doc } = mergeTape(stored, assembled, { nowIso: '2026-09-25T02:16:00.000Z', withinWindow: false, resolveResult: () => null });
+    expect(doc.tags).toEqual(stored.tags);
+    expect(doc.coverage.tags).toEqual(stored.coverage.tags);
+  });
+});
