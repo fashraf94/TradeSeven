@@ -35,7 +35,10 @@
 // fixture days. Credentials load only inside main(): the same lookup the
 // growth replay uses (scripts/experiments/growth-replay/growthReplay.js
 // loadEnv / serviceAccount) — the environment, then this tree's .env.local,
-// then the primary checkout's; values are never printed.
+// then the primary checkout's; values are never printed — the project id
+// included — and a failure prints only its class and a bounded, sanitized
+// message (censusErrorLine: no ids, no key material; Astra's B1 review,
+// backlog 1).
 //
 // USAGE (repo root; the founder or a session with the credential):
 //   node scripts/census-film-room-b1.mjs [--json <path>]
@@ -364,6 +367,43 @@ function stop(message, code = 2) {
   process.exit(code);
 }
 
+// ── the CLI's own output (Astra's B1 review, backlog 1) ─────────────────────
+
+/** The credential's own values, registered once loaded: a failure message that quotes one never prints it. */
+const NEVER_PRINTED = [];
+/** The longest failure line the CLI prints. */
+export const CENSUS_ERROR_MAX = 200;
+
+/** An id-like token: 8+ characters mixing letters and digits, or 12+ mixing letter cases. */
+const idLike = (t) => (/[0-9]/.test(t) && /[A-Za-z]/.test(t)) || (t.length >= 12 && /[a-z]/.test(t) && /[A-Z]/.test(t));
+
+/**
+ * The CLI's failure line: the error's class (a plain identifier, else Error)
+ * and its message with key blocks, the credential's own values, addresses,
+ * resource paths and id-like tokens removed, bounded to CENSUS_ERROR_MAX —
+ * never an id, never key material. Arrays only: the write-grep gate reads
+ * this file.
+ */
+export function censusErrorLine(err, { secrets = NEVER_PRINTED } = {}) {
+  let cls = 'Error';
+  try {
+    const n = err !== null && typeof err === 'object' ? (err.name ?? err.constructor?.name) : null;
+    if (typeof n === 'string' && /^[A-Za-z_$][A-Za-z0-9_$]{0,39}$/.test(n)) cls = n;
+  } catch { cls = 'Error'; }
+  let text = '';
+  try { text = String(err !== null && typeof err === 'object' ? err.message ?? '' : err ?? ''); } catch { text = ''; }
+  for (const s of secrets) if (typeof s === 'string' && s.length >= 3) text = text.split(s).join('[redacted]');
+  text = text
+    .replace(/-----BEGIN[\s\S]*?(?:-----END[^-]*-----|$)/g, '[key]')
+    .replace(/[^\s@]+@[^\s@]+/g, '[address]')
+    .replace(/\S*\/\S*/g, '[path]')
+    .replace(/[A-Za-z0-9_-]{8,}/g, (t) => (idLike(t) ? '[id]' : t))
+    .replace(/\s+/g, ' ')
+    .trim();
+  const line = text ? `${cls}: ${text}` : cls;
+  return line.length > CENSUS_ERROR_MAX ? `${line.slice(0, CENSUS_ERROR_MAX - 3)}...` : line;
+}
+
 export function parseArgs(argv) {
   const out = { json: null };
   for (let i = 0; i < argv.length; i += 1) if (argv[i] === '--json') { out.json = argv[i + 1] ?? null; i += 1; }
@@ -387,8 +427,8 @@ async function main() {
   if (!sa || typeof sa.private_key !== 'string') stop('no Firebase service account (checked the environment, this tree\'s .env.local, then the primary checkout\'s; value not printed)');
   const { initializeApp, cert } = await import('firebase-admin/app');
   const { getFirestore } = await import('firebase-admin/firestore');
+  NEVER_PRINTED.push(...[sa.project_id, sa.client_email, sa.private_key_id, sa.client_id].filter((v) => typeof v === 'string' && v));
   const db = getFirestore(initializeApp({ credential: cert(sa) }, 'census-film-room-b1'));
-  console.log(`[census-b1] Firestore project_id: ${sa.project_id}`);
 
   const tapeSnap = await db.collectionGroup('tape').get();
   const tapes = tapeSnap.docs.map((d) => ({ path: d.ref.path, data: d.data() }));
@@ -419,5 +459,5 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main().catch((err) => { console.error(`[census-b1] failed: ${String(err?.message || err).replace(/-----BEGIN[\s\S]*?-----END[^-]*-----/g, '[REDACTED]')}`); process.exit(1); });
+  main().catch((err) => { console.error(`[census-b1] failed: ${censusErrorLine(err)}`); process.exit(1); });
 }

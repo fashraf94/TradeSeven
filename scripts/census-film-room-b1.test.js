@@ -17,7 +17,7 @@ vi.mock('../src/config/featureFlags.js', async (importOriginal) => ({
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { WRITE_PATTERN, GATED_FILES, writeCallsIn, computeB1Census, renderB1Census, tapeIdsOf, parseArgs } from './census-film-room-b1.mjs';
+import { WRITE_PATTERN, GATED_FILES, writeCallsIn, computeB1Census, renderB1Census, tapeIdsOf, parseArgs, censusErrorLine, CENSUS_ERROR_MAX } from './census-film-room-b1.mjs';
 import { writeTapeDay } from '../api/_utils/filmTape/writeTapeDay.js';
 import { makeTapeDb } from '../api/_utils/filmTape/__fixtures__/tapeFirestore.js';
 import { seedDay } from '../api/_utils/filmTape/__fixtures__/tapeFixtures.js';
@@ -168,5 +168,46 @@ describe('the small parts', () => {
     for (const p of ['agentBattles/b1/tape/2026-09-24/series/ACN', 'other/b1/tape/2026-09-24', 'agentBattles/b1/tape/24-09-2026']) expect(tapeIdsOf(p), p).toBeNull();
     expect(parseArgs(['--json', 'out.json'])).toEqual({ json: 'out.json' });
     expect(parseArgs([])).toEqual({ json: null });
+  });
+});
+
+describe('the CLI\'s own output — no ids, no key material (Astra\'s B1 review, backlog 1)', () => {
+  const SRC = readFileSync(resolve(REPO, 'scripts/census-film-room-b1.mjs'), 'utf8');
+
+  it('main() prints no project id: no console line names one, and the credential\'s values are registered never to be printed', () => {
+    const consoleLines = SRC.split(/\r?\n/).filter((l) => /console\.(log|error|warn|info)\(/.test(l));
+    expect(consoleLines.length).toBeGreaterThan(0);
+    expect(consoleLines.filter((l) => /project_id|projectId|client_email|private_key/.test(l))).toEqual([]);
+    expect(SRC).toMatch(/NEVER_PRINTED\.push\(\.\.\.\[sa\.project_id, sa\.client_email, sa\.private_key_id, sa\.client_id\]/);
+  });
+
+  it('the failure handler prints censusErrorLine, never the raw message', () => {
+    expect(SRC).toMatch(/console\.error\(`\[census-b1\] failed: \$\{censusErrorLine\(err\)\}`\)/);
+    expect(SRC).not.toMatch(/failed: \$\{String\(err/);
+  });
+
+  it('a failure line keeps the class and drops key blocks, the credential\'s values, addresses, resource paths and ids', () => {
+    const err = new TypeError([
+      'Could not load -----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC/x+y\n-----END PRIVATE KEY-----',
+      'for svc-reader@demo-project.iam.gserviceaccount.com',
+      'at projects/demo-project/databases/(default)/documents/agentBattles/AbCdEf1234567890XyZq/tape/2026-10-09;',
+      'battle AbCdEf1234567890XyZq, owner Qw3rTy9UiOp4AsDfGh5JkLzXcV7b, agent ag3ntK1d;',
+      'project tradesevenx; status PERMISSION_DENIED',
+    ].join(' '));
+    const line = censusErrorLine(err, { secrets: ['tradesevenx'] });
+    expect(line.startsWith('TypeError: Could not load [key] for [address] at [path]')).toBe(true);
+    for (const leak of ['BEGIN', 'MIIE', 'PRIVATE KEY', 'svc-reader', 'demo-project', 'agentBattles', 'AbCdEf1234567890XyZq', 'Qw3rTy9UiOp4AsDfGh5JkLzXcV7b', 'ag3ntK1d', 'tradesevenx']) {
+      expect(line, leak).not.toContain(leak);
+    }
+    expect(line).toContain('PERMISSION_DENIED');                    // a status word is no id
+    expect(line.length).toBeLessThanOrEqual(CENSUS_ERROR_MAX);
+  });
+
+  it('bounded, and safe on an unterminated key block, a thrown string, a planted class name and a throwing message', () => {
+    expect(censusErrorLine(new Error('x '.repeat(5000))).length).toBe(CENSUS_ERROR_MAX);
+    expect(censusErrorLine(new Error('bad -----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0'))).toBe('Error: bad [key]');
+    expect(censusErrorLine('plain words')).toBe('Error: plain words');
+    expect(censusErrorLine(Object.assign(new Error('m'), { name: 'agentBattles/b1 Qw3rTy9UiOp' }))).toBe('Error: m');
+    expect(censusErrorLine({ get message() { throw new Error('no'); }, name: 'RangeError' })).toBe('RangeError');
   });
 });
