@@ -50,6 +50,15 @@ import { renderEvalIdentityBlock } from './evalIdentityBlocks.js';
 // byte-identical (the DR-13 flag-split pattern: fenced diff = this import +
 // one call site below).
 import { buildFundamentalsBlock } from './fundamentalsRender.js';
+// Crypto Slot paragraph (§7-gated fence contact, Fable build prompt
+// 2026-10-14; merges only with the founder's sign-off on this hunk —
+// docs/audits/20261014_BUILD_CRYPTO_SLOT_PROMPT.md §2): the tiered template's YOUR
+// CRYPTO SLOT block — non-fenced pure module, dark behind
+// CRYPTO_SLOT_PROMPT_ENABLED; '' while dark, so the tiered template stays
+// byte-identical (the DR-13 flag-split pattern: this import + one
+// interpolation below; registered in PROMPT_CONTRIBUTING_MODULES in this
+// same commit). The flat6 template never carries it — no crypto there.
+import { renderCryptoSlotBlock } from './evalCryptoSlotBlock.js';
 
 // ==================== SYSTEM PROMPT ====================
 
@@ -360,7 +369,7 @@ Threshold penalties:
   -2.0x ATR → Meltdown: -35 pts
 
 When you swap out an asset, its current points are LOCKED permanently. The incoming asset starts scoring fresh from its price at swap time.
-
+${renderCryptoSlotBlock()}
 ━━━ DECISION FRAMEWORK ━━━
 
 ${renderDefaultToHold()}

@@ -55,6 +55,7 @@ export const PROMPT_CONTRIBUTING_MODULES = [
   'callRecords/copy.js',     // Cockpit Build 1a: the call lines and receipt text (the chat calls block renders them into the voice prompt at 'on' — spec §4, §9)
   'callRecords/callActions.js', // Cockpit Build 1a: the canonical call-directive templates — model-visible through the directive block (spec §6; Amendment B §12)
   'callRecords/callsBlock.js', // Cockpit Build 1a: the chat calls block rendered into the voice prompt at resolved 'on' (spec §9)
+  'evalCryptoSlotBlock.js',  // Crypto Slot paragraph: the tiered eval prompt's YOUR CRYPTO SLOT block (registered in the same commit as the fenced splice)
 ];
 
 // Every OTHER same-directory module the two fenced assemblers import,

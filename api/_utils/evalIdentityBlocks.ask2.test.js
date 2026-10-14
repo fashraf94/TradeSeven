@@ -30,6 +30,9 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get EQUIPPED_RULE_PRECEDENCE_ENABLED() { return flagState.precedence; },
   get EVAL_IDENTITY_BLOCK_ENABLED() { return flagState.identity; },
+  // Crypto Slot paragraph: the goldens are the crypto-slot-DARK text of
+  // record, so this suite pins that flag dark and stays flip-proof.
+  get CRYPTO_SLOT_PROMPT_ENABLED() { return false; },
 }));
 vi.mock('./firebaseAdmin.js', () => ({ getFirebaseAdmin: () => ({}) }));
 

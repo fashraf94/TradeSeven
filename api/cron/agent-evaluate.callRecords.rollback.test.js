@@ -78,7 +78,8 @@ vi.mock('../_utils/learning/captureReceipt.js', () => ({
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   const actual = await importOriginal();
   // Pilot P6: SWAP_IDENTITY_MODE pinned 'off' too — this suite's fixture is the off shape (writer arguments, trade rows, entry keys), so the founder's flip moves no line here.
-  return { ...actual, CALL_RECORDS_MODE: 'off', SWAP_IDENTITY_MODE: 'off', get TICK_CAPTURE_ENABLED() { return flagState.tickCapture; } };
+  // Crypto Slot paragraph: CRYPTO_SLOT_PROMPT_ENABLED pinned false — the golden's embedded tiered request is the crypto-slot-dark prompt bytes, so that flip moves no line here either.
+  return { ...actual, CALL_RECORDS_MODE: 'off', SWAP_IDENTITY_MODE: 'off', CRYPTO_SLOT_PROMPT_ENABLED: false, get TICK_CAPTURE_ENABLED() { return flagState.tickCapture; } };
 });
 
 const { processAgentBattle } = await import('./agent-evaluate.js');

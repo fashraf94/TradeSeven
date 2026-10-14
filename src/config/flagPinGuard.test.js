@@ -227,6 +227,8 @@ const DARK_BY_DESIGN = {
   //   one-line founder PR after a live battle's shadow read, never a build PR,
   //   and each moves the pin row in anticipationThresholdLintFlags.test.js in
   //   the same commit (BUILD_RULES §2).
+  CRYPTO_SLOT_PROMPT_ENABLED:
+    'Crypto Slot paragraph (docs/audits/20261014_BUILD_CRYPTO_SLOT_PROMPT.md) — the tiered eval prompt\'s YOUR CRYPTO SLOT block, built dark; flips in its own commit after the replay probe reads clean and Flash signs off, never in the build PR. The flip moves the pin in cryptoSlotPromptFlags.test.js to true, drops this entry and regenerates the 7 tiered prompt snapshots (build report §7)',
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────
