@@ -69,6 +69,9 @@ vi.mock('../_utils/learning/captureReceipt.js', () => ({
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get SWAP_IDENTITY_MODE() { return flags.swapIdentity; },
+  // Crypto Slot paragraph: pinned false — the baseline's request hashes are the
+  // crypto-slot-dark prompt bytes, so that flip moves no hash here.
+  CRYPTO_SLOT_PROMPT_ENABLED: false,
 }));
 
 const { processAgentBattle } = await import('./agent-evaluate.js');
