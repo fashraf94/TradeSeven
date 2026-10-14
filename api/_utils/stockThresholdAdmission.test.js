@@ -66,6 +66,18 @@ describe('server stock admission and atomic writers', () => {
     f.h.store.get('stockThresholdControl/admission').enabled = true; f.h.store.get('stockThresholdControl/admission').epoch++;
     await expect(commitBattleDocWithPin(f.adapter, f.doc, { dark: true })).rejects.toMatchObject({ reason: 'creation_selection_changed' }); expect(f.h.writes).toEqual([]);
   });
+  it.each([false, true])('review K3-6: a creation commit error with the selector %s keeps the original error reachable', async on => {
+    selector.enabled = on;
+    const { createAgentBattle } = await import('./agentBattleService.js');
+    const { makeCompositionStoreDouble } = await import('./__fixtures__/compositionStoreDouble.js');
+    const composition = makeCompositionStoreDouble();
+    const cutover = () => Object.assign(new Error('composition cutover interleaved'), { code: 'battle_cutover_interleaved' });
+    const db = { doc: () => ({ get: async () => ({ exists: false, data: () => undefined }) }), collection: name => composition.collection(name) ?? { add: async () => { throw cutover(); }, doc: id => ({ id: id ?? 'battle-test-1', __collection: name }) }, runTransaction: async fn => fn({ get: async ref => ref.get(), create: async () => { throw cutover(); } }) };
+    const agent = { id: 'agent-1', ownerId: 'user-1', name: 'Viper', archetype: 'momentum_chaser', lastDecision: { portfolio: { star: [{ symbol: 'AAPL', baseATR: 3 }], core: [], support: [] }, bench: { stocks: [], crypto: null }, watchlist: { active: [], hotBench: [], monitoring: [] } } };
+    const err = await createAgentBattle(db, agent, {}, {}, { duration: '1d' }).then(() => null, e => e);
+    if (on) expect(err).toMatchObject({ name: 'StockThresholdRefusal', reason: 'corrected_creation_failed', cause: { code: 'battle_cutover_interleaved' } });
+    else expect(err).toMatchObject({ name: 'Error', code: 'battle_cutover_interleaved' });
+  });
   it('ordinary control-read errors become scoped retriable refusals for cooldown cleanup', async () => {
     const f = await creationFixture(); f.h.db.doc = () => ({ get: async () => { throw Error('Firestore unavailable'); } });
     await expect(prepareStockCreation(f.doc, { db: f.h.db })).rejects.toMatchObject({ name: 'StockThresholdRefusal', reason: 'admission_control_unavailable', retriable: true });

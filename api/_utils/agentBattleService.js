@@ -331,7 +331,9 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
     const docRef = await commitBattleDocWithPin(commitDb, battleDoc, activationPin);
     return { id: docRef.id, expiresAt };
   } catch (error) {
-    if (stockSelected && !isTournament && error?.name !== 'StockThresholdRefusal' && !error?.hypothesisCarriage) throw new StockThresholdRefusal('corrected_creation_failed');
+    // The scoped retriable refusal keeps the original error as its cause, so
+    // the deploy log still names it (review K3-6).
+    if (stockSelected && !isTournament && error?.name !== 'StockThresholdRefusal' && !error?.hypothesisCarriage) throw Object.assign(new StockThresholdRefusal('corrected_creation_failed'), { cause: error });
     throw error;
   }
 }

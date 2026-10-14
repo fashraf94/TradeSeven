@@ -208,9 +208,13 @@ describe('pin 3 — no doc re-read between the prompt build and the stamp (disco
     expect(window).not.toMatch(/\.get\(battleRef\)/);
     expect(window).not.toMatch(/runTransaction\(/);
     expect(window).not.toMatch(/Object\.assign\(battle\b/);
-    // the two legitimate write-backs onto `battle` (the migration fields and refreshBattleFromDoc) are the only ones in the file
-    // Corrected-only lock refresh precedes the prompt; post-model refresh is
-    // roster-only and cannot replace prompt-visible controls.
+    // The corrected model-swap roster re-read assigns `battle` field by field,
+    // so it is pinned by name: it runs after the stamp, just before the final
+    // write (review K3-7 — inside the window it moved fundAsOf to the post-swap bench).
+    expect(window).not.toMatch(/refreshCorrectedRoster\(/);
+    // the legitimate write-backs onto `battle` (the migration fields,
+    // refreshBattleFromDoc, and the corrected-only lock-transaction refresh
+    // that precedes the prompt) are the only ones in the file
     expect(CRON.match(/Object\.assign\(battle\b/g)).toHaveLength(3);
   });
 
