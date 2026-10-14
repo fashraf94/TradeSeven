@@ -28,7 +28,19 @@ vi.mock('../agentRiskManager.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../archetypeRegistry.js', async (importOriginal) => {
+  const real = await importOriginal();
+  // one made-up id whose definition lacks a threshold (review C-4); every real id resolves as it does in production
+  return {
+    ...real,
+    getArchetypeDefinition: (id, o) => (id === 'half_built'
+      ? { physics: { hftConfig: { forcedRotation: { enabled: true, pctThreshold: 0.001, ticksThreshold: null, winnerThreshold: 0, maxTickAgeMinutes: 20 } } } }
+      : real.getArchetypeDefinition(id, o)),
+  };
+});
+
 import { writeTapeDay } from './writeTapeDay.js';
+import { tagTapeDay } from './tapeTags.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay } from './__fixtures__/tapeFixtures.js';
 import { stalledDay } from './__fixtures__/tagFixtures.js';
@@ -77,5 +89,13 @@ describe('a tagger throw never escapes the tape write', () => {
     expect(String(tape.coverage.tags.note)).not.toMatch(/tagger failed/);
     expect(tape.tags.inputs).not.toBeNull();
     expect(tape.tags.items.map((i) => i.tickSeq)).toEqual([4, 5]);
+  });
+});
+
+describe('a definition missing a threshold (review C-4)', () => {
+  it('reads unavailable, naming the missing threshold — never complete with no tags', () => {
+    const r = tagTapeDay({ battle: { agentContext: { archetype: 'half_built' } }, doc: { checks: [], actions: [], coverage: { checks: { status: 'complete' }, evidence: { status: 'complete' } } } });
+    expect(r.tags.items).toBeNull();
+    expect(r.coverage).toMatchObject({ status: 'unavailable', note: "stalled unavailable: the archetype's forced-rotation thresholds are incomplete (ticksThreshold)" });
   });
 });

@@ -72,6 +72,8 @@ export async function stalledDay({
     const evalId = quiet ? null : `${battleId}:e${seq}`;
     const firing = seq === exitSeq;
     const verdicts = Object.fromEntries(held.map((s) => [s, firing && s === 'ACN' ? { action: 'SWAP_OUT', reason: 'stagnation' } : { action: 'HOLD', reason: null }]));
+    // the evidence is stamped AFTER the tick's swaps (agent-evaluate.js rebuilds the book before the prompt): the exit check's stamp holds XOM, not ACN
+    const stamped = firing ? held.map((s) => (s === 'ACN' ? 'XOM' : s)) : held;
     const actions = firing ? [{ source: 'risk_manager', exitReason: 'stagnation', symbolOut: 'ACN', symbolIn: 'XOM', swappedOutAt: swapAt, lockedPoints: -2.5, entryPrice: 110 }] : [];
     ticks.push(await makeTick({
       battleId, tickSeq: seq, capturedAtMs, exitReason: kind, stages: STAGES_TO[kind], evalId,
@@ -79,11 +81,11 @@ export async function stalledDay({
       verdicts, decision: quiet ? null : { original: 'HOLD', final: 'HOLD', holdKind: null },
       guardrail: { evaluated: false, deployedCount: 0 }, actions,
       controls: controlEpoch !== null ? { rendered: 'resolved', controlEpoch } : null,
-      evidenceKeys: quiet ? [] : held, symbols: [...new Set([...held, 'XOM'])],
+      evidenceKeys: quiet ? [] : stamped, symbols: [...new Set([...held, 'XOM'])],
     }));
     if (!quiet) {
       const e = makeEntry({ evalId, timestampMs: capturedAtMs - 5_000, total: seq, held: [], declarationsPhase: 'none' });
-      e.evidence = evidenceAt(held, seq, verdicts);
+      e.evidence = evidenceAt(stamped, seq, verdicts);
       evaluations.push(e);
     }
     if (firing) held = held.map((s) => (s === 'ACN' ? 'XOM' : s));

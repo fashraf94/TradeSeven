@@ -396,3 +396,108 @@ describe('tagTapeDay never throws', () => {
     expect(r.coverage.status).toBe('unavailable');
   });
 });
+
+// ── the §2 review's rows (docs/audits/20261012_BUILD_FILM_ROOM_B1.md §7) ────
+
+describe('review A-1 — the threshold less S1 is at least 1: a holding that moves at every check is never stalled', () => {
+  it('degen (ticksThreshold 3) under an aggressive dial: round(3 ÷ 1.3) = 2, less S1 = 0 → floored at 1', () => {
+    const battle = battleOf('degen', { dials: { tempo: 'aggressive' } });
+    const moving = Array.from({ length: 5 }, (_, i) => row(i + 1, i * 15, { px: { ACN: Math.round(300 * 1.05 ** i * 100) / 100 }, chg: { ACN: -1 } }));
+    const { inputs, items } = run(moving, { battle, archetype: 'degen', dialEnabled: true });
+    expect(inputs.perCheck[0].effectiveTicksThreshold).toBe(2);
+    expect(items).toEqual([]);
+    const flatDay = Array.from({ length: 3 }, (_, i) => row(i + 1, i * 15, { px: { ACN: flat(i) } }));
+    expect(run(flatDay, { battle, archetype: 'degen', dialEnabled: true }).items.map((i) => [i.tickSeq, i.count])).toEqual([[2, 1], [3, 2]]);
+  });
+});
+
+describe('review A-2 — a fire recorded only on an entry-rebuilt check (its evidence stamp\'s risk) is a fire', () => {
+  it('no tag after the check whose stamp records the stagnation verdict', () => {
+    const entryRow = (seq, min, verdict) => ({
+      key: `eval:e${seq}`, rowSource: 'entry', tickSeq: null, at: atOf(min), state: 'completed', risk: null,
+      evidence: { ACN: { px: flat(seq), chg: -0.4, ...(verdict ? { risk: { action: 'SWAP_OUT', reason: 'stagnation' } } : {}) } }, evidenceAt: atOf(min),
+    });
+    const checks = Array.from({ length: 8 }, (_, i) => entryRow(i + 1, i * 15, i + 1 >= 6));
+    expect(run(checks).items.map((i) => i.count)).toEqual([3, 4]);   // checks 4 and 5; none from the fire at 6 on
+  });
+});
+
+describe('review A-3 — an exit is preceded only by a tag in the RUN it ends', () => {
+  const fire = { ACN: { action: 'SWAP_OUT', reason: 'stagnation' } };
+
+  it('a morning tag, then a timely move that resets the count, then the rule fires with no tag in the run-up: not preceded', () => {
+    const px = [300, 300.01, 300, 300.01, 300, 306, 306.01, 306];
+    const checks = px.map((p, i) => row(i + 1, i * 15, { px: { ACN: p }, ...(i === 7 ? { risk: fire } : {}) }));
+    const exit = { key: 'swap:acn', at: atOf(7 * 15 - 0.2), symbolOut: 'ACN', symbolIn: 'XOM', exitReason: 'stagnation', tickSeq: 8 };
+    const { items, exits } = run(checks, { actions: [exit] });
+    expect(items.map((i) => i.tickSeq)).toEqual([4, 5]);
+    expect(exits[0].precededByTag).toBe(false);
+  });
+
+  it('a vetoed fire, a reset, a second run-up: the second run is tagged (fired clears with the run) and it precedes the exit', () => {
+    const px = [300, 300.01, 300, 300.01, 300, 300.01, 303, 303.01, 303, 303.01, 303, 303.01];
+    const checks = px.map((p, i) => row(i + 1, i * 15, { px: { ACN: p }, ...([6, 12].includes(i + 1) ? { risk: fire } : {}) }));
+    const exit = { key: 'swap:acn', at: atOf(11 * 15 - 0.2), symbolOut: 'ACN', symbolIn: 'XOM', exitReason: 'stagnation', tickSeq: 12 };
+    const { items, exits } = run(checks, { actions: [exit] });
+    expect(items.map((i) => i.tickSeq)).toEqual([4, 5, 10, 11]);
+    expect(exits[0].precededByTag).toBe(true);
+  });
+});
+
+describe('review A-4 — the swap check: the risk record is the book before the swap, the stamp the book after it', () => {
+  it('the incoming name is first walked at the next check (as the live counter first sees it), and the sold name is no pause', async () => {
+    const { tape } = await writeFor(await stalledDay({ battleId: 'b-swapcheck' }));
+    const trace = [];
+    tagDay({ inputs: tape.tags.inputs, checks: tape.checks, actions: tape.actions, trace });
+    expect(trace.filter((x) => x.symbol === 'XOM')[0].tickSeq).toBe(7);   // not 6, the swap check
+    expect(String(tape.coverage.tags.note)).not.toMatch(/pauses/);
+  });
+});
+
+describe('review A-5 / A-6 — never throws; an unreadable exit instant is unknown', () => {
+  it('a check instant past the Date range: the section and its coverage come back, no throw', () => {
+    const doc = { checks: [{ ...row(1, 0, { px: { ACN: 1 } }), at: 1e20 }], actions: [], coverage: { checks: { status: 'complete' }, evidence: { status: 'complete' } } };
+    expect(tagTapeDay({ battle: battleOf('momentum_chaser'), doc }).coverage.status).toEqual(expect.any(String));
+  });
+
+  it('an exit whose instant is not a string: precededByTag null, never false', () => {
+    const checks = Array.from({ length: 5 }, (_, i) => row(i + 1, i * 15, { px: { ACN: flat(i) } }));
+    const { exits } = run(checks, { actions: [{ key: 'x', at: 1758730000000, symbolOut: 'ACN', symbolIn: 'XOM', exitReason: 'stagnation' }] });
+    expect(exits).toEqual([{ symbol: 'ACN', tickSeq: null, at: null, precededByTag: null }]);
+  });
+});
+
+describe('review C-4 — the winner test\'s unit, a price without a change, entry rows, the evidence instant, the writer\'s wiring', () => {
+  it('chg is a percent: 0.1% is below momentum_chaser\'s 0.15% winner threshold (tagged); 0.2% is not', () => {
+    const day = (c) => Array.from({ length: 5 }, (_, i) => row(i + 1, i * 15, { px: { ACN: flat(i) }, chg: { ACN: c } }));
+    expect(seqsOf(run(day(0.1)).items)).toEqual([4, 5]);
+    expect(seqsOf(run(day(0.2)).items)).toEqual([]);
+  });
+
+  it('a price with no change is never tagged (the winner test cannot be read)', () => {
+    const checks = Array.from({ length: 5 }, (_, i) => ({ ...row(i + 1, i * 15, { px: { ACN: flat(i) } }), evidence: { ACN: { px: flat(i), chg: null } } }));
+    expect(run(checks).items).toEqual([]);
+  });
+
+  it('a check with evidence and no risk record (an entry-rebuilt check) is walked by its stamp', () => {
+    const checks = Array.from({ length: 5 }, (_, i) => ({ ...row(i + 1, i * 15, { px: { ACN: flat(i) } }), risk: null, rowSource: 'entry', tickSeq: null, key: `eval:${i}` }));
+    expect(run(checks).items.map((i) => i.count)).toEqual([3, 4]);
+  });
+
+  it('the age guard reads the evidence instant: stamps 15 minutes apart count even when the checks are captured 25 apart', () => {
+    const checks = [0, 25, 50, 75, 100].map((min, i) => ({ ...row(i + 1, min, { px: { ACN: flat(i) } }), evidenceAt: atOf(i * 15) }));
+    expect(seqsOf(run(checks).items)).toEqual([4, 5]);
+  });
+
+  it('through the writer: the dial flag the close pass runs with (battle_frozen), and the battle RE-READ in the transaction (BA-37)', async () => {
+    const fx = await stalledDay({ battleId: 'b-wired', dials: { tempo: 'aggressive' } });
+    const t = makeTapeDb(seedDay({}, fx));
+    // the pass selected a stale copy naming an archetype the registry does not know; the battle as it stands names momentum_chaser
+    const stale = { ...structuredClone(fx.battle), id: fx.battleId, agentContext: { ...fx.battle.agentContext, archetype: 'speculator' } };
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NOW, battle: stale });
+    const tape = t.store.get(tapePath(fx.battleId, fx.etDate));
+    expect(tape.tags.inputs.archetypeCodeId).toBe('momentum_chaser');
+    expect(tape.tags.inputs.dialEnabledAtTagTime).toBe(true);
+    expect(tape.tags.inputs.perCheck.every((p) => p.basis === 'battle_frozen' && p.tempoMultiplier === 1.3)).toBe(true);
+  });
+});

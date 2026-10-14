@@ -90,9 +90,40 @@ export function listExits(actions) {
     .map((a) => ({ symbol: str(a.symbolOut), tickSeq: Number.isInteger(a.tickSeq) ? a.tickSeq : null, at: str(a.at), precededByTag: null }));
 }
 
+/** The risk actions that take a holding out of the book at its check (agentRiskManager.js evaluateRiskAction). */
+const SWAP_ACTIONS = Object.freeze(['SWAP_OUT', 'EMERGENCY_SWAP', 'TRAIL_STOP']);
+
+/** The stagnation verdict a check records for a holding: on its tick's risk record, or — a check rebuilt from its entry — on the evidence stamp's risk (tickStamps.js composeRisk). */
+const firedAt = (check, sym) => (isObj(check.risk) && check.risk[sym]?.reason === STAGNATION_EXIT_REASON)
+  || (isObj(check.evidence) && isObj(check.evidence[sym]) && check.evidence[sym].risk?.reason === STAGNATION_EXIT_REASON);
+
+/**
+ * The held stocks a check records with no price, less the ones that left the
+ * book AT that check — the evidence is stamped after a swap and no longer
+ * carries the sold name (agent-evaluate.js: the risk record before the swap,
+ * the stamp after it), so a sold name is no pause. A name left when the
+ * check's risk verdict for it is a swap action, or an action of the day swapped
+ * it out at that check (its tickSeq, else an instant after the previous check
+ * and not after this one).
+ */
+export function unpricedHeld(check, { actions = [], prevAt = null } = {}) {
+  const held = heldAt(check);
+  if (!held) return [];
+  const fromMs = toMs(prevAt) ?? -Infinity;
+  const atMs = toMs(check.at);
+  const left = (sym) => (isObj(check.risk) && SWAP_ACTIONS.includes(check.risk[sym]?.action))
+    || rowsOf(actions).some((a) => a.symbolOut === sym && ((Number.isInteger(a.tickSeq) && a.tickSeq === check.tickSeq)
+      || (toMs(a.at) !== null && atMs !== null && toMs(a.at) > fromMs && toMs(a.at) <= atMs)));
+  return held.filter((sym) => num(check.evidence?.[sym]?.px) === null && !left(sym));
+}
+
 /** The dial at one check, with its basis (see the header). */
 function dialAt({ desired, tick, epochLog, dialEnabled }) {
   if (desired === undefined || desired === null) return { basis: 'archetype_default', effectiveTempo: 'standard', multiplier: 1 };
+  // controls.controlEpoch is the log's length after this tick's epoch telemetry
+  // appended (agent-evaluate.js), so log[epoch − 1] is the epoch in force. If
+  // that append's durable write failed twice, the in-memory log was not
+  // extended and the index names the previous epoch (controlSuppressionTelemetry.js) — rare, and not detectable here.
   const epoch = tick?.controls?.controlEpoch;
   const entry = Number.isInteger(epoch) && epoch >= 1 ? epochLog[epoch - 1] : null;
   if (isObj(entry) && typeof entry.modes?.tempoDialEnabled === 'boolean') {
@@ -156,10 +187,17 @@ export function tagInputs({ battle, checks, ticks = [], dialEnabled = TEMPO_DIAL
   };
 }
 
-/** The holdings a check records: its risk verdicts' symbols and its evidence stamp's. Null when it records neither. */
+/**
+ * The holdings a check records: the risk record's symbols — the book the live
+ * counter stepped over at that check (agent-evaluate.js: the risk loop runs
+ * before any swap of the tick) — else, on a check rebuilt from its entry (no
+ * risk record), the evidence stamp's. Null when it records neither. (A name a
+ * swap brought in appears in the stamp before it is in a risk record; the live
+ * counter first sees it at the next tick, and so does this walk.)
+ */
 function heldAt(check) {
-  const keys = [...Object.keys(isObj(check.risk) ? check.risk : {}), ...Object.keys(isObj(check.evidence) ? check.evidence : {})];
-  return keys.length ? [...new Set(keys)].sort() : null;
+  const keys = isObj(check.risk) && Object.keys(check.risk).length ? Object.keys(check.risk) : Object.keys(isObj(check.evidence) ? check.evidence : {});
+  return keys.length ? [...keys].sort() : null;
 }
 
 /**
@@ -170,12 +208,16 @@ function heldAt(check) {
  * over `evidence[sym].px` at the check's evidence instant (`evidenceAt`, else
  * its `at`); a check with no price for the holding pauses it. A holding the
  * check does not record (a check that records holdings at all) leaves the book:
- * its count is dropped, as the live counter prunes it. The rule has FIRED for
- * a holding once a check records its stagnation verdict, until it leaves.
- * A check tags the holding `stalled` when it carries the holding's price and
- * change, the rule has not fired, the count is at or above the effective
- * threshold less S1 (S2's count when the rule is off), and the change is below
- * the rule's winner threshold.
+ * its count is dropped, as the live counter prunes it. A RUN is the stretch
+ * since the holding came into the book or since a timely move reset its count
+ * (a within-age comparison that set it to 0). The rule has FIRED for a holding
+ * once a check of the run records its stagnation verdict. A check tags the
+ * holding `stalled` when it carries the holding's price and change, the rule
+ * has not fired in the run, the count is at or above the effective threshold
+ * less S1 — and at least 1, so a holding that moved at every check is never
+ * stalled (S2's count when the rule is off) — and the change is below the
+ * rule's winner threshold. An exit is preceded by a tag only when a tag of the
+ * holding falls in the run the exit ends.
  *
  * Two parameters exist for the read-only census only (scripts/census-film-room-b1.mjs),
  * never passed by the close pass: `seed`, a per-holding starting state (the
@@ -195,13 +237,15 @@ export function tagDay({ inputs, checks, actions, seed = null, trace = null }) {
   if (walked.length !== inputs.perCheck.length) throw new Error('tags_inputs_mismatch: perCheck does not cover the checks');
   const state = isObj(seed) ? Object.fromEntries(Object.entries(seed).map(([sym, s]) => [sym, { ...s, fired: false }])) : {};
   const items = [];
+  const resets = [];
   walked.forEach((c, i) => {
     const pc = inputs.perCheck[i];
     if (pc.at !== c.at || pc.tickSeq !== (Number.isInteger(c.tickSeq) ? c.tickSeq : null)) throw new Error('tags_inputs_mismatch: perCheck out of step with the checks');
     const held = heldAt(c);
     if (!held) return;
     for (const sym of Object.keys(state)) if (!held.includes(sym)) delete state[sym];
-    const liveAt = fr.enabled ? pc.effectiveTicksThreshold - S1 : pc.effectiveTicksThreshold;
+    // At least 1: the count must have stepped at least once (review A-1: a small dialled threshold less S1 reaches 0).
+    const liveAt = fr.enabled ? Math.max(1, pc.effectiveTicksThreshold - S1) : pc.effectiveTicksThreshold;
     for (const sym of held) {
       const prev = state[sym] ?? { stagnationTicks: 0, lastTickPrice: null, lastTickTimestamp: null, fired: false };
       const ev = isObj(c.evidence) && isObj(c.evidence[sym]) ? c.evidence[sym] : null;
@@ -216,9 +260,12 @@ export function tagDay({ inputs, checks, actions, seed = null, trace = null }) {
         maxTickAgeMinutes: fr.maxTickAgeMinutes,
         stagnationTicks: prev.stagnationTicks,
       });
-      const fired = prev.fired || (isObj(c.risk) && c.risk[sym]?.reason === STAGNATION_EXIT_REASON);
+      // A timely move that reset the count starts a new run: the rule has not fired in it.
+      const reset = step.withinAge && step.stagnationTicks === 0;
+      if (reset) resets.push({ symbol: sym, ms: toMs(c.at) });
+      const fired = (prev.fired && !reset) || firedAt(c, sym);
       state[sym] = { stagnationTicks: step.stagnationTicks, lastTickPrice: step.lastTickPrice, lastTickTimestamp: step.lastTickTimestamp, fired };
-      if (Array.isArray(trace)) trace.push({ symbol: sym, tickSeq: Number.isInteger(c.tickSeq) ? c.tickSeq : null, at: c.at, px, chg, count: step.stagnationTicks, withinAge: step.withinAge, fired, liveAt, winnerThreshold: fr.winnerThreshold });
+      if (Array.isArray(trace)) trace.push({ symbol: sym, tickSeq: Number.isInteger(c.tickSeq) ? c.tickSeq : null, at: c.at, px, chg, count: step.stagnationTicks, withinAge: step.withinAge, reset, fired, liveAt, winnerThreshold: fr.winnerThreshold });
       if (px === null || chg === null || fired) continue;
       if (step.stagnationTicks >= liveAt && chg / 100 < fr.winnerThreshold) {
         items.push({
@@ -232,20 +279,26 @@ export function tagDay({ inputs, checks, actions, seed = null, trace = null }) {
   const acts = rowsOf(actions);
   const exits = listExits(acts).map((x) => {
     const exitMs = toMs(x.at);
-    // The tag must fall inside the holding's stint that the exit ends: after
-    // the last swap that brought the name in before the exit, if any.
-    const entries = acts.filter((a) => a.symbolIn === x.symbol && toMs(a.at) !== null && exitMs !== null && toMs(a.at) < exitMs).map((a) => toMs(a.at));
-    const since = entries.length ? Math.max(...entries) : -Infinity;
-    const precededByTag = exitMs !== null && items.some((it) => it.symbol === x.symbol && toMs(it.at) !== null && toMs(it.at) < exitMs && toMs(it.at) > since);
+    // An exit whose instant is unreadable: unknown, never a mismatch (review A-6).
+    if (exitMs === null) return { ...x, precededByTag: null };
+    // The tag must fall in the RUN the exit ends: after the last swap that
+    // brought the name in, and after the last reset of its count, before the exit.
+    const marks = [
+      ...acts.filter((a) => a.symbolIn === x.symbol && toMs(a.at) !== null && toMs(a.at) < exitMs).map((a) => toMs(a.at)),
+      ...resets.filter((r) => r.symbol === x.symbol && r.ms !== null && r.ms < exitMs).map((r) => r.ms),
+    ];
+    const since = marks.length ? Math.max(...marks) : -Infinity;
+    const precededByTag = items.some((it) => it.symbol === x.symbol && toMs(it.at) !== null && toMs(it.at) < exitMs && toMs(it.at) >= since);
     return { ...x, precededByTag };
   });
   return { items, exits, closing: state };
 }
 
 /** BA-20 — the tags section's coverage: it follows the inputs `stalled` reads (the checks and the evidence), never the bars. */
+const MAX_DATE_MS = 8.64e15;
 function tagsCoverage(doc, { failure = null, pausedChecks = 0 } = {}) {
   const span = (() => {
-    const ms = tagChecks(doc?.checks).map((c) => toMs(c.at)).filter((v) => v !== null).sort((a, b) => a - b);
+    const ms = tagChecks(doc?.checks).map((c) => toMs(c.at)).filter((v) => v !== null && Math.abs(v) <= MAX_DATE_MS).sort((a, b) => a - b);
     return ms.length ? { from: new Date(ms[0]).toISOString(), to: new Date(ms[ms.length - 1]).toISOString() } : null;
   })();
   const sources = ['checks', 'checks.evidence', 'checks.risk', 'actions'];
@@ -262,12 +315,10 @@ function tagsCoverage(doc, { failure = null, pausedChecks = 0 } = {}) {
   return coverageOf('complete', { span, sources, note: pauses.join('; ') || null });
 }
 
-/** Checks that record a holding without its price — where the count pauses. */
-function pausedCheckCount(checks) {
-  return tagChecks(checks).filter((c) => {
-    const held = heldAt(c);
-    return held && held.some((sym) => num(c.evidence?.[sym]?.px) === null);
-  }).length;
+/** Checks that record a holding without its price — where the count pauses (a name sold at the check is no pause). */
+function pausedCheckCount(checks, actions) {
+  const walked = tagChecks(checks);
+  return walked.filter((c, i) => unpricedHeld(c, { actions, prevAt: i ? walked[i - 1].at : null }).length > 0).length;
 }
 
 /**
@@ -293,13 +344,14 @@ export function tagTapeDay({ battle, ticks = [], doc, dialEnabled = TEMPO_DIAL_E
     const { items, exits: tagged } = tagDay({ inputs: r.inputs, checks: doc?.checks, actions: doc?.actions });
     return {
       tags: { ...tagsHeader(), inputs: r.inputs, items, exits: tagged },
-      coverage: tagsCoverage(doc, { pausedChecks: pausedCheckCount(doc?.checks) }),
+      coverage: tagsCoverage(doc, { pausedChecks: pausedCheckCount(doc?.checks, doc?.actions) }),
     };
   } catch (err) {
     const errorClass = str(err?.name) ?? str(err?.constructor?.name) ?? 'Error';
-    return {
-      tags: { ...tagsHeader(), inputs: null, items: null, exits },
-      coverage: tagsCoverage(doc, { failure: `stalled unavailable: the tagger failed (${errorClass})` }),
-    };
+    const note = `stalled unavailable: the tagger failed (${errorClass})`;
+    let coverage;
+    // the failure path's own coverage must not throw either (review A-5): its span is dropped first
+    try { coverage = tagsCoverage(doc, { failure: note }); } catch { coverage = coverageOf('unavailable', { sources: ['checks', 'checks.evidence', 'checks.risk', 'actions'], note }); }
+    return { tags: { ...tagsHeader(), inputs: null, items: null, exits }, coverage };
   }
 }

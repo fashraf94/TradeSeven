@@ -26,7 +26,11 @@
 // §0.2): before anything else main() greps this file and the tagger it runs for
 // a Firestore write call and refuses to run on any match (exit 3). Every
 // Firestore access is a get, a query or a getAll; plain objects and arrays
-// only (the gate would read a Map's or a Set's mutators as writes).
+// only (the gate would read a Map's or a Set's mutators as writes). The gate
+// reads this file and the tagger; the other local modules the script loads
+// (the tape writer's pure helpers, the registry, the constants) are handed
+// plain data only — the Firestore handle is created inside main() from a
+// dynamic import and never leaves it, so no imported module can write through it.
 // scripts/census-film-room-b1.test.js runs the same gate and the core on
 // fixture days. Credentials load only inside main(): the same lookup the
 // growth replay uses (scripts/experiments/growth-replay/growthReplay.js
@@ -39,7 +43,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { tagTapeDay, tagInputs, tagDay } from '../api/_utils/filmTape/tapeTags.js';
+import { tagTapeDay, tagInputs, tagDay, unpricedHeld } from '../api/_utils/filmTape/tapeTags.js';
 import { buildMeetings } from '../api/_utils/filmTape/tapeAssemble.js';
 import { symbolPlan } from '../api/_utils/filmTape/candleInputs.js';
 import { modernNotes } from '../api/_utils/filmTape/tapeNotes.js';
@@ -142,13 +146,16 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
     if (!battle) { bump(out.tags.unavailableReasons, 'battle document unreadable'); out.tags.unavailable += 1; continue; }
 
     // evidence stamp per check state
+    let prevAt = null;
     for (const c of rows(tape.checks)) {
       const s = out.evidence.byState[c.state] ?? (out.evidence.byState[c.state] = { checks: 0, withEvidence: 0, withHeldPx: 0, heldWithoutPx: 0 });
       s.checks += 1;
       const held = Object.keys(isObj(c.risk) ? c.risk : {});
+      const unpriced = unpricedHeld(c, { actions: tape.actions, prevAt });
       if (isObj(c.evidence)) s.withEvidence += 1;
-      if (held.length && held.every((sym) => typeof c.evidence?.[sym]?.px === 'number')) s.withHeldPx += 1;
-      if (held.some((sym) => typeof c.evidence?.[sym]?.px !== 'number')) s.heldWithoutPx += 1;
+      if (held.length && !unpriced.length) s.withHeldPx += 1;
+      if (unpriced.length) s.heldWithoutPx += 1;
+      if (c.at) prevAt = c.at;
     }
 
     // T1
@@ -189,7 +196,11 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
       if (x.precededByTag === null) { out.B.unknown += 1; bump(out.B.mismatchClass, 'tagger_unavailable'); continue; }
       out.B.notPreceded += 1;
       const stint = stintRows(trace, tape.actions, x);
+      const exitMs = toMs(x.at);
+      const sinceIn = Math.max(-Infinity, ...rows(tape.actions).filter((a) => a.symbolIn === x.symbol && toMs(a.at) !== null && toMs(a.at) < exitMs).map((a) => toMs(a.at)));
       const flags = {
+        // a tag of the holding in its stint, but before a reset of its count: the run that ended in the exit had none
+        tag_before_reset: (tags.items ?? []).some((it) => it.symbol === x.symbol && toMs(it.at) > sinceIn && toMs(it.at) < exitMs),
         count_carried_overnight: Boolean(seeded?.exits?.find((s) => s.at === x.at && s.symbol === x.symbol)?.precededByTag),
         no_price_pause: stint.some((r) => r.px === null),
         winner_basis: stint.some((r) => !r.fired && r.px !== null && r.chg !== null && r.count >= r.liveAt && r.chg / 100 >= r.winnerThreshold),
@@ -203,7 +214,7 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
     if (v.etDate === acceptanceA.etDate) {
       for (const x of (tags.exits ?? []).filter((e) => e.symbol === acceptanceA.symbol)) {
         const items = (tags.items ?? []).filter((i) => i.symbol === acceptanceA.symbol).map((i) => ({ at: etClock(i.at), count: i.count, threshold: i.effectiveTicksThreshold }));
-        const walk = trace.filter((r) => r.symbol === acceptanceA.symbol).map((r) => ({ at: etClock(r.at), px: r.px === null ? 'none' : 'priced', count: r.count, liveAt: r.liveAt, fired: r.fired }));
+        const walk = trace.filter((r) => r.symbol === acceptanceA.symbol).map((r) => ({ at: etClock(r.at), px: r.px === null ? 'none' : 'priced', count: r.count, liveAt: r.liveAt, fired: r.fired, reset: r.reset }));
         out.A.exitsFound.push({ battle: battleLabel[battleId], exitAt: etClock(x.at), precededByTag: x.precededByTag, items, walk });
       }
     }
@@ -273,8 +284,10 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
   out.tapes.battlesTaped = Object.keys(battleLabel).length;
   out.tapes.owners = Object.keys(ownerLabel).length;
   out.tapes.days = Object.keys(days).length;
-  const found = out.A.exitsFound.filter((e) => e.exitAt === acceptanceA.etClock);
-  out.A.verdict = found.length ? (found.every((e) => e.precededByTag === true) ? 'PASS' : 'FAIL') : 'NOT_FOUND';
+  // every stagnation exit of the holding that day gets its own verdict; the named one is the one at the named minute
+  for (const e of out.A.exitsFound) e.verdict = e.precededByTag === true ? 'PASS' : 'FAIL';
+  const named = out.A.exitsFound.filter((e) => e.exitAt === acceptanceA.etClock);
+  out.A.verdict = named.length ? (named.every((e) => e.verdict === 'PASS') ? 'PASS' : 'FAIL') : (out.A.exitsFound.length ? `NOT_AT_${acceptanceA.etClock.replace(':', '')}` : 'NOT_FOUND');
   return out;
 }
 
@@ -290,9 +303,9 @@ export function renderB1Census(r) {
   L.push('');
   L.push(`## A — ${r.A.etDate}, ${r.A.symbol}: ${r.A.verdict}`);
   for (const e of r.A.exitsFound) {
-    L.push(`- ${e.battle}: stagnation exit at ${e.exitAt} ET · precededByTag ${e.precededByTag}`);
+    L.push(`- ${e.battle}: stagnation exit at ${e.exitAt} ET · precededByTag ${e.precededByTag} · ${e.verdict}`);
     L.push(`  tags: ${e.items.map((i) => `${i.at} (count ${i.count} / ${i.threshold})`).join(', ') || 'none'}`);
-    L.push(`  walk: ${e.walk.map((w) => `${w.at} ${w.px === 'none' ? 'no price' : `c${w.count}`}${w.fired ? ' fired' : ''}`).join(' · ')}`);
+    L.push(`  walk: ${e.walk.map((w) => `${w.at} ${w.px === 'none' ? 'no price' : `c${w.count}`}${w.reset ? ' reset' : ''}${w.fired ? ' fired' : ''}`).join(' · ')}`);
   }
   L.push('');
   L.push(`## B — exits ${r.B.exits} · preceded ${r.B.preceded} · not preceded ${r.B.notPreceded} · unknown (tagger unavailable) ${r.B.unknown}`);
