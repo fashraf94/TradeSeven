@@ -3238,3 +3238,8 @@ export const SWAP_IDENTITY_MODES = Object.freeze(['off', 'shadow', 'enforce']);
  */
 // Pinned by: cryptoSlotPromptFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const CRYPTO_SLOT_PROMPT_ENABLED = false;
+
+// New battle selection only. Existing games dispatch from their saved tuple.
+// Owner dormant-build adoption: docs/approvals/BAGGERBOMB_STOCK_THRESHOLDS_ADOPTION_20261013.md.
+// Pinned by: stockThresholdModel.test.js (activation requires a later owner request).
+export const STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED = false;

@@ -3,6 +3,9 @@
 // Uses Firebase Admin SDK (not client SDK).
 // Writes to agentBattles collection (not battles).
 
+import { stockModelRoute } from '../../src/utils/stockThresholdModel.js';
+import { executeCorrectedStockSwap } from './stockThresholdAdmission.js';
+import { refuseStock } from './stockThresholdMeasurementProvider.js';
 import {
   calculateAssetScoreServer,
   flattenPortfolioServer,
@@ -220,6 +223,9 @@ function refusalOf(verification) {
  * @returns {Object} { closedTrade, incomingAsset }
  */
 export async function executeSwapServer(db, battleId, battle, resolvedTier, resolvedSlotIndex, benchAsset, currentDay, currentPrices, evaluationMetadata = {}, snapshot = null, opts = {}) {
+  const stockRoute = stockModelRoute(battle);
+  if (stockRoute.status === 'unavailable') refuseStock(stockRoute.reason);
+  if (stockRoute.status === 'corrected') return executeCorrectedStockSwap(db, battleId, battle, resolvedTier, resolvedSlotIndex, benchAsset, currentPrices, currentDay, evaluationMetadata, snapshot, opts);
   const {
     now: clock = () => new Date(),
     fetchDailyReference = getStockAnalysisData,

@@ -21,6 +21,7 @@
 //                 (byte-identity; the PR-3 batteries pin the wider surface).
 
 import { describe, it, expect, vi } from 'vitest';
+import { parse } from 'acorn';
 
 const flagState = { fence: true, compiledIdentity: true };
 vi.mock('./compositionConfig.js', () => ({
@@ -328,6 +329,57 @@ describe('the decide.js catch fix (§2 review F1) — static source guard (the d
     // Both battle call sites (tiered + tournament) thread the pin:
     expect(src.split('activationPin: projectionPin').length - 1).toBe(2);
     // The tournament fork hands the SAME flow pin down:
-    expect(src.includes('runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId: agentDoc.id, projectionPin })')).toBe(true);
+    expect(src.includes('runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId: agentDoc.id, projectionPin, beforeDeployment })')).toBe(true);
+  });
+
+  it('the same pin reaches both battle calls and the deferred tournament projection executes after settlement refusal, with fence errors still aborting (AST)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../agent/decide.js', import.meta.url), 'utf8');
+    const nodes = n => !n || typeof n !== 'object' ? [] : [n, ...Object.values(n).flatMap(v => Array.isArray(v) ? v.flatMap(nodes) : nodes(v))];
+    const ast = nodes(parse(src, { ecmaVersion: 'latest', sourceType: 'module' }));
+    const calls = name => ast.filter(n => n.type === 'CallExpression' && n.callee.name === name);
+    const binding = name => ast.find(n => n.type === 'VariableDeclarator' && n.id?.name === name);
+    const pin = binding('projectionPin');
+    expect(pin.init.type).toBe('AwaitExpression');
+    expect(pin.init.argument.callee.name).toBe('pinActivationDescriptor');
+    for (const gate of calls('ensureDeployableCompiledBuild')) expect(pin.start).toBeLessThan(gate.start);
+    expect(calls('ensureDeployableCompiledBuild').length).toBeGreaterThan(0);
+    const battleCalls = calls('createAgentBattle');
+    expect(battleCalls).toHaveLength(2);
+    for (const call of battleCalls) {
+      const prop = call.arguments.flatMap(n => n.properties || []).find(p => p.key?.name === 'activationPin');
+      expect(prop?.value.name).toBe('projectionPin');
+    }
+    const dispatch = calls('runPrescribedTournamentDeploy');
+    expect(dispatch).toHaveLength(1);
+    for (const name of ['projectionPin', 'beforeDeployment']) {
+      expect(dispatch[0].arguments[0].properties.find(p => p.key.name === name)?.value.name).toBe(name);
+    }
+    const deferred = ast.find(n => n.type === 'AssignmentExpression' && n.left.name === 'deferredTournamentProjection');
+    expect(deferred.right.type).toBe('ArrowFunctionExpression');
+    expect(deferred.right.body.callee.name).toBe('commitActiveRulesProjection');
+    expect(deferred.right.body.arguments.slice(0, 4).map(n => n.name)).toEqual(['db', 'agentRef', 'activeRulesForDeploy', 'projectionPin']);
+    const callback = binding('beforeDeployment').init;
+    expect(callback.type).toBe('ConditionalExpression');
+    expect(callback.test.name).toBe('deferredTournamentProjection');
+    const callbackNodes = nodes(callback.consequent);
+    expect(callbackNodes.some(n => n.type === 'AwaitExpression' && n.argument.callee?.name === 'deferredTournamentProjection')).toBe(true);
+    const caught = callbackNodes.find(n => n.type === 'CatchClause');
+    const fence = caught.body.body[0];
+    expect(src.slice(fence.test.start, fence.test.end)).toBe("projErr?.code === 'projection_stale_generation' || projErr?.code === 'epoch_closed'");
+    const refused = nodes(fence.consequent);
+    expect(refused.some(n => n.type === 'CallExpression' && n.callee.property?.name === 'status' && n.arguments[0].value === 409)).toBe(true);
+    expect(refused.some(n => n.type === 'ReturnStatement' && n.argument?.value === false)).toBe(true);
+    const helper = ast.find(n => n.type === 'FunctionDeclaration' && n.id?.name === 'runPrescribedTournamentDeploy');
+    const helperNodes = nodes(helper.body);
+    const settlement = helperNodes.find(n => n.type === 'IfStatement' && n.test.type === 'AwaitExpression' && n.test.argument.callee?.name === 'refuseUnsettledStockTournamentBattle');
+    const invoke = helperNodes.find(n => n.type === 'IfStatement' && n.test.type === 'LogicalExpression' && n.test.left.name === 'beforeDeployment');
+    expect(invoke.test.right.type).toBe('UnaryExpression');
+    expect(invoke.test.right.operator).toBe('!');
+    expect(invoke.test.right.argument.type).toBe('AwaitExpression');
+    expect(invoke.test.right.argument.argument.callee.name).toBe('beforeDeployment');
+    expect(invoke.consequent.type).toBe('ReturnStatement');
+    expect(settlement.start).toBeLessThan(invoke.start);
+    expect(invoke.start).toBeLessThan(battleCalls.find(c => c.start > helper.start).start);
   });
 });

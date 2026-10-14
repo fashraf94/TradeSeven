@@ -31,16 +31,19 @@
       ],
       "callTokens": [
         "options.activationPin ?? await pinActivationDescriptor(db)",
-        "commitBattleDocWithPin(db,",
+        "const commitDb = stockCreation ? stockCreationDb(db, stockCreation) : db",
+        "await commitBattleDocWithPin(commitDb, battleDoc, activationPin)",
         "manifestGenerationStamp(activationPin)"
       ],
       "order": [
-        ["options.activationPin ?? await pinActivationDescriptor(", "commitBattleDocWithPin("]
+        ["options.activationPin ?? await pinActivationDescriptor(", "stockCreationDb(db, stockCreation)"],
+        ["stockCreationDb(db, stockCreation)", "await commitBattleDocWithPin(commitDb, battleDoc, activationPin)"]
       ],
       "forbidden": [
         "collection('agentBattles').add("
       ],
-      "readerRejection": "compositionAdvisoryRender admissibility gate rejects mismatched/half stamps"
+      "readerRejection": "compositionAdvisoryRender admissibility gate rejects mismatched/half stamps",
+      "note": "PR 958: the stock admission adapter decorates the database passed to the ORIGINAL executed composition fence, using the SAME activationPin; it never replaces that fence. No stock selection passes the original db. compositionDerivedWrites.census.test.js also validates the AST binding, awaited call and ordered flow pin; stockThresholdAdmission.test.js exercises atomic creation and descriptor cutover refusal through the adapter."
     },
     {
       "file": "api/_utils/compileOnSettingsChange.js",

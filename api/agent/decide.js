@@ -14,6 +14,8 @@ import {
   formatStoriesSummary,
 } from '../_utils/agentPromptAssembly.js';
 import { createAgentBattle } from '../_utils/agentBattleService.js';
+import { stockModelRoute } from '../../src/utils/stockThresholdModel.js';
+import { StockThresholdRefusal } from '../_utils/stockThresholdMeasurementProvider.js';
 import { projectActiveRules } from '../_utils/projectActiveRules.js';
 // Rule Conflict Reconciler (Phase 2). api→src import is BUILD_RULES §4-blessed:
 // the reconciler is Node-clean (no browser deps) and featureFlags.js is
@@ -246,6 +248,7 @@ export default async function handler(req, res) {
     // guarded write below validates epoch + generation and stamps the value.
     // Dark: zero reads here, the same single update there — byte-identical.
     const projectionPin = await pinActivationDescriptor(db);
+    let deferredTournamentProjection = null;
     try {
       const [rulesSnap, bundlesSnap] = await Promise.all([
         agentRef.collection('rules').get(),
@@ -288,7 +291,13 @@ export default async function handler(req, res) {
       // creating a battle, and edits are locked mid-battle, so the write is a
       // redundant no-op. The in-memory value above still feeds the prompt.
       if (!agent.activeBattleId) {
-        await commitActiveRulesProjection(db, agentRef, activeRulesForDeploy, projectionPin, { actor: agent.ownerId }); // PR 4 splice (#4: probe admission)
+        if (req.body.gameMode === FLAT6_GAME_MODE) {
+          // The helper's final settlement check must precede this durable write,
+          // including a battle that appeared while loadout inputs were read.
+          deferredTournamentProjection = () => commitActiveRulesProjection(db, agentRef, activeRulesForDeploy, projectionPin, { actor: agent.ownerId });
+        } else {
+          await commitActiveRulesProjection(db, agentRef, activeRulesForDeploy, projectionPin, { actor: agent.ownerId }); // PR 4 splice (#4: probe admission)
+        }
       }
     } catch (projErr) {
       // PR 4 (§2 review F1): the GENERATION-FENCE rejections must NOT ride the
@@ -313,7 +322,21 @@ export default async function handler(req, res) {
     if (req.body.gameMode === FLAT6_GAME_MODE) {
       // The flow pin travels: the tournament battle commit re-validates
       // against the SAME pin taken before this flow's derivations (FC-1).
-      return await runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId: agentDoc.id, projectionPin });
+      const beforeDeployment = deferredTournamentProjection ? async () => {
+        try { await deferredTournamentProjection(); }
+        catch (projErr) {
+          // Preserve the original projection rejection/fail-open behavior.
+          if (projErr?.code === 'projection_stale_generation' || projErr?.code === 'epoch_closed') {
+            await agentRef.update({ deployingAt: null });
+            res.status(409).json({ error: projErr.code });
+            return false;
+          }
+          console.error('[agent/decide] activeRules projection FAILED for agent', agentId,
+            '— deploying with stored activeRules (which is empty for a freshly-seeded agent, i.e. an inert loadout):', projErr);
+        }
+        return true;
+      } : null;
+      return await runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId: agentDoc.id, projectionPin, beforeDeployment });
     }
 
     // 3. Fetch stock universe — ONE Firestore read
@@ -783,6 +806,12 @@ export default async function handler(req, res) {
       }
 
       // Battle has expired — mark it as completed and proceed to create new one
+      // Corrected settlement belongs to the guarded cron completion writer.
+      // This legacy GC has neither operand qualification nor atomic stats.
+      if (stockModelRoute(existingBattle).status !== 'legacy') {
+        await agentRef.update({ deployingAt: null, lastDeployedAt: agent.lastDeployedAt ?? null });
+        throw new StockThresholdRefusal('prior_corrected_battle_requires_settlement');
+      }
       await db.collection('agentBattles').doc(existingBattleId).update({
         status: 'completed',
         completedAt: new Date().toISOString(),
@@ -953,7 +982,7 @@ export default async function handler(req, res) {
       // [Pilot P1b] The carriage race (no battle was created): restore the
       // cooldown, as the baseline gate does, so the deploy is retriable at
       // once; the catch below releases the lock and answers.
-      if (battleErr?.hypothesisCarriage) await agentRef.update({ lastDeployedAt: agent.lastDeployedAt ?? null }).catch(() => {});
+      if (battleErr?.hypothesisCarriage || battleErr?.name === 'StockThresholdRefusal') await agentRef.update({ lastDeployedAt: agent.lastDeployedAt ?? null }).catch(() => {});
       throw battleErr;
     });
 
@@ -1041,6 +1070,7 @@ export default async function handler(req, res) {
       ]);
     }
 
+    if (error?.name === 'StockThresholdRefusal') return res.status(503).json({ error: 'Stock admission unavailable', reason: error.reason, retriable: true });
     return res.status(500).json({
       error: 'Failed to generate portfolio',
       details: error.message,
@@ -1329,10 +1359,39 @@ export function enrichPrescribedPortfolio(symbols, stockUniverse) {
 // caller; every early return clears it.
 // Exported for behavioral testing of the deploy path (test-only surface; no
 // runtime behavior change). The internal FLAT6 dispatch calls it directly.
-export async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId, projectionPin = null }) {
+async function refuseUnsettledStockTournamentBattle({ agentRef, res, activeBattles, checkedAt }) {
+  const doc = activeBattles.docs[0];
+  if (!doc) return false;
+  const battle = doc.data(), expiresAt = battle.expiresAt;
+  const isExpired = expiresAt && (expiresAt.toDate ? expiresAt.toDate() : new Date(expiresAt)) < checkedAt;
+  const route = stockModelRoute(battle);
+  if (!isExpired || route.status === 'legacy') return false;
+  // Clear only the temporary lock; never restore fields from the stale agent
+  // snapshot or write completion/score/statistics on this deploy path.
+  await agentRef.update({ deployingAt: null });
+  res.status(503).json({
+    error: 'existing_battle_requires_settlement', reason: 'prior_corrected_battle_requires_settlement',
+    retriable: true, existingBattleId: doc.id, modelStatus: route.status,
+    message: 'Existing stock battle requires qualified settlement before tournament deployment.',
+  });
+  return true;
+}
+
+export async function runPrescribedTournamentDeploy({ db, req, res, agentRef, agent, agentId, projectionPin = null, beforeDeployment = null }) {
   const clearLock = () => agentRef.update({ deployingAt: null }).catch(() => {});
   const modeConfig = resolveModeConfig(FLAT6_GAME_MODE);
   const { groupId, prescribedPortfolio, isCpu, userPicksStance, doubleDownSymbols, userPicks } = req.body;
+
+  // Resolve settlement before any durable deployment write. Legacy projection
+  // still precedes the original validation exits, using its existing flow pin.
+  const activeBattles = await db.collection('agentBattles')
+    .where('agentId', '==', agentId)
+    .where('status', '==', 'active')
+    .limit(1)
+    .get();
+  const existingBattleCheckedAt = new Date();
+  if (await refuseUnsettledStockTournamentBattle({ agentRef, res, activeBattles, checkedAt: existingBattleCheckedAt })) return;
+  if (beforeDeployment && !await beforeDeployment()) return;
 
   // Joint-stamp contract (founder ruling B3): no groupId, no battle.
   if (typeof groupId !== 'string' || groupId.length === 0) {
@@ -1390,19 +1449,24 @@ export async function runPrescribedTournamentDeploy({ db, req, res, agentRef, ag
 
   // One active battle per agent — the same check + expiry completion as the
   // legacy path (duplicated deliberately so the legacy handler body stays
-  // untouched).
-  const activeBattles = await db.collection('agentBattles')
+  // untouched). Re-read here, where the pre-guard helper read it: the
+  // settlement snapshot predates the projection, rankings and agent writes,
+  // and expiring from it could overwrite a completion the cron committed in
+  // between (review K2-4).
+  const currentBattles = await db.collection('agentBattles')
     .where('agentId', '==', agentId)
     .where('status', '==', 'active')
     .limit(1)
     .get();
-  if (!activeBattles.empty) {
-    const existingBattle = activeBattles.docs[0].data();
-    const existingBattleId = activeBattles.docs[0].id;
+  if (!currentBattles.empty) {
+    const existingBattle = currentBattles.docs[0].data();
+    const existingBattleId = currentBattles.docs[0].id;
     const expiresAt = existingBattle.expiresAt;
-    const isExpired = expiresAt && (
-      (expiresAt.toDate ? expiresAt.toDate() : new Date(expiresAt)) < new Date()
-    );
+    // A supported/invalid saved model never falls into legacy GC: it passed the
+    // guard only while unexpired, and one first seen by the re-read above never
+    // met the guard at all. Legacy uses its original clock.
+    const isExpired = stockModelRoute(existingBattle).status === 'legacy' && expiresAt &&
+      (expiresAt.toDate ? expiresAt.toDate() : new Date(expiresAt)) < new Date();
     if (!isExpired) {
       await agentRef.update({ activeBattleId: existingBattleId });
       return res.status(200).json({

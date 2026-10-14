@@ -21,6 +21,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { parse } from 'acorn';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../..');
@@ -28,6 +29,10 @@ const CENSUS = JSON.parse(readFileSync(resolve(HERE, 'compositionDerivedWritesCe
 const WRITER_CENSUS = JSON.parse(readFileSync(resolve(HERE, 'compositionWriterCensus.json'), 'utf8'));
 
 const read = (f) => readFileSync(resolve(REPO, f), 'utf8');
+function nodes(node) {
+  if (!node || typeof node !== 'object') return [];
+  return [node, ...Object.values(node).flatMap(v => Array.isArray(v) ? v.flatMap(nodes) : nodes(v))];
+}
 
 describe('B1-EXT part 3 — the derived-write census', () => {
   it('every derived writer carries its declared mechanism tokens in source (the wiring proof)', () => {
@@ -64,6 +69,32 @@ describe('B1-EXT part 3 — the derived-write census', () => {
       expect((row.order ?? []).length, `${file} row lost its order leg`).toBeGreaterThan(0);
       expect((row.forbidden ?? []).length, `${file} row lost its forbidden leg`).toBeGreaterThan(0);
     }
+  });
+
+  it('the stock database adapter remains bound to the original awaited composition fence and the same flow pin (AST, comments cannot satisfy it)', () => {
+    const ast = nodes(parse(read('api/_utils/agentBattleService.js'), { ecmaVersion: 'latest', sourceType: 'module' }));
+    const body = nodes(ast.find(n => n.type === 'FunctionDeclaration' && n.id?.name === 'createAgentBattle').body);
+    const binding = name => body.find(n => n.type === 'VariableDeclarator' && n.id?.name === name);
+    const pin = binding('activationPin');
+    expect(pin.init.type).toBe('LogicalExpression');
+    expect(pin.init.operator).toBe('??');
+    expect(pin.init.left.object.name).toBe('options');
+    expect(pin.init.left.property.name).toBe('activationPin');
+    expect(pin.init.right.type).toBe('AwaitExpression');
+    expect(pin.init.right.argument.callee.name).toBe('pinActivationDescriptor');
+    expect(pin.init.right.argument.arguments.map(n => n.name)).toEqual(['db']);
+    const db = binding('commitDb');
+    expect(db.init.type).toBe('ConditionalExpression');
+    expect(db.init.test.name).toBe('stockCreation');
+    expect(db.init.consequent.callee.name).toBe('stockCreationDb');
+    expect(db.init.consequent.arguments.map(n => n.name)).toEqual(['db', 'stockCreation']);
+    expect(db.init.alternate.name).toBe('db');
+    const calls = body.filter(n => n.type === 'CallExpression' && n.callee.name === 'commitBattleDocWithPin');
+    expect(calls).toHaveLength(1);
+    expect(calls[0].arguments.map(n => n.name)).toEqual(['commitDb', 'battleDoc', 'activationPin']);
+    expect(body.some(n => n.type === 'AwaitExpression' && n.argument === calls[0])).toBe(true);
+    expect(pin.start).toBeLessThan(db.start);
+    expect(db.start).toBeLessThan(calls[0].start);
   });
 
   it('the census is COMPLETE: every A46-censused composition writer class is classified derived or excluded', () => {

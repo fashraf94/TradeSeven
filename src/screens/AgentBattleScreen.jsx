@@ -7,6 +7,8 @@
 //   3. useWebSocketPrices + EODHD polling — live prices for matchup view
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { stockModelRoute, isStock, committedStockContext, validCommittedStockScores } from '../utils/stockThresholdModel.js';
+import { StockRewardDetails } from '../components/draft/ResearchTabs/BaggerBombTab.jsx';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronLeft, Activity, Bot, Bookmark } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
@@ -192,7 +194,31 @@ const entryPriceOf = (asset, startingPrices) => asset.swapPrice || startingPrice
  * position's qualified current and its retained GENUINE close. Same arithmetic,
  * one copy (the scoring-copy lesson, BUILD_RULES §4).
  */
-function enrichHeldPosition(asset, tier, { curPrice, previousClose, startingPrices, thresholds, thresholdHistory, activatedAt, createdAt }) {
+export function StockDispatchRow(props) {
+  if (!props.leftAsset?.stockRewardRoute && !props.rightAsset?.stockRewardRoute) return <TacticalRow {...props} />;
+  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+    {['leftAsset', 'rightAsset'].map((side, i) => {
+      const a = props[side];
+      if (!a) return <div key={side} />;
+      if (!a.stockRewardRoute) return <TacticalRow key={side} {...props} leftAsset={i === 0 ? a : null} rightAsset={i === 1 ? a : null} />;
+      return <article key={side} aria-label={`${i === 0 ? 'Agent' : 'CPU'} ${a.symbol}`}>
+        <button type="button" onClick={() => props.onSymbolClick?.(a)}>{a.symbol}</button>
+        <p>{a.points === null ? 'Score unavailable' : `${a.points} pts`}; {a.badges?.join(', ') || 'no earned tiers'}</p>
+        <details><summary>Why? Measured reward</summary><StockRewardDetails context={a.rewardContext} />
+          {i === 0 && props.renderWhy?.(a.rewardContext?.proximity || null)}
+        </details>
+      </article>;
+    })}
+  </div>;
+}
+
+export function enrichHeldPosition(asset, tier, { curPrice, previousClose, startingPrices, thresholds, thresholdHistory, activatedAt, createdAt, stockBattle, stockSide = 'agent', stockSlot = 0 }) {
+  const route = stockModelRoute(stockBattle);
+  if (route.status === 'unavailable' || (route.status === 'corrected' && isStock(asset))) {
+    const context = route.status === 'corrected' ? committedStockContext(stockBattle, asset, stockSide, tier, stockSlot) : route;
+    const score = calculateAssetScoreV3({ ...asset, tier }, null, {}, {}, null, context);
+    return { ...asset, stockRewardRoute: true, rewardContext: context, points: score.totalPoints, badges: score.badges, history: score.history, priceChange: score.priceChange ?? null, currentPrice: context.currentPrice ?? null, openPrice: asset.stockThresholdReceipt?.fill ?? null };
+  }
   const openPrice = entryPriceOf(asset, startingPrices);
   const threshold = thresholds[asset.symbol] || {};
   const baseATR = threshold.threshold || DEFAULT_THRESHOLD;
@@ -1282,6 +1308,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       thresholdHistory: identifiedBattle?.thresholdHistory,
       activatedAt: identifiedBattle?.activatedAt,
       createdAt: identifiedBattle?.createdAt,
+      stockBattle: identifiedBattle,
     };
     const byPos = {};
     const side = (name, portfolio) => {
@@ -1297,7 +1324,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           const q = quoteStateOf(posKey);
           let enriched;
           if (q.status === 'usable') {
-            enriched = enrichHeldPosition(asset, tier, { ...scoring, curPrice: q.accepted.price, previousClose: q.genuineClose });
+            enriched = enrichHeldPosition(asset, tier, { ...scoring, curPrice: q.accepted.price, previousClose: q.genuineClose, stockSide: name === 'player' ? 'agent' : 'cpu', stockSlot: slot });
           } else {
             const entry = typeof asset.symbol === 'string' ? entryPriceOf(asset, gatedContext.startingPrices) : 0;
             enriched = {
@@ -1310,6 +1337,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               },
             };
           }
+          if (isStock(asset) && stockModelRoute(identifiedBattle).status !== 'legacy') enriched = enrichHeldPosition(asset, tier, { ...scoring, stockSide: name === 'player' ? 'agent' : 'cpu', stockSlot: slot });
           enriched = { ...enriched, quotePosKey: posKey, quoteToken: token };
           byPos[posKey] = enriched;
           return enriched;
@@ -1322,7 +1350,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     return { player, cpu, byPos };
     // quoteTokenOf / quoteStateOf read exactly gatedLineage and quoteBook.quotes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gatedContext, gatedLineage, quoteBook.quotes, identifiedBattle?.thresholdHistory, identifiedBattle?.activatedAt, identifiedBattle?.createdAt]);
+  }, [gatedContext, gatedLineage, quoteBook.quotes, identifiedBattle]);
 
   // Completeness (§5.2): a structurally valid snapshot and a qualified current
   // for EVERY required held position on both sides (risk-locked included).
@@ -1520,7 +1548,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
 
   // ── Asset enrichment ──────────────────────────────────────────────────────
 
-  const enrichAsset = useCallback((asset, tier) => {
+  const enrichAsset = useCallback((asset, tier, stockSide = 'agent', stockSlot = 0) => {
     if (!asset) return null;
 
     if (asset.isCash) return enrichCash(asset);
@@ -1535,8 +1563,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       thresholdHistory: agentBattle?.thresholdHistory,
       activatedAt: agentBattle?.activatedAt,
       createdAt: agentBattle?.createdAt,
+      stockBattle: agentBattle, stockSide, stockSlot,
     });
-  }, [effectivePrices, startingPrices, thresholds, previousClosePrices, agentBattle?.thresholdHistory, agentBattle?.activatedAt, agentBattle?.createdAt]);
+  }, [effectivePrices, startingPrices, thresholds, previousClosePrices, agentBattle]);
 
   // ── Enriched portfolios ───────────────────────────────────────────────────
 
@@ -1547,9 +1576,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     const p = playerPortfolioSource;
     if (!p) return { star: [], core: [], support: [] };
     return {
-      star: (p.star || []).map(a => enrichAsset(a, 'star')),
-      core: (p.core || []).map(a => enrichAsset(a, 'core')),
-      support: (p.support || []).map(a => enrichAsset(a, 'support')),
+      star: (p.star || []).map((a, slot) => enrichAsset(a, 'star', 'agent', slot)),
+      core: (p.core || []).map((a, slot) => enrichAsset(a, 'core', 'agent', slot)),
+      support: (p.support || []).map((a, slot) => enrichAsset(a, 'support', 'agent', slot)),
     };
   }, [gatedPath, playerPortfolioSource, enrichAsset]);
   // Gated: the identified context's rows (empty until admitted); flag-off and
@@ -1581,9 +1610,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     const p = opponentPortfolioSource;
     if (!p) return { star: [], core: [], support: [] };
     return {
-      star: (p.star || []).map(a => enrichAsset(a, 'star')),
-      core: (p.core || []).map(a => enrichAsset(a, 'core')),
-      support: (p.support || []).map(a => enrichAsset(a, 'support')),
+      star: (p.star || []).map((a, slot) => enrichAsset(a, 'star', 'cpu', slot)),
+      core: (p.core || []).map((a, slot) => enrichAsset(a, 'core', 'cpu', slot)),
+      support: (p.support || []).map((a, slot) => enrichAsset(a, 'support', 'cpu', slot)),
     };
   }, [gatedPath, opponentPortfolioSource, enrichAsset]);
   const enrichedOpponentPortfolio = gatedPath ? (gatedEnriched?.cpu ?? EMPTY_ENRICHED) : legacyEnrichedOpponentPortfolio;
@@ -1677,7 +1706,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // otherwise the qualified stored pair with its actual time, else an explicit
   // unavailable object — never a default 0–0. Undefined everywhere else, which
   // each consumer reads as "exactly as shipped".
-  const comparison = admitted && gatedContextKey ? selectComparison({
+  const comparison = stockModelRoute(agentBattle).status !== 'legacy' ? selectComparison({ status: agentBattle?.status, complete: false, browserPair: null, scoreState: validCommittedStockScores(agentBattle) ? agentBattle.scoreState : {}, contextKey: agentBattle?.id, nowMs: Date.now() }) : admitted && gatedContextKey ? selectComparison({
     status: agentBattle?.status,
     complete: quotesComplete,
     browserPair: quotesComplete ? [playerTotalScore, opponentTotalScore] : null,
@@ -2679,16 +2708,22 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     return Math.round(viewportHeight * scale);
   })();
 
-  // Memoize enriched research asset to avoid re-renders on every price tick
+  // Memoize enriched research asset to avoid re-renders on every price tick.
+  // On a pinned stock model a bare held name (cockpit, chat, ticker card)
+  // resolves to its enriched held row — the player's first, then the CPU's —
+  // so research reads that row's own context, never the legacy table (review K1-2).
   const stableResearchAsset = useMemo(() => {
     if (!researchAsset) return null;
-    return buildResearchAsset(researchAsset, {
+    const pinnedRow = !researchAsset.stockRewardRoute && stockModelRoute(agentBattle).status !== 'legacy'
+      ? [enrichedPlayerPortfolio, enrichedOpponentPortfolio].flatMap(p => ['star', 'core', 'support'].flatMap(k => p?.[k] || [])).find(a => a?.stockRewardRoute && a.symbol === researchAsset.symbol)
+      : null;
+    return buildResearchAsset(pinnedRow || researchAsset, {
       livePrices: effectivePrices,
       thresholds,
       startingPrices,
       useDefaultThreshold: true,
     });
-  }, [researchAsset, effectivePrices, thresholds, startingPrices]);
+  }, [researchAsset, effectivePrices, thresholds, startingPrices, agentBattle, enrichedPlayerPortfolio, enrichedOpponentPortfolio]);
 
   // ── Quote integrity: render-time eligibility of open details (§7) ────────
   //
@@ -2721,6 +2756,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               currentPrice: q.accepted.price,
               lockedPrice: entry > 0 ? entry : null,
               threshold: gatedContext.thresholds[pos.symbol]?.threshold || DEFAULT_THRESHOLD,
+              ...(isStock(pos.asset) && stockModelRoute(identifiedBattle).status !== 'legacy' ? {
+                // No chart threshold on the pinned route (review K1-1).
+                threshold: null, stockRewardRoute: true, stockThresholdReceipt: pos.asset.stockThresholdReceipt,
+                rewardContext: committedStockContext(identifiedBattle, pos.asset, pos.side === 'cpu' ? 'cpu' : 'agent', pos.tier, pos.slot),
+              } : {}),
               ...(crypto ? { isCrypto: true } : {}),
             },
             controlledQuote: {
@@ -2796,7 +2836,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
           const whyable = controllerOn && !!leftAsset?.symbol && !leftAsset.isCash;
           const isWhyOpen = whyable && whyOpen?.key === rowKey && whyOpen.symbol === leftAsset.symbol;
           const row = (
-            <TacticalRow
+            <StockDispatchRow
               key={rowKey}
               leftAsset={leftAsset}
               rightAsset={enrichedOpponentPortfolio[tier.key]?.[i] || null}
@@ -2855,7 +2895,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                     heldSince={leftAsset.swappedInAt || agentBattle?.activatedAt || null}
                     // A2.1: the two scoring tiers as prices, from the row's own
                     // baseline and its own baseATR — never a third source.
-                    lines={deriveTierPrices(leftAsset.thresholdBaseline, leftAsset.baseATR, leftAsset.direction)}
+                    lines={deriveTierPrices(leftAsset.thresholdBaseline, leftAsset.baseATR, leftAsset.direction, leftAsset.rewardContext)}
                     // A2.1b: only the sentences of THIS tier's deploy
                     // rationale that name THIS piece — else nothing.
                     deployPlan={deployPlan}
