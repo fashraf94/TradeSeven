@@ -50,7 +50,7 @@ import { modernNotes } from '../api/_utils/filmTape/tapeNotes.js';
 import { etDayBounds, withinCandleWindow, toMs } from '../api/_utils/filmTape/tapeTime.js';
 import { tradingTimeline } from '../src/utils/tapeSchedule.js';
 import { TEMPO_DIAL_ENABLED } from '../src/config/featureFlags.js';
-import { AWAITING_CANDLES_NOTE } from '../src/constants/filmTape.js';
+import { AWAITING_CANDLES_NOTE, CANDLE_SELECTABLE_STATUSES } from '../src/constants/filmTape.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..');
@@ -109,7 +109,7 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
     A: { etDate: acceptanceA.etDate, symbol: acceptanceA.symbol, exitsFound: [], verdict: 'NOT_FOUND' },
     evidence: { byState: {} },
     T1: { tieredNoOpponent: 0, tieredNoOpponentWithZeroLastCheck: 0 },
-    T2: { meetings: 0, byStatus: {}, legs: 0, tapesWithNewSymbols: 0, newSymbolsPerTape: 0, newSymbolDayPairs: 0, perMeeting: [], filedLaterDay: {}, refreshExpires: 0, refreshRequeues: 0, notCopiedNotes: 0 },
+    T2: { meetings: 0, byStatus: {}, legs: 0, tapesWithNewSymbols: 0, newSymbolsPerTape: 0, newSymbolDayPairs: 0, perMeeting: [], filedLaterDay: {}, legsFetchedNextRun: 0, legsNotFetched: 0, notCopiedNotes: 0 },
     W1: { terminalWithAwaitingNote: 0 },
     W2: { battlesWithDroppedEntries: 0, ofThemTaped: 0 },
     W4: { tapesWithOldWording: 0 },
@@ -247,8 +247,10 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
       out.T2.tapesWithNewSymbols += 1;
       out.T2.newSymbolsPerTape += added;
       const c = tape.passes?.candles;
-      if (c?.status === 'written' && !withinCandleWindow(v.etDate, nowMs)) out.T2.refreshExpires += 1;
-      if (withinCandleWindow(v.etDate, nowMs) && ['written', 'partial', 'failed'].includes(c?.status)) out.T2.refreshRequeues += 1;
+      // meeting-only symbols are best effort and never a candle input (B1 review): the refresh re-queues nothing,
+      // so a day's new leg symbols are fetched only if its candle pass is still to run inside the window
+      if (CANDLE_SELECTABLE_STATUSES.includes(c?.status) && withinCandleWindow(v.etDate, nowMs)) out.T2.legsFetchedNextRun += 1;
+      else out.T2.legsNotFetched += 1;
     }
 
     // W1
@@ -316,8 +318,8 @@ export function renderB1Census(r) {
   for (const [s, v] of Object.entries(r.evidence.byState).sort()) L.push(`- ${s}: ${v.checks} · ${v.withEvidence} · ${v.withHeldPx} · ${v.heldWithoutPx}`);
   L.push('');
   L.push(`## T1 — written tiered days whose battle has no opponent: ${r.T1.tieredNoOpponent} (of them, a stored last-check opponent of 0: ${r.T1.tieredNoOpponentWithZeroLastCheck})`);
-  L.push(`## T2 — meetings the writer copies: ${r.T2.meetings} (${kv(r.T2.byStatus)}) · legs ${r.T2.legs} · days with a new leg symbol ${r.T2.tapesWithNewSymbols} · new symbols summed per day ${r.T2.newSymbolsPerTape} · new (symbol, day) EODHD requests ${r.T2.newSymbolDayPairs} (${r.T2.newSymbolDayPairs * 5} units)`);
-  L.push(`   on the refresh: written candle passes outside the window that would expire ${r.T2.refreshExpires} · passes inside it that would be re-queued ${r.T2.refreshRequeues} · days whose meeting coverage names something not copied ${r.T2.notCopiedNotes}`);
+  L.push(`## T2 — meetings the writer copies: ${r.T2.meetings} (${kv(r.T2.byStatus)}) · legs ${r.T2.legs} · days with a new leg symbol ${r.T2.tapesWithNewSymbols} · new symbols summed per day ${r.T2.newSymbolsPerTape} · new (symbol, day) pairs the legs name ${r.T2.newSymbolDayPairs} (${r.T2.newSymbolDayPairs * 5} EODHD units if fetched)`);
+  L.push(`   on the refresh (no candle field moves; no request is made): days whose new leg symbols the next candle run fetches ${r.T2.legsFetchedNextRun} · days whose candle pass already ran, so their legs get no bars ${r.T2.legsNotFetched} · days whose meeting coverage names something not copied ${r.T2.notCopiedNotes}`);
   L.push(`   meetings resolved on a later ET day than created (whole histories): ${kv(r.T2.filedLaterDay)}`);
   for (const m of r.T2.perMeeting) L.push(`   - ${m.battle} ${m.etDate}: ${m.status} · legs ${m.legs} · new symbols ${m.newSymbols}`);
   L.push(`## W1 — closed-out days still saying a candle pass is coming: ${r.W1.terminalWithAwaitingNote}`);
