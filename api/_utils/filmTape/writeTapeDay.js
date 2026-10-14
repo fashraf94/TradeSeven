@@ -59,6 +59,7 @@ export const isTieredBattle = (battle) => resolveModeConfig(battle?.gameMode).la
  * @param {object} [opts.runsRead]        the day's agentEvalRuns read ONCE per pass (§5)
  * @param {Function} [opts.resolveResult] BA-4 result comparison (default: the evaluator's own)
  * @param {string} [opts.callRecordsMode] the CALL_RECORDS_MODE this run writes under (BA-16)
+ * @param {number} [opts.sizeBudget]     the document size budget (tapeSize.js; default TAPE_SIZE_BUDGET_BYTES — a test seam)
  * @returns {Promise<{ status: 'written'|'unchanged'|'skipped_mode', battleId, etDate, runCount, bytes }>}
  */
 export async function writeTapeDay(battleId, etDate, opts = {}) {
@@ -145,7 +146,8 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
       tagDay = tagFor(now);
     }
     // BA-39: the merge recomputes the result with the same comparison the assembly used.
-    const { doc: merged, changed } = mergeTape(stored, doc, { nowIso, withinWindow, canonicalBattle, resolveResult: opts.resolveResult ?? resolveBattleResult, tagDay });
+    // B1 (Astra F3): the merged document stays within the size budget where B1's optional sections can make it so.
+    const { doc: merged, changed } = mergeTape(stored, doc, { nowIso, withinWindow, canonicalBattle, resolveResult: opts.resolveResult ?? resolveBattleResult, tagDay, sizeBudget: opts.sizeBudget });
     if (changed) tx.set(ref, merged);
     outcome = { doc: merged, changed };
   });

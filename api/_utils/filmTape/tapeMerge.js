@@ -48,6 +48,7 @@ import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf, MEETINGS_
 import { candleInputFingerprint, changedInputParts, replayLogicVersionOf, REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
 import { modernNotes } from './tapeNotes.js';
+import { fitTapeToBudget, TAPE_SIZE_BUDGET_BYTES } from './tapeSize.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const present = (v) => v !== null && v !== undefined;
@@ -393,9 +394,13 @@ function battleWinner(stored, assembled, canonicalBattle) {
  *   tagTapeDay, which never throws), so `tags` is recomputed from the merged
  *   checks and actions on every write. The merge imports no tagger, for the
  *   same reason it imports no evaluator. Without one, a stored section stands.
+ *   `sizeBudget` (B1, Astra F3): the document size the write stays within —
+ *   B1's optional sections go first when the merged document would pass it
+ *   (tapeSize.js fitTapeToBudget), on a fresh write and a merge alike, before
+ *   "did anything change" is asked. Default TAPE_SIZE_BUDGET_BYTES.
  * @returns {{ doc: object, changed: boolean, carried: object }}
  */
-export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false, resolveResult = null, tagDay = null }) {
+export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false, resolveResult = null, tagDay = null, sizeBudget = TAPE_SIZE_BUDGET_BYTES }) {
   // The read's limits (BA-26 amended) steer the coverage merge; they are never stored.
   const { readLimits = {}, ...assembled } = isObj(assembledIn) ? assembledIn : {};
   const isSkipped = assembled?.passes?.close?.status === 'skipped_mode';
@@ -409,12 +414,12 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       }
     }
     if (!isSkipped) withTags(doc, null, tagDay);
-    return { doc: sanitizeForFirestore(doc), changed: true, carried: {} };
+    return { doc: fitTapeToBudget(sanitizeForFirestore(doc), { budget: sizeBudget }), changed: true, carried: {} };
   }
   if (isSkipped) {
     const doc = { ...assembled, firstWrittenAt: stored.firstWrittenAt ?? nowIso, runCount: stored.runCount ?? 1, writtenAt: stored.writtenAt ?? nowIso };
     doc.passes = { ...doc.passes, close: { ...doc.passes.close, writtenAt: stored.passes?.close?.writtenAt ?? nowIso } };
-    return finish(stored, doc, nowIso, {});
+    return finish(stored, doc, nowIso, {}, sizeBudget);
   }
 
   const carried = {};
@@ -577,7 +582,7 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
   merged.firstWrittenAt = stored.firstWrittenAt ?? stored.writtenAt ?? nowIso;
   merged.runCount = stored.runCount ?? 1;
   merged.passes.close.writtenAt = stored.passes?.close?.writtenAt ?? nowIso;
-  return finish(stored, merged, nowIso, carried);
+  return finish(stored, merged, nowIso, carried, sizeBudget);
 }
 
 /**
@@ -730,8 +735,8 @@ function versionLabelled(cov, pairs, withinWindow, status) {
   return { ...cov, status: cov.status === 'complete' ? 'partial' : cov.status, note: [...kept, label].join('; ') };
 }
 
-function finish(stored, doc, nowIso, carried) {
-  const clean = sanitizeForFirestore(doc);
+function finish(stored, doc, nowIso, carried, sizeBudget = TAPE_SIZE_BUDGET_BYTES) {
+  const clean = fitTapeToBudget(sanitizeForFirestore(doc), { budget: sizeBudget });
   if (sameContent(stored, clean)) return { doc: stored, changed: false, carried };
   clean.writtenAt = nowIso;
   clean.runCount = (stored.runCount ?? 1) + 1;
