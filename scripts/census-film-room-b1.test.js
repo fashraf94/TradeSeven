@@ -17,7 +17,7 @@ vi.mock('../src/config/featureFlags.js', async (importOriginal) => ({
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { WRITE_PATTERN, GATED_FILES, writeCallsIn, computeB1Census, renderB1Census, tapeIdsOf, parseArgs, censusErrorLine, CENSUS_ERROR_MAX } from './census-film-room-b1.mjs';
+import { WRITE_PATTERN, GATED_FILES, writeCallsIn, computeB1Census, renderB1Census, tapeIdsOf, parseArgs, censusErrorLine, CENSUS_ERROR_MAX, registerNeverPrinted } from './census-film-room-b1.mjs';
 import { writeTapeDay } from '../api/_utils/filmTape/writeTapeDay.js';
 import { makeTapeDb } from '../api/_utils/filmTape/__fixtures__/tapeFirestore.js';
 import { seedDay } from '../api/_utils/filmTape/__fixtures__/tapeFixtures.js';
@@ -174,16 +174,38 @@ describe('the small parts', () => {
 describe('the CLI\'s own output — no ids, no key material (Astra\'s B1 review, backlog 1)', () => {
   const SRC = readFileSync(resolve(REPO, 'scripts/census-film-room-b1.mjs'), 'utf8');
 
-  it('main() prints no project id: no console line names one, and the credential\'s values are registered never to be printed', () => {
-    const consoleLines = SRC.split(/\r?\n/).filter((l) => /console\.(log|error|warn|info)\(/.test(l));
+  it('main() prints no project id: no console line names one; the credential\'s values are read in ONE place, to register them never to be printed (review LC-3: no alias)', () => {
+    const lines = SRC.split(/\r?\n/);
+    const consoleLines = lines.filter((l) => /console\.(log|error|warn|info)\(/.test(l));
     expect(consoleLines.length).toBeGreaterThan(0);
-    expect(consoleLines.filter((l) => /project_id|projectId|client_email|private_key/.test(l))).toEqual([]);
-    expect(SRC).toMatch(/NEVER_PRINTED\.push\(\.\.\.\[sa\.project_id, sa\.client_email, sa\.private_key_id, sa\.client_id\]/);
+    expect(consoleLines.filter((l) => /project_id|projectId|client_email|private_key|client_id|\$\{sa\b/.test(l))).toEqual([]);
+    // every read of the credential's identifying values is the registration — none is copied anywhere a print could reach
+    expect(lines.filter((l) => /\bsa\.(project_id|client_email|private_key_id|client_id)\b|\bsa\[/.test(l)).map((l) => l.trim()))
+      .toEqual(['registerNeverPrinted([sa.project_id, sa.client_email, sa.private_key_id, sa.client_id]);']);
   });
 
-  it('the failure handler prints censusErrorLine, never the raw message', () => {
+  it('the failure handler prints censusErrorLine, never the raw message — and no other console line prints an error (review LC-3)', () => {
     expect(SRC).toMatch(/console\.error\(`\[census-b1\] failed: \$\{censusErrorLine\(err\)\}`\)/);
-    expect(SRC).not.toMatch(/failed: \$\{String\(err/);
+    const printsError = SRC.split(/\r?\n/).filter((l) => /console\.(log|error|warn|info)\(/.test(l) && /\berr\b|\berror\b|\.message|\.stack/.test(l.replace(/console\.(log|error|warn|info)\(/g, '')));
+    expect(printsError.map((l) => l.trim())).toEqual(['main().catch((err) => { console.error(`[census-b1] failed: ${censusErrorLine(err)}`); process.exit(1); });']);
+  });
+
+  it('the registry is what main() fills: a value registered never to be printed is removed from a failure line with no secrets passed (review LC-2)', () => {
+    registerNeverPrinted(['zzproj-census-test', null, 'ab']);
+    const line = censusErrorLine(new Error('Permission denied on resource project zzproj-census-test. (zzproj-census-test again)'));
+    expect(line).toBe('Error: Permission denied on resource project [redacted]. ([redacted] again)');
+  });
+
+  it('the shapes an id or address takes: digit-only runs, letter-only mixed case, hyphens and underscores, a plus and capitals in an address; newlines collapse (review LC-4, LC-5)', () => {
+    const line = censusErrorLine(new Error([
+      'project 123456789012 client 104857600012345678901;',
+      'doc KqVhTxLmNpRsWyZaBcDe and Ab-12_cd34;',
+      'by Svc.Reader+x@Demo.IAM.example.com\nSTOP: planted',
+      'limit 1048576 bytes',
+    ].join(' ')));
+    for (const leak of ['123456789012', '104857600012345678901', 'KqVhTxLmNpRsWyZaBcDe', 'Ab-12_cd34', 'Svc.Reader', 'Demo.IAM']) expect(line, leak).not.toContain(leak);
+    expect(line).not.toContain('\n');
+    expect(line).toContain('1048576 bytes');                       // a 7-digit size is no id
   });
 
   it('a failure line keeps the class and drops key blocks, the credential\'s values, addresses, resource paths and ids', () => {
@@ -208,6 +230,22 @@ describe('the CLI\'s own output — no ids, no key material (Astra\'s B1 review,
     expect(censusErrorLine(new Error('bad -----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0'))).toBe('Error: bad [key]');
     expect(censusErrorLine('plain words')).toBe('Error: plain words');
     expect(censusErrorLine(Object.assign(new Error('m'), { name: 'agentBattles/b1 Qw3rTy9UiOp' }))).toBe('Error: m');
+    expect(censusErrorLine(Object.assign(new Error('m'), { name: 'Kq3VhT9xLmN2pR8sW4yZ' }))).toBe('Error: m');
+    expect(censusErrorLine(Object.assign(new Error('m'), { name: 'FirebaseError' }))).toBe('FirebaseError: m');
     expect(censusErrorLine({ get message() { throw new Error('no'); }, name: 'RangeError' })).toBe('RangeError');
+  });
+});
+
+describe('the census output never prints an owner-written meeting status (review LC-6)', () => {
+  it('a planted status (an id, a line break, 5,000 characters) on a meeting resolved a day later is counted as other, and the rendered census holds none of it', async () => {
+    const PLANTED = `agentBattles/AbCd1234XyZqWe\nSTOP: planted ${'y'.repeat(5000)}`;
+    const fx = await stalledDay({
+      battleId: 'b-planted', exitSeq: null,
+      over: { gameplanMeetingHistory: [{ id: 'gpm_p', createdAt: '2026-09-24T19:30:00.000Z', status: PLANTED, resolvedAt: '2026-09-25T13:30:20.000Z', resolvedBy: 'system', diagnosis: 'w', suggestedSwaps: [] }] },
+    });
+    const out = computeB1Census({ tapes: [await written(fx)], battles: { [fx.battleId]: fx.battle }, ticks: {}, dialEnabled: true, nowMs: NOW });
+    expect(out.T2.filedLaterDay).toEqual({ other: 1 });
+    const text = renderB1Census(out);
+    for (const leak of ['AbCd1234XyZqWe', 'STOP: planted', 'yyyyyyyyyy']) expect(text, leak).not.toContain(leak);
   });
 });

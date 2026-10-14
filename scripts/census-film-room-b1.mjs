@@ -47,7 +47,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tagTapeDay, tagInputs, tagDay, unpricedHeld } from '../api/_utils/filmTape/tapeTags.js';
-import { buildMeetings } from '../api/_utils/filmTape/tapeAssemble.js';
+import { buildMeetings, MEETING_STATUSES } from '../api/_utils/filmTape/tapeAssemble.js';
 import { symbolPlan } from '../api/_utils/filmTape/candleInputs.js';
 import { modernNotes } from '../api/_utils/filmTape/tapeNotes.js';
 import { etDayBounds, withinCandleWindow, toMs } from '../api/_utils/filmTape/tapeTime.js';
@@ -272,7 +272,8 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
     for (const m of rows(battles[id]?.gameplanMeetingHistory)) {
       const created = etDate(m.createdAt);
       const resolved = etDate(m.resolvedAt);
-      if (created && resolved && resolved > created) bump(out.T2.filedLaterDay, String(m.status));
+      // the history is owner-writable: a status outside the three outcomes is counted as 'other', never printed (review LC-6)
+      if (created && resolved && resolved > created) bump(out.T2.filedLaterDay, MEETING_STATUSES.includes(m.status) ? m.status : 'other');
     }
   }
 
@@ -371,14 +372,19 @@ function stop(message, code = 2) {
 
 /** The credential's own values, registered once loaded: a failure message that quotes one never prints it. */
 const NEVER_PRINTED = [];
+/** Register values a failure line must never print (main() hands in the credential's own). */
+export function registerNeverPrinted(values) {
+  for (const v of Array.isArray(values) ? values : []) if (typeof v === 'string' && v.length >= 3) NEVER_PRINTED.push(v);
+}
 /** The longest failure line the CLI prints. */
 export const CENSUS_ERROR_MAX = 200;
 
-/** An id-like token: 8+ characters mixing letters and digits, or 12+ mixing letter cases. */
-const idLike = (t) => (/[0-9]/.test(t) && /[A-Za-z]/.test(t)) || (t.length >= 12 && /[a-z]/.test(t) && /[A-Z]/.test(t));
+/** An id-like token: 8+ characters mixing letters and digits, 12+ mixing letter cases, or a run of 9+ digits (a project number, a client id — review LC-4). */
+const idLike = (t) => (/[0-9]/.test(t) && /[A-Za-z]/.test(t)) || (t.length >= 12 && /[a-z]/.test(t) && /[A-Z]/.test(t)) || /^[0-9]{9,}$/.test(t);
 
 /**
- * The CLI's failure line: the error's class (a plain identifier, else Error)
+ * The CLI's failure line: the error's class (an identifier ending in Error or
+ * Exception, else Error — an id planted as a name never prints)
  * and its message with key blocks, the credential's own values, addresses,
  * resource paths and id-like tokens removed, bounded to CENSUS_ERROR_MAX —
  * never an id, never key material. Arrays only: the write-grep gate reads
@@ -388,7 +394,7 @@ export function censusErrorLine(err, { secrets = NEVER_PRINTED } = {}) {
   let cls = 'Error';
   try {
     const n = err !== null && typeof err === 'object' ? (err.name ?? err.constructor?.name) : null;
-    if (typeof n === 'string' && /^[A-Za-z_$][A-Za-z0-9_$]{0,39}$/.test(n)) cls = n;
+    if (typeof n === 'string' && n.length <= 40 && /^[A-Za-z_$][A-Za-z0-9_$]*(Error|Exception)$/.test(n)) cls = n;
   } catch { cls = 'Error'; }
   let text = '';
   try { text = String(err !== null && typeof err === 'object' ? err.message ?? '' : err ?? ''); } catch { text = ''; }
@@ -427,7 +433,7 @@ async function main() {
   if (!sa || typeof sa.private_key !== 'string') stop('no Firebase service account (checked the environment, this tree\'s .env.local, then the primary checkout\'s; value not printed)');
   const { initializeApp, cert } = await import('firebase-admin/app');
   const { getFirestore } = await import('firebase-admin/firestore');
-  NEVER_PRINTED.push(...[sa.project_id, sa.client_email, sa.private_key_id, sa.client_id].filter((v) => typeof v === 'string' && v));
+  registerNeverPrinted([sa.project_id, sa.client_email, sa.private_key_id, sa.client_id]);
   const db = getFirestore(initializeApp({ credential: cert(sa) }, 'census-film-room-b1'));
 
   const tapeSnap = await db.collectionGroup('tape').get();
