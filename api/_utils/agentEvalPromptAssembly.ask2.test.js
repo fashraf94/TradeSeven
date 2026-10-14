@@ -36,6 +36,10 @@ const { flagState } = vi.hoisted(() => ({ flagState: { precedence: false } }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get EQUIPPED_RULE_PRECEDENCE_ENABLED() { return flagState.precedence; },
+  // Crypto Slot paragraph: the goldens are the crypto-slot-DARK text of
+  // record, so this suite pins that flag dark and stays flip-proof; the
+  // paragraph's own contract lives in evalCryptoSlotBlock.test.js.
+  get CRYPTO_SLOT_PROMPT_ENABLED() { return false; },
 }));
 
 // NOTE (BUILD_RULES §4 dependency-surface guard): this UNMOCKED import of the
