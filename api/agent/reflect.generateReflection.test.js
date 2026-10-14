@@ -609,6 +609,48 @@ describe('the no-lesson marker (O9)', () => {
       expect(await generateReflection(db, BATTLE_ID, { attempt: 3, modelCall: false })).toMatchObject({ outcome: 'failed' });
       expect(writes).toEqual([]);
     });
+
+    it('the transaction re-checks on its own read: an entry for the game that landed after the fresh read still blocks the marker', async () => {
+      sdk.create = async () => { throw new InternalServerError(529, {}, 'x', new Headers()); };
+      const { db, writes, store } = casualSeed();
+      const realTx = db.runTransaction;
+      db.runTransaction = async (fn) => {
+        // Another writer lands this game's entry between reflect.js's fresh read and the transaction.
+        store.set(`agents/${PARENT_ID}`, { ...store.get(`agents/${PARENT_ID}`), memory: [...priorMemory(2), { ...priorMemory(1)[0], gameId: BATTLE_ID, lesson: 'landed elsewhere' }] });
+        return realTx(fn);
+      };
+      expect(await generateReflection(db, BATTLE_ID, { attempt: 3 })).toMatchObject({ outcome: 'failed', counted: true });
+      expect(writes).toEqual([]);
+      expect(store.get(`agents/${PARENT_ID}`).memory.filter((m) => m.gameId === BATTLE_ID)).toHaveLength(1);
+    });
+  });
+
+  it('a lesson that lands while the third attempt runs is found by the fresh read: the attempt is a success, never a marker', async () => {
+    const { db, writes, store } = seed();
+    sdk.create = async () => {
+      // A write for this game lands during the call (it committed elsewhere) — then the call fails.
+      store.set(`agents/${AGENT_ID}`, { ...store.get(`agents/${AGENT_ID}`), memory: [...priorMemory(4), { ...priorMemory(1)[0], gameId: BATTLE_ID, lesson: 'landed during the call' }] });
+      throw new InternalServerError(529, {}, 'x', new Headers());
+    };
+    const result = await generateReflection(db, BATTLE_ID, { attempt: 3 });
+    expect(result).toMatchObject({ outcome: 'ok', reason: 'already_recorded', record: { outcome: 'ok', failureClass: null } });
+    expect(writes).toEqual([]);
+    expect(store.get(`agents/${AGENT_ID}`).memory.filter((m) => m.gameId === BATTLE_ID)).toEqual([expect.objectContaining({ lesson: 'landed during the call' })]);
+  });
+
+  it('a third attempt whose fresh read throws writes nothing and waits for the recovery pass', async () => {
+    sdk.create = async () => { throw new InternalServerError(529, {}, 'x', new Headers()); };
+    const { db, writes } = seed();
+    const realCollection = db.collection;
+    let agentReads = 0;
+    db.collection = (name) => {
+      const c = realCollection(name);
+      if (name !== 'agents') return c;
+      return { ...c, doc: (id) => { const ref = c.doc(id); return { ...ref, get: async () => { agentReads += 1; if (agentReads > 1) { const e = new Error('UNAVAILABLE'); e.name = 'FirebaseError'; throw e; } return ref.get(); } }; } };
+    };
+    const result = await generateReflection(db, BATTLE_ID, { attempt: 3 });
+    expect(result).toMatchObject({ outcome: 'failed', counted: true, deferToRecovery: true, record: { failureClass: 'http_529' } });
+    expect(writes).toEqual([]);
   });
 
   describe('a third attempt that cannot leave its row waits for the recovery pass', () => {
