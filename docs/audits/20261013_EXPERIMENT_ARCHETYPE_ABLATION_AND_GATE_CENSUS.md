@@ -348,7 +348,7 @@ node scripts/experiments/archetypeAblationReplay.mjs selftest      # synthetic c
 | plan | 23:40 | `433a19a4` | `c94d6f7f…` | same bytes |
 | submit | 23:40 | `2f8af76e` | `c94d6f7f…` | committed |
 | collect | 23:44 | `2f8af76e` | `42239c52…` | an uncommitted working copy between `2f8af76e` and `a59dd4c1`; its collect path is unchanged from `2f8af76e` |
-| **analyze**, **facts** (`analysis.json`, `facts.json`) | after the review | final commit | final script | the analysis of record; `analyze` is logged in the manifest from this version on |
+| **analyze**, **facts** (`analysis.json`, `facts.json`) | 14 Oct, after the review | `98612ed6` | `cca67681…` | the analysis of record, from the committed final code on a clean tree; `analyze` is logged in the manifest from this version on |
 
 The census of record ran before the review fixes. Those fixes change the census only on paths this window never took (0 forced swaps, 0 executed-symbol mismatches, 0 ambiguous identities, 0 per-battle gaps), so it was not re-run: a re-run would overwrite the sample the batch was built from.
 
@@ -419,10 +419,11 @@ R1 also noticed three adjacent gaps; all three are fixed: result ids not checked
 
 ### Build, selftest and mutation check
 
-- **`vite build`** on `a59dd4c1` passed (exit 0, 51 s, chunk-size warning only). No test imports `App.jsx`. The script and report touch no bundled file, so the build guards against nothing in this change; it is run because the rule requires it. ⟪FINAL BUILD⟫
+- **`vite build`** passed on `a59dd4c1` (exit 0, 51 s), on the final code commit `98612ed6` (exit 0, 13 s) and on the pushed head (docs only on top of `98612ed6`). Only the chunk-size warning appeared. Each build ran on an LF `git archive` extraction with `node_modules` linked by junction, unlinked afterwards. No test imports `App.jsx`. The script and report touch no bundled file, so the build guards against nothing in this change; it is run because the rule requires it.
 - **Mutation check of the selftest** ran on its own extraction, each planted defect applied alone.
   - First run: 10 of 12 killed. M1 survived: "verifyEdit never compares" got through because the out-of-span row planted its change in an *untargeted* field. M7 crashed the selftest instead of failing a named row.
   - Both selftest gaps were fixed: a targeted-field row was added, and post-loop rows were guarded.
   - Re-run: 12 of 12 killed by named rows.
-  - ⟪FINAL MUTATION⟫
-- **The selftest grew** from 44 to 61 checks with the review fixes: semantics, gate edge paths, count-based bars, cap validation.
+  - On the final code commit `98612ed6`, 18 mutants ran: the 12 above plus 6 for the review's own guards. These were semantics ignoring other markers, executed symbols not compared, the cap check dropping finiteness, bars from rounded percentages, a failed call plus forced swap counted as fail-closed, and an ambiguous identity read as absent. **18 of 18 killed by named rows.** Two of those six needed a new selftest row first (`null` planned spend; two wisdom headers).
+- **The selftest grew** from 44 to 63 checks with the review fixes: semantics, gate edge paths, count-based bars, cap validation, the ambiguous identity.
+- **After the fixes:** `assertArmSemantics` passes on all 714 submitted requests. `analyze` re-run from `98612ed6` reproduces every Part A number and bar outcome in §4.
