@@ -1,6 +1,8 @@
 // Test-only comparison for the owner-approved settlement guard. The immutable
 // legacy golden stays unchanged. Remove only the explicitly asserted bounded
-// active-battle query events (now before deferred projection). Keep EVERY
+// active-battle query events: the settlement snapshot before deferred
+// projection, plus the legacy re-read at the original position (review K2-4),
+// both of the one exact shape below. Keep EVERY
 // document read, write, response, model
 // request, timestamp, prescription, transaction and final document byte-exact.
 export function tournamentSettlementGoldenPair(actual, baseline) {
@@ -22,5 +24,5 @@ export function tournamentSettlementGoldenPair(actual, baseline) {
       sequence: capture.store.sequence.filter(e => e.query !== 'agentBattles'),
     } };
   };
-  return [strip(actual, 1), strip(baseline, 1)];
+  return [strip(actual, 2), strip(baseline, 1)];
 }

@@ -1449,18 +1449,24 @@ export async function runPrescribedTournamentDeploy({ db, req, res, agentRef, ag
 
   // One active battle per agent — the same check + expiry completion as the
   // legacy path (duplicated deliberately so the legacy handler body stays
-  // untouched).
-  if (!activeBattles.empty) {
-    const existingBattle = activeBattles.docs[0].data();
-    const existingBattleId = activeBattles.docs[0].id;
+  // untouched). Re-read here, where the pre-guard helper read it: the
+  // settlement snapshot predates the projection, rankings and agent writes,
+  // and expiring from it could overwrite a completion the cron committed in
+  // between (review K2-4).
+  const currentBattles = await db.collection('agentBattles')
+    .where('agentId', '==', agentId)
+    .where('status', '==', 'active')
+    .limit(1)
+    .get();
+  if (!currentBattles.empty) {
+    const existingBattle = currentBattles.docs[0].data();
+    const existingBattleId = currentBattles.docs[0].id;
     const expiresAt = existingBattle.expiresAt;
-    // A supported/invalid saved model passed the guard only while unexpired.
-    // Keep that decision coherent if the clock advances during the metadata
-    // write; it must never fall into legacy GC. Legacy uses its original clock.
-    const isExpired = expiresAt && (
-      (expiresAt.toDate ? expiresAt.toDate() : new Date(expiresAt)) <
-        (stockModelRoute(existingBattle).status === 'legacy' ? new Date() : existingBattleCheckedAt)
-    );
+    // A supported/invalid saved model never falls into legacy GC: it passed the
+    // guard only while unexpired, and one first seen by the re-read above never
+    // met the guard at all. Legacy uses its original clock.
+    const isExpired = stockModelRoute(existingBattle).status === 'legacy' && expiresAt &&
+      (expiresAt.toDate ? expiresAt.toDate() : new Date(expiresAt)) < new Date();
     if (!isExpired) {
       await agentRef.update({ activeBattleId: existingBattleId });
       return res.status(200).json({

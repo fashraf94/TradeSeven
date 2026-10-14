@@ -108,7 +108,7 @@ beforeEach(() => {
   mocks.fetchIntradayBatch.mockResolvedValue({});
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); delete process.env.EODHD_API_KEY; });
-async function stockTick(variant = 'final', { quoteLagSec = 0 } = {}) {
+async function stockTick(variant = 'final', { quoteLagSec = 0, failRefreshRead = false } = {}) {
   const { battle: corrected, inputs } = await correctedStockBattle();
   const original = makeTickBattle();
   const battle = { ...original, ...corrected, timing: { tradingDays: ['2026-10-14'], currentTradingDay: 1 }, cronState: { ...original.cronState, lastGameplanDate: '10/14/2026' }, scoreState: { ...original.scoreState, ...corrected.scoreState }, scoring: { ...original.scoring, ...corrected.scoring } };
@@ -149,12 +149,19 @@ async function stockTick(variant = 'final', { quoteLagSec = 0 } = {}) {
   const stories = variant === 'risk_then_model' ? [{ id: 'story-goog', data: () => ({ tickers: ['MSFT', 'GOOG'], headline: 'GOOG catalyst', summary: 'fixture', publishedAt: new Date(), category: 'catalyst' }) }] : [];
   const storyQuery = { where: () => storyQuery, orderBy: () => storyQuery, limit: () => storyQuery, get: async () => ({ docs: stories, empty: !stories.length, size: stories.length }) };
   db.collection = name => name === 'fantasyTimesStories' && stories.length ? storyQuery : name === 'learningReceipts' ? { doc: id => ({ collection: sub => ({ doc: rid => ({ create: async value => { const p = `${id}/${sub}/${rid}`; if (db.__stockLearning.has(p)) throw Error('already exists'); db.__stockLearning.set(p, structuredClone(value)); } }) }) }) } : collection(name);
+  // Review K2-7: one transient battle read failure right after a committed swap.
+  let refreshArmed = false;
+  if (failRefreshRead) {
+    const inner = db.collection;
+    db.collection = name => { const c = inner(name); return name !== 'agentBattles' ? c : { ...c, doc: id => { const r = c.doc(id); return { ...r, get: async () => { if (refreshArmed) { refreshArmed = false; throw Object.assign(Error('14 UNAVAILABLE: transient read failure'), { code: 14 }); } return r.get(); } }; } }; };
+  }
   db.doc = path => ({ path, id: path.split('/').at(-1), get: async () => ({ exists: !!inputs[path], data: () => structuredClone(inputs[path]) }) });
   const runTx = db.runTransaction.bind(db);
-  db.runTransaction = cb => runTx(tx => cb({ ...tx, create: (ref, data) => { if (inputs[ref.path]) throw Error('already exists'); inputs[ref.path] = structuredClone(data); } }));
+  db.runTransaction = cb => runTx(tx => cb({ ...tx, create: (ref, data) => { if (inputs[ref.path]) throw Error('already exists'); inputs[ref.path] = structuredClone(data); }, update: (ref, patch) => { tx.update(ref, patch); if (failRefreshRead && Object.hasOwn(patch, 'scoring.stockRosterVersion')) refreshArmed = true; } }));
   const summary = { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0, errors: 0 };
-  await processAgentBattle(db, battle, summary, Date.now(), new Map(), { everEnabled: false });
-  return { db, battle, summary };
+  let thrown = null;
+  try { await processAgentBattle(db, battle, summary, Date.now(), new Map(), { everEnabled: false }); } catch (err) { if (!failRefreshRead) throw err; thrown = err; }
+  return { db, battle, summary, thrown };
 }
 describe('corrected evaluator and settlement use pinned model with admission false', () => {
   it.each(['risk', 'haiku', 'approved', 'expired', 'suppression', 'meeting'])('real common swap writer on evaluator route %s', async route => {
@@ -194,6 +201,13 @@ describe('corrected evaluator and settlement use pinned model with admission fal
     expect(b.scoring.stockScoreComponents[fresh]).toMatchObject({ points: 68, exitPrice: 106, exitQuoteAsOf: '2026-10-14T14:03:00.000Z' });
     const captured = [...db.__stockLearning.values()].map(r => r.stockRewardContract).find(c => c?.outgoingPositionId === fresh);
     expect(captured).toMatchObject({ exitPrice: 106, lockedPoints: 68, rewardContext: { currentPrice: 106 } });
+  });
+  it('K2-7: a failed roster re-read after a committed model swap errors the tick and never logs a failed swap', async () => {
+    const errors = []; vi.spyOn(console, 'error').mockImplementation((...args) => { errors.push(args.map(String).join(' ')); });
+    const { db, thrown } = await stockTick('haiku', { failRefreshRead: true });
+    expect(thrown?.message).toContain('transient read failure');
+    expect(db.__store.battle.portfolio.star[0].symbol).toBe('MSFT'); expect(db.__store.battle.trades).toHaveLength(1);
+    expect(errors.some(e => e.includes('Swap execution failed'))).toBe(false);
   });
   it.each(['passive', 'proposal_pending', 'gameplan_pending', 'gameplan_created', 'trigger_skipped', 'final'])('actual score exit %s commits supported finite operands', async variant => {
     const { db, summary } = await stockTick(variant);

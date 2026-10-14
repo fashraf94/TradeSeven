@@ -24,7 +24,11 @@ async function creationFixture() {
 describe('server stock admission and atomic writers', () => {
   it('switch off has zero collector calls and no registry/input writes', async () => {
     const collector = vi.fn(() => { throw Error('must not run'); });
-    expect(await prepareStockCreation({}, { collector })).toBe(null); expect(collector).not.toHaveBeenCalled();
+    // An in-scope document (review K3-8: `{}` failed the scope check before the switch mattered).
+    const doc = { gameMode: 'baggerbomb_agent', duration: 'fullday', portfolio: { star: [{ symbol: 'AAPL', baseATR: 2.5 }], core: [], support: [] }, opponent: { portfolio: { star: [{ symbol: 'MSFT', baseATR: 3 }], core: [], support: [] } } };
+    const db = { doc: vi.fn(() => { throw Error('must not read control'); }), collection: vi.fn(), runTransaction: vi.fn() };
+    expect(await prepareStockCreation(doc, { collector, db })).toBe(null);
+    expect(collector).not.toHaveBeenCalled(); expect(db.doc).not.toHaveBeenCalled();
   });
   it.each([{ dark: true }, { dark: false, descriptor: null }])('preserves executed composition fence and commits both sides atomically %j', async pin => {
     const { adapter, doc, h } = await creationFixture();
@@ -131,6 +135,13 @@ describe('server stock admission and atomic writers', () => {
     const { battle, inputs } = await correctedStockBattle(); battle.portfolio.bench.crypto = { symbol: 'BTC-USD.CC', isCrypto: true, baseATR: 5 };
     const h = inputStore(battle, inputs); const q = { ...prices(), 'BTC-USD.CC': { current: 50000, timestamp: Date.parse(STOCK_TEST_NOW) / 1000 } };
     await executeSwapServer(h.db, battle.id, battle, 'star', 0, battle.portfolio.bench.crypto, 1, q, {}, null, { now: stockTestClock }); expect(h.store.get(`agentBattles/${battle.id}`).portfolio.bench.crypto).toBe(null);
+  });
+  it('review K2-3: typed crypto entering a corrected game starts from a reset threshold history', async () => {
+    const { battle, inputs } = await correctedStockBattle(); battle.portfolio.bench.crypto = { symbol: 'BTC-USD.CC', isCrypto: true, baseATR: 5 };
+    battle.thresholdHistory = { 'BTC-USD.CC': { maxMultiplier: 1.6, minMultiplier: 0, badges: ['bagger'] }, 'ETH-USD.CC': { maxMultiplier: 0.4, minMultiplier: -0.2, badges: [] } };
+    const h = inputStore(battle, inputs); const q = { ...prices(), 'BTC-USD.CC': { current: 50000, timestamp: Date.parse(STOCK_TEST_NOW) / 1000 } };
+    await executeSwapServer(h.db, battle.id, battle, 'star', 0, battle.portfolio.bench.crypto, 1, q, {}, null, { now: stockTestClock });
+    expect(h.store.get(`agentBattles/${battle.id}`).thresholdHistory).toEqual({ 'BTC-USD.CC': { maxMultiplier: 0, minMultiplier: 0, badges: [] }, 'ETH-USD.CC': { maxMultiplier: 0.4, minMultiplier: -0.2, badges: [] } });
   });
   it.each([[1, 75], [undefined, 105]])('whole-asset corrected scorer retains the tier stamp %s and canonical points %s', async (stamp, expected) => {
     const { battle } = await correctedStockBattle({ fill: 100 });

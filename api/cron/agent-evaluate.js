@@ -338,6 +338,11 @@ export default async function handler(req, res) {
             // battle (/code-review high, angle-B finding).
             console.error(`${LOG_PREFIX} Expired battle ${battle.id} no longer exists — counted as error, not completed.`);
             summary.errors++;
+          } else if (completion.reason === 'corrected_score_unavailable') {
+            // A pinned stock battle without committed qualified evidence stays
+            // active; that is never "another writer completed it" (review K2-1b).
+            console.error(`${LOG_PREFIX} Expired battle ${battle.id} lacks committed corrected stock evidence — not settled, counted as error.`);
+            summary.errors++;
           } else {
             summary.completionSkipped++; // another writer fully completed it first
           }
@@ -3668,6 +3673,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // P2: set after a successful reserve; the catch runs the
           // compensating release (benchAsset is out of scope there).
           let reservedSymbolIn = null;
+          let correctedRefreshDue = false;
           try {
             const benchAsset = findBenchAsset(battle.portfolio?.bench, haikuResult.symbolIn);
             // Phase 6 (§4.6) — receipt source: a guardrail-forced swap is
@@ -3956,7 +3962,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             const haikuInSymbol = swapResult.closedTrade?.symbolIn || haikuResult.symbolIn;
             vwapTicks[haikuInSymbol] = 0;
             stagnationTicks[haikuInSymbol] = 0;
-            if (correctedStockGame) await refreshCorrectedRoster(rawBattleRef, battle);
+            correctedRefreshDue = correctedStockGame;
           } catch (swapErr) {
             console.error(`${LOG_PREFIX} Swap execution failed for battle ${battle.id}:`, swapErr.message);
             // Integrity follow-up 2 (Part D): the executor threw and the fresh
@@ -4007,6 +4013,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             // P2: compensating release (no-op unless the reserve had landed).
             if (!swapOutcomeUnknown) await releaseTournamentReservation(db, tournamentCtx, reservedSymbolIn);
           }
+          // The committed swap's corrected roster re-read sits outside the
+          // executor's try: a failed read errors the tick, never records a
+          // landed trade as a failed swap (review K2-7, landedTrade.js rule).
+          if (correctedRefreshDue) await refreshCorrectedRoster(rawBattleRef, battle);
         } else {
           // PRESERVED FOR POST-LAUNCH (2026-05-19): copilot/manual proposal-creation path.
           // See AUTHORITY_MODE_POST_LAUNCH_BACKLOG.md. Unreachable under the launch guard

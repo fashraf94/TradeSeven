@@ -83,6 +83,36 @@ describe('owner-approved prescribed tournament stock settlement refusal', () => 
     };
     await deploy(f, true); protectedState(f, true); expect(injected).toBe(true);
   });
+  // Review K2-4: a cron completion landing during the helper's rankings read
+  // (after the settlement snapshot) must not be overwritten by legacy GC.
+  const atRankingsRead = mutate => {
+    const collection = state.db.collection.bind(state.db); let injected = false;
+    state.db.collection = name => {
+      const c = collection(name);
+      if (name !== 'indexIntelligence') return c;
+      return { ...c, doc: id => { const r = c.doc(id); return id !== 'stockRankings' ? r : { ...r, get: async () => { const s = await r.get(); if (!injected) { injected = true; mutate(); } return s; } }; } };
+    };
+    return () => injected;
+  };
+  it('K2-4: legacy GC never overwrites a completion the cron committed after the settlement snapshot', async () => {
+    const f = await fixture(); delete f.battle.scoring.stockThresholdModel; state.db.__docs.set(BATTLE, structuredClone(f.battle));
+    const cron = { ...structuredClone(f.battle), status: 'completed', completedAt: '2026-10-14T14:01:30.000Z', pendingReflection: true };
+    const injected = atRankingsRead(() => state.db.__docs.set(BATTLE, structuredClone(cron)));
+    await deploy(f);
+    expect(injected()).toBe(true);
+    expect(stored(state.db, BATTLE)).toEqual(cron);
+    expect(state.db.__access.writes.some(w => w.path === BATTLE)).toBe(false);
+    expect(f.res.statusCode).toBe(200); expect(f.res.body.battleCreated).toBe(true);
+  });
+  it('K2-4: a corrected battle first seen by the legacy re-read is never expired by legacy GC', async () => {
+    const f = await fixture({ active: false });
+    const injected = atRankingsRead(() => { state.db.__docs.get(BATTLE).status = 'active'; f.battle.status = 'active'; });
+    await deploy(f);
+    expect(injected()).toBe(true);
+    expect(stored(state.db, BATTLE)).toEqual(f.battle);
+    expect(state.db.__access.writes.some(w => w.path === BATTLE)).toBe(false);
+    expect(f.res.body).toMatchObject({ battleCreated: false, existingBattleId: 'prior' });
+  });
   it('unstamped expired game keeps legacy GC, prescribed creation and calibrated rules', async () => {
     const f = await fixture(); delete f.battle.scoring.stockThresholdModel; state.db.__docs.set(BATTLE, structuredClone(f.battle));
     await deploy(f);

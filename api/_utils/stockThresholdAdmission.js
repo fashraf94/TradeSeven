@@ -251,6 +251,10 @@ export async function executeCorrectedStockSwap(db, battleId, expected, tier, sl
     if (isStock(out)) benchStocks.push(outgoingBench);
     const update = { [`portfolio.${tier}`]: nextTier, 'portfolio.bench.stocks': benchStocks, 'portfolio.bench.crypto': !isStock(out) ? outgoingBench : live.portfolio.bench?.crypto?.symbol === incomingAsset.symbol ? null : live.portfolio.bench?.crypto || null,
       'scoring.stockRosterVersion': live.scoring.stockRosterVersion + 1, 'scoring.stockScoreComponents': components, trades: [...(live.trades || []), closedTrade].slice(-50), 'scoreState.tradeCount': (live.scoreState.tradeCount || 0) + 1, 'scoreState.stockScoreEvidence': { status: 'unavailable', reason: 'roster_changed_awaiting_score' }, 'scoreState.currentScore': null, 'scoreState.opponentScore': null, updatedAt: at };
+    // Typed crypto keeps the legacy entry reset: a re-entry never inherits a
+    // former lifetime's threshold history (review K2-3). The whole map, as the
+    // legacy writer does: a dotted path would split a `.CC` symbol.
+    if (!isStock(benchAsset)) update.thresholdHistory = { ...(live.thresholdHistory || {}), [incomingAsset.symbol]: { maxMultiplier: 0, minMultiplier: 0, badges: [] } };
     if (inReceipt) {
       update[`scoring.stockRewardHistory.agent.${incomingId}`] = initialRewardHistory(inReceipt);
       update[`scoring.stockRiskHistory.agent.${incomingId}`] = { positionId: incomingId, maxMultiplier: 0, minMultiplier: 0 };
