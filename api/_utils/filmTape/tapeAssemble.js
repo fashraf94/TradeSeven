@@ -19,6 +19,7 @@ import {
 } from '../../../src/constants/filmTape.js';
 import { toMs, inDay, etDateOf, etDayBounds, sessionFor, previousSession, withinCandleWindow } from './tapeTime.js';
 import { historyListOf, meetingLegsOf, meetingOf } from '../playerFieldReaders.js';
+import { flattenPortfolioServer, flattenBenchServer } from '../agentScoring.js';
 import { tradingTimeline } from '../../../src/utils/tapeSchedule.js';
 import { NOTES, UNKNOWN_WHAT, counted } from './tapeNotes.js';
 
@@ -753,13 +754,35 @@ const ticker = (v) => (typeof v === 'string' && TICKER.test(v) ? v : null);
 const instant = (v) => (str(v) && v.length <= INSTANT_MAX && toMs(v) !== null ? v : null);
 
 /**
+ * B1 review RF-1 — the symbols a filed leg can name: the battle's own book and
+ * bench. The evaluator proposes a held name out and a bench name in
+ * (agent-evaluate.js handleGameplanMeeting: `benchAssets` is portfolio.bench),
+ * and a swap returns the outgoing name to the bench (agentSwapExecution.js), so
+ * the two together hold every symbol a real leg names. The portfolio is
+ * server-written (firestore.rules: not in the owner's update list); the
+ * history is not, so a symbol it names outside the roster is someone's text —
+ * never a ticker the candle pass fetches or the screen shows. The fenced
+ * flatteners are called, never copied (BUILD_RULES §4); an unreadable
+ * portfolio is an empty roster (every leg symbol then counted, none copied).
+ */
+function rosterOf(battle) {
+  try {
+    const p = battle?.portfolio;
+    return new Set([...flattenPortfolioServer(p), ...flattenBenchServer(p?.bench)].map((a) => a?.symbol).filter((s) => typeof s === 'string' && s));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
  * B1 T2 (Build B spec §3) — the gameplan meetings created on the tape day,
  * copied from the battle's meeting history as typed facts. The history (and
  * the pending meeting it is filed from) is owner-writable
  * (api/_utils/playerFieldReaders.js), so it is read through the type-checking
  * readers and every copied value is checked: an instant must be a real
  * instant, a symbol a ticker, the status one of the three outcomes; the legs
- * stop at the server's two, the day at MEETINGS_PER_DAY_MAX, and words longer
+ * stop at the server's two, the day at MEETINGS_PER_DAY_MAX, a leg symbol must
+ * be in the battle's portfolio or bench (rosterOf), and words longer
  * than MEETING_DIAGNOSIS_MAX are not copied. What was not copied is counted in
  * the section's coverage note. `diagnosis` is someone's words — stored text,
  * no number class.
@@ -777,11 +800,19 @@ export function buildMeetings({ battle, bounds }) {
   let legsDropped = 0;
   let wordsDropped = 0;
   let idsDropped = 0;
+  let offRoster = 0;
+  const roster = rosterOf(battle);
+  const legSymbol = (v) => {
+    const t = ticker(v);
+    if (t !== null && !roster.has(t)) { offRoster += 1; return null; }
+    return t;
+  };
   const seen = {};
   for (const m of ofDay.sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt))) {
     if (!MEETING_STATUSES.includes(m.status)) { unrecognised += 1; continue; }
-    const legs = meetingLegsOf(m).map(({ leg }) => ({ symbolOut: ticker(leg.symbolOut), symbolIn: ticker(leg.symbolIn) }));
-    legsDropped += Math.max(0, legs.length - MEETING_LEGS_MAX);
+    const allLegs = meetingLegsOf(m);
+    legsDropped += Math.max(0, allLegs.length - MEETING_LEGS_MAX);
+    const legs = allLegs.slice(0, MEETING_LEGS_MAX).map(({ leg }) => ({ symbolOut: legSymbol(leg.symbolOut), symbolIn: legSymbol(leg.symbolIn) }));
     const diagnosis = str(m.diagnosis);
     if (diagnosis && diagnosis.length > MEETING_DIAGNOSIS_MAX) wordsDropped += 1;
     const resolvedBy = str(m.resolvedBy);
@@ -797,7 +828,7 @@ export function buildMeetings({ battle, bounds }) {
       resolvedAt: instant(m.resolvedAt),
       status: m.status,
       resolvedBy: resolvedBy && resolvedBy.length <= MEETING_RESOLVED_BY_MAX ? resolvedBy : null,
-      legs: legs.slice(0, MEETING_LEGS_MAX),
+      legs,
       diagnosis: diagnosis && diagnosis.length <= MEETING_DIAGNOSIS_MAX ? diagnosis : null,
     });
   }
@@ -812,6 +843,7 @@ export function buildMeetings({ battle, bounds }) {
   if (unfiled && inDay(instant(unfiled.createdAt), bounds)) notes.push('a meeting created this day was not yet filed in the meeting history when this tape was read — only a later run of this day\'s close pass (a refresh) copies it');
   if (unrecognised) notes.push(`${counted(unrecognised, 'meeting record', 'meeting records')} of this day with an outcome other than approved, rejected or expired not copied`);
   if (legsDropped) notes.push(`${counted(legsDropped, 'leg', 'legs')} past the ${MEETING_LEGS_MAX} a meeting proposes not copied`);
+  if (offRoster) notes.push(`${counted(offRoster, 'leg symbol', 'leg symbols')} outside the battle's portfolio and bench not copied`);
   if (wordsDropped) notes.push(`${counted(wordsDropped, 'diagnosis', 'diagnoses')} longer than ${MEETING_DIAGNOSIS_MAX} characters not copied`);
   if (idsDropped) notes.push(`${counted(idsDropped, 'meeting id', 'meeting ids')} longer than ${MEETING_ID_MAX} characters not copied`);
   if (overflow) notes.push(`${counted(overflow, 'meeting', 'meetings')} past ${MEETINGS_PER_DAY_MAX} in a day not copied`);
@@ -820,6 +852,19 @@ export function buildMeetings({ battle, bounds }) {
     rows: kept,
     coverage: coverageOf(notes.length ? 'partial' : 'complete', { span, sources: ['gameplanMeetingHistory', 'gameplanMeeting'], note: notes.join('; ') || null }),
   };
+}
+
+/**
+ * Exit criterion 4 for T2: a failure reading the meetings never stops the
+ * write — the section reads unavailable with the error's class, and every
+ * other section is written as it would be without it.
+ */
+function meetingsOrUnavailable(args) {
+  try {
+    return buildMeetings(args);
+  } catch (e) {
+    return { rows: [], coverage: coverageOf('unavailable', { sources: ['gameplanMeetingHistory', 'gameplanMeeting'], note: `the meetings could not be read (${typeof e?.name === 'string' ? e.name : 'Error'})` }) };
+  }
 }
 
 // ── score and battle (BA-4) ────────────────────────────────────────────────
@@ -1009,7 +1054,7 @@ export function assembleTape({
   const plans = buildPlans({ entriesDay: entries.day, tickByEvalId });
   const rationale = buildRationale({ entriesDay: entries.day, tickByEvalId });
   const calls = callsRead.ok ? buildCalls({ calls: callsRead.calls, bounds, nowIso, callRecordsMode }) : [];
-  const meetings = buildMeetings({ battle, bounds });
+  const meetings = meetingsOrUnavailable({ battle, bounds });
 
   // ---- comparables (BA-13): TICKER_TO_SECTOR, never the stored sector string
   const heldSymbols = new Set();

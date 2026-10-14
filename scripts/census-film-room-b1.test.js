@@ -108,8 +108,9 @@ describe('the core over days the real close pass wrote', () => {
       battleId: 'b-meet', exitSeq: null,
       over: {
         timing: { tradingDays: ['not-a-date', '2026-09-24'] },
+        portfolio: { star: [{ symbol: 'ACN' }, { symbol: 'MSFT' }], core: [], support: [], bench: { stocks: [{ symbol: 'ORCL' }, { symbol: 'NVDA' }], crypto: null } },
         gameplanMeetingHistory: [{ id: 'gpm_x', createdAt: '2026-09-24T15:10:00.000Z', status: 'rejected', resolvedAt: '2026-09-24T15:20:00.000Z', resolvedBy: 'coach', diagnosis: 'w', suggestedSwaps: [{ symbolOut: 'ACN', symbolIn: 'ORCL' }] },
-          { id: 'gpm_y', createdAt: '2026-09-24T19:30:00.000Z', status: 'expired', resolvedAt: '2026-09-25T13:30:20.000Z', resolvedBy: 'system', diagnosis: 'w', suggestedSwaps: [{ symbolOut: 'MSFT', symbolIn: 'NVDA' }] }],
+          { id: 'gpm_y', createdAt: '2026-09-24T19:30:00.000Z', status: 'expired', resolvedAt: '2026-09-25T13:30:20.000Z', resolvedBy: 'system', diagnosis: 'w', suggestedSwaps: [{ symbolOut: 'MSFT', symbolIn: 'NVDA' }, { symbolOut: 'BEST', symbolIn: 'NVDA' }] }],
       },
     }));
     // W1 and W4: a closed-out day still saying a candle pass is coming, in the pre-W4 wording
@@ -142,7 +143,8 @@ describe('the core over days the real close pass wrote', () => {
 
   it('T1, T2, W1, W2, W4 — the counts the report needs', () => {
     expect(r.T1.tieredNoOpponent).toBe(1);
-    expect(r.T2).toMatchObject({ meetings: 2, byStatus: { rejected: 1, expired: 1 }, legs: 2, tapesWithNewSymbols: 1, newSymbolsPerTape: 1, newSymbolDayPairs: 1 });
+    expect(r.T2).toMatchObject({ meetings: 2, byStatus: { rejected: 1, expired: 1 }, legs: 3, tapesWithNewSymbols: 1, newSymbolsPerTape: 1, newSymbolDayPairs: 1 });
+    expect(r.T2.offRosterSymbols).toBe(1);                         // review RF-1: the planted BEST, counted and never added
     expect(r.T2.filedLaterDay).toEqual({ expired: 1 });
     expect(r.W1.terminalWithAwaitingNote).toBe(1);
     expect(r.W2).toEqual({ battlesWithDroppedEntries: 1, ofThemTaped: 1 });

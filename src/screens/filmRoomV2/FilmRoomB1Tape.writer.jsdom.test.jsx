@@ -47,10 +47,13 @@ beforeEach(() => { globalThis.localStorage.clear(); m.setup(); });
 afterEach(() => m.teardown());
 
 const DIAGNOSIS = 'Technology sector dragging performance (2.1% loss, 40% of total negative P&L).';
+/** The battle's book and bench as the server wrote them (review RF-1: a leg names one of these or none). */
+const ROSTER23 = Object.freeze({ star: [{ symbol: 'INTC' }], core: [], support: [], bench: { stocks: [{ symbol: 'ORCL' }], crypto: null } });
 let b1;
 beforeAll(async () => {
   const fx = await sep23Day({ battleId: 'b-sep23-b1' });
   fx.battle.agentContext = { ...fx.battle.agentContext, archetype: 'momentum_chaser' };
+  fx.battle.portfolio = { ...fx.battle.portfolio, ...ROSTER23 };
   fx.battle.gameplanMeetingHistory = [{
     id: 'gpm_b1', createdAt: `${SEP23}T17:20:00.000Z`, diagnosis: DIAGNOSIS, opportunity: 'Industrials has momentum.',
     proposedAction: 'rotate_sector', fromSector: 'Technology', toSectors: ['Technology'],
@@ -184,6 +187,41 @@ describe('review C-1 — a completed battle with no opponent (basis none), on th
     await openAt(none.tape, none.series, label);
     if (label === 'Glance') expect(m.container.textContent).toContain('no opponent: the battle was created without a CPU opponent');
     const docs = { tape: none.tape, battle: battleOf(none.tape), ...Object.fromEntries(none.series.map((s) => [`series:${s.symbol}`, s])) };
+    expect(sweepNumbers(m.container, docs), label).toEqual([]);
+    expect(sweepWords(m.container, docs), label).toEqual([]);
+    expect(sweepSigns(m.container), label).toEqual([]);
+    expect(quoteDefects(m.container, docs), label).toEqual([]);
+    expect(storedNoteDefects(m.container, docs), label).toEqual([]);
+  });
+});
+
+describe('review RF-1 — a leg symbol outside the battle\'s portfolio and bench never reaches the screen', () => {
+  const PLANTED = ['BEST', 'GRADE', 'ONE'];
+  let planted;
+  beforeAll(async () => {
+    const fx = await sep23Day({ battleId: 'b-sep23-rf1' });
+    fx.battle.agentContext = { ...fx.battle.agentContext, archetype: 'momentum_chaser' };
+    fx.battle.portfolio = { ...fx.battle.portfolio, ...ROSTER23 };
+    fx.battle.gameplanMeetingHistory = [{
+      id: 'gpm_rf1', createdAt: `${SEP23}T17:20:00.000Z`, diagnosis: DIAGNOSIS, status: 'rejected', resolvedBy: 'coach',
+      suggestedSwaps: [{ symbolOut: 'INTC', symbolIn: 'BEST', rationale: 'r' }, { symbolOut: 'GRADE', symbolIn: 'ONE', rationale: 'r' }],
+      expiresAt: `${SEP23}T20:00:00.000Z`, resolvedAt: `${SEP23}T17:31:00.000Z`,
+    }];
+    // every planted name HAS bars, so only the roster keeps it off the tape and the screen
+    const flat = (p) => sessionRows(SEP23, () => p, { volume: 1000 });
+    planted = await buildTapeDay(fx, { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: { ...sep23Bars(), BEST: flat(50), GRADE: flat(20), ONE: flat(10) } });
+  });
+
+  it('the tape: the planted symbols are null and counted, and no series is written for them', () => {
+    expect(planted.tape.meetings[0].legs).toEqual([{ symbolOut: 'INTC', symbolIn: null }, { symbolOut: null, symbolIn: null }]);
+    expect(planted.tape.coverage.meetings).toMatchObject({ status: 'partial', note: "3 leg symbols outside the battle's portfolio and bench not copied" });
+    expect(planted.series.map((s) => s.symbol).filter((s) => PLANTED.includes(s))).toEqual([]);
+  });
+
+  it.each(['Glance', 'Study', 'Deep dive'])('%s: the picker offers none of them, and every sweep is clean', async (label) => {
+    await openAt(planted.tape, planted.series, label);
+    if (label === 'Deep dive') expect(pickerSymbols().filter((s) => PLANTED.includes(s))).toEqual([]);
+    const docs = { tape: planted.tape, battle: battleOf(planted.tape), ...Object.fromEntries(planted.series.map((s) => [`series:${s.symbol}`, s])) };
     expect(sweepNumbers(m.container, docs), label).toEqual([]);
     expect(sweepWords(m.container, docs), label).toEqual([]);
     expect(sweepSigns(m.container), label).toEqual([]);

@@ -109,7 +109,7 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
     A: { etDate: acceptanceA.etDate, symbol: acceptanceA.symbol, exitsFound: [], verdict: 'NOT_FOUND' },
     evidence: { byState: {} },
     T1: { tieredNoOpponent: 0, tieredNoOpponentWithZeroLastCheck: 0 },
-    T2: { meetings: 0, byStatus: {}, legs: 0, tapesWithNewSymbols: 0, newSymbolsPerTape: 0, newSymbolDayPairs: 0, perMeeting: [], filedLaterDay: {}, legsFetchedNextRun: 0, legsNotFetched: 0, notCopiedNotes: 0 },
+    T2: { meetings: 0, byStatus: {}, legs: 0, tapesWithNewSymbols: 0, newSymbolsPerTape: 0, newSymbolDayPairs: 0, perMeeting: [], filedLaterDay: {}, legsFetchedNextRun: 0, legsNotFetched: 0, notCopiedNotes: 0, offRosterSymbols: 0 },
     W1: { terminalWithAwaitingNote: 0 },
     W2: { battlesWithDroppedEntries: 0, ofThemTaped: 0 },
     W4: { tapesWithOldWording: 0 },
@@ -223,6 +223,8 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
     const bounds = etDayBounds(v.etDate);
     const meetings = buildMeetings({ battle, bounds });
     if (meetings.coverage.note) out.T2.notCopiedNotes += 1;
+    // B1 review RF-1: leg symbols outside the battle's portfolio and bench (a real leg never names one)
+    out.T2.offRosterSymbols += Number(/(\d+) leg symbols? outside the battle's portfolio and bench not copied/.exec(meetings.coverage.note ?? '')?.[1] ?? 0);
     // what T2 ADDS: the leg symbols against the day's set without any meeting (a stored day may or may not carry them yet)
     const plan = {};
     for (const e of symbolPlan({ ...tape, meetings: [] })) plan[e.symbol] = true;
@@ -319,7 +321,7 @@ export function renderB1Census(r) {
   L.push('');
   L.push(`## T1 — written tiered days whose battle has no opponent: ${r.T1.tieredNoOpponent} (of them, a stored last-check opponent of 0: ${r.T1.tieredNoOpponentWithZeroLastCheck})`);
   L.push(`## T2 — meetings the writer copies: ${r.T2.meetings} (${kv(r.T2.byStatus)}) · legs ${r.T2.legs} · days with a new leg symbol ${r.T2.tapesWithNewSymbols} · new symbols summed per day ${r.T2.newSymbolsPerTape} · new (symbol, day) pairs the legs name ${r.T2.newSymbolDayPairs} (${r.T2.newSymbolDayPairs * 5} EODHD units if fetched)`);
-  L.push(`   on the refresh (no candle field moves; no request is made): days whose new leg symbols the next candle run fetches ${r.T2.legsFetchedNextRun} · days whose candle pass already ran, so their legs get no bars ${r.T2.legsNotFetched} · days whose meeting coverage names something not copied ${r.T2.notCopiedNotes}`);
+  L.push(`   on the refresh (no candle field moves; no request is made): days whose new leg symbols the next candle run fetches ${r.T2.legsFetchedNextRun} · days whose candle pass already ran, so their legs get no bars ${r.T2.legsNotFetched} · days whose meeting coverage names something not copied ${r.T2.notCopiedNotes} · leg symbols outside the battle's portfolio and bench ${r.T2.offRosterSymbols}`);
   L.push(`   meetings resolved on a later ET day than created (whole histories): ${kv(r.T2.filedLaterDay)}`);
   for (const m of r.T2.perMeeting) L.push(`   - ${m.battle} ${m.etDate}: ${m.status} · legs ${m.legs} · new symbols ${m.newSymbols}`);
   L.push(`## W1 — closed-out days still saying a candle pass is coming: ${r.W1.terminalWithAwaitingNote}`);
@@ -393,7 +395,7 @@ async function main() {
   console.log(`[census-b1] tapes read: ${tapes.length}`);
   const battleIds = [...new Set(tapes.map((t) => tapeIdsOf(t.path)?.battleId).filter(Boolean))].sort();
   const battles = {};
-  const FIELDS = ['agentContext', 'controlEpochLog', 'opponent', 'gameMode', 'timing', 'gameplanMeetingHistory', 'gameplanMeeting', 'status', 'activatedAt', 'createdAt', 'completedAt'];
+  const FIELDS = ['agentContext', 'controlEpochLog', 'opponent', 'gameMode', 'timing', 'gameplanMeetingHistory', 'gameplanMeeting', 'status', 'activatedAt', 'createdAt', 'completedAt', 'portfolio'];
   for (let k = 0; k < battleIds.length; k += 100) {
     const refs = battleIds.slice(k, k + 100).map((id) => db.collection('agentBattles').doc(id));
     const snaps = await db.getAll(...refs, { fieldMask: FIELDS });

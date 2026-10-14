@@ -14,6 +14,13 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.setConfig({ testTimeout: 60_000 });
 
+// criterion 4: a switch that makes the meeting reader throw (off for every other row)
+const ctl = vi.hoisted(() => ({ throwHistory: false }));
+vi.mock('../playerFieldReaders.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, historyListOf: (...a) => { if (ctl.throwHistory) throw new TypeError('planted'); return real.historyListOf(...a); } };
+});
+
 vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_TAPE_WRITE_ENABLED() { return true; },
@@ -51,8 +58,18 @@ const HISTORY = [
   meeting('gpm_2', `${D}T17:00:00.000Z`, 'expired', [['MSFT', 'NVDA']], { resolvedAt: `${D}T20:00:20.000Z` }),
 ];
 
+/**
+ * The battle's book and bench (review RF-1: a leg names one of these or none). The
+ * book names what the fixture day holds; the bench, every name a test's leg brings in.
+ */
+const ROSTER = Object.freeze({
+  star: [{ symbol: 'ACN' }, { symbol: 'MSFT' }], core: [{ symbol: 'NVDA' }, { symbol: 'XOM' }], support: [{ symbol: 'CSCO' }],
+  bench: { stocks: ['ORCL', 'IBM', 'AMD', 'CVX', 'ZZZQ'].map((symbol) => ({ symbol })), crypto: null },
+});
+
 async function dayWith(over, opts = {}) {
   const fx = await stalledDay({ battleId: opts.battleId ?? 'b-meet', over });
+  fx.battle.portfolio = { ...fx.battle.portfolio, ...ROSTER };
   const t = makeTapeDb(seedDay({}, fx));
   await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: opts.night ?? NIGHT });
   return { fx, t, tape: t.store.get(path(fx)) };
@@ -134,7 +151,7 @@ describe('the history is owner-writable: every copied value is checked, and what
       meeting('d', `${D}T15:30:00.000Z`, 'expired', [['ACN', 'ORCL']], { createdAt: 'not-an-instant' }),
       'not a row', null, 7,
     ];
-    const { rows: out, coverage } = buildMeetings({ battle: { gameplanMeetingHistory: rows }, bounds });
+    const { rows: out, coverage } = buildMeetings({ battle: { portfolio: ROSTER, gameplanMeetingHistory: rows }, bounds });
     expect(out.map((m) => m.key)).toEqual([`b|${D}T14:30:00.000Z`, `c|${D}T15:00:00.000Z`]);
     expect(out[0].legs).toEqual([{ symbolOut: 'ACN', symbolIn: 'ORCL' }, { symbolOut: 'MSFT', symbolIn: 'IBM' }]);
     expect(out[0].legs).toHaveLength(MEETING_LEGS_MAX);
@@ -147,7 +164,7 @@ describe('the history is owner-writable: every copied value is checked, and what
 
   it('a history that is not a list: nothing read, the section unavailable with its reason — never a throw', () => {
     for (const raw of [{ 0: HISTORY[1] }, 'gpm', 42]) {
-      expect(buildMeetings({ battle: { gameplanMeetingHistory: raw }, bounds })).toEqual({ rows: [], coverage: expect.objectContaining({ status: 'unavailable', note: 'the meeting history is not a list — no meeting could be read' }) });
+      expect(buildMeetings({ battle: { portfolio: ROSTER, gameplanMeetingHistory: raw }, bounds })).toEqual({ rows: [], coverage: expect.objectContaining({ status: 'unavailable', note: 'the meeting history is not a list — no meeting could be read' }) });
     }
     expect(buildMeetings({ battle: {}, bounds }).coverage.status).toBe('complete');
   });
@@ -155,7 +172,7 @@ describe('the history is owner-writable: every copied value is checked, and what
   it('an id past MEETING_ID_MAX is not copied (review B-1: no planted value can grow the tape past Firestore\'s limit); the key uses \'meeting\', counted', () => {
     const big = meeting('x'.repeat(MEETING_ID_MAX + 1), `${D}T14:00:00.000Z`, 'rejected', [['ACN', 'ORCL']]);
     const ok = meeting('y'.repeat(MEETING_ID_MAX), `${D}T14:30:00.000Z`, 'rejected', [['ACN', 'ORCL']]);
-    const { rows, coverage } = buildMeetings({ battle: { gameplanMeetingHistory: [big, ok] }, bounds });
+    const { rows, coverage } = buildMeetings({ battle: { portfolio: ROSTER, gameplanMeetingHistory: [big, ok] }, bounds });
     expect(rows.map((r) => r.key)).toEqual([`meeting|${D}T14:00:00.000Z`, `${'y'.repeat(MEETING_ID_MAX)}|${D}T14:30:00.000Z`]);
     expect(coverage.note).toBe(`1 meeting id longer than ${MEETING_ID_MAX} characters not copied`);
     expect(JSON.stringify(rows).length).toBeLessThan(2000);
@@ -166,7 +183,7 @@ describe('the history is owner-writable: every copied value is checked, and what
       expiresAt: 1758730000000, resolvedAt: { seconds: 1 }, diagnosis: 'd'.repeat(MEETING_DIAGNOSIS_MAX),
     });
     const long = meeting('gpm_l', `${D}T15:00:00.000Z`, 'expired', [['ACN', 'ORCL']], { expiresAt: `${D}T20:00:00.000Z${' '.repeat(40)}` });
-    const { rows } = buildMeetings({ battle: { gameplanMeetingHistory: [odd, long] }, bounds });
+    const { rows } = buildMeetings({ battle: { portfolio: ROSTER, gameplanMeetingHistory: [odd, long] }, bounds });
     expect(rows[0]).toMatchObject({ expiresAt: null, resolvedAt: null, diagnosis: 'd'.repeat(MEETING_DIAGNOSIS_MAX) });
     expect(rows[1].expiresAt).toBeNull();
   });
@@ -188,7 +205,7 @@ describe('the history is owner-writable: every copied value is checked, and what
   it('at most MEETINGS_PER_DAY_MAX a day; a duplicated id keeps every row apart', () => {
     const many = Array.from({ length: MEETINGS_PER_DAY_MAX + 3 }, (_, i) => meeting('same', new Date(Date.parse(`${D}T13:30:00.000Z`) + i * 60_000).toISOString(), 'expired', [['ACN', 'ORCL']]));
     many.push({ ...many[0] });
-    const { rows, coverage } = buildMeetings({ battle: { gameplanMeetingHistory: many }, bounds });
+    const { rows, coverage } = buildMeetings({ battle: { portfolio: ROSTER, gameplanMeetingHistory: many }, bounds });
     expect(rows).toHaveLength(MEETINGS_PER_DAY_MAX);
     expect(new Set(rows.map((r) => r.key)).size).toBe(MEETINGS_PER_DAY_MAX);
     expect(rows[1].key).toBe(`same|${D}T13:30:00.000Z#2`);
@@ -285,5 +302,65 @@ describe('the candle pass adds every leg\'s symbols to its series set — dedupl
     expect(fresh.symbols.filter((s) => !base.symbols.includes(s))).toEqual(['ORCL']);
     expect(fresh.series).toContain('ORCL');
     expect(fresh.summary.units - base.summary.units).toBe(5);       // UNITS_PER_REQUEST
+  });
+});
+
+describe('review RF-1 — a leg names a symbol of the battle\'s own portfolio or bench, or none', () => {
+  it('a planted symbol outside the roster is not copied, is counted, and never reaches the series set', async () => {
+    const planted = meeting('gpm_p', `${D}T15:40:00.000Z`, 'rejected', [['ACN', 'BEST'], ['GRADE', 'ORCL']]);
+    const { rows, coverage } = buildMeetings({ battle: { portfolio: ROSTER, gameplanMeetingHistory: [planted] }, bounds });
+    expect(rows[0].legs).toEqual([{ symbolOut: 'ACN', symbolIn: null }, { symbolOut: null, symbolIn: 'ORCL' }]);
+    expect(coverage).toMatchObject({ status: 'partial', note: "2 leg symbols outside the battle's portfolio and bench not copied" });
+    const { tape } = await dayWith({ gameplanMeetingHistory: [planted] }, { battleId: 'b-rf1' });
+    expect(tape.meetings[0].legs).toEqual([{ symbolOut: 'ACN', symbolIn: null }, { symbolOut: null, symbolIn: 'ORCL' }]);
+    expect(tape.coverage.meetings.note).toBe("2 leg symbols outside the battle's portfolio and bench not copied");
+    expect(symbolPlan(tape).map((e) => e.symbol).filter((s) => s === 'BEST' || s === 'GRADE')).toEqual([]);
+  });
+
+  it('one symbol counts as one; a leg the server could propose (a held name out, a bench name in) is copied whole', () => {
+    const one = buildMeetings({ battle: { portfolio: ROSTER, gameplanMeetingHistory: [meeting('gpm_o', `${D}T15:40:00.000Z`, 'expired', [['ACN', 'ONE']])] }, bounds });
+    expect(one.rows[0].legs).toEqual([{ symbolOut: 'ACN', symbolIn: null }]);
+    expect(one.coverage.note).toBe("1 leg symbol outside the battle's portfolio and bench not copied");
+    const real = buildMeetings({ battle: { portfolio: ROSTER, gameplanMeetingHistory: [HISTORY[1]] }, bounds });
+    expect(real.rows[0].legs).toEqual([{ symbolOut: 'ACN', symbolIn: 'ORCL' }]);
+    expect(real.coverage).toMatchObject({ status: 'complete', note: null });
+  });
+
+  it('the bench\'s crypto and every tier of the book count; a battle with no portfolio copies no leg symbol', () => {
+    const roster = { star: [{ symbol: 'AAPL' }], core: [{ symbol: 'KO' }], support: [{ symbol: 'PEP' }], bench: { stocks: [{ symbol: 'AMD' }], crypto: { symbol: 'ETH' } } };
+    const legs = [['AAPL', 'AMD'], ['KO', 'ETH'], ['PEP', 'AMD']];
+    const r = buildMeetings({ battle: { portfolio: roster, gameplanMeetingHistory: [{ ...meeting('gpm_t', `${D}T15:40:00.000Z`, 'rejected', legs.slice(0, 2)) }, meeting('gpm_u', `${D}T15:50:00.000Z`, 'rejected', legs.slice(2))] }, bounds });
+    expect(r.rows.flatMap((m) => m.legs)).toEqual([{ symbolOut: 'AAPL', symbolIn: 'AMD' }, { symbolOut: 'KO', symbolIn: 'ETH' }, { symbolOut: 'PEP', symbolIn: 'AMD' }]);
+    expect(r.coverage.note).toBeNull();
+    const none = buildMeetings({ battle: { gameplanMeetingHistory: [HISTORY[1]] }, bounds });
+    expect(none.rows[0].legs).toEqual([{ symbolOut: null, symbolIn: null }]);
+    expect(none.coverage.note).toBe("2 leg symbols outside the battle's portfolio and bench not copied");
+  });
+
+  it('an unreadable portfolio is an empty roster: every leg symbol counted, none copied, and the day still written', async () => {
+    const r = buildMeetings({ battle: { portfolio: { star: 'not-a-list' }, gameplanMeetingHistory: [HISTORY[1]] }, bounds });
+    expect(r.rows[0].legs).toEqual([{ symbolOut: null, symbolIn: null }]);
+    expect(r.coverage.note).toBe("2 leg symbols outside the battle's portfolio and bench not copied");
+    const fx = await stalledDay({ battleId: 'b-rf1-bad', over: { gameplanMeetingHistory: [HISTORY[1]] } });
+    fx.battle.portfolio = { ...fx.battle.portfolio, star: 'not-a-list' };
+    const t = makeTapeDb(seedDay({}, fx));
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT });
+    const tape = t.store.get(path(fx));
+    expect(tape.passes.close.status).toBe('written');
+    expect(tape.meetings[0].legs).toEqual([{ symbolOut: null, symbolIn: null }]);
+  });
+});
+
+describe('criterion 4 — a T2 failure never stops the write', () => {
+  it('the meeting reader throws: the day is written, the section reads unavailable with the error class, every other section as without it', async () => {
+    const clean = (await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-t2-iso' })).tape;
+    ctl.throwHistory = true;
+    let broken;
+    try { broken = (await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-t2-iso' })).tape; } finally { ctl.throwHistory = false; }
+    expect(broken.passes.close.status).toBe('written');
+    expect(broken.meetings).toEqual([]);
+    expect(broken.coverage.meetings).toMatchObject({ status: 'unavailable', note: 'the meetings could not be read (TypeError)' });
+    const rest = (t) => { const c = structuredClone(t); delete c.meetings; delete c.coverage.meetings; delete c.writtenAt; delete c.passes.close.writtenAt; return c; };
+    expect(rest(broken)).toEqual(rest(clean));
   });
 });
