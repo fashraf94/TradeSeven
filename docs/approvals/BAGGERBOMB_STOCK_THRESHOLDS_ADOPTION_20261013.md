@@ -10,3 +10,9 @@ The hashed policy object remains unchanged. Historical pending-approval reports 
 * Publication SHA-256: `3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f`
 
 SHA-256 uses UTF-8 canonical stableStringify, recursively sorted keys and preserved array order. The approval record is outside those hashes. No client field, offline attestation or unregistered authority can authorize admission. The admission selector ships false and affects new creation only.
+
+## Additional prescribed tournament settlement contact
+
+The owner's direct follow-up reply authorizes: “the additional corrected-only refusal guard in runPrescribedTournamentDeploy, plus directly related tests and documentation.” It specifies expired active corrected models and present invalid/unsupported stamps, stored-model dispatch independent of admission, no battle/score/history/completion/statistics changes, preservation of durable agent metadata, and release of only the temporary deploy lock. The check must precede durable writes, rather than restoring stale metadata. Unstamped tournament behavior remains; merge and activation remain separate decisions.
+
+This narrowly supplements the first approval's prescribed-deploy exclusion. The caller defers only tournament loadout persistence into a server callback. The helper performs its settlement check before invoking that callback and before decision/cooldown writes, leaving settlement to the existing qualified completion writer. The original projection pin, writer and rejection/fail-open handling remain; legacy projection still precedes group/rankings/prescription validation. The exact policy hashes and registry version are unchanged. Verification is recorded in `docs/audits/BAGGERBOMB_TOURNAMENT_STOCK_SETTLEMENT_GUARD_REVIEW_20261013.md`.

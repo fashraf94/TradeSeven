@@ -146,8 +146,11 @@ describe('baseline gate — parity + sanitization invariants', () => {
     // outcome is not throttled behind the 2-minute cooldown.
     // Pilot P1b (BUILD_RULES §2 review L2-2) adds a THIRD battle-less abort that rolls the cooldown back:
     // the deploy-carriage race (the creation transaction threw HypothesisCarriageError, no battle exists).
+    // The approved dormant stock implementation already added the FOURTH:
+    // ordinary corrected-GC refusal. The tournament settlement guard is before
+    // durable writes and adds no stale-metadata restoration (behavioral suite).
     const matches = SOURCE.match(/lastDeployedAt: agent\.lastDeployedAt \?\? null/g);
-    expect(matches).toHaveLength(3);
+    expect(matches).toHaveLength(4);
   });
 
   it('createAgentBattle is still called with the same (db, agentData, thresholds, startingPrices) payload in both paths', () => {
