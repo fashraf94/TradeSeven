@@ -177,17 +177,23 @@ function heldAt(check) {
  * threshold less S1 (S2's count when the rule is off), and the change is below
  * the rule's winner threshold.
  *
- * @param {{ inputs: object, checks: object[], actions: object[] }} p
- * @returns {{ items: object[], exits: object[] }}
+ * Two parameters exist for the read-only census only (scripts/census-film-room-b1.mjs),
+ * never passed by the close pass: `seed`, a per-holding starting state (the
+ * census replays the live counter's overnight carry with it), and `trace`, an
+ * array the walk appends one row per holding per check to. The returned
+ * `closing` is the state after the last check.
+ *
+ * @param {{ inputs: object, checks: object[], actions: object[], seed?: object|null, trace?: object[]|null }} p
+ * @returns {{ items: object[], exits: object[], closing: object }}
  */
-export function tagDay({ inputs, checks, actions }) {
+export function tagDay({ inputs, checks, actions, seed = null, trace = null }) {
   const fr = inputs.forcedRotation;
   const S1 = inputs.slots.S1.checksBeforeRule;
   const S2 = inputs.slots.S2;
   const pctThreshold = fr.enabled ? fr.pctThreshold : S2.pctThreshold;
   const walked = tagChecks(checks);
   if (walked.length !== inputs.perCheck.length) throw new Error('tags_inputs_mismatch: perCheck does not cover the checks');
-  const state = {};
+  const state = isObj(seed) ? Object.fromEntries(Object.entries(seed).map(([sym, s]) => [sym, { ...s, fired: false }])) : {};
   const items = [];
   walked.forEach((c, i) => {
     const pc = inputs.perCheck[i];
@@ -212,6 +218,7 @@ export function tagDay({ inputs, checks, actions }) {
       });
       const fired = prev.fired || (isObj(c.risk) && c.risk[sym]?.reason === STAGNATION_EXIT_REASON);
       state[sym] = { stagnationTicks: step.stagnationTicks, lastTickPrice: step.lastTickPrice, lastTickTimestamp: step.lastTickTimestamp, fired };
+      if (Array.isArray(trace)) trace.push({ symbol: sym, tickSeq: Number.isInteger(c.tickSeq) ? c.tickSeq : null, at: c.at, px, chg, count: step.stagnationTicks, withinAge: step.withinAge, fired, liveAt, winnerThreshold: fr.winnerThreshold });
       if (px === null || chg === null || fired) continue;
       if (step.stagnationTicks >= liveAt && chg / 100 < fr.winnerThreshold) {
         items.push({
@@ -232,7 +239,7 @@ export function tagDay({ inputs, checks, actions }) {
     const precededByTag = exitMs !== null && items.some((it) => it.symbol === x.symbol && toMs(it.at) !== null && toMs(it.at) < exitMs && toMs(it.at) > since);
     return { ...x, precededByTag };
   });
-  return { items, exits };
+  return { items, exits, closing: state };
 }
 
 /** BA-20 — the tags section's coverage: it follows the inputs `stalled` reads (the checks and the evidence), never the bars. */

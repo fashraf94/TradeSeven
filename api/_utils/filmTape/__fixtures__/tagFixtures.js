@@ -56,9 +56,9 @@ function evidenceAt(held, seq, riskStatus) {
  */
 export async function stalledDay({
   battleId = 'b-stalled', archetype = 'momentum_chaser', exitSeq = 6, noTriggerSeqs = [], slots = 26,
-  dials = null, controlEpochLog = null, controlEpoch = null, opponent = CPU_OPPONENT, over = {},
+  dials = null, controlEpochLog = null, controlEpoch = null, opponent = CPU_OPPONENT, over = {}, etDate = '2026-09-24',
 } = {}) {
-  const D = '2026-09-24';
+  const D = etDate;
   const ticks = [];
   const evaluations = [];
   let held = ['ACN', 'MSFT', 'NVDA'];
@@ -89,6 +89,7 @@ export async function stalledDay({
     if (firing) held = held.map((s) => (s === 'ACN' ? 'XOM' : s));
   }
   const battle = battleDoc({
+    timing: { tradingDays: [D], currentTradingDay: 1, timezone: 'America/New_York' },
     cronState: { tickSeq: slots },
     agentContext: {
       archetype,
