@@ -3195,3 +3195,44 @@ export const SWAP_IDENTITY_MODE = 'shadow';
 
 /** The three founder-walked states, in walk order. */
 export const SWAP_IDENTITY_MODES = Object.freeze(['off', 'shadow', 'enforce']);
+
+/**
+ * CRYPTO_SLOT_PROMPT_ENABLED — the Crypto Slot paragraph (Fable build prompt,
+ * 14 Oct 2026; Phase 0 docs/audits/20261014_PHASE0_CRYPTO_SLOT.md; build report
+ * docs/audits/20261014_BUILD_CRYPTO_SLOT_PROMPT.md). DARK — default FALSE.
+ *
+ * When TRUE, the tiered (BaggerBomb agent game) eval system prompt carries a
+ * `━━━ YOUR CRYPTO SLOT ━━━` block between SCORING RULES and DECISION
+ * FRAMEWORK (api/_utils/evalCryptoSlotBlock.js, spliced once into the fenced
+ * agentEvalPromptAssembly.js): the third Support slot holds the one crypto;
+ * crypto swaps only for crypto and a stock only for a stock (the fenced
+ * validator's isCrypto match); the slot's two moves are hold or swap for the
+ * bench crypto; SECTOR AWARENESS is for the stock slots; every position is
+ * long. Prompt-only: no validator, executor, scorer or tool-schema change.
+ * The flat6 (tournament) template never carries it — the tournament has no
+ * crypto.
+ *
+ * When FALSE (CURRENT), the render returns '' and every eval system prompt is
+ * byte-identical to the pre-build text (evalCryptoSlotBlock.test.js against
+ * __fixtures__/cryptoSlotPromptGoldens.json, captured from the clean tree).
+ *
+ * Read it at CALL time, never module scope (the Ask 3 compileBuild lesson).
+ * Flips in its own commit after the replay probe reads clean (build report
+ * §6) and Flash signs off — never in the build PR. THE FLIP MAP (build report
+ * §7): the flag → true; the pin in cryptoSlotPromptFlags.test.js → true and
+ * this flag's DARK_BY_DESIGN entry dropped from flagPinGuard.test.js, in the
+ * same commit; exactly 7 snapshots regenerate — `npx vitest run
+ * api/_utils/p4Equivalence.battery.test.js
+ * api/_utils/evalIdentityBlock.injection.test.js -u` moves the tiered P4
+ * analyst snapshot and the six tiered DR-13 identityOn snapshots (the flat6
+ * ones must not move). Nothing else: six suites pin this flag false in their
+ * own featureFlags mocks (they mock it, they do not pin it), so their goldens
+ * stay the text of record and never regenerate —
+ * agentEvalPromptAssembly.ask1.test.js, agentEvalPromptAssembly.ask2.test.js,
+ * evalIdentityBlocks.ask2.test.js, agent-evaluate.callRecords.offGolden.test.js,
+ * agent-evaluate.callRecords.rollback.test.js and
+ * agent-evaluate.meetingCopy.baseline.test.js; evalCryptoSlotBlock.test.js
+ * forces both states itself.
+ */
+// Pinned by: cryptoSlotPromptFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const CRYPTO_SLOT_PROMPT_ENABLED = false;
