@@ -2,7 +2,10 @@
 
 **Date:** 14 Oct 2026 · **Session:** Claude Code desktop, local Windows, Opus 5.5 · **Prompt:** Fable, "Experiment — Did the learning help? Scoring the changed moments", 14 Oct 2026 · **Base HEAD:** `e880592e` (`origin/main` after `git fetch origin`) · **Branch:** `claude/experiment-changed-moments-score` · **No model calls.**
 
-> **How this file was written.** Section 3, the method, was committed and pushed with the script as `731799d2` before any price bar was fetched or any outcome read (rule 8). The scoring run used that exact script. The other sections were written from its output afterwards, and §8 records the review.
+> **How this file was written.**
+> - **Method first.** Section 3, the method, was committed and pushed with the script as `731799d2` before any price bar was fetched (rule 8). The scoring run used that exact script.
+> - **Results after.** The other sections were written from the run's output afterwards.
+> - **The review.** §8 records the BUILD_RULES §2 review. Its confirmed findings changed wording, guards, records and tests, never a scored number. §3 stays as declared; where it was wrong, §8 carries an erratum.
 
 ## 1. In plain terms
 
@@ -11,16 +14,25 @@ The growth replay found 29 moments where removing an agent's learned paragraph c
 | Question | Answer |
 |---|---|
 | **The label** | **No clear effect.** |
-| How the 29 moments scored | 28 could be scored on both measures. On points, the learned call did better on 11, worse on 12, and tied on 5. Price gives the same split: 11 / 12 / 5. A coin-flip test cannot tell this apart from chance (p = 1.0). |
+| How the 29 moments scored | 28 could be scored on both measures. On points, the learned call did better on 11, worse on 12, and tied on 5; price gives the same split. A coin-flip test cannot tell this apart from chance (p = 1.0). |
 | How many of the changes were trades the learning stopped | **20 of 29.** In 4 more, the learning *caused* a trade; in the other 5, it changed which stock was bought. |
-| What the control says | Across every trade the agents chose in the replay, **trading lost to holding more often than it won: 29 times against 19**, with 5 ties. That is not significant (p = 0.19), but it leans one way. |
+| What the control says | Across every trade the agents chose in the replay, **trading lost to holding more often than it won: 29 times against 19**, with 5 ties (p = 0.19, not significant). That count includes these 29 moments' own trades. The 30 trades that both versions of the agent made lean the same way on their own: 7 won, 13 lost (p = 0.26). |
 | Which paragraphs drove it | None produced a clear result. The Trend Follower paragraph present on 16 moments came out roughly even. The Contrarian paragraph (12 moments) was slightly worse, and the other Trend Follower paragraph (1 moment) was worse. |
 
-- **Where the learning stopped a trade, holding was usually the better outcome.** It was better on 10 of the 20, worse on 7, and tied on 3. That matches the control: in this period trades tended to lose to holding. So stopping a trade looks good mostly because trading looked bad, not because of anything particular in the paragraph.
+- **Where the learning stopped a trade, holding did better on 10 of the 20, worse on 7, and tied on 3** (p = 0.63, not significant).
+  - That leans the same way as the control. But the control contains these same 20 trades, so the two are not independent.
+  - This score cannot say whether the paragraph picked which trades to stop.
 - **Where the learning caused a trade, the trade did worse** on 3 of 4, and tied on the fourth.
-- **In total, the learned calls finished 100 points behind the unlearned ones over the 28 moments.** Most of that gap comes from four large misses, each between 28 and 42 points. At the next check after each moment, the picture is just as even: 13 better, 11 worse.
-- **The two measures say nearly the same thing.** Unless a stock crosses a badge line, BaggerBomb points are about ten times the price move, times the slot's tier multiplier. So they are not two independent pieces of evidence.
-- **This is a small sample from founder and tester play.** With 28 moments, only a large effect could have shown up as anything other than "no clear effect".
+- **In total, the learned calls finished 100 points behind the unlearned ones over the 28 moments.**
+  - The four largest misses (28 to 42 points each) add up to more than the whole gap; the other 24 moments net out slightly ahead.
+  - At the next check after each moment the picture is just as even: 13 better, 11 worse.
+- **The lean depends on a tie-breaking detail; the label does not.** Two of the 29 usual calls were exact ties in the votes. The replay broke such ties by alphabetical order.
+  - Under the opposite rule, 30 moments change their usual call, and 29 of those score.
+  - The learned call does better on 13 and worse on 11, finishing 60 points behind. The label is still **no clear effect**.
+- **The two measures say nearly the same thing.** Unless a stock crosses a badge line, BaggerBomb points are about ten times the price move, times the slot's tier multiplier. They gave the same verdict on every scored moment, so they are not two independent pieces of evidence.
+- **This is a small sample from founder and tester play.**
+  - With 28 moments, only a large effect could have shown up as anything other than "no clear effect".
+  - About 5 of the 29 changes are the kind that noise alone produces. The replay measured that same rate between two identical runs.
 
 ## 2. Gate facts
 
@@ -30,31 +42,43 @@ The growth replay found 29 moments where removing an agent's learned paragraph c
 - `node_modules` is a junction into the primary checkout, unlinked at session end.
 
 **Pre-declaration (rule 8).**
-- The method (§3 and the script header) was committed as `731799d2` and **pushed before any bar was fetched or any outcome read**.
-- Every scoring command ran that exact file: SHA-256 `bd6b7a3e990236d2637f57e227b384664f668a26514a9766e5341eb1e8526d87`, logged per command in the run manifest.
-- Two earlier `plan` runs came from uncommitted drafts, while the slot reconstruction was being debugged. They read inputs only — no bars, no tape replay — and were superseded.
+- **The commit.** The method (§3 and the script header's M1–M9) was committed as `731799d2` at 20:27:42Z and pushed at 20:27:49Z, **before any bar was fetched**.
+- **Which script ran.** The run of record ran that exact file: SHA-256 `bd6b7a3e990236d2637f57e227b384664f668a26514a9766e5341eb1e8526d87`, logged per command in the run manifest.
+- **The earlier drafts.** Two earlier `plan` runs came from uncommitted drafts, while the slot reconstruction was being debugged. They fetched no bars and ran no replay.
+- **What `plan` reads, stated exactly (review A1).**
+  - `plan` stores the battle-day's records, and those include quotes and trade prices recorded *after* each check: later evaluation entries' evidence prices, and later trades' exit prices.
+  - The scorer never reads them. The review stripped them from a copy of the snapshot and reproduced `summary.json` and `results.local.json` byte for byte.
+  - Nothing later than a check was printed during development: the console showed structure, counts, symbols and times only.
+  - The drafts' code cannot be recovered, so this is the author's statement, not something the run record proves.
 
 | Fact | Value |
 |---|---|
 | Run | `cms-20261014T202814` (`%USERPROFILE%/growth-replay-runs/`, outside git) |
-| Run window (14 Oct 2026, UTC) | `plan` 20:28:15 · `known-answer` 20:28:24, bars fetched 20:28:28–20:28:38 · `score` 20:29:20 |
-| Script SHA-256 | `bd6b7a3e…8526d87`, the same on all three commands |
+| Run of record (14 Oct 2026, UTC) | `plan` 20:28:15 · `known-answer` 20:28:24, bars fetched 20:28:28–20:28:38 · `score` 20:29:20. Script `bd6b7a3e…8526d87` on all three. |
+| Re-run after review | `known-answer` 21:30:48 and `score`, on the same run and bar cache, with the fixed script (commit `4abf6854`, SHA-256 `21c9e9b9…`). Every scored number is identical to the run of record: 0 differences across `summary.json` and `results.local.json`. 0 further EODHD requests. |
 | EODHD requests | **41 of the 400 cap**, one per symbol, 0 failures |
 | Known-answer, layer 1 (the tape's own rows, our bars) | **9 of 9** match exactly |
-| Known-answer, layer 2 (our builder) | **4 of 4** in its domain match, exactly on every number. The other 5 are deterministic exits taken before the prompt was built, outside the builder's domain (§3.9). |
-| Bars against the tape's stored 10-minute series | **28 of 28** series equal |
-| Sale reconciliation: lock, exit price and fill against the platform's records | **20 of 20** each, over every recorded model swap on the 29 battle-days (4 tiered, 16 flat6) |
-| Self-test | 54 rows pass (gates every command) |
+| Known-answer, layer 2 (our builder) | **4 of 4** in its domain match within the pre-declared 1-point tolerance. The re-run records them **exact on every number** (review B13). The other 5 are archetype-rule exits taken before the prompt was built, outside the builder's domain (§3.9): 4 came 1–2 s before the prompt, and 1 had no prompt at all. |
+| Bars against the tape's stored 10-minute series | **28 of 28 compared series equal.** The 4 replayed tape-days hold 67 stored series; the other 39 are of symbols never fetched (SPY, RSP, sector funds, held names no call touched). The comparison is descriptive, not part of the gate (review B5). |
+| Sale reconciliation: lock, exit price and fill against the platform's records | **20 of 20** each, over every recorded model swap on the 29 battle-days (4 tiered, 16 flat6). The re-run makes this a gate before any bar (review B2). |
+| Self-test | 54 rows at the run of record; 78 after review. Mutation-checked (§8). |
 | Firestore | Read-only; the §7 write-call grep gated every command in the same shell command (no matches) |
 | Model calls | None |
 
 **Inputs.**
-- 69 distinct swap calls were needed. 57 built; the other 12 are crypto (`crypto_not_supported`).
+- **Swap calls.** 69 distinct swap calls were needed. 57 built; the other 12 are crypto (`crypto_not_supported`).
 - **Entries.** All 57 rendered exactly to the shown `$Entry`: 54 starting prices and 3 earlier fills.
 - **Lock ATR.** 54 used `scoring.thresholds`.
+- **The lock against LockNow.** The built lock equals the `LockNow` the agent was shown on **56 of 57** (review A5).
+  - The one exception is a tiered control trade, counted in both controls: −64 built against −63 shown.
+  - The cause is the evidence price, which the capture rounds to the cent, while LockNow uses the unrounded quote.
+  - At the platform's −63 that trade's close difference is −24, not −25. The control sums would read −128, −20 and −203. No verdict, tally, p-value or label moves.
 - **The 1-decimal ATR rule (M7).** 45 of the 57 used a 1-decimal ATR for one leg — in every case the bought name's, since those bench candidates have no stored threshold. Every held name's ATR was exact. Every one of their verdicts held at every corner of the rounding box, so M7 left nothing unscored.
 
-**Changes after the method commit:** none to the script. This report's results sections, and the review record in §8, were added after the run.
+**Changes after the method commit:**
+- **The run of record** used the method commit's script unchanged.
+- **After review**, the script changed guards, records and tests only. The header lists each change by review id, and the re-run reproduces every scored number.
+- **This report:** the results sections and §8 were written after the run.
 
 ## 3. Method (pre-declared)
 
@@ -228,11 +252,11 @@ When an ATR is known only to 0.1 (the body's rendering), the moment is also repl
 
 **By kind, at the close (points; price splits the same way):**
 
-| Kind | Moments | Better | Worse | Tied | Sum (points) |
-|---|---|---|---|---|---|
-| Stopped (learning held, without it the agent traded) | 20 | 10 | 7 | 3 | −43 |
-| Caused (learning traded, without it the agent held) | 4 | 0 | 3 | 1 | −46 |
-| Changed pick | 5 (4 scored) | 1 | 2 | 1 | −11 |
+| Kind | Moments | Better | Worse | Tied | Sum (points) | Sign test p |
+|---|---|---|---|---|---|---|
+| Stopped (learning held, without it the agent traded) | 20 | 10 | 7 | 3 | −43 | 0.63 |
+| Caused (learning traded, without it the agent held) | 4 | 0 | 3 | 1 | −46 | 0.25 |
+| Changed pick | 5 (4 scored) | 1 | 2 | 1 | −11 | 1.0 |
 
 **By paragraph, at the close (points):**
 
@@ -270,10 +294,22 @@ When an ATR is known only to 0.1 (the body's rendering), the moment is also repl
 
 The 11 batch-check trades and the 12 main-run trades that were not scored all have a crypto leg.
 
+**The control overlaps the moments (review A2; split added after the run, descriptive).**
+- The control includes the changed moments' own trades: 34 of its 64 trades (33 of 53 scored) are legs of the 29 moments.
+- For those legs the result is the record's own number. A stopped moment's control row is the negative of its record difference; a caused moment's is the same number.
+- The rest are the 30 trades that both versions of the agent made at the same moment:
+
+| Control part | Trades | Scored | Trade better | Trade worse | Tied | Sum (points) | Sum (price) | Sign test p |
+|---|---|---|---|---|---|---|---|---|
+| Batch check — legs of the 29 changed moments | 34 | 33 | 12 | 16 | 5 | +18 | −2.03 pp | 0.57 |
+| Batch check — trades both versions made | 30 | 20 | 7 | 13 | 0 | −147 | −13.53 pp | 0.26 |
+| Main run — legs of its own 29 changed moments | 36 | 33 | 10 | 18 | 5 | −73 | −9.82 pp | 0.18 |
+| Main run — trades both versions made | 30 | 21 | 8 | 13 | 0 | −131 | −12.01 pp | 0.38 |
+
 **Reading the control beside the label.**
-- In this period a trade lost to holding more often than it won.
+- In this period a trade lost to holding more often than it won. That holds in the trades both versions made, which are independent of the moments (7 won, 13 lost; p = 0.26).
 - So a paragraph that mostly *stops* trades would look helpful even if its content did not matter.
-- Here the stopped trades favour the learning (10 against 7) and the caused trades go against it (0 against 3). Both point the same way as the control, and neither is significant.
+- Here the stopped trades favour the learning (10 against 7) and the caused trades go against it (0 against 3). Both lean the way the independent part of the control leans; neither is significant.
 - The control does not set the label, and it cannot explain away a label of "no clear effect": there is no effect for it to explain.
 
 ## 6. Limits
@@ -281,10 +317,19 @@ The 11 batch-check trades and the 12 main-run trades that were not scored all ha
 - **The delayed quote.** Both calls start from the price the agent was shown: the platform's quote, about 15–20 minutes delayed.
   - **Measured on the 33 sales replayed for the set of record:** the shown price minus the 1-minute bar at the check had a median of −0.02%, ranging from −0.83% to +1.11%.
   - **Lag:** the minute whose price best matches the shown one sat a median 16 minutes before the check (3 to 39).
+    - That search ran 0–40 minutes back, over n = 28: the first sale of each moment, since M20's sale has no shown price.
+    - A wider window keeps finding coincidental earlier matches, so its maximum grows while its median stays at 16–17 (review A6).
   - The hold path and the trade start from the same vintage of quote, but each stock's own lag differs.
 - **A one-step replay.** Both paths run from the check to the day's close. A later trade in the same slot is not replayed (the tape's own label). Eight figures are marked hypothetical for that reason: M02, M08, M09, M10, M15, M25, S03 and S04.
 - **The call as proposed.** Each usual call is scored as if it had been carried out. Guardrails, the risk manager, the validator and the executor were not run, as in the replay. The live battle's own action at each check is shown beside it. At M03 and M10 it was a rule exit, taken before the prompt was built, that matches neither call.
-- **Small numbers.** 28 moments scored, 23 of them not tied. At 23, the sign test needs a split of at least 17 to 6 to reach p < 0.05. Several usual calls are pluralities rather than majorities: M22 held on 3 of 8 votes, M11 on 4 of 8.
+- **Small numbers.** 28 moments scored, 23 of them not tied. At 23, the sign test needs a split of at least 17 to 6 to reach p < 0.05. Several usual calls are pluralities rather than majorities, and two are exact ties broken by the replay's pre-declared rule (the alphabetically first call wins):
+  - **M22:** with learning, HOLD 3 and SWAP AMAT→MSFT 3 (malformed 2). HOLD wins only on alphabetical order.
+  - **M21:** without learning, AMAT→CSCO 4 and AMAT→MSFT 4.
+- **Tie-rule sensitivity** (review A3; computed after the run, descriptive). Under the opposite rule (the alphabetically last call wins):
+  - **The set:** 30 moments change their usual call, against 29. M22 drops out, M21's call becomes AMAT→MSFT, and two others come in.
+  - **The score:** 29 scored, 13 better / 11 worse / 5 tied on both measures, −60 points and −3.39 pp, p = 0.84: still **no clear effect**.
+  - **What moves:** the descriptive lean (11 / 12 and −100 under the rule of record).
+- **Noise.** About 5 of the 29 changes are the kind noise alone produces. The replay's no-effect flip rate for 8 against 8 repeats is 1.8%, and its fresh and original baselines differed on 5 of 280. Any real effect of the paragraphs is diluted by these noise flips.
 - **Founder and tester play only.** It comes from a pre-launch product, 29 one-session battles between 22 Sep and 8 Oct 2026. The learning is three paragraphs: two Trend Follower versions and one Contrarian.
 - **The two measures are nearly one.** Unless a badge line is crossed, points are about ten times the price move, times the tier multiplier. The tie bands were set before this was seen, and they line up for flat6 (1 point ≈ 0.10 pp). Agreement between the two measures is therefore not two pieces of evidence.
 - **Flat6 has no tape precedent.** The tape never replays flat6 battles (BA-3), and 20 of the 29 moments are flat6.
@@ -292,7 +337,13 @@ The 11 batch-check trades and the 12 main-run trades that were not scored all ha
   - **What did not:** its hold and swap paths could not be checked against stored numbers.
   - **Layer 2 is small:** it covers only the 4 tiered model swaps the tape replayed on these days.
 - **ATR to one decimal.** 45 of 57 swap calls read at least one ATR only to 0.1. Every verdict held at every corner of that rounding (M7).
-- **End of battle.** For every moment it is the session close, so it adds no figure of its own.
+  - §3.7's reassurance that ATRs were "5–8% here" was wrong (erratum, §8).
+  - One control trade did cross a badge line inside its corners: AMZN→V, with V shown at 1.0%. Its verdict held.
+- **The shown price is rounded to the cent.** The capture stores the evidence price at 2 dp, while the platform's own LockNow and executor use the unrounded quote.
+  - On 1 of 57 built calls this moved the lock by one point (§2).
+  - On 4 of 57 it moved the price change in the second decimal.
+  - No verdict moved.
+- **End of battle.** For every moment it is the session close, so it adds no figure of its own. That rule is checked: all 29 battles are one completed session, and every scored trade falls on its battle's day.
 - **Not scored, with reasons:**
   - **M20 and S02** — a crypto leg. M20's learned call sells BTC; S02 sells BTC on both calls (`crypto_not_supported`).
   - **The control** — 11 batch-check trades and 12 main-run trades, all for a crypto leg.
@@ -301,3 +352,87 @@ The 11 batch-check trades and the 12 main-run trades that were not scored all ha
 ## 7. No recommendation
 
 This report makes none. The founder decides in the Practice Field chat.
+
+## 8. Review record (BUILD_RULES §2)
+
+**Why a review was required.** The branch diff is 4 files and about 2,140 lines, over the 1,500-line threshold.
+
+**How it was run.**
+- **Two lenses.** Each worked on its own LF `git archive` of `d147c2fc`, with a private copy of the run data, read-only on git and on the real run folder, and with no network:
+  - **Lens A** was told to *refute the result*, on the prompt's five questions: the entry price, peeking, the same arithmetic as the tape, double counting or dropping, and whether the control explains the label.
+  - **Lens B** reviewed code correctness and ran the self-test's mutation check.
+- **Verifiers.** Every finding then went to a separate verifier, on its own archive, told to refute it with a concrete repro. That is 22 verifiers for 23 finding ids; A4 and B15 are the same point.
+- **What the lenses recomputed independently.**
+  - Lens A recomputed all 31 scored moments and 107 control trades from the cached bars, calling only the fenced scorer: every number matched.
+  - Lens B re-ran `score` and reproduced the outputs byte for byte.
+
+**Result: 18 CONFIRMED, 5 PARTLY CONFIRMED, 0 fully REFUTED.**
+- Parts of six findings were refuted (A6, B2, B5, B8, B12, B16; see the dispositions below).
+- **No finding changes a scored number or the label.** Severities are after verification.
+
+| Id | Finding | Verdict | After verification | Disposition |
+|---|---|---|---|---|
+| A1 | "The drafts read inputs only / no outcome read" claims more than the code shows: `plan` stores the day's later quotes and trade prices | CONFIRMED | Low: not peeking; the scorer never reads them (strip-and-rerun gives byte-identical outputs) | Report §2 reworded to say exactly what `plan` stores |
+| A2 | The control contains the moments' own trades (34 of 64); "points the same way as the control" is partly circular | CONFIRMED | Low (upper) | Overlap disclosed; split added (§5): the trades both versions made lose 7 to 13 on their own; §1 and §5 reworded |
+| A3 | M22 and M21 are exact vote ties; no tie-rule sensitivity; noise floor not mentioned | CONFIRMED | Low: label holds under both rules | §6 names the ties, adds the opposite rule (30 moments, 13/11/5, −60, p 0.84, no clear effect) and the noise floor (about 5 of 29) |
+| A4 / B15 | §1 said holding was "usually" better (10 of 20) and asserted an untested cause | CONFIRMED | Low | §1 reworded; p column added to the by-kind table |
+| A5 | The "lock differs from LockNow" flag (1 control trade) was not disclosed | CONFIRMED, cause corrected: the 2-dp evidence price, not the inputs listed | Low: no verdict moves | §2 discloses it with the platform's −63 and the sums it would give; 56 of 57 locks equal LockNow |
+| A6 | The lag window (0–40 min) and n (28) were not stated | PARTLY CONFIRMED: widening refuted (it finds coincidental repeats) | Nit | Window and n stated (§6); named constant in the script |
+| A7 | The report cited a §8 that did not exist | CONFIRMED | Nit (blocks a push) | This section |
+| B1 | Nothing tested `pathValues`; two index mutants survived silently | CONFIRMED | Medium (guard gap; code correct) | Self-test S12 built through the real `composeLegs` |
+| B2 | The flat6 path is not gated | PARTLY CONFIRMED: the reported mutants are loud; the missing STOP matches the declared method; but a new silent mutant (score's replay call losing the flat6 stamp) survived everything | Low: this run's lock and replay agree on all 57 calls | Sale reconciliation is now a gate before any bar; `score` stops on a lock/replay disagreement at the sale; flat6 self-test rows |
+| B3 | M7 is declared moment-wide; the code applied it per horizon | CONFIRMED | Low: no verdict moved at any horizon | Code changed to the declared text; §3.7 untouched |
+| B4 | §3.7's "(5–8% here)" is wrong | CONFIRMED | Low (prose) | Erratum E1 below; §3.7 untouched |
+| B5 | The series cross-check is not enforced and skips silently | CONFIRMED; adding a STOP refuted (stored series merge across retries) | Low | Read / compared / skipped recorded; denominator in §2; erratum E5 |
+| B6 | "End of battle = close" is assumed, not checked | CONFIRMED (re-use hazard) | Low: 29/29 battles, 163/163 units | Checked and gated in `plan`, `known-answer` and `score` |
+| B7 | Layer 2's domain was decided by whether a body exists, not by source | CONFIRMED | Low: all 5 exclusions are rule exits | Every model swap is in the domain; one without a body now fails the gate loudly |
+| B8 | "Exact" ATRs are 1-dp matches against later records | PARTLY CONFIRMED: examples misattributed; one latent path (bench record, used 0 times) | Informational | Bench record must render to the shown ATR; erratum E4 |
+| B9 | Self-test gaps: points-only label rows, a missing hold leg, the price tie band, two `atrStable` cases, the coarse lock | CONFIRMED | Low | Rows added; each kills its mutant |
+| B10 | Self-test gaps: count after the request, per-day requests, partial redaction | CONFIRMED | Low: the run made 41 requests for 41 symbols; nothing leaked | Rows added |
+| B11 | Self-test gaps: `slotsAt`, entry-only check rows, the `$Entry` check, the sign of `moveAt` | CONFIRMED; the `moveAt` gap raised to medium | Low/medium | Rows added; points-against-price agreement now in the summary (28/28, 53/53, 54/54) |
+| B12 | §3.3 describes the entry as a single fallback list; the code has two exclusive branches | PARTLY CONFIRMED: the code is right and stricter | Nit: 0 effect | Erratum E2; §3.3 untouched |
+| B13 | Layer 2 "exactly on every number" had no artifact behind it | CONFIRMED | Nit | Layer 2 now records exact equality; the re-run shows 4 of 4 exact |
+| B14 | S8 tested only the tiered positions table | CONFIRMED | Nit | Flat6 S8 row |
+| B16 | `score` did not check the known-answer's script; two mislabelled reasons | (a) CONFIRMED; (b) mostly refuted (only when both legs' bars are missing); (c) CONFIRMED, latent | Nit | `score` stops on a known-answer run by another script; both reasons fixed |
+
+**Errata to the pre-declared §3** (left verbatim; these are corrections, not changes of method).
+
+- **E1 (B4).** §3.7's "(5–8% here)" was wrong when written.
+  - The coarse ATRs were all bought legs: 2.5–8.0% in the set of record (17 of 26 below 5%), and 1.0–8.0% across all 45. Held legs were exact at 1.2–7.84%.
+  - A badge was within reach. In the control, AMZN→V (V shown at 1.0%) crossed a bust line at the close at ATR 1.0 and 0.95, but not at 1.05.
+  - M7's corners caught it, and the verdict held (−19 against −9).
+- **E2 (B12).** §3.3's "X's entry" row reads as one fallback list. The code has two exclusive branches:
+  - if a swap brought X in before the check, only the swap's records are tried;
+  - `startingPrices[X]` is tried only for a name held from the start.
+  - Where the two readings would differ, the baseline is the previous close, so that moment is not scored either way.
+- **E3 (B3).** M7 as written unscores a moment's points at *every* horizon if a verdict moves at *any* horizon. The run of record's code applied it per horizon. No verdict moved at any horizon (0 of 452 corner evaluations), so the two readings give identical output. The code now follows the text.
+- **E4 (B8).** Why the "exact" ATR sources hold the value in force at the check:
+  - a held asset's `baseATR` is written only at creation or swap-in;
+  - `scoring.thresholds` is fixed at creation;
+  - a receipt or bench copy repeats the held value.
+  - Synthetic bench names, by contrast, have their ATR rebuilt at every check. That is why most bought legs read the body's 1-dp value under M7.
+- **E5 (B5).** §3.4's "must equal" describes the expected result of a descriptive cross-check, not a gate. A stored series is merged bucket by bucket across the candle pass's retries, so a mismatch is reported, not gated.
+
+**Mutation check.**
+- **At the run of record.** Lens B ran 68 mutants against the 54-row self-test. 48 were killed and 3 are equivalent:
+  - **T6:** points deltas are integers.
+  - **H5:** a history inside the same badge band scores identically.
+  - **Q3:** an empty domain gives NaN, which fails the share test anyway.
+  
+  17 survived. The verifiers added more, among them the silent stamp mutant (B2).
+- **After the fixes.** 85 mutants ran against the 78-row self-test:
+  - **82 killed.** T6 is now killed by the frozen tie pin.
+  - **2 equivalent:** H5 and Q3.
+  - **1 killed at run time:** the mutant that drops the flat6 stamp from `score`'s replay call is not a self-test case. Both of `score`'s new guards stop it: the known-answer SHA check, and, with that bypassed in a copy, the stamp check, which flagged 25 swap calls.
+
+**The re-run after the fixes.**
+- `known-answer` and `score` ran on the same run, from the same bar cache, with the committed fixed script (`4abf6854`). They made 0 further EODHD requests.
+- Every field of the run of record's `summary.json` and `results.local.json` is identical.
+- The new descriptive block, `summary.postReview`, carries the control split, the opposite tie rule, the points-against-price agreement and the stamp check: 58 of 58 calls agree.
+
+**Builds and checks at the pushed head:**
+- `vite build` passes on the LF `git archive` (see the PR).
+- ESLint and the CI lint gate are clean.
+- The four repo tests that walk `scripts/` pass: the protected-store scan, the writer census, the runbook gate and the flag-pin guard.
+- The self-test passes 78 of 78.
+- The §7 write-call grep finds no matches.
