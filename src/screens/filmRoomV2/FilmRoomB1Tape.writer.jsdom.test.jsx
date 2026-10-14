@@ -19,6 +19,9 @@
 //     the section's status untouched (best effort, candlePass.js processTape).
 //   · A battle with no opponent (basis none), completed: its result reads
 //     unavailable with its reason, and every sweep is clean (review C-1).
+//     One that STORES a draw too — a fresh write, a pre-T1 tape refreshed and
+//     a kept completed block (Astra F1): nothing reads "Draw" in the screen's
+//     own voice; the platform's completion message is still quoted as its words.
 //   · Every sweep (numbers and their classes, words, signs, quotations, stored
 //     notes) is clean at every depth, the leg's series open included.
 //
@@ -36,6 +39,10 @@ vi.mock('../../config/featureFlags.js', async (importOriginal) => ({
 import FilmRoomScreenV2 from './FilmRoomScreenV2';
 import { sep23Day, sep23Bars, buildTapeDay, SEP23, SEP23_NIGHT, SEP23_MORNING } from '../../../api/_utils/filmTape/__fixtures__/screenFixtures.js';
 import { sessionRows } from '../../../api/_utils/filmTape/__fixtures__/tapeBars.js';
+import { writeTapeDay } from '../../../api/_utils/filmTape/writeTapeDay.js';
+import { makeTapeDb } from '../../../api/_utils/filmTape/__fixtures__/tapeFirestore.js';
+import { seedDay } from '../../../api/_utils/filmTape/__fixtures__/tapeFixtures.js';
+import { NO_OPPONENT_NOTE } from '../../../api/_utils/filmTape/tapeAssemble.js';
 import {
   mounter, battleOf, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, storedNoteDefects,
 } from './__fixtures__/filmRoomHarness';
@@ -222,6 +229,71 @@ describe('review RF-1 — a leg symbol outside the battle\'s portfolio and bench
     await openAt(planted.tape, planted.series, label);
     if (label === 'Deep dive') expect(pickerSymbols().filter((s) => PLANTED.includes(s))).toEqual([]);
     const docs = { tape: planted.tape, battle: battleOf(planted.tape), ...Object.fromEntries(planted.series.map((s) => [`series:${s.symbol}`, s])) };
+    expect(sweepNumbers(m.container, docs), label).toEqual([]);
+    expect(sweepWords(m.container, docs), label).toEqual([]);
+    expect(sweepSigns(m.container), label).toEqual([]);
+    expect(quoteDefects(m.container, docs), label).toEqual([]);
+    expect(storedNoteDefects(m.container, docs), label).toEqual([]);
+  });
+});
+
+describe('Astra F1 — a completed battle with no opponent that STORES a draw: on the screen nothing reads "Draw"', () => {
+  const FEED_TEXT = 'Battle complete. Result: Draw.';
+  const tapes = {};
+  let series;
+  /** The stored draw over a fresh write, a pre-T1 tape refreshed, and a kept completed block refreshed — the real writer each time. */
+  beforeAll(async () => {
+    const fx = await sep23Day({ battleId: 'b-sep23-f1' });
+    fx.battle.opponent = null;
+    fx.battle.result = 'draw';
+    fx.battle.scoreState = { ...fx.battle.scoreState, opponentScore: 0 };
+    fx.battle.statusFeed = [{ action: 'battle_complete', message: FEED_TEXT, timestamp: fx.battle.completedAt }];
+    for (const tk of fx.ticks) if (tk.scores) tk.scores.opponent = 0;
+    const fresh = await buildTapeDay(fx, { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sep23Bars() });
+    tapes.fresh = fresh.tape;
+    series = fresh.series;
+    const refresh = async (old) => {
+      const t = makeTapeDb(seedDay({}, fx));
+      const where = `agentBattles/${fx.battleId}/tape/${fx.etDate}`;
+      t.store.set(where, old);
+      await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: SEP23_NIGHT + 60_000 });
+      return t.store.get(where);
+    };
+    // as the A1 writer left it: no basis, the 0s copied, the stored draw
+    const preT1 = structuredClone(fresh.tape);
+    delete preT1.score.opponentBasis;
+    if (preT1.score.lastCheck) preT1.score.lastCheck.opponent = 0;
+    preT1.battle.final.opponent = 0;
+    preT1.battle.result = { value: 'draw', basis: 'stored' };
+    for (const c of preT1.checks) if (c.scores) delete c.scores.opponent;
+    tapes.preT1 = await refresh(preT1);
+    // as the B1 head wrote it: basis none, the final opponent null, the stored draw — the block is kept (BA-27)
+    const kept = structuredClone(fresh.tape);
+    kept.battle.result = { value: 'draw', basis: 'stored' };
+    tapes.kept = await refresh(kept);
+  });
+
+  it.each(['fresh', 'preT1', 'kept'])('the %s tape: the result unavailable with the no-opponent note; the platform\'s words kept', (which) => {
+    expect(tapes[which].battle.result).toEqual({ value: null, basis: 'unavailable', note: NO_OPPONENT_NOTE });
+    expect(tapes[which].battle.completionMessage?.text).toBe(FEED_TEXT);
+  });
+
+  const CASES = ['fresh', 'preT1', 'kept'].flatMap((which) => ['Glance', 'Study', 'Deep dive'].map((label) => [which, label]));
+  it.each(CASES)('%s, %s: no "Draw" in the screen\'s own voice; the completion message quoted as the platform\'s; every sweep clean', async (which, label) => {
+    const tape = tapes[which];
+    await openAt(tape, series, label);
+    expect(m.qa('[data-result="draw"]')).toEqual([]);
+    // the screen's own words: every text node outside a quotation of the tape
+    const walk = document.createTreeWalker(m.container, NodeFilter.SHOW_TEXT);
+    const own = [];
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) if (!n.parentElement?.closest('[data-quote-path]')) own.push(n.textContent);
+    expect(own.join(' ')).not.toMatch(/\bdraw\b/i);
+    if (label === 'Glance') {
+      expect(m.qa('[data-result="unavailable"]')).toHaveLength(1);
+      expect(m.container.textContent).toContain(NO_OPPONENT_NOTE);
+      expect(m.q('[data-quote-path="battle.completionMessage.text"]').textContent).toBe(FEED_TEXT);
+    }
+    const docs = { tape, battle: battleOf(tape), ...Object.fromEntries(series.map((s) => [`series:${s.symbol}`, s])) };
     expect(sweepNumbers(m.container, docs), label).toEqual([]);
     expect(sweepWords(m.container, docs), label).toEqual([]);
     expect(sweepSigns(m.container), label).toEqual([]);

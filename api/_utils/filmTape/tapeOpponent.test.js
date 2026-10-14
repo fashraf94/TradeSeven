@@ -149,3 +149,79 @@ describe('none — never 0, never a tie (contract acceptance E; exit criterion 2
     expect(doc.battle.result).toEqual({ value: null, basis: 'unavailable', note: NO_OPPONENT_NOTE });
   });
 });
+
+describe('Astra F1 — under none a stored win, loss or draw never stands (exit criterion 2): the one resolver, assembly and merge alike', () => {
+  const DONE = '2026-09-24T20:05:00.000Z';
+  const FEED = [{ action: 'battle_complete', message: 'Battle complete. Agent: 0.0 pts vs CPU: 0.0 pts. Result: Draw.', timestamp: DONE }];
+  const completedNone = (battleId, result) => stalledDay({
+    battleId, opponent: null,
+    over: { status: 'completed', completedAt: DONE, result, statusFeed: FEED, scoreState: { currentScore: 0, activeScore: 0, bankedScore: 0, opponentScore: 0, bankedBadgePoints: { total: 0 }, tradeCount: 1 } },
+  });
+  const zeroTicks = (fx) => { for (const tk of fx.ticks) tk.scores.opponent = 0; return fx; };
+  const UNAVAILABLE = { value: null, basis: 'unavailable', note: NO_OPPONENT_NOTE };
+
+  it.each(['draw', 'win', 'loss'])('a fresh write of a completed battle storing %s: the result is unavailable with the no-opponent note; the platform\'s completion message is still its words', async (stored) => {
+    const fx = zeroTicks(await completedNone(`b-f1-fresh-${stored}`, stored));
+    const { tape } = await writeFor(fx);
+    expect(tape.score.opponentBasis).toBe('none');
+    expect(tape.battle.final).toEqual({ total: 0, opponent: null, at: DONE });
+    expect(tape.battle.result).toEqual(UNAVAILABLE);
+    expect(tape.battle.completionMessage).toEqual({ text: FEED[0].message, at: DONE });
+  });
+
+  it('a tape written before T1 (the A1 writer: no basis, the 0s copied, the stored draw) is corrected by the refresh', async () => {
+    const fx = zeroTicks(await completedNone('b-f1-pre-t1', 'draw'));
+    const first = await writeFor(fx);
+    const old = structuredClone(first.tape);
+    delete old.score.opponentBasis;
+    old.score.lastCheck.opponent = 0;
+    old.battle.final.opponent = 0;
+    old.battle.result = { value: 'draw', basis: 'stored' };
+    for (const c of old.checks) if (c.scores) delete c.scores.opponent;
+    first.t.store.set(path(fx), old);
+    const { r, tape } = await writeFor(fx, { t: first.t, now: NOW + 60_000 });
+    expect(r.status).toBe('written');
+    expect(tape.battle.final.opponent).toBeNull();
+    expect(tape.battle.result).toEqual(UNAVAILABLE);
+    expect(tape.battle.completionMessage).toEqual({ text: FEED[0].message, at: DONE });
+  });
+
+  it('a KEPT completed block storing a draw (as the B1 head wrote it: basis none, the final opponent null) — the stored block stands and its draw does not', async () => {
+    const fx = zeroTicks(await completedNone('b-f1-kept', 'draw'));
+    const first = await writeFor(fx);
+    const old = structuredClone(first.tape);
+    old.battle.result = { value: 'draw', basis: 'stored' };     // Astra's repro tape
+    first.t.store.set(path(fx), old);
+    const { tape } = await writeFor(fx, { t: first.t, now: NOW + 60_000 });
+    expect(tape.battle.completedAt).toBe(DONE);
+    expect(tape.battle.result).toEqual(UNAVAILABLE);
+    expect(tape.battle.completionMessage).toEqual({ text: FEED[0].message, at: DONE });
+  });
+
+  it('a KEPT completed block storing a draw against a stale active assembly (BA-27: the stored block outranks it) — still unavailable', () => {
+    const stored = {
+      etDate: '2026-09-24', passes: { close: { status: 'written', gaps: [] }, candles: { status: 'skipped', reason: 'outside_candle_window' } },
+      score: { lastCheck: null, firstCheck: null, dayChange: null, opponentBasis: 'none' },
+      battle: { status: 'completed', completedAt: DONE, final: { total: 0, opponent: null, at: DONE }, result: { value: 'draw', basis: 'stored' }, completionMessage: { text: FEED[0].message, at: DONE } },
+      checks: [], actions: [], directives: [], plans: [], calls: [], rationale: [], coverage: {},
+    };
+    const assembled = {
+      ...structuredClone(stored),
+      battle: { status: 'active', completedAt: null, final: null, result: { value: null, basis: 'not_completed' }, completionMessage: null },
+    };
+    const { doc } = mergeTape(stored, assembled, { nowIso: '2026-09-25T02:16:00.000Z', withinWindow: false, canonicalBattle: false, resolveResult: () => 'draw' });
+    expect(doc.battle.status).toBe('completed');
+    expect(doc.battle.result).toEqual(UNAVAILABLE);
+    expect(doc.battle.completionMessage).toEqual({ text: FEED[0].message, at: DONE });
+  });
+
+  it('controls: with an opponent a stored draw still stands; with none and the battle not completed, the result is not completed', async () => {
+    const withCpu = await stalledDay({
+      battleId: 'b-f1-cpu',
+      over: { status: 'completed', completedAt: DONE, result: 'draw', statusFeed: FEED, scoreState: { currentScore: 0, activeScore: 0, bankedScore: 0, opponentScore: 0, bankedBadgePoints: { total: 0 }, tradeCount: 1 } },
+    });
+    expect((await writeFor(withCpu)).tape.battle.result).toEqual({ value: 'draw', basis: 'stored' });
+    const live = zeroTicks(await stalledDay({ battleId: 'b-f1-live', opponent: null, over: { result: 'draw' } }));
+    expect((await writeFor(live)).tape.battle.result).toEqual({ value: null, basis: 'not_completed' });
+  });
+});

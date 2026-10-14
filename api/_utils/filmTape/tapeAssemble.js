@@ -908,20 +908,26 @@ const SCORE_NAMES = Object.freeze({ total: 'agent score', opponent: 'opponent sc
 export const NO_OPPONENT_NOTE = 'no opponent: the battle was created without a CPU opponent';
 
 /**
- * BA-39 — a battle's result from its completion block's own facts. A `stored`
- * result (a result field the platform wrote) wins. Otherwise a result is
+ * BA-39 — a battle's result from its completion block's own facts. A battle
+ * created without an opponent comes first (B1 T1, contract E; Astra F1): it
+ * has no result against one — completed, the result is unavailable with the
+ * no-opponent note, whatever a stored win, loss or draw says; not yet
+ * completed, it is not completed. Otherwise a `stored` result (a result field
+ * the platform wrote) wins. Otherwise a result is
  * derived only for a completed battle whose two final scores are both
  * recorded finite numbers, by `derive` — the comparison completion uses,
  * over those two scores. A missing score gives no result: null, basis
  * `unavailable`, and a note naming the missing score — never a draw read
  * from a score that was never written. One rule, used by the assembly and by
- * every merge (tapeMerge.js recomputes it from the merged final scores).
+ * every merge (tapeMerge.js recomputes it from the merged final scores, a
+ * kept completion block included). The platform's completion message is a
+ * separate record (completionMessageOf), quoted as its words, never this.
  */
 export function battleResultOf({ status, stored = null, final = null, derive = null, noOpponent = false }) {
+  // B1 T1 (contract E): a battle created without an opponent has no result against one — never a tie read from a 0, never a stored one.
+  if (noOpponent) return status === 'completed' ? { value: null, basis: 'unavailable', note: NO_OPPONENT_NOTE } : { value: null, basis: 'not_completed' };
   if (stored) return { value: stored, basis: 'stored' };
   if (status !== 'completed') return { value: null, basis: 'not_completed' };
-  // B1 T1 (contract E): a battle created without an opponent has no result against one — never a tie read from a 0.
-  if (noOpponent) return { value: null, basis: 'unavailable', note: NO_OPPONENT_NOTE };
   const missing = ['total', 'opponent'].filter((k) => num(final?.[k]) === null);
   if (missing.length) return { value: null, basis: 'unavailable', note: `${missing.map((k) => SCORE_NAMES[k]).join(' and ')} never recorded` };
   return { value: derive ? derive(final) : null, basis: 'derived' };
