@@ -735,9 +735,59 @@ async function fetchTechnicals(db, clean, result, staleBackup, forceRefresh, isC
   }
 }
 
+/** A complete decimal numeric string: digits, optionally a point and more digits. */
+const DECIMAL_PRICE_STRING = /^\d+(?:\.\d+)?$/;
+
+/**
+ * A real-time quote's selected price → a finite, strictly positive number, or
+ * null when the value is not a usable price.
+ *
+ * Accepts a finite positive number, or a complete decimal numeric string
+ * (`"63.66"`, `"63"`), which is converted. Rejects everything else: EODHD's
+ * `"NA"`, malformed strings (`"63.66junk"`, `" 63.66"`, `"63."`, `"1e3"`, `""`),
+ * zero, negatives, non-finite values, booleans, arrays, objects and nullish.
+ *
+ * Deliberately NOT `toFiniteNumber`: that daily-bar helper uses `parseFloat`,
+ * which reads `"63.66junk"` as 63.66, and it accepts zero and negatives.
+ *
+ * Why it matters: a 200 response for a delisted symbol carries `close: "NA"`.
+ * Mapped unchecked, the string reached the deploy gate (whose Guard 1
+ * substituted a stale daily close and let the battle start) and the cron's
+ * settlement guard (which refuses non-numbers on every tick), so the battle
+ * started but could never be scored (docs/audits/20261014_BUILD_NA_QUOTE_INVALID_PRICE.md).
+ *
+ * @param {*} v
+ * @returns {number|null}
+ */
+export function toUsableQuotePrice(v) {
+  if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? v : null;
+  if (typeof v === 'string' && DECIMAL_PRICE_STRING.test(v)) {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  return null;
+}
+
+/** A bounded, log-safe description of a rejected quote value (no URL, no payload dump). */
+function describeQuoteValue(v) {
+  if (typeof v === 'string') return `string ${JSON.stringify(v.slice(0, 16))}${v.length > 16 ? '…' : ''}`;
+  if (typeof v === 'number') return `number ${v}`;
+  if (Array.isArray(v)) return 'array';
+  return v === null ? 'null' : typeof v;
+}
+
 /**
  * Fetch real-time price (never cached long-term).
- * Falls back to latest OHLCV close on failure.
+ *
+ * A 200 response whose selected price (`close || previousClose || 0`, order
+ * unchanged) is not a usable price sets NO price: `result.price` stays absent
+ * and `result.errors.price` records why. Every consumer already treats an
+ * absent price as unavailable (deploy gate, settlement guard, swap executor,
+ * daily scores). It is validated BEFORE `result.price` is assigned, so no
+ * unusable object is ever left in place.
+ *
+ * A failed request (non-200 or a throw) falls back to the latest OHLCV close,
+ * marked `fallback: true` — unchanged.
  */
 async function fetchRealTimePrice(eohdSymbol, apiKey, result) {
   try {
@@ -746,8 +796,15 @@ async function fetchRealTimePrice(eohdSymbol, apiKey, result) {
 
     if (response.ok) {
       const data = await response.json();
+      const selected = data.close || data.previousClose || 0;
+      const current = toUsableQuotePrice(selected);
+      if (current === null) {
+        result.errors.price = 'Real-time price unavailable: the selected price is not a positive number';
+        console.warn(`[MarketDataCache] Real-time price unavailable for ${eohdSymbol} (selected ${describeQuoteValue(selected)}); no price set`);
+        return;
+      }
       result.price = {
-        current: data.close || data.previousClose || 0,
+        current,
         previousClose: data.previousClose || 0,
         change: data.change || 0,
         changePercent: data.change_p || 0,
