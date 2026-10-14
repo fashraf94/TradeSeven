@@ -78,7 +78,8 @@ describe('the §4 document', () => {
       expect(Object.keys(tape.coverage[s]).sort(), s).toEqual(['note', 'preservedFrom', 'sources', 'span', 'status', ...extra].sort());
       expect(['complete', 'partial', 'unavailable']).toContain(tape.coverage[s].status);
     }
-    expect(Object.keys(tape.score).sort()).toEqual(['dayChange', 'firstCheck', 'lastCheck']);
+    // B1 T1: and whose score the opponent's is.
+    expect(Object.keys(tape.score).sort()).toEqual(['dayChange', 'firstCheck', 'lastCheck', 'opponentBasis']);
     // Amendment D (BA-39): the block also carries the platform's own words at completion.
     expect(Object.keys(tape.battle).sort()).toEqual(['completedAt', 'completionMessage', 'final', 'result', 'status']);
     expect(tape).not.toHaveProperty('readLimits');                     // the read's limits steer the merge; never stored

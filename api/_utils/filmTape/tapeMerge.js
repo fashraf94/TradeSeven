@@ -428,9 +428,15 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
   const aScore = isObj(assembled.score) ? assembled.score : {};
   // The day's LAST admitted check keeps the later instant, the FIRST the
   // earlier — a read that lost rows never moves either (review L1-F8a).
-  const lastCheck = mergeUnit(sScore.lastCheck, aScore.lastCheck, (u) => toMs(u?.at) ?? -Infinity);
+  // B1 T1: whose score the opponent's is — a fact of the battle the tape is
+  // assembled from (re-read in the write's transaction, BA-37); a stored basis
+  // stands only when the new read carries none.
+  const opponentBasis = aScore.opponentBasis ?? sScore.opponentBasis ?? null;
+  let lastCheck = mergeUnit(sScore.lastCheck, aScore.lastCheck, (u) => toMs(u?.at) ?? -Infinity);
+  // Contract E: with no opponent, a kept last check written before T1 (the tick's 0) is no score either.
+  if (opponentBasis === 'none' && isObj(lastCheck) && lastCheck.opponent !== null && lastCheck.opponent !== undefined) lastCheck = { ...lastCheck, opponent: null };
   const firstCheck = mergeUnit(sScore.firstCheck, aScore.firstCheck, (u) => -(toMs(u?.at) ?? Infinity));
-  merged.score = { lastCheck, firstCheck, dayChange: mergeDayChange(sScore, aScore, lastCheck) };
+  merged.score = { lastCheck, firstCheck, dayChange: mergeDayChange(sScore, aScore, lastCheck), ...(opponentBasis ? { opponentBasis } : {}) };
   // What followed each filing, recounted on every merge from the MERGED check
   // and action rows, each directive's aftermath ending at the next committed
   // filing among ALL merged directives — a preserved one included (BA-30,
@@ -450,7 +456,9 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
   const winner = battleWinner(stored, assembled, canonicalBattle) === 'stored' ? stored : assembled;
   const block = isObj(winner.battle) ? winner.battle : {};
   const other = winner === stored ? assembled.battle : stored.battle;
-  const final = block.final ?? null;
+  // B1 T1 (contract E): with no opponent, a kept block's opponent score (an empty portfolio's 0) is no score.
+  const noOpponent = opponentBasis === 'none';
+  const final = noOpponent && isObj(block.final) ? { ...block.final, opponent: null } : (block.final ?? null);
   merged.battle = {
     status: block.status ?? null,
     completedAt: block.completedAt ?? null,
@@ -462,6 +470,7 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       status: block.status ?? null,
       stored: block.result?.basis === 'stored' ? block.result.value : null,
       final,
+      noOpponent,
       derive: (f) => {
         if (typeof resolveResult !== 'function') throw new Error('mergeTape: ctx.resolveResult is required to derive a battle result (BA-39)');
         return resolveResult({ gameMode: merged.gameMode ?? stored.gameMode ?? null, scoreState: { currentScore: f.total, opponentScore: f.opponent } });

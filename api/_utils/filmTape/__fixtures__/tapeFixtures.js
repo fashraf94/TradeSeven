@@ -128,9 +128,17 @@ export function receiptOf({ battleId, out, inn, tier, slotIndex, swappedOutAt, s
   };
 }
 
+/**
+ * The CPU opponent a self-select deploy embeds in a tiered battle
+ * (api/agent/decide.js `opponent`, written by createAgentBattle as
+ * `opponent: options.opponent || null`). Film Room B1 T1 reads its presence.
+ */
+export const CPU_OPPONENT = Object.freeze({ portfolio: { star: [], core: [], support: [] }, bench: null, username: 'CPU Opponent', odUserId: 'cpu' });
+
 export function battleDoc(over) {
   return {
     ownerId: OWNER, agentId: AGENT, status: 'active', gameMode: 'baggerbomb_agent',
+    opponent: structuredClone(CPU_OPPONENT),
     duration: 'fullday', createdAt: '2026-09-24T12:00:00.000Z', activatedAt: '2026-09-24T12:00:00.000Z', completedAt: null,
     timing: { tradingDays: ['2026-09-24'], currentTradingDay: 1, timezone: 'America/New_York' },
     agentContext: { archetype: 'speculator', initialPortfolio: { star: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }], core: [{ symbol: 'NVDA' }, { symbol: 'AMD' }], support: [{ symbol: 'KO' }, { symbol: 'PEP' }, { symbol: 'BTC', isCrypto: true }] } },

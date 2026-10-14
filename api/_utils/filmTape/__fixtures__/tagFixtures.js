@@ -17,13 +17,12 @@
 //   moves but is UP from entry (a winner: never stalled). MSFT moves 0.4% a check.
 
 import { composeEvidenceStamp } from '../../tickStamps.js';
-import { makeTick, makeEntry, battleDoc, sessionRuns, tradeOf, receiptOf, STAGES_TO } from './tapeFixtures.js';
+import { makeTick, makeEntry, battleDoc, sessionRuns, tradeOf, receiptOf, STAGES_TO, CPU_OPPONENT } from './tapeFixtures.js';
 
 const iso = (ms) => new Date(ms).toISOString();
 const at = (date, hhmmss) => Date.parse(`${date}T${hhmmss}.000Z`);
 
-/** The CPU opponent a self-select deploy embeds (api/agent/decide.js `opponent`). */
-export const CPU_OPPONENT = Object.freeze({ portfolio: { star: [], core: [], support: [] }, bench: null, username: 'CPU Opponent', odUserId: 'cpu' });
+export { CPU_OPPONENT };
 
 /** The price and the change from entry the agent is shown for `sym` at check `seq`. */
 export function quoteOf(sym, seq) {
@@ -97,7 +96,8 @@ export async function stalledDay({
       initialPortfolio: { star: [{ symbol: 'ACN' }], core: [{ symbol: 'MSFT' }], support: [{ symbol: 'NVDA' }] },
     },
     portfolio: { startingPrices: { ACN: 301.2, MSFT: 418, NVDA: 119 } },
-    ...(opponent ? { opponent } : {}),
+    // null: a battle created with no CPU opponent, as createAgentBattle writes it (`opponent: options.opponent || null`)
+    opponent: opponent ? structuredClone(opponent) : null,
     ...(controlEpochLog ? { controlEpochLog } : {}),
     evaluations,
     trades: exitSeq ? [tradeOf({ out: 'ACN', inn: 'XOM', tier: 'star', slotIndex: 0, entryPrice: 301.2, exitPrice: 300, lockedPoints: -2.5, lockedGainPct: -0.4, swappedOutAt: swapAt, source: 'risk_manager', exitReason: 'stagnation' })] : [],

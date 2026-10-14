@@ -216,6 +216,7 @@ describe('the class each printed number carries is its own field\'s (review L4-F
       'checks[].scores.active': 'recorded',
       'checks[].scores.banked': 'recorded',
       'checks[].scores.total': 'recorded',
+      'checks[].scores.opponent': 'recorded',
       'checks[].tickMs': 'recorded',
       'checks[].guardrail.deployedCount': 'recorded',
       'checks[].evidence.*.px': 'recorded',

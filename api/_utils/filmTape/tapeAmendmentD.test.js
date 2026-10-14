@@ -43,7 +43,7 @@ import { sessionBars } from './bars.js';
 import { sessionFor } from './tapeTime.js';
 import { formatTapeMarkdown } from './tapeExport.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
-import { seedDay, capturedDay, completedDay } from './__fixtures__/tapeFixtures.js';
+import { seedDay, capturedDay, completedDay, CPU_OPPONENT } from './__fixtures__/tapeFixtures.js';
 import { buildBattleBlock } from './tapeAssemble.js';
 import { mergeTape } from './tapeMerge.js';
 import { resolveBattleResult } from './battleResult.js';
@@ -426,7 +426,8 @@ async function neverScoredDay({ battleId = 'b-never-scored', feed = null } = {})
 describe('BA-39 (Q2) — a battle result is derived only from two recorded final scores', () => {
   it('Q2: final 0 vs an absent opponent gives result null, basis unavailable, with a note naming the missing score — the comparison is never run', () => {
     const resolveResult = vi.fn(() => 'draw');
-    const battle = { status: 'completed', completedAt: COMPLETED_AT, gameMode: 'baggerbomb_agent', scoreState: { currentScore: 0 } };
+    // A tiered battle carries the CPU opponent its deploy embedded (B1 T1 reads its presence; basis `none` is tapeOpponent.test.js's).
+    const battle = { status: 'completed', completedAt: COMPLETED_AT, gameMode: 'baggerbomb_agent', opponent: CPU_OPPONENT, scoreState: { currentScore: 0 } };
     const block = buildBattleBlock({ battle, resolveResult });
     expect(block.final).toEqual({ total: 0, opponent: null, at: COMPLETED_AT });
     expect(block.result).toEqual({ value: null, basis: 'unavailable', note: 'opponent score never recorded' });
@@ -439,7 +440,7 @@ describe('BA-39 (Q2) — a battle result is derived only from two recorded final
   });
 
   it('Q2 GUARD: two recorded scores — 0 vs 0 included — still give the comparison completion uses', () => {
-    const battle = { status: 'completed', completedAt: COMPLETED_AT, gameMode: 'baggerbomb_agent', scoreState: { currentScore: 0, opponentScore: 0 } };
+    const battle = { status: 'completed', completedAt: COMPLETED_AT, gameMode: 'baggerbomb_agent', opponent: CPU_OPPONENT, scoreState: { currentScore: 0, opponentScore: 0 } };
     expect(buildBattleBlock({ battle, resolveResult: resolveBattleResult }).result).toEqual({ value: 'draw', basis: 'derived' });
     expect(buildBattleBlock({ battle: { ...battle, scoreState: { currentScore: 46, opponentScore: 36 } }, resolveResult: resolveBattleResult }).result)
       .toEqual({ value: 'win', basis: 'derived' });

@@ -155,8 +155,23 @@ function decisionOf(tick) {
   return { original: str(d.original), final: str(d.final), holdKind: str(d.holdKind) };
 }
 
-const scoresOf = (s) => (isObj(s) && num(s.total) !== null
-  ? { active: num(s.active), banked: num(s.banked), total: num(s.total) }
+/**
+ * Film Room B1 T1 (Build B spec §3) — whose score the opponent's is. A
+ * battle created with a CPU opponent (`battle.opponent`, the self-select
+ * deploy's embedded portfolio) is `cpu_portfolio`; one created without (the
+ * prescribed tournament deploy, founder ruling D4) is `none`, and there the
+ * tick's opponent score is the sum over an empty portfolio — a 0 that is no
+ * score at all, so it is never copied.
+ */
+export const opponentBasisOf = (battle) => (isObj(battle?.opponent) ? 'cpu_portfolio' : 'none');
+
+/**
+ * A check's scores. T1: the opponent's score is copied from the permanent
+ * tick under basis `cpu_portfolio`; under `none` — and for a check rebuilt
+ * from an evaluations entry, which never carried it — it is null, never 0.
+ */
+const scoresOf = (s, { opponent = false } = {}) => (isObj(s) && num(s.total) !== null
+  ? { active: num(s.active), banked: num(s.banked), total: num(s.total), opponent: opponent ? num(s.opponent) : null }
   : null);
 
 /** BA-8 — a tick-backed check's state. */
@@ -170,7 +185,7 @@ const blankRow = () => ({
   risk: null, guardrail: null, decision: null, scores: null, tickMs: null, evidence: null, evidenceAt: null,
 });
 
-function tickRow(tick, entry, battleId) {
+function tickRow(tick, entry, battleId, { opponentBasis = 'none' } = {}) {
   const evidence = copyEvidence(entry?.evidence);
   return {
     ...blankRow(),
@@ -186,7 +201,7 @@ function tickRow(tick, entry, battleId) {
     risk: riskOf(tick),
     guardrail: guardrailOf(tick),
     decision: decisionOf(tick),
-    scores: scoresOf(tick.scores),
+    scores: scoresOf(tick.scores, { opponent: opponentBasis === 'cpu_portfolio' }),
     tickMs: num(entry?.tickMs),
     evidence,
     evidenceAt: evidence ? str(entry?.promptBuiltAt) : null,
@@ -715,7 +730,7 @@ export function buildCalls({ calls, bounds, nowIso, callRecordsMode }) {
 
 // ── score and battle (BA-4) ────────────────────────────────────────────────
 
-export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entryRowsScored, priorTape }) {
+export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entryRowsScored, priorTape, opponentBasis = opponentBasisOf(battle) }) {
   // Every admitted check with scores: its tick row, or — when capture missed
   // it — its entry row (review L1-F5: a later entry-only check is the day's
   // last admitted check even when earlier checks have tick records).
@@ -729,7 +744,8 @@ export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entry
     const raw = Number.isInteger(last.tickSeq) ? rawTickBySeq.get(last.tickSeq) : null;
     lastCheck = {
       at: last.at, tickSeq: last.tickSeq, active: last.scores.active, banked: last.scores.banked, total: last.scores.total,
-      opponent: num(raw?.scores?.opponent), bankedBadgePoints: num(raw?.scores?.bankedBadgePoints),
+      // T1 (contract E): with no opponent the tick's 0 is no score — null, never readable as a tie.
+      opponent: opponentBasis === 'cpu_portfolio' ? num(raw?.scores?.opponent) : null, bankedBadgePoints: num(raw?.scores?.bankedBadgePoints),
     };
     firstCheck = { at: first.at, tickSeq: first.tickSeq, total: first.scores.total };
   }
@@ -744,11 +760,13 @@ export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entry
     const ref = priorTape.score.lastCheck.total;
     dayChange = { value: round2(lastCheck.total - ref), basis: 'prior_day_tape', reference: ref, referenceEtDate: priorDay };
   }
-  return { lastCheck, firstCheck, dayChange };
+  return { lastCheck, firstCheck, dayChange, opponentBasis };
 }
 
 /** BA-39 — what a missing final score is called in a result's note. */
 const SCORE_NAMES = Object.freeze({ total: 'agent score', opponent: 'opponent score' });
+/** B1 T1 — the result's note for a battle created without an opponent (score.opponentBasis `none`). */
+export const NO_OPPONENT_NOTE = 'no opponent: the battle was created without one';
 
 /**
  * BA-39 — a battle's result from its completion block's own facts. A `stored`
@@ -760,9 +778,11 @@ const SCORE_NAMES = Object.freeze({ total: 'agent score', opponent: 'opponent sc
  * from a score that was never written. One rule, used by the assembly and by
  * every merge (tapeMerge.js recomputes it from the merged final scores).
  */
-export function battleResultOf({ status, stored = null, final = null, derive = null }) {
+export function battleResultOf({ status, stored = null, final = null, derive = null, noOpponent = false }) {
   if (stored) return { value: stored, basis: 'stored' };
   if (status !== 'completed') return { value: null, basis: 'not_completed' };
+  // B1 T1 (contract E): a battle created without an opponent has no result against one — never a tie read from a 0.
+  if (noOpponent) return { value: null, basis: 'unavailable', note: NO_OPPONENT_NOTE };
   const missing = ['total', 'opponent'].filter((k) => num(final?.[k]) === null);
   if (missing.length) return { value: null, basis: 'unavailable', note: `${missing.map((k) => SCORE_NAMES[k]).join(' and ')} never recorded` };
   return { value: derive ? derive(final) : null, basis: 'derived' };
@@ -787,8 +807,10 @@ export function buildBattleBlock({ battle, resolveResult }) {
   const status = str(battle?.status);
   const completed = status === 'completed';
   const stored = ['win', 'loss', 'draw'].includes(battle?.result) ? battle.result : null;
+  // B1 T1 (contract E): with no opponent, the stored opponentScore is the sum over an empty portfolio — never copied.
+  const noOpponent = opponentBasisOf(battle) === 'none';
   const final = completed
-    ? { total: num(battle?.scoreState?.currentScore), opponent: num(battle?.scoreState?.opponentScore), at: str(battle?.completedAt) }
+    ? { total: num(battle?.scoreState?.currentScore), opponent: noOpponent ? null : num(battle?.scoreState?.opponentScore), at: str(battle?.completedAt) }
     : null;
   // BA-39: the comparison runs over the two recorded final scores, and only when both exist.
   const derive = resolveResult
@@ -798,7 +820,7 @@ export function buildBattleBlock({ battle, resolveResult }) {
     status,
     completedAt: str(battle?.completedAt),
     final,
-    result: battleResultOf({ status, stored, final, derive }),
+    result: battleResultOf({ status, stored, final, derive, noOpponent }),
     completionMessage: completed ? completionMessageOf(battle) : null,
   };
 }
@@ -858,7 +880,8 @@ export function assembleTape({
   const rawTickBySeq = new Map(dayTicks.map((t) => [t.tickSeq, t]));
 
   // ---- checks
-  const tickRows = dayTicks.map((t) => tickRow(t, t.evalId ? entryByEvalId.get(t.evalId) : null, battleId));
+  const opponentBasis = opponentBasisOf(battle);
+  const tickRows = dayTicks.map((t) => tickRow(t, t.evalId ? entryByEvalId.get(t.evalId) : null, battleId, { opponentBasis }));
   const entryOnly = entries.day.filter((e) => !(str(e.evalId) && tickByEvalId.has(e.evalId))).map(entryRow);
   const runs = runsRead.ok ? runsRead.runs : [];
   const deferredRuns = runs.filter((r) => Array.isArray(r.deferredBattleIds) && r.deferredBattleIds.includes(battleId));
@@ -920,6 +943,7 @@ export function assembleTape({
     rawTickBySeq,
     entryRowsScored: entryOnly.filter((r) => r.scores),
     priorTape,
+    opponentBasis,
   });
 
   // ---- coverage (BA-20, BA-26) — computed from what this read could see.

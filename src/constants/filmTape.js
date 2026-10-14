@@ -183,6 +183,9 @@ export const TAPE_NUMBER_CLASSES = Object.freeze({
   'checks[].scores.active': 'recorded',
   'checks[].scores.banked': 'recorded',
   'checks[].scores.total': 'recorded',
+  // B1 T1 — copied from the permanent tick under `score.opponentBasis`
+  // `cpu_portfolio`; null under `none` and on a check rebuilt from an entry.
+  'checks[].scores.opponent': 'recorded',
   'checks[].tickMs': 'recorded',
   'checks[].guardrail.deployedCount': 'recorded',
   'checks[].evidence.*.px': 'recorded',

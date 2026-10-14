@@ -188,7 +188,8 @@
       "value": null,
       "basis": "unavailable",
       "reference": null
-    }
+    },
+    "opponentBasis": "cpu_portfolio"
   },
   "battle": {
     "status": "completed",
@@ -250,6 +251,7 @@
     "checks[].scores.active": "recorded",
     "checks[].scores.banked": "recorded",
     "checks[].scores.total": "recorded",
+    "checks[].scores.opponent": "recorded",
     "checks[].tickMs": "recorded",
     "checks[].guardrail.deployedCount": "recorded",
     "checks[].evidence.*.px": "recorded",
