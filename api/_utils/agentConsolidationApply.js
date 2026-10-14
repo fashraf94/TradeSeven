@@ -3,6 +3,18 @@
 // writer. Funnel principle: this is the ONLY writer of agent.disciplines.
 //
 // Memory is NOT touched here. Lessons are flagged consumed but not removed.
+//
+// Reflection outage fix, part 2 (P-OUT-2, founder rulings O5 and O8, 14 Oct
+// 2026; build report docs/audits/20261014_BUILD_REFLECTION_OUTAGE_FIX_2.md):
+//   • the driver re-checks the floor on its own re-read — fewer than
+//     MIN_REAL_LESSONS_FOR_CONSOLIDATION real lessons → it returns
+//     { success: false, reason: 'insufficient_real_lessons' } and writes nothing;
+//   • the call gets the part-1 fix (api/agent/reflect.js callSonnetReflection):
+//     an AbortController signal CANCELS it when our deadline fires; only
+//     stop_reason 'tool_use' is parsed; 'max_tokens' is a named failure;
+//   • the shadow line carries the part-1 vocabulary (reflectionOutcome.js) —
+//     outcome, failureClass, accountWide, errorName, elapsedMs, stopReason,
+//     usage, model — and no agent text on any failure.
 
 import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'node:crypto';
@@ -11,11 +23,19 @@ import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { SUBMIT_CONSOLIDATION_TOOL } from './agentConsolidationToolSchema.js';
 import { buildConsolidationPrompt } from './agentConsolidationPrompt.js';
 import { logConsolidation } from './shadowLogger.js';
+import { countRealLessons, MIN_REAL_LESSONS_FOR_CONSOLIDATION } from './memoryLessons.js';
+import { classifyReflectionError, isAccountWideRefusal, errorNameOf, usageOf } from './reflectionOutcome.js';
 
 const LOG_PREFIX = '[CONSOLIDATION]';
 const SONNET_MODEL = 'claude-sonnet-4-6';
-const SONNET_TIMEOUT_MS = 30_000;
-const MAX_OUTPUT_TOKENS = 2000;
+// Chosen by measurement (P-OUT-2, O8): four calls with the filtered request on
+// the real windows holding the most real lessons (3, 2, 2, 2) ran 25.6–36.1 s
+// for 1,131–1,655 output tokens, all valid tool calls — the old 30 s race would
+// have cut off two of the four. Deadline >= 1.5x the slowest call (54.1 s);
+// ceiling >= 2x the largest answer (3,310). At the measured ~50 tokens a
+// second, 60 s writes under 4,096, so a runaway answer is named timeout.
+export const CONSOLIDATION_TIMEOUT_MS = 60_000;
+export const CONSOLIDATION_MAX_TOKENS = 4096;
 
 // Word-count thresholds. Soft = target; hard = validation failure.
 const INSIGHT_HARD_LIMIT_WORDS = 400;
@@ -331,54 +351,40 @@ export async function consolidateAgentEvolution(db, agentRef, { transactionalApp
   }
   const agent = { id: agentSnap.id, ...agentSnap.data() };
 
+  // P-OUT-2 (O5): the driver's own floor, on its own re-read. reflect.js checks
+  // it before the milestone claim; this second check writes nothing at all.
+  const window = Array.isArray(agent.memory) ? agent.memory : [];
+  const realLessons = countRealLessons(window);
+  if (realLessons < MIN_REAL_LESSONS_FOR_CONSOLIDATION) {
+    console.log(`${LOG_PREFIX} skipped for agent ${agent.id}: ${realLessons} real lesson(s) of ${window.length} in the window (floor ${MIN_REAL_LESSONS_FOR_CONSOLIDATION})`);
+    logConsolidation({
+      agentId: agent.id,
+      success: false,
+      reason: 'insufficient_real_lessons',
+      realLessons,
+      totalEntries: window.length,
+    }).catch(() => {});
+    return { success: false, reason: 'insufficient_real_lessons' };
+  }
+
   const { systemPrompt, userMessage } = buildConsolidationPrompt(agent);
 
-  let response;
-  try {
-    response = await Promise.race([
-      getAnthropicClient().messages.create({
-        model: SONNET_MODEL,
-        max_tokens: MAX_OUTPUT_TOKENS,
-        temperature: 0.3,
-        // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
-        // preserve the prior Sonnet-4 (no-thinking) latency profile.
-        thinking: { type: 'disabled' },
-        output_config: { effort: 'low' },
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-        tools: [SUBMIT_CONSOLIDATION_TOOL],
-        tool_choice: { type: 'tool', name: 'submit_consolidation' },
-      }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Sonnet consolidation timeout (30s)')), SONNET_TIMEOUT_MS),
-      ),
-    ]);
-  } catch (err) {
-    console.error(`${LOG_PREFIX} Sonnet call failed for agent ${agent.id}:`, err.message);
+  // The call never throws: a failure comes back named, and nothing is written.
+  // Its shadow line carries the call's fields and NO agent text.
+  const call = await callSonnetConsolidation(systemPrompt, userMessage);
+  if (!call.ok) {
+    console.warn(`${LOG_PREFIX} consolidation call failed for agent ${agent.id}: ${call.reason} (${call.failureClass}${call.errorName ? `, ${call.errorName}` : ''}) after ${call.meta.elapsedMs ?? '?'}ms`);
     logConsolidation({
       agentId: agent.id,
       success: false,
-      reason: 'sonnet_call_failed',
-      error: err.message,
+      reason: call.reason,
+      ...consolidationCallFields(call),
       durationMs: Date.now() - startTime,
     }).catch(() => {});
-    return { success: false, reason: 'sonnet_call_failed' };
+    return { success: false, reason: call.reason };
   }
 
-  const toolUse = response?.content?.find(c => c.type === 'tool_use');
-  if (!toolUse?.input) {
-    console.warn(`${LOG_PREFIX} Sonnet did not use submit_consolidation tool for agent ${agent.id}`);
-    logConsolidation({
-      agentId: agent.id,
-      success: false,
-      reason: 'no_tool_use',
-      response: safeStringify(response),
-      durationMs: Date.now() - startTime,
-    }).catch(() => {});
-    return { success: false, reason: 'no_tool_use' };
-  }
-
-  const consolidation = toolUse.input;
+  const consolidation = call.consolidation;
   const validation = validateConsolidationOutput(consolidation, agent);
   if (!validation.valid) {
     console.warn(`${LOG_PREFIX} Validation failed for agent ${agent.id}:`, validation.errors);
@@ -386,8 +392,8 @@ export async function consolidateAgentEvolution(db, agentRef, { transactionalApp
       agentId: agent.id,
       success: false,
       reason: 'validation_failed',
-      errors: validation.errors,
-      output: consolidation,
+      ...consolidationCallFields({ ...call, ok: false, failureClass: 'missing_keys' }),
+      validationErrorCount: validation.errors.length,
       durationMs: Date.now() - startTime,
     }).catch(() => {});
     return { success: false, reason: 'validation_failed', errors: validation.errors };
@@ -407,8 +413,7 @@ export async function consolidateAgentEvolution(db, agentRef, { transactionalApp
       agentId: agent.id,
       success: false,
       reason: 'firestore_apply_failed',
-      error: err.message,
-      output: consolidation,
+      ...consolidationCallFields({ ...call, ok: false, failureClass: 'unknown', errorName: errorNameOf(err) }),
       durationMs: Date.now() - startTime,
     }).catch(() => {});
     return { success: false, reason: 'firestore_apply_failed' };
@@ -420,7 +425,7 @@ export async function consolidateAgentEvolution(db, agentRef, { transactionalApp
     cycle: applyResult.newCycle,
     input: { systemPrompt, userMessage },
     output: consolidation,
-    usage: response.usage || null,
+    ...consolidationCallFields(call),
     durationMs: Date.now() - startTime,
   }).catch(() => {});
 
@@ -433,10 +438,106 @@ export async function consolidateAgentEvolution(db, agentRef, { transactionalApp
   return { success: true };
 }
 
-function safeStringify(value) {
-  try {
-    return JSON.stringify(value).slice(0, 5000);
-  } catch {
-    return '[unserializable]';
+// ==================== THE CALL (P-OUT-2, O8) ====================
+
+class ConsolidationDeadlineError extends Error {
+  constructor() {
+    super(`Sonnet consolidation deadline (${CONSOLIDATION_TIMEOUT_MS / 1000}s)`);
+    this.name = 'ConsolidationDeadlineError';
   }
+}
+
+/**
+ * One consolidation call. NEVER throws — resolves to
+ *   { ok: true, consolidation, meta } or
+ *   { ok: false, reason, failureClass, accountWide, errorName, meta }
+ * where meta = { elapsedMs, stopReason, usage, model } and reason keeps the
+ * driver's existing names (sonnet_call_failed, no_tool_use) plus max_tokens.
+ *
+ * The part-1 pattern (api/agent/reflect.js callSonnetReflection): our deadline
+ * settles the race and then ABORTS the request, so a timed-out call is
+ * cancelled, not left running and billed; a timeout is classified by our own
+ * fired flag. Under the forced tool choice a completed answer IS
+ * stop_reason 'tool_use' — an answer cut at the ceiling is 'max_tokens', and any
+ * other stop reason is no_tool_use, even with a tool block; neither is parsed.
+ */
+async function callSonnetConsolidation(systemPrompt, userMessage) {
+  const meta = { elapsedMs: null, stopReason: null, usage: null, model: SONNET_MODEL };
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  let timedOut = false;
+  let timer = null;
+  let response;
+  try {
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        reject(new ConsolidationDeadlineError()); // settles the race first …
+        controller.abort();                       // … then cancels the request
+      }, CONSOLIDATION_TIMEOUT_MS);
+    });
+    response = await Promise.race([
+      getAnthropicClient().messages.create({
+        model: SONNET_MODEL,
+        max_tokens: CONSOLIDATION_MAX_TOKENS,
+        temperature: 0.3,
+        // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+        // preserve the prior Sonnet-4 (no-thinking) latency profile.
+        thinking: { type: 'disabled' },
+        output_config: { effort: 'low' },
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
+        tools: [SUBMIT_CONSOLIDATION_TOOL],
+        tool_choice: { type: 'tool', name: 'submit_consolidation' },
+      }, { signal: controller.signal }),
+      deadline,
+    ]);
+  } catch (err) {
+    meta.elapsedMs = Date.now() - startedAt;
+    return {
+      ok: false,
+      reason: 'sonnet_call_failed',
+      failureClass: classifyReflectionError(err, { timedOut }),
+      accountWide: !timedOut && isAccountWideRefusal(err),
+      errorName: errorNameOf(err),
+      meta,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+
+  meta.elapsedMs = Date.now() - startedAt;
+  meta.stopReason = typeof response?.stop_reason === 'string' ? response.stop_reason : null;
+  meta.usage = usageOf(response?.usage);
+  if (typeof response?.model === 'string' && response.model) meta.model = response.model;
+
+  if (meta.stopReason === 'max_tokens') {
+    return { ok: false, reason: 'max_tokens', failureClass: 'max_tokens', accountWide: false, errorName: null, meta };
+  }
+  if (meta.stopReason !== 'tool_use') {
+    return { ok: false, reason: 'no_tool_use', failureClass: 'no_tool_use', accountWide: false, errorName: null, meta };
+  }
+  const toolUse = response?.content?.find?.(c => c.type === 'tool_use');
+  if (!toolUse?.input) {
+    return { ok: false, reason: 'no_tool_use', failureClass: 'no_tool_use', accountWide: false, errorName: null, meta };
+  }
+  return { ok: true, consolidation: toolUse.input, meta };
+}
+
+/**
+ * The call's fields on the consolidation shadow line, in the part-1 vocabulary
+ * (reflectionOutcome.js). Classes, a class name, timings, token counts and the
+ * model id only — never agent text.
+ */
+function consolidationCallFields(call) {
+  return {
+    outcome: call.ok ? 'ok' : 'failed',
+    failureClass: call.ok ? null : (call.failureClass ?? 'unknown'),
+    accountWide: !call.ok && call.accountWide === true,
+    errorName: call.ok ? null : (call.errorName ?? null),
+    elapsedMs: call.meta?.elapsedMs ?? null,
+    stopReason: call.meta?.stopReason ?? null,
+    usage: call.meta?.usage ?? null,
+    model: call.meta?.model ?? null,
+  };
 }

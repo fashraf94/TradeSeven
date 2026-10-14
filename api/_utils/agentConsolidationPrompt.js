@@ -11,6 +11,8 @@
 // reflection with prior-consolidation status — derived from the latest
 // evolution event timestamp — per Phase 0 design clarification.
 
+import { isRealLesson } from './memoryLessons.js';
+
 // ==================== LOCKED FIXTURE — DO NOT MODIFY ====================
 
 const SYSTEM_PROMPT_TEMPLATE = `<role>
@@ -266,6 +268,12 @@ function renderDiscipline(d) {
  * The annotation is derived by comparing entry.date to the timestamp of the
  * latest evolution event. Game numbers are derived from gamesPlayed and the
  * entry's position in the rolling 5-game window.
+ *
+ * Reflection outage fix, part 2 (P-OUT-2, founder ruling O5): only REAL
+ * lessons are rendered (memoryLessons.js) — a legacy failure entry
+ * ("Reflection generation failed.") or a no-lesson marker never reaches the
+ * consolidation. Each game keeps the number it has in the UNFILTERED window:
+ * numbers are computed over the whole window first, then the rest dropped.
  */
 export function formatMemory(memory, evolutionTimeline, gamesPlayed = 0) {
   if (!Array.isArray(memory) || memory.length === 0) {
@@ -274,10 +282,15 @@ export function formatMemory(memory, evolutionTimeline, gamesPlayed = 0) {
 
   const lastEvolutionTs = getLastEvolutionTimestampMs(evolutionTimeline);
   const total = memory.length;
+  const numbered = memory
+    .map((entry, i) => ({ entry, gameNumber: computeGameNumber(gamesPlayed, total, i) }))
+    .filter(({ entry }) => isRealLesson(entry));
+  if (numbered.length === 0) {
+    return '(none — agent has not yet logged battle reflections)';
+  }
 
-  return memory
-    .map((entry, i) => {
-      const gameNumber = computeGameNumber(gamesPlayed, total, i);
+  return numbered
+    .map(({ entry, gameNumber }) => {
       const annotation = annotateMemoryEntry(entry?.date || entry?.createdAt, lastEvolutionTs);
       const result = formatResultLetter(entry?.result);
       const score = formatScore(entry?.score);

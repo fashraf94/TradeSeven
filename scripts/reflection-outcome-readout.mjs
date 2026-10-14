@@ -6,7 +6,10 @@
 // LATEST attempt's outcome (`reflectionOutcome`: outcome ok | failed,
 // failureClass from a fixed vocabulary, errorName, elapsedMs, stopReason,
 // usage, model, attempt, at), the attempt count (`reflectionAttempts`) and,
-// after the third failure, `reflectionNoLesson: true`. This prints counts of
+// after the third failure, `reflectionNoLesson: true`. Since part 2 (P-OUT-2,
+// ruling O7) the record also says whether the account itself refused the call
+// (`accountWide`); such a refusal does not use up a try, so "still retrying"
+// carries a sub-count, "waiting on the account". This prints counts of
 // those outcomes by class and by day for a date range, so the next outage is
 // a five-minute read instead of a reproduction. Build report:
 // docs/audits/20261010_BUILD_REFLECTION_OUTAGE_FIX.md (§ "How to confirm it").
@@ -53,6 +56,7 @@ export function computeReflectionOutcomeReadout(rows, { fromDay, toDay }) {
     latestAttempt: {},
     noLesson: 0,
     retrying: 0,
+    waitingOnAccount: 0, // of `retrying`: the latest attempt was an account-wide refusal (P-OUT-2, O7)
     endedOtherwise: 0,
     okElapsedMs: { max: null, total: 0, n: 0 },
     maxOutputTokens: null,
@@ -75,8 +79,10 @@ export function computeReflectionOutcomeReadout(rows, { fromDay, toDay }) {
       out.failed += 1; d.failed += 1;
       bump(out.failedByClass, cls); bump(d.classes, cls);
       if (row.reflectionNoLesson === true) out.noLesson += 1;
-      else if (row.pendingReflection === true) out.retrying += 1;
-      else out.endedOtherwise += 1; // e.g. the agent was deleted after a failed attempt
+      else if (row.pendingReflection === true) {
+        out.retrying += 1;
+        if (rec.accountWide === true) out.waitingOnAccount += 1;
+      } else out.endedOtherwise += 1; // e.g. the agent was deleted after a failed attempt
     }
     bump(out.latestAttempt, Number.isInteger(rec.attempt) ? String(rec.attempt) : '?');
     const outTok = rec.usage?.output_tokens;
@@ -91,7 +97,7 @@ export function renderReflectionOutcomeReadout(r, { readAt }) {
   const p = (s = '') => L.push(s);
   p(`Reflection outcomes, latest attempt per battle — ${r.fromDay} to ${r.toDay} (UTC days), read ${readAt}`);
   p('');
-  p(`Battles: ${r.battles}   ok: ${r.ok}   failed: ${r.failed}   (of the failed: finished without a lesson ${r.noLesson}, still retrying ${r.retrying}, ended otherwise ${r.endedOtherwise})`);
+  p(`Battles: ${r.battles}   ok: ${r.ok}   failed: ${r.failed}   (of the failed: finished without a lesson ${r.noLesson}, still retrying ${r.retrying} [of which waiting on the account ${r.waitingOnAccount}], ended otherwise ${r.endedOtherwise})`);
   if (r.okElapsedMs.n > 0) p(`Successful calls: slowest ${(r.okElapsedMs.max / 1000).toFixed(1)} s, average ${(r.okElapsedMs.total / r.okElapsedMs.n / 1000).toFixed(1)} s`);
   if (r.maxOutputTokens != null) p(`Largest answer: ${r.maxOutputTokens} output tokens`);
   p('');

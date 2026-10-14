@@ -130,11 +130,38 @@ describe('legacy failure entries (P-OUT-1 display line D)', () => {
     ]);
   });
 
+  it('the legacy literal is the very one the consolidation filter excludes (one source, api/_utils/memoryLessons.js)', async () => {
+    const shared = await import('../../api/_utils/memoryLessons.js');
+    expect(LEGACY_REFLECTION_FAILURE_LESSON).toBe(shared.LEGACY_REFLECTION_FAILURE_LESSON);
+  });
+
   it('only the exact legacy literal is replaced — a lesson that merely mentions failure is a real lesson', () => {
     const rows = gameRows([
       { gameMode: 'baggerbomb', result: 'loss', score: -1, lesson: 'Reflection generation failed. ', date: '2026-10-05T00:00:00Z' },
       { gameMode: 'baggerbomb', result: 'loss', score: -1, lesson: 'My entry failed because I chased the gap.', date: '2026-10-04T00:00:00Z' },
     ]);
     expect(rows.map((r) => r.subtitle)).toEqual(['Reflection generation failed. ', 'My entry failed because I chased the gap.']);
+  });
+});
+
+// Reflection outage fix, part 2 (P-OUT-2, O9): a battle that finished without a
+// lesson leaves a no-lesson marker in the window; the game keeps its row.
+describe('no-lesson markers (P-OUT-2, O9)', () => {
+  const gameRows = (memory) => buildEvolutionTimeline({ memory }).filter((e) => e.type === 'game');
+  const marker = (over = {}) => ({ gameId: 'b9', gameMode: 'baggerbomb_tournament', result: 'loss', score: -4.5, opponentScore: 0, lesson: '', noLesson: true, date: '2026-10-13T00:00:00.000Z', ...over });
+
+  it('a marker renders the game\'s row with "No lesson was recorded for this game." — the game no longer disappears', () => {
+    const [row] = gameRows([marker()]);
+    expect(row).toMatchObject({ type: 'game', subtitle: NO_LESSON_RECORDED_LINE });
+    expect(row.title).toBe(gameRows([{ ...marker(), noLesson: undefined, lesson: 'real' }])[0].title);
+  });
+
+  it('a marker beside a real lesson for the SAME game never stands in for it: only the lesson\'s row shows', () => {
+    const rows = gameRows([
+      marker({ gameId: 'same', date: '2026-10-13T00:00:00.000Z' }),
+      { gameId: 'same', gameMode: 'baggerbomb', result: 'loss', score: -4.5, lesson: 'Cut the laggard sooner.', date: '2026-10-13T01:00:00.000Z' },
+      marker({ gameId: 'other', date: '2026-10-12T00:00:00.000Z' }),
+    ]);
+    expect(rows.map((r) => r.subtitle)).toEqual(['Cut the laggard sooner.', NO_LESSON_RECORDED_LINE]);
   });
 });

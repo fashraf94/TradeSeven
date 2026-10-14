@@ -30,6 +30,13 @@
 //   • a reflection STARTS only when its whole deadline still fits the
 //     reflection phase, so the tenants below keep their slices.
 //   See docs/audits/20261010_BUILD_REFLECTION_OUTAGE_FIX.md.
+//
+// Part 2 (P-OUT-2, founder rulings O7 and O9, 14 Oct 2026): an account-wide
+// refusal (401 / 403 / 404, a spend or usage limit, the credit balance) does
+// not use up a try while the battle completed within the last 7 days — the
+// outcome write hands the claimed attempt back, and the battle stays pending;
+// a battle that finishes without a lesson has left its no-lesson row in the
+// learning window. See docs/audits/20261014_BUILD_REFLECTION_OUTAGE_FIX_2.md.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { generateReflection } from '../agent/reflect.js';
@@ -49,8 +56,11 @@ import { runHypothesisReviewPass } from '../_utils/hypothesisRecords/reviewPass.
 
 // P-OUT-1: 60 → 120 s. The tenants' budget (TIME_BUDGET_MS) is unchanged; the
 // ceiling is raised so the rare consolidation path — a reflection at its full
-// 35 s deadline followed by its own 30 s consolidation call
-// (agentConsolidationApply.js) — can never be killed mid-write.
+// 35 s deadline followed by its own consolidation call
+// (agentConsolidationApply.js) — can never be killed mid-write. P-OUT-2 (O8)
+// measured that call and set its deadline to 60 s: 5 s start + 35 s + 60 s +
+// 10 s of writes = 110 s, still inside 120 s, so the ceiling is unchanged
+// (pinned in process-pending-reflections.outcome.test.js).
 export const config = { maxDuration: 120 };
 
 const LOG_PREFIX = '[ProcessPendingReflections]';
@@ -150,10 +160,15 @@ export default async function handler(req, res) {
           : { attempt: claim.attempt });
 
         // ok → flag cleared + outcome; skipped → flag cleared (nothing to
-        // reflect); failed → NOTHING was written by the reflection: the flag
+        // reflect); failed → no lesson was written by the reflection: the flag
         // stays set for the next tick, or clears at the cap with the battle
-        // marked reflectionNoLesson (reflectionOutcome.js).
-        const update = reflectionBattleUpdate(result, { attempt: claim.attempt, at: new Date().toISOString() });
+        // marked reflectionNoLesson (reflectionOutcome.js). P-OUT-2: an
+        // account-wide refusal within the backstop hands this attempt back in
+        // the same write (O7); a third attempt that could not leave its
+        // no-lesson row waits for the recovery pass (O9).
+        const update = reflectionBattleUpdate(result, {
+          attempt: claim.attempt, at: new Date().toISOString(), recoveryPass: claim.state === 'exhausted',
+        });
         await battleRef.update({ ...update, reflectionLeaseUntil: null });
 
         if (result?.outcome === 'ok' || result?.outcome === 'skipped') {
@@ -161,7 +176,9 @@ export default async function handler(req, res) {
           console.log(`${LOG_PREFIX} Battle ${battleId}: reflection ${result.outcome}${result.reason ? ` (${result.reason})` : ''}, flag cleared`);
         } else {
           summary.failed++;
-          console.warn(`${LOG_PREFIX} Battle ${battleId}: attempt ${claim.attempt}/${MAX_REFLECTION_ATTEMPTS} failed (${update.reflectionOutcome?.failureClass ?? 'unknown'})${update.reflectionNoLesson ? ' — finished without a lesson' : ' — retries next tick'}`);
+          const after = update.reflectionNoLesson ? ' — finished without a lesson'
+            : ('reflectionAttempts' in update ? ' — not counted (account-wide refusal); retries next tick' : ' — retries next tick');
+          console.warn(`${LOG_PREFIX} Battle ${battleId}: attempt ${claim.attempt}/${MAX_REFLECTION_ATTEMPTS} failed (${update.reflectionOutcome?.failureClass ?? 'unknown'})${after}`);
         }
       } catch (err) {
         // An unexpected throw (a Firestore read or write): the flag stays set

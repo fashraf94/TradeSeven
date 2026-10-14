@@ -26,9 +26,10 @@ vi.mock('@anthropic-ai/sdk', async (importOriginal) => {
   }
   return { ...real, default: FakeAnthropic };
 });
-const shadow = vi.hoisted(() => ({ lines: [] }));
+const shadow = vi.hoisted(() => ({ lines: [], consolidationLines: [] }));
 vi.mock('../_utils/shadowLogger.js', () => ({
   logReflection: vi.fn(async (r) => { shadow.lines.push(structuredClone(r)); return true; }),
+  logConsolidation: vi.fn(async (r) => { shadow.consolidationLines.push(structuredClone(r)); return true; }),
 }));
 const consolidation = vi.hoisted(() => ({ calls: [] }));
 vi.mock('../_utils/agentConsolidationApply.js', () => ({
@@ -38,7 +39,9 @@ vi.mock('../_utils/agentConsolidationApply.js', () => ({
 const { generateReflection } = await import('./reflect.js');
 const { REFLECTION_TOOL, buildReflectionSystemPrompt, buildReflectionUserMessage } = await import('../_utils/agentReflectionUtils.js');
 const { REFLECTION_TIMEOUT_MS, REFLECTION_MAX_TOKENS, REFLECTION_MODEL } = await import('../_utils/reflectionOutcome.js');
-const { InternalServerError, RateLimitError, APIConnectionError, APIUserAbortError } = await import('@anthropic-ai/sdk');
+const { InternalServerError, RateLimitError, APIConnectionError, APIUserAbortError, APIError } = await import('@anthropic-ai/sdk');
+// §1-fenced: CALLED here to pin how the draft prompt renders a no-lesson marker; never edited.
+const { formatMemory: formatDraftPromptMemory } = await import('../_utils/agentPromptAssembly.js');
 
 // ── an in-memory Firestore that records EVERY write, including collection.add ──
 function makeDb(seed) {
@@ -124,6 +127,7 @@ beforeEach(() => {
   sdk.calls.length = 0;
   sdk.create = null;
   shadow.lines.length = 0;
+  shadow.consolidationLines.length = 0;
   consolidation.calls.length = 0;
 });
 afterEach(() => { vi.useRealTimers(); });
@@ -275,7 +279,7 @@ describe('a valid answer writes memory exactly as before', () => {
     expect(feedbackWrites(writes)).toEqual([]);
 
     expect(result.record).toEqual({
-      outcome: 'ok', failureClass: null, errorName: null,
+      outcome: 'ok', failureClass: null, accountWide: false, errorName: null,
       elapsedMs: expect.any(Number), stopReason: 'tool_use',
       usage: { input_tokens: 3_800, output_tokens: 900 }, model: 'claude-sonnet-4-6',
       attempt: 3, at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
@@ -423,15 +427,19 @@ describe('a lesson already recorded is a success without a second call (review R
     expect(writes).toEqual([]);
   });
 
-  it('the recovery pass (modelCall false) never calls: a landed lesson is ok, a missing one is failed/unknown', async () => {
+  it('the recovery pass (modelCall false) never calls: a landed lesson is ok and writes nothing; a missing one is failed/unknown and leaves the no-lesson marker (P-OUT-2, O9)', async () => {
     sdk.create = vi.fn(async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION }));
     const landed = seed({ agent: { ...AGENT, memory: recordedMemory() } });
     expect(await generateReflection(landed.db, BATTLE_ID, { attempt: 3, modelCall: false })).toMatchObject({ outcome: 'ok', reason: 'already_recorded' });
+    expect(landed.writes).toEqual([]);
     const missing = seed();
     const result = await generateReflection(missing.db, BATTLE_ID, { attempt: 3, modelCall: false });
-    expect(result).toMatchObject({ outcome: 'failed', record: { outcome: 'failed', failureClass: 'unknown', errorName: null, model: null, attempt: 3 } });
+    expect(result).toMatchObject({ outcome: 'failed', counted: true, record: { outcome: 'failed', failureClass: 'unknown', errorName: null, model: null, attempt: 3 } });
+    expect(result).not.toHaveProperty('deferToRecovery');
     expect(sdk.calls).toEqual([]);
-    expect([...landed.writes, ...missing.writes]).toEqual([]);
+    expect(missing.writes).toHaveLength(1);
+    expect(missing.store.get(`agents/${AGENT_ID}`).memory.filter((m) => m.gameId === BATTLE_ID)).toEqual([expect.objectContaining({ noLesson: true, lesson: '' })]);
+    expect(shadow.lines).toEqual([]); // no call, no shadow line
   });
 });
 
@@ -445,5 +453,250 @@ describe('nothing to reflect is a skip, never a call', () => {
     expect(await generateReflection(db, BATTLE_ID)).toEqual({ outcome: 'skipped', reason });
     expect(sdk.calls).toEqual([]);
     expect(writes).toEqual([]);
+  });
+});
+
+// ═══════════════ Reflection outage fix, part 2 (P-OUT-2, rulings O5, O7, O9) ═══════════════
+
+const HOUR = 60 * 60 * 1000;
+const completedAgo = (ms) => ({ ...BATTLE, completedAt: new Date(Date.now() - ms).toISOString() });
+const apiErr = (status, type, message, extra = {}) =>
+  APIError.generate(status, { type: 'error', error: { type, message, ...extra }, request_id: 'req_test' }, undefined, new Headers());
+const legacyEntry = (i) => ({ ...priorMemory(1)[0], gameId: `legacy-${i}`, lesson: 'Reflection generation failed.', adjustment: 'N/A' });
+const markerEntry = (gameId) => ({ gameId, gameMode: 'baggerbomb_tournament', result: 'win', score: 1, opponentScore: 0, lesson: '', noLesson: true, date: '2026-10-01T00:00:00.000Z' });
+const realEntry = (i) => ({ ...priorMemory(1)[0], gameId: `real-${i}`, lesson: `real lesson ${i}` });
+const failingAgentUpdate = (db, { applyFirst = false, times = Infinity } = {}) => {
+  const realCollection = db.collection;
+  let thrown = 0;
+  db.collection = (name) => {
+    const c = realCollection(name);
+    if (name !== 'agents') return c;
+    return { ...c, doc: (id) => { const ref = c.doc(id); return { ...ref, update: async (patch) => { if (applyFirst) await ref.update(patch); if (thrown < times) { thrown += 1; const e = new Error('DEADLINE_EXCEEDED'); e.name = 'FirebaseError'; throw e; } if (!applyFirst) await ref.update(patch); } }; } };
+  };
+};
+
+describe('account-wide refusals (O7)', () => {
+  const REFUSALS = [
+    ['a 401', () => apiErr(401, 'authentication_error', 'invalid x-api-key'), 'http_401'],
+    ['a 403', () => apiErr(403, 'permission_error', 'not permitted'), 'http_403'],
+    ['a 404 (a retired or unknown model)', () => apiErr(404, 'not_found_error', 'model: claude-retired'), 'http_404'],
+    ['the usage limit', () => apiErr(400, 'invalid_request_error', 'You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC.'), 'http_400'],
+  ];
+
+  it.each(REFUSALS)('%s on a recent battle is named and marked accountWide, and does NOT count — even at attempt 3: no marker, nothing written', async (_label, makeErr, failureClass) => {
+    sdk.create = async () => { throw makeErr(); };
+    const { db, writes } = seed({ battle: completedAgo(HOUR) });
+    const result = await generateReflection(db, BATTLE_ID, { attempt: 3 });
+    expect(result).toMatchObject({ outcome: 'failed', counted: false, record: { outcome: 'failed', failureClass, accountWide: true, attempt: 3 } });
+    expect(result).not.toHaveProperty('deferToRecovery');
+    expect(writes).toEqual([]);
+    expect(consolidation.calls).toEqual([]);
+    expect(shadow.lines[0]).toMatchObject({ outcome: 'failed', failureClass, accountWide: true, selfReflection: null });
+  });
+
+  it('past the 7-day backstop the same refusal counts: the third attempt finishes the game with its marker', async () => {
+    sdk.create = async () => { throw REFUSALS[0][1](); };
+    const { db, writes, store } = seed({ battle: completedAgo(8 * 24 * HOUR) });
+    const result = await generateReflection(db, BATTLE_ID, { attempt: 3 });
+    expect(result).toMatchObject({ outcome: 'failed', counted: true, record: { failureClass: 'http_401', accountWide: true } });
+    expect(writes).toHaveLength(1);
+    expect(store.get(`agents/${AGENT_ID}`).memory.at(-1)).toMatchObject({ gameId: BATTLE_ID, noLesson: true });
+  });
+
+  it('a plain 400 counts like any other failure', async () => {
+    sdk.create = async () => { throw apiErr(400, 'invalid_request_error', 'max_tokens: 99999 > 64000'); };
+    const { db, writes } = seed({ battle: completedAgo(HOUR) });
+    const result = await generateReflection(db, BATTLE_ID, { attempt: 3 });
+    expect(result).toMatchObject({ outcome: 'failed', counted: true, record: { failureClass: 'http_400', accountWide: false } });
+    expect(writes).toHaveLength(1); // the marker
+  });
+
+  it('our own deadline is never account-wide', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    sdk.create = (_body, opts) => new Promise((_, reject) => { opts.signal.addEventListener('abort', () => reject(apiErr(401, 'authentication_error', 'x'))); });
+    const { db } = seed({ battle: completedAgo(HOUR) });
+    const pending = generateReflection(db, BATTLE_ID, { attempt: 1 });
+    await vi.advanceTimersByTimeAsync(REFLECTION_TIMEOUT_MS);
+    expect(await pending).toMatchObject({ counted: true, record: { failureClass: 'timeout', accountWide: false } });
+  });
+});
+
+describe('the no-lesson marker (O9)', () => {
+  it('the third counted failure writes exactly ONE marker into the rolling window: the game fields, an empty lesson, noLesson', async () => {
+    sdk.create = async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION }, { stop_reason: 'max_tokens' });
+    const { db, writes, store } = seed();
+    const result = await generateReflection(db, BATTLE_ID, { attempt: 3 });
+    expect(result).toMatchObject({ outcome: 'failed', counted: true, record: { failureClass: 'max_tokens', attempt: 3 } });
+    expect(result).not.toHaveProperty('deferToRecovery');
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ op: 'update', path: `agents/${AGENT_ID}` });
+    const memory = store.get(`agents/${AGENT_ID}`).memory;
+    expect(memory).toHaveLength(5);
+    expect(memory.slice(0, 4)).toEqual(priorMemory(5).slice(-4)); // the rolling window, exactly as for a lesson
+    expect(memory[4]).toEqual({
+      gameId: BATTLE_ID, gameMode: 'baggerbomb_tournament', result: 'win', score: 12.35, opponentScore: 0,
+      lesson: '', noLesson: true, date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+    expect(consolidation.calls).toEqual([]);
+    expect(shadow.lines[0]).toMatchObject({ outcome: 'failed', selfReflection: null });
+  });
+
+  it('attempts 1 and 2 write no marker', async () => {
+    sdk.create = async () => { throw new InternalServerError(529, {}, 'x', new Headers()); };
+    for (const attempt of [1, 2]) {
+      const { db, writes } = seed();
+      expect(await generateReflection(db, BATTLE_ID, { attempt })).toMatchObject({ outcome: 'failed', counted: true });
+      expect(writes).toEqual([]);
+    }
+  });
+
+  it('the marker the code writes renders in the fenced draft prompt as "No lesson recorded."', async () => {
+    sdk.create = async () => { throw new InternalServerError(529, {}, 'x', new Headers()); };
+    const { db, store } = seed();
+    await generateReflection(db, BATTLE_ID, { attempt: 3 });
+    const marker = store.get(`agents/${AGENT_ID}`).memory.at(-1);
+    // agentPromptAssembly.js formatMemory → `Game (<Win|Loss> <+score>): <lesson || 'No lesson recorded.'>`,
+    // under the draft prompt's "RECENT GAME MEMORY:" block.
+    expect(formatDraftPromptMemory([marker])).toBe('Game (Win +12.35): No lesson recorded.');
+  });
+
+  it('a marker already in the window is never written twice — not by the third attempt, not by the recovery pass', async () => {
+    sdk.create = async () => { throw new InternalServerError(529, {}, 'x', new Headers()); };
+    const agent = { ...AGENT, memory: [...priorMemory(4), markerEntry(BATTLE_ID)] };
+    const third = seed({ agent });
+    expect(await generateReflection(third.db, BATTLE_ID, { attempt: 3 })).toMatchObject({ outcome: 'failed', counted: true });
+    expect(third.writes).toEqual([]);
+    const recovery = seed({ agent });
+    expect(await generateReflection(recovery.db, BATTLE_ID, { attempt: 3, modelCall: false })).toMatchObject({ outcome: 'failed' });
+    expect(recovery.writes).toEqual([]);
+  });
+
+  it.each([
+    ['a no-lesson marker', markerEntry(BATTLE_ID)],
+    ['a legacy failure entry', { ...legacyEntry(0), gameId: BATTLE_ID }],
+  ])('%s for this game never counts as recorded: the attempt still calls the model and records the real lesson', async (_label, entry) => {
+    sdk.create = vi.fn(async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION }));
+    const { db, store } = seed({ agent: { ...AGENT, memory: [...priorMemory(3), entry] } });
+    const result = await generateReflection(db, BATTLE_ID, { attempt: 2 });
+    expect(result).toMatchObject({ outcome: 'ok' });
+    expect(result).not.toHaveProperty('reason');
+    expect(sdk.calls).toHaveLength(1);
+    expect(store.get(`agents/${AGENT_ID}`).memory.at(-1)).toMatchObject({ gameId: BATTLE_ID, lesson: VALID_SELF_REFLECTION.lesson });
+  });
+
+  describe('the casual forward', () => {
+    const CLONE_ID = 'casual-agent-owner-1';
+    const PARENT_ID = 'ranked-1';
+    const casualSeed = (parentMemory = priorMemory(2)) => makeDb({
+      [`agentBattles/${BATTLE_ID}`]: { ...BATTLE, agentId: CLONE_ID, gameMode: 'baggerbomb' },
+      [`agents/${CLONE_ID}`]: { ...AGENT, rankedAgentId: PARENT_ID, memory: [] },
+      [`agents/${PARENT_ID}`]: { ...AGENT, memory: parentMemory },
+    });
+
+    it('a casual clone\'s marker lands on the PARENT through the transactional forward; the clone is untouched', async () => {
+      sdk.create = async () => { throw new InternalServerError(529, {}, 'x', new Headers()); };
+      const { db, writes, store } = casualSeed();
+      expect(await generateReflection(db, BATTLE_ID, { attempt: 3 })).toMatchObject({ outcome: 'failed', counted: true });
+      expect(writes.map((w) => `${w.op} ${w.path}`)).toEqual([`tx.update agents/${PARENT_ID}`]);
+      expect(store.get(`agents/${PARENT_ID}`).memory).toHaveLength(3);
+      expect(store.get(`agents/${PARENT_ID}`).memory[2]).toMatchObject({ gameId: BATTLE_ID, gameMode: 'baggerbomb', lesson: '', noLesson: true });
+      expect(store.get(`agents/${CLONE_ID}`).memory).toEqual([]);
+    });
+
+    it('the transactional forward never appends a marker beside any entry for the same game', async () => {
+      sdk.create = async () => { throw new InternalServerError(529, {}, 'x', new Headers()); };
+      const { db, writes } = casualSeed([...priorMemory(2), markerEntry(BATTLE_ID)]);
+      expect(await generateReflection(db, BATTLE_ID, { attempt: 3, modelCall: false })).toMatchObject({ outcome: 'failed' });
+      expect(writes).toEqual([]);
+    });
+  });
+
+  describe('a third attempt that cannot leave its row waits for the recovery pass', () => {
+    it('the marker write throws → deferToRecovery; the record keeps the call\'s class', async () => {
+      sdk.create = async () => { throw new InternalServerError(529, {}, 'x', new Headers()); };
+      const { db, writes } = seed();
+      failingAgentUpdate(db);
+      const result = await generateReflection(db, BATTLE_ID, { attempt: 3 });
+      expect(result).toMatchObject({ outcome: 'failed', counted: true, deferToRecovery: true, record: { failureClass: 'http_529' } });
+      expect(writes).toEqual([]);
+    });
+
+    it('the LESSON write commits but reports an error → deferred; the recovery pass then finds the lesson and never writes a marker', async () => {
+      sdk.create = async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION });
+      const { db, store } = seed();
+      failingAgentUpdate(db, { applyFirst: true, times: 1 });
+      const third = await generateReflection(db, BATTLE_ID, { attempt: 3 });
+      expect(third).toMatchObject({ outcome: 'failed', counted: true, deferToRecovery: true, record: { failureClass: 'unknown', errorName: 'FirebaseError' } });
+      const recovery = await generateReflection(db, BATTLE_ID, { attempt: 3, modelCall: false });
+      expect(recovery).toMatchObject({ outcome: 'ok', reason: 'already_recorded' });
+      const forGame = store.get(`agents/${AGENT_ID}`).memory.filter((m) => m.gameId === BATTLE_ID);
+      expect(forGame).toEqual([expect.objectContaining({ lesson: VALID_SELF_REFLECTION.lesson })]);
+      expect(forGame[0]).not.toHaveProperty('noLesson');
+    });
+
+    it('the recovery pass never defers, even when its own marker write throws', async () => {
+      const { db } = seed();
+      failingAgentUpdate(db);
+      const result = await generateReflection(db, BATTLE_ID, { attempt: 3, modelCall: false });
+      expect(result).toMatchObject({ outcome: 'failed', counted: true });
+      expect(result).not.toHaveProperty('deferToRecovery');
+    });
+  });
+});
+
+describe('the consolidation floor (O5) — counted on a fresh read, before anything is spent', () => {
+  const MILESTONE = { gamesPlayed: 5 };
+  const okCall = () => { sdk.create = async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION }); };
+
+  it('2 real lessons after this game → no consolidation, no milestone claim, no pendingConsolidation, one shadow line with the counts', async () => {
+    okCall();
+    const { db, writes, store } = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), legacyEntry(3), realEntry(4)] } });
+    const result = await generateReflection(db, BATTLE_ID);
+    expect(result).toMatchObject({ outcome: 'ok' });                  // the lesson itself is written as always
+    expect(writes.map((w) => `${w.op} ${w.path}`)).toEqual([`update agents/${AGENT_ID}`]);
+    expect(consolidation.calls).toEqual([]);
+    const agent = store.get(`agents/${AGENT_ID}`);
+    expect(agent).not.toHaveProperty('lastConsolidatedGamesPlayed');
+    expect(agent).not.toHaveProperty('pendingConsolidation');
+    expect(shadow.consolidationLines).toEqual([{ agentId: AGENT_ID, success: false, reason: 'insufficient_real_lessons', realLessons: 2, totalEntries: 5 }]);
+  });
+
+  it('markers and blank lessons do not count toward the floor', async () => {
+    okCall();
+    const { db } = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [markerEntry('m-1'), { ...realEntry(2), lesson: '  ' }, legacyEntry(3), realEntry(4)] } });
+    await generateReflection(db, BATTLE_ID);
+    expect(consolidation.calls).toEqual([]);
+    expect(shadow.consolidationLines[0]).toMatchObject({ realLessons: 2, totalEntries: 5 });
+  });
+
+  it('3 real lessons → the consolidation runs once: the claim, the flag, the call', async () => {
+    okCall();
+    const { db, store } = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), realEntry(3), realEntry(4)] } });
+    await generateReflection(db, BATTLE_ID);
+    expect(consolidation.calls).toHaveLength(1);
+    expect(store.get(`agents/${AGENT_ID}`)).toMatchObject({ lastConsolidatedGamesPlayed: 5, pendingConsolidation: true });
+    expect(shadow.consolidationLines).toEqual([]);
+  });
+
+  it('the floor reads the window this game\'s lesson has just joined (2 real before it, 3 after → runs)', async () => {
+    okCall();
+    const { db } = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), legacyEntry(3), realEntry(4), realEntry(5)] } });
+    await generateReflection(db, BATTLE_ID);
+    expect(consolidation.calls).toHaveLength(1); // the oldest legacy entry rolled out; the new lesson is the third
+  });
+
+  it('the already-recorded path respects the floor: below it nothing is spent; at it the consolidation runs', async () => {
+    sdk.create = vi.fn(async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION }));
+    const recorded = { ...realEntry(0), gameId: BATTLE_ID };
+    const below = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), realEntry(3), recorded] } });
+    expect(await generateReflection(below.db, BATTLE_ID, { attempt: 2 })).toMatchObject({ outcome: 'ok', reason: 'already_recorded' });
+    expect(consolidation.calls).toEqual([]);
+    expect(below.writes).toEqual([]);
+    expect(shadow.consolidationLines).toEqual([{ agentId: AGENT_ID, success: false, reason: 'insufficient_real_lessons', realLessons: 2, totalEntries: 4 }]);
+
+    const at = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), realEntry(2), realEntry(3), recorded] } });
+    expect(await generateReflection(at.db, BATTLE_ID, { attempt: 2 })).toMatchObject({ outcome: 'ok', reason: 'already_recorded' });
+    expect(consolidation.calls).toHaveLength(1);
+    expect(sdk.calls).toEqual([]);
   });
 });

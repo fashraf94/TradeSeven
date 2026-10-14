@@ -10,6 +10,14 @@
 // fits a measured budget and is CANCELLED when its deadline fires (O2); a
 // failed call is never saved as a lesson — nothing is written and the result
 // says why, so the cron can retry with a cap (O3) and record the outcome (O4).
+//
+// Part 2 (P-OUT-2, founder rulings O5, O7, O9, 14 Oct 2026): an account-wide
+// refusal is named on the record and, within the backstop, does not use up a
+// try (O7); a game that finishes without a lesson leaves ONE honest no-lesson
+// marker in the learning window (O9); the five-game consolidation runs only
+// when that window holds MIN_REAL_LESSONS_FOR_CONSOLIDATION real lessons, and
+// below it spends nothing — no call, no milestone, no pendingConsolidation (O5).
+// See docs/audits/20261014_BUILD_REFLECTION_OUTAGE_FIX_2.md.
 
 import Anthropic from '@anthropic-ai/sdk';
 import {
@@ -17,17 +25,26 @@ import {
   buildReflectionSystemPrompt,
   buildReflectionUserMessage,
 } from '../_utils/agentReflectionUtils.js';
-import { logReflection } from '../_utils/shadowLogger.js';
+import { logReflection, logConsolidation } from '../_utils/shadowLogger.js';
 import { consolidateAgentEvolution } from '../_utils/agentConsolidationApply.js';
 import {
   REFLECTION_MODEL,
   REFLECTION_TIMEOUT_MS,
   REFLECTION_MAX_TOKENS,
+  MAX_REFLECTION_ATTEMPTS,
   classifyReflectionError,
+  isAccountWideRefusal,
+  isCountedAttempt,
   errorNameOf,
   usageOf,
   buildReflectionOutcome,
 } from '../_utils/reflectionOutcome.js';
+import {
+  isRealLesson,
+  isNoLessonMarker,
+  countRealLessons,
+  MIN_REAL_LESSONS_FOR_CONSOLIDATION,
+} from '../_utils/memoryLessons.js';
 // Per-Battle Loadout + Concurrency Phase 1 — learning attribution redirect: a
 // casual-clone battle's memory + consolidation belong to the PARENT ranked agent.
 // resolveRecordTargetId is pure (the clone doc is already read as agentDoc); the
@@ -58,8 +75,16 @@ function getAnthropicClient() {
  * Returns what happened, for the cron to record on the battle:
  *   { outcome: 'ok', record }      — the lesson is in memory (exactly as before;
  *                                    or already was: reason 'already_recorded');
- *   { outcome: 'failed', record }  — NOTHING was written (no memory entry, no
- *                                    consolidation); record.failureClass says why;
+ *   { outcome: 'failed', record, counted [, deferToRecovery] }
+ *                                  — no lesson was written and no consolidation
+ *                                    ran; record.failureClass says why. counted
+ *                                    false = an account-wide refusal within the
+ *                                    backstop (O7): the try is not used up. When
+ *                                    the game finishes without a lesson here (the
+ *                                    third counted failure, or the recovery pass)
+ *                                    its no-lesson marker is written (O9);
+ *                                    deferToRecovery = a third attempt that could
+ *                                    not write it, left for the recovery pass;
  *   { outcome: 'skipped', reason } — nothing to reflect (battle or agent gone).
  *
  * @param {FirebaseFirestore.Firestore} db - Firebase Admin Firestore instance
@@ -116,55 +141,102 @@ export async function generateReflection(db, battleId, { attempt = 1, modelCall 
   }
   const isCasualForward = learningRef !== agentRef;
 
+  // This game's REAL lesson in a window — a no-lesson marker never counts, so a
+  // marker can never turn a later attempt into a success (O9) — and its marker.
+  const lessonRecordedIn = (memory) => (memory || []).some((m) => m?.gameId === battleId && isRealLesson(m));
+  const markerRecordedIn = (memory) => (memory || []).some((m) => m?.gameId === battleId && isNoLessonMarker(m));
+
   // A retry after a success whose battle write was lost (or whose memory write
   // committed but reported an error): this game's lesson is already in the
   // window. No second call — it would only duplicate the lesson — but the
   // attempt is a success, and the consolidation gate below still runs (the
   // milestone claim keeps it to one run per milestone).
-  const alreadyRecorded = (learningDoc.memory || []).some((m) => m?.gameId === battleId);
+  let alreadyRecorded = lessonRecordedIn(learningDoc.memory);
   let record;
   if (alreadyRecorded) {
     console.log(`${LOG_PREFIX} Battle ${battleId}: lesson already recorded on agent ${learningDoc.id} — no new call`);
     record = buildReflectionOutcome({ outcome: 'ok', model: null, attempt, at: new Date().toISOString() });
-  } else if (!modelCall) {
-    // The cron's recovery pass for a battle whose attempts are all spent and
-    // whose last attempt left no record: no new call, and no lesson exists.
-    console.warn(`${LOG_PREFIX} Battle ${battleId}: attempts spent and no lesson recorded — no new call`);
-    return { outcome: 'failed', record: buildReflectionOutcome({ outcome: 'failed', failureClass: 'unknown', model: null, attempt, at: new Date().toISOString() }) };
   } else {
-    // 3. Call Sonnet for reflection. Never throws: a failure comes back named.
-    const call = await callSonnetReflection(battleDoc, agentDoc);
-    let failure = call.ok ? null : { failureClass: call.failureClass, errorName: call.errorName };
+    // 3. Call Sonnet for reflection (never throws: a failure comes back named) —
+    //    except on the cron's recovery pass for a battle whose attempts are all
+    //    spent (modelCall false): no new call, and no lesson exists.
+    if (!modelCall) console.warn(`${LOG_PREFIX} Battle ${battleId}: attempts spent and no lesson recorded — no new call`);
+    const call = modelCall ? await callSonnetReflection(battleDoc, agentDoc) : null;
+    let failure = !call
+      ? { failureClass: 'unknown', errorName: null, accountWide: false }
+      : (call.ok ? null : { failureClass: call.failureClass, errorName: call.errorName, accountWide: call.accountWide === true });
+    let counted = true;
+    let deferToRecovery = false;
 
-    // 4. Write self-reflection to agent.memory[] (rolling 5-game window) — ONLY on
-    //    a usable answer; a failure writes nothing (O3). Casual forward → the
-    //    PARENT's window (transactional merge); else → this agent. A write that
-    //    throws leaves no lesson, so it is a failed attempt the cron retries.
-    if (!failure) {
+    // 4. What this attempt writes into agent.memory[] (the rolling 5-game
+    //    window) — at most ONE entry, through the existing memory writers
+    //    (casual forward → the PARENT's window, transactional merge; else →
+    //    this agent):
+    //    • a usable answer → this game's lesson, exactly as before;
+    //    • a failure that finishes the game without a lesson — the third
+    //      COUNTED failure (O7), or the recovery pass — → the game's no-lesson
+    //      marker (O9), looked up on a fresh read first, so it never lands
+    //      beside a real lesson for this game and never twice;
+    //    • any other failure → nothing (O3).
+    let entry = call?.ok ? buildMemoryEntry(battleDoc, call.selfReflection) : null;
+    let baseMemory = agentDoc.memory || [];
+    if (failure) {
+      counted = isCountedAttempt({ outcome: 'failed', accountWide: failure.accountWide }, { completedAt: battleDoc.completedAt, nowMs: Date.now() });
+      if (!modelCall || (counted && attempt >= MAX_REFLECTION_ATTEMPTS)) {
+        try {
+          const freshSnap = await learningRef.get();
+          const freshMemory = (freshSnap.exists ? freshSnap.data().memory : []) || [];
+          if (lessonRecordedIn(freshMemory)) {
+            // The lesson did land after all (a write that committed but
+            // reported an error): the attempt is a success, never a marker.
+            failure = null;
+            alreadyRecorded = true;
+          } else if (!markerRecordedIn(freshMemory)) {
+            entry = buildNoLessonMarker(battleDoc);
+            baseMemory = freshMemory;
+          }
+        } catch (err) {
+          console.error(`${LOG_PREFIX} Battle ${battleId}: could not read the learning window for the no-lesson row:`, err?.message || err);
+          deferToRecovery = modelCall;
+        }
+      }
+    }
+    if (entry) {
       try {
         if (isCasualForward) {
-          await appendMemoryReflectionForwardTx(db, learningRef, buildMemoryEntry(battleDoc, call.selfReflection));
+          await appendMemoryReflectionForwardTx(db, learningRef, entry);
         } else {
-          await writeMemoryReflection(db, agentRef, agentDoc, battleDoc, call.selfReflection);
+          await writeMemoryReflection(agentRef, agentDoc.id, baseMemory, entry);
         }
       } catch (err) {
-        console.error(`${LOG_PREFIX} Failed to write memory for agent ${battleDoc.agentId}:`, err.message);
-        failure = { failureClass: 'unknown', errorName: errorNameOf(err) };
+        if (isNoLessonMarker(entry)) {
+          console.error(`${LOG_PREFIX} Failed to write the no-lesson marker for battle ${battleId}:`, err.message);
+        } else {
+          // A lesson write that throws leaves no lesson: a failed attempt the cron retries.
+          console.error(`${LOG_PREFIX} Failed to write memory for agent ${battleDoc.agentId}:`, err.message);
+          failure = { failureClass: 'unknown', errorName: errorNameOf(err), accountWide: false };
+        }
+        // A third attempt that could not leave its row (the lesson or the
+        // marker) waits one tick for the no-call recovery pass, which looks for
+        // the lesson and writes the marker; that pass always finishes the battle.
+        deferToRecovery = modelCall && attempt >= MAX_REFLECTION_ATTEMPTS;
       }
     }
 
     record = buildReflectionOutcome({
       outcome: failure ? 'failed' : 'ok',
       failureClass: failure?.failureClass ?? null,
+      accountWide: failure?.accountWide === true,
       errorName: failure?.errorName ?? null,
-      ...call.meta,
+      ...(call ? call.meta : { model: null }),
       attempt,
       at: new Date().toISOString(),
     });
 
-    // Shadow log (fire-and-forget), mirroring the outcome record (O4). The
-    // lesson travels only with a success; a failure line carries no agent text.
-    logReflection({
+    // Shadow log (fire-and-forget), mirroring the outcome record (O4), for an
+    // attempt that made a call. The lesson travels only with a success; a
+    // failure line carries no agent text.
+    if (call) logReflection({
       battleId,
       agentId: battleDoc.agentId,
       userId: battleDoc.ownerId || null,
@@ -177,13 +249,13 @@ export async function generateReflection(db, battleId, { attempt = 1, modelCall 
       turnCount: (battleDoc.chatExchanges || []).length,
       tradeCount: (battleDoc.trades || []).length,
       evaluationCount: (battleDoc.evaluations || []).length,
-      selfReflection: failure ? null : call.selfReflection,
+      selfReflection: !failure && call.ok ? call.selfReflection : null,
       ...record,
     }).catch(() => {});
 
     if (failure) {
-      console.error(`${LOG_PREFIX} Reflection failed for battle ${battleId} (attempt ${attempt}): ${record.failureClass}${record.errorName ? ` (${record.errorName})` : ''} after ${record.elapsedMs ?? '?'}ms — nothing written`);
-      return { outcome: 'failed', record };
+      console.error(`${LOG_PREFIX} Reflection failed for battle ${battleId} (attempt ${attempt}${counted ? '' : ', not counted: account-wide refusal'}): ${record.failureClass}${record.errorName ? ` (${record.errorName})` : ''} after ${record.elapsedMs ?? '?'}ms — no lesson written`);
+      return { outcome: 'failed', record, counted, ...(deferToRecovery ? { deferToRecovery: true } : {}) };
     }
   }
 
@@ -203,7 +275,29 @@ export async function generateReflection(db, battleId, { attempt = 1, modelCall 
     // TRANSACTIONAL apply. Non-casual: this agent, plain apply — byte-identical.
     const stats = learningDoc.stats || {};
     const gamesPlayed = stats.gamesPlayed || 0;
+    // P-OUT-2 (O5) — the floor: counted on a FRESH read of the learning
+    // target's window, the one this game's lesson has just joined, BEFORE the
+    // milestone claim and the pendingConsolidation write. Below it nothing is
+    // spent or written — no call, no claim, no flag — and the agent keeps its
+    // current paragraph; one shadow line records the skip (counts, no text).
+    let belowFloor = false;
     if (gamesPlayed > 0 && gamesPlayed % 5 === 0) {
+      const windowSnap = await learningRef.get();
+      const window = (windowSnap.exists ? windowSnap.data().memory : []) || [];
+      const realLessons = countRealLessons(window);
+      if (realLessons < MIN_REAL_LESSONS_FOR_CONSOLIDATION) {
+        belowFloor = true;
+        console.log(`${LOG_PREFIX} consolidation at game ${gamesPlayed} skipped for agent ${learningDoc.id}: ${realLessons} real lesson(s) of ${window.length} in the window (floor ${MIN_REAL_LESSONS_FOR_CONSOLIDATION})`);
+        logConsolidation({
+          agentId: learningDoc.id,
+          success: false,
+          reason: 'insufficient_real_lessons',
+          realLessons,
+          totalEntries: window.length,
+        }).catch(() => {});
+      }
+    }
+    if (!belowFloor && gamesPlayed > 0 && gamesPlayed % 5 === 0) {
       // Ruling 1 — milestone-claim: when the feature is ON, only the reflection
       // that first stamps lastConsolidatedGamesPlayed=gamesPlayed consolidates, so
       // two reflections at the same %5 milestone (a casual settlement + a ranked
@@ -298,7 +392,13 @@ async function callSonnetReflection(battleDoc, agentDoc) {
     ]);
   } catch (err) {
     meta.elapsedMs = Date.now() - startedAt;
-    return { ok: false, failureClass: classifyReflectionError(err, { timedOut }), errorName: errorNameOf(err), meta };
+    return {
+      ok: false,
+      failureClass: classifyReflectionError(err, { timedOut }),
+      accountWide: !timedOut && isAccountWideRefusal(err),
+      errorName: errorNameOf(err),
+      meta,
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -343,9 +443,9 @@ async function callSonnetReflection(battleDoc, agentDoc) {
  * Write self-reflection to agent.memory[] with rolling 5-game window.
  * Uses Admin SDK directly — not the client-side agentService.js.
  */
-// Pure: the rolling-window memory entry for a completed battle. Extracted so the
-// plain write and the casual transactional forward build the SAME entry.
-function buildMemoryEntry(battleDoc, selfReflection) {
+// Pure: the game fields every window entry carries (gameId, gameMode, result,
+// score, opponentScore) — shared by a lesson entry and a no-lesson marker.
+function gameFieldsOf(battleDoc) {
   const scoreState = battleDoc.scoreState || {};
   const currentScore = scoreState.currentScore || 0;
   const opponentScore = scoreState.opponentScore || 0;
@@ -356,6 +456,14 @@ function buildMemoryEntry(battleDoc, selfReflection) {
     result,
     score: Math.round(currentScore * 100) / 100,
     opponentScore: Math.round(opponentScore * 100) / 100,
+  };
+}
+
+// Pure: the rolling-window memory entry for a completed battle. Extracted so the
+// plain write and the casual transactional forward build the SAME entry.
+function buildMemoryEntry(battleDoc, selfReflection) {
+  return {
+    ...gameFieldsOf(battleDoc),
     lesson: selfReflection.lesson || '',
     adjustment: selfReflection.adjustment || '',
     hypothesisGrades: selfReflection.hypothesisGrades || [],
@@ -364,25 +472,41 @@ function buildMemoryEntry(battleDoc, selfReflection) {
   };
 }
 
-async function writeMemoryReflection(db, agentRef, agentDoc, battleDoc, selfReflection) {
-  const memoryEntry = buildMemoryEntry(battleDoc, selfReflection);
-  // Rolling 5-game window: keep last 4 + new entry
-  const currentMemory = agentDoc.memory || [];
-  const updatedMemory = [...currentMemory.slice(-4), memoryEntry];
+// Pure (P-OUT-2, O9): the no-lesson marker for a battle that finished without a
+// lesson — the usual game fields, an empty lesson and noLesson: true. The
+// timeline shows it as "No lesson was recorded for this game."; the
+// consolidation filter and alreadyRecorded ignore it (memoryLessons.js).
+function buildNoLessonMarker(battleDoc) {
+  return {
+    ...gameFieldsOf(battleDoc),
+    lesson: '',
+    noLesson: true,
+    date: new Date().toISOString(),
+  };
+}
+
+// The plain write into the rolling 5-game window (keep the last 4 + the new
+// entry): this game's lesson on a success, or — P-OUT-2 (O9) — its no-lesson
+// marker, on the window read just before (currentMemory).
+async function writeMemoryReflection(agentRef, agentId, currentMemory, memoryEntry) {
+  const updatedMemory = [...(currentMemory || []).slice(-4), memoryEntry];
 
   await agentRef.update({ memory: updatedMemory });
-  console.log(`${LOG_PREFIX} Wrote memory reflection for agent ${agentDoc.id} (${updatedMemory.length} entries)`);
+  console.log(`${LOG_PREFIX} Wrote memory ${isNoLessonMarker(memoryEntry) ? 'no-lesson marker' : 'reflection'} for agent ${agentId} (${updatedMemory.length} entries)`);
 }
 
 // Casual copy-forward of a reflection into the PARENT ranked agent's rolling
 // memory window — TRANSACTIONAL, so the merge base is the parent's CURRENT memory
 // (fresh read), never the clone's stale/empty memory, and a concurrent parent
 // memory write is not clobbered (design lock: "copy-forward-with-merge → must
-// merge, not clobber").
+// merge, not clobber"). P-OUT-2 (O9): a no-lesson marker is appended only when
+// the fresh window holds no entry at all for its game — never beside the
+// game's lesson, never twice.
 async function appendMemoryReflectionForwardTx(db, targetRef, memoryEntry) {
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(targetRef);
     const currentMemory = (snap.exists ? snap.data().memory : []) || [];
+    if (isNoLessonMarker(memoryEntry) && currentMemory.some((m) => m?.gameId === memoryEntry.gameId)) return;
     const updatedMemory = [...currentMemory.slice(-4), memoryEntry];
     tx.update(targetRef, { memory: updatedMemory });
   });
