@@ -6,6 +6,9 @@
 // Schedule: */15 13,14,15,16,17,18,19,20,21 * * 1-5
 
 import Anthropic from '@anthropic-ai/sdk';
+import { stockModelRoute, isStock, positions as stockPositions, finite as finiteStock } from '../../src/utils/stockThresholdModel.js';
+import { scoreCorrectedPosition, correctedScorePatch, commitCorrectedScore, validCorrectedCompletion, readCorrectedInputs, refreshCorrectedRoster } from '../_utils/stockThresholdAdmission.js';
+import { refuseStock } from '../_utils/stockThresholdMeasurementProvider.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 // Archetype Phase 2 P2.6 (non-fenced): shadow assembly + behavior-record
 // envelope plumbing. DARK since 2026-09-12 (SHADOW_ASSEMBLY_ENABLED=false):
@@ -334,6 +337,11 @@ export default async function handler(req, res) {
             // phantom "expired and completed" + pattern-log for a nonexistent
             // battle (/code-review high, angle-B finding).
             console.error(`${LOG_PREFIX} Expired battle ${battle.id} no longer exists — counted as error, not completed.`);
+            summary.errors++;
+          } else if (completion.reason === 'corrected_score_unavailable') {
+            // A pinned stock battle without committed qualified evidence stays
+            // active; that is never "another writer completed it" (review K2-1b).
+            console.error(`${LOG_PREFIX} Expired battle ${battle.id} lacks committed corrected stock evidence — not settled, counted as error.`);
             summary.errors++;
           } else {
             summary.completionSkipped++; // another writer fully completed it first
@@ -824,12 +832,28 @@ function buildPoolEmptyFeedEntry({ message, symbolOut, symbolIn = null, regime =
 }
 
 export async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map(), masteryFlagView = DARK_FLAG_VIEW, intradayContext = null) {
-  const battleRef = db.collection('agentBattles').doc(battle.id);
+  const stockRoute = stockModelRoute(battle);
+  if (stockRoute.status === 'unavailable') { summary.errors++; return; }
+  const correctedStockGame = stockRoute.status === 'corrected';
+  const rawBattleRef = db.collection('agentBattles').doc(battle.id);
+  let commitStockFrame = null;
+  // All six score-bearing exits execute this guard, including suppressed exits.
+  const battleRef = correctedStockGame ? new Proxy(rawBattleRef, { get(target, key) {
+    if (key === 'update') return patch => Object.keys(patch).some(k => k.startsWith('scoreState.') || k.startsWith('thresholdHistory.'))
+      ? commitStockFrame(patch) : target.update(patch);
+    return typeof target[key] === 'function' ? target[key].bind(target) : target[key];
+  } }) : rawBattleRef;
 
   // ---- Idempotency: atomically check and acquire evaluatingAt lock ----
   const lockAcquired = await db.runTransaction(async (transaction) => {
     const doc = await transaction.get(battleRef);
     const data = doc.data();
+    if (correctedStockGame) {
+      const live = { id: battle.id, ...data };
+      if (stockModelRoute(live).status !== 'corrected' || live.status !== 'active') refuseStock('unsupported_live_stock_model');
+      await readCorrectedInputs(transaction, db, live);
+      Object.assign(battle, live);
+    }
     const currentLock = data?.cronState?.evaluatingAt;
 
     if (currentLock) {
@@ -1153,6 +1177,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // mutates `battle` in place), so the rebuild sees the post-swap portfolio
     // and threshold history; every other input is tick-invariant.
     const scoreHeldPositions = (flat) => flat.map(asset => {
+      if (correctedStockGame && isStock(asset)) return scoreCorrectedPosition(battle, asset, 'agent', prices, new Date().toISOString());
       const currentPrice = prices[asset.symbol]?.current;
       const entryPrice = asset.swapPrice || battle.portfolio?.startingPrices?.[asset.symbol] || 0;
 
@@ -1206,7 +1231,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     let assetScores = scoreHeldPositions(flatPortfolio);
 
     // ---- Compute CPU opponent scores ----
-    const cpuAssetScores = cpuPortfolioFlat.map(asset => {
+    let cpuAssetScores = cpuPortfolioFlat.map(asset => {
+      if (correctedStockGame && isStock(asset)) return scoreCorrectedPosition(battle, asset, 'cpu', prices, new Date().toISOString());
       const currentPrice = prices[asset.symbol]?.current;
       const entryPrice = startingPrices[asset.symbol] || 0;
 
@@ -1253,18 +1279,18 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       );
     });
 
-    const opponentScore = cpuAssetScores.reduce((sum, s) => sum + s.totalPoints, 0);
+    let opponentScore = cpuAssetScores.reduce((sum, s) => sum + s.totalPoints, 0);
 
     // ---- Update scores (always, even without Haiku) ----
-    const activeScore = assetScores.reduce((sum, s) => sum + s.totalPoints, 0);
-    const bankedScore = (battle.trades || []).reduce((sum, t) => {
+    let activeScore = assetScores.reduce((sum, s) => sum + s.totalPoints, 0);
+    let bankedScore = (battle.trades || []).reduce((sum, t) => {
       return sum + (Number.isFinite(t?.lockedPoints) ? t.lockedPoints : 0);
     }, 0);
     // Phase 2: bankedBadgePoints persists badge points across days. Held-position
     // bonusPoints get banked nightly by agent-daily-scores.js, then thresholdHistory
     // is zeroed. Without this, multi-day battles silently lose all overnight badges.
     const bankedBadgePoints = battle.scoreState?.bankedBadgePoints?.total ?? 0;
-    const currentScore = activeScore + bankedScore + bankedBadgePoints;
+    let currentScore = activeScore + bankedScore + bankedBadgePoints;
 
     const scoreUpdate = {
       'scoreState.activeScore': Math.round(activeScore * 100) / 100,
@@ -1273,6 +1299,40 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       'scoreState.opponentScore': Math.round(opponentScore * 100) / 100,
       'scoreState.lastScoredAt': new Date().toISOString(),
     };
+    if (correctedStockGame) {
+      const reconcile = patch => {
+        const at = new Date().toISOString();
+        for (const k of Object.keys(patch)) if (k.startsWith('scoring.stockRewardHistory.') || k.startsWith('scoring.stockRiskHistory.') || k.startsWith('scoring.stockRewardContexts.')) delete patch[k];
+        assetScores = scoreHeldPositions(flattenPortfolioServer(battle.portfolio));
+        cpuAssetScores = stockPositions(battle).filter(p => p.side === 'cpu').map(p => !(prices[p.asset.symbol]?.current > 0) ? { symbol: p.asset.symbol, totalPoints: null } : isStock(p.asset)
+          ? scoreCorrectedPosition(battle, { ...p.asset, tier: p.tier }, 'cpu', prices, at)
+          : cpuAssetScores.find(s => s.symbol === p.asset.symbol) || { totalPoints: null });
+        // Typed crypto keeps its scorer; missing required quote is still missing.
+        assetScores = assetScores.map(s => !isStock(flattenPortfolioServer(battle.portfolio).find(a => a.symbol === s.symbol)) && !(prices[s.symbol]?.current > 0) ? { ...s, totalPoints: null } : s);
+        const corrected = correctedScorePatch(battle, assetScores, cpuAssetScores, at);
+        for (const p of stockPositions(battle).filter(p => isStock(p.asset))) delete patch[`thresholdHistory.${p.asset.symbol}`];
+        Object.assign(patch, corrected);
+        activeScore = corrected['scoreState.activeScore']; bankedScore = corrected['scoreState.bankedScore']; currentScore = corrected['scoreState.currentScore']; opponentScore = corrected['scoreState.opponentScore'];
+        delete patch['scoreState.peakScore']; delete patch['scoreState.peakScoreAt'];
+        if (finiteStock(currentScore) && currentScore > (battle.scoreState?.peakScore ?? -Infinity)) { patch['scoreState.peakScore'] = currentScore; patch['scoreState.peakScoreAt'] = at; }
+        return patch;
+      };
+      reconcile(scoreUpdate);
+      commitStockFrame = async patch => {
+        reconcile(patch);
+        if (Array.isArray(patch.evaluations)) patch.evaluations = patch.evaluations.map((e, i) => i === patch.evaluations.length - 1 && !battle.evaluations?.some(old => old.evalId === e.evalId)
+          ? { ...e, scores: { active: activeScore, banked: bankedScore, total: currentScore }, stockThresholdModel: battle.scoring.stockThresholdModel } : e);
+        return commitCorrectedScore(db, rawBattleRef, battle, patch, result => captureStep(tickCapture, () => {
+          tickCapture.scores({ active: result.patch['scoreState.activeScore'], banked: result.patch['scoreState.bankedScore'], total: result.patch['scoreState.currentScore'], opponent: result.patch['scoreState.opponentScore'], bankedBadgePoints: 0 });
+        }));
+      };
+      if (scoreUpdate['scoreState.stockScoreEvidence'].status !== 'valid') {
+        await battleRef.update(scoreUpdate);
+        summary.held++; return;
+      }
+      // Commit the operands the corrected decision prompt will consume.
+      await battleRef.update(scoreUpdate);
+    }
     // Capture: the score fields EXACTLY as this tick wrote them (C-2 — the
     // record never recomputes a score), and the tick's own symbol universe so
     // far. `universe()` merges, so the later call picks up a rebuilt bench and
@@ -1280,7 +1340,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     captureStep(tickCapture, () => {
       tickCapture.stage('quotes_checked');
       tickCapture.stage('scores_marked');
-      tickCapture.scores({
+      if (!correctedStockGame) tickCapture.scores({
         active: Math.round(activeScore * 100) / 100,
         banked: Math.round(bankedScore * 100) / 100,
         total: Math.round(currentScore * 100) / 100,
@@ -1305,7 +1365,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // entry a swap transaction wrote earlier in this cron run (e.g. the
     // freshly swapped-in symbol's zero-reset).
     for (const score of assetScores) {
-      scoreUpdate[`thresholdHistory.${score.symbol}`] = score.history;
+      if (!correctedStockGame || !score.rewardContext) scoreUpdate[`thresholdHistory.${score.symbol}`] = score.history;
     }
 
     // ---- P4 contract #5 consumer (companion b; founder ruling D8) ----
@@ -1673,6 +1733,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // F1b — set when a COMMITTED swap could not be re-read. Non-null stops the
     // tick taking any further discretionary action.
     let refreshFailure = null;
+    // A committed corrected model swap: its roster is re-read just before the
+    // final write (reviews K2-7, K3-7).
+    let correctedRefreshDue = false;
     const lockedPositions = new Set();
     const vwapTicks = { ...(battle.cronState?.vwapTicks || {}) };
     // Forge Enforcement Keystone V1.4 §4.2 (Knob A) — per-symbol stagnation state,
@@ -1800,7 +1863,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         intradaySnapshot,
         { ticksBelowVwap: vwapTicks[score.symbol], stagnationTicks: stagnationTicks[score.symbol], withinAge: stag.withinAge },
         presetConfig.risk,
-        archetypeConfig
+        archetypeConfig,
+        score.rewardContext || null
       );
 
       riskStatus[score.symbol] = riskResult;
@@ -2077,7 +2141,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             // after an earlier exit: an occupant that changed underneath this
             // loop is named, never sold under another position's verdict
             // (review S2-3).
-            ...swapIdentityOptions(swapIdentityMode, expectedOutOfPosition(asset))
+            ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfPosition(asset), { prices })
           );
         } catch (riskExecErr) {
           riskSwapResult = await swapResultAfterThrow(battleRef, riskCall, riskExecErr);
@@ -2206,6 +2270,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               battleId: battle.id,
               battleDay: currentDay,
               timestamp: riskSwapResult.closedTrade?.swappedOutAt || null,
+              ...(riskSwapResult.closedTrade?.stockThresholdModel ? { stockRewardContract: riskSwapResult.closedTrade } : {}),
               // /code-review fix: receiptSeq is the CONVENTION itself —
               // scoreState.tradeCount+1 at decision time (battle.* is
               // pre-refresh here). Deliberately NOT parsed from riskTradeId:
@@ -2369,7 +2434,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // only. The end-of-tick score transaction was computed BEFORE the risk
       // loop, so it cannot be moved by this (asserted by T1's scope guard).
       for (const [symbol, entryPrice] of Object.entries(forcedEntryPrices)) {
-        prices[symbol] = { ...(prices[symbol] || {}), current: entryPrice };
+        if (!correctedStockGame) prices[symbol] = { ...(prices[symbol] || {}), current: entryPrice };
       }
       flatPortfolio = flattenPortfolioServer(battle.portfolio);
       portfolioSymbols = flatPortfolio.map(a => a.symbol).filter(Boolean);
@@ -2379,6 +2444,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       ].filter(Boolean);
       benchSymbols = benchAssets.map(a => a.symbol).filter(Boolean);
       assetScores = scoreHeldPositions(flatPortfolio);
+      if (correctedStockGame) {
+        await battleRef.update(scoreUpdate);
+        if (!finiteStock(currentScore) || !finiteStock(opponentScore)) { summary.held++; return; }
+      }
 
       // Prune the two per-symbol maps to what is still held. PRUNE ONLY —
       // never re-run `evaluateRisk`: that would be a second risk pass on the
@@ -2400,6 +2469,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     const proposalHandled = refreshFailure
       ? null // F1b — discretionary; the book we would act on cannot be read
       : await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore, tournamentCtx, swapIdentityMode, governingPreset);
+    if (correctedStockGame && scoreUpdate['scoreState.stockScoreEvidence'].rosterToken !== battle.scoreState?.stockScoreEvidence?.rosterToken) {
+      await battleRef.update(scoreUpdate);
+      if (!finiteStock(currentScore) || !finiteStock(opponentScore)) { summary.held++; return; }
+    }
     if (proposalHandled === 'skip_haiku') {
       // Proposal is pending and not expired — write scores/risk but skip trigger gate + Haiku
       finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
@@ -2436,6 +2509,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     const gameplanHandled = refreshFailure
       ? 'continue'
       : await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations, tournamentCtx, swapIdentityMode, governingPreset);
+    if (correctedStockGame && scoreUpdate['scoreState.stockScoreEvidence'].rosterToken !== battle.scoreState?.stockScoreEvidence?.rosterToken) {
+      await battleRef.update(scoreUpdate);
+      if (!finiteStock(currentScore) || !finiteStock(opponentScore)) { summary.held++; return; }
+    }
     // R11 (Exit-Behavior Tier 2): a pending-and-unexpired meeting suppresses
     // DISCRETIONARY trading, never the user's standing deterministic orders —
     // the pass below runs the guardrail stops + profit target before the
@@ -3716,7 +3793,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
                 benchAsset, currentDay, prices, evaluationMetadata, snapshot,
                 // P6: the belief — the position validateTradeDecision resolved
                 // from the model's symbolOut on this same snapshot.
-                ...swapIdentityOptions(swapIdentityMode, expectedOutOfPosition(battle.portfolio?.[validation.resolvedTier]?.[validation.resolvedSlotIndex]))
+                ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfPosition(battle.portfolio?.[validation.resolvedTier]?.[validation.resolvedSlotIndex]), { prices })
               );
             } catch (modelExecErr) {
               swapResult = await swapResultAfterThrow(battleRef, modelCall, modelExecErr);
@@ -3829,6 +3906,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
                   battleId: battle.id,
                   battleDay: currentDay,
                   timestamp: swapResult.closedTrade?.swappedOutAt || null,
+                ...(swapResult.closedTrade?.stockThresholdModel ? { stockRewardContract: swapResult.closedTrade } : {}),
                   // receiptSeq = the numeric core of the trade id (scoreState.tradeCount+1).
                   receiptSeq: Number(String(evaluationMetadata.id).replace('trade_', '')) || null,
                   // Nullish-coalesce (a symbol only ever falls back on null/undefined).
@@ -3886,6 +3964,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             const haikuInSymbol = swapResult.closedTrade?.symbolIn || haikuResult.symbolIn;
             vwapTicks[haikuInSymbol] = 0;
             stagnationTicks[haikuInSymbol] = 0;
+            correctedRefreshDue = correctedStockGame;
           } catch (swapErr) {
             console.error(`${LOG_PREFIX} Swap execution failed for battle ${battle.id}:`, swapErr.message);
             // Integrity follow-up 2 (Part D): the executor threw and the fresh
@@ -4585,6 +4664,12 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // `evaluation` is the object `evaluations` holds, so the restamp rides this
     // write. What runs AFTER it — narrations, anticipations, the tick capture —
     // is the loop's cost but outside `tickMs` by definition.
+    // A committed corrected model swap's roster is re-read only here: outside
+    // the executor's try, so a failed read errors the tick rather than
+    // recording a landed trade as failed (review K2-7, landedTrade.js rule),
+    // and after the stamps read the prompt-time picture (review K3-7). The
+    // corrected score commit below needs the live roster.
+    if (correctedRefreshDue) await refreshCorrectedRoster(rawBattleRef, battle);
     evaluation.tickMs = Date.now() - tickAdmittedAtMs;
     await battleRef.update(finalUpdate);
     summary.evaluated++;
@@ -4764,6 +4849,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       }
     }
   }
+}
+
+// Corrected games always thread the held belief even when the legacy identity
+// rollout is off. Stored proposal/meeting entry instants still bind that belief.
+function stockSwapOptions(battle, mode, expectedOut, { padSnapshot = false, prices = null } = {}) {
+  if (stockModelRoute(battle).status !== 'corrected') return swapIdentityOptions(mode, expectedOut, { padSnapshot });
+  const options = { identityMode: mode, expectedOut, stockPrices: prices };
+  return padSnapshot ? [null, options] : [options];
 }
 
 // ==================== HELPERS ====================
@@ -5086,7 +5179,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
               null, // F2: the stored snapshot is owner-writable — never a trade row's numbers
               // P6: the belief stored at proposal creation (symbol-only when the
               // proposal predates the stored identity or was client-written).
-              ...swapIdentityOptions(swapIdentityMode, expectedOutOfStored(proposal.symbolOut, proposal, 'outgoingSwappedInAt'))
+              ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfStored(proposal.symbolOut, proposal, 'outgoingSwappedInAt'), { prices })
             );
           } catch (approvedExecErr) {
             approvedSwapResult = await swapResultAfterThrow(battleRef, approvedCall, approvedExecErr);
@@ -5155,6 +5248,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
                 battleId: battle.id,
                 battleDay: serverDay, // integrity F2: the server's own day, never the stored record's
                 timestamp: approvedSwapResult.closedTrade?.swappedOutAt || null,
+                ...(approvedSwapResult.closedTrade?.stockThresholdModel ? { stockRewardContract: approvedSwapResult.closedTrade } : {}),
                 // #9 (adversarial review): the predicate/decision instant is the
                 // proposal's creation — NOT the execution timestamp above — so the
                 // up-to-TTL staleness stays computable. Integrity F2: read from the
@@ -5357,7 +5451,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
             null, // F2: the stored snapshot is owner-writable — never a trade row's numbers
             // P6: the belief stored at proposal creation — the expiry tick hands
             // the executor a tier and slot stored up to a TTL earlier (DCR-002 P02).
-            ...swapIdentityOptions(swapIdentityMode, expectedOutOfStored(proposal.symbolOut, proposal, 'outgoingSwappedInAt'))
+            ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfStored(proposal.symbolOut, proposal, 'outgoingSwappedInAt'), { prices })
           );
         } catch (expiredExecErr) {
           expiredSwapResult = await swapResultAfterThrow(battleRef, expiredCall, expiredExecErr);
@@ -5417,6 +5511,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
               battleId: battle.id,
               battleDay: serverDay, // integrity F2: the server's own day, never the stored record's
               timestamp: expiredSwapResult.closedTrade?.swappedOutAt || null,
+              ...(expiredSwapResult.closedTrade?.stockThresholdModel ? { stockRewardContract: expiredSwapResult.closedTrade } : {}),
               // #9: the decision instant is the proposal's creation, not the
               // execution timestamp above — from the server's deciding entry (F2).
               decisionAtMs: serverDecision?.timestamp ?? null, // integrity F2: the server's decision instant, else the execution's
@@ -5798,7 +5893,7 @@ export async function runSuppressionDeterministicPass({
         slot.tier, slot.slotIndex,
         benchAsset, currentDay, prices, evaluationMetadata, snapshot,
         // P6: the belief — the position this pass resolved by symbol just above.
-        ...swapIdentityOptions(swapIdentityMode, expectedOutOfPosition(battle.portfolio?.[slot.tier]?.[slot.slotIndex]))
+        ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfPosition(battle.portfolio?.[slot.tier]?.[slot.slotIndex]), { prices })
       );
     } catch (passExecErr) {
       passSwapResult = await swapResultAfterThrow(battleRef, passCall, passExecErr);
@@ -5897,6 +5992,7 @@ export async function runSuppressionDeterministicPass({
           battleId: battle.id,
           battleDay: currentDay,
           timestamp: passSwapResult.closedTrade?.swappedOutAt || null,
+          ...(passSwapResult.closedTrade?.stockThresholdModel ? { stockRewardContract: passSwapResult.closedTrade } : {}),
           receiptSeq: (battle.scoreState?.tradeCount || 0) + 1,
           symbolIn: passSwapResult.closedTrade?.symbolIn ?? deterministicResult.symbolIn,
           symbolOut: passSwapResult.closedTrade?.symbolOut ?? deterministicResult.symbolOut,
@@ -6174,7 +6270,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
             // tell a symbol that left and came back from the original position.
             // Follow-up 2 (Part A): from the server's COPY, never the meeting.
             // This call passes no snapshot, so the options take the eleventh place.
-            ...swapIdentityOptions(swapIdentityMode, expectedOutOfStored(run.symbolOut, run, 'swappedInAt'), { padSnapshot: true })
+            ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfStored(run.symbolOut, run, 'swappedInAt'), { padSnapshot: true, prices })
           );
         } catch (legExecErr) {
           gameplanSwapResult = await swapResultAfterThrow(battleRef, legCall, legExecErr);
@@ -6259,6 +6355,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
               battleId: battle.id,
               battleDay: currentDay,
               timestamp: gameplanSwapResult.closedTrade?.swappedOutAt || null,
+              ...(gameplanSwapResult.closedTrade?.stockThresholdModel ? { stockRewardContract: gameplanSwapResult.closedTrade } : {}),
               // /code-review fix: the convention directly (tradeId here is
               // minted as tradeCount+1 so the values agree — using the
               // convention keeps all new sites uniform and immune to trade-id
@@ -6575,6 +6672,8 @@ function detectGameplanMeetingTrigger(battle, assetScores, prices, flatPortfolio
  * today's behavior byte-for-byte, including the exact feed message.
  */
 export function resolveCompletionDisposition(battle) {
+  const stockRoute = stockModelRoute(battle);
+  if (stockRoute.status === 'unavailable' || (stockRoute.status === 'corrected' && !validCorrectedCompletion(battle))) return { result: null, completionContext: 'corrected_score_unavailable', statusMessage: 'Result unavailable: incomplete pinned stock evidence.', updateAgentStats: false, pendingReflection: false, logLine: 'corrected result unavailable' };
   const scoreState = battle.scoreState || {};
   const currentScore = scoreState.currentScore || 0;
   if (battle.gameMode === TOURNAMENT_GAME_MODE) {
@@ -6654,6 +6753,9 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     const snap = await t.get(battleRef);
     if (!snap.exists) return { committed: false, reason: 'missing' };
     const fresh = { id: battle.id, ...snap.data() };
+    const stockRoute = stockModelRoute(fresh);
+    if (stockRoute.status === 'unavailable' || (stockRoute.status === 'corrected' && !validCorrectedCompletion(fresh))) return { committed: false, reason: 'corrected_score_unavailable' };
+    if (stockRoute.status === 'corrected') await readCorrectedInputs(t, db, fresh);
     const isBareGcCompletion =
       fresh.status === 'completed' &&
       fresh.pendingReflection === undefined &&

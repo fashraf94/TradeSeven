@@ -66,6 +66,11 @@ export function buildResearchAsset(asset, options = {}) {
     ?? asset.changePercent
     ?? null;
 
+  // No threshold: the modal's bomb chart would redraw targets from its own
+  // baseline and mark "HIT" from whole-session candles (review K1-1). The tab
+  // renders the pinned context's six exact targets instead.
+  if (asset.stockRewardRoute) return { ...asset, symbol: sym, price: asset.currentPrice ?? null, threshold: null, lockedPrice: asset.stockThresholdReceipt?.fill ?? null, percentChange: asset.priceChange ?? null };
+
   // --- Threshold resolution ---
   const thresholdEntry = lookup(thresholds, sym);
   const threshold = thresholdEntry?.threshold

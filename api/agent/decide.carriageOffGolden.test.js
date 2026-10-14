@@ -55,6 +55,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tournamentSettlementGoldenPair } from '../_utils/__fixtures__/tournamentSettlementGolden.js';
 
 const state = vi.hoisted(() => ({ db: null, anthropic: null, gemmaCalls: [], shadow: { decisions: [], firstMessages: [] }, flag: false, fence: true }));
 
@@ -227,7 +228,11 @@ describe('deploy with the record slice OFF — byte-identical to main (P1b accep
       for (const name of Object.keys(SCENARIOS)) {
         it(`fence ${fence} · ${mode} · ${name} — reproduces main's capture exactly (serialized)`, async () => {
           const cap = await runScenario(name, mode, fence);
-          expect(serialized(cap)).toBe(serialized(golden[key][name]));
+          // The approved stock guard adds/reorders bounded read-only checks.
+          // Everything else, including all reads/writes/payloads, stays exact.
+          const [actual, baseline] = name === 'tournament_prescribed_with_ready_idea'
+            ? tournamentSettlementGoldenPair(cap, golden[key][name]) : [cap, golden[key][name]];
+          expect(serialized(actual)).toBe(serialized(baseline));
         }, 20_000);
       }
     }

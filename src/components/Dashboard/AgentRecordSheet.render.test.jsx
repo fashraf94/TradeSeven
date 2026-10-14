@@ -137,4 +137,14 @@ describe('timeline — legacy failure entries (P-OUT-1 display line D)', () => {
     expect(html).toContain('Strategic insight');
     expect(html).toContain('Most of my reflections failed, so I trade on instinct.');
   });
+
+  // P-OUT-2 (O9): a battle that finished without a lesson keeps its row.
+  it('a no-lesson marker renders the game\'s row with the honest line', () => {
+    const html = renderAgent({
+      ...AGENT,
+      memory: [{ gameId: 'g3', gameMode: 'baggerbomb_tournament', result: 'win', score: 7, opponentScore: 0, lesson: '', noLesson: true, date: '2026-10-13T00:00:00.000Z' }],
+    });
+    expect(html).toContain('Baggerbomb Tournament battle — Win · +7');
+    expect(html).toContain('No lesson was recorded for this game.');
+  });
 });

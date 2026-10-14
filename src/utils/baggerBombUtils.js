@@ -532,7 +532,16 @@ export function createThresholdEvent(player, symbol, thresholdName, multiplier, 
  *   When null/undefined, falls back to priceChange (backward-compatible for old battles).
  * @returns {Object} Score breakdown
  */
-export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes = {}, thresholdPriceChange = null) {
+export function calculateAssetScoreV3(asset, priceChange, history = {}, extremes = {}, thresholdPriceChange = null, rewardContext = null) {
+  if (rewardContext !== null) {
+    if (rewardContext.status !== 'valid') return { symbol: asset.symbol, status: 'unavailable', reason: rewardContext.reason, totalPoints: null, basePoints: null, bonusPoints: null, multiplier: null, badges: [], baseATR: asset.baseATR, history: null, rewardContext };
+    const gain = (rewardContext.currentPrice - rewardContext.fill) / rewardContext.fill * 100;
+    const tierMultiplier = asset.tierMultiplier ?? (CONVICTION_MULTIPLIERS[asset.tier] || CONVICTION_MULTIPLIERS.support);
+    const badges = rewardContext.crossedTiers;
+    const bonusPoints = calculatePoints(badges);
+    const basePoints = gain * 10 * tierMultiplier;
+    return { symbol: asset.symbol, status: 'valid', priceChange: gain, multiplier: rewardContext.multiplier, baseATR: asset.baseATR, tierMultiplier, basePoints: Math.round(basePoints), bonusPoints, totalPoints: Math.round(basePoints + bonusPoints), badges, history: rewardContext.history, rewardContext };
+  }
   const baseATR = asset.baseATR || 2.5;
 
   // Negate priceChange for short positions — shorts profit when price goes DOWN

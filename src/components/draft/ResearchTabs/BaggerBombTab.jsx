@@ -5,12 +5,27 @@ import React, { useState, useEffect } from 'react';
 import { BAGGER_TIERS, BUST_TIERS } from '../../../constants/baggerBombScoring';
 import { DEFAULT_THRESHOLD } from '../../../utils/researchAssetBuilder';
 import { getVolatilityThresholds } from '../../../services/volatilityService';
+import { stockSummary } from '../../../utils/stockThresholdModel.js';
+
+export function StockRewardDetails({ context }) {
+  if (!context || context.status !== 'valid') return <p role="status">Measured reward unavailable: {context?.reason || 'missing_bound_evidence'}</p>;
+  return <section aria-label="Measured stock reward targets">
+    <p>Frozen reward: {stockSummary(context.scoringPct)}% (rounded summary). Exact effective percentage: {context.scoringPctDecimal}%.</p>
+    <p>Fill ${context.fill}; quote ${context.currentPrice}; observation {context.history.observedAt}.</p>
+    <p>{context.proximity?.locked ? 'Reward LOCK' : 'Reward unlocked'}; next {context.nextTarget ? `${context.nextTarget.key} at exact $${context.nextTarget.target}` : 'all positive tiers earned'}.</p>
+    <progress aria-label="Progress to next unearned reward" value={context.proximity?.progress ?? 1} max="1" />
+    <ul>{context.targets.map(t => <li key={t.key}>{t.label}: ${stockSummary(t.target)} (rounded); exact ${t.target}; {context.crossedTiers.includes(t.key) ? 'earned' : t.target <= 0 ? 'unreachable (target at or below $0)' : 'unearned'}</li>)}</ul>
+    <p>Position {context.positionId}; input {context.inputRef}. Currency summaries do not control awards.</p>
+    <p>Model {context.modelId}; receipt {context.receiptHash}; provider quote as of {context.quoteEvidence?.providerAsOf}.</p>
+  </section>;
+}
 
 const BaggerBombTab = ({ asset }) => {
   // On-demand threshold fetch when not provided via props
   const [fetchedThreshold, setFetchedThreshold] = useState(null);
 
   useEffect(() => {
+    if (asset?.stockRewardRoute) return;
     if (asset?.threshold) return; // Already have threshold from props
     const symbol = asset?.symbol;
     if (!symbol) return;
@@ -26,7 +41,9 @@ const BaggerBombTab = ({ asset }) => {
       .catch(() => {}); // Silent — falls back to DEFAULT_THRESHOLD
 
     return () => { cancelled = true; };
-  }, [asset?.symbol, asset?.threshold, asset?.isCrypto]);
+  }, [asset?.symbol, asset?.threshold, asset?.isCrypto, asset?.stockRewardRoute]);
+
+  if (asset?.stockRewardRoute) return <StockRewardDetails context={asset.rewardContext} />;
 
   const baseThreshold = asset?.threshold || fetchedThreshold || DEFAULT_THRESHOLD;
 

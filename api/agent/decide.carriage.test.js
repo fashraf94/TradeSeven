@@ -34,6 +34,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tournamentSettlementGoldenPair } from '../_utils/__fixtures__/tournamentSettlementGolden.js';
 
 const state = vi.hoisted(() => ({ db: null, anthropic: null, gemmaCalls: [], shadow: { decisions: [], firstMessages: [] }, flag: false, fence: true }));
 
@@ -187,7 +188,8 @@ describe('acceptance row 2 — gate ON, carried: everything the agent and the ma
   }, 20_000);
   it('the prescribed TOURNAMENT branch never carries: byte-identical to main, zero version reads, the ready idea untouched', async () => {
     const { cap } = await run(SCENARIOS.tournament_prescribed_with_ready_idea());
-    expect(cap).toEqual(GOLDEN.scenarios.tournament_prescribed_with_ready_idea);
+    const [actual, baseline] = tournamentSettlementGoldenPair(cap, GOLDEN.scenarios.tournament_prescribed_with_ready_idea);
+    expect(actual).toEqual(baseline); // only the explicitly asserted guard queries differ
     expect(H.hypothesisAccess(cap)).toEqual({ reads: [], queries: [], writes: [] });
   }, 20_000);
   it('no equip, or an uncommitted list (no frozen snapshot): byte-identical to main, zero version reads', async () => {

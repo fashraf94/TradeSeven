@@ -345,6 +345,7 @@ export function buildRawReceipt(raw = {}) {
     },
 
     dataQuality: { nullFlags: collectNullFlags(predicateInputs) },
+    ...(raw.stockRewardContract ? { stockRewardContract: raw.stockRewardContract } : {}),
   });
 }
 
