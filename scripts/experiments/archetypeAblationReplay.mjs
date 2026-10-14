@@ -44,7 +44,8 @@
 //   node scripts/experiments/archetypeAblationReplay.mjs submit --go   # Message Batches, cap-checked in code
 //   node scripts/experiments/archetypeAblationReplay.mjs status [--wait]
 //   node scripts/experiments/archetypeAblationReplay.mjs collect
-//   node scripts/experiments/archetypeAblationReplay.mjs analyze
+//   node scripts/experiments/archetypeAblationReplay.mjs analyze [--ftqa owner-X]
+//   node scripts/experiments/archetypeAblationReplay.mjs facts         # offline counts the report cites (run folder only)
 //   node scripts/experiments/archetypeAblationReplay.mjs selftest      # synthetic checks of the edits and the flip rules
 
 import { execFileSync } from 'node:child_process';
@@ -148,7 +149,7 @@ const CENSUS_MARKERS = {
   identity: ['ABOUT YOU:\n', 'YOUR STRATEGIC BRIEF (from when you built this portfolio):\n', 'YOUR INITIAL PORTFOLIO RATIONALE:\n', WISDOM_HEADER, FRESH_LINE, RULES_HEADER, C_HEADER, S_HEADER, 'C_INST: INSTITUTIONAL DATA LAG'],
   live: ['━━━ LIVE BATTLE STATE ━━━', 'MACRO BENCHMARKS TODAY:', '## Vision State', 'REGIME CONTEXT:\n', 'STRATEGY PRESET: ', 'ACTIVE POSITIONS:\n', 'BENCH (available for swap):', 'BENCH: Empty', BENCH_TECH_HEADER, 'FUNDAMENTALS (held + bench', 'CLOSED TRADES THIS BATTLE:', 'TRIGGER (why you were woken up):', 'INTRADAY MOMENTUM SNAPSHOT:', 'RISK STATUS:\n', 'ACTIVE DIRECTIVE (from your Coach):', 'STANDING LEANS (user-equipped persistent adjustments):', '=== INSTITUTIONAL INTELLIGENCE (13F Filings) ===', NEWS_INTEL_HEADER, NEWS_BARE_HEADER, 'YOUR LAST 3 DECISIONS:'],
   // A4/A5 reach probes: the voice layer's market context and the learned-text forms other than the wisdom paragraph.
-  probes: ['Daily Regime Brief', 'MARKET CONTEXT', 'LESSON', 'Lesson', 'DOSSIER', 'Dossier', 'memory', 'RSI=', 'MACD', 'RVOL='],
+  probes: ['Daily Regime Brief', 'MARKET CONTEXT', 'LESSON', 'Lesson', 'DOSSIER', 'Dossier', 'memory', 'RSI=', 'MACD', 'RVOL=', 'crypto', 'Crypto', '[cautious register]', 'More cautious, in character'],
 };
 
 // ---------------------------------------------------------------- small helpers
@@ -340,6 +341,9 @@ function uniqueIndex(hay, needle) {
 /** A rules chunk (C or S) inside the FORGE RULES part of messages[0] (agentEvalPromptAssembly.js:803-835). */
 export function findRulesChunk(identityText, header, linePrefix) {
   const identity = parseIdentity(identityText);
+  // An identity block parseIdentity could not resolve is ambiguous, never "absent":
+  // otherwise A3 would silently run as a leans-only removal (review L2 #5a).
+  if (identity.status !== 'learned' && identity.status !== 'fresh') return { status: 'ambiguous', why: `identity_${identity.status}` };
   if (!identity.rules) return { status: 'absent' };
   const bodyAt = identity.rules.start + SEP.length + RULES_HEADER.length;
   if (!identityText.startsWith(RULES_HEADER, identity.rules.start + SEP.length)) return { status: 'ambiguous', why: 'rules_header' };
@@ -368,6 +372,9 @@ export function findNews(liveText) {
   if (iIntel < 0 && iBare < 0) return { status: 'absent' };
   const kind = iIntel >= 0 ? 'intelligence' : 'bare';
   const start = iIntel >= 0 ? iIntel : iBare;
+  // The history part may appear once at most; a second copy (e.g. inside a headline)
+  // would cut the block early, so it is ambiguous (review L2 #5b).
+  if (uniqueIndex(liveText, SEP + LAST3_HEADER) === -2) return { status: 'ambiguous', why: 'last3_twice' };
   const nextAt = liveText.indexOf(SEP + LAST3_HEADER, start + SEP.length);
   const end = nextAt >= 0 ? nextAt : liveText.length;
   const block = liveText.slice(start + SEP.length, end);
@@ -565,6 +572,19 @@ function writeJsonAtomic(p, value) {
   writeFileSync(tmp, JSON.stringify(value, null, 1));
   renameSync(tmp, p);
 }
+/** census / plan never rewrite a run that has created a batch: a new run needs a new folder (review L1 F1). */
+function refuseIfSpent(manifest, cmd) {
+  if ((manifest.batches || []).length || manifest.pendingCreate) stop(`${cmd} would rewrite a run that already has batches — move ${RUN_DIR} aside and start a new run instead.`);
+}
+
+/** Every cap figure finite and inside the caps, and the plan passed its own check (review L1 F2). */
+export function planWithinCaps(plan) {
+  const e = plan?.estimate;
+  if (!e || plan.withinCap !== true) return false;
+  if (![e.calls, e.plannedUsd, e.worstUsd].every(Number.isFinite)) return false;
+  return e.calls <= CAPS.calls && e.plannedUsd <= CAPS.usd && e.worstUsd <= CAPS.usd && e.worstUsd >= e.plannedUsd - 1e-9;
+}
+
 function acquireLock(cmd) {
   const p = P('run.lock');
   try {
@@ -623,19 +643,43 @@ export function pairValidationCause(errors) {
  */
 export function classifyGate(perm, body) {
   const m = perm.model || {};
-  if (m.outcome !== 'ok') {
-    return { kind: 'model_failed', cause: `model_failed:${m.failureClass ?? 'unknown'}`, final: perm.decision?.final ?? null, holdKind: perm.decision?.holdKind ?? null };
-  }
   const d = perm.decision || {};
+  if (m.outcome !== 'ok') {
+    // A failed call holds by default — unless a guardrail then forced a protective
+    // SWAP with no model proposal behind it (agent-evaluate.js:3343-3368): a
+    // deterministic action, never counted in the fail-closed HOLD row (review L3 #5a).
+    if (d.final === 'SWAP') return { kind: 'deterministic_without_proposal', cause: `model_failed_then_forced_swap:${m.failureClass ?? 'unknown'}`, final: 'SWAP' };
+    return { kind: 'model_failed', cause: `model_failed:${m.failureClass ?? 'unknown'}`, final: d.final ?? null, holdKind: d.holdKind ?? null };
+  }
   const orig = { action: d.original ?? null, out: sym(d.originalSymbolOut), in: sym(d.originalSymbolIn) };
   const fin = { action: d.final ?? null, out: sym(d.finalSymbolOut), in: sym(d.finalSymbolIn) };
   const same = orig.action === fin.action && (orig.action !== 'SWAP' || (orig.out === fin.out && orig.in === fin.in));
-  if (same) return { kind: 'as_proposed', cause: null, orig, fin };
+  if (same) {
+    // decision.final* restates the proposal (agent-evaluate.js:4122-4123 → :4363-4364); what
+    // the executor actually swapped is on actions[] (:3730-3738). A committed model-path
+    // swap on different symbols is an intervention the decision fields cannot show (review L3 #1).
+    // The closed trade's symbols are on checks.execution (agent-evaluate.js:3739) and
+    // on the committed model-path action (:3730-3738); either one disagreeing with the
+    // proposal is a swap executed on other symbols.
+    if (orig.action === 'SWAP') {
+      const done = (perm.actions || []).filter((a) => (a.source === 'haiku' || a.source === 'guardrail') && a.committed === true).at(-1);
+      const ex = perm.checks?.execution;
+      const executed = ex?.status === 'evaluated' && ex?.result === 'passed' && sym(ex.symbolOut) !== null
+        ? { out: sym(ex.symbolOut), in: sym(ex.symbolIn) }
+        : (done && sym(done.symbolOut) !== null ? { out: sym(done.symbolOut), in: sym(done.symbolIn) } : null);
+      if (executed && (executed.out !== orig.out || executed.in !== orig.in)) {
+        return { kind: 'intervened', cause: 'executed_other_symbols', orig, fin: { action: 'SWAP', ...executed } };
+      }
+    }
+    // A forced swap that a later gate blocked nets out to the proposal: "as proposed"
+    // by this census's definition, but flagged so it is never invisible (review L3 #5c).
+    return { kind: 'as_proposed', cause: d.replacedByDeterministic === true ? 'guardrail_forced_swap_then_blocked_net_none' : null, orig, fin };
+  }
   const c = perm.checks || {};
   const g = perm.guardrail || {};
   let cause = 'unclassified';
   if (g.faultClass === 'guardrail_error') cause = 'guardrail_fault';
-  else if (d.replacedByDeterministic === true) cause = 'guardrail_forced_swap';
+  else if (d.replacedByDeterministic === true) cause = fin.action === 'SWAP' ? 'guardrail_forced_swap' : 'guardrail_forced_swap_then_blocked';
   else {
     const blocked = GATE_ORDER.find((name) => c[name]?.result === 'blocked');
     if (blocked === 'proposedPairValidation') cause = `pair_validation:${pairValidationCause(body?.validationErrors)}`;
@@ -643,7 +687,7 @@ export function classifyGate(perm, body) {
     else if (blocked === 'reservation') cause = `reservation:${c.reservation.reason ?? 'unknown'}`;
     else if (blocked === 'execution') cause = `execution_refusal:${c.execution.reason ?? 'unknown'}`;
     else if (blocked) cause = blocked;
-    else if (c.execution?.status === 'failed') cause = 'execution_failed';
+    else if (c.execution?.status === 'failed') cause = 'execution_failed_or_outcome_unknown';
     else if (c.execution?.status === 'bypassed' && c.execution?.reason === 'reservation_denied') cause = 'reservation:denied';
     else if (orig.action === 'SWAP' && fin.action === 'HOLD' && d.downgraded === true && g.evaluated === true && (c.lock?.status ?? 'not_evaluated') === 'not_evaluated') cause = 'guardrail_block';
   }
@@ -704,6 +748,7 @@ async function census() {
   mkdirSync(RUN_DIR, { recursive: true });
   acquireLock('census');
   const manifest = existsSync(P('manifest.json')) ? readJson(P('manifest.json')) : { createdAt: new Date().toISOString(), seed: SEED };
+  refuseIfSpent(manifest, 'census');
   stamp(manifest, 'census');
   const { env, rank } = loadEnv();
   const db = openFirestore(env, rank);
@@ -721,12 +766,14 @@ async function census() {
   const ownerOrder = [];
   const records = [];       // one per tick, permanent facts only
   const sourcesOut = [];    // woken bodies (player text) — local only
-  const seqGaps = { battles: 0, minted: 0, documents: 0 };
+  const seqGaps = { battles: 0, minted: 0, documents: 0, mismatchedBattles: [] };
   let battlesWithTicks = 0;
 
   const sortedWalk = [...walk].sort((a, b) => (toMs(a.createdAt) ?? 0) - (toMs(b.createdAt) ?? 0) || a.battleId.localeCompare(b.battleId));
   for (const b of sortedWalk) {
     const ticks = await reader.ticks(b.battleId);
+    const mintedHere = Number(b.cronState?.tickSeq) || 0;
+    if (mintedHere !== ticks.length) seqGaps.mismatchedBattles.push({ battleId: b.battleId, minted: mintedHere, documents: ticks.length });
     if (!ticks.length) continue;
     battlesWithTicks += 1;
     const minted = Number(b.cronState?.tickSeq) || 0;
@@ -756,7 +803,7 @@ async function census() {
         decision: t.decision ?? {},
         checks: t.checks ?? {},
         guardrail: t.guardrail ?? {},
-        actions: Array.isArray(t.actions) ? t.actions.map((a) => ({ source: a.source ?? null, exitReason: a.exitReason ?? null, committed: a.committed === true })) : [],
+        actions: Array.isArray(t.actions) ? t.actions.map((a) => ({ source: a.source ?? null, exitReason: a.exitReason ?? null, symbolOut: a.symbolOut ?? null, symbolIn: a.symbolIn ?? null, committed: a.committed === true })) : [],
         risk: { forcedExitCount: t.risk?.forcedExitCount ?? null, lockedCount: t.risk?.lockedCount ?? null },
         envelope: { requestedModel: t.callEnvelope?.requestedModel ?? null, temperature: t.callEnvelope?.temperature ?? null, inputTokens: t.callEnvelope?.inputTokens ?? null, outputTokens: t.callEnvelope?.outputTokens ?? null },
         controls: { directiveThreadId: t.controls?.directiveThreadId ? true : false, leanCount: (t.controls?.standingLeanIds || []).length, ruleCount: (t.controls?.activeRuleIds || []).length },
@@ -782,7 +829,8 @@ async function census() {
             && req.messages.every((m) => typeof m?.content === 'string')
             && typeof req.system === 'string'
             && req.tools?.length === 1 && req.tools[0]?.name === PROD_TOOL_NAME
-            && req.tool_choice?.type === 'tool' && req.tool_choice?.name === PROD_TOOL_NAME;
+            && req.tool_choice?.type === 'tool' && req.tool_choice?.name === PROD_TOOL_NAME
+            && Number.isInteger(req.max_tokens) && req.max_tokens > 0;
           rec.reqModel = req.model; rec.reqTemperature = req.temperature; rec.reqMaxTokens = req.max_tokens;
           rec.toolSchemaSha = sha256Utf8(JSON.stringify(req.tools));
           const orig = capturedTuple(t, body);
@@ -815,7 +863,7 @@ async function census() {
     const label = ownerLabel[uid];
     ownerClass[label] = records.some((r) => r.owner === label && r.isCpu) ? 'cpu' : 'non_cpu';
   }
-  for (const r of records) r.ownerClass = r.isCpu ? 'cpu' : (ownerClass[r.owner] ?? 'unknown');
+  for (const r of records) r.ownerClass = r.isCpu ? 'cpu' : 'non_cpu';
 
   // Directive gate census (Part B): status per exchange in the capture window, per archetype. Counts only.
   const firstMs = Math.min(...records.map((r) => toMs(r.capturedAt)).filter(Number.isFinite));
@@ -934,6 +982,7 @@ async function census() {
       const row = bucket[r.archetype] || (bucket[r.archetype] = { woken: 0, modelOk: 0, asProposed: 0, intervened: 0, modelFailed: 0, causes: {}, failures: {}, proposedSwaps: 0, executedSwaps: 0, proposedHolds: 0, holdsForcedToSwap: 0 });
       row.woken += 1;
       if (r.gate.kind === 'model_failed') { row.modelFailed += 1; inc(row.failures, r.gate.cause); continue; }
+      if (r.gate.kind === 'deterministic_without_proposal') { row.deterministicWithoutProposal = (row.deterministicWithoutProposal || 0) + 1; inc(row.failures, r.gate.cause); continue; }
       row.modelOk += 1;
       if (r.decision.original === 'SWAP') row.proposedSwaps += 1; else row.proposedHolds += 1;
       if (r.decision.final === 'SWAP') row.executedSwaps += 1;
@@ -950,7 +999,7 @@ async function census() {
   for (const row of Object.values(partB)) {
     row.interventionRatePct = round(pct(row.intervened, row.woken), 1);
     row.interventionRateOfProposalsPct = round(pct(row.intervened, row.modelOk), 1);
-    row.swapBlockRatePct = round(pct(Object.entries(row.causes).filter(([k]) => k !== 'guardrail_forced_swap').reduce((s, [, v]) => s + v, 0), row.proposedSwaps), 1);
+    row.swapBlockRatePct = round(pct(Object.entries(row.causes).filter(([k]) => k !== 'guardrail_forced_swap' && k !== 'executed_other_symbols').reduce((s, [, v]) => s + v, 0), row.proposedSwaps), 1);
     row.B4flag = (row.interventionRatePct ?? 0) >= BARS.B4_restrictive;
   }
 
@@ -982,6 +1031,53 @@ const priceKeyOf = (modelId) => {
   return m ? `claude-${m[1]}-${m[2]}-${m[3]}` : null;
 };
 
+/**
+ * What each arm must have produced, checked on the edited request itself. verifyEdit
+ * can only prove the declared spans were applied; this proves they were the RIGHT
+ * spans (review L2 #4). Throws on any violation.
+ */
+export function assertArmSemantics(arm, archetypeKey, before, after) {
+  const fail = (why) => { throw new Error(`${arm} semantics: ${why}`); };
+  const m0 = after.messages[0].content;
+  const m2 = after.messages[2].content;
+  for (const [name, text] of [['system', after.system], ['m0', m0], ['m2', m2]]) if (text.includes('\n\n\n')) fail(`empty part left in ${name}`);
+  const gone = (text, marker) => { if (text.includes(marker)) fail(`${marker.trim()} still present`); };
+  if (arm === 'A0' && JSON.stringify(before) !== JSON.stringify(after)) fail('A0 changed the request');
+  // Nothing beyond the target: every other section marker keeps its count.
+  const TARGETS = {
+    A1: [NEWS_INTEL_HEADER, NEWS_BARE_HEADER], A2: [BENCH_TECH_HEADER], A3: [S_HEADER, 'STANDING LEANS (user-equipped persistent adjustments):'],
+    A4: [WISDOM_HEADER, FRESH_LINE], A7: [C_HEADER], A6: [], A6n: [], A0: [],
+  };
+  const whole = (r) => `${r.system}\n${r.messages.map((m) => m.content).join('\n')}`;
+  for (const marker of [...CENSUS_MARKERS.system, ...CENSUS_MARKERS.identity, ...CENSUS_MARKERS.live]) {
+    if ((TARGETS[arm] || []).includes(marker)) continue;
+    if (countOf(whole(before), marker) !== countOf(whole(after), marker)) fail(`section "${marker.trim()}" changed but is not this arm's target`);
+  }
+  if (arm === 'A1') {
+    gone(m2, NEWS_INTEL_HEADER); gone(m2, NEWS_BARE_HEADER);
+    const was = before.messages[2].content;
+    const at = was.indexOf(SEP + (was.includes(NEWS_INTEL_HEADER) ? NEWS_INTEL_HEADER : NEWS_BARE_HEADER));
+    const rest = m2.slice(at);
+    if (!(rest === '' || rest.startsWith(SEP + LAST3_HEADER))) fail('the news block was not followed by the history part or the end');
+  }
+  if (arm === 'A2') {
+    gone(m2, BENCH_TECH_HEADER);
+    const at = before.messages[2].content.indexOf(SEP + BENCH_TECH_HEADER);
+    const rest = m2.slice(at);
+    if (!(rest === '' || AFTER_BENCH_TECH.some((h) => rest.startsWith(SEP + h)))) fail('the bench block was not followed by a known part');
+  }
+  if (arm === 'A3') { gone(m0, S_HEADER); gone(m2, 'STANDING LEANS (user-equipped persistent adjustments):'); }
+  if (arm === 'A4') { gone(m0, WISDOM_HEADER); if (countOf(m0, FRESH_LINE) !== 1) fail('fresh-agent line not rendered exactly once'); }
+  if (arm === 'A7') gone(m0, C_HEADER);
+  if (arm === 'A6' || arm === 'A6n') {
+    const partner = CHARTER_PAIRS[archetypeKey];
+    if (!after.system.includes(EVAL_IDENTITY_BLOCKS[partner].render)) fail('partner charter absent');
+    if (after.system.includes(EVAL_IDENTITY_BLOCKS[archetypeKey].render)) fail('own charter still present');
+    if (arm === 'A6n' && (after.system.includes(`Your archetype is ${displayArchetype(archetypeKey)}.`) || m0.includes(`\nArchetype: ${displayArchetype(archetypeKey)}\n`))) fail('own archetype name still present');
+  }
+  return true;
+}
+
 function buildTasks(manifest, recordsByK, sources) {
   const tasks = [];
   const naCounts = {};
@@ -994,6 +1090,7 @@ function buildTasks(manifest, recordsByK, sources) {
         const a = applyArm(req, arm, arch, loc);
         if (a.na) { inc(naCounts[`${arch}|${arm}`] || (naCounts[`${arch}|${arm}`] = {}), a.na); continue; }
         verifyEdit(req, a.request, a.edits);
+        assertArmSemantics(arm, arch, req, a.request);
         tasks.push({ k, arch, arm, edits: a.edits, chars: { before: req.system.length + req.messages.reduce((s, m) => s + m.content.length, 0), removed: a.edits.reduce((s, e) => s + e.removed, 0), added: a.edits.reduce((s, e) => s + e.added, 0) }, inputTokens: recordsByK[k].envelope.inputTokens, outputTokens: recordsByK[k].envelope.outputTokens, maxTokens: req.max_tokens, model: req.model });
       }
     }
@@ -1013,6 +1110,7 @@ export function estimate(tasks) {
     const o = t.outputTokens ?? 1500;
     const p = (i * price.batchIn + o * price.batchOut) / 1e6;
     const w = (i * price.batchIn + t.maxTokens * price.batchOut) / 1e6;
+    if (![i, o, p, w].every(Number.isFinite) || !(Number.isInteger(t.maxTokens) && t.maxTokens > 0)) throw new Error(`non-finite estimate for ${t.k} ${t.arm} (max_tokens ${t.maxTokens})`);
     planned += p; worst += w; inTok += i; outTok += o;
     const c = cells[`${t.arch}|${t.arm}`] || (cells[`${t.arch}|${t.arm}`] = { calls: 0, usd: 0 });
     c.calls += 1; c.usd += p;
@@ -1024,14 +1122,17 @@ async function plan() {
   if (!existsSync(P('census.json'))) stop('run `census` first.');
   acquireLock('plan');
   const manifest = readJson(P('manifest.json'));
+  refuseIfSpent(manifest, 'plan');
   stamp(manifest, 'plan');
   const records = readJson(P('records.json'));
   const recordsByK = Object.fromEntries(records.map((r) => [r.k, r]));
   const sources = Object.fromEntries(loadJsonl(P('sources.jsonl')).filter((s) => s.request).map((s) => [s.k, s]));
   const { tasks, naCounts } = buildTasks(manifest, recordsByK, sources);
   const est = estimate(tasks);
-  manifest.plan = { at: new Date().toISOString(), tasks: tasks.map((t) => [t.k, t.arch, t.arm]), naCounts, estimate: { calls: est.calls, inTok: est.inTok, outTok: est.outTok, plannedUsd: est.planned, worstUsd: est.worst }, cells: est.cells };
-  manifest.plan.withinCap = est.calls <= CAPS.calls && est.worst <= CAPS.usd;
+  const planTasks = tasks.map((t) => [t.k, t.arch, t.arm]);
+  const candidate = { at: new Date().toISOString(), hash: sha256Utf8(JSON.stringify(planTasks)), tasks: planTasks, naCounts, estimate: { calls: est.calls, inTok: est.inTok, outTok: est.outTok, plannedUsd: est.planned, worstUsd: est.worst }, cells: est.cells };
+  candidate.withinCap = est.calls <= CAPS.calls && est.planned <= CAPS.usd && est.worst <= CAPS.usd;
+  if (candidate.withinCap) manifest.plan = candidate; else manifest.rejectedPlan = candidate;
   writeJsonAtomic(P('manifest.json'), manifest);
   // Edit verification exhibit: five records per arm (ids, spans, the first and last 80 removed characters).
   const spot = [];
@@ -1051,7 +1152,7 @@ async function plan() {
   console.log(`[ablation] Part A estimate: ${est.calls} calls · input ≈ ${est.inTok.toLocaleString()} tokens · output ≈ ${est.outTok.toLocaleString()} tokens · planned $${est.planned.toFixed(2)} · worst case (every reply at max_tokens) $${est.worst.toFixed(2)} · caps ${CAPS.calls} calls / $${CAPS.usd}`);
   for (const [cell, c] of Object.entries(est.cells).sort()) console.log(`  ${cell.padEnd(22)} ${String(c.calls).padStart(4)} calls  $${c.usd.toFixed(2)}`);
   console.log(`  not applicable (records × arm): ${JSON.stringify(naCounts)}`);
-  if (!manifest.plan.withinCap) stop(`the estimate exceeds a cap (${est.calls} calls, worst $${est.worst.toFixed(2)}; caps ${CAPS.calls} / $${CAPS.usd}). Nothing was sent.`, 5);
+  if (!candidate.withinCap) stop(`the estimate exceeds a cap (${est.calls} calls, worst $${est.worst.toFixed(2)}; caps ${CAPS.calls} / $${CAPS.usd}). Nothing was sent.`, 5);
 }
 
 // ---------------------------------------------------------------- Anthropic HTTP (plain fetch, Message Batches)
@@ -1064,7 +1165,7 @@ function anthropicUrl(urlPath) {
 async function api(apiKey, method, urlPath, body) {
   let res;
   try {
-    res = await fetch(anthropicUrl(urlPath), { method, headers: { 'x-api-key': apiKey, 'anthropic-version': ANTHROPIC_VERSION, 'content-type': 'application/json' }, body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body) });
+    res = await fetch(anthropicUrl(urlPath), { method, redirect: 'error', headers: { 'x-api-key': apiKey, 'anthropic-version': ANTHROPIC_VERSION, 'content-type': 'application/json' }, body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body) });
   } catch (err) {
     throw new Error(`network error on ${method} ${urlPath.split('?')[0]}: ${redactSecrets(err?.cause?.code || err?.name || 'unknown')}`);
   }
@@ -1081,6 +1182,7 @@ function requestFor(task, sources) {
   const a = applyArm(req, arm, arch);
   if (a.na) throw new Error(`${k} ${arm}: not applicable at submit (${a.na})`);
   verifyEdit(req, a.request, a.edits);
+  assertArmSemantics(arm, arch, req, a.request);
   return a.request; // exactly the captured literal's keys: model, max_tokens, temperature, system, messages, tools, tool_choice
 }
 
@@ -1099,17 +1201,20 @@ function chunkLines(lines) {
 const totalOf = (counts) => Object.values(counts || {}).reduce((s, x) => s + (Number(x) || 0), 0);
 
 /** An interrupted create: the intent is on disk before every POST; adopt the one batch it made, if any. */
-async function reconcilePending(apiKey, manifest) {
+async function reconcilePending(apiKey, manifest, { forgetPending = false } = {}) {
   const p = manifest.pendingCreate;
   if (!p) return;
   const known = new Set((manifest.batches || []).map((b) => b.batchId));
   const r = await api(apiKey, 'GET', '/v1/messages/batches?limit=100');
   if (r.status !== 200) stop(`could not list batches to reconcile an interrupted create (HTTP ${r.status}); nothing was sent`);
   const since = Date.parse(p.at) - 120_000;
-  const cands = (r.json?.data || []).filter((b) => !known.has(b.id) && Date.parse(b.created_at) >= since && totalOf(b.request_counts) === p.count);
+  const until = Date.parse(p.at) + 600_000;
+  const cands = (r.json?.data || []).filter((b) => !known.has(b.id) && Date.parse(b.created_at) >= since && Date.parse(b.created_at) <= until && totalOf(b.request_counts) === p.count);
   if (cands.length > 1) stop(`an interrupted create left ${cands.length} candidate batches; reconcile manifest.pendingCreate by hand`);
+  if (cands.length === 0 && !forgetPending) stop(`an interrupted ${p.kind} create (${p.count} requests, ${p.at}) matches no listed batch. It may still exist (clock skew, more than 100 newer batches, list lag). Check the Console; re-run with --forget-pending only if it does not exist.`);
   manifest.batches = manifest.batches || [];
   if (cands.length === 1) manifest.batches.push({ batchId: cands[0].id, createdAt: cands[0].created_at, count: p.count, taskIdx: p.taskIdx, kind: p.kind, adopted: true });
+  console.log(`[ablation] interrupted ${p.kind} create: ${cands.length === 1 ? `adopted ${cands[0].id}` : 'no batch exists (--forget-pending)'}`);
   delete manifest.pendingCreate;
   writeJsonAtomic(P('manifest.json'), manifest);
 }
@@ -1123,7 +1228,7 @@ async function createRecordedBatch(apiKey, manifest, chunk, kind) {
   const r = await api(apiKey, 'POST', '/v1/messages/batches', body);
   if (r.status !== 200 || typeof r.json?.id !== 'string') stop(`batch create returned HTTP ${r.status}: ${String(r.json?.error?.message ?? '').slice(0, 300)} (the pending record stays; the next submit or collect reconciles it)`);
   manifest.batches = manifest.batches || [];
-  manifest.batches.push({ batchId: r.json.id, createdAt: new Date().toISOString(), count: chunk.length, bytes, taskIdx: chunk.map((l) => l.i), kind });
+  manifest.batches.push({ batchId: r.json.id, createdAt: new Date().toISOString(), count: chunk.length, bytes, taskIdx: chunk.map((l) => l.i), kind, planHash: manifest.plan?.hash ?? null });
   delete manifest.pendingCreate;
   writeJsonAtomic(P('manifest.json'), manifest);
   console.log(`[ablation] created ${r.json.id} (${kind}, ${chunk.length} requests)`);
@@ -1135,13 +1240,14 @@ async function submit(flags) {
   const manifest = readJson(P('manifest.json'));
   if (!manifest.plan) stop('no plan — run `plan` first.');
   const e = manifest.plan.estimate;
-  if (!(e.calls <= CAPS.calls && e.worstUsd <= CAPS.usd && Number.isFinite(e.plannedUsd))) stop(`plan over a cap (${e.calls} calls, worst $${e.worstUsd}); nothing was sent.`, 5);
+  if (!planWithinCaps(manifest.plan)) stop(`plan over a cap or malformed (${e?.calls} calls, planned ${e?.plannedUsd}, worst ${e?.worstUsd}); nothing was sent.`, 5);
   stamp(manifest, 'submit');
   const { env } = loadEnv();
   const apiKey = anthropicKey(env);
-  await reconcilePending(apiKey, manifest);
+  await reconcilePending(apiKey, manifest, { forgetPending: flags.forgetPending === true });
   const sources = Object.fromEntries(loadJsonl(P('sources.jsonl')).filter((s) => s.request).map((s) => [s.k, s]));
   const done = new Set((manifest.batches || []).flatMap((b) => b.taskIdx));
+  if ((manifest.batches || []).some((b) => b.planHash && b.planHash !== manifest.plan.hash)) stop('a recorded batch belongs to a different plan; start a new run folder.');
   const lines = [];
   manifest.plan.tasks.forEach((task, i) => {
     if (done.has(i)) return;
@@ -1150,6 +1256,8 @@ async function submit(flags) {
   // Arms are shuffled together across batches, so no arm sits alone in its own batch.
   const chunks = chunkLines(shuffle(lines, rng(SEED + 31)));
   console.log(`[ablation] ${lines.length} request(s) to submit in ${chunks.length} batch(es)`);
+  const already = (manifest.batches || []).reduce((n, b) => n + (b.count || 0), 0);
+  if (already + lines.length > CAPS.calls) stop(`cumulative calls would be ${already + lines.length} (cap ${CAPS.calls}); nothing was sent.`, 5);
   for (const chunk of chunks) await createRecordedBatch(apiKey, manifest, chunk, 'main');
 }
 
@@ -1181,7 +1289,7 @@ async function collect(flags) {
   stamp(manifest, 'collect');
   const { env } = loadEnv();
   const apiKey = anthropicKey(env);
-  await reconcilePending(apiKey, manifest);
+  await reconcilePending(apiKey, manifest, { forgetPending: flags.forgetPending === true });
   const resDir = P('results');
   mkdirSync(resDir, { recursive: true });
   manifest.outcomes = manifest.outcomes || {};
@@ -1190,12 +1298,15 @@ async function collect(flags) {
     const r = await api(apiKey, 'GET', `/v1/messages/batches/${b.batchId}`);
     if (r.json?.processing_status !== 'ended') { console.log(`[ablation] ${b.batchId} is ${r.json?.processing_status ?? `HTTP ${r.status}`} — not collected yet`); continue; }
     const file = path.join(resDir, `${b.batchId}.jsonl`);
-    const res = await fetch(anthropicUrl(r.json.results_url), { headers: { 'x-api-key': apiKey, 'anthropic-version': ANTHROPIC_VERSION } });
+    const res = await fetch(anthropicUrl(r.json.results_url), { redirect: 'error', headers: { 'x-api-key': apiKey, 'anthropic-version': ANTHROPIC_VERSION } });
     if (!res.ok) stop(`results download for ${b.batchId} returned HTTP ${res.status} (the batch is kept)`);
     await pipeline(Readable.fromWeb(res.body), createWriteStream(`${file}.tmp`));
     renameSync(`${file}.tmp`, file);
     const resultLines = readFileSync(file, 'utf8').split('\n').filter((l) => l.trim());
     if (resultLines.length !== b.count) stop(`${b.batchId}: ${resultLines.length} result lines for ${b.count} requests — kept the batch`);
+    const own = new Set((b.taskIdx || []).map((i) => `aa_${String(i).padStart(5, '0')}`));
+    const foreign = resultLines.map((l) => JSON.parse(l).custom_id).filter((id) => !own.has(id));
+    if (foreign.length) stop(`${b.batchId}: ${foreign.length} result id(s) are not this batch's tasks (e.g. ${String(foreign[0]).slice(0, 40)}) — not saved, not deleted; reconcile by hand`);
     for (const line of resultLines) {
       const row = JSON.parse(line);
       const i = Number(row.custom_id.slice(3));
@@ -1221,6 +1332,9 @@ async function collect(flags) {
   const retried = new Set((manifest.batches || []).filter((b) => b.kind === 'retry').flatMap((b) => b.taskIdx));
   const toRetry = Object.entries(manifest.outcomes).filter(([i, o]) => o.type === 'errored' && RETRYABLE_ERRORS.has(o.errType) && !retried.has(Number(i))).map(([i]) => Number(i));
   if (!allSaved || !toRetry.length || flags.noRetry) return;
+  if (!flags.go) { console.log(`[ablation] ${toRetry.length} server-errored request(s) can be retried once: re-run collect --go`); return; }
+  const sentSoFar = (manifest.batches || []).reduce((n, b) => n + (b.count || 0), 0);
+  if (sentSoFar + toRetry.length > CAPS.calls) stop(`a retry would take cumulative calls to ${sentSoFar + toRetry.length} (cap ${CAPS.calls}); nothing was sent.`, 5);
   const sources = Object.fromEntries(loadJsonl(P('sources.jsonl')).filter((s) => s.request).map((s) => [s.k, s]));
   const lines = toRetry.map((i) => ({ i, json: JSON.stringify({ custom_id: `aa_${String(i).padStart(5, '0')}`, params: requestFor(manifest.plan.tasks[i], sources) }) }));
   for (const chunk of chunkLines(lines)) await createRecordedBatch(apiKey, manifest, chunk, 'retry');
@@ -1298,14 +1412,16 @@ export function applyBars(table, archetypes) {
   for (const a of archetypes) {
     const a0 = table[`${a}|A0`];
     if (!a0) continue;
-    const floor = a0.anyPct;
-    const row = { A0anyPct: floor, B0: floor > BARS.B0_noisy ? 'noisy' : 'ok', arms: {} };
+    // From counts, never from rounded percentages (review L2 #6 / L4 F9).
+    const rate = (c) => (c.n ? (100 * c.any) / c.n : NaN);
+    const floor = rate(a0);
+    const row = { A0anyPct: round(floor), B0: floor > BARS.B0_noisy ? 'noisy' : 'ok', arms: {} };
     for (const arm of ['A1', 'A2', 'A3', 'A4', 'A6', 'A7']) {
       const c = table[`${a}|${arm}`];
       if (!c) { row.arms[arm] = { label: 'not measured' }; continue; }
-      const excess = round(c.anyPct - floor);
+      const excess = rate(c) - floor;
       const lb = excess >= BARS.B1_loadBearing;
-      const label = { excessPts: excess, B1: lb ? 'load-bearing' : 'not load-bearing', noisy: row.B0 === 'noisy' };
+      const label = { excessPts: round(excess), n: c.n, B1: lb ? 'load-bearing' : 'not load-bearing', noisy: row.B0 === 'noisy' };
       if (arm === 'A6') label.B2 = excess >= BARS.B2_charter ? 'the charter is in the thinking' : 'the charter is not load-bearing at the decision';
       if (arm === 'A7') label.B3 = excess >= BARS.B3_constraint ? 'the constraint text is doing real restriction work' : 'the model stays inside the constraints without being told';
       row.arms[arm] = label;
@@ -1316,8 +1432,11 @@ export function applyBars(table, archetypes) {
 }
 
 async function analyze(flags = {}) {
+  acquireLock('analyze');
   const manifest = readJson(P('manifest.json'));
   if (!manifest.plan) stop('no plan.');
+  stamp(manifest, 'analyze');
+  writeJsonAtomic(P('manifest.json'), manifest);
   const records = Object.fromEntries(readJson(P('records.json')).map((r) => [r.k, r]));
   const sources = Object.fromEntries(loadJsonl(P('sources.jsonl')).filter((s) => s.request).map((s) => [s.k, s]));
   const results = loadResults();
@@ -1335,7 +1454,7 @@ async function analyze(flags = {}) {
     // excerpts (agentNewsContext.js:266-274), so on some records an A3 / A7 removal
     // leaves "→ Relevant rules: S…/C…" lines behind. The split is reported beside the arm.
     const live = JSON.parse(sources[k].request).messages[2].content;
-    const residue = arm === 'A3' ? /Relevant rules: S\d/.test(live) : arm === 'A7' ? /Relevant rules: C\d/.test(live) : null;
+    const residue = arm === 'A3' ? /Relevant rules:[^\n]*\bS\d+ \(/.test(live) : arm === 'A7' ? /Relevant rules:[^\n]*\bC\d+ \(/.test(live) : null;
     rows.push({ i, k, arch, arm, ownerClass: records[k].ownerClass, orig, reply, cmp: compareTuples(orig, reply), residue });
   });
   const archs = Object.keys(manifest.sample).filter((a) => manifest.sample[a].length >= SAMPLE_MIN);
@@ -1403,6 +1522,90 @@ async function analyze(flags = {}) {
   for (const [cell, c] of Object.entries(pooled).sort()) console.log(`  ${cell.padEnd(22)} n=${String(c.n).padStart(3)} any=${String(c.anyPct).padStart(5)}% action=${String(c.actionPct).padStart(5)}% symbol=${String(c.symbolPct).padStart(5)}% malformed=${c.malformed} reasonOnly=${c.reasonOnly}`);
 }
 
+// ---------------------------------------------------------------- facts (offline; reads the run folder only)
+
+/**
+ * Counts the report states that the census does not carry (review L4 F6/F14, L2 #3/#7):
+ * computed from the stored requests and records only — no Firestore, no API — and
+ * written to facts.json, so every number has a file behind it. Counts only, no text.
+ */
+async function facts() {
+  if (!existsSync(P('records.json'))) stop('run `census` first.');
+  const manifest = readJson(P('manifest.json'));
+  const records = readJson(P('records.json'));
+  const eligible = records.filter((r) => r.applicable);
+  const sources = Object.fromEntries(loadJsonl(P('sources.jsonl')).filter((s) => s.request).map((s) => [s.k, s]));
+  const out = { at: new Date().toISOString(), scriptSha256: scriptSha(), eligible: eligible.length, byArchetype: {} };
+  const RULE_PHRASES = [/vice versa/i, /stock for crypto/i, /crypto for (a )?(stock|crypto)/i, /crypto[- ]for[- ]crypto/i, /crypto (only )?(swaps?|trades?) (only )?(for|with) crypto/i, /only (for|with) crypto/i, /asset[- ]type match/i, /asset class/i];
+  const part = (req) => ({ system: req.system, m0: req.messages[0].content, m2: req.messages[2].content, tools: JSON.stringify(req.tools) });
+  for (const r of eligible) {
+    const a = out.byArchetype[r.archetype] || (out.byArchetype[r.archetype] = {
+      n: 0, crypto: { system: 0, m0: 0, m2: 0, tools: 0, any: 0 }, cryptoRulePhrase: { system: 0, m0: 0, m2: 0, tools: 0 },
+      cLines: {}, sLines: {}, cCategories: {}, bothCandS: 0, leans: { records: 0, byOwner: {} }, memory: {}, cautiousRegister: 0, owners: {},
+    });
+    const req = JSON.parse(sources[r.k].request);
+    const p = part(req);
+    a.n += 1;
+    inc(a.owners, r.owner);
+    let anyCrypto = false;
+    for (const [name, text] of Object.entries(p)) {
+      if (/crypto/i.test(text)) { a.crypto[name] += 1; anyCrypto = true; }
+      if (RULE_PHRASES.some((re) => re.test(text))) a.cryptoRulePhrase[name] += 1;
+    }
+    if (anyCrypto) a.crypto.any += 1;
+    const c = findRulesChunk(p.m0, C_HEADER, /^C\d+\. /);
+    const s = findRulesChunk(p.m0, S_HEADER, /^S\d+\. /);
+    inc(a.cLines, String(c.status === 'present' ? c.count : 0));
+    inc(a.sLines, String(s.status === 'present' ? s.count : 0));
+    if (c.status === 'present' && s.status === 'present') a.bothCandS += 1;
+    if (c.status === 'present') {
+      for (const m of p.m0.slice(c.span.start, c.span.end).matchAll(/^C\d+\. .* \[([A-Za-z_]+)\]$/gm)) inc(a.cCategories, m[1]);
+    }
+    if (findLeans(p.m2).status === 'present') { a.leans.records += 1; inc(a.leans.byOwner, r.owner); }
+    // Where the word "memory" sits: the m0 part header that precedes it, or the field.
+    const at = p.m0.indexOf('memory');
+    if (at >= 0) {
+      const heads = ['ABOUT YOU:', 'YOUR STRATEGIC BRIEF', 'YOUR INITIAL PORTFOLIO RATIONALE', 'YOUR STRATEGIC WISDOM', FRESH_LINE, 'YOUR FORGE RULES'];
+      const before = p.m0.slice(0, at);
+      const head = heads.map((h) => [h, before.lastIndexOf(h)]).sort((x, y) => y[1] - x[1])[0];
+      inc(a.memory, `m0:${head[1] >= 0 ? head[0] : 'none'}`);
+    }
+    if (p.system.includes('memory')) inc(a.memory, 'system');
+    if (p.m2.includes('memory')) inc(a.memory, 'm2');
+    if (/\[cautious register\]|More cautious, in character/.test(`${p.system}${p.m0}${p.m2}`)) a.cautiousRegister += 1;
+  }
+  // The sampled arm requests: what each removal leaves behind (review L2 #3, #7).
+  const sampled = { a3EmptyRulesPart: {}, a7EmptyRulesPart: {}, a6nNameInBrief: {} };
+  for (const [k, arch, arm] of manifest.plan?.tasks || []) {
+    if (!['A3', 'A7', 'A6n'].includes(arm)) continue;
+    const req = JSON.parse(sources[k].request);
+    const after = applyArm(req, arm, arch).request;
+    const m0 = after.messages[0].content;
+    if (arm === 'A3' || arm === 'A7') {
+      const key = arm === 'A3' ? 'a3EmptyRulesPart' : 'a7EmptyRulesPart';
+      inc(sampled[key], `${arch}:${m0.includes(`${RULES_HEADER}When making trades:`) ? 'rules_part_left_with_no_rule_lines' : 'other_rules_remain'}`);
+    }
+    if (arm === 'A6n') {
+      // The brief is free text and may hold blank lines: it runs to the next part header.
+      const briefAt = m0.indexOf('YOUR STRATEGIC BRIEF');
+      const nextHeads = ['YOUR INITIAL PORTFOLIO RATIONALE:', WISDOM_HEADER, FRESH_LINE, RULES_HEADER].map((h) => m0.indexOf(SEP + h, briefAt + 1)).filter((i) => i > briefAt);
+      const brief = briefAt >= 0 ? m0.slice(briefAt, nextHeads.length ? Math.min(...nextHeads) : m0.length) : '';
+      const names = [displayArchetype(arch), ARCHETYPES[arch]].map((x) => x.toLowerCase());
+      inc(sampled.a6nNameInBrief, `${arch}:${names.some((x) => brief.toLowerCase().includes(x)) ? 'own_name_in_brief' : 'not_in_brief'}`);
+    }
+  }
+  out.sampledArms = sampled;
+  // The B4 flag's spread (review L4 F13): intervened checks by battle and by day.
+  const spread = {};
+  for (const r of records.filter((x) => x.woken && x.bodyState === 'complete' && x.gate?.kind === 'intervened')) {
+    const s = spread[r.archetype] || (spread[r.archetype] = { battles: {}, days: {} });
+    inc(s.battles, r.battleId); inc(s.days, r.etDate);
+  }
+  out.interventionSpread = Object.fromEntries(Object.entries(spread).map(([a, s]) => [a, { battles: Object.keys(s.battles).length, days: Object.keys(s.days).length, perBattle: Object.values(s.battles).sort((x, y) => y - x), perDay: s.days }]));
+  writeJsonAtomic(P('facts.json'), out);
+  console.log(JSON.stringify(out, null, 1));
+}
+
 // ---------------------------------------------------------------- exhibits (outside the repo; player text allowed)
 
 function para(s) { return String(s ?? '').replace(/\s+/g, ' ').trim(); }
@@ -1446,7 +1649,7 @@ function writeExhibits() {
     lines.push(...founderRead(records, sources));
   }
   if (existsSync(P('edit-spotcheck.json'))) {
-    lines.push('## 4. Edit spot check — five records per arm', '', 'Each row: the field edited, the character span, and the first/last 80 characters of what the arm removed (A6: the charter render it replaced). Everything outside the span is byte-identical (verifyEdit, run on every request).', '');
+    lines.push('## 4. Edit spot check — five records per arm', '', 'Each row: the field edited, the character span, and the first/last 80 characters of what the arm removed (A6: the charter render it replaced). On every request: verifyEdit proves every byte outside the declared spans is unchanged, and assertArmSemantics proves the spans were the right ones (the targeted marker is gone, no empty part is left, the neighbouring part is one the assembler would place there, the partner charter is present and the own charter absent).', '');
     for (const s of readJson(P('edit-spotcheck.json'))) lines.push(`- **${s.arm}** \`${s.k}\` ${s.field} [${s.start}, ${s.end}) −${s.removedChars} +${s.addedChars} · head “${para(s.head)}” · tail “${para(s.tail)}”`);
     lines.push('');
   }
@@ -1478,6 +1681,8 @@ export function runSelftest() {
   const expectAbsent = { A1: [NEWS_INTEL_HEADER], A2: [BENCH_TECH_HEADER], A3: [S_HEADER, 'STANDING LEANS'], A4: [WISDOM_HEADER], A7: [C_HEADER] };
   for (const arm of ['A1', 'A2', 'A3', 'A4', 'A6', 'A7']) {
     const a = applyArm(req, arm, 'momentum_chaser', loc);
+    ok(`${arm} applicable`, !a.na);
+    if (a.na) continue;
     let verified = false;
     try { verified = verifyEdit(req, a.request, a.edits); } catch { verified = false; }
     ok(`${arm} verifies`, verified);
@@ -1485,23 +1690,28 @@ export function runSelftest() {
     for (const h of expectAbsent[arm] || []) ok(`${arm} removed ${h.slice(0, 20)}`, !all.includes(h));
     ok(`${arm} keeps no empty part`, !a.request.messages[0].content.includes('\n\n\n') && !a.request.messages[2].content.includes('\n\n\n'));
   }
-  const a1 = applyArm(req, 'A1', 'momentum_chaser', loc);
-  ok('A1 joins neighbours with one separator', a1.request.messages[2].content.includes(`platform safety limits, or an active directive.${SEP}${LAST3_HEADER}`));
-  const a7 = applyArm(req, 'A7', 'momentum_chaser', loc);
-  ok('A7 leaves S-rules first after header', a7.request.messages[0].content.includes(`${RULES_HEADER}${S_HEADER}S1.`));
-  const a3 = applyArm(req, 'A3', 'momentum_chaser', loc);
-  ok('A3 leaves C-rules then trailer', a3.request.messages[0].content.includes(`C1. Max 20% [Risk]${SEP}When making trades:`));
-  const a6 = applyArm(req, 'A6', 'momentum_chaser', loc);
-  ok('A6 renders the Contrarian charter', a6.request.system.includes(EVAL_IDENTITY_BLOCKS.contrarian.render) && !a6.request.system.includes(charter));
-  const a6n = applyArm(req, 'A6n', 'momentum_chaser', loc);
+  // A not-applicable arm yields an empty stand-in, so every row below FAILS by name instead of throwing.
+  const blank = { system: '', messages: [{ content: '' }, { content: '' }, { content: '' }] };
+  const armOf = (arm) => applyArm(req, arm, 'momentum_chaser', loc);
+  const reqOf = (arm) => armOf(arm).request || blank;
+  ok('A1 joins neighbours with one separator', reqOf('A1').messages[2].content.includes(`platform safety limits, or an active directive.${SEP}${LAST3_HEADER}`));
+  ok('A7 leaves S-rules first after header', reqOf('A7').messages[0].content.includes(`${RULES_HEADER}${S_HEADER}S1.`));
+  ok('A3 leaves C-rules then trailer', reqOf('A3').messages[0].content.includes(`C1. Max 20% [Risk]${SEP}When making trades:`));
+  ok('A6 renders the Contrarian charter', reqOf('A6').system.includes(EVAL_IDENTITY_BLOCKS.contrarian.render) && !reqOf('A6').system.includes(charter));
+  const a6n = armOf('A6n');
   let a6nOk = false; try { a6nOk = verifyEdit(req, a6n.request, a6n.edits); } catch { a6nOk = false; }
   ok('A6n verifies (three spans, two fields)', a6nOk && a6n.edits.length === 3);
-  ok('A6n renames both mentions', a6n.request.system.includes('Your archetype is Contrarian. You are mid-battle') && a6n.request.messages[0].content.includes('\nArchetype: Contrarian\n') && a6n.request.system.includes(EVAL_IDENTITY_BLOCKS.contrarian.render));
-  ok('A0 identical', JSON.stringify(applyArm(req, 'A0', 'momentum_chaser', loc).request) === JSON.stringify(req));
-  // A planted edit outside the span must fail verification.
-  const bad = JSON.parse(JSON.stringify(a1.request)); bad.messages[0].content += 'x';
-  let caught = false; try { verifyEdit(req, bad, a1.edits); } catch { caught = true; }
-  ok('verifyEdit catches an out-of-span change', caught);
+  ok('A6n renames both mentions', reqOf('A6n').system.includes('Your archetype is Contrarian. You are mid-battle') && reqOf('A6n').messages[0].content.includes('\nArchetype: Contrarian\n') && reqOf('A6n').system.includes(EVAL_IDENTITY_BLOCKS.contrarian.render));
+  ok('A0 identical', JSON.stringify(armOf('A0').request) === JSON.stringify(req));
+  // A planted change outside the span must fail verification — in an untargeted
+  // field, and (the case the span check exists for) inside the TARGETED field.
+  const a1 = armOf('A1');
+  const bad = JSON.parse(JSON.stringify(reqOf('A1'))); bad.messages[0].content += 'x';
+  let caught = false; try { verifyEdit(req, bad, a1.edits || []); } catch { caught = true; }
+  ok('verifyEdit catches a change in an untargeted field', caught && !a1.na);
+  const bad2 = JSON.parse(JSON.stringify(reqOf('A1'))); bad2.messages[2].content = bad2.messages[2].content.replace('Day 1', 'Day 2');
+  let caught2 = false; try { verifyEdit(req, bad2, a1.edits || []); } catch { caught2 = true; }
+  ok('verifyEdit catches an out-of-span change in the targeted field', caught2 && !a1.na);
   // Flip rules.
   const orig = { valid: true, action: 'SWAP', out: 'AAA', in: 'BBB', swapType: 'upgrade' };
   ok('same → no flip', !compareTuples(orig, { ...orig }).anyFlip);
@@ -1510,7 +1720,7 @@ export function runSelftest() {
   ok('swap_type only → reason-only, not any', compareTuples(orig, { ...orig, swapType: 'profit_take' }).reasonOnly && !compareTuples(orig, { ...orig, swapType: 'profit_take' }).anyFlip);
   ok('malformed → action flip', compareTuples(orig, { valid: false, action: 'malformed' }).actionFlip);
   // Bars.
-  const table = { 'x|A0': { anyPct: 5 }, 'x|A1': { anyPct: 15 }, 'x|A6': { anyPct: 19.9 }, 'x|A7': { anyPct: 20 } };
+  const table = { 'x|A0': { n: 20, any: 1 }, 'x|A1': { n: 20, any: 3 }, 'x|A6': { n: 1000, any: 199 }, 'x|A7': { n: 20, any: 4 } };
   const bars = applyBars(table, ['x']);
   ok('B1 at +10 is load-bearing', bars.x.arms.A1.B1 === 'load-bearing');
   ok('B2 below +15 is not', bars.x.arms.A6.B2.startsWith('the charter is not'));
@@ -1530,6 +1740,23 @@ export function runSelftest() {
   ok('pair validation sub-cause', pairValidationCause(['Conviction 65 below 70 threshold']) === 'conviction_below_70');
   ok('as proposed', classifyGate({ model: { outcome: 'ok' }, decision: { original: 'HOLD', final: 'HOLD' } }).kind === 'as_proposed');
   ok('lock block', classifyGate({ model: { outcome: 'ok' }, decision: { original: 'SWAP', originalSymbolOut: 'A', originalSymbolIn: 'B', final: 'HOLD' }, checks: { lock: { result: 'blocked' } } }).cause === 'lock');
+  // Review fixes (L3 #1, #5): edge paths the decision fields alone cannot show.
+  ok('swap executed on other symbols is an intervention', classifyGate({ model: { outcome: 'ok' }, decision: { original: 'SWAP', originalSymbolOut: 'A', originalSymbolIn: 'B', final: 'SWAP', finalSymbolOut: 'A', finalSymbolIn: 'B' }, actions: [{ source: 'haiku', committed: true, symbolOut: 'C', symbolIn: 'B' }] }).cause === 'executed_other_symbols');
+  ok('swap executed as proposed stays as proposed', classifyGate({ model: { outcome: 'ok' }, decision: { original: 'SWAP', originalSymbolOut: 'A', originalSymbolIn: 'B', final: 'SWAP', finalSymbolOut: 'A', finalSymbolIn: 'B' }, actions: [{ source: 'haiku', committed: true, symbolOut: 'A', symbolIn: 'B' }] }).kind === 'as_proposed');
+  ok('failed call + forced swap is not a fail-closed hold', classifyGate({ model: { outcome: 'failed', failureClass: 'timeout' }, decision: { final: 'SWAP' } }).kind === 'deterministic_without_proposal');
+  ok('forced swap then blocked is named', classifyGate({ model: { outcome: 'ok' }, decision: { original: 'SWAP', originalSymbolOut: 'A', originalSymbolIn: 'B', final: 'HOLD', replacedByDeterministic: true } }).cause === 'guardrail_forced_swap_then_blocked');
+  ok('closed trade on other symbols (checks.execution) is an intervention', classifyGate({ model: { outcome: 'ok' }, decision: { original: 'SWAP', originalSymbolOut: 'A', originalSymbolIn: 'B', final: 'SWAP', finalSymbolOut: 'A', finalSymbolIn: 'B' }, checks: { execution: { status: 'evaluated', result: 'passed', symbolOut: 'C', symbolIn: 'B' } } }).cause === 'executed_other_symbols');
+  ok('forced-then-blocked netting to the proposal is flagged, as proposed', (() => { const g = classifyGate({ model: { outcome: 'ok' }, decision: { original: 'HOLD', final: 'HOLD', replacedByDeterministic: true } }); return g.kind === 'as_proposed' && g.cause === 'guardrail_forced_swap_then_blocked_net_none'; })());
+  // Review fixes (L2 #4, #6; L1 F2).
+  let semOk = true; try { for (const arm of ['A0', 'A1', 'A2', 'A3', 'A4', 'A6', 'A6n', 'A7']) assertArmSemantics(arm, 'momentum_chaser', req, applyArm(req, arm, 'momentum_chaser', loc).request); } catch { semOk = false; }
+  ok('assertArmSemantics passes every correct arm', semOk);
+  const wrongLoc = { ...loc, news: { ...loc.news, span: { start: 0, end: req.messages[2].content.length } } };
+  const wrong = applyArm(req, 'A1', 'momentum_chaser', wrongLoc);
+  let verifyFooled = false; try { verifyFooled = verifyEdit(req, wrong.request, wrong.edits); } catch { verifyFooled = false; }
+  let semCaught = false; try { assertArmSemantics('A1', 'momentum_chaser', req, wrong.request); } catch { semCaught = true; }
+  ok('a wrong span passes verifyEdit but not assertArmSemantics', verifyFooled && semCaught);
+  ok('bars use counts, not rounded percentages', applyBars({ 'x|A0': { n: 21, any: 2 }, 'x|A1': { n: 41, any: 8 } }, ['x']).x.arms.A1.B1 === 'not load-bearing');
+  ok('a non-finite worst case never passes the cap', !planWithinCaps({ withinCap: true, estimate: { calls: 10, plannedUsd: 1, worstUsd: null } }) && planWithinCaps({ withinCap: true, estimate: { calls: 10, plannedUsd: 1, worstUsd: 2 } }));
   return { pass: checks.every((c) => c.pass), failed: checks.filter((c) => !c.pass).map((c) => c.name), count: checks.length };
 }
 
@@ -1543,6 +1770,7 @@ export function parseArgs(argv) {
     if (a === '--go') flags.go = true;
     else if (a === '--wait') flags.wait = true;
     else if (a === '--no-retry') flags.noRetry = true;
+    else if (a === '--forget-pending') flags.forgetPending = true;
     else if (a === '--ftqa') { flags.ftqa = argv[i + 1]; i += 1; }
     else pos.push(a);
   }
@@ -1558,6 +1786,7 @@ async function main() {
     case 'status': return status(flags);
     case 'collect': return collect(flags);
     case 'analyze': return analyze(flags);
+    case 'facts': return facts();
     case 'selftest': {
       const r = runSelftest();
       console.log(JSON.stringify(r, null, 1));
@@ -1565,7 +1794,7 @@ async function main() {
       return undefined;
     }
     default:
-      console.log('archetypeAblationReplay — census | plan | submit --go | status [--wait] | collect | analyze | selftest');
+      console.log('archetypeAblationReplay — census | plan | submit --go | status [--wait] | collect [--go] | analyze [--ftqa owner-X] | facts | selftest  (also --forget-pending, --no-retry)');
       return undefined;
   }
 }
