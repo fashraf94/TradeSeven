@@ -790,7 +790,10 @@ async function fetchRealTimePrice(eohdSymbol, apiKey, result) {
  * @returns {Array<{ datetime: string, open: number, high: number, low: number, close: number, volume: number }>}
  */
 export async function fetchIntradayCandles(symbol, options = {}) {
-  const { interval = '5m', hoursBack } = options;
+  // keepMissingVolume (Film Room B1 W3, the tape's candle pass only): a missing
+  // or non-finite volume is returned as null instead of 0. Off by default, so
+  // every other caller's projection is unchanged.
+  const { interval = '5m', hoursBack, keepMissingVolume = false } = options;
   const apiKey = getApiKey();
   const clean = getCleanSymbol(symbol);
   const isCrypto = isCryptoSymbol(symbol);
@@ -868,7 +871,7 @@ export async function fetchIntradayCandles(symbol, options = {}) {
     high: d.high,
     low: d.low,
     close: d.close,
-    volume: d.volume || 0,
+    volume: keepMissingVolume ? (Number.isFinite(d.volume) ? d.volume : null) : (d.volume || 0),
   }));
 }
 

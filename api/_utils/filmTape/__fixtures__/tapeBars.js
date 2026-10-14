@@ -78,7 +78,8 @@ export function fetcherOf(bySymbol) {
     const v = bySymbol[symbol];
     if (v instanceof Error) throw v;
     // The generic fetcher's own output shape (marketDataCache.js): datetime + OHLCV.
-    return (v || []).map((r) => ({ datetime: r.datetime, open: r.open, high: r.high, low: r.low, close: r.close, volume: r.volume || 0 }));
+    // …including its volume projection: `d.volume || 0`, or null for a missing one when the tape asks (keepMissingVolume, B1 W3).
+    return (v || []).map((r) => ({ datetime: r.datetime, open: r.open, high: r.high, low: r.low, close: r.close, volume: opts?.keepMissingVolume ? (Number.isFinite(r.volume) ? r.volume : null) : (r.volume || 0) }));
   };
   return { fetchCandles, calls };
 }

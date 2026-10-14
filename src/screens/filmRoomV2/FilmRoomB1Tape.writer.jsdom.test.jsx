@@ -54,6 +54,8 @@ beforeAll(async () => {
     status: 'rejected', expiresAt: `${SEP23}T20:00:00.000Z`, resolvedAt: `${SEP23}T17:31:00.000Z`, resolvedBy: 'coach',
   }];
   const bars = { ...sep23Bars(), ORCL: sessionRows(SEP23, (i) => Math.round(181.2 * (1 + 0.001 * Math.sin(i / 29)) * 100) / 100, { volume: 1500 }) };
+  // W3: one INTC minute (09:33 ET; rows[0] is pre-market) arrives without its volume
+  bars.INTC = bars.INTC.map((r, i) => (i === 4 ? { ...r, volume: null } : r));
   b1 = await buildTapeDay(fx, { night: SEP23_NIGHT, morning: SEP23_MORNING, bars });
 });
 
@@ -126,6 +128,21 @@ describe('THE ONE VISIBLE CONSEQUENCE: the leg\'s new series is offered in the D
     await openAt(b1.tape, b1.series, 'Deep dive', 'ORCL');
     expect(m.container.textContent).toContain('price series');
     expect(m.container.textContent).not.toContain(DIAGNOSIS);
+  });
+});
+
+describe('W3 on the screen: a bucket whose volume is missing stays missing', () => {
+  it('the stored INTC series holds the null; the Deep dive draws no volume bar for it and withholds the session total — never a 0', async () => {
+    const intc = b1.series.find((s) => s.symbol === 'INTC');
+    expect(intc.bars[0].v).toBeNull();
+    expect(intc.bars.slice(1).every((b) => typeof b.v === 'number')).toBe(true);
+    await openAt(b1.tape, b1.series, 'Deep dive', 'INTC');
+    expect(m.qa('[data-volume-bar]')).toHaveLength(intc.bars.length - 1);
+    expect(m.qa('[data-volume-bar="0"]')).toEqual([]);
+    expect(m.container.textContent).not.toContain('Volume · session');
+    // the control: a symbol whose every bucket has its volume shows the total
+    await openAt(b1.tape, b1.series, 'Deep dive', 'AMD');
+    expect(m.container.textContent).toContain('Volume · session');
   });
 });
 

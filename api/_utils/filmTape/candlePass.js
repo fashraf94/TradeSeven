@@ -159,7 +159,8 @@ async function barsFor({ symbol, etDate, session, nowMs, fetchCandles, memo, usa
   let bars = [];
   try {
     usage.requests += 1;
-    const candles = await fetchCandles(symbol, { interval: '1m', hoursBack });
+    // B1 W3: the generic fetcher's projection turns a missing volume into 0 for its other callers; the tape asks it not to.
+    const candles = await fetchCandles(symbol, { interval: '1m', hoursBack, keepMissingVolume: true });
     bars = sessionBars(candles, etDate, session);
   } catch (err) {
     usage.errors.push(`${symbol}: ${String(err?.message || err).slice(0, 120)}`);
