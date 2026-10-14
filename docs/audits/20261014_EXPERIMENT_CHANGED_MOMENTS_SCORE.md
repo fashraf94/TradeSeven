@@ -2,15 +2,59 @@
 
 **Date:** 14 Oct 2026 · **Session:** Claude Code desktop, local Windows, Opus 5.5 · **Prompt:** Fable, "Experiment — Did the learning help? Scoring the changed moments", 14 Oct 2026 · **Base HEAD:** `e880592e` (`origin/main` after `git fetch origin`) · **Branch:** `claude/experiment-changed-moments-score` · **No model calls.**
 
-> **Status of this file at this commit: METHOD ONLY.** Section 3 is the pre-declared method, committed with the script before any price bar was fetched and before any outcome was read (rule 8). Every other section is filled by the scoring run in a later commit; until then it reads *pending*.
+> **How this file was written.** Section 3, the method, was committed and pushed with the script as `731799d2` before any price bar was fetched or any outcome read (rule 8). The scoring run used that exact script. The other sections were written from its output afterwards, and §8 records the review.
 
 ## 1. In plain terms
 
-*Pending the scoring run.*
+The growth replay found 29 moments where removing an agent's learned paragraph changed its usual call. This asks, for each one: **did the call made with the paragraph do better or worse than the call made without it?** "Better" is judged by what the market did next, through the closing bell that day. We measure it two ways: BaggerBomb points, using the Film Room tape's own arithmetic, and the plain price move.
+
+| Question | Answer |
+|---|---|
+| **The label** | **No clear effect.** |
+| How the 29 moments scored | 28 could be scored on both measures. On points, the learned call did better on 11, worse on 12, and tied on 5. Price gives the same split: 11 / 12 / 5. A coin-flip test cannot tell this apart from chance (p = 1.0). |
+| How many of the changes were trades the learning stopped | **20 of 29.** In 4 more, the learning *caused* a trade; in the other 5, it changed which stock was bought. |
+| What the control says | Across every trade the agents chose in the replay, **trading lost to holding more often than it won: 29 times against 19**, with 5 ties. That is not significant (p = 0.19), but it leans one way. |
+| Which paragraphs drove it | None produced a clear result. The Trend Follower paragraph present on 16 moments came out roughly even. The Contrarian paragraph (12 moments) was slightly worse, and the other Trend Follower paragraph (1 moment) was worse. |
+
+- **Where the learning stopped a trade, holding was usually the better outcome.** It was better on 10 of the 20, worse on 7, and tied on 3. That matches the control: in this period trades tended to lose to holding. So stopping a trade looks good mostly because trading looked bad, not because of anything particular in the paragraph.
+- **Where the learning caused a trade, the trade did worse** on 3 of 4, and tied on the fourth.
+- **In total, the learned calls finished 100 points behind the unlearned ones over the 28 moments.** Most of that gap comes from four large misses, each between 28 and 42 points. At the next check after each moment, the picture is just as even: 13 better, 11 worse.
+- **The two measures say nearly the same thing.** Unless a stock crosses a badge line, BaggerBomb points are about ten times the price move, times the slot's tier multiplier. So they are not two independent pieces of evidence.
+- **This is a small sample from founder and tester play.** With 28 moments, only a large effect could have shown up as anything other than "no clear effect".
 
 ## 2. Gate facts
 
-*Pending the scoring run.*
+**Session preamble (BUILD_RULES §2/§3).**
+- `git fetch origin` ran first.
+- The worktree was cut from `origin/main` at `e880592e`, clean. The local branch is the app-suffixed `claude/experiment-changed-moments-score-0b40c9`, pushed as `claude/experiment-changed-moments-score`.
+- `node_modules` is a junction into the primary checkout, unlinked at session end.
+
+**Pre-declaration (rule 8).**
+- The method (§3 and the script header) was committed as `731799d2` and **pushed before any bar was fetched or any outcome read**.
+- Every scoring command ran that exact file: SHA-256 `bd6b7a3e990236d2637f57e227b384664f668a26514a9766e5341eb1e8526d87`, logged per command in the run manifest.
+- Two earlier `plan` runs came from uncommitted drafts, while the slot reconstruction was being debugged. They read inputs only — no bars, no tape replay — and were superseded.
+
+| Fact | Value |
+|---|---|
+| Run | `cms-20261014T202814` (`%USERPROFILE%/growth-replay-runs/`, outside git) |
+| Run window (14 Oct 2026, UTC) | `plan` 20:28:15 · `known-answer` 20:28:24, bars fetched 20:28:28–20:28:38 · `score` 20:29:20 |
+| Script SHA-256 | `bd6b7a3e…8526d87`, the same on all three commands |
+| EODHD requests | **41 of the 400 cap**, one per symbol, 0 failures |
+| Known-answer, layer 1 (the tape's own rows, our bars) | **9 of 9** match exactly |
+| Known-answer, layer 2 (our builder) | **4 of 4** in its domain match, exactly on every number. The other 5 are deterministic exits taken before the prompt was built, outside the builder's domain (§3.9). |
+| Bars against the tape's stored 10-minute series | **28 of 28** series equal |
+| Sale reconciliation: lock, exit price and fill against the platform's records | **20 of 20** each, over every recorded model swap on the 29 battle-days (4 tiered, 16 flat6) |
+| Self-test | 54 rows pass (gates every command) |
+| Firestore | Read-only; the §7 write-call grep gated every command in the same shell command (no matches) |
+| Model calls | None |
+
+**Inputs.**
+- 69 distinct swap calls were needed. 57 built; the other 12 are crypto (`crypto_not_supported`).
+- **Entries.** All 57 rendered exactly to the shown `$Entry`: 54 starting prices and 3 earlier fills.
+- **Lock ATR.** 54 used `scoring.thresholds`.
+- **The 1-decimal ATR rule (M7).** 45 of the 57 used a 1-decimal ATR for one leg — in every case the bought name's, since those bench candidates have no stored threshold. Every held name's ATR was exact. Every one of their verdicts held at every corner of the rounding box, so M7 left nothing unscored.
+
+**Changes after the method commit:** none to the script. This report's results sections, and the review record in §8, were added after the run.
 
 ## 3. Method (pre-declared)
 
@@ -128,15 +172,131 @@ When an ATR is known only to 0.1 (the body's rendering), the moment is also repl
 
 ## 4. The moments of record, M01–M29
 
-*Pending the scoring run.*
+**How to read the table.**
+- Each difference is the call **with** learning minus the call **without** it, so **positive means the learned call did better**.
+- Points are BaggerBomb points; price is percentage points (pp) of move. "(tie)" means within ±1 point or ±0.10 pp.
+- The moments are numbered by date, then by check time.
+- **Votes** are how many of the 8 repeats gave the usual call.
+- **Paragraph** is the SHA-256 prefix of the learned text, as in the replay. `9b800c54` and `8ef74043` are the two Trend Follower versions; `3c0b446b` is the Contrarian.
+- **End of battle**: every battle here is a one-session battle, so the end of the battle *is* the close. "Hypothetical" marks a slot the real battle traded again later that day: the replay does not follow that later trade.
+
+| # | Kind | Archetype | Mode | Paragraph | With learning (votes) | Without (votes) | Live battle did | Points, close | Price pp, close | Points, next check | Price pp, next check | End of battle | Coverage |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| M01 | stopped | Trend Follower | tiered | `8ef74043` | HOLD (8/8) | SWAP GOOGL→MU (5/8) | SWAP GOOGL→MU | −28 | −2.85 | −14 | −1.37 | as close | exact inputs |
+| M02 | stopped | Trend Follower | tiered | `9b800c54` | HOLD (5/8) | SWAP MSFT→PLTR (5/8) | HOLD | +3 | +0.33 | +5 | +0.48 | as close; **hypothetical** | exact inputs |
+| M03 | caused | Trend Follower | tiered | `9b800c54` | SWAP INTC→PLTR (8/8) | HOLD (8/8) | SWAP MSFT→CRWD (archetype exit) | −32 | −1.63 | −4 | −0.19 | as close | exact inputs |
+| M04 | caused | Trend Follower | tiered | `9b800c54` | SWAP DE→PLTR (6/8) | HOLD (8/8) | SWAP DE→PLTR | 0 (tie) | +0.09 (tie) | −1 (tie) | −0.06 (tie) | as close | exact inputs |
+| M05 | stopped | Trend Follower | tiered | `9b800c54` | HOLD (8/8) | SWAP META→PANW (8/8) | HOLD | −30 | −2.02 | −12 | −0.77 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M06 | stopped | Trend Follower | flat6 | `9b800c54` | HOLD (8/8) | SWAP PANW→EMR (6/8) | HOLD | +1 (tie) | +0.04 (tie) | +4 | +0.48 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M07 | changed pick | Trend Follower | flat6 | `9b800c54` | SWAP PANW→HUM (7/8) | SWAP PANW→EMR (6/8) | HOLD | −19 | −1.91 | −7 | −0.73 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M08 | stopped | Trend Follower | flat6 | `9b800c54` | HOLD (7/8) | SWAP AMD→DHR (7/8) | HOLD | +2 | +0.22 | +5 | +0.58 | as close; **hypothetical** | ATR to 0.1 for a leg; verdict stable at every corner |
+| M09 | stopped | Contrarian | tiered | `3c0b446b` | HOLD (7/8) | SWAP AMD→BE (8/8) | HOLD | +5 | +0.26 | +4 | +0.21 | as close; **hypothetical** | ATR to 0.1 for a leg; verdict stable at every corner |
+| M10 | stopped | Contrarian | tiered | `3c0b446b` | HOLD (7/8) | SWAP AMD→AMAT (4/8) | SWAP NVDA→BE (archetype exit) | −42 | −2.12 | −17 | −0.83 | as close; **hypothetical** | exact inputs |
+| M11 | stopped | Trend Follower | flat6 | `9b800c54` | HOLD (4/8) | SWAP PWR→PANW (5/8) | SWAP PWR→PANW | +13 | +1.22 | +6 | +0.61 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M12 | caused | Trend Follower | flat6 | `9b800c54` | SWAP MAR→SNOW (8/8) | HOLD (8/8) | SWAP MAR→SNOW | −10 | −1.01 | +3 | +0.29 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M13 | caused | Trend Follower | flat6 | `9b800c54` | SWAP GME→ACN (7/8) | HOLD (7/8) | HOLD | −4 | −0.44 | +13 | +1.28 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M14 | stopped | Trend Follower | flat6 | `9b800c54` | HOLD (8/8) | SWAP RKLB→MSFT (6/8) | HOLD | +16 | +1.62 | +11 | +1.11 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M15 | stopped | Trend Follower | flat6 | `9b800c54` | HOLD (6/8) | SWAP LRCX→AVGO (6/8) | HOLD | +7 | +0.72 | −4 | −0.39 | as close; **hypothetical** | ATR to 0.1 for a leg; verdict stable at every corner |
+| M16 | stopped | Contrarian | flat6 | `3c0b446b` | HOLD (7/8) | SWAP INTC→CTVA (7/8) | SWAP INTC→CTVA | −14 | −1.40 | +4 | +0.45 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M17 | stopped | Contrarian | flat6 | `3c0b446b` | HOLD (8/8) | SWAP AMAT→CEG (8/8) | HOLD | +21 | +2.12 | +5 | +0.52 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M18 | stopped | Contrarian | flat6 | `3c0b446b` | HOLD (8/8) | SWAP AMAT→MSFT (8/8) | HOLD | −2 | −0.21 | −3 | −0.30 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M19 | stopped | Contrarian | flat6 | `3c0b446b` | HOLD (7/8) | SWAP AMAT→MSFT (8/8) | HOLD | 0 (tie) | −0.01 (tie) | −4 | −0.30 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M20 | changed pick (different sold names) | Trend Follower | tiered | `9b800c54` | SWAP BTC→AMD (7/8) | SWAP CEG→AMD (8/8) | HOLD | `not_scored` | `not_scored` | `not_scored` | `not_scored` | — | a crypto leg (`crypto_not_supported`) |
+| M21 | stopped | Contrarian | flat6 | `3c0b446b` | HOLD (8/8) | SWAP AMAT→CSCO (4/8) | HOLD | −11 | −1.07 | −3 | −0.31 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M22 | stopped | Contrarian | flat6 | `3c0b446b` | HOLD (3/8) | SWAP AMAT→MSFT (8/8) | HOLD | +2 | +0.27 | 0 (tie) | +0.01 (tie) | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M23 | stopped | Trend Follower | tiered | `9b800c54` | HOLD (7/8) | SWAP CEG→AMD (8/8) | HOLD | +28 | +1.46 | +1 (tie) | +0.06 (tie) | as close | exact inputs |
+| M24 | changed pick | Contrarian | flat6 | `3c0b446b` | SWAP MOS→AMZN (7/8) | SWAP MOS→KMI (5/8) | SWAP MOS→AMZN | +1 (tie) | +0.09 (tie) | +2 | +0.17 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M25 | stopped | Contrarian | flat6 | `3c0b446b` | HOLD (8/8) | SWAP LIN→MSFT (7/8) | HOLD | −20 | −1.06 | −1 (tie) | −0.11 | as close; **hypothetical** | ATR to 0.1 for a leg; verdict stable at every corner |
+| M26 | changed pick | Trend Follower | flat6 | `9b800c54` | SWAP BE→COP (7/8) | SWAP BE→PM (6/8) | SWAP BE→COP | −4 | −0.47 | −11 | −1.04 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M27 | stopped | Contrarian | flat6 | `3c0b446b` | HOLD (7/8) | SWAP FMC→PM (5/8) | HOLD | 0 (tie) | +0.05 (tie) | +10 | +1.04 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M28 | changed pick | Trend Follower | flat6 | `9b800c54` | SWAP LLY→CVX (8/8) | SWAP LLY→PM (7/8) | SWAP LLY→CVX | +11 | +1.12 | +4 | +0.41 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+| M29 | stopped | Contrarian | flat6 | `3c0b446b` | HOLD (8/8) | SWAP AMAT→PM (5/8) | HOLD | +6 | +0.65 | −5 | −0.52 | as close | ATR to 0.1 for a leg; verdict stable at every corner |
+
+**Totals at the close** (moments scored on both measures: 28):
+
+| | Better | Worse | Tied | Sum | Sign test p |
+|---|---|---|---|---|---|
+| Points | 11 | 12 | 5 | −100 | 1.0 |
+| Price | 11 | 12 | 5 | −5.95 pp | 1.0 |
+
+**At the next check:**
+
+| | Better | Worse | Tied | Sum | Sign test p |
+|---|---|---|---|---|---|
+| Points | 13 | 11 | 4 | −9 | 0.84 |
+| Price | 13 | 12 | 3 | +0.77 pp | 1.0 |
+
+**By kind, at the close (points; price splits the same way):**
+
+| Kind | Moments | Better | Worse | Tied | Sum (points) |
+|---|---|---|---|---|---|
+| Stopped (learning held, without it the agent traded) | 20 | 10 | 7 | 3 | −43 |
+| Caused (learning traded, without it the agent held) | 4 | 0 | 3 | 1 | −46 |
+| Changed pick | 5 (4 scored) | 1 | 2 | 1 | −11 |
+
+**By paragraph, at the close (points):**
+
+| Paragraph | Archetype | Moments | Better | Worse | Tied | Sum |
+|---|---|---|---|---|---|---|
+| `9b800c54` | Trend Follower | 16 (15 scored) | 7 | 6 | 2 | −18 |
+| `3c0b446b` | Contrarian | 12 | 4 | 5 | 3 | −54 |
+| `8ef74043` | Trend Follower (the other version) | 1 | 0 | 1 | 0 | −28 |
+
+**By mode:** tiered 9 moments (8 scored): 3 better, 4 worse, 1 tied, −96 points. Flat6 20 moments: 8 better, 8 worse, 4 tied, −4 points. The tiered sums are larger because tier multipliers of 2× and 1.5× scale the points.
 
 ## 5. The second set, and the control
 
-*Pending the scoring run.*
+**The second set.** These are the main run's 4 learning-removed flips that the batch check did not reproduce. They set no label.
+
+| # | Kind | Archetype | Mode | Paragraph | With learning (votes) | Without (votes) | Live battle did | Points, close | Price pp, close | Points, next check | Price pp, next check | End of battle | Coverage |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| S01 | changed pick (different sold names) | Trend Follower | tiered | `9b800c54` | SWAP PANW→AMD (4/10) | SWAP NVDA→AMD (4/10) | HOLD | −22 | −0.92 | −5 | −0.24 | as close | exact inputs |
+| S02 | changed pick | Trend Follower | tiered | `9b800c54` | SWAP BTC→MPC (6/10) | SWAP BTC→CTVA (5/10) | HOLD | `not_scored` | `not_scored` | `not_scored` | `not_scored` | — | a crypto leg (`crypto_not_supported`) |
+| S03 | caused | Trend Follower | flat6 | `9b800c54` | SWAP LLY→CVX (5/10) | HOLD (10/10) | HOLD | −25 | −2.60 | −7 | −0.70 | as close; **hypothetical** | ATR to 0.1 for a leg; verdict stable at every corner |
+| S04 | caused | Trend Follower | flat6 | `9b800c54` | SWAP LLY→CVX (8/10) | HOLD (9/10) | HOLD | −20 | −2.11 | −10 | −1.09 | as close; **hypothetical** | ATR to 0.1 for a leg; verdict stable at every corner |
+
+- 3 of the 4 could be scored. On all 3 the learned call did worse: −67 points and −5.63 pp in total.
+- S02 has a crypto leg on both calls.
+- Read alone, the set is "too few to read".
+
+**The control: do trades beat holding anyway?** Every distinct trade that was the usual call of either condition in the batch check, scored against holding the same slot. A positive number means the trade beat holding.
+
+| Control | Trades | Scored | Trade better | Trade worse | Tied | Sum (points) | Sum (price) | Sign test p |
+|---|---|---|---|---|---|---|---|---|
+| Batch check (of record) | 64 | 53 | **19** | **29** | 5 | −129 | −15.56 pp | 0.19 |
+| — flat6 | 39 | 39 | 14 | 21 | 4 | −108 | −16.20 pp | 0.31 |
+| — tiered | 25 | 14 | 5 | 8 | 1 | −21 | +0.64 pp | 0.58 |
+| Main run (descriptive) | 66 | 54 | 18 | 31 | 5 | −204 | −21.83 pp | 0.085 |
+
+The 11 batch-check trades and the 12 main-run trades that were not scored all have a crypto leg.
+
+**Reading the control beside the label.**
+- In this period a trade lost to holding more often than it won.
+- So a paragraph that mostly *stops* trades would look helpful even if its content did not matter.
+- Here the stopped trades favour the learning (10 against 7) and the caused trades go against it (0 against 3). Both point the same way as the control, and neither is significant.
+- The control does not set the label, and it cannot explain away a label of "no clear effect": there is no effect for it to explain.
 
 ## 6. Limits
 
-*Pending the scoring run.*
+- **The delayed quote.** Both calls start from the price the agent was shown: the platform's quote, about 15–20 minutes delayed.
+  - **Measured on the 33 sales replayed for the set of record:** the shown price minus the 1-minute bar at the check had a median of −0.02%, ranging from −0.83% to +1.11%.
+  - **Lag:** the minute whose price best matches the shown one sat a median 16 minutes before the check (3 to 39).
+  - The hold path and the trade start from the same vintage of quote, but each stock's own lag differs.
+- **A one-step replay.** Both paths run from the check to the day's close. A later trade in the same slot is not replayed (the tape's own label). Eight figures are marked hypothetical for that reason: M02, M08, M09, M10, M15, M25, S03 and S04.
+- **The call as proposed.** Each usual call is scored as if it had been carried out. Guardrails, the risk manager, the validator and the executor were not run, as in the replay. The live battle's own action at each check is shown beside it. At M03 and M10 it was a rule exit, taken before the prompt was built, that matches neither call.
+- **Small numbers.** 28 moments scored, 23 of them not tied. At 23, the sign test needs a split of at least 17 to 6 to reach p < 0.05. Several usual calls are pluralities rather than majorities: M22 held on 3 of 8 votes, M11 on 4 of 8.
+- **Founder and tester play only.** It comes from a pre-launch product, 29 one-session battles between 22 Sep and 8 Oct 2026. The learning is three paragraphs: two Trend Follower versions and one Contrarian.
+- **The two measures are nearly one.** Unless a badge line is crossed, points are about ten times the price move, times the tier multiplier. The tie bands were set before this was seen, and they line up for flat6 (1 point ≈ 0.10 pp). Agreement between the two measures is therefore not two pieces of evidence.
+- **Flat6 has no tape precedent.** The tape never replays flat6 battles (BA-3), and 20 of the 29 moments are flat6.
+  - **What validated:** for flat6, the scoring is the same imported replay with the 1.0 stamp the live evaluator uses. Its sale arithmetic matched the platform on all 16 flat6 model swaps.
+  - **What did not:** its hold and swap paths could not be checked against stored numbers.
+  - **Layer 2 is small:** it covers only the 4 tiered model swaps the tape replayed on these days.
+- **ATR to one decimal.** 45 of 57 swap calls read at least one ATR only to 0.1. Every verdict held at every corner of that rounding (M7).
+- **End of battle.** For every moment it is the session close, so it adds no figure of its own.
+- **Not scored, with reasons:**
+  - **M20 and S02** — a crypto leg. M20's learned call sells BTC; S02 sells BTC on both calls (`crypto_not_supported`).
+  - **The control** — 11 batch-check trades and 12 main-run trades, all for a crypto leg.
+  - **Nothing else.** No moment lost its points to a missing bar, a missing input, a previous-close baseline, or the ATR rule.
 
 ## 7. No recommendation
 
