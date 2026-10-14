@@ -30,7 +30,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   FROZEN_NOW,
   makeTickBattle, makePriceTable, makeRankingsDoc, makeTechDocs, makeIntradayCandles,
-  makeHoldResult, makeSwapResult, makeToolUseResponse, makeTickDb,
+  makeSwapResult, makeToolUseResponse, makeTickDb,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 
 const mocks = vi.hoisted(() => ({
@@ -224,13 +224,19 @@ describe('the RISK STATUS annotation on a real stagnation SWAP_OUT', () => {
     expect(entry.validationErrors.join(' | ')).toContain('bench_not_positive');
   });
 
-  it('a "can swap" verdict never annotates: BTC stagnant but ETH clears the model\'s floor (0.4) and not the rotation\'s (0.5)', async () => {
+  it('a "can swap" verdict never annotates: BTC stagnant but ETH clears the model\'s floor (0.4) and not the rotation\'s (0.5) — and the gate agrees: the model\'s swap executes', async () => {
     // BTC −0.5, ATR 5: the rotation needs ETH ≥ +2.00; the model's swap needs ≥ +1.50.
-    const { live } = await runTick(cryptoBattle({ cronState: stagnantBtc(67450) }), makeHoldResult(), pricesWith({ eth: 1.8, btc: -0.5 }));
-    expect(executeSwapServerMock).not.toHaveBeenCalled();
+    // The rotation is vetoed before the prompt; the model's own BTC → ETH then
+    // clears the gate's haiku_decision floor — a gate run at the rotation's
+    // reason would refuse it (review RV-23, refuter E8(d)).
+    const { live, entry } = await runTick(cryptoBattle({ cronState: stagnantBtc(67450) }), BTC_TO_ETH, pricesWith({ eth: 1.8, btc: -0.5 }));
     expect(linesOf(live)).toEqual([CAN('BTC', 'ETH', '+1.80')]);
     expect(live).toContain('\nBTC: SWAP_OUT (stagnation)\n');
     expect(live).not.toContain(ANNOTATION);
+    expect(executeSwapServerMock).toHaveBeenCalledTimes(1);
+    expect(executeSwapServerMock.mock.calls[0][5].symbol).toBe('ETH');
+    expect(entry.decision).toBe('SWAP');
+    expect(entry.downgraded).toBe(false);
   });
 });
 

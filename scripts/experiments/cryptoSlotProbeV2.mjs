@@ -67,6 +67,8 @@ const PROJECT_ROOT = path.resolve(HERE, '..', '..');
 const SOURCE_DIR = path.join(os.homedir(), 'ft-experiment-exhibits', 'archetype-ablation-run');
 const RUN_DIR = path.join(os.homedir(), 'ft-experiment-exhibits', 'crypto-slot-probe-v2');
 const SOURCES_SHA256 = '6fb95a74bcbdd8ae59580b48ec8896722938d07ddc1be4a58c1b463202144437';
+/** records.json (archetype, gate cause, recorded tokens) — pinned too (review E4), as of this build's plan. */
+const RECORDS_SHA256 = '8bc76a9e20d03c7ec3664ac7d118595e18d417ad2a0dd568e5b0151772436fe9';
 /** The bars (build prompt §7.4 + ruling R-f), applied as written. */
 export const BARS = Object.freeze({
   main: { cryptoToStockMax: 2, cryptoToStockRefusedMax: 0, cryptoToCryptoOnCannotMax: 2 },
@@ -423,7 +425,9 @@ function loadSource() {
   const raw = readFileSync(file, 'utf8');
   const sha = sha256Utf8(raw);
   if (sha !== SOURCES_SHA256) stop(`sources.jsonl SHA-256 is ${sha}, not the Phase 0's ${SOURCES_SHA256}`);
-  return { sources: raw.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l)), records: readJson(path.join(SOURCE_DIR, 'records.json')), sha };
+  const recordsRaw = readFileSync(path.join(SOURCE_DIR, 'records.json'), 'utf8');
+  if (sha256Utf8(recordsRaw) !== RECORDS_SHA256) stop(`records.json SHA-256 is ${sha256Utf8(recordsRaw)}, not ${RECORDS_SHA256}`);
+  return { sources: raw.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l)), records: JSON.parse(recordsRaw), sha };
 }
 
 const liveOf = (req) => (typeof req.messages?.[2]?.content === 'string' ? req.messages[2].content : null);
