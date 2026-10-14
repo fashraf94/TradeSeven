@@ -207,7 +207,7 @@ export function renderCryptoSlotCheckLine(battle, verdict, formatPct) {
 /**
  * The RISK STATUS annotation: when the verdict is "you cannot swap", the held
  * crypto's own `<HELD>: SWAP_OUT (<reason>)` line — matched on the rendered
- * block, i.e. on exactly what the model reads (§9) — gains
+ * block, i.e. on exactly what the model reads (BUILD_RULES §9) — gains
  * CRYPTO_SLOT_ANNOTATION. Any other input comes back unchanged: no block, a
  * "can swap" or unrenderable verdict, no SWAP_OUT line for the held crypto,
  * or more than one candidate line (never guess). A stock's line is never

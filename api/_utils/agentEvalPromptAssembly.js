@@ -1219,7 +1219,7 @@ ${triggerLines}`);
   // Crypto Slot v2: the CRYPTO SLOT THIS CHECK line takes this slot —
   // immediately before RISK STATUS when that block renders — and RISK STATUS
   // passes through the annotation. The line prints the bench crypto's daily
-  // move with formatPct, the BENCH table's own formatter (§9). Null and the
+  // move with formatPct, the BENCH table's own formatter (BUILD_RULES §9). Null and the
   // block unchanged while dark, for flat6, or with no verdict on momentumData.
   const cryptoSlotLine = renderCryptoSlotCheckLine(battle, momentumData?.cryptoSlotVerdict, formatPct);
   if (cryptoSlotLine) parts.push(cryptoSlotLine);

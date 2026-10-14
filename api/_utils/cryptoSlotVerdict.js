@@ -13,26 +13,35 @@
 //   LOCK      the gate's own predicate: lockedPositions.has(symbolOut)
 //             (agent-evaluate.js, "Block Haiku from swapping out LOCKED positions").
 //   cooldown  the fenced validator, validateTradeDecision (agentSwapExecution.js),
-//             called with VERDICT_DECISION. For the held crypto and the bench
-//             crypto every other predicate it applies passes by construction
-//             (in the portfolio; in the bench; not self; not already held; both
-//             crypto; conviction 70; a hypothesis of 10+ characters), so a
-//             refusal is the cooldown. That is CONFIRMED, never assumed: the
-//             validator is run again with the bench crypto's cooldown cleared,
-//             and only a pass there names the cooldown. A refusal that
-//             survives the clearing is structural (a malformed book) → no line.
-//             The error text is never read (ruling R-c).
+//             called with verdictDecision(). On a well-formed book every other
+//             predicate it applies passes for the held crypto and the bench
+//             crypto (in the portfolio; in the bench; not self; not already
+//             held; both crypto; conviction 70; a hypothesis of 10+
+//             characters), so a refusal there is the cooldown. That is
+//             CONFIRMED, never assumed: the validator is run again with the
+//             bench crypto's cooldown cleared, and only a pass there names the
+//             cooldown. A refusal that survives the clearing means a malformed
+//             book (e.g. a bench crypto without isCrypto) → no line. The error
+//             text is never read (ruling R-c).
 //   not up /  clearsHurdleFloor (agentRiskManager.js) with the gate's own
 //   margin    arguments: reason 'haiku_decision', the dial-clamped
 //             archetypeConfig, and resolveHurdleAtr(held, freshHurdleAtrMap,
 //             assetScores' baseATR ?? 2.5) as the ATR. blockReason
-//             'bench_not_positive' → not up; 'below_floor' / 'margin_invalid'
-//             → margin. Any other (future) block reason → no line.
+//             'bench_not_positive' → not up; 'below_floor' → margin;
+//             'margin_invalid' (an ATR that is not positive — the margin cannot
+//             be compared, and the gate refuses; the scorer turns a missing or
+//             0 baseATR into 2.5, so only a malformed negative one gets here)
+//             → margin too: the bench crypto is up and does not clear the
+//             floor. Any other (future) block reason → no line.
 //   swap cap  getRecentSwapCount (agentRiskManager.js) with the gate's own
 //             arguments, and the gate's own inline comparison — the one
 //             expression with no function to call, pinned by a source-scan
 //             row in cryptoSlotVerdict.test.js so a change to the gate fails a
 //             test (ruling R-c: never extract it — that would edit the gate).
+//             It counts what the gate counts: every swap in the window but the
+//             emergency and user-directive ones — the platform's stagnation
+//             rotations and approved meeting legs included, not only the
+//             agent's own.
 //
 // ORDER (ruling R-b): the gates' order at HEAD — LOCK → the validator →
 // the hurdle (bench-positive, then the margin) → the cap. The first that
@@ -40,17 +49,31 @@
 //
 // NOT COVERED (each the model's own, or out of the line's scope):
 //   - conviction ≥ 70 and the hypothesis floor — the model's own fields;
-//   - the distressed veto — stockRegimes is empty for crypto (no
-//     stockTechnicalScores doc; 144/144 stored checks read "unknown");
-//   - a player's stop-loss / trailing-stop / profit-target guardrail, which
-//     can still move the crypto after the model answers, and the
-//     maxSectorWeight guardrail — the protective-stop class, a documented
-//     exception (ruling R-a). The line speaks of what the agent can do.
+//   - the distressed veto — an OPERATIONAL fact, not a structural one: no
+//     stockTechnicalScores doc exists for any crypto symbol today (none is in
+//     the stock universe; 144/144 stored checks read "unknown"), so no crypto
+//     regime can be 'distressed'. A doc under a crypto symbol would arm it;
+//   - the player's guardrails — the protective-stop class, a documented
+//     exception (ruling R-a): a stop-loss / trailing-stop / profit-target
+//     breach on the held crypto can still swap it after the model answers,
+//     past the hurdle and the cap — whether the model held, or proposed the
+//     same swap (applyGuardrails then reinforces it under the guardrail's
+//     reason); a breach on ANOTHER position takes the check's one swap; a
+//     maxSectorWeight guardrail can refuse a crypto → crypto swap whose
+//     incoming crypto reads "Unknown" (F1). The line speaks of what the agent
+//     can do, never of what the engine will do;
+//   - refusals after the gates: the executor's swap-identity check (at
+//     'enforce'; 'shadow' today) and a battle that is no longer active.
 //
-// WHY "CAN" HOLDS AT GATE TIME: between this call and the gates nothing makes
-// them stricter — the cap count only falls (no trade lands in between; old
-// ones age out), a cooldown only expires, lockedPositions is not written after
-// the post-swap prune, and prices is the same object.
+// TIMING: the verdict is taken before the prompt build; the gates run after
+// the model call (seconds later). Between the two nothing writes battle,
+// prices, lockedPositions, assetScores or freshHurdleAtrMap, so "can" holds at
+// gate time: the cap count can only fall (no trade lands in between; old ones
+// age out — getRecentSwapCount's future-guard would only matter for a trade
+// stamped ahead of this clock by another instance) and a cooldown can only
+// expire. The other direction is not monotone and is safe: on a window-edge
+// or cooldown-expiry tick a "cannot" can become passable by gate time — the
+// agent holds, and the swap is forgone for that check.
 //
 // DARK: computeCryptoSlotVerdict returns null while CRYPTO_SLOT_PROMPT_ENABLED
 // is off, and the cron attaches nothing — momentumData stays byte-identical.
@@ -106,7 +129,7 @@ function withoutBenchCryptoCooldown(battle) {
  * @param {Object} p.archetypeConfig   - the dial-clamped config the gates use
  * @param {Map} p.freshHurdleAtrMap
  * @param {Array} p.assetScores
- * @param {number} p.nowMs             - the cap window's anchor (the gate uses Date.now())
+ * @param {number} p.nowMs             - the cap window's anchor (the gate uses Date.now(); computeCryptoSlotVerdict passes its own)
  * @returns {null | { held: string, bench: string, canSwap: boolean, reason: string|null, benchDailyPct: number }}
  *   null when there is no line to show: a flat6 battle, not exactly one held
  *   crypto, no bench crypto, or a refusal the line has no words for.
@@ -162,13 +185,16 @@ export function computeCryptoSlotVerdictForced({ battle, prices, lockedPositions
 
 /**
  * The tick-side entry point: null while CRYPTO_SLOT_PROMPT_ENABLED is off
- * (read at call time), and null on any fault — a verdict that cannot be
- * computed shows no line rather than a guessed one, and never costs the tick.
+ * (read at call time — and nothing else runs, not even the clock read, so a
+ * dark tick does exactly what it did before), and null on any fault — a
+ * verdict that cannot be computed shows no line rather than a guessed one, and
+ * never costs the tick. The cap window is anchored at Date.now() taken here,
+ * after the flag, unless the caller passes `nowMs` (tests).
  */
 export function computeCryptoSlotVerdict(args) {
-  if (!CRYPTO_SLOT_PROMPT_ENABLED) return null;
   try {
-    return computeCryptoSlotVerdictForced(args);
+    if (!CRYPTO_SLOT_PROMPT_ENABLED) return null;
+    return computeCryptoSlotVerdictForced({ ...args, nowMs: args?.nowMs ?? Date.now() });
   } catch (err) {
     console.warn('[CryptoSlotVerdict] verdict failed — no line this check:', err?.message || err);
     return null;

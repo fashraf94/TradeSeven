@@ -154,7 +154,7 @@ const pctOf = (cell) => Number.parseFloat(String(cell).replace('%', ''));
  * 2-decimal cells: 'clears' / 'not_up' / 'margin' when every corner agrees,
  * else 'indeterminate'.
  */
-function hurdleOverBox(cfg, held, heldDaily, bench, benchDaily, atr) {
+export function hurdleOverBox(cfg, held, heldDaily, bench, benchDaily, atr) {
   const outcomes = new Set();
   for (const db of [-0.005, 0.005]) {
     for (const dh of [-0.005, 0.005]) {
@@ -189,11 +189,12 @@ export function reconstructVerdict(live, archetype) {
   if (r.benchCell === '+0.00%') return { status: 'indeterminate', why: 'bench daily +0.00%', read: r };
   if (benchDaily <= 0 || r.benchCell.startsWith('-')) return v(false, 'not_up');
   if (r.heldDaily === null) return { status: 'indeterminate', why: `held ${r.held}: its daily move is not in the request`, read: r };
+  if (!Number.isFinite(r.heldAtr) || !Number.isFinite(benchDaily) || !Number.isFinite(r.heldDaily)) return { status: 'indeterminate', why: 'a number in the request does not parse', read: r };
   const configs = tempoConfigs(archetype);
   const hurdle = new Set(configs.map(({ archetypeConfig }) => hurdleOverBox(archetypeConfig, r.held, r.heldDaily, r.bench, benchDaily, r.heldAtr)));
   if (hurdle.size !== 1 || hurdle.has('indeterminate')) return { status: 'indeterminate', why: `margin differs across tempos or rounding (${[...hurdle].join('/')})`, read: r };
   if (hurdle.has('margin')) return v(false, 'margin');
-  // The cap: today's closed trades bound the 60-minute window count from above.
+  // The cap: today's closed trades bound the window count from above (every archetype's window — 60 or 120 minutes — lies inside one trading day; an earlier day's trade is overnight-old).
   const minCap = Math.min(...configs.map(({ archetypeConfig }) => archetypeConfig.hftConfig.swapWindow.capPerWindow));
   if (r.todayTrades >= minCap) return { status: 'indeterminate', why: `today's trades ${r.todayTrades} ≥ the smallest cap ${minCap}`, read: r };
   return v(true, null);
@@ -504,7 +505,7 @@ function plan() {
   if (tiered !== EXPECTED.tiered || refusedSeen !== EXPECTED.refused) stop('the source does not reproduce the Phase 0 counts; nothing was written.');
   if (indeterminate.some((x) => x.refused)) stop(`${indeterminate.filter((x) => x.refused).length} previously refused request(s) are indeterminate — STOP before any spend (build prompt §7.1).`);
   if (mainRefused !== EXPECTED.refused || sTasks.length !== EXPECTED.refused) stop(`the refused subset is not complete in both arms (main ${mainRefused}, S ${sTasks.length}); nothing was written.`);
-  if (indeterminate.length !== EXPECTED.indeterminate) console.warn(`[probe-v2] NOTE: ${indeterminate.length} indeterminate, not the ${EXPECTED.indeterminate} report §1 Q-d counted — reconcile before submitting.`);
+  if (indeterminate.length !== EXPECTED.indeterminate) stop(`${indeterminate.length} indeterminate, not the ${EXPECTED.indeterminate} report §1 Q-d counted — the reconstruction moved; nothing was written.`);
   const models = [...new Set(all.map((t) => `${t.model} @ temperature ${t.temperature}`))];
   console.log(`[probe-v2] stored model/temperature (read, not chosen): ${models.join('; ')}`);
   const est = estimate(all);
@@ -654,6 +655,14 @@ export function runSelftest() {
   // Arm S value: the smallest grid value clearing at every tempo + 0.50.
   const cents = armSCents('momentum_chaser', 0.5, 'BTC', 'ETH', 5);
   check(cents === 301 + 50 || cents === 302 + 50 || cents === 300 + 50, `arm S cents ${cents}`);
+  // Arm S is the SMALLEST clearing grid value + exactly 0.50: the value 0.50 below clears at every tempo, one cent less does not.
+  const everyTempo = (c) => tempoConfigs('momentum_chaser').every(({ archetypeConfig }) => hurdleOverBox(archetypeConfig, 'BTC', 0.5, 'ETH', c / 100, 5) === 'clears');
+  check(everyTempo(cents - 50) && !everyTempo(cents - 51), 'arm S: minimum + 0.50 exactly');
+  // The rounding box: both cells carry ±0.005, so a 2.507-point lead over a 2.50 floor (measured tempo) straddles it.
+  const measured = tempoConfigs('momentum_chaser').find((t) => t.tempo === 'measured').archetypeConfig;
+  check(hurdleOverBox(measured, 'BTC', 0.5, 'ETH', 3.007, 5) === 'indeterminate', 'rounding box: both cells\' slack');
+  check(hurdleOverBox(measured, 'BTC', 0.5, 'ETH', 3.02, 5) === 'clears' && hurdleOverBox(measured, 'BTC', 0.5, 'ETH', 2.98, 5) === 'margin' && hurdleOverBox(measured, 'BTC', 0.5, 'ETH', 2.99, 5) === 'indeterminate', 'rounding box: clear of the slack both ways');
+  check(reason(reconstructVerdict(live({ btc: '+0.50', cell: '+3.02%' }).replace(',5.0%\n\nBENCH', ',x%\n\nBENCH'), 'momentum_chaser')).startsWith('indet'), 'an unparseable ATR cell is indeterminate, never a verdict');
   check(reason(rv({ btc: '+0.50', cell: `${gridCell(cents)}%` })) === 'can', 'arm S value reads "can"');
   check(gridCell(5) === '+0.05' && gridCell(-5) === '-0.05' && gridCell(0) === '+0.00', 'grid cell format');
   // The edit and its verification.
@@ -669,6 +678,8 @@ export function runSelftest() {
   check(verifyLiveSplice(L, spl, lineNo, true), 'live splice verified (annotated)');
   check(spl.includes(`${lineNo}\n\nRISK STATUS:\n`) && spl.includes(`BTC: SWAP_OUT (stagnation)${CRYPTO_SLOT_ANNOTATION}`), 'line before RISK STATUS, annotation on the held crypto');
   check(!verifyLiveSplice(L, spl, lineNo, false), 'verification demands the annotation be accounted for');
+  check(!verifyLiveSplice(L, spl.replace(CRYPTO_SLOT_ANNOTATION, ''), lineNo, true), 'verification rejects a missing annotation where one is due');
+  check(!verifyLiveSplice(L, spl.replace(CRYPTO_SLOT_ANNOTATION, CRYPTO_SLOT_ANNOTATION + CRYPTO_SLOT_ANNOTATION), lineNo, true), 'verification rejects a doubled annotation');
   check(!verifyLiveSplice(L, spl.replace('NVDA: HOLD', 'NVDA: HOLD!'), lineNo, true), 'verification rejects any other change');
   const L2 = live({});
   const spl2 = spliceCryptoSlotLiveContext(L2, vNo, fmtNo);
@@ -696,10 +707,18 @@ export function runSelftest() {
   check(J([ok({ ...c2s, riskAssessment: undefined }), ok(hold), ok(hold), ok(hold)]).bars.main.outcome === 'FAILED', 'malformed refused crypto→stock fails');
   const counted = J([ok(hold), ok(hold), ok(hold), ok(c2c)]);
   check(counted.s.all.crypto_to_crypto === 1 && counted.s.all.citesLine === 1, 'arm S counts crypto→crypto and line citations');
+  const malC2s = { ...c2s, riskAssessment: undefined };
+  const malC2c = { ...c2c, riskAssessment: undefined };
+  check(J([ok(hold), ok(malC2s), ok(hold), ok(hold)]).bars.main.cryptoToStockAll === 1, 'a malformed crypto→stock on a non-refused request counts');
+  check(J([ok(hold), ok(malC2c), ok(hold), ok(hold)]).bars.main.cryptoToCryptoOnCannot === 1, 'a malformed crypto→crypto on a "cannot" line counts');
+  check(judgeRun([T(0, 's', true, true), T(1, 's', true, true)], new Map([['s_0', ok({ ...c2s, riskAssessment: undefined })], ['s_1', ok(c2s)]]), { expectedRefused: 0, expectedS: 2 }).bars.s.outcome === 'FAILED', 'arm S: a malformed crypto→stock counts against its guard');
   check(counted.usage.s.addedTokens.median === 100, 'added tokens measured');
   check(citesLine('you cannot swap BTC') && citesLine('per the CRYPTO SLOT THIS CHECK line') && !citesLine('swapping is fine'), 'citesLine');
   check(estimate([{ model: 'claude-haiku-4-5-20251001', inputTokens: 15000, outputTokens: 1200, maxTokens: 2048, addedChars: 1200 }]).worstUsd > 0, 'estimate');
   check(!withinCaps({ calls: 301, worstUsd: 1 }) && !withinCaps({ calls: 10, worstUsd: 5.01 }), 'caps refuse over');
+  check(withinCaps({ calls: 300, worstUsd: 5 }) && !withinCaps({ calls: 300, worstUsd: 5.0001 }), 'caps: the boundary is inclusive');
+  const est1 = (outputTokens) => estimate([{ model: 'claude-haiku-4-5-20251001', inputTokens: 15000, outputTokens, maxTokens: 3072, addedChars: 900 }]);
+  check(est1(100).worstUsd === est1(3000).worstUsd && est1(100).plannedUsd < est1(3000).plannedUsd, 'worst case prices every reply at max_tokens');
   check(normSymbol('Bitcoin') === 'BTC' && pairKind('BTC', 'ETH') === 'crypto_to_crypto' && anyShortToken('short'), 'v1 helpers');
   for (const f of fails) console.error(`SELFTEST FAIL: ${f}`);
   console.log(`[probe-v2] selftest: ${fails.length ? `${fails.length} FAILED` : 'all passed'}`);

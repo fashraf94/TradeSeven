@@ -2776,7 +2776,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // Attached ONLY when there is a verdict: while CRYPTO_SLOT_PROMPT_ENABLED
     // is off the key is never set, so momentumData — and the shadow capture
     // that carries it — is byte-identical. Not on an unreadable book (F1b).
-    const cryptoSlotVerdict = refreshFailure ? null : computeCryptoSlotVerdict({ battle, prices, lockedPositions, archetypeConfig, freshHurdleAtrMap, assetScores, nowMs: Date.now() });
+    const cryptoSlotVerdict = refreshFailure ? null : computeCryptoSlotVerdict({ battle, prices, lockedPositions, archetypeConfig, freshHurdleAtrMap, assetScores });
     if (cryptoSlotVerdict) momentumData.cryptoSlotVerdict = cryptoSlotVerdict;
 
     // ---- Call Haiku ----

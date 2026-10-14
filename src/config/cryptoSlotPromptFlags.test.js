@@ -1,9 +1,11 @@
 // src/config/cryptoSlotPromptFlags.test.js
 //
 // Crypto Slot paragraph — DARK pin (BUILD_RULES §2). CRYPTO_SLOT_PROMPT_ENABLED
-// ships FALSE on purpose: the tiered eval prompt's YOUR CRYPTO SLOT block is
-// built dark and flips in its own commit after the replay probe reads clean
-// and Flash signs off (docs/audits/20261014_BUILD_CRYPTO_SLOT_PROMPT.md §6–§7).
+// ships FALSE on purpose: the tiered eval prompt's YOUR CRYPTO SLOT block and
+// (Crypto Slot v2) the live context's CRYPTO SLOT THIS CHECK line and RISK
+// STATUS annotation are built dark and flip in their own commit after probe v2
+// reads clean and Flash signs off (docs/audits/20261014_BUILD_CRYPTO_SLOT_CHECK_LINE.md
+// §7–§8; the paragraph's first build: docs/audits/20261014_BUILD_CRYPTO_SLOT_PROMPT.md).
 //
 // This row is a tripwire in BOTH directions. An accidental flip to true would
 // change every tiered eval prompt; the flag-pin guard turns that into a loud

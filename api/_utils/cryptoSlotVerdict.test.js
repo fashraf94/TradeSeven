@@ -27,10 +27,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const { flagState } = vi.hoisted(() => ({ flagState: { crypto: false } }));
+const { flagState } = vi.hoisted(() => ({ flagState: { crypto: false, throws: false } }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  get CRYPTO_SLOT_PROMPT_ENABLED() { return flagState.crypto; },
+  get CRYPTO_SLOT_PROMPT_ENABLED() { if (flagState.throws) throw new Error('flag unreadable'); return flagState.crypto; },
 }));
 vi.mock('./firebaseAdmin.js', () => ({ getFirebaseAdmin: () => ({}) }));
 
@@ -111,6 +111,7 @@ const reasonOf = (v) => (v === null ? null : v.canSwap ? 'can' : v.reason);
 
 afterEach(() => {
   flagState.crypto = false;
+  flagState.throws = false;
   vi.restoreAllMocks();
 });
 
@@ -119,7 +120,7 @@ afterEach(() => {
 describe('the verdict — each check, through the real gate functions', () => {
   it('the fixed decision the validator is asked about (ruling R-c): SWAP, held out, bench in, conviction 70, a 10+ character hypothesis', () => {
     const d = verdictDecision('BTC', 'ETH');
-    expect(d).toEqual({ decision: 'SWAP', symbolOut: 'BTC', symbolIn: 'ETH', conviction: 70, hypothesis: d.hypothesis });
+    expect(d).toEqual({ decision: 'SWAP', symbolOut: 'BTC', symbolIn: 'ETH', conviction: 70, hypothesis: 'Crypto slot verdict: the held crypto for the bench crypto.' });
     expect(d.hypothesis.trim().length).toBeGreaterThanOrEqual(10);
     // On a clean book every other predicate the validator applies passes —
     // the premise behind "a refusal is the cooldown".
@@ -168,6 +169,9 @@ describe('the verdict — each check, through the real gate functions', () => {
     expect(reasonOf(run({ battle: book({ trades: [...four.slice(0, 3), swap('old', 61)] }) }))).toBe('can');
     expect(reasonOf(run({ battle: book({ trades: [...four.slice(0, 3), swap('e', 5, 'vwap_failure')] }) }))).toBe('can');
     expect(reasonOf(run({ battle: book({ trades: [...four.slice(0, 3), swap('f', 5, 'guardrail_profitTarget')] }) }))).toBe('can');
+    // A disabled window caps nothing — the gate's `swCfg?.enabled &&`.
+    const noWindow = { ...ANALYST, hftConfig: { ...ANALYST.hftConfig, swapWindow: { ...ANALYST.hftConfig.swapWindow, enabled: false } } };
+    expect(reasonOf(run({ battle: book({ trades: four }), archetypeConfig: noWindow }))).toBe('can');
     // The window is anchored at nowMs — the gate's own Date.now().
     expect(reasonOf(run({ battle: book({ trades: four }), nowMs: NOW + 30 * 60000 }))).toBe('can');
   });
@@ -234,6 +238,31 @@ describe('the verdict — the flag and the tick-side wrapper', () => {
     expect(computeCryptoSlotVerdict(args())).toEqual(computeCryptoSlotVerdictForced(args()));
     flagState.crypto = false;
     expect(computeCryptoSlotVerdict(args())).toBeNull();
+  });
+
+  it('dark: nothing runs, not even the clock read — a dark tick does exactly what it did before', () => {
+    flagState.crypto = false;
+    const now = vi.spyOn(Date, 'now');
+    const { nowMs, ...noClock } = args();
+    expect(computeCryptoSlotVerdict(noClock)).toBeNull();
+    expect(now).not.toHaveBeenCalled();
+  });
+
+  it('lit, without nowMs: the cap window is anchored at Date.now() taken after the flag', () => {
+    flagState.crypto = true;
+    vi.spyOn(Date, 'now').mockReturnValue(NOW);
+    const four = [swap('a', 5), swap('b', 10), swap('c', 20), swap('d', 59)];
+    const { nowMs, ...noClock } = args();
+    expect(reasonOf(computeCryptoSlotVerdict({ ...noClock, battle: book({ trades: four }) }))).toBe('swap_cap');
+    Date.now.mockReturnValue(NOW + 2 * 60000);
+    expect(reasonOf(computeCryptoSlotVerdict({ ...noClock, battle: book({ trades: four }) }))).toBe('can');
+  });
+
+  it('an unreadable flag is no line, never a thrown tick', () => {
+    flagState.throws = true;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(computeCryptoSlotVerdict(args())).toBeNull();
+    expect(console.warn).toHaveBeenCalled();
   });
 
   it('a fault is no line, never a thrown tick', () => {
@@ -325,7 +354,7 @@ describe('source pins — where the cron computes and attaches the verdict', () 
   const at = (s) => { const i = CRON_RAW.indexOf(s); expect(i, s).toBeGreaterThan(-1); return i; };
 
   it('after the forced-exit rebuild, the proposal / meeting re-reads and the trigger gate; before the prompt build', () => {
-    const call = at('const cryptoSlotVerdict = refreshFailure ? null : computeCryptoSlotVerdict({ battle, prices, lockedPositions, archetypeConfig, freshHurdleAtrMap, assetScores, nowMs: Date.now() });');
+    const call = at('const cryptoSlotVerdict = refreshFailure ? null : computeCryptoSlotVerdict({ battle, prices, lockedPositions, archetypeConfig, freshHurdleAtrMap, assetScores });');
     expect(CRON_RAW.split('computeCryptoSlotVerdict(')).toHaveLength(2);
     expect(at('Rebuilt decision snapshot after')).toBeLessThan(call);
     expect(at('await handleGameplanMeeting(db, battleRef, battle')).toBeLessThan(call);

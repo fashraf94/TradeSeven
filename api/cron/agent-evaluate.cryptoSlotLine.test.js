@@ -112,6 +112,7 @@ const stagnantBtc = (price) => ({ stagnationTicks: { BTC: 10 }, lastTickPrice: {
 const BTC_TO_ETH = makeSwapResult({ symbolOut: 'BTC', symbolIn: 'ETH', tier: 'support', conviction: 90, status_feed_update: 'Rotating BTC → ETH.' });
 
 async function runTick(battle, toolInput, prices) {
+  const callsBefore = mocks.create.mock.calls.length;
   mocks.getStockAnalysisData.mockImplementation(async (symbol) => (prices[symbol] ? { price: prices[symbol], daily: [] } : {}));
   mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
   mocks.create.mockImplementation(async () => makeToolUseResponse(toolInput));
@@ -119,7 +120,7 @@ async function runTick(battle, toolInput, prices) {
   const summary = { evaluated: 0, held: 0, triggered: 0, skipped: 0, swapped: 0 };
   await processAgentBattle(db, battle, summary, Date.now(), new Map(), { everEnabled: false });
   const finalUpdate = db.__updates.find((u) => Array.isArray(u.evaluations)) || null;
-  const request = mocks.create.mock.calls[0]?.[0] ?? null;
+  const request = mocks.create.mock.calls[callsBefore]?.[0] ?? null;
   return {
     entry: finalUpdate ? finalUpdate.evaluations.at(-1) : null,
     request,
@@ -189,6 +190,22 @@ describe('verdict = gate — the line the model is shown, and what the gates do 
       expect(entry.validationErrors.join(' | ')).toContain(heldBy);
       expect(entry.validationErrors).toHaveLength(1); // the FIRST failing gate, and only it, is what production records
     }
+  });
+
+  it('the tempo dial: at "measured" the cap is 3 per 60 min — the verdict uses the clamped config the gate uses, and they agree', async () => {
+    const measured = () => {
+      const b = cryptoBattle({ trades: [recentSwap('t1', 5), recentSwap('t2', 15), recentSwap('t3', 25)] });
+      return { ...b, agentContext: { ...b.agentContext, dials: { tempo: 'measured' } } };
+    };
+    const { entry, live } = await runTick(measured(), BTC_TO_ETH, pricesWith({ eth: 6.0 }));
+    expect(linesOf(live)).toEqual([CANNOT('BTC', 'you have reached the swap limit for this window')]);
+    expect(executeSwapServerMock).not.toHaveBeenCalled();
+    expect(entry.validationErrors).toEqual([expect.stringContaining('Swap cap reached (3/60min)')]);
+    // Control: the same three swaps at the standard tempo (cap 4) — you can swap, and it executes.
+    executeSwapServerMock.mockClear();
+    const standard = await runTick(cryptoBattle({ trades: [recentSwap('t1', 5), recentSwap('t2', 15), recentSwap('t3', 25)] }), BTC_TO_ETH, pricesWith({ eth: 6.0 }));
+    expect(linesOf(standard.live)).toEqual([CAN('BTC', 'ETH', '+6.00')]);
+    expect(executeSwapServerMock).toHaveBeenCalledTimes(1);
   });
 
   it('the line sits immediately before RISK STATUS when that block renders', async () => {

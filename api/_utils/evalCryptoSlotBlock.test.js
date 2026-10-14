@@ -488,8 +488,12 @@ describe('v2 — the RISK STATUS annotation', () => {
 
 // ==================== v2 — THE LIVE CONTEXT, THROUGH THE REAL FENCED ASSEMBLER ====================
 
-// The verdict each case would carry (what cryptoSlotVerdict.js returns for that
-// book — its own suite proves the verdicts; here they only drive the render).
+// Render drivers: the verdict each row hands the assembler. They match what
+// cryptoSlotVerdict.js returns for these books — except
+// tiered.stock-swapout.btc-hold, which drives the swap-limit text through the
+// assembler (that book has no trades; its real verdict is not_up). These rows
+// prove the RENDER; verdict = gate is proven end to end in
+// api/cron/agent-evaluate.cryptoSlotLine.test.js.
 const CASE_VERDICTS = {
   'tiered.btc-swapout-stagnation.eth-down': V(),
   'tiered.btc-swapout-stagnation.eth-up': V({ canSwap: true, reason: null, benchDailyPct: 2.1 }),
