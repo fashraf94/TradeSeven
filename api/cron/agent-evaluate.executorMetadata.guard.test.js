@@ -152,7 +152,7 @@ const TEXT_SANITIZERS = ['clientText', 'clientToken', 'proposalDescriptiveMetada
 /** P6's belief sanitizers (expectedOutOfStored type-checks a stored belief). */
 const BELIEF_SANITIZERS = ['expectedOutOfStored', 'expectedOutOfPosition'];
 /** Reviewed helpers that may receive the whole battle (each reads server fields only). */
-const BATTLE_HELPERS = ['desiredTempoOf'];
+  const BATTLE_HELPERS = ['desiredTempoOf', 'stockSwapOptions'];
 /**
  * Metadata keys that must hold the server's own value — never text from an
  * owner-writable record, not even capped. `entryPreset` joined at enforce
@@ -334,7 +334,7 @@ function metadataObject({ call, fn }) {
 /** The P6 options spread of one call (`...swapIdentityOptions(…)`), or null. */
 function optionsSpread({ call }) {
   const spreads = call.arguments.filter((a) => a.type === 'SpreadElement');
-  return spreads.length === 1 && spreads[0].argument.type === 'CallExpression' && calleeName(spreads[0].argument) === 'swapIdentityOptions' ? spreads[0] : null;
+  return spreads.length === 1 && spreads[0].argument.type === 'CallExpression' && ['swapIdentityOptions', 'stockSwapOptions'].includes(calleeName(spreads[0].argument)) ? spreads[0] : null;
 }
 
 /** The whole static check of one call: a list of problems (empty = clean). */

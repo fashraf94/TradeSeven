@@ -86,8 +86,8 @@ export const USER_DIRECTIVE_BYPASS_REASONS = new Set([
  * @param {Object|null} [archetypeConfig] - archetype config (from getArchetypeConfig)
  * @returns {{ action: string, reason: string|null, detail: string, hftConfig: Object|null }}
  */
-export function evaluateRisk(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, presetOverrides = {}, archetypeConfig = null) {
-  const base = evaluateRiskAction(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, presetOverrides, archetypeConfig);
+export function evaluateRisk(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, presetOverrides = {}, archetypeConfig = null, rewardContext = null) {
+  const base = evaluateRiskAction(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, presetOverrides, archetypeConfig, rewardContext);
   return { ...base, hftConfig: archetypeConfig?.hftConfig || null };
 }
 
@@ -112,7 +112,7 @@ export function evaluateRisk(position, currentPrice, entryPrice, baseATR, intrad
  * @param {Object} [presetOverrides] - Optional preset risk overrides { bustBuffer, vwapFailureTicks, vwapDeadBandPct, trailStopATR }
  * @returns {{ action: string, reason: string|null, detail: string }}
  */
-function evaluateRiskAction(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, presetOverrides = {}, archetypeConfig = null) {
+function evaluateRiskAction(position, currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, presetOverrides = {}, archetypeConfig = null, rewardContext = null) {
   if (!currentPrice || !entryPrice || entryPrice <= 0 || !baseATR || baseATR <= 0) {
     return { action: 'HOLD', reason: null, detail: '' };
   }
@@ -147,7 +147,10 @@ function evaluateRiskAction(position, currentPrice, entryPrice, baseATR, intrada
   }
 
   // 3. LOCK — within 0.2x ATR of next bonus threshold
-  if (atrMultiplier > 0) {
+  if (rewardContext !== null && rewardContext.status === 'valid' && rewardContext.proximity?.locked) {
+    return { action: 'LOCK', reason: 'threshold_proximity', detail: `${position.symbol} approaching measured ${rewardContext.nextTarget.key} at exact $${rewardContext.nextTarget.target} (${rewardContext.scoringPctDecimal}% frozen reward unit).` };
+  }
+  if (rewardContext === null && atrMultiplier > 0) {
     for (const threshold of BONUS_THRESHOLDS) {
       if (atrMultiplier >= threshold - LOCK_PROXIMITY && atrMultiplier < threshold) {
         const distance = (threshold - atrMultiplier).toFixed(2);

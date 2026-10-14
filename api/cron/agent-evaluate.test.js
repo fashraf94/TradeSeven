@@ -145,16 +145,16 @@ describe('agent-evaluate cron — Phase 4 technical snapshot writes', () => {
     // its pre-P6 ten arguments there (the off goldens record every argument).
     // Matched on the code with line comments removed.
     const code = source.replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-    const inScopeSites = code.match(/executeSwapServer\([\s\S]+?(snapshot|null),\s*\.\.\.swapIdentityOptions\(swapIdentityMode, expectedOut\w+\([^\n]*\)\)\s*\)/g) || [];
+    const inScopeSites = code.match(/executeSwapServer\([\s\S]+?(snapshot|null),\s*\.\.\.stockSwapOptions\(battle, swapIdentityMode, expectedOut\w+\([^\n]*\), \{ prices \}\)\s*\)/g) || [];
     expect(inScopeSites.length).toBe(5);
     // The gameplan rotation passes no snapshot (nine arguments): its options
     // are padded into the eleventh place, the snapshot's own default in the tenth.
     // Integrity follow-up 2 (Part A): its belief is the server's COPY of the
     // leg (`run`), never the owner-writable meeting leg.
-    const gameplanSites = code.match(/evaluationId: gameplanEvalId \}\),\s*\.\.\.swapIdentityOptions\(swapIdentityMode, expectedOutOfStored\(run\.symbolOut, run, 'swappedInAt'\), \{ padSnapshot: true \}\)\s*\)/g) || [];
+    const gameplanSites = code.match(/evaluationId: gameplanEvalId \}\),\s*\.\.\.stockSwapOptions\(battle, swapIdentityMode, expectedOutOfStored\(run\.symbolOut, run, 'swappedInAt'\), \{ padSnapshot: true, prices \}\)\s*\)/g) || [];
     expect(gameplanSites.length).toBe(1);
     // One options spread per call site — every one of the six hands the executor its belief.
-    expect((code.match(/\.\.\.swapIdentityOptions\(swapIdentityMode, /g) || []).length).toBe(6);
+    expect((code.match(/\.\.\.stockSwapOptions\(battle, swapIdentityMode, /g) || []).length).toBe(6);
     expect((code.match(/await executeSwapServer\(/g) || []).length).toBe(6);
   });
 
@@ -875,6 +875,8 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
       'api/_utils/flat6TierStamp.passthrough.test.js',
       'api/cron/agent-evaluate.js',
       'api/cron/agent-evaluate.test.js',
+      'api/_utils/stockThresholdAdmission.test.js',
+      'api/cron/agent-evaluate.stockThresholds.test.js',
     ]);
     const apiRoot = resolve(__dirname, '..');
     const offenders = [];

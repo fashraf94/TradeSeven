@@ -714,7 +714,9 @@ function computeTrailingDrawdownPct(position, prices, battle) {
   const current = getCurrentPrice(position, prices);
   if (!entry || !current) return null;
 
-  const hist = battle?.thresholdHistory?.[position.symbol];
+  const hist = position.stockThresholdReceipt
+    ? battle?.scoring?.stockRiskHistory?.agent?.[position.positionId]
+    : battle?.thresholdHistory?.[position.symbol];
   const peakMultiplier = typeof hist?.maxMultiplier === 'number' ? hist.maxMultiplier : 0;
   const baseATR = typeof position.baseATR === 'number' ? position.baseATR : 0;
   if (peakMultiplier <= 0 || baseATR <= 0) return null;

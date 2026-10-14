@@ -416,7 +416,8 @@ export function extractSentences(text, symbol) {
  * check that inversion against (the agent layer is long-only in V1,
  * BUILD_RULES §7). Omitting is the honest answer until one does.
  */
-export function deriveTierPrices(thresholdBaseline, baseATR, direction = null) {
+export function deriveTierPrices(thresholdBaseline, baseATR, direction = null, rewardContext = null) {
+  if (rewardContext !== null) return rewardContext.status === 'valid' ? Object.fromEntries(rewardContext.targets.map(t => [t.key, t.target])) : null;
   if (direction === 'short') return null;
   const positiveNumber = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
   if (!positiveNumber(thresholdBaseline) || !positiveNumber(baseATR)) return null;

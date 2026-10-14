@@ -1422,6 +1422,10 @@ function lockNowCell(score) {
  * a bonus the scorer already paid. Always present: 'maxed' when all three
  * bonuses are earned. */
 function nextBonusCell(score) {
+  if (score.rewardContext) {
+    const c = score.rewardContext;
+    return c.status !== 'valid' ? `unavailable:${c.reason}` : c.nextTarget ? `exact $${c.nextTarget.target}` : 'maxed';
+  }
   const crossedMax = score.history?.maxMultiplier ?? 0;
   // BAGGER_TIERS is the canonical ascending positive-tier array — the same
   // source the scorer's badge grants read (§4 one source, CR-5).
@@ -1468,6 +1472,10 @@ export function buildPortfolioCSV(assetScores, prices, battle, rankingsMap = {})
   const flat = flattenPortfolioServer(battle.portfolio);
 
   const rows = assetScores.map(score => {
+    if (score.rewardContext) {
+      const c = score.rewardContext;
+      return c.status !== 'valid' ? `${score.symbol},measured reward unavailable:${c.reason}` : `${score.symbol},measured reward,fill $${c.fill},quote $${c.currentPrice},frozen ${c.scoringPctDecimal}%,mult ${c.multiplier},crossed [${c.crossedTiers.join('|')}],lock ${c.proximity?.locked === true},next ${nextBonusCell(score)},points ${lockNowCell(score)},calibrated risk ATR ${score.baseATR}%`;
+    }
     const price = prices[score.symbol];
     const currentPrice = price?.current || 0;
     const asset = flat.find(a => a.symbol === score.symbol);

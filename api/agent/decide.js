@@ -14,6 +14,8 @@ import {
   formatStoriesSummary,
 } from '../_utils/agentPromptAssembly.js';
 import { createAgentBattle } from '../_utils/agentBattleService.js';
+import { stockModelRoute } from '../../src/utils/stockThresholdModel.js';
+import { StockThresholdRefusal } from '../_utils/stockThresholdMeasurementProvider.js';
 import { projectActiveRules } from '../_utils/projectActiveRules.js';
 // Rule Conflict Reconciler (Phase 2). api→src import is BUILD_RULES §4-blessed:
 // the reconciler is Node-clean (no browser deps) and featureFlags.js is
@@ -783,6 +785,12 @@ export default async function handler(req, res) {
       }
 
       // Battle has expired — mark it as completed and proceed to create new one
+      // Corrected settlement belongs to the guarded cron completion writer.
+      // This legacy GC has neither operand qualification nor atomic stats.
+      if (stockModelRoute(existingBattle).status !== 'legacy') {
+        await agentRef.update({ deployingAt: null, lastDeployedAt: agent.lastDeployedAt ?? null });
+        throw new StockThresholdRefusal('prior_corrected_battle_requires_settlement');
+      }
       await db.collection('agentBattles').doc(existingBattleId).update({
         status: 'completed',
         completedAt: new Date().toISOString(),
@@ -953,7 +961,7 @@ export default async function handler(req, res) {
       // [Pilot P1b] The carriage race (no battle was created): restore the
       // cooldown, as the baseline gate does, so the deploy is retriable at
       // once; the catch below releases the lock and answers.
-      if (battleErr?.hypothesisCarriage) await agentRef.update({ lastDeployedAt: agent.lastDeployedAt ?? null }).catch(() => {});
+      if (battleErr?.hypothesisCarriage || battleErr?.name === 'StockThresholdRefusal') await agentRef.update({ lastDeployedAt: agent.lastDeployedAt ?? null }).catch(() => {});
       throw battleErr;
     });
 
@@ -1041,6 +1049,7 @@ export default async function handler(req, res) {
       ]);
     }
 
+    if (error?.name === 'StockThresholdRefusal') return res.status(503).json({ error: 'Stock admission unavailable', reason: error.reason, retriable: true });
     return res.status(500).json({
       error: 'Failed to generate portfolio',
       details: error.message,

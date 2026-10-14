@@ -66,6 +66,8 @@ export function buildResearchAsset(asset, options = {}) {
     ?? asset.changePercent
     ?? null;
 
+  if (asset.stockRewardRoute) return { ...asset, symbol: sym, price: asset.currentPrice ?? null, threshold: asset.rewardContext?.status === 'valid' ? asset.rewardContext.scoringPct : null, lockedPrice: asset.stockThresholdReceipt?.fill ?? null, percentChange: asset.priceChange ?? null };
+
   // --- Threshold resolution ---
   const thresholdEntry = lookup(thresholds, sym);
   const threshold = thresholdEntry?.threshold

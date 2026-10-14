@@ -3195,3 +3195,7 @@ export const SWAP_IDENTITY_MODE = 'shadow';
 
 /** The three founder-walked states, in walk order. */
 export const SWAP_IDENTITY_MODES = Object.freeze(['off', 'shadow', 'enforce']);
+// New battle selection only. Existing games dispatch from their saved tuple.
+// Owner dormant-build adoption: docs/approvals/BAGGERBOMB_STOCK_THRESHOLDS_ADOPTION_20261013.md.
+// Pinned by: stockThresholdModel.test.js (activation requires a later owner request).
+export const STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED = false;

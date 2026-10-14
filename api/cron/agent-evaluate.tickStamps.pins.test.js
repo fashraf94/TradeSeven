@@ -209,7 +209,9 @@ describe('pin 3 — no doc re-read between the prompt build and the stamp (disco
     expect(window).not.toMatch(/runTransaction\(/);
     expect(window).not.toMatch(/Object\.assign\(battle\b/);
     // the two legitimate write-backs onto `battle` (the migration fields and refreshBattleFromDoc) are the only ones in the file
-    expect(CRON.match(/Object\.assign\(battle\b/g)).toHaveLength(2);
+    // Corrected-only lock refresh precedes the prompt; post-model refresh is
+    // roster-only and cannot replace prompt-visible controls.
+    expect(CRON.match(/Object\.assign\(battle\b/g)).toHaveLength(3);
   });
 
   it('the cron never assigns battle.directive in any form — the in-memory slot is exactly the rendered one', () => {

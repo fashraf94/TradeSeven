@@ -22,6 +22,7 @@ import {
   THRESHOLD_POINTS,
   THRESHOLD_MULTIPLIERS,
 } from '../../src/constants/baggerBombScoring.js';
+import { calculateAssetScoreV3 } from '../../src/utils/baggerBombUtils.js';
 
 // ==================== CONSTANTS (canonical re-exports) ====================
 
@@ -221,7 +222,8 @@ export function isSwapLocked(currentMultiplier, baseATR) {
  * @param {number|null} thresholdPriceChange - Percent change from previousClose for threshold detection
  * @returns {Object} Score breakdown
  */
-export function calculateAssetScoreServer(asset, priceChange, history = {}, extremes = {}, thresholdPriceChange = null) {
+export function calculateAssetScoreServer(asset, priceChange, history = {}, extremes = {}, thresholdPriceChange = null, rewardContext = null) {
+  if (rewardContext !== null) return calculateAssetScoreV3(asset, priceChange, history, extremes, thresholdPriceChange, rewardContext);
   const baseATR = asset.baseATR || 2.5;
 
   // Negate for short positions

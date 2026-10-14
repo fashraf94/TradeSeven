@@ -18,6 +18,8 @@
  * Phase 2 of agent battle daily-reset arc. See FANTASYTRADES_AGENTIC_TRADING.
  */
 
+import { stockModelRoute } from '../../src/utils/stockThresholdModel.js';
+import { checkpointCorrectedDaily } from '../_utils/stockThresholdAdmission.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
@@ -50,6 +52,9 @@ async function resetBattleDaily(db, battleDoc, currentPrices, dailyBySymbol = {}
   const tradingDays = battle.timing?.tradingDays || [];
   const currentDay = getCurrentTradingDayServer(tradingDays);
   const dayKey = `day${currentDay}`;
+  const stockRoute = stockModelRoute(battle);
+  if (stockRoute.status === 'unavailable') return { status: 'error', reason: stockRoute.reason };
+  if (stockRoute.status === 'corrected') return checkpointCorrectedDaily(db, db.collection('agentBattles').doc(battleId), battle, dayKey, new Date().toISOString());
 
   // Idempotency check — already banked today?
   if (battle.scoreState?.dailyScores?.[dayKey]?.recorded) {

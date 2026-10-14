@@ -26,6 +26,8 @@ import { buildCustomizationSnapshot } from './leanRevalidation.js';
 // before (the P4 equivalence battery is the lock).
 import { MANIFEST_WRITE_ENABLED } from '../../src/config/featureFlags.js';
 import { buildResolvedAgentManifest } from './resolvedAgentManifest.js';
+import { prepareStockCreation, stockCreationDb, stockAdmissionEnabled } from './stockThresholdAdmission.js';
+import { refuseStock, StockThresholdRefusal } from './stockThresholdMeasurementProvider.js';
 import {
   pinActivationDescriptor, assertProjectionCurrent,
   manifestGenerationStamp, commitBattleDocWithPin,
@@ -65,6 +67,7 @@ export async function findActiveAgentBattles(db) {
  * @returns {{ id: string }} Created document reference
  */
 export async function createAgentBattle(db, agentData, thresholds, startingPrices, options = {}) {
+  const stockSelected = stockAdmissionEnabled();
   const sectorMap = options.sectorMap || {};
   const now = new Date().toISOString();
   const duration = options.duration || '1d';
@@ -320,8 +323,17 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
     },
   };
 
-  const docRef = await commitBattleDocWithPin(db, battleDoc, activationPin); // FC-1: dark = the same add
-  return { id: docRef.id, expiresAt };
+  try {
+    if (!isTournament && stockSelected !== stockAdmissionEnabled()) refuseStock('creation_selection_changed');
+    const stockCreation = await prepareStockCreation(battleDoc, { db });
+    if (stockCreation) stockCreation.battleDoc = battleDoc;
+    const commitDb = stockCreation ? stockCreationDb(db, stockCreation) : db;
+    const docRef = await commitBattleDocWithPin(commitDb, battleDoc, activationPin);
+    return { id: docRef.id, expiresAt };
+  } catch (error) {
+    if (stockSelected && !isTournament && error?.name !== 'StockThresholdRefusal' && !error?.hypothesisCarriage) throw new StockThresholdRefusal('corrected_creation_failed');
+    throw error;
+  }
 }
 
 // ==================== HELPERS ====================

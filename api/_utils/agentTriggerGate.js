@@ -69,6 +69,12 @@ export function evaluateTriggers(battle, assetScores, prices, news, momentumData
 
   // Threshold proximity: asset within 0.2x ATR of a bonus or penalty threshold
   for (const score of assetScores) {
+    if (score.rewardContext) {
+      const c = score.rewardContext;
+      if (c.status === 'valid' && c.proximity?.locked) triggers.push({ type: 'threshold_proximity', detail: `${score.symbol} approaching measured ${c.nextTarget.key} at exact $${c.nextTarget.target}` });
+      if (c.status === 'valid' && c.penaltyProximity?.approaching) triggers.push({ type: 'threshold_proximity', detail: `${score.symbol} approaching measured ${c.nextPenalty.key} at exact $${c.nextPenalty.target}` });
+      continue;
+    }
     const mult = score.multiplier;
 
     // Negative thresholds: approaching penalties
