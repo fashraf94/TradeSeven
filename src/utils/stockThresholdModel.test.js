@@ -151,6 +151,13 @@ describe('pinned stock context', () => {
     expect(correctedPrompt).toContain('frozen 2.000000%'); expect(correctedPrompt).toContain('calibrated risk ATR 2.5%');
     expect(correctedPrompt).toContain('lock true'); expect(correctedPrompt).toContain(`exact $${c.nextTarget.target}`);
     expect(legacyPrompt).not.toContain('measured reward'); expect(legacyPrompt).toContain('2.5%');
+    // Review K1-4: corrected rows keep the header's identity columns (the
+    // star tier carries 2x conviction), available or not.
+    const [header, row] = correctedPrompt.split('\n');
+    expect(header.split(',').slice(0, 4)).toEqual(['Tier', 'Symbol', 'Sector', 'Entry']);
+    expect(row.startsWith('star,AAPL,Unknown,Day1,measured reward,fill $100,')).toBe(true);
+    const missing = calculateAssetScoreServer(a, null, {}, {}, null, stockRewardContext(battle, a, 'agent', 'star', 0, { price: null }));
+    expect(buildPortfolioCSV([missing], prices, battle).split('\n')[1]).toBe('star,AAPL,Unknown,Day1,measured reward unavailable:missing_post_entry_quote');
     // Deterministic decision consumer: this asserts the changed fact's meaning,
     // not a prediction of a live stochastic model's trade or call cadence.
     expect(evaluateRisk(a, q, 100, a.baseATR, null, {}, {}, null, c).action).toBe('LOCK');

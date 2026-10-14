@@ -168,6 +168,9 @@ describe('corrected evaluator and settlement use pinned model with admission fal
     expect(tick.scores.opponent).toBe(db.__store.battle.scoreState.opponentScore);
     const learning = [...db.__stockLearning.values()][0];
     expect(learning.stockRewardContract.incomingReceipt.receiptHash).toBe(db.__store.battle.portfolio.star[0].stockThresholdReceipt.receiptHash);
+    // Review K1-7: the calibrated lifetime history rides the corrected contract.
+    expect(learning.stockRewardContract.outgoingRiskHistory).toEqual(db.__store.battle.scoring.stockRiskHistory.agent['position-agent']);
+    expect(learning.stockRewardContract.outgoingRiskHistory).toMatchObject({ positionId: 'position-agent' });
   });
   // Review R1 sequencing. Lag 1 s is the real ordering: the tick's MSFT quote
   // predates the fill, so the exit has no post-entry evidence and refuses with

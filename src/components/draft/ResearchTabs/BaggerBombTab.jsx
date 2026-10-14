@@ -14,7 +14,7 @@ export function StockRewardDetails({ context }) {
     <p>Fill ${context.fill}; quote ${context.currentPrice}; observation {context.history.observedAt}.</p>
     <p>{context.proximity?.locked ? 'Reward LOCK' : 'Reward unlocked'}; next {context.nextTarget ? `${context.nextTarget.key} at exact $${context.nextTarget.target}` : 'all positive tiers earned'}.</p>
     <progress aria-label="Progress to next unearned reward" value={context.proximity?.progress ?? 1} max="1" />
-    <ul>{context.targets.map(t => <li key={t.key}>{t.label}: ${stockSummary(t.target)} (rounded); exact ${t.target}; {context.crossedTiers.includes(t.key) ? 'earned' : 'unearned'}</li>)}</ul>
+    <ul>{context.targets.map(t => <li key={t.key}>{t.label}: ${stockSummary(t.target)} (rounded); exact ${t.target}; {context.crossedTiers.includes(t.key) ? 'earned' : t.target <= 0 ? 'unreachable (target at or below $0)' : 'unearned'}</li>)}</ul>
     <p>Position {context.positionId}; input {context.inputRef}. Currency summaries do not control awards.</p>
     <p>Model {context.modelId}; receipt {context.receiptHash}; provider quote as of {context.quoteEvidence?.providerAsOf}.</p>
   </section>;

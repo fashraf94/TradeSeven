@@ -237,7 +237,10 @@ export async function executeCorrectedStockSwap(db, battleId, expected, tier, sl
     if (!positive(fill)) refuseStock('missing_incoming_fill');
     const incomingAsset = { symbol: benchAsset.symbol, name: benchAsset.name || benchAsset.symbol, isCrypto: !isStock(benchAsset), baseATR: live.scoring.thresholds?.[benchAsset.symbol]?.threshold || benchAsset.baseATR || (benchAsset.isCrypto ? 5 : 2.5), swapPrice: fill, swappedInAt: at, swappedInDay: currentDay, positionId: incomingId, slotVersion: out.slotVersion + 1, ...(inReceipt ? { stockThresholdReceipt: inReceipt } : {}), ...(benchAsset.isCrypto && benchAsset.direction ? { direction: benchAsset.direction } : {}) };
     const closedTrade = { ...metadata, symbolOut: out.symbol, symbolIn: incomingAsset.symbol, name: out.name || out.symbol, tier, slotIndex: slot, entryPrice: entry, exitPrice: exit.price, lockedPoints: score.totalPoints, lockedGainPct: score.priceChange, swappedOutAt: at, swapDay: currentDay, isCrypto: out.isCrypto || false, direction: out.direction || null, snapshot,
-      stockThresholdModel: live.scoring.stockThresholdModel, outgoingPositionId: out.positionId, incomingPositionId: incomingId, outgoingReceipt: out.stockThresholdReceipt || null, incomingReceipt: inReceipt, rewardContext: score.rewardContext || null };
+      stockThresholdModel: live.scoring.stockThresholdModel, outgoingPositionId: out.positionId, incomingPositionId: incomingId, outgoingReceipt: out.stockThresholdReceipt || null, incomingReceipt: inReceipt, rewardContext: score.rewardContext || null,
+      // The calibrated history the trailing guardrail read for this lifetime;
+      // capture keeps it here, not in the symbol-keyed legacy field (review K1-7).
+      outgoingRiskHistory: isStock(out) ? live.scoring.stockRiskHistory?.agent?.[out.positionId] ?? null : null };
     const components = { ...live.scoring.stockScoreComponents };
     if (components[out.positionId]) refuseStock('already_banked_position');
     components[out.positionId] = { status: 'closed', positionId: out.positionId, side: 'agent', points: score.totalPoints, receiptHash: out.stockThresholdReceipt?.receiptHash || null, exitPrice: exit.price, exitQuoteAsOf: exit.asOf, closedAt: at };

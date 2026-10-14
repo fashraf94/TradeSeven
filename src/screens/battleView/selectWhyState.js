@@ -417,7 +417,9 @@ export function extractSentences(text, symbol) {
  * BUILD_RULES §7). Omitting is the honest answer until one does.
  */
 export function deriveTierPrices(thresholdBaseline, baseATR, direction = null, rewardContext = null) {
-  if (rewardContext !== null) return rewardContext.status === 'valid' ? Object.fromEntries(rewardContext.targets.map(t => [t.key, t.target])) : null;
+  // Pinned stock route: no tier line. Its cent copy rounds half-up, unlabelled,
+  // beside the context's labelled half-even six exact targets (review K1-3).
+  if (rewardContext !== null) return null;
   if (direction === 'short') return null;
   const positiveNumber = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
   if (!positiveNumber(thresholdBaseline) || !positiveNumber(baseATR)) return null;

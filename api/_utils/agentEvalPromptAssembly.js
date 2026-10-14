@@ -1474,7 +1474,11 @@ export function buildPortfolioCSV(assetScores, prices, battle, rankingsMap = {})
   const rows = assetScores.map(score => {
     if (score.rewardContext) {
       const c = score.rewardContext;
-      return c.status !== 'valid' ? `${score.symbol},measured reward unavailable:${c.reason}` : `${score.symbol},measured reward,fill $${c.fill},quote $${c.currentPrice},frozen ${c.scoringPctDecimal}%,mult ${c.multiplier},crossed [${c.crossedTiers.join('|')}],lock ${c.proximity?.locked === true},next ${nextBonusCell(score)},points ${lockNowCell(score)},calibrated risk ATR ${score.baseATR}%`;
+      // Identity columns as the header names them (review K1-4); the measured
+      // cells after them are self-labelled rather than header-aligned.
+      const held = flat.find(a => a.symbol === score.symbol);
+      const identity = `${isFlat6 ? '' : `${held?.tier || 'support'},`}${score.symbol},${held?.sector || 'Unknown'},${held?.swappedInDay ? `Day${held.swappedInDay}` : 'Day1'}`;
+      return c.status !== 'valid' ? `${identity},measured reward unavailable:${c.reason}` : `${identity},measured reward,fill $${c.fill},quote $${c.currentPrice},frozen ${c.scoringPctDecimal}%,mult ${c.multiplier},crossed [${c.crossedTiers.join('|')}],lock ${c.proximity?.locked === true},next ${nextBonusCell(score)},points ${lockNowCell(score)},calibrated risk ATR ${score.baseATR}%`;
     }
     const price = prices[score.symbol];
     const currentPrice = price?.current || 0;

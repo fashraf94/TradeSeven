@@ -8,7 +8,8 @@ import { stockWriterDb } from '../../api/_utils/__fixtures__/stockThresholdHarne
 // Infrastructure is replaced; row, canonical scorer, Why and tab are real.
 vi.mock('../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 import { StockDispatchRow, enrichHeldPosition } from './AgentBattleScreen.jsx';
-import BaggerBombTab from '../components/draft/ResearchTabs/BaggerBombTab.jsx';
+import BaggerBombTab, { StockRewardDetails } from '../components/draft/ResearchTabs/BaggerBombTab.jsx';
+import { stockRewardContext } from '../utils/stockThresholdModel.js';
 import WhyPanel from './battleView/WhyPanel.jsx';
 import { selectWhyState, deriveTierPrices } from './battleView/selectWhyState.js';
 import { buildResearchAsset } from '../utils/researchAssetBuilder.js';
@@ -31,6 +32,21 @@ describe('real rendered pinned stock detail integration', () => {
     for (const t of left.rewardContext.targets) { expect(row).toContain(`exact $${t.target}`); expect(tab).toContain(`exact $${t.target}`); }
     expect(row).toContain('Why?'); expect(row).toContain('position-agent'); expect(row).toContain('position-cpu'); expect(tab).toContain('2.000000%'); expect(tab).not.toContain('99.00');
     expect(research.rewardContext).toEqual(left.rewardContext);
+  });
+  it('review K1-3: the Why disclosure carries no half-up cent tier line beside the exact targets', async () => {
+    const { left } = await renderedFacts();
+    expect(deriveTierPrices(null, null, null, left.rewardContext)).toBe(null);
+    const row = renderToStaticMarkup(<StockDispatchRow leftAsset={left} renderWhy={() => <WhyPanel symbol="AAPL" state={selectWhyState(null, 'AAPL', STOCK_TEST_NOW)} lines={deriveTierPrices(null, null, null, left.rewardContext)} proximity={left.rewardContext.proximity} />} />);
+    expect(row).not.toContain('Bagger $'); expect(row).toContain(`exact $${left.rewardContext.targets[0].target}`);
+    expect(deriveTierPrices(100, 2)).toEqual({ bagger: 102, bust: 98 });
+  });
+  it('review K1-6: a measured tier whose exact target is at or below $0 reads unreachable, not unearned', async () => {
+    const { battle } = await correctedStockBattle({ fill: 10, scoringPct: 60 });
+    const c = stockRewardContext(battle, { ...battle.portfolio.star[0], tier: 'star' }, 'agent', 'star', 0, { price: 10, asOf: STOCK_TEST_NOW, observedAt: STOCK_TEST_NOW });
+    const html = renderToStaticMarkup(<StockRewardDetails context={c} />);
+    expect(c.targets.find(t => t.key === 'meltdown').target).toBeLessThan(0);
+    expect(html).toMatch(/Meltdown[^<]*unreachable \(target at or below \$0\)/);
+    expect(html).toMatch(/BaggerBomb[^<]*unearned/);
   });
   it('corrupt tuple/missing receipt remain unavailable through row and real tab', async () => {
     const { battle } = await renderedFacts(); battle.scoring.stockThresholdModel = null;

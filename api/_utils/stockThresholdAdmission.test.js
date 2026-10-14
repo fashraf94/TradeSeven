@@ -175,6 +175,13 @@ describe('server stock admission and atomic writers', () => {
     const n = h.writes.length;
     await expect(executeSwapServer(h.db, battle.id, before, 'star', 0, { symbol: 'MSFT', baseATR: 3 }, 1, prices(108), {}, null, { now: stockTestClock, collector: s => stockObservation(s) })).rejects.toMatchObject({ reason: 'stale_swap_position' }); expect(h.writes).toHaveLength(n);
   });
+  it('review K1-7: the closed trade carries the outgoing lifetime calibrated risk history the guardrail read', async () => {
+    const { battle, inputs } = await correctedStockBattle(); const risk = { positionId: 'position-agent', maxMultiplier: 1.6, minMultiplier: -0.4 };
+    battle.scoring.stockRiskHistory.agent['position-agent'] = risk; battle.scoring.stockRiskHistory.cpu['position-cpu'] = { positionId: 'position-cpu', maxMultiplier: 9, minMultiplier: 0 };
+    const h = inputStore(battle, inputs);
+    const { closedTrade } = await executeSwapServer(h.db, battle.id, battle, 'star', 0, { symbol: 'MSFT', baseATR: 3 }, 1, prices(104), {}, null, { now: stockTestClock, collector: s => stockObservation(s) });
+    expect(closedTrade.outgoingRiskHistory).toEqual(risk);
+  });
   it('missing incoming evidence or corrupted immutable input leaves outgoing/bank untouched', async () => {
     const { battle, inputs } = await correctedStockBattle(), h = inputStore(battle, inputs); const before = structuredClone(h.store.get(`agentBattles/${battle.id}`));
     await expect(executeSwapServer(h.db, battle.id, battle, 'star', 0, { symbol: 'MSFT' }, 1, prices(), {}, null, { now: stockTestClock, collector: async () => { throw Error('missing incoming'); } })).rejects.toThrow();

@@ -2708,16 +2708,22 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     return Math.round(viewportHeight * scale);
   })();
 
-  // Memoize enriched research asset to avoid re-renders on every price tick
+  // Memoize enriched research asset to avoid re-renders on every price tick.
+  // On a pinned stock model a bare held name (cockpit, chat, ticker card)
+  // resolves to its enriched held row — the player's first, then the CPU's —
+  // so research reads that row's own context, never the legacy table (review K1-2).
   const stableResearchAsset = useMemo(() => {
     if (!researchAsset) return null;
-    return buildResearchAsset(researchAsset, {
+    const pinnedRow = !researchAsset.stockRewardRoute && stockModelRoute(agentBattle).status !== 'legacy'
+      ? [enrichedPlayerPortfolio, enrichedOpponentPortfolio].flatMap(p => ['star', 'core', 'support'].flatMap(k => p?.[k] || [])).find(a => a?.stockRewardRoute && a.symbol === researchAsset.symbol)
+      : null;
+    return buildResearchAsset(pinnedRow || researchAsset, {
       livePrices: effectivePrices,
       thresholds,
       startingPrices,
       useDefaultThreshold: true,
     });
-  }, [researchAsset, effectivePrices, thresholds, startingPrices]);
+  }, [researchAsset, effectivePrices, thresholds, startingPrices, agentBattle, enrichedPlayerPortfolio, enrichedOpponentPortfolio]);
 
   // ── Quote integrity: render-time eligibility of open details (§7) ────────
   //
@@ -2751,7 +2757,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               lockedPrice: entry > 0 ? entry : null,
               threshold: gatedContext.thresholds[pos.symbol]?.threshold || DEFAULT_THRESHOLD,
               ...(isStock(pos.asset) && stockModelRoute(identifiedBattle).status !== 'legacy' ? {
-                stockRewardRoute: true, stockThresholdReceipt: pos.asset.stockThresholdReceipt,
+                // No chart threshold on the pinned route (review K1-1).
+                threshold: null, stockRewardRoute: true, stockThresholdReceipt: pos.asset.stockThresholdReceipt,
                 rewardContext: committedStockContext(identifiedBattle, pos.asset, pos.side === 'cpu' ? 'cpu' : 'agent', pos.tier, pos.slot),
               } : {}),
               ...(crypto ? { isCrypto: true } : {}),
