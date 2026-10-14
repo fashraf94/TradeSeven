@@ -5,7 +5,7 @@
 **Read-only:** Firestore reads through the Admin SDK (`.env.local` credentials, loaded as the existing read scripts load them), `git` reads, nothing else. No product source, flag, rule, index or schema changed. No model API call: every token figure is read from the stored tick bodies' `usage`. The raw dump went to the git-ignored `reads-raw/` folder; nothing raw is committed.
 **The accounts:** the prompt's two uid placeholders arrived unfilled. The uids were taken from the week-1 read's git-ignored raw dump (`reads-raw/cockpit-week1/`, the battles' owner fields under their `founder` / `FT_QA` labels) on this machine, passed inline for each run (`COCKPIT_ALLOWLIST_UIDS=<founder>,<FT_QA>`), never written to `.env.local`, a committed file or this report.
 **Markers (BUILD_RULES §3):** a code claim cites `file:line` and is **VERIFIED** when read in this session at HEAD; **ASSUMED** when taken from a document, a subagent's read not re-read here, or inferred; **COMPUTED** when the script produced it from Firestore.
-**BUILD_RULES §2:** the branch diff is 3 files, 1,246 insertions (the design pass 209, the script 585, this report 452), no deletions — under the review threshold (10 files or 1,500 lines), so no §2 review was run.
+**BUILD_RULES §2:** the branch diff is 3 files, 1461 insertions (the design pass 209, the script 585, this report 456), no deletions — under the review threshold (10 files or 1,500 lines), so no §2 review was run.
 **Sources:** `scripts/build2b-discovery.mjs` (new; every table under "Generated" is its output, inserted verbatim) and the code reads below. Four read-only Explore subagents mapped B3, B7, B8 and B9/B1's breadth; every line they cited that this report relies on was re-read here (VERIFIED) or is marked ASSUMED.
 
 ---
@@ -14,47 +14,47 @@
 
 | Question | Answer |
 |---|---|
-| When was this read? | **2026-10-14 12:36 ET, inside the session.** Oct 14 has no check yet in either account: the founder's battle `vwuCE…` (created 11:38 ET, `baggerbomb_agent`, expires 20:00 ET) had **no evaluation entry after four cron slots** (`cronState.lastEvaluatedAt` null); FT_QA has no Oct 14 battle. Every Oct 14 row below is therefore empty; a re-read after the close is the one thing that would move these tables. |
-| What ran? | 16 battle-days: founder 13 (momentum_chaser; Oct 6–9, 12, 13), FT_QA 3 (diversifier; Oct 6, 7, 12). 249 checks, 154 calls, 133 declarations records; 0 calls open at read. |
-| Did timeouts rise with the cockpit (DP-7)? | **Yes, and they stayed up in week 2.** Founder: 16.0% of model calls (32 of 200; 7.0% in the shadow weeks, 8.4% off); week 2 alone 30.4% (7 of 23). FT_QA 38.5% (15 of 39). Every timeout is the SDK's 20-second limit; the 22-second backstop never fired. The ten Oct 8 API refusals are outside every rate. |
-| Is it the declarations block? | The numbers say three things. A check's time is set by how much the agent writes: output tokens and call time correlate 0.99 (founder). The answers got longer at the top: 28% of readable founder answers are ≥ 1,500 tokens at `on`, 12% in shadow, 16% off. But completed declaring and non-declaring checks differ by about 90 tokens and 1.2 s at the median, and the declarations block is 9% of the answer's characters (FT_QA 10.5%). The Diversifier writes 1,537 tokens at the median (founder 1,291) and its call takes 19.3 s at the median. Timeouts cluster at 12:00–13:00 ET for the founder (23%, 17%) and at 14:00–15:00 ET for FT_QA (40%, 50%). |
-| Input size | The `on` tool schema is 13,625 characters against 8,539 off (+5,086, the declarations property); input tokens at the median 14,701 (on), 14,235 (shadow), 13,150 (off). The Diversifier's prompt is 349 tokens larger than the founder's at the median. |
+| When was this read? | **2026-10-14 16:40 ET, after the close** (a first read at 12:36 ET, inside the session, produced this branch's first version; this is the re-read, and only Oct 14 moved). Oct 14: FT_QA's battle `BJVQK…` (created 13:52 ET) ran 7 checks and minted 2 calls; **the founder's battle `vwuCE…` (created 11:38 ET, `baggerbomb_agent`, status active, expires 20:00 ET) had no evaluation entry through the close** — `cronState.lastEvaluatedAt` null after twenty cron slots — so no founder Oct 14 row exists anywhere below. |
+| What ran? | 17 battle-days: founder 13 (momentum_chaser; Oct 6–9, 12, 13), FT_QA 4 (diversifier; Oct 6, 7, 12, 14). 256 checks, 156 calls, 135 declarations records; 0 calls open at read. |
+| Did timeouts rise with the cockpit (DP-7)? | **Yes, and they stayed up in week 2.** Founder: 16.0% of model calls (32 of 200; 7.0% in the shadow weeks, 8.4% off); week 2 alone 30.4% (7 of 23). FT_QA 41.3% (19 of 46; 4 of 7 on Oct 14). Every timeout is the SDK's 20-second limit; the 22-second backstop never fired. The ten Oct 8 API refusals are outside every rate. |
+| Is it the declarations block? | The numbers say three things. A check's time is set by how much the agent writes: output tokens and call time correlate 0.99 (founder). The answers got longer at the top: 28% of readable founder answers are ≥ 1,500 tokens at `on`, 12% in shadow, 16% off. But completed declaring and non-declaring checks differ by about 90 tokens and 1.2 s at the median, and the declarations block is 9% of the answer's characters (FT_QA 10%). The Diversifier writes 1,537 tokens at the median (founder 1,291) and its call takes 19.3 s at the median. Timeouts cluster at 12:00–13:00 ET for the founder (23%, 17%) and at 14:00–15:00 ET for FT_QA (36%, 60%). |
+| Input size | The `on` tool schema is 13,625 characters against 8,539 off (+5,086, the declarations property); input tokens at the median 14,701 (on), 14,235 (shadow), 13,150 (off). The Diversifier's prompt is 455 tokens larger than the founder's at the median. |
 | Headroom for a 30 s timeout | The admission requirement is 48 s today and would be 58 s (five worst-case checks per 290 s invocation instead of six); no on-window tick exceeded 48 s (max 44.2 s). The post-call allowance (12 s) cannot be measured on its own from the records. |
-| Called shots per check | Founder raw mean 1.23 (2 of 117 declaring checks wrote more than 3; the validator kept none above 3); FT_QA 1.81 (none above 3). The cap of 6 was never approached. |
-| What would lead the Now card? | Founder: an exit with no replacement at 38% of checks, a hold-default shot 24%, a Confirmation 13%, a live command alone 3%, nothing 21%; the lead changed at 31% of consecutive checks. FT_QA: the no-replacement exit at 85%. |
+| Called shots per check | Founder raw mean 1.23 (2 of 117 declaring checks wrote more than 3; the validator kept none above 3); FT_QA 1.72 (none above 3). The cap of 6 was never approached. |
+| What would lead the Now card? | Founder: an exit with no replacement at 38% of checks, a hold-default shot 24%, a Confirmation 13%, a live command alone 3%, nothing 21%; the lead changed at 31% of consecutive checks. FT_QA: the no-replacement exit at 72%, a hold-default shot 11%, nothing 17%. |
 | How many chips in the Also-live strip? | Open threads per check: founder battles average 0.7–5.1 (max 10); FT_QA 1–7.1 (max 9). |
 | The replacement step | 103 exit calls with no usable replacement (founder 90, 6.9 per battle-day; FT_QA 13). At the founder's 88 readable checks the agent's own lists held ≥ 2 available names for 39 calls (44%) and ≥ 1 for 58 (66%); FT_QA 5 and 10 of 13. The bench itself showed ≥ 2 available names at every readable check but one. |
 | Two commands wanted | Zero refusals in the window and no filing replaced a live command. Two or more overrideable symbols were open at 61% of the founder's checks and 72% of FT_QA's. |
 | Stale commands | 1 of 3: the VLO "Go now" (Oct 6) outlived its stock by 11 prompts; the ZS (Oct 9) and META (Oct 12) commands did not. |
 | Following your call | 9 calls were minted under a live command on their symbol, direction and side (6 ZS, 3 META); every one matched the command's default and sat within 1% of its level. |
-| Week 2 beside week 1 | Founder 2 battle-days, 23 checks, 30.4% timeouts (14.1% in week 1), 3 answers (1 override, 2 agreements), nothing broken; FT_QA 1 battle-day, 6 checks, 2 calls, no answer. The sweep closed every week-2 past-deadline call 0.6 min after its deadline (week 1: up to 31 min). |
-| The seams, one line each | B1 a new `commandsUsed` key is a fence question (the battle doc's shape); B2 one refusal branch stands between today and "replace"; B3 one writer, six call sites, only the model path feeds the calls pipeline; B4 the terminal tag branches never read `actedEvalId`; B5 the prompt's only bench score is the platform's `technicalScore` — no agent score exists; B6 the text reaches only the decider's prompt; B7 the screener is unreachable from a battle and has no symbol scope; B8 the calls are already in scope where the rows render; B10 PR #958 is the one live collision. |
+| Week 2 beside week 1 | Founder 2 battle-days, 23 checks, 30.4% timeouts (14.1% in week 1), 3 answers (1 override, 2 agreements), nothing broken; FT_QA 2 battle-days, 13 checks, 46.2% timeouts, 4 calls, no answer. The sweep closed every week-2 past-deadline call 0.6 min after its deadline (week 1: up to 31 min). |
+| The seams, one line each | B1 a new `commandsUsed` key is a fence question (the battle doc's shape); B2 one refusal branch stands between today and "replace"; B3 one writer, six call sites, only the model path feeds the calls pipeline; B4 the terminal tag branches never read `actedEvalId`; B5 the prompt's only bench score is the platform's `technicalScore` — no agent score exists — and one live call shows the mint/filing mismatch; B6 the text reaches only the decider's prompt; B7 the screener is unreachable from a battle and has no symbol scope; B8 the calls are already in scope where the rows render; B10 PR #958 is the one live collision. |
 
 ---
 
 ## Part A — the timing read (DP-7)
 
-Read at 2026-10-14T16:36:01.963Z (2026-10-14 12:36 ET) · HEAD `6e539963` · #931 merged 2026-10-05T17:35:34-05:00 (`693dc323`). Battles owned by the two accounts: 102 (founder 98, FT_QA 4); read in full (expiry on/after 2026-09-21, or active): 35. Windows: on = ET sessions 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-09, 2026-10-12, 2026-10-13, 2026-10-14 (week 1 = 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-09; week 2 = 2026-10-12, 2026-10-13, 2026-10-14); pre-flip = 2026-09-21 up to the #931 merge instant, shadow when the entry carries `declarationsPhase`, off otherwise.
+Read at 2026-10-14T20:40:02.113Z (2026-10-14 16:40 ET) · HEAD `78862cc1` · #931 merged 2026-10-05T17:35:34-05:00 (`693dc323`). Battles owned by the two accounts: 103 (founder 98, FT_QA 5); read in full (expiry on/after 2026-09-21, or active): 36. Windows: on = ET sessions 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-09, 2026-10-12, 2026-10-13, 2026-10-14 (week 1 = 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-09; week 2 = 2026-10-12, 2026-10-13, 2026-10-14); pre-flip = 2026-09-21 up to the #931 merge instant, shadow when the entry carries `declarationsPhase`, off otherwise.
 
 | Account · archetype | Window | Battles | Battle-days | Checks | ET days |
 |---|---|---|---|---|---|
-| FT_QA · diversifier | on | 3 | 3 | 39 | 2026-10-06, 2026-10-07, 2026-10-12 |
+| FT_QA · diversifier | on | 4 | 4 | 46 | 2026-10-06, 2026-10-07, 2026-10-12, 2026-10-14 |
 | founder · contrarian | pre-flip · off | 1 | 1 | 15 | 2026-09-21 |
 | founder · momentum_chaser | on | 13 | 13 | 210 | 2026-10-06, 2026-10-07, 2026-10-08, 2026-10-09, 2026-10-12, 2026-10-13 |
 | founder · momentum_chaser | pre-flip · shadow | 9 | 9 | 157 | 2026-09-28, 2026-09-29, 2026-09-30, 2026-10-01 |
 | founder · momentum_chaser | pre-flip · off | 7 | 7 | 119 | 2026-09-22, 2026-09-23, 2026-09-25, 2026-10-02, 2026-10-05 |
 
-- Active at read: founder `vwuCE…` (expires 2026-10-14 20:00 ET). Open calls at read (on window): 0. `declarationsPhase` values on the on-window checks: `expected` ×133, `none` ×116.
+- Active at read: FT_QA `BJVQK…` (expires 2026-10-14 20:00 ET); founder `vwuCE…` (expires 2026-10-14 20:00 ET). Open calls at read (on window): 0. `declarationsPhase` values on the on-window checks: `expected` ×135, `none` ×121.
 
 ### A1 · Timeout rate and callMs
 
-**In plain terms.** The founder's timeout share is 16.0% of model calls over the cockpit-on window (32 of 200), against 7.0% in the shadow weeks and 8.4% off; week 2's two battle-days ran 30.4%. FT_QA (Diversifier) is at 38.5% over three battle-days. Every timeout is the SDK's own 20-second limit (`timeoutKind: sdk`); the 22-second backstop never fired. The ten API-refused checks (Oct 8, HTTP 400 "usage limits") are outside every rate here. Among completed checks the median call is 1.2 s longer when the check declares (15.5 s vs 14.3 s, founder), while the p90 and p95 are not; the whole distribution's median moved from 15.3 s (shadow) to 16.0 s (on). By hour, the founder's timeouts cluster at 12:00 (22.7%) and 13:00 ET (17.0%) and thin out by 15:00 (9.1%); FT_QA's at 14:00–15:00 ET (40%, 50%). By day: Oct 7 23.1%, Oct 12 46.2% (6 of 13), Oct 9 5.9%.
+**In plain terms.** The founder's timeout share is 16.0% of model calls over the cockpit-on window (32 of 200), against 7.0% in the shadow weeks and 8.4% off; week 2's two battle-days ran 30.4%. FT_QA (Diversifier) is at 41.3% over four battle-days (4 of 7 on Oct 14). Every timeout is the SDK's own 20-second limit (`timeoutKind: sdk`); the 22-second backstop never fired. The ten API-refused checks (Oct 8, HTTP 400 "usage limits") are outside every rate here. Among completed checks the median call is 1.2 s longer when the check declares (15.5 s vs 14.3 s, founder), while the p90 and p95 are not; the whole distribution's median moved from 15.3 s (shadow) to 16.0 s (on). By hour, the founder's timeouts cluster at 12:00 (22.7%) and 13:00 ET (17.0%) and thin out by 15:00 (9.1%); FT_QA's at 14:00–15:00 ET (35.7%, 60.0%). By day: founder Oct 7 23.1%, Oct 12 46.2% (6 of 13), Oct 9 5.9%; FT_QA Oct 14 57.1%.
 
 A *model call* is a dispatched check (finite `callMs`) that the API did not refuse; API-refused checks (`failureClass` = an HTTP status) are left out of every rate and listed in their own column. A timed-out check has no answer, so it cannot be classified as declaring: the declaring / non-declaring split covers completed checks (no `haikuError`), and timeouts stand beside them. `callMs` p50 · p90 · p95 in ms.
 
 | Account · archetype | Window | Checks | Model calls | API-refused (separate) | Timeouts | `timeoutKind` | Other failures | callMs p50 · p90 · p95 (model calls) | Declaring / completed | callMs, completed declaring | callMs, completed non-declaring |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| FT_QA · diversifier | on | 39 | 39 | 0 | 15 / 39 (38.5%) | `sdk` ×15 | none | 19280 · 20005 · 20007 (n=39) | 16 / 24 | 18458 · 19326 · 19485 (n=16) | 16800 · 19496 · 19496 (n=8) |
+| FT_QA · diversifier | on | 46 | 46 | 0 | 19 / 46 (41.3%) | `sdk` ×19 | none | 19311 · 20006 · 20007 (n=46) | 18 / 27 | 18458 · 19485 · 19636 (n=18) | 16800 · 19496 · 19496 (n=9) |
 | founder · contrarian | pre-flip · off | 15 | 15 | 0 | 1 / 15 (6.7%) | `sdk` ×1 | none | 16190 · 18982 · 20007 (n=15) | 0 / 14 | n/a | 15738 · 18112 · 18982 (n=14) |
 | founder · momentum_chaser | on | 210 | 200 | 10 | 32 / 200 (16.0%) | `sdk` ×32 | `invalid_tool_result` ×1 | 15996 · 20004 · 20005 (n=200) | 117 / 167 | 15491 · 18946 · 19263 (n=117) | 14295 · 19027 · 19833 (n=50) |
 | founder · momentum_chaser | pre-flip · shadow | 157 | 157 | 0 | 11 / 157 (7.0%) | `sdk` ×11 | `invalid_tool_result` ×4 | 15303 · 19583 · 20004 (n=157) | 4 / 142 | 17607 · 19031 · 19031 (n=4) | 14883 · 17883 · 18758 (n=138) |
@@ -67,8 +67,8 @@ By ET hour of the check (on window):
 | FT_QA · diversifier | 11:00 | 3 | 3 | 0 | 1 / 3 (33.3%) | `sdk` ×1 | none | 18458 · 20006 · 20006 (n=3) | 2 / 2 | 17086 · 18458 · 18458 (n=2) | n/a |
 | FT_QA · diversifier | 12:00 | 6 | 6 | 0 | 2 / 6 (33.3%) | `sdk` ×2 | none | 19206 · 20004 · 20004 (n=6) | 4 / 4 | 18399 · 19230 · 19230 (n=4) | n/a |
 | FT_QA · diversifier | 13:00 | 8 | 8 | 0 | 2 / 8 (25.0%) | `sdk` ×2 | none | 18133 · 20004 · 20004 (n=8) | 3 / 6 | 19311 · 19326 · 19326 (n=3) | 16609 · 18133 · 18133 (n=3) |
-| FT_QA · diversifier | 14:00 | 10 | 10 | 0 | 4 / 10 (40.0%) | `sdk` ×4 | none | 19280 · 20004 · 20005 (n=10) | 5 / 6 | 18483 · 19485 · 19485 (n=5) | 16800 · 16800 · 16800 (n=1) |
-| FT_QA · diversifier | 15:00 | 12 | 12 | 0 | 6 / 12 (50.0%) | `sdk` ×6 | none | 19496 · 20007 · 20008 (n=12) | 2 / 6 | 17387 · 18529 · 18529 (n=2) | 17383 · 19496 · 19496 (n=4) |
+| FT_QA · diversifier | 14:00 | 14 | 14 | 0 | 5 / 14 (35.7%) | `sdk` ×5 | none | 19280 · 20005 · 20013 (n=14) | 7 / 9 | 18483 · 19636 · 19636 (n=7) | 15783 · 16800 · 16800 (n=2) |
+| FT_QA · diversifier | 15:00 | 15 | 15 | 0 | 9 / 15 (60.0%) | `sdk` ×9 | none | 20004 · 20007 · 20008 (n=15) | 2 / 6 | 17387 · 18529 · 18529 (n=2) | 17383 · 19496 · 19496 (n=4) |
 | founder · momentum_chaser | 09:00 | 12 | 12 | 0 | 2 / 12 (16.7%) | `sdk` ×2 | none | 16250 · 20004 · 20005 (n=12) | 7 / 10 | 16250 · 19174 · 19174 (n=7) | 14856 · 19865 · 19865 (n=3) |
 | founder · momentum_chaser | 10:00 | 1 | 1 | 0 | 0 / 1 (0.0%) | none | none | 10947 · 10947 · 10947 (n=1) | 1 / 1 | 10947 · 10947 · 10947 (n=1) | n/a |
 | founder · momentum_chaser | 11:00 | 2 | 2 | 0 | 1 / 2 (50.0%) | `sdk` ×1 | none | 18105 · 20005 · 20005 (n=2) | 1 / 1 | 18105 · 18105 · 18105 (n=1) | n/a |
@@ -84,6 +84,7 @@ By ET day (on window):
 | FT_QA · diversifier | 2026-10-06 | 15 | 15 | 0 | 7 / 15 (46.7%) | `sdk` ×7 | none | 19485 · 20004 · 20005 (n=15) | 6 / 8 | 18399 · 19485 · 19485 (n=6) | 16255 · 17383 · 17383 (n=2) |
 | FT_QA · diversifier | 2026-10-07 | 18 | 18 | 0 | 6 / 18 (33.3%) | `sdk` ×6 | none | 19230 · 20006 · 20007 (n=18) | 7 / 12 | 19206 · 19326 · 19326 (n=7) | 16800 · 19496 · 19496 (n=5) |
 | FT_QA · diversifier | 2026-10-12 | 6 | 6 | 0 | 2 / 6 (33.3%) | `sdk` ×2 | none | 18483 · 20008 · 20008 (n=6) | 3 / 4 | 18483 · 18529 · 18529 (n=3) | 17741 · 17741 · 17741 (n=1) |
+| FT_QA · diversifier | 2026-10-14 | 7 | 7 | 0 | 4 / 7 (57.1%) | `sdk` ×4 | none | 20005 · 20013 · 20013 (n=7) | 2 / 3 | 17891 · 19636 · 19636 (n=2) | 15783 · 15783 · 15783 (n=1) |
 | founder · momentum_chaser | 2026-10-06 | 50 | 50 | 0 | 6 / 50 (12.0%) | `sdk` ×6 | none | 14856 · 20003 · 20003 (n=50) | 28 / 44 | 12911 · 19012 · 19047 (n=28) | 15491 · 19151 · 19908 (n=16) |
 | founder · momentum_chaser | 2026-10-07 | 52 | 52 | 0 | 12 / 52 (23.1%) | `sdk` ×12 | none | 16897 · 20004 · 20004 (n=52) | 26 / 40 | 15312 · 19192 · 19265 (n=26) | 14231 · 19027 · 19833 (n=14) |
 | founder · momentum_chaser | 2026-10-08 | 34 | 24 | 10 | 4 / 24 (16.7%) | `sdk` ×4 | none | 17593 · 20004 · 20005 (n=24) | 17 / 20 | 17593 · 18946 · 19861 (n=17) | 14791 · 17031 · 17031 (n=3) |
@@ -95,13 +96,13 @@ By ET day (on window):
 
 ### A2 · Output tokens vs callMs; the declarations block's share
 
-**In plain terms.** 168 of the founder's 200 on-window model calls left a readable answer (the 32 timeouts stored their request and no response); 24 of 39 for FT_QA; 146 of 157 shadow and 109 of 119 off; the Sep 21 contrarian battle has no bodies (capture began Sep 22). Output tokens and call time move together almost exactly (founder 0.99; shadow 0.96; off 0.93): a 500–999-token answer takes 9.9 s at the median, 1,000–1,499 takes 14.6 s, 1,500–1,999 takes 18.7 s with a p95 of 19.9 s, a hair under the limit. What changed at `on` is the share of long answers: 47 of 168 readable founder answers (28%) are ≥ 1,500 tokens, against 17 of 146 (12%) in shadow and 17 of 109 (16%) off. Declaring and non-declaring completed checks differ little (1,299 vs 1,213 tokens at the median), and the declarations block is 8.8% of the answer's characters on average (FT_QA 10.5%; the four shadow declarations 14.6%). Raw called shots correlate 0.62 with output tokens (FT_QA 0.71). The Diversifier's answers are longer throughout: 1,537 tokens at the median. No answer hit the 3,072-token ceiling.
+**In plain terms.** 168 of the founder's 200 on-window model calls left a readable answer (the 32 timeouts stored their request and no response); 27 of 46 for FT_QA; 146 of 157 shadow and 109 of 119 off; the Sep 21 contrarian battle has no bodies (capture began Sep 22). Output tokens and call time move together almost exactly (founder 0.99; shadow 0.96; off 0.93; FT_QA 0.86): a 500–999-token answer takes 9.9 s at the median, 1,000–1,499 takes 14.6 s, 1,500–1,999 takes 18.7 s with a p95 of 19.9 s, a hair under the limit. What changed at `on` is the share of long answers: 47 of 168 readable founder answers (28%) are ≥ 1,500 tokens, against 17 of 146 (12%) in shadow and 17 of 109 (16%) off. Declaring and non-declaring completed checks differ little (1,299 vs 1,213 tokens at the median), and the declarations block is 8.8% of the answer's characters on average (FT_QA 10.1%; the four shadow declarations 14.6%). Raw called shots correlate 0.62 with output tokens (FT_QA 0.60). The Diversifier's answers are longer throughout: 1,537 tokens at the median, 15 of its 27 readable answers in the top bin. No answer hit the 3,072-token ceiling.
 
 A body is *readable* when the stored response carries `usage.output_tokens` (a timed-out check stores its request and no response). The declarations share is a character-share proxy: the JSON length of the tool input's `declarations` block over the JSON length of the whole tool input (no token counter is called).
 
 | Account · archetype | Window | Bodies readable / model calls | Timeouts with a request and no response | corr(output tokens, callMs) | Output tokens p50 · p90 · p95 | …declaring checks | …non-declaring checks | Declarations share of the tool input (mean · median) | corr(raw called shots, output tokens) | `max_tokens` stops |
 |---|---|---|---|---|---|---|---|---|---|---|
-| FT_QA · diversifier | on | 24 of 39 | 15 | 0.86 | 1537 · 1788 · 1793 (n=24) | 1591 · 1793 · 1898 (n=16) | 1476 · 1681 · 1681 (n=8) | 10.47% · 11.55% (n=16) | 0.71 | 0 |
+| FT_QA · diversifier | on | 27 of 46 | 19 | 0.86 | 1537 · 1788 · 1793 (n=27) | 1591 · 1793 · 1898 (n=18) | 1476 · 1681 · 1681 (n=9) | 10.08% · 11.55% (n=18) | 0.60 | 0 |
 | founder · contrarian | pre-flip · off | 0 of 15 | 0 | n/a | n/a | n/a | n/a | n/a | n/a | 0 |
 | founder · momentum_chaser | on | 168 of 200 | 32 | 0.99 | 1291 · 1658 · 1700 (n=168) | 1299 · 1658 · 1703 (n=117) | 1213 · 1650 · 1700 (n=51) | 8.79% · 9.15% (n=117) | 0.62 | 0 |
 | founder · momentum_chaser | pre-flip · shadow | 146 of 157 | 11 | 0.96 | 1212 · 1524 · 1589 (n=146) | 1555 · 1663 · 1663 (n=4) | 1207 · 1497 · 1586 (n=142) | 14.56% · 16.68% (n=4) | 0.32 | 0 |
@@ -110,8 +111,8 @@ A body is *readable* when the stored response carries `usage.output_tokens` (a t
 | Account · archetype | Window | Output tokens | Checks | callMs p50 · p90 · p95 | Declaring | Raw called shots (mean) |
 |---|---|---|---|---|---|---|
 | FT_QA · diversifier | on | 500–999 | 1 | 12225 · 12225 · 12225 (n=1) | 1 / 1 (100.0%) | 0 |
-| FT_QA · diversifier | on | 1000–1499 | 9 | 16800 · 18529 · 18529 (n=9) | 4 / 9 (44.4%) | 0.3 |
-| FT_QA · diversifier | on | 1500–1999 | 14 | 18483 · 19485 · 19496 (n=14) | 11 / 14 (78.6%) | 1.9 |
+| FT_QA · diversifier | on | 1000–1499 | 11 | 16800 · 18399 · 18529 (n=11) | 5 / 11 (45.5%) | 0.5 |
+| FT_QA · diversifier | on | 1500–1999 | 15 | 19206 · 19496 · 19636 (n=15) | 12 / 15 (80.0%) | 1.7 |
 | founder · momentum_chaser | on | 500–999 | 35 | 9852 · 11641 · 11949 (n=35) | 18 / 35 (51.4%) | 0.1 |
 | founder · momentum_chaser | on | 1000–1499 | 86 | 14647 · 16989 · 17173 (n=86) | 65 / 86 (75.6%) | 0.8 |
 | founder · momentum_chaser | on | 1500–1999 | 47 | 18726 · 19789 · 19861 (n=47) | 34 / 47 (72.3%) | 1.6 |
@@ -124,13 +125,13 @@ A body is *readable* when the stored response carries `usage.output_tokens` (a t
 
 ### A3 · Input size per check
 
-**In plain terms.** Every dispatched check's request is readable, timeouts included. The `on` request is 46,217 characters at the median (founder), 1,240 more than shadow and 5,536 more than off; the difference sits in the tool schema (13,625 characters at on, 13,166 shadow, 8,539 off: the declarations property) and in the messages (16,343 vs 15,893). In tokens the completed checks read 14,701 at the median (shadow 14,235, off 13,150; p95 16,705). The Diversifier's prompt is 46,382 characters and 15,050 tokens at the median, 349 tokens more than the founder's. The BENCH TECHNICAL CONTEXT block (B5) is in 207 of 210 founder prompts and in all 39 of FT_QA's.
+**In plain terms.** Every dispatched check's request is readable, timeouts included. The `on` request is 46,217 characters at the median (founder), 1,240 more than shadow and 5,536 more than off; the difference sits in the tool schema (13,625 characters at on, 13,166 shadow, 8,539 off: the declarations property) and in the messages (16,343 vs 15,893). In tokens the completed checks read 14,701 at the median (shadow 14,235, off 13,150; p95 16,705). The Diversifier's prompt is 46,383 characters and 15,156 tokens at the median, 455 tokens more than the founder's. The BENCH TECHNICAL CONTEXT block (B5) is in 207 of 210 founder prompts and in all 46 of FT_QA's.
 
 Request characters come from the stored request (system + the three messages + the tool schema), so they cover timed-out checks too; input tokens come from the response's `usage.input_tokens`, so completed checks only.
 
 | Account · archetype | Window | Requests readable / dispatched | Request chars p50 · p90 · p95 | System chars p50 | Message chars p50 | Tool schema chars p50 | Input tokens p50 · p90 · p95 | Prompts with a BENCH TECHNICAL CONTEXT block |
 |---|---|---|---|---|---|---|---|---|
-| FT_QA · diversifier | on | 39 of 39 | 46382 · 48256 · 48659 (n=39) | 16261 | 16496 | 13625 | 15050 · 15806 · 15837 (n=24) | 39 of 39 |
+| FT_QA · diversifier | on | 46 of 46 | 46383 · 48237 · 48639 (n=46) | 16261 | 16497 | 13625 | 15156 · 15806 · 15837 (n=27) | 46 of 46 |
 | founder · contrarian | pre-flip · off | 0 of 15 | n/a | n/a | n/a | n/a | n/a | 0 of 0 |
 | founder · momentum_chaser | on | 210 of 210 | 46217 · 51132 · 51561 (n=210) | 16249 | 16343 | 13625 | 14701 · 16579 · 16705 (n=168) | 207 of 210 |
 | founder · momentum_chaser | pre-flip · shadow | 157 of 157 | 44977 · 48316 · 49963 (n=157) | 16249 | 15562 | 13166 | 14235 · 15551 · 16054 (n=146) | 153 of 157 |
@@ -160,13 +161,13 @@ Request characters come from the stored request (system + the three messages + t
 1. **The backstop follows the timeout** (the code's own rule: "a defense-in-depth backstop 2s above it", `:2866`). `HAIKU_CALL_CEILING_MS` → 32,000; the requirement → 10,000 + 32,000 + 12,000 + 4,000 = **58,000 ms** (+10,000). Against the handler: 290,000 / 48,000 = 6.04 worst-case checks fit today, 290,000 / 58,000 = **5.0** at 30 s; the gate admits a check only while `remaining ≥ 58,000`, so the last admitted check still ends inside the 290 s budget and the 10 s buffer to the kill (`:206`) is untouched. The lock (120,000) stays above one check (58,000).
 2. **The admission budget held at 48,000** (the requirement's terms changed so the sum stays): 48,000 − 10,000 − 32,000 − 4,000 = **2,000 ms** for post-call work, against 12,000 today. The records cannot say how long the post-call work takes on its own: `tickMs` spans the whole tick from admission under the lock to the final update (`agent-evaluate.js:893`, `:4162`), so `tickMs − buildMs − callMs` (the table below) holds the pre-build work — quotes, the risk loop, triggers — as well as the post-call work. The table below gives those sums.
 
-**What the checks actually took (COMPUTED):** no on-window tick exceeded the 48 s requirement: tickMs p95 33.3 s (founder), 41.6 s (FT_QA), max 44.2 s. The build is 2–3 ms at the median; the call 16.0 s (founder) and 19.3 s (FT_QA); the rest of the tick (the pre-build fetches and risk loop plus the post-call work) 8.9 s at the median and 16.4 s at p95 for the founder, 12.9 s and 21.6 s for FT_QA, against 7.2 s and 12.5 s in the shadow weeks.
+**What the checks actually took (COMPUTED):** no on-window tick exceeded the 48 s requirement: tickMs p95 33.3 s (founder), 41.6 s (FT_QA), max 44.2 s. The build is 2–3 ms at the median; the call 16.0 s (founder) and 19.3 s (FT_QA); the rest of the tick (the pre-build fetches and risk loop plus the post-call work) 8.9 s at the median and 16.4 s at p95 for the founder, 13.0 s and 21.6 s for FT_QA, against 7.2 s and 12.5 s in the shadow weeks.
 
 From the evaluation entries: `buildMs` (the prompt build), `callMs` (the model call) and `tickMs` (the whole tick, from admission under the lock to the final update, so it also holds the pre-build work: quotes, the risk loop, triggers). The rest = tickMs − buildMs − callMs, the pre-build and post-call work together; the records do not split the two. Model calls only; ms.
 
 | Account · archetype | Window | Model calls | buildMs p50 · p90 · p95 | callMs p50 · p90 · p95 | tickMs p50 · p90 · p95 | The rest (tickMs − buildMs − callMs) p50 · p90 · p95 | tickMs > 48,000 | tickMs max |
 |---|---|---|---|---|---|---|---|---|
-| FT_QA · diversifier | on | 39 | 3 · 8 · 9 (n=39) | 19280 · 20005 · 20007 (n=39) | 32165 · 36195 · 41620 (n=39) | 12932 · 17828 · 21602 (n=39) | 0 | 44199 |
+| FT_QA · diversifier | on | 46 | 3 · 8 · 8 (n=46) | 19311 · 20006 · 20007 (n=46) | 32431 · 36591 · 41620 (n=46) | 12950 · 17828 · 21602 (n=46) | 0 | 44199 |
 | founder · contrarian | pre-flip · off | 15 | 5 · 9 · 11 (n=15) | 16190 · 18982 · 20007 (n=15) | n/a | n/a | 0 | n/a |
 | founder · momentum_chaser | on | 200 | 2 · 5 · 6 (n=200) | 15996 · 20004 · 20005 (n=200) | 26200 · 32284 · 33291 (n=200) | 8881 · 14179 · 16383 (n=200) | 0 | 41951 |
 | founder · momentum_chaser | pre-flip · shadow | 157 | 2 · 6 · 7 (n=157) | 15303 · 19583 · 20004 (n=157) | 22857 · 27583 · 29137 (n=157) | 7245 · 11663 · 12471 (n=157) | 0 | 32257 |
@@ -174,13 +175,13 @@ From the evaluation entries: `buildMs` (the prompt build), `callMs` (the model c
 
 ### A5 · Called shots per declaring check
 
-**In plain terms.** A declaring check carried 1.23 raw called shots on average (founder; 45 of 117 declaring checks carried none, the watching-only records) and 1.81 for FT_QA. The agent wrote more than three shots at 2 of 133 declaring checks (both the founder's, four shots each); after the validator's removals no record kept more than three. The cap of six was never approached. DP-7's option 2 (a cap of 3) would have touched two checks in the window.
+**In plain terms.** A declaring check carried 1.23 raw called shots on average (founder; 45 of 117 declaring checks carried none, the watching-only records) and 1.72 for FT_QA. The agent wrote more than three shots at 2 of 135 declaring checks (both the founder's, four shots each); after the validator's removals no record kept more than three. The cap of six was never approached. DP-7's option 2 (a cap of 3) would have touched two checks in the window.
 
 Raw = the agent's `declarations.calledShots` as written in the tool input; kept = the record's list after validation (cap 6, `validate.js` DECLARATION_CAPS.shots).
 
 | Account · archetype | Window | Declaring checks | Raw shots: histogram | Raw > 3 | Raw mean | Kept shots: histogram | Kept > 3 | Kept mean |
 |---|---|---|---|---|---|---|---|---|
-| FT_QA · diversifier | on | 16 | `0` ×3, `1` ×1, `2` ×8, `3` ×4 | 0 | 1.81 | `0` ×3, `1` ×2, `2` ×8, `3` ×3 | 0 | 1.69 |
+| FT_QA · diversifier | on | 18 | `0` ×4, `1` ×1, `2` ×9, `3` ×4 | 0 | 1.72 | `0` ×4, `1` ×2, `2` ×9, `3` ×3 | 0 | 1.61 |
 | founder · momentum_chaser | on | 117 | `0` ×45, `1` ×19, `2` ×36, `3` ×15, `4` ×2 | 2 | 1.23 | `0` ×45, `1` ×27, `2` ×35, `3` ×10 | 0 | 1.09 |
 | founder · momentum_chaser | pre-flip · shadow | 4 | `1` ×1, `2` ×1, `3` ×2 | 0 | 2.25 | `1` ×1, `2` ×1, `3` ×2 | 0 | 2.25 |
 
@@ -298,11 +299,11 @@ Measured against the 44 files B1–B8 cite (the endpoint, chat, chip, directive 
 
 ## Part C — live counts (Oct 6–14, both accounts)
 
-Every count is taken at a check's instant (its declarations record's mint, or the entry's final update) on the records as read; Oct 14 has no check. Threads follow Amendment C-6; a thread *needs you* when its newest call is not an upside call, nothing on it is answered, and its deadline is ahead. The script prints up to eight verbatim examples per section, the first eight by time.
+Every count is taken at a check's instant (its declarations record's mint, or the entry's final update) on the records as read at 16:40 ET; the founder has no Oct 14 check. Threads follow Amendment C-6; a thread *needs you* when its newest call is not an upside call, nothing on it is answered, and its deadline is ahead. The script prints up to eight verbatim examples per section, the first eight by time.
 
 ### C1 · Now-card candidates
 
-**In plain terms.** With DP-1's priority the founder's Now card would lead with an exit the agent will make and no usable replacement at 80 of 210 checks (38%), a hold-default called shot at 51 (24%), another Confirmation at 27 (13%), the status of a live command alone at 7 (3%), and nothing at 45 (21%). FT_QA: the no-replacement exit at 33 of 39 (85%). The lead (priority and thread) changed at 62 of the founder's 197 consecutive check pairs (31%); the priority alone at 39 (20%). Battles differ: `N6UPR…` and `3vzKW…` led with a no-replacement exit at 14 and 15 of their 17–18 checks; `CtzRn…` led with hold-default shots at 16 of 18 and changed thread 11 times. The eight examples all fall in one battle's restated CTVA thread, the first eight priority-1 checks by time.
+**In plain terms.** With DP-1's priority the founder's Now card would lead with an exit the agent will make and no usable replacement at 80 of 210 checks (38%), a hold-default called shot at 51 (24%), another Confirmation at 27 (13%), the status of a live command alone at 7 (3%), and nothing at 45 (21%). FT_QA: the no-replacement exit at 33 of 46 (72%), a hold-default shot at 5 (all on Oct 14), nothing at 8. The lead (priority and thread) changed at 62 of the founder's 197 consecutive check pairs (31%); the priority alone at 39 (20%); FT_QA 6 of 42. Battles differ: `N6UPR…` and `3vzKW…` led with a no-replacement exit at 14 and 15 of their 17–18 checks; `CtzRn…` led with hold-default shots at 16 of 18 and changed thread 11 times. The eight examples all fall in one battle's restated CTVA thread, the first eight priority-1 checks by time.
 
 At each check's instant (its declarations record's mint, or its final update) the open calls are folded into C-6 threads; a thread *needs you* when its newest call is not an upside call, no call in it is answered, and its deadline is ahead. DP-1's priority: 1 = a Confirmation (exit, default act) with `counterpart` null; 2 = any other Confirmation; 3 = a called shot the agent plans to hold on; 4 = a live command and nothing above; none otherwise. A *lead change* is a check whose lead (priority and thread, a thread named by its oldest call so a restatement is not a change) differs from the previous check of the same battle.
 
@@ -324,13 +325,14 @@ At each check's instant (its declarations record's mint, or its final update) th
 | `iIt9g…` | FT_QA | 2026-10-06 | 15 | 11 | 0 | 0 | 0 | 4 | 2 | 1 |
 | `bDveg…` | FT_QA | 2026-10-07 | 18 | 17 | 0 | 0 | 0 | 1 | 2 | 1 |
 | `NoWNY…` | FT_QA | 2026-10-12 | 6 | 5 | 0 | 0 | 0 | 1 | 1 | 1 |
+| `BJVQK…` | FT_QA | 2026-10-14 | 7 | 0 | 0 | 5 | 0 | 2 | 1 | 1 |
 
-- founder: 210 checks — lead 1 ×80, 2 ×27, 3 ×51, 4 ×7, none ×45; lead changes 62 (priority-only 39) over 197 consecutive pairs. FT_QA: 39 checks — lead 1 ×33, 2 ×0, 3 ×0, 4 ×0, none ×6; lead changes 5 (priority-only 3) over 36 consecutive pairs.
+- founder: 210 checks — lead 1 ×80, 2 ×27, 3 ×51, 4 ×7, none ×45; lead changes 62 (priority-only 39) over 197 consecutive pairs. FT_QA: 46 checks — lead 1 ×33, 2 ×0, 3 ×5, 4 ×0, none ×8; lead changes 6 (priority-only 4) over 42 consecutive pairs.
 - Examples (priority 1): founder `3vzKW…` eval_004 (12:17 ET): priority 1 — CTVA exit below 13.08 (confirmation, default act, this_session, counterpart null); founder `3vzKW…` eval_005 (12:32 ET): priority 1 — CTVA exit below 12.8 (confirmation, default act, this_session, counterpart null); founder `3vzKW…` eval_006 (12:47 ET): priority 1 — CTVA exit below 12.95 (confirmation, default act, this_session, counterpart null); founder `3vzKW…` eval_007 (13:03 ET): priority 1 — CTVA exit below 12.95 (confirmation, default act, this_session, counterpart null); founder `3vzKW…` eval_008 (13:17 ET): priority 1 — CTVA exit below 12.95 (confirmation, default act, this_session, counterpart null); founder `3vzKW…` eval_009 (13:32 ET): priority 1 — CTVA exit below 12.95 (confirmation, default act, this_session, counterpart null); founder `3vzKW…` eval_010 (13:47 ET): priority 1 — CTVA exit below 12.95 (confirmation, default act, this_session, counterpart null); founder `3vzKW…` eval_011 (14:03 ET): priority 1 — CTVA exit below 12.95 (confirmation, default act, this_session, counterpart null).
 
 ### C2 · Open calls at once
 
-**In plain terms.** The strip holds every open thread but the Now card, so its chip count is the open-thread count below minus one when a card shows. The founder's battles averaged 0.7 to 5.1 open threads per check with maxima of 2 to 10 (`CtzRn…` 10, `bzYya…` 9); FT_QA's `bDveg…` averaged 7.1 with a maximum of 9 (13 calls before folding). Threads needing you averaged up to 5.1 (founder `zC5A8…`) and 6.3 (FT_QA `bDveg…`), maxima 9 and 8.
+**In plain terms.** The strip holds every open thread but the Now card, so its chip count is the open-thread count below minus one when a card shows. The founder's battles averaged 0.7 to 5.1 open threads per check with maxima of 2 to 10 (`CtzRn…` 10, `bzYya…` 9); FT_QA's `bDveg…` averaged 7.1 with a maximum of 9 (13 calls before folding), its Oct 14 battle 1.4. Threads needing you averaged up to 5.1 (founder `zC5A8…`) and 6.3 (FT_QA `bDveg…`), maxima 9 and 8.
 
 At each check's instant: the open calls after C-6 folding (threads), upside calls included — the strip holds every open call but the Now card. Per battle: mean and max over its checks.
 
@@ -339,6 +341,7 @@ At each check's instant: the open calls after C-6 folding (threads), upside call
 | `3vzKW…` | founder | 2026-10-09 | 18 | 5.1 | 7 | 5.3 | 8 | 3.9 | 5 |
 | `5gnep…` | founder | 2026-10-08 | 17 | 2.5 | 4 | 2.5 | 5 | 2.4 | 4 |
 | `bDveg…` | FT_QA | 2026-10-07 | 18 | 7.1 | 9 | 9 | 13 | 6.3 | 8 |
+| `BJVQK…` | FT_QA | 2026-10-14 | 7 | 1.4 | 2 | 1.4 | 2 | 1.4 | 2 |
 | `bzYya…` | founder | 2026-10-07 | 18 | 4.1 | 9 | 4.1 | 9 | 4.1 | 9 |
 | `CtzRn…` | founder | 2026-10-06 | 18 | 5.1 | 10 | 5.2 | 11 | 4.2 | 9 |
 | `cXFPX…` | founder | 2026-10-06 | 17 | 2.5 | 6 | 2.6 | 7 | 1.5 | 5 |
@@ -355,7 +358,7 @@ At each check's instant: the open calls after C-6 folding (threads), upside call
 
 ### C3 · The replacement step
 
-**In plain terms.** 103 exit calls would show "Who comes in?": founder 90 across 13 battle-days (6.9 per battle-day; 35 Confirmations, 55 hold-default shots), FT_QA 13 (7 and 6). At the founder's 88 readable minting checks the bench showed at least two available names 87 times; the agent's anticipation candidates held ≥ 1 available name for 43 calls and ≥ 2 for 13; its watch list ≥ 1 for 34 and ≥ 2 for 33; either list ≥ 1 for 58 (66%) and ≥ 2 for 39 (44%). FT_QA: either ≥ 1 for 10 of 13 and ≥ 2 for 5. Week 2 ran higher: either ≥ 2 for 8 of the founder's 13 week-2 calls. The B5 line at the end: 12 entry calls kept a counterpart; for the 7 whose prompt carries a Tier column the counterpart sat in the call's own slot tier every time; the other 5 are flat6 prompts, which carry no tier.
+**In plain terms.** 103 exit calls would show "Who comes in?": founder 90 across 13 battle-days (6.9 per battle-day; 35 Confirmations, 55 hold-default shots), FT_QA 13 (7 and 6; its two Oct 14 calls are not among them). At the founder's 88 readable minting checks the bench showed at least two available names 87 times; the agent's anticipation candidates held ≥ 1 available name for 43 calls and ≥ 2 for 13; its watch list ≥ 1 for 34 and ≥ 2 for 33; either list ≥ 1 for 58 (66%) and ≥ 2 for 39 (44%). FT_QA: either ≥ 1 for 10 of 13 and ≥ 2 for 5. Week 2 ran higher: either ≥ 2 for 8 of the founder's 13 week-2 calls. The B5 line at the end: 13 entry calls kept a counterpart; for the 8 whose prompt carries a Tier column the counterpart sat in the call's own slot tier 7 times and in another tier once — FT_QA `BJVQK…:eval_003:call:1`, AMGN entry above 430 in `core` with counterpart PFE, which the prompt shows in `support` (14:31 ET, Oct 14): mint kept it (held anywhere), and a "Go instead" on it would be refused `counterpart_not_held` at filing (`callActions.js:137-139`). The other 5 are flat6 prompts, which carry no tier.
 
 The calls that would show "Who comes in?": Confirmations (exit, default act) and hold-default exit called shots whose `counterpart` is null. At the minting check: the names in the agent's anticipation candidates (`candidates[].symbol`) and in its declarations record's watch list that the same prompt's bench showed as `available`. A check with several such calls counts once per call.
 
@@ -372,11 +375,11 @@ The calls that would show "Who comes in?": Confirmations (exit, default act) and
 | FT_QA | 2026-10-12 | 1 | 1 | 0 | 1 of 1 | 1 | 1 · 0 | 1 · 1 | 1 · 1 | 23 |
 
 - Examples: founder `CtzRn…:eval_002:call:0` PANW exit above 415 (called_shot, default hold, this_session, counterpart null) — eyeing (candidates) none; watching MSFT, AMD, EMR; bench available 15; founder `CtzRn…:eval_002:call:1` BE exit above 304 (called_shot, default hold, this_session, counterpart null) — eyeing (candidates) none; watching MSFT, AMD, EMR; bench available 15; founder `CtzRn…:eval_002:call:2` ZS exit above 217 (called_shot, default hold, this_session, counterpart null) — eyeing (candidates) none; watching MSFT, AMD, EMR; bench available 15; founder `CtzRn…:eval_003:call:0` GEV exit below 1020.68 (called_shot, default hold, this_session, counterpart null) — eyeing (candidates) AVGO; watching AVGO; bench available 3; founder `zC5A8…:eval_004:call:1` LRCX exit below 325 (called_shot, default hold, this_session, counterpart null) — eyeing (candidates) CTVA, PWR; watching CTVA, PWR, AVGO, KLAC; bench available 18; founder `CtzRn…:eval_005:call:0` GEV exit below 1042.87 (called_shot, default hold, this_session, counterpart null) — eyeing (candidates) none; watching AMD, CTVA, PWR, CEG; bench available 18; founder `CtzRn…:eval_005:call:1` AMAT exit below 524.21 (confirmation, default act, next_check, counterpart null) — eyeing (candidates) none; watching AMD, CTVA, PWR, CEG; bench available 18; founder `zC5A8…:eval_005:call:0` BE exit above 300 (called_shot, default hold, this_session, counterpart null) — eyeing (candidates) none; watching none; bench available 17.
-- B5 (C-3's entry mint rule vs the filing check counterpart_not_held): entry calls with a kept counterpart 12; counterpart in the call's slot tier 7, in another tier 0, tier unreadable from the stored prompt (no Tier column) 5.
+- B5 (C-3's entry mint rule vs the filing check counterpart_not_held): entry calls with a kept counterpart 13; counterpart in the call's slot tier 7, in another tier 1, tier unreadable from the stored prompt (no Tier column) 5.
 
 ### C4 · Two commands wanted
 
-**In plain terms.** No override was filed while another call's directive was live (no `directive_pending` refusal is stored) and no filing replaced a live command, so the one-at-a-time limit never bit. The want shows another way: two or more overrideable calls on different symbols were open at 129 of the founder's 210 checks (61%; at least one at 161) and at 28 of FT_QA's 39 (72%).
+**In plain terms.** No override was filed while another call's directive was live (no `directive_pending` refusal is stored) and no filing replaced a live command, so the one-at-a-time limit never bit. The want shows another way: two or more overrideable calls on different symbols were open at 129 of the founder's 210 checks (61%; at least one at 161) and at 33 of FT_QA's 46 (72%).
 
 (a) Overrides filed while another call's directive was live: the endpoint stores the refusal on the call (`refused.reason = directive_pending`); a chat or chip filing that replaced a live call directive carries a `supersedes` stamp. (b) At each check's instant: the threads needing you whose newest call takes an override (every non-upside open call does), by distinct symbol — checks where two or more symbols were open at once.
 
@@ -392,6 +395,7 @@ The calls that would show "Who comes in?": Confirmations (exit, default act) and
 | FT_QA | 2026-10-06 | 15 | 11 | 11 |
 | FT_QA | 2026-10-07 | 18 | 17 | 17 |
 | FT_QA | 2026-10-12 | 6 | 5 | 0 |
+| FT_QA | 2026-10-14 | 7 | 5 | 5 |
 
 - (b) Examples: founder `CtzRn…` eval_002 (09:46 ET): ZS, BE, PANW; founder `CtzRn…` eval_003 (12:02 ET): GEV, ZS, BE; founder `CtzRn…` eval_004 (12:17 ET): GEV, ZS, BE; founder `zC5A8…` eval_004 (12:17 ET): LRCX, AMD; founder `CtzRn…` eval_005 (12:32 ET): AMAT, GEV, ZS, BE; founder `zC5A8…` eval_005 (12:46 ET): BE, LRCX, AMD; founder `CtzRn…` eval_006 (12:47 ET): GEV, ZS, BE; founder `CtzRn…` eval_007 (13:02 ET): GEV, ZS, BE.
 
@@ -420,12 +424,12 @@ Calls minted while a live command (C5's interval) on the same symbol and directi
 
 ### C7 · Week 2 beside week 1
 
-**In plain terms.** Week 2 is two founder battle-days (Oct 12, 13) and one FT_QA battle-day (Oct 12), 29 checks in all, so its rates are coarse. Founder: timeouts 7 of 23 (30.4%; week 1 14.1%), no malformed answer, 7 declaring checks and 8.5 calls per battle-day (9.4 and 10 in week 1), 3 answers (the META override and two agreements), no acted call, nothing broken: every declaring check wrote its record, no Amendment C field is missing, every terminal call has its receipt, writer and event. FT_QA: 6 checks, 2 calls, no answer. One change of pace: every week-2 past-deadline call was closed by the sweep 0.6 minutes after its deadline (14 of 14), where week 1 ranged 0.6–31.1 minutes.
+**In plain terms.** Week 2 is two founder battle-days (Oct 12, 13) and two FT_QA battle-days (Oct 12, 14), 36 checks in all, so its rates are coarse. Founder: timeouts 7 of 23 (30.4%; week 1 14.1%), no malformed answer, 7 declaring checks and 8.5 calls per battle-day (9.4 and 10 in week 1), 3 answers (the META override and two agreements), no acted call, nothing broken: every declaring check wrote its record, no Amendment C field is missing, every terminal call has its receipt, writer and event. FT_QA: 13 checks, 6 timeouts (46.2%), 4 calls, no answer; its Oct 14 battle ended its last check with `consecutiveEvalFailures` 3 and the status line "Evaluation engine degraded this tick". One change of pace: every week-2 past-deadline call was closed by the sweep 0.6 minutes after its deadline (16 of 16), where week 1 ranged 0.6–31.1 minutes.
 
 | Account · archetype | Week | Battle-days | Checks | Model calls | API-refused | Timeouts | invalid_tool_result | Declaring checks / battle-day | Calls / battle-day | Calls by kind · direction · default | Answered | Call events by kind | Call states at read | Acted (`actedEvalId`) | Anything broken |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | FT_QA · diversifier | week 1 | 2 | 33 | 33 | 0 | 13 / 33 (39.4%) | 0 | 6.50 | 12.50 | `called_shot:entry·act` ×4, `called_shot:entry·hold` ×8, `called_shot:exit·hold` ×6, `confirmation:exit·act` ×7 | 0 (0 overrides, 0 agreements) | `declared` ×11, `expired` ×23 | `expired_unresolved` ×23, `hit` ×2 | 0 | publication gaps 0; Amendment C fields missing none; integrity 0; sweep lag past_deadline (min) 12.22 · 0.60 · 0.6–31.1 (n=21) |
-| FT_QA · diversifier | week 2 | 1 | 6 | 6 | 0 | 2 / 6 (33.3%) | 0 | 3 | 2 | `confirmation:exit·act` ×2 | 0 (0 overrides, 0 agreements) | `declared` ×2, `expired` ×2 | `expired_unresolved` ×2 | 0 | publication gaps 0; Amendment C fields missing none; integrity 0; sweep lag past_deadline (min) 0.60 · 0.60 · 0.6–0.6 (n=2) |
+| FT_QA · diversifier | week 2 | 2 | 13 | 13 | 0 | 6 / 13 (46.2%) | 0 | 2.50 | 2 | `called_shot:entry·hold` ×1, `called_shot:exit·hold` ×1, `confirmation:exit·act` ×2 | 0 (0 overrides, 0 agreements) | `declared` ×3, `expired` ×4 | `expired_unresolved` ×4 | 0 | publication gaps 0; Amendment C fields missing none; integrity 0; sweep lag past_deadline (min) 0.60 · 0.60 · 0.6–0.6 (n=4) |
 | founder · momentum_chaser | week 1 | 11 | 187 | 177 | 10 | 25 / 177 (14.1%) | 1 | 9.36 | 10 | `called_shot:entry·act` ×6, `called_shot:entry·hold` ×16, `called_shot:exit·hold` ×51, `confirmation:exit·act` ×37 | 4 (2 overrides, 2 agreements) | `answered` ×4, `declared` ×64, `ended_with_battle` ×44, `expired` ×42, `heard` ×2 | `ended_with_battle` ×44, `expired_unresolved` ×42, `hit` ×21, `invalidated` ×3 | 1 | publication gaps 0; Amendment C fields missing none; integrity 0; sweep lag past_deadline (min) 19.66 · 31.10 · 0.6–31.1 (n=24) |
 | founder · momentum_chaser | week 2 | 2 | 23 | 23 | 0 | 7 / 23 (30.4%) | 0 | 7 | 8.50 | `called_shot:entry·act` ×3, `called_shot:entry·hold` ×1, `called_shot:exit·hold` ×7, `confirmation:exit·act` ×6 | 3 (1 overrides, 2 agreements) | `answered` ×3, `declared` ×8, `expired` ×15, `heard` ×1 | `expired_unresolved` ×15, `hit` ×2 | 0 | publication gaps 0; Amendment C fields missing none; integrity 0; sweep lag past_deadline (min) 0.60 · 0.60 · 0.6–0.6 (n=12) |
 
@@ -433,14 +437,14 @@ Calls minted while a live command (C5's interval) on the same symbol and directi
 
 ## Questions for the founder
 
-1. **The Oct 14 battle with no check.** The founder's battle created at 11:38 ET on Oct 14 (`baggerbomb_agent`, expires 20:00 ET) had no evaluation entry at 12:36 ET, after four cron slots; `cronState.lastEvaluatedAt` is null. Was it meant to start checking today? The read instant also leaves Oct 14 out of every table; a re-read after the close would fill it.
+1. **The Oct 14 battle with no check.** The founder's battle created at 11:38 ET on Oct 14 (`baggerbomb_agent`, status active, expires 20:00 ET) had no evaluation entry at 16:40 ET, after twenty cron slots; `cronState.lastEvaluatedAt` is null. Whether the cron visited it is not in the records read here (no run document was read). Was it meant to run today?
 2. **Reading DP-7's numbers.** Timeouts track answer length; long answers are more common at `on`; yet declaring and non-declaring completed checks differ by about a second, and the Diversifier writes long answers with or without a declaration. Which reading governs the replay: the text (fewer, shorter declarations), the timeout, or both?
 3. **The command counter and the fence.** A `commandsUsed` key on the battle document is a new key on the fenced `createAgentBattle` shape, as a concept; the League counter went into its own collection for that reason. Is a key the endpoint alone writes acceptable, or does the counter live elsewhere?
 4. **"Eyeing" for the replacement step.** With two names as the bar, the three readings give 13, 33 and 39 of the founder's 88 calls (candidates, watch list, either). Which list does "Shadow is eyeing" draw from?
 5. **The retire-on-exit receipt.** It needs a new call-event kind; the eight kinds today do not include one. Amendment D, or a reuse of `superseded`?
 6. **The screener's scope.** The screener has no symbol filter the client can set; the only way to scope it to the bench today is a filter the model happens to write. Server-side scope (the bench list sent with the request) or client-side filtering of the model's results?
 7. **The sweep's pace.** Week-2 past-deadline receipts arrived 0.6 minutes after the deadline; week 1's took up to 31 minutes. Did the reflections cron's timing change with the fix merged Oct 11 (#953)?
-8. **FT_QA's week 2.** The QA account played Oct 12 only (6 checks from 14:18 ET), answered none of its 2 calls, and its week-1 battles still carry the 38.5% timeout share. Is that the plan for the QA account?
+8. **FT_QA's week 2.** The QA account played Oct 12 (from 14:18 ET) and Oct 14 (from 13:52 ET), 13 checks with 6 timeouts, answered none of its 4 calls, and its Oct 14 battle's last check reported the engine degraded. Is that the plan for the QA account?
 
 ---
 
