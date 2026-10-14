@@ -59,6 +59,22 @@ describe('computeReflectionOutcomeReadout', () => {
     expect(r2.noLesson + r2.retrying + r2.endedOtherwise).toBe(r2.failed);
   });
 
+  it('"waiting on the account" (P-OUT-2, O7) is a sub-count of "still retrying": only a pending battle whose latest attempt the account refused', () => {
+    const day = '2026-10-14';
+    const rows = [
+      { reflectionOutcome: rec({ failureClass: 'http_401', accountWide: true, at: `${day}T13:00:00.000Z` }), pendingReflection: true },  // waiting on the account
+      { reflectionOutcome: rec({ failureClass: 'http_400', accountWide: true, at: `${day}T13:15:00.000Z` }), pendingReflection: true },  // waiting on the account
+      { reflectionOutcome: rec({ failureClass: 'timeout', accountWide: false, at: `${day}T13:30:00.000Z` }), pendingReflection: true },  // an ordinary retry
+      { reflectionOutcome: rec({ failureClass: 'http_401', accountWide: true, attempt: 3, at: `${day}T13:45:00.000Z` }), pendingReflection: false, reflectionNoLesson: true }, // past the backstop: finished
+      { reflectionOutcome: rec({ failureClass: 'http_404', accountWide: true, at: `${day}T14:00:00.000Z` }), pendingReflection: false }, // ended otherwise
+    ];
+    const r3 = computeReflectionOutcomeReadout(rows, { fromDay: day, toDay: day });
+    expect(r3).toMatchObject({ failed: 5, retrying: 3, waitingOnAccount: 2, noLesson: 1, endedOtherwise: 1 });
+    expect(r3.noLesson + r3.retrying + r3.endedOtherwise).toBe(r3.failed);
+    const text3 = renderReflectionOutcomeReadout(r3, { readAt: `${day}T15:00:00.000Z` });
+    expect(text3).toContain('still retrying 3 [of which waiting on the account 2]');
+  });
+
   it('the range is inclusive at both ends and ignores rows with no record', () => {
     expect(computeReflectionOutcomeReadout(ROWS, { fromDay: '2026-10-13', toDay: '2026-10-13' }).battles).toBe(3);
     expect(computeReflectionOutcomeReadout(ROWS, { fromDay: '2026-10-20', toDay: '2026-10-20' }).battles).toBe(1);
@@ -71,7 +87,7 @@ describe('the rendered readout', () => {
   const text = renderReflectionOutcomeReadout(r, { readAt: '2026-10-14T00:00:00.000Z' });
 
   it('prints the counts by class and by day', () => {
-    expect(text).toContain('Battles: 4   ok: 2   failed: 2   (of the failed: finished without a lesson 1, still retrying 1, ended otherwise 0)');
+    expect(text).toContain('Battles: 4   ok: 2   failed: 2   (of the failed: finished without a lesson 1, still retrying 1 [of which waiting on the account 0], ended otherwise 0)');
     expect(text).toMatch(/timeout\s+1/);
     expect(text).toMatch(/http_529\s+1/);
     expect(text).toContain('2026-10-13  ok 1  failed 2  (http_529 1, timeout 1)');

@@ -13,16 +13,22 @@
 
 import { CMD } from '../components/Dashboard/commandUI';
 import { getArchetypeDisplayName } from '../data/archetypeDisplay';
+// Pure, import-free (api/_utils/memoryLessons.js): the SAME definitions the
+// consolidation filter uses, so the sheet and the wisdom rewrite agree on
+// which rows are lessons (BUILD_RULES §9).
+import { LEGACY_REFLECTION_FAILURE_LESSON, isNoLessonMarker, isRealLesson } from '../../api/_utils/memoryLessons.js';
 
 // Wins keep the Hub's emerald — CMD reserves its red for downside, and draw
 // stays deliberately neutral so only real losses read as red.
 export const EMERALD = '#34D399';
 
 // Reflection outage fix (P-OUT-1, display line D, 10 Oct 2026): until then a
-// failed reflection was saved as a memory entry whose lesson was this literal
-// line. Entries already holding it render the honest line below instead; no
-// new entry can carry it (api/agent/reflect.js writes nothing on a failure).
-export const LEGACY_REFLECTION_FAILURE_LESSON = 'Reflection generation failed.';
+// failed reflection was saved as a memory entry whose lesson was the literal
+// LEGACY_REFLECTION_FAILURE_LESSON. Entries already holding it render the
+// honest line below instead; no new entry can carry it. Part 2 (P-OUT-2, O9,
+// 14 Oct 2026): a game that finished without a lesson now leaves a no-lesson
+// marker (noLesson: true), which renders the same honest line.
+export { LEGACY_REFLECTION_FAILURE_LESSON };
 export const NO_LESSON_RECORDED_LINE = 'No lesson was recorded for this game.';
 
 export const parseDate = (val) => {
@@ -145,8 +151,13 @@ export function buildEvolutionTimeline(agent) {
     });
   });
 
+  // A marker never stands in for a lesson: if the window also holds a real
+  // lesson for the same game (the writers never put one beside the other), the
+  // lesson's row is the game's row.
+  const gamesWithLesson = new Set((agent.memory || []).filter(isRealLesson).map(m => m.gameId).filter(Boolean));
   (agent.memory || []).forEach(m => {
     if (!m.result) return;
+    if (isNoLessonMarker(m) && gamesWithLesson.has(m.gameId)) return;
     const resultLabel = m.result === 'win' ? 'Win' : m.result === 'draw' ? 'Draw' : 'Loss';
     // "· +156" / "· −75" — signed with the typographic minus, dot-separated.
     const scoreLabel = Number.isFinite(m.score)
@@ -155,7 +166,7 @@ export function buildEvolutionTimeline(agent) {
     events.push({
       type: 'game',
       title: `${getGameModeDisplayName(m.gameMode)} — ${resultLabel}${scoreLabel}`,
-      subtitle: m.lesson === LEGACY_REFLECTION_FAILURE_LESSON ? NO_LESSON_RECORDED_LINE : (m.lesson || ''),
+      subtitle: isNoLessonMarker(m) || m.lesson === LEGACY_REFLECTION_FAILURE_LESSON ? NO_LESSON_RECORDED_LINE : (m.lesson || ''),
       date: parseDate(m.date),
       color: m.result === 'win' ? EMERALD : m.result === 'draw' ? CMD.ink2 : CMD.risk,
     });

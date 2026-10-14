@@ -89,6 +89,54 @@ describe('formatMemory', () => {
   });
 });
 
+// Reflection outage fix, part 2 (P-OUT-2, founder ruling O5): a consolidation
+// reads only REAL lessons. Legacy failure entries and no-lesson markers never
+// reach it, and every game keeps the number it has in the unfiltered window.
+describe('formatMemory — only real lessons reach the consolidation (P-OUT-2, O5)', () => {
+  const game = (lesson, over = {}) => ({ result: 'win', score: 10, opponentScore: 0, lesson, adjustment: `adj ${lesson}`, date: '2026-10-01T00:00:00.000Z', ...over });
+  const WINDOW = [
+    game('Lesson A'),
+    game('Reflection generation failed.', { adjustment: 'N/A' }),
+    game('Lesson C'),
+    { gameId: 'g4', gameMode: 'baggerbomb', result: 'loss', score: -3, opponentScore: 0, lesson: '', noLesson: true, date: '2026-10-02T00:00:00.000Z' },
+    game('Lesson E'),
+  ];
+
+  it('excludes legacy failure lines and markers, and the games keep their numbers (gamesPlayed known)', () => {
+    const out = formatMemory(WINDOW, [], 10);
+    expect(out).not.toContain('Reflection generation failed.');
+    expect(out).not.toContain('N/A');
+    expect(out).not.toContain('(no lesson recorded)');
+    expect(out).not.toContain('score -3');
+    expect(out.match(/^Game /gm)).toHaveLength(3);
+    expect(out).toContain('Game 6 (W, score 10 vs 0) [new this cycle]:\n  Lesson: Lesson A');
+    expect(out).toContain('Game 8 (W, score 10 vs 0) [new this cycle]:\n  Lesson: Lesson C');
+    expect(out).toContain('Game 10 (W, score 10 vs 0) [new this cycle]:\n  Lesson: Lesson E');
+  });
+
+  it('numbering holds when gamesPlayed is unknown: "N of M in window" over the unfiltered window', () => {
+    const out = formatMemory(WINDOW, [], 0);
+    expect(out.match(/^Game .*$/gm)).toEqual([
+      'Game 1 of 5 in window (W, score 10 vs 0) [new this cycle]:',
+      'Game 3 of 5 in window (W, score 10 vs 0) [new this cycle]:',
+      'Game 5 of 5 in window (W, score 10 vs 0) [new this cycle]:',
+    ]);
+  });
+
+  it('a blank lesson is not a lesson; a window with no real lesson renders the empty sentinel', () => {
+    expect(formatMemory([game('   '), game('Lesson B')], [], 2)).not.toMatch(/^Game 1 /m);
+    expect(formatMemory([game('Reflection generation failed.'), { ...WINDOW[3] }], [], 2))
+      .toBe('(none — agent has not yet logged battle reflections)');
+  });
+
+  it('the whole consolidation prompt carries no failure line and no marker', () => {
+    const { systemPrompt } = buildConsolidationPrompt({ name: 'T', memory: WINDOW, stats: { gamesPlayed: 10 }, evolutionTimeline: [] });
+    expect(systemPrompt).not.toContain('Reflection generation failed.');
+    expect(systemPrompt).toContain('Lesson: Lesson E');
+    expect(systemPrompt.match(/^Game \d+ /gm)).toHaveLength(3);
+  });
+});
+
 // ==================== formatPendingLessons ====================
 
 describe('formatPendingLessons', () => {
