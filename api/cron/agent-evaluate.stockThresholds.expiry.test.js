@@ -20,7 +20,7 @@ vi.mock('../_utils/tournamentAgentLedger.js', () => ({ resolveTournamentContext:
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => world.db }));
 vi.mock('../_utils/battlePatternLogger.js', () => ({ logBattlePattern: vi.fn(async () => {}) }));
 vi.mock('../_utils/shadowLogger.js', async o => ({ ...(await o()), logEvaluation: vi.fn(async () => false), logVisionTransition: vi.fn(async () => false), logAnticipation: vi.fn(async () => false) }));
-vi.mock('../../src/config/featureFlags.js', async o => ({ ...(await o()), TICK_STAMPS_ENABLED: false, TICK_CAPTURE_ENABLED: false, CALL_RECORDS_MODE: 'off', SWAP_IDENTITY_MODE: 'off' }));
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({ ...(await importOriginal()), TICK_STAMPS_ENABLED: false, TICK_CAPTURE_ENABLED: false, CALL_RECORDS_MODE: 'off', SWAP_IDENTITY_MODE: 'off' }));
 
 const cron = await import('./agent-evaluate.js');
 const { correctedStockBattle, STOCK_TEST_NOW } = await import('../_utils/__fixtures__/stockThresholdHarness.js');

@@ -877,6 +877,9 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
       'api/cron/agent-evaluate.test.js',
       'api/_utils/stockThresholdAdmission.test.js',
       'api/cron/agent-evaluate.stockThresholds.test.js',
+      // Review K3-7: the same corrected-lifecycle harness with tick stamps on
+      // wraps the real writer to inject the fixture collector — a test consumer.
+      'api/cron/agent-evaluate.stockThresholds.stamps.test.js',
     ]);
     const apiRoot = resolve(__dirname, '..');
     const offenders = [];
