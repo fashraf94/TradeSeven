@@ -101,6 +101,12 @@ describe('Astra F2 — on the volume tie only the volume moves: the saved bar\'s
   const bar = (p, v) => ({ t: '2026-09-24T13:30:00.000Z', o: p, h: p + 0.01, l: p - 0.01, c: p, v, n: 10, m: 10 });
   const doc = (bars) => ({ symbol: 'ACN', bars, atChecks: [], sessionOpen: null });
 
+  it('equal minutes, both volumes recorded: the saved bar stands whole — its volume too (BA-34\'s tie; review LC-8)', () => {
+    const r = keepSeries(doc([bar(100, 5_000)]), doc([bar(101, 9_000)]));
+    expect(r.doc.bars[0]).toEqual(bar(100, 5_000));
+    expect(r.kept).toBe(true);
+  });
+
   it('equal minutes, the fresh bar priced differently: the saved bar with the fresh volume — and the merge is kept (it holds a saved fact)', () => {
     const r = keepSeries(doc([bar(100, null)]), doc([bar(101, 10_000)]));
     expect(r.doc.bars[0]).toEqual({ ...bar(100, null), v: 10_000 });

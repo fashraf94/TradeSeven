@@ -198,11 +198,11 @@ describe('Astra F1 — under none a stored win, loss or draw never stands (exit 
     expect(tape.battle.completionMessage).toEqual({ text: FEED[0].message, at: DONE });
   });
 
-  it('a KEPT completed block storing a draw against a stale active assembly (BA-27: the stored block outranks it) — still unavailable', () => {
+  it.each(['draw', 'win', 'loss'])('a KEPT completed block storing %s against a stale active assembly (BA-27: the stored block outranks it) — still unavailable (review LC-7)', (value) => {
     const stored = {
       etDate: '2026-09-24', passes: { close: { status: 'written', gaps: [] }, candles: { status: 'skipped', reason: 'outside_candle_window' } },
       score: { lastCheck: null, firstCheck: null, dayChange: null, opponentBasis: 'none' },
-      battle: { status: 'completed', completedAt: DONE, final: { total: 0, opponent: null, at: DONE }, result: { value: 'draw', basis: 'stored' }, completionMessage: { text: FEED[0].message, at: DONE } },
+      battle: { status: 'completed', completedAt: DONE, final: { total: 0, opponent: null, at: DONE }, result: { value, basis: 'stored' }, completionMessage: { text: FEED[0].message, at: DONE } },
       checks: [], actions: [], directives: [], plans: [], calls: [], rationale: [], coverage: {},
     };
     const assembled = {

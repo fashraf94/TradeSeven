@@ -129,13 +129,14 @@ describe('the T1 note and the isolated read', () => {
     expect(opponentNoteOf(['A', 'B', 'C', 'D'])).toBe("the opponent's score could not be read at 4 checks (A, B, C and others)");
   });
 
-  it('a class that is not a plain identifier (or whose name itself throws) is named Error — the note never copies other text', () => {
+  it('a class that is not an error class\'s name (a path, an id-like word, a name that itself throws) is named Error — the note never copies other text (review LA-3)', () => {
     const r = opponentReader();
     const thrower = (err) => ({ get opponent() { throw err; } });
+    expect(r.read(thrower(Object.assign(new Error('x'), { name: 'Kq3VhT9xLmN2pR8sW4yZ' })))).toBeNull();
     expect(r.read(thrower(Object.assign(new Error('x'), { name: 'agentBattles/b-1 secret' })))).toBeNull();
     expect(r.read(thrower({ get name() { throw new Error('no'); } }))).toBeNull();
     expect(r.read(thrower(new RangeError('y')))).toBeNull();
     expect(r.read({ opponent: 7 })).toBe(7);
-    expect(r.failures).toEqual(['Error', 'Error', 'RangeError']);
+    expect(r.failures).toEqual(['Error', 'Error', 'Error', 'RangeError']);
   });
 });

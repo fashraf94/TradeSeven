@@ -181,11 +181,15 @@ const scoresOf = (s, { opponent = null } = {}) => (isObj(s) && num(s.total) !== 
   ? { active: num(s.active), banked: num(s.banked), total: num(s.total), opponent: opponent ? opponent(s) : null }
   : null);
 
-/** An error's class for a note: its name when it is a plain identifier (40 characters at most), else 'Error'. */
+/**
+ * An error's class for a note: its name when it reads as an error class — a
+ * plain identifier ending in Error or Exception, 40 characters at most — else
+ * 'Error', so no other text (an id planted as a name) reaches the tape (review LA-3).
+ */
 function errorClassOf(err) {
   let name = null;
   try { name = str(err?.name) ?? str(err?.constructor?.name); } catch { name = null; }
-  return name && /^[A-Za-z_$][A-Za-z0-9_$]{0,39}$/.test(name) ? name : 'Error';
+  return name && name.length <= 40 && /^[A-Za-z_$][A-Za-z0-9_$]*(Error|Exception)$/.test(name) ? name : 'Error';
 }
 
 /**
