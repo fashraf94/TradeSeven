@@ -3221,7 +3221,9 @@ export const SWAP_IDENTITY_MODES = Object.freeze(['off', 'shadow', 'enforce']);
  * §6) and Flash signs off — never in the build PR. THE FLIP MAP (build report
  * §7): the flag → true; the pin in cryptoSlotPromptFlags.test.js → true and
  * this flag's DARK_BY_DESIGN entry dropped from flagPinGuard.test.js, in the
- * same commit; exactly 7 snapshots regenerate — `npx vitest run
+ * same commit, with the "DARK — default FALSE" / "When FALSE (CURRENT)" lines
+ * here and the pin file's "ships FALSE" header reworded (BUILD_RULES §2);
+ * exactly 7 snapshots regenerate — `npx vitest run
  * api/_utils/p4Equivalence.battery.test.js
  * api/_utils/evalIdentityBlock.injection.test.js -u` moves the tiered P4
  * analyst snapshot and the six tiered DR-13 identityOn snapshots (the flat6

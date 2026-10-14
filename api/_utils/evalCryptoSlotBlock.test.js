@@ -18,9 +18,13 @@
 //
 // Both flags are walked through vi.mock getters (importOriginal spread — the
 // safe pattern), so nothing here moves when CRYPTO_SLOT_PROMPT_ENABLED or
-// EQUIPPED_RULE_PRECEDENCE_ENABLED flips. The crypto list is mocked through a
-// getter too (transparent unless a row sets it), which is what proves the
-// symbols are read from agentCryptoAssets.js rather than typed.
+// EQUIPPED_RULE_PRECEDENCE_ENABLED flips. The two other flags the system
+// prompt reads, EVAL_IDENTITY_BLOCK_ENABLED and PROFIT_TARGET_EXECUTOR_ENABLED,
+// are pinned to their values at capture (true, true — the fixture's
+// capturedAt), so the never-regenerated capture stays the text of record if
+// either is ever walked back. The crypto list is mocked through a getter too
+// (transparent unless a row sets it), which is what proves the symbols are
+// read from agentCryptoAssets.js rather than typed.
 //
 // NOTE (BUILD_RULES §4 dependency-surface guard): this file's UNMOCKED imports
 // of evalCryptoSlotBlock.js and the fenced assembler are the runtime guard for
@@ -39,6 +43,8 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get CRYPTO_SLOT_PROMPT_ENABLED() { return flagState.crypto; },
   get EQUIPPED_RULE_PRECEDENCE_ENABLED() { return flagState.precedence; },
+  get EVAL_IDENTITY_BLOCK_ENABLED() { return true; },
+  get PROFIT_TARGET_EXECUTOR_ENABLED() { return true; },
 }));
 vi.mock('./agentCryptoAssets.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -230,9 +236,13 @@ describe('FLAG ON — the block sits once, between SCORING RULES and DECISION FR
     }
   });
 
-  it.each(KEYS)('%s: the probe splice of the flag-off prompt === the flag-on build (spliceCryptoSlotBlock is locked to production)', (key) => {
+  it.each(KEYS)('%s: the probe splice of the flag-off prompt === the flag-on build, whatever the flag (spliceCryptoSlotBlock is locked to production)', (key) => {
     flagState.crypto = true;
-    expect(spliceCryptoSlotBlock(GOLDENS.systemTiered[key])).toBe(tiered(key));
+    const flagOnBuild = tiered(key);
+    for (const state of [true, false]) {
+      flagState.crypto = state;
+      expect(spliceCryptoSlotBlock(GOLDENS.systemTiered[key])).toBe(flagOnBuild);
+    }
   });
 
   it('the probe splice refuses what it cannot place: flat6, an already-spliced prompt, a missing or doubled anchor', () => {
@@ -244,6 +254,8 @@ describe('FLAG ON — the block sits once, between SCORING RULES and DECISION FR
       expect(spliceCryptoSlotBlock(GOLDENS.systemFlat6[key])).toBeNull();
     }
     expect(spliceCryptoSlotBlock(tiered('analyst'))).toBeNull();
+    // A prompt that still has the anchor but already carries the banner elsewhere.
+    expect(spliceCryptoSlotBlock(`${tierLine}${CRYPTO_SLOT_BANNER}\n${CRYPTO_SLOT_SPLICE_ANCHOR}`)).toBeNull();
     expect(spliceCryptoSlotBlock(`${tierLine}no anchor here`)).toBeNull();
     expect(spliceCryptoSlotBlock(`${tierLine}${CRYPTO_SLOT_SPLICE_ANCHOR}${CRYPTO_SLOT_SPLICE_ANCHOR}`)).toBeNull();
     expect(spliceCryptoSlotBlock(`${tierLine}${CRYPTO_SLOT_SPLICE_ANCHOR}`)).not.toBeNull();

@@ -51,7 +51,8 @@ import { renderEvalIdentityBlock } from './evalIdentityBlocks.js';
 // one call site below).
 import { buildFundamentalsBlock } from './fundamentalsRender.js';
 // Crypto Slot paragraph (§7-gated fence contact, Fable build prompt
-// 2026-10-14; founder sign-off on this hunk): the tiered template's YOUR
+// 2026-10-14; merges only with the founder's sign-off on this hunk —
+// docs/audits/20261014_BUILD_CRYPTO_SLOT_PROMPT.md §2): the tiered template's YOUR
 // CRYPTO SLOT block — non-fenced pure module, dark behind
 // CRYPTO_SLOT_PROMPT_ENABLED; '' while dark, so the tiered template stays
 // byte-identical (the DR-13 flag-split pattern: this import + one
