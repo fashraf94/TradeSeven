@@ -211,7 +211,10 @@ The two added files are exactly the new ones (`evalCryptoSlotBlock.test.js`, `cr
 | Symbol join drops "and" | 10 | Probe: short detector loosened | 17 |
 | Probe splice one line late | 6 | | |
 
-**`vite build`:** green at `89774037` in the Linux clone, with only the pre-existing CSS-syntax and chunk-size warnings. See the pushed-head line at the end of this section.
+**`vite build` and `lint:gate`.** All runs were in the Linux clone; `vite build` showed only the pre-existing CSS-syntax and chunk-size warnings.
+- `vite build`: green at `89774037` and at `51ec041a`, the head with the complete report.
+- `npm run lint:gate`: green at `51ec041a`, exit 0 with `--max-warnings 0`. It covers `scripts/` and the new test files.
+- The only commit after `51ec041a` is the one adding this paragraph. `vite build` was re-run on that pushed head before the push.
 
 **Token line (prompt §4.6).**
 - **The block:** 845 characters, about 212 tokens at the repo's chars/4 convention.
