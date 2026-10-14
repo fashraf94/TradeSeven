@@ -11,15 +11,17 @@
 // Astra's repro: an accepted source battle, an accepted core tape and a day of
 // meetings each within the builder's limits (__fixtures__/sizeFixtures.js).
 //   · A near-limit core (one 970,000-character rationale — Astra's size):
-//     the source battle with its meetings and the core tape are each accepted;
-//     WITHOUT the budget the refresh is rejected and the whole write fails
-//     (the seam); WITH it the day writes, meetings unavailable
-//     (document_size_budget) — and since this core is over the budget even
-//     without them, the tag items and exits go too (step 2) — every other
-//     section as the core write left it.
+//     the source battle with its meetings and the core tape (written whole,
+//     tags and all) are each accepted; WITHOUT the budget the refresh is
+//     rejected and the whole write fails (the seam); WITH it the day writes,
+//     meetings unavailable (document_size_budget) — and since this core is over
+//     the budget even without them, the tag items and exits go too (step 2) —
+//     every other section as the core write left it.
 //   · A core within the budget (880,000): meetings unavailable, tags and every
 //     other section intact; the same day with no budget is accepted too (the
 //     budget is a margin under the limit, not the limit).
+//   · The same two cores on a FRESH write, the meetings there from the start:
+//     the fresh path is budgeted too (and without it, rejected).
 //   · A core over the limit by itself (three ticks' risk reasons; every source
 //     document small): rejected, as before B1 — no tape stored.
 
@@ -76,11 +78,14 @@ const core = (doc) => {
   return stableStringify(c);
 };
 
-/** The core write (no meetings yet), then the battle's meetings filed — the source battle as the refresh reads it. */
-async function coreThenMeetings(battleId, opts) {
+/**
+ * The core write (no meetings yet), then the battle's meetings filed — the source battle as the refresh reads it.
+ * `coreBudget: Infinity` writes the core tape whole, tags included, as Astra's accepted core tape was (review LB-3).
+ */
+async function coreThenMeetings(battleId, opts, { coreBudget } = {}) {
   const fx = await sizedDay({ battleId, ...opts });
   await seed(fx);
-  const first = await writeTapeDay(fx.battleId, D, { db, now: NIGHT });
+  const first = await writeTapeDay(fx.battleId, D, { db, now: NIGHT, sizeBudget: coreBudget });
   const coreTape = await readTape(fx);
   fx.battle.gameplanMeetingHistory = boundedMeetings(D);
   await db.doc(`agentBattles/${fx.battleId}`).set(json(fx.battle));      // rejected here would fail the row: the source battle must be accepted
@@ -89,9 +94,10 @@ async function coreThenMeetings(battleId, opts) {
 
 describe('Astra F3 — a near-limit core (Astra\'s 970,000-character rationale) and 26 bounded meetings, on the emulator', () => {
   it('the seam, WITHOUT the budget: the source battle and the core tape are accepted, the refresh with the meetings is rejected — the whole write fails, the stored tape stays as it was', async () => {
-    const { fx, first, coreTape } = await coreThenMeetings('b-f3-astra-seam', { rationaleChars: 970_000 });
+    const { fx, first, coreTape } = await coreThenMeetings('b-f3-astra-seam', { rationaleChars: 970_000 }, { coreBudget: Infinity });
     expect(first.status).toBe('written');
     expect(coreTape.passes.close.status).toBe('written');
+    expect(coreTape.tags.items.length).toBeGreaterThan(0);                                // the accepted core tape carries its tags
     expect(utf8(JSON.stringify(fx.battle))).toBeGreaterThan(1_040_000);                  // the source battle, accepted above
     expect(String((await rejection(writeTapeDay(fx.battleId, D, { db, now: LATER, sizeBudget: Infinity }), 'no budget, near-limit core + meetings'))?.message)).toMatch(TOO_BIG);
     const after = await readTape(fx);
@@ -100,7 +106,9 @@ describe('Astra F3 — a near-limit core (Astra\'s 970,000-character rationale) 
   });
 
   it('WITH the budget: the day writes — meetings unavailable (document_size_budget); still over the budget without them, the tag items and exits go too; every other section as the core write left it', async () => {
-    const { fx, coreTape } = await coreThenMeetings('b-f3-astra', { rationaleChars: 970_000 });
+    const { fx, coreTape } = await coreThenMeetings('b-f3-astra', { rationaleChars: 970_000 }, { coreBudget: Infinity });
+    expect(coreTape.tags.items.length).toBeGreaterThan(0);                                // the accepted core tape carries its tags…
+    expect(coreTape.tags.exits.length).toBeGreaterThan(0);
     const r = await writeTapeDay(fx.battleId, D, { db, now: LATER });
     expect(r.status).toBe('written');
     const tape = await readTape(fx);
@@ -134,6 +142,35 @@ describe('a core within the budget (an 880,000-character rationale) and the same
     const { fx } = await coreThenMeetings('b-f3-within-control', { rationaleChars: 880_000 });
     expect((await writeTapeDay(fx.battleId, D, { db, now: LATER, sizeBudget: Infinity })).status).toBe('written');
     expect((await readTape(fx)).meetings).toHaveLength(26);
+  });
+});
+
+describe('a FRESH write (no stored tape), on the emulator — the fresh path is budgeted too (review LB-2)', () => {
+  it('Astra\'s near-limit core with the meetings from the start: without the budget the fresh write is rejected; with it the day writes, meetings unavailable, the tag items and exits gone', async () => {
+    const seam = await sizedDay({ battleId: 'b-f3-fresh-seam', rationaleChars: 970_000, meetings: boundedMeetings(D) });
+    await seed(seam);                                                                     // the source battle, meetings and all, accepted
+    expect(String((await rejection(writeTapeDay(seam.battleId, D, { db, now: NIGHT, sizeBudget: Infinity }), 'no budget, fresh write'))?.message)).toMatch(TOO_BIG);
+    expect(await readTape(seam)).toBeNull();
+    const fx = await sizedDay({ battleId: 'b-f3-fresh', rationaleChars: 970_000, meetings: boundedMeetings(D) });
+    await seed(fx);
+    expect((await writeTapeDay(fx.battleId, D, { db, now: NIGHT })).status).toBe('written');
+    const tape = await readTape(fx);
+    expect(tape.meetings).toEqual([]);
+    expect(tape.coverage.meetings).toMatchObject({ status: 'unavailable', note: MEETINGS_OVER_BUDGET_NOTE });
+    expect(tape.tags.items).toBeNull();
+    expect(tape.tags.exits).toBeNull();
+    expect(tape.coverage.tags).toMatchObject({ status: 'unavailable', note: TAGS_OVER_BUDGET_NOTE });
+    expect(tape.rationale[0].rationale).toHaveLength(970_000);                            // the core is whole
+  });
+
+  it('a core within the budget with the meetings from the start: meetings unavailable, the tags intact', async () => {
+    const fx = await sizedDay({ battleId: 'b-f3-fresh-within', rationaleChars: 880_000, meetings: boundedMeetings(D) });
+    await seed(fx);
+    expect((await writeTapeDay(fx.battleId, D, { db, now: NIGHT })).status).toBe('written');
+    const tape = await readTape(fx);
+    expect(tape.meetings).toEqual([]);
+    expect(tape.coverage.meetings).toMatchObject({ status: 'unavailable', note: MEETINGS_OVER_BUDGET_NOTE });
+    expect(tape.tags.items.length).toBeGreaterThan(0);
   });
 });
 

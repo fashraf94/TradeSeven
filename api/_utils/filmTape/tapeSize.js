@@ -18,7 +18,8 @@
 //
 // The estimate is conservative: the larger of Firestore's documented storage
 // size (string = UTF-8 bytes + 1, number 8, boolean and null 1, a map's field
-// names UTF-8 + 1 each, the document's name + 16, the document + 32) and the
+// names UTF-8 + 1 each, an empty map or array 1 — as the emulator counts it
+// (review LB-1) — the document's name + 16, the document + 32) and the
 // document's UTF-8 JSON length.
 
 import { coverageOf } from './tapeAssemble.js';
@@ -42,8 +43,8 @@ export function firestoreValueBytes(v) {
   if (typeof v === 'number') return 8;
   if (typeof v === 'string') return utf8(v) + 1;
   if (v instanceof Date) return 8;
-  if (Array.isArray(v)) return v.reduce((n, x) => n + firestoreValueBytes(x), 0);
-  if (typeof v === 'object') return Object.entries(v).reduce((n, [k, x]) => (x === undefined ? n : n + utf8(k) + 1 + firestoreValueBytes(x)), 0);
+  if (Array.isArray(v)) return Math.max(1, v.reduce((n, x) => n + firestoreValueBytes(x), 0));
+  if (typeof v === 'object') return Math.max(1, Object.entries(v).reduce((n, [k, x]) => (x === undefined ? n : n + utf8(k) + 1 + firestoreValueBytes(x)), 0));
   return 8;
 }
 
@@ -55,10 +56,15 @@ export function tapeDocumentBytes(doc) {
   return Math.max(name + firestoreValueBytes(doc) + 32, json);
 }
 
+/**
+ * A dropped section's coverage: unavailable, the budget note, its span and
+ * sources kept. A section already unavailable for a reason of its own (a
+ * tagger failure) keeps that reason first (review LB-4).
+ */
 const overBudget = (cov, sources, note) => coverageOf('unavailable', {
   span: isObj(cov) ? cov.span ?? null : null,
   sources: isObj(cov) && Array.isArray(cov.sources) ? cov.sources : sources,
-  note,
+  note: isObj(cov) && cov.status === 'unavailable' && typeof cov.note === 'string' && cov.note && cov.note !== note ? `${cov.note}; ${note}` : note,
 });
 
 /**

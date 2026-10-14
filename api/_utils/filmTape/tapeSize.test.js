@@ -61,6 +61,12 @@ describe('the estimate — Firestore\'s storage-size rules, and never less than 
     expect(firestoreValueBytes([1, 'x', null])).toBe(8 + 2 + 1);
   });
 
+  it('an empty map or array counts 1 byte, as the emulator counts it — never 0 (review LB-1)', () => {
+    expect(firestoreValueBytes({})).toBe(1);
+    expect(firestoreValueBytes([])).toBe(1);
+    expect(firestoreValueBytes({ a: [], b: {} })).toBe((2 + 1) + (2 + 1));
+  });
+
   it('a document: its name (agentBattles/{id}/tape/{etDate}) + 16 + its fields + 32 — or its UTF-8 JSON, whichever is larger', () => {
     const doc = { battleId: 'b1', etDate: D, n: [0, 0, 0, 0, 0, 0, 0, 0] };
     const name = (12 + 1) + (2 + 1) + (4 + 1) + (10 + 1) + 16;
@@ -77,6 +83,28 @@ describe('the estimate — Firestore\'s storage-size rules, and never less than 
   it('a document within the budget is returned as it is', () => {
     const doc = { battleId: 'b1', etDate: D, meetings: [{ a: 1 }], tags: { items: [], exits: [] } };
     expect(fitTapeToBudget(doc, { budget: 10_000 })).toBe(doc);
+  });
+
+  it('the boundary: a document exactly at the budget stands; one byte over drops the meetings, whose coverage keeps its span and sources (review LC-10)', () => {
+    const span = { from: `${D}T14:00:00.000Z`, to: `${D}T15:00:00.000Z` };
+    const doc = { battleId: 'b1', etDate: D, meetings: [{ a: 1 }], coverage: { meetings: { status: 'complete', span, sources: ['gameplanMeetingHistory'], preservedFrom: null, note: null } } };
+    const at = tapeDocumentBytes(doc);
+    expect(fitTapeToBudget(doc, { budget: at })).toBe(doc);
+    const over = fitTapeToBudget(doc, { budget: at - 1 });
+    expect(over.meetings).toEqual([]);
+    expect(over.coverage.meetings).toEqual({ status: 'unavailable', span, sources: ['gameplanMeetingHistory'], preservedFrom: null, note: MEETINGS_OVER_BUDGET_NOTE });
+  });
+
+  it('a tags section already unavailable for its own reason keeps that reason first; its exits still go (review LB-4)', () => {
+    const own = 'stalled unavailable: the archetype is not in the registry (speculator)';
+    const doc = {
+      battleId: 'b1', etDate: D, meetings: [],
+      tags: { registryVersion: 1, items: null, exits: [{ symbol: 'ACN', tickSeq: 6, at: `${D}T14:45:10.000Z`, precededByTag: null }] },
+      coverage: { tags: { status: 'unavailable', span: null, sources: ['checks'], preservedFrom: null, note: own } },
+    };
+    const out = fitTapeToBudget(doc, { budget: 10 });
+    expect(out.tags).toEqual({ registryVersion: 1, items: null, exits: null });
+    expect(out.coverage.tags.note).toBe(`${own}; ${TAGS_OVER_BUDGET_NOTE}`);
   });
 });
 
@@ -141,6 +169,17 @@ describe('through the real writer: meetings first, then the tag items and exits,
     expect(tape.meetings).toEqual([]);
     expect(tape.coverage.meetings).toMatchObject({ status: 'unavailable', note: MEETINGS_OVER_BUDGET_NOTE });
     expect(core(tape)).toBe(core(control));
+  });
+
+  it('the PRODUCTION default (no budget passed, 950,000): a core near the limit (an 880,000-character rationale) with the same meetings writes them unavailable, the tags intact (review LC-1)', async () => {
+    const big = await sizedDay({ battleId: 'b-size-default', rationaleChars: 880_000, meetings: boundedMeetings(D) });
+    const t = makeTapeDb(seedDay({}, big));
+    await writeTapeDay(big.battleId, big.etDate, { db: t.db, now: NIGHT });            // no sizeBudget: the writer's own default
+    const tape = t.store.get(path(big));
+    expect(tape.meetings).toEqual([]);
+    expect(tape.coverage.meetings).toMatchObject({ status: 'unavailable', note: MEETINGS_OVER_BUDGET_NOTE });
+    expect(tape.tags.items.length).toBeGreaterThan(0);
+    expect(tapeDocumentBytes(tape)).toBeLessThanOrEqual(TAPE_SIZE_BUDGET_BYTES);
   });
 
   it('the default budget leaves an ordinary day — meetings at every limit included — exactly as written without one', async () => {
