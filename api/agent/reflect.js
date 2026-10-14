@@ -55,6 +55,12 @@ import { resolveRecordTargetId } from '../_utils/casualClone.js';
 // byte-identity (the agent doc gains lastConsolidatedGamesPlayed only on the
 // guarded path). featureFlags.js is Node-clean (BUILD_RULES §4).
 import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../../src/config/featureFlags.js';
+// P-OUT-2, founder ruling on O6 (14 Oct 2026, strict reading): only a battle
+// that moved gamesPlayed may run the rewrite. A tournament battle never moves
+// it — api/cron/agent-evaluate.js resolveCompletionDisposition keys on this
+// same constant — so the gate and the completion rule share one source.
+// leagueTournament.js is import-free (BUILD_RULES §4).
+import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 
 const LOG_PREFIX = '[REFLECT]';
 
@@ -283,6 +289,15 @@ export async function generateReflection(db, battleId, { attempt = 1, modelCall 
     // TRANSACTIONAL apply. Non-casual: this agent, plain apply — byte-identical.
     const stats = learningDoc.stats || {};
     const gamesPlayed = stats.gamesPlayed || 0;
+    // P-OUT-2, founder ruling on O6 (strict reading): only a battle that MOVED
+    // gamesPlayed may run the rewrite. A tournament battle never moves it, so
+    // it never reaches the floor, the claim or the call — even when it lands
+    // on a turn that an earlier battle left open below the floor.
+    const movedGamesPlayed = battleDoc.gameMode !== TOURNAMENT_GAME_MODE;
+    const atTurn = movedGamesPlayed && gamesPlayed > 0 && gamesPlayed % 5 === 0;
+    if (!movedGamesPlayed && gamesPlayed > 0 && gamesPlayed % 5 === 0) {
+      console.log(`${LOG_PREFIX} Battle ${battleId}: a tournament battle never runs the rewrite (game count ${gamesPlayed} untouched by it)`);
+    }
     // P-OUT-2 (O5) — the floor: counted on a FRESH read of the learning
     // target's window, the one this game's lesson has just joined, BEFORE the
     // milestone claim and the pendingConsolidation write. Below it nothing is
@@ -293,7 +308,7 @@ export async function generateReflection(db, battleId, { attempt = 1, modelCall 
     // driver's own re-read, the driver refuses but the milestone stays claimed;
     // the rewrite waits for the next milestone. No call is made.
     let belowFloor = false;
-    if (gamesPlayed > 0 && gamesPlayed % 5 === 0) {
+    if (atTurn) {
       const windowSnap = await learningRef.get();
       const window = (windowSnap.exists ? windowSnap.data().memory : []) || [];
       const realLessons = countRealLessons(window);
@@ -309,7 +324,7 @@ export async function generateReflection(db, battleId, { attempt = 1, modelCall 
         }).catch(() => {});
       }
     }
-    if (!belowFloor && gamesPlayed > 0 && gamesPlayed % 5 === 0) {
+    if (atTurn && !belowFloor) {
       // Ruling 1 — milestone-claim: when the feature is ON, only the reflection
       // that first stamps lastConsolidatedGamesPlayed=gamesPlayed consolidates, so
       // two reflections at the same %5 milestone (a casual settlement + a ranked

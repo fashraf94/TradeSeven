@@ -98,6 +98,11 @@ const BATTLE = {
   evaluations: [{ evalId: 'e1', timestamp: '2026-10-09T14:00:00Z', decision: 'HOLD', conviction: 6, hypothesis: 'NVDA keeps leading' }],
   trades: [], statusFeed: [], chatExchanges: [],
 };
+// A battle that MOVES gamesPlayed (a game against the CPU). Founder ruling on O6
+// (strict reading): only such a battle may run the rewrite, so every row that
+// exercises the consolidation gate at a turn uses it; BATTLE stays a
+// tournament battle, which never does.
+const RANKED_BATTLE = { ...BATTLE, gameMode: 'baggerbomb_agent' };
 const AGENT = { name: 'Nova', archetype: 'analyst', ownerId: 'owner-1', stats: { gamesPlayed: 3 }, memory: priorMemory(5) };
 const seed = ({ battle = BATTLE, agent = AGENT, extra = {} } = {}) => makeDb({
   [`agentBattles/${BATTLE_ID}`]: battle,
@@ -228,7 +233,7 @@ describe('every other failure class is named and writes nothing', () => {
 
   it('a failure at a 5-game milestone runs NO consolidation and burns no milestone', async () => {
     sdk.create = async () => { throw new InternalServerError(500, {}, 'x', new Headers()); };
-    const { db, writes, store } = seed({ agent: { ...AGENT, stats: { gamesPlayed: 5 } } });
+    const { db, writes, store } = seed({ battle: RANKED_BATTLE, agent: { ...AGENT, stats: { gamesPlayed: 5 } } });
     const result = await generateReflection(db, BATTLE_ID);
     expectNamedFailure(result, writes, 'http_500');
     expect(store.get(`agents/${AGENT_ID}`)).not.toHaveProperty('lastConsolidatedGamesPlayed');
@@ -237,7 +242,7 @@ describe('every other failure class is named and writes nothing', () => {
 
   it('a memory write that throws after a valid answer is a failed attempt (class unknown), never a silent success', async () => {
     sdk.create = async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION });
-    const { db, writes } = seed({ agent: { ...AGENT, stats: { gamesPlayed: 5 } } });
+    const { db, writes } = seed({ battle: RANKED_BATTLE, agent: { ...AGENT, stats: { gamesPlayed: 5 } } });
     const realCollection = db.collection;
     db.collection = (name) => {
       const c = realCollection(name);
@@ -310,7 +315,7 @@ describe('a valid answer writes memory exactly as before', () => {
 
   it('a success at a 5-game milestone still runs the consolidation gate, once', async () => {
     sdk.create = async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION });
-    const { db } = seed({ agent: { ...AGENT, stats: { gamesPlayed: 5 } } });
+    const { db } = seed({ battle: RANKED_BATTLE, agent: { ...AGENT, stats: { gamesPlayed: 5 } } });
     const result = await generateReflection(db, BATTLE_ID);
     expect(result.outcome).toBe('ok');
     expect(consolidation.calls).toHaveLength(1);
@@ -396,7 +401,7 @@ describe('a lesson already recorded is a success without a second call (review R
 
   it('an ambiguous memory write (committed, then reported failed) still consolidates at its milestone on the retry', async () => {
     sdk.create = async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION });
-    const { db, store } = seed({ agent: { ...AGENT, stats: { gamesPlayed: 5 } } });
+    const { db, store } = seed({ battle: RANKED_BATTLE, agent: { ...AGENT, stats: { gamesPlayed: 5 } } });
     // The agent update APPLIES, then throws once — as a DEADLINE_EXCEEDED on a committed write would.
     const realCollection = db.collection;
     let thrown = false;
@@ -746,7 +751,7 @@ describe('the consolidation floor (O5) — counted on a fresh read, before anyth
 
   it('2 real lessons after this game → no consolidation, no milestone claim, no pendingConsolidation, one shadow line with the counts', async () => {
     okCall();
-    const { db, writes, store } = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), legacyEntry(3), realEntry(4)] } });
+    const { db, writes, store } = seed({ battle: RANKED_BATTLE, agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), legacyEntry(3), realEntry(4)] } });
     const result = await generateReflection(db, BATTLE_ID);
     expect(result).toMatchObject({ outcome: 'ok' });                  // the lesson itself is written as always
     expect(writes.map((w) => `${w.op} ${w.path}`)).toEqual([`update agents/${AGENT_ID}`]);
@@ -759,7 +764,7 @@ describe('the consolidation floor (O5) — counted on a fresh read, before anyth
 
   it('markers and blank lessons do not count toward the floor', async () => {
     okCall();
-    const { db } = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [markerEntry('m-1'), { ...realEntry(2), lesson: '  ' }, legacyEntry(3), realEntry(4)] } });
+    const { db } = seed({ battle: RANKED_BATTLE, agent: { ...AGENT, stats: MILESTONE, memory: [markerEntry('m-1'), { ...realEntry(2), lesson: '  ' }, legacyEntry(3), realEntry(4)] } });
     await generateReflection(db, BATTLE_ID);
     expect(consolidation.calls).toEqual([]);
     expect(shadow.consolidationLines[0]).toMatchObject({ realLessons: 2, totalEntries: 5 });
@@ -767,7 +772,7 @@ describe('the consolidation floor (O5) — counted on a fresh read, before anyth
 
   it('3 real lessons → the consolidation runs once: the claim, the flag, the call', async () => {
     okCall();
-    const { db, store } = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), realEntry(3), realEntry(4)] } });
+    const { db, store } = seed({ battle: RANKED_BATTLE, agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), realEntry(3), realEntry(4)] } });
     await generateReflection(db, BATTLE_ID);
     expect(consolidation.calls).toHaveLength(1);
     expect(store.get(`agents/${AGENT_ID}`)).toMatchObject({ lastConsolidatedGamesPlayed: 5, pendingConsolidation: true });
@@ -776,7 +781,7 @@ describe('the consolidation floor (O5) — counted on a fresh read, before anyth
 
   it('the floor reads the window this game\'s lesson has just joined (2 real before it, 3 after → runs)', async () => {
     okCall();
-    const { db } = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), legacyEntry(3), realEntry(4), realEntry(5)] } });
+    const { db } = seed({ battle: RANKED_BATTLE, agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), legacyEntry(3), realEntry(4), realEntry(5)] } });
     await generateReflection(db, BATTLE_ID);
     expect(consolidation.calls).toHaveLength(1); // the oldest legacy entry rolled out; the new lesson is the third
   });
@@ -802,15 +807,80 @@ describe('the consolidation floor (O5) — counted on a fresh read, before anyth
   it('the already-recorded path respects the floor: below it nothing is spent; at it the consolidation runs', async () => {
     sdk.create = vi.fn(async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION }));
     const recorded = { ...realEntry(0), gameId: BATTLE_ID };
-    const below = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), realEntry(3), recorded] } });
+    const below = seed({ battle: RANKED_BATTLE, agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), realEntry(3), recorded] } });
     expect(await generateReflection(below.db, BATTLE_ID, { attempt: 2 })).toMatchObject({ outcome: 'ok', reason: 'already_recorded' });
     expect(consolidation.calls).toEqual([]);
     expect(below.writes).toEqual([]);
     expect(shadow.consolidationLines).toEqual([{ agentId: AGENT_ID, success: false, reason: 'insufficient_real_lessons', realLessons: 2, totalEntries: 4 }]);
 
-    const at = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), realEntry(2), realEntry(3), recorded] } });
+    const at = seed({ battle: RANKED_BATTLE, agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), realEntry(2), realEntry(3), recorded] } });
     expect(await generateReflection(at.db, BATTLE_ID, { attempt: 2 })).toMatchObject({ outcome: 'ok', reason: 'already_recorded' });
     expect(consolidation.calls).toHaveLength(1);
     expect(sdk.calls).toEqual([]);
+  });
+});
+
+// Founder ruling on O6 (14 Oct 2026), the strict reading: only a battle that
+// moved gamesPlayed may run the rewrite. A tournament battle never moves it
+// (agent-evaluate.js resolveCompletionDisposition), so it never reaches the
+// floor, the claim or the call — review WR-1.
+describe('only a battle that moved the game count may run the rewrite (founder ruling on O6)', () => {
+  const MILESTONE = { gamesPlayed: 5 };
+  const okCall = () => { sdk.create = async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION }); };
+
+  it('a tournament battle at a turn, with 3+ real lessons, never runs the rewrite: no claim, no flag, no call, no line', async () => {
+    okCall();
+    const { db, writes, store } = seed({ agent: { ...AGENT, stats: MILESTONE, memory: priorMemory(4) } });
+    expect(BATTLE.gameMode).toBe('baggerbomb_tournament');
+    expect(await generateReflection(db, BATTLE_ID)).toMatchObject({ outcome: 'ok' }); // the lesson itself is written as always
+    expect(writes.map((w) => `${w.op} ${w.path}`)).toEqual([`update agents/${AGENT_ID}`]);
+    expect(consolidation.calls).toEqual([]);
+    expect(store.get(`agents/${AGENT_ID}`)).not.toHaveProperty('lastConsolidatedGamesPlayed');
+    expect(store.get(`agents/${AGENT_ID}`)).not.toHaveProperty('pendingConsolidation');
+    expect(shadow.consolidationLines).toEqual([]);
+  });
+
+  it('a tournament battle at a turn below the floor writes nothing either — not even the skip line', async () => {
+    okCall();
+    const { db } = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), legacyEntry(3), realEntry(4)] } });
+    await generateReflection(db, BATTLE_ID);
+    expect(consolidation.calls).toEqual([]);
+    expect(shadow.consolidationLines).toEqual([]);
+  });
+
+  it('the WR-1 path: a ranked turn left open below the floor is NOT completed by a later tournament lesson that brings the window to 3', async () => {
+    okCall();
+    const { db, store } = makeDb({
+      'agentBattles/ranked-10': { ...RANKED_BATTLE },
+      'agentBattles/tourney-1': { ...BATTLE },
+      [`agents/${AGENT_ID}`]: { ...AGENT, stats: { gamesPlayed: 10 }, lastConsolidatedGamesPlayed: 5, memory: [legacyEntry(1), legacyEntry(2), legacyEntry(3), legacyEntry(4), realEntry(5)] },
+    });
+    await generateReflection(db, 'ranked-10'); // its lesson makes 2 real: below the floor, the turn stays open
+    expect(consolidation.calls).toEqual([]);
+    expect(shadow.consolidationLines).toEqual([{ agentId: AGENT_ID, success: false, reason: 'insufficient_real_lessons', realLessons: 2, totalEntries: 5 }]);
+
+    await generateReflection(db, 'tourney-1'); // its lesson makes 3 real — but a tournament battle never runs the rewrite
+    expect(store.get(`agents/${AGENT_ID}`).memory.filter((m) => m.lesson === VALID_SELF_REFLECTION.lesson)).toHaveLength(2);
+    expect(consolidation.calls).toEqual([]);
+    expect(store.get(`agents/${AGENT_ID}`)).toMatchObject({ lastConsolidatedGamesPlayed: 5 });
+    expect(store.get(`agents/${AGENT_ID}`)).not.toHaveProperty('pendingConsolidation');
+    expect(shadow.consolidationLines).toHaveLength(1);
+  });
+
+  it('a tournament battle\'s already-recorded path never runs the rewrite', async () => {
+    sdk.create = vi.fn(async () => toolResponse({ selfReflection: VALID_SELF_REFLECTION }));
+    const recorded = { ...realEntry(0), gameId: BATTLE_ID };
+    const { db, writes } = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [realEntry(1), realEntry(2), realEntry(3), recorded] } });
+    expect(await generateReflection(db, BATTLE_ID, { attempt: 2 })).toMatchObject({ outcome: 'ok', reason: 'already_recorded' });
+    expect(consolidation.calls).toEqual([]);
+    expect(writes).toEqual([]);
+    expect(sdk.calls).toEqual([]);
+  });
+
+  it('the same windows on a battle that moved the count DO run it (the control)', async () => {
+    okCall();
+    const { db } = seed({ battle: RANKED_BATTLE, agent: { ...AGENT, stats: MILESTONE, memory: priorMemory(4) } });
+    await generateReflection(db, BATTLE_ID);
+    expect(consolidation.calls).toHaveLength(1);
   });
 });
