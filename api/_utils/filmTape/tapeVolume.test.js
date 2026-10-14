@@ -22,7 +22,7 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
 
 import { fetchIntradayCandles } from '../marketDataCache.js';
 import { writeTapeDay } from './writeTapeDay.js';
-import { runCandlePass } from './candlePass.js';
+import { runCandlePass, keepSeries } from './candlePass.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay } from './__fixtures__/tapeFixtures.js';
 import { sessionRows, flatRows, fetcherOf } from './__fixtures__/tapeBars.js';
@@ -71,5 +71,26 @@ describe('through the real candle pass: the stored series keeps the missing volu
     expect(series.bars[0]).toMatchObject({ t: '2026-09-24T13:30:00.000Z', v: null, m: 10 });
     expect(series.bars[1]).toMatchObject({ t: '2026-09-24T13:40:00.000Z', v: 10_000, m: 10 });
     expect(series.numberClasses['bars[].v']).toBe('market');
+  });
+});
+
+describe('review B-4 — the BA-34 series merge never keeps a missing volume over a later response that has it', () => {
+  const bar = (v, m = 10) => ({ t: '2026-09-24T13:30:00.000Z', o: 1, h: 1, l: 1, c: 1, v, n: m, m });
+  const doc = (bars) => ({ symbol: 'ACN', bars, atChecks: [], sessionOpen: null });
+
+  it('equal minutes: the saved null gives way to the fresh volume — nothing kept', () => {
+    const r = keepSeries(doc([bar(null)]), doc([bar(9000)]));
+    expect(r.kept).toBe(false);
+    expect(r.doc.bars[0].v).toBe(9000);
+  });
+
+  it('equal minutes, the fresh response missing the volume: the saved volume stands (a saved fact never shrinks)', () => {
+    const r = keepSeries(doc([bar(9000)]), doc([bar(null)]));
+    expect(r.doc.bars[0].v).toBe(9000);
+    expect(r.kept).toBe(true);
+  });
+
+  it('more minutes still win, whatever the volume', () => {
+    expect(keepSeries(doc([bar(9000, 9)]), doc([bar(null, 10)])).doc.bars[0]).toMatchObject({ v: null, m: 10 });
   });
 });

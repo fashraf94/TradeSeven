@@ -107,6 +107,7 @@ import { tapeRef } from './tapeSources.js';
 import { NOTES } from './tapeNotes.js';
 import {
   symbolPlan, candleInputFingerprint, replayBuiltFrom, replayBuiltFromV1, priceBuiltFrom, seriesBuiltFrom, replayLogicVersionOf, REPLAY_LOGIC_VERSION,
+  meetingLegSymbols, MEETING_SYMBOLS_PER_DAY_MAX,
 } from './candleInputs.js';
 
 export { symbolPlan };
@@ -317,7 +318,10 @@ export function keepSeries(saved, fresh) {
   const bars = [...new Set([...savedBars.keys(), ...freshBars.keys()])].sort().map((t) => {
     const s = savedBars.get(t);
     const f = freshBars.get(t);
-    return !s ? f : (!f ? s : (barMinutes(f) > barMinutes(s) ? f : s));
+    if (!s || !f) return s ?? f;
+    if (barMinutes(f) !== barMinutes(s)) return barMinutes(f) > barMinutes(s) ? f : s;
+    // B1 W3 (review B-4): on the same minutes, a bar with its volume beats one without — a missing volume never outlasts a later response that has it
+    return s.v === null && typeof f.v === 'number' ? f : s;
   });
   const keyOf = (a) => checkKey(a?.tickSeq, a?.at);
   const savedAt = new Map((Array.isArray(saved.atChecks) ? saved.atChecks : []).filter(isObj).map((a) => [keyOf(a), a]));
@@ -610,10 +614,32 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
       if (out.builtFrom !== builtFrom && !gaps.some((g) => g.startsWith('built before'))) gaps.push('built before its inputs changed');
       if (gaps.length) gapsBySymbol[entry.symbol] = gaps;
     }
-    const candles = nextCandleState({
-      prev, requested, missing, incomplete: Object.keys(gapsBySymbol).sort(), retryable,
-      stale: stale.replays.length > 0 || stale.prices.length > 0, outdated: stale.versions.length > 0, inputFingerprint: candleInputFingerprint(cur), nowIso,
-    });
+    // B1 T2: a meeting-only symbol is best effort — its missing or incomplete
+    // bars are stated (symbolsMissing / symbolsIncomplete keep every fact, and
+    // the series note names them) but decide neither the pass's status nor the
+    // series section's, so an unservable leg never downgrades the day or burns
+    // its retries.
+    const legOnly = (sym) => curPlan.find((e) => e.symbol === sym)?.role === 'meeting';
+    const coreRequested = requested.filter((sym) => !legOnly(sym));
+    const coreMissing = missing.filter((sym) => !legOnly(sym));
+    const coreGaps = Object.fromEntries(Object.entries(gapsBySymbol).filter(([sym]) => !legOnly(sym)));
+    const legMissing = missing.filter(legOnly);
+    const legGaps = Object.keys(gapsBySymbol).filter(legOnly).sort();
+    const legDropped = meetingLegSymbols(cur, (sym) => symbolPlan({ ...cur, meetings: [] }).some((e) => e.symbol === sym)).dropped;
+    const candles = {
+      ...nextCandleState({
+        prev, requested: coreRequested, missing: coreMissing, incomplete: Object.keys(coreGaps).sort(), retryable,
+        stale: stale.replays.length > 0 || stale.prices.length > 0, outdated: stale.versions.length > 0, inputFingerprint: candleInputFingerprint(cur), nowIso,
+      }),
+      symbolsRequested: requested, symbolsMissing: missing, symbolsIncomplete: Object.keys(gapsBySymbol).sort(),
+    };
+    const seriesCov = seriesCoverage(coreRequested, coreMissing, coreGaps, session, keptFrom, stale.prices,
+      plans.filter((p) => Array.isArray(p.price?.missingInputs) && p.price.missingInputs.length > 0), plans.map((p) => p.price));
+    const legNotes = [
+      ...(legMissing.length ? [`meeting legs without bars (not part of this section's status): ${legMissing.join(', ')}`] : []),
+      ...(legGaps.length ? [`meeting legs incomplete — ${legGaps.map((sym) => `${sym}: ${gapsBySymbol[sym].join(', ')}`).join('; ')}`] : []),
+      ...(legDropped.length ? [`${legDropped.length === 1 ? '1 meeting-leg symbol' : `${legDropped.length} meeting-leg symbols`} past the ${MEETING_SYMBOLS_PER_DAY_MAX} a day not fetched`] : []),
+    ];
     for (const { entry, doc } of writes) tx.set(seriesRef(entry.symbol), doc);
     tx.update(ref, sanitizeForFirestore({
       actions,
@@ -621,8 +647,7 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
       numberClasses: TAPE_NUMBER_CLASSES,
       'passes.candles': candles,
       'coverage.replay': replayCoverage(cur, replays, session, stale.replays, stale.versions, candles.status),
-      'coverage.series': seriesCoverage(requested, missing, gapsBySymbol, session, keptFrom, stale.prices,
-        plans.filter((p) => Array.isArray(p.price?.missingInputs) && p.price.missingInputs.length > 0), plans.map((p) => p.price)),
+      'coverage.series': legNotes.length ? { ...seriesCov, note: [seriesCov.note, ...legNotes].filter(Boolean).join('; ') } : seriesCov,
     }));
     const series = writes.length;
     result = { status: candles.status, attempts: candles.attempts, requested: requested.length, missing, series };

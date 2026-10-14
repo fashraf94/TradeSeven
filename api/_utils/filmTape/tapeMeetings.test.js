@@ -22,8 +22,8 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
 
 import { writeTapeDay } from './writeTapeDay.js';
 import { runCandlePass } from './candlePass.js';
-import { buildMeetings, MEETING_LEGS_MAX, MEETINGS_PER_DAY_MAX, MEETING_DIAGNOSIS_MAX } from './tapeAssemble.js';
-import { symbolPlan, candleInputFingerprint } from './candleInputs.js';
+import { buildMeetings, MEETING_LEGS_MAX, MEETINGS_PER_DAY_MAX, MEETING_DIAGNOSIS_MAX, MEETING_ID_MAX } from './tapeAssemble.js';
+import { symbolPlan, candleInputFingerprint, meetingLegSymbols, MEETING_SYMBOLS_PER_DAY_MAX } from './candleInputs.js';
 import { etDayBounds } from './tapeTime.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay } from './__fixtures__/tapeFixtures.js';
@@ -152,6 +152,39 @@ describe('the history is owner-writable: every copied value is checked, and what
     expect(buildMeetings({ battle: {}, bounds }).coverage.status).toBe('complete');
   });
 
+  it('an id past MEETING_ID_MAX is not copied (review B-1: no planted value can grow the tape past Firestore\'s limit); the key uses \'meeting\', counted', () => {
+    const big = meeting('x'.repeat(MEETING_ID_MAX + 1), `${D}T14:00:00.000Z`, 'rejected', [['ACN', 'ORCL']]);
+    const ok = meeting('y'.repeat(MEETING_ID_MAX), `${D}T14:30:00.000Z`, 'rejected', [['ACN', 'ORCL']]);
+    const { rows, coverage } = buildMeetings({ battle: { gameplanMeetingHistory: [big, ok] }, bounds });
+    expect(rows.map((r) => r.key)).toEqual([`meeting|${D}T14:00:00.000Z`, `${'y'.repeat(MEETING_ID_MAX)}|${D}T14:30:00.000Z`]);
+    expect(coverage.note).toBe(`1 meeting id longer than ${MEETING_ID_MAX} characters not copied`);
+    expect(JSON.stringify(rows).length).toBeLessThan(2000);
+  });
+
+  it('instants that are not instants (a number, an object, a long string) are not copied; a diagnosis of exactly the bound is', () => {
+    const odd = meeting('gpm_i', `${D}T14:00:00.000Z`, 'expired', [['ACN', 'ORCL']], {
+      expiresAt: 1758730000000, resolvedAt: { seconds: 1 }, diagnosis: 'd'.repeat(MEETING_DIAGNOSIS_MAX),
+    });
+    const long = meeting('gpm_l', `${D}T15:00:00.000Z`, 'expired', [['ACN', 'ORCL']], { expiresAt: `${D}T20:00:00.000Z${' '.repeat(40)}` });
+    const { rows } = buildMeetings({ battle: { gameplanMeetingHistory: [odd, long] }, bounds });
+    expect(rows[0]).toMatchObject({ expiresAt: null, resolvedAt: null, diagnosis: 'd'.repeat(MEETING_DIAGNOSIS_MAX) });
+    expect(rows[1].expiresAt).toBeNull();
+  });
+
+  it('the day\'s cap holds for the MERGED rows (review B-2): re-planted meetings never grow the section across refreshes', async () => {
+    const day = (prefix) => Array.from({ length: MEETINGS_PER_DAY_MAX }, (_, i) => meeting(`${prefix}${i}`, new Date(Date.parse(`${D}T13:40:00.000Z`) + i * 60_000).toISOString(), 'expired', [['ACN', 'ORCL']]));
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: day('a') }, { battleId: 'b-cap' });
+    expect(tape.meetings).toHaveLength(MEETINGS_PER_DAY_MAX);
+    const battle = structuredClone(t.store.get(`agentBattles/${fx.battleId}`));
+    battle.gameplanMeetingHistory = day('b');
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 60_000 });
+    const after = t.store.get(path(fx));
+    expect(after.meetings).toHaveLength(MEETINGS_PER_DAY_MAX);
+    expect(after.coverage.meetings.status).toBe('partial');
+    expect(after.coverage.meetings.note).toBe(`${MEETINGS_PER_DAY_MAX} meetings past ${MEETINGS_PER_DAY_MAX} in a day not copied`);
+  });
+
   it('at most MEETINGS_PER_DAY_MAX a day; a duplicated id keeps every row apart', () => {
     const many = Array.from({ length: MEETINGS_PER_DAY_MAX + 3 }, (_, i) => meeting('same', new Date(Date.parse(`${D}T13:30:00.000Z`) + i * 60_000).toISOString(), 'expired', [['ACN', 'ORCL']]));
     many.push({ ...many[0] });
@@ -175,13 +208,28 @@ describe('the candle pass adds every leg\'s symbols to its series set — dedupl
     expect(SERIES_ROLES).toContain('meeting');
   });
 
-  it('legs the set already holds move nothing: the same plan and the same candle input fingerprint as with no meeting', async () => {
+  it('legs the set already holds move nothing; a NEW leg symbol joins the plan but never the candle input identity (best effort)', async () => {
     const without = (await dayWith({}, { battleId: 'b-none-meet' })).tape;
     const withHeld = (await dayWith({ gameplanMeetingHistory: [HISTORY[2]] }, { battleId: 'b-none-meet' })).tape;
     expect(symbolPlan(withHeld)).toEqual(symbolPlan(without));
     expect(candleInputFingerprint(withHeld)).toEqual(candleInputFingerprint(without));
     const withNew = (await dayWith({ gameplanMeetingHistory: [HISTORY[1]] }, { battleId: 'b-none-meet' })).tape;
-    expect(candleInputFingerprint(withNew).symbols).not.toBe(candleInputFingerprint(without).symbols);
+    expect(symbolPlan(withNew).map((e) => e.symbol)).toContain('ORCL');
+    expect(candleInputFingerprint(withNew)).toEqual(candleInputFingerprint(without));
+  });
+
+  it('a leg whose symbolOut is new to the day joins the plan too (both of a leg\'s symbols)', async () => {
+    const odd = { ...HISTORY[1], id: 'gpm_odd', suggestedSwaps: [{ symbolOut: 'CSCO', symbolIn: 'ORCL', rationale: 'r' }] };
+    const plan = symbolPlan((await dayWith({ gameplanMeetingHistory: [odd] }, { battleId: 'b-odd' })).tape);
+    expect(plan.filter((e) => e.role === 'meeting').map((e) => e.symbol)).toEqual(['CSCO', 'ORCL']);
+  });
+
+  it('at most MEETING_SYMBOLS_PER_DAY_MAX new symbols a day — the rest counted, never fetched', () => {
+    const tape = { checks: [{ key: 'seq:1', tickSeq: 1, state: 'completed', at: `${D}T13:30:20.000Z`, risk: { ACN: { action: 'HOLD', reason: null } } }], actions: [], plans: [], comparables: { sectors: {} }, meetings: ['AAA', 'BBB', 'CCC', 'DDD', 'EEE', 'FFF'].map((s, i) => ({ key: `m${i}`, legs: [{ symbolOut: 'ACN', symbolIn: s }] })) };
+    const r = meetingLegSymbols(tape, (s) => s === 'ACN');
+    expect(MEETING_SYMBOLS_PER_DAY_MAX).toBe(4);
+    expect(r).toEqual({ added: ['AAA', 'BBB', 'CCC', 'DDD'], dropped: ['EEE', 'FFF'] });
+    expect(symbolPlan(tape).filter((e) => e.role === 'meeting').map((e) => e.symbol)).toEqual(['AAA', 'BBB', 'CCC', 'DDD']);
   });
 
   describe('a refresh of a day whose candle pass already ran, now carrying a meeting with a NEW leg symbol (the founder\'s post-merge refresh)', () => {
@@ -195,30 +243,31 @@ describe('the candle pass adds every leg\'s symbols to its series set — dedupl
       return { fx, t };
     }
 
-    it('inside the candle window: re-queued, `symbols` named — the next candle pass fetches the leg', async () => {
+    it.each([['inside the candle window', NIGHT + 86_400_000], ['outside it', Date.parse('2026-10-17T02:15:30.000Z')]])('%s: the meeting is copied and NOTHING on the candle side moves — no re-queue, no expiry, no label (the leg gets no bars: stated)', async (_label, now) => {
       const { fx, t } = await candled([HISTORY[1]]);
-      await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 86_400_000 });
-      expect(t.store.get(path(fx)).passes.candles).toMatchObject({ status: 'pending', reason: 'inputs_changed', changedInputs: ['symbols'], attempts: 0 });
+      const before = structuredClone(t.store.get(path(fx)));
+      await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now });
+      const after = t.store.get(path(fx));
+      expect(after.meetings).toHaveLength(1);
+      expect(after.passes.candles).toEqual(before.passes.candles);
+      expect(after.coverage.series).toEqual(before.coverage.series);
+      expect(after.coverage.replay).toEqual(before.coverage.replay);
       const f = anyBars();
       await runCandlePass({ db: t.db, fetchCandles: f.fetchCandles, clock: () => MORNING + 86_400_000, startMs: MORNING + 86_400_000 });
-      expect(f.calls.map((c) => c.symbol)).toContain('ORCL');
-      expect(t.store.get(`${path(fx)}/series/ORCL`)?.role).toBe('meeting');
+      expect(f.calls).toEqual([]);                                  // a written pass is not selected again: no EODHD call
     });
+  });
 
-    it('outside it: a written pass becomes expired (inputs_changed_outside_window), its series coverage labelled — the merge\'s own BA-25 rule, reported', async () => {
-      const { fx, t } = await candled([HISTORY[1]]);
-      await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: Date.parse('2026-10-17T02:15:30.000Z') });
-      const tape = t.store.get(path(fx));
-      expect(tape.passes.candles).toMatchObject({ status: 'expired', reason: 'inputs_changed_outside_window', changedInputs: ['symbols'] });
-      expect(tape.coverage.series.note).toMatch(/built before the candle inputs changed \(symbols\) — outside its retry window, not rebuilt/);
-    });
-
-    it('a meeting whose legs the set already holds changes nothing on the candle side', async () => {
-      const { fx, t } = await candled([HISTORY[2]]);
-      const before = structuredClone(t.store.get(path(fx)).passes.candles);
-      await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: Date.parse('2026-10-17T02:15:30.000Z') });
-      expect(t.store.get(path(fx)).passes.candles).toEqual(before);
-    });
+  it('a leg with no bars is best effort: the pass is written, the series section complete, the leg named in its note and kept in symbolsMissing — no retry', async () => {
+    const zz = { ...HISTORY[1], id: 'gpm_zz', suggestedSwaps: [{ symbolOut: 'ACN', symbolIn: 'ZZZQ', rationale: 'r' }] };
+    const { fx, t } = await dayWith({ gameplanMeetingHistory: [zz] }, { battleId: 'b-zz' });
+    const f = fetcherOf(new Proxy({}, { get: (_, sym) => (sym === 'ZZZQ' ? [] : (typeof sym === 'string' ? flatRows(D, 100) : undefined)) }));
+    await runCandlePass({ db: t.db, fetchCandles: f.fetchCandles, clock: () => MORNING, startMs: MORNING });
+    const tape = t.store.get(path(fx));
+    expect(tape.passes.candles).toMatchObject({ status: 'written', attempts: 1, symbolsMissing: ['ZZZQ'] });
+    expect(tape.passes.candles.symbolsRequested).toContain('ZZZQ');
+    expect(tape.coverage.series.status).toBe('complete');
+    expect(tape.coverage.series.note).toBe("meeting legs without bars (not part of this section's status): ZZZQ");
   });
 
   it('THE ADDED EODHD CALLS, through the real candle pass: one request per new leg symbol (ORCL), none for legs already held', async () => {

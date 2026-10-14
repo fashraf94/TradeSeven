@@ -86,16 +86,37 @@ export function symbolPlan(tape) {
   for (const s of MARKET_COMPARABLES) add(s, 'market');
   // Film Room B1 T2: every gameplan meeting leg's symbols, so a rejected or
   // expired leg has bars — DEDUPLICATED against the set above: a symbol the
-  // day already holds keeps its roles (its series and this fingerprint do not
-  // move); only a new one is added, as `meeting`. No sector ETF is added for it.
-  for (const m of rows(tape.meetings)) {
-    for (const leg of Array.isArray(m.legs) ? m.legs : []) {
-      for (const s of [leg?.symbolOut, leg?.symbolIn]) if (typeof s === 'string' && !roles.has(s)) add(s, 'meeting');
-    }
-  }
+  // day already holds keeps its roles (its series does not move); only a new
+  // one is added, as `meeting`, at most MEETING_SYMBOLS_PER_DAY_MAX a day. No
+  // sector ETF is added for it. A meeting-only symbol is BEST EFFORT: it is
+  // not part of the candle input identity (candleInputFingerprint) and its
+  // missing bars do not decide the pass's status (candlePass.js processTape).
+  for (const s of meetingLegSymbols(tape, (sym) => roles.has(sym)).added) add(s, 'meeting');
   const primary = (set) => (set.has('sold') ? 'sold' : set.has('held') ? 'held' : set.has('plan') ? 'plan' : set.has('market') ? 'market' : set.has('meeting') ? 'meeting' : 'sector');
   return [...roles.entries()].map(([symbol, set]) => ({ symbol, role: primary(set), roles: [...set].sort() }))
     .sort((a, b) => (a.symbol < b.symbol ? -1 : 1));
+}
+
+/** B1 T2 — at most this many meeting-leg symbols a day join the set (a server meeting proposes at most two legs, each with one new name). */
+export const MEETING_SYMBOLS_PER_DAY_MAX = 4;
+
+/**
+ * B1 T2 — the meeting-leg symbols a day's set does not already hold (`held`),
+ * in meeting and leg order: the first MEETING_SYMBOLS_PER_DAY_MAX are
+ * `added`, the rest `dropped` (each counted once). Crypto is never fetched.
+ */
+export function meetingLegSymbols(tape, held) {
+  const added = [];
+  const dropped = [];
+  for (const m of rows(tape?.meetings)) {
+    for (const leg of Array.isArray(m.legs) ? m.legs : []) {
+      for (const s of [leg?.symbolOut, leg?.symbolIn]) {
+        if (typeof s !== 'string' || !s || isCryptoSymbol(s) || held(s) || added.includes(s) || dropped.includes(s)) continue;
+        if (added.length < MEETING_SYMBOLS_PER_DAY_MAX) added.push(s); else dropped.push(s);
+      }
+    }
+  }
+  return { added, dropped };
 }
 
 /** The fingerprint's parts, in the words the tape uses to name what changed. */
@@ -144,7 +165,8 @@ export function candleInputFingerprint(tape) {
     salePrices: digest(rows(tape?.actions).map(saleValues)),
     plans: digest(rows(tape?.plans).map(planValues)),
     symbols: digest([
-      ...symbolPlan(tape || {}).map((e) => ['role', e.symbol, e.roles.join('+')]),
+      // B1 T2: a meeting-only symbol is best effort, never an input whose change re-queues or expires a pass
+      ...symbolPlan(tape || {}).filter((e) => e.role !== 'meeting').map((e) => ['role', e.symbol, e.roles.join('+')]),
       ...Object.keys(sectors).sort().map((s) => ['sector', s, orNull(sectors[s])]),
     ]),
   };

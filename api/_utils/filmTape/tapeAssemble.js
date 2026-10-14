@@ -744,9 +744,13 @@ export const MEETINGS_PER_DAY_MAX = 26;
 /** Bounds on the copied words and the resolver's name. */
 export const MEETING_DIAGNOSIS_MAX = 500;
 export const MEETING_RESOLVED_BY_MAX = 40;
+/** A meeting id longer than this is not copied (the server's are `gpm_<epoch ms>`); the key then uses 'meeting'. */
+export const MEETING_ID_MAX = 64;
+/** An instant is an ISO string; a longer string is not one the history could hold. */
+const INSTANT_MAX = 40;
 const TICKER = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
 const ticker = (v) => (typeof v === 'string' && TICKER.test(v) ? v : null);
-const instant = (v) => (str(v) && toMs(v) !== null ? v : null);
+const instant = (v) => (str(v) && v.length <= INSTANT_MAX && toMs(v) !== null ? v : null);
 
 /**
  * B1 T2 (Build B spec §3) — the gameplan meetings created on the tape day,
@@ -772,6 +776,7 @@ export function buildMeetings({ battle, bounds }) {
   let unrecognised = 0;
   let legsDropped = 0;
   let wordsDropped = 0;
+  let idsDropped = 0;
   const seen = {};
   for (const m of ofDay.sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt))) {
     if (!MEETING_STATUSES.includes(m.status)) { unrecognised += 1; continue; }
@@ -780,7 +785,10 @@ export function buildMeetings({ battle, bounds }) {
     const diagnosis = str(m.diagnosis);
     if (diagnosis && diagnosis.length > MEETING_DIAGNOSIS_MAX) wordsDropped += 1;
     const resolvedBy = str(m.resolvedBy);
-    const base = `${str(m.id) ?? 'meeting'}|${m.createdAt}`;
+    // B1 review B-1: every copied string is bounded — the id too, so no planted value can grow the tape past Firestore's limit
+    const id = str(m.id);
+    if (id && id.length > MEETING_ID_MAX) idsDropped += 1;
+    const base = `${id && id.length <= MEETING_ID_MAX ? id : 'meeting'}|${m.createdAt}`;
     seen[base] = (seen[base] ?? 0) + 1;
     rows.push({
       key: seen[base] === 1 ? base : `${base}#${seen[base]}`,
@@ -805,6 +813,7 @@ export function buildMeetings({ battle, bounds }) {
   if (unrecognised) notes.push(`${counted(unrecognised, 'meeting record', 'meeting records')} of this day with an outcome other than approved, rejected or expired not copied`);
   if (legsDropped) notes.push(`${counted(legsDropped, 'leg', 'legs')} past the ${MEETING_LEGS_MAX} a meeting proposes not copied`);
   if (wordsDropped) notes.push(`${counted(wordsDropped, 'diagnosis', 'diagnoses')} longer than ${MEETING_DIAGNOSIS_MAX} characters not copied`);
+  if (idsDropped) notes.push(`${counted(idsDropped, 'meeting id', 'meeting ids')} longer than ${MEETING_ID_MAX} characters not copied`);
   if (overflow) notes.push(`${counted(overflow, 'meeting', 'meetings')} past ${MEETINGS_PER_DAY_MAX} in a day not copied`);
   const span = spanOf(kept.map((m) => m.createdAt));
   return {
@@ -851,7 +860,7 @@ export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entry
 /** BA-39 — what a missing final score is called in a result's note. */
 const SCORE_NAMES = Object.freeze({ total: 'agent score', opponent: 'opponent score' });
 /** B1 T1 — the result's note for a battle created without an opponent (score.opponentBasis `none`). */
-export const NO_OPPONENT_NOTE = 'no opponent: the battle was created without one';
+export const NO_OPPONENT_NOTE = 'no opponent: the battle was created without a CPU opponent';
 
 /**
  * BA-39 — a battle's result from its completion block's own facts. A `stored`

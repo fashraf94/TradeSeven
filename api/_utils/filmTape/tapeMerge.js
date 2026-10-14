@@ -44,7 +44,7 @@
 
 import { createHash } from 'node:crypto';
 import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE, AWAITING_CANDLES_NOTE } from '../../../src/constants/filmTape.js';
-import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf } from './tapeAssemble.js';
+import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf, MEETINGS_PER_DAY_MAX } from './tapeAssemble.js';
 import { candleInputFingerprint, changedInputParts, replayLogicVersionOf, REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
 import { modernNotes } from './tapeNotes.js';
@@ -556,7 +556,15 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
   }
   // B1 T2: the meetings' coverage is the new read's — the history only grows
   // (an append-only list) — preserved from the stored copy for any row it kept.
-  const meetingsCov = assembled.coverage?.meetings ?? stored.coverage?.meetings ?? null;
+  let meetingsCov = assembled.coverage?.meetings ?? stored.coverage?.meetings ?? null;
+  // B1 review B-2: the day's cap holds for the MERGED rows too (the earliest
+  // kept), so re-planted meetings never grow the section across refreshes.
+  const meetingOverflow = merged.meetings.length - MEETINGS_PER_DAY_MAX;
+  if (meetingOverflow > 0) {
+    merged.meetings = merged.meetings.slice(0, MEETINGS_PER_DAY_MAX);
+    const kept = String(meetingsCov?.note ?? '').split('; ').filter((part) => part && !/ past \d+ in a day not copied$/.test(part));
+    meetingsCov = { ...(isObj(meetingsCov) ? meetingsCov : {}), status: 'partial', note: [...kept, `${meetingOverflow === 1 ? '1 meeting' : `${meetingOverflow} meetings`} past ${MEETINGS_PER_DAY_MAX} in a day not copied`].join('; ') };
+  }
   if (isObj(meetingsCov)) {
     merged.coverage.meetings = carriedAny(carried.meetings)
       ? { ...meetingsCov, preservedFrom: stored.coverage?.meetings?.preservedFrom ?? stored.writtenAt ?? null }

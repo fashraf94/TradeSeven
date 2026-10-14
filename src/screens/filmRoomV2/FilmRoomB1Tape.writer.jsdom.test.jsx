@@ -12,9 +12,13 @@
 //   · NEW FIELDS ARE UNRENDERED: the whole screen at Glance and Study — and the
 //     Deep dive with the same symbol open — is the same HTML, byte for byte
 //     (React's useId values renumbered), with the B1 fields stripped from the tape.
-//   · THE ONE VISIBLE CONSEQUENCE, stated: the leg's new series document is a
+//   · THE VISIBLE CONSEQUENCES, stated: the leg's new series document is a
 //     day series like any other, so the Deep dive's symbol picker offers it,
-//     as "price series", its numbers marked as market data. Nothing else moves.
+//     as "price series", its numbers marked as market data (the export lists it
+//     too); and a leg with no bars is named in the series coverage line's note,
+//     the section's status untouched (best effort, candlePass.js processTape).
+//   · A battle with no opponent (basis none), completed: its result reads
+//     unavailable with its reason, and every sweep is clean (review C-1).
 //   · Every sweep (numbers and their classes, words, signs, quotations, stored
 //     notes) is clean at every depth, the leg's series open included.
 //
@@ -157,5 +161,33 @@ describe('every sweep is clean at every depth, on the B1-written tape (A2\'s cri
     expect(sweepSigns(m.container), where).toEqual([]);
     expect(quoteDefects(m.container, docs), where).toEqual([]);
     expect(storedNoteDefects(m.container, docs), where).toEqual([]);
+  });
+});
+
+describe('review C-1 — a completed battle with no opponent (basis none), on the screen', () => {
+  let none;
+  beforeAll(async () => {
+    const fx = await sep23Day({ battleId: 'b-sep23-none' });
+    fx.battle.opponent = null;
+    fx.battle.scoreState = { ...fx.battle.scoreState, opponentScore: 0 };
+    for (const tk of fx.ticks) if (tk.scores) tk.scores.opponent = 0;
+    none = await buildTapeDay(fx, { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sep23Bars() });
+  });
+
+  it('the tape: no opponent number anywhere, the result unavailable with its reason', () => {
+    expect(none.tape.score.opponentBasis).toBe('none');
+    expect(none.tape.battle.result).toEqual({ value: null, basis: 'unavailable', note: 'no opponent: the battle was created without a CPU opponent' });
+    expect(none.tape.battle.final.opponent).toBeNull();
+  });
+
+  it.each(['Glance', 'Study', 'Deep dive'])('%s: the reason is shown, and every sweep is clean', async (label) => {
+    await openAt(none.tape, none.series, label);
+    if (label === 'Glance') expect(m.container.textContent).toContain('no opponent: the battle was created without a CPU opponent');
+    const docs = { tape: none.tape, battle: battleOf(none.tape), ...Object.fromEntries(none.series.map((s) => [`series:${s.symbol}`, s])) };
+    expect(sweepNumbers(m.container, docs), label).toEqual([]);
+    expect(sweepWords(m.container, docs), label).toEqual([]);
+    expect(sweepSigns(m.container), label).toEqual([]);
+    expect(quoteDefects(m.container, docs), label).toEqual([]);
+    expect(storedNoteDefects(m.container, docs), label).toEqual([]);
   });
 });
