@@ -142,9 +142,11 @@ export async function generateReflection(db, battleId, { attempt = 1, modelCall 
   const isCasualForward = learningRef !== agentRef;
 
   // This game's REAL lesson in a window — a no-lesson marker never counts, so a
-  // marker can never turn a later attempt into a success (O9) — and its marker.
+  // marker can never turn a later attempt into a success (O9) — and ANY entry
+  // for this game (a marker, or a legacy failure line), which blocks a marker
+  // exactly as the casual transaction does (review WR-9).
   const lessonRecordedIn = (memory) => (memory || []).some((m) => m?.gameId === battleId && isRealLesson(m));
-  const markerRecordedIn = (memory) => (memory || []).some((m) => m?.gameId === battleId && isNoLessonMarker(m));
+  const gameRecordedIn = (memory) => (memory || []).some((m) => m?.gameId === battleId);
 
   // A retry after a success whose battle write was lost (or whose memory write
   // committed but reported an error): this game's lesson is already in the
@@ -187,11 +189,14 @@ export async function generateReflection(db, battleId, { attempt = 1, modelCall 
           const freshSnap = await learningRef.get();
           const freshMemory = (freshSnap.exists ? freshSnap.data().memory : []) || [];
           if (lessonRecordedIn(freshMemory)) {
-            // The lesson did land after all (a write that committed but
-            // reported an error): the attempt is a success, never a marker.
+            // This game's lesson landed while the call ran — only a writer
+            // running at the same time can do that (an earlier attempt's
+            // write is found by the check above): the attempt is a success,
+            // never a marker beside the lesson (review WR-4).
+            console.warn(`${LOG_PREFIX} Battle ${battleId}: the call failed (${failure.failureClass}) but this game's lesson is already in the window — recorded as ok`);
             failure = null;
             alreadyRecorded = true;
-          } else if (!markerRecordedIn(freshMemory)) {
+          } else if (!gameRecordedIn(freshMemory)) {
             entry = buildNoLessonMarker(battleDoc);
             baseMemory = freshMemory;
           }
@@ -228,7 +233,10 @@ export async function generateReflection(db, battleId, { attempt = 1, modelCall 
       failureClass: failure?.failureClass ?? null,
       accountWide: failure?.accountWide === true,
       errorName: failure?.errorName ?? null,
-      ...(call ? call.meta : { model: null }),
+      // A lesson found already recorded is an `ok` with no call metrics, like
+      // the already-recorded path above — never the failed call's time and
+      // tokens on a success (review WR-4).
+      ...(call && !alreadyRecorded ? call.meta : { model: null }),
       attempt,
       at: new Date().toISOString(),
     });
@@ -280,6 +288,10 @@ export async function generateReflection(db, battleId, { attempt = 1, modelCall 
     // milestone claim and the pendingConsolidation write. Below it nothing is
     // spent or written — no call, no claim, no flag — and the agent keeps its
     // current paragraph; one shadow line records the skip (counts, no text).
+    // Known limit (review WR-3): if a second run on the SAME agent (a manual
+    // run during a tick) lands a no-lesson marker between this read and the
+    // driver's own re-read, the driver refuses but the milestone stays claimed;
+    // the rewrite waits for the next milestone. No call is made.
     let belowFloor = false;
     if (gamesPlayed > 0 && gamesPlayed % 5 === 0) {
       const windowSnap = await learningRef.get();

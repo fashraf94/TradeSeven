@@ -132,6 +132,8 @@ describe('account-wide refusals — the classifier (checked against the SDK and 
     ['400 a workspace spend limit', () => apiErr(400, 'invalid_request_error', 'You have reached your specified workspace API usage limits. You will regain access on 2026-11-01 at 00:00 UTC.'), 'BadRequestError'],
     ['400 the credit balance', () => apiErr(400, 'invalid_request_error', 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'), 'BadRequestError'],
     ['429 the usage tier\'s monthly spend cap', () => apiErr(429, 'rate_limit_error', 'You have reached your API usage limits: your organization has crossed its monthly API usage threshold.', { details: { error_code: 'enforced_spend_limit_reached' } }), 'RateLimitError'],
+    ['a 401 with no JSON body (a proxy page) — by its status alone', () => APIError.generate(401, undefined, 'Unauthorized', new Headers()), 'AuthenticationError'],
+    ['a 404 with no JSON body — by its status alone', () => APIError.generate(404, undefined, 'Not Found', new Headers()), 'NotFoundError'],
   ])('%s is account-wide, its class unchanged (http_<status>)', (_label, make, sdkClass) => {
     const err = make();
     expect(err.constructor.name).toBe(sdkClass); // the SDK's real class for that status

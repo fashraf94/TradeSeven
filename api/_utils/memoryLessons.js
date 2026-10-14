@@ -32,7 +32,12 @@ export function isNoLessonMarker(entry) {
 /**
  * A real lesson (O5): a non-blank lesson that is not the legacy failure
  * literal and not a no-lesson marker. The literal is matched exactly, as the
- * timeline matches it, so the filter and the screen agree row for row.
+ * timeline matches it, so a legacy entry and a marker are excluded here and
+ * shown as "No lesson was recorded for this game." there. One edge stays apart
+ * on purpose (review WR-10): an entry with a blank or missing lesson is not a
+ * lesson here, while the timeline shows it with an empty line, as part 1's
+ * display ruling pinned. No writer can store one (a blank lesson is a
+ * missing_keys failure in reflect.js) and the 10 Oct census found none.
  */
 export function isRealLesson(entry) {
   if (!entry || typeof entry !== 'object' || isNoLessonMarker(entry)) return false;

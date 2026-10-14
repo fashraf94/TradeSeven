@@ -187,13 +187,18 @@ export default async function handler(req, res) {
         summary.failed++;
         // When the throw came from the reflection itself (never from the
         // outcome write — that would turn a landed success into a failure),
-        // record the attempt as failed/unknown, best effort; at the cap this
-        // finishes the battle without a lesson now rather than next tick.
+        // record the attempt as failed/unknown, best effort. P-OUT-2 (O9,
+        // review WR-2): a THIRD attempt that threw has left no no-lesson row,
+        // so it waits one tick for the no-call recovery pass, which writes the
+        // row; a recovery pass that throws finishes the battle at once.
         if (claim?.attempt && result === undefined) {
           try {
             const at = new Date().toISOString();
             const record = buildReflectionOutcome({ outcome: 'failed', failureClass: 'unknown', errorName: errorNameOf(err), model: null, attempt: claim.attempt, at });
-            await battleRef.update({ ...reflectionBattleUpdate({ outcome: 'failed', record }, { attempt: claim.attempt, at }), reflectionLeaseUntil: null });
+            await battleRef.update({
+              ...reflectionBattleUpdate({ outcome: 'failed', record, deferToRecovery: true }, { attempt: claim.attempt, at, recoveryPass: claim.state === 'exhausted' }),
+              reflectionLeaseUntil: null,
+            });
           } catch (recordErr) {
             console.error(`${LOG_PREFIX} Battle ${battleId}: could not record the failed attempt:`, recordErr?.message || recordErr);
           }

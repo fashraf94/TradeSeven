@@ -246,6 +246,7 @@ describe('every other failure class is named and writes nothing', () => {
     };
     const result = await generateReflection(db, BATTLE_ID);
     expect(result).toMatchObject({ outcome: 'failed', record: { failureClass: 'unknown', errorName: 'FirebaseError', stopReason: 'tool_use' } });
+    expect(result).not.toHaveProperty('deferToRecovery'); // only a THIRD attempt defers (review WR-7)
     expect(writes).toEqual([]);
     expect(consolidation.calls).toEqual([]);
     expect(shadow.lines[0]).toMatchObject({ outcome: 'failed', selfReflection: null });
@@ -567,6 +568,13 @@ describe('the no-lesson marker (O9)', () => {
     expect(formatDraftPromptMemory([marker])).toBe('Game (Win +12.35): No lesson recorded.');
   });
 
+  it('on the plain path any entry for the game — a legacy failure line too — blocks the marker, as the casual transaction does (review WR-9)', async () => {
+    sdk.create = async () => { throw new InternalServerError(529, {}, 'x', new Headers()); };
+    const { db, writes } = seed({ agent: { ...AGENT, memory: [...priorMemory(4), { ...legacyEntry(0), gameId: BATTLE_ID }] } });
+    expect(await generateReflection(db, BATTLE_ID, { attempt: 3 })).toMatchObject({ outcome: 'failed', counted: true });
+    expect(writes).toEqual([]);
+  });
+
   it('a marker already in the window is never written twice — not by the third attempt, not by the recovery pass', async () => {
     sdk.create = async () => { throw new InternalServerError(529, {}, 'x', new Headers()); };
     const agent = { ...AGENT, memory: [...priorMemory(4), markerEntry(BATTLE_ID)] };
@@ -630,6 +638,20 @@ describe('the no-lesson marker (O9)', () => {
       expect(writes).toEqual([]);
       expect(store.get(`agents/${PARENT_ID}`).memory.filter((m) => m.gameId === BATTLE_ID)).toHaveLength(1);
     });
+
+    it('the fresh read is the PARENT\'s window: a lesson that landed on the parent during the third attempt makes it a success (review WR-6)', async () => {
+      const { db, writes, store } = casualSeed();
+      sdk.create = async () => {
+        // This game's lesson lands on the PARENT during the call (a committed write elsewhere) — then the call fails.
+        store.set(`agents/${PARENT_ID}`, { ...store.get(`agents/${PARENT_ID}`), memory: [...priorMemory(2), { ...priorMemory(1)[0], gameId: BATTLE_ID, lesson: 'landed on the parent' }] });
+        throw new InternalServerError(529, {}, 'x', new Headers());
+      };
+      const result = await generateReflection(db, BATTLE_ID, { attempt: 3 });
+      expect(result).toMatchObject({ outcome: 'ok', reason: 'already_recorded', record: { outcome: 'ok', failureClass: null } });
+      expect(writes).toEqual([]);
+      expect(store.get(`agents/${PARENT_ID}`).memory.filter((m) => m.gameId === BATTLE_ID)).toEqual([expect.objectContaining({ lesson: 'landed on the parent' })]);
+      expect(store.get(`agents/${CLONE_ID}`).memory).toEqual([]);
+    });
   });
 
   it('a lesson that lands while the third attempt runs is found by the fresh read: the attempt is a success, never a marker', async () => {
@@ -640,9 +662,27 @@ describe('the no-lesson marker (O9)', () => {
       throw new InternalServerError(529, {}, 'x', new Headers());
     };
     const result = await generateReflection(db, BATTLE_ID, { attempt: 3 });
-    expect(result).toMatchObject({ outcome: 'ok', reason: 'already_recorded', record: { outcome: 'ok', failureClass: null } });
+    expect(result).toMatchObject({ outcome: 'ok', reason: 'already_recorded' });
+    // An `ok` with no call metrics, like the already-recorded path — never the failed call's time or tokens (review WR-4).
+    expect(result.record).toMatchObject({ outcome: 'ok', failureClass: null, accountWide: false, errorName: null, elapsedMs: null, stopReason: null, usage: null, model: null, attempt: 3 });
     expect(writes).toEqual([]);
     expect(store.get(`agents/${AGENT_ID}`).memory.filter((m) => m.gameId === BATTLE_ID)).toEqual([expect.objectContaining({ lesson: 'landed during the call' })]);
+  });
+
+  it('the marker is written on the FRESH window: another game\'s lesson that landed during the third attempt survives (review WR-6)', async () => {
+    const { db, writes, store } = seed({ agent: { ...AGENT, memory: priorMemory(3) } });
+    sdk.create = async () => {
+      // ANOTHER game's lesson lands on this agent during the call (e.g. a casual clone's forward to its ranked parent) — then the call fails.
+      store.set(`agents/${AGENT_ID}`, { ...store.get(`agents/${AGENT_ID}`), memory: [...priorMemory(3), realEntry(9)] });
+      throw new InternalServerError(529, {}, 'x', new Headers());
+    };
+    const result = await generateReflection(db, BATTLE_ID, { attempt: 3 });
+    expect(result).toMatchObject({ outcome: 'failed', counted: true, record: { failureClass: 'http_529' } });
+    expect(writes).toHaveLength(1);
+    const memory = store.get(`agents/${AGENT_ID}`).memory;
+    expect(memory.map((m) => m.gameId)).toEqual(['old-0', 'old-1', 'old-2', 'real-9', BATTLE_ID]);
+    expect(memory[3]).toEqual(realEntry(9));
+    expect(memory[4]).toMatchObject({ gameId: BATTLE_ID, lesson: '', noLesson: true });
   });
 
   it('a third attempt whose fresh read throws writes nothing and waits for the recovery pass', async () => {
@@ -658,6 +698,13 @@ describe('the no-lesson marker (O9)', () => {
     const result = await generateReflection(db, BATTLE_ID, { attempt: 3 });
     expect(result).toMatchObject({ outcome: 'failed', counted: true, deferToRecovery: true, record: { failureClass: 'http_529' } });
     expect(writes).toEqual([]);
+
+    // The recovery pass whose fresh read throws never defers: the cron finishes it (review WR-7).
+    agentReads = 0;
+    const recovery = await generateReflection(db, BATTLE_ID, { attempt: 3, modelCall: false });
+    expect(agentReads).toBe(2); // the fresh read ran (and threw) — the row cannot pass without it
+    expect(recovery).toMatchObject({ outcome: 'failed', counted: true });
+    expect(recovery).not.toHaveProperty('deferToRecovery');
   });
 
   describe('a third attempt that cannot leave its row waits for the recovery pass', () => {
@@ -732,6 +779,24 @@ describe('the consolidation floor (O5) — counted on a fresh read, before anyth
     const { db } = seed({ agent: { ...AGENT, stats: MILESTONE, memory: [legacyEntry(1), legacyEntry(2), legacyEntry(3), realEntry(4), realEntry(5)] } });
     await generateReflection(db, BATTLE_ID);
     expect(consolidation.calls).toHaveLength(1); // the oldest legacy entry rolled out; the new lesson is the third
+  });
+
+  it('casual forward: the floor counts the PARENT\'s window this game\'s lesson has just joined, never the clone\'s copy (review WR-6)', async () => {
+    okCall();
+    const CLONE_ID = 'casual-agent-owner-1';
+    const PARENT_ID = 'ranked-1';
+    const { db, store } = makeDb({
+      [`agentBattles/${BATTLE_ID}`]: { ...BATTLE, agentId: CLONE_ID, gameMode: 'baggerbomb' },
+      // The clone holds the parent's window as re-synced at deploy; this game's lesson lands on the parent only.
+      [`agents/${CLONE_ID}`]: { ...AGENT, rankedAgentId: PARENT_ID, stats: { gamesPlayed: 1 }, memory: [realEntry(1), realEntry(2)] },
+      [`agents/${PARENT_ID}`]: { ...AGENT, stats: MILESTONE, memory: [realEntry(1), realEntry(2)] },
+    });
+    expect(await generateReflection(db, BATTLE_ID)).toMatchObject({ outcome: 'ok' });
+    expect(consolidation.calls).toHaveLength(1); // 2 real on the parent + this game's = 3
+    expect(consolidation.calls[0][1].path).toBe(`agents/${PARENT_ID}`);
+    expect(consolidation.calls[0][2]).toEqual({ transactionalApply: true });
+    expect(store.get(`agents/${PARENT_ID}`)).toMatchObject({ lastConsolidatedGamesPlayed: 5, pendingConsolidation: true });
+    expect(shadow.consolidationLines).toEqual([]);
   });
 
   it('the already-recorded path respects the floor: below it nothing is spent; at it the consolidation runs', async () => {

@@ -2,9 +2,10 @@
 //
 // Reflection outage fix, part 2 (P-OUT-2, founder rulings O7 and O9) — END TO
 // END: the real cron handler and the REAL generateReflection (api/agent/reflect.js)
-// against the Anthropic SDK mocked with its REAL error classes, on the
-// in-memory Firestore. Nothing between the API's refusal and the battle record
-// is mocked:
+// on the in-memory Firestore, with the Anthropic client replaced by a fake whose
+// messages.create throws the SDK's REAL error classes. Everything from the
+// thrown refusal to the battle record is real; the SDK's own HTTP layer (its
+// retries and backoff, below messages.create) is NOT exercised here (review WR-8):
 //   • 401 / 403 / 404 and the account's usage limit leave the attempt count
 //     unchanged and the game pending — even at attempt 3 — and write no marker;
 //   • a plain 400 counts; past the 7-day backstop a refusal counts;
@@ -81,7 +82,7 @@ describe('account-wide refusals do not use up a try (O7) — the real cron, the 
       expect(b).not.toHaveProperty('reflectionNoLesson');
       expect(await markersFor('b1')).toEqual([]);
     }
-    expect(sdk.calls).toBeGreaterThanOrEqual(2); // a model call each tick (the SDK's own retries may add more)
+    expect(sdk.calls).toBe(2); // one model call each tick (this harness replaces messages.create, so the SDK's own retries never run)
   });
 
   it('a plain 400 counts: the third attempt finishes the game with exactly one marker', async () => {
@@ -139,6 +140,29 @@ describe('the no-lesson marker (O9) — the real cron, the real reflect.js', () 
     await handler(cronReq(), makeRes());
     expect(sdk.calls).toBe(calls);
     expect(await markersFor('b1')).toHaveLength(1);
+  });
+
+  it('a third attempt that THROWS before its call (a failed read) leaves no row, so it waits one tick; the recovery pass then writes the marker (review WR-2)', async () => {
+    await seed({ attempts: 2 });
+    sdk.create = async () => { throw new Error('the recovery pass must never call'); };
+    const realCollection = fakeDb.collection.bind(fakeDb);
+    let thrown = false;
+    fakeDb.collection = (name) => {
+      const c = realCollection(name);
+      if (name !== 'agents') return c;
+      return { ...c, doc: (id) => { const ref = c.doc(id); return { ...ref, get: async () => { if (!thrown) { thrown = true; throw Object.assign(new Error('14 UNAVAILABLE'), { name: 'FirebaseError' }); } return ref.get(); } }; } };
+    };
+    await handler(cronReq(), makeRes());
+    let b = await doc('agentBattles/b1');
+    expect(b).toMatchObject({ pendingReflection: true, reflectionAttempts: 3, reflectionOutcome: { failureClass: 'unknown', errorName: 'FirebaseError', attempt: 3 } });
+    expect(b).not.toHaveProperty('reflectionNoLesson');
+    expect(await markersFor('b1')).toEqual([]);
+
+    await handler(cronReq(), makeRes());
+    b = await doc('agentBattles/b1');
+    expect(b).toMatchObject({ pendingReflection: false, reflectionNoLesson: true, reflectionAttempts: 3 });
+    expect(await markersFor('b1')).toHaveLength(1);
+    expect(sdk.calls).toBe(0);
   });
 
   it('the recovery pass (a run that died in its third attempt) writes one marker when no lesson landed', async () => {

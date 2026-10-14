@@ -144,7 +144,7 @@ describe('a failure is retried with a cap, never saved, never looped (O3)', () =
     expect(b.reflectionOutcome).toMatchObject({ outcome: 'failed', failureClass: 'unknown', attempt: 1 });
   });
 
-  it('an unexpected THROW still spends the attempt (claimed before the call) and is recorded failed/unknown; the third finishes the battle', async () => {
+  it('an unexpected THROW still spends the attempt (claimed before the call) and is recorded failed/unknown; the third waits for the recovery pass, whose throw finishes the battle (P-OUT-2, review WR-2)', async () => {
     await seedPending('b1');
     reflectMock.mockRejectedValue(new Error('5 NOT_FOUND: agent read failed'));
     await handler(cronReq(), makeRes());
@@ -156,11 +156,19 @@ describe('a failure is retried with a cap, never saved, never looped (O3)', () =
     await handler(cronReq(), makeRes());
     expect(reflectMock).toHaveBeenCalledTimes(3);
     b = await battle('b1');
-    expect(b).toMatchObject({ pendingReflection: false, reflectionNoLesson: true, reflectionAttempts: 3 });
+    // The third attempt left no no-lesson row: it stays pending for the recovery pass.
+    expect(b).toMatchObject({ pendingReflection: true, reflectionAttempts: 3 });
+    expect(b).not.toHaveProperty('reflectionNoLesson');
     expect(b.reflectionOutcome).toMatchObject({ outcome: 'failed', failureClass: 'unknown', attempt: 3 });
 
     await handler(cronReq(), makeRes());
-    expect(reflectMock).toHaveBeenCalledTimes(3); // gone from the queue
+    expect(reflectMock).toHaveBeenCalledTimes(4);
+    expect(reflectMock.mock.calls[3][2]).toEqual({ attempt: 3, modelCall: false }); // the no-call recovery pass
+    b = await battle('b1');
+    expect(b).toMatchObject({ pendingReflection: false, reflectionNoLesson: true, reflectionAttempts: 3 }); // its throw finishes the battle
+
+    await handler(cronReq(), makeRes());
+    expect(reflectMock).toHaveBeenCalledTimes(4); // gone from the queue
   });
 
   it('a throw from the OUTCOME write after an ok never records a failure; the next attempt finds the lesson and clears', async () => {
