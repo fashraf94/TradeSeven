@@ -1,11 +1,11 @@
 # Phase 0 — Cockpit Build 2b discovery: the timing read, seams, and live counts
 
-**Date:** 2026-10-14 · **Branch:** `claude/phase0-build2b-cockpit` (the Code tab's worktree branch is `claude/phase0-build2b-cockpit-6caf52`; pushed under the prompt's name) · **Code HEAD:** `d5d8fa9b` (= `origin/main` after `git fetch origin`, the #957 merge; every `file:line` below is at it — the branch's own commits add this report, the script and the design pass, no product code) · **First commit:** `6e539963` = `docs/design/COCKPIT_DESIGN_PASS_V1.md`, byte for byte (SHA-256 `4241e860fbfde428b43657de180e79d18f2e521bc772c8bc7bc0ff69984f990e`, verified on the attached file, the staged blob and the committed blob) · **Tree:** clean at start.
+**Date:** 2026-10-14 · **Branch:** `claude/phase0-build2b-cockpit` (the Code tab's worktree branch is `claude/phase0-build2b-cockpit-6caf52`; pushed under the prompt's name) · **Code HEAD:** `d5d8fa9b` (= `origin/main` after `git fetch origin`, the #957 merge; every `file:line` below is at it — the branch's own commits add this report, the script and the design pass, no product code) · **Main moved during the session** to `e880592e` (three merges on Oct 14; B10 names the eight B-set files whose lines may have drifted since) · **First commit:** `6e539963` = `docs/design/COCKPIT_DESIGN_PASS_V1.md`, byte for byte (SHA-256 `4241e860fbfde428b43657de180e79d18f2e521bc772c8bc7bc0ff69984f990e`, verified on the attached file, the staged blob and the committed blob) · **Tree:** clean at start.
 **Scope:** the two allowlisted accounts, labelled **founder** and **FT_QA** (no uid in this file or the script), on the cockpit-on ET sessions **Oct 6–14** (week 1 = Oct 6–9, week 2 = Oct 12–14), beside the founder's pre-flip battles: *off* (Sep 21–25, Oct 2 and Oct 5 — entries with no `declarationsPhase`) and *shadow* (Sep 28–Oct 1). Facts only; no recommendations.
 **Read-only:** Firestore reads through the Admin SDK (`.env.local` credentials, loaded as the existing read scripts load them), `git` reads, nothing else. No product source, flag, rule, index or schema changed. No model API call: every token figure is read from the stored tick bodies' `usage`. The raw dump went to the git-ignored `reads-raw/` folder; nothing raw is committed.
 **The accounts:** the prompt's two uid placeholders arrived unfilled. The uids were taken from the week-1 read's git-ignored raw dump (`reads-raw/cockpit-week1/`, the battles' owner fields under their `founder` / `FT_QA` labels) on this machine, passed inline for each run (`COCKPIT_ALLOWLIST_UIDS=<founder>,<FT_QA>`), never written to `.env.local`, a committed file or this report.
 **Markers (BUILD_RULES §3):** a code claim cites `file:line` and is **VERIFIED** when read in this session at HEAD; **ASSUMED** when taken from a document, a subagent's read not re-read here, or inferred; **COMPUTED** when the script produced it from Firestore.
-**BUILD_RULES §2:** the branch diff is 3 files, 1461 insertions (the design pass 209, the script 585, this report 456), no deletions — under the review threshold (10 files or 1,500 lines), so no §2 review was run.
+**BUILD_RULES §2:** the branch diff against the base `d5d8fa9b` is 3 files, 1,250 insertions (the design pass 209, the script 585, this report 456), no deletions — under the review threshold (10 files or 1,500 lines), so no §2 review was run.
 **Sources:** `scripts/build2b-discovery.mjs` (new; every table under "Generated" is its output, inserted verbatim) and the code reads below. Four read-only Explore subagents mapped B3, B7, B8 and B9/B1's breadth; every line they cited that this report relies on was re-read here (VERIFIED) or is marked ASSUMED.
 
 ---
@@ -283,17 +283,19 @@ Measured against the 44 files B1–B8 cite (the endpoint, chat, chip, directive 
 
 | Branch or PR | Last commit | Overlap with the B set | Note |
 |---|---|---|---|
-| **PR #958** `codex/baggerbomb-stock-thresholds-dormant-v1` (45 files; local twin `claude/baggerbomb-thresholds-takeover-324d11`) | Oct 14 | `api/cron/agent-evaluate.js`, `src/screens/AgentBattleScreen.jsx`, `src/config/featureFlags.js`, and four fenced files (`agentBattleService.js`, `agentEvalPromptAssembly.js`, `agentRiskManager.js`, `agentSwapExecution.js`) | the one live collision: B3's call sites and B5/B6's assembler |
+| **PR #958** `codex/baggerbomb-stock-thresholds-dormant-v1` (45 files; local twin `claude/baggerbomb-thresholds-takeover-324d11`) | Oct 14 | `api/cron/agent-evaluate.js`, `src/screens/AgentBattleScreen.jsx`, `src/config/featureFlags.js`, and four fenced files (`agentBattleService.js`, `agentEvalPromptAssembly.js`, `agentRiskManager.js`, `agentSwapExecution.js`) | the one live collision when the seams were read: B3's call sites and B5/B6's assembler; **merged to main at 14:17 CDT Oct 14** (`e880592e`), after this report's anchors were taken |
 | `origin/codex/shadow-cpu-activation-closeout-20261012` (19 files) | Oct 12 | `featureFlags.js`, `AgentBattleScreen.jsx` | no PR open |
 | `origin/codex/shadow-cpu-activation-prep-20261006` | Oct 6 | the same two | superseded by the closeout (ASSUMED) |
 | `origin/flip/eodhd-quick-wins`, `origin/perf/eodhd-quick-wins` | Oct 7 | `agent-evaluate.js`, `featureFlags.js` | no PR open |
 | `origin/claude/cockpit-build2a-smoke` | Oct 4 | `featureFlags.js`, `AgentBattleScreen.jsx` | the never-merged smoke branch |
-| **The crypto-slot fix** | — | none | only the Phase 0 audit exists (`origin/claude/phase0-crypto-slot`, docs only, Oct 14; local `claude/crypto-slot-prompt-2786d6` holds the same audit); no fix branch |
-| **Reflection fix part 2** | — | none | the local branch `claude/reflection-outage-fix-p2-c79d3e` sits at `main` with no commit |
+| **The crypto-slot fix** | Oct 14 | `src/config/featureFlags.js` | when the seams were read only the Phase 0 audit existed (`origin/claude/phase0-crypto-slot`, docs only); **PR #961 `claude/crypto-slot-prompt` merged at 12:34 CDT Oct 14** |
+| **Reflection fix part 2** | Oct 14 | `api/cron/process-pending-reflections.js` (the sweep's host, +40 lines) | when the seams were read the local branch `claude/reflection-outage-fix-p2-c79d3e` sat at `main` with no commit; **PR #960 `claude/reflection-outage-fix-2` merged at 14:11 CDT Oct 14** |
 | **P1c** | — | none | no branch under any `p1c` name |
 | PRs #760, #761, #762 (mandate flags, Aug 14) | Aug 14 | `featureFlags.js` (+ tests) | stale |
 | PRs #451, #427, #422 | Jun–Jul | none | a Markdown upload and two dependabot bumps |
 | 12 older unmerged remote branches (Jan–Sep) | before Oct 1 | 1–4 files each (`b2-directive-transaction` 4, `battle-view-controller-phase-a-v5gog5` 4) | listed for completeness; none has an open PR |
+
+**Main moved during the session.** `origin/main` was `d5d8fa9b` when the seams were read and `e880592e` at the post-close re-read: three merges on Oct 14 (#961 at 12:34 CDT, #960 at 14:11, #958 at 14:17) changed eight B-set files (305 insertions, 49 deletions): `api/cron/agent-evaluate.js` (+134 lines, #958), `src/screens/AgentBattleScreen.jsx` (#958), `src/config/featureFlags.js` (#958, #961), `api/cron/process-pending-reflections.js` (#960), and the fenced `agentBattleService.js`, `agentEvalPromptAssembly.js`, `agentRiskManager.js` and `agentSwapExecution.js` (#958). Every `file:line` in this report is at `d5d8fa9b`; in those eight files the cited lines may have moved.
 
 ---
 
@@ -443,7 +445,7 @@ Calls minted while a live command (C5's interval) on the same symbol and directi
 4. **"Eyeing" for the replacement step.** With two names as the bar, the three readings give 13, 33 and 39 of the founder's 88 calls (candidates, watch list, either). Which list does "Shadow is eyeing" draw from?
 5. **The retire-on-exit receipt.** It needs a new call-event kind; the eight kinds today do not include one. Amendment D, or a reuse of `superseded`?
 6. **The screener's scope.** The screener has no symbol filter the client can set; the only way to scope it to the bench today is a filter the model happens to write. Server-side scope (the bench list sent with the request) or client-side filtering of the model's results?
-7. **The sweep's pace.** Week-2 past-deadline receipts arrived 0.6 minutes after the deadline; week 1's took up to 31 minutes. Did the reflections cron's timing change with the fix merged Oct 11 (#953)?
+7. **The sweep's pace.** Week-2 past-deadline receipts arrived 0.6 minutes after the deadline; week 1's took up to 31 minutes. #953 (merged Oct 11) did change `api/cron/process-pending-reflections.js`, the sweep's host, and #960 changed it again on Oct 14, after week 2's receipts. Did the Oct 11 change move the sweep's timing?
 8. **FT_QA's week 2.** The QA account played Oct 12 (from 14:18 ET) and Oct 14 (from 13:52 ET), 13 checks with 6 timeouts, answered none of its 4 calls, and its Oct 14 battle's last check reported the engine degraded. Is that the plan for the QA account?
 
 ---
