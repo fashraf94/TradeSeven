@@ -274,14 +274,14 @@ describe('THE CONTROLS (C01–C16) — green at the reviewed tip, green after ev
     expect(tapeOf(t, fx.battleId).passes.candles.status).toBe('written');
   });
 
-  it('C10: a saved series built before a recovered check, whose refetch fails, says so — "built before 1 check(s) were recorded" — and the pass stays queued', async () => {
+  it('C10: a saved series built before a recovered check, whose refetch fails, says so — "built before 1 check was recorded" — and the pass stays queued', async () => {
     const { t, fx, recover } = await withoutTick10();
     recover();
     await write(t, fx, MORNING + 3_600_000);
     await morning(t, allBars({ AAPL: new Error('EODHD 500') }), MORNING + DAY);
     expect(t.store.get(seriesPath(fx.battleId, 'AAPL')).atChecks.some((a) => a.tickSeq === 10)).toBe(false);
     const tape = tapeOf(t, fx.battleId);
-    expect(tape.coverage.series.note).toMatch(/AAPL: built before 1 check\(s\) were recorded/);
+    expect(tape.coverage.series.note).toMatch(/AAPL: built before 1 check was recorded/);
     expect(tape.passes.candles).toMatchObject({ status: 'partial', symbolsIncomplete: ['AAPL'] });
   });
 

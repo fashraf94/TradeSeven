@@ -321,7 +321,7 @@ describe('F2 — BA-24: sample freshness and session completeness', () => {
     expect(aapl.bars).toHaveLength(39);
     expect(aapl.atChecks.find((a) => a.at === '2026-09-24T14:00:20.000Z')).toMatchObject({ price: null, barClosedAt: '2026-09-24T13:54:00.000Z' });
     expect(tapeOf(t, 'b-captured').passes.candles).toMatchObject({ status: 'partial', reason: 'bars_incomplete', symbolsIncomplete: ['AAPL'] });
-    expect(tapeOf(t, 'b-captured').coverage.series.note).toMatch(/AAPL: no fresh price at 1 check\(s\)/);
+    expect(tapeOf(t, 'b-captured').coverage.series.note).toMatch(/AAPL: no fresh price at 1 check(?!s)/);
     expect(s.written).toEqual([]);
   });
 
@@ -575,7 +575,7 @@ describe('F5 — BA-26: an unknown check is never "complete", and a caveat learn
       expect(cov[s].status, s).not.toBe('complete');
       expect(cov[s].unknownChecks, s).toBe(1);
     }
-    expect(cov.calls.note).toMatch(/no model check recorded among the 25 known check\(s\); 1 check\(s\) have no record/);
+    expect(cov.calls.note).toMatch(/no model check recorded among the 25 known checks; 1 check has no record/);
     expect(cov.calls.note).not.toMatch(/reached the model/);
   });
 
@@ -652,7 +652,7 @@ describe('F5 — BA-26: an unknown check is never "complete", and a caveat learn
     const cov = tapeOf(t, fx.battleId).coverage;
     for (const s of ['plans', 'rationale', 'evidence', 'calls']) {
       expect(cov[s].unknownChecks, s).toBe(2);                          // tick 13's gap and the lost entry
-      expect(cov[s].caveats.join(' '), s).toMatch(/1 check\(s\) recorded an evalId whose evaluation entry is absent/);
+      expect(cov[s].caveats.join(' '), s).toMatch(/1 check recorded an evalId whose evaluation entry is absent/);
       expect(cov[s].note, s).not.toMatch(/evicted/);
     }
   });
@@ -670,7 +670,7 @@ describe('F5 — BA-26: an unknown check is never "complete", and a caveat learn
     const plans = tapeOf(t, fx.battleId).coverage.plans;
     expect(plans.unknownChecks).toBe(2);
     expect(plans.status).toBe('partial');
-    expect(plans.caveats.join(' ')).toMatch(/1 check\(s\) recorded an evalId whose evaluation entry is absent/);
+    expect(plans.caveats.join(' ')).toMatch(/1 check recorded an evalId whose evaluation entry is absent/);
   });
 });
 

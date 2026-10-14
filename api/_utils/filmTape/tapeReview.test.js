@@ -170,7 +170,7 @@ describe('L1 — the tape document', () => {
     const cov = tapeOf(t, fx.battleId).coverage.calls;
     expect(cov.status).toBe('complete');
     // BA-26's wording: what was observed among the known checks, never a categorical claim about the day
-    expect(cov.note).toMatch(/no model check recorded among the 26 known check\(s\)/);
+    expect(cov.note).toMatch(/no model check recorded among the 26 known checks/);
     expect(cov.note).not.toMatch(/reached the model|not being minted/);
     expect(cov.unknownChecks).toBe(0);
   });
@@ -210,7 +210,7 @@ describe('L1 — the tape document', () => {
     await write(t, fx);
     const cov = tapeOf(t, fx.battleId).coverage.checks;
     expect(cov.status).toBe('partial');
-    expect(cov.note).toMatch(/no run record for 1 evaluator slot\(s\) \(11:00 ET\)/);
+    expect(cov.note).toMatch(/no run record for 1 evaluator slot \(11:00 ET\) — a check in it may be missing/);
   });
 
   it('L1-Q1: a check whose capture failed but whose entry survives is ONE row — its number stays among the gaps', async () => {

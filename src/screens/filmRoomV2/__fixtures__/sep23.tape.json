@@ -148,7 +148,7 @@
         "evaluations"
       ],
       "preservedFrom": null,
-      "note": "2 entr(y/ies) carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied",
+      "note": "2 entries carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied",
       "caveats": [],
       "unknownChecks": 0,
       "dependsOn": "a99aa2cd955d267b"

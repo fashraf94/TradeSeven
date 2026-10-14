@@ -104,6 +104,7 @@ import { replayAction, REPLAY_LABEL, mergeReplay, replayHasFact, replayCovers } 
 import { coverageOf } from './tapeAssemble.js';
 import { sanitizeForFirestore, stableStringify, versionLabel, rebuildOutlook, closedOutNoteFields } from './tapeMerge.js';
 import { tapeRef } from './tapeSources.js';
+import { NOTES } from './tapeNotes.js';
 import {
   symbolPlan, candleInputFingerprint, replayBuiltFrom, replayBuiltFromV1, priceBuiltFrom, seriesBuiltFrom, replayLogicVersionOf, REPLAY_LOGIC_VERSION,
 } from './candleInputs.js';
@@ -236,7 +237,7 @@ function replayCoverage(tape, replays, session, stale = [], outdated = [], passS
   const inScope = actions.length - outOfScope;
   const full = [...replays.values()].filter((r) => r && r.gapPoints !== null && r.missingInputs.length === 0).length;
   const reasons = [];
-  if (outOfScope) reasons.push(`${outOfScope} crypto leg(s) not replayed (crypto_not_supported)`);
+  if (outOfScope) reasons.push(NOTES.cryptoLegs(outOfScope));
   const missing = [...new Set([...replays.values()].flatMap((r) => (r ? r.missingInputs : [])))];
   if (missing.length) reasons.push(`missing inputs: ${missing.join(', ')}`);
   // BA-31: a replay is complete only while it is current — built from the inputs the tape holds now.
@@ -267,7 +268,7 @@ export function seriesGaps(doc, session) {
   const have = Array.isArray(doc?.bars) ? doc.bars.length : 0;
   if (have < expected) gaps.push(`${have} of ${expected} ten-minute bars`);
   const stale = (Array.isArray(doc?.atChecks) ? doc.atChecks : []).filter((a) => a && a.price === null && sampleCanExist(session, toMs(a.at))).length;
-  if (stale) gaps.push(`no fresh price at ${stale} check(s)`);
+  if (stale) gaps.push(NOTES.noFreshPrice(stale));
   return gaps;
 }
 
@@ -275,7 +276,7 @@ export function seriesGaps(doc, session) {
 function uncoveredChecks(doc, checks) {
   const have = new Set((Array.isArray(doc?.atChecks) ? doc.atChecks : []).map((a) => checkKey(a?.tickSeq, a?.at)));
   const n = checks.filter((c) => !have.has(checkKey(c.tickSeq, c.at))).length;
-  return n ? [`built before ${n} check(s) were recorded`] : [];
+  return n ? [NOTES.builtBeforeChecks(n)] : [];
 }
 
 /** The 1-minute bars a 10-minute bar was built from (BA-34). */

@@ -47,6 +47,7 @@ import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE, AWAITING_
 import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf } from './tapeAssemble.js';
 import { candleInputFingerprint, changedInputParts, replayLogicVersionOf, REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
+import { modernNotes } from './tapeNotes.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const present = (v) => v !== null && v !== undefined;
@@ -308,7 +309,9 @@ function mergeCoverage(section, storedDoc, newCov, carried, { limits = [], depen
   const sRank = COVERAGE_RANK[storedCov.status] ?? 0;
   const nRank = COVERAGE_RANK[newCov?.status] ?? 0;
   const keepStored = sRank > nRank || unobserved;
-  const base = keepStored ? { ...storedCov } : { ...newCov };
+  // B1 W4: a stored note or caveat in the pre-W4 wording ("check(s)") is said
+  // the W4 way before the union, so one fact is never kept twice in two wordings.
+  const base = keepStored ? { ...storedCov, note: modernNotes(storedCov.note) } : { ...newCov };
   const spans = [storedCov.span, newCov?.span].filter(isObj);
   base.span = spans.length
     ? { from: spans.map((s) => s.from).filter(Boolean).sort()[0] ?? null, to: spans.map((s) => s.to).filter(Boolean).sort().pop() ?? null }
@@ -316,7 +319,7 @@ function mergeCoverage(section, storedDoc, newCov, carried, { limits = [], depen
   base.sources = [...new Set([...(storedCov.sources || []), ...(newCov?.sources || [])])];
   base.preservedFrom = (keepStored || carried) ? storedAt : null;
   if (Array.isArray(storedCov.caveats) || Array.isArray(newCov?.caveats)) {
-    let caveats = [...new Set([...(storedCov.caveats || []), ...(newCov?.caveats || [])])];
+    let caveats = [...new Set([...(storedCov.caveats || []).map(modernNotes), ...(newCov?.caveats || [])])];
     let resolved = [];
     if (!limits.length && !unobserved) {
       // A read with no limit that saw every dependency the section now has: they are observed.

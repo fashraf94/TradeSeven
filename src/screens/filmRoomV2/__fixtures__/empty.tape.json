@@ -142,7 +142,7 @@
         "declarations"
       ],
       "preservedFrom": null,
-      "note": "no model check recorded among the 0 known check(s); state as observed at copiedAt, not a reconstruction of the day",
+      "note": "no model check recorded among the 0 known checks; state as observed at copiedAt, not a reconstruction of the day",
       "caveats": [],
       "unknownChecks": 0,
       "dependsOn": "cb1bac19b4471727"

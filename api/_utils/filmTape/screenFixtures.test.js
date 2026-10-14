@@ -75,7 +75,7 @@ describe('the Sep-23-shaped day, as the passes write it', () => {
     expect(tape.plans.length).toBeGreaterThan(4);
     expect(tape.plans.every((p) => p.price && p.price.atPlan)).toBe(true);
     expect(tape.rationale.length).toBe(10);
-    expect(tape.coverage.rationale.note).toMatch(/2 entr\(y\/ies\) carried platform-written text/);
+    expect(tape.coverage.rationale.note).toMatch(/2 entries carried platform-written text/);
     expect(tape.directives.map((d) => d.cardState)).toEqual(['committed', 'no_change', 'not_filed']);
     expect(tape.directives[0].heard).toBeTruthy();
     expect(tape.diagnostics.intradayViews).toBe('present');

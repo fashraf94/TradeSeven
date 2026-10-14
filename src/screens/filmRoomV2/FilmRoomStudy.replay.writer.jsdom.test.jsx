@@ -50,6 +50,7 @@ import { makeTapeDb } from '../../../api/_utils/filmTape/__fixtures__/tapeFirest
 import { writeTapeDay } from '../../../api/_utils/filmTape/writeTapeDay.js';
 import { runCandlePass } from '../../../api/_utils/filmTape/candlePass.js';
 import { fetcherOf } from '../../../api/_utils/filmTape/__fixtures__/tapeBars.js';
+import { NOTES } from '../../../api/_utils/filmTape/tapeNotes.js';
 import { mounter, sweepNumbers, sweepWords, sweepSigns, quoteDefects, storedNoteDefects } from './__fixtures__/filmRoomHarness';
 
 vi.setConfig({ testTimeout: 90_000, hookTimeout: 120_000 });
@@ -227,7 +228,7 @@ describe('R11 — the replay sentence only beside a drawn replay (writer to scre
     const tape = days.crypto;
     const k = tape.actions.findIndex((a) => a.symbolOut === 'BTC');
     expect(tape.actions[k]).toMatchObject({ replayReason: 'crypto_not_supported', replay: null });
-    expect(tape.coverage.replay.note).toMatch(/1 crypto leg\(s\) not replayed/);   // the day's note names it too — at the section's head
+    expect(tape.coverage.replay.note).toMatch(/1 crypto leg not replayed/);   // the day's note names it too — at the section's head
     mount(tape);
     const c = card(k);
     expect(c.querySelector('[data-replay-none="crypto"]').textContent).toBe('No replay for this swap. · crypto legs are not replayed');
@@ -237,7 +238,7 @@ describe('R11 — the replay sentence only beside a drawn replay (writer to scre
     expect(c.querySelector('[data-stored-note="coverage.replay.note"]')).toBeNull();
     // the day's replay coverage line, once, at the section's head
     expect(m.qa('[data-coverage-of="replay"]')).toHaveLength(1);
-    expect(m.q('[data-coverage-of="replay"]').textContent).toContain('1 crypto leg(s) not replayed');
+    expect(m.q('[data-coverage-of="replay"]').textContent).toContain('1 crypto leg not replayed');
     for (const i of tape.actions.map((_, j) => j).filter((j) => j !== k)) {
       expect(card(i).querySelector('[data-replay-sentence] [data-stored-note]').textContent, `card ${i}`).toBe(tape.actions[i].replay.label);
     }
@@ -628,7 +629,15 @@ describe('Astra F1 — a replay is drawn only when it emits visible geometry: a 
     // React's useId values count every id the test process has handed out, so they are renumbered by first appearance
     // (one token, one number, wherever it stands); every other byte is hashed as rendered
     const stableIds = (h) => { const seen = new Map(); return h.replace(/_r_[0-9a-z]+_/g, (id) => { if (!seen.has(id)) seen.set(id, `_r_${seen.size}_`); return seen.get(id); }); };
-    const html = [false, true].map((desktop) => { mount(days.full, desktop); return stableIds(m.container.innerHTML); });
+    // Film Room B1 W4 changed the wording of one stored note on this day — coverage.rationale's count now agrees with
+    // its noun ("2 entries" for "2 entr(y/ies)"). The pinned hashes stay the pre-R15 renderer's: the tape is shown with
+    // that note in its pre-W4 wording and every byte matches; the live tape's render differs from it by the note's text
+    // alone, rendered verbatim (R1/R9).
+    const W4 = [NOTES.platformAuthored(2), "2 entr(y/ies) carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied"];
+    expect(days.full.coverage.rationale.note).toContain(W4[0]);
+    const preW4 = structuredClone(days.full);
+    preW4.coverage.rationale.note = preW4.coverage.rationale.note.split(W4[0]).join(W4[1]);
+    const html = [false, true].map((desktop) => { mount(preW4, desktop); return stableIds(m.container.innerHTML); });
     expect(html.every((h) => h.includes('data-swap-card') && !h.includes('data-replay-none'))).toBe(true);   // every card drawn
     // the SHA-256 of the whole Study's HTML at each width as 6d5898af's renderer drew it (captured from that commit, on
     // Linux, the same under TZ=UTC and America/Chicago, the row alone and the whole file)
@@ -636,6 +645,13 @@ describe('Astra F1 — a replay is drawn only when it emits visible geometry: a 
       '65668a674ae6d0de10e0f59ca7d643d101e0e7bf9b058f6bea2157d26bdd4921',
       '0761d9ca913f878cc96f7e10ab4b02b9227f46d858cf3bb758b1b2c60c3b6d78',
     ]);
+    // the same sequence on a fresh root (phone, then desktop), as the pinned renders were made
+    m.teardown(); m.setup();
+    const live = [false, true].map((desktop) => { mount(days.full, desktop); return stableIds(m.container.innerHTML); });
+    live.forEach((h, i) => {
+      expect(h).toContain(W4[0]);
+      expect(h.split(W4[0]).join(W4[1])).toBe(html[i]);
+    });
   });
 
   it('control: a replay with no value keeps the no-drawn treatment — no ring, no legend, no label', () => {

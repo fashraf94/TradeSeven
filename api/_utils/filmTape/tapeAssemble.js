@@ -20,6 +20,7 @@ import {
 import { toMs, inDay, etDateOf, etDayBounds, sessionFor, previousSession, withinCandleWindow } from './tapeTime.js';
 import { historyListOf, meetingLegsOf, meetingOf } from '../playerFieldReaders.js';
 import { tradingTimeline } from '../../../src/utils/tapeSchedule.js';
+import { NOTES, UNKNOWN_WHAT, counted } from './tapeNotes.js';
 
 /** `evaluations[]` is `slice(-150)` (api/cron/agent-evaluate.js:4257). */
 export const EVALUATIONS_CAP = 150;
@@ -746,7 +747,6 @@ export const MEETING_RESOLVED_BY_MAX = 40;
 const TICKER = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
 const ticker = (v) => (typeof v === 'string' && TICKER.test(v) ? v : null);
 const instant = (v) => (str(v) && toMs(v) !== null ? v : null);
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 /**
  * B1 T2 (Build B spec §3) — the gameplan meetings created on the tape day,
@@ -802,10 +802,10 @@ export function buildMeetings({ battle, bounds }) {
   // refresh — can copy it.
   const unfiled = meetingOf(battle?.gameplanMeeting);
   if (unfiled && inDay(instant(unfiled.createdAt), bounds)) notes.push('a meeting created this day was not yet filed in the meeting history when this tape was read — only a later run of this day\'s close pass (a refresh) copies it');
-  if (unrecognised) notes.push(`${plural(unrecognised, 'meeting record', 'meeting records')} of this day with an outcome other than approved, rejected or expired not copied`);
-  if (legsDropped) notes.push(`${plural(legsDropped, 'leg', 'legs')} past the ${MEETING_LEGS_MAX} a meeting proposes not copied`);
-  if (wordsDropped) notes.push(`${plural(wordsDropped, 'diagnosis', 'diagnoses')} longer than ${MEETING_DIAGNOSIS_MAX} characters not copied`);
-  if (overflow) notes.push(`${plural(overflow, 'meeting', 'meetings')} past ${MEETINGS_PER_DAY_MAX} in a day not copied`);
+  if (unrecognised) notes.push(`${counted(unrecognised, 'meeting record', 'meeting records')} of this day with an outcome other than approved, rejected or expired not copied`);
+  if (legsDropped) notes.push(`${counted(legsDropped, 'leg', 'legs')} past the ${MEETING_LEGS_MAX} a meeting proposes not copied`);
+  if (wordsDropped) notes.push(`${counted(wordsDropped, 'diagnosis', 'diagnoses')} longer than ${MEETING_DIAGNOSIS_MAX} characters not copied`);
+  if (overflow) notes.push(`${counted(overflow, 'meeting', 'meetings')} past ${MEETINGS_PER_DAY_MAX} in a day not copied`);
   const span = spanOf(kept.map((m) => m.createdAt));
   return {
     rows: kept,
@@ -1065,24 +1065,22 @@ export function assembleTape({
 
   const entryReasons = [];
   if (entries.evictionPossible) entryReasons.push(limit(`evaluations[] is at its ${EVALUATIONS_CAP}-entry cap and its oldest surviving entry is not before this day — the day's first entries may have been evicted`, LIMIT_SOURCES.evaluationsCap));
-  if (evictedEntries) entryReasons.push(limit(`${evictedEntries} check(s) recorded an evalId whose evaluation entry is absent (evicted: older than the oldest surviving entry)`, LIMIT_SOURCES.evaluationsCap));
-  if (lostEntries) entryReasons.push(caveat(`${lostEntries} check(s) recorded an evalId whose evaluation entry is absent`));
-  const unknownReason = (what) => (unknownChecks
-    ? [caveat(`${unknownChecks} minted check(s) of this day have no record of what they read or produced (no tick record, or an evaluation entry that is absent) — ${what} unknown for them`)]
-    : []);
+  if (evictedEntries) entryReasons.push(limit(NOTES.evictedEntries(evictedEntries), LIMIT_SOURCES.evaluationsCap));
+  if (lostEntries) entryReasons.push(caveat(NOTES.lostEntries(lostEntries)));
+  const unknownReason = (what) => (unknownChecks ? [caveat(NOTES.unknownChecks(unknownChecks, what))] : []);
   const checksSpan = spanOf(checks.map((r) => r.at));
 
   const checkReasons = [];
   if (capture === 'absent') checkReasons.push(caveat('capture absent: no tick records for this battle-day — checks shown from evaluation entries only'));
-  if (gaps.attributed.length) checkReasons.push(caveat(`${gaps.attributed.length} minted check(s) of this day have no record (tickSeq ${gaps.attributed.join(', ')})`));
-  if (gaps.unattributed.length) checkReasons.push(caveat(`${gaps.unattributed.length} minted check(s) adjacent to this day have no record and their day cannot be established (tickSeq ${gaps.unattributed.join(', ')})`));
-  if (entryOnly.length && capture !== 'absent') checkReasons.push(caveat(`${entryOnly.length} evaluation entr(y/ies) have no tick record; their sequence numbers are among the gaps`));
+  if (gaps.attributed.length) checkReasons.push(caveat(NOTES.gapsAttributed(gaps.attributed.length, gaps.attributed.join(', '))));
+  if (gaps.unattributed.length) checkReasons.push(caveat(NOTES.gapsUnattributed(gaps.unattributed.length, gaps.unattributed.join(', '))));
+  if (entryOnly.length && capture !== 'absent') checkReasons.push(caveat(NOTES.entryOnly(entryOnly.length)));
   if (!runsRead.ok) checkReasons.push(limit(`run records unreadable (${runsRead.error}) — deferrals unknown`, LIMIT_SOURCES.runs));
   else if (!runs.length) checkReasons.push(caveat('no evaluation-run records exist for this day — deferrals cannot be listed'));
   else {
     const missingSlots = missingRunSlots({ etDate, runs, battle, nowMs });
     if (missingSlots.length) {
-      checkReasons.push(caveat(`no run record for ${missingSlots.length} evaluator slot(s) (${missingSlots.map((t) => ET_HHMM.format(new Date(t))).join(', ')} ET) — a check in them may be missing or its deferral unlisted`));
+      checkReasons.push(caveat(NOTES.missingSlots(missingSlots.length, missingSlots.map((t) => ET_HHMM.format(new Date(t))).join(', '))));
     }
   }
   if (deferralsTruncated) checkReasons.push(caveat('a run record\'s deferred list was truncated — deferrals past its first 200 ids are not listed (deferralsTruncated)'));
@@ -1107,7 +1105,7 @@ export function assembleTape({
   // price and locked gain are unknown here, a limit of this read (BA-20: every
   // source under its cap; round-3 review L2-1). When every swap that could
   // have been evicted matched, nothing of the day was.
-  else if (trades.evictionPossible && unmatched) actionReasons.push(limit(`trades[] is at its ${TRADES_CAP}-entry cap and its oldest surviving entry is not before this day — ${unmatched} swap(s) have no trade record here (possibly evicted): tier, slot, exit price and locked gain unknown`, LIMIT_SOURCES.tradesCap));
+  else if (trades.evictionPossible && unmatched) actionReasons.push(limit(NOTES.untradedSwaps(TRADES_CAP, unmatched), LIMIT_SOURCES.tradesCap));
   if (!receiptsRead.ok) actionReasons.push(limit(`learning receipts unreadable (${receiptsRead.error}) — replay inputs and holding times unavailable`, LIMIT_SOURCES.receipts));
   coverage.actions = coverageOf(statusFrom(actionReasons, actions.length > 0 || actionsProvable), {
     span: spanOf(actions.map((a) => a.at)), sources: ['ticks.actions', 'trades', 'learningReceipts'], note: texts(actionReasons).join('; ') || null,
@@ -1116,27 +1114,27 @@ export function assembleTape({
 
   const heardReasons = [];
   if (entries.evictionPossible && capture !== 'present') heardReasons.push(limit('evaluation entries may be evicted and capture is incomplete — a heard stamp may be missing', LIMIT_SOURCES.evaluationsCap));
-  heardReasons.push(...unknownReason('a heard stamp, and the checks after a filing, are'));
+  heardReasons.push(...unknownReason(UNKNOWN_WHAT.directives));
   const earlyCards = directives.filter((d) => (toMs(d.filedAt) ?? bounds.startMs) < bounds.startMs).length;
-  const directiveNotes = earlyCards ? [`${earlyCards} card(s) filed before this ET day (after the battle's activation or the previous trading day) are shown here`] : [];
+  const directiveNotes = earlyCards ? [NOTES.earlyCards(earlyCards)] : [];
   coverage.directives = coverageOf(statusFrom(heardReasons, true), {
     span: spanOf(directives.map((d) => d.filedAt)), sources: ['chatExchanges', 'evaluations.heard', 'ticks.controls'], note: [...texts(heardReasons), ...directiveNotes].join('; ') || null,
     caveats: caveatsOf(heardReasons), unknownChecks,
   });
 
   const entrySpan = spanOf(entries.day.map((e) => e.timestamp));
-  const planReasons = [...entryReasons, ...unknownReason('plans they recorded are')];
+  const planReasons = [...entryReasons, ...unknownReason(UNKNOWN_WHAT.plans)];
   coverage.plans = coverageOf(statusFrom(planReasons, entries.day.length > 0), {
     span: entrySpan, sources: ['evaluations.candidates'], note: texts(planReasons).join('; ') || null,
     caveats: caveatsOf(planReasons), unknownChecks,
   });
-  const rationaleReasons = [...entryReasons, ...unknownReason('rationale they recorded is')];
-  const rationaleNote = [...texts(rationaleReasons), ...(rationale.platformAuthored ? [`${rationale.platformAuthored} entr(y/ies) carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied`] : [])];
+  const rationaleReasons = [...entryReasons, ...unknownReason(UNKNOWN_WHAT.rationale)];
+  const rationaleNote = [...texts(rationaleReasons), ...(rationale.platformAuthored ? [NOTES.platformAuthored(rationale.platformAuthored)] : [])];
   coverage.rationale = coverageOf(statusFrom(rationaleReasons, entries.day.length > 0), {
     span: entrySpan, sources: ['evaluations'], note: rationaleNote.join('; ') || null,
     caveats: caveatsOf(rationaleReasons), unknownChecks,
   });
-  const evidenceReasons = [...entryReasons, ...unknownReason('evidence stamps they recorded are')];
+  const evidenceReasons = [...entryReasons, ...unknownReason(UNKNOWN_WHAT.evidence)];
   coverage.evidence = coverageOf(statusFrom(evidenceReasons, entries.day.length > 0), {
     span: spanOf(checks.filter((r) => r.evidence).map((r) => r.evidenceAt ?? r.at)), sources: ['evaluations.evidence'], note: texts(evidenceReasons).join('; ') || null,
     caveats: caveatsOf(evidenceReasons), unknownChecks,
@@ -1151,7 +1149,7 @@ export function assembleTape({
     // Facts, not reasons — and only what was observed (BA-26): never a
     // categorical claim about a day whose checks are not all known.
     if (!entries.day.length && !noEntry.length) {
-      callNotes.push(`no model check recorded among the ${knownChecks} known check(s)${unknownGaps ? `; ${unknownGaps} check(s) have no record` : ''}`);
+      callNotes.push(NOTES.noModelCheck(knownChecks, unknownGaps));
     } else if (entries.day.length && !phased) callNotes.push('no evaluation entry of this day carries a declarations phase');
   }
   if (entries.evictionPossible) callReasons.push(limit('declaration phases unknown for evicted entries', LIMIT_SOURCES.evaluationsCap));
@@ -1163,11 +1161,11 @@ export function assembleTape({
     const looked = declarationsRead.checked instanceof Set ? declarationsRead.checked : null;
     const unread = looked ? expected.filter((id) => !looked.has(id)) : [];
     const absent = expected.filter((id) => (!looked || looked.has(id)) && !declarationsRead.present.has(id));
-    if (unread.length) callReasons.push(limit(`${unread.length} check(s) expected a declarations record this read did not look up (an evaluation newer than the read)`, LIMIT_SOURCES.declarationsUnread));
-    if (absent.length) callReasons.push(caveat(`${absent.length} check(s) expected a declarations record that is absent (failed or unconfirmed — contract §2.1)`));
+    if (unread.length) callReasons.push(limit(NOTES.declarationsUnread(unread.length), LIMIT_SOURCES.declarationsUnread));
+    if (absent.length) callReasons.push(caveat(NOTES.declarationsAbsent(absent.length)));
   }
-  if (lostEntries) callReasons.push(caveat(`${lostEntries} check(s) recorded an evalId whose evaluation entry is absent — whether they expected a declarations record is unknown`));
-  callReasons.push(...unknownReason('their declarations phase, and so an absent declarations record, is'));
+  if (lostEntries) callReasons.push(caveat(NOTES.lostDeclarations(lostEntries)));
+  callReasons.push(...unknownReason(UNKNOWN_WHAT.calls));
   coverage.calls = coverageOf(statusFrom(callReasons, calls.length > 0), {
     span: spanOf(calls.map((c) => c.mintedAt)), sources: ['calls', 'declarations'],
     note: [...texts(callReasons), ...callNotes, 'state as observed at copiedAt, not a reconstruction of the day'].join('; '),
