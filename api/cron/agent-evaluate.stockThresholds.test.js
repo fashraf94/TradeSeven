@@ -1,8 +1,5 @@
 // Isolated corrected lifecycle; real writers/scorer, mocked market/model infrastructure.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   FROZEN_NOW,
   PRE_PHASE_B_ENTRY_KEYS,
@@ -10,18 +7,13 @@ import {
   TIMING_ENTRY_KEYS,
   FAIL_CLOSED_ENTRY_KEYS,
   makeTickBattle,
-  makePriceTable,
   makeRankingsDoc,
-  makeTechDocs,
-  makeIntradayCandles,
   makeHoldResult,
   makeSwapResult,
   serverMeetingOverrides,
   makeToolUseResponse,
   makeTickDb,
-  undefinedPaths,
   POST_GOLDEN_UPDATE_KEYS,
-  withoutPostGoldenKeys,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 
 const mocks = vi.hoisted(() => ({
@@ -101,7 +93,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
 }));
 
 const { processAgentBattle, completeBattle } = await import('./agent-evaluate.js');
-const { correctedStockBattle, STOCK_TEST_NOW, stockRows } = await import('../_utils/__fixtures__/stockThresholdHarness.js');
+const { correctedStockBattle, STOCK_TEST_NOW } = await import('../_utils/__fixtures__/stockThresholdHarness.js');
 const { stockWriterDb } = await import('../_utils/__fixtures__/stockThresholdHarness.js');
 const { correctedScorePatch, scoreCorrectedPosition } = await import('../_utils/stockThresholdAdmission.js');
 const { withCaptureStore, permanentDoc } = await import('../_utils/__fixtures__/tickCaptureHarness.js');
@@ -116,7 +108,7 @@ beforeEach(() => {
   mocks.fetchIntradayBatch.mockResolvedValue({});
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); delete process.env.EODHD_API_KEY; });
-async function stockTick(variant = 'final') {
+async function stockTick(variant = 'final', { quoteLagSec = 0 } = {}) {
   const { battle: corrected, inputs } = await correctedStockBattle();
   const original = makeTickBattle();
   const battle = { ...original, ...corrected, timing: { tradingDays: ['2026-10-14'], currentTradingDay: 1 }, cronState: { ...original.cronState, lastGameplanDate: '10/14/2026' }, scoreState: { ...original.scoreState, ...corrected.scoreState }, scoring: { ...original.scoring, ...corrected.scoring } };
@@ -135,16 +127,28 @@ async function stockTick(variant = 'final') {
     }
     if (variant === 'suppression' || variant === 'meeting') Object.assign(battle, serverMeetingOverrides({ id: 'meeting', status: variant === 'meeting' ? 'approved' : 'pending', createdAt: STOCK_TEST_NOW, expiresAt: '2026-10-14T14:12:00Z', diagnosis: 'fixture', suggestedSwaps: [{ symbolOut: 'AAPL', symbolIn: 'MSFT', swappedInAt: STOCK_TEST_NOW, rationale: 'fixture' }] }));
   }
+  // Review R1: a forced exit enters MSFT, then a catalyst-added GOOG lets the
+  // model rotate that fresh lifetime out in the same tick and price map.
+  if (variant === 'risk_then_model') {
+    runtime.route = 'risk';
+    vi.setSystemTime(new Date('2026-10-14T14:03:00Z'));
+    const quote = { MSFT: 106, GOOG: 100 };
+    mocks.getStockAnalysisData.mockImplementation(async symbol => ({ price: { current: quote[symbol] ?? 103.27, previousClose: 103.27, changePercent: symbol === 'MSFT' ? 4 : symbol === 'GOOG' ? 9 : 0, timestamp: Date.now() / 1000 - quoteLagSec }, daily: [] }));
+    mocks.create.mockImplementation(async () => makeToolUseResponse(makeSwapResult({ symbolOut: 'MSFT', symbolIn: 'GOOG', tier: 'star' })));
+  }
   if (variant === 'gameplan_created') {
     battle.cronState.lastGameplanDate = null;
     battle.trades = [1, 2, 3].map(n => ({ id: `closed-${n}`, lockedPoints: -10 }));
     const { canonicalContentHash } = await import('../_utils/canonicalHash.js');
     for (const t of battle.trades) { const c = { positionId: t.id, side: 'agent', status: 'closed', points: -10, closedAt: STOCK_TEST_NOW, receiptHash: null }; battle.scoring.stockScoreComponents[t.id] = { ...c, componentHash: canonicalContentHash(c) }; }
   }
-  const db = withCaptureStore(makeTickDb({ battle, rankingsDoc: { ...makeRankingsDoc(), stocks: [{ symbol: 'AAPL', baseATR: 2.5 }, { symbol: 'MSFT', baseATR: 3 }] }, techDocs: {} }));
+  const ranked = [{ symbol: 'AAPL', baseATR: 2.5 }, { symbol: 'MSFT', baseATR: 3 }, ...(variant === 'risk_then_model' ? [{ symbol: 'GOOG', baseATR: 3 }] : [])];
+  const db = withCaptureStore(makeTickDb({ battle, rankingsDoc: { ...makeRankingsDoc(), stocks: ranked }, techDocs: {} }));
   db.__stockLearning = new Map();
   const collection = db.collection.bind(db);
-  db.collection = name => name === 'learningReceipts' ? { doc: id => ({ collection: sub => ({ doc: rid => ({ create: async value => { const p = `${id}/${sub}/${rid}`; if (db.__stockLearning.has(p)) throw Error('already exists'); db.__stockLearning.set(p, structuredClone(value)); } }) }) }) } : collection(name);
+  const stories = variant === 'risk_then_model' ? [{ id: 'story-goog', data: () => ({ tickers: ['MSFT', 'GOOG'], headline: 'GOOG catalyst', summary: 'fixture', publishedAt: new Date(), category: 'catalyst' }) }] : [];
+  const storyQuery = { where: () => storyQuery, orderBy: () => storyQuery, limit: () => storyQuery, get: async () => ({ docs: stories, empty: !stories.length, size: stories.length }) };
+  db.collection = name => name === 'fantasyTimesStories' && stories.length ? storyQuery : name === 'learningReceipts' ? { doc: id => ({ collection: sub => ({ doc: rid => ({ create: async value => { const p = `${id}/${sub}/${rid}`; if (db.__stockLearning.has(p)) throw Error('already exists'); db.__stockLearning.set(p, structuredClone(value)); } }) }) }) } : collection(name);
   db.doc = path => ({ path, id: path.split('/').at(-1), get: async () => ({ exists: !!inputs[path], data: () => structuredClone(inputs[path]) }) });
   const runTx = db.runTransaction.bind(db);
   db.runTransaction = cb => runTx(tx => cb({ ...tx, create: (ref, data) => { if (inputs[ref.path]) throw Error('already exists'); inputs[ref.path] = structuredClone(data); } }));
@@ -164,6 +168,29 @@ describe('corrected evaluator and settlement use pinned model with admission fal
     expect(tick.scores.opponent).toBe(db.__store.battle.scoreState.opponentScore);
     const learning = [...db.__stockLearning.values()][0];
     expect(learning.stockRewardContract.incomingReceipt.receiptHash).toBe(db.__store.battle.portfolio.star[0].stockThresholdReceipt.receiptHash);
+  });
+  // Review R1 sequencing. Lag 1 s is the real ordering: the tick's MSFT quote
+  // predates the fill, so the exit has no post-entry evidence and refuses with
+  // nothing written. Lag 0 is the frozen-clock equal instant, which the adopted
+  // context rule (asOf >= enteredAt) accepts: the exit banks from that one quote.
+  it.each([[1, 'refused'], [0, 'banked']])('R1: the fresh lifetime rotated out in its entry tick needs a dated exit quote (lag %ss → %s)', async (lag, outcome) => {
+    const { db, summary } = await stockTick('risk_then_model', { quoteLagSec: lag });
+    const b = db.__store.battle, fresh = b.trades[0].incomingPositionId;
+    expect(runtime.executed.map(args => args[5].symbol)).toEqual(['MSFT', 'GOOG']);
+    expect(summary.errors).toBe(0); expect(b.scoreState.stockScoreEvidence.status).toBe('valid');
+    expect(b.trades[0]).toMatchObject({ symbolOut: 'AAPL', symbolIn: 'MSFT' });
+    if (outcome === 'refused') {
+      expect(b.portfolio.star[0]).toMatchObject({ symbol: 'MSFT', positionId: fresh });
+      expect(b.trades).toHaveLength(1); expect(Object.keys(b.scoring.stockScoreComponents)).toEqual(['position-agent']);
+      expect(b.evaluations.at(-1).validationErrors.join(' ')).toContain('missing_post_entry_quote');
+      expect(b.scoreState.currentScore).toBe(0);
+      return;
+    }
+    const t = b.trades[1];
+    expect(t).toMatchObject({ symbolOut: 'MSFT', symbolIn: 'GOOG', outgoingPositionId: fresh, entryPrice: 103.27, exitPrice: 106, lockedGainPct: (106 - 103.27) / 103.27 * 100, lockedPoints: 68, rewardContext: { currentPrice: 106, quoteEvidence: { kind: 'post_entry_quote', providerAsOf: '2026-10-14T14:03:00.000Z' } } });
+    expect(b.scoring.stockScoreComponents[fresh]).toMatchObject({ points: 68, exitPrice: 106, exitQuoteAsOf: '2026-10-14T14:03:00.000Z' });
+    const captured = [...db.__stockLearning.values()].map(r => r.stockRewardContract).find(c => c?.outgoingPositionId === fresh);
+    expect(captured).toMatchObject({ exitPrice: 106, lockedPoints: 68, rewardContext: { currentPrice: 106 } });
   });
   it.each(['passive', 'proposal_pending', 'gameplan_pending', 'gameplan_created', 'trigger_skipped', 'final'])('actual score exit %s commits supported finite operands', async variant => {
     const { db, summary } = await stockTick(variant);

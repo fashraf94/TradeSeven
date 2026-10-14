@@ -68,7 +68,9 @@ describe('server stock admission and atomic writers', () => {
   });
   it('an agent entry into a CPU ticker preserves the CPU market quote/lifetime', async () => {
     const { battle, inputs } = await correctedStockBattle({ cpuSymbol: 'MSFT' }); const h = inputStore(battle, inputs);
-    const at = '2026-10-14T14:03:00Z'; const q = { AAPL: { current: 103.27, timestamp: Date.parse(at) / 1000 }, MSFT: { current: 106, timestamp: Date.parse(at) / 1000 } };
+    // The tick fetched MSFT before the swap committed (review R1): a quote dated
+    // at or after the entry would value the fresh lifetime instead of its fill.
+    const at = '2026-10-14T14:03:00Z'; const q = { AAPL: { current: 103.27, timestamp: Date.parse(at) / 1000 }, MSFT: { current: 106, timestamp: Date.parse(at) / 1000 - 1 } };
     const before = scoreCorrectedPosition(battle, { ...battle.opponent.portfolio.star[0], tier: 'star' }, 'cpu', q, at);
     const result = await executeSwapServer(h.db, battle.id, battle, 'star', 0, { symbol: 'MSFT', baseATR: 3 }, 1, q, {}, null, { now: () => new Date(at), collector: s => stockObservation(s) });
     const live = h.store.get(`agentBattles/${battle.id}`); live.id = battle.id;
@@ -150,7 +152,8 @@ describe('server stock admission and atomic writers', () => {
     const result = await executeSwapServer(h.db, battle.id, battle, 'star', 0, incoming, 1, { 'BTC-USD.CC': quote(103), 'ETH-USD.CC': quote(200) }, {}, null, { now: stockTestClock });
     expect(selector.enabled).toBe(false);
     expect(result.closedTrade.lockedPoints).toBe(expected);
-    expect(h.store.get(`agentBattles/${battle.id}`).scoring.stockScoreComponents['crypto-position'].points).toBe(expected);
+    expect(result.closedTrade.exitPrice).toBe(103);
+    expect(h.store.get(`agentBattles/${battle.id}`).scoring.stockScoreComponents['crypto-position']).toMatchObject({ points: expected, exitPrice: 103, exitQuoteAsOf: STOCK_TEST_NOW });
   });
   it('commits real zero/negative totals; missing score propagates and blocks completion', async () => {
     const { battle, inputs } = await correctedStockBattle(), h = inputStore(battle, inputs);
@@ -189,5 +192,71 @@ describe('server stock admission and atomic writers', () => {
     expect(await checkpointCorrectedDaily(clean.db, clean.db.doc(`agentBattles/${battle.id}`), committed, 'day1', STOCK_TEST_NOW)).toEqual({ status: 'recorded' });
     expect(await checkpointCorrectedDaily(clean.db, clean.db.doc(`agentBattles/${battle.id}`), committed, 'day1', STOCK_TEST_NOW)).toEqual({ status: 'skipped', reason: 'already_recorded' });
     const after = clean.store.get(`agentBattles/${battle.id}`); expect(after.portfolio).toEqual(committed.portfolio); expect(after.scoring.stockRewardHistory).toEqual(committed.scoring.stockRewardHistory); expect(after.scoreState.currentScore).toBe(committed.scoreState.currentScore);
+  });
+});
+// Review R1 (takeover, 2026-10-14): the entry-commit marker valued an outgoing
+// exit at its own fill. A fresh MSFT lifetime (fill $100, 2% unit, entered
+// 14:03) is rotated out through the real corrected executeSwapServer route.
+describe('R1: an outgoing corrected exit needs dated post-entry evidence', () => {
+  const firstAt = '2026-10-14T14:03:00.000Z', secondAt = '2026-10-14T14:04:00.000Z';
+  const ts = iso => Date.parse(iso) / 1000;
+  async function freshLifetime({ beforeCommit = null } = {}) {
+    const { battle, inputs } = await correctedStockBattle({ fill: 100 });
+    battle.portfolio.bench.stocks.push({ symbol: 'GOOG', baseATR: 3 });
+    const path = `agentBattles/${battle.id}`, hook = { beforeCommit };
+    const h = stockWriterDb({ [path]: battle, ...inputs, 'indexIntelligence/stockRankings': { stocks: ['AAPL', 'MSFT', 'GOOG'].map(symbol => ({ symbol })) } }, { beforeCommit: ctx => hook.beforeCommit?.(ctx) });
+    // The tick's MSFT quote was fetched before the swap committed the $100 fill.
+    const q = { AAPL: { current: 103, timestamp: ts(firstAt) }, MSFT: { current: 110, timestamp: ts('2026-10-14T14:02:59Z') }, GOOG: { current: 100, timestamp: ts(secondAt) } };
+    const first = await executeSwapServer(h.db, battle.id, battle, 'star', 0, battle.portfolio.bench.stocks[0], 1, q, {}, null, { now: () => new Date(firstAt), collector: s => stockObservation(s, { price: 100, clock: () => new Date(firstAt) }) });
+    return { h, path, q, hook, fresh: first.incomingAsset, live: structuredClone(h.store.get(path)) };
+  }
+  const rotateOut = f => executeSwapServer(f.h.db, f.live.id, f.live, 'star', 0, f.live.portfolio.bench.stocks.find(a => a.symbol === 'GOOG'), 1, f.q, {}, null, { now: () => new Date(secondAt), collector: s => stockObservation(s, { price: 100, clock: () => new Date(secondAt) }) });
+  const held = f => scoreCorrectedPosition(f.live, { ...f.live.portfolio.star[0], tier: 'star' }, 'agent', f.q, secondAt);
+  it.each([
+    ['pre-entry', '2026-10-14T14:02:59Z', 'entry_commit', 100, 0],
+    ['same-instant', firstAt, 'post_entry_quote', 110, 295],
+    ['later', secondAt, 'post_entry_quote', 110, 295],
+    ['absent', null, 'entry_commit', 100, 0],
+  ])('held scoring of the fresh lifetime with a %s tick quote', async (_, asOf, kind, price, points) => {
+    const f = await freshLifetime();
+    expect(f.q.MSFT.stockEntryCommit).toEqual({ positionId: f.fresh.positionId, receiptHash: f.fresh.stockThresholdReceipt.receiptHash });
+    f.q.MSFT = asOf ? { ...f.q.MSFT, timestamp: ts(asOf) } : { stockEntryCommit: f.q.MSFT.stockEntryCommit };
+    expect(held(f)).toMatchObject({ totalPoints: points, rewardContext: { currentPrice: price, quoteEvidence: { kind } } });
+  });
+  it('a pre-entry exit quote refuses with zero writes; the held entry valuation never qualifies the exit', async () => {
+    const f = await freshLifetime(); const before = structuredClone(f.h.store.get(f.path)), n = f.h.writes.length;
+    expect(held(f)).toMatchObject({ totalPoints: 0, rewardContext: { quoteEvidence: { kind: 'entry_commit' } } });
+    await expect(rotateOut(f)).rejects.toMatchObject({ reason: 'missing_post_entry_quote' });
+    expect(f.h.writes).toHaveLength(n); expect(f.h.store.get(f.path)).toEqual(before);
+  });
+  it.each([
+    ['gain', 110, 295, 10],
+    // −3% crosses −1x ($98) and −1.5x at equality ($97): −60 base − 10 − 20.
+    ['loss', 97, -90, -3],
+  ])('a dated post-entry %s quote outranks the marker and binds exit, gain, points, bank and context', async (_, price, points, gainPct) => {
+    const f = await freshLifetime(); f.q.MSFT = { ...f.q.MSFT, current: price, timestamp: ts(secondAt) };
+    const { closedTrade: t } = await rotateOut(f);
+    expect(t).toMatchObject({ outgoingPositionId: f.fresh.positionId, entryPrice: 100, exitPrice: price, lockedPoints: points, lockedGainPct: gainPct, rewardContext: { currentPrice: price, quoteEvidence: { kind: 'post_entry_quote', providerAsOf: secondAt } } });
+    const live = f.h.store.get(f.path);
+    expect(live.scoring.stockScoreComponents[f.fresh.positionId]).toMatchObject({ points, exitPrice: price, exitQuoteAsOf: secondAt });
+    expect(live.scoring.stockRewardHistory.agent[f.fresh.positionId]).toEqual(t.rewardContext.history);
+    expect(live.trades.at(-1)).toEqual(t);
+  });
+  it.each([['absent', () => undefined], ['fallback', q => ({ ...q, fallback: true, timestamp: Date.parse('2026-10-14T14:04:00Z') / 1000 })]])('an %s exit quote refuses with zero writes', async (_, quote) => {
+    const f = await freshLifetime(); const n = f.h.writes.length; f.q.MSFT = quote(f.q.MSFT);
+    await expect(rotateOut(f)).rejects.toMatchObject({ reason: 'missing_exit_quote' }); expect(f.h.writes).toHaveLength(n);
+  });
+  it('a contended retry banks the fresh lifetime once; a stale replay cannot bank it again', async () => {
+    const f = await freshLifetime(); f.q.MSFT = { ...f.q.MSFT, timestamp: ts(secondAt) };
+    let raced = false;
+    f.hook.beforeCommit = ({ versions }) => { if (raced) return; raced = true; versions.set(f.path, (versions.get(f.path) || 0) + 1); };
+    const attempts = f.h.attempts(), n = f.h.writes.length;
+    const { closedTrade } = await rotateOut(f);
+    expect(f.h.attempts() - attempts).toBe(2); expect(f.h.writes.length - n).toBe(2);
+    const live = f.h.store.get(f.path);
+    expect(live.scoring.stockScoreComponents[f.fresh.positionId].points).toBe(295);
+    expect(live.trades.filter(t => t.outgoingPositionId === f.fresh.positionId)).toEqual([closedTrade]);
+    const m = f.h.writes.length;
+    await expect(rotateOut(f)).rejects.toMatchObject({ reason: 'stale_swap_position' }); expect(f.h.writes).toHaveLength(m);
   });
 });

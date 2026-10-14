@@ -129,14 +129,16 @@ export function decisionQuote(price, observedAt) {
   const timestamp = typeof price?.timestamp === 'number' && finite(price.timestamp) ? new Date(price.timestamp * 1000).toISOString() : price?.timestamp;
   return { price: price?.fallback === true ? null : price?.current, asOf: timestamp, observedAt };
 }
-export function scoreCorrectedPosition(battle, asset, side, prices, observedAt) {
+// A qualified post-entry quote always values the position. The position-bound
+// entry commit only stands in when this price map holds no such quote (the
+// swap tick's quotes predate the fill), and never for an exit (review R1).
+export function scoreCorrectedPosition(battle, asset, side, prices, observedAt, { entryCommit = true } = {}) {
   const p = positions(battle).find(p => p.side === side && p.asset.positionId === asset.positionId);
   const r = asset.stockThresholdReceipt;
   const entry = prices[asset.symbol]?.stockEntryCommit;
-  const quote = r && entry?.positionId === r.positionId && entry.receiptHash === r.receiptHash
-    ? { kind: 'entry_commit', price: r.fill, asOf: r.fillQuote.quoteAsOf, observedAt: r.enteredAt, receiptHash: r.receiptHash }
-    : decisionQuote(prices[asset.symbol], observedAt);
-  const context = p ? stockRewardContext(battle, asset, side, p.tier, p.slot, quote) : { status: 'unavailable', reason: 'missing_position_identity' };
+  let context = p ? stockRewardContext(battle, asset, side, p.tier, p.slot, decisionQuote(prices[asset.symbol], observedAt)) : { status: 'unavailable', reason: 'missing_position_identity' };
+  if (entryCommit && p && context.reason === 'missing_post_entry_quote' && r && entry?.positionId === r.positionId && entry.receiptHash === r.receiptHash)
+    context = stockRewardContext(battle, asset, side, p.tier, p.slot, { kind: 'entry_commit', price: r.fill, asOf: r.fillQuote.quoteAsOf, observedAt: r.enteredAt, receiptHash: r.receiptHash });
   return { ...calculateAssetScoreServer(asset, null, {}, {}, null, context), positionId: asset.positionId, side };
 }
 export function correctedScorePatch(battle, agentScores, cpuScores, at) {
@@ -227,16 +229,18 @@ export async function executeCorrectedStockSwap(db, battleId, expected, tier, sl
     const outQuote = decisionQuote(prices[out.symbol], at);
     if (!positive(outQuote.price) || instantMs(outQuote.asOf) === null || instantMs(outQuote.asOf) > instantMs(at)) refuseStock('missing_exit_quote');
     const entry = out.stockThresholdReceipt?.fill ?? out.swapPrice ?? live.portfolio.startingPrices?.[out.symbol];
-    const score = isStock(out) ? scoreCorrectedPosition(live, { ...out, tier }, 'agent', prices, at) : calculateAssetScoreServer({ ...out, tier, tierMultiplier: out.tierMultiplier }, (outQuote.price - entry) / entry * 100, live.thresholdHistory?.[out.symbol] || {});
+    const score = isStock(out) ? scoreCorrectedPosition(live, { ...out, tier }, 'agent', prices, at, { entryCommit: false }) : calculateAssetScoreServer({ ...out, tier, tierMultiplier: out.tierMultiplier }, (outQuote.price - entry) / entry * 100, live.thresholdHistory?.[out.symbol] || {});
     if (!finite(score.totalPoints)) refuseStock(score.reason || 'missing_outgoing_score');
+    // One accepted exit: the scored stock context's dated quote, else the typed crypto quote.
+    const exit = isStock(out) ? { price: score.rewardContext.currentPrice, asOf: score.rewardContext.quoteEvidence.providerAsOf } : { price: outQuote.price, asOf: outQuote.asOf };
     const fill = inReceipt?.fill ?? prices[benchAsset.symbol]?.current;
     if (!positive(fill)) refuseStock('missing_incoming_fill');
     const incomingAsset = { symbol: benchAsset.symbol, name: benchAsset.name || benchAsset.symbol, isCrypto: !isStock(benchAsset), baseATR: live.scoring.thresholds?.[benchAsset.symbol]?.threshold || benchAsset.baseATR || (benchAsset.isCrypto ? 5 : 2.5), swapPrice: fill, swappedInAt: at, swappedInDay: currentDay, positionId: incomingId, slotVersion: out.slotVersion + 1, ...(inReceipt ? { stockThresholdReceipt: inReceipt } : {}), ...(benchAsset.isCrypto && benchAsset.direction ? { direction: benchAsset.direction } : {}) };
-    const closedTrade = { ...metadata, symbolOut: out.symbol, symbolIn: incomingAsset.symbol, name: out.name || out.symbol, tier, slotIndex: slot, entryPrice: entry, exitPrice: outQuote.price, lockedPoints: score.totalPoints, lockedGainPct: score.priceChange, swappedOutAt: at, swapDay: currentDay, isCrypto: out.isCrypto || false, direction: out.direction || null, snapshot,
+    const closedTrade = { ...metadata, symbolOut: out.symbol, symbolIn: incomingAsset.symbol, name: out.name || out.symbol, tier, slotIndex: slot, entryPrice: entry, exitPrice: exit.price, lockedPoints: score.totalPoints, lockedGainPct: score.priceChange, swappedOutAt: at, swapDay: currentDay, isCrypto: out.isCrypto || false, direction: out.direction || null, snapshot,
       stockThresholdModel: live.scoring.stockThresholdModel, outgoingPositionId: out.positionId, incomingPositionId: incomingId, outgoingReceipt: out.stockThresholdReceipt || null, incomingReceipt: inReceipt, rewardContext: score.rewardContext || null };
     const components = { ...live.scoring.stockScoreComponents };
     if (components[out.positionId]) refuseStock('already_banked_position');
-    components[out.positionId] = { status: 'closed', positionId: out.positionId, side: 'agent', points: score.totalPoints, receiptHash: out.stockThresholdReceipt?.receiptHash || null, closedAt: at };
+    components[out.positionId] = { status: 'closed', positionId: out.positionId, side: 'agent', points: score.totalPoints, receiptHash: out.stockThresholdReceipt?.receiptHash || null, exitPrice: exit.price, exitQuoteAsOf: exit.asOf, closedAt: at };
     components[out.positionId].componentHash = canonicalContentHash(components[out.positionId]);
     const nextTier = [...live.portfolio[tier]]; nextTier[slot] = incomingAsset;
     const outgoingBench = { symbol: out.symbol, name: out.name || out.symbol, isCrypto: out.isCrypto || false, baseATR: out.baseATR, direction: out.direction || null, cooldownUntil: new Date(clock().getTime() + 86400000).toISOString() };
