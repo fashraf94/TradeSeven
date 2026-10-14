@@ -58,7 +58,12 @@ import { buildFundamentalsBlock } from './fundamentalsRender.js';
 // byte-identical (the DR-13 flag-split pattern: this import + one
 // interpolation below; registered in PROMPT_CONTRIBUTING_MODULES in this
 // same commit). The flat6 template never carries it — no crypto there.
-import { renderCryptoSlotBlock } from './evalCryptoSlotBlock.js';
+// Crypto Slot v2 (§7-gated, Fable build prompt + rulings 2026-10-14;
+// merges only with the founder's sign-off on this hunk —
+// docs/audits/20261014_BUILD_CRYPTO_SLOT_CHECK_LINE.md §3): the same module's
+// CRYPTO SLOT THIS CHECK line and RISK STATUS annotation, rendered in
+// buildLiveContextBlock's 3e3 slot — null / unchanged while dark or flat6.
+import { renderCryptoSlotBlock, renderCryptoSlotCheckLine, annotateCryptoSlotRiskStatus } from './evalCryptoSlotBlock.js';
 
 // ==================== SYSTEM PROMPT ====================
 
@@ -1211,8 +1216,15 @@ ${triggerLines}`);
   }
 
   // 3e3. Risk Status
+  // Crypto Slot v2: the CRYPTO SLOT THIS CHECK line takes this slot —
+  // immediately before RISK STATUS when that block renders — and RISK STATUS
+  // passes through the annotation. The line prints the bench crypto's daily
+  // move with formatPct, the BENCH table's own formatter (§9). Null and the
+  // block unchanged while dark, for flat6, or with no verdict on momentumData.
+  const cryptoSlotLine = renderCryptoSlotCheckLine(battle, momentumData?.cryptoSlotVerdict, formatPct);
+  if (cryptoSlotLine) parts.push(cryptoSlotLine);
   if (momentumData?.riskStatus) {
-    const riskLines = buildRiskStatusBlock(assetScores, momentumData.riskStatus);
+    const riskLines = annotateCryptoSlotRiskStatus(battle, buildRiskStatusBlock(assetScores, momentumData.riskStatus), momentumData?.cryptoSlotVerdict);
     if (riskLines) parts.push(riskLines);
   }
 
