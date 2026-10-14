@@ -20,7 +20,7 @@
 | Verdict = gate | End to end on the real cron, for every reason and for "can swap": the line the model was sent and what the gates then did with the same swap agree. A reviewer tried to make them disagree and found only the documented guardrail class plus two timing edges (§6). **No input was found where the line says "you can swap" and LOCK, cooldown, the cap or the hurdle then refuses**, except one theoretical clock-skew route between two servers. |
 | Tests | Full Linux suite, CI-shaped, on the code head `afaccb36`: `959 passed │ 7 skipped (966)`, 20,620 tests, **0 failing**. The baseline was 964 files, 0 failing; the 2 added files are the new suites. `lint:gate` and `vite build` are green (§5). |
 | Mutation | **44 of my mutants, all killed**, including every one the prompt names (§5). The tests/probe reviewer ran its own 74 mutants; its survivors were genuine probe-selftest gaps (now closed and re-killed) or equivalent mutants. |
-| Review | Four lenses, then six refuters. 29 raw findings collapse to 26 distinct:<ul><li>CONFIRMED 17, PARTLY 7, REFUTED 1, and 1 accepted as is;</li><li>**0 blocker, 0 major**, 5 minor, the rest nit or none.</li></ul>Every in-scope finding is fixed (`d6c25973`, `afaccb36`) or documented for Fable. One new pre-existing defect is reported for separate tasking (**G3**, §6.4). |
+| Review | Four lenses, then five refuters. 29 raw findings collapse to 26 distinct:<ul><li>CONFIRMED 17, PARTLY 7, REFUTED 1, and 1 accepted as is;</li><li>**0 blocker, 0 major**, 5 minor, the rest nit or none.</li></ul>Every in-scope finding is fixed (`d6c25973`, `afaccb36`) or documented for Fable. One new pre-existing defect is reported for separate tasking (**G3**, §6.4). |
 | Probe v2 | **The main arm FAILED one clause:**<ul><li>crypto → stock was **2 of 128** (bar ≤ 2: met), but both were among the 26 previously refused (bar 0: **missed**). Both are one Diversifier battle's consecutive BTC → LLY checks.</li><li>crypto → crypto where the line says "cannot" was **1** (bar ≤ 2: met).</li></ul>**Arm S (COUNTERFACTUAL) PASSED:** 0 crypto → stock of 26, and 21 of 26 took the "can swap".<br>For comparison, #961's probe had 10 crypto → stock, 9 of the 26, and 14 crypto → crypto.<br>The cost was **$1.78**. Paragraph v2 + the line measure **279–289 tokens**.<br>Per R-f: **no re-wording, the PR stays draft, STOP for Fable** (§7). |
 | Flip | Not in this PR. The dry run (§8) shows the flip moves exactly what #961's did: 3 files plus 7 tiered system-prompt snapshots. **No live-context suite moves.** Control: the flag alone reddens exactly 10 rows. Flip: the checklist leaves 0 failing. |
 | For Fable | Report §6.3, the R-a class as found in review:<ul><li>a guardrail can also back the agent's own BTC → ETH;</li><li>bullet 1's "ends as a HOLD";</li><li>"you have reached the swap limit" counts the platform's own rotations.</li></ul>Plus §7's reading. |
@@ -499,7 +499,7 @@ The tests/probe reviewer (L3) independently ran 74 mutants (§6).
 **`vite build` and `lint:gate`** (Linux clone):
 - At `216bc5b7` (the STOP report): `vite build` green.
 - At the build's working diff: `lint:gate` green.
-- At the code head `d6c25973`: `lint:gate` exit 0 and `vite build` green (built in 10.97 s). Both also ran at `d6c25973`.
+- At the code head `afaccb36`: `lint:gate` exit 0 and `vite build` green (built in 10.97 s). Both were also green at `d6c25973` (built in 13.23 s).
 - The pushed head is built again before the push (memory rule: build the pushed head).
 
 ---
@@ -520,7 +520,7 @@ The tests/probe reviewer (L3) independently ran 74 mutants (§6).
 - **L3:** tests, pins, goldens, flip-proofing, the probe (mutating).
 - **L4:** honesty: every sentence against the code.
 
-Then five refuters on L1/L2/L4's findings, batched by topic (timing; the guardrail class and wording; code and doc claims; out-of-scope), and a sixth on L3's.
+Then four refuters on L1/L2/L4's findings, batched by topic (timing; the guardrail class and wording; code and doc claims; out-of-scope), and a fifth on L3's.
 
 ### §6.1 What the lenses established
 
@@ -681,9 +681,9 @@ Also in the class and documented:
 | Archetype / battle | Diversifier, **one battle, consecutive checks**. It is the battle behind #961's run of four BTC → LLY. | Diversifier, another battle |
 | The line said | "cannot — ETH is −5.15% / −5.70% … must be up on the day" | "cannot — ETH is −0.93% …" |
 | RISK STATUS flags BTC SWAP_OUT (annotated) | 0 | 1 |
-| Cites the line | 1. It names the "crypto slot constraint" and reads it as ruling out BTC → ETH only, then calls BTC → LLY "a stock swap into Support tier". | 1 |
+| Cites the line | 1. It names the crypto-slot rule but reads it as ruling out only BTC → ETH, and then treats BTC → LLY as a stock-slot move in the Support tier. | 1 |
 | Cites SWAP_OUT | 0 | 1 |
-| Its own words say it will hold, yet the tool decision is SWAP | 0 | **1**: the rationale says it "cannot swap BTC this check" and is "holding BTC one more check", and the structured decision is SWAP BTC → ETH |
+| Its own words say it will hold, yet the tool decision is SWAP | 0 | **1**: the rationale says it cannot swap this check and will hold, and the structured decision is SWAP BTC → ETH |
 | Frames BTC as stagnant and the incoming name as strong today | 2 | 1 |
 | Mentions the Support tier / its 1.0x multiplier | 2 | 0 |
 
@@ -693,7 +693,7 @@ Also in the class and documented:
    - 14 now hold, and 9 move a stock slot instead, as the paragraph says ("If you want to make a move that check, it has to be in a stock slot").
    - Across all 128, crypto → stock fell 26 → 2 and crypto → crypto is 1. 21 replies cite the line in their own words.
 2. **The two misses are one battle's two consecutive checks, both Diversifier BTC → LLY,** where BTC carried no SWAP_OUT.
-   - One reply shows the residual misreading: it took the line as ruling out ETH only, and treated a crypto → stock swap as "a stock swap into Support tier".
+   - One reply shows the residual misreading: it took the line as ruling out ETH only, and treated a crypto → stock swap as a stock-slot move.
    - That is bullet 1's rule, "a crypto can only be replaced by a crypto", not taking hold against the Diversifier's sector-gap charter on that battle.
    - The 26 refused are not independent draws (#961 §6's caveat), and this battle contributes heavily to them.
 3. **The one crypto → crypto is a reply whose narrative holds while its decision swaps.**
@@ -751,7 +751,7 @@ The flip is its own small commit after Flash signs off on §3 and §7, never in 
 - The new suites force the flag themselves.
 - So the line and the annotation move no file at the flip. Their first appearance is in production.
 
-**Dry run of this checklist** (my private Linux clone at the code head `d6c25973`, CI-shaped; the clone was restored clean after each run):
+**Dry run of this checklist** (my private Linux clone at `d6c25973`, CI-shaped; the clone was restored clean after each run). `d6c25973` was the code head then. `afaccb36` changed only one end-to-end test row and the probe's `records.json` pin, and neither is in the flip set, so the run stands for it:
 
 | Run | What changed | Result |
 |---|---|---|
