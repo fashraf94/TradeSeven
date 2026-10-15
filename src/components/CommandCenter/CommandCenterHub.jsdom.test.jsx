@@ -131,6 +131,28 @@ describe('S1 production state — every section in its loading state (ruling R-S
     expect(hold.textContent).not.toMatch(/Locked in/);
   });
 
+  it('a ready deploy with no handler (S1 wires none) still renders every hold disabled: the card, the strip, the first-deploy action', () => {
+    for (const [site, hubWidth] of [['desktop', 1216], ['mobile', 390]]) {
+      const m = renderHub({ site, hubWidth, sections: fixture('first') });
+      const holds = byRole(m.host, 'button', COPY.deploy.holdLabel);
+      // Desktop: the first-deploy action and the Deploy card; phone: the first-deploy action and the strip.
+      expect(holds.length, site).toBe(2);
+      for (const hold of holds) expect(hold.disabled, site).toBe(true);
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+    }
+  });
+
+  it('the hub scopes border-box to its own three roots (the app ships no global box-sizing rule)', () => {
+    renderHub({ site: 'mobile', hubWidth: 390 });
+    const rules = [...document.querySelectorAll('style[data-hub-box-model]')].map((s) => s.textContent);
+    expect(rules).toHaveLength(1);
+    for (const root of ['[data-hub="shell"]', '[data-hub-strip]', '[data-hub-sheet-overlay]']) {
+      expect(rules[0]).toContain(`${root} *`);
+    }
+    expect(rules[0]).toMatch(/\{ box-sizing: border-box; \}$/);
+  });
+
   it('every later-slice action renders disabled: the Forge actions, the pickers and the profile', () => {
     const phone = renderHub({ site: 'mobile', hubWidth: 390 });
     const profile = phone.host.querySelector('[data-hub-profile]');
