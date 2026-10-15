@@ -53,6 +53,11 @@ describe('Ruling 1: the fill quote provider time is the reward lower bound', () 
     const { battle } = await correctedStockBattle({ fill: 100 }); const a = battle.portfolio.star[0];
     expect(stockRewardContext(battle, a, 'agent', 'star', 0, q(100, '2026-10-14T13:46:59.000Z'))).toEqual({ status: 'unavailable', reason: 'missing_post_entry_quote' });
   });
+  it('a quote stamped after its own observation instant is unavailable, so history never runs ahead of real time (review B1-6)', async () => {
+    const { battle } = await correctedStockBattle({ fill: 100 }); const a = battle.portfolio.star[0];
+    expect(stockRewardContext(battle, a, 'agent', 'star', 0, q(101, '2026-10-14T14:10:00.000Z', '2026-10-14T14:05:00.000Z'))).toEqual({ status: 'unavailable', reason: 'missing_post_entry_quote' });
+    expect(stockRewardContext(battle, a, 'agent', 'star', 0, q(101, '2026-10-14T14:05:00.000Z', '2026-10-14T14:05:00.000Z')).status).toBe('valid');
+  });
   it('the :61 trap: a fresh history seeded at the fill quote time is accepted; one older than the fill quote is invalid', async () => {
     const { battle } = await correctedStockBattle({ fill: 100 }); const a = battle.portfolio.star[0];
     expect(initialRewardHistory(a.stockThresholdReceipt).observedAt).toBe(FILL_AT);
@@ -180,8 +185,15 @@ describe('Ruling 6: the control document is the only on-switch (allowlist on own
       ['no audience', control({ audience: undefined })], ['mode all', control({ audience: { mode: 'all' } })], ['mode all with ids', control({ audience: { mode: 'all', ownerIds: ['owner-pilot'] } })],
       ['empty allowlist', control({ audience: { mode: 'allowlist', ownerIds: [] } })], ['non-string id', control({ audience: { mode: 'allowlist', ownerIds: [42] } })], ['empty id', control({ audience: { mode: 'allowlist', ownerIds: [''] } })],
       ['bad epoch', control({ epoch: 0 })], ['v1 model', control({ model: { ...STOCK_MODEL, modelId: 'stock_measured_atr14_fullday_v1' } })], ['unparseable', 'garbage'],
-    ]) expect(stockAdmissionSelects(c, 'owner-pilot'), label).toBe(false);
+    ]) {
+      expect(stockAdmissionSelects(c, 'owner-pilot'), label).toBe(false);
+      // The document itself is closed, not merely silent for this owner: the
+      // pilot control script reads it through this check (review B1-3).
+      expect(validStockAdmissionControl(c), label).toBe(false);
+    }
     expect(stockAdmissionSelects(control(), undefined)).toBe(false);
+    // One malformed id closes the whole document, even for a listed owner (review B1-3).
+    for (const ownerIds of [['owner-pilot', 42], ['owner-pilot', '']]) expect(stockAdmissionSelects(control({ audience: { mode: 'allowlist', ownerIds } }), 'owner-pilot'), JSON.stringify(ownerIds)).toBe(false);
     expect(STOCK_APPROVAL).toMatchObject({ modelId: 'stock_measured_atr14_fullday_v2', approvedPolicyRef: 'owner_baggerbomb_stock_thresholds_v2_20261015@v1' });
   });
   it.each([
@@ -193,8 +205,11 @@ describe('Ruling 6: the control document is the only on-switch (allowlist on own
     expect(collector).not.toHaveBeenCalled(); expect(h.writes).toEqual([]);
   });
   it('an unreadable control document is legacy too (never a refusal for an owner it cannot place)', async () => {
-    const collector = vi.fn();
+    const collector = vi.fn(); const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(await prepareStockCreation(creationDoc(), { db: { doc: () => ({ get: async () => { throw Error('Firestore unavailable'); } }) }, collector, now: stockCreationClock })).toBe(null);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toMatch(/stockThresholdControl\/admission unreadable; this creation is legacy: Firestore unavailable/);
+    expect(warn.mock.calls[0][0]).not.toMatch(/owner-pilot/);
     expect(await prepareStockCreation(creationDoc(), { db: {}, collector, now: stockCreationClock })).toBe(null);
     expect(collector).not.toHaveBeenCalled();
   });
@@ -212,6 +227,21 @@ describe('Ruling 6: the control document is the only on-switch (allowlist on own
       const r = await run(mutate);
       await expect(r.commit).rejects.toMatchObject({ reason: 'creation_selection_changed' }); expect(r.h.writes).toEqual([]);
     }
+  });
+  it('a selected creation committed before the v2 approval instant is refused with zero writes; at the instant it commits (review B1-2)', async () => {
+    const approved = Date.parse(STOCK_APPROVAL.approvedAt);
+    const commitAt = async ms => {
+      const clock = () => new Date(ms);
+      const obs = { AAPL: await stockObservation('AAPL', { rows: stockRows('2026-10-15'), clock }), MSFT: await stockObservation('MSFT', { rows: stockRows('2026-10-15'), clock }) };
+      const h = creationStore(control()); const doc = creationDoc();
+      const prepared = await prepareStockCreation(doc, { db: h.db, collector: s => obs[s], now: clock }); prepared.battleDoc = doc;
+      return { h, commit: commitBattleDocWithPin(stockCreationDb(h.db, prepared, clock), doc, { dark: true }) };
+    };
+    const early = await commitAt(approved - 1);
+    await expect(early.commit).rejects.toMatchObject({ name: 'StockThresholdRefusal', reason: 'approval_not_effective' }); expect(early.h.writes).toEqual([]);
+    const onTime = await commitAt(approved);
+    const ref = await onTime.commit;
+    expect(onTime.h.store.get(`agentBattles/${ref.id}`).scoring.stockThresholdModel.admittedAt).toBe(STOCK_APPROVAL.approvedAt.replace('Z', '.000Z'));
   });
 });
 
@@ -299,6 +329,13 @@ describe('Ruling 8: pilot crypto', () => {
     expect(h.writes).toEqual([]); expect(h.store.get(`agentBattles/${battle.id}`)).toEqual(before);
     const { incomingAsset } = await executeSwapServer(h.db, battle.id, battle, 'star', 0, battle.portfolio.bench.crypto, 1, prices({ current: 50000, timestamp: ts('2026-10-14T13:58:00Z') }), {}, null, { now: stockTestClock });
     expect(incomingAsset).toMatchObject({ symbol: 'BTC-USD.CC', swapPrice: 50000 });
+  });
+  it('an incoming stock fills from its collector receipt, so a fallback tick quote for it never refuses the swap (review B1-6)', async () => {
+    const { battle, inputs } = await correctedStockBattle({ fill: 100 }); const h = inputStore(battle, inputs);
+    const prices = { AAPL: { current: 102, timestamp: ts('2026-10-14T13:48:00Z') }, MSFT: { current: 50, fallback: true } };
+    const { incomingAsset } = await executeSwapServer(h.db, battle.id, battle, 'star', 0, { symbol: 'MSFT', baseATR: 3 }, 1, prices, {}, null, { now: stockTestClock, collector: s => stockObservation(s) });
+    expect(incomingAsset.symbol).toBe('MSFT');
+    expect(incomingAsset.swapPrice).toBe(incomingAsset.stockThresholdReceipt.fill); expect(incomingAsset.swapPrice).not.toBe(50);
   });
   it('the outgoing crypto entry must be a positive price', async () => {
     const { battle, inputs } = await correctedStockBattle();

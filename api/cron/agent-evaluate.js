@@ -2154,7 +2154,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             // after an earlier exit: an occupant that changed underneath this
             // loop is named, never sold under another position's verdict
             // (review S2-3).
-            ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfPosition(asset), { prices })
+            ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfPosition(asset))
           );
         } catch (riskExecErr) {
           riskSwapResult = await swapResultAfterThrow(battleRef, riskCall, riskExecErr);
@@ -3850,7 +3850,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
                 benchAsset, currentDay, prices, evaluationMetadata, snapshot,
                 // P6: the belief — the position validateTradeDecision resolved
                 // from the model's symbolOut on this same snapshot.
-                ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfPosition(battle.portfolio?.[validation.resolvedTier]?.[validation.resolvedSlotIndex]), { prices })
+                ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfPosition(battle.portfolio?.[validation.resolvedTier]?.[validation.resolvedSlotIndex]))
               );
             } catch (modelExecErr) {
               swapResult = await swapResultAfterThrow(battleRef, modelCall, modelExecErr);
@@ -4910,9 +4910,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
 
 // Corrected games always thread the held belief even when the legacy identity
 // rollout is off. Stored proposal/meeting entry instants still bind that belief.
-function stockSwapOptions(battle, mode, expectedOut, { padSnapshot = false, prices = null } = {}) {
+function stockSwapOptions(battle, mode, expectedOut, { padSnapshot = false } = {}) {
   if (stockModelRoute(battle).status !== 'corrected') return swapIdentityOptions(mode, expectedOut, { padSnapshot });
-  const options = { identityMode: mode, expectedOut, stockPrices: prices };
+  const options = { identityMode: mode, expectedOut };
   return padSnapshot ? [null, options] : [options];
 }
 
@@ -5236,7 +5236,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
               null, // F2: the stored snapshot is owner-writable — never a trade row's numbers
               // P6: the belief stored at proposal creation (symbol-only when the
               // proposal predates the stored identity or was client-written).
-              ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfStored(proposal.symbolOut, proposal, 'outgoingSwappedInAt'), { prices })
+              ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfStored(proposal.symbolOut, proposal, 'outgoingSwappedInAt'))
             );
           } catch (approvedExecErr) {
             approvedSwapResult = await swapResultAfterThrow(battleRef, approvedCall, approvedExecErr);
@@ -5508,7 +5508,7 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
             null, // F2: the stored snapshot is owner-writable — never a trade row's numbers
             // P6: the belief stored at proposal creation — the expiry tick hands
             // the executor a tier and slot stored up to a TTL earlier (DCR-002 P02).
-            ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfStored(proposal.symbolOut, proposal, 'outgoingSwappedInAt'), { prices })
+            ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfStored(proposal.symbolOut, proposal, 'outgoingSwappedInAt'))
           );
         } catch (expiredExecErr) {
           expiredSwapResult = await swapResultAfterThrow(battleRef, expiredCall, expiredExecErr);
@@ -5950,7 +5950,7 @@ export async function runSuppressionDeterministicPass({
         slot.tier, slot.slotIndex,
         benchAsset, currentDay, prices, evaluationMetadata, snapshot,
         // P6: the belief — the position this pass resolved by symbol just above.
-        ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfPosition(battle.portfolio?.[slot.tier]?.[slot.slotIndex]), { prices })
+        ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfPosition(battle.portfolio?.[slot.tier]?.[slot.slotIndex]))
       );
     } catch (passExecErr) {
       passSwapResult = await swapResultAfterThrow(battleRef, passCall, passExecErr);
@@ -6327,7 +6327,7 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
             // tell a symbol that left and came back from the original position.
             // Follow-up 2 (Part A): from the server's COPY, never the meeting.
             // This call passes no snapshot, so the options take the eleventh place.
-            ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfStored(run.symbolOut, run, 'swappedInAt'), { padSnapshot: true, prices })
+            ...stockSwapOptions(battle, swapIdentityMode, expectedOutOfStored(run.symbolOut, run, 'swappedInAt'), { padSnapshot: true })
           );
         } catch (legExecErr) {
           gameplanSwapResult = await swapResultAfterThrow(battleRef, legCall, legExecErr);

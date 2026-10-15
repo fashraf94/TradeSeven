@@ -63,7 +63,12 @@ export async function prepareStockCreation(battleDoc, { db, collector = collectS
   if (battleDoc.gameMode !== 'baggerbomb_agent' || battleDoc.duration !== 'fullday' || !battleDoc.opponent?.portfolio) return null;
   if (!db) return null;
   let control = null;
-  try { const controlSnap = await db.doc(STOCK_ADMISSION_CONTROL_PATH).get(); control = controlSnap.exists ? controlSnap.data() : null; } catch { return null; }
+  try { const controlSnap = await db.doc(STOCK_ADMISSION_CONTROL_PATH).get(); control = controlSnap.exists ? controlSnap.data() : null; } catch (error) {
+    // Legacy, but never silently: the pilot verify step needs to see why an
+    // allowlisted owner got a legacy battle (review B1-5). No owner id is logged.
+    console.warn(`[stockThresholdAdmission] ${STOCK_ADMISSION_CONTROL_PATH} unreadable; this creation is legacy: ${error?.message || error}`);
+    return null;
+  }
   if (!stockAdmissionSelects(control, battleDoc.ownerId)) return null;
   const late = lateStartRefusal(now().toISOString());
   if (late) refuseStock(late);

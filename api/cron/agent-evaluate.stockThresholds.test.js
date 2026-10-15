@@ -115,7 +115,7 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); delete process.env.E
 // v2: `cpuSymbol` places the CPU's lifetime on its own ticker; `undated` strips
 // the provider timestamp from those symbols' quotes (they still pass the M1
 // quote gate), so that side's reward context is unavailable this tick.
-async function stockTick(variant = 'final', { quoteLagSec = 0, failRefreshRead = false, cpuSymbol = 'AAPL', undated = [] } = {}) {
+async function stockTick(variant = 'final', { quoteLagSec = 0, failRefreshRead = false, cpuSymbol = 'AAPL', undated = [], meeting = true } = {}) {
   const { battle: corrected, inputs } = await correctedStockBattle({ cpuSymbol });
   const original = makeTickBattle();
   const battle = { ...original, ...corrected, timing: { tradingDays: ['2026-10-14'], currentTradingDay: 1 }, cronState: { ...original.cronState, lastGameplanDate: '10/14/2026' }, scoreState: { ...original.scoreState, ...corrected.scoreState }, scoring: { ...original.scoring, ...corrected.scoring } };
@@ -132,7 +132,7 @@ async function stockTick(variant = 'final', { quoteLagSec = 0, failRefreshRead =
     if (variant === 'approved' || variant === 'expired') {
       runtime.launch = 'copilot'; battle.pendingProposal = { proposalId: 'proposal', evalId: 'prior', mode: 'copilot', symbolOut: 'AAPL', symbolIn: 'MSFT', tier: 'star', slotIndex: 0, conviction: 80, rationale: 'fixture', outgoingSwappedInAt: STOCK_TEST_NOW, createdAt: STOCK_TEST_NOW, expiresAt: '2026-10-14T14:02:30Z', resolvedAt: variant === 'approved' ? '2026-10-14T14:02:20Z' : null, resolution: variant === 'approved' ? 'approved' : null };
     }
-    if (variant === 'suppression' || variant === 'meeting') Object.assign(battle, serverMeetingOverrides({ id: 'meeting', status: variant === 'meeting' ? 'approved' : 'pending', createdAt: STOCK_TEST_NOW, expiresAt: '2026-10-14T14:12:00Z', diagnosis: 'fixture', suggestedSwaps: [{ symbolOut: 'AAPL', symbolIn: 'MSFT', swappedInAt: STOCK_TEST_NOW, rationale: 'fixture' }] }));
+    if ((variant === 'suppression' && meeting) || variant === 'meeting') Object.assign(battle, serverMeetingOverrides({ id: 'meeting', status: variant === 'meeting' ? 'approved' : 'pending', createdAt: STOCK_TEST_NOW, expiresAt: '2026-10-14T14:12:00Z', diagnosis: 'fixture', suggestedSwaps: [{ symbolOut: 'AAPL', symbolIn: 'MSFT', swappedInAt: STOCK_TEST_NOW, rationale: 'fixture' }] }));
   }
   // Review R1: a forced exit enters MSFT, then a catalyst-added GOOG lets the
   // model rotate that fresh lifetime out in the same tick and price map.
@@ -406,6 +406,19 @@ describe('v2 Ruling 3: an unavailable corrected frame continues the tick', () =>
     const scored = (b.statusFeed || []).filter(e => Object.hasOwn(e, 'score'));
     expect(scored.length).toBeGreaterThan(0); expect(scored.every(e => e.score === null)).toBe(true);
     expect(b.cronState.evaluatingAt).toBe(null);
+  });
+  it('with no pending meeting, the unavailable-frame exit itself runs the R11 pass, withholds the model call and finalizes (review B2-2)', async () => {
+    const { db, summary } = await stockTick('suppression', { cpuSymbol: 'GOOG', undated: ['GOOG'], meeting: false });
+    const b = db.__store.battle;
+    expect(b.gameplanMeeting ?? null).toBe(null);
+    expect(runtime.executed).toHaveLength(1); expect(b.portfolio.star[0].symbol).toBe('MSFT');
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(b.scoreState).toMatchObject({ currentScore: null, opponentScore: null, stockScoreEvidence: { status: 'unavailable' } });
+    expect((b.statusFeed || []).map(e => [e.action, e.score])).toContainEqual(['guardrail_forced_swap', null]);
+    expect(b.cronState.evaluatingAt).toBe(null); expect(b.cronState.lastEvaluatedAt).toBe(nowIso());
+    const tick = permanentDoc(db, 'stock-battle', `stock-battle:${b.cronState.tickSeq}`);
+    expect(tick).toMatchObject({ stageReached: 'gameplan_handled', exitReason: 'no_trigger' });
+    expect(summary.errors).toBe(0);
   });
   it('every feed, proposal and completion score site rounds through feedScore (null stays null; legacy rounding unchanged)', () => {
     const source = readFileSync(new URL('./agent-evaluate.js', import.meta.url), 'utf8');
