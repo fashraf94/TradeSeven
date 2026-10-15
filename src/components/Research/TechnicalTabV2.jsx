@@ -9,18 +9,52 @@ import QuadrantBadge from './MoneyMap/QuadrantBadge';
 /**
  * TechnicalTabV2 — Enhanced 4-section collapsible technical analysis tab.
  * Replaces the mock-data-driven TechnicalAnalysisTab with real computed data.
+ *
+ * `dailyData` is the symbol's DAILY series (newest-first, as the API returns
+ * it) — never the chart's candles, which can be weekly or intraday.
  */
-const TechnicalTabV2 = ({ asset, ohlcvData, indicators, levels, onLevelHighlight }) => {
+const TechnicalTabV2 = ({ asset, dailyData, indicators, levels, onLevelHighlight }) => {
   const price = asset?.price || 0;
 
   return (
     <div>
       <PriceLevelsSection levels={levels} price={price} onLevelHighlight={onLevelHighlight} />
       <MomentumSection indicators={indicators} price={price} />
-      <VolumeRangeSection ohlcvData={ohlcvData} price={price} />
+      <VolumeRangeSection dailyData={dailyData} price={price} />
       <SectorContextSection asset={asset} />
     </div>
   );
+};
+
+// A level's distance is stored as a bare percentage string ("-2.31"); show
+// its sign and unit, formatted from that same number.
+const formatDistance = (distance) => {
+  const n = Number(distance);
+  if (distance == null || distance === '' || !Number.isFinite(n)) return '';
+  return `${n > 0 ? '+' : ''}${n.toFixed(2)}%`;
+};
+
+/**
+ * MACD wording from the histogram (MACD minus its signal line). `histogram`
+ * is newest-first: index 0 is the latest daily bar, up to 6 bars. "Cross" is
+ * said only when the line was on the other side within the last 5 bars; `n`
+ * counts bars back to the first bar on the current side.
+ */
+const describeMacd = (macd, histogram) => {
+  if (!macd || !Number.isFinite(macd.histogram)) return { tone: 'unknown', text: '—' };
+  const side = Math.sign(macd.histogram);
+  if (side === 0) return { tone: 'neutral', text: 'On signal line' };
+  const series = Array.isArray(histogram) ? histogram : [];
+  for (let j = 1; j < Math.min(series.length, 6); j++) {
+    if (Math.sign(series[j]) === -side) {
+      return side > 0
+        ? { tone: 'bullish', text: `Bullish cross · ${j - 1}d ago` }
+        : { tone: 'bearish', text: `Bearish cross · ${j - 1}d ago` };
+    }
+  }
+  return side > 0
+    ? { tone: 'bullish', text: 'Above signal line' }
+    : { tone: 'bearish', text: 'Below signal line' };
 };
 
 // ============================
@@ -81,7 +115,7 @@ const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
             fontSize: '11px',
             color: 'rgba(255, 255, 255, 0.5)',
           }}>
-            {level.distanceFromCurrent || ''}
+            {formatDistance(level.distanceFromCurrent)}
           </span>
         </div>
       </div>
@@ -133,18 +167,20 @@ const MomentumSection = ({ indicators, price }) => {
     );
   }
 
-  const { rsi, macd, sma50 } = indicators;
+  const { rsi, macd, macdHistogram, sma50 } = indicators;
 
-  // RSI gauge
-  const rsiValue = rsi ?? 50;
-  const rsiColor = rsiValue >= 70 ? '#ff4757' : rsiValue <= 30 ? HOLO_COLORS.green : HOLO_COLORS.amber;
-  const rsiLabel = rsiValue >= 70 ? 'Overbought' : rsiValue <= 30 ? 'Oversold' : 'Neutral';
+  // RSI gauge — the zone word and the dot read the same one-decimal number
+  // that is shown (BUILD_RULES §9). No reading → no number, zone or dot.
+  const rsiText = Number.isFinite(rsi) ? rsi.toFixed(1) : null;
+  const rsiShown = rsiText === null ? null : Number(rsiText);
+  const rsiColor = rsiShown === null ? HOLO_COLORS.textSecondary
+    : rsiShown >= 70 ? '#ff4757' : rsiShown <= 30 ? HOLO_COLORS.green : HOLO_COLORS.amber;
+  const rsiLabel = rsiShown === null ? null
+    : rsiShown >= 70 ? 'Overbought' : rsiShown <= 30 ? 'Oversold' : 'Neutral';
 
   // MACD signal
-  const macdSignal = macd
-    ? macd.histogram > 0 ? 'bullish' : macd.histogram < 0 ? 'bearish' : 'neutral'
-    : 'unknown';
-  const macdColor = macdSignal === 'bullish' ? HOLO_COLORS.green : macdSignal === 'bearish' ? '#ff4757' : HOLO_COLORS.textSecondary;
+  const macdSignal = describeMacd(macd, macdHistogram);
+  const macdColor = macdSignal.tone === 'bullish' ? HOLO_COLORS.green : macdSignal.tone === 'bearish' ? '#ff4757' : HOLO_COLORS.textSecondary;
 
   // vs 50-Day MA
   const ma50Diff = sma50 && price ? ((price - sma50) / sma50 * 100) : null;
@@ -160,14 +196,16 @@ const MomentumSection = ({ indicators, price }) => {
           <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)' }}>RSI (14)</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '14px', fontWeight: '700', color: rsiColor, fontFamily: 'monospace' }}>
-              {rsiValue?.toFixed(1)}
+              {rsiText ?? '—'}
             </span>
-            <span style={{
-              padding: '1px 5px', borderRadius: '4px', fontSize: '9px', fontWeight: '600',
-              background: `${rsiColor}20`, color: rsiColor,
-            }}>
-              {rsiLabel}
-            </span>
+            {rsiLabel && (
+              <span style={{
+                padding: '1px 5px', borderRadius: '4px', fontSize: '9px', fontWeight: '600',
+                background: `${rsiColor}20`, color: rsiColor,
+              }}>
+                {rsiLabel}
+              </span>
+            )}
           </div>
         </div>
         {/* RSI bar */}
@@ -176,14 +214,16 @@ const MomentumSection = ({ indicators, price }) => {
           background: 'linear-gradient(90deg, #00ff88 0%, #f59e0b 50%, #ff4757 100%)',
           opacity: 0.3,
         }}>
-          <div style={{
-            position: 'absolute',
-            left: `${Math.min(Math.max(rsiValue, 0), 100)}%`,
-            top: '-3px',
-            width: '12px', height: '12px', borderRadius: '50%',
-            background: rsiColor, border: `2px solid ${HOLO_COLORS.bgCard}`,
-            transform: 'translateX(-50%)',
-          }} />
+          {rsiShown !== null && (
+            <div data-testid="rsi-dot" style={{
+              position: 'absolute',
+              left: `${Math.min(Math.max(rsiShown, 0), 100)}%`,
+              top: '-3px',
+              width: '12px', height: '12px', borderRadius: '50%',
+              background: rsiColor, border: `2px solid ${HOLO_COLORS.bgCard}`,
+              transform: 'translateX(-50%)',
+            }} />
+          )}
         </div>
       </div>
 
@@ -196,13 +236,12 @@ const MomentumSection = ({ indicators, price }) => {
         <span style={{
           padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '600',
           background: `${macdColor}15`, color: macdColor,
-          textTransform: 'capitalize',
         }}>
-          {macdSignal === 'bullish'
-            ? <><TrendingUp size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} /> Bullish Cross</>
-            : macdSignal === 'bearish'
-            ? <><TrendingDown size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} /> Bearish Cross</>
-            : 'Neutral'}
+          {macdSignal.tone === 'bullish'
+            ? <><TrendingUp size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} /> {macdSignal.text}</>
+            : macdSignal.tone === 'bearish'
+            ? <><TrendingDown size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} /> {macdSignal.text}</>
+            : macdSignal.text}
         </span>
       </div>
 
@@ -228,24 +267,50 @@ const MomentumSection = ({ indicators, price }) => {
 // ============================
 // Section C: Volume & Range
 // ============================
-const VolumeRangeSection = ({ ohlcvData, price }) => {
+const DAY_MS = 24 * 60 * 60 * 1000;
+const barTime = (c) => {
+  const t = Date.parse(String(c?.date || c?.datetime || '').substring(0, 10));
+  return Number.isFinite(t) ? t : null;
+};
+
+const VolumeRangeSection = ({ dailyData, price }) => {
   const stats = useMemo(() => {
-    if (!ohlcvData || ohlcvData.length < 5) return null;
+    if (!dailyData || dailyData.length < 5) return null;
+    const bars = [...dailyData].reverse(); // oldest-first
 
-    const volumes = ohlcvData.map(c => Number(c.volume) || 0).filter(v => v > 0);
+    // Average over the last 30 daily sessions (latest included); the label
+    // says how many sessions when fewer exist.
+    const volumes = bars.map(c => Number(c.volume) || 0).filter(v => v > 0);
     const latestVolume = volumes[volumes.length - 1] || 0;
-    const avgVolume = volumes.slice(-20).reduce((a, b) => a + b, 0) / Math.min(volumes.length, 20);
+    const avgWindow = volumes.slice(-30);
+    const avgVolume = avgWindow.length > 0 ? avgWindow.reduce((a, b) => a + b, 0) / avgWindow.length : 0;
     const volumeRatio = avgVolume > 0 ? latestVolume / avgVolume : 1;
+    const avgLabel = `${avgWindow.length}d Avg`;
 
-    // 52-week (or available) range
-    const highs = ohlcvData.map(c => Number(c.high)).filter(Number.isFinite);
-    const lows = ohlcvData.map(c => Number(c.low)).filter(Number.isFinite);
+    // Range over the trailing 52 weeks by date (~252 stock sessions, 364
+    // crypto days). Called "52-week" only when the series covers all of it;
+    // otherwise the label states the span the bars actually cover.
+    const lastT = barTime(bars[bars.length - 1]);
+    const firstT = barTime(bars[0]);
+    const cutoff = lastT !== null ? lastT - 364 * DAY_MS : null;
+    const fullYear = cutoff !== null && firstT !== null && firstT <= cutoff;
+    const windowBars = fullYear ? bars.filter(c => barTime(c) > cutoff) : bars;
+    let rangeLabel = '52-week range';
+    if (!fullYear) {
+      const spanDays = lastT !== null && firstT !== null ? (lastT - firstT) / DAY_MS : null;
+      const months = spanDays === null ? null : Math.min(11, Math.round(spanDays / 30.44));
+      rangeLabel = spanDays === null ? `Range (${bars.length} sessions)`
+        : months >= 1 ? `Range (${months} mo)`
+        : `Range (${Math.max(1, Math.round(spanDays / 7))} wk)`;
+    }
+    const highs = windowBars.map(c => Number(c.high)).filter(Number.isFinite);
+    const lows = windowBars.map(c => Number(c.low)).filter(Number.isFinite);
     const high52w = Math.max(...highs);
     const low52w = Math.min(...lows);
     const rangePercent = high52w > low52w ? ((price - low52w) / (high52w - low52w)) * 100 : 50;
 
-    return { latestVolume, avgVolume, volumeRatio, high52w, low52w, rangePercent };
-  }, [ohlcvData, price]);
+    return { latestVolume, avgVolume, volumeRatio, avgLabel, high52w, low52w, rangePercent, rangeLabel };
+  }, [dailyData, price]);
 
   const formatVolume = (v) => {
     if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
@@ -272,7 +337,7 @@ const VolumeRangeSection = ({ ohlcvData, price }) => {
               ratio={stats.volumeRatio}
             />
             <VolumeBar
-              label="30d Avg"
+              label={stats.avgLabel}
               value={stats.avgVolume}
               maxValue={Math.max(stats.latestVolume, stats.avgVolume)}
               formatted={formatVolume(stats.avgVolume)}
@@ -283,8 +348,11 @@ const VolumeRangeSection = ({ ohlcvData, price }) => {
             </div>
           </div>
 
-          {/* 52-Week Range */}
+          {/* 52-Week Range (or the span the daily bars cover) */}
           <div>
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
+              {stats.rangeLabel}
+            </div>
             <div style={{
               display: 'flex', justifyContent: 'space-between',
               fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px',
