@@ -94,6 +94,12 @@ import { applyGuardrails, injectDiversifierSectorCap, resolveSectorSlotObserveCa
 import { classifyStockRegime, classifyMarketPosture, getPresetAdjustedStrategies } from '../_utils/agentRegimeClassifier.js';
 import { evaluateRisk, calculate5minSMA20, pickSwapReplacementCandidate, updateStagnationCounter, findPortfolioSlot, clearsHurdleFloor, getRecentSwapCount, EMERGENCY_BYPASS_REASONS, USER_DIRECTIVE_BYPASS_REASONS, buildSwapReceiptSource } from '../_utils/agentRiskManager.js';
 import { buildFreshAtrPercentileMap, resolveHurdleAtr } from '../_utils/hurdleAtr.js';
+// Crypto Slot v2 (§7-gated fence contact, Fable build prompt + rulings
+// 2026-10-14; merges only with the founder's sign-off on this hunk —
+// docs/audits/20261014_BUILD_CRYPTO_SLOT_CHECK_LINE.md §3): the CRYPTO SLOT
+// THIS CHECK verdict, computed with the model-swap gates' own functions in a
+// non-fenced module; null while CRYPTO_SLOT_PROMPT_ENABLED is off.
+import { computeCryptoSlotVerdict } from '../_utils/cryptoSlotVerdict.js';
 import { getPresetConfig } from '../_utils/agentPresetConfig.js';
 import { isVwapSessionUsable, isVwapStrike, pruneCounterMaps, seedVwapFireGuard, isReplacementQualified, newestCandleAsOfMs, VWAP_CASCADE_GUARD_N, CASCADE_QUALIFY_TIMEOUT_MS } from '../_utils/agentVwapFloor.js';
 import { getArchetypeConfig, resolveHftConfig, KNOB_CONFIG_VERSION } from '../_utils/agentArchetypeConfig.js';
@@ -2760,6 +2766,18 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
+
+    // ---- Crypto Slot v2: the CRYPTO SLOT THIS CHECK verdict ----
+    // The held crypto ↔ bench crypto swap, run through the model-swap gates'
+    // own functions (LOCK, the validator's cooldown, the hurdle floor, the swap
+    // cap) on the book the prompt is about to describe: after the forced-exit
+    // rebuild and the proposal / meeting re-reads above, before the prompt
+    // build below, on the same objects the gates read once the model answers.
+    // Attached ONLY when there is a verdict: while CRYPTO_SLOT_PROMPT_ENABLED
+    // is off the key is never set, so momentumData — and the shadow capture
+    // that carries it — is byte-identical. Not on an unreadable book (F1b).
+    const cryptoSlotVerdict = refreshFailure ? null : computeCryptoSlotVerdict({ battle, prices, lockedPositions, archetypeConfig, freshHurdleAtrMap, assetScores });
+    if (cryptoSlotVerdict) momentumData.cryptoSlotVerdict = cryptoSlotVerdict;
 
     // ---- Call Haiku ----
     summary.triggered++;
