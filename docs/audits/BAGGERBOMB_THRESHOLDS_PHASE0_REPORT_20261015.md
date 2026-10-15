@@ -6,13 +6,12 @@ October 15, 2026. Claude Code (Opus) for Flash; Fable writes the build prompt fr
 
 1. **Your battle.** The battle that started at 12:35 am today holds UNP and HUM, with ACN on the bench. Its modal sets UNP's TenBagger at **$287.85**, only **+0.48%** above your $286.48 entry. The old system gives each stock a threshold equal to 8 times its volatility *rank* (0 to 1), not its actual daily movement. UNP ranks near the bottom (3rd percentile), so it gets 0.24%. UNP opened at $290 this morning, five times that threshold, so it hit TenBagger at the opening bell. A normal UNP day moves about 1.4%. The measured model would put TenBagger at **$294.47**.
 2. **Across all 228 stocks we can measure, the old numbers rank stocks in the right order but on the wrong scale.** Quiet stocks (Duke, CSX, UNP, KO) get thresholds 4 to 16 times too small. Busy stocks (HUM, MPC, INTU) get thresholds 1.5 to 2 times too big. Your CPU opponent uses a flat 2.5% on every stock.
-3. **The live price feed is 15 minutes behind, sometimes up to 17, and moves in whole minutes.** It never showed two prices for the same minute. The game stops scoring at the 3:45 pm check, and that check sees 3:30 pm prices, so the last half hour of trading never counts.
+3. **The live price feed is 15 minutes behind, rarely up to 18, and moves in whole minutes.** It never showed two prices for the same minute. After the close the price stopped moving. The game stops scoring at the 3:45 pm check, and that check sees 3:30 pm prices, so the last half hour of trading never counts.
 4. **Late-start cutoff.** I recommend refusing new measured battles in the last **45 minutes** before the close. That leaves 2 scoring checks and about 30 minutes of real market movement. 20 minutes is the bare minimum for even one check.
 5. **Three findings change the plan:**
    - Turning the code switch on without its control document blocks *every* new battle for *everyone*. The pilot allowlist needs a small change in a protected file.
    - The game keeps only its latest score snapshot. "Settle on the last good snapshot" therefore really means "the latest one if it is good, otherwise result unavailable", unless the build adds a new saved record.
    - Battles started outside market hours are not covered by any ruling. That is 37% of all battles, including yours.
-6. **Made-up numbers.** The modal's "Historical (30 days)" box is placeholder data for every stock: UNP, HUM and ACN all show 40% / 2.0% / 12 of 30. The "Buy" rating can also be a default.
 
 ## Verdict table
 
@@ -23,7 +22,7 @@ October 15, 2026. Claude Code (Opus) for Flash; Fable writes the build prompt fr
 | B2. Founder's battle | **`io4sC…` (active, created 00:35 ET, expires 20:00 ET).** It holds UNP and HUM, with ACN on the bench. Earlier candidates: `L7wzt…` (Oct 13: HUM, ACN, UNP) and `rFoJH…` (Oct 12: ACN, HUM, UNP). **Flash to confirm.** All three are legacy. The UNP case is explained (§B2). |
 | B3. Zero checks | Battles with the model field, any value: **0 of 588** (`!= null` 0, `== null` 0). `stockThresholdInputs`: **0**. `stockThresholdControl` docs: **0**; `admission` is **absent**. |
 | B4. FT_QA / Cipher | FT_QA's agent **Cipher** exists, holds a deploy-ready decision and is free (`activeBattleId: null`, no deploy lock). It has 5 completed full-day agent-vs-CPU battles, the last on Oct 14. It **can** create one, subject to the pilot gate in E6. |
-| C. Live feed (interim; final after the 16:50 ET tail) | Delay **15:01 to 17:01** after the provider's minute stamp (median 15:19). Whole-minute stamps, per symbol. **0** same-minute/different-price cases, **0** missing or non-numeric fields. |
+| C. Live feed (13:04–16:50 ET, 932 symbol-quotes) | Delay **15:01 to 18:19** after the provider's minute stamp (median 15:19, p99 16:21). Whole-minute stamps, per symbol. **0** same-minute/different-price cases, **0** missing or non-numeric fields. The 16:00 closing bar arrived at 16:15. After it, no price moved; stamps crept to 16:03–16:04 (HUM to 16:23) and froze. |
 | C4. N for Ruling 2 | **Recommend N = 45** (2 scoreable ticks, about 30 minutes of market). Hard floor N = 20 (1 tick). The last evaluating tick is 15:45 ET (`isMarketOpen` gate). |
 | D. Universe | **228 qualified** on arithmetic, **11 refused** (catalog). **228 EODHD calls.** Legacy rank and measured ATR agree on order (Spearman **0.987**) but not scale: median legacy/measured ratio **1.56**, 21 names below 0.5×, 20 above 2×. |
 | E1. Timing | Ruling 1 touches `stockThresholdModel.js` :52, :61, :62, :63, :80 plus admission :141 and the exit at :230–235. **Watch the :61 trap.** K2-6 disappears if the stand-in comes from the receipt (Branch A, recommended). |
@@ -51,7 +50,7 @@ October 15, 2026. Claude Code (Opus) for Flash; Fable writes the build prompt fr
   - **VERIFIED**: I re-read the line in this session.
   - **VERIFIED (sub)**: a read-only subagent quoted the line verbatim in this session, and I did not re-read it.
   - **ASSUMED**: inferred.
-  - Four isolated read-only subagents mapped E1–E8. I re-read every load-bearing line they cited.
+  - Four isolated read-only subagents mapped B2's modal recipe and E1–E8. I re-read every load-bearing line they cited.
 - **Owner labels:**
   - **founder = owner-1**: agent "shadow". Its battle `uKKR6…` is the one the cockpit audit labels founder (`docs/audits/20261009_COCKPIT_LIVE_WEEK1_READ.md:75`).
   - **FT_QA = owner-12**: agent Cipher. Its battle `q84cK…` is the one that audit labels FT_QA (same file, :75).
@@ -160,7 +159,7 @@ Notes on the table:
 1. The old system ranks every stock by recent volatility, from 0 (calmest) to 1 (wildest), and multiplies the rank by 8.
 2. UNP is one of the calmest names, at rank 0.03, so its threshold is **0.24%**.
 3. TenBagger is 2× the threshold: **+0.48%**, or $287.85 from the $286.48 entry.
-4. UNP's real average daily range is **1.40%** ($4.00), and it opened today at **$290.00**. That is +1.23%, five times the threshold, so the battle recorded UNP's peak at **4.85×** the threshold within the first tick (`thresholdHistory.UNP.maxMultiplier` 4.846).
+4. UNP's real average daily range is **1.40%** ($4.00), and it opened today at **$290.00**. That is +1.23%, five times the threshold, so the battle recorded UNP's peak at **4.85×** the threshold early in the session (`thresholdHistory.UNP.maxMultiplier` 4.846, about $289.80).
 5. The chart also shows "TenBagger HIT!", because its line sits at $287.80 from yesterday's close and today's session high is $290.
 6. With the measured model, the same fill would need +2.79% ($294.47) for TenBagger, and BaggerBomb would sit at $290.47. So the opening print would be just short of a BaggerBomb.
 7. HUM is the opposite case. Its rank (0.94) makes the threshold 7.52% and TenBagger +15%, against a measured 5.02%.
@@ -193,7 +192,7 @@ So no v1 battle has ever existed, and retiring v1 strands nothing.
 
 ## C. Live delayed-feed measurement
 
-Status: INTERIM — generated 2026-10-15T17:35:42.596Z; the close and post-close tail are still running (ends 16:50 ET).
+Status: FINAL — polling ended 16:50 ET.
 
 **C1. Method**
 
@@ -214,32 +213,33 @@ Status: INTERIM — generated 2026-10-15T17:35:42.596Z; the close and post-close
 - **What was recorded for each sample:**
   - send time, receive time and the server `Date` header;
   - the raw quote, with `timestamp`, `gmtoffset`, OHLC, volume, `previousClose`, `change` and `change_p`.
-- **Counts:** 33 polls, 330 symbol-quotes (A: 330), HTTP errors 0.
-- **Clock:** local clock vs EODHD `Date` header: server ahead by 0.92–1.92 s (median 1.45 s); delays below use the server `Date`.
+- **Counts:** 131 polls, 932 symbol-quotes (A: 420, B: 72, C: 350, D: 90), HTTP errors 0.
+- **Clock:** local clock vs EODHD `Date` header: server ahead by 0.92–3.36 s (median 1.53 s); delays below use the server `Date`.
 
 **C2. Results**
 
 - **Precision:** `timestamp` is integer Unix seconds and always a whole minute (`timestamp % 60 = 0` on every sample). It is per symbol: one response can carry different minutes for different symbols. `gmtoffset` is 0.
-- **Delay** (server `Date` minus provider `timestamp`): n = 330 regular-session quotes: min 15:01, p10 15:19, median 15:19, p90 16:01, p99 16:19, max 17:19.
+- **Delay** (server `Date` minus provider `timestamp`): n = 642 regular-session quotes: min 15:01, p10 15:19, median 15:19, p90 16:01, p99 16:21, max 18:19.
   - At wall time W the feed normally serves the minute bar stamped **floor(W) − 15 min**.
-  - Sometimes it lags one or two more minutes (the 16:xx and 17:xx tails), then catches up with a 120 s jump.
-- **How the provider time moved** across 60 s neighbouring polls (all symbols): 0 s: 52 · 60 s: 227 · 120 s: 41.
-  - Liquid names (AAPL, MSFT, JPM, XOM, JNJ, KO, NVDA) advanced on 85–92% of polls.
-  - UNP, HUM and ACN advanced on 62–73%, with more 0 s / 120 s pairs.
+  - Sometimes it lags one to three more minutes (the 16:xx–18:xx tails), then catches up with a 120–240 s jump.
+- **How the provider time moved** across 60 s neighbouring polls (all symbols): 0 s: 180 · 60 s: 591 · 120 s: 65 · 180 s: 4 · 240 s: 2 · 1200 s: 1.
+  - **In the regular session** (pairs observed before 16:15 ET), liquid names (AAPL, MSFT, JPM, XOM, JNJ, KO, NVDA) advanced on **91–97%** of polls. UNP, HUM and ACN advanced on **70–83%**, with more 0 s / 120 s pairs.
+  - The rate column in the table below covers the whole run. It is lower for UNP, HUM and ACN because it includes the frozen post-close tail.
   - The provider time never went backwards.
+  - **Tick-aligned check:** polls in the first 20 s after the 15:45 ET mark returned provider times **15:29–15:30 ET** for all 10 symbols. Polls after the 13:15 and 13:30 marks returned 12:59–13:00 and 13:15.
 
 | Symbol | Samples | Delay min / median / p90 / max (m:ss) | Advance rate per 60 s | Step sizes on 60 s neighbours | Backwards | Same time, different price | Missing / non-numeric fields | Last provider time (ET) |
 |---|---|---|---|---|---|---|---|---|
-| UNP.US | 33 | 15:01 / 15:19 / 16:19 / 17:01 | 0.72 | 0s×9, 60s×15, 120s×8 | 0 | 0 | none | 13:20:00 |
-| HUM.US | 33 | 15:01 / 15:19 / 16:19 / 17:19 | 0.59 | 0s×13, 60s×9, 120s×10 | 0 | 0 | none | 13:18:00 |
-| ACN.US | 33 | 15:01 / 15:19 / 16:19 / 17:01 | 0.75 | 0s×8, 60s×16, 120s×8 | 0 | 0 | none | 13:20:00 |
-| AAPL.US | 33 | 15:01 / 15:19 / 15:20 / 16:01 | 0.94 | 0s×2, 60s×29, 120s×1 | 0 | 0 | none | 13:20:00 |
-| MSFT.US | 33 | 15:01 / 15:19 / 15:20 / 16:19 | 0.88 | 0s×4, 60s×25, 120s×3 | 0 | 0 | none | 13:20:00 |
-| JPM.US | 33 | 15:01 / 15:19 / 15:19 / 16:19 | 0.91 | 0s×3, 60s×27, 120s×2 | 0 | 0 | none | 13:20:00 |
-| XOM.US | 33 | 15:01 / 15:19 / 15:19 / 16:19 | 0.91 | 0s×3, 60s×27, 120s×2 | 0 | 0 | none | 13:20:00 |
-| JNJ.US | 33 | 15:01 / 15:19 / 15:19 / 16:19 | 0.91 | 0s×3, 60s×27, 120s×2 | 0 | 0 | none | 13:20:00 |
-| KO.US | 33 | 15:01 / 15:19 / 15:20 / 16:19 | 0.88 | 0s×4, 60s×25, 120s×3 | 0 | 0 | none | 13:20:00 |
-| NVDA.US | 33 | 15:01 / 15:19 / 15:19 / 16:19 | 0.91 | 0s×3, 60s×27, 120s×2 | 0 | 0 | none | 13:20:00 |
+| UNP.US | 131 | 15:01 / 15:19 / 16:19 / 17:01 | 0.58 | 0s×45, 60s×48, 120s×13 | 0 | 0 | none | 16:03:00 |
+| HUM.US | 131 | 15:01 / 15:20 / 16:19 / 18:19 | 0.50 | 0s×53, 60s×33, 120s×17, 180s×1, 240s×1, 1200s×1 | 0 | 0 | none | 16:23:00 |
+| ACN.US | 131 | 15:01 / 15:19 / 16:19 / 17:01 | 0.58 | 0s×44, 60s×49, 120s×12, 180s×1 | 0 | 0 | none | 16:04:00 |
+| AAPL.US | 77 | 15:01 / 15:19 / 15:20 / 16:01 | 0.97 | 0s×2, 60s×72, 120s×1 | 0 | 0 | none | 16:04:00 |
+| MSFT.US | 77 | 15:01 / 15:19 / 15:20 / 16:20 | 0.92 | 0s×6, 60s×64, 120s×5 | 0 | 0 | none | 16:03:00 |
+| JPM.US | 77 | 15:01 / 15:19 / 15:20 / 16:19 | 0.92 | 0s×6, 60s×66, 120s×2, 180s×1 | 0 | 0 | none | 16:03:00 |
+| XOM.US | 77 | 15:01 / 15:19 / 15:20 / 16:20 | 0.92 | 0s×6, 60s×65, 120s×3, 240s×1 | 0 | 0 | none | 16:04:00 |
+| JNJ.US | 77 | 15:01 / 15:19 / 15:20 / 16:19 | 0.91 | 0s×7, 60s×64, 120s×3, 180s×1 | 0 | 0 | none | 16:03:00 |
+| KO.US | 77 | 15:01 / 15:19 / 15:20 / 16:19 | 0.91 | 0s×7, 60s×63, 120s×5 | 0 | 0 | none | 16:03:00 |
+| NVDA.US | 77 | 15:01 / 15:19 / 15:20 / 16:20 | 0.95 | 0s×4, 60s×67, 120s×4 | 0 | 0 | none | 16:04:00 |
 
 **Same time, different price.** None so far: for every symbol, each provider minute carried exactly one `close`. Under Ruling 1, "same time, same price" is the normal case, and "same time, different price" did not occur in this sample.
 
@@ -248,10 +248,361 @@ Status: INTERIM — generated 2026-10-15T17:35:42.596Z; the close and post-close
 **C3. Close behaviour** (every sample observed at or after 15:55 ET):
 
 ```
-(no samples yet at or after 15:55 ET)
+15:55:20 AAPL.US  ts=15:40:00 close=342.37
+15:55:20 ACN.US   ts=15:40:00 close=224.865
+15:55:20 HUM.US   ts=15:40:00 close=432.36
+15:55:20 JNJ.US   ts=15:40:00 close=253.77
+15:55:20 JPM.US   ts=15:40:00 close=335.14
+15:55:20 KO.US    ts=15:40:00 close=92.015
+15:55:20 MSFT.US  ts=15:40:00 close=540.28
+15:55:20 NVDA.US  ts=15:40:00 close=217.4973
+15:55:20 UNP.US   ts=15:40:00 close=287.94
+15:55:20 XOM.US   ts=15:40:00 close=173.93
+15:56:19 AAPL.US  ts=15:41:00 close=342.19
+15:56:19 ACN.US   ts=15:41:00 close=224.73
+15:56:19 HUM.US   ts=15:40:00 close=432.36
+15:56:19 JNJ.US   ts=15:41:00 close=253.84
+15:56:19 JPM.US   ts=15:41:00 close=335.17
+15:56:19 KO.US    ts=15:41:00 close=92.005
+15:56:19 MSFT.US  ts=15:41:00 close=540.165
+15:56:19 NVDA.US  ts=15:41:00 close=217.54
+15:56:19 UNP.US   ts=15:40:00 close=287.94
+15:56:19 XOM.US   ts=15:41:00 close=174.07
+15:57:20 AAPL.US  ts=15:42:00 close=342.092776
+15:57:20 ACN.US   ts=15:42:00 close=224.705
+15:57:20 HUM.US   ts=15:42:00 close=431.97
+15:57:20 JNJ.US   ts=15:42:00 close=253.79
+15:57:20 JPM.US   ts=15:42:00 close=335.06
+15:57:20 KO.US    ts=15:42:00 close=92
+15:57:20 MSFT.US  ts=15:42:00 close=540.1
+15:57:20 NVDA.US  ts=15:42:00 close=217.685
+15:57:20 UNP.US   ts=15:42:00 close=288.235
+15:57:20 XOM.US   ts=15:42:00 close=174.03
+15:58:19 AAPL.US  ts=15:43:00 close=341.97
+15:58:19 ACN.US   ts=15:42:00 close=224.705
+15:58:19 HUM.US   ts=15:42:00 close=431.97
+15:58:19 JNJ.US   ts=15:43:00 close=253.68
+15:58:19 JPM.US   ts=15:43:00 close=335.03
+15:58:19 KO.US    ts=15:43:00 close=91.98
+15:58:19 MSFT.US  ts=15:43:00 close=539.92
+15:58:19 NVDA.US  ts=15:43:00 close=217.655
+15:58:19 UNP.US   ts=15:43:00 close=288.23
+15:58:19 XOM.US   ts=15:43:00 close=173.95
+15:59:20 AAPL.US  ts=15:44:00 close=342.05
+15:59:20 ACN.US   ts=15:44:00 close=224.9
+15:59:20 HUM.US   ts=15:44:00 close=431.8
+15:59:20 JNJ.US   ts=15:44:00 close=253.77
+15:59:20 JPM.US   ts=15:44:00 close=334.95
+15:59:20 KO.US    ts=15:44:00 close=91.985
+15:59:20 MSFT.US  ts=15:44:00 close=540.09
+15:59:20 NVDA.US  ts=15:44:00 close=217.475
+15:59:20 UNP.US   ts=15:44:00 close=288.52
+15:59:20 XOM.US   ts=15:44:00 close=173.81
+16:00:23 AAPL.US  ts=15:45:00 close=342.21
+16:00:23 ACN.US   ts=15:45:00 close=225.3
+16:00:23 HUM.US   ts=15:45:00 close=431.74
+16:00:23 JNJ.US   ts=15:45:00 close=253.645
+16:00:23 JPM.US   ts=15:45:00 close=334.82
+16:00:23 KO.US    ts=15:45:00 close=92.005
+16:00:23 MSFT.US  ts=15:45:00 close=540.52
+16:00:23 NVDA.US  ts=15:45:00 close=217.57
+16:00:23 UNP.US   ts=15:45:00 close=288.29
+16:00:23 XOM.US   ts=15:45:00 close=173.885
+16:01:20 AAPL.US  ts=15:46:00 close=342.495
+16:01:20 ACN.US   ts=15:46:00 close=225.49
+16:01:20 HUM.US   ts=15:46:00 close=431.78
+16:01:20 JNJ.US   ts=15:46:00 close=253.89
+16:01:20 JPM.US   ts=15:46:00 close=334.85
+16:01:20 KO.US    ts=15:46:00 close=91.955
+16:01:20 MSFT.US  ts=15:46:00 close=540.33
+16:01:20 NVDA.US  ts=15:46:00 close=217.375
+16:01:20 UNP.US   ts=15:46:00 close=288.33
+16:01:20 XOM.US   ts=15:46:00 close=173.92
+16:02:20 AAPL.US  ts=15:47:00 close=342.49
+16:02:20 ACN.US   ts=15:47:00 close=225.44
+16:02:20 HUM.US   ts=15:46:00 close=431.78
+16:02:20 JNJ.US   ts=15:47:00 close=254.1
+16:02:20 JPM.US   ts=15:47:00 close=334.905
+16:02:20 KO.US    ts=15:47:00 close=91.98
+16:02:20 MSFT.US  ts=15:47:00 close=540.47
+16:02:20 NVDA.US  ts=15:47:00 close=217.575
+16:02:20 UNP.US   ts=15:47:00 close=288.24
+16:02:20 XOM.US   ts=15:47:00 close=174.03
+16:03:20 AAPL.US  ts=15:48:00 close=342.7037
+16:03:20 ACN.US   ts=15:48:00 close=225.305
+16:03:20 HUM.US   ts=15:48:00 close=431.64
+16:03:20 JNJ.US   ts=15:48:00 close=254.18
+16:03:20 JPM.US   ts=15:48:00 close=334.86
+16:03:20 KO.US    ts=15:48:00 close=91.975
+16:03:20 MSFT.US  ts=15:48:00 close=540.275
+16:03:20 NVDA.US  ts=15:48:00 close=217.56
+16:03:20 UNP.US   ts=15:48:00 close=288.12
+16:03:20 XOM.US   ts=15:48:00 close=174.13
+16:04:20 AAPL.US  ts=15:49:00 close=342.87
+16:04:20 ACN.US   ts=15:49:00 close=225.35
+16:04:20 HUM.US   ts=15:49:00 close=431.7
+16:04:20 JNJ.US   ts=15:49:00 close=254.185
+16:04:20 JPM.US   ts=15:49:00 close=334.81
+16:04:20 KO.US    ts=15:49:00 close=91.985
+16:04:20 MSFT.US  ts=15:49:00 close=540.435
+16:04:20 NVDA.US  ts=15:49:00 close=217.53
+16:04:20 UNP.US   ts=15:49:00 close=288.24
+16:04:20 XOM.US   ts=15:49:00 close=174.18
+16:05:20 AAPL.US  ts=15:50:00 close=342.435
+16:05:20 ACN.US   ts=15:50:00 close=225.07
+16:05:20 HUM.US   ts=15:50:00 close=432
+16:05:20 JNJ.US   ts=15:50:00 close=254.19
+16:05:20 JPM.US   ts=15:50:00 close=334.95
+16:05:20 KO.US    ts=15:50:00 close=91.98
+16:05:20 MSFT.US  ts=15:50:00 close=539.5586
+16:05:20 NVDA.US  ts=15:50:00 close=217.355
+16:05:20 UNP.US   ts=15:50:00 close=288.4299
+16:05:20 XOM.US   ts=15:50:00 close=174.22
+16:06:20 AAPL.US  ts=15:51:00 close=342.34
+16:06:20 ACN.US   ts=15:51:00 close=225.02
+16:06:20 HUM.US   ts=15:51:00 close=431.655
+16:06:20 JNJ.US   ts=15:51:00 close=254.235
+16:06:20 JPM.US   ts=15:51:00 close=335.36
+16:06:20 KO.US    ts=15:51:00 close=91.995
+16:06:20 MSFT.US  ts=15:51:00 close=539.165
+16:06:20 NVDA.US  ts=15:51:00 close=217.26
+16:06:20 UNP.US   ts=15:51:00 close=288.465
+16:06:20 XOM.US   ts=15:51:00 close=174.54
+16:07:20 AAPL.US  ts=15:52:00 close=342.18
+16:07:20 ACN.US   ts=15:52:00 close=225.06
+16:07:20 HUM.US   ts=15:52:00 close=430
+16:07:20 JNJ.US   ts=15:52:00 close=254.11
+16:07:20 JPM.US   ts=15:52:00 close=335.43
+16:07:20 KO.US    ts=15:52:00 close=92.01
+16:07:20 MSFT.US  ts=15:52:00 close=539.16
+16:07:20 NVDA.US  ts=15:52:00 close=217.22
+16:07:20 UNP.US   ts=15:52:00 close=288.69
+16:07:20 XOM.US   ts=15:52:00 close=174.615
+16:08:20 AAPL.US  ts=15:53:00 close=342.08
+16:08:20 ACN.US   ts=15:53:00 close=224.731
+16:08:20 HUM.US   ts=15:52:00 close=430
+16:08:20 JNJ.US   ts=15:53:00 close=254.04
+16:08:20 JPM.US   ts=15:53:00 close=335.59
+16:08:20 KO.US    ts=15:53:00 close=91.98
+16:08:20 MSFT.US  ts=15:53:00 close=539.415
+16:08:20 NVDA.US  ts=15:53:00 close=217.356384
+16:08:20 UNP.US   ts=15:53:00 close=288.73
+16:08:20 XOM.US   ts=15:53:00 close=174.51
+16:09:20 AAPL.US  ts=15:54:00 close=342.41
+16:09:20 ACN.US   ts=15:54:00 close=224.675
+16:09:20 HUM.US   ts=15:54:00 close=430.4225
+16:09:20 JNJ.US   ts=15:54:00 close=253.900247
+16:09:20 JPM.US   ts=15:54:00 close=335.285
+16:09:20 KO.US    ts=15:54:00 close=91.97
+16:09:20 MSFT.US  ts=15:54:00 close=539.41
+16:09:20 NVDA.US  ts=15:54:00 close=217.565
+16:09:20 UNP.US   ts=15:54:00 close=288.675
+16:09:20 XOM.US   ts=15:54:00 close=174.605
+16:10:20 AAPL.US  ts=15:55:00 close=342.58
+16:10:20 ACN.US   ts=15:55:00 close=224.885
+16:10:20 HUM.US   ts=15:55:00 close=430.7
+16:10:20 JNJ.US   ts=15:55:00 close=253.69
+16:10:20 JPM.US   ts=15:55:00 close=335.4002
+16:10:20 KO.US    ts=15:55:00 close=91.88
+16:10:20 MSFT.US  ts=15:55:00 close=539.975
+16:10:20 NVDA.US  ts=15:55:00 close=217.425
+16:10:20 UNP.US   ts=15:55:00 close=288.62
+16:10:20 XOM.US   ts=15:55:00 close=174.57
+16:11:20 AAPL.US  ts=15:56:00 close=342.63
+16:11:20 ACN.US   ts=15:56:00 close=225.105
+16:11:20 HUM.US   ts=15:56:00 close=431.14
+16:11:20 JNJ.US   ts=15:56:00 close=253.775
+16:11:20 JPM.US   ts=15:56:00 close=335.505
+16:11:20 KO.US    ts=15:56:00 close=91.845
+16:11:20 MSFT.US  ts=15:56:00 close=539.66
+16:11:20 NVDA.US  ts=15:56:00 close=217.27
+16:11:20 UNP.US   ts=15:56:00 close=288.58
+16:11:20 XOM.US   ts=15:56:00 close=174.6196
+16:12:20 AAPL.US  ts=15:57:00 close=342.43
+16:12:20 ACN.US   ts=15:57:00 close=224.9
+16:12:20 HUM.US   ts=15:57:00 close=431.23
+16:12:20 JNJ.US   ts=15:57:00 close=253.65
+16:12:20 JPM.US   ts=15:57:00 close=335.44
+16:12:20 KO.US    ts=15:57:00 close=91.77
+16:12:20 MSFT.US  ts=15:57:00 close=539.85
+16:12:20 NVDA.US  ts=15:57:00 close=217.34
+16:12:20 UNP.US   ts=15:57:00 close=288.76
+16:12:20 XOM.US   ts=15:57:00 close=174.75
+16:13:20 AAPL.US  ts=15:58:00 close=342.6
+16:13:20 ACN.US   ts=15:58:00 close=224.95
+16:13:20 HUM.US   ts=15:58:00 close=431.0403
+16:13:20 JNJ.US   ts=15:58:00 close=253.58
+16:13:20 JPM.US   ts=15:58:00 close=335.485
+16:13:20 KO.US    ts=15:58:00 close=91.74
+16:13:20 MSFT.US  ts=15:58:00 close=540.07
+16:13:20 NVDA.US  ts=15:58:00 close=217.48
+16:13:20 UNP.US   ts=15:58:00 close=288.69
+16:13:20 XOM.US   ts=15:58:00 close=174.7
+16:14:20 AAPL.US  ts=15:59:00 close=342.52
+16:14:20 ACN.US   ts=15:59:00 close=224.79
+16:14:20 HUM.US   ts=15:59:00 close=431.965
+16:14:20 JNJ.US   ts=15:59:00 close=253.69
+16:14:20 JPM.US   ts=15:59:00 close=335.39
+16:14:20 KO.US    ts=15:59:00 close=91.775
+16:14:20 MSFT.US  ts=15:59:00 close=539.525
+16:14:20 NVDA.US  ts=15:59:00 close=217.37
+16:14:20 UNP.US   ts=15:59:00 close=288.715
+16:14:20 XOM.US   ts=15:59:00 close=174.785
+16:15:20 AAPL.US  ts=16:00:00 close=342
+16:15:20 ACN.US   ts=16:00:00 close=224.9
+16:15:20 HUM.US   ts=16:00:00 close=432.13
+16:15:20 JNJ.US   ts=16:00:00 close=253.37
+16:15:20 JPM.US   ts=16:00:00 close=335.57
+16:15:20 KO.US    ts=16:00:00 close=91.9
+16:15:20 MSFT.US  ts=15:59:00 close=539.525
+16:15:20 NVDA.US  ts=15:59:00 close=217.37
+16:15:20 UNP.US   ts=16:00:00 close=288.705
+16:15:20 XOM.US   ts=16:00:00 close=174.65
+16:16:20 AAPL.US  ts=16:01:00 close=342
+16:16:20 ACN.US   ts=16:00:00 close=224.9
+16:16:20 HUM.US   ts=16:00:00 close=432.13
+16:16:20 JNJ.US   ts=16:00:00 close=253.37
+16:16:20 JPM.US   ts=16:00:00 close=335.57
+16:16:20 KO.US    ts=16:01:00 close=91.9
+16:16:20 MSFT.US  ts=16:01:00 close=539.44
+16:16:20 NVDA.US  ts=16:01:00 close=217.23
+16:16:20 UNP.US   ts=16:01:00 close=288.705
+16:16:20 XOM.US   ts=16:00:00 close=174.65
+16:17:20 AAPL.US  ts=16:02:00 close=342
+16:17:20 ACN.US   ts=16:00:00 close=224.9
+16:17:20 HUM.US   ts=16:00:00 close=432.13
+16:17:20 JNJ.US   ts=16:00:00 close=253.37
+16:17:20 JPM.US   ts=16:00:00 close=335.57
+16:17:20 KO.US    ts=16:02:00 close=91.9
+16:17:20 MSFT.US  ts=16:02:00 close=539.44
+16:17:20 NVDA.US  ts=16:02:00 close=217.23
+16:17:20 UNP.US   ts=16:01:00 close=288.705
+16:17:20 XOM.US   ts=16:00:00 close=174.65
+16:18:20 AAPL.US  ts=16:03:00 close=342
+16:18:20 ACN.US   ts=16:03:00 close=224.9
+16:18:20 HUM.US   ts=16:03:00 close=432.13
+16:18:20 JNJ.US   ts=16:03:00 close=253.37
+16:18:20 JPM.US   ts=16:03:00 close=335.57
+16:18:20 KO.US    ts=16:03:00 close=91.9
+16:18:20 MSFT.US  ts=16:03:00 close=539.44
+16:18:20 NVDA.US  ts=16:03:00 close=217.23
+16:18:20 UNP.US   ts=16:03:00 close=288.705
+16:18:20 XOM.US   ts=16:00:00 close=174.65
+16:19:20 AAPL.US  ts=16:04:00 close=342
+16:19:20 ACN.US   ts=16:04:00 close=224.9
+16:19:20 HUM.US   ts=16:03:00 close=432.13
+16:19:20 JNJ.US   ts=16:03:00 close=253.37
+16:19:20 JPM.US   ts=16:03:00 close=335.57
+16:19:20 KO.US    ts=16:03:00 close=91.9
+16:19:20 MSFT.US  ts=16:03:00 close=539.44
+16:19:20 NVDA.US  ts=16:04:00 close=217.23
+16:19:20 UNP.US   ts=16:03:00 close=288.705
+16:19:20 XOM.US   ts=16:04:00 close=174.65
+16:20:21 ACN.US   ts=16:04:00 close=224.9
+16:20:21 HUM.US   ts=16:03:00 close=432.13
+16:20:21 UNP.US   ts=16:03:00 close=288.705
+16:21:22 ACN.US   ts=16:04:00 close=224.9
+16:21:22 HUM.US   ts=16:03:00 close=432.13
+16:21:22 UNP.US   ts=16:03:00 close=288.705
+16:22:22 ACN.US   ts=16:04:00 close=224.9
+16:22:22 HUM.US   ts=16:03:00 close=432.13
+16:22:22 UNP.US   ts=16:03:00 close=288.705
+16:23:20 ACN.US   ts=16:04:00 close=224.9
+16:23:20 HUM.US   ts=16:03:00 close=432.13
+16:23:20 UNP.US   ts=16:03:00 close=288.705
+16:24:20 ACN.US   ts=16:04:00 close=224.9
+16:24:20 HUM.US   ts=16:03:00 close=432.13
+16:24:20 UNP.US   ts=16:03:00 close=288.705
+16:25:20 ACN.US   ts=16:04:00 close=224.9
+16:25:20 HUM.US   ts=16:03:00 close=432.13
+16:25:20 UNP.US   ts=16:03:00 close=288.705
+16:26:20 ACN.US   ts=16:04:00 close=224.9
+16:26:20 HUM.US   ts=16:03:00 close=432.13
+16:26:20 UNP.US   ts=16:03:00 close=288.705
+16:27:20 ACN.US   ts=16:04:00 close=224.9
+16:27:20 HUM.US   ts=16:03:00 close=432.13
+16:27:20 UNP.US   ts=16:03:00 close=288.705
+16:28:20 ACN.US   ts=16:04:00 close=224.9
+16:28:20 HUM.US   ts=16:03:00 close=432.13
+16:28:20 UNP.US   ts=16:03:00 close=288.705
+16:29:20 ACN.US   ts=16:04:00 close=224.9
+16:29:20 HUM.US   ts=16:03:00 close=432.13
+16:29:20 UNP.US   ts=16:03:00 close=288.705
+16:30:21 ACN.US   ts=16:04:00 close=224.9
+16:30:21 HUM.US   ts=16:23:00 close=432.13
+16:30:21 UNP.US   ts=16:03:00 close=288.705
+16:31:20 ACN.US   ts=16:04:00 close=224.9
+16:31:20 HUM.US   ts=16:23:00 close=432.13
+16:31:20 UNP.US   ts=16:03:00 close=288.705
+16:32:20 ACN.US   ts=16:04:00 close=224.9
+16:32:20 HUM.US   ts=16:23:00 close=432.13
+16:32:20 UNP.US   ts=16:03:00 close=288.705
+16:33:20 ACN.US   ts=16:04:00 close=224.9
+16:33:20 HUM.US   ts=16:23:00 close=432.13
+16:33:20 UNP.US   ts=16:03:00 close=288.705
+16:34:20 ACN.US   ts=16:04:00 close=224.9
+16:34:20 HUM.US   ts=16:23:00 close=432.13
+16:34:20 UNP.US   ts=16:03:00 close=288.705
+16:35:20 ACN.US   ts=16:04:00 close=224.9
+16:35:20 HUM.US   ts=16:23:00 close=432.13
+16:35:20 UNP.US   ts=16:03:00 close=288.705
+16:36:20 ACN.US   ts=16:04:00 close=224.9
+16:36:20 HUM.US   ts=16:23:00 close=432.13
+16:36:20 UNP.US   ts=16:03:00 close=288.705
+16:37:20 ACN.US   ts=16:04:00 close=224.9
+16:37:20 HUM.US   ts=16:23:00 close=432.13
+16:37:20 UNP.US   ts=16:03:00 close=288.705
+16:38:20 ACN.US   ts=16:04:00 close=224.9
+16:38:20 HUM.US   ts=16:23:00 close=432.13
+16:38:20 UNP.US   ts=16:03:00 close=288.705
+16:39:20 ACN.US   ts=16:04:00 close=224.9
+16:39:20 HUM.US   ts=16:23:00 close=432.13
+16:39:20 UNP.US   ts=16:03:00 close=288.705
+16:40:20 ACN.US   ts=16:04:00 close=224.9
+16:40:20 HUM.US   ts=16:23:00 close=432.13
+16:40:20 UNP.US   ts=16:03:00 close=288.705
+16:41:20 ACN.US   ts=16:04:00 close=224.9
+16:41:20 HUM.US   ts=16:23:00 close=432.13
+16:41:20 UNP.US   ts=16:03:00 close=288.705
+16:42:20 ACN.US   ts=16:04:00 close=224.9
+16:42:20 HUM.US   ts=16:23:00 close=432.13
+16:42:20 UNP.US   ts=16:03:00 close=288.705
+16:43:20 ACN.US   ts=16:04:00 close=224.9
+16:43:20 HUM.US   ts=16:23:00 close=432.13
+16:43:20 UNP.US   ts=16:03:00 close=288.705
+16:44:20 ACN.US   ts=16:04:00 close=224.9
+16:44:20 HUM.US   ts=16:23:00 close=432.13
+16:44:20 UNP.US   ts=16:03:00 close=288.705
+16:45:20 ACN.US   ts=16:04:00 close=224.9
+16:45:20 HUM.US   ts=16:23:00 close=432.13
+16:45:20 UNP.US   ts=16:03:00 close=288.705
+16:46:20 ACN.US   ts=16:04:00 close=224.9
+16:46:20 HUM.US   ts=16:23:00 close=432.13
+16:46:20 UNP.US   ts=16:03:00 close=288.705
+16:47:20 ACN.US   ts=16:04:00 close=224.9
+16:47:20 HUM.US   ts=16:23:00 close=432.13
+16:47:20 UNP.US   ts=16:03:00 close=288.705
+16:48:20 ACN.US   ts=16:04:00 close=224.9
+16:48:20 HUM.US   ts=16:23:00 close=432.13
+16:48:20 UNP.US   ts=16:03:00 close=288.705
+16:49:20 ACN.US   ts=16:04:00 close=224.9
+16:49:20 HUM.US   ts=16:23:00 close=432.13
+16:49:20 UNP.US   ts=16:03:00 close=288.705
 ```
 
-_Reading of the close behaviour pending: the close falls at 16:00 ET and the tail runs to 16:50 ET._
+**Reading:**
+
+- **The 16:00 ET closing bar arrived at 16:15:20 ET**, on the same 15-minute delay. It was stamped 16:00 with AAPL 342.00, UNP 288.705, HUM 432.13 and ACN 224.90.
+- **After that, no price changed through 16:50 ET.**
+  - The provider time crept forward a few more minutes at the unchanged closing price, to 16:01–16:04, then froze: UNP at 16:03, ACN at 16:04, AAPL at 16:04.
+  - HUM jumped once from 16:03 to **16:23** (first seen at 16:30:21), still at 432.13. That jump is the largest step in the run (1,200 s).
+  - The real-time endpoint showed no after-hours price movement in this window, and no same-time/different-price case either.
+- **For scoring this is descriptive only.** No evaluating tick runs at or after 16:00 (C4), so post-close quotes never reach a score.
+- **For creation it matters (F2 #3).** After 16:15 the publication window opens again. An evening creation would then:
+  - get a **fill equal to the official close**, stamped 16:0x–16:2x ET;
+  - play the next session, so the overnight gap counts as the battle's first move;
+  - and its source session would flip to the same day at 16:00 (`api/_utils/measuredStockThreshold.js:42`, VERIFIED). The collector would then need that day's EOD bar to exist already.
+- **Not measured in this session:** whether that bar exists at 16:15, the overnight feed, and what the 09:30 ET first tick sees.
 
 **C4. N for Ruling 2**
 
@@ -261,10 +612,10 @@ _Reading of the close behaviour pending: the close falls at 16:00 ET and the tai
 - **What each tick sees:** a provider time of roughly W − 15 min (C2). The 15:45 tick therefore scores on **≈ 15:30 provider time**, the latest market moment any battle is ever scored on. Everything after about 15:30 ET is never observed. That is true for legacy battles too.
 - **The fill's provider time:** a corrected battle created at C gets a fill quote stamped T_f ≈ C − 15 (to C − 17) min.
 - **Which ticks can score it:** under Ruling 1, a tick at W scores a held stock when its quote is strictly later than T_f, or at the same time with the same price.
-  - With the measured 15–17 min delay band, any tick at least **3 minutes** after creation is strictly later.
-  - A tick 0–3 minutes after creation can see T_w ≤ T_f. That frame is unavailable unless the K2-6 stand-in (Branch A) values it at the fill.
+  - With the measured delay band (15:01–18:19), any tick at least **3 minutes** after creation is strictly later, or **4 minutes** to cover the single 18:19 outlier.
+  - A tick 0–4 minutes after creation can see T_w ≤ T_f. That frame is unavailable unless the K2-6 stand-in (Branch A) values it at the fill.
 
-**Worst case for a battle created exactly N minutes before the 16:00 close** (C = 16:00 − N, 3-minute margin):
+**Worst case for a battle created exactly N minutes before the 16:00 close** (C = 16:00 − N, 4-minute margin):
 
 | N (minutes before close) | Created at (ET) | Scoreable ticks (Ruling 1) | Which ticks | Market time actually scored (≈ N − 15) |
 |---|---|---|---|---|
@@ -275,7 +626,7 @@ _Reading of the close behaviour pending: the close falls at 16:00 ET and the tai
 | 60 | 15:00 | 3 | 15:15, 15:30, 15:45 | ≈ 45 min |
 | 75 | 14:45 | 4 | 15:00 … 15:45 | ≈ 60 min |
 
-General rule: worst-case scoreable ticks = floor((N − 18) / 15) + 1 for N ≥ 18, and 0 below.
+General rule: worst-case scoreable ticks = floor((N − 19) / 15) + 1 for N ≥ 19, and 0 below.
 
 **Recommendation: N = 45 minutes,** refusing corrected creation from 15:15 ET (12:15 on early-close days).
 - That guarantees two scoreable frames. A single invalid frame cannot then end the battle as "result unavailable", and the agent gets a decision tick with a real price move behind it.
@@ -541,7 +892,7 @@ Open for Flash: vision retirement and the dark settlement record (F2).
   - A fallback quote fails M1, so the whole tick is skipped and the previous frame stands.
 - **Branch B (no stand-in):** a swap at the final tick leaves the frame unavailable whenever the provider minute advanced between the tick's quote fetch (`:1110`) and the collector's fill fetch.
   - In production history, **6 of 203 trades (3%) landed in the 15:45 tick, in 6 of 81 battles (7.4%)**, all with a stock incoming.
-  - The feed advanced on 67–92% of 60-second polls (C).
+  - In the regular session the feed advanced on 70–97% of 60-second polls (C2).
   - So Branch B would lose the final frame in roughly **4–7% of battles**.
 
 ### E4. Readers
@@ -1025,4 +1376,4 @@ Measured ATR14 % is the six-decimal half-even `scoringPctDecimal` of the Oct 14 
 - `indexIntelligence/stockRankings`;
 - `stockThresholdInputs` / `stockThresholdControl` counts.
 
-**EODHD:** Task C: 330 symbol-quotes on the multi-symbol real-time endpoint (EODHD bills 1 call per symbol; my tally). Task D: 228 `eod` calls. Account counter (`/api/user`, shared with production crons, so not attributable): 39732 at start; end reading pending. Daily limit 100,000.
+**EODHD:** Task C: 932 symbol-quotes on the multi-symbol real-time endpoint (EODHD bills 1 call per symbol; my tally). Task D: 228 `eod` calls. Account counter (`/api/user`, shared with production crons, so not attributable): 39732 at 2026-10-15T17:03:53.988Z → 55316 at 2026-10-15T20:50:30.795Z (Δ 15584). Daily limit 100,000.
