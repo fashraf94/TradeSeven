@@ -4,7 +4,8 @@
 // design's seven scenarios (ff-fixtures.jsx ffScenario: returning, long,
 // first, active, review, blocked, checking) rewritten as the hub's own
 // section props (hub/hubModel.js), so the four compositions can be checked
-// with real row counts.
+// with real row counts — plus spec §10's named critical case the design does
+// not carry, rankedLive (a live game with deploy still ready).
 //
 // ILLUSTRATIVE DATA. On the build branch only tests import this module; the
 // hub never does, and no URL, storage or environment switch reaches it. (The
@@ -31,6 +32,7 @@ const loadout = (summary) => ({ ...LOADOUT, summary });
 
 const GAMES = Object.freeze({
   active: { id: 'game_1007', mode: 'BaggerBomb', opponent: 'CPU — Capital Preserver', live: true, clock: '2h 41m left', detail: 'Score −12.4 · 3 trades · session ends 4:00 PM ET' },
+  ranked: { id: 'game_r1007', mode: 'Ranked', opponent: 'Player — Northwind', live: true, clock: '1h 05m left', detail: 'Score +4.2 · 2 trades · session ends 4:00 PM ET' },
   g1003: { id: 'game_1003', mode: 'BaggerBomb', opponent: 'CPU — Contrarian', live: false, detail: 'Oct 3', outcome: { text: 'Lost −101', tone: 'neg' }, review: true },
   g0930: { id: 'game_0930', mode: 'BaggerBomb', opponent: 'CPU — Diversifier', live: false, detail: 'Sep 30 · no score was recorded', outcome: { text: 'No result', tone: 'neutral' }, review: true },
   g0926: { id: 'game_0926', mode: 'BaggerBomb', opponent: 'CPU — Trend Follower', live: false, detail: 'Sep 26', outcome: { text: 'Draw −8', tone: 'neutral' } },
@@ -78,6 +80,10 @@ const liveCandidate = {
   status: 'ready',
   candidate: { key: 'openGame', title: 'Open your live game', why: 'BaggerBomb vs CPU — Capital Preserver · 2h 41m left in today’s session.', detail: 'Score −12.4 · 3 trades · session ends 4:00 PM ET', cta: 'Open game' },
 };
+const rankedCandidate = {
+  status: 'ready',
+  candidate: { key: 'openGame', title: 'Open your live game', why: 'Ranked vs Player — Northwind · 1h 05m left in today’s session.', detail: 'Score +4.2 · 2 trades · session ends 4:00 PM ET', cta: 'Open game' },
+};
 const firstCandidate = {
   status: 'ready',
   candidate: { key: 'deploy', title: 'Play your first BaggerBomb game against a CPU', why: 'Shadow deploys with the Speculator loadout.', cta: 'Deploy' },
@@ -112,6 +118,15 @@ export const HUB_LAYOUT_FIXTURES = Object.freeze({
     activity: activity([]),
     brief: BRIEF,
     career: { status: 'ready', record: '0W–0L' },
+  }),
+  rankedLive: scenario('Ranked game live', 'The spec §10 critical case: a ranked game is live and deploy stays ready, so the strip offers Open game and the hold together.', {
+    nextAction: rankedCandidate,
+    games: games([GAMES.ranked, ...DONE]),
+    deploy: { displayState: 'ready', canStart: true },
+    loadout: loadout('Speculator · ready to deploy'),
+    activity: activity(ACTIVITY),
+    brief: BRIEF,
+    career: CAREER,
   }),
   active: scenario('Active game', 'A live game blocks deploy; the strip offers Open game.', {
     nextAction: liveCandidate,

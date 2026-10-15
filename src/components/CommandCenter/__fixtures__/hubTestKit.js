@@ -46,10 +46,12 @@ export function installFakeLayout(initial = {}) {
   return {
     state,
     observers,
-    /** Change the boxes and fire every live observer, as a resize would. */
+    /** Change the boxes and fire every live observer, as a resize would (inside act, so React commits). */
     resize(next) {
       Object.assign(state, next);
-      for (const o of [...observers]) o.callback([...o.targets].map((target) => ({ target })), o);
+      act(() => {
+        for (const o of [...observers]) o.callback([...o.targets].map((target) => ({ target })), o);
+      });
     },
     restore() {
       globalThis.ResizeObserver = originalRO;

@@ -68,7 +68,7 @@ export function deployDisplay(deploy, liveGame = null) {
 
   let hold = null;
   if (liveGame && !inFlight) {
-    hold = canStart ? { label: COPY.deploy.holdWithGame, secondary: true } : null;
+    hold = canStart ? { label: COPY.deploy.holdShort, secondary: true } : null;
   } else if (displayState === 'checking') hold = { label: COPY.deploy.holdShort, secondary: false };
   else if (displayState === 'ready' || displayState === 'blocked') hold = { label: COPY.deploy.hold, secondary: false };
   else if (displayState === 'submitting') hold = { label: COPY.deploy.holdSubmitting, secondary: false };

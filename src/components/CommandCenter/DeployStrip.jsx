@@ -56,10 +56,11 @@ const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutL
         </span>
         <span data-hub-strip-line="2" style={{ fontSize: 11, color: C.ink2, lineHeight: 1.3, paddingLeft: 14, ...clamp2 }}>{line2}</span>
       </button>
-      <div style={{ display: 'flex', flexDirection: openGame && hold ? 'column' : 'row', gap: 6, flexShrink: 0, alignItems: 'stretch' }}>
+      {/* One row, never the design's column: a live game with deploy still ready (spec §10's ranked-only case) would otherwise grow the strip past the design's 63–69 px. */}
+      <div style={{ display: 'flex', flexDirection: 'row', gap: 6, flexShrink: 0, alignItems: 'stretch' }}>
         {openGame && (
-          <HubButton kind="primary" icon="sword" onPress={liveGame && onOpenGame ? () => onOpenGame(liveGame) : undefined} style={{ padding: '0 14px' }}>
-            {COPY.deploy.openGame}
+          <HubButton kind="primary" icon="sword" onPress={liveGame && onOpenGame ? () => onOpenGame(liveGame) : undefined} ariaLabel={COPY.deploy.openGame} style={{ padding: hold ? '0 12px' : '0 14px' }}>
+            {hold ? COPY.deploy.openGameShort : COPY.deploy.openGame}
           </HubButton>
         )}
         {hold && <HubHold compact canStart={display.canStart} label={hold.label} onDeploy={onDeploy} />}

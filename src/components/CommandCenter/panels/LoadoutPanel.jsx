@@ -18,7 +18,7 @@ import { Card, Eyebrow, HubButton, HubLink, LoadingLine, Mono, Tag, useHubCompos
 
 function SlotCard({ accent, children }) {
   return (
-    <Card style={{ background: C.bg, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+    <Card style={{ background: C.bg, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <div aria-hidden="true" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: accent, opacity: 0.85 }} />
       {children}
     </Card>
@@ -48,7 +48,7 @@ export default function LoadoutPanel({ loadout, onChangeArchetype, onChangeWatch
             <LoadingLine style={{ marginTop: 10 }}>{COPY.loadout.loading}</LoadingLine>
           )}
           <div style={{ marginTop: 12 }}>
-            <HubButton small onPress={onChangeArchetype}>{COPY.loadout.changeArchetype}</HubButton>
+            <HubButton small onPress={onChangeArchetype} style={{ whiteSpace: 'normal', textAlign: 'center', maxWidth: '100%' }}>{COPY.loadout.changeArchetype}</HubButton>
           </div>
         </SlotCard>
         <SlotCard accent={C.teal}>
@@ -71,7 +71,7 @@ export default function LoadoutPanel({ loadout, onChangeArchetype, onChangeWatch
             <LoadingLine style={{ marginTop: 10 }}>{COPY.loadout.loading}</LoadingLine>
           )}
           <div style={{ marginTop: 12 }}>
-            <HubButton small onPress={onChangeWatchlist}>{COPY.loadout.changeWatchlist}</HubButton>
+            <HubButton small onPress={onChangeWatchlist} style={{ whiteSpace: 'normal', textAlign: 'center', maxWidth: '100%' }}>{COPY.loadout.changeWatchlist}</HubButton>
           </div>
         </SlotCard>
       </div>

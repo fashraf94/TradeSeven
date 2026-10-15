@@ -61,3 +61,17 @@ export const AREA_TOKEN = Object.freeze(['teal', 'teal', 'gold']);
 
 /** The phone's minimum touch target (spec §10 / prompt §4.7). */
 export const PHONE_TARGET = 44;
+
+/**
+ * The hub's box model. The design assumes `* { box-sizing: border-box }`
+ * (ff-ui.jsx injectFfCSS); the app ships no such rule (its Tailwind v4 build
+ * ignores the `@tailwind base` directive in index.css, so every element is
+ * content-box). Without it the phone's 100dvh scroll pane grows by its own
+ * bottom padding and a full-width button overflows its card by its padding.
+ * Scoped to the hub's three roots — the shell, the strip and the sheet — so
+ * no other screen changes.
+ */
+export const HUB_BOX_MODEL_CSS = ['[data-hub="shell"]', '[data-hub-strip]', '[data-hub-sheet-overlay]']
+  .flatMap((root) => [root, `${root} *`, `${root} *::before`, `${root} *::after`])
+  .join(', ')
+  .concat(' { box-sizing: border-box; }');

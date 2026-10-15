@@ -41,13 +41,18 @@ import {
   HUB_SITES,
   PHONE_TABS,
   AREA_FOR_PHONE_TAB,
+  DESKTOP_MAIN_ORDER,
+  DESKTOP_SIDE_ORDER,
+  STACKED_ORDER,
+  TABLET_SIDE_ORDER,
+  TABLET_TOP_ORDER,
   composeHub,
 } from './hub/composition';
 import { deployDisplay } from './hub/deployDisplay';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { formatHubDate, headerName } from './hub/hubDate';
 import { HUB_S1_SECTIONS, splitGames } from './hub/hubModel';
-import { C, HUB_LAYERS } from './hub/hubStyle';
+import { C, HUB_BOX_MODEL_CSS, HUB_LAYERS } from './hub/hubStyle';
 import { shadowTierFor } from './hub/shadowGeometry';
 import { useHubWidth } from './hub/useHubWidth';
 import { useNavClearance } from './hub/useNavClearance';
@@ -128,6 +133,7 @@ function PhoneHub({ sections }) {
   };
   return (
     <HubLayoutContext.Provider value={composition}>
+      <style data-hub-box-model="">{HUB_BOX_MODEL_CSS}</style>
       <section
         ref={rootRef}
         aria-label={COPY.regionLabel}
@@ -208,44 +214,49 @@ function WideHub({ sections }) {
       reducedMotion={shared.reducedMotion}
     />
   );
-  const next = <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} />;
-  const games = <GamesSection games={sections.games} onOpenHistory={actions.openHistory} />;
-  const deploy = <DeploySection deploy={sections.deploy} loadoutLine={shared.loadoutLine} onOpenLoadout={() => setArea(HUB_AREAS.ARCHETYPE)} />;
-  const activity = <ActivitySection activity={sections.activity} />;
-  const brief = <BriefSection brief={sections.brief} />;
+  const parts = {
+    stage,
+    panel,
+    next: <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} />,
+    games: <GamesSection games={sections.games} onOpenHistory={actions.openHistory} />,
+    deploy: <DeploySection deploy={sections.deploy} loadoutLine={shared.loadoutLine} onOpenLoadout={() => setArea(HUB_AREAS.ARCHETYPE)} />,
+    activity: <ActivitySection activity={sections.activity} />,
+    brief: <BriefSection brief={sections.brief} />,
+  };
+  const place = (order) => order.map((key) => <React.Fragment key={key}>{parts[key]}</React.Fragment>);
   const col = { display: 'flex', flexDirection: 'column', gap: 22, minWidth: 0 };
 
   let body;
   if (desktop) {
-    // The design's order: [stage + area panel] | [next action + Games, Deploy, Activity, Brief].
+    // The design's order: [stage + area panel] | [next action, Games, Deploy, Activity, Brief].
     body = (
       <div style={{ padding: `14px ${gutter}px 30px`, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 360px', gap: 24, alignItems: 'start' }}>
-        <div style={col}>{stage}{panel}</div>
-        <div style={col}>{next}{games}{deploy}{activity}{brief}</div>
+        <div style={col}>{place(DESKTOP_MAIN_ORDER)}</div>
+        <div style={col}>{place(DESKTOP_SIDE_ORDER)}</div>
       </div>
     );
   } else if (tablet) {
     // Deploy above Games, so an enabled hold stays in the first viewport with maximum rows (spec §10).
     body = (
       <div style={{ padding: `14px ${gutter}px 28px`, display: 'flex', flexDirection: 'column', gap: 20 }}>
-        {next}
-        {stage}
+        {place(TABLET_TOP_ORDER)}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 20, alignItems: 'start' }}>
-          <div style={col}>{panel}</div>
-          <div style={col}>{deploy}{games}{activity}{brief}</div>
+          <div style={col}>{parts.panel}</div>
+          <div style={col}>{place(TABLET_SIDE_ORDER)}</div>
         </div>
       </div>
     );
   } else {
     body = (
       <div style={{ padding: `14px ${gutter}px 28px`, display: 'flex', flexDirection: 'column', gap: 20 }}>
-        {next}{stage}{panel}{deploy}{games}{activity}{brief}
+        {place(STACKED_ORDER)}
       </div>
     );
   }
 
   return (
     <HubLayoutContext.Provider value={composition}>
+      <style data-hub-box-model="">{HUB_BOX_MODEL_CSS}</style>
       <section
         ref={rootRef}
         aria-label={COPY.regionLabel}

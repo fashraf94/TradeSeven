@@ -92,7 +92,7 @@ export const HUB_COPY = Object.freeze({
     nextDeploy: 'Changes apply to your next deploy.',
     changeInForge: 'Change in the Forge',
     /** The strip's and the Deploy card's loadout line while the loadout loads. */
-    lineLoading: 'Loadout · checking',
+    lineLoading: 'Checking your loadout',
     line: (archetype, watchlist) => `${archetype} · ${watchlist}`,
   }),
 
@@ -134,7 +134,6 @@ export const HUB_COPY = Object.freeze({
     loadoutLink: 'Loadout',
     hold: 'Hold to deploy',
     holdShort: 'Deploy',
-    holdWithGame: 'Hold · deploy',
     holdSubmitting: 'Submitting…',
     holdDeployed: 'Deployed',
     holdLabel: 'Hold to deploy. Press and hold, or press Enter or Space to deploy now.',
@@ -143,6 +142,8 @@ export const HUB_COPY = Object.freeze({
     keyboardHelp: 'Or press Enter or Space to deploy now.',
     retry: 'Retry',
     openGame: 'Open game',
+    /** The strip's Open game beside the hold (a live game with deploy still ready), so both fit one 63–69 px row. */
+    openGameShort: 'Open',
     /**
      * The Deploy card's and the strip's words for each display state, in the
      * spec §3.1 / §5 vocabulary (C1, C3). S1 renders `checking`; the others

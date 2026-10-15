@@ -551,3 +551,37 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
       .toEqual(['../../hooks/useX', './more']);
   });
 });
+
+describe('S1 hub side — colour and motion only through the tokens (ruling R-S1-2; BUILD_RULES §10, §11)', () => {
+  const HEX = /#[0-9a-fA-F]{3,8}\b/;
+  const SVG_PAINT_VAR = /\b(?:stroke|fill|stopColor|stop-color)=\{?\s*(?:cssVar\(|C\.\w|['"`]var\(|tint\()/;
+  const CSS_TRANSITION = /\b(?:transition|animation)\s*:\s*['"`]/;
+
+  it('no hex colour literal anywhere under src/components/CommandCenter/ (fixtures and the tests\' kit included)', () => {
+    const hits = hubDirFiles().filter((rel) => HEX.test(stripComments(read(rel)).replace(/(['"`])#[a-z][\w-]*\1/g, '')));
+    expect(hits).toEqual([]);
+  });
+
+  it('SVG paint attributes take a computed hex (readToken) or currentColor, never a var() reference (hazard H8)', () => {
+    const hits = hubDirFiles().filter((rel) => SVG_PAINT_VAR.test(stripComments(read(rel))));
+    expect(hits).toEqual([]);
+  });
+
+  it('no CSS transition or animation string: motion goes through motionToken (the motion guard counts only transition={{)', () => {
+    const hits = hubDirFiles().filter((rel) => CSS_TRANSITION.test(stripComments(read(rel))));
+    expect(hits).toEqual([]);
+  });
+
+  it('the three scans flag what they name', () => {
+    expect(HEX.test("color: '#9a9dab'")).toBe(true);
+    expect(HEX.test('<stop stopColor="#5EEAD4" />')).toBe(true);
+    expect(SVG_PAINT_VAR.test('<path stroke={cssVar(\'teal\')} />')).toBe(true);
+    expect(SVG_PAINT_VAR.test('<circle fill="var(--ft-teal)" />')).toBe(true);
+    expect(SVG_PAINT_VAR.test('<path stroke={C.teal} />')).toBe(true);
+    expect(SVG_PAINT_VAR.test('<path stroke={stroke} />')).toBe(false);
+    expect(SVG_PAINT_VAR.test('<path stroke="currentColor" />')).toBe(false);
+    expect(CSS_TRANSITION.test("style={{ transition: 'border-color .2s' }}")).toBe(true);
+    expect(CSS_TRANSITION.test("animation: 'ffPulse 1.2s ease-in-out infinite'")).toBe(true);
+    expect(CSS_TRANSITION.test('transition={motionToken(\'smooth\', { reducedMotion })}')).toBe(false);
+  });
+});

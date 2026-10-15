@@ -101,3 +101,16 @@ export function rovingIndex(key, index, count, { vertical = false } = {}) {
   if (prev) return (index + count - 1) % count;
   return null;
 }
+
+/**
+ * Section order per composition (ruling R-S1-3). Desktop keeps the design's
+ * order; tablet and stacked put Deploy above Games so an enabled hold stays in
+ * the first viewport with maximum rows (spec §10). The stacked order is the
+ * founder's, as written; the S1 build report records its measured first-
+ * viewport result at 614 × 1000 for the founder (one line to change here).
+ */
+export const DESKTOP_MAIN_ORDER = Object.freeze(['stage', 'panel']);
+export const DESKTOP_SIDE_ORDER = Object.freeze(['next', 'games', 'deploy', 'activity', 'brief']);
+export const TABLET_TOP_ORDER = Object.freeze(['next', 'stage']);
+export const TABLET_SIDE_ORDER = Object.freeze(['deploy', 'games', 'activity', 'brief']);
+export const STACKED_ORDER = Object.freeze(['next', 'stage', 'panel', 'deploy', 'games', 'activity', 'brief']);
