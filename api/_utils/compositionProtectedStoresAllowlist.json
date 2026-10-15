@@ -368,7 +368,8 @@
     "api/_utils/stockThresholdAdmission.js::executeCorrectedStockSwap::create::unresolved": 1,
     "api/_utils/stockThresholdAdmission.js::executeCorrectedStockSwap::update::unresolved": 1,
     "api/_utils/stockThresholdAdmission.js::stockCreationDb::create::unresolved": 1,
-    "api/agent/decide.js::refuseUnsettledStockTournamentBattle::update::agents": 1
+    "api/agent/decide.js::refuseUnsettledStockTournamentBattle::update::agents": 1,
+    "scripts/stock-threshold-pilot-control.mjs::run::set::unresolved": 1
   },
   "_notes_spec1_phase3": {
     "api/_utils/mandateClosePass.js::closeBook (set/update)": "SPEC1 Phase 3 (this PR). The §3.6 daily-close transaction — TWO tx.set sites (the deferred-write loop: decisions/{id} expiry receipts + corporateActions/{actionId} logs + CORPORATE_CLOSE receipts; and the dailyRows/{date} row write, whose mandateRef-parameter-rooted chain the scanner cannot resolve even though the collection literal is visible) and one tx.update on the mandate doc (marks/peaks/scoring/health/execState under revision discipline). The atomic reads-before-writes structure must not be restructured to chase a literal. Same class as the Phase 2 executeDecision/writeTerminal entries. Verified targets: mandates/{id}, mandates/{id}/decisions, mandates/{id}/corporateActions, mandates/{id}/dailyRows — none protected. The pendingScoringAppends write (appendScoringWithRetry) resolves via its callee-base literal and needs no entry.",
@@ -462,5 +463,8 @@
   },
   "_notes_reflection_outage_fix": {
     "api/cron/process-pending-reflections.js::handler::update::unresolved": "Reflection outage fix (P-OUT-1, founder ruling O3; review RV-5; build report docs/audits/20261010_BUILD_REFLECTION_OUTAGE_FIX.md). HUMAN REVIEW: the attempt CLAIM — ONE runTransaction per battle, before the model call, reading agentBattles/{battleId} (battleRef = db.collection('agentBattles').doc(battleId)) and making at most ONE tx.update: reflectionAttempts = prior + 1 with a claim lease reflectionLeaseUntil = now + 150 s, or — for a battle whose attempts are already spent (MAX_REFLECTION_ATTEMPTS = 3) — the lease alone, for its no-call recovery pass. An unexpired lease makes the claim write nothing. End states are written by the handler's plain battleRef.update (resolved, agentBattles), which clears the lease. Handle-form writes are unresolved by construction; the target is the non-protected agentBattles collection, never agents. FOUNDER SIGN-OFF REQUESTED."
+  },
+  "_notes_baggerbomb_thresholds_v2": {
+    "scripts/stock-threshold-pilot-control.mjs::run::set::unresolved": "BaggerBomb stock thresholds v2 pilot (approval docs/approvals/BAGGERBOMB_STOCK_THRESHOLDS_V2_PILOT_20261015.md, Ruling 6; runbook docs/specs/BAGGERBOMB_STOCK_THRESHOLDS_ADMISSION_RUNBOOK_V1_20261013.md). HUMAN REVIEW: an operator-only CLI, never imported by api/ or src/. ONE ref.set on ref = db.doc(STOCK_ADMISSION_CONTROL_PATH) = stockThresholdControl/admission (the shared admission control document; a single fixed path, not a composition-protected store, and not agents). It runs only with --apply after printing the exact document; the default is a dry run that writes nothing. The document is built by buildControlDocument (schema 2, allowlist audience of owner ids passed on the command line and never written to files, epoch advanced past the current one; enable is validated by validStockAdmissionControl; disable keeps the audience with enabled:false) and is read back and compared after the write. Unresolved because the ref is a handle built from an imported path constant."
   }
 }
