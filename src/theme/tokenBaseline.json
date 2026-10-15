@@ -26,6 +26,14 @@
   "--ft-copper": "#e8927c",
   "--ft-white": "#ffffff",
 
+  "--ft-ink": "#f4f5f8",
+  "--ft-ink-2": "#9a9dab",
+  "--ft-ink-3": "#7c8094",
+  "--ft-teal-2": "#7fd4ff",
+  "--ft-blue-action": "#2e6fe8",
+  "--ft-pos": "#3ddc97",
+  "--ft-neg": "#ff4d5e",
+
   "--ft-scrim-rgb": "255, 255, 255",
   "--ft-shadow-rgb": "0, 0, 0",
   "--ft-cyan-rgb": "0, 217, 255",
@@ -35,6 +43,8 @@
   "--ft-teal-rgb": "94, 234, 212",
   "--ft-copper-rgb": "232, 146, 124",
   "--ft-purple-rgb": "139, 92, 246",
+  "--ft-blue-action-rgb": "46, 111, 232",
+  "--ft-gold-rgb": "240, 199, 94",
 
   "--ft-accent": "var(--ft-cyan)",
   "--ft-warp-tint": "var(--ft-accent)",

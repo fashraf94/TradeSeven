@@ -159,6 +159,35 @@
   --ft-white: #ffffff;
 
   /* ---------------------------------------------------------------------------
+     COMMAND CENTER HUB — the design's seven colours with no earlier token.
+     Founder ruling R-S1-2 (Flash, Oct 15, 2026; BUILD_RULES §10), from the
+     design of record docs/design/20261012_COMMAND_CENTER_FLOWING_FILAMENT_MOCKUP.html
+     (ff-ui.jsx FF table). Added as they are, never substituted; no existing
+     token is retuned and no other screen consumes them.
+     ------------------------------------------------------------------------ */
+
+  /* FF.ink — primary text on hub surfaces. */
+  --ft-ink: #f4f5f8;
+
+  /* FF.ink2 — secondary text. */
+  --ft-ink-2: #9a9dab;
+
+  /* FF.ink3 — muted text, lifted from CMD's #5e6170 so it clears 4.5:1 on
+     --ft-bg-card (4.58:1). It does NOT clear 4.5:1 on --ft-bg-agent (4.38:1)
+     or on the hub's teal/blue-tinted surfaces; text there uses --ft-ink-2. */
+  --ft-ink-3: #7c8094;
+
+  /* FF.teal2 — the Shadow filaments' far colour (the near colour is --ft-teal). */
+  --ft-teal-2: #7fd4ff;
+
+  /* FF.blue — the primary action button (Open Film Room, Hold to deploy). */
+  --ft-blue-action: #2e6fe8;
+
+  /* FF.pos / FF.neg — a positive / negative recorded outcome. */
+  --ft-pos: #3ddc97;
+  --ft-neg: #ff4d5e;
+
+  /* ---------------------------------------------------------------------------
      RGB TRIPLETS (ruling R-S9)
      For rgba() composition at LITERAL sites only, e.g.
          background: rgba(var(--ft-cyan-rgb), 0.1);
@@ -188,6 +217,13 @@
 
   /* Tracks --ft-purple (#8b5cf6), per the R-S9 exception. */
   --ft-purple-rgb: 139, 92, 246;
+
+  /* Command Center hub (ruling R-S1-2: "-rgb companions where readTokenRgb
+     needs them"). The design composes these two translucently: the action
+     blue on the ready Deploy card and the primary button's shadow, and the
+     shipped --ft-gold on the Equipped Archetype control and its ring. */
+  --ft-blue-action-rgb: 46, 111, 232;
+  --ft-gold-rgb: 240, 199, 94;
 
   /* ---------------------------------------------------------------------------
      SEMANTIC TIER (ruling R-S3: these ARE var() aliases)
