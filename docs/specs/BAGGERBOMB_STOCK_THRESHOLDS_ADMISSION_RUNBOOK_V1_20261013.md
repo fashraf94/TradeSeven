@@ -3,7 +3,7 @@
 | Verdict | Meaning |
 | --- | --- |
 | v2 ALLOWLIST PILOT (Oct 15, 2026) | The code selector ships `true`. The server document `stockThresholdControl/admission` is the only on-switch, and only an allowlist of account ids (`ownerId`) is selected. Everyone else — and everyone, while the document is missing, disabled or malformed — gets today's legacy creation. |
-| SWITCH-ON BLOCKED | Do not enable the control document until the security-identity follow-up is merged (see "Precondition" below). |
+| SWITCH-ON BLOCKED | Do not enable the control document until the security-identity follow-up is merged and Flash has ruled on the evening window (see the two "Precondition" sections below). |
 | PRODUCTION | No control document has been written by the build. Writing it is a separate, authorized operator step after Flash merges. |
 
 Decisions: [the v2 pilot approval](../approvals/BAGGERBOMB_STOCK_THRESHOLDS_V2_PILOT_20261015.md) (Rulings 1–16) supersedes the v1 control contract below where they differ. The v1 dormant adoption is [here](../approvals/BAGGERBOMB_STOCK_THRESHOLDS_ADOPTION_20261013.md) for history; the v1 model is retired.
@@ -42,7 +42,13 @@ The collector (`api/_utils/stockThresholdMeasurementProvider.js`) requires the p
 
 **Do not run `enable` until a follow-up that settles the identity rule is merged and a fresh universe record shows the eligible set qualifies.** (A scratch emulation that accepts the provider's OpenFIGI when ISIN is absent qualified 228 of 239 — the full arithmetic set — but that rule is a contract decision for Flash and Fable, not part of this build.)
 
-## Switching the pilot on (after the precondition)
+## Precondition: the evening window (founder ruling needed)
+
+Found by the build review (lens B1, verified): on a regular trading day, a full-day battle whose roster holds crypto and that is created from 16:15 ET up to 20:00 ET expires at 20:00 ET the same evening (`computeFullDayExpiry`, the crypto "Night Game" close), and no evaluation runs after 16:00 ET. The battle never gets a scored check. A measured battle then ends as **result unavailable** at the next weekday's first run, and until then `decide.js` refuses that agent's redeploy (Friday evening → Monday 09:00 ET). Every tiered battle carries crypto (Phase 0), so in practice every pilot creation in that window is dead. Pre-open, after 20:00 ET, weekends, holidays and early-close days play the next session as Ruling 7 intends.
+
+This predates v2: a legacy battle created in the same window records a 0–0 draw with stats and a reflection (reported separately). Ruling 7 allows after-close creation, so the build does not refuse the window. **Do not run `enable` until Flash rules** between: (a) refuse measured creation when the battle would expire before the next session opens (non-fenced, narrows Ruling 7); (b) move the crypto expiry for after-close creations to the next session (fenced `createAgentBattle` contact, also changes legacy); (c) accept and tell pilot players to deploy after 20:00 ET or before the open. The late-start player line ("Try again 15 minutes after the close") should follow that ruling.
+
+## Switching the pilot on (after the preconditions)
 
 1. Confirm the deployed build is the merged v2 build (the registry tuple above) and that crons run (they do not on preview).
 2. `.env.local` with the Admin credentials must be present in the checkout you run from (`scripts/loadLocalEnv.js`).
