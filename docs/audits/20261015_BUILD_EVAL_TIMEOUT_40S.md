@@ -12,7 +12,7 @@
 | Why 40 and not 30? | The agent's answer is capped at 3,072 tokens (`agentEvalTransport.js:80`). At the measured rate a full-length answer takes about 31–32 s, before any midday slowdown. 30 s would still cut off the longest answers; 40 s clears the cap with room, so the token cap, not the clock, is again what bounds an answer. |
 | What does it cost? | Fewer worst-case checks fit in one cron run. A check is admitted only when 68 s remain (was 48 s) of the 290 s run budget, so the gate stops admitting new model calls about 20 s earlier in each run. Real checks take about 26 s at the median, so a run still fits roughly 8 battles; the existing fair rotation (`agent-evaluate.js:454`) puts any deferred battle first next run. The per-battle lock (120 s) still exceeds the worst-case check (about 90 s). Model cost: the long answers now complete and are billed; negligible against the monthly credit. |
 | Fenced files? | None edited, none called in a new way. `agentEvalTransport.js` and `agent-evaluate.js` are not on the BUILD_RULES §1 fence list. |
-| Tests | 3 new rows, 6 rows re-based. Mutation check: 4 of 4 mutants killed (§3). Full Linux suite and `lint:gate`: §4. |
+| Tests | 2 new rows, the SDK-timeout row strengthened, 8 rows re-based, and one frozen fixture reconciled value-only (three strings, §2). Mutation check: 4 of 4 mutants killed (§3). Full Linux suite and `lint:gate`: §4. |
 | What it does not fix | Whether checks that DO complete are minting calls. Not changed here; see §5. |
 
 ## 1. The contract
@@ -27,10 +27,12 @@
 | File | Change |
 |---|---|
 | `api/_utils/agentEvalTransport.js` | `HAIKU_SDK_TIMEOUT_MS` and `HAIKU_BACKSTOP_MARGIN_MS` added (`:21`, `:29`); `HAIKU_CALL_CEILING_MS` derived (`:30`); comments re-stated (the 64 s / 68 s requirement, the timeout kinds). |
-| `api/cron/agent-evaluate.js` | Imports the constant (`:181`) and passes it at the call (`:2999`); four comments that named 20 s / 22 s / 44 s / 48 s re-stated (`:222-224`, `:2824-2839`, `:2958-2970`, the timeout-kind comment). No logic change. |
+| `api/cron/agent-evaluate.js` | Imports the constant (`:181`) and passes it at the call (`:2999`); four comments that named 20 s / 22 s / 44 s / 48 s re-stated (`:222-224`, `:2824-2839`, `:2958-2970`, the timeout-kind comment). No logic change. The `budget_skipped` message now reads "…, 64s required" because it prints the computed requirement. |
 | `api/_utils/agentEvalTransport.test.js` | New block: the timeout is 40 s and the backstop is derived 2 s above it; the timeout clears a full 3,072-token answer at ≤ 10 ms per token. The 44 s pin becomes 64 s. |
 | `api/_utils/callRecords/publish.test.js` | The admission pins move 44,000 / 48,000 → 64,000 / 68,000; the "admits at off, not at shadow" boundary moves 46 s → 66 s. |
 | `api/cron/agent-evaluate.timing.test.js` | `REAL_CALL_CEILING_MS` 22,000 → 42,000; the §4.1 build is re-based to the ceiling minus 0.5 s so the June 11 defect row still bites; the SDK-timeout row's double now honors the `timeout` it is handed and asserts it is `HAIKU_SDK_TIMEOUT_MS` (40,000). |
+| `api/cron/agent-evaluate.tickStamps.callsOn.test.js` | The admission boundary row moves 46 s → 66 s left (64,000 off / 68,000 shadow); the skipped-phase row keeps its arithmetic (15 s left at the phase) with 68 s left and a 53 s model call. One comment re-stated. |
+| `api/_utils/__fixtures__/callRecordsOffGolden.json` + its pin in `agent-evaluate.callRecords.offGolden.test.js` | **Value-only reconciliation, not a regeneration** — the Sep 25, 2026 precedent (the 2048 → 3072 token ceiling). The `budget_skipped` exit's message states the requirement, so exactly three strings change: "40s remaining, 44s required" → "40s remaining, 64s required". Nothing else in the fixture moves (`git diff --word-diff`: 3 × `44s` → `64s`). The SHA-256 pin moves in the same commit, the prior value recorded beside it. **Founder sign-off is the merge.** |
 
 ## 3. Mutation check
 
@@ -47,10 +49,11 @@ Each mutant applied in place, the affected files run, the file restored and comp
 
 Linux (the session's container), Node 22.22.0 / npm 10.9.4, `TZ=UTC`.
 
-- The three affected files: 80 / 80 passed.
+- The directly affected files: all pass.
 - `npm run lint:gate`: exit 0.
-- Full suite: reported in the PR description.
-- `vite build`: not run — no client file changed and the diff is under the BUILD_RULES §2 review threshold (5 code/test files, about 110 lines).
+- **First full run** (`--maxWorkers=4` on a 2-CPU container): 5 failures. Three were this change's own pins not yet re-based (the two `tickStamps.callsOn` admission rows and the off-golden `budget_skipped` message), fixed in the next commit. Two were 5-second test timeouts under CPU contention in untouched files (`api/cron/film-tape-backfill.e2e.test.js`, `src/components/League/leagueRawIds.guard.test.jsx`); both pass in isolation on this branch.
+- **Final full run** (`--maxWorkers=2`, CI-shaped, at the pin-re-base commit `e777855`): 981 files passed, 4 skipped; **20,885 tests passed, 0 failed**, 65 skipped (858 s).
+- `vite build`: not run — no client file changed and the diff is under the BUILD_RULES §2 review threshold (9 files including this record, about 260 lines).
 
 ## 5. Out of scope, reported for separate tasking
 
