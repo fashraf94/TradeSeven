@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { createChart, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries } from 'lightweight-charts';
 import { HOLO_COLORS } from '../../constants/holoTheme';
-import { prepareChartData, formatTime, calculateBombLevels, detectBombCrossings, calculateNearestLevel } from './chartUtils';
+import { prepareChartData, formatTime, calculateBombLevels, measuredBombLevels, detectBombCrossings, calculateNearestLevel } from './chartUtils';
 import { detectTrendlines } from './trendlineDetection';
 import OHLCDisplay from '../shared/OHLCDisplay';
 import { getDailyHL } from '../../services/websocketService';
@@ -90,14 +90,21 @@ const StockChart = ({
   }, [controlled, ohlcvData]);
   const isScaffold = (c) => scaffoldTime != null && !!c && c.time === scaffoldTime && c.open === c.close;
 
+  // v2 Ruling 15: a measured-model position draws its committed context's six
+  // exact targets from the fill (bombData.measured); legacy is unchanged.
   const bombLevels = useMemo(() => {
+    if (isBombView && bombData?.measured) return measuredBombLevels(bombData.baselinePrice, bombData.targets);
     if (!isBombView || !bombData?.threshold || !bombData?.baselinePrice) return [];
     return calculateBombLevels(bombData.baselinePrice, bombData.threshold);
-  }, [isBombView, bombData?.threshold, bombData?.baselinePrice]);
+  }, [isBombView, bombData?.threshold, bombData?.baselinePrice, bombData?.measured, bombData?.targets]);
 
   // Determine which bomb levels have been triggered from TODAY's chart data only
   // (previous days' candles were at different baselines so they'd cause false HITs)
   const triggeredLevels = useMemo(() => {
+    // v2 Ruling 15: a measured-model position's HITs are exactly the committed
+    // context's crossed tiers — never session candles (which include pre-entry
+    // prints and cannot prove when a level was touched).
+    if (bombData?.measured) return isBombView && Array.isArray(bombData.crossedTiers) ? [...bombData.crossedTiers] : [];
     if (!isBombView || bombLevels.length === 0 || !ohlcvData || ohlcvData.length === 0) return [];
     const triggered = new Set();
     const baseline = bombData?.baselinePrice;
@@ -134,7 +141,7 @@ const StockChart = ({
       });
     });
     return [...triggered];
-  }, [isBombView, bombLevels, ohlcvData, bombData?.baselinePrice, controlled, controlledCrypto]);
+  }, [isBombView, bombLevels, ohlcvData, bombData?.baselinePrice, bombData?.measured, bombData?.crossedTiers, controlled, controlledCrypto]);
 
   // Nearest bomb level to current price (for distance indicator)
   // Filters out already-triggered levels so the annotation advances to the next uncrossed target
@@ -474,7 +481,8 @@ const StockChart = ({
 
       // Bomb crossing markers (safety: setMarkers may not exist in all versions)
       try {
-        const markers = detectBombCrossings(chartData, bombLevels);
+        // v2 Ruling 15: no candle-derived crossing arrows on a measured-model position.
+        const markers = bombData?.measured ? [] : detectBombCrossings(chartData, bombLevels);
         if (markers.length > 0 && typeof bombSeries.setMarkers === 'function') {
           bombSeries.setMarkers(markers.sort((a, b) => a.time - b.time));
         }

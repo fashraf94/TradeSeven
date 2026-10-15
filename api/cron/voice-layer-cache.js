@@ -26,6 +26,10 @@ import { fetchAgentSafeWireDays, resolveAgentSafeEntries } from '../_utils/agent
 // too), so a flag-off cache doc stays field-wise byte-identical (the newsLines
 // precedent). Read at call time per battle, never module scope.
 import { getVoiceGroundingMode } from '../../src/config/featureFlags.js';
+// BaggerBomb stock thresholds v2 (Ruling 16): the persisted dispatch and the
+// committed reward context. Node-clean src module (BUILD_RULES §4); the unmocked
+// import in voice-layer-cache.stockThresholds.test.js is its dependency guard.
+import { stockModelRoute, isStock, committedStockContext } from '../../src/utils/stockThresholdModel.js';
 
 export const config = { maxDuration: 60 };
 
@@ -133,9 +137,12 @@ function smaRead(flag, value) {
 export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScoresMap, thresholdHistory = {}, startingPrices = {}, intradayMomentumMap = {}, options = {}) {
   if (!portfolio) return [];
   const briefs = [];
+  // v2 Ruling 16: a measured-model battle's stocks read their committed reward
+  // context; options.stockBattle is the battle doc (absent → legacy, unchanged).
+  const stockRoute = options.stockBattle ? stockModelRoute(options.stockBattle) : { status: 'legacy' };
 
   ['star', 'core', 'support'].forEach(tier => {
-    (portfolio[tier] || []).forEach(stock => {
+    (portfolio[tier] || []).forEach((stock, slot) => {
       if (!stock?.symbol) return;
       const symbol = stock.symbol;
       const price = priceMap[symbol];
@@ -353,9 +360,36 @@ export function buildPortfolioBriefs(portfolio, priceMap, rankingsMap, techScore
       // Tier 0 Item 4: thresholdProximity + existingBadges
       const baseATR = stock.baseATR;
       const history = thresholdHistory[symbol] || {};
-      brief.existingBadges = getBadgesFromHistoryServer(history);
+      const measured = stockRoute.status !== 'legacy' && isStock(stock);
+      brief.existingBadges = measured ? [] : getBadgesFromHistoryServer(history);
 
-      if (baseATR && baseATR > 0) {
+      if (measured) {
+        // v2 Ruling 16: the multiplier against the frozen measured %, badges
+        // from the committed context's crossed tiers, and its own reward LOCK
+        // (§9: the same context the scorer, risk LOCK and modal read).
+        const c = stockRoute.status === 'corrected' ? committedStockContext(options.stockBattle, stock, 'agent', tier, slot) : stockRoute;
+        if (c.status === 'valid') {
+          brief.existingBadges = [...c.crossedTiers];
+          const redZoneRaw = detectRedZone(c.multiplier, brief.existingBadges);
+          const locked = c.proximity?.locked === true;
+          brief.thresholdProximity = {
+            unit: 'frozen_measured_pct',
+            currentMultiplier: c.multiplier,
+            frozenMeasuredPct: c.scoringPct,
+            redZone: redZoneRaw ? {
+              targetThreshold: redZoneRaw.targetThreshold,
+              targetMultiple: redZoneRaw.targetMultiple,
+              direction: redZoneRaw.direction,
+              zoneProgressPercent: redZoneRaw.progress,
+            } : null,
+            swapLock: locked
+              ? { locked: true, direction: 'positive', distancePercent: (c.nextTarget.target - c.currentPrice) / c.fill * 100, message: `approaching ${c.nextTarget.label}` }
+              : { locked: false, direction: null, distancePercent: null, message: null },
+          };
+        } else {
+          brief.measuredRewardUnavailable = c.reason || 'unavailable';
+        }
+      } else if (baseATR && baseATR > 0) {
         // Canonical formula (agentScoring.js:148-152): prefer thresholdPriceChange
         // (close vs previousClose) over priceChange (close vs entry).
         const thresholdPriceChange = (typeof price.change_p === 'number' && isFinite(price.change_p))
@@ -938,7 +972,9 @@ export default async function handler(req, res) {
         battle.thresholdHistory || {},
         battle.startingPrices || {},
         intradayMomentumMap,
-        briefOptions,
+        // v2 Ruling 16: only a stamped battle carries stockBattle, so a legacy
+        // battle's options are exactly the prior object.
+        Object.hasOwn(battle.scoring || {}, 'stockThresholdModel') ? { ...briefOptions, stockBattle: battle } : briefOptions,
       );
       const benchBriefs = buildBenchBriefs(battle.portfolio, priceMap, rankingsMap, techScoresMap, undefined, briefOptions);
       const scoutAlerts = buildScoutAlerts(battle.watchlist, rankingsMap, techScoresMap, archetype, portfolioSyms);

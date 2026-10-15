@@ -206,6 +206,9 @@ export function composeEvidenceStamp({ assetScores, prices, momentumData, stockR
       nr7: rankInfo ? rankInfo.nr7Flag === true : null,
       regime: strOrNull(stockRegimes?.[sym]),
       risk: composeRisk(riskStatus?.[sym]),
+      // BaggerBomb stock thresholds v2 (Ruling 16): a measured-model stock's
+      // multiple is in its frozen measured % unit, and its label says so.
+      ...(score.rewardContext ? { atrXUnit: 'frozen_measured_pct' } : {}),
     };
   }
   return evidence;

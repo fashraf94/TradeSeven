@@ -720,7 +720,11 @@ export default async function handler(req, res) {
     //     any mode but 'off') its counterpart for the shadow record (§9, G6).
     const buildPrompt = (g) => buildVoiceLayerPrompt({
       agent,
-      battle,
+      // BaggerBomb stock thresholds v2 (Ruling 16): the battle-state score line
+      // reads only validly committed measured scores, and a receipt is bound to
+      // its battle id — `battleDoc.data()` carries none. Nothing in the prompt
+      // reads `battle.id`, so a legacy prompt is unchanged.
+      battle: { id: battleId, ...battle },
       elicitationTarget: g ? elicitationTargetNew : elicitationTargetOld,
       conversationHistory: g ? conversationHistoryNew : conversationHistoryOld,
       anchorContext,

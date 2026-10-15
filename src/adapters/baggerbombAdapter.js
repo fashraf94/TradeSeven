@@ -30,6 +30,8 @@ import { classifyBattleType, battleTypeLabel } from '../utils/commandCenterLiveB
 import { SLOT_MS } from '../components/Dashboard/desk/deskCopy';
 // Table G (V1.4): the unconfirmed-outcome marker, as data (zero-import).
 import { feedBeatUnconfirmed } from '../data/executionOutcome';
+// BaggerBomb stock thresholds v2 (Ruling 16): the committed-score display rule.
+import { displayedStockScores } from '../utils/stockThresholdModel.js';
 
 export const PHASE = Object.freeze({
   PRE_OPEN: 'PRE_OPEN',
@@ -522,7 +524,8 @@ export function buildBaggerbombAdapter(battle, voiceLayerCacheDoc, agent, now, m
     // Same derivation ManageStation.jsx:32-33 already uses, so the Desk and
     // the Manage rail cannot disagree about the score (BUILD_RULES §9).
     score: {
-      current: battle?.scoreState?.currentScore ?? null,
+      // v2 Ruling 16: a measured-model battle's unavailable score stays null.
+      current: displayedStockScores(battle).currentScore ?? null,
       tradeCount: battle?.scoreState?.tradeCount ?? (battle?.trades?.length || 0),
     },
 

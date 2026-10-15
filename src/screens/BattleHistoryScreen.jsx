@@ -1,5 +1,6 @@
 import React from 'react';
 import { HOLO_COLORS } from '../constants/holoTheme';
+import { displayedStockScores } from '../utils/stockThresholdModel.js';
 
 const BattleHistoryScreen = ({
   containerStyle,
@@ -242,8 +243,11 @@ const BattleHistoryScreen = ({
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {completedAgentBattles.map((b) => {
-                  const myScore = b?.scoreState?.currentScore;
-                  const oppScore = b?.scoreState?.opponentScore;
+                  // v2 Ruling 16: a measured-model battle shows only committed
+                  // scores; a result-unavailable one shows no score and no outcome.
+                  const shownScores = displayedStockScores(b);
+                  const myScore = shownScores?.currentScore;
+                  const oppScore = shownScores?.opponentScore;
                   const completedAt = b?.completedAt;
                   let completedLabel = '';
                   if (completedAt) {

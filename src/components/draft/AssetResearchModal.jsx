@@ -245,6 +245,16 @@ const AssetResearchModal = ({
   // asset properties. This ensures the bomb chart and BaggerBombTab use yesterday's close
   // as the starting point, matching the scoring engine's daily reset behavior.
   const bombData = useMemo(() => {
+    // BaggerBomb stock thresholds v2, Ruling 15: a measured-model position's
+    // chart draws its committed context's six exact targets from the fill, and
+    // its HITs are that context's crossed tiers (StockChart `measured`). An
+    // unavailable context draws nothing.
+    if (currentAsset?.stockRewardRoute) {
+      const c = currentAsset.rewardContext;
+      return c?.status === 'valid'
+        ? { measured: true, baselinePrice: c.fill, targets: c.targets.map(t => ({ key: t.key, price: t.target })), crossedTiers: [...c.crossedTiers] }
+        : null;
+    }
     const threshold = currentAsset?.threshold;
     const baselinePrice =
       researchData.previousClose || // OHLCV-derived yesterday's close (most accurate)
@@ -261,7 +271,7 @@ const AssetResearchModal = ({
     return { threshold, baselinePrice };
   }, [researchData.previousClose, currentAsset?.threshold, currentAsset?.lockedPrice, currentAsset?.baselinePrice,
       currentAsset?.startPrice, currentAsset?.startingPrice, currentAsset?.basePrice, currentAsset?.draftPrice,
-      currentAsset?.price, currentAsset?.currentPrice]);
+      currentAsset?.price, currentAsset?.currentPrice, currentAsset?.stockRewardRoute, currentAsset?.rewardContext]);
 
   // v2: Measure container height for drawer snap points
   useEffect(() => {
@@ -344,8 +354,10 @@ const AssetResearchModal = ({
   const priceChange = enrichedAsset.percentChange || enrichedAsset.change || 0;
 
   // Use real rating from API if available, fall back to mock
-  const displayRating = profile?.ratingText || fundamentals.rating;
-  const ratingColor = getRatingColor(displayRating);
+  // BaggerBomb stock thresholds v2, Ruling 15: a rating is shown only when the
+  // profile carries a real one — never the mock default ("Buy").
+  const displayRating = profile?.ratingText || null;
+  const ratingColor = displayRating ? getRatingColor(displayRating) : null;
 
   // Whether the CURRENTLY-DISPLAYED asset can be drafted right now: the draft
   // preconditions (your turn + canPick + an onAcquire handler) AND, when the
@@ -794,12 +806,14 @@ const AssetResearchModal = ({
             >
               {activeTab === 'fundamental' && (
                 <div style={{ padding: '8px 0' }}>
-                  {/* Rating */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                    <span style={{ color: ratingColor, fontWeight: '600', fontSize: '14px' }}>
-                      {'\u25CF'} {displayRating}
-                    </span>
-                  </div>
+                  {/* Rating \u2014 only a real profile rating (v2 Ruling 15) */}
+                  {displayRating ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                      <span style={{ color: ratingColor, fontWeight: '600', fontSize: '14px' }}>
+                        {'\u25CF'} {displayRating}
+                      </span>
+                    </div>
+                  ) : null}
                   {/* Company profile: sector/industry pills + description */}
                   {profileLoading && (
                     <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)' }}>
@@ -1089,19 +1103,21 @@ const AssetResearchModal = ({
 
             {activeTab === 'fundamental' && (
               <div>
-                {/* Rating */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: '16px',
-                  }}
-                >
-                  <span style={{ color: ratingColor, fontWeight: '600', fontSize: '14px' }}>
-                    ● {displayRating}
-                  </span>
-                </div>
+                {/* Rating — only a real profile rating (v2 Ruling 15) */}
+                {displayRating ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '16px',
+                    }}
+                  >
+                    <span style={{ color: ratingColor, fontWeight: '600', fontSize: '14px' }}>
+                      ● {displayRating}
+                    </span>
+                  </div>
+                ) : null}
 
                 {/* Company Profile Section */}
                 {profileLoading && (

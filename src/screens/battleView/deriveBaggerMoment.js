@@ -43,6 +43,7 @@
 // recorded debt; this module does not become the third.
 
 import { THRESHOLD_MULTIPLIERS, CONVICTION_MULTIPLIERS } from '../../constants/baggerBombScoring';
+import { stockModelRoute, positions as stockPositions, isStock, committedStockContext } from '../../utils/stockThresholdModel';
 
 /** The line a piece crosses to be a bagger. The canonical constant, not a copy. */
 export const BAGGER_LINE = THRESHOLD_MULTIPLIERS.bagger;
@@ -56,6 +57,18 @@ export const BAGGER_LINE = THRESHOLD_MULTIPLIERS.bagger;
  * crossing that already existed.
  */
 export function persistedMaxMultiplier(battle, symbol) {
+  // BaggerBomb stock thresholds v2 (Ruling 16, review K1-5): a measured-model
+  // battle's held agent stock has no thresholdHistory entry. Its crossing is
+  // the committed reward context's own crossed tiers — the line once `bagger`
+  // is crossed, else 0 — never a re-derived multiple (equality is decided by
+  // the context's exact targets, not by inverse arithmetic).
+  if (stockModelRoute(battle).status !== 'legacy') {
+    const held = stockPositions(battle).find((p) => p.side === 'agent' && p.asset.symbol === symbol && isStock(p.asset));
+    if (held) {
+      const c = committedStockContext(battle, held.asset, 'agent', held.tier, held.slot);
+      return c.status === 'valid' && c.crossedTiers.includes('bagger') ? BAGGER_LINE : 0;
+    }
+  }
   const raw = battle?.thresholdHistory?.[symbol]?.maxMultiplier;
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
 }
@@ -148,7 +161,10 @@ export function baggerMomentFacts(asset, tier = undefined) {
   // through; this reads the same field off the same object.
   const mult = asset.tierMultiplier
     ?? (CONVICTION_MULTIPLIERS[tier ?? asset.tier] || undefined);
-  const pct = asset.baseATR;
+  // v2 Ruling 16: a measured-model row's bagger level is one frozen measured %
+  // from its fill — read off the row's own committed context (§9), never its
+  // calibrated baseATR. An unavailable context says nothing.
+  const pct = asset.stockRewardRoute ? (asset.rewardContext?.status === 'valid' ? asset.rewardContext.scoringPct : null) : asset.baseATR;
   if (typeof mult !== 'number' || !Number.isFinite(mult)) return null;
   if (typeof pct !== 'number' || !Number.isFinite(pct) || pct <= 0) return null;
   return { mult, pct };

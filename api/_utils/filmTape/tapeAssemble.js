@@ -21,6 +21,8 @@ import { toMs, inDay, etDateOf, etDayBounds, sessionFor, previousSession, within
 import { historyListOf, meetingLegsOf, meetingOf } from '../playerFieldReaders.js';
 import { flattenPortfolioServer, flattenBenchServer } from '../agentScoring.js';
 import { tradingTimeline } from '../../../src/utils/tapeSchedule.js';
+// BaggerBomb stock thresholds v2 (Ruling 16): the persisted dispatch, Node-clean (BUILD_RULES §4).
+import { stockModelRoute } from '../../../src/utils/stockThresholdModel.js';
 import { NOTES, UNKNOWN_WHAT, counted } from './tapeNotes.js';
 
 /** `evaluations[]` is `slice(-150)` (api/cron/agent-evaluate.js:4257). */
@@ -178,7 +180,9 @@ export const opponentBasisOf = (battle) => (isObj(battle?.opponent) ? 'cpu_portf
  * is null, never 0.
  */
 const scoresOf = (s, { opponent = null } = {}) => (isObj(s) && num(s.total) !== null
-  ? { active: num(s.active), banked: num(s.banked), total: num(s.total), opponent: opponent ? opponent(s) : null }
+  ? { active: num(s.active), banked: num(s.banked), total: num(s.total), opponent: opponent ? opponent(s) : null,
+    // v2 Ruling 16: a measured-model check keeps its committed frame's references.
+    ...(isObj(s.stockModel) ? { stockModel: s.stockModel } : {}) }
   : null);
 
 /**
@@ -417,7 +421,13 @@ export function buildReplayInputs({ row, receipt, trade, battle }) {
       thresholdBaseline: baseline.source,
     },
   };
+  // v2 Ruling 16: a measured-model stock leg is never rescored with legacy ATR
+  // math. The trade's corrected contract (the capture's stockRewardContract, or
+  // the closed trade itself) names which legs carry a measured receipt; those
+  // legs are not replayed. Crypto legs and legacy trades are unchanged.
+  const contract = isObj(receipt?.stockRewardContract) ? receipt.stockRewardContract : (isObj(trade?.stockThresholdModel) ? trade : null);
   const ghostMissing = [];
+  if (isObj(contract?.outgoingReceipt)) ghostMissing.push('ghost.measuredStockModel');
   if (ghost.entryPrice === null) ghostMissing.push('ghost.entryPrice');
   if (ghost.atr === null) ghostMissing.push('ghost.atr');
   if (ghost.tier === null) ghostMissing.push('ghost.tier');
@@ -446,6 +456,7 @@ export function buildReplayInputs({ row, receipt, trade, battle }) {
     },
   };
   const boughtMissing = [];
+  if (isObj(contract?.incomingReceipt)) boughtMissing.push('bought.measuredStockModel');
   if (bought.entryPrice === null) boughtMissing.push('bought.entryPrice');
   if (bought.atr === null) boughtMissing.push('bought.atr');
   if (bought.tier === null) boughtMissing.push('bought.tier');
@@ -1003,6 +1014,11 @@ export function buildBattleBlock({ battle, resolveResult }) {
     final,
     result: battleResultOf({ status, stored, final, derive, noOpponent }),
     completionMessage: completed ? completionMessageOf(battle) : null,
+    // v2 Ruling 16: a stamped battle's block says so, so a later merge — which
+    // holds only the final scores — keeps this assembly's corrected-aware
+    // result instead of re-deriving one with legacy math. Absent on legacy.
+    ...(isObj(battle?.scoring) && Object.hasOwn(battle.scoring, 'stockThresholdModel')
+      ? { stockModel: { route: stockModelRoute(battle).status, modelId: str(battle.scoring.stockThresholdModel?.modelId) } } : {}),
   };
 }
 

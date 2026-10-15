@@ -194,6 +194,26 @@ export function calculateBombLevels(baselinePrice, threshold) {
 }
 
 /**
+ * BaggerBomb stock thresholds v2, Ruling 15: a measured-model position's levels.
+ * The six prices are the committed reward context's exact targets from the
+ * fill \u2014 never re-derived from a threshold (BUILD_RULES \u00A79) \u2014 styled per tier
+ * like calculateBombLevels, with the fill as the "Entry" line. A target at or
+ * below $0 is unreachable and is not drawn.
+ *
+ * @param {number} fill - The position's receipt fill
+ * @param {Array<{key: string, price: number}>} targets - The context's targets
+ */
+export function measuredBombLevels(fill, targets) {
+  if (!(typeof fill === 'number' && fill > 0) || !Array.isArray(targets)) return [];
+  const style = Object.fromEntries(calculateBombLevels(1, 1).map(level => [level.tier, level]));
+  const levels = targets
+    .filter(t => style[t?.key] && t.key !== 'baseline' && typeof t.price === 'number' && Number.isFinite(t.price) && t.price > 0)
+    .map(t => ({ ...style[t.key], price: t.price }));
+  levels.push({ ...style.baseline, price: fill, label: '\u2014 Entry \u2014' });
+  return levels.sort((a, b) => b.price - a.price);
+}
+
+/**
  * Detect candles where price crossed a bomb level threshold.
  * Scans chart-ready data (oldest-first) for crossings.
  *

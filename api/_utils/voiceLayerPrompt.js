@@ -5,6 +5,9 @@
 // are exported as needed by callers and tests.
 
 import { computeGameContext } from './agentNewsContext.js';
+// BaggerBomb stock thresholds v2 (Ruling 16): persisted dispatch, committed-score
+// display rule and presentation rounding. Node-clean src module (BUILD_RULES §4).
+import { stockModelRoute, displayedStockScores, stockSummary } from '../../src/utils/stockThresholdModel.js';
 import { getMarketState } from './marketSchedule.js';
 import { computeTimeRemaining } from './agentEvalPromptAssembly.js';
 import { wrapWithDelimiters } from './injectionGuard.js';
@@ -1139,8 +1142,13 @@ export function buildBattleState(battle, { grounded = false } = {}) {
     ).join('\n');
   }
 
-  const currentScore = battle.scoreState?.currentScore ?? 0;
-  const opponentScore = battle.scoreState?.opponentScore ?? 0;
+  // v2 Ruling 16: a measured-model battle shows only validly committed scores;
+  // an unavailable score reads as unavailable, never "0 — 0 (TIED)". A legacy
+  // battle's scoreState is read exactly as before.
+  const shownScores = displayedStockScores(battle);
+  const scoresUnavailable = stockModelRoute(battle).status !== 'legacy' && (shownScores.currentScore == null || shownScores.opponentScore == null);
+  const currentScore = shownScores.currentScore ?? 0;
+  const opponentScore = shownScores.opponentScore ?? 0;
   const { gameState, urgency } = computeGameContext(battle);
 
   // Degraded-mode disclosure (Haiku eval reliability fix, June 2026 — L3):
@@ -1153,10 +1161,10 @@ export function buildBattleState(battle, { grounded = false } = {}) {
 
   return `CURRENT BATTLE:
 - Mode: ${battle.gameMode}
-- Score: You ${currentScore} — Opponent ${opponentScore} (${currentScore > opponentScore ? 'LEADING' : currentScore < opponentScore ? 'TRAILING' : 'TIED'} by ${Math.abs(currentScore - opponentScore)} pts)
+- Score: ${scoresUnavailable ? 'unavailable — the measured stock scores are not confirmed right now; do not read them as 0 or a tie' : `You ${currentScore} — Opponent ${opponentScore} (${currentScore > opponentScore ? 'LEADING' : currentScore < opponentScore ? 'TRAILING' : 'TIED'} by ${Math.abs(currentScore - opponentScore)} pts)`}
 - Market: ${marketState.state}
 - Time remaining: ${timeRemaining}
-- Game state: ${gameState}
+- Game state: ${scoresUnavailable ? 'unknown (score unavailable)' : gameState}
 - Urgency: ${urgency}
 - Your portfolio: ${portfolioDisplay}${evalHealthLine}${tradeBlock}`;
 }
@@ -1876,11 +1884,14 @@ export function buildPortfolioBriefsBlock(marketSnapshot, { grounded = false } =
 
     // Tier 0 Item 4: threshold proximity render lines.
     // Order: Threshold: → Swap-lock: (conditional) → Badges earned: (conditional)
+    // v2 Ruling 16: a measured-model stock's brief names its frozen measured %.
+    if (b.measuredRewardUnavailable) entry += '\nMeasured reward: unavailable this check';
     if (b.thresholdProximity) {
       const tp = b.thresholdProximity;
       const multStr = tp.currentMultiplier.toFixed(1);
-      const atrStr = tp.baseATR.toFixed(1);
-      let thresholdLine = `Threshold: ${multStr}x (baseATR ${atrStr}%)`;
+      let thresholdLine = tp.unit === 'frozen_measured_pct'
+        ? `Threshold: ${multStr}x of its frozen measured ${stockSummary(tp.frozenMeasuredPct)}%`
+        : `Threshold: ${multStr}x (baseATR ${tp.baseATR.toFixed(1)}%)`;
       if (tp.redZone) {
         thresholdLine += ` — red zone toward ${tp.redZone.targetThreshold} (${tp.redZone.zoneProgressPercent}% of zone)`;
       }
