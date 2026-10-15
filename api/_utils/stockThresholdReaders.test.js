@@ -153,7 +153,12 @@ describe('film tape: merge and replay never rescore a measured position with leg
     expect(block.stockModel).toEqual({ route: 'corrected', modelId: 'stock_measured_atr14_fullday_v2' });
     expect(block.result).toEqual({ value: 'draw', basis: 'derived' }); // both sides hold AAPL at the same fill and quote
     const unavailable = buildBattleBlock({ battle: { ...battle, completionContext: 'corrected_score_unavailable' }, resolveResult: resolveBattleResult });
-    expect(unavailable.result).toEqual({ value: null, basis: 'derived' });
+    // A result-unavailable completion keeps its last stored scores, but the tape's
+    // final scores are the displayed ones: none, and no "derived" basis (review B2-5).
+    expect(Number.isFinite(battle.scoreState.currentScore)).toBe(true);
+    expect(unavailable.final).toMatchObject({ total: null, opponent: null });
+    expect(unavailable.result).toMatchObject({ value: null, basis: 'unavailable' });
+    expect(block.final).toMatchObject({ total: battle.scoreState.currentScore, opponent: battle.scoreState.opponentScore });
     expect(Object.hasOwn(buildBattleBlock({ battle: legacyOf(battle), resolveResult: resolveBattleResult }), 'stockModel')).toBe(false);
   });
   it('a merge keeps a stamped block\'s assembled result and never calls the legacy resolver; legacy merges re-derive as before', async () => {

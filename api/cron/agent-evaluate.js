@@ -350,13 +350,13 @@ export default async function handler(req, res) {
             // battle (/code-review high, angle-B finding).
             console.error(`${LOG_PREFIX} Expired battle ${battle.id} no longer exists — counted as error, not completed.`);
             summary.errors++;
-          } else if (completion.reason === 'corrected_score_unavailable') {
-            // A pinned stock battle without committed qualified evidence stays
-            // active; that is never "another writer completed it" (review K2-1b).
-            console.error(`${LOG_PREFIX} Expired battle ${battle.id} lacks committed corrected stock evidence — not settled, counted as error.`);
-            summary.errors++;
           } else {
-            summary.completionSkipped++; // another writer fully completed it first
+            // Another writer fully completed it first. v2 Ruling 4: that includes
+            // a battle already ended as result unavailable — completeBattle
+            // returns its context for a non-active battle only, so a stale
+            // listing is skipped, never an error (review B2-1; K2-1b's "stays
+            // active" outcome no longer exists).
+            summary.completionSkipped++;
           }
         } catch (err) {
           console.error(`${LOG_PREFIX} Error completing expired battle ${battle.id}:`, err.message);
@@ -4725,8 +4725,11 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // the executor's try, so a failed read errors the tick rather than
     // recording a landed trade as failed (review K2-7, landedTrade.js rule),
     // and after the stamps read the prompt-time picture (review K3-7). The
-    // corrected score commit below needs the live roster.
-    if (correctedRefreshDue) await refreshCorrectedRoster(rawBattleRef, battle);
+    // corrected score commit below needs the live roster. v2 Ruling 3: so does a
+    // forced exit whose post-swap re-read failed (F1b), now reachable on an
+    // unavailable frame — without this the final write refused the stale roster
+    // and the tick lost its F1b record (review B2-4).
+    if (correctedRefreshDue || (correctedStockGame && refreshFailure)) await refreshCorrectedRoster(rawBattleRef, battle);
     evaluation.tickMs = Date.now() - tickAdmittedAtMs;
     await battleRef.update(finalUpdate);
     summary.evaluated++;

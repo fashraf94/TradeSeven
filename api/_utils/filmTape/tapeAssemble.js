@@ -22,7 +22,7 @@ import { historyListOf, meetingLegsOf, meetingOf } from '../playerFieldReaders.j
 import { flattenPortfolioServer, flattenBenchServer } from '../agentScoring.js';
 import { tradingTimeline } from '../../../src/utils/tapeSchedule.js';
 // BaggerBomb stock thresholds v2 (Ruling 16): the persisted dispatch, Node-clean (BUILD_RULES §4).
-import { stockModelRoute } from '../../../src/utils/stockThresholdModel.js';
+import { stockModelRoute, displayedStockScores } from '../../../src/utils/stockThresholdModel.js';
 import { NOTES, UNKNOWN_WHAT, counted } from './tapeNotes.js';
 
 /** `evaluations[]` is `slice(-150)` (api/cron/agent-evaluate.js:4257). */
@@ -1005,8 +1005,11 @@ export function buildBattleBlock({ battle, resolveResult }) {
   const stored = ['win', 'loss', 'draw'].includes(battle?.result) ? battle.result : null;
   // B1 T1 (contract E): with no opponent, the stored opponentScore is the sum over an empty portfolio — never copied.
   const noOpponent = opponentBasisOf(battle) === 'none';
+  // v2 Ruling 16: a measured-model battle's final scores are its displayed ones —
+  // none for a result-unavailable completion (review B2-5). Legacy reads scoreState.
+  const shown = displayedStockScores(battle);
   const final = completed
-    ? { total: num(battle?.scoreState?.currentScore), opponent: noOpponent ? null : num(battle?.scoreState?.opponentScore), at: str(battle?.completedAt) }
+    ? { total: num(shown.currentScore), opponent: noOpponent ? null : num(shown.opponentScore), at: str(battle?.completedAt) }
     : null;
   // BA-39: the comparison runs over the two recorded final scores, and only when both exist.
   const derive = resolveResult

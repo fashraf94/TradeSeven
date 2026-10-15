@@ -232,6 +232,16 @@ describe('corrected evaluator and settlement use pinned model with admission fal
     expect(db.__store.battle.portfolio.star[0].symbol).toBe('MSFT'); expect(db.__store.battle.trades).toHaveLength(1);
     expect(errors.some(e => e.includes('Swap execution failed'))).toBe(false);
   });
+  it.each([['valid frame', {}], ['unavailable frame', { cpuSymbol: 'GOOG', undated: ['GOOG'] }]])('a forced exit whose re-read fails still writes its F1b record, its beat and the final write (%s; review B2-4)', async (_, opts) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { db, thrown } = await stockTick('risk', { failRefreshRead: true, ...opts });
+    const b = db.__store.battle;
+    expect(thrown).toBe(null);
+    expect(b.portfolio.star[0].symbol).toBe('MSFT'); expect(b.trades).toHaveLength(1);
+    expect((b.statusFeed || []).some(e => e.action === 'emergency_swap')).toBe(true);
+    expect(b.cronState.lastEvaluatedAt).toBe(new Date().toISOString()); expect(b.cronState.evaluatingAt).toBe(null);
+    expect(JSON.stringify(b.evaluations || [])).toContain('refresh_failed');
+  });
   it.each(['passive', 'proposal_pending', 'gameplan_pending', 'gameplan_created', 'trigger_skipped', 'final'])('actual score exit %s commits supported finite operands', async variant => {
     const { db, summary } = await stockTick(variant);
     expect(summary.errors).toBe(0);
