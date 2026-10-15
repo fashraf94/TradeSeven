@@ -23,6 +23,7 @@
 | Review | Four lenses, then five refuters. 29 raw findings collapse to 26 distinct:<ul><li>CONFIRMED 17, PARTLY 7, REFUTED 1, and 1 accepted as is;</li><li>**0 blocker, 0 major**, 5 minor, the rest nit or none.</li></ul>Every in-scope finding is fixed (`d6c25973`, `afaccb36`) or documented for Fable. One new pre-existing defect is reported for separate tasking (**G3**, §6.4). |
 | Probe v2 | **The main arm FAILED one clause:**<ul><li>crypto → stock was **2 of 128** (bar ≤ 2: met), but both were among the 26 previously refused (bar 0: **missed**). Both are one Diversifier battle's consecutive BTC → LLY checks.</li><li>crypto → crypto where the line says "cannot" was **1** (bar ≤ 2: met).</li></ul>**Arm S (COUNTERFACTUAL) PASSED:** 0 crypto → stock of 26, and 21 of 26 took the "can swap".<br>For comparison, #961's probe had 10 crypto → stock, 9 of the 26, and 14 crypto → crypto.<br>The cost was **$1.78**. Paragraph v2 + the line measure **279–289 tokens**.<br>Per R-f: **no re-wording, the PR stays draft, STOP for Fable** (§7). |
 | Flip | Not in this PR. The dry run (§8) shows the flip moves exactly what #961's did: 3 files plus 7 tiered system-prompt snapshots. **No live-context suite moves.** Control: the flag alone reddens exactly 10 rows. Flip: the checklist leaves 0 failing. |
+| **Fable's ruling (§10)** | The §7 miss **does not block the flip**: two correlated draws from one battle, and a residual miss ends in the validator's refusal, which is today's behaviour. The text flips exactly as probed. §6.3's edges stay documented, queued for the paragraph's next revision. G3 leads the swap-path integrity build. **Flash signs off on §3.** #964 is marked ready, with current `main` merged and re-checked. |
 | For Fable | Report §6.3, the R-a class as found in review:<ul><li>a guardrail can also back the agent's own BTC → ETH;</li><li>bullet 1's "ends as a HOLD";</li><li>"you have reached the swap limit" counts the platform's own rotations.</li></ul>Plus §7's reading. |
 
 ---
@@ -795,3 +796,36 @@ Carried, one line each:
 - "Not up": the Daily% cell. `-0.00%` is down (`formatPct` prints `+` for ≥ 0); `+0.00%` would be indeterminate (none occurred).
 - Margin: production's `clearsHurdleFloor` at each tempo's clamped config, over the ±0.005 rounding box of both 2-decimal cells.
 - Cap: today's CLOSED TRADES rows, compared with the smallest tempo cap.
+
+---
+
+## §10 Rulings after the probe (Fable, 14 Oct 2026) — verbatim
+
+~~~~text
+Fable's rulings on #964 (Oct 14):
+1. §7's missed clause does not block the flip: two correlated draws from one battle; a residual miss ends in the validator's refusal, which is today's behavior. Flip the text exactly as probed. No re-wording.
+2. §6.3: all three edges stay documented as they are. Queued for the paragraph's next revision (with the short task): "you cannot swap {HELD} for anything this check"; bullet 1 drops "and ends as a HOLD"; the swap-limit sentence's "you".
+3. G3 joins the swap-path integrity build with F1, F7 and G1, plus the filed note:undefined write failure (20260919 report §11.6(1)). G3 leads it.
+4. Flash signs off on §3.
+Steps: append these rulings to the report as §10, push, mark #964 ready. After Flash merges #964: fetch main, open the flip on a new branch claude/crypto-slot-flip exactly per §8 (flag, pin, guard entry, 7 snapshots, docstring rewording), run the full suite, stop at a draft PR.
+~~~~
+
+**How they land.**
+
+| Ruling | Effect |
+|---|---|
+| 1 | §7's missed clause does not block the flip. The flip ships exactly the text probed: paragraph v2, the line and the annotation. Nothing is re-worded. |
+| 2 | §6.3's three edges stay documented as they are, here and in the verdict module's NOT COVERED block. They are queued for the paragraph's next revision, with the short task: "you cannot swap {HELD} for anything this check"; bullet 1 drops "and ends as a HOLD"; and the swap-limit sentence's "you". None of this is in this PR or in the flip. |
+| 3 | The swap-path integrity build, led by **G3**: G3, F1, F7, G1, and the filed `note: undefined` write failure (`20260919_BUILD_EVAL_FIX_INTEGRATION.md` §11.6(1)). §9 is unchanged except for this order. |
+| 4 | Flash signs off on the §3 hunks. |
+
+**Before marking #964 ready: current `main` merged and re-checked.**
+- `main` had moved to `531c2088` (#965, #966) since the build's base `e880592e`. Merged into the branch as `2eca4a9a`.
+- No file in common with this branch.
+- `main` added an assembler test (`agentEvalPromptAssembly.invalidQuoteBench.test.js`) and an executor call-site census row (`agent-evaluate.test.js`). The final checks therefore ran on the merged tree.
+- Result: on `2eca4a9a`, Linux, CI-shaped: `Test Files 964 passed │ 7 skipped (971)`, 20,649 tests, **0 failing**. `lint:gate` exit 0; `vite build` green (built in 14.56 s). The 5 files above the build's 966 are `main`'s new suites.
+
+**Next, after Flash merges #964:**
+1. Fetch `main` and open the flip on a new branch, `claude/crypto-slot-flip`, exactly per §8: the flag, the pin, the guard entry, the 7 tiered snapshots, and the docstring rewording.
+2. Run the full suite.
+3. Stop at a draft PR.
