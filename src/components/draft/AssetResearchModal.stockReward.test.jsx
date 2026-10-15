@@ -131,13 +131,15 @@ describe('v2 Ruling 15: the measured-model modal — tab and chart from the comm
     expect(document.body.textContent).toContain('THRESHOLDS');
     for (const gone of ['HISTORICAL (30 DAYS)', 'Hit Rate', 'Avg Daily Move', 'Days Hit']) expect(document.body.textContent).not.toContain(gone);
   });
+  // Ruling 15's "no default Buy" now rides PR #971's analyst chip (merged from
+  // main): a rating shows only from a real profile, labelled as analyst consensus.
   it('the Fundamental tab shows a rating only when the profile carries a real one (never the mock default)', async () => {
     const r = buildResearchAsset({ symbol: 'AAPL', tier: 'star' }, { livePrices: { AAPL: 101.2 }, thresholds: { AAPL: { threshold: 2 } }, useDefaultThreshold: true });
     seedMarket(); net.profile = null; await open(r, 'fundamental');
-    for (const rating of ['Strong Buy', 'Buy', 'Hold']) expect(document.body.textContent).not.toContain(`● ${rating}`);
+    for (const rating of ['Strong Buy', 'Buy', 'Hold']) expect(document.body.textContent).not.toContain(rating);
     act(() => root.unmount()); root = createRoot(container);
-    net.profile = { ratingText: 'Hold' }; await open(r, 'fundamental');
-    expect(document.body.textContent).toContain('● Hold');
+    net.profile = { symbol: 'AAPL', ratingText: 'Hold', analystConsensus: { rating: 3, totalAnalysts: 12 } }; await open(r, 'fundamental');
+    expect(document.body.textContent).toContain('Wall St: Hold · 12 analysts');
     net.profile = null;
   });
 });
