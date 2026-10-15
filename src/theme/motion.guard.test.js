@@ -209,7 +209,7 @@ describe('motion guard — no new raw transition literal in migrated files (A5)'
       for (const ent of readdirSync(dir, { withFileTypes: true })) {
         const abs = path.join(dir, ent.name);
         if (ent.isDirectory()) walk(abs);
-        else if (/\.(js|jsx)$/.test(ent.name) && !/\.test\.(js|jsx)$/.test(ent.name)) {
+        else if (/\.[mc]?jsx?$/.test(ent.name) && !/\.test\.[mc]?jsx?$/.test(ent.name)) {
           onDisk.push(path.relative(REPO_ROOT, abs).split(path.sep).join('/'));
         }
       }

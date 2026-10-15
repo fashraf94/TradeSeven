@@ -72,6 +72,15 @@ describe('S0 mount sites — one pick, read by both sites', () => {
     expect(BLOCK).toContain('hubOn: isCommandCenterHubOn(),');
   });
 
+  it('the accessor App calls is featureFlags\' own, un-aliased and never shadowed', () => {
+    // The name appears twice: the featureFlags import and the one call. An
+    // alias, a local wrapper or a second binding (say, one adding a URL
+    // override) changes the count or the import line.
+    expect(APP).toMatch(/import \{[^}]*\bisCommandCenterHubOn \} from '\.\/config\/featureFlags';/);
+    expect(APP).not.toMatch(/\bisCommandCenterHubOn as\b/);
+    expect(count(/\bisCommandCenterHubOn\b/)).toBe(2);
+  });
+
   it('the two dashboard flags reach the sites only through the pick — no direct ternary survives', () => {
     // Each appears in the featureFlags import and in the pick, nowhere else.
     expect(count(/\bCOMMAND_DASHBOARD_ENABLED\b/)).toBe(2);
@@ -206,6 +215,37 @@ describe('S0 mount sites — the three legacy elements keep their pre-S0 props',
   });
 });
 
+describe('S0 mount sites — the dashboard block from the pick to its end, as a whole', () => {
+  it('is exactly the pick, the mobile site and the desktop site: nothing added, removed or reordered', () => {
+    // The rows above pin the parts; this one pins that nothing sits between
+    // them — no early `return` that skips a site's boundary, no shadowing
+    // `dashboardPick`, no sibling inside a wrapper, no second element. Built
+    // from the same frozen prop lists, normalized like siteTree().
+    const props = (tag) => LEGACY_PROPS_AT_495EE07B[tag].join(' ');
+    const boundaryOpen = 'return ( <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen(\'home\'); }}> <div style={containerStyle}>';
+    const expected = [
+      'const dashboardPick = pickDashboardShell({ hubOn: isCommandCenterHubOn(), isMobile, mobileDashboardOn: COMMAND_DASHBOARD_ENABLED, desktopDashboardOn: COMMAND_DASHBOARD_DESKTOP_ENABLED, });',
+      'if (isMobile) {',
+      'const DashboardComponent = dashboardPick.legacyShell === DASHBOARD_SHELLS.COMMAND_DASHBOARD ? CommandDashboard : DashboardLoop;',
+      `const legacyDashboard = ( <DashboardComponent ${props('DashboardComponent')} /> );`,
+      boundaryOpen,
+      '{isStarfieldMobileOn() ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />}',
+      '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? <CommandCenterHubGate legacy={legacyDashboard} /> : legacyDashboard}',
+      '</div> </ErrorBoundary> ); }',
+      "const sidebarOffsetStyle = { marginLeft: sidebarCollapsed ? '64px' : '220px', transition: 'margin-left 0.2s ease' };",
+      'const legacyDesktopDashboard = dashboardPick.legacyShell === DASHBOARD_SHELLS.COMMAND_DASHBOARD_DESKTOP ? (',
+      `<div style={sidebarOffsetStyle}> <CommandDashboardDesktop ${props('CommandDashboardDesktop')} /> </div>`,
+      `) : ( <DashboardDesktop ${props('DashboardDesktop')} /> );`,
+      boundaryOpen,
+      '{isStarfieldOn() ? <StarfieldBackground mode="desktop" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />}',
+      '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? ( <CommandCenterHubGate legacy={legacyDesktopDashboard} frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>} /> ) : legacyDesktopDashboard}',
+      '</div> </ErrorBoundary> ); }',
+    ].join(' ');
+    const fromPick = BLOCK.slice(BLOCK.indexOf('const dashboardPick = pickDashboardShell('));
+    expect(fromPick.replace(/\{\s*\}/g, '').replace(/\s+/g, ' ').trim()).toBe(expected);
+  });
+});
+
 describe('S0 mount sites — each shell is mounted once, and only through the pick', () => {
   it('one mount per legacy shell, two gates, and no other way in', () => {
     expect(count(/<DashboardComponent\b/)).toBe(1);
@@ -215,19 +255,26 @@ describe('S0 mount sites — each shell is mounted once, and only through the pi
     expect(count(/<CommandDashboard\b(?!Desktop)/)).toBe(0);
     expect(count(/<DashboardLoop\b/)).toBe(0);
     expect(count(/<CommandCenterHubGate\b/)).toBe(2);
+    // ...and no other reference at all (createElement, a prop, an alias): the
+    // import's binding and path, plus the two tags.
+    expect(count(/\bCommandCenterHubGate\b/)).toBe(4);
     expect(count(/<CommandCenterHub\b(?!Gate)/)).toBe(0);
   });
 
   it('App imports the gate and the picker statically, and never the hub module', () => {
     expect(APP).toContain("import CommandCenterHubGate from './components/CommandCenter/CommandCenterHubGate';");
     expect(APP).toContain("import { pickDashboardShell, DASHBOARD_SHELLS } from './components/CommandCenter/pickDashboardShell';");
-    expect(APP).not.toMatch(/CommandCenter\/CommandCenterHub['"]/);
+    // No literal naming the hub module, in any form (hubPathLiterals, below).
+    expect(hubPathLiterals(APP)).toEqual([]);
   });
 });
 
 // ── The hub chunk: one way in, and nothing running inside it ────────────────
 
-/** Every non-test JS/JSX file under src/. */
+const SOURCE_FILE = /\.[mc]?jsx?$/;
+const TEST_FILE = /\.test\.[mc]?jsx?$/;
+
+/** Every non-test source file under src/ (.js, .jsx, .mjs, .cjs). */
 function sourceFiles() {
   const out = [];
   const walk = (abs) => {
@@ -235,7 +282,7 @@ function sourceFiles() {
       if (ent.name === 'node_modules' || ent.name.startsWith('.') || ent.name === '__golden__') continue;
       const child = path.join(abs, ent.name);
       if (ent.isDirectory()) walk(child);
-      else if (/\.(js|jsx)$/.test(ent.name) && !/\.test\.(js|jsx)$/.test(ent.name)) {
+      else if (SOURCE_FILE.test(ent.name) && !TEST_FILE.test(ent.name)) {
         out.push(path.relative(REPO_ROOT, child).split(path.sep).join('/'));
       }
     }
@@ -246,17 +293,43 @@ function sourceFiles() {
 
 const GATE = 'src/components/CommandCenter/CommandCenterHubGate.jsx';
 
+/**
+ * Every string literal — quotes or backticks, with or without an extension —
+ * that names the hub module, wherever it sits: import(), from, require,
+ * import.meta.glob or anything else. A literal naming CommandCenterHubGate does
+ * not count. Each is reported with whether it is the argument of an import().
+ */
+const HUB_PATH_LITERAL = /(['"`])([^'"`\n]*\bCommandCenterHub(?:\.[mc]?jsx?)?)\1/g;
+
+function hubPathLiterals(code) {
+  const out = [];
+  for (let m = HUB_PATH_LITERAL.exec(code); m !== null; m = HUB_PATH_LITERAL.exec(code)) {
+    const viaImportCall = /\bimport\s*\(\s*$/.test(code.slice(Math.max(0, m.index - 24), m.index));
+    out.push(`${viaImportCall ? 'import(' : ''}${m[2]}`);
+  }
+  HUB_PATH_LITERAL.lastIndex = 0;
+  return out;
+}
+
 describe('S0 hub chunk — reached only through the gate\'s dynamic import', () => {
   it('the one reference to the hub module in src/ is the gate\'s import()', () => {
     const files = sourceFiles();
     expect(files.length, 'the src walk found nothing, so this row would be vacuous').toBeGreaterThan(100);
-    const refs = [];
-    for (const rel of files) {
-      const code = stripComments(read(rel));
-      const re = /(import\s*\(\s*|from\s+|require\s*\(\s*)['"]((?:\.{1,2}\/|@\/)[^'"]*\bCommandCenterHub)['"]/g;
-      for (let m = re.exec(code); m !== null; m = re.exec(code)) refs.push(`${rel} ${m[1].trim()}${m[2]}`);
-    }
+    const refs = files.flatMap((rel) => hubPathLiterals(stripComments(read(rel))).map((ref) => `${rel} ${ref}`));
     expect(refs).toEqual([`${GATE} import(./CommandCenterHub`]);
+  });
+
+  it('the reference scan is not vacuous: it sees every form a reference can take', () => {
+    for (const planted of [
+      "import('./components/CommandCenter/CommandCenterHub.jsx');",
+      'import(`./components/CommandCenter/CommandCenterHub`);',
+      "import.meta.glob('./components/CommandCenter/CommandCenterHub.jsx', { eager: true });",
+      "const Hub = require('../CommandCenter/CommandCenterHub');",
+      "import Hub from '@/components/CommandCenter/CommandCenterHub';",
+    ]) {
+      expect(hubPathLiterals(planted), planted).toHaveLength(1);
+    }
+    expect(hubPathLiterals("import CommandCenterHubGate from './components/CommandCenter/CommandCenterHubGate';")).toEqual([]);
   });
 
   it('the gate\'s default export binds that import and the real page reload', () => {
@@ -267,19 +340,21 @@ describe('S0 hub chunk — reached only through the gate\'s dynamic import', () 
   });
 });
 
-const RELATIVE_IMPORT = /(?:^|\n)\s*import\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g;
+/** Static module edges: `import … from`, side-effect `import '…'`, and `export … from` re-exports. */
+const MODULE_EDGE = /(?:^|\n)\s*(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g;
 
-function importsOf(rel) {
-  const code = stripComments(read(rel));
+function importsOfCode(code) {
   const specs = [];
-  for (let m = RELATIVE_IMPORT.exec(code); m !== null; m = RELATIVE_IMPORT.exec(code)) specs.push(m[1]);
-  RELATIVE_IMPORT.lastIndex = 0;
+  for (let m = MODULE_EDGE.exec(code); m !== null; m = MODULE_EDGE.exec(code)) specs.push(m[1]);
+  MODULE_EDGE.lastIndex = 0;
   return specs;
 }
+const importsOf = (rel) => importsOfCode(stripComments(read(rel)));
 
 function resolveRelative(fromRel, spec) {
   const base = path.join(path.dirname(path.join(REPO_ROOT, fromRel)), spec);
-  const hit = [base, `${base}.js`, `${base}.jsx`, path.join(base, 'index.js')].find((c) => existsSync(c) && !c.endsWith(path.sep));
+  const hit = [base, `${base}.js`, `${base}.jsx`, `${base}.mjs`, path.join(base, 'index.js')]
+    .find((c) => existsSync(c) && !c.endsWith(path.sep));
   return hit ? path.relative(REPO_ROOT, hit).split(path.sep).join('/') : null;
 }
 
@@ -306,9 +381,11 @@ function graph(entryRel) {
 // the hub side in S0 (spec §4: no hub data read, timer, listener,
 // target-progress subscription, provider or ceremony effect).
 const ACTIVITY = [
-  /\bonSnapshot\b/, /\bgetDocs?\s*\(/, /\bfetch\s*\(/, /\bquery\s*\(/,
-  /\bsetTimeout\b/, /\bsetInterval\b/, /\brequestAnimationFrame\b/, /\brequestIdleCallback\b/,
-  /\baddEventListener\b/, /\bsubscribe\b/, /\b(?:Intersection|Resize|Mutation)Observer\b/,
+  /\bonSnapshot\b/, /\bgetDoc\w*\s*\(/, /\bfetch\s*\(/, /\bquery\s*\(/, /\bonAuthStateChanged\b/, /\bonIdTokenChanged\b/,
+  /\bsetTimeout\b/, /\bsetInterval\b/, /\brequestAnimationFrame\b/, /\brequestIdleCallback\b/, /\bqueueMicrotask\b/,
+  /\baddEventListener\b/, /\.addListener\s*\(/, /\b(?:window|document|globalThis|self)\.on[a-z]+\s*=(?!=)/,
+  /\bsubscribe\b/, /\bsubscribe\w*\s*\(/, /\b(?:Intersection|Resize|Mutation|Performance)Observer\b/,
+  /\b(?:BroadcastChannel|WebSocket|EventSource|XMLHttpRequest|Worker|sendBeacon|matchMedia)\b/,
   /\buse(?:Layout|Insertion)?Effect\b/, /\buseSyncExternalStore\b/,
   /\b(?:local|session)Storage\b/,
 ];
@@ -327,6 +404,14 @@ describe('S0 flag-off guarantee — nothing on the hub side reads, waits, listen
     expect(seen.flatMap(activityIn)).toEqual([]);
   });
 
+  it('the hub side loads nothing later: no import() or require() in its graph', () => {
+    // A dynamic import is an edge the static walk cannot follow (firebase/auth
+    // loaded at render, say), so S0's hub side has none.
+    const { seen } = graph('src/components/CommandCenter/CommandCenterHub.jsx');
+    const lazy = seen.filter((rel) => /\b(?:import|require)\s*\(/.test(stripComments(read(rel))));
+    expect(lazy).toEqual([]);
+  });
+
   it('the gate, its copy and the picker: no read, timer, listener or effect of their own', () => {
     const files = [
       GATE,
@@ -341,17 +426,26 @@ describe('S0 flag-off guarantee — nothing on the hub side reads, waits, listen
     expect(stripComments(read(GATE))).toMatch(/import \{ logErrorToFirebase \} from '\.\.\/ErrorBoundary';/);
   });
 
-  it('the picker imports nothing — it reads only its argument', () => {
-    expect(importsOf('src/components/CommandCenter/pickDashboardShell.js')).toEqual([]);
+  it('the picker imports nothing and touches no global — it reads only its argument', () => {
+    const PICKER = 'src/components/CommandCenter/pickDashboardShell.js';
+    expect(importsOf(PICKER)).toEqual([]);
+    expect(stripComments(read(PICKER))).not.toMatch(
+      /\b(?:window|document|globalThis|self|navigator|location|history|localStorage|sessionStorage|process|Date|performance)\b/,
+    );
   });
 
-  it('the activity scan is not vacuous: it flags a planted timer, listener, read and effect', () => {
+  it('the scans are not vacuous: each flags what it plants', () => {
     const planted = [
-      'setTimeout(() => {}, 0);', "window.addEventListener('focus', f);",
-      'onSnapshot(q, cb);', 'useEffect(() => {}, []);', 'getDoc(ref);',
+      'setTimeout(() => {}, 0);', "window.addEventListener('focus', f);", 'window.onfocus = () => {};',
+      "window.matchMedia('(max-width: 768px)').addListener(f);", 'queueMicrotask(f);', 'new BroadcastChannel("x");',
+      'onSnapshot(q, cb);', 'getDocFromServer(ref);', 'subscribeToAgentDoc(id, cb);', 'onAuthStateChanged(auth, f);',
+      'useEffect(() => {}, []);', 'navigator.sendBeacon(url);',
     ];
     for (const line of planted) {
       expect(ACTIVITY.some((re) => re.test(line)), line).toBe(true);
     }
+    // ...and the edge scan follows re-exports, so a barrel cannot hide a module.
+    expect(importsOfCode("export { default as useX } from '../../hooks/useX';\nexport * from './more';"))
+      .toEqual(['../../hooks/useX', './more']);
   });
 });

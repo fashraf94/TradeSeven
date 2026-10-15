@@ -103,6 +103,10 @@ describe('COMMAND_CENTER_HUB_ENABLED — the dark pin (BUILD_RULES §2)', () => 
     expect(window).toContain('never-merge smoke branches');
     // The flip map names all four moves, so following it leaves nothing red.
     expect(window).toContain('THE FLIP MAP');
+    expect(window).toContain(' *   1. this constant → true;');
+    expect(window).toContain(' *   2. commandCenterHubFlags.test.js: the pin row → true, the accessor row');
+    expect(window).toContain(" *   3. src/config/flagPinGuard.test.js: this flag's DARK_BY_DESIGN entry dropped;");
+    expect(window).toContain(' *   4. this docstring: the state lines');
     expect(window).toContain('the registration row turned around to assert the\n *      DARK_BY_DESIGN entry is gone');
     expect(window).toContain("this flag's DARK_BY_DESIGN entry dropped");
     expect(window).toContain('the state lines');

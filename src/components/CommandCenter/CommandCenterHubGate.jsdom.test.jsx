@@ -236,6 +236,8 @@ describe('a rejected import renders the hub-off legacy shell for the width and f
     expect(notice.getAttribute('role')).toBe('alert');
     expect(notice.textContent).toContain(HUB_GATE_COPY.loadFailed);
     expect(notice.style.position).toBe('fixed');
+    // Above the shells, whose roots are position: relative; z-index: 1.
+    expect(Number(notice.style.zIndex)).toBeGreaterThan(1);
     expect(notice.parentElement).toBe(container);
     expect(container.firstElementChild).toBe(notice);
 
@@ -361,6 +363,9 @@ describe('Retry, Reload and Dismiss', () => {
     await rejectCall(imp.calls[0]);
     await click(HUB_GATE_COPY.reload);
     expect(reload).toHaveBeenCalledTimes(1);
+    // With no argument: handed the click event, the default reloadPage would
+    // take it for a location and throw (location.reload is not a function).
+    expect(reload).toHaveBeenCalledWith();
     expect(imp.fn).toHaveBeenCalledTimes(1);
   });
 
