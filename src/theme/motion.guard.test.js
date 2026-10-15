@@ -128,6 +128,15 @@ const GUARDED_FILES = [
   'src/screens/filmRoomV2/filmRoomSeen.js',
   // Film Room A2 — the 'filmRoom' route's v2 gate (BA-40): token-only and motion-token-only from birth, registered in the commit that introduces it.
   'src/screens/filmRoomV2/FilmRoomRoute.jsx',
+  // Command Center hub, S0 (spec V1.2 §10: new files register with the relevant
+  // guards) — the mount picker, the lazy gate and its copy, and the hub scaffold;
+  // token-only and motion-token-only from birth, registered in the commit that
+  // introduces them. The directory row below keeps every later slice's files here.
+  'src/components/CommandCenter/pickDashboardShell.js',
+  'src/components/CommandCenter/hubGateCopy.js',
+  'src/components/CommandCenter/CommandCenterHubGate.jsx',
+  'src/components/CommandCenter/CommandCenterHub.jsx',
+  'src/components/CommandCenter/hub/hubCopy.js',
 ];
 
 /**
@@ -187,6 +196,31 @@ describe('motion guard — no new raw transition literal in migrated files (A5)'
     expect(
       missing,
       `these src/screens/battleView/ files are not on the guarded list: ${missing.join(', ')}.\n`
+        + 'REMEDY: add each to GUARDED_FILES and regenerate the baseline IN THE SAME COMMIT (hazard 34).',
+    ).toEqual([]);
+  });
+
+  it('every file under src/components/CommandCenter/ is on this list (hazard 34)', () => {
+    // The Command Center hub is built in slices (spec V1.2 §11.2), each adding
+    // files here. Without this row a later slice's file would simply be
+    // unguarded, the silence hazard 34 names. Walks subdirectories too (hub/).
+    const onDisk = [];
+    const walk = (dir) => {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
+        const abs = path.join(dir, ent.name);
+        if (ent.isDirectory()) walk(abs);
+        else if (/\.(js|jsx)$/.test(ent.name) && !/\.test\.(js|jsx)$/.test(ent.name)) {
+          onDisk.push(path.relative(REPO_ROOT, abs).split(path.sep).join('/'));
+        }
+      }
+    };
+    walk(path.join(REPO_ROOT, 'src', 'components', 'CommandCenter'));
+    expect(onDisk.length, 'the CommandCenter walk found nothing, so this row would be vacuous').toBeGreaterThan(0);
+    const listed = new Set(GUARDED_FILES);
+    const missing = onDisk.filter((f) => !listed.has(f));
+    expect(
+      missing,
+      `these src/components/CommandCenter/ files are not on the guarded list: ${missing.join(', ')}.\n`
         + 'REMEDY: add each to GUARDED_FILES and regenerate the baseline IN THE SAME COMMIT (hazard 34).',
     ).toEqual([]);
   });

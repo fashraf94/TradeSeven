@@ -98,6 +98,11 @@
     "src/screens/filmRoomV2/FilmRoomDeepDive.jsx": {},
     "src/screens/filmRoomV2/FilmRoomScreenV2.jsx": {},
     "src/screens/filmRoomV2/filmRoomSeen.js": {},
-    "src/screens/filmRoomV2/FilmRoomRoute.jsx": {}
+    "src/screens/filmRoomV2/FilmRoomRoute.jsx": {},
+    "src/components/CommandCenter/pickDashboardShell.js": {},
+    "src/components/CommandCenter/hubGateCopy.js": {},
+    "src/components/CommandCenter/CommandCenterHubGate.jsx": {},
+    "src/components/CommandCenter/CommandCenterHub.jsx": {},
+    "src/components/CommandCenter/hub/hubCopy.js": {}
   }
 }
