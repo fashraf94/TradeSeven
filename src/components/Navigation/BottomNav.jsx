@@ -48,7 +48,10 @@ export default function BottomNav({ screen, setScreen, setShowForge, showForge }
   };
 
   return (
+    // data-ft-bottom-nav: inert; the Command Center hub's mobile strip finds
+    // this nav by it to sit above its measured height.
     <nav
+      data-ft-bottom-nav=""
       style={{
         position: 'fixed',
         bottom: 0,

@@ -6,6 +6,11 @@
 //
 // App renders this at a dashboard site ONLY when pickDashboardShell() names the
 // hub. The gate never chooses a shell. App hands it:
+//   site   — which dashboard site this is, 'mobile' or 'desktop' (App's own
+//            isMobile branch). The gate passes it to the hub unchanged: the
+//            hub composes by its own width AND the site, because a 614 px hub
+//            is the phone on the mobile site and one column on the desktop
+//            site (slice S1, founder ruling R-S1-3);
 //   legacy — the legacy shell element exactly as App renders it at this site
 //            with the hub off (the picker's `legacyShell`, wrapper included);
 //   frame  — App's host wrapper for what replaces that shell (desktop: the
@@ -199,10 +204,11 @@ export function createCommandCenterHubGate(importHub, { reload = reloadPage } = 
   const loader = createHubLoader(importHub);
 
   /**
+   * @param {'mobile'|'desktop'} props.site    this dashboard site, handed to the hub as is
    * @param {React.ReactElement} props.legacy  the hub-off shell for this site, as App renders it
    * @param {Function}           [props.frame] App's host wrapper for the skeleton and the hub
    */
-  function CommandCenterHubGate({ legacy, frame = unframed }) {
+  function CommandCenterHubGate({ site, legacy, frame = unframed }) {
     const [loads, setLoads] = useState(0);
     const [retrying, setRetrying] = useState(false);
     const [dismissed, setDismissed] = useState(false);
@@ -235,7 +241,7 @@ export function createCommandCenterHubGate(importHub, { reload = reloadPage } = 
       >
         {frame(
           <Suspense fallback={<HubSkeleton />}>
-            <Hub />
+            <Hub site={site} />
           </Suspense>,
         )}
       </HubLoadBoundary>
