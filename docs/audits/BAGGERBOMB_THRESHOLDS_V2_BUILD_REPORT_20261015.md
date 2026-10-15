@@ -11,7 +11,7 @@ October 15, 2026. Built by Claude Code (Opus) from Fable's build prompt carrying
 - **Missing prices.** When a price is missing, the game shows "—", never 0, and risk checks and safety exits still run. If no valid score exists at expiry, the battle ends as "result unavailable", with no stats or reflection.
 - **Everyone else.** Nothing changes: with no control document, every battle is created exactly as today, with no extra data calls, and tournaments are untouched. The one visible change for all players is that the stock modal drops the placeholder "Historical (30 days)" block and the default "Buy" rating.
 - **On and off.** Each is one script run, which previews by default, with the account ids given at run time. Turning it off sends new battles back to the old scoring.
-- **Checks.** Full test suite on Linux: 989 test files pass and 7 are skipped by design (exit 0). The lint gate and the build are clean. The three-lens review, with refuters, verified 26 findings and one question: 16 are fixed here, 6 go to you or to a ruling, 1 was refuted and the rest are notes. A final mutation pass found 7 weak spots in the tests. Each now has a test that fails if it breaks, and one was a real bug in the pilot check script, now fixed.
+- **Checks.** Full test suite on Linux: 993 test files pass and 7 are skipped by design (exit 0). The lint gate and the build are clean. The three-lens review, with refuters, verified 26 findings and one question: 16 are fixed here, 6 go to you or to a ruling, 1 was refuted and the rest are notes. A final mutation pass found 7 weak spots in the tests. Each now has a test that fails if it breaks, and one was a real bug in the pilot check script, now fixed.
 - **Production.** Nothing was deployed, switched on or written there.
 
 ## Verdict table
@@ -31,16 +31,16 @@ October 15, 2026. Built by Claude Code (Opus) from Fable's build prompt carrying
 | 11 | Result unavailable: the vision is retired; no settlement record, stats, mastery, reflection, review queue or pattern log | DONE | `agent-evaluate.js` `completeBattle` (`:6866`, `:6998`, `:7103`) | expiry suite; VISION rows |
 | 12 | Completion timing as-is | NO CHANGE | — | — |
 | 13 | v2 policy JSON (Rulings 1, 3, 4, 7, 8, 9 hashed); id, version and ref; publication rule unchanged; 45 minutes unhashed; v1 retired | DONE | `docs/specs/BAGGERBOMB_STOCK_THRESHOLDS_POLICY_V2_20261015.json`; registry; `src/utils/stockThresholdModel.js` | "v2 identity" row (the registry recomputes both hashes) |
-| 15 | Modal: normal layout from the committed context; six targets from the fill; HIT only from crossed tiers; Details collapsed; "Measured reward unavailable"; Why proximity text; every battle loses "Historical (30 days)" and the default "Buy" | DONE | `src/components/draft/ResearchTabs/BaggerBombTab.jsx`; `AssetResearchModal.jsx`; `src/components/Research/chartUtils.js`; `StockChart.jsx`; `src/screens/AgentBattleScreen.jsx` | `AssetResearchModal.stockReward.test.jsx` (7 rows); `stockThresholdRendered.test.jsx` |
+| 15 | Modal: normal layout from the committed context; six targets from the fill; HIT only from crossed tiers; Details collapsed; "Measured reward unavailable"; Why proximity text; every battle loses "Historical (30 days)" and the default "Buy" | DONE (the rating is now PR #971's analyst chip, from `main`) | `src/components/draft/ResearchTabs/BaggerBombTab.jsx`; `AssetResearchModal.jsx`; `src/components/Research/chartUtils.js`; `StockChart.jsx`; `src/screens/AgentBattleScreen.jsx` | `AssetResearchModal.stockReward.test.jsx` (7 rows); `stockThresholdRendered.test.jsx` |
 | 16 | Readers use the committed context; "—" for unavailable; legacy unchanged | DONE | §4 | `api/_utils/stockThresholdReaders.test.js` (14 rows), `src/screens/stockThresholdReaders.test.jsx` (6 rows), Film Room check-detail row |
 | — | Pilot scripts (control is dry-run by default; verify is read-only) | DONE | `scripts/stock-threshold-pilot-control.mjs`, `scripts/stock-threshold-pilot-verify.mjs` | `scripts/stock-threshold-pilot.test.js` (8 rows) |
 | — | Universe on the runtime path (UNP, HUM, ACN named) | DONE, **with a switch-on blocker** (§6a) | §6 and Appendix A | live record, GET only |
 
 | Check | Head | Result |
 | --- | --- | --- |
-| Full suite, Linux (WSL Ubuntu, Node 20.20.2, `CI=true TZ=UTC --maxWorkers=2`, exit code asserted) | `6149ee99` (code-final, `main` `7d26161f` merged) | Test Files 989 passed, 7 skipped (996). Tests 21096 passed, 88 skipped (21184). EXIT=0 |
-| `npm run lint:gate` | `6149ee99` | exit 0 |
-| `vite build` | `6149ee99` | exit 0, built in 13.87 s (3969 modules) |
+| Full suite, Linux (WSL Ubuntu, Node 20.20.2, `CI=true TZ=UTC --maxWorkers=2`, exit code asserted) | `2b55d54a` (code-final, `main` `83ec3b88` merged) | Test Files 993 passed, 7 skipped (1000). Tests 21124 passed, 88 skipped (21212). EXIT=0 |
+| `npm run lint:gate` | `2b55d54a` | exit 0 |
+| `vite build` | `2b55d54a` | exit 0, built in 16.59 s (3969 modules) |
 | Flag-flip dry run (flag line → `false`, every pin as shipped) | `107767f4` | Only flag-state pins fail (§7) |
 | Broad `eslint .` | — | Not run as a gate and **not presented as clean** |
 
@@ -48,9 +48,10 @@ October 15, 2026. Built by Claude Code (Opus) from Fable's build prompt carrying
 
 - `git fetch origin` ran first. Branch `claude/baggerbomb-thresholds-v2-e22124`, HEAD `495ee07b` = `origin/main`, clean tree.
 - The first commit, `cda11253`, is the byte-exact Phase 0 report (interim). The final Phase 0 copy, with §C3 finalized at 16:50 ET by the other session, landed as `30322ffe` before Ruling 7's closing-quote rule was implemented.
-- `main` moved twice during the build, and each move was merged with the app's sync tool:
+- `main` moved three times during the build, and each move was merged with the app's sync tool:
   - `11ecd41b` (PR #959, docs/scripts) at `9b1a42c6`.
   - `7d26161f` (PRs #968 eval timeout 40 s, #969 Command Center S0, #970 BUILD_RULES) at `599562cb`. The only conflict was the end of `src/config/featureFlags.js`; both flags are kept and S0's flag is still last.
+  - `83ec3b88` (PR #971 research modal honesty fixes) at `e18f94ab`. The conflict was `src/components/draft/AssetResearchModal.jsx`. #971 replaced the rating with a Wall Street analyst-consensus chip shown only from a real profile, which already meets Ruling 15's "no default Buy", so the merge kept `main`'s display and this build's measured chart data. The Ruling 15 rating row now pins the chip (`2b55d54a`).
 - Anchors from Phase 0 §E were re-verified before each edit. Nothing on `main` contradicted a ruling when the build started, so there was no STOP before writing.
 - Commits:
   - `f3b01be6` contract, timing, admission and the switch
@@ -61,8 +62,9 @@ October 15, 2026. Built by Claude Code (Opus) from Fable's build prompt carrying
   - review fixes: `f341fe02` (admission and evaluator rows), `52ca74cf` (readers), `6c1b121c` (second precondition, build readings), `d18ad77a` (expiry count, F1b final write, tape final scores)
   - `599562cb` merge of `main` (`7d26161f`)
   - `6149ee99` mutation-lens kill rows and the verify agreement fix
+  - `e18f94ab` merge of `main` (`83ec3b88`); `2b55d54a` the rating row follows #971
   - the commit that adds this report
-- Diff against current `main`: 64 files, +4,093/−463 before the commit that adds this report.
+- Diff against current `main` (`83ec3b88`): 64 files, +4,068/−442, not counting this report.
 
 ## 2. Fence contact
 
@@ -278,7 +280,8 @@ Ruling 2's retry hint ("15 minutes after the close") should follow the decision.
 | --- | --- | --- | --- |
 | `9b1a42c6` (build + first `main` merge) | 1 failed, 983 passed, 7 skipped (991) | 1 failed, 20967 passed, 88 skipped | 1 |
 | `599562cb` (review fixes + second `main` merge) | 989 passed, 7 skipped (996) | 21093 passed, 88 skipped (21181) | 0 |
-| `6149ee99` (code-final, mutation kill rows) | 989 passed, 7 skipped (996) | 21096 passed, 88 skipped (21184) | 0 |
+| `6149ee99` (mutation kill rows) | 989 passed, 7 skipped (996) | 21096 passed, 88 skipped (21184) | 0 |
+| `2b55d54a` (code-final, third `main` merge) | 993 passed, 7 skipped (1000) | 21124 passed, 88 skipped (21212) | 0 |
 
 - The one failure at `9b1a42c6` was `api/_utils/compositionProtectedStores.scan.test.js`. The deny-by-default protected-store scan flagged the pilot control script's single `ref.set` on `stockThresholdControl/admission`. The writer was reviewed and allowlisted, with a note, in `107767f4`.
 - The pushed head adds only this report (`docs/audits/`), so its `vite build` is recorded in the PR.
@@ -292,8 +295,8 @@ Ruling 2's retry hint ("15 minutes after the close") should follow the decision.
 - A code rollback of the flag would move the pin, the guard entry and `STOCK_ADMISSION_CONTROL_READS` together. The runbook's rollback is the control document, which needs no code.
 
 **lint:gate and vite build.**
-- `npm run lint:gate` exited 0 at `d18ad77a`, at `599562cb` and at `6149ee99`.
-- `vite build` exited 0 at `6149ee99`. The CSS-syntax and dynamic-import warnings are pre-existing.
+- `npm run lint:gate` exited 0 at `d18ad77a`, `599562cb`, `6149ee99` and `2b55d54a`.
+- `vite build` exited 0 at `6149ee99` and `2b55d54a`. The CSS-syntax and dynamic-import warnings are pre-existing.
 - Broad `eslint .` is not a gate here and is not claimed clean.
 
 ## 8. Review record
