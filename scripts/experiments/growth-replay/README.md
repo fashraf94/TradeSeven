@@ -58,3 +58,22 @@ node scripts/experiments/growth-replay/growthReplay.js batchcheck-analyze --run 
 - **Spend limit.** A spend-limit error stops the command (exit 3). A spend-limit *result* inside a batch still lets `collect` save and delete what was paid for, but no retry batch is created.
 - **Deletes are retried.** Every `collect` retries deleting any batch whose results are on disk.
 - **A new pilot is refused once batches exist.** It would remap their custom ids; start a new run with `plan` instead.
+
+## Changed-moments score (Fable, 14 Oct 2026)
+
+`changedMomentsScore.js` asks whether the calls the learning changed did **better** or **worse**, using what the market did next. No model calls. The report is `docs/audits/20261014_EXPERIMENT_CHANGED_MOMENTS_SCORE.md`; the method is pre-declared in the script's header (M1–M9) and the report's §3.
+
+- **Moments.** The batch check's 29 moments whose usual call differs with and without the learned paragraph (the set of record), the main run's other `strip` flips (the second set), and every swap that is a usual call in the batch check (the control).
+- **Scoring is imported, never copied.** Each call is replayed by the Film Room tape's `replayAction` (`api/_utils/filmTape/tapeReplay.js`), which scores through the fenced `calculateAssetScoreServer`. Fenced files edited: none.
+- **Read-only.** Firestore through `.collection / .doc / .get / .getAll / .where` only; every run is gated by the same write-call grep as the replay.
+- **EODHD.** 1-minute bars, one request per symbol, at most **400 requests**, counted in the run manifest before each request. The key (`EODHD_API_KEY`, environment then `.env.local`) is never printed; an EODHD URL is redacted in every message.
+- **Local only.** Everything is written to `%USERPROFILE%/growth-replay-runs/cms-<time>/`; files named `*.local.*` carry ids or player text and are never committed. `summary.json` carries neither.
+
+```
+node scripts/experiments/growth-replay/changedMomentsScore.js selftest       # 78 rows; gates every other command
+node scripts/experiments/growth-replay/changedMomentsScore.js plan           # Firestore reads, inputs, the sale reconciliation, the request count; no bars
+node scripts/experiments/growth-replay/changedMomentsScore.js known-answer   # pre-bar gates (one session, sale reconciliation), fetches every bar (counted), the series cross-check, the 90% gate
+node scripts/experiments/growth-replay/changedMomentsScore.js score          # refuses unless the gate passed under this same script; reads the bar cache only
+```
+
+After the run, the BUILD_RULES §2 review changed guards, records and tests only (the script header lists them; the report's §8 records the review). Re-running `known-answer` and `score` on the same run from the bar cache reproduces every scored number and makes no EODHD request.
