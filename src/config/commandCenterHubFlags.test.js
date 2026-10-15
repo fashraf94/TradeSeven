@@ -62,9 +62,15 @@ describe('COMMAND_CENTER_HUB_ENABLED — the dark pin (BUILD_RULES §2)', () => 
     );
   });
 
-  it('no consumer reads the constant: outside featureFlags.js, src/ reaches the flag only through its accessor', () => {
+  it('no module-scope derivation of the accessor exists in the flag module', () => {
+    // The cockpitUiFlags.test.js precedent row; the next row covers consumers.
+    expect(SRC).not.toMatch(/const \w+ = isCommandCenterHubOn\(\)/);
+  });
+
+  it('no consumer reads the constant, or derives the accessor at module scope: src/ reads the flag at render', () => {
     // Where the accessor is called (App.jsx, once, at render inside the
     // dashboard block) is pinned by commandCenterHub.mount.guard.test.js.
+    // A column-0 `const` is module scope: a consumer that froze the flag at load.
     const readers = [];
     const walk = (dir) => {
       for (const ent of readdirSync(dir, { withFileTypes: true })) {
@@ -74,7 +80,9 @@ describe('COMMAND_CENTER_HUB_ENABLED — the dark pin (BUILD_RULES §2)', () => 
         if (abs === path.join(HERE, 'featureFlags.js')) continue;
         // Code only: a comment that names the flag is documentation, not a read.
         const code = readFileSync(abs, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-        if (/\bCOMMAND_CENTER_HUB_ENABLED\b/.test(code)) readers.push(path.relative(SRC_ROOT, abs));
+        if (/\bCOMMAND_CENTER_HUB_ENABLED\b/.test(code) || /^(?:export )?const \w+ = isCommandCenterHubOn\(\)/m.test(code)) {
+          readers.push(path.relative(SRC_ROOT, abs));
+        }
       }
     };
     walk(SRC_ROOT);
