@@ -272,10 +272,13 @@ describe('S1 keyboard — tablist / tab / tabpanel with a roving tab stop (spec 
     const { host } = renderHub({ site: 'mobile', hubWidth: 390 });
     const tabs = byRole(host, 'tab');
     expect(tabs.map((t) => t.textContent)).toEqual(['Overview', 'Research', 'Partnership', 'Loadout']);
+    // One tab stop: the selected tab's (a roving tabindex).
+    expect(tabs.map((t) => t.tabIndex)).toEqual([0, -1, -1, -1]);
     tabs[0].focus();
     press(tabs[0], 'ArrowRight');
     expect(document.activeElement).toBe(tabs[1]);
     expect(host.querySelector('[data-hub-phone-panel]').getAttribute('data-hub-phone-panel')).toBe('research');
+    expect(tabs.map((t) => t.tabIndex)).toEqual([-1, 0, -1, -1]);
     press(tabs[1], 'End');
     expect(document.activeElement).toBe(tabs[3]);
     press(tabs[3], 'ArrowRight');
