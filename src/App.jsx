@@ -123,8 +123,10 @@ import DashboardLoop from './components/Dashboard/DashboardLoop';
 import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
+import CommandCenterHubGate from './components/CommandCenter/CommandCenterHubGate';
+import { pickDashboardShell, DASHBOARD_SHELLS } from './components/CommandCenter/pickDashboardShell';
 import { excludeVoidedGroupBattles } from './utils/commandCenterLiveBattles';
-import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn, isDeploySkyCouplingOn, isCharacterPaneOn } from './config/featureFlags';
+import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn, isDeploySkyCouplingOn, isCharacterPaneOn, isCommandCenterHubOn } from './config/featureFlags';
 import { pickCeremonyEntry } from './components/Dashboard/deployCeremony/ceremonyData';
 // Delight Layer Task 2: the battle-weather starfield. Mounted ONLY at the two
 // dashboard sites below, each behind its own flag; every other DesktopBackground
@@ -8757,13 +8759,57 @@ export default function PortfolioDuel() {
 
     const hasActiveBattle = activeBattlesWithData.length > 0;
 
+    // Command Center hub S0 (spec V1.2 §4): ONE pure picker chooses the shell at
+    // BOTH sites below. Hub off → each site's legacy shell, exactly as before;
+    // hub on → CommandCenterHubGate, which falls back to that same legacy shell
+    // if the hub chunk fails to load. The hub flag is read here, at render.
+    // The starfield / background and the host wrappers stay App's.
+    const dashboardPick = pickDashboardShell({
+      hubOn: isCommandCenterHubOn(),
+      isMobile,
+      mobileDashboardOn: COMMAND_DASHBOARD_ENABLED,
+      desktopDashboardOn: COMMAND_DASHBOARD_DESKTOP_ENABLED,
+    });
+
     // ═══════════════════════════════════════════════════════════
     // MOBILE: The Loop — unified battle feed
     // ═══════════════════════════════════════════════════════════
     if (isMobile) {
       // Flag-gated swap: the new agent-command loop-home vs. the existing feed.
       // Same props either way; DashboardLoop stays untouched (instant rollback).
-      const DashboardComponent = COMMAND_DASHBOARD_ENABLED ? CommandDashboard : DashboardLoop;
+      const DashboardComponent = dashboardPick.legacyShell === DASHBOARD_SHELLS.COMMAND_DASHBOARD ? CommandDashboard : DashboardLoop;
+      const legacyDashboard = (
+        <DashboardComponent
+          user={user}
+          setShowForge={setShowForge}
+          onCreateAgentBattle={handleCreateAgentTrainingBattle}
+          onEnterBattle={handleEnterCeremonyBattle}
+          onOpenAgentBattle={handleOpenAgentBattle}
+          activeBattles={activeBattles}
+          activeDraftBattles={activeDraftBattles}
+          activeTrainingBattles={activeTrainingBattles}
+          activeAgentBattles={activeAgentBattles}
+          voiceLayerCaches={voiceLayerCaches}
+          lobbyBattles={lobbyBattles}
+          completedBattles={completedBattles}
+          setCurrentBattle={setCurrentBattle}
+          setCurrentDraft={setCurrentDraft}
+          setScreen={setScreen}
+          setActiveBattleId={setActiveBattleId}
+          setBattleToJoin={setBattleToJoin}
+          copyToClipboard={copyToClipboard}
+          setShowBaggerBombModal={setShowBaggerBombModal}
+          setShowSnakeDraftModal={setShowSnakeDraftModal}
+          setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
+          setShowTrainingConfirmModal={setShowTrainingConfirmModal}
+          setTrainingConfirmType={setTrainingConfirmType}
+          setSidebarOpen={setSidebarOpen}
+          unreadCount={unreadCount}
+          activeDraftBanner={activeDraftBanner}
+          setActiveDraftBanner={setActiveDraftBanner}
+          onStoryPress={(story) => handleStorySelect(story)}
+        />
+      );
       return (
         <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen('home'); }}>
           <div style={containerStyle}>
@@ -8774,36 +8820,9 @@ export default function PortfolioDuel() {
             {isStarfieldMobileOn()
               ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} />
               : <DesktopBackground isDesktop={isDesktop} />}
-            <DashboardComponent
-              user={user}
-              setShowForge={setShowForge}
-              onCreateAgentBattle={handleCreateAgentTrainingBattle}
-              onEnterBattle={handleEnterCeremonyBattle}
-              onOpenAgentBattle={handleOpenAgentBattle}
-              activeBattles={activeBattles}
-              activeDraftBattles={activeDraftBattles}
-              activeTrainingBattles={activeTrainingBattles}
-              activeAgentBattles={activeAgentBattles}
-              voiceLayerCaches={voiceLayerCaches}
-              lobbyBattles={lobbyBattles}
-              completedBattles={completedBattles}
-              setCurrentBattle={setCurrentBattle}
-              setCurrentDraft={setCurrentDraft}
-              setScreen={setScreen}
-              setActiveBattleId={setActiveBattleId}
-              setBattleToJoin={setBattleToJoin}
-              copyToClipboard={copyToClipboard}
-              setShowBaggerBombModal={setShowBaggerBombModal}
-              setShowSnakeDraftModal={setShowSnakeDraftModal}
-              setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
-              setShowTrainingConfirmModal={setShowTrainingConfirmModal}
-              setTrainingConfirmType={setTrainingConfirmType}
-              setSidebarOpen={setSidebarOpen}
-              unreadCount={unreadCount}
-              activeDraftBanner={activeDraftBanner}
-              setActiveDraftBanner={setActiveDraftBanner}
-              onStoryPress={(story) => handleStorySelect(story)}
-            />
+            {dashboardPick.shell === DASHBOARD_SHELLS.HUB
+              ? <CommandCenterHubGate legacy={legacyDashboard} />
+              : legacyDashboard}
           </div>
         </ErrorBoundary>
       );
@@ -8812,6 +8831,54 @@ export default function PortfolioDuel() {
     // ═══════════════════════════════════════════════════════════
     // DESKTOP: The Minimal — two-panel layout (Phase 3)
     // ═══════════════════════════════════════════════════════════
+    // The persistent fixed sidebar's offset. CommandDashboardDesktop and the hub
+    // sit inside it; DashboardDesktop offsets itself through its
+    // sidebarCollapsed prop, so it never gets this wrapper.
+    const sidebarOffsetStyle = { marginLeft: sidebarCollapsed ? '64px' : '220px', transition: 'margin-left 0.2s ease' };
+    const legacyDesktopDashboard = dashboardPick.legacyShell === DASHBOARD_SHELLS.COMMAND_DASHBOARD_DESKTOP ? (
+      // Desktop Command surface (dark behind the flag). Offset for the
+      // persistent fixed sidebar, matching the other desktop screens.
+      <div style={sidebarOffsetStyle}>
+        <CommandDashboardDesktop
+          user={user}
+          setScreen={setScreen}
+          setSidebarOpen={setSidebarOpen}
+          unreadCount={unreadCount}
+          setShowForge={setShowForge}
+          setCurrentBattle={setCurrentBattle}
+          activeAgentBattles={activeAgentBattles}
+          voiceLayerCaches={voiceLayerCaches}
+          onCreateAgentBattle={handleCreateAgentTrainingBattle}
+          onEnterBattle={handleEnterCeremonyBattle}
+          onOpenAgentBattle={handleOpenAgentBattle}
+        />
+      </div>
+    ) : (
+      <DashboardDesktop
+        user={user}
+        activeBattles={activeBattles}
+        activeDraftBattles={activeDraftBattles}
+        activeTrainingBattles={activeTrainingBattles}
+        activeAgentBattles={activeAgentBattles}
+        lobbyBattles={lobbyBattles}
+        completedBattles={completedBattles}
+        setCurrentBattle={setCurrentBattle}
+        setCurrentDraft={setCurrentDraft}
+        setScreen={setScreen}
+        setActiveBattleId={setActiveBattleId}
+        setBattleToJoin={setBattleToJoin}
+        copyToClipboard={copyToClipboard}
+        setShowBaggerBombModal={setShowBaggerBombModal}
+        setShowSnakeDraftModal={setShowSnakeDraftModal}
+        setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
+        setShowTrainingConfirmModal={setShowTrainingConfirmModal}
+        setTrainingConfirmType={setTrainingConfirmType}
+        activeDraftBanner={activeDraftBanner}
+        setActiveDraftBanner={setActiveDraftBanner}
+        sidebarCollapsed={sidebarCollapsed}
+        onStoryPress={(story) => handleStorySelect(story)}
+      />
+    );
     return (
       <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen('home'); }}>
         <div style={containerStyle}>
@@ -8823,50 +8890,15 @@ export default function PortfolioDuel() {
             ? <StarfieldBackground mode="desktop" liveGames={starfieldLiveGames} />
             : <DesktopBackground isDesktop={isDesktop} />}
 
-          {COMMAND_DASHBOARD_DESKTOP_ENABLED ? (
-            // Desktop Command surface (dark behind the flag). Offset for the
-            // persistent fixed sidebar, matching the other desktop screens.
-            <div style={{ marginLeft: sidebarCollapsed ? '64px' : '220px', transition: 'margin-left 0.2s ease' }}>
-              <CommandDashboardDesktop
-                user={user}
-                setScreen={setScreen}
-                setSidebarOpen={setSidebarOpen}
-                unreadCount={unreadCount}
-                setShowForge={setShowForge}
-                setCurrentBattle={setCurrentBattle}
-                activeAgentBattles={activeAgentBattles}
-                voiceLayerCaches={voiceLayerCaches}
-                onCreateAgentBattle={handleCreateAgentTrainingBattle}
-                onEnterBattle={handleEnterCeremonyBattle}
-                onOpenAgentBattle={handleOpenAgentBattle}
-              />
-            </div>
-          ) : (
-            <DashboardDesktop
-              user={user}
-              activeBattles={activeBattles}
-              activeDraftBattles={activeDraftBattles}
-              activeTrainingBattles={activeTrainingBattles}
-              activeAgentBattles={activeAgentBattles}
-              lobbyBattles={lobbyBattles}
-              completedBattles={completedBattles}
-              setCurrentBattle={setCurrentBattle}
-              setCurrentDraft={setCurrentDraft}
-              setScreen={setScreen}
-              setActiveBattleId={setActiveBattleId}
-              setBattleToJoin={setBattleToJoin}
-              copyToClipboard={copyToClipboard}
-              setShowBaggerBombModal={setShowBaggerBombModal}
-              setShowSnakeDraftModal={setShowSnakeDraftModal}
-              setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}
-              setShowTrainingConfirmModal={setShowTrainingConfirmModal}
-              setTrainingConfirmType={setTrainingConfirmType}
-              activeDraftBanner={activeDraftBanner}
-              setActiveDraftBanner={setActiveDraftBanner}
-              sidebarCollapsed={sidebarCollapsed}
-              onStoryPress={(story) => handleStorySelect(story)}
+          {dashboardPick.shell === DASHBOARD_SHELLS.HUB ? (
+            // The hub (and its skeleton / load notice) sits in the same sidebar
+            // offset as CommandDashboardDesktop. The fallback shell is passed
+            // unwrapped: it carries its own offset, as above.
+            <CommandCenterHubGate
+              legacy={legacyDesktopDashboard}
+              frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>}
             />
-          )}
+          ) : legacyDesktopDashboard}
         </div>
       </ErrorBoundary>
     );

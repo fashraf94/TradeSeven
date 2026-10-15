@@ -183,7 +183,7 @@ import { resolveModeConfig } from '../../src/constants/agentGameModes.js';
 // and resolveRecordTargetId (pure, given the in-tx clone doc — the settlement)
 // share one rule: casual clone → parent, everything else → self (byte-identical).
 import { resolveAttributionAgentId, resolveRecordTargetId } from '../_utils/casualClone.js';
-import { classifyHaikuFailure, classifyTimeoutKind, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, PROMPT_BUILD_CEILING_MS, PROMPT_BUILD_TIMEOUT_ERROR_NAME, EVAL_MODEL_ID, EVAL_MAX_OUTPUT_TOKENS } from '../_utils/agentEvalTransport.js';
+import { classifyHaikuFailure, classifyTimeoutKind, shouldStartHaikuCall, nextConsecutiveEvalFailures, HAIKU_CALL_CEILING_MS, HAIKU_SDK_TIMEOUT_MS, PROMPT_BUILD_CEILING_MS, PROMPT_BUILD_TIMEOUT_ERROR_NAME, EVAL_MODEL_ID, EVAL_MAX_OUTPUT_TOKENS } from '../_utils/agentEvalTransport.js';
 import { logBattlePattern } from '../_utils/battlePatternLogger.js';
 import { runCanonicalOpenSweep } from '../_utils/canonicalOpenSweep.js';
 // Tick capture: the ONE canonical content-hash helper (BUILD_RULES §4 — never
@@ -225,8 +225,8 @@ function getAnthropicClient() {
     // maxRetries: 0 — deliberate deviation from the codebase's maxRetries: 2
     // convention (decide.js, reflect.js, compile-dimensions.js, ...). The SDK
     // retries timeouts and connection errors by default, and this cron cannot
-    // absorb retry multiplication: 2 retries × the 20s per-request timeout at
-    // the call site ≈ 60s per battle — enough to blow a single battle's slice of
+    // absorb retry multiplication: 2 retries × the per-request timeout at the
+    // call site (HAIKU_SDK_TIMEOUT_MS, 40s) ≈ 120s per battle — enough to blow a single battle's slice of
     // the shared budget and lose its awaited finalUpdate. Phase 2 failureClass
     // instrumentation measures whether transient errors (429/5xx) are frequent
     // enough to justify a budgeted retry later (founder decision L2: measure
@@ -2861,19 +2861,20 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
 
     // Pre-call budget guard: a late-run battle must never start the evaluation
     // engine when its bounded phases — the 10s prompt-build ceiling, then the
-    // 22s hard-abort call ceiling, then post-call work (parallel narration
+    // 42s hard-abort call ceiling (22s until the Oct 15, 2026 timeout raise),
+    // then post-call work (parallel narration
     // dispatch ≤10s + the awaited finalUpdate, the same 12s allowance the
     // anticipation gate uses) — could push the function past TIME_BUDGET_MS /
-    // the kill window and lose the finalUpdate. 44s, the sum of the three named
-    // constants in agentEvalTransport.js (34s until Sep 2026, when the build
+    // the kill window and lose the finalUpdate. 64s, the sum of the three named
+    // constants in agentEvalTransport.js (44s at the 20s timeout; 34s until Sep 2026, when the build
     // became a bounded phase BEFORE the call rather than time stolen from
     // inside its ceiling). The handler-level deferral can't express this: by
     // now the battle's risk swaps and score writes have already happened
     // mid-function — we skip only the Haiku call and keep the normal write
     // path. It still runs ONCE, before the build.
     // Calls (§3.7): at shadow/on the pre-call requirement carries the calls
-    // phase's 4,000 ms admission reserve (48,000 ms); at off it is 0 and the
-    // requirement is today's 44,000 ms exactly.
+    // phase's 4,000 ms admission reserve (68,000 ms); at off it is 0 and the
+    // requirement is 64,000 ms.
     const budget = shouldStartHaikuCall({ elapsedMs: Date.now() - cronStartTime, timeBudgetMs: TIME_BUDGET_MS, callsReserveMs: callsReserveMsFor(callsCtx.mode) });
     if (refreshFailure) {
       // F1b — a swap committed and its re-read failed. No model call: the
@@ -2993,7 +2994,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         const { systemPrompt, identityBlock, liveContextBlock } = built;
 
         // ---- Phase 2: the call, and ONLY now the backstop ----
-        // L1 transport: SDK-native per-request timeout (20s) replaces the old
+        // L1 transport: SDK-native per-request timeout (HAIKU_SDK_TIMEOUT_MS —
+        // 40s since Oct 15, 2026; 20s before) replaces the old
         // bare Promise.race — the SDK aborts its underlying fetch at `timeout`
         // (verified v0.71.2 fetchWithTimeout), so the losing request is genuinely
         // cancelled, never orphaned server-side billing unrecorded tokens. The
@@ -3002,9 +3004,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // ARMED HERE, not before the build (Sep 2026 transport hygiene; the
         // placement dates to June 11 and Phase 0 §3.1 steps 8–12 measured its
         // cost). Armed before the build, prompt-assembly time was charged
-        // against the 22s ceiling: the call's effective ceiling was 22s − the
-        // build, and any build over 2s fired the backstop before the SDK's own
-        // 20s timeout could — so the backstop was not a backstop. Both timers
+        // against the (then 22s) ceiling: the call's effective ceiling was the
+        // ceiling − the build, and any build over 2s fired the backstop before
+        // the SDK's own timeout could — so the backstop was not a backstop. Both timers
         // now measure the same interval from the same instant.
         const abortCtrl = new AbortController();
         hardAbort = setTimeout(() => abortCtrl.abort(), HAIKU_CALL_CEILING_MS);
@@ -3033,7 +3035,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             // 'shadow', the 1a text at 'on' (per-owner).
             tools: [buildTradeDecisionTool({ declarations: callsCtx.mode })],
             tool_choice: { type: 'tool', name: 'submit_trade_decision' },
-          }, { timeout: 20_000, signal: abortCtrl.signal });
+          }, { timeout: HAIKU_SDK_TIMEOUT_MS, signal: abortCtrl.signal });
         } finally {
           // Return OR throw — the honest wall time the call actually got.
           callMs = Date.now() - callStartedAt;
@@ -3158,7 +3160,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // build-phase failure whose message happens to be timeout-shaped —
           // gaxios' 'Total timeout of 60000ms exceeded' on a stalled token
           // refresh, a socket's 'connect ETIMEDOUT' — would be recorded as
-          // timeoutKind 'sdk', asserting that the SDK's 20s per-request timeout
+          // timeoutKind 'sdk', asserting that the SDK's per-request timeout
           // fired on a request that was never sent.
           timeoutKind: callMs === null ? null : classifyTimeoutKind(err),
         };

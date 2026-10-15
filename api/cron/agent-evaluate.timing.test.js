@@ -3,22 +3,24 @@
 // Transport hygiene (Sep 12, 2026) — WHEN the decider's call starts, HOW LONG
 // it gets, and what the record says about it. Three end-to-end rows against the
 // REAL processAgentBattle, the same harness the tickStamps suites use, with
-// `setTimeout` faked so a 21.5-second build and a 20-second call cost the suite
-// nothing. The seam is the cron itself, never a re-implementation of its
+// `setTimeout` faked so a build half a second under the call ceiling and a
+// 40-second call cost the suite nothing. The seam is the cron itself, never a re-implementation of its
 // ordering: the builders and the model are doubled, the sequence between them
 // is production code.
 //
 //   §4.1 THE TIMER PLACEMENT. The AbortController backstop is armed AFTER the
 //        prompt is built, not before it. Under the June 11 placement a 21.5 s
-//        build left the call 0.5 s of the 22 s ceiling and the backstop fired
-//        INSIDE the call — before the SDK's own 20 s timeout could. The row
+//        build left the call 0.5 s of the (then 22 s) ceiling and the backstop
+//        fired INSIDE the call — before the SDK's own timeout could. The row
+//        (re-based on the Oct 15, 2026 42 s ceiling: the build is the ceiling
+//        minus 0.5 s, so the old placement still leaves the call 500 ms)
 //        drives exactly that scenario and asserts on the signal the cron hands
 //        `messages.create`: not aborted at call time, and never aborted during
 //        a 5 s call.
 //
 //        The build ceiling (§2.2) is raised for this row alone, through the
 //        transport module's live binding: with the production 10 s ceiling a
-//        21.5 s build would end as `build_timeout` and never reach the call, so
+//        41.5 s build would end as `build_timeout` and never reach the call, so
 //        the ceiling would decide the row instead of the placement under test.
 //        §4.2 below runs the ceiling at its production value.
 //
@@ -138,7 +140,7 @@ const TRANSPORT = await import('../_utils/agentEvalTransport.js');
 const { HAIKU_CALL_CEILING_MS } = TRANSPORT;
 
 const REAL_BUILD_CEILING_MS = 10_000;
-const REAL_CALL_CEILING_MS = 22_000;
+const REAL_CALL_CEILING_MS = 42_000; // 22_000 until the Oct 15, 2026 timeout raise (SDK 40s + 2s backstop)
 
 /** What the doubled model saw and did — the evidence both timing rows turn on. */
 let calls;
@@ -214,12 +216,12 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('§4.1 — the abort backstop is armed AFTER the prompt is built', () => {
   // The defect, stated as arithmetic: armed before the build, the backstop
   // fires BUILD + CALL_REMAINDER after t0, so the call's effective ceiling is
-  // 22s − build. At a 21.5s build that is 500 ms.
-  const BUILD_MS = 21_500;
+  // the ceiling − build. At a build 0.5s under the ceiling that is 500 ms.
+  const BUILD_MS = REAL_CALL_CEILING_MS - 500;
   const CALL_MS = 5_000;
 
   beforeEach(() => {
-    // Above the 21.5s build: this row is about the placement, not the ceiling.
+    // Above the build: this row is about the placement, not the ceiling.
     mocks.buildCeilingMs = 60_000;
     mocks.buildDelayMs = BUILD_MS;
     mocks.create.mockImplementation(modelTaking(CALL_MS));
@@ -230,7 +232,7 @@ describe('§4.1 — the abort backstop is armed AFTER the prompt is built', () =
 
     expect(mocks.create).toHaveBeenCalledTimes(1);
     expect(calls).toHaveLength(1);
-    // THE ROW. Under the June 11 placement this signal was armed 21.5s before
+    // THE ROW. Under the June 11 placement this signal was armed BUILD_MS before
     // the call and had 500 ms left on it; the abort fired 500 ms in and the
     // tick recorded `timeout` with no decision.
     expect(calls[0].abortedAtCallTime, 'the signal must be fresh at call time').toBe(false);
@@ -266,27 +268,35 @@ describe('§4.1 — the abort backstop is armed AFTER the prompt is built', () =
     // Review lens A, finding A4: the `if (buildMs === null)` guard in the catch
     // is the only thing stopping buildMs from absorbing the CALL's wall time on
     // a call-phase failure — i.e. from answering "build or call?" wrongly in
-    // exactly the case the field exists for. Without it this reads 43 500.
+    // exactly the case the field exists for. Without it this reads BUILD_MS + the ceiling.
     expect(entry.buildMs).toBe(BUILD_MS);
   });
 
   it("the SDK's own timeout is recorded as 'sdk', end to end — the common production path, not just the backstop", async () => {
-    // Review lens C, finding C6: the SDK is doubled, so `timeout: 20_000` is
-    // inert in every test and only the cron's 22s backstop can fire. In
+    // Review lens C, finding C6: the SDK is doubled, so the SDK's own timeout
+    // never fires by itself in a test and only the cron's backstop can. In
     // production the SDK's own timeout fires FIRST, so this row drives the
     // shape the SDK throws (0.71.2: constructor APIConnectionTimeoutError,
     // `.name` left at 'Error', message 'Request timed out.') through the real
     // processAgentBattle and asserts what the record says about it.
-    mocks.create.mockImplementation(async () => {
-      await new Promise((r) => setTimeout(r, 20_000));
+    // Oct 15, 2026: the double now HONORS the `timeout` the cron hands it, so
+    // the row also proves which clock the cron sets — the named
+    // HAIKU_SDK_TIMEOUT_MS (40s), not the old 20_000 literal.
+    let handedTimeout;
+    mocks.create.mockImplementation(async (_body, opts) => {
+      handedTimeout = opts.timeout;
+      await new Promise((r) => setTimeout(r, opts.timeout));
       const err = new Error('Request timed out.');
       Object.defineProperty(err.constructor, 'name', { value: 'APIConnectionTimeoutError', configurable: true });
       throw err;
     });
     const { entry } = await runTick();
+    expect(handedTimeout).toBe(TRANSPORT.HAIKU_SDK_TIMEOUT_MS);
+    expect(handedTimeout).toBe(40_000);
+    expect(handedTimeout).toBeLessThan(TRANSPORT.HAIKU_CALL_CEILING_MS); // the backstop stays behind it
     expect(entry.haikuError.failureClass).toBe('timeout');
     expect(entry.haikuError.timeoutKind).toBe('sdk');
-    expect(entry.callMs).toBe(20_000);      // the call DID run — the kind is earned
+    expect(entry.callMs).toBe(40_000);      // the call DID run — the kind is earned
     expect(entry.buildMs).toBe(BUILD_MS);
     expect(entry.promptBuiltAt).not.toBeNull();
   });
@@ -313,7 +323,7 @@ describe('§4.1 — the abort backstop is armed AFTER the prompt is built', () =
   it('a BUILD failure whose message is timeout-shaped is never recorded as a transport timeout kind', async () => {
     // Review lenses A/B/D (A2 / B1 / D4). The build's own Firestore path can
     // throw gaxios' 'Total timeout of …ms exceeded' on a stalled token refresh.
-    // failureClass 'timeout' there is pre-existing; claiming the SDK's 20s
+    // failureClass 'timeout' there is pre-existing; claiming the SDK's own
     // per-request timeout fired on a request that was never sent is not.
     mocks.buildDelayMs = 0;
     mocks.liveBlockError = new Error('Total timeout of 60000ms exceeded before any response was received');

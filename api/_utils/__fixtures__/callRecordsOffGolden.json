@@ -7551,7 +7551,7 @@
               "guardrailSourceNote": null,
               "haikuError": {
                 "failureClass": "budget_skipped",
-                "message": "cron budget too low to start Haiku call (40s remaining, 44s required)",
+                "message": "cron budget too low to start Haiku call (40s remaining, 64s required)",
                 "timestamp": "2026-09-09T15:00:00.000Z",
                 "timeoutKind": null,
                 "evalId": "eval_001"
@@ -7587,7 +7587,7 @@
           "cronState.cronErrors": [
             {
               "timestamp": "2026-09-09T15:00:00.000Z",
-              "error": "haiku_eval budget_skipped: cron budget too low to start Haiku call (40s remaining, 44s required)",
+              "error": "haiku_eval budget_skipped: cron budget too low to start Haiku call (40s remaining, 64s required)",
               "failureClass": "budget_skipped",
               "evalId": "eval_001"
             }
@@ -7895,7 +7895,7 @@
               },
               "controlSourceText": {},
               "faults": {
-                "model": "cron budget too low to start Haiku call (40s remaining, 44s required)",
+                "model": "cron budget too low to start Haiku call (40s remaining, 64s required)",
                 "guardrail": null,
                 "capture": null
               },
