@@ -424,8 +424,10 @@ describe('Build 2a — Amendment C end to end on the real check', () => {
 });
 
 describe('§3.12 row 6 — the budget on the model path', () => {
-  it('admission: 46 s left admits the model at off (44,000 required) and skips it at shadow (48,000 required)', async () => {
-    const cronStartTime = Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 46_000);
+  // Re-based Oct 15, 2026 (the eval model timeout 20s → 40s): the requirement
+  // is 64,000 at off and 68,000 at shadow/on (44,000 / 48,000 before).
+  it('admission: 66 s left admits the model at off (64,000 required) and skips it at shadow (68,000 required)', async () => {
+    const cronStartTime = Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 66_000);
     const off = await runTick({ mode: 'off', cronStartTime });
     expect(mocks.create).toHaveBeenCalledTimes(1);
     expect(off.entry.haikuError).toBeNull();
@@ -435,9 +437,9 @@ describe('§3.12 row 6 — the budget on the model path', () => {
   });
 
   it('the phase is skipped at available < 4,000 with a narration queued: the narration still dispatches, nothing is published, the wire says failed', async () => {
-    const cronStartTime = Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 48_000);
-    // The model call takes 33 s of the shared clock: 15 s remain at the phase, 3 s past the tail.
-    const beforeModel = async () => { vi.setSystemTime(new Date(Date.now() + 33_000)); };
+    const cronStartTime = Date.parse(FROZEN_NOW) - (TIME_BUDGET_MS - 68_000);
+    // The model call takes 53 s of the shared clock: 15 s remain at the phase, 3 s past the tail.
+    const beforeModel = async () => { vi.setSystemTime(new Date(Date.now() + 53_000)); };
     generateTradeNarration.mockClear();
     const { db, entry, swaps } = await runTick({ mode: 'shadow', cronStartTime, beforeModel, result: makeSwapResult({ declarations: makeDeclarations() }) });
     expect(swaps).toBe(1);
@@ -805,7 +807,7 @@ describe('§3.12 row 4 — the clock: every exit observes at its own instant, af
     // The passive exit precedes the data fetch: its instant is the health instant itself, never earlier.
     const BEFORE_DATA_FETCH = new Set(['passive']);
     const rows = {
-      // budget_skipped: 100 s left at the start → 40 s at admission after the 60 s the data fetch costs (< 48 s: skipped), 28 s available at its hook.
+      // budget_skipped: 100 s left at the start → 40 s at admission after the 60 s the data fetch costs (< 68 s: skipped), 28 s available at its hook.
       model_result: {}, budget_skipped: { cronStartTime: T1 - (TIME_BUDGET_MS - 100_000) },
       no_trigger: NO_ENTRY_PATHS.no_trigger(), proposal_pending: NO_ENTRY_PATHS.proposal_pending(),
       gameplan_pending: withStop(NO_ENTRY_PATHS.gameplan_pending()), gameplan_created: withStop(NO_ENTRY_PATHS.gameplan_created()),

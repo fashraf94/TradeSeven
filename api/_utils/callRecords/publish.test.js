@@ -63,21 +63,21 @@ afterEach(() => {
 
 // ---------------------------------------------------------------------------
 describe('the budget — one clock (row 6)', () => {
-  it('admission: the calls reserve is 4,000 ms at shadow/on and 0 at off — 48,000 vs 44,000 required', () => {
+  it('admission: the calls reserve is 4,000 ms at shadow/on and 0 at off — 68,000 vs 64,000 required (48,000 vs 44,000 before the Oct 15, 2026 40s timeout)', () => {
     expect(callsReserveMsFor('off')).toBe(0);
     expect(callsReserveMsFor('shadow')).toBe(CALLS_RESERVE_MS);
     expect(callsReserveMsFor('on')).toBe(CALLS_RESERVE_MS);
     const off = shouldStartHaikuCall({ elapsedMs: 0, timeBudgetMs: TIME_BUDGET_MS, callsReserveMs: callsReserveMsFor('off') });
     const shadow = shouldStartHaikuCall({ elapsedMs: 0, timeBudgetMs: TIME_BUDGET_MS, callsReserveMs: callsReserveMsFor('shadow') });
-    expect(off.requiredMs).toBe(44_000);
+    expect(off.requiredMs).toBe(64_000);
     expect(off.requiredMs).toBe(PROMPT_BUILD_CEILING_MS + HAIKU_CALL_CEILING_MS + HAIKU_POST_CALL_ALLOWANCE_MS);
-    expect(shadow.requiredMs).toBe(48_000);
-    // The scheduling effect, stated: 46 s left admits the model at off, not at shadow.
-    const at46 = (mode) => shouldStartHaikuCall({ elapsedMs: TIME_BUDGET_MS - 46_000, timeBudgetMs: TIME_BUDGET_MS, callsReserveMs: callsReserveMsFor(mode) }).proceed;
-    expect(at46('off')).toBe(true);
-    expect(at46('shadow')).toBe(false);
-    // The default (no reserve passed) is today's number exactly.
-    expect(shouldStartHaikuCall({ elapsedMs: 0, timeBudgetMs: TIME_BUDGET_MS }).requiredMs).toBe(44_000);
+    expect(shadow.requiredMs).toBe(68_000);
+    // The scheduling effect, stated: 66 s left admits the model at off, not at shadow.
+    const at66 = (mode) => shouldStartHaikuCall({ elapsedMs: TIME_BUDGET_MS - 66_000, timeBudgetMs: TIME_BUDGET_MS, callsReserveMs: callsReserveMsFor(mode) }).proceed;
+    expect(at66('off')).toBe(true);
+    expect(at66('shadow')).toBe(false);
+    // The default (no reserve passed) is the off number exactly.
+    expect(shouldStartHaikuCall({ elapsedMs: 0, timeBudgetMs: TIME_BUDGET_MS }).requiredMs).toBe(64_000);
   });
 
   it('model path: runs only at available ≥ 4,000; the deadline is min(now + 4,000, the tail boundary)', () => {

@@ -6,12 +6,28 @@
 // `new APIConnectionTimeoutError().name === 'Error'`, message
 // 'Request timed out.'; APIUserAbortError → 'Request was aborted.').
 
-// Pre-call budget guard constants. 22s = the SDK's 20s per-request timeout
-// plus the 2s AbortController backstop in agent-evaluate.js. 12s = post-call
+// The SDK's per-request timeout on the one mid-battle `messages.create` call —
+// ONE exported source (agent-evaluate.js passes it as `{ timeout }`; it used to
+// be a literal there). Raised 20s → 40s (Oct 15, 2026, founder ruling) on the
+// Build 2b discovery's DP-7 read (docs/audits/20261014_PHASE0_BUILD2B_COCKPIT.md
+// §A1–A4, on the claude/phase0-build2b-cockpit branch): every timeout in the
+// cockpit-on window was this SDK limit (`timeoutKind: sdk`, never the backstop);
+// call time tracks output tokens almost exactly (corr 0.99, ~9 ms per token on
+// Haiku 4.5), so 20s cut off every answer past roughly 1,900 tokens — 30% of
+// the founder's week-2 checks and 41% of the Diversifier's. 40s clears an answer
+// at the full EVAL_MAX_OUTPUT_TOKENS ceiling (~32s at the measured rate) with
+// room for midday API slowness, so the output ceiling, not the clock, is again
+// what bounds an answer.
+export const HAIKU_SDK_TIMEOUT_MS = 40_000;
+
+// Pre-call budget guard constants. The call ceiling = the SDK timeout above
+// plus the 2s AbortController backstop in agent-evaluate.js (derived, so the
+// backstop follows the timeout and stays a backstop). 12s = post-call
 // allowance: parallel narration dispatch (≤10s per Gemma call) + the awaited
 // finalUpdate write + headroom — the same allowance the anticipation budget
 // gate already uses (agent-evaluate.js finally block).
-export const HAIKU_CALL_CEILING_MS = 22_000;
+export const HAIKU_BACKSTOP_MARGIN_MS = 2_000;
+export const HAIKU_CALL_CEILING_MS = HAIKU_SDK_TIMEOUT_MS + HAIKU_BACKSTOP_MARGIN_MS;
 export const HAIKU_POST_CALL_ALLOWANCE_MS = 12_000;
 
 // Prompt-build ceiling (Sep 2026 transport hygiene). The backstop above is now
@@ -111,9 +127,9 @@ export function classifyHaikuFailure(err) {
  * alone the two were indistinguishable, and only haikuError.message separated
  * them).
  *
- *   'sdk'      — the SDK's own per-request timeout (20s). APIConnectionTimeoutError,
- *                message 'Request timed out.'
- *   'backstop' — the cron's AbortController ceiling (22s). APIUserAbortError,
+ *   'sdk'      — the SDK's own per-request timeout (HAIKU_SDK_TIMEOUT_MS, 40s).
+ *                APIConnectionTimeoutError, message 'Request timed out.'
+ *   'backstop' — the cron's AbortController ceiling (HAIKU_CALL_CEILING_MS, 42s). APIUserAbortError,
  *                a native AbortError, message 'Request was aborted.'
  *   null       — not a transport timeout at all (a build timeout, a status
  *                error, a truncated response, anything else).
@@ -152,10 +168,12 @@ export function classifyTimeoutKind(err) {
  * without risking the function's kill window and losing the awaited
  * finalUpdate?
  *
- * Required remaining = prompt-build ceiling (10s) + call ceiling (22s hard
- * abort) + post-call allowance (12s) = 44s against TIME_BUDGET_MS. It was 34s
- * until Sep 2026, when the backstop moved to after the build: the build is now
- * a bounded phase that runs SEQUENTIALLY BEFORE the call rather than inside its
+ * Required remaining = prompt-build ceiling (10s) + call ceiling (42s hard
+ * abort) + post-call allowance (12s) = 64s against TIME_BUDGET_MS (68s with
+ * the 4s calls reserve at shadow/on). It was 44s / 48s at the 20s SDK timeout
+ * until Oct 15, 2026, and 34s until Sep 2026, when the backstop moved to after
+ * the build: the build is now a bounded phase that runs SEQUENTIALLY BEFORE the
+ * call rather than inside its
  * ceiling, so the guard must reserve room for it. The requirement is the sum of
  * the three named constants and never a literal — a future ceiling change moves
  * it here, once. `budget_skipped` semantics are unchanged: the engine was never
@@ -169,8 +187,8 @@ export function classifyTimeoutKind(err) {
  * @param {number} [p.postCallAllowanceMs]
  * @param {number} [p.callsReserveMs] Cockpit Build 0 (docs/design/COCKPIT_SPEC_V1_3.md
  *   §3.7): the call-records phase's admission reserve, ADDED to the post-call
- *   allowance — 4,000 ms at CALL_RECORDS_MODE shadow/on (48,000 ms required),
- *   0 at off (44,000 ms, today's number exactly). The caller resolves it from the
+ *   allowance — 4,000 ms at CALL_RECORDS_MODE shadow/on (68,000 ms required),
+ *   0 at off (64,000 ms). The caller resolves it from the
  *   check's mode (api/_utils/callRecords/publish.js callsReserveMsFor); an
  *   intentional scheduling effect of shadow/on, reported as such.
  * @returns {{ proceed: boolean, remainingMs: number, requiredMs: number }}

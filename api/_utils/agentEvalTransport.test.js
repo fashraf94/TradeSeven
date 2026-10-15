@@ -12,6 +12,8 @@ import {
   shouldStartHaikuCall,
   nextConsecutiveEvalFailures,
   HAIKU_CALL_CEILING_MS,
+  HAIKU_SDK_TIMEOUT_MS,
+  HAIKU_BACKSTOP_MARGIN_MS,
   HAIKU_POST_CALL_ALLOWANCE_MS,
   PROMPT_BUILD_CEILING_MS,
   PROMPT_BUILD_TIMEOUT_ERROR_NAME,
@@ -183,6 +185,28 @@ describe('classifyTimeoutKind', () => {
   });
 });
 
+describe('HAIKU_SDK_TIMEOUT_MS — the model call\'s own clock (Oct 15, 2026 raise)', () => {
+  // The Build 2b discovery (DP-7, §A1–A2) measured the cockpit-on window: every
+  // timeout was the SDK's own limit, and call time tracks output tokens almost
+  // exactly — the 1,500–1,999-token bin ran 19,861 ms at p95, i.e. under
+  // 10 ms per output token including time to first token. At 20s the clock,
+  // not the output ceiling, was what ended long answers.
+  const MEASURED_MS_PER_OUTPUT_TOKEN = 10;
+
+  it('is 40s, and the backstop is derived 2s above it so it stays a backstop', () => {
+    expect(HAIKU_SDK_TIMEOUT_MS).toBe(40_000);
+    expect(HAIKU_BACKSTOP_MARGIN_MS).toBe(2_000);
+    expect(HAIKU_CALL_CEILING_MS).toBe(HAIKU_SDK_TIMEOUT_MS + HAIKU_BACKSTOP_MARGIN_MS);
+    expect(HAIKU_CALL_CEILING_MS).toBeGreaterThan(HAIKU_SDK_TIMEOUT_MS);
+  });
+
+  it('clears an answer at the full output ceiling at the measured rate — the ceiling, not the clock, bounds an answer', () => {
+    // Fails at the old 20s (3,072 × 10 ms = 30,720 ms) and fails again if the
+    // output ceiling is raised without the timeout following it.
+    expect(EVAL_MAX_OUTPUT_TOKENS * MEASURED_MS_PER_OUTPUT_TOKEN).toBeLessThan(HAIKU_SDK_TIMEOUT_MS);
+  });
+});
+
 describe('shouldStartHaikuCall — pre-call budget guard', () => {
   const timeBudgetMs = 80_000; // > the requirement, so the boundary rows are about the guard, not the budget
   // The requirement is the SUM OF THE THREE NAMED CONSTANTS and never a
@@ -191,10 +215,10 @@ describe('shouldStartHaikuCall — pre-call budget guard', () => {
   // backstop is armed after the prompt is built), so its ceiling joins the sum.
   const required = PROMPT_BUILD_CEILING_MS + HAIKU_CALL_CEILING_MS + HAIKU_POST_CALL_ALLOWANCE_MS;
 
-  it('derives the 44s requirement from the 10s build ceiling + 22s call ceiling + 12s post-call allowance', () => {
-    expect(required).toBe(44_000);
+  it('derives the 64s requirement from the 10s build ceiling + 42s call ceiling + 12s post-call allowance', () => {
+    expect(required).toBe(64_000);
     expect(PROMPT_BUILD_CEILING_MS).toBe(10_000);
-    expect(HAIKU_CALL_CEILING_MS).toBe(22_000);
+    expect(HAIKU_CALL_CEILING_MS).toBe(42_000);
     expect(HAIKU_POST_CALL_ALLOWANCE_MS).toBe(12_000);
     // anti-vacuous: the build ceiling is really IN the sum (the pre-Sep-2026
     // guard required 34s and this row is what catches a silent revert)
