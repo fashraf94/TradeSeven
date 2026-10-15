@@ -11,10 +11,12 @@
 // This row is a tripwire in BOTH directions. An accidental flip back to false
 // would silently drop the block, the line and the annotation from every tiered
 // eval prompt; the flag-pin guard turns that into a loud failure naming this
-// file. When a rollback IS deliberate, this assertion moves to false AND the
-// flag's DARK_BY_DESIGN entry is restored in flagPinGuard.test.js — in the
-// same commit, which is the coupling the guard enforces. The row's title names
-// no value, so a flip moves one literal here. Referenced by the flag's
+// file. A deliberate rollback moves this assertion to false and restores the
+// flag's DARK_BY_DESIGN entry in flagPinGuard.test.js, in the same commit (the
+// flip map in featureFlags.js). The guard enforces only the flip direction —
+// its integrity row fails while a flag that ships true is still listed — so
+// restoring the entry on a rollback is by hand. The row's title names no
+// value, so a flip moves one literal here. Referenced by the flag's
 // "Pinned by:" docstring in featureFlags.js.
 //
 // Deliberately pins ONLY this flag (the equippedRulePrecedenceFlags.test.js
