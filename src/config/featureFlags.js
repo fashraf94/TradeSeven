@@ -3202,9 +3202,10 @@ export const SWAP_IDENTITY_MODES = Object.freeze(['off', 'shadow', 'enforce']);
  * docs/audits/20261014_BUILD_CRYPTO_SLOT_PROMPT.md) and, since Crypto Slot v2
  * (build report docs/audits/20261014_BUILD_CRYPTO_SLOT_CHECK_LINE.md), the
  * per-check line and the RISK STATUS annotation — one flag for all three (D-9).
- * DARK — default FALSE.
+ * ON — default TRUE since the flip, 14 Oct 2026 (v2 build report §8, after
+ * Fable's rulings in §10). Built dark.
  *
- * When TRUE:
+ * When TRUE (CURRENT):
  *   - the tiered (BaggerBomb agent game) eval system prompt carries a
  *     `━━━ YOUR CRYPTO SLOT ━━━` block (paragraph v2) between SCORING RULES
  *     and DECISION FRAMEWORK (api/_utils/evalCryptoSlotBlock.js, spliced once
@@ -3220,20 +3221,22 @@ export const SWAP_IDENTITY_MODES = Object.freeze(['off', 'shadow', 'enforce']);
  * change. The flat6 (tournament) template and live context never carry any of
  * it — the tournament has no crypto.
  *
- * When FALSE (CURRENT), the renders return '' / null, the cron attaches no
+ * When FALSE (the rollback), the renders return '' / null, the cron attaches no
  * verdict to momentumData, and every eval system prompt and live context is
  * byte-identical to the pre-build text (evalCryptoSlotBlock.test.js against
  * __fixtures__/cryptoSlotPromptGoldens.json and cryptoSlotLiveContextGoldens.json,
  * both captured from the clean tree).
  *
  * Read it at CALL time, never module scope (the Ask 3 compileBuild lesson).
- * Flips in its own commit after probe v2 reads clean (v2 build report §7)
- * and Flash signs off — never in a build PR. THE FLIP MAP (v2 build report
- * §8, which supersedes the #961 report's §7): the flag → true; the pin in cryptoSlotPromptFlags.test.js → true and
- * this flag's DARK_BY_DESIGN entry dropped from flagPinGuard.test.js, in the
- * same commit, with the "DARK — default FALSE" / "When FALSE (CURRENT)" lines
- * here and the pin file's "ships FALSE" header reworded (BUILD_RULES §2);
- * exactly 7 snapshots regenerate — `npx vitest run
+ * Flipped in its own commit, never in a build PR, after Fable ruled probe
+ * v2's one missed clause non-blocking — the text flips exactly as probed
+ * (v2 build report §10, ruling 1) — and Flash signed off on the §3 hunks.
+ * THE FLIP MAP (v2 build report §8, which supersedes the #961 report's §7);
+ * a rollback runs it in reverse: the flag → false; the pin in
+ * cryptoSlotPromptFlags.test.js → false and this flag's DARK_BY_DESIGN entry
+ * restored in flagPinGuard.test.js, in the same commit, with the state lines
+ * here and the pin file's header reworded back (BUILD_RULES §2); the same
+ * 7 snapshots regenerate — `npx vitest run
  * api/_utils/p4Equivalence.battery.test.js
  * api/_utils/evalIdentityBlock.injection.test.js -u` moves the tiered P4
  * analyst snapshot and the six tiered DR-13 identityOn snapshots (the flat6
@@ -3248,7 +3251,7 @@ export const SWAP_IDENTITY_MODES = Object.freeze(['off', 'shadow', 'enforce']);
  * both states themselves.
  */
 // Pinned by: cryptoSlotPromptFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const CRYPTO_SLOT_PROMPT_ENABLED = false;
+export const CRYPTO_SLOT_PROMPT_ENABLED = true;
 
 // New battle selection only. Existing games dispatch from their saved tuple.
 // Owner dormant-build adoption: docs/approvals/BAGGERBOMB_STOCK_THRESHOLDS_ADOPTION_20261013.md.
