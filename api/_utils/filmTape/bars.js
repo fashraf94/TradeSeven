@@ -54,7 +54,8 @@ const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
 /**
  * The regular-session 1-minute bars of `etDate`, oldest first, as
- * `{ t, o, h, l, c, v }` (t = start, epoch ms). `session` is
+ * `{ t, o, h, l, c, v }` (t = start, epoch ms; v null when the minute's
+ * volume is missing — B1 W3). `session` is
  * marketSchedule.getSessionForDate(etDate).
  */
 export function sessionBars(candles, etDate, session) {
@@ -71,7 +72,8 @@ export function sessionBars(candles, etDate, session) {
     const t = barStartMs(c.datetime);
     if (t === null || t < session.openMs || t > endMs) continue;
     if (![c.open, c.high, c.low, c.close].every(finite)) continue;
-    byStart.set(t, { t, o: c.open, h: c.high, l: c.low, c: c.close, v: finite(c.volume) ? c.volume : 0 });
+    // B1 W3: a missing or non-finite volume is missing — null, never 0 (a real 0 stays 0).
+    byStart.set(t, { t, o: c.open, h: c.high, l: c.low, c: c.close, v: finite(c.volume) ? c.volume : null });
   }
   return [...byStart.values()].sort((a, b) => a.t - b.t);
 }
@@ -132,7 +134,8 @@ export function aggregate10m(bars, session) {
     if (k < 0) continue;
     const cur = buckets.get(k);
     if (!cur) buckets.set(k, { t: new Date(session.openMs + k * SERIES_BUCKET_MS).toISOString(), o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, n: 1, m: 1 });
-    else { cur.h = Math.max(cur.h, b.h); cur.l = Math.min(cur.l, b.l); cur.c = b.c; cur.v += b.v; cur.n += 1; cur.m += 1; }
+    // B1 W3: a 10-minute bar any of whose minutes lacks its volume has none — null, never a partial sum.
+    else { cur.h = Math.max(cur.h, b.h); cur.l = Math.min(cur.l, b.l); cur.c = b.c; cur.v = cur.v === null || b.v === null ? null : cur.v + b.v; cur.n += 1; cur.m += 1; }
   }
   return [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
 }

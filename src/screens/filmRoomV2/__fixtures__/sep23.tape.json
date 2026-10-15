@@ -148,7 +148,7 @@
         "evaluations"
       ],
       "preservedFrom": null,
-      "note": "2 entr(y/ies) carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied",
+      "note": "2 entries carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied",
       "caveats": [],
       "unknownChecks": 0,
       "dependsOn": "a99aa2cd955d267b"
@@ -181,6 +181,16 @@
       "unknownChecks": 0,
       "dependsOn": "92dcec663465ac2e"
     },
+    "meetings": {
+      "status": "complete",
+      "span": null,
+      "sources": [
+        "gameplanMeetingHistory",
+        "gameplanMeeting"
+      ],
+      "preservedFrom": null,
+      "note": null
+    },
     "replay": {
       "status": "complete",
       "span": {
@@ -205,6 +215,21 @@
       ],
       "preservedFrom": null,
       "note": null
+    },
+    "tags": {
+      "status": "unavailable",
+      "span": {
+        "from": "2026-09-23T14:15:20.000Z",
+        "to": "2026-09-23T19:45:20.000Z"
+      },
+      "sources": [
+        "checks",
+        "checks.evidence",
+        "checks.risk",
+        "actions"
+      ],
+      "preservedFrom": null,
+      "note": "stalled unavailable: unknown archetype (momentum)"
     }
   },
   "score": {
@@ -226,7 +251,8 @@
       "value": -47,
       "basis": "battle_start",
       "reference": 0
-    }
+    },
+    "opponentBasis": "cpu_portfolio"
   },
   "battle": {
     "status": "completed",
@@ -293,7 +319,8 @@
       "scores": {
         "active": 17,
         "banked": -6,
-        "total": 11
+        "total": 11,
+        "opponent": -61
       },
       "tickMs": null,
       "evidence": null,
@@ -348,7 +375,8 @@
       "scores": {
         "active": -73,
         "banked": -6,
-        "total": -79
+        "total": -79,
+        "opponent": -62
       },
       "tickMs": null,
       "evidence": null,
@@ -403,7 +431,8 @@
       "scores": {
         "active": -83,
         "banked": -6,
-        "total": -89
+        "total": -89,
+        "opponent": -63
       },
       "tickMs": null,
       "evidence": null,
@@ -458,7 +487,8 @@
       "scores": {
         "active": -77,
         "banked": -6,
-        "total": -83
+        "total": -83,
+        "opponent": -64
       },
       "tickMs": null,
       "evidence": null,
@@ -513,7 +543,8 @@
       "scores": {
         "active": -43,
         "banked": -6,
-        "total": -49
+        "total": -49,
+        "opponent": -65
       },
       "tickMs": null,
       "evidence": null,
@@ -568,7 +599,8 @@
       "scores": {
         "active": -35,
         "banked": -6,
-        "total": -41
+        "total": -41,
+        "opponent": -66
       },
       "tickMs": null,
       "evidence": null,
@@ -623,7 +655,8 @@
       "scores": {
         "active": -29,
         "banked": -6,
-        "total": -35
+        "total": -35,
+        "opponent": -67
       },
       "tickMs": null,
       "evidence": null,
@@ -682,7 +715,8 @@
       "scores": {
         "active": -31,
         "banked": -6,
-        "total": -37
+        "total": -37,
+        "opponent": -68
       },
       "tickMs": 6100,
       "evidence": {
@@ -814,7 +848,8 @@
       "scores": {
         "active": -49,
         "banked": -6,
-        "total": -55
+        "total": -55,
+        "opponent": -69
       },
       "tickMs": 6100,
       "evidence": null,
@@ -873,7 +908,8 @@
       "scores": {
         "active": -50,
         "banked": -6,
-        "total": -56
+        "total": -56,
+        "opponent": -70
       },
       "tickMs": 6100,
       "evidence": {
@@ -1005,7 +1041,8 @@
       "scores": {
         "active": -49,
         "banked": -6,
-        "total": -55
+        "total": -55,
+        "opponent": -71
       },
       "tickMs": 6100,
       "evidence": {
@@ -1137,7 +1174,8 @@
       "scores": {
         "active": -54,
         "banked": -6,
-        "total": -60
+        "total": -60,
+        "opponent": -72
       },
       "tickMs": 6100,
       "evidence": {
@@ -1269,7 +1307,8 @@
       "scores": {
         "active": -69,
         "banked": -6,
-        "total": -75
+        "total": -75,
+        "opponent": -73
       },
       "tickMs": 6100,
       "evidence": null,
@@ -1328,7 +1367,8 @@
       "scores": {
         "active": -86,
         "banked": -6,
-        "total": -92
+        "total": -92,
+        "opponent": -74
       },
       "tickMs": 6100,
       "evidence": {
@@ -1460,7 +1500,8 @@
       "scores": {
         "active": -85,
         "banked": -6,
-        "total": -91
+        "total": -91,
+        "opponent": -75
       },
       "tickMs": 6100,
       "evidence": {
@@ -1592,7 +1633,8 @@
       "scores": {
         "active": -59,
         "banked": -6,
-        "total": -65
+        "total": -65,
+        "opponent": -76
       },
       "tickMs": 6100,
       "evidence": {
@@ -1724,7 +1766,8 @@
       "scores": {
         "active": -55,
         "banked": -6,
-        "total": -61
+        "total": -61,
+        "opponent": -77
       },
       "tickMs": 6100,
       "evidence": {
@@ -1856,7 +1899,8 @@
       "scores": {
         "active": -69,
         "banked": -6,
-        "total": -75
+        "total": -75,
+        "opponent": -78
       },
       "tickMs": 6100,
       "evidence": {
@@ -1988,7 +2032,8 @@
       "scores": {
         "active": -63,
         "banked": -6,
-        "total": -69
+        "total": -69,
+        "opponent": -79
       },
       "tickMs": 6100,
       "evidence": {
@@ -2116,7 +2161,8 @@
       "scores": {
         "active": -67,
         "banked": -6,
-        "total": -73
+        "total": -73,
+        "opponent": -80
       },
       "tickMs": null,
       "evidence": null,
@@ -2171,7 +2217,8 @@
       "scores": {
         "active": -48,
         "banked": -6,
-        "total": -54
+        "total": -54,
+        "opponent": -81
       },
       "tickMs": null,
       "evidence": null,
@@ -2226,7 +2273,8 @@
       "scores": {
         "active": -40,
         "banked": -6,
-        "total": -46
+        "total": -46,
+        "opponent": -82
       },
       "tickMs": null,
       "evidence": null,
@@ -2281,7 +2329,8 @@
       "scores": {
         "active": -41,
         "banked": -6,
-        "total": -47
+        "total": -47,
+        "opponent": -83
       },
       "tickMs": null,
       "evidence": null,
@@ -3566,6 +3615,7 @@
       "holdKind": null
     }
   ],
+  "meetings": [],
   "comparables": {
     "market": [
       "SPY",
@@ -3613,6 +3663,7 @@
     "checks[].scores.active": "recorded",
     "checks[].scores.banked": "recorded",
     "checks[].scores.total": "recorded",
+    "checks[].scores.opponent": "recorded",
     "checks[].tickMs": "recorded",
     "checks[].guardrail.deployedCount": "recorded",
     "checks[].evidence.*.px": "recorded",
@@ -3685,6 +3736,47 @@
     "calls[].resolvedAt": "recorded",
     "calls[].horizon.expiresAt": "recorded",
     "calls[].hypothesisRef.hypothesisVersion": "recorded",
-    "rationale[].tickSeq": "recorded"
+    "rationale[].tickSeq": "recorded",
+    "tags.registryVersion": "recorded",
+    "tags.situations.*": "recorded",
+    "tags.inputs.forcedRotation.pctThreshold": "recorded",
+    "tags.inputs.forcedRotation.ticksThreshold": "recorded",
+    "tags.inputs.forcedRotation.winnerThreshold": "recorded",
+    "tags.inputs.forcedRotation.maxTickAgeMinutes": "recorded",
+    "tags.inputs.slots.S1.checksBeforeRule": "recorded",
+    "tags.inputs.slots.S2.checks": "recorded",
+    "tags.inputs.slots.S2.pctThreshold": "recorded",
+    "tags.inputs.perCheck[].tickSeq": "recorded",
+    "tags.inputs.perCheck[].tempoMultiplier": "derived",
+    "tags.inputs.perCheck[].effectiveTicksThreshold": "derived",
+    "tags.items[].version": "recorded",
+    "tags.items[].tickSeq": "recorded",
+    "tags.items[].count": "derived",
+    "tags.items[].effectiveTicksThreshold": "derived",
+    "tags.exits[].tickSeq": "recorded"
+  },
+  "tags": {
+    "registryVersion": 1,
+    "situations": {
+      "stalled": 1
+    },
+    "inputs": {
+      "archetypeCodeId": "momentum"
+    },
+    "items": null,
+    "exits": [
+      {
+        "symbol": "MSFT",
+        "tickSeq": 11,
+        "at": "2026-09-23T16:45:08.000Z",
+        "precededByTag": null
+      },
+      {
+        "symbol": "ETN",
+        "tickSeq": 20,
+        "at": "2026-09-23T19:00:10.000Z",
+        "precededByTag": null
+      }
+    ]
   }
 }

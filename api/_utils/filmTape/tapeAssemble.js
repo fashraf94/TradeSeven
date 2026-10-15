@@ -15,9 +15,13 @@ import { TICKER_TO_SECTOR } from '../rankingConfig.js';
 import { isCryptoSymbol } from '../marketDataCache.js';
 import {
   TAPE_VERSION, TAPE_NUMBER_CLASSES, TICK_EXIT_STATES, NON_CHECK_STATES, NO_CHANGE_GATE_STATUSES,
-  EXIT_MECHANISMS, MARKET_COMPARABLES, CALL_CONTRACT_VERSION,
+  EXIT_MECHANISMS, MARKET_COMPARABLES, CALL_CONTRACT_VERSION, AWAITING_CANDLES_NOTE,
 } from '../../../src/constants/filmTape.js';
 import { toMs, inDay, etDateOf, etDayBounds, sessionFor, previousSession, withinCandleWindow } from './tapeTime.js';
+import { historyListOf, meetingLegsOf, meetingOf } from '../playerFieldReaders.js';
+import { flattenPortfolioServer, flattenBenchServer } from '../agentScoring.js';
+import { tradingTimeline } from '../../../src/utils/tapeSchedule.js';
+import { NOTES, UNKNOWN_WHAT, counted } from './tapeNotes.js';
 
 /** `evaluations[]` is `slice(-150)` (api/cron/agent-evaluate.js:4257). */
 export const EVALUATIONS_CAP = 150;
@@ -155,9 +159,59 @@ function decisionOf(tick) {
   return { original: str(d.original), final: str(d.final), holdKind: str(d.holdKind) };
 }
 
-const scoresOf = (s) => (isObj(s) && num(s.total) !== null
-  ? { active: num(s.active), banked: num(s.banked), total: num(s.total) }
+/**
+ * Film Room B1 T1 (Build B spec §3) — whose score the opponent's is. A
+ * battle created with a CPU opponent (`battle.opponent`, the self-select
+ * deploy's embedded portfolio) is `cpu_portfolio`; one created without (the
+ * prescribed tournament deploy, founder ruling D4) is `none`, and there the
+ * tick's opponent score is the sum over an empty portfolio — a 0 that is no
+ * score at all, so it is never copied.
+ */
+export const opponentBasisOf = (battle) => (isObj(battle?.opponent) ? 'cpu_portfolio' : 'none');
+
+/**
+ * A check's scores. T1: the opponent's score is copied from the permanent
+ * tick under basis `cpu_portfolio`, by `opponent` — read apart from the
+ * scores it rides with (Astra F4), so a failure reading it is that check's
+ * null and the T1 note's, never the row's or the day's; under `none` — and
+ * for a check rebuilt from an evaluations entry, which never carried it — it
+ * is null, never 0.
+ */
+const scoresOf = (s, { opponent = null } = {}) => (isObj(s) && num(s.total) !== null
+  ? { active: num(s.active), banked: num(s.banked), total: num(s.total), opponent: opponent ? opponent(s) : null }
   : null);
+
+/**
+ * An error's class for a note: its name when it reads as an error class — a
+ * plain identifier ending in Error or Exception, 40 characters at most — else
+ * 'Error', so no other text (an id planted as a name) reaches the tape (review LA-3).
+ */
+function errorClassOf(err) {
+  let name = null;
+  try { name = str(err?.name) ?? str(err?.constructor?.name); } catch { name = null; }
+  return name && name.length <= 40 && /^[A-Za-z_$][A-Za-z0-9_$]*(Error|Exception)$/.test(name) ? name : 'Error';
+}
+
+/**
+ * B1 T1 (Astra F4) — the per-check opponent read, isolated: `read(scores)`
+ * returns the recorded number, or null when reading it throws; each failure's
+ * error class is kept in `failures` for the T1 note.
+ */
+export function opponentReader() {
+  const failures = [];
+  const read = (s) => {
+    try { return num(s.opponent); } catch (err) { failures.push(errorClassOf(err)); return null; }
+  };
+  return { read, failures };
+}
+
+/** The T1 note (`score.opponentNote`): how many checks' opponent scores could not be read, and the error classes (three at most). */
+export function opponentNoteOf(failures) {
+  if (!Array.isArray(failures) || !failures.length) return null;
+  const classes = [...new Set(failures)].sort();
+  const listed = classes.length > 3 ? `${classes.slice(0, 3).join(', ')} and others` : classes.join(', ');
+  return `the opponent's score could not be read at ${counted(failures.length, 'check', 'checks')} (${listed})`;
+}
 
 /** BA-8 — a tick-backed check's state. */
 export function tickState(tick, entry) {
@@ -170,7 +224,7 @@ const blankRow = () => ({
   risk: null, guardrail: null, decision: null, scores: null, tickMs: null, evidence: null, evidenceAt: null,
 });
 
-function tickRow(tick, entry, battleId) {
+function tickRow(tick, entry, battleId, { opponentBasis = 'none', readOpponent = opponentReader().read } = {}) {
   const evidence = copyEvidence(entry?.evidence);
   return {
     ...blankRow(),
@@ -186,7 +240,7 @@ function tickRow(tick, entry, battleId) {
     risk: riskOf(tick),
     guardrail: guardrailOf(tick),
     decision: decisionOf(tick),
-    scores: scoresOf(tick.scores),
+    scores: scoresOf(tick.scores, { opponent: opponentBasis === 'cpu_portfolio' ? readOpponent : null }),
     tickMs: num(entry?.tickMs),
     evidence,
     evidenceAt: evidence ? str(entry?.promptBuiltAt) : null,
@@ -539,13 +593,15 @@ export function afterOf({ filedAt, endMs, checkRows, actionRows }) {
  * time, so every card lands on exactly one tape.
  */
 export function directiveWindow({ battle, etDate, bounds }) {
-  const days = Array.isArray(battle?.timing?.tradingDays) ? battle.timing.tradingDays : null;
+  const days = tradingTimeline(battle);
   const i = days ? days.indexOf(etDate) : -1;
   if (i === 0) {
     const act = toMs(battle?.activatedAt) ?? toMs(battle?.createdAt);
     return { startMs: act !== null ? Math.min(act, bounds.startMs) : bounds.startMs, endMs: bounds.endMs };
   }
-  if (i > 0) return { startMs: Math.min(etDayBounds(days[i - 1]).endMs, bounds.startMs), endMs: bounds.endMs };
+  // W2: the timeline is validated (tradingTimeline); a real date past the calendar's horizon may still have no bounds.
+  const prev = i > 0 ? etDayBounds(days[i - 1]) : null;
+  if (prev) return { startMs: Math.min(prev.endMs, bounds.startMs), endMs: bounds.endMs };
   return { startMs: bounds.startMs, endMs: bounds.endMs };
 }
 
@@ -713,9 +769,142 @@ export function buildCalls({ calls, bounds, nowIso, callRecordsMode }) {
   return rows.sort((a, b) => (a.mintedAt ?? 0) - (b.mintedAt ?? 0) || (a.key < b.key ? -1 : 1));
 }
 
+// ── gameplan meetings (B1 T2) ──────────────────────────────────────────────
+
+/** The meeting outcomes the history records (agent-evaluate.js handleGameplanMeeting: approved, rejected, expired). */
+export const MEETING_STATUSES = Object.freeze(['approved', 'rejected', 'expired']);
+/** The server proposes at most two legs (agent-evaluate.js: `rankedSectors.slice(0, 2)`, one leg per candidate). */
+export const MEETING_LEGS_MAX = 2;
+/** At most one meeting per evaluator slot of a regular session (6.5 h ÷ 15 min). */
+export const MEETINGS_PER_DAY_MAX = 26;
+/** Bounds on the copied words and the resolver's name. */
+export const MEETING_DIAGNOSIS_MAX = 500;
+export const MEETING_RESOLVED_BY_MAX = 40;
+/** A meeting id longer than this is not copied (the server's are `gpm_<epoch ms>`); the key then uses 'meeting'. */
+export const MEETING_ID_MAX = 64;
+/** An instant is an ISO string; a longer string is not one the history could hold. */
+const INSTANT_MAX = 40;
+const TICKER = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
+const ticker = (v) => (typeof v === 'string' && TICKER.test(v) ? v : null);
+const instant = (v) => (str(v) && v.length <= INSTANT_MAX && toMs(v) !== null ? v : null);
+
+/**
+ * B1 review RF-1 — the symbols a filed leg can name: the battle's own book and
+ * bench. The evaluator proposes a held name out and a bench name in
+ * (agent-evaluate.js handleGameplanMeeting: `benchAssets` is portfolio.bench),
+ * and a swap returns the outgoing name to the bench (agentSwapExecution.js), so
+ * the two together hold every symbol a real leg names. The portfolio is
+ * server-written (firestore.rules: not in the owner's update list); the
+ * history is not, so a symbol it names outside the roster is someone's text —
+ * never a ticker the candle pass fetches or the screen shows. The fenced
+ * flatteners are called, never copied (BUILD_RULES §4); an unreadable
+ * portfolio is an empty roster (every leg symbol then counted, none copied).
+ */
+function rosterOf(battle) {
+  try {
+    const p = battle?.portfolio;
+    return new Set([...flattenPortfolioServer(p), ...flattenBenchServer(p?.bench)].map((a) => a?.symbol).filter((s) => typeof s === 'string' && s));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * B1 T2 (Build B spec §3) — the gameplan meetings created on the tape day,
+ * copied from the battle's meeting history as typed facts. The history (and
+ * the pending meeting it is filed from) is owner-writable
+ * (api/_utils/playerFieldReaders.js), so it is read through the type-checking
+ * readers and every copied value is checked: an instant must be a real
+ * instant, a symbol a ticker, the status one of the three outcomes; the legs
+ * stop at the server's two, the day at MEETINGS_PER_DAY_MAX, a leg symbol must
+ * be in the battle's portfolio or bench (rosterOf), and words longer
+ * than MEETING_DIAGNOSIS_MAX are not copied. What was not copied is counted in
+ * the section's coverage note. `diagnosis` is someone's words — stored text,
+ * no number class.
+ */
+export function buildMeetings({ battle, bounds }) {
+  const raw = battle?.gameplanMeetingHistory;
+  const notes = [];
+  if (raw !== undefined && raw !== null && !Array.isArray(raw)) {
+    return { rows: [], coverage: coverageOf('unavailable', { sources: ['gameplanMeetingHistory'], note: 'the meeting history is not a list — no meeting could be read' }) };
+  }
+  const history = historyListOf(raw).filter(isObj);
+  const ofDay = history.filter((m) => inDay(instant(m.createdAt), bounds));
+  const rows = [];
+  let unrecognised = 0;
+  let legsDropped = 0;
+  let wordsDropped = 0;
+  let idsDropped = 0;
+  let offRoster = 0;
+  const roster = rosterOf(battle);
+  const legSymbol = (v) => {
+    const t = ticker(v);
+    if (t !== null && !roster.has(t)) { offRoster += 1; return null; }
+    return t;
+  };
+  const seen = {};
+  for (const m of ofDay.sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt))) {
+    if (!MEETING_STATUSES.includes(m.status)) { unrecognised += 1; continue; }
+    const allLegs = meetingLegsOf(m);
+    legsDropped += Math.max(0, allLegs.length - MEETING_LEGS_MAX);
+    const legs = allLegs.slice(0, MEETING_LEGS_MAX).map(({ leg }) => ({ symbolOut: legSymbol(leg.symbolOut), symbolIn: legSymbol(leg.symbolIn) }));
+    const diagnosis = str(m.diagnosis);
+    if (diagnosis && diagnosis.length > MEETING_DIAGNOSIS_MAX) wordsDropped += 1;
+    const resolvedBy = str(m.resolvedBy);
+    // B1 review B-1: every copied string is bounded — the id too, so no planted value can grow the tape past Firestore's limit
+    const id = str(m.id);
+    if (id && id.length > MEETING_ID_MAX) idsDropped += 1;
+    const base = `${id && id.length <= MEETING_ID_MAX ? id : 'meeting'}|${m.createdAt}`;
+    seen[base] = (seen[base] ?? 0) + 1;
+    rows.push({
+      key: seen[base] === 1 ? base : `${base}#${seen[base]}`,
+      createdAt: instant(m.createdAt),
+      expiresAt: instant(m.expiresAt),
+      resolvedAt: instant(m.resolvedAt),
+      status: m.status,
+      resolvedBy: resolvedBy && resolvedBy.length <= MEETING_RESOLVED_BY_MAX ? resolvedBy : null,
+      legs,
+      diagnosis: diagnosis && diagnosis.length <= MEETING_DIAGNOSIS_MAX ? diagnosis : null,
+    });
+  }
+  const kept = rows.slice(0, MEETINGS_PER_DAY_MAX);
+  const overflow = rows.length - kept.length;
+  // The meeting on the battle is not filed yet, whatever its status says: the
+  // evaluator files it into the history at the next check (an unanswered one
+  // expires at its deadline but is filed the next morning; a player's answer
+  // waits for the next check). Only a later run of this day's close pass — a
+  // refresh — can copy it.
+  const unfiled = meetingOf(battle?.gameplanMeeting);
+  if (unfiled && inDay(instant(unfiled.createdAt), bounds)) notes.push('a meeting created this day was not yet filed in the meeting history when this tape was read — only a later run of this day\'s close pass (a refresh) copies it');
+  if (unrecognised) notes.push(`${counted(unrecognised, 'meeting record', 'meeting records')} of this day with an outcome other than approved, rejected or expired not copied`);
+  if (legsDropped) notes.push(`${counted(legsDropped, 'leg', 'legs')} past the ${MEETING_LEGS_MAX} a meeting proposes not copied`);
+  if (offRoster) notes.push(`${counted(offRoster, 'leg symbol', 'leg symbols')} outside the battle's portfolio and bench not copied`);
+  if (wordsDropped) notes.push(`${counted(wordsDropped, 'diagnosis', 'diagnoses')} longer than ${MEETING_DIAGNOSIS_MAX} characters not copied`);
+  if (idsDropped) notes.push(`${counted(idsDropped, 'meeting id', 'meeting ids')} longer than ${MEETING_ID_MAX} characters not copied`);
+  if (overflow) notes.push(`${counted(overflow, 'meeting', 'meetings')} past ${MEETINGS_PER_DAY_MAX} in a day not copied`);
+  const span = spanOf(kept.map((m) => m.createdAt));
+  return {
+    rows: kept,
+    coverage: coverageOf(notes.length ? 'partial' : 'complete', { span, sources: ['gameplanMeetingHistory', 'gameplanMeeting'], note: notes.join('; ') || null }),
+  };
+}
+
+/**
+ * Exit criterion 4 for T2: a failure reading the meetings never stops the
+ * write — the section reads unavailable with the error's class, and every
+ * other section is written as it would be without it.
+ */
+function meetingsOrUnavailable(args) {
+  try {
+    return buildMeetings(args);
+  } catch (e) {
+    return { rows: [], coverage: coverageOf('unavailable', { sources: ['gameplanMeetingHistory', 'gameplanMeeting'], note: `the meetings could not be read (${typeof e?.name === 'string' ? e.name : 'Error'})` }) };
+  }
+}
+
 // ── score and battle (BA-4) ────────────────────────────────────────────────
 
-export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entryRowsScored, priorTape }) {
+export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entryRowsScored, priorTape, opponentBasis = opponentBasisOf(battle) }) {
   // Every admitted check with scores: its tick row, or — when capture missed
   // it — its entry row (review L1-F5: a later entry-only check is the day's
   // last admitted check even when earlier checks have tick records).
@@ -729,11 +918,13 @@ export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entry
     const raw = Number.isInteger(last.tickSeq) ? rawTickBySeq.get(last.tickSeq) : null;
     lastCheck = {
       at: last.at, tickSeq: last.tickSeq, active: last.scores.active, banked: last.scores.banked, total: last.scores.total,
-      opponent: num(raw?.scores?.opponent), bankedBadgePoints: num(raw?.scores?.bankedBadgePoints),
+      // T1 (contract E): with no opponent the tick's 0 is no score — null, never readable as a tie. The check's own
+      // row read it, once, isolated (Astra F4): an entry-rebuilt check's is null.
+      opponent: opponentBasis === 'cpu_portfolio' ? (last.scores.opponent ?? null) : null, bankedBadgePoints: num(raw?.scores?.bankedBadgePoints),
     };
     firstCheck = { at: first.at, tickSeq: first.tickSeq, total: first.scores.total };
   }
-  const days = Array.isArray(battle?.timing?.tradingDays) ? battle.timing.tradingDays : null;
+  const days = tradingTimeline(battle);
   const isFirstDay = days ? days[0] === etDate : false;
   const priorDay = days ? (days[days.indexOf(etDate) - 1] ?? null) : previousSession(etDate);
   let dayChange = { value: null, basis: 'unavailable', reference: null };
@@ -744,23 +935,33 @@ export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entry
     const ref = priorTape.score.lastCheck.total;
     dayChange = { value: round2(lastCheck.total - ref), basis: 'prior_day_tape', reference: ref, referenceEtDate: priorDay };
   }
-  return { lastCheck, firstCheck, dayChange };
+  return { lastCheck, firstCheck, dayChange, opponentBasis };
 }
 
 /** BA-39 — what a missing final score is called in a result's note. */
 const SCORE_NAMES = Object.freeze({ total: 'agent score', opponent: 'opponent score' });
+/** B1 T1 — the result's note for a battle created without an opponent (score.opponentBasis `none`). */
+export const NO_OPPONENT_NOTE = 'no opponent: the battle was created without a CPU opponent';
 
 /**
- * BA-39 — a battle's result from its completion block's own facts. A `stored`
- * result (a result field the platform wrote) wins. Otherwise a result is
+ * BA-39 — a battle's result from its completion block's own facts. A battle
+ * created without an opponent comes first (B1 T1, contract E; Astra F1): it
+ * has no result against one — completed, the result is unavailable with the
+ * no-opponent note, whatever a stored win, loss or draw says; not yet
+ * completed, it is not completed. Otherwise a `stored` result (a result field
+ * the platform wrote) wins. Otherwise a result is
  * derived only for a completed battle whose two final scores are both
  * recorded finite numbers, by `derive` — the comparison completion uses,
  * over those two scores. A missing score gives no result: null, basis
  * `unavailable`, and a note naming the missing score — never a draw read
  * from a score that was never written. One rule, used by the assembly and by
- * every merge (tapeMerge.js recomputes it from the merged final scores).
+ * every merge (tapeMerge.js recomputes it from the merged final scores, a
+ * kept completion block included). The platform's completion message is a
+ * separate record (completionMessageOf), quoted as its words, never this.
  */
-export function battleResultOf({ status, stored = null, final = null, derive = null }) {
+export function battleResultOf({ status, stored = null, final = null, derive = null, noOpponent = false }) {
+  // B1 T1 (contract E): a battle created without an opponent has no result against one — never a tie read from a 0, never a stored one.
+  if (noOpponent) return status === 'completed' ? { value: null, basis: 'unavailable', note: NO_OPPONENT_NOTE } : { value: null, basis: 'not_completed' };
   if (stored) return { value: stored, basis: 'stored' };
   if (status !== 'completed') return { value: null, basis: 'not_completed' };
   const missing = ['total', 'opponent'].filter((k) => num(final?.[k]) === null);
@@ -787,8 +988,10 @@ export function buildBattleBlock({ battle, resolveResult }) {
   const status = str(battle?.status);
   const completed = status === 'completed';
   const stored = ['win', 'loss', 'draw'].includes(battle?.result) ? battle.result : null;
+  // B1 T1 (contract E): with no opponent, the stored opponentScore is the sum over an empty portfolio — never copied.
+  const noOpponent = opponentBasisOf(battle) === 'none';
   const final = completed
-    ? { total: num(battle?.scoreState?.currentScore), opponent: num(battle?.scoreState?.opponentScore), at: str(battle?.completedAt) }
+    ? { total: num(battle?.scoreState?.currentScore), opponent: noOpponent ? null : num(battle?.scoreState?.opponentScore), at: str(battle?.completedAt) }
     : null;
   // BA-39: the comparison runs over the two recorded final scores, and only when both exist.
   const derive = resolveResult
@@ -798,7 +1001,7 @@ export function buildBattleBlock({ battle, resolveResult }) {
     status,
     completedAt: str(battle?.completedAt),
     final,
-    result: battleResultOf({ status, stored, final, derive }),
+    result: battleResultOf({ status, stored, final, derive, noOpponent }),
     completionMessage: completed ? completionMessageOf(battle) : null,
   };
 }
@@ -848,7 +1051,7 @@ export function assembleTape({
 }) {
   const nowIso = new Date(nowMs).toISOString();
   const battleId = battle.id;
-  const days = Array.isArray(battle?.timing?.tradingDays) ? battle.timing.tradingDays.filter((d) => typeof d === 'string') : null;
+  const days = tradingTimeline(battle);
   const entries = dayEntries(battle, bounds);
   const trades = dayTrades(battle, bounds);
   const dayTicks = [...(ticksRead.ticks || [])].filter((t) => Number.isInteger(t?.tickSeq)).sort((a, b) => a.tickSeq - b.tickSeq);
@@ -858,7 +1061,10 @@ export function assembleTape({
   const rawTickBySeq = new Map(dayTicks.map((t) => [t.tickSeq, t]));
 
   // ---- checks
-  const tickRows = dayTicks.map((t) => tickRow(t, t.evalId ? entryByEvalId.get(t.evalId) : null, battleId));
+  const opponentBasis = opponentBasisOf(battle);
+  // B1 T1 (Astra F4): one isolated opponent read per check; its failures go to the T1 note, never the day's.
+  const t1 = opponentReader();
+  const tickRows = dayTicks.map((t) => tickRow(t, t.evalId ? entryByEvalId.get(t.evalId) : null, battleId, { opponentBasis, readOpponent: t1.read }));
   const entryOnly = entries.day.filter((e) => !(str(e.evalId) && tickByEvalId.has(e.evalId))).map(entryRow);
   const runs = runsRead.ok ? runsRead.runs : [];
   const deferredRuns = runs.filter((r) => Array.isArray(r.deferredBattleIds) && r.deferredBattleIds.includes(battleId));
@@ -892,6 +1098,7 @@ export function assembleTape({
   const plans = buildPlans({ entriesDay: entries.day, tickByEvalId });
   const rationale = buildRationale({ entriesDay: entries.day, tickByEvalId });
   const calls = callsRead.ok ? buildCalls({ calls: callsRead.calls, bounds, nowIso, callRecordsMode }) : [];
+  const meetings = meetingsOrUnavailable({ battle, bounds });
 
   // ---- comparables (BA-13): TICKER_TO_SECTOR, never the stored sector string
   const heldSymbols = new Set();
@@ -920,7 +1127,10 @@ export function assembleTape({
     rawTickBySeq,
     entryRowsScored: entryOnly.filter((r) => r.scores),
     priorTape,
+    opponentBasis,
   });
+  const opponentNote = opponentNoteOf(t1.failures);
+  if (opponentNote) score.opponentNote = opponentNote;
 
   // ---- coverage (BA-20, BA-26) — computed from what this read could see.
   // Every reason is a CAVEAT, a fact about the day's record (a gap, a check
@@ -955,24 +1165,22 @@ export function assembleTape({
 
   const entryReasons = [];
   if (entries.evictionPossible) entryReasons.push(limit(`evaluations[] is at its ${EVALUATIONS_CAP}-entry cap and its oldest surviving entry is not before this day — the day's first entries may have been evicted`, LIMIT_SOURCES.evaluationsCap));
-  if (evictedEntries) entryReasons.push(limit(`${evictedEntries} check(s) recorded an evalId whose evaluation entry is absent (evicted: older than the oldest surviving entry)`, LIMIT_SOURCES.evaluationsCap));
-  if (lostEntries) entryReasons.push(caveat(`${lostEntries} check(s) recorded an evalId whose evaluation entry is absent`));
-  const unknownReason = (what) => (unknownChecks
-    ? [caveat(`${unknownChecks} minted check(s) of this day have no record of what they read or produced (no tick record, or an evaluation entry that is absent) — ${what} unknown for them`)]
-    : []);
+  if (evictedEntries) entryReasons.push(limit(NOTES.evictedEntries(evictedEntries), LIMIT_SOURCES.evaluationsCap));
+  if (lostEntries) entryReasons.push(caveat(NOTES.lostEntries(lostEntries)));
+  const unknownReason = (what) => (unknownChecks ? [caveat(NOTES.unknownChecks(unknownChecks, what))] : []);
   const checksSpan = spanOf(checks.map((r) => r.at));
 
   const checkReasons = [];
   if (capture === 'absent') checkReasons.push(caveat('capture absent: no tick records for this battle-day — checks shown from evaluation entries only'));
-  if (gaps.attributed.length) checkReasons.push(caveat(`${gaps.attributed.length} minted check(s) of this day have no record (tickSeq ${gaps.attributed.join(', ')})`));
-  if (gaps.unattributed.length) checkReasons.push(caveat(`${gaps.unattributed.length} minted check(s) adjacent to this day have no record and their day cannot be established (tickSeq ${gaps.unattributed.join(', ')})`));
-  if (entryOnly.length && capture !== 'absent') checkReasons.push(caveat(`${entryOnly.length} evaluation entr(y/ies) have no tick record; their sequence numbers are among the gaps`));
+  if (gaps.attributed.length) checkReasons.push(caveat(NOTES.gapsAttributed(gaps.attributed.length, gaps.attributed.join(', '))));
+  if (gaps.unattributed.length) checkReasons.push(caveat(NOTES.gapsUnattributed(gaps.unattributed.length, gaps.unattributed.join(', '))));
+  if (entryOnly.length && capture !== 'absent') checkReasons.push(caveat(NOTES.entryOnly(entryOnly.length)));
   if (!runsRead.ok) checkReasons.push(limit(`run records unreadable (${runsRead.error}) — deferrals unknown`, LIMIT_SOURCES.runs));
   else if (!runs.length) checkReasons.push(caveat('no evaluation-run records exist for this day — deferrals cannot be listed'));
   else {
     const missingSlots = missingRunSlots({ etDate, runs, battle, nowMs });
     if (missingSlots.length) {
-      checkReasons.push(caveat(`no run record for ${missingSlots.length} evaluator slot(s) (${missingSlots.map((t) => ET_HHMM.format(new Date(t))).join(', ')} ET) — a check in them may be missing or its deferral unlisted`));
+      checkReasons.push(caveat(NOTES.missingSlots(missingSlots.length, missingSlots.map((t) => ET_HHMM.format(new Date(t))).join(', '))));
     }
   }
   if (deferralsTruncated) checkReasons.push(caveat('a run record\'s deferred list was truncated — deferrals past its first 200 ids are not listed (deferralsTruncated)'));
@@ -997,7 +1205,7 @@ export function assembleTape({
   // price and locked gain are unknown here, a limit of this read (BA-20: every
   // source under its cap; round-3 review L2-1). When every swap that could
   // have been evicted matched, nothing of the day was.
-  else if (trades.evictionPossible && unmatched) actionReasons.push(limit(`trades[] is at its ${TRADES_CAP}-entry cap and its oldest surviving entry is not before this day — ${unmatched} swap(s) have no trade record here (possibly evicted): tier, slot, exit price and locked gain unknown`, LIMIT_SOURCES.tradesCap));
+  else if (trades.evictionPossible && unmatched) actionReasons.push(limit(NOTES.untradedSwaps(TRADES_CAP, unmatched), LIMIT_SOURCES.tradesCap));
   if (!receiptsRead.ok) actionReasons.push(limit(`learning receipts unreadable (${receiptsRead.error}) — replay inputs and holding times unavailable`, LIMIT_SOURCES.receipts));
   coverage.actions = coverageOf(statusFrom(actionReasons, actions.length > 0 || actionsProvable), {
     span: spanOf(actions.map((a) => a.at)), sources: ['ticks.actions', 'trades', 'learningReceipts'], note: texts(actionReasons).join('; ') || null,
@@ -1006,27 +1214,27 @@ export function assembleTape({
 
   const heardReasons = [];
   if (entries.evictionPossible && capture !== 'present') heardReasons.push(limit('evaluation entries may be evicted and capture is incomplete — a heard stamp may be missing', LIMIT_SOURCES.evaluationsCap));
-  heardReasons.push(...unknownReason('a heard stamp, and the checks after a filing, are'));
+  heardReasons.push(...unknownReason(UNKNOWN_WHAT.directives));
   const earlyCards = directives.filter((d) => (toMs(d.filedAt) ?? bounds.startMs) < bounds.startMs).length;
-  const directiveNotes = earlyCards ? [`${earlyCards} card(s) filed before this ET day (after the battle's activation or the previous trading day) are shown here`] : [];
+  const directiveNotes = earlyCards ? [NOTES.earlyCards(earlyCards)] : [];
   coverage.directives = coverageOf(statusFrom(heardReasons, true), {
     span: spanOf(directives.map((d) => d.filedAt)), sources: ['chatExchanges', 'evaluations.heard', 'ticks.controls'], note: [...texts(heardReasons), ...directiveNotes].join('; ') || null,
     caveats: caveatsOf(heardReasons), unknownChecks,
   });
 
   const entrySpan = spanOf(entries.day.map((e) => e.timestamp));
-  const planReasons = [...entryReasons, ...unknownReason('plans they recorded are')];
+  const planReasons = [...entryReasons, ...unknownReason(UNKNOWN_WHAT.plans)];
   coverage.plans = coverageOf(statusFrom(planReasons, entries.day.length > 0), {
     span: entrySpan, sources: ['evaluations.candidates'], note: texts(planReasons).join('; ') || null,
     caveats: caveatsOf(planReasons), unknownChecks,
   });
-  const rationaleReasons = [...entryReasons, ...unknownReason('rationale they recorded is')];
-  const rationaleNote = [...texts(rationaleReasons), ...(rationale.platformAuthored ? [`${rationale.platformAuthored} entr(y/ies) carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied`] : [])];
+  const rationaleReasons = [...entryReasons, ...unknownReason(UNKNOWN_WHAT.rationale)];
+  const rationaleNote = [...texts(rationaleReasons), ...(rationale.platformAuthored ? [NOTES.platformAuthored(rationale.platformAuthored)] : [])];
   coverage.rationale = coverageOf(statusFrom(rationaleReasons, entries.day.length > 0), {
     span: entrySpan, sources: ['evaluations'], note: rationaleNote.join('; ') || null,
     caveats: caveatsOf(rationaleReasons), unknownChecks,
   });
-  const evidenceReasons = [...entryReasons, ...unknownReason('evidence stamps they recorded are')];
+  const evidenceReasons = [...entryReasons, ...unknownReason(UNKNOWN_WHAT.evidence)];
   coverage.evidence = coverageOf(statusFrom(evidenceReasons, entries.day.length > 0), {
     span: spanOf(checks.filter((r) => r.evidence).map((r) => r.evidenceAt ?? r.at)), sources: ['evaluations.evidence'], note: texts(evidenceReasons).join('; ') || null,
     caveats: caveatsOf(evidenceReasons), unknownChecks,
@@ -1041,7 +1249,7 @@ export function assembleTape({
     // Facts, not reasons — and only what was observed (BA-26): never a
     // categorical claim about a day whose checks are not all known.
     if (!entries.day.length && !noEntry.length) {
-      callNotes.push(`no model check recorded among the ${knownChecks} known check(s)${unknownGaps ? `; ${unknownGaps} check(s) have no record` : ''}`);
+      callNotes.push(NOTES.noModelCheck(knownChecks, unknownGaps));
     } else if (entries.day.length && !phased) callNotes.push('no evaluation entry of this day carries a declarations phase');
   }
   if (entries.evictionPossible) callReasons.push(limit('declaration phases unknown for evicted entries', LIMIT_SOURCES.evaluationsCap));
@@ -1053,19 +1261,22 @@ export function assembleTape({
     const looked = declarationsRead.checked instanceof Set ? declarationsRead.checked : null;
     const unread = looked ? expected.filter((id) => !looked.has(id)) : [];
     const absent = expected.filter((id) => (!looked || looked.has(id)) && !declarationsRead.present.has(id));
-    if (unread.length) callReasons.push(limit(`${unread.length} check(s) expected a declarations record this read did not look up (an evaluation newer than the read)`, LIMIT_SOURCES.declarationsUnread));
-    if (absent.length) callReasons.push(caveat(`${absent.length} check(s) expected a declarations record that is absent (failed or unconfirmed — contract §2.1)`));
+    if (unread.length) callReasons.push(limit(NOTES.declarationsUnread(unread.length), LIMIT_SOURCES.declarationsUnread));
+    if (absent.length) callReasons.push(caveat(NOTES.declarationsAbsent(absent.length)));
   }
-  if (lostEntries) callReasons.push(caveat(`${lostEntries} check(s) recorded an evalId whose evaluation entry is absent — whether they expected a declarations record is unknown`));
-  callReasons.push(...unknownReason('their declarations phase, and so an absent declarations record, is'));
+  if (lostEntries) callReasons.push(caveat(NOTES.lostDeclarations(lostEntries)));
+  callReasons.push(...unknownReason(UNKNOWN_WHAT.calls));
   coverage.calls = coverageOf(statusFrom(callReasons, calls.length > 0), {
     span: spanOf(calls.map((c) => c.mintedAt)), sources: ['calls', 'declarations'],
     note: [...texts(callReasons), ...callNotes, 'state as observed at copiedAt, not a reconstruction of the day'].join('; '),
     caveats: caveatsOf(callReasons), unknownChecks,
   });
 
+  // B1 T2: the meetings' own coverage (Build B spec §3).
+  coverage.meetings = meetings.coverage;
+
   const within = withinCandleWindow(etDate, nowMs);
-  const candleNote = within ? 'awaiting the candle pass' : 'no candle pass is scheduled for this day (outside the 10-trading-day window)';
+  const candleNote = within ? AWAITING_CANDLES_NOTE : 'no candle pass is scheduled for this day (outside the 10-trading-day window)';
   coverage.replay = coverageOf('unavailable', { note: candleNote });
   coverage.series = coverageOf('unavailable', { note: candleNote });
 
@@ -1124,6 +1335,7 @@ export function assembleTape({
     plans,
     calls,
     rationale: rationale.rows,
+    meetings: meetings.rows,
     comparables: { market: [...MARKET_COMPARABLES], sectors },
     diagnostics: { intradayViews: intradayViewsPresent === true ? 'present' : (intradayViewsPresent === false ? 'absent' : 'unknown') },
     numberClasses: TAPE_NUMBER_CLASSES,

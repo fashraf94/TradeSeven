@@ -23,7 +23,7 @@
 // FILM_TAPE_WRITE_ENABLED is read at call time, here as well as in the
 // handlers, so no caller can write a tape while the writer is dark.
 
-import { FILM_TAPE_WRITE_ENABLED, CALL_RECORDS_MODE } from '../../../src/config/featureFlags.js';
+import { FILM_TAPE_WRITE_ENABLED, CALL_RECORDS_MODE, TEMPO_DIAL_ENABLED } from '../../../src/config/featureFlags.js';
 import { resolveModeConfig } from '../../../src/constants/agentGameModes.js';
 import { TAPE_VERSION, TAPE_NUMBER_CLASSES } from '../../../src/constants/filmTape.js';
 import {
@@ -34,6 +34,8 @@ import { assembleTape, assembleSkippedModeTape, dayEntries } from './tapeAssembl
 import { mergeTape, sanitizeForFirestore, stableStringify } from './tapeMerge.js';
 import { etDayBounds, previousSession, withinCandleWindow, toMs } from './tapeTime.js';
 import { resolveBattleResult } from './battleResult.js';
+import { tradingTimeline } from '../../../src/utils/tapeSchedule.js';
+import { tagTapeDay } from './tapeTags.js';
 
 const nowMsOf = (now) => {
   if (typeof now === 'function') return nowMsOf(now());
@@ -57,6 +59,7 @@ export const isTieredBattle = (battle) => resolveModeConfig(battle?.gameMode).la
  * @param {object} [opts.runsRead]        the day's agentEvalRuns read ONCE per pass (§5)
  * @param {Function} [opts.resolveResult] BA-4 result comparison (default: the evaluator's own)
  * @param {string} [opts.callRecordsMode] the CALL_RECORDS_MODE this run writes under (BA-16)
+ * @param {number} [opts.sizeBudget]     the document size budget (tapeSize.js; default TAPE_SIZE_BUDGET_BYTES — a test seam)
  * @returns {Promise<{ status: 'written'|'unchanged'|'skipped_mode', battleId, etDate, runCount, bytes }>}
  */
 export async function writeTapeDay(battleId, etDate, opts = {}) {
@@ -75,10 +78,14 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
   // BA-37: the tiered assembly as a function of the battle document, over this
   // run's subcollection reads — re-run on the transaction's re-read.
   let assembleFrom = null;
+  // B1 (spec §2): the tagger over the merged day, bound to the battle the tape
+  // is assembled from and this run's tick read (the dial's control epochs).
+  // tagTapeDay never throws: a failure is the tags section's, never the write's.
+  let tagFor = null;
   if (!isTieredBattle(battle)) {
     assembled = assembleSkippedModeTape({ battle, etDate, nowMs });
   } else {
-    const days = Array.isArray(battle?.timing?.tradingDays) ? battle.timing.tradingDays : null;
+    const days = tradingTimeline(battle);
     const priorDay = days ? (days[days.indexOf(etDate) - 1] ?? null) : previousSession(etDate);
     const [ticksRead, receiptsRead, callsRead, runsRead, intradayViewsPresent, priorTape] = await Promise.all([
       readDayTicks(db, battleId, bounds),
@@ -108,6 +115,7 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
       mintedMax: battle?.cronState ? (battle.cronState.tickSeq ?? null) : (b?.cronState?.tickSeq ?? null),
     });
     assembled = assembleFrom(battle);
+    tagFor = (b) => (doc) => tagTapeDay({ battle: b, ticks: ticksRead.ticks || [], doc, dialEnabled: TEMPO_DIAL_ENABLED });
   }
 
   const withinWindow = withinCandleWindow(etDate, nowMs);
@@ -125,6 +133,7 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
     // still never moves a stored completion backward (BA-27).
     let doc = assembled;
     let canonicalBattle = false;
+    let tagDay = null;
     if (assembleFrom) {
       const bSnap = await tx.get(battleRef(db, battleId));
       const now = bSnap && bSnap.exists ? { id: battleId, ...(typeof bSnap.data === 'function' ? bSnap.data() : bSnap.data) } : null;
@@ -134,9 +143,11 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
       if (!now) throw new Error('battle_not_found');
       doc = stableStringify(now) === stableStringify(battle) ? assembled : assembleFrom(now);
       canonicalBattle = true;
+      tagDay = tagFor(now);
     }
     // BA-39: the merge recomputes the result with the same comparison the assembly used.
-    const { doc: merged, changed } = mergeTape(stored, doc, { nowIso, withinWindow, canonicalBattle, resolveResult: opts.resolveResult ?? resolveBattleResult });
+    // B1 (Astra F3): the merged document stays within the size budget where B1's optional sections can make it so.
+    const { doc: merged, changed } = mergeTape(stored, doc, { nowIso, withinWindow, canonicalBattle, resolveResult: opts.resolveResult ?? resolveBattleResult, tagDay, sizeBudget: opts.sizeBudget });
     if (changed) tx.set(ref, merged);
     outcome = { doc: merged, changed };
   });

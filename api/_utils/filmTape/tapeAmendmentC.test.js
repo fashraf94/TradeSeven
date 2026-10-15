@@ -584,7 +584,7 @@ describe('BA-20 / BA-37 (round-3 review L2-1) — a swap whose trade record may 
   const laterTrades = (base, n) => Array.from({ length: n }, (_, i) => ({
     ...base, symbolOut: `LX${i}`, symbolIn: `LY${i}`, slotIndex: 0, tier: 'support', swappedOutAt: new Date(Date.parse('2026-09-25T14:00:00.000Z') + i * 60_000).toISOString(),
   }));
-  const CAP_NOTE = /trades\[\] is at its 50-entry cap and its oldest surviving entry is not before this day — 1 swap\(s\) have no trade record here \(possibly evicted\)/;
+  const CAP_NOTE = /trades\[\] is at its 50-entry cap and its oldest surviving entry is not before this day — 1 swap has no trade record here \(possibly evicted\)/;
 
   it('L2-1: capture present, trades[] at its 50-entry cap with its oldest entry on the day, and the AMD trade evicted — the action stands, unmatched, and actions coverage is partial with the cap named, never complete', async () => {
     const fx = await presentCaptureDay();
@@ -697,7 +697,10 @@ describe('BA-37 (round-3 review L2-3) — the gap horizon is the minted count of
     const tape = tapeOf(t, fx.battleId);
     expect(tape.passes.close.gaps).toEqual([last]);
     expect(tape.passes.close.capture).toBe('partial');
-    expect(Object.entries(tape.coverage).filter(([k, c]) => !['replay', 'series'].includes(k) && c.status === 'complete').map(([k]) => k)).toEqual(['actions']);
+    // Film Room B1: `meetings` reads the meeting history, not the checks, so a missing check does not touch it;
+    // `tags` reads the checks and stays under this row (it reads unavailable over the gap).
+    expect(Object.entries(tape.coverage).filter(([k, c]) => !['replay', 'series', 'meetings'].includes(k) && c.status === 'complete').map(([k]) => k)).toEqual(['actions']);
+    expect(tape.coverage.tags.status).toBe('unavailable');
   });
 
   it('L2-3 (refuter of lens 4): a selected copy whose cronState counts nothing yet — no check minted at selection, as a new battle is written — sets no horizon: the re-read\'s first mint is no gap of day 1', async () => {
@@ -730,8 +733,8 @@ describe('BA-37 (round-3 review L2-3) — the gap horizon is the minted count of
     expect(tape.passes.close.unattributedGaps).toEqual([]);
     expect(tape.checks.filter((c) => c.rowSource === 'gap').map((c) => c.tickSeq)).toEqual([40]);
     expect(tape.coverage.checks.caveats).toEqual([
-      '1 minted check(s) of this day have no record (tickSeq 40)',
-      '1 evaluation entr(y/ies) have no tick record; their sequence numbers are among the gaps',   // e40 survives on the battle
+      '1 minted check of this day has no record (tickSeq 40)',
+      '1 evaluation entry has no tick record; its sequence number is among the gaps',   // e40 survives on the battle
     ]);
   });
 });

@@ -100,3 +100,32 @@ describe('the 10-minute series (BA-12)', () => {
     expect(pctChange(0, 1)).toBeNull();
   });
 });
+
+// ── Film Room B1 item 7 — W3: a missing volume stays missing ────────────────
+
+describe('W3 — a missing or non-finite minute volume is null, never 0; a real 0 stays 0', () => {
+  const withVolumes = (vols) => sessionRows(D, () => 100).map((r, i) => (i >= 1 && i <= vols.length ? { ...r, volume: vols[i - 1] } : r));
+
+  it('the minute bar: missing (undefined, null), non-finite (NaN, Infinity) and non-numeric volumes read null; 0 reads 0', () => {
+    // rows[0] is the pre-market row; rows[1..] are the session's minutes 09:30, 09:31, …
+    const bars = sessionBars(withVolumes([undefined, null, Number.NaN, Infinity, '12', 0, 7]), D, S);
+    expect(bars.slice(0, 7).map((b) => b.v)).toEqual([null, null, null, null, null, 0, 7]);
+  });
+
+  it('the 10-minute bar: any minute without its volume makes the bucket\'s volume null; zero-volume minutes sum as 0', () => {
+    const rows = sessionRows(D, () => 100, { extras: false }).map((r, i) => {
+      if (i === 3) return { ...r, volume: null };                 // 09:33 — bucket 0 lacks one volume
+      if (i >= 10 && i < 20) return { ...r, volume: 0 };          // bucket 1: ten real zeros
+      return r;
+    });
+    const tens = aggregate10m(sessionBars(rows, D, S), S);
+    expect(tens[0]).toMatchObject({ v: null, m: 10, n: 10 });
+    expect(tens[1]).toMatchObject({ v: 0, m: 10 });
+    expect(tens[2]).toMatchObject({ v: 10_000, m: 10 });           // ten minutes of the fixture's 1,000
+  });
+
+  it('the first minute of a bucket missing its volume makes it null too (no partial sum from the second minute on)', () => {
+    const rows = sessionRows(D, () => 100, { extras: false }).map((r, i) => (i === 0 ? { ...r, volume: undefined } : r));
+    expect(aggregate10m(sessionBars(rows, D, S), S)[0].v).toBeNull();
+  });
+});

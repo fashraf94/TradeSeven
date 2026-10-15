@@ -142,10 +142,20 @@
         "declarations"
       ],
       "preservedFrom": null,
-      "note": "no model check recorded among the 0 known check(s); state as observed at copiedAt, not a reconstruction of the day",
+      "note": "no model check recorded among the 0 known checks; state as observed at copiedAt, not a reconstruction of the day",
       "caveats": [],
       "unknownChecks": 0,
       "dependsOn": "cb1bac19b4471727"
+    },
+    "meetings": {
+      "status": "complete",
+      "span": null,
+      "sources": [
+        "gameplanMeetingHistory",
+        "gameplanMeeting"
+      ],
+      "preservedFrom": null,
+      "note": null
     },
     "replay": {
       "status": "complete",
@@ -167,6 +177,18 @@
       ],
       "preservedFrom": null,
       "note": null
+    },
+    "tags": {
+      "status": "unavailable",
+      "span": null,
+      "sources": [
+        "checks",
+        "checks.evidence",
+        "checks.risk",
+        "actions"
+      ],
+      "preservedFrom": null,
+      "note": "stalled unavailable: unknown archetype (momentum)"
     }
   },
   "score": {
@@ -176,7 +198,8 @@
       "value": null,
       "basis": "unavailable",
       "reference": null
-    }
+    },
+    "opponentBasis": "cpu_portfolio"
   },
   "battle": {
     "status": "completed",
@@ -202,6 +225,7 @@
   "plans": [],
   "calls": [],
   "rationale": [],
+  "meetings": [],
   "comparables": {
     "market": [
       "SPY",
@@ -238,6 +262,7 @@
     "checks[].scores.active": "recorded",
     "checks[].scores.banked": "recorded",
     "checks[].scores.total": "recorded",
+    "checks[].scores.opponent": "recorded",
     "checks[].tickMs": "recorded",
     "checks[].guardrail.deployedCount": "recorded",
     "checks[].evidence.*.px": "recorded",
@@ -310,6 +335,34 @@
     "calls[].resolvedAt": "recorded",
     "calls[].horizon.expiresAt": "recorded",
     "calls[].hypothesisRef.hypothesisVersion": "recorded",
-    "rationale[].tickSeq": "recorded"
+    "rationale[].tickSeq": "recorded",
+    "tags.registryVersion": "recorded",
+    "tags.situations.*": "recorded",
+    "tags.inputs.forcedRotation.pctThreshold": "recorded",
+    "tags.inputs.forcedRotation.ticksThreshold": "recorded",
+    "tags.inputs.forcedRotation.winnerThreshold": "recorded",
+    "tags.inputs.forcedRotation.maxTickAgeMinutes": "recorded",
+    "tags.inputs.slots.S1.checksBeforeRule": "recorded",
+    "tags.inputs.slots.S2.checks": "recorded",
+    "tags.inputs.slots.S2.pctThreshold": "recorded",
+    "tags.inputs.perCheck[].tickSeq": "recorded",
+    "tags.inputs.perCheck[].tempoMultiplier": "derived",
+    "tags.inputs.perCheck[].effectiveTicksThreshold": "derived",
+    "tags.items[].version": "recorded",
+    "tags.items[].tickSeq": "recorded",
+    "tags.items[].count": "derived",
+    "tags.items[].effectiveTicksThreshold": "derived",
+    "tags.exits[].tickSeq": "recorded"
+  },
+  "tags": {
+    "registryVersion": 1,
+    "situations": {
+      "stalled": 1
+    },
+    "inputs": {
+      "archetypeCodeId": "momentum"
+    },
+    "items": null,
+    "exits": []
   }
 }

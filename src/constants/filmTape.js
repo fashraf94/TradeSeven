@@ -39,6 +39,12 @@ export const COVERAGE_SECTIONS = Object.freeze([
 ]);
 /** The two sections only the candle pass writes (BA-19). */
 export const CANDLE_COVERAGE_SECTIONS = Object.freeze(['replay', 'series']);
+/**
+ * Film Room B1 — the coverage sections the card build's tape additions carry
+ * (Build B spec §2–§3), beside the sections above. The close pass writes them;
+ * the A2 screen and the export render none of them (B2 renders the card).
+ */
+export const B1_COVERAGE_SECTIONS = Object.freeze(['tags', 'meetings']);
 
 // ── BA-8: check states ──────────────────────────────────────────────────────
 // A tick-backed check takes its capture `exitReason`, except that a
@@ -99,7 +105,8 @@ export const CANDLE_SOURCES = Object.freeze(['eodhd_1m', 'shared_cache']);
 export const MARKET_COMPARABLES = Object.freeze(['SPY', 'RSP']);
 /** Deep-dive bar width (BA-12). */
 export const SERIES_INTERVAL = '10m';
-export const SERIES_ROLES = Object.freeze(['held', 'sold', 'plan', 'market', 'sector']);
+/** `meeting` (Film Room B1 T2): a gameplan meeting leg's symbol the day's set did not already hold. */
+export const SERIES_ROLES = Object.freeze(['held', 'sold', 'plan', 'market', 'sector', 'meeting']);
 
 // ── The two schedules (vercel.json) — the hub helper reads the close pass's ─
 // UTC `15 2 * * 2-6`: 22:15 EDT / 21:15 EST, the SAME ET date as the session.
@@ -120,6 +127,8 @@ export const CANDLE_PASS_UTC_HOUR = 11;
 // the gap combines both bases.
 export const LOCKED_BASIS = 'eodhd_realtime_delayed';
 export const LOCKED_BASIS_NOTE = "Banked points and the bought entry use the platform's quote, delayed about 15–20 minutes; rebuilt values use completed 1-minute bars.";
+/** The close pass's note on a candle section no candle pass has written yet, inside the window (B1 W1 rewrites it at close-out). */
+export const AWAITING_CANDLES_NOTE = 'awaiting the candle pass';
 /** BA-38 — the note a replay built by an earlier replay logic carries where no candle pass will rebuild it. */
 export const REPLAY_VERSION_NOTE = 'built by an earlier replay version; the reconciliation split was not computed';
 
@@ -177,6 +186,9 @@ export const TAPE_NUMBER_CLASSES = Object.freeze({
   'checks[].scores.active': 'recorded',
   'checks[].scores.banked': 'recorded',
   'checks[].scores.total': 'recorded',
+  // B1 T1 — copied from the permanent tick under `score.opponentBasis`
+  // `cpu_portfolio`; null under `none` and on a check rebuilt from an entry.
+  'checks[].scores.opponent': 'recorded',
   'checks[].tickMs': 'recorded',
   'checks[].guardrail.deployedCount': 'recorded',
   'checks[].evidence.*.px': 'recorded',
@@ -269,6 +281,27 @@ export const TAPE_NUMBER_CLASSES = Object.freeze({
   'calls[].hypothesisRef.hypothesisVersion': 'recorded',
   // rationale
   'rationale[].tickSeq': 'recorded',
+  // Film Room B1 — the tags section (Build B spec §2; src/data/situationRegistry.js).
+  // `inputs.*` take their source's class: thresholds and slot values copied as
+  // the platform and the registry hold them are recorded; the dial's multiplier
+  // and the threshold it yields are computed, derived. Every count is derived.
+  'tags.registryVersion': 'recorded',
+  'tags.situations.*': 'recorded',
+  'tags.inputs.forcedRotation.pctThreshold': 'recorded',
+  'tags.inputs.forcedRotation.ticksThreshold': 'recorded',
+  'tags.inputs.forcedRotation.winnerThreshold': 'recorded',
+  'tags.inputs.forcedRotation.maxTickAgeMinutes': 'recorded',
+  'tags.inputs.slots.S1.checksBeforeRule': 'recorded',
+  'tags.inputs.slots.S2.checks': 'recorded',
+  'tags.inputs.slots.S2.pctThreshold': 'recorded',
+  'tags.inputs.perCheck[].tickSeq': 'recorded',
+  'tags.inputs.perCheck[].tempoMultiplier': 'derived',
+  'tags.inputs.perCheck[].effectiveTicksThreshold': 'derived',
+  'tags.items[].version': 'recorded',
+  'tags.items[].tickSeq': 'recorded',
+  'tags.items[].count': 'derived',
+  'tags.items[].effectiveTicksThreshold': 'derived',
+  'tags.exits[].tickSeq': 'recorded',
 });
 
 /** The same declaration for `tape/{etDate}/series/{symbol}`. */

@@ -512,7 +512,7 @@ describe('BA-46 / F3 — the rationale timeline', () => {
     expect(m.container.textContent).not.toMatch(/Haiku call failed|defaulting to HOLD/);
     // the Diagnostic area holds only its label and the presence statement — no check state, no failure (review A2L4-9)
     expect(m.q('[data-region="diagnostics"]').textContent).toBe(`${INTRADAY_DIAGNOSTIC_HEADER}Intraday diagnostic views were recorded for this battle-day.`);
-    expect(m.q('#rationale').textContent).toContain("2 entr(y/ies) carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied");
+    expect(m.q('#rationale').textContent).toContain("2 entries carried platform-written text (a placeholder or a guardrail override), not the agent's words — not copied");
   });
 
   it('tapping a state entry opens that check\'s record (BA-44)', () => {

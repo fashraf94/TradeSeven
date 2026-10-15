@@ -43,10 +43,12 @@
 //   · Nothing changed → no write at all, so the stored bytes stand.
 
 import { createHash } from 'node:crypto';
-import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE } from '../../../src/constants/filmTape.js';
-import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf } from './tapeAssemble.js';
+import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE, AWAITING_CANDLES_NOTE } from '../../../src/constants/filmTape.js';
+import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf, MEETINGS_PER_DAY_MAX } from './tapeAssemble.js';
 import { candleInputFingerprint, changedInputParts, replayLogicVersionOf, REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
+import { modernNotes } from './tapeNotes.js';
+import { fitTapeToBudget, TAPE_SIZE_BUDGET_BYTES } from './tapeSize.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const present = (v) => v !== null && v !== undefined;
@@ -150,6 +152,12 @@ const SECTION_RULES = Object.freeze({
     groups: [['tickSeq']],
     candle: [],
     order: (rows) => [...rows].sort((a, b) => ((toMs(a.at) ?? 0) - (toMs(b.at) ?? 0)) || (a.key < b.key ? -1 : 1)),
+  },
+  // B1 T2 — a meeting copied from the history, by its id and creation instant.
+  meetings: {
+    groups: [],
+    candle: [],
+    order: (rows) => [...rows].sort((a, b) => ((toMs(a.createdAt) ?? 0) - (toMs(b.createdAt) ?? 0)) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)),
   },
 });
 
@@ -302,7 +310,9 @@ function mergeCoverage(section, storedDoc, newCov, carried, { limits = [], depen
   const sRank = COVERAGE_RANK[storedCov.status] ?? 0;
   const nRank = COVERAGE_RANK[newCov?.status] ?? 0;
   const keepStored = sRank > nRank || unobserved;
-  const base = keepStored ? { ...storedCov } : { ...newCov };
+  // B1 W4: a stored note or caveat in the pre-W4 wording ("check(s)") is said
+  // the W4 way before the union, so one fact is never kept twice in two wordings.
+  const base = keepStored ? { ...storedCov, note: modernNotes(storedCov.note) } : { ...newCov };
   const spans = [storedCov.span, newCov?.span].filter(isObj);
   base.span = spans.length
     ? { from: spans.map((s) => s.from).filter(Boolean).sort()[0] ?? null, to: spans.map((s) => s.to).filter(Boolean).sort().pop() ?? null }
@@ -310,7 +320,7 @@ function mergeCoverage(section, storedDoc, newCov, carried, { limits = [], depen
   base.sources = [...new Set([...(storedCov.sources || []), ...(newCov?.sources || [])])];
   base.preservedFrom = (keepStored || carried) ? storedAt : null;
   if (Array.isArray(storedCov.caveats) || Array.isArray(newCov?.caveats)) {
-    let caveats = [...new Set([...(storedCov.caveats || []), ...(newCov?.caveats || [])])];
+    let caveats = [...new Set([...(storedCov.caveats || []).map(modernNotes), ...(newCov?.caveats || [])])];
     let resolved = [];
     if (!limits.length && !unobserved) {
       // A read with no limit that saw every dependency the section now has: they are observed.
@@ -379,9 +389,18 @@ function battleWinner(stored, assembled, canonicalBattle) {
  *   imports no evaluator, so the candle pass, which imports this module for
  *   its serializers, does not load one (review AD3-2). A derivation without
  *   it throws.
+ *   `tagDay` (Film Room B1, spec §2): `(doc) => ({ tags, coverage })`, the
+ *   tagger over the MERGED day (writeTapeDay hands in tapeTags.js
+ *   tagTapeDay, which never throws), so `tags` is recomputed from the merged
+ *   checks and actions on every write. The merge imports no tagger, for the
+ *   same reason it imports no evaluator. Without one, a stored section stands.
+ *   `sizeBudget` (B1, Astra F3): the document size the write stays within —
+ *   B1's optional sections go first when the merged document would pass it
+ *   (tapeSize.js fitTapeToBudget), on a fresh write and a merge alike, before
+ *   "did anything change" is asked. Default TAPE_SIZE_BUDGET_BYTES.
  * @returns {{ doc: object, changed: boolean, carried: object }}
  */
-export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false, resolveResult = null }) {
+export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false, resolveResult = null, tagDay = null, sizeBudget = TAPE_SIZE_BUDGET_BYTES }) {
   // The read's limits (BA-26 amended) steer the coverage merge; they are never stored.
   const { readLimits = {}, ...assembled } = isObj(assembledIn) ? assembledIn : {};
   const isSkipped = assembled?.passes?.close?.status === 'skipped_mode';
@@ -394,17 +413,18 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
         if (isObj(doc.coverage[section])) doc.coverage[section] = { ...doc.coverage[section], dependsOn: sectionDependsOn(section, doc) };
       }
     }
-    return { doc: sanitizeForFirestore(doc), changed: true, carried: {} };
+    if (!isSkipped) withTags(doc, null, tagDay);
+    return { doc: fitTapeToBudget(sanitizeForFirestore(doc), { budget: sizeBudget }), changed: true, carried: {} };
   }
   if (isSkipped) {
     const doc = { ...assembled, firstWrittenAt: stored.firstWrittenAt ?? nowIso, runCount: stored.runCount ?? 1, writtenAt: stored.writtenAt ?? nowIso };
     doc.passes = { ...doc.passes, close: { ...doc.passes.close, writtenAt: stored.passes?.close?.writtenAt ?? nowIso } };
-    return finish(stored, doc, nowIso, {});
+    return finish(stored, doc, nowIso, {}, sizeBudget);
   }
 
   const carried = {};
   const merged = { ...assembled };
-  for (const section of ['checks', 'actions', 'directives', 'plans', 'calls', 'rationale']) {
+  for (const section of ['checks', 'actions', 'directives', 'plans', 'calls', 'rationale', 'meetings']) {
     const { rows, carried: c } = mergeRows(section, stored[section], assembled[section]);
     merged[section] = rows;
     carried[section] = c;
@@ -422,9 +442,20 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
   const aScore = isObj(assembled.score) ? assembled.score : {};
   // The day's LAST admitted check keeps the later instant, the FIRST the
   // earlier — a read that lost rows never moves either (review L1-F8a).
-  const lastCheck = mergeUnit(sScore.lastCheck, aScore.lastCheck, (u) => toMs(u?.at) ?? -Infinity);
+  // B1 T1: whose score the opponent's is — a fact of the battle the tape is
+  // assembled from (re-read in the write's transaction, BA-37); a stored basis
+  // stands only when the new read carries none.
+  const opponentBasis = aScore.opponentBasis ?? sScore.opponentBasis ?? null;
+  let lastCheck = mergeUnit(sScore.lastCheck, aScore.lastCheck, (u) => toMs(u?.at) ?? -Infinity);
+  // Contract E: with no opponent, a kept last check written before T1 (the tick's 0) is no score either.
+  if (opponentBasis === 'none' && isObj(lastCheck) && lastCheck.opponent !== null && lastCheck.opponent !== undefined) lastCheck = { ...lastCheck, opponent: null };
   const firstCheck = mergeUnit(sScore.firstCheck, aScore.firstCheck, (u) => -(toMs(u?.at) ?? Infinity));
-  merged.score = { lastCheck, firstCheck, dayChange: mergeDayChange(sScore, aScore, lastCheck) };
+  // B1 T1 (Astra F4): the T1 note is the new read's — a read that failed says so; a working refresh clears it.
+  merged.score = {
+    lastCheck, firstCheck, dayChange: mergeDayChange(sScore, aScore, lastCheck),
+    ...(opponentBasis ? { opponentBasis } : {}),
+    ...(typeof aScore.opponentNote === 'string' && aScore.opponentNote ? { opponentNote: aScore.opponentNote } : {}),
+  };
   // What followed each filing, recounted on every merge from the MERGED check
   // and action rows, each directive's aftermath ending at the next committed
   // filing among ALL merged directives — a preserved one included (BA-30,
@@ -444,7 +475,9 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
   const winner = battleWinner(stored, assembled, canonicalBattle) === 'stored' ? stored : assembled;
   const block = isObj(winner.battle) ? winner.battle : {};
   const other = winner === stored ? assembled.battle : stored.battle;
-  const final = block.final ?? null;
+  // B1 T1 (contract E): with no opponent, a kept block's opponent score (an empty portfolio's 0) is no score.
+  const noOpponent = opponentBasis === 'none';
+  const final = noOpponent && isObj(block.final) ? { ...block.final, opponent: null } : (block.final ?? null);
   merged.battle = {
     status: block.status ?? null,
     completedAt: block.completedAt ?? null,
@@ -456,6 +489,7 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       status: block.status ?? null,
       stored: block.result?.basis === 'stored' ? block.result.value : null,
       final,
+      noOpponent,
       derive: (f) => {
         if (typeof resolveResult !== 'function') throw new Error('mergeTape: ctx.resolveResult is required to derive a battle result (BA-39)');
         return resolveResult({ gameMode: merged.gameMode ?? stored.gameMode ?? null, scoreState: { currentScore: f.total, opponentScore: f.opponent } });
@@ -526,14 +560,52 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
     const changed = merged.passes.candles?.changedInputs;
     if (Array.isArray(changed) && changed.length && isObj(cov) && cov.status !== 'unavailable') cov = builtBefore(cov, changed, withinWindow, merged.passes.candles?.status);
     if (section === 'replay' && outdated.length && isObj(cov) && cov.status !== 'unavailable') cov = versionLabelled(cov, outdated, withinWindow, merged.passes.candles?.status);
+    // B1 W1: a tape closed out before W1 still says a candle pass is coming — corrected on its next merge.
+    if (isObj(cov) && closedOutNote(cov.note, merged.passes.candles) !== cov.note) cov = { ...cov, note: closedOutNote(cov.note, merged.passes.candles) };
     merged.coverage[section] = cov;
   }
+  // B1 T2: the meetings' coverage is the new read's — the history only grows
+  // (an append-only list) — preserved from the stored copy for any row it kept.
+  let meetingsCov = assembled.coverage?.meetings ?? stored.coverage?.meetings ?? null;
+  // B1 review B-2: the day's cap holds for the MERGED rows too (the earliest
+  // kept), so re-planted meetings never grow the section across refreshes.
+  const meetingOverflow = merged.meetings.length - MEETINGS_PER_DAY_MAX;
+  if (meetingOverflow > 0) {
+    merged.meetings = merged.meetings.slice(0, MEETINGS_PER_DAY_MAX);
+    const kept = String(meetingsCov?.note ?? '').split('; ').filter((part) => part && !/ past \d+ in a day not copied$/.test(part));
+    meetingsCov = { ...(isObj(meetingsCov) ? meetingsCov : {}), status: 'partial', note: [...kept, `${meetingOverflow === 1 ? '1 meeting' : `${meetingOverflow} meetings`} past ${MEETINGS_PER_DAY_MAX} in a day not copied`].join('; ') };
+  }
+  if (isObj(meetingsCov)) {
+    merged.coverage.meetings = carriedAny(carried.meetings)
+      ? { ...meetingsCov, preservedFrom: stored.coverage?.meetings?.preservedFrom ?? stored.writtenAt ?? null }
+      : meetingsCov;
+  }
+  // B1 (spec §2): re-tagged from the merged rows and coverage, every write.
+  withTags(merged, stored, tagDay);
 
   merged.writtenAt = stored.writtenAt;
   merged.firstWrittenAt = stored.firstWrittenAt ?? stored.writtenAt ?? nowIso;
   merged.runCount = stored.runCount ?? 1;
   merged.passes.close.writtenAt = stored.passes?.close?.writtenAt ?? nowIso;
-  return finish(stored, merged, nowIso, carried);
+  return finish(stored, merged, nowIso, carried, sizeBudget);
+}
+
+/**
+ * B1 (spec §2) — the `tags` section and `coverage.tags`, from the tagger the
+ * caller handed in, over `doc` as merged. Without a tagger, the stored
+ * section stands (a caller that only merges never drops it).
+ */
+function withTags(doc, stored, tagDay) {
+  if (typeof tagDay === 'function') {
+    const { tags, coverage } = tagDay(doc);
+    doc.tags = tags;
+    doc.coverage = { ...(isObj(doc.coverage) ? doc.coverage : {}), tags: coverage };
+    return;
+  }
+  if (isObj(stored?.tags)) {
+    doc.tags = stored.tags;
+    doc.coverage = { ...(isObj(doc.coverage) ? doc.coverage : {}), tags: stored.coverage?.tags ?? null };
+  }
 }
 
 /** BA-38 — was this replay built by an earlier replay logic than the one that builds replays now? */
@@ -598,6 +670,40 @@ export function rebuildOutlook(withinWindow, status) {
   return 'awaiting the next candle pass';
 }
 
+// ── Film Room B1 W1: a closed-out tape stops saying a candle pass is coming ──
+
+const AWAITING_CANDLES = AWAITING_CANDLES_NOTE;
+const AWAITING_NEXT = rebuildOutlook(true, 'pending');
+
+/** How a TERMINAL candle pass closed (BA-32), in the outlook's words, with its reason. */
+export function closedOutWords(candles) {
+  return candles?.status === 'exhausted'
+    ? `the candle pass did not complete: its attempts are spent (${candles.reason ?? 'attempts_exhausted'})`
+    : `the candle pass did not complete within its 10-trading-day window (${candles?.reason ?? 'retry_window_elapsed'})`;
+}
+
+/**
+ * B1 W1 — a candle section's note once its pass is terminal (expired or
+ * exhausted): "awaiting the candle pass" says how it closed, and a label's
+ * "awaiting the next candle pass" takes the terminal outlook. Any other note,
+ * or a pass still to come, is returned as it is.
+ */
+export function closedOutNote(note, candles) {
+  if (typeof note !== 'string' || !['expired', 'exhausted'].includes(candles?.status)) return note;
+  return note.split('; ').map((part) => (part === AWAITING_CANDLES ? closedOutWords(candles) : part.split(AWAITING_NEXT).join(rebuildOutlook(false, candles.status)))).join('; ');
+}
+
+/** The targeted fields a close-out writer adds: each candle section's note that closedOutNote changes. */
+export function closedOutNoteFields(tape, candles) {
+  const out = {};
+  for (const section of CANDLE_COVERAGE_SECTIONS) {
+    const note = tape?.coverage?.[section]?.note;
+    const next = closedOutNote(note, candles);
+    if (isObj(tape?.coverage?.[section]) && next !== note) out[`coverage.${section}.note`] = next;
+  }
+  return out;
+}
+
 /**
  * BA-25 — label candle output built from inputs that have since changed: at
  * most `partial`, and the note names what changed and whether a candle pass
@@ -634,8 +740,8 @@ function versionLabelled(cov, pairs, withinWindow, status) {
   return { ...cov, status: cov.status === 'complete' ? 'partial' : cov.status, note: [...kept, label].join('; ') };
 }
 
-function finish(stored, doc, nowIso, carried) {
-  const clean = sanitizeForFirestore(doc);
+function finish(stored, doc, nowIso, carried, sizeBudget = TAPE_SIZE_BUDGET_BYTES) {
+  const clean = fitTapeToBudget(sanitizeForFirestore(doc), { budget: sizeBudget });
   if (sameContent(stored, clean)) return { doc: stored, changed: false, carried };
   clean.writtenAt = nowIso;
   clean.runCount = (stored.runCount ?? 1) + 1;
