@@ -35,53 +35,6 @@ export const COMMAND_DASHBOARD_ENABLED = true;
 export const COMMAND_DASHBOARD_DESKTOP_ENABLED = true;
 
 /**
- * Command Center hub — slice S0 (spec
- * docs/specs/20261012_COMMAND_CENTER_CORE_IMPLEMENTATION_SPEC_V1_2.md §2, §4,
- * §11; build report docs/audits/20261015_BUILD_COMMAND_CENTER_HUB_S0.md).
- * DARK — default FALSE.
- *
- * When TRUE, both dashboard mount sites in App.jsx render the hub
- * (CommandCenterHubGate, which lazily loads CommandCenterHub) in place of the
- * legacy shells. ONE pure picker makes the choice at both sites
- * (src/components/CommandCenter/pickDashboardShell.js) from four inputs: this
- * flag, isMobile, COMMAND_DASHBOARD_ENABLED and
- * COMMAND_DASHBOARD_DESKTOP_ENABLED. App keeps the host wrappers (the desktop
- * sidebar offset) and the starfield / background at both sites. If the hub
- * chunk fails to load, the gate renders the legacy shell this flag's FALSE
- * state would render at the same width and flags, with a Retry / Reload notice.
- *
- * When FALSE (the shipped state): the picker returns the legacy shell at both
- * sites — CommandDashboard or DashboardLoop on mobile, CommandDashboardDesktop
- * (in its sidebar offset) or DashboardDesktop on desktop, by their own flags,
- * exactly as before S0. The gate is never rendered, so the hub chunk is never
- * requested and no hub read, timer, listener, subscription or effect exists.
- *
- * S0 is a scaffold: the hub module is one labelled placeholder. The later
- * slices (S1–S7, S2b) build the hub behind this same flag.
- *
- * Read it at RENDER scope through isCommandCenterHubOn() below, never as a
- * module-scope const in a consumer (the isCharacterPaneOn rule: a bare
- * featureFlags vi.mock factory resolves a module-scope const to undefined).
- * No URL, environment or localStorage override exists. The founder's preview
- * is the never-merge branch `claude/command-center-hub-s0-smoke`, which flips
- * this one line.
- *
- * RUNWAY: activation is a separate founder action after the reviewed core,
- * deployment validation, fidelity/device evidence and useful Research for the
- * intended admitted cohort (spec §0, §12). Never a build PR. The flip moves the
- * pin in commandCenterHubFlags.test.js to true AND drops this flag from
- * DARK_BY_DESIGN in src/config/flagPinGuard.test.js, in the same commit
- * (BUILD_RULES §2).
- */
-// Pinned by: commandCenterHubFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const COMMAND_CENTER_HUB_ENABLED = false;
-
-/** The ONE consumer seam for the hub flag, read at render: the flag and nothing else. */
-export function isCommandCenterHubOn() {
-  return COMMAND_CENTER_HUB_ENABLED;
-}
-
-/**
  * Forge — authored per-rule Hard/Soft override (Phase 3).
  *
  * When false (default), the bundle build flow's Hard/Soft stage renders the
@@ -3304,3 +3257,50 @@ export const CRYPTO_SLOT_PROMPT_ENABLED = true;
 // Owner dormant-build adoption: docs/approvals/BAGGERBOMB_STOCK_THRESHOLDS_ADOPTION_20261013.md.
 // Pinned by: stockThresholdModel.test.js (activation requires a later owner request).
 export const STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED = false;
+
+/**
+ * Command Center hub — slice S0 (spec
+ * docs/specs/20261012_COMMAND_CENTER_CORE_IMPLEMENTATION_SPEC_V1_2.md §2, §4,
+ * §11; build report docs/audits/20261015_BUILD_COMMAND_CENTER_HUB_S0.md).
+ * DARK — default FALSE.
+ *
+ * When TRUE, both dashboard mount sites in App.jsx render the hub
+ * (CommandCenterHubGate, which lazily loads CommandCenterHub) in place of the
+ * legacy shells. ONE pure picker makes the choice at both sites
+ * (src/components/CommandCenter/pickDashboardShell.js) from four inputs: this
+ * flag, isMobile, COMMAND_DASHBOARD_ENABLED and
+ * COMMAND_DASHBOARD_DESKTOP_ENABLED. App keeps the host wrappers (the desktop
+ * sidebar offset) and the starfield / background at both sites. If the hub
+ * chunk fails to load, the gate renders the legacy shell this flag's FALSE
+ * state would render at the same width and flags, with a Retry / Reload notice.
+ *
+ * When FALSE (the shipped state): the picker returns the legacy shell at both
+ * sites — CommandDashboard or DashboardLoop on mobile, CommandDashboardDesktop
+ * (in its sidebar offset) or DashboardDesktop on desktop, by their own flags,
+ * exactly as before S0. The gate is never rendered, so the hub chunk is never
+ * requested and no hub read, timer, listener, subscription or effect exists.
+ *
+ * S0 is a scaffold: the hub module is one labelled placeholder. The later
+ * slices (S1–S7, S2b) build the hub behind this same flag.
+ *
+ * Read it at RENDER scope through isCommandCenterHubOn() below, never as a
+ * module-scope const in a consumer (the isCharacterPaneOn rule: a bare
+ * featureFlags vi.mock factory resolves a module-scope const to undefined).
+ * No URL, environment or localStorage override exists. The founder's preview
+ * is the never-merge branch `claude/command-center-hub-s0-smoke`, which flips
+ * this one line.
+ *
+ * RUNWAY: activation is a separate founder action after the reviewed core,
+ * deployment validation, fidelity/device evidence and useful Research for the
+ * intended admitted cohort (spec §0, §12). Never a build PR. The flip moves the
+ * pin in commandCenterHubFlags.test.js to true AND drops this flag from
+ * DARK_BY_DESIGN in src/config/flagPinGuard.test.js, in the same commit
+ * (BUILD_RULES §2).
+ */
+// Pinned by: commandCenterHubFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const COMMAND_CENTER_HUB_ENABLED = false;
+
+/** The ONE consumer seam for the hub flag, read at render: the flag and nothing else. */
+export function isCommandCenterHubOn() {
+  return COMMAND_CENTER_HUB_ENABLED;
+}
