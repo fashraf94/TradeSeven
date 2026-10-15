@@ -145,7 +145,12 @@ const GOLDEN_PATH = resolve(HERE, '../_utils/__fixtures__/callRecordsOffGolden.j
 // 15 `max_tokens` / `maxOutputTokens` values in the fixture and nothing else —
 // with only those edited, every byte-identity row passed and only this pin
 // failed. Captured SHA was 15a442dd066ba17104621083dc13deba3bd671167da538b4f232815fb6381091.
-const GOLDEN_SHA256 = '053396e6bbd3c139540913b35f546444dcd4625eca3e00c9e08a4abe4467d444';
+// Moved a second time by the same VALUE-ONLY reconciliation (Oct 15 2026, the
+// eval model timeout 20s → 40s, docs/audits/20261015_BUILD_EVAL_TIMEOUT_40S.md):
+// the budget_skipped exit's honest message names the requirement, so exactly
+// three strings change, "40s remaining, 44s required" → "…, 64s required", and
+// nothing else. The prior pin was 053396e6bbd3c139540913b35f546444dcd4625eca3e00c9e08a4abe4467d444.
+const GOLDEN_SHA256 = 'f5dee04df16e07cf7441f6e10144e229c0b62e82676dfa135671b7b972d1a312';
 const ENV = globalThis.process?.env || {};
 const GENERATE = ENV.GENERATE_CALLS_OFF_GOLDEN === '1';
 if (GENERATE && ENV.CI) throw new Error('GENERATE_CALLS_OFF_GOLDEN is a local, deliberate act — never on CI');
