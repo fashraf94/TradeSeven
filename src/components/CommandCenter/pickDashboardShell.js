@@ -23,8 +23,8 @@
 // owns the wrappers (the desktop sidebar offset), the starfield and the
 // background; the picker never sees them.
 //
-// `hubOn` must be exactly `true` to pick the hub, so an undefined flag (a bare
-// featureFlags vi.mock factory, say) fails closed to the legacy shell. The
+// `hubOn` must be exactly `true` to pick the hub, so anything else (undefined
+// from an automocked accessor, say) fails closed to the legacy shell. The
 // other three inputs keep the truthiness App's own `if (isMobile)` and the
 // pre-S0 ternaries used, so the legacy pick is the pre-S0 pick for any value.
 

@@ -12,13 +12,14 @@
 // bare; the desktop gate framed by that same offset). Which shell a row expects
 // comes from pickDashboardShell with the hub OFF, so the fallback is checked
 // against the flag-off render itself, not against a table written here. That
-// App really builds them this way is pinned by commandCenterHub.mount.guard.test.js.
+// App really builds the elements and the gate this way is pinned by
+// commandCenterHub.mount.guard.test.js, as source text.
 //
 // The render root wraps the gate in the real house ErrorBoundary named
 // "Dashboard", inside StrictMode, as App's root and dashboard sites do.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import React, { StrictMode, act } from 'react';
+import React, { StrictMode, act, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -39,13 +40,13 @@ import {
   createHubLoader,
   HubLoadError,
   isHubLoadError,
+  reloadPage,
+  HUB_LOAD_REPORT,
 } from './CommandCenterHubGate';
 import { HUB_GATE_COPY } from './hubGateCopy';
 import { pickDashboardShell, DASHBOARD_SHELLS as S } from './pickDashboardShell';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-
-const GATE_REPORT = 'Command Center hub (chunk load)';
 
 function deferred() {
   let resolve;
@@ -67,7 +68,14 @@ function controlledImport() {
 
 const HUB_MODULE = { default: function TestHub() { return <section data-hub="test-hub">hub</section>; } };
 
-const Shell = ({ name }) => <div data-shell={name} />;
+// Counts its own mounts: a ref set on a component's first render is new only on a mount
+// (StrictMode renders a mount twice, so rows compare counts, never expect an absolute one).
+const legacyMounts = { n: 0 };
+function Shell({ name }) {
+  const seen = useRef(false);
+  if (!seen.current) { seen.current = true; legacyMounts.n += 1; }
+  return <div data-shell={name} />;
+}
 const sidebarOffset = (node) => <div data-frame="sidebar-offset">{node}</div>;
 
 /** The legacy element for a shell key, as App.jsx builds it at its site. */
@@ -90,6 +98,7 @@ beforeEach(() => {
   document.body.appendChild(host);
   root = createRoot(host);
   errorLog.writes.length = 0;
+  legacyMounts.n = 0;
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
@@ -131,8 +140,9 @@ async function resolveCall(call, module = HUB_MODULE) {
 
 const q = (selector) => host.querySelector(selector);
 const shellsShown = () => [...host.querySelectorAll('[data-shell]')].map((n) => n.dataset.shell);
-const gateReports = () => errorLog.writes.filter((w) => w.screen === GATE_REPORT);
-const button = (label) => [...host.querySelectorAll('button')].find((b) => b.textContent === label);
+const gateReports = () => errorLog.writes.filter((w) => w.screen === HUB_LOAD_REPORT);
+const button = (label) => [...host.querySelectorAll('button')].find((b) => b.textContent === label || b.getAttribute('aria-label') === label);
+const click = async (label) => { await act(async () => { button(label).click(); }); };
 
 describe('the chunk is requested only by rendering the gate', () => {
   it('building a gate calls no import; rendering it calls the import once, StrictMode included', async () => {
@@ -220,18 +230,14 @@ describe('a rejected import renders the hub-off legacy shell for the width and f
     // Not the outer Dashboard boundary's error screen.
     expect(host.textContent).not.toContain('encountered an error');
 
-    // The notice comes first, framed exactly as the hub would have been.
+    // The notice floats above the shell: fixed, unframed, first in the container.
     const container = q('[data-container="app"]');
     const notice = q('[data-hub-gate="load-error"]');
     expect(notice.getAttribute('role')).toBe('alert');
     expect(notice.textContent).toContain(HUB_GATE_COPY.loadFailed);
-    expect(container.firstElementChild.contains(notice)).toBe(true);
-    if (isMobile) {
-      expect(notice.parentElement).toBe(container);
-    } else {
-      expect(notice.parentElement.dataset.frame).toBe('sidebar-offset');
-      expect(notice.parentElement.parentElement).toBe(container);
-    }
+    expect(notice.style.position).toBe('fixed');
+    expect(notice.parentElement).toBe(container);
+    expect(container.firstElementChild).toBe(notice);
 
     // The legacy shell carries its own App wrapper and nothing more: the gate's
     // frame never lands on it, so DashboardDesktop is not offset twice.
@@ -244,70 +250,43 @@ describe('a rejected import renders the hub-off legacy shell for the width and f
   });
 });
 
-describe('the failure is reported, and Retry and Reload work', () => {
-  it('reports once, through the house error log and the console', async () => {
+describe('the failure is reported once per import attempt', () => {
+  it('reports once, through the house error log and the console, naming the cause', async () => {
     const imp = controlledImport();
     const Gate = createCommandCenterHubGate(imp.fn);
     await render(<Gate legacy={<Shell name="legacy" />} />);
-    await rejectCall(imp.calls[0], new Error('chunk 404'));
+    const cause = new TypeError('chunk 404');
+    await rejectCall(imp.calls[0], cause);
     expect(gateReports()).toHaveLength(1);
-    expect(gateReports()[0].message).toContain('chunk 404');
+    expect(gateReports()[0].message).toContain('TypeError: chunk 404');
+    expect(gateReports()[0].stack).toBe(cause.stack.substring(0, 1000));
     expect(console.error.mock.calls.some((args) => String(args[0]).startsWith('[CommandCenterHubGate]'))).toBe(true);
   });
 
-  it('Retry imports the chunk again and, when it loads, the hub replaces the notice and the legacy shell', async () => {
+  it('a later mount that shows the same cached failure neither re-imports nor re-reports', async () => {
     const imp = controlledImport();
     const Gate = createCommandCenterHubGate(imp.fn);
     await render(<Gate legacy={<Shell name="legacy" />} />);
     await rejectCall(imp.calls[0]);
+    for (let i = 0; i < 3; i += 1) {
+      await act(async () => { root.render(<div />); });
+      await render(<Gate legacy={<Shell name="legacy" />} />);
+      await settle();
+    }
     expect(shellsShown()).toEqual(['legacy']);
-
-    await act(async () => { button(HUB_GATE_COPY.retry).click(); });
-    expect(imp.fn).toHaveBeenCalledTimes(2);
-    expect(q('[data-hub-gate="loading"]')).not.toBeNull();
-    expect(shellsShown()).toEqual([]);
-
-    await resolveCall(imp.calls[1]);
-    expect(q('[data-hub="test-hub"]')).not.toBeNull();
-    expect(q('[data-hub-gate="load-error"]')).toBeNull();
-    expect(shellsShown()).toEqual([]);
+    expect(imp.fn).toHaveBeenCalledTimes(1);
     expect(gateReports()).toHaveLength(1);
   });
 
-  it('a Retry that fails again lands on the legacy shell and the notice again, reported again', async () => {
+  it('the chunk failure is still reported when the fallback shell itself throws on its first render', async () => {
     const imp = controlledImport();
     const Gate = createCommandCenterHubGate(imp.fn);
-    await render(<Gate legacy={<Shell name="legacy" />} />);
+    function BrokenLegacy() { throw new Error('legacy bug'); }
+    await render(<Gate legacy={<BrokenLegacy />} />);
     await rejectCall(imp.calls[0]);
-    await act(async () => { button(HUB_GATE_COPY.retry).click(); });
-    await rejectCall(imp.calls[1]);
-    expect(shellsShown()).toEqual(['legacy']);
-    expect(q('[data-hub-gate="load-error"]')).not.toBeNull();
-    expect(imp.fn).toHaveBeenCalledTimes(2);
-    expect(gateReports()).toHaveLength(2);
-  });
-
-  it('Reload reloads the page and imports nothing', async () => {
-    const imp = controlledImport();
-    const reload = vi.fn();
-    const Gate = createCommandCenterHubGate(imp.fn, { reload });
-    await render(<Gate legacy={<Shell name="legacy" />} />);
-    await rejectCall(imp.calls[0]);
-    await act(async () => { button(HUB_GATE_COPY.reload).click(); });
-    expect(reload).toHaveBeenCalledTimes(1);
-    expect(imp.fn).toHaveBeenCalledTimes(1);
-  });
-
-  it('without Retry, a later mount still shows the legacy shell — a failed chunk is not re-requested on its own', async () => {
-    const imp = controlledImport();
-    const Gate = createCommandCenterHubGate(imp.fn);
-    await render(<Gate legacy={<Shell name="legacy" />} />);
-    await rejectCall(imp.calls[0]);
-    await act(async () => { root.render(<div />); });
-    await render(<Gate legacy={<Shell name="legacy" />} />);
-    await settle();
-    expect(shellsShown()).toEqual(['legacy']);
-    expect(imp.fn).toHaveBeenCalledTimes(1);
+    expect(host.textContent).toContain('Dashboard encountered an error');
+    expect(gateReports()).toHaveLength(1);
+    expect(errorLog.writes.some((w) => w.screen === 'Dashboard' && w.message === 'legacy bug')).toBe(true);
   });
 
   it('an import that throws synchronously is a rejected import too', async () => {
@@ -316,6 +295,94 @@ describe('the failure is reported, and Retry and Reload work', () => {
     await settle();
     expect(shellsShown()).toEqual(['legacy']);
     expect(gateReports()).toHaveLength(1);
+  });
+});
+
+describe('Retry, Reload and Dismiss', () => {
+  it('Retry imports again while the legacy shell stays; when it loads, the hub replaces both', async () => {
+    const imp = controlledImport();
+    const Gate = createCommandCenterHubGate(imp.fn);
+    await render(<Gate legacy={<Shell name="legacy" />} />);
+    await rejectCall(imp.calls[0]);
+    const mounted = legacyMounts.n;
+    expect(mounted).toBeGreaterThan(0);
+
+    button(HUB_GATE_COPY.retry).focus();
+    await click(HUB_GATE_COPY.retry);
+    expect(imp.fn).toHaveBeenCalledTimes(2);
+    // In flight: the dashboard stays, the button says so and keeps focus.
+    expect(shellsShown()).toEqual(['legacy']);
+    expect(q('[data-hub-gate="loading"]')).toBeNull();
+    expect(legacyMounts.n).toBe(mounted);
+    const retrying = button(HUB_GATE_COPY.retrying);
+    expect(retrying.getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(retrying);
+
+    await resolveCall(imp.calls[1]);
+    expect(q('[data-hub="test-hub"]')).not.toBeNull();
+    expect(q('[data-hub-gate="load-error"]')).toBeNull();
+    expect(shellsShown()).toEqual([]);
+    expect(gateReports()).toHaveLength(1);
+  });
+
+  it('a Retry that fails leaves the page as it was: same legacy mount, the notice back to Retry, one more report', async () => {
+    const imp = controlledImport();
+    const Gate = createCommandCenterHubGate(imp.fn);
+    await render(<Gate legacy={<Shell name="legacy" />} />);
+    await rejectCall(imp.calls[0]);
+    const mounted = legacyMounts.n;
+    await click(HUB_GATE_COPY.retry);
+    await rejectCall(imp.calls[1]);
+    expect(shellsShown()).toEqual(['legacy']);
+    expect(legacyMounts.n).toBe(mounted);
+    expect(button(HUB_GATE_COPY.retry).getAttribute('aria-disabled')).toBe('false');
+    expect(imp.fn).toHaveBeenCalledTimes(2);
+    expect(gateReports()).toHaveLength(2);
+  });
+
+  it('clicking Retry again while one is in flight starts no second import', async () => {
+    const imp = controlledImport();
+    const Gate = createCommandCenterHubGate(imp.fn);
+    await render(<Gate legacy={<Shell name="legacy" />} />);
+    await rejectCall(imp.calls[0]);
+    await click(HUB_GATE_COPY.retry);
+    await click(HUB_GATE_COPY.retrying);
+    await click(HUB_GATE_COPY.retrying);
+    expect(imp.fn).toHaveBeenCalledTimes(2);
+    await resolveCall(imp.calls[1]);
+    expect(q('[data-hub="test-hub"]')).not.toBeNull();
+  });
+
+  it('Reload reloads the page and imports nothing', async () => {
+    const imp = controlledImport();
+    const reload = vi.fn();
+    const Gate = createCommandCenterHubGate(imp.fn, { reload });
+    await render(<Gate legacy={<Shell name="legacy" />} />);
+    await rejectCall(imp.calls[0]);
+    await click(HUB_GATE_COPY.reload);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(imp.fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('Dismiss removes the notice and leaves the legacy shell, importing nothing', async () => {
+    const imp = controlledImport();
+    const Gate = createCommandCenterHubGate(imp.fn);
+    await render(<Gate legacy={<Shell name="legacy" />} />);
+    await rejectCall(imp.calls[0]);
+    const mounted = legacyMounts.n;
+    const close = button(HUB_GATE_COPY.dismiss);
+    expect(close.textContent).toBe(HUB_GATE_COPY.dismissMark);
+    await click(HUB_GATE_COPY.dismiss);
+    expect(q('[data-hub-gate="load-error"]')).toBeNull();
+    expect(shellsShown()).toEqual(['legacy']);
+    expect(legacyMounts.n).toBe(mounted);
+    expect(imp.fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('the default reload reloads the location it is given (window.location unless a test hands one in)', () => {
+    const location = { reload: vi.fn() };
+    reloadPage(location);
+    expect(location.reload).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -335,20 +402,40 @@ describe('only a rejected import falls back', () => {
 });
 
 describe('the loader', () => {
-  it('tags a rejection as HubLoadError, keeping its cause', async () => {
-    const cause = new Error('net::ERR_FAILED');
+  it('tags a rejection as HubLoadError, naming the cause and keeping its stack', () => {
+    const cause = new TypeError('net::ERR_FAILED');
     const error = new HubLoadError(cause);
     expect(isHubLoadError(error)).toBe(true);
     expect(error.cause).toBe(cause);
-    expect(error.message).toContain('net::ERR_FAILED');
+    expect(error.message).toContain('TypeError: net::ERR_FAILED');
+    expect(error.stack).toBe(cause.stack);
     expect(isHubLoadError(cause)).toBe(false);
   });
 
-  it('retry() swaps in a fresh lazy component; current() is stable between retries', () => {
-    const loader = createHubLoader(() => Promise.resolve(HUB_MODULE));
+  it('retry() swaps in a new lazy only when its import loads, and shares one import while in flight', async () => {
+    const imp = controlledImport();
+    const report = vi.fn();
+    const loader = createHubLoader(imp.fn, report);
     const first = loader.current();
+    expect(imp.fn).not.toHaveBeenCalled();
+
+    const failing = loader.retry();
+    expect(loader.retry()).toBe(failing);
+    expect(imp.fn).toHaveBeenCalledTimes(1);
+    imp.calls[0].reject(new Error('offline'));
+    await expect(failing).rejects.toBeInstanceOf(HubLoadError);
     expect(loader.current()).toBe(first);
-    loader.retry();
+    expect(report).toHaveBeenCalledTimes(1);
+
+    const loading = loader.retry();
+    imp.calls[1].resolve(HUB_MODULE);
+    await loading;
     expect(loader.current()).not.toBe(first);
+    expect(report).toHaveBeenCalledTimes(1);
+  });
+
+  it('a report that throws does not change the outcome', async () => {
+    const loader = createHubLoader(() => Promise.reject(new Error('offline')), () => { throw new Error('report broke'); });
+    await expect(loader.retry()).rejects.toBeInstanceOf(HubLoadError);
   });
 });

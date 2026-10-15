@@ -115,6 +115,96 @@ describe('S0 mount sites — the desktop site', () => {
   });
 });
 
+/**
+ * A site's returned tree, from `return (` through `</ErrorBoundary>`, with
+ * emptied JSX comments (`{}` once the comment text is stripped) dropped and
+ * whitespace collapsed — so a row compares structure, not formatting.
+ */
+function siteTree(fromAnchor) {
+  const at = BLOCK.indexOf(fromAnchor);
+  expect(at, `anchor ${fromAnchor} moved — re-anchor this guard`).toBeGreaterThan(-1);
+  const start = BLOCK.indexOf('return (', at);
+  const end = BLOCK.indexOf('</ErrorBoundary>', start) + '</ErrorBoundary>'.length;
+  expect(start).toBeGreaterThan(at);
+  expect(BLOCK.slice(end).trimStart().startsWith(');')).toBe(true);
+  return BLOCK.slice(start, end).replace(/\{\s*\}/g, '').replace(/\s+/g, ' ').trim();
+}
+
+describe('S0 mount sites — each site\'s whole tree: the Dashboard boundary, the container, the background, then the pick', () => {
+  // The pre-S0 trees with ONLY the shell child replaced by the pick's ternary:
+  // same boundary (its name and its back action), same container, the starfield
+  // / background first. A shell or gate moved out of the boundary, ahead of the
+  // background or into a fragment changes the flag-off render and fails here.
+  it('mobile', () => {
+    expect(siteTree('if (isMobile) {')).toBe(
+      'return ( <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen(\'home\'); }}> <div style={containerStyle}> '
+      + '{isStarfieldMobileOn() ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />} '
+      + '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? <CommandCenterHubGate legacy={legacyDashboard} /> : legacyDashboard} '
+      + '</div> </ErrorBoundary>',
+    );
+  });
+
+  it('desktop', () => {
+    expect(siteTree('const legacyDesktopDashboard')).toBe(
+      'return ( <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen(\'home\'); }}> <div style={containerStyle}> '
+      + '{isStarfieldOn() ? <StarfieldBackground mode="desktop" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />} '
+      + '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? ( <CommandCenterHubGate legacy={legacyDesktopDashboard} '
+      + 'frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>} /> ) : legacyDesktopDashboard} '
+      + '</div> </ErrorBoundary>',
+    );
+  });
+});
+
+/** A legacy element's props, one per line, in source order. */
+function propsOf(tag) {
+  const open = BLOCK.indexOf(`<${tag}\n`);
+  expect(open, `<${tag} moved — re-anchor this guard`).toBeGreaterThan(-1);
+  const close = BLOCK.indexOf('/>', open);
+  return BLOCK.slice(open + tag.length + 2, close).split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+// Frozen from 495ee07b (spec §11.3 "unchanged legacy render checks"): S0 moved
+// these three elements into consts and must not have touched a prop. No test
+// renders App.jsx, so these lists are where a dropped or renamed prop shows.
+const LEGACY_PROPS_AT_495EE07B = {
+  DashboardComponent: [
+    'user={user}', 'setShowForge={setShowForge}', 'onCreateAgentBattle={handleCreateAgentTrainingBattle}',
+    'onEnterBattle={handleEnterCeremonyBattle}', 'onOpenAgentBattle={handleOpenAgentBattle}', 'activeBattles={activeBattles}',
+    'activeDraftBattles={activeDraftBattles}', 'activeTrainingBattles={activeTrainingBattles}',
+    'activeAgentBattles={activeAgentBattles}', 'voiceLayerCaches={voiceLayerCaches}', 'lobbyBattles={lobbyBattles}',
+    'completedBattles={completedBattles}', 'setCurrentBattle={setCurrentBattle}', 'setCurrentDraft={setCurrentDraft}',
+    'setScreen={setScreen}', 'setActiveBattleId={setActiveBattleId}', 'setBattleToJoin={setBattleToJoin}',
+    'copyToClipboard={copyToClipboard}', 'setShowBaggerBombModal={setShowBaggerBombModal}',
+    'setShowSnakeDraftModal={setShowSnakeDraftModal}', 'setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}',
+    'setShowTrainingConfirmModal={setShowTrainingConfirmModal}', 'setTrainingConfirmType={setTrainingConfirmType}',
+    'setSidebarOpen={setSidebarOpen}', 'unreadCount={unreadCount}', 'activeDraftBanner={activeDraftBanner}',
+    'setActiveDraftBanner={setActiveDraftBanner}', 'onStoryPress={(story) => handleStorySelect(story)}',
+  ],
+  CommandDashboardDesktop: [
+    'user={user}', 'setScreen={setScreen}', 'setSidebarOpen={setSidebarOpen}', 'unreadCount={unreadCount}',
+    'setShowForge={setShowForge}', 'setCurrentBattle={setCurrentBattle}', 'activeAgentBattles={activeAgentBattles}',
+    'voiceLayerCaches={voiceLayerCaches}', 'onCreateAgentBattle={handleCreateAgentTrainingBattle}',
+    'onEnterBattle={handleEnterCeremonyBattle}', 'onOpenAgentBattle={handleOpenAgentBattle}',
+  ],
+  DashboardDesktop: [
+    'user={user}', 'activeBattles={activeBattles}', 'activeDraftBattles={activeDraftBattles}',
+    'activeTrainingBattles={activeTrainingBattles}', 'activeAgentBattles={activeAgentBattles}', 'lobbyBattles={lobbyBattles}',
+    'completedBattles={completedBattles}', 'setCurrentBattle={setCurrentBattle}', 'setCurrentDraft={setCurrentDraft}',
+    'setScreen={setScreen}', 'setActiveBattleId={setActiveBattleId}', 'setBattleToJoin={setBattleToJoin}',
+    'copyToClipboard={copyToClipboard}', 'setShowBaggerBombModal={setShowBaggerBombModal}',
+    'setShowSnakeDraftModal={setShowSnakeDraftModal}', 'setShowBaggerBombTrainingConfirm={setShowBaggerBombTrainingConfirm}',
+    'setShowTrainingConfirmModal={setShowTrainingConfirmModal}', 'setTrainingConfirmType={setTrainingConfirmType}',
+    'activeDraftBanner={activeDraftBanner}', 'setActiveDraftBanner={setActiveDraftBanner}',
+    'sidebarCollapsed={sidebarCollapsed}', 'onStoryPress={(story) => handleStorySelect(story)}',
+  ],
+};
+
+describe('S0 mount sites — the three legacy elements keep their pre-S0 props', () => {
+  it.each(Object.keys(LEGACY_PROPS_AT_495EE07B))('<%s> has exactly its 495ee07b props, in order', (tag) => {
+    expect(propsOf(tag)).toEqual(LEGACY_PROPS_AT_495EE07B[tag]);
+  });
+});
+
 describe('S0 mount sites — each shell is mounted once, and only through the pick', () => {
   it('one mount per legacy shell, two gates, and no other way in', () => {
     expect(count(/<DashboardComponent\b/)).toBe(1);
@@ -171,7 +261,7 @@ describe('S0 hub chunk — reached only through the gate\'s dynamic import', () 
   it('the gate\'s default export binds that import and the real page reload', () => {
     const code = stripComments(read(GATE));
     expect(code).toContain("export default createCommandCenterHubGate(() => import('./CommandCenterHub'));");
-    expect(code).toContain('const reloadPage = () => window.location.reload();');
+    expect(code).toMatch(/export function reloadPage\(location = window\.location\) \{\n {2}location\.reload\(\);\n\}/);
     expect(code).toMatch(/export function createCommandCenterHubGate\(importHub, \{ reload = reloadPage \} = \{\}\)/);
   });
 });

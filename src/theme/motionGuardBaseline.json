@@ -211,23 +211,23 @@
     },
     "src/components/CommandCenter/pickDashboardShell.js": {
       "count": 0,
-      "authority": "Command Center hub S0 (spec V1.2 \u00a710: new colors through the CSS-token bridge, new motion through motionToken) \u2014 the mount picker, the lazy gate and its copy, and the hub scaffold; token-only (cssVar) and with no transition literal from birth. Registered in the commit that introduces them."
+      "authority": "Command Center hub S0 (spec V1.2 \u00a710: new colors through the CSS-token bridge, new motion through motionToken) \u2014 the mount picker, the lazy gate and its copy, and the hub scaffold; colours only through cssVar (the gate and the scaffold; the picker and the two copy tables have none) and no transition literal, from birth. Registered in the commit that introduces them."
     },
     "src/components/CommandCenter/hubGateCopy.js": {
       "count": 0,
-      "authority": "Command Center hub S0 (spec V1.2 \u00a710: new colors through the CSS-token bridge, new motion through motionToken) \u2014 the mount picker, the lazy gate and its copy, and the hub scaffold; token-only (cssVar) and with no transition literal from birth. Registered in the commit that introduces them."
+      "authority": "Command Center hub S0 (spec V1.2 \u00a710: new colors through the CSS-token bridge, new motion through motionToken) \u2014 the mount picker, the lazy gate and its copy, and the hub scaffold; colours only through cssVar (the gate and the scaffold; the picker and the two copy tables have none) and no transition literal, from birth. Registered in the commit that introduces them."
     },
     "src/components/CommandCenter/CommandCenterHubGate.jsx": {
       "count": 0,
-      "authority": "Command Center hub S0 (spec V1.2 \u00a710: new colors through the CSS-token bridge, new motion through motionToken) \u2014 the mount picker, the lazy gate and its copy, and the hub scaffold; token-only (cssVar) and with no transition literal from birth. Registered in the commit that introduces them."
+      "authority": "Command Center hub S0 (spec V1.2 \u00a710: new colors through the CSS-token bridge, new motion through motionToken) \u2014 the mount picker, the lazy gate and its copy, and the hub scaffold; colours only through cssVar (the gate and the scaffold; the picker and the two copy tables have none) and no transition literal, from birth. Registered in the commit that introduces them."
     },
     "src/components/CommandCenter/CommandCenterHub.jsx": {
       "count": 0,
-      "authority": "Command Center hub S0 (spec V1.2 \u00a710: new colors through the CSS-token bridge, new motion through motionToken) \u2014 the mount picker, the lazy gate and its copy, and the hub scaffold; token-only (cssVar) and with no transition literal from birth. Registered in the commit that introduces them."
+      "authority": "Command Center hub S0 (spec V1.2 \u00a710: new colors through the CSS-token bridge, new motion through motionToken) \u2014 the mount picker, the lazy gate and its copy, and the hub scaffold; colours only through cssVar (the gate and the scaffold; the picker and the two copy tables have none) and no transition literal, from birth. Registered in the commit that introduces them."
     },
     "src/components/CommandCenter/hub/hubCopy.js": {
       "count": 0,
-      "authority": "Command Center hub S0 (spec V1.2 \u00a710: new colors through the CSS-token bridge, new motion through motionToken) \u2014 the mount picker, the lazy gate and its copy, and the hub scaffold; token-only (cssVar) and with no transition literal from birth. Registered in the commit that introduces them."
+      "authority": "Command Center hub S0 (spec V1.2 \u00a710: new colors through the CSS-token bridge, new motion through motionToken) \u2014 the mount picker, the lazy gate and its copy, and the hub scaffold; colours only through cssVar (the gate and the scaffold; the picker and the two copy tables have none) and no transition literal, from birth. Registered in the commit that introduces them."
     }
   }
 }

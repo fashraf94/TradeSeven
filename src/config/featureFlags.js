@@ -3272,7 +3272,8 @@ export const STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED = false;
  * COMMAND_DASHBOARD_DESKTOP_ENABLED. App keeps the host wrappers (the desktop
  * sidebar offset) and the starfield / background at both sites. If the hub
  * chunk fails to load, the gate renders the legacy shell this flag's FALSE
- * state would render at the same width and flags, with a Retry / Reload notice.
+ * state would render at the same width and flags, under a Retry / Reload /
+ * Dismiss notice.
  *
  * When FALSE (the shipped state): the picker returns the legacy shell at both
  * sites — CommandDashboard or DashboardLoop on mobile, CommandDashboardDesktop
@@ -3284,18 +3285,22 @@ export const STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED = false;
  * slices (S1–S7, S2b) build the hub behind this same flag.
  *
  * Read it at RENDER scope through isCommandCenterHubOn() below, never as a
- * module-scope const in a consumer (the isCharacterPaneOn rule: a bare
- * featureFlags vi.mock factory resolves a module-scope const to undefined).
- * No URL, environment or localStorage override exists. The founder's preview
- * is the never-merge branch `claude/command-center-hub-s0-smoke`, which flips
- * this one line.
+ * module-scope const in a consumer (the isCharacterPaneOn rule — the
+ * featureFlags vi.mock hazard). No URL, environment or localStorage override
+ * exists. The founder previews it on never-merge smoke branches that flip this
+ * one line and nothing else (S0's is named in its build report).
  *
  * RUNWAY: activation is a separate founder action after the reviewed core,
  * deployment validation, fidelity/device evidence and useful Research for the
- * intended admitted cohort (spec §0, §12). Never a build PR. The flip moves the
- * pin in commandCenterHubFlags.test.js to true AND drops this flag from
- * DARK_BY_DESIGN in src/config/flagPinGuard.test.js, in the same commit
- * (BUILD_RULES §2).
+ * intended admitted cohort (spec §0, §12). Never a build PR.
+ * THE FLIP MAP — one commit, which a rollback runs in reverse (BUILD_RULES §2):
+ *   1. this constant → true;
+ *   2. commandCenterHubFlags.test.js: the pin row → true, the accessor row's
+ *      title, and the registration row turned around to assert the
+ *      DARK_BY_DESIGN entry is gone;
+ *   3. src/config/flagPinGuard.test.js: this flag's DARK_BY_DESIGN entry dropped;
+ *   4. this docstring: the state lines ("DARK — default FALSE", "When FALSE
+ *      (the shipped state)") reworded to the live state.
  */
 // Pinned by: commandCenterHubFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const COMMAND_CENTER_HUB_ENABLED = false;

@@ -76,8 +76,8 @@ describe('pickDashboardShell — the hub fails closed, the legacy pick keeps pre
   });
 
   it('an undefined legacy flag picks the same shell the pre-S0 ternary did (the falsy branch)', () => {
-    // A bare featureFlags vi.mock factory resolves these to undefined; the
-    // pre-S0 `FLAG ? A : B` then rendered B, and so does the picker.
+    // An undefined flag (an automocked one, say) took the pre-S0
+    // `FLAG ? A : B` to B, and so does the picker.
     expect(pickDashboardShell({ hubOn: false, isMobile: true }).shell).toBe(S.DASHBOARD_LOOP);
     expect(pickDashboardShell({ hubOn: false, isMobile: false }).shell).toBe(S.DASHBOARD_DESKTOP);
     // ...and an undefined width is App's desktop branch (`if (isMobile)` is falsy).

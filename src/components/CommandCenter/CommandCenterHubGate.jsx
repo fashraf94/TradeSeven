@@ -8,27 +8,36 @@
 // hub. The gate never chooses a shell. App hands it:
 //   legacy — the legacy shell element exactly as App renders it at this site
 //            with the hub off (the picker's `legacyShell`, wrapper included);
-//   frame  — App's host wrapper for what the gate itself draws (desktop: the
+//   frame  — App's host wrapper for what replaces that shell (desktop: the
 //            sidebar offset). Absent → nothing wraps it (mobile).
 //
 // It renders:
 //   loading  → frame(skeleton) while the hub chunk is in flight;
 //   loaded   → frame(hub);
-//   rejected → frame(notice) and then `legacy`: the shell the hub-off flag
-//              renders at this width and flags, never the Dashboard boundary's
-//              error screen. The failure is reported (console + the house
-//              error log, logErrorToFirebase) and the notice offers Retry and
-//              Reload. `legacy` keeps its own wrapper and is never framed, so
-//              DashboardDesktop, which offsets itself, is not offset twice.
+//   rejected → `legacy`, the shell the hub-off flag renders at this width and
+//              flags (never the Dashboard boundary's error screen), under a
+//              notice offering Retry, Reload and Dismiss. `legacy` keeps its own
+//              wrapper and is never framed, so DashboardDesktop, which offsets
+//              itself, is not offset twice. The notice floats (position: fixed)
+//              rather than sitting in the page flow, so it never pushes a
+//              fixed-height shell (CommandDashboardDesktop is 100vh) off screen.
 //
 // Only a REJECTED IMPORT falls back. The loader tags the rejection
-// (HubLoadError) and this gate's boundary handles nothing else: any other error
-// the hub throws is rethrown to App's `Dashboard` ErrorBoundary, so a hub bug
-// is never hidden behind the legacy shell.
+// (HubLoadError) and this gate's boundary handles nothing else: an error the hub
+// throws while rendering is rethrown to App's `Dashboard` ErrorBoundary, so a
+// hub render bug is never hidden behind the legacy shell. An error thrown while
+// the hub chunk EVALUATES rejects the import, so it does fall back — and its
+// report carries the cause's name, message and stack, so it reads as what it is.
 //
-// React keeps a rejected lazy() forever, so Retry builds a NEW lazy() and
-// remounts the boundary: the import runs again. Reload is for a browser that
-// keeps the failed module fetch (a stale deploy, say).
+// The failure is reported by the loader, once per import attempt, at the
+// moment the import rejects (console + the house error log,
+// logErrorToFirebase): never again for a later mount that merely shows the same
+// cached failure, and never lost when something else throws in the same render.
+//
+// React keeps a rejected lazy() forever, so Retry starts a FRESH import while
+// the legacy shell stays on screen, and swaps in a new lazy() only once that
+// import has loaded. A failed retry leaves the page exactly as it was. Reload
+// is for a browser that keeps the failed module fetch (a stale deploy, say).
 //
 // The lazy() lives at module scope, one per gate (App.jsx's lazy screens are
 // the house convention). Creating it calls nothing: importing this module
@@ -43,28 +52,54 @@ import { logErrorToFirebase } from '../ErrorBoundary';
 import { cssVar } from '../../theme/cssTokens';
 import { HUB_GATE_COPY as COPY } from './hubGateCopy';
 
+/** The error-log screen name for a failed hub import. */
+export const HUB_LOAD_REPORT = 'Command Center hub (chunk load)';
+
 /** A rejected hub import, tagged so the boundary can tell it from a hub render error. */
 export class HubLoadError extends Error {
   constructor(cause) {
-    super(`The Command Center hub chunk failed to load: ${cause?.message ?? String(cause)}`, { cause });
+    const name = typeof cause?.name === 'string' ? cause.name : 'Error';
+    super(`The Command Center hub chunk failed to load (${name}: ${cause?.message ?? String(cause)})`, { cause });
     this.name = 'HubLoadError';
+    // The report's stack is the cause's: where the fetch, or the module's evaluation, failed.
+    if (typeof cause?.stack === 'string') this.stack = cause.stack;
   }
 }
 
 export const isHubLoadError = (error) => error instanceof HubLoadError;
 
+/** One report per failed import attempt: the console and the house error log. */
+export function reportHubLoadFailure(error) {
+  console.error('[CommandCenterHubGate] the hub chunk failed to load; rendering the legacy dashboard:', error);
+  logErrorToFirebase(error, undefined, HUB_LOAD_REPORT);
+}
+
 /**
- * One lazy hub at a time. `retry()` swaps in a fresh lazy(), because React
- * keeps a rejected one forever. A synchronous throw from `importHub` is a
+ * The hub's lazy component and its retries. Each import attempt that rejects is
+ * tagged and reported once, here. `retry()` runs a fresh import and swaps in a
+ * new lazy() only when it loads (React keeps a rejected lazy forever); calls
+ * while one is in flight share it. A synchronous throw from `importHub` is a
  * rejected import too.
  */
-export function createHubLoader(importHub) {
-  const fresh = () => lazy(() => new Promise((resolve) => { resolve(importHub()); })
-    .catch((cause) => { throw new HubLoadError(cause); }));
-  let Hub = fresh();
+export function createHubLoader(importHub, report = reportHubLoadFailure) {
+  const load = () => new Promise((resolve) => { resolve(importHub()); })
+    .catch((cause) => {
+      const error = new HubLoadError(cause);
+      try { report(error); } catch { /* a failing report never changes the outcome */ }
+      throw error;
+    });
+  let Hub = lazy(load);
+  let pending = null;
   return {
     current: () => Hub,
-    retry: () => { Hub = fresh(); },
+    retry() {
+      if (!pending) {
+        pending = load()
+          .then((module) => { Hub = lazy(() => Promise.resolve(module)); })
+          .finally(() => { pending = null; });
+      }
+      return pending;
+    },
   };
 }
 
@@ -79,13 +114,6 @@ class HubLoadBoundary extends Component {
     return { caught: true, error };
   }
 
-  componentDidCatch(error, errorInfo) {
-    // Anything else was rethrown by render() and is reported by the boundary that takes it.
-    if (!isHubLoadError(error)) return;
-    console.error('[CommandCenterHubGate] the hub chunk failed to load; rendering the legacy dashboard:', error);
-    logErrorToFirebase(error, errorInfo, 'Command Center hub (chunk load)');
-  }
-
   render() {
     if (!this.state.caught) return this.props.children;
     // Not a load failure: App's Dashboard ErrorBoundary takes it, as it would without the gate.
@@ -96,14 +124,12 @@ class HubLoadBoundary extends Component {
 
 const unframed = (node) => node;
 
-const layer = { position: 'relative', zIndex: 1 };
-
 function HubSkeleton() {
   return (
     <div
       role="status"
       data-hub-gate="loading"
-      style={{ ...layer, minHeight: '100vh', padding: '48px 24px', textAlign: 'center', fontSize: 13, color: cssVar('text-secondary') }}
+      style={{ position: 'relative', zIndex: 1, minHeight: '100vh', padding: '48px 24px', textAlign: 'center', fontSize: 13, color: cssVar('text-secondary') }}
     >
       {COPY.loading}
     </div>
@@ -122,32 +148,48 @@ const noticeButton = {
   cursor: 'pointer',
 };
 
-function HubLoadNotice({ onRetry, onReload }) {
+function HubLoadNotice({ retrying, onRetry, onReload, onDismiss }) {
   return (
     <div
       role="alert"
       data-hub-gate="load-error"
       style={{
-        ...layer,
+        position: 'fixed',
+        zIndex: 45,
+        top: 'calc(env(safe-area-inset-top, 0px) + 12px)',
+        left: 16,
+        right: 16,
+        maxWidth: 560,
+        margin: '0 auto',
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',
         gap: 8,
-        padding: '8px 16px',
+        padding: '8px 8px 8px 16px',
         background: cssVar('bg-card'),
-        borderBottom: `1px solid ${cssVar('border-strong')}`,
+        border: `1px solid ${cssVar('border-strong')}`,
+        borderRadius: 12,
         color: cssVar('text-primary'),
         fontSize: 13,
       }}
     >
       <span style={{ flex: '1 1 220px' }}>{COPY.loadFailed}</span>
-      <button type="button" onClick={onRetry} style={noticeButton}>{COPY.retry}</button>
+      {/* aria-disabled, not disabled: the button keeps focus while the retry runs. */}
+      <button type="button" aria-disabled={retrying} onClick={onRetry} style={noticeButton}>
+        {retrying ? COPY.retrying : COPY.retry}
+      </button>
       <button type="button" onClick={onReload} style={noticeButton}>{COPY.reload}</button>
+      <button type="button" aria-label={COPY.dismiss} onClick={onDismiss} style={{ ...noticeButton, border: 'none', minWidth: 44, padding: 0 }}>
+        {COPY.dismissMark}
+      </button>
     </div>
   );
 }
 
-const reloadPage = () => window.location.reload();
+/** Reloads the page. `location` is a parameter only so a test can hand it a stand-in. */
+export function reloadPage(location = window.location) {
+  location.reload();
+}
 
 /**
  * The gate for one hub module. The default export below binds the real chunk
@@ -158,21 +200,35 @@ export function createCommandCenterHubGate(importHub, { reload = reloadPage } = 
 
   /**
    * @param {React.ReactElement} props.legacy  the hub-off shell for this site, as App renders it
-   * @param {Function}           [props.frame] App's host wrapper for the gate's own output
+   * @param {Function}           [props.frame] App's host wrapper for the skeleton and the hub
    */
   function CommandCenterHubGate({ legacy, frame = unframed }) {
-    const [attempt, setAttempt] = useState(0);
+    const [loads, setLoads] = useState(0);
+    const [retrying, setRetrying] = useState(false);
+    const [dismissed, setDismissed] = useState(false);
     const Hub = loader.current();
     const retry = () => {
-      loader.retry();
-      setAttempt((n) => n + 1);
+      if (retrying) return;
+      setRetrying(true);
+      loader.retry().then(
+        () => { setRetrying(false); setLoads((n) => n + 1); },
+        // Already reported by the loader; the legacy shell simply stays.
+        () => { setRetrying(false); },
+      );
     };
     return (
       <HubLoadBoundary
-        key={attempt}
+        key={loads}
         renderFallback={() => (
           <>
-            {frame(<HubLoadNotice onRetry={retry} onReload={reload} />)}
+            {!dismissed && (
+              <HubLoadNotice
+                retrying={retrying}
+                onRetry={retry}
+                onReload={() => reload()}
+                onDismiss={() => setDismissed(true)}
+              />
+            )}
             {legacy}
           </>
         )}
