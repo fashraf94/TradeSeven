@@ -19,7 +19,7 @@ vi.mock('../../services/fundamentalsService', () => ({ getCompanyProfile: () => 
 vi.mock('../../services/websocketService', () => ({ getDailyHL: () => null }));
 vi.mock('../../utils/fetchWithAuth', () => ({ fetchWithAuth: () => Promise.resolve({ json: async () => ({ success: true, data: {} }) }) }));
 vi.mock('lightweight-charts', () => {
-  const series = () => ({ setData() {}, createPriceLine(o) { lines.push(o); return { applyOptions() {} }; }, removePriceLine() {}, setMarkers() {}, priceScale() { return { applyOptions() {} }; }, applyOptions() {} });
+  const series = () => ({ setData() {}, createPriceLine(o) { lines.push(o); return { applyOptions() {} }; }, removePriceLine() {}, setMarkers(m) { if (m?.length) lines.push({ title: `CANDLE MARKERS HIT ${m.length}` }); }, priceScale() { return { applyOptions() {} }; }, applyOptions() {} });
   return {
     createChart: () => { charts.created += 1; return { addSeries: () => series(), removeSeries() {}, subscribeCrosshairMove() {}, timeScale() { return { applyOptions() {}, fitContent() {}, scrollToRealTime() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange() { return null; } }; }, applyOptions() {}, remove() {} }; },
     CandlestickSeries: 'Candlestick', HistogramSeries: 'Histogram', LineSeries: 'Line', AreaSeries: 'Area',

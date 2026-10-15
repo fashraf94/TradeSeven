@@ -46,6 +46,11 @@ describe('scripts/stock-threshold-pilot-control.mjs', () => {
     const show = await runControl(['show'], { db: s.db, log: () => {} });
     expect(show.written).toBe(false); expect(s.writes).toHaveLength(2);
   });
+  it('a write that reads back differently is an error, never "Written" (review mutation lens S3)', async () => {
+    const s = controlStore(); const set = s.db.doc('stockThresholdControl/admission').set;
+    const db = { doc: path => ({ ...s.db.doc(path), set: v => set({ ...v, epoch: v.epoch + 40 }) }) };
+    await expect(runControl(['enable', '--owner', 'owner-a', '--apply'], { db, log: () => {} })).rejects.toThrow('read-back differs');
+  });
   it('owner ids come only from the command line: the script writes no file', () => {
     const source = readFileSync(new URL('./stock-threshold-pilot-control.mjs', import.meta.url), 'utf8');
     expect(source).not.toMatch(/writeFile|appendFile|createWriteStream/);
@@ -73,6 +78,8 @@ describe('scripts/stock-threshold-pilot-verify.mjs', () => {
     expect(agent.targets.bagger).toBe(100 * (1 + 1 * 2 / 100));
     expect(report.sides.agent).toMatchObject({ stored: h.store.get(`agentBattles/${battle.id}`).scoreState.currentScore, agrees: true });
     expect(report.sides.cpu).toMatchObject({ agrees: true, banked: 0 });
+    // Neither side holds crypto, so each stored active score is exactly its recomputed stock points.
+    expect(report.sides.agent).toMatchObject({ holdsCrypto: false, cryptoRemainder: 0 }); expect(report.sides.cpu).toMatchObject({ holdsCrypto: false, cryptoRemainder: 0 });
     expect(log.mock.calls.flat().join('\n')).toContain('AGREES');
     expect(h.writes).toEqual([]);
   });
@@ -84,5 +91,16 @@ describe('scripts/stock-threshold-pilot-verify.mjs', () => {
     const r = verifyBattle(live);
     expect(r.valid).toBe(false); expect(r.sides.agent.agrees).toBe(false);
     expect(verifyBattle({ id: 'legacy', status: 'active', scoring: {} }).lines.at(-1)).toContain('not a measured-model battle');
+  });
+  it('a stored score that is self-consistent but not the recomputed stock points is CHECK on a side without crypto; a crypto side reports the remainder (review mutation lens S5)', async () => {
+    const { battle, h } = await committed();
+    const live = { id: battle.id, ...h.store.get(`agentBattles/${battle.id}`) };
+    live.scoreState.activeScore += 5; live.scoreState.currentScore += 5; live.scoreState.opponentScore += 5;
+    const r = verifyBattle(live);
+    expect(r.sides.agent).toMatchObject({ holdsCrypto: false, cryptoRemainder: 5, agrees: false }); expect(r.sides.cpu).toMatchObject({ cryptoRemainder: 5, agrees: false });
+    expect(r.lines.join(' | ')).toContain('no crypto: remainder 5 must be 0');
+    live.portfolio.support = [...(live.portfolio.support || []), { symbol: 'BTC', isCrypto: true, baseATR: 5 }];
+    const withCrypto = verifyBattle(live);
+    expect(withCrypto.sides.agent).toMatchObject({ holdsCrypto: true, cryptoRemainder: 5, agrees: true });
   });
 });

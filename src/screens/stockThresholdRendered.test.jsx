@@ -54,6 +54,18 @@ describe('real rendered pinned stock detail integration', () => {
     expect(z.targets.find(t => t.key === 'meltdown').target).toBe(0);
     expect(renderToStaticMarkup(<StockRewardDetails context={z} />)).toMatch(/data-tier="meltdown" data-tier-status="unreachable"/);
   });
+  it('v2 Ruling 15: a tier crossed earlier stays earned, with its points, after the price retreats below it (review mutation lens R15a)', async () => {
+    const { battle } = await correctedStockBattle({ fill: 100 }); const a = { ...battle.portfolio.star[0], tier: 'star' };
+    const high = stockRewardContext(battle, a, 'agent', 'star', 0, { price: 103.5, asOf: '2026-10-14T13:50:00.000Z', observedAt: STOCK_TEST_NOW });
+    battle.scoring.stockRewardHistory.agent[a.positionId] = high.history;
+    const back = stockRewardContext(battle, a, 'agent', 'star', 0, { price: 101, asOf: '2026-10-14T13:55:00.000Z', observedAt: STOCK_TEST_NOW });
+    expect(back).toMatchObject({ status: 'valid', currentPrice: 101, crossedTiers: ['bagger', 'doubleBagger'] });
+    const html = renderToStaticMarkup(<StockRewardDetails context={back} />);
+    expect(html).toMatch(/data-tier="bagger" data-tier-status="earned"/); expect(html).toMatch(/data-tier="doubleBagger" data-tier-status="earned"/);
+    expect(html).toMatch(/data-tier="tenBagger" data-tier-status="unearned"/);
+    const points = back.targets.filter(t => ['bagger', 'doubleBagger'].includes(t.key)).reduce((n, t) => n + t.points, 0);
+    expect(html).toContain(`tier points +${points}`);
+  });
   it('v2 Ruling 15: Why gets the measured proximity line from the committed context; the corrected row shows the bagger footer it is given', async () => {
     const { left } = await renderedFacts();
     const expected = measuredProximity(left.rewardContext);
@@ -66,6 +78,9 @@ describe('real rendered pinned stock detail integration', () => {
     const maxed = { ...left.rewardContext, nextTarget: null };
     expect(measuredProximity(maxed).text).toBe(`${left.rewardContext.targets.find(t => t.key === 'tenBagger').emoji} MAX`);
     expect(measuredProximity({ status: 'unavailable', reason: 'x' })).toBe(null);
+    // The distance is from the committed price, not from the fill (review mutation lens R16j).
+    const far = { ...left.rewardContext, currentPrice: 95 };
+    expect(measuredProximity(far).text).toBe(`${far.nextTarget.emoji} ${stockSummary((far.nextTarget.target - 95) / 95 * 100, 1)}% to ${far.nextTarget.label}`);
   });
   it('v2 Ruling 15: the tab reads the normal layout — Entry is the fill, % moves, targets, earned state and points', async () => {
     const { left } = await renderedFacts();

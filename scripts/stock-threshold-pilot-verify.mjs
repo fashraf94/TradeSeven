@@ -5,8 +5,11 @@
 // measured %, fill and fill-quote time), the six exact targets (with their
 // half-even cent summaries), the committed reward context and the points the
 // canonical scorer gives that context; then each side's score agreement: the
-// stored score against the recomputed stock points plus the banked components,
-// the committed-score validity check and a replay of every bound input.
+// stored score against its own active and banked parts and the banked
+// components, and — on a side that holds no crypto — the stored active score
+// against the recomputed stock points (a side with crypto reports the crypto
+// remainder, which the committed frame does not let this script recompute);
+// then the committed-score validity check and a replay of every bound input.
 //
 // Nothing is written: only document reads. No provider call.
 //
@@ -68,10 +71,14 @@ export function verifyBattle(battle, replay = { status: 'not_run' }) {
     // Crypto keeps the legacy scorer on live prices, which the committed frame does
     // not store per asset: it is the remainder, reported, never recomputed here.
     const other = Number.isFinite(storedActive) && Number.isFinite(stockActive) ? round2(storedActive - stockActive) : null;
+    // A side without crypto has no remainder to explain: its recomputed stock
+    // points must equal the stored active score (review mutation lens S5).
+    const holdsCrypto = out.positions.some(p => p.side === side && !p.stock);
     const agrees = Number.isFinite(stored) && Number.isFinite(stockActive)
-      && (side === 'cpu' ? banked === 0 : ss.bankedScore === banked && round2(ss.activeScore + ss.bankedScore) === round2(stored));
-    out.sides[side] = { stored: stored ?? null, stockActive, cryptoRemainder: other, banked, agrees };
-    lines.push(`${side}: stored ${stored ?? 'unavailable'} · stock positions recomputed ${stockActive ?? 'n/a'} · crypto remainder ${other ?? 'n/a'} (legacy scorer, not recomputed) · banked components ${banked} → ${agrees ? 'AGREES' : 'CHECK'}`);
+      && (side === 'cpu' ? banked === 0 : ss.bankedScore === banked && round2(ss.activeScore + ss.bankedScore) === round2(stored))
+      && (holdsCrypto || other === 0);
+    out.sides[side] = { stored: stored ?? null, stockActive, cryptoRemainder: other, holdsCrypto, banked, agrees };
+    lines.push(`${side}: stored ${stored ?? 'unavailable'} · stock positions recomputed ${stockActive ?? 'n/a'} · ${holdsCrypto ? `crypto remainder ${other ?? 'n/a'} (legacy scorer, not recomputed)` : `no crypto: remainder ${other ?? 'n/a'} must be 0`} · banked components ${banked} → ${agrees ? 'AGREES' : 'CHECK'}`);
   }
   out.valid = validCommittedStockScores(battle);
   const shown = displayedStockScores(battle);

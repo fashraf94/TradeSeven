@@ -265,7 +265,9 @@ describe('Ruling 6 through createAgentBattle (approved fence contact)', () => {
     const { createAgentBattle } = await import('./agentBattleService.js');
     const { makeCompositionStoreDouble } = await import('./__fixtures__/compositionStoreDouble.js');
     const composition = makeCompositionStoreDouble(); const added = [], reads = [], inputs = [];
-    const cutover = () => Object.assign(new Error('composition cutover interleaved'), { code: 'battle_cutover_interleaved' });
+    const cutover = () => (failCommit === 'carriage'
+      ? Object.assign(new Error('hypothesis carriage race'), { hypothesisCarriage: true })
+      : Object.assign(new Error('composition cutover interleaved'), { code: 'battle_cutover_interleaved' }));
     const rankings = { get: async () => { reads.push('indexIntelligence/stockRankings'); return { exists: true, data: () => ({ stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }] }) }; } };
     const db = {
       doc: path => ({ path, id: path.split('/').at(-1), get: async () => { reads.push(path); return ctl === undefined ? { exists: false, data: () => undefined } : { exists: true, data: () => structuredClone(ctl) }; } }),
@@ -305,6 +307,9 @@ describe('Ruling 6 through createAgentBattle (approved fence contact)', () => {
     const on = await create({ flag: true, ctl: control(), ownerId: 'owner-pilot', options: tiered, failCommit: true });
     expect(on.e).toMatchObject({ name: 'StockThresholdRefusal', reason: 'corrected_creation_failed', retriable: true, cause: { code: 'battle_cutover_interleaved' } });
     expect(on.added).toEqual([]);
+    // A hypothesis-carriage race keeps its own error, selected or not (review mutation lens R6c).
+    const carriage = await create({ flag: true, ctl: control(), ownerId: 'owner-pilot', options: tiered, failCommit: 'carriage' });
+    expect(carriage.e).toMatchObject({ name: 'Error', hypothesisCarriage: true }); expect(carriage.e.name).not.toBe('StockThresholdRefusal');
   });
   it('a selected owner\'s provider failure is a retriable refusal, never a raw 500', async () => {
     eodhd.mockImplementationOnce(async () => { throw Error('offline'); });
