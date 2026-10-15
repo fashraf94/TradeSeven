@@ -4,9 +4,9 @@
 // (spec V1.2 §4, §11.3 "source guard on both mount sites"; "no chunk
 // import/read/listener/timer with hub false").
 //
-// No test can import App.jsx (BUILD_RULES §2: `vite build` is the only check
-// there), so the two dashboard sites are pinned as source text, comments
-// stripped — the starfield.inert.test.jsx technique. starfield.inert already
+// Only one suite renders App.jsx (src/App.xpModal.jsdom.test.jsx, desktop
+// only, for the XP modal), so the two dashboard sites are pinned as source
+// text, comments stripped — the starfield.inert.test.jsx technique. starfield.inert already
 // pins the starfield / background ternaries at both sites; this file pins what
 // S0 added around them:
 //   1. ONE pick, made at render inside the dashboard block, from the four
@@ -164,8 +164,9 @@ function propsOf(tag) {
 }
 
 // Frozen from 495ee07b (spec §11.3 "unchanged legacy render checks"): S0 moved
-// these three elements into consts and must not have touched a prop. No test
-// renders App.jsx, so these lists are where a dropped or renamed prop shows.
+// these three elements into consts and must not have touched a prop. No suite
+// renders these shells through App with their props asserted, so these lists
+// are where a dropped or renamed prop shows.
 const LEGACY_PROPS_AT_495EE07B = {
   DashboardComponent: [
     'user={user}', 'setShowForge={setShowForge}', 'onCreateAgentBattle={handleCreateAgentTrainingBattle}',
