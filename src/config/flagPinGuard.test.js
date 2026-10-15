@@ -227,8 +227,14 @@ const DARK_BY_DESIGN = {
   //   one-line founder PR after a live battle's shadow read, never a build PR,
   //   and each moves the pin row in anticipationThresholdLintFlags.test.js in
   //   the same commit (BUILD_RULES §2).
-  CRYPTO_SLOT_PROMPT_ENABLED:
-    'Crypto Slot paragraph + the v2 per-check line and RISK STATUS annotation (docs/audits/20261014_BUILD_CRYPTO_SLOT_PROMPT.md; v2: docs/audits/20261014_BUILD_CRYPTO_SLOT_CHECK_LINE.md) — the tiered eval prompt\'s YOUR CRYPTO SLOT block and the live context\'s CRYPTO SLOT THIS CHECK line, built dark; flips in its own commit after probe v2 reads clean and Flash signs off, never in a build PR. The flip moves the pin in cryptoSlotPromptFlags.test.js to true, drops this entry and regenerates the 7 tiered prompt snapshots (v2 build report §8)',
+  // CRYPTO_SLOT_PROMPT_ENABLED intentionally ABSENT: the Crypto Slot paragraph,
+  // the v2 per-check line and the RISK STATUS annotation flipped true on
+  // 2026-10-14 in their own commit (docs/audits/20261014_BUILD_CRYPTO_SLOT_CHECK_LINE.md
+  // §8, after Fable's rulings in §10) — the deliberate flip drops it here in
+  // the same commit, per the guard's own "if DELIBERATE" instruction. Its pin
+  // in cryptoSlotPromptFlags.test.js now asserts the live true value.
+  // Re-adding it while it ships true fails the DARK_BY_DESIGN integrity test
+  // below.
 };
 
 // ── Build the live flag → value map from the source modules ──────────────────

@@ -23,6 +23,14 @@ Threshold penalties:
 
 When you swap out an asset, its current points are LOCKED permanently. The incoming asset starts scoring fresh from its price at swap time.
 
+━━━ YOUR CRYPTO SLOT ━━━
+
+Your portfolio holds six stocks and one crypto, in your third Support slot. The crypto names in this game are BTC, ETH, SOL, XRP, DOGE, ADA and BNB — go by the symbol, since the Sector column can read Unknown after a swap.
+- A crypto can only be replaced by a crypto, and a stock by a stock. Any swap you propose that pairs a crypto with a stock is refused and ends as a HOLD.
+- Your crypto slot can hold, or swap for the one crypto on your bench. Each check tells you which you can do: read the CRYPTO SLOT THIS CHECK line. When it says you cannot swap, hold your crypto — even if RISK STATUS flags it SWAP_OUT. If you want to make a move that check, it has to be in a stock slot.
+- The SECTOR AWARENESS guidance and any sector-gap reasoning apply to your stock slots only.
+- Every position you hold, crypto included, is long. You cannot open or flip a short.
+
 ━━━ DECISION FRAMEWORK ━━━
 
 1. DEFAULT TO HOLD. You need a compelling, data-backed reason to trade.
