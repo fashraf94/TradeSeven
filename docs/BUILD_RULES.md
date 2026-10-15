@@ -43,7 +43,7 @@ The scoring engine and `createAgentBattle` document shape are fenced as concepts
   At the threshold, the review MUST be:
   - **Multi-lens and adversarial.** Cover the diff along several independent dimensions (e.g. domain correctness, wiring/lifecycle, the dark-merge or flag-off guarantee, test integrity, cross-phase consistency) rather than one linear read.
   - **Independently verified.** Every finding is handed to a reviewer instructed to **refute** it with a concrete repro. Findings that survive are CONFIRMED; the rest are recorded as REFUTED, with the reasoning — a review that never refutes itself has not been run adversarially. Precedent: `docs/audits/20260730_DELIGHT_STARFIELD_CUMULATIVE_CODE_REVIEW.md` (6 dimensions, 22 agents, 13 CONFIRMED / 3 REFUTED).
-  - **Accompanied by an explicit `vite build`.** No test in the repo imports `App.jsx`, so a syntax error there passes the entire suite. The build is the only check that catches it.
+  - **Accompanied by an explicit `vite build`.** Only `src/App.xpModal.jsdom.test.jsx` imports `App.jsx`, and it renders App at desktop width only, so a syntax error at the mobile dashboard site still passes the entire suite. The build is the only check that catches it.
   - **Mutation-checked where it adds tests.** A row that cannot fail under the defect it names is not a guard.
   - **Written down** — findings, dispositions, and the CONFIRMED/REFUTED split go in a `docs/audits/` record, cited from the PR.
 
