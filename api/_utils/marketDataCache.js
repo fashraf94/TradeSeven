@@ -812,6 +812,10 @@ async function fetchRealTimePrice(eohdSymbol, apiKey, result) {
         low: data.low,
         volume: data.volume,
         timestamp: data.timestamp,
+        // BaggerBomb v2 Ruling 9 (additive): marks a price that is the
+        // previousClose stand-in, not a real `close`. Legacy selection above is
+        // unchanged; only corrected stock valuation reads it (as unavailable).
+        ...(data.close ? {} : { previousCloseStandIn: true }),
       };
     } else {
       throw new Error(`Real-time price responded with ${response.status}`);

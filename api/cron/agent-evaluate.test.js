@@ -50,14 +50,16 @@ describe('agent-evaluate cron — intraday momentum persistence (Phase 2: via fi
     expect(source).toMatch(/import\s*\{\s*finalizeCronState\s*\}\s*from\s*'\.\.\/_utils\/agentCronState\.js'/);
   });
 
-  it('routes cron-state persistence through finalizeCronState at exactly the 6 flush sites', () => {
+  it('routes cron-state persistence through finalizeCronState at exactly the 7 flush sites', () => {
     // Phase 2 (§4.5) consolidated the five inline cron-state writes into one
     // helper so a new persisted field is a one-line add in agentCronState.js.
     // The 5 mutually-exclusive return paths (proposal-skip, gameplan-skip,
     // gameplan-trigger, no-trigger-held, full-Haiku finalUpdate) each call it;
     // P4 added a 6th: the CPU passive-battle skip (contract #5 consumer).
+    // BaggerBomb stock thresholds v2 Ruling 3 added a 7th: the corrected-only
+    // unavailable-frame exit (the four former early returns, which skipped it).
     const calls = source.match(/finalizeCronState\(/g) || [];
-    expect(calls.length).toBe(6);
+    expect(calls.length).toBe(7);
   });
 
   it('passes vwapTicks AND intradayMomentum together at every flush site (they must never drift apart)', () => {
@@ -67,7 +69,8 @@ describe('agent-evaluate cron — intraday momentum persistence (Phase 2: via fi
     // P4 CPU-skip site flushes BEFORE momentumData exists, so it preserves
     // the battle's persisted counters instead (asserted separately below).
     const both = source.match(/finalizeCronState\([^;]*?\bvwapTicks\b[^;]*?intradayMomentum:\s*momentumData\.vwap/g) || [];
-    expect(both.length).toBe(5);
+    // 6 with the v2 Ruling 3 unavailable-frame exit, which flushes the same tables.
+    expect(both.length).toBe(6);
     const preserved = source.match(/finalizeCronState\([^;]*?vwapTicks: battle\.cronState\?\.vwapTicks \|\| \{\},[^;]*?intradayMomentum: battle\.cronState\?\.intradayMomentum \|\| \{\}/g) || [];
     expect(preserved.length).toBe(1);
   });
@@ -340,9 +343,10 @@ describe('agent-evaluate cron — Knob A forced rotation wiring (§4.2)', () => 
     expect(source).toMatch(/source: riskResult\.reason === 'stagnation' \? 'archetype' : 'risk_manager'/);
   });
 
-  it('all 5 finalizeCronState calls carry the three stagnation maps', () => {
+  it('all 6 finalizeCronState calls carry the three stagnation maps', () => {
+    // 6 with the v2 Ruling 3 unavailable-frame exit (BaggerBomb stock thresholds v2).
     const withStag = source.match(/finalizeCronState\([^;]*?stagnationTicks, lastTickPrice, lastTickTimestamp/g) || [];
-    expect(withStag.length).toBe(5);
+    expect(withStag.length).toBe(6);
   });
 });
 
@@ -880,6 +884,9 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
       // Review K3-7: the same corrected-lifecycle harness with tick stamps on
       // wraps the real writer to inject the fixture collector — a test consumer.
       'api/cron/agent-evaluate.stockThresholds.stamps.test.js',
+      // BaggerBomb stock thresholds v2: the Ruling 1/8/9 exit, crypto and strict-close
+      // rows run the real corrected writer through the dispatcher — a test consumer.
+      'api/_utils/stockThresholdV2.test.js',
       // Invalid real-time price fix (docs/audits/20261014_BUILD_NA_QUOTE_INVALID_PRICE.md):
       // runs the real executor on prices built by the real producer to prove an
       // unpriced swap-in commits nothing — a test consumer, not a new call site.
@@ -949,10 +956,11 @@ describe('agent-evaluate cron — VWAP floor wiring (A1/B1/B6)', () => {
     expect(source).toMatch(/&& !activePortfolioSet\.has\(stock\.symbol\)/);
   });
 
-  it('B6: the guard is seeded from cronState with ET rollover and carried by all 5 finalize sites', () => {
+  it('B6: the guard is seeded from cronState with ET rollover and carried by all 6 finalize sites', () => {
     expect(source).toMatch(/const vwapFireGuard = seedVwapFireGuard\(battle\.cronState\?\.vwapFireGuard, todayET\)/);
+    // 6 with the v2 Ruling 3 unavailable-frame exit (BaggerBomb stock thresholds v2).
     const withGuard = source.match(/finalizeCronState\([^;]*?vwapFireGuard \}\)/g) || [];
-    expect(withGuard.length).toBe(5);
+    expect(withGuard.length).toBe(6);
   });
 
   it('B6: only vwap_failure fires are counted, live within the tick', () => {

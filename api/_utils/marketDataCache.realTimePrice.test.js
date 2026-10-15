@@ -89,12 +89,21 @@ describe('getStockAnalysisData — a 200 with a usable price keeps today\'s payl
   it('an absent, null or zero close still selects a valid numeric previousClose', async () => {
     for (const body of [{ previousClose: 50 }, { close: null, previousClose: 50 }, { close: 0, previousClose: 50 }]) {
       const r = await produce(body);
+      // BaggerBomb v2 Ruling 9: the selection is unchanged (current 50); the
+      // additive previousCloseStandIn marks it, so only corrected stock
+      // valuation can refuse it.
       expect(r.price).toEqual({
         current: 50, previousClose: 50, change: 0, changePercent: 0,
         high: undefined, low: undefined, volume: undefined, timestamp: undefined,
+        previousCloseStandIn: true,
       });
       expect(r.errors.price).toBeUndefined();
     }
+  });
+
+  it('BaggerBomb v2 Ruling 9: a real close carries no stand-in marker', async () => {
+    const r = await produce(REAL_TIME.MPC_LIVE, { symbol: 'MPC' });
+    expect(Object.hasOwn(r.price, 'previousCloseStandIn')).toBe(false);
   });
 
   it('a complete decimal string close becomes a number; the other fields are as before', async () => {

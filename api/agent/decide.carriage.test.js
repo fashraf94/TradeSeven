@@ -35,6 +35,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tournamentSettlementGoldenPair } from '../_utils/__fixtures__/tournamentSettlementGolden.js';
+import { stockAdmissionControlReadStripped, STOCK_ADMISSION_CONTROL_READS } from '../_utils/__fixtures__/stockAdmissionGolden.js';
 
 const state = vi.hoisted(() => ({ db: null, anthropic: null, gemmaCalls: [], shadow: { decisions: [], firstMessages: [] }, flag: false, fence: true }));
 
@@ -172,7 +173,8 @@ describe('acceptance row 2 — gate ON, carried: everything the agent and the ma
     expect(battle.agentContext.equippedHypothesis).toMatchObject({ watchlistId: H.WATCHLIST_ID, hypothesisVersion: 2, statement: 'Idea version 2' });
     expect(battle.agentContext.equippedWatchlist).toEqual(offBattle.agentContext.equippedWatchlist); // the snapshot is untouched
     expect(cap.docs[`agents/${H.AGENT_ID}`]).toEqual(off.docs[`agents/${H.AGENT_ID}`]);
-    expect(serialized(withoutRecords(cap))).toBe(serialized(withoutRecords(off)));
+    // v2 Ruling 6: less the one asserted stock admission control read.
+    expect(serialized(withoutRecords(stockAdmissionControlReadStripped(cap, 1)))).toBe(serialized(withoutRecords(off)));
     // What the record slice added: one bounded version read before the battle work, the fresh read inside the
     // creation transaction, and — in that same commit — the activation and the armed row.
     expect(cap.store.queries.filter((q) => isHyp(`${q.collectionPath}/`))).toHaveLength(1);
@@ -195,7 +197,8 @@ describe('acceptance row 2 — gate ON, carried: everything the agent and the ma
   it('no equip, or an uncommitted list (no frozen snapshot): byte-identical to main, zero version reads', async () => {
     for (const name of ['self_select_no_equip', 'self_select_uncommitted_list']) {
       const { cap } = await run(SCENARIOS[name]());
-      expect(cap, name).toEqual(GOLDEN.scenarios[name]);
+      // v2 Ruling 6: less the one asserted stock admission control read.
+      expect(stockAdmissionControlReadStripped(cap, STOCK_ADMISSION_CONTROL_READS[name]), name).toEqual(GOLDEN.scenarios[name]);
     }
   }, 30_000);
 });
@@ -456,7 +459,8 @@ describe('the §2 review fixes, through the endpoint', () => {
     const off = GOLDEN.scenariosFenceDark.self_select_ready_over_activated;
     expect(H.hypothesisAccess(cap).writes).toEqual([]);
     expect(H.hypothesisAccess(cap).queries).toHaveLength(1);
-    expect(serialized(withoutRecords(cap))).toBe(serialized(withoutRecords(off)));
+    // v2 Ruling 6: less the one asserted stock admission control read.
+    expect(serialized(withoutRecords(stockAdmissionControlReadStripped(cap, 1)))).toBe(serialized(withoutRecords(off)));
   }, 20_000);
 });
 

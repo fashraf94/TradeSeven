@@ -3,9 +3,10 @@ import * as flags from '../../src/config/featureFlags.js';
 import { STOCK_MODEL, stockModelRoute, positions, isStock, rosterToken, initialRewardHistory, stockRewardContext, finite, positive, instantMs, validateStockReceipt, validCommittedStockScores, stockContent, committedContextContent } from '../../src/utils/stockThresholdModel.js';
 import { candidateRoundHalfEven, measureStock } from './measuredStockThreshold.js';
 import { canonicalContentHash } from './canonicalHash.js';
-import { resolveStockApproval, STOCK_APPROVAL, STOCK_ADMISSION_CONTROL_PATH, validStockAdmissionControl } from './stockThresholdPolicyRegistry.js';
-import { collectStockObservation, qualifyStockObservation, refuseStock } from './stockThresholdMeasurementProvider.js';
+import { resolveStockApproval, STOCK_APPROVAL, STOCK_ADMISSION_CONTROL_PATH, validStockAdmissionControl, stockAdmissionSelects } from './stockThresholdPolicyRegistry.js';
+import { collectStockObservation, qualifyStockObservation, refuseStock, StockThresholdRefusal } from './stockThresholdMeasurementProvider.js';
 import { calculateAssetScoreServer } from './agentScoring.js';
+import { getSessionForDate } from '../../src/utils/marketCalendar.js';
 
 export const stockAdmissionEnabled = () => Object.hasOwn(flags, 'STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED') && flags.STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED === true;
 export function effectiveStockPercentage(measuredPct) {
@@ -36,19 +37,48 @@ async function readEligibility(tx, db, symbols) {
   const ranked = new Set((snap.data()?.stocks || []).map(s => s.symbol));
   if (!snap.exists || symbols.some(s => !ranked.has(s))) refuseStock('current_ranked_membership_missing');
 }
-export async function prepareStockCreation(battleDoc, { db, collector = collectStockObservation } = {}) {
+// v2 Ruling 2: corrected creation is refused from 45 minutes before the calendar
+// close (15:15 ET; 12:15 ET on early-close days), measured at the creation's
+// began instant against the session's own closeMs, never a clock literal. A code
+// constant recorded in the pilot approval document, deliberately not hashed.
+export const STOCK_LATE_START_CUTOFF_MINUTES = 45;
+const etDateOf = ms => {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(ms);
+  const part = type => parts.find(p => p.type === type).value;
+  return `${part('year')}-${part('month')}-${part('day')}`;
+};
+export function lateStartRefusal(began) {
+  const ms = instantMs(began);
+  if (ms === null) return 'invalid_creation_instant';
+  const session = getSessionForDate(etDateOf(ms));
+  if (!session) return 'calendar_missing';
+  return session.isTradingDay && ms >= session.closeMs - STOCK_LATE_START_CUTOFF_MINUTES * 60000 && ms < session.closeMs ? 'late_start_cutoff' : null;
+}
+// v2 Ruling 6: the control document is the only on-switch. A missing, unreadable,
+// disabled, unparseable or old-schema control, or one whose allowlist does not name
+// this owner, keeps today's legacy creation with no measurement read (null). Only a
+// selected (allowlisted) creation can be refused, and every refusal is retriable.
+export async function prepareStockCreation(battleDoc, { db, collector = collectStockObservation, now = () => new Date() } = {}) {
   if (!stockAdmissionEnabled()) return null;
   if (battleDoc.gameMode !== 'baggerbomb_agent' || battleDoc.duration !== 'fullday' || !battleDoc.opponent?.portfolio) return null;
-  if (!db) refuseStock('shared_admission_control_missing');
-  let controlSnap;
-  try { controlSnap = await db.doc(STOCK_ADMISSION_CONTROL_PATH).get(); } catch { refuseStock('admission_control_unavailable'); }
-  const control = controlSnap.data();
-  if (!controlSnap.exists || !validStockAdmissionControl(control)) refuseStock('shared_admission_closed');
+  if (!db) return null;
+  let control = null;
+  try { const controlSnap = await db.doc(STOCK_ADMISSION_CONTROL_PATH).get(); control = controlSnap.exists ? controlSnap.data() : null; } catch { return null; }
+  if (!stockAdmissionSelects(control, battleDoc.ownerId)) return null;
+  const late = lateStartRefusal(now().toISOString());
+  if (late) refuseStock(late);
   const observations = [];
-  for (const p of positions(battleDoc)) {
-    if (isStock(p.asset) && !positive(p.asset.baseATR)) refuseStock('calibrated_unit_missing');
-    if (isStock(p.asset) && p.asset.direction != null && p.asset.direction !== 'long') refuseStock('unsupported_stock_direction');
-    if (isStock(p.asset)) observations.push({ ...p, observation: await collector(p.asset.symbol, p.asset.baseATR), positionId: randomUUID() });
+  try {
+    for (const p of positions(battleDoc)) {
+      if (isStock(p.asset) && !positive(p.asset.baseATR)) refuseStock('calibrated_unit_missing');
+      if (isStock(p.asset) && p.asset.direction != null && p.asset.direction !== 'long') refuseStock('unsupported_stock_direction');
+      if (isStock(p.asset)) observations.push({ ...p, observation: await collector(p.asset.symbol, p.asset.baseATR), positionId: randomUUID() });
+    }
+  } catch (error) {
+    // A selected creation's unexpected error stays a scoped retriable refusal
+    // that keeps its cause (review K3-6), now that selection is per battle.
+    if (error?.name === 'StockThresholdRefusal') throw error;
+    throw Object.assign(new StockThresholdRefusal('corrected_creation_failed'), { cause: error });
   }
   return { observations, model: { ...STOCK_MODEL }, selected: true, control };
 }
@@ -125,20 +155,25 @@ export function stockCreationDb(db, prepared, now = () => new Date()) {
     return typeof target[key] === 'function' ? target[key].bind(target) : target[key];
   } });
 }
-export function decisionQuote(price, observedAt) {
+// v2 Ruling 9: with strictClose, only a real provider `close` values the position;
+// the shared quote path's previousClose stand-in (marketDataCache.js) is unavailable.
+export function decisionQuote(price, observedAt, { strictClose = false } = {}) {
   const timestamp = typeof price?.timestamp === 'number' && finite(price.timestamp) ? new Date(price.timestamp * 1000).toISOString() : price?.timestamp;
-  return { price: price?.fallback === true ? null : price?.current, asOf: timestamp, observedAt };
+  return { price: price?.fallback === true || (strictClose && price?.previousCloseStandIn === true) ? null : price?.current, asOf: timestamp, observedAt };
 }
-// A qualified post-entry quote always values the position. The position-bound
-// entry commit only stands in when this price map holds no such quote (the
-// swap tick's quotes predate the fill), and never for an exit (review R1).
-export function scoreCorrectedPosition(battle, asset, side, prices, observedAt, { entryCommit = true } = {}) {
+// A quote at or after the fill quote values the position (v2 Ruling 1). Branch A:
+// when this tick's dated quote predates the fill quote (the position was entered
+// after the tick fetched its prices, including a recovered landed trade), the
+// position is valued at its own receipt fill: same provider time, same price.
+// An exit never stands in (review R1).
+export function scoreCorrectedPosition(battle, asset, side, prices, observedAt, { fillStandIn = true } = {}) {
   const p = positions(battle).find(p => p.side === side && p.asset.positionId === asset.positionId);
   const r = asset.stockThresholdReceipt;
-  const entry = prices[asset.symbol]?.stockEntryCommit;
-  let context = p ? stockRewardContext(battle, asset, side, p.tier, p.slot, decisionQuote(prices[asset.symbol], observedAt)) : { status: 'unavailable', reason: 'missing_position_identity' };
-  if (entryCommit && p && context.reason === 'missing_post_entry_quote' && r && entry?.positionId === r.positionId && entry.receiptHash === r.receiptHash)
-    context = stockRewardContext(battle, asset, side, p.tier, p.slot, { kind: 'entry_commit', price: r.fill, asOf: r.fillQuote.quoteAsOf, observedAt: r.enteredAt, receiptHash: r.receiptHash });
+  const quote = decisionQuote(prices[asset.symbol], observedAt, { strictClose: true });
+  let context = p ? stockRewardContext(battle, asset, side, p.tier, p.slot, quote) : { status: 'unavailable', reason: 'missing_position_identity' };
+  const tickAsOf = instantMs(quote.asOf), fillAsOf = instantMs(r?.fillQuote?.quoteAsOf);
+  if (fillStandIn && p && context.reason === 'missing_post_entry_quote' && positive(quote.price) && tickAsOf !== null && fillAsOf !== null && tickAsOf < fillAsOf)
+    context = stockRewardContext(battle, asset, side, p.tier, p.slot, { price: r.fill, asOf: r.fillQuote.quoteAsOf, observedAt: r.fillQuote.observedAt });
   return { ...calculateAssetScoreServer(asset, null, {}, {}, null, context), positionId: asset.positionId, side };
 }
 export function correctedScorePatch(battle, agentScores, cpuScores, at) {
@@ -226,13 +261,19 @@ export async function executeCorrectedStockSwap(db, battleId, expected, tier, sl
     if (observation) await readEligibility(tx, db, [benchAsset.symbol]);
     const at = clock().toISOString();
     const inReceipt = observation ? bindStockReceipt(observation, { battleId, side: 'agent', tier, slot, positionId: incomingId, slotVersion: out.slotVersion + 1, enteredAt: at }) : null;
-    const outQuote = decisionQuote(prices[out.symbol], at);
+    const outQuote = decisionQuote(prices[out.symbol], at, { strictClose: isStock(out) });
     if (!positive(outQuote.price) || instantMs(outQuote.asOf) === null || instantMs(outQuote.asOf) > instantMs(at)) refuseStock('missing_exit_quote');
     const entry = out.stockThresholdReceipt?.fill ?? out.swapPrice ?? live.portfolio.startingPrices?.[out.symbol];
-    const score = isStock(out) ? scoreCorrectedPosition(live, { ...out, tier }, 'agent', prices, at, { entryCommit: false }) : calculateAssetScoreServer({ ...out, tier, tierMultiplier: out.tierMultiplier }, (outQuote.price - entry) / entry * 100, live.thresholdHistory?.[out.symbol] || {});
+    // v2 Ruling 8: the outgoing crypto entry must be a positive price, never a 0 or missing basis.
+    if (!isStock(out) && !positive(entry)) refuseStock('missing_outgoing_entry');
+    const score = isStock(out) ? scoreCorrectedPosition(live, { ...out, tier }, 'agent', prices, at, { fillStandIn: false }) : calculateAssetScoreServer({ ...out, tier, tierMultiplier: out.tierMultiplier }, (outQuote.price - entry) / entry * 100, live.thresholdHistory?.[out.symbol] || {});
     if (!finite(score.totalPoints)) refuseStock(score.reason || 'missing_outgoing_score');
+    // v2 Ruling 1: an exit needs a quote strictly later than the fill quote.
+    if (isStock(out) && !(instantMs(score.rewardContext.quoteEvidence.providerAsOf) > instantMs(out.stockThresholdReceipt.fillQuote.quoteAsOf))) refuseStock('exit_quote_not_after_fill');
     // One accepted exit: the scored stock context's dated quote, else the typed crypto quote.
     const exit = isStock(out) ? { price: score.rewardContext.currentPrice, asOf: score.rewardContext.quoteEvidence.providerAsOf } : { price: outQuote.price, asOf: outQuote.asOf };
+    // v2 Ruling 8: an incoming crypto fill from the stale adjusted-close fallback is refused.
+    if (!inReceipt && prices[benchAsset.symbol]?.fallback === true) refuseStock('fallback_incoming_fill');
     const fill = inReceipt?.fill ?? prices[benchAsset.symbol]?.current;
     if (!positive(fill)) refuseStock('missing_incoming_fill');
     const incomingAsset = { symbol: benchAsset.symbol, name: benchAsset.name || benchAsset.symbol, isCrypto: !isStock(benchAsset), baseATR: live.scoring.thresholds?.[benchAsset.symbol]?.threshold || benchAsset.baseATR || (benchAsset.isCrypto ? 5 : 2.5), swapPrice: fill, swappedInAt: at, swappedInDay: currentDay, positionId: incomingId, slotVersion: out.slotVersion + 1, ...(inReceipt ? { stockThresholdReceipt: inReceipt } : {}), ...(benchAsset.isCrypto && benchAsset.direction ? { direction: benchAsset.direction } : {}) };
@@ -263,11 +304,6 @@ export async function executeCorrectedStockSwap(db, battleId, expected, tier, sl
     if (score.rewardContext) update[`scoring.stockRewardHistory.agent.${out.positionId}`] = score.history;
     tx.update(ref, update);
     return { closedTrade, incomingAsset, stockThresholdModel: live.scoring.stockThresholdModel, rosterVersion: update['scoring.stockRosterVersion'], scoreState: { currentScore: null, opponentScore: null, stockScoreEvidence: update['scoreState.stockScoreEvidence'] } };
-  }).then(result => {
-    const r = result.incomingAsset.stockThresholdReceipt;
-    if (r) prices[result.incomingAsset.symbol] = { ...(prices[result.incomingAsset.symbol] || {}), stockEntryCommit: { positionId: r.positionId, receiptHash: r.receiptHash } };
-    if (r && opts.stockPrices && opts.stockPrices !== prices) opts.stockPrices[result.incomingAsset.symbol] = { ...(opts.stockPrices[result.incomingAsset.symbol] || {}), stockEntryCommit: { positionId: r.positionId, receiptHash: r.receiptHash } };
-    return result;
   });
 }
 // Checkpoints retain component ownership; no second bonus component is credited.

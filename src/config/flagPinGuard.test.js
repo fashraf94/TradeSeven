@@ -56,8 +56,10 @@ const FLAG_SOURCE_MODULES = [
 // When a dark flag is DELIBERATELY flipped: update its pin AND remove its entry
 // here, in the same commit (the integrity test below enforces the coupling).
 const DARK_BY_DESIGN = {
-  STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED:
-    'Owner-approved dormant stock threshold implementation; new admission activation requires a separate owner decision',
+  // STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED intentionally ABSENT: it flipped
+  // true for the v2 allowlist pilot (founder Ruling 6, 2026-10-15) — the server
+  // control document is now the only on-switch. The deliberate flip drops it
+  // here in the same change; its stockThresholdModel.test.js pin asserts true.
   COMPILER_ENABLED:
     'double-gated behind the activationGate; flips ONLY via a deliberate founder PR with a green gate, never a build PR — REGISTERED CARRIAGE (Ask 2 rescoped, founder decision 3, 2026-09-02): its flip PR also lights the compiler\'s declaredConflicts declaration (profit target × mb-08, R8/F10), which is doubly dark behind EQUIPPED_RULE_PRECEDENCE_ENABLED until then',
   EQUIPPED_RULE_PRECEDENCE_ENABLED:

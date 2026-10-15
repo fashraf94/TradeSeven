@@ -26,8 +26,8 @@ import { buildCustomizationSnapshot } from './leanRevalidation.js';
 // before (the P4 equivalence battery is the lock).
 import { MANIFEST_WRITE_ENABLED } from '../../src/config/featureFlags.js';
 import { buildResolvedAgentManifest } from './resolvedAgentManifest.js';
-import { prepareStockCreation, stockCreationDb, stockAdmissionEnabled } from './stockThresholdAdmission.js';
-import { refuseStock, StockThresholdRefusal } from './stockThresholdMeasurementProvider.js';
+import { prepareStockCreation, stockCreationDb } from './stockThresholdAdmission.js';
+import { StockThresholdRefusal } from './stockThresholdMeasurementProvider.js';
 import {
   pinActivationDescriptor, assertProjectionCurrent,
   manifestGenerationStamp, commitBattleDocWithPin,
@@ -67,7 +67,6 @@ export async function findActiveAgentBattles(db) {
  * @returns {{ id: string }} Created document reference
  */
 export async function createAgentBattle(db, agentData, thresholds, startingPrices, options = {}) {
-  const stockSelected = stockAdmissionEnabled();
   const sectorMap = options.sectorMap || {};
   const now = new Date().toISOString();
   const duration = options.duration || '1d';
@@ -323,9 +322,13 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
     },
   };
 
+  // v2 Ruling 6: selection is per battle. prepareStockCreation returns null (this
+  // exact legacy path and its errors) unless the control document's allowlist
+  // names this owner; tournaments never reach the control read. Only a selected
+  // creation's failure becomes the scoped retriable refusal.
+  let stockCreation = null;
   try {
-    if (!isTournament && stockSelected !== stockAdmissionEnabled()) refuseStock('creation_selection_changed');
-    const stockCreation = await prepareStockCreation(battleDoc, { db });
+    stockCreation = await prepareStockCreation(battleDoc, { db });
     if (stockCreation) stockCreation.battleDoc = battleDoc;
     const commitDb = stockCreation ? stockCreationDb(db, stockCreation) : db;
     const docRef = await commitBattleDocWithPin(commitDb, battleDoc, activationPin);
@@ -333,7 +336,7 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
   } catch (error) {
     // The scoped retriable refusal keeps the original error as its cause, so
     // the deploy log still names it (review K3-6).
-    if (stockSelected && !isTournament && error?.name !== 'StockThresholdRefusal' && !error?.hypothesisCarriage) throw Object.assign(new StockThresholdRefusal('corrected_creation_failed'), { cause: error });
+    if (stockCreation && error?.name !== 'StockThresholdRefusal' && !error?.hypothesisCarriage) throw Object.assign(new StockThresholdRefusal('corrected_creation_failed'), { cause: error });
     throw error;
   }
 }

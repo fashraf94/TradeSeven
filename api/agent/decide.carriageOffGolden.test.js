@@ -56,6 +56,7 @@ import { createHash } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tournamentSettlementGoldenPair } from '../_utils/__fixtures__/tournamentSettlementGolden.js';
+import { stockAdmissionControlReadStripped, STOCK_ADMISSION_CONTROL_READS } from '../_utils/__fixtures__/stockAdmissionGolden.js';
 
 const state = vi.hoisted(() => ({ db: null, anthropic: null, gemmaCalls: [], shadow: { decisions: [], firstMessages: [] }, flag: false, fence: true }));
 
@@ -227,7 +228,9 @@ describe('deploy with the record slice OFF — byte-identical to main (P1b accep
     for (const mode of Object.keys(MODES)) {
       for (const name of Object.keys(SCENARIOS)) {
         it(`fence ${fence} · ${mode} · ${name} — reproduces main's capture exactly (serialized)`, async () => {
-          const cap = await runScenario(name, mode, fence);
+          // v2 Ruling 6: the shipped admission selector adds one asserted
+          // control-document read to a tiered creation (none to the others).
+          const cap = stockAdmissionControlReadStripped(await runScenario(name, mode, fence), STOCK_ADMISSION_CONTROL_READS[name]);
           // The approved stock guard adds/reorders bounded read-only checks.
           // Everything else, including all reads/writes/payloads, stays exact.
           const [actual, baseline] = name === 'tournament_prescribed_with_ready_idea'
