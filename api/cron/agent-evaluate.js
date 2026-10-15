@@ -6,10 +6,15 @@
 // Schedule: */15 13,14,15,16,17,18,19,20,21 * * 1-5
 
 import Anthropic from '@anthropic-ai/sdk';
-import { stockModelRoute, isStock, positions as stockPositions, finite as finiteStock } from '../../src/utils/stockThresholdModel.js';
+import { stockModelRoute, isStock, positions as stockPositions, finite as finiteStock, STOCK_RESULT_UNAVAILABLE } from '../../src/utils/stockThresholdModel.js';
 import { scoreCorrectedPosition, correctedScorePatch, commitCorrectedScore, validCorrectedCompletion, readCorrectedInputs, refreshCorrectedRoster } from '../_utils/stockThresholdAdmission.js';
 import { refuseStock } from '../_utils/stockThresholdMeasurementProvider.js';
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+
+// v2 Ruling 3: a corrected game's unavailable score is written as null in every
+// feed beat, proposal and completion line — never as 0. A legacy score is always
+// a number here, so its rounding is unchanged.
+export const feedScore = score => (score == null ? null : Math.round(score * 100) / 100);
 // Archetype Phase 2 P2.6 (non-fenced): shadow assembly + behavior-record
 // envelope plumbing. DARK since 2026-09-12 (SHADOW_ASSEMBLY_ENABLED=false):
 // the THREE flag-gated call sites below — the per-tick runShadowTickCapture,
@@ -331,8 +336,9 @@ export default async function handler(req, res) {
         try {
           const completion = await completeBattle(db, battle, summary, masteryFlagView, masteryGroupCache, masterySiblingsCache);
           if (completion.committed) {
-            // Log battle pattern for earned trait detection (Phase 2 pre-warm, non-blocking)
-            logBattlePattern(battle.agentId, battle.id, battle).catch(err => {
+            // Log battle pattern for earned trait detection (Phase 2 pre-warm, non-blocking).
+            // v2 Ruling 4: a result-unavailable battle logs nothing.
+            if (completion.disposition?.completionContext !== RESULT_UNAVAILABLE_CONTEXT) logBattlePattern(battle.agentId, battle.id, battle).catch(err => {
               console.error(`${LOG_PREFIX} Pattern logging failed for battle ${battle.id}:`, err.message);
             });
             // Reflection is handled by the dedicated process-pending-reflections cron,
@@ -1329,14 +1335,15 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         if (Array.isArray(patch.evaluations)) patch.evaluations = patch.evaluations.map((e, i) => i === patch.evaluations.length - 1 && !battle.evaluations?.some(old => old.evalId === e.evalId)
           ? { ...e, scores: { active: activeScore, banked: bankedScore, total: currentScore }, stockThresholdModel: battle.scoring.stockThresholdModel } : e);
         return commitCorrectedScore(db, rawBattleRef, battle, patch, result => captureStep(tickCapture, () => {
-          tickCapture.scores({ active: result.patch['scoreState.activeScore'], banked: result.patch['scoreState.bankedScore'], total: result.patch['scoreState.currentScore'], opponent: result.patch['scoreState.opponentScore'], bankedBadgePoints: 0 });
+          tickCapture.scores({ active: result.patch['scoreState.activeScore'], banked: result.patch['scoreState.bankedScore'], total: result.patch['scoreState.currentScore'], opponent: result.patch['scoreState.opponentScore'], bankedBadgePoints: 0,
+            // v2 Ruling 16: the capture row carries the corrected frame's references.
+            stockModel: { modelId: battle.scoring.stockThresholdModel?.modelId, policyHash: battle.scoring.stockThresholdModel?.policyHash, scoreVersion: result.patch['scoring.stockScoreVersion'], evidence: result.patch['scoreState.stockScoreEvidence']?.status } });
         }));
       };
-      if (scoreUpdate['scoreState.stockScoreEvidence'].status !== 'valid') {
-        await battleRef.update(scoreUpdate);
-        summary.held++; return;
-      }
-      // Commit the operands the corrected decision prompt will consume.
+      // Commit the operands the corrected decision prompt will consume. v2
+      // Ruling 3: an unavailable frame is committed too, and the tick continues —
+      // the calibrated risk pass and forced exits below run on it (its reward
+      // context is unavailable, so only the reward LOCK goes dark).
       await battleRef.update(scoreUpdate);
     }
     // Capture: the score fields EXACTLY as this tick wrote them (C-2 — the
@@ -1918,7 +1925,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             pvpContext: null,
             action: 'hold',
             regime: stockRegimes[score.symbol] || null,
-            score: Math.round(currentScore * 100) / 100,
+            score: feedScore(currentScore),
             citedRules: ['swap_window_cap'],
             triggeredBy: 'risk_stagnation',
             source: 'archetype',
@@ -1989,7 +1996,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             message: `Wanted out of ${score.symbol} — no replacement available in the group's agent market.`,
             symbolOut: score.symbol,
             regime: stockRegimes[score.symbol] || null,
-            score: Math.round(currentScore * 100) / 100,
+            score: feedScore(currentScore),
             reason: riskResult.reason,
           }));
         } else {
@@ -2001,7 +2008,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             pvpContext: null,
             action: 'pool_empty',
             regime: stockRegimes[score.symbol] || null,
-            score: Math.round(currentScore * 100) / 100,
+            score: feedScore(currentScore),
             citedRules: [riskResult.reason],
             triggeredBy: `risk_${riskResult.reason}`,
             source: 'risk_manager',
@@ -2036,7 +2043,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             pvpContext: null,
             action: 'cascade_guard_hold',
             regime: stockRegimes[score.symbol] || null,
-            score: Math.round(currentScore * 100) / 100,
+            score: feedScore(currentScore),
             citedRules: ['vwap_cascade_guard'],
             triggeredBy: 'risk_vwap_failure',
             source: 'risk_manager',
@@ -2116,7 +2123,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             symbolOut: score.symbol,
             symbolIn: replacement.symbol,
             regime: stockRegimes[score.symbol] || null,
-            score: Math.round(currentScore * 100) / 100,
+            score: feedScore(currentScore),
             reason: riskResult.reason,
           }));
           continue;
@@ -2193,7 +2200,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           pvpContext: null,
           action: riskResult.action.toLowerCase(),
           regime: stockRegimes[score.symbol] || null,
-          score: Math.round(currentScore * 100) / 100,
+          score: feedScore(currentScore),
           citedRules: [riskResult.reason],
           triggeredBy: `risk_${riskResult.reason}`,
           source: riskResult.reason === 'stagnation' ? 'archetype' : 'risk_manager',
@@ -2366,7 +2373,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           pvpContext: null,
           action: 'risk_swap_failed',
           regime: stockRegimes[score.symbol] || null,
-          score: Math.round(currentScore * 100) / 100,
+          score: feedScore(currentScore),
           citedRules: [riskResult.reason],
           triggeredBy: `risk_${riskResult.reason}`,
           source: 'risk_manager',
@@ -2450,10 +2457,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       ].filter(Boolean);
       benchSymbols = benchAssets.map(a => a.symbol).filter(Boolean);
       assetScores = scoreHeldPositions(flatPortfolio);
-      if (correctedStockGame) {
-        await battleRef.update(scoreUpdate);
-        if (!finiteStock(currentScore) || !finiteStock(opponentScore)) { summary.held++; return; }
-      }
+      // v2 Ruling 3: commit the post-exit frame and continue, available or not.
+      if (correctedStockGame) await battleRef.update(scoreUpdate);
 
       // Prune the two per-symbol maps to what is still held. PRUNE ONLY —
       // never re-run `evaluateRisk`: that would be a second risk pass on the
@@ -2475,10 +2480,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     const proposalHandled = refreshFailure
       ? null // F1b — discretionary; the book we would act on cannot be read
       : await handlePendingProposal(db, battleRef, battle, prices, statusFeedEntries, summary, currentScore, tournamentCtx, swapIdentityMode, governingPreset);
-    if (correctedStockGame && scoreUpdate['scoreState.stockScoreEvidence'].rosterToken !== battle.scoreState?.stockScoreEvidence?.rosterToken) {
-      await battleRef.update(scoreUpdate);
-      if (!finiteStock(currentScore) || !finiteStock(opponentScore)) { summary.held++; return; }
-    }
+    // v2 Ruling 3: a roster change commits a fresh frame; the tick continues.
+    if (correctedStockGame && scoreUpdate['scoreState.stockScoreEvidence'].rosterToken !== battle.scoreState?.stockScoreEvidence?.rosterToken) await battleRef.update(scoreUpdate);
     if (proposalHandled === 'skip_haiku') {
       // Proposal is pending and not expired — write scores/risk but skip trigger gate + Haiku
       finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
@@ -2515,10 +2518,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     const gameplanHandled = refreshFailure
       ? 'continue'
       : await handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEntries, summary, pendingNarrations, tournamentCtx, swapIdentityMode, governingPreset);
-    if (correctedStockGame && scoreUpdate['scoreState.stockScoreEvidence'].rosterToken !== battle.scoreState?.stockScoreEvidence?.rosterToken) {
-      await battleRef.update(scoreUpdate);
-      if (!finiteStock(currentScore) || !finiteStock(opponentScore)) { summary.held++; return; }
-    }
+    // v2 Ruling 3: a roster change commits a fresh frame; the tick continues.
+    if (correctedStockGame && scoreUpdate['scoreState.stockScoreEvidence'].rosterToken !== battle.scoreState?.stockScoreEvidence?.rosterToken) await battleRef.update(scoreUpdate);
     // R11 (Exit-Behavior Tier 2): a pending-and-unexpired meeting suppresses
     // DISCRETIONARY trading, never the user's standing deterministic orders —
     // the pass below runs the guardrail stops + profit target before the
@@ -2544,6 +2545,43 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         tickCapture.exit('gameplan_pending');
       });
       // Calls (§3.8): this exit's flips, after its authoritative write, under the non-model rule.
+      if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
+      return;
+    }
+
+    // ---- v2 Ruling 3: unavailable corrected frame ----
+    // The calibrated risk pass, forced exits, the proposal and the meeting have
+    // run on this frame. Its reward-dependent discretionary stages (meeting
+    // diagnosis, trigger gate, model call) see an unavailable reward and are
+    // withheld this check: the fenced live-context header would render the null
+    // score as 0 (agentEvalPromptAssembly.js buildLiveContextBlock). The deployed
+    // guardrails still run through the R11 deterministic pass, and the tick ends
+    // with finalizeCronState and the normal final write. A refresh failure keeps
+    // its own record path below (E1: no discretion and no pass on an unread book).
+    if (correctedStockGame && !refreshFailure && (!finiteStock(currentScore) || !finiteStock(opponentScore))) {
+      await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, governingPreset, callsCtx, swapIdentityMode });
+      finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
+      if (statusFeedEntries.length > 0) {
+        const existingFeed = battle.statusFeed || [];
+        scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
+      }
+      // Calls (§3.4): no model call — the no-trigger row's observation unless the
+      // R11 pass already froze its own.
+      callsStep(callsCtx, () => {
+        callsCtx.exit = 'no_trigger';
+        freezeObservation(callsCtx, {
+          source: 'no_trigger',
+          observedAtMs: Date.now(),
+          examined: [...flattenPortfolioServer(battle.portfolio), ...flattenBenchServer(battle.portfolio?.bench)].map((a) => a.symbol),
+        });
+      });
+      await battleRef.update(scoreUpdate);
+      summary.evaluated++;
+      summary.held++;
+      captureStep(tickCapture, () => {
+        tickCapture.stage('gameplan_handled');
+        tickCapture.exit('no_trigger');
+      });
       if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
@@ -2915,7 +2953,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // abandoned; the winner clears the timer in its own finally, so no
         // timer dangles into the next battle either way.
         const buildPrompt = async () => {
-          const systemPrompt = buildEvalSystemPrompt(agentName, archetype, battle.gameMode, ctx.archetype);
+          // v2 Ruling 10: a measured-model game's reward prose names its frozen measured %.
+          const systemPrompt = buildEvalSystemPrompt(agentName, archetype, battle.gameMode, ctx.archetype, { measuredStockReward: correctedStockGame });
           const identityBlock = buildAgentIdentityBlock(battle);
           const liveContextBlock = await buildLiveContextBlock(
             battle, prices, macroPrices, assetScores,
@@ -4074,7 +4113,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
             triggers: triggers.map(t => t.type),
             regime: stockRegimes[haikuResult.symbolOut] || null,
             marketPosture,
-            scoreAtProposal: Math.round(currentScore * 100) / 100,
+            scoreAtProposal: feedScore(currentScore),
             createdAt: now,
             expiresAt: new Date(Date.now() + ttlMinutes * 60 * 1000).toISOString(),
             mode,
@@ -4146,7 +4185,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         pvpContext: haikuResult?.pvp_context || null,
         action: 'proposal',
         regime: stockRegimes[haikuResult?.symbolOut] || null,
-        score: Math.round(currentScore * 100) / 100,
+        score: feedScore(currentScore),
         citedRules: haikuResult?.cited_rules || [],
         citedForgeRules: haikuResult?.cited_forge_rules || [],
         triggeredBy: triggers.map(t => t.type).join(', '),
@@ -4166,7 +4205,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         pvpContext: haikuResult?.pvp_context || null,
         action: decision === 'SWAP' ? 'swap' : 'hold',
         regime: stockRegimes[haikuResult?.symbolOut] || null,
-        score: Math.round(currentScore * 100) / 100,
+        score: feedScore(currentScore),
         citedRules: haikuResult?.cited_rules || [],
         citedForgeRules: haikuResult?.cited_forge_rules || [],
         triggeredBy: triggers.map(t => t.type).join(', '),
@@ -5754,7 +5793,7 @@ export async function runSuppressionDeterministicPass({
           message: `Wanted out of ${noBench.symbol} — no replacement available in the group's agent market.`,
           symbolOut: noBench.symbol,
           regime: stockRegimes[noBench.symbol] || null,
-          score: Math.round(currentScore * 100) / 100,
+          score: feedScore(currentScore),
           reason: `guardrail_${noBench.type}`,
         }));
       } else {
@@ -5764,7 +5803,7 @@ export async function runSuppressionDeterministicPass({
           pvpContext: null,
           action: 'pool_empty',
           regime: stockRegimes[noBench.symbol] || null,
-          score: Math.round(currentScore * 100) / 100,
+          score: feedScore(currentScore),
           citedRules: [`guardrail_${noBench.type}`],
           triggeredBy: `guardrail_${noBench.type}`,
           source: 'guardrail',
@@ -5788,7 +5827,7 @@ export async function runSuppressionDeterministicPass({
         pvpContext: null,
         action: 'hold',
         regime: stockRegimes[lockDeferred.symbol] || null,
-        score: Math.round(currentScore * 100) / 100,
+        score: feedScore(currentScore),
         citedRules: [`guardrail_${lockDeferred.type}`],
         triggeredBy: `guardrail_${lockDeferred.type}`,
         source: 'guardrail',
@@ -5829,7 +5868,7 @@ export async function runSuppressionDeterministicPass({
         pvpContext: null,
         action: 'hold',
         regime: stockRegimes[deterministicResult.symbolOut] || null,
-        score: Math.round(currentScore * 100) / 100,
+        score: feedScore(currentScore),
         citedRules: [deterministicExitReason],
         triggeredBy: deterministicExitReason,
         source: 'guardrail',
@@ -5886,7 +5925,7 @@ export async function runSuppressionDeterministicPass({
         symbolOut: deterministicResult.symbolOut,
         symbolIn: deterministicResult.symbolIn,
         regime: stockRegimes[deterministicResult.symbolOut] || null,
-        score: Math.round(currentScore * 100) / 100,
+        score: feedScore(currentScore),
         reason: deterministicExitReason,
       }));
       return;
@@ -5951,7 +5990,7 @@ export async function runSuppressionDeterministicPass({
       // B6a) — one vocabulary for one event class.
       action: 'guardrail_forced_swap',
       regime: stockRegimes[deterministicResult.symbolOut] || null,
-      score: Math.round(currentScore * 100) / 100,
+      score: feedScore(currentScore),
       citedRules: [deterministicExitReason],
       triggeredBy: deterministicExitReason,
       source: 'guardrail',
@@ -6093,7 +6132,7 @@ export async function runSuppressionDeterministicPass({
       pvpContext: null,
       action: 'risk_swap_failed',
       regime: null,
-      score: Math.round(currentScore * 100) / 100,
+      score: feedScore(currentScore),
       citedRules: deterministicResult?.sourceNote ? [deterministicResult.sourceNote] : ['guardrail'],
       triggeredBy: deterministicResult?.sourceNote || 'guardrail',
       source: 'guardrail',
@@ -6689,9 +6728,15 @@ function detectGameplanMeetingTrigger(battle, assetScores, prices, flatPortfolio
  * reflection (contract #5 passivity — no model calls). Tiered battles keep
  * today's behavior byte-for-byte, including the exact feed message.
  */
+// v2 Rulings 4 and 11: the "result unavailable" disposition — no result, no
+// stats, no reflection or review queue, no pattern log.
+export const RESULT_UNAVAILABLE_CONTEXT = STOCK_RESULT_UNAVAILABLE;
+const resultUnavailableDisposition = () => ({ result: null, completionContext: RESULT_UNAVAILABLE_CONTEXT, statusMessage: 'Result unavailable: incomplete pinned stock evidence.', updateAgentStats: false, pendingReflection: false, logLine: 'corrected result unavailable' });
 export function resolveCompletionDisposition(battle) {
   const stockRoute = stockModelRoute(battle);
-  if (stockRoute.status === 'unavailable' || (stockRoute.status === 'corrected' && !validCorrectedCompletion(battle))) return { result: null, completionContext: 'corrected_score_unavailable', statusMessage: 'Result unavailable: incomplete pinned stock evidence.', updateAgentStats: false, pendingReflection: false, logLine: 'corrected result unavailable' };
+  // A completed result-unavailable battle stays result-unavailable for every
+  // later reader (film tape), even when its last stored frame looks valid.
+  if (stockRoute.status === 'unavailable' || (stockRoute.status === 'corrected' && (battle.completionContext === RESULT_UNAVAILABLE_CONTEXT || !validCorrectedCompletion(battle)))) return resultUnavailableDisposition();
   const scoreState = battle.scoreState || {};
   const currentScore = scoreState.currentScore || 0;
   if (battle.gameMode === TOURNAMENT_GAME_MODE) {
@@ -6772,8 +6817,18 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     if (!snap.exists) return { committed: false, reason: 'missing' };
     const fresh = { id: battle.id, ...snap.data() };
     const stockRoute = stockModelRoute(fresh);
-    if (stockRoute.status === 'unavailable' || (stockRoute.status === 'corrected' && !validCorrectedCompletion(fresh))) return { committed: false, reason: 'corrected_score_unavailable' };
-    if (stockRoute.status === 'corrected') await readCorrectedInputs(t, db, fresh);
+    // v2 Ruling 4: a corrected battle settles on its latest stored frame only
+    // when that frame is valid and its bound inputs replay. Otherwise — route
+    // unavailable included — an active battle ends as "result unavailable",
+    // which never depends on readCorrectedInputs succeeding.
+    let resultUnavailable = stockRoute.status === 'unavailable' || (stockRoute.status === 'corrected' && !validCorrectedCompletion(fresh));
+    if (!resultUnavailable && stockRoute.status === 'corrected') {
+      try { await readCorrectedInputs(t, db, fresh); } catch (err) {
+        if (err?.name !== 'StockThresholdRefusal') throw err; // transient: retried next run
+        resultUnavailable = true;
+      }
+    }
+    if (resultUnavailable && fresh.status !== 'active') return { committed: false, reason: RESULT_UNAVAILABLE_CONTEXT };
     const isBareGcCompletion =
       fresh.status === 'completed' &&
       fresh.pendingReflection === undefined &&
@@ -6799,7 +6854,11 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     const agentSnap = agentRef ? await t.get(agentRef) : { exists: false };
 
     const scoreState = fresh.scoreState || {};
-    const currentScore = scoreState.currentScore || 0;
+    const currentScore = resultUnavailable ? null : scoreState.currentScore || 0;
+    // v2 Ruling 4: a battle ending as "result unavailable" carries that context
+    // on this transaction's own read, so the one disposition resolver answers it
+    // even when its last stored frame looked valid (corrupt inputs).
+    if (resultUnavailable) fresh.completionContext = RESULT_UNAVAILABLE_CONTEXT;
     const disposition = resolveCompletionDisposition(fresh);
 
     // ---- Phase 1 record attribution redirect ----
@@ -6916,7 +6975,7 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
         message: disposition.statusMessage,
         action: 'battle_complete',
         source: 'system',
-        score: Math.round(currentScore * 100) / 100,
+        score: feedScore(currentScore),
       }].slice(-50),
     };
     // P4: the tournament terminal state is explicit — completed, context
@@ -6924,12 +6983,20 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
     if (disposition.completionContext) {
       updatePayload.completionContext = disposition.completionContext;
     }
+    // v2 Rulings 4 and 11: the result-unavailable terminal writes exactly
+    // status, completedAt, completionContext, pendingReflection:false,
+    // reviewPending:false, the lock release and a null-score feed line (plus the
+    // retired vision below) — no reflectedAt. It leaves scoring, scoreState,
+    // trades, evaluations and stockThresholdInputs as they are, and writes no
+    // result, stats, mastery stamp, settlement record, completionReason or
+    // lastDeployedAt.
+    if (resultUnavailable) delete updatePayload.reflectedAt;
     // P2.6 (dark; §6.4): the terminal transaction stamps
     // receiptCoverage:'pending' for manifest battles — the post-commit
     // settlement writer flips it to 'complete'; a crash in between leaves
     // 'pending' as the retry marker, so absence-of-record is always
     // distinguishable from zero events. Flag off / pre-manifest: no field.
-    if (SHADOW_ASSEMBLY_ENABLED && fresh.resolvedAgentManifest) {
+    if (SHADOW_ASSEMBLY_ENABLED && fresh.resolvedAgentManifest && !resultUnavailable) {
       updatePayload.receiptCoverage = 'pending';
     }
     if (retiredVisionForWrite) {
@@ -6938,7 +7005,9 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
 
     let masteryStamped = false;
     let freshForAward = null;
-    if (isBareGcCompletion) {
+    if (resultUnavailable) {
+      // v2 Ruling 11: no mastery eligibility stamp (and so no award).
+    } else if (isBareGcCompletion) {
       // Repair in place: keep the GC's status flip and its earlier (honest)
       // completedAt; supply everything the bare fence-path write missed.
       // NO mastery stamp here — structurally outside (V2.1 STOP-A.2).
@@ -7026,7 +7095,7 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
       }
     }
 
-    return { committed: true, repaired: isBareGcCompletion, disposition, currentScore, visionTransitionLogPayload, masteryStamped, freshForAward };
+    return { committed: true, repaired: isBareGcCompletion, disposition, currentScore, visionTransitionLogPayload, masteryStamped, freshForAward, ...(resultUnavailable ? { resultUnavailable: true } : {}) };
   });
 
   // Sibling-cache coherence (ruling B4 + delta review): this battle is now
@@ -7085,7 +7154,8 @@ export async function completeBattle(db, battle, summary, masteryFlagView = DARK
   // logged never thrown into the expiry loop; the module skips pre-manifest
   // battles and leaves receiptCoverage:'pending' on failure as the retry
   // marker). Uses the transaction's own fresh doc — no re-fetch.
-  if (SHADOW_ASSEMBLY_ENABLED && txOutcome.disposition) {
+  // v2 Ruling 11: a result-unavailable battle writes no settlement record.
+  if (SHADOW_ASSEMBLY_ENABLED && txOutcome.disposition && !txOutcome.resultUnavailable) {
     await writeBattleSettlementRecord(db, {
       freshBattle: { ...(txOutcome.freshForAward ?? battle), id: battle.id },
       completedAtIso: now,
@@ -7142,7 +7212,8 @@ export async function repairBareGcCompletions(db, summary, masteryFlagView = DAR
         // (delta review): a repair sweep has no latency budget to protect,
         // and unlike the expiry path no later event would regenerate a
         // pattern record dropped by a frozen serverless runtime.
-        await logBattlePattern(gcBattle.agentId, gcBattle.id, gcBattle).catch(err => {
+        // v2 Ruling 4: a result-unavailable battle logs no pattern.
+        if (outcome.disposition?.completionContext !== RESULT_UNAVAILABLE_CONTEXT) await logBattlePattern(gcBattle.agentId, gcBattle.id, gcBattle).catch(err => {
           console.error(`${LOG_PREFIX} Pattern logging failed for repaired battle ${gcBattle.id}:`, err.message);
         });
       }

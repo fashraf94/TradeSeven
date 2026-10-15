@@ -327,6 +327,14 @@ export function buildCaptureDocuments(state, {
       total: num(state.scoreFields?.total),
       opponent: num(state.scoreFields?.opponent),
       bankedBadgePoints: num(state.scoreFields?.bankedBadgePoints),
+      // BaggerBomb stock thresholds v2 (Ruling 16): a measured-model check's
+      // row names the committed frame it copies. Absent on a legacy check.
+      ...(state.scoreFields?.stockModel && typeof state.scoreFields.stockModel === 'object' ? { stockModel: {
+        modelId: typeof state.scoreFields.stockModel.modelId === 'string' ? state.scoreFields.stockModel.modelId : null,
+        policyHash: typeof state.scoreFields.stockModel.policyHash === 'string' ? state.scoreFields.stockModel.policyHash : null,
+        scoreVersion: num(state.scoreFields.stockModel.scoreVersion),
+        evidence: typeof state.scoreFields.stockModel.evidence === 'string' ? state.scoreFields.stockModel.evidence : null,
+      } } : {}),
     },
     capture: {
       // NAMED FOR WHAT IT MEASURES (Astra round 1, F7). This number is written

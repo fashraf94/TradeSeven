@@ -185,6 +185,13 @@ export const PERMANENT_FIELD_KINDS = Object.freeze({
   'scores.total': 'number',
   'scores.opponent': 'number',
   'scores.bankedBadgePoints': 'number',
+  // BaggerBomb stock thresholds v2 (Ruling 16): a measured-model check's row
+  // names the committed frame it copies — an id, a sha256, an ordinal and the
+  // evidence status. Absent on a legacy check.
+  'scores.stockModel.modelId': 'id',
+  'scores.stockModel.policyHash': 'hash',
+  'scores.stockModel.scoreVersion': 'number',
+  'scores.stockModel.evidence': 'id',
 
   'capture.preCommitMs': 'number',
   'capture.bodyMs': 'number',
@@ -250,6 +257,7 @@ export const PERMANENT_CONTAINER_KINDS = Object.freeze({
   'callEnvelope': 'object',
   'body': 'object',
   'scores': 'object',
+  'scores.stockModel': 'object',
   'capture': 'object',
 });
 

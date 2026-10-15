@@ -168,7 +168,8 @@ describe('pin 2 — the gate and the fail-safe contain the resolution and the st
     expect(flips[0]).toBeGreaterThan(live);
     expect(transport).toBeGreaterThan(flips[0]);
     // the three builders run in the request's order, before the flip
-    const sys = CRON.indexOf('const systemPrompt = buildEvalSystemPrompt(agentName, archetype, battle.gameMode, ctx.archetype);');
+    // BaggerBomb stock thresholds v2 Ruling 10 added the measured-reward option to this call.
+    const sys = CRON.indexOf('const systemPrompt = buildEvalSystemPrompt(agentName, archetype, battle.gameMode, ctx.archetype, { measuredStockReward: correctedStockGame });');
     const identity = CRON.indexOf('const identityBlock = buildAgentIdentityBlock(battle);');
     expect(sys).toBeGreaterThan(decl);
     expect(identity).toBeGreaterThan(sys);
