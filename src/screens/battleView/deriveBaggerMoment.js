@@ -54,19 +54,25 @@ export const BAGGER_LINE = THRESHOLD_MULTIPLIERS.bagger;
  * A missing entry is 0, not null: a piece with no history has not crossed, and
  * a null here would make every comparison below silently false — including the
  * seed, which would then let the FIRST tick that writes a history fire a
- * crossing that already existed.
+ * crossing that already existed. The one null is a measured-model piece whose
+ * committed context is unavailable: unknown, which deriveBaggerCrossings
+ * handles explicitly (and the footer reads as "no footer").
  */
 export function persistedMaxMultiplier(battle, symbol) {
   // BaggerBomb stock thresholds v2 (Ruling 16, review K1-5): a measured-model
   // battle's held agent stock has no thresholdHistory entry. Its crossing is
   // the committed reward context's own crossed tiers — the line once `bagger`
   // is crossed, else 0 — never a re-derived multiple (equality is decided by
-  // the context's exact targets, not by inverse arithmetic).
+  // the context's exact targets, not by inverse arithmetic). While the committed
+  // context is unavailable (a swap's reset, a Ruling 3 frame) the answer is null —
+  // unknown, never 0 — so a crossing is not "lost" and then announced again on
+  // the next valid frame (review B3-1). deriveBaggerCrossings carries it forward.
   if (stockModelRoute(battle).status !== 'legacy') {
     const held = stockPositions(battle).find((p) => p.side === 'agent' && p.asset.symbol === symbol && isStock(p.asset));
     if (held) {
       const c = committedStockContext(battle, held.asset, 'agent', held.tier, held.slot);
-      return c.status === 'valid' && c.crossedTiers.includes('bagger') ? BAGGER_LINE : 0;
+      if (c.status !== 'valid') return null;
+      return c.crossedTiers.includes('bagger') ? BAGGER_LINE : 0;
     }
   }
   const raw = battle?.thresholdHistory?.[symbol]?.maxMultiplier;
@@ -96,8 +102,15 @@ export function deriveBaggerCrossings(seen, battle, book) {
     // entries would otherwise announce the same crossing twice.
     if (Object.prototype.hasOwnProperty.call(next, symbol)) continue;
     const now = persistedMaxMultiplier(battle, symbol);
+    if (seen === null || seen === undefined) { next[symbol] = now; continue; } // the seed
+    const known = Object.prototype.hasOwnProperty.call(seen, symbol);
+    // Unknown (a measured frame without a valid committed context): remember what
+    // was last known — a piece the seed never saw still enters at 0 — and fire nothing.
+    if (now === null) { next[symbol] = known ? seen[symbol] : 0; continue; }
     next[symbol] = now;
-    if (seen === null || seen === undefined) continue;          // the seed
+    // Seeded while unknown (a reload during an unavailable frame): this first
+    // known value is the seed, so a crossing that already existed never fires.
+    if (known && seen[symbol] === null) continue;
     const before = typeof seen[symbol] === 'number' ? seen[symbol] : 0;
     // A piece the seed never saw (swapped in since) enters at 0 — so a symbol
     // that arrives ALREADY above the line announces itself, which is right: it

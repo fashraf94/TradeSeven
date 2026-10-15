@@ -112,6 +112,7 @@ export const FILM_ROOM_COPY = Object.freeze({
     px: "px · the platform's quote",
     chg: 'chg · change from entry, %',
     atrX: 'atrX · ATR multiple',
+    atrXMeasured: 'atrX · measured reward multiple (frozen measured %)',
     vwapDev: 'vwapDev · VWAP deviation',
     bbPct: 'bbPct · band-width percentile',
     nr7: 'nr7',

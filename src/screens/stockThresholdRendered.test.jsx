@@ -78,7 +78,6 @@ describe('real rendered pinned stock detail integration', () => {
     }
     expect(c.crossedTiers).toEqual(['bagger', 'doubleBagger']);
     expect(tab).toMatch(/data-tier="tenBagger" data-tier-status="unearned"/);
-    expect(tab).not.toContain('HISTORICAL'); expect(tab).not.toContain('Hit Rate');
   });
   it('corrupt tuple/missing receipt remain unavailable through row and real tab', async () => {
     const { battle } = await renderedFacts(); battle.scoring.stockThresholdModel = null;

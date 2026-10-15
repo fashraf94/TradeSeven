@@ -123,7 +123,10 @@ function dayTrades(battle, bounds) {
 
 // ── checks (BA-7, BA-8) ────────────────────────────────────────────────────
 
-/** Only the stamp's eight fields, by name (tickStamps.js composeEvidenceStamp). */
+/** Only the stamp's eight fields, by name (tickStamps.js composeEvidenceStamp),
+ * plus — on a measured-model stock only — the unit of its atrX (v2 Ruling 16,
+ * review B3-6), so Film Room never calls a frozen-measured multiple an ATR one.
+ * A legacy stamp's copy is unchanged. */
 function copyEvidence(evidence) {
   if (!isObj(evidence)) return null;
   const out = {};
@@ -134,6 +137,7 @@ function copyEvidence(evidence) {
       nr7: typeof v.nr7 === 'boolean' ? v.nr7 : null,
       regime: str(v.regime),
       risk: isObj(v.risk) && str(v.risk.action) ? { action: v.risk.action, ...(str(v.risk.reason) ? { reason: v.risk.reason } : {}) } : null,
+      ...(v.atrXUnit === 'frozen_measured_pct' ? { atrXUnit: 'frozen_measured_pct' } : {}),
     };
   }
   return Object.keys(out).length ? out : null;

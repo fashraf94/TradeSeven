@@ -30,7 +30,7 @@ export function EvidenceStamp({ tape, index, symbol }) {
         {at ? <When style={mono(9.5, C.ink3)}>{etClock(at)}</When> : null}
       </div>
       {EVIDENCE_NUMBERS.map((f) => (
-        <Row key={f} k={COPY.evidenceFields[f]} v={<TapeNum doc={tape} path={['checks', index, 'evidence', symbol, f]} fmt={f === 'px' ? fmtPrice : fmtPlain} size={11.5} />} />
+        <Row key={f} k={f === 'atrX' && e.atrXUnit === 'frozen_measured_pct' ? COPY.evidenceFields.atrXMeasured : COPY.evidenceFields[f]} v={<TapeNum doc={tape} path={['checks', index, 'evidence', symbol, f]} fmt={f === 'px' ? fmtPrice : fmtPlain} size={11.5} />} />
       ))}
       <Row k={COPY.evidenceFields.nr7} v={<span style={mono(11, C.ink)}>{e.nr7 === true ? COPY.yes : e.nr7 === false ? COPY.no : COPY.notRecorded}</span>} />
       <Row k={COPY.evidenceFields.regime} v={<span style={mono(11, C.ink)}><Rec>{e.regime ?? COPY.notRecorded}</Rec></span>} />

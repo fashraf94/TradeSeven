@@ -1165,7 +1165,7 @@ export function buildBattleState(battle, { grounded = false } = {}) {
 - Market: ${marketState.state}
 - Time remaining: ${timeRemaining}
 - Game state: ${scoresUnavailable ? 'unknown (score unavailable)' : gameState}
-- Urgency: ${urgency}
+- Urgency: ${scoresUnavailable ? 'unknown (score unavailable)' : urgency}
 - Your portfolio: ${portfolioDisplay}${evalHealthLine}${tradeBlock}`;
 }
 

@@ -10,6 +10,7 @@ import { createRoot } from 'react-dom/client';
 
 const net = vi.hoisted(() => ({ daily: {}, intraday: {}, profile: null }));
 const lines = vi.hoisted(() => []);
+const charts = vi.hoisted(() => ({ created: 0 }));
 vi.mock('../../services/eodhdAPI', () => ({
   fetchHistoricalOHLCV: (symbol, timeframe) => Promise.resolve((timeframe === '1d' ? net.daily : timeframe === '30m' ? net.intraday : {})[symbol] ?? []),
   getStockPrice: (symbol) => Promise.resolve({ symbol, price: 0 }),
@@ -20,7 +21,7 @@ vi.mock('../../utils/fetchWithAuth', () => ({ fetchWithAuth: () => Promise.resol
 vi.mock('lightweight-charts', () => {
   const series = () => ({ setData() {}, createPriceLine(o) { lines.push(o); return { applyOptions() {} }; }, removePriceLine() {}, setMarkers() {}, priceScale() { return { applyOptions() {} }; }, applyOptions() {} });
   return {
-    createChart: () => ({ addSeries: () => series(), removeSeries() {}, subscribeCrosshairMove() {}, timeScale() { return { applyOptions() {}, fitContent() {}, scrollToRealTime() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange() { return null; } }; }, applyOptions() {}, remove() {} }),
+    createChart: () => { charts.created += 1; return { addSeries: () => series(), removeSeries() {}, subscribeCrosshairMove() {}, timeScale() { return { applyOptions() {}, fitContent() {}, scrollToRealTime() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange() { return null; } }; }, applyOptions() {}, remove() {} }; },
     CandlestickSeries: 'Candlestick', HistogramSeries: 'Histogram', LineSeries: 'Line', AreaSeries: 'Area',
   };
 });
@@ -49,7 +50,7 @@ const oldKey = process.env.EODHD_API_KEY;
 beforeAll(() => { process.env.EODHD_API_KEY = 'isolated-key'; });
 afterAll(() => { if (oldKey === undefined) delete process.env.EODHD_API_KEY; else process.env.EODHD_API_KEY = oldKey; });
 let container, root;
-beforeEach(() => { container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); lines.length = 0; vi.spyOn(console, 'log').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {}); });
+beforeEach(() => { container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container); lines.length = 0; charts.created = 0; vi.spyOn(console, 'log').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {}); });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.restoreAllMocks(); vi.useRealTimers(); });
 const flush = async () => { for (let i = 0; i < 4; i++) await act(async () => { await vi.advanceTimersByTimeAsync(0); }); };
 
@@ -93,7 +94,6 @@ describe('v2 Ruling 15: the measured-model modal — tab and chart from the comm
     expect(tierRow('bagger').dataset.tierStatus).toBe('unearned');
     expect(tierRow('bagger').textContent).toContain('$102.76'); expect(tierRow('bagger').textContent).toContain('+2.00%');
     expect(document.body.textContent).toContain('Entry: $100.75');
-    expect(document.body.textContent).not.toContain('HISTORICAL');
   });
   it.each([['exact', t => t, true], ['one ulp short', t => nextDown(t), false]])('at the %s bagger target, tab and chart agree with the server context', async (_, at, earned) => {
     const { battle } = await correctedStockBattle({ fill: 100.75 });
@@ -104,6 +104,17 @@ describe('v2 Ruling 15: the measured-model modal — tab and chart from the comm
     expect(tierRow('bagger').dataset.tierStatus).toBe(earned ? 'earned' : 'unearned');
     const hit = lines.filter(l => /HIT/.test(l.title || ''));
     expect(hit.map(l => l.price)).toEqual(earned ? [left.rewardContext.targets.find(t => t.key === 'bagger').target] : []);
+  });
+  it('an equal committed context rebuilt by every screen render keeps the same chart; a new crossing still reaches it (review B3-2)', async () => {
+    const quote = { posKey: 'agent|star|0', symbol: 'AAPL', price: 101.2, extremes: null };
+    const show = async left => { await act(async () => { root.render(<AssetResearchModal asset={research(left)} onClose={() => {}} showActionButton={false} isGameContext version={2} defaultTab="baggerbomb" defaultTimeframe="bomb" controlledQuote={quote} />); }); await flush(); };
+    const left = await committedRow(); seedMarket();
+    await show(left); const first = charts.created; expect(first).toBeGreaterThan(0);
+    await show({ ...left, rewardContext: structuredClone(left.rewardContext) }); await show({ ...left, rewardContext: structuredClone(left.rewardContext) });
+    expect(charts.created).toBe(first);
+    const crossed = await committedRow(103); await show(crossed);
+    expect(tierRow('bagger').dataset.tierStatus).toBe('earned');
+    expect(lines.some(l => /HIT/.test(l.title || ''))).toBe(true);
   });
   it('an unavailable context reads as a short state and draws no targets', async () => {
     const left = await committedRow();

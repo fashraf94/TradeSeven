@@ -80,7 +80,13 @@ describe('voice cache, chat prompt and the other cache readers', () => {
     expect(text).toContain('- Game state: unknown (score unavailable)');
     const done = { ...battle, status: 'completed', completionContext: 'corrected_score_unavailable' };
     expect(buildBattleState(done)).toContain('- Score: unavailable');
-    const legacy = { ...legacyOf(battle), scoreState: { currentScore: 0, opponentScore: 0 } };
+    // A result-unavailable completion keeps its last stored (finite) score; the
+    // urgency must not be read from it either (review B3-8).
+    const stale = buildBattleState({ ...done, scoreState: { ...battle.scoreState, currentScore: -185, opponentScore: 40 } });
+    expect(stale).toContain('- Game state: unknown (score unavailable)'); expect(stale).toContain('- Urgency: unknown (score unavailable)');
+    expect(buildBattleState(legacy0())).toMatch(/- Urgency: (?!unknown)/);
+    function legacy0() { return { ...legacyOf(battle), scoreState: { currentScore: 0, opponentScore: 0 } }; }
+    const legacy = legacy0();
     expect(buildBattleState(legacy)).toContain('- Score: You 0 — Opponent 0 (TIED by 0 pts)');
     expect(displayedStockScores(legacy)).toBe(legacy.scoreState);
   });
@@ -104,6 +110,13 @@ describe('reflection THRESHOLDS block', () => {
     expect(msg).toContain(`  AAPL: frozen measured 2.000000% from fill $100, mult=${c.multiplier.toFixed(2)}, maxMult=${c.history.maxMultiplier.toFixed(2)}, minMult=${c.history.minMultiplier.toFixed(2)}, crossed [bagger|doubleBagger]`);
     expect(msg).toContain('  BTC-USD.CC: baseATR=5, maxMult=0.40, minMult=-0.10');
     expect(msg).not.toContain('AAPL: baseATR=2.5');
+    // Agent battles key crypto by its bare symbol (review B3-3); a stock key that
+    // is no longer held prints nothing in the measured block.
+    battle.scoring.thresholds = { AAPL: { threshold: 2.5 }, BTC: { threshold: 5 }, MSFT: { threshold: 3 } };
+    battle.thresholdHistory = { BTC: { maxMultiplier: 0.4, minMultiplier: -0.1 } };
+    const bare = buildReflectionUserMessage(battle, { name: 'Cipher', archetype: 'diversifier' });
+    expect(bare).toContain('  BTC: baseATR=5, maxMult=0.40, minMult=-0.10');
+    expect(bare).not.toContain('MSFT: baseATR=3');
     const legacy = legacyOf(battle);
     expect(buildReflectionUserMessage(legacy, { name: 'Cipher', archetype: 'diversifier' })).toContain('  AAPL: baseATR=2.5, maxMult=0.00, minMult=0.00');
   });
@@ -158,6 +171,17 @@ describe('film tape: merge and replay never rescore a measured position with leg
     const legacyMerged = mergeTape(tape, structuredClone(tape), { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true, resolveResult: resolve }).doc;
     expect(legacyMerged.battle.result).toEqual({ value: 'win', basis: 'derived' }); expect(resolve).toHaveBeenCalled();
     expect(Object.hasOwn(legacyMerged.battle, 'stockModel')).toBe(false);
+  });
+  it('the tape keeps a measured stamp\'s atrX unit and adds nothing to a legacy stamp (review B3-6)', async () => {
+    const fx = await completedDay(); let planted = null;
+    for (const e of fx.battle.evaluations || []) for (const [sym, v] of Object.entries(e.evidence || {})) if (!planted || planted === sym) { planted = sym; v.atrXUnit = 'frozen_measured_pct'; }
+    const t = makeTapeDb(seedDay({}, fx)); const D = '2026-09-24';
+    await writeTapeDay(fx.battleId, D, { db: t.db, now: Date.parse('2026-09-25T02:15:30.000Z') });
+    const rows = (t.store.get(`agentBattles/${fx.battleId}/tape/${D}`).checks || []).flatMap(c => Object.entries(c.evidence || {}));
+    expect(planted).not.toBe(null);
+    expect(rows.filter(([s]) => s === planted).length).toBeGreaterThan(0);
+    for (const [s, v] of rows) expect(Object.hasOwn(v, 'atrXUnit'), s).toBe(s === planted);
+    for (const [s, v] of rows) if (s === planted) expect(v.atrXUnit).toBe('frozen_measured_pct');
   });
   it('replay drops both measured legs (with the reason) and keeps legacy and crypto legs', () => {
     const row = { entryPrice: 100, entryPriceSource: 'trades.entryPrice', at: '2026-10-14T15:00:00.000Z', inBasis: { price: 50 }, inBasisSource: 'receipt.entryMark' };
