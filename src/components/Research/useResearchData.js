@@ -35,7 +35,7 @@ function getPreviousClose(dailyData, todayKey = null) {
 const ET_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
 const isPos = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
 /** V-11 session date: ET for stocks, UTC for crypto. */
-const sessionDateOf = (ms, crypto) => (crypto ? new Date(ms).toISOString().slice(0, 10) : ET_DATE.format(new Date(ms)));
+export const sessionDateOf = (ms, crypto) => (crypto ? new Date(ms).toISOString().slice(0, 10) : ET_DATE.format(new Date(ms)));
 /** A candle's session: a daily/weekly date string IS its session date; an
  *  intraday bar's is its instant's ET (stock) or UTC (crypto) date. */
 function candleSessionDate(c, crypto) {
@@ -158,6 +158,19 @@ function controlledCandles(processed, { timeframe, current, crypto, supplied, no
   return result;
 }
 
+// The daily series asks for 400 calendar days (~275 stock sessions) so the
+// 200-day average and a full 52-week range can be computed from it. The 1D
+// chart keeps its usual framing: it is handed only the bars the server's
+// default daily request returns, the trailing 180 calendar days
+// (api/stocks/historical.js, TIMEFRAME_CONFIG['1d'].days).
+const DAILY_HISTORY_DAYS = 400;
+const CHART_1D_DAYS = 180;
+/** The 1D chart's bars: those dated on or after (now − 180 days, UTC), as the server's default request computes its start. */
+function chartWindow1D(data, nowMs = Date.now()) {
+  const from = new Date(nowMs - CHART_1D_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return data.filter(c => String(c.date || c.datetime || '').substring(0, 10) >= from);
+}
+
 /**
  * Central data hook for the redesigned Research modal.
  * Manages OHLCV data, technical indicators, and S/R levels.
@@ -169,9 +182,12 @@ function controlledCandles(processed, { timeframe, current, crypto, supplied, no
  * @param {boolean} options.technicalActive - The Technical tab is showing. Off
  *   the 1D chart, only this lets the hook fetch the daily series that the
  *   indicators and levels are computed from.
+ * @param {boolean} options.srRequested - The chart's S/R toggle was turned on
+ *   for this symbol. Off the 1D chart it asks for the same daily series the
+ *   Technical tab does (one request, shared).
  * @returns {Object} { ohlcvData, timeframe, setTimeframe, indicators, levels, dailyData, smaData, loading, error }
  */
-export default function useResearchData(symbol, { currentPrice, isCrypto, initialTimeframe, controlled = null, technicalActive = false } = {}) {
+export default function useResearchData(symbol, { currentPrice, isCrypto, initialTimeframe, controlled = null, technicalActive = false, srRequested = false } = {}) {
   // Controlled held-quote mode: the parent's session-qualified extremes stand in
   // for the polled ones EVERYWHERE they are read (V-6 a), and nothing here
   // fetches a quote. `controlled.extremes` = { sessionDate, high?, low?, open? }
@@ -254,7 +270,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     const refEntry = cacheRef.current[cacheKey];
     const isRefStale = isBomb && refEntry?.cachedAt && (Date.now() - refEntry.cachedAt > INTRADAY_STALE_MS);
     if (!isSpectate && refEntry && !isRefStale) {
-      setRawData(refEntry.data || refEntry);
+      setRawData(apiTimeframe === '1d' ? chartWindow1D(refEntry) : (refEntry.data || refEntry));
       if (apiTimeframe === '1d') setDailySeries({ symbol, data: refEntry });
       setError(null);
       return;
@@ -272,7 +288,10 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     if (isSpectate) spectateSettledRef.current = false;
 
     const cryptoOpt = isCrypto ? { type: 'crypto' } : {};
-    const fetchOpts = isSpectate ? { days: 1, ...cryptoOpt } : isBomb ? { days: bombDays, ...cryptoOpt } : isCrypto ? cryptoOpt : undefined;
+    const fetchOpts = isSpectate ? { days: 1, ...cryptoOpt }
+      : isBomb ? { days: bombDays, ...cryptoOpt }
+      : apiTimeframe === '1d' ? { days: DAILY_HISTORY_DAYS, ...cryptoOpt }
+      : isCrypto ? cryptoOpt : undefined;
     fetchHistoricalOHLCV(symbol, apiTimeframe, fetchOpts)
       .then(data => {
         if (thisRequest.aborted) return;
@@ -298,7 +317,8 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         } else {
           const filtered = isBomb ? filterToRegularHours(data) : data;
           if (!isSpectate) cacheRef.current[cacheKey] = isBomb ? { data: filtered, cachedAt: Date.now() } : filtered;
-          setRawData(filtered);
+          // 1D: the chart gets its usual window; the cache and the daily series keep all of it.
+          setRawData(apiTimeframe === '1d' ? chartWindow1D(filtered) : filtered);
           if (isSpectate) spectateSettledRef.current = true;
 
           // Compute daily change from daily data (rawData is newest-first)
@@ -369,11 +389,14 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   useEffect(() => { currentSymbolRef.current = symbol; }, [symbol]);
 
   // The daily series off the 1D chart: fetched only while the Technical tab is
-  // showing and nothing daily is cached for the symbol — the same request the
-  // 1D chart makes, cached under its own key. On 1D the chart's own series is
-  // the daily series (the main fetch sets it), so nothing extra is fetched.
+  // showing or the chart's S/R toggle has been turned on, and nothing daily is
+  // cached for the symbol — the same request the 1D chart makes, cached under
+  // its own key, so the tab and the toggle share it. On 1D the chart's own
+  // series is the daily series (the main fetch sets it), so nothing extra is
+  // fetched.
+  const levelsWanted = technicalActive || srRequested;
   useEffect(() => {
-    if (!symbol || !technicalActive || apiTimeframe === '1d') return;
+    if (!symbol || !levelsWanted || apiTimeframe === '1d') return;
     if (dailySeries?.symbol === symbol) return;
     const cached = cacheRef.current[`${symbol}_1d`] || cacheRef.current[`${symbol}_1d_technical`];
     if (cached && cached.length > 0) {
@@ -382,7 +405,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     }
     if (dailyInflightRef.current === symbol) return;
     dailyInflightRef.current = symbol;
-    fetchHistoricalOHLCV(symbol, '1d', isCrypto ? { type: 'crypto' } : undefined)
+    fetchHistoricalOHLCV(symbol, '1d', { days: DAILY_HISTORY_DAYS, ...(isCrypto ? { type: 'crypto' } : {}) })
       .then(data => {
         if (!data || data.length === 0) return;
         cacheRef.current[`${symbol}_1d_technical`] = data;
@@ -392,7 +415,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       .finally(() => {
         if (dailyInflightRef.current === symbol) dailyInflightRef.current = null;
       });
-  }, [symbol, technicalActive, apiTimeframe, dailySeries, isCrypto]);
+  }, [symbol, levelsWanted, apiTimeframe, dailySeries, isCrypto]);
 
   // Auto-refresh spectate mode every 15 seconds
   // Guards:
@@ -791,7 +814,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     setRawData(null);
     setError(null);
     setLoading(true);
-    const retryOpts = isBomb ? { days: bombDays } : {};
+    const retryOpts = isBomb ? { days: bombDays } : apiTimeframe === '1d' ? { days: DAILY_HISTORY_DAYS } : {};
     if (isCrypto) retryOpts.type = 'crypto';
     fetchHistoricalOHLCV(symbol, apiTimeframe, Object.keys(retryOpts).length > 0 ? retryOpts : undefined)
       .then(data => {
@@ -799,7 +822,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           setError('No historical data available');
         } else {
           cacheRef.current[cacheKey] = isBomb ? { data, cachedAt: Date.now() } : data;
-          setRawData(data);
+          setRawData(apiTimeframe === '1d' ? chartWindow1D(data) : data);
           if (apiTimeframe === '1d') setDailySeries({ symbol, data });
         }
       })
@@ -874,7 +897,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
   return {
     ohlcvData,       // Oldest-first, processed for current timeframe
-    rawData,         // Newest-first, raw from API (the chart's series)
+    rawData,         // Newest-first, raw from API (the chart's series; on 1D its usual 180-day window)
     timeframe,
     setTimeframe,
     indicators,      // From the daily series, whatever the chart's timeframe

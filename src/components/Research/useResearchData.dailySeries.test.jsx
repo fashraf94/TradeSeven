@@ -109,7 +109,7 @@ function seed() {
 }
 const BOMB_CALL = ['fetchHistoricalOHLCV', 'AAPL', '30m', { days: 20 }];
 const DAILY_CHANGE_CALL = ['fetchHistoricalOHLCV', 'AAPL', '1d', { days: 5 }];
-const DAILY_CALL = ['fetchHistoricalOHLCV', 'AAPL', '1d', null]; // the 1D chart's own request
+const DAILY_CALL = ['fetchHistoricalOHLCV', 'AAPL', '1d', { days: 400 }]; // the 1D chart's own request (re-pinned by founder ruling 2026-10-15, research modal F3)
 
 describe('F2 — indicators and levels come from the daily series', () => {
   it('bomb view + Technical tab: one extra daily request, and every reading is from the daily closes', async () => {
