@@ -74,10 +74,10 @@ const getMovingAverageLevels = (indicators, currentPrice) => {
     });
   }
 
-  if (indicators?.sma50?.value) {
+  if (indicators?.sma50) {
     levels.push({
-      price: indicators.sma50.value,
-      type: currentPrice > indicators.sma50.value ? 'SUPPORT' : 'RESISTANCE',
+      price: indicators.sma50,
+      type: currentPrice > indicators.sma50 ? 'SUPPORT' : 'RESISTANCE',
       factor: {
         name: '50-day SMA',
         description: 'Medium-term trend indicator widely watched by institutions',
