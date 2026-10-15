@@ -135,6 +135,8 @@ const DARK_BY_DESIGN = {
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
   COMMAND_CENTER_SYNC_ENABLED:
     'Command Center Sync Pass 1 — the Desk, the phase slots and the Huddle tab label; read-only, flips in its own PR after a founder preview smoke, never a build PR',
+  COMMAND_CENTER_HUB_ENABLED:
+    'Command Center hub (spec V1.2, slices S0–S8) — both dashboard mount sites pick the hub through one pure picker; flag-off they render the legacy shells exactly as before and the hub chunk is never requested. Built dark across the slices; activation is a separate founder action after the reviewed core, deployment validation, device evidence and useful Research (spec §12), never a build PR. The flip runs the FLIP MAP in the flag\'s docstring in one commit: the pin in commandCenterHubFlags.test.js to true AND that file\'s registration row turned around to assert this entry is gone, this entry dropped, and the docstring\'s state lines reworded; no URL, environment or localStorage override exists',
   WEEKLY_LADDER_PLACEMENT_ENABLED:
     'Weekly ladder placement points on the monthly board — built dark; flips only after a founder preview smoke (flag flip is its own one-line PR)',
   // LEAGUE_FUSE_HERO_ENABLED intentionally ABSENT: it flipped true in its own
