@@ -153,6 +153,16 @@ The Film Room's governing documents, its build reports and Astra's reviews of it
 | `specs/FILM_ROOM_BUILD_B_CARD_SPEC_V1_AMENDMENT_A_20261014.md` | Build B spec V1.0 — Amendment A: founder rulings on B1 (Fable, Oct 14, 2026). RB-1 (W2's validated timeline governs every day-derived value: `dayNumber`, `score.dayChange`, the first- and final-day flags, the directive window), RB-2 (dispositions accepted for B1), RB-3 (deferred to B1.1), RB-4 (W5 deferred to B2), RB-5 (a battle whose game mode the tape does not cover opens the legacy Film Room). |
 | `audits/20261014_ASTRA_REVIEW_FILM_ROOM_B1.md` | Astra's review of Film Room B1 (Oct 14, 2026; PR #962 at `1fcefa56`). Verdict: DO NOT MERGE (F1 a stored draw under basis `none`, F2 the volume tie rewrites saved prices, F3 the document-size seam, F4 a T1 failure aborts the day, F5 W2 moves `score.dayChange`). F5 is accepted by Amendment A RB-1; F1–F4 and backlog 1 are answered in build report §12; §2 (b) by RB-5 and PR #963. |
 
+## Command Center
+
+The Command Center hub's governing documents and build reports, in reading order. The hub is built in slices (spec §11.2): S0 first, then S1 onward, each its own session and PR. Every slice reads the spec and the design from here.
+
+| File | What it is |
+|---|---|
+| `specs/20261012_COMMAND_CENTER_CORE_IMPLEMENTATION_SPEC_V1_2.md` | **Approved by the founder, committed byte-identical (Oct 15, 2026, S0 build; SHA-256 `174d1a9a7f111a2c9cfc482456a4ea06f05123eb6f6415192ce991b6a831497c`)** — Command Center core implementation spec V1.2 (Oct 12, 2026; consolidates V1.1, passed its final focused review). The build-governing body: scope and component map (§2), reader ownership (§3), the flag matrix and disabled behavior (§4), deployment state and hold (§5), the Film Room review refresh and read budget (§6), outcomes (§7), Research and activity (§8), growth boundaries (§9), layout and accessibility (§10), the review dispositions, slice order and acceptance plan (§11), and activation (§12). V1 and V1.1 are historical and are not in the repo. |
+| `audits/20261012_COMMAND_CENTER_INTEGRATION_UPDATE.md` | The spec's companion integration update (Oct 12, 2026; committed byte-identical, SHA-256 `fd5ba3223dc07d488ec8764c6e3040edab392f0c908193a6a4ecf52a97bd1f7c`): what V1.2 changed from V1.1, the corrections C1–C6, the slice handoff and the files of record. |
+| `design/20261012_COMMAND_CENTER_FLOWING_FILAMENT_MOCKUP.html` | The hub's design of record: the approved Claude Design mock-up, "Flowing Filament" (committed byte-identical, SHA-256 `34741c53822d08021fc685fe87c7dc06796429ad7272270290f62925738d9286`). Structure, behaviour and vocabulary come from the mock-up; its data are placeholders. Its prototype chrome (the scenario bar, the tweaks panel, the Records overlay and its own top navigation) is not product. |
+
 ## Maintenance rules
 
 - Documents here are **records**, not living files: superseding happens by adding a new versioned document, never by editing a locked one. (Exception: this README's table and `BUILD_RULES.md`, which track current state.)
