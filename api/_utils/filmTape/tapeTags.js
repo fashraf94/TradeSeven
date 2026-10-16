@@ -74,6 +74,7 @@ import { SITUATIONS, SITUATION_REGISTRY_VERSION } from '../../../src/data/situat
 import { isCheck } from './candleInputs.js';
 import { coverageOf } from './tapeAssemble.js';
 import { toMs } from './tapeTime.js';
+import { errorClassOf } from './errorClass.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -420,7 +421,8 @@ export function tagTapeDay({ battle, ticks = [], doc, dialEnabled = TEMPO_DIAL_E
       }),
     };
   } catch (err) {
-    const errorClass = str(err?.name) ?? str(err?.constructor?.name) ?? 'Error';
+    // B1.1 (RC-4): a class from the one fixed list, never a raw name
+    const errorClass = errorClassOf(err);
     const note = `stalled unavailable: the tagger failed (${errorClass})`;
     let coverage;
     // the failure path's own coverage must not throw either (review A-5): its span is dropped first

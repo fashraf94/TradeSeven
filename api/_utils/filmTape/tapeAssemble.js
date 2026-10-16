@@ -24,6 +24,7 @@ import { tradingTimeline } from '../../../src/utils/tapeSchedule.js';
 // BaggerBomb stock thresholds v2 (Ruling 16): the persisted dispatch, Node-clean (BUILD_RULES §4).
 import { stockModelRoute, displayedStockScores } from '../../../src/utils/stockThresholdModel.js';
 import { NOTES, UNKNOWN_WHAT, counted } from './tapeNotes.js';
+import { errorClassOf } from './errorClass.js';
 
 /** `evaluations[]` is `slice(-150)` (api/cron/agent-evaluate.js:4257). */
 export const EVALUATIONS_CAP = 150;
@@ -214,16 +215,6 @@ const scoresOf = (s, { opponent = null } = {}) => (isObj(s) && num(s.total) !== 
     ...(isObj(s.stockModel) ? { stockModel: s.stockModel } : {}) }
   : null);
 
-/**
- * An error's class for a note: its name when it reads as an error class — a
- * plain identifier ending in Error or Exception, 40 characters at most — else
- * 'Error', so no other text (an id planted as a name) reaches the tape (review LA-3).
- */
-function errorClassOf(err) {
-  let name = null;
-  try { name = str(err?.name) ?? str(err?.constructor?.name); } catch { name = null; }
-  return name && name.length <= 40 && /^[A-Za-z_$][A-Za-z0-9_$]*(Error|Exception)$/.test(name) ? name : 'Error';
-}
 
 /**
  * B1 T1 (Astra F4) — the per-check opponent read, isolated: `read(scores)`
@@ -941,7 +932,7 @@ function meetingsOrUnavailable(args) {
   try {
     return buildMeetings(args);
   } catch (e) {
-    return { rows: [], coverage: coverageOf('unavailable', { sources: ['gameplanMeetingHistory', 'gameplanMeeting'], note: `the meetings could not be read (${typeof e?.name === 'string' ? e.name : 'Error'})` }) };
+    return { rows: [], coverage: coverageOf('unavailable', { sources: ['gameplanMeetingHistory', 'gameplanMeeting'], note: `the meetings could not be read (${errorClassOf(e)})` }) };
   }
 }
 

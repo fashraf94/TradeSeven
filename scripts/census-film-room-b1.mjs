@@ -56,6 +56,7 @@ import { etDayBounds, withinCandleWindow, toMs } from '../api/_utils/filmTape/ta
 import { tradingTimeline } from '../src/utils/tapeSchedule.js';
 import { TEMPO_DIAL_ENABLED } from '../src/config/featureFlags.js';
 import { AWAITING_CANDLES_NOTE, CANDLE_SELECTABLE_STATUSES } from '../src/constants/filmTape.js';
+import { errorClassOf } from '../api/_utils/filmTape/errorClass.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..');
@@ -388,19 +389,17 @@ export const CENSUS_ERROR_MAX = 200;
 const idLike = (t) => (/[0-9]/.test(t) && /[A-Za-z]/.test(t)) || (t.length >= 12 && /[a-z]/.test(t) && /[A-Z]/.test(t)) || /^[0-9]{9,}$/.test(t);
 
 /**
- * The CLI's failure line: the error's class (an identifier ending in Error or
- * Exception, else Error — an id planted as a name never prints)
+ * The CLI's failure line: the error's class (B1.1 RC-4: a class from the one
+ * fixed list of real error classes, api/_utils/filmTape/errorClass.js, else
+ * Error — an id planted as a name never prints, however class-shaped)
  * and its message with key blocks, the credential's own values, addresses,
  * resource paths and id-like tokens removed, bounded to CENSUS_ERROR_MAX —
  * never an id, never key material. Arrays only: the write-grep gate reads
  * this file.
  */
 export function censusErrorLine(err, { secrets = NEVER_PRINTED } = {}) {
-  let cls = 'Error';
-  try {
-    const n = err !== null && typeof err === 'object' ? (err.name ?? err.constructor?.name) : null;
-    if (typeof n === 'string' && n.length <= 40 && /^[A-Za-z_$][A-Za-z0-9_$]*(Error|Exception)$/.test(n)) cls = n;
-  } catch { cls = 'Error'; }
+  // B1.1 (RC-4, Astra N1): the class from the one fixed list of real error classes, never a class-shaped name
+  const cls = errorClassOf(err);
   let text = '';
   try { text = String(err !== null && typeof err === 'object' ? err.message ?? '' : err ?? ''); } catch { text = ''; }
   for (const s of secrets) if (typeof s === 'string' && s.length >= 3) text = text.split(s).join('[redacted]');
