@@ -108,9 +108,9 @@ describe('real rendered pinned stock detail integration', () => {
     // A crossed Bust moves the line to the next penalty; every penalty crossed reads the meltdown MAX.
     const crash = c.targets.find(t => t.key === 'crash');
     expect(measuredProximity({ ...c, nextPenalty: crash, penaltyProximity: { ...crash } }).text).toBe(`💥 ${stockSummary((102 - crash.target) / 102 * 100, 1)}% to Crash`);
-    // Every penalty crossed: the line carries the penalty side's (empty) proximity, never the reward side's (mutation lens P4).
+    // Every penalty crossed: the line carries the penalty side's (empty) proximity, never the reward side's (blockers mutation lens BKM-P4).
     expect(measuredProximity({ ...c, nextPenalty: null, penaltyProximity: null })).toEqual({ text: '🔥 MAX' });
-    // Bust and Crash crossed: the distance is over the committed price (2.8), not the target (2.9) (review B3-3).
+    // Bust and Crash crossed: the distance is over the committed price (2.8), not the target (2.9) (blockers review BK3-3).
     const meltdown = c.targets.find(t => t.key === 'meltdown');
     expect(measuredProximity({ ...c, nextPenalty: meltdown, penaltyProximity: { ...meltdown } }).text).toBe('🔥 2.8% to Meltdown');
     // Exactly at the fill looks up, as legacy's priceChange >= 0 does.
@@ -124,7 +124,7 @@ describe('real rendered pinned stock detail integration', () => {
     expect(legacy.stockRewardRoute).toBeUndefined();
     const html = renderToStaticMarkup(<StockDispatchRow leftAsset={legacy} />);
     expect(html).toBe(renderToStaticMarkup(<TacticalRow leftAsset={legacy} />));
-    expect(html).toContain('📉 0.3% to Bust'); // legacy distance: −2.20% against a −2.5% Bust (review B3-4)
+    expect(html).toContain('📉 0.3% to Bust'); // legacy distance: −2.20% against a −2.5% Bust (blockers review BK3-4)
   });
   it('corrupt tuple/missing receipt remain unavailable through row and real tab', async () => {
     const { battle } = await renderedFacts(); battle.scoring.stockThresholdModel = null;

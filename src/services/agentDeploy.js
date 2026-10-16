@@ -25,7 +25,7 @@ export const STOCK_ADMISSION_ERROR = 'Stock admission unavailable';
 // The late start and the evening window (P2) name the retry time, derived
 // from the same rule as the server refusal (src/utils/stockAdmissionWindow.js).
 // The 503 carries only the reason, so the time comes from this browser's clock
-// when the refusal arrives (review B2-6).
+// when the refusal arrives (blockers review BK2-6).
 const RETRY_TIME_REASONS = new Set(['late_start_cutoff', 'evening_window']);
 const etClock = ms => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(ms).replace(/\s/g, ' ');
 const STOCK_ADMISSION_LINES = {

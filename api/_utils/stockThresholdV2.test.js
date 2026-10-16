@@ -5,7 +5,7 @@
 // below is its Node dependency-surface guard (BUILD_RULES §4): never mock it.
 // First import: the fenced computeFullDayExpiry derives its instant from the process
 // zone, and the evening-window rows read it, so this file runs in UTC like CI and
-// production (review B3-1).
+// production (blockers review BK3-1).
 import './__fixtures__/pinTimezoneUtc.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const selector = vi.hoisted(() => ({ enabled: true }));
@@ -407,7 +407,7 @@ describe('security identity follow-up (P1, build report §6a Option A): ISIN, el
   it.each([
     ['a bad check digit', 'BBG000BW3298'], ['lower case', 'bbg000bw3299'], ['11 characters', 'BBG000BW329'], ['13 characters', 'BBG000BW32990'],
     // Each malformed value below keeps a check digit the loop accepts, so only the named
-    // check can refuse it (review B3-2); an 11-character value can never pass the loop.
+    // check can refuse it (blockers review BK3-2); an 11-character value can never pass the loop.
     ['a vowel (valid check digit)', 'BAG000BW3291'], ['third character not G (valid check digit)', 'BBH000BW3298'], ['a reserved prefix (valid check digit)', 'BSG000B9XRY7'],
     ['surrounding space', ' BBG000BW3244'], ['mixed case', 'bbg000BW3299'], ['a number', 123456789012], ['empty', ''], ['null', null], ['absent', undefined],
   ])('ISIN null with a malformed FIGI (%s) is refused before the quote GET', async (_, OpenFigi) => {
@@ -569,7 +569,7 @@ describe('evening window (P2, build report §6b option (a)): a pilot battle that
   }, 240_000);
   it('the retry time is the Night Game close on a regular day and the end of the publication window on an early-close day', () => {
     expect(NIGHT_GAME_CLOSE).toEqual({ hour: 20, minute: 0 });
-    // The shared delay is the hashed publication rule's own minimum (review B2-7).
+    // The shared delay is the hashed publication rule's own minimum (blockers review BK2-7).
     expect(STOCK_PUBLICATION_DELAY_MINUTES).toBe(APPROVED_STOCK_POLICY.publicationRule.minimumMinutesAfterScheduledClose); expect(STOCK_PUBLICATION_DELAY_MINUTES).toBe(15);
     expect(stockAdmissionRetryAt(iso(ET('2026-10-21', 15, 30)))).toBe(ET('2026-10-21', 20, 0));
     expect(stockAdmissionRetryAt(iso(ET('2026-10-21', 18, 0)))).toBe(ET('2026-10-21', 20, 0));
