@@ -191,6 +191,48 @@ describe('Amendment D RD-3 — the note for a meeting not yet filed says what is
   });
 });
 
+describe('Amendment D RD-6 — a copied meeting is permanent: the owner\'s two plants (review X3-7), through an admin refresh', () => {
+  /** A planted history row created `i` seconds after 14:00 ET on the day — before every real meeting of the fixture. */
+  const plant = (i) => meeting(`plant_${String(i).padStart(2, '0')}`, `${D}T14:00:${String(i).padStart(2, '0')}.000Z`, 'approved', [['ACN', 'ORCL']]);
+
+  it('a rewritten copied row (same id and instant, a new outcome, legs and words): the stored row stands exactly, preserved; the next refresh changes nothing', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-rewrite' });
+    const battle = structuredClone(t.store.get(`agentBattles/${fx.battleId}`));
+    battle.gameplanMeetingHistory = [HISTORY[0], meeting('gpm_1', `${D}T15:10:00.000Z`, 'approved', [['MSFT', 'AMD']], { diagnosis: 'Rewritten.', resolvedBy: 'owner' }), HISTORY[2]];
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    expect((await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 60_000 })).status).toBe('written');
+    const after = t.store.get(path(fx));
+    expect(after.meetings).toEqual(tape.meetings);
+    expect(after.coverage.meetings.preservedFrom).toBe(tape.writtenAt);
+    expect((await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 120_000 })).status).toBe('unchanged');
+  });
+
+  it('26 earlier-dated plants: the cap keeps the two stored rows first, exactly as stored, then the earliest plants; the next refresh changes nothing', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-plants' });
+    const battle = structuredClone(t.store.get(`agentBattles/${fx.battleId}`));
+    battle.gameplanMeetingHistory = [...HISTORY, ...Array.from({ length: 26 }, (_, i) => plant(i))];
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 60_000 });
+    const after = t.store.get(path(fx));
+    expect(after.meetings).toHaveLength(MEETINGS_PER_DAY_MAX);
+    for (const row of tape.meetings) expect(after.meetings.find((m) => m.key === row.key)).toEqual(row);
+    // the rest are the earliest plants, and the section stays in creation order
+    expect(after.meetings.filter((m) => m.key.startsWith('plant_')).map((m) => m.key.slice(0, 8))).toEqual(Array.from({ length: MEETINGS_PER_DAY_MAX - 2 }, (_, i) => `plant_${String(i).padStart(2, '0')}`));
+    expect(after.meetings.map((m) => m.createdAt)).toEqual([...after.meetings.map((m) => m.createdAt)].sort());
+    expect(after.coverage.meetings.status).toBe('partial');
+    expect((await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 120_000 })).status).toBe('unchanged');
+  });
+
+  it('a meeting the tape has not stored is still copied from the new read (only stored rows are permanent)', async () => {
+    const { fx, t } = await dayWith({ gameplanMeetingHistory: HISTORY.slice(0, 2) }, { battleId: 'b-new-row' });
+    const battle = structuredClone(t.store.get(`agentBattles/${fx.battleId}`));
+    battle.gameplanMeetingHistory = HISTORY;
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 60_000 });
+    expect(t.store.get(path(fx)).meetings.map((m) => m.key)).toEqual([`gpm_1|${D}T15:10:00.000Z`, `gpm_2|${D}T17:00:00.000Z`]);
+  });
+});
+
 describe('merge-monotone (BA-19): a meeting the tape holds is kept when a later read lacks it', () => {
   it('the owner empties the history; the refresh keeps both rows, and the coverage says they were preserved', async () => {
     const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY });

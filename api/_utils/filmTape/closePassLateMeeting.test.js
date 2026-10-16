@@ -22,6 +22,7 @@ import { runClosePass, runBackfill, previousTapeDay, meetingKeysOn } from './clo
 import { writeTapeDay } from './writeTapeDay.js';
 import { runCandlePass } from './candlePass.js';
 import { candleInputFingerprint } from './candleInputs.js';
+import { MEETINGS_PER_DAY_MAX } from './tapeAssemble.js';
 import { contentOf, stableStringify } from './tapeMerge.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay, multiDay } from './__fixtures__/tapeFixtures.js';
@@ -362,5 +363,38 @@ describe('review X5-8 — the first night after deploy: a P written in B1\'s sha
     undone.passes = { ...undone.passes, close: { ...undone.passes.close, writtenAt: b1.passes.close.writtenAt } };
     expect(stableStringify(undone)).toBe(stableStringify(b1));
     expect(b1.tags.items?.length ?? 0).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('Amendment D RD-6 — a copied meeting is permanent through the late-meeting re-merge (review X3-7\'s two plants)', () => {
+  // An on-time meeting copied on P's night; the late one, filed at D's first check, makes D's pass re-merge P.
+  const ON_TIME = { id: 'gpm_ontime', createdAt: `${P}T15:00:00.000Z`, expiresAt: `${P}T16:00:00.000Z`, status: 'rejected', resolvedAt: `${P}T15:30:20.000Z`, resolvedBy: 'coach', diagnosis: 'On time.', suggestedSwaps: [{ symbolOut: 'PEP', symbolIn: 'COST', rationale: 'r' }] };
+  const worldWith = (battleId, historyAtD) => lateMeetingWorld({
+    battleId,
+    prepare: (fx) => { fx.battle.gameplanMeetingHistory = [structuredClone(ON_TIME)]; },
+    between: (t) => { const b = t.store.get(`agentBattles/${battleId}`); b.gameplanMeetingHistory = historyAtD(); t.store.set(`agentBattles/${battleId}`, b); },
+  });
+
+  it('the owner rewrites the copied row: P is re-merged for the late meeting, and the stored row stands exactly as stored', async () => {
+    const w = await worldWith('b-rd6-rewrite', () => [{ ...structuredClone(ON_TIME), status: 'approved', resolvedBy: 'owner', diagnosis: 'Rewritten.', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'COST', rationale: 'x' }] }, structuredClone(FILED)]);
+    const stored = w.before.meetings.find((m) => m.key === `gpm_ontime|${ON_TIME.createdAt}`);
+    expect(stored).toMatchObject({ status: 'rejected', diagnosis: 'On time.' });
+    const sD = await runClosePass({ db: w.t.db, clock: () => D_NIGHT });
+    expect(sD.remerged).toEqual([{ battleId: 'b-rd6-rewrite', etDate: P, bytes: expect.any(Number), meetingsStored: true }]);
+    const after = w.t.store.get(tapePath('b-rd6-rewrite', P));
+    expect(after.meetings.find((m) => m.key === stored.key)).toEqual(stored);
+    expect(after.meetings.map((m) => m.key)).toEqual([stored.key, `gpm_late|${PENDING.createdAt}`]);
+  });
+
+  it('26 earlier-dated plants: P is re-merged, and the cap keeps the stored row first, exactly as stored', async () => {
+    const plants = () => Array.from({ length: 26 }, (_, i) => ({ ...structuredClone(ON_TIME), id: `plant_${String(i).padStart(2, '0')}`, createdAt: `${P}T14:00:${String(i).padStart(2, '0')}.000Z`, diagnosis: 'Planted.' }));
+    const w = await worldWith('b-rd6-plants', () => [...plants(), structuredClone(ON_TIME), structuredClone(FILED)]);
+    const stored = w.before.meetings.find((m) => m.key === `gpm_ontime|${ON_TIME.createdAt}`);
+    const sD = await runClosePass({ db: w.t.db, clock: () => D_NIGHT });
+    // the plants are the candidates P lacked; the cap does not keep them all
+    expect(sD.remerged).toEqual([{ battleId: 'b-rd6-plants', etDate: P, bytes: expect.any(Number), meetingsStored: false }]);
+    const after = w.t.store.get(tapePath('b-rd6-plants', P));
+    expect(after.meetings).toHaveLength(MEETINGS_PER_DAY_MAX);
+    expect(after.meetings.find((m) => m.key === stored.key)).toEqual(stored);
   });
 });
