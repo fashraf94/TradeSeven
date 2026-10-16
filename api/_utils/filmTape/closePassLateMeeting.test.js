@@ -108,7 +108,9 @@ describe('a meeting created after P\'s last check and filed at D\'s first: P gai
   it('P\'s own pass wrote it without the meeting, saying it was not yet filed', () => {
     expect(w.sP.written.map((x) => x.etDate)).toEqual([P]);
     expect(w.before.meetings).toEqual([]);
-    expect(w.before.coverage.meetings.note).toMatch(/not yet filed/);
+    // P is an earlier day of the five-day battle: Amendment D RD-3's earlier-day words
+    expect(w.before.isFinalDay).toBe(false);
+    expect(w.before.coverage.meetings.note).toBe('a meeting created this day was not yet filed when this tape was read; the next night\'s close pass copies it once it is filed');
     expect(w.before.passes.candles.status).toBe('written');
   });
 

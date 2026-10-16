@@ -855,8 +855,12 @@ function rosterOf(battle) {
  * than MEETING_DIAGNOSIS_MAX are not copied. What was not copied is counted in
  * the section's coverage note. `diagnosis` is someone's words — stored text,
  * no number class.
+ *
+ * `finalDay` (Build B Amendment D, RD-3): the tape day is the last entry of
+ * the battle's validated timeline (tradingTimeline). It picks the words the
+ * coverage note says of a meeting not yet filed; nothing else reads it.
  */
-export function buildMeetings({ battle, bounds }) {
+export function buildMeetings({ battle, bounds, finalDay = false }) {
   const raw = battle?.gameplanMeetingHistory;
   const notes = [];
   if (raw !== undefined && raw !== null && !Array.isArray(raw)) {
@@ -906,10 +910,13 @@ export function buildMeetings({ battle, bounds }) {
   // The meeting on the battle is not filed yet, whatever its status says: the
   // evaluator files it into the history at the next check (an unanswered one
   // expires at its deadline but is filed the next morning; a player's answer
-  // waits for the next check). Only a later run of this day's close pass — a
-  // refresh — can copy it.
+  // waits for the next check). Nothing is copied from it (Amendment D RD-3),
+  // and the note says what is true of it: on an earlier day, the next night's
+  // pass re-merges this day once it is filed (RC-3); on the final day there is
+  // no next check, and completion does not file a pending meeting, so it never
+  // reaches the history.
   const unfiled = meetingOf(battle?.gameplanMeeting);
-  if (unfiled && inDay(instant(unfiled.createdAt), bounds)) notes.push('a meeting created this day was not yet filed in the meeting history when this tape was read — only a later run of this day\'s close pass (a refresh) copies it');
+  if (unfiled && inDay(instant(unfiled.createdAt), bounds)) notes.push(finalDay ? UNFILED_FINAL_DAY_NOTE : UNFILED_EARLIER_DAY_NOTE);
   if (unrecognised) notes.push(`${counted(unrecognised, 'meeting record', 'meeting records')} of this day with an outcome other than approved, rejected or expired not copied`);
   if (legsDropped) notes.push(`${counted(legsDropped, 'leg', 'legs')} past the ${MEETING_LEGS_MAX} a meeting proposes not copied`);
   if (offRoster) notes.push(`${counted(offRoster, 'leg symbol', 'leg symbols')} outside the battle's portfolio and bench not copied`);
@@ -922,6 +929,10 @@ export function buildMeetings({ battle, bounds }) {
     coverage: coverageOf(notes.length ? 'partial' : 'complete', { span, sources: ['gameplanMeetingHistory', 'gameplanMeeting'], note: notes.join('; ') || null }),
   };
 }
+
+/** Amendment D RD-3 — the meetings note for a meeting not yet filed, on the battle's final day and on an earlier day (verbatim). */
+export const UNFILED_FINAL_DAY_NOTE = 'a meeting created this day was still pending after the battle\'s last check; the platform does not file a meeting left pending at completion, so it is not copied';
+export const UNFILED_EARLIER_DAY_NOTE = 'a meeting created this day was not yet filed when this tape was read; the next night\'s close pass copies it once it is filed';
 
 /**
  * Exit criterion 4 for T2: a failure reading the meetings never stops the
@@ -1094,6 +1105,9 @@ export function assembleTape({
   const nowIso = new Date(nowMs).toISOString();
   const battleId = battle.id;
   const days = tradingTimeline(battle);
+  // RB-1: the validated timeline's last entry; null when it does not validate. The tape's
+  // `isFinalDay` and the meetings note (RD-3) read this one value (BUILD_RULES §9).
+  const isFinalDay = days ? days[days.length - 1] === etDate : null;
   const entries = dayEntries(battle, bounds);
   const trades = dayTrades(battle, bounds);
   const dayTicks = [...(ticksRead.ticks || [])].filter((t) => Number.isInteger(t?.tickSeq)).sort((a, b) => a.tickSeq - b.tickSeq);
@@ -1140,7 +1154,8 @@ export function assembleTape({
   const plans = buildPlans({ entriesDay: entries.day, tickByEvalId });
   const rationale = buildRationale({ entriesDay: entries.day, tickByEvalId });
   const calls = callsRead.ok ? buildCalls({ calls: callsRead.calls, bounds, nowIso, callRecordsMode }) : [];
-  const meetings = meetingsOrUnavailable({ battle, bounds });
+  // RD-3: a timeline that does not validate names no final day, so its note is the earlier day's
+  const meetings = meetingsOrUnavailable({ battle, bounds, finalDay: isFinalDay === true });
 
   // ---- comparables (BA-13): TICKER_TO_SECTOR, never the stored sector string
   const heldSymbols = new Set();
@@ -1332,7 +1347,7 @@ export function assembleTape({
     gameMode: str(battle.gameMode),
     etDate,
     dayNumber: days && days.includes(etDate) ? days.indexOf(etDate) + 1 : null,
-    isFinalDay: days ? days[days.length - 1] === etDate : null,
+    isFinalDay,
     battleStatusAtWrite: str(battle.status),
     writtenAt: nowIso,
     firstWrittenAt: nowIso,
