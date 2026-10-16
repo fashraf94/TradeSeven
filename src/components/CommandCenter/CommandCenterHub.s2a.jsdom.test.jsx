@@ -195,6 +195,17 @@ describe('the new states through the real Deploy card (desktop) and strip (phone
     expect(card().textContent).toMatch(/Ready to deploy · as of \d{1,2}:\d{2} [AP]M ET/);
   });
 
+  it('the strip\'s two lines wrap in full — no line clamp, no hidden overflow (S1 review L3-13; measured in headless Edge at 360 and 390)', () => {
+    const deploy = attempt('refused', { result: { kind: 'review_due', line: DUE_DEPLOY_LINE } });
+    render(<CommandCenterHub site="mobile" sections={withDeploy(deploy)} />, 360);
+    for (const n of ['1', '2']) {
+      const css = strip().querySelector(`[data-hub-strip-line="${n}"]`).getAttribute('style');
+      expect(css, n).not.toMatch(/line-clamp/);
+      expect(css, n).not.toMatch(/overflow:\s*hidden/);
+      expect(css, n).toMatch(/overflow-wrap:\s*anywhere/);
+    }
+  });
+
   it('cooldown: the next permitted deploy time on the strip, the hold disabled', () => {
     const deploy = deriveHubDeployState(base({ cooldown: { ownerUid: 'owner-a', cooldownUntil: Date.UTC(2026, 9, 14, 14, 42, 5) } }));
     render(<CommandCenterHub site="mobile" sections={withDeploy(deploy)} />, 390);
