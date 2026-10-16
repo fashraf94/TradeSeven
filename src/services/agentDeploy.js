@@ -16,18 +16,25 @@ import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../config/featureFlags';
 import * as ceremonyTiming from '../components/Dashboard/deployCeremony/ceremonyTiming';
 // Pilot P1b — the deploy refusal's typed code (founder ruling B2).
 import { DEPLOY_REFUSAL_CODE } from '../constants/hypothesisRecords';
+import { stockAdmissionRetryAt } from '../utils/stockAdmissionWindow';
 
 // BaggerBomb stock thresholds v2 (Rulings 2 and 6): only an allowlisted pilot
 // creation can be refused this way. The server's 503 carries `reason`; the
 // ceremony shows `details`, so the reason becomes one short player line.
 export const STOCK_ADMISSION_ERROR = 'Stock admission unavailable';
+// The late start and the evening window (P2) name the retry time, derived
+// from the same rule as the server refusal (src/utils/stockAdmissionWindow.js).
+// The 503 carries only the reason, so the time comes from the refusal's clock.
+const RETRY_TIME_REASONS = new Set(['late_start_cutoff', 'evening_window']);
+const etClock = ms => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(ms).replace(/\s/g, ' ');
 const STOCK_ADMISSION_LINES = {
-  late_start_cutoff: 'Measured battles stop starting 45 minutes before the market close. Try again 15 minutes after the close.',
   publication_window_not_open: 'Measured battles reopen 15 minutes after the market close. Try again shortly.',
   prior_corrected_battle_requires_settlement: 'Your previous measured battle is still settling. Try again after it completes.',
 };
-export function stockAdmissionLine(data) {
+export function stockAdmissionLine(data, now = new Date()) {
   if (data?.error !== STOCK_ADMISSION_ERROR) return null;
+  const retryAt = RETRY_TIME_REASONS.has(data.reason) ? stockAdmissionRetryAt(now.toISOString()) : null;
+  if (retryAt !== null) return `Measured battles can't start this late in the day. Try again after ${etClock(retryAt)} ET.`;
   return STOCK_ADMISSION_LINES[data.reason] ?? 'Measured scoring could not start this battle just now. Try again in a minute.';
 }
 

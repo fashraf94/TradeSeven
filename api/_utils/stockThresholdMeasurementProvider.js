@@ -6,6 +6,7 @@ import { expectedSessionAt, measureStock, strictNumber, instant } from './measur
 import { getPreviousSessionDate } from '../../src/utils/marketCalendar.js';
 import { STOCK_APPROVAL, APPROVED_STOCK_POLICY } from './stockThresholdPolicyRegistry.js';
 import { validateActivationPrice } from './baselineValidation.js';
+import { STOCK_PUBLICATION_DELAY_MINUTES } from '../../src/utils/stockAdmissionWindow.js';
 const collected = new WeakSet();
 const observationDigests = new WeakMap();
 const observationDigest = o => canonicalContentHash(JSON.parse(JSON.stringify(o)));
@@ -14,12 +15,25 @@ export class StockThresholdRefusal extends Error {
   constructor(reason) { super(`Stock threshold unavailable: ${reason}`); this.name = 'StockThresholdRefusal'; this.reason = reason; this.retriable = true; }
 }
 export const refuseStock = reason => { throw new StockThresholdRefusal(reason); };
+// Security identity (v2 follow-up, build report §6a Option A): a non-empty ISIN
+// string keeps `<ISIN>`; otherwise only a well-formed FIGI (OpenFIGI shape, no
+// reserved prefix, valid check digit) gives `FIGI:<OpenFigi>`. FIGI is share-class
+// level, so BRK-A and BRK-B never share one. CIK and LEI are never used. The rule
+// is recorded in the v2 approval and the runbook; it is not hashed.
+const FIGI_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+export function wellFormedFigi(v) {
+  if (typeof v !== 'string' || !/^[B-DF-HJ-NP-TV-Z]{2}G[B-DF-HJ-NP-TV-Z0-9]{8}[0-9]$/.test(v) || /^(BS|BM|GG|GB|GH|KY|VG)/.test(v)) return false;
+  let sum = 0;
+  for (let i = 0; i < 11; i++) { const n = FIGI_CHARS.indexOf(v[i]) * (i % 2 ? 2 : 1); sum += Math.floor(n / 10) + n % 10; }
+  return (10 - sum % 10) % 10 === Number(v[11]);
+}
+const securityIdentity = general => (typeof general.ISIN === 'string' && general.ISIN ? general.ISIN : wellFormedFigi(general.OpenFigi) ? `FIGI:${general.OpenFigi}` : refuseStock('security_identity_unqualified'));
 export async function collectStockObservation(symbol, baseATR, { fetcher = fetch, now = () => new Date() } = {}) {
   if (!/^[A-Z][A-Z0-9.-]*$/.test(symbol || '') || APPROVED_STOCK_POLICY.currentCatalogExceptions.unavailableForCorrectedAdmission.includes(symbol) || ['HES', 'IPG', 'WBA'].includes(symbol)) refuseStock('catalog_unavailable');
   const began = now().toISOString();
   const expected = expectedSessionAt(began);
   if (expected.status !== 'valid') refuseStock(expected.reason);
-  if (Date.parse(began) < expected.closeMs + 15 * 60000) refuseStock('publication_window_not_open');
+  if (Date.parse(began) < expected.closeMs + STOCK_PUBLICATION_DELAY_MINUTES * 60000) refuseStock('publication_window_not_open');
   const key = process.env.EODHD_API_KEY;
   if (!key) refuseStock('provider_not_configured');
   let from = expected.sourceSession;
@@ -39,7 +53,8 @@ export async function collectStockObservation(symbol, baseATR, { fetcher = fetch
   const rows = await get(`eod/${providerSymbol}`, { from, to: expected.sourceSession, period: 'd', order: 'a' });
   const capturedAt = now().toISOString();
   const general = await get(`fundamentals/${providerSymbol}`, { filter: 'General' });
-  if (general?.Code !== symbol || general.IsDelisted !== false || !['NYSE', 'NASDAQ'].includes(general.Exchange) || general.Type !== 'Common Stock' || !['US', 'USA'].includes(general.CountryISO) || typeof general.ISIN !== 'string' || !general.ISIN) refuseStock('security_identity_unqualified');
+  if (general?.Code !== symbol || general.IsDelisted !== false || !['NYSE', 'NASDAQ'].includes(general.Exchange) || general.Type !== 'Common Stock' || !['US', 'USA'].includes(general.CountryISO)) refuseStock('security_identity_unqualified');
+  const identity = securityIdentity(general);
   const snapshot = { id: randomUUID(), providerSymbol, capturedAt, basis: 'raw_ohlc_adjusted_close', rows };
   // Deliberately omit finalization. Stage 1's arbitrary final=true is never
   // fabricated; approved runtime authority qualifies the valid arithmetic.
@@ -54,7 +69,7 @@ export async function collectStockObservation(symbol, baseATR, { fetcher = fetch
   const validation = validateActivationPrice({ current: price, high: strictNumber(quoteRaw.high), low: strictNumber(quoteRaw.low), fallback: false, previousClose: strictNumber(quoteRaw.previousClose), recentClose: strictNumber(rows?.at(-1)?.close), baseATR });
   if (validation.fired || validation.value !== price) refuseStock('fill_validation_refused');
   const fillQuote = { provider: 'EODHD', source: 'real-time', price, quoteAsOf: new Date(timestamp * 1000).toISOString(), observedAt, validation: 'accepted_original_quote', raw: quoteRaw };
-  const observation = { schemaVersion: 1, collectorId: STOCK_APPROVAL.collectorId, approvedPolicyRef: STOCK_APPROVAL.approvedPolicyRef, policyHash: STOCK_APPROVAL.policyHash, publicationRuleHash: STOCK_APPROVAL.publicationRuleHash, request, snapshot, snapshotHash: canonicalContentHash(snapshot), general, securityId: `EODHD:${providerSymbol}:${general.ISIN}`, measurement, fillQuote };
+  const observation = { schemaVersion: 1, collectorId: STOCK_APPROVAL.collectorId, approvedPolicyRef: STOCK_APPROVAL.approvedPolicyRef, policyHash: STOCK_APPROVAL.policyHash, publicationRuleHash: STOCK_APPROVAL.publicationRuleHash, request, snapshot, snapshotHash: canonicalContentHash(snapshot), general, securityId: `EODHD:${providerSymbol}:${identity}`, measurement, fillQuote };
   collected.add(observation);
   observationDigests.set(observation, observationDigest(observation));
   return observation;
@@ -64,7 +79,7 @@ export function qualifyStockObservation(observation, at) {
   const expected = expectedSessionAt(at);
   if (expected.status !== 'valid') refuseStock(expected.reason);
   if (observation.measurement.sourceSession !== expected.sourceSession) refuseStock('source_session_changed');
-  if (instant(observation.snapshot.capturedAt) < expected.closeMs + 15 * 60000 || instant(observation.snapshot.capturedAt) > instant(at)) refuseStock('invalid_publication_observation');
+  if (instant(observation.snapshot.capturedAt) < expected.closeMs + STOCK_PUBLICATION_DELAY_MINUTES * 60000 || instant(observation.snapshot.capturedAt) > instant(at)) refuseStock('invalid_publication_observation');
   if (observation.snapshotHash !== canonicalContentHash(observation.snapshot)) refuseStock('snapshot_hash_mismatch');
   if (observationDigests.get(observation) !== observationDigest(observation)) refuseStock('observation_content_changed');
   if (instant(observation.fillQuote.observedAt) > instant(at)) refuseStock('future_fill_observation');

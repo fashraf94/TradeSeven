@@ -8,6 +8,7 @@ import { stockWriterDb } from '../../api/_utils/__fixtures__/stockThresholdHarne
 // Infrastructure is replaced; row, canonical scorer, Why and tab are real.
 vi.mock('../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 import { StockDispatchRow, enrichHeldPosition } from './AgentBattleScreen.jsx';
+import TacticalRow from '../components/BaggerBomb/TacticalRow';
 import BaggerBombTab, { StockRewardDetails } from '../components/draft/ResearchTabs/BaggerBombTab.jsx';
 import { stockRewardContext, measuredProximity, stockSummary } from '../utils/stockThresholdModel.js';
 import WhyPanel from './battleView/WhyPanel.jsx';
@@ -16,9 +17,9 @@ import { buildResearchAsset } from '../utils/researchAssetBuilder.js';
 const oldKey = process.env.EODHD_API_KEY;
 beforeAll(() => { process.env.EODHD_API_KEY = 'isolated-key'; });
 afterAll(() => { if (oldKey === undefined) delete process.env.EODHD_API_KEY; else process.env.EODHD_API_KEY = oldKey; });
-async function renderedFacts() {
+async function renderedFacts(current = 107) {
   const { battle } = await correctedStockBattle();
-  const prices = { AAPL: { current: 107, timestamp: Date.parse(STOCK_TEST_NOW) / 1000 } };
+  const prices = { AAPL: { current, timestamp: Date.parse(STOCK_TEST_NOW) / 1000 } };
   const a = scoreCorrectedPosition(battle, { ...battle.portfolio.star[0], tier: 'star' }, 'agent', prices, STOCK_TEST_NOW), c = scoreCorrectedPosition(battle, { ...battle.opponent.portfolio.star[0], tier: 'star' }, 'cpu', prices, STOCK_TEST_NOW);
   const h = stockWriterDb({ battle }); await h.db.doc('battle').update(correctedScorePatch(battle, [a], [c], STOCK_TEST_NOW)); Object.assign(battle, h.store.get('battle'));
   return { battle, left: enrichHeldPosition(battle.portfolio.star[0], 'star', { stockBattle: battle, stockSide: 'agent', stockSlot: 0 }), right: enrichHeldPosition(battle.opponent.portfolio.star[0], 'star', { stockBattle: battle, stockSide: 'cpu', stockSlot: 0 }) };
@@ -93,6 +94,33 @@ describe('real rendered pinned stock detail integration', () => {
     }
     expect(c.crossedTiers).toEqual(['bagger', 'doubleBagger']);
     expect(tab).toMatch(/data-tier="tenBagger" data-tier-status="unearned"/);
+  });
+  it('review B3-7: below the fill, Why names the penalty side as legacy does; at the fill it looks up', async () => {
+    const { left: down } = await renderedFacts(102); // fill 103.27, frozen 2%: Bust at 101.2046
+    const c = down.rewardContext;
+    expect(c).toMatchObject({ status: 'valid', currentPrice: 102, crossedTiers: [] }); expect(c.multiplier).toBeLessThan(0);
+    const expected = measuredProximity(c);
+    expect(expected).toMatchObject({ key: 'bust', distance: c.penaltyProximity.distance, approaching: c.penaltyProximity.approaching });
+    expect(expected.text).toBe(`📉 ${stockSummary((102 - c.nextPenalty.target) / 102 * 100, 1)}% to Bust`);
+    let received = null;
+    const row = renderToStaticMarkup(<StockDispatchRow leftAsset={down} renderWhy={p => { received = p; return <WhyPanel symbol="AAPL" state={selectWhyState(null, 'AAPL', STOCK_TEST_NOW)} lines={deriveTierPrices(null, null, null, c)} proximity={p} />; }} />);
+    expect(received).toEqual(expected); expect(row).toContain(expected.text); expect(row).not.toContain('% to BaggerBomb');
+    // A crossed Bust moves the line to the next penalty; every penalty crossed reads the meltdown MAX.
+    const crash = c.targets.find(t => t.key === 'crash');
+    expect(measuredProximity({ ...c, nextPenalty: crash, penaltyProximity: { ...crash } }).text).toBe(`💥 ${stockSummary((102 - crash.target) / 102 * 100, 1)}% to Crash`);
+    expect(measuredProximity({ ...c, nextPenalty: null, penaltyProximity: null }).text).toBe('🔥 MAX');
+    // Exactly at the fill looks up, as legacy's priceChange >= 0 does.
+    const flat = (await renderedFacts(103.27)).left.rewardContext;
+    expect(flat.multiplier).toBe(0);
+    expect(measuredProximity(flat).text).toBe(`💣 ${stockSummary((flat.nextTarget.target - 103.27) / 103.27 * 100, 1)}% to BaggerBomb`);
+  });
+  it('review B3-7 legacy control: a legacy row below its entry renders through TacticalRow unchanged, with the legacy penalty line', async () => {
+    const { battle } = await correctedStockBattle(); delete battle.scoring.stockThresholdModel; delete battle.portfolio.star[0].stockThresholdReceipt;
+    const legacy = enrichHeldPosition(battle.portfolio.star[0], 'star', { curPrice: 101, previousClose: 103.27, startingPrices: { AAPL: 103.27 }, thresholds: { AAPL: { threshold: 2.5 } }, thresholdHistory: {}, activatedAt: STOCK_TEST_NOW, createdAt: STOCK_TEST_NOW, stockBattle: battle });
+    expect(legacy.stockRewardRoute).toBeUndefined();
+    const html = renderToStaticMarkup(<StockDispatchRow leftAsset={legacy} />);
+    expect(html).toBe(renderToStaticMarkup(<TacticalRow leftAsset={legacy} />));
+    expect(html).toContain('to Bust');
   });
   it('corrupt tuple/missing receipt remain unavailable through row and real tab', async () => {
     const { battle } = await renderedFacts(); battle.scoring.stockThresholdModel = null;
