@@ -3,8 +3,8 @@
 // Research modal follow-up, display agreement (BUILD_RULES §9; build report
 // docs/audits/20261015_BUILD_RESEARCH_MODAL_F3_FOLLOWUP.md):
 //   D-1  a level's distance and its support/resistance side are measured from
-//        the price the "Current" row shows (at the two decimals shown), not
-//        the newest daily close
+//        the price the "Current" row shows (real prices, detectLevels' formula
+//        and tie rule), not the newest daily close
 //   D-3  only a cross on the newest bar reads "latest session"
 //   D-4  the first volume bar is labeled "Today" only when its bar is the
 //        current session's; otherwise "Last session · <its date>"
@@ -100,21 +100,49 @@ describe('D-1 — levels are placed and measured from the displayed price', () =
     expect(levelRows().map((r) => r.distance)).toEqual(['-1.01%', '-3.03%']);
   });
 
-  it('sides and distances use the two-decimal figures shown: a level that reads "$475.60" against "$475.60" is resistance at "0.00%"', async () => {
+  /** Click every level row, top to bottom; the sides the tab reports. */
+  async function clickedSides(picked) {
+    const rows = [...container.querySelectorAll('div')].filter((d) => d.style.cursor === 'pointer');
+    for (const r of rows) await act(async () => { r.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    return picked.map((p) => p.type);
+  }
+
+  it('real prices, detectLevels\' tie rule: a level exactly at the shown price is resistance at "0.00%"; one a fraction of a cent below is support', async () => {
     const picked = [];
     const levels = {
       support: [{ price: 475.597, strength: 'WEAK', distanceFromCurrent: '-1.95' }, { price: 475.0, strength: 'WEAK', distanceFromCurrent: '-2.07' }],
-      resistance: [{ price: 475.6049, strength: 'WEAK', distanceFromCurrent: '-1.95' }],
+      resistance: [{ price: 475.6, strength: 'WEAK', distanceFromCurrent: '-1.95' }],
       currentPrice: 485.05,
     };
     await render({ asset: { symbol: 'AAPL', price: 475.6 }, levels, onLevelHighlight: (v) => picked.push(v) });
-    const rows = [...container.querySelectorAll('div')].filter((d) => d.style.cursor === 'pointer');
-    for (const r of rows) await act(async () => { r.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    // Both 475.597 and 475.6049 read "$475.60" — at the shown price, so resistance, "0.00%".
-    expect(picked.map((p) => p.type)).toEqual(['RESISTANCE', 'RESISTANCE', 'SUPPORT']);
+    expect(await clickedSides(picked)).toEqual(['RESISTANCE', 'SUPPORT', 'SUPPORT']);
     expect(levelRows().map((r) => [r.price, r.distance])).toEqual([
       ['$475.60', '0.00%'], ['$475.60', '0.00%'], ['$475.00', '-0.13%'],
     ]);
+  });
+
+  it('a sub-dollar asset (shown $0.2049): $0.2001 is support at "-2.34%" and $0.2051 resistance at "+0.10%" — not cents ties', async () => {
+    const picked = [];
+    const levels = {
+      support: [{ price: 0.2001, strength: 'MODERATE', distanceFromCurrent: '-2.00' }],
+      resistance: [{ price: 0.2051, strength: 'WEAK', distanceFromCurrent: '0.50' }],
+      currentPrice: 0.2041,
+    };
+    await render({ asset: { symbol: 'DOGE', price: 0.2049 }, levels, onLevelHighlight: (v) => picked.push(v) });
+    expect(await clickedSides(picked)).toEqual(['RESISTANCE', 'SUPPORT']);
+    expect(levelRows().map((r) => r.distance)).toEqual(['+0.10%', '-2.34%']);
+  });
+
+  it('a sub-cent asset (shown $0.0000123): real distances, both sides', async () => {
+    const picked = [];
+    const levels = {
+      support: [{ price: 0.000011, strength: 'MODERATE', distanceFromCurrent: '-8.33' }],
+      resistance: [{ price: 0.000013, strength: 'WEAK', distanceFromCurrent: '8.33' }],
+      currentPrice: 0.000012,
+    };
+    await render({ asset: { symbol: 'SHIB', price: 0.0000123 }, levels, onLevelHighlight: (v) => picked.push(v) });
+    expect(await clickedSides(picked)).toEqual(['RESISTANCE', 'SUPPORT']);
+    expect(levelRows().map((r) => r.distance)).toEqual(['+5.69%', '-10.57%']);
   });
 
   it('a distance under 0.005% reads "0.00%", never "-0.00%"', async () => {

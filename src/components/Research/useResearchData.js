@@ -177,12 +177,13 @@ const noChartBars1D = (data) => Array.isArray(data) && data.length > 0 && chartW
 // ── Levels as displayed (BUILD_RULES §9) ─────────────────────────────────────
 // detectLevels sides and measures levels from the newest daily close. What the
 // modal shows — the Technical tab's rows and the chart's S/R lines — sides and
-// measures them from the displayed price, at the two decimals both prices are
-// shown with. A level at the shown price is resistance (detectLevels' tie rule).
-const toCents = (v) => Math.round(Number(v) * 100);
+// measures them from the displayed price instead, with detectLevels' formula
+// and tie rule (a level at the price is resistance). Real prices, not the
+// two-decimal figures printed: for a sub-dollar asset those read "$0.20" for
+// levels percent apart.
 const isShownPrice = (price) => typeof price === 'number' && Number.isFinite(price) && price > 0;
 /** 'SUPPORT' or 'RESISTANCE' for a level against the shown price. */
-export const sideOfShownPrice = (levelPrice, price) => (toCents(levelPrice) < toCents(price) ? 'SUPPORT' : 'RESISTANCE');
+export const sideOfShownPrice = (levelPrice, price) => (Number(levelPrice) < Number(price) ? 'SUPPORT' : 'RESISTANCE');
 /** The levels re-sided around the shown price (closest first); unchanged without a shown price. */
 export function sideLevelsAt(levels, price) {
   if (!levels || !isShownPrice(price)) return levels;
@@ -193,11 +194,10 @@ export function sideLevelsAt(levels, price) {
     resistance: all.filter(l => sideOfShownPrice(l.price, price) === 'RESISTANCE').sort((a, b) => a.price - b.price),
   };
 }
-/** A level's % distance from the shown price (both at two decimals); null without a shown price. */
+/** A level's % distance from the shown price; null without a shown price. */
 export function distanceFromShownPrice(levelPrice, price) {
   if (!isShownPrice(price)) return null;
-  const p = toCents(price) / 100;
-  return ((toCents(levelPrice) / 100 - p) / p) * 100;
+  return ((Number(levelPrice) - price) / price) * 100;
 }
 
 /**
