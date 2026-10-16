@@ -138,9 +138,9 @@ describe('F8 — MACD says "cross" only when one happened', () => {
     expect(rowText('MACD Signal')).toBe('MACD Signal Bullish cross · 2d ago');
   });
 
-  it('positive → negative on the latest bar → "Bearish cross · 0d ago"; negative throughout → "Below signal line"', async () => {
+  it('positive → negative on the latest bar → "Bearish cross · latest session"; negative throughout → "Below signal line"', async () => {
     await render({ indicators: { ...QUIET, macd: { macd: -1, signal: -0.8, histogram: -0.2 }, macdHistogram: [-0.2, 0.1, 0.2, 0.3, 0.4, 0.5] } });
-    expect(rowText('MACD Signal')).toBe('MACD Signal Bearish cross · 0d ago');
+    expect(rowText('MACD Signal')).toBe('MACD Signal Bearish cross · latest session');
     await render({ indicators: { ...QUIET, macd: { macd: -1, signal: -0.8, histogram: -0.2 }, macdHistogram: [-0.2, -0.1, -0.2, -0.3, -0.4, -0.5] } });
     expect(rowText('MACD Signal')).toBe('MACD Signal Below signal line');
   });

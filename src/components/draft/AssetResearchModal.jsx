@@ -7,7 +7,7 @@ import { formatLargeNumber } from '../../utils/formatters';
 import ChartHeader from '../Research/ChartHeader';
 import WhyMovingPopup from '../Research/WhyMovingPopup';
 import StockChart from '../Research/StockChart';
-import useResearchData from '../Research/useResearchData';
+import useResearchData, { sessionDateOf, sideLevelsAt, sideOfShownPrice } from '../Research/useResearchData';
 import AnalysisDrawer from '../Research/AnalysisDrawer';
 import TechnicalTabV2 from '../Research/TechnicalTabV2';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -177,6 +177,10 @@ const AssetResearchModal = ({
   const [profileLoading, setProfileLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
   const [highlightedLevel, setHighlightedLevel] = useState(null);
+  // The symbol the chart's S/R toggle was clicked for. The toggle's state is
+  // private to StockChart (no callback prop), so the modal notices the click on
+  // its pill; the chart remounts per symbol (key), which turns S/R off again.
+  const [srSymbol, setSrSymbol] = useState(null);
   const [drawerSnapState, setDrawerSnapState] = useState('mid');
   const [v2ContainerHeight, setV2ContainerHeight] = useState(600);
   const v2ContainerRef = useRef(null);
@@ -228,8 +232,28 @@ const AssetResearchModal = ({
     isCrypto: isCrypto,
     initialTimeframe: defaultTimeframe,
     technicalActive: activeTab === 'technical',
+    srRequested: srSymbol !== null && srSymbol === currentAsset?.symbol,
     ...(controlledMode ? { controlled: { extremes: controlledValid ? (controlledQuote.extremes || null) : null } } : {}),
   });
+
+  // Off the 1D chart, turning S/R on asks for the daily levels the toggle draws
+  // (the same single daily request the Technical tab makes).
+  const handleChartClickCapture = useCallback((e) => {
+    const pill = e.target?.closest?.('button');
+    if (pill && pill.textContent.trim() === 'S/R') setSrSymbol(currentAsset?.symbol ?? null);
+  }, [currentAsset?.symbol]);
+
+  // The chart's S/R lines and its highlighted level are sided from the same
+  // shown price as the Technical tab's rows ("Current"), by the same helper —
+  // never by the close detectLevels used. Memoized: the chart redraws its lines
+  // whenever the levels object changes.
+  const shownPrice = currentAsset?.price;
+  const chartLevels = useMemo(() => sideLevelsAt(researchData.levels, shownPrice), [researchData.levels, shownPrice]);
+  const chartHighlight = useMemo(() => (
+    highlightedLevel && typeof shownPrice === 'number' && Number.isFinite(shownPrice) && shownPrice > 0
+      ? { ...highlightedLevel, type: sideOfShownPrice(highlightedLevel.price, shownPrice) }
+      : highlightedLevel
+  ), [highlightedLevel, shownPrice]);
 
   // Always prefer daily change from OHLCV data over parent-provided percentChange.
   // Parent components (BaggerBomb, Snake Draft) pass entry-based cumulative % change
@@ -736,7 +760,7 @@ const AssetResearchModal = ({
 
           {/* v2: Chart Section */}
           {version >= 2 && (
-            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: '40px' }}>
+            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: '40px' }} onClickCapture={handleChartClickCapture}>
               {researchData.loading && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -778,9 +802,9 @@ const AssetResearchModal = ({
                   rawData={researchData.rawData}
                   timeframe={researchData.timeframe}
                   onTimeframeChange={researchData.setTimeframe}
-                  levels={researchData.levels}
+                  levels={chartLevels}
                   smaData={researchData.smaData}
-                  activeHighlight={highlightedLevel}
+                  activeHighlight={chartHighlight}
                   height={chartHeight}
                   bombData={bombData}
                   symbol={currentAsset?.symbol}
@@ -883,6 +907,7 @@ const AssetResearchModal = ({
                   dailyData={researchData.dailyData}
                   indicators={researchData.indicators}
                   levels={researchData.levels}
+                  sessionDate={sessionDateOf(Date.now(), !!isCrypto)}
                   onLevelHighlight={setHighlightedLevel}
                 />
               )}

@@ -139,6 +139,7 @@ function sessionBars(date, startPrice, { upto = '19:30' } = {}) {
 // BEGIN GENERATED OFF REFERENCES — captured at the pre-build SHA 44d0c63eba4e3099552d3ec3dbde6a89660a7e06 (6 entries).
 // Regenerate ONLY by re-running this file's OFF rows at that SHA with
 // SHADOW_OFF_CAPTURE_DIR set; never by blessing build output.
+// re-pinned by founder ruling 2026-10-15 (research modal F3), 1D request now `{ days: 400 }`; all other rows unchanged.
 const OFF = {
  "cryptoEveningPriority2": {
   "calls": [
@@ -147,6 +148,7 @@ const OFF = {
     "BTC",
     "1d",
     {
+     "days": 400,
      "type": "crypto"
     }
    ],
@@ -201,7 +203,9 @@ const OFF = {
     "fetchHistoricalOHLCV",
     "AAPL",
     "1d",
-    null
+    {
+     "days": 400
+    }
    ],
    [
     "getStockPrice",
@@ -493,7 +497,9 @@ const OFF = {
     "fetchHistoricalOHLCV",
     "AAPL",
     "1d",
-    null
+    {
+     "days": 400
+    }
    ],
    [
     "getStockPrice",
@@ -503,7 +509,9 @@ const OFF = {
     "fetchHistoricalOHLCV",
     "MSFT",
     "1d",
-    null
+    {
+     "days": 400
+    }
    ],
    [
     "getStockPrice",

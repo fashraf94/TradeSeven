@@ -5,6 +5,7 @@ import { HOLO_COLORS } from '../../constants/holoTheme';
 import { SECTORS, CRYPTO_SECTOR } from '../../constants/sectors';
 import { getQuickSectorSummary } from '../../services/sectorDataService';
 import QuadrantBadge from './MoneyMap/QuadrantBadge';
+import { sideLevelsAt, distanceFromShownPrice } from './useResearchData';
 
 /**
  * TechnicalTabV2 — Enhanced 4-section collapsible technical analysis tab.
@@ -12,25 +13,28 @@ import QuadrantBadge from './MoneyMap/QuadrantBadge';
  *
  * `dailyData` is the symbol's DAILY series (newest-first, as the API returns
  * it) — never the chart's candles, which can be weekly or intraday.
+ * `sessionDate` is the current trading session's date (YYYY-MM-DD: ET for
+ * stocks, UTC for crypto — useResearchData's sessionDateOf).
  */
-const TechnicalTabV2 = ({ asset, dailyData, indicators, levels, onLevelHighlight }) => {
+const TechnicalTabV2 = ({ asset, dailyData, indicators, levels, sessionDate, onLevelHighlight }) => {
   const price = asset?.price || 0;
 
   return (
     <div>
       <PriceLevelsSection levels={levels} price={price} onLevelHighlight={onLevelHighlight} />
       <MomentumSection indicators={indicators} price={price} />
-      <VolumeRangeSection dailyData={dailyData} price={price} />
+      <VolumeRangeSection dailyData={dailyData} price={price} sessionDate={sessionDate} />
       <SectorContextSection asset={asset} />
     </div>
   );
 };
 
-// A level's distance is stored as a bare percentage string ("-2.31"); show
-// its sign and unit, formatted from that same number.
+// A level's distance in percent, shown with its sign and unit — rounded
+// first, so a distance under 0.005% reads "0.00%", never "-0.00%".
 const formatDistance = (distance) => {
-  const n = Number(distance);
-  if (distance == null || distance === '' || !Number.isFinite(n)) return '';
+  if (distance == null || distance === '') return '';
+  const n = Number(Number(distance).toFixed(2));
+  if (!Number.isFinite(n)) return '';
   return `${n > 0 ? '+' : ''}${n.toFixed(2)}%`;
 };
 
@@ -38,7 +42,8 @@ const formatDistance = (distance) => {
  * MACD wording from the histogram (MACD minus its signal line). `histogram`
  * is newest-first: index 0 is the latest daily bar, up to 6 bars. "Cross" is
  * said only when the line was on the other side within the last 5 bars; `n`
- * counts bars back to the first bar on the current side.
+ * counts bars back to the first bar on the current side ("latest session" when
+ * that is the newest bar).
  */
 const describeMacd = (macd, histogram) => {
   if (!macd || !Number.isFinite(macd.histogram)) return { tone: 'unknown', text: '—' };
@@ -47,9 +52,10 @@ const describeMacd = (macd, histogram) => {
   const series = Array.isArray(histogram) ? histogram : [];
   for (let j = 1; j < Math.min(series.length, 6); j++) {
     if (Math.sign(series[j]) === -side) {
+      const when = j === 1 ? 'latest session' : `${j - 1}d ago`;
       return side > 0
-        ? { tone: 'bullish', text: `Bullish cross · ${j - 1}d ago` }
-        : { tone: 'bearish', text: `Bearish cross · ${j - 1}d ago` };
+        ? { tone: 'bullish', text: `Bullish cross · ${when}` }
+        : { tone: 'bearish', text: `Bearish cross · ${when}` };
     }
   }
   return side > 0
@@ -60,9 +66,14 @@ const describeMacd = (macd, histogram) => {
 // ============================
 // Section A: Price Levels
 // ============================
+// detectLevels sides and measures levels from the newest daily close; the
+// rows below are sided and measured from the price the "Current" row shows
+// (BUILD_RULES §9) — the same helper sides the chart's S/R lines. Without a
+// shown price there is nothing to measure from.
 const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
-  const support = levels?.support || [];
-  const resistance = levels?.resistance || [];
+  const sided = sideLevelsAt(levels, price);
+  const support = sided?.support || [];
+  const resistance = sided?.resistance || [];
 
   const renderLevel = (level, idx) => {
     const isSupport = level.type === 'SUPPORT';
@@ -115,7 +126,7 @@ const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
             fontSize: '11px',
             color: 'rgba(255, 255, 255, 0.5)',
           }}>
-            {formatDistance(level.distanceFromCurrent)}
+            {formatDistance(distanceFromShownPrice(level.price, price))}
           </span>
         </div>
       </div>
@@ -273,15 +284,26 @@ const barTime = (c) => {
   return Number.isFinite(t) ? t : null;
 };
 
-const VolumeRangeSection = ({ dailyData, price }) => {
+// "Oct 14" for a YYYY-MM-DD session date.
+const shortDate = (dateKey) => new Date(`${dateKey}T00:00:00Z`)
+  .toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+const VolumeRangeSection = ({ dailyData, price, sessionDate }) => {
   const stats = useMemo(() => {
     if (!dailyData || dailyData.length < 5) return null;
     const bars = [...dailyData].reverse(); // oldest-first
 
     // Average over the last 30 daily sessions (latest included); the label
     // says how many sessions when fewer exist.
-    const volumes = bars.map(c => Number(c.volume) || 0).filter(v => v > 0);
+    const volumeBars = bars.filter(c => (Number(c.volume) || 0) > 0);
+    const volumes = volumeBars.map(c => Number(c.volume));
     const latestVolume = volumes[volumes.length - 1] || 0;
+    // The latest bar is the newest COMPLETED session — during market hours,
+    // yesterday's. "Today" only when its date is the current session's.
+    const latestDate = String(volumeBars[volumeBars.length - 1]?.date || '').substring(0, 10);
+    const latestLabel = !latestDate ? 'Last session'
+      : latestDate === sessionDate ? 'Today'
+      : `Last session · ${shortDate(latestDate)}`;
     const avgWindow = volumes.slice(-30);
     const avgVolume = avgWindow.length > 0 ? avgWindow.reduce((a, b) => a + b, 0) / avgWindow.length : 0;
     const volumeRatio = avgVolume > 0 ? latestVolume / avgVolume : 1;
@@ -309,8 +331,8 @@ const VolumeRangeSection = ({ dailyData, price }) => {
     const low52w = Math.min(...lows);
     const rangePercent = high52w > low52w ? ((price - low52w) / (high52w - low52w)) * 100 : 50;
 
-    return { latestVolume, avgVolume, volumeRatio, avgLabel, high52w, low52w, rangePercent, rangeLabel };
-  }, [dailyData, price]);
+    return { latestVolume, latestLabel, avgVolume, volumeRatio, avgLabel, high52w, low52w, rangePercent, rangeLabel };
+  }, [dailyData, price, sessionDate]);
 
   const formatVolume = (v) => {
     if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
@@ -327,22 +349,28 @@ const VolumeRangeSection = ({ dailyData, price }) => {
         </div>
       ) : (
         <>
-          {/* Volume comparison bars */}
+          {/* Volume comparison bars — one grid, so both bars start at the same x
+              whatever the length of the first bar's dated label */}
           <div style={{ marginBottom: '16px' }}>
-            <VolumeBar
-              label="Today"
-              value={stats.latestVolume}
-              maxValue={Math.max(stats.latestVolume, stats.avgVolume)}
-              formatted={formatVolume(stats.latestVolume)}
-              ratio={stats.volumeRatio}
-            />
-            <VolumeBar
-              label={stats.avgLabel}
-              value={stats.avgVolume}
-              maxValue={Math.max(stats.latestVolume, stats.avgVolume)}
-              formatted={formatVolume(stats.avgVolume)}
-              ratio={1}
-            />
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'minmax(50px, max-content) 1fr 45px',
+              columnGap: '8px', rowGap: '4px', alignItems: 'center', marginBottom: '4px',
+            }}>
+              <VolumeBar
+                label={stats.latestLabel}
+                value={stats.latestVolume}
+                maxValue={Math.max(stats.latestVolume, stats.avgVolume)}
+                formatted={formatVolume(stats.latestVolume)}
+                ratio={stats.volumeRatio}
+              />
+              <VolumeBar
+                label={stats.avgLabel}
+                value={stats.avgVolume}
+                maxValue={Math.max(stats.latestVolume, stats.avgVolume)}
+                formatted={formatVolume(stats.avgVolume)}
+                ratio={1}
+              />
+            </div>
             <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '4px' }}>
               {stats.volumeRatio.toFixed(1)}x average volume
             </div>
@@ -393,16 +421,17 @@ const VolumeBar = ({ label, value, maxValue, formatted, ratio }) => {
     : ratio > 1.3 ? 'rgba(0, 217, 255, 0.4)'
     : 'rgba(255, 255, 255, 0.3)';
 
+  // One row of the parent's three-column grid (label · bar · value).
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+    <div style={{ display: 'contents' }}>
       <span style={{
         fontSize: '11px', color: 'rgba(255,255,255,0.5)',
-        width: '50px', flexShrink: 0,
+        whiteSpace: 'nowrap',
       }}>
         {label}
       </span>
       <div style={{
-        flex: 1, height: '14px', borderRadius: '4px',
+        height: '14px', borderRadius: '4px',
         background: 'rgba(255,255,255,0.06)', position: 'relative', overflow: 'hidden',
       }}>
         <div style={{
@@ -412,7 +441,7 @@ const VolumeBar = ({ label, value, maxValue, formatted, ratio }) => {
       </div>
       <span style={{
         fontSize: '11px', color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace',
-        width: '45px', textAlign: 'right', flexShrink: 0,
+        textAlign: 'right',
       }}>
         {formatted}
       </span>
