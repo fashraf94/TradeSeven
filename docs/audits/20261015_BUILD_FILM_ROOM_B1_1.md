@@ -6,6 +6,7 @@
 
 | Question | Answer |
 |---|---|
+| **The rulings round (16 Oct, Amendment D)** | **See §12.** RD-1–RD-7 built; questions back to the founder in §12.6. |
 | Built | B0 docs and items 1–5, one commit each with their tests; one commit of §2 review fixes. Draft PR, no merge, no production write, no backfill, no refresh. |
 | Item 1 (RC-2) — the live count on the record | **Done.** The evaluator records, per held symbol, the count `evaluateRisk` received, `withinAge` and `dailyPct` exactly as passed (`\|\| 0` included); the capture writes `risk.stagnation`, the tape copies it to `checks[].stagnation` (class R). |
 | Proof of no change in the evaluator (exit criterion 1) | **Holds.** Every battle write (`cronState` included), prompt, writer argument, verdict and capture byte is identical to the tree before B1.1, with `risk.stagnation` lifted — on the frozen calls-off golden (16 scenarios), the rollback golden (3) and a new frozen golden of **18 ticks where the stagnation rule is live** (fires executed, vetoed, held by the breaker, paused, reset, chained). |
@@ -171,3 +172,125 @@ Counts: of the 27 X1–X4 findings, 13 CONFIRMED, 13 PARTLY (X1-2 among them: me
 6. **Owner-written meeting history and the re-merge (X3-7).** The owner may write `gameplanMeetingHistory`; a planted duplicate or a new id makes the next night's pass re-merge P, the new read of a copied row wins, and 26 earlier-dated plants push the real meeting off P (the day's cap keeps the earliest). Before B1.1 only an admin refresh (or a completion night) could do this. Option: make a copied meeting row permanent (the stored row wins, the cap keeps stored rows first).
 7. **For separate tasking (pre-existing, reported, not fixed):** X3-5 (a seq listed both as the day's gap and as unattributed after any re-write, `tapeMerge.js:523–527`); X4-3 (an empty-message error prints its bare name in the read notes and `passes.*.reason`); X1-2 (a dotted ticker key is rejected by the capture serializer under every symbol-keyed map); X2-2's sub-classes; X2-6's fixture variant; X2-7b's `winnerBasis` label.
 8. **RC-5 respected:** no census size line was built.
+
+## 12. The rulings round (Amendment D)
+
+**Date:** 16 Oct 2026 · **Prompt:** Fable, "Fix prompt — Film Room B1.1: the founder's rulings on §11" · **Governing:** Build B Amendment D (RD-1–RD-7), committed verbatim in this round
+
+### 12.0 Verdict
+
+| Question | Answer |
+|---|---|
+| Built | B0 (Amendment D verbatim, README row) and the five fixes, one commit each with their tests; one commit of review fixes; `origin/main` merged in. Draft PR, no merge, no production write, no backfill, no refresh. |
+| RD-1 | **Done.** The version rule at `captureConfig.js:38–45` is RD-1's, citing Amendment D; no version value and no golden moved. |
+| RD-3 | **Done.** The final day's note and the earlier day's are RD-3's words, verbatim. The day is decided by the tape's own `isFinalDay` (one value, BUILD_RULES §9). A refresh rewrites an old note and moves nothing else. |
+| RD-5 | **Done as worded, with no effect on the status (§12.6 item 1).** On every tape the writer produces, a partial evidence section comes with a partial checks section, and the checks section always counts. So RD-5 changes only the sources and the note; `stalled` still reads unavailable (review Y2-1, confirmed by a 2,000-sequence fuzz). |
+| RD-6 | **Done.** A stored meeting row stands against any new read, and the cap keeps stored rows first, on the nightly pass, the late re-merge and a refresh. **One latent exception:** the size budget's step (RB-6) still drops stored rows, and the next refresh then accepts any read (review Y1-1; §12.6 item 2). |
+| RD-7 | **Done.** X4-3, X2-7b and X2-6 are fixed. X3-5, X1-2 and X2-2 are routed as ruled, not built. |
+| Exit criteria | B1.1's nine stand, criterion 2 read as RD-2 states it. **Criterion 10** (no stored meeting row changes after it is copied) holds on every merge path; Y1-1's size-budget case breaches it. That case is latent: real tapes are 9.9–114 KB against a 950,000-byte budget. |
+| Mutants | **14 of 14 killed** (the prompt's six and eight more), then **10 of 10** after the review fixes (§12.3). |
+| Review | Three lenses (Y1–Y3) and one refuter per finding: **14 findings — 9 CONFIRMED, 4 PARTLY, 0 REFUTED, 1 closed by this section** (§12.4). Five were fixed by new rows; the rest are rulings or separate tasking. |
+| Checks (the branch merged with current `origin/main`) | Linux suite, CI-shaped: **0 failing files** at both heads (§12.5). Rules suite: **25 files, 424 passed**. `lint:gate`: 0 problems. `vite build`: passes. **The three frozen evaluator goldens: 37 of 37, untouched.** |
+| Fence | No BUILD_RULES §1 file, rules, index, flag, `vercel.json` or `agent-evaluate.js` touched; no new legacy-table importer (§12.7). |
+
+### 12.1 Preamble
+
+- **Fetch:** `git fetch origin` first. The PR head was `cdae4f30`, as the prompt said; PR #977 open and draft.
+- **Branch:** the app's worktree branch `claude/film-room-b1-1-rulings-74489f`, reset to `cdae4f30` (clean tree), pushed by refspec to `claude/film-room-b1-1`.
+- **Main moved** from `17947fdd` to `078fe895` (#978, Command Center S2a; 35 files, none under `api/_utils/filmTape/`, only `docs/README.md` in common, in another section). Merged at **`94ec1b48`** with the app's base-branch sync, no conflict.
+
+### 12.2 The fixes
+
+Lines are at the review-fix head `69b63e14`.
+
+| # | Ruling | Commit | What | Tests | Mutants |
+|---|---|---|---|---|---|
+| B0 | — | `8cabfe03` | `docs/specs/FILM_ROOM_BUILD_B_CARD_SPEC_V1_AMENDMENT_D_20261016.md`, verbatim between the markers; one README row | — | — |
+| 1 | RD-1 | `8ee62f15` | `captureConfig.js:38–45`: the rule, with `risk.stagnation` cited under RD-1; `TICK_CAPTURE_SCHEMA_VERSION` (`:46`) and `_CALLS` (`:54`) unchanged | none (a comment; the review found no row that reads it) | — |
+| 2 | RD-3 | `20f62869` | `tapeAssemble.js`: `buildMeetings` takes `finalDay` (`:863`), the note (`:919`), the two sentences as constants (`:934–935`), `isFinalDay` computed once (`:1110`) and handed to both the tape field and the note (`:1158`) | `tapeMeetings.test.js` RD-3 rows (`:136`): the words verbatim; a completed battle's final day; an active battle's final day; a multi-day battle's earlier and final days; a battle with no list; a refresh rewrites the pre-RD-3 note and nothing else moves, and the next refresh is unchanged. `closePassLateMeeting.test.js`: P of the five-day world, byte-pinned | D1, D13, D14 |
+| 3 | RD-5 | `1c942bdf` | `tapeTags.js` `tagsCoverage` (`:383`): the evidence status and the `checks.evidence` source only when some holding is recomputed (`:439`) | `tapeTagsRecorded.test.js` RD-5 rows (`:413`): fully recorded with partial evidence (complete); mixed (unavailable, naming the evidence); fully recomputed (B1.1's coverage exactly); partial checks (still unavailable); a day holding nothing; the real acceptance tape's sources | D2, D11 |
+| 4 | RD-6 | `9ae89939` | `tapeMerge.js`: the meetings rule is `permanent` (`:165`); a stored row stands and is counted as preserved only when the read differs (`:193`); the cap keeps stored rows first, then new rows by creation time, in creation order (`:588–597`) | review X3-7's two plants (a rewritten copied row; 26 earlier-dated plants) through an admin refresh (`tapeMeetings.test.js:208`, each followed by an unchanged refresh) and through the late re-merge (`closePassLateMeeting.test.js:369`): the stored row stays exactly as stored | D3, D4, D12 |
+| 5 | RD-7 | `4ca8b7bd` | **X4-3:** `errorClass.js` `errorTextOf` (`:77`), used at the three sites whose text reaches the tape: `tapeSources.js:22` (the read notes, `ticks_unreadable`), `closePass.js:110` (`passes.close.reason` / `lastError`), `candlePass.js:811` (`passes.candles.reason`). **X2-7b:** `WINNER_BASIS` is `{ recorded: 'daily_change', recomputed: 'change_since_entry' }` (`tapeTags.js:95`, `:237`). **X2-6:** `stalledDay`'s `dailyChangeOf` (`tagFixtures.js`; the default is unchanged) | `errorText.test.js` (the helper, and each site through the real passes with an empty-message `FakeOwner31Error`); `tapeTags.test.js:83`; B1's own frozen inputs still reproduce B1's items and exits (`tapeTagsRecorded.test.js:235`); the X2-6 day (`:483`): recorded tags NVDA (down on the day) not ACN, recomputed tags ACN | D5, D6, D7, D8–D10 |
+| review | — | `69b63e14` | Y3-1, Y3-2, Y2-4, Y2-2, Y1-4, Y1-3 (§12.4) | the rows §12.4 names | F1–F10 |
+| merge | — | `94ec1b48` | `origin/main` `078fe895` | — | — |
+
+### 12.3 Mutants
+
+All ran on an LF snapshot of the merged tree (D1–D14 at `94ec1b48`, F1–F10 with the files of `69b63e14`), one at a time, against the files whose rows claim to catch them; each file restored to its committed bytes afterwards (checked). The prompt's six are D1–D6.
+
+| Id | Mutant | Killed by |
+|---|---|---|
+| **D1** | the final-day test removed: every day reads the earlier-day note | 5 RD-3 rows |
+| **D2** | evidence counted on a fully recorded day | 4 RD-5 rows |
+| **D3** | a new read wins over a stored meeting row | both "rewritten copied row" rows |
+| **D4** | the cap keeps new rows first | both "26 earlier-dated plants" rows |
+| **D5** | the bare name kept on an empty message | 6 `errorText` rows |
+| **D6** | one `winnerBasis` for both bases | the `winnerBasis` pin and the X2-6 recorded row |
+| D7 | the recorded walk reads the change since entry (the X2-6 day alone, filtered) | the X2-6 recorded row |
+| D8–D10 | each of the three sites back to `String(err?.message \|\| err)` | the read-note, `ticks_unreadable`, close-pass and candle-pass rows |
+| D11 | `checks.evidence` listed on every day | 4 RD-5 rows |
+| D12 | an identical re-read counted as preserved | the RD-3 refresh row (and, after the review, its own row: F4) |
+| D13 | the note keyed on the battle's status instead of the final day | 4 RD-3 rows |
+| D14 | a battle with no list read as the final day | the no-list row |
+| F1 / F2 | `errorTextOf` with `String(message)` unguarded / an empty text printed | the Y3-1 row |
+| F3 | the thrown-function branch dropped | the Y3-2 row |
+| F4 | an identical re-read counted as preserved (filtered to its own row) | the Y3-2 identical re-read row |
+| F5 / F6 | the failure paths drop the evidence source (catch path / default) | the Y2-4 row |
+| F7 | a recomputed holding prefers a check's recorded daily change (Y2-2's mutant B) | the Y2-2 mixed row |
+| F8 / F9 | the final day from the raw list (the note / the tape's field) | the Y1-4 validated-timeline row |
+| F10 | a completed battle's every day reads the final-day note | the Y1-4 earlier-day-of-a-completed-battle row |
+
+### 12.4 The review
+
+The round's diff crossed the threshold (16 files). Three lenses on path-distinct LF snapshots of `94ec1b48`, read-only on git and the worktree: **Y1** the meetings (RD-3, RD-6), **Y2** the tagger (RD-5, X2-7b, X2-6), **Y3** X4-3, RD-1, fences and test integrity. Every finding went to its own refuter on its own snapshot (13 refuters). The ids are new for this round (B1.1's were X1–X5).
+
+| Id | Finding | Refuter | Disposition |
+|---|---|---|---|
+| Y1-1 | an over-budget merge drops every meeting row, stored ones too; the next refresh then takes any read (26 plants, or a rewritten copied row) as the stored rows, and the real rows never return | CONFIRMED, reproduced at the production 950,000-byte default; latent (real tapes 9.9–114 KB; a second merge needs an admin refresh) | **ruling** (§12.6 item 2) |
+| Y1-2 | the meetings coverage is the new read's, so a refused rewrite still moves the status and the note, which then describes the history read, not the rows the tape holds | PARTLY: the note is true of the history; the same divergence existed before RD-6 for kept rows; RD-6 adds the same-key route, including a stored row whose dropped diagnosis loses its explaining note | **ruling** (§12.6 item 3) |
+| Y1-3 | a battle with no timeline list (or `[]`) gets the earlier-day words, but no night re-merges it | PARTLY: an all-invalid list never gets a tape; unreachable for any battle since 2026-03-31 (the only creator writes the list; the owner cannot) | row retitled: RB-1's rule, unreachable today |
+| Y1-4 | two final-day mutants survive: the raw list's last entry; a completed battle's every day | CONFIRMED | **fixed:** two rows (F8–F10) |
+| Y1-5 | a row the owner plants under a pending meeting's key before it is filed becomes permanent | PARTLY: the evaluator appends, so it needs a second owner write; the owner can author the filed row anyway; RD-6 names the refresh | a limit of the ruling, reported |
+| Y1-6 | the cap's note undercounts after a merge (`merged − 26` replaces the read's count) | CONFIRMED, pre-existing (same numbers before RD-6) | separate tasking |
+| Y1-7 | the owner can erase or plant the RD-3 note through `gameplanMeeting` | CONFIRMED, pre-existing (B1's gate); the plant needs no merge | separate tasking |
+| Y2-1 | RD-5 never changes `coverage.tags.status` on a written tape | CONFIRMED (single writes, merges, a 2,000-sequence fuzz; the fuzz finds the divergence at once when the companion reason is removed) | **ruling** (§12.6 item 1) |
+| Y2-2 | X2-6 catches the swap in one direction: a recomputed holding that prefers a check's recorded daily change survives | CONFIRMED (the literal swaps are killed; a mixed day is the realistic recomputed shape) | **fixed:** the mixed-day row (F7) |
+| Y2-3 | `winnerBasis` changing from a string to a map is undeclared | PARTLY: every stored tape is B1-shaped, so a refresh moves it together with RC-1's accepted label move and `holdingBasis`; no reader reads it; no version rule requires a bump (`situationRegistry.js:15–17`) | declared here (§12.5a) |
+| Y2-4 | the failure paths' sources are pinned only by regenerable screen fixtures (the catch path not at all), and the comment's "full list" is imprecise | CONFIRMED | **fixed:** comment and a row (F5, F6) |
+| Y3-1 | `errorTextOf`'s "never throws" was false for a message with no usable `toString` | CONFIRMED; the base code threw on the same inputs; unreachable from owner input | **fixed:** guarded, with a row (F1, F2) |
+| Y3-2 | no row throws a function; RD-6's "only when the read differs" has no row of its own | CONFIRMED (a thrown function prints code text, no owner id) | **fixed:** two rows (F3, F4) |
+| Y3-3 | the README row cites §12 before it exists | an observation about a pending step; not sent to a refuter | closed by this section |
+
+Counts: 14 findings — 9 CONFIRMED, 4 PARTLY, 0 REFUTED as a whole (parts of Y1-3, Y1-5 and Y2-3 were refuted), 1 not refuted (Y3-3, closed). Lens and refuter reports are held in the session.
+
+### 12.5 Checks
+
+| Check | Tree | Result |
+|---|---|---|
+| Full suite, CI-shaped (WSL Ubuntu, a private clone, Node 20.20.2, npm 10.8.2, `CI=true TZ=UTC`, `--maxWorkers=2`) | `94ec1b48` (the five fixes merged with `origin/main`) | **1,030 files, 0 failing; 22,224 passed, 0 failed, 88 skipped** (471 s) |
+| the same | `69b63e14` (tree `6dca55fa`, with the review fixes) | **1,030 files, 0 failing; 22,231 passed, 0 failed, 88 skipped** (447 s) |
+| Rules suite (`npm run test:rules`; Windows, Java 21, the Firestore emulator — WSL has no Java) | LF archive of `94ec1b48` | **25 files, 424 passed** (the review fixes touch no rules or emulator code) |
+| `lint:gate` (Linux) | `94ec1b48`; `69b63e14` | 0 problems at both |
+| `vite build` (Linux) | `94ec1b48`; `69b63e14`; the pushed head (this report's commit, docs only) | passes at each |
+| Frozen evaluator goldens (calls-off, rollback, live stagnation) | `94ec1b48`; `69b63e14` | **37 of 37** at both. No golden file is in this round's diff. |
+
+- **Windows worktree runs** fail only rows known to fail on this machine: `tapeWiring` (it imports a CRLF-shebang script; passes on Linux) and, under parallel load, rows that hit vitest's 5 s default (`candlePass` "counts each morning…"; green alone, 20/20).
+- **PR CI** runs on the push; its result is reported with the PR, not here.
+
+**12.5a Declared movements.** A refresh of a stored day (every stored tape is B1-shaped) now also rewrites `tags.inputs.winnerBasis` from the string `'change_since_entry'` to the map, beside RC-1's accepted label move and `holdingBasis`; no reader reads it and `tagDay` ignores it. On a fully recorded day, `coverage.tags` no longer lists `checks.evidence`. A refresh of a day that carries the pre-RD-3 note rewrites that note. No registry or `stalled` version moved: the registry's rule covers a definition, a slot or a question, none of which changed.
+
+**12.5b Choices the build made.** RD-3: a battle with no list names no final day, so its note is the earlier day's (RB-1; unreachable today). RD-5: a day holding nothing has no recomputed holding, so only the checks count; the failure paths keep B1's source list. RD-6: a stored row is marked preserved only when the read differs, and the kept rows stay in creation order (a second refresh writes nothing; tested). X4-3: only the three sites that reach the tape changed; the summary and log lines that reach no tape are unchanged (`closePass.js:167`, `candlePass.js:169`, `:705`, `:791`, the handlers' bodies).
+
+### 12.6 For the founder (STOP)
+
+1. **RD-5 has no effect on `stalled`'s status (Y2-1).** Every reason that lowers the evidence section also lowers the checks section (`tapeAssemble.js:1232–1233`, `:1244–1245`: for an absent entry, the checks section's reason is about `tickMs`, a field the tagger never reads), and the checks section always counts. So a fully recorded day with partial evidence still reads `stalled` unavailable, now naming the checks. Options: (a) accept that RD-5 moves only the sources and the note; (b) let `coverage.tags` set aside the checks section's absent-entry reason on a day with no recomputed holding; (c) another rule.
+2. **Criterion 10 and the size budget (Y1-1).** RB-6 accepts that an over-budget core loses its meetings; under RD-6 the next refresh then takes any read as the stored rows. Latent today. A fix the refuter found keeps both rulings: when over budget, drop the rows the tape does not already store first, stored rows only if still over, then the tags. It changes RB-6's step and the section would read `partial`, not `unavailable`.
+3. **What the meetings coverage describes (Y1-2).** As in B1, it describes the latest read of the history; the rows are the stored copy, and `preservedFrom` is the only sign. After RD-6 a refused rewrite moves the note, and a stored row's dropped diagnosis can lose its explaining note. Keep B1's meaning, or have the coverage describe the rows the tape holds.
+4. **An earlier day of a completed battle whose meeting is still unfiled (Y1-4's refuter).** It reads the earlier-day words, as RD-3 rules for an earlier day (a row pins it), but completion does not file the meeting, so the promise cannot be kept. It needs a final day with no filing check, and it is dormant while battles are single-day.
+5. **A limit of RD-6 (Y1-5):** a row the owner plants under a pending meeting's key before filing becomes permanent; no fix is indicated.
+6. **For separate tasking (pre-existing, reported, not fixed):** Y1-6 (the cap's note undercounts; the larger of the two counts is a better lower bound); Y1-7 (the owner can erase or plant the RD-3 note; the server's copy, `cronState.gameplanMeeting`, which the owner cannot write, could key it); the re-merge is never retried after `time_floor` or `notReached`, and the backfill never re-merges (dormant); `closePass.js:167`'s re-merge catch can throw on a message with no usable text, under a "never throws" docstring; `firedAt` still falls back to the evidence stamp's risk for a recorded holding.
+7. **Routed as RD-7 rules, not built:** X3-5 (B2's writer section, discovery first), X1-2 (the Command Center chat), X2-2 (backlog).
+
+### 12.7 Fence statement
+
+The round's own changes (`git diff --name-only cdae4f30 4ca8b7bd` and `94ec1b48 69b63e14`) name no BUILD_RULES §1 file, no `firestore.rules`, no `firestore.indexes.json`, no `vercel.json`, no `src/config/featureFlags.js`, no `api/_utils/archetypeImportBoundaryBaseline.json` and not `api/cron/agent-evaluate.js`. The only new imports are `errorClass.js` (three times) and test-only imports; no legacy archetype table is imported. No merge to `main`, no production write, no backfill, no refresh.
