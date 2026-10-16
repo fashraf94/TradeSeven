@@ -69,7 +69,9 @@ describe('the real gate and the real hub chunk', () => {
     await act(async () => {
       root.render(<StrictMode><CommandCenterHubGate site={site} legacy={<div data-shell="legacy" />} frame={frame} /></StrictMode>);
     });
-    for (let i = 0; i < 50 && !host.querySelector('[data-hub="shell"]'); i += 1) {
+    // Up to 5 s for the first evaluation: vitest transforms the chunk's modules on first
+    // import, and since S2a that graph includes the selectors and their shipped inputs.
+    for (let i = 0; i < 500 && !host.querySelector('[data-hub="shell"]'); i += 1) {
       await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     }
     const hub = host.querySelector('[data-hub="shell"]');

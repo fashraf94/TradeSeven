@@ -168,6 +168,15 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/sections/GamesSection.jsx',
   'src/components/CommandCenter/sections/HubHold.jsx',
   'src/components/CommandCenter/sections/NextActionCard.jsx',
+  // Command Center hub, S2a (the pure deploy selectors and their test fixtures):
+  // no colour and no motion at all, registered in the commit that introduces them
+  // so the whole directory stays on this list (hazard 34).
+  'src/components/CommandCenter/__fixtures__/attemptFixtures.js',
+  'src/components/CommandCenter/__fixtures__/deployStateFixtures.js',
+  'src/components/CommandCenter/hub/selectors/attemptReducer.js',
+  'src/components/CommandCenter/hub/selectors/attemptVocabulary.js',
+  'src/components/CommandCenter/hub/selectors/deployState.js',
+  'src/components/CommandCenter/hub/selectors/ownership.js',
 ];
 
 /**

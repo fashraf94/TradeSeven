@@ -5,7 +5,7 @@
 // "Tester" literal).
 
 import { describe, expect, it } from 'vitest';
-import { formatHubDate, headerName } from './hubDate';
+import { formatHubDate, formatHubTime, headerName } from './hubDate';
 
 describe('formatHubDate — weekday, month and day in US Eastern time', () => {
   it('reads the design\'s shape', () => {
@@ -39,5 +39,21 @@ describe('headerName — the display name, else the username, else none', () => 
     [{ displayName: 42 }, ''],
   ])('%j → %j', (user, expected) => {
     expect(headerName(user)).toBe(expected);
+  });
+});
+
+describe('formatHubTime — a clock time in US Eastern time (slice S2a: as-of and cooldown times)', () => {
+  it('reads the hour and minute in ET, across the DST change', () => {
+    expect(formatHubTime(Date.UTC(2026, 9, 14, 14, 40, 20))).toBe('10:40 AM');
+    expect(formatHubTime(Date.UTC(2026, 10, 2, 15, 5))).toBe('10:05 AM');
+  });
+
+  it('roundUp reads the next whole minute, and a whole minute as itself', () => {
+    expect(formatHubTime(Date.UTC(2026, 9, 14, 14, 40, 20), { roundUp: true })).toBe('10:41 AM');
+    expect(formatHubTime(Date.UTC(2026, 9, 14, 14, 41), { roundUp: true })).toBe('10:41 AM');
+  });
+
+  it('anything but a finite number reads as nothing', () => {
+    for (const v of [null, undefined, Number.NaN, Number.POSITIVE_INFINITY, '1791384000000', new Date()]) expect(formatHubTime(v)).toBe('');
   });
 });

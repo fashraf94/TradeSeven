@@ -6,9 +6,12 @@
 // strip 40 < nav 50 < sheets), outside the tab panel so every tab keeps it.
 //
 // Two lines — status and loadout — and the action slot, from the display
-// table in hub/deployDisplay.js. S1's state is "Checking eligibility…" with
-// the shipped hold control present and disabled. The status button opens the
-// Loadout tab: local presentation, the one thing the strip does in S1.
+// table in hub/deployDisplay.js. In production the state is "Checking
+// eligibility…" with the shipped hold control present and disabled. The
+// status button opens the Loadout tab: local presentation, the one thing the
+// strip does before S2b. Slice S2a: the slot also carries the state's one
+// action (Retry, Open game, Enter battle, Check deployment, Open in the
+// Forge) through `onAction(kind)`, disabled with no handler.
 //
 // Placement: `bottom` is the nav's measured height, so the safe-area inset
 // the nav pads is not counted again; only with no nav does the strip pad the
@@ -25,11 +28,11 @@ import HubHold from './sections/HubHold';
 
 const clamp2 = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textWrap: 'pretty' };
 
-const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutLine, placement, onOpenLoadout, onOpenGame, onDeploy, onRetry }, ref) {
+const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutLine, placement, onOpenLoadout, onOpenGame, onDeploy, onAction }, ref) {
   const display = deployDisplay(deploy, liveGame);
   const line1 = display.stripLine1;
   const line2 = display.stripLine2(loadoutLine);
-  const { hold, openGame, retry } = display.strip;
+  const { hold, openGame, action } = display.strip;
   return (
     <div
       ref={ref}
@@ -64,7 +67,11 @@ const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutL
           </HubButton>
         )}
         {hold && <HubHold compact canStart={display.canStart} label={hold.label} onDeploy={onDeploy} />}
-        {retry && <HubButton kind="secondary" onPress={onRetry} style={{ padding: '0 14px' }}>{COPY.deploy.retry}</HubButton>}
+        {action && (
+          <HubButton kind="secondary" onPress={onAction ? () => onAction(action.kind) : undefined} style={{ padding: '0 14px' }}>
+            {action.label}
+          </HubButton>
+        )}
       </div>
     </div>
   );

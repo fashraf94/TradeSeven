@@ -1,103 +1,209 @@
 // src/components/CommandCenter/hub/deployDisplay.js
 //
-// Command Center hub, slice S1 — what the mobile strip and the Deploy card
-// show for a deploy display state (spec V1.2 §3.1, §5.2, §10; the design's
-// GameStrip and DeploySection, ff-mobile.jsx / ff-side.jsx).
+// Command Center hub — what the mobile strip and the Deploy card show for a
+// deploy display state (spec V1.2 §3.1, §5.2, §10; the design's GameStrip and
+// DeploySection, ff-mobile.jsx / ff-side.jsx). Slice S1 laid the table down;
+// slice S2a extends it to the whole vocabulary.
 //
-// Input is the shape S2a's selector will return, `deriveHubDeployState` →
-// `{ displayState, canStart, … }` (§3.1), plus the first live game row when
-// there is one. This table only translates; it decides no eligibility. Its keys
-// are §3.1 / §5.2 DISPLAY words (`checking`, `ready`, `confirmed` …), never the
-// provider's stored phases (`created`, `refused`, `orphaned` … — §5.2: "UI
-// confirmed, finishing and failed are display words; they are never stored
-// phases").
+// Input is the selector's result, `deriveHubDeployState` → `{ displayState,
+// canStart, reason, freshness, retryAction, action, recovered, battleId,
+// cooldownUntil }` (selectors/deployState.js), plus the first live game row
+// when there is one. This table only translates; it decides no eligibility.
+// Its keys are DISPLAY words — the §3.1 eligibility states and the §5.2
+// attempt words (`verifying`, `finishing`, `confirmed`, `failed` …) — never a
+// stored phase it could misread: `created`, `refused`, `orphaned` and `idle`
+// are phases only. `existing` and `uncertain` are both a stored phase and a
+// display word in §5.2, and here they are only ever the display word the
+// selector chose.
 //
-// S1 renders `checking` only. The other rows are the design's states (ready,
-// live with Open game, blocked, error, submitting, confirmed), reached from
-// the layout fixtures until S2a/S2b supply real state. An unknown display
-// state fails closed to `checking`: nothing can start from a state this table
-// does not know.
+// The compositions follow the design's rules: no live hold while an attempt is
+// submitting, verifying, finishing or terminal (the control reports the phase,
+// disabled); Retry on a read error; Open game on an existing battle; an
+// attempt's one action in place of the hold. A Retry of a READ (the agent, the
+// poll) and an attempt's Retry (a new request) are different actions and never
+// share a kind. An unknown display state fails closed to `checking`: nothing
+// can start from a state this table does not know.
 
 import { HUB_COPY as COPY } from './hubCopy';
+import { formatHubTime } from './hubDate';
+import { ATTEMPT_ACTIONS } from './selectors/attemptVocabulary';
 
-/** The display states this table renders, in the §3.1 vocabulary. */
-export const DEPLOY_DISPLAY_STATES = Object.freeze(['checking', 'ready', 'blocked', 'eligibility_error', 'submitting', 'confirmed']);
+/** The display states this table renders: spec §3.1's, then §5.2's attempt words. */
+export const DEPLOY_DISPLAY_STATES = Object.freeze([
+  'signed_out', 'account_transition', 'cooldown', 'loading_agent', 'agent_error', 'no_agent',
+  'blocked', 'eligibility_error', 'checking', 'ready_stale', 'ready',
+  'submitting', 'verifying', 'finishing', 'confirmed', 'existing', 'failed', 'uncertain',
+]);
+
+/** The actions a display can offer: an attempt's (spec §5.2) and a read's Retry (§3). */
+export const DISPLAY_ACTIONS = Object.freeze({ ...ATTEMPT_ACTIONS, RETRY_READ: 'retryRead' });
 
 const S = COPY.deploy.states;
+const D = COPY.deploy;
 
-const known = (state) => (DEPLOY_DISPLAY_STATES.includes(state) ? state : 'checking');
+const ACTION_LABEL = Object.freeze({
+  [DISPLAY_ACTIONS.RETRY_READ]: D.retry,
+  [DISPLAY_ACTIONS.RETRY]: D.retry,
+  [DISPLAY_ACTIONS.ENTER_BATTLE]: D.enterBattle,
+  [DISPLAY_ACTIONS.OPEN_GAME]: D.openGame,
+  [DISPLAY_ACTIONS.CHECK_DEPLOYMENT]: D.checkDeployment,
+  [DISPLAY_ACTIONS.OPEN_FORGE_REVIEW]: D.openForge,
+});
+const actionOf = (kind) => (Object.hasOwn(ACTION_LABEL, kind) ? Object.freeze({ kind, label: ACTION_LABEL[kind] }) : null);
+
+/** The attempt's display words (spec §5.2). */
+const ATTEMPT_STATES = new Set(['submitting', 'verifying', 'finishing', 'confirmed', 'existing', 'failed', 'uncertain']);
+/** The attempt is in flight or just confirmed: the control reports its phase. */
+const IN_FLIGHT = new Set(['submitting', 'verifying', 'finishing', 'confirmed']);
+/** A read failed with nothing retained: Retry takes the hold's place. */
+const READ_ERRORS = new Set(['agent_error', 'eligibility_error']);
+/** Eligibility not yet known or not this owner's to act on: a disabled hold, the words on the line. */
+const WAITING = new Set(['checking', 'loading_agent', 'signed_out', 'account_transition', 'no_agent', 'cooldown']);
+
+const finite = (n) => typeof n === 'number' && Number.isFinite(n);
+const etTime = (ms, opts) => {
+  const clock = formatHubTime(ms, opts);
+  return clock ? COPY.time.et(clock) : '';
+};
+
+function known(deploy) {
+  const state = deploy?.displayState;
+  if (!DEPLOY_DISPLAY_STATES.includes(state)) return 'checking';
+  // A cooldown with no bound to show is not a state this table can render.
+  if (state === 'cooldown' && !finite(deploy.cooldownUntil)) return 'checking';
+  return state;
+}
+
+function statusOf(displayState, deploy, reason, asOf) {
+  switch (displayState) {
+    case 'blocked': return S.blocked(reason);
+    case 'cooldown': return S.cooldown(etTime(deploy.cooldownUntil, { roundUp: true }));
+    case 'ready_stale': return S.ready_stale(asOf);
+    case 'confirmed': return deploy?.recovered === true ? D.confirmedRecovered : S.confirmed;
+    default: return S[displayState];
+  }
+}
+
+function dotOf(displayState, liveGame) {
+  if (displayState === 'confirmed') return 'pos';
+  if (displayState === 'submitting' || displayState === 'verifying' || displayState === 'finishing') return 'blue-action';
+  if (displayState === 'failed' || displayState === 'uncertain') return 'copper';
+  if (displayState === 'existing' || liveGame) return 'teal';
+  if (displayState === 'ready' || displayState === 'ready_stale') return 'pos';
+  if (displayState === 'checking' || displayState === 'loading_agent' || displayState === 'account_transition') return 'ink-2';
+  return 'ink-3';
+}
+
+function holdLabelOf(displayState, recovered) {
+  switch (displayState) {
+    case 'submitting': return D.holdSubmitting;
+    case 'verifying': return D.holdVerifying;
+    case 'finishing': return D.holdFinishing;
+    case 'confirmed': return recovered ? D.confirmedRecovered : D.holdDeployed;
+    default: return D.hold;
+  }
+}
 
 /**
- * @param {{ displayState: string, canStart?: boolean, reason?: string }} deploy
+ * @param {object} deploy the selector's result (selectors/deployState.js)
  * @param {null|{ clock: string, preOpen?: boolean }} liveGame the first live game row, if any
  * @returns {{
  *   displayState: string,
  *   status: string,             the state's words (the strip's first line without a live game)
  *   dot: string,                the status dot's token
- *   canStart: boolean,          true only for `ready` with canStart
+ *   canStart: boolean,          true only for ready / ready_stale with canStart
  *   processing: boolean,        a hub-started deployment is submitting (Shadow's status)
  *   stripLine1: string,
  *   stripLine2: (loadoutLine: string) => string,
- *   strip: { openGame: boolean, hold: null|{ label: string, secondary: boolean }, retry: boolean },
+ *   strip: { openGame: boolean, hold: null|{ label: string, secondary: boolean }, action: null|{ kind: string, label: string } },
  *   cardHoldLabel: string,
- *   cardLine: null|{ icon: string|null, text: string, retry: boolean },
+ *   cardLine: null|{ icon: string|null, text: string, action: null|{ kind: string, label: string } },
+ *   cardNote: null|{ text: string, action: null|{ kind: string, label: string } },
  * }}
  */
 export function deployDisplay(deploy, liveGame = null) {
-  const displayState = known(deploy?.displayState);
+  const displayState = known(deploy);
   const reason = typeof deploy?.reason === 'string' && deploy.reason ? deploy.reason : '';
-  const canStart = displayState === 'ready' && deploy?.canStart === true;
-  const status = displayState === 'blocked' ? S.blocked(reason) : S[displayState];
-  const inFlight = displayState === 'submitting' || displayState === 'confirmed';
-
-  let dot = 'ink-3';
-  if (displayState === 'confirmed') dot = 'pos';
-  else if (displayState === 'submitting') dot = 'blue-action';
-  else if (liveGame) dot = 'teal';
-  else if (displayState === 'ready') dot = 'pos';
-  else if (displayState === 'checking') dot = 'ink-2';
+  const canStart = (displayState === 'ready' || displayState === 'ready_stale') && deploy?.canStart === true;
+  const asOf = etTime(deploy?.freshness?.asOf);
+  const stale = deploy?.freshness?.stale === true;
+  const refreshing = deploy?.freshness?.refreshing === true;
+  const recovered = displayState === 'confirmed' && deploy?.recovered === true;
+  const status = statusOf(displayState, deploy, reason, asOf);
+  const attemptShown = ATTEMPT_STATES.has(displayState);
+  const inFlight = IN_FLIGHT.has(displayState);
+  const attemptAction = attemptShown ? actionOf(deploy?.action) : null;
+  const readRetry = actionOf(DISPLAY_ACTIONS.RETRY_READ);
 
   // The strip (ff-mobile.jsx GameStrip): a live game takes the first line and
-  // the Open game action; the deploy state moves to the second line.
+  // the Open game action; the deploy state moves to the second line. An
+  // attempt keeps the first line over a live game.
   const liveLine = liveGame ? (liveGame.preOpen ? COPY.strip.deployed(liveGame.clock) : COPY.strip.live(liveGame.clock)) : null;
-  const stripLine1 = inFlight || !liveGame ? status : liveLine;
+  const stripLine1 = attemptShown || !liveGame ? status : liveLine;
   const gateLine = displayState === 'blocked'
-    ? COPY.deploy.blockedBehindGame(reason)
-    : displayState === 'checking' || displayState === 'eligibility_error' ? status : null;
-  const stripLine2 = (loadoutLine) => (!inFlight && liveGame && gateLine ? gateLine : loadoutLine);
+    ? D.blockedBehindGame(reason)
+    : WAITING.has(displayState) || READ_ERRORS.has(displayState) ? status : null;
+  const stripLine2 = (loadoutLine) => {
+    // A refusal's own words, unchanged, take the second line (spec §5.2).
+    if (displayState === 'failed' && reason) return reason;
+    if (!attemptShown && liveGame && gateLine) return gateLine;
+    return loadoutLine;
+  };
 
   let hold = null;
-  if (liveGame && !inFlight) {
-    hold = canStart ? { label: COPY.deploy.holdShort, secondary: true } : null;
-  } else if (displayState === 'checking') hold = { label: COPY.deploy.holdShort, secondary: false };
-  else if (displayState === 'ready' || displayState === 'blocked') hold = { label: COPY.deploy.hold, secondary: false };
-  else if (displayState === 'submitting') hold = { label: COPY.deploy.holdSubmitting, secondary: false };
-  else if (displayState === 'confirmed') hold = { label: COPY.deploy.holdDeployed, secondary: false };
+  if (attemptShown) {
+    if (inFlight && !attemptAction) hold = { label: holdLabelOf(displayState, recovered), secondary: false };
+  } else if (liveGame) {
+    hold = canStart ? { label: D.holdShort, secondary: true } : null;
+  } else if (WAITING.has(displayState)) hold = { label: D.holdShort, secondary: false };
+  else if (displayState === 'ready' || displayState === 'ready_stale' || displayState === 'blocked') hold = { label: D.hold, secondary: false };
 
-  const cardHoldLabel = displayState === 'submitting' ? COPY.deploy.holdSubmitting
-    : displayState === 'confirmed' ? COPY.deploy.holdDeployed : COPY.deploy.hold;
+  const stripAction = attemptAction || (!liveGame && READ_ERRORS.has(displayState) ? readRetry : null);
 
   let cardLine = null;
-  if (displayState === 'checking') cardLine = { icon: null, text: status, retry: false };
-  else if (displayState === 'blocked') cardLine = { icon: 'lock', text: status, retry: false };
-  else if (displayState === 'eligibility_error') cardLine = { icon: 'info', text: status, retry: true };
-  else if (displayState === 'submitting') cardLine = { icon: null, text: COPY.deploy.cardSubmitting, retry: false };
-  else if (displayState === 'confirmed') cardLine = { icon: 'check', text: COPY.deploy.cardConfirmed, retry: false };
+  switch (displayState) {
+    case 'checking': case 'loading_agent': case 'signed_out': case 'account_transition':
+    case 'verifying': case 'finishing':
+      cardLine = { icon: null, text: status, action: null }; break;
+    case 'cooldown': case 'blocked':
+      cardLine = { icon: 'lock', text: status, action: null }; break;
+    case 'no_agent': case 'ready_stale':
+      cardLine = { icon: 'info', text: status, action: null }; break;
+    case 'agent_error': case 'eligibility_error':
+      cardLine = { icon: 'info', text: status, action: readRetry }; break;
+    case 'submitting':
+      cardLine = { icon: null, text: D.cardSubmitting, action: null }; break;
+    case 'confirmed':
+      cardLine = { icon: 'check', text: recovered ? D.confirmedRecovered : D.cardConfirmed, action: attemptAction }; break;
+    case 'failed':
+      cardLine = { icon: 'info', text: reason || status, action: attemptAction }; break;
+    case 'existing': case 'uncertain':
+      cardLine = { icon: 'info', text: status, action: attemptAction }; break;
+    default: break;
+  }
+
+  // Freshness (spec §3.1): a stale retained list says when it was true and
+  // offers the read's Retry; a pending refresh says so, with the retained time.
+  let cardNote = null;
+  if (displayState === 'ready_stale') cardNote = { text: D.refreshFailed, action: readRetry };
+  else if (displayState === 'blocked' && stale) cardNote = { text: D.staleAsOf(asOf), action: readRetry };
+  else if ((displayState === 'ready' || displayState === 'blocked') && refreshing) cardNote = { text: D.refreshing(asOf), action: null };
 
   return {
     displayState,
     status,
-    dot,
+    dot: dotOf(displayState, liveGame),
     canStart,
     processing: displayState === 'submitting',
     stripLine1,
     stripLine2,
     strip: {
-      openGame: Boolean(liveGame) && !inFlight,
+      openGame: Boolean(liveGame) && !attemptShown,
       hold,
-      retry: !liveGame && displayState === 'eligibility_error',
+      action: stripAction,
     },
-    cardHoldLabel,
+    cardHoldLabel: holdLabelOf(displayState, recovered),
     cardLine,
+    cardNote,
   };
 }

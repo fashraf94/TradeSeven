@@ -417,6 +417,11 @@ const PERMITTED_TERMINALS = Object.freeze({
   'src/components/Dashboard/deployCeremony/HoldToDeployButton.jsx': 'the shipped hold control, rendered disabled with no onComplete (prompt §4.4)',
   'src/theme/cssTokens.js': 'the colour token bridge (BUILD_RULES §10)',
   'src/theme/motion.js': 'the motion vocabulary (BUILD_RULES §11)',
+  // S2a (prompt §4): the pure deploy selectors' three shipped, Node-clean inputs, each
+  // already in the main graph (App imports all three), so the hub chunk adds none.
+  'src/utils/commandCenterLiveBattles.js': 'deriveDeployGate and DEPLOY_BLOCK_REASON — the retained gate the deploy selector computes (spec §3.1)',
+  'src/constants/leagueTournament.js': 'TRAINING_CLONE_ID_PREFIX — the active poll\'s training-clone exclusion (spec §3)',
+  'src/constants/hypothesisRecords.js': 'DEPLOY_REFUSAL_CODE and DUE_DEPLOY_LINE — the review-due refusal the translator keeps (ruling R-S2A-2)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -517,6 +522,26 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
     const files = hubDirFiles();
     expect(files.length, 'the CommandCenter walk found nothing, so this row would be vacuous').toBeGreaterThan(20);
     expect(files.flatMap(activityIn)).toEqual([]);
+  });
+
+  it('S2a: the scan reaches the selectors directory, and none of its modules holds an allowance', () => {
+    const selectors = hubDirFiles().filter((rel) => rel.startsWith(`${HUB_DIR}/hub/selectors/`));
+    expect(selectors.sort()).toEqual([
+      HUB_FILE('hub/selectors/attemptReducer.js'),
+      HUB_FILE('hub/selectors/attemptVocabulary.js'),
+      HUB_FILE('hub/selectors/deployState.js'),
+      HUB_FILE('hub/selectors/ownership.js'),
+    ]);
+    expect(Object.keys(ALLOWED_ACTIVITY).filter((rel) => rel.includes('/selectors/'))).toEqual([]);
+    expect(selectors.flatMap(activityIn)).toEqual([]);
+    expect(selectors.flatMap(urlSwitchesIn)).toEqual([]);
+    // ...and the hub module reaches the selector and the vocabulary, so the walk's terminal
+    // list is exact. The reducer has no caller until S2b's provider, so no chunk carries it yet.
+    const { seen } = graph(HUB_FILE('CommandCenterHub.jsx'));
+    expect(seen).toEqual(expect.arrayContaining([
+      HUB_FILE('hub/selectors/attemptVocabulary.js'), HUB_FILE('hub/selectors/deployState.js'), HUB_FILE('hub/selectors/ownership.js'),
+    ]));
+    expect(seen).not.toContain(HUB_FILE('hub/selectors/attemptReducer.js'));
   });
 
   it('the allowances are exactly where they are used, so none goes stale', () => {
