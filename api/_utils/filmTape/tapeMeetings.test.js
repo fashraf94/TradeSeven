@@ -168,7 +168,21 @@ describe('Amendment D RD-3 — the note for a meeting not yet filed says what is
     expect(last.coverage.meetings.note).toBe(RD3_FINAL);
   });
 
-  it('a timeline that does not validate names no final day (isFinalDay null): the earlier-day words', async () => {
+  it('review Y1-4 — the final day is the VALIDATED timeline\'s last entry: a raw list ending in a weekend day and a non-date still makes D final', async () => {
+    const { tape } = await dayWith({ ...timeline([D, '2026-09-26', 'not-a-date']), gameplanMeetingHistory: HISTORY, gameplanMeeting: PENDING }, { battleId: 'b-raw-tail' });
+    expect(tape.isFinalDay).toBe(true);
+    expect(tape.coverage.meetings.note).toBe(RD3_FINAL);
+  });
+
+  it('review Y1-4 — an EARLIER day of a completed battle (a refresh after completion) reads the earlier-day words: the status does not decide', async () => {
+    const { tape } = await dayWith({ ...timeline([D, '2026-09-25']), status: 'completed', completedAt: '2026-09-25T20:00:40.000Z', gameplanMeetingHistory: HISTORY, gameplanMeeting: PENDING }, { battleId: 'b-done-earlier' });
+    expect(tape.isFinalDay).toBe(false);
+    expect(tape.coverage.meetings.note).toBe(RD3_EARLIER);
+  });
+
+  // Review Y1-3: no battle created since 2026-03-31 lacks the list (createAgentBattle writes it; the owner cannot), and on such a
+  // day no next-night re-merge reaches it (previousTapeDay is null) — only a refresh copies the meeting. The row pins RB-1's rule.
+  it('a battle with no timeline list names no final day (isFinalDay null): the earlier-day words (RB-1; unreachable today — review Y1-3)', async () => {
     const { tape } = await dayWith({ timing: { timezone: 'America/New_York' }, gameplanMeetingHistory: HISTORY, gameplanMeeting: PENDING }, { battleId: 'b-no-timeline' });
     expect(tape.isFinalDay).toBeNull();
     expect(tape.coverage.meetings.note).toBe(RD3_EARLIER);
@@ -221,6 +235,15 @@ describe('Amendment D RD-6 — a copied meeting is permanent: the owner\'s two p
     expect(after.meetings.map((m) => m.createdAt)).toEqual([...after.meetings.map((m) => m.createdAt)].sort());
     expect(after.coverage.meetings.status).toBe('partial');
     expect((await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 120_000 })).status).toBe('unchanged');
+  });
+
+  it('review Y3-2 — an IDENTICAL re-read keeps the stored rows without marking them preserved: the refresh writes nothing', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-same' });
+    expect(tape.meetings).toHaveLength(2);
+    expect((await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 60_000 })).status).toBe('unchanged');
+    const after = t.store.get(path(fx));
+    expect(after.runCount).toBe(tape.runCount);
+    expect(after.coverage.meetings.preservedFrom).toBeNull();
   });
 
   it('a meeting the tape has not stored is still copied from the new read (only stored rows are permanent)', async () => {

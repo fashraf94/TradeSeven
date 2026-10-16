@@ -66,15 +66,22 @@ export function errorClassOf(err) {
 
 /**
  * Build B Amendment D RD-7 (review X4-3) — an error's text for a read note or
- * a `passes.*.reason`: its message when it has one, as before; when the
- * message is empty, its class from the list (errorClassOf) — never the bare
- * name `String(err)` falls back to. A thrown value that is not an object keeps
- * its own text, as before. Never throws.
+ * a `passes.*.reason`: its message's text when it has one, as before; when it
+ * has none — a falsy message, or one whose text is empty or cannot be read —
+ * its class from the list (errorClassOf), never the bare name (or, for a
+ * thrown function, the source text) that `String(err)` falls back to. A thrown
+ * value that is not an object keeps its own text, as before. Never throws
+ * (review Y3-1: `String(message)` throws for a message with no usable
+ * `toString`, which would escape the per-battle catch that calls this).
  */
 export function errorTextOf(err) {
   let message = null;
   try { message = err?.message; } catch { message = null; }
-  if (message) return String(message);
+  if (message) {
+    let text = '';
+    try { text = String(message); } catch { text = ''; }
+    if (text) return text;
+  }
   if ((typeof err === 'object' && err !== null) || typeof err === 'function') return errorClassOf(err);
   return String(err);
 }

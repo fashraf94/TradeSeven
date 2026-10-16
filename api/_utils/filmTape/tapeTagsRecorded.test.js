@@ -459,6 +459,16 @@ describe('Amendment D RD-5 — the evidence counts only when some holding is rec
     expect(r.coverage).toMatchObject({ status: 'complete', sources: ['checks', 'checks.risk', 'actions'] });
   });
 
+  it('review Y2-4 — the failure paths keep B1\'s source list on a fully recorded day: inputs that do not resolve, and a throw inside the walk', () => {
+    const B1_SOURCES = ['checks', 'checks.evidence', 'checks.risk', 'actions'];
+    const doc = { checks: DAY.recorded, actions: [], coverage: { checks: { status: 'complete' }, evidence: { status: 'partial' } } };
+    const unresolved = tagger.tagTapeDay({ battle: { agentContext: { archetype: 'speculator' } }, dialEnabled: true, doc });
+    expect(unresolved.coverage).toMatchObject({ status: 'unavailable', note: 'stalled unavailable: unknown archetype (speculator)', sources: B1_SOURCES });
+    const throwing = { ...doc, get actions() { throw new Error('planted'); } };
+    const failed = tagger.tagTapeDay({ battle: { agentContext: { archetype: 'momentum_chaser' } }, dialEnabled: true, doc: throwing });
+    expect(failed.coverage).toMatchObject({ status: 'unavailable', note: 'stalled unavailable: the tagger failed (Error)', sources: B1_SOURCES });
+  });
+
   it('on a real tape: the fully recorded acceptance day names no evidence source; the same day without records does', async () => {
     expect((await writeFor(await DAYS.acceptance(true))).coverage.tags.sources).toEqual(['checks', 'checks.risk', 'actions', 'checks.stagnation']);
     expect((await writeFor(await DAYS.acceptance(false))).coverage.tags.sources).toEqual(['checks', 'checks.evidence', 'checks.risk', 'actions']);
@@ -494,5 +504,14 @@ describe('Amendment D RD-7 (review X2-6) — the daily change and the change sin
     const tape = await writeFor(await day(false));
     expect(Object.values(tape.tags.inputs.holdingBasis).every((b) => b === 'recomputed')).toBe(true);
     expect(taggedSyms(tape)).toEqual(['ACN']);
+  });
+
+  it('review Y2-2 — MIXED (ACN\'s record missing at one check): recomputed ACN reads the change since entry even where its other checks carry a daily change; recorded NVDA reads the daily change', async () => {
+    const fx = await day(true);
+    delete fx.ticks.find((tk) => tk.tickSeq === 3).risk.stagnation.ACN;
+    const tape = await writeFor(fx);
+    expect(tape.tags.inputs.holdingBasis).toEqual({ ACN: 'recomputed', MSFT: 'recorded', NVDA: 'recorded' });
+    // ACN's records (+0.5% on the day) would make it a winner; its basis is recomputed, so −0.4% since entry stalls it
+    expect(taggedSyms(tape)).toEqual(['ACN', 'NVDA']);
   });
 });

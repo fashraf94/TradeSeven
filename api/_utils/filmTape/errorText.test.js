@@ -74,6 +74,25 @@ describe('errorTextOf', () => {
     const hostile = { get message() { throw new Error('getter'); }, name: REGISTERED };
     expect(errorTextOf(hostile)).toBe('Error');
   });
+
+  it('review Y3-1 — a message with no usable text (no toString, a throwing toString, text that is empty) prints the class; the helper never throws', () => {
+    // each of these makes `String(message)` throw or come back empty
+    const noToString = Object.assign(new TypeError('x'), { message: Object.create(null) });
+    expect(() => String(noToString.message)).toThrow();
+    expect(errorTextOf(noToString)).toBe('TypeError');
+    expect(errorTextOf({ message: Object.create(null), name: REGISTERED })).toBe('Error');
+    expect(errorTextOf({ message: { toString() { throw new Error('ts'); } } })).toBe('Error');
+    expect(errorTextOf({ message: [], name: REGISTERED })).toBe('Error');
+  });
+
+  it('review Y3-2 — a thrown function or class prints its listed class or `Error`, never its source text', () => {
+    const C = class FakeOwner31Error {};
+    expect(String(C)).toBe('class FakeOwner31Error {}');          // what String(err) would print
+    expect(errorTextOf(C)).toBe('Error');
+    expect(errorTextOf(function FakeOwner31Error() {})).toBe('Error');
+    expect(errorTextOf(() => 0)).toBe('Error');
+    expect(errorTextOf(TypeError)).toBe('TypeError');             // the constructor itself: its `name` is a listed class
+  });
 });
 
 describe('every tape field an error\'s text reaches prints the class, not the name', () => {

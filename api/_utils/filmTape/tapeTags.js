@@ -374,7 +374,10 @@ export function tagDay({ inputs, checks, actions, seed = null, trace = null }) {
  * only when some holding of the day is on the recomputed basis (`recomputed`);
  * a recorded holding's count, age verdict and winner input are its records.
  * The checks section always counts. The failure paths, which tag nothing,
- * keep the full list of the inputs the tagger reads (the default).
+ * keep B1's list (the defaults): the checks, the evidence, the risk records
+ * and the actions — the evidence even on a day whose holdings are all on the
+ * recorded basis (the unresolved-inputs path returns before the bases are
+ * known), and not `checks.stagnation`, as in B1.1 (review Y2-4).
  */
 const MAX_DATE_MS = 8.64e15;
 function tagsCoverage(doc, { failure = null, pausedChecks = 0, recorded = false, recomputed = true } = {}) {
