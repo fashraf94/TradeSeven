@@ -34,7 +34,15 @@
 // wall time on a slow write; lowering the budget floor trades coverage for
 // scheduling headroom (C-9's permitted effect). Both are read at call time.
 
-/** Schema version of the two documents. Bump on any shape change. */
+/**
+ * Schema version of the two documents. Bump when a reader must know the
+ * version to read a record correctly: a field removed, renamed, retyped or
+ * given a new meaning. A field added beside the existing ones and read by name
+ * does not bump; the ruling that adds it is cited here (Build B Amendment D,
+ * RD-1 — docs/specs/FILM_ROOM_BUILD_B_CARD_SPEC_V1_AMENDMENT_D_20261016.md):
+ *   · `risk.stagnation` (Film Room B1.1, Amendment C RC-2) — accepted under
+ *     versions 1 and 2 by RD-1.
+ */
 export const TICK_CAPTURE_SCHEMA_VERSION = 1;
 
 /**
