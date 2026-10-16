@@ -3,16 +3,22 @@
 // common swap writer and creation service. Only the network, the clock and the
 // admission flag are doubles. The real import of src/utils/stockThresholdModel.js
 // below is its Node dependency-surface guard (BUILD_RULES §4): never mock it.
+// First import: the fenced computeFullDayExpiry derives its instant from the process
+// zone, and the evening-window rows read it, so this file runs in UTC like CI and
+// production (blockers review BK3-1).
+import './__fixtures__/pinTimezoneUtc.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const selector = vi.hoisted(() => ({ enabled: true }));
 vi.mock('../../src/config/featureFlags.js', async original => ({ ...await original(), get STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED() { return selector.enabled; } }));
-import { prepareStockCreation, stockCreationDb, scoreCorrectedPosition, lateStartRefusal, STOCK_LATE_START_CUTOFF_MINUTES, decisionQuote, bindStockReceipt } from './stockThresholdAdmission.js';
-import { collectStockObservation } from './stockThresholdMeasurementProvider.js';
-import { validStockAdmissionControl, stockAdmissionSelects, STOCK_APPROVAL } from './stockThresholdPolicyRegistry.js';
+import { prepareStockCreation, stockCreationDb, scoreCorrectedPosition, lateStartRefusal, STOCK_LATE_START_CUTOFF_MINUTES, decisionQuote, bindStockReceipt, readCorrectedInputs } from './stockThresholdAdmission.js';
+import { collectStockObservation, wellFormedFigi } from './stockThresholdMeasurementProvider.js';
+import { validStockAdmissionControl, stockAdmissionSelects, STOCK_APPROVAL, APPROVED_STOCK_POLICY } from './stockThresholdPolicyRegistry.js';
 import { commitBattleDocWithPin } from './compositionGenerationFence.js';
 import { executeSwapServer } from './agentSwapExecution.js';
 import { canonicalContentHash } from './canonicalHash.js';
-import { getSessionForDate } from '../../src/utils/marketCalendar.js';
+import { getSessionForDate, etWallClockToMs } from '../../src/utils/marketCalendar.js';
+// The real import of the shared creation window is its Node dependency-surface guard (BUILD_RULES §4): never mock it.
+import { eveningWindowRefusal, stockAdmissionRetryAt, NIGHT_GAME_CLOSE, STOCK_PUBLICATION_DELAY_MINUTES } from '../../src/utils/stockAdmissionWindow.js';
 import { STOCK_MODEL, stockRewardContext, initialRewardHistory, stockModelRoute } from '../../src/utils/stockThresholdModel.js';
 import { stockObservation, stockRows, stockWriterDb, correctedStockBattle, STOCK_TEST_NOW, stockTestClock, STOCK_CREATION_NOW, stockCreationClock } from './__fixtures__/stockThresholdHarness.js';
 
@@ -26,7 +32,9 @@ const ts = iso => Date.parse(iso) / 1000;
 const q = (price, asOf, observedAt = STOCK_TEST_NOW) => ({ price, asOf, observedAt });
 const inputStore = (battle, inputs) => stockWriterDb({ [`agentBattles/${battle.id}`]: battle, ...inputs, 'indexIntelligence/stockRankings': { stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }] } });
 const control = (over = {}) => ({ schemaVersion: 2, enabled: true, epoch: 1, model: { ...STOCK_MODEL }, audience: { mode: 'allowlist', ownerIds: ['owner-pilot'] }, ...over });
-const creationDoc = (ownerId = 'owner-pilot') => ({ ownerId, gameMode: 'baggerbomb_agent', duration: 'fullday', portfolio: { star: [{ symbol: 'AAPL', baseATR: 2.5 }], core: [], support: [], startingPrices: {} }, opponent: { portfolio: { star: [{ symbol: 'MSFT', baseATR: 3 }], core: [], support: [] } }, scoring: {}, scoreState: {} });
+// expiresAt is the fence's stock-only full-day expiry for both creation clocks used
+// here (Oct 15 after the close and Oct 16 in session): Oct 16, 16:00 ET (P2 reads it).
+const creationDoc = (ownerId = 'owner-pilot', expiresAt = '2026-10-16T20:00:00.000Z') => ({ ownerId, expiresAt, gameMode: 'baggerbomb_agent', duration: 'fullday', portfolio: { star: [{ symbol: 'AAPL', baseATR: 2.5 }], core: [], support: [], startingPrices: {} }, opponent: { portfolio: { star: [{ symbol: 'MSFT', baseATR: 3 }], core: [], support: [] } }, scoring: {}, scoreState: {} });
 const creationStore = ctl => stockWriterDb({ 'indexIntelligence/stockRankings': { stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }] }, ...(ctl === undefined ? {} : { 'stockThresholdControl/admission': ctl }) });
 
 describe('Ruling 1: the fill quote provider time is the reward lower bound', () => {
@@ -371,9 +379,202 @@ describe('v2 identity: v1 is retired', () => {
     const { battle } = await correctedStockBattle();
     battle.scoring.stockThresholdModel = { modelId: 'stock_measured_atr14_fullday_v1', publicationRuleId: 'eodhd_us_completed_session_observation_v1', policyHash: 'baa2b39688b673c93190540f500307ae7ad4aba7a07228ca23ba1f2afe1bf9f8', publicationRuleHash: '3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f', approvedPolicyRef: 'owner_baggerbomb_stock_thresholds_v1_20261013@v1', admittedAt: STOCK_TEST_NOW };
     expect(stockModelRoute(battle)).toEqual({ status: 'unavailable', reason: 'unsupported_stock_model' });
-    const { APPROVED_STOCK_POLICY } = await import('./stockThresholdPolicyRegistry.js');
     expect(canonicalContentHash(APPROVED_STOCK_POLICY)).toBe(STOCK_MODEL.policyHash);
     expect(canonicalContentHash(APPROVED_STOCK_POLICY.publicationRule)).toBe('3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f');
     expect(APPROVED_STOCK_POLICY).toMatchObject({ modelId: 'stock_measured_atr14_fullday_v2', modelVersion: 2 });
+  });
+});
+
+describe('security identity follow-up (P1, build report §6a Option A): ISIN, else a well-formed FIGI', () => {
+  // Live General blocks, Oct 15 2026 (GET only): US issuers carry ISIN null and an
+  // OpenFigi; a foreign issuer (ACN) carries both. BRK-A and BRK-B share a CIK.
+  const LIVE = {
+    ACN: { ISIN: 'IE00B4BNMY34', OpenFigi: 'BBG000D9D830', CIK: '0001467373' },
+    UNP: { ISIN: null, OpenFigi: 'BBG000BW3299', CIK: '0000100885' },
+    'BRK-A': { ISIN: null, OpenFigi: 'BBG000DWDMY4', CIK: '0001067983' },
+    'BRK-B': { ISIN: null, OpenFigi: 'BBG000DWH8Q0', CIK: '0001067983' },
+  };
+  const general = fields => v => (v.Type ? { ...v, ...fields } : v);
+  const observe = (symbol, fields = LIVE[symbol]) => stockObservation(symbol, { changeResponse: general(fields) });
+  it('a non-empty ISIN keeps the old form, even beside a FIGI', async () => {
+    expect((await observe('ACN')).securityId).toBe('EODHD:ACN.US:IE00B4BNMY34');
+  });
+  it('ISIN null (or empty) with a well-formed FIGI gives the FIGI form', async () => {
+    expect((await observe('UNP')).securityId).toBe('EODHD:UNP.US:FIGI:BBG000BW3299');
+    expect((await observe('UNP', { ...LIVE.UNP, ISIN: '' })).securityId).toBe('EODHD:UNP.US:FIGI:BBG000BW3299');
+    expect(wellFormedFigi('BBG001S5N8V8')).toBe(true); // a share-class FIGI has the same shape
+  });
+  it.each([
+    ['a bad check digit', 'BBG000BW3298'], ['lower case', 'bbg000bw3299'], ['11 characters', 'BBG000BW329'], ['13 characters', 'BBG000BW32990'],
+    // Each malformed value below keeps a check digit the loop accepts, so only the named
+    // check can refuse it (blockers review BK3-2); an 11-character value can never pass the loop.
+    ['a vowel (valid check digit)', 'BAG000BW3291'], ['third character not G (valid check digit)', 'BBH000BW3298'], ['a reserved prefix (valid check digit)', 'BSG000B9XRY7'],
+    ['surrounding space', ' BBG000BW3244'], ['mixed case', 'bbg000BW3299'], ['a number', 123456789012], ['empty', ''], ['null', null], ['absent', undefined],
+  ])('ISIN null with a malformed FIGI (%s) is refused before the quote GET', async (_, OpenFigi) => {
+    const fetched = [];
+    await expect(stockObservation('UNP', { changeResponse: (v, url) => { fetched.push(url.pathname); return general({ ISIN: null, OpenFigi, CIK: LIVE.UNP.CIK, LEI: '549300HO5WFZUT5N2T22' })(v); } }))
+      .rejects.toMatchObject({ name: 'StockThresholdRefusal', reason: 'security_identity_unqualified', retriable: true });
+    expect(fetched.some(p => p.includes('/real-time/'))).toBe(false);
+  });
+  it('neither ISIN nor FIGI is refused, whatever CIK and LEI say; every other identity check is unchanged', async () => {
+    await expect(observe('UNP', { ISIN: null, OpenFigi: null, CIK: LIVE.UNP.CIK, LEI: '549300HO5WFZUT5N2T22' })).rejects.toMatchObject({ reason: 'security_identity_unqualified' });
+    for (const bad of [{ Code: 'MSFT' }, { IsDelisted: true }, { Exchange: 'OTC' }, { Type: 'ETF' }, { CountryISO: 'CA' }]) {
+      await expect(observe('UNP', { ...LIVE.UNP, ...bad }), JSON.stringify(bad)).rejects.toMatchObject({ reason: 'security_identity_unqualified' });
+      await expect(observe('ACN', { ...LIVE.ACN, ...bad }), JSON.stringify(bad)).rejects.toMatchObject({ reason: 'security_identity_unqualified' });
+    }
+  });
+  it('BRK-A and BRK-B get different ids: one composite FIGI per security, unlike their shared CIK', async () => {
+    const a = await observe('BRK-A'), b = await observe('BRK-B');
+    expect(a.securityId).toBe('EODHD:BRK-A.US:FIGI:BBG000DWDMY4'); expect(b.securityId).toBe('EODHD:BRK-B.US:FIGI:BBG000DWH8Q0');
+    expect(a.securityId.split(':').at(-1)).not.toBe(b.securityId.split(':').at(-1));
+    expect(LIVE['BRK-A'].CIK).toBe(LIVE['BRK-B'].CIK);
+  });
+  it('a FIGI receipt scores and its input replays; a changed id is refused in the input or the receipt; the v2 policy hash does not move', async () => {
+    const figi = v => (v.Type ? { ...v, ISIN: null, OpenFigi: 'BBG000B9XRY4' } : v);
+    const { battle, inputs } = await correctedStockBattle({ changeResponse: figi });
+    const a = battle.portfolio.star[0], r = a.stockThresholdReceipt;
+    expect(r.securityId).toBe('EODHD:AAPL.US:FIGI:BBG000B9XRY4'); expect(inputs[r.inputRef].securityId).toBe(r.securityId);
+    expect(stockRewardContext(battle, a, 'agent', 'star', 0, q(104, '2026-10-14T13:50:00.000Z')).status).toBe('valid');
+    const replay = (b, store) => { const h = inputStore(b, store); return h.db.runTransaction(tx => readCorrectedInputs(tx, h.db, b)); };
+    await expect(replay(battle, inputs)).resolves.toBe(undefined);
+    const changedInput = structuredClone(inputs); changedInput[r.inputRef].securityId = 'EODHD:AAPL.US:FIGI:BBG000BPH459';
+    await expect(replay(battle, changedInput)).rejects.toMatchObject({ reason: 'immutable_observation_corrupt' });
+    const changedReceipt = structuredClone(battle); changedReceipt.portfolio.star[0].stockThresholdReceipt.securityId = 'EODHD:AAPL.US:US0378331005';
+    await expect(replay(changedReceipt, inputs)).rejects.toMatchObject({ reason: 'receipt_hash_mismatch' });
+    expect(STOCK_MODEL.policyHash).toBe('22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b');
+  });
+});
+
+describe('evening window (P2, build report §6b option (a)): a pilot battle that would expire before any session can score it is refused', () => {
+  const ET = (date, hh, mm, ss = 0) => etWallClockToMs(date, hh, mm) + ss * 1000;
+  const iso = ms => new Date(ms).toISOString();
+  const crypto = { symbol: 'BTC-USD.CC', isCrypto: true, baseATR: 5 };
+  // createAgentBattle under the faked clock: the fenced computeFullDayExpiry sets
+  // expiresAt, so these rows read the battle's own expiry, never a clock literal.
+  // The provider is offline, so a creation that passes every window check reaches
+  // its first GET and is refused provider_failure; one refused by a window check
+  // never calls fetch.
+  async function createAt(ms, { roster = 'crypto', ownerId = 'owner-pilot', ctl = control() } = {}) {
+    selector.enabled = true;
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(ms));
+    const fetchSpy = vi.fn(async () => { throw Error('offline'); }); vi.stubGlobal('fetch', fetchSpy);
+    const { createAgentBattle } = await import('./agentBattleService.js');
+    const { makeCompositionStoreDouble } = await import('./__fixtures__/compositionStoreDouble.js');
+    const composition = makeCompositionStoreDouble(); const added = [];
+    const db = {
+      doc: path => ({ path, id: path.split('/').at(-1), get: async () => (ctl === null ? { exists: false, data: () => undefined } : { exists: true, data: () => structuredClone(ctl) }) }),
+      collection: name => composition.collection(name) ?? { add: async doc => { added.push(doc); return { id: 'battle-1' }; }, doc: id => ({ id: id ?? 'battle-1', path: `${name}/${id ?? 'battle-1'}` }) },
+      runTransaction: async fn => fn({ get: async ref => ref.get(), create: async (r, doc) => { added.push(doc); }, update: () => {} }),
+    };
+    const portfolio = { star: [{ symbol: 'AAPL', baseATR: 2.5 }], core: [], support: roster === 'crypto' ? [{ ...crypto }] : [] };
+    const agent = { id: 'agent-1', ownerId, name: 'Cipher', archetype: 'diversifier', lastDecision: { portfolio, bench: { stocks: [], crypto: null }, watchlist: { active: [], hotBench: [], monitoring: [] } } };
+    const result = await createAgentBattle(db, agent, {}, {}, { duration: 'fullday', opponent: { portfolio: { star: [{ symbol: 'MSFT', baseATR: 2.5 }], core: [], support: [] } } }).then(r => ({ r }), e => ({ e }));
+    vi.useRealTimers();
+    return { ...result, added, fetchSpy };
+  }
+  it('runs in the production process zone (UTC): the fenced computeFullDayExpiry derives its instant from it', () => {
+    // Under another zone the fence's expiry shifts by the zone offset (pre-existing,
+    // out of scope); the first import pins UTC, and this row fails first, by name,
+    // if a pool ever ignores that pin (worker threads do).
+    expect(new Date(Date.UTC(2026, 9, 21)).getTimezoneOffset()).toBe(0);
+  });
+  const refusedBy = async (ms, opts) => { const c = await createAt(ms, opts); return { reason: c.e?.reason ?? null, fetched: c.fetchSpy.mock.calls.length, c }; };
+  // The fence's expiry for a roster created at ms (legacy: ctl null = no control document).
+  const fenceExpiry = async (ms, roster = 'crypto') => (await createAt(ms, { roster, ctl: null })).r.expiresAt;
+
+  it.each([
+    ['16:00 (the close)', 16, 0, 0], ['16:05 (inside the publication window)', 16, 5, 0], ['16:15', 16, 15, 0], ['18:00', 18, 0, 0], ['19:59', 19, 59, 0], ['19:59:59', 19, 59, 59],
+  ])('regular weekday, crypto roster, %s ET: evening_window before any GET', async (_, hh, mm, ss) => {
+    const r = await refusedBy(ET('2026-10-21', hh, mm, ss));
+    expect(r.c.e).toMatchObject({ name: 'StockThresholdRefusal', reason: 'evening_window', retriable: true });
+    expect(r.fetched).toBe(0); expect(r.c.added).toEqual([]);
+  });
+  it('the late start and the evening window leave no gap at the close', async () => {
+    expect((await refusedBy(ET('2026-10-21', 15, 59, 59))).reason).toBe('late_start_cutoff');
+    expect((await refusedBy(ET('2026-10-21', 16, 0, 0))).reason).toBe('evening_window');
+  });
+  it.each([
+    ['20:00 (the Night Game close)', '2026-10-21', 20, 0], ['20:15', '2026-10-21', 20, 15], ['23:30', '2026-10-21', 23, 30], ['pre-open 08:00', '2026-10-22', 8, 0], ['in session 10:00', '2026-10-22', 10, 0],
+  ])('crypto roster at %s ET is allowed: the window passes and the collector makes its first GET', async (_, date, hh, mm) => {
+    const r = await refusedBy(ET(date, hh, mm));
+    expect(r.reason).toBe('provider_failure'); expect(r.fetched).toBeGreaterThan(0);
+  });
+  it('Friday evening is refused; Saturday is allowed', async () => {
+    expect(await fenceExpiry(ET('2026-10-23', 18, 0))).toBe(iso(ET('2026-10-23', 20, 0)));
+    expect((await refusedBy(ET('2026-10-23', 18, 0))).reason).toBe('evening_window');
+    expect(await fenceExpiry(ET('2026-10-24', 12, 0))).toBe(iso(ET('2026-10-26', 20, 0)));
+    const sat = await refusedBy(ET('2026-10-24', 12, 0));
+    expect(sat.reason).toBe('provider_failure'); expect(sat.fetched).toBeGreaterThan(0);
+  });
+  it('early-close day (Nov 27): refused from 12:15 ET until its expiry moves to the next session; there is no Night Game', async () => {
+    // A crypto roster on an early-close day expires at the 13:00 close, so its
+    // "evening expiry" is the close itself; from 13:00 it expires Monday 20:00.
+    expect(await fenceExpiry(ET('2026-11-27', 12, 30))).toBe(iso(ET('2026-11-27', 13, 0)));
+    expect(await fenceExpiry(ET('2026-11-27', 13, 0))).toBe(iso(ET('2026-11-30', 20, 0)));
+    expect((await refusedBy(ET('2026-11-27', 12, 14, 59))).reason).toBe('provider_failure');
+    for (const [hh, mm, ss] of [[12, 15, 0], [12, 45, 0], [12, 59, 59]]) expect((await refusedBy(ET('2026-11-27', hh, mm, ss))).reason, `${hh}:${mm}:${ss}`).toBe('late_start_cutoff');
+    for (const [hh, mm, ss] of [[13, 0, 0], [13, 14, 59]]) { const r = await refusedBy(ET('2026-11-27', hh, mm, ss)); expect(r.reason, `${hh}:${mm}:${ss}`).toBe('publication_window_not_open'); expect(r.fetched).toBe(0); }
+    const open = await refusedBy(ET('2026-11-27', 13, 15, 0));
+    expect(open.reason).toBe('provider_failure'); expect(open.fetched).toBeGreaterThan(0);
+  });
+  it('a stock-only roster after the close is allowed: it plays the next session', async () => {
+    expect(await fenceExpiry(ET('2026-10-21', 18, 0), 'stocks')).toBe(iso(ET('2026-10-22', 16, 0)));
+    const r = await refusedBy(ET('2026-10-21', 18, 0), { roster: 'stocks' });
+    expect(r.reason).toBe('provider_failure'); expect(r.fetched).toBeGreaterThan(0);
+  });
+  it('a non-allowlisted owner in the window keeps the legacy battle, with zero collector calls', async () => {
+    const r = await refusedBy(ET('2026-10-21', 18, 0), { ownerId: 'owner-other' });
+    expect(r.c.e).toBeUndefined(); expect(r.fetched).toBe(0);
+    expect(r.c.added).toHaveLength(1); expect(Object.hasOwn(r.c.added[0].scoring, 'stockThresholdModel')).toBe(false);
+    expect(r.c.added[0].expiresAt).toBe(iso(ET('2026-10-21', 20, 0)));
+  });
+  it('outside a session a selected creation needs a readable expiry; during a session the expiry is not read', async () => {
+    const collector = vi.fn(); const h = creationStore(control());
+    await expect(prepareStockCreation(creationDoc('owner-pilot', 'not-an-instant'), { db: h.db, collector, now: () => new Date(ET('2026-10-21', 20, 30)) })).rejects.toMatchObject({ reason: 'invalid_battle_expiry', retriable: true });
+    await expect(prepareStockCreation(creationDoc('owner-pilot', null), { db: h.db, collector, now: () => new Date(ET('2026-10-24', 12, 0)) })).rejects.toMatchObject({ reason: 'invalid_battle_expiry' });
+    expect(collector).not.toHaveBeenCalled();
+    expect(eveningWindowRefusal(iso(ET('2026-10-21', 10, 0)), 'not-an-instant')).toBe(null);
+    expect(eveningWindowRefusal(iso(ET('2026-10-21', 8, 0)), undefined)).toBe(null);
+    expect(eveningWindowRefusal('not-an-instant', iso(ET('2026-10-21', 20, 0)))).toBe('invalid_creation_instant');
+    expect(eveningWindowRefusal('2028-01-04T23:00:00.000Z', '2028-01-05T01:00:00.000Z')).toBe('calendar_missing');
+    // Exactly at the next open is still before any evaluating tick: refused only when strictly before.
+    expect(eveningWindowRefusal(iso(ET('2026-10-21', 18, 0)), iso(ET('2026-10-22', 9, 30) - 1))).toBe('evening_window');
+    expect(eveningWindowRefusal(iso(ET('2026-10-21', 18, 0)), iso(ET('2026-10-22', 9, 30)))).toBe(null);
+  });
+  it('sweep: every refused instant names a retry time that is the first instant the same rule accepts (EDT week and the EST Thanksgiving week)', async () => {
+    // Every 15 minutes, a crypto roster (tiered rosters always carry one). The rule
+    // is the server's own: the late start, the evening window on the fence's
+    // expiry, and the collector's publication window (real code, offline GET).
+    const collectorWindow = async ms => collectStockObservation('AAPL', 2.5, { now: () => new Date(ms), fetcher: async () => { throw Error('offline'); } }).then(() => null, e => (e.reason === 'provider_failure' ? null : e.reason));
+    const refusal = async ms => lateStartRefusal(iso(ms)) || eveningWindowRefusal(iso(ms), await fenceExpiry(ms)) || collectorWindow(ms);
+    const days = [['2026-10-19', 7], ['2026-11-23', 8]];
+    let refused = 0, named = 0;
+    for (const [start, n] of days) {
+      const from = ET(start, 0, 0);
+      for (let ms = from; ms < from + n * 86_400_000; ms += 15 * 60000) {
+        const reason = await refusal(ms);
+        if (!reason) continue;
+        refused++;
+        if (reason !== 'late_start_cutoff' && reason !== 'evening_window') continue;
+        named++;
+        const retry = stockAdmissionRetryAt(iso(ms));
+        expect(retry, iso(ms)).toBeGreaterThan(ms);
+        expect(await refusal(retry), `${iso(ms)} → ${iso(retry)}`).toBe(null);
+        expect(await refusal(retry - 1000), `${iso(ms)} → ${iso(retry)} − 1 s`).not.toBe(null);
+      }
+    }
+    // Nine regular weekdays × 19 instants (late start 15:15–15:45, evening 16:00–19:45) = 171, plus the
+    // early close's late start (12:15–12:45) = 174 named; its 13:00 publication window is the one more refusal.
+    expect({ refused, named }).toEqual({ refused: 175, named: 174 });
+  }, 240_000);
+  it('the retry time is the Night Game close on a regular day and the end of the publication window on an early-close day', () => {
+    expect(NIGHT_GAME_CLOSE).toEqual({ hour: 20, minute: 0 });
+    // The shared delay is the hashed publication rule's own minimum (blockers review BK2-7).
+    expect(STOCK_PUBLICATION_DELAY_MINUTES).toBe(APPROVED_STOCK_POLICY.publicationRule.minimumMinutesAfterScheduledClose); expect(STOCK_PUBLICATION_DELAY_MINUTES).toBe(15);
+    expect(stockAdmissionRetryAt(iso(ET('2026-10-21', 15, 30)))).toBe(ET('2026-10-21', 20, 0));
+    expect(stockAdmissionRetryAt(iso(ET('2026-10-21', 18, 0)))).toBe(ET('2026-10-21', 20, 0));
+    expect(stockAdmissionRetryAt(iso(ET('2026-11-27', 12, 30)))).toBe(ET('2026-11-27', 13, 15));
+    expect(stockAdmissionRetryAt(iso(ET('2026-10-24', 12, 0)))).toBe(null);
+    expect(stockAdmissionRetryAt('not-an-instant')).toBe(null);
   });
 });
