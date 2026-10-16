@@ -263,6 +263,8 @@
     "checks[].scores.banked": "recorded",
     "checks[].scores.total": "recorded",
     "checks[].scores.opponent": "recorded",
+    "checks[].stagnation.*.ticks": "recorded",
+    "checks[].stagnation.*.dailyPct": "recorded",
     "checks[].tickMs": "recorded",
     "checks[].guardrail.deployedCount": "recorded",
     "checks[].evidence.*.px": "recorded",
@@ -355,9 +357,9 @@
     "tags.exits[].tickSeq": "recorded"
   },
   "tags": {
-    "registryVersion": 1,
+    "registryVersion": 2,
     "situations": {
-      "stalled": 1
+      "stalled": 2
     },
     "inputs": {
       "archetypeCodeId": "momentum"

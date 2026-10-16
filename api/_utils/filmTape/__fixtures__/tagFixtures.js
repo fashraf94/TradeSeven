@@ -17,6 +17,8 @@
 //   moves but is UP from entry (a winner: never stalled). MSFT moves 0.4% a check.
 
 import { composeEvidenceStamp } from '../../tickStamps.js';
+import { updateStagnationCounter } from '../../agentRiskManager.js';
+import { getArchetypeDefinition } from '../../archetypeRegistry.js';
 import { makeTick, makeEntry, battleDoc, sessionRuns, tradeOf, receiptOf, STAGES_TO, CPU_OPPONENT } from './tapeFixtures.js';
 
 const iso = (ms) => new Date(ms).toISOString();
@@ -53,22 +55,53 @@ function evidenceAt(held, seq, riskStatus) {
  * @param {number|null} [o.controlEpoch]   every tick's controls.controlEpoch
  * @param {object|null} [o.opponent]       battle.opponent (the CPU opponent by default)
  * @param {object} [o.over]                more battle fields
+ * @param {number[]} [o.meetingSeqs]       checks whose tick exits `gameplan_pending` (no evaluation entry, so no evidence)
+ * @param {boolean|object} [o.recordStagnation]  B1.1 (RC-2): every tick records `risk.stagnation` as the live
+ *                                         evaluator does — the platform's counter stepped at EVERY tick over
+ *                                         the quote, under the archetype's thresholds, the day change as
+ *                                         `priceChange / 100`. An object seeds the counter (the overnight
+ *                                         carry): `{ SYM: { stagnationTicks, lastTickPrice, lastTickTimestamp } }`.
+ * @param {number[]} [o.unrecordedSeqs]    with recordStagnation: checks whose tick carries no record
+ * @param {Function|null} [o.dailyChangeOf] with recordStagnation: `(sym, seq) => percent`, the DAY's change the
+ *                                         live rule reads (`prices[sym].changePercent`), where it differs from the
+ *                                         change since entry the agent is shown (Amendment D RD-7, review X2-6).
+ *                                         Default: the change since entry, as every other fixture day.
  */
 export async function stalledDay({
   battleId = 'b-stalled', archetype = 'momentum_chaser', exitSeq = 6, noTriggerSeqs = [], slots = 26,
   dials = null, controlEpochLog = null, controlEpoch = null, opponent = CPU_OPPONENT, over = {}, etDate = '2026-09-24',
+  meetingSeqs = [], recordStagnation = false, unrecordedSeqs = [], dailyChangeOf = null,
 } = {}) {
   const D = etDate;
   const ticks = [];
   const evaluations = [];
   let held = ['ACN', 'MSFT', 'NVDA'];
+  // B1.1: the live counter, stepped at every tick before the tick's swaps (agent-evaluate.js's risk loop)
+  const fr = recordStagnation ? getArchetypeDefinition(archetype)?.physics?.hftConfig?.forcedRotation : null;
+  const live = recordStagnation && typeof recordStagnation === 'object' ? structuredClone(recordStagnation) : {};
   // Check `seq` is captured at 13:30:20Z + 15 min per check; a swap happens inside its tick, 10 s before the capture.
   const capturedAt = (seq) => at(D, '13:30:20') + (seq - 1) * 15 * 60_000;
   const swapAt = exitSeq ? iso(capturedAt(exitSeq) - 10_000) : null;
   for (let seq = 1; seq <= slots; seq += 1) {
     const capturedAtMs = capturedAt(seq);
-    const quiet = noTriggerSeqs.includes(seq);
-    const kind = quiet ? 'no_trigger' : 'completed';
+    const meeting = meetingSeqs.includes(seq);
+    const quiet = noTriggerSeqs.includes(seq) || meeting;
+    const kind = meeting ? 'gameplan_pending' : (quiet ? 'no_trigger' : 'completed');
+    let stagnation = null;
+    if (recordStagnation) {
+      for (const s of Object.keys(live)) if (!held.includes(s)) delete live[s];
+      const rec = {};
+      for (const s of held) {
+        const prev = live[s] ?? {};
+        const step = updateStagnationCounter({
+          currentPrice: quoteOf(s, seq).current, lastTickPrice: prev.lastTickPrice ?? null, lastTickTimestamp: prev.lastTickTimestamp ?? null,
+          now: capturedAtMs - 15_000, pctThreshold: fr?.pctThreshold ?? 0.001, maxTickAgeMinutes: fr?.maxTickAgeMinutes ?? 20, stagnationTicks: prev.stagnationTicks,
+        });
+        live[s] = { stagnationTicks: step.stagnationTicks, lastTickPrice: step.lastTickPrice, lastTickTimestamp: step.lastTickTimestamp };
+        rec[s] = { ticks: step.stagnationTicks, withinAge: step.withinAge, dailyPct: (dailyChangeOf ? dailyChangeOf(s, seq) : quoteOf(s, seq).priceChange) / 100 };
+      }
+      stagnation = unrecordedSeqs.includes(seq) ? null : rec;
+    }
     const evalId = quiet ? null : `${battleId}:e${seq}`;
     const firing = seq === exitSeq;
     const verdicts = Object.fromEntries(held.map((s) => [s, firing && s === 'ACN' ? { action: 'SWAP_OUT', reason: 'stagnation' } : { action: 'HOLD', reason: null }]));
@@ -78,7 +111,7 @@ export async function stalledDay({
     ticks.push(await makeTick({
       battleId, tickSeq: seq, capturedAtMs, exitReason: kind, stages: STAGES_TO[kind], evalId,
       scores: { active: seq, banked: 0, total: seq, opponent: 2 * seq, bankedBadgePoints: 0 },
-      verdicts, decision: quiet ? null : { original: 'HOLD', final: 'HOLD', holdKind: null },
+      verdicts, stagnation, decision: quiet ? null : { original: 'HOLD', final: 'HOLD', holdKind: null },
       guardrail: { evaluated: false, deployedCount: 0 }, actions,
       controls: controlEpoch !== null ? { rendered: 'resolved', controlEpoch } : null,
       evidenceKeys: quiet ? [] : stamped, symbols: [...new Set([...held, 'XOM'])],

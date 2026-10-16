@@ -29,7 +29,8 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
 
 import { writeTapeDay } from './writeTapeDay.js';
 import { runCandlePass } from './candlePass.js';
-import { buildMeetings, MEETING_LEGS_MAX, MEETINGS_PER_DAY_MAX, MEETING_DIAGNOSIS_MAX, MEETING_ID_MAX } from './tapeAssemble.js';
+import { buildMeetings, MEETING_LEGS_MAX, MEETINGS_PER_DAY_MAX, MEETING_DIAGNOSIS_MAX, MEETING_ID_MAX, UNFILED_FINAL_DAY_NOTE, UNFILED_EARLIER_DAY_NOTE } from './tapeAssemble.js';
+import { contentOf, stableStringify } from './tapeMerge.js';
 import { symbolPlan, candleInputFingerprint, meetingLegSymbols, MEETING_SYMBOLS_PER_DAY_MAX } from './candleInputs.js';
 import { etDayBounds } from './tapeTime.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
@@ -43,6 +44,9 @@ const NIGHT = Date.parse('2026-09-25T02:15:30.000Z');
 const MORNING = Date.parse('2026-09-25T11:00:30.000Z');
 const bounds = etDayBounds(D);
 const path = (fx) => `agentBattles/${fx.battleId}/tape/${fx.etDate}`;
+// Amendment D RD-3's two notes, as the ruling words them (docs/specs/FILM_ROOM_BUILD_B_CARD_SPEC_V1_AMENDMENT_D_20261016.md)
+const RD3_FINAL = 'a meeting created this day was still pending after the battle\'s last check; the platform does not file a meeting left pending at completion, so it is not copied';
+const RD3_EARLIER = 'a meeting created this day was not yet filed when this tape was read; the next night\'s close pass copies it once it is filed';
 
 /** A history row as the evaluator files it: the meeting (agent-evaluate.js buildGameplanMeeting) with its resolution. */
 const meeting = (id, createdAt, status, legs, over = {}) => ({
@@ -107,7 +111,7 @@ describe('the meetings created on the tape day, as typed facts', () => {
     expect(tape.coverage.meetings.status).toBe('complete');
   });
 
-  it('a meeting not yet filed when the tape is read (pending, or answered but not yet processed) is not copied — the coverage says so, and a later run of the day copies it', async () => {
+  it('a meeting not yet filed when the tape is read (pending, or answered but not yet processed) is not copied — the coverage says so (this single-day battle\'s day is its final day: RD-3\'s final-day words), and a run of the day after it is filed copies it', async () => {
     const answered = { ...meeting('gpm_4', `${D}T19:00:00.000Z`, 'approved', [['NVDA', 'AMD']]), resolvedAt: `${D}T19:10:00.000Z`, resolvedBy: 'coach' };
     const answeredDay = (await dayWith({ gameplanMeetingHistory: HISTORY, gameplanMeeting: answered }, { battleId: 'b-answered' })).tape;
     expect(answeredDay.meetings).toHaveLength(2);
@@ -116,8 +120,8 @@ describe('the meetings created on the tape day, as typed facts', () => {
     const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY, gameplanMeeting: pending });
     expect(tape.meetings.map((m) => m.key)).toEqual([`gpm_1|${D}T15:10:00.000Z`, `gpm_2|${D}T17:00:00.000Z`]);
     expect(tape.coverage.meetings.status).toBe('partial');
-    expect(tape.coverage.meetings.note).toBe('a meeting created this day was not yet filed in the meeting history when this tape was read — only a later run of this day\'s close pass (a refresh) copies it');
-    // the next morning's first check expires it into the history; the refresh re-reads the day
+    expect(tape.coverage.meetings.note).toBe(RD3_FINAL);
+    // were it filed (completion does not file it today — RD-3), a run of the day would copy it
     const battle = structuredClone(t.store.get(`agentBattles/${fx.battleId}`));
     battle.gameplanMeetingHistory = [...HISTORY, { ...pending, status: 'expired', resolvedAt: '2026-09-25T13:30:20.000Z', resolvedBy: 'system' }];
     battle.gameplanMeeting = null;
@@ -126,6 +130,129 @@ describe('the meetings created on the tape day, as typed facts', () => {
     const after = t.store.get(path(fx));
     expect(after.meetings.map((m) => [m.key, m.status])).toEqual([[`gpm_1|${D}T15:10:00.000Z`, 'rejected'], [`gpm_2|${D}T17:00:00.000Z`, 'expired'], [`gpm_3|${D}T19:30:00.000Z`, 'expired']]);
     expect(after.coverage.meetings.status).toBe('complete');
+  });
+});
+
+describe('Amendment D RD-3 — the note for a meeting not yet filed says what is true of the day', () => {
+  const PENDING = { ...meeting('gpm_3', `${D}T19:30:00.000Z`, 'pending', [['NVDA', 'AMD']]), resolvedAt: null, resolvedBy: null };
+  const ON_TIME = [`gpm_1|${D}T15:10:00.000Z`, `gpm_2|${D}T17:00:00.000Z`];
+  const timeline = (tradingDays) => ({ timing: { tradingDays, currentTradingDay: 1, timezone: 'America/New_York' } });
+
+  it('the two notes are the ruling\'s words, verbatim', () => {
+    expect(UNFILED_FINAL_DAY_NOTE).toBe(RD3_FINAL);
+    expect(UNFILED_EARLIER_DAY_NOTE).toBe(RD3_EARLIER);
+  });
+
+  it('a completed battle\'s final day: the final-day words; nothing is copied from the pending meeting', async () => {
+    const { tape } = await dayWith({ gameplanMeetingHistory: HISTORY, gameplanMeeting: PENDING, status: 'completed', completedAt: `${D}T20:00:40.000Z` }, { battleId: 'b-final-done' });
+    expect(tape.isFinalDay).toBe(true);
+    expect(tape.battle.status).toBe('completed');
+    expect(tape.meetings.map((m) => m.key)).toEqual(ON_TIME);
+    expect(tape.coverage.meetings).toMatchObject({ status: 'partial', note: RD3_FINAL });
+  });
+
+  it('an active battle\'s final day (completion has not run when the tape is read): the final-day words too', async () => {
+    const { tape } = await dayWith({ gameplanMeetingHistory: HISTORY, gameplanMeeting: PENDING }, { battleId: 'b-final-active' });
+    expect(tape.isFinalDay).toBe(true);
+    expect(tape.battleStatusAtWrite).toBe('active');
+    expect(tape.coverage.meetings).toMatchObject({ status: 'partial', note: RD3_FINAL });
+  });
+
+  it('a multi-day battle: its earlier day reads the earlier-day words, its final day the final-day words', async () => {
+    const earlier = (await dayWith({ ...timeline([D, '2026-09-25']), gameplanMeetingHistory: HISTORY, gameplanMeeting: PENDING }, { battleId: 'b-two-first' })).tape;
+    expect(earlier.isFinalDay).toBe(false);
+    expect(earlier.meetings.map((m) => m.key)).toEqual(ON_TIME);
+    expect(earlier.coverage.meetings).toMatchObject({ status: 'partial', note: RD3_EARLIER });
+    const last = (await dayWith({ ...timeline(['2026-09-23', D]), gameplanMeetingHistory: HISTORY, gameplanMeeting: PENDING }, { battleId: 'b-two-last' })).tape;
+    expect(last.isFinalDay).toBe(true);
+    expect(last.coverage.meetings.note).toBe(RD3_FINAL);
+  });
+
+  it('review Y1-4 — the final day is the VALIDATED timeline\'s last entry: a raw list ending in a weekend day and a non-date still makes D final', async () => {
+    const { tape } = await dayWith({ ...timeline([D, '2026-09-26', 'not-a-date']), gameplanMeetingHistory: HISTORY, gameplanMeeting: PENDING }, { battleId: 'b-raw-tail' });
+    expect(tape.isFinalDay).toBe(true);
+    expect(tape.coverage.meetings.note).toBe(RD3_FINAL);
+  });
+
+  it('review Y1-4 — an EARLIER day of a completed battle (a refresh after completion) reads the earlier-day words: the status does not decide', async () => {
+    const { tape } = await dayWith({ ...timeline([D, '2026-09-25']), status: 'completed', completedAt: '2026-09-25T20:00:40.000Z', gameplanMeetingHistory: HISTORY, gameplanMeeting: PENDING }, { battleId: 'b-done-earlier' });
+    expect(tape.isFinalDay).toBe(false);
+    expect(tape.coverage.meetings.note).toBe(RD3_EARLIER);
+  });
+
+  // Review Y1-3: no battle created since 2026-03-31 lacks the list (createAgentBattle writes it; the owner cannot), and on such a
+  // day no next-night re-merge reaches it (previousTapeDay is null) — only a refresh copies the meeting. The row pins RB-1's rule.
+  it('a battle with no timeline list names no final day (isFinalDay null): the earlier-day words (RB-1; unreachable today — review Y1-3)', async () => {
+    const { tape } = await dayWith({ timing: { timezone: 'America/New_York' }, gameplanMeetingHistory: HISTORY, gameplanMeeting: PENDING }, { battleId: 'b-no-timeline' });
+    expect(tape.isFinalDay).toBeNull();
+    expect(tape.coverage.meetings.note).toBe(RD3_EARLIER);
+  });
+
+  it('a refresh rewrites a tape that carries the pre-RD-3 note to the new one, and nothing else on the tape moves', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY, gameplanMeeting: PENDING }, { battleId: 'b-old-note' });
+    const old = structuredClone(tape);
+    old.coverage.meetings.note = 'a meeting created this day was not yet filed in the meeting history when this tape was read — only a later run of this day\'s close pass (a refresh) copies it';
+    t.store.set(path(fx), old);                                  // as B1 / B1.1 wrote it
+    const r = await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 86_400_000 });
+    expect(r.status).toBe('written');
+    const after = t.store.get(path(fx));
+    expect(after.coverage.meetings.note).toBe(RD3_FINAL);
+    const noNote = (doc) => { const c = contentOf(structuredClone(doc)); delete c.coverage.meetings.note; return stableStringify(c); };
+    expect(noNote(after)).toBe(noNote(old));
+    expect(after.runCount).toBe(old.runCount + 1);
+    // and the next refresh finds nothing to change
+    expect((await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 2 * 86_400_000 })).status).toBe('unchanged');
+  });
+});
+
+describe('Amendment D RD-6 — a copied meeting is permanent: the owner\'s two plants (review X3-7), through an admin refresh', () => {
+  /** A planted history row created `i` seconds after 14:00 ET on the day — before every real meeting of the fixture. */
+  const plant = (i) => meeting(`plant_${String(i).padStart(2, '0')}`, `${D}T14:00:${String(i).padStart(2, '0')}.000Z`, 'approved', [['ACN', 'ORCL']]);
+
+  it('a rewritten copied row (same id and instant, a new outcome, legs and words): the stored row stands exactly, preserved; the next refresh changes nothing', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-rewrite' });
+    const battle = structuredClone(t.store.get(`agentBattles/${fx.battleId}`));
+    battle.gameplanMeetingHistory = [HISTORY[0], meeting('gpm_1', `${D}T15:10:00.000Z`, 'approved', [['MSFT', 'AMD']], { diagnosis: 'Rewritten.', resolvedBy: 'owner' }), HISTORY[2]];
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    expect((await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 60_000 })).status).toBe('written');
+    const after = t.store.get(path(fx));
+    expect(after.meetings).toEqual(tape.meetings);
+    expect(after.coverage.meetings.preservedFrom).toBe(tape.writtenAt);
+    expect((await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 120_000 })).status).toBe('unchanged');
+  });
+
+  it('26 earlier-dated plants: the cap keeps the two stored rows first, exactly as stored, then the earliest plants; the next refresh changes nothing', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-plants' });
+    const battle = structuredClone(t.store.get(`agentBattles/${fx.battleId}`));
+    battle.gameplanMeetingHistory = [...HISTORY, ...Array.from({ length: 26 }, (_, i) => plant(i))];
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 60_000 });
+    const after = t.store.get(path(fx));
+    expect(after.meetings).toHaveLength(MEETINGS_PER_DAY_MAX);
+    for (const row of tape.meetings) expect(after.meetings.find((m) => m.key === row.key)).toEqual(row);
+    // the rest are the earliest plants, and the section stays in creation order
+    expect(after.meetings.filter((m) => m.key.startsWith('plant_')).map((m) => m.key.slice(0, 8))).toEqual(Array.from({ length: MEETINGS_PER_DAY_MAX - 2 }, (_, i) => `plant_${String(i).padStart(2, '0')}`));
+    expect(after.meetings.map((m) => m.createdAt)).toEqual([...after.meetings.map((m) => m.createdAt)].sort());
+    expect(after.coverage.meetings.status).toBe('partial');
+    expect((await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 120_000 })).status).toBe('unchanged');
+  });
+
+  it('review Y3-2 — an IDENTICAL re-read keeps the stored rows without marking them preserved: the refresh writes nothing', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-same' });
+    expect(tape.meetings).toHaveLength(2);
+    expect((await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 60_000 })).status).toBe('unchanged');
+    const after = t.store.get(path(fx));
+    expect(after.runCount).toBe(tape.runCount);
+    expect(after.coverage.meetings.preservedFrom).toBeNull();
+  });
+
+  it('a meeting the tape has not stored is still copied from the new read (only stored rows are permanent)', async () => {
+    const { fx, t } = await dayWith({ gameplanMeetingHistory: HISTORY.slice(0, 2) }, { battleId: 'b-new-row' });
+    const battle = structuredClone(t.store.get(`agentBattles/${fx.battleId}`));
+    battle.gameplanMeetingHistory = HISTORY;
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 60_000 });
+    expect(t.store.get(path(fx)).meetings.map((m) => m.key)).toEqual([`gpm_1|${D}T15:10:00.000Z`, `gpm_2|${D}T17:00:00.000Z`]);
   });
 });
 

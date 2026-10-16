@@ -28,6 +28,8 @@ import { makeTapeDb } from '../_utils/filmTape/__fixtures__/tapeFirestore.js';
 import { seedDay, capturedDay, noTriggerDay, completedDay, skippedModeDay, multiDay } from '../_utils/filmTape/__fixtures__/tapeFixtures.js';
 
 const NIGHT = Date.parse('2026-09-25T02:15:30.000Z'); // 22:15 EDT on 2026-09-24
+// B1.1's log-line row runs three nightly passes over a five-day battle: the heavy tape suites' limit.
+vi.setConfig({ testTimeout: 30_000 });
 const tapePath = (id, d) => `agentBattles/${id}/tape/${d}`;
 
 function res() {
@@ -94,6 +96,40 @@ describe('the handler — guard, flag, wiring', () => {
     expect(r.body).toMatchObject({ mode: 'close', etDate: '2026-09-24', battles: 1 });
     expect(r.body.written).toHaveLength(1);
     expect(t.writeLog.every((w) => /^agentBattles\/[^/]+\/tape\/\d{4}-\d{2}-\d{2}$/.test(w.path))).toBe(true);
+  });
+
+  it('B1.1 (RC-3, review X3-8): the log line COUNTS a real late-meeting re-merge — 1/0/0, then 0/1/0 on a rerun; the body carries the rows', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const P = '2026-09-24';
+    const fx = await multiDay({ battleId: 'b-log' });
+    fx.battle.portfolio = { ...fx.battle.portfolio, star: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }], core: [{ symbol: 'NVDA' }, { symbol: 'AMD' }], support: [{ symbol: 'KO' }, { symbol: 'PEP' }], bench: { stocks: [{ symbol: 'COST' }], crypto: null } };
+    const meeting = { id: 'gpm_log', createdAt: `${P}T19:50:00.000Z`, expiresAt: `${P}T16:00:00.000Z`, status: 'pending', diagnosis: 'd', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'COST', rationale: 'r' }] };
+    fx.battle.gameplanMeetingHistory = [];
+    fx.battle.gameplanMeeting = structuredClone(meeting);
+    const t = await worldOf(fx);
+    admin.db = t.db;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const lineOf = () => { const l = logSpy.mock.calls.map((c) => c.map(String).join(' ')).filter((x) => x.includes('"remerged"')).pop(); return JSON.parse(l.slice(l.indexOf('{'))); };
+    try {
+      vi.setSystemTime(NIGHT);                                   // P's own pass
+      await handler(cronReq(), res());
+      const b = t.store.get('agentBattles/b-log');
+      Object.assign(b, { gameplanMeeting: null, gameplanMeetingHistory: [{ ...meeting, status: 'expired', resolvedAt: '2026-09-25T13:30:20.000Z', resolvedBy: 'system' }] });
+      t.store.set('agentBattles/b-log', b);
+      const D_NIGHT = NIGHT + 86_400_000;
+      vi.setSystemTime(D_NIGHT);                                 // D's pass re-merges P
+      const r = res();
+      await handler(cronReq(), r);
+      expect(r.body.remerged).toEqual([{ battleId: 'b-log', etDate: P, bytes: expect.any(Number), meetingsStored: true }]);
+      expect(lineOf()).toMatchObject({ remerged: 1, remergeUnchanged: 0, remergeFailed: 0 });
+      vi.setSystemTime(D_NIGHT + 60_000);                        // a rerun finds it copied
+      await handler(cronReq(), res());
+      const again = lineOf();
+      expect(again).toMatchObject({ remerged: 0, remergeUnchanged: 1, remergeFailed: 0 });
+      for (const k of ['remerged', 'remergeUnchanged', 'remergeFailed']) expect(typeof again[k], k).toBe('number');
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it('the backfill entry is ADMIN-ONLY: the cron header alone never runs it', async () => {

@@ -1736,6 +1736,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
 
     // ---- Risk evaluation layer (runs BEFORE trigger gate) ----
     const riskStatus = {};
+    // Film Room B1.1 (Amendment C, RC-2): per symbol, the values the stagnation
+    // rule READ this tick — recorded for the capture, never read back here.
+    const stagnationRead = {};
     const riskSwaps = [];
     // How many S7 forced exits actually COMMITTED this tick. Drives the
     // decision-snapshot rebuild below; a queued-but-failed swap does not
@@ -1870,8 +1873,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         sma20_5m: vwapInfo.sma20_5m || null,
       } : null;
 
+      const riskPosition = { symbol: score.symbol, tier: asset?.tier, baseATR: score.baseATR, dailyPct: (prices[score.symbol]?.changePercent || 0) / 100 };
       const riskResult = evaluateRisk(
-        { symbol: score.symbol, tier: asset?.tier, baseATR: score.baseATR, dailyPct: (prices[score.symbol]?.changePercent || 0) / 100 },
+        riskPosition,
         currentPrice, entryPrice, score.baseATR,
         intradaySnapshot,
         { ticksBelowVwap: vwapTicks[score.symbol], stagnationTicks: stagnationTicks[score.symbol], withinAge: stag.withinAge },
@@ -1881,6 +1885,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       );
 
       riskStatus[score.symbol] = riskResult;
+      stagnationRead[score.symbol] = { ticks: stagnationTicks[score.symbol], withinAge: stag.withinAge, dailyPct: riskPosition.dailyPct };
 
       if (['EMERGENCY_SWAP', 'SWAP_OUT', 'TRAIL_STOP'].includes(riskResult.action)) {
         riskSwaps.push({ score, asset, riskResult });
@@ -1901,6 +1906,8 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       }
       tickCapture.risk({
         verdicts,
+        // B1.1 (RC-2): what the stagnation rule read, beside what it decided.
+        stagnation: stagnationRead,
         evaluatedCount: Object.keys(verdicts).length,
         lockedCount: lockedPositions.size,
         forcedExitCount: riskSwaps.length,

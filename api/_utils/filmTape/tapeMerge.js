@@ -7,7 +7,9 @@
 // a fact an earlier run saved:
 //
 //   · ROWS are unioned by a stable key. A stored row the new read lacks (its
-//     source evicted — evaluations[] past 150, trades[] past 50) is KEPT.
+//     source evicted — evaluations[] past 150, trades[] past 50) is KEPT. A
+//     stored MEETING row stands even against a new read under its key, and
+//     the day's meeting cap keeps stored rows first (Amendment D RD-6).
 //   · COLUMN GROUPS inside a row are carried as a unit: when the new read no
 //     longer has a group's source (an entry's evidence, a trade join) and the
 //     stored row does, the stored group is kept whole — never a mixed pair.
@@ -154,9 +156,13 @@ const SECTION_RULES = Object.freeze({
     order: (rows) => [...rows].sort((a, b) => ((toMs(a.at) ?? 0) - (toMs(b.at) ?? 0)) || (a.key < b.key ? -1 : 1)),
   },
   // B1 T2 — a meeting copied from the history, by its id and creation instant.
+  // Build B Amendment D RD-6: a copied meeting is PERMANENT — a filed meeting
+  // never changes after filing, so a new read under a stored key (a rewritten
+  // history) never replaces the stored row, on every path that merges.
   meetings: {
     groups: [],
     candle: [],
+    permanent: true,
     order: (rows) => [...rows].sort((a, b) => ((toMs(a.createdAt) ?? 0) - (toMs(b.createdAt) ?? 0)) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)),
   },
 });
@@ -183,6 +189,8 @@ export function mergeRows(section, storedRows, newRows) {
       continue;
     }
     stored.delete(n.key);
+    // RD-6: the stored row stands; it is preserved (carried) only when the new read differs from it
+    if (rule.permanent) { out.push(s); if (stableStringify(s) !== stableStringify(n)) carried.rows += 1; continue; }
     if (rule.sameObservation && rule.sameObservation(s, n)) { out.push(s); continue; }
     // A tick record is permanent: nothing weaker (a gap, an entry) replaces it.
     if (s.rowSource === 'tick' && n.rowSource !== 'tick' && section === 'checks') { out.push(s); carried.rows += 1; continue; }
@@ -573,11 +581,18 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
   // B1 T2: the meetings' coverage is the new read's — the history only grows
   // (an append-only list) — preserved from the stored copy for any row it kept.
   let meetingsCov = assembled.coverage?.meetings ?? stored.coverage?.meetings ?? null;
-  // B1 review B-2: the day's cap holds for the MERGED rows too (the earliest
-  // kept), so re-planted meetings never grow the section across refreshes.
+  // B1 review B-2: the day's cap holds for the MERGED rows too, so re-planted
+  // meetings never grow the section across refreshes. Amendment D RD-6: the
+  // cap keeps the stored rows first, then the new ones by creation time (the
+  // merged rows are in creation order); what it keeps stays in that order.
   const meetingOverflow = merged.meetings.length - MEETINGS_PER_DAY_MAX;
   if (meetingOverflow > 0) {
-    merged.meetings = merged.meetings.slice(0, MEETINGS_PER_DAY_MAX);
+    const storedMeetings = keySet(stored.meetings);
+    const keep = new Set([
+      ...merged.meetings.filter((m) => storedMeetings.has(m.key)),
+      ...merged.meetings.filter((m) => !storedMeetings.has(m.key)),
+    ].slice(0, MEETINGS_PER_DAY_MAX));
+    merged.meetings = merged.meetings.filter((m) => keep.has(m));
     const kept = String(meetingsCov?.note ?? '').split('; ').filter((part) => part && !/ past \d+ in a day not copied$/.test(part));
     meetingsCov = { ...(isObj(meetingsCov) ? meetingsCov : {}), status: 'partial', note: [...kept, `${meetingOverflow === 1 ? '1 meeting' : `${meetingOverflow} meetings`} past ${MEETINGS_PER_DAY_MAX} in a day not copied`].join('; ') };
   }

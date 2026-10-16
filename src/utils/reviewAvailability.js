@@ -24,6 +24,12 @@
 // Otherwise Stage 1. The output is EXACTLY the three keys in every branch: at
 // most one bounded tape read and one cached verdict, never a fourth key.
 //
+// AN UNTAPED MODE (Build B Amendment B RB-9, after RB-5): a battle whose game
+// mode the writer does not tape — the writer's own test,
+// `resolveModeConfig(gameMode).label !== 'tiered'` (writeTapeDay.js
+// isTieredBattle; the route's since PR #963) — answers as at 'off': Stage 1,
+// decided BEFORE any verdict is asked, so it costs no verdict and no read.
+//
 // STAGE 1 (v2 not on for the owner — today, whatever the writer flag says):
 // synchronous from the battle document, NO read. ready = completed AND the
 // legacy review exists (`dailyReviews[]` non-empty — presence only, never
@@ -37,7 +43,8 @@
 // `timing.tradingDays`, when it is a real date). ready = completed AND that
 // tape's `passes.close.status === 'written'`. pending = not ready, the writer
 // flag on, a tiered battle (a flat6/tournament battle only ever gets
-// `skipped_mode`, BA-3), and the close pass's OWN selection will tape the
+// `skipped_mode`, BA-3 — since RB-9 it never reaches Stage 3, and the test is
+// kept as a second guard), and the close pass's OWN selection will tape the
 // final day and has not yet run its course — the one rule in
 // src/utils/tapeSchedule.js that the server's close pass selects by
 // (closePassWillTape; BA-28): every `timing.tradingDays` entry a session of
@@ -135,6 +142,12 @@ export async function getReviewAvailability(battle, { readTape = defaultReadTape
   if (!battle || typeof battle !== 'object') return result(false, null, 'unavailable');
   const target = typeof battle.id === 'string' && battle.id ? FILM_ROOM_ROUTE : null;
   if (!target) return result(false, null, 'unavailable');
+  // RB-9: a mode the tape does not cover answers as at 'off' — before any verdict is asked.
+  // Never a rejection (review X4-2): a mode that cannot even be looked up falls through to the
+  // stages below, exactly as before RB-9 (Stage 3 catches its own throw).
+  let untaped = false;
+  try { untaped = resolveModeConfig(battle.gameMode).label !== 'tiered'; } catch { untaped = false; }
+  if (untaped) return stageOne(battle, target);
   // BA-40: Stage 3 only when v2 resolves on for THIS battle's owner.
   let v2 = false;
   try { v2 = (await resolveFilmRoomV2ForBattle(battle, { readVerdict })) === true; } catch { v2 = false; }

@@ -6,7 +6,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   approxBytes, buildCaptureDocuments, finalizeTickCapture, resolveBodyHolder,
-  sha256Hex, truncateUtf8, utf8Length, withDeadline,
+  sha256Hex, truncateUtf8, utf8Length, withDeadline, stagnationRecordOf,
 } from './captureWriter.js';
 import { TICK_CAPTURE_BODY_DOC_MAX_BYTES } from './captureConfig.js';
 import { createTickCaptureContext, runWithTickCaptureScope } from './captureContext.js';
@@ -529,5 +529,60 @@ describe('helpers', () => {
   it('approxBytes survives a value it cannot serialize', () => {
     const cyclic = {}; cyclic.self = cyclic;
     expect(approxBytes(cyclic)).toBe(0);
+  });
+});
+
+describe('Film Room B1.1 (Amendment C, RC-2) — `risk.stagnation`, what the stagnation rule read', () => {
+  const stagnationTick = (stagnation) => liveState((c) => {
+    c.exit('completed'); c.stage('finalized');
+    c.risk({ verdicts: { NVDA: { action: 'HOLD', reason: null }, KO: { action: 'HOLD', reason: null } }, stagnation, evaluatedCount: 2, lockedCount: 0, forcedExitCount: 0 });
+  });
+
+  it('is a sibling of the verdicts: per held symbol the count, the age verdict and the daily change, admitted and free of text', () => {
+    const ctx = stagnationTick({ NVDA: { ticks: 3, withinAge: true, dailyPct: 0.0198 }, KO: { ticks: 0, withinAge: false, dailyPct: 0 } });
+    const { permanent, rejected } = buildCaptureDocuments(ctx.state, { nowMs: NOW_MS, bodyFacts: EMPTY_BODY });
+    expect(rejected).toEqual([]);
+    expect(permanent.risk.stagnation).toEqual({ NVDA: { ticks: 3, withinAge: true, dailyPct: 0.0198 }, KO: { ticks: 0, withinAge: false, dailyPct: 0 } });
+    expect(Object.keys(permanent.risk.verdicts).sort()).toEqual(['KO', 'NVDA']);
+    expect(permanent.capture.rejectedFieldCount).toBe(0);
+  });
+
+  it('type-checked: a count that is not an integer ≥ 0, an age verdict that is not a boolean, a change that is not finite — each null', () => {
+    const bad = [
+      [{ ticks: 2.5, withinAge: 'yes', dailyPct: Number.POSITIVE_INFINITY }, { ticks: null, withinAge: null, dailyPct: null }],
+      [{ ticks: -1, withinAge: 1, dailyPct: '0.01' }, { ticks: null, withinAge: null, dailyPct: null }],
+      [{ ticks: '3', withinAge: null, dailyPct: Number.NaN }, { ticks: null, withinAge: null, dailyPct: null }],
+      ['not a record', { ticks: null, withinAge: null, dailyPct: null }],
+      [{ ticks: 0, withinAge: false, dailyPct: -0.004 }, { ticks: 0, withinAge: false, dailyPct: -0.004 }],
+    ];
+    for (const [given, want] of bad) {
+      expect(stagnationRecordOf({ NVDA: given }), JSON.stringify(given)).toEqual({ NVDA: want });
+    }
+  });
+
+  it('keys must be ticker-shaped: any other key is not copied, and a ticker the tick never held reaches the body, never the record', () => {
+    expect(stagnationRecordOf({ 'not a ticker': { ticks: 1, withinAge: true, dailyPct: 0 }, nvda: { ticks: 1, withinAge: true, dailyPct: 0 }, NVDA: { ticks: 1, withinAge: true, dailyPct: 0 } }))
+      .toEqual({ NVDA: { ticks: 1, withinAge: true, dailyPct: 0 } });
+    const ctx = stagnationTick({ NVDA: { ticks: 1, withinAge: true, dailyPct: 0 }, TSLA: { ticks: 4, withinAge: true, dailyPct: 0 } });
+    const { permanent, body, rejected } = buildCaptureDocuments(ctx.state, { nowMs: NOW_MS, bodyFacts: EMPTY_BODY });
+    expect(Object.keys(permanent.risk.stagnation)).toEqual(['NVDA']);
+    expect(rejected.map((r) => r.path)).toEqual(['risk.stagnation.TSLA']);
+    expect(body.rejectedFields.map((r) => r.path)).toEqual(['risk.stagnation.TSLA']);
+    expect(permanent.capture.rejectedFieldCount).toBe(1);
+  });
+
+  it('a tick that recorded none (it never reached the risk loop, or a pre-B1.1 caller) keeps the record\'s earlier shape: no `stagnation` key at all', () => {
+    const ctx = liveState((c) => { c.exit('degraded_quotes'); c.risk({ verdicts: {}, evaluatedCount: 0, lockedCount: 0, forcedExitCount: 0 }); });
+    const { permanent } = buildCaptureDocuments(ctx.state, { nowMs: NOW_MS, bodyFacts: EMPTY_BODY });
+    expect(Object.keys(permanent.risk)).toEqual(['verdicts', 'lockedCount', 'forcedExitCount', 'evaluatedCount']);
+    expect(stagnationRecordOf(undefined)).toBeNull();
+    expect(stagnationRecordOf([])).toBeNull();
+  });
+
+  it('the schema version is unchanged by it — an additive, ungated field under the registered versions (docs/audits/20261015_BUILD_FILM_ROOM_B1_1.md §3 says why, and asks for the ruling)', () => {
+    const ctx = stagnationTick({ NVDA: { ticks: 1, withinAge: true, dailyPct: 0 } });
+    const { permanent, body } = buildCaptureDocuments(ctx.state, { nowMs: NOW_MS, bodyFacts: EMPTY_BODY });
+    expect(permanent.schemaVersion).toBe(1);
+    expect(body.schemaVersion).toBe(1);
   });
 });

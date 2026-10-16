@@ -105,6 +105,7 @@ import { coverageOf } from './tapeAssemble.js';
 import { sanitizeForFirestore, stableStringify, versionLabel, rebuildOutlook, closedOutNoteFields } from './tapeMerge.js';
 import { tapeRef } from './tapeSources.js';
 import { NOTES } from './tapeNotes.js';
+import { errorTextOf } from './errorClass.js';
 import {
   symbolPlan, candleInputFingerprint, replayBuiltFrom, replayBuiltFromV1, priceBuiltFrom, seriesBuiltFrom, replayLogicVersionOf, REPLAY_LOGIC_VERSION,
   meetingLegSymbols, MEETING_SYMBOLS_PER_DAY_MAX,
@@ -807,7 +808,7 @@ export async function runCandlePass({ db, fetchCandles, clock = Date.now, startM
       else if (r.status === 'requeued') summary.requeued.push(path);
       else summary.failed.push(row);
     } catch (err) {
-      const reason = String(err?.message || err).slice(0, 200);
+      const reason = errorTextOf(err).slice(0, 200);
       summary.failed.push({ path, error: reason });
       console.error(`[film-tape-candles] ${path} failed: ${reason}`);
       // A thrown run is still an attempt: count it, so a persistent failure

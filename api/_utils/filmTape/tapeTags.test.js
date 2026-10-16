@@ -80,11 +80,11 @@ describe('the thresholds come from the registry adapter — the source the live 
     expect(tagInputs({ battle: {}, checks: [] })).toEqual({ ok: false, reason: 'no archetype recorded on the battle', archetypeCodeId: null });
   });
 
-  it('the slots are the registry\'s S1 and S2, and the winner test names its basis', () => {
+  it('the slots are the registry\'s S1 and S2, and the winner test names each basis\'s input (Amendment D RD-7, review X2-7b)', () => {
     const { inputs } = run([]);
     expect(inputs.slots).toEqual({ S1: { checksBeforeRule: SITUATIONS.stalled.slots.S1.checksBeforeRule }, S2: { checks: 6, pctThreshold: 0.003 } });
-    expect(inputs.winnerBasis).toBe(WINNER_BASIS);
-    expect(WINNER_BASIS).toBe('change_since_entry');
+    expect(inputs.winnerBasis).toEqual(WINNER_BASIS);
+    expect(WINNER_BASIS).toEqual({ recorded: 'daily_change', recomputed: 'change_since_entry' });
   });
 });
 
@@ -97,7 +97,7 @@ describe('the count is the platform\'s (updateStagnationCounter), over the price
     const checks = day(7, { 6: { px: { ACN: flat(5) }, risk: { ACN: { action: 'SWAP_OUT', reason: 'stagnation' } } } });
     const { items } = run(checks);
     expect(items.map((i) => [i.tickSeq, i.count, i.effectiveTicksThreshold])).toEqual([[4, 3, 5], [5, 4, 5]]);
-    expect(items[0]).toEqual({ situationId: 'stalled', version: 1, symbol: 'ACN', tickSeq: 4, at: atOf(45), count: 3, effectiveTicksThreshold: 5 });
+    expect(items[0]).toEqual({ situationId: 'stalled', version: 2, symbol: 'ACN', tickSeq: 4, at: atOf(45), count: 3, effectiveTicksThreshold: 5 });
   });
 
   it('a move at or above the threshold resets the count', () => {
@@ -267,8 +267,8 @@ describe('the close pass writes the section (writeTapeDay → the merge → tagT
     const { tape, r } = await writeFor(fx);
     expect(r.status).toBe('written');
     expect(Object.keys(tape.tags).sort()).toEqual(['exits', 'inputs', 'items', 'registryVersion', 'situations']);
-    expect(tape.tags.registryVersion).toBe(1);
-    expect(tape.tags.situations).toEqual({ stalled: 1 });
+    expect(tape.tags.registryVersion).toBe(2);
+    expect(tape.tags.situations).toEqual({ stalled: 2 });
     expect(tape.tags.items.map((i) => [i.symbol, i.tickSeq, i.count])).toEqual([['ACN', 4, 3], ['ACN', 5, 4]]);
     expect(tape.tags.exits).toEqual([{ symbol: 'ACN', tickSeq: 6, at: fx.swapAt, precededByTag: true }]);
     expect(tape.tags.inputs.archetypeCodeId).toBe('momentum_chaser');

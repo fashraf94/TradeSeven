@@ -17,7 +17,7 @@
 // under an old version keep it. A tag is a fact, never a verdict.
 
 /** The registry's own version — stored on every tape's `tags.registryVersion`. */
-export const SITUATION_REGISTRY_VERSION = 1;
+export const SITUATION_REGISTRY_VERSION = 2;
 
 /**
  * Each entry: `{ id, version, title, definition, slots, playerCallable }`.
@@ -27,9 +27,10 @@ export const SITUATION_REGISTRY_VERSION = 1;
 export const SITUATIONS = Object.freeze({
   stalled: Object.freeze({
     id: 'stalled',
-    version: 1,
+    // v2 (Film Room B1.1, Amendment C RC-1): the recorded basis, the live rule's own count.
+    version: 2,
     title: 'Our stocks are not moving',
-    definition: 'Per holding, per check. The platform\'s stagnation count is recomputed from the price the agent was shown at each check (checks[].evidence.px), with the platform\'s own arithmetic (updateStagnationCounter), the archetype\'s forced-rotation thresholds from the registry adapter, the battle\'s tempo dial, and the rule\'s tick-age guard. A check with no price for the holding pauses the count, as the age guard does. The count starts at zero at the day\'s first check. A run is the stretch since the holding came into the book or since a timely move reset its count. The holding is stalled at a check when the count is at or above the effective threshold less S1 (and at least 1), the rule has not fired for it in the run, and it is below the rule\'s winner threshold. When the archetype\'s forced rotation is switched off, the count runs at S2\'s move threshold and the holding is stalled at S2\'s check count.',
+    definition: 'Per holding, per check. The count is the platform\'s stagnation count. Where every check of the day that holds the symbol carries the count the live rule recorded (checks[].stagnation), the count, its age verdict and the daily change the rule\'s winner test read are those records, and the count carries over the night as the live rule\'s does. Otherwise the count is recomputed from the price the agent was shown at each check (checks[].evidence.px), with the platform\'s own arithmetic (updateStagnationCounter), the archetype\'s forced-rotation thresholds from the registry adapter, the battle\'s tempo dial, and the rule\'s tick-age guard. A check with no price for the holding pauses the recomputed count, as the age guard does, and the recomputed count starts at zero at the day\'s first check. A run is the stretch since the holding came into the book or since a timely move reset its count. The holding is stalled at a check when the count is at or above the effective threshold less S1 (and at least 1), the rule has not fired for it in the run, and it is below the rule\'s winner threshold. When the archetype\'s forced rotation is switched off, the count runs at S2\'s move threshold and the holding is stalled at S2\'s check count.',
     slots: Object.freeze({
       // S1 — how many checks before the stagnation rule fires that `stalled` goes live.
       S1: Object.freeze({ checksBeforeRule: 2 }),

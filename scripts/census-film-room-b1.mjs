@@ -11,7 +11,12 @@
 //      the platform's stagnation exit at 15:01 ET.
 //   B. Every recorded stagnation exit on a taped day is preceded by a `stalled`
 //      tag for that holding — the exits, those preceded, the mismatches, and
-//      each mismatch's reason class (never hidden).
+//      each mismatch's reason class (never hidden). B1.1: a holding tagged on
+//      the live rule's own record (Amendment C RC-1, basis `recorded`) has no
+//      recomputed count to blame — the B1 classes below would misread it —
+//      so its mismatch is class `recorded_basis` (the threshold is still the
+//      tagger's own: a dial that disagrees with the live one, a holding at
+//      the winner threshold or an unrecorded tick are its causes).
 //
 // It also counts what the build report needs: the evidence stamp on each check
 // state (no_trigger above all), tiered days whose battle has no opponent (T1),
@@ -54,6 +59,7 @@ import { etDayBounds, withinCandleWindow, toMs } from '../api/_utils/filmTape/ta
 import { tradingTimeline } from '../src/utils/tapeSchedule.js';
 import { TEMPO_DIAL_ENABLED } from '../src/config/featureFlags.js';
 import { AWAITING_CANDLES_NOTE, CANDLE_SELECTABLE_STATUSES } from '../src/constants/filmTape.js';
+import { errorClassOf } from '../api/_utils/filmTape/errorClass.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..');
@@ -201,7 +207,10 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
       const stint = stintRows(trace, tape.actions, x);
       const exitMs = toMs(x.at);
       const sinceIn = Math.max(-Infinity, ...rows(tape.actions).filter((a) => a.symbolIn === x.symbol && toMs(a.at) !== null && toMs(a.at) < exitMs).map((a) => toMs(a.at)));
-      const flags = {
+      // B1.1 (RC-1): a holding tagged on the live rule's own record has no recomputed COUNT to blame — the
+      // classes below describe the recomputed walk, so a recorded holding's mismatch is its own class.
+      const recorded = tags.inputs?.holdingBasis?.[x.symbol] === 'recorded';
+      const flags = recorded ? { recorded_basis: true } : {
         // a tag of the holding in its stint, but before a reset of its count: the run that ended in the exit had none
         tag_before_reset: (tags.items ?? []).some((it) => it.symbol === x.symbol && toMs(it.at) > sinceIn && toMs(it.at) < exitMs),
         count_carried_overnight: Boolean(seeded?.exits?.find((s) => s.at === x.at && s.symbol === x.symbol)?.precededByTag),
@@ -209,7 +218,7 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
         winner_basis: stint.some((r) => !r.fired && r.px !== null && r.chg !== null && r.count >= r.liveAt && r.chg / 100 >= r.winnerThreshold),
       };
       for (const [k, on] of Object.entries(flags)) if (on) bump(out.B.mismatchFlags, k);
-      const cls = flags.count_carried_overnight ? 'count_carried_overnight' : flags.no_price_pause ? 'no_price_pause' : flags.winner_basis ? 'winner_basis' : 'other';
+      const cls = recorded ? 'recorded_basis' : flags.count_carried_overnight ? 'count_carried_overnight' : flags.no_price_pause ? 'no_price_pause' : flags.winner_basis ? 'winner_basis' : 'other';
       bump(out.B.mismatchClass, cls);
     }
 
@@ -383,21 +392,23 @@ export const CENSUS_ERROR_MAX = 200;
 const idLike = (t) => (/[0-9]/.test(t) && /[A-Za-z]/.test(t)) || (t.length >= 12 && /[a-z]/.test(t) && /[A-Z]/.test(t)) || /^[0-9]{9,}$/.test(t);
 
 /**
- * The CLI's failure line: the error's class (an identifier ending in Error or
- * Exception, else Error — an id planted as a name never prints)
+ * The CLI's failure line: the error's class (B1.1 RC-4: a class from the one
+ * fixed list of real error classes, api/_utils/filmTape/errorClass.js, else
+ * Error — an id planted as a name never prints, however class-shaped)
  * and its message with key blocks, the credential's own values, addresses,
  * resource paths and id-like tokens removed, bounded to CENSUS_ERROR_MAX —
- * never an id, never key material. Arrays only: the write-grep gate reads
- * this file.
+ * never an id, never key material. A thrown function or class is an error
+ * object here too (Amendment F RF-1, Astra's B1.1 review F1): its message
+ * when it has one, else the class alone — never its source or its name.
+ * Arrays only: the write-grep gate reads this file.
  */
 export function censusErrorLine(err, { secrets = NEVER_PRINTED } = {}) {
-  let cls = 'Error';
-  try {
-    const n = err !== null && typeof err === 'object' ? (err.name ?? err.constructor?.name) : null;
-    if (typeof n === 'string' && n.length <= 40 && /^[A-Za-z_$][A-Za-z0-9_$]*(Error|Exception)$/.test(n)) cls = n;
-  } catch { cls = 'Error'; }
+  // B1.1 (RC-4, Astra N1): the class from the one fixed list of real error classes, never a class-shaped name
+  const cls = errorClassOf(err);
+  // Amendment F RF-1: only a primitive keeps its own text; String() of a function is its source, name included
+  const errorLike = typeof err === 'function' || (err !== null && typeof err === 'object');
   let text = '';
-  try { text = String(err !== null && typeof err === 'object' ? err.message ?? '' : err ?? ''); } catch { text = ''; }
+  try { text = String(errorLike ? err.message ?? '' : err ?? ''); } catch { text = ''; }
   for (const s of secrets) if (typeof s === 'string' && s.length >= 3) text = text.split(s).join('[redacted]');
   text = text
     .replace(/-----BEGIN[\s\S]*?(?:-----END[^-]*-----|$)/g, '[key]')

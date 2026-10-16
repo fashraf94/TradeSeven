@@ -54,7 +54,8 @@ export const ENUM_LISTS = Object.freeze({
 });
 
 const ID_RE = /^[A-Za-z0-9_:.+\-/]{1,120}$/;
-const SYMBOL_RE = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
+/** A ticker's shape (the universe still decides admission). Exported for the writer's B1.1 key check. */
+export const SYMBOL_RE = /^[A-Z0-9][A-Z0-9.-]{0,11}$/;
 const SHA256_RE = /^[a-f0-9]{64}$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2}))?$/;
 
@@ -96,6 +97,11 @@ export const PERMANENT_FIELD_KINDS = Object.freeze({
 
   'risk.verdicts.*.action': 'id',
   'risk.verdicts.*.reason': 'id',
+  // Film Room B1.1 (Amendment C, RC-2): what the stagnation rule read, per
+  // held symbol — the count it received, its age verdict, the daily change.
+  'risk.stagnation.*.ticks': 'number',
+  'risk.stagnation.*.withinAge': 'bool',
+  'risk.stagnation.*.dailyPct': 'number',
   'risk.lockedCount': 'number',
   'risk.forcedExitCount': 'number',
   'risk.evaluatedCount': 'number',
@@ -227,6 +233,7 @@ export const PERMANENT_FIELD_KINDS = Object.freeze({
  */
 export const PERMANENT_KEY_KINDS = Object.freeze({
   'risk.verdicts': 'symbol',
+  'risk.stagnation': 'symbol',
 });
 
 export const PERMANENT_CONTAINER_KINDS = Object.freeze({
@@ -236,6 +243,8 @@ export const PERMANENT_CONTAINER_KINDS = Object.freeze({
   'risk': 'object',
   'risk.verdicts': 'object',
   'risk.verdicts.*': 'object',
+  'risk.stagnation': 'object',
+  'risk.stagnation.*': 'object',
   'checks': 'object',
   'checks.*': 'object',
   'decision': 'object',

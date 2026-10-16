@@ -10,6 +10,7 @@
 // intradayViews presence for the day; the prior day's tape.
 
 import { TAPE_SUBCOLLECTION } from '../../../src/constants/filmTape.js';
+import { errorTextOf } from './errorClass.js';
 
 const docData = (snap) => (snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null);
 const docsOf = (snap) => (snap?.docs || []).map((d) => ({ id: d.id, ...(typeof d.data === 'function' ? d.data() : d.data) }));
@@ -18,7 +19,7 @@ export const battleRef = (db, battleId) => db.collection('agentBattles').doc(bat
 export const tapeRef = (db, battleId, etDate) => battleRef(db, battleId).collection(TAPE_SUBCOLLECTION).doc(etDate);
 
 async function attempt(fn) {
-  try { return { ok: true, value: await fn(), error: null }; } catch (err) { return { ok: false, value: null, error: String(err?.message || err).slice(0, 200) }; }
+  try { return { ok: true, value: await fn(), error: null }; } catch (err) { return { ok: false, value: null, error: errorTextOf(err).slice(0, 200) }; }
 }
 
 /** The battle document, with its id, or null. */

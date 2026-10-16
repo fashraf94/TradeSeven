@@ -45,6 +45,7 @@ import {
   makeIntradayCandles, makeHoldResult, makeSwapResult, makeToolUseResponse, deepClone, serverMeetingOverrides,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { makeCallsDb, callsTouches, storedCollection, storedDoc, CALL_SUBCOLLECTIONS } from '../_utils/__fixtures__/callRecordsStore.js';
+import { liftStagnationRecord, verdictSymbolsByPath } from '../_utils/__fixtures__/stagnationLift.js';
 
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
 const { swapMock } = vi.hoisted(() => ({ swapMock: vi.fn() }));
@@ -488,6 +489,13 @@ describe('calls OFF — byte-identical to the frozen pre-change fixture on every
         expect(lifted, `${name}: the creation write carries the server's copy`).toHaveLength(1);
         live.updates = rest;
       }
+      // Film Room B1.1 (RC-2) — the one intended capture change: the tick record's
+      // `risk.stagnation`, on every record whose verdicts the tick computed, over
+      // exactly those symbols. Lifted, so every other capture byte is still compared.
+      const stagnation = liftStagnationRecord(live.capture);
+      expect(Object.fromEntries(stagnation.lifted.map((l) => [l.path, Object.keys(l.stagnation).sort()])), `${name}: risk.stagnation is where the verdicts are`)
+        .toEqual(verdictSymbolsByPath(frozen.capture));
+      live.capture = stagnation.rest;
       expect(serialize(live.updates), `${name}: battle writes moved`).toBe(serialize(frozen.updates));
       expect(serialize(live.prompts), `${name}: prompt bytes moved`).toBe(serialize(frozen.prompts));
       expect(serialize(live.capture), `${name}: capture documents moved`).toBe(serialize(frozen.capture));
