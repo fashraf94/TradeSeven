@@ -205,6 +205,7 @@ const LEGACY_PROPS = {
 // Regenerate ONLY by re-running this file's OFF rows at that SHA with
 // SHADOW_OFF_CAPTURE_DIR set; never by blessing build output.
 // re-pinned by founder ruling 2026-10-15 (research modal F3), 1D request now `{ days: 400 }`; all other rows unchanged.
+// re-pinned by founder ruling 2026-10-15 (research modal W-2), legacy Current follows the live price: samePriceUpdate's header price and the ON-F2b row's read of it; all other rows unchanged.
 const OFF = {
  "heldLegacy": {
   "body": {
@@ -339,7 +340,7 @@ const OFF = {
    ]
   ],
   "header": [
-   "$104.00",
+   "$104.60",
    "▲ 4.60%"
   ],
   "readout": [
@@ -496,7 +497,7 @@ describe('ON — healthy held open', () => {
     expect(readout()).toEqual(['O 102.00', 'H 106.20', 'L 101.50', 'C 104.60']);
     expect(net.calls.length).toBe(before);
     expect(document.body.querySelectorAll('[data-test-drawer]').length).toBe(chartsBefore);
-    expect(OFF.samePriceUpdate.header[0]).toBe('$104.00'); // legacy kept its symbol-keyed price
+    expect(OFF.samePriceUpdate.header[0]).toBe('$104.60'); // legacy now follows the live price (research modal W-2)
   });
 
   it('crypto (V-11): no observed open anywhere — readout "—", popup body without open', async () => {
