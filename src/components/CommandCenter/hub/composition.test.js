@@ -120,8 +120,10 @@ describe('section orders (ruling R-S1-3; spec §10)', () => {
     expect(TABLET_SIDE_ORDER).toEqual(['deploy', 'games', 'activity', 'brief']);
   });
 
-  it('stacked: the founder\'s order, Deploy above Games', () => {
-    expect(STACKED_ORDER).toEqual(['next', 'stage', 'panel', 'deploy', 'games', 'activity', 'brief']);
+  it('stacked: the founder\'s order of Oct 15 (S1 report Q1, ruling R-S2A-1) — Deploy above the area panel and above Games', () => {
+    expect(STACKED_ORDER).toEqual(['next', 'stage', 'deploy', 'panel', 'games', 'activity', 'brief']);
+    expect(before(STACKED_ORDER, 'stage', 'deploy')).toBe(true);
+    expect(before(STACKED_ORDER, 'deploy', 'panel')).toBe(true);
     expect(before(STACKED_ORDER, 'deploy', 'games')).toBe(true);
     expect(before(TABLET_SIDE_ORDER, 'deploy', 'games')).toBe(true);
   });
