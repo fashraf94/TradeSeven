@@ -40,10 +40,13 @@ import { writeTapeDay } from './writeTapeDay.js';
 import * as tagger from './tapeTags.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay } from './__fixtures__/tapeFixtures.js';
-import { stalledDay } from './__fixtures__/tagFixtures.js';
+import { stalledDay, epochEntry } from './__fixtures__/tagFixtures.js';
 import { SITUATIONS, SITUATION_REGISTRY_VERSION } from '../../../src/data/situationRegistry.js';
 import { computeB1Census } from '../../../scripts/census-film-room-b1.mjs';
 import { stableStringify } from './tapeMerge.js';
+
+// Rows write whole fixture days through the real writer (the heavy tape suites' limit).
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_PATH = resolve(HERE, '__fixtures__/tagsB1Golden.json');
@@ -63,14 +66,14 @@ async function writeFor(fx) {
 
 // The census's mismatch shape: ACN stalls from check 2; checks 3 and 4 are
 // no-trigger checks and 5 a meeting check — none carries a price, so B1's
-// recomputed count pauses there (and the age guard then pauses it at 6);
-// the live rule kept counting and fired at 6.
+// recomputed count pauses there; the live rule kept counting and fired at 6
+// (whose stamp, written after the swap, no longer carries ACN).
 const ACCEPTANCE = { noTriggerSeqs: [3, 4], meetingSeqs: [5], exitSeq: 6 };
 /** The fixture days, each as a function of whether its ticks carry the record. */
 const DAYS = {
   acceptance: (recorded) => stalledDay({ battleId: 'b-accB', ...ACCEPTANCE, recordStagnation: recorded }),
   standard: (recorded) => stalledDay({ battleId: 'b-std', recordStagnation: recorded }),
-  // ACN's record missing at ONE check (8): ACN alone is recomputed for the day
+  // ACN's record missing at ONE check (3): ACN alone is recomputed for the day
   oneMissing: async (recorded) => {
     const fx = await stalledDay({ battleId: 'b-one', ...ACCEPTANCE, recordStagnation: recorded });
     if (recorded) delete fx.ticks.find((tk) => tk.tickSeq === 3).risk.stagnation.ACN;
@@ -322,5 +325,67 @@ describe('RC-1\'s "the count runs at S2\'s move threshold" holds for the recorde
     const off = VALID_ARCHETYPES.filter((id) => getArchetypeDefinition(id).physics.hftConfig.forcedRotation.enabled === false);
     expect(off.length).toBeGreaterThan(0);
     for (const id of off) expect(getArchetypeDefinition(id).physics.hftConfig.forcedRotation.pctThreshold, id).toBe(SITUATIONS.stalled.slots.S2.pctThreshold);
+  });
+});
+
+describe('review X2-1 — a recorded holding\'s mismatch is reported with its own class', () => {
+  it('a recorded day whose tagger threshold is not the live one (the tape\'s dial reads `measured`, the fixture\'s live counter fired at the archetype\'s own 5): not preceded, class `recorded_basis`', async () => {
+    const fx = await stalledDay({ battleId: 'b-rec-miss', recordStagnation: true, dials: { tempo: 'measured' }, controlEpochLog: [epochEntry(true)], controlEpoch: 1 });
+    const tape = await writeFor(fx);
+    expect(tape.tags.inputs.holdingBasis.ACN).toBe('recorded');
+    expect(tape.tags.inputs.perCheck[0].effectiveTicksThreshold).toBeGreaterThan(5);
+    expect(tape.tags.exits).toEqual([{ symbol: 'ACN', tickSeq: 6, at: expect.any(String), precededByTag: false }]);
+    const B = census(tape, fx.battle);
+    expect(B).toMatchObject({ exits: 1, preceded: 0, notPreceded: 1 });
+    expect(B.mismatchClass).toEqual({ recorded_basis: 1 });
+    expect(B.mismatchFlags).toEqual({ recorded_basis: 1 });
+  });
+});
+
+describe('review X2-1 (refuter rf5, P2) — the class on a shape reachable with no dial at all', () => {
+  it('a recorded holding hovering at the winner threshold — above it at every stall check, below it only at the fire: not preceded, class `recorded_basis`', () => {
+    // momentum_chaser: live at count 3, winner threshold 0.0015
+    const checks = [
+      rrow(1, 0, { rec: { ACN: R(1, true, -0.001) } }),
+      rrow(2, 15, { rec: { ACN: R(2, true, -0.001) } }),
+      rrow(3, 30, { rec: { ACN: R(3, true, 0.0016) } }),
+      rrow(4, 45, { rec: { ACN: R(4, true, 0.0016) } }),
+      rrow(5, 60, { rec: { ACN: R(5, true, 0.0014) }, risk: { ACN: { action: 'SWAP_OUT', reason: 'stagnation' } } }),
+    ];
+    const tape = {
+      etDate: '2026-09-24', ownerId: 'o-1', passes: { close: { status: 'written' }, candles: { status: 'written' } }, checks, actions: [exitAt(5, 60)],
+      coverage: { checks: { status: 'complete' }, evidence: { status: 'complete' } }, meetings: [], comparables: { sectors: {} },
+    };
+    const battle = { id: 'b-hover', agentContext: { archetype: 'momentum_chaser' } };
+    const B = census(tape, battle);
+    expect(B).toMatchObject({ exits: 1, preceded: 0, notPreceded: 1 });
+    expect(B.mismatchClass).toEqual({ recorded_basis: 1 });
+  });
+});
+
+describe('review X5-2 / X5-4 — the basis rule\'s remaining branches', () => {
+  it('a check rebuilt from its entry (capture missed the tick) carries no record: every holding it holds is recomputed for the day', async () => {
+    const fx = await stalledDay({ battleId: 'b-entry-row', recordStagnation: true });
+    fx.ticks = fx.ticks.filter((tk) => tk.tickSeq !== 7);
+    const tape = await writeFor(fx);
+    const entry = tape.checks.find((c) => c.rowSource === 'entry');
+    expect(entry).toBeTruthy();
+    const heldThere = Object.keys(entry.evidence).sort();
+    expect(heldThere.length).toBeGreaterThan(0);
+    for (const sym of heldThere) expect(tape.tags.inputs.holdingBasis[sym], sym).toBe('recomputed');
+  });
+
+  it.each([
+    ['an age verdict that is not a boolean', { ticks: 5, withinAge: null, dailyPct: -0.004 }],
+    ['a daily change that is not a number', { ticks: 5, withinAge: true, dailyPct: null }],
+  ])('an incomplete record — %s — at one check puts the holding on the recomputed basis', (_, rec) => {
+    const r = walk([rrow(1, 0, { rec: { ACN: R(4) } }), rrow(2, 15, { rec: { ACN: rec } })]);
+    expect(r.inputs.holdingBasis).toEqual({ ACN: 'recomputed' });
+  });
+
+  it('stored inputs naming an EXTRA holding the checks do not hold are out of step too', async () => {
+    const tape = JSON.parse(JSON.stringify(await writeFor(await DAYS.acceptance(true))));
+    const tampered = { ...tape.tags.inputs, holdingBasis: { ...tape.tags.inputs.holdingBasis, ZZZ: 'recorded' } };
+    expect(() => tagger.tagDay({ inputs: tampered, checks: tape.checks, actions: tape.actions })).toThrow('tags_inputs_mismatch');
   });
 });

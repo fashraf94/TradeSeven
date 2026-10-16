@@ -170,10 +170,11 @@ describe('Stage 3 — FILM_ROOM_V2_MODE on: one bounded read of tape/{finalEtDat
       .toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
   });
 
-  it('a flat6/tournament battle is never "pending": its pass writes skipped_mode, never a readable tape (BA-3)', async () => {
+  it('a flat6/tournament battle with no legacy review queued reads unavailable — its pass writes skipped_mode, never a readable tape (BA-3), so the tape is never asked (RB-9: Stage 1)', async () => {
     const r = recorder(null);
     expect(await getReviewAvailability(base({ gameMode: 'baggerbomb_tournament' }), { readTape: r.readTape, now: MON_1900_EDT }))
       .toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
+    expect(r.calls).toEqual([]);
   });
 
   it('ignores the legacy review entirely — a dailyReviews entry never makes Stage 3 ready', async () => {
@@ -395,5 +396,30 @@ describe('RB-9 — a battle whose mode the writer does not tape answers Stage 1,
     expect(await getReviewAvailability(battle, { readTape: r2.readTape, now: THU, readVerdict: v.readVerdict })).toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
     expect(v.asked).toEqual(['battle-1']);
     expect(r2.calls).toEqual([]);
+  });
+});
+
+describe('RB-9, review X4-2 / X4-4 — the mode test is the writer\'s own, and never a rejection', () => {
+  it("the helper's branch is the writer's own test (writeTapeDay.js isTieredBattle) for every mode the platform knows and for prototype names", async () => {
+    const { isTieredBattle } = await import('../../api/_utils/filmTape/writeTapeDay.js');
+    const { MODE_CONFIGS } = await import('../constants/agentGameModes');
+    flags.mode = 'allowlist'; flags.writer = true;
+    for (const gameMode of [...Object.keys(MODE_CONFIGS), '__proto__', 'constructor', 'toString', 'hasOwnProperty', 'not_a_mode', undefined]) {
+      resetFilmRoomVerdicts();
+      const asked = [];
+      const r = recorder({ passes: { close: { status: 'written' } } });
+      await getReviewAvailability(base({ gameMode }), { readTape: r.readTape, now: THU, readVerdict: async (id) => { asked.push(id); return true; } });
+      // a taped mode asks the verdict at 'allowlist'; an untaped one never does
+      expect(asked.length === 0, String(gameMode)).toBe(!isTieredBattle({ gameMode }));
+    }
+  });
+
+  it.each(['off', 'allowlist', 'on'])("a gameMode that cannot even be looked up answers three keys at '%s' — never a rejection", async (mode) => {
+    flags.mode = mode; flags.writer = true;
+    for (const gameMode of [Object.create(null), { toString: 'x' }, { valueOf: 1, toString: 1 }]) {
+      resetFilmRoomVerdicts();
+      const out = await getReviewAvailability(base({ gameMode }), { readTape: recorder(null).readTape, now: THU, readVerdict: async () => true });
+      expect(Object.keys(out).sort()).toEqual(KEYS);
+    }
   });
 });

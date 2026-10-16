@@ -12,8 +12,10 @@
 // (tapeTags.js tagTapeDay) and the census's failure line
 // (scripts/census-film-room-b1.mjs censusErrorLine).
 //
-// Zero imports, data and one pure function: the census's write-grep gate
-// reads the files it runs over production data, so this holds no mutators.
+// Zero imports, data and one pure function, and no mutators. The census imports
+// it; the census's write-grep gate reads only the census and the tagger
+// (GATED_FILES), and this module, like the census's other helpers, is handed
+// plain data only — the Firestore handle never leaves the census's main().
 
 /**
  * The real error classes these paths can raise, each with where it comes
@@ -26,14 +28,20 @@ export const ERROR_CLASSES = Object.freeze([
   // (an instance's name is "Error"), so it is known by its constructor:
   'FirebaseError',          // :25, the base every Admin SDK error extends; a FirebaseFirestoreError instance reports
                             //      it, because the base constructor resets the prototype to its own (:38)
-  'FirebaseAppError',       // :95, app initialisation and the credential (lib/app/credential-internal.js:85-324)
-  'FirebaseFirestoreError', // :187, getFirestore()'s own failures (lib/firestore/firestore-internal.js:39, :80, :121, :137)
-  // google-gax 4.6.1, build/src/googleError.js:23: the RPC error a @google-cloud/firestore 7.11.6
-  // call can reject with (build/src/call.js:49, :73, :104). A gRPC status error from @grpc/grpc-js
-  // 1.9.15 is a plain Error (build/src/call.js:29-33 callErrorFromStatus), so it prints `Error`.
+  'FirebaseAppError',       // :95, app initialisation and the credential (lib/app/credential-internal.js:85-410)
+  'FirebaseFirestoreError', // :187, getFirestore()'s own failures (lib/firestore/firestore-internal.js:39, :80, :121, :137);
+                            //       an instance reports FirebaseError (above), so this entry is kept for a raised
+                            //       subclass that resets its own prototype, never relied on
+  // google-gax 4.6.1, build/src/googleError.js:23: the RPC error @google-cloud/firestore 7.11.6's
+  // unary calls can reject with — google-gax's own build/src/call.js:49, :73, :104 and
+  // normalCalls/retries.js:66, :72 (a call's total timeout and retry limit). Firestore's reads are
+  // server streams on the retry-request path, which re-emits the gRPC error itself. A gRPC status
+  // error is a plain Error — callErrorFromStatus in the @grpc/grpc-js 1.14.3 google-gax loads
+  // (google-gax/node_modules/@grpc/grpc-js, build/src/call.js:30-35) — so it prints `Error`.
   'GoogleError',
   // gaxios 6.7.1, build/src/common.js:31: the HTTP error of the service account's token request
-  // (google-auth-library 9.15.1, the credential under Firestore's gRPC calls)
+  // (google-auth-library 9.15.1). Under gRPC a token failure reaches the caller as a status (a plain
+  // Error); a GaxiosError surfaces on Firestore's REST transport.
   'GaxiosError',
 ]);
 

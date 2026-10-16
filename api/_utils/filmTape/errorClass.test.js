@@ -61,6 +61,8 @@ const { GoogleError } = fromPackage('google-gax', 'googleError.js');
 const { GaxiosError } = fromPackage('gaxios', 'common.js');
 
 const NOW = Date.parse('2026-09-25T02:15:30.000Z');
+// A surface row writes four whole fixture days through the real writer (the heavy tape suites' limit).
+vi.setConfig({ testTimeout: 30_000 });
 afterEach(() => { knobs.site = null; knobs.err = null; });
 
 /** Astra's N1 repro: a registered value (an id-shaped token) planted as the class — by name, and as a real class's own name. */
@@ -106,7 +108,8 @@ describe('errorClassOf', () => {
   it('a built-in prints its class; a plain Error prints Error', () => {
     expect(errorClassOf(new TypeError('x'))).toBe('TypeError');
     expect(errorClassOf(new RangeError('x'))).toBe('RangeError');
-    expect(errorClassOf(new AggregateError([], 'x'))).toBe('AggregateError');
+    // globalThis: the lint gate's globals predate ES2021's AggregateError (review X4-1)
+    expect(errorClassOf(new globalThis.AggregateError([], 'x'))).toBe('AggregateError');
     expect(errorClassOf(new Error('x'))).toBe('Error');
   });
 
@@ -168,5 +171,13 @@ describe('the census\'s failure line', () => {
     expect(censusErrorLine(new TypeError('bad input'))).toBe('TypeError: bad input');
     expect(censusErrorLine(new FirebaseAppError('invalid-credential', 'no key'))).toBe('FirebaseAppError: no key');
     expect(censusErrorLine(new GoogleError('unavailable'))).toBe('GoogleError: unavailable');
+  });
+});
+
+describe('review X5-5 — a listed name wins over a listed constructor', () => {
+  it('a RangeError renamed TypeError prints TypeError (the name, when listed and specific, is read first)', () => {
+    expect(errorClassOf(Object.assign(new RangeError('x'), { name: 'TypeError' }))).toBe('TypeError');
+    // the generic name falls through to the constructor
+    expect(errorClassOf(Object.assign(new RangeError('x'), { name: 'Error' }))).toBe('RangeError');
   });
 });

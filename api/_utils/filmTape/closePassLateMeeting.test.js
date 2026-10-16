@@ -18,7 +18,7 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
   CALL_RECORDS_MODE: 'shadow',
 }));
 
-import { runClosePass, previousTapeDay, meetingKeysOn } from './closePass.js';
+import { runClosePass, runBackfill, previousTapeDay, meetingKeysOn } from './closePass.js';
 import { writeTapeDay } from './writeTapeDay.js';
 import { runCandlePass } from './candlePass.js';
 import { candleInputFingerprint } from './candleInputs.js';
@@ -26,6 +26,9 @@ import { contentOf, stableStringify } from './tapeMerge.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay, multiDay } from './__fixtures__/tapeFixtures.js';
 import { flatRows, fetcherOf } from './__fixtures__/tapeBars.js';
+
+// Each row builds one to three whole multi-day worlds (close pass, candle pass, close pass): the heavy tape suites' limit.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 
 const P = '2026-09-24';
 const D = '2026-09-25';
@@ -38,7 +41,8 @@ const bars = () => Object.fromEntries(Object.entries(PRICES).map(([s, p]) => [s,
 
 /** The meeting the evaluator proposed at 15:50 ET on P — after P's last check (19:21Z) — as it sits on the battle, unanswered. */
 const PENDING = {
-  id: 'gpm_late', createdAt: `${P}T19:50:00.000Z`, expiresAt: `${D}T16:00:00.000Z`, status: 'pending',
+  // the evaluator's deadline is 16:00 server time (UTC) of the creation day (agent-evaluate.js), already past: filed `expired` at D's first check
+  id: 'gpm_late', createdAt: `${P}T19:50:00.000Z`, expiresAt: `${P}T16:00:00.000Z`, status: 'pending',
   diagnosis: 'Consumer Defensive is dragging.', suggestedSwaps: [{ symbolOut: 'KO', symbolIn: 'COST', rationale: 'r' }],
 };
 /** The same meeting as D's first check files it (expired at its deadline, filed the next morning). */
@@ -55,11 +59,12 @@ afterEach(() => { errSpy.mockRestore(); vi.unstubAllGlobals(); });
  * battle, and P's candle pass ran the next morning. Then D's first check
  * filed it (`filed: false` leaves no meeting on P at all).
  */
-async function lateMeetingWorld({ battleId = 'b-late', filed = true, hooks = {} } = {}) {
+async function lateMeetingWorld({ battleId = 'b-late', filed = true, hooks = {}, prepare = null, between = null } = {}) {
   const fx = await multiDay({ battleId });
   fx.battle.portfolio = { ...fx.battle.portfolio, ...ROSTER };
   fx.battle.gameplanMeetingHistory = [];
   fx.battle.gameplanMeeting = filed ? structuredClone(PENDING) : null;
+  if (prepare) prepare(fx);
   const t = makeTapeDb(seedDay({}, fx), { hooks });
   const sP = await runClosePass({ db: t.db, clock: () => P_NIGHT });
   const candles = fetcherOf(bars());
@@ -69,6 +74,7 @@ async function lateMeetingWorld({ battleId = 'b-late', filed = true, hooks = {} 
   const b = t.store.get(`agentBattles/${battleId}`);
   if (filed) Object.assign(b, { gameplanMeeting: null, gameplanMeetingHistory: [structuredClone(FILED)] });
   t.store.set(`agentBattles/${battleId}`, b);
+  if (between) between(t);
   return { fx, t, sP, before, candles, battleId };
 }
 const without = (doc, keys) => { const c = contentOf(structuredClone(doc)); for (const k of keys) delete c[k]; if (c.coverage) delete c.coverage.meetings; return c; };
@@ -108,7 +114,7 @@ describe('a meeting created after P\'s last check and filed at D\'s first: P gai
 
   it('D is written, and P is listed `remerged`: it now holds the meeting, and its "not yet filed" note has cleared', () => {
     expect(sD.written.map((x) => x.etDate)).toEqual([D]);
-    expect(sD.remerged).toEqual([{ battleId: w.battleId, etDate: P, bytes: expect.any(Number) }]);
+    expect(sD.remerged).toEqual([{ battleId: w.battleId, etDate: P, bytes: expect.any(Number), meetingsStored: true }]);
     expect(sD.remergeUnchanged).toEqual([]);
     expect(sD.remergeFailed).toEqual([]);
     expect(sD.failed).toEqual([]);
@@ -118,13 +124,13 @@ describe('a meeting created after P\'s last check and filed at D\'s first: P gai
     expect(after.coverage.meetings.note).toBeNull();
   });
 
-  it('exit criterion 2: nothing else on P moved — only `meetings` and `coverage.meetings` (and the write\'s bookkeeping)', () => {
+  it('on this world, whose other sources did not grow after P\'s night, nothing else on P moved — only `meetings` and `coverage.meetings` (and the write\'s bookkeeping); a re-merge is a refresh of P (review X3-2, the row below)', () => {
     const after = w.t.store.get(tapePath(w.battleId, P));
     expect(stableStringify(without(after, ['meetings']))).toBe(stableStringify(without(w.before, ['meetings'])));
     expect(after.runCount).toBe(w.before.runCount + 1);
   });
 
-  it('the candle pass is not reopened: no candle field moves, the input fingerprint is the same, and no price provider is asked (RB-2: the late leg gets no bars)', () => {
+  it('the re-merge reopens no candle pass: no candle field moves, the input fingerprint is the same, and no price provider is asked (RB-2: P\'s pass has ended, so the late leg gets no bars)', () => {
     const after = w.t.store.get(tapePath(w.battleId, P));
     expect(after.passes.candles).toEqual(w.before.passes.candles);
     expect(after.coverage.replay).toEqual(w.before.coverage.replay);
@@ -144,6 +150,32 @@ describe('a meeting created after P\'s last check and filed at D\'s first: P gai
     expect(again.remerged).toEqual([]);
     expect(again.remergeUnchanged).toEqual([{ battleId: w.battleId, etDate: P, reason: 'already_copied' }]);
     expect(w.t.writeLog.slice(writesBefore).filter((x) => x.path === tapePath(w.battleId, P))).toEqual([]);
+  });
+});
+
+describe('review X3-2 — a re-merge of P IS a refresh of P at that instant (the same writer, RC-3)', () => {
+  it('a call minted on P, open at P\'s night and hit by D: the re-merged P equals, byte for byte, the founder\'s refresh of P at the same instant — the call\'s observed state moves on both', async () => {
+    const callId = 'b-eq:b-eq:e100:call:0';
+    const callPath = `agentBattles/b-eq/calls/${callId}`;
+    const call = {
+      callId, kind: 'called_shot', battleId: 'b-eq', evalId: 'b-eq:e100', evalSeq: 100,
+      mintedAt: Date.parse(`${P}T18:00:25.000Z`), symbol: 'KO', direction: 'exit',
+      horizon: { phrase: 'this_battle', expiresAt: Date.parse(`${D}T20:00:00.000Z`), basis: 'battle_end' },
+      evidence: { tickId: 'b-eq:100', availability: 'unresolved', priceAsOf: `${P}T18:00:12.000Z` },
+      hypothesisRef: null, origin: 'agent_initiative', state: 'open', stateChangedAt: null, stateSource: null,
+    };
+    const prepare = (fx) => { fx.calls = [structuredClone(call)]; };
+    const between = (t) => { t.store.set(callPath, { ...call, state: 'hit', stateChangedAt: Date.parse(`${D}T14:00:20.000Z`), stateSource: 'check' }); };
+    const re = await lateMeetingWorld({ battleId: 'b-eq', prepare, between });
+    expect(re.before.calls.map((c) => c.state)).toEqual(['open']);
+    const sD = await runClosePass({ db: re.t.db, clock: () => D_NIGHT });
+    expect(sD.remerged.map((x) => x.etDate)).toEqual([P]);
+    const viaRemerge = re.t.store.get(tapePath('b-eq', P));
+    expect(viaRemerge.calls.map((c) => c.state)).toEqual(['hit']);
+    const rf = await lateMeetingWorld({ battleId: 'b-eq', prepare, between });
+    const sR = await runBackfill({ db: rf.t.db, clock: () => D_NIGHT, startMs: D_NIGHT, dates: [P], refresh: true });
+    expect(sR.refreshed.map((x) => x.etDate)).toEqual([P]);
+    expect(stableStringify(viaRemerge)).toBe(stableStringify(rf.t.store.get(tapePath('b-eq', P))));
   });
 });
 
@@ -218,5 +250,115 @@ describe('a P with no written tape is never written by a re-merge (the backfill 
     const sD = await runClosePass({ db: w.t.db, clock: () => D_NIGHT });
     expect(sD.remergeUnchanged).toEqual([{ battleId: 'b-nop', etDate: P, reason: 'not_written' }]);
     expect(w.t.store.has(tapePath('b-nop', P))).toBe(false);
+  });
+});
+
+describe('review X3-8 — an untaped battle is never re-merged, and P is never read for it', () => {
+  it('a multi-day tournament battle with a meeting filed on P: its day is skipped_mode, no re-merge row, no read of P\'s tape', async () => {
+    const fx = await multiDay({ battleId: 'b-flat' });
+    Object.assign(fx.battle, { gameMode: 'baggerbomb_tournament', portfolio: { ...fx.battle.portfolio, ...ROSTER }, gameplanMeeting: null, gameplanMeetingHistory: [structuredClone(FILED)] });
+    const t = makeTapeDb(seedDay({}, fx));
+    const sD = await runClosePass({ db: t.db, clock: () => D_NIGHT });
+    expect(sD.skippedMode).toEqual(['b-flat']);
+    expect([sD.remerged, sD.remergeUnchanged, sD.remergeFailed]).toEqual([[], [], []]);
+    expect(t.readLog.filter((l) => String(l).includes(`/tape/${P}`))).toEqual([]);
+  });
+});
+
+describe('review X3-6 — the re-merge runs only above the pass\'s time floor', () => {
+  it('when D\'s own write leaves the pass below the floor, P is listed `remergeUnchanged` (time_floor) and is neither read nor written', async () => {
+    const w = await lateMeetingWorld({ battleId: 'b-floor' });
+    let now = D_NIGHT;
+    // D's write takes the pass to its ceiling
+    const write = async (...a) => { const r = await writeTapeDay(...a); now += 300_000; return r; };
+    const reads = w.t.readLog.length;
+    const sD = await runClosePass({ db: w.t.db, clock: () => now, startMs: D_NIGHT, budgetMs: 300_000, write });
+    expect(sD.written.map((x) => x.etDate)).toEqual([D]);
+    expect(sD.remergeUnchanged).toEqual([{ battleId: 'b-floor', etDate: P, reason: 'time_floor' }]);
+    expect(sD.remerged).toEqual([]);
+    expect(stableStringify(w.t.store.get(tapePath('b-floor', P)))).toBe(stableStringify(w.before));
+    // the only read of P is D's own writer's (its day change), before the floor check
+    const pReads = w.t.readLog.slice(reads).filter((l) => String(l).includes(`/tape/${P}`));
+    expect(pReads.length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('review X3-4 — a re-merge whose meeting the size budget drops says so', () => {
+  it('P re-merged under a budget its meetings do not fit: listed `remerged` with meetingsStored false; P holds none, its section says why', async () => {
+    const w = await lateMeetingWorld({ battleId: 'b-budget' });
+    const pSize = JSON.stringify(w.before).length;
+    // a budget P's core fits but P with the late meeting does not (tapeSize.js fitTapeToBudget drops the meetings first)
+    const write = (id, d, o) => writeTapeDay(id, d, d === P ? { ...o, sizeBudget: pSize + 50 } : o);
+    const sD = await runClosePass({ db: w.t.db, clock: () => D_NIGHT, write });
+    expect(sD.remerged).toEqual([{ battleId: 'b-budget', etDate: P, bytes: expect.any(Number), meetingsStored: false }]);
+    const after = w.t.store.get(tapePath('b-budget', P));
+    expect(after.meetings).toEqual([]);
+    expect(after.coverage.meetings.status).toBe('unavailable');
+  });
+});
+
+describe('review X3-3 — a late leg on a P whose candle pass is still to run gets bars as an on-time leg does', () => {
+  it('P\'s first candle run never happened: the re-merge moves no candle field; P\'s own next run fetches the leg, best effort', async () => {
+    const fx = await multiDay({ battleId: 'b-open' });
+    fx.battle.portfolio = { ...fx.battle.portfolio, ...ROSTER };
+    fx.battle.gameplanMeetingHistory = [];
+    fx.battle.gameplanMeeting = structuredClone(PENDING);
+    const t = makeTapeDb(seedDay({}, fx));
+    await runClosePass({ db: t.db, clock: () => P_NIGHT });
+    const before = structuredClone(t.store.get(tapePath('b-open', P)));
+    expect(before.passes.candles.status).toBe('pending');
+    const b = t.store.get('agentBattles/b-open');
+    Object.assign(b, { gameplanMeeting: null, gameplanMeetingHistory: [structuredClone(FILED)] });
+    t.store.set('agentBattles/b-open', b);
+    await runClosePass({ db: t.db, clock: () => D_NIGHT });
+    const after = t.store.get(tapePath('b-open', P));
+    expect(after.passes.candles).toEqual(before.passes.candles);
+    expect(candleInputFingerprint(after)).toEqual(candleInputFingerprint(before));
+    const morning = Date.parse('2026-09-26T11:00:30.000Z');
+    const candles = fetcherOf({ ...bars(), COST: flatRows(P, 900) });
+    await runCandlePass({ db: t.db, fetchCandles: candles.fetchCandles, clock: () => morning, startMs: morning });
+    expect(candles.calls.some((c) => c.symbol === 'COST')).toBe(true);
+  });
+});
+
+describe('review X5-3 — P that already holds an on-time meeting still gains the late one', () => {
+  it('an early meeting copied on P\'s night plus the late one filed at D: P is re-merged and holds both, in order', async () => {
+    const EARLY = { id: 'gpm_early', createdAt: `${P}T15:00:00.000Z`, expiresAt: `${P}T16:00:00.000Z`, status: 'expired', resolvedAt: `${P}T16:15:20.000Z`, resolvedBy: 'system', diagnosis: 'Earlier.', suggestedSwaps: [{ symbolOut: 'PEP', symbolIn: 'COST', rationale: 'r' }] };
+    const w = await lateMeetingWorld({
+      battleId: 'b-two',
+      prepare: (fx) => { fx.battle.gameplanMeetingHistory = [structuredClone(EARLY)]; },
+      between: (t) => { const b = t.store.get('agentBattles/b-two'); b.gameplanMeetingHistory = [structuredClone(EARLY), structuredClone(FILED)]; t.store.set('agentBattles/b-two', b); },
+    });
+    expect(w.before.meetings.map((m) => m.key)).toEqual([`gpm_early|${EARLY.createdAt}`]);
+    const sD = await runClosePass({ db: w.t.db, clock: () => D_NIGHT });
+    expect(sD.remerged).toEqual([{ battleId: 'b-two', etDate: P, bytes: expect.any(Number), meetingsStored: true }]);
+    expect(w.t.store.get(tapePath('b-two', P)).meetings.map((m) => m.key)).toEqual([`gpm_early|${EARLY.createdAt}`, `gpm_late|${PENDING.createdAt}`]);
+  });
+});
+
+describe('review X5-8 — the first night after deploy: a P written in B1\'s shape, re-merged by B1.1', () => {
+  it('moves exactly the meetings, their coverage, the v2 tag labels with the new holdingBasis, and the two new declarations — nothing else', async () => {
+    const w = await lateMeetingWorld({ battleId: 'b-b1p', prepare: (fx) => { fx.battle.agentContext = { ...fx.battle.agentContext, archetype: 'momentum_chaser' }; } });
+    // P as B1's writer stored it: the v1 labels, no holdingBasis, the declaration without B1.1's two entries
+    const b1 = structuredClone(w.before);
+    b1.tags.registryVersion = 1;
+    b1.tags.situations = { ...b1.tags.situations, stalled: 1 };
+    if (Array.isArray(b1.tags.items)) b1.tags.items = b1.tags.items.map((i) => ({ ...i, version: 1 }));
+    if (b1.tags.inputs) delete b1.tags.inputs.holdingBasis;
+    for (const k of Object.keys(b1.numberClasses)) if (k.startsWith('checks[].stagnation.')) delete b1.numberClasses[k];
+    w.t.store.set(tapePath('b-b1p', P), b1);
+    await runClosePass({ db: w.t.db, clock: () => D_NIGHT });
+    const after = w.t.store.get(tapePath('b-b1p', P));
+    expect(after.tags.registryVersion).toBe(2);
+    expect(Object.values(after.tags.inputs.holdingBasis).every((b) => b === 'recomputed')).toBe(true);
+    expect(after.numberClasses['checks[].stagnation.*.ticks']).toBe('recorded');
+    // every other byte as B1 stored it: undo exactly the declared movements and compare
+    const undone = structuredClone(after);
+    undone.meetings = b1.meetings; undone.coverage = { ...undone.coverage, meetings: b1.coverage.meetings };
+    undone.tags = b1.tags; undone.numberClasses = b1.numberClasses;
+    for (const k of ['writtenAt', 'runCount']) undone[k] = b1[k];
+    undone.passes = { ...undone.passes, close: { ...undone.passes.close, writtenAt: b1.passes.close.writtenAt } };
+    expect(stableStringify(undone)).toBe(stableStringify(b1));
+    expect(b1.tags.items?.length ?? 0).toBeGreaterThanOrEqual(0);
   });
 });

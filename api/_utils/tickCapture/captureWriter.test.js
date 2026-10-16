@@ -579,7 +579,7 @@ describe('Film Room B1.1 (Amendment C, RC-2) — `risk.stagnation`, what the sta
     expect(stagnationRecordOf([])).toBeNull();
   });
 
-  it('the schema version is unchanged by it — an additive, ungated field under the registered versions (the build report §1 says why)', () => {
+  it('the schema version is unchanged by it — an additive, ungated field under the registered versions (docs/audits/20261015_BUILD_FILM_ROOM_B1_1.md §3 says why, and asks for the ruling)', () => {
     const ctx = stagnationTick({ NVDA: { ticks: 1, withinAge: true, dailyPct: 0 } });
     const { permanent, body } = buildCaptureDocuments(ctx.state, { nowMs: NOW_MS, bodyFacts: EMPTY_BODY });
     expect(permanent.schemaVersion).toBe(1);

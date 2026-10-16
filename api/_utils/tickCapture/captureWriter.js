@@ -157,7 +157,8 @@ const isPlainObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(
  * that is not ticker-shaped is not copied (the serializer then admits each key
  * by the tick's own universe, as it admits the verdicts' keys). Null when the
  * tick recorded none — a tick that never reached the risk loop — so its record
- * keeps the shape it had before B1.1.
+ * keeps the shape it had before B1.1. A loop over no holdings records `{}`, as
+ * `verdicts` does (review X1-1).
  */
 export function stagnationRecordOf(raw) {
   if (!isPlainObj(raw)) return null;

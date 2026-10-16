@@ -1,0 +1,615 @@
+{
+  "capturedFrom": "a git -c core.autocrlf=false archive of origin/main @ 1d6d5d4a251f90f7f7d09e3d51653869531b4ac6 (before any Film Room B1.1 source) with this suite dropped in; harness tickStampsHarness.js + tickCaptureHarness.js; refuter rf9 (B1.1 review X1-3) scenarios",
+  "frozenNow": "2026-09-09T15:00:00.000Z",
+  "parts": [
+    "thrown",
+    "summary",
+    "updates",
+    "prompts",
+    "capture",
+    "writers",
+    "riskCalls",
+    "stagCalls",
+    "hurdleCalls",
+    "stored"
+  ],
+  "scenarios": {
+    "fires_executes_mixed": [
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "015e13eb70d1da407204ebf3ede43b353e553ad16374aab10b082e0f5d7a8f9e",
+          "updates": "2996069f521f0ebdcfebbdea7645f716c4de9aef208c205f69932aa13ad998d3",
+          "prompts": "1b790b85d771b1bb86166bd58c4394a460ad1fb514eb577ff5de78ced15dfdf7",
+          "capture": "3e3aba64ef05047dfae17486f02bb40288e48c5af31759daa5affb8a4087ee7e",
+          "writers": "e78e2fa833f30cc7ca4142aec960e70470a220595d983096c77630608becc0f4",
+          "riskCalls": "ca1ce88fce19768caa9a79cd2c96951f8736c210ae8c06d4c49070a84b11b89b",
+          "stagCalls": "b933e45fba2722c451587b7fe193c79accfcd034093c72449fa0b38eca59334c",
+          "hurdleCalls": "4d3350984df7e286512254938fee364a99749b1b03668a3862448a699f6833a7",
+          "stored": "4c21a3c46538fa56df0f6e9aad28267e325c4fc6860223142a4d4269c9923ea4"
+        },
+        "liveness": {
+          "stagnationFires": [
+            "TSLA"
+          ],
+          "withinAgeEvaluations": 4,
+          "pausedAboveZero": 2,
+          "swapsExecuted": 1,
+          "stagnationHurdleCalls": 1,
+          "finalStagnationTicks": {
+            "TSLA": 6,
+            "NVDA": 3,
+            "MSFT": 7,
+            "KO": 8,
+            "PG": 10,
+            "BTC": 6,
+            "AMZN": 0,
+            "AMD": 0
+          }
+        }
+      }
+    ],
+    "fires_vetoed": [
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "2593095740596216fad13850cfba3b83352935d7983b91d7e37e388a1ccc6134",
+          "updates": "8eacd9b75e041969ed66fc423ef1c53ca474a4e6bf6421c00ba94d5312f65ff0",
+          "prompts": "7c566c19ca51e494ba7a68a0d9d0551eef7443d29c6f5ecdbe0c62f62d5f2e71",
+          "capture": "8a94b6b5e941044fdbbaf5bea655ecec30b8fbf68e4a067a845411ceaca199cd",
+          "writers": "9e8ed67bb886ad4b63c383dad584d3703e4ac16e8cfb4509da7b07e7f8a1c9c4",
+          "riskCalls": "ca1ce88fce19768caa9a79cd2c96951f8736c210ae8c06d4c49070a84b11b89b",
+          "stagCalls": "b933e45fba2722c451587b7fe193c79accfcd034093c72449fa0b38eca59334c",
+          "hurdleCalls": "70105a5e26f1e8e8b7fe4af6fc7941653c2773e8e7bfa1ce72f14939dbfa8fb6",
+          "stored": "2033a69225f39c6dbbe68091c28dff14be1e703e926e53cfba33e7a65a94bf75"
+        },
+        "liveness": {
+          "stagnationFires": [
+            "TSLA"
+          ],
+          "withinAgeEvaluations": 4,
+          "pausedAboveZero": 2,
+          "swapsExecuted": 0,
+          "stagnationHurdleCalls": 2,
+          "finalStagnationTicks": {
+            "TSLA": 6,
+            "NVDA": 3,
+            "MSFT": 7,
+            "KO": 8,
+            "PG": 10,
+            "BTC": 6,
+            "AMZN": 0
+          }
+        }
+      }
+    ],
+    "fires_cap_hit": [
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "2593095740596216fad13850cfba3b83352935d7983b91d7e37e388a1ccc6134",
+          "updates": "99787c4104ae700c11471f57497f701a0bf34c817b0d41986b42c4be691c4104",
+          "prompts": "61d86c99492a071788c55071b9beef00820cd5ffb141f57fcf85e15d4a83254f",
+          "capture": "72e166298bbe1c212d627e09c385f3ba199ef311f1a4b1d245ac29bb2278f694",
+          "writers": "0be46c8ac075e51b40326f9cfec63d26be17a3424867bb8e9f476a3fba658f69",
+          "riskCalls": "ca1ce88fce19768caa9a79cd2c96951f8736c210ae8c06d4c49070a84b11b89b",
+          "stagCalls": "b933e45fba2722c451587b7fe193c79accfcd034093c72449fa0b38eca59334c",
+          "hurdleCalls": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "stored": "dfa7c0aafb02ec4a9607dea9a5c404b117c3d7879511cdce9bff340d9238060d"
+        },
+        "liveness": {
+          "stagnationFires": [
+            "TSLA"
+          ],
+          "withinAgeEvaluations": 4,
+          "pausedAboveZero": 2,
+          "swapsExecuted": 0,
+          "stagnationHurdleCalls": 0,
+          "finalStagnationTicks": {
+            "TSLA": 6,
+            "NVDA": 3,
+            "MSFT": 7,
+            "KO": 8,
+            "PG": 10,
+            "BTC": 6,
+            "AMZN": 0
+          }
+        }
+      }
+    ],
+    "two_fire": [
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "015e13eb70d1da407204ebf3ede43b353e553ad16374aab10b082e0f5d7a8f9e",
+          "updates": "b4f33a8b45c82cc0a4f5d0570995ffa00c33bc822b9a6478ed3ac03ede0788e0",
+          "prompts": "9063c0cd1bc10d7598e5f431c62218436c8a8216ca2b9bd9e2a6f42ccf0ef59c",
+          "capture": "b3fabf83460c13aadcb6d9b0cb64af5d22c30f525b493184c0a037d454ea3c2a",
+          "writers": "b6283dac84fec0b5026b9211e0f71fc55ffa8ff69c5cb2c1ecf10ea45c479a67",
+          "riskCalls": "95928cea5a916f4228b995e50901b972b5d513ff780dd8a09345554750e8768f",
+          "stagCalls": "289c3bae4957c90ad837311e907884390ae1a3150ac1dbf4c1de185ace6b6ae7",
+          "hurdleCalls": "e48285641b24b8825f6696ae6d270df54d0f285c5ed60718de3060523959b99c",
+          "stored": "f4c3201d7438b08b89346d362cf6df0f4d75aacb86a00caeccccd81c3588cb75"
+        },
+        "liveness": {
+          "stagnationFires": [
+            "KO",
+            "TSLA"
+          ],
+          "withinAgeEvaluations": 2,
+          "pausedAboveZero": 0,
+          "swapsExecuted": 1,
+          "stagnationHurdleCalls": 2,
+          "finalStagnationTicks": {
+            "TSLA": 7,
+            "KO": 7,
+            "NVDA": 0,
+            "MSFT": 0,
+            "AMZN": 0,
+            "PG": 0,
+            "BTC": 0,
+            "AMD": 0
+          }
+        }
+      }
+    ],
+    "all_paused": [
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "2593095740596216fad13850cfba3b83352935d7983b91d7e37e388a1ccc6134",
+          "updates": "eecdb228f90430beb5b45c7197834fdd5d8b131ce7f6585229423c72aaf762e8",
+          "prompts": "5503f07032841a290b85e9403352afdde33def1c273896a2639913c4ab8c57c0",
+          "capture": "2bcfc4b4e2cb75d0ded6d9534c657780288730c828d29232a891c7dc06a3a787",
+          "writers": "9e8ed67bb886ad4b63c383dad584d3703e4ac16e8cfb4509da7b07e7f8a1c9c4",
+          "riskCalls": "239438219463c9493bb08889190817cce5c493f54eb2e4d1c182065aee879c7b",
+          "stagCalls": "419bab90971ce5cd3791737d5e58ac4638ffdbd9fe9e27d00713bf1f6529f536",
+          "hurdleCalls": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "stored": "1de279bb35b0ddce5f7e9e55874d093c11934ca1e327d1ba407ed93d5e53665d"
+        },
+        "liveness": {
+          "stagnationFires": [],
+          "withinAgeEvaluations": 0,
+          "pausedAboveZero": 7,
+          "swapsExecuted": 0,
+          "stagnationHurdleCalls": 0,
+          "finalStagnationTicks": {
+            "NVDA": 9,
+            "TSLA": 9,
+            "MSFT": 9,
+            "AMZN": 9,
+            "KO": 9,
+            "PG": 9,
+            "BTC": 9
+          }
+        }
+      }
+    ],
+    "threshold_cross_and_reset": [
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "015e13eb70d1da407204ebf3ede43b353e553ad16374aab10b082e0f5d7a8f9e",
+          "updates": "5dd7cfc3f045f4b909d65fa9255ecde45570f88c4d07ba9e71dfddbd0aaff54f",
+          "prompts": "1b790b85d771b1bb86166bd58c4394a460ad1fb514eb577ff5de78ced15dfdf7",
+          "capture": "3e3aba64ef05047dfae17486f02bb40288e48c5af31759daa5affb8a4087ee7e",
+          "writers": "3399024e065167213eae74e5644f54beabf67fd118fd64117ef6a85533d57550",
+          "riskCalls": "73e0055bd6fa588fc5cb40205c70b36649f1fc3d72a8fafdf32d5e14d5a45981",
+          "stagCalls": "74d57b1dd4cbe428de8defab81852a2de05e1c98c30ac30c0454cdb8b5a57884",
+          "hurdleCalls": "4d3350984df7e286512254938fee364a99749b1b03668a3862448a699f6833a7",
+          "stored": "85e4182bef5b34281bd1e12ae00cda21eb7adde885503d6747d9925c5634f2ff"
+        },
+        "liveness": {
+          "stagnationFires": [
+            "TSLA"
+          ],
+          "withinAgeEvaluations": 4,
+          "pausedAboveZero": 0,
+          "swapsExecuted": 1,
+          "stagnationHurdleCalls": 1,
+          "finalStagnationTicks": {
+            "TSLA": 6,
+            "KO": 0,
+            "NVDA": 6,
+            "AMZN": 12,
+            "MSFT": 0,
+            "PG": 0,
+            "BTC": 0,
+            "AMD": 0
+          }
+        }
+      }
+    ],
+    "fires_then_model_swap": [
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "015e13eb70d1da407204ebf3ede43b353e553ad16374aab10b082e0f5d7a8f9e",
+          "updates": "3354202283f1675815a46a5599b0ad447967b2c8dee16a6b8bffdf6a08337503",
+          "prompts": "1b790b85d771b1bb86166bd58c4394a460ad1fb514eb577ff5de78ced15dfdf7",
+          "capture": "241384379a723e2616da58ef038c5b08eae530ad6b8167c68a42b68acc9c0aa3",
+          "writers": "b7070a6dbac366783d0e206d13b8c2066f1d058dde1f0eea3ccdefd74b7cfadf",
+          "riskCalls": "ca1ce88fce19768caa9a79cd2c96951f8736c210ae8c06d4c49070a84b11b89b",
+          "stagCalls": "b933e45fba2722c451587b7fe193c79accfcd034093c72449fa0b38eca59334c",
+          "hurdleCalls": "7c955582668f30964853a1dc4e4f649c7cd29dfae08b09ac3de3123efca340c5",
+          "stored": "a011e7b8d893f7aac47294edb7fc76c9b59b563acf646492e902d7151ceebf07"
+        },
+        "liveness": {
+          "stagnationFires": [
+            "TSLA"
+          ],
+          "withinAgeEvaluations": 4,
+          "pausedAboveZero": 2,
+          "swapsExecuted": 1,
+          "stagnationHurdleCalls": 1,
+          "finalStagnationTicks": {
+            "TSLA": 6,
+            "NVDA": 3,
+            "MSFT": 7,
+            "KO": 8,
+            "PG": 10,
+            "BTC": 6,
+            "AMZN": 0,
+            "AMD": 0
+          }
+        }
+      }
+    ],
+    "fires_then_model_swap_executes": [
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "688798cd92cb180a804449bca2a5bdccca5891c1ea710f121dd2d940c1225d71",
+          "updates": "f40563058e4e84e1ff28093eb0c9a6c5f9000fda706ae1d45688d0e149eba390",
+          "prompts": "45d3270710925d38e524813c668efb4ef085040ee1fda108649d2d31c0e1e43e",
+          "capture": "84fda6a74985c370cbcc719dba0d2a65c98cb3947aa07735e843e7c60722773a",
+          "writers": "6b6bff7955ff358ea6bfbf8851e12aa36670157acaad741fa116c05f726639d7",
+          "riskCalls": "ca1ce88fce19768caa9a79cd2c96951f8736c210ae8c06d4c49070a84b11b89b",
+          "stagCalls": "b933e45fba2722c451587b7fe193c79accfcd034093c72449fa0b38eca59334c",
+          "hurdleCalls": "90c7fc207df7f838438cdd3d5a4d9b45a6c91caf09c3130c3e37f996e8f65c1e",
+          "stored": "34af0644142bde5305da758582fe61b88428789b6072169cb0eec1c247a3f870"
+        },
+        "liveness": {
+          "stagnationFires": [
+            "TSLA"
+          ],
+          "withinAgeEvaluations": 4,
+          "pausedAboveZero": 2,
+          "swapsExecuted": 2,
+          "stagnationHurdleCalls": 1,
+          "finalStagnationTicks": {
+            "TSLA": 6,
+            "NVDA": 3,
+            "MSFT": 7,
+            "KO": 8,
+            "PG": 10,
+            "BTC": 6,
+            "AMZN": 0,
+            "AMD": 0,
+            "JPM": 0
+          }
+        }
+      }
+    ],
+    "fires_capture_off": [
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "26d5e7a77c8509e5eef5dbeb7f2ed35c0f0193d34d8c12565601118b7bb6505a",
+          "updates": "d9a8560e8ebd5ca52097f1e21129229b73a9ecb7a904564b253972c7d8e6eea5",
+          "prompts": "1b790b85d771b1bb86166bd58c4394a460ad1fb514eb577ff5de78ced15dfdf7",
+          "capture": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "writers": "e78e2fa833f30cc7ca4142aec960e70470a220595d983096c77630608becc0f4",
+          "riskCalls": "ca1ce88fce19768caa9a79cd2c96951f8736c210ae8c06d4c49070a84b11b89b",
+          "stagCalls": "b933e45fba2722c451587b7fe193c79accfcd034093c72449fa0b38eca59334c",
+          "hurdleCalls": "4d3350984df7e286512254938fee364a99749b1b03668a3862448a699f6833a7",
+          "stored": "c7669338075389c23fcb49121090a41ee7d3802e6f6e9036c7b80b7d8d0af9e4"
+        },
+        "liveness": {
+          "stagnationFires": [
+            "TSLA"
+          ],
+          "withinAgeEvaluations": 4,
+          "pausedAboveZero": 2,
+          "swapsExecuted": 1,
+          "stagnationHurdleCalls": 1,
+          "finalStagnationTicks": {
+            "TSLA": 6,
+            "NVDA": 3,
+            "MSFT": 7,
+            "KO": 8,
+            "PG": 10,
+            "BTC": 6,
+            "AMZN": 0,
+            "AMD": 0
+          }
+        }
+      }
+    ],
+    "degen_small_winner_fires": [
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "24387b875950f8d87c87e3196ecaac7cce798a7453fb5a8e7d6e36529d7a1fee",
+          "updates": "2f8cebaf384c91d751a8596db2781da769fc1b1b95ff3211613e6ffb6ae4f2d7",
+          "prompts": "6faa5a7a62d2a0cf205e6b1c9498f434649bbda0c55e55c4c8cd6262b95092e8",
+          "capture": "b8d944d63dc8b21757b2feef3ccf977eb1f52f8e497813d089afb433c82a5ab7",
+          "writers": "2bbc4125f0af0c73474bdee77a56e963d6fa60221f288ef2b24fbdab44dc653e",
+          "riskCalls": "8dcc05aedbb5f84ae09e80bfefe3529d5a8988b551a24f4b32886626e0dfc461",
+          "stagCalls": "25b8767759373383970073565735a95373f5fecb78ce5bcafe8c3996a1f5ab38",
+          "hurdleCalls": "7503bc1cc554ca99a5d95c914919729205227b1cb413d2f988c29ad2846809c1",
+          "stored": "06846034c629d730e1b122426f78b477a973f4809ff7aec3d310fbaab960a246"
+        },
+        "liveness": {
+          "stagnationFires": [
+            "KO",
+            "MSFT"
+          ],
+          "withinAgeEvaluations": 4,
+          "pausedAboveZero": 0,
+          "swapsExecuted": 2,
+          "stagnationHurdleCalls": 2,
+          "finalStagnationTicks": {
+            "MSFT": 4,
+            "KO": 3,
+            "NVDA": 4,
+            "PG": 2,
+            "TSLA": 0,
+            "AMZN": 0,
+            "BTC": 0,
+            "AMD": 0,
+            "JPM": 0
+          }
+        }
+      }
+    ],
+    "multi_tick_from_empty": [
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "2593095740596216fad13850cfba3b83352935d7983b91d7e37e388a1ccc6134",
+          "updates": "e599fd940778b17203d31909c015e17a49ff2c9d0cfa6a92f9ed01f2eef34de4",
+          "prompts": "5503f07032841a290b85e9403352afdde33def1c273896a2639913c4ab8c57c0",
+          "capture": "2bcfc4b4e2cb75d0ded6d9534c657780288730c828d29232a891c7dc06a3a787",
+          "writers": "9e8ed67bb886ad4b63c383dad584d3703e4ac16e8cfb4509da7b07e7f8a1c9c4",
+          "riskCalls": "55f3b370a5bb4383b20c8ac930b50b4e075e7a6579f194272b12f44b7a5965f4",
+          "stagCalls": "4a40db0568b13fe822b2c0d07c66520e8ffa37020b71f88969355e71c352cf71",
+          "hurdleCalls": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "stored": "a5e834b51cae80b0fc4ecf5e5037054d66031249629aa0f3579d0b3d257e2d5f"
+        },
+        "liveness": {
+          "stagnationFires": [],
+          "withinAgeEvaluations": 0,
+          "pausedAboveZero": 0,
+          "swapsExecuted": 0,
+          "stagnationHurdleCalls": 0,
+          "finalStagnationTicks": {
+            "NVDA": 0,
+            "TSLA": 0,
+            "MSFT": 0,
+            "AMZN": 0,
+            "KO": 0,
+            "PG": 0,
+            "BTC": 0
+          }
+        }
+      },
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "2593095740596216fad13850cfba3b83352935d7983b91d7e37e388a1ccc6134",
+          "updates": "242b985931403f7cfdd9cbcd6c00bcc86207ea11d90604ede576d7766302f242",
+          "prompts": "f3178ea5a9da1bbdc9979988b97ab3b0048314b40718697ad186235ffbf51baf",
+          "capture": "4d4bcf5bb9be07ee50a200847caef905358902e877e6b1febfd1b5f641827958",
+          "writers": "47e8b0242176391691c874ced00889a21dd4f139950c4fdbfad3400295e277cd",
+          "riskCalls": "3329ec03bb391758b97b03031e97969fbbe1242d6db9f1b045d53456ce5bbab0",
+          "stagCalls": "bbac52fb2e24c2f4a98a99bcd60e39597968048aeaab777ddddc67d2d6dee5b8",
+          "hurdleCalls": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "stored": "17e0d8042dd4be4bf382d3ddf952c6a2bf23fba4b05caae90ef2bf994781a1eb"
+        },
+        "liveness": {
+          "stagnationFires": [],
+          "withinAgeEvaluations": 7,
+          "pausedAboveZero": 0,
+          "swapsExecuted": 0,
+          "stagnationHurdleCalls": 0,
+          "finalStagnationTicks": {
+            "NVDA": 1,
+            "TSLA": 1,
+            "MSFT": 1,
+            "AMZN": 1,
+            "KO": 1,
+            "PG": 1,
+            "BTC": 1
+          }
+        }
+      },
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "2593095740596216fad13850cfba3b83352935d7983b91d7e37e388a1ccc6134",
+          "updates": "59eed1441a68e469d28de8bd7cb48fd67b399a916ad02781c58b8adc2f557107",
+          "prompts": "c76698d6dff445834bd0d82c3abbdac14fe8efe849b3e1c5be3248d4e493b713",
+          "capture": "3d84bd05d3f3b41acc6336a17594cfab06fdfbfa7c0f0ef57d0bc41e3a5e52fe",
+          "writers": "330ad7cfc5984e3cc9839d7804a374a30587dbffc6cbf975d270e5af1b0078db",
+          "riskCalls": "8db832d54965137a88228962049f43f274cd026e0251804f1d120b71001fdaec",
+          "stagCalls": "86e0a69a4a96d09785ef2d5a00536056be49578d35be335ccaa6b49e30fe6635",
+          "hurdleCalls": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "stored": "6b465834a4ea5850be89cbc24ed78f699426560e86e2aa32b6670424f3932590"
+        },
+        "liveness": {
+          "stagnationFires": [],
+          "withinAgeEvaluations": 7,
+          "pausedAboveZero": 0,
+          "swapsExecuted": 0,
+          "stagnationHurdleCalls": 0,
+          "finalStagnationTicks": {
+            "NVDA": 2,
+            "TSLA": 2,
+            "MSFT": 2,
+            "AMZN": 2,
+            "KO": 2,
+            "PG": 2,
+            "BTC": 2
+          }
+        }
+      },
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "2593095740596216fad13850cfba3b83352935d7983b91d7e37e388a1ccc6134",
+          "updates": "1416f8ff99ddf122dfa6830cccb8ae4a3f1c62da2991bd28c18d37eb178dfbe5",
+          "prompts": "ecbd901cbdc506e20fb989c7f5dc93c493bd5fde7055e3e0b81685afe4736964",
+          "capture": "8b98d7208193d0695a900f9826a55d5918824f308b753d8e4995a7e517c8d570",
+          "writers": "270fc8d3b3329c89f7c30f141c4e1baca7d1a82ec11f6fa31ab36b2f7a0f8f13",
+          "riskCalls": "d6d5cc3112695244a5ad34d9599e2adcea158bf707e38e561a71b14cf886f0d8",
+          "stagCalls": "e05bd3c00f3c26955f859acd57aaa368bc6fbe28b7afcfbfabe45867ac9b434e",
+          "hurdleCalls": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "stored": "f32a1a7c4699ba68a8aa6c0b95a47881d44df86d63ced041dedc7587801dc676"
+        },
+        "liveness": {
+          "stagnationFires": [],
+          "withinAgeEvaluations": 7,
+          "pausedAboveZero": 0,
+          "swapsExecuted": 0,
+          "stagnationHurdleCalls": 0,
+          "finalStagnationTicks": {
+            "NVDA": 3,
+            "TSLA": 3,
+            "MSFT": 3,
+            "AMZN": 3,
+            "KO": 3,
+            "PG": 3,
+            "BTC": 3
+          }
+        }
+      },
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "2593095740596216fad13850cfba3b83352935d7983b91d7e37e388a1ccc6134",
+          "updates": "2b39d7db304f9b8b7513cc9815a402c15a3ed45424064edb8ae008d961fd4b05",
+          "prompts": "64d677ae88b385e14704d8a3ef0e28cca9b214e4788645cb7f1e8edbdcacbbf2",
+          "capture": "78036503935ed0a8210f05491fdbc2fe3e74a8f2e7e454ccaa8c3ad5d168eb4a",
+          "writers": "9bdca869c64832ed315f2a0511292d9cdbc267a591e9888ed2d6a9c102697221",
+          "riskCalls": "18e209e70371f79cc704fe4606c520e4af1ded6a8b7399cb6226d031cd8604c1",
+          "stagCalls": "7bc24d0c75902cdf8038ed4b5b4c0f3dfa8e6daeb67f957ca7cf44a002e691fc",
+          "hurdleCalls": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "stored": "584207bac687f5a06bed2a5056ec867f7a4a5e5f74ad6922c8c90da8d6066723"
+        },
+        "liveness": {
+          "stagnationFires": [],
+          "withinAgeEvaluations": 7,
+          "pausedAboveZero": 0,
+          "swapsExecuted": 0,
+          "stagnationHurdleCalls": 0,
+          "finalStagnationTicks": {
+            "NVDA": 4,
+            "TSLA": 4,
+            "MSFT": 4,
+            "AMZN": 4,
+            "KO": 4,
+            "PG": 4,
+            "BTC": 4
+          }
+        }
+      },
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "2593095740596216fad13850cfba3b83352935d7983b91d7e37e388a1ccc6134",
+          "updates": "8ae179312c2a9dec565e6a5150ded286e472aac2245f8004264af66bbc261a63",
+          "prompts": "e94fd7d87db7160bbe058cf81b0be9173b0ce0bd35e8fb6988ea8ba87b839c9f",
+          "capture": "3b3f39061c7c4fade25ad8546fd5b7e44036507f5ea114b33a1dde37cf9ec2f8",
+          "writers": "c7f829cac4f2afc68464a8742e44f5629a953277dee5fb7acfef8c8530f9e6fd",
+          "riskCalls": "7f6f59c55d5b3849e3f623780973b0288df884032cf07e22471c5c30324b088d",
+          "stagCalls": "01cb446216fe0fd89c46eb52d2186d96422945d94b28fa9e7a730769dccc0843",
+          "hurdleCalls": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "stored": "6507a34b6332d8176604e8e6c049ce15e9292081de540e2ee23352ce1ff44eb4"
+        },
+        "liveness": {
+          "stagnationFires": [],
+          "withinAgeEvaluations": 7,
+          "pausedAboveZero": 0,
+          "swapsExecuted": 0,
+          "stagnationHurdleCalls": 0,
+          "finalStagnationTicks": {
+            "NVDA": 5,
+            "TSLA": 5,
+            "MSFT": 5,
+            "AMZN": 5,
+            "KO": 5,
+            "PG": 5,
+            "BTC": 5
+          }
+        }
+      },
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "015e13eb70d1da407204ebf3ede43b353e553ad16374aab10b082e0f5d7a8f9e",
+          "updates": "ff81e0b185e1585fe5da318af9270ec07b1f39f8ca3c40f9352c9a42fdd075cd",
+          "prompts": "270f406a0862134570e8e876c274da0de7eb90acf731e434a411b619d382c634",
+          "capture": "7db7b390f04646b79b3491cd5982c1af35cef9173ca5a20c8ca7ce1b37189088",
+          "writers": "88d914c7bb8a8da7c6ac3aa45be9ca6167ef81ec0f4cf600ff409cdeb743edb9",
+          "riskCalls": "e4297beed64b146bc9196a6fd37363a30a00f497722c7ff0e301c8f9be06ba20",
+          "stagCalls": "21188e48904cda2b9b485608874f92d212bea32b01a75852fe0860e1dd75d932",
+          "hurdleCalls": "e48285641b24b8825f6696ae6d270df54d0f285c5ed60718de3060523959b99c",
+          "stored": "2519fb8b10ec15fa5b38e9c001182910fa9221a6237ebc4b5a320ba27516c2fa"
+        },
+        "liveness": {
+          "stagnationFires": [
+            "KO",
+            "TSLA"
+          ],
+          "withinAgeEvaluations": 7,
+          "pausedAboveZero": 0,
+          "swapsExecuted": 1,
+          "stagnationHurdleCalls": 2,
+          "finalStagnationTicks": {
+            "NVDA": 6,
+            "TSLA": 6,
+            "MSFT": 6,
+            "AMZN": 6,
+            "KO": 6,
+            "PG": 6,
+            "BTC": 6,
+            "AMD": 0
+          }
+        }
+      },
+      {
+        "digests": {
+          "thrown": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "summary": "2593095740596216fad13850cfba3b83352935d7983b91d7e37e388a1ccc6134",
+          "updates": "2807ea149061df14a137fd7c01e09e9b536f0f88e952ac083660d012ea36bf3f",
+          "prompts": "d9e70345834d3e9988cad8cc7e3174178253ca7445ede78ab698db7cc50b93d3",
+          "capture": "3dabe252903640608ce4a0f95547da6fa7a093b958f40e5f6602bc47b9363157",
+          "writers": "001b4c040a5fb3c8ad867991fa5917a3cd84c311eb8bc0a6c6044d47cd46f584",
+          "riskCalls": "cda2273eaf3643541382d3070a171e23745972458ba5cc411c9f6870f86ce15c",
+          "stagCalls": "0c38c4cf591607d0c6f0a18f87f0e106a1206dceab6d499d6073006cc6886f14",
+          "hurdleCalls": "8cad5de3eb8705ff9316e6c39576b34f165b21f8b185ec4edbff5f19f87699a7",
+          "stored": "33f212dd275563c931583a4c88fd891e4d80531fc11ffb8833018b2bc37c85bf"
+        },
+        "liveness": {
+          "stagnationFires": [
+            "KO"
+          ],
+          "withinAgeEvaluations": 6,
+          "pausedAboveZero": 0,
+          "swapsExecuted": 0,
+          "stagnationHurdleCalls": 1,
+          "finalStagnationTicks": {
+            "NVDA": 7,
+            "MSFT": 7,
+            "AMZN": 7,
+            "KO": 7,
+            "PG": 7,
+            "BTC": 7,
+            "AMD": 0
+          }
+        }
+      }
+    ]
+  }
+}

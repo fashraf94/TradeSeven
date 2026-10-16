@@ -46,11 +46,19 @@
 // document alone (buildMeetings over P's bounds — no read) it lists the
 // meetings now created on P; only when there is one does it read P's tape,
 // and only when a listed meeting's key is missing from P's stored `meetings`
-// does it re-merge P with the same writer (writeTapeDay: merge-monotone, the
-// candle pass not reopened — a meeting-only symbol is outside its input
-// fingerprint, so a late meeting's legs get no bars, RB-2). A failed re-merge
-// is caught and counted: P's tape stays as it was (the writer's transaction
-// never committed), P is never marked failed, and D's write is unaffected.
+// does it re-merge P with the same writer (writeTapeDay: merge-monotone). The
+// re-merge reopens no candle pass — a meeting-only symbol is outside the
+// candle input fingerprint, so a written pass stays written and a late
+// meeting's legs get no bars (RB-2); only a pass that was still to retry
+// anyway fetches them, best effort, on its next attempt. The re-merge is
+// a whole re-merge of P, as a refresh of P is: any other source of P that
+// grew since P's night is copied too (the build report names them). It runs
+// only above the pass's time floor. A failed re-merge is caught and counted:
+// it never marks P failed and leaves D's write as it was. P is either as it
+// was or holds exactly the whole re-merge this pass intended (the transaction
+// commits whole or not at all): a commit with an unknown outcome can leave P
+// re-merged beside a `remergeFailed` row, or beside `writer_unchanged` when
+// the SDK's own retry re-reads the applied write (review X3-9).
 
 import { findActiveAgentBattles } from '../agentBattleService.js';
 import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
@@ -125,10 +133,13 @@ export function meetingKeysOn(battle, etDate) {
  * Never throws; every outcome is one summary row (counted in the log line).
  * `remergeUnchanged` rows say why P was left as it was: `already_copied`
  * (P's stored meetings hold every key), `not_written` (P has no written tape
- * to merge into — the backfill is that day's path), `writer_unchanged` (the
- * writer found nothing to change, e.g. the size budget drops the meetings).
+ * to merge into — the backfill is that day's path), `time_floor` (the pass
+ * is below its time floor), `writer_unchanged` (the writer found nothing to
+ * change). A `remerged` row says whether P now holds every candidate meeting
+ * (`meetingsStored`, from one read of P after the write): the size budget
+ * (RB-6) can drop P's meetings while the re-merge still writes P.
  */
-async function remergePreviousDay({ db, battle, etDate, clock, write, summary }) {
+async function remergePreviousDay({ db, battle, etDate, clock, write, summary, startMs, budgetMs }) {
   let P = null;
   try {
     if (!isTieredBattle(battle)) return;
@@ -136,6 +147,8 @@ async function remergePreviousDay({ db, battle, etDate, clock, write, summary })
     if (!P || !isEtDate(P) || !isSessionDate(P)) return;
     const keys = meetingKeysOn(battle, P);
     if (!keys.length) return;                                   // no candidate: P is never read
+    // the pass's own floor (review X3-6): a re-merge is a second write for the battle
+    if (budgetMs - elapsedFrom(startMs, clock) < TIME_FLOOR_MS) { summary.remergeUnchanged.push({ battleId: battle.id, etDate: P, reason: 'time_floor' }); return; }
     // read directly, not through readTape (which reads a failed read as no tape): an unreadable P is a failed re-merge, never `not_written`
     const snap = await tapeRef(db, battle.id, P).get();
     const stored = snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
@@ -143,10 +156,13 @@ async function remergePreviousDay({ db, battle, etDate, clock, write, summary })
     const have = (Array.isArray(stored.meetings) ? stored.meetings : []).map((m) => m?.key);
     if (keys.every((k) => have.includes(k))) { summary.remergeUnchanged.push({ battleId: battle.id, etDate: P, reason: 'already_copied' }); return; }
     const r = await write(battle.id, P, { db, now: clock(), battle });
-    if (r.status === 'written') summary.remerged.push({ battleId: battle.id, etDate: P, bytes: r.bytes });
-    else summary.remergeUnchanged.push({ battleId: battle.id, etDate: P, reason: 'writer_unchanged' });
+    if (r.status !== 'written') { summary.remergeUnchanged.push({ battleId: battle.id, etDate: P, reason: 'writer_unchanged' }); return; }
+    // review X3-4: what the write produced, not only that it wrote
+    const after = await tapeRef(db, battle.id, P).get();
+    const kept = ((after && after.exists ? (typeof after.data === 'function' ? after.data() : after.data) : null)?.meetings ?? []).map((m) => m?.key);
+    summary.remerged.push({ battleId: battle.id, etDate: P, bytes: r.bytes, meetingsStored: keys.every((k) => kept.includes(k)) });
   } catch (err) {
-    // Counted, never marked: P's tape stays as it was, and no failure record is written for it.
+    // Counted, never marked: no failure record is written for P, and D's write stands.
     summary.remergeFailed.push({ battleId: battle.id, etDate: P, reason: String(err?.message || err).slice(0, 300) });
   }
 }
@@ -212,7 +228,7 @@ export async function runClosePass({ db, clock = Date.now, startMs = clock(), bu
       await safeMarkFailed(db, battle, target, err, clock, summary);
     }
     // RC-3: day D is handled — its previous session may owe a late-filed meeting (never throws).
-    await remergePreviousDay({ db, battle, etDate: target, clock, write, summary });
+    await remergePreviousDay({ db, battle, etDate: target, clock, write, summary, startMs, budgetMs });
   }
   return summary;
 }

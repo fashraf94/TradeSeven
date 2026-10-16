@@ -12,8 +12,11 @@
 //   B. Every recorded stagnation exit on a taped day is preceded by a `stalled`
 //      tag for that holding — the exits, those preceded, the mismatches, and
 //      each mismatch's reason class (never hidden). B1.1: a holding tagged on
-//      the live rule's own record (Amendment C RC-1, basis `recorded`) has
-//      nothing recomputed to blame, so its mismatch is class `recorded_basis`.
+//      the live rule's own record (Amendment C RC-1, basis `recorded`) has no
+//      recomputed count to blame — the B1 classes below would misread it —
+//      so its mismatch is class `recorded_basis` (the threshold is still the
+//      tagger's own: a dial that disagrees with the live one, a holding at
+//      the winner threshold or an unrecorded tick are its causes).
 //
 // It also counts what the build report needs: the evidence stamp on each check
 // state (no_trigger above all), tiered days whose battle has no opponent (T1),
@@ -204,7 +207,7 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
       const stint = stintRows(trace, tape.actions, x);
       const exitMs = toMs(x.at);
       const sinceIn = Math.max(-Infinity, ...rows(tape.actions).filter((a) => a.symbolIn === x.symbol && toMs(a.at) !== null && toMs(a.at) < exitMs).map((a) => toMs(a.at)));
-      // B1.1 (RC-1): a holding tagged on the live rule's own record has no recomputation to blame — the
+      // B1.1 (RC-1): a holding tagged on the live rule's own record has no recomputed COUNT to blame — the
       // classes below describe the recomputed walk, so a recorded holding's mismatch is its own class.
       const recorded = tags.inputs?.holdingBasis?.[x.symbol] === 'recorded';
       const flags = recorded ? { recorded_basis: true } : {

@@ -384,8 +384,8 @@ function tagsCoverage(doc, { failure = null, pausedChecks = 0, recorded = false 
 
 /**
  * Checks that record a holding without its price — where the RECOMPUTED count
- * pauses (a name sold at the check is no pause; a recorded holding's count
- * never pauses, RC-1).
+ * pauses (a name sold at the check is no pause). A recorded holding is not
+ * counted: its count is the live rule's own (RC-1), never this pause.
  */
 function pausedCheckCount(checks, actions, holdingBasis = {}) {
   const walked = tagChecks(checks);

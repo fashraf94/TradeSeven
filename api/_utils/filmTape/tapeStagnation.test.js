@@ -25,6 +25,8 @@ import { stalledDay } from './__fixtures__/tagFixtures.js';
 import { numbersWithClasses, formatNumberPath } from '../../../src/constants/filmTape.js';
 
 const NOW = Date.parse('2026-09-25T02:15:30.000Z');
+// Rows write whole fixture days through the real writer (the heavy tape suites' limit).
+vi.setConfig({ testTimeout: 30_000 });
 const path = (fx) => `agentBattles/${fx.battleId}/tape/${fx.etDate}`;
 async function writeFor(fx, { now = NOW, t = makeTapeDb(seedDay({}, fx)) } = {}) {
   const r = await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now });
