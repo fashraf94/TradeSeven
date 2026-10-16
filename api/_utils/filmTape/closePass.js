@@ -66,6 +66,7 @@ import { writeTapeDay, markCloseFailed, isTieredBattle } from './writeTapeDay.js
 import { resolveBattleResult } from './battleResult.js';
 import { buildBattleBlock, buildMeetings } from './tapeAssemble.js';
 import { stableStringify } from './tapeMerge.js';
+import { errorTextOf } from './errorClass.js';
 import { readEvalRunsForDay, readTape, tapeRef } from './tapeSources.js';
 import { etDayBounds, etDateOf, sessionDatesBetween, sessionFor, nextCalendarDate } from './tapeTime.js';
 import { isBattleDay, completionsSinceMs, tapeDateFor, isEtDate, isSessionDate, tradingTimeline } from '../../../src/utils/tapeSchedule.js';
@@ -106,7 +107,7 @@ function sessionOrMissing(etDate) {
 const elapsedFrom = (startMs, clock) => clock() - startMs;
 
 async function safeMarkFailed(db, battle, etDate, err, clock, summary) {
-  const reason = String(err?.message || err).slice(0, 300);
+  const reason = errorTextOf(err).slice(0, 300);
   summary.failed.push({ battleId: battle.id, etDate, reason });
   try {
     await markCloseFailed(db, battle, etDate, reason, { now: clock() });

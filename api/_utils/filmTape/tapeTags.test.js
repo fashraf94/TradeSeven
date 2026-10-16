@@ -80,11 +80,11 @@ describe('the thresholds come from the registry adapter — the source the live 
     expect(tagInputs({ battle: {}, checks: [] })).toEqual({ ok: false, reason: 'no archetype recorded on the battle', archetypeCodeId: null });
   });
 
-  it('the slots are the registry\'s S1 and S2, and the winner test names its basis', () => {
+  it('the slots are the registry\'s S1 and S2, and the winner test names each basis\'s input (Amendment D RD-7, review X2-7b)', () => {
     const { inputs } = run([]);
     expect(inputs.slots).toEqual({ S1: { checksBeforeRule: SITUATIONS.stalled.slots.S1.checksBeforeRule }, S2: { checks: 6, pctThreshold: 0.003 } });
-    expect(inputs.winnerBasis).toBe(WINNER_BASIS);
-    expect(WINNER_BASIS).toBe('change_since_entry');
+    expect(inputs.winnerBasis).toEqual(WINNER_BASIS);
+    expect(WINNER_BASIS).toEqual({ recorded: 'daily_change', recomputed: 'change_since_entry' });
   });
 });
 

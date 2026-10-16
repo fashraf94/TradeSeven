@@ -10,9 +10,14 @@
 // Used by: the T1 note (tapeAssemble.js opponentReader), the meetings note
 // (tapeAssemble.js meetingsOrUnavailable), the tagger's failure note
 // (tapeTags.js tagTapeDay) and the census's failure line
-// (scripts/census-film-room-b1.mjs censusErrorLine).
+// (scripts/census-film-room-b1.mjs censusErrorLine). Build B Amendment D RD-7
+// (review X4-3): errorTextOf, where a read note or a `passes.*.reason` prints
+// an error's message — the source reads (tapeSources.js attempt: the read
+// notes and `ticks_unreadable`), the close pass's failure record (closePass.js
+// safeMarkFailed: `passes.close.reason`) and the candle pass's
+// (candlePass.js: `passes.candles.reason`).
 //
-// Zero imports, data and one pure function, and no mutators. The census imports
+// Zero imports, data and two pure functions, and no mutators. The census imports
 // it; the census's write-grep gate reads only the census and the tagger
 // (GATED_FILES), and this module, like the census's other helpers, is handed
 // plain data only — the Firestore handle never leaves the census's main().
@@ -57,4 +62,19 @@ export function errorClassOf(err) {
   const ctor = read(() => err?.constructor?.name);
   for (const c of [name, ctor]) if (c && c !== 'Error' && ERROR_CLASSES.includes(c)) return c;
   return 'Error';
+}
+
+/**
+ * Build B Amendment D RD-7 (review X4-3) — an error's text for a read note or
+ * a `passes.*.reason`: its message when it has one, as before; when the
+ * message is empty, its class from the list (errorClassOf) — never the bare
+ * name `String(err)` falls back to. A thrown value that is not an object keeps
+ * its own text, as before. Never throws.
+ */
+export function errorTextOf(err) {
+  let message = null;
+  try { message = err?.message; } catch { message = null; }
+  if (message) return String(message);
+  if ((typeof err === 'object' && err !== null) || typeof err === 'function') return errorClassOf(err);
+  return String(err);
 }

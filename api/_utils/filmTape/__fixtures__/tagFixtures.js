@@ -62,11 +62,15 @@ function evidenceAt(held, seq, riskStatus) {
  *                                         `priceChange / 100`. An object seeds the counter (the overnight
  *                                         carry): `{ SYM: { stagnationTicks, lastTickPrice, lastTickTimestamp } }`.
  * @param {number[]} [o.unrecordedSeqs]    with recordStagnation: checks whose tick carries no record
+ * @param {Function|null} [o.dailyChangeOf] with recordStagnation: `(sym, seq) => percent`, the DAY's change the
+ *                                         live rule reads (`prices[sym].changePercent`), where it differs from the
+ *                                         change since entry the agent is shown (Amendment D RD-7, review X2-6).
+ *                                         Default: the change since entry, as every other fixture day.
  */
 export async function stalledDay({
   battleId = 'b-stalled', archetype = 'momentum_chaser', exitSeq = 6, noTriggerSeqs = [], slots = 26,
   dials = null, controlEpochLog = null, controlEpoch = null, opponent = CPU_OPPONENT, over = {}, etDate = '2026-09-24',
-  meetingSeqs = [], recordStagnation = false, unrecordedSeqs = [],
+  meetingSeqs = [], recordStagnation = false, unrecordedSeqs = [], dailyChangeOf = null,
 } = {}) {
   const D = etDate;
   const ticks = [];
@@ -94,7 +98,7 @@ export async function stalledDay({
           now: capturedAtMs - 15_000, pctThreshold: fr?.pctThreshold ?? 0.001, maxTickAgeMinutes: fr?.maxTickAgeMinutes ?? 20, stagnationTicks: prev.stagnationTicks,
         });
         live[s] = { stagnationTicks: step.stagnationTicks, lastTickPrice: step.lastTickPrice, lastTickTimestamp: step.lastTickTimestamp };
-        rec[s] = { ticks: step.stagnationTicks, withinAge: step.withinAge, dailyPct: quoteOf(s, seq).priceChange / 100 };
+        rec[s] = { ticks: step.stagnationTicks, withinAge: step.withinAge, dailyPct: (dailyChangeOf ? dailyChangeOf(s, seq) : quoteOf(s, seq).priceChange) / 100 };
       }
       stagnation = unrecordedSeqs.includes(seq) ? null : rec;
     }

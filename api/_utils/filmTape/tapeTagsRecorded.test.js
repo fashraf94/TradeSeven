@@ -40,7 +40,7 @@ import { writeTapeDay } from './writeTapeDay.js';
 import * as tagger from './tapeTags.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay } from './__fixtures__/tapeFixtures.js';
-import { stalledDay, epochEntry } from './__fixtures__/tagFixtures.js';
+import { stalledDay, epochEntry, quoteOf } from './__fixtures__/tagFixtures.js';
 import { SITUATIONS, SITUATION_REGISTRY_VERSION } from '../../../src/data/situationRegistry.js';
 import { computeB1Census } from '../../../scripts/census-film-room-b1.mjs';
 import { stableStringify } from './tapeMerge.js';
@@ -121,7 +121,11 @@ function asB1(section, { recordsRead = false } = {}) {
   s.tags.registryVersion = 1;
   s.tags.situations = { ...s.tags.situations, stalled: 1 };
   if (Array.isArray(s.tags.items)) s.tags.items = s.tags.items.map((i) => ({ ...i, version: 1 }));
-  if (s.tags.inputs) delete s.tags.inputs.holdingBasis;
+  if (s.tags.inputs) {
+    delete s.tags.inputs.holdingBasis;
+    // Amendment D RD-7 (X2-7b): v2 names each basis's input; B1 stored the recomputed one alone. Only the exact map is relabelled.
+    if (stableStringify(s.tags.inputs.winnerBasis) === stableStringify(tagger.WINNER_BASIS)) s.tags.inputs.winnerBasis = tagger.WINNER_BASIS.recomputed;
+  }
   return s;
 }
 const census = (tape, battle) => computeB1Census({ tapes: [{ path: `agentBattles/${battle.id}/tape/${tape.etDate}`, data: tape }], battles: { [battle.id]: battle }, dialEnabled: true, nowMs: NOW }).B;
@@ -226,6 +230,15 @@ describe('exit criterion 3 — the section is reproducible from tags.inputs and 
     const again = tagger.tagDay({ inputs: v1, checks: tape.checks, actions: tape.actions });
     expect(again.items).toEqual(tape.tags.items);
     expect(again.exits).toEqual(tape.tags.exits);
+  });
+
+  it.each(Object.keys(DAYS))('Amendment D RD-7 (X2-7b): B1\'s OWN stored inputs (frozen; winnerBasis the string it stored) still reproduce B1\'s items and exits — %s', async (name) => {
+    const b1 = golden.days[name].withoutRecords.tags;
+    expect(b1.inputs.winnerBasis).toBe('change_since_entry');
+    const tape = JSON.parse(JSON.stringify(await writeFor(await DAYS[name](false))));
+    const again = tagger.tagDay({ inputs: b1.inputs, checks: tape.checks, actions: tape.actions });
+    expect(again.items.map((i) => ({ ...i, version: 1 }))).toEqual(b1.items);
+    expect(again.exits).toEqual(b1.exits);
   });
 });
 
@@ -449,5 +462,37 @@ describe('Amendment D RD-5 — the evidence counts only when some holding is rec
   it('on a real tape: the fully recorded acceptance day names no evidence source; the same day without records does', async () => {
     expect((await writeFor(await DAYS.acceptance(true))).coverage.tags.sources).toEqual(['checks', 'checks.risk', 'actions', 'checks.stagnation']);
     expect((await writeFor(await DAYS.acceptance(false))).coverage.tags.sources).toEqual(['checks', 'checks.evidence', 'checks.risk', 'actions']);
+  });
+});
+
+// ── Amendment D RD-7 (review X2-6) — a day whose daily change is not its change since entry ──
+// Every other fixture day records the daily change AS the change since entry,
+// so a winner test that read the wrong one went unseen there. Here ACN is up on
+// the day (+0.5%, a winner) but down since entry (−0.4%); NVDA is down on the
+// day (−0.2%) but up since entry (+0.8%). No stagnation fire (exitSeq null).
+describe('Amendment D RD-7 (review X2-6) — the daily change and the change since entry differ', () => {
+  const DAILY = { ACN: 0.5, NVDA: -0.2 };
+  const day = (recorded) => stalledDay({ battleId: 'b-x26', exitSeq: null, recordStagnation: recorded, dailyChangeOf: (sym, seq) => DAILY[sym] ?? quoteOf(sym, seq).priceChange });
+  const taggedSyms = (tape) => [...new Set(tape.tags.items.map((i) => i.symbol))].sort();
+
+  it('the fixture records the two changes apart (the precondition)', async () => {
+    const fx = await day(true);
+    const t4 = fx.ticks.find((tk) => tk.tickSeq === 4);
+    expect(t4.risk.stagnation.ACN.dailyPct).toBe(0.005);
+    expect(quoteOf('ACN', 4).priceChange / 100).toBe(-0.004);
+    expect(t4.risk.stagnation.NVDA.dailyPct).toBe(-0.002);
+  });
+
+  it('RECORDED: the winner test reads the daily change — NVDA (down on the day) is stalled, ACN (up on the day) never', async () => {
+    const tape = await writeFor(await day(true));
+    expect(tape.tags.inputs.holdingBasis).toEqual({ ACN: 'recorded', MSFT: 'recorded', NVDA: 'recorded' });
+    expect(tape.tags.inputs.winnerBasis).toEqual({ recorded: 'daily_change', recomputed: 'change_since_entry' });
+    expect(taggedSyms(tape)).toEqual(['NVDA']);
+  });
+
+  it('RECOMPUTED (the same day without the records): the winner test reads the change since entry — ACN is stalled, NVDA never', async () => {
+    const tape = await writeFor(await day(false));
+    expect(Object.values(tape.tags.inputs.holdingBasis).every((b) => b === 'recomputed')).toBe(true);
+    expect(taggedSyms(tape)).toEqual(['ACN']);
   });
 });

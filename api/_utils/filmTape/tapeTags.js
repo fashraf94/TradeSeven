@@ -57,7 +57,8 @@
 //   · the daily change the live rule's winner test reads
 //     (`prices[sym].changePercent`, agent-evaluate.js). The tape records
 //     `evidence.*.chg`, the change from the position's entry; the winner test
-//     here reads it, basis `change_since_entry`.
+//     here reads it (`tags.inputs.winnerBasis.recomputed`: `change_since_entry`;
+//     a recorded holding's is `daily_change`, its record's `dailyPct`).
 //   · a price at a check with no evaluation entry (a `no_trigger` check writes
 //     none). The live counter steps on every tick; here such a check pauses the
 //     count for the holding, as the age guard does — updateStagnationCounter's
@@ -82,8 +83,16 @@ const str = (v) => (typeof v === 'string' && v ? v : null);
 const rowsOf = (v) => (Array.isArray(v) ? v.filter(isObj) : []);
 
 const STALLED = SITUATIONS.stalled;
-/** The winner test's input for a RECOMPUTED holding (the live rule reads the daily change, which its tape does not hold; a recorded holding reads the recorded `dailyPct`). */
-export const WINNER_BASIS = 'change_since_entry';
+/**
+ * The winner test's input per basis, stored as `tags.inputs.winnerBasis`
+ * (Build B Amendment D RD-7, review X2-7b): a RECORDED holding reads the daily
+ * change the live rule read (its record's `dailyPct`); a RECOMPUTED holding
+ * reads the change from entry (`evidence.*.chg`), as B1 did — its tape does
+ * not hold the daily change. B1 and B1.1 stored the recomputed input alone
+ * (the string 'change_since_entry'); tagDay never reads this field, so those
+ * stored inputs still reproduce their sections.
+ */
+export const WINNER_BASIS = Object.freeze({ recorded: 'daily_change', recomputed: 'change_since_entry' });
 /** RC-1 — the two bases a holding's day is tagged on. */
 export const HOLDING_BASES = Object.freeze(['recorded', 'recomputed']);
 /** The dial bases, in the spec's order of preference (§2). */
@@ -225,7 +234,7 @@ export function tagInputs({ battle, checks, ticks = [], dialEnabled = TEMPO_DIAL
       slots: { S1: { checksBeforeRule: STALLED.slots.S1.checksBeforeRule }, S2: { checks: S2.checks, pctThreshold: S2.pctThreshold } },
       tempoDesired: typeof desired === 'string' ? desired : null,
       dialEnabledAtTagTime: dialEnabled === true,
-      winnerBasis: WINNER_BASIS,
+      winnerBasis: { ...WINNER_BASIS },
       perCheck,
       // RC-1: each holding's basis for the day (recorded | recomputed)
       holdingBasis: holdingBasisOf(checks),
