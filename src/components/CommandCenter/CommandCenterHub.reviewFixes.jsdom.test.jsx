@@ -55,34 +55,67 @@ function unmountAll() {
 const SHELLS = [['mobile', 360], ['mobile', 390], ['desktop', 770], ['desktop', 614], ['desktop', 1216], ['desktop', 1060]];
 
 describe('S1 review fixes — accessibility (L3)', () => {
-  it('L3-1: a width change that switches the composition keeps keyboard focus on the same area tab', () => {
-    const { host } = renderHub({ site: 'desktop', hubWidth: 1216 });
-    const tab = selectedTabs(host)[0];
-    const id = tab.id;
-    tab.focus();
-    for (const width of [960, 614, 770, 1216]) {
+  // Every direction between the three wide compositions, in one walk.
+  const WALK = [1216, 960, 614, 1060, 700, 1216, 614];
+
+  it('L3-1: a width change that switches the composition remounts nothing — the same nodes, in every direction', () => {
+    const { host } = renderHub({ site: 'desktop', hubWidth: 1216, sections: fixture('returning') });
+    const pick = () => ({
+      tab: selectedTabs(host)[0],
+      panel: host.querySelector('[role="tabpanel"]'),
+      stage: host.querySelector('[data-hub-stage]'),
+      deploy: host.querySelector('[data-hub-deploy]'),
+      hold: byRole(host.querySelector('[data-hub-deploy]'), 'button', COPY.deploy.holdLabel)[0],
+      next: host.querySelector('[data-hub-next-action]'),
+    });
+    const first = pick();
+    for (const width of WALK.slice(1)) {
       layout.resize({ hubWidth: width });
-      expect(document.activeElement?.id, `after ${width}`).toBe(id);
+      const now = pick();
+      for (const key of Object.keys(first)) expect(now[key], `${key} after ${width}`).toBe(first[key]);
     }
   });
 
-  it('L3-1: a focused element with no id lands on the hub root, not on <body>', () => {
+  it('L3-1: keyboard focus stays where it was — an area tab, or a link with no id', () => {
     const { host } = renderHub({ site: 'desktop', hubWidth: 1216 });
+    const tab = selectedTabs(host)[0];
+    tab.focus();
+    for (const width of WALK.slice(1)) {
+      layout.resize({ hubWidth: width });
+      expect(document.activeElement, `after ${width}`).toBe(tab);
+    }
     const [loadoutLink] = byRole(host.querySelector('[data-hub-deploy]'), 'button', COPY.deploy.loadoutLink);
     loadoutLink.focus();
-    layout.resize({ hubWidth: 770 });
-    expect(document.activeElement).toBe(hubRoot());
+    for (const width of WALK.slice(1)) {
+      layout.resize({ hubWidth: width });
+      expect(document.activeElement, `after ${width}`).toBe(loadoutLink);
+    }
   });
 
-  it('L3-1: focus that had left the hub is not pulled back by a later switch', () => {
-    const outside = document.createElement('button');
-    document.body.appendChild(outside);
-    const { host } = renderHub({ site: 'desktop', hubWidth: 1216 });
-    selectedTabs(host)[0].focus();
-    outside.focus();
-    layout.resize({ hubWidth: 770 });
-    expect(document.activeElement).toBe(outside);
-    outside.remove();
+  it('L3-1 / R-S1-5: the Brief\'s open state survives every width change within the desktop site', () => {
+    const { host } = renderHub({ site: 'desktop', hubWidth: 1216, sections: fixture('returning') });
+    const more = () => byRole(host.querySelector('[data-hub-section="brief"]'), 'button').find((b) => b.hasAttribute('aria-expanded'));
+    click(more());
+    expect(more().getAttribute('aria-expanded')).toBe('true');
+    for (const width of WALK.slice(1)) {
+      layout.resize({ hubWidth: width });
+      expect(more().getAttribute('aria-expanded'), `after ${width}`).toBe('true');
+    }
+  });
+
+  it('L3-1: the wide grid places every part by area — the order constants, as CSS', async () => {
+    const { wideGrid } = await import('./CommandCenterHub');
+    expect(wideGrid('desktop', true).body.gridTemplateAreas).toBe('"main next" "main side"');
+    expect(wideGrid('desktop', false).body.gridTemplateAreas).toBe('"main side"');
+    expect(wideGrid('desktop', true).sideOrder).toEqual(['games', 'deploy', 'activity', 'brief']);
+    expect(wideGrid('tablet', true).body.gridTemplateAreas).toBe('"next next" "stage stage" "panel side"');
+    expect(wideGrid('tablet', false).body.gridTemplateAreas).toBe('"stage stage" "panel side"');
+    expect(wideGrid('tablet', true).sideOrder).toEqual(['deploy', 'games', 'activity', 'brief']);
+    expect(wideGrid('stacked', true).body.gridTemplateAreas).toBe('"next" "stage" "panel" "deploy" "games" "activity" "brief"');
+    expect(wideGrid('stacked', true).sideOrder).toEqual(['deploy', 'games', 'activity', 'brief']);
+    expect(wideGrid('stacked', true).main).toEqual({ display: 'contents' });
+    expect(wideGrid('tablet', true).main).toEqual({ display: 'contents' });
+    expect(wideGrid('desktop', true).main.display).toBe('flex');
   });
 
   it('L3-4: both tabpanels take a tab stop', () => {
@@ -126,14 +159,19 @@ describe('S1 review fixes — accessibility (L3)', () => {
     let { host } = renderHub({ site: 'desktop', hubWidth: 1216 });
     let tabs = byRole(host, 'tab');
     tabs[2].focus();
-    for (const mod of ['altKey', 'ctrlKey', 'metaKey']) press(tabs[2], 'ArrowDown', { [mod]: true });
-    expect(tabs[2].getAttribute('aria-selected')).toBe('true');
+    // One press per modifier, checked each time (three presses would cycle a three-tab list back to the start).
+    for (const mod of ['altKey', 'ctrlKey', 'metaKey']) {
+      press(tabs[2], 'ArrowDown', { [mod]: true });
+      expect(tabs[2].getAttribute('aria-selected'), mod).toBe('true');
+    }
     unmountAll();
     ({ host } = renderHub({ site: 'mobile', hubWidth: 390 }));
     tabs = byRole(host, 'tab');
     tabs[0].focus();
-    for (const mod of ['altKey', 'ctrlKey', 'metaKey']) press(tabs[0], 'ArrowLeft', { [mod]: true });
-    expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+    for (const mod of ['altKey', 'ctrlKey', 'metaKey']) {
+      press(tabs[0], 'ArrowLeft', { [mod]: true });
+      expect(tabs[0].getAttribute('aria-selected'), mod).toBe('true');
+    }
   });
 
   it.each(SHELLS)('L3-10: no block element inside a button (%s site at %i px), in the S1 state and every fixture', (site, hubWidth) => {

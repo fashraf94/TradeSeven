@@ -33,7 +33,7 @@ export default function ActivitySection({ activity, limit = null, onOpen, onAll 
             <Row
               key={e.id}
               onPress={onOpen ? () => onOpen(e) : undefined}
-              ariaLabel={COPY.activity.rowLabel(e.text, e.sub)}
+              ariaLabel={COPY.activity.rowLabel(e.text, e.sub, e.at)}
               style={{ minHeight: 52, padding: '9px 12px', borderTop: i ? `1px solid ${HAIR}` : 'none', borderRadius: 0 }}
               right={<Mono style={{ fontSize: 10, color: C.ink3, whiteSpace: 'nowrap', flexShrink: 0 }}>{e.at}</Mono>}
             >

@@ -44,12 +44,15 @@ describe('HubSheet — review fixes', () => {
     const dialog = document.querySelector('[role="dialog"]');
     expect(dialog.tabIndex).toBe(-1);
     dialog.focus();
+    expect(document.activeElement).toBe(dialog);
     press(dialog, 'Tab');
     expect(document.activeElement).toBe(dialog.querySelector('[data-hub-sheet-close]'));
     dialog.focus();
+    expect(document.activeElement).toBe(dialog);
     press(dialog, 'Tab', { shiftKey: true });
     expect(document.activeElement).toBe(dialog.querySelector('[data-inside="last"]'));
     dialog.focus();
+    expect(document.activeElement).toBe(dialog);
     press(dialog, 'Escape');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(opener);

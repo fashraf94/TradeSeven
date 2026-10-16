@@ -434,13 +434,10 @@ const HUB_FILE = (name) => `${HUB_DIR}/${name}`;
 /**
  * The S1 allowances, by file: the ResizeObservers that measure the hub (its
  * width, the stage connector, the strip and BottomNav) with the layout effects
- * that attach them, the sheet's focus / inert effect, and the hub root's
- * layout effect that keeps focus across a composition switch (S1 review L3-1).
- * The test kit defines a stand-in ResizeObserver. Nothing else anywhere in the
- * directory.
+ * that attach them, and the sheet's focus / inert effect. The test kit defines
+ * a stand-in ResizeObserver. Nothing else anywhere in the directory.
  */
 const ALLOWED_ACTIVITY = Object.freeze({
-  [HUB_FILE('CommandCenterHub.jsx')]: ['\\buseLayoutEffect\\b'],
   [HUB_FILE('hub/useHubWidth.js')]: ['\\bResizeObserver\\b', '\\buseLayoutEffect\\b'],
   [HUB_FILE('hub/useNavClearance.js')]: ['\\bResizeObserver\\b', '\\buseLayoutEffect\\b'],
   [HUB_FILE('ShadowStage.jsx')]: ['\\bResizeObserver\\b', '\\buseLayoutEffect\\b'],

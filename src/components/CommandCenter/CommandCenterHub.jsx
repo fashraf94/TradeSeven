@@ -24,16 +24,22 @@
 // Its only subscriptions are the ResizeObservers that measure it (its width,
 // the stage connector, and on the phone the strip and BottomNav) and the
 // signed-in user from useUser() for the header line. OS reduced motion comes
-// from framer-motion's useReducedMotion, the house precedent. Its one effect
-// of its own is a layout effect that keeps keyboard focus in the hub when a
-// width change within the desktop site switches the composition (S1 review
-// L3-1).
+// from framer-motion's useReducedMotion, the house precedent.
+//
+// One tree for the three wide compositions. Desktop, tablet and stacked are
+// one CSS grid whose areas change with the composition; every part keeps its
+// place in the React tree (the stage and panel wrappers switch to
+// `display: contents` off the desktop; the side parts are keyed children of one
+// wrapper, reordered in place). So a width change within the desktop site — a
+// resize, browser zoom, a tablet turned — remounts nothing: focus, the Brief's
+// open state and (for S2b) a charging hold all survive (S1 review L3-1; ruling
+// R-S1-5; spec §5.5 "keep panels mounted while charging").
 //
 // Nothing imports this module statically. Only CommandCenterHubGate's dynamic
 // import reaches it, so it ships in its own chunk and is requested only when
 // the gate renders (the hub flag on).
 
-import React, { useId, useLayoutEffect, useRef, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { useUser } from '../../contexts/UserContext';
 import {
@@ -44,7 +50,6 @@ import {
   HUB_SITES,
   PHONE_TABS,
   AREA_FOR_PHONE_TAB,
-  DESKTOP_MAIN_ORDER,
   DESKTOP_SIDE_ORDER,
   STACKED_ORDER,
   TABLET_SIDE_ORDER,
@@ -142,30 +147,51 @@ function useHubSheet(rootRef) {
   };
 }
 
+const SIDE_PARTS = new Set(['games', 'deploy', 'activity', 'brief']);
+const sideOf = (order) => order.filter((key) => SIDE_PARTS.has(key));
+const rows = (list) => list.map((row) => `"${row}"`).join(' ');
+
 /**
- * The wide compositions arrange the same parts under different parents, so a
- * width change that switches the composition (a resize, browser zoom, a tablet
- * turned) remounts them and focus would fall to <body>. This remembers which
- * hub element had focus and, after the switch, puts it back by id (the area
- * tabs and the panel keep theirs), else on the hub root (S1 review L3-1).
+ * The wide compositions' one grid (ruling R-S1-3), from the order constants in
+ * hub/composition.js. Desktop: [stage + panel] | [next action over the side
+ * column]; the next action's row is `auto` and the side's `1fr`, so the side
+ * column starts right under the card whatever the stage's height. Tablet: next
+ * action and stage across, then [panel | side]. Stacked: one column, every part
+ * in its own row. Only CSS changes between them.
  */
-function useFocusAcrossCompositions(rootRef, composition) {
-  const lastRef = useRef({ inside: false, id: null });
-  const prevRef = useRef(composition);
-  useLayoutEffect(() => {
-    if (prevRef.current === composition) return;
-    prevRef.current = composition;
-    const active = document.activeElement;
-    if (!lastRef.current.inside || (active && active !== document.body)) return;
-    const target = (lastRef.current.id && document.getElementById(lastRef.current.id)) || rootRef.current;
-    target?.focus();
-  }, [composition, rootRef]);
+export function wideGrid(composition, hasNext) {
+  if (composition === HUB_COMPOSITIONS.DESKTOP) {
+    return {
+      body: {
+        display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 360px', columnGap: 24, rowGap: 22, alignItems: 'start',
+        gridTemplateRows: hasNext ? 'auto 1fr' : 'auto',
+        gridTemplateAreas: hasNext ? rows(['main next', 'main side']) : rows(['main side']),
+      },
+      main: { gridArea: 'main', display: 'flex', flexDirection: 'column', gap: 22, minWidth: 0 },
+      side: { gridArea: 'side', display: 'flex', flexDirection: 'column', gap: 22, minWidth: 0 },
+      sideOrder: sideOf(DESKTOP_SIDE_ORDER),
+    };
+  }
+  if (composition === HUB_COMPOSITIONS.TABLET) {
+    const top = TABLET_TOP_ORDER.filter((key) => hasNext || key !== 'next').map((key) => `${key} ${key}`);
+    return {
+      body: {
+        display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 20, alignItems: 'start',
+        gridTemplateAreas: rows([...top, 'panel side']),
+      },
+      main: { display: 'contents' },
+      side: { gridArea: 'side', display: 'flex', flexDirection: 'column', gap: 22, minWidth: 0 },
+      sideOrder: TABLET_SIDE_ORDER,
+    };
+  }
   return {
-    onFocusCapture: (event) => { lastRef.current = { inside: true, id: event.target.id || null }; },
-    // Focus moving to an element outside the hub ends the memory; a removed element (no related target) does not.
-    onBlurCapture: (event) => {
-      if (event.relatedTarget && !rootRef.current?.contains(event.relatedTarget)) lastRef.current = { inside: false, id: null };
+    body: {
+      display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 20, alignItems: 'start',
+      gridTemplateAreas: rows(STACKED_ORDER.filter((key) => hasNext || key !== 'next')),
     },
+    main: { display: 'contents' },
+    side: { display: 'contents' },
+    sideOrder: sideOf(STACKED_ORDER),
   };
 }
 
@@ -239,7 +265,6 @@ function WideHub({ sections }) {
   const composition = composeHub({ site: HUB_SITES.DESKTOP, width });
   const [area, setArea] = useState(DEFAULT_AREA);
   const sheet = useHubSheet(rootRef);
-  const focusKeeper = useFocusAcrossCompositions(rootRef, composition);
   const actions = {
     openHistory: shared.completed.length ? sheet.open('history') : undefined,
   };
@@ -271,45 +296,30 @@ function WideHub({ sections }) {
       reducedMotion={shared.reducedMotion}
     />
   );
-  const parts = {
-    stage,
-    panel,
-    next: <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} />,
+  const side = {
     games: <GamesSection games={sections.games} onOpenHistory={actions.openHistory} />,
     deploy: <DeploySection deploy={sections.deploy} loadoutLine={shared.loadoutLine} onOpenLoadout={() => setArea(HUB_AREAS.ARCHETYPE)} />,
     activity: <ActivitySection activity={sections.activity} />,
     brief: <BriefSection brief={sections.brief} />,
   };
-  const place = (order) => order.map((key) => <React.Fragment key={key}>{parts[key]}</React.Fragment>);
-  const col = { display: 'flex', flexDirection: 'column', gap: 22, minWidth: 0 };
-
-  let body;
-  if (desktop) {
-    // The design's order: [stage + area panel] | [next action, Games, Deploy, Activity, Brief].
-    body = (
-      <div style={{ padding: `14px ${gutter}px 30px`, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 360px', gap: 24, alignItems: 'start' }}>
-        <div style={col}>{place(DESKTOP_MAIN_ORDER)}</div>
-        <div style={col}>{place(DESKTOP_SIDE_ORDER)}</div>
+  const hasNext = sections.nextAction?.status === 'ready' && Boolean(sections.nextAction.candidate);
+  const grid = wideGrid(composition, hasNext);
+  const body = (
+    <div data-hub-body={composition} style={{ padding: `14px ${gutter}px ${desktop ? 30 : 28}px`, ...grid.body }}>
+      <div data-hub-slot="next" style={{ gridArea: 'next', minWidth: 0, display: hasNext ? 'block' : 'none' }}>
+        <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} />
       </div>
-    );
-  } else if (tablet) {
-    // Deploy above Games, so an enabled hold stays in the first viewport with maximum rows (spec §10).
-    body = (
-      <div style={{ padding: `14px ${gutter}px 28px`, display: 'flex', flexDirection: 'column', gap: 20 }}>
-        {place(TABLET_TOP_ORDER)}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 20, alignItems: 'start' }}>
-          <div style={col}>{parts.panel}</div>
-          <div style={col}>{place(TABLET_SIDE_ORDER)}</div>
-        </div>
+      <div data-hub-slot="main" style={grid.main}>
+        <div data-hub-slot="stage" style={{ gridArea: 'stage', minWidth: 0 }}>{stage}</div>
+        <div data-hub-slot="panel" style={{ gridArea: 'panel', minWidth: 0 }}>{panel}</div>
       </div>
-    );
-  } else {
-    body = (
-      <div style={{ padding: `14px ${gutter}px 28px`, display: 'flex', flexDirection: 'column', gap: 20 }}>
-        {place(STACKED_ORDER)}
+      <div data-hub-slot="side" style={grid.side}>
+        {grid.sideOrder.map((key) => (
+          <div key={key} data-hub-slot={key} style={{ gridArea: key, minWidth: 0 }}>{side[key]}</div>
+        ))}
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
     <HubLayoutContext.Provider value={composition}>
@@ -322,8 +332,6 @@ function WideHub({ sections }) {
         data-hub-composition={composition}
         data-hub-width={width ?? ''}
         tabIndex={-1}
-        onFocusCapture={focusKeeper.onFocusCapture}
-        onBlurCapture={focusKeeper.onBlurCapture}
         style={{ ...rootStyle, minHeight: '100vh', overflowX: 'hidden' }}
       >
         <HubHeader dateText={shared.dateText} name={shared.name} gutter={desktop || tablet ? 28 : gutter} />

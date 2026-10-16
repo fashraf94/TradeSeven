@@ -190,7 +190,8 @@ export const HUB_COPY = Object.freeze({
     empty: 'Nothing recorded yet.',
     /** The phone Overview's link to the whole list (the design's; S4 wires its sheet). */
     all: (n) => `All activity · ${n}`,
-    rowLabel: (text, sub) => `${text}: ${sub}`,
+    /** An activity row's name: what happened, its line, and when (the visible time; S1 review L3-8). */
+    rowLabel: (text, sub, at) => `${text}: ${sub}${at ? `, ${at}` : ''}`,
   }),
 
   brief: Object.freeze({
