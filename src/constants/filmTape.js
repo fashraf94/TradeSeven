@@ -189,6 +189,10 @@ export const TAPE_NUMBER_CLASSES = Object.freeze({
   // B1 T1 — copied from the permanent tick under `score.opponentBasis`
   // `cpu_portfolio`; null under `none` and on a check rebuilt from an entry.
   'checks[].scores.opponent': 'recorded',
+  // B1.1 (Amendment C, RC-2) — what the stagnation rule read at the tick,
+  // copied from its permanent record (`risk.stagnation`); absent before B1.1.
+  'checks[].stagnation.*.ticks': 'recorded',
+  'checks[].stagnation.*.dailyPct': 'recorded',
   'checks[].tickMs': 'recorded',
   'checks[].guardrail.deployedCount': 'recorded',
   'checks[].evidence.*.px': 'recorded',

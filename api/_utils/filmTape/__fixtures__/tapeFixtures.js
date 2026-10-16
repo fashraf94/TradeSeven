@@ -39,7 +39,7 @@ const at = (date, hhmmss) => Date.parse(`${date}T${hhmmss}.000Z`);
 export async function makeTick({
   battleId, tickSeq, capturedAtMs, exitReason, stages, evalId = null, day = '1',
   scores = null, verdicts = null, decision = null, actions = [], controls = null,
-  modelFailureClass = null, guardrail = null, evidenceKeys = [], symbols = [],
+  modelFailureClass = null, guardrail = null, evidenceKeys = [], symbols = [], stagnation = null,
 }) {
   const ctx = createTickCaptureContext({ battleId, tickSeq, agentId: AGENT, ownerId: OWNER, gameMode: 'baggerbomb_agent', enabled: true, startedAtMs: capturedAtMs - 20_000 });
   ctx.schema(resolveCaptureSchema({ callsEnabled: true }));
@@ -48,7 +48,8 @@ export async function makeTick({
   ctx.exit(exitReason);
   if (evalId) ctx.identify({ evalId, day, battlePhase: 'midday' });
   if (scores) ctx.scores(scores);
-  if (verdicts) ctx.risk({ verdicts, evaluatedCount: Object.keys(verdicts).length, lockedCount: 0, forcedExitCount: Object.values(verdicts).filter((v) => v.action !== 'HOLD').length });
+  // B1.1 (RC-2): `stagnation` — what the stagnation rule read, as the evaluator records it beside the verdicts.
+  if (verdicts) ctx.risk({ verdicts, ...(stagnation ? { stagnation } : {}), evaluatedCount: Object.keys(verdicts).length, lockedCount: 0, forcedExitCount: Object.values(verdicts).filter((v) => v.action !== 'HOLD').length });
   if (decision) ctx.decision(decision);
   if (modelFailureClass) ctx.model({ outcome: 'failed', failureClass: modelFailureClass, attempted: false });
   if (guardrail) ctx.guardrail(guardrail);

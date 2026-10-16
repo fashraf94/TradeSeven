@@ -27,7 +27,7 @@ import {
   TICK_CAPTURE_TEXT_FIELD_MAX_BYTES, TICK_CAPTURE_BODY_DOC_MAX_BYTES,
   TICK_CAPTURE_BODY_RETENTION_DAYS, CHECK_NAMES, resolveCaptureSchema,
 } from './captureConfig.js';
-import { buildUniverse, sanitizePermanentDocument, findFreeText } from './captureSerializer.js';
+import { buildUniverse, sanitizePermanentDocument, findFreeText, SYMBOL_RE } from './captureSerializer.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8');
@@ -146,6 +146,33 @@ function defaultChecks(recorded) {
 
 const iso = (v) => (typeof v === 'string' && v ? v : null);
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const isPlainObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Film Room B1.1 (Amendment C, RC-2) — what the stagnation rule READ for each
+ * held symbol this tick: `ticks`, the count evaluateRisk received; `withinAge`,
+ * the age verdict; `dailyPct`, the daily change exactly as passed to it.
+ * Type-checked: a count that is not an integer ≥ 0, an age verdict that is not
+ * a boolean and a change that is not a finite number are each null, and a key
+ * that is not ticker-shaped is not copied (the serializer then admits each key
+ * by the tick's own universe, as it admits the verdicts' keys). Null when the
+ * tick recorded none — a tick that never reached the risk loop — so its record
+ * keeps the shape it had before B1.1.
+ */
+export function stagnationRecordOf(raw) {
+  if (!isPlainObj(raw)) return null;
+  const out = {};
+  for (const [symbol, v] of Object.entries(raw)) {
+    if (!SYMBOL_RE.test(symbol)) continue;
+    const r = isPlainObj(v) ? v : {};
+    out[symbol] = {
+      ticks: Number.isInteger(r.ticks) && r.ticks >= 0 ? r.ticks : null,
+      withinAge: typeof r.withinAge === 'boolean' ? r.withinAge : null,
+      dailyPct: num(r.dailyPct),
+    };
+  }
+  return out;
+}
 
 /**
  * Compose both documents from a finalized context. Pure: no clock beyond the
@@ -176,6 +203,7 @@ export function buildCaptureDocuments(state, {
   // unregistered at this baseline) is never emitted under a borrowed version.
   const schema = state.captureSchema ?? resolveCaptureSchema({ callsEnabled: false, pilotEnabled: false });
   if (!schema.available) throw new Error(`capture_schema_unavailable:${schema.reason}`);
+  const stagnation = stagnationRecordOf(state.riskFacts.stagnation);
 
   // ---- the body: ALL text, under the TTL ----------------------------------
   const body = {
@@ -250,6 +278,9 @@ export function buildCaptureDocuments(state, {
     // symbol, nothing free-text.
     risk: {
       verdicts: state.riskFacts.verdicts ?? {},
+      // B1.1 (RC-2): the stagnation rule's inputs, a sibling of its verdicts —
+      // present only on a tick that recorded them.
+      ...(stagnation !== null ? { stagnation } : {}),
       lockedCount: num(state.riskFacts.lockedCount),
       forcedExitCount: num(state.riskFacts.forcedExitCount),
       evaluatedCount: num(state.riskFacts.evaluatedCount),

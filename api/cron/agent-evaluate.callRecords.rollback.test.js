@@ -39,6 +39,7 @@ import {
   makeIntradayCandles, makeHoldResult, makeToolUseResponse, deepClone, OLD_THREAD,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { makeCallsDb, callsTouches, storedCollection, storedDoc, CALL_SUBCOLLECTIONS } from '../_utils/__fixtures__/callRecordsStore.js';
+import { liftStagnationRecord, verdictSymbolsByPath } from '../_utils/__fixtures__/stagnationLift.js';
 
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
 const { swapMock } = vi.hoisted(() => ({ swapMock: vi.fn() }));
@@ -230,6 +231,18 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 const serialize = (v) => JSON.stringify(v);
 
+/**
+ * Film Room B1.1 (Amendment C, RC-2) — the one intended capture change, the
+ * tick record's `risk.stagnation`: lifted after asserting it sits on every
+ * record whose verdicts the tick computed, over exactly those symbols
+ * (stagnationLift.js), so every other capture byte is still compared.
+ */
+function withoutStagnation(live, frozen) {
+  const { rest, lifted } = liftStagnationRecord(live.capture);
+  expect(Object.fromEntries(lifted.map((l) => [l.path, Object.keys(l.stagnation).sort()]))).toEqual(verdictSymbolsByPath(frozen.capture));
+  return { ...live, capture: rest };
+}
+
 describe('Build 1a rollback — at off a battle carrying call state renders as it did before the build', () => {
   it('GENERATE (local only) or load the frozen fixture', async () => {
     if (!GENERATE) {
@@ -273,7 +286,7 @@ describe('Build 1a rollback — at off a battle carrying call state renders as i
     const frozen = golden.scenarios.no_directive;
     expect(serialize(live.updates)).toBe(serialize(frozen.updates));
     expect(serialize(live.prompts)).toBe(serialize(frozen.prompts));
-    expect(serialize(live.capture)).toBe(serialize(frozen.capture));
+    expect(serialize(withoutStagnation(live, frozen).capture)).toBe(serialize(frozen.capture));
     expect(serialize(live.summary)).toBe(serialize(frozen.summary));
     expect(live.thrown).toBe(frozen.thrown);
     expect(callsTouches(db)).toEqual({ reads: 0, writes: 0, queries: 0 });
@@ -288,7 +301,7 @@ describe('Build 1a rollback — at off a battle carrying call state renders as i
     const frozen = offGolden.scenarios.completed_hold;
     expect(serialize(live.updates)).toBe(serialize(frozen.updates));
     expect(serialize(live.prompts)).toBe(serialize(frozen.prompts));
-    expect(serialize(live.capture)).toBe(serialize(frozen.capture));
+    expect(serialize(withoutStagnation(live, frozen).capture)).toBe(serialize(frozen.capture));
     expect(serialize(live.summary)).toBe(serialize(frozen.summary));
     expect(live.thrown).toBe(frozen.thrown);
     expect(serialize(live.prompts)).toContain('ACTIVE DIRECTIVE (from your Coach)');
@@ -310,7 +323,7 @@ describe('Build 1a rollback — a CALL directive in the slot is inert at off (sp
     const frozen = golden.scenarios.no_directive;
     expect(serialize(live.updates)).toBe(serialize(frozen.updates));
     expect(serialize(live.prompts)).toBe(serialize(frozen.prompts));
-    expect(serialize(live.capture)).toBe(serialize(frozen.capture));
+    expect(serialize(withoutStagnation(live, frozen).capture)).toBe(serialize(frozen.capture));
     expect(serialize(live.summary)).toBe(serialize(frozen.summary));
     expect(live.thrown).toBe(frozen.thrown);
     expect(serialize(live.prompts)).not.toContain(CALL_THREAD);

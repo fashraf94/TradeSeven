@@ -155,6 +155,31 @@ function riskOf(tick) {
   return Object.keys(out).length ? out : null;
 }
 
+/**
+ * Film Room B1.1 (Amendment C, RC-2) — what the stagnation rule read for each
+ * held symbol at the tick (`risk.stagnation`): the count evaluateRisk
+ * received, its age verdict and the daily change exactly as passed. Copied
+ * type-checked as the capture writer checks it (captureWriter.js
+ * stagnationRecordOf): a value of any other shape is null, a key that is not
+ * ticker-shaped is not copied. Null when the tick recorded none (every tick
+ * before B1.1), and the row then carries no `stagnation` at all. Class R.
+ */
+function stagnationOf(tick) {
+  const rec = tick?.risk?.stagnation;
+  if (!isObj(rec)) return null;
+  const out = {};
+  for (const [sym, v] of Object.entries(rec)) {
+    if (!TICKER.test(sym)) continue;
+    const r = isObj(v) ? v : {};
+    out[sym] = {
+      ticks: Number.isInteger(r.ticks) && r.ticks >= 0 ? r.ticks : null,
+      withinAge: typeof r.withinAge === 'boolean' ? r.withinAge : null,
+      dailyPct: num(r.dailyPct),
+    };
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 const guardrailOf = (tick) => (isObj(tick?.guardrail)
   ? { evaluated: tick.guardrail.evaluated === true, deployedCount: num(tick.guardrail.deployedCount) }
   : null);
@@ -234,6 +259,7 @@ const blankRow = () => ({
 
 function tickRow(tick, entry, battleId, { opponentBasis = 'none', readOpponent = opponentReader().read } = {}) {
   const evidence = copyEvidence(entry?.evidence);
+  const stagnation = stagnationOf(tick);
   return {
     ...blankRow(),
     key: `seq:${tick.tickSeq}`,
@@ -246,6 +272,8 @@ function tickRow(tick, entry, battleId, { opponentBasis = 'none', readOpponent =
     exitReason: str(tick.exitReason),
     stageReached: str(tick.stageReached),
     risk: riskOf(tick),
+    // B1.1 (RC-2): a declared new field, only on a check whose tick recorded it.
+    ...(stagnation ? { stagnation } : {}),
     guardrail: guardrailOf(tick),
     decision: decisionOf(tick),
     scores: scoresOf(tick.scores, { opponent: opponentBasis === 'cpu_portfolio' ? readOpponent : null }),

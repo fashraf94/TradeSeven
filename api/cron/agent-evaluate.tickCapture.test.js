@@ -40,8 +40,13 @@ import { TICK_CAPTURE_MIN_REMAINING_BUDGET_MS } from '../_utils/tickCapture/capt
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
 const { swapMock } = vi.hoisted(() => ({ swapMock: vi.fn() }));
 const { guardrailHook } = vi.hoisted(() => ({ guardrailHook: { throwMessage: null } }));
-/** Forces a LOCK verdict for one held symbol; the real evaluator runs otherwise. */
-const { riskHook } = vi.hoisted(() => ({ riskHook: { lockSymbols: [] } }));
+/**
+ * Forces a LOCK verdict for one held symbol; the real evaluator runs otherwise.
+ * `received` (B1.1, RC-2): per symbol, what evaluateRisk was handed — the daily
+ * change, the stagnation count and the age verdict — so a row can pin that the
+ * capture records exactly those.
+ */
+const { riskHook } = vi.hoisted(() => ({ riskHook: { lockSymbols: [], received: {} } }));
 /** Forces the tournament ledger to deny the reserve, the G1 path. */
 const { ledgerHook } = vi.hoisted(() => ({ ledgerHook: { denyReservation: null } }));
 const flagState = vi.hoisted(() => ({ tickCapture: true }));
@@ -84,11 +89,13 @@ vi.mock('../_utils/agentRiskManager.js', async (importOriginal) => {
   const real = await importOriginal();
   return {
     ...real,
-    evaluateRisk: (position, ...rest) => (
-      riskHook.lockSymbols.includes(position?.symbol)
+    evaluateRisk: (position, ...rest) => {
+      // rest: currentPrice, entryPrice, baseATR, intradaySnapshot, cronMemory, …
+      riskHook.received[position?.symbol] = { ticks: rest[4]?.stagnationTicks, withinAge: rest[4]?.withinAge, dailyPct: position?.dailyPct };
+      return riskHook.lockSymbols.includes(position?.symbol)
         ? { action: 'LOCK', reason: 'near_threshold', detail: 'near_threshold' }
-        : real.evaluateRisk(position, ...rest)
-    ),
+        : real.evaluateRisk(position, ...rest);
+    },
   };
 });
 vi.mock('../_utils/tournamentAgentLedger.js', () => ({
@@ -197,6 +204,7 @@ async function runTick({
   authority.mode = dormantProposalPath ? 'copilot' : 'autopilot';
   guardrailHook.throwMessage = guardrailHook.throwMessage ?? null;
   riskHook.lockSymbols = lockSymbols ?? [];
+  riskHook.received = {};
   ledgerHook.denyReservation = denyReservation ?? null;
   mocks.getStockAnalysisData.mockImplementation(async (symbol) => (prices[symbol] ? { price: prices[symbol], daily: [] } : {}));
   mocks.fetchIntradayBatch.mockImplementation(async () => ({ NVDA: makeIntradayCandles() }));
@@ -693,6 +701,36 @@ describe('F5 (Astra round 1) — a check is recorded where it actually runs', ()
     }
     // and they carry no free text
     expect(containsText(permanent.risk, ' ')).toBe(false);
+  });
+
+  it('B1.1 (RC-2): `risk.stagnation` records, per held symbol, exactly the count, age verdict and daily change evaluateRisk received', async () => {
+    // Seeded counters so this tick's update MOVES them: NVDA flat and timely
+    // (+1), MSFT flat but its last price 30 minutes old (paused, not timely),
+    // KO moved (reset to 0). MSFT's quote carries no changePercent, so the
+    // rule reads its `|| 0`.
+    const base = makeTickBattle();
+    const prices = makePriceTable();
+    delete prices.MSFT.changePercent;
+    const minutesAgo = (m) => Date.parse(FROZEN_NOW) - m * 60_000;
+    const battle = makeTickBattle({
+      cronState: {
+        ...base.cronState,
+        stagnationTicks: { NVDA: 2, MSFT: 4, KO: 3 },
+        lastTickPrice: { NVDA: prices.NVDA.current, MSFT: prices.MSFT.current, KO: prices.KO.current * 1.02 },
+        lastTickTimestamp: { NVDA: minutesAgo(15), MSFT: minutesAgo(30), KO: minutesAgo(15) },
+      },
+    });
+    const { permanent } = await runTick({ battle, prices });
+    const received = riskHook.received;
+    expect(Object.keys(received).length).toBeGreaterThan(0);
+    expect(permanent.risk.stagnation).toEqual(received);
+    // the count is the one AFTER this tick's update — never the seeded one it started from
+    expect(received.NVDA).toEqual({ ticks: 3, withinAge: true, dailyPct: prices.NVDA.changePercent / 100 });
+    expect(received.MSFT).toEqual({ ticks: 4, withinAge: false, dailyPct: 0 });
+    expect(received.KO).toEqual({ ticks: 0, withinAge: true, dailyPct: prices.KO.changePercent / 100 });
+    // its keys are the verdicts' keys: one record per symbol the rule evaluated
+    expect(Object.keys(permanent.risk.stagnation).sort()).toEqual(Object.keys(permanent.risk.verdicts).sort());
+    expect(permanent.capture.rejectedFieldCount).toBe(0);
   });
 
   it('C-7: a guardrail evaluation that ran is recorded with its outcome', async () => {

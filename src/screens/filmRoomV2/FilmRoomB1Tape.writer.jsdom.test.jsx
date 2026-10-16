@@ -301,3 +301,50 @@ describe('Astra F1 — a completed battle with no opponent that STORES a draw: o
     expect(storedNoteDefects(m.container, docs), label).toEqual([]);
   });
 });
+
+describe('Film Room B1.1 (exit criterion 9) — the live v2 screen on a tape whose checks carry the live rule\'s count', () => {
+  let b11;
+  beforeAll(async () => {
+    const fx = await sep23Day({ battleId: 'b-sep23-b11' });
+    fx.battle.agentContext = { ...fx.battle.agentContext, archetype: 'momentum_chaser' };
+    fx.battle.portfolio = { ...fx.battle.portfolio, ...ROSTER23 };
+    // every tick records what the stagnation rule read (RC-2), as the evaluator writes it beside the verdicts
+    for (const tk of fx.ticks) {
+      if (!tk.risk?.verdicts) continue;
+      tk.risk.stagnation = Object.fromEntries(Object.keys(tk.risk.verdicts).map((s) => [s, { ticks: tk.tickSeq % 5, withinAge: tk.tickSeq % 3 !== 0, dailyPct: -0.002 }]));
+    }
+    b11 = await buildTapeDay(fx, { night: SEP23_NIGHT, morning: SEP23_MORNING, bars: sep23Bars() });
+  });
+  /** The tape with B1.1's field and its declaration removed, then B1's: what the A2 writer stored for the same day. */
+  function stripB11(tape) {
+    const t = stripB1(tape);
+    for (const c of t.checks) delete c.stagnation;
+    for (const k of Object.keys(t.numberClasses)) if (k.startsWith('checks[].stagnation.')) delete t.numberClasses[k];
+    return t;
+  }
+
+  it('the precondition: every tick-backed check carries `stagnation`, and its numbers are declared recorded', () => {
+    const rows = b11.tape.checks.filter((c) => c.rowSource === 'tick');
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((c) => c.stagnation && Object.keys(c.stagnation).length > 0)).toBe(true);
+    expect(b11.tape.numberClasses['checks[].stagnation.*.ticks']).toBe('recorded');
+  });
+
+  it.each([['Glance', null], ['Study', null], ['Deep dive', 'INTC']])('%s %s: the same HTML, byte for byte, with B1.1\'s and B1\'s fields stripped', async (label, sym) => {
+    const withB11 = await openAt(b11.tape, b11.series, label, sym);
+    const without = await openAt(stripB11(b11.tape), b11.series, label, sym);
+    expect(withB11.length).toBeGreaterThan(5000);
+    expect(withB11).toBe(without);
+  });
+
+  it.each([['Glance', null], ['Study', null], ['Deep dive', 'INTC']])('%s %s: every sweep is clean (A2\'s criteria)', async (label, sym) => {
+    await openAt(b11.tape, b11.series, label, sym);
+    const docs = { tape: b11.tape, battle: battleOf(b11.tape), ...Object.fromEntries(b11.series.map((s) => [`series:${s.symbol}`, s])) };
+    const where = `${label} ${sym ?? ''}`;
+    expect(sweepNumbers(m.container, docs), where).toEqual([]);
+    expect(sweepWords(m.container, docs), where).toEqual([]);
+    expect(sweepSigns(m.container), where).toEqual([]);
+    expect(quoteDefects(m.container, docs), where).toEqual([]);
+    expect(storedNoteDefects(m.container, docs), where).toEqual([]);
+  });
+});
