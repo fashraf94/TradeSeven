@@ -27,7 +27,9 @@ import ShadowStill from './ShadowStill';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { deployDisplay } from './hub/deployDisplay';
 import { formatHubDate } from './hub/hubDate';
+import { DESKTOP_COMPLETED_LIMIT, splitGames } from './hub/hubModel';
 import { stillPaths } from './hub/shadowGeometry';
+import { C } from './hub/hubStyle';
 import { readToken } from '../../theme/cssTokens';
 import { HUB_LAYOUT_FIXTURES, HUB_LAYOUT_FIXTURE_NAMES } from './__fixtures__/hubLayoutFixtures';
 import { byRole, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav, press } from './__fixtures__/hubTestKit';
@@ -180,6 +182,8 @@ describe('S1 review fixes — cleanup, layout contracts and static states (L5-12
     expect(row.style.top).toBe('0px');
   });
 
+  // jsdom computes no layout, so this reads the declared size (min-height or
+  // height); the headless-Edge run in the build report measures the real boxes.
   it('every phone control is at least 44 px tall, on every tab, in the S1 state and with rows', () => {
     for (const name of [null, 'returning', 'long', 'rankedLive']) {
       const m = renderHub({ site: 'mobile', hubWidth: 390, sections: name ? fixture(name) : undefined });
@@ -216,7 +220,7 @@ describe('S1 review fixes — cleanup, layout contracts and static states (L5-12
     renderHub({ site: 'mobile', hubWidth: 390 });
     click(document.querySelector('[data-hub-phone-tab="research"]'));
     const color = (a) => document.querySelector(`[data-hub-summary="${a}"]`).style.color;
-    expect([color(0), color(1), color(2)]).toEqual(['var(--ft-ink-2)', 'var(--ft-ink)', 'var(--ft-ink-2)']);
+    expect([color(0), color(1), color(2)]).toEqual([C.ink2, C.ink, C.ink2]);
   });
 
   it('S1\'s checking state shows the secondary-ink dot on the strip', () => {
@@ -250,8 +254,10 @@ describe('S1 review fixes — the smaller contracts (L5-15 … L5-18)', () => {
     const m = mount(<ShadowStill size={200} tier="mid" selectedArea={2} />);
     mounted.push(m);
     m.rerender(<ShadowStill size={200} tier="mid" selectedArea={0} />);
-    const drawn = [...m.host.querySelectorAll('[data-shadow-strand] path:last-child')].map((p) => p.getAttribute('d'));
-    expect(drawn).toEqual(stillPaths('mid', 0).map((p) => p.d));
+    const drawn = new Set([...m.host.querySelectorAll('[data-shadow-strand] path')].map((p) => p.getAttribute('d')));
+    const wanted = new Set(stillPaths('mid', 0).map((p) => p.d));
+    expect(wanted).not.toEqual(new Set(stillPaths('mid', 2).map((p) => p.d)));
+    expect(drawn).toEqual(wanted);
   });
 
   it('the display states the fixtures reach: blocked keeps the strip hold, confirmed reads Deployed with the positive dot', () => {
@@ -269,6 +275,8 @@ describe('S1 review fixes — the smaller contracts (L5-15 … L5-18)', () => {
   });
 
   it('exactly two completed games: no History link (the desktop shows both already)', () => {
+    // The fixture's own count, so an edit to it cannot make this row vacuous.
+    expect(splitGames(fixture('blocked').games).completed).toHaveLength(DESKTOP_COMPLETED_LIMIT);
     renderHub({ site: 'desktop', hubWidth: 1216, sections: fixture('blocked') });
     expect(byRole(section('games'), 'button', COPY.games.history)).toHaveLength(0);
   });
@@ -318,8 +326,11 @@ describe('S1 review fixes — the Shadow\'s connector and SVG paint, as drawn (L
     renderHub({ site: 'desktop', hubWidth: 1216 });
     const path = document.querySelector('[data-hub-connector] path');
     expect(path).not.toBeNull();
-    // Box right 366, middle 60 + 170 = 230; the Equipped Archetype ring's left 500 − 2, middle 100 + 168 + 11 = 279.
-    expect(path.getAttribute('d')).toBe('M366.0 230.0 C432.0 230.0, 432.0 279.0, 498.0 279.0');
+    // The two R-S1-1 anchors only (the curve between them is free): box right 366, middle 60 + 170 = 230;
+    // the Equipped Archetype ring's left 500 − 2, middle 100 + 168 + 11 = 279.
+    const d = path.getAttribute('d');
+    expect(d.startsWith('M366.0 230.0 ')).toBe(true);
+    expect(d.endsWith(' 498.0 279.0')).toBe(true);
     expect(path.getAttribute('stroke')).toBe(readToken('gold'));
     expect(path.getAttribute('stroke')).toMatch(/^#[0-9a-f]{6}$/);
   });

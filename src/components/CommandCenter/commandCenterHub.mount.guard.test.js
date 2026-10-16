@@ -718,6 +718,7 @@ describe('S1 hub side — colour and motion only through the tokens (ruling R-S1
     // Raw colours (L5-1, L5-4): lowercase, uppercase, core and non-core hex; numeric rgba; a colour name.
     for (const planted of [
       "export const LEAK = '#ecfffb';", '<path stroke="#ecfffb" />', "pos: '#bada55',", "color: '#9a9dab'", '<stop stopColor="#5EEAD4" />',
+      'const glow = `#ecfffb`;', "border: '1px solid #ecfffb'", "color: '#fff'",
       "export const HAIR = 'rgba(255, 255, 255, 0.07)';", "color: 'white',", "border: '1px solid black'",
     ]) {
       expect(colourHitsIn(planted), planted).not.toEqual([]);

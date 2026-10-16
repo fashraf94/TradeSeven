@@ -192,6 +192,9 @@ describe('copy centralization — every user-visible string is in a copy table',
       '<EmptyNote icon="sword" sub="Your first BaggerBomb game starts from Deploy." />',
       '<Icon name="Partnership" />',
       '<span>{ready ? COPY.a : `Checking ${what}`}</span>',
+      // The L5 refuter's two: a ternary child and a ternary attribute.
+      "<HubLink>{open ? 'Less' : 'More'}</HubLink>",
+      "<section aria-label={desktop ? 'Command Center' : COPY.regionLabel} />",
     ]) {
       expect(literalCopyIn(asModule(planted)), planted).not.toEqual([]);
     }
