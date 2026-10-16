@@ -8,29 +8,41 @@
 // chunk).
 //
 //   1. no user-visible string is written anywhere else under
-//      src/components/CommandCenter/ (JSX text, a quoted text child, or a
-//      quoted accessible-name / label / title attribute) — the layout fixtures
-//      are illustrative data and exempt;
+//      src/components/CommandCenter/ — the layout fixtures are illustrative
+//      data and exempt. The scan parses each file (acorn with acorn-jsx, the
+//      parser four repo guards already use) and judges by position, not by
+//      wording (S1 review L5-2): any JSX text with a letter; any string or
+//      template literal with a letter that a JSX child or a JSX attribute
+//      renders, through `&&`, `?:`, `+` and template parts; and any such
+//      literal given to a copy-named property (`label`, `title`, `sub` …) in
+//      any file. The never-copy attributes (ids, data-*, classes, styles, roles,
+//      SVG geometry and the hub's token-valued props) are listed, and a
+//      token-valued prop must still hold a token. Its boundary: a string held
+//      in a plain variable and passed by name is not seen;
 //   2. the strings the spec fixes are exactly the spec's;
 //   3. no string claims growth, counts, history or authority the hub does not
-//      hold, and no prototype chrome word or "Tester" survives;
+//      hold, and no prototype chrome word or "Tester" survives — checked on
+//      every literal the copy tables' source holds, so no branch of a copy
+//      function goes unread (S1 review L5-3), and on sampled outputs;
 //   4. the hold's "1.3 s" agrees with the shipped hold (display agreement,
 //      BUILD_RULES §9) — a tripwire on useHoldToDeploy.js's HOLD_MS.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Parser } from 'acorn';
+import acornJsx from 'acorn-jsx';
 import { describe, expect, it } from 'vitest';
 import { HUB_COPY } from './hub/hubCopy';
 import { HUB_GATE_COPY } from './hubGateCopy';
 
+const JsxParser = Parser.extend(acornJsx());
+/** Parse a module, JSX included. A file that does not parse fails its row; none is skipped. */
+const parseModule = (code) => JsxParser.parse(code, { ecmaVersion: 'latest', sourceType: 'module' });
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..', '..');
 const read = (rel) => readFileSync(path.join(REPO_ROOT, rel), 'utf8').replace(/\r\n/g, '\n');
-const stripComments = (source) => source
-  .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .replace(/^\s*\/\/.*$/gm, '');
 
 const DIR = 'src/components/CommandCenter';
 const COPY_TABLES = [`${DIR}/hub/hubCopy.js`, `${DIR}/hubGateCopy.js`];
@@ -48,26 +60,92 @@ function hubSourceFiles() {
   return out.filter((rel) => !COPY_TABLES.includes(rel));
 }
 
-// A user-visible string written in place: JSX text with a letter, a quoted
-// text child with a letter, or a quoted accessible name / label / title.
-const LITERAL_COPY = [
-  // JSX text: words between a tag's end and the next tag. Code operators
-  // (`(`, `)`, `&`, `|`, `=`, `;`) never sit in text, so `a > limit && (<div`
-  // is not mistaken for it.
-  { name: 'JSX text', re: />\s*([A-Za-z][^<>{}\n()&|=;]*?)\s*<\//g },
-  { name: 'JSX text', re: />\s*([A-Za-z][^<>{}\n()&|=;]*?)\s*<[A-Za-z]/g },
-  // A quoted child, not an attribute's value (`id={`h${uid}`}` is not copy).
-  { name: 'quoted child', re: /(?<!=\s*)\{\s*(['"`])([^'"`\n]*[A-Za-z][^'"`\n]*)\1\s*\}/g },
-  { name: 'quoted attribute', re: /\b(?:aria-label|ariaLabel|aria-description|label|title|placeholder|alt)=\s*(?:\{\s*)?(['"`])([^'"`\n]*[A-Za-z][^'"`\n]*)\1/g },
-];
+// A user-visible string written in place, judged by where it sits (S1 review L5-2).
+const LETTER = /[A-Za-z]/;
+/** Attributes that never carry copy: identity, wiring, styling, ARIA state, and SVG geometry and paint. */
+const NEVER_COPY_ATTRIBUTES = new Set([
+  'id', 'key', 'ref', 'className', 'style', 'role', 'type', 'tabIndex', 'htmlFor', 'xmlns', 'as',
+  'aria-hidden', 'aria-live', 'aria-modal', 'aria-orientation', 'aria-controls', 'aria-labelledby', 'aria-describedby',
+  'aria-selected', 'aria-expanded', 'aria-disabled', 'aria-current', 'aria-atomic', 'aria-haspopup',
+  'd', 'viewBox', 'fill', 'stroke', 'strokeWidth', 'strokeLinecap', 'strokeLinejoin', 'strokeDasharray', 'stopColor', 'stopOpacity',
+  'offset', 'gradientUnits', 'transform', 'points', 'preserveAspectRatio', 'fillRule', 'clipRule', 'vectorEffect',
+]);
+/** The hub's own token-valued props: never copy, but each value must still be a token (`bolt`, `secondary`, `ink-2`, `chevR`). */
+const TOKEN_ATTRIBUTES = new Set(['accent', 'icon', 'kind', 'name', 'tone', 'aria-live', 'aria-orientation', 'role', 'type', 'as']);
+const TOKEN = /^[a-z][a-zA-Z0-9-]*$/;
+/** Object properties whose string value is shown to the player, in any hub file. */
+const COPY_PROPERTIES = new Set([
+  'label', 'title', 'text', 'sub', 'caption', 'heading', 'message', 'placeholder', 'alt', 'ariaLabel', 'aria-label',
+  'description', 'summary', 'cta', 'why', 'detail', 'eyebrow', 'hint', 'help', 'empty', 'line', 'line1', 'line2',
+]);
+
+/** The string pieces an expression renders: literals, template parts, and both sides of `&&`, `||`, `??`, `?:` and `+`. */
+function renderedStrings(node, out = []) {
+  if (!node) return out;
+  switch (node.type) {
+    case 'Literal': if (typeof node.value === 'string') out.push(node.value); break;
+    case 'TemplateLiteral': node.quasis.forEach((q) => out.push(q.value.cooked ?? q.value.raw)); node.expressions.forEach((e) => renderedStrings(e, out)); break;
+    case 'LogicalExpression': renderedStrings(node.left, out); renderedStrings(node.right, out); break;
+    case 'ConditionalExpression': renderedStrings(node.consequent, out); renderedStrings(node.alternate, out); break;
+    case 'BinaryExpression': if (node.operator === '+') { renderedStrings(node.left, out); renderedStrings(node.right, out); } break;
+    case 'SequenceExpression': renderedStrings(node.expressions[node.expressions.length - 1], out); break;
+    case 'ArrayExpression': node.elements.forEach((e) => renderedStrings(e, out)); break;
+    default: break;
+  }
+  return out;
+}
+
+const attributeName = (n) => (n.type === 'JSXNamespacedName' ? `${n.namespace.name}:${n.name.name}` : n.name);
+const clip = (s) => s.replace(/\s+/g, ' ').trim().slice(0, 60);
 
 function literalCopyIn(code) {
   const hits = [];
-  for (const { name, re } of LITERAL_COPY) {
-    for (let m = re.exec(code); m !== null; m = re.exec(code)) hits.push(`${name}: ${m[0].trim().slice(0, 60)}`);
-    re.lastIndex = 0;
-  }
+  const visit = (node, parent) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'JSXText' && LETTER.test(node.value)) hits.push(`JSX text: ${clip(node.value)}`);
+    if (node.type === 'JSXExpressionContainer' && (parent?.type === 'JSXElement' || parent?.type === 'JSXFragment')) {
+      for (const s of renderedStrings(node.expression)) if (LETTER.test(s)) hits.push(`JSX child: ${clip(s)}`);
+    }
+    if (node.type === 'JSXAttribute' && node.value) {
+      const name = attributeName(node.name);
+      const values = node.value.type === 'Literal' ? [String(node.value.value)]
+        : node.value.type === 'JSXExpressionContainer' ? renderedStrings(node.value.expression) : [];
+      const lettered = values.filter((s) => LETTER.test(s));
+      if (TOKEN_ATTRIBUTES.has(name)) {
+        for (const s of lettered) if (!TOKEN.test(s)) hits.push(`attribute ${name}: ${clip(s)}`);
+      } else if (!NEVER_COPY_ATTRIBUTES.has(name) && !name.startsWith('data-')) {
+        for (const s of lettered) hits.push(`attribute ${name}: ${clip(s)}`);
+      }
+    }
+    if (node.type === 'Property' && !node.computed) {
+      const key = node.key.type === 'Identifier' ? node.key.name : String(node.key.value);
+      if (COPY_PROPERTIES.has(key)) for (const s of renderedStrings(node.value)) if (LETTER.test(s)) hits.push(`property ${key}: ${clip(s)}`);
+    }
+    for (const [k, v] of Object.entries(node)) {
+      if (k === 'start' || k === 'end') continue;
+      if (Array.isArray(v)) v.forEach((child) => visit(child, node));
+      else if (v && typeof v.type === 'string') visit(v, node);
+    }
+  };
+  visit(parseModule(code), null);
   return hits;
+}
+
+/** Every string literal and template part in a module's source. */
+function sourceStrings(code) {
+  const out = [];
+  const visit = (node) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'Literal' && typeof node.value === 'string') out.push(node.value);
+    if (node.type === 'TemplateElement') out.push(node.value.cooked ?? node.value.raw);
+    for (const [k, v] of Object.entries(node)) {
+      if (k === 'start' || k === 'end') continue;
+      if (Array.isArray(v)) v.forEach(visit);
+      else if (v && typeof v.type === 'string') visit(v);
+    }
+  };
+  visit(parseModule(code));
+  return out;
 }
 
 /** Every string value in a copy table, functions sampled with placeholder arguments. */
@@ -81,32 +159,59 @@ function strings(table) {
   visit(table);
   return out;
 }
-const ALL_COPY = [...strings(HUB_COPY), ...strings(HUB_GATE_COPY)];
+/** Every literal the two tables' source holds, whichever branch of a copy function it sits in (S1 review L5-3). */
+const SOURCE_COPY = COPY_TABLES.flatMap((rel) => sourceStrings(read(rel)));
+const ALL_COPY = [...strings(HUB_COPY), ...strings(HUB_GATE_COPY), ...SOURCE_COPY];
 
 describe('copy centralization — every user-visible string is in a copy table', () => {
   it('no file under src/components/CommandCenter/ writes copy in place', () => {
     const files = hubSourceFiles();
     expect(files.length, 'the walk found nothing, so this row would be vacuous').toBeGreaterThan(20);
-    const hits = files.flatMap((rel) => literalCopyIn(stripComments(read(rel))).map((h) => `${rel} — ${h}`));
+    // Comments are not stripped first: the parser skips them, and a regex strip could cut code.
+    const hits = files.flatMap((rel) => literalCopyIn(read(rel)).map((h) => `${rel} — ${h}`));
     expect(hits).toEqual([]);
   });
 
   it('the scan is not vacuous: it flags each way copy can be written in place', () => {
+    const asModule = (jsx) => `export const X = () => (\n${jsx}\n);`;
     for (const planted of [
       '<p>Checking your games</p>',
       '<span>Ready to deploy<Icon name="x" /></span>',
       "<span>{'Hold to deploy'}</span>",
-      '<button aria-label="Close">',
-      '<HubButton ariaLabel={"Not now"}>',
+      '<button aria-label="Close" />',
+      '<HubButton ariaLabel={"Not now"} />',
       '<HubSheet title={`Completed games`} />',
       '<Row label="Game history" />',
+      // S1 review L5-2: text after an expression (GC1), text over two lines (GC2), text led by a dash (GC6),
+      // a string behind `&&` in an attribute (GC4) and in a child (GC5), a copy prop not on any list (GC8).
+      '<span>{completed.length} completed</span>',
+      '<span>\n  Checking the\n  ideas list\n</span>',
+      '<span> — never rewrites a game in progress.</span>',
+      "<section aria-label={rootRef && 'Command Center'} />",
+      "<p>{COPY.loading && 'Loading the Command Center…'}</p>",
+      '<EmptyNote icon="sword" sub="Your first BaggerBomb game starts from Deploy." />',
+      '<Icon name="Partnership" />',
+      '<span>{ready ? COPY.a : `Checking ${what}`}</span>',
     ]) {
-      expect(literalCopyIn(planted), planted).not.toEqual([]);
+      expect(literalCopyIn(asModule(planted)), planted).not.toEqual([]);
     }
+    // A copy-named property in a plain .js helper (GC3).
+    expect(literalCopyIn("export const strip = { hold: { label: 'Deploy', secondary: false } };")).not.toEqual([]);
     // ...and leaves alone what is not copy.
-    for (const fine of ['<span>{COPY.games.loading}</span>', "<span>{' '}</span>", '<div data-hub="shell" />', 'a > b && c < d', '{ready && rows.length > limit && (\n<div><HubLink />', '<stop id={`h${uid}`} />', '<circle fill={`url(#h${uid})`} />']) {
-      expect(literalCopyIn(fine), fine).toEqual([]);
+    for (const fine of [
+      '<span>{COPY.games.loading}</span>', "<span>{' '}</span>", '<div data-hub="shell" />', '<span>{a > b && c < d}</span>',
+      '<>{ready && rows.length > limit && (\n<div><HubLink /></div>)}</>', '<stop id={`h${uid}`} />', '<circle fill={`url(#h${uid})`} />',
+      '<Icon name="chevR" />', '<HubButton kind="secondary" icon="hammer" />', '<Tag tone="ink-2" />', '<div role="tablist" aria-orientation="vertical" />',
+      "<div style={{ display: 'flex', border: `1px solid ${HAIR}` }} />", '<path d="M9 5l7 7-7 7" strokeLinecap="round" />',
+    ]) {
+      expect(literalCopyIn(asModule(fine)), fine).toEqual([]);
     }
+    expect(literalCopyIn("export const ORDER = Object.freeze({ display: 'flex', status: 'loading' });")).toEqual([]);
+  });
+
+  it('every hub source file parses, so none is skipped by the scan', () => {
+    for (const rel of hubSourceFiles()) expect(() => parseModule(read(rel)), rel).not.toThrow();
+    for (const rel of COPY_TABLES) expect(() => parseModule(read(rel)), rel).not.toThrow();
   });
 });
 
@@ -153,6 +258,13 @@ describe('no claim the hub cannot back (spec §8.2, §11.3)', () => {
     for (const s of ['Shadow learned your style', 'Shadow is improving', 'Since your last visit', 'Sources · 4', 'Tuesday, October 7 · Tester', 'Simulated sequence']) {
       expect(BANNED.some((re) => re.test(s)), s).toBe(true);
     }
+  });
+
+  it('a branch the sampled call never takes is still read: the scan reads every literal in the source (S1 review L5-3)', () => {
+    const seen = sourceStrings("export const T = { names: (n) => (n === 1 ? ' Shadow learned' : 's'), live: (n) => (n === 1 ? '1 live game' : `${n} live games`) };");
+    expect(seen).toEqual(expect.arrayContaining([' Shadow learned', '1 live game', ' live games']));
+    expect(seen.some((s) => BANNED.some((re) => re.test(s)))).toBe(true);
+    expect(seen.flatMap((s) => s.match(/\d+(\.\d+)?/g) || [])).toEqual(['1']);
   });
 
   it('no copy carries a count the hub does not hold: the only numbers written are the spec\'s 1.3 s and 10 games', () => {

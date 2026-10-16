@@ -347,8 +347,21 @@ describe('S0 hub chunk — reached only through the gate\'s dynamic import', () 
   });
 });
 
-/** Static module edges: `import … from`, side-effect `import '…'`, and `export … from` re-exports. */
-const MODULE_EDGE = /(?:^|\n)\s*(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g;
+/**
+ * Static module edges: `import … from`, side-effect `import '…'`, and `export … from` re-exports,
+ * spaced or not (`from"x"`, `import"x"`), at a line start or after a `;` (S1 review L5-19).
+ */
+const MODULE_EDGE = /(?:^|[\n;])\s*(?:import|export)\b\s*(?:[^'"]*?\bfrom\s*)?['"]([^'"]+)['"]/g;
+
+/** Load-time edges: `import(…)`, `require(…)` and `import.meta.glob(…)` with a literal specifier (S1 review L5-8). */
+const LAZY_EDGE = /\b(?:import|require|import\.meta\.glob(?:Eager)?)\s*\(\s*(['"`])([^'"`]+)\1/g;
+
+function lazyImportsOfCode(code) {
+  const specs = [];
+  for (let m = LAZY_EDGE.exec(code); m !== null; m = LAZY_EDGE.exec(code)) specs.push(m[2]);
+  LAZY_EDGE.lastIndex = 0;
+  return specs;
+}
 
 function importsOfCode(code) {
   const specs = [];
@@ -365,14 +378,34 @@ function resolveRelative(fromRel, spec) {
   return hit ? path.relative(REPO_ROOT, hit).split(path.sep).join('/') : null;
 }
 
-/** Static import / re-export edges from `rel` that land in the hub directory (relative specifiers and the @/ alias). */
+/** Every string literal (quotes or backticks) that is a path into, or onto, a directory named CommandCenter. */
+const HUB_DIR_LITERAL = /(['"`])((?:[^'"`\n]*\/)?CommandCenter(?:\/[^'"`\n]*)?)\1/g;
+
+function hubDirLiterals(code) {
+  const out = [];
+  for (let m = HUB_DIR_LITERAL.exec(code); m !== null; m = HUB_DIR_LITERAL.exec(code)) out.push(m[2]);
+  HUB_DIR_LITERAL.lastIndex = 0;
+  return out;
+}
+
+/**
+ * Import / re-export edges from `rel` that land in the hub directory (relative specifiers and the @/ alias):
+ * static ones as `a -> b`, load-time ones (`import()`, `require()`, `import.meta.glob()`) as `a -> lazy b`.
+ */
 function edgesIntoHub(rel, code) {
-  return importsOfCode(code).flatMap((spec) => {
-    let resolved = null;
-    if (spec.startsWith('.')) resolved = resolveRelative(rel, spec);
-    else if (spec.startsWith('@/')) resolved = resolveRelative('src/index.js', `./${spec.slice(2)}`);
-    return resolved && resolved.startsWith(`${HUB_DIR}/`) ? [`${rel} -> ${resolved}`] : [];
-  });
+  const resolve = (spec) => {
+    if (spec.startsWith('.')) return resolveRelative(rel, spec);
+    if (spec.startsWith('@/')) return resolveRelative('src/index.js', `./${spec.slice(2)}`);
+    return null;
+  };
+  const into = (spec) => {
+    const resolved = resolve(spec);
+    return resolved && resolved.startsWith(`${HUB_DIR}/`) ? resolved : null;
+  };
+  return [
+    ...importsOfCode(code).map(into).filter(Boolean).map((to) => `${rel} -> ${to}`),
+    ...lazyImportsOfCode(code).map(into).filter(Boolean).map((to) => `${rel} -> lazy ${to}`),
+  ];
 }
 
 // S1 (prompt §5): the hub side may reach these shipped first-party modules.
@@ -413,9 +446,10 @@ function graph(entryRel) {
 // none (spec §4). S1's may hold only the allowances below. Each pattern names
 // ONE thing, so allowing it in a file allows nothing else.
 const ACTIVITY = [
-  /\bonSnapshot\b/, /\bgetDoc\w*\s*\(/, /\bfetch\s*\(/, /\bquery\s*\(/, /\bonAuthStateChanged\b/, /\bonIdTokenChanged\b/,
+  /\bonSnapshot\b/, /\bgetDoc\w*\s*\(/, /\bfetch\s*(?:\?\.)?\s*\(/, /\bquery\s*\(/, /\bonAuthStateChanged\b/, /\bonIdTokenChanged\b/,
   /\bsetTimeout\b/, /\bsetInterval\b/, /\brequestAnimationFrame\b/, /\brequestIdleCallback\b/, /\bqueueMicrotask\b/,
-  /\baddEventListener\b/, /\.addListener\s*\(/, /\b(?:window|document|globalThis|self)\.on[a-z]+\s*=(?!=)/,
+  // A handler assigned on any receiver (`document.body.onkeydown = f`), not only the globals (S1 review L5-19).
+  /\baddEventListener\b/, /\.addListener\s*\(/, /\.on[a-z]+\s*=(?!=)/,
   /\bsubscribe\b/, /\bsubscribe\w*\s*\(/,
   /\bResizeObserver\b/, /\bIntersectionObserver\b/, /\bMutationObserver\b/, /\bPerformanceObserver\b/,
   /\b(?:BroadcastChannel|WebSocket|EventSource|XMLHttpRequest|Worker|sendBeacon|matchMedia)\b/,
@@ -426,7 +460,14 @@ const ACTIVITY = [
 // The hub side's only switches are its props: no URL, history or cookie can
 // reach it (ruling R-S1-4: the build branch carries no URL override of any
 // kind). The never-merge smoke branch's `?hubFixtures=` reds this, by design.
-const URL_SWITCHES = [/\blocation\b/, /\bURLSearchParams\b/, /\bsearchParams\b/, /\bhistory\.\w+State\b/, /\bdocument\.cookie\b/];
+// The build-time environment and the document's own URL are switches too (S1 review L5-7).
+const URL_SWITCHES = [
+  /\blocation\b/, /\bURLSearchParams\b/, /\bsearchParams\b/, /\bhistory\.\w+State\b/, /\bdocument\.cookie\b/,
+  /\bimport\.meta\.env\b/, /\bdocument\.(?:URL|documentURI|referrer|baseURI)\b/,
+];
+
+/** The gate's one sanctioned use of `location`: the real page reload, pinned whole by the S0 row above. */
+const GATE_RELOAD = 'export function reloadPage(location = window.location) {\n  location.reload();\n}';
 
 const HUB_DIR = 'src/components/CommandCenter';
 const HUB_FILE = (name) => `${HUB_DIR}/${name}`;
@@ -512,6 +553,18 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
     expect(files.flatMap(activityIn)).toEqual([]);
   });
 
+  it('the gate, its copy and the picker: no URL, environment or cookie switch either — the gate\'s `location` is its pinned reload alone (ruling R-S1-4; S1 review L5-7)', () => {
+    const gate = stripComments(read(GATE));
+    expect(gate.split(GATE_RELOAD)).toHaveLength(2);
+    const codes = {
+      [GATE]: gate.replace(GATE_RELOAD, ''),
+      'src/components/CommandCenter/hubGateCopy.js': stripComments(read('src/components/CommandCenter/hubGateCopy.js')),
+      'src/components/CommandCenter/pickDashboardShell.js': stripComments(read('src/components/CommandCenter/pickDashboardShell.js')),
+    };
+    const hits = Object.entries(codes).flatMap(([rel, code]) => URL_SWITCHES.filter((re) => re.test(code)).map((re) => `${rel}: ${re.source}`));
+    expect(hits).toEqual([]);
+  });
+
   it('the gate\'s only firebase contact is the house error log, used on a failed load', () => {
     expect(importsOf(GATE).sort()).toEqual(['../../theme/cssTokens', '../ErrorBoundary', './hubGateCopy', 'react']);
     expect(stripComments(read(GATE))).toMatch(/import \{ logErrorToFirebase \} from '\.\.\/ErrorBoundary';/);
@@ -521,10 +574,12 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
     expect(importsOf('src/components/CommandCenter/hubGateCopy.js')).toEqual([]);
   });
 
-  it('the main graph reaches the hub directory only through App → the gate and App → the picker (S1 review L2-1)', () => {
-    // Every other hub module stays out of the main chunk: no src/ file outside
-    // the directory may import one statically (relative or through the @/ alias),
-    // nor name one in a string literal.
+  it('the main graph reaches the hub directory only through App → the gate and App → the picker (S1 review L2-1, L5-8)', () => {
+    // Every other hub module stays out of the main chunk and out of every page
+    // load: no src/ file outside the directory may import one, statically or at
+    // load time (`import()`, `require()`, `import.meta.glob()`), relative or
+    // through the @/ alias, nor name a path into it in a string literal — App
+    // included, whose only two such literals are its two static imports.
     const outside = sourceFiles().filter((rel) => !rel.startsWith(`${HUB_DIR}/`));
     expect(outside.length, 'the src walk found nothing, so this row would be vacuous').toBeGreaterThan(100);
     const edges = outside.flatMap((rel) => edgesIntoHub(rel, stripComments(read(rel))));
@@ -532,16 +587,35 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
       `src/App.jsx -> ${HUB_FILE('CommandCenterHubGate.jsx')}`,
       `src/App.jsx -> ${HUB_FILE('pickDashboardShell.js')}`,
     ]);
-    const literals = outside.filter((rel) => rel !== 'src/App.jsx' && /(['"`])[^'"`\n]*components\/CommandCenter\b[^'"`\n]*\1/.test(stripComments(read(rel))));
-    expect(literals).toEqual([]);
+    const literals = outside.flatMap((rel) => hubDirLiterals(stripComments(read(rel))).map((lit) => `${rel}: ${lit}`));
+    expect(literals.sort()).toEqual([
+      'src/App.jsx: ./components/CommandCenter/CommandCenterHubGate',
+      'src/App.jsx: ./components/CommandCenter/pickDashboardShell',
+    ]);
   });
 
-  it('the edge scan is not vacuous: it resolves relative and @/ imports and re-exports into the directory', () => {
+  it('the edge scan is not vacuous: it resolves relative and @/ imports, re-exports and load-time imports into the directory', () => {
     expect(edgesIntoHub('src/components/Navigation/BottomNav.jsx', "import { BOTTOM_NAV_ATTRIBUTE } from '../CommandCenter/hub/navClearance';"))
       .toEqual([`src/components/Navigation/BottomNav.jsx -> ${HUB_FILE('hub/navClearance.js')}`]);
     expect(edgesIntoHub('src/App.jsx', "export { HUB_COPY } from '@/components/CommandCenter/hub/hubCopy';"))
       .toEqual([`src/App.jsx -> ${HUB_FILE('hub/hubCopy.js')}`]);
     expect(edgesIntoHub('src/App.jsx', "import x from './components/Dashboard/CommandDashboard';")).toEqual([]);
+    // Load-time edges (L5-8: GF1, GF2, GX4) and the unspaced static form (L5-19: GA6, GX1).
+    expect(edgesIntoHub('src/App.jsx', "import('./components/CommandCenter/hub/hubCopy');"))
+      .toEqual([`src/App.jsx -> lazy ${HUB_FILE('hub/hubCopy.js')}`]);
+    expect(edgesIntoHub('src/components/Navigation/BottomNav.jsx', "const m = () => import('../CommandCenter/hub/navClearance');"))
+      .toEqual([`src/components/Navigation/BottomNav.jsx -> lazy ${HUB_FILE('hub/navClearance.js')}`]);
+    expect(edgesIntoHub('src/App.jsx', "const f = () => import('./components/CommandCenter/__fixtures__/hubLayoutFixtures');"))
+      .toEqual([`src/App.jsx -> lazy ${HUB_FILE('__fixtures__/hubLayoutFixtures.js')}`]);
+    expect(edgesIntoHub('src/App.jsx', "require('./components/CommandCenter/hub/hubStyle');"))
+      .toEqual([`src/App.jsx -> lazy ${HUB_FILE('hub/hubStyle.js')}`]);
+    expect(edgesIntoHub('src/App.jsx', "import { x } from\"./components/CommandCenter/hub/hubStyle\";"))
+      .toEqual([`src/App.jsx -> ${HUB_FILE('hub/hubStyle.js')}`]);
+    expect(importsOfCode("import * as t from\"../../../constants/leagueTournament\";\nimport\"./side.css\";")).toEqual(['../../../constants/leagueTournament', './side.css']);
+    // ...and the literal scan sees a relative path into the directory, a template literal included.
+    expect(hubDirLiterals("const p = '../CommandCenter/hub/navClearance';")).toEqual(['../CommandCenter/hub/navClearance']);
+    expect(hubDirLiterals('import(`./components/CommandCenter/${name}`);')).toEqual(['./components/CommandCenter/${name}']);
+    expect(hubDirLiterals("import x from './components/Dashboard/CommandDashboard';")).toEqual([]);
   });
 
   it('the gate hands the hub its site and nothing else', () => {
@@ -565,6 +639,8 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
       'onSnapshot(q, cb);', 'getDocFromServer(ref);', 'subscribeToAgentDoc(id, cb);', 'onAuthStateChanged(auth, f);',
       'useEffect(() => {}, []);', 'navigator.sendBeacon(url);', 'new IntersectionObserver(cb);', 'new MutationObserver(cb);',
       'useLayoutEffect(() => {});', 'new ResizeObserver(cb);',
+      // S1 review L5-19: an optional call and a handler on any receiver.
+      "fetch?.('/api/hub');", 'document.body.onkeydown = f;',
     ];
     for (const line of planted) {
       expect(ACTIVITY.some((re) => re.test(line)), line).toBe(true);
@@ -580,9 +656,16 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
     for (const [rel, lines] of Object.entries(negatives)) {
       for (const line of lines) expect(activityInCode(rel, line), `${rel}: ${line}`).not.toEqual([]);
     }
-    for (const line of ["new URLSearchParams(location.search).get('hubFixtures')", 'window.location.search', "history.replaceState(null, '', url)"]) {
+    for (const line of [
+      "new URLSearchParams(location.search).get('hubFixtures')", 'window.location.search', "history.replaceState(null, '', url)",
+      // S1 review L5-7: the build-time environment and the document's own URL.
+      'import.meta.env.VITE_HUB_FIXTURES', "document.URL.includes('hubFixtures')", "new URLSearchParams(window.location.search).get('hubFixtures')",
+    ]) {
       expect(URL_SWITCHES.some((re) => re.test(line)), line).toBe(true);
     }
+    // The gate's reload names `location` (so it must be lifted out), and lifting it out leaves any other use in view.
+    expect(URL_SWITCHES.some((re) => re.test(GATE_RELOAD))).toBe(true);
+    expect(URL_SWITCHES.some((re) => re.test(`${GATE_RELOAD}\nconst q = window.location.search;`.replace(GATE_RELOAD, '')))).toBe(true);
     // ...and the edge scan follows re-exports, so a barrel cannot hide a module.
     expect(importsOfCode("export { default as useX } from '../../hooks/useX';\nexport * from './more';"))
       .toEqual(['../../hooks/useX', './more']);
@@ -590,12 +673,31 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
 });
 
 describe('S1 hub side — colour and motion only through the tokens (ruling R-S1-2; BUILD_RULES §10, §11)', () => {
+  // No id-stripping before the hex scan: it once deleted every quoted lowercase
+  // hex starting a–f along with the ids it meant (S1 review L5-1). Ids such as
+  // '#root' or `url(#h${uid})` never had the hex shape to begin with.
   const HEX = /#[0-9a-fA-F]{3,8}\b/;
-  const SVG_PAINT_VAR = /\b(?:stroke|fill|stopColor|stop-color)=\{?\s*(?:cssVar\(|C\.\w|['"`]var\(|tint\()/;
+  // Raw colours that are not hex (S1 review L5-4): a numeric rgb()/hsl(), or a
+  // CSS colour name as the value of a colour property. `tint()` composes
+  // rgba(var(--ft-…-rgb), a), which this never matches; transparent and
+  // currentColor are not colour names here.
+  const RAW_FUNCTION_COLOUR = /\b(?:rgba?|hsla?)\(\s*\d/;
+  const NAMED_COLOUR = /\b(?:color|background(?:Color)?|border(?:Top|Right|Bottom|Left)?(?:Color)?|outline(?:Color)?|fill|stroke|stopColor|boxShadow|textShadow|caretColor|accentColor)\s*[:=]\s*\{?\s*(['"`])[^'"`\n]*\b(?:white|black|red|green|blue|yellow|orange|purple|pink|gr[ae]y|silver|gold|teal|navy|cyan|magenta|lime|maroon|olive|aqua|fuchsia|brown|indigo|violet|crimson|coral|salmon|tomato|turquoise)\b[^'"`\n]*\1/;
+  // SVG paint never takes a var() or a composed rgba(var()) string — cssVar, the
+  // C map, tint() or the hairlines (hazard H8; S1 review L5-5).
+  const SVG_PAINT_VAR = /\b(?:stroke|fill|stopColor|stop-color)=\{?\s*(?:cssVar\(|C\.\w|['"`]var\(|tint\(|HAIR\b|HAIR_2\b)/;
   const CSS_TRANSITION = /\b(?:transition|animation)\s*:\s*['"`]/;
+  // Motion written as a key — a style property (transitionDuration,
+  // WebkitTransition), an animate/initial/variants `transition: {…}` override,
+  // or CSS inside a string (S1 review L5-6). The house writes motion only as
+  // the `transition={motionToken(…)}` prop, which this never matches.
+  const MOTION_KEY = /\b(?:Webkit|Moz|ms)?[Tt]ransition\w*\s*:|\b(?:Webkit|Moz|ms)?[Aa]nimation\w*\s*:/;
+  const colourHitsIn = (code) => [
+    HEX.test(code) && 'hex', RAW_FUNCTION_COLOUR.test(code) && 'rgb()/hsl()', NAMED_COLOUR.test(code) && 'colour name',
+  ].filter(Boolean);
 
-  it('no hex colour literal anywhere under src/components/CommandCenter/ (fixtures and the tests\' kit included)', () => {
-    const hits = hubDirFiles().filter((rel) => HEX.test(stripComments(read(rel)).replace(/(['"`])#[a-z][\w-]*\1/g, '')));
+  it('no raw colour anywhere under src/components/CommandCenter/ — no hex, no numeric rgb()/hsl(), no colour name (fixtures and the tests\' kit included)', () => {
+    const hits = hubDirFiles().flatMap((rel) => colourHitsIn(stripComments(read(rel))).map((kind) => `${rel}: ${kind}`));
     expect(hits).toEqual([]);
   });
 
@@ -604,21 +706,44 @@ describe('S1 hub side — colour and motion only through the tokens (ruling R-S1
     expect(hits).toEqual([]);
   });
 
-  it('no CSS transition or animation string: motion goes through motionToken (the motion guard counts only transition={{)', () => {
-    const hits = hubDirFiles().filter((rel) => CSS_TRANSITION.test(stripComments(read(rel))));
+  it('no CSS transition or animation, as a string or as a key: motion goes through motionToken (the motion guard counts only transition={{)', () => {
+    const hits = hubDirFiles().filter((rel) => {
+      const code = stripComments(read(rel));
+      return CSS_TRANSITION.test(code) || MOTION_KEY.test(code);
+    });
     expect(hits).toEqual([]);
   });
 
-  it('the three scans flag what they name', () => {
-    expect(HEX.test("color: '#9a9dab'")).toBe(true);
-    expect(HEX.test('<stop stopColor="#5EEAD4" />')).toBe(true);
+  it('the scans flag what they name, through the same pipeline the rows use', () => {
+    // Raw colours (L5-1, L5-4): lowercase, uppercase, core and non-core hex; numeric rgba; a colour name.
+    for (const planted of [
+      "export const LEAK = '#ecfffb';", '<path stroke="#ecfffb" />', "pos: '#bada55',", "color: '#9a9dab'", '<stop stopColor="#5EEAD4" />',
+      "export const HAIR = 'rgba(255, 255, 255, 0.07)';", "color: 'white',", "border: '1px solid black'",
+    ]) {
+      expect(colourHitsIn(planted), planted).not.toEqual([]);
+    }
+    for (const fine of [
+      "document.querySelector('#root')", "id: '#hub-panel'", '<circle fill={`url(#h${uid})`} />', "background: tint('teal', 0.12)",
+      "color: C.ink", "background: 'transparent'", '<path fill="currentColor" />', "tone=\"gold\"", "AREA_TOKEN = ['teal', 'teal', 'gold']",
+    ]) {
+      expect(colourHitsIn(fine), fine).toEqual([]);
+    }
     expect(SVG_PAINT_VAR.test('<path stroke={cssVar(\'teal\')} />')).toBe(true);
     expect(SVG_PAINT_VAR.test('<circle fill="var(--ft-teal)" />')).toBe(true);
     expect(SVG_PAINT_VAR.test('<path stroke={C.teal} />')).toBe(true);
+    expect(SVG_PAINT_VAR.test('<path fill={HAIR} />')).toBe(true);
     expect(SVG_PAINT_VAR.test('<path stroke={stroke} />')).toBe(false);
     expect(SVG_PAINT_VAR.test('<path stroke="currentColor" />')).toBe(false);
     expect(CSS_TRANSITION.test("style={{ transition: 'border-color .2s' }}")).toBe(true);
     expect(CSS_TRANSITION.test("animation: 'ffPulse 1.2s ease-in-out infinite'")).toBe(true);
+    // Motion as a key (L5-6: GT1, GT2, GT3, GT5).
+    for (const planted of [
+      ".concat(' [data-hub=\"shell\"] button { transition: background-color 200ms ease; }')", "transitionDuration: '200ms',",
+      'animate={{ opacity: 1, transition: { duration: 0.4 } }}', "WebkitTransition: 'opacity 200ms',", "animationName: 'pulse',",
+    ]) {
+      expect(MOTION_KEY.test(planted), planted).toBe(true);
+    }
+    expect(MOTION_KEY.test('transition={motionToken(\'smooth\', { reducedMotion })}')).toBe(false);
     expect(CSS_TRANSITION.test('transition={motionToken(\'smooth\', { reducedMotion })}')).toBe(false);
   });
 });

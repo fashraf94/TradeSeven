@@ -12,7 +12,7 @@
 // The mock below passes the real hub module through and only counts how many
 // times it is evaluated.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import React, { StrictMode, act } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -30,6 +30,16 @@ vi.mock('../../contexts/UserContext', () => ({ useUser: () => ({ user: { display
 
 import CommandCenterHubGate from './CommandCenterHubGate';
 import { HUB_COPY } from './hub/hubCopy';
+
+// The count right after the imports, read before any row renders the gate, so
+// the row below holds in any order (S1 review L5-9: under --sequence.shuffle it
+// ran after a render and saw 1). The wait lets an eager import() — the defect
+// the row exists for — settle and be counted.
+let evaluationsAtImport = null;
+beforeAll(async () => {
+  await vi.dynamicImportSettled();
+  evaluationsAtImport = hubModule.evaluations;
+});
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -49,7 +59,7 @@ afterEach(async () => {
 
 describe('the real gate and the real hub chunk', () => {
   it('importing the gate (what App does on every load) evaluates no hub module', () => {
-    expect(hubModule.evaluations).toBe(0);
+    expect(evaluationsAtImport).toBe(0);
   });
 
   it.each([
