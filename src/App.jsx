@@ -128,6 +128,8 @@ import { pickDashboardShell, DASHBOARD_SHELLS } from './components/CommandCenter
 import { excludeVoidedGroupBattles } from './utils/commandCenterLiveBattles';
 import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn, isDeploySkyCouplingOn, isCharacterPaneOn, isCommandCenterHubOn } from './config/featureFlags';
 import { pickCeremonyEntry } from './components/Dashboard/deployCeremony/ceremonyData';
+import { handoffBattleId, isHandoffOwnerCurrent, buildOptimisticBattleEntry, appendOptimisticBattle } from './components/Dashboard/deployHandoff';
+import { signedInUid } from './services/deployIdentity';
 // Delight Layer Task 2: the battle-weather starfield. Mounted ONLY at the two
 // dashboard sites below, each behind its own flag; every other DesktopBackground
 // mount is untouched (spec V2 R-T2-S5 + Amendment A2).
@@ -6655,7 +6657,18 @@ export default function PortfolioDuel() {
     // agentMeta: { agentId, agentBattleId, innerMonologue, strategyBrief, expiresAt, opponent, opponentBench }
     // CPU opponent is now generated server-side in decide.js and included in the response.
 
-    const agentBattleId = agentMeta?.agentBattleId;
+    // Command Center repair R1 (ruling R-R1-5): the handoff fabricates nothing and
+    // knows its owner. Without a real server id it builds no battle, appends
+    // nothing, stashes nothing and navigates nowhere (deployAgent no longer calls
+    // it without one; this is the second lock). The identity the deploy was
+    // captured for (agentMeta.ownerUid) must still be the signed-in one before
+    // the optimistic append, the fresh-price overwrite, the stash and the
+    // navigation; otherwise all four are skipped. The checks live in
+    // components/Dashboard/deployHandoff.js.
+    const agentBattleId = handoffBattleId(agentMeta);
+    const ownerUid = agentMeta?.ownerUid ?? null;
+    const ownerIsCurrent = () => isHandoffOwnerCurrent(ownerUid, signedInUid());
+    if (agentBattleId === null || !ownerIsCurrent()) return null;
     const cpuPortfolio = agentMeta?.opponent || null;
     const cpuBench = agentMeta?.opponentBench || null;
 
@@ -6716,31 +6729,28 @@ export default function PortfolioDuel() {
     // ranked. If a future optimistic append here ever adds a groupId (ranked) battle,
     // it MUST run through the poll's voided exclusion first — it must not silently
     // inherit this bypass.
+    //
+    // R1: the entry is built in deployHandoff.js and now also carries its owner
+    // (`ownerId`, so the poll's owner filter keeps it) and `localOrigin: true`
+    // (so the hub's Activity can leave it out until the server document
+    // replaces it).
     if (isDeploySkyCouplingOn() && agentBattleId) {
-      setActiveAgentBattles((prev) => {
-        const existing = Array.isArray(prev) ? prev : [];
-        if (existing.some((b) => b?.id === agentBattleId)) return existing;
-        return [...existing, {
-          id: agentBattleId,
-          agentId: agentMeta?.agentId,
-          status: 'active',
-          expiresAt: agentMeta?.expiresAt || null,
-          activatedAt: now.toISOString(),
-          createdAt: now.toISOString(),
-          portfolio: {
-            ...(portfolioData || {}),
-            bench: benchData || null,
-            startingPrices: allStartingPrices,
-          },
-          opponent: cpuPortfolio ? { portfolio: cpuPortfolio, bench: cpuBench } : null,
-          gameMode: null,
-          groupId: null,
-        }];
-      });
+      setActiveAgentBattles((prev) => appendOptimisticBattle(prev, buildOptimisticBattleEntry({
+        agentBattleId,
+        ownerUid,
+        agentId: agentMeta?.agentId,
+        expiresAt: agentMeta?.expiresAt,
+        nowIso: now.toISOString(),
+        portfolio: portfolioData,
+        bench: benchData,
+        startingPrices: allStartingPrices,
+        opponentPortfolio: cpuPortfolio,
+        opponentBench: cpuBench,
+      })));
     }
 
     const currentBattleObj = {
-      id: agentBattleId || `agent_${Date.now()}`,
+      id: agentBattleId,
       _v: 3,
       type: 'baggerbomb',
       agentDeployed: true,
@@ -6792,6 +6802,10 @@ export default function PortfolioDuel() {
         try {
           const { doc, updateDoc } = await import('firebase/firestore');
           const { db } = await import('./firebase/config');
+          // R1: the write lands several awaits after the handoff — re-check the
+          // owner immediately before it, so a former account's battle is never
+          // written once another account is signed in.
+          if (!ownerIsCurrent()) return;
           await updateDoc(doc(db, 'agentBattles', agentBattleId), {
             'portfolio.startingPrices': merged,
           });

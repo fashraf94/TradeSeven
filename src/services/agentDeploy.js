@@ -8,6 +8,21 @@
 //
 // This does NOT modify decide.js or createAgentBattle — it only calls them.
 // UI state (a `deploying` flag) stays with each caller.
+//
+// Command Center repair R1 (spec V1.2 §5.1–§5.3, corrections C2 and C3): every
+// result carries a typed `outcome` from src/constants/deployOutcomes.js beside
+// its unchanged legacy fields (`success`, `status`, `httpStatus`, `postIssued`,
+// `error`, `details`, `errorPhase`, `battleId`):
+//   created         — a 200 with a real new battle id, handed off; success:true
+//   existing_battle — a 200 with battleCreated:false and a real existingBattleId;
+//                     no handoff, nothing stashed, nothing navigated (IR-01)
+//   refused         — the two no-POST preflights (postIssued:false) and every
+//                     JSON 4xx or 503 the server sent (postIssued:true)
+//   uncertain       — the POST may have committed: a network failure, a non-JSON
+//                     body, any other JSON 5xx, a 200 naming no battle
+//   handoff_failed  — a real creation whose App handoff threw; carries battleId
+//   orphaned        — the signed-in account changed during the deploy
+// The callback is called only for `created`, and always with a real id.
 
 import { getIdToken } from '../firebase/authService';
 import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../config/featureFlags';
@@ -16,7 +31,9 @@ import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../config/featureFlags';
 import * as ceremonyTiming from '../components/Dashboard/deployCeremony/ceremonyTiming';
 // Pilot P1b — the deploy refusal's typed code (founder ruling B2).
 import { DEPLOY_REFUSAL_CODE } from '../constants/hypothesisRecords';
+import { DEPLOY_OUTCOMES } from '../constants/deployOutcomes';
 import { stockAdmissionRetryAt, STOCK_PUBLICATION_DELAY_MINUTES } from '../utils/stockAdmissionWindow';
+import { signedInUid } from './deployIdentity';
 
 // BaggerBomb stock thresholds v2 (Rulings 2 and 6): only an allowlisted pilot
 // creation can be refused this way. The server's 503 carries `reason`; the
@@ -39,8 +56,53 @@ export function stockAdmissionLine(data, now = new Date()) {
   return STOCK_ADMISSION_LINES[data.reason] ?? 'Measured scoring could not start this battle just now. Try again in a minute.';
 }
 
-export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetResolved) {
-  if (!agentId) return { success: false, postIssued: false, error: 'no-agent' };
+// R1 (ruling R-R1-3) — the two 429s decide.js sends itself, keyed by their exact
+// words: the 120 s deploy lock and the per-agent 2-minute cooldown. Any other
+// 429 (the shared rate limiter in front of the handler sends one) is refused
+// with no reason.
+const REFUSAL_REASONS_429 = Object.freeze({
+  'Deploy already in progress': 'in_progress',
+  'Please wait 2 minutes between deploys': 'cooldown',
+});
+
+// R1 (ruling R-R1-3) — which JSON failures are DEFINITIVE. Every 4xx the
+// endpoint sends is a refusal before anything was created, and so is every 503
+// it sends: the stock-admission refusal, the pricing gate and the missing
+// rankings each release the lock first. Any other 5xx — the single catch's
+// 500 above all — may follow the battle commit (THE FAILURE MODEL block in
+// services/agentBattleVerify.js), so it stays uncertain. A non-JSON body proves
+// nothing about who answered and is uncertain whatever its status.
+const isDefinitiveRefusal = (status) => (status >= 400 && status < 500) || status === 503;
+
+// A real server id: a nonempty string with no surrounding space — the same rule
+// the hub's translator applies (attemptVocabulary.js realId).
+const realId = (id) => (typeof id === 'string' && id.length > 0 && id.trim() === id ? id : null);
+
+/**
+ * @param {string} agentId the ranked agent the deploy is for
+ * @param {Function|null} onCreateAgentBattle App's handoff, called only for a real creation
+ * @param {Function} [onDeployTargetResolved] reported the deploy target as soon as it is known
+ * @param {{ isCurrent?: () => boolean }} [options] `isCurrent` lets a caller add its own
+ *   staleness check (S2b's attempt epoch). It is checked BESIDE the signed-in uid, never
+ *   instead of it, and only a literal `true` keeps the deploy current.
+ */
+export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetResolved, options = {}) {
+  if (!agentId) return { outcome: DEPLOY_OUTCOMES.REFUSED, success: false, postIssued: false, error: 'no-agent' };
+
+  // R1 (ruling R-R1-4; spec V1.2 §5.3) — the identity this deploy belongs to,
+  // captured at entry. After every await, and immediately before the handoff, a
+  // changed or absent uid ends the deploy as `orphaned` with no further effect:
+  // no token or clone for another account, no POST, no target report, no
+  // handoff, no result shown for the former owner. A battle the server may
+  // already have created for the captured owner is left exactly as it is.
+  const capturedUid = signedInUid();
+  const isCurrent = typeof options?.isCurrent === 'function' ? options.isCurrent : null;
+  const stillOwned = () => {
+    if (capturedUid === null || signedInUid() !== capturedUid) return false;
+    if (isCurrent === null) return true;
+    try { return isCurrent() === true; } catch { return false; }
+  };
+  const orphaned = (postIssued) => ({ outcome: DEPLOY_OUTCOMES.ORPHANED, success: false, postIssued });
 
   // The deploy TARGET id, reported upward the instant it is known so the caller
   // can subscribe to the document this deploy will actually write to. The
@@ -76,8 +138,12 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   const token = await getIdToken();
   if (!token) {
     console.error('[Deploy] No auth token — sign in required to deploy');
-    return { success: false, postIssued: false, error: 'auth-required' };
+    return { outcome: DEPLOY_OUTCOMES.REFUSED, success: false, postIssued: false, error: 'auth-required' };
   }
+  // R1 — after the token. Nobody signed in at entry reads as a missing token
+  // above, exactly as before; a token taken across an account change is never
+  // used.
+  if (!stillOwned()) return orphaned(false);
 
   // Per-Battle Loadout + Concurrency Phase 1: when enabled, a Command-Center
   // BaggerBomb deploy runs on the caller's PERSISTENT casual clone (its own
@@ -90,6 +156,7 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   // agentId: the deploy proceeds exactly as today, degraded to the real agent,
   // never blocked. Flag OFF → deployAgentId === agentId (byte-identical).
   if (CASUAL_CLONE_CONCURRENCY_ENABLED) {
+    let cloneId = null;
     try {
       // getIdToken sits between setDeployTarget #1 and here, so the raw gap
       // between the two target reports is NOT the clone round trip. Marking the
@@ -102,7 +169,7 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
       });
       const cloneData = await cloneRes.text().then((t) => { try { return JSON.parse(t); } catch { return null; } });
       if (cloneRes.ok && cloneData && typeof cloneData.cloneId === 'string') {
-        setDeployTarget(cloneData.cloneId);
+        cloneId = cloneData.cloneId;
       } else {
         // Fallback: the target stays the ranked agent, already reported above.
         // setDeployTarget never fires a second time, so the clone outcome is
@@ -115,6 +182,10 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
       ceremonyTiming.markCloneFallback('threw');
       console.warn('[Deploy] casual clone ensure errored — deploying the real agent:', err?.message || err);
     }
+    // R1 — after the clone ensure, and before its target is reported or POSTed:
+    // an old request never deploys anything once the account has changed.
+    if (!stillOwned()) return orphaned(false);
+    if (cloneId !== null) setDeployTarget(cloneId);
   }
 
   // Step 1: generate the portfolio via the AI decision endpoint.
@@ -138,7 +209,10 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
     // The request left the client but produced no response. Whether the server
     // saw it is unknowable here, which is itself the answer the ceremony needs.
     console.error('[Deploy] Network failure posting to /api/agent/decide:', err?.message || err);
+    // R1 — the POST went out; a former owner's failure is not shown.
+    if (!stillOwned()) return orphaned(true);
     return {
+      outcome: DEPLOY_OUTCOMES.UNCERTAIN,
       success: false, postIssued: true, httpStatus: null,
       error: 'deploy_network', details: err?.message || 'Network request failed',
     };
@@ -146,11 +220,15 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   // Marked at response arrival rather than after the body read, so this measures
   // the server round trip and not the client's parse.
   ceremonyTiming.markPostResolved(response.status);
+  // R1 — after the POST.
+  if (!stillOwned()) return orphaned(true);
   // Guard the body parse: /api/agent/decide can return a NON-JSON error page — a
   // 500 HTML page, a module-link crash (ERR_MODULE_NOT_FOUND), a gateway timeout.
   // Calling response.json() on that throws a SyntaxError that masks the real HTTP
   // status. Read the body once as text, parse defensively, and surface the status.
   const raw = await response.text().catch(() => '');
+  // R1 — after the body read.
+  if (!stillOwned()) return orphaned(true);
   let data = null;
   if (raw) {
     try { data = JSON.parse(raw); } catch { data = null; }
@@ -162,6 +240,7 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
       const snippet = raw.slice(0, 300).trim();
       console.error(`[Deploy] Failed: HTTP ${status} — non-JSON response`, snippet || '(empty body)');
       return {
+        outcome: DEPLOY_OUTCOMES.UNCERTAIN,
         success: false,
         status,
         postIssued: true,
@@ -180,15 +259,54 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
     const refusalLine = data.error === DEPLOY_REFUSAL_CODE && typeof data.message === 'string' ? data.message
       : stockAdmissionLine(data);
     console.error('[Deploy] Failed:', status, data.error, refusalLine || data.details || '');
+    const refused = isDefinitiveRefusal(status);
+    const reason = refused && status === 429 ? REFUSAL_REASONS_429[data.error] : undefined;
     return {
+      outcome: refused ? DEPLOY_OUTCOMES.REFUSED : DEPLOY_OUTCOMES.UNCERTAIN,
       success: false, status, postIssued: true, httpStatus: status,
       error: data.error, details: refusalLine ?? data.details, errorPhase: data.errorPhase,
+      // The P1b refusal's typed code rides beside its line (spec §5.2: Forge action, no auto retry).
+      ...(refused && data.error === DEPLOY_REFUSAL_CODE ? { code: DEPLOY_REFUSAL_CODE } : {}),
+      ...(reason ? { reason } : {}),
+    };
+  }
+
+  // R1 (ruling R-R1-2) — decide.js answers success:true for TWO different facts,
+  // and they are told apart here, BEFORE the handoff. `battleCreated: false`
+  // with `existingBattleId` is the "agent already has an active battle" branch:
+  // a battle THIS deploy did not create. It calls no create callback, so App
+  // stashes nothing, appends nothing, navigates nowhere and fabricates no id;
+  // the shells show it as its own terminal and open the owned server document.
+  const existingBattleId = data.battleCreated === false ? realId(data.existingBattleId) : null;
+  if (existingBattleId !== null) {
+    console.log('[Deploy] The agent already has a running battle:', existingBattleId);
+    return {
+      outcome: DEPLOY_OUTCOMES.EXISTING_BATTLE,
+      success: false, existingBattleId, postIssued: true, httpStatus: response.status,
+    };
+  }
+  // The created 200 carries `battleCreated: true` and the new `agentBattleId`. A
+  // 200 that names neither a new battle nor an existing one is malformed: the
+  // server answered, but this client cannot say what it did, so it is uncertain
+  // and nothing is handed off.
+  const agentBattleId = data.battleCreated === false ? null : realId(data.agentBattleId);
+  if (agentBattleId === null) {
+    console.error('[Deploy] Failed: HTTP', response.status, '— success without a battle id');
+    return {
+      outcome: DEPLOY_OUTCOMES.UNCERTAIN,
+      success: false, status: response.status, postIssued: true, httpStatus: response.status,
+      // No id to carry: nothing here may pin a reveal (useCeremonyStageMachine's deployBattleId).
+      battleId: null,
+      error: 'deploy_no_battle_id', details: 'The deploy finished without naming a battle.',
     };
   }
 
   // Step 2: hand off to the app's battle-creation callback (it navigates).
-  console.log('[Deploy] Agent battle created:', data.agentBattleId || '(existing)');
+  console.log('[Deploy] Agent battle created:', agentBattleId);
   if (onCreateAgentBattle) {
+    // R1 — immediately before the handoff: no append, stash or navigation for
+    // a former owner.
+    if (!stillOwned()) return orphaned(true);
     try {
       await onCreateAgentBattle(
         data.portfolio,
@@ -197,7 +315,12 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
           // The deployed agent's id (the casual clone when the feature is on) — kept
           // consistent with the created battle's agentId. Flag off: === agentId.
           agentId: deployAgentId,
-          agentBattleId: data.agentBattleId || null,
+          // Always the real server id: the callback is never reached without one.
+          agentBattleId,
+          // R1 (ruling R-R1-5): the identity this deploy was captured for. App
+          // stamps it on its optimistic entry and checks it again before each
+          // of its own effects.
+          ownerUid: capturedUid,
           innerMonologue: data.innerMonologue || null,
           strategyBrief: data.strategyBrief || null,
           expiresAt: data.expiresAt || null,
@@ -214,23 +337,24 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
       // server") for a deploy that definitively did.
       //
       // `battleId` is returned rather than merely `httpStatus: 200`, because 200 on
-      // its own must NEVER buy a reveal: `decide.js:748-758` (the "agent already has
-      // an active battle" branch) also returns 200 + `success: true`, carrying
+      // its own must NEVER buy a reveal: decide.js's "agent already has an active
+      // battle" branch also returns 200 + `success: true`, carrying
       // `existingBattleId` and NO `agentBattleId` — a battle this deploy did not
-      // create. So the id is the gate, not the status: absent here, this resolves as
-      // an ordinary unknown and the ceremony says "lost contact".
+      // create. That branch is typed `existing_battle` above and never reaches
+      // here, so the id carried here is always the battle this deploy created.
       console.error('[Deploy] Battle created but the client handoff threw:', err?.message || err);
       return {
+        outcome: DEPLOY_OUTCOMES.HANDOFF_FAILED,
         success: false,
         status: response.status,
         postIssued: true,
         httpStatus: response.status,
-        battleId: data.agentBattleId || null,
+        battleId: agentBattleId,
         error: 'deploy_handoff',
         details: err?.message || 'The battle was created but could not be opened.',
       };
     }
   }
 
-  return { success: true, agentBattleId: data.agentBattleId || null };
+  return { outcome: DEPLOY_OUTCOMES.CREATED, success: true, agentBattleId };
 }

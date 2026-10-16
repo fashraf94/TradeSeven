@@ -26,13 +26,26 @@ import CeremonyTheater from './CeremonyTheater';
 import CeremonyChecklist from './CeremonyChecklist';
 import CeremonyReveal from './CeremonyReveal';
 import CeremonyError from './CeremonyError';
+import CeremonyExisting from './CeremonyExisting';
 
 const Z_INDEX = 1010; // above EquipSheet/ScoutingBoardSheet (1000), below tour/watchlist (10000)
 const DEPLOY_LOCK_MS = 120000; // server's per-agent deploy cooldown
 
+// Command Center repair R1 (ruling R-R1-6) — additive props, all optional:
+//   - `deployResult.status === 'existing'` with `existingBattleId`: the server's
+//     "already has a running battle" answer. The stage machine commits to its
+//     own `existing` terminal (CeremonyExisting), never the reveal or the error.
+//   - `liveBattles` / `onOpenBattle`: the shell's own live list and the open
+//     handler that terminal's one action uses (the shells wire it to
+//     handleOpenAgentBattle). Never onEnterBattle, never onCreateAgentBattle.
+//   - `attemptId` / `onPhaseChange({ attemptId, phase, errorTone })`: fired on
+//     mount and at every stage-machine transition, echoing the id held at that
+//     moment, so the hub's bridge (S2b) can carry attempt identity. A stale
+//     notification is the consumer's to ignore; the ceremony only echoes.
 export default function DeployCeremony({
   agent, accent = CMD.teal, agentName = 'Your agent', directiveCount = 0,
   deployResult, targetAgentId = null, onEnterBattle, onDismiss, onRetry,
+  liveBattles = null, onOpenBattle, attemptId = null, onPhaseChange,
 }) {
   const reduce = useReducedMotion();
   const containerRef = useRef(null);
@@ -74,6 +87,15 @@ export default function DeployCeremony({
     [targetAgentId],
   );
 
+  // R1 (R-R1-6): the phase notification. The machine reports every transition
+  // as it happens; this echoes the attempt id held at that moment.
+  const phaseNoteRef = useRef({ attemptId, onPhaseChange });
+  phaseNoteRef.current = { attemptId, onPhaseChange };
+  const notePhase = ({ phase, errorTone }) => {
+    const { attemptId: id, onPhaseChange: note } = phaseNoteRef.current;
+    if (typeof note === 'function') note({ attemptId: id, phase, errorTone });
+  };
+
   // deployProgress primitives (spec §5.5)
   const dp = deployProgress || {};
   const machine = useCeremonyStageMachine({
@@ -95,6 +117,7 @@ export default function DeployCeremony({
     targetKnown,
     targetAgentId,
     verifyBattle,
+    onPhaseChange: notePhase,
   });
 
   // Stage 1 chip data — all best-effort (§5.4).
@@ -145,6 +168,8 @@ export default function DeployCeremony({
     ? (machine.errorTone === 'confirmed' ? 'Deployment failed.' : 'Couldn’t confirm the deployment.')
     : machine.phase === 'reveal'
       ? `${agentName} is ready for battle.`
+      : machine.phase === 'existing'
+        ? `${agentName} already has a game running.`
       : {
           loadout: 'Loading the loadout',
           scanning: 'Scanning the market',
@@ -188,6 +213,20 @@ export default function DeployCeremony({
         onEnterBattle={enterBattle}
         onDismiss={onDismiss}
         reduce={reduce}
+      />
+    );
+  } else if (machine.phase === 'existing') {
+    // R1: the agent's running battle, not a new one. Its action opens the owned
+    // server document the server named; nothing here enters or creates.
+    body = (
+      <CeremonyExisting
+        accent={accent}
+        agentName={agentName}
+        existingBattleId={deployResult?.existingBattleId ?? null}
+        liveBattles={liveBattles}
+        verifyBattle={verifyBattle}
+        onOpenBattle={onOpenBattle}
+        onDismiss={onDismiss}
       />
     );
   } else if (reduce) {

@@ -37,6 +37,10 @@ import useMasteryProfile from '../../hooks/useMasteryProfile';
 import useDailyRegimeBrief from '../../hooks/useDailyRegimeBrief';
 import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentBattles';
 import { deployAgent } from '../../services/agentDeploy';
+// Command Center repair R1: the one result → ceremony mapping, and the
+// ceremony-off path for the agent's already-running battle.
+import { deployResultFor, isExistingBattleResult } from './deployResult';
+import { openExistingBattleDirectly } from './deployCeremony/existingBattle';
 // Record-only ceremony instrumentation (console; no writes, nothing gates on it).
 import * as ceremonyTiming from './deployCeremony/ceremonyTiming';
 import { subscribeMyGroup } from '../../services/tournamentGroupService';
@@ -199,6 +203,10 @@ export default function CommandDashboard({
   // since the server writes deployProgress there. Never derived here: only
   // deployAgent knows whether the clone resolved or the fallback fired.
   const [deployTargetId, setDeployTargetId] = useState(null);
+  // R1: the same id, readable when the deploy returns (the state above is a
+  // render behind it), for the ceremony-off existing-battle open.
+  const deployTargetRef = useRef(null);
+  const reportDeployTarget = (id) => { deployTargetRef.current = id; setDeployTargetId(id); };
 
   // G2 (docs/audits/20260720_G2_ACTIVEBATTLEID_CONFLICT_DISCOVERY.md): a competitive pod
   // deploys the user's REAL agent, and /api/agent/decide allows only ONE active battle.
@@ -237,7 +245,7 @@ export default function CommandDashboard({
     setDeploying(true);
     let result = { success: false };
     try {
-      result = await deployAgent(agent.id, onCreateAgentBattle, setDeployTargetId);
+      result = await deployAgent(agent.id, onCreateAgentBattle, reportDeployTarget);
     } catch (err) {
       console.error('[Deploy] Error:', err);
       // `postIssued: false` is now TRUE of every throw that can reach here.
@@ -250,20 +258,19 @@ export default function CommandDashboard({
     }
     setDeploying(false);
     if (ceremonyOn) {
-      setDeployResult(result?.success
-        ? { status: 'success', agentBattleId: result.agentBattleId }
-        : {
-            status: 'error', error: result?.error, details: result?.details,
-            // Forwarded for the ceremony's recovered-reveal gate — see the
-            // deployAgent comment above the POST. Previously dropped here, which
-            // is why the ceremony could not tell a refusal from a real failure.
-            httpStatus: result?.httpStatus ?? null,
-            postIssued: result?.postIssued === true,
-            // Set only when the server 200'd with a real battle id and the client
-            // handoff then threw. The battle exists and we are holding its id, so
-            // the ceremony pins the reveal to it rather than inferring from status.
-            battleId: result?.battleId ?? null,
-          });
+      // deployResult.js: `existing` for the agent's running battle (R1); every
+      // other outcome maps exactly as it did inline here before.
+      setDeployResult(deployResultFor(result));
+    } else if (isExistingBattleResult(result)) {
+      // R1 (ruling R-R1-2): with the ceremony off, the running game opens
+      // directly — the owned server document the server named, never a creation,
+      // and no "deployed" toast, because nothing was deployed.
+      await openExistingBattleDirectly({
+        existingBattleId: result.existingBattleId,
+        targetAgentId: deployTargetRef.current,
+        liveBattles,
+        onOpen: onOpenAgentBattle,
+      });
     }
     return result;
   };
@@ -642,6 +649,9 @@ export default function CommandDashboard({
           deployResult={deployResult}
           targetAgentId={deployTargetId}
           onEnterBattle={(recoveredBattle) => { onEnterBattle?.(recoveredBattle); setCeremonyOpen(false); }}
+          // R1: the existing-battle terminal opens the owned server document.
+          liveBattles={liveBattles}
+          onOpenBattle={(battle) => { onOpenAgentBattle?.(battle); setCeremonyOpen(false); }}
           onDismiss={() => setCeremonyOpen(false)}
           onRetry={handleCeremonyRetry}
         />
