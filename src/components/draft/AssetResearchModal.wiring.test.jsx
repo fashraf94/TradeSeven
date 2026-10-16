@@ -440,6 +440,12 @@ describe('W-2 — the legacy modal\'s price is the live price, everywhere on the
     expect(header()[0]).toBe('$\u2014');
   });
 
+  it('a stock navigated to before its price arrives: the header reads "$—" (not the original asset\'s live price, not "$0.00")', async () => {
+    await mount('1D', { wsPrice: 200 });
+    await navigateTo('MSFT'); // its quote answers price 0: never filled
+    expect(header()[0]).toBe('$\u2014');
+  });
+
   it('the held (controlled) view keeps the accepted observation: a different wsPrice moves nothing', async () => {
     lv.levels = LEVELS;
     const contract = { posKey: 'player:star:0', symbol: 'AAPL', price: 200, extremes: null };
