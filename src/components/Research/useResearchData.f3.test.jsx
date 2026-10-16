@@ -4,9 +4,11 @@
 // docs/audits/20261015_BUILD_RESEARCH_MODAL_F3_FOLLOWUP.md):
 //   F3   the daily series asks for 400 days, so the 200-day average, a full
 //        52-week range and a 30-session volume average exist; the 1D chart is
-//        still handed exactly the bars the server's 180-day default returns.
+//        still handed exactly the bars the server's 180-day default returns,
+//        and a symbol with no bar in those 180 days is "no data", as before.
 //   D-2  turning the chart's S/R toggle on (off 1D) asks for the same single
-//        daily request the Technical tab does — shared, never twice.
+//        daily request the Technical tab does — shared, never twice; after a
+//        failed request, opening the Technical tab still asks again.
 //   V-11 the session date the tab's "Today" label is matched against.
 //
 // The REAL hook and the REAL Technical tab; stubbed: the network (eodhdAPI,
@@ -23,16 +25,18 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Daily bars the server would return for `days` calendar days back from
  *  NOW (UTC start date, as api/stocks/historical.js computes it), up to
  *  yesterday — during the session EODHD has no bar for today. Newest-first.
- *  Stocks: weekdays only; crypto: every day. Closes alternate 199.5 / 200.5. */
-function serverDaily(days, { crypto = false } = {}) {
+ *  Stocks: weekdays only; crypto: every day. Closes alternate 199.5 / 200.5
+ *  plus 0.001 per bar back, so means over 50, 126 and 200 closes all differ.
+ *  `staleOnly`: only bars on or before 2026-04-01 (none in the last 180 days). */
+function serverDaily(days, { crypto = false, staleOnly = false } = {}) {
   const from = new Date(NOW - days * DAY_MS).toISOString().slice(0, 10);
   const out = [];
-  const d = new Date('2026-10-14T00:00:00Z');
+  const d = new Date(staleOnly ? '2026-04-01T00:00:00Z' : '2026-10-14T00:00:00Z');
   while (d.toISOString().slice(0, 10) >= from) {
     const day = d.getUTCDay();
     if (crypto || (day !== 0 && day !== 6)) {
       const i = out.length; // 0 = newest
-      const close = i % 2 ? 199.5 : 200.5;
+      const close = (i % 2 ? 199.5 : 200.5) + 0.001 * i;
       // Volume: newest 20 at 1M, next 10 at 4M, older at 9M — a 30-session
       // mean of 2.0M (a 20-bar mean would read 1.0M, a 40-bar mean 3.75M).
       const volume = i < 20 ? 1e6 : i < 30 ? 4e6 : 9e6;
@@ -43,16 +47,21 @@ function serverDaily(days, { crypto = false } = {}) {
   return out;
 }
 
-const net = vi.hoisted(() => ({ calls: [], weekly: {}, hold: new Set(), fail: new Set() }));
+const net = vi.hoisted(() => ({ calls: [], weekly: {}, hold: new Set(), fail: new Set(), stale: new Set() }));
 vi.mock('../../services/eodhdAPI', () => ({
   fetchHistoricalOHLCV: (symbol, timeframe, opts) => {
     net.calls.push(['fetchHistoricalOHLCV', symbol, timeframe, opts ?? null]);
     if (net.hold.has(`${symbol}_${timeframe}`)) return new Promise(() => {});
-    if (net.fail.has(`${symbol}_${timeframe}`)) {
-      net.fail.delete(`${symbol}_${timeframe}`);
+    const failKey = `${symbol}_${timeframe}_${opts?.days ?? ''}`; // one-shot, by symbol, timeframe and days
+    if (net.fail.has(failKey)) {
+      net.fail.delete(failKey);
       return Promise.reject(new Error('Proxy error: 500'));
     }
-    if (timeframe === '1d') return Promise.resolve(serverDaily(opts?.days ?? 180, { crypto: opts?.type === 'crypto' }));
+    if (timeframe === '1d') {
+      // No bar in the window: the server answers 404, which the fetcher resolves as null.
+      const rows = serverDaily(opts?.days ?? 180, { crypto: opts?.type === 'crypto', staleOnly: net.stale.has(symbol) });
+      return Promise.resolve(rows.length > 0 ? rows : null);
+    }
     if (timeframe === '1w') return Promise.resolve(net.weekly[symbol] ?? []);
     return Promise.resolve([]);
   },
@@ -80,6 +89,7 @@ beforeEach(() => {
   net.weekly = { AAPL: [{ date: '2026-10-05', open: 198, high: 202, low: 197, close: 200, volume: 5e6 }, { date: '2026-09-28', open: 199, high: 201, low: 196, close: 198, volume: 5e6 }] };
   net.hold.clear();
   net.fail.clear();
+  net.stale.clear();
   latest = null;
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -173,7 +183,7 @@ describe('F3 — the 1D chart keeps its framing: exactly the bars of the server\
   });
 
   it('after a failed first request, Retry asks for { days: 400 } and the chart again gets the 180-day window', async () => {
-    net.fail.add('AAPL_1d');
+    net.fail.add('AAPL_1d_400');
     await render('AAPL', STOCK_1D);
     expect(latest.error).toBeTruthy();
     expect(latest.rawData).toBeNull();
@@ -190,6 +200,36 @@ describe('F3 — the 1D chart keeps its framing: exactly the bars of the server\
     expect(latest.rawData).toEqual(serverDaily(180, { crypto: true }));
     expect(latest.rawData.length).toBe(180);
     expect(latest.dailyData.length).toBe(400);
+  });
+});
+
+describe('F3 — a symbol with no bar in the last 180 days is "no data", as the 180-day request was', () => {
+  it('1D: error (Retry), no chart bars, no daily series, no previous close — and Retry says the same', async () => {
+    net.stale.add('AAPL');
+    expect(serverDaily(180, { staleOnly: true })).toEqual([]); // before: the 180-day request had nothing (404)
+    expect(serverDaily(400, { staleOnly: true }).length).toBeGreaterThan(0); // the 400-day one has old bars
+    await render('AAPL', STOCK_1D);
+    expect(latest.error).toBe('No historical data available');
+    expect(latest.rawData).toBeNull();
+    expect(latest.ohlcvData).toBeNull();
+    expect(latest.dailyData).toBeNull();
+    expect(latest.previousClose).toBeNull();
+    expect(latest.dailyChange).toBeNull();
+    await act(async () => { latest.retry(); });
+    await settle();
+    expect(historyCalls()).toEqual([DAILY_400, DAILY_400]);
+    expect(latest.error).toBe('No historical data available');
+    expect(latest.rawData).toBeNull();
+    expect(latest.dailyData).toBeNull();
+  });
+
+  it('off 1D: the lazy daily request finds no recent bar → no daily series, no levels', async () => {
+    net.stale.add('AAPL');
+    await render('AAPL', { currentPrice: 0, isCrypto: false, initialTimeframe: '1W', technicalActive: true });
+    expect(historyCalls()).toEqual([WEEKLY, DAILY_CHANGE, DAILY_400]);
+    expect(latest.dailyData).toBeNull();
+    expect(latest.indicators).toBeNull();
+    expect(latest.levels).toBeNull();
   });
 });
 
@@ -227,6 +267,19 @@ describe('D-2 — the S/R toggle asks for the daily levels (one request, shared 
     await render('AAPL', { ...ON_1W, technicalActive: true, srRequested: true });
     // The held 5-day request and the held 400-day request — one each.
     expect(historyCalls()).toEqual([WEEKLY, DAILY_CHANGE, DAILY_400]);
+  });
+});
+
+describe('D-2 — after a failed daily request', () => {
+  it('toggle on, the request fails, then the Technical tab opens → it asks again (each trigger re-runs the fetch)', async () => {
+    const ON_1W = { currentPrice: 0, isCrypto: false, initialTimeframe: '1W' };
+    net.fail.add('AAPL_1d_400');
+    await render('AAPL', { ...ON_1W, technicalActive: false, srRequested: true });
+    expect(historyCalls()).toEqual([WEEKLY, DAILY_CHANGE, DAILY_400]);
+    expect(latest.dailyData).toBeNull();
+    await render('AAPL', { ...ON_1W, technicalActive: true, srRequested: true });
+    expect(historyCalls()).toEqual([WEEKLY, DAILY_CHANGE, DAILY_400, DAILY_400]);
+    expect(latest.levels).not.toBeNull();
   });
 });
 

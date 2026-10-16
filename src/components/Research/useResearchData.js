@@ -170,6 +170,35 @@ function chartWindow1D(data, nowMs = Date.now()) {
   const from = new Date(nowMs - CHART_1D_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   return data.filter(c => String(c.date || c.datetime || '').substring(0, 10) >= from);
 }
+/** 1D: a series with no bar inside the chart's 180-day window is the "no data"
+ *  the server's 180-day request used to answer (a 404). */
+const noChartBars1D = (data) => Array.isArray(data) && data.length > 0 && chartWindow1D(data).length === 0;
+
+// ── Levels as displayed (BUILD_RULES §9) ─────────────────────────────────────
+// detectLevels sides and measures levels from the newest daily close. What the
+// modal shows — the Technical tab's rows and the chart's S/R lines — sides and
+// measures them from the displayed price, at the two decimals both prices are
+// shown with. A level at the shown price is resistance (detectLevels' tie rule).
+const toCents = (v) => Math.round(Number(v) * 100);
+const isShownPrice = (price) => typeof price === 'number' && Number.isFinite(price) && price > 0;
+/** 'SUPPORT' or 'RESISTANCE' for a level against the shown price. */
+export const sideOfShownPrice = (levelPrice, price) => (toCents(levelPrice) < toCents(price) ? 'SUPPORT' : 'RESISTANCE');
+/** The levels re-sided around the shown price (closest first); unchanged without a shown price. */
+export function sideLevelsAt(levels, price) {
+  if (!levels || !isShownPrice(price)) return levels;
+  const all = [...(levels.support || []), ...(levels.resistance || [])].filter(l => Number.isFinite(l?.price));
+  return {
+    ...levels,
+    support: all.filter(l => sideOfShownPrice(l.price, price) === 'SUPPORT').sort((a, b) => b.price - a.price),
+    resistance: all.filter(l => sideOfShownPrice(l.price, price) === 'RESISTANCE').sort((a, b) => a.price - b.price),
+  };
+}
+/** A level's % distance from the shown price (both at two decimals); null without a shown price. */
+export function distanceFromShownPrice(levelPrice, price) {
+  if (!isShownPrice(price)) return null;
+  const p = toCents(price) / 100;
+  return ((toCents(levelPrice) / 100 - p) / p) * 100;
+}
 
 /**
  * Central data hook for the redesigned Research modal.
@@ -295,7 +324,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     fetchHistoricalOHLCV(symbol, apiTimeframe, fetchOpts)
       .then(data => {
         if (thisRequest.aborted) return;
-        if (!data || data.length === 0) {
+        if (!data || data.length === 0 || (apiTimeframe === '1d' && noChartBars1D(data))) {
           if (isSpectate) {
             // Spectate fallback: use cached 30m bomb data if available
             const bombCacheKey = `${symbol}_30m_bomb`;
@@ -394,9 +423,8 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   // its own key, so the tab and the toggle share it. On 1D the chart's own
   // series is the daily series (the main fetch sets it), so nothing extra is
   // fetched.
-  const levelsWanted = technicalActive || srRequested;
   useEffect(() => {
-    if (!symbol || !levelsWanted || apiTimeframe === '1d') return;
+    if (!symbol || !(technicalActive || srRequested) || apiTimeframe === '1d') return;
     if (dailySeries?.symbol === symbol) return;
     const cached = cacheRef.current[`${symbol}_1d`] || cacheRef.current[`${symbol}_1d_technical`];
     if (cached && cached.length > 0) {
@@ -407,7 +435,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     dailyInflightRef.current = symbol;
     fetchHistoricalOHLCV(symbol, '1d', { days: DAILY_HISTORY_DAYS, ...(isCrypto ? { type: 'crypto' } : {}) })
       .then(data => {
-        if (!data || data.length === 0) return;
+        if (!data || data.length === 0 || noChartBars1D(data)) return;
         cacheRef.current[`${symbol}_1d_technical`] = data;
         if (currentSymbolRef.current === symbol) setDailySeries({ symbol, data });
       })
@@ -415,7 +443,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       .finally(() => {
         if (dailyInflightRef.current === symbol) dailyInflightRef.current = null;
       });
-  }, [symbol, levelsWanted, apiTimeframe, dailySeries, isCrypto]);
+  }, [symbol, technicalActive, srRequested, apiTimeframe, dailySeries, isCrypto]);
 
   // Auto-refresh spectate mode every 15 seconds
   // Guards:
@@ -818,7 +846,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     if (isCrypto) retryOpts.type = 'crypto';
     fetchHistoricalOHLCV(symbol, apiTimeframe, Object.keys(retryOpts).length > 0 ? retryOpts : undefined)
       .then(data => {
-        if (!data || data.length === 0) {
+        if (!data || data.length === 0 || (apiTimeframe === '1d' && noChartBars1D(data))) {
           setError('No historical data available');
         } else {
           cacheRef.current[cacheKey] = isBomb ? { data, cachedAt: Date.now() } : data;

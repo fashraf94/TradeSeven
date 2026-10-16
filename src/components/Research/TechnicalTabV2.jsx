@@ -5,6 +5,7 @@ import { HOLO_COLORS } from '../../constants/holoTheme';
 import { SECTORS, CRYPTO_SECTOR } from '../../constants/sectors';
 import { getQuickSectorSummary } from '../../services/sectorDataService';
 import QuadrantBadge from './MoneyMap/QuadrantBadge';
+import { sideLevelsAt, distanceFromShownPrice } from './useResearchData';
 
 /**
  * TechnicalTabV2 — Enhanced 4-section collapsible technical analysis tab.
@@ -28,10 +29,12 @@ const TechnicalTabV2 = ({ asset, dailyData, indicators, levels, sessionDate, onL
   );
 };
 
-// A level's distance in percent, shown with its sign and unit.
+// A level's distance in percent, shown with its sign and unit — rounded
+// first, so a distance under 0.005% reads "0.00%", never "-0.00%".
 const formatDistance = (distance) => {
-  const n = Number(distance);
-  if (distance == null || distance === '' || !Number.isFinite(n)) return '';
+  if (distance == null || distance === '') return '';
+  const n = Number(Number(distance).toFixed(2));
+  if (!Number.isFinite(n)) return '';
   return `${n > 0 ? '+' : ''}${n.toFixed(2)}%`;
 };
 
@@ -64,18 +67,13 @@ const describeMacd = (macd, histogram) => {
 // Section A: Price Levels
 // ============================
 // detectLevels sides and measures levels from the newest daily close; the
-// rows below are placed and measured from the price the "Current" row shows
-// (BUILD_RULES §9). Without a shown price there is nothing to measure from.
+// rows below are sided and measured from the price the "Current" row shows
+// (BUILD_RULES §9) — the same helper sides the chart's S/R lines. Without a
+// shown price there is nothing to measure from.
 const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
-  const hasPrice = Number.isFinite(price) && price > 0;
-  const all = [...(levels?.support || []), ...(levels?.resistance || [])];
-  const support = hasPrice
-    ? all.filter(l => l.price < price).sort((a, b) => b.price - a.price) // closest first
-    : levels?.support || [];
-  const resistance = hasPrice
-    ? all.filter(l => l.price >= price).sort((a, b) => a.price - b.price) // closest first
-    : levels?.resistance || [];
-  const distanceOf = (level) => (hasPrice ? ((level.price - price) / price) * 100 : null);
+  const sided = sideLevelsAt(levels, price);
+  const support = sided?.support || [];
+  const resistance = sided?.resistance || [];
 
   const renderLevel = (level, idx) => {
     const isSupport = level.type === 'SUPPORT';
@@ -128,7 +126,7 @@ const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
             fontSize: '11px',
             color: 'rgba(255, 255, 255, 0.5)',
           }}>
-            {formatDistance(distanceOf(level))}
+            {formatDistance(distanceFromShownPrice(level.price, price))}
           </span>
         </div>
       </div>

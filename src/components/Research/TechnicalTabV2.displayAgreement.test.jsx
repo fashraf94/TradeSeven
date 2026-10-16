@@ -3,7 +3,9 @@
 // Research modal follow-up, display agreement (BUILD_RULES §9; build report
 // docs/audits/20261015_BUILD_RESEARCH_MODAL_F3_FOLLOWUP.md):
 //   D-1  a level's distance and its support/resistance side are measured from
-//        the price the "Current" row shows, not the newest daily close
+//        the price the "Current" row shows (at the two decimals shown), not
+//        the newest daily close
+//   D-3  only a cross on the newest bar reads "latest session"
 //   D-4  the first volume bar is labeled "Today" only when its bar is the
 //        current session's; otherwise "Last session · <its date>"
 // The REAL tab; only the sector-summary network call is stubbed.
@@ -98,6 +100,29 @@ describe('D-1 — levels are placed and measured from the displayed price', () =
     expect(levelRows().map((r) => r.distance)).toEqual(['-1.01%', '-3.03%']);
   });
 
+  it('sides and distances use the two-decimal figures shown: a level that reads "$475.60" against "$475.60" is resistance at "0.00%"', async () => {
+    const picked = [];
+    const levels = {
+      support: [{ price: 475.597, strength: 'WEAK', distanceFromCurrent: '-1.95' }, { price: 475.0, strength: 'WEAK', distanceFromCurrent: '-2.07' }],
+      resistance: [{ price: 475.6049, strength: 'WEAK', distanceFromCurrent: '-1.95' }],
+      currentPrice: 485.05,
+    };
+    await render({ asset: { symbol: 'AAPL', price: 475.6 }, levels, onLevelHighlight: (v) => picked.push(v) });
+    const rows = [...container.querySelectorAll('div')].filter((d) => d.style.cursor === 'pointer');
+    for (const r of rows) await act(async () => { r.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    // Both 475.597 and 475.6049 read "$475.60" — at the shown price, so resistance, "0.00%".
+    expect(picked.map((p) => p.type)).toEqual(['RESISTANCE', 'RESISTANCE', 'SUPPORT']);
+    expect(levelRows().map((r) => [r.price, r.distance])).toEqual([
+      ['$475.60', '0.00%'], ['$475.60', '0.00%'], ['$475.00', '-0.13%'],
+    ]);
+  });
+
+  it('a distance under 0.005% reads "0.00%", never "-0.00%"', async () => {
+    const levels = { support: [{ price: 475.0, strength: 'WEAK', distanceFromCurrent: '-2.07' }], resistance: [], currentPrice: 485.05 };
+    await render({ asset: { symbol: 'AAPL', price: 475.01 }, levels });
+    expect(levelRows().map((r) => r.distance)).toEqual(['0.00%']);
+  });
+
   it('no displayed price: the stored sides, and no distance (nothing on screen to measure from)', async () => {
     await render({ asset: { symbol: 'AAPL', price: 0 }, levels: CLOSE_LEVELS });
     const rows = levelRows();
@@ -126,6 +151,15 @@ function firstVolumeRow() {
   const row = grid.firstElementChild;
   return { label: row.firstElementChild.textContent, value: row.lastElementChild.textContent };
 }
+
+describe('D-3 — a cross one bar back keeps its count', () => {
+  it('negative → positive one bar before the newest → "Bullish cross · 1d ago" (only the newest bar is "latest session")', async () => {
+    const indicators = { rsi: 50, macd: { macd: 1, signal: 0.7, histogram: 0.3 }, macdHistogram: [0.3, 0.2, -0.1, -0.2, -0.3, -0.4], sma50: null };
+    await render({ indicators });
+    const label = [...container.querySelectorAll('span')].find((s) => s.textContent === 'MACD Signal');
+    expect(label.parentElement.textContent).toBe('MACD Signal Bullish cross · 1d ago');
+  });
+});
 
 describe('D-4 — the first volume bar is labeled by its own date', () => {
   it('newest bar dated the current session → "Today"', async () => {
