@@ -26,7 +26,7 @@ import useRecentCompletedAgentBattles from '../../hooks/useRecentCompletedAgentB
 import { deployAgent } from '../../services/agentDeploy';
 // Command Center repair R1: the one result → ceremony mapping, and the
 // ceremony-off path for the agent's already-running battle.
-import { deployResultFor, isExistingBattleResult } from './deployResult';
+import { deployResultFor, isExistingBattleResult, isOrphanedResult } from './deployResult';
 import { openExistingBattleDirectly } from './deployCeremony/existingBattle';
 // Record-only ceremony instrumentation (console; no writes, nothing gates on it).
 import * as ceremonyTiming from './deployCeremony/ceremonyTiming';
@@ -170,7 +170,11 @@ export default function CommandDashboardDesktop({
     if (ceremonyOn) {
       // deployResult.js: `existing` for the agent's running battle (R1); every
       // other outcome maps exactly as it did inline here before.
-      setDeployResult(deployResultFor(result));
+      // Founder ruling Q2: a deploy orphaned by an account change shows the former
+      // owner's deploy nothing — the ceremony closes rather than verify or offer
+      // Try again under the new account.
+      if (isOrphanedResult(result)) setCeremonyOpen(false);
+      else setDeployResult(deployResultFor(result));
     } else if (isExistingBattleResult(result)) {
       // R1 (ruling R-R1-2): with the ceremony off, the running game opens
       // directly — the owned server document the server named, never a creation,

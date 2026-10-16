@@ -11,12 +11,22 @@
 // `error` (nothing failed). `created` and every other outcome map exactly as
 // before: `success` → { status: 'success', agentBattleId }, the rest → the
 // error shape the ceremony's recovered-reveal gate reads.
+//
+// Founder ruling Q2 (R1 amendment): an `orphaned` outcome — the signed-in
+// account changed during the deploy — is not mapped at all. The shells close
+// the ceremony instead (isOrphanedResult), so nothing about the former owner's
+// deploy is shown, verified or retried under the new account (spec §5.2, §5.4).
 
 import { DEPLOY_OUTCOMES } from '../../constants/deployOutcomes';
 
 /** The deploy found the agent's running battle instead of creating one. */
 export function isExistingBattleResult(result) {
   return result?.outcome === DEPLOY_OUTCOMES.EXISTING_BATTLE;
+}
+
+/** The signed-in account changed during the deploy: its result belongs to nobody on screen. */
+export function isOrphanedResult(result) {
+  return result?.outcome === DEPLOY_OUTCOMES.ORPHANED;
 }
 
 /** A deployAgent result → the ceremony's `deployResult`. */

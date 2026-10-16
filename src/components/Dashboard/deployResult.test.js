@@ -7,7 +7,7 @@
 // parity reference.
 
 import { describe, it, expect } from 'vitest';
-import { deployResultFor, isExistingBattleResult } from './deployResult';
+import { deployResultFor, isExistingBattleResult, isOrphanedResult } from './deployResult';
 import { DEPLOY_REFUSAL_CODE, DUE_DEPLOY_LINE } from '../../constants/hypothesisRecords';
 
 // CommandDashboard.jsx / CommandDashboardDesktop.jsx at main 078fe895, the
@@ -54,6 +54,19 @@ describe('deployResultFor: created and every other outcome map exactly as before
     expect(deployResultFor(RESULTS['refused (review due)'])).toEqual({
       status: 'error', error: DEPLOY_REFUSAL_CODE, details: DUE_DEPLOY_LINE, httpStatus: 409, postIssued: true, battleId: null,
     });
+  });
+});
+
+describe('isOrphanedResult: the shells close the ceremony on it (founder ruling Q2)', () => {
+  it('true only for the orphaned outcome', () => {
+    expect(isOrphanedResult(RESULTS['orphaned (before the POST)'])).toBe(true);
+    expect(isOrphanedResult(RESULTS['orphaned (after the POST)'])).toBe(true);
+    for (const [label, r] of Object.entries(RESULTS)) {
+      if (!label.startsWith('orphaned')) expect(isOrphanedResult(r), label).toBe(false);
+    }
+    expect(isOrphanedResult({ outcome: 'existing_battle' })).toBe(false);
+    expect(isOrphanedResult({ success: false, postIssued: true })).toBe(false);
+    expect(isOrphanedResult(null)).toBe(false);
   });
 });
 

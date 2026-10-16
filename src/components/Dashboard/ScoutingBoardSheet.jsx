@@ -17,6 +17,7 @@ import { Zap, Star } from 'lucide-react';
 import EquipSheet from './EquipSheet';
 import { CMD, alpha, readableOn, Mono, Eyebrow, ErrorBanner } from './commandUI';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
+import { isExistingBattleResult } from './deployResult';
 
 // A ranked / in-universe row: symbol · (★ if equipped) · chip · sector · score.
 function BoardRow({ row, accent, showStar }) {
@@ -126,7 +127,9 @@ export default function ScoutingBoardSheet({
   const footer = (
     <button
       type="button"
-      onClick={async () => { const r = await onDeploy?.(); if (r?.success) onClose?.(); }}
+      // Closes on a created deploy, and (founder ruling Q4, R1 amendment) on the
+      // agent's already-running battle, as it did before R1 typed that answer.
+      onClick={async () => { const r = await onDeploy?.(); if (r?.success || isExistingBattleResult(r)) onClose?.(); }}
       disabled={deployBusy}
       style={{
         width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,

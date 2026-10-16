@@ -59,7 +59,8 @@ export function stockAdmissionLine(data, now = new Date()) {
 // R1 (ruling R-R1-3) — the two 429s decide.js sends itself, keyed by their exact
 // words: the 120 s deploy lock and the per-agent 2-minute cooldown. Any other
 // 429 (the shared rate limiter in front of the handler sends one) is refused
-// with no reason.
+// with no reason; the limiter's own wait, in seconds, rides along as
+// `retryAfter` (founder ruling Q3, below).
 const REFUSAL_REASONS_429 = Object.freeze({
   'Deploy already in progress': 'in_progress',
   'Please wait 2 minutes between deploys': 'cooldown',
@@ -67,11 +68,12 @@ const REFUSAL_REASONS_429 = Object.freeze({
 
 // R1 (ruling R-R1-3) — which JSON failures are typed DEFINITIVE. Every 4xx the
 // endpoint sends is a refusal before anything was created. Every 503 it sends
-// is typed refused by the ruling: the pricing gate and the missing rankings
-// answer before any battle write; the stock-admission refusal does too, except
-// one case the R1 review found (L4-1) — `reason: 'corrected_creation_failed'`
-// can follow a commit whose acknowledgement was lost. It stays refused here,
-// as ruled, pending the founder's answer in the R1 build report. Every other
+// is typed refused: the pricing gate and the missing rankings answer before any
+// battle write, and so does the stock-admission refusal — except one reason.
+// `reason: 'corrected_creation_failed'` can follow a battle commit whose
+// acknowledgement was lost (review L4-1, proven on the real Firestore SDK), so
+// by founder ruling Q1 it is uncertain, its player line still in `details`
+// (mayFollowCommit, below). Every other
 // 5xx stays uncertain: the single catch's 500 can follow the battle commit, and
 // decide.js sends no 502/504 itself — those are gateway or timeout statuses,
 // which can arrive after a commit too (review L4-5: the ceremony's attribution
@@ -79,6 +81,8 @@ const REFUSAL_REASONS_429 = Object.freeze({
 // than the ceremony's). A non-JSON body proves nothing about who answered and
 // is uncertain whatever its status.
 const isDefinitiveRefusal = (status) => (status >= 400 && status < 500) || status === 503;
+// Founder ruling Q1 (R1 amendment): the one 503 reason that can follow a commit.
+const mayFollowCommit = (status, data) => status === 503 && data?.reason === 'corrected_creation_failed';
 
 // A real server id: a nonempty string with no surrounding space — the same rule
 // the hub's translator applies (attemptVocabulary.js realId).
@@ -102,8 +106,8 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   // here: no token or clone for another account, no POST, no target report, no
   // handoff. A battle the server may already have created for the captured
   // owner is left exactly as it is. How a caller displays `orphaned` is the
-  // caller's: the shells map it like any failure, by the R1 shell rule (review
-  // L2-2, a founder question in the R1 build report).
+  // caller's: the shells close the ceremony on it, showing the former owner's
+  // deploy nothing (founder ruling Q2; review L2-2).
   const capturedUid = signedInUid();
   const isCurrent = options?.isCurrent ?? null;
   const stillOwned = () => {
@@ -282,7 +286,7 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
     const refusalLine = data.error === DEPLOY_REFUSAL_CODE && typeof data.message === 'string' ? data.message
       : stockAdmissionLine(data);
     console.error('[Deploy] Failed:', status, data.error, refusalLine || data.details || '');
-    const refused = isDefinitiveRefusal(status);
+    const refused = isDefinitiveRefusal(status) && !mayFollowCommit(status, data);
     const reason = refused && status === 429 ? REFUSAL_REASONS_429[data.error] : undefined;
     return {
       outcome: refused ? DEPLOY_OUTCOMES.REFUSED : DEPLOY_OUTCOMES.UNCERTAIN,
@@ -291,6 +295,10 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
       // The P1b refusal's typed code rides beside its line (spec §5.2: Forge action, no auto retry).
       ...(refused && data.error === DEPLOY_REFUSAL_CODE ? { code: DEPLOY_REFUSAL_CODE } : {}),
       ...(reason ? { reason } : {}),
+      // Founder ruling Q3 (R1 amendment): the shared rate limiter's 429 body names
+      // its wait in seconds (api/_utils/rateLimit.js). Forwarded as given, from the
+      // body only, for the hub's cooldown (spec §5.4); nothing reads it today.
+      ...(Number.isFinite(data.retryAfter) ? { retryAfter: data.retryAfter } : {}),
     };
   }
 

@@ -139,15 +139,37 @@ describe('the result table: every path, every legacy field, its outcome', () => 
     });
   });
 
-  it('the rate limiter\'s 429 (rateLimit.js) is refused with no reason: neither the lock nor the cooldown', async () => {
+  it('the rate limiter\'s 429 (rateLimit.js) is refused with no reason; its wait in seconds rides along as retryAfter (founder ruling Q3)', async () => {
     stubFetch(json(429, { success: false, error: 'Rate limit exceeded', message: 'Too many requests. Please try again in 41 seconds.', retryAfter: 41 }));
     const out = await run(vi.fn());
     expect(out).toEqual({
       outcome: 'refused', success: false, status: 429, postIssued: true, httpStatus: 429,
-      error: 'Rate limit exceeded', details: undefined, errorPhase: undefined,
+      error: 'Rate limit exceeded', details: undefined, errorPhase: undefined, retryAfter: 41,
     });
     expect(out).not.toHaveProperty('reason');
   });
+
+  it.each([['a string', '41'], ['null', null], ['NaN (sent as null)', NaN], ['absent', undefined]])(
+    'a limiter body whose retryAfter is %s forwards none (founder ruling Q3)', async (_label, retryAfter) => {
+      stubFetch(json(429, { success: false, error: 'Rate limit exceeded', retryAfter }));
+      expect(await run(vi.fn())).not.toHaveProperty('retryAfter');
+    },
+  );
+
+  it('503 stock admission with reason corrected_creation_failed is uncertain — it can follow a commit (founder ruling Q1); its player line is kept', async () => {
+    stubFetch(json(503, { error: 'Stock admission unavailable', reason: 'corrected_creation_failed', retriable: true }));
+    expect(await run(vi.fn())).toEqual({
+      outcome: 'uncertain', success: false, status: 503, postIssued: true, httpStatus: 503,
+      error: 'Stock admission unavailable', details: 'Measured scoring could not start this battle just now. Try again in a minute.', errorPhase: undefined,
+    });
+  });
+
+  it.each(['prior_corrected_battle_requires_settlement', 'provider_failure', 'creation_selection_changed', 'publication_window_not_open'])(
+    'every other stock-admission reason (%s) stays refused (founder ruling Q1 names one reason)', async (reason) => {
+      stubFetch(json(503, { error: 'Stock admission unavailable', reason, retriable: true }));
+      expect((await run(vi.fn())).outcome).toBe('refused');
+    },
+  );
 
   it('503 stock admission: refused, with its player line', async () => {
     stubFetch(json(503, { error: 'Stock admission unavailable', reason: 'publication_window_not_open', retriable: true }));
@@ -478,6 +500,7 @@ describe('the hub\'s translator reads every R1 result as spec §5.2 says', () =>
     ['a JSON 500', json(500, { error: 'Failed to generate portfolio' })],
     ['a non-JSON 502', page(502, '<html>')],
     ['a 200 naming no battle', json(200, { success: true })],
+    ['the stock 503 that can follow a commit (founder ruling Q1)', json(503, { error: 'Stock admission unavailable', reason: 'corrected_creation_failed' })],
   ])('%s → uncertain, lost contact, never typed-away as untyped', async (_label, response) => {
     const t = await translated(response);
     expect([t.phase, t.ceremony.errorTone, t.detail.kind]).toEqual(['uncertain', 'lost_contact', 'uncertain']);

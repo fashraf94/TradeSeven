@@ -45,9 +45,9 @@ describe.each(SHELLS)('%s — R1 deploy wiring', (shell) => {
     expect(handleDeploy(src)).toContain('await deployAgent(agent.id, onCreateAgentBattle, reportDeployTarget);');
   });
 
-  it('ceremony on: the result goes through deployResultFor, and no inline mapping is left behind', () => {
+  it('ceremony on: an orphaned deploy closes the ceremony (founder ruling Q2); every other result goes through deployResultFor; no inline mapping is left behind', () => {
     const body = handleDeploy(src);
-    expect(body).toMatch(/if \(ceremonyOn\) \{\s*setDeployResult\(deployResultFor\(result\)\);\s*\}/);
+    expect(body).toMatch(/if \(ceremonyOn\) \{\s*if \(isOrphanedResult\(result\)\) setCeremonyOpen\(false\);\s*else setDeployResult\(deployResultFor\(result\)\);\s*\}/);
     expect(body).not.toContain("status: 'success'");
     expect(body).not.toContain("status: 'error'");
   });
@@ -83,7 +83,7 @@ describe.each(SHELLS)('%s — R1 deploy wiring', (shell) => {
   });
 
   it('imports the mapping and the opener from their R1 modules', () => {
-    expect(src).toContain("import { deployResultFor, isExistingBattleResult } from './deployResult';");
+    expect(src).toContain("import { deployResultFor, isExistingBattleResult, isOrphanedResult } from './deployResult';");
     expect(src).toContain("import { openExistingBattleDirectly } from './deployCeremony/existingBattle';");
   });
 });
