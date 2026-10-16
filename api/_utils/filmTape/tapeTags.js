@@ -360,18 +360,23 @@ export function tagDay({ inputs, checks, actions, seed = null, trace = null }) {
 /**
  * BA-20 — the tags section's coverage: it follows the inputs `stalled` reads
  * (the checks and the evidence; RC-1: the checks' records, when a holding is
- * on the recorded basis), never the bars.
+ * on the recorded basis), never the bars. Amendment D RD-5: the evidence is
+ * read — its section's status counts, and `checks.evidence` is a source —
+ * only when some holding of the day is on the recomputed basis (`recomputed`);
+ * a recorded holding's count, age verdict and winner input are its records.
+ * The checks section always counts. The failure paths, which tag nothing,
+ * keep the full list of the inputs the tagger reads (the default).
  */
 const MAX_DATE_MS = 8.64e15;
-function tagsCoverage(doc, { failure = null, pausedChecks = 0, recorded = false } = {}) {
+function tagsCoverage(doc, { failure = null, pausedChecks = 0, recorded = false, recomputed = true } = {}) {
   const span = (() => {
     const ms = tagChecks(doc?.checks).map((c) => toMs(c.at)).filter((v) => v !== null && Math.abs(v) <= MAX_DATE_MS).sort((a, b) => a - b);
     return ms.length ? { from: new Date(ms[0]).toISOString(), to: new Date(ms[ms.length - 1]).toISOString() } : null;
   })();
-  const sources = ['checks', 'checks.evidence', 'checks.risk', 'actions', ...(recorded ? ['checks.stagnation'] : [])];
+  const sources = ['checks', ...(recomputed ? ['checks.evidence'] : []), 'checks.risk', 'actions', ...(recorded ? ['checks.stagnation'] : [])];
   if (failure) return coverageOf('unavailable', { span, sources, note: failure });
   const reasons = [];
-  for (const section of ['checks', 'evidence']) {
+  for (const section of recomputed ? ['checks', 'evidence'] : ['checks']) {
     const status = doc?.coverage?.[section]?.status;
     if (status !== 'complete') reasons.push(`the ${section} section is ${status ?? 'missing'}`);
   }
@@ -418,6 +423,8 @@ export function tagTapeDay({ battle, ticks = [], doc, dialEnabled = TEMPO_DIAL_E
       coverage: tagsCoverage(doc, {
         pausedChecks: pausedCheckCount(doc?.checks, doc?.actions, r.inputs.holdingBasis),
         recorded: Object.values(r.inputs.holdingBasis).includes('recorded'),
+        // RD-5: a day with no recomputed holding (none held, or every one recorded) reads no evidence
+        recomputed: Object.values(r.inputs.holdingBasis).includes('recomputed'),
       }),
     };
   } catch (err) {

@@ -389,3 +389,65 @@ describe('review X5-2 / X5-4 — the basis rule\'s remaining branches', () => {
     expect(() => tagger.tagDay({ inputs: tampered, checks: tape.checks, actions: tape.actions })).toThrow('tags_inputs_mismatch');
   });
 });
+
+// ── Amendment D RD-5 — coverage on a recorded day ──────────────────────────
+// The evidence section's status counts toward coverage.tags (and
+// `checks.evidence` is a source) only when some holding of the day is on the
+// recomputed basis. The checks section always counts. Within one assembly an
+// evidence reason always comes with a checks reason (tapeAssemble.js: the
+// "tickMs unavailable where the entry is absent" reason), so these rows set the
+// two sections' statuses directly, as B1's own coverage rows do (tapeTags.test.js).
+describe('Amendment D RD-5 — the evidence counts only when some holding is recomputed', () => {
+  const DAY = {
+    recorded: [1, 2, 3, 4].map((seq) => rrow(seq, (seq - 1) * 15, { rec: { ACN: R(seq) }, px: { ACN: 300 } })),
+    // MSFT carries no record: it alone is recomputed
+    mixed: [1, 2, 3, 4].map((seq) => rrow(seq, (seq - 1) * 15, { held: ['ACN', 'MSFT'], rec: { ACN: R(seq) }, px: { ACN: 300, MSFT: 420 } })),
+    recomputed: [1, 2, 3, 4].map((seq) => rrow(seq, (seq - 1) * 15, { px: { ACN: 300 + (seq % 2) * 0.01 } })),
+  };
+  const tagsFor = (checks, checksStatus, evidenceStatus) => tagger.tagTapeDay({
+    battle: { agentContext: { archetype: 'momentum_chaser' } }, dialEnabled: true,
+    doc: { checks, actions: [], coverage: { checks: { status: checksStatus }, evidence: { status: evidenceStatus } } },
+  });
+
+  it('a FULLY RECORDED day with partial evidence: complete — no longer unavailable — and the evidence is not a source', () => {
+    const r = tagsFor(DAY.recorded, 'complete', 'partial');
+    expect(r.tags.inputs.holdingBasis).toEqual({ ACN: 'recorded' });
+    expect(r.coverage).toMatchObject({ status: 'complete', note: null, sources: ['checks', 'checks.risk', 'actions', 'checks.stagnation'] });
+    expect(r.tags.items.map((i) => i.tickSeq)).toEqual([3, 4]);
+  });
+
+  it('a MIXED day (MSFT recomputed) with partial evidence: unavailable, naming the evidence, which is a source', () => {
+    const r = tagsFor(DAY.mixed, 'complete', 'partial');
+    expect(r.tags.inputs.holdingBasis).toEqual({ ACN: 'recorded', MSFT: 'recomputed' });
+    expect(r.coverage).toMatchObject({
+      status: 'unavailable', note: 'stalled unavailable: the evidence section is partial',
+      sources: ['checks', 'checks.evidence', 'checks.risk', 'actions', 'checks.stagnation'],
+    });
+  });
+
+  it('a FULLY RECOMPUTED day with partial evidence: unavailable, exactly as B1.1 wrote it', () => {
+    const r = tagsFor(DAY.recomputed, 'complete', 'partial');
+    expect(r.tags.inputs.holdingBasis).toEqual({ ACN: 'recomputed' });
+    expect(r.coverage).toEqual({
+      status: 'unavailable', span: { from: atOf(0), to: atOf(45) },
+      sources: ['checks', 'checks.evidence', 'checks.risk', 'actions'], preservedFrom: null, note: 'stalled unavailable: the evidence section is partial',
+    });
+  });
+
+  it('a fully recorded day whose CHECKS are partial: still unavailable, naming the checks alone', () => {
+    const r = tagsFor(DAY.recorded, 'partial', 'partial');
+    expect(r.coverage).toMatchObject({ status: 'unavailable', note: 'stalled unavailable: the checks section is partial' });
+    expect(r.coverage.sources).not.toContain('checks.evidence');
+  });
+
+  it('a day that holds nothing has no recomputed holding: only the checks count', () => {
+    const r = tagsFor([{ key: 'seq:1', rowSource: 'tick', tickSeq: 1, at: atOf(0), state: 'completed', risk: null, evidence: null }], 'complete', 'unavailable');
+    expect(r.tags.inputs.holdingBasis).toEqual({});
+    expect(r.coverage).toMatchObject({ status: 'complete', sources: ['checks', 'checks.risk', 'actions'] });
+  });
+
+  it('on a real tape: the fully recorded acceptance day names no evidence source; the same day without records does', async () => {
+    expect((await writeFor(await DAYS.acceptance(true))).coverage.tags.sources).toEqual(['checks', 'checks.risk', 'actions', 'checks.stagnation']);
+    expect((await writeFor(await DAYS.acceptance(false))).coverage.tags.sources).toEqual(['checks', 'checks.evidence', 'checks.risk', 'actions']);
+  });
+});
