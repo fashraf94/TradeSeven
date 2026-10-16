@@ -106,6 +106,8 @@ export default async function handler(req, res) {
       etDate: summary.etDate, battles: summary.battles, written: summary.written?.length ?? 0,
       unchanged: summary.unchanged?.length ?? 0, skippedMode: summary.skippedMode?.length ?? 0, invalid: summary.invalid?.length ?? 0,
       failed: summary.failed?.length ?? 0, notReached: summary.notReached?.length ?? 0, skipped: summary.skipped ?? false,
+      // B1.1 (RC-3): the late-filed-meeting re-merges of previous sessions — counts only
+      remerged: summary.remerged?.length ?? 0, remergeUnchanged: summary.remergeUnchanged?.length ?? 0, remergeFailed: summary.remergeFailed?.length ?? 0,
     }));
     return res.status(200).json({ mode: 'close', ...summary, ms: Date.now() - startMs });
   } catch (err) {

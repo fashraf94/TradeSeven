@@ -37,16 +37,30 @@
 // unchanged. A refresh re-reads every written day of its range, so a refresh
 // stopped by the time floor resumes by naming a range that starts at its
 // `resumeFrom` date.
+//
+// LATE-FILED MEETINGS (Film Room B1.1, Amendment C RC-3): a meeting is filed
+// into the battle's history at the check AFTER it resolves, so one created
+// late on session P can reach the history only on the next session D, after
+// P's tape was written. After a battle's day D is handled, the pass looks at
+// P, D's previous session in the battle's validated timeline: from the battle
+// document alone (buildMeetings over P's bounds — no read) it lists the
+// meetings now created on P; only when there is one does it read P's tape,
+// and only when a listed meeting's key is missing from P's stored `meetings`
+// does it re-merge P with the same writer (writeTapeDay: merge-monotone, the
+// candle pass not reopened — a meeting-only symbol is outside its input
+// fingerprint, so a late meeting's legs get no bars, RB-2). A failed re-merge
+// is caught and counted: P's tape stays as it was (the writer's transaction
+// never committed), P is never marked failed, and D's write is unaffected.
 
 import { findActiveAgentBattles } from '../agentBattleService.js';
 import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
-import { writeTapeDay, markCloseFailed } from './writeTapeDay.js';
+import { writeTapeDay, markCloseFailed, isTieredBattle } from './writeTapeDay.js';
 import { resolveBattleResult } from './battleResult.js';
-import { buildBattleBlock } from './tapeAssemble.js';
+import { buildBattleBlock, buildMeetings } from './tapeAssemble.js';
 import { stableStringify } from './tapeMerge.js';
-import { readEvalRunsForDay, readTape } from './tapeSources.js';
+import { readEvalRunsForDay, readTape, tapeRef } from './tapeSources.js';
 import { etDayBounds, etDateOf, sessionDatesBetween, sessionFor, nextCalendarDate } from './tapeTime.js';
-import { isBattleDay, completionsSinceMs, tapeDateFor, isEtDate, isSessionDate } from '../../../src/utils/tapeSchedule.js';
+import { isBattleDay, completionsSinceMs, tapeDateFor, isEtDate, isSessionDate, tradingTimeline } from '../../../src/utils/tapeSchedule.js';
 
 export const TIME_FLOOR_MS = 30_000;
 /** The longest range one backfill request may name (sessions). */
@@ -93,6 +107,50 @@ async function safeMarkFailed(db, battle, etDate, err, clock, summary) {
   }
 }
 
+/** RC-3 — the session before `etDate` in the battle's validated timeline (tradingTimeline), or null: its first day, or a timeline that does not validate. */
+export function previousTapeDay(battle, etDate) {
+  const days = tradingTimeline(battle);
+  const i = days ? days.indexOf(etDate) : -1;
+  return i > 0 ? days[i - 1] : null;
+}
+
+/** RC-3 — the keys of the meetings the battle's history now holds as created on `etDate`, from the battle document alone (the writer's own builder over that day's bounds). */
+export function meetingKeysOn(battle, etDate) {
+  return buildMeetings({ battle, bounds: etDayBounds(etDate) }).rows.map((m) => m.key);
+}
+
+/**
+ * RC-3 — after day D of `battle` is handled: re-merge its previous session P
+ * when a meeting created on P has since been filed and P's tape lacks it.
+ * Never throws; every outcome is one summary row (counted in the log line).
+ * `remergeUnchanged` rows say why P was left as it was: `already_copied`
+ * (P's stored meetings hold every key), `not_written` (P has no written tape
+ * to merge into — the backfill is that day's path), `writer_unchanged` (the
+ * writer found nothing to change, e.g. the size budget drops the meetings).
+ */
+async function remergePreviousDay({ db, battle, etDate, clock, write, summary }) {
+  let P = null;
+  try {
+    if (!isTieredBattle(battle)) return;
+    P = previousTapeDay(battle, etDate);
+    if (!P || !isEtDate(P) || !isSessionDate(P)) return;
+    const keys = meetingKeysOn(battle, P);
+    if (!keys.length) return;                                   // no candidate: P is never read
+    // read directly, not through readTape (which reads a failed read as no tape): an unreadable P is a failed re-merge, never `not_written`
+    const snap = await tapeRef(db, battle.id, P).get();
+    const stored = snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
+    if (stored?.passes?.close?.status !== 'written') { summary.remergeUnchanged.push({ battleId: battle.id, etDate: P, reason: 'not_written' }); return; }
+    const have = (Array.isArray(stored.meetings) ? stored.meetings : []).map((m) => m?.key);
+    if (keys.every((k) => have.includes(k))) { summary.remergeUnchanged.push({ battleId: battle.id, etDate: P, reason: 'already_copied' }); return; }
+    const r = await write(battle.id, P, { db, now: clock(), battle });
+    if (r.status === 'written') summary.remerged.push({ battleId: battle.id, etDate: P, bytes: r.bytes });
+    else summary.remergeUnchanged.push({ battleId: battle.id, etDate: P, reason: 'writer_unchanged' });
+  } catch (err) {
+    // Counted, never marked: P's tape stays as it was, and no failure record is written for it.
+    summary.remergeFailed.push({ battleId: battle.id, etDate: P, reason: String(err?.message || err).slice(0, 300) });
+  }
+}
+
 /**
  * The nightly pass for `etDate` (default: the ET date at `clock()`).
  *
@@ -120,7 +178,11 @@ export async function runClosePass({ db, clock = Date.now, startMs = clock(), bu
   for (const b of [...active, ...completed]) if (b?.id && !byId.has(b.id)) byId.set(b.id, b);
   const battles = [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
 
-  const summary = { etDate: date, battles: battles.length, written: [], unchanged: [], skippedMode: [], notBattleDay: [], invalid: [], failed: [], notReached: [] };
+  const summary = {
+    etDate: date, battles: battles.length, written: [], unchanged: [], skippedMode: [], notBattleDay: [], invalid: [], failed: [], notReached: [],
+    // RC-3: the previous sessions this pass re-merged for a late-filed meeting, left as they were, or failed to re-merge
+    remerged: [], remergeUnchanged: [], remergeFailed: [],
+  };
   for (const [i, battle] of battles.entries()) {
     if (budgetMs - elapsedFrom(startMs, clock) < TIME_FLOOR_MS) {
       summary.notReached = battles.slice(i).map((b) => b.id);
@@ -140,15 +202,17 @@ export async function runClosePass({ db, clock = Date.now, startMs = clock(), bu
       if (target !== date && completionRecorded(await readTape(db, battle.id, target), battle)) {
         // A final-day re-merge whose completion the tape already records.
         summary.unchanged.push(battle.id);
-        continue;
+      } else {
+        const r = await write(battle.id, target, { db, now: clock(), battle, runsRead: target === date ? runsRead : undefined });
+        if (r.status === 'skipped_mode') summary.skippedMode.push(battle.id);
+        else if (r.status === 'unchanged') summary.unchanged.push(battle.id);
+        else summary.written.push({ battleId: battle.id, etDate: target, bytes: r.bytes });
       }
-      const r = await write(battle.id, target, { db, now: clock(), battle, runsRead: target === date ? runsRead : undefined });
-      if (r.status === 'skipped_mode') summary.skippedMode.push(battle.id);
-      else if (r.status === 'unchanged') summary.unchanged.push(battle.id);
-      else summary.written.push({ battleId: battle.id, etDate: target, bytes: r.bytes });
     } catch (err) {
       await safeMarkFailed(db, battle, target, err, clock, summary);
     }
+    // RC-3: day D is handled — its previous session may owe a late-filed meeting (never throws).
+    await remergePreviousDay({ db, battle, etDate: target, clock, write, summary });
   }
   return summary;
 }
