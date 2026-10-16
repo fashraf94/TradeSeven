@@ -18,6 +18,22 @@
 // One replacement is the build's, not the spec's: the confirmed Deploy line
 // says the game appears "in Games", not the design's "above", because the
 // tablet and stacked compositions put Deploy above Games (S1 review L1-6).
+//
+// Slice S2a (the deploy vocabulary, spec §3, §3.1, §5.2) adds the words of
+// every eligibility and attempt display state. The spec's own: "Switching
+// account…", "Create your agent first", "Eligibility unavailable" + Retry,
+// "Ready to deploy · as of {time}", "Finishing deployment", "Deployed",
+// "Battle confirmed", "Already running" + Open game, "Couldn't confirm the
+// deploy", "Sign in required". Two are the shipped ceremony's
+// (CeremonyError.jsx), so the hub and the overlay say the same thing:
+// "Deployment failed" and "Couldn't confirm the deploy". The build's own,
+// where the spec names a state but no words: the agent's loading state says
+// "Checking eligibility…" like the poll's (eligibility cannot be known
+// before the agent, and one line avoids a flicker of two), its error "Agent
+// unavailable" + Retry, a block with no reason (concurrency off, whose
+// helper gives none) "Unavailable", the cooldown "Next deploy at {time}",
+// the in-flight control labels, "Verifying deployment…", "Check
+// deployment", "Enter battle", and the as-of and refresh notes.
 // No string claims learning, improvement, intelligence or an earned tier,
 // counts anything the hub does not hold, or says "since your last visit"
 // (§8.2, §11.3) — the copy guard pins that.
@@ -151,28 +167,60 @@ export const HUB_COPY = Object.freeze({
     /** Spec §5.5, exactly. The shipped hold is 1,300 ms (useHoldToDeploy.js HOLD_MS). */
     pointerHelp: 'Hold for 1.3 s. Release before the hold completes to cancel.',
     keyboardHelp: 'Or press Enter or Space to deploy now.',
+    holdVerifying: 'Verifying…',
+    holdFinishing: 'Finishing…',
     retry: 'Retry',
     openGame: 'Open game',
     /** The strip's Open game beside the hold (a live game with deploy still ready), so both fit one 63–69 px row. */
     openGameShort: 'Open',
+    /** An attempt's actions (spec §5.2, §5.4). S2b wires them; until then each is disabled. */
+    enterBattle: 'Enter battle',
+    checkDeployment: 'Check deployment',
+    openForge: 'Open in the Forge',
     /**
      * The Deploy card's and the strip's words for each display state, in the
-     * spec §3.1 / §5 vocabulary (C1, C3). S1 renders `checking`; the others
-     * are the design's states, reached only from fixtures until S2a/S2b.
+     * spec §3.1 / §5.2 vocabulary (C1, C3): the eligibility states, then the
+     * attempt's display words. Every key is a DISPLAY state; none is a stored
+     * provider phase but `existing` and `uncertain`, which §5.2 uses as both.
      */
     states: Object.freeze({
-      checking: 'Checking eligibility…',
-      ready: 'Ready to deploy',
-      blocked: (reason) => `Unavailable · ${reason}`,
+      signed_out: 'Sign in required',
+      account_transition: 'Switching account…',
+      cooldown: (time) => `Next deploy at ${time}`,
+      loading_agent: 'Checking eligibility…',
+      agent_error: 'Agent unavailable',
+      no_agent: 'Create your agent first',
+      blocked: (reason) => (reason ? `Unavailable · ${reason}` : 'Unavailable'),
       eligibility_error: 'Eligibility unavailable',
+      checking: 'Checking eligibility…',
+      ready_stale: (time) => (time ? `Ready to deploy · as of ${time}` : 'Ready to deploy'),
+      ready: 'Ready to deploy',
       submitting: 'Submitting deployment…',
+      verifying: 'Verifying deployment…',
+      finishing: 'Finishing deployment',
       confirmed: 'Deployed',
+      existing: 'Already running',
+      failed: 'Deployment failed',
+      uncertain: 'Couldn’t confirm the deploy',
     }),
+    /** A recovered confirmation: the battle is owned and admitted, but nothing proves this request created it (spec §5.2). */
+    confirmedRecovered: 'Battle confirmed',
     /** The Deploy card's longer line for the in-flight states. */
     cardSubmitting: 'Submitting once · waiting for the game to be created',
     cardConfirmed: 'Deployed · the game appears in Games once its record arrives',
     /** The strip's second line while a live game holds the first. */
-    blockedBehindGame: (reason) => `Deploy unavailable · ${reason}`,
+    blockedBehindGame: (reason) => (reason ? `Deploy unavailable · ${reason}` : 'Deploy unavailable'),
+    /** The same line when the block is the last successful check's (spec §3.1 row 6: as-of if stale). */
+    blockedStaleBehindGame: (time) => (time ? `Deploy unavailable · as of ${time}` : 'Deploy unavailable'),
+    /** The freshness notes (spec §3.1): a refresh in flight, and a refresh that failed. */
+    refreshing: (time) => (time ? `Refreshing · as of ${time}` : 'Refreshing'),
+    refreshFailed: 'Couldn’t refresh',
+    staleAsOf: (time) => (time ? `As of ${time} · couldn’t refresh` : 'Couldn’t refresh'),
+  }),
+
+  /** A clock time in ET, the market's clock (hub/hubDate.js formatHubTime). */
+  time: Object.freeze({
+    et: (clock) => `${clock} ET`,
   }),
 
   strip: Object.freeze({

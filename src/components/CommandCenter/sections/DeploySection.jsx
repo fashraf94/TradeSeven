@@ -1,11 +1,17 @@
 // src/components/CommandCenter/sections/DeploySection.jsx
 //
-// Command Center hub, slice S1 — the Deploy card on the desktop, tablet and
-// stacked compositions (the design's DeploySection, ff-side.jsx; spec V1.2
-// §3.1, §5.5). S1 renders "Send Shadow into a game" with "Checking
-// eligibility…", the shipped hold control disabled with no onComplete, and the
-// spec's pointer and keyboard helper lines. The other display states come
-// from the layout fixtures until S2a/S2b (hub/deployDisplay.js).
+// Command Center hub — the Deploy card on the desktop, tablet and stacked
+// compositions (the design's DeploySection, ff-side.jsx; spec V1.2 §3.1,
+// §5.5). Slice S1 laid it down: "Send Shadow into a game", the shipped hold
+// control disabled with no onComplete, and the spec's pointer and keyboard
+// helper lines. Slice S2a renders every display state of hub/deployDisplay.js:
+// the state's line with its one action, and the freshness note under it. In
+// production the selector reads S2a's unresolved inputs as "Checking
+// eligibility…"; S3 and S2b supply real ones.
+//
+// Every action goes through `onAction(kind)`; with no handler (S2a wires none)
+// each renders disabled. A read's Retry and an attempt's Retry are different
+// kinds, so wiring one can never start the other.
 //
 // The state line is not a second live region: the stage's status line is the
 // hub's one (spec §10).
@@ -19,10 +25,21 @@ import HubHold from './HubHold';
 
 const LINE_ICON_COLOR = { lock: C.ink3, info: C.copper, check: C.pos };
 
-export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoadout, onRetry }) {
+function ActionLink({ action, onAction }) {
+  if (!action) return null;
+  return (
+    <>
+      <span>{COPY.sep}</span>
+      <HubLink onPress={onAction ? () => onAction(action.kind) : undefined}>{action.label}</HubLink>
+    </>
+  );
+}
+
+export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoadout, onAction }) {
   const display = deployDisplay(deploy);
-  const tinted = display.displayState === 'ready';
+  const tinted = display.displayState === 'ready' || display.displayState === 'ready_stale';
   const line = display.cardLine;
+  const note = display.cardNote;
   return (
     <Section label={COPY.deploy.label} data-hub-section="deploy">
       <Card
@@ -44,17 +61,18 @@ export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoa
             {line.icon ? (
               <span style={{ color: LINE_ICON_COLOR[line.icon], display: 'flex', marginTop: 2 }}><Icon name={line.icon} size={14} /></span>
             ) : (
-              <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', background: display.displayState === 'submitting' ? C.blue : C.ink2, marginTop: 5, flexShrink: 0 }} />
+              <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', background: display.dot === 'blue-action' ? C.blue : C.ink2, marginTop: 5, flexShrink: 0 }} />
             )}
             <span>
               {line.text}
-              {line.retry && (
-                <>
-                  <span>{COPY.sep}</span>
-                  <HubLink onPress={onRetry}>{COPY.deploy.retry}</HubLink>
-                </>
-              )}
+              <ActionLink action={line.action} onAction={onAction} />
             </span>
+          </div>
+        )}
+        {note && (
+          <div data-hub-deploy-note="" style={{ marginTop: 6, paddingLeft: 22, fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
+            {note.text}
+            <ActionLink action={note.action} onAction={onAction} />
           </div>
         )}
         <div data-hub-hold-help="" style={{ marginTop: 10, fontSize: 12.5, color: tinted ? C.ink2 : C.ink3, lineHeight: 1.45 }}>

@@ -133,6 +133,12 @@
     "src/components/CommandCenter/sections/DeploySection.jsx": {},
     "src/components/CommandCenter/sections/GamesSection.jsx": {},
     "src/components/CommandCenter/sections/HubHold.jsx": {},
-    "src/components/CommandCenter/sections/NextActionCard.jsx": {}
+    "src/components/CommandCenter/sections/NextActionCard.jsx": {},
+    "src/components/CommandCenter/__fixtures__/attemptFixtures.js": {},
+    "src/components/CommandCenter/__fixtures__/deployStateFixtures.js": {},
+    "src/components/CommandCenter/hub/selectors/attemptReducer.js": {},
+    "src/components/CommandCenter/hub/selectors/attemptVocabulary.js": {},
+    "src/components/CommandCenter/hub/selectors/deployState.js": {},
+    "src/components/CommandCenter/hub/selectors/ownership.js": {}
   }
 }
