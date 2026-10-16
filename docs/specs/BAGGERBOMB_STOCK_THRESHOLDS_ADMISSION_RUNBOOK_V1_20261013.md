@@ -3,7 +3,7 @@
 | Verdict | Meaning |
 | --- | --- |
 | v2 ALLOWLIST PILOT (Oct 15, 2026) | The code selector ships `true`. The server document `stockThresholdControl/admission` is the only on-switch, and only an allowlist of account ids (`ownerId`) is selected. Everyone else — and everyone, while the document is missing, disabled or malformed — gets today's legacy creation. |
-| SWITCH-ON BLOCKED | Do not enable the control document until the security-identity follow-up is merged and Flash has ruled on the evening window (see the two "Precondition" sections below). |
+| PRECONDITIONS RULED | The blockers follow-up settles both switch-on preconditions: security identity (ISIN, else a well-formed FIGI) and the evening window (refused). See the two sections below. Do not enable the control document before that follow-up is merged and deployed; switching on is a separate step. |
 | PRODUCTION | No control document has been written by the build. Writing it is a separate, authorized operator step after Flash merges. |
 
 Decisions: [the v2 pilot approval](../approvals/BAGGERBOMB_STOCK_THRESHOLDS_V2_PILOT_20261015.md) (Rulings 1–16) supersedes the v1 control contract below where they differ. The v1 dormant adoption is [here](../approvals/BAGGERBOMB_STOCK_THRESHOLDS_ADOPTION_20261013.md) for history; the v1 model is retired.
@@ -34,21 +34,48 @@ The enabled shape is:
 - Missing, disabled (`enabled: false`), unparseable, old-schema (`schemaVersion: 1`), unregistered-model or unreadable control: **legacy for everyone, with no measurement reads.** This reverses the v1 runbook's "never legacy" for unselected creations (Ruling 6).
 - `epoch` is a positive integer. A selected creation re-reads the whole document inside its creation transaction and is refused (`creation_selection_changed`, retriable) if anything in it changed — disabling, a new epoch, a removed owner.
 - Selection runs in `prepareStockCreation` (`api/_utils/stockThresholdAdmission.js`) after the game-mode scope check: tournaments and other modes never read the control document. Every tiered full-day creation reads it once. A non-listed owner returns `null` before any measurement GET, so its creation and its errors are exactly today's legacy ones (`createAgentBattle` keys its refusal wrapper on that per-battle selection).
-- A selected creation is refused retriably from 45 minutes before the calendar close (15:15 ET; 12:15 ET on early-close days; Ruling 2), during the 16:00–16:15 ET publication window, and whenever the collector cannot qualify both sides' stocks. The player sees one short line (`src/services/agentDeploy.js` `stockAdmissionLine`).
+- A selected creation is refused retriably in four cases:
+  - from 45 minutes before the calendar close (15:15 ET; 12:15 ET on early-close days; Ruling 2);
+  - in the evening window, after the close, when the battle would expire before the next session opens (ruling P2, below);
+  - during the 16:00–16:15 ET publication window;
+  - whenever the collector cannot qualify both sides' stocks.
+- The player sees one short line (`src/services/agentDeploy.js` `stockAdmissionLine`).
 
-## Precondition: security identity (switch-on blocked)
+## Security identity (ruled: ISIN, else a well-formed FIGI)
 
-The collector (`api/_utils/stockThresholdMeasurementProvider.js`) requires the provider's `General.ISIN` to be a non-empty string and builds `securityId` from it. The live universe record of Oct 15, 2026 (build report §Universe) found `ISIN` and `CUSIP` null for almost every US-domiciled stock: **220 of 239 refused `security_identity_unqualified`; 8 qualify, all non-US-domiciled issuers.** A pilot battle needs every stock on both sides to qualify, so today nearly every allowlisted creation would be refused.
+Without a fix, the collector (`api/_utils/stockThresholdMeasurementProvider.js`) required a non-empty `General.ISIN`. The provider returns that as null for almost every US-domiciled stock, so 220 of 239 symbols were refused on Oct 15, 2026.
 
-**Do not run `enable` until a follow-up that settles the identity rule is merged and a fresh universe record shows the eligible set qualifies.** (A scratch emulation that accepts the provider's OpenFIGI when ISIN is absent qualified 228 of 239 — the full arithmetic set — but that rule is a contract decision for Flash and Fable, not part of this build.)
+The ruling (P1, approval §"Switch-on preconditions" 1) keeps every other identity check and builds `securityId` as follows:
+- `EODHD:<SYM>.US:<ISIN>` when `ISIN` is a non-empty string;
+- otherwise `EODHD:<SYM>.US:FIGI:<OpenFigi>`, only when `OpenFigi` is a well-formed FIGI (`wellFormedFigi`: shape, reserved prefixes, check digit);
+- otherwise `security_identity_unqualified`.
 
-## Precondition: the evening window (founder ruling needed)
+CIK and LEI are never used. The rule is not hashed and the v2 policy hash does not move.
 
-Found by the build review (lens B1, verified): on a regular trading day, a full-day battle whose roster holds crypto and that is created from 16:15 ET up to 20:00 ET expires at 20:00 ET the same evening (`computeFullDayExpiry`, the crypto "Night Game" close), and no evaluation runs after 16:00 ET. The battle never gets a scored check. A measured battle then ends as **result unavailable** at the next weekday's first run, and until then `decide.js` refuses that agent's redeploy (Friday evening → Monday 09:00 ET). Every tiered battle carries crypto (Phase 0), so in practice every pilot creation in that window is dead. Pre-open, after 20:00 ET, weekends, holidays and early-close days play the next session as Ruling 7 intends.
+**Universe record** (real collector path, GET only, concurrency 1, no Firestore; Oct 15, 23:09 ET): **228 of 239 qualify**, 8 with the ISIN form and 220 with the FIGI form. The other 11 are the catalog exclusions (AVB, CTRA, EA, EQR, HES, IPG, K, MMC, PARA, WBA, WBD).
 
-This predates v2: a legacy battle created in the same window records a 0–0 draw with stats and a reflection (reported separately). Ruling 7 allows after-close creation, so the build does not refuse the window. **Do not run `enable` until Flash rules** between: (a) refuse measured creation when the battle would expire before the next session opens (non-fenced, narrows Ruling 7); (b) move the crypto expiry for after-close creations to the next session (fenced `createAgentBattle` contact, also changes legacy); (c) accept and tell pilot players to deploy after 20:00 ET or before the open. The late-start player line ("Try again 15 minutes after the close") should follow that ruling.
+## The evening window (ruled: refused for the pilot)
 
-## Switching the pilot on (after the preconditions)
+**The problem.** On a regular trading day, a full-day battle whose roster holds crypto and that is created after the close expires at 20:00 ET the same evening (the fenced `computeFullDayExpiry`, the crypto "Night Game" close). No evaluation runs after 16:00 ET, so it would never get a scored check. Every tiered battle carries crypto.
+
+**The rule** (P2, approval §"Switch-on preconditions" 2):
+- For allowlisted creations only, `prepareStockCreation` refuses retriably with `evening_window` when both of these hold:
+  - the creation is outside a trading session (after the current session's close, or on a weekend or holiday);
+  - the battle's own `expiresAt` falls before the next session's `openMs`.
+- It runs after selection and before any measurement GET.
+- It is derived from the calendar and the battle's `expiresAt` (`src/utils/stockAdmissionWindow.js`), never from a clock literal.
+- It narrows Ruling 7 for the pilot only, pending the separate legacy evening-draw diagnosis.
+
+| Day | Crypto roster refused | Allowed again |
+| --- | --- | --- |
+| Regular trading day | 15:15–20:00 ET (14:15–19:00 CT): the late start, then the evening window | 20:00 ET (19:00 CT), then all night, pre-open and in session until the next 15:15 ET |
+| Friday | 15:15–20:00 ET, the same | 20:00 ET Friday; all weekend |
+| Early-close day | 12:15–13:15 ET (11:15–12:15 CT): the late start, then the publication window. There is no Night Game; the expiry is the 13:00 close itself. | 13:15 ET (12:15 CT); the battle plays the next session |
+
+- A refused player reads, for both reasons: "Measured battles can't start this late in the day. Try again after 8:00 PM ET." On an early-close day the time is 1:15 PM ET. The retry time comes from the same module (`stockAdmissionRetryAt`). The browser computes it at the refusal instant, because the fenced `decide.js` 503 carries only the reason.
+- Non-allowlisted owners, legacy creation and tournaments are unchanged. A legacy battle created in that window still records a 0–0 draw; that is reported separately and is out of scope here.
+
+## Switching the pilot on (a separate step, after the blockers follow-up is merged and deployed)
 
 1. Confirm the deployed build is the merged v2 build (the registry tuple above) and that crons run (they do not on preview).
 2. `.env.local` with the Admin credentials must be present in the checkout you run from (`scripts/loadLocalEnv.js`).
