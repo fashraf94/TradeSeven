@@ -36,11 +36,11 @@ const heldBy = (s, over = {}) => ({ ...s, hold: { controlId: 'card', holdToken: 
 const fromHold = (s, attemptId = 'a1') => begin(s, attemptId, { controlId: s.hold.controlId, holdToken: s.hold.holdToken });
 
 const REFUSED = TYPED_RESULTS['refused after a POST (a typed 429)'].result;
-const REVIEW_DUE = LEGACY_RESULTS['JSON 409 hypothesis_review_due (agentDeploy.js:172-177) — the one typed refusal today'].result;
+const REVIEW_DUE = LEGACY_RESULTS['JSON 409 hypothesis_review_due (agentDeploy.js) — the one typed refusal today'].result;
 const CREATED = TYPED_RESULTS['created with a real id'].result;
 const EXISTING = TYPED_RESULTS['existing_battle with a valid existingBattleId'].result;
 const HANDOFF = TYPED_RESULTS['handoff_failed after a real created id: provider created, real id kept, legacy failure kept'].result;
-const UNTYPED = LEGACY_RESULTS['success with a real id (agentDeploy.js:227) — never a creation without its type'].result;
+const UNTYPED = LEGACY_RESULTS['success with a real id (agentDeploy.js) — never a creation without its type'].result;
 
 /** The selector over the reducer's state, with every reader ready and nothing live. */
 const deployFrom = (s, over = {}) => deriveHubDeployState({

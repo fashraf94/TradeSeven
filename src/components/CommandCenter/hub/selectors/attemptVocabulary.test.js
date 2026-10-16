@@ -67,7 +67,7 @@ describe('today\'s results (src/services/agentDeploy.js), ruling R-S2A-2: untype
   });
 
   it('the review-due refusal keeps its line verbatim, the P1b words, with the confirmed-refusal tone', () => {
-    const t = translationOf(LEGACY_RESULTS['JSON 409 hypothesis_review_due (agentDeploy.js:172-177) — the one typed refusal today'].result);
+    const t = translationOf(LEGACY_RESULTS['JSON 409 hypothesis_review_due (agentDeploy.js) — the one typed refusal today'].result);
     expect(t.detail.line).toBe(DUE_DEPLOY_LINE);
     expect(t.detail.line).toBe('This idea is due for review — reaffirm it first (one tap, same content if you want), and the fresh version deploys.');
     expect(t.ceremony).toEqual({ phase: 'error', errorTone: 'confirmed' });

@@ -5,7 +5,8 @@
 // ownership.test.js).
 //
 //   LEGACY_RESULTS   every result shape src/services/agentDeploy.js returns
-//                    today, by line, with the translation ruling R-S2A-2 gives
+//                    today, by shape (no line numbers: they drift; a row in
+//                    attemptVocabulary.test.js pins each shape in the source), with the translation ruling R-S2A-2 gives
 //                    it: untyped → uncertain, but for the 409 review-due refusal
 //   TYPED_RESULTS    every §5.2 service outcome (R1's vocabulary), the valid
 //                    forms and the ones that must fall back to uncertain
@@ -24,27 +25,27 @@ export const REAL_ID = 'bt_7Qx2';
 
 /** agentDeploy.js today. `kind` is the detail kind the translation must give. */
 export const LEGACY_RESULTS = Object.freeze({
-  'no-agent, no POST (agentDeploy.js:35)': {
+  'no-agent, no POST (agentDeploy.js)': {
     result: { success: false, postIssued: false, error: 'no-agent' },
     phase: 'uncertain', displayState: 'uncertain', kind: 'untyped', postIssued: false,
   },
-  'auth-required, no POST (agentDeploy.js:71)': {
+  'auth-required, no POST (agentDeploy.js)': {
     result: { success: false, postIssued: false, error: 'auth-required' },
     phase: 'uncertain', displayState: 'uncertain', kind: 'untyped', postIssued: false,
   },
-  'network failure after the POST left (agentDeploy.js:133)': {
+  'network failure after the POST left (agentDeploy.js)': {
     result: { success: false, postIssued: true, httpStatus: null, error: 'deploy_network', details: 'Network request failed' },
     phase: 'uncertain', displayState: 'uncertain', kind: 'untyped', postIssued: true,
   },
-  'non-JSON 500 (agentDeploy.js:156)': {
+  'non-JSON 500 (agentDeploy.js)': {
     result: { success: false, status: 500, postIssued: true, httpStatus: 500, error: 'deploy_http_500', details: '<html>Internal error</html>' },
     phase: 'uncertain', displayState: 'uncertain', kind: 'untyped', postIssued: true,
   },
-  'JSON 429 cooldown (agentDeploy.js:175; decide.js:193)': {
+  'JSON 429 cooldown (agentDeploy.js; decide.js)': {
     result: { success: false, status: 429, postIssued: true, httpStatus: 429, error: 'Please wait 2 minutes between deploys', details: undefined, errorPhase: undefined },
     phase: 'uncertain', displayState: 'uncertain', kind: 'untyped', postIssued: true,
   },
-  'JSON 409 hypothesis_review_due (agentDeploy.js:172-177) — the one typed refusal today': {
+  'JSON 409 hypothesis_review_due (agentDeploy.js) — the one typed refusal today': {
     result: { success: false, status: 409, postIssued: true, httpStatus: 409, error: DEPLOY_REFUSAL_CODE, details: DUE_DEPLOY_LINE, errorPhase: undefined },
     phase: 'refused', displayState: 'failed', kind: 'review_due', postIssued: true, line: DUE_DEPLOY_LINE,
   },
@@ -60,11 +61,11 @@ export const LEGACY_RESULTS = Object.freeze({
     result: { success: false, status: 500, postIssued: true, httpStatus: 500, error: DEPLOY_REFUSAL_CODE, details: DUE_DEPLOY_LINE },
     phase: 'uncertain', displayState: 'uncertain', kind: 'untyped', postIssued: true,
   },
-  'a 200 that is not success (malformed; agentDeploy.js:151)': {
+  'a 200 that is not success (malformed; agentDeploy.js)': {
     result: { success: false, status: 200, postIssued: true, httpStatus: 200, error: undefined, details: undefined },
     phase: 'uncertain', displayState: 'uncertain', kind: 'untyped', postIssued: true,
   },
-  'handoff threw after a real creation (agentDeploy.js:215) — untyped until R1': {
+  'handoff threw after a real creation (agentDeploy.js) — untyped until R1': {
     result: { success: false, status: 200, postIssued: true, httpStatus: 200, battleId: REAL_ID, error: 'deploy_handoff', details: 'boom' },
     phase: 'uncertain', displayState: 'uncertain', kind: 'untyped', postIssued: true,
   },
@@ -72,7 +73,7 @@ export const LEGACY_RESULTS = Object.freeze({
     result: { success: false, status: 200, postIssued: true, httpStatus: 200, battleId: null, error: 'deploy_handoff', details: 'boom' },
     phase: 'uncertain', displayState: 'uncertain', kind: 'untyped', postIssued: true,
   },
-  'success with a real id (agentDeploy.js:227) — never a creation without its type': {
+  'success with a real id (agentDeploy.js) — never a creation without its type': {
     result: { success: true, agentBattleId: REAL_ID },
     phase: 'uncertain', displayState: 'uncertain', kind: 'untyped', postIssued: true,
   },
