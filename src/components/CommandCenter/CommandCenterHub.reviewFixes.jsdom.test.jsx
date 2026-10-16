@@ -106,9 +106,17 @@ describe('S1 review fixes — accessibility (L3)', () => {
   it('L3-1: with no next action its grid slot takes no space (no empty row, no stray gap); with one it shows', () => {
     renderHub({ site: 'desktop', hubWidth: 1216 });
     expect(document.querySelector('[data-hub-slot="next"]').style.display).toBe('none');
+    expect(document.querySelector('[data-hub-body]').style.gridTemplateAreas).toBe('"main side"');
     unmountAll();
     renderHub({ site: 'desktop', hubWidth: 1216, sections: fixture('returning') });
     expect(document.querySelector('[data-hub-slot="next"]').style.display).toBe('block');
+    expect(document.querySelector('[data-hub-body]').style.gridTemplateAreas).toBe('"main next" "main side"');
+  });
+
+  it('L3-8: an activity row\'s name carries its time', () => {
+    const { host } = renderHub({ site: 'desktop', hubWidth: 1216, sections: fixture('returning') });
+    const names = byRole(host.querySelector('[data-hub-section="activity"]'), 'button').map((b) => b.getAttribute('aria-label') || '');
+    expect(names[0]).toBe('Game completed: vs CPU — Contrarian · Lost −101, Oct 3, 4:00 PM');
   });
 
   it('L3-1: the wide grid places every part by area — the order constants, as CSS', async () => {
