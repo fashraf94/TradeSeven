@@ -224,6 +224,9 @@
      shipped --ft-gold on the Equipped Archetype control and its ring. */
   --ft-blue-action-rgb: 46, 111, 232;
   --ft-gold-rgb: 240, 199, 94;
+  /* The secondary ink, translucent: the tinted chip a recorded draw wears (the
+     design's FfTag in ink2, ff-side.jsx ResultTag). */
+  --ft-ink-2-rgb: 154, 157, 171;
 
   /* ---------------------------------------------------------------------------
      SEMANTIC TIER (ruling R-S3: these ARE var() aliases)

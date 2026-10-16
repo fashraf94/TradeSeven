@@ -24,13 +24,16 @@
 // Its only subscriptions are the ResizeObservers that measure it (its width,
 // the stage connector, and on the phone the strip and BottomNav) and the
 // signed-in user from useUser() for the header line. OS reduced motion comes
-// from framer-motion's useReducedMotion, the house precedent.
+// from framer-motion's useReducedMotion, the house precedent. Its one effect
+// of its own is a layout effect that keeps keyboard focus in the hub when a
+// width change within the desktop site switches the composition (S1 review
+// L3-1).
 //
 // Nothing imports this module statically. Only CommandCenterHubGate's dynamic
 // import reaches it, so it ships in its own chunk and is requested only when
 // the gate renders (the hub flag on).
 
-import React, { useId, useRef, useState } from 'react';
+import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { useUser } from '../../contexts/UserContext';
 import {
@@ -52,7 +55,7 @@ import { deployDisplay } from './hub/deployDisplay';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { formatHubDate, headerName } from './hub/hubDate';
 import { HUB_S1_SECTIONS, splitGames } from './hub/hubModel';
-import { C, HUB_BOX_MODEL_CSS, HUB_LAYERS } from './hub/hubStyle';
+import { C, HUB_LAYERS, HUB_SCOPED_CSS } from './hub/hubStyle';
 import { shadowTierFor } from './hub/shadowGeometry';
 import { useHubWidth } from './hub/useHubWidth';
 import { useNavClearance } from './hub/useNavClearance';
@@ -94,7 +97,10 @@ export function loadoutLineOf(loadout) {
   return COPY.loadout.lineLoading;
 }
 
-const rootStyle = { position: 'relative', zIndex: HUB_LAYERS.page, color: C.ink };
+const rootStyle = { position: 'relative', zIndex: HUB_LAYERS.page, color: C.ink, outline: 'none' };
+
+/** The phone's sticky tab row (4 + 46 + 1 px) and a little air: the pane's top scroll padding. */
+const PHONE_TAB_ROW_CLEARANCE = 56;
 
 function useShared(sections) {
   const { user } = useUser();
@@ -118,6 +124,51 @@ function useShared(sections) {
   };
 }
 
+/**
+ * The History sheet's state. `open(kind)` is a click handler: it keeps the
+ * control that was clicked, so focus returns there when the sheet closes
+ * (Safari does not focus a clicked button), and the hub root is the fallback
+ * if that control is gone by then (S1 review L3-3).
+ */
+function useHubSheet(rootRef) {
+  const [sheet, setSheet] = useState(null);
+  const openerRef = useRef(null);
+  return {
+    sheet,
+    open: (kind) => (event) => { openerRef.current = event?.currentTarget ?? null; setSheet(kind); },
+    close: () => setSheet(null),
+    opener: openerRef.current,
+    fallback: rootRef.current,
+  };
+}
+
+/**
+ * The wide compositions arrange the same parts under different parents, so a
+ * width change that switches the composition (a resize, browser zoom, a tablet
+ * turned) remounts them and focus would fall to <body>. This remembers which
+ * hub element had focus and, after the switch, puts it back by id (the area
+ * tabs and the panel keep theirs), else on the hub root (S1 review L3-1).
+ */
+function useFocusAcrossCompositions(rootRef, composition) {
+  const lastRef = useRef({ inside: false, id: null });
+  const prevRef = useRef(composition);
+  useLayoutEffect(() => {
+    if (prevRef.current === composition) return;
+    prevRef.current = composition;
+    const active = document.activeElement;
+    if (!lastRef.current.inside || (active && active !== document.body)) return;
+    const target = (lastRef.current.id && document.getElementById(lastRef.current.id)) || rootRef.current;
+    target?.focus();
+  }, [composition, rootRef]);
+  return {
+    onFocusCapture: (event) => { lastRef.current = { inside: true, id: event.target.id || null }; },
+    // Focus moving to an element outside the hub ends the memory; a removed element (no related target) does not.
+    onBlurCapture: (event) => {
+      if (event.relatedTarget && !rootRef.current?.contains(event.relatedTarget)) lastRef.current = { inside: false, id: null };
+    },
+  };
+}
+
 /** The mobile site: header → compact stage → sticky tabs → section, and the strip above BottomNav. */
 function PhoneHub({ sections }) {
   const shared = useShared(sections);
@@ -126,14 +177,14 @@ function PhoneHub({ sections }) {
   const width = useHubWidth(rootRef);
   const placement = useNavClearance(stripRef);
   const [tab, setTab] = useState(DEFAULT_PHONE_TAB);
-  const [sheet, setSheet] = useState(null);
+  const sheet = useHubSheet(rootRef);
   const composition = HUB_COMPOSITIONS.PHONE;
   const actions = {
-    openHistory: shared.completed.length ? () => setSheet('history') : undefined,
+    openHistory: shared.completed.length ? sheet.open('history') : undefined,
   };
   return (
     <HubLayoutContext.Provider value={composition}>
-      <style data-hub-box-model="">{HUB_BOX_MODEL_CSS}</style>
+      <style data-hub-css="">{HUB_SCOPED_CSS}</style>
       <section
         ref={rootRef}
         aria-label={COPY.regionLabel}
@@ -141,7 +192,12 @@ function PhoneHub({ sections }) {
         data-hub-site={HUB_SITES.MOBILE}
         data-hub-composition={composition}
         data-hub-width={width ?? ''}
-        style={{ ...rootStyle, height: '100dvh', overflowY: 'auto', overflowX: 'hidden', paddingBottom: placement.scrollClearance }}
+        tabIndex={-1}
+        style={{
+          ...rootStyle, height: '100dvh', overflowY: 'auto', overflowX: 'hidden', paddingBottom: placement.scrollClearance,
+          // Focus scrolling keeps a focused row clear of the sticky tab row and of the strip and nav (S1 review L3-5).
+          scrollPaddingTop: PHONE_TAB_ROW_CLEARANCE, scrollPaddingBottom: placement.scrollClearance,
+        }}
       >
         <HubHeader phone dateText={shared.dateText} name={shared.name} />
         <div style={{ padding: '10px 14px 12px' }}>
@@ -168,8 +224,8 @@ function PhoneHub({ sections }) {
         placement={placement}
         onOpenLoadout={() => setTab(PHONE_TABS.LOADOUT)}
       />
-      {sheet === 'history' && (
-        <HistorySheet games={sections.games} career={sections.career} phone onClose={() => setSheet(null)} reducedMotion={shared.reducedMotion} />
+      {sheet.sheet === 'history' && (
+        <HistorySheet games={sections.games} career={sections.career} phone onClose={sheet.close} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} />
       )}
     </HubLayoutContext.Provider>
   );
@@ -182,9 +238,10 @@ function WideHub({ sections }) {
   const width = useHubWidth(rootRef);
   const composition = composeHub({ site: HUB_SITES.DESKTOP, width });
   const [area, setArea] = useState(DEFAULT_AREA);
-  const [sheet, setSheet] = useState(null);
+  const sheet = useHubSheet(rootRef);
+  const focusKeeper = useFocusAcrossCompositions(rootRef, composition);
   const actions = {
-    openHistory: shared.completed.length ? () => setSheet('history') : undefined,
+    openHistory: shared.completed.length ? sheet.open('history') : undefined,
   };
   const desktop = composition === HUB_COMPOSITIONS.DESKTOP;
   const tablet = composition === HUB_COMPOSITIONS.TABLET;
@@ -256,7 +313,7 @@ function WideHub({ sections }) {
 
   return (
     <HubLayoutContext.Provider value={composition}>
-      <style data-hub-box-model="">{HUB_BOX_MODEL_CSS}</style>
+      <style data-hub-css="">{HUB_SCOPED_CSS}</style>
       <section
         ref={rootRef}
         aria-label={COPY.regionLabel}
@@ -264,13 +321,16 @@ function WideHub({ sections }) {
         data-hub-site={HUB_SITES.DESKTOP}
         data-hub-composition={composition}
         data-hub-width={width ?? ''}
+        tabIndex={-1}
+        onFocusCapture={focusKeeper.onFocusCapture}
+        onBlurCapture={focusKeeper.onBlurCapture}
         style={{ ...rootStyle, minHeight: '100vh', overflowX: 'hidden' }}
       >
         <HubHeader dateText={shared.dateText} name={shared.name} gutter={desktop || tablet ? 28 : gutter} />
         {body}
       </section>
-      {sheet === 'history' && (
-        <HistorySheet games={sections.games} career={sections.career} onClose={() => setSheet(null)} reducedMotion={shared.reducedMotion} />
+      {sheet.sheet === 'history' && (
+        <HistorySheet games={sections.games} career={sections.career} onClose={sheet.close} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} />
       )}
     </HubLayoutContext.Provider>
   );

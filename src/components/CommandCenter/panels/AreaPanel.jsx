@@ -6,7 +6,9 @@
 // controls select; on the phone its body sits inside the tab row's panel.
 //
 // The heading follows the control: "Equipped Archetype" on the wider
-// compositions, the phone tab's "Loadout" on the phone (prompt §4.3).
+// compositions, the phone tab's "Loadout" on the phone (prompt §4.3). The
+// panel takes a tab stop (tabIndex 0): in S1 it may hold no enabled control,
+// and Tab must still reach its content (APG; S1 review L3-4).
 //
 // The design's one-line area descriptions are not carried into S1: each names
 // data the hub does not hold yet (the equipped archetype by name) or describes
@@ -37,9 +39,9 @@ export function AreaBody({ area, sections, actions }) {
   );
 }
 
-export function AreaHeading({ area, label, size = 20 }) {
+export function AreaHeading({ area, label, size = 20, gap = 10 }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap }}>
       <RingGlyph on area={area} />
       <h2 style={{ margin: 0, fontSize: size, fontWeight: 700, letterSpacing: '-0.015em', color: C.ink }}>{label}</h2>
     </div>
@@ -51,6 +53,7 @@ export default function AreaPanel({ area, panelId, tabId, sections, actions, red
   return (
     <section
       role="tabpanel"
+      tabIndex={0}
       id={panelId}
       aria-labelledby={tabId}
       data-hub-area-panel={area}
@@ -62,7 +65,7 @@ export default function AreaPanel({ area, panelId, tabId, sections, actions, red
         initial={reducedMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={motionToken('smooth', { reducedMotion })}
-        style={{ marginTop: 16 }}
+        style={{ marginTop: 18 }}
       >
         <AreaBody area={area} sections={sections} actions={actions} />
       </motion.div>

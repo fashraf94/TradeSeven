@@ -67,13 +67,18 @@ function NameLine({ stacked = false }) {
   );
 }
 
-/** The connector's path, from the box's right edge (its middle) to the ring's left edge, in stage px. */
-export function connectorPath(stageRect, boxRect, glyphRect) {
-  if (!stageRect || !boxRect || !glyphRect || !boxRect.width || !glyphRect.width) return null;
-  const sx = boxRect.right - stageRect.left;
-  const sy = boxRect.top - stageRect.top + boxRect.height / 2;
-  const ex = glyphRect.left - stageRect.left - 2;
-  const ey = glyphRect.top - stageRect.top + glyphRect.height / 2;
+/**
+ * The connector's path, from the box's right edge (its middle) to the ring's
+ * left edge, in the overlay's px. `origin` is where the overlay SVG starts:
+ * the stage's padding box (it is `inset: 0` inside the stage's 1 px border),
+ * not its border box (S1 review L4-6).
+ */
+export function connectorPath(origin, boxRect, glyphRect) {
+  if (!origin || !boxRect || !glyphRect || !boxRect.width || !glyphRect.width) return null;
+  const sx = boxRect.right - origin.left;
+  const sy = boxRect.top - origin.top + boxRect.height / 2;
+  const ex = glyphRect.left - origin.left - 2;
+  const ey = glyphRect.top - origin.top + glyphRect.height / 2;
   if (!(ex > sx)) return null;
   const mx = (sx + ex) / 2;
   const f = (v) => v.toFixed(1);
@@ -93,7 +98,9 @@ export function ShadowStage({ composition, size, tier, status, processing, selec
     if (!stage) return undefined;
     const measure = () => {
       const glyph = glyphRefs.current[selectedArea];
-      const next = connectorPath(stage.getBoundingClientRect(), boxRef.current?.getBoundingClientRect(), glyph?.getBoundingClientRect());
+      const rect = stage.getBoundingClientRect();
+      const origin = { left: rect.left + stage.clientLeft, top: rect.top + stage.clientTop };
+      const next = connectorPath(origin, boxRef.current?.getBoundingClientRect(), glyph?.getBoundingClientRect());
       setPath((prev) => (prev?.d === next?.d ? prev : next));
     };
     measure();

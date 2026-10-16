@@ -75,3 +75,17 @@ export const HUB_BOX_MODEL_CSS = ['[data-hub="shell"]', '[data-hub-strip]', '[da
   .flatMap((root) => [root, `${root} *`, `${root} *::before`, `${root} *::after`])
   .join(', ')
   .concat(' { box-sizing: border-box; }');
+
+/**
+ * The design's focus ring (ff-ui.jsx: a 2 px teal outline, 2 px out), which
+ * the app does not ship either. Full-bleed rows inside a clipped, rounded list
+ * draw it inset so the clip cannot hide it (S1 review L1-5, L3-11).
+ */
+export const HUB_FOCUS_CSS = ['[data-hub="shell"]', '[data-hub-strip]', '[data-hub-sheet-overlay]']
+  .map((root) => `${root} :focus-visible`)
+  .join(', ')
+  .concat(' { outline: 2px solid var(--ft-teal); outline-offset: 2px; }')
+  .concat(' [data-hub-inset-focus]:focus-visible { outline-offset: -2px; }');
+
+/** Everything the hub's one scoped <style> carries. */
+export const HUB_SCOPED_CSS = `${HUB_BOX_MODEL_CSS}\n${HUB_FOCUS_CSS}`;

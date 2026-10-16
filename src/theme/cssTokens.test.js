@@ -73,11 +73,11 @@ describe('defines-all-tokens (A1)', () => {
     ).toEqual([]);
   });
 
-  it('has a baseline that covers the whole locked list — 52 tokens', () => {
-    // 52 since Command Center hub S1 (founder ruling R-S1-2, Oct 15 2026): the
+  it('has a baseline that covers the whole locked list — 53 tokens', () => {
+    // 53 since Command Center hub S1 (founder ruling R-S1-2, Oct 15 2026): the
     // design's seven colours with no earlier token (--ft-ink, -ink-2, -ink-3,
-    // -teal-2, -blue-action, -pos, -neg) plus two triplets the hub composes
-    // translucently (--ft-blue-action-rgb, --ft-gold-rgb).
+    // -teal-2, -blue-action, -pos, -neg) plus three triplets the hub composes
+    // translucently (--ft-blue-action-rgb, --ft-gold-rgb, --ft-ink-2-rgb).
     // 43 since Cockpit Build 2a, which added the four --ft-call-* state ALIASES
     // (spec §9) — aliases of shipped tokens, no new colour; the hex / triplet
     // split below does not move.
@@ -86,7 +86,7 @@ describe('defines-all-tokens (A1)', () => {
     // value the repo already shipped twice under legacy names (CMD.copper,
     // DARK_TOKENS.warmCopper), not a new colour — but the count is pinned so
     // that even an addition has to be a deliberate, reviewed line.
-    expect(Object.keys(BASELINE)).toHaveLength(52);
+    expect(Object.keys(BASELINE)).toHaveLength(53);
   });
 });
 
@@ -110,16 +110,16 @@ describe('parity-with-baseline (A2)', () => {
     expect(canonTriplet(rawProp(name))).toBe(canonTriplet(expected));
   });
 
-  it('guards the comparator split itself — 30 strict rows, 11 triplet rows', () => {
+  it('guards the comparator split itself — 30 strict rows, 12 triplet rows', () => {
     // If this drifts, someone added a token without deciding which comparator it
     // belongs under, and one of the two it.each blocks above silently skipped it.
-    // Command Center hub S1 (R-S1-2) took these from 23/9 to 30/11: seven hexes
-    // and two triplets.
+    // Command Center hub S1 (R-S1-2) took these from 23/9 to 30/12: seven hexes
+    // and three triplets.
     // A3.0 took these from 22/8 to 23/9 — one hex (--ft-copper) and one triplet
     // (--ft-copper-rgb), landed together so the arena can compose rgba() from the
     // same value it paints solid.
     expect({ strict: hexRows.length, triplets: tripletRows.length })
-      .toEqual({ strict: 30, triplets: 11 });
+      .toEqual({ strict: 30, triplets: 12 });
   });
 });
 

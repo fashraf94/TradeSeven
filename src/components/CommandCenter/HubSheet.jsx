@@ -7,7 +7,12 @@
 //   - role="dialog", aria-modal, labelled by its title;
 //   - on open, focus moves to Close; Tab and Shift+Tab cycle inside;
 //   - Escape and the backdrop close it; on close, focus returns to the
-//     control that opened it;
+//     control that opened it (`opener`, captured by the caller at the click —
+//     Safari does not focus a clicked button), or, if that control is gone or
+//     disabled by then, to `fallbackFocus` (S1 review L3-3);
+//   - the dialog itself takes focus (tabIndex -1), so a click on its plain
+//     content keeps the keys inside it, and the trap pulls stray focus back
+//     (S1 review L3-2);
 //   - while open, the background is inert: the sheet renders in a portal on
 //     document.body and marks every other child of body `inert` (App's root
 //     with it, so the strip and BottomNav too), restoring exactly what it
@@ -42,19 +47,23 @@ export function inertSiblings(keep) {
   return () => { for (const el of marked) el.removeAttribute('inert'); };
 }
 
-export default function HubSheet({ title, eyebrow = null, label, phone = false, width = 560, onClose, reducedMotion = false, children }) {
+export default function HubSheet({ title, eyebrow = null, label, phone = false, width = 560, onClose, opener = null, fallbackFocus = null, reducedMotion = false, children }) {
   const overlayRef = useRef(null);
   const dialogRef = useRef(null);
   const closeRef = useRef(null);
 
   useEffect(() => {
-    const opener = document.activeElement;
+    const invoker = opener || document.activeElement;
     const restore = inertSiblings(overlayRef.current);
     closeRef.current?.focus();
     return () => {
       restore();
-      if (opener && typeof opener.focus === 'function' && opener.isConnected) opener.focus();
+      // A removed or disabled opener cannot take focus (browsers ignore focus() on a disabled button).
+      const canReturn = invoker && typeof invoker.focus === 'function' && invoker.isConnected && !invoker.disabled;
+      if (canReturn) invoker.focus();
+      if ((!canReturn || document.activeElement !== invoker) && fallbackFocus && fallbackFocus.isConnected) fallbackFocus.focus();
     };
+    // The opener and the fallback are read once, at open: the sheet returns focus to what opened it.
   }, []);
 
   const onKeyDown = (event) => {
@@ -68,7 +77,12 @@ export default function HubSheet({ title, eyebrow = null, label, phone = false, 
     if (!nodes.length) return;
     const first = nodes[0];
     const last = nodes[nodes.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
+    const inside = [...nodes].includes(document.activeElement);
+    if (!inside) {
+      // Focus on the dialog itself (after a click on its content) or astray: back into the cycle.
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    } else if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last.focus();
     } else if (!event.shiftKey && document.activeElement === last) {
@@ -95,6 +109,7 @@ export default function HubSheet({ title, eyebrow = null, label, phone = false, 
       />
       <motion.div
         ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={label || title}

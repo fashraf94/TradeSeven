@@ -35,7 +35,7 @@ const GAMES = Object.freeze({
   ranked: { id: 'game_r1007', mode: 'Ranked', opponent: 'Player — Northwind', live: true, clock: '1h 05m left', detail: 'Score +4.2 · 2 trades · session ends 4:00 PM ET' },
   g1003: { id: 'game_1003', mode: 'BaggerBomb', opponent: 'CPU — Contrarian', live: false, detail: 'Oct 3', outcome: { text: 'Lost −101', tone: 'neg' }, review: true },
   g0930: { id: 'game_0930', mode: 'BaggerBomb', opponent: 'CPU — Diversifier', live: false, detail: 'Sep 30 · no score was recorded', outcome: { text: 'No result', tone: 'neutral' }, review: true },
-  g0926: { id: 'game_0926', mode: 'BaggerBomb', opponent: 'CPU — Trend Follower', live: false, detail: 'Sep 26', outcome: { text: 'Draw −8', tone: 'neutral' } },
+  g0926: { id: 'game_0926', mode: 'BaggerBomb', opponent: 'CPU — Trend Follower', live: false, detail: 'Sep 26', outcome: { text: 'Draw −8', tone: 'draw' } },
   g0919: { id: 'game_0919', mode: 'BaggerBomb', opponent: 'CPU — Fundamental Investor', live: false, detail: 'Sep 19', outcome: { text: 'Won +304', tone: 'pos' } },
 });
 
@@ -74,19 +74,19 @@ const none = { status: 'ready', candidate: null };
 
 const reviewCandidate = {
   status: 'ready',
-  candidate: { key: 'review', title: 'Review your Oct 3 game in the Film Room', why: 'vs CPU — Contrarian · Lost −101 · review available.', cta: 'Open Film Room' },
+  candidate: { key: 'review', id: 'game_1003', title: 'Review your Oct 3 game in the Film Room', why: 'vs CPU — Contrarian · Lost −101 · review available.', cta: 'Open Film Room' },
 };
 const liveCandidate = {
   status: 'ready',
-  candidate: { key: 'openGame', title: 'Open your live game', why: 'BaggerBomb vs CPU — Capital Preserver · 2h 41m left in today’s session.', detail: 'Score −12.4 · 3 trades · session ends 4:00 PM ET', cta: 'Open game' },
+  candidate: { key: 'openGame', id: 'game_1007', title: 'Open your live game', why: 'BaggerBomb vs CPU — Capital Preserver · 2h 41m left in today’s session.', detail: 'Score −12.4 · 3 trades · session ends 4:00 PM ET', cta: 'Open game' },
 };
 const rankedCandidate = {
   status: 'ready',
-  candidate: { key: 'openGame', title: 'Open your live game', why: 'Ranked vs Player — Northwind · 1h 05m left in today’s session.', detail: 'Score +4.2 · 2 trades · session ends 4:00 PM ET', cta: 'Open game' },
+  candidate: { key: 'openGame', id: 'game_r1007', title: 'Open your live game', why: 'Ranked vs Player — Northwind · 1h 05m left in today’s session.', detail: 'Score +4.2 · 2 trades · session ends 4:00 PM ET', cta: 'Open game' },
 };
 const firstCandidate = {
   status: 'ready',
-  candidate: { key: 'deploy', title: 'Play your first BaggerBomb game against a CPU', why: 'Shadow deploys with the Speculator loadout.', cta: 'Deploy' },
+  candidate: { key: 'deploy', id: null, title: 'Play your first BaggerBomb game against a CPU', why: 'Shadow deploys with the Speculator loadout.', cta: 'Deploy' },
 };
 
 const scenario = (label, notes, sections) => Object.freeze({ label, notes, sections: Object.freeze({ research: { status: 'loading' }, ...sections }) });
@@ -132,7 +132,7 @@ export const HUB_LAYOUT_FIXTURES = Object.freeze({
     nextAction: liveCandidate,
     games: games([GAMES.active, ...DONE]),
     deploy: { displayState: 'blocked', canStart: false, reason: 'capacity 1 of 1 in use' },
-    loadout: loadout('Speculator · locked in game'),
+    loadout: { ...loadout('Speculator · locked in game'), lockedInGame: true },
     activity: activity(ACTIVITY),
     brief: BRIEF,
     career: CAREER,

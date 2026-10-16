@@ -9,7 +9,11 @@
 // both keep their Forge actions).
 //
 // The design's further blocks (permitted controls, recorded outcomes) are
-// records, so they arrive with S5 too.
+// records, so they arrive with S5 too. The Forge line keeps the design's words
+// (ff-stage.jsx ArchetypePanel), less its Partnership clause (§8.3): "Locked in
+// battle · …" while the loadout is locked in a live game (S5's
+// `loadout.lockedInGame`), and "— never rewrites a game in progress." (a game
+// keeps the loadout it was deployed with; spec §2).
 
 import React from 'react';
 import { HUB_COPY as COPY } from '../hub/hubCopy';
@@ -32,10 +36,10 @@ export default function LoadoutPanel({ loadout, onChangeArchetype, onChangeWatch
   const watchlist = ready ? loadout.watchlist : null;
   const symbols = Array.isArray(watchlist?.symbols) ? watchlist.symbols : [];
   return (
-    <div data-hub-panel="loadout" data-hub-status-of={loadout?.status || 'loading'} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div data-hub-panel="loadout" data-hub-status-of={loadout?.status || 'loading'} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
         <SlotCard accent={C.gold}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Eyebrow>{COPY.loadout.archetype}</Eyebrow>
             {archetype && <Tag tone="gold">{COPY.loadout.equipped}</Tag>}
           </div>
@@ -52,7 +56,7 @@ export default function LoadoutPanel({ loadout, onChangeArchetype, onChangeWatch
           </div>
         </SlotCard>
         <SlotCard accent={C.teal}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Eyebrow>{COPY.loadout.watchlist}</Eyebrow>
             {watchlist && <Mono style={{ fontSize: 11, color: C.ink3 }}>{COPY.loadout.names(symbols.length)}</Mono>}
           </div>
@@ -76,9 +80,10 @@ export default function LoadoutPanel({ loadout, onChangeArchetype, onChangeWatch
         </SlotCard>
       </div>
       <div style={{ fontSize: 12.5, color: C.ink3, lineHeight: 1.55 }}>
-        <span>{COPY.loadout.nextDeploy}</span>
+        <span>{ready && loadout.lockedInGame ? COPY.loadout.nextDeployLocked : COPY.loadout.nextDeploy}</span>
         <span>{' '}</span>
         <HubLink onPress={onOpenForge}>{COPY.loadout.changeInForge}</HubLink>
+        <span>{COPY.loadout.neverRewrites}</span>
       </div>
     </div>
   );

@@ -15,6 +15,9 @@
 //     "Checking eligibility…";
 //   - the activity heading (§8.2), exactly;
 //   - the career caption (§7), exactly.
+// One replacement is the build's, not the spec's: the confirmed Deploy line
+// says the game appears "in Games", not the design's "above", because the
+// tablet and stacked compositions put Deploy above Games (S1 review L1-6).
 // No string claims learning, improvement, intelligence or an earned tier,
 // counts anything the hub does not hold, or says "since your last visit"
 // (§8.2, §11.3) — the copy guard pins that.
@@ -77,6 +80,8 @@ export const HUB_COPY = Object.freeze({
     loading: 'Checking your research',
     /** The Forge action. S6 wires it; in S1 it is disabled. */
     openForge: 'Open in the Forge',
+    /** The panel's eyebrow, over its content (the design's header row). */
+    ideas: 'Ideas',
   }),
 
   loadout: Object.freeze({
@@ -90,7 +95,11 @@ export const HUB_COPY = Object.freeze({
     changeArchetype: 'Change archetype',
     changeWatchlist: 'Change watchlist',
     nextDeploy: 'Changes apply to your next deploy.',
+    /** The same line while the loadout is locked in a live game (the design's live variant). */
+    nextDeployLocked: 'Locked in battle · changes apply to your next deploy.',
     changeInForge: 'Change in the Forge',
+    /** After the Forge link: a game keeps the loadout it was deployed with (spec §2: battle-frozen). */
+    neverRewrites: ' — never rewrites a game in progress.',
     /** The strip's and the Deploy card's loadout line while the loadout loads. */
     lineLoading: 'Checking your loadout',
     line: (archetype, watchlist) => `${archetype} · ${watchlist}`,
@@ -99,7 +108,6 @@ export const HUB_COPY = Object.freeze({
   nextAction: Object.freeze({
     label: 'Next action',
     later: 'Later',
-    laterLabel: 'Not now',
   }),
 
   games: Object.freeze({
@@ -108,13 +116,16 @@ export const HUB_COPY = Object.freeze({
     loading: 'Checking your games',
     empty: 'No games yet',
     emptySub: 'Your first BaggerBomb game against a CPU starts from Deploy.',
+    /** The phone Overview's empty note: Deploy is the strip below. */
+    emptySubPhone: 'Your first BaggerBomb game against a CPU starts from Deploy, below.',
     liveCount: (n) => `${n} live`,
     completedCount: (n) => `${n} completed`,
     history: 'History',
     vs: (mode) => `${mode} vs`,
     reviewTag: 'Review',
     reviewsAvailable: 'Reviews available',
-    rowLabel: (live, mode, opponent, outcome) => `${live ? 'Open live game' : 'Open game record'}: ${mode} vs ${opponent}, ${outcome}`,
+    /** A game row's name: what it opens, the game, its outcome, a ready review and its detail line. */
+    rowLabel: (live, mode, opponent, outcome, review, detail) => [`${live ? 'Open live game' : 'Open game record'}: ${mode} vs ${opponent}`, outcome, review ? 'review available' : '', detail].filter(Boolean).join(', '),
   }),
 
   history: Object.freeze({
@@ -167,7 +178,7 @@ export const HUB_COPY = Object.freeze({
   strip: Object.freeze({
     regionLabel: 'Game actions',
     /** The strip's status button names both lines, then where it goes. */
-    openLoadoutLabel: (line1, line2) => `${line1}. ${line2}. Open loadout`,
+    openLoadoutLabel: (line1, line2) => `${line1.replace(/[.…]+$/, '')}. ${line2.replace(/[.…]+$/, '')}. Open loadout`,
     live: (clock) => `Live · ${clock}`,
     deployed: (clock) => `Deployed · ${clock}`,
   }),
@@ -177,6 +188,8 @@ export const HUB_COPY = Object.freeze({
     label: 'Recent activity · your last 10 games and current loadout',
     loading: 'Checking your activity',
     empty: 'Nothing recorded yet.',
+    /** The phone Overview's link to the whole list (the design's; S4 wires its sheet). */
+    all: (n) => `All activity · ${n}`,
     rowLabel: (text, sub) => `${text}: ${sub}`,
   }),
 

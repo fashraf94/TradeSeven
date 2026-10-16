@@ -47,7 +47,7 @@ export default function NextActionCard({ nextAction, deploy, onAct, onLater }) {
         ) : (
           <HubButton kind="primary" icon={CTA_ICON[candidate.key]} onPress={onAct} style={{ flex: 1 }}>{candidate.cta}</HubButton>
         )}
-        <HubButton kind="ghost" onPress={onLater} ariaLabel={COPY.nextAction.laterLabel}>{COPY.nextAction.later}</HubButton>
+        <HubButton kind="ghost" onPress={onLater}>{COPY.nextAction.later}</HubButton>
       </div>
     </section>
   );

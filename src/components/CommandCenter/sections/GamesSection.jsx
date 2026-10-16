@@ -23,29 +23,31 @@ export function GameRow({ game, onOpen, compact = false }) {
   const live = Boolean(game.live);
   const outcome = game.outcome || null;
   const tags = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+    <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
       {live && <Tag tone="teal">{game.preOpen ? COPY.strip.deployed(game.clock) : COPY.strip.live(game.clock)}</Tag>}
       {!live && outcome && (outcome.tone === 'pos' || outcome.tone === 'neg') && (
         <Mono style={{ fontSize: 13.5, fontWeight: 700, color: OUTCOME_TONE[outcome.tone] }}>{outcome.text}</Mono>
       )}
-      {!live && outcome && outcome.tone !== 'pos' && outcome.tone !== 'neg' && <Tag dim>{outcome.text}</Tag>}
+      {/* A recorded draw wears the design's tinted ink-2 chip; anything without a verdict (No result, Ended) the dim one (ff-side.jsx ResultTag; S1 review L1-10). */}
+      {!live && outcome && outcome.tone === 'draw' && <Tag tone="ink-2">{outcome.text}</Tag>}
+      {!live && outcome && outcome.tone !== 'pos' && outcome.tone !== 'neg' && outcome.tone !== 'draw' && <Tag dim>{outcome.text}</Tag>}
       {!live && game.review && <Tag tone="gold" dim>{COPY.games.reviewTag}</Tag>}
-    </div>
+    </span>
   );
   return (
     <Row
       onPress={onOpen ? () => onOpen(game) : undefined}
-      ariaLabel={COPY.games.rowLabel(live, game.mode, game.opponent, live ? COPY.strip.live(game.clock) : outcome?.text || '')}
+      ariaLabel={COPY.games.rowLabel(live, game.mode, game.opponent, live ? COPY.strip.live(game.clock) : outcome?.text || '', !live && game.review, game.detail)}
       style={{ background: C.bg, border: `1px solid ${live ? tint('teal', 0.35) : HAIR}`, minHeight: compact ? 48 : 56 }}
     >
-      <div data-hub-game-row={live ? 'live' : 'completed'} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 11, color: C.ink3, letterSpacing: '0.02em' }}>{COPY.games.vs(game.mode)}</div>
-          <div style={{ fontSize: compact ? 13.5 : 14.5, fontWeight: 600, color: C.ink, lineHeight: 1.25, textWrap: 'pretty' }}>{game.opponent}</div>
-        </div>
+      <span data-hub-game-row={live ? 'live' : 'completed'} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <span style={{ display: 'block', minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: 11, color: C.ink3, letterSpacing: '0.02em' }}>{COPY.games.vs(game.mode)}</span>
+          <span style={{ display: 'block', fontSize: compact ? 13.5 : 14.5, fontWeight: 600, color: C.ink, lineHeight: 1.25, textWrap: 'pretty' }}>{game.opponent}</span>
+        </span>
         {tags}
-      </div>
-      {game.detail && <div style={{ fontSize: 12, color: C.ink3, marginTop: 4, lineHeight: 1.4 }}>{game.detail}</div>}
+      </span>
+      {game.detail && <span style={{ display: 'block', fontSize: 12, color: C.ink3, marginTop: 4, lineHeight: 1.4 }}>{game.detail}</span>}
     </Row>
   );
 }
@@ -56,9 +58,10 @@ export default function GamesSection({ games, onOpenGame, onOpenHistory }) {
   const shown = [...live, ...completed.slice(0, DESKTOP_COMPLETED_LIMIT)];
   let right = null;
   if (ready && live.length) right = <Tag tone="teal">{COPY.games.liveCount(live.length)}</Tag>;
-  else if (ready && completed.length) right = <Mono style={{ fontSize: 11, color: C.ink3 }}>{COPY.games.completedCount(completed.length)}</Mono>;
+  // The design shows the completed count whenever no game is live, "0 completed" included (S1 review L1-10).
+  else if (ready) right = <Mono style={{ fontSize: 11, color: C.ink3 }}>{COPY.games.completedCount(completed.length)}</Mono>;
   const history = ready && completed.length > DESKTOP_COMPLETED_LIMIT && onOpenHistory
-    ? <HubLink onPress={onOpenHistory} style={{ fontSize: 12.5 }}>{COPY.games.history}</HubLink>
+    ? <HubLink onPress={onOpenHistory}>{COPY.games.history}</HubLink>
     : null;
   return (
     <Section

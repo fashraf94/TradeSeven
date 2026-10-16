@@ -24,6 +24,8 @@ export const areaPanelId = (idBase) => `${idBase}-area-panel`;
 export default function AreaControls({ idBase, selected, onSelect, summaries, compact = false, glyphRefs }) {
   const tabRefs = useRef([]);
   const onKeyDown = (event) => {
+    // A modified arrow belongs to the browser (Alt+Left is Back): S1 review L3-9.
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
     const index = HUB_AREA_ORDER.indexOf(selected);
     const next = rovingIndex(event.key, index < 0 ? 0 : index, HUB_AREA_ORDER.length, { vertical: true });
     if (next == null) return;

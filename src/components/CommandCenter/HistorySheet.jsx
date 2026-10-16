@@ -14,13 +14,15 @@ import HubSheet from './HubSheet';
 import { Mono } from './HubParts';
 import { GameRow } from './sections/GamesSection';
 
-export default function HistorySheet({ games, career, phone, onClose, reducedMotion }) {
+export default function HistorySheet({ games, career, phone, onClose, opener, fallbackFocus, reducedMotion }) {
   const { completed } = splitGames(games);
   const record = career?.status === 'ready' && career.record ? career.record : null;
   return (
     <HubSheet
       phone={phone}
       onClose={onClose}
+      opener={opener}
+      fallbackFocus={fallbackFocus}
       reducedMotion={reducedMotion}
       eyebrow={COPY.history.eyebrow(completed.length)}
       title={COPY.history.title}

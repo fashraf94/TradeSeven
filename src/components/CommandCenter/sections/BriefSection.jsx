@@ -32,14 +32,15 @@ export default function BriefSection({ brief }) {
           onClick={toggle}
           disabled={!toggle}
           aria-expanded={body ? open : undefined}
+          data-hub-inset-focus=""
           style={{ appearance: 'none', font: 'inherit', color: 'inherit', background: 'transparent', border: 'none', cursor: toggle ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 12, width: '100%', minHeight: 56, padding: '10px 14px', textAlign: 'left' }}
         >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>{COPY.brief.label}</div>
+          <span style={{ display: 'block', flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.ink }}>{COPY.brief.label}</span>
             {body
-              ? caption && <div style={{ fontSize: 12, color: C.ink3, marginTop: 2 }}>{caption}</div>
+              ? caption && <span style={{ display: 'block', fontSize: 12, color: C.ink3, marginTop: 2 }}>{caption}</span>
               : <LoadingLine style={{ marginTop: 4, fontSize: 12 }}>{COPY.brief.loading}</LoadingLine>}
-          </div>
+          </span>
           <span style={{ color: C.ink3, display: 'flex' }}><Icon name={open ? 'chevD' : 'chevR'} size={15} /></span>
         </button>
         {open && body && (
@@ -66,7 +67,7 @@ export default function BriefSection({ brief }) {
           <LoadingLine>{COPY.brief.loading}</LoadingLine>
         )}
         <div style={{ display: 'flex', gap: 16, marginTop: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
-          <HubLink onPress={toggle} ariaExpanded={body ? open : undefined}>{open ? COPY.brief.less : COPY.brief.more}</HubLink>
+          <HubLink onPress={toggle} ariaExpanded={body ? open : undefined} size={13}>{open ? COPY.brief.less : COPY.brief.more}</HubLink>
         </div>
       </Card>
     </Section>

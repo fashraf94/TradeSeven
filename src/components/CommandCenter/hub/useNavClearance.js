@@ -36,8 +36,10 @@ export function useNavClearance(stripRef) {
       stripElRef.current = strip;
       observerRef.current = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
       if (observerRef.current) {
-        if (nav) observerRef.current.observe(nav);
-        if (strip) observerRef.current.observe(strip);
+        // The border box: BottomNav is content-box, so a padding change (a safe-area
+        // inset arriving after load) moves only its border box (S1 review L4-4).
+        if (nav) observerRef.current.observe(nav, { box: 'border-box' });
+        if (strip) observerRef.current.observe(strip, { box: 'border-box' });
       }
     }
     measure();

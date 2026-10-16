@@ -365,6 +365,16 @@ function resolveRelative(fromRel, spec) {
   return hit ? path.relative(REPO_ROOT, hit).split(path.sep).join('/') : null;
 }
 
+/** Static import / re-export edges from `rel` that land in the hub directory (relative specifiers and the @/ alias). */
+function edgesIntoHub(rel, code) {
+  return importsOfCode(code).flatMap((spec) => {
+    let resolved = null;
+    if (spec.startsWith('.')) resolved = resolveRelative(rel, spec);
+    else if (spec.startsWith('@/')) resolved = resolveRelative('src/index.js', `./${spec.slice(2)}`);
+    return resolved && resolved.startsWith(`${HUB_DIR}/`) ? [`${rel} -> ${resolved}`] : [];
+  });
+}
+
 // S1 (prompt §5): the hub side may reach these shipped first-party modules.
 // The walk records them and does not enter them: each is owned, reviewed and
 // guarded elsewhere, and its own effects are its own. Anything else outside
@@ -424,10 +434,13 @@ const HUB_FILE = (name) => `${HUB_DIR}/${name}`;
 /**
  * The S1 allowances, by file: the ResizeObservers that measure the hub (its
  * width, the stage connector, the strip and BottomNav) with the layout effects
- * that attach them, and the sheet's focus / inert effect. The test kit defines
- * a stand-in ResizeObserver. Nothing else anywhere in the directory.
+ * that attach them, the sheet's focus / inert effect, and the hub root's
+ * layout effect that keeps focus across a composition switch (S1 review L3-1).
+ * The test kit defines a stand-in ResizeObserver. Nothing else anywhere in the
+ * directory.
  */
 const ALLOWED_ACTIVITY = Object.freeze({
+  [HUB_FILE('CommandCenterHub.jsx')]: ['\\buseLayoutEffect\\b'],
   [HUB_FILE('hub/useHubWidth.js')]: ['\\bResizeObserver\\b', '\\buseLayoutEffect\\b'],
   [HUB_FILE('hub/useNavClearance.js')]: ['\\bResizeObserver\\b', '\\buseLayoutEffect\\b'],
   [HUB_FILE('ShadowStage.jsx')]: ['\\bResizeObserver\\b', '\\buseLayoutEffect\\b'],
@@ -505,6 +518,33 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
   it('the gate\'s only firebase contact is the house error log, used on a failed load', () => {
     expect(importsOf(GATE).sort()).toEqual(['../../theme/cssTokens', '../ErrorBoundary', './hubGateCopy', 'react']);
     expect(stripComments(read(GATE))).toMatch(/import \{ logErrorToFirebase \} from '\.\.\/ErrorBoundary';/);
+  });
+
+  it('the gate\'s copy table imports nothing: the hub\'s copy table stays in the lazy chunk (S1 review L2-1)', () => {
+    expect(importsOf('src/components/CommandCenter/hubGateCopy.js')).toEqual([]);
+  });
+
+  it('the main graph reaches the hub directory only through App → the gate and App → the picker (S1 review L2-1)', () => {
+    // Every other hub module stays out of the main chunk: no src/ file outside
+    // the directory may import one statically (relative or through the @/ alias),
+    // nor name one in a string literal.
+    const outside = sourceFiles().filter((rel) => !rel.startsWith(`${HUB_DIR}/`));
+    expect(outside.length, 'the src walk found nothing, so this row would be vacuous').toBeGreaterThan(100);
+    const edges = outside.flatMap((rel) => edgesIntoHub(rel, stripComments(read(rel))));
+    expect(edges.sort()).toEqual([
+      `src/App.jsx -> ${HUB_FILE('CommandCenterHubGate.jsx')}`,
+      `src/App.jsx -> ${HUB_FILE('pickDashboardShell.js')}`,
+    ]);
+    const literals = outside.filter((rel) => rel !== 'src/App.jsx' && /(['"`])[^'"`\n]*components\/CommandCenter\b[^'"`\n]*\1/.test(stripComments(read(rel))));
+    expect(literals).toEqual([]);
+  });
+
+  it('the edge scan is not vacuous: it resolves relative and @/ imports and re-exports into the directory', () => {
+    expect(edgesIntoHub('src/components/Navigation/BottomNav.jsx', "import { BOTTOM_NAV_ATTRIBUTE } from '../CommandCenter/hub/navClearance';"))
+      .toEqual([`src/components/Navigation/BottomNav.jsx -> ${HUB_FILE('hub/navClearance.js')}`]);
+    expect(edgesIntoHub('src/App.jsx', "export { HUB_COPY } from '@/components/CommandCenter/hub/hubCopy';"))
+      .toEqual([`src/App.jsx -> ${HUB_FILE('hub/hubCopy.js')}`]);
+    expect(edgesIntoHub('src/App.jsx', "import x from './components/Dashboard/CommandDashboard';")).toEqual([]);
   });
 
   it('the gate hands the hub its site and nothing else', () => {

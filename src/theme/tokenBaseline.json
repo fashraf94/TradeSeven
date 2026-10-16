@@ -45,6 +45,7 @@
   "--ft-purple-rgb": "139, 92, 246",
   "--ft-blue-action-rgb": "46, 111, 232",
   "--ft-gold-rgb": "240, 199, 94",
+  "--ft-ink-2-rgb": "154, 157, 171",
 
   "--ft-accent": "var(--ft-cyan)",
   "--ft-warp-tint": "var(--ft-accent)",

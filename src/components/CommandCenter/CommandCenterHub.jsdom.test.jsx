@@ -143,14 +143,17 @@ describe('S1 production state — every section in its loading state (ruling R-S
     }
   });
 
-  it('the hub scopes border-box to its own three roots (the app ships no global box-sizing rule)', () => {
+  it('the hub scopes border-box and the design\'s focus ring to its own three roots (the app ships neither)', () => {
     renderHub({ site: 'mobile', hubWidth: 390 });
-    const rules = [...document.querySelectorAll('style[data-hub-box-model]')].map((s) => s.textContent);
+    const rules = [...document.querySelectorAll('style[data-hub-css]')].map((s) => s.textContent);
     expect(rules).toHaveLength(1);
     for (const root of ['[data-hub="shell"]', '[data-hub-strip]', '[data-hub-sheet-overlay]']) {
-      expect(rules[0]).toContain(`${root} *`);
+      expect(rules[0]).toContain(`${root} *,`);
+      expect(rules[0]).toContain(`${root} :focus-visible`);
     }
-    expect(rules[0]).toMatch(/\{ box-sizing: border-box; \}$/);
+    expect(rules[0]).toMatch(/\{ box-sizing: border-box; \}/);
+    expect(rules[0]).toMatch(/\{ outline: 2px solid var\(--ft-teal\); outline-offset: 2px; \}/);
+    expect(rules[0]).toMatch(/\[data-hub-inset-focus\]:focus-visible \{ outline-offset: -2px; \}/);
   });
 
   it('every later-slice action renders disabled: the Forge actions, the pickers and the profile', () => {

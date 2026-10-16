@@ -9,6 +9,13 @@
 //   - a control with no handler renders disabled (S1 wires no action; S2b–S6
 //     supply them), so nothing on screen pretends to work;
 //   - on the phone every control is at least 44 px tall (spec §10);
+//   - a label's size sits on an inner span (Label): src/index.css forces every
+//     <button> to 16 px !important (iOS auto-zoom; the repo's "hazard 48"),
+//     which beats a size set on the button itself (S1 review L1-1);
+//   - a disabled control keeps legible text: the secondary ink on its own
+//     surface, never the design's half opacity, which put S1's only strip
+//     action at 2.85:1 (S1 review L3-14; prompt §4.7 "all text ≥ 4.5:1");
+//   - no block element inside a button (S1 review L3-10);
 //   - no CSS transition strings: motion goes through the motion tokens.
 
 import React, { createContext, useContext } from 'react';
@@ -19,6 +26,11 @@ import { AREA_TOKEN, C, HAIR, HAIR_2, MONO, PHONE_TARGET, tint } from './hub/hub
 export const HubLayoutContext = createContext('stacked');
 export const useHubComposition = () => useContext(HubLayoutContext);
 const usePhone = () => useHubComposition() === 'phone';
+
+/** A button's label at its own size (the FilmRoomKit Label pattern; see the header). */
+export function Label({ size, weight, children, style }) {
+  return <span style={{ fontSize: size, fontWeight: weight, lineHeight: 1.2, ...style }}>{children}</span>;
+}
 
 export function Mono({ children, style, ...rest }) {
   return <span style={{ fontFamily: MONO, ...style }} {...rest}>{children}</span>;
@@ -36,6 +48,7 @@ export function Eyebrow({ children, color = C.ink3, style, as: Tag = 'div' }) {
 export function Tag({ children, tone = 'teal', dim = false, style }) {
   return (
     <span
+      data-hub-tag={dim ? 'dim' : tone}
       style={{
         fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600,
         color: dim ? C.ink2 : cssVar(tone),
@@ -97,6 +110,9 @@ const BUTTON_KINDS = {
   ghost: { background: 'transparent', color: C.ink2, border: '1px solid transparent' },
 };
 
+/** Disabled: no fill, no glow, the secondary ink — 6.35:1 on bg-agent, 6.64:1 on bg-card. */
+const DISABLED = { background: C.raised, color: C.ink2, border: `1px solid ${HAIR_2}`, boxShadow: 'none' };
+
 /**
  * The design's FfBtn. With no `onPress` it renders disabled — the S1 rule for
  * every action a later slice wires.
@@ -115,14 +131,14 @@ export function HubButton({ kind = 'secondary', icon, children, onPress, small =
         appearance: 'none', font: 'inherit', cursor: disabled ? 'not-allowed' : 'pointer',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
         minHeight: height, padding: small ? '0 12px' : '0 16px', borderRadius: 12,
-        fontWeight: 600, fontSize: small ? 13 : 14, width: full ? '100%' : 'auto', whiteSpace: 'nowrap',
+        fontWeight: 600, width: full ? '100%' : 'auto', whiteSpace: 'nowrap',
         ...BUTTON_KINDS[kind],
-        ...(disabled ? { opacity: 0.5, boxShadow: 'none' } : null),
+        ...(disabled ? (kind === 'ghost' ? { color: C.ink2 } : DISABLED) : null),
         ...style,
       }}
     >
       {icon && <Icon name={icon} size={16} />}
-      {children}
+      <Label size={small ? 13 : 14} weight={600}>{children}</Label>
     </button>
   );
 }
@@ -131,7 +147,7 @@ export function HubButton({ kind = 'secondary', icon, children, onPress, small =
  * The design's inline link (.ff-link). On the phone it is a 44 px target; on
  * wider compositions it sits in the line of text, as designed.
  */
-export function HubLink({ children, onPress, ariaExpanded, ariaLabel, style }) {
+export function HubLink({ children, onPress, ariaExpanded, ariaLabel, size = 12.5, style }) {
   const phone = usePhone();
   const disabled = typeof onPress !== 'function';
   return (
@@ -145,11 +161,11 @@ export function HubLink({ children, onPress, ariaExpanded, ariaLabel, style }) {
         appearance: 'none', font: 'inherit', background: 'transparent', border: 'none', padding: 0,
         cursor: disabled ? 'not-allowed' : 'pointer',
         display: phone ? 'inline-flex' : 'inline', alignItems: 'center', minHeight: phone ? PHONE_TARGET : undefined,
-        color: C.teal, fontWeight: 600, lineHeight: 1.3, opacity: disabled ? 0.55 : 1,
+        color: disabled ? C.ink2 : C.teal, fontWeight: 600, lineHeight: 1.3,
         ...style,
       }}
     >
-      <span style={{ borderBottom: `1px solid ${tint('teal', 0.35)}`, paddingBottom: 1 }}>{children}</span>
+      <span style={{ fontSize: size, borderBottom: `1px solid ${disabled ? HAIR_2 : tint('teal', 0.35)}`, paddingBottom: 1 }}>{children}</span>
     </button>
   );
 }
@@ -190,13 +206,14 @@ export function Row({ onPress, children, right = null, ariaLabel, style }) {
       onClick={disabled ? undefined : onPress}
       disabled={disabled}
       aria-label={ariaLabel}
+      data-hub-inset-focus=""
       style={{
         appearance: 'none', font: 'inherit', color: 'inherit', background: 'transparent', border: 'none',
         cursor: disabled ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 12, width: '100%',
         minHeight: 52, padding: '10px 12px', borderRadius: 12, textAlign: 'left', ...style,
       }}
     >
-      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+      <span style={{ display: 'block', flex: 1, minWidth: 0 }}>{children}</span>
       {right}
       <span style={{ color: C.ink3, display: 'flex' }}><Icon name="chevR" size={15} /></span>
     </button>
@@ -218,13 +235,13 @@ export function EmptyNote({ icon, title, sub }) {
   );
 }
 
-/** A section's loading line: a still dot and the section's own "Checking …" words. Not a live region. */
+/** A section's loading line: a still dot and the section's own "Checking …" words. Not a live region. A span, so it may sit in a button. */
 export function LoadingLine({ children, style }) {
   return (
-    <div data-hub-loading="" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.ink2, lineHeight: 1.45, ...style }}>
+    <span data-hub-loading="" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.ink2, lineHeight: 1.45, ...style }}>
       <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: C.ink3, flexShrink: 0 }} />
       <span>{children}</span>
-    </div>
+    </span>
   );
 }
 

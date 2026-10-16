@@ -19,7 +19,7 @@ import { AREA_FOR_PHONE_TAB, HUB_AREAS, PHONE_TAB_ORDER, PHONE_TABS, rovingIndex
 import { PHONE_ACTIVITY_LIMIT, splitGames } from './hub/hubModel';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { C, HAIR } from './hub/hubStyle';
-import { LoadingLine, Mono, Row, Section } from './HubParts';
+import { EmptyNote, Label, LoadingLine, Mono, Row, Section } from './HubParts';
 import { AreaBody, AreaHeading } from './panels/AreaPanel';
 import ActivitySection from './sections/ActivitySection';
 import BriefSection from './sections/BriefSection';
@@ -32,6 +32,8 @@ export const phonePanelId = (idBase) => `${idBase}-tab-panel`;
 export function PhoneTabRow({ idBase, tab, onSelect }) {
   const refs = useRef([]);
   const onKeyDown = (event) => {
+    // A modified arrow belongs to the browser (Alt+Left is Back): S1 review L3-9.
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
     const next = rovingIndex(event.key, PHONE_TAB_ORDER.indexOf(tab), PHONE_TAB_ORDER.length);
     if (next == null) return;
     event.preventDefault();
@@ -63,7 +65,7 @@ export function PhoneTabRow({ idBase, tab, onSelect }) {
             onClick={() => onSelect(key)}
             style={{ appearance: 'none', font: 'inherit', background: 'transparent', border: 'none', cursor: 'pointer', minHeight: 46, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', fontSize: 12.5, fontWeight: 600, color: on ? C.ink : C.ink2, padding: 0, whiteSpace: 'nowrap', borderRadius: 8 }}
           >
-            {COPY.phoneTabs[key]}
+            <Label size={12.5} weight={600}>{COPY.phoneTabs[key]}</Label>
             {on && <span aria-hidden="true" style={{ position: 'absolute', left: 6, right: 6, bottom: 0, height: 3, borderRadius: 2, background: bar }} />}
           </button>
         );
@@ -74,8 +76,10 @@ export function PhoneTabRow({ idBase, tab, onSelect }) {
 
 /**
  * Overview: the live game (as the next action when it is the candidate), the
- * next action, ready reviews, the history entry, a short activity list and the
- * brief, collapsed. In S1 everything but the frame is loading.
+ * next action, ready reviews (without the next action's own game), the
+ * history entry, a short activity list and the brief, collapsed. With games
+ * resolved and empty and no candidate, the design's empty note. In S1
+ * everything but the frame is loading.
  */
 function PhoneOverview({ sections, actions }) {
   const { games, nextAction, deploy, activity, brief, career } = sections;
@@ -84,11 +88,13 @@ function PhoneOverview({ sections, actions }) {
   const candidate = nextAction?.status === 'ready' ? nextAction.candidate : null;
   const liveGame = live[0] || null;
   const liveIsCandidate = Boolean(liveGame && candidate?.key === 'openGame');
-  const reviews = completed.filter((g) => g.review);
+  // The next action's own game is not listed again (ff-mobile.jsx MobileOverview; S1 review L1-2).
+  const reviews = completed.filter((g) => g.review && g.id !== candidate?.id);
   const record = career?.status === 'ready' && career.record ? career.record : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       {!ready && <LoadingLine>{COPY.games.loading}</LoadingLine>}
+      {ready && !liveGame && !candidate && completed.length === 0 && <EmptyNote icon="sword" title={COPY.games.empty} sub={COPY.games.emptySubPhone} />}
       {liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} />}
       {liveGame && !liveIsCandidate && <GameRow game={liveGame} onOpen={actions.openGame} />}
       {candidate && !liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} />}
@@ -106,11 +112,11 @@ function PhoneOverview({ sections, actions }) {
           style={{ background: C.surface, border: `1px solid ${HAIR}`, minHeight: 56 }}
           right={record ? <Mono style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{record}</Mono> : null}
         >
-          <div style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>{COPY.history.rowTitle}</div>
-          <div style={{ fontSize: 12, color: C.ink3, marginTop: 2 }}>{COPY.history.rowSub(completed.length)}</div>
+          <span style={{ display: 'block', fontSize: 14, fontWeight: 600, color: C.ink }}>{COPY.history.rowTitle}</span>
+          <span style={{ display: 'block', fontSize: 12, color: C.ink3, marginTop: 2 }}>{COPY.history.rowSub(completed.length)}</span>
         </Row>
       )}
-      <ActivitySection activity={activity} limit={PHONE_ACTIVITY_LIMIT} onOpen={actions.openActivity} />
+      <ActivitySection activity={activity} limit={PHONE_ACTIVITY_LIMIT} onOpen={actions.openActivity} onAll={actions.openAllActivity} />
       <BriefSection brief={brief} />
     </div>
   );
@@ -120,13 +126,14 @@ export function PhonePanel({ idBase, tab, sections, actions, reducedMotion }) {
   const area = AREA_FOR_PHONE_TAB[tab];
   const label = tab === PHONE_TABS.LOADOUT ? COPY.phoneTabs.loadout : area == null ? null : COPY.areas.names[area];
   return (
-    <div role="tabpanel" id={phonePanelId(idBase)} aria-labelledby={phoneTabId(idBase, tab)} data-hub-phone-panel={tab}>
+    // tabIndex 0: in S1 a panel may hold no enabled control, and Tab must still reach its content (S1 review L3-4).
+    <div role="tabpanel" tabIndex={0} id={phonePanelId(idBase)} aria-labelledby={phoneTabId(idBase, tab)} data-hub-phone-panel={tab}>
       <motion.div key={tab} initial={reducedMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={motionToken('smooth', { reducedMotion })}>
         {area == null ? (
           <PhoneOverview sections={sections} actions={actions} />
         ) : (
           <>
-            <div style={{ marginBottom: 14 }}><AreaHeading area={area} label={label} size={18} /></div>
+            <div style={{ marginBottom: 14 }}><AreaHeading area={area} label={label} size={18} gap={9} /></div>
             <AreaBody area={area} sections={sections} actions={actions} />
           </>
         )}

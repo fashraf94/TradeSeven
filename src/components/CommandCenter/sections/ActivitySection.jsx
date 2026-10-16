@@ -10,11 +10,16 @@ import React from 'react';
 import { readyRows } from '../hub/hubModel';
 import { HUB_COPY as COPY } from '../hub/hubCopy';
 import { C, HAIR, tint } from '../hub/hubStyle';
-import { Icon, LoadingLine, Mono, Row, Section } from '../HubParts';
+import { HubLink, Icon, LoadingLine, Mono, Row, Section } from '../HubParts';
 
 const KIND_ICON = { completed: 'sword', deployed: 'bolt', loadout: 'pencil', idea: 'search' };
 
-export default function ActivitySection({ activity, limit = null, onOpen }) {
+/**
+ * With a `limit` (the phone Overview's three rows) and more rows than it, the
+ * design's "All activity · N" link follows — N is the fetched window's own
+ * length, and the link stays disabled until S4 supplies its sheet.
+ */
+export default function ActivitySection({ activity, limit = null, onOpen, onAll }) {
   const ready = activity?.status === 'ready';
   const rows = readyRows(activity);
   const items = limit ? rows.slice(0, limit) : rows;
@@ -32,18 +37,21 @@ export default function ActivitySection({ activity, limit = null, onOpen }) {
               style={{ minHeight: 52, padding: '9px 12px', borderTop: i ? `1px solid ${HAIR}` : 'none', borderRadius: 0 }}
               right={<Mono style={{ fontSize: 10, color: C.ink3, whiteSpace: 'nowrap', flexShrink: 0 }}>{e.at}</Mono>}
             >
-              <div data-hub-activity-row="" style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <span data-hub-activity-row="" style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                 <span aria-hidden="true" style={{ width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: tint('teal', 0.1), flexShrink: 0, marginTop: 1, color: C.teal }}>
                   <Icon name={KIND_ICON[e.kind] || 'dot'} size={13} />
                 </span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: C.ink }}>{e.text}</div>
-                  <div style={{ fontSize: 12, color: C.ink3, marginTop: 2, lineHeight: 1.4, textWrap: 'pretty' }}>{e.sub}</div>
-                </div>
-              </div>
+                <span style={{ display: 'block', minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: C.ink }}>{e.text}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: C.ink3, marginTop: 2, lineHeight: 1.4, textWrap: 'pretty' }}>{e.sub}</span>
+                </span>
+              </span>
             </Row>
           ))}
         </div>
+      )}
+      {ready && limit && rows.length > limit && (
+        <div><HubLink onPress={onAll}>{COPY.activity.all(rows.length)}</HubLink></div>
       )}
     </Section>
   );

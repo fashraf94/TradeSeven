@@ -29,8 +29,8 @@ export function installFakeLayout(initial = {}) {
   const originalRect = Element.prototype.getBoundingClientRect;
 
   class FakeResizeObserver {
-    constructor(callback) { this.callback = callback; this.targets = new Set(); observers.add(this); }
-    observe(target) { this.targets.add(target); }
+    constructor(callback) { this.callback = callback; this.targets = new Set(); this.options = new Map(); observers.add(this); }
+    observe(target, options) { this.targets.add(target); this.options.set(target, options); }
     unobserve(target) { this.targets.delete(target); }
     disconnect() { this.targets.clear(); observers.delete(this); }
   }

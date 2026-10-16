@@ -6,8 +6,9 @@
 // The strip is fixed above App's BottomNav. Both heights come from a
 // ResizeObserver on the element's border box (useNavClearance), never from
 // CSS: BottomNav declares `height: 64px` with `padding-bottom:
-// env(safe-area-inset-bottom)` under the app's border-box sizing, so its CSS
-// height is not a safe guess at its outer height on every device.
+// env(safe-area-inset-bottom)`, and the app ships no border-box rule (it is
+// content-box), so its outer height is 64 px plus the device's inset — its CSS
+// height is not a safe guess at it.
 //
 // The safe-area inset is counted once. The nav's measured outer height already
 // contains its own safe-area padding, so a strip sitting on the nav adds none.

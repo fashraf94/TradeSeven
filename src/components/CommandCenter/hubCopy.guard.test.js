@@ -51,8 +51,11 @@ function hubSourceFiles() {
 // A user-visible string written in place: JSX text with a letter, a quoted
 // text child with a letter, or a quoted accessible name / label / title.
 const LITERAL_COPY = [
-  { name: 'JSX text', re: />\s*([A-Za-z][^<>{}\n]*?)\s*<\//g },
-  { name: 'JSX text', re: />\s*([A-Za-z][^<>{}\n]*?)\s*<[A-Za-z]/g },
+  // JSX text: words between a tag's end and the next tag. Code operators
+  // (`(`, `)`, `&`, `|`, `=`, `;`) never sit in text, so `a > limit && (<div`
+  // is not mistaken for it.
+  { name: 'JSX text', re: />\s*([A-Za-z][^<>{}\n()&|=;]*?)\s*<\//g },
+  { name: 'JSX text', re: />\s*([A-Za-z][^<>{}\n()&|=;]*?)\s*<[A-Za-z]/g },
   // A quoted child, not an attribute's value (`id={`h${uid}`}` is not copy).
   { name: 'quoted child', re: /(?<!=\s*)\{\s*(['"`])([^'"`\n]*[A-Za-z][^'"`\n]*)\1\s*\}/g },
   { name: 'quoted attribute', re: /\b(?:aria-label|ariaLabel|aria-description|label|title|placeholder|alt)=\s*(?:\{\s*)?(['"`])([^'"`\n]*[A-Za-z][^'"`\n]*)\1/g },
@@ -101,7 +104,7 @@ describe('copy centralization — every user-visible string is in a copy table',
       expect(literalCopyIn(planted), planted).not.toEqual([]);
     }
     // ...and leaves alone what is not copy.
-    for (const fine of ['<span>{COPY.games.loading}</span>', "<span>{' '}</span>", '<div data-hub="shell" />', 'a > b && c < d', '<stop id={`h${uid}`} />', '<circle fill={`url(#h${uid})`} />']) {
+    for (const fine of ['<span>{COPY.games.loading}</span>', "<span>{' '}</span>", '<div data-hub="shell" />', 'a > b && c < d', '{ready && rows.length > limit && (\n<div><HubLink />', '<stop id={`h${uid}`} />', '<circle fill={`url(#h${uid})`} />']) {
       expect(literalCopyIn(fine), fine).toEqual([]);
     }
   });

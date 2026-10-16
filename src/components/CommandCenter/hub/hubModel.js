@@ -12,13 +12,15 @@
 // (../__fixtures__/hubLayoutFixtures.js) fill the same shapes for tests only.
 //
 //   nextAction  { status, candidate: null | { key: 'openGame'|'review'|'deploy',
-//                 title, why, detail?, cta } }                         §8.2
+//                 id (the game's record id; null for deploy), title, why,
+//                 detail?, cta } }                                     §8.2
 //   games       { status, rows: [{ id, mode, opponent, live, clock?, preOpen?,
-//                 detail, outcome?: { text, tone: 'pos'|'neg'|'neutral' },
+//                 detail, outcome?: { text, tone: 'pos'|'neg'|'draw'|'neutral' },
 //                 review?: boolean }] }                                §3, §7
 //   deploy      { displayState, canStart, reason? }                    §3.1 (S2a)
 //   loadout     { status, archetype?: { name, approach },
-//                 watchlist?: { name, symbols }, summary? }            §2 (S5)
+//                 watchlist?: { name, symbols }, summary?,
+//                 lockedInGame? }                                      §2 (S5)
 //   research    { status }                                             §8.1 (S6)
 //   activity    { status, rows: [{ id, kind, text, sub, at }] }        §8.2 (S4)
 //   brief       { status, caption?, body? }                            §8.3 (S4)
