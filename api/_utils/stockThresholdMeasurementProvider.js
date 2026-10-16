@@ -17,8 +17,9 @@ export class StockThresholdRefusal extends Error {
 export const refuseStock = reason => { throw new StockThresholdRefusal(reason); };
 // Security identity (v2 follow-up, build report §6a Option A): a non-empty ISIN
 // string keeps `<ISIN>`; otherwise only a well-formed FIGI (OpenFIGI shape, no
-// reserved prefix, valid check digit) gives `FIGI:<OpenFigi>`. FIGI is share-class
-// level, so BRK-A and BRK-B never share one. CIK and LEI are never used. The rule
+// reserved prefix, valid check digit) gives `FIGI:<OpenFigi>`. The provider's FIGI
+// is the US composite FIGI, one per security, so BRK-A and BRK-B never share one
+// (a CIK is per issuer). CIK and LEI are never used. The rule
 // is recorded in the v2 approval and the runbook; it is not hashed.
 const FIGI_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 export function wellFormedFigi(v) {

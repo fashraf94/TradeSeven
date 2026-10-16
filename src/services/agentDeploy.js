@@ -16,7 +16,7 @@ import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../config/featureFlags';
 import * as ceremonyTiming from '../components/Dashboard/deployCeremony/ceremonyTiming';
 // Pilot P1b — the deploy refusal's typed code (founder ruling B2).
 import { DEPLOY_REFUSAL_CODE } from '../constants/hypothesisRecords';
-import { stockAdmissionRetryAt } from '../utils/stockAdmissionWindow';
+import { stockAdmissionRetryAt, STOCK_PUBLICATION_DELAY_MINUTES } from '../utils/stockAdmissionWindow';
 
 // BaggerBomb stock thresholds v2 (Rulings 2 and 6): only an allowlisted pilot
 // creation can be refused this way. The server's 503 carries `reason`; the
@@ -28,7 +28,7 @@ export const STOCK_ADMISSION_ERROR = 'Stock admission unavailable';
 const RETRY_TIME_REASONS = new Set(['late_start_cutoff', 'evening_window']);
 const etClock = ms => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(ms).replace(/\s/g, ' ');
 const STOCK_ADMISSION_LINES = {
-  publication_window_not_open: 'Measured battles reopen 15 minutes after the market close. Try again shortly.',
+  publication_window_not_open: `Measured battles reopen ${STOCK_PUBLICATION_DELAY_MINUTES} minutes after the market close. Try again shortly.`,
   prior_corrected_battle_requires_settlement: 'Your previous measured battle is still settling. Try again after it completes.',
 };
 export function stockAdmissionLine(data, now = new Date()) {

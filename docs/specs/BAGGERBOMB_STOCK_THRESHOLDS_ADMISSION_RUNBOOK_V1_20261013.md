@@ -37,7 +37,7 @@ The enabled shape is:
 - A selected creation is refused retriably in four cases:
   - from 45 minutes before the calendar close (15:15 ET; 12:15 ET on early-close days; Ruling 2);
   - in the evening window, after the close, when the battle would expire before the next session opens (ruling P2, below);
-  - during the 16:00–16:15 ET publication window;
+  - during the publication window, the first 15 minutes after the close. A crypto roster on a regular day meets the evening window first, so this one shows on early-close days (13:00–13:15 ET) and for stock-only rosters;
   - whenever the collector cannot qualify both sides' stocks.
 - The player sees one short line (`src/services/agentDeploy.js` `stockAdmissionLine`).
 
@@ -68,11 +68,13 @@ CIK and LEI are never used. The rule is not hashed and the v2 policy hash does n
 
 | Day | Crypto roster refused | Allowed again |
 | --- | --- | --- |
-| Regular trading day | 15:15–20:00 ET (14:15–19:00 CT): the late start, then the evening window | 20:00 ET (19:00 CT), then all night, pre-open and in session until the next 15:15 ET |
+| Regular trading day | 15:15–20:00 ET (14:15–19:00 CT): the late start, then the evening window | 20:00 ET (19:00 CT), then all night, pre-open and in session until the next late start (15:15 ET, or 12:15 ET before an early close) |
 | Friday | 15:15–20:00 ET, the same | 20:00 ET Friday; all weekend |
 | Early-close day | 12:15–13:15 ET (11:15–12:15 CT): the late start, then the publication window. There is no Night Game; the expiry is the 13:00 close itself. | 13:15 ET (12:15 CT); the battle plays the next session |
 
-- A refused player reads, for both reasons: "Measured battles can't start this late in the day. Try again after 8:00 PM ET." On an early-close day the time is 1:15 PM ET. The retry time comes from the same module (`stockAdmissionRetryAt`). The browser computes it at the refusal instant, because the fenced `decide.js` 503 carries only the reason.
+- A refused player reads, for both reasons: "Measured battles can't start this late in the day. Try again after 8:00 PM ET." On an early-close day the time is 1:15 PM ET. The retry time comes from the same module (`stockAdmissionRetryAt`). The browser computes it from its own clock when the refusal arrives, because the fenced `decide.js` 503 carries only the reason. It assumes the roster carries crypto, which every tiered pilot roster does.
+- Each refused attempt still costs the deploy's model calls and replaces the agent's shown decision: the refusal comes at battle creation, after `decide.js` has run them, and the cooldown is restored (as for the late start). Tell pilot players the window rather than letting them retry into it.
+- At the calendar's horizon (Friday 2027-12-31, after 15:15 ET) the next session lies in 2028, outside the maintained tables, so creation is refused `calendar_missing` and the 8:00 PM retry time is wrong that one evening. Adding the 2028 tables (`src/utils/marketCalendar.js`) removes it.
 - Non-allowlisted owners, legacy creation and tournaments are unchanged. A legacy battle created in that window still records a 0–0 draw; that is reported separately and is out of scope here.
 
 ## Switching the pilot on (a separate step, after the blockers follow-up is merged and deployed)

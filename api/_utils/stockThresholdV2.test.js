@@ -3,12 +3,16 @@
 // common swap writer and creation service. Only the network, the clock and the
 // admission flag are doubles. The real import of src/utils/stockThresholdModel.js
 // below is its Node dependency-surface guard (BUILD_RULES §4): never mock it.
+// First import: the fenced computeFullDayExpiry derives its instant from the process
+// zone, and the evening-window rows read it, so this file runs in UTC like CI and
+// production (review B3-1).
+import './__fixtures__/pinTimezoneUtc.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const selector = vi.hoisted(() => ({ enabled: true }));
 vi.mock('../../src/config/featureFlags.js', async original => ({ ...await original(), get STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED() { return selector.enabled; } }));
 import { prepareStockCreation, stockCreationDb, scoreCorrectedPosition, lateStartRefusal, STOCK_LATE_START_CUTOFF_MINUTES, decisionQuote, bindStockReceipt, readCorrectedInputs } from './stockThresholdAdmission.js';
 import { collectStockObservation, wellFormedFigi } from './stockThresholdMeasurementProvider.js';
-import { validStockAdmissionControl, stockAdmissionSelects, STOCK_APPROVAL } from './stockThresholdPolicyRegistry.js';
+import { validStockAdmissionControl, stockAdmissionSelects, STOCK_APPROVAL, APPROVED_STOCK_POLICY } from './stockThresholdPolicyRegistry.js';
 import { commitBattleDocWithPin } from './compositionGenerationFence.js';
 import { executeSwapServer } from './agentSwapExecution.js';
 import { canonicalContentHash } from './canonicalHash.js';
@@ -375,7 +379,6 @@ describe('v2 identity: v1 is retired', () => {
     const { battle } = await correctedStockBattle();
     battle.scoring.stockThresholdModel = { modelId: 'stock_measured_atr14_fullday_v1', publicationRuleId: 'eodhd_us_completed_session_observation_v1', policyHash: 'baa2b39688b673c93190540f500307ae7ad4aba7a07228ca23ba1f2afe1bf9f8', publicationRuleHash: '3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f', approvedPolicyRef: 'owner_baggerbomb_stock_thresholds_v1_20261013@v1', admittedAt: STOCK_TEST_NOW };
     expect(stockModelRoute(battle)).toEqual({ status: 'unavailable', reason: 'unsupported_stock_model' });
-    const { APPROVED_STOCK_POLICY } = await import('./stockThresholdPolicyRegistry.js');
     expect(canonicalContentHash(APPROVED_STOCK_POLICY)).toBe(STOCK_MODEL.policyHash);
     expect(canonicalContentHash(APPROVED_STOCK_POLICY.publicationRule)).toBe('3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f');
     expect(APPROVED_STOCK_POLICY).toMatchObject({ modelId: 'stock_measured_atr14_fullday_v2', modelVersion: 2 });
@@ -403,8 +406,10 @@ describe('security identity follow-up (P1, build report §6a Option A): ISIN, el
   });
   it.each([
     ['a bad check digit', 'BBG000BW3298'], ['lower case', 'bbg000bw3299'], ['11 characters', 'BBG000BW329'], ['13 characters', 'BBG000BW32990'],
-    ['a vowel', 'BAG000BW3299'], ['third character not G', 'BBH000BW3299'], ['a reserved prefix (valid check digit)', 'BSG000B9XRY7'],
-    ['surrounding space', ' BBG000BW3299'], ['a number', 123456789012], ['empty', ''], ['null', null], ['absent', undefined],
+    // Each malformed value below keeps a check digit the loop accepts, so only the named
+    // check can refuse it (review B3-2); an 11-character value can never pass the loop.
+    ['a vowel (valid check digit)', 'BAG000BW3291'], ['third character not G (valid check digit)', 'BBH000BW3298'], ['a reserved prefix (valid check digit)', 'BSG000B9XRY7'],
+    ['surrounding space', ' BBG000BW3244'], ['mixed case', 'bbg000BW3299'], ['a number', 123456789012], ['empty', ''], ['null', null], ['absent', undefined],
   ])('ISIN null with a malformed FIGI (%s) is refused before the quote GET', async (_, OpenFigi) => {
     const fetched = [];
     await expect(stockObservation('UNP', { changeResponse: (v, url) => { fetched.push(url.pathname); return general({ ISIN: null, OpenFigi, CIK: LIVE.UNP.CIK, LEI: '549300HO5WFZUT5N2T22' })(v); } }))
@@ -418,7 +423,7 @@ describe('security identity follow-up (P1, build report §6a Option A): ISIN, el
       await expect(observe('ACN', { ...LIVE.ACN, ...bad }), JSON.stringify(bad)).rejects.toMatchObject({ reason: 'security_identity_unqualified' });
     }
   });
-  it('BRK-A and BRK-B get different ids: FIGI is share-class level, unlike their shared CIK', async () => {
+  it('BRK-A and BRK-B get different ids: one composite FIGI per security, unlike their shared CIK', async () => {
     const a = await observe('BRK-A'), b = await observe('BRK-B');
     expect(a.securityId).toBe('EODHD:BRK-A.US:FIGI:BBG000DWDMY4'); expect(b.securityId).toBe('EODHD:BRK-B.US:FIGI:BBG000DWH8Q0');
     expect(a.securityId.split(':').at(-1)).not.toBe(b.securityId.split(':').at(-1));
@@ -469,7 +474,8 @@ describe('evening window (P2, build report §6b option (a)): a pilot battle that
   }
   it('runs in the production process zone (UTC): the fenced computeFullDayExpiry derives its instant from it', () => {
     // Under another zone the fence's expiry shifts by the zone offset (pre-existing,
-    // out of scope); Vercel and CI run UTC, so these rows pin the shipped behaviour.
+    // out of scope); the first import pins UTC, and this row fails first, by name,
+    // if a pool ever ignores that pin (worker threads do).
     expect(new Date(Date.UTC(2026, 9, 21)).getTimezoneOffset()).toBe(0);
   });
   const refusedBy = async (ms, opts) => { const c = await createAt(ms, opts); return { reason: c.e?.reason ?? null, fetched: c.fetchSpy.mock.calls.length, c }; };
@@ -562,7 +568,9 @@ describe('evening window (P2, build report §6b option (a)): a pilot battle that
     expect({ refused, named }).toEqual({ refused: 175, named: 174 });
   }, 240_000);
   it('the retry time is the Night Game close on a regular day and the end of the publication window on an early-close day', () => {
-    expect(NIGHT_GAME_CLOSE).toEqual({ hour: 20, minute: 0 }); expect(STOCK_PUBLICATION_DELAY_MINUTES).toBe(15);
+    expect(NIGHT_GAME_CLOSE).toEqual({ hour: 20, minute: 0 });
+    // The shared delay is the hashed publication rule's own minimum (review B2-7).
+    expect(STOCK_PUBLICATION_DELAY_MINUTES).toBe(APPROVED_STOCK_POLICY.publicationRule.minimumMinutesAfterScheduledClose); expect(STOCK_PUBLICATION_DELAY_MINUTES).toBe(15);
     expect(stockAdmissionRetryAt(iso(ET('2026-10-21', 15, 30)))).toBe(ET('2026-10-21', 20, 0));
     expect(stockAdmissionRetryAt(iso(ET('2026-10-21', 18, 0)))).toBe(ET('2026-10-21', 20, 0));
     expect(stockAdmissionRetryAt(iso(ET('2026-11-27', 12, 30)))).toBe(ET('2026-11-27', 13, 15));
