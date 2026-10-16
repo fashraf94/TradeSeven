@@ -11,15 +11,16 @@ Prepared 2026-10-16 by Flash (Claude Code). Prompt: "FantasyTrades Command Cente
 | The intended change? | The already-running answer (200 `battleCreated:false`) is now `existing_battle`: no create callback, no fabricated `agent_` id, no stash, no false reveal; a new **Already running · Open game** terminal opens the owned server document. |
 | Checks | At the code head `e5e98d42`, Linux, CI-shaped (`--maxWorkers=2`): **Test Files 1028 passed | 7 skipped (1035)**, 22,300 tests passed, **0 failed**, exit 0. `lint:gate` exit 0. `vite build` exit 0; the hub chunk is unchanged at 67.58 kB. Mutation: every added or changed row has been the failing row of a non-equivalent mutant (§8.3). `vite build` and `lint:gate` were re-run at the pushed report head (PR description). |
 | Review | BUILD_RULES §2 review run: 4 read-only lenses + 13 refuters (one per finding or NIT group, each on its own snapshot) + the mutating lens L5 last. L1–L4: 24 unique findings, 15 CONFIRMED and 9 PARTLY (sub-claims refuted), 0 refuted outright; 8 fixed, 16 recorded (two as founder questions). L5: 15 test gaps. Its refuter re-ran the 11 it could test: 10 CONFIRMED, L5-9 PARTLY. Every gap was closed with a row or recorded. No BLOCKER. The one MAJOR that survived refutation (L4-1) was graded below MAJOR by its own refuter, because nothing live reads `outcome` yet; it is Q1. |
-| Founder questions | **Two need a ruling before S2b wires `outcome`** (§11): Q1 the stock 503 that can follow a commit (typed `refused` as ruled), Q2 how the shells show `orphaned` (error shape as ruled). Two more are optional (Q3 limiter `retryAfter`, Q4 Scouting Board close). |
+| Founder questions | **Answered 2026-10-16: apply all four fixes as proposed in §11.** Applied in the amendment, §14 (new code head `1d5dd538`). Q1: the stock 503 that can follow a commit is now `uncertain`. Q2: the shells close the ceremony on `orphaned`. Q3: the limiter's `retryAfter` is forwarded. Q4: the Scouting Board closes on an existing battle. |
 | Status | Pushed as a draft PR, **STOPPED**: no merge, no CI watching. The PR's Vercel preview is the founder's smoke surface: one real deploy must reveal and enter exactly as today. |
 
 ## 1. Branch, HEAD and preamble
 
 - `git fetch origin` first (BUILD_RULES §3): `origin/main` = `078fe895` (PR #978, S2a, merged — the precondition holds). Re-fetched before the final checks: unchanged.
 - Worktree branch `claude/deploy-r1-typed-outcomes-ca0c16` (the app's suffix), cut at `078fe895`, clean at start. Pushed as `claude/deploy-r1-typed-outcomes` by refspec.
-- Commits: `df8b6c8a` R1 code and tests · `7c665c3e` the identity reader's rows · `4b4531d1` mutation round 1 (survivor rows, the leak-free ceremony harness, the hub translator over every result) · `969c7da1` review fix round · `1e65feb1` the rows L5 found missing · `e5e98d42` App's guard pinned as a top-level statement · the report commit.
+- Commits: `df8b6c8a` R1 code and tests · `7c665c3e` the identity reader's rows · `4b4531d1` mutation round 1 (survivor rows, the leak-free ceremony harness, the hub translator over every result) · `969c7da1` review fix round · `1e65feb1` the rows L5 found missing · `e5e98d42` App's guard pinned as a top-level statement · `bc53176f` the first report · `1d5dd538` the amendment after the founder's rulings (§14) · the amended report.
 - Code head `e5e98d42`; report head = the PR head.
+- **Amended after the founder's rulings:** code head `1d5dd538`, the amendment commit. The amended report follows it. See §14.
 
 ## 2. Starting check (BUILD_RULES §3)
 
@@ -82,8 +83,8 @@ Every row is pinned field-for-field in `src/services/agentDeploy.outcomes.test.j
 | JSON 409 `hypothesis_review_due` (carriage refusal) | `refused` | false | 409 | 409 | true | `hypothesis_review_due` | the server's `message` (table C's due line) | `code: 'hypothesis_review_due'`, `errorPhase` |
 | JSON 429 `Deploy already in progress` (`decide.js:184`) | `refused` | false | 429 | 429 | true | the words | — | `reason: 'in_progress'` |
 | JSON 429 `Please wait 2 minutes between deploys` (`decide.js:193`) | `refused` | false | 429 | 429 | true | the words | — | `reason: 'cooldown'` |
-| JSON 429 `Rate limit exceeded` (`rateLimit.js:78`, before the handler) | `refused` | false | 429 | 429 | true | `Rate limit exceeded` | — | no `reason`; its Retry-After is not read |
-| JSON 503 `Stock admission unavailable` (`decide.js:1073`) | `refused` (as ruled; `reason:'corrected_creation_failed'` can follow a commit — Q1) | false | 503 | 503 | true | the words | the player line (`stockAdmissionLine`) | — |
+| JSON 429 `Rate limit exceeded` (`rateLimit.js:78`, before the handler) | `refused` | false | 429 | 429 | true | `Rate limit exceeded` | — | no `reason`. **Amended (Q3, §14):** `retryAfter` is the body's finite seconds; the header is never read |
+| JSON 503 `Stock admission unavailable` (`decide.js:1073`) | `refused`. **Amended (Q1, §14):** `uncertain` when `reason:'corrected_creation_failed'` | false | 503 | 503 | true | the words | the player line (`stockAdmissionLine`), kept in both cases | — |
 | JSON 503 `pricing_unavailable` (`:897`) / missing rankings (`:364`) | `refused` | false | 503 | 503 | true | `data.error` | `data.details` | — |
 | JSON 400 / 401 / 403 / 404 / other 409s / any other 4xx | `refused` | false | s | s | true | `data.error` | `data.details` | — |
 | JSON 2xx whose `success` is not `true` | `uncertain` | false | s | s | true | `data.error` | `data.details` | — |
@@ -308,17 +309,17 @@ How the runs worked:
 | 6 | `1e65feb1` | L5's 14 real survivors, I3x (every deploy orphaned) and FO1 (the flag-off guard) | **16/16 killed**, each by the row written for it. |
 | 7 | `e5e98d42` | L5's M43 (App's guard wrapped in `if (false)`) | killed by the strengthened source pin. |
 
-Every added or changed row named in §5 and §6 has been the failing row of at least one non-equivalent mutant.
+Every added or changed row at the pushed head has been the failing row of at least one non-equivalent mutant. The L5-7 focus row was rewritten; the `document.activeElement` asserts it dropped could never fail in jsdom, so they were never guarded. The amendment's rows are covered in §14.
 
 ## 9. Builder interpretations, as they stand after review
 
-1. Every JSON 503 decide.js sends is `refused` (pricing, missing rankings, stock admission). **Except in one case it is not definitive** — L4-1, Q1.
-2. The rate limiter's 429 is `refused` with no `reason`; its `Retry-After` / `retryAfter` is not forwarded (Q3).
+1. Every JSON 503 decide.js sends is `refused` (pricing, missing rankings, stock admission). **Except in one case it is not definitive** — L4-1, Q1. **Amended (§14):** that one reason is now `uncertain`.
+2. The rate limiter's 429 is `refused` with no `reason`; its `Retry-After` / `retryAfter` is not forwarded (Q3). **Amended (§14):** the body's `retryAfter` is now forwarded; the header is still not read.
 3. A real `agentBattleId` with no `battleCreated` flag stays `created` (parity); `battleCreated:false` wins over a present `agentBattleId`.
 4. The uid guard is strict: a token obtained while nobody is signed in is never used; nobody signed in at entry ends at `auth-required`; a null token caused by an account change is `orphaned` (L2-4).
 5. `options.isCurrent` is checked beside the uid; only a literal `true` passes; a throw or a non-function fails closed (L2-3).
 6. No guard after the hand-off callback resolves: App's handler is synchronous to its return (its only awaits are inside the fire-and-forget price write, which re-checks the owner), so nothing can change in between (L1-2 / L2-7, refuted as reachable by a 0–300 microtask sweep).
-7. `orphaned` maps in the shells to the legacy error shape, by the shell rule — Q2.
+7. `orphaned` maps in the shells to the legacy error shape, by the shell rule — Q2. **Amended (§14):** the shells now close the ceremony on `orphaned`.
 8. The existing terminal resolves from the shell's live list first (skipping `localOrigin` and non-active entries), then the target-scoped verifier, and requires the server's id and the signed-in owner; Retry re-reads, never POSTs. A league battle is reachable only through the live list (L3-1, documented and pinned).
 9. `onPhaseChange` is reported from the machine's own setters at every transition, plus once on mount (StrictMode reports mount twice in development — L3-8).
 10. **Corrected (L3-11):** before R1, ceremony-off + an existing battle was not silent — it navigated into the fabricated battle and toasted "Agent deployed". After R1 it opens the owned document, or shows nothing if it cannot (as ceremony-off refusals always have).
@@ -332,16 +333,16 @@ Outcomes and identity:
 - A→B→A is undetected without the epoch.
 - `orphaned` is a local disposition. It carries `postIssued` and logs one warning.
 
-Before S2b wires `outcome` to Retry:
-- Wait for Q1. Until it is answered, treat a stock-admission `refused` with `reason:'corrected_creation_failed'` as possibly committed: reconcile before offering Retry.
+Before S2b wires `outcome` to Retry (amended, §14):
+- Q1 is answered. The stock-admission 503 with `reason:'corrected_creation_failed'` is `uncertain`, so it goes through reconciliation like any other `uncertain`. Every other stock reason stays `refused`.
 - Results carry `reason` only on decide's two 429s (`in_progress`/`cooldown`). `code` appears only on review-due.
 - Refusal words beyond `details` are S2b's to compose, from `evidence.error`, `reason` and `httpStatus` (L4-3).
-- The limiter's `retryAfter` is not forwarded (Q3).
+- The limiter's 429 carries `retryAfter`, the body's seconds (Q3). S2b converts it to `retryAfterUntil` with its own clock (the S2a reducer's `cooldownUntilFrom`).
 
 The ceremony bridge:
 - Use `attemptId` and `onPhaseChange` (reported at every transition).
 - Ignore repeats (StrictMode).
-- Close the ceremony on `orphaned` and on any auth/epoch change (L2-2, L2-6); the legacy shells do not.
+- Close the ceremony on any auth/epoch change, at the change itself (L2-2, L2-6). Since the amendment, the legacy shells close it on `orphaned`, but only when the result arrives.
 
 The existing battle:
 - R1's terminal reads the live list, then the verifier.
@@ -366,6 +367,8 @@ The optimistic entry:
 
 
 ## 11. Founder questions
+
+**Answered 2026-10-16: apply all four fixes as proposed below.** Applied in §14. The questions are kept here as they were asked.
 
 **Q1 — the stock 503 that can follow a commit (review L4-1, CONFIRMED on the real SDK).**
 - R-R1-3 names "503 stock admission" `refused`, and R1 types it so.
@@ -428,4 +431,52 @@ The optimistic entry:
 
 - This report's byte-identical copy: `C:/Users/fashr/Documents/FantasyTrades/CommandCenter/20261016_BUILD_DEPLOY_R1_TYPED_OUTCOMES.md` (sha256 in the PR description).
 - The scratchpad holds the review material: the brief, the lens findings, the refuter verdicts, the mutation specs and results, and the WSL logs.
-- **Next:** the founder answers Q1 and Q2 (and optionally Q3 and Q4). An independent Fable review of this PR follows. R2 runs separately. S2b waits for reviewed R1 and R2.
+- **Next (as of the first report):** the founder answers Q1 and Q2 (and optionally Q3 and Q4). An independent Fable review of this PR follows. R2 runs separately. S2b waits for reviewed R1 and R2. The founder has since answered all four; see §14.
+
+## 14. Amendment after founder rulings
+
+**Ruling (2026-10-16):** "Apply all four fixes as proposed in report §11." The four fixes are below.
+
+**New code head: `1d5dd538`.** The amended report is the next commit, and the PR head.
+
+| Ruling | Change, by `file:line` at `1d5dd538` | Effect |
+|---|---|---|
+| **Q1** | `src/services/agentDeploy.js:85` `mayFollowCommit` (a 503 whose `reason` is `corrected_creation_failed`); `:289` `refused` excludes it. | That 503 is now `uncertain`. Its player line stays in `details`, and every legacy field is unchanged. Every other stock-admission reason stays `refused`. The hub's translator reads it as uncertain / lost contact. The shipped ceremony is unchanged: `deployResultFor` maps `refused` and `uncertain` to the same error shape. |
+| **Q2** | `src/components/Dashboard/deployResult.js:28` `isOrphanedResult`; `CommandDashboard.jsx:42`, `:266-267`; `CommandDashboardDesktop.jsx:29`, `:176-177`. Both shells are edited identically. | With the ceremony on, an `orphaned` deploy closes the ceremony instead of being mapped to the error shape. The former owner's deploy is no longer verified under the new account, and no "Try again" can deploy the new account's agent. **Residual:** the ceremony closes when the result arrives, not at the account switch itself. That is still S2b's epoch. |
+| **Q3** | `src/services/agentDeploy.js:301` | On a JSON failure, a finite numeric `retryAfter` in the body is forwarded as `retryAfter` (seconds). Only the shared rate limiter's 429 sends one. The header is never read, so the S2a guard that forbids the hyphenated header name in this file stays green. Nothing reads the field today; S2b converts it into a cooldown. |
+| **Q4** | `src/components/Dashboard/ScoutingBoardSheet.jsx:20` (import), `:132` | The sheet closes on `existing_battle` as well as on a created deploy, as it did before R1 typed that answer. It still stays open on every failure, including `orphaned`. Only where the user lands changes; a later tap still meets the 2-minute cooldown. |
+
+**Created-path parity:** unaffected. Q1 and Q3 are inside the JSON-failure branch. Q2 acts only on `orphaned`. Q4 adds a close only for `existing_battle`; a created deploy closes the sheet exactly as before.
+
+**Rows added or moved:**
+- `agentDeploy.outcomes.test.js`:
+  - the `corrected_creation_failed` 503 is `uncertain`, with its line kept;
+  - four other stock reasons stay `refused`;
+  - the hub translator reads that 503 as uncertain;
+  - the limiter row now pins `retryAfter: 41`;
+  - a non-finite `retryAfter` (string, null, NaN, absent) forwards nothing.
+- `deployResult.test.js`: `isOrphanedResult` is true only for `orphaned`.
+- `deployShells.r1.guard.test.js`: the ceremony-on branch now pins the orphaned close, and the import pin moved.
+- New file `ScoutingBoardSheet.close.test.jsx` (7 rows, the real sheet): created and `existing_battle` close it; refused, uncertain, handoff_failed, orphaned and a shell catch leave it open.
+
+**Mutation (run 8, LF snapshot of `1d5dd538`):** 10 mutants (Q1a–c, Q3a–b, Q2a–c, Q4a–b). **10/10 killed**, each by the row written for it. Baseline 360/360.
+
+**Checks at `1d5dd538`:**
+
+| Check | Result |
+|---|---|
+| R1 test set (18 files, Windows worktree) | **360 passed**, 0 failed |
+| `vite build` (Linux) | exit 0; hub chunk unchanged at 67.58 kB |
+| `lint:gate` (Linux) | exit 0 |
+| Full suite, CI-shaped (Linux) | **Test Files 1029 passed \| 7 skipped (1036)**; 22,318 tests passed, **0 failed**, 88 skipped; exit 0 |
+
+**Review:** the four changes are the one-line fixes §11 proposed, applied as the founder ruled. Each is mutation-checked, and their rows were written to the refuters' findings (L4-1 / F2, L2-2 / F3, L4-2 / F10, L3-4 / F8). No lens re-ran over them. The independent Fable review follows.
+
+**Superseded by this amendment:**
+- §4: the stock-503 row and the limiter row. Marked inline.
+- §9: interpretations 1, 2 and 7. Marked inline.
+- §10: the S2b items for Q1, Q3 and the shells' close. Updated.
+- §11: all four questions, now answered.
+- The earlier PR-description errata (the report commit's SHA, and §8.3's wording) are folded into §1 and §8.3.
+
+**Unchanged and still open for separate tasking:** everything in §12, including the stale S2a guard premise, the fenced root cause at `agentBattleService.js:339`, and the B2 case Q1 does not cover.
