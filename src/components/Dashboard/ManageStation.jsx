@@ -15,6 +15,7 @@ import GainLossBadge from '../shared/GainLossBadge';
 import { CMD, alpha, Mono } from './commandUI';
 import { classifyBattleType, battleTypeLabel, BATTLE_TYPE_RANKED } from '../../utils/commandCenterLiveBattles';
 import { DESK_COPY } from './desk/deskCopy';
+import { displayedStockScores } from '../../utils/stockThresholdModel.js';
 
 function timeLeft(expiresAt) {
   if (!expiresAt) return null;
@@ -30,7 +31,8 @@ function timeLeft(expiresAt) {
 export default function ManageStation({ battle, agent, accent, onOpen, showType, sync = null }) {
   if (!battle) return null;
   const agentName = battle.agentContext?.agentName || agent?.name || 'Your agent';
-  const score = battle.scoreState?.currentScore;
+  // v2 Ruling 16: a measured-model battle's unavailable score is null ("—"), never 0.
+  const score = displayedStockScores(battle).currentScore;
   const tradeCount = battle.scoreState?.tradeCount ?? (battle.trades?.length || 0);
   const left = timeLeft(battle.expiresAt);
 

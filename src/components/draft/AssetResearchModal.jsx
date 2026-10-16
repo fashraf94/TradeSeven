@@ -292,7 +292,24 @@ const AssetResearchModal = ({
   // Prefer previousClose from OHLCV daily data (most accurate daily baseline) over
   // asset properties. This ensures the bomb chart and BaggerBombTab use yesterday's close
   // as the starting point, matching the scoring engine's daily reset behavior.
+  // BaggerBomb stock thresholds v2, Ruling 15: a measured-model position's
+  // chart draws its committed context's six exact targets from the fill, and
+  // its HITs are that context's crossed tiers (StockChart `measured`). An
+  // unavailable context draws nothing. Keyed on the context's CONTENT, not its
+  // identity: the screen rebuilds an equal context on every render, and a new
+  // object here would tear the chart down each time (review B3-2).
+  const measuredContext = currentAsset?.stockRewardRoute ? currentAsset.rewardContext : null;
+  const measuredBombKey = currentAsset?.stockRewardRoute
+    ? (measuredContext?.status === 'valid'
+      ? JSON.stringify([measuredContext.fill, measuredContext.targets.map(t => [t.key, t.target]), measuredContext.crossedTiers])
+      : 'unavailable')
+    : null;
   const bombData = useMemo(() => {
+    if (measuredBombKey) {
+      if (measuredBombKey === 'unavailable') return null;
+      const [fill, targets, crossedTiers] = JSON.parse(measuredBombKey);
+      return { measured: true, baselinePrice: fill, targets: targets.map(([key, price]) => ({ key, price })), crossedTiers };
+    }
     const threshold = currentAsset?.threshold;
     const baselinePrice =
       researchData.previousClose || // OHLCV-derived yesterday's close (most accurate)
@@ -309,7 +326,7 @@ const AssetResearchModal = ({
     return { threshold, baselinePrice };
   }, [researchData.previousClose, currentAsset?.threshold, currentAsset?.lockedPrice, currentAsset?.baselinePrice,
       currentAsset?.startPrice, currentAsset?.startingPrice, currentAsset?.basePrice, currentAsset?.draftPrice,
-      currentAsset?.price, currentAsset?.currentPrice]);
+      currentAsset?.price, currentAsset?.currentPrice, measuredBombKey]);
 
   // v2: Measure container height for drawer snap points
   useEffect(() => {

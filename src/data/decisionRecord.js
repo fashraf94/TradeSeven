@@ -1033,7 +1033,8 @@ export function evidenceFacts(evidence) {
   const chg = num(evidence.chg);
   if (chg != null) fact(`Gain since entry ${signed(chg)}%`);
   const atrX = num(evidence.atrX);
-  if (atrX != null) fact(`ATR multiple ${atrX.toFixed(2)}×`);
+  // v2 Ruling 16: a measured-model stock's multiple names its unit.
+  if (atrX != null) fact(evidence.atrXUnit === 'frozen_measured_pct' ? `Measured reward multiple ${atrX.toFixed(2)}× (frozen measured %)` : `ATR multiple ${atrX.toFixed(2)}×`);
   const vwapDev = num(evidence.vwapDev);
   if (vwapDev != null) fact(`VWAP deviation ${signed(vwapDev)}%`);
   const bbPct = num(evidence.bbPct);

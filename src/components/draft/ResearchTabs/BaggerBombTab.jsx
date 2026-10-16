@@ -7,17 +7,96 @@ import { DEFAULT_THRESHOLD } from '../../../utils/researchAssetBuilder';
 import { getVolatilityThresholds } from '../../../services/volatilityService';
 import { stockSummary } from '../../../utils/stockThresholdModel.js';
 
-export function StockRewardDetails({ context }) {
-  if (!context || context.status !== 'valid') return <p role="status">Measured reward unavailable: {context?.reason || 'missing_bound_evidence'}</p>;
-  return <section aria-label="Measured stock reward targets">
-    <p>Frozen reward: {stockSummary(context.scoringPct)}% (rounded summary). Exact effective percentage: {context.scoringPctDecimal}%.</p>
-    <p>Fill ${context.fill}; quote ${context.currentPrice}; observation {context.history.observedAt}.</p>
-    <p>{context.proximity?.locked ? 'Reward LOCK' : 'Reward unlocked'}; next {context.nextTarget ? `${context.nextTarget.key} at exact $${context.nextTarget.target}` : 'all positive tiers earned'}.</p>
-    <progress aria-label="Progress to next unearned reward" value={context.proximity?.progress ?? 1} max="1" />
-    <ul>{context.targets.map(t => <li key={t.key}>{t.label}: ${stockSummary(t.target)} (rounded); exact ${t.target}; {context.crossedTiers.includes(t.key) ? 'earned' : t.target <= 0 ? 'unreachable (target at or below $0)' : 'unearned'}</li>)}</ul>
-    <p>Position {context.positionId}; input {context.inputRef}. Currency summaries do not control awards.</p>
-    <p>Model {context.modelId}; receipt {context.receiptHash}; provider quote as of {context.quoteEvidence?.providerAsOf}.</p>
-  </section>;
+const sectionLabel = {
+  fontSize: '10px', fontWeight: 700, color: 'rgba(255, 255, 255, 0.5)',
+  textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px',
+};
+const mono = (size, color) => ({ color, fontFamily: 'monospace', fontSize: size });
+
+/** A tier's state, from the committed context only (BUILD_RULES §9). */
+export function measuredTierStatus(context, t) {
+  if (context.crossedTiers.includes(t.key)) return 'earned';
+  return t.target > 0 ? 'unearned' : 'unreachable';
+}
+
+// BaggerBomb stock thresholds v2, Ruling 15: a measured-model position's tab in
+// the normal BaggerBomb layout. Every value comes from the committed reward
+// context (§9): the fill as Entry, each tier's % move (k × the frozen measured
+// %), its exact target (cents are a half-even summary) and earned state from the
+// context's own crossed tiers. References sit in a collapsed Details row.
+export function StockRewardDetails({ context, symbol = null }) {
+  if (!context || context.status !== 'valid') {
+    return (
+      <section aria-label="Measured stock reward" style={{ padding: '20px', textAlign: 'center' }}>
+        <div role="status" style={{ fontSize: '14px', fontWeight: 700, color: '#e6edf3' }}>Measured reward unavailable</div>
+        <div style={{ fontSize: '12px', marginTop: '6px', color: '#6e7681' }}>This position&apos;s measured score can&apos;t be confirmed right now. It updates on the next check.</div>
+        <details style={{ marginTop: '10px', fontSize: '11px', color: '#6e7681' }}>
+          <summary>Details</summary>
+          <div>Reason: {context?.reason || 'missing_bound_evidence'}</div>
+        </details>
+      </section>
+    );
+  }
+  const tierPoints = context.targets.filter(t => context.crossedTiers.includes(t.key)).reduce((n, t) => n + t.points, 0);
+  const row = (t, i, list) => {
+    const positive = t.k > 0;
+    const status = measuredTierStatus(context, t);
+    return (
+      <div key={t.key} data-tier={t.key} data-tier-status={status} style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0',
+        borderBottom: i < list.length - 1 ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
+      }}>
+        <span style={{ color: positive ? '#00ff88' : '#ff3366', fontSize: '13px' }}>{t.emoji} {t.label}</span>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span style={mono('12px', 'rgba(255, 255, 255, 0.6)')}>{positive ? '+' : '-'}{stockSummary(Math.abs(t.k) * context.scoringPct)}%</span>
+          <span style={{ color: 'rgba(255, 255, 255, 0.3)', fontSize: '10px' }}>{'→'}</span>
+          <span style={{ ...mono('11px', 'rgba(255, 255, 255, 0.8)'), minWidth: '60px', textAlign: 'right' }}>{t.target > 0 ? `$${stockSummary(t.target)}` : '—'}</span>
+          <span style={{ fontSize: '11px', minWidth: '72px', textAlign: 'right', fontWeight: status === 'earned' ? 700 : 400, color: status === 'earned' ? (positive ? '#00ff88' : '#ff3366') : 'rgba(255, 255, 255, 0.45)' }}>
+            {status === 'earned' ? '✓ earned' : status}
+          </span>
+          <span style={{ ...mono('12px', positive ? '#00ff88' : '#ff3366'), fontWeight: 700, minWidth: '48px', textAlign: 'right' }}>{positive ? '+' : ''}{t.points} pts</span>
+        </div>
+      </div>
+    );
+  };
+  const up = context.targets.filter(t => t.k > 0), down = context.targets.filter(t => t.k < 0);
+  return (
+    <section aria-label="Measured stock reward targets">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+        <span style={{ fontSize: '24px' }}>{'\u{1F4A3}'}</span>
+        <div>
+          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#00ff88' }}>BAGGERBOMB STATS</h3>
+          <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'rgba(255, 255, 255, 0.5)' }}>Measured scoring{symbol ? ` for ${symbol}` : ''}</p>
+        </div>
+      </div>
+      <div style={{ color: '#a0a0a0', fontSize: '13px', marginTop: '-12px', marginBottom: '12px' }}>
+        Entry: <span style={{ color: '#e0e0e0', fontWeight: 600 }}>${stockSummary(context.fill)}</span>
+        <span style={{ color: '#6e7681', marginLeft: '8px' }}>(your fill · targets move {stockSummary(context.scoringPct)}% per tier step)</span>
+      </div>
+      <div style={{ marginBottom: '20px' }}>
+        <div style={sectionLabel}>THRESHOLDS</div>
+        <div style={{ background: 'rgba(0, 255, 136, 0.05)', borderRadius: '10px', padding: '12px', marginBottom: '8px' }}>{up.map(row)}</div>
+        <div style={{ background: 'rgba(255, 51, 102, 0.05)', borderRadius: '10px', padding: '12px' }}>{down.map(row)}</div>
+      </div>
+      <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)', marginBottom: '12px' }}>
+        Now ${stockSummary(context.currentPrice)} · {stockSummary(context.multiplier)}x · tier points {tierPoints > 0 ? '+' : ''}{tierPoints}
+        {context.proximity?.locked ? <span style={{ color: '#f59e0b' }}> · within 0.2x of {context.nextTarget.label} — held for the bonus</span> : null}
+      </div>
+      <details style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.6)' }}>
+        <summary>Details</summary>
+        <div>Frozen measured %: {context.scoringPctDecimal}% (exact)</div>
+        <ul style={{ margin: '4px 0', paddingLeft: '16px' }}>
+          {context.targets.map(t => <li key={t.key}>{t.label}: exact ${t.target}</li>)}
+        </ul>
+        <div>Quote ${context.currentPrice} as of {context.quoteEvidence?.providerAsOf}</div>
+        <div>Position {context.positionId}</div>
+        <div>Receipt {context.receiptHash}</div>
+        <div>Input {context.inputRef}</div>
+        <div>Model {context.modelId}</div>
+        <div>Cents are rounded half-even for display only; awards use the exact targets.</div>
+      </details>
+    </section>
+  );
 }
 
 const BaggerBombTab = ({ asset }) => {
@@ -43,7 +122,7 @@ const BaggerBombTab = ({ asset }) => {
     return () => { cancelled = true; };
   }, [asset?.symbol, asset?.threshold, asset?.isCrypto, asset?.stockRewardRoute]);
 
-  if (asset?.stockRewardRoute) return <StockRewardDetails context={asset.rewardContext} />;
+  if (asset?.stockRewardRoute) return <StockRewardDetails context={asset.rewardContext} symbol={asset.symbol} />;
 
   const baseThreshold = asset?.threshold || fetchedThreshold || DEFAULT_THRESHOLD;
 
@@ -70,20 +149,9 @@ const BaggerBombTab = ({ asset }) => {
     return `$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  const getHistoricalStats = (symbol) => {
-    const mockData = {
-      'AAPL': { hitRate: 35, avgMove: 1.8, daysAboveThreshold: 10 },
-      'TSLA': { hitRate: 55, avgMove: 3.2, daysAboveThreshold: 17 },
-      'NVDA': { hitRate: 48, avgMove: 2.8, daysAboveThreshold: 14 },
-      'MSFT': { hitRate: 32, avgMove: 1.6, daysAboveThreshold: 9 },
-      'GOOGL': { hitRate: 38, avgMove: 2.1, daysAboveThreshold: 11 },
-      'AMZN': { hitRate: 42, avgMove: 2.3, daysAboveThreshold: 12 },
-      'META': { hitRate: 45, avgMove: 2.5, daysAboveThreshold: 13 },
-    };
-    return mockData[symbol] || { hitRate: 40, avgMove: 2.0, daysAboveThreshold: 12 };
-  };
-
-  const historical = getHistoricalStats(asset?.symbol);
+  // v2 Ruling 15: the placeholder "Historical (30 days)" block (mock hit rate,
+  // average move and days hit, identical for every unknown symbol) is gone for
+  // every battle; no real history source exists for it.
 
   const currentBaggerBombs = asset?.baggerBombs || 0;
   const currentBusts = asset?.busts || 0;
@@ -325,84 +393,7 @@ const BaggerBombTab = ({ asset }) => {
         </div>
       </div>
 
-      {/* HISTORICAL Section */}
       <div>
-        <div style={{
-          fontSize: '10px',
-          fontWeight: 700,
-          color: 'rgba(255, 255, 255, 0.5)',
-          textTransform: 'uppercase',
-          letterSpacing: '1px',
-          marginBottom: '10px',
-        }}>
-          HISTORICAL (30 DAYS)
-        </div>
-
-        <div style={{
-          background: 'rgba(0, 217, 255, 0.05)',
-          borderRadius: '10px',
-          padding: '14px',
-        }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr 1fr',
-            gap: '12px',
-            textAlign: 'center',
-          }}>
-            <div>
-              <div style={{
-                fontSize: '20px',
-                fontWeight: 700,
-                color: historical.hitRate >= 50 ? '#00ff88' : historical.hitRate >= 30 ? '#f59e0b' : '#ff3366',
-              }}>
-                {historical.hitRate}%
-              </div>
-              <div style={{
-                fontSize: '9px',
-                color: 'rgba(255, 255, 255, 0.5)',
-                marginTop: '4px',
-                textTransform: 'uppercase',
-              }}>
-                Hit Rate
-              </div>
-            </div>
-            <div>
-              <div style={{
-                fontSize: '20px',
-                fontWeight: 700,
-                color: '#00d9ff',
-              }}>
-                {historical.avgMove.toFixed(1)}%
-              </div>
-              <div style={{
-                fontSize: '9px',
-                color: 'rgba(255, 255, 255, 0.5)',
-                marginTop: '4px',
-                textTransform: 'uppercase',
-              }}>
-                Avg Daily Move
-              </div>
-            </div>
-            <div>
-              <div style={{
-                fontSize: '20px',
-                fontWeight: 700,
-                color: '#fff',
-              }}>
-                {historical.daysAboveThreshold}/30
-              </div>
-              <div style={{
-                fontSize: '9px',
-                color: 'rgba(255, 255, 255, 0.5)',
-                marginTop: '4px',
-                textTransform: 'uppercase',
-              }}>
-                Days Hit
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Note */}
         <div style={{
           marginTop: '12px',

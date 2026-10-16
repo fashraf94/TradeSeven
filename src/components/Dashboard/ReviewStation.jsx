@@ -13,12 +13,15 @@ import { CMD, alpha } from './commandUI';
 import { COMMAND_CENTER_SYNC_ENABLED } from '../../config/featureFlags';
 import { deriveDebriefPending } from '../../adapters/baggerbombAdapter';
 import { DESK_COPY } from './desk/deskCopy';
+import { displayedStockScores } from '../../utils/stockThresholdModel.js';
 
 export default function ReviewStation({ battles = [], agent, accent, onReview }) {
   if (!battles.length) return null;
   const latest = battles[0];
   const agentName = latest.agentContext?.agentName || agent?.name || 'Your agent';
-  const score = latest.scoreState?.currentScore;
+  // v2 Ruling 16: a measured-model battle's unavailable score (including a
+  // result-unavailable completion) is null ("—"), never 0.
+  const score = displayedStockScores(latest).currentScore;
   const more = battles.length - 1;
 
   // Command Center Sync (Pass 1, spec §7 POST_CLOSE / §12 acceptance): a battle

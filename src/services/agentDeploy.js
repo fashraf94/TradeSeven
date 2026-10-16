@@ -17,6 +17,20 @@ import * as ceremonyTiming from '../components/Dashboard/deployCeremony/ceremony
 // Pilot P1b — the deploy refusal's typed code (founder ruling B2).
 import { DEPLOY_REFUSAL_CODE } from '../constants/hypothesisRecords';
 
+// BaggerBomb stock thresholds v2 (Rulings 2 and 6): only an allowlisted pilot
+// creation can be refused this way. The server's 503 carries `reason`; the
+// ceremony shows `details`, so the reason becomes one short player line.
+export const STOCK_ADMISSION_ERROR = 'Stock admission unavailable';
+const STOCK_ADMISSION_LINES = {
+  late_start_cutoff: 'Measured battles stop starting 45 minutes before the market close. Try again 15 minutes after the close.',
+  publication_window_not_open: 'Measured battles reopen 15 minutes after the market close. Try again shortly.',
+  prior_corrected_battle_requires_settlement: 'Your previous measured battle is still settling. Try again after it completes.',
+};
+export function stockAdmissionLine(data) {
+  if (data?.error !== STOCK_ADMISSION_ERROR) return null;
+  return STOCK_ADMISSION_LINES[data.reason] ?? 'Measured scoring could not start this battle just now. Try again in a minute.';
+}
+
 export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetResolved) {
   if (!agentId) return { success: false, postIssued: false, error: 'no-agent' };
 
@@ -153,8 +167,10 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
     // Pilot P1b: a deploy refused because the equipped idea is due for review
     // carries its words in `message` — table C's due-deploy line, verbatim —
     // and the ceremony shows `details`, so that one refusal forwards its line
-    // there. Every other failure forwards exactly what it did before.
-    const refusalLine = data.error === DEPLOY_REFUSAL_CODE && typeof data.message === 'string' ? data.message : null;
+    // there. A measured pilot's stock-admission refusal forwards its player
+    // line (v2 Ruling 2). Every other failure forwards exactly what it did before.
+    const refusalLine = data.error === DEPLOY_REFUSAL_CODE && typeof data.message === 'string' ? data.message
+      : stockAdmissionLine(data);
     console.error('[Deploy] Failed:', status, data.error, refusalLine || data.details || '');
     return {
       success: false, status, postIssued: true, httpStatus: status,

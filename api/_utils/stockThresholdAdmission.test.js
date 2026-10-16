@@ -6,20 +6,22 @@ import { collectStockObservation, qualifyStockObservation } from './stockThresho
 import { commitBattleDocWithPin } from './compositionGenerationFence.js';
 import { executeSwapServer } from './agentSwapExecution.js';
 import { getSessionForDate } from '../../src/utils/marketCalendar.js';
-import { stockObservation, stockRows, stockWriterDb, correctedStockBattle, STOCK_TEST_NOW, stockTestClock } from './__fixtures__/stockThresholdHarness.js';
+import { stockObservation, stockRows, stockWriterDb, correctedStockBattle, STOCK_TEST_NOW, stockTestClock, stockCreationClock } from './__fixtures__/stockThresholdHarness.js';
 import { STOCK_MODEL } from '../../src/utils/stockThresholdModel.js';
 const oldKey = process.env.EODHD_API_KEY;
 beforeEach(() => { process.env.EODHD_API_KEY = 'isolated-key'; selector.enabled = false; });
 afterEach(() => { if (oldKey === undefined) delete process.env.EODHD_API_KEY; else process.env.EODHD_API_KEY = oldKey; vi.restoreAllMocks(); });
 const prices = (current = 103.27) => ({ AAPL: { current, timestamp: Date.parse(STOCK_TEST_NOW) / 1000 } });
 const inputStore = (battle, inputs) => stockWriterDb({ [`agentBattles/${battle.id}`]: battle, ...inputs, 'indexIntelligence/stockRankings': { stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }] } });
+// v2 (Ruling 6): the schema-2 control with an allowlist naming this owner is the
+// on-switch; creation runs after the v2 approval instant (source session Oct 15).
 async function creationFixture() {
   selector.enabled = true;
-  const o1 = await stockObservation(), o2 = await stockObservation('MSFT');
-  const doc = { gameMode: 'baggerbomb_agent', duration: 'fullday', portfolio: { star: [{ symbol: 'AAPL', baseATR: 2.5 }], core: [], support: [], startingPrices: {} }, opponent: { portfolio: { star: [{ symbol: 'MSFT', baseATR: 3 }], core: [], support: [] } }, scoring: {}, scoreState: {} };
-  const h = stockWriterDb({ 'indexIntelligence/stockRankings': { stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }] }, 'stockThresholdControl/admission': { schemaVersion: 1, enabled: true, epoch: 1, model: STOCK_MODEL } });
-  const prepared = await prepareStockCreation(doc, { db: h.db, collector: async symbol => symbol === 'AAPL' ? o1 : o2 }); prepared.battleDoc = doc;
-  return { doc, prepared, h, adapter: stockCreationDb(h.db, prepared, stockTestClock) };
+  const o1 = await stockObservation('AAPL', { rows: stockRows('2026-10-15'), clock: stockCreationClock }), o2 = await stockObservation('MSFT', { rows: stockRows('2026-10-15'), clock: stockCreationClock });
+  const doc = { ownerId: 'owner-pilot', gameMode: 'baggerbomb_agent', duration: 'fullday', portfolio: { star: [{ symbol: 'AAPL', baseATR: 2.5 }], core: [], support: [], startingPrices: {} }, opponent: { portfolio: { star: [{ symbol: 'MSFT', baseATR: 3 }], core: [], support: [] } }, scoring: {}, scoreState: {} };
+  const h = stockWriterDb({ 'indexIntelligence/stockRankings': { stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }] }, 'stockThresholdControl/admission': { schemaVersion: 2, enabled: true, epoch: 1, model: STOCK_MODEL, audience: { mode: 'allowlist', ownerIds: ['owner-pilot'] } } });
+  const prepared = await prepareStockCreation(doc, { db: h.db, collector: async symbol => symbol === 'AAPL' ? o1 : o2, now: stockCreationClock }); prepared.battleDoc = doc;
+  return { doc, prepared, h, adapter: stockCreationDb(h.db, prepared, stockCreationClock) };
 }
 describe('server stock admission and atomic writers', () => {
   it('switch off has zero collector calls and no registry/input writes', async () => {
@@ -66,7 +68,10 @@ describe('server stock admission and atomic writers', () => {
     f.h.store.get('stockThresholdControl/admission').enabled = true; f.h.store.get('stockThresholdControl/admission').epoch++;
     await expect(commitBattleDocWithPin(f.adapter, f.doc, { dark: true })).rejects.toMatchObject({ reason: 'creation_selection_changed' }); expect(f.h.writes).toEqual([]);
   });
-  it.each([false, true])('review K3-6: a creation commit error with the selector %s keeps the original error reachable', async on => {
+  // v2 Ruling 6: selection is per battle, so an unselected creation (here a 1d
+  // battle) keeps today's raw error whatever the code selector; the selected
+  // creation's wrapped refusal is covered in stockThresholdV2.test.js.
+  it.each([false, true])('review K3-6: an unselected creation commit error with the selector %s keeps the original error', async on => {
     selector.enabled = on;
     const { createAgentBattle } = await import('./agentBattleService.js');
     const { makeCompositionStoreDouble } = await import('./__fixtures__/compositionStoreDouble.js');
@@ -75,24 +80,25 @@ describe('server stock admission and atomic writers', () => {
     const db = { doc: () => ({ get: async () => ({ exists: false, data: () => undefined }) }), collection: name => composition.collection(name) ?? { add: async () => { throw cutover(); }, doc: id => ({ id: id ?? 'battle-test-1', __collection: name }) }, runTransaction: async fn => fn({ get: async ref => ref.get(), create: async () => { throw cutover(); } }) };
     const agent = { id: 'agent-1', ownerId: 'user-1', name: 'Viper', archetype: 'momentum_chaser', lastDecision: { portfolio: { star: [{ symbol: 'AAPL', baseATR: 3 }], core: [], support: [] }, bench: { stocks: [], crypto: null }, watchlist: { active: [], hotBench: [], monitoring: [] } } };
     const err = await createAgentBattle(db, agent, {}, {}, { duration: '1d' }).then(() => null, e => e);
-    if (on) expect(err).toMatchObject({ name: 'StockThresholdRefusal', reason: 'corrected_creation_failed', cause: { code: 'battle_cutover_interleaved' } });
-    else expect(err).toMatchObject({ name: 'Error', code: 'battle_cutover_interleaved' });
+    expect(err).toMatchObject({ name: 'Error', code: 'battle_cutover_interleaved' });
   });
-  it('ordinary control-read errors become scoped retriable refusals for cooldown cleanup', async () => {
+  it('v2 Ruling 6: an unreadable control document is legacy (null), never a refusal', async () => {
     const f = await creationFixture(); f.h.db.doc = () => ({ get: async () => { throw Error('Firestore unavailable'); } });
-    await expect(prepareStockCreation(f.doc, { db: f.h.db })).rejects.toMatchObject({ name: 'StockThresholdRefusal', reason: 'admission_control_unavailable', retriable: true });
+    expect(await prepareStockCreation(f.doc, { db: f.h.db, now: stockCreationClock })).toBe(null);
   });
   it('an agent entry into a CPU ticker preserves the CPU market quote/lifetime', async () => {
     const { battle, inputs } = await correctedStockBattle({ cpuSymbol: 'MSFT' }); const h = inputStore(battle, inputs);
-    // The tick fetched MSFT before the swap committed (review R1): a quote dated
-    // at or after the entry would value the fresh lifetime instead of its fill.
-    const at = '2026-10-14T14:03:00Z'; const q = { AAPL: { current: 103.27, timestamp: Date.parse(at) / 1000 }, MSFT: { current: 106, timestamp: Date.parse(at) / 1000 - 1 } };
+    // v2 Ruling 1: the tick's MSFT quote (13:47:59) is after the CPU fill quote
+    // (13:47) and before the fresh agent fill quote (13:48, stamped 15 minutes
+    // behind the 14:03 swap): the CPU is valued at it, the fresh lifetime at its fill.
+    const at = '2026-10-14T14:03:00Z'; const q = { AAPL: { current: 103.27, timestamp: Date.parse(at) / 1000 }, MSFT: { current: 106, timestamp: Date.parse('2026-10-14T13:47:59Z') / 1000 } };
     const before = scoreCorrectedPosition(battle, { ...battle.opponent.portfolio.star[0], tier: 'star' }, 'cpu', q, at);
-    const result = await executeSwapServer(h.db, battle.id, battle, 'star', 0, { symbol: 'MSFT', baseATR: 3 }, 1, q, {}, null, { now: () => new Date(at), collector: s => stockObservation(s) });
+    expect(before.rewardContext).toMatchObject({ status: 'valid', currentPrice: 106 });
+    const result = await executeSwapServer(h.db, battle.id, battle, 'star', 0, { symbol: 'MSFT', baseATR: 3 }, 1, q, {}, null, { now: () => new Date(at), collector: s => stockObservation(s, { clock: () => new Date(at) }) });
     const live = h.store.get(`agentBattles/${battle.id}`); live.id = battle.id;
-    expect(q.MSFT.current).toBe(106);
+    expect(q.MSFT.current).toBe(106); expect(Object.keys(q.MSFT)).toEqual(['current', 'timestamp']); // no marker is written onto the price map
     expect(scoreCorrectedPosition(live, { ...live.opponent.portfolio.star[0], tier: 'star' }, 'cpu', q, at)).toEqual(before);
-    expect(scoreCorrectedPosition(live, { ...result.incomingAsset, tier: 'star' }, 'agent', q, at).totalPoints).toBe(0);
+    expect(scoreCorrectedPosition(live, { ...result.incomingAsset, tier: 'star' }, 'agent', q, at)).toMatchObject({ totalPoints: 0, rewardContext: { currentPrice: 103.27, quoteEvidence: { kind: 'fill_quote' } } });
   });
   it('does not promote analyst final=true or serialized observations to server authority', async () => {
     const o = await stockObservation();
@@ -139,7 +145,7 @@ describe('server stock admission and atomic writers', () => {
   it('keeps short crypto typed during selected creation; refuses a short incoming stock', async () => {
     const f = await creationFixture(); f.doc.portfolio.support.push({ symbol: 'BTC-USD.CC', isCrypto: true, direction: 'short', baseATR: 5 });
     const spy = vi.fn(symbol => stockObservation(symbol));
-    const prepared = await prepareStockCreation(f.doc, { db: f.h.db, collector: spy }); expect(prepared.observations).toHaveLength(2); expect(spy).toHaveBeenCalledTimes(2);
+    const prepared = await prepareStockCreation(f.doc, { db: f.h.db, collector: spy, now: stockCreationClock }); expect(prepared.observations).toHaveLength(2); expect(spy).toHaveBeenCalledTimes(2);
     const { battle, inputs } = await correctedStockBattle(), h = inputStore(battle, inputs);
     await expect(executeSwapServer(h.db, battle.id, battle, 'star', 0, { symbol: 'MSFT', direction: 'short' }, 1, prices(), {}, null, { collector: spy })).rejects.toMatchObject({ reason: 'unsupported_stock_direction' });
   });
@@ -242,31 +248,41 @@ describe('R1: an outgoing corrected exit needs dated post-entry evidence', () =>
   }
   const rotateOut = f => executeSwapServer(f.h.db, f.live.id, f.live, 'star', 0, f.live.portfolio.bench.stocks.find(a => a.symbol === 'GOOG'), 1, f.q, {}, null, { now: () => new Date(secondAt), collector: s => stockObservation(s, { price: 100, clock: () => new Date(secondAt) }) });
   const held = f => scoreCorrectedPosition(f.live, { ...f.live.portfolio.star[0], tier: 'star' }, 'agent', f.q, secondAt);
+  // v2 Ruling 1: the fresh MSFT fill quote is stamped 13:48 (15 minutes behind
+  // its 14:03 commit). The entry marker is gone: a pre-fill tick quote stands in
+  // at the receipt's own fill (Branch A); an absent quote stands in for nothing.
+  const fillAt = '2026-10-14T13:48:00Z';
   it.each([
-    ['pre-entry', '2026-10-14T14:02:59Z', 'entry_commit', 100, 0],
-    ['same-instant', firstAt, 'post_entry_quote', 110, 295],
-    ['later', secondAt, 'post_entry_quote', 110, 295],
-    ['absent', null, 'entry_commit', 100, 0],
-  ])('held scoring of the fresh lifetime with a %s tick quote', async (_, asOf, kind, price, points) => {
+    ['pre-fill', '2026-10-14T13:47:59Z', 110, { kind: 'fill_quote', price: 100, points: 0 }],
+    ['fill-time, same price', fillAt, 100, { kind: 'fill_quote', price: 100, points: 0 }],
+    ['fill-time, other price', fillAt, 110, { reason: 'fill_time_price_conflict' }],
+    ['later', secondAt, 110, { kind: 'post_fill_quote', price: 110, points: 295 }],
+    ['absent', null, null, { reason: 'missing_post_entry_quote' }],
+  ])('held scoring of the fresh lifetime with a %s tick quote', async (_, asOf, current, want) => {
     const f = await freshLifetime();
-    expect(f.q.MSFT.stockEntryCommit).toEqual({ positionId: f.fresh.positionId, receiptHash: f.fresh.stockThresholdReceipt.receiptHash });
-    f.q.MSFT = asOf ? { ...f.q.MSFT, timestamp: ts(asOf) } : { stockEntryCommit: f.q.MSFT.stockEntryCommit };
-    expect(held(f)).toMatchObject({ totalPoints: points, rewardContext: { currentPrice: price, quoteEvidence: { kind } } });
+    expect(f.fresh.stockThresholdReceipt.fillQuote.quoteAsOf).toBe(new Date(fillAt).toISOString());
+    expect(Object.keys(f.q.MSFT)).toEqual(['current', 'timestamp']); // no marker on the price map
+    f.q.MSFT = asOf ? { current, timestamp: ts(asOf) } : undefined;
+    if (want.reason) expect(held(f).rewardContext).toEqual({ status: 'unavailable', reason: want.reason });
+    else expect(held(f)).toMatchObject({ totalPoints: want.points, rewardContext: { currentPrice: want.price, quoteEvidence: { kind: want.kind } } });
   });
-  it('a pre-entry exit quote refuses with zero writes; the held entry valuation never qualifies the exit', async () => {
-    const f = await freshLifetime(); const before = structuredClone(f.h.store.get(f.path)), n = f.h.writes.length;
-    expect(held(f)).toMatchObject({ totalPoints: 0, rewardContext: { quoteEvidence: { kind: 'entry_commit' } } });
+  it('a pre-fill exit quote refuses with zero writes; the held fill valuation never qualifies the exit', async () => {
+    const f = await freshLifetime(); f.q.MSFT = { current: 110, timestamp: ts('2026-10-14T13:47:59Z') };
+    const before = structuredClone(f.h.store.get(f.path)), n = f.h.writes.length;
+    expect(held(f)).toMatchObject({ totalPoints: 0, rewardContext: { quoteEvidence: { kind: 'fill_quote' } } });
     await expect(rotateOut(f)).rejects.toMatchObject({ reason: 'missing_post_entry_quote' });
+    f.q.MSFT = { current: 100, timestamp: ts(fillAt) };
+    await expect(rotateOut(f)).rejects.toMatchObject({ reason: 'exit_quote_not_after_fill' });
     expect(f.h.writes).toHaveLength(n); expect(f.h.store.get(f.path)).toEqual(before);
   });
   it.each([
     ['gain', 110, 295, 10],
     // −3% crosses −1x ($98) and −1.5x at equality ($97): −60 base − 10 − 20.
     ['loss', 97, -90, -3],
-  ])('a dated post-entry %s quote outranks the marker and binds exit, gain, points, bank and context', async (_, price, points, gainPct) => {
+  ])('a dated post-fill %s quote binds exit, gain, points, bank and context', async (_, price, points, gainPct) => {
     const f = await freshLifetime(); f.q.MSFT = { ...f.q.MSFT, current: price, timestamp: ts(secondAt) };
     const { closedTrade: t } = await rotateOut(f);
-    expect(t).toMatchObject({ outgoingPositionId: f.fresh.positionId, entryPrice: 100, exitPrice: price, lockedPoints: points, lockedGainPct: gainPct, rewardContext: { currentPrice: price, quoteEvidence: { kind: 'post_entry_quote', providerAsOf: secondAt } } });
+    expect(t).toMatchObject({ outgoingPositionId: f.fresh.positionId, entryPrice: 100, exitPrice: price, lockedPoints: points, lockedGainPct: gainPct, rewardContext: { currentPrice: price, quoteEvidence: { kind: 'post_fill_quote', providerAsOf: secondAt } } });
     const live = f.h.store.get(f.path);
     expect(live.scoring.stockScoreComponents[f.fresh.positionId]).toMatchObject({ points, exitPrice: price, exitQuoteAsOf: secondAt });
     expect(live.scoring.stockRewardHistory.agent[f.fresh.positionId]).toEqual(t.rewardContext.history);
@@ -276,18 +292,17 @@ describe('R1: an outgoing corrected exit needs dated post-entry evidence', () =>
     const f = await freshLifetime(); const n = f.h.writes.length; f.q.MSFT = quote(f.q.MSFT);
     await expect(rotateOut(f)).rejects.toMatchObject({ reason: 'missing_exit_quote' }); expect(f.h.writes).toHaveLength(n);
   });
-  // Mutation lens KM-3: the marker is bound to ITS position. The agent's fresh
-  // MSFT marker never stands in for the CPU's MSFT lifetime whose own quote is
-  // missing in the swap tick: the CPU stays unavailable, never a fill-valued draw.
-  it('a marker for the agent lifetime never values the CPU lifetime of the same ticker', async () => {
+  // Mutation lens KM-3 (v2 form): the stand-in is bound to EACH receipt. After
+  // the agent enters MSFT, a swap tick with no MSFT quote never values the CPU's
+  // MSFT lifetime at any fill: the CPU stays unavailable, never a fill-valued draw.
+  it('the agent lifetime\'s entry never values the CPU lifetime of the same ticker', async () => {
     const { battle, inputs } = await correctedStockBattle({ cpuSymbol: 'MSFT' });
     const h = stockWriterDb({ [`agentBattles/${battle.id}`]: battle, ...inputs, 'indexIntelligence/stockRankings': { stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }] } });
     const at = '2026-10-14T14:03:00Z';
     const q = { AAPL: { current: 103.27, timestamp: ts(at) }, MSFT: { current: 106, timestamp: ts(at) - 1 } };
     await executeSwapServer(h.db, battle.id, battle, 'star', 0, { symbol: 'MSFT', baseATR: 3 }, 1, q, {}, null, { now: () => new Date(at), collector: s => stockObservation(s) });
     const live = h.store.get(`agentBattles/${battle.id}`); live.id = battle.id;
-    expect(q.MSFT.stockEntryCommit).toBeTruthy();
-    const cpu = scoreCorrectedPosition(live, { ...live.opponent.portfolio.star[0], tier: 'star' }, 'cpu', { ...q, MSFT: { stockEntryCommit: q.MSFT.stockEntryCommit } }, at);
+    const cpu = scoreCorrectedPosition(live, { ...live.opponent.portfolio.star[0], tier: 'star' }, 'cpu', { AAPL: q.AAPL }, at);
     expect(cpu.rewardContext).toMatchObject({ status: 'unavailable', reason: 'missing_post_entry_quote' });
     expect(Number.isFinite(cpu.totalPoints)).toBe(false);
   });
