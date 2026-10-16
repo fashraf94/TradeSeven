@@ -61,6 +61,10 @@ describe('R1 — App\'s handoff fabricates nothing and knows its owner (R-R1-5)'
       expect(at, `${effect} must exist`).toBeGreaterThan(-1);
       expect(at, `${effect} must follow the guard`).toBeGreaterThan(guard);
     }
+    // It is a top-level statement of the handler, directly after the owner check is
+    // defined — not wrapped in a block that could skip it (review L5, F43).
+    const escapeRe = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    expect(body).toMatch(new RegExp(`${escapeRe('const ownerIsCurrent = () => isHandoffOwnerCurrent(ownerUid, signedInUid());')}\\s*${escapeRe(GUARD)}`));
     // ...and the guard is the first statement that uses the id at all.
     const DECL = 'const agentBattleId = handoffBattleId(agentMeta);';
     expect(body.indexOf('agentBattleId', body.indexOf(DECL) + DECL.length)).toBe(guard + 'if ('.length);
