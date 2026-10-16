@@ -171,7 +171,9 @@ async function remergePreviousDay({ db, battle, etDate, clock, write, summary, s
     summary.remerged.push({ battleId: battle.id, etDate: P, bytes: r.bytes, meetingsStored: keys.every((k) => kept.includes(k)) });
   } catch (err) {
     // Counted, never marked: no failure record is written for P, and D's write stands.
-    summary.remergeFailed.push({ battleId: battle.id, etDate: P, reason: String(err?.message || err).slice(0, 300) });
+    // Amendment F RF-2: the reason through the class list (errorTextOf never throws) — this
+    // catch runs outside the pass's per-battle try, so a throw here would end the whole pass.
+    summary.remergeFailed.push({ battleId: battle.id, etDate: P, reason: errorTextOf(err).slice(0, 300) });
   }
 }
 

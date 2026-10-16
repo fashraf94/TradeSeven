@@ -359,6 +359,45 @@ describe('Build B Amendment F RF-2 (Astra\'s B1.1 review F2) — a write the wri
   });
 });
 
+describe('Build B Amendment F RF-2 — the re-merge\'s catch never throws: the pass carries on to the next battle', () => {
+  /** Two five-day battles, each with the late meeting filed at D's first check; `b-catch-a` sorts first. */
+  async function twoBattleWorld() {
+    const store = {};
+    for (const battleId of ['b-catch-a', 'b-catch-b']) {
+      const fx = await multiDay({ battleId });
+      fx.battle.portfolio = { ...fx.battle.portfolio, ...ROSTER };
+      fx.battle.gameplanMeetingHistory = [];
+      fx.battle.gameplanMeeting = structuredClone(PENDING);
+      seedDay(store, fx);
+    }
+    const t = makeTapeDb(store);
+    await runClosePass({ db: t.db, clock: () => P_NIGHT });
+    const before = structuredClone(t.store.get(tapePath('b-catch-a', P)));
+    for (const battleId of ['b-catch-a', 'b-catch-b']) {
+      const b = t.store.get(`agentBattles/${battleId}`);
+      Object.assign(b, { gameplanMeeting: null, gameplanMeetingHistory: [structuredClone(FILED)] });
+      t.store.set(`agentBattles/${battleId}`, b);
+    }
+    return { t, before };
+  }
+
+  // String() of the symbol does not throw (a control); of the object it does; of the function it is the function's source
+  it.each([
+    ['a thrown symbol', () => Symbol('thrown symbol'), 'Symbol(thrown symbol)'],
+    ['a thrown object whose toString throws', () => ({ toString() { throw new Error('no text'); } }), 'Error'],
+    ['a thrown function', () => function ThrownFunction() {}, 'Error'],
+  ])('%s: the first battle\'s re-merge is counted `remergeFailed`, its reason through errorTextOf (an object\'s or function\'s is its listed class); the next battle is written and re-merged', async (_label, thrown, reason) => {
+    const w = await twoBattleWorld();
+    const write = async (id, d, o) => { if (id === 'b-catch-a' && d === P) throw thrown(); return writeTapeDay(id, d, o); };
+    const sD = await runClosePass({ db: w.t.db, clock: () => D_NIGHT, write });
+    expect(sD.written.map((x) => [x.battleId, x.etDate])).toEqual([['b-catch-a', D], ['b-catch-b', D]]);
+    expect(sD.remergeFailed).toEqual([{ battleId: 'b-catch-a', etDate: P, reason }]);
+    expect(sD.remerged).toEqual([{ battleId: 'b-catch-b', etDate: P, bytes: expect.any(Number), meetingsStored: true }]);
+    expect(sD.failed).toEqual([]);
+    expect(stableStringify(w.t.store.get(tapePath('b-catch-a', P)))).toBe(stableStringify(w.before));
+  });
+});
+
 describe('review X3-3 — a late leg on a P whose candle pass is still to run gets bars as an on-time leg does', () => {
   it('P\'s first candle run never happened: the re-merge moves no candle field; P\'s own next run fetches the leg, best effort', async () => {
     const fx = await multiDay({ battleId: 'b-open' });
