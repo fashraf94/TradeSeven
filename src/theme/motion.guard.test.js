@@ -137,6 +137,40 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/CommandCenterHubGate.jsx',
   'src/components/CommandCenter/CommandCenterHub.jsx',
   'src/components/CommandCenter/hub/hubCopy.js',
+  // Command Center hub, S1 (the approved shell; founder ruling R-S1-2: no raw hex
+  // anywhere under src/components/CommandCenter/; motion only through the motion
+  // tokens). Token-only and motion-token-only from birth, registered in the commit
+  // that introduces them. The layout fixtures and the tests' kit included.
+  'src/components/CommandCenter/AreaControls.jsx',
+  'src/components/CommandCenter/DeployStrip.jsx',
+  'src/components/CommandCenter/HistorySheet.jsx',
+  'src/components/CommandCenter/HubHeader.jsx',
+  'src/components/CommandCenter/HubParts.jsx',
+  'src/components/CommandCenter/HubSheet.jsx',
+  'src/components/CommandCenter/PhoneTabs.jsx',
+  'src/components/CommandCenter/ShadowStage.jsx',
+  'src/components/CommandCenter/ShadowStill.jsx',
+  'src/components/CommandCenter/__fixtures__/hubLayoutFixtures.js',
+  'src/components/CommandCenter/__fixtures__/hubTestKit.js',
+  'src/components/CommandCenter/hub/composition.js',
+  'src/components/CommandCenter/hub/deployDisplay.js',
+  'src/components/CommandCenter/hub/hubDate.js',
+  'src/components/CommandCenter/hub/hubModel.js',
+  'src/components/CommandCenter/hub/hubStyle.js',
+  'src/components/CommandCenter/hub/navClearance.js',
+  'src/components/CommandCenter/hub/shadowGeometry.js',
+  'src/components/CommandCenter/hub/useHubWidth.js',
+  'src/components/CommandCenter/hub/useNavClearance.js',
+  'src/components/CommandCenter/panels/AreaPanel.jsx',
+  'src/components/CommandCenter/panels/LoadoutPanel.jsx',
+  'src/components/CommandCenter/panels/PartnershipPanel.jsx',
+  'src/components/CommandCenter/panels/ResearchPanel.jsx',
+  'src/components/CommandCenter/sections/ActivitySection.jsx',
+  'src/components/CommandCenter/sections/BriefSection.jsx',
+  'src/components/CommandCenter/sections/DeploySection.jsx',
+  'src/components/CommandCenter/sections/GamesSection.jsx',
+  'src/components/CommandCenter/sections/HubHold.jsx',
+  'src/components/CommandCenter/sections/NextActionCard.jsx',
 ];
 
 /**

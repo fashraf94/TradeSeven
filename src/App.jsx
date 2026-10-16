@@ -8821,7 +8821,7 @@ export default function PortfolioDuel() {
               ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} />
               : <DesktopBackground isDesktop={isDesktop} />}
             {dashboardPick.shell === DASHBOARD_SHELLS.HUB
-              ? <CommandCenterHubGate legacy={legacyDashboard} />
+              ? <CommandCenterHubGate site="mobile" legacy={legacyDashboard} />
               : legacyDashboard}
           </div>
         </ErrorBoundary>
@@ -8895,6 +8895,7 @@ export default function PortfolioDuel() {
             // offset as CommandDashboardDesktop. The fallback shell is passed
             // unwrapped: it carries its own offset, as above.
             <CommandCenterHubGate
+              site="desktop"
               legacy={legacyDesktopDashboard}
               frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>}
             />
