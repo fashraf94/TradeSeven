@@ -171,12 +171,15 @@ function serviceResult(state, action) {
   if (!current(state, action) || state.attempt.phase !== ATTEMPT_PHASES.SUBMITTING) return state;
   const t = translateServiceResult(action.result);
   // The record keeps its captured owner: nothing here stamps the current uid onto a response.
-  return withAttempt(state, {
+  const next = withAttempt(state, {
     phase: t.phase,
     result: t.detail,
     ceremonyPhase: t.ceremony.phase,
     errorTone: t.ceremony.errorTone,
   });
+  // A typed `orphaned` outcome is an invalidation like any other: the epoch moves,
+  // so no later callback of this request is current (spec §5.2).
+  return t.phase === ATTEMPT_PHASES.ORPHANED ? freeze({ ...next, attemptEpoch: state.attemptEpoch + 1 }) : next;
 }
 
 function reconciliationPending(state, action) {
@@ -216,7 +219,8 @@ const TONE_SET = new Set(Object.values(ERROR_TONES));
 
 function ceremonyPhase(state, action) {
   // Carries the attempt's identity: a stale notification cannot change a later attempt.
-  if (!current(state, action) || !unacknowledged(state.attempt) || !CEREMONY_SET.has(action.phase)) return state;
+  if (!current(state, action) || !unacknowledged(state.attempt) || state.attempt.phase === ATTEMPT_PHASES.ORPHANED) return state;
+  if (!CEREMONY_SET.has(action.phase)) return state;
   return withAttempt(state, { ceremonyPhase: action.phase, errorTone: TONE_SET.has(action.errorTone) ? action.errorTone : null });
 }
 

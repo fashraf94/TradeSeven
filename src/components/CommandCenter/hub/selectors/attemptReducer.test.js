@@ -406,6 +406,24 @@ describe('authChanged, orphan cleanup, flagDisabled, unmount (§4, §5.3, §5.4)
     ]) expect(attemptReducer(gone, a)).toBe(gone);
   });
 
+  it('a typed orphaned outcome is an invalidation: the epoch moves, so no later callback of that request is current', () => {
+    const s = begin(signedInAs());
+    const old = tag(s);
+    const o = result(s, TYPED_RESULTS['orphaned: a local ownership disposition'].result);
+    expect(o.attempt.phase).toBe('orphaned');
+    expect(o.attemptEpoch).toBe(s.attemptEpoch + 1);
+    expect(attemptReducer(o, { type: T.CEREMONY_PHASE, ...old, phase: 'reveal' })).toBe(o);
+    expect(dismiss(o, old)).toBe(o);
+    expect(deployFrom(o).displayState).toBe('account_transition');
+    expect(attemptReducer(o, { type: T.ORPHAN_CLEANED, attemptId: 'a1' }).attempt).toBeNull();
+  });
+
+  it('an orphaned record takes no ceremony report, even one tagged with its own (stale) identity', () => {
+    const s = begin(signedInAs());
+    const orphanedInPlace = { ...s, attempt: { ...s.attempt, phase: 'orphaned' } };
+    expect(attemptReducer(orphanedInPlace, { type: T.CEREMONY_PHASE, ...tag(s), phase: 'reveal' })).toBe(orphanedInPlace);
+  });
+
   it('unknown actions and junk change nothing', () => {
     const s = signedInAs();
     for (const a of [null, undefined, 'begin', {}, { type: 'toString' }, { type: 'constructor' }, { type: 'confirmed' }]) expect(attemptReducer(s, a)).toBe(s);

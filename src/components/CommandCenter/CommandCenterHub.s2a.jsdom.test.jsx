@@ -104,9 +104,9 @@ describe('production: the hub calls the selector with S2a\'s unresolved inputs (
 });
 
 describe('the layout fixtures: every deploy state is the selector\'s, from the scenario\'s own inputs', () => {
-  it.each(HUB_LAYOUT_FIXTURE_NAMES)('%s: sections.deploy is deriveHubDeployState(deployInputs)', (name) => {
+  it.each(HUB_LAYOUT_FIXTURE_NAMES)('%s: exposes its selector inputs, and its deploy is exactly the selector\'s on them (the scenario helper overwrites any hand-written one)', (name) => {
     const { deployInputs, sections } = HUB_LAYOUT_FIXTURES[name];
-    expect(deployInputs).toBeTruthy();
+    expect(deployInputs.auth).toMatchObject({ signedIn: true });
     expect(sections.deploy).toEqual(deriveHubDeployState(deployInputs));
   });
 

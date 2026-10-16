@@ -140,13 +140,19 @@ export function deployDisplay(deploy, liveGame = null) {
   // attempt keeps the first line over a live game.
   const liveLine = liveGame ? (liveGame.preOpen ? COPY.strip.deployed(liveGame.clock) : COPY.strip.live(liveGame.clock)) : null;
   const stripLine1 = attemptShown || !liveGame ? status : liveLine;
+  // A stale block says when it was true on every surface (spec §3.1 row 6): the
+  // card's note, and on the strip the second line — beside a live game in place
+  // of the reason (the live line and Open game already say why), else in place
+  // of the loadout.
+  const staleBlock = displayState === 'blocked' && stale;
   const gateLine = displayState === 'blocked'
-    ? D.blockedBehindGame(reason)
+    ? (staleBlock ? D.blockedStaleBehindGame(asOf) : D.blockedBehindGame(reason))
     : WAITING.has(displayState) || READ_ERRORS.has(displayState) ? status : null;
   const stripLine2 = (loadoutLine) => {
     // A refusal's own words, unchanged, take the second line (spec §5.2).
     if (displayState === 'failed' && reason) return reason;
     if (!attemptShown && liveGame && gateLine) return gateLine;
+    if (staleBlock) return D.staleAsOf(asOf);
     return loadoutLine;
   };
 

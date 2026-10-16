@@ -210,6 +210,8 @@ export const HUB_COPY = Object.freeze({
     cardConfirmed: 'Deployed · the game appears in Games once its record arrives',
     /** The strip's second line while a live game holds the first. */
     blockedBehindGame: (reason) => (reason ? `Deploy unavailable · ${reason}` : 'Deploy unavailable'),
+    /** The same line when the block is the last successful check's (spec §3.1 row 6: as-of if stale). */
+    blockedStaleBehindGame: (time) => (time ? `Deploy unavailable · as of ${time}` : 'Deploy unavailable'),
     /** The freshness notes (spec §3.1): a refresh in flight, and a refresh that failed. */
     refreshing: (time) => (time ? `Refreshing · as of ${time}` : 'Refreshing'),
     refreshFailed: 'Couldn’t refresh',

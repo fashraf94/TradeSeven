@@ -148,6 +148,17 @@ describe('the eligibility states (§3.1)', () => {
     expect(refreshing.cardNote).toEqual({ text: 'Refreshing · as of 10:40 AM ET', action: null });
   });
 
+  it('a stale block says when it was true on the strip too: beside a live game in place of the reason, else in place of the loadout', () => {
+    const stale = { displayState: 'blocked', reason: DEPLOY_BLOCK_REASON, freshness: { asOf: T, stale: true } };
+    expect(deployDisplay(stale, LIVE).stripLine2(LOADOUT)).toBe('Deploy unavailable · as of 10:40 AM ET');
+    expect(deployDisplay(stale).stripLine1).toBe(`Unavailable · ${DEPLOY_BLOCK_REASON}`);
+    expect(deployDisplay(stale).stripLine2(LOADOUT)).toBe('As of 10:40 AM ET · couldn’t refresh');
+    // A fresh block keeps the reason and the loadout.
+    const fresh = { ...stale, freshness: { asOf: T, stale: false } };
+    expect(deployDisplay(fresh, LIVE).stripLine2(LOADOUT)).toBe(`Deploy unavailable · ${DEPLOY_BLOCK_REASON}`);
+    expect(deployDisplay(fresh).stripLine2(LOADOUT)).toBe(LOADOUT);
+  });
+
   it('blocked with no reason (concurrency off: the helper gives none) reads "Unavailable", never a dangling separator', () => {
     expect(deployDisplay({ displayState: 'blocked', reason: null }).status).toBe('Unavailable');
     expect(deployDisplay({ displayState: 'blocked', reason: null }, LIVE).stripLine2(LOADOUT)).toBe('Deploy unavailable');
