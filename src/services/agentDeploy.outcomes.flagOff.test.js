@@ -52,11 +52,16 @@ describe('the identity guard with the casual clone off (review L5-9)', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('after the POST: orphaned with postIssued true, no hand-off', async () => {
-    globalThis.fetch = vi.fn(async () => { auth.uid = 'uid-B'; return json(200, CREATED_200); });
+  it('after the POST: orphaned with postIssued true before the body is read, no hand-off', async () => {
+    const response = json(200, CREATED_200);
+    const bodyRead = vi.spyOn(response, 'text');
+    globalThis.fetch = vi.fn(async () => { auth.uid = 'uid-B'; return response; });
     const cb = vi.fn();
     expect(await run(cb)).toEqual({ outcome: 'orphaned', success: false, postIssued: true });
     expect(cb).not.toHaveBeenCalled();
+    // The after-body guard would orphan the same way; only the unread body shows
+    // this boundary's own guard answered (Fable review FR-3).
+    expect(bodyRead).not.toHaveBeenCalled();
   });
 
   it('after the body read: orphaned, no hand-off', async () => {

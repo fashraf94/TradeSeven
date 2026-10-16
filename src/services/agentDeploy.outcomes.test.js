@@ -342,12 +342,17 @@ describe('the identity guard: a changed or absent uid orphans the deploy at each
     expect(cb).not.toHaveBeenCalled();
   });
 
-  it('after the POST: orphaned with postIssued true, no handoff; the server battle is left alone (no further request)', async () => {
-    stubFetch(() => { auth.uid = 'uid-B'; return json(200, CREATED_200); });
+  it('after the POST: orphaned with postIssued true before the body is read, no handoff; the server battle is left alone (no further request)', async () => {
+    const response = json(200, CREATED_200);
+    const bodyRead = vi.spyOn(response, 'text');
+    stubFetch(() => { auth.uid = 'uid-B'; return response; });
     const cb = vi.fn();
     expect(await run(cb)).toEqual(ORPHANED_AFTER_POST);
     expect(cb).not.toHaveBeenCalled();
     expect(globalThis.fetch.mock.calls.map(([url]) => url)).toEqual(['/api/agent/ensure-casual-clone', '/api/agent/decide']);
+    // The after-body guard would orphan the same way; only the unread body shows
+    // this boundary's own guard answered (Fable review FR-3).
+    expect(bodyRead).not.toHaveBeenCalled();
   });
 
   it('after a POST that failed in transit: orphaned, not the old owner\'s network failure', async () => {
