@@ -166,9 +166,12 @@ function controlledCandles(processed, { timeframe, current, crypto, supplied, no
  * @param {Object} options - Optional configuration
  * @param {number} options.currentPrice - Live price for synthetic candle (from header)
  * @param {boolean} options.isCrypto - Whether the asset is crypto (trades 24/7)
- * @returns {Object} { ohlcvData, timeframe, setTimeframe, indicators, levels, smaData, loading, error }
+ * @param {boolean} options.technicalActive - The Technical tab is showing. Off
+ *   the 1D chart, only this lets the hook fetch the daily series that the
+ *   indicators and levels are computed from.
+ * @returns {Object} { ohlcvData, timeframe, setTimeframe, indicators, levels, dailyData, smaData, loading, error }
  */
-export default function useResearchData(symbol, { currentPrice, isCrypto, initialTimeframe, controlled = null } = {}) {
+export default function useResearchData(symbol, { currentPrice, isCrypto, initialTimeframe, controlled = null, technicalActive = false } = {}) {
   // Controlled held-quote mode: the parent's session-qualified extremes stand in
   // for the polled ones EVERYWHERE they are read (V-6 a), and nothing here
   // fetches a quote. `controlled.extremes` = { sessionDate, high?, low?, open? }
@@ -189,6 +192,11 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   const [dailyChange, setDailyChange] = useState(null); // Daily % change computed from OHLCV
   const [previousClose, setPreviousClose] = useState(null); // Yesterday's close from daily OHLCV
   const [realtimeExtremes, setRealtimeExtremes] = useState(null); // Live intraday high/low from real-time API
+  // The symbol's DAILY series (newest-first) for indicators and levels, kept
+  // apart from the chart's series, which can be weekly or intraday.
+  const [dailySeries, setDailySeries] = useState(null); // { symbol, data }
+  const currentSymbolRef = useRef(symbol);
+  const dailyInflightRef = useRef(null);
 
   const abortRef = useRef(null);
   const cacheRef = useRef({});  // In-memory cache keyed by `${symbol}_${apiTimeframe}`
@@ -247,6 +255,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     const isRefStale = isBomb && refEntry?.cachedAt && (Date.now() - refEntry.cachedAt > INTRADAY_STALE_MS);
     if (!isSpectate && refEntry && !isRefStale) {
       setRawData(refEntry.data || refEntry);
+      if (apiTimeframe === '1d') setDailySeries({ symbol, data: refEntry });
       setError(null);
       return;
     }
@@ -295,6 +304,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
           // Compute daily change from daily data (rawData is newest-first)
           if (apiTimeframe === '1d' && data.length >= 1) {
             cacheRef.current[`${symbol}_1d`] = data;
+            setDailySeries({ symbol, data }); // On 1D the chart's series IS the daily series
             const prevClose = getPreviousClose(data, prevCloseKey());
             if (prevClose) {
               setPreviousClose(prevClose);
@@ -355,6 +365,34 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       })
       .catch(() => {}); // Silent — dailyChange stays null, enrichedAsset falls through
   }, [symbol, isCrypto]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { currentSymbolRef.current = symbol; }, [symbol]);
+
+  // The daily series off the 1D chart: fetched only while the Technical tab is
+  // showing and nothing daily is cached for the symbol — the same request the
+  // 1D chart makes, cached under its own key. On 1D the chart's own series is
+  // the daily series (the main fetch sets it), so nothing extra is fetched.
+  useEffect(() => {
+    if (!symbol || !technicalActive || apiTimeframe === '1d') return;
+    if (dailySeries?.symbol === symbol) return;
+    const cached = cacheRef.current[`${symbol}_1d`] || cacheRef.current[`${symbol}_1d_technical`];
+    if (cached && cached.length > 0) {
+      setDailySeries({ symbol, data: cached });
+      return;
+    }
+    if (dailyInflightRef.current === symbol) return;
+    dailyInflightRef.current = symbol;
+    fetchHistoricalOHLCV(symbol, '1d', isCrypto ? { type: 'crypto' } : undefined)
+      .then(data => {
+        if (!data || data.length === 0) return;
+        cacheRef.current[`${symbol}_1d_technical`] = data;
+        if (currentSymbolRef.current === symbol) setDailySeries({ symbol, data });
+      })
+      .catch(() => {}) // Silent — indicators stay null and the tab shows its empty states
+      .finally(() => {
+        if (dailyInflightRef.current === symbol) dailyInflightRef.current = null;
+      });
+  }, [symbol, technicalActive, apiTimeframe, dailySeries, isCrypto]);
 
   // Auto-refresh spectate mode every 15 seconds
   // Guards:
@@ -692,14 +730,17 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     return result;
   }, [processedCandles, throttledPrice, timeframe, isCrypto, realtimeExtremes, controlledMode, suppliedSession, suppliedHigh, suppliedLow, suppliedOpen]);
 
-  // Compute closing prices (newest-first, as expected by indicator functions)
-  const closingPrices = useMemo(() => {
-    if (!rawData) return [];
-    // rawData is newest-first — extract close prices in that order
-    return rawData.map(c => Number(c.close)).filter(p => Number.isFinite(p) && p > 0);
-  }, [rawData]);
+  // The daily series for THIS symbol (null until loaded; never the chart's
+  // weekly or intraday candles).
+  const dailyData = dailySeries?.symbol === symbol ? dailySeries.data : null;
 
-  // Compute technical indicators from daily data (only meaningful for '1D' timeframe raw data)
+  // Closing prices of the daily series (newest-first, as expected by indicator functions)
+  const closingPrices = useMemo(() => {
+    if (!dailyData) return [];
+    return dailyData.map(c => Number(c.close)).filter(p => Number.isFinite(p) && p > 0);
+  }, [dailyData]);
+
+  // Technical indicators from the daily series, whatever the chart's timeframe
   const indicators = useMemo(() => {
     if (closingPrices.length < 15) return null;
 
@@ -709,7 +750,16 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     const sma50 = calculateSMA(closingPrices, 50);
     const sma200 = calculateSMA(closingPrices, 200);
 
-    return { rsi, macd, sma20, sma50, sma200 };
+    // MACD histogram as of each of the latest 6 daily bars (newest-first):
+    // dropping the k newest closes gives the reading k bars ago.
+    const macdHistogram = [];
+    for (let k = 0; k < 6; k++) {
+      const m = calculateMACD(closingPrices.slice(k));
+      if (!m) break;
+      macdHistogram.push(m.histogram);
+    }
+
+    return { rsi, macd, macdHistogram, sma20, sma50, sma200 };
   }, [closingPrices]);
 
   // Compute SMA line data for chart overlay (newest-first input → newest-first output)
@@ -723,16 +773,16 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     return { sma20, sma50 };
   }, [rawData]);
 
-  // Compute S/R levels using daily data (newest-first)
+  // Compute S/R levels from the daily series (newest-first)
   const levels = useMemo(() => {
-    if (!rawData || rawData.length < 20 || !indicators) return null;
+    if (!dailyData || dailyData.length < 20 || !indicators) return null;
 
     try {
-      return detectLevels(rawData, indicators);
+      return detectLevels(dailyData, indicators);
     } catch {
       return null;
     }
-  }, [rawData, indicators]);
+  }, [dailyData, indicators]);
 
   // Retry function
   const retry = useCallback(() => {
@@ -750,6 +800,7 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
         } else {
           cacheRef.current[cacheKey] = isBomb ? { data, cachedAt: Date.now() } : data;
           setRawData(data);
+          if (apiTimeframe === '1d') setDailySeries({ symbol, data });
         }
       })
       .catch(err => setError(err.message || 'Failed to fetch data'))
@@ -823,12 +874,13 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
   return {
     ohlcvData,       // Oldest-first, processed for current timeframe
-    rawData,         // Newest-first, raw from API (for indicators/levels)
+    rawData,         // Newest-first, raw from API (the chart's series)
     timeframe,
     setTimeframe,
-    indicators,
+    indicators,      // From the daily series, whatever the chart's timeframe
     smaData,
-    levels,
+    levels,          // From the daily series, whatever the chart's timeframe
+    dailyData,       // Newest-first daily series (null until loaded)
     loading,
     error,
     retry,

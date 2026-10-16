@@ -59,7 +59,6 @@ const getMockFundamentals = (symbol) => {
     peRatio: '25x',
     revenueGrowth: '+15%',
     profitMargin: '20%',
-    rating: 'Buy',
     strengths: ['Strong market position', 'Growing revenue', 'Solid fundamentals'],
     weaknesses: ['Valuation concerns', 'Market competition', 'Economic sensitivity'],
     low52w: 100,
@@ -68,14 +67,14 @@ const getMockFundamentals = (symbol) => {
 
   // Custom data for popular stocks
   const stockData = {
-    'AAPL': { marketCap: '$3.0T', peRatio: '30x', revenueGrowth: '+8%', profitMargin: '25%', rating: 'Strong Buy', low52w: 164, high52w: 199, strengths: ['Strong ecosystem', 'Brand loyalty', 'Services growth'], weaknesses: ['iPhone dependency', 'China exposure', 'Premium pricing'] },
-    'MSFT': { marketCap: '$2.9T', peRatio: '35x', revenueGrowth: '+15%', profitMargin: '36%', rating: 'Strong Buy', low52w: 309, high52w: 430, strengths: ['Cloud dominance', 'AI integration', 'Enterprise strength'], weaknesses: ['Gaming struggles', 'Regulatory scrutiny', 'Valuation'] },
-    'GOOGL': { marketCap: '$2.0T', peRatio: '25x', revenueGrowth: '+12%', profitMargin: '24%', rating: 'Buy', low52w: 120, high52w: 180, strengths: ['Search dominance', 'YouTube growth', 'Cloud expansion'], weaknesses: ['Ad market risks', 'Antitrust concerns', 'AI competition'] },
-    'AMZN': { marketCap: '$1.9T', peRatio: '60x', revenueGrowth: '+11%', profitMargin: '7%', rating: 'Buy', low52w: 118, high52w: 201, strengths: ['AWS leadership', 'E-commerce scale', 'Prime ecosystem'], weaknesses: ['Thin retail margins', 'Labor costs', 'Competition'] },
-    'NVDA': { marketCap: '$1.2T', peRatio: '65x', revenueGrowth: '+122%', profitMargin: '55%', rating: 'Strong Buy', low52w: 108, high52w: 505, strengths: ['AI chip dominance', 'Data center growth', 'CUDA ecosystem'], weaknesses: ['Concentration risk', 'Competition', 'Valuation'] },
-    'TSLA': { marketCap: '$800B', peRatio: '70x', revenueGrowth: '+19%', profitMargin: '11%', rating: 'Hold', low52w: 138, high52w: 299, strengths: ['EV leadership', 'Manufacturing scale', 'Energy business'], weaknesses: ['Competition growing', 'Execution risks', 'Valuation premium'] },
-    'META': { marketCap: '$1.3T', peRatio: '28x', revenueGrowth: '+23%', profitMargin: '29%', rating: 'Buy', low52w: 274, high52w: 531, strengths: ['User engagement', 'Ad efficiency', 'AI investment'], weaknesses: ['Metaverse losses', 'Privacy concerns', 'Competition'] },
-    'JPM': { marketCap: '$550B', peRatio: '11x', revenueGrowth: '+8%', profitMargin: '33%', rating: 'Buy', low52w: 135, high52w: 200, strengths: ['Scale advantage', 'Diverse revenue', 'Strong management'], weaknesses: ['Rate sensitivity', 'Regulatory burden', 'Credit risk'] }
+    'AAPL': { marketCap: '$3.0T', peRatio: '30x', revenueGrowth: '+8%', profitMargin: '25%', low52w: 164, high52w: 199, strengths: ['Strong ecosystem', 'Brand loyalty', 'Services growth'], weaknesses: ['iPhone dependency', 'China exposure', 'Premium pricing'] },
+    'MSFT': { marketCap: '$2.9T', peRatio: '35x', revenueGrowth: '+15%', profitMargin: '36%', low52w: 309, high52w: 430, strengths: ['Cloud dominance', 'AI integration', 'Enterprise strength'], weaknesses: ['Gaming struggles', 'Regulatory scrutiny', 'Valuation'] },
+    'GOOGL': { marketCap: '$2.0T', peRatio: '25x', revenueGrowth: '+12%', profitMargin: '24%', low52w: 120, high52w: 180, strengths: ['Search dominance', 'YouTube growth', 'Cloud expansion'], weaknesses: ['Ad market risks', 'Antitrust concerns', 'AI competition'] },
+    'AMZN': { marketCap: '$1.9T', peRatio: '60x', revenueGrowth: '+11%', profitMargin: '7%', low52w: 118, high52w: 201, strengths: ['AWS leadership', 'E-commerce scale', 'Prime ecosystem'], weaknesses: ['Thin retail margins', 'Labor costs', 'Competition'] },
+    'NVDA': { marketCap: '$1.2T', peRatio: '65x', revenueGrowth: '+122%', profitMargin: '55%', low52w: 108, high52w: 505, strengths: ['AI chip dominance', 'Data center growth', 'CUDA ecosystem'], weaknesses: ['Concentration risk', 'Competition', 'Valuation'] },
+    'TSLA': { marketCap: '$800B', peRatio: '70x', revenueGrowth: '+19%', profitMargin: '11%', low52w: 138, high52w: 299, strengths: ['EV leadership', 'Manufacturing scale', 'Energy business'], weaknesses: ['Competition growing', 'Execution risks', 'Valuation premium'] },
+    'META': { marketCap: '$1.3T', peRatio: '28x', revenueGrowth: '+23%', profitMargin: '29%', low52w: 274, high52w: 531, strengths: ['User engagement', 'Ad efficiency', 'AI investment'], weaknesses: ['Metaverse losses', 'Privacy concerns', 'Competition'] },
+    'JPM': { marketCap: '$550B', peRatio: '11x', revenueGrowth: '+8%', profitMargin: '33%', low52w: 135, high52w: 200, strengths: ['Scale advantage', 'Diverse revenue', 'Strong management'], weaknesses: ['Rate sensitivity', 'Regulatory burden', 'Credit risk'] }
   };
 
   return { ...defaults, ...(stockData[symbol] || {}) };
@@ -174,6 +173,7 @@ const AssetResearchModal = ({
   const [activeTab, setActiveTab] = useState(defaultTab || (isCrypto ? 'health' : isIndexAsset ? 'marketContext' : isSectorETF ? 'holdings' : 'fundamental'));
   const [whyMovingOpen, setWhyMovingOpen] = useState(false);
   const [profile, setProfile] = useState(null);
+  const [profileSymbol, setProfileSymbol] = useState(null); // the symbol `profile` was fetched for
   const [profileLoading, setProfileLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
   const [highlightedLevel, setHighlightedLevel] = useState(null);
@@ -227,6 +227,7 @@ const AssetResearchModal = ({
       : (isOriginalAsset ? wsPrice : null) || currentAsset?.price || currentAsset?.currentPrice || 0,
     isCrypto: isCrypto,
     initialTimeframe: defaultTimeframe,
+    technicalActive: activeTab === 'technical',
     ...(controlledMode ? { controlled: { extremes: controlledValid ? (controlledQuote.extremes || null) : null } } : {}),
   });
 
@@ -307,15 +308,22 @@ const AssetResearchModal = ({
 
   useEffect(() => {
     if (failClosed) return;
-    if (currentAsset?.symbol && !isCrypto) {
+    // A symbol change clears the previous symbol's profile — and its analyst
+    // rating — at once, and a late answer for the old symbol is dropped.
+    let cancelled = false;
+    const symbol = currentAsset?.symbol;
+    setProfile(null);
+    setProfileSymbol(null);
+    if (symbol && !isCrypto) {
       setProfileLoading(true);
       setDescExpanded(false);
-      getCompanyProfile(currentAsset.symbol)
-        .then(data => setProfile(data))
-        .finally(() => setProfileLoading(false));
+      getCompanyProfile(symbol)
+        .then(data => { if (!cancelled) { setProfile(data); setProfileSymbol(symbol); } })
+        .finally(() => { if (!cancelled) setProfileLoading(false); });
     } else {
-      setProfile(null);
+      setProfileLoading(false);
     }
+    return () => { cancelled = true; };
   }, [currentAsset?.symbol]);
 
   // Fetch current price for internally-navigated stocks (not the original asset).
@@ -343,9 +351,28 @@ const AssetResearchModal = ({
   const fundamentals = getMockFundamentals(currentAsset.symbol);
   const priceChange = enrichedAsset.percentChange || enrichedAsset.change || 0;
 
-  // Use real rating from API if available, fall back to mock
-  const displayRating = profile?.ratingText || fundamentals.rating;
-  const ratingColor = getRatingColor(displayRating);
+  // The Analysis-tab rating is Wall Street analyst consensus, labeled as such,
+  // from the resolved profile of the DISPLAYED symbol alone: nothing while it
+  // is pending or missing, and "no coverage" when no analyst covers the stock
+  // (the server's rating reads "Hold" there).
+  const analystTotal = profile?.analystConsensus?.totalAnalysts;
+  const analystChip = profile && !profileLoading && profileSymbol === currentAsset?.symbol
+    && typeof analystTotal === 'number' && Number.isFinite(analystTotal)
+    ? (analystTotal === 0
+      ? { text: 'Wall St: no coverage', color: HOLO_COLORS.textMuted }
+      : profile.ratingText
+        ? { text: `Wall St: ${profile.ratingText} · ${analystTotal} analyst${analystTotal === 1 ? '' : 's'}`, color: getRatingColor(profile.ratingText) }
+        : null)
+    : null;
+  const analystChipEl = analystChip && (
+    <span style={{
+      color: analystChip.color, fontWeight: '600', fontSize: '12px',
+      padding: '2px 8px', borderRadius: '8px',
+      background: `${analystChip.color}15`, border: `1px solid ${analystChip.color}40`,
+    }}>
+      {analystChip.text}
+    </span>
+  );
 
   // Whether the CURRENTLY-DISPLAYED asset can be drafted right now: the draft
   // preconditions (your turn + canPick + an onAcquire handler) AND, when the
@@ -794,12 +821,12 @@ const AssetResearchModal = ({
             >
               {activeTab === 'fundamental' && (
                 <div style={{ padding: '8px 0' }}>
-                  {/* Rating */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                    <span style={{ color: ratingColor, fontWeight: '600', fontSize: '14px' }}>
-                      {'\u25CF'} {displayRating}
-                    </span>
-                  </div>
+                  {/* Wall Street analyst consensus */}
+                  {analystChipEl && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                      {analystChipEl}
+                    </div>
+                  )}
                   {/* Company profile: sector/industry pills + description */}
                   {profileLoading && (
                     <div style={{ marginBottom: '12px', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)' }}>
@@ -853,7 +880,7 @@ const AssetResearchModal = ({
               {activeTab === 'technical' && (
                 <TechnicalTabV2
                   asset={currentAsset}
-                  ohlcvData={researchData.ohlcvData}
+                  dailyData={researchData.dailyData}
                   indicators={researchData.indicators}
                   levels={researchData.levels}
                   onLevelHighlight={setHighlightedLevel}
@@ -1089,19 +1116,19 @@ const AssetResearchModal = ({
 
             {activeTab === 'fundamental' && (
               <div>
-                {/* Rating */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: '16px',
-                  }}
-                >
-                  <span style={{ color: ratingColor, fontWeight: '600', fontSize: '14px' }}>
-                    ● {displayRating}
-                  </span>
-                </div>
+                {/* Wall Street analyst consensus */}
+                {analystChipEl && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '16px',
+                    }}
+                  >
+                    {analystChipEl}
+                  </div>
+                )}
 
                 {/* Company Profile Section */}
                 {profileLoading && (
