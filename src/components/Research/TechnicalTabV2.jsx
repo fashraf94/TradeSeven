@@ -6,6 +6,7 @@ import { SECTORS, CRYPTO_SECTOR } from '../../constants/sectors';
 import { getQuickSectorSummary } from '../../services/sectorDataService';
 import QuadrantBadge from './MoneyMap/QuadrantBadge';
 import { sideLevelsAt, distanceFromShownPrice } from './useResearchData';
+import { priceText } from './priceFormat';
 
 /**
  * TechnicalTabV2 — Enhanced 4-section collapsible technical analysis tab.
@@ -40,22 +41,24 @@ const formatDistance = (distance) => {
 
 /**
  * MACD wording from the histogram (MACD minus its signal line). `histogram`
- * is newest-first: index 0 is the latest daily bar, up to 6 bars. "Cross" is
- * said only when the line was on the other side within the last 5 bars; `n`
- * counts bars back to the first bar on the current side ("latest session" when
- * that is the newest bar).
+ * is newest-first: index 0 is the latest daily bar, up to 6 bars; `dates[k]`
+ * is the date of the bar behind histogram[k]. "Cross" is said only when the
+ * line was on the other side within the last 5 bars, and it names the first
+ * bar on the current side: "latest session" when that is the newest bar,
+ * otherwise that bar's own date ("Oct 13", printed as the volume label prints
+ * a date).
  */
-const describeMacd = (macd, histogram) => {
+const describeMacd = (macd, histogram, dates) => {
   if (!macd || !Number.isFinite(macd.histogram)) return { tone: 'unknown', text: '—' };
   const side = Math.sign(macd.histogram);
   if (side === 0) return { tone: 'neutral', text: 'On signal line' };
   const series = Array.isArray(histogram) ? histogram : [];
   for (let j = 1; j < Math.min(series.length, 6); j++) {
     if (Math.sign(series[j]) === -side) {
-      const when = j === 1 ? 'latest session' : `${j - 1}d ago`;
-      return side > 0
-        ? { tone: 'bullish', text: `Bullish cross · ${when}` }
-        : { tone: 'bearish', text: `Bearish cross · ${when}` };
+      const date = Array.isArray(dates) ? dates[j - 1] : null;
+      const when = j === 1 ? 'latest session' : (/^\d{4}-\d{2}-\d{2}$/.test(date ?? '') ? shortDate(date) : null);
+      const cross = side > 0 ? 'Bullish cross' : 'Bearish cross';
+      return { tone: side > 0 ? 'bullish' : 'bearish', text: when ? `${cross} · ${when}` : cross };
     }
   }
   return side > 0
@@ -107,7 +110,7 @@ const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
             color,
             fontFamily: 'monospace',
           }}>
-            ${level.price?.toFixed(2)}
+            ${priceText(level.price)}
           </span>
           <span style={{
             padding: '1px 5px',
@@ -149,7 +152,7 @@ const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
           }}>
             <span style={{ fontSize: '11px', color: '#00d9ff', fontWeight: '600' }}>Current</span>
             <span style={{ fontSize: '13px', color: '#00d9ff', fontWeight: '700', fontFamily: 'monospace' }}>
-              ${price?.toFixed(2)}
+              ${priceText(price)}
             </span>
           </div>
 
@@ -178,7 +181,7 @@ const MomentumSection = ({ indicators, price }) => {
     );
   }
 
-  const { rsi, macd, macdHistogram, sma50 } = indicators;
+  const { rsi, macd, macdHistogram, macdHistogramDates, sma50 } = indicators;
 
   // RSI gauge — the zone word and the dot read the same one-decimal number
   // that is shown (BUILD_RULES §9). No reading → no number, zone or dot.
@@ -190,7 +193,7 @@ const MomentumSection = ({ indicators, price }) => {
     : rsiShown >= 70 ? 'Overbought' : rsiShown <= 30 ? 'Oversold' : 'Neutral';
 
   // MACD signal
-  const macdSignal = describeMacd(macd, macdHistogram);
+  const macdSignal = describeMacd(macd, macdHistogram, macdHistogramDates);
   const macdColor = macdSignal.tone === 'bullish' ? HOLO_COLORS.green : macdSignal.tone === 'bearish' ? '#ff4757' : HOLO_COLORS.textSecondary;
 
   // vs 50-Day MA
@@ -385,8 +388,8 @@ const VolumeRangeSection = ({ dailyData, price, sessionDate }) => {
               display: 'flex', justifyContent: 'space-between',
               fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px',
             }}>
-              <span>${stats.low52w?.toFixed(2)}</span>
-              <span>${stats.high52w?.toFixed(2)}</span>
+              <span>${priceText(stats.low52w)}</span>
+              <span>${priceText(stats.high52w)}</span>
             </div>
             {/* Range bar */}
             <div style={{
