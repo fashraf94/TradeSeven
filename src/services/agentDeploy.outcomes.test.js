@@ -23,6 +23,8 @@ vi.mock('../firebase/authService', () => ({
 const { deployAgent } = await import('./agentDeploy');
 const { DEPLOY_OUTCOMES } = await import('../constants/deployOutcomes');
 const { DEPLOY_REFUSAL_CODE, DUE_DEPLOY_LINE } = await import('../constants/hypothesisRecords');
+// The hub's translator (S2a). A test file may import it; the main graph may not.
+const { translateServiceResult } = await import('../components/CommandCenter/hub/selectors/attemptVocabulary');
 
 const RANKED = 'agent-ranked-1';
 const CLONE = 'casual-agent-uid-A';
@@ -387,5 +389,63 @@ describe('the identity guard: a changed or absent uid orphans the deploy at each
     const cb = vi.fn();
     expect((await run(cb)).outcome).toBe(DEPLOY_OUTCOMES.CREATED);
     expect(cb).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// The hub reads what the service writes: every R1 result through S2a's own
+// translateServiceResult lands on spec V1.2 §5.2's provider phase.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('the hub\'s translator reads every R1 result as spec §5.2 says', () => {
+  const translated = async (decide, cb = vi.fn()) => { stubFetch(decide); return translateServiceResult(await run(cb)); };
+
+  it('created → provider created, ceremony theater, the real id', async () => {
+    const t = await translated(json(200, CREATED_200));
+    expect([t.phase, t.ceremony.phase, t.detail.kind, t.detail.battleId]).toEqual(['created', 'theater', 'created', 'battle-new']);
+  });
+
+  it('existing_battle → provider existing, the existing terminal, the server\'s id — never created', async () => {
+    const t = await translated(json(200, EXISTING_200));
+    expect([t.phase, t.ceremony.phase, t.detail.kind, t.detail.battleId]).toEqual(['existing', 'existing', 'existing', 'battle-running']);
+  });
+
+  it('handoff_failed → provider created with the handoff detail and the real id, verifying', async () => {
+    const t = await translated(json(200, CREATED_200), () => { throw new Error('boom'); });
+    expect([t.phase, t.ceremony.phase, t.detail.kind, t.detail.battleId]).toEqual(['created', 'verifying', 'handoff', 'battle-new']);
+  });
+
+  it('the 409 review-due refusal → refused, its line kept, the confirmed-refusal tone', async () => {
+    const t = await translated(json(409, { error: DEPLOY_REFUSAL_CODE, message: DUE_DEPLOY_LINE }));
+    expect([t.phase, t.ceremony.errorTone, t.detail.kind, t.detail.line, t.displayState]).toEqual(['refused', 'confirmed', 'review_due', DUE_DEPLOY_LINE, 'failed']);
+  });
+
+  it.each([
+    ['the cooldown 429', json(429, { error: 'Please wait 2 minutes between deploys' })],
+    ['the stock-admission 503', json(503, { error: 'Stock admission unavailable', reason: 'publication_window_not_open' })],
+    ['a 403', json(403, { error: 'ownership_mismatch' })],
+  ])('%s → refused, a failure the hub shows as definitive', async (_label, response) => {
+    const t = await translated(response);
+    expect([t.phase, t.detail.kind, t.detail.postIssued]).toEqual(['refused', 'refused', true]);
+  });
+
+  it.each([
+    ['a network failure', new TypeError('Failed to fetch')],
+    ['a JSON 500', json(500, { error: 'Failed to generate portfolio' })],
+    ['a non-JSON 502', page(502, '<html>')],
+    ['a 200 naming no battle', json(200, { success: true })],
+  ])('%s → uncertain, lost contact, never typed-away as untyped', async (_label, response) => {
+    const t = await translated(response);
+    expect([t.phase, t.ceremony.errorTone, t.detail.kind]).toEqual(['uncertain', 'lost_contact', 'uncertain']);
+  });
+
+  it('a preflight refusal → refused with postIssued false (no deploy cooldown follows)', async () => {
+    const t = translateServiceResult(await deployAgent(null, vi.fn(), vi.fn()));
+    expect([t.phase, t.detail.postIssued]).toEqual(['refused', false]);
+  });
+
+  it('orphaned → the local disposition: nothing shown', async () => {
+    getIdTokenMock.mockImplementation(async () => { auth.uid = 'uid-B'; return 'tok'; });
+    const t = await translated(json(200, CREATED_200));
+    expect([t.phase, t.displayState, t.detail.postIssued]).toEqual(['orphaned', null, false]);
   });
 });

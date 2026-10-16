@@ -54,6 +54,12 @@ vi.mock('./ceremonyData', async (importOriginal) => ({
   useEquippedWatchlistSymbols: () => ({ symbols: [] }),
 }));
 
+// A row's waits stay well inside its own timeout, so a failing row fails on its
+// assertion — never on vitest's timeout, whose still-running wait loop would
+// leak act() calls into the rows after it.
+vi.setConfig({ testTimeout: 15000 });
+const WAIT_MS = 3000;
+
 const { deployAgent } = await import('../../../services/agentDeploy.js');
 const { deployResultFor } = await import('../deployResult.js');
 const { default: DeployCeremony } = await import('./DeployCeremony.jsx');
@@ -78,6 +84,9 @@ const serverReturns = (...docs) => getDocsFromServerMock.mockResolvedValue({ emp
 const docOf = (id, data) => ({ id, data: () => data });
 
 let container; let root; let entered; let opened; let retried; let notes; let createCb;
+// Bumped when a row ends: a wait loop from an earlier row stops instead of
+// running on into the next one.
+let rowGeneration = 0;
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -101,6 +110,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  rowGeneration += 1;
   act(() => root.unmount());
   container.remove();
   vi.restoreAllMocks();
@@ -137,11 +147,13 @@ const renderWith = (deployProgress, deployResult, extra = {}) => {
 const text = () => document.body.textContent || '';
 const buttons = () => [...document.body.querySelectorAll('button')];
 const button = (label) => buttons().find((b) => (b.textContent || '').includes(label));
-const waitFor = async (pred, what, timeoutMs = 5000) => {
+const waitFor = async (pred, what, timeoutMs = WAIT_MS) => {
+  const gen = rowGeneration;
   const start = Date.now();
-  while (!pred() && Date.now() - start < timeoutMs) {
+  while (gen === rowGeneration && !pred() && Date.now() - start < timeoutMs) {
     await act(async () => { await new Promise((r) => setTimeout(r, 40)); });
   }
+  if (gen !== rowGeneration) throw new Error(`abandoned: ${what} (its row already ended)`);
   if (!pred()) throw new Error(`never reached: ${what} — text: ${text().slice(0, 300)}`);
 };
 const tick = async (ms = 150) => { await act(async () => { await new Promise((r) => setTimeout(r, ms)); }); };
@@ -242,7 +254,7 @@ describe('Existing battle R1 (spec §11.3) — the real machine with 200 battleC
     await waitFor(() => text().includes('Couldn’t open the running game'), 'unavailable after the switch');
   });
 
-  it('the terminal latches: a later success never turns it into a reveal', async () => {
+  it('the terminal latches: a later result never turns it into a reveal or a verification', async () => {
     serverReturns(docOf(RUNNING_ID, RUNNING_DOC()));
     await runTo(deployResultFor(await serviceResult(json(200, EXISTING_200))));
     await waitFor(() => text().includes('Already running'), 'the existing terminal');
@@ -250,6 +262,26 @@ describe('Existing battle R1 (spec §11.3) — the real machine with 200 battleC
     await tick(600);
     expect(text()).toContain('Already running');
     expect(text()).not.toContain('Deployment complete');
+    // An error result, and the server's own error checkpoint, after the terminal:
+    // a machine that did not latch `existing` would start a verification here.
+    renderWith({ stage: 'error', deployId: OURS, updatedAt: `${OURS}-4` }, { status: 'error', postIssued: true, httpStatus: 500, existingBattleId: RUNNING_ID });
+    await tick(400);
+    expect(text()).toContain('Already running');
+    expect(text()).not.toMatch(/Deployment (failed|unconfirmed)/);
+    expect(notes.map((n) => n.phase)).toEqual(['theater', 'existing']);
+  });
+
+  it('while the document is still being read, Open is disabled and opens nothing', async () => {
+    let release;
+    getDocsFromServerMock.mockImplementation(() => new Promise((resolve) => { release = () => resolve({ empty: false, docs: [docOf(RUNNING_ID, RUNNING_DOC())] }); }));
+    await runTo(deployResultFor(await serviceResult(json(200, EXISTING_200))));
+    await waitFor(() => text().includes('Finding the running game…'), 'the pending read');
+    expect(button('Open game').disabled).toBe(true);
+    act(() => { button('Open game').click(); });
+    expect(opened).toEqual([]);
+    await act(async () => { release(); });
+    await waitFor(() => button('Open game') && !button('Open game').disabled, 'Open after the read');
+    expect(text()).not.toContain('Finding the running game…');
   });
 });
 
