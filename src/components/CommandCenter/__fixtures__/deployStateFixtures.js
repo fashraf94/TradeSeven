@@ -117,9 +117,19 @@ export const PRECEDENCE_ROWS = Object.freeze([
     displayState: 'cooldown',
   },
   {
-    name: 'agent loading beats a block and a first-poll failure',
+    name: 'agent loading beats a block (a live BaggerBomb in the retained list)',
+    inputs: base({ agent: { status: 'loading', agent: null, ownerUid: null, ownerEpoch: null }, poll: pollReady([BATTLES.baggerbomb]) }),
+    displayState: 'loading_agent',
+  },
+  {
+    name: 'agent loading beats a first-poll failure',
     inputs: base({ agent: { status: 'loading', agent: null, ownerUid: null, ownerEpoch: null }, poll: pollInitial({ status: 'error' }) }),
     displayState: 'loading_agent',
+  },
+  {
+    name: 'a submitting attempt beats an agent reload (row 3 over row 5)',
+    inputs: base({ attempt: attemptFor('submitting'), agent: { status: 'loading', agent: null, ownerUid: null, ownerEpoch: null } }),
+    displayState: 'submitting',
   },
   {
     name: 'a stale active BaggerBomb blocks even while the poll errors',

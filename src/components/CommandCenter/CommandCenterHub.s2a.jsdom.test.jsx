@@ -24,12 +24,13 @@ import CommandCenterHub from './CommandCenterHub';
 import DeploySection from './sections/DeploySection';
 import DeployStrip from './DeployStrip';
 import { HUB_COPY as COPY } from './hub/hubCopy';
+import { deployDisplay } from './hub/deployDisplay';
 import { HUB_S1_SECTIONS, HUB_S2A_DEPLOY_INPUTS } from './hub/hubModel';
 import { deriveHubDeployState, firstDeploymentCandidate } from './hub/selectors/deployState';
 import { DUE_DEPLOY_LINE } from '../../constants/hypothesisRecords';
 import { DEPLOY_BLOCK_REASON } from '../../utils/commandCenterLiveBattles';
 import { FIXTURE_BLOCK_REASON, HUB_LAYOUT_FIXTURES, HUB_LAYOUT_FIXTURE_NAMES } from './__fixtures__/hubLayoutFixtures';
-import { attemptFor, base, pollReady } from './__fixtures__/deployStateFixtures';
+import { BATTLES, attemptFor, base, pollReady } from './__fixtures__/deployStateFixtures';
 import { byRole, byText, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav } from './__fixtures__/hubTestKit';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -97,7 +98,7 @@ describe('production: the hub calls the selector with S2a\'s unresolved inputs (
     expect(Object.keys(HUB_S1_SECTIONS)).not.toContain('deploy');
   });
 
-  it('a sections prop without a deploy state takes the selector\'s', () => {
+  it('a sections prop without a deploy state renders checking (the selector\'s reading of S2a\'s inputs, and the display\'s fail-closed default alike)', () => {
     render(<CommandCenterHub site="desktop" sections={{ ...HUB_S1_SECTIONS }} />);
     expect(card().getAttribute('data-hub-deploy')).toBe('checking');
   });
@@ -213,6 +214,32 @@ describe('the new states through the real Deploy card (desktop) and strip (phone
     const [control] = byRole(card(), 'button', COPY.deploy.states.existing);
     expect(control.disabled).toBe(true);
     expect(byRole(card(), 'button', COPY.deploy.openGame)).toHaveLength(1);
+  });
+
+  it('A5-10: with a handler, the hold is live only where the selector allowed a start — on the card and on the strip', () => {
+    const onDeploy = vi.fn();
+    // The hold is named by its instruction while it offers the hold, else by its phase label (HubHold.jsx).
+    const nameOf = (label) => ([COPY.deploy.hold, COPY.deploy.holdShort].includes(label) ? COPY.deploy.holdLabel : label);
+    const hold = (scope, deploy) => byRole(scope, 'button', nameOf(deployDisplay(deploy).cardHoldLabel))[0];
+    const cases = [
+      [deriveHubDeployState(base()), false],
+      [deriveHubDeployState(base({ poll: pollReady([], { status: 'error' }) })), false],
+      [deriveHubDeployState(base({ poll: { status: 'loading', liveBattles: null, ownerUid: null, ownerEpoch: null } })), true],
+      [deriveHubDeployState(base({ poll: pollReady([BATTLES.baggerbomb]) })), true],
+      [attempt('refused', { result: { kind: 'refused', line: 'no' } }), true],
+    ];
+    for (const [deploy, disabled] of cases) {
+      render(<DeploySection deploy={deploy} loadoutLine="x" onDeploy={onDeploy} />);
+      expect(hold(document.body, deploy).disabled, `card ${deploy.displayState}`).toBe(disabled);
+      for (const m of mounted) m.unmount();
+      mounted = [];
+      render(<DeployStrip deploy={deploy} liveGame={null} loadoutLine="x" placement={{ stripBottom: 64, stripPadsSafeArea: false }} onDeploy={onDeploy} />, 390);
+      const stripHold = byRole(document.body, 'button').find((b) => b.getAttribute('aria-label') === COPY.deploy.holdLabel);
+      if (stripHold) expect(stripHold.disabled, `strip ${deploy.displayState}`).toBe(disabled);
+      else expect(disabled, `strip ${deploy.displayState} shows no hold`).toBe(true);
+      for (const m of mounted) m.unmount();
+      mounted = [];
+    }
   });
 
   it('cooldown: the next permitted deploy time on the strip, the hold disabled', () => {

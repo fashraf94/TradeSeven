@@ -77,6 +77,8 @@ const TOKEN = /^[a-z][a-zA-Z0-9-]*$/;
 const COPY_PROPERTIES = new Set([
   'label', 'title', 'text', 'sub', 'caption', 'heading', 'message', 'placeholder', 'alt', 'ariaLabel', 'aria-label',
   'description', 'summary', 'cta', 'why', 'detail', 'eyebrow', 'hint', 'help', 'empty', 'line', 'line1', 'line2',
+  // S2a: the deploy selector's `reason` reaches the strip and the card verbatim (S2a review A5-9).
+  'reason',
 ]);
 
 /** The string pieces an expression renders: literals, template parts, and both sides of `&&`, `||`, `??`, `?:` and `+`. */
@@ -210,6 +212,16 @@ describe('copy centralization — every user-visible string is in a copy table',
       expect(literalCopyIn(asModule(fine)), fine).toEqual([]);
     }
     expect(literalCopyIn("export const ORDER = Object.freeze({ display: 'flex', status: 'loading' });")).toEqual([]);
+  });
+
+  it('the pure selectors hold no words at all: every string literal under hub/selectors/ is a vocabulary token, never a phrase (S2a review A5-9)', () => {
+    const selectors = hubSourceFiles().filter((rel) => rel.startsWith(`${DIR}/hub/selectors/`));
+    expect(selectors.length, 'no selector found, so this row would be vacuous').toBeGreaterThan(3);
+    const phrases = selectors.flatMap((rel) => sourceStrings(read(rel)).filter((s) => /\s/.test(s) && LETTER.test(s)).map((s) => `${rel}: ${clip(s)}`));
+    expect(phrases).toEqual([]);
+    // ...and the scan sees a returned phrase and a phrase on a non-copy key (PL-13, PL-15).
+    expect(sourceStrings("export const f = () => 'Deployment failed';").filter((s) => /\s/.test(s))).toEqual(['Deployment failed']);
+    expect(literalCopyIn("export const s = { reason: 'Deploy unavailable right now' };")).not.toEqual([]);
   });
 
   it('every hub source file parses, so none is skipped by the scan', () => {

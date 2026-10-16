@@ -357,6 +357,43 @@ describe('S2a review fixes — hold epoch, cooldown owner, Retry readiness (A1, 
   });
 });
 
+describe('S2a review fixes — the test-integrity lens\'s rows (A5)', () => {
+  it('A5-4: the first-deployment candidate needs the completed read to be THIS owner\'s — a ready read that names no owner is not', () => {
+    const first = base({ agent: agentReady({ agent: { id: 'agent-a', stats: { gamesPlayed: 0 } } }), completed: { status: 'ready', rows: [], ownerUid: null, ownerEpoch: null } });
+    expect(deriveHubDeployState(first).canStart).toBe(true);
+    expect(firstDeploymentCandidate(first)).toBe(false);
+  });
+
+  it('A5-5: a poll status the table does not know, over a retained clear list, checks and admits nothing', () => {
+    for (const status of ['stale', 'READY', undefined]) {
+      expect(deriveHubDeployState(base({ poll: pollReady([], { status }) })), String(status)).toMatchObject({ displayState: 'checking', canStart: false });
+    }
+  });
+
+  it('A5-13: a reader with no ownerUid key at all has not resolved; a stale list is never also refreshing; a fresh block offers no read Retry', () => {
+    const { ownerUid: _u, ownerEpoch: _e, ...noOwner } = agentReady();
+    expect(deriveHubDeployState(base({ agent: { ...noOwner, status: 'loading' } })).displayState).toBe('loading_agent');
+    expect(deriveHubDeployState(base({ completed: { status: 'loading', rows: [] } })).displayState).toBe('ready');
+    expect(deriveHubDeployState(base({ poll: pollReady([], { status: 'error', refreshing: true }) })).freshness).toEqual({ asOf: AS_OF, stale: true, refreshing: false });
+    expect(deriveHubDeployState(base({ poll: pollReady([BATTLES.baggerbomb]) })).retryAction).toBeNull();
+  });
+
+  it('A5 refuter (DS-23): a hold names its control only when the control is named by a string', () => {
+    expect(deriveHubDeployState(base({ hold: { ...HOLD, controlId: 42 } })).holdControlId).toBeNull();
+    expect(deriveHubDeployState(base({ hold: HOLD })).holdControlId).toBe('deploy-card');
+  });
+
+  it('A5 refuter (DS-47): the first-deployment candidate with no poll at all is false and does not throw', () => {
+    const first = base({ agent: agentReady({ agent: { id: 'agent-a', stats: { gamesPlayed: 0 } } }), completed: completedReady([]) });
+    for (const poll of [null, undefined]) expect(firstDeploymentCandidate({ ...first, poll })).toBe(false);
+  });
+
+  it('A5-14 (DS-58): the first-deployment candidate with no identity is false and does not throw, whatever the readers hold', () => {
+    const first = base({ agent: agentReady({ agent: { id: 'agent-a', stats: { gamesPlayed: 0 } } }), completed: completedReady([]) });
+    for (const auth of [null, undefined, { signedIn: false }]) expect(firstDeploymentCandidate({ ...first, auth })).toBe(false);
+  });
+});
+
 describe('purity of the result', () => {
   it('returns a frozen object and never mutates its inputs', () => {
     const inputs = base({ poll: pollReady([BATTLES.ranked, BATTLES.training]) });
@@ -367,10 +404,11 @@ describe('purity of the result', () => {
     expect(JSON.stringify(inputs)).toBe(before);
   });
 
-  it('is a function of its inputs: the same inputs give the same result', () => {
+  it('is a function of its inputs: the same inputs give the same result, and no input at all admits nothing', () => {
     const inputs = base({ poll: pollReady([BATTLES.baggerbomb], { status: 'error' }) });
     expect(deriveHubDeployState(inputs)).toEqual(deriveHubDeployState(inputs));
-    expect(deriveHubDeployState(undefined).displayState).toBe('checking');
+    expect(deriveHubDeployState(undefined)).toMatchObject({ displayState: 'checking', canStart: false });
+    expect(deriveHubDeployState(null)).toMatchObject({ displayState: 'checking', canStart: false });
   });
 
   it('S2a\'s fixture times are what they say: NOW and the retained as-of', () => {

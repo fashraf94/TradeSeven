@@ -108,6 +108,29 @@ describe('today\'s results (src/services/agentDeploy.js), ruling R-S2A-2: untype
   });
 });
 
+describe('S2a review fixes — the server\'s words and the handoff forms (A5-3, A5-7)', () => {
+  it('A5-3: a 409 review-due refusal keeps the server\'s OWN words exactly, padding included; the shared line is only the fallback', () => {
+    const words = 'Server words for this idea, as the server sent them.';
+    const legacy = translateServiceResult({ success: false, postIssued: true, httpStatus: 409, error: 'hypothesis_review_due', details: words });
+    expect(legacy.detail.line).toBe(words);
+    expect(legacy.detail.line).not.toBe(DUE_DEPLOY_LINE);
+    const padded = '  Server words, padded.  ';
+    expect(translateServiceResult({ success: false, postIssued: true, httpStatus: 409, error: 'hypothesis_review_due', details: padded }).detail.line).toBe(padded);
+    expect(translateServiceResult({ outcome: 'refused', success: false, postIssued: true, httpStatus: 409, error: 'hypothesis_review_due', details: words }).detail.line).toBe(words);
+  });
+
+  it('A5 refuter (AV-29, AV-30): a creation carries no error tone; an orphaned outcome keeps its own postIssued', () => {
+    expect(translateServiceResult({ outcome: 'created', success: true, agentBattleId: REAL_ID }).ceremony).toEqual({ phase: 'theater', errorTone: null });
+    expect(translateServiceResult({ outcome: 'handoff_failed', success: false, battleId: REAL_ID }).ceremony.errorTone).toBeNull();
+    expect(translateServiceResult({ outcome: 'orphaned', success: false, postIssued: false }).detail.postIssued).toBe(false);
+  });
+
+  it('A5-7: handoff_failed takes its real id from battleId or agentBattleId, and one that says battleCreated:false is never a creation', () => {
+    expect(translateServiceResult({ outcome: 'handoff_failed', success: false, postIssued: true, agentBattleId: REAL_ID })).toMatchObject({ phase: 'created', detail: { battleId: REAL_ID } });
+    expect(translateServiceResult({ outcome: 'handoff_failed', success: false, postIssued: true, battleId: REAL_ID, battleCreated: false }).phase).toBe('uncertain');
+  });
+});
+
 describe('the typed outcomes (spec §5.2, row for row)', () => {
   it.each(Object.entries(TYPED_RESULTS))('%s', (_name, want) => {
     const t = translationOf(want.result);

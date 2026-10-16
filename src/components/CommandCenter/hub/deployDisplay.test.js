@@ -227,6 +227,8 @@ describe('the attempt words (§5.2): no live hold while in flight or terminal; o
   it('confirmed: "Deployed", and the card says the game appears in Games (never "above"); with Enter battle it takes the hold\'s place', () => {
     const plain = deployDisplay({ displayState: 'confirmed', canStart: false });
     expect(plain.stripLine1).toBe('Deployed');
+    // Without its action the control reports the phase on the strip (A5 refuter, DD-16).
+    expect(plain.strip.hold).toEqual({ label: COPY.deploy.holdDeployed, secondary: false });
     expect(plain.cardLine.text).toBe(COPY.deploy.cardConfirmed);
     expect(plain.cardLine.text).not.toMatch(/above/);
     expect(plain.processing).toBe(false);
@@ -272,8 +274,9 @@ describe('the attempt words (§5.2): no live hold while in flight or terminal; o
     const worded = deployDisplay({ displayState: 'failed', reason: 'Please wait 2 minutes between deploys', retryBlock: { displayState: 'cooldown', cooldownUntil: T } });
     expect(worded.stripLine2(LOADOUT)).toBe('Please wait 2 minutes between deploys');
     expect(worded.cardNote.text).toBe('Next deploy at 10:41 AM ET');
-    // Nothing is said when the block would only read "ready", and an eligibility state never carries one.
+    // Nothing is said when the block would only read "ready" (or "ready, stale"), and an eligibility state never carries one.
     expect(deployDisplay({ displayState: 'uncertain', retryBlock: { displayState: 'ready' } }).cardNote).toBeNull();
+    expect(deployDisplay({ displayState: 'failed', retryBlock: { displayState: 'ready_stale' } }).cardNote).toBeNull();
     expect(deployDisplay({ displayState: 'ready', canStart: true, retryBlock: { displayState: 'cooldown', cooldownUntil: T } }).cardNote).toBeNull();
     // A cooldown block without a bound reads as checking, never "Next deploy at ".
     expect(deployDisplay({ displayState: 'uncertain', retryBlock: { displayState: 'cooldown', cooldownUntil: null } }).cardNote.text).toBe(COPY.deploy.states.checking);
@@ -345,6 +348,35 @@ describe('a live game (spec §10)', () => {
     const existing = deployDisplay({ displayState: 'existing', action: 'openGame' }, LIVE);
     expect(existing.stripLine1).toBe('Already running');
     expect(existing.strip).toEqual({ openGame: false, hold: null, action: { kind: 'openGame', label: 'Open game' } });
+  });
+});
+
+describe('S2a review fixes — the test-integrity lens\'s display rows (A5-12, A5-15)', () => {
+  it('A5-12: with no time to show, every as-of or refresh line drops its time, never leaving "as of " dangling', () => {
+    expect(COPY.deploy.states.ready_stale('')).toBe('Ready to deploy');
+    expect(COPY.deploy.blockedStaleBehindGame('')).toBe('Deploy unavailable');
+    expect(COPY.deploy.staleAsOf('')).toBe(COPY.deploy.refreshFailed);
+    expect(COPY.deploy.refreshing('')).toBe('Refreshing');
+    // Reachable: a stale clear list whose last success has no recorded time.
+    const d = deployDisplay({ displayState: 'ready_stale', canStart: true, freshness: { asOf: null, stale: true } });
+    expect(d.status).toBe('Ready to deploy');
+    expect(`${d.status} ${d.stripLine1} ${d.cardLine.text}`).not.toMatch(/as of\s*$|as of\s+·/);
+  });
+
+  it('A5-15: the status dot per state — copper for a failed or uncertain attempt, teal for an existing one, ink-2 while checking', () => {
+    expect(deployDisplay({ displayState: 'failed' }).dot).toBe('copper');
+    expect(deployDisplay({ displayState: 'uncertain' }).dot).toBe('copper');
+    expect(deployDisplay({ displayState: 'existing' }).dot).toBe('teal');
+    for (const displayState of ['checking', 'loading_agent', 'account_transition']) expect(deployDisplay({ displayState }).dot, displayState).toBe('ink-2');
+    for (const displayState of ['verifying', 'finishing']) expect(deployDisplay({ displayState }).dot, displayState).toBe('blue-action');
+    for (const displayState of ['signed_out', 'no_agent', 'agent_error', 'eligibility_error', 'blocked']) expect(deployDisplay({ displayState }).dot, displayState).toBe('ink-3');
+  });
+
+  it('A5-15: the build\'s own words and icons — the agent\'s error, the card\'s submitting line, no_agent\'s info icon', () => {
+    expect(COPY.deploy.states.agent_error).toBe('Agent unavailable');
+    expect(COPY.deploy.cardSubmitting).toBe('Submitting once · waiting for the game to be created');
+    expect(deployDisplay({ displayState: 'no_agent' }).cardLine).toEqual({ icon: 'info', text: 'Create your agent first', action: null });
+    expect(deployDisplay({ displayState: 'cooldown', cooldownUntil: T }).cardLine.icon).toBe('lock');
   });
 });
 

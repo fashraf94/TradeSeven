@@ -219,5 +219,5 @@ export const C3_CASES = Object.freeze([
   'another account or target inherits neither countdown nor guard',
   'a fast refusal and a late losing completion',
   'orphan cleanup',
-  'no selector uses a stored confirmed or failed phase',
+  'no stored phase is ever confirmed, failed, finishing or verifying (the display guard holds the selectors to it)',
 ]);

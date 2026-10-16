@@ -618,7 +618,7 @@ describe('spec §11.3 "Vocabulary C3" — one sequence per case', () => {
       expect(s.attempt.phase).toBe('orphaned');
       expect(cleanup(s).attempt).toBeNull();
     },
-    'no selector uses a stored confirmed or failed phase': () => {
+    'no stored phase is ever confirmed, failed, finishing or verifying (the display guard holds the selectors to it)': () => {
       // The reducer never stores one: walk every reachable phase.
       const phases = new Set();
       for (const { result: r } of [...Object.values(TYPED_RESULTS), ...Object.values(LEGACY_RESULTS)]) {
@@ -637,6 +637,53 @@ describe('spec §11.3 "Vocabulary C3" — one sequence per case', () => {
 
   it.each([...C3_CASES])('%s', (name) => {
     sequences[name]();
+  });
+});
+
+describe('S2a review fixes — the test-integrity lens\'s rows (A5)', () => {
+  it('A5 refuter (AR-61): evidence naming no owner is refused, and an empty uid signs nobody in', () => {
+    const out = initialAttemptState();
+    expect(attemptReducer(out, { type: T.COOLDOWN_EVIDENCE, ownerUid: null, authEpoch: 0, targetAgentId: TARGET, lastDeployedAtMs: T0 })).toBe(out);
+    expect(attemptReducer(signedInAs(), { type: T.AUTH_CHANGED, uid: '' }).authUid).toBeNull();
+  });
+
+  it('A5-1: evidence of another auth epoch is refused even when it would set a new bound', () => {
+    const s = signedInAs();
+    expect(evidence(s, { authEpoch: s.authEpoch + 1, lastDeployedAtMs: T0 })).toBe(s);
+    expect(evidence(s, { lastDeployedAtMs: T0 })).not.toBe(s);
+  });
+
+  it('A5-6: a locked hold admits only its own control AND its own token', () => {
+    const s = heldBy(signedInAs());
+    expect(begin(s, 'a1', { controlId: 'card', holdToken: 'stale' })).toBe(s);
+    expect(begin(s, 'a1', { controlId: 'strip', holdToken: 't' })).toBe(s);
+    expect(begin(s, 'a1', { controlId: 'card', holdToken: 't' }).attempt.phase).toBe('submitting');
+  });
+
+  it('A5-11: cooldown evidence never writes onto a record a typed orphaned outcome left, even at the same epoch', () => {
+    const o = result(begin(signedInAs()), TYPED_RESULTS['orphaned: a local ownership disposition'].result);
+    const e = evidence(o, { lastDeployedAtMs: T0 });
+    expect(cooldownFor(e, A, TARGET).cooldownUntil).toBe(T0 + 120000);
+    expect(e.attempt).toBe(o.attempt);
+  });
+
+  it('A5-14: begin copies a known owner + target bound onto the record; a non-finite start is no start time', () => {
+    const s = evidence(signedInAs(), { lastDeployedAtMs: T0 });
+    expect(begin(s, 'a1', { startedAt: T0 + 200000 }).attempt.cooldownUntil).toBe(T0 + 120000);
+    for (const startedAt of [Number.NaN, '2026-10-14', undefined]) expect(begin(signedInAs(), 'a1', { startedAt }).attempt.startedAt).toBeNull();
+  });
+
+  it('A5-14: dismissing an unresolved uncertain overlay releases its committed hold (the guard stays)', () => {
+    const u = result(fromHold(heldBy(signedInAs())), UNTYPED);
+    expect(u.hold.phase).toBe('locked');
+    const d = dismiss(u);
+    expect(d.hold).toBeNull();
+    expect(d.attempt.phase).toBe('uncertain');
+  });
+
+  it('A5-14: a found battle whose id is padded is not a real id: the attempt stays uncertain', () => {
+    const p = pending(result(begin(signedInAs()), UNTYPED));
+    expect(reconciled(p, 'found', { battle: { id: ' bt_1 ', ownerId: A }, admitted: true }).attempt).toMatchObject({ phase: 'uncertain', reconciliationStatus: 'error' });
   });
 });
 
