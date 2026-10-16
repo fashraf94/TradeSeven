@@ -1,0 +1,22 @@
+# Build B spec V1.0 — Amendment B: founder rulings on the B1 fix round (2026-10-14)
+
+- **RB-6 — The tape's document size budget stays 950,000 bytes.**
+  - The margin under Firestore's 1 MiB limit protects two things: the estimator, and the candle pass's later in-place growth (about 2.0–4.4 KB per replay and about 330 B per plan).
+  - On realistic tapes the estimate over-counts by about 15.6%, so the budget fires near 822 KB of real size.
+  - A core between the budget and the limit loses its tag items and exits as well as its meetings. That's accepted: raising the budget to keep them would spend the margin the candle pass needs.
+  - The candle pass's targeted update is not re-fitted. A core over the budget on its own behaves as before B1.
+  - B1.1 adds the largest tape's estimated size to the census, as a number with no id, so we know how far real tapes sit from the budget.
+  - Revisit the candle-pass re-fit only if a real tape comes within the margin.
+- **RB-7 — A failed opponent read on a refresh.**
+  - Accepted as built for B1: that check's opponent is null and the T1 note names the failure, even where a refresh replaces a recorded score. LA-2 is accepted on the same ground.
+  - This can't happen while the opponent is read from a stored number.
+  - When an opponent read can fail for real (for example T3's group standing, read from another document), BA-19 governs: a recorded score is never replaced by an emptier read, and the note still records the failure.
+  - Under basis `none`, F1's rule wins and no score is kept.
+- **RB-8 — LA-6 is parked.**
+  - The problem: after a retry whose provider response re-prices a minute the saved attempt already held, plan prices and replays can take the fresh price while the series keeps the saved bar.
+  - It predates B1. It needs both a partial first attempt and a provider revision between attempts, and the difference is a revised minute's price.
+  - It has no one-line fix: the series keeps 10-minute bars, while plans and replays sample 1-minute bars, so a "saved value wins" rule can't line them up exactly.
+  - It's taken up when the candle pass is next reworked (tournament tapes), or sooner if a tester sees a plan price or a replay off the drawn line by more than rounding. No discovery task now.
+- **RB-9 — The hub helper follows RB-5.**
+  - `src/utils/reviewAvailability.js` answers for a battle mode the tape doesn't cover as it does at `'off'` (Stage 1), using the same mode test as the writer and the route.
+  - It has no live consumer. The fix lands in B1.1, before the hub wires it, with its three-key tripwire unchanged.

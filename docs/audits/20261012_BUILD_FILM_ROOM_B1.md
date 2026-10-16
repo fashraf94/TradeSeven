@@ -319,3 +319,20 @@ All on `7a4758d2` — the round's last code commit, on the tree merged with `mai
 ### 12.8 Fence statement (this round)
 
 `git diff --name-only 1fcefa56 6a7b49f3` plus `95dbd5b4..7a4758d2` (the round, without the merge of `main`) names no BUILD_RULES §1 file, no `firestore.rules`, no `firestore.indexes.json`, no `vercel.json` and no `src/config/featureFlags.js`. Nothing fenced is called anew; the B1 calls stand as §11 states. No merge into `main`, no production write, no backfill.
+
+## 13. The refresh
+
+The founder ran §9's refresh on 2026-10-15, after #962 merged and deployed, with range `2026-09-21..2026-10-14` (`refresh=1`). Counts only, from the run's own summary:
+
+| Field | Count |
+|---|---:|
+| `refreshed` | 18 |
+| `alreadyDone` | 100 (the `skipped_mode` days) |
+| `written` | 0 |
+| `unchanged` | 0 |
+| `skippedMode` | 0 |
+| `failed` | 0 |
+
+- **`complete: true`** in 32,911 ms: the run fit one request, so nothing needed `resumeFrom`.
+- **Sizes:** the 18 refreshed tapes are 9,929 to 114,229 bytes. The largest is about 12% of the 950,000-byte budget (`api/_utils/filmTape/tapeSize.js`), so no refreshed day dropped its meetings or tag items.
+- **Past days need nothing more for late-filed meetings:** the refresh ran after every earlier meeting was filed (Amendment C, RC-3). From B1.1 on, the close pass re-merges the previous session when a meeting created on it is filed later.
