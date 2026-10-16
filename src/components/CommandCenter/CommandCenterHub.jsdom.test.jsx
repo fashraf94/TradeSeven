@@ -205,6 +205,15 @@ describe('S1 compositions and defaults at the four shells (rulings R-S1-3, R-S1-
     m.unmount();
     mounted = [];
     m = renderHub({ site: 'desktop', hubWidth: 614, sections: fixture('long') });
+    // Stacked places its parts by grid area (ruling R-S2A-1): on screen the order is
+    // next action → stage → Deploy → area panel → Games → Activity → Brief.
+    const areas = m.host.querySelector('[data-hub-body]').style.gridTemplateAreas.match(/"[^"]+"/g).map((r) => r.slice(1, -1));
+    expect(areas).toEqual(['next', 'stage', 'deploy', 'panel', 'games', 'activity', 'brief']);
+    const placed = (selector) => m.host.querySelector(selector).closest('[data-hub-slot]').style.gridArea;
+    expect(placed('[data-hub-stage]')).toBe('stage');
+    expect(placed('[data-hub-section="deploy"]')).toBe('deploy');
+    expect(placed('[data-hub-area-panel]')).toBe('panel');
+    // One grid, one tree (S1 review L3-1): the DOM keeps its order, so the move is visual only.
     const all = [...m.host.querySelectorAll('[data-hub-next-action], [data-hub-stage], [data-hub-area-panel], [data-hub-section]')]
       .map((el) => el.getAttribute('data-hub-section') || (el.hasAttribute('data-hub-stage') ? 'stage' : el.hasAttribute('data-hub-area-panel') ? 'panel' : 'next'));
     expect(all).toEqual(['next', 'stage', 'panel', 'deploy', 'games', 'activity', 'brief']);

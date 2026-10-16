@@ -6,9 +6,12 @@
 // strip 40 < nav 50 < sheets), outside the tab panel so every tab keeps it.
 //
 // Two lines — status and loadout — and the action slot, from the display
-// table in hub/deployDisplay.js. S1's state is "Checking eligibility…" with
-// the shipped hold control present and disabled. The status button opens the
-// Loadout tab: local presentation, the one thing the strip does in S1.
+// table in hub/deployDisplay.js. In production the state is "Checking
+// eligibility…" with the shipped hold control present and disabled. The
+// status button opens the Loadout tab: local presentation, the one thing the
+// strip does before S2b. Slice S2a: the slot also carries the state's one
+// action (Retry, Open game, Enter battle, Check deployment, Open in the
+// Forge) through `onAction(kind)`, disabled with no handler.
 //
 // Placement: `bottom` is the nav's measured height, so the safe-area inset
 // the nav pads is not counted again; only with no nav does the strip pad the
@@ -23,13 +26,19 @@ import { cssVar } from '../../theme/cssTokens';
 import { HubButton } from './HubParts';
 import HubHold from './sections/HubHold';
 
-const clamp2 = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textWrap: 'pretty' };
+// Both lines wrap in full, never clipped (slice S2a, S1 review L3-13): the S2a
+// vocabulary carries long words a two-line clamp cut at 360 and 390 px in
+// headless Edge — the block reason with no live row (3–4 lines), the block
+// reason behind a live game and a long watchlist beside a ranked game (3 lines
+// at 360), and the review-due refusal (3–4 lines). The strip grows instead, and
+// the page's clearance follows its measured height (useNavClearance).
+const wrap = { display: 'block', overflowWrap: 'anywhere', textWrap: 'pretty' };
 
-const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutLine, placement, onOpenLoadout, onOpenGame, onDeploy, onRetry }, ref) {
+const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutLine, placement, onOpenLoadout, onOpenGame, onDeploy, onAction }, ref) {
   const display = deployDisplay(deploy, liveGame);
   const line1 = display.stripLine1;
   const line2 = display.stripLine2(loadoutLine);
-  const { hold, openGame, retry } = display.strip;
+  const { hold, openGame, action } = display.strip;
   return (
     <div
       ref={ref}
@@ -52,9 +61,9 @@ const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutL
       >
         <span style={{ display: 'flex', alignItems: 'flex-start', gap: 7, minWidth: 0 }}>
           <span aria-hidden="true" data-hub-strip-dot={display.dot} style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, marginTop: 5, background: cssVar(display.dot), boxShadow: liveGame ? `0 0 8px ${C.teal}` : 'none' }} />
-          <span data-hub-strip-line="1" style={{ fontSize: 13, fontWeight: 600, color: C.ink, lineHeight: 1.3, ...clamp2 }}>{line1}</span>
+          <span data-hub-strip-line="1" style={{ fontSize: 13, fontWeight: 600, color: C.ink, lineHeight: 1.3, ...wrap }}>{line1}</span>
         </span>
-        <span data-hub-strip-line="2" style={{ fontSize: 11, color: C.ink2, lineHeight: 1.3, paddingLeft: 14, ...clamp2 }}>{line2}</span>
+        <span data-hub-strip-line="2" style={{ fontSize: 11, color: C.ink2, lineHeight: 1.3, paddingLeft: 14, ...wrap }}>{line2}</span>
       </button>
       {/* One row, never the design's column: a live game with deploy still ready (spec §10's ranked-only case) would otherwise grow the strip past the design's 63–69 px. */}
       <div style={{ display: 'flex', flexDirection: 'row', gap: 6, flexShrink: 0, alignItems: 'stretch' }}>
@@ -64,7 +73,11 @@ const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutL
           </HubButton>
         )}
         {hold && <HubHold compact canStart={display.canStart} label={hold.label} onDeploy={onDeploy} />}
-        {retry && <HubButton kind="secondary" onPress={onRetry} style={{ padding: '0 14px' }}>{COPY.deploy.retry}</HubButton>}
+        {action && (
+          <HubButton kind="secondary" onPress={onAction ? () => onAction(action.kind) : undefined} style={{ padding: '0 14px' }}>
+            {action.label}
+          </HubButton>
+        )}
       </div>
     </div>
   );

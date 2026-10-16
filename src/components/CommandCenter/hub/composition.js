@@ -105,12 +105,17 @@ export function rovingIndex(key, index, count, { vertical = false } = {}) {
 /**
  * Section order per composition (ruling R-S1-3). Desktop keeps the design's
  * order; tablet and stacked put Deploy above Games so an enabled hold stays in
- * the first viewport with maximum rows (spec §10). The stacked order is the
- * founder's, as written; the S1 build report records its measured first-
- * viewport result at 614 × 1000 for the founder (one line to change here).
+ * the first viewport with maximum rows (spec §10). Stacked also puts Deploy
+ * above the area panel (founder decision of Oct 15 on the S1 report's Q1,
+ * ruling R-S2A-1): as first written, the hold sat at 1114–1204 of 1000 at
+ * 614 × 1000 whenever a next action showed; with Deploy above the panel it
+ * holds 746–816 there and 772–842 at the narrowest desktop site (549 × 900).
+ * The order is the grid's, so it moves the parts on screen only: the React
+ * tree, and with it the DOM and focus order, is unchanged (CommandCenterHub.jsx
+ * wideGrid), so nothing remounts across a width change (S1 review L3-1).
  */
 export const DESKTOP_MAIN_ORDER = Object.freeze(['stage', 'panel']);
 export const DESKTOP_SIDE_ORDER = Object.freeze(['next', 'games', 'deploy', 'activity', 'brief']);
 export const TABLET_TOP_ORDER = Object.freeze(['next', 'stage']);
 export const TABLET_SIDE_ORDER = Object.freeze(['deploy', 'games', 'activity', 'brief']);
-export const STACKED_ORDER = Object.freeze(['next', 'stage', 'panel', 'deploy', 'games', 'activity', 'brief']);
+export const STACKED_ORDER = Object.freeze(['next', 'stage', 'deploy', 'panel', 'games', 'activity', 'brief']);

@@ -348,6 +348,30 @@
     "src/components/CommandCenter/sections/NextActionCard.jsx": {
       "count": 0,
       "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/__fixtures__/attemptFixtures.js": {
+      "count": 0,
+      "authority": "Command Center hub S2a (prompt \u00a74; founder ruling R-S1-2) \u2014 the pure deploy selectors and their test fixtures: no JSX, no colour, no motion at all, so zero raw transition literals from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/__fixtures__/deployStateFixtures.js": {
+      "count": 0,
+      "authority": "Command Center hub S2a (prompt \u00a74; founder ruling R-S1-2) \u2014 the pure deploy selectors and their test fixtures: no JSX, no colour, no motion at all, so zero raw transition literals from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/selectors/attemptReducer.js": {
+      "count": 0,
+      "authority": "Command Center hub S2a (prompt \u00a74; founder ruling R-S1-2) \u2014 the pure deploy selectors and their test fixtures: no JSX, no colour, no motion at all, so zero raw transition literals from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/selectors/attemptVocabulary.js": {
+      "count": 0,
+      "authority": "Command Center hub S2a (prompt \u00a74; founder ruling R-S1-2) \u2014 the pure deploy selectors and their test fixtures: no JSX, no colour, no motion at all, so zero raw transition literals from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/selectors/deployState.js": {
+      "count": 0,
+      "authority": "Command Center hub S2a (prompt \u00a74; founder ruling R-S1-2) \u2014 the pure deploy selectors and their test fixtures: no JSX, no colour, no motion at all, so zero raw transition literals from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/selectors/ownership.js": {
+      "count": 0,
+      "authority": "Command Center hub S2a (prompt \u00a74; founder ruling R-S1-2) \u2014 the pure deploy selectors and their test fixtures: no JSX, no colour, no motion at all, so zero raw transition literals from birth. Registered in the commit that introduces them."
     }
   }
 }

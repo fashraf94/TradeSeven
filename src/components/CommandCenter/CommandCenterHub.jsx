@@ -17,7 +17,8 @@
 //     "no result has resolved" (hub/hubModel.js HUB_S1_SECTIONS). Nothing here
 //     reads data, sets a timer, fabricates a row or resolves anything. The
 //     `sections` prop exists so S3–S6 readers (and, in tests, the layout
-//     fixtures) can supply the same shapes.
+//     fixtures) can supply the same shapes. Since slice S2a the deploy state
+//     is deriveHubDeployState's, from S2a's unresolved inputs (ruling R-S2A-3).
 //   - No background of its own: App's starfield stays behind the hub at both
 //     sites; hub surfaces sit on bg-card / bg-agent over it.
 //
@@ -59,7 +60,8 @@ import {
 import { deployDisplay } from './hub/deployDisplay';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { formatHubDate, headerName } from './hub/hubDate';
-import { HUB_S1_SECTIONS, splitGames } from './hub/hubModel';
+import { HUB_S1_SECTIONS, HUB_S2A_DEPLOY_INPUTS, splitGames } from './hub/hubModel';
+import { deriveHubDeployState } from './hub/selectors/deployState';
 import { C, HUB_LAYERS, HUB_SCOPED_CSS } from './hub/hubStyle';
 import { shadowTierFor } from './hub/shadowGeometry';
 import { useHubWidth } from './hub/useHubWidth';
@@ -345,12 +347,22 @@ function WideHub({ sections }) {
 }
 
 /**
- * @param {'mobile'|'desktop'} props.site     App's pick, through the gate (ruling R-S1-3)
- * @param {object}             [props.sections] the section props (hub/hubModel.js); S1 passes the loading state
+ * Slice S2a (ruling R-S2A-3): the deploy state is the selector's, never a
+ * hand-written value. S2a's inputs have resolved nothing, so it reads
+ * `checking` and nothing a user sees changes; S3 and S2b supply real inputs.
  */
-export default function CommandCenterHub({ site, sections = HUB_S1_SECTIONS }) {
+const HUB_S2A_DEPLOY = deriveHubDeployState(HUB_S2A_DEPLOY_INPUTS);
+const HUB_DEFAULT_SECTIONS = Object.freeze({ ...HUB_S1_SECTIONS, deploy: HUB_S2A_DEPLOY });
+
+/**
+ * @param {'mobile'|'desktop'} props.site     App's pick, through the gate (ruling R-S1-3)
+ * @param {object}             [props.sections] the section props (hub/hubModel.js): the loading
+ *   state, with the selector's deploy state; a sections prop without `deploy` takes that one too
+ */
+export default function CommandCenterHub({ site, sections = HUB_DEFAULT_SECTIONS }) {
+  const resolved = sections.deploy ? sections : { ...sections, deploy: HUB_S2A_DEPLOY };
   // Keyed by site: a hub handed the other site starts from that site's defaults (ruling R-S1-5).
   return site === HUB_SITES.MOBILE
-    ? <PhoneHub key={HUB_SITES.MOBILE} sections={sections} />
-    : <WideHub key={HUB_SITES.DESKTOP} sections={sections} />;
+    ? <PhoneHub key={HUB_SITES.MOBILE} sections={resolved} />
+    : <WideHub key={HUB_SITES.DESKTOP} sections={resolved} />;
 }

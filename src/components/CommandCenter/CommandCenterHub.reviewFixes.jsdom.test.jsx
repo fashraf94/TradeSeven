@@ -127,7 +127,8 @@ describe('S1 review fixes — accessibility (L3)', () => {
     expect(wideGrid('tablet', true).body.gridTemplateAreas).toBe('"next next" "stage stage" "panel side"');
     expect(wideGrid('tablet', false).body.gridTemplateAreas).toBe('"stage stage" "panel side"');
     expect(wideGrid('tablet', true).sideOrder).toEqual(['deploy', 'games', 'activity', 'brief']);
-    expect(wideGrid('stacked', true).body.gridTemplateAreas).toBe('"next" "stage" "panel" "deploy" "games" "activity" "brief"');
+    expect(wideGrid('stacked', true).body.gridTemplateAreas).toBe('"next" "stage" "deploy" "panel" "games" "activity" "brief"');
+    expect(wideGrid('stacked', false).body.gridTemplateAreas).toBe('"stage" "deploy" "panel" "games" "activity" "brief"');
     expect(wideGrid('stacked', true).sideOrder).toEqual(['deploy', 'games', 'activity', 'brief']);
     expect(wideGrid('stacked', true).main).toEqual({ display: 'contents' });
     expect(wideGrid('tablet', true).main).toEqual({ display: 'contents' });
