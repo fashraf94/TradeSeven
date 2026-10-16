@@ -103,6 +103,14 @@ describe('S1 review fixes — accessibility (L3)', () => {
     }
   });
 
+  it('L3-1: with no next action its grid slot takes no space (no empty row, no stray gap); with one it shows', () => {
+    renderHub({ site: 'desktop', hubWidth: 1216 });
+    expect(document.querySelector('[data-hub-slot="next"]').style.display).toBe('none');
+    unmountAll();
+    renderHub({ site: 'desktop', hubWidth: 1216, sections: fixture('returning') });
+    expect(document.querySelector('[data-hub-slot="next"]').style.display).toBe('block');
+  });
+
   it('L3-1: the wide grid places every part by area — the order constants, as CSS', async () => {
     const { wideGrid } = await import('./CommandCenterHub');
     expect(wideGrid('desktop', true).body.gridTemplateAreas).toBe('"main next" "main side"');
