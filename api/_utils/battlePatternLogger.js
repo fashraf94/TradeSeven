@@ -13,6 +13,8 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { LAUNCH_EXECUTION_MODE } from './executionAuthority.js';
 import { battleLedgerOf } from './playerFieldReaders.js';
 import { clientToken } from './executorMetadata.js';
+// BaggerBomb stock thresholds v2 (Ruling 16). Node-clean src module (BUILD_RULES §4).
+import { stockModelRoute } from '../../src/utils/stockThresholdModel.js';
 
 /**
  * Log a battle pattern record to the agent's battlePatterns subcollection.
@@ -161,7 +163,15 @@ function detectPresetSwitchPattern(battle) {
   return 'single-switch';
 }
 
-function countThresholdHits(battle) {
+// v2 Ruling 16: a measured-model battle's stock lifetimes count their committed
+// crossed tiers (scoring.stockRewardHistory — held and banked lifetimes alike);
+// its legacy thresholdHistory then holds crypto only. Legacy: nothing here.
+function measuredCrossedTiers(battle) {
+  if (stockModelRoute(battle).status !== 'corrected') return [];
+  return Object.values(battle.scoring?.stockRewardHistory?.agent || {}).map(h => (Array.isArray(h?.crossedTiers) ? h.crossedTiers : []));
+}
+
+export function countThresholdHits(battle) {
   const history = battle.thresholdHistory || {};
   let bagger = 0;
   let double = 0;
@@ -173,11 +183,16 @@ function countThresholdHits(battle) {
     if (max >= 1.5) double++;
     if (max >= 2.0) triple++;
   }
+  for (const tiers of measuredCrossedTiers(battle)) {
+    if (tiers.includes('bagger')) bagger++;
+    if (tiers.includes('doubleBagger')) double++;
+    if (tiers.includes('tenBagger')) triple++;
+  }
 
   return { bagger, double, triple };
 }
 
-function countPenalties(battle) {
+export function countPenalties(battle) {
   const history = battle.thresholdHistory || {};
   let bust = 0;
   let crash = 0;
@@ -188,6 +203,11 @@ function countPenalties(battle) {
     if (min <= -1.0) bust++;
     if (min <= -1.5) crash++;
     if (min <= -2.0) meltdown++;
+  }
+  for (const tiers of measuredCrossedTiers(battle)) {
+    if (tiers.includes('bust')) bust++;
+    if (tiers.includes('crash')) crash++;
+    if (tiers.includes('meltdown')) meltdown++;
   }
 
   return { bust, crash, meltdown };

@@ -7,7 +7,7 @@
 //   3. useWebSocketPrices + EODHD polling — live prices for matchup view
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { stockModelRoute, isStock, committedStockContext, validCommittedStockScores } from '../utils/stockThresholdModel.js';
+import { stockModelRoute, isStock, committedStockContext, validCommittedStockScores, measuredProximity } from '../utils/stockThresholdModel.js';
 import { StockRewardDetails } from '../components/draft/ResearchTabs/BaggerBombTab.jsx';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronLeft, Activity, Bot, Bookmark } from 'lucide-react';
@@ -204,8 +204,11 @@ export function StockDispatchRow(props) {
       return <article key={side} aria-label={`${i === 0 ? 'Agent' : 'CPU'} ${a.symbol}`}>
         <button type="button" onClick={() => props.onSymbolClick?.(a)}>{a.symbol}</button>
         <p>{a.points === null ? 'Score unavailable' : `${a.points} pts`}; {a.badges?.join(', ') || 'no earned tiers'}</p>
-        <details><summary>Why? Measured reward</summary><StockRewardDetails context={a.rewardContext} />
-          {i === 0 && props.renderWhy?.(a.rewardContext?.proximity || null)}
+        {/* v2 Ruling 16 (K1-5): the bagger footer, from the committed crossed tiers. */}
+        {i === 0 && props.baggerFooter ? <div data-bagger-footer="1">{props.baggerFooter}</div> : null}
+        <details><summary>Why? Measured reward</summary><StockRewardDetails context={a.rewardContext} symbol={a.symbol} />
+          {/* v2 Ruling 15: Why's proximity line, from the same committed context. */}
+          {i === 0 && props.renderWhy?.(measuredProximity(a.rewardContext))}
         </details>
       </article>;
     })}

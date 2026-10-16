@@ -5,15 +5,23 @@ import { canonicalContentHash } from '../canonicalHash.js';
 import { STOCK_MODEL, initialRewardHistory } from '../../../src/utils/stockThresholdModel.js';
 export const STOCK_TEST_NOW = '2026-10-14T14:02:00.000Z';
 export const stockTestClock = () => new Date(STOCK_TEST_NOW);
+// The live real-time feed serves the minute bar ~15 minutes behind the wall
+// clock (Phase 0 §C2: delay 15:01–17:19). A fill quote is therefore stamped
+// before its commit instant, as v2 Ruling 1's fill-time lower bound expects.
+export const FILL_QUOTE_LAG_SEC = 900;
+// Creation is gated on the v2 approval instant (2026-10-15T20:23:45Z); a creation
+// fixture runs on the next session (source session 2026-10-15).
+export const STOCK_CREATION_NOW = '2026-10-16T14:02:00.000Z';
+export const stockCreationClock = () => new Date(STOCK_CREATION_NOW);
 export function stockRows(session = '2026-10-13') {
   const dates = [session];
   for (let i = 0; i < 14; i++) dates.unshift(getPreviousSessionDate(dates[0]));
   return dates.map(date => ({ date, open: 100, high: 101, low: 99, close: 100, adjusted_close: 100, volume: 10000 }));
 }
-export async function stockObservation(symbol = 'AAPL', { price = 103.27, rows = stockRows(), clock = stockTestClock, changeResponse = x => x } = {}) {
+export async function stockObservation(symbol = 'AAPL', { price = 103.27, rows = stockRows(), clock = stockTestClock, changeResponse = x => x, quoteLagSec = FILL_QUOTE_LAG_SEC } = {}) {
   return collectStockObservation(symbol, 2.5, { now: clock, fetcher: async url => {
     const path = url.pathname;
-    const value = path.includes('/eod/') ? rows : path.includes('/fundamentals/') ? { Code: symbol, CountryISO: 'US', Type: 'Common Stock', Exchange: 'NASDAQ', IsDelisted: false, ISIN: `US-${symbol}` } : { code: `${symbol}.US`, close: price, high: Math.max(200, price * 2), low: Math.min(1, price / 2), previousClose: 100, timestamp: Date.parse(clock().toISOString()) / 1000 };
+    const value = path.includes('/eod/') ? rows : path.includes('/fundamentals/') ? { Code: symbol, CountryISO: 'US', Type: 'Common Stock', Exchange: 'NASDAQ', IsDelisted: false, ISIN: `US-${symbol}` } : { code: `${symbol}.US`, close: price, high: Math.max(200, price * 2), low: Math.min(1, price / 2), previousClose: 100, timestamp: Date.parse(clock().toISOString()) / 1000 - quoteLagSec };
     return { ok: true, json: async () => structuredClone(changeResponse(value, url)) };
   } });
 }

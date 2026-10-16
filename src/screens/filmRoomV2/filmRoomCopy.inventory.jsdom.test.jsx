@@ -54,7 +54,7 @@ const COPY_KEYS = [
   'agentVsCpu.agent', 'agentVsCpu.vs', 'agentVsCpu.cpu', 'platformAtCompletion',
   'checkAt()', 'decision', 'decisionOf()', 'decisionNone', 'defaultHoldNote', 'riskTitle', 'noRisk', 'riskNote', 'scores',
   'scoreParts.active', 'scoreParts.banked', 'scoreParts.total', 'evidenceTitle', 'evidenceLabel', 'evidenceNone',
-  'evidenceFields.px', 'evidenceFields.chg', 'evidenceFields.atrX', 'evidenceFields.vwapDev', 'evidenceFields.bbPct', 'evidenceFields.nr7', 'evidenceFields.regime', 'evidenceFields.risk',
+  'evidenceFields.px', 'evidenceFields.chg', 'evidenceFields.atrX', 'evidenceFields.atrXMeasured', 'evidenceFields.vwapDev', 'evidenceFields.bbPct', 'evidenceFields.nr7', 'evidenceFields.regime', 'evidenceFields.risk',
   'yes', 'no', 'notRecorded', 'close',
   'jumps[0][0]', 'jumps[0][1]', 'jumps[1][0]', 'jumps[1][1]', 'jumps[2][0]', 'jumps[2][1]', 'jumps[3][0]', 'jumps[3][1]', 'jumps[4][0]', 'jumps[4][1]', 'jumps[5][0]', 'jumps[5][1]',
   'holdings', 'holdingsStart', 'holdingsEnd', 'holdingsAt()', 'swapByMaker.agent', 'swapByMaker.platform', 'swapByMaker.other', 'swapMakerNote', 'tapForDeep',
@@ -183,9 +183,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 239 copy keys, 347 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(239);   // Astra F1: the two point legends (237 before)
-    expect(inventory()).toHaveLength(347);
+  it('the inventory\'s size is pinned (the build report states it): 240 copy keys, 348 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(240);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before)
+    expect(inventory()).toHaveLength(348);
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {

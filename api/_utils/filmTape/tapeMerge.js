@@ -491,6 +491,10 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       final,
       noOpponent,
       derive: (f) => {
+        // v2 Ruling 16: a measured-model block keeps the result its assembly
+        // derived from the full battle (the corrected gate); the merge holds
+        // only the final scores and never re-derives one with legacy math.
+        if (isObj(block.stockModel) || isObj(other?.stockModel)) return block.result?.value ?? null;
         if (typeof resolveResult !== 'function') throw new Error('mergeTape: ctx.resolveResult is required to derive a battle result (BA-39)');
         return resolveResult({ gameMode: merged.gameMode ?? stored.gameMode ?? null, scoreState: { currentScore: f.total, opponentScore: f.opponent } });
       },
@@ -499,6 +503,8 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
     // recorded before they were copied takes them from the other read of the
     // same completion.
     completionMessage: block.completionMessage ?? (sameCompletion(block, other) ? other?.completionMessage : null) ?? null,
+    // v2 Ruling 16: the measured-model marker moves with the block (absent on legacy).
+    ...(isObj(block.stockModel) ? { stockModel: block.stockModel } : isObj(other?.stockModel) ? { stockModel: other.stockModel } : {}),
   };
   merged.battleStatusAtWrite = winner.battleStatusAtWrite ?? block.status ?? null;
   merged.comparables = {

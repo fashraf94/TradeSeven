@@ -3,6 +3,10 @@
 // Tool Use schema, and response parsing.
 
 import { flattenPortfolioServer } from './agentScoring.js';
+// BaggerBomb stock thresholds v2 (Ruling 16): persisted dispatch and committed
+// reward context. Node-clean src module (BUILD_RULES §4).
+import { stockModelRoute, isStock, positions as stockPositions, committedStockContext } from '../../src/utils/stockThresholdModel.js';
+import { VALID_CRYPTO_SYMBOLS } from './agentCryptoAssets.js';
 
 // ==================== TOOL SCHEMA ====================
 
@@ -224,12 +228,30 @@ Total Trades: ${truncated.totalTrades}`;
   // --- Thresholds ---
   const thresholds = battleDoc.scoring?.thresholds || {};
   const thresholdHistory = battleDoc.thresholdHistory || {};
-  const thresholdLines = Object.entries(thresholds).map(([symbol, t]) => {
+  const legacyLine = ([symbol, t]) => {
     const history = thresholdHistory[symbol] || {};
     const maxMult = (history.maxMultiplier || 0).toFixed(2);
     const minMult = (history.minMultiplier || 0).toFixed(2);
     return `  ${symbol}: baseATR=${t.threshold}, maxMult=${maxMult}, minMult=${minMult}`;
-  });
+  };
+  // v2 Ruling 16: a measured-model battle's held stocks read the committed
+  // reward context (frozen measured %, multiples, crossed tiers); its crypto
+  // keeps the legacy line. A legacy battle's block is unchanged. Agent battles
+  // key crypto by its bare symbol (BTC, isCrypto: true), so a threshold key is
+  // crypto when a held asset says so or the symbol is a crypto symbol (review B3-3).
+  const heldCrypto = new Set([...flattenPortfolioServer(portfolio), portfolio.bench?.crypto].filter(a => a?.symbol && !isStock(a)).map(a => a.symbol));
+  const cryptoKey = symbol => heldCrypto.has(symbol) || /\.CC$/i.test(symbol) || VALID_CRYPTO_SYMBOLS.includes(String(symbol).toUpperCase());
+  const thresholdLines = stockModelRoute(battleDoc).status === 'legacy'
+    ? Object.entries(thresholds).map(legacyLine)
+    : [
+      ...stockPositions(battleDoc).filter(p => p.side === 'agent' && isStock(p.asset)).map(p => {
+        const c = committedStockContext(battleDoc, p.asset, 'agent', p.tier, p.slot);
+        return c.status !== 'valid'
+          ? `  ${p.asset.symbol}: measured reward unavailable (${c.reason})`
+          : `  ${p.asset.symbol}: frozen measured ${c.scoringPctDecimal}% from fill $${c.fill}, mult=${c.multiplier.toFixed(2)}, maxMult=${c.history.maxMultiplier.toFixed(2)}, minMult=${c.history.minMultiplier.toFixed(2)}, crossed [${c.crossedTiers.join('|')}]`;
+      }),
+      ...Object.entries(thresholds).filter(([symbol]) => cryptoKey(symbol)).map(legacyLine),
+    ];
   const thresholdBlock = `THRESHOLDS:\n${thresholdLines.join('\n') || '  (none)'}`;
 
   // --- Trade History ---

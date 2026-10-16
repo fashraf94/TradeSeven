@@ -9,7 +9,7 @@ import { stockWriterDb } from '../../api/_utils/__fixtures__/stockThresholdHarne
 vi.mock('../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 import { StockDispatchRow, enrichHeldPosition } from './AgentBattleScreen.jsx';
 import BaggerBombTab, { StockRewardDetails } from '../components/draft/ResearchTabs/BaggerBombTab.jsx';
-import { stockRewardContext } from '../utils/stockThresholdModel.js';
+import { stockRewardContext, measuredProximity, stockSummary } from '../utils/stockThresholdModel.js';
 import WhyPanel from './battleView/WhyPanel.jsx';
 import { selectWhyState, deriveTierPrices } from './battleView/selectWhyState.js';
 import { buildResearchAsset } from '../utils/researchAssetBuilder.js';
@@ -45,13 +45,54 @@ describe('real rendered pinned stock detail integration', () => {
     const c = stockRewardContext(battle, { ...battle.portfolio.star[0], tier: 'star' }, 'agent', 'star', 0, { price: 10, asOf: STOCK_TEST_NOW, observedAt: STOCK_TEST_NOW });
     const html = renderToStaticMarkup(<StockRewardDetails context={c} />);
     expect(c.targets.find(t => t.key === 'meltdown').target).toBeLessThan(0);
-    expect(html).toMatch(/Meltdown[^<]*unreachable \(target at or below \$0\)/);
-    expect(html).toMatch(/BaggerBomb[^<]*unearned/);
+    // v2 Ruling 15 layout: each tier row carries its state; an unreachable target shows no price.
+    expect(html).toMatch(/data-tier="meltdown" data-tier-status="unreachable"[^]*?—[^]*?unreachable/);
+    expect(html).toMatch(/data-tier="bagger" data-tier-status="unearned"/);
     // Mutation lens KM-40: exactly $0 (k = −2 at 50%) is unreachable too.
     const { battle: atZero } = await correctedStockBattle({ fill: 10, scoringPct: 50 });
     const z = stockRewardContext(atZero, { ...atZero.portfolio.star[0], tier: 'star' }, 'agent', 'star', 0, { price: 10, asOf: STOCK_TEST_NOW, observedAt: STOCK_TEST_NOW });
     expect(z.targets.find(t => t.key === 'meltdown').target).toBe(0);
-    expect(renderToStaticMarkup(<StockRewardDetails context={z} />)).toMatch(/Meltdown[^<]*unreachable \(target at or below \$0\)/);
+    expect(renderToStaticMarkup(<StockRewardDetails context={z} />)).toMatch(/data-tier="meltdown" data-tier-status="unreachable"/);
+  });
+  it('v2 Ruling 15: a tier crossed earlier stays earned, with its points, after the price retreats below it (review mutation lens R15a)', async () => {
+    const { battle } = await correctedStockBattle({ fill: 100 }); const a = { ...battle.portfolio.star[0], tier: 'star' };
+    const high = stockRewardContext(battle, a, 'agent', 'star', 0, { price: 103.5, asOf: '2026-10-14T13:50:00.000Z', observedAt: STOCK_TEST_NOW });
+    battle.scoring.stockRewardHistory.agent[a.positionId] = high.history;
+    const back = stockRewardContext(battle, a, 'agent', 'star', 0, { price: 101, asOf: '2026-10-14T13:55:00.000Z', observedAt: STOCK_TEST_NOW });
+    expect(back).toMatchObject({ status: 'valid', currentPrice: 101, crossedTiers: ['bagger', 'doubleBagger'] });
+    const html = renderToStaticMarkup(<StockRewardDetails context={back} />);
+    expect(html).toMatch(/data-tier="bagger" data-tier-status="earned"/); expect(html).toMatch(/data-tier="doubleBagger" data-tier-status="earned"/);
+    expect(html).toMatch(/data-tier="tenBagger" data-tier-status="unearned"/);
+    const points = back.targets.filter(t => ['bagger', 'doubleBagger'].includes(t.key)).reduce((n, t) => n + t.points, 0);
+    expect(html).toContain(`tier points +${points}`);
+  });
+  it('v2 Ruling 15: Why gets the measured proximity line from the committed context; the corrected row shows the bagger footer it is given', async () => {
+    const { left } = await renderedFacts();
+    const expected = measuredProximity(left.rewardContext);
+    expect(expected.text).toBe(`${left.rewardContext.nextTarget.emoji} ${stockSummary((left.rewardContext.nextTarget.target - left.rewardContext.currentPrice) / left.rewardContext.currentPrice * 100, 1)}% to ${left.rewardContext.nextTarget.label}`);
+    let received = null;
+    const row = renderToStaticMarkup(<StockDispatchRow leftAsset={left} baggerFooter="Bagger hit · +15 banked" renderWhy={p => { received = p; return <WhyPanel symbol="AAPL" state={selectWhyState(null, 'AAPL', STOCK_TEST_NOW)} lines={deriveTierPrices(null, null, null, left.rewardContext)} proximity={p} />; }} />);
+    expect(received).toEqual(expected); expect(row).toContain(expected.text);
+    expect(row).toContain('data-bagger-footer="1"'); expect(row).toContain('Bagger hit · +15 banked');
+    // Every positive tier earned → MAX; unavailable → no line.
+    const maxed = { ...left.rewardContext, nextTarget: null };
+    expect(measuredProximity(maxed).text).toBe(`${left.rewardContext.targets.find(t => t.key === 'tenBagger').emoji} MAX`);
+    expect(measuredProximity({ status: 'unavailable', reason: 'x' })).toBe(null);
+    // The distance is from the committed price, not from the fill (review mutation lens R16j).
+    const far = { ...left.rewardContext, currentPrice: 95 };
+    expect(measuredProximity(far).text).toBe(`${far.nextTarget.emoji} ${stockSummary((far.nextTarget.target - 95) / 95 * 100, 1)}% to ${far.nextTarget.label}`);
+  });
+  it('v2 Ruling 15: the tab reads the normal layout — Entry is the fill, % moves, targets, earned state and points', async () => {
+    const { left } = await renderedFacts();
+    const c = left.rewardContext; // fill 103.27, frozen 2%, committed quote 107 (+3.61%) crosses 1.0x and 1.5x
+    const tab = renderToStaticMarkup(<BaggerBombTab asset={buildResearchAsset(left)} />);
+    expect(tab).toContain('BAGGERBOMB STATS'); expect(tab).toContain(`Entry: <span style="color:#e0e0e0;font-weight:600">$${stockSummary(c.fill)}</span>`);
+    for (const t of c.targets) {
+      const status = c.crossedTiers.includes(t.key) ? 'earned' : 'unearned';
+      expect(tab).toMatch(new RegExp(`data-tier="${t.key}" data-tier-status="${status}"[^]*?${t.k > 0 ? '\\+' : '-'}${stockSummary(Math.abs(t.k) * c.scoringPct).replace('.', '\\.')}%[^]*?\\$${stockSummary(t.target).replace('.', '\\.')}`));
+    }
+    expect(c.crossedTiers).toEqual(['bagger', 'doubleBagger']);
+    expect(tab).toMatch(/data-tier="tenBagger" data-tier-status="unearned"/);
   });
   it('corrupt tuple/missing receipt remain unavailable through row and real tab', async () => {
     const { battle } = await renderedFacts(); battle.scoring.stockThresholdModel = null;

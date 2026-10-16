@@ -40,9 +40,14 @@ describe('R11 — the suppression-path deterministic pass (red-first wiring)', (
     expect(source).toMatch(/if \(gameplanTrigger\) \{\s*\n\s*await runSuppressionDeterministicPass\(/);
   });
 
-  it('exactly two call sites — the pass never touches the normal-tick flow (byte-identical outside suppression)', () => {
+  it('exactly three call sites — the pass never touches the normal-tick flow (byte-identical outside suppression)', () => {
     const calls = source.match(/await runSuppressionDeterministicPass\(/g) || [];
-    expect(calls.length).toBe(2);
+    // The third (BaggerBomb stock thresholds v2 Ruling 3) is the corrected-only
+    // unavailable-frame exit: discretion is withheld, so the deployed guardrails
+    // run through this pass. It is reachable only on a measured-model battle
+    // whose committed score is unavailable, never on a legacy tick.
+    expect(calls.length).toBe(3);
+    expect(source).toMatch(/if \(correctedStockGame && !refreshFailure && \(!finiteStock\(currentScore\) \|\| !finiteStock\(opponentScore\)\)\) \{\s*\n\s*await runSuppressionDeterministicPass\(/);
   });
 
   it('both call sites thread the FULL argument object (dual-review blind spot: a dropped arg would crash the pass, not a pin)', () => {
@@ -50,7 +55,7 @@ describe('R11 — the suppression-path deterministic pass (red-first wiring)', (
     // enforce readiness added governingPreset (the check's preset key, resolved once — review ER1-1).
     const ARGS = 'runSuppressionDeterministicPass\\(\\{ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, governingPreset, callsCtx, swapIdentityMode \\}\\)';
     const full = source.match(new RegExp(ARGS, 'g')) || [];
-    expect(full.length).toBe(2);
+    expect(full.length).toBe(3); // + the v2 Ruling 3 unavailable-frame site
   });
 
   it('the dark gate is the FIRST statement of the body (dual-review blind spot: nothing may precede it)', () => {

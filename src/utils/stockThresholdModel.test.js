@@ -24,8 +24,8 @@ describe('pinned stock context', () => {
     const source = readFileSync(new URL('./marketCalendar.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
     expect(createHash('sha256').update(source).digest('hex')).toBe('f03b061c7241fdc8b004c7fd616811457b488f29feb8bf618fa476c7b3ff14de');
   });
-  it('pins admission false without coupling existing dispatch', async () => {
-    expect(STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED).toBe(false);
+  it('pins admission true (v2 Ruling 6: the control document is the on-switch) without coupling existing dispatch', async () => {
+    expect(STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED).toBe(true);
     expect(stockModelRoute((await correctedStockBattle()).battle).status).toBe('corrected');
     expect(stockModelRoute({ scoring: {} }).status).toBe('legacy');
   });
@@ -74,11 +74,14 @@ describe('pinned stock context', () => {
     expect(stockRewardContext(battle, a, 'agent', 'star', 0, quote(a.swapPrice)).status).toBe('unavailable');
     expect(initialRewardHistory(cpu.stockThresholdReceipt).crossedTiers).toEqual([]);
   });
-  it('ignores whole-session extremes and refuses missing/pre-entry observations', async () => {
+  it('ignores whole-session extremes and refuses missing/pre-fill observations', async () => {
     const { battle } = await correctedStockBattle(); const a = battle.portfolio.star[0];
     expect(stockRewardContext(battle, a, 'agent', 'star', 0, { ...quote(a.swapPrice), high: 1000, low: 1 }).crossedTiers).toEqual([]);
     expect(stockRewardContext(battle, a, 'agent', 'star', 0, { price: 100 }).status).toBe('unavailable');
-    expect(stockRewardContext(battle, a, 'agent', 'star', 0, { ...quote(100), asOf: '2026-10-14T14:01:00Z' }).status).toBe('unavailable');
+    // v2 Ruling 1: the lower bound is the fill quote's provider time (13:47), not the
+    // 14:02 commit — 14:01 is a valid later quote; 13:46 is before the fill.
+    expect(stockRewardContext(battle, a, 'agent', 'star', 0, { ...quote(100), asOf: '2026-10-14T14:01:00Z' }).status).toBe('valid');
+    expect(stockRewardContext(battle, a, 'agent', 'star', 0, { ...quote(100), asOf: '2026-10-14T13:46:00Z' }).status).toBe('unavailable');
   });
   it('corrupt receipt content makes both committed display and comparison unavailable', async () => {
     const { battle } = await correctedStockBattle(); const a = battle.portfolio.star[0];

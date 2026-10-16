@@ -21,6 +21,8 @@ import { toMs, inDay, etDateOf, etDayBounds, sessionFor, previousSession, within
 import { historyListOf, meetingLegsOf, meetingOf } from '../playerFieldReaders.js';
 import { flattenPortfolioServer, flattenBenchServer } from '../agentScoring.js';
 import { tradingTimeline } from '../../../src/utils/tapeSchedule.js';
+// BaggerBomb stock thresholds v2 (Ruling 16): the persisted dispatch, Node-clean (BUILD_RULES §4).
+import { stockModelRoute, displayedStockScores } from '../../../src/utils/stockThresholdModel.js';
 import { NOTES, UNKNOWN_WHAT, counted } from './tapeNotes.js';
 
 /** `evaluations[]` is `slice(-150)` (api/cron/agent-evaluate.js:4257). */
@@ -121,7 +123,10 @@ function dayTrades(battle, bounds) {
 
 // ── checks (BA-7, BA-8) ────────────────────────────────────────────────────
 
-/** Only the stamp's eight fields, by name (tickStamps.js composeEvidenceStamp). */
+/** Only the stamp's eight fields, by name (tickStamps.js composeEvidenceStamp),
+ * plus — on a measured-model stock only — the unit of its atrX (v2 Ruling 16,
+ * review B3-6), so Film Room never calls a frozen-measured multiple an ATR one.
+ * A legacy stamp's copy is unchanged. */
 function copyEvidence(evidence) {
   if (!isObj(evidence)) return null;
   const out = {};
@@ -132,6 +137,7 @@ function copyEvidence(evidence) {
       nr7: typeof v.nr7 === 'boolean' ? v.nr7 : null,
       regime: str(v.regime),
       risk: isObj(v.risk) && str(v.risk.action) ? { action: v.risk.action, ...(str(v.risk.reason) ? { reason: v.risk.reason } : {}) } : null,
+      ...(v.atrXUnit === 'frozen_measured_pct' ? { atrXUnit: 'frozen_measured_pct' } : {}),
     };
   }
   return Object.keys(out).length ? out : null;
@@ -178,7 +184,9 @@ export const opponentBasisOf = (battle) => (isObj(battle?.opponent) ? 'cpu_portf
  * is null, never 0.
  */
 const scoresOf = (s, { opponent = null } = {}) => (isObj(s) && num(s.total) !== null
-  ? { active: num(s.active), banked: num(s.banked), total: num(s.total), opponent: opponent ? opponent(s) : null }
+  ? { active: num(s.active), banked: num(s.banked), total: num(s.total), opponent: opponent ? opponent(s) : null,
+    // v2 Ruling 16: a measured-model check keeps its committed frame's references.
+    ...(isObj(s.stockModel) ? { stockModel: s.stockModel } : {}) }
   : null);
 
 /**
@@ -417,7 +425,13 @@ export function buildReplayInputs({ row, receipt, trade, battle }) {
       thresholdBaseline: baseline.source,
     },
   };
+  // v2 Ruling 16: a measured-model stock leg is never rescored with legacy ATR
+  // math. The trade's corrected contract (the capture's stockRewardContract, or
+  // the closed trade itself) names which legs carry a measured receipt; those
+  // legs are not replayed. Crypto legs and legacy trades are unchanged.
+  const contract = isObj(receipt?.stockRewardContract) ? receipt.stockRewardContract : (isObj(trade?.stockThresholdModel) ? trade : null);
   const ghostMissing = [];
+  if (isObj(contract?.outgoingReceipt)) ghostMissing.push('ghost.measuredStockModel');
   if (ghost.entryPrice === null) ghostMissing.push('ghost.entryPrice');
   if (ghost.atr === null) ghostMissing.push('ghost.atr');
   if (ghost.tier === null) ghostMissing.push('ghost.tier');
@@ -446,6 +460,7 @@ export function buildReplayInputs({ row, receipt, trade, battle }) {
     },
   };
   const boughtMissing = [];
+  if (isObj(contract?.incomingReceipt)) boughtMissing.push('bought.measuredStockModel');
   if (bought.entryPrice === null) boughtMissing.push('bought.entryPrice');
   if (bought.atr === null) boughtMissing.push('bought.atr');
   if (bought.tier === null) boughtMissing.push('bought.tier');
@@ -990,8 +1005,11 @@ export function buildBattleBlock({ battle, resolveResult }) {
   const stored = ['win', 'loss', 'draw'].includes(battle?.result) ? battle.result : null;
   // B1 T1 (contract E): with no opponent, the stored opponentScore is the sum over an empty portfolio — never copied.
   const noOpponent = opponentBasisOf(battle) === 'none';
+  // v2 Ruling 16: a measured-model battle's final scores are its displayed ones —
+  // none for a result-unavailable completion (review B2-5). Legacy reads scoreState.
+  const shown = displayedStockScores(battle);
   const final = completed
-    ? { total: num(battle?.scoreState?.currentScore), opponent: noOpponent ? null : num(battle?.scoreState?.opponentScore), at: str(battle?.completedAt) }
+    ? { total: num(shown.currentScore), opponent: noOpponent ? null : num(shown.opponentScore), at: str(battle?.completedAt) }
     : null;
   // BA-39: the comparison runs over the two recorded final scores, and only when both exist.
   const derive = resolveResult
@@ -1003,6 +1021,11 @@ export function buildBattleBlock({ battle, resolveResult }) {
     final,
     result: battleResultOf({ status, stored, final, derive, noOpponent }),
     completionMessage: completed ? completionMessageOf(battle) : null,
+    // v2 Ruling 16: a stamped battle's block says so, so a later merge — which
+    // holds only the final scores — keeps this assembly's corrected-aware
+    // result instead of re-deriving one with legacy math. Absent on legacy.
+    ...(isObj(battle?.scoring) && Object.hasOwn(battle.scoring, 'stockThresholdModel')
+      ? { stockModel: { route: stockModelRoute(battle).status, modelId: str(battle.scoring.stockThresholdModel?.modelId) } } : {}),
   };
 }
 

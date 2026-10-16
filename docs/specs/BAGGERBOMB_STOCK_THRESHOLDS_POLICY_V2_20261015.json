@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "approvalState": "owner_approved_allowlist_pilot",
+  "approvedPolicyRef": "owner_baggerbomb_stock_thresholds_v2_20261015@v1",
+  "approvalRecord": "docs/approvals/BAGGERBOMB_STOCK_THRESHOLDS_V2_PILOT_20261015.md",
+  "supersedes": "stock_measured_atr14_fullday_v1 (retired: 0 v1 battles exist; a v1 stamp resolves unavailable)",
+  "sourceBaseline": "495ee07b43945cfd8171fff82a34d732df5fea47",
+  "policy": {
+    "modelId": "stock_measured_atr14_fullday_v2",
+    "modelVersion": 2,
+    "scope": {
+      "creationGameMode": "baggerbomb_agent",
+      "creationDuration": "fullday",
+      "opponent": "embedded_cpu",
+      "assets": "stock",
+      "directions": "long_only",
+      "existingUnstampedGames": "legacy",
+      "crypto": "legacy_within_same_battle"
+    },
+    "measurement": {
+      "method": "sma_of_fourteen_daily_dollar_true_ranges",
+      "period": 14,
+      "requiredConsecutiveSessionBars": 15,
+      "basis": "fully_adjusted_ohlc_via_adjusted_close_over_raw_close",
+      "ohlcTolerance": 0,
+      "arithmetic": "binary64_unrounded_no_intermediate_rounding",
+      "calendar": "src/utils/marketCalendar.js@c05a5bf7697d12869f51f6bd7f4914f287e0f01f",
+      "calendarSourceSha256": "f03b061c7241fdc8b004c7fd616811457b488f29feb8bf618fa476c7b3ff14de",
+      "sourceSession": "independently_latest_completed_exchange_session_at_each_position_commit",
+      "formingSession": "excluded",
+      "rawSnapshot": "single_complete_capture_no_cached_fragments"
+    },
+    "publicationRule": {
+      "id": "eodhd_us_completed_session_observation_v1",
+      "provider": "EODHD",
+      "endpoint": "eod",
+      "exchanges": [
+        "NYSE",
+        "NASDAQ"
+      ],
+      "minimumMinutesAfterScheduledClose": 15,
+      "evidenceSource": "https://eodhd.com/financial-apis/api-for-historical-data-and-volumes",
+      "snapshotRequirement": "one_complete_response_with_all_fifteen_expected_sessions",
+      "revisionHandling": "new_full_snapshot_new_input_receipt_existing_admissions_keep_frozen_receipt",
+      "attestationAuthority": "owner_approved_server_collector_with_versioned_policy_and_input_hash",
+      "ohlcTolerance": 0
+    },
+    "gameplay": {
+      "bounds": "none",
+      "percentageQuantization": {
+        "decimalPlaces": 6,
+        "rounding": "decimal_half_even",
+        "inputRepresentation": "shortest_round_trip_decimal_of_binary64_measuredPct",
+        "when": "once_at_position_admission"
+      },
+      "zeroVolatility": "valid_measurement_ineligible_reward_divisor",
+      "positiveQuantizedToZero": "ineligible_no_epsilon_or_default",
+      "anchor": "validated_position_entry_or_swap_fill",
+      "freeze": "position_lifetime",
+      "reEntry": "new_identity_receipt_and_reward_history",
+      "rewardBoundaries": "theoretical_unrounded_target_from_frozen_effective_percentage",
+      "boundaryEquality": "crossed_at_equality_using_shared_underlying_contract",
+      "decisionPricePrecision": "retain_validated_quote_precision_no_cent_rounding_no_added_epsilon",
+      "constants": "src/constants/baggerBombScoring.js",
+      "basePointsAndConviction": "retain_canonical_existing_formula"
+    },
+    "rewardTiming": {
+      "ruling": "v2_ruling_1",
+      "lowerBound": "fill_quote_provider_time_quoteAsOf",
+      "quoteStrictlyLater": "valid",
+      "quoteAtFillProviderTime": "valid_only_at_exactly_the_fill_price",
+      "quoteAtFillProviderTimeDifferentPrice": "unavailable",
+      "quoteBeforeFillProviderTime": "unavailable",
+      "exit": "requires_a_quote_strictly_later_than_the_fill_quote",
+      "enteredAt": "recorded_separately_upper_bound_on_fill_evidence",
+      "tickQuotePredatesFill": "value_at_own_receipt_fill_quote_same_time_same_price",
+      "entryCommitMarker": "none",
+      "historySeed": "fill_quote_provider_time"
+    },
+    "quote": {
+      "ruling": "v2_ruling_9",
+      "stockValuation": "real_close_field_only",
+      "previousCloseStandIn": "unavailable_for_corrected_stocks",
+      "fallbackAdjustedClose": "unavailable"
+    },
+    "offHoursCreation": {
+      "ruling": "v2_ruling_7",
+      "allowed": [
+        "pre_open",
+        "after_close_once_publication_window_opens",
+        "weekends_and_holidays"
+      ],
+      "fill": "latest_valid_real_time_quote_at_creation_strict_close_provider_timestamp_existing_activation_validation",
+      "sourceSessionClosingQuote": "accepted_when_its_provider_timestamp_is_at_or_after_the_source_session_calendar_close",
+      "closingQuoteTolerance": "none",
+      "earlierStamp": "refused_retriable",
+      "openingJump": "post_fill_movement",
+      "publicationWindow": "refused_from_close_to_close_plus_15_minutes"
+    },
+    "crypto": {
+      "ruling": "v2_ruling_8",
+      "incomingFallbackFill": "refused",
+      "outgoingEntry": "positive_price_required",
+      "otherCryptoSwaps": "continue"
+    },
+    "unavailableFrame": {
+      "ruling": "v2_ruling_3",
+      "tick": "continues",
+      "calibratedRiskPass": "runs",
+      "forcedExits": "run",
+      "deployedGuardrails": "run_including_r11_deterministic_pass",
+      "rewardDependentStages": "unavailable_context_discretionary_model_call_withheld_this_tick",
+      "nullScore": "never_written_or_shown_as_zero",
+      "cronState": "finalized_with_the_normal_final_write_on_every_exit",
+      "quoteHealthGate": "unchanged"
+    },
+    "expiry": {
+      "ruling": "v2_ruling_4",
+      "latestStoredFrameValid": "settle_on_it",
+      "otherwise": "result_unavailable_terminal",
+      "lastValidFrameRecord": "none",
+      "routeUnavailable": "result_unavailable_terminal",
+      "terminalWrites": [
+        "status_completed",
+        "completedAt",
+        "completionContext_corrected_score_unavailable",
+        "pendingReflection_false",
+        "reviewPending_false",
+        "cronState_evaluatingAt_null",
+        "statusFeed_line_with_null_score",
+        "vision_retired",
+        "agent_activeBattleId_null_only_while_current"
+      ],
+      "terminalNeverWrites": [
+        "result_or_draw",
+        "stats_or_parent_redirect",
+        "reflection_or_review_queue",
+        "mastery_stamp_or_award",
+        "settlement_record",
+        "battle_pattern_log",
+        "completionReason",
+        "lastDeployedAt"
+      ],
+      "terminalInputsReplay": "not_required"
+    },
+    "display": {
+      "percentageSummaryDecimals": 2,
+      "effectivePercentageDetailDecimals": 6,
+      "currencySummaryDecimals": 2,
+      "currencyRounding": "decimal_half_even_presentation_only",
+      "exactBoundaryDetail": "shortest_round_trip_representation_of_unrounded_boundary",
+      "summaryMayControlAwards": false
+    },
+    "dispatch": {
+      "admissionSwitch": "new_battle_model_selection_only",
+      "existingGames": "immutable_modelId_and_policyHash_independent_of_admission_switch",
+      "rollbackNewBattles": "legacy_selection_when_control_document_missing_disabled_or_owner_unlisted",
+      "rollbackExistingCorrectedGameSwaps": "continue_pinned_model_require_current_qualified_incoming_measurement_and_fill",
+      "switchFlipBeforeCreationCommit": "refuse_attempt_retry_model_selection_no_silent_fallback",
+      "absentModelStamp": "legacy",
+      "presentMalformedUnknownUnsupportedOrHashMismatch": "unavailable_no_legacy_or_latest_model_fallback",
+      "modelRegistry": "retain_supported_pinned_versions_until_all_admitted_games_complete"
+    },
+    "riskAndHurdle": {
+      "baseATR": "retained_calibrated_trading_unit",
+      "trailingHistory": "matching_calibrated_history_separate_from_measured_reward_history",
+      "emergencyAndSteppedTrail": "retain_calibrated_divisor_reference_and_priority",
+      "hurdle": "retain_fresh_percentile_unit_or_frozen_calibrated_fallback",
+      "rewardLock": "measured_reward_context_only_at_existing_priority",
+      "bench": "retain_legacy_units"
+    },
+    "currentCatalogExceptions": {
+      "unavailableForCorrectedAdmission": [
+        "AVB",
+        "CTRA",
+        "EA",
+        "EQR",
+        "K",
+        "MMC",
+        "PARA",
+        "WBD"
+      ],
+      "dispositions": "separate_catalog_task_no_silent_alias_or_invented_bars"
+    },
+    "rollout": {
+      "activation": "control_document_allowlist_pilot_keyed_on_ownerId",
+      "audience": "allowlist_mode_with_non_empty_owner_ids_only_any_other_mode_closed",
+      "broadRelease": "later_code_change_and_owner_decision",
+      "existingGamesAndHistoricalResults": "no_migration_or_rescoring",
+      "admissionSwitchDefault": true
+    }
+  },
+  "policyContentHash": "22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b",
+  "publicationRuleContentHash": "3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f",
+  "hashAlgorithm": "sha256_of_stableStringify_recursively_sorted_object_keys_preserved_array_order_UTF8",
+  "hashSource": "api/_utils/canonicalHash.js:20",
+  "unhashedCodeConstants": {
+    "lateStartCutoffMinutes": 45,
+    "lateStartCutoffSource": "api/_utils/stockThresholdAdmission.js STOCK_LATE_START_CUTOFF_MINUTES (v2 Ruling 2)"
+  },
+  "rulingEvidence": {
+    "offHoursCreation": "Phase 0 report section C3 (final, polling ended 16:50 ET Oct 15 2026; docs/audits/BAGGERBOMB_THRESHOLDS_PHASE0_REPORT_20261015.md): the 16:00 ET closing bar was served at 16:15:20 ET stamped exactly 16:00:00 at the official close; later stamps crept to 16:01-16:04 (HUM 16:23) at the unchanged close; no after-hours movement. Before that bar arrives the feed can still serve the 15:59:00 minute bar, which the at-or-after-close rule refuses (retriable). The collector check stockThresholdMeasurementProvider.js (quote stamp >= source-session closeMs) already implements this rule; no tolerance was added. Overnight and pre-open stamps were not measured."
+  }
+}

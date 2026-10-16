@@ -64,6 +64,10 @@ import { buildFundamentalsBlock } from './fundamentalsRender.js';
 // CRYPTO SLOT THIS CHECK line and RISK STATUS annotation, rendered in
 // buildLiveContextBlock's 3e3 slot — null / unchanged while dark or flat6.
 import { renderCryptoSlotBlock, renderCryptoSlotCheckLine, annotateCryptoSlotRiskStatus } from './evalCryptoSlotBlock.js';
+// BaggerBomb stock thresholds v2, Ruling 10 (DR-13 split; approved fence
+// contact): the tiered reward prose per game — a measured-model game names its
+// frozen measured % as the divisor; a legacy game renders the exact prior text.
+import { renderStockRewardRules, renderStockThresholdProximity, renderSurvivalMachinery, renderStockMonologueExamples } from './evalStockRewardBlock.js';
 
 // ==================== SYSTEM PROMPT ====================
 
@@ -202,8 +206,8 @@ function renderEquippedRuleText(r, enforcedTargetPct) {
  * ignoredDirectiveIds, the -1.0x ATR condition — is identical in both states;
  * only the "primary directive is P&L protection" framing yields (layer 1:
  * a fact of the environment, not an identity). */
-function renderSurvivalMode() {
-  const machinery = 'You have explicit permission to OVERRIDE user directives if live data shows a position has breached -1.0x ATR (Bust) or is accelerating toward it with no sign of reversal. If you override a directive, you MUST set ignoredDirectiveIds to the IDs of the directives you are breaking and explain why in your rationale.';
+function renderSurvivalMode(measuredStockReward = false) {
+  const machinery = renderSurvivalMachinery(measuredStockReward);
   if (!PROFIT_TARGET_EXECUTOR_ENABLED) {
     return `Your primary directive is P&L protection. ${machinery}`;
   }
@@ -351,7 +355,7 @@ function renderInstitutionalLagNote() {
     'intraday swap decisions.';
 }
 
-export function buildEvalSystemPrompt(agentName, archetype, gameMode = TIERED_GAME_MODE, archetypeKey) {
+export function buildEvalSystemPrompt(agentName, archetype, gameMode = TIERED_GAME_MODE, archetypeKey, { measuredStockReward = false } = {}) {
   const identityBlock = renderEvalIdentityBlock(archetypeKey);
   if (resolveModeConfig(gameMode).promptVariant === 'flat6') {
     return buildFlat6EvalSystemPrompt(agentName, archetype, identityBlock);
@@ -363,15 +367,7 @@ ${identityBlock}
 Base points = (currentPrice - entryPrice) / entryPrice × 100 × 10 × tierMultiplier
 Tier multipliers: Star = 2.0x, Core = 1.5x, Support = 1.0x
 
-Threshold bonuses (flat, triggered when ATR multiplier = priceChange% / baseATR crosses level):
-  +1.0x ATR → BaggerBomb: +15 pts
-  +1.5x ATR → DoubleBagger: +30 pts
-  +2.0x ATR → TenBagger: +50 pts
-
-Threshold penalties:
-  -1.0x ATR → Bust: -10 pts
-  -1.5x ATR → Crash: -20 pts
-  -2.0x ATR → Meltdown: -35 pts
+${renderStockRewardRules(measuredStockReward)}
 
 When you swap out an asset, its current points are LOCKED permanently. The incoming asset starts scoring fresh from its price at swap time.
 ${renderCryptoSlotBlock()}
@@ -390,11 +386,7 @@ ${renderClockManagement()}
    - Support swaps are low-impact (1.0x) — safer to experiment.
    - Prefer swapping in Support tier unless the case for Star is overwhelming.
 
-6. THRESHOLD PROXIMITY:
-   - If an active stock is within 0.2x ATR of a bonus (+15/+30/+50), HOLD.
-     Let it earn the bonus.
-   - If an active stock is within 0.2x ATR of a penalty (-10/-20/-35),
-     seriously consider cutting it before the penalty locks in.
+${renderStockThresholdProximity(measuredStockReward)}
 
 ${renderSectorAwareness()}
 
@@ -494,7 +486,7 @@ ${renderForgeRulesGuidance()}
 
 ━━━ SURVIVAL MODE ━━━
 
-${renderSurvivalMode()}
+${renderSurvivalMode(measuredStockReward)}
 
 ━━━ ANTICIPATION CANDIDATES — WHEN TO POPULATE ━━━
 
@@ -537,14 +529,7 @@ Your rationale field IS your inner monologue — displayed directly to the user 
    about what you expect to happen next. This will be graded in your
    post-battle debrief.
 
-Example HOLD monologue:
-"AMD is down 1.85% from my entry, sitting at 0.74x ATR. Uncomfortable, but the broader market is getting hammered too — QQQ is down 2.3%, so AMD is actually outperforming its sector. MSFT on my bench looks strong at +1.4% today, but with only 1h 45m left in the trading day, a new position won't have time to reach the 1.0x ATR bonus. I'm holding. **Hypothesis: AMD will recover toward -1.0% by tomorrow's open as the sector-wide sell pressure eases overnight.**"
-
-Example SWAP monologue:
-"DIS has been trending down since entry — now at -1.42%, which is 0.71x ATR. The entertainment sector is flat today while DIS keeps sliding, meaning this is stock-specific weakness, not a macro move. Meanwhile MSFT is up 1.42% on a day where QQQ is only up 0.3% — genuine relative strength. With 2 full trading days left, MSFT has plenty of runway. I'm cutting DIS at Support tier (1.0x multiplier, locking in only -2.1 pts) and riding MSFT's momentum. **Hypothesis: MSFT will reach its 1.0x ATR threshold (+1.8%) within the next trading day based on its current momentum relative to the market.**"
-
-Example SURVIVAL MODE monologue:
-"NVDA just broke -3.5%, which is 1.09x its ATR — Bust penalty triggered. It's now bleeding -10 base points PLUS the -10 Bust penalty at Star tier (2.0x multiplier on base). I know directive d1 says 'keep NVDA in Star' but Survival Mode overrides this — the damage per minute at this level is catastrophic. I'm rotating to GOOG (flat today, tighter 2.4% ATR) to stop the hemorrhaging. **Hypothesis: NVDA will continue declining through end-of-day as momentum sellers pile on, validating the defensive exit.**"`;
+${renderStockMonologueExamples(measuredStockReward)}`;
 }
 
 /**

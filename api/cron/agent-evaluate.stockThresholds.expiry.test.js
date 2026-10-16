@@ -52,23 +52,45 @@ async function strandedWorld(others = []) {
   return { db, before, errors, r };
 }
 
-describe('K2-1b: an expired pinned stock battle without committed evidence is reported, not hidden', () => {
-  // With no other active battle the handler answers 'No active agent battles'
-  // (no `errors` key), so the loud log line is the observable signal here.
-  it('the real handler logs it as an error, never as completed, and leaves the battle active', async () => {
+// v2 Ruling 4 supersedes the K2-1b "stays active" outcome: the battle now ends as
+// "result unavailable" through the real handler, and nothing is pattern-logged.
+describe('v2 Ruling 4: an expired pinned stock battle without a valid final frame ends as result unavailable', () => {
+  // With no other active battle the handler answers 'No active agent battles'.
+  it('the real handler completes it with no result, and the pattern logger stays silent', async () => {
+    const { logBattlePattern } = await import('../_utils/battlePatternLogger.js');
+    logBattlePattern.mockClear();
     const { db, before, errors, r } = await strandedWorld();
     expect(r.statusCode).toBe(200);
-    expect(r.body).toMatchObject({ expired: 0, message: 'No active agent battles' });
-    expect(errors.filter(e => e.includes('lacks committed corrected stock evidence'))).toHaveLength(1);
-    expect(db.__store.battle).toEqual(before);
+    expect(r.body).toMatchObject({ expired: 1, message: 'No active agent battles' });
+    expect(errors.filter(e => e.includes('lacks committed corrected stock evidence'))).toHaveLength(0);
+    expect(db.__store.battle).toMatchObject({ status: 'completed', completionContext: 'corrected_score_unavailable', pendingReflection: false, reviewPending: false });
+    expect(db.__store.battle.scoreState).toEqual(before.scoreState); expect(db.__store.battle.scoring).toEqual(before.scoring);
+    expect(db.__store.battle.statusFeed.at(-1)).toMatchObject({ action: 'battle_complete', score: null });
+    expect(logBattlePattern).not.toHaveBeenCalled();
   });
-  // Mutation lens KM-47: with another live battle (deferred once the sweep
-  // spends the time budget) the full summary shows the counters themselves.
-  it('the run summary counts it as an error, never as completionSkipped', async () => {
+  // Mutation lens KM-47 (v2 form): with another live battle (deferred once the
+  // sweep spends the time budget) the full summary shows the counters themselves.
+  it('the run summary counts it as expired, never as an error or completionSkipped', async () => {
     world.sweepAdvanceMs = 291_000;
-    const { db, before, r } = await strandedWorld([{ id: 'other-live', status: 'active', expiresAt: '2026-10-15T20:00:00.000Z', cronState: {} }]);
+    const { db, r } = await strandedWorld([{ id: 'other-live', status: 'active', expiresAt: '2026-10-15T20:00:00.000Z', cronState: {} }]);
     expect(r.statusCode).toBe(200);
-    expect(r.body).toMatchObject({ expired: 0, deferred: 1, errors: 1, completionSkipped: 0 });
-    expect(db.__store.battle).toEqual(before);
+    expect(r.body).toMatchObject({ expired: 1, deferred: 1, errors: 0, completionSkipped: 0 });
+    expect(db.__store.battle.status).toBe('completed');
+  });
+  // Review B2-1: a run holding a stale "active" listing of a battle another run
+  // already ended as result unavailable skips it — never an error, never "not settled".
+  it('a stale listing of a battle already ended as result unavailable counts as completionSkipped', async () => {
+    world.sweepAdvanceMs = 291_000;
+    const { db } = await strandedWorld([{ id: 'other-live', status: 'active', expiresAt: '2026-10-15T20:00:00.000Z', cronState: {} }]);
+    expect(db.__store.battle.status).toBe('completed');
+    const stale = { ...deepClone(db.__store.battle), id: 'stock-battle', status: 'active' };
+    world.battles = () => [stale, { id: 'other-live', status: 'active', expiresAt: '2026-10-15T20:00:00.000Z', cronState: {} }];
+    const errors = []; console.error.mockImplementation((...args) => { errors.push(args.map(String).join(' ')); });
+    const r = { statusCode: null, body: null, status(c) { r.statusCode = c; return r; }, json(b) { r.body = b; return r; } };
+    vi.setSystemTime(new Date('2026-10-14T20:20:00.000Z'));
+    await cron.default({ headers: { authorization: 'Bearer expiry-secret' } }, r);
+    expect(r.body).toMatchObject({ expired: 0, errors: 0, completionSkipped: 1 });
+    expect(errors.filter(e => e.includes('not settled'))).toEqual([]);
+    expect(db.__store.battle.status).toBe('completed');
   });
 });

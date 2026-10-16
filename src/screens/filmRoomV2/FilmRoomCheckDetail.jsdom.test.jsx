@@ -41,6 +41,17 @@ describe('BA-44 — a check\'s record', () => {
     expect(sweepWords(m.container, { tape: sep23Tape })).toEqual([]);
   });
 
+  it('a measured-model stock\'s atrX reads as its measured reward multiple; every other stamp keeps the ATR label (stock thresholds v2, review B3-6)', () => {
+    const t = clone(sep23Tape);
+    const [measured, ...others] = Object.keys(t.checks[swapIdx].evidence);
+    t.checks[swapIdx].evidence[measured].atrXUnit = 'frozen_measured_pct';
+    m.render(<CheckDetail tape={t} index={swapIdx} />);
+    expect(m.q(`[data-evidence="${swapIdx}:${measured}"]`).textContent).toContain('atrX · measured reward multiple (frozen measured %)');
+    expect(m.q(`[data-evidence="${swapIdx}:${measured}"]`).textContent).not.toContain('atrX · ATR multiple');
+    for (const s of others) expect(m.q(`[data-evidence="${swapIdx}:${s}"]`).textContent, s).toContain('atrX · ATR multiple');
+    expect(sweepWords(m.container, { tape: t })).toEqual([]);
+  });
+
   it('BA-7: each symbol\'s recorded risk decision — "Risk decision recorded: HOLD", or the action with its reason', () => {
     m.render(<CheckDetail tape={sep23Tape} index={ruleIdx} />);
     const rows = m.qa(`[data-risk-rows="${ruleIdx}"] > span`).map((s) => s.textContent);
