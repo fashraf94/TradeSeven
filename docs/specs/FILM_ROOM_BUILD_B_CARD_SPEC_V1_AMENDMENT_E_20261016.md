@@ -1,0 +1,21 @@
+# Build B spec V1.0 — Amendment E: founder rulings on the B1.1 rulings round (2026-10-16)
+
+- **RE-1 — `stalled`'s coverage on a recorded day.**
+  - RD-5 moves only the sources and the note on real tapes. Every reason that lowers the evidence section also lowers the checks section, through the absent-entry reason, which is about a field the tagger never reads.
+  - The rule becomes: on a day with no recomputed holding, `coverage.tags` sets aside the checks section's absent-entry reason. Every other checks reason still counts.
+  - This is built in B2's writer section, before tags render. The same section makes the re-merge's `catch` safe for an error with no usable text.
+- **RE-2 — Criterion 10 and the size budget.**
+  - Criterion 10 has one exception: when RB-6's budget drops the meetings section, the stored rows go with it, and a later read restores what the history then holds.
+  - This is latent. Real tapes are 9.9–114 KB against a 950,000-byte budget.
+  - The refuter's fix (drop the rows the tape doesn't already store first, and stored rows only if still over) is backlog. It's taken up with RC-5's trigger: a tape approaching the budget.
+- **RE-3 — What the meetings coverage describes.**
+  - `coverage.meetings` describes the rows the tape stores, not the latest read of the history.
+  - This is built in B2's writer section, before meetings render.
+- **RE-4 — The earlier-day note on a completed battle.**
+  - Accepted while every battle is single-day.
+  - It is reworded when multi-day battles return, or when completion files pending meetings (the Command Center item).
+- **RE-5 — Meetings are the owner's record, never proof.**
+  - The meeting history is owner-writable, so a row planted under a pending meeting's key before filing becomes permanent (Y1-5). The same goes for planting or erasing the unfiled note (Y1-7).
+  - The tape copies the history as the owner's record.
+  - Nothing that grants a stage (the plays ledger's drilled, proven or installed) may rest on a meeting row.
+  - Keying the unfiled note off the server's own copy (`cronState.gameplanMeeting`) is backlog.
