@@ -20,9 +20,9 @@
 //   node scripts/stock-threshold-pilot-control.mjs enable --owner <uid> [--owner <uid>] [--apply]
 //   node scripts/stock-threshold-pilot-control.mjs disable [--apply]
 //
-// PRECONDITION (build report, identity finding): do not enable before the
-// security-identity follow-up lands — the collector refuses most US stocks
-// today because the provider's General.ISIN is null.
+// PRECONDITION: do not enable before the blockers follow-up (security identity:
+// ISIN, else a well-formed FIGI; the evening window refused) is merged and
+// deployed. Switching on is a separate, authorized step (runbook).
 
 import { pathToFileURL } from 'node:url';
 import { STOCK_MODEL, stockContent } from '../src/utils/stockThresholdModel.js';

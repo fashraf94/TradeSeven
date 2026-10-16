@@ -5,6 +5,7 @@ import { prepareChartData, formatTime, calculateBombLevels, measuredBombLevels, 
 import { detectTrendlines } from './trendlineDetection';
 import OHLCDisplay from '../shared/OHLCDisplay';
 import { getDailyHL } from '../../services/websocketService';
+import { priceDecimals } from './priceFormat';
 
 const TIMEFRAMES = [
   { key: '1D', label: '1D' },
@@ -51,6 +52,7 @@ const StockChart = ({
   todayDailyCandle,  // Today's daily OHLCV candle with authoritative high/low
   realtimeExtremes,  // Battle hook's real-time intraday high/low { high, low } (optional backup)
   controlledSession, // Optional { crypto }: controlled held research. Absent = legacy.
+  onToggleSR,        // Optional (isOn) => void, called when the S/R pill flips
 }) => {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -550,7 +552,10 @@ const StockChart = ({
         }
       }
     } else {
-      // Normal view: Candlestick + volume
+      // Normal view: Candlestick + volume. A sub-dollar asset's axis — and so the
+      // labels of the S/R and tapped-level lines drawn on this series — takes
+      // the modal's price precision; $1 and up keep the default two decimals.
+      const decimals = priceDecimals(chartData[chartData.length - 1]?.close);
       const candleSeries = chart.addSeries(CandlestickSeries, {
         upColor: HOLO_COLORS.green,
         downColor: '#ff4757',
@@ -558,6 +563,7 @@ const StockChart = ({
         borderDownColor: '#ff4757',
         wickUpColor: HOLO_COLORS.green,
         wickDownColor: '#ff4757',
+        ...(decimals > 2 ? { priceFormat: { type: 'price', precision: decimals, minMove: 1 / 10 ** decimals } } : {}),
       });
       candleSeriesRef.current = candleSeries;
 
@@ -935,7 +941,7 @@ const StockChart = ({
             <button onClick={() => setShowSMA(v => !v)} style={pillStyle(showSMA)}>
               SMA
             </button>
-            <button onClick={() => setShowSR(v => !v)} style={pillStyle(showSR)}>
+            <button onClick={() => { setShowSR(v => !v); onToggleSR?.(!showSR); }} style={pillStyle(showSR)}>
               S/R
             </button>
           </div>

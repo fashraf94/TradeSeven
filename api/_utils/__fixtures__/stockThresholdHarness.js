@@ -25,8 +25,8 @@ export async function stockObservation(symbol = 'AAPL', { price = 103.27, rows =
     return { ok: true, json: async () => structuredClone(changeResponse(value, url)) };
   } });
 }
-export async function correctedStockBattle({ fill = 103.27, cpuFill = fill, cpuSymbol = 'AAPL', scoringPct = null } = {}) {
-  const agentObs = await stockObservation('AAPL', { price: fill }), cpuObs = await stockObservation(cpuSymbol, { price: cpuFill });
+export async function correctedStockBattle({ fill = 103.27, cpuFill = fill, cpuSymbol = 'AAPL', scoringPct = null, changeResponse } = {}) {
+  const agentObs = await stockObservation('AAPL', { price: fill, changeResponse }), cpuObs = await stockObservation(cpuSymbol, { price: cpuFill, changeResponse });
   const battle = { id: 'stock-battle', agentId: 'agent', ownerId: 'owner', gameMode: 'baggerbomb_agent', duration: 'fullday', status: 'active', activatedAt: STOCK_TEST_NOW,
     portfolio: { star: [{ symbol: 'AAPL', baseATR: 2.5 }], core: [], support: [], bench: { stocks: [{ symbol: 'MSFT', baseATR: 3 }], crypto: null }, startingPrices: { AAPL: fill } },
     opponent: { portfolio: { star: [{ symbol: cpuSymbol, baseATR: 2.5 }], core: [], support: [] } },

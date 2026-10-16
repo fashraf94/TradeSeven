@@ -7,6 +7,7 @@ import { resolveStockApproval, STOCK_APPROVAL, STOCK_ADMISSION_CONTROL_PATH, val
 import { collectStockObservation, qualifyStockObservation, refuseStock, StockThresholdRefusal } from './stockThresholdMeasurementProvider.js';
 import { calculateAssetScoreServer } from './agentScoring.js';
 import { getSessionForDate } from '../../src/utils/marketCalendar.js';
+import { etDateOf, eveningWindowRefusal } from '../../src/utils/stockAdmissionWindow.js';
 
 export const stockAdmissionEnabled = () => Object.hasOwn(flags, 'STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED') && flags.STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED === true;
 export function effectiveStockPercentage(measuredPct) {
@@ -42,11 +43,6 @@ async function readEligibility(tx, db, symbols) {
 // began instant against the session's own closeMs, never a clock literal. A code
 // constant recorded in the pilot approval document, deliberately not hashed.
 export const STOCK_LATE_START_CUTOFF_MINUTES = 45;
-const etDateOf = ms => {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(ms);
-  const part = type => parts.find(p => p.type === type).value;
-  return `${part('year')}-${part('month')}-${part('day')}`;
-};
 export function lateStartRefusal(began) {
   const ms = instantMs(began);
   if (ms === null) return 'invalid_creation_instant';
@@ -70,8 +66,12 @@ export async function prepareStockCreation(battleDoc, { db, collector = collectS
     return null;
   }
   if (!stockAdmissionSelects(control, battleDoc.ownerId)) return null;
-  const late = lateStartRefusal(now().toISOString());
-  if (late) refuseStock(late);
+  // P2 (build report §6b, option (a)): from the close until the next session can
+  // score it, a battle whose own expiry comes first is refused (evening_window).
+  // Pilot-only narrowing of Ruling 7; legacy and tournaments never get here.
+  const began = now().toISOString();
+  const outOfWindow = lateStartRefusal(began) || eveningWindowRefusal(began, battleDoc.expiresAt);
+  if (outOfWindow) refuseStock(outOfWindow);
   const observations = [];
   try {
     for (const p of positions(battleDoc)) {

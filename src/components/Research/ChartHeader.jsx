@@ -1,6 +1,7 @@
 import React from 'react';
 import { HOLO_COLORS, CATEGORY_CONFIG, getSectorColor } from '../../constants/holoTheme';
 import { INDEX_REGISTRY } from '../../constants/indexRegistry';
+import { priceText } from './priceFormat';
 
 /**
  * ChartHeader - Compact 56px header bar for the redesigned research modal.
@@ -101,7 +102,7 @@ const ChartHeader = ({ asset, sector, category, isIndex, onClose, onWhyMoving, o
           color: HOLO_COLORS.textPrimary,
           fontFamily: 'monospace',
         }}>
-          ${asset.price?.toFixed(2) || '\u2014'}
+          ${priceText(asset.price) || '\u2014'}
         </span>
 
         {/* Daily change pill */}

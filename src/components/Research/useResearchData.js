@@ -211,8 +211,8 @@ export function distanceFromShownPrice(levelPrice, price) {
  * @param {boolean} options.technicalActive - The Technical tab is showing. Off
  *   the 1D chart, only this lets the hook fetch the daily series that the
  *   indicators and levels are computed from.
- * @param {boolean} options.srRequested - The chart's S/R toggle was turned on
- *   for this symbol. Off the 1D chart it asks for the same daily series the
+ * @param {boolean} options.srRequested - The chart's S/R toggle is on (as the
+ *   chart reports it). Off the 1D chart it asks for the same daily series the
  *   Technical tab does (one request, shared).
  * @returns {Object} { ohlcvData, timeframe, setTimeframe, indicators, levels, dailyData, smaData, loading, error }
  */
@@ -417,14 +417,15 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
 
   useEffect(() => { currentSymbolRef.current = symbol; }, [symbol]);
 
-  // The daily series off the 1D chart: fetched only while the Technical tab is
-  // showing or the chart's S/R toggle has been turned on, and nothing daily is
-  // cached for the symbol — the same request the 1D chart makes, cached under
-  // its own key, so the tab and the toggle share it. On 1D the chart's own
-  // series is the daily series (the main fetch sets it), so nothing extra is
-  // fetched.
-  useEffect(() => {
-    if (!symbol || !(technicalActive || srRequested) || apiTimeframe === '1d') return;
+  // The daily series off the 1D chart, asked for by its two users — the
+  // Technical tab showing, the chart's S/R toggle on — each in its own effect,
+  // so one of them turning on (or the symbol or view changing while it is on)
+  // asks, and one turning off never does. Nothing is asked when a daily series
+  // is cached for the symbol (the same request the 1D chart makes, under its
+  // own key, so the tab and the toggle share it) or already in flight. On 1D
+  // the chart's own series is the daily series (the main fetch sets it).
+  const askDailySeries = useCallback(() => {
+    if (!symbol || apiTimeframe === '1d') return;
     if (dailySeries?.symbol === symbol) return;
     const cached = cacheRef.current[`${symbol}_1d`] || cacheRef.current[`${symbol}_1d_technical`];
     if (cached && cached.length > 0) {
@@ -443,7 +444,9 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
       .finally(() => {
         if (dailyInflightRef.current === symbol) dailyInflightRef.current = null;
       });
-  }, [symbol, technicalActive, srRequested, apiTimeframe, dailySeries, isCrypto]);
+  }, [symbol, apiTimeframe, dailySeries, isCrypto]);
+  useEffect(() => { if (technicalActive) askDailySeries(); }, [technicalActive, askDailySeries]);
+  useEffect(() => { if (srRequested) askDailySeries(); }, [srRequested, askDailySeries]);
 
   // Auto-refresh spectate mode every 15 seconds
   // Guards:
@@ -785,11 +788,14 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
   // weekly or intraday candles).
   const dailyData = dailySeries?.symbol === symbol ? dailySeries.data : null;
 
-  // Closing prices of the daily series (newest-first, as expected by indicator functions)
-  const closingPrices = useMemo(() => {
+  // The daily bars with a usable close (newest-first): their closes feed the
+  // indicator functions, and their dates name the bar behind a MACD reading.
+  const closingBars = useMemo(() => {
     if (!dailyData) return [];
-    return dailyData.map(c => Number(c.close)).filter(p => Number.isFinite(p) && p > 0);
+    return dailyData.filter(c => { const p = Number(c.close); return Number.isFinite(p) && p > 0; });
   }, [dailyData]);
+  // Closing prices of the daily series (newest-first, as expected by indicator functions)
+  const closingPrices = useMemo(() => closingBars.map(c => Number(c.close)), [closingBars]);
 
   // Technical indicators from the daily series, whatever the chart's timeframe
   const indicators = useMemo(() => {
@@ -802,16 +808,19 @@ export default function useResearchData(symbol, { currentPrice, isCrypto, initia
     const sma200 = calculateSMA(closingPrices, 200);
 
     // MACD histogram as of each of the latest 6 daily bars (newest-first):
-    // dropping the k newest closes gives the reading k bars ago.
+    // dropping the k newest closes gives the reading k bars ago, taken at the
+    // bar dated macdHistogramDates[k].
     const macdHistogram = [];
+    const macdHistogramDates = [];
     for (let k = 0; k < 6; k++) {
       const m = calculateMACD(closingPrices.slice(k));
       if (!m) break;
       macdHistogram.push(m.histogram);
+      macdHistogramDates.push(String(closingBars[k].date || closingBars[k].datetime || '').substring(0, 10));
     }
 
-    return { rsi, macd, macdHistogram, sma20, sma50, sma200 };
-  }, [closingPrices]);
+    return { rsi, macd, macdHistogram, macdHistogramDates, sma20, sma50, sma200 };
+  }, [closingPrices, closingBars]);
 
   // Compute SMA line data for chart overlay (newest-first input → newest-first output)
   const smaData = useMemo(() => {
