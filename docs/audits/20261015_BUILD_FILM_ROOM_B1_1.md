@@ -6,6 +6,7 @@
 
 | Question | Answer |
 |---|---|
+| **Astra's findings (16 Oct, Amendment F)** | **See §13.** F1 (RF-1) and F2 (RF-2) fixed, and the re-merge's catch made safe; 5 of 5 mutants killed. |
 | **The rulings round (16 Oct, Amendment D)** | **See §12.** RD-1–RD-7 built; questions back to the founder in §12.6. |
 | Built | B0 docs and items 1–5, one commit each with their tests; one commit of §2 review fixes. Draft PR, no merge, no production write, no backfill, no refresh. |
 | Item 1 (RC-2) — the live count on the record | **Done.** The evaluator records, per held symbol, the count `evaluateRisk` received, `withinAge` and `dailyPct` exactly as passed (`\|\| 0` included); the capture writes `risk.stagnation`, the tape copies it to `checks[].stagnation` (class R). |
@@ -294,3 +295,76 @@ Counts: 14 findings — 9 CONFIRMED, 4 PARTLY, 0 REFUTED as a whole (parts of Y1
 ### 12.7 Fence statement
 
 The round's own changes (`git diff --name-only cdae4f30 4ca8b7bd` and `94ec1b48 69b63e14`) name no BUILD_RULES §1 file, no `firestore.rules`, no `firestore.indexes.json`, no `vercel.json`, no `src/config/featureFlags.js`, no `api/_utils/archetypeImportBoundaryBaseline.json` and not `api/cron/agent-evaluate.js`. The only new imports are `errorClass.js` (three times) and test-only imports; no legacy archetype table is imported. No merge to `main`, no production write, no backfill, no refresh.
+
+## 13. Astra's findings (Amendment F)
+
+**Date:** 16 Oct 2026 · **Prompt:** Fable, "Fix prompt — Film Room B1.1: Astra's two findings" · **Governing:** Astra's B1.1 review (`docs/audits/20261016_ASTRA_REVIEW_FILM_ROOM_B1_1.md`) and Build B Amendments E (RE-1–RE-5) and F (RF-1, RF-2), all three committed verbatim in this round
+
+### 13.0 Verdict
+
+| Question | Answer |
+|---|---|
+| Built | B0 (the review and Amendments E and F verbatim, three README rows) and the three fixes, one commit each with their tests; one comment-only commit. No merge, no production write, no backfill, no refresh. |
+| F1 / RF-1 — the census and a thrown function (criterion 7) | **Fixed.** A thrown function or class is read like an error object: its message when it has one, else the listed class alone. `class CustomError {}`, `function ShortError(){}` and a function with an empty message each print `Error` and nothing else. |
+| F2 / RF-2 — an acknowledged re-merge (criterion 5) | **Fixed.** The writer returns the meeting keys of the document it committed; the re-merge reports `remerged` and `meetingsStored` from that, and the second read of P is gone. Astra's repro (the write commits, then a read of P would fail) is now `remerged`, never `remergeFailed`. |
+| RF-2 — the re-merge's catch | **Fixed.** Its reason goes through `errorTextOf`, which never throws. A throwing reason would have ended the whole close pass, because the re-merge runs outside the per-battle `try`. |
+| Mutants | **5 of 5 killed**: the prompt's four and one more (§13.2). |
+| The three frozen evaluator goldens | **37 of 37, untouched.** Calls-off, rollback and live stagnation pass at `12c11575`. No golden, fixture or `api/cron/` file is in this round's diff, so identity is expected. |
+| Checks (the branch with current `origin/main`, which is already in it) | Linux suite, CI-shaped: **1,023 files passed, 7 skipped, 0 failing; 22,238 passed, 0 failed, 88 skipped.** Rules suite: **25 files, 424 passed.** `lint:gate`: **0 problems.** `vite build`: **passes** (§13.4). |
+| Fence | No BUILD_RULES §1 file, rules, index, flag, `vercel.json` or `agent-evaluate.js` touched; no import changed (§13.5). |
+| Review | **No lens review ran this round.** Its own diff (9 files, 420 lines, 144 of them code and tests) is under the review threshold as §12.4 measured it. Astra's review is the independent review of the head these fixes answer, and each fix is mutation-checked. |
+
+### 13.1 Preamble
+
+- **Fetch:** `git fetch origin` first. The PR head was `f2cd07e2`, as the prompt said; PR #977 open and draft. `origin/main` = `078fe895`, already an ancestor of the head, so the head tree is the tree merged with `main`. Re-fetched before the final runs and before the push: `main` unchanged.
+- **Branch:** the app's worktree branch `claude/film-room-b1-1-astra-266bd6`, reset to `f2cd07e2` (clean tree), pushed by refspec to `claude/film-room-b1-1`.
+- **Ids.** RF-1 and RF-2 are Amendment F's rulings. The code already cites a "review RF-1" from B1, the refuter's finding on owner-planted leg symbols (`census-film-room-b1.mjs:238`, `closePassLateMeeting.test.js:51`). Every new citation says "Amendment F RF-n". The mutants are Z-M1–Z-M5, a prefix used nowhere else.
+
+### 13.2 The fixes
+
+Lines are at the code head `12c11575`.
+
+| # | Ruling | Commit | What | Tests | Mutants |
+|---|---|---|---|---|---|
+| B0 | — | `8261a000` | `docs/audits/20261016_ASTRA_REVIEW_FILM_ROOM_B1_1.md`, `docs/specs/FILM_ROOM_BUILD_B_CARD_SPEC_V1_AMENDMENT_E_20261016.md`, `…_AMENDMENT_F_20261016.md`, each verbatim between its markers; three README rows | — | — |
+| 1 | RF-1 (F1) | `c45cbdec` | `census-film-room-b1.mjs` `censusErrorLine`: `errorLike` is a function or a non-null object (`:409`), and only a primitive keeps its own text (`:411`); the docstring says so (`:400–403`). The class (`errorClassOf`), the scrubbing and the length bound are unchanged | `census-film-room-b1.test.js:238`: Astra's three repros print `Error`, nothing else; a function with a usable message prints it; controls as before: an ordinary `RangeError` instance, Astra N1's registered value (by name, and redacted in a `TypeError`'s message), a thrown string | Z-M1 |
+| 2 | RF-2 (F2) | `d62afff8` | `writeTapeDay.js:161–162`: the result carries `meetingKeys`, the keys of the merged document after the size budget (the `@returns` at `:63–67`). `closePass.js:167–171`: `remerged` and `meetingsStored` come from `r.meetingKeys`; the read of P after the write is removed. The docstring (`:141–147`) and the header (`:56–58`) say what `remerged` and `remergeFailed` now mean | `closePassLateMeeting.test.js:303`: **Astra's repro** (ordinary reads of P fail once the re-merge's write to P commits): `remerged` with `meetingsStored: true`, no `remergeFailed`, no read of P after the commit, P holds the meeting with `runCount` + 1, `written`, no `lastError`, D byte-identical to a fault-free world; **a budget-dropped write** under the same fault: `remerged` with `meetingsStored: false`; **the writer** returns the committed keys, and `[]` when the budget dropped them. **A failure before commit** is the existing criterion-5 row (`:205`), unchanged: `remergeFailed`, P byte for byte as it was | Z-M2, Z-M3, Z-M5 |
+| 3 | RF-2, the catch | `2d7f7878` | `closePass.js:172–177`: the reason is `errorTextOf(err)`, sliced to 300, in place of `String(err?.message \|\| err)` | `closePassLateMeeting.test.js:362`: two battles, the first one's re-merge throws: a symbol, an object whose `toString` throws, a function. In each, the pass carries on: both days written, the second battle re-merged, the first listed `remergeFailed` with reason `Symbol(thrown symbol)` / `Error` / `Error`, and its P byte-identical | Z-M4 |
+| — | — | `12c11575` | the bare "RF-1" in the census comment (`:408`) qualified as Amendment F's | — | — |
+
+### 13.3 Mutants
+
+All ran on Linux in a private clone at `2d7f7878`, one at a time, against the files whose rows claim to catch them (the census suite; the late-meeting suite, plus the handler suite for Z-M3). Each file was restored afterwards and the tree checked clean.
+
+| Id | Mutant | Killed by |
+|---|---|---|
+| **Z-M1** | the function routed through `String(err)` (`errorLike` back to objects only) | the RF-1 row |
+| **Z-M2** | the summary built from a re-read of P (the removed read restored) | Astra's repro row and the budget-under-fault row |
+| **Z-M3** | `meetingsStored` taken from the meetings read before the write instead of the committed ones | 8 rows: the main late-meeting row, Astra's repro, the three catch rows (their second battle), X5-3, RD-6's rewritten-row row and the handler's log-line row (`film-tape-close.test.js`) |
+| **Z-M4** | the catch's raw `String(err?.message \|\| err)` restored | the thrown-object row (the pass rejects) and the thrown-function row (the reason is the function's source) |
+| Z-M5 | the writer's `meetingKeys` taken from the assembled document, before the merge and the budget | 4 rows: X3-4's budget row, the budget-under-fault row, the writer-keys row and RD-6's 26-plant row (the cap) |
+
+The thrown-symbol row is a control, not a kill: `String()` of a symbol does not throw, so it passes under Z-M4. It shows the reason is unchanged for a primitive.
+
+### 13.4 Checks
+
+| Check | Tree | Result |
+|---|---|---|
+| Full suite, CI-shaped (WSL Ubuntu, a private clone, Node 20.20.2, npm 10.8.2, `CI=true TZ=UTC`, `--maxWorkers=2`) | `12c11575` (tree `59e529ec`; `main` `078fe895` is already in it) | **1,023 files passed, 7 skipped, 0 failing; 22,238 passed, 0 failed, 88 skipped** (671 s). §12's head had 22,231; the 7 more are this round's new rows. |
+| Frozen evaluator goldens (calls-off, rollback, live stagnation) | `12c11575` | **37 of 37** (3 files) |
+| Rules suite (`npm run test:rules`; Windows, Java 21, the Firestore emulator — WSL has no Java) | LF archive of `2d7f7878` (the code head but for one census comment) | **25 files, 424 passed** |
+| `lint:gate` (Linux) | `12c11575` | 0 problems |
+| `vite build` (Linux) | `12c11575`; the pushed head (this report's commit, docs only) | passes at both |
+
+- **Windows worktree runs** of the touched suites (`TZ=UTC`), after each fix: the census (19) and error-class (13) suites; the late-meeting suite (26 rows at the code head), the handler, the writer and the error-text suites. All passed.
+- **PR CI** runs on the push; its result is reported with the PR, not here.
+
+### 13.5 Choices the build made, and the fence
+
+- `meetingKeys` is returned with every status. On `unchanged` it is the stored document's keys; on `skipped_mode` it is empty. The re-merge reads it only after `written`.
+- A writer result without a `meetingKeys` array reads as nothing stored (`meetingsStored: false`). It never throws into the catch.
+- "A usable message" is the census's existing test for an object: `message ?? ''`, converted and scrubbed. A message that is empty after scrubbing prints the class alone.
+- A thrown symbol keeps its own text in the re-merge's reason (`Symbol(…)`), as every primitive does through `errorTextOf`.
+- The X3-9 note stays (`closePass.js:59–63`): a commit whose acknowledgement is lost still reaches the catch, and P can then be re-merged beside a `remergeFailed` row. That is a write the writer never acknowledged, so RF-2 does not cover it.
+- Not built here, as ruled: the rest of RE-1, and RE-3 (B2's writer section); RE-2's stored-first budget (backlog); RE-4 and RE-5 (accepted).
+- **Fence.** `git diff --name-only f2cd07e2 12c11575` names no BUILD_RULES §1 file, no `firestore.rules`, no `firestore.indexes.json`, no `vercel.json`, no `src/config/featureFlags.js`, no `api/_utils/archetypeImportBoundaryBaseline.json` and not `api/cron/agent-evaluate.js`. No import was added or removed. No merge to `main`, no production write, no backfill, no refresh.
