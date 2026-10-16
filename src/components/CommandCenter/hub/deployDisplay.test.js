@@ -128,13 +128,33 @@ describe('the eligibility states (§3.1)', () => {
     expect(d.cardNote).toEqual({ text: 'Refreshing · as of 10:40 AM ET', action: null });
   });
 
-  it('ready_stale: able to start, the as-of words on the line, and the read\'s Retry in the note', () => {
-    const d = deployDisplay({ displayState: 'ready_stale', canStart: true, freshness: { asOf: T, stale: true } });
+  it('ready_stale: able to start, the as-of words on the line, and the poll\'s Retry in the note', () => {
+    const d = deployDisplay({ displayState: 'ready_stale', canStart: true, freshness: { asOf: T, stale: true }, retryAction: 'poll' });
     expect(d.canStart).toBe(true);
     expect(d.stripLine1).toBe('Ready to deploy · as of 10:40 AM ET');
-    expect(d.strip.hold).toEqual({ label: COPY.deploy.hold, secondary: false });
     expect(d.cardLine).toEqual({ icon: 'info', text: 'Ready to deploy · as of 10:40 AM ET', action: null });
     expect(d.cardNote).toEqual({ text: COPY.deploy.refreshFailed, action: { kind: 'retryRead', label: 'Retry' } });
+  });
+
+  it('A1-1: the strip says it too — alone, the refresh failure on line two; beside a live game, when it was true; the read\'s Retry stays on the card', () => {
+    const stale = { displayState: 'ready_stale', canStart: true, freshness: { asOf: T, stale: true }, retryAction: 'poll' };
+    const alone = deployDisplay(stale);
+    expect(alone.stripLine1).toBe('Ready to deploy · as of 10:40 AM ET');
+    expect(alone.stripLine2(LOADOUT)).toBe(COPY.deploy.refreshFailed);
+    expect(alone.strip).toEqual({ openGame: false, hold: { label: COPY.deploy.hold, secondary: false }, action: null });
+    const live = deployDisplay(stale, LIVE);
+    expect(live.stripLine1).toBe('Live · 2h 41m left');
+    expect(live.stripLine2(LOADOUT)).toBe('As of 10:40 AM ET · couldn’t refresh');
+    expect(live.strip).toEqual({ openGame: true, hold: { label: COPY.deploy.holdShort, secondary: true }, action: null });
+    // A pending refresh: the retained time on line two — for a clear list alone or beside a live game, for a block alone.
+    const refreshing = { displayState: 'ready', canStart: true, freshness: { asOf: T, stale: false, refreshing: true } };
+    expect(deployDisplay(refreshing).stripLine2(LOADOUT)).toBe('Refreshing · as of 10:40 AM ET');
+    expect(deployDisplay(refreshing, LIVE).stripLine2(LOADOUT)).toBe('Refreshing · as of 10:40 AM ET');
+    const blockedRefreshing = { displayState: 'blocked', reason: DEPLOY_BLOCK_REASON, freshness: { asOf: T, refreshing: true } };
+    expect(deployDisplay(blockedRefreshing).stripLine2(LOADOUT)).toBe('Refreshing · as of 10:40 AM ET');
+    expect(deployDisplay(blockedRefreshing, LIVE).stripLine2(LOADOUT)).toBe(`Deploy unavailable · ${DEPLOY_BLOCK_REASON}`);
+    // A fresh ready list keeps the loadout.
+    expect(deployDisplay({ displayState: 'ready', canStart: true, freshness: { asOf: T } }).stripLine2(LOADOUT)).toBe(LOADOUT);
   });
 
   it('blocked: the reason, verbatim, and a hold that cannot start; a stale block says when it was true, with Retry', () => {
@@ -226,7 +246,37 @@ describe('the attempt words (§5.2): no live hold while in flight or terminal; o
     const d = deployDisplay({ displayState: 'existing', action: 'openGame' });
     expect(d.strip).toEqual({ openGame: false, hold: null, action: { kind: 'openGame', label: 'Open game' } });
     expect(d.cardLine).toEqual({ icon: 'info', text: 'Already running', action: { kind: 'openGame', label: 'Open game' } });
-    expect(d.cardHoldLabel).toBe(COPY.deploy.hold);
+  });
+
+  it('A1-4: on a terminal with its own action the card\'s control reports the phase, as in flight — never the hold\'s words', () => {
+    expect(deployDisplay({ displayState: 'failed' }).cardHoldLabel).toBe('Deployment failed');
+    expect(deployDisplay({ displayState: 'existing' }).cardHoldLabel).toBe('Already running');
+    expect(deployDisplay({ displayState: 'uncertain' }).cardHoldLabel).toBe('Couldn’t confirm the deploy');
+    for (const displayState of ['submitting', 'verifying', 'finishing', 'confirmed', 'existing', 'failed', 'uncertain']) {
+      expect([COPY.deploy.hold, COPY.deploy.holdShort], displayState).not.toContain(deployDisplay({ displayState }).cardHoldLabel);
+    }
+    for (const displayState of ['checking', 'ready', 'ready_stale', 'blocked', 'cooldown']) {
+      expect(deployDisplay({ displayState, cooldownUntil: T }).cardHoldLabel, displayState).toBe(COPY.deploy.hold);
+    }
+  });
+
+  it('A1-2: a withheld Retry says why — the next deploy time, the block, the read still checking — on the card and on line two', () => {
+    const cooling = deployDisplay({ displayState: 'uncertain', action: null, retryBlock: { displayState: 'cooldown', cooldownUntil: T, reason: null } });
+    expect(cooling.strip.action).toBeNull();
+    expect(cooling.cardNote).toEqual({ text: 'Next deploy at 10:41 AM ET', action: null });
+    expect(cooling.stripLine2(LOADOUT)).toBe('Next deploy at 10:41 AM ET');
+    const blocked = deployDisplay({ displayState: 'failed', reason: '', action: null, retryBlock: { displayState: 'blocked', reason: DEPLOY_BLOCK_REASON, cooldownUntil: null } });
+    expect(blocked.cardNote.text).toBe(`Unavailable · ${DEPLOY_BLOCK_REASON}`);
+    expect(blocked.stripLine2(LOADOUT)).toBe(`Unavailable · ${DEPLOY_BLOCK_REASON}`);
+    // A refusal's own words keep line two.
+    const worded = deployDisplay({ displayState: 'failed', reason: 'Please wait 2 minutes between deploys', retryBlock: { displayState: 'cooldown', cooldownUntil: T } });
+    expect(worded.stripLine2(LOADOUT)).toBe('Please wait 2 minutes between deploys');
+    expect(worded.cardNote.text).toBe('Next deploy at 10:41 AM ET');
+    // Nothing is said when the block would only read "ready", and an eligibility state never carries one.
+    expect(deployDisplay({ displayState: 'uncertain', retryBlock: { displayState: 'ready' } }).cardNote).toBeNull();
+    expect(deployDisplay({ displayState: 'ready', canStart: true, retryBlock: { displayState: 'cooldown', cooldownUntil: T } }).cardNote).toBeNull();
+    // A cooldown block without a bound reads as checking, never "Next deploy at ".
+    expect(deployDisplay({ displayState: 'uncertain', retryBlock: { displayState: 'cooldown', cooldownUntil: null } }).cardNote.text).toBe(COPY.deploy.states.checking);
   });
 
   it('failed: "Deployment failed", the server\'s line unchanged on line two and the card, Retry or the Forge', () => {

@@ -69,8 +69,12 @@ describe('the real gate and the real hub chunk', () => {
     await act(async () => {
       root.render(<StrictMode><CommandCenterHubGate site={site} legacy={<div data-shell="legacy" />} frame={frame} /></StrictMode>);
     });
-    // Up to 5 s for the first evaluation: vitest transforms the chunk's modules on first
-    // import, and since S2a that graph includes the selectors and their shipped inputs.
+    // Up to 500 polls for the first evaluation. Each poll is a 10 ms act() but takes about
+    // 16–38 ms under vitest, so S1's 50 polls meant ~0.8–1.9 s and 500 mean ~8–19 s. Since
+    // S2a the chunk's first import also transforms the selectors and their shipped inputs
+    // (7 modules, ~149 KB of source, leagueTournament.js alone 84 KB), and under load it
+    // outran 50 polls (59 and 70 measured; S2a review A4-1). A chunk that never loads still
+    // fails this row — after ~8 s, inside the 30 s test timeout.
     for (let i = 0; i < 500 && !host.querySelector('[data-hub="shell"]'); i += 1) {
       await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     }

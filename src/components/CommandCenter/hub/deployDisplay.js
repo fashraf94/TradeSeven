@@ -100,6 +100,9 @@ function holdLabelOf(displayState, recovered) {
     case 'verifying': return D.holdVerifying;
     case 'finishing': return D.holdFinishing;
     case 'confirmed': return recovered ? D.confirmedRecovered : D.holdDeployed;
+    // A terminal with its own action: the card's control reports the phase too,
+    // so neither its words nor its name offer a hold (prompt §4.5; S2a review A1-4).
+    case 'existing': case 'failed': case 'uncertain': return S[displayState];
     default: return D.hold;
   }
 }
@@ -134,6 +137,16 @@ export function deployDisplay(deploy, liveGame = null) {
   const inFlight = IN_FLIGHT.has(displayState);
   const attemptAction = attemptShown ? actionOf(deploy?.action) : null;
   const readRetry = actionOf(DISPLAY_ACTIONS.RETRY_READ);
+  // Why an attempt's Retry is withheld: the row a replacing request would meet
+  // now — a cooldown's next time, a block's reason, a read still checking (spec
+  // §5.4; S2a review A1-2). Nothing is said when it would only read "ready".
+  const block = attemptShown && deploy?.retryBlock && typeof deploy.retryBlock === 'object' ? deploy.retryBlock : null;
+  const blockStatus = block && block.displayState !== 'ready' && block.displayState !== 'ready_stale'
+    && DEPLOY_DISPLAY_STATES.includes(block.displayState)
+    ? statusOf(block.displayState === 'cooldown' && !finite(block.cooldownUntil) ? 'checking' : block.displayState, block,
+      typeof block.reason === 'string' ? block.reason : '', '')
+    : null;
+  const blockText = typeof blockStatus === 'string' && blockStatus ? blockStatus : null;
 
   // The strip (ff-mobile.jsx GameStrip): a live game takes the first line and
   // the Open game action; the deploy state moves to the second line. An
@@ -145,14 +158,25 @@ export function deployDisplay(deploy, liveGame = null) {
   // of the reason (the live line and Open game already say why), else in place
   // of the loadout.
   const staleBlock = displayState === 'blocked' && stale;
+  // The same holds for a stale or refreshing list (rows 9 and 10): the strip is
+  // the phone's only deploy surface, so its second line says so too (S2a review
+  // A1-1). A stale clear list: beside a live game when it was true, alone the
+  // refresh failure (line one already carries the time). A pending refresh: the
+  // retained time — beside a live game for a clear list, and alone for a block
+  // (beside a live game a block's line two keeps its reason). The read's Retry
+  // stays on the card: the strip's one row has no room for a third control.
+  const freshnessLine = displayState === 'ready_stale' ? (liveGame ? D.staleAsOf(asOf) : D.refreshFailed)
+    : refreshing && (displayState === 'ready' || (displayState === 'blocked' && !liveGame)) ? D.refreshing(asOf) : null;
   const gateLine = displayState === 'blocked'
     ? (staleBlock ? D.blockedStaleBehindGame(asOf) : D.blockedBehindGame(reason))
     : WAITING.has(displayState) || READ_ERRORS.has(displayState) ? status : null;
   const stripLine2 = (loadoutLine) => {
     // A refusal's own words, unchanged, take the second line (spec §5.2).
     if (displayState === 'failed' && reason) return reason;
+    if (attemptShown && blockText) return blockText;
     if (!attemptShown && liveGame && gateLine) return gateLine;
     if (staleBlock) return D.staleAsOf(asOf);
+    if (freshnessLine) return freshnessLine;
     return loadoutLine;
   };
 
@@ -191,7 +215,8 @@ export function deployDisplay(deploy, liveGame = null) {
   // Freshness (spec §3.1): a stale retained list says when it was true and
   // offers the read's Retry; a pending refresh says so, with the retained time.
   let cardNote = null;
-  if (displayState === 'ready_stale') cardNote = { text: D.refreshFailed, action: readRetry };
+  if (blockText) cardNote = { text: blockText, action: null };
+  else if (displayState === 'ready_stale') cardNote = { text: D.refreshFailed, action: readRetry };
   else if (displayState === 'blocked' && stale) cardNote = { text: D.staleAsOf(asOf), action: readRetry };
   else if ((displayState === 'ready' || displayState === 'blocked') && refreshing) cardNote = { text: D.refreshing(asOf), action: null };
 

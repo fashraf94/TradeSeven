@@ -16,8 +16,10 @@
 //     flagDisabled, revoked }
 //   attempt   the provider record of spec §5.2 (makeAttempt below) or null
 //   hold      { controlId, holdToken, holdEpoch, phase } or null. S2a never
-//             claims or commits one (C4 is R2's and S2b's, ruling R-S2A-5); it
-//             only releases one where the spec says so
+//             claims or commits one (C4 is R2's and S2b's, ruling R-S2A-5). It
+//             admits a request from a hold only once that hold is committed
+//             (locked), and releases the committed hold with the attempt it
+//             started: dismissal, a Retry, an orphaned outcome
 //   cooldowns { [ownerUid]: { [targetAgentId]: cooldownUntil } } — keyed by the
 //             captured owner and the resolved target, kept across dismissal,
 //             never read for another owner
@@ -110,9 +112,16 @@ function current(state, action) {
 }
 
 const activeHold = (hold) => Boolean(hold) && (hold.phase === HOLD_PHASES.CHARGING || hold.phase === HOLD_PHASES.LOCKED);
-/** A hold another control owns: a tap or a second control cannot bypass it (spec §5.5). */
-const foreignHold = (state, action) => activeHold(state.hold)
-  && !(state.hold.controlId === action.controlId && state.hold.holdToken === action.holdToken);
+/**
+ * The caller's own hold, ready to start its request: its control and token, and
+ * COMMITTED (locked) — spec §5.5: commitment, not charging, is the boundary
+ * (S2a review A3-6). The slot holds one hold, and while an attempt stands no
+ * other can commit, so a locked hold belongs to the request it admits.
+ */
+const ownCommittedHold = (state, action) => Boolean(state.hold) && state.hold.phase === HOLD_PHASES.LOCKED
+  && state.hold.controlId === action.controlId && state.hold.holdToken === action.holdToken;
+/** A hold the request does not own: a tap or a second control cannot bypass it (spec §5.5). */
+const foreignHold = (state, action) => activeHold(state.hold) && !ownCommittedHold(state, action);
 
 const unacknowledged = (attempt) => Boolean(attempt) && attempt.phase !== ATTEMPT_PHASES.IDLE;
 
@@ -145,12 +154,15 @@ const validTarget = (id) => typeof id === 'string' && id.length > 0;
 
 const withAttempt = (state, patch) => freeze({ ...state, attempt: freeze({ ...state.attempt, ...patch }) });
 
-/** A committed hold belongs to the attempt it started; dismissal releases it (spec §5.4). */
+/** A committed hold belongs to the attempt it started; that attempt's end releases it (spec §5.4). */
 const releaseHold = (hold) => (hold && hold.phase === HOLD_PHASES.LOCKED ? null : hold);
 
 function begin(state, action) {
-  if (state.flagDisabled || !authMatches(state, action.auth) || !validNewId(state, action.attemptId)) return state;
-  if (!validTarget(action.targetAgentId)) return state;
+  if (!authMatches(state, action.auth) || !validNewId(state, action.attemptId) || !validTarget(action.targetAgentId)) return state;
+  const own = ownCommittedHold(state, action);
+  // A runtime disable refuses new attempts; a request already at commitment
+  // (its hold locked) still goes and keeps its record (spec §4; S2a review A3-7).
+  if (state.flagDisabled && !own) return state;
   // An unacknowledged attempt — submitting, a terminal, an uncertain one whose
   // overlay was dismissed, an orphan not yet cleaned — keeps the guard.
   if (unacknowledged(state.attempt) || foreignHold(state, action)) return state;
@@ -160,6 +172,7 @@ function begin(state, action) {
 
 function targetResolved(state, action) {
   if (!current(state, action) || state.attempt.phase !== ATTEMPT_PHASES.SUBMITTING || !validTarget(action.targetAgentId)) return state;
+  if (state.attempt.targetAgentId === action.targetAgentId) return state;
   return withAttempt(state, {
     targetAgentId: action.targetAgentId,
     cooldownUntil: cooldownFor(state, state.attempt.capturedUid, action.targetAgentId).cooldownUntil,
@@ -178,8 +191,10 @@ function serviceResult(state, action) {
     errorTone: t.ceremony.errorTone,
   });
   // A typed `orphaned` outcome is an invalidation like any other: the epoch moves,
-  // so no later callback of this request is current (spec §5.2).
-  return t.phase === ATTEMPT_PHASES.ORPHANED ? freeze({ ...next, attemptEpoch: state.attemptEpoch + 1 }) : next;
+  // so no later callback of this request is current, and its hold goes with it
+  // (spec §5.2; S2a review A2-3, A3-5).
+  if (t.phase !== ATTEMPT_PHASES.ORPHANED) return next;
+  return freeze({ ...next, attemptEpoch: state.attemptEpoch + 1, hold: releaseHold(state.hold) });
 }
 
 function reconciliationPending(state, action) {
@@ -221,15 +236,18 @@ function ceremonyPhase(state, action) {
   // Carries the attempt's identity: a stale notification cannot change a later attempt.
   if (!current(state, action) || !unacknowledged(state.attempt) || state.attempt.phase === ATTEMPT_PHASES.ORPHANED) return state;
   if (!CEREMONY_SET.has(action.phase)) return state;
-  return withAttempt(state, { ceremonyPhase: action.phase, errorTone: TONE_SET.has(action.errorTone) ? action.errorTone : null });
+  const errorTone = TONE_SET.has(action.errorTone) ? action.errorTone : null;
+  if (state.attempt.ceremonyPhase === action.phase && state.attempt.errorTone === errorTone) return state;
+  return withAttempt(state, { ceremonyPhase: action.phase, errorTone });
 }
 
 function dismiss(state, action) {
   if (!current(state, action)) return state;
   const a = state.attempt;
+  const hold = releaseHold(state.hold);
   const acknowledge = () => freeze({
     ...state,
-    hold: releaseHold(state.hold),
+    hold,
     attempt: freeze({ ...a, phase: ATTEMPT_PHASES.IDLE, ceremonyPhase: CEREMONY_PHASES.CLOSED, acknowledgedAt: finite(action.at) ? action.at : null }),
   });
   switch (a.phase) {
@@ -242,7 +260,8 @@ function dismiss(state, action) {
       // Only an owned clear result lets acknowledgment through; otherwise the
       // overlay closes and the guard stays until reconciliation resolves.
       if (a.reconciliationStatus === RECONCILIATION.CLEAR) return acknowledge();
-      return freeze({ ...state, hold: releaseHold(state.hold), attempt: freeze({ ...a, ceremonyPhase: CEREMONY_PHASES.CLOSED }) });
+      if (a.ceremonyPhase === CEREMONY_PHASES.CLOSED && hold === state.hold) return state;
+      return freeze({ ...state, hold, attempt: freeze({ ...a, ceremonyPhase: CEREMONY_PHASES.CLOSED }) });
     default:
       return state;
   }
@@ -257,10 +276,13 @@ function retry(state, action) {
   if (!fromRefused && !fromClear) return state;
   // Waits for the owner + target cooldown; without a clock it cannot show the bound passed.
   if (cooling(cooldownFor(state, prior.capturedUid, prior.targetAgentId).cooldownUntil, action.now)) return state;
-  if (!validNewId(state, action.attemptId) || foreignHold(state, action)) return state;
+  // A Retry is a tap: it needs no token. The terminal's own committed (locked)
+  // hold does not stand in its way and is released with the terminal it
+  // replaces; another control's charging hold does (S2a review A3-1).
+  if (!validNewId(state, action.attemptId) || (state.hold && state.hold.phase === HOLD_PHASES.CHARGING)) return state;
   // Atomically replaces the prior terminal; one new request, one epoch.
   const attempt = makeAttempt(state, action, prior.targetAgentId);
-  return freeze({ ...state, attemptEpoch: attempt.attemptEpoch, attempt });
+  return freeze({ ...state, attemptEpoch: attempt.attemptEpoch, attempt, hold: releaseHold(state.hold) });
 }
 
 function cooldownEvidence(state, action) {
@@ -275,7 +297,9 @@ function cooldownEvidence(state, action) {
   const owner = freeze({ ...(state.cooldowns[action.ownerUid] || {}), [action.targetAgentId]: next });
   const cooldowns = freeze({ ...state.cooldowns, [action.ownerUid]: owner });
   const a = state.attempt;
-  const attempt = a && a.capturedUid === action.ownerUid && a.targetAgentId === action.targetAgentId
+  // Only the current owner's live record at this auth epoch carries the bound; an orphan is left alone (S2a review A2-6).
+  const attempt = a && a.phase !== ATTEMPT_PHASES.ORPHANED && a.capturedUid === action.ownerUid
+    && a.authEpoch === action.authEpoch && a.targetAgentId === action.targetAgentId
     ? freeze({ ...a, cooldownUntil: next }) : a;
   return freeze({ ...state, cooldowns, attempt });
 }
@@ -299,7 +323,9 @@ function authChanged(state, action) {
 
 function orphanCleaned(state, action) {
   const a = state.attempt;
-  if (!a || a.phase !== ATTEMPT_PHASES.ORPHANED || a.attemptId !== action.attemptId) return state;
+  // Tagged with the orphan's id AND epoch: a late cleanup of an earlier orphan
+  // that reused the id cannot remove a later one (S2a review A2-4, A3-10).
+  if (!a || a.phase !== ATTEMPT_PHASES.ORPHANED || a.attemptId !== action.attemptId || a.attemptEpoch !== action.attemptEpoch) return state;
   return freeze({ ...state, attempt: null });
 }
 

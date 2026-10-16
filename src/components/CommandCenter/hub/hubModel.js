@@ -20,7 +20,8 @@
 //   deploy      deriveHubDeployState's result (selectors/deployState.js):
 //               { displayState, canStart, gateBlocked, freshness: { asOf,
 //                 stale, refreshing }, retryAction, reason, action,
-//                 recovered, battleId, cooldownUntil, holdControlId }   §3.1 (S2a)
+//                 recovered, battleId, cooldownUntil, holdControlId,
+//                 retryBlock }                                         §3.1 (S2a)
 //               The hub root fills it from the selector (ruling R-S2A-3);
 //               HUB_S1_SECTIONS carries no hand-written one.
 //   loadout     { status, archetype?: { name, approach },
@@ -56,10 +57,12 @@
 //                 candidate only                                      S3
 //   attempt     the provider record (selectors/attemptVocabulary.js) or null S2b
 //   hold        { controlId, holdToken, holdEpoch, phase: 'idle'|'charging'|
-//                 'locked' } or null; the token is opaque here        S2b (R2)
+//                 'locked' } or null; the token is opaque here, and a hold
+//                 with no valid epoch commits nothing                 S2b (R2)
 //   cooldown    { ownerUid, targetAgentId, cooldownUntil } for the captured
 //                 owner and resolved target — selectors/attemptReducer.js
-//                 cooldownFor() — or null                             S2b
+//                 cooldownFor() — or null; a bound naming no owner, or
+//                 another, applies to nobody                          S2b
 //   now         the clock, for the cooldown only; null holds a cooldown S2b
 //   concurrencyEnabled  CASUAL_CLONE_CONCURRENCY_ENABLED as the shells read it,
 //                 at render; anything but true is the legacy any-live gate  S3
@@ -67,8 +70,13 @@
 //                 start (the words do not change)                     S2b
 //
 // The attempt reducer's actions (selectors/attemptReducer.js) carry their own
-// payloads, every id, time and token supplied by the caller:
+// payloads, every id, time and token supplied by the caller. Before `begin`
+// and `retry` the provider asks the selector — canCommit for a hold, canStart
+// for a tap, the `retry` action for a Retry — which runs the §3.1 table with
+// every reader, the cooldown included; the reducer re-checks only what it
+// holds itself (the guard, the hold, a Retry's cooldown).
 //   begin                 { attemptId, auth, targetAgentId, startedAt, controlId?, holdToken? }
+//                           (a hold's token is admitted only once committed: locked)
 //   targetResolved        { attemptId, attemptEpoch, targetAgentId }
 //   serviceResult         { attemptId, attemptEpoch, result }   (the service's result, as returned)
 //   reconciliationPending { attemptId, attemptEpoch }
@@ -76,11 +84,11 @@
 //                           battle?: { id, ownerId }, admitted?: the recovery gates' verdict }
 //   ceremonyPhase         { attemptId, attemptEpoch, phase, errorTone? }
 //   dismiss               { attemptId, attemptEpoch, at }
-//   retry                 { attemptId (new), priorAttemptId, priorAttemptEpoch, auth, now,
-//                           startedAt, controlId?, holdToken? }
+//   retry                 { attemptId (new), priorAttemptId, priorAttemptEpoch, auth, now, startedAt }
+//                           (a tap: no token; the prior attempt's own spent hold goes with it)
 //   cooldownEvidence      { ownerUid, authEpoch, targetAgentId, lastDeployedAtMs?, retryAfterUntil? }
 //   authChanged           { uid }        (null when signed out)
-//   orphanCleaned         { attemptId }  (after S2b has run the orphan's local cleanup)
+//   orphanCleaned         { attemptId, attemptEpoch }  (after S2b has run the orphan's local cleanup)
 //   flagDisabled          {}
 //   unmount               {}
 

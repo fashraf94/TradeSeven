@@ -206,6 +206,15 @@ describe('the new states through the real Deploy card (desktop) and strip (phone
     }
   });
 
+  it('A1-4: on a terminal attempt the card\'s control is named by its phase, never by the hold instruction', () => {
+    const deploy = attempt('existing', { result: { kind: 'existing', battleId: 'bt_live' } });
+    render(<CommandCenterHub site="desktop" sections={withDeploy(deploy)} />);
+    expect(byRole(card(), 'button', COPY.deploy.holdLabel)).toHaveLength(0);
+    const [control] = byRole(card(), 'button', COPY.deploy.states.existing);
+    expect(control.disabled).toBe(true);
+    expect(byRole(card(), 'button', COPY.deploy.openGame)).toHaveLength(1);
+  });
+
   it('cooldown: the next permitted deploy time on the strip, the hold disabled', () => {
     const deploy = deriveHubDeployState(base({ cooldown: { ownerUid: 'owner-a', cooldownUntil: Date.UTC(2026, 9, 14, 14, 42, 5) } }));
     render(<CommandCenterHub site="mobile" sections={withDeploy(deploy)} />, 390);

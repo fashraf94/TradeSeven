@@ -29,6 +29,11 @@ const retry = (s, attemptId, now, over = {}) => attemptReducer(s, {
 const pending = (s, tagged = tag(s)) => attemptReducer(s, { type: T.RECONCILIATION_PENDING, ...tagged });
 const reconciled = (s, status, over = {}, tagged = tag(s)) => attemptReducer(s, { type: T.RECONCILIATION_RESULT, ...tagged, status, ...over });
 const evidence = (s, over = {}) => attemptReducer(s, { type: T.COOLDOWN_EVIDENCE, ownerUid: s.authUid, authEpoch: s.authEpoch, targetAgentId: TARGET, ...over });
+/** S2b's cleanup report, tagged with the orphan's id and epoch. */
+const cleanup = (s, attemptId = s.attempt?.attemptId, attemptEpoch = s.attempt?.attemptEpoch) => attemptReducer(s, { type: T.ORPHAN_CLEANED, attemptId, attemptEpoch });
+/** A hold as S2b / R2 claim it, committed (locked) unless said otherwise. */
+const heldBy = (s, over = {}) => ({ ...s, hold: { controlId: 'card', holdToken: 't', holdEpoch: 1, phase: 'locked', ...over } });
+const fromHold = (s, attemptId = 'a1') => begin(s, attemptId, { controlId: s.hold.controlId, holdToken: s.hold.holdToken });
 
 const REFUSED = TYPED_RESULTS['refused after a POST (a typed 429)'].result;
 const REVIEW_DUE = LEGACY_RESULTS['JSON 409 hypothesis_review_due (agentDeploy.js:172-177) — the one typed refusal today'].result;
@@ -110,18 +115,24 @@ describe('begin', () => {
     const orphaned = attemptReducer(begin(signedInAs()), { type: T.AUTH_CHANGED, uid: A });
     expect(orphaned.attempt.phase).toBe('orphaned');
     expect(begin(orphaned, 'a2')).toBe(orphaned);
-    const cleaned = attemptReducer(orphaned, { type: T.ORPHAN_CLEANED, attemptId: 'a1' });
+    const cleaned = cleanup(orphaned);
     expect(cleaned.attempt).toBeNull();
     expect(begin(cleaned, 'a2').attempt.phase).toBe('submitting');
   });
 
-  it('a hold owned by another control refuses it; the holder\'s own token is let through', () => {
-    const s = { ...signedInAs(), hold: { controlId: 'strip', holdToken: 'tok', holdEpoch: 1, phase: 'locked' } };
+  it('only the caller\'s own committed hold admits it; any other active hold refuses (S2a review A3-6)', () => {
+    const s = heldBy(signedInAs(), { controlId: 'strip', holdToken: 'tok' });
     expect(begin(s, 'a1', { controlId: 'card', holdToken: 'tok2' })).toBe(s);
     expect(begin(s, 'a1')).toBe(s);
-    expect(begin(s, 'a1', { controlId: 'strip', holdToken: 'tok' }).attempt.phase).toBe('submitting');
+    const own = begin(s, 'a1', { controlId: 'strip', holdToken: 'tok' });
+    expect(own.attempt.phase).toBe('submitting');
+    // While its attempt stands the same token starts nothing else.
+    expect(begin(own, 'a2', { controlId: 'strip', holdToken: 'tok' })).toBe(own);
+    // Still charging (uncommitted): even its own token is refused.
+    const charging = heldBy(signedInAs(), { controlId: 'strip', holdToken: 'tok', phase: 'charging' });
+    expect(begin(charging, 'a1', { controlId: 'strip', holdToken: 'tok' })).toBe(charging);
     // An idle hold blocks nothing.
-    const idle = { ...s, hold: { ...s.hold, phase: 'idle' } };
+    const idle = heldBy(signedInAs(), { phase: 'idle' });
     expect(begin(idle, 'a1').attempt.phase).toBe('submitting');
   });
 
@@ -281,9 +292,9 @@ describe('ceremonyPhase', () => {
 });
 
 describe('dismiss (§5.4)', () => {
-  it.each([['created', CREATED], ['existing', EXISTING], ['refused', REFUSED]])('%s: acknowledged and idle at once, the ceremony closed, a committed hold released', (_name, r) => {
-    let s = result(begin(signedInAs()), r);
-    s = { ...s, hold: { controlId: 'card', holdToken: 't', holdEpoch: 1, phase: 'locked' } };
+  it.each([['created', CREATED], ['existing', EXISTING], ['refused', REFUSED]])('%s: acknowledged and idle at once, the ceremony closed, its own committed hold released', (_name, r) => {
+    const s = result(fromHold(heldBy(signedInAs())), r);
+    expect(s.hold.phase).toBe('locked');
     const d = dismiss(s);
     expect(d.attempt).toMatchObject({ phase: 'idle', ceremonyPhase: 'closed', acknowledgedAt: T0 + 1000 });
     expect(d.hold).toBeNull();
@@ -354,15 +365,15 @@ describe('retry (§5.4)', () => {
     expect(retry(r, 'a1', T0)).toBe(r);
     const off = attemptReducer(r, { type: T.FLAG_DISABLED });
     expect(retry(off, 'a2', T0)).toBe(off);
-    const held = { ...r, hold: { controlId: 'strip', holdToken: 'tok', holdEpoch: 1, phase: 'charging' } };
+    const held = heldBy(r, { controlId: 'strip', holdToken: 'tok', phase: 'charging' });
     expect(retry(held, 'a2', T0)).toBe(held);
   });
 });
 
 describe('authChanged, orphan cleanup, flagDisabled, unmount (§4, §5.3, §5.4)', () => {
   it('an account change orphans the unresolved attempt, clears the hold, and bumps both epochs — even A → A', () => {
-    let s = begin(signedInAs());
-    s = { ...s, hold: { controlId: 'card', holdToken: 't', holdEpoch: 1, phase: 'locked' } };
+    const s = fromHold(heldBy(signedInAs()));
+    expect(s.hold).toMatchObject({ phase: 'locked' });
     const changed = attemptReducer(s, { type: T.AUTH_CHANGED, uid: B });
     expect(changed).toMatchObject({ authUid: B, authEpoch: 1, attemptEpoch: 2, hold: null });
     expect(changed.attempt).toMatchObject({ phase: 'orphaned', ceremonyPhase: 'closed', capturedUid: A });
@@ -374,16 +385,19 @@ describe('authChanged, orphan cleanup, flagDisabled, unmount (§4, §5.3, §5.4)
     const done = dismiss(result(begin(signedInAs()), CREATED));
     expect(attemptReducer(done, { type: T.AUTH_CHANGED, uid: B }).attempt).toBeNull();
     const orphaned = attemptReducer(begin(signedInAs()), { type: T.AUTH_CHANGED, uid: B });
-    expect(attemptReducer(orphaned, { type: T.ORPHAN_CLEANED, attemptId: 'zz' })).toBe(orphaned);
-    expect(attemptReducer(orphaned, { type: T.ORPHAN_CLEANED, attemptId: 'a1' }).attempt).toBeNull();
+    expect(cleanup(orphaned, 'zz')).toBe(orphaned);
+    // The id alone is not enough: the cleanup carries the orphan's epoch (S2a review A2-4, A3-10).
+    expect(cleanup(orphaned, 'a1', orphaned.attempt.attemptEpoch + 1)).toBe(orphaned);
+    expect(attemptReducer(orphaned, { type: T.ORPHAN_CLEANED, attemptId: 'a1' })).toBe(orphaned);
+    expect(cleanup(orphaned).attempt).toBeNull();
   });
 
   it('flagDisabled cancels a charging hold and refuses new attempts; a committed request keeps its record through resolution', () => {
-    const charging = { ...signedInAs(), hold: { controlId: 'card', holdToken: 't', holdEpoch: 1, phase: 'charging' } };
+    const charging = heldBy(signedInAs(), { phase: 'charging' });
     const off = attemptReducer(charging, { type: T.FLAG_DISABLED });
     expect(off).toMatchObject({ flagDisabled: true, hold: null });
     expect(begin(off, 'a1')).toBe(off);
-    let s = { ...begin(signedInAs()), hold: { controlId: 'card', holdToken: 't', holdEpoch: 1, phase: 'locked' } };
+    let s = fromHold(heldBy(signedInAs()));
     s = attemptReducer(s, { type: T.FLAG_DISABLED });
     expect(s.hold.phase).toBe('locked');
     expect(s.attempt.phase).toBe('submitting');
@@ -401,7 +415,7 @@ describe('authChanged, orphan cleanup, flagDisabled, unmount (§4, §5.3, §5.4)
       { type: T.SERVICE_RESULT, attemptId: 'a1', attemptEpoch: 2, result: CREATED },
       { type: T.BEGIN, attemptId: 'a9', auth: authOf(gone), targetAgentId: TARGET },
       { type: T.AUTH_CHANGED, uid: B },
-      { type: T.ORPHAN_CLEANED, attemptId: 'a1' },
+      { type: T.ORPHAN_CLEANED, attemptId: 'a1', attemptEpoch: 1 },
       { type: T.CEREMONY_PHASE, attemptId: 'a1', attemptEpoch: 1, phase: 'reveal' },
     ]) expect(attemptReducer(gone, a)).toBe(gone);
   });
@@ -415,7 +429,7 @@ describe('authChanged, orphan cleanup, flagDisabled, unmount (§4, §5.3, §5.4)
     expect(attemptReducer(o, { type: T.CEREMONY_PHASE, ...old, phase: 'reveal' })).toBe(o);
     expect(dismiss(o, old)).toBe(o);
     expect(deployFrom(o).displayState).toBe('account_transition');
-    expect(attemptReducer(o, { type: T.ORPHAN_CLEANED, attemptId: 'a1' }).attempt).toBeNull();
+    expect(cleanup(o).attempt).toBeNull();
   });
 
   it('an orphaned record takes no ceremony report, even one tagged with its own (stale) identity', () => {
@@ -451,7 +465,7 @@ describe('the sequences the prompt names (§5)', () => {
     let s = begin(signedInAs(A));
     const old = tag(s);
     s = attemptReducer(s, { type: T.AUTH_CHANGED, uid: B });
-    s = attemptReducer(s, { type: T.ORPHAN_CLEANED, attemptId: 'a1' });
+    s = cleanup(s);
     s = attemptReducer(s, { type: T.AUTH_CHANGED, uid: A });
     expect(s.authUid).toBe(A);
     expect(s.authEpoch).toBe(2);
@@ -494,7 +508,7 @@ describe('the sequences the prompt names (§5)', () => {
     s = attemptReducer(s, { type: T.AUTH_CHANGED, uid: B });
     // B sees A's orphan as a transition until cleanup...
     expect(deployFrom(s).displayState).toBe('account_transition');
-    s = attemptReducer(s, { type: T.ORPHAN_CLEANED, attemptId: 'a1' });
+    s = cleanup(s);
     // ...then its own readiness, with no countdown: A's bound stays A's.
     expect(cooldownFor(s, B, TARGET).cooldownUntil).toBeNull();
     expect(deployFrom(s)).toMatchObject({ displayState: 'ready', canStart: true });
@@ -508,7 +522,7 @@ describe('the sequences the prompt names (§5)', () => {
     const old = tag(s);
     s = attemptReducer(s, { type: T.AUTH_CHANGED, uid: B });
     expect(deployFrom(s).displayState).toBe('account_transition');
-    s = attemptReducer(s, { type: T.ORPHAN_CLEANED, attemptId: 'a1' });
+    s = cleanup(s);
     const b = begin(s, 'b1');
     expect(b.attempt.capturedUid).toBe(B);
     // A's promise settles late: it cannot release or replace B's guard.
@@ -585,11 +599,14 @@ describe('spec §11.3 "Vocabulary C3" — one sequence per case', () => {
       expect(deployFrom(s).recovered).toBe(false);
     },
     'another account or target inherits neither countdown nor guard': () => {
-      let s = evidence(signedInAs(A), { lastDeployedAtMs: T0 });
+      // A has an unresolved attempt (the guard) and a known bound (the countdown).
+      let s = evidence(dismiss(result(begin(signedInAs(A)), UNTYPED)), { lastDeployedAtMs: T0 });
+      expect(s.attempt.phase).toBe('uncertain');
       expect(cooldownFor(s, A, 'casual-agent-other').cooldownUntil).toBeNull();
-      s = attemptReducer(s, { type: T.AUTH_CHANGED, uid: B });
+      s = cleanup(attemptReducer(s, { type: T.AUTH_CHANGED, uid: B }));
       expect(cooldownFor(s, B, TARGET).cooldownUntil).toBeNull();
-      expect(begin(s, 'b1').attempt.cooldownUntil).toBeNull();
+      const b = begin(s, 'b1', { startedAt: T0 + 1 });
+      expect(b.attempt).toMatchObject({ capturedUid: B, cooldownUntil: null, phase: 'submitting' });
     },
     'a fast refusal and a late losing completion': () => {
       const s = result(begin(signedInAs()), REFUSED);
@@ -599,7 +616,7 @@ describe('spec §11.3 "Vocabulary C3" — one sequence per case', () => {
     'orphan cleanup': () => {
       const s = attemptReducer(begin(signedInAs()), { type: T.AUTH_CHANGED, uid: B });
       expect(s.attempt.phase).toBe('orphaned');
-      expect(attemptReducer(s, { type: T.ORPHAN_CLEANED, attemptId: 'a1' }).attempt).toBeNull();
+      expect(cleanup(s).attempt).toBeNull();
     },
     'no selector uses a stored confirmed or failed phase': () => {
       // The reducer never stores one: walk every reachable phase.
@@ -620,5 +637,85 @@ describe('spec §11.3 "Vocabulary C3" — one sequence per case', () => {
 
   it.each([...C3_CASES])('%s', (name) => {
     sequences[name]();
+  });
+});
+
+describe('S2a review fixes — holds, cleanup, cooldown and reconciliation (A2, A3)', () => {
+  it('A3-1: a Retry is a tap — no token; the terminal\'s own committed hold does not stand in its way and goes with it', () => {
+    const r = result(fromHold(heldBy(signedInAs())), REFUSED);
+    expect(r.hold.phase).toBe('locked');
+    const next = retry(r, 'a2', T0 + 1);
+    expect(next.attempt).toMatchObject({ attemptId: 'a2', phase: 'submitting' });
+    expect(next.hold).toBeNull();
+    // The same from an uncertain attempt reconciled clear.
+    const clear = reconciled(pending(result(fromHold(heldBy(signedInAs())), UNTYPED)), 'clear');
+    expect(retry(clear, 'a2', T0 + 1)).toMatchObject({ hold: null, attempt: { attemptId: 'a2' } });
+    // Another control's charging hold still stands in the way.
+    const charging = { ...r, hold: { ...r.hold, controlId: 'strip', holdToken: 'x', phase: 'charging' } };
+    expect(retry(charging, 'a2', T0 + 1)).toBe(charging);
+  });
+
+  it('A3-5, A2-3: a typed orphaned outcome releases its committed hold, so nothing is stranded after cleanup', () => {
+    const s = fromHold(heldBy(signedInAs()));
+    const o = result(s, TYPED_RESULTS['orphaned: a local ownership disposition'].result);
+    expect(o.hold).toBeNull();
+    const cleaned = cleanup(o);
+    expect(cleaned).toMatchObject({ attempt: null, hold: null });
+    expect(begin(cleaned, 'a9', { startedAt: T0 }).attempt.phase).toBe('submitting');
+  });
+
+  it('A3-7: with the flag disabled, a request already committed (its hold locked) still starts; nothing else does', () => {
+    const off = attemptReducer(heldBy(signedInAs()), { type: T.FLAG_DISABLED });
+    expect(off.hold.phase).toBe('locked');
+    expect(begin(off, 'a1')).toBe(off);
+    expect(begin(off, 'a1', { controlId: 'strip', holdToken: 'x' })).toBe(off);
+    expect(fromHold(off).attempt.phase).toBe('submitting');
+    // A charging hold is cancelled by the disable, so it can start nothing.
+    const offCharging = attemptReducer(heldBy(signedInAs(), { phase: 'charging' }), { type: T.FLAG_DISABLED });
+    expect(offCharging.hold).toBeNull();
+    expect(begin(offCharging, 'a1', { controlId: 'card', holdToken: 't' })).toBe(offCharging);
+  });
+
+  it('A3-4 (recorded for S2b): begin itself reads no cooldown — the provider asks canStart / canCommit first, as KICKOFF §4.4 has it', () => {
+    const s = evidence(signedInAs(), { lastDeployedAtMs: T0 });
+    expect(begin(s, 'a1', { startedAt: T0 + 1 }).attempt.phase).toBe('submitting');
+    expect(deployFrom(s)).toMatchObject({ displayState: 'cooldown', canStart: false });
+  });
+
+  it('A2-4, A3-10: a late cleanup of an earlier orphan that reused the id cannot remove a later one', () => {
+    let s = begin(signedInAs(A));
+    s = attemptReducer(s, { type: T.AUTH_CHANGED, uid: B });
+    const firstTag = { attemptId: s.attempt.attemptId, attemptEpoch: s.attempt.attemptEpoch };
+    s = cleanup(s);
+    s = begin(s, 'a1');
+    expect(s.attempt).toMatchObject({ attemptId: 'a1', capturedUid: B });
+    s = attemptReducer(s, { type: T.AUTH_CHANGED, uid: A });
+    expect(s.attempt.phase).toBe('orphaned');
+    expect(attemptReducer(s, { type: T.ORPHAN_CLEANED, ...firstTag })).toBe(s);
+    expect(begin(s, 'a9')).toBe(s);
+  });
+
+  it('A2-6: cooldown evidence never writes onto an orphan or a record of an older auth epoch', () => {
+    let s = begin(signedInAs(A));
+    s = attemptReducer(attemptReducer(s, { type: T.AUTH_CHANGED, uid: B }), { type: T.AUTH_CHANGED, uid: A });
+    const before = s.attempt;
+    s = evidence(s, { lastDeployedAtMs: T0 });
+    expect(cooldownFor(s, A, TARGET).cooldownUntil).toBe(T0 + 120000);
+    expect(s.attempt).toBe(before);
+    expect(s.attempt.cooldownUntil).toBeNull();
+    // The current record of this epoch does carry it.
+    const live = evidence(begin(signedInAs()), { lastDeployedAtMs: T0 });
+    expect(live.attempt.cooldownUntil).toBe(T0 + 120000);
+    const otherTarget = evidence(begin(signedInAs()), { lastDeployedAtMs: T0, targetAgentId: 'agent-ranked' });
+    expect(otherTarget.attempt.cooldownUntil).toBeNull();
+  });
+
+  it('A3-8: an accepted action that changes nothing returns the same state', () => {
+    const s = begin(signedInAs());
+    expect(attemptReducer(s, { type: T.TARGET_RESOLVED, ...tag(s), targetAgentId: TARGET })).toBe(s);
+    const c = attemptReducer(s, { type: T.CEREMONY_PHASE, ...tag(s), phase: 'theater' });
+    expect(attemptReducer(c, { type: T.CEREMONY_PHASE, ...tag(c), phase: 'theater' })).toBe(c);
+    const closed = dismiss(result(s, UNTYPED));
+    expect(dismiss(closed)).toBe(closed);
   });
 });

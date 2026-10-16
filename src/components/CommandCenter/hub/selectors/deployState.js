@@ -109,6 +109,7 @@ const state = (displayState, canStart, rest = {}) => Object.freeze({
   battleId: null,
   cooldownUntil: null,
   holdControlId: null,
+  retryBlock: null,
   ...rest,
 });
 
@@ -143,6 +144,9 @@ function freshnessOf(poll, gate) {
  *   battleId: string|null,              the real server id an attempt names
  *   cooldownUntil: number|null,         the next permitted deploy, when cooling down
  *   holdControlId: string|null,         the control holding, when one is
+ *   retryBlock: null|{ displayState, reason, cooldownUntil },
+ *                                       why an attempt's Retry is withheld: the row a
+ *                                       replacing request would meet now
  * }}
  */
 export function deriveHubDeployState(inputs) {
@@ -173,12 +177,30 @@ export function deriveHubDeployState(inputs) {
   // mistake, say) shows nothing it could be wrong about and admits nothing.
   if (liveAttempt(attempt) && !shown) return state(ELIGIBILITY_STATES.CHECKING, false, gated);
   if (shown) {
+    // A Retry replaces the terminal with a new request, so it is offered only
+    // when that request would be admitted now: the §3.1 table run again with the
+    // attempt replaced — ownership, cooldown, agent, retained gate (spec §5.4: "A
+    // retry rechecks ownership/readiness, waits for cooldown"). The terminal's own
+    // committed (locked) hold goes with it; another control's charging hold still
+    // counts. An open modal does not: Retry lives in the ceremony's overlay.
+    // Otherwise the row it would meet says why (S2a review A1-2, A3-2, A3-3).
+    let action = shown.action;
+    let retryBlock = null;
+    if (action === ATTEMPT_ACTIONS.RETRY) {
+      const ownHold = hold && hold.phase === HOLD_PHASES.LOCKED ? null : hold;
+      const next = deriveHubDeployState({ ...inputs, attempt: null, hold: ownHold, modalOpen: false });
+      if (!next.canStart) {
+        action = null;
+        retryBlock = Object.freeze({ displayState: next.displayState, reason: next.reason, cooldownUntil: next.cooldownUntil });
+      }
+    }
     return state(shown.displayState, false, {
       ...gated,
       reason: shown.line ?? null,
-      action: shown.action,
+      action,
       recovered: shown.recovered === true,
       battleId: shown.battleId ?? null,
+      retryBlock,
     });
   }
   // ...or this owner's hold: it can only have been claimed from a ready state, so
@@ -188,9 +210,10 @@ export function deriveHubDeployState(inputs) {
     return state(ELIGIBILITY_STATES.READY, false, { ...gated, holdControlId: typeof hold.controlId === 'string' ? hold.controlId : null });
   }
 
-  // 4 — an applicable owner + target cooldown. Without a clock the bound cannot be
-  // shown to have passed, so it holds (fail closed).
-  const until = cooldown && (cooldown.ownerUid == null || cooldown.ownerUid === auth.uid) ? cooldown.cooldownUntil : null;
+  // 4 — an applicable owner + target cooldown: one keyed to this owner (a bound
+  // naming no owner applies to nobody; S2a review A2-5). Without a clock the
+  // bound cannot be shown to have passed, so it holds (fail closed).
+  const until = cooldown && cooldown.ownerUid === auth.uid ? cooldown.cooldownUntil : null;
   if (finite(until) && !(finite(now) && now >= until)) {
     return state(ELIGIBILITY_STATES.COOLDOWN, false, { ...gated, cooldownUntil: until });
   }
@@ -229,16 +252,19 @@ export function deriveHubDeployState(inputs) {
 
 /**
  * The holding control's synchronous recheck at its threshold (spec §3.1, §5.5).
- * Only the hold whose token this is, still charging, is exempt from row 3;
- * every other row is checked again: auth and epoch, any attempt (an unresolved
- * reconciliation included), cooldown, the agent, poll ownership, the retained
- * gate and an open modal. A token is opaque here: S2a claims none.
+ * Only the hold whose token this is, still charging, at a valid hold epoch, is
+ * exempt from row 3; every other row is checked again: auth and epoch, any
+ * attempt (an unresolved reconciliation included), cooldown, the agent, poll
+ * ownership, the retained gate and an open modal. A token is opaque here: S2a
+ * claims none (a hold of an earlier identity cannot reach here: authChanged
+ * empties the slot in the same transition).
  */
 export function canCommit(holdToken, inputs) {
   const hold = inputs?.hold;
   if (holdToken == null || !hold || typeof hold !== 'object') return false;
   if (hold.holdToken !== holdToken || hold.phase !== HOLD_PHASES.CHARGING) return false;
-  if (hold.holdEpoch != null && !validEpoch(hold.holdEpoch)) return false;
+  // A malformed hold — no valid epoch — commits nothing (S2a review A1-5, A2-1).
+  if (!validEpoch(hold.holdEpoch)) return false;
   return deriveHubDeployState({ ...inputs, hold: null }).canStart === true;
 }
 

@@ -169,6 +169,44 @@ export const C2_BOUNDARIES = Object.freeze([
   'ceremony notification', 'result display',
 ]);
 
+/**
+ * The spec §11.3 "Ownership C2" cases, by name (S2a review A1-6, A2-7): where
+ * S2a exercises each — `file` and the exact row titles — or `deferredTo` the
+ * slice that owns it, because it needs the provider, the root bridge or the
+ * service, which S2a does not build. ownership.test.js checks every cited
+ * title exists.
+ */
+export const C2_CASES = Object.freeze({
+  'change uid during token / clone / POST / body / handoff / verification / Enter': {
+    file: 'hub/selectors/ownership.test.js',
+    rows: ['a change at one boundary leaves every later boundary stale: the epochs never move back'],
+  },
+  'A → B → A': {
+    file: 'hub/selectors/attemptReducer.test.js',
+    rows: ['A → B → A: nothing of the first A request survives, and the second A starts fresh'],
+  },
+  'late target callback': {
+    file: 'hub/selectors/attemptReducer.test.js',
+    rows: ['a late target callback (stale tag, account change, after the result) changes nothing'],
+  },
+  'preserve owner and real id': {
+    file: 'hub/selectors/attemptReducer.test.js',
+    rows: ['translates by §5.2 and stores the real server id, never stamping the current uid'],
+  },
+  'no old append / stash / navigation / result': {
+    file: 'hub/selectors/attemptReducer.test.js',
+    rows: ['is ignored unless current: another attempt id, another epoch, or after an account change'],
+    deferredTo: 'S2b — the append, stash and navigation are the provider\'s and App\'s effects; S2a holds only the result half',
+  },
+  'server battle remains': {
+    deferredTo: 'S2b and R1 — S2a deletes nothing and holds no writer',
+  },
+  'new account readiness independent': {
+    file: 'hub/selectors/attemptReducer.test.js',
+    rows: ['orphan cleanup: the old owner\'s result never displays, and the new account does not wait for the old promise'],
+  },
+});
+
 /** The spec §11.3 "Vocabulary C3" cases, by name; attemptReducer.test.js runs one sequence per name. */
 export const C3_CASES = Object.freeze([
   'every service outcome and ceremony phase maps by §5.2',

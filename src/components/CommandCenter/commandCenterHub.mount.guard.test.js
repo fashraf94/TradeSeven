@@ -418,7 +418,9 @@ const PERMITTED_TERMINALS = Object.freeze({
   'src/theme/cssTokens.js': 'the colour token bridge (BUILD_RULES §10)',
   'src/theme/motion.js': 'the motion vocabulary (BUILD_RULES §11)',
   // S2a (prompt §4): the pure deploy selectors' three shipped, Node-clean inputs, each
-  // already in the main graph (App imports all three), so the hub chunk adds none.
+  // already in the main graph — App imports commandCenterLiveBattles and leagueTournament;
+  // hypothesisRecords arrives through App → the Command dashboards → services/agentDeploy —
+  // so the hub chunk duplicates none (the S2a review's build comparison, A4-3).
   'src/utils/commandCenterLiveBattles.js': 'deriveDeployGate and DEPLOY_BLOCK_REASON — the retained gate the deploy selector computes (spec §3.1)',
   'src/constants/leagueTournament.js': 'TRAINING_CLONE_ID_PREFIX — the active poll\'s training-clone exclusion (spec §3)',
   'src/constants/hypothesisRecords.js': 'DEPLOY_REFUSAL_CODE and DUE_DEPLOY_LINE — the review-due refusal the translator keeps (ruling R-S2A-2)',

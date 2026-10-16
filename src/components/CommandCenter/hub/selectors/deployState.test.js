@@ -311,6 +311,52 @@ describe('firstDeploymentCandidate (§3.1): a ready, EMPTY completed read for th
   });
 });
 
+describe('S2a review fixes — hold epoch, cooldown owner, Retry readiness (A1, A2, A3)', () => {
+  it('A1-5, A2-1: canCommit refuses a malformed hold — one with no valid hold epoch', () => {
+    expect(canCommit('tok_1', base({ hold: HOLD }))).toBe(true);
+    for (const holdEpoch of [null, undefined, -1, 1.5, '2']) expect(canCommit('tok_1', base({ hold: { ...HOLD, holdEpoch } })), String(holdEpoch)).toBe(false);
+    const { holdEpoch: _drop, ...noEpoch } = HOLD;
+    expect(canCommit('tok_1', base({ hold: noEpoch }))).toBe(false);
+  });
+
+  it('A2-5: a cooldown that names no owner, or another, applies to nobody here', () => {
+    expect(deriveHubDeployState(base({ cooldown: { cooldownUntil: NOW + 90000 } })).displayState).toBe('ready');
+    expect(deriveHubDeployState(base({ cooldown: { ...COOLDOWN, ownerUid: undefined } })).displayState).toBe('ready');
+    expect(deriveHubDeployState(base({ cooldown: COOLDOWN })).displayState).toBe('cooldown');
+  });
+
+  const refused = (over = {}) => attemptFor('refused', { result: { kind: 'refused', line: 'no' }, ...over });
+  const clearUncertain = (over = {}) => attemptFor('uncertain', { reconciliationStatus: 'clear', ...over });
+
+  it.each([['refused', refused], ['uncertain, reconciled clear', clearUncertain]])('A1-2, A3-2, A3-3 (%s): Retry is offered only when the replacing request would be admitted now', (_name, make) => {
+    expect(deriveHubDeployState(base({ attempt: make() }))).toMatchObject({ action: 'retry', retryBlock: null });
+    // Cooling: withheld, and the bound says when.
+    expect(deriveHubDeployState(base({ attempt: make(), cooldown: COOLDOWN }))).toMatchObject({
+      action: null, retryBlock: { displayState: 'cooldown', cooldownUntil: COOLDOWN.cooldownUntil },
+    });
+    // The retained gate blocks: withheld, with the helper's reason.
+    expect(deriveHubDeployState(base({ attempt: make(), poll: pollReady([BATTLES.baggerbomb]) }))).toMatchObject({
+      action: null, retryBlock: { displayState: 'blocked', reason: DEPLOY_BLOCK_REASON },
+    });
+    // The agent read failed: withheld.
+    expect(deriveHubDeployState(base({ attempt: make(), agent: agentReady({ status: 'error', agent: null }) })).retryBlock).toMatchObject({ displayState: 'agent_error' });
+    // An open modal is the ceremony's own overlay, where Retry lives: not a reason to withhold it.
+    expect(deriveHubDeployState(base({ attempt: make(), modalOpen: true })).action).toBe('retry');
+    // The terminal's own committed (locked) hold does not count; another control's charging hold does.
+    expect(deriveHubDeployState(base({ attempt: make(), hold: { ...HOLD, phase: 'locked' } })).action).toBe('retry');
+    expect(deriveHubDeployState(base({ attempt: make(), hold: { ...HOLD, controlId: 'strip' } })).action).toBeNull();
+    // Whatever the Retry, the attempt keeps its own words and nothing else can start.
+    const d = deriveHubDeployState(base({ attempt: make(), cooldown: COOLDOWN }));
+    expect(d.canStart).toBe(false);
+    expect(['failed', 'uncertain']).toContain(d.displayState);
+  });
+
+  it('a review-due refusal keeps its Forge action whatever the cooldown (it is not a retry)', () => {
+    const due = attemptFor('refused', { result: { kind: 'review_due', line: 'Due.' } });
+    expect(deriveHubDeployState(base({ attempt: due, cooldown: COOLDOWN }))).toMatchObject({ action: 'openForgeReview', retryBlock: null });
+  });
+});
+
 describe('purity of the result', () => {
   it('returns a frozen object and never mutates its inputs', () => {
     const inputs = base({ poll: pollReady([BATTLES.ranked, BATTLES.training]) });
