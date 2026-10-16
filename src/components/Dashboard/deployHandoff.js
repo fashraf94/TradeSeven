@@ -11,6 +11,8 @@
 //     the signed-in one. Checked before the optimistic append, the fresh-price
 //     overwrite, the stash and the navigation; when it fails, all four are
 //     skipped.
+//   - ownedCeremonyEntryInputs: the same owner check, again, immediately before
+//     the reveal's Enter navigates (the ceremony defers the navigation).
 //   - buildOptimisticBattleEntry / appendOptimisticBattle: the post-deploy
 //     settle's entry (Delight Layer Task 4, ruling R-T4-S1), now carrying its
 //     owner (`ownerId`, so the poll's owner filter keeps it) and an explicit
@@ -63,6 +65,27 @@ export function buildOptimisticBattleEntry({
     opponent: opponentPortfolio ? { portfolio: opponentPortfolio, bench: opponentBench } : null,
     gameMode: null,
     groupId: null,
+  };
+}
+
+/**
+ * The reveal's "Enter the battle" (App.jsx handleEnterCeremonyBattle) is the
+ * navigation of a ceremony deploy, so it checks the owner again immediately
+ * before it (ruling R-R1-5; spec §5.4; review L2-1). It filters the inputs of
+ * pickCeremonyEntry and leaves that function, and its precedence, untouched:
+ *   - a recovered document (it has an id) is entered only if the signed-in uid
+ *     owns it; if it does not, nothing is entered — the stash never stands in
+ *     for a recovered battle, which is the precedence pickCeremonyEntry keeps;
+ *   - the stash is entered only if the uid it was stashed for is signed in.
+ * Returns `{ stash, recoveredBattle }` for pickCeremonyEntry.
+ */
+export function ownedCeremonyEntryInputs({ stash, stashOwnerUid, recoveredBattle, currentUid }) {
+  if (recoveredBattle?.id && !isHandoffOwnerCurrent(recoveredBattle.ownerId, currentUid)) {
+    return { stash: null, recoveredBattle: null };
+  }
+  return {
+    stash: stash && isHandoffOwnerCurrent(stashOwnerUid, currentUid) ? stash : null,
+    recoveredBattle,
   };
 }
 

@@ -17,6 +17,15 @@
 // existingBattleId and whose ownerId is the signed-in uid. Anything else — a
 // miss, a throw, another id, another owner, no uid — is "unavailable": the
 // terminal offers Retry, which reads again and never POSTs.
+//
+// The two sources do not see the same documents (R1 review L3-1). decide.js's
+// existing-battle query has no group filter, so on the clone-fallback path it
+// can name the owner's live LEAGUE battle; the verifier skips league (and
+// expired) documents — that filter is the recovery gate's attribution guard and
+// stays — so only the live list can resolve such an id, and it opens into the
+// League Arena through handleOpenAgentBattle. A voided group's battle is in
+// neither source and stays unavailable. S2b's targeted read of the server's id
+// (spec V1.2 §6, §11.3 "Existing battle R1") is what closes this.
 
 import { findActiveBattleForAgent } from '../../../services/agentBattleVerify';
 import { signedInUid } from '../../../services/deployIdentity';

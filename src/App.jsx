@@ -128,7 +128,7 @@ import { pickDashboardShell, DASHBOARD_SHELLS } from './components/CommandCenter
 import { excludeVoidedGroupBattles } from './utils/commandCenterLiveBattles';
 import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn, isDeploySkyCouplingOn, isCharacterPaneOn, isCommandCenterHubOn } from './config/featureFlags';
 import { pickCeremonyEntry } from './components/Dashboard/deployCeremony/ceremonyData';
-import { handoffBattleId, isHandoffOwnerCurrent, buildOptimisticBattleEntry, appendOptimisticBattle } from './components/Dashboard/deployHandoff';
+import { handoffBattleId, isHandoffOwnerCurrent, buildOptimisticBattleEntry, appendOptimisticBattle, ownedCeremonyEntryInputs } from './components/Dashboard/deployHandoff';
 import { signedInUid } from './services/deployIdentity';
 // Delight Layer Task 2: the battle-weather starfield. Mounted ONLY at the two
 // dashboard sites below, each behind its own flag; every other DesktopBackground
@@ -6624,6 +6624,9 @@ export default function PortfolioDuel() {
   // so "Back to hub" can never orphan a live deploy. pendingCeremonyBattleRef holds
   // the built battle between the deploy and the CTA (flag-on only).
   const pendingCeremonyBattleRef = useRef(null);
+  // R1 (ruling R-R1-5; review L2-1): the uid the stashed battle was handed off
+  // for, set beside the stash, so Enter can check its owner before navigating.
+  const pendingCeremonyOwnerRef = useRef(null);
   const enterAgentBattle = (battleObj) => {
     if (!battleObj) return;
     setActiveBattleId(battleObj.id);
@@ -6641,12 +6644,18 @@ export default function PortfolioDuel() {
   // battle built at deploy time is used exactly as before.
   const handleEnterCeremonyBattle = (recoveredBattle = null) => {
     const b = pendingCeremonyBattleRef.current;
+    const stashOwnerUid = pendingCeremonyOwnerRef.current;
     pendingCeremonyBattleRef.current = null;
+    pendingCeremonyOwnerRef.current = null;
+    // R1: Enter is this deploy's navigation, so the owner is checked again
+    // immediately before it — the stash's and the recovered document's
+    // (deployHandoff.js ownedCeremonyEntryInputs; an unowned one enters nothing).
+    const owned = ownedCeremonyEntryInputs({ stash: b, stashOwnerUid, recoveredBattle, currentUid: signedInUid() });
     // Precedence lives in pickCeremonyEntry (ceremonyData.js) so the rule is
     // testable on its own — the recovered battle wins over a stash the user left
     // behind by dismissing an earlier reveal. A 'recovered' entry is a raw
     // Firestore doc and must be hydrated; a 'stash' is already a built battle.
-    const entry = pickCeremonyEntry(b, recoveredBattle);
+    const entry = pickCeremonyEntry(owned.stash, owned.recoveredBattle);
     if (entry.kind === 'recovered') handleOpenAgentBattle(entry.battle);
     else if (entry.kind === 'stash') enterAgentBattle(entry.battle);
   };
@@ -6824,6 +6833,7 @@ export default function PortfolioDuel() {
     // the toast (the reveal is the confirmation).
     if (isDeployCeremonyOn()) {
       pendingCeremonyBattleRef.current = currentBattleObj;
+      pendingCeremonyOwnerRef.current = ownerUid;
     } else {
       enterAgentBattle(currentBattleObj);
       showToast(`Agent deployed to BaggerBomb! 🤖💣`);

@@ -157,7 +157,8 @@ describe('the result table: every path, every legacy field, its outcome', () => 
     [503, { error: 'pricing_unavailable', reason: 'pricing_unavailable', retriable: true }],
     [503, { error: 'Stock rankings not available. Cron may not have run yet.' }],
     [400, { error: 'agentId required' }],
-    [401, { error: 'Unauthorized', message: 'Invalid token' }],
+    // api/_utils/authMiddleware.js requireAuth's own body (review L4-4).
+    [401, { error: 'Authentication required', message: 'Invalid or expired token' }],
     [403, { error: 'ownership_mismatch', message: 'You can only deploy your own agent' }],
     [404, { error: 'Agent not found' }],
     [409, { error: 'compiled_build_unverifiable', message: 'internal reason' }],
@@ -374,6 +375,41 @@ describe('the identity guard: a changed or absent uid orphans the deploy at each
     stubFetch(json(200, CREATED_200));
     expect(await run(vi.fn(), { isCurrent })).toEqual(ORPHANED_BEFORE_POST);
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['false', false],
+    ['a precomputed true', true],
+    ['an object', { epoch: 2 }],
+  ])('isCurrent passed as %s, not a function, keeps nothing current (review L2-3)', async (_label, isCurrent) => {
+    stubFetch(json(200, CREATED_200));
+    expect(await run(vi.fn(), { isCurrent })).toEqual(ORPHANED_BEFORE_POST);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('a token lost to an account change is the change, not a missing sign-in (review L2-4)', async () => {
+    getIdTokenMock.mockImplementation(async () => { auth.uid = 'uid-B'; return null; });
+    expect(await run(vi.fn())).toEqual(ORPHANED_BEFORE_POST);
+  });
+
+  it('a token refresh that fails with the same account signed in stays auth-required', async () => {
+    getIdTokenMock.mockResolvedValue(null);
+    expect((await run(vi.fn())).error).toBe('auth-required');
+  });
+
+  it('an orphaned deploy leaves one warning, never an error (review L1-1)', async () => {
+    getIdTokenMock.mockImplementation(async () => { auth.uid = 'uid-B'; return 'tok'; });
+    stubFetch(json(200, CREATED_200));
+    await run(vi.fn());
+    expect(console.warn).toHaveBeenCalledWith('[Deploy] The signed-in account changed during the deploy; nothing further was done.', { postIssued: false });
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it('a deploy with nobody signed in at entry names that case in its warning', async () => {
+    auth.uid = null;
+    stubFetch(json(200, CREATED_200));
+    await run(vi.fn());
+    expect(console.warn).toHaveBeenCalledWith('[Deploy] No signed-in account when the deploy started; nothing further was done.', { postIssued: false });
   });
 
   it('A→B→A inside one await is invisible to the uid alone; an epoch passed as isCurrent catches it', async () => {

@@ -65,13 +65,19 @@ const REFUSAL_REASONS_429 = Object.freeze({
   'Please wait 2 minutes between deploys': 'cooldown',
 });
 
-// R1 (ruling R-R1-3) — which JSON failures are DEFINITIVE. Every 4xx the
-// endpoint sends is a refusal before anything was created, and so is every 503
-// it sends: the stock-admission refusal, the pricing gate and the missing
-// rankings each release the lock first. Any other 5xx — the single catch's
-// 500 above all — may follow the battle commit (THE FAILURE MODEL block in
-// services/agentBattleVerify.js), so it stays uncertain. A non-JSON body proves
-// nothing about who answered and is uncertain whatever its status.
+// R1 (ruling R-R1-3) — which JSON failures are typed DEFINITIVE. Every 4xx the
+// endpoint sends is a refusal before anything was created. Every 503 it sends
+// is typed refused by the ruling: the pricing gate and the missing rankings
+// answer before any battle write; the stock-admission refusal does too, except
+// one case the R1 review found (L4-1) — `reason: 'corrected_creation_failed'`
+// can follow a commit whose acknowledgement was lost. It stays refused here,
+// as ruled, pending the founder's answer in the R1 build report. Every other
+// 5xx stays uncertain: the single catch's 500 can follow the battle commit, and
+// decide.js sends no 502/504 itself — those are gateway or timeout statuses,
+// which can arrive after a commit too (review L4-5: the ceremony's attribution
+// gate, unchanged by R1, admits only 500, so this typing is more conservative
+// than the ceremony's). A non-JSON body proves nothing about who answered and
+// is uncertain whatever its status.
 const isDefinitiveRefusal = (status) => (status >= 400 && status < 500) || status === 503;
 
 // A real server id: a nonempty string with no surrounding space — the same rule
@@ -84,25 +90,38 @@ const realId = (id) => (typeof id === 'string' && id.length > 0 && id.trim() ===
  * @param {Function} [onDeployTargetResolved] reported the deploy target as soon as it is known
  * @param {{ isCurrent?: () => boolean }} [options] `isCurrent` lets a caller add its own
  *   staleness check (S2b's attempt epoch). It is checked BESIDE the signed-in uid, never
- *   instead of it, and only a literal `true` keeps the deploy current.
+ *   instead of it, and only a literal `true` keeps the deploy current. Passed but not a
+ *   function (a precomputed boolean, an object) it keeps nothing current.
  */
 export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetResolved, options = {}) {
   if (!agentId) return { outcome: DEPLOY_OUTCOMES.REFUSED, success: false, postIssued: false, error: 'no-agent' };
 
   // R1 (ruling R-R1-4; spec V1.2 §5.3) — the identity this deploy belongs to,
   // captured at entry. After every await, and immediately before the handoff, a
-  // changed or absent uid ends the deploy as `orphaned` with no further effect:
-  // no token or clone for another account, no POST, no target report, no
-  // handoff, no result shown for the former owner. A battle the server may
-  // already have created for the captured owner is left exactly as it is.
+  // changed or absent uid ends the deploy as `orphaned` with no further effect
+  // here: no token or clone for another account, no POST, no target report, no
+  // handoff. A battle the server may already have created for the captured
+  // owner is left exactly as it is. How a caller displays `orphaned` is the
+  // caller's: the shells map it like any failure, by the R1 shell rule (review
+  // L2-2, a founder question in the R1 build report).
   const capturedUid = signedInUid();
-  const isCurrent = typeof options?.isCurrent === 'function' ? options.isCurrent : null;
+  const isCurrent = options?.isCurrent ?? null;
   const stillOwned = () => {
     if (capturedUid === null || signedInUid() !== capturedUid) return false;
     if (isCurrent === null) return true;
+    // A check that cannot be run cannot vouch for the deploy (review L2-3).
+    if (typeof isCurrent !== 'function') return false;
     try { return isCurrent() === true; } catch { return false; }
   };
-  const orphaned = (postIssued) => ({ outcome: DEPLOY_OUTCOMES.ORPHANED, success: false, postIssued });
+  const orphaned = (postIssued) => {
+    // A warning, not an error: nothing failed, the result is only withheld
+    // (review L1-1). The first case is also what a test sees when its auth
+    // mock has no getCurrentUser.
+    console.warn(capturedUid === null
+      ? '[Deploy] No signed-in account when the deploy started; nothing further was done.'
+      : '[Deploy] The signed-in account changed during the deploy; nothing further was done.', { postIssued });
+    return { outcome: DEPLOY_OUTCOMES.ORPHANED, success: false, postIssued };
+  };
 
   // The deploy TARGET id, reported upward the instant it is known so the caller
   // can subscribe to the document this deploy will actually write to. The
@@ -137,6 +156,9 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
   // (Firebase ID token + ownership). Same pattern as fetchWithAuth.
   const token = await getIdToken();
   if (!token) {
+    // R1 — a token lost to an account change is that change, not a missing
+    // sign-in (review L2-4). Nobody signed in at entry stays auth-required.
+    if (capturedUid !== null && !stillOwned()) return orphaned(false);
     console.error('[Deploy] No auth token — sign in required to deploy');
     return { outcome: DEPLOY_OUTCOMES.REFUSED, success: false, postIssued: false, error: 'auth-required' };
   }
@@ -209,7 +231,8 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
     // The request left the client but produced no response. Whether the server
     // saw it is unknowable here, which is itself the answer the ceremony needs.
     console.error('[Deploy] Network failure posting to /api/agent/decide:', err?.message || err);
-    // R1 — the POST went out; a former owner's failure is not shown.
+    // R1 — the POST went out; a former owner's network failure is typed
+    // orphaned, not uncertain.
     if (!stillOwned()) return orphaned(true);
     return {
       outcome: DEPLOY_OUTCOMES.UNCERTAIN,

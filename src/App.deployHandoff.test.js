@@ -91,3 +91,29 @@ describe('R1 — App\'s handoff fabricates nothing and knows its owner (R-R1-5)'
     expect(body).toMatch(/return agentBattleId;\s*};\s*$/);
   });
 });
+
+/** The body of handleEnterCeremonyBattle, comments stripped. */
+function enterBody() {
+  const start = APP.indexOf('const handleEnterCeremonyBattle = (recoveredBattle = null) => {');
+  expect(start, 'handleEnterCeremonyBattle must exist in App.jsx').toBeGreaterThan(-1);
+  const end = APP.indexOf('const handleCreateAgentTrainingBattle', start);
+  expect(end).toBeGreaterThan(start);
+  return stripComments(APP.slice(start, end));
+}
+
+describe('R1 — Enter is the ceremony deploy\'s navigation: it checks the owner again (R-R1-5; review L2-1)', () => {
+  it('the stash is recorded with the uid it was handed off for, in the same branch', () => {
+    expect(handlerBody()).toMatch(/pendingCeremonyBattleRef\.current = currentBattleObj;\s*pendingCeremonyOwnerRef\.current = ownerUid;/);
+  });
+
+  it('Enter filters pickCeremonyEntry\'s inputs by the signed-in uid, then calls it unchanged', () => {
+    const body = enterBody();
+    const filter = body.indexOf('ownedCeremonyEntryInputs({ stash: b, stashOwnerUid, recoveredBattle, currentUid: signedInUid() })');
+    const pick = body.indexOf('pickCeremonyEntry(owned.stash, owned.recoveredBattle)');
+    expect(filter).toBeGreaterThan(-1);
+    expect(pick).toBeGreaterThan(filter);
+    expect(body).not.toMatch(/pickCeremonyEntry\(b, recoveredBattle\)/);
+    // Both refs are consumed together, so a later Enter cannot reuse either.
+    expect(body).toMatch(/pendingCeremonyBattleRef\.current = null;\s*pendingCeremonyOwnerRef\.current = null;/);
+  });
+});

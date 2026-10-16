@@ -147,6 +147,9 @@ const renderWith = (deployProgress, deployResult, extra = {}) => {
 const text = () => document.body.textContent || '';
 const buttons = () => [...document.body.querySelectorAll('button')];
 const button = (label) => buttons().find((b) => (b.textContent || '').includes(label));
+// The terminal's primary button is never `disabled` (focus would drop out of the
+// modal, review L3-2); while the read is pending it is aria-disabled.
+const openReady = () => { const b = button('Open game'); return Boolean(b) && b.getAttribute('aria-disabled') !== 'true'; };
 const waitFor = async (pred, what, timeoutMs = WAIT_MS) => {
   const gen = rowGeneration;
   const start = Date.now();
@@ -196,7 +199,7 @@ describe('Existing battle R1 (spec §11.3) — the real machine with 200 battleC
   it('Open hands over the OWNED SERVER DOCUMENT the server named, read through the target-scoped verifier', async () => {
     serverReturns(docOf(RUNNING_ID, RUNNING_DOC()));
     await runTo(deployResultFor(await serviceResult(json(200, EXISTING_200))));
-    await waitFor(() => button('Open game') && !button('Open game').disabled, 'Open enabled');
+    await waitFor(() => openReady(), 'Open enabled');
     expect(getDocsFromServerMock).toHaveBeenCalled();
     act(() => { button('Open game').click(); });
     expect(opened).toHaveLength(1);
@@ -207,7 +210,7 @@ describe('Existing battle R1 (spec §11.3) — the real machine with 200 battleC
   it('the shell\'s own live list answers first, without a read', async () => {
     const listed = { id: RUNNING_ID, ...RUNNING_DOC() };
     await runTo(deployResultFor(await serviceResult(json(200, EXISTING_200))), { liveBattles: [listed] });
-    await waitFor(() => button('Open game') && !button('Open game').disabled, 'Open enabled');
+    await waitFor(() => openReady(), 'Open enabled');
     expect(getDocsFromServerMock).not.toHaveBeenCalled();
     act(() => { button('Open game').click(); });
     expect(opened).toEqual([listed]);
@@ -222,7 +225,7 @@ describe('Existing battle R1 (spec §11.3) — the real machine with 200 battleC
     const posts = globalThis.fetch.mock.calls.length;
     serverReturns(docOf(RUNNING_ID, RUNNING_DOC()));
     act(() => { button('Retry').click(); });
-    await waitFor(() => button('Open game') && !button('Open game').disabled, 'Open after retry');
+    await waitFor(() => openReady(), 'Open after retry');
     expect(getDocsFromServerMock.mock.calls.length).toBeGreaterThan(reads);
     expect(globalThis.fetch.mock.calls.length).toBe(posts);
     expect(retried).toBe(0);
@@ -247,7 +250,7 @@ describe('Existing battle R1 (spec §11.3) — the real machine with 200 battleC
   it('the owner is read again at Open: a switch after the read opens nothing', async () => {
     serverReturns(docOf(RUNNING_ID, RUNNING_DOC()));
     await runTo(deployResultFor(await serviceResult(json(200, EXISTING_200))));
-    await waitFor(() => button('Open game') && !button('Open game').disabled, 'Open enabled');
+    await waitFor(() => openReady(), 'Open enabled');
     signedIn.uid = 'uid-2';
     act(() => { button('Open game').click(); });
     expect(opened).toEqual([]);
@@ -276,12 +279,34 @@ describe('Existing battle R1 (spec §11.3) — the real machine with 200 battleC
     getDocsFromServerMock.mockImplementation(() => new Promise((resolve) => { release = () => resolve({ empty: false, docs: [docOf(RUNNING_ID, RUNNING_DOC())] }); }));
     await runTo(deployResultFor(await serviceResult(json(200, EXISTING_200))));
     await waitFor(() => text().includes('Finding the running game…'), 'the pending read');
-    expect(button('Open game').disabled).toBe(true);
+    expect(button('Open game').getAttribute('aria-disabled')).toBe('true');
+    expect(button('Open game').hasAttribute('disabled')).toBe(false);
     act(() => { button('Open game').click(); });
     expect(opened).toEqual([]);
     await act(async () => { release(); });
-    await waitFor(() => button('Open game') && !button('Open game').disabled, 'Open after the read');
+    await waitFor(() => openReady(), 'Open after the read');
     expect(text()).not.toContain('Finding the running game…');
+  });
+});
+
+describe('the primary button keeps focus inside the modal (review L3-2)', () => {
+  it('Retry → reading → Open is ONE button node, focused throughout and never `disabled`', async () => {
+    serverReturns();
+    await runTo(deployResultFor(await serviceResult(json(200, EXISTING_200))));
+    await waitFor(() => Boolean(button('Retry')), 'unavailable');
+    const primary = button('Retry');
+    act(() => { primary.focus(); });
+    let release;
+    getDocsFromServerMock.mockImplementation(() => new Promise((resolve) => { release = () => resolve({ empty: false, docs: [docOf(RUNNING_ID, RUNNING_DOC())] }); }));
+    act(() => { primary.click(); });
+    await waitFor(() => text().includes('Finding the running game…'), 'the pending read');
+    expect(button('Open game')).toBe(primary);
+    expect(primary.hasAttribute('disabled')).toBe(false);
+    expect(document.activeElement).toBe(primary);
+    await act(async () => { release(); });
+    await waitFor(openReady, 'Open after the read');
+    expect(button('Open game')).toBe(primary);
+    expect(document.activeElement).toBe(primary);
   });
 });
 

@@ -50,6 +50,13 @@ describe('resolveExistingBattle', () => {
     expect(verify).toHaveBeenCalledTimes(1);
   });
 
+  it('a listed LEAGUE battle the server named is the running game: found from the list (review L3-1)', async () => {
+    const league = { ...OWNED, groupId: 'group-77', gameMode: 'baggerbomb_tournament' };
+    const verify = vi.fn(async () => ({ found: false, battle: null }));
+    expect(await resolveExistingBattle({ existingBattleId: ID, uid: 'uid-A', liveBattles: [league], verify })).toEqual({ status: 'found', battle: league });
+    expect(verify).not.toHaveBeenCalled();
+  });
+
   it('a listed battle that is not active is skipped', async () => {
     const verify = vi.fn(async () => ({ found: false, battle: null }));
     expect((await resolveExistingBattle({ existingBattleId: ID, uid: 'uid-A', liveBattles: [{ ...OWNED, status: 'completed' }], verify })).status).toBe('unavailable');

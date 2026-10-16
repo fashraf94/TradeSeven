@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  handoffBattleId, isHandoffOwnerCurrent, buildOptimisticBattleEntry, appendOptimisticBattle,
+  handoffBattleId, isHandoffOwnerCurrent, buildOptimisticBattleEntry, appendOptimisticBattle, ownedCeremonyEntryInputs,
 } from './deployHandoff';
 
 describe('handoffBattleId: the real server id, or null — never a fabricated one', () => {
@@ -91,5 +91,36 @@ describe('appendOptimisticBattle: once per id', () => {
   });
   it('a missing list starts a new one', () => {
     expect(appendOptimisticBattle(null, { id: 'battle-new' })).toEqual([{ id: 'battle-new' }]);
+  });
+});
+
+describe('ownedCeremonyEntryInputs: Enter checks the owner again, and leaves pickCeremonyEntry\'s precedence alone (review L2-1)', () => {
+  const STASH = { id: 'battle-new', built: true };
+  const RECOVERED = { id: 'battle-recovered', ownerId: 'uid-A' };
+
+  it('the same account: the stash and the recovered document pass unchanged', () => {
+    expect(ownedCeremonyEntryInputs({ stash: STASH, stashOwnerUid: 'uid-A', recoveredBattle: null, currentUid: 'uid-A' }))
+      .toEqual({ stash: STASH, recoveredBattle: null });
+    expect(ownedCeremonyEntryInputs({ stash: STASH, stashOwnerUid: 'uid-A', recoveredBattle: RECOVERED, currentUid: 'uid-A' }))
+      .toEqual({ stash: STASH, recoveredBattle: RECOVERED });
+  });
+
+  it('another account: the stash is not entered', () => {
+    expect(ownedCeremonyEntryInputs({ stash: STASH, stashOwnerUid: 'uid-A', recoveredBattle: null, currentUid: 'uid-B' }))
+      .toEqual({ stash: null, recoveredBattle: null });
+  });
+
+  it('a stash with no recorded owner is not entered', () => {
+    expect(ownedCeremonyEntryInputs({ stash: STASH, stashOwnerUid: null, recoveredBattle: null, currentUid: 'uid-A' }).stash).toBeNull();
+  });
+
+  it('a recovered document of another account enters nothing — the stash never stands in for it', () => {
+    expect(ownedCeremonyEntryInputs({ stash: STASH, stashOwnerUid: 'uid-B', recoveredBattle: RECOVERED, currentUid: 'uid-B' }))
+      .toEqual({ stash: null, recoveredBattle: null });
+  });
+
+  it('signed out: nothing is entered', () => {
+    expect(ownedCeremonyEntryInputs({ stash: STASH, stashOwnerUid: 'uid-A', recoveredBattle: RECOVERED, currentUid: null }))
+      .toEqual({ stash: null, recoveredBattle: null });
   });
 });
