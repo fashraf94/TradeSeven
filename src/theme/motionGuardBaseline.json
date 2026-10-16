@@ -228,6 +228,126 @@
     "src/components/CommandCenter/hub/hubCopy.js": {
       "count": 0,
       "authority": "Command Center hub S0 (spec V1.2 \u00a710: new colors through the CSS-token bridge, new motion through motionToken) \u2014 the mount picker, the lazy gate and its copy, and the hub scaffold; colours only through cssVar (the gate and the scaffold; the picker and the two copy tables have none) and no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/AreaControls.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/DeployStrip.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/HistorySheet.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/HubHeader.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/HubParts.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/HubSheet.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/PhoneTabs.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/ShadowStage.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/ShadowStill.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/__fixtures__/hubLayoutFixtures.js": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/__fixtures__/hubTestKit.js": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/composition.js": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/deployDisplay.js": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/hubDate.js": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/hubModel.js": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/hubStyle.js": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/navClearance.js": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/shadowGeometry.js": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/useHubWidth.js": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/useNavClearance.js": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/panels/AreaPanel.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/panels/LoadoutPanel.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/panels/PartnershipPanel.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/panels/ResearchPanel.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/sections/ActivitySection.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/sections/BriefSection.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/sections/DeploySection.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/sections/GamesSection.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/sections/HubHold.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/sections/NextActionCard.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S1 (spec V1.2 \u00a710; founder ruling R-S1-2) \u2014 the approved shell: colours only through cssVar / rgba(var(--ft-*-rgb)) / readToken, motion only through motionToken, no transition literal, from birth. Registered in the commit that introduces them."
     }
   }
 }

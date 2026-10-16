@@ -48,7 +48,7 @@ export default function BottomNav({ screen, setScreen, setShowForge, showForge }
   };
 
   return (
-    <nav
+    <nav data-ft-bottom-nav=""
       style={{
         position: 'fixed',
         bottom: 0,
