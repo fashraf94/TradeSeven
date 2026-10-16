@@ -1,0 +1,1477 @@
+{
+  "capturedFrom": "claude/film-room-b1-1 @ 0fdd9039 — api/_utils/filmTape/tapeTags.js and src/data/situationRegistry.js byte-identical to main @ 495ee07b (B1); the tagger then had no recorded basis, so B1 recomputes whether or not the ticks carry the record",
+  "days": {
+    "acceptance": {
+      "withoutRecords": {
+        "tags": {
+          "registryVersion": 1,
+          "situations": {
+            "stalled": 1
+          },
+          "inputs": {
+            "archetypeCodeId": "momentum_chaser",
+            "forcedRotation": {
+              "enabled": true,
+              "pctThreshold": 0.0015,
+              "ticksThreshold": 5,
+              "winnerThreshold": 0.0015,
+              "maxTickAgeMinutes": 20
+            },
+            "slots": {
+              "S1": {
+                "checksBeforeRule": 2
+              },
+              "S2": {
+                "checks": 6,
+                "pctThreshold": 0.003
+              }
+            },
+            "tempoDesired": null,
+            "dialEnabledAtTagTime": true,
+            "winnerBasis": "change_since_entry",
+            "perCheck": [
+              {
+                "tickSeq": 1,
+                "at": "2026-09-24T13:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 2,
+                "at": "2026-09-24T13:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 3,
+                "at": "2026-09-24T14:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 4,
+                "at": "2026-09-24T14:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 5,
+                "at": "2026-09-24T14:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 6,
+                "at": "2026-09-24T14:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 7,
+                "at": "2026-09-24T15:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 8,
+                "at": "2026-09-24T15:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 9,
+                "at": "2026-09-24T15:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 10,
+                "at": "2026-09-24T15:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 11,
+                "at": "2026-09-24T16:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 12,
+                "at": "2026-09-24T16:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 13,
+                "at": "2026-09-24T16:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 14,
+                "at": "2026-09-24T16:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 15,
+                "at": "2026-09-24T17:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 16,
+                "at": "2026-09-24T17:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 17,
+                "at": "2026-09-24T17:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 18,
+                "at": "2026-09-24T17:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 19,
+                "at": "2026-09-24T18:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 20,
+                "at": "2026-09-24T18:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 21,
+                "at": "2026-09-24T18:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 22,
+                "at": "2026-09-24T18:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 23,
+                "at": "2026-09-24T19:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 24,
+                "at": "2026-09-24T19:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 25,
+                "at": "2026-09-24T19:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 26,
+                "at": "2026-09-24T19:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              }
+            ]
+          },
+          "items": [],
+          "exits": [
+            {
+              "symbol": "ACN",
+              "tickSeq": 6,
+              "at": "2026-09-24T14:45:10.000Z",
+              "precededByTag": false
+            }
+          ]
+        },
+        "coverage": {
+          "status": "complete",
+          "span": {
+            "from": "2026-09-24T13:30:20.000Z",
+            "to": "2026-09-24T19:45:20.000Z"
+          },
+          "sources": [
+            "checks",
+            "checks.evidence",
+            "checks.risk",
+            "actions"
+          ],
+          "preservedFrom": null,
+          "note": "the count pauses at 3 checks that carry no price for a held stock"
+        }
+      },
+      "withRecords": {
+        "tags": {
+          "registryVersion": 1,
+          "situations": {
+            "stalled": 1
+          },
+          "inputs": {
+            "archetypeCodeId": "momentum_chaser",
+            "forcedRotation": {
+              "enabled": true,
+              "pctThreshold": 0.0015,
+              "ticksThreshold": 5,
+              "winnerThreshold": 0.0015,
+              "maxTickAgeMinutes": 20
+            },
+            "slots": {
+              "S1": {
+                "checksBeforeRule": 2
+              },
+              "S2": {
+                "checks": 6,
+                "pctThreshold": 0.003
+              }
+            },
+            "tempoDesired": null,
+            "dialEnabledAtTagTime": true,
+            "winnerBasis": "change_since_entry",
+            "perCheck": [
+              {
+                "tickSeq": 1,
+                "at": "2026-09-24T13:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 2,
+                "at": "2026-09-24T13:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 3,
+                "at": "2026-09-24T14:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 4,
+                "at": "2026-09-24T14:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 5,
+                "at": "2026-09-24T14:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 6,
+                "at": "2026-09-24T14:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 7,
+                "at": "2026-09-24T15:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 8,
+                "at": "2026-09-24T15:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 9,
+                "at": "2026-09-24T15:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 10,
+                "at": "2026-09-24T15:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 11,
+                "at": "2026-09-24T16:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 12,
+                "at": "2026-09-24T16:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 13,
+                "at": "2026-09-24T16:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 14,
+                "at": "2026-09-24T16:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 15,
+                "at": "2026-09-24T17:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 16,
+                "at": "2026-09-24T17:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 17,
+                "at": "2026-09-24T17:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 18,
+                "at": "2026-09-24T17:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 19,
+                "at": "2026-09-24T18:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 20,
+                "at": "2026-09-24T18:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 21,
+                "at": "2026-09-24T18:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 22,
+                "at": "2026-09-24T18:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 23,
+                "at": "2026-09-24T19:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 24,
+                "at": "2026-09-24T19:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 25,
+                "at": "2026-09-24T19:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 26,
+                "at": "2026-09-24T19:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              }
+            ]
+          },
+          "items": [],
+          "exits": [
+            {
+              "symbol": "ACN",
+              "tickSeq": 6,
+              "at": "2026-09-24T14:45:10.000Z",
+              "precededByTag": false
+            }
+          ]
+        },
+        "coverage": {
+          "status": "complete",
+          "span": {
+            "from": "2026-09-24T13:30:20.000Z",
+            "to": "2026-09-24T19:45:20.000Z"
+          },
+          "sources": [
+            "checks",
+            "checks.evidence",
+            "checks.risk",
+            "actions"
+          ],
+          "preservedFrom": null,
+          "note": "the count pauses at 3 checks that carry no price for a held stock"
+        }
+      }
+    },
+    "standard": {
+      "withoutRecords": {
+        "tags": {
+          "registryVersion": 1,
+          "situations": {
+            "stalled": 1
+          },
+          "inputs": {
+            "archetypeCodeId": "momentum_chaser",
+            "forcedRotation": {
+              "enabled": true,
+              "pctThreshold": 0.0015,
+              "ticksThreshold": 5,
+              "winnerThreshold": 0.0015,
+              "maxTickAgeMinutes": 20
+            },
+            "slots": {
+              "S1": {
+                "checksBeforeRule": 2
+              },
+              "S2": {
+                "checks": 6,
+                "pctThreshold": 0.003
+              }
+            },
+            "tempoDesired": null,
+            "dialEnabledAtTagTime": true,
+            "winnerBasis": "change_since_entry",
+            "perCheck": [
+              {
+                "tickSeq": 1,
+                "at": "2026-09-24T13:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 2,
+                "at": "2026-09-24T13:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 3,
+                "at": "2026-09-24T14:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 4,
+                "at": "2026-09-24T14:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 5,
+                "at": "2026-09-24T14:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 6,
+                "at": "2026-09-24T14:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 7,
+                "at": "2026-09-24T15:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 8,
+                "at": "2026-09-24T15:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 9,
+                "at": "2026-09-24T15:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 10,
+                "at": "2026-09-24T15:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 11,
+                "at": "2026-09-24T16:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 12,
+                "at": "2026-09-24T16:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 13,
+                "at": "2026-09-24T16:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 14,
+                "at": "2026-09-24T16:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 15,
+                "at": "2026-09-24T17:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 16,
+                "at": "2026-09-24T17:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 17,
+                "at": "2026-09-24T17:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 18,
+                "at": "2026-09-24T17:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 19,
+                "at": "2026-09-24T18:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 20,
+                "at": "2026-09-24T18:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 21,
+                "at": "2026-09-24T18:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 22,
+                "at": "2026-09-24T18:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 23,
+                "at": "2026-09-24T19:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 24,
+                "at": "2026-09-24T19:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 25,
+                "at": "2026-09-24T19:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 26,
+                "at": "2026-09-24T19:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              }
+            ]
+          },
+          "items": [
+            {
+              "situationId": "stalled",
+              "version": 1,
+              "symbol": "ACN",
+              "tickSeq": 4,
+              "at": "2026-09-24T14:15:20.000Z",
+              "count": 3,
+              "effectiveTicksThreshold": 5
+            },
+            {
+              "situationId": "stalled",
+              "version": 1,
+              "symbol": "ACN",
+              "tickSeq": 5,
+              "at": "2026-09-24T14:30:20.000Z",
+              "count": 4,
+              "effectiveTicksThreshold": 5
+            }
+          ],
+          "exits": [
+            {
+              "symbol": "ACN",
+              "tickSeq": 6,
+              "at": "2026-09-24T14:45:10.000Z",
+              "precededByTag": true
+            }
+          ]
+        },
+        "coverage": {
+          "status": "complete",
+          "span": {
+            "from": "2026-09-24T13:30:20.000Z",
+            "to": "2026-09-24T19:45:20.000Z"
+          },
+          "sources": [
+            "checks",
+            "checks.evidence",
+            "checks.risk",
+            "actions"
+          ],
+          "preservedFrom": null,
+          "note": null
+        }
+      },
+      "withRecords": {
+        "tags": {
+          "registryVersion": 1,
+          "situations": {
+            "stalled": 1
+          },
+          "inputs": {
+            "archetypeCodeId": "momentum_chaser",
+            "forcedRotation": {
+              "enabled": true,
+              "pctThreshold": 0.0015,
+              "ticksThreshold": 5,
+              "winnerThreshold": 0.0015,
+              "maxTickAgeMinutes": 20
+            },
+            "slots": {
+              "S1": {
+                "checksBeforeRule": 2
+              },
+              "S2": {
+                "checks": 6,
+                "pctThreshold": 0.003
+              }
+            },
+            "tempoDesired": null,
+            "dialEnabledAtTagTime": true,
+            "winnerBasis": "change_since_entry",
+            "perCheck": [
+              {
+                "tickSeq": 1,
+                "at": "2026-09-24T13:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 2,
+                "at": "2026-09-24T13:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 3,
+                "at": "2026-09-24T14:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 4,
+                "at": "2026-09-24T14:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 5,
+                "at": "2026-09-24T14:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 6,
+                "at": "2026-09-24T14:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 7,
+                "at": "2026-09-24T15:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 8,
+                "at": "2026-09-24T15:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 9,
+                "at": "2026-09-24T15:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 10,
+                "at": "2026-09-24T15:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 11,
+                "at": "2026-09-24T16:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 12,
+                "at": "2026-09-24T16:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 13,
+                "at": "2026-09-24T16:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 14,
+                "at": "2026-09-24T16:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 15,
+                "at": "2026-09-24T17:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 16,
+                "at": "2026-09-24T17:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 17,
+                "at": "2026-09-24T17:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 18,
+                "at": "2026-09-24T17:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 19,
+                "at": "2026-09-24T18:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 20,
+                "at": "2026-09-24T18:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 21,
+                "at": "2026-09-24T18:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 22,
+                "at": "2026-09-24T18:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 23,
+                "at": "2026-09-24T19:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 24,
+                "at": "2026-09-24T19:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 25,
+                "at": "2026-09-24T19:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 26,
+                "at": "2026-09-24T19:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              }
+            ]
+          },
+          "items": [
+            {
+              "situationId": "stalled",
+              "version": 1,
+              "symbol": "ACN",
+              "tickSeq": 4,
+              "at": "2026-09-24T14:15:20.000Z",
+              "count": 3,
+              "effectiveTicksThreshold": 5
+            },
+            {
+              "situationId": "stalled",
+              "version": 1,
+              "symbol": "ACN",
+              "tickSeq": 5,
+              "at": "2026-09-24T14:30:20.000Z",
+              "count": 4,
+              "effectiveTicksThreshold": 5
+            }
+          ],
+          "exits": [
+            {
+              "symbol": "ACN",
+              "tickSeq": 6,
+              "at": "2026-09-24T14:45:10.000Z",
+              "precededByTag": true
+            }
+          ]
+        },
+        "coverage": {
+          "status": "complete",
+          "span": {
+            "from": "2026-09-24T13:30:20.000Z",
+            "to": "2026-09-24T19:45:20.000Z"
+          },
+          "sources": [
+            "checks",
+            "checks.evidence",
+            "checks.risk",
+            "actions"
+          ],
+          "preservedFrom": null,
+          "note": null
+        }
+      }
+    },
+    "oneMissing": {
+      "withoutRecords": {
+        "tags": {
+          "registryVersion": 1,
+          "situations": {
+            "stalled": 1
+          },
+          "inputs": {
+            "archetypeCodeId": "momentum_chaser",
+            "forcedRotation": {
+              "enabled": true,
+              "pctThreshold": 0.0015,
+              "ticksThreshold": 5,
+              "winnerThreshold": 0.0015,
+              "maxTickAgeMinutes": 20
+            },
+            "slots": {
+              "S1": {
+                "checksBeforeRule": 2
+              },
+              "S2": {
+                "checks": 6,
+                "pctThreshold": 0.003
+              }
+            },
+            "tempoDesired": null,
+            "dialEnabledAtTagTime": true,
+            "winnerBasis": "change_since_entry",
+            "perCheck": [
+              {
+                "tickSeq": 1,
+                "at": "2026-09-24T13:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 2,
+                "at": "2026-09-24T13:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 3,
+                "at": "2026-09-24T14:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 4,
+                "at": "2026-09-24T14:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 5,
+                "at": "2026-09-24T14:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 6,
+                "at": "2026-09-24T14:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 7,
+                "at": "2026-09-24T15:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 8,
+                "at": "2026-09-24T15:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 9,
+                "at": "2026-09-24T15:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 10,
+                "at": "2026-09-24T15:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 11,
+                "at": "2026-09-24T16:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 12,
+                "at": "2026-09-24T16:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 13,
+                "at": "2026-09-24T16:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 14,
+                "at": "2026-09-24T16:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 15,
+                "at": "2026-09-24T17:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 16,
+                "at": "2026-09-24T17:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 17,
+                "at": "2026-09-24T17:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 18,
+                "at": "2026-09-24T17:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 19,
+                "at": "2026-09-24T18:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 20,
+                "at": "2026-09-24T18:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 21,
+                "at": "2026-09-24T18:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 22,
+                "at": "2026-09-24T18:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 23,
+                "at": "2026-09-24T19:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 24,
+                "at": "2026-09-24T19:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 25,
+                "at": "2026-09-24T19:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 26,
+                "at": "2026-09-24T19:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              }
+            ]
+          },
+          "items": [],
+          "exits": [
+            {
+              "symbol": "ACN",
+              "tickSeq": 6,
+              "at": "2026-09-24T14:45:10.000Z",
+              "precededByTag": false
+            }
+          ]
+        },
+        "coverage": {
+          "status": "complete",
+          "span": {
+            "from": "2026-09-24T13:30:20.000Z",
+            "to": "2026-09-24T19:45:20.000Z"
+          },
+          "sources": [
+            "checks",
+            "checks.evidence",
+            "checks.risk",
+            "actions"
+          ],
+          "preservedFrom": null,
+          "note": "the count pauses at 3 checks that carry no price for a held stock"
+        }
+      },
+      "withRecords": {
+        "tags": {
+          "registryVersion": 1,
+          "situations": {
+            "stalled": 1
+          },
+          "inputs": {
+            "archetypeCodeId": "momentum_chaser",
+            "forcedRotation": {
+              "enabled": true,
+              "pctThreshold": 0.0015,
+              "ticksThreshold": 5,
+              "winnerThreshold": 0.0015,
+              "maxTickAgeMinutes": 20
+            },
+            "slots": {
+              "S1": {
+                "checksBeforeRule": 2
+              },
+              "S2": {
+                "checks": 6,
+                "pctThreshold": 0.003
+              }
+            },
+            "tempoDesired": null,
+            "dialEnabledAtTagTime": true,
+            "winnerBasis": "change_since_entry",
+            "perCheck": [
+              {
+                "tickSeq": 1,
+                "at": "2026-09-24T13:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 2,
+                "at": "2026-09-24T13:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 3,
+                "at": "2026-09-24T14:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 4,
+                "at": "2026-09-24T14:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 5,
+                "at": "2026-09-24T14:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 6,
+                "at": "2026-09-24T14:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 7,
+                "at": "2026-09-24T15:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 8,
+                "at": "2026-09-24T15:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 9,
+                "at": "2026-09-24T15:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 10,
+                "at": "2026-09-24T15:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 11,
+                "at": "2026-09-24T16:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 12,
+                "at": "2026-09-24T16:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 13,
+                "at": "2026-09-24T16:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 14,
+                "at": "2026-09-24T16:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 15,
+                "at": "2026-09-24T17:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 16,
+                "at": "2026-09-24T17:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 17,
+                "at": "2026-09-24T17:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 18,
+                "at": "2026-09-24T17:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 19,
+                "at": "2026-09-24T18:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 20,
+                "at": "2026-09-24T18:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 21,
+                "at": "2026-09-24T18:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 22,
+                "at": "2026-09-24T18:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 23,
+                "at": "2026-09-24T19:00:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 24,
+                "at": "2026-09-24T19:15:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 25,
+                "at": "2026-09-24T19:30:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              },
+              {
+                "tickSeq": 26,
+                "at": "2026-09-24T19:45:20.000Z",
+                "tempoMultiplier": 1,
+                "effectiveTicksThreshold": 5,
+                "basis": "archetype_default"
+              }
+            ]
+          },
+          "items": [],
+          "exits": [
+            {
+              "symbol": "ACN",
+              "tickSeq": 6,
+              "at": "2026-09-24T14:45:10.000Z",
+              "precededByTag": false
+            }
+          ]
+        },
+        "coverage": {
+          "status": "complete",
+          "span": {
+            "from": "2026-09-24T13:30:20.000Z",
+            "to": "2026-09-24T19:45:20.000Z"
+          },
+          "sources": [
+            "checks",
+            "checks.evidence",
+            "checks.risk",
+            "actions"
+          ],
+          "preservedFrom": null,
+          "note": "the count pauses at 3 checks that carry no price for a held stock"
+        }
+      }
+    }
+  }
+}

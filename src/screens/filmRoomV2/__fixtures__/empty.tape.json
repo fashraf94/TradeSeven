@@ -357,9 +357,9 @@
     "tags.exits[].tickSeq": "recorded"
   },
   "tags": {
-    "registryVersion": 1,
+    "registryVersion": 2,
     "situations": {
-      "stalled": 1
+      "stalled": 2
     },
     "inputs": {
       "archetypeCodeId": "momentum"

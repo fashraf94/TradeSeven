@@ -323,11 +323,14 @@ describe('Film Room B1.1 (exit criterion 9) — the live v2 screen on a tape who
     return t;
   }
 
-  it('the precondition: every tick-backed check carries `stagnation`, and its numbers are declared recorded', () => {
+  it('the precondition: every tick-backed check carries `stagnation`, its numbers are declared recorded, and `stalled` v2 tags on the recorded basis', () => {
     const rows = b11.tape.checks.filter((c) => c.rowSource === 'tick');
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.every((c) => c.stagnation && Object.keys(c.stagnation).length > 0)).toBe(true);
     expect(b11.tape.numberClasses['checks[].stagnation.*.ticks']).toBe('recorded');
+    expect(Object.values(b11.tape.tags.inputs.holdingBasis)).toContain('recorded');
+    expect(b11.tape.tags.items.length).toBeGreaterThan(0);
+    expect(b11.tape.tags.situations).toEqual({ stalled: 2 });
   });
 
   it.each([['Glance', null], ['Study', null], ['Deep dive', 'INTC']])('%s %s: the same HTML, byte for byte, with B1.1\'s and B1\'s fields stripped', async (label, sym) => {

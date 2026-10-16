@@ -43,21 +43,28 @@ describe('the registry module — zero-import, Node-clean', () => {
 });
 
 describe('the V1 entries (contract §2)', () => {
-  it('stalled v1 is live; down and good_lead are reserved, with no version, definition or slots', () => {
+  it('stalled is live (v2 since B1.1, Amendment C RC-1); down and good_lead are reserved, with no version, definition or slots', () => {
     expect(SITUATION_IDS).toEqual(['stalled', 'down', 'good_lead']);
     expect(LIVE_SITUATION_IDS).toEqual(['stalled']);
-    expect(SITUATION_REGISTRY_VERSION).toBe(1);
+    expect(SITUATION_REGISTRY_VERSION).toBe(2);
     for (const id of SITUATION_IDS) {
       expect(Object.keys(SITUATIONS[id]).sort(), id).toEqual(['definition', 'id', 'playerCallable', 'slots', 'title', 'version']);
       expect(SITUATIONS[id].id).toBe(id);
     }
-    expect(SITUATIONS.stalled.version).toBe(1);
+    expect(SITUATIONS.stalled.version).toBe(2);
     expect(typeof SITUATIONS.stalled.definition).toBe('string');
     for (const id of ['down', 'good_lead']) {
       expect(SITUATIONS[id].version, id).toBeNull();
       expect(SITUATIONS[id].definition, id).toBeNull();
       expect(SITUATIONS[id].slots, id).toEqual({});
     }
+  });
+
+  it('B1.1 (RC-1): the stalled definition is Amendment C\'s text, verbatim', () => {
+    const doc = readFileSync(path.join(REPO, 'docs/specs/FILM_ROOM_BUILD_B_CARD_SPEC_V1_AMENDMENT_C_20261015.md'), 'utf8').replace(/\r\n/g, '\n');
+    const quoted = /\n {4}> \*(Per holding, per check\.[^\n]*)\*\n/.exec(doc)?.[1];
+    expect(quoted).toBeTruthy();
+    expect(SITUATIONS.stalled.definition).toBe(quoted);
   });
 
   it('playerCallable: stalled no; down and good_lead yes (ruling 3)', () => {

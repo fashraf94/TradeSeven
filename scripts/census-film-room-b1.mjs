@@ -11,7 +11,9 @@
 //      the platform's stagnation exit at 15:01 ET.
 //   B. Every recorded stagnation exit on a taped day is preceded by a `stalled`
 //      tag for that holding — the exits, those preceded, the mismatches, and
-//      each mismatch's reason class (never hidden).
+//      each mismatch's reason class (never hidden). B1.1: a holding tagged on
+//      the live rule's own record (Amendment C RC-1, basis `recorded`) has
+//      nothing recomputed to blame, so its mismatch is class `recorded_basis`.
 //
 // It also counts what the build report needs: the evidence stamp on each check
 // state (no_trigger above all), tiered days whose battle has no opponent (T1),
@@ -201,7 +203,10 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
       const stint = stintRows(trace, tape.actions, x);
       const exitMs = toMs(x.at);
       const sinceIn = Math.max(-Infinity, ...rows(tape.actions).filter((a) => a.symbolIn === x.symbol && toMs(a.at) !== null && toMs(a.at) < exitMs).map((a) => toMs(a.at)));
-      const flags = {
+      // B1.1 (RC-1): a holding tagged on the live rule's own record has no recomputation to blame — the
+      // classes below describe the recomputed walk, so a recorded holding's mismatch is its own class.
+      const recorded = tags.inputs?.holdingBasis?.[x.symbol] === 'recorded';
+      const flags = recorded ? { recorded_basis: true } : {
         // a tag of the holding in its stint, but before a reset of its count: the run that ended in the exit had none
         tag_before_reset: (tags.items ?? []).some((it) => it.symbol === x.symbol && toMs(it.at) > sinceIn && toMs(it.at) < exitMs),
         count_carried_overnight: Boolean(seeded?.exits?.find((s) => s.at === x.at && s.symbol === x.symbol)?.precededByTag),
@@ -209,7 +214,7 @@ export function computeB1Census({ tapes, battles, ticks = {}, dialEnabled, nowMs
         winner_basis: stint.some((r) => !r.fired && r.px !== null && r.chg !== null && r.count >= r.liveAt && r.chg / 100 >= r.winnerThreshold),
       };
       for (const [k, on] of Object.entries(flags)) if (on) bump(out.B.mismatchFlags, k);
-      const cls = flags.count_carried_overnight ? 'count_carried_overnight' : flags.no_price_pause ? 'no_price_pause' : flags.winner_basis ? 'winner_basis' : 'other';
+      const cls = recorded ? 'recorded_basis' : flags.count_carried_overnight ? 'count_carried_overnight' : flags.no_price_pause ? 'no_price_pause' : flags.winner_basis ? 'winner_basis' : 'other';
       bump(out.B.mismatchClass, cls);
     }
 

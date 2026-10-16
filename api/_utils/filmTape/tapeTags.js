@@ -39,7 +39,21 @@
 // The resolution and the threshold scaling are the clamp's own
 // (resolveTempoDial, applyTempoToHftConfig).
 //
-// WHAT THE TAPE DOES NOT HOLD (reported, never guessed):
+// TWO BASES, PER HOLDING PER DAY (B1.1, Amendment C RC-1 — `stalled` v2):
+//   recorded    — every check that holds the symbol carries the live rule's
+//                 own record (`checks[].stagnation[sym]`, copied from the
+//                 tick's `risk.stagnation`, RC-2): the count evaluateRisk
+//                 received, its age verdict and the daily change the winner
+//                 test read. Those are the tag's count, age verdict and winner
+//                 input; nothing is recomputed, and the count carries over the
+//                 night as the live rule's does. A reset is `withinAge &&
+//                 ticks === 0`.
+//   recomputed  — any check that holds the symbol lacks the record (every
+//                 day before B1.1): the holding is walked exactly as v1 walks
+//                 it, below. `tags.inputs.holdingBasis` stores each holding's
+//                 basis, so the section is reproducible from the tape alone.
+//
+// WHAT A RECOMPUTED HOLDING'S TAPE DOES NOT HOLD (reported, never guessed):
 //   · the daily change the live rule's winner test reads
 //     (`prices[sym].changePercent`, agent-evaluate.js). The tape records
 //     `evidence.*.chg`, the change from the position's entry; the winner test
@@ -67,8 +81,10 @@ const str = (v) => (typeof v === 'string' && v ? v : null);
 const rowsOf = (v) => (Array.isArray(v) ? v.filter(isObj) : []);
 
 const STALLED = SITUATIONS.stalled;
-/** The winner test's input on the tape (the live rule reads the daily change, which the tape does not hold). */
+/** The winner test's input for a RECOMPUTED holding (the live rule reads the daily change, which its tape does not hold; a recorded holding reads the recorded `dailyPct`). */
 export const WINNER_BASIS = 'change_since_entry';
+/** RC-1 — the two bases a holding's day is tagged on. */
+export const HOLDING_BASES = Object.freeze(['recorded', 'recomputed']);
 /** The dial bases, in the spec's order of preference (§2). */
 export const DIAL_BASES = Object.freeze(['tick_controls', 'battle_frozen', 'archetype_default']);
 /** The exit reason the platform's forced rotation records (agentRiskManager.js evaluateRiskAction step 5). */
@@ -89,6 +105,33 @@ export function listExits(actions) {
     .filter((a) => a.exitReason === STAGNATION_EXIT_REASON)
     .map((a) => ({ symbol: str(a.symbolOut), tickSeq: Number.isInteger(a.tickSeq) ? a.tickSeq : null, at: str(a.at), precededByTag: null }));
 }
+
+/**
+ * RC-1 — a check's COMPLETE record for `sym`: the count (an integer ≥ 0), the
+ * age verdict (a boolean) and the daily change (a finite number) the live rule
+ * read at that tick — or null when any of the three is missing.
+ */
+export function recordAt(check, sym) {
+  const r = isObj(check?.stagnation) ? check.stagnation[sym] : null;
+  return isObj(r) && Number.isInteger(r.ticks) && r.ticks >= 0 && typeof r.withinAge === 'boolean' && num(r.dailyPct) !== null ? r : null;
+}
+
+/**
+ * RC-1 — each holding's basis for the day, from the checks alone: `recorded`
+ * when EVERY check that holds the symbol carries its complete record, else
+ * `recomputed`. Sorted by symbol.
+ */
+export function holdingBasisOf(checks) {
+  const out = {};
+  for (const c of tagChecks(checks)) {
+    const held = heldAt(c);
+    if (!held) continue;
+    for (const sym of held) if (out[sym] !== 'recomputed') out[sym] = recordAt(c, sym) ? 'recorded' : 'recomputed';
+  }
+  return Object.fromEntries(Object.keys(out).sort().map((sym) => [sym, out[sym]]));
+}
+
+const sameBasis = (a, b) => isObj(a) && isObj(b) && Object.keys(a).length === Object.keys(b).length && Object.keys(b).every((k) => a[k] === b[k]);
 
 /** The risk actions that take a holding out of the book at its check (agentRiskManager.js evaluateRiskAction). */
 const SWAP_ACTIONS = Object.freeze(['SWAP_OUT', 'EMERGENCY_SWAP', 'TRAIL_STOP']);
@@ -183,6 +226,8 @@ export function tagInputs({ battle, checks, ticks = [], dialEnabled = TEMPO_DIAL
       dialEnabledAtTagTime: dialEnabled === true,
       winnerBasis: WINNER_BASIS,
       perCheck,
+      // RC-1: each holding's basis for the day (recorded | recomputed)
+      holdingBasis: holdingBasisOf(checks),
     },
   };
 }
@@ -203,6 +248,12 @@ function heldAt(check) {
 /**
  * PURE — the day's `stalled` items and every recorded stagnation exit, from
  * the stored inputs, checks and actions alone.
+ *
+ * Per holding, its basis (RC-1, holdingBasisOf — the checks' own fact, which
+ * stored inputs naming one must match). RECORDED: at every check the count,
+ * the age verdict and the winner test's input are the check's record of the
+ * live rule (`checks[].stagnation[sym]`: ticks, withinAge, dailyPct); a reset
+ * is a timely zero; nothing else below changes. RECOMPUTED, as v1:
  *
  * Per holding, in check order: the count steps through updateStagnationCounter
  * over `evidence[sym].px` at the check's evidence instant (`evidenceAt`, else
@@ -235,6 +286,9 @@ export function tagDay({ inputs, checks, actions, seed = null, trace = null }) {
   const pctThreshold = fr.enabled ? fr.pctThreshold : S2.pctThreshold;
   const walked = tagChecks(checks);
   if (walked.length !== inputs.perCheck.length) throw new Error('tags_inputs_mismatch: perCheck does not cover the checks');
+  // RC-1: the basis is the checks' own fact; stored inputs that name another are out of step (v1 inputs name none)
+  const bases = holdingBasisOf(walked);
+  if (inputs.holdingBasis !== undefined && !sameBasis(inputs.holdingBasis, bases)) throw new Error('tags_inputs_mismatch: holdingBasis does not match the checks');
   const state = isObj(seed) ? Object.fromEntries(Object.entries(seed).map(([sym, s]) => [sym, { ...s, fired: false }])) : {};
   const items = [];
   const resets = [];
@@ -251,23 +305,31 @@ export function tagDay({ inputs, checks, actions, seed = null, trace = null }) {
       const ev = isObj(c.evidence) && isObj(c.evidence[sym]) ? c.evidence[sym] : null;
       const px = num(ev?.px);
       const chg = num(ev?.chg);
-      const step = updateStagnationCounter({
-        currentPrice: px,
-        lastTickPrice: prev.lastTickPrice,
-        lastTickTimestamp: prev.lastTickTimestamp,
-        now: toMs(c.evidenceAt) ?? toMs(c.at),
-        pctThreshold,
-        maxTickAgeMinutes: fr.maxTickAgeMinutes,
-        stagnationTicks: prev.stagnationTicks,
-      });
+      // RC-1: a recorded holding reads the live rule's own record at every check — nothing recomputed;
+      // a recomputed one steps the platform's counter over the price the agent was shown.
+      const rec = bases[sym] === 'recorded' ? recordAt(c, sym) : null;
+      const step = rec
+        ? { stagnationTicks: rec.ticks, withinAge: rec.withinAge, lastTickPrice: prev.lastTickPrice, lastTickTimestamp: prev.lastTickTimestamp }
+        : updateStagnationCounter({
+          currentPrice: px,
+          lastTickPrice: prev.lastTickPrice,
+          lastTickTimestamp: prev.lastTickTimestamp,
+          now: toMs(c.evidenceAt) ?? toMs(c.at),
+          pctThreshold,
+          maxTickAgeMinutes: fr.maxTickAgeMinutes,
+          stagnationTicks: prev.stagnationTicks,
+        });
       // A timely move that reset the count starts a new run: the rule has not fired in it.
       const reset = step.withinAge && step.stagnationTicks === 0;
       if (reset) resets.push({ symbol: sym, ms: toMs(c.at) });
       const fired = (prev.fired && !reset) || firedAt(c, sym);
       state[sym] = { stagnationTicks: step.stagnationTicks, lastTickPrice: step.lastTickPrice, lastTickTimestamp: step.lastTickTimestamp, fired };
-      if (Array.isArray(trace)) trace.push({ symbol: sym, tickSeq: Number.isInteger(c.tickSeq) ? c.tickSeq : null, at: c.at, px, chg, count: step.stagnationTicks, withinAge: step.withinAge, reset, fired, liveAt, winnerThreshold: fr.winnerThreshold });
-      if (px === null || chg === null || fired) continue;
-      if (step.stagnationTicks >= liveAt && chg / 100 < fr.winnerThreshold) {
+      if (Array.isArray(trace)) trace.push({ symbol: sym, tickSeq: Number.isInteger(c.tickSeq) ? c.tickSeq : null, at: c.at, px, chg, count: step.stagnationTicks, withinAge: step.withinAge, reset, fired, liveAt, winnerThreshold: fr.winnerThreshold, basis: rec ? 'recorded' : 'recomputed', dailyPct: rec ? rec.dailyPct : null });
+      if (fired) continue;
+      // The winner test's input: the recorded daily change, or — recomputed — the change from entry, which needs the check's price
+      const winnerInput = rec ? rec.dailyPct : (px === null || chg === null ? null : chg / 100);
+      if (winnerInput === null) continue;
+      if (step.stagnationTicks >= liveAt && winnerInput < fr.winnerThreshold) {
         items.push({
           situationId: STALLED.id, version: STALLED.version, symbol: sym,
           tickSeq: Number.isInteger(c.tickSeq) ? c.tickSeq : null, at: c.at,
@@ -294,14 +356,18 @@ export function tagDay({ inputs, checks, actions, seed = null, trace = null }) {
   return { items, exits, closing: state };
 }
 
-/** BA-20 — the tags section's coverage: it follows the inputs `stalled` reads (the checks and the evidence), never the bars. */
+/**
+ * BA-20 — the tags section's coverage: it follows the inputs `stalled` reads
+ * (the checks and the evidence; RC-1: the checks' records, when a holding is
+ * on the recorded basis), never the bars.
+ */
 const MAX_DATE_MS = 8.64e15;
-function tagsCoverage(doc, { failure = null, pausedChecks = 0 } = {}) {
+function tagsCoverage(doc, { failure = null, pausedChecks = 0, recorded = false } = {}) {
   const span = (() => {
     const ms = tagChecks(doc?.checks).map((c) => toMs(c.at)).filter((v) => v !== null && Math.abs(v) <= MAX_DATE_MS).sort((a, b) => a - b);
     return ms.length ? { from: new Date(ms[0]).toISOString(), to: new Date(ms[ms.length - 1]).toISOString() } : null;
   })();
-  const sources = ['checks', 'checks.evidence', 'checks.risk', 'actions'];
+  const sources = ['checks', 'checks.evidence', 'checks.risk', 'actions', ...(recorded ? ['checks.stagnation'] : [])];
   if (failure) return coverageOf('unavailable', { span, sources, note: failure });
   const reasons = [];
   for (const section of ['checks', 'evidence']) {
@@ -315,10 +381,14 @@ function tagsCoverage(doc, { failure = null, pausedChecks = 0 } = {}) {
   return coverageOf('complete', { span, sources, note: pauses.join('; ') || null });
 }
 
-/** Checks that record a holding without its price — where the count pauses (a name sold at the check is no pause). */
-function pausedCheckCount(checks, actions) {
+/**
+ * Checks that record a holding without its price — where the RECOMPUTED count
+ * pauses (a name sold at the check is no pause; a recorded holding's count
+ * never pauses, RC-1).
+ */
+function pausedCheckCount(checks, actions, holdingBasis = {}) {
   const walked = tagChecks(checks);
-  return walked.filter((c, i) => unpricedHeld(c, { actions, prevAt: i ? walked[i - 1].at : null }).length > 0).length;
+  return walked.filter((c, i) => unpricedHeld(c, { actions, prevAt: i ? walked[i - 1].at : null }).some((sym) => holdingBasis[sym] !== 'recorded')).length;
 }
 
 /**
@@ -344,7 +414,10 @@ export function tagTapeDay({ battle, ticks = [], doc, dialEnabled = TEMPO_DIAL_E
     const { items, exits: tagged } = tagDay({ inputs: r.inputs, checks: doc?.checks, actions: doc?.actions });
     return {
       tags: { ...tagsHeader(), inputs: r.inputs, items, exits: tagged },
-      coverage: tagsCoverage(doc, { pausedChecks: pausedCheckCount(doc?.checks, doc?.actions) }),
+      coverage: tagsCoverage(doc, {
+        pausedChecks: pausedCheckCount(doc?.checks, doc?.actions, r.inputs.holdingBasis),
+        recorded: Object.values(r.inputs.holdingBasis).includes('recorded'),
+      }),
     };
   } catch (err) {
     const errorClass = str(err?.name) ?? str(err?.constructor?.name) ?? 'Error';
