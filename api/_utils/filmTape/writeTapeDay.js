@@ -60,7 +60,11 @@ export const isTieredBattle = (battle) => resolveModeConfig(battle?.gameMode).la
  * @param {Function} [opts.resolveResult] BA-4 result comparison (default: the evaluator's own)
  * @param {string} [opts.callRecordsMode] the CALL_RECORDS_MODE this run writes under (BA-16)
  * @param {number} [opts.sizeBudget]     the document size budget (tapeSize.js; default TAPE_SIZE_BUDGET_BYTES — a test seam)
- * @returns {Promise<{ status: 'written'|'unchanged'|'skipped_mode', battleId, etDate, runCount, bytes }>}
+ * @returns {Promise<{ status: 'written'|'unchanged'|'skipped_mode', battleId, etDate, runCount, bytes, meetingKeys }>}
+ *   `meetingKeys`: the keys of the meetings in the document the tape holds
+ *   after this call — the merged document, after the size budget
+ *   (Build B Amendment F RF-2: a caller reports what was committed from
+ *   this, never from a second read)
  */
 export async function writeTapeDay(battleId, etDate, opts = {}) {
   if (!FILM_TAPE_WRITE_ENABLED) throw new Error('film_tape_write_disabled');
@@ -154,7 +158,8 @@ export async function writeTapeDay(battleId, etDate, opts = {}) {
   const status = assembled.passes.close.status === 'skipped_mode'
     ? 'skipped_mode'
     : (outcome.changed ? 'written' : 'unchanged');
-  return { status, battleId, etDate, runCount: outcome.doc?.runCount ?? null, bytes: JSON.stringify(outcome.doc).length };
+  const meetingKeys = (Array.isArray(outcome.doc?.meetings) ? outcome.doc.meetings : []).map((m) => m?.key);
+  return { status, battleId, etDate, runCount: outcome.doc?.runCount ?? null, bytes: JSON.stringify(outcome.doc).length, meetingKeys };
 }
 
 /**

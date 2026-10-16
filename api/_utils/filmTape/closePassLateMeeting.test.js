@@ -300,6 +300,65 @@ describe('review X3-4 — a re-merge whose meeting the size budget drops says so
   });
 });
 
+describe('Build B Amendment F RF-2 (Astra\'s B1.1 review F2) — a write the writer acknowledged is a re-merge that happened', () => {
+  /** A world whose ordinary reads of P fail once the re-merge's write to P has committed (Astra's `post_commit_verification_read_failed`). */
+  async function postCommitFaultWorld(battleId) {
+    const pPath = tapePath(battleId, P);
+    const s = { armed: false, committed: false, faults: 0 };
+    const w = await lateMeetingWorld({ battleId, hooks: {
+      // the fixture runs this only once a commit is going through: its read set held, every write checked before any applies
+      beforeWrite: (op, path) => { if (s.armed && path === pPath) s.committed = true; },
+      beforeRead: (label) => { if (s.committed && label === pPath) { s.faults += 1; throw new Error('post_commit_verification_read_failed'); } },
+    } });
+    s.armed = true;
+    return { ...w, s, pPath };
+  }
+
+  it('Astra\'s repro: the write to P commits, then a read of P would fail — P is listed `remerged` (meetingsStored true), never `remergeFailed`, and nothing reads P after its commit', async () => {
+    const w = await postCommitFaultWorld('b-ack');
+    const sD = await runClosePass({ db: w.t.db, clock: () => D_NIGHT });
+    expect(w.s.committed).toBe(true);
+    expect(sD.remerged).toEqual([{ battleId: 'b-ack', etDate: P, bytes: expect.any(Number), meetingsStored: true }]);
+    expect(sD.remergeFailed).toEqual([]);
+    expect(sD.failed).toEqual([]);
+    expect(w.s.faults).toBe(0);
+    const p = w.t.store.get(w.pPath);
+    expect(p.meetings.map((m) => m.key)).toEqual([`gpm_late|${PENDING.createdAt}`]);
+    expect(p.runCount).toBe(w.before.runCount + 1);
+    expect(p.passes.close.status).toBe('written');
+    expect(p.passes.close.lastError ?? null).toBeNull();
+    // D as it is in a fault-free world
+    const ok = await lateMeetingWorld({ battleId: 'b-ack' });
+    await runClosePass({ db: ok.t.db, clock: () => D_NIGHT });
+    expect(stableStringify(contentOf(w.t.store.get(tapePath('b-ack', D))))).toBe(stableStringify(contentOf(ok.t.store.get(tapePath('b-ack', D)))));
+  });
+
+  it('a write whose meetings the size budget drops, under the same fault: listed `remerged` with meetingsStored false — the committed document\'s keys, not the history\'s', async () => {
+    const w = await postCommitFaultWorld('b-ack-budget');
+    const pSize = JSON.stringify(w.before).length;
+    const write = (id, d, o) => writeTapeDay(id, d, d === P ? { ...o, sizeBudget: pSize + 50 } : o);
+    const sD = await runClosePass({ db: w.t.db, clock: () => D_NIGHT, write });
+    expect(w.s.committed).toBe(true);
+    expect(sD.remerged).toEqual([{ battleId: 'b-ack-budget', etDate: P, bytes: expect.any(Number), meetingsStored: false }]);
+    expect(sD.remergeFailed).toEqual([]);
+    expect(w.s.faults).toBe(0);
+    expect(w.t.store.get(w.pPath).meetings).toEqual([]);
+  });
+
+  it('the writer returns the keys of the document it committed: P\'s stored meetings, and none when the size budget dropped them', async () => {
+    const w = await lateMeetingWorld({ battleId: 'b-keys' });
+    const r = await writeTapeDay('b-keys', P, { db: w.t.db, now: D_NIGHT });
+    expect(r.status).toBe('written');
+    expect(r.meetingKeys).toEqual([`gpm_late|${PENDING.createdAt}`]);
+    expect(r.meetingKeys).toEqual(w.t.store.get(tapePath('b-keys', P)).meetings.map((m) => m.key));
+    const b = await lateMeetingWorld({ battleId: 'b-keys' });
+    const rb = await writeTapeDay('b-keys', P, { db: b.t.db, now: D_NIGHT, sizeBudget: JSON.stringify(b.before).length + 50 });
+    expect(rb.status).toBe('written');
+    expect(rb.meetingKeys).toEqual([]);
+    expect(b.t.store.get(tapePath('b-keys', P)).meetings).toEqual([]);
+  });
+});
+
 describe('review X3-3 — a late leg on a P whose candle pass is still to run gets bars as an on-time leg does', () => {
   it('P\'s first candle run never happened: the re-merge moves no candle field; P\'s own next run fetches the leg, best effort', async () => {
     const fx = await multiDay({ battleId: 'b-open' });

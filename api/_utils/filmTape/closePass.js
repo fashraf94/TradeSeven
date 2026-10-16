@@ -53,7 +53,9 @@
 // anyway fetches them, best effort, on its next attempt. The re-merge is
 // a whole re-merge of P, as a refresh of P is: any other source of P that
 // grew since P's night is copied too (the build report names them). It runs
-// only above the pass's time floor. A failed re-merge is caught and counted:
+// only above the pass's time floor. A write the writer acknowledged is listed
+// `remerged`, from the writer's own outcome, and nothing reads P after it
+// (Build B Amendment F RF-2). A failed re-merge is caught and counted:
 // it never marks P failed and leaves D's write as it was. P is either as it
 // was or holds exactly the whole re-merge this pass intended (the transaction
 // commits whole or not at all): a commit with an unknown outcome can leave P
@@ -137,8 +139,12 @@ export function meetingKeysOn(battle, etDate) {
  * to merge into — the backfill is that day's path), `time_floor` (the pass
  * is below its time floor), `writer_unchanged` (the writer found nothing to
  * change). A `remerged` row says whether P now holds every candidate meeting
- * (`meetingsStored`, from one read of P after the write): the size budget
- * (RB-6) can drop P's meetings while the re-merge still writes P.
+ * (`meetingsStored`, from the meeting keys of the document the writer
+ * committed — Amendment F RF-2: an acknowledged write is a re-merge that
+ * happened, and nothing reads P after it): the size budget (RB-6) can drop
+ * P's meetings while the re-merge still writes P. `remergeFailed` is a
+ * re-merge that failed before the writer acknowledged a write: an
+ * unreadable P, or a write that failed (criterion 5).
  */
 async function remergePreviousDay({ db, battle, etDate, clock, write, summary, startMs, budgetMs }) {
   let P = null;
@@ -158,9 +164,10 @@ async function remergePreviousDay({ db, battle, etDate, clock, write, summary, s
     if (keys.every((k) => have.includes(k))) { summary.remergeUnchanged.push({ battleId: battle.id, etDate: P, reason: 'already_copied' }); return; }
     const r = await write(battle.id, P, { db, now: clock(), battle });
     if (r.status !== 'written') { summary.remergeUnchanged.push({ battleId: battle.id, etDate: P, reason: 'writer_unchanged' }); return; }
-    // review X3-4: what the write produced, not only that it wrote
-    const after = await tapeRef(db, battle.id, P).get();
-    const kept = ((after && after.exists ? (typeof after.data === 'function' ? after.data() : after.data) : null)?.meetings ?? []).map((m) => m?.key);
+    // review X3-4: what the write produced, not only that it wrote. Amendment F RF-2 (Astra's
+    // B1.1 review F2): from the writer's own outcome — the committed document's meeting keys —
+    // never a second read of P, whose failure would report an acknowledged write as failed.
+    const kept = Array.isArray(r.meetingKeys) ? r.meetingKeys : [];
     summary.remerged.push({ battleId: battle.id, etDate: P, bytes: r.bytes, meetingsStored: keys.every((k) => kept.includes(k)) });
   } catch (err) {
     // Counted, never marked: no failure record is written for P, and D's write stands.
