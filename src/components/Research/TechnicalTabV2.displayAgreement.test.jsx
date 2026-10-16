@@ -180,12 +180,15 @@ function firstVolumeRow() {
   return { label: row.firstElementChild.textContent, value: row.lastElementChild.textContent };
 }
 
-describe('D-3 — a cross one bar back keeps its count', () => {
-  it('negative → positive one bar before the newest → "Bullish cross · 1d ago" (only the newest bar is "latest session")', async () => {
-    const indicators = { rsi: 50, macd: { macd: 1, signal: 0.7, histogram: 0.3 }, macdHistogram: [0.3, 0.2, -0.1, -0.2, -0.3, -0.4], sma50: null };
+describe('D-3 — a cross one bar back reads the date of that bar (research modal W-4)', () => {
+  it('negative → positive one bar before the newest, on Oct 14 → "Bullish cross · Oct 14" (only the newest bar is "latest session")', async () => {
+    const indicators = {
+      rsi: 50, macd: { macd: 1, signal: 0.7, histogram: 0.3 }, macdHistogram: [0.3, 0.2, -0.1, -0.2, -0.3, -0.4], sma50: null,
+      macdHistogramDates: ['2026-10-15', '2026-10-14', '2026-10-13', '2026-10-12', '2026-10-09', '2026-10-08'],
+    };
     await render({ indicators });
     const label = [...container.querySelectorAll('span')].find((s) => s.textContent === 'MACD Signal');
-    expect(label.parentElement.textContent).toBe('MACD Signal Bullish cross · 1d ago');
+    expect(label.parentElement.textContent).toBe('MACD Signal Bullish cross · Oct 14');
   });
 });
 

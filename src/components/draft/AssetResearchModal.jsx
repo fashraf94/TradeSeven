@@ -177,15 +177,23 @@ const AssetResearchModal = ({
   const [profileLoading, setProfileLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
   const [highlightedLevel, setHighlightedLevel] = useState(null);
-  // The symbol the chart's S/R toggle was clicked for. The toggle's state is
-  // private to StockChart (no callback prop), so the modal notices the click on
-  // its pill; the chart remounts per symbol (key), which turns S/R off again.
-  const [srSymbol, setSrSymbol] = useState(null);
+  // The chart's S/R pill, as the chart reports it (onToggleSR).
+  const [srOn, setSrOn] = useState(false);
   const [drawerSnapState, setDrawerSnapState] = useState('mid');
   const [v2ContainerHeight, setV2ContainerHeight] = useState(600);
   const v2ContainerRef = useRef(null);
   const isInternalNavRef = useRef(false);
   const { isMobile, isTablet } = useIsMobile();
+
+  // A new symbol gets a new chart (key) with S/R off and nothing tapped, so the
+  // old symbol's S/R state and tapped level are dropped in the same render,
+  // before that chart mounts.
+  const [chartSymbol, setChartSymbol] = useState(currentAsset?.symbol);
+  if (chartSymbol !== currentAsset?.symbol) {
+    setChartSymbol(currentAsset?.symbol);
+    setHighlightedLevel(null);
+    setSrOn(false);
+  }
 
   const handleNavigateToStock = useCallback((ticker, name) => {
     if (controlledMode) return;
@@ -224,46 +232,62 @@ const AssetResearchModal = ({
       : Math.min(isTablet ? 260 : 300, Math.round(v2ContainerHeight * 0.45))
     : isMobile ? 200 : isTablet ? 260 : 300;
 
+  // One price for the whole sheet (BUILD_RULES §9): the live price the header's
+  // "% today" and the chart's live candle follow — wsPrice for the original
+  // asset, the fetched price for a navigated stock — or, in a held view, the
+  // accepted observation. The header price, "Current", the level sides and
+  // distances and the chart's S/R colors all read `shownAsset.price`.
+  const sheetPrice = controlledMode
+    ? (controlledPrice ?? 0)
+    : (isOriginalAsset ? wsPrice : null) || currentAsset?.price || currentAsset?.currentPrice || 0;
+  const shownAsset = useMemo(() => (
+    currentAsset && sheetPrice > 0 && sheetPrice !== currentAsset.price ? { ...currentAsset, price: sheetPrice } : currentAsset
+  ), [currentAsset, sheetPrice]);
+
   // v2: Research data hook for chart + enhanced technical tab
   const researchData = useResearchData(version >= 2 && !failClosed ? currentAsset?.symbol : null, {
-    currentPrice: controlledMode
-      ? (controlledPrice ?? 0)
-      : (isOriginalAsset ? wsPrice : null) || currentAsset?.price || currentAsset?.currentPrice || 0,
+    currentPrice: sheetPrice,
     isCrypto: isCrypto,
     initialTimeframe: defaultTimeframe,
     technicalActive: activeTab === 'technical',
-    srRequested: srSymbol !== null && srSymbol === currentAsset?.symbol,
+    srRequested: srOn,
     ...(controlledMode ? { controlled: { extremes: controlledValid ? (controlledQuote.extremes || null) : null } } : {}),
   });
 
-  // Off the 1D chart, turning S/R on asks for the daily levels the toggle draws
-  // (the same single daily request the Technical tab makes).
-  const handleChartClickCapture = useCallback((e) => {
-    const pill = e.target?.closest?.('button');
-    if (pill && pill.textContent.trim() === 'S/R') setSrSymbol(currentAsset?.symbol ?? null);
-  }, [currentAsset?.symbol]);
+  // The chart is on screen exactly when it has bars; it starts with S/R off
+  // each time it mounts (after a failed request it unmounts), so the pill's
+  // reported state goes with it.
+  const chartShown = version >= 2 && !!researchData.ohlcvData && researchData.ohlcvData.length > 0;
+  if (srOn && !chartShown) setSrOn(false);
 
   // The chart's S/R lines and its highlighted level are sided from the same
   // shown price as the Technical tab's rows ("Current"), by the same helper —
-  // never by the close detectLevels used. Memoized: the chart redraws its lines
-  // whenever the levels object changes.
-  const shownPrice = currentAsset?.price;
-  const chartLevels = useMemo(() => sideLevelsAt(researchData.levels, shownPrice), [researchData.levels, shownPrice]);
+  // never by the close detectLevels used. The chart redraws its lines whenever
+  // the levels object changes, so a new one is made only when a level changes
+  // side: a live tick that moves no level across redraws nothing here (a
+  // throttled live-candle update rebuilds the chart, and its lines, anyway).
+  const shownPrice = shownAsset?.price;
+  const sidedLevels = sideLevelsAt(researchData.levels, shownPrice);
+  const sidesKey = sidedLevels
+    ? `${(sidedLevels.support || []).map(l => l.price).join(',')}|${(sidedLevels.resistance || []).map(l => l.price).join(',')}`
+    : '';
+  const chartLevels = useMemo(() => sidedLevels, [researchData.levels, sidesKey]); // eslint-disable-line react-hooks/exhaustive-deps -- the shown price reaches it through sidesKey
+  const tappedSide = highlightedLevel && typeof shownPrice === 'number' && Number.isFinite(shownPrice) && shownPrice > 0
+    ? sideOfShownPrice(highlightedLevel.price, shownPrice)
+    : highlightedLevel?.type;
   const chartHighlight = useMemo(() => (
-    highlightedLevel && typeof shownPrice === 'number' && Number.isFinite(shownPrice) && shownPrice > 0
-      ? { ...highlightedLevel, type: sideOfShownPrice(highlightedLevel.price, shownPrice) }
-      : highlightedLevel
-  ), [highlightedLevel, shownPrice]);
+    highlightedLevel ? { ...highlightedLevel, type: tappedSide } : null
+  ), [highlightedLevel, tappedSide]);
 
   // Always prefer daily change from OHLCV data over parent-provided percentChange.
   // Parent components (BaggerBomb, Snake Draft) pass entry-based cumulative % change
   // for scoring context, but the research modal should show today's daily change.
   const enrichedAsset = useMemo(() => {
     if (researchData.dailyChange != null) {
-      return { ...currentAsset, percentChange: researchData.dailyChange };
+      return { ...shownAsset, percentChange: researchData.dailyChange };
     }
-    return currentAsset;
-  }, [currentAsset, researchData.dailyChange]);
+    return shownAsset;
+  }, [shownAsset, researchData.dailyChange]);
 
   // v2: Bomb chart data — only available when asset has battle context (threshold + baseline price)
   // Prefer previousClose from OHLCV daily data (most accurate daily baseline) over
@@ -777,7 +801,7 @@ const AssetResearchModal = ({
 
           {/* v2: Chart Section */}
           {version >= 2 && (
-            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: '40px' }} onClickCapture={handleChartClickCapture}>
+            <div style={{ flexShrink: 0, position: 'relative', zIndex: 1, paddingBottom: '40px' }}>
               {researchData.loading && !researchData.ohlcvData && (
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -812,7 +836,7 @@ const AssetResearchModal = ({
                   </button>
                 </div>
               )}
-              {researchData.ohlcvData && researchData.ohlcvData.length > 0 && (
+              {chartShown && (
                 <StockChart
                   key={currentAsset?.symbol}
                   ohlcvData={researchData.ohlcvData}
@@ -828,6 +852,7 @@ const AssetResearchModal = ({
                   todayDailyCandle={researchData.todayDailyCandle}
                   realtimeExtremes={isOriginalAsset && !controlledMode ? realtimeExtremes : null}
                   controlledSession={controlledMode ? { crypto: !!isCrypto } : undefined}
+                  onToggleSR={setSrOn}
                 />
               )}
             </div>
@@ -920,7 +945,7 @@ const AssetResearchModal = ({
 
               {activeTab === 'technical' && (
                 <TechnicalTabV2
-                  asset={currentAsset}
+                  asset={shownAsset}
                   dailyData={researchData.dailyData}
                   indicators={researchData.indicators}
                   levels={researchData.levels}

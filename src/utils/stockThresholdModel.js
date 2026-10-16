@@ -101,9 +101,20 @@ export function validCommittedStockScores(battle) {
 }
 // v2 Ruling 15: the Why proximity for a measured-model row — the context's own
 // proximity plus the legacy line's shape ("💣 1.2% to BaggerBomb", "MAX" once
-// every bonus tier is earned), from the committed context only (§9).
+// every bonus tier is earned), from the committed context only (§9). Review
+// B3-7: the side follows the direction, as legacy does (calculateNextThreshold):
+// below the fill it is the penalty side ("📉 0.8% to Bust", "🔥 MAX" once every
+// penalty tier is crossed); at or above the fill, the reward side.
 export function measuredProximity(context) {
   if (!context || context.status !== 'valid') return null;
+  if (context.multiplier < 0) {
+    if (!context.nextPenalty) {
+      const bottom = context.targets.find(t => t.key === 'meltdown');
+      return { ...(context.penaltyProximity || {}), text: `${bottom?.emoji ? `${bottom.emoji} ` : ''}MAX` };
+    }
+    const pct = (context.currentPrice - context.nextPenalty.target) / context.currentPrice * 100;
+    return { ...context.penaltyProximity, text: `${context.nextPenalty.emoji} ${stockSummary(pct, 1)}% to ${context.nextPenalty.label}` };
+  }
   if (!context.nextTarget) {
     const top = context.targets.find(t => t.key === 'tenBagger');
     return { ...(context.proximity || {}), text: `${top?.emoji ? `${top.emoji} ` : ''}MAX` };

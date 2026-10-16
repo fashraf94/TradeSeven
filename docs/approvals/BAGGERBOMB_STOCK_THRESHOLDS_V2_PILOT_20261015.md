@@ -20,7 +20,7 @@ October 15, 2026. Flash (founder) decisions recorded for the v2 build. Fable (Cl
 | Policy SHA-256 (canonical stableStringify) | `22a815985037ddba74526973237817f233e38fd97cb1b1cff5f33e7af345050b` |
 | Publication rule | `eodhd_us_completed_session_observation_v1`, unchanged; SHA-256 `3ad8e14b203acd660faba9b8ec7e78c7dcb9f312741ec04cd062bcf79741a85f` |
 | Approved reference | `owner_baggerbomb_stock_thresholds_v2_20261015@v1` |
-| Collector | `eodhd_stock_server_collector_v1` (collector code unchanged) |
+| Collector | `eodhd_stock_server_collector_v1` (id unchanged; its identity rule is amended by ruling P1, "Switch-on preconditions" 1) |
 | v1 | Retired, not kept. No v1 battle exists (Phase 0 §B3). A v1 stamp resolves unavailable and can still end under Ruling 4. |
 
 Rulings 1, 3, 4, 7, 8 and 9 are hashed policy fields (`rewardTiming`, `unavailableFrame`, `expiry`, `offHoursCreation`, `crypto`, `quote`). Ruling 2's 45 minutes is a code constant (`STOCK_LATE_START_CUTOFF_MINUTES`, `api/_utils/stockThresholdAdmission.js`), recorded here and deliberately not hashed.
@@ -44,11 +44,41 @@ Rulings 1, 3, 4, 7, 8 and 9 are hashed policy fields (`rewardTiming`, `unavailab
 15. **The stock modal on corrected positions** uses the normal BaggerBomb tab layout from the committed context only, draws all six targets on the chart from the fill with HIT markers only from crossed tiers, puts references in a collapsed Details row, states "Measured reward unavailable" clearly and fills Why's proximity text. For every battle, the placeholder "Historical (30 days)" block is removed and no rating renders without a real `ratingText`.
 16. **Readers.** Every legacy-only reader in Phase 0 §E4 resolves the pinned model on corrected games; legacy games are unchanged everywhere.
 
-## Switch-on preconditions (build findings, not rulings)
+## Switch-on preconditions (build findings, now ruled)
 
-**1. Security identity.** The build's live universe record (Oct 15, 17:34 ET; build report and audit record) found that the collector's security-identity check requires a non-empty `General.ISIN`, which the provider returns as null for almost every US-domiciled stock (220 of 239 symbols refused `security_identity_unqualified`; only 8 non-US-domiciled issuers qualify). **Do not enable the control document until a follow-up that settles the identity rule is merged and the universe record shows the eligible set qualifies.** That follow-up is a contract decision for Flash and Fable (what anchors `securityId` in immutable receipts), not part of this approval.
+The v2 build found two problems that blocked switch-on. Flash ruled on both in the blockers follow-up (Fable's prompt of Oct 15, 2026, received by the follow-up session at about 21:50 America/Chicago, `2026-10-16T02:50Z`), together with a display ruling (P3). None of the three is written into the hashed policy: the v2 policy hash, the publication-rule hash, the approved reference and `approvedAt` are all unchanged. P2 does narrow what the hashed `offHoursCreation.allowed` entry `after_close_once_publication_window_opens` permits, for pilot creations only; this record, not the policy file, carries that narrowing. No receipt existed when they landed, so nothing was migrated. Switching the pilot on remains a separate, authorized step.
 
-**2. The evening window.** The build review (lens B1, verified) found that on a regular trading day a full-day battle holding crypto that is created from 16:15 ET up to 20:00 ET expires at 20:00 ET the same evening and never gets a scored check, because no evaluation runs after 16:00 ET. Phase 0 §C3 assumed such a creation "plays the next session"; that holds only for stock-only rosters, and every tiered battle carries crypto. A measured battle created there ends as result unavailable, and the agent cannot redeploy until it settles at the next weekday's first run. Legacy battles in the same window already end as a 0–0 draw (reported separately). Ruling 7 allows after-close creation, so the build does not refuse the window. **Do not enable the control document until Flash rules** on the options in the runbook (refuse the window; move the crypto expiry, which is fenced; or accept and steer players to after 20:00 ET).
+**1. Security identity (ruling P1, the v2 build report's §6a Option A).** The collector (`collectStockObservation`, `api/_utils/stockThresholdMeasurementProvider.js`) keeps every other identity check exactly as before: `Code`, `IsDelisted === false`, NYSE/NASDAQ, "Common Stock", US/USA. Then:
+- When `General.ISIN` is a non-empty string, `securityId` is `EODHD:<SYM>.US:<ISIN>`, as before.
+- Otherwise `General.OpenFigi` is accepted only when it is a well-formed FIGI: 12 characters, the OpenFIGI shape (two consonants, `G`, eight consonants or digits, a digit), no reserved prefix (BS, BM, GG, GB, GH, KY, VG) and a valid check digit. `securityId` is then `EODHD:<SYM>.US:FIGI:<OpenFigi>`.
+- If neither is present, the stock is refused `security_identity_unqualified`, as before.
+- CIK and LEI are never used. The provider's `OpenFigi` is the US composite FIGI, one per security, so the two share classes of one company differ (BRK-A `BBG000DWDMY4`, BRK-B `BBG000DWH8Q0`), while a CIK is shared by both.
+- Receipts carry the id, and every replay compares it (`readCorrectedInputs`), whichever form it takes.
+- **Universe record** (real collector path, GET only, concurrency 1, no Firestore; Oct 15, 23:09 ET): 228 of 239 qualify (8 with the ISIN form, 220 with the FIGI form). The other 11 are the catalog exclusions (AVB, CTRA, EA, EQR, HES, IPG, K, MMC, PARA, WBA, WBD). UNP, HUM and ACN qualify.
+
+**2. The evening window (ruling P2, the v2 build report's §6b option (a)).**
+- **The problem.** On a regular trading day, a full-day battle holding crypto that is created after the close expires at 20:00 ET the same evening (the fenced `computeFullDayExpiry`, Night Game close). No evaluation runs after 16:00 ET, so it would never get a scored check.
+- **The rule.** For selected (allowlisted) creations only, `prepareStockCreation` now refuses retriably with `evening_window` when the creation is outside a trading session (after the current session's close, or on a weekend or holiday) and the battle's own `expiresAt` falls before the next trading session's `openMs`.
+  - It runs after selection and before any measurement GET.
+  - It is derived from the calendar (`getSessionForDate`) and the battle's `expiresAt` (`eveningWindowRefusal`, `src/utils/stockAdmissionWindow.js`), never from a clock literal.
+  - It begins at the close, where Ruling 2's 45-minute late start ends, so the two leave no gap.
+- **This narrows Ruling 7 for the pilot only**, pending the separate diagnosis of the legacy evening 0–0 draws. Non-selected owners, legacy creation and tournaments are unchanged. The fence is not touched.
+- **When a crypto roster can start, on a regular trading day.**
+  - Refused from 15:15 to 20:00 ET (14:15 to 19:00 CT).
+  - Allowed from 20:00 ET (19:00 CT) until the next session's late start (15:15 ET, or 12:15 ET when that session closes early), including pre-open, weekends and holidays.
+  - A Friday creation from 15:15 ET is refused until 20:00 ET; Saturday is allowed.
+- **Early-close days.** A crypto roster's expiry is the 13:00 ET close itself; there is no Night Game. So:
+  - the late start refuses 12:15 to 13:00 ET (11:15 to 12:00 CT);
+  - the collector's publication window refuses 13:00 to 13:15 ET;
+  - from 13:15 ET the battle plays the next session.
+- **Stock-only rosters** play the next session after the close and are not refused by this rule. In practice none reaches the pilot: a tiered decision without its support crypto is refused (`decide.js` `validatePortfolio`), so every pilot roster carries crypto.
+- **The player line**, for both `late_start_cutoff` and `evening_window` (`src/services/agentDeploy.js`), names the retry time from the same module (`stockAdmissionRetryAt`): "Measured battles can't start this late in the day. Try again after 8:00 PM ET." On an early-close day it says 1:15 PM ET. The server's 503 (fenced `decide.js`) carries only the reason, so the browser computes the time from its own clock when the refusal arrives. That time assumes the roster carries crypto (above); a browser clock set to another day falls back to the generic line or names that day's time.
+
+**3. Why proximity (ruling P3, review B3-7).** On measured rows, Why's proximity line follows the direction, as legacy does:
+- below the fill it shows the committed `penaltyProximity` (for example "📉 0.8% to Bust"; "🔥 MAX" once every penalty tier is crossed);
+- at or above the fill it shows `proximity`, as before.
+
+It reads the committed context only (§9 display agreement). Legacy rows are unchanged.
 
 ## Build readings of the rulings (recorded, not new rulings)
 

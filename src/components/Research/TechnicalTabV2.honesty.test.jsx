@@ -126,20 +126,23 @@ describe('F7 — RSI shows a reading or nothing', () => {
 });
 
 describe('F8 — MACD says "cross" only when one happened', () => {
+  // The dates of the bars behind the histogram readings, newest first (Oct 15 2026 is a Thursday).
+  const MACD_DATES = ['2026-10-15', '2026-10-14', '2026-10-13', '2026-10-12', '2026-10-09', '2026-10-08'];
+
   it('histogram positive for 6 bars → "Above signal line"', async () => {
     const h = [0.5, 0.4, 0.3, 0.2, 0.1, 0.05];
     await render({ indicators: { ...QUIET, macd: { macd: 1, signal: 0.5, histogram: 0.5 }, macdHistogram: h } });
     expect(rowText('MACD Signal')).toBe('MACD Signal Above signal line');
   });
 
-  it('negative → positive 2 bars ago → "Bullish cross · 2d ago"', async () => {
+  it('negative → positive two bars back, on Oct 13 → "Bullish cross · Oct 13" (the date of the cross bar)', async () => {
     const h = [0.3, 0.2, 0.1, -0.1, -0.2, -0.3];
-    await render({ indicators: { ...QUIET, macd: { macd: 1, signal: 0.7, histogram: 0.3 }, macdHistogram: h } });
-    expect(rowText('MACD Signal')).toBe('MACD Signal Bullish cross · 2d ago');
+    await render({ indicators: { ...QUIET, macd: { macd: 1, signal: 0.7, histogram: 0.3 }, macdHistogram: h, macdHistogramDates: MACD_DATES } });
+    expect(rowText('MACD Signal')).toBe('MACD Signal Bullish cross · Oct 13');
   });
 
   it('positive → negative on the latest bar → "Bearish cross · latest session"; negative throughout → "Below signal line"', async () => {
-    await render({ indicators: { ...QUIET, macd: { macd: -1, signal: -0.8, histogram: -0.2 }, macdHistogram: [-0.2, 0.1, 0.2, 0.3, 0.4, 0.5] } });
+    await render({ indicators: { ...QUIET, macd: { macd: -1, signal: -0.8, histogram: -0.2 }, macdHistogram: [-0.2, 0.1, 0.2, 0.3, 0.4, 0.5], macdHistogramDates: MACD_DATES } });
     expect(rowText('MACD Signal')).toBe('MACD Signal Bearish cross · latest session');
     await render({ indicators: { ...QUIET, macd: { macd: -1, signal: -0.8, histogram: -0.2 }, macdHistogram: [-0.2, -0.1, -0.2, -0.3, -0.4, -0.5] } });
     expect(rowText('MACD Signal')).toBe('MACD Signal Below signal line');
