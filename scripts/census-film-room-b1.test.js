@@ -234,6 +234,22 @@ describe('the CLI\'s own output — no ids, no key material (Astra\'s B1 review,
     expect(censusErrorLine(Object.assign(new Error('m'), { name: 'FirebaseError' }))).toBe('FirebaseError: m');
     expect(censusErrorLine({ get message() { throw new Error('no'); }, name: 'RangeError' })).toBe('RangeError');
   });
+
+  it('Amendment F RF-1 (Astra\'s B1.1 review F1): a thrown function or class prints its message when it has one, else the listed class alone — never its source or its name', () => {
+    class CustomError {}
+    function ShortError() {}
+    const emptyMessage = Object.assign(function Planted() {}, { message: '' });
+    // Astra's three repros: each is the class alone, with no other text
+    for (const thrown of [CustomError, ShortError, emptyMessage]) expect(censusErrorLine(thrown)).toBe('Error');
+    // a function with a usable message prints it, sanitized as any message is
+    expect(censusErrorLine(Object.assign(function Named() {}, { message: 'safe reason' }))).toBe('Error: safe reason');
+    // the controls, as before: an ordinary instance, Astra N1's registered value, a thrown string
+    expect(censusErrorLine(new RangeError('out of range'))).toBe('RangeError: out of range');
+    registerNeverPrinted(['FakeOwner31Error']);
+    expect(censusErrorLine({ name: 'FakeOwner31Error', message: 'safe reason' })).toBe('Error: safe reason');
+    expect(censusErrorLine(new TypeError('about FakeOwner31Error'))).toBe('TypeError: about [redacted]');
+    expect(censusErrorLine('plain words')).toBe('Error: plain words');
+  });
 });
 
 describe('the census output never prints an owner-written meeting status (review LC-6)', () => {

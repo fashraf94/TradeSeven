@@ -397,14 +397,18 @@ const idLike = (t) => (/[0-9]/.test(t) && /[A-Za-z]/.test(t)) || (t.length >= 12
  * Error — an id planted as a name never prints, however class-shaped)
  * and its message with key blocks, the credential's own values, addresses,
  * resource paths and id-like tokens removed, bounded to CENSUS_ERROR_MAX —
- * never an id, never key material. Arrays only: the write-grep gate reads
- * this file.
+ * never an id, never key material. A thrown function or class is an error
+ * object here too (Amendment F RF-1, Astra's B1.1 review F1): its message
+ * when it has one, else the class alone — never its source or its name.
+ * Arrays only: the write-grep gate reads this file.
  */
 export function censusErrorLine(err, { secrets = NEVER_PRINTED } = {}) {
   // B1.1 (RC-4, Astra N1): the class from the one fixed list of real error classes, never a class-shaped name
   const cls = errorClassOf(err);
+  // RF-1: only a primitive keeps its own text; String() of a function is its source, name included
+  const errorLike = typeof err === 'function' || (err !== null && typeof err === 'object');
   let text = '';
-  try { text = String(err !== null && typeof err === 'object' ? err.message ?? '' : err ?? ''); } catch { text = ''; }
+  try { text = String(errorLike ? err.message ?? '' : err ?? ''); } catch { text = ''; }
   for (const s of secrets) if (typeof s === 'string' && s.length >= 3) text = text.split(s).join('[redacted]');
   text = text
     .replace(/-----BEGIN[\s\S]*?(?:-----END[^-]*-----|$)/g, '[key]')
