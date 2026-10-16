@@ -268,6 +268,7 @@ Only the failure paths changed, as W-1 asks:
 ## 6. Visible changes (plain terms)
 
 1. **Header, default modal:** the price moves with the live price, as the "% today" next to it already did.
+   - An asset handed to the modal with only a `currentPrice` (no `price`) now shows that price in the header and "Current". Before, it read "$—" and "$0.00", while the "% today" was already computed from it.
 2. **Technical tab, default modal:** "Current" is that same live price. Each level's distance and its above/below side are measured from it, so a level can change list and colour as the price crosses it.
 3. **Chart, S/R on:** the dashed lines change colour as the live price crosses them, and so does a tapped level's solid line.
 4. **Held (controlled) view:** nothing moves with the live price; the accepted price is used as before.
