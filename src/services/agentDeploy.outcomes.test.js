@@ -15,6 +15,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { getIdTokenMock, auth } = vi.hoisted(() => ({ getIdTokenMock: vi.fn(), auth: { uid: 'uid-A' } }));
+// The casual-clone ensure runs in every row here (its production value, stated
+// so the file does not silently depend on it; review L5-9). The flag-off
+// boundaries are in agentDeploy.outcomes.flagOff.test.js.
+vi.mock('../config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), CASUAL_CLONE_CONCURRENCY_ENABLED: true }));
 vi.mock('../firebase/authService', () => ({
   getIdToken: getIdTokenMock,
   getCurrentUser: () => (auth.uid ? { uid: auth.uid } : null),
@@ -390,6 +394,11 @@ describe('the identity guard: a changed or absent uid orphans the deploy at each
   it('a token lost to an account change is the change, not a missing sign-in (review L2-4)', async () => {
     getIdTokenMock.mockImplementation(async () => { auth.uid = 'uid-B'; return null; });
     expect(await run(vi.fn())).toEqual(ORPHANED_BEFORE_POST);
+  });
+
+  it('a null token with a stale isCurrent is orphaned, not auth-required (review L5-10)', async () => {
+    getIdTokenMock.mockResolvedValue(null);
+    expect(await run(vi.fn(), { isCurrent: () => false })).toEqual(ORPHANED_BEFORE_POST);
   });
 
   it('a token refresh that fails with the same account signed in stays auth-required', async () => {

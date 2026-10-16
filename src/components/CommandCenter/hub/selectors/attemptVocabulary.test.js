@@ -86,7 +86,7 @@ describe('today\'s results (src/services/agentDeploy.js), ruling R-S2A-2: untype
     expect(t.detail.kind).toBe('untyped');
   });
 
-  it('every legacy shape in the fixture is still one agentDeploy.js returns, now beside its typed outcome (R1)', async () => {
+  it('R1 typed the service: every legacy field the fixture shapes use is still returned, beside an outcome; the untyped fixture rows are now synthetic fail-closed inputs', async () => {
     const { readFileSync } = await import('node:fs');
     const path = await import('node:path');
     const { fileURLToPath } = await import('node:url');

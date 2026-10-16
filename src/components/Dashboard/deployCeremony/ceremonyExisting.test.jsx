@@ -83,7 +83,7 @@ const json = (status, body) => ({ ok: status >= 200 && status < 300, status, sta
 const serverReturns = (...docs) => getDocsFromServerMock.mockResolvedValue({ empty: docs.length === 0, docs });
 const docOf = (id, data) => ({ id, data: () => data });
 
-let container; let root; let entered; let opened; let retried; let notes; let createCb;
+let container; let root; let entered; let opened; let retried; let notes; let createCb; let dismissed;
 // Bumped when a row ends: a wait loop from an earlier row stops instead of
 // running on into the next one.
 let rowGeneration = 0;
@@ -93,7 +93,7 @@ beforeEach(() => {
   if (!window.matchMedia) {
     window.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
   }
-  entered = undefined; opened = []; retried = 0; notes = [];
+  entered = undefined; opened = []; retried = 0; notes = []; dismissed = 0;
   createCb = vi.fn();
   getDocsFromServerMock.mockReset();
   getIdTokenMock.mockReset();
@@ -135,7 +135,7 @@ const renderWith = (deployProgress, deployResult, extra = {}) => {
         onEnterBattle={(b) => { entered = b ?? null; }}
         onOpenBattle={(b) => { opened.push(b); }}
         onRetry={() => { retried += 1; }}
-        onDismiss={() => {}}
+        onDismiss={() => { dismissed += 1; }}
         attemptId="att-1"
         onPhaseChange={(n) => { notes.push(n); }}
         {...extra}
@@ -177,14 +177,18 @@ describe('Existing battle R1 (spec §11.3) — the real machine with 200 battleC
     expect(createCb).not.toHaveBeenCalled();
     expect(result).toEqual({ outcome: 'existing_battle', success: false, existingBattleId: RUNNING_ID, postIssued: true, httpStatus: 200 });
     expect(deployResultFor(result)).toEqual({ status: 'existing', existingBattleId: RUNNING_ID, httpStatus: 200, postIssued: true });
-    expect(JSON.stringify(result)).not.toMatch(/agent_/);
+    // No battle id of any kind rides on the result: App fabricated its `agent_` id from a
+    // null one, and nothing here could hand it one.
+    expect(result).not.toHaveProperty('agentBattleId');
+    expect(result).not.toHaveProperty('battleId');
   });
 
   it('the existing terminal: no reveal, no Enter, even beside a complete checkpoint', async () => {
     serverReturns(docOf(RUNNING_ID, RUNNING_DOC()));
     await runTo(deployResultFor(await serviceResult(json(200, EXISTING_200))));
     await waitFor(() => text().includes('Already running'), 'the existing terminal');
-    // Past the reveal's success grace, in case anything still drifts toward it.
+    // A few machine ticks later the terminal still holds (the latch; a reveal would need a
+    // `success` status, which this result never is).
     await tick(600);
     expect(text()).toContain('Nova already has a game running.');
     expect(text()).toContain('No new game was started.');
@@ -290,7 +294,7 @@ describe('Existing battle R1 (spec §11.3) — the real machine with 200 battleC
 });
 
 describe('the primary button keeps focus inside the modal (review L3-2)', () => {
-  it('Retry → reading → Open is ONE button node, focused throughout and never `disabled`', async () => {
+  it('Retry → reading → Open is ONE button node, never `disabled` (jsdom does no focus fixup, so these rows pin the structure; review L5-7)', async () => {
     serverReturns();
     await runTo(deployResultFor(await serviceResult(json(200, EXISTING_200))));
     await waitFor(() => Boolean(button('Retry')), 'unavailable');
@@ -302,11 +306,65 @@ describe('the primary button keeps focus inside the modal (review L3-2)', () => 
     await waitFor(() => text().includes('Finding the running game…'), 'the pending read');
     expect(button('Open game')).toBe(primary);
     expect(primary.hasAttribute('disabled')).toBe(false);
-    expect(document.activeElement).toBe(primary);
+    expect(primary.getAttribute('aria-disabled')).toBe('true');
     await act(async () => { release(); });
     await waitFor(openReady, 'Open after the read');
     expect(button('Open game')).toBe(primary);
-    expect(document.activeElement).toBe(primary);
+    expect(primary.hasAttribute('disabled')).toBe(false);
+  });
+});
+
+describe('review L5 — the rows the mutating lens found missing', () => {
+  it('"Back to hub" on the existing terminal dismisses (L5-3)', async () => {
+    serverReturns(docOf(RUNNING_ID, RUNNING_DOC()));
+    await runTo(deployResultFor(await serviceResult(json(200, EXISTING_200))));
+    await waitFor(() => text().includes('Already running'), 'the existing terminal');
+    // The terminal's own text button (the overlay's X carries only an aria-label).
+    const back = buttons().find((b) => (b.textContent || '').includes('Back to hub'));
+    act(() => { back.click(); });
+    expect(dismissed).toBe(1);
+    expect(opened).toEqual([]);
+  });
+
+  it('a shell re-render with a fresh liveBattles array of the same content starts no new read (L5-4)', async () => {
+    serverReturns(docOf(RUNNING_ID, RUNNING_DOC()));
+    // The shells build liveBattles with .filter() on every render: a new array each time.
+    const other = () => [{ id: 'battle-elsewhere', ownerId: 'uid-1', status: 'active' }];
+    const existing = deployResultFor(await serviceResult(json(200, EXISTING_200)));
+    await runTo(existing, { liveBattles: other() });
+    await waitFor(openReady, 'Open enabled');
+    const reads = getDocsFromServerMock.mock.calls.length;
+    for (let i = 0; i < 3; i += 1) {
+      renderWith({ stage: 'complete', deployId: OURS, updatedAt: `${OURS}-2` }, existing, { liveBattles: other() });
+      await tick(60);
+    }
+    expect(getDocsFromServerMock.mock.calls.length).toBe(reads);
+    expect(openReady()).toBe(true);
+  });
+
+  it('Retry reads the CURRENT live list — a poll that landed after the first read (L5-4, L3-1)', async () => {
+    serverReturns();
+    const existing = deployResultFor(await serviceResult(json(200, EXISTING_200)));
+    await runTo(existing, { liveBattles: [] });
+    await waitFor(() => Boolean(button('Retry')), 'unavailable');
+    renderWith({ stage: 'complete', deployId: OURS, updatedAt: `${OURS}-2` }, existing, { liveBattles: [{ id: RUNNING_ID, ...RUNNING_DOC() }] });
+    act(() => { button('Retry').click(); });
+    await waitFor(openReady, 'Open after Retry, from the list');
+  });
+
+  it('the ordinary created reveal is reported to onPhaseChange too (L5-1)', async () => {
+    // The stage floors (≈9.5 s) are crossed by moving the machine's clock, not by waiting.
+    const realNow = performance.now.bind(performance);
+    let offset = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => realNow() + offset);
+    renderWith(null, { status: 'pending' });
+    renderWith({ stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1` }, { status: 'pending' });
+    await tick();
+    renderWith({ stage: 'complete', deployId: OURS, updatedAt: `${OURS}-2` }, { status: 'success', agentBattleId: 'battle-new' });
+    for (let i = 0; i < 10 && !text().includes('Deployment complete'); i += 1) { offset += 3000; await tick(150); }
+    await waitFor(() => text().includes('Deployment complete'), 'the ordinary reveal');
+    expect(notes.map((n) => n.phase)).toEqual(['theater', 'reveal']);
+    expect(notes.every((n) => n.attemptId === 'att-1' && n.errorTone === null)).toBe(true);
   });
 });
 

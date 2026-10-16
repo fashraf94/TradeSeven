@@ -7,9 +7,11 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// The module's default readers are never used here; every row injects its own.
-vi.mock('../../../services/agentBattleVerify', () => ({ findActiveBattleForAgent: vi.fn(), default: vi.fn() }));
-vi.mock('../../../firebase/authService', () => ({ getIdToken: vi.fn(), getCurrentUser: () => null }));
+// The module's default readers, configurable for the one row that uses them
+// (the shells call openExistingBattleDirectly without injecting either).
+const { verifyDefault, signedIn } = vi.hoisted(() => ({ verifyDefault: vi.fn(), signedIn: { uid: null } }));
+vi.mock('../../../services/agentBattleVerify', () => ({ findActiveBattleForAgent: verifyDefault, default: verifyDefault }));
+vi.mock('../../../firebase/authService', () => ({ getIdToken: vi.fn(), getCurrentUser: () => (signedIn.uid ? { uid: signedIn.uid } : null) }));
 
 const { ownsExistingBattle, resolveExistingBattle, openExistingBattleDirectly } = await import('./existingBattle');
 
@@ -118,6 +120,21 @@ describe('openExistingBattleDirectly (ceremony off)', () => {
     const onOpen = vi.fn();
     expect(await openExistingBattleDirectly({ existingBattleId: ID, targetAgentId: 't', liveBattles: [], onOpen, verify: async () => ({ found: false, battle: null }), currentUid: () => 'uid-A' })).toBe(false);
     expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('with its DEFAULT readers (as the shells call it): the target-scoped verifier and the signed-in uid (review L5-5)', async () => {
+    signedIn.uid = 'uid-A';
+    verifyDefault.mockReset();
+    verifyDefault.mockResolvedValue({ found: true, battle: OWNED });
+    const onOpen = vi.fn();
+    expect(await openExistingBattleDirectly({ existingBattleId: ID, targetAgentId: 'casual-agent-uid-A', liveBattles: [], onOpen })).toBe(true);
+    expect(verifyDefault).toHaveBeenCalledWith('casual-agent-uid-A');
+    expect(onOpen).toHaveBeenCalledWith(OWNED);
+    signedIn.uid = 'uid-B';
+    const onOpenB = vi.fn();
+    expect(await openExistingBattleDirectly({ existingBattleId: ID, targetAgentId: 'casual-agent-uid-A', liveBattles: [], onOpen: onOpenB })).toBe(false);
+    expect(onOpenB).not.toHaveBeenCalled();
+    signedIn.uid = null;
   });
 
   it('an open that throws resolves false instead of rejecting', async () => {

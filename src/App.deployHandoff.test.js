@@ -66,6 +66,16 @@ describe('R1 — App\'s handoff fabricates nothing and knows its owner (R-R1-5)'
     expect(body.indexOf('agentBattleId', body.indexOf(DECL) + DECL.length)).toBe(guard + 'if ('.length);
   });
 
+  it('the settle hands the builder every field the pre-R1 inline entry had (review L5-2)', () => {
+    const body = handlerBody();
+    const settle = body.slice(body.indexOf('isDeploySkyCouplingOn()'), body.indexOf('const currentBattleObj'));
+    for (const arg of [
+      'agentBattleId,', 'ownerUid,', 'agentId: agentMeta?.agentId,', 'expiresAt: agentMeta?.expiresAt,',
+      'nowIso: now.toISOString(),', 'portfolio: portfolioData,', 'bench: benchData,',
+      'startingPrices: allStartingPrices,', 'opponentPortfolio: cpuPortfolio,', 'opponentBench: cpuBench,',
+    ]) expect(settle, arg).toContain(arg);
+  });
+
   it('the optimistic entry carries that owner', () => {
     const body = handlerBody();
     const settle = body.slice(body.indexOf('isDeploySkyCouplingOn()'), body.indexOf('const currentBattleObj'));

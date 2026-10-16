@@ -233,6 +233,9 @@ describe('agentDeploy — reports where the failure happened (PR 2)', () => {
   // was not created by this deploy, so there is no id to carry and the 200 must
   // buy nothing. The machine's gate keys on the id, not the status, precisely so
   // this row cannot become a reveal.
+  // R1: this body (no battleCreated flag) is now the malformed 200 — typed
+  // `uncertain`, no hand-off at all, and still no battle id to carry (the real
+  // existing-battle 200, battleCreated:false, is `existing_battle`).
   // DIES UNDER: fabricating an id here, or admitting 200 on the status alone.
   it('a 200 carrying only existingBattleId yields NO battle id to carry', async () => {
     postSucceeding({ success: true, existingBattleId: 'battle-someone-elses', portfolio: {}, bench: {} });

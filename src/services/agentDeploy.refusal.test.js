@@ -50,7 +50,10 @@ describe('the deploy refusal reaches the ceremony verbatim', () => {
   });
   it('a refusal body without a string message forwards no invented words (AD02: a non-string message is not forwarded)', async () => {
     globalThis.fetch = vi.fn(async () => respond(409, { error: DEPLOY_REFUSAL_CODE }));
-    expect((await deployAgent('agent-1', vi.fn())).details).toBeUndefined();
+    const wordless = await deployAgent('agent-1', vi.fn());
+    expect(wordless.details).toBeUndefined();
+    // R1 (review L5-8): the refusal itself, not an orphaned deploy that has no details either.
+    expect(wordless.outcome).toBe('refused');
     globalThis.fetch = vi.fn(async () => respond(409, { error: DEPLOY_REFUSAL_CODE, message: 42 }));
     expect((await deployAgent('agent-1', vi.fn())).details).toBeUndefined();
   });

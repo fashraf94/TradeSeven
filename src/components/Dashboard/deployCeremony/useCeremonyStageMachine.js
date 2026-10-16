@@ -405,10 +405,12 @@ export default function useCeremonyStageMachine({
       // ── R1 (ruling R-R1-6): the server's explicit 200 with battleCreated:false.
       // The agent already has a running battle and this deploy created none, so
       // the machine commits straight to the `existing` terminal. It is checked
-      // FIRST, before the progress bookkeeping, because no checkpoint changes
-      // it: decide.js stamps stage 'complete' in its decision write, BEFORE its
-      // existing-battle check, so a complete checkpoint arrives beside this
-      // answer. Unchecked, the machine would read 'existing' as still pending,
+      // first, before the progress bookkeeping: no checkpoint changes it, and
+      // only a server error checkpoint for this deploy arriving in the same tick
+      // could otherwise get in ahead of it. decide.js stamps stage 'complete' in
+      // its decision write, BEFORE its existing-battle check, so a complete
+      // checkpoint arrives beside this answer. Without this branch the machine
+      // would read 'existing' as still pending,
       // hold the theater, and after the watchdog verify its way to a
       // lost-contact error. No verification runs here: nothing is in doubt, and
       // no existence check may promote it to a reveal.
