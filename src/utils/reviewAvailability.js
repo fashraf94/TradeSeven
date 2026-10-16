@@ -24,6 +24,12 @@
 // Otherwise Stage 1. The output is EXACTLY the three keys in every branch: at
 // most one bounded tape read and one cached verdict, never a fourth key.
 //
+// AN UNTAPED MODE (Build B Amendment B RB-9, after RB-5): a battle whose game
+// mode the writer does not tape — the writer's own test,
+// `resolveModeConfig(gameMode).label !== 'tiered'` (writeTapeDay.js
+// isTieredBattle; the route's since PR #963) — answers as at 'off': Stage 1,
+// decided BEFORE any verdict is asked, so it costs no verdict and no read.
+//
 // STAGE 1 (v2 not on for the owner — today, whatever the writer flag says):
 // synchronous from the battle document, NO read. ready = completed AND the
 // legacy review exists (`dailyReviews[]` non-empty — presence only, never
@@ -135,6 +141,8 @@ export async function getReviewAvailability(battle, { readTape = defaultReadTape
   if (!battle || typeof battle !== 'object') return result(false, null, 'unavailable');
   const target = typeof battle.id === 'string' && battle.id ? FILM_ROOM_ROUTE : null;
   if (!target) return result(false, null, 'unavailable');
+  // RB-9: a mode the tape does not cover answers as at 'off' — before any verdict is asked.
+  if (resolveModeConfig(battle.gameMode).label !== 'tiered') return stageOne(battle, target);
   // BA-40: Stage 3 only when v2 resolves on for THIS battle's owner.
   let v2 = false;
   try { v2 = (await resolveFilmRoomV2ForBattle(battle, { readVerdict })) === true; } catch { v2 = false; }

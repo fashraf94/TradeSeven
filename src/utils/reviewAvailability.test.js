@@ -352,3 +352,48 @@ describe('review A2L4-5 — exactly three keys, none undefined, in EVERY branch 
     }
   });
 });
+
+// ── Build B Amendment B RB-9 (Film Room B1.1 item 4) — the hub helper follows RB-5 ──
+
+describe('RB-9 — a battle whose mode the writer does not tape answers Stage 1, before any verdict is asked', () => {
+  const asking = (answer = true) => {
+    const asked = [];
+    return { asked, readVerdict: async (id) => { asked.push(id); return answer; } };
+  };
+  const STAGE1 = [
+    ['ready', base({ gameMode: 'baggerbomb_tournament', dailyReviews: [{ day: 1 }] }), { ready: true, target: 'filmRoom', availability: 'ready' }],
+    ['pending', base({ gameMode: 'baggerbomb_tournament', reviewPending: true }), { ready: false, target: 'filmRoom', availability: 'pending' }],
+    ['unavailable', base({ gameMode: 'baggerbomb_tournament' }), { ready: false, target: 'filmRoom', availability: 'unavailable' }],
+  ];
+
+  it.each(['on', 'allowlist'])("a tournament battle at '%s': Stage 1's three answers — exactly three keys, no verdict asked, no tape read", async (mode) => {
+    flags.mode = mode; flags.writer = true;
+    for (const [label, battle, want] of STAGE1) {
+      resetFilmRoomVerdicts();
+      // a written final-day tape the Stage 3 path would read and answer `ready` from
+      const r = recorder({ passes: { close: { status: 'written' } } });
+      const v = asking(true);
+      const out = await getReviewAvailability(battle, { readTape: r.readTape, now: THU, readVerdict: v.readVerdict });
+      expect(out, label).toEqual(want);
+      expect(Object.keys(out).sort(), label).toEqual(KEYS);
+      expect(r.calls, `${label}: no tape read`).toEqual([]);
+      expect(v.asked, `${label}: no verdict asked`).toEqual([]);
+    }
+  });
+
+  it.each([['tiered', 'baggerbomb_agent'], ['unknown', 'not_a_mode'], ['absent', undefined]])("%s mode: as before — at 'on' Stage 3 reads the final-day tape once; at 'allowlist' the verdict is asked", async (_label, gameMode) => {
+    flags.writer = true;
+    const battle = base(gameMode === undefined ? {} : { gameMode });
+    flags.mode = 'on';
+    const r = recorder({ passes: { close: { status: 'written' } } });
+    expect(await getReviewAvailability(battle, { readTape: r.readTape, now: THU })).toEqual({ ready: true, target: 'filmRoom', availability: 'ready' });
+    expect(r.calls).toEqual([['battle-1', '2026-09-28']]);
+    flags.mode = 'allowlist';
+    resetFilmRoomVerdicts();
+    const v = asking(false);
+    const r2 = recorder({ passes: { close: { status: 'written' } } });
+    expect(await getReviewAvailability(battle, { readTape: r2.readTape, now: THU, readVerdict: v.readVerdict })).toEqual({ ready: false, target: 'filmRoom', availability: 'unavailable' });
+    expect(v.asked).toEqual(['battle-1']);
+    expect(r2.calls).toEqual([]);
+  });
+});
