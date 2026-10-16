@@ -6,7 +6,7 @@ import { SECTORS, CRYPTO_SECTOR } from '../../constants/sectors';
 import { getQuickSectorSummary } from '../../services/sectorDataService';
 import QuadrantBadge from './MoneyMap/QuadrantBadge';
 import { sideLevelsAt, distanceFromShownPrice } from './useResearchData';
-import { priceText } from './priceFormat';
+import { priceText, priceDecimals } from './priceFormat';
 
 /**
  * TechnicalTabV2 — Enhanced 4-section collapsible technical analysis tab.
@@ -19,12 +19,15 @@ import { priceText } from './priceFormat';
  */
 const TechnicalTabV2 = ({ asset, dailyData, indicators, levels, sessionDate, onLevelHighlight }) => {
   const price = asset?.price || 0;
+  // One precision for the asset's prices: its shown price's (without one, each
+  // price prints by its own size).
+  const decimals = price > 0 ? priceDecimals(price) : undefined;
 
   return (
     <div>
-      <PriceLevelsSection levels={levels} price={price} onLevelHighlight={onLevelHighlight} />
+      <PriceLevelsSection levels={levels} price={price} decimals={decimals} onLevelHighlight={onLevelHighlight} />
       <MomentumSection indicators={indicators} price={price} />
-      <VolumeRangeSection dailyData={dailyData} price={price} sessionDate={sessionDate} />
+      <VolumeRangeSection dailyData={dailyData} price={price} decimals={decimals} sessionDate={sessionDate} />
       <SectorContextSection asset={asset} />
     </div>
   );
@@ -73,7 +76,7 @@ const describeMacd = (macd, histogram, dates) => {
 // rows below are sided and measured from the price the "Current" row shows
 // (BUILD_RULES §9) — the same helper sides the chart's S/R lines. Without a
 // shown price there is nothing to measure from.
-const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
+const PriceLevelsSection = ({ levels, price, decimals, onLevelHighlight }) => {
   const sided = sideLevelsAt(levels, price);
   const support = sided?.support || [];
   const resistance = sided?.resistance || [];
@@ -110,7 +113,7 @@ const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
             color,
             fontFamily: 'monospace',
           }}>
-            ${priceText(level.price)}
+            ${priceText(level.price, decimals)}
           </span>
           <span style={{
             padding: '1px 5px',
@@ -152,7 +155,7 @@ const PriceLevelsSection = ({ levels, price, onLevelHighlight }) => {
           }}>
             <span style={{ fontSize: '11px', color: '#00d9ff', fontWeight: '600' }}>Current</span>
             <span style={{ fontSize: '13px', color: '#00d9ff', fontWeight: '700', fontFamily: 'monospace' }}>
-              ${priceText(price)}
+              ${priceText(price, decimals)}
             </span>
           </div>
 
@@ -291,7 +294,7 @@ const barTime = (c) => {
 const shortDate = (dateKey) => new Date(`${dateKey}T00:00:00Z`)
   .toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
-const VolumeRangeSection = ({ dailyData, price, sessionDate }) => {
+const VolumeRangeSection = ({ dailyData, price, decimals, sessionDate }) => {
   const stats = useMemo(() => {
     if (!dailyData || dailyData.length < 5) return null;
     const bars = [...dailyData].reverse(); // oldest-first
@@ -388,8 +391,8 @@ const VolumeRangeSection = ({ dailyData, price, sessionDate }) => {
               display: 'flex', justifyContent: 'space-between',
               fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px',
             }}>
-              <span>${priceText(stats.low52w)}</span>
-              <span>${priceText(stats.high52w)}</span>
+              <span>${priceText(stats.low52w, decimals)}</span>
+              <span>${priceText(stats.high52w, decimals)}</span>
             </div>
             {/* Range bar */}
             <div style={{

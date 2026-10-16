@@ -264,7 +264,8 @@ const AssetResearchModal = ({
   // shown price as the Technical tab's rows ("Current"), by the same helper —
   // never by the close detectLevels used. The chart redraws its lines whenever
   // the levels object changes, so a new one is made only when a level changes
-  // side, not on every live tick.
+  // side: a live tick that moves no level across redraws nothing here (a
+  // throttled live-candle update rebuilds the chart, and its lines, anyway).
   const shownPrice = shownAsset?.price;
   const sidedLevels = sideLevelsAt(researchData.levels, shownPrice);
   const sidesKey = sidedLevels

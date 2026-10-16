@@ -73,6 +73,23 @@ describe('W-3 — the price format (priceFormat.js)', () => {
     expect(priceText(0.009996)).toBe('0.009996');
   });
 
+  it('the band is read from the rounded price: one that rounds up into the next band prints in it', () => {
+    expect(priceText(0.99996)).toBe('1.00'); // not "1.0000"
+    expect(priceText(1.00004)).toBe('1.00');
+    expect(priceText(0.999949)).toBe('0.9999');
+    expect(priceText(0.0099996)).toBe('0.0100'); // not "0.01000"
+    expect(priceText(0.00009999)).toBe('0.00009999');
+  });
+
+  it('at most 10 decimals (the chart library mislabels 11 and throws past 16); an asset\'s decimals can be passed in', () => {
+    expect(priceDecimals(2.822e-8)).toBe(10);
+    expect(priceText(2.822e-8)).toBe('0.0000000282');
+    expect(priceText(1e-98)).toBe('0.0000000000'); // toFixed past 100 digits would throw
+    expect(priceDecimals(1.234e-7)).toBe(10);
+    expect(priceText(1.05, 4)).toBe('1.0500');
+    expect(priceText(0.98, 2)).toBe('0.98');
+  });
+
   it('no price to size: absent stays absent, zero reads "0.00"', () => {
     expect(priceText(undefined)).toBeUndefined();
     expect(priceText(null)).toBeUndefined();
@@ -98,6 +115,32 @@ describe('W-3 — the Technical tab prints each price in its asset\'s format', (
     await render({ asset: { symbol: 'SHIB', price: 0.00001234 }, levels: { support: [level(0.0000118)], resistance: [level(0.0000129)], currentPrice: 0.0000123 } });
     expect(current()).toBe('$0.00001234');
     expect(levelPrices()).toEqual(['$0.00001290', '$0.00001180']);
+  });
+
+  it('one precision per asset: at $0.999, levels just over $1 keep four decimals (two would print "$1.00" twice)', async () => {
+    await render({ asset: { symbol: 'ADA', price: 0.999 }, levels: { support: [level(0.9951)], resistance: [level(1.0004), level(1.0049)], currentPrice: 0.999 } });
+    expect(current()).toBe('$0.9990');
+    expect(levelPrices()).toEqual(['$1.0049', '$1.0004', '$0.9951']);
+  });
+
+  it('one precision per asset: at $1.02, a $0.98 level prints two decimals, as the chart\'s axis labels it', async () => {
+    await render({ asset: { symbol: 'ADA', price: 1.02 }, levels: { support: [level(0.98)], resistance: [level(1.05)], currentPrice: 1.02 } });
+    expect(current()).toBe('$1.02');
+    expect(levelPrices()).toEqual(['$1.05', '$0.98']);
+  });
+
+  it('no shown price: each level prints by its own size', async () => {
+    await render({ asset: { symbol: 'DOGE', price: 0 }, levels: { support: [level(0.2001)], resistance: [level(0.2051)], currentPrice: 0.2045 } });
+    expect(levelPrices()).toEqual(['$0.2051', '$0.2001']);
+  });
+
+  it('range endpoints in the asset\'s precision: ADA at $0.98 with a $0.95–$1.10 range reads "$0.9500" and "$1.1000"', async () => {
+    const dailyData = dailyBars(30, '2026-10-14', (i) => ({
+      open: 1, high: 1.01, low: 0.99, close: 1, ...(i === 3 ? { low: 0.95 } : {}), ...(i === 7 ? { high: 1.1 } : {}),
+    }));
+    await render({ asset: { symbol: 'ADA', price: 0.98 }, dailyData, sessionDate: '2026-10-15' });
+    const range = [...container.querySelectorAll('span')].map((s) => s.textContent).filter((t) => t.startsWith('$'));
+    expect(range).toEqual(['$0.9500', '$1.1000']);
   });
 
   it('DOGE-class range endpoints: "$0.1523" and "$0.4871"', async () => {
@@ -134,5 +177,7 @@ describe('W-4 — each MACD reading is dated by the bar behind it', () => {
     expect(rowText()).toBe('MACD Signal Bullish cross · Oct 9');
     await render({ indicators: { ...QUIET, macd, macdHistogram } });
     expect(rowText()).toBe('MACD Signal Bullish cross');
+    await render({ indicators: { ...QUIET, macd, macdHistogram, macdHistogramDates: ['2026-10-14', '2026-10-12', 'Oct 9', '2026-10-08', '2026-10-07', '2026-10-06'] } });
+    expect(rowText()).toBe('MACD Signal Bullish cross'); // not a YYYY-MM-DD date: no date shown
   });
 });

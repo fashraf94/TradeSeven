@@ -25,9 +25,9 @@ import { createRoot } from 'react-dom/client';
 
 const NOW = Date.parse('2026-10-15T17:00:00.000Z'); // Thu 1:00 PM ET
 const DAY_MS = 24 * 60 * 60 * 1000;
-const BASE = { AAPL: 200, MSFT: 400, DOGE: 0.2, SHIB: 0.0000123 };
+const BASE = { AAPL: 200, MSFT: 400, DOGE: 0.2, SHIB: 0.0000123, FALL: 0.5 };
 
-const net = vi.hoisted(() => ({ calls: [], fail: new Map() }));
+const net = vi.hoisted(() => ({ calls: [], fail: new Map(), holdQuote: false }));
 /** Daily bars for `days` calendar days back from NOW, up to Oct 14, newest-first (stocks: weekdays). */
 function serverDaily(days, base, crypto) {
   const from = new Date(NOW - days * DAY_MS).toISOString().slice(0, 10);
@@ -39,6 +39,17 @@ function serverDaily(days, base, crypto) {
       const close = base * (out.length % 2 ? 0.9975 : 1.0025);
       out.push({ date: d.toISOString().slice(0, 10), open: close, high: close * 1.01, low: close * 0.99, close, volume: 1e6 });
     }
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+  return out;
+}
+/** A coin that fell through $1: every day back to `days` ago, newest-first, closing at 0.50 + 0.01 per day back. */
+function fallingDaily(days) {
+  const out = [];
+  const d = new Date('2026-10-14T00:00:00Z');
+  for (let i = 0; i <= days; i++) {
+    const close = 0.5 + 0.01 * i;
+    out.push({ date: d.toISOString().slice(0, 10), open: close, high: close * 1.01, low: close * 0.99, close, volume: 1e6 });
     d.setUTCDate(d.getUTCDate() - 1);
   }
   return out;
@@ -62,7 +73,7 @@ vi.mock('../../services/eodhdAPI', () => ({
       return Promise.reject(new Error('Proxy error: 500'));
     }
     const b = BASE[symbol];
-    if (timeframe === '1d') return Promise.resolve(serverDaily(opts?.days ?? 180, b, opts?.type === 'crypto'));
+    if (timeframe === '1d') return Promise.resolve(symbol === 'FALL' ? fallingDaily(opts?.days ?? 180) : serverDaily(opts?.days ?? 180, b, opts?.type === 'crypto'));
     if (timeframe === '1w') {
       return Promise.resolve([
         { date: '2026-10-12', open: b, high: b * 1.01, low: b * 0.99, close: b, volume: 5e6 },
@@ -74,6 +85,7 @@ vi.mock('../../services/eodhdAPI', () => ({
   },
   getStockPrice: (symbol) => {
     net.calls.push(['getStockPrice', symbol]);
+    if (net.holdQuote) return new Promise(() => {});
     return Promise.resolve({ symbol, price: 0 });
   },
 }));
@@ -149,6 +161,7 @@ vi.mock('../Research/SmartMoneyTab', () => ({ default: () => null }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: { currentUser: null }, default: {} }));
 
 import AssetResearchModal from './AssetResearchModal';
+import StockChart from '../Research/StockChart';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 if (!globalThis.ResizeObserver) {
@@ -168,6 +181,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date(NOW));
   net.calls.length = 0;
   net.fail.clear();
+  net.holdQuote = false;
   chart.series.length = 0;
   chart.created.length = 0;
   chart.live.clear();
@@ -306,6 +320,72 @@ describe('W-1 — the request follows the S/R pill the chart reports (onToggleSR
   });
 });
 
+describe('W-1 — S/R starts off for every symbol and every mounted chart, on every path', () => {
+  const contract = (symbol, price) => ({ posKey: 'player:star:0', symbol, price, extremes: null });
+  const MSFT = { symbol: 'MSFT', name: 'MSFT', price: 400 };
+
+  it('the chart reports a flip only when its pill is clicked — never on mount (no effect stands in for the click)', async () => {
+    const reports = [];
+    const bars = [
+      { date: '2026-10-05', open: 200, high: 202, low: 197, close: 199, volume: 5e6 },
+      { date: '2026-10-12', open: 199, high: 202, low: 198, close: 200, volume: 5e6 },
+    ];
+    await act(async () => {
+      root.render(<StockChart ohlcvData={bars} rawData={[...bars].reverse()} timeframe="1W" onTimeframeChange={() => {}} levels={null} symbol="AAPL" onToggleSR={(on) => reports.push(on)} />);
+    });
+    await flush();
+    expect(reports).toEqual([]);
+    await click(button('S/R'));
+    await click(button('S/R'));
+    expect(reports).toEqual([true, false]);
+  });
+
+  it('legacy re-open for MSFT (the asset prop changes) with S/R on for AAPL: MSFT asks nothing until its own pill', async () => {
+    await mount('1W');
+    await click(button('S/R'));
+    expect(dailyRequests('AAPL')).toHaveLength(1);
+    await mount('1W', { asset: MSFT });
+    expect(button('S/R')).toBeTruthy();
+    expect(dailyRequests('MSFT')).toEqual([]);
+  });
+
+  it('held (controlled) view re-opened for MSFT with S/R on for AAPL: MSFT asks nothing until its own pill', async () => {
+    await mount('1W', { controlledQuote: contract('AAPL', 200) });
+    await click(button('S/R'));
+    expect(dailyRequests('AAPL')).toHaveLength(1);
+    await mount('1W', { asset: MSFT, controlledQuote: contract('MSFT', 400) });
+    expect(button('S/R')).toBeTruthy();
+    expect(dailyRequests('MSFT')).toEqual([]);
+  });
+
+  it('S/R on for MSFT, then back (←) to AAPL: AAPL asks nothing (its S/R is off)', async () => {
+    await mount('1W');
+    await navigateTo('MSFT');
+    await click(button('S/R'));
+    expect(dailyRequests('MSFT')).toHaveLength(1);
+    await click(button('\u2190'));
+    expect(button('S/R')).toBeTruthy();
+    expect(dailyRequests('AAPL')).toEqual([]);
+  });
+
+  it('the Technical tab open on MSFT, then back (←) to AAPL with the tab still open: AAPL\'s daily series is asked for', async () => {
+    await mount('1W');
+    await navigateTo('MSFT');
+    await openTab('technical');
+    expect(dailyRequests('MSFT')).toHaveLength(1);
+    await click(button('\u2190'));
+    expect(dailyRequests('AAPL')).toEqual([daily400('AAPL')]);
+  });
+
+  it('a failed daily request with the Technical tab open, then a view switch (1W → bomb): it asks again', async () => {
+    net.fail.set('AAPL_1d_400', 1);
+    await mount('1W', { asset: { ...AAPL, threshold: 2.5 }, defaultTab: 'technical' });
+    expect(dailyRequests('AAPL')).toHaveLength(1);
+    await click(button('\uD83D\uDCA3'));
+    expect(dailyRequests('AAPL')).toHaveLength(2);
+  });
+});
+
 describe('W-2 — the legacy modal\'s price is the live price, everywhere on the sheet', () => {
   const LEVELS = { support: [level(198)], resistance: [level(200.4), level(202)], currentPrice: 200 };
 
@@ -344,6 +424,22 @@ describe('W-2 — the legacy modal\'s price is the live price, everywhere on the
     expect(highlightLines()[0][1]).not.toBe('#ff4757');
   });
 
+  it('a live tick that moves no level across sides redraws no S/R line (200 → 200.05, under the live candle\'s throttle)', async () => {
+    await mount('1D', { wsPrice: 200 });
+    await click(button('S/R'));
+    const srCreated = () => chart.created.filter((l) => l.opts.lineStyle === 2).length;
+    expect(srCreated()).toBe(2);
+    await mount('1D', { wsPrice: 200.05 });
+    expect(header()[0]).toBe('$200.05');
+    expect(srCreated()).toBe(2);
+  });
+
+  it('a priceless asset before its price arrives: the header reads "$—", not "$0.00"', async () => {
+    net.holdQuote = true;
+    await mount('1D', { asset: { symbol: 'AAPL', name: 'AAPL' } });
+    expect(header()[0]).toBe('$\u2014');
+  });
+
   it('the held (controlled) view keeps the accepted observation: a different wsPrice moves nothing', async () => {
     lv.levels = LEVELS;
     const contract = { posKey: 'player:star:0', symbol: 'AAPL', price: 200, extremes: null };
@@ -364,6 +460,7 @@ describe('W-3 — per-asset price format in the header and on the chart', () => 
     const candles = candleSeries();
     expect(candles.length).toBeGreaterThan(0);
     for (const s of candles) expect(s.opts.priceFormat).toEqual({ type: 'price', precision: 4, minMove: 0.0001 });
+    for (const s of chart.series.filter((x) => x.type === 'Histogram')) expect(s.opts.priceFormat).toEqual({ type: 'volume' }); // the volume series keeps its own
     await openTab('technical');
     await click(levelRow('$0.2051'));
     const [line] = [...chart.live].filter(isHighlight);
@@ -378,6 +475,35 @@ describe('W-3 — per-asset price format in the header and on the chart', () => 
     const candles = candleSeries();
     expect(candles.length).toBeGreaterThan(0);
     for (const s of candles) expect(s.opts.priceFormat).toEqual({ type: 'price', precision: 8, minMove: 1e-8 });
+  });
+
+  it('the axis precision comes from the latest candle: a coin that fell through $1 (older bars above $1) gets four decimals', async () => {
+    await mount('1D', { asset: { symbol: 'FALL', name: 'Fall', price: 0.5049, isCrypto: true } });
+    expect(header()[0]).toBe('$0.5049');
+    const candles = candleSeries();
+    expect(candles.length).toBeGreaterThan(0);
+    for (const s of candles) expect(s.opts.priceFormat).toEqual({ type: 'price', precision: 4, minMove: 0.0001 });
+  });
+
+  it('the bomb view\'s series keep the default format (the precision is the normal view\'s only)', async () => {
+    await mount('bomb', { asset: { symbol: 'DOGE', name: 'Dogecoin', price: 0.2049, isCrypto: true, threshold: 2.5 } });
+    expect(button('S/R')).toBeUndefined(); // the bomb view is up
+    const candles = candleSeries();
+    expect(candles.length).toBeGreaterThan(0);
+    for (const s of candles) expect('priceFormat' in s.opts).toBe(false);
+    for (const s of chart.series.filter((x) => x.type === 'Histogram')) expect(s.opts.priceFormat).toEqual({ type: 'volume' });
+  });
+
+  it('the held (controlled) view formats a sub-dollar asset the same way, and a different wsPrice moves nothing', async () => {
+    lv.levels = { support: [level(0.2001)], resistance: [level(0.2051)], currentPrice: 0.2 };
+    const asset = { symbol: 'DOGE', name: 'Dogecoin', price: 0.2049, isCrypto: true };
+    await mount('1D', { asset, wsPrice: 0.25, controlledQuote: { posKey: 'player:star:0', symbol: 'DOGE', price: 0.2049, extremes: null } });
+    await openTab('technical');
+    expect(header()[0]).toBe('$0.2049');
+    expect(current()).toBe('$0.2049');
+    expect(levelRows().map((r) => r[0])).toEqual(['$0.2051', '$0.2001']);
+    for (const s of candleSeries()) expect(s.opts.priceFormat).toEqual({ type: 'price', precision: 4, minMove: 0.0001 });
+    expect(quoteCalls()).toEqual([]);
   });
 
   it('a stock: "$200.00", and the chart\'s series options are unchanged (no priceFormat — the default two decimals)', async () => {
@@ -406,11 +532,26 @@ describe('W-5 — a tapped level is cleared on a symbol change, before the new c
     expect(chart.created.slice(mark).filter(isHighlight)).toEqual([]);
   });
 
-  it('…and back to AAPL: the old tap does not come back', async () => {
-    await tapOnAapl();
+  it('tap a level on MSFT, then back (←) to AAPL: MSFT\'s tap is not drawn on AAPL\'s chart', async () => {
+    await mount('1D');
+    lv.levels = { support: [level(398)], resistance: [level(402)], currentPrice: 400 };
     await navigateTo('MSFT');
+    await openTab('technical');
+    await click(levelRow('$402.00'));
+    expect(highlightLines()).toEqual([[402, '#ff4757']]);
     const mark = chart.created.length;
-    await click(button('←'));
+    await click(button('\u2190'));
+    expect(button('S/R')).toBeTruthy();
+    expect(highlightLines()).toEqual([]);
+    expect(chart.created.slice(mark).filter(isHighlight)).toEqual([]);
+  });
+
+  it('legacy re-open for another symbol (the asset prop changes): the tap is cleared before MSFT\'s chart mounts', async () => {
+    await tapOnAapl();
+    lv.levels = { support: [level(398)], resistance: [level(402)], currentPrice: 400 };
+    const mark = chart.created.length;
+    await mount('1D', { asset: { symbol: 'MSFT', name: 'MSFT', price: 400 } });
+    expect(button('S/R')).toBeTruthy();
     expect(highlightLines()).toEqual([]);
     expect(chart.created.slice(mark).filter(isHighlight)).toEqual([]);
   });
