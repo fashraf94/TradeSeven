@@ -24,7 +24,8 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
 const { getIdTokenMock } = vi.hoisted(() => ({ getIdTokenMock: vi.fn() }));
-vi.mock('../../../firebase/authService', () => ({ getIdToken: getIdTokenMock }));
+// R1 (R-R1-4): the deploy is owned by the signed-in uid; one stays signed in throughout.
+vi.mock('../../../firebase/authService', () => ({ getIdToken: getIdTokenMock, getCurrentUser: () => ({ uid: 'uid-1' }) }));
 
 const { deployAgent } = await import('../../../services/agentDeploy.js');
 const { default: useCeremonyStageMachine } = await import('./useCeremonyStageMachine.js');

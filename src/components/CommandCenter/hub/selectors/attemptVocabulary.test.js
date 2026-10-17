@@ -86,25 +86,27 @@ describe('today\'s results (src/services/agentDeploy.js), ruling R-S2A-2: untype
     expect(t.detail.kind).toBe('untyped');
   });
 
-  it('every shape in the fixture is one agentDeploy.js returns today: each return names the fields the fixture uses', async () => {
+  it('R1 typed the service: every legacy field the fixture shapes use is still returned, beside an outcome; the untyped fixture rows are now synthetic fail-closed inputs', async () => {
     const { readFileSync } = await import('node:fs');
     const path = await import('node:path');
     const { fileURLToPath } = await import('node:url');
     const here = path.dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(path.resolve(here, '../../../../services/agentDeploy.js'), 'utf8');
+    // R1 (ruling R-R1-3) kept every legacy field and added `outcome`; the
+    // untyped fixture rows stay as the translator's fail-closed inputs.
     for (const fragment of [
-      "return { success: false, postIssued: false, error: 'no-agent' };",
-      "return { success: false, postIssued: false, error: 'auth-required' };",
+      "return { outcome: DEPLOY_OUTCOMES.REFUSED, success: false, postIssued: false, error: 'no-agent' };",
+      "return { outcome: DEPLOY_OUTCOMES.REFUSED, success: false, postIssued: false, error: 'auth-required' };",
       "error: 'deploy_network'",
       'error: `deploy_http_${status}`',
       'error: data.error, details: refusalLine ?? data.details, errorPhase: data.errorPhase,',
       "error: 'deploy_handoff',",
-      'battleId: data.agentBattleId || null,',
-      'return { success: true, agentBattleId: data.agentBattleId || null };',
+      'battleId: agentBattleId,',
+      'return { outcome: DEPLOY_OUTCOMES.CREATED, success: true, agentBattleId };',
       'data.error === DEPLOY_REFUSAL_CODE',
     ]) expect(src, fragment).toContain(fragment);
-    // No typed outcome exists in the service yet: R1 adds it.
-    expect(src).not.toMatch(/\boutcome\s*:/);
+    // The service now types its results: R1 added the outcome this row once said was missing.
+    expect(src).toMatch(/\boutcome\s*:/);
   });
 });
 

@@ -28,7 +28,8 @@ const { getIdTokenMock, targetProgressState, verifyMock } = vi.hoisted(() => ({
   verifyMock: vi.fn(),
 }));
 
-vi.mock('../../../firebase/authService', () => ({ getIdToken: getIdTokenMock }));
+// R1 (R-R1-4): the deploy is owned by the signed-in uid; one stays signed in throughout.
+vi.mock('../../../firebase/authService', () => ({ getIdToken: getIdTokenMock, getCurrentUser: () => ({ uid: 'uid-1' }) }));
 // PR 2: the ceremony now runs an existence check before committing to any
 // terminal claim. Mocked here so this file keeps testing PR 1's contract without
 // pulling in firebase/config; the check's own behavior is covered in
@@ -232,6 +233,9 @@ describe('agentDeploy — reports where the failure happened (PR 2)', () => {
   // was not created by this deploy, so there is no id to carry and the 200 must
   // buy nothing. The machine's gate keys on the id, not the status, precisely so
   // this row cannot become a reveal.
+  // R1: this body (no battleCreated flag) is now the malformed 200 — typed
+  // `uncertain`, no hand-off at all, and still no battle id to carry (the real
+  // existing-battle 200, battleCreated:false, is `existing_battle`).
   // DIES UNDER: fabricating an id here, or admitting 200 on the status alone.
   it('a 200 carrying only existingBattleId yields NO battle id to carry', async () => {
     postSucceeding({ success: true, existingBattleId: 'battle-someone-elses', portfolio: {}, bench: {} });
@@ -246,7 +250,8 @@ describe('agentDeploy — reports where the failure happened (PR 2)', () => {
   it('a callback that does NOT throw still reports plain success', async () => {
     postSucceeding({ success: true, agentBattleId: 'battle-ok', portfolio: {}, bench: {} });
     const r = await deployAgent(RANKED, async () => {}, () => {});
-    expect(r).toEqual({ success: true, agentBattleId: 'battle-ok' });
+    // R1 (R-R1-3) adds the typed outcome beside the unchanged legacy pair.
+    expect(r).toEqual({ outcome: 'created', success: true, agentBattleId: 'battle-ok' });
   });
 });
 

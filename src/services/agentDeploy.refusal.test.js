@@ -11,7 +11,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('../firebase/authService', () => ({ getIdToken: async () => 'id-token' }));
+// R1 (R-R1-4): the deploy is owned by the signed-in uid; one stays signed in throughout.
+vi.mock('../firebase/authService', () => ({ getIdToken: async () => 'id-token', getCurrentUser: () => ({ uid: 'uid-1' }) }));
 vi.mock('../config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), CASUAL_CLONE_CONCURRENCY_ENABLED: false }));
 
 const { deployAgent } = await import('./agentDeploy');
@@ -31,7 +32,9 @@ describe('the deploy refusal reaches the ceremony verbatim', () => {
   it('409 hypothesis_review_due → details is table C\'s due-deploy line, byte for byte; the code and status ride along', async () => {
     globalThis.fetch = vi.fn(async () => respond(409, { error: DEPLOY_REFUSAL_CODE, message: DUE_DEPLOY_LINE }));
     const out = await deployAgent('agent-1', vi.fn());
+    // R1 (R-R1-3) adds the typed outcome and the refusal code beside the unchanged legacy fields.
     expect(out).toEqual({
+      outcome: 'refused', code: DEPLOY_REFUSAL_CODE,
       success: false, status: 409, postIssued: true, httpStatus: 409,
       error: 'hypothesis_review_due', details: DUE_DEPLOY_LINE, errorPhase: undefined,
     });
@@ -47,7 +50,10 @@ describe('the deploy refusal reaches the ceremony verbatim', () => {
   });
   it('a refusal body without a string message forwards no invented words (AD02: a non-string message is not forwarded)', async () => {
     globalThis.fetch = vi.fn(async () => respond(409, { error: DEPLOY_REFUSAL_CODE }));
-    expect((await deployAgent('agent-1', vi.fn())).details).toBeUndefined();
+    const wordless = await deployAgent('agent-1', vi.fn());
+    expect(wordless.details).toBeUndefined();
+    // R1 (review L5-8): the refusal itself, not an orphaned deploy that has no details either.
+    expect(wordless.outcome).toBe('refused');
     globalThis.fetch = vi.fn(async () => respond(409, { error: DEPLOY_REFUSAL_CODE, message: 42 }));
     expect((await deployAgent('agent-1', vi.fn())).details).toBeUndefined();
   });

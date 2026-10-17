@@ -104,9 +104,18 @@ export default function useCeremonyStageMachine({
   // check cannot complete. Absent (or not a function) is itself a check that could
   // not run, and resolves to "lost contact" — never to a non-creation claim.
   verifyBattle = null,
+  // Command Center repair R1 (ruling R-R1-6): `({ phase, errorTone }) => void`,
+  // told the phase on mount and at EVERY transition, as it happens. A check
+  // that answers at once goes verifying → reveal inside one render batch, so a
+  // render-time observer would never see `verifying`; this one does. A
+  // throwing listener is logged and ignored.
+  onPhaseChange = null,
 }) {
   // Public outputs
-  const [phase, setPhase] = useState('theater'); // 'theater' | 'verifying' | 'reveal' | 'error'
+  // 'existing' (Command Center repair R1, ruling R-R1-6): the server answered
+  // that the agent already has a running battle, so this deploy created
+  // nothing. A terminal of its own — never the reveal, never an error.
+  const [phase, setPhaseState] = useState('theater'); // 'theater' | 'verifying' | 'reveal' | 'error' | 'existing'
   const [stageIndex, setStageIndex] = useState(0);
   const [serverRank, setServerRank] = useState(0);
   const [slow, setSlow] = useState(false);
@@ -115,7 +124,23 @@ export default function useCeremonyStageMachine({
   // 'confirmed'    → a server error signal AND an empty query. Both required
   //                  before the client may assert that no battle was created.
   // 'lost_contact' → anything else. We do not know, and say so.
-  const [errorTone, setErrorTone] = useState(null);
+  const [errorTone, setErrorToneState] = useState(null);
+
+  // R1 (R-R1-6): the two setters every transition already goes through, with
+  // the report added. The tone is mirrored first, so an error is reported with
+  // the tone set just before it (runVerification sets the tone, then the phase).
+  const onPhaseChangeRef = useRef(onPhaseChange);
+  onPhaseChangeRef.current = onPhaseChange;
+  const toneRef = useRef(null);
+  const reportPhase = (next) => {
+    const listener = onPhaseChangeRef.current;
+    if (typeof listener !== 'function') return;
+    try { listener({ phase: next, errorTone: toneRef.current }); } catch (err) {
+      console.warn('[Ceremony] onPhaseChange threw:', err?.message || err);
+    }
+  };
+  const setPhase = (next) => { setPhaseState(next); reportPhase(next); };
+  const setErrorTone = (tone) => { toneRef.current = tone; setErrorToneState(tone); };
   // The battle the check FOUND, carried through to the reveal CTA. In the `:929`
   // scenario `agent.activeBattleId` was never written — that write is the
   // statement that threw — so the CTA must use this and never fall back to it.
@@ -373,9 +398,27 @@ export default function useCeremonyStageMachine({
       // The latch. 'verifying' belongs here: without it the machine keeps
       // evaluating error branches while a check is in flight and can commit to
       // 'error' underneath its own verification.
-      if (phaseRef.current === 'error' || phaseRef.current === 'reveal' || phaseRef.current === 'verifying') return;
+      if (phaseRef.current === 'error' || phaseRef.current === 'reveal' || phaseRef.current === 'verifying' || phaseRef.current === 'existing') return;
       const t = performance.now();
       const { stage: s, deployId: id, updatedAt: up, errorPhase: ep, deployStatus: ds, targetKnown: known, targetAgentId: target } = inRef.current;
+
+      // ── R1 (ruling R-R1-6): the server's explicit 200 with battleCreated:false.
+      // The agent already has a running battle and this deploy created none, so
+      // the machine commits straight to the `existing` terminal. It is checked
+      // first, before the progress bookkeeping: no checkpoint changes it, and
+      // only a server error checkpoint for this deploy arriving in the same tick
+      // could otherwise get in ahead of it. decide.js stamps stage 'complete' in
+      // its decision write, BEFORE its existing-battle check, so a complete
+      // checkpoint arrives beside this answer. Without this branch the machine
+      // would read 'existing' as still pending,
+      // hold the theater, and after the watchdog verify its way to a
+      // lost-contact error. No verification runs here: nothing is in doubt, and
+      // no existence check may promote it to a reveal.
+      if (ds === 'existing') {
+        phaseRef.current = 'existing';
+        setPhase('existing');
+        return;
+      }
 
       // ── §5 Baseline + unsolicited-progress guard.
       //
@@ -517,6 +560,8 @@ export default function useCeremonyStageMachine({
       }
     };
 
+    // R1 (R-R1-6): the phase this machine starts in, before its first evaluation.
+    reportPhase(phaseRef.current);
     const iv = setInterval(evaluate, 100);
     evaluate();
     return () => {

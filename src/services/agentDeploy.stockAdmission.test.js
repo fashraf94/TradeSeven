@@ -7,7 +7,8 @@
 // refused this way; every other failure forwards exactly what it did before.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('../firebase/authService', () => ({ getIdToken: async () => 'id-token' }));
+// R1 (R-R1-4): the deploy is owned by the signed-in uid; one stays signed in throughout.
+vi.mock('../firebase/authService', () => ({ getIdToken: async () => 'id-token', getCurrentUser: () => ({ uid: 'uid-1' }) }));
 vi.mock('../config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), CASUAL_CLONE_CONCURRENCY_ENABLED: false }));
 
 const { deployAgent, stockAdmissionLine, STOCK_ADMISSION_ERROR } = await import('./agentDeploy');
@@ -24,7 +25,9 @@ describe('the measured pilot refusal reads as one clear player line', () => {
   it('late-start cutoff → the retry-time line, retriable, with the code and status riding along', async () => {
     globalThis.fetch = vi.fn(async () => respond(503, { error: STOCK_ADMISSION_ERROR, reason: 'late_start_cutoff', retriable: true }));
     at('2026-10-21', 15, 30);
+    // R1 (R-R1-3) adds the typed outcome beside the unchanged legacy fields.
     expect(await deployAgent('agent-1', vi.fn())).toEqual({
+      outcome: 'refused',
       success: false, status: 503, postIssued: true, httpStatus: 503, error: 'Stock admission unavailable',
       details: AFTER_8, errorPhase: undefined,
     });

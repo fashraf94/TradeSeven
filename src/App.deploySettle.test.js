@@ -16,10 +16,18 @@
 // injected shape really resolves to BATTLE LIVE — is asserted for real against
 // the adapter and the state machine in warpBattleAdapter.test.js.
 
+//
+// Command Center repair R1 (ruling R-R1-5) moved the entry's builder and the
+// append into src/components/Dashboard/deployHandoff.js, where they are pure
+// and exported. The shape and idempotence rows below therefore assert the
+// builder's real output, and pin only that the settle block routes through it;
+// the gate, read-path and ordering rows stay on App's source.
+
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildOptimisticBattleEntry, appendOptimisticBattle } from './components/Dashboard/deployHandoff';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP = readFileSync(path.join(HERE, 'App.jsx'), 'utf8');
@@ -69,10 +77,18 @@ describe('A5 — the post-deploy settle is wired at the deploy handler', () => {
     // reads expiresAt and activatedAt||createdAt. A shape missing `status`
     // silently never counts as live, and the settle would do nothing at all.
     const block = settleBlock();
-    expect(block).toMatch(/status:\s*'active'/);
+    expect(block).toContain('buildOptimisticBattleEntry(');
+    expect(block).toMatch(/\bagentBattleId,/);
     expect(block).toContain('expiresAt');
-    expect(block).toContain('activatedAt');
-    expect(block).toContain('id: agentBattleId');
+    const entry = buildOptimisticBattleEntry({
+      agentBattleId: 'battle-1', ownerUid: 'uid-1', agentId: 'agent-1',
+      expiresAt: '2026-10-16T20:00:00.000Z', nowIso: '2026-10-16T14:00:00.000Z',
+      portfolio: {}, bench: null, startingPrices: {},
+    });
+    expect(entry.status).toBe('active');
+    expect(entry.expiresAt).toBe('2026-10-16T20:00:00.000Z');
+    expect(entry.activatedAt).toBe('2026-10-16T14:00:00.000Z');
+    expect(entry.id).toBe('battle-1');
   });
 
   it('only fires when the server actually returned a battle id', () => {
@@ -92,7 +108,10 @@ describe('A5 — the post-deploy settle is wired at the deploy handler', () => {
   it('is idempotent — a repeated id is not appended twice', () => {
     // The poll replaces the array wholesale, but a retry inside one poll window
     // must not double-count the same battle.
-    expect(settleBlock()).toMatch(/some\(|find\(|includes\(/);
+    expect(settleBlock()).toContain('appendOptimisticBattle(prev,');
+    const once = appendOptimisticBattle([], { id: 'battle-1' });
+    expect(once).toHaveLength(1);
+    expect(appendOptimisticBattle(once, { id: 'battle-1', again: true })).toBe(once);
   });
 
   it('opens NO new Firestore read path (A6)', () => {
