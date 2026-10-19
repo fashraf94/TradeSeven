@@ -8,8 +8,8 @@ import { ARCHETYPE_WEIGHTS, computeArchetypeRankings } from '../_utils/archetype
 
 const mocks = vi.hoisted(() => ({ prices: vi.fn(), intraday: vi.fn(), create: vi.fn(), tournament: null }));
 const flags = vi.hoisted(() => ({ menu: true }));
-vi.mock('../../src/config/featureFlags.js', async original => ({
-  ...(await original()),
+vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
+  ...(await importOriginal()),
   get ARCHETYPE_REFRESH_MENU_ENABLED() { return flags.menu; },
 }));
 vi.mock('@anthropic-ai/sdk', () => ({ default: class {
