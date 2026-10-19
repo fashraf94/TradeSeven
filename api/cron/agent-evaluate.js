@@ -30,6 +30,7 @@ import { assessRequiredQuotes } from '../_utils/agentQuoteHealth.js';
 import { resolveBadgeBaseline } from '../_utils/baselineValidation.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
 import { unionEquippedIntoHotBench } from '../_utils/watchlistEquip.js';
+import { buildArchetypeCandidateMenu } from '../_utils/archetypeCandidateMenu.js';
 import {
   calculateAssetScoreServer,
   flattenPortfolioServer,
@@ -252,7 +253,7 @@ function getAnthropicClient() {
  * Consumer half of Option B. Decide whether to rebuild the hotBench menu this
  * tick: on a new trading day (the original once/day cadence) OR when the
  * producer has published a fresher stockRankings doc since our last rebuild
- * (an intraday recompute) — so menu membership tracks fresh baggerBombFit
+ * (an intraday recompute) — so menu membership tracks fresh ranking inputs
  * instead of being frozen for the whole day. Pure for unit testing.
  *
  * Inert pre-Option-B: when computedAt is absent both ms values are 0, the
@@ -1483,48 +1484,65 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
 
       // Consumer half of Option B: also rebuild when the producer published a
       // fresher stockRankings doc (intraday recompute) since our last rebuild,
-      // so menu membership tracks fresh baggerBombFit — not just once/day.
+      // so menu membership tracks fresh rankings — not just once/day.
       const rankingsComputedMs = rankingsResult.value.data().computedAt?.toMillis?.() ?? 0;
       const lastHotBenchComputedMs = battle.cronState?.lastHotBenchComputedAt || 0;
       const rebuildHotBench = shouldRebuildHotBench({ isNewTradingDay, rankingsComputedMs, lastHotBenchComputedMs });
 
       if (rebuildHotBench && battle.watchlist) {
-        const portfolioSet = new Set(portfolioSymbols);
-        const benchSet = new Set(benchSymbols);
-        let candidates = stockRankingsArray
-          .filter(s => !portfolioSet.has(s.symbol) && !benchSet.has(s.symbol))
-          .sort((a, b) => (b.baggerBombFit || 0) - (a.baggerBombFit || 0));
-        if (tournamentCtx) {
-          // P2: hotBench candidates exclude symbols held by other agents in
-          // the group (Spec §1.2 pre-filtering).
-          candidates = excludeHeldByOthers(candidates, tournamentCtx.heldByOthers);
-        }
+        // Preserve the frozen archetype's candidate preferences in BaggerBomb.
+        // League/tournament and unknown identities retain the legacy policy.
+        const archetypeMenu = buildArchetypeCandidateMenu({
+          gameMode: battle.gameMode,
+          isTournament: Boolean(tournamentCtx),
+          archetype: ctx.archetype,
+          rankings: stockRankingsArray,
+          excludeSymbols: new Set([...portfolioSymbols, ...benchSymbols]),
+          equippedTickers: battle.agentContext?.equippedWatchlist?.tickers || [],
+          onEvent: () => console.warn(`${LOG_PREFIX} [archetype-menu] legacy refresh: unknown archetype`),
+        });
+        let newHotBench;
+        let newMonitoring;
+        if (archetypeMenu) {
+          ({ hotBench: newHotBench, monitoring: newMonitoring } = archetypeMenu);
+        } else {
+          const portfolioSet = new Set(portfolioSymbols);
+          const benchSet = new Set(benchSymbols);
+          let candidates = stockRankingsArray
+            .filter(s => !portfolioSet.has(s.symbol) && !benchSet.has(s.symbol))
+            .sort((a, b) => (b.baggerBombFit || 0) - (a.baggerBombFit || 0));
+          if (tournamentCtx) {
+            // P2: hotBench candidates exclude symbols held by other agents in
+            // the group (Spec §1.2 pre-filtering).
+            candidates = excludeHeldByOthers(candidates, tournamentCtx.heldByOthers);
+          }
 
-        let newHotBench = candidates.slice(0, 15).map(s => s.symbol);
-        // [Phase5B1] Union equipped tickers back into the hotBench every
-        // refresh cycle (Q9). The rankings-based rebuild above drops equipped
-        // tickers that aren't top-15 by baggerBombFit; the union re-admits
-        // them. Soft cap 20 — equipped tickers always survive the cap.
-        const equippedTickers = battle.agentContext?.equippedWatchlist?.tickers || [];
-        if (equippedTickers.length > 0) {
-          const beforeLen = newHotBench.length;
-          newHotBench = unionEquippedIntoHotBench({
-            hotBench: newHotBench,
-            equippedTickers,
-            rankings: stockRankingsArray,
-            // P2: equipped tickers held by rival agents stay out too (the
-            // union re-admits dropped tickers; spread of the empty array is
-            // a no-op for regular battles).
-            excludeSymbols: new Set([...portfolioSymbols, ...benchSymbols, ...(tournamentCtx ? tournamentCtx.heldByOthers : [])]),
-            cap: 20,
-          });
-          console.log(`${LOG_PREFIX} [Phase5B1] Daily refresh unioned equipped tickers into hotBench (${beforeLen} → ${newHotBench.length})`);
+          newHotBench = candidates.slice(0, 15).map(s => s.symbol);
+          // [Phase5B1] Union equipped tickers back into the hotBench every
+          // refresh cycle (Q9). The rankings-based rebuild above drops equipped
+          // tickers that aren't top-15 by baggerBombFit; the union re-admits
+          // them. Soft cap 20 — equipped tickers always survive the cap.
+          const equippedTickers = battle.agentContext?.equippedWatchlist?.tickers || [];
+          if (equippedTickers.length > 0) {
+            const beforeLen = newHotBench.length;
+            newHotBench = unionEquippedIntoHotBench({
+              hotBench: newHotBench,
+              equippedTickers,
+              rankings: stockRankingsArray,
+              // P2: equipped tickers held by rival agents stay out too (the
+              // union re-admits dropped tickers; spread of the empty array is
+              // a no-op for regular battles).
+              excludeSymbols: new Set([...portfolioSymbols, ...benchSymbols, ...(tournamentCtx ? tournamentCtx.heldByOthers : [])]),
+              cap: 20,
+            });
+            console.log(`${LOG_PREFIX} [Phase5B1] Daily refresh unioned equipped tickers into hotBench (${beforeLen} → ${newHotBench.length})`);
+          }
+          const hotBenchSetRefresh = new Set(newHotBench);
+          newMonitoring = candidates
+            .filter(s => !hotBenchSetRefresh.has(s.symbol))
+            .slice(0, 18)
+            .map(s => s.symbol);
         }
-        const hotBenchSetRefresh = new Set(newHotBench);
-        const newMonitoring = candidates
-          .filter(s => !hotBenchSetRefresh.has(s.symbol))
-          .slice(0, 18)
-          .map(s => s.symbol);
 
         const refreshedWatchlist = {
           active: portfolioSymbols,
