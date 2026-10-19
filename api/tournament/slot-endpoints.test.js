@@ -20,6 +20,9 @@ vi.mock('../../src/config/featureFlags.js', () => ({
   get LEAGUE_LIVE_DRAFT() { return h.flag; },
   LEAGUE_CANONICAL_OPEN_CAPTURE: false,
   LEAGUE_LOBBY_ENABLED: true, // lobbyEndpoint.js (parseBody/resolveDisplayName reuse) imports it
+  // Backing Amendment D R3 (safety fix 1): claimSlotSeat reads it at call time
+  // to decide whether to run the back-then-join check — off, as in production.
+  BACKING_BETA_ENABLED: false,
 }));
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => h.db }));
 vi.mock('../_utils/authMiddleware.js', () => ({

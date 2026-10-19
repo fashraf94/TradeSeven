@@ -1094,10 +1094,34 @@ describe('idempotency and the race (§8)', () => {
     // pool document itself, which is the mechanism the header claims.
     vi.setSystemTime(new Date('2026-09-22T14:00:00.000Z'));
     const conflictsBefore = DB.stats.conflicts;
-    const [stakeRes] = await Promise.all([
-      post(VALID()),
-      closePool(DB.db, { id: GROUP_ID, ...group() }, new Date('2026-09-22T14:00:00.000Z')),
-    ]);
+    // THE INTERLEAVE IS FORCED, not left to tick timing (Amendment D: the
+    // close now reads the group first, which moved the old race's timing so
+    // the two never overlapped). The STAKE transaction — the one whose first
+    // read is its stake document — reads the open pool; the close then runs
+    // to commit; the stake's commit must then see the pool document moved.
+    const POOL_PATH = `${BACKING_POOLS_COLLECTION}/${GROUP_ID}`;
+    const run = DB.db.runTransaction;
+    let closed = false;
+    DB.db.runTransaction = (fn) => run(async (tx) => {
+      let stakeTx = null;
+      const get = async (ref) => {
+        const snap = await tx.get(ref);
+        if (stakeTx === null) stakeTx = ref.path.startsWith(`${BACKING_STAKES_COLLECTION}/`);
+        if (stakeTx && !closed && ref.path === POOL_PATH) {
+          closed = true;
+          await closePool(DB.db, { id: GROUP_ID, ...group() }, new Date('2026-09-22T14:00:00.000Z'));
+        }
+        return snap;
+      };
+      return fn({ ...tx, get });
+    });
+    let stakeRes;
+    try {
+      stakeRes = await post(VALID());
+    } finally {
+      DB.db.runTransaction = run;
+    }
+    expect(closed).toBe(true);
     expect(DB.stats.conflicts).toBeGreaterThan(conflictsBefore);  // they really contended
     expect(stakeRes.statusCode).toBe(409);
     expect(stakeRes.body.error).toBe('pool_closed');

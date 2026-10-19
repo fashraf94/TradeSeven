@@ -37,8 +37,8 @@
 //
 // SEALED WHILE OPEN, AND THE TEST SAYS SO (§3, Amendment B §B2). An OPEN pool's
 // projection carries the THRESHOLD-CAPPED validity signals (`backerProgress`,
-// `teamSpread`), the close, the live teams and the VIEWER'S OWN stakes — and
-// nothing else. No pot total, no exact backer or team count, no per-team stake
+// `teamSpread`), the `full` flag (Amendment D R2 — a boolean, no count), the
+// close, the live teams and the VIEWER'S OWN stakes — and nothing else. No pot total, no exact backer or team count, no per-team stake
 // total, no pays ×. They are not merely omitted from the render: they are
 // absent from the response, asserted by a row that walks the whole open-pool
 // body BY KEY NAME rather than spot-checking one field. A CLOSED / INSUFFICIENT
@@ -150,6 +150,10 @@ export function podListWeek(now = new Date()) {
  * streams it directly and an endpoint-side clamp would conceal nothing (§B5).
  * The fallbacks below are for a document that carries no pair at all — a pool
  * opened before this PR, or a terminal pool projected through this branch.
+ *
+ * `full` (Amendment D R2) is the document's own flag, read as `=== true`, so
+ * a pool written before the key existed answers `false`. It is the one fact
+ * about the book's SIZE an open pool publishes — no count rides with it.
  */
 function cappedPoolProgress(pool) {
   const progress = pool?.backerProgress;
@@ -160,6 +164,7 @@ function cappedPoolProgress(pool) {
       met: progress?.met === true,
     },
     teamSpread: { met: pool?.teamSpread?.met === true },
+    full: pool?.full === true,
   };
 }
 
@@ -201,6 +206,11 @@ export function projectPod(group, pool, { viewerUid, myStakes = [], teamLabelFor
   // merely their own. Read off the LIVE seats even for a revealed pool: whether
   // the viewer is seated is a fact about the pod now, not about the freeze.
   const viewerSeated = live.some((s) => s.odUserId === viewerUid);
+  // AMENDMENT D R2: a FULL pool offers a viewer with no stake in it no way to
+  // start one — no seat is backable for them. A viewer who already holds a
+  // stake here backs as before (a top-up, or another team while the pool is
+  // under its document limit — the stake transaction decides the latter).
+  const fullForViewer = open === true && pool?.full === true && myStakes.length === 0;
 
   // D-af (Amendment C §C1): the seat's name is the server's, off the ONE
   // descriptor every backing endpoint builds (`labelSeatOf`).
@@ -214,7 +224,7 @@ export function projectPod(group, pool, { viewerUid, myStakes = [], teamLabelFor
       label,
       secondary,
       isOwnSeat: seat.odUserId === viewerUid,
-      backable: open === true && !viewerSeated,
+      backable: open === true && !viewerSeated && !fullForViewer,
     };
     if (!revealed) return base;
     return {

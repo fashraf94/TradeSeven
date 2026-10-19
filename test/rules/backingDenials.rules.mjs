@@ -363,6 +363,11 @@ describe('backingPools/{groupId} — authed-read, server-written (§3, §6)', ()
       // pool, and one that could lower it would hide a real one.
       await assertFails(updateDoc(doc(fs, POOL), { backerProgress: { count: 3, floor: 3, met: true } }), label);
       await assertFails(updateDoc(doc(fs, POOL), { teamSpread: { met: true } }), label);
+      // Amendment D R2 (safety fix 1): `full` is a server fact as well — a
+      // client that could set it would close a pool to every new backer, and
+      // one that could clear it would advertise room the stake path refuses.
+      await assertFails(updateDoc(doc(fs, POOL), { full: true }), label);
+      await assertFails(updateDoc(doc(fs, POOL), { full: false }), label);
     }
   });
 });

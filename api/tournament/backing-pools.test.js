@@ -331,11 +331,13 @@ describe('THE SEAL — an OPEN pool reveals no per-team total and no pays × (§
     // What an open pool MAY show (§3, Amendment B §B2): the CAPPED validity
     // signals, the close — and nothing about the book. Four backers are on this
     // pool; the count it publishes is 3, because 3 is the floor and there is no
-    // fourth value to publish.
+    // fourth value to publish. `full` (Amendment D R2 — moved DELIBERATELY in
+    // safety fix 1) is the one size fact: a boolean, `false` here, no count.
     expect(res.body.pods[0].pool).toEqual({
       status: 'open',
       backerProgress: { count: VALIDITY_MIN_BACKERS, floor: VALIDITY_MIN_BACKERS, met: true },
       teamSpread: { met: true },
+      full: false,
       closesAt: CLOSE_ISO,
       closeReason: 'clock',
     });
@@ -388,10 +390,11 @@ describe('THE SEAL — an OPEN pool reveals no per-team total and no pays × (§
     ]) {
       expect(keys.has(sealed), `an OPEN pod published "${sealed}" (Amendment B §B2)`).toBe(false);
     }
-    // And the positive half: what IS there is the capped pair, the close, the
-    // live teams and the viewer's own stakes.
+    // And the positive half: what IS there is the capped pair, the `full`
+    // flag (Amendment D R2 — a boolean, added DELIBERATELY in safety fix 1),
+    // the close, the live teams and the viewer's own stakes.
     expect(Object.keys(openPod.pool).sort())
-      .toEqual(['backerProgress', 'closeReason', 'closesAt', 'status', 'teamSpread']);
+      .toEqual(['backerProgress', 'closeReason', 'closesAt', 'full', 'status', 'teamSpread']);
     expect(keys.has('myStakes')).toBe(true);
     expect(keys.has('teams')).toBe(true);
   });

@@ -56,6 +56,7 @@ import { BACKING_WALLETS_COLLECTION, ENTRY_TYPES } from './backingWallet.js';
 import { POOL_INELIGIBLE } from './backingWeek.js';
 import {
   ALLOWANCE_BP,
+  POOL_MAX_BACKERS,
   VALIDITY_MIN_BACKERS,
   VALIDITY_MIN_TEAMS,
 } from '../../src/constants/backing.js';
@@ -730,7 +731,7 @@ describe('the open pool is sealed — Amendment B §B2/§B5', () => {
       }
     });
 
-    it('publishes NOTHING ELSE — no pot, no exact count, at any input', () => {
+    it('publishes NOTHING ELSE below the backer limit — no pot, no exact count (Amendment D adds only `full`, pinned below)', () => {
       const progress = publicProgressFrom({ potTotal: 9999, uniqueBackers: 7, teamsBacked: 4 });
       expect(Object.keys(progress).sort()).toEqual(['backerProgress', 'teamSpread']);
       expect(JSON.stringify(progress)).not.toContain('9999');
@@ -743,8 +744,12 @@ describe('the open pool is sealed — Amendment B §B2/§B5', () => {
     const qualified = publicProgressFrom({ uniqueBackers: 3, teamsBacked: 2 });
 
     it('is FALSE for every above-floor move — the §B2 freeze', () => {
+      // Below the pool's backer limit (Amendment D R1). Moved DELIBERATELY in
+      // safety fix 1: the loop used to run to 50 backers, past the one public
+      // move Amendment D R2 adds — `full` at the 20th — which the rows below
+      // pin on its own.
       const pool = { ...qualified };
-      for (const uniqueBackers of [3, 4, 5, 50]) {
+      for (const uniqueBackers of [3, 4, 5, POOL_MAX_BACKERS - 1]) {
         for (const teamsBacked of [2, 3, 4]) {
           expect(
             publicProgressChanged(pool, publicProgressFrom({ uniqueBackers, teamsBacked })),
@@ -754,7 +759,35 @@ describe('the open pool is sealed — Amendment B §B2/§B5', () => {
       }
     });
 
-    it('is TRUE for each of §B3\'s two accepted residual signals, and only those', () => {
+    it('Amendment D R2: `full` moves the document EXACTLY ONCE — at the 20th distinct backer — and never again', () => {
+      const below = publicProgressFrom({ uniqueBackers: POOL_MAX_BACKERS - 1, teamsBacked: 4 });
+      expect(below).not.toHaveProperty('full');
+      const atLimit = publicProgressFrom({ uniqueBackers: POOL_MAX_BACKERS, teamsBacked: 4 });
+      expect(atLimit.full).toBe(true);
+      // The one move…
+      expect(publicProgressChanged({ ...below }, atLimit)).toBe(true);
+      // …and none after it, whatever else a stake changes above the floors.
+      const fullPool = { ...below, ...atLimit };
+      for (const uniqueBackers of [POOL_MAX_BACKERS, POOL_MAX_BACKERS + 3, 50]) {
+        for (const teamsBacked of [2, 3, 4]) {
+          expect(publicProgressChanged(fullPool, publicProgressFrom({ uniqueBackers, teamsBacked }))).toBe(false);
+        }
+      }
+      // The key carries no count — only `true`, and only at or past the limit.
+      expect(Object.keys(atLimit).sort()).toEqual(['backerProgress', 'full', 'teamSpread']);
+      expect(JSON.stringify(atLimit)).not.toContain(String(POOL_MAX_BACKERS));
+    });
+
+    it('Amendment D R2: a pool written BEFORE `full` existed reads as not full — no phantom write', () => {
+      // The old document has the pair and no `full` key; a below-limit stake
+      // must not move it (an `undefined !== false` comparison would).
+      const legacy = { ...qualified };
+      expect(legacy).not.toHaveProperty('full');
+      expect(publicProgressChanged(legacy, publicProgressFrom({ uniqueBackers: 7, teamsBacked: 3 }))).toBe(false);
+      expect(publicProgressChanged({ ...legacy, full: false }, publicProgressFrom({ uniqueBackers: 7, teamsBacked: 3 }))).toBe(false);
+    });
+
+    it('is TRUE for each of §B3\'s two accepted residual signals, and only those (Amendment D\'s third, `full`, is pinned on its own below)', () => {
       const below = publicProgressFrom({ uniqueBackers: 1, teamsBacked: 1 });
       // A sub-floor backer tick.
       expect(publicProgressChanged({ ...below }, publicProgressFrom({ uniqueBackers: 2, teamsBacked: 1 })))

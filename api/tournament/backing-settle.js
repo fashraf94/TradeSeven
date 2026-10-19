@@ -28,12 +28,18 @@
 //     `overrideHold: true`, which bypasses the agent-less refusal and settles;
 //     who and why are logged loudly and recorded on the pool (`holdRelease`);
 //   · a ceiling hold (`holdReason: 'stake_ceiling'`) is STRUCTURAL — the bound
-//     is Firestore's — so an override re-runs the assertion and re-holds.
+//     is the settlement module's own margin (`SETTLEMENT_MAX_STAKES` /
+//     `SETTLEMENT_MAX_WRITES`; NOT a Firestore limit — the 500-write
+//     transaction limit this once cited was removed by Google on Mar 29,
+//     2023) — so an override re-runs the assertion and re-holds.
 //     NO PRIMITIVE EXITS IT TODAY (MONEY-4, the PR 5 review record): there is
-//     no "admin void", and the refund holds at 96 live stakes (since D-ag —
-//     one stake per team per backer — 24 backers each backing all four seats
-//     of one pod reach it) with no way to reduce the book from
-//     this route. The one procedure is a Console repair, with two traps:
+//     no "admin void", and the refund holds at 96 live stakes with no way to
+//     reduce the book from this route. Since Amendment D R1 (Oct 18, 2026)
+//     no ADMISSIBLE book reaches it — the stake transaction caps a pool at 20
+//     distinct backers and 80 stake documents, and the worst such book
+//     projects 401 writes — so this is the procedure for a book written
+//     before the cap or out of band. The one procedure is a Console repair,
+//     with two traps:
 //     a stake voided by hand must carry the GROUP'S OWN reason
 //     (`group_voided` / `group_expired` / `group_deleted`) and its ledger
 //     pair must be written with it, and the hold must then be released with

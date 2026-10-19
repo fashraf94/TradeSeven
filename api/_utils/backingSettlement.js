@@ -45,9 +45,12 @@
 // THE STAKE CEILING (H3). One transaction per pool, bounded: the live-stake
 // count is asserted INSIDE the transaction against `SETTLEMENT_MAX_STAKES`, and
 // the projected write count against `SETTLEMENT_MAX_WRITES`; either past its
-// bound holds the pool `resolving` with `holdReason: 'stake_ceiling'` rather
-// than attempting a commit Firestore would reject. See the constants for the
-// arithmetic.
+// bound holds the pool `resolving` with `holdReason: 'stake_ceiling'`. The two
+// bounds are THIS CODE'S OWN MARGINS, not a Firestore limit (see the
+// constants). Since Amendment D R1 no admissible book reaches them: the stake
+// transaction caps a pool at `POOL_MAX_BACKERS` distinct backers and
+// `POOL_MAX_STAKES` stake documents (src/constants/backing.js), and the worst
+// such book projects 401 writes (api/_utils/backingPoolCap.test.js).
 //
 // WRITES ONLY TO BACKING COLLECTIONS (H2): `backingPools`, `backingStakes`,
 // `backingWallets`. Never `tournamentGroups` (no `settledAt` on a terminal doc
@@ -152,26 +155,32 @@ const LOG_PREFIX = '[BackingSettlement]';
  * transaction writes the stake document (1) and the stake side's month
  * attribution (`recordStakeLoss`: entry + wallet, 2); a WINNING stake adds its
  * payout (`creditPayout`: entry + wallet, 2). So a losing stake costs 3 writes
- * and a winning one 5, plus one pool write. Firestore caps a transaction at
- * 500 writes. At 120 stakes the all-losing case is 361 writes; the all-winning
- * case would be 601, which is why the write PROJECTION below is asserted
- * beside the count rather than instead of it — the count is the legible
- * bound, the projection is the one Firestore enforces. Beta scale is nowhere
- * near either: ALLOWANCE_BP / MIN_STAKE_BP caps a backer at 20 debits a week,
- * one stake DOCUMENT per team per pod since D-ag (Amendment C §C2 — at most
- * four per backer per pod), and realistic pools carry ≤ 40 (pre-build check
- * §2.6).
+ * and a winning one 5, plus one pool write. At 120 stakes the all-losing case
+ * is 361 writes and the all-winning case 601, which is why the write
+ * PROJECTION below is asserted beside the count rather than instead of it.
+ *
+ * THESE ARE THIS CODE'S OWN MARGINS, NOT A FIRESTORE LIMIT (corrected by
+ * Amendment D, Oct 18, 2026). This comment used to say "Firestore caps a
+ * transaction at 500 writes"; Google removed that limit on Mar 29, 2023, so
+ * nothing outside this file enforces 120 or 480. They are kept, unchanged, as
+ * a bound on how large one money transaction is allowed to grow. What keeps a
+ * book inside them is the stake transaction: since Amendment D R1 a pool
+ * admits at most `POOL_MAX_BACKERS` (20) distinct backers and
+ * `POOL_MAX_STAKES` (80) stake documents, so the worst admissible book — 80
+ * stakes, every one a winner — projects 1 + 80 × 5 = 401 writes. The pin
+ * test (api/_utils/backingPoolCap.test.js) fails if either limit is raised
+ * past these ceilings.
  */
 export const SETTLEMENT_MAX_STAKES = 120;
 
 /**
  * The most writes one settlement transaction will project before holding
- * instead (H3) — 20 under Firestore's 500-write transaction limit (platform
- * knowledge, ASSUMED in the pre-build check §2.6 and not verifiable in-tree)
- * as pure margin; the projection already counts the pool write and every
+ * instead (H3) — this code's own margin (see `SETTLEMENT_MAX_STAKES`: the
+ * Firestore 500-write transaction limit this once cited was removed by Google
+ * on Mar 29, 2023). The projection already counts the pool write and every
  * wallet re-set. Counted conservatively: every `commitWallet` call is a write
- * even when two stakes by one backer re-set the same wallet document, which
- * matches the SDK's per-operation count (no same-document coalescing).
+ * even when two stakes by one backer re-set the same wallet document (no
+ * same-document coalescing).
  */
 export const SETTLEMENT_MAX_WRITES = 480;
 
@@ -268,16 +277,16 @@ const REFUND_VOID_REASONS = new Set([
  * THE STUCK STATE, stated plainly (MONEY-4, the PR 5 review record): a book
  * of 96–120 live stakes SETTLES (the settlement's losers cost 3) but can never
  * be REFUNDED — the hold is structural and `fromHold` re-asserts the same
- * ceiling. The "≤ 40 stakes per pool" figure is ASSUMED beta scale, enforced
- * by nothing (the stake endpoint caps per backer and per team, never the
- * book), so 24 backers each backing all four seats of one pod reach it (one
- * stake per team per backer since D-ag, Amendment C §C2 — the pre-cleanup
- * figure was five backers at a 20-stake cap). No primitive exits it
- * today; the only procedure is the Console one described in
- * api/tournament/backing-settle.js, and a batched refund (priors costed at 0
- * once applied, wallets read before the ceiling) is the follow-up that would
- * close the class. Inherited posture: the settlement holds the same way above
- * 120 stakes (PR 3 review record, "the ceiling is STRUCTURAL").
+ * ceiling. Until Amendment D (Oct 18, 2026) nothing bounded the book, so 24
+ * backers each backing all four seats of one pod reached it (Astra's BKG-001).
+ * Since Amendment D R1 the stake transaction caps a pool at 80 stake
+ * documents, so no ADMISSIBLE book reaches this state: the worst one refunds
+ * at 1 + 80 × 5 = 401 writes (api/_utils/backingPoolCap.test.js). A book
+ * written before the cap, or out of band, can still reach it; no primitive
+ * exits it today — the only procedure is the Console one described in
+ * api/tournament/backing-settle.js (`overrideHold` does NOT release a
+ * `stake_ceiling` hold). Inherited posture: the settlement holds the same way
+ * above 120 stakes (PR 3 review record, "the ceiling is STRUCTURAL").
  */
 const REFUND_WRITES_PER_STAKE = 5;
 
@@ -626,9 +635,15 @@ export async function settlePool(db, groupId, {
     // (PR 5 — the PR 3 review record's finding 21), reached here so every
     // host inherits it. A pod with no pool at all has nothing to refund.
     const closed = await ensureClosed(db, groupId, nowDate);
-    if (closed.closed === true) {
+    // Since safety fix 1 the close decides on ITS OWN read of the group, so a
+    // pod that came back (a slot id is deterministic) is closed as the live
+    // pod — `closed` / `insufficient`, or left open — never `refunded`. Only
+    // a `refunded` close is this branch's refund (the review's MON-5 / CON-7).
+    if (closed.closed === true && closed.status === POOL_STATUS.REFUNDED) {
       return { settled: false, refunded: true, reason: SETTLEMENT_REASON.REFUNDED, refundReason: VOID_REASONS.GROUP_DELETED, pool: closed.pool };
     }
+    if (closed.closed === true) return { settled: false, reason: SETTLEMENT_REASON.NOT_FINAL, pool: closed.pool };
+    if (closed.reason === 'still_open') return { settled: false, reason: SETTLEMENT_REASON.POOL_OPEN };
     if (closed.reason === 'no_pool') return { settled: false, reason: SETTLEMENT_REASON.NO_GROUP };
     return refundRoute(VOID_REASONS.GROUP_DELETED);
   }
@@ -749,7 +764,9 @@ export async function settlePool(db, groupId, {
     // ----- THE HOLDS (each writes the pool and returns; nothing else moves) -----
     let holdReason = null;
     // (5) THE STAKE CEILING (H3), asserted inside the transaction. Structural:
-    // not bypassed by `overrideHold`, because the bound is Firestore's.
+    // not bypassed by `overrideHold` — the bound is this code's own margin
+    // on one money transaction (see `SETTLEMENT_MAX_STAKES`), not a hold a
+    // human can wave through.
     if (stakes.length > SETTLEMENT_MAX_STAKES) holdReason = HOLD_REASON.STAKE_CEILING;
     // (6) THE AGENT-LESS REFUSAL (D-ae). Bypassed ONLY by an explicit override.
     if (holdReason === null && !releasing && agentLayerAbsent(group)) holdReason = HOLD_REASON.AGENT_LAYER_ABSENT;
@@ -783,7 +800,15 @@ export async function settlePool(db, groupId, {
         updatedAt: nowIso,
       };
       tx.set(poolRef, held);
-      console.error(`${LOG_PREFIX} HOLD: pool ${poolRef.path} held in resolving — holdReason=${holdReason} (live stakes ${stakes.length}, source ${source}${releasing ? ', override refused' : ''}). Release: POST /api/tournament/backing-settle { groupId, overrideHold: true }.`);
+      // THE RELEASE THE LOG NAMES IS THE ONE THAT WORKS FOR THIS HOLD. An
+      // `agent_layer_absent` hold is released by the admin re-run with
+      // `overrideHold`; a `stake_ceiling` hold is NOT — the ceiling is
+      // re-asserted on every pass, override or not — so telling the operator
+      // to send `overrideHold` there sent them round a loop (Amendment D).
+      const release = holdReason === HOLD_REASON.STAKE_CEILING
+        ? 'overrideHold does NOT release a stake_ceiling hold; follow the Console procedure in api/tournament/backing-settle.js'
+        : 'POST /api/tournament/backing-settle { groupId, overrideHold: true }';
+      console.error(`${LOG_PREFIX} HOLD: pool ${poolRef.path} held in resolving — holdReason=${holdReason} (live stakes ${stakes.length}, source ${source}${releasing ? ', override refused' : ''}). Release: ${release}.`);
       return { settled: false, reason: holdReason, holdReason, pool: held };
     }
 
@@ -998,7 +1023,8 @@ async function locatePool(db, groupId, cheapGroup) {
  * SAME CEILING, SAME ALLOWLIST AS SETTLEMENT (H3). The live-stake count and
  * the projected write count are asserted INSIDE the transaction; past either
  * bound a `closed` pool is held `resolving` with `holdReason: 'stake_ceiling'`
- * rather than attempting a commit Firestore would reject. Writes only to
+ * rather than growing one money transaction past this code's own margin
+ * (see `SETTLEMENT_MAX_STAKES` — not a Firestore limit). Writes only to
  * `backingPools`, `backingStakes` and `backingWallets` (H2). A missing wallet
  * aborts `wallet_missing` rather than minting a record from nothing (the
  * settlement's own posture, the PR 3 review record's finding 17).

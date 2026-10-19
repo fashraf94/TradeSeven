@@ -72,6 +72,34 @@ export const MIN_STAKE_BP = 50;
 export const VALIDITY_MIN_BACKERS = 3;
 export const VALIDITY_MIN_TEAMS = 2;
 
+// ==================== POOL SIZE (Amendment D R1/R2 — Oct 18, 2026) ====================
+
+/**
+ * The most DISTINCT BACKERS one pool admits (Amendment D R1). A stake that
+ * would add the 21st backer is refused `pool_full`; admitting the 20th writes
+ * `full: true` on the public pool document in that same transaction (R2) —
+ * the one public fact about the book's size, carrying no count.
+ *
+ * THE BOUND EXISTS FOR THE MONEY PATHS, not for fairness: the settlement and
+ * refund writers hold any book over their own limits for ever
+ * (`SETTLEMENT_MAX_STAKES` / `SETTLEMENT_MAX_WRITES`, backingSettlement.js),
+ * so a pool must never be able to grow past what they can pay or refund.
+ * The second limit below is the one the write arithmetic rests on.
+ */
+export const POOL_MAX_BACKERS = 20;
+
+/**
+ * The most STAKE DOCUMENTS one pool admits (Amendment D R1) — the belt for
+ * slot seat churn, where one backer can hold a stake on a departed seat and
+ * another on its replacement, so 20 backers is not by itself 80 documents.
+ * A stake that would create the 81st document is refused `pool_full`; it sets
+ * no public flag (R2). A TOP-UP of an existing document is never refused by
+ * either limit (R1). The worst admissible book — 80 documents, every one a
+ * winner, or every one refunded — projects 1 + 80 × 5 = 401 writes, inside
+ * `SETTLEMENT_MAX_WRITES` (480); a pin test ties the two together.
+ */
+export const POOL_MAX_STAKES = 80;
+
 // ==================== WINDOW (§4 — D-c amended, D-x) ====================
 
 /**

@@ -36,10 +36,26 @@
 // `beforeCommit({ attempt, store, versions, commitWrites })`, when given, runs
 // after the body and before the conflict check — a seam for a suite to land a
 // competing write "between" read and commit.
+//
+// `slotWriters: true` (Backing Amendment D, safety fix 1) — OPT-IN, so every
+// backing suite keeps the "whole documents or nothing" guard on `tx.update`.
+// It lets the REAL live-draft slot writers (liveDraftFormation.js
+// `claimSlotSeat` / `releaseSlotSeat`) run on this harness, for the rows that
+// interleave a slot claim with a stake: `tx.update` (a SHALLOW top-level
+// merge — the only shape those writers use — applied at commit onto the
+// document as the transaction read it, which the conflict check guarantees is
+// the stored one), `tx.delete`, a plain `ref.update` / `ref.delete`, and the
+// `array-contains` filter (`findActiveGroupInBattleWeek`). Off, all four
+// behave exactly as before.
 
 const tick = () => new Promise((r) => setImmediate(r));
 
-export function makeVersionedDb(initial = {}, { beforeCommit = null } = {}) {
+// A buffered field update, applied at commit (`slotWriters` only).
+const UPDATE = Symbol('update');
+// A buffered delete (`slotWriters` only).
+const DELETE = Symbol('delete');
+
+export function makeVersionedDb(initial = {}, { beforeCommit = null, slotWriters = false } = {}) {
   const store = new Map(Object.entries(initial).map(([k, v]) => [k, structuredClone(v)]));
   const versions = new Map();
   const writeLog = [];
@@ -52,8 +68,16 @@ export function makeVersionedDb(initial = {}, { beforeCommit = null } = {}) {
     .filter(([p]) => p.startsWith(`${prefix}/`) && !p.slice(prefix.length + 1).includes('/'))
     .map(([p, d]) => ({ __path: p, id: p.slice(prefix.length + 1), data: () => structuredClone(d) }));
   const snapshotOf = (docs) => ({ docs, empty: docs.length === 0, size: docs.length, forEach: (cb) => docs.forEach(cb) });
+  const matches = (d, f) => {
+    if (f.op === '==') return d.data()[f.field] === f.value;
+    if (slotWriters && f.op === 'array-contains') {
+      const v = d.data()[f.field];
+      return Array.isArray(v) && v.includes(f.value);
+    }
+    return true;
+  };
   function makeQuery(prefix, filters) {
-    const run = () => docsUnder(prefix).filter((d) => filters.every((f) => f.op !== '==' || d.data()[f.field] === f.value));
+    const run = () => docsUnder(prefix).filter((d) => filters.every((f) => matches(d, f)));
     const self = {
       path: prefix, _run: run,
       where: (field, op, value) => makeQuery(prefix, [...filters, { field, op, value }]),
@@ -70,6 +94,16 @@ export function makeVersionedDb(initial = {}, { beforeCommit = null } = {}) {
       // A PLAIN (non-transactional) write, for the hosts that write outside
       // their transaction (the stake endpoint's telemetry record, PR 5).
       set: async (data) => { await tick(); store.set(path, structuredClone(data)); versions.set(path, (versions.get(path) ?? 0) + 1); writeLog.push(['set', path]); },
+      ...(slotWriters ? {
+        update: async (fields) => {
+          await tick();
+          if (!store.has(path)) throw new Error(`update on missing doc ${path}`);
+          store.set(path, { ...store.get(path), ...structuredClone(fields) });
+          versions.set(path, (versions.get(path) ?? 0) + 1);
+          writeLog.push(['update', path]);
+        },
+        delete: async () => { await tick(); store.delete(path); versions.set(path, (versions.get(path) ?? 0) + 1); writeLog.push(['delete', path]); },
+      } : {}),
       collection: (sub) => makeCollection(`${path}/${sub}`),
     };
   }
@@ -83,9 +117,18 @@ export function makeVersionedDb(initial = {}, { beforeCommit = null } = {}) {
   }
   const commitWrites = (buffer) => {
     for (const [p, d] of buffer) {
-      store.set(p, d);
+      if (d === DELETE) {
+        store.delete(p);
+        writeLog.push(['tx.delete', p]);
+      } else if (d?.[UPDATE]) {
+        if (!store.has(p)) throw new Error(`tx.update on missing doc ${p}`);
+        store.set(p, { ...store.get(p), ...d[UPDATE] });
+        writeLog.push(['tx.update', p]);
+      } else {
+        store.set(p, d);
+        writeLog.push(['tx.set', p]);
+      }
       versions.set(p, (versions.get(p) ?? 0) + 1);
-      writeLog.push(['tx.set', p]);
     }
   };
   const db = {
@@ -105,7 +148,10 @@ export function makeVersionedDb(initial = {}, { beforeCommit = null } = {}) {
           return snapshotOf(docs);
         },
         set: (ref, data) => { wrote = true; buffer.push([ref.path, structuredClone(data)]); },
-        update: () => { throw new Error('the backing transactions write whole documents or nothing'); },
+        update: slotWriters
+          ? (ref, fields) => { wrote = true; buffer.push([ref.path, { [UPDATE]: structuredClone(fields) }]); }
+          : () => { throw new Error('the backing transactions write whole documents or nothing'); },
+        ...(slotWriters ? { delete: (ref) => { wrote = true; buffer.push([ref.path, DELETE]); } } : {}),
       };
       for (let attempt = 1; attempt <= 6; attempt += 1) {
         stats.attempts += 1;

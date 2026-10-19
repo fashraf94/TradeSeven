@@ -16,6 +16,19 @@
 // refusal-by-throw rule after the first buffered write, and the four writes.
 // The route now validates the request, calls `placeStake`, and answers.
 //
+// AMENDMENT D (Oct 18, 2026 — the founder's rulings on Astra's Oct 7 review)
+// adds two things to the transaction and moves nothing else:
+//   · R1/R2, THE POOL'S SIZE — a new stake document that would add the 21st
+//     distinct backer is refused `pool_full` before the first buffered write;
+//     one that would be the 81st document is refused `pool_full` after the
+//     debit, by a rolled-back throw (so nobody can probe the document count
+//     for free — CHECK 3b); the 20th backer writes `full: true` on the public
+//     document through the existing progress path;
+//   · R5, THE CLOCK — the window is read from `clock()` on every attempt,
+//     after the replay probe, never from the request's entry instant.
+// The check order is window → belt → eligibility → backer limit → allowance
+// → cap → debit → document limit.
+//
 // THE ONE ADDITION TO THE WRITE: `poolId` on a NEW stake document — the pool
 // this stake sits in, `groupId` or `dev-{groupId}` (`poolIdFor`). The client
 // subscribes to a backed pod's pool by this id (src/hooks/useMyBacking.js),
@@ -76,7 +89,7 @@ import {
   walletRef,
 } from './backingWallet.js';
 import { hashFingerprint } from './backingFingerprint.js';
-import { MIN_STAKE_BP, PER_TEAM_CAP_BP } from '../../src/constants/backing.js';
+import { MIN_STAKE_BP, PER_TEAM_CAP_BP, POOL_MAX_BACKERS, POOL_MAX_STAKES } from '../../src/constants/backing.js';
 import { TOURNAMENT_GAME_MODE, TOURNAMENT_GROUPS_COLLECTION } from '../../src/constants/leagueTournament.js';
 
 /** The sealed per-stake document E1 moves the fingerprint into (§6, §8). */
@@ -88,6 +101,35 @@ export const MAX_REQUEST_ID_LEN = 200;
 
 /** The refusal a SMOKE session gets for a stake on anything but an `isDev` pod. */
 export const SMOKE_REQUIRES_DEV = 'smoke_requires_dev';
+
+/** The refusal for a stake past either pool-size limit (Amendment D R1), and its one sentence. */
+export const POOL_FULL = 'pool_full';
+export const POOL_FULL_MESSAGE = 'This pool is full.';
+
+/**
+ * The pool's size, from the sealed totals' `backers` map (Amendment D R1):
+ * the distinct backers, and the STAKE DOCUMENTS — the `byTeam` keys across
+ * every backer. Counted from the keys themselves, never from the folded
+ * `byTeam` totals (`totalsFromBackers` skips a non-positive amount, and a key
+ * is a document whatever its amount says).
+ *
+ * WHY THE KEY COUNT IS THE DOCUMENT COUNT while the pool is open: every
+ * stake document is (backer, pool, team) at a deterministic id
+ * (`stakeIdFor`), and the one writer of `private/totals` before close is
+ * this module's transaction, which adds a `byTeam` key in the same commit
+ * that creates the document and only adds to an existing key on a top-up.
+ * Nothing voids, settles or deletes a stake while the pool is `open` — the
+ * close, the settlement and the refund all run on a pool the window has
+ * closed — so before close the keys and the live documents are one set.
+ * (A document removed out of band leaves its key behind; the count then
+ * errs toward refusing, never toward admitting.) Pure.
+ */
+export function poolSizeOf(backers) {
+  let stakes = 0;
+  const entries = Object.values(backers ?? {});
+  for (const entry of entries) stakes += Object.keys(entry?.byTeam ?? {}).length;
+  return { backers: entries.length, stakes };
+}
 
 /**
  * The stake's DETERMINISTIC document id, from (uid, groupId, teamOdUserId) —
@@ -253,7 +295,12 @@ function requireStakeArgs({ uid, groupId, teamOdUserId, amount, requestId }) {
  * @param {number} args.amount         whole BP, within [MIN_STAKE_BP, PER_TEAM_CAP_BP].
  * @param {string} args.requestId      this submission's idempotency key.
  * @param {{ipHash?: string, uaHash?: string}} [args.fingerprint] the sealed meta's fingerprint (E1).
- * @param {Date} [args.now]
+ * @param {Date} [args.now]           the REQUEST's entry instant — the lazy jobs before
+ *   the transaction run on it, and the stake's timestamps are written from it.
+ * @param {() => Date} [args.clock]    the clock the WINDOW is read from, once per
+ *   transaction attempt (Amendment D R5). The real clock by default: a request
+ *   that entered before close but executes after it is refused on its own
+ *   execution instant, never on its captured entry time.
  * @param {boolean} [args.smoke]       this caller is a smoke session — dev pods only.
  * @param {boolean} [args.allowDev]    `materializePool`'s dev opt-in.
  * @param {Function} [args.checkEligibility] the §8 checker; `checkBackingEligibility` by default.
@@ -267,11 +314,12 @@ function requireStakeArgs({ uid, groupId, teamOdUserId, amount, requestId }) {
 export async function placeStake(db, {
   uid, decodedToken = null, groupId, teamOdUserId, amount, requestId,
   fingerprint = {}, now = new Date(), smoke = false, allowDev = false,
-  checkEligibility = checkBackingEligibility,
+  checkEligibility = checkBackingEligibility, clock = () => new Date(),
 } = {}) {
   requireStakeArgs({ uid, groupId, teamOdUserId, amount, requestId });
   const at = now instanceof Date ? now : new Date(now);
   if (!Number.isFinite(at.getTime())) throw new StakeRefusal(400, 'invalid_now');
+  if (typeof clock !== 'function') throw new StakeRefusal(400, 'invalid_clock');
 
   // THE ONE DOCUMENT for this (backer, pool, team), and THIS REQUEST's debit
   // (D-ag): a top-up is a second debit against the same document.
@@ -280,7 +328,7 @@ export async function placeStake(db, {
   const entryId = stakeEntryIdFor(debitKey);
 
   // 6. The pod, then the two lazy jobs §4/§7 put on the stake path.
-  const group = await readGroup(db, groupId);
+  let group = await readGroup(db, groupId);
   if (group == null) {
     // A deleted pod still refunds whatever its pool held (§7); the stake
     // itself has nowhere to go. NOT for a SMOKE SESSION: `ensureClosed` on a
@@ -289,7 +337,19 @@ export async function placeStake(db, {
     // that is gone was cleaned up, dev pool included (DEV-1, the activation
     // review record). The answer is the same either way.
     if (smoke !== true) await ensureClosed(db, groupId, at);
-    return { refusal: { status: 409, error: 'no_pod', message: 'That pod is no longer available.' } };
+    // …UNLESS THE POD IS BACK. A slot id is deterministic, so a pod deleted
+    // and re-claimed between the read above and the close keeps its id and its
+    // still-open pool — the close then decides on the live pod and leaves it
+    // open. Answering `no_pod` there would tell a resent, ALREADY COMMITTED
+    // request it placed nothing, and the client (R6) would end its attempt on
+    // that typed answer and let the next Confirm debit again (the
+    // safety-fix-1 review's CON-1b). So the pod is read once more and, if it
+    // exists, the request goes on to the transaction, whose replay probe
+    // answers it.
+    group = await readGroup(db, groupId);
+    if (group == null) {
+      return { refusal: { status: 409, error: 'no_pod', message: 'That pod is no longer available.' } };
+    }
   }
   // A SMOKE SESSION BACKS DEV PODS ONLY — decided on the pod's own `isDev`,
   // before any write, so a smoke stake can never reach a production pool,
@@ -369,6 +429,15 @@ export async function placeStake(db, {
     if (!poolSnap.exists) return { refusal: { status: 409, error: 'no_pool' } };
     const pool = poolSnap.data();
 
+    // ---- THE CLOCK, READ FRESH ON THIS ATTEMPT (Amendment D R5, BKG-006).
+    // Not `at`: `at` is when the request ENTERED, and a body that runs — or
+    // re-runs after a contention retry — past the close must be refused on
+    // the instant it executes. Read after the replay probe, so a replay of a
+    // committed request still answers its original success after close.
+    const txAt = clock();
+    const txMs = txAt instanceof Date ? txAt.getTime() : new Date(txAt).getTime();
+    if (!Number.isFinite(txMs)) throw new StakeRefusal(500, 'invalid_clock');
+
     // ---- CHECK 1: the window, on the SERVER clock (§4, §8). BOTH ENDS.
     if (pool.status !== POOL_STATUS.OPEN) {
       return { refusal: { status: 409, error: 'pool_closed', poolStatus: pool.status } };
@@ -381,16 +450,22 @@ export async function placeStake(db, {
     // pool is drawn from ONE allowance, and a stake in that gap would re-key
     // the wallet to next week and expire this week's).
     const opensMs = new Date(pool.opensAt).getTime();
-    if (Number.isFinite(opensMs) && at.getTime() < opensMs) {
+    if (Number.isFinite(opensMs) && txMs < opensMs) {
       return { refusal: { status: 409, error: 'pool_not_open', opensAt: pool.opensAt } };
     }
-    // The far end.
-    if (at.getTime() >= new Date(pool.closesAt).getTime()) {
+    // The far end — on this attempt's own reading of the clock (R5). An
+    // unreadable `closesAt` is CLOSED, `ensureClosed`'s conservative
+    // direction (a bare `>=` against NaN would admit; the safety-fix-1
+    // review's CON-6).
+    const closesMs = new Date(pool.closesAt).getTime();
+    if (!Number.isFinite(closesMs) || txMs >= closesMs) {
       return { refusal: { status: 409, error: 'pool_closed', poolStatus: pool.status } };
     }
 
     // ---- CHECK 2: the battle-doc belt (§4). Read inside the transaction so a
-    // draft that lands mid-request cannot be straddled.
+    // draft that lands mid-request cannot be straddled. It takes no time
+    // input: it is a read of THIS attempt, so it is fresh on every retry by
+    // construction (Amendment D R5).
     if (await tournamentBattleExists(db, (q) => tx.get(q), groupId)) {
       return { refusal: { status: 409, error: 'battle_started' } };
     }
@@ -427,6 +502,16 @@ export async function placeStake(db, {
 
     const totalsRef = poolTotalsRefFor(db, txGroup);
     const totalsSnap = await tx.get(totalsRef);
+    // THE POOL'S SIZE IS READ FROM HERE (Amendment D R1), so a missing sealed
+    // cache on a pool that has already taken a stake fails CLOSED: the first
+    // stake on a pool writes both this document and the public counter (0 → 1),
+    // so a counter above zero with no totals is an out-of-band state, and an
+    // empty map would let the cap restart from nothing (the safety-fix-1
+    // review's MON-3). Refused before any write.
+    if (!totalsSnap.exists && (pool.backerProgress?.count ?? 0) > 0) {
+      console.error(`[backing-stake] ${poolRef.path} has taken stakes but carries no private/totals — refusing (the pool size cannot be read)`);
+      return { refusal: { status: 409, error: 'no_pool', reason: 'totals_missing' } };
+    }
     const backers = totalsSnap.exists && totalsSnap.data()?.backers
       ? structuredClone(totalsSnap.data().backers)
       : {};
@@ -460,6 +545,30 @@ export async function placeStake(db, {
     // top-up would revive it — refused, before the first write.
     if (prior != null && prior.status !== STAKE_STATUS.LIVE) {
       return { refusal: { status: 409, error: 'stake_not_live' } };
+    }
+
+    // ---- CHECK 3b: THE POOL'S SIZE (Amendment D R1), read from the sealed
+    // `backers` map this transaction already holds (see `poolSizeOf` for why
+    // its keys are the stake documents). A TOP-UP of a document this backer
+    // already holds is never refused by either limit — the per-team cap and
+    // the allowance still apply below. A NEW document is refused when it
+    // would add the 21st distinct backer, or be the 81st stake document,
+    // whoever places it — `pool_full`, one status and one payload for both.
+    //
+    // THE BACKER LIMIT is decided HERE, before the first buffered write, so it
+    // refuses by returning and nothing is written: "Full" is already public at
+    // 20 backers (R2), so answering it early tells nobody anything.
+    //
+    // THE DOCUMENT LIMIT is decided after the debit (below), by a throw that
+    // rolls the whole attempt back. It publishes nothing (R2), and placing it
+    // before the allowance would let any eligible viewer with no allowance
+    // left probe — for free, repeatedly — whether a pool the list shows as
+    // not Full has reached 80 documents: sealed book size (the safety-fix-1
+    // review's SEAL-4). After the debit, only a request that would otherwise
+    // have been ADMITTED learns it.
+    const size = poolSizeOf(backers);
+    if (prior == null && backers[uid] == null && size.backers >= POOL_MAX_BACKERS) {
+      return { refusal: { status: 409, error: POOL_FULL, message: POOL_FULL_MESSAGE } };
     }
 
     // ---- CHECK 4a: the allowance for THIS POOL'S backing week, granted
@@ -515,6 +624,15 @@ export async function placeStake(db, {
       throw new StakeRefusal(409, 'stake_already_spent');
     }
     const wallet2 = debit.wallet;
+
+    // ---- CHECK 4d: THE DOCUMENT LIMIT (Amendment D R1; placed here for
+    // SEAL-4 — see CHECK 3b). A NEW document that would be the 81st is
+    // refused by a THROW: the allowance grant and the debit buffered above
+    // roll back with it, so nothing is written, and the answer is the backer
+    // limit's, word for word.
+    if (prior == null && size.stakes >= POOL_MAX_STAKES) {
+      throw new StakeRefusal(409, POOL_FULL, { message: POOL_FULL_MESSAGE });
+    }
 
     // ---- WRITE 5: the stake (§6 shape) — the ONE document for this team,
     // created or TOPPED UP (D-ag) — plus its sealed meta (E1).
@@ -576,10 +694,11 @@ export async function placeStake(db, {
     tx.set(totalsRef, { ...totals.private, updatedAt: nowIso });
 
     // AND NO PUBLIC WRITE WHEN THE CAPPED VALUES DO NOT MOVE. Above the
-    // floors `publicProgressFrom` is constant, so this is always the case
-    // once both thresholds are met — an above-threshold stake leaves the
-    // public document BYTE-IDENTICAL, which is the whole point of §B2's
-    // freeze. Skipping the write, rather than writing the same values, is
+    // floors `publicProgressFrom` is constant except for ONE move — `full`,
+    // at the 20th distinct backer (Amendment D R2) — so once both thresholds
+    // are met an above-threshold stake leaves the public document
+    // BYTE-IDENTICAL, bar that single write, which is the whole point of
+    // §B2's freeze. Skipping the write, rather than writing the same values, is
     // what makes it byte-identical: `backingPools/{poolId}` is authed-read
     // and therefore an `onSnapshot` stream, so a bare `updatedAt` bump would
     // itself publish "someone just staked" to every spectator watching.

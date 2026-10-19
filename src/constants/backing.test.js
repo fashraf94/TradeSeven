@@ -60,6 +60,10 @@ describe('backing constants — the module contract', () => {
       'MIN_STAKE_BP',
       'PER_TEAM_CAP_BP',
       'POOL_EXCLUDED_SLOT_IDS',
+      // Amendment D R1 (Oct 18, 2026): the pool's two size limits — pinned to
+      // the settlement ceilings in api/_utils/backingPoolCap.test.js.
+      'POOL_MAX_BACKERS',
+      'POOL_MAX_STAKES',
       'POOL_MIN_WINDOW_MS',
       'POOL_STRIP',
       // Amendment C §C1 (D-af): the team-labels route's ceiling, one number

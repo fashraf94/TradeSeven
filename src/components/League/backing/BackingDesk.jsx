@@ -319,6 +319,7 @@ function WindowView(props) {
             {/* Keyed per ENTRY and per seat (BUG-001): every "Back" / "Add" mounts a fresh control. */}
             <StakeControl
               key={`${stakeEntry}:${view.groupId}:${view.odUserId}`}
+              uid={uid}
               card={card}
               pod={pod}
               wallet={wallet}

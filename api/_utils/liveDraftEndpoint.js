@@ -42,6 +42,8 @@ const SLOT_ERROR_TO_HTTP = Object.freeze({
   draft_already_started: [409, 'draft_already_started', 'That draft has already started — seats are locked.'],
   already_in_competitive:[409, 'already_in_competitive', 'You already have a game that week — finish it before joining another slot.'],
   not_a_slot_group:      [409, 'not_a_slot_group', 'That group isn’t a live-draft slot.'],
+  // Backing Amendment D R3: the claimant holds a live stake in this pod's pool.
+  backed_this_pod:       [409, 'backed_this_pod', 'You’ve backed a team in this draft, so you can’t take a seat in it. Pick a different slot.'],
   bad_user:              [400, 'bad_user', 'Could not identify your account — please sign in again.'],
   bad_group:             [400, 'bad_group', 'That game reference looks malformed.'],
   // live-draft pick lifecycle

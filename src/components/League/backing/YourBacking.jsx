@@ -156,15 +156,19 @@ export function weekCardModel({ groupId, stakes, pool, group, labelsById, battle
   const standing = group ? podStanding(group) : [];
   const amounts = new Map();
   const statuses = new Map();
+  const voidWords = new Map();
   for (const s of stakes) {
     amounts.set(s.teamOdUserId, (amounts.get(s.teamOdUserId) ?? 0) + (Number.isFinite(s.amount) ? s.amount : 0));
     statuses.set(s.teamOdUserId, [...(statuses.get(s.teamOdUserId) ?? []), typeof s.status === 'string' ? s.status : 'live']);
+    // A void whose own reason has words (Amendment D R4 — `backer_seated`).
+    if (s.status === 'voided' && RESULTS.stakeVoid[s.voidReason]) voidWords.set(s.teamOdUserId, RESULTS.stakeVoid[s.voidReason]);
   }
   // A stake that is no longer live says so beside its amount (DOM-6): any
-  // void on the team reads void; a team whose stakes have all resolved reads settled.
+  // void on the team reads void — or its own reason, where it has one; a team
+  // whose stakes have all resolved reads settled.
   const stakeStatus = (id) => {
     const list = statuses.get(id) ?? [];
-    if (list.includes('voided')) return WEEK.stakeStatus.voided;
+    if (list.includes('voided')) return voidWords.get(id) ?? WEEK.stakeStatus.voided;
     if (list.length > 0 && list.every((x) => x === 'won' || x === 'lost')) return WEEK.stakeStatus.won;
     return null;
   };
@@ -177,7 +181,11 @@ export function weekCardModel({ groupId, stakes, pool, group, labelsById, battle
   // A refunded or VOID outcome — the cancellation's refund landed, or the pool
   // itself closed `insufficient` / `refunded` — carries where the points went.
   const refunded = cancellation?.refunded === true;
-  const voidOutcome = refunded || pool?.status === 'refunded' || pool?.status === 'insufficient';
+  // …or a single STAKE voided inside a pool that was not (Amendment D R4's
+  // `backer_seated`, a seat that left) — its points go to the record too
+  // (the safety-fix-1 review's HON-3).
+  const voidOutcome = refunded || pool?.status === 'refunded' || pool?.status === 'insufficient'
+    || stakes.some((s) => s?.status === 'voided');
   const reveal = teams.map((id) => {
     // The two layers, named apart — the SERVER's `player` and `agent`,
     // never guessed from a lone label (RAWID-R-2): a label with no

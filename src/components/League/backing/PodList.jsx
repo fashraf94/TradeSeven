@@ -25,6 +25,12 @@
 // an open pool — the seal test (PodList.test.jsx) renders a pool whose object
 // has been given a pot and asserts the figure never reaches the DOM.
 //
+// "FULL" (Amendment D R2) is the one size fact: an open pool whose document
+// says `full`, shown to a viewer with NO stake in it (`poolFullForViewer`) —
+// a word, never a count. Its seats still open their cards, and the card's
+// call to back reads "This pool is full." (TeamCard's BackButton) — no way
+// to start a stake there. A viewer who holds a stake sees their pod as today.
+//
 // The design's `backing-browse.jsx` was not in the attached bundle (the
 // landing-door canvas carries the strip, card, parts and data modules); this
 // list is built from the briefs' contract with the bundle's parts vocabulary
@@ -49,7 +55,7 @@ import { Eyebrow, Mono, Icon, LIcon, Tag, AgentAvatar, KindMark } from '../Leagu
 import { baseGroupName, seatColor } from '../leagueAdapter';
 import { BackersCall, MonoAttr, Sealed } from './BackingParts';
 import { POD_LIST, bp } from './backingCopy';
-import { liveStakeTotal } from './backingStakes';
+import { liveStakeTotal, poolFullForViewer } from './backingStakes';
 import { formatEtClose, teamLabelOf } from './backingStripState';
 
 const REVEALED = new Set(['closed', 'insufficient', 'resolving', 'resolved', 'refunded']);
@@ -100,6 +106,9 @@ export function PodEntry({ pod, onOpenSeat, accent = LX.energy, selectedSeat = n
   const revealed = pool != null && REVEALED.has(pool.status);
   const yours = pod.teams.some((t) => t.isOwnSeat);
   const myTotal = liveStakeTotal(pod);
+  // Amendment D R2: "Full" to a viewer with no stake here; a backer's pod
+  // reads as before (their stake line, a top-up still open to them).
+  const full = poolFullForViewer(pod);
   const humans = pod.teams.filter((t) => !t.isCpu).length;
   const cpus = pod.teams.length - humans;
   const closeLabel = formatEtClose(pool?.closesAt);
@@ -119,6 +128,7 @@ export function PodEntry({ pod, onOpenSeat, accent = LX.energy, selectedSeat = n
           <span style={{ fontSize: 14, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em' }}>{baseGroupName(pod.groupId)}</span>
           <Tag color={pod.formationPath === 'slot' ? LX.cpu : LTOKENS.ink3}>{pod.formationPath === 'slot' ? POD_LIST.slot : POD_LIST.lobby}</Tag>
           {yours && <Tag color={accent}>{POD_LIST.yours}</Tag>}
+          {full && <span data-backing="pool-full"><Tag color={LTOKENS.ink3}>{POD_LIST.full}</Tag></span>}
         </div>
         <Mono style={{ fontSize: 9.5, color: LTOKENS.ink3, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <Icon name="clock" size={10} color={LTOKENS.ink3} />
