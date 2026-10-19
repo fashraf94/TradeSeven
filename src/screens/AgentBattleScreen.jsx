@@ -7,7 +7,7 @@
 //   3. useWebSocketPrices + EODHD polling — live prices for matchup view
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { stockModelRoute, isStock, committedStockContext, validCommittedStockScores, measuredProximity } from '../utils/stockThresholdModel.js';
+import { stockModelRoute, isStock, committedStockContext, validCommittedStockScores } from '../utils/stockThresholdModel.js';
 import { StockRewardDetails } from '../components/draft/ResearchTabs/BaggerBombTab.jsx';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronLeft, Activity, Bot, Bookmark } from 'lucide-react';
@@ -196,23 +196,22 @@ const entryPriceOf = (asset, startingPrices) => asset.swapPrice || startingPrice
  */
 export function StockDispatchRow(props) {
   if (!props.leftAsset?.stockRewardRoute && !props.rightAsset?.stockRewardRoute) return <TacticalRow {...props} />;
-  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-    {['leftAsset', 'rightAsset'].map((side, i) => {
-      const a = props[side];
-      if (!a) return <div key={side} />;
-      if (!a.stockRewardRoute) return <TacticalRow key={side} {...props} leftAsset={i === 0 ? a : null} rightAsset={i === 1 ? a : null} />;
-      return <article key={side} aria-label={`${i === 0 ? 'Agent' : 'CPU'} ${a.symbol}`}>
-        <button type="button" onClick={() => props.onSymbolClick?.(a)}>{a.symbol}</button>
-        <p>{a.points === null ? 'Score unavailable' : `${a.points} pts`}; {a.badges?.join(', ') || 'no earned tiers'}</p>
-        {/* v2 Ruling 16 (K1-5): the bagger footer, from the committed crossed tiers. */}
-        {i === 0 && props.baggerFooter ? <div data-bagger-footer="1">{props.baggerFooter}</div> : null}
-        <details><summary>Why? Measured reward</summary><StockRewardDetails context={a.rewardContext} symbol={a.symbol} />
-          {/* v2 Ruling 15: Why's proximity line, from the same committed context. */}
-          {i === 0 && props.renderWhy?.(measuredProximity(a.rewardContext))}
-        </details>
-      </article>;
-    })}
-  </div>;
+  // The model selects facts, not a replacement design. Keep the normal row,
+  // side-aware research door, price, badges, gauge, footer and Why interaction.
+  // The legacy breakdown reconstructs ATR targets, so measured points open
+  // the existing research view, which already understands committed context.
+  const renderWhy = props.renderWhy && props.leftAsset?.stockRewardRoute
+    ? proximity => <>
+      {props.renderWhy(proximity)}
+      <div style={{ padding: 12, minWidth: 0, overflowX: 'auto' }}>
+        <StockRewardDetails context={props.leftAsset.rewardContext} symbol={props.leftAsset.symbol} />
+      </div>
+    </>
+    : props.renderWhy;
+  return <TacticalRow {...props} renderWhy={renderWhy} onPointsClick={(asset, ...args) => {
+    if (asset.stockRewardRoute) props.onSymbolClick?.(asset, ...args);
+    else props.onPointsClick?.(asset, ...args);
+  }} />;
 }
 
 export function enrichHeldPosition(asset, tier, { curPrice, previousClose, startingPrices, thresholds, thresholdHistory, activatedAt, createdAt, stockBattle, stockSide = 'agent', stockSlot = 0 }) {

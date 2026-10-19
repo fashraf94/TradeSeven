@@ -23,6 +23,7 @@ import { BATTLE_VIEW_COPY } from '../../screens/battleView/battleViewCopy';
 // list, so the RULES (BUILD_RULES §10, §11) are what hold here, not a test.
 import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
+import { measuredProximity } from '../../utils/stockThresholdModel.js';
 
 const DEFAULT_HISTORY = { maxMultiplier: 0, minMultiplier: 0 };
 
@@ -39,7 +40,9 @@ const DEFAULT_HISTORY = { maxMultiplier: 0, minMultiplier: 0 };
  * never rendered from substituted zeros. Absent (every legacy caller): the
  * row renders exactly as shipped.
  */
-const isQuoteUnavailable = (asset) => asset?.quoteAvailability?.status === 'unavailable';
+const isQuoteUnavailable = (asset) => asset?.stockRewardRoute
+  ? asset.rewardContext?.status !== 'valid'
+  : asset?.quoteAvailability?.status === 'unavailable';
 
 /**
  * The inputs ProximityLabel was always fed for a side, resolved with the same
@@ -102,9 +105,9 @@ function AssetSide({
   // an asset today; the contract is kept equal to the shipped one regardless.
   const ownProximity = useMemo(() => {
     if (proximity || !asset || asset.isCash || isQuoteUnavailable(asset)) return null;
-    return computeProximity(proximityInputs(asset));
+    return asset.stockRewardRoute ? measuredProximity(asset.rewardContext) : computeProximity(proximityInputs(asset));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proximity, !!asset, asset?.isCash, asset?.priceChange, asset?.thresholdPriceChange, asset?.baseATR, asset?.history, asset?.dailyLevels, asset?.currentPrice, asset?.quoteAvailability?.status]);
+  }, [proximity, !!asset, asset?.isCash, asset?.priceChange, asset?.thresholdPriceChange, asset?.baseATR, asset?.history, asset?.dailyLevels, asset?.currentPrice, asset?.quoteAvailability?.status, asset?.stockRewardRoute, asset?.rewardContext]);
   const resolvedProximity = proximity ?? ownProximity;
 
   // Destructured here, above the early returns, so the two memos below can be
@@ -134,6 +137,17 @@ function AssetSide({
   // return paths both memos now compute a cheap value nothing reads.
   // Threshold heat: compute proximity ratio for radiance + text warming
   const thresholdHeat = useMemo(() => {
+    if (asset?.stockRewardRoute) {
+      const c = asset.rewardContext;
+      if (c?.status !== 'valid' || Math.abs(c.multiplier) < THRESHOLD_HEAT.neutralZone) return { proximityRatio: 1, direction: 'neutral' };
+      const negative = c.multiplier < 0;
+      const next = negative ? c.nextPenalty : c.nextTarget;
+      const distance = negative ? c.penaltyProximity?.distance : c.proximity?.distance;
+      return {
+        proximityRatio: next && Number.isFinite(distance) ? Math.max(0, distance / Math.abs(next.k)) : 1,
+        direction: negative ? 'negative' : 'positive',
+      };
+    }
     const multiplier = baseATR > 0 ? priceChange / baseATR : 0;
     // Neutral zone: no heat when near zero
     if (Math.abs(multiplier) < THRESHOLD_HEAT.neutralZone) {
@@ -162,7 +176,7 @@ function AssetSide({
       const proximityRatio = distanceRemaining / Math.abs(target);
       return { proximityRatio, direction: 'negative' };
     }
-  }, [priceChange, baseATR, history]);
+  }, [priceChange, baseATR, history, asset?.stockRewardRoute, asset?.rewardContext]);
 
   // Compute radiance opacity from proximity ratio
   const radianceOpacity = useMemo(() => {
@@ -255,7 +269,7 @@ function AssetSide({
   const sideArg = reportClickSide ? [{ side: isRight ? 'cpu' : 'player' }] : [];
 
   if (isQuoteUnavailable(asset)) {
-    const qa = asset.quoteAvailability;
+    const qa = asset.stockRewardRoute ? { label: 'Measured reward unavailable' } : asset.quoteAvailability;
     // Dollars are the player's convention (D-85): a dated last quote shows on
     // the player's side only; the CPU side gets the plain status.
     const status = !isRight && qa.lastQuoteLabel ? qa.lastQuoteLabel : qa.label;
@@ -266,8 +280,10 @@ function AssetSide({
         // (counters, fuse, radiance) carried across the unavailable stretch.
         key="quote-unavailable"
         data-quote-unavailable={asset.symbol}
+        {...(asset.stockRewardRoute ? { 'data-measured-unavailable': asset.rewardContext?.reason || 'missing_bound_evidence' } : {})}
         style={{
           flex: 1,
+          ...(asset?.stockRewardRoute ? { minWidth: 0 } : {}),
           padding: '12px',
           display: 'flex',
           flexDirection: 'column',
@@ -374,6 +390,7 @@ function AssetSide({
 
   return (
     <div
+      {...(asset.stockRewardRoute ? { 'data-measured-stock': symbol, 'aria-label': `${isRight ? 'CPU' : 'Agent'} ${symbol}` } : {})}
       onClick={handleAssetClick}
       {...(whyEnabled ? {
         role: 'button',
@@ -385,6 +402,7 @@ function AssetSide({
       } : {})}
       style={{
         flex: 1,
+        ...(asset.stockRewardRoute ? { minWidth: 0 } : {}),
         padding: '12px',
         display: 'flex',
         flexDirection: 'column',
@@ -566,6 +584,7 @@ function AssetSide({
           compact
           showLabels={false}
           onThresholdCross={onThresholdCross}
+          {...(asset.stockRewardRoute ? { rewardContext: asset.rewardContext } : {})}
         />
         {/* Leading-edge radiance — glows when approaching threshold */}
         {radianceOpacity > 0 && (
@@ -743,10 +762,10 @@ export default function TacticalRow({
   // AssetSide, once.
   const leftProximity = useMemo(() => {
     if (!leftAsset || leftAsset.isCash || isQuoteUnavailable(leftAsset)) return null;
-    return computeProximity(proximityInputs(leftAsset));
+    return leftAsset.stockRewardRoute ? measuredProximity(leftAsset.rewardContext) : computeProximity(proximityInputs(leftAsset));
   // Value-keyed, like the pre-lift label (see AssetSide's memo above).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!leftAsset, leftAsset?.isCash, leftAsset?.priceChange, leftAsset?.thresholdPriceChange, leftAsset?.baseATR, leftAsset?.history, leftAsset?.dailyLevels, leftAsset?.currentPrice, leftAsset?.quoteAvailability?.status]);
+  }, [!!leftAsset, leftAsset?.isCash, leftAsset?.priceChange, leftAsset?.thresholdPriceChange, leftAsset?.baseATR, leftAsset?.history, leftAsset?.dailyLevels, leftAsset?.currentPrice, leftAsset?.quoteAvailability?.status, leftAsset?.stockRewardRoute, leftAsset?.rewardContext]);
 
   return (
     <>

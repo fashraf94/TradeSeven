@@ -212,17 +212,23 @@ export default function ChamberFuse({
   showLabels = true,
   animate = true,
   onThresholdCross,
+  // Measured stocks use the committed multiplier and crossed tiers directly.
+  // No calibrated ATR division or browser-inferred awards on this path.
+  rewardContext = null,
 }) {
   const prevMultiplierRef = useRef(0);
 
   // Calculate current position as multiplier of baseATR
   const currentMultiplier = useMemo(() => {
+    if (rewardContext) return rewardContext.multiplier;
     if (!baseATR || baseATR === 0) return 0;
     return priceChange / baseATR;
-  }, [priceChange, baseATR]);
+  }, [priceChange, baseATR, rewardContext]);
 
-  // Determine which segments are lit (current OR history)
-  const litSegments = useMemo(() => ({
+  // Measured segments use the committed crossed tiers. Legacy uses current/history.
+  const litSegments = useMemo(() => rewardContext
+    ? Object.fromEntries(Object.keys(MULTIPLIERS).map(key => [key, rewardContext.crossedTiers.includes(key)]))
+    : ({
     // Positive: lit if current >= threshold OR history max >= threshold
     bagger: currentMultiplier >= MULTIPLIERS.bagger || history.maxMultiplier >= MULTIPLIERS.bagger,
     doubleBagger: currentMultiplier >= MULTIPLIERS.doubleBagger || history.maxMultiplier >= MULTIPLIERS.doubleBagger,
@@ -231,7 +237,7 @@ export default function ChamberFuse({
     bust: currentMultiplier <= MULTIPLIERS.bust || history.minMultiplier <= MULTIPLIERS.bust,
     crash: currentMultiplier <= MULTIPLIERS.crash || history.minMultiplier <= MULTIPLIERS.crash,
     meltdown: currentMultiplier <= MULTIPLIERS.meltdown || history.minMultiplier <= MULTIPLIERS.meltdown,
-  }), [currentMultiplier, history.maxMultiplier, history.minMultiplier]);
+  }), [currentMultiplier, history.maxMultiplier, history.minMultiplier, rewardContext]);
 
   // Derive highest active state from litSegments
   const activeState = useMemo(() => {
@@ -307,7 +313,7 @@ export default function ChamberFuse({
 
   // Detect threshold crossings and fire callback
   useEffect(() => {
-    if (!onThresholdCross) return;
+    if (!onThresholdCross || rewardContext) return;
 
     const prev = prevMultiplierRef.current;
     const curr = currentMultiplier;
@@ -328,7 +334,7 @@ export default function ChamberFuse({
     });
 
     prevMultiplierRef.current = curr;
-  }, [currentMultiplier, onThresholdCross]);
+  }, [currentMultiplier, onThresholdCross, rewardContext]);
 
   // Ignite transition — brightness flash on new threshold crossing
   const [igniting, setIgniting] = useState(false);
@@ -382,6 +388,7 @@ export default function ChamberFuse({
 
   return (
     <div
+      {...(rewardContext ? { 'data-reward-multiplier': currentMultiplier, 'data-earned-tiers': rewardContext.crossedTiers.join(',') } : {})}
       style={{
         position: 'relative',
         width: '100%',

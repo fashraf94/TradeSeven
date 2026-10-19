@@ -116,7 +116,7 @@ describe('K1-2: a bare held name opens research on the pinned row context', () =
   it('the CPU row of a shared ticker opens the CPU context', async () => {
     HOOK.doc = await committedBattle();
     await mount();
-    const asset = await open(container.querySelector('article[aria-label="CPU AAPL"] button'));
+    const asset = await open(container.querySelector('[data-measured-stock][aria-label="CPU AAPL"] div[style*="inline-block"]'));
     expect(asset).toMatchObject({ symbol: 'AAPL', stockRewardRoute: true, threshold: null, positionId: 'position-cpu', rewardContext: { fill: 99.5, positionId: 'position-cpu' } });
   });
   // Mutation lens KM-29: a bare name resolves to the held row OF THAT SYMBOL.
