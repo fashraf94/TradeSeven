@@ -1,5 +1,6 @@
 import { ARCHETYPE_WEIGHTS, computeArchetypeRankings } from './archetypeScoring.js';
 import { TIERED_GAME_MODE } from '../../src/constants/agentGameModes.js';
+import * as featureFlags from '../../src/config/featureFlags.js';
 
 /**
  * BaggerBomb refresh only. Null delegates to the caller's legacy fit policy.
@@ -11,6 +12,9 @@ export function buildArchetypeCandidateMenu({
   gameMode, isTournament = false, archetype, rankings,
   excludeSymbols = new Set(), equippedTickers = [], onEvent = () => {},
 }) {
+  // Call-time read. Absent exports in older bare test mocks also stay dark.
+  if (!Object.hasOwn(featureFlags, 'ARCHETYPE_REFRESH_MENU_ENABLED')
+    || featureFlags.ARCHETYPE_REFRESH_MENU_ENABLED !== true) return null;
   if (isTournament || (gameMode != null && gameMode !== TIERED_GAME_MODE)) return null;
   if (typeof archetype !== 'string' || !Object.hasOwn(ARCHETYPE_WEIGHTS, archetype)) {
     onEvent({ type: 'archetype_candidate_menu_legacy', reason: 'unknown_archetype' });

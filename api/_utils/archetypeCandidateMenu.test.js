@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
-// BUILD_RULES §4 dependency-surface guard: real imports, never mocked. This
-// loads the scorer, feature flags and game-mode constants in Node.
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+// The scorer and menu stay real. Only the feature flag varies via a getter.
+// Unmocked Node dependency guard: agent-evaluate.shouldRebuildHotBench.test.js.
 import { buildArchetypeCandidateMenu } from './archetypeCandidateMenu.js';
 import { ARCHETYPE_WEIGHTS, computeArchetypeRankings } from './archetypeScoring.js';
 import { makeCandidateUniverse } from './__fixtures__/archetypeCandidateMenu.js';
@@ -10,12 +10,41 @@ const rankings = makeCandidateUniverse();
 const excludeSymbols = new Set(rankings.slice(0, 9).map(s => s.symbol));
 const base = { gameMode: 'baggerbomb_agent', archetype: 'analyst', rankings, excludeSymbols };
 const symbols = rows => rows.map(s => s.symbol);
+const flags = vi.hoisted(() => ({ menu: true }));
+vi.mock('../../src/config/featureFlags.js', async original => ({
+  ...(await original()),
+  get ARCHETYPE_REFRESH_MENU_ENABLED() { return flags.menu; },
+}));
+beforeEach(() => { flags.menu = true; });
 
 describe('BaggerBomb archetype candidate menu', () => {
+  it('ships dark with a pin on the real, unmocked flag', async () => {
+    const actualFlags = await vi.importActual('../../src/config/featureFlags.js');
+    expect(actualFlags.ARCHETYPE_REFRESH_MENU_ENABLED).toBe(false);
+  });
+
+  it('reads the flag on every call and stays dark unless explicitly true', () => {
+    for (const value of [false, undefined, true, false]) {
+      flags.menu = value;
+      const menu = buildArchetypeCandidateMenu(base);
+      if (value === true) expect(menu).not.toBeNull();
+      else expect(menu).toBeNull();
+    }
+  });
+
   it.each(archetypes)('retains full-universe %s rank through both menus', archetype => {
     const expected = symbols(computeArchetypeRankings(rankings, archetype, { gameMode: 'baggerBomb' }))
       .filter(s => !excludeSymbols.has(s));
     const menu = buildArchetypeCandidateMenu({ ...base, archetype });
+    expect(menu).toEqual({ hotBench: expected.slice(0, 15), monitoring: expected.slice(15, 33) });
+  });
+
+  it.each(archetypes)('retains %s rank with unequal sector populations (19–28)', archetype => {
+    const rows = makeCandidateUniverse({ sectorSizes: [28, 27, 26, 25, 24, 23, 20, 19] });
+    const excluded = new Set(symbols(rows.slice(0, 9)));
+    const expected = symbols(computeArchetypeRankings(rows, archetype, { gameMode: 'baggerBomb' }))
+      .filter(s => !excluded.has(s));
+    const menu = buildArchetypeCandidateMenu({ ...base, rankings: rows, excludeSymbols: excluded, archetype });
     expect(menu).toEqual({ hotBench: expected.slice(0, 15), monitoring: expected.slice(15, 33) });
   });
 
@@ -90,5 +119,17 @@ describe('BaggerBomb archetype candidate menu', () => {
     const events = [];
     expect(buildArchetypeCandidateMenu({ ...base, archetype, onEvent: event => events.push(event) })).toBeNull();
     expect(events).toEqual([{ type: 'archetype_candidate_menu_legacy', reason: 'unknown_archetype' }]);
+  });
+
+  it('stays dark when an older bare mock omits the flag export', async () => {
+    vi.resetModules();
+    vi.doMock('../../src/config/featureFlags.js', () => ({}));
+    try {
+      const { buildArchetypeCandidateMenu: bareMockMenu } = await import('./archetypeCandidateMenu.js');
+      expect(bareMockMenu(base)).toBeNull();
+    } finally {
+      vi.doUnmock('../../src/config/featureFlags.js');
+      vi.resetModules();
+    }
   });
 });

@@ -7,6 +7,11 @@ import { makeCandidateUniverse } from '../_utils/__fixtures__/archetypeCandidate
 import { ARCHETYPE_WEIGHTS, computeArchetypeRankings } from '../_utils/archetypeScoring.js';
 
 const mocks = vi.hoisted(() => ({ prices: vi.fn(), intraday: vi.fn(), create: vi.fn(), tournament: null }));
+const flags = vi.hoisted(() => ({ menu: true }));
+vi.mock('../../src/config/featureFlags.js', async original => ({
+  ...(await original()),
+  get ARCHETYPE_REFRESH_MENU_ENABLED() { return flags.menu; },
+}));
 vi.mock('@anthropic-ai/sdk', () => ({ default: class {
   constructor() { this.messages = { create: (...args) => mocks.create(...args) }; }
 } }));
@@ -33,6 +38,11 @@ const { processAgentBattle } = await import('./agent-evaluate.js');
 const symbols = rows => rows.map(row => row.symbol);
 const universe = makeCandidateUniverse();
 const rankings = { ...makeRankingsDoc(), stocks: [...makeRankingsDoc().stocks, ...universe] };
+// Characterized on unchanged base 39053aed. Independent of the new selector.
+const LEGACY_MENU = {
+  hotBench: ['S009', 'S018', 'S027', 'S036', 'S045', 'S054', 'S063', 'S072', 'S081', 'S090', 'S002', 'S011', 'S020', 'S029', 'S038'],
+  monitoring: ['S047', 'S056', 'S065', 'S074', 'S083', 'S092', 'S004', 'S013', 'S022', 'S031', 'S040', 'S049', 'S058', 'S067', 'S076', 'S085', 'S094', 'S006'],
+};
 
 function battleFor(archetype = 'analyst', overrides = {}) {
   const battle = makeTickBattle(overrides);
@@ -54,6 +64,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(FROZEN_NOW));
   mocks.tournament = null;
+  flags.menu = true;
   mocks.create.mockReset().mockResolvedValue(makeToolUseResponse(makeHoldResult()));
   const priceTable = makePriceTable();
   mocks.prices.mockReset().mockImplementation(async symbol => ({
@@ -87,12 +98,31 @@ describe('real refresh writes and model candidate consumption', () => {
 
   it('keeps equipped priority during overflow in the real refresh', async () => {
     const battle = battleFor();
-    const equipped = universe.slice(80, 88).map(s => s.symbol);
+    const ranked = symbols(computeArchetypeRankings(rankings.stocks, 'analyst', { gameMode: 'baggerBomb' }))
+      .filter(s => s.startsWith('S'));
+    // Eight low-ranked in-universe names guarantee 15 + 8 > 20, without
+    // overlap. Expected membership comes from the canonical scorer directly,
+    // never from the menu helper or the legacy equip helper under test.
+    const equipped = ranked.slice(-8);
+    const expected = [...ranked.slice(0, 12), ...equipped];
     battle.agentContext.equippedWatchlist = { tickers: equipped };
     const { update } = await runTick(battle);
-    for (const symbol of equipped) expect(update.watchlist.hotBench).toContain(symbol);
-    expect(update.watchlist.hotBench.length).toBeLessThanOrEqual(20);
+    expect(update.watchlist.hotBench).toEqual(expected);
     expect(update.watchlist.monitoring.some(s => update.watchlist.hotBench.includes(s))).toBe(false);
+  });
+
+  it('flag-off output equals the unchanged base fit list', async () => {
+    flags.menu = false;
+    const { update } = await runTick(battleFor());
+    expect(update.watchlist.hotBench).toEqual(LEGACY_MENU.hotBench);
+    expect(update.watchlist.monitoring).toEqual(LEGACY_MENU.monitoring);
+  });
+
+  it('unresolved flat6 context retains the unchanged base fit list', async () => {
+    expect(mocks.tournament).toBeNull();
+    const { update } = await runTick(battleFor('analyst', { gameMode: 'baggerbomb_tournament' }));
+    expect(update.watchlist.hotBench).toEqual(LEGACY_MENU.hotBench);
+    expect(update.watchlist.monitoring).toEqual(LEGACY_MENU.monitoring);
   });
 
   it.each(['baggerbomb_tournament', 'league'])('%s retains fit selection and equipped/rival exclusions', async gameMode => {
@@ -114,6 +144,9 @@ describe('real refresh writes and model candidate consumption', () => {
   it('uses legacy fit selection and a diagnostic for an unknown frozen identity', async () => {
     const { update } = await runTick(battleFor('unknown'));
     expect(update.watchlist.hotBench.slice(0, 3)).toEqual(['S009', 'S018', 'S027']);
-    expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('[archetype-menu] legacy refresh: unknown archetype'));
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('[archetype-menu] legacy refresh: unknown archetype battle=battle-tick-1'),
+      { archetype: 'unknown' },
+    );
   });
 });

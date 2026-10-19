@@ -1499,7 +1499,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           rankings: stockRankingsArray,
           excludeSymbols: new Set([...portfolioSymbols, ...benchSymbols]),
           equippedTickers: battle.agentContext?.equippedWatchlist?.tickers || [],
-          onEvent: () => console.warn(`${LOG_PREFIX} [archetype-menu] legacy refresh: unknown archetype`),
+          onEvent: () => console.warn(`${LOG_PREFIX} [archetype-menu] legacy refresh: unknown archetype battle=${battle.id}`, { archetype: ctx.archetype }),
         });
         let newHotBench;
         let newMonitoring;
