@@ -138,6 +138,9 @@ export const POD_LIST = Object.freeze({
   closes: (closeLabel) => (closeLabel ? `Closes ${closeLabel}` : 'Close pending'),
   seats: (humans, cpus) => `${plural(humans, 'human', 'humans')} · ${plural(cpus, 'CPU', 'CPUs')}`,
   noPool: 'No pool for this pod.',
+  // Amendment D R2: an open pool at its backer limit, to a viewer with no
+  // stake in it. The one size fact a pool publishes — never a count.
+  full: 'Full',
   sealedPot: 'Pot',
   sealedPays: 'Pays ×',
   sealed: 'SEALED',
@@ -302,6 +305,8 @@ export const CARD = Object.freeze({
     yoursTeam: 'This is your team. Backing is for the pods you watch.',
     yoursPod: 'Your pod. Backing is for the pods you watch.',
     closed: 'BACKING CLOSED FOR THE WEEK',
+    // Amendment D R2: a full pool offers a viewer with no stake no way in.
+    full: 'This pool is full.',
     backedPrefix: (amount) => `BACKED · ${bp(amount)} BP · `,
     back: (name, agentName) => `Back ${name} & ${agentName}`,
     // The agent-less seat's CTA (OBS-001): the player alone — never "& {player}'s agent".
@@ -393,6 +398,17 @@ export const STAKE = Object.freeze({
   toppedUp: (added) => `Added ${bp(added)} BP to your stake.`,
   backedSub: 'Recorded by the server. Sealed until the pool closes.',
   replayed: 'Already recorded — this stake was placed once.',
+  // ONE CONFIRM IS ONE REQUEST UNTIL IT RESOLVES (Amendment D R6): the reply
+  // did not say whether the stake was placed, so the form says exactly that
+  // and offers only the identical request again.
+  unresolved: (amount, label) => `We couldn’t confirm your ${bp(amount)} BP on ${label}.`,
+  // The same attempt, still out — sent by a form that has since closed.
+  inFlight: (amount, label) => `Your ${bp(amount)} BP on ${label} is still being confirmed.`,
+  unresolvedSub: 'Check again sends the same request, so it can’t be placed twice.',
+  checkAgain: 'Check again',
+  checking: 'Checking…',
+  // A replay answered after the pool closed: recorded, and no longer sealed.
+  backedSubClosed: 'Recorded by the server. This pool has closed since — its result shows under Results.',
   another: 'Back another team',
   belowMin: `The minimum stake is ${bp(MIN_STAKE_BP)} BP.`,
   aboveCap: `The per-team cap is ${bp(PER_TEAM_CAP_BP)} BP, including what you already have on this team.`,
@@ -428,6 +444,8 @@ export const REFUSALS = Object.freeze({
   stake_already_spent: 'That request was already used. Start a new stake.',
   // D-ag: a stake that has been settled or voided is not topped up.
   stake_not_live: 'Your stake on this team can no longer be added to.',
+  // Amendment D R1: the 21st distinct backer, or the 81st stake document.
+  pool_full: 'This pool is full.',
   insufficient_allowance: STAKE.aboveAllowance,
   week_mismatch: 'Your allowance is on a different week. Reload and try again.',
   server_error: 'Could not place that stake. Try again.',
@@ -546,6 +564,13 @@ export const RESULTS = Object.freeze({
   lost: 'lost',
   pending: 'settling',
   voided: 'void',
+  // A voided STAKE's own reason, where the stake's words say more than "void"
+  // (Amendment D R4 — the close voids a stake whose backer took a seat in the
+  // pod, and refunds it to the record). Keyed by the stake's `voidReason`;
+  // any reason not here reads `voided`.
+  stakeVoid: Object.freeze({
+    backer_seated: 'Refunded — you took a seat in this pod.',
+  }),
   net: (n) => (Number.isFinite(n) ? `${n >= 0 ? '+' : '−'}${bp(Math.abs(n))} BP net` : ''),
   // The reveal, per team (§3): backers, the BP share labeled exactly, pays ×.
   teams: 'Every team · revealed',

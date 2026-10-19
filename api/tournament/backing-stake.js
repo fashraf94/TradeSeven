@@ -110,7 +110,8 @@
 // `private/totals` and only the threshold-capped `backerProgress` /
 // `teamSpread` to the public document — and writes the public document NOT AT
 // ALL when those capped values are unchanged, which is every stake once both
-// floors are met. Nothing else in this transaction moves: the check order, the
+// floors are met — bar the one `full` write at the 20th distinct backer
+// (Amendment D R2). Nothing else in this transaction moves: the check order, the
 // `requestId` idempotency, the wallet threading and the belt are as PR 2 left
 // them, because the amendment changes WHAT IS PUBLISHED, not what is decided.
 //
@@ -300,8 +301,11 @@ export default async function handler(req, res) {
     // subtract their own contribution from anything they are told, so handing
     // the pot back in the confirmation response would re-open the leak the
     // document move just closed, on the one request most able to exploit it.
-    // The reply projects the same capped fields the public document carries,
-    // read off that document, so the two cannot disagree (§9).
+    // The reply projects the capped fields the public document carries, read
+    // off that document, so the two cannot disagree (§9) — all but `full`
+    // (Amendment D R2), deliberately left out: it is a fact for viewers with
+    // no stake in the pool, the one who just staked is not one, and no client
+    // reads the reply's `pool` (the pod list re-reads on `onBacked`).
     return res.status(200).json({
       replay: outcome.replay === true,
       // D-ag: whether this request topped up a stake the backer already held,

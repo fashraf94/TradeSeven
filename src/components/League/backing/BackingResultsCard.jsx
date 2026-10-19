@@ -55,7 +55,8 @@ export function stakeOutcomeWords(stake) {
   switch (stake?.status) {
     case 'won': return Number.isFinite(stake.payout) ? RESULTS.paid(stake.payout) : RESULTS.paidUnknown;
     case 'lost': return RESULTS.lost;
-    case 'voided': return RESULTS.voided;
+    // The stake's own reason where it has words of its own (Amendment D R4).
+    case 'voided': return RESULTS.stakeVoid[stake.voidReason] ?? RESULTS.voided;
     default: return RESULTS.pending;
   }
 }
@@ -110,12 +111,16 @@ export function resultsCardModel(pod) {
     if (won) return Number.isFinite(pod.paysX) ? RESULTS.paidX(pod.paysX) : RESULTS.paidUnknown;
     return Number.isFinite(t.paysX) ? RESULTS.wouldPay(t.paysX) : RESULTS.noBackers;
   };
-  return { settled, voided, winners, winnerNames, mine, teams, revealed, reasonKey, first, paysCell };
+  // A STAKE voided inside a pool that was not (Amendment D R4's `backer_seated`,
+  // or a seat that left): the pool-level refund block does not show, so the
+  // stake rows carry where its points went (the safety-fix-1 review's HON-3).
+  const stakeVoided = !voided && mine.some((s) => s?.status === 'voided');
+  return { settled, voided, winners, winnerNames, mine, teams, revealed, reasonKey, first, paysCell, stakeVoided };
 }
 
 export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape = null }) {
   if (!pod || typeof pod !== 'object') return null;
-  const { settled, voided, winners, winnerNames, mine, teams, revealed, reasonKey, first, paysCell: paysCellFor } = resultsCardModel(pod);
+  const { settled, voided, winners, winnerNames, mine, teams, revealed, reasonKey, first, paysCell: paysCellFor, stakeVoided } = resultsCardModel(pod);
   const color = outcomeColor(pod.outcome, accent);
 
   return (
@@ -158,6 +163,7 @@ export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape
           {Number.isFinite(pod.myNet) && (
             <MonoAttr data-backing="results-net" style={{ fontSize: 12.5, fontWeight: 700, color: pod.myNet >= 0 ? LTOKENS.gold : LX.neg }}>{RESULTS.net(pod.myNet)}</MonoAttr>
           )}
+          {stakeVoided && <div data-backing="results-stake-refund-note" style={{ fontSize: 11.5, color: LTOKENS.ink3, lineHeight: 1.45 }}>{RESULTS.toRecord}</div>}
         </div>
       )}
 
@@ -201,7 +207,7 @@ export default function BackingResultsCard({ pod, accent = LX.energy, onOpenTape
 /** The desktop card — the same model, as a table (Team · Backers · Share · Pays ×, or BP backed before a settlement). */
 export function BackingResultsCardDesk({ pod, accent = LX.energy, onOpenTape = null }) {
   if (!pod || typeof pod !== 'object') return null;
-  const { settled, voided, winners, winnerNames, mine, teams, revealed, reasonKey, first, paysCell } = resultsCardModel(pod);
+  const { settled, voided, winners, winnerNames, mine, teams, revealed, reasonKey, first, paysCell, stakeVoided } = resultsCardModel(pod);
   const color = outcomeColor(pod.outcome, accent);
   const cols = 'minmax(0, 1.4fr) 96px minmax(0, 1.3fr) 128px';
   const head = { fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase' };
@@ -245,6 +251,7 @@ export function BackingResultsCardDesk({ pod, accent = LX.energy, onOpenTape = n
           {Number.isFinite(pod.myNet) && (
             <MonoAttr data-backing="results-net" style={{ fontSize: 13, fontWeight: 700, color: pod.myNet >= 0 ? LTOKENS.gold : LX.neg }}>{RESULTS.net(pod.myNet)}</MonoAttr>
           )}
+          {stakeVoided && <div data-backing="results-stake-refund-note" style={{ fontSize: 11.5, color: LTOKENS.ink3, lineHeight: 1.45 }}>{RESULTS.toRecord}</div>}
         </div>
       )}
 

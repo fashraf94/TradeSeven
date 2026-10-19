@@ -13,6 +13,9 @@
 // document at all while open — they live in `private/totals` beside the
 // per-team totals — and the close copies all three back up as part of the §3
 // step 4 reveal. `publicProgressFrom` is the one implementation of the cap.
+// Amendment D R2 adds ONE field beside the pair: `full: true`, written once,
+// when the pool admits its `POOL_MAX_BACKERS`-th distinct backer — no count,
+// no amount, no team — and taken off at close with the pair.
 //
 // `backingPools/{groupId}`, `dev-{groupId}` in the dev namespace — the PR 1
 // wallet-id rule verbatim (`walletIdFor`, backingWallet.js), so a smoke pod can
@@ -34,10 +37,17 @@
 // left would still read as backable from the frozen copy).
 //
 // THE CLOSE ORDER IS THE SPEC'S, AND NOTHING MAY REORDER IT (§3):
+//   (0) READ THE GROUP INSIDE THE CLOSE'S OWN TRANSACTION (Amendment D,
+//       BKG-002). The caller's group object is a POINTER — its id and its
+//       pool namespace — and nothing else: every decision below is made on
+//       the in-transaction read, so a seat released between the caller's
+//       read and this commit is a departed seat here, never a seated one;
 //   (1) FREEZE `teams[]` to the seats present in `players[]` now;
 //   (2) VOID every `live` stake whose `teamOdUserId` is no longer seated
 //       (`voidReason: 'seat_left'`), score-neutral through PR 1's
-//       `creditRefund`;
+//       `creditRefund` — and then, among the rest, every stake whose BACKER
+//       holds a seat in the pod (`voidReason: 'backer_seated'`, Amendment D
+//       R4). A stake that is both is `seat_left`: step 2's own reason wins;
 //   (3) EVALUATE VALIDITY on what remains — ≥ VALIDITY_MIN_BACKERS unique
 //       backers AND ≥ VALIDITY_MIN_TEAMS distinct teams — giving `closed` or
 //       `insufficient`; on `insufficient` every remaining stake is voided
@@ -95,6 +105,7 @@ import {
 import { readWallet, walletRef, creditRefund, recordStakeLoss } from './backingWallet.js';
 import {
   POOL_EXCLUDED_SLOT_IDS,
+  POOL_MAX_BACKERS,
   VALIDITY_MIN_BACKERS,
   VALIDITY_MIN_TEAMS,
 } from '../../src/constants/backing.js';
@@ -138,6 +149,11 @@ export const STAKE_STATUS = Object.freeze({
  */
 export const VOID_REASONS = Object.freeze({
   SEAT_LEFT: 'seat_left',
+  // Amendment D R4 (Oct 18, 2026): the BACKER holds a seat in the pod at
+  // close, per the close transaction's own read. The belt behind R3's claim
+  // refusal (liveDraftFormation.js `claimSlotSeat`): a backer who took a
+  // seat in the pod they backed never keeps a live stake on it.
+  BACKER_SEATED: 'backer_seated',
   INSUFFICIENT: 'insufficient',
   GROUP_VOIDED: 'group_voided',
   GROUP_EXPIRED: 'group_expired',
@@ -453,15 +469,26 @@ export function buildOpenPool(group, now, { eligibility }) {
  *     pod names which team took a stake by arithmetic — the exact leak §B1
  *     describes — so the count does not leave `private/totals` at all.
  *
- * ONCE BOTH ARE MET THIS FUNCTION IS CONSTANT for every further stake, which is
- * what lets the stake transaction skip its public write entirely
+ * ONCE BOTH ARE MET THIS FUNCTION IS CONSTANT for every further stake — bar
+ * the one `full` move at the 20th distinct backer (Amendment D R2, below) —
+ * which is what lets the stake transaction skip its public write
  * (`publicProgressChanged` below, backing-stake.js WRITE 6). That is the whole
- * point of the amendment: above the floor, the public document does not move.
+ * point of the amendment: above the floor, the public document does not move,
+ * except that once.
  *
  * The two residual signals §B3 accepts — the spread flipping unmet → met, and
  * at most two sub-floor backer ticks — are exactly what remains, and they carry
  * no amount. §B4: below the floor a spectator is told what the pool needs,
  * because thin-pool risk outranks further sealing; at and above it, nothing.
+ *
+ * `full: true` — AMENDMENT D R2, the one public fact about the book's SIZE.
+ * Present only once the pool holds `POOL_MAX_BACKERS` distinct backers, and
+ * ABSENT (never `false`) below that: a pool opened before Amendment D carries
+ * no `full` key, and an absent key and a `false` one must read the same, or
+ * the next stake on every such pool would publish a phantom write. Distinct
+ * backers only grow while a pool is open, so the key appears once and is
+ * never written again — one extra public write per pool, at the 20th backer.
+ * It carries no count, no amount and no team.
  *
  * @param {{uniqueBackers?: number, teamsBacked?: number}} totals the TRUE
  *   counts, as `totalsFromBackers` / `totalsFromStakes` derive them.
@@ -476,6 +503,7 @@ export function publicProgressFrom(totals) {
       met: uniqueBackers >= VALIDITY_MIN_BACKERS,
     },
     teamSpread: { met: teamsBacked >= VALIDITY_MIN_TEAMS },
+    ...(uniqueBackers >= POOL_MAX_BACKERS ? { full: true } : {}),
   };
 }
 
@@ -489,11 +517,17 @@ export function publicProgressFrom(totals) {
  * unchanged therefore writes the public document NOT AT ALL, and the snapshot
  * a spectator holds is byte-identical across it.
  *
- * ABOVE THE FLOOR THIS IS ALWAYS FALSE, which is §B2's requirement. It is also
- * false for a sub-floor stake that moves nothing public (a second stake by a
- * backer already counted, on a team already spread) — deliberately stronger
- * than the letter of §B2, because §B3 lists the residual signals EXHAUSTIVELY
- * and a bare `updatedAt` tick is not among the two it accepts.
+ * ABOVE THE FLOOR THIS IS FALSE — bar the one `full` move below — which is
+ * §B2's requirement. It is also false for a sub-floor stake that moves
+ * nothing public (a second stake by a backer already counted, on a team
+ * already spread) — deliberately stronger than the letter of §B2, because
+ * §B3 lists the residual signals EXHAUSTIVELY (two, plus `full` as Amendment
+ * D adds it) and a bare `updatedAt` tick is not among them.
+ *
+ * `full` (Amendment D R2) moves it exactly once — at the 20th distinct
+ * backer — and is compared as `=== true` on both sides, so a pool written
+ * before the key existed (no `full` at all) reads the same as one below the
+ * limit, and never costs a write.
  */
 export function publicProgressChanged(pool, progress) {
   const was = pool?.backerProgress;
@@ -501,7 +535,8 @@ export function publicProgressChanged(pool, progress) {
   return was?.count !== now?.count
     || was?.floor !== now?.floor
     || was?.met !== now?.met
-    || pool?.teamSpread?.met !== progress?.teamSpread?.met;
+    || pool?.teamSpread?.met !== progress?.teamSpread?.met
+    || (pool?.full === true) !== (progress?.full === true);
 }
 
 /**
@@ -580,23 +615,50 @@ function liveStakesQuery(db, groupId) {
  * The §3 close, as ONE transaction in the spec's order. See the module header
  * for the four steps and why step 2 precedes step 3.
  *
+ * THE GROUP IS READ HERE, IN THIS TRANSACTION (Amendment D, BKG-002). The
+ * `group` argument is a POINTER: its `id` names the group document and its
+ * `isDev` the pool namespace, and NOTHING about membership is read from it.
+ * Whether to close, the frozen seats, the seat-left and backer-seated voids,
+ * validity and the deleted-group refund all come from the in-transaction
+ * read, so a seat released (or claimed) after the caller read the pod is
+ * judged as it stands at commit — and a transaction retry re-reads it. The
+ * pointer and the read can disagree in two ways, each decided by the read:
+ *   · a TOMBSTONE was handed in but the group EXISTS — the pod came back
+ *     (slot group ids are deterministic, so a re-claim recreates the same id;
+ *     liveDraftFormation.js `slotGroupId`). The close is decided on the live
+ *     group, on the live group's terms, which include the clock: a pool whose
+ *     window is still open is NOT closed (`still_open`, nothing written);
+ *   · a group was handed in but is MISSING here — the deleted path: the pool
+ *     lands `refunded`, every stake voided `group_deleted`.
+ * A live group whose own `isDev` routes to a different pool than the pointer
+ * named is refused (`namespace_mismatch`, nothing written) — unreachable from
+ * any writer today, and never a reason to close the wrong book.
+ *
  * @param {Object} db
- * @param {Object} group the group doc as `{ id, ...data }`, or the TOMBSTONE
- *   `{ id, isDev, missing: true }` that `ensureClosed` builds when the doc is
- *   gone (§7 — the last human left a slot pod). A tombstone has no seats, so
- *   every stake fails step 2 and the pool lands `refunded` with every stake
- *   voided `group_deleted`.
+ * @param {Object} group the POINTER: the group doc as `{ id, ...data }`, or
+ *   the TOMBSTONE `{ id, isDev, missing: true }` that `ensureClosed` builds
+ *   when its read found the doc gone (§7 — the last human left a slot pod).
+ *   Only `id` and `isDev` are read from it (and `missing`, to know the clock
+ *   was not checked by the caller).
  * @returns {Promise<{closed: boolean, status?: string, reason?: string,
  *   pool?: Object, voided?: number, refunded?: number}>}
  */
 export async function closePool(db, group, now = new Date()) {
   const ref = poolRefFor(db, group);
+  const poolId = poolIdFor(group);
   const groupId = group.id;
-  const missing = group?.missing === true;
+  const passedTombstone = group?.missing === true;
+  const groupRef = db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
   const nowIso = new Date(now).toISOString();
+  const nowMs = new Date(now).getTime();
 
   return db.runTransaction(async (tx) => {
     // ---------- READS (all of them, before any write) ----------
+    // (0) THE GROUP, first — every decision below is made on this read.
+    const groupSnap = await tx.get(groupRef);
+    const liveGroup = groupSnap.exists ? { ...groupSnap.data(), id: groupId } : null;
+    const missing = liveGroup == null;
+
     const poolSnap = await tx.get(ref);
     if (!poolSnap.exists) return { closed: false, reason: 'no_pool' };
     const pool = poolSnap.data();
@@ -604,21 +666,50 @@ export async function closePool(db, group, now = new Date()) {
     if (pool.status !== POOL_STATUS.OPEN) {
       return { closed: false, reason: 'not_open', status: pool.status, pool };
     }
+    if (!missing) {
+      // The live group must route to THIS pool (see the docstring).
+      if (poolIdFor(liveGroup) !== poolId) return { closed: false, reason: 'namespace_mismatch', pool };
+      // A tombstone was handed in, and the pod is back: `ensureClosed`
+      // skipped the clock for a deleted pod, so it is checked here, against
+      // the live group's own pool — `ensureClosed`'s rule, verbatim.
+      if (passedTombstone) {
+        const closesMs = new Date(pool.closesAt).getTime();
+        if (Number.isFinite(closesMs) && nowMs < closesMs) return { closed: false, reason: 'still_open', pool };
+      }
+    }
+
+    // THE SEALED TOTALS — read, never trusted (the stakes below are the
+    // ledger and step 4 re-derives the cache from them), and read for ONE
+    // reason: it is the document EVERY stake transaction writes. Above the
+    // §B2 floor a stake writes no pool document, so without this read a stake
+    // committing between the close's live-stakes query and the close's commit
+    // would touch nothing the close read — a query's read set is the documents
+    // it matched — and the close would commit a book without it: the stake
+    // left `live` in a closed pool, its amount in no pot (the safety-fix-1
+    // review's MON-1). With it, the two serialize on this document: whichever
+    // commits second re-runs and sees the other.
+    await tx.get(poolTotalsRefFor(db, group));
 
     const stakesSnap = await tx.get(liveStakesQuery(db, groupId));
     const stakes = [];
     stakesSnap.forEach((doc) => stakes.push({ id: doc.id, ...doc.data() }));
 
-    // ---------- (1) FREEZE the seats (§3 step 1) ----------
-    const frozenTeams = missing ? [] : liveTeamsFor(group);
+    // ---------- (1) FREEZE the seats (§3 step 1) — from THIS read ----------
+    const frozenTeams = missing ? [] : liveTeamsFor(liveGroup);
     const seated = new Set(frozenTeams.map((t) => t.odUserId));
 
     // ---------- (2) WHICH STAKES A DEPARTED SEAT VOIDS (§3 step 2) ----------
+    // …and, among the stakes on seated teams, which a SEATED BACKER voids
+    // (Amendment D R4): a backer who holds a seat in this pod, per this read,
+    // keeps no live stake on it. Partitioned in that order, so a stake that
+    // is both reads `seat_left` — the team left, which is step 2's own fact.
     const seatLeft = [];
+    const backerSeated = [];
     const surviving = [];
     for (const stake of stakes) {
-      if (seated.has(stake.teamOdUserId)) surviving.push(stake);
-      else seatLeft.push(stake);
+      if (!seated.has(stake.teamOdUserId)) seatLeft.push(stake);
+      else if (seated.has(stake.userId)) backerSeated.push(stake);
+      else surviving.push(stake);
     }
 
     // ---------- (3) VALIDITY ON WHAT REMAINS (§3 step 3) ----------
@@ -655,6 +746,9 @@ export async function closePool(db, group, now = new Date()) {
     for (const stake of seatLeft) {
       voids.push({ stake, reason: missing ? VOID_REASONS.GROUP_DELETED : VOID_REASONS.SEAT_LEFT });
     }
+    // Refunded to the record like every other void; the weekly allowance is
+    // not restored (`creditRefund`, unchanged — Amendment D R4).
+    for (const stake of backerSeated) voids.push({ stake, reason: VOID_REASONS.BACKER_SEATED });
     if (status === POOL_STATUS.INSUFFICIENT) {
       for (const stake of surviving) voids.push({ stake, reason: VOID_REASONS.INSUFFICIENT });
     }
@@ -773,9 +867,11 @@ export async function closePool(db, group, now = new Date()) {
     // a second, coarser source for the same fact — `count: 3` sitting beside
     // `uniqueBackers: 5` is precisely the drift §9 forbids. Deleted from the
     // whole-doc `tx.set` payload, so the reveal leaves exactly one answer to
-    // "how many backers" on the document.
+    // "how many backers" on the document. `full` (Amendment D R2) is an
+    // open-state signal of the same kind and comes off with them.
     delete closedPool.backerProgress;
     delete closedPool.teamSpread;
+    delete closedPool.full;
     tx.set(ref, closedPool);
 
     return { closed: true, status, pool: closedPool, voided: voids.length, refunded };

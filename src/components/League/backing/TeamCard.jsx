@@ -38,7 +38,7 @@ import { Mono, Icon, LIcon, Tag, AgentAvatar, KindMark } from '../LeagueParts';
 import { baseGroupName, seatColor } from '../leagueAdapter';
 import { MonoAttr, Stat, TapeHead, TapeList } from './BackingParts';
 import PitchEditor from './PitchEditor';
-import { stakedOnTeam } from './backingStakes';
+import { poolFullForViewer, stakedOnTeam } from './backingStakes';
 import { teamLabelOf } from './backingStripState';
 import { CARD, agentPickDid, humanPickDid } from './backingCopy';
 
@@ -263,6 +263,15 @@ export function BackButton({ card, pod, agentName, accent, onBack, hasAgent = tr
     return (
       <div data-backing="cta-closed" style={{ padding: '12px 14px', borderRadius: 13, textAlign: 'center', border: `1px solid ${LTOKENS.hair2}`, background: LTOKENS.surface }}>
         <Mono style={{ fontSize: 11, color: LTOKENS.ink2, letterSpacing: '0.06em' }}>{`${myStake > 0 ? CARD.cta.backedPrefix(myStake) : ''}${CARD.cta.closed}`}</Mono>
+      </div>
+    );
+  }
+  // Amendment D R2: a full pool offers a viewer with no stake in it no way to
+  // start one — a sentence, not a button. A backer there keeps today's CTA.
+  if (poolFullForViewer(pod)) {
+    return (
+      <div data-backing="cta-full" style={{ padding: '12px 14px', borderRadius: 13, textAlign: 'center', border: `1px solid ${LTOKENS.hair2}`, background: LTOKENS.surface }}>
+        <span style={{ fontSize: 13, color: LTOKENS.ink2 }}>{CARD.cta.full}</span>
       </div>
     );
   }

@@ -295,7 +295,21 @@ describe('Backing Beta PR 1 flag — the pin (BUILD_RULES §2)', () => {
     // helper under api/_utils that reads it at all: a second reader would be
     // a second gate no dark suite covers (the row above this one).
     const readers = listSources('api').filter((rel) => rel.startsWith('api/_utils/') && /\bBACKING_BETA_ENABLED\b/.test(read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')));
-    expect(readers).toEqual(['api/_utils/backingSmoke.js', 'api/_utils/tournamentAdvancement.js']);
+    expect(readers).toEqual([
+      'api/_utils/backingSmoke.js',
+      // Backing safety fix 1 (Amendment D R3), moved DELIBERATELY: the slot
+      // claim reads the flag at call time to decide whether to run the
+      // back-then-join check — not a backing route, and covered by its own
+      // dark row (asserted just below).
+      'api/_utils/liveDraftFormation.js',
+      'api/_utils/tournamentAdvancement.js',
+    ]);
+    // The new reader's darkness is a suite too: flag off, a production claim
+    // makes no stake read and the same write as before.
+    const claimDark = read('api/_utils/liveDraftFormation.backedThisPod.test.js');
+    expect(claimDark).toContain('FLAG OFF, production pod');
+    expect(claimDark).toContain('flags.backing = false;');
+    expect(read('api/_utils/liveDraftFormation.js')).toMatch(/BACKING_BETA_ENABLED === true \|\| group\?\.isDev === true/);
 
     // And the darkness is proved by a suite, not by a reviewer's reading. The
     // two PR 2 routes are covered by the shared PR 2 darkness file; the PR 3

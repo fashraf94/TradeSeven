@@ -66,7 +66,7 @@ import {
   createClaimSystemState,
   isoWeekString,
 } from '../../src/constants/leagueTournament.js';
-import { LEAGUE_CANONICAL_OPEN_CAPTURE } from '../../src/config/featureFlags.js';
+import { BACKING_BETA_ENABLED, LEAGUE_CANONICAL_OPEN_CAPTURE } from '../../src/config/featureFlags.js';
 import { LIVE_DRAFT_SLOTS, ET_WEEKDAY_NAMES, slotById, isSlotEnabled } from '../../src/config/liveDraftSlots.js';
 
 const LOG_PREFIX = '[LiveDraftFormation]';
@@ -264,6 +264,92 @@ function groupRefFor(db, groupId) {
   return db.collection(TOURNAMENT_GROUPS_COLLECTION).doc(groupId);
 }
 
+/**
+ * The clock a slot write reads INSIDE its transaction (Backing Amendment D
+ * R5, Oct 18, 2026 — Astra's BKG-006). The fire-instant check runs on a reading
+ * taken on EACH attempt, never on the instant the request entered: a claim or
+ * a release that entered before the fire and executes after it is refused.
+ *
+ *   · an explicit `clock` wins;
+ *   · else a caller that PINNED `now` pins the clock to it — the suites drive
+ *     these writers at fixed instants (a July 2026 fixture must not be judged
+ *     against the machine's real date);
+ *   · else the real clock, read fresh each call.
+ * THE ROUTES PASS NEITHER (api/tournament/slot-claim.js, slot-release.js), so
+ * production always reads `new Date()` inside the transaction. A future
+ * production caller must not pass `now` to these writers without a `clock`.
+ */
+function slotClockFor(now, clock) {
+  if (typeof clock === 'function') return clock;
+  if (now !== undefined) {
+    const pinned = new Date(now);
+    return () => pinned;
+  }
+  return () => new Date();
+}
+
+// ==================== BACK-THEN-JOIN (Backing Amendment D R3) ====================
+//
+// A slot claim by an account that holds a LIVE Backing stake in that pod's
+// pool is refused `backed_this_pod` (Astra's BKG-005). The stake route
+// already refuses join-then-back (own-pod, backingEligibility.js); this is
+// the other order. `claimSlotSeat` is the ONLY writer that adds a human to
+// a pod that can already carry stakes — lobby, advancement and seeded pods
+// are created with their seats fixed (the Amendment D build report lists every
+// `groupMembers` / `players` writer) — and its create branch matters too:
+// slot group ids are deterministic, so a pod deleted by its last release and
+// re-claimed keeps the same id, and the same still-open pool with it.
+//
+// THE READ: the claimant's stakes for the pod's backing week through the
+// committed `backingStakes (userId ASC, weekKey ASC)` composite — no new
+// index — filtered to this `groupId` and `live` in memory, INSIDE the claim
+// transaction. A stake that lands after this read is caught at close by
+// Amendment D R4's belt (`backer_seated`, backingPools.js `closePool`).
+//
+// FLAG DISCIPLINE: the read runs only while `BACKING_BETA_ENABLED` is true at
+// CALL time, or on a DEV pod — so while the flag is false a production claim
+// behaves exactly as before (no extra read, the same write). No stake can
+// exist on a production pod while the flag is false: every stake path is
+// behind it. The dev clause covers a dev slot pod should one ever exist, but
+// NO writer creates one today (`buildInitialSlotGroupDoc` sets no `isDev`;
+// the smoke seeds lobby pods, which this function refuses), and the create
+// branch has no group to read `isDev` from — so no preview smoke reaches
+// this check. Its evidence before the flip is the suite
+// (liveDraftFormation.backedThisPod.test.js); its first real run is after it.
+// The same gate decides `releaseSlotSeat`'s pool read (CON-3).
+
+/**
+ * The Backing stake collection and its live status, NAMED HERE rather than
+ * imported: backingPools.js imports backingWeek.js, which imports THIS module,
+ * so importing back would close a cycle. Pinned to backingPools.js's own
+ * `BACKING_STAKES_COLLECTION` / `STAKE_STATUS.LIVE` by the back-then-join suite.
+ */
+export const CLAIM_STAKES_COLLECTION = 'backingStakes';
+export const CLAIM_LIVE_STAKE_STATUS = 'live';
+/** The Backing pool collection, and a pod's pool id — `poolIdFor`'s rule, pinned to it by the same suite. */
+export const CLAIM_POOLS_COLLECTION = 'backingPools';
+export function claimPoolIdFor(groupId, group) {
+  return group?.isDev === true ? `dev-${groupId}` : groupId;
+}
+
+/** Does this claim run the back-then-join read? `group` is null on the create branch. */
+export function backedThisPodCheckApplies(group) {
+  return BACKING_BETA_ENABLED === true || group?.isDev === true;
+}
+
+/** Does `odUserId` hold a LIVE stake in `groupId`'s pool for `weekKey`? A transactional read. */
+async function claimantHoldsLiveStake(tx, db, { odUserId, groupId, weekKey }) {
+  const snap = await tx.get(db.collection(CLAIM_STAKES_COLLECTION)
+    .where('userId', '==', odUserId)
+    .where('weekKey', '==', weekKey));
+  let held = false;
+  snap.forEach((doc) => {
+    const s = doc.data();
+    if (s?.groupId === groupId && s?.status === CLAIM_LIVE_STAKE_STATUS) held = true;
+  });
+  return held;
+}
+
 // A group "occupies" a user's battle week from formation through its battle:
 // FORMING → DRAFTING → AWAITING_OPEN → BATTLE.
 const ACTIVE_GROUP_STATUSES = new Set([
@@ -335,12 +421,21 @@ function buildInitialSlotGroupDoc({ odUserId, displayName, slotId, scheduledDraf
  *   - FORMING + < 4     → join.
  *   - FORMING + full    → `slot_full`.
  *   - not FORMING       → `draft_already_started` (the slot has fired).
+ *   - the fire instant has passed on a reading taken INSIDE the transaction
+ *     (Backing Amendment D R5) → `draft_already_started`, on both branches.
+ *   - the claimant holds a live Backing stake in this pod's pool (Amendment D
+ *     R3; flag-gated, see above) → `backed_this_pod`, on both branches.
  * Returns `{ groupId, slotId, scheduledDraftAt, battleStartWeek, humanCount,
  * created, joined, alreadyClaimed }`. Throws SLOT_SENTINEL_PREFIX errors
  * (unknown_slot / slot_disabled / slot_full / draft_already_started /
- * not_a_slot_group).
+ * not_a_slot_group / backed_this_pod).
+ *
+ * `now` is the request's entry instant (the occurrence it resolves to);
+ * `clock` the in-transaction reading (`slotClockFor`).
  */
-export async function claimSlotSeat(db, { slotId, odUserId, displayName = null, now = new Date() } = {}) {
+export async function claimSlotSeat(db, { slotId, odUserId, displayName = null, now: nowArg, clock } = {}) {
+  const now = nowArg === undefined ? new Date() : nowArg;
+  const readClock = slotClockFor(nowArg, clock);
   const slot = slotById(slotId);
   if (!slot) throw slotError('unknown_slot');
   // Disabled slot (liveDraftSlots.js `enabled: false`) — refuse BEFORE any read
@@ -371,8 +466,18 @@ export async function claimSlotSeat(db, { slotId, odUserId, displayName = null, 
 
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
+    // THIS ATTEMPT'S reading of the clock (Amendment D R5) — fresh on every
+    // retry, never the entry instant the occurrence was resolved from.
+    const txNowIso = toIso(readClock());
 
     if (!snap.exists) {
+      // The occurrence resolved at entry may have fired since.
+      if (fireIso <= txNowIso) throw slotError('draft_already_started');
+      // A recreated pod keeps its id and its open pool (Amendment D R3).
+      if (backedThisPodCheckApplies(null)
+        && await claimantHoldsLiveStake(tx, db, { odUserId, groupId, weekKey: battleWeek })) {
+        throw slotError('backed_this_pod');
+      }
       const doc = buildInitialSlotGroupDoc({
         odUserId, displayName, slotId, scheduledDraftAt: fireIso, battleStartWeek, now,
       });
@@ -395,7 +500,21 @@ export async function claimSlotSeat(db, { slotId, odUserId, displayName = null, 
         humanCount: members.length, created: false, joined: false, alreadyClaimed: true,
       };
     }
+    // THE FIRE INSTANT, on this attempt's reading (Amendment D R5). The join
+    // branch used to rely on the occurrence resolved at entry and checked no
+    // instant here at all. A member's idempotent re-claim above writes
+    // nothing and answers as before.
+    const scheduled = typeof group.scheduledDraftAt === 'string' ? group.scheduledDraftAt : fireIso;
+    if (scheduled <= txNowIso) throw slotError('draft_already_started');
     if (members.length >= GROUP_SIZE) throw slotError('slot_full');
+    // BACK-THEN-JOIN (Amendment D R3): the pod's backing week is its own
+    // battle Monday's — the key `backingWeekFor` gives every stake on it.
+    if (backedThisPodCheckApplies(group)) {
+      const weekKey = typeof group.battleStartWeek?.mondayEtDate === 'string'
+        ? deriveBaseLayerWeek(group.battleStartWeek)
+        : battleWeek;
+      if (await claimantHoldsLiveStake(tx, db, { odUserId, groupId, weekKey })) throw slotError('backed_this_pod');
+    }
 
     tx.update(ref, {
       groupMembers: [...members, odUserId],
@@ -419,10 +538,14 @@ export async function claimSlotSeat(db, { slotId, odUserId, displayName = null, 
  *   - otherwise             → drop the seat.
  * Returns `{ groupId, released, deleted, humanCount, reason }`. Throws
  * SLOT_SENTINEL_PREFIX errors (draft_already_started / not_a_slot_group).
+ * The fire-instant lock reads the clock INSIDE the transaction, on every
+ * attempt (Backing Amendment D R5 — `slotClockFor`).
  */
-export async function releaseSlotSeat(db, groupId, { odUserId, now = new Date() } = {}) {
+export async function releaseSlotSeat(db, groupId, { odUserId, now: nowArg, clock } = {}) {
   if (typeof groupId !== 'string' || groupId.length === 0) throw slotError('bad_group');
   if (typeof odUserId !== 'string' || odUserId.length === 0) throw slotError('bad_user');
+  const now = nowArg === undefined ? new Date() : nowArg;
+  const readClock = slotClockFor(nowArg, clock);
   const ref = groupRefFor(db, groupId);
   const nowIso = toIso(now);
 
@@ -437,13 +560,29 @@ export async function releaseSlotSeat(db, groupId, { odUserId, now = new Date() 
     // hasn't advanced the status yet — this closes the release-vs-fire window
     // (fire reads the human set across multiple transactions while still FORMING;
     // a release landing mid-fire would desync the seats from the draft state).
-    if (typeof group.scheduledDraftAt === 'string' && group.scheduledDraftAt <= nowIso) {
+    // Judged on THIS attempt's reading of the clock, not the entry instant
+    // (Amendment D R5): a release that entered before the fire and runs after
+    // it is refused.
+    if (typeof group.scheduledDraftAt === 'string' && group.scheduledDraftAt <= toIso(readClock())) {
       throw slotError('draft_already_started');
     }
 
     const members = group.groupMembers || [];
     if (!members.includes(odUserId)) {
       return { groupId, released: false, deleted: false, humanCount: members.length, reason: 'not_a_member' };
+    }
+
+    // THE POOL, READ (and only read) when Backing is on for this pod (the
+    // safety-fix-1 review's CON-3). The clock check above is taken before
+    // this commits, so a release reading fire − 1 ms could still commit AFTER
+    // a lazy close at the fire instant froze its seat — a departed seat in the
+    // frozen teams, its backers' stakes settled as losses (Astra's P11,
+    // reversed). The close never writes this group, but it does write the
+    // pool: reading it here makes the two serialize — a close that commits
+    // first sends this release round again, and the re-run's fresh clock is
+    // past the fire. Flag off, no read: the production path is unchanged.
+    if (backedThisPodCheckApplies(group)) {
+      await tx.get(db.collection(CLAIM_POOLS_COLLECTION).doc(claimPoolIdFor(groupId, group)));
     }
 
     const remaining = members.filter((id) => id !== odUserId);

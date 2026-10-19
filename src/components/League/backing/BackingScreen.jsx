@@ -319,6 +319,7 @@ function BackingScreenLive({ uid, accent, viewport, onBack, onOpenTape, initialS
           <TopBar label={SCREEN.toCard} onBack={toCard} accent={accent} />
           <div style={{ borderRadius: 18, padding: '14px 15px', background: `linear-gradient(165deg, ${alpha(accent, 0.06)}, ${LTOKENS.surface} 58%)`, border: `1px solid ${alpha(accent, 0.26)}` }}>
             <StakeControl
+              uid={uid}
               card={cardQuery.card}
               pod={pod}
               wallet={wallet}

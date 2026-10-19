@@ -16,10 +16,20 @@
 //   · ATTESTATION FIRST: no valid attestation (useEligibility, or the stake
 //     endpoint's `eligibility_required`) shows the AttestationStep before the
 //     control; `account_required` shows the plain sign-in sentence.
-//   · Each Confirm generates a FRESH requestId (newRequestId), and "Backed"
-//     renders ONLY from the server's success reply — never optimistically,
-//     never from the request. Every refusal reason maps to one plain sentence
-//     in backingCopy.js.
+//   · ONE CONFIRM IS ONE REQUEST UNTIL IT RESOLVES (Amendment D R6, Oct 18,
+//     2026 — Astra's BKG-004). A Confirm with no attempt pending mints a
+//     requestId (newRequestId) and records the attempt — `{ requestId,
+//     amount }`, keyed by viewer, pod and team, in stakeAttempts.js, which
+//     outlives this control's remounts and a same-tab reload — BEFORE the
+//     request leaves. An AMBIGUOUS outcome (no connection, any server error
+//     or timeout, a reply without its stake) keeps it: the form reads "We
+//     couldn't confirm your {amount} BP on {team}.", the amount is locked,
+//     and the one button is "Check again", which resends the IDENTICAL
+//     request — the server replays a committed one, so it can never debit
+//     twice. Only a definitive outcome — a success, or a typed refusal —
+//     ends the attempt. "Backed" renders ONLY from the server's success
+//     reply — never optimistically, never from the request. Every refusal
+//     reason maps to one plain sentence in backingCopy.js.
 //   · Nothing here shows a pot, a share or a payout: the reply's pool
 //     projection carries only the capped signals and the close, and the
 //     control does not render even those — the pod list does.
@@ -69,6 +79,10 @@ import { Disclosures, MonoAttr, PointsMeter } from './BackingParts';
 import { ATTEST, CARD, DESK, SCREEN, STAKE, STAKE_PRESETS, bp, refusalMessage } from './backingCopy';
 import { stakedOnTeam } from './backingStakes';
 import { teamLabelOf } from './backingStripState';
+import {
+  clearStakeAttempt, markStakeAttemptInFlight, readStakeAttempt, saveStakeAttempt, stakeAttemptInFlight,
+  stakeAttemptKey, stakeOutcomeAmbiguous, subscribeStakeAttempt,
+} from './stakeAttempts';
 
 /**
  * The allowance the RECEIPT shows — the server's number, or nothing:
@@ -142,7 +156,21 @@ function TopUpPanel({ label, already, adding, capLeft, accent }) {
   );
 }
 
-export default function StakeControl({ card, pod, wallet, eligibility, accent = LX.energy, onBacked, onClose, services = null, layout = 'mobile', onCancel = null, onPending = null }) {
+/**
+ * The UNRESOLVED attempt (Amendment D R6): what was sent, said plainly, and the
+ * one way forward. The amount is the attempt's own — locked, not editable.
+ */
+function UnresolvedNotice({ attempt, label, accent, inFlight = false }) {
+  // Still out (sent by a form that has since closed): say so, not "couldn't".
+  return (
+    <div data-backing="stake-unresolved" data-in-flight={inFlight ? 'true' : undefined} role="status" style={{ padding: '11px 12px', borderRadius: 12, background: alpha(accent, 0.07), border: `1px solid ${alpha(accent, 0.28)}` }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: LTOKENS.ink, lineHeight: 1.4 }}>{inFlight ? STAKE.inFlight(attempt.amount, label) : STAKE.unresolved(attempt.amount, label)}</div>
+      <div style={{ fontSize: 11.5, color: LTOKENS.ink2, lineHeight: 1.45, marginTop: 4 }}>{STAKE.unresolvedSub}</div>
+    </div>
+  );
+}
+
+export default function StakeControl({ card, pod, wallet, eligibility, accent = LX.energy, onBacked, onClose, services = null, layout = 'mobile', onCancel = null, onPending = null, uid = null }) {
   const place = services?.placeStake ?? placeStake;
   const nextRequestId = services?.newRequestId ?? newRequestId;
   const attest = services?.attestEligibility ?? attestEligibility;
@@ -192,33 +220,103 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [needsAttest, setNeedsAttest] = useState(false);
+  // THE UNRESOLVED ATTEMPT for this viewer, pod and team (Amendment D R6),
+  // read on mount — so re-entering this team's form, after a remount or a
+  // same-tab reload, shows the same state.
+  const attemptKey = stakeAttemptKey(uid, card.groupId, card.odUserId);
+  const [attempt, setAttempt] = useState(() => readStakeAttempt(attemptKey));
+  // A request for this key still in flight from a control that has since
+  // unmounted (HON-4, the safety-fix-1 review): shown as "being confirmed",
+  // its one button held, until the store says how it ended.
+  const [inFlightElsewhere, setInFlightElsewhere] = useState(() => stakeAttemptInFlight(attemptKey));
+  // THIS control's own request: while it is out, this control decides its
+  // own state from the reply, never from the store's echo of it.
+  const sendingRef = useRef(false);
+  useEffect(() => {
+    const sync = () => {
+      if (sendingRef.current) return;
+      setAttempt(readStakeAttempt(attemptKey));
+      setInFlightElsewhere(stakeAttemptInFlight(attemptKey));
+    };
+    // Re-read on a key change too — a viewer who changes while the control
+    // stays mounted must never resend another account's request (HON-8).
+    sync();
+    return subscribeStakeAttempt(attemptKey, sync);
+  }, [attemptKey]);
 
-  const amount = custom.length > 0 ? Number(custom) : preset;
+  // While an attempt is unresolved its amount is the only amount.
+  const amount = attempt ? attempt.amount : custom.length > 0 ? Number(custom) : preset;
 
   const confirm = async () => {
-    const problem = validateAmount(amount, { capLeft, allowanceLeft });
-    if (problem) { setError(problem); return; }
-    const requestId = nextRequestId();
+    // ONE request per attempt in flight, whoever sent it (CON-8).
+    if (sendingRef.current || stakeAttemptInFlight(attemptKey)) return;
+    // "Check again" resends the IDENTICAL request — same id, same amount — and
+    // skips the client pre-check: if the first one committed, the pod's own
+    // stakes may already count it, and a "cap reached" here would strand it.
+    // The store is read again, not only this render's state: it is the record.
+    let sending = readStakeAttempt(attemptKey) ?? attempt;
+    sendingRef.current = true;
+    if (!sending) {
+      const problem = validateAmount(amount, { capLeft, allowanceLeft });
+      if (problem) { sendingRef.current = false; setError(problem); return; }
+      sending = { requestId: nextRequestId(), amount };
+      // Recorded BEFORE the request leaves, so a reload mid-flight finds it;
+      // this form shows it as unresolved only once the reply is ambiguous.
+      saveStakeAttempt(attemptKey, sending);
+    }
+    markStakeAttemptInFlight(attemptKey, true);
     setBusy(true);
     setPending(true);
     setError(null);
     try {
-      const body = await place({ groupId: card.groupId, teamOdUserId: card.odUserId, amount, requestId });
+      const body = await place({ groupId: card.groupId, teamOdUserId: card.odUserId, amount: sending.amount, requestId: sending.requestId });
       // "Backed" only from the server's success reply — and only with the
       // amount THAT reply carries: a reply without its stake is not a stake
-      // (FAB-11, the PR 4 review record). The pod list re-reads the ledger
+      // (FAB-11, the PR 4 review record), and not an answer either — it is
+      // AMBIGUOUS (R6), so the attempt stands. The pod list re-reads the ledger
       // (`onBacked` → refresh) so the §B6 line and the strip follow the record.
       if (!Number.isFinite(body?.stake?.amount)) throw Object.assign(new Error('stake reply without a stake'), { code: 'server_error' });
+      clearStakeAttempt(attemptKey);
+      setAttempt(null);
       setResult(body);
       onBacked?.(body);
     } catch (err) {
-      if (err?.code === 'eligibility_required') setNeedsAttest(true);
-      setError(refusalMessage(err?.code));
+      if (stakeOutcomeAmbiguous(err)) {
+        // Not an answer: the stake may have committed. Keep the attempt — in
+        // the store as well as here (HON-5) — and the form now says so and
+        // offers only "Check again".
+        saveStakeAttempt(attemptKey, sending);
+        setAttempt(sending);
+      } else {
+        // A TYPED refusal is an answer: nothing was placed, the attempt is over.
+        clearStakeAttempt(attemptKey);
+        setAttempt(null);
+        if (err?.code === 'eligibility_required') setNeedsAttest(true);
+        setError(refusalMessage(err?.code));
+      }
     } finally {
+      sendingRef.current = false;
+      markStakeAttemptInFlight(attemptKey, false);
       setBusy(false);
       setPending(false);
     }
   };
+
+  // The unresolved state's one button, the same in both layouts — held while
+  // any request for this attempt is out, this control's or an earlier one's.
+  const held = busy || inFlightElsewhere;
+  const checkAgainButton = (padding) => (
+    <button
+      type="button"
+      className="lg-tap"
+      data-backing="check-again"
+      onClick={confirm}
+      disabled={held}
+      style={{ all: 'unset', boxSizing: 'border-box', cursor: held ? 'default' : 'pointer', width: '100%', padding, borderRadius: 13, textAlign: 'center', fontWeight: 700, fontSize: 14.5, background: accent, color: LTOKENS.bg, opacity: held ? 0.7 : 1, boxShadow: `0 8px 24px ${alpha(accent, 0.3)}` }}
+    >
+      {held ? STAKE.checking : STAKE.checkAgain}
+    </button>
+  );
 
   // Desktop: the way back to the right column's rail (mobile has its top bar).
   const cancelLink = layout === 'desktop' && onCancel ? (
@@ -243,7 +341,8 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
     return <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{step}{cancelLink}</div>;
   }
 
-  if (!walletKnown && !result) {
+  // An unresolved attempt needs no wallet figure: "Check again" sends what was sent.
+  if (!walletKnown && !result && !attempt) {
     return <MonoAttr data-backing="wallet-checking" style={{ fontSize: 11, color: LTOKENS.ink3 }}>{STAKE.walletPending}</MonoAttr>;
   }
 
@@ -261,10 +360,34 @@ export default function StakeControl({ card, pod, wallet, eligibility, accent = 
         {result.topUp === true && Number.isFinite(result.added) && (
           <MonoAttr data-backing="topped-up" style={{ display: 'block', marginTop: 6, fontSize: 11, color: LTOKENS.ink2 }}>{STAKE.toppedUp(result.added)}</MonoAttr>
         )}
-        <div style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, marginTop: 6 }}>{STAKE.backedSub}</div>
+        {/* A replay answered after the pool closed (R5 keeps it a success) is
+            no longer "sealed until the pool closes" — the stake's own status
+            says where it stands (the safety-fix-1 review's HON-6). */}
+        <div style={{ fontSize: 12.5, color: LTOKENS.ink2, lineHeight: 1.45, marginTop: 6 }}>{typeof result.stake.status === 'string' && result.stake.status !== 'live' ? STAKE.backedSubClosed : STAKE.backedSub}</div>
         {left != null && <MonoAttr data-backing="backed-left" style={{ display: 'block', marginTop: 6, fontSize: 11, color: LTOKENS.ink2 }}>{STAKE.remaining(left)}</MonoAttr>}
         {result?.replay === true && <Mono style={{ display: 'block', marginTop: 6, fontSize: 10, color: LTOKENS.ink3 }}>{STAKE.replayed}</Mono>}
         <button type="button" className="lg-tap" onClick={onClose} style={{ all: 'unset', cursor: 'pointer', marginTop: 14, padding: '10px 16px', borderRadius: 11, background: LTOKENS.surface, border: `1px solid ${LTOKENS.hair2}`, fontSize: 13, fontWeight: 600, color: LTOKENS.ink }}>{STAKE.another}</button>
+      </div>
+    );
+  }
+
+  // THE UNRESOLVED ATTEMPT (Amendment D R6), both layouts: no amount to pick,
+  // no Confirm — what was sent, the three lines, and "Check again".
+  if (attempt) {
+    const desktop = layout === 'desktop';
+    return (
+      <div data-backing="stake-control" data-layout={desktop ? 'desktop' : undefined} data-attempt="unresolved" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+          <Eyebrow color={accent} style={{ marginBottom: 5 }}>{STAKE.eyebrow}</Eyebrow>
+          <div style={{ fontSize: 18, fontWeight: 700, color: LTOKENS.ink, letterSpacing: '-0.01em', lineHeight: 1.15 }}>{title}</div>
+        </div>
+        <UnresolvedNotice attempt={attempt} label={label} accent={accent} inFlight={inFlightElsewhere && !busy} />
+        <div>
+          <Mono style={{ fontSize: 9, color: LTOKENS.ink3, letterSpacing: '0.12em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>{STAKE.disclosuresTitle}</Mono>
+          <Disclosures />
+        </div>
+        {checkAgainButton(14)}
+        {cancelLink}
       </div>
     );
   }

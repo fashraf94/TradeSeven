@@ -48,6 +48,9 @@ const SLOT_ERROR_COPY = Object.freeze({
   slot_full: 'That slot is full — all four seats are taken.',
   draft_already_started: 'That draft has already started — seats are locked.',
   live_draft_disabled: 'Live draft isn’t available right now.',
+  // Backing Amendment D R3 (Oct 18, 2026): a claim by an account that holds a
+  // live stake in that pod's pool. The server's own sentence, the same words.
+  backed_this_pod: 'You’ve backed a team in this draft, so you can’t take a seat in it. Pick a different slot.',
 });
 
 export function mapSlotActionError(err) {

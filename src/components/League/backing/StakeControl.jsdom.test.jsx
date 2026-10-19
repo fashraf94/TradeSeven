@@ -38,6 +38,7 @@ vi.mock('../../../services/backingService', () => ({
 const { default: StakeControl, receiptAllowance, validateAmount } = await import('./StakeControl');
 const { stakedOnTeam } = await import('./backingStakes');
 const { REFUSALS, STAKE } = await import('./backingCopy');
+const { forgetStakeAttemptMemory } = await import('./stakeAttempts');
 
 class Refusal extends Error { constructor(code) { super(code); this.code = code; } }
 
@@ -66,7 +67,13 @@ const settle = async () => { for (let i = 0; i < 3; i += 1) await act(async () =
 const q = (c, sel) => c.querySelector(sel);
 const confirmButton = (c) => q(c, '[data-backing="confirm"]');
 
-beforeEach(() => { svc.placeStake.mockReset(); svc.attestEligibility.mockReset(); svc.ids = 0; });
+// Amendment D R6: an unresolved attempt OUTLIVES the control (stakeAttempts.js
+// — memory and this tab's sessionStorage), so every row starts from none.
+beforeEach(() => {
+  svc.placeStake.mockReset(); svc.attestEligibility.mockReset(); svc.ids = 0;
+  forgetStakeAttemptMemory();
+  try { globalThis.sessionStorage?.clear(); } catch { /* no storage in this environment */ }
+});
 afterEach(async () => {
   for (const { root, container } of roots) { await act(async () => root.unmount()); container.remove(); }
   roots = [];
@@ -347,14 +354,20 @@ describe('the PR 4 review record — FAB-10, FAB-11, FAB-16 (docs/audits/2026092
     expect(container.textContent).toContain('Reading your points…');
   });
 
-  it('FAB-11: a success reply that carries no stake is not "Backed" — the plain failure sentence, nothing recorded', async () => {
+  it('FAB-11: a success reply that carries no stake is not "Backed" — and (Amendment D R6) not an answer either: the attempt stands, "Check again" only', async () => {
+    // MOVED DELIBERATELY in safety fix 1. This row used to expect the plain
+    // failure sentence and a fresh Confirm. A reply without its stake does not
+    // say whether the stake was placed, so R6 makes it AMBIGUOUS: the form says
+    // so, locks the amount, and offers only the identical request again.
     svc.placeStake.mockResolvedValue({ ok: true });
     const { container, props } = await mount();
     await click(confirmButton(container));
     await settle();
     expect(q(container, '[data-backing="backed"]')).toBeNull();
     expect(container.textContent).not.toContain('Backed ·');
-    expect(container.textContent).toContain(REFUSALS.server_error);
+    expect(q(container, '[data-backing="stake-unresolved"]').textContent).toContain(STAKE.unresolved(100, 'Kestrel'));
+    expect(confirmButton(container)).toBeNull();
+    expect(q(container, '[data-backing="check-again"]').textContent).toBe(STAKE.checkAgain);
     expect(props.onBacked).not.toHaveBeenCalled();
   });
 
