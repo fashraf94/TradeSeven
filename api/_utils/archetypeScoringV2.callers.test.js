@@ -1,6 +1,6 @@
 // api/_utils/archetypeScoringV2.callers.test.js
 //
-// Archetype Rank Interface V2 — spec §5 test 10: all nine production caller
+// Archetype Rank Interface V2 — spec §5 test 10: all production caller
 // paths of the scoring engine (the V-5 census + path 7b, spec §4) carry a
 // pinned expected game mode. Source-text contract, like the ratchet: a caller
 // that loses its mode, a new caller without one, or a 'mandate' mode anywhere
@@ -17,6 +17,7 @@ const read = (rel) => readFileSync(path.join(REPO, rel), 'utf8');
 
 // caller → the exact call-site text that pins its mode (spec §4 census).
 const CENSUS = [
+  { id: 'refresh', file: 'api/_utils/archetypeCandidateMenu.js', mode: 'baggerBomb', pattern: /computeArchetypeRankings\(rankings, archetype, \{ gameMode: 'baggerBomb' \}\)/ },
   { id: 1, file: 'api/agent/decide.js', mode: 'baggerBomb (flip PR — fenced, untouched)', pattern: /computeArchetypeRankings\(stockUniverse, archetype\);/, fenced: true },
   { id: 2, file: 'api/cron/compute-index-intelligence.js', mode: 'standard', pattern: /computeArchetypeRankings\(rankingStocks, archetype, \{ gameMode: 'standard' \}\)/ },
   { id: '2 (arch_scores_v2)', file: 'api/cron/compute-index-intelligence.js', mode: 'standard', pattern: /computeArchetypeRankingsV2\(rankingStocks, archetype, \{\s*gameMode: 'standard',/ },
@@ -47,7 +48,7 @@ describe('every production caller carries a pinned game mode (test 10 — the V-
     });
   }
 
-  it('the direct-call census is complete: exactly the eight files that call the engine, and every non-fenced call passes gameMode', () => {
+  it('the direct-call census is complete: exactly the registered files that call the engine, and every non-fenced call passes gameMode', () => {
     const callers = {};
     for (const rel of [...walk('api'), ...walk('src')]) {
       if (rel === 'api/_utils/archetypeScoring.js' || rel === 'api/_utils/archetypeScoringV2.js') continue;
@@ -56,6 +57,7 @@ describe('every production caller carries a pinned game mode (test 10 — the V-
       if (calls.length) callers[rel] = calls;
     }
     expect(Object.keys(callers).sort()).toEqual([
+      'api/_utils/archetypeCandidateMenu.js',
       'api/_utils/tournamentAgentBoards.js',
       'api/_utils/tournamentAgentDraft.js',
       'api/_utils/tournamentBoardAutoCommit.js',

@@ -152,6 +152,8 @@ const DARK_BY_DESIGN = {
     'pre-open display routing (spec V2.1) — display-only; flips only after a founder preview smoke of the 9:30 transition',
   ARCHETYPE_VECTORS_V2_ENABLED:
     'Archetype Rank Interface V2 (spec V1.3) — the V2 scorer ships dark for the observation window; flips in its own §7 PR after spec §6 passes, with the P-3 version bumps, never a build PR',
+  ARCHETYPE_REFRESH_MENU_ENABLED:
+    'BaggerBomb archetype hot-bench membership — dark until the founder reviews the real-data menu dry run in BAGGERBOMB_ARCHETYPE_REFRESH_REVIEW_20261018.md §7; flip in a separate PR, moving the pin and removing this entry together; crons do not run on preview',
   // BATTLE_VIEW_CHARACTER_PANE_ENABLED intentionally ABSENT: it flipped true on
   // 2026-09-07 (src/config/featureFlags.js) in its own deliberate one-line PR
   // after the founder's A3.5 preview smoke on `smoke/character-pane` — the

@@ -2054,6 +2054,18 @@ export const COMMAND_CENTER_SYNC_ENABLED = false;
 export const ARCHETYPE_VECTORS_V2_ENABLED = false;
 
 /**
+ * BaggerBomb archetype hot-bench membership. DARK — default FALSE.
+ * Read at CALL time by archetypeCandidateMenu.js. While false, refresh uses
+ * the legacy fit list. Model presentation order remains composite order.
+ * Flip in a separate founder PR after the real-data menu dry run in
+ * docs/audits/BAGGERBOMB_ARCHETYPE_REFRESH_REVIEW_20261018.md §7.
+ * Crons do not run on preview. The flip moves the pin and removes the
+ * DARK_BY_DESIGN entry in flagPinGuard.test.js in the same commit.
+ */
+// Pinned by: archetypeCandidateMenu.test.js (flagPinGuard: value and pin move together — BUILD_RULES §2).
+export const ARCHETYPE_REFRESH_MENU_ENABLED = false;
+
+/**
  * Exit-Behavior Rebalance Tier 2, Ask 2 (rescoped) — equipped-rule precedence
  * made honest across the three non-archetype surfaces (kickoff 2026-09-01;
  * five founder decisions 2026-09-02). DARK — default FALSE.
