@@ -19,6 +19,64 @@ beforeAll(() => { process.env.EODHD_API_KEY = 'isolated-test-key'; });
 afterAll(() => { if (key === undefined) delete process.env.EODHD_API_KEY; else process.env.EODHD_API_KEY = key; });
 function adjacent(n, up) { const a = new Float64Array([n]), b = new BigUint64Array(a.buffer); b[0] += up ? 1n : -1n; return a[0]; }
 const quote = price => ({ price, asOf: STOCK_TEST_NOW, observedAt: STOCK_TEST_NOW });
+
+describe('committed score roster after Firestore map ordering', () => {
+  async function savedFrame() {
+    const { battle } = await correctedStockBattle({ fill: 100, cpuFill: 99, cpuSymbol: 'MSFT' });
+    const prices = { AAPL: { current: 101, timestamp: Date.parse(STOCK_TEST_NOW) / 1000 }, MSFT: { current: 100, timestamp: Date.parse(STOCK_TEST_NOW) / 1000 } };
+    const scores = ['agent', 'cpu'].map(side => scoreCorrectedPosition(battle, { ...(side === 'agent' ? battle.portfolio : battle.opponent.portfolio).star[0], tier: 'star' }, side, prices, STOCK_TEST_NOW));
+    const h = stockWriterDb({ battle });
+    await h.db.doc('battle').update(correctedScorePatch(battle, [scores[0]], [scores[1]], STOCK_TEST_NOW));
+    return h.store.get('battle');
+  }
+  const reorderModel = battle => {
+    battle.scoring.stockThresholdModel = Object.fromEntries(Object.entries(battle.scoring.stockThresholdModel).sort(([a], [b]) => a.localeCompare(b)));
+    return battle;
+  };
+  it('accepts identical model fields in a different order without changing saved totals or evidence', async () => {
+    const battle = await savedFrame();
+    expect(validCommittedStockScores(battle)).toBe(true);
+    reorderModel(battle);
+    const before = structuredClone(battle);
+    expect(committedStockContext(battle, battle.portfolio.star[0], 'agent', 'star', 0).status).toBe('valid');
+    expect(validCommittedStockScores(battle)).toBe(true);
+    expect(battle).toEqual(before);
+    expect([battle.scoreState.currentScore, battle.scoreState.opponentScore]).toEqual([20, 20]);
+  });
+  it('also accepts a saved token whose model keys arrived in another order', async () => {
+    const battle = await savedFrame();
+    const token = JSON.parse(battle.scoreState.stockScoreEvidence.rosterToken);
+    token[0] = Object.fromEntries(Object.entries(token[0]).reverse());
+    battle.scoreState.stockScoreEvidence.rosterToken = JSON.stringify(token);
+    expect(validCommittedStockScores(battle)).toBe(true);
+  });
+  it.each([undefined, null, '', '{broken', 'null', '[]', '{}', 12])('rejects malformed or incomplete saved roster %j', async token => {
+    const battle = reorderModel(await savedFrame());
+    battle.scoreState.stockScoreEvidence.rosterToken = token;
+    expect(validCommittedStockScores(battle)).toBe(false);
+  });
+  it.each(['model', 'version', 'position', 'slot', 'array order', 'extra field'])('still rejects changed roster %s', async field => {
+    const battle = reorderModel(await savedFrame());
+    const token = JSON.parse(battle.scoreState.stockScoreEvidence.rosterToken);
+    if (field === 'model') token[0].admittedAt = '2026-10-14T13:00:00.000Z';
+    if (field === 'version') token[1] += 1;
+    if (field === 'position') token[2][0][4] = 'old-position';
+    if (field === 'slot') token[2][0][2] += 1;
+    if (field === 'array order') token[2].reverse();
+    if (field === 'extra field') token[0].unexpected = true;
+    battle.scoreState.stockScoreEvidence.rosterToken = JSON.stringify(token);
+    expect(validCommittedStockScores(battle)).toBe(false);
+  });
+  it.each(['score', 'score version', 'context', 'component'])('still rejects changed %s after map reordering', async field => {
+    const battle = reorderModel(await savedFrame());
+    if (field === 'score') battle.scoreState.currentScore += 1;
+    if (field === 'score version') battle.scoring.stockScoreVersion += 1;
+    if (field === 'context') battle.scoring.stockRewardContexts.agent['position-agent'].currentPrice += 1;
+    if (field === 'component') battle.scoring.stockScoreComponents.closed = { points: 100 };
+    expect(validCommittedStockScores(battle)).toBe(false);
+  });
+});
+
 describe('pinned stock context', () => {
   it('locks the exact canonical-LF calendar source under the adopted policy', () => {
     const source = readFileSync(new URL('./marketCalendar.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');

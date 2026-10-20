@@ -27,17 +27,17 @@ async function renderedFacts(current = 107) {
 describe('real rendered pinned stock detail integration', () => {
   it('row/Why/research display all six exact shared targets with selector false', async () => {
     const { left, right } = await renderedFacts();
-    const row = renderToStaticMarkup(<StockDispatchRow leftAsset={left} rightAsset={right} renderWhy={() => <WhyPanel symbol="AAPL" state={selectWhyState(null, 'AAPL', STOCK_TEST_NOW)} lines={deriveTierPrices(null, null, null, left.rewardContext)} proximity={left.rewardContext.proximity} />} />);
+    const row = renderToStaticMarkup(<StockDispatchRow whyOpen onWhy={() => {}} whyLabel="Why?" leftAsset={left} rightAsset={right} renderWhy={() => <WhyPanel symbol="AAPL" state={selectWhyState(null, 'AAPL', STOCK_TEST_NOW)} lines={deriveTierPrices(null, null, null, left.rewardContext)} proximity={left.rewardContext.proximity} />} />);
     const research = buildResearchAsset(left, { thresholds: { AAPL: { threshold: 99 } }, livePrices: { AAPL: 999 }, useDefaultThreshold: true });
     const tab = renderToStaticMarkup(<BaggerBombTab asset={research} />);
     for (const t of left.rewardContext.targets) { expect(row).toContain(`exact $${t.target}`); expect(tab).toContain(`exact $${t.target}`); }
-    expect(row).toContain('Why?'); expect(row).toContain('position-agent'); expect(row).toContain('position-cpu'); expect(tab).toContain('2.000000%'); expect(tab).not.toContain('99.00');
+    expect(row).toContain('Why?'); expect(row).toContain('position-agent'); expect(row).toContain('aria-label="CPU AAPL"'); expect(tab).toContain('2.000000%'); expect(tab).not.toContain('99.00');
     expect(research.rewardContext).toEqual(left.rewardContext);
   });
   it('review K1-3: the Why disclosure carries no half-up cent tier line beside the exact targets', async () => {
     const { left } = await renderedFacts();
     expect(deriveTierPrices(null, null, null, left.rewardContext)).toBe(null);
-    const row = renderToStaticMarkup(<StockDispatchRow leftAsset={left} renderWhy={() => <WhyPanel symbol="AAPL" state={selectWhyState(null, 'AAPL', STOCK_TEST_NOW)} lines={deriveTierPrices(null, null, null, left.rewardContext)} proximity={left.rewardContext.proximity} />} />);
+    const row = renderToStaticMarkup(<StockDispatchRow whyOpen leftAsset={left} renderWhy={() => <WhyPanel symbol="AAPL" state={selectWhyState(null, 'AAPL', STOCK_TEST_NOW)} lines={deriveTierPrices(null, null, null, left.rewardContext)} proximity={left.rewardContext.proximity} />} />);
     expect(row).not.toContain('Bagger $'); expect(row).toContain(`exact $${left.rewardContext.targets[0].target}`);
     expect(deriveTierPrices(100, 2)).toEqual({ bagger: 102, bust: 98 });
   });
@@ -72,7 +72,7 @@ describe('real rendered pinned stock detail integration', () => {
     const expected = measuredProximity(left.rewardContext);
     expect(expected.text).toBe(`${left.rewardContext.nextTarget.emoji} ${stockSummary((left.rewardContext.nextTarget.target - left.rewardContext.currentPrice) / left.rewardContext.currentPrice * 100, 1)}% to ${left.rewardContext.nextTarget.label}`);
     let received = null;
-    const row = renderToStaticMarkup(<StockDispatchRow leftAsset={left} baggerFooter="Bagger hit · +15 banked" renderWhy={p => { received = p; return <WhyPanel symbol="AAPL" state={selectWhyState(null, 'AAPL', STOCK_TEST_NOW)} lines={deriveTierPrices(null, null, null, left.rewardContext)} proximity={p} />; }} />);
+    const row = renderToStaticMarkup(<StockDispatchRow whyOpen leftAsset={left} baggerFooter="Bagger hit · +15 banked" renderWhy={p => { received = p; return <WhyPanel symbol="AAPL" state={selectWhyState(null, 'AAPL', STOCK_TEST_NOW)} lines={deriveTierPrices(null, null, null, left.rewardContext)} proximity={p} />; }} />);
     expect(received).toEqual(expected); expect(row).toContain(expected.text);
     expect(row).toContain('data-bagger-footer="1"'); expect(row).toContain('Bagger hit · +15 banked');
     // Every positive tier earned → MAX; unavailable → no line.
@@ -103,7 +103,7 @@ describe('real rendered pinned stock detail integration', () => {
     expect(expected).toMatchObject({ key: 'bust', distance: c.penaltyProximity.distance, approaching: c.penaltyProximity.approaching });
     expect(expected.text).toBe(`📉 ${stockSummary((102 - c.nextPenalty.target) / 102 * 100, 1)}% to Bust`);
     let received = null;
-    const row = renderToStaticMarkup(<StockDispatchRow leftAsset={down} renderWhy={p => { received = p; return <WhyPanel symbol="AAPL" state={selectWhyState(null, 'AAPL', STOCK_TEST_NOW)} lines={deriveTierPrices(null, null, null, c)} proximity={p} />; }} />);
+    const row = renderToStaticMarkup(<StockDispatchRow whyOpen leftAsset={down} renderWhy={p => { received = p; return <WhyPanel symbol="AAPL" state={selectWhyState(null, 'AAPL', STOCK_TEST_NOW)} lines={deriveTierPrices(null, null, null, c)} proximity={p} />; }} />);
     expect(received).toEqual(expected); expect(row).toContain(expected.text); expect(row).not.toContain('% to BaggerBomb');
     // A crossed Bust moves the line to the next penalty; every penalty crossed reads the meltdown MAX.
     const crash = c.targets.find(t => t.key === 'crash');
@@ -122,14 +122,14 @@ describe('real rendered pinned stock detail integration', () => {
     const { battle } = await correctedStockBattle(); delete battle.scoring.stockThresholdModel; delete battle.portfolio.star[0].stockThresholdReceipt;
     const legacy = enrichHeldPosition(battle.portfolio.star[0], 'star', { curPrice: 101, previousClose: 103.27, startingPrices: { AAPL: 103.27 }, thresholds: { AAPL: { threshold: 2.5 } }, thresholdHistory: {}, activatedAt: STOCK_TEST_NOW, createdAt: STOCK_TEST_NOW, stockBattle: battle });
     expect(legacy.stockRewardRoute).toBeUndefined();
-    const html = renderToStaticMarkup(<StockDispatchRow leftAsset={legacy} />);
+    const html = renderToStaticMarkup(<StockDispatchRow whyOpen leftAsset={legacy} />);
     expect(html).toBe(renderToStaticMarkup(<TacticalRow leftAsset={legacy} />));
     expect(html).toContain('📉 0.3% to Bust'); // legacy distance: −2.20% against a −2.5% Bust (blockers review BK3-4)
   });
   it('corrupt tuple/missing receipt remain unavailable through row and real tab', async () => {
     const { battle } = await renderedFacts(); battle.scoring.stockThresholdModel = null;
     const left = enrichHeldPosition(battle.portfolio.star[0], 'star', { stockBattle: battle });
-    expect(renderToStaticMarkup(<StockDispatchRow leftAsset={left} />)).toContain('unsupported_stock_model');
+    expect(renderToStaticMarkup(<StockDispatchRow whyOpen leftAsset={left} />)).toContain('unsupported_stock_model');
     expect(renderToStaticMarkup(<BaggerBombTab asset={buildResearchAsset(left)} />)).toContain('unavailable');
   });
 });

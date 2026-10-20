@@ -7,14 +7,14 @@
 //   3. useWebSocketPrices + EODHD polling — live prices for matchup view
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { stockModelRoute, isStock, committedStockContext, validCommittedStockScores, measuredProximity } from '../utils/stockThresholdModel.js';
+import { stockModelRoute, isStock, committedStockContext, validCommittedStockScores } from '../utils/stockThresholdModel.js';
 import { StockRewardDetails } from '../components/draft/ResearchTabs/BaggerBombTab.jsx';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ChevronLeft, Activity, Bot, Bookmark } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
-import AnimatedScore from '../components/shared/AnimatedScore';
+import AnimatedScore, { formatScoreDisplay } from '../components/shared/AnimatedScore';
 import { AgentPresenceMount } from '../components/AgentPresence';
 import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn, isCharacterPaneOn, isShowItOn, isShadowCpuQuoteIntegrityOn, isCockpitUiOn, ARCHETYPE_INTEGRITY_MODE } from '../config/featureFlags';
 import { getAuth } from 'firebase/auth';
@@ -196,23 +196,22 @@ const entryPriceOf = (asset, startingPrices) => asset.swapPrice || startingPrice
  */
 export function StockDispatchRow(props) {
   if (!props.leftAsset?.stockRewardRoute && !props.rightAsset?.stockRewardRoute) return <TacticalRow {...props} />;
-  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-    {['leftAsset', 'rightAsset'].map((side, i) => {
-      const a = props[side];
-      if (!a) return <div key={side} />;
-      if (!a.stockRewardRoute) return <TacticalRow key={side} {...props} leftAsset={i === 0 ? a : null} rightAsset={i === 1 ? a : null} />;
-      return <article key={side} aria-label={`${i === 0 ? 'Agent' : 'CPU'} ${a.symbol}`}>
-        <button type="button" onClick={() => props.onSymbolClick?.(a)}>{a.symbol}</button>
-        <p>{a.points === null ? 'Score unavailable' : `${a.points} pts`}; {a.badges?.join(', ') || 'no earned tiers'}</p>
-        {/* v2 Ruling 16 (K1-5): the bagger footer, from the committed crossed tiers. */}
-        {i === 0 && props.baggerFooter ? <div data-bagger-footer="1">{props.baggerFooter}</div> : null}
-        <details><summary>Why? Measured reward</summary><StockRewardDetails context={a.rewardContext} symbol={a.symbol} />
-          {/* v2 Ruling 15: Why's proximity line, from the same committed context. */}
-          {i === 0 && props.renderWhy?.(measuredProximity(a.rewardContext))}
-        </details>
-      </article>;
-    })}
-  </div>;
+  // The model selects facts, not a replacement design. Keep the normal row,
+  // side-aware research door, price, badges, gauge, footer and Why interaction.
+  // The legacy breakdown reconstructs ATR targets, so measured points open
+  // the existing research view, which already understands committed context.
+  const renderWhy = props.renderWhy && props.leftAsset?.stockRewardRoute
+    ? proximity => <>
+      {props.renderWhy(proximity)}
+      <div style={{ padding: 12, minWidth: 0, overflowX: 'auto' }}>
+        <StockRewardDetails context={props.leftAsset.rewardContext} symbol={props.leftAsset.symbol} />
+      </div>
+    </>
+    : props.renderWhy;
+  return <TacticalRow {...props} renderWhy={renderWhy} onPointsClick={(asset, ...args) => {
+    if (asset.stockRewardRoute) props.onSymbolClick?.(asset, ...args);
+    else props.onPointsClick?.(asset, ...args);
+  }} />;
 }
 
 export function enrichHeldPosition(asset, tier, { curPrice, previousClose, startingPrices, thresholds, thresholdHistory, activatedAt, createdAt, stockBattle, stockSide = 'agent', stockSlot = 0 }) {
@@ -1709,7 +1708,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // otherwise the qualified stored pair with its actual time, else an explicit
   // unavailable object — never a default 0–0. Undefined everywhere else, which
   // each consumer reads as "exactly as shipped".
-  const comparison = stockModelRoute(agentBattle).status !== 'legacy' ? selectComparison({ status: agentBattle?.status, complete: false, browserPair: null, scoreState: validCommittedStockScores(agentBattle) ? agentBattle.scoreState : {}, contextKey: agentBattle?.id, nowMs: Date.now() }) : admitted && gatedContextKey ? selectComparison({
+  const comparison = stockModelRoute(agentBattle).status !== 'legacy' ? wholeScoreComparison(selectComparison({ status: agentBattle?.status, complete: false, browserPair: null, scoreState: validCommittedStockScores(agentBattle) ? agentBattle.scoreState : {}, contextKey: agentBattle?.id, nowMs: Date.now() })) : admitted && gatedContextKey ? selectComparison({
     status: agentBattle?.status,
     complete: quotesComplete,
     browserPair: quotesComplete ? [playerTotalScore, opponentTotalScore] : null,
@@ -3957,4 +3956,23 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       )}
     </div>
   );
+}
+
+// Measured scoreboard presentation. Both headers, lead copy and accessible text
+// share whole-point formatting. Keep precise scores, lead and bar unchanged.
+function wholeScoreComparison(comparison) {
+  if (!comparison?.available) return comparison;
+  const digits = comparison.pair.map(value => formatScoreDisplay(value, { fractionDigits: 0 }));
+  const margin = Math.abs(Number(digits[0]) - Number(digits[1]));
+  const marginText = margin === 0 ? 'less than 1' : String(margin);
+  const prose = comparison.lead === 'tie' ? QUOTE_INTEGRITY_COPY.tied
+    : comparison.lead === 'player' ? QUOTE_INTEGRITY_COPY.youLeadBy(marginText)
+      : QUOTE_INTEGRITY_COPY.cpuLeadsBy(marginText);
+  return {
+    ...comparison,
+    fractionDigits: 0,
+    digits,
+    prose,
+    accessibleText: `${comparison.label}. You ${digits[0]}, CPU ${digits[1]}. ${prose}.`,
+  };
 }

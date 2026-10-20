@@ -95,9 +95,21 @@ export function committedStockContext(battle, asset, side, tier, slot) {
   return stockRewardContext(battle, asset, side, tier, slot, { price: c.currentPrice, asOf: c.quoteEvidence?.providerAsOf, observedAt: c.quoteEvidence?.observedAt });
 }
 export const committedContextContent = battle => stockContent(positions(battle).filter(p => isStock(p.asset)).map(p => [p.side, p.asset.positionId, battle.scoring.stockRewardContexts?.[p.side]?.[p.asset.positionId] || null]));
+function matchesCommittedRoster(token, battle) {
+  if (typeof token !== 'string') return false;
+  try {
+    // Firestore map ordering is not identity. Existing evidence stores the
+    // writer's JSON key order inside a string, while SDK reads can reorder the
+    // model map. Compare the complete contents, preserving roster array order.
+    // Keep the persisted token format and every identity field unchanged.
+    return stockContent(JSON.parse(token)) === stockContent(JSON.parse(rosterToken(battle)));
+  } catch {
+    return false;
+  }
+}
 export function validCommittedStockScores(battle) {
   const e = battle?.scoreState?.stockScoreEvidence;
-  return stockModelRoute(battle).status === 'corrected' && e?.status === 'valid' && sameModel(e.model) && e.rosterToken === rosterToken(battle) && e.scoreVersion === battle.scoring.stockScoreVersion && finite(battle.scoreState.currentScore) && finite(battle.scoreState.opponentScore) && e.currentScore === battle.scoreState.currentScore && e.opponentScore === battle.scoreState.opponentScore && e.componentContent === stockContent(battle.scoring.stockScoreComponents || {}) && e.contextContent === committedContextContent(battle) && instantMs(e.at) !== null && positions(battle).every(p => !isStock(p.asset) || committedStockContext(battle, p.asset, p.side, p.tier, p.slot).status === 'valid');
+  return stockModelRoute(battle).status === 'corrected' && e?.status === 'valid' && sameModel(e.model) && matchesCommittedRoster(e.rosterToken, battle) && e.scoreVersion === battle.scoring.stockScoreVersion && finite(battle.scoreState.currentScore) && finite(battle.scoreState.opponentScore) && e.currentScore === battle.scoreState.currentScore && e.opponentScore === battle.scoreState.opponentScore && e.componentContent === stockContent(battle.scoring.stockScoreComponents || {}) && e.contextContent === committedContextContent(battle) && instantMs(e.at) !== null && positions(battle).every(p => !isStock(p.asset) || committedStockContext(battle, p.asset, p.side, p.tier, p.slot).status === 'valid');
 }
 // v2 Ruling 15: the Why proximity for a measured-model row — the context's own
 // proximity plus the legacy line's shape ("💣 1.2% to BaggerBomb", "MAX" once
