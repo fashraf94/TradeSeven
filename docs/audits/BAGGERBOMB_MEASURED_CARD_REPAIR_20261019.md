@@ -6,9 +6,9 @@
 | Is a repair prepared? | Yes. The measured route now uses the existing TacticalRow design, with measured facts supplied directly to its display elements. |
 | Does this undo the threshold correction? | No. Model admission, scoring arithmetic, persisted evidence, thresholds, receipts, and backend writers have no diff. |
 | Is the production screen repaired? | No deployment claimed. Deliver through a draft PR for preview review and founder merge. |
-| Is “Comparison unavailable” solved? | A reproducible display rejection is fixed: changing only Firestore map-key order hid valid totals and the bar. Desktop and mobile regression tests now pass. The affected live battle still needs the updated deployment check. |
+| Is “Comparison unavailable” solved? | A reproducible display rejection is fixed: changing only Firestore map-key order hid valid totals and the bar. Desktop and mobile regression tests now pass. The founder confirmed the fix landed perfectly at 22:41 Chicago time. |
 | Validation | Original card repair: 1,054 tests. Score follow-up: 162 tests across seven suites, including desktop/mobile header rendering. Five score regressions fail the pre-fix code. Production build and lint gate pass. |
-| Remaining acceptance | View the affected measured battle in the Vercel preview at desktop and phone widths. Pixel verification was unavailable in this environment. |
+| Remaining acceptance | Founder confirmed the repair. The requested whole-number scoreboard polish is included in the latest commit for a final visual check. |
 
 ## Provenance and scope
 
@@ -84,3 +84,13 @@ Local Chromium and Headless Shell downloads returned unusable archives. The avai
 Before merge, view a measured battle on the preview at desktop and phone widths. Confirm aligned cards, prices and gauges, readable spacing, the center tier badge, player Why open/close, CPU symbol and points research identity, and the crypto row. Verify unavailable data shows a status rather than zero values. The branch retains the existing design and has DOM/behavior coverage, but a browser pixel review remains required for this visual bug.
 
 No merge, production activation, CI polling, review requests or automatic follow-up changes. The founder owns the preview decision and merge.
+
+## Whole-number scoreboard polish, 22:41 Chicago request
+
+The founder confirmed the prior repair landed perfectly and requested removing scoreboard decimals before merge.
+
+VERIFIED, `src/screens/AgentBattleScreen.jsx:1711` and `:3963`: measured-score comparisons now format both header totals as whole numbers. Lead copy and accessible text use those same displayed digits. When rounded scores match but the precise scores differ, the copy says the leader leads by less than 1. The stored pair, score arithmetic, selected winner/lead, score timestamp, validation and bar width remain unchanged. Both desktop and mobile headers consume this presentation object. The legacy quote-integrity path is unchanged.
+
+Existing mounted-screen assertions now require whole numbers and no decimal text in the header. The measured-screen and legacy quote-availability suites pass 282 tests. Explicit production build, required lint gate and whitespace checks pass. No new test suite or independent agent review was added for this presentation change.
+
+No merge or production deployment was performed. The founder owns the final visual acceptance and merge.

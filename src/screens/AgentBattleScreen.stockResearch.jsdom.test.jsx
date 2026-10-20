@@ -119,8 +119,10 @@ describe('saved measured totals after Firestore map ordering', () => {
     const header = container.querySelector('[data-arena-header]');
     expect(header).not.toBeNull();
     for (const score of [HOOK.doc.scoreState.currentScore, HOOK.doc.scoreState.opponentScore]) {
-      expect(header.textContent).toContain(`${score >= 0 ? '+' : ''}${score.toFixed(2)}`);
+      const rounded = Math.round(score) || 0;
+      expect(header.textContent).toContain(`${rounded >= 0 ? '+' : ''}${rounded}`);
     }
+    expect(header.textContent).not.toMatch(/[+-]?\d+\.\d+/);
     expect(header.querySelector('[data-arena-bar]')).not.toBeNull();
     expect(header.querySelector('[data-comparison-label]').getAttribute('data-comparison-kind')).toBe(status === 'completed' ? 'final' : 'last-scored');
     expect(header.textContent).not.toMatch(/comparison unavailable/i);

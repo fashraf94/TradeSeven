@@ -14,7 +14,7 @@ import { ChevronLeft, Activity, Bot, Bookmark } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import useAgentBattleId from '../hooks/useAgentBattleId';
 import useAgentBattle from '../hooks/useAgentBattle';
-import AnimatedScore from '../components/shared/AnimatedScore';
+import AnimatedScore, { formatScoreDisplay } from '../components/shared/AnimatedScore';
 import { AgentPresenceMount } from '../components/AgentPresence';
 import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn, isCharacterPaneOn, isShowItOn, isShadowCpuQuoteIntegrityOn, isCockpitUiOn, ARCHETYPE_INTEGRITY_MODE } from '../config/featureFlags';
 import { getAuth } from 'firebase/auth';
@@ -1708,7 +1708,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   // otherwise the qualified stored pair with its actual time, else an explicit
   // unavailable object — never a default 0–0. Undefined everywhere else, which
   // each consumer reads as "exactly as shipped".
-  const comparison = stockModelRoute(agentBattle).status !== 'legacy' ? selectComparison({ status: agentBattle?.status, complete: false, browserPair: null, scoreState: validCommittedStockScores(agentBattle) ? agentBattle.scoreState : {}, contextKey: agentBattle?.id, nowMs: Date.now() }) : admitted && gatedContextKey ? selectComparison({
+  const comparison = stockModelRoute(agentBattle).status !== 'legacy' ? wholeScoreComparison(selectComparison({ status: agentBattle?.status, complete: false, browserPair: null, scoreState: validCommittedStockScores(agentBattle) ? agentBattle.scoreState : {}, contextKey: agentBattle?.id, nowMs: Date.now() })) : admitted && gatedContextKey ? selectComparison({
     status: agentBattle?.status,
     complete: quotesComplete,
     browserPair: quotesComplete ? [playerTotalScore, opponentTotalScore] : null,
@@ -3956,4 +3956,23 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       )}
     </div>
   );
+}
+
+// Measured scoreboard presentation. Both headers, lead copy and accessible text
+// share whole-point formatting. Keep precise scores, lead and bar unchanged.
+function wholeScoreComparison(comparison) {
+  if (!comparison?.available) return comparison;
+  const digits = comparison.pair.map(value => formatScoreDisplay(value, { fractionDigits: 0 }));
+  const margin = Math.abs(Number(digits[0]) - Number(digits[1]));
+  const marginText = margin === 0 ? 'less than 1' : String(margin);
+  const prose = comparison.lead === 'tie' ? QUOTE_INTEGRITY_COPY.tied
+    : comparison.lead === 'player' ? QUOTE_INTEGRITY_COPY.youLeadBy(marginText)
+      : QUOTE_INTEGRITY_COPY.cpuLeadsBy(marginText);
+  return {
+    ...comparison,
+    fractionDigits: 0,
+    digits,
+    prose,
+    accessibleText: `${comparison.label}. You ${digits[0]}, CPU ${digits[1]}. ${prose}.`,
+  };
 }
