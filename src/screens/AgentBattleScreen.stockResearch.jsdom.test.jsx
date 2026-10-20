@@ -103,6 +103,38 @@ const open = async (el) => {
 };
 const chip = symbol => container.querySelector(`[data-cockpit-monitoring-symbol="${symbol}"]`);
 
+describe('saved measured totals after Firestore map ordering', () => {
+  it.each([[1600, 'active'], [390, 'active'], [375, 'completed']])('renders scores and the bar at width %i for %s battles', async (width, status) => {
+    HOOK.doc = await committedBattle({ cpuSymbol: 'MSFT' });
+    HOOK.doc.status = status;
+    // Firestore sorts map keys. The string inside score evidence retains the
+    // writer's original key order, although every saved value is unchanged.
+    HOOK.doc.scoring.stockThresholdModel = Object.fromEntries(Object.entries(HOOK.doc.scoring.stockThresholdModel).sort(([a], [b]) => a.localeCompare(b)));
+    window.innerWidth = width;
+    window.matchMedia = query => {
+      const min = /min-width:\s*(\d+)px/.exec(String(query));
+      return { matches: min ? width >= Number(min[1]) : !String(query).includes('prefers-reduced-motion'), addEventListener() {}, removeEventListener() {} };
+    };
+    await mount('MSFT');
+    const header = container.querySelector('[data-arena-header]');
+    expect(header).not.toBeNull();
+    for (const score of [HOOK.doc.scoreState.currentScore, HOOK.doc.scoreState.opponentScore]) {
+      expect(header.textContent).toContain(`${score >= 0 ? '+' : ''}${score.toFixed(2)}`);
+    }
+    expect(header.querySelector('[data-arena-bar]')).not.toBeNull();
+    expect(header.querySelector('[data-comparison-label]').getAttribute('data-comparison-kind')).toBe(status === 'completed' ? 'final' : 'last-scored');
+    expect(header.textContent).not.toMatch(/comparison unavailable/i);
+  });
+  it('still withholds a mismatched total instead of substituting stock-row sums', async () => {
+    HOOK.doc = await committedBattle();
+    HOOK.doc.scoreState.currentScore += 1;
+    await mount();
+    const header = container.querySelector('[data-arena-header]');
+    expect(header.textContent).toContain('Comparison unavailable');
+    expect(header.querySelector('[data-arena-bar]')).toBeNull();
+  });
+});
+
 describe('K1-2: a bare held name opens research on the pinned row context', () => {
   it('a Monitoring chip for a held corrected AAPL opens the player row context, no legacy threshold', async () => {
     HOOK.doc = await committedBattle();

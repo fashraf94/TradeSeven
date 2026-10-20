@@ -1,4 +1,4 @@
-# BaggerBomb measured-card repair, October 19, 2026
+# BaggerBomb card and score-display repair, October 19, 2026
 
 | Question | Verdict |
 | --- | --- |
@@ -6,15 +6,15 @@
 | Is a repair prepared? | Yes. The measured route now uses the existing TacticalRow design, with measured facts supplied directly to its display elements. |
 | Does this undo the threshold correction? | No. Model admission, scoring arithmetic, persisted evidence, thresholds, receipts, and backend writers have no diff. |
 | Is the production screen repaired? | No deployment claimed. Deliver through a draft PR for preview review and founder merge. |
-| Is “Comparison unavailable” solved? | No. Its source conditions are traced and tested. The affected battle's saved score evidence and deployment identity are still needed. |
-| Validation | 1,054 passing tests across 18 suites, explicit Vite production build, lint gate. Five new regression cases fail unchanged main. |
+| Is “Comparison unavailable” solved? | A reproducible display rejection is fixed: changing only Firestore map-key order hid valid totals and the bar. Desktop and mobile regression tests now pass. The affected live battle still needs the updated deployment check. |
+| Validation | Original card repair: 1,054 tests. Score follow-up: 162 tests across seven suites, including desktop/mobile header rendering. Five score regressions fail the pre-fix code. Production build and lint gate pass. |
 | Remaining acceptance | View the affected measured battle in the Vercel preview at desktop and phone widths. Pixel verification was unavailable in this environment. |
 
 ## Provenance and scope
 
 Fetched origin before comparing against main. Created the isolated branch `codex/baggerbomb-measured-cards` from current main `f6400a652dcb583fdf74cec34c7629ebc423dfef`, with a clean starting tree. No other task's working tree was edited. The founder reviewed the source diagnosis in the prior exchange and asked this chat to diagnose and fix the issue.
 
-The authoritative visual reference is the existing TacticalRow component. This is a repair of its measured-stock integration, not a redesign. The submitted screenshot is the observed symptom. Its actual deployed SHA, battle ID, and activation/control history have not been verified.
+The authoritative visual reference is the existing TacticalRow component. This is a repair of its measured-stock integration, not a redesign. The submitted screenshots show the symptoms. Later screenshots identify preview commit `b89c2f9` and battle `vrLxfQxi2cTHu9IWAb3v`. The complete saved battle document has not been read. The user confirmed Cockpit UID access is scoped to Production, explaining its absence from this preview.
 
 ## Source diagnosis
 
@@ -37,19 +37,30 @@ Line anchors below refer to this branch's source.
 
 No fenced production function was edited or newly invoked by production code. Test fixtures call `scoreCorrectedPosition` and `correctedScorePatch` from stockThresholdAdmission, which invoke the existing fenced `calculateAssetScoreServer` adapter. No flags, API handlers, Firebase rules, package files or scoring constants were changed. No production database/provider calls or writes were performed.
 
-## Comparison status
+## Score-display follow-up, 21:03 Chicago request
 
-VERIFIED, `src/screens/AgentBattleScreen.jsx:1711`: the measured branch only passes stored scores into the comparison selector when `validCommittedStockScores` accepts the frame.
+Fetched origin again before checking remote state. PR #984 remained open and draft, with remote head `b89c2f91d6ce53dd88010dc6d0c4094a1a460f5b`. The local card commit `861e531` has the identical tree. The user explicitly requested completing the missing-score fix in this task.
 
-VERIFIED, `src/utils/stockThresholdModel.js:98`: acceptance checks the model, roster, version, totals, component content, committed contexts and position receipts/history.
+VERIFIED, `src/utils/stockThresholdModel.js:39`: the saved roster token serializes the model map with ordinary JSON.stringify, retaining insertion order. Firestore sorts map fields while the serialized token remains a string. Firebase documents this behavior at https://firebase.google.com/docs/firestore/manage-data/data-types.
 
-VERIFIED, `src/screens/battleView/shadowCpuQuoteIntegrity.js:652`: the stored pair also requires finite scores and a valid, nonfuture `lastScoredAt`.
+VERIFIED by reproduction: create a committed score frame through the existing scorer and patch writer, then change only the model map's key order. Before the fix, both saved totals remain 20, both row contexts remain valid, but `validCommittedStockScores` changes from true to false. The screen then removes both totals and the bar at `src/screens/AgentBattleScreen.jsx:1711`. No altered score or absent quote is needed to reproduce the symptom.
 
-A fixture generated through the real corrected scorer/writer produces an available comparison. Removing its score evidence or timestamp correctly produces unavailable. These tests do not establish the production battle's failure reason. The screenshot alone does not establish whether the safeguard is working correctly or rejecting valid evidence.
+VERIFIED repair, `src/utils/stockThresholdModel.js:98`: parse the stored roster token and compare its complete contents using the existing stable object serializer. Preserve array order, all identity fields, persisted token format, and every other evidence check. Malformed tokens still fail. This restores reads of existing committed scores without a migration, recalculation or database write.
 
-The user's earlier `snapshot-28e6375731e68cf22dd3a0224bb1057f.json` was inspected. Its captured roster is different, and its projected battle fields omit the score evidence. It cannot answer the live comparison question.
+VERIFIED, `src/utils/stockThresholdModel.js:110`: the shared committed-score validator retains model, roster version, score version, total equality, component, context, receipt and history validation. This also corrects consumers of the shared validator, including result eligibility when the only difference is map-key order. No scoring arithmetic, score writer or fenced production function changed.
 
-Next investigation: identify the affected battle and deployed commit, then make one bounded read of the battle document. Evaluate each validation predicate against that same snapshot. Report the first failure and distinguish a writer defect, incomplete quote/evidence frame, or display rejection. Do not bypass evidence checks or insert zero scores to hide the message.
+VERIFIED, `src/screens/battleView/shadowCpuQuoteIntegrity.js:652`: the existing stored pair still requires finite scores and a valid, nonfuture lastScoredAt. The fix adds no browser estimate or zero fallback.
+
+### Follow-up verification
+
+- Before implementation: five failures across the two modified suites. Two detect key-order rejection directly. Three mount the full screen and show the missing header totals at desktop 1600px, mobile 390px, and completed mobile 375px. The other 41 tests pass.
+- After implementation: 162 tests pass across seven suites covering the model, mounted screen, frontend/backend readers, corrected writer, evaluator and expiry path.
+- VERIFIED mounted-screen assertions at `src/screens/AgentBattleScreen.stockResearch.jsdom.test.jsx:106`: both saved scores and the score bar render. Active games use last-scored comparison and completed games use final comparison. A changed total still shows unavailable.
+- Negative cases reject malformed tokens, changed model admission time, roster version, position, slot, array order, extra identity fields, totals, score version, contexts and components.
+- Explicit production build and required lint gate pass. Existing CSS/chunk warnings remain. Diff whitespace check passes.
+- Cumulative PR remains nine files and below 1,500 changed lines. No independent agent review was run. Full repository suite was not rerun.
+
+The reproduced defect matches the reported pattern of valid stock rows with missing header totals. Its presence in the specific live document remains unverified because no authenticated battle snapshot was available. Confirm the affected battle on the updated preview or Production deployment before claiming the live incident resolved. No user-run diagnostic script is required to deploy this repair.
 
 ## Validation
 
