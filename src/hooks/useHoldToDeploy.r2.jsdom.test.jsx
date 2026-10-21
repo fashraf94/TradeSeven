@@ -468,7 +468,10 @@ describe('D4 — switching away mid-hold cannot deploy on return', () => {
     expect(onComplete).not.toHaveBeenCalled();
   });
 
-  it('a frame that runs while hidden cancels instead of committing, even with no visibilitychange', () => {
+  it('a frame that runs while the document is still hidden (an engine that does not pause frames) cancels instead of committing', () => {
+    // Not the browser's resume path: browsers pause frames for a hidden tab, so
+    // the resumed frame runs visible and the visibilitychange row above is the
+    // D4 guard. A suspension that delivers no event is not covered (report §11).
     const onComplete = vi.fn();
     render(<Hold onComplete={onComplete} />);
     const [b] = buttons();
