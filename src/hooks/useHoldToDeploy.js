@@ -27,15 +27,21 @@
 // ===========================================================================
 //
 // One ordinary hold, an early release and a keyboard deploy behave exactly as
-// before R2, sky stream included. What R2 changed is every case in which the
-// hook let two things happen that should be one, or let a deploy fire the
-// player could not see coming.
+// before R2, sky stream included. What R2 changes are the cases, found so far,
+// in which the hook let two things happen that should be one, or let a deploy
+// fire the player could not see coming. Not closed: a touch release queued
+// behind a long main-thread task still loses to the threshold frame, as before
+// R2 (R2 report §11).
 //
 //   ONE HOLD AT A TIME, APP-WIDE. ./holdClaim.js holds a single slot. Pointer
 //   down and Enter/Space each CLAIM it before any effect: a denied claim
 //   returns with no phase change, frame, haptic, progress, sky event, pointer
 //   capture, timer or onComplete. A second control, a second pointer, or a key
 //   on a charging control is denied the same way.
+//
+//   POINTER CAPTURE (R-R2-3) is taken for a MOUSE only. For touch and pen it is
+//   stopped pending founder review: the platform's own implicit capture stays
+//   in place, exactly as before R2 (capturePointer below; R2 report §11 Q1).
 //
 //   AUTHORITATIVE STATE IS IN REFS. stateRef ('idle' | 'charging' | 'locked')
 //   and tokenRef are written in the same call that changes them; the React
@@ -50,13 +56,13 @@
 //   queued frame, resets the display and emits ONE abort. The unmount cancel
 //   is a layout-effect cleanup, so it lands in the commit that removes the
 //   button and no queued frame or beat can run in between. The blur/visibility
-//   listeners exist only while charging. They are what stops D4: browsers
-//   pause animation frames for a hidden tab, so the frame that resumes after a
-//   switch runs VISIBLE, and only the visibilitychange/blur that came first
-//   can have cancelled that hold. A frame that runs while still hidden (an
-//   engine that does not pause) cancels too. Not covered: a suspension or a
-//   long stall that delivers neither event; the frame after it commits, as
-//   before R2 (R2 report §11).
+//   listeners exist only while charging. They are what stops D4: hiding a
+//   document fires visibilitychange in the same step that hides it, before any
+//   frame can run, so the listener cancels the hold first and no resumed frame
+//   finds it charging. A frame that runs while still hidden (a host that runs
+//   frames for hidden pages) cancels too — defence in depth. Not covered: a
+//   suspension or a long stall that delivers neither event; the frame after
+//   it commits, as before R2 (R2 report §11).
 //
 //   THE THRESHOLD IS THE COMMITMENT BOUNDARY. At p ≥ 1 (or an accepted key)
 //   commitHold(token) decides atomically; only on true does stateRef become
@@ -211,14 +217,24 @@ function dispatchIntent(progress, reason) {
 }
 
 /**
- * Keep the pointer on the button for the rest of the gesture (R-R2-3), so its
- * release is delivered here wherever it happens. Feature-detected: jsdom and
- * older engines have no setPointerCapture, and a pointer the platform no
+ * Keep a MOUSE pointer on the button for the rest of the gesture (R-R2-3), so
+ * its release is delivered here wherever it happens. Feature-detected: jsdom
+ * and older engines have no setPointerCapture, and a pointer the platform no
  * longer knows throws. Either way the hold carries on uncaptured, and release,
  * leave and cancel still end it.
+ *
+ * TOUCH AND PEN ARE NOT CAPTURED — R-R2-3 is stopped for them, pending founder
+ * review (R2 report §11 Q1). The platform already captures a touch to the
+ * element touched (the label, the icon). Moving it to the button changes the
+ * target of the following moves, and WebKit's touch path then fires
+ * pointerout at the label with a null relatedTarget — which React reads as
+ * leaving the BUTTON, cancelling the hold (WebKit source read, R2 report §9;
+ * the iOS caller is closed and unmeasured). Uncaptured, touch and pen keep the
+ * path they had before R2 exactly.
  */
 function capturePointer(e) {
   const el = e?.currentTarget;
+  if (e?.pointerType !== 'mouse') return;
   if (!el || typeof el.setPointerCapture !== 'function' || e.pointerId == null) return;
   try {
     el.setPointerCapture(e.pointerId);
@@ -381,18 +397,19 @@ export default function useHoldToDeploy({
   }, [cancel, onComplete, onCommit, beatOwner, lockBeatMs]);
 
   const tick = useCallback(() => {
+    const token = tokenRef.current;
     // A frame that runs while the document is still hidden cancels instead of
     // committing (R-R2-4): performance.now() kept running, so p may have
-    // jumped to 1. Browsers normally pause frames for a hidden tab, so the
-    // frame that resumes runs visible; the visibilitychange/blur listeners are
-    // what cancel that hold (D4, review IR-08).
+    // jumped to 1. Defence in depth — the visibilitychange listener has
+    // already cancelled the hold before any frame of a hidden page can run
+    // (D4, review IR-08).
     if (typeof document !== 'undefined' && document.hidden) {
       cancel();
       return;
     }
     // A claim revoked from outside ends the charge at the next frame, so two
     // holds never charge at once (R2 review L4-2).
-    if (currentHold()?.holdToken !== tokenRef.current) {
+    if (currentHold()?.holdToken !== token) {
       cancel();
       return;
     }
@@ -403,9 +420,10 @@ export default function useHoldToDeploy({
     // at its peak — the commit beat then releases from the top rather than from
     // wherever the previous frame happened to sit.
     dispatchIntent(p);
-    // A listener may have ended the charge synchronously: then this frame does
-    // nothing more — no haptic, no next frame (R2 review L3-3).
-    if (stateRef.current !== 'charging') return;
+    // A listener may have ended the charge synchronously — or ended it and
+    // started another: then this frame does nothing more, no haptic and no
+    // next frame, and the new charge runs its own chain (R2 review L3-3).
+    if (stateRef.current !== 'charging' || tokenRef.current !== token) return;
     while (hapticRef.current < HAPTIC_STEPS.length && p >= HAPTIC_STEPS[hapticRef.current]) {
       vibrate(hapticRef.current === HAPTIC_STEPS.length - 1 ? 60 : 12);
       hapticRef.current += 1;
@@ -506,13 +524,11 @@ export default function useHoldToDeploy({
     cancel();
   }, [cancel]);
 
-  // Only the button's OWN capture loss ends a charge. A touch is implicitly
-  // captured by the element actually touched (the label span, the icon), and
-  // capturePointer moves it to the button. Chromium overwrites that pending
-  // capture before processing it, so the child never fires
-  // lostpointercapture (measured in headless Edge, R2 report §9); an engine
-  // that processed it first would bubble the child's event up here. Either
-  // way that is the hand-over, not a loss.
+  // Only the button's OWN capture loss ends a charge. A touch keeps the
+  // platform's implicit capture on the element actually touched (the label
+  // span, the icon — capturePointer leaves touch alone), and that element's
+  // lostpointercapture bubbles up here when the finger lifts. That is the end
+  // of the gesture, already handled by pointerup, not a loss mid-hold.
   const onLostPointerCapture = (e) => { if (e.target === e.currentTarget) cancel(); };
 
   const active = enabled && !disabled;

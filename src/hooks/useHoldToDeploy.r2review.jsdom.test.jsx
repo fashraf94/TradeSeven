@@ -341,6 +341,29 @@ describe('L3-3 — a listener that cancels mid-frame: nothing more from that fra
     expect(frames.size).toBe(0);
     expect(btn().dataset.phase).toBe('idle');
   });
+
+  it('a listener that cancels AND re-presses inside the frame leaves one frame chain, the new one (RL3)', () => {
+    render(<H onComplete={() => {}} />);
+    let done = false;
+    const cancelAndRepress = (event) => {
+      if (done || typeof event.detail.progress !== 'number' || event.detail.progress <= 0.3) return;
+      done = true;
+      window.dispatchEvent(new Event('blur'));
+      ev.down(btn());
+    };
+    window.addEventListener(DEPLOY_INTENT_EVENT, cancelAndRepress);
+    try {
+      act(() => { ev.down(btn()); });
+      step(600);
+    } finally {
+      window.removeEventListener(DEPLOY_INTENT_EVENT, cancelAndRepress);
+    }
+    expect(btn().dataset.phase).toBe('charging');
+    expect(frames.size).toBe(1);
+    const before = seen.length;
+    step(800);
+    expect(seen.length - before).toBe(1);
+  });
 });
 
 // ===========================================================================

@@ -412,35 +412,54 @@ describe('D3 — one control, two inputs: only one starts', () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 
-  it('pointer down captures the pointer on the button when the platform supports it', () => {
+  it('a mouse pointer down captures the pointer on the button when the platform supports it', () => {
     const capture = vi.fn();
     Object.defineProperty(Element.prototype, 'setPointerCapture', { configurable: true, writable: true, value: capture });
     render(<Hold />);
     const [b] = buttons();
-    act(() => { ev.down(b, { pointerId: 7 }); });
+    act(() => { ev.down(b, { pointerId: 7, pointerType: 'mouse' }); });
     expect(capture).toHaveBeenCalledTimes(1);
     expect(capture).toHaveBeenCalledWith(7);
     expect(capture.mock.contexts[0]).toBe(b);
   });
+
+  for (const pointerType of ['touch', 'pen', '']) {
+    it(`a ${pointerType || 'typeless'} pointer is never captured: it keeps the platform's own capture, as before R2`, () => {
+      // R-R2-3 is stopped for touch and pen pending founder review (report §11
+      // Q1): moving a touch's capture to the button re-targets its moves, and
+      // WebKit's touch path then fires pointerout with a null relatedTarget.
+      const capture = vi.fn();
+      Object.defineProperty(Element.prototype, 'setPointerCapture', { configurable: true, writable: true, value: capture });
+      const onComplete = vi.fn();
+      render(<Hold onComplete={onComplete} />);
+      const [b] = buttons();
+      act(() => { ev.down(b, { pointerId: 4, pointerType }); });
+      step(600); step(1300);
+      advance(450);
+      expect(capture).not.toHaveBeenCalled();
+      expect(onComplete).toHaveBeenCalledTimes(1);
+    });
+  }
 
   it('a denied pointer is never captured', () => {
     const capture = vi.fn();
     Object.defineProperty(Element.prototype, 'setPointerCapture', { configurable: true, writable: true, value: capture });
     render(<><Hold label="A" /><Hold label="B" /></>);
     const [ba, bb] = buttons();
-    act(() => { ev.down(ba, { pointerId: 7 }); });
-    act(() => { ev.down(bb, { pointerId: 9 }); });
+    act(() => { ev.down(ba, { pointerId: 7, pointerType: 'mouse' }); });
+    act(() => { ev.down(bb, { pointerId: 9, pointerType: 'mouse' }); });
     expect(capture.mock.calls).toEqual([[7]]);
   });
 
   it('a capture the platform refuses does not break the hold', () => {
     const onComplete = vi.fn();
-    Object.defineProperty(Element.prototype, 'setPointerCapture', {
-      configurable: true, writable: true, value: () => { throw new DOMException('no such pointer', 'NotFoundError'); },
-    });
+    const refuse = vi.fn(() => { throw new DOMException('no such pointer', 'NotFoundError'); });
+    Object.defineProperty(Element.prototype, 'setPointerCapture', { configurable: true, writable: true, value: refuse });
     render(<Hold onComplete={onComplete} />);
     const [b] = buttons();
-    holdToCommit(b);
+    act(() => { ev.down(b, { pointerId: 7, pointerType: 'mouse' }); });
+    step(600); step(1300);
+    expect(refuse).toHaveBeenCalledTimes(1);
     expect(count('commit')).toBe(1);
     advance(450);
     expect(onComplete).toHaveBeenCalledTimes(1);
@@ -469,9 +488,10 @@ describe('D4 — switching away mid-hold cannot deploy on return', () => {
   });
 
   it('a frame that runs while the document is still hidden (an engine that does not pause frames) cancels instead of committing', () => {
-    // Not the browser's resume path: browsers pause frames for a hidden tab, so
-    // the resumed frame runs visible and the visibilitychange row above is the
-    // D4 guard. A suspension that delivers no event is not covered (report §11).
+    // Not the browser's resume path: hiding a document fires visibilitychange
+    // before any frame can run, so the row above is the D4 guard and this
+    // branch is defence in depth. A suspension that delivers no event is not
+    // covered (report §11).
     const onComplete = vi.fn();
     render(<Hold onComplete={onComplete} />);
     const [b] = buttons();
@@ -511,11 +531,9 @@ describe('D5 — window blur and lost pointer capture cancel a charge', () => {
     });
   }
 
-  it('a capture hand-over from the touched label to the button is not a loss: the hold carries on and deploys once', () => {
-    // On touch the pointer is implicitly captured by the element touched, and
-    // the button's own setPointerCapture moves it. Chromium never fires the
-    // label's lostpointercapture for that (measured in headless Edge); an
-    // engine that did would bubble it to the button, which must not cancel.
+  it('the touched label losing its own capture (it bubbles to the button) is not the button\'s loss: the hold carries on and deploys once', () => {
+    // A touch keeps the platform's implicit capture on the element touched; its
+    // lostpointercapture bubbles to the button, which must not cancel on it.
     const onComplete = vi.fn();
     render(<Hold onComplete={onComplete} />);
     const [b] = buttons();
