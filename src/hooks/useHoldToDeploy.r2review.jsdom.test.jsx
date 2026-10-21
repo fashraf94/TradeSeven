@@ -367,6 +367,155 @@ describe('L3-3 — a listener that cancels mid-frame: nothing more from that fra
 });
 
 // ===========================================================================
+// L5 — rows the mutating lens found missing (its probes P1–P9, H2)
+// ===========================================================================
+
+describe('L5-5 — a Locked-in control whose deploy has settled ignores input until re-enabled, as before R2', () => {
+  it('pointer: no new charge', async () => {
+    render(<HoldToDeployButton label="Deploy" onComplete={() => {}} />);
+    holdToCommit(btn());
+    await act(async () => { vi.advanceTimersByTime(450); });
+    expect(currentHold()).toBeNull();
+    expect(btn().textContent).toBe('Locked in');
+    const before = frameRequests;
+    act(() => { ev.down(btn()); });
+    expect(frameRequests).toBe(before);
+    expect(btn().textContent).toBe('Locked in');
+  });
+
+  it('key: no second deploy', async () => {
+    const onComplete = vi.fn();
+    render(<HoldToDeployButton label="Deploy" onComplete={onComplete} />);
+    act(() => { ev.key(btn()); });
+    await act(async () => { vi.advanceTimersByTime(450); });
+    expect(currentHold()).toBeNull();
+    act(() => { ev.key(btn()); });
+    advance(450);
+    expect(count('commit')).toBe(1);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('L5-2 — disabled from a non-event update cancels in its own commit (BI-4)', () => {
+  it('a frame queued before the passive effects cannot commit on the now-disabled control', async () => {
+    const onComplete = vi.fn();
+    render(<HoldToDeployButton label="Deploy" onComplete={onComplete} />);
+    act(() => { ev.down(btn()); });
+    step(600); step(1000);
+    await commitOutsideAct(() => root.render(<HoldToDeployButton label="Deploy" onComplete={onComplete} disabled />));
+    frameAt(1300);
+    await settleScheduler();
+    advance(1000);
+    expect(count('commit')).toBe(0);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+});
+
+describe('L5-3 — a deploy whose promise rejects still frees the claim', () => {
+  it('the slot is empty once the rejection settles, and the rejection still surfaces once', async () => {
+    // The hook keeps a rejected deploy visible as ONE unhandled rejection (as
+    // before R2, when the promise was dropped). This row listens for it in
+    // place of vitest's own listener, for its duration only.
+    const surfaced = [];
+    const theirs = process.listeners('unhandledRejection');
+    const mine = (reason) => { surfaced.push(reason?.message); };
+    process.removeAllListeners('unhandledRejection');
+    process.on('unhandledRejection', mine);
+    try {
+      let fail;
+      const inFlight = new Promise((_, reject) => { fail = reject; });
+      render(<><H key="a" controlId="a" onComplete={() => inFlight} /><H key="b" controlId="b" /></>);
+      holdToCommit(btn(0));
+      advance(450);
+      expect(currentHold()).not.toBeNull();
+      await act(async () => { fail(new Error('deploy boom')); });
+      await immediate();
+      expect(currentHold()).toBeNull();
+      expect(surfaced).toEqual(['deploy boom']);
+      const before = frameRequests;
+      act(() => { ev.down(btn(1)); });
+      expect(frameRequests).toBe(before + 1);
+    } finally {
+      process.off('unhandledRejection', mine);
+      for (const l of theirs) process.on('unhandledRejection', l);
+    }
+  });
+});
+
+describe('L5-6 — a beat revoked from outside leaves a usable, drained control', () => {
+  it('the same control can hold again afterwards', () => {
+    render(<H onComplete={() => {}} />);
+    holdToCommit(btn());
+    releaseHold(currentHold().holdToken);
+    advance(450);
+    expect(btn().dataset.phase).toBe('idle');
+    const before = frameRequests;
+    act(() => { ev.down(btn()); });
+    expect(frameRequests).toBe(before + 1);
+  });
+
+  it('through the button: label and fill back to idle', () => {
+    render(<HoldToDeployButton label="Deploy" onComplete={() => {}} />);
+    holdToCommit(btn());
+    releaseHold(currentHold().holdToken);
+    advance(450);
+    expect(btn().textContent).toBe('Deploy');
+    expect(btn().querySelector('span[aria-hidden]').style.width).toBe('0%');
+  });
+});
+
+describe('L5-7 — the settle releases its own token, even after a re-enable cleared the control', () => {
+  it('hold → beat → disable → re-enable mid-flight → settle: the slot is free', async () => {
+    let settle;
+    const inFlight = new Promise((resolve) => { settle = resolve; });
+    render(<H onComplete={() => inFlight} />);
+    holdToCommit(btn());
+    advance(450);
+    render(<H onComplete={() => inFlight} disabled />);
+    render(<H onComplete={() => inFlight} />);
+    expect(btn().dataset.phase).toBe('idle');
+    expect(currentHold()).toMatchObject({ phase: 'locked' });
+    await act(async () => { settle({ success: true }); });
+    expect(currentHold()).toBeNull();
+  });
+});
+
+describe('L5-9 — each button is its own control id (R-R2-1), stable across renders', () => {
+  it('two buttons claim under distinct ids; a re-render keeps the id', () => {
+    const two = (n) => (<><HoldToDeployButton label={`A${n}`} onComplete={() => {}} /><HoldToDeployButton label="B" onComplete={() => {}} /></>);
+    render(two(1));
+    act(() => { ev.down(btn(0)); });
+    const idA = currentHold().controlId;
+    act(() => { ev.up(btn(0)); });
+    act(() => { ev.down(btn(1)); });
+    const idB = currentHold().controlId;
+    act(() => { ev.up(btn(1)); });
+    expect(idA).not.toBe(idB);
+    render(two(2));
+    act(() => { ev.down(btn(0)); });
+    expect(currentHold().controlId).toBe(idA);
+    act(() => { ev.up(btn(0)); });
+  });
+});
+
+describe('L5-11 — the act-less helper really splits a commit from its passive effects', () => {
+  it('returns after the layout effect and before the passive one (the L2-1, L2-5 and BI-4 rows rest on it)', async () => {
+    const log = [];
+    function Probe({ n }) {
+      React.useLayoutEffect(() => { log.push(`layout${n}`); }, [n]);
+      React.useEffect(() => { log.push(`passive${n}`); }, [n]);
+      return <i>{n}</i>;
+    }
+    render(<Probe n={1} />);
+    log.length = 0;
+    await commitOutsideAct(() => root.render(<Probe n={2} />));
+    const atReturn = [...log];
+    await settleScheduler();
+    expect({ atReturn, after: [...log] }).toEqual({ atReturn: ['layout2'], after: ['layout2', 'passive2'] });
+  });
+});
+
+// ===========================================================================
 // L2-5 — the re-enable reset never overwrites a live charge
 // ===========================================================================
 

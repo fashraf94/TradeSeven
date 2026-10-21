@@ -164,10 +164,11 @@ describe('beatOwner — the committed beat handed to its owner', () => {
     expect(token).toBe(onCommit.mock.calls[0][0]);
     act(() => { vi.advanceTimersByTime(5000); });
     expect(onComplete).not.toHaveBeenCalled();
-    await act(async () => { run(); });
+    // Twice in one go, before the first deploy's settle can free the slot: the
+    // second call is refused by the one-shot guard, not by the token recheck
+    // (R2 review L5-4).
+    await act(async () => { run(); run(); });
     expect(onComplete).toHaveBeenCalledTimes(1);
-    await act(async () => { run(); });
-    expect(onComplete).toHaveBeenCalledTimes(1); // one-shot
     expect(currentHold()).toBeNull();
   });
 

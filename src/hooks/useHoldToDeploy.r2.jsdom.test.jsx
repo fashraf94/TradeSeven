@@ -22,8 +22,12 @@
 //
 // SAME-FRAME ORDERINGS. React handles a native event with the props of the
 // last COMMITTED render. Two inputs dispatched inside one act() therefore land
-// with no render between them — exactly the window the pre-R2 hook's
-// render-derived phase could not see (D1, D3, D6).
+// with no render between them. For D1 that is a real browser window: the
+// threshold frame's update renders in a later task, so a release can land
+// first. For two INPUT events (D3, D6's same-act rows) it is not: outside act,
+// React 19 renders a discrete event's update at the microtask checkpoint the
+// browser runs after each listener. Those rows pin R-R2-2 (no guard reads a
+// rendered phase) rather than a browser-reachable defect (R2 review L5-10).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
@@ -337,9 +341,13 @@ describe('D2 — one hold at a time, app-wide', () => {
     const [ba, bb] = buttons();
     act(() => { ev.down(ba); });
     step(600);
+    const before = { events: seen.length, buzz: buzz.length, timers: vi.getTimerCount() };
     act(() => { ev.key(bb); });
     expect(bb.textContent).toBe('B');
-    expect(count('commit')).toBe(0);
+    // Zero effects from the denied key (L5-1): no sky event, haptic or timer.
+    expect(seen.length).toBe(before.events);
+    expect(buzz.length).toBe(before.buzz);
+    expect(vi.getTimerCount()).toBe(before.timers);
     step(1300);
     advance(450);
     expect(a).toHaveBeenCalledTimes(1);
@@ -752,7 +760,9 @@ describe('the claim lasts through the beat and the deploy request', () => {
     const a = vi.fn();
     render(<Hold key="a" label="A" onComplete={a} />);
     holdToCommit(buttons()[0]);
+    expect(vi.getTimerCount()).toBe(1);
     render(<Hold key="b" label="B" />);
+    expect(vi.getTimerCount()).toBe(0); // the beat timer itself is cleared (R-R2-8; L5-8)
     advance(450);
     expect(a).not.toHaveBeenCalled();
     const before = frameRequests;
@@ -794,5 +804,15 @@ describe('the re-enable reset returns the display to idle — never while a comm
     expect(b.textContent).toBe('Locked in');
     advance(350);
     expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The file never resets the slot: a row that leaked the claim fails the row
+// after it. This last row is that "row after" for the final one (L5-12).
+describe('sentinel — the claim is free after every row above', () => {
+  it('a fresh control charges on the first press', () => {
+    render(<Hold />);
+    act(() => { ev.down(buttons()[0]); });
+    expect(frameRequests).toBe(1);
   });
 });
