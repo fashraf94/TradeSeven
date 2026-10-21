@@ -25,6 +25,7 @@ export const feedScore = score => (score == null ? null : Math.round(score * 100
 import { SHADOW_ASSEMBLY_ENABLED } from '../../src/config/featureFlags.js';
 import { runShadowTickCapture, writeBattleSettlementRecord } from '../_utils/shadowAssemblyCapture.js';
 import { isMarketOpen, getETDate, formatDateString } from '../_utils/marketSchedule.js';
+import { etWallClockToMs } from '../../src/utils/marketCalendar.js';
 import { getStockAnalysisData, fetchIntradayBatch, fetchIntradayCandles, filterToLatestSession } from '../_utils/marketDataCache.js';
 import { assessRequiredQuotes } from '../_utils/agentQuoteHealth.js';
 import { resolveBadgeBaseline } from '../_utils/baselineValidation.js';
@@ -6602,6 +6603,12 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
   return 'skip_haiku';
 }
 
+// Build EOD expiry: 4:00 PM ET on today's ET date, on any server timezone
+// (exported for its test).
+export function gameplanMeetingExpiresAt(now = new Date()) {
+  return new Date(etWallClockToMs(formatDateString(getETDate(now)), 16, 0)).toISOString();
+}
+
 /**
  * Detect whether a gameplan meeting should be triggered.
  * Triggers on:
@@ -6723,11 +6730,7 @@ function detectGameplanMeetingTrigger(battle, assetScores, prices, flatPortfolio
     }
   }
 
-  // Build EOD expiry
-  const nowET = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
-  const todayDate = new Date(nowET);
-  todayDate.setHours(16, 0, 0, 0); // 4:00 PM ET
-  const expiresAt = todayDate.toISOString();
+  const expiresAt = gameplanMeetingExpiresAt();
 
   return {
     id: `gpm_${Date.now()}`,

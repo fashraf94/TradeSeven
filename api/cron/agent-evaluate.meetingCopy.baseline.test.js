@@ -79,7 +79,14 @@ const { processAgentBattle } = await import('./agent-evaluate.js');
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_PATH = resolve(HERE, '../_utils/__fixtures__/meetingCopyBaseline.json');
 /** SHA-256 of the fixture captured from the base tree (moved only by a recapture from such a tree). */
-const GOLDEN_SHA256 = '6c4b17d9cf65907f02e3b7326ba234aafb725bd632fca0973d94615464df3b01';
+// Moved once by a VALUE-ONLY reconciliation, not a recapture (Oct 21 2026, the
+// callRecordsOffGolden precedent — founder ruling Sep 25 2026): the gameplan
+// meeting expires at 4:00 PM ET on any server timezone, so the created
+// meeting's expiresAt in created_off and created_shadow moves
+// "2026-09-09T16:00:00.000Z" (noon EDT, the old local-time setHours on a UTC
+// clock) → "2026-09-09T20:00:00.000Z", and nothing else. The prior pin was
+// 6c4b17d9cf65907f02e3b7326ba234aafb725bd632fca0973d94615464df3b01.
+const GOLDEN_SHA256 = '59b15c4d7d65d127300f8246d02dde52bfee7991b791c16388c273ada0aa83af';
 const ENV = process.env;
 const GENERATE = ENV.GENERATE_MEETING_BASELINE === '1';
 if (GENERATE && ENV.CI) throw new Error('GENERATE_MEETING_BASELINE is a local, deliberate act — never on CI');
