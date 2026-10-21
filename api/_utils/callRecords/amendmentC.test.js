@@ -30,6 +30,7 @@ import { classifyAnswer, ANSWERS_1A } from './answers.js';
 import { bindHorizon, battleExpiryMs } from './horizon.js';
 import { saidPassesLint } from './copy.js';
 import { FROZEN_NOW, HELD, makeTickBattle, makeDeclarations, makeObservation } from '../__fixtures__/tickStampsHarness.js';
+import { freezeSwapBook } from './swappable.js';
 import { makeCallsDb, storedDoc, storedCollection } from '../__fixtures__/callRecordsStore.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -52,7 +53,9 @@ const committedBattle = (over = {}) => makeTickBattle({ cronState: { ...makeTick
 const mint = (raw, over = {}) => buildMintCandidate({
   battleId: BATTLE_ID, evalId: EVAL_ID, evalSeq: 1, mintedAtMs: MINT, raw, universe: UNIVERSE,
   observation: makeObservation(), promptBuiltAt: FROZEN_NOW, tickId: null, battle: committedBattle(),
-  held: [...HELD], mintedMode: 'shadow', ...over,
+  held: [...HELD], mintedMode: 'shadow',
+  // Build 2b (Amendment D-7 / D-3): the seam's frozen book, and the options' two lists (none here).
+  book: freezeSwapBook(committedBattle()), anticipationCandidates: null, rankMap: null, ...over,
 });
 
 // ---------------------------------------------------------------------------
@@ -196,7 +199,7 @@ describe('C-1 — the top-level watch list', () => {
       });
       ctx.exit = 'model_result';
       ctx.evalIdentity = { evalId: EVAL_ID, evalSeq: 1 };
-      const res = await runModelCallsPhase(ctx, { db, battle: committedBattle(), timeBudgetMs: TIME_BUDGET_MS, promptBuiltAt: FROZEN_NOW, tickId: null });
+      const res = await runModelCallsPhase(ctx, { db, battle: committedBattle(), timeBudgetMs: TIME_BUDGET_MS, promptBuiltAt: FROZEN_NOW, tickId: null, anticipationCandidates: null, rankMap: null });
       expect(res).toMatchObject({ phaseResult: 'written', wire: 'written' });
       const record = storedDoc(db, 'declarations', EVAL_ID);
       expect(record).toMatchObject({ watching: ['MU', 'GME'], watchingSource: 'top_level', mintedMode: 'on', calledShots: [], minted: [] });
@@ -237,12 +240,15 @@ describe('C-2 — heldAtMint, from the held set frozen at the model seam', () =>
     expect(c.calls[0]).not.toHaveProperty('heldAtMint');
   });
 
-  it('the held set is REQUIRED: omitted → throws; null (the explicit "unknown") → heldAtMint false and no counterpart usable', () => {
+  // Cockpit Build 2b (Amendment D-7) moved counterpart usability from the held set to the frozen BOOK:
+  // `held: null` still reads heldAtMint false; the unknown book (null) is what proves no counterpart usable.
+  it('the held set is REQUIRED: omitted → throws; null (the explicit "unknown") → heldAtMint false; with the book unknown too, no counterpart usable', () => {
     expect(() => buildMintCandidate({
       battleId: BATTLE_ID, evalId: EVAL_ID, evalSeq: 1, mintedAtMs: MINT, raw: makeDeclarations(), universe: UNIVERSE,
       observation: makeObservation(), promptBuiltAt: FROZEN_NOW, tickId: null, battle: committedBattle(), mintedMode: 'shadow',
+      book: null, anticipationCandidates: null, rankMap: null,
     })).toThrow(/held/);
-    const c = mint({ calledShots: [shot({ symbol: 'TSLA', counterpart: 'KO', condition: { side: 'above', level: 250 } })] }, { held: null });
+    const c = mint({ calledShots: [shot({ symbol: 'TSLA', counterpart: 'KO', condition: { side: 'above', level: 250 } })] }, { held: null, book: null });
     expect(c.calls[0].heldAtMint).toBe(false);
     expect(c.calls[0].counterpart).toBeNull();
     expect(c.calls[0].counterpartRaw).toBe('KO');
@@ -281,14 +287,24 @@ describe('C-3 — counterpart usability (the discovery\'s D-B5 classes)', () => 
     expect(one(exit('AMD'))).toMatchObject({ counterpart: 'AMD', counterpartRaw: null });
   });
 
-  it('exit: a bench name COOLDOWN-LOCKED at the seam → unusable (C-3 "not cooldown-locked where the seam knows lock status" — review L1-3)', () => {
-    const call = mint({ calledShots: [exit('AMD')] }, { locked: ['AMD'] }).calls[0];
+  // Cockpit Build 2b (Amendment D-7): the lock is read from the seam's FROZEN BOOK at promptBuiltAt — the
+  // very bench rows the prompt rendered "locked until …" from (C-3's review L1-3, carried) — by the one
+  // swappable test the filing uses; C-3's separate `locked` list no longer feeds the mint.
+  it('exit: a bench name COOLDOWN-LOCKED at the seam → unusable (C-3 "not cooldown-locked where the seam knows lock status" — review L1-3; D-7 reads the frozen book)', () => {
+    const bookWith = (symbol, cooldownUntil) => {
+      const b = committedBattle();
+      b.portfolio = { ...b.portfolio, bench: { ...b.portfolio.bench, stocks: b.portfolio.bench.stocks.map((s) => (s.symbol === symbol ? { ...s, cooldownUntil } : s)) } };
+      return freezeSwapBook(b);
+    };
+    const after = new Date(PROMPT_MS + 3_600_000).toISOString();
+    const before = new Date(PROMPT_MS - 1).toISOString();
+    const call = mint({ calledShots: [exit('AMD')] }, { book: bookWith('AMD', after) }).calls[0];
     expect(call).toMatchObject({ counterpart: null, counterpartRaw: 'AMD' });
-    // Lock status unknown (null) excludes nothing; a lock on ANOTHER name changes nothing.
-    expect(mint({ calledShots: [exit('AMD')] }, { locked: null }).calls[0].counterpart).toBe('AMD');
-    expect(mint({ calledShots: [exit('AMD')] }, { locked: ['JPM'] }).calls[0].counterpart).toBe('AMD');
+    // A lock that ended before the seam excludes nothing; a lock on ANOTHER name changes nothing.
+    expect(mint({ calledShots: [exit('AMD')] }, { book: bookWith('AMD', before) }).calls[0].counterpart).toBe('AMD');
+    expect(mint({ calledShots: [exit('AMD')] }, { book: bookWith('JPM', after) }).calls[0].counterpart).toBe('AMD');
     // The lock clause is an EXIT rule: an entry's counterpart is a held name, never a bench one.
-    expect(mint({ calledShots: [entry('KO')] }, { locked: ['KO'] }).calls[0].counterpart).toBe('KO');
+    expect(mint({ calledShots: [entry('KO')] }, { book: bookWith('AMD', after) }).calls[0].counterpart).toBe('KO');
   });
 
   it('the seam freezes the lock set from the very bench the prompt rendered, at promptBuiltAt — cooldownUntil after it is locked, before it is not; the hot bench never is', () => {
@@ -343,11 +359,17 @@ describe('C-3 — counterpart usability (the discovery\'s D-B5 classes)', () => 
     expect(counterpartRawOf('short')).toBe('short');
   });
 
-  it('counterpartUsable is the one rule; an unknown seam proves nothing', () => {
-    expect(counterpartUsable({ symbol: 'NVDA', direction: 'exit', counterpart: 'JPM' }, { held: HELD, universe: UNIVERSE })).toBe(true);
-    expect(counterpartUsable({ symbol: 'NVDA', direction: 'exit', counterpart: 'JPM' }, { held: null, universe: UNIVERSE })).toBe(false);
-    expect(counterpartUsable({ symbol: 'NVDA', direction: 'exit', counterpart: 'JPM' }, { held: HELD, universe: null })).toBe(false);
-    expect(counterpartUsable({ symbol: 'NVDA', direction: 'exit', counterpart: 'JPM' }, { held: HELD, universe: UNIVERSE, locked: ['JPM'] })).toBe(false);
+  // Cockpit Build 2b (Amendment D-7): ONE test with the filing — canComeIn against the frozen book for an
+  // exit, the call's own slot tier for an entry; an unknown seam (no book) still proves nothing.
+  it('counterpartUsable is the one rule (D-7); an unknown seam proves nothing', () => {
+    const book = freezeSwapBook(committedBattle());
+    const exitRow = { symbol: 'NVDA', direction: 'exit', slot: 'star', counterpart: 'JPM' };
+    expect(counterpartUsable(exitRow, { book, atMs: PROMPT_MS })).toBe(true);
+    expect(counterpartUsable(exitRow, { book: null, atMs: PROMPT_MS })).toBe(false);
+    expect(counterpartUsable({ ...exitRow, counterpart: 'MSFT' }, { book, atMs: PROMPT_MS })).toBe(false); // held
+    expect(counterpartUsable({ ...exitRow, counterpart: 'BTC' }, { book, atMs: PROMPT_MS })).toBe(false);  // held (and crypto)
+    expect(counterpartUsable({ symbol: 'AMD', direction: 'entry', slot: 'support', counterpart: 'KO' }, { book, atMs: PROMPT_MS })).toBe(true);
+    expect(counterpartUsable({ symbol: 'AMD', direction: 'entry', slot: 'core', counterpart: 'KO' }, { book, atMs: PROMPT_MS })).toBe(false); // KO sits in support
   });
 
   // C-3 changes what `counterpart` MEANS for its non-renderer consumers too
@@ -449,6 +471,8 @@ describe('C-5 — mintedMode on calls and the declarations record', () => {
       const ctx = createCallsContext({ mode: 'on', handlerStartMs: MINT - 60_000 });
       ctx.universe = Object.freeze([...UNIVERSE]);
       ctx.held = Object.freeze([...HELD]);
+      // Build 2b (Amendment D-7): the book the seam freezes beside the held set (observe.js freezeModelObservation).
+      ctx.book = freezeSwapBook(committedBattle());
       ctx.observation = makeObservation();
       ctx.declarations = captureDeclarations(makeDeclarations(), {
         universe: ctx.universe,
@@ -456,7 +480,7 @@ describe('C-5 — mintedMode on calls and the declarations record', () => {
       });
       ctx.exit = 'model_result';
       ctx.evalIdentity = { evalId: EVAL_ID, evalSeq: 1 };
-      await runModelCallsPhase(ctx, { db, battle: committedBattle(), timeBudgetMs: TIME_BUDGET_MS, promptBuiltAt: FROZEN_NOW, tickId: null });
+      await runModelCallsPhase(ctx, { db, battle: committedBattle(), timeBudgetMs: TIME_BUDGET_MS, promptBuiltAt: FROZEN_NOW, tickId: null, anticipationCandidates: null, rankMap: null });
       expect(storedDoc(db, 'declarations', EVAL_ID).mintedMode).toBe('on');
       const calls = Object.values(storedCollection(db, 'calls'));
       expect(calls).toHaveLength(2);

@@ -22,6 +22,7 @@ import {
   serverMeetingOverrides,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { buildMintCandidate } from '../_utils/callRecords/candidate.js';
+import { freezeSwapBook } from '../_utils/callRecords/swappable.js';
 import { NON_MODEL_FLIP_EXITS } from '../_utils/callRecords/flip.js';
 import { resolveCaptureSchema } from '../_utils/tickCapture/captureConfig.js';
 import { makeCallsDb, storedDoc, storedCollection, callsTouches } from '../_utils/__fixtures__/callRecordsStore.js';
@@ -463,6 +464,7 @@ function earlierCalls(calledShots) {
     universe: ['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', 'BTC', 'AMD', 'JPM'],
     observation: makeObservation({ observedAtMs: EARLIER_MINT_MS - 5_000 }), promptBuiltAt: new Date(EARLIER_MINT_MS - 5_000).toISOString(),
     tickId: null, battle: makeTickBattle(), held: [...HELD], mintedMode: 'shadow',
+    book: freezeSwapBook(makeTickBattle()), anticipationCandidates: null, rankMap: null,
   }).calls.map((c) => JSON.parse(JSON.stringify(c)));
 }
 const seedOf = (calls) => ({ calls: Object.fromEntries(calls.map((c) => [c.callId, c])) });

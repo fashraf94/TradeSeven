@@ -17,13 +17,18 @@
 //   5  the per-user limiter, before any read                 → 429
 //   6  read the battle — missing                             → 404
 //   7  the caller is not the owner                           → 403
-//   8  200 { on, allowlisted } with Cache-Control: no-store
+//   8  200 { on, allowlisted, serverNowMs } with Cache-Control: no-store
 //
 // `allowlisted` (Film Room A2, Amendment E BA-40 — the one added field) is the
 // allowlist verdict ALONE for this battle's owner: isCockpitOwnerAllowlisted,
 // never conflated with the calls mode `on` folds in. FILM_ROOM_V2_MODE
 // 'allowlist' reads it (src/utils/filmRoomGate.js); no new endpoint, and no uid
 // ever reaches the client.
+//
+// `serverNowMs` (Cockpit Build 2b, spec S-9 — from merge) is the server's own
+// Date.now() at the answer: the client keeps `serverNowMs − Date.now()` as its
+// clock offset, so a card stops offering answers at its deadline on the
+// SERVER's time (spec §8), the clock the answer endpoint refuses by.
 //
 // It answers for the caller's own battle only, so it is no oracle on who is
 // admitted: a non-owner learns nothing but 403. One document read; no write.
@@ -90,6 +95,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       on: resolveCallRecordsMode(battle) === 'on',
       allowlisted: isCockpitOwnerAllowlisted(battle?.ownerId),
+      serverNowMs: Date.now(),
     });
   } catch (error) {
     console.error('[CockpitStatus] Error:', error?.message || error);

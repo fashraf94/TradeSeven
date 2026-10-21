@@ -32,7 +32,10 @@ describe('deterministic ids (Amendment B §6)', () => {
     expect(eventIdOf('superseded', { directiveThreadId: 'thread-x' })).toBe('thread-x:superseded');
     expect(() => eventIdOf('heard', { callId: 'c1' })).toThrow(/needs evalId/);
     expect(() => eventIdOf('bogus', {})).toThrow(/unknown kind/);
-    expect(CALL_EVENT_KINDS).toEqual(['declared', 'answered', 'heard', 'acted', 'no_matching_trade', 'expired', 'ended_with_battle', 'superseded']);
+    // Cockpit Build 2b (Amendment D-6): `retired` is the ninth kind.
+    expect(CALL_EVENT_KINDS).toEqual(['declared', 'answered', 'heard', 'acted', 'no_matching_trade', 'expired', 'ended_with_battle', 'superseded', 'retired']);
+    expect(eventIdOf('retired', { directiveThreadId: 't-1' })).toBe('t-1:retired');
+    expect(() => eventIdOf('retired', {})).toThrow(/needs directiveThreadId/);
     expect(EVENTS_SUBCOLLECTION).toBe('callEvents');
   });
 });

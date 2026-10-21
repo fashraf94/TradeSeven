@@ -56,9 +56,16 @@ import { buildCallEvent, createCallEvent } from './events.js';
 import { renderExpiredEvent, renderAnswerExpiredLine } from './copy.js';
 import { directiveRecordOf, selectedPickOf } from './threads.js';
 
-/** The pick an answered pick call selected (its directive record's own action), or null — Build 1a (spec §7). */
-function selectedPickFor(call, parent) {
-  if (call?.kind !== 'pick' || call?.playerResponse?.kind !== 'directive') return null;
+/**
+ * The name an answered call's directive selected (its directive record's own
+ * action), or null: a pick's selection — Build 1a (spec §7) — and, Cockpit
+ * Build 2b (Amendment D-5), the chosen name of an EXIT call's directive (a
+ * call_replace, or a call_go that names who comes in). A v1 exit directive
+ * records no name, so it binds nothing, as before.
+ */
+export function selectedPickFor(call, parent) {
+  if (call?.playerResponse?.kind !== 'directive') return null;
+  if (call?.kind !== 'pick' && call?.direction !== 'exit') return null;
   return selectedPickOf(parent, call.playerResponse.directiveThreadId);
 }
 import {
@@ -140,6 +147,9 @@ export function decideFlip(call, observation) {
  * pick  ↔ symbolIn ∈ options, symbolOut === swapOut, tier === slot, and the
  *         selected option when one is bound (Build 0 has no selection surface —
  *         the answer endpoint is Build 1 — so the caller passes none).
+ * Cockpit Build 2b (D-5): an exit whose directive names who comes in binds
+ * symbolIn === that name, the way a selected pick binds a pick — so an agent
+ * exit of AMD for CEG under a live "bring in DHR" is not the called trade.
  * The resolved slot must be a concrete index; a field the executor did not
  * return is null, and a null never matches.
  */
@@ -157,7 +167,9 @@ export function matchesWholeTrade(call, executorResult, { selectedSymbol = null 
     return r.symbolIn === call.symbol && (call.counterpart == null || r.symbolOut === call.counterpart);
   }
   if (call.direction === 'exit') {
-    return r.symbolOut === call.symbol && (call.counterpart == null || r.symbolIn === call.counterpart);
+    if (r.symbolOut !== call.symbol) return false;
+    if (typeof selectedSymbol === 'string' && selectedSymbol) return r.symbolIn === selectedSymbol;
+    return call.counterpart == null || r.symbolIn === call.counterpart;
   }
   return false;
 }

@@ -44,6 +44,8 @@ vi.mock('../_utils/firebaseAdmin.js', () => ({
 const { default: handler, resetCockpitStatusRateLimit, COCKPIT_STATUS_USER_RATE_LIMIT } = await import('./cockpit-status.js');
 
 const BATTLE = 'battle-1';
+// Cockpit Build 2b (spec S-9): the 200 body carries the server's own clock — frozen here so it is exact.
+const NOW = Date.parse('2026-10-15T16:00:00.000Z');
 const ENV_BEFORE = process.env.COCKPIT_ALLOWLIST_UIDS;
 const mkRes = () => ({
   statusCode: null, body: null, headers: {},
@@ -64,8 +66,11 @@ beforeEach(() => {
   process.env.COCKPIT_ALLOWLIST_UIDS = 'owner-uid-1';
   resetCockpitStatusRateLimit();
   vi.spyOn(console, 'error').mockImplementation(() => {});
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(NOW);
 });
 afterEach(() => {
+  vi.useRealTimers();
   if (ENV_BEFORE === undefined) delete process.env.COCKPIT_ALLOWLIST_UIDS; else process.env.COCKPIT_ALLOWLIST_UIDS = ENV_BEFORE;
 });
 
@@ -73,7 +78,7 @@ describe('the answer — the server\'s own resolution, for the owner alone', () 
   it('on: CALL_RECORDS_MODE on and the owner allowlisted → 200 { on: true, allowlisted: true }, Cache-Control: no-store, one read', async () => {
     const res = await get();
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ on: true, allowlisted: true });
+    expect(res.body).toEqual({ on: true, allowlisted: true, serverNowMs: NOW });
     expect(res.headers['cache-control']).toBe('no-store');
     expect(state.reads).toEqual([`agentBattles/${BATTLE}`]);
   });
@@ -85,24 +90,40 @@ describe('the answer — the server\'s own resolution, for the owner alone', () 
       resetCockpitStatusRateLimit();
       const res = await get();
       expect(res.statusCode, `${mode}/${allow}`).toBe(200);
-      expect(res.body, `${mode}/${allow}`).toEqual({ on: false, allowlisted });
+      expect(res.body, `${mode}/${allow}`).toEqual({ on: false, allowlisted, serverNowMs: NOW });
       expect(res.headers['cache-control']).toBe('no-store');
     }
   });
 
   it('a rollback (the uid removed from the environment the instance sees) is visible on the very next ask — no cache', async () => {
-    expect((await get()).body).toEqual({ on: true, allowlisted: true });
+    expect((await get()).body).toEqual({ on: true, allowlisted: true, serverNowMs: NOW });
     process.env.COCKPIT_ALLOWLIST_UIDS = '';
-    expect((await get()).body).toEqual({ on: false, allowlisted: false });
+    expect((await get()).body).toEqual({ on: false, allowlisted: false, serverNowMs: NOW });
   });
 
-  it('BA-40: the one added field — exactly `on` and `allowlisted`, both booleans; a malformed owner reads not allowlisted', async () => {
+  it('BA-40: the one added field — exactly `on` and `allowlisted`, both booleans (plus 2b S-9\'s serverNowMs); a malformed owner reads not allowlisted', async () => {
     const res = await get();
-    expect(Object.keys(res.body).sort()).toEqual(['allowlisted', 'on']);
+    expect(Object.keys(res.body).sort()).toEqual(['allowlisted', 'on', 'serverNowMs']);
     state.battles[BATTLE] = { ownerId: 42, status: 'active' };
     state.uid = 42;
     resetCockpitStatusRateLimit();
-    expect((await get()).body).toEqual({ on: false, allowlisted: false });
+    expect((await get()).body).toEqual({ on: false, allowlisted: false, serverNowMs: NOW });
+  });
+});
+
+describe('Cockpit Build 2b — S-9: the server\'s clock', () => {
+  it('the 200 body carries serverNowMs = the server\'s own Date.now() at the answer, and Cache-Control stays no-store', async () => {
+    const res = await get();
+    expect(res.statusCode).toBe(200);
+    expect(res.body.serverNowMs).toBe(NOW);
+    vi.setSystemTime(NOW + 61_000);
+    resetCockpitStatusRateLimit();
+    expect((await get()).body.serverNowMs).toBe(NOW + 61_000);
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+  it('no refusal carries it: a 403 or a 404 says only its error', async () => {
+    state.uid = 'someone-else';
+    expect((await get()).body).toEqual({ error: 'forbidden' });
   });
 });
 
@@ -133,7 +154,7 @@ describe('the refusals, in order', () => {
     await handler({ method: 'GET' }, bare);
     expect(bare.statusCode).toBe(400);
     expect(state.reads).toEqual([]);
-    expect((await get({ battleId: [BATTLE] })).body).toEqual({ on: true, allowlisted: true });
+    expect((await get({ battleId: [BATTLE] })).body).toEqual({ on: true, allowlisted: true, serverNowMs: NOW });
   });
 
   it('404 for a battle that does not exist; 500 when the read fails (the client reads both as off)', async () => {

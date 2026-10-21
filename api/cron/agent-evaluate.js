@@ -57,6 +57,8 @@ import { recordFetchedQuote, freezeObservation, freezeModelObservation, classify
 import { captureDeclarations } from '../_utils/callRecords/validate.js';
 import { bindHorizon, battleExpiryMs } from '../_utils/callRecords/horizon.js';
 import { callsReserveMsFor, runModelCallsPhase } from '../_utils/callRecords/publish.js';
+// Cockpit Build 2b (Amendment D-6): the retire-on-exit step before the prompt.
+import { retireLeftBook, RETIRE_TX_MS } from '../_utils/callRecords/retire.js';
 import { runCallFlips, runExitCallsHook } from '../_utils/callRecords/flip.js';
 import { validateTradeToolResult, INVALID_TOOL_RESULT_CLASS } from '../_utils/agentEvalToolResultValidation.js';
 import { evaluateTriggers, fetchRecentNews, MAX_STORY_WAKE_ATTEMPTS, SEEN_STORY_ID_CAP } from '../_utils/agentTriggerGate.js';
@@ -117,7 +119,7 @@ import { getArchetypeConfig, resolveHftConfig, KNOB_CONFIG_VERSION } from '../_u
 // with the same inputs — purity guarantees the telemetry can never disagree
 // with what the prompt rendered.
 import { FieldValue } from 'firebase-admin/firestore';
-import { isDirectiveActive } from '../_utils/directiveUtils.js';
+import { isDirectiveActive, isCallDirective } from '../_utils/directiveUtils.js';
 import { resolveControls } from '../_utils/controlPromptRenderer.js';
 import { recordControlEpochIfNeeded } from '../_utils/controlSuppressionTelemetry.js';
 import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
@@ -2574,6 +2576,28 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       return;
     }
 
+    // ---- Cockpit Build 2b (Amendment D-6; spec S-7) — retire on exit ----
+    // A live CALL-FAMILY command whose stock left the book is retired here,
+    // at resolved 'on', in one bounded transaction (retire.js; 800 ms, never
+    // throws), so this check's prompt is built without it. THE PLACE, at HEAD:
+    // after the last pre-prompt route that can move the book — the risk loop's
+    // forced exits (re-read in refreshBattleFromDoc, B3 route 2), the pending
+    // proposal's execution (route 6, dormant under autopilot) and an approved
+    // gameplan meeting's legs (route 5: handleGameplanMeeting executes them and
+    // returns 'continue' into this tick) — and before every reader of the
+    // prompt's directive: the trigger gate, the admission budget, the fenced
+    // prompt build (buildLiveContextBlock) and the heard stamp. A tick that
+    // returned above (proposal or meeting pending) retires at its next check
+    // (D-6); routes after the prompt — the agent's own trade, a suppression-pass
+    // guardrail exit — are the heard pass's (acted) or the next check's. It
+    // runs on a refresh-failure tick too: it reads its own fresh parent.
+    if (callsCtx.mode === 'on' && isCallDirective(battle.directive)) {
+      const retireNowMs = Date.now();
+      // The check has neither its committed evalId nor its prompt yet: both are null on the event (D-6 evidence).
+      const retire = await callsStepAsync(callsCtx, () => retireLeftBook({ db, battleRef, battle, nowMs: retireNowMs, evalId: null, promptBuiltAt: null, deadlineMs: retireNowMs + RETIRE_TX_MS }));
+      if (retire?.retired) console.log(`${LOG_PREFIX} Retired the cockpit command on battle ${battle.id} (${retire.reason}) before the prompt`);
+    }
+
     // ---- v2 Ruling 3: unavailable corrected frame ----
     // The calibrated risk pass, forced exits, the proposal and the meeting have
     // run on this frame. Its reward-dependent discretionary stages (meeting
@@ -4787,6 +4811,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // model's echo). Inert below resolved 'on'.
         heardWriter: runHeardPhase,
         heard: evaluation.heard ?? null,
+        // Cockpit Build 2b (Amendment D-3; spec S-3): the mint's two new inputs, both already in hand —
+        // the LINTED anticipation candidates (the list the entry's `candidates` stamp is composed from)
+        // and `{ symbol: technicalRank }` from the rankings this check's prompt rendered
+        // (momentumData.rankingsMap). No new I/O.
+        anticipationCandidates: Array.isArray(lintedAnticipationCandidates) ? lintedAnticipationCandidates : null,
+        rankMap: momentumData.rankingsMap && typeof momentumData.rankingsMap === 'object'
+          ? Object.fromEntries(Object.entries(momentumData.rankingsMap).map(([symbol, row]) => [symbol, row?.technicalRank ?? null]))
+          : null,
       })
       : runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS })));
     // Capture references (§3.7/§3.9): CONFIRMED publication results only,

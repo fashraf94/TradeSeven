@@ -16,6 +16,7 @@ import { captureDeclarations } from './validate.js';
 import { bindHorizon, battleExpiryMs } from './horizon.js';
 import { shouldStartHaikuCall, PROMPT_BUILD_CEILING_MS, HAIKU_CALL_CEILING_MS, HAIKU_POST_CALL_ALLOWANCE_MS } from '../agentEvalTransport.js';
 import { FROZEN_NOW, HELD, makeTickBattle, makeDeclarations, makeObservation } from '../__fixtures__/tickStampsHarness.js';
+import { freezeSwapBook } from './swappable.js';
 import { makeCallsDb, storedDoc, storedCollection, callsTouches, QUEUE_COLLECTION } from '../__fixtures__/callRecordsStore.js';
 
 const TIME_BUDGET_MS = 290_000; // agent-evaluate.js TIME_BUDGET_MS
@@ -37,7 +38,9 @@ const committedBattle = (over = {}) => makeTickBattle({
 });
 const candidateOf = (raw = makeDeclarations(), over = {}) => buildMintCandidate({
   battleId: BATTLE_ID, evalId: EVAL_ID, evalSeq: 1, mintedAtMs: MINT, raw, universe: UNIVERSE,
-  observation: makeObservation(), promptBuiltAt: FROZEN_NOW, tickId: `${BATTLE_ID}:1`, battle: committedBattle(), held: [...HELD], mintedMode: 'shadow', ...over,
+  observation: makeObservation(), promptBuiltAt: FROZEN_NOW, tickId: `${BATTLE_ID}:1`, battle: committedBattle(), held: [...HELD], mintedMode: 'shadow',
+  // Build 2b (Amendment D-7 / D-3): the seam's frozen book, and the options' two lists (none here).
+  book: freezeSwapBook(committedBattle()), anticipationCandidates: null, rankMap: null, ...over,
 });
 const far = () => Date.now() + 5_000;
 const publish = (db, candidate, over = {}) => publishDeclarations({
@@ -446,7 +449,9 @@ function modelCtx({ mode = 'shadow', raw = makeDeclarations(), handlerStartMs = 
   return ctx;
 }
 const phaseArgs = (db, over = {}) => ({
-  db, battle: committedBattle(), timeBudgetMs: TIME_BUDGET_MS, promptBuiltAt: FROZEN_NOW, tickId: `${BATTLE_ID}:1`, ...over,
+  db, battle: committedBattle(), timeBudgetMs: TIME_BUDGET_MS, promptBuiltAt: FROZEN_NOW, tickId: `${BATTLE_ID}:1`,
+  // Build 2b (Amendment D-3): the mint's two new inputs (none here).
+  anticipationCandidates: null, rankMap: null, ...over,
 });
 const statusWrites = (db) => db.__updates.filter((u) => Object.keys(u).some((k) => k.startsWith('cronState.callsDiag')));
 
