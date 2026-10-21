@@ -98,7 +98,7 @@ import Cockpit2b from './battleView/Cockpit2b';
 import CockpitBenchSheet from './battleView/CockpitBenchSheet';
 import { useCockpit2bAnswer } from './battleView/useCockpit2bAnswer';
 import { useCockpitBench } from '../hooks/useCockpitBench';
-import { cardKeyOf, liveCommandOf, rowMarksOf, replaceLineOf, meterOf, eyeingOf, benchSheetOf, pickAnswerFor } from './battleView/cockpit2bModel';
+import { cardKeyOf, liveCommandOf, rowMarksOf, replaceLineOf, meterOf, agentListsOf, benchSheetOf, pickAnswerFor } from './battleView/cockpit2bModel';
 import { battleExpiryMs } from '../../api/_utils/callRecords/horizon.js';
 import { BATTLE_CHAT_BUDGET } from '../../api/_utils/directiveFiling.js';
 import { useBaggerMoment } from './battleView/useBaggerMoment';
@@ -2666,7 +2666,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     call: cockpitBenchCall,
     step: cockpitBenchStep,
     agent: agentBattle?.agentContext?.agentName || 'Your Agent',
-    eyeing: eyeingOf({ evaluations: agentBattle?.evaluations, monitoring: cockpitMonitoringRead.value }),
+    agentLists: agentListsOf({ evaluations: agentBattle?.evaluations, monitoring: cockpitMonitoringRead.value }),
     benchState,
     sort: cockpitBenchSort,
     meter: meterOf(agentBattle?.chatExchanges ?? [], { league: agentBattle?.gameMode === TOURNAMENT_GAME_MODE }),

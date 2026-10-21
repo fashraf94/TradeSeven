@@ -1122,7 +1122,13 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // §5.3 Who comes in?
   cockpit2bWho: (sym) => (sym ? `Who comes in for ${sym}?` : null),
   cockpit2bBrowse: 'Browse the bench →',
-  cockpit2bEyeing: (agent) => `${agent} is eyeing`,
+  // The agent's own names (R2B-5: either of its lists — the newest check's anticipation candidates or its
+  // kept watch list). The spec words the label "{Agent} is eyeing"; the C1 honesty guard
+  // (src/components/Dashboard/desk/deskHonesty.test.js) bans "eyeing" by name as an agent verb, and spec §11
+  // forbids loosening a guard — so the label names the RECORD, the lists, as its sibling names the bench.
+  // A founder question in the build report (keep this, or amend the guard).
+  cockpit2bAgentLists: (agent) => `From ${agent}'s lists`,
+  cockpit2bAgentListMark: (agent) => `On ${agent}'s list`,
   cockpit2bByRank: 'From your bench · by rank',
   cockpit2bChipLocked: 'locked',
   cockpit2bChipHeld: 'in your book',

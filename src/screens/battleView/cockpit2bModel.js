@@ -180,7 +180,7 @@ function chipOf(option, call, { battle, nowMs, locked }) {
 function groupsOf(call, agent, chipFor) {
   const options = Array.isArray(call.replacementOptions) ? call.replacementOptions.filter((o) => o && nonEmpty(o.symbol)) : [];
   return [
-    { key: 'agent', label: COPY.cockpit2bEyeing(agent), chips: options.filter((o) => o.source === 'agent').map(chipFor) },
+    { key: 'agent', label: COPY.cockpit2bAgentLists(agent), chips: options.filter((o) => o.source === 'agent').map(chipFor) },
     { key: 'bench', label: COPY.cockpit2bByRank, chips: options.filter((o) => o.source === 'bench').map(chipFor) },
   ].filter((g) => g.chips.length > 0);
 }
@@ -491,12 +491,12 @@ export function pctText(v) {
 }
 
 /**
- * The agent's own names, live (§4 "Eyeing names"): the newest evaluation's
+ * The agent's own names, live (§4's eyeing names — labelled by their lists): the newest evaluation's
  * `candidates` stamp and the newest 'on' declarations `watching` (the
- * Monitoring reader's record). The sheet's "{Agent} is eyeing" marker only;
+ * Monitoring reader's record). The sheet's "On {Agent}'s list" marker only;
  * a card's chips use the call's STORED options.
  */
-export function eyeingOf({ evaluations = [], monitoring = null } = {}) {
+export function agentListsOf({ evaluations = [], monitoring = null } = {}) {
   const out = new Set();
   const newest = Array.isArray(evaluations) && evaluations.length > 0 ? evaluations[evaluations.length - 1] : null;
   for (const c of Array.isArray(newest?.candidates) ? newest.candidates : []) if (nonEmpty(c?.symbol)) out.add(c.symbol);
@@ -533,11 +533,11 @@ export function pickAnswerFor(step) {
  * @param {object|null} p.data       the endpoint's 200 body { asOf, out, rows }
  * @param {object|null} p.call       the scoped call (null = browse)
  * @param {string|null} p.step       the call's step (replacementStepFor)
- * @param {Set<string>} p.eyeing     eyeingOf(...)
+ * @param {Set<string>} p.agentLists agentListsOf(...)
  * @param {object|null} p.benchState selectBench(battle)
  * @param {string|null} p.filedText  the filed command's canonical text once a pick lands
  */
-export function benchSheetOf({ status = 'loading', data = null, call = null, step = null, agent = 'Your Agent', eyeing = new Set(), benchState = null, sort = 'rank', meter = null, pending = null, filedText = null }) {
+export function benchSheetOf({ status = 'loading', data = null, call = null, step = null, agent = 'Your Agent', agentLists = new Set(), benchState = null, sort = 'rank', meter = null, pending = null, filedText = null }) {
   const scoped = Boolean(call);
   const answer = scoped ? pickAnswerFor(step) : null;
   const filed = nonEmpty(filedText);
@@ -559,7 +559,7 @@ export function benchSheetOf({ status = 'loading', data = null, call = null, ste
       day: pctText(r.changePct) ?? '—',
       dayTone: finite(r.changePct) ? (r.changePct > 0 ? 'up' : r.changePct < 0 ? 'down' : 'flat') : 'flat',
       atr: finite(r.atrPct) ? COPY.cockpit2bAtr(`${r.atrPct.toFixed(1)}%`) : '—',
-      eyeing: eyeing.has(r.symbol),
+      onAgentList: agentLists.has(r.symbol),
       note: benchNoteOf(benchState, r.symbol),
       action,
     };
@@ -569,7 +569,7 @@ export function benchSheetOf({ status = 'loading', data = null, call = null, ste
     scoped,
     title: scoped ? COPY.cockpit2bWho(call.symbol) : COPY.cockpit2bBenchTitle,
     sub: status === 'ready' ? COPY.cockpit2bBenchSub(rows.length, available, etTime(data?.asOf ?? null)) : null,
-    eyeingLabel: COPY.cockpit2bEyeing(agent),
+    agentListLabel: COPY.cockpit2bAgentListMark(agent),
     sorts: BENCH_SORTS.map((key) => ({ key, label: key === 'rank' ? COPY.cockpit2bSortRank : key === 'move' ? COPY.cockpit2bSortMove : COPY.cockpit2bSortSector, on: key === (BENCH_SORTS.includes(sort) ? sort : 'rank') })),
     rows: status === 'ready' ? rows : [],
     loading: status === 'loading' ? COPY.cockpit2bBenchLoading : null,

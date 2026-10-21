@@ -15,7 +15,7 @@ import { buildCockpitFeed } from './cockpitModel';
 import {
   buildCockpit2bView, chooseNow, nowPriorityOf, planLinesOf, buttonLabelOf, meterOf, cardKeyOf, chipLevelOf,
   stripChipOf, dayLineOf, replaceLineOf, liveCommandOf, rowMarksOf, commandReceiptsOf, STRIP_SHOWN,
-  benchSheetOf, eyeingOf, benchNoteOf, pctText,
+  benchSheetOf, agentListsOf, benchNoteOf, pctText,
 } from './cockpit2bModel';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 
@@ -219,7 +219,7 @@ describe('§5.3 Who comes in? — the stored options, judged at the server\'s no
     const step = view([exitActNoCp()]).now.step;
     expect(step.title).toBe('Who comes in for VLO?');
     expect(step.browse).toBe('Browse the bench →');
-    expect(step.groups.map((g) => g.label)).toEqual(['Shadow is eyeing', 'From your bench · by rank']);
+    expect(step.groups.map((g) => g.label)).toEqual(['From Shadow\'s lists', 'From your bench · by rank']);
     expect(step.groups[0].chips.map((c) => [c.symbol, c.disabled, c.note])).toEqual([['MPC', false, null]]);
     expect(step.groups[1].chips.map((c) => [c.symbol, c.disabled, c.note])).toEqual([['XOM', false, null], ['PSX', true, 'locked'], ['KO', true, 'in your book']]);
   });
@@ -415,7 +415,7 @@ describe('§5.7 the bench sheet (6A) — the endpoint\'s rows, as read', () => {
     { symbol: 'AAPL', name: 'Apple', sector: 'Tech', rank: 5, price: 230, changePct: 0, atrPct: 1.1, status: 'available', lockedUntil: null },
   ];
   const DATA = { asOf: iso(at('13:15')), out: { symbol: 'VLO', slot: 'core' }, rows: ROWS };
-  const sheet = (over = {}) => benchSheetOf({ status: 'ready', data: DATA, call: exitActNoCp(), step: 'on_card', agent: AGENT, eyeing: new Set(['XOM']), benchState: { cards: [{ text: 'XOM keeps **holding** its range.', symbols: ['XOM'] }] }, ...over });
+  const sheet = (over = {}) => benchSheetOf({ status: 'ready', data: DATA, call: exitActNoCp(), step: 'on_card', agent: AGENT, agentLists: new Set(['XOM']), benchState: { cards: [{ text: 'XOM keeps **holding** its range.', symbols: ['XOM'] }] }, ...over });
 
   it('scoped: the title, the sub (names · available · prices as of), Rank first, every status row', () => {
     const s = sheet();
@@ -430,11 +430,11 @@ describe('§5.7 the bench sheet (6A) — the endpoint\'s rows, as read', () => {
       ['MPC', '—', 'no_price', 'no price'],
     ]);
     const xom = s.rows.find((r) => r.symbol === 'XOM');
-    expect(xom).toMatchObject({ sector: 'Energy', day: '+1.2%', atr: 'ATR 1.8%', eyeing: true, note: 'XOM keeps **holding** its range.' });
+    expect(xom).toMatchObject({ sector: 'Energy', day: '+1.2%', atr: 'ATR 1.8%', onAgentList: true, note: 'XOM keeps **holding** its range.' });
     expect(xom.action).toMatchObject({ answer: 'replace', dot: true, disabled: false, aria: 'Pick XOM · 1 command' });
     // The note only from the selector: a name no sentence names shows nothing.
     expect(s.rows.find((r) => r.symbol === 'AAPL').note).toBeNull();
-    expect(s.rows.find((r) => r.symbol === 'MPC')).toMatchObject({ sector: '—', day: '—', atr: '—', eyeing: false });
+    expect(s.rows.find((r) => r.symbol === 'MPC')).toMatchObject({ sector: '—', day: '—', atr: '—', onAgentList: false });
   });
   it('the sorts: today\'s move (unknowns last) and sector then rank', () => {
     expect(sheet({ sort: 'move' }).rows.map((r) => r.symbol)).toEqual(['CVX', 'XOM', 'AAPL', 'PSX', 'MPC']);
@@ -463,8 +463,8 @@ describe('§5.7 the bench sheet (6A) — the endpoint\'s rows, as read', () => {
     expect(sheet({ status: 'loading', data: null })).toMatchObject({ loading: 'Reading the bench…', rows: [], sub: null });
     expect(sheet({ status: 'error', data: null })).toMatchObject({ error: 'Couldn\'t read the bench right now.', rows: [] });
   });
-  it('eyeingOf: the newest evaluation\'s candidates and the newest watching list', () => {
-    const e = eyeingOf({ evaluations: [{ candidates: [{ symbol: 'OLD' }] }, { candidates: [{ symbol: 'XOM', direction: 'potential_entry' }] }], monitoring: { symbols: ['MPC'] } });
+  it('agentListsOf: the newest evaluation\'s candidates and the newest watching list', () => {
+    const e = agentListsOf({ evaluations: [{ candidates: [{ symbol: 'OLD' }] }, { candidates: [{ symbol: 'XOM', direction: 'potential_entry' }] }], monitoring: { symbols: ['MPC'] } });
     expect([...e].sort()).toEqual(['MPC', 'XOM']);
     expect(benchNoteOf(null, 'XOM')).toBeNull();
     expect(pctText(-0.84)).toBe('−0.8%');

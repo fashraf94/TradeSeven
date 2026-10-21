@@ -25,7 +25,7 @@ const ROWS = [
 const DATA = { asOf: '2026-10-21T17:15:20.000Z', out: { symbol: 'VLO', slot: 'core' }, rows: ROWS };
 const CALL = { callId: 'b:e:call:0', symbol: 'VLO', slot: 'core', direction: 'exit' };
 const BENCH_STATE = { cards: [{ text: 'XOM keeps **holding** its range while crude firms.', symbols: ['XOM'] }] };
-const sheetOf = (over = {}) => benchSheetOf({ status: 'ready', data: DATA, call: CALL, step: 'on_card', agent: 'Shadow', eyeing: new Set(['XOM']), benchState: BENCH_STATE, ...over });
+const sheetOf = (over = {}) => benchSheetOf({ status: 'ready', data: DATA, call: CALL, step: 'on_card', agent: 'Shadow', agentLists: new Set(['XOM']), benchState: BENCH_STATE, ...over });
 
 let container;
 let root;
@@ -68,7 +68,7 @@ describe('the bench sheet', () => {
     const pick = q('[data-cockpit-bench-pick="XOM"]');
     expect(pick.getAttribute('aria-label')).toBe('Pick XOM · 1 command');
     expect(pick.querySelector('[data-cockpit-bullet]')).not.toBeNull();
-    expect(q('[data-cockpit-bench-row="XOM"] [data-cockpit-bench-eyeing]').textContent).toBe('Shadow is eyeing');
+    expect(q('[data-cockpit-bench-row="XOM"] [data-cockpit-bench-agent-list]').textContent).toBe('On Shadow\'s list');
   });
 
   it('the note is the selector\'s own sentence, emphasis kept, two lines until tapped; a row with none shows nothing', () => {

@@ -7,7 +7,7 @@
 // a modal bottom sheet on the phone, a modal panel within the pane on desktop,
 // focus trapped and restored, Escape closes.
 //
-//   rows      rank · symbol (+ "{Agent} is eyeing") · sector · day % · ATR %
+//   rows      rank · symbol (+ "On {Agent}'s list") · sector · day % · ATR %
 //             · the action — Pick ·● (scoped, available) · locked until {t}
 //             · can't come in · no price · available (browse)
 //   the note  the agent's OWN sentence about that name from its last check
@@ -204,8 +204,8 @@ export default function CockpitBenchSheet({
                   style={{ ...plainButton, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: phone ? 'wrap' : 'nowrap', minHeight: 24 }}
                 >
                   <span style={{ fontSize: 14, fontWeight: 700, color: cssVar('text-primary'), lineHeight: 1.2 }}>{r.symbol}</span>
-                  {r.eyeing ? (
-                    <span data-cockpit-bench-eyeing="1" style={{ ...mono(8.5, cssVar('teal')), border: `1px solid rgba(var(--ft-teal-rgb), 0.5)`, borderRadius: 5, padding: '0 5px', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{sheet.eyeingLabel}</span>
+                  {r.onAgentList ? (
+                    <span data-cockpit-bench-agent-list="1" style={{ ...mono(8.5, cssVar('teal')), border: `1px solid rgba(var(--ft-teal-rgb), 0.5)`, borderRadius: 5, padding: '0 5px', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{sheet.agentListLabel}</span>
                   ) : null}
                 </button>
                 <span style={{ fontSize: 10.5, color: cssVar('text-secondary'), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.sector}</span>
