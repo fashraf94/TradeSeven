@@ -46,7 +46,7 @@
 //   touch on the button would re-target its moves off the label, and WebKit's
 //   touch pointerout carries a null relatedTarget that React reads as leaving
 //   the button; capturing a mouse would stop drag-off from cancelling
-//   (R2 report §9.3, §14).
+//   (R2 report §9.3, §14 — founder rulings applied).
 //
 //   AUTHORITATIVE STATE IS IN REFS. stateRef ('idle' | 'charging' | 'locked')
 //   and tokenRef are written in the same call that changes them; the React
@@ -82,8 +82,9 @@
 //   returns the control to idle.
 //
 //   THE CLAIM LASTS THROUGH THE DEPLOY REQUEST. onComplete runs once, after the
-//   beat; the slot stays locked until its result settles, so no second control
-//   can start a hold while one deploy is in flight (Fable R1 review FR-4).
+//   beat; the slot stays locked until its result settles (or the bounded
+//   safety release below), so no second control can start a hold while one
+//   deploy is in flight (Fable R1 review FR-4).
 //   Released by: a cancel; that settle (a synchronous throw included); an
 //   unmount that cancels a beat before it runs; and, if the request never
 //   settles, the bounded safety release HOLD_CLAIM_SAFETY_RELEASE_MS after
@@ -356,8 +357,9 @@ export default function useHoldToDeploy({
         releaseHold(token);
         throw err;
       }
-      // R-R2-7: the claim is held until the deploy request settles. A rejection
-      // still surfaces once, as it did when the result was dropped.
+      // R-R2-7: the claim is held until the deploy request settles (or the
+      // safety release above fires). A rejection still surfaces once, as it
+      // did when the result was dropped.
       Promise.resolve(result).finally(() => {
         clearTimeout(safetyRelease);
         releaseHold(token);
@@ -382,8 +384,11 @@ export default function useHoldToDeploy({
         beatOwner.commit(token, run);
       } catch (err) {
         // An owner that throws has not taken the beat. The hook keeps it, so
-        // its run still releases the claim (R2 review L4-1).
-        lockTimerRef.current = setTimeout(run, lockBeatMs);
+        // its run still releases the claim (R2 review L4-1) — unless the owner
+        // already ran it before throwing: a timer for a spent run would leave
+        // a dead id that a later unmount reads as a pending beat, freeing the
+        // in-flight claim (R2 rulings review F1-1).
+        if (!ran) lockTimerRef.current = setTimeout(run, lockBeatMs);
         thrown = thrown ?? err;
       }
     }
@@ -477,7 +482,7 @@ export default function useHoldToDeploy({
   // committed beat is still pending: showing idle then would show cancellation
   // for a deploy that is about to fire (spec §5.5). Never over a charge that
   // began after the re-enable rendered (R2 review L2-5). The claim is not
-  // released here; its own settle does that.
+  // released here; its own settle (or safety release) does that.
   useEffect(() => {
     if (wasDisabledRef.current && !disabled && !beatPendingRef.current && stateRef.current !== 'charging') {
       if (stateRef.current === 'locked') {
@@ -502,7 +507,7 @@ export default function useHoldToDeploy({
       // Unmounting during the legacy beat cancels the deploy, as before R2
       // (R-R2-8): onComplete will never run, so nothing else would release the
       // claim. An owned beat (beatOwner) is not cancelled, and a beat that has
-      // already run is released by its own settle.
+      // already run is released by its own settle or safety release.
       clearTimeout(lockTimerRef.current);
       lockTimerRef.current = null;
       beatPendingRef.current = false;

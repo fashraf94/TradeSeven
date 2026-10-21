@@ -31,8 +31,9 @@
 // and a commitment be decided in the same call that makes it (R-R2-5).
 //
 // Who releases (the hook keeps this; useHoldToDeploy.js header): a cancel
-// while charging; the settle of onComplete's result after a committed beat; an
-// unmount that cancels a legacy beat before it runs. A beat handed to a
+// while charging; the settle of onComplete's result after a committed beat, or
+// the bounded safety release 180 s after onComplete ran if it never settles;
+// an unmount that cancels a legacy beat before it runs. A beat handed to a
 // beatOwner is released by its run, or by the owner.
 
 let slot = null;

@@ -171,6 +171,66 @@ describe('the bounded safety release (founder ruling on Q3)', () => {
     expect(currentHold()).toEqual(newer);
   });
 
+  // Rows from the rulings review (lens F1, F1-1 and F1-2).
+  const toThreshold = (b) => {
+    act(() => { press(b); });
+    act(() => { frameAt(600); });
+    act(() => { frameAt(1300); });
+  };
+
+  it('an owned beat run synchronously by its owner gets the safety release too', () => {
+    const a = vi.fn(never);
+    render(<H controlId="a" onComplete={a} beatOwner={{ commit: (token, run) => { run(); } }} />);
+    toThreshold(btn());
+    expect(a).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(1);
+    advance(179_999);
+    expect(currentHold()).toMatchObject({ controlId: 'a' });
+    advance(1);
+    expect(currentHold()).toBeNull();
+  });
+
+  it('an owned beat run after the control unmounted: the unmount frees nothing, the bound counts from the run', () => {
+    const a = vi.fn(never);
+    let run;
+    render(<H key="a" controlId="a" onComplete={a} beatOwner={{ commit: (token, r) => { run = r; } }} />);
+    toThreshold(btn());
+    render(<div />);
+    expect(currentHold()).toMatchObject({ controlId: 'a', phase: 'locked' });
+    advance(5_000);
+    act(() => { run(); });
+    expect(a).toHaveBeenCalledTimes(1);
+    advance(179_999);
+    expect(currentHold()).toMatchObject({ controlId: 'a' });
+    advance(1);
+    expect(currentHold()).toBeNull();
+  });
+
+  it('an owner that runs the beat and then throws: a later unmount does not free the in-flight claim (F1-1)', () => {
+    const a = vi.fn(never);
+    const owner = { commit: (token, run) => { run(); throw new Error('owner'); } };
+    render(<H key="a" controlId="a" onComplete={a} beatOwner={owner} />);
+    act(() => { press(btn()); });
+    act(() => { frameAt(600); });
+    expect(() => act(() => { frameAt(1300); })).toThrow('owner');
+    expect(a).toHaveBeenCalledTimes(1);
+    advance(10_000);
+    render(<div />); // unmount 10 s into the request (BI-1: must not release)
+    expect(currentHold()).toMatchObject({ controlId: 'a', phase: 'locked' });
+    advance(170_000); // the safety release is the bound
+    expect(currentHold()).toBeNull();
+  });
+
+  it('a beat revoked before it runs arms no safety release', () => {
+    const a = vi.fn(never);
+    render(<H controlId="a" onComplete={a} />);
+    toThreshold(btn());
+    releaseHold(currentHold().holdToken);
+    advance(450);
+    expect(a).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('a synchronously throwing onComplete releases at once and leaves no safety timer behind', () => {
     render(<H onComplete={() => { throw new Error('boom'); }} />);
     act(() => { press(btn()); });
