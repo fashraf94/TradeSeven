@@ -221,6 +221,29 @@ describe('the bounded safety release (founder ruling on Q3)', () => {
     expect(currentHold()).toBeNull();
   });
 
+  it('…nor can that owner\'s commit lose a LATER committed deploy on the same control (F1-1, refuter RF1)', async () => {
+    const first = deferred();
+    const syncThenThrow = { commit: (token, run) => { run(); throw new Error('owner'); } };
+    render(<H key="a" controlId="a" onComplete={() => first.promise} beatOwner={syncThenThrow} />);
+    act(() => { press(btn()); });
+    act(() => { frameAt(600); });
+    expect(() => act(() => { frameAt(1300); })).toThrow('owner');
+    advance(1_000);
+    await act(async () => { first.settle({ success: true }); });
+    expect(currentHold()).toBeNull();
+    render(<H key="a" controlId="a" onComplete={() => first.promise} beatOwner={syncThenThrow} disabled />);
+    const handed = [];
+    const second = vi.fn(never);
+    render(<H key="a" controlId="a" onComplete={second} beatOwner={{ commit: (token, run) => { handed.push(run); } }} />);
+    expect(btn().dataset.phase).toBe('idle');
+    act(() => { key(btn()); });
+    expect(currentHold()).toMatchObject({ controlId: 'a', phase: 'locked' });
+    render(<div />); // an owned beat survives unmount
+    expect(currentHold()).toMatchObject({ controlId: 'a', phase: 'locked' });
+    act(() => { handed[0](); });
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
   it('a beat revoked before it runs arms no safety release', () => {
     const a = vi.fn(never);
     render(<H controlId="a" onComplete={a} />);

@@ -96,7 +96,8 @@
 //   deploy from an unmounted shell would have no ceremony to show it. The seam
 //   for S2b's provider: onCommit(token), called synchronously at the boundary,
 //   and beatOwner { commit(token, run) }, which takes the beat instead of this
-//   hook's timer; an owned beat survives unmount and its run releases the claim.
+//   hook's timer; an owned beat survives unmount, and once its run has called
+//   onComplete the settle (or the safety release) frees the claim.
 //   An owner whose commit throws does not take the beat: the hook keeps it.
 //   With neither passed, behaviour is the legacy one above.
 //
