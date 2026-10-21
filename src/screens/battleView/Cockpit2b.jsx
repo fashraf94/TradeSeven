@@ -8,14 +8,17 @@
 //   top row      the vintage (desktop, as 2a) and the commands meter (§5.1)
 //   ⚡ Now        one card by the fixed priority (§5.2), or the quiet line
 //   Also live    every other open card as a chip, expanding in place (§5.4)
-//   day line     calls · hit · expired · answered (§5.5), never tappable
+//   day line     calls · hit · expired · answered today (§5.5), never tappable
 //   Monitoring   as 2a
-//   Earlier      collapsed, with its count (§5.6)
+//   Earlier      collapsed, with its count, ten then "Show all" as 2a (§5.6)
 //
 // IT RENDERS THE VIEW MODEL (cockpit2bModel.js) AND KEEPS ONLY CLIENT STATE:
-// the spotlight, the card held after "Confirm exit" (V5-6), the expanded
-// chip, the strip's overflow, Earlier's toggle, the step opened by "Exit
-// instead" (V5-4) and the replace confirmation (§6.3). Nothing is persisted.
+// the spotlight, the expanded chip, the strip's overflow, Earlier's toggle and
+// the step opened by "Exit instead" (V5-4). The card held after "Confirm exit"
+// (V5-6) and the replace confirmation (§6.3) live in the shared answer flow
+// (useCockpit2bAnswer), because 2a's details sheet and the bench sheet answer
+// too. Nothing is persisted. A spotlight or an opened step outlives nothing:
+// each is dropped once its card no longer offers it (review CB4-6, CB4-10).
 //
 // ANSWERS go through the screen's answer hook — NO OPTIMISTIC STATE: the
 // pressed button reads "Sending…", every button waits, and the card changes
@@ -24,9 +27,17 @@
 // 409 `replace_unconfirmed` (a chat directive, or a slot this client had not
 // seen) opens the same prompt from the response's `currentText`.
 //
+// FOCUS NEVER FALLS TO <body> (2a review L5-5; 2b review CB5-2). Every
+// in-place swap names where focus goes next — the expanded chip's header and
+// back, the step's first live control and back to "Exit instead", the
+// confirmation's Replace (focused when it appears, so it is also announced)
+// and back to the pressed control on Keep, the first chip "+n more" revealed,
+// the Now card after a spotlight or Done, the first row "Show all" revealed.
+//
 // HAZARD 48: index.css forces every <button> to 16px !important, so every
 // label sizes an inner <span>. Buttons that wait are `aria-disabled`, never
-// `disabled` (a pressed button keeps focus while it sends — 2a review L5-5).
+// `disabled` (a pressed button keeps focus while it sends). The app has no
+// global border-box: a full-width box that carries padding says so itself.
 // Tokens only (`--ft-*`); `motionToken('smooth')` for card changes and chip
 // expansion, `instant` under reduced motion (§9).
 
@@ -39,7 +50,7 @@ import { GroupHeader, MonitoringRow, StateTag, plainButton, labelSpan, toneColor
 import { buildCockpit2bView, replaceLineOf, pickAnswerFor } from './cockpit2bModel';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-const nonEmpty = (v) => typeof v === 'string' && v.length > 0;
+const cssEscape = (v) => String(v).replace(/["\\]/g, '\\$&');
 
 /** The one bullet an override carries (§6.2): a 6 px teal dot after the label. */
 function Bullet() {
@@ -88,7 +99,7 @@ function Meter({ meter }) {
           <span
             key={i}
             data-cockpit-meter-dot={i < meter.left ? 'left' : 'spent'}
-            style={{ width: 5, height: 5, borderRadius: 4, background: i < meter.left ? cssVar('teal') : 'transparent', border: `1px solid ${i < meter.left ? cssVar('teal') : cssVar('text-muted')}` }}
+            style={{ width: 5, height: 5, borderRadius: 4, background: i < meter.left ? cssVar('teal') : 'transparent', border: `1px solid ${i < meter.left ? cssVar('teal') : cssVar('text-secondary')}` }}
           />
         ))}
       </span>
@@ -97,8 +108,8 @@ function Meter({ meter }) {
   );
 }
 
-/** §6.2's buttons: agreeing first and free; every override one bullet. */
-function Actions({ buttons, phone, onPress }) {
+/** §6.2's buttons: agreeing first and free; every override one bullet. Shared with 2a's details sheet under the flag. */
+export function CockpitActions({ buttons, phone, onPress }) {
   if (!Array.isArray(buttons) || buttons.length === 0) return null;
   return (
     <div data-cockpit-buttons="1" style={{ display: 'grid', gridTemplateColumns: `repeat(${buttons.length}, minmax(0, 1fr))`, gap: 8 }}>
@@ -121,12 +132,20 @@ function Actions({ buttons, phone, onPress }) {
   );
 }
 
+/** A step chip's accessible name: what it shows — picked, sending, or the pick and its cost (review CB5-10). */
+function optionName(c) {
+  if (c.picked) return `✓ ${c.symbol}`;
+  if (c.sending) return `${c.symbol} · ${COPY.cockpit2bSending}`;
+  if (c.disabled) return [c.symbol, c.note].filter(Boolean).join(' · ');
+  return COPY.cockpit2bOneCommandAria(`${COPY.cockpit2bPick} ${c.symbol}`);
+}
+
 /** "Who comes in?" (§5.3): the stored options in two groups, the browse door, the foot after "Exit instead". */
 function Step({ step, phone, onPick, onBrowse, onLetChoose, onCancel, onDone }) {
   if (!step) return null;
   return (
     <div data-cockpit-step={step.state} style={{ borderTop: `1px solid rgba(var(--ft-scrim-rgb), 0.08)`, paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 13.5, fontWeight: 600, color: cssVar('text-primary') }}>{step.title}</span>
         {step.browse ? (
           <button type="button" data-cockpit-browse="1" onClick={onBrowse} style={{ ...plainButton, minHeight: 24, whiteSpace: 'nowrap' }}>
@@ -147,7 +166,7 @@ function Step({ step, phone, onPick, onBrowse, onLetChoose, onCancel, onDone }) 
                     data-cockpit-option={c.symbol}
                     data-cockpit-option-picked={c.picked ? '1' : undefined}
                     aria-disabled={c.disabled ? 'true' : undefined}
-                    aria-label={c.disabled ? [c.symbol, c.note].filter(Boolean).join(' · ') : COPY.cockpit2bOneCommandAria(`${COPY.cockpit2bPick} ${c.symbol}`)}
+                    aria-label={optionName(c)}
                     onClick={() => { if (!c.disabled) onPick(c.symbol); }}
                     style={{
                       ...actionStyle(c.disabled && !c.picked, phone),
@@ -199,18 +218,43 @@ function Step({ step, phone, onPick, onBrowse, onLetChoose, onCancel, onDone }) 
   );
 }
 
-/** The replace confirmation (§6.3), in place on the card, before anything is sent. */
-export function ReplaceConfirm({ line, phone, onReplace, onKeep }) {
+/**
+ * The replace confirmation (§6.3), in place, before anything is sent. Replace
+ * takes focus when the prompt appears — the control that raised it is gone,
+ * and focus announces the group's line (review CB5-2, CB5-4: in a scrolled
+ * sheet, focus also brings the prompt into view). While the replacement is in
+ * flight Replace reads "Sending…" and both wait (§6.1; review CB4-4).
+ */
+export function ReplaceConfirm({ line, phone, sending = false, onReplace, onKeep }) {
+  const replaceRef = React.useRef(null);
+  const shown = Boolean(line);
+  React.useEffect(() => {
+    if (shown) replaceRef.current?.focus?.();
+  }, [shown]);
   if (!line) return null;
   return (
     <div data-cockpit-replace-confirm="1" role="group" aria-label={line} style={{ borderTop: `1px solid rgba(var(--ft-scrim-rgb), 0.08)`, paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <span style={{ fontSize: 13.5, color: cssVar('text-primary'), lineHeight: 1.45 }}>{line}</span>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
-        <button type="button" data-cockpit-replace="1" aria-label={COPY.cockpit2bOneCommandAria(COPY.cockpit2bReplace)} onClick={onReplace} style={actionStyle(false, phone)}>
-          <span style={labelSpan(13)}>{COPY.cockpit2bReplace}</span>
-          <Bullet />
+        <button
+          ref={replaceRef}
+          type="button"
+          data-cockpit-replace="1"
+          aria-label={sending ? COPY.cockpit2bSending : COPY.cockpit2bOneCommandAria(COPY.cockpit2bReplace)}
+          aria-disabled={sending ? 'true' : undefined}
+          onClick={() => { if (!sending) onReplace?.(); }}
+          style={actionStyle(sending, phone)}
+        >
+          <span style={labelSpan(13)}>{sending ? COPY.cockpit2bSending : COPY.cockpit2bReplace}</span>
+          {sending ? null : <Bullet />}
         </button>
-        <button type="button" data-cockpit-keep="1" onClick={onKeep} style={actionStyle(false, phone)}>
+        <button
+          type="button"
+          data-cockpit-keep="1"
+          aria-disabled={sending ? 'true' : undefined}
+          onClick={() => { if (!sending) onKeep?.(); }}
+          style={actionStyle(sending, phone)}
+        >
           <span style={labelSpan(13)}>{COPY.cockpit2bKeep}</span>
         </button>
       </div>
@@ -228,25 +272,27 @@ function MovedLine({ card }) {
       <button type="button" data-cockpit-line-moved="1" aria-expanded={open} onClick={() => setOpen((v) => !v)} style={{ ...plainButton, alignSelf: 'flex-start', minHeight: 24 }}>
         <span style={monoLine()}>{card.lineMoved}</span>
       </button>
-      {open ? card.earlierLevels.map((l) => <span key={l.key} data-cockpit-earlier-level="1" style={monoLine(10.5, cssVar('text-muted'))}>{l.text}</span>) : null}
+      {open ? card.earlierLevels.map((l) => <span key={l.key} data-cockpit-earlier-level="1" style={monoLine(10.5)}>{l.text}</span>) : null}
     </div>
   );
 }
 
 /**
  * One card's body — the Now card and an expanded strip chip share it. The
- * eyebrow and the plan are one plain button opening 2a's details sheet.
+ * eyebrow and the plan are one plain button opening 2a's details sheet. The
+ * head wraps: a long tag ("Command retired · … at the {t} check") drops below
+ * the eyebrow rather than pushing the card past the screen (review CB5-3, CB5-5).
  */
-function CardBody({ card, phone, compact = false, confirmLine, handlers }) {
+function CardBody({ card, phone, compact = false, confirmLine, confirmSending = false, handlers }) {
   const tags = (
-    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0, flex: '0 1 auto' }}>
       {card.followTag ? <StateTag tag={card.followTag} /> : null}
       <StateTag tag={card.tag} />
     </span>
   );
   const head = (
-    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
-      <span style={{ ...eyebrowStyle, color: card.mode === 'upside' ? cssVar('text-secondary') : cssVar('teal') }}>
+    <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
+      <span style={{ ...eyebrowStyle, flex: '1 1 auto', color: card.mode === 'upside' ? cssVar('text-secondary') : cssVar('teal') }}>
         {card.eyebrow}
         {card.mode !== 'command' && card.from ? <span style={subEyebrow}>{' · '}{card.from}</span> : null}
       </span>
@@ -257,7 +303,7 @@ function CardBody({ card, phone, compact = false, confirmLine, handlers }) {
   const refusal = card.refusalLine ?? null;
   const showBody = !compact || card.mode !== 'upside';
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
       <button
         type="button"
         data-cockpit-tile-open="1"
@@ -281,7 +327,7 @@ function CardBody({ card, phone, compact = false, confirmLine, handlers }) {
           <span data-cockpit-receipts-line="1" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', ...monoLine(10.5, cssVar('call-yours')) }}>
             {card.receipts.map((r, i) => (
               <React.Fragment key={`${i}-${r}`}>
-                {i > 0 ? <span aria-hidden="true" style={{ color: cssVar('text-muted') }}>→</span> : null}
+                {i > 0 ? <span aria-hidden="true" style={{ color: cssVar('text-secondary') }}>→</span> : null}
                 <span>{r}</span>
               </React.Fragment>
             ))}
@@ -293,10 +339,10 @@ function CardBody({ card, phone, compact = false, confirmLine, handlers }) {
       </button>
       <MovedLine card={card} />
       {confirmLine ? (
-        <ReplaceConfirm line={confirmLine} phone={phone} onReplace={handlers.onConfirmReplace} onKeep={handlers.onConfirmKeep} />
+        <ReplaceConfirm line={confirmLine} phone={phone} sending={confirmSending} onReplace={handlers.onConfirmReplace} onKeep={handlers.onConfirmKeep} />
       ) : (
         <>
-          {handlers.stepOpen(card) ? null : <Actions buttons={card.buttons} phone={phone} onPress={(b) => handlers.onPress(card, b)} />}
+          {handlers.stepOpen(card) ? null : <CockpitActions buttons={card.buttons} phone={phone} onPress={(b) => handlers.onPress(card, b)} />}
           {card.step && (card.step.state !== 'after_exit_instead' || handlers.stepOpen(card)) ? (
             <Step
               step={card.step}
@@ -318,11 +364,12 @@ function CardBody({ card, phone, compact = false, confirmLine, handlers }) {
 }
 
 /** The Now card (§5.2): the shipped tile scaled up, in the V5 teal-outlined container. */
-function NowCard({ card, phone, reducedMotion, confirmLine, handlers }) {
+function NowCard({ card, phone, reducedMotion, confirmLine, confirmSending, handlers }) {
   return (
     <motion.div
       data-cockpit-tile={card.tileId}
       data-cockpit-now={card.key}
+      data-cockpit-card={card.key}
       data-cockpit-now-mode={card.mode}
       initial={reducedMotion ? false : { opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
@@ -334,21 +381,22 @@ function NowCard({ card, phone, reducedMotion, confirmLine, handlers }) {
         background: `rgba(var(--ft-shadow-rgb), 0.35)`,
         boxShadow: `0 0 28px rgba(var(--ft-teal-rgb), 0.07)`,
         padding: '12px 14px 14px',
+        minWidth: 0,
       }}
     >
-      <CardBody card={card} phone={phone} confirmLine={confirmLine} handlers={handlers} />
+      <CardBody card={card} phone={phone} confirmLine={confirmLine} confirmSending={confirmSending} handlers={handlers} />
     </motion.div>
   );
 }
 
 /** One Also-live chip (§5.4): compact, or expanded in place to the card anatomy with "Spotlight →". */
-function StripChip({ chip, phone, reducedMotion, confirmLine, handlers }) {
+function StripChip({ chip, phone, reducedMotion, confirmLine, confirmSending, handlers }) {
   const dot = (
-    <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 3, background: chip.yours ? cssVar('teal') : cssVar('text-muted'), flexShrink: 0 }} />
+    <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 3, background: chip.yours ? cssVar('teal') : cssVar('text-secondary'), flexShrink: 0 }} />
   );
   const [sym, ...rest] = chip.text.split(' ');
   const label = (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...monoLine(10.5) }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0, flexWrap: 'wrap', ...monoLine(10.5) }}>
       {dot}
       <span style={{ color: cssVar('text-primary'), fontWeight: 700 }}>{sym}</span>
       <span style={{ color: sideColor(chip.side) }}>{rest[0]}</span>
@@ -360,6 +408,7 @@ function StripChip({ chip, phone, reducedMotion, confirmLine, handlers }) {
       <button
         type="button"
         data-cockpit-chip={chip.key}
+        data-cockpit-chip-toggle="1"
         aria-expanded="false"
         aria-label={chip.aria}
         onClick={() => handlers.onExpand(chip.key)}
@@ -369,6 +418,7 @@ function StripChip({ chip, phone, reducedMotion, confirmLine, handlers }) {
           alignItems: 'center',
           padding: '4px 10px',
           minHeight: 26,
+          maxWidth: '100%',
           borderRadius: 13,
           border: `1px solid ${chip.yours ? `rgba(var(--ft-teal-rgb), 0.5)` : `rgba(var(--ft-scrim-rgb), 0.14)`}`,
           background: chip.yours ? `rgba(var(--ft-teal-rgb), 0.08)` : `rgba(var(--ft-shadow-rgb), 0.25)`,
@@ -381,13 +431,19 @@ function StripChip({ chip, phone, reducedMotion, confirmLine, handlers }) {
   return (
     <motion.div
       data-cockpit-chip={chip.key}
+      data-cockpit-card={chip.key}
       data-cockpit-tile={chip.card.tileId}
       data-cockpit-chip-expanded="1"
       initial={reducedMotion ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={motionToken('smooth', { reducedMotion })}
       style={{
+        // A flex item in the wrapping strip: its min-content must not be its text's width (review CB5-3), and its
+        // padding counts inside the 100% (no global border-box here).
         flexBasis: '100%',
+        minWidth: 0,
+        maxWidth: '100%',
+        boxSizing: 'border-box',
         borderRadius: 12,
         border: `1px solid ${chip.yours ? `rgba(var(--ft-teal-rgb), 0.4)` : `rgba(var(--ft-scrim-rgb), 0.14)`}`,
         background: `rgba(var(--ft-shadow-rgb), 0.3)`,
@@ -397,10 +453,17 @@ function StripChip({ chip, phone, reducedMotion, confirmLine, handlers }) {
         gap: 8,
       }}
     >
-      <button type="button" aria-expanded="true" aria-label={chip.aria} onClick={() => handlers.onExpand(chip.key)} style={{ ...plainButton, minHeight: 26, display: 'flex', alignItems: 'center' }}>
+      <button
+        type="button"
+        data-cockpit-chip-toggle="1"
+        aria-expanded="true"
+        aria-label={COPY.cockpit2bChipAriaCollapse(chip.text)}
+        onClick={() => handlers.onExpand(chip.key)}
+        style={{ ...plainButton, minHeight: 26, display: 'flex', alignItems: 'center', minWidth: 0 }}
+      >
         {label}
       </button>
-      <CardBody card={chip.card} phone={phone} compact confirmLine={confirmLine} handlers={handlers} />
+      <CardBody card={chip.card} phone={phone} compact confirmLine={confirmLine} confirmSending={confirmSending} handlers={handlers} />
       {chip.spotlight ? (
         <button type="button" data-cockpit-spotlight={chip.key} onClick={() => handlers.onSpotlight(chip.key)} style={{ ...plainButton, alignSelf: 'flex-start', minHeight: 24 }}>
           <span style={{ ...labelSpan(10.5), fontFamily: MONO, color: cssVar('teal') }}>{COPY.cockpit2bSpotlight}</span>
@@ -423,6 +486,7 @@ function StripChip({ chip, phone, reducedMotion, confirmLine, handlers }) {
  * @param {object|null} props.pending  the answer hook's in-flight answer
  * @param {object} props.flow          useCockpit2bAnswer(...) — the confirmation and the held card, shared with the sheets
  * @param {(target: { callId: string, step: string|null, cardKey: string }) => void} props.onOpenBench
+ * @param {() => void} [props.onShowAllEarlier]  2a's "Show all" (the screen holds the flag the feed reads)
  */
 export default function Cockpit2b({
   feed,
@@ -441,63 +505,110 @@ export default function Cockpit2b({
   onOpenSheet,
   onSymbolClick,
   onOpenBench,
+  onShowAllEarlier = null,
 }) {
+  const rootRef = React.useRef(null);
   const [spotlightKey, setSpotlightKey] = React.useState(null);
   const [expandedKey, setExpandedKey] = React.useState(null);
   const [overflow, setOverflow] = React.useState(false);
   const [earlierOpen, setEarlierOpen] = React.useState(false);
   const [stepOpenKey, setStepOpenKey] = React.useState(null);
+  // Where focus goes after the next render: a function of the root, run once (review CB5-2).
+  const [focusAfter, setFocusAfter] = React.useState(null);
   const { calls = [], events = [], rawExchanges = [], battle = null, evaluations = [], controlEpochLog = null, suppressed = false } = records || {};
   const heldKey = flow?.heldKey ?? null;
   const confirm = flow?.confirm ?? null;
 
   const view = React.useMemo(() => (feed ? buildCockpit2bView({
     feed, calls, events, rawExchanges, battle, agent, nowMs, phone, evaluations, nextDecisionAt, league, controlEpochLog, suppressed,
-    ui: { spotlightKey, heldKey, expandedKey, overflow, pending },
-  }) : null), [feed, calls, events, rawExchanges, battle, agent, nowMs, phone, evaluations, nextDecisionAt, league, controlEpochLog, suppressed, spotlightKey, heldKey, expandedKey, overflow, pending]);
+    ui: { spotlightKey, heldKey, expandedKey, overflow, pending, stepOpenKey },
+  }) : null), [feed, calls, events, rawExchanges, battle, agent, nowMs, phone, evaluations, nextDecisionAt, league, controlEpochLog, suppressed, spotlightKey, heldKey, expandedKey, overflow, pending, stepOpenKey]);
 
   // A held card ends once it no longer leads (picked, resolved, or its step gone); a confirmation
-  // whose card left this screen is dropped.
+  // whose card left this screen is dropped; a spotlight or an opened step its card no longer offers is dropped.
   const nowKey = view?.nowKey ?? null;
   const shownKeys = view ? [view.nowKey, ...view.strip.chips.filter((c) => c.card).map((c) => c.key)].filter(Boolean).join('|') : '';
   const release = flow?.release;
   const keep = flow?.keep;
+  const spotlightStale = Boolean(view?.spotlightStale);
+  const stepOpenStale = Boolean(view?.stepOpenStale);
   React.useEffect(() => {
     if (heldKey && nowKey !== heldKey) release?.();
   }, [heldKey, nowKey, release]);
   React.useEffect(() => {
     if (confirm && confirm.surface === 'card' && !shownKeys.split('|').includes(confirm.key)) keep?.();
   }, [confirm, shownKeys, keep]);
+  React.useEffect(() => { if (spotlightStale) setSpotlightKey(null); }, [spotlightStale]);
+  React.useEffect(() => { if (stepOpenStale) setStepOpenKey(null); }, [stepOpenStale]);
+  React.useLayoutEffect(() => {
+    if (!focusAfter) return;
+    const el = rootRef.current ? focusAfter(rootRef.current) : null;
+    if (el && typeof el.focus === 'function') el.focus();
+    setFocusAfter(null);
+  }, [focusAfter]);
 
   if (!view) return null;
   const ready = status === 'ready';
-  const target = (card) => ({ surface: 'card', key: card.key, step: card.step?.state ?? null });
+  const card = (key) => `[data-cockpit-card="${cssEscape(key)}"]`;
+  const focusNext = (fn) => setFocusAfter(() => fn);
+  const nowOpen = (root) => root.querySelector('[data-cockpit-now] [data-cockpit-tile-open]');
+  const target = (c) => ({ surface: 'card', key: c.key, step: c.step?.state ?? null });
+  const afterFiling = (result) => { if (result?.status === 200) setStepOpenKey(null); };
   const handlers = {
     onOpenSheet,
-    stepOpen: (card) => stepOpenKey === card.key && card.step?.state === 'after_exit_instead',
-    onPress: (card, b) => {
-      if (b.opensStep) { setStepOpenKey(card.key); return; }
-      flow?.request(target(card), b.callId, b.answer, { override: b.row === 'directive' });
+    stepOpen: (c) => Boolean(c.step) && stepOpenKey === c.step.callId && c.step.state === 'after_exit_instead',
+    onPress: (c, b) => {
+      if (b.opensStep) {
+        setStepOpenKey(c.step?.callId ?? null);
+        focusNext((root) => root.querySelector(`${card(c.key)} [data-cockpit-step] button:not([aria-disabled="true"])`));
+        return;
+      }
+      flow?.request(target(c), b.callId, b.answer, { override: b.row === 'directive' });
     },
-    onPick: (card, symbol) => {
-      const answer = pickAnswerFor(card.step?.state);
-      if (answer) flow?.request(target(card), card.step.callId, answer, { pickSymbol: symbol, override: true });
+    onPick: (c, symbol) => {
+      const answer = pickAnswerFor(c.step?.state);
+      if (answer) Promise.resolve(flow?.request(target(c), c.step.callId, answer, { pickSymbol: symbol, override: true })).then(afterFiling);
     },
-    onLetChoose: (card) => flow?.request(target(card), card.step.callId, 'go_now', { override: true }),
-    onCancelStep: () => setStepOpenKey(null),
-    onDone: () => flow?.release(),
-    onBrowse: (card) => onOpenBench?.({ callId: card.step?.callId ?? card.callId, step: card.step?.state ?? null, cardKey: card.key }),
+    onLetChoose: (c) => { Promise.resolve(flow?.request(target(c), c.step.callId, 'go_now', { override: true })).then(afterFiling); },
+    onCancelStep: (c) => {
+      setStepOpenKey(null);
+      focusNext((root) => root.querySelector(`${card(c.key)} [data-cockpit-answer="go_now"]`));
+    },
+    onDone: () => { flow?.release(); focusNext(nowOpen); },
+    onBrowse: (c) => onOpenBench?.({ callId: c.step?.callId ?? c.callId, step: c.step?.state ?? null, cardKey: c.key }),
     onConfirmReplace: () => flow?.replace(),
-    onConfirmKeep: () => flow?.keep(),
-    onExpand: (key) => setExpandedKey((k) => (k === key ? null : key)),
-    onSpotlight: (key) => { setSpotlightKey(key); setExpandedKey(null); },
+    onConfirmKeep: () => {
+      const was = confirm;
+      flow?.keep();
+      if (!was) return;
+      focusNext((root) => {
+        const scope = root.querySelector(card(was.key));
+        if (!scope) return null;
+        const pressed = was.pickSymbol
+          ? scope.querySelector(`[data-cockpit-option="${cssEscape(was.pickSymbol)}"]`) ?? scope.querySelector('[data-cockpit-let-choose]')
+          : scope.querySelector(`[data-cockpit-answer="${cssEscape(was.answer)}"]`) ?? scope.querySelector('[data-cockpit-let-choose]');
+        return pressed ?? scope.querySelector('[data-cockpit-tile-open]');
+      });
+    },
+    onExpand: (key) => {
+      setExpandedKey((k) => (k === key ? null : key));
+      focusNext((root) => root.querySelector(`[data-cockpit-chip="${cssEscape(key)}"][data-cockpit-chip-toggle], [data-cockpit-chip="${cssEscape(key)}"] [data-cockpit-chip-toggle]`));
+    },
+    onSpotlight: (key) => { setSpotlightKey(key); setExpandedKey(null); focusNext(nowOpen); },
   };
-  const confirmLineFor = (key) => (confirm && confirm.surface === 'card' && confirm.key === key
-    ? replaceLineOf({ kind: confirm.kind, symbol: confirm.symbol, text: confirm.text, agent })
-    : null);
+  const confirmFor = (key) => (confirm && confirm.surface === 'card' && confirm.key === key ? confirm : null);
+  const confirmLineFor = (key) => {
+    const c = confirmFor(key);
+    return c ? replaceLineOf({ kind: c.kind, symbol: c.symbol, text: c.text, agent }) : null;
+  };
+  const confirmSendingFor = (key) => {
+    const c = confirmFor(key);
+    return Boolean(c) && Boolean(pending) && pending.callId === c.callId;
+  };
+  const shownChips = view.strip.chips.length;
 
   return (
-    <div data-cockpit-feed="2b" data-cockpit-status={status} style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    <div ref={rootRef} data-cockpit-feed="2b" data-cockpit-status={status} style={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
       <div
         data-cockpit-top-row="1"
         style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 14px', borderBottom: `1px solid rgba(var(--ft-scrim-rgb), 0.07)`, ...monoLine(10.5) }}
@@ -513,7 +624,7 @@ export default function Cockpit2b({
           <section data-cockpit-now-section="1">
             <GroupHeader groupKey="now" label={COPY.cockpit2bNowHeader} count={view.nowCount} />
             {view.now ? (
-              <NowCard key={`${view.now.key}:${view.now.mode}`} card={view.now} phone={phone} reducedMotion={reducedMotion} confirmLine={confirmLineFor(view.now.key)} handlers={handlers} />
+              <NowCard key={`${view.now.key}:${view.now.mode}`} card={view.now} phone={phone} reducedMotion={reducedMotion} confirmLine={confirmLineFor(view.now.key)} confirmSending={confirmSendingFor(view.now.key)} handlers={handlers} />
             ) : (
               <div data-cockpit-quiet="1" style={{ padding: '18px 14px 8px', fontSize: 13, color: cssVar('text-secondary'), lineHeight: 1.45, display: 'flex', alignItems: 'center', gap: 9 }}>
                 <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 3, background: cssVar('teal'), flexShrink: 0 }} />
@@ -522,20 +633,33 @@ export default function Cockpit2b({
             )}
           </section>
           {view.strip.count > 0 ? (
-            <section data-cockpit-strip="1" style={{ padding: '10px 12px 6px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <section data-cockpit-strip="1" style={{ padding: '10px 12px 6px', display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
               <span role="heading" aria-level={3} style={eyebrowStyle}>{view.strip.header}</span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minWidth: 0 }}>
                 {view.strip.chips.map((chip) => (
-                  <StripChip key={chip.key} chip={chip} phone={phone} reducedMotion={reducedMotion} confirmLine={confirmLineFor(chip.key)} handlers={handlers} />
+                  <StripChip key={chip.key} chip={chip} phone={phone} reducedMotion={reducedMotion} confirmLine={confirmLineFor(chip.key)} confirmSending={confirmSendingFor(chip.key)} handlers={handlers} />
                 ))}
                 {view.strip.more ? (
-                  <button type="button" data-cockpit-strip-more="1" onClick={() => setOverflow(true)} style={{ ...plainButton, padding: '4px 10px', minHeight: 26, borderRadius: 13, border: `1px solid rgba(var(--ft-scrim-rgb), 0.14)` }}>
+                  <button
+                    type="button"
+                    data-cockpit-strip-more="1"
+                    onClick={() => {
+                      setOverflow(true);
+                      focusNext((root) => root.querySelectorAll('[data-cockpit-strip] [data-cockpit-chip-toggle]')[shownChips] ?? null);
+                    }}
+                    style={{ ...plainButton, padding: '4px 10px', minHeight: 26, borderRadius: 13, border: `1px solid rgba(var(--ft-scrim-rgb), 0.14)` }}
+                  >
                     <span style={monoLine(10.5, cssVar('text-primary'))}>{view.strip.more}</span>
                   </button>
                 ) : null}
                 {view.strip.fewer ? (
-                  <button type="button" data-cockpit-strip-fewer="1" onClick={() => setOverflow(false)} style={{ ...plainButton, padding: '4px 6px', minHeight: 26 }}>
-                    <span style={monoLine(10.5, cssVar('text-muted'))}>{view.strip.fewer}</span>
+                  <button
+                    type="button"
+                    data-cockpit-strip-fewer="1"
+                    onClick={() => { setOverflow(false); focusNext((root) => root.querySelector('[data-cockpit-strip-more]')); }}
+                    style={{ ...plainButton, padding: '4px 6px', minHeight: 26 }}
+                  >
+                    <span style={monoLine(10.5)}>{view.strip.fewer}</span>
                   </button>
                 ) : null}
               </div>
@@ -578,6 +702,20 @@ export default function Cockpit2b({
               </button>
             </div>
           )) : null}
+          {earlierOpen && view.earlier.more && typeof onShowAllEarlier === 'function' ? (
+            <button
+              type="button"
+              data-cockpit-show-all="1"
+              onClick={() => {
+                const shown = view.earlier.rows.length;
+                onShowAllEarlier();
+                focusNext((root) => root.querySelectorAll('[data-cockpit-earlier-row] [data-cockpit-tile-open]')[shown] ?? null);
+              }}
+              style={{ ...plainButton, margin: '10px 12px 4px', padding: '6px 12px', minHeight: 36, borderRadius: 16, border: `1px solid ${cssVar('call-yours')}`, color: cssVar('call-yours') }}
+            >
+              <span style={labelSpan(12)}>{view.earlier.more}</span>
+            </button>
+          ) : null}
         </section>
       ) : null}
     </div>

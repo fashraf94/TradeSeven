@@ -983,6 +983,18 @@ describe('Build 2b — retire on exit end to end (Amendment D-6)', () => {
     expect(storedCollection(db, 'callEvents')[`${THREAD}:retired`]).toBeUndefined();
   });
 
+  it("review CB1-1 — a meeting-PENDING check retires too: the risk loop and the R11 pass still move the book there", async () => {
+    const b = makeTickBattle({
+      ...serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] }),
+      directive: slot(), chatExchanges: [],
+      trades: [{ symbolOut: 'XOM', symbolIn: 'TSLA', tier: 'star', slotIndex: 1, swappedOutAt: '2026-09-09T14:40:00.000Z', source: 'risk_manager' }],
+    });
+    const { db } = await runTick({ mode: 'on', battle: b, seed: seedOf([xomCall()]) });
+    expect(mocks.create.mock.calls.length).toBe(0); // no prompt on a pending-meeting tick
+    expect(db.__store.battle.directive).toBeNull();
+    expect(storedCollection(db, 'callEvents')[`${THREAD}:retired`]).toMatchObject({ kind: 'retired', reason: 'symbol_not_held' });
+  });
+
   it("at 'shadow': the step never runs — the slot and the events untouched", async () => {
     const { db } = await runTick({ mode: 'shadow', battle: battle(), seed: seedOf([xomCall()]) });
     expect(db.__store.battle.directive).toEqual(slot());

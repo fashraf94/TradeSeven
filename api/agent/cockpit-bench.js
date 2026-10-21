@@ -45,7 +45,14 @@
 //            key). Read literally, every stock row would be 'no_price' and the
 //            sheet could offer no stock pick. The build report records the
 //            reading for a founder ruling; benchPriceRows() is the one place a
-//            ruling would change.
+//            ruling would change. TWO CONSEQUENCES OF THAT SOURCE (review
+//            CB1-3): benchBriefs covers the bench stocks and the crypto slot
+//            only, so a HOT-BENCH name is always 'no_price' here although the
+//            executor accepts it and the card's chip may offer it; and before
+//            the battle's first voice-layer run (*/15, market hours) there is
+//            no cache document, so every stock row is 'no_price'. Both are in
+//            the build report's founder questions (benchBriefs is also read by
+//            the chat's prompt, so widening it is model-visible).
 //   asOf     the price read's own instant (the cache document's `updatedAt`) —
 //            the sheet's "prices as of {t}" names the vintage of the numbers
 //            it shows (BUILD_RULES §9); null without a cache document.
@@ -148,6 +155,9 @@ export function buildBenchRows({ battle, call = null, rankingsBySymbol = {}, pri
   const held = heldSet(battle);
   const scoped = Boolean(call);
   const out = scoped ? call.symbol : null;
+  // An exit whose stock already LEFT the book can bring nobody in: every scoped row is not_swappable (the filing
+  // would be 400 symbol_not_held — review CB1-8).
+  const outGone = scoped && !held.has(out);
   const outCrypto = scoped ? outIsCrypto(battle, out) : null;
   const names = swapListNames(battle).filter((s) => !held.has(s) && (!scoped || nameIsCrypto(battle, s) === outCrypto));
   const rows = names.map((symbol) => {
@@ -158,7 +168,9 @@ export function buildBenchRows({ battle, call = null, rankingsBySymbol = {}, pri
     const price = priced?.price ?? null;
     let status;
     let lockedUntil = null;
-    if (scoped) {
+    if (scoped && outGone) {
+      status = 'not_swappable';
+    } else if (scoped) {
       const verdict = canComeIn({ battle, out, slot: call.slot, inSymbol: symbol, atMs: nowMs });
       if (verdict.ok) status = !crypto && !usablePrice(price) ? 'no_price' : 'available';
       else if (verdict.reason === 'pick_locked') { status = 'locked'; lockedUntil = bench?.cooldownUntil ?? null; } else status = 'not_swappable';

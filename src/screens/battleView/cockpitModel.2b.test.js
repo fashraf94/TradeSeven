@@ -270,3 +270,86 @@ describe('the sheet carries the card\'s D-12 lines', () => {
     expect(sheet.commandLine).toBe(COPY.cockpitCommandOnLine('$1240.00'));
   });
 });
+
+// ---------------------------------------------------------------------------
+// The review's fix round (docs/audits — Build 2b review CB3-*, CB4-5, CB6-4).
+
+describe('review CB3-1 — the command is live while its SLOT is, not while its answered call is open', () => {
+  const zsShot = () => call({ ...minted('12:45'), symbol: 'ZS', slot: 'support', kind: 'called_shot', defaultAction: 'hold', condition: { side: 'below', level: 228 } });
+  const zsConf = (over = {}) => call({ ...minted('13:15'), symbol: 'ZS', slot: 'support', kind: 'confirmation', defaultAction: 'act', condition: { side: 'below', level: 228 }, ...over });
+  it('the answered call HIT under a live slot: its restatement still reads "Following your call" and is offered no answer (flag off and on)', () => {
+    const answered = zsShot();
+    const slot = command(answered, { kind: 'call_go', answer: 'go_now', filedAt: iso(at('13:06')) });
+    answered.state = 'hit';
+    answered.stateChangedAt = at('13:15');
+    const r = zsConf();
+    for (const v2 of [false, true]) {
+      const f = feed([answered, r], { directive: slot, events: [declared(r, slot.directiveThreadId)], v2 });
+      const card = cardOf(f, r);
+      expect(card.following).toEqual([r.callId]);
+      expect(card.followTag?.text).toBe('Following your call');
+      expect(card.buttons).toEqual([]);
+      expect(card.group).toBe(COCKPIT_GROUP.WAITING);
+      expect(f.needsYouCount).toBe(0);
+      // The answered call itself is in Earlier, as resolved.
+      expect(f.earlier.map((t) => t.call.callId)).toContain(answered.callId);
+    }
+  });
+  it('two restatements under a resolved answered call fold onto ONE card of the command', () => {
+    const answered = zsShot();
+    const slot = command(answered, { kind: 'call_go', answer: 'go_now', filedAt: iso(at('13:06')) });
+    answered.state = 'expired_unresolved';
+    const r1 = zsConf({ ...minted('13:15') });
+    const r2 = zsConf({ ...minted('13:30'), condition: { side: 'below', level: 228.5 } });
+    const f = feed([answered, r1, r2], { directive: slot, events: [declared(r1, slot.directiveThreadId), declared(r2, slot.directiveThreadId)] });
+    const open = [...f.needsYou, ...f.waiting];
+    expect(open).toHaveLength(1);
+    expect(open[0].following.sort()).toEqual([r1.callId, r2.callId].sort());
+  });
+});
+
+describe('review CB3-2 — the retired tag names the check the stock LEFT at (the recorded trade), not the retiring step', () => {
+  it('trade at 1:02 PM, retired by the 1:15 PM step → "… left the book at the 1:00 PM check"; no trade → the step\'s check', () => {
+    const c = call({ ...minted('12:45') });
+    command(c, { kind: 'call_hold', answer: 'hold', filedAt: iso(at('12:50')) });
+    const ev = { kind: 'retired', at: at('13:15') + 30_000, callIds: [c.callId], symbol: 'LLY', reason: 'symbol_not_held', trade: { symbolOut: 'LLY', symbolIn: 'MPC', at: iso(T('2026-10-16T17:02:10.000Z')), source: 'archetype' } };
+    expect(callTag(c, { events: [ev], evaluations: EVALS, nowMs: NOW }).text).toBe('Command retired · LLY left the book at the 1:00 PM check');
+    expect(callTag(c, { events: [{ ...ev, trade: null }], evaluations: EVALS, nowMs: NOW }).text).toBe('Command retired · LLY left the book at the 1:15 PM check');
+  });
+});
+
+describe('review CB3-3 — after D-4\'s second answer the agreement\'s own receipt reads as the agreement', () => {
+  it('ack go 12:05, replace 12:10 → receipts "You agreed · 12:05 PM", "Filed 12:10 PM"', () => {
+    const c = call({ ...minted('12:00') });
+    const ackAt = T('2026-10-16T16:05:00.000Z');
+    const replaceAt = T('2026-10-16T16:10:00.000Z');
+    c.playerResponse = { answer: 'replace', kind: 'directive', directiveThreadId: 'th-r', callId: c.callId, filedAt: iso(replaceAt), heardEvalId: null, after: { answer: 'go', filedAt: iso(ackAt) } };
+    const events = [
+      { kind: 'answered', at: ackAt, callIds: [c.callId], text: '' },
+      { kind: 'answered', at: replaceAt, callIds: [c.callId], text: '' },
+    ];
+    const lines = events.map((e) => receiptLineOf(e, c, { evaluations: EVALS, nowMs: NOW }));
+    expect(lines).toEqual(['You agreed · 12:05 PM', 'Filed 12:10 PM']);
+  });
+});
+
+describe('review CB6-4 — under the flag the answer line quotes the 2b button the player tapped', () => {
+  it('go_now reads "exit instead" on an exit, "bring it in" on an entry; 2a keeps "go instead"', () => {
+    expect(COPY.cockpitThreadAnswer('go_now', '1:05 PM', '12:00 PM', null, { v2: true, direction: 'exit' })).toBe('You said exit instead · 1:05 PM, on the 12:00 PM wording');
+    expect(COPY.cockpitThreadAnswer('go_now', '1:05 PM', null, 'XOM', { v2: true, direction: 'exit' })).toBe('You said exit instead, bring in XOM · 1:05 PM');
+    expect(COPY.cockpitThreadAnswer('go_now', '1:05 PM', null, null, { v2: true, direction: 'entry' })).toBe('You said bring it in · 1:05 PM');
+    expect(COPY.cockpitThreadAnswer('go_now', '1:05 PM', null)).toBe('You said go instead · 1:05 PM');
+  });
+});
+
+describe('review CB4-5 — the step keeps the buttons\' gates (deadline, acted)', () => {
+  it('past its deadline or once the agent acted, an exit with no counterpart offers no step', () => {
+    const exit = (over = {}) => call({ ...minted('12:00'), replacementOptions: [{ symbol: 'XOM', source: 'bench' }], ...over });
+    const live = exit();
+    expect(cardOf(feed([live], { v2: true }), live).step).toBe('on_card');
+    const late = exit({ horizon: { phrase: 'this_session', expiresAt: NOW - 60_000, basis: 'this_session' } });
+    expect(cardOf(feed([late], { v2: true }), late).step).toBeNull();
+    const acted = exit({ outcome: { actedEvalId: 'eval_022' } });
+    expect(cardOf(feed([acted], { v2: true }), acted).step).toBeNull();
+  });
+});

@@ -98,7 +98,8 @@ import Cockpit2b from './battleView/Cockpit2b';
 import CockpitBenchSheet from './battleView/CockpitBenchSheet';
 import { useCockpit2bAnswer } from './battleView/useCockpit2bAnswer';
 import { useCockpitBench } from '../hooks/useCockpitBench';
-import { cardKeyOf, liveCommandOf, rowMarksOf, replaceLineOf, meterOf, agentListsOf, benchSheetOf, pickAnswerFor } from './battleView/cockpit2bModel';
+import { cardKeyOf, liveCommandOf, rowMarksOf, replaceLineOf, meterOf, agentListsOf, benchSheetOf, pickAnswerFor, sheetButtonsOf } from './battleView/cockpit2bModel';
+import { cockpitRefusalLine } from './battleView/battleViewCopy';
 import { battleExpiryMs } from '../../api/_utils/callRecords/horizon.js';
 import { BATTLE_CHAT_BUDGET } from '../../api/_utils/directiveFiling.js';
 import { useBaggerMoment } from './battleView/useBaggerMoment';
@@ -2538,9 +2539,14 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const [cockpitBench, setCockpitBench] = useState(null);
   const [cockpitBenchSort, setCockpitBenchSort] = useState('rank');
   const [cockpitBenchFiled, setCockpitBenchFiled] = useState(null);
+  // A refused pick's line, shown ON the sheet (review CB4-11, CB6-7).
+  const [cockpitBenchRefusal, setCockpitBenchRefusal] = useState(null);
   const openCockpitBenchBrowse = useCallback(() => {
     const invoker = typeof document !== 'undefined' ? document.activeElement : null;
     setCockpitBenchFiled(null);
+    setCockpitBenchRefusal(null);
+    // Rank is the sheet's default at every opening (§5.7; review CB4-13).
+    setCockpitBenchSort('rank');
     setCockpitBench({ callId: null, step: null, cardKey: null });
     // On desktop the sheet is a panel within the pane's Cockpit tab: open it there.
     if (isDesktop) pane.openPane(PANE_SECTION.COCKPIT, invoker);
@@ -2612,7 +2618,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     nextDecisionAt: turnLine?.nextDecisionAt ?? null,
     battleExpiresAtMs: cockpitBattleEndMs,
     v2: isCockpit2bOn(),
-  }) : null), [cockpitOn, cockpitCallsRead.value, cockpitEventsRead.value, agentBattle?.evaluations, agentBattle?.directive, agentBattle?.controlEpochLog, agentBattle?.chatExchanges, cockpitBattleEndMs, cockpitNowMs, cockpitAnswer.pending, cockpitAnswer.outcomes, cockpitShowAllEarlier, turnLine?.nextDecisionAt]);
+    league: agentBattle?.gameMode === TOURNAMENT_GAME_MODE,
+  }) : null), [agentBattle?.gameMode, cockpitOn, cockpitCallsRead.value, cockpitEventsRead.value, agentBattle?.evaluations, agentBattle?.directive, agentBattle?.controlEpochLog, agentBattle?.chatExchanges, cockpitBattleEndMs, cockpitNowMs, cockpitAnswer.pending, cockpitAnswer.outcomes, cockpitShowAllEarlier, turnLine?.nextDecisionAt]);
   // A refusal line clears for good once the record behind its tile changes —
   // the call resolved or was answered — or the call leaves the feed (founder
   // ruling Oct 5): its outcome is dropped as soon as no tile shows it, so it
@@ -2660,6 +2667,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const cockpitBenchCall = cockpitBench?.callId ? ((Array.isArray(cockpitCallsRead.value) ? cockpitCallsRead.value : []).find((c) => c?.callId === cockpitBench.callId) ?? null) : null;
   // The step as the card stands NOW (a filed pick ends it, and every Pick then waits).
   const cockpitBenchStep = cockpitBenchTile?.step ?? null;
+  const cockpitLeague = agentBattle?.gameMode === TOURNAMENT_GAME_MODE;
+  const cockpitMeter = cockpit2b ? meterOf(agentBattle?.chatExchanges ?? [], { league: cockpitLeague }) : null;
   const cockpitBenchSheet = cockpitBenchOpen ? benchSheetOf({
     status: cockpitBenchRead.status === 'idle' ? 'loading' : cockpitBenchRead.status,
     data: cockpitBenchRead.data,
@@ -2669,9 +2678,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     agentLists: agentListsOf({ evaluations: agentBattle?.evaluations, monitoring: cockpitMonitoringRead.value }),
     benchState,
     sort: cockpitBenchSort,
-    meter: meterOf(agentBattle?.chatExchanges ?? [], { league: agentBattle?.gameMode === TOURNAMENT_GAME_MODE }),
+    meter: cockpitMeter,
     pending: cockpitAnswer.pending,
     filedText: cockpitBenchFiled,
+    nowMs: cockpitNowMs,
+    refusalLine: cockpitBenchRefusal,
   }) : null;
   const cockpitRowMarks = cockpit2b && cockpitFeed
     ? rowMarksOf({ feed: cockpitFeed, directive: agentBattle?.directive ?? null, nowMs: cockpitNowMs, controlEpochLog: agentBattle?.controlEpochLog ?? null, suppressed: cockpitSuppressed })
@@ -2691,11 +2702,23 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   useEffect(() => {
     if (cockpitSheetOrphaned) { setCockpitSheetCallId(null); setCockpitCheckGone(false); }
   }, [cockpitSheetOrphaned]);
-  // The bench sheet follows the same rule: the flag or the cockpit gone, or — on desktop — the pane off Cockpit.
-  const cockpitBenchOrphaned = Boolean(cockpitBench) && (!cockpit2b || (isDesktop && (!pane.open || pane.section !== PANE_SECTION.COCKPIT)));
+  // The bench sheet follows the same rule: the flag or the cockpit gone, or — on desktop — the pane off Cockpit,
+  // or (scoped) its call resolved with nothing filed from the sheet (review CB4-12).
+  const cockpitBenchOrphaned = Boolean(cockpitBench) && (
+    !cockpit2b
+    || (isDesktop && (!pane.open || pane.section !== PANE_SECTION.COCKPIT))
+    || (Boolean(cockpitBench.callId) && !cockpitBenchFiled && cockpitReadStatus === 'ready' && (!cockpitBenchCall || cockpitBenchCall.state !== 'open'))
+  );
   useEffect(() => {
-    if (cockpitBenchOrphaned) { setCockpitBench(null); setCockpitBenchFiled(null); }
+    if (cockpitBenchOrphaned) { setCockpitBench(null); setCockpitBenchFiled(null); setCockpitBenchRefusal(null); }
   }, [cockpitBenchOrphaned]);
+  // A replace confirmation never outlives the sheet it was raised on (review CB4-1): whichever way the sheet
+  // closed — its own close, an orphan rule, the check link — the prompt is dropped, nothing is sent.
+  const cockpitConfirmSurface = cockpitFlow.confirm?.surface ?? null;
+  const keepCockpitConfirm = cockpitFlow.keep;
+  useEffect(() => {
+    if ((cockpitConfirmSurface === 'sheet' && !cockpitSheetCallId) || (cockpitConfirmSurface === 'bench' && !cockpitBench)) keepCockpitConfirm();
+  }, [cockpitConfirmSurface, cockpitSheetCallId, cockpitBench, keepCockpitConfirm]);
   useEffect(() => {
     if (!cockpitOn && phoneScreen !== PHONE_SCREEN.BOARD) setPhoneScreen(PHONE_SCREEN.BOARD);
   }, [cockpitOn, phoneScreen]);
@@ -2734,26 +2757,48 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const closeCockpitBench = () => {
     setCockpitBench(null);
     setCockpitBenchFiled(null);
+    setCockpitBenchRefusal(null);
     if (cockpitFlow.confirm?.surface === 'bench') cockpitFlow.keep();
   };
-  const onCockpitBenchResult = (result) => {
-    if (result?.status !== 200) return;
+  const onCockpitBenchResult = (result, pickSymbol = null) => {
+    if (!result) return;
+    if (result.status !== 200) {
+      // §7.3's line for the refused pick, on the sheet (a 409 replace_unconfirmed opens the prompt instead: null).
+      setCockpitBenchRefusal(cockpitRefusalLine(result.status, result.body, {
+        v2: true,
+        names: { pickSymbol, counterpart: cockpitBenchCall?.counterpart ?? null, symbol: cockpitBenchCall?.symbol ?? null, league: cockpitLeague },
+      }));
+      return;
+    }
+    setCockpitBenchRefusal(null);
     const text = result.body?.directive?.text;
     setCockpitBenchFiled(typeof text === 'string' && text ? text : (agentBattle?.directive?.callId === cockpitBench?.callId ? agentBattle?.directive?.text ?? null : null));
   };
   const handleCockpitBenchPick = (symbol) => {
     const answer = pickAnswerFor(cockpitBenchStep);
     if (!answer || !cockpitBenchCall) return;
-    cockpitFlow.request({ surface: 'bench', key: cockpitBench?.cardKey ?? null, step: cockpitBenchStep }, cockpitBenchCall.callId, answer, { pickSymbol: symbol, override: true }).then(onCockpitBenchResult);
+    setCockpitBenchRefusal(null);
+    cockpitFlow.request({ surface: 'bench', key: cockpitBench?.cardKey ?? null, step: cockpitBenchStep }, cockpitBenchCall.callId, answer, { pickSymbol: symbol, override: true }).then((r) => onCockpitBenchResult(r, symbol));
   };
   // 2a's details sheet under the flag: its overrides confirm first too (§6.3) — in the sheet.
   const cockpitSheetAnswer = (callId, answer) => {
     const b = (cockpitSheet?.buttons || []).find((x) => x.callId === callId && x.answer === answer);
     cockpitFlow.request({ surface: 'sheet', key: cockpitSheetTile ? cardKeyOf(cockpitSheetTile) : null, step: cockpitSheetTile?.step ?? null }, callId, answer, { override: b?.row === 'directive' });
   };
-  const cockpitConfirmLine = (surface) => (cockpit2b && cockpitFlow.confirm?.surface === surface
+  // The prompt shows only on the surface AND the card it was raised on (review CB4-1): a different sheet, or the
+  // sheet reopened on another call, never wears it.
+  const cockpitSheetKey = cockpitSheetTile ? cardKeyOf(cockpitSheetTile) : null;
+  const cockpitConfirmOn = (surface, key, callId = null) => {
+    const c = cockpitFlow.confirm;
+    return Boolean(cockpit2b && c && c.surface === surface && c.key === key && (callId === null || c.callId === callId));
+  };
+  const cockpitConfirmLine = (surface, key, callId = null) => (cockpitConfirmOn(surface, key, callId)
     ? replaceLineOf({ kind: cockpitFlow.confirm.kind, symbol: cockpitFlow.confirm.symbol, text: cockpitFlow.confirm.text, agent: agentBattle?.agentContext?.agentName || 'Your Agent' })
     : null);
+  const cockpitConfirmSending = (surface, key, callId = null) => cockpitConfirmOn(surface, key, callId)
+    && Boolean(cockpitAnswer.pending) && cockpitAnswer.pending.callId === cockpitFlow.confirm.callId;
+  // While the research modal stands over the bench sheet, the sheet defers to it (review CB4-9, CB5-1).
+  const cockpitResearchOpen = gatedPath ? Boolean(researchView) : Boolean(researchAsset);
   const cockpitVintage = BATTLE_VIEW_COPY.cockpitVintage(checkOf(latestPromptBuiltAt(agentBattle?.evaluations)), turnLine?.nextDecisionAt ?? null);
   const cockpitFeedElement = cockpitOn && cockpitFeed ? (cockpit2b ? (
     <Cockpit2b
@@ -2780,7 +2825,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       flow={cockpitFlow}
       onOpenSheet={openCockpitSheet}
       onSymbolClick={handleCockpitSymbol}
-      onOpenBench={({ callId, step, cardKey }) => { setCockpitBenchFiled(null); setCockpitBench({ callId, step, cardKey }); }}
+      onOpenBench={({ callId, step, cardKey }) => { setCockpitBenchFiled(null); setCockpitBenchRefusal(null); setCockpitBenchSort('rank'); setCockpitBench({ callId, step, cardKey }); }}
+      onShowAllEarlier={() => setCockpitShowAllEarlier(true)}
     />
   ) : (
     <CockpitFeed
@@ -2816,7 +2862,13 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       onClose={closeCockpitSheet}
       onAnswer={cockpit2b ? cockpitSheetAnswer : cockpitAnswer.submit}
       onOpenCheck={handleCockpitOpenCheck}
-      {...(cockpit2b ? { confirmLine: cockpitConfirmLine('sheet'), onConfirmReplace: cockpitFlow.replace, onConfirmKeep: cockpitFlow.keep } : {})}
+      {...(cockpit2b ? {
+        confirmLine: cockpitConfirmLine('sheet', cockpitSheetKey),
+        confirmSending: cockpitConfirmSending('sheet', cockpitSheetKey),
+        onConfirmReplace: cockpitFlow.replace,
+        onConfirmKeep: cockpitFlow.keep,
+        actions: cockpitSheetTile ? sheetButtonsOf(cockpitSheetTile, { meter: cockpitMeter, pending: cockpitAnswer.pending, league: cockpitLeague }) : [],
+      } : {})}
     />
   ) : null;
   const cockpitBenchElement = cockpit2b ? (
@@ -2830,9 +2882,12 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       onSort={setCockpitBenchSort}
       onPick={handleCockpitBenchPick}
       onResearch={handleCockpitSymbol}
-      confirmLine={cockpitConfirmLine('bench')}
-      onConfirmReplace={() => cockpitFlow.replace().then(onCockpitBenchResult)}
+      confirmLine={cockpitConfirmLine('bench', cockpitBench?.cardKey ?? null, cockpitBench?.callId ?? null)}
+      confirmSending={cockpitConfirmSending('bench', cockpitBench?.cardKey ?? null, cockpitBench?.callId ?? null)}
+      onConfirmReplace={() => { const pick = cockpitFlow.confirm?.pickSymbol ?? null; cockpitFlow.replace().then((r) => onCockpitBenchResult(r, pick)); }}
       onConfirmKeep={cockpitFlow.keep}
+      suspended={cockpitResearchOpen}
+      onSuspendedEscape={gatedPath ? closeGatedResearch : () => setResearchAsset(null)}
     />
   ) : null;
   // The desktop's Cockpit panel: the feed in its own scroller, the sheet a

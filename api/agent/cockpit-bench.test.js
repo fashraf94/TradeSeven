@@ -200,8 +200,13 @@ describe('browse rows (no callId): every bench-list name, status from the lock a
 describe('the pure parts', () => {
   it('not_swappable for a name the test refuses for any other reason', () => {
     const battle = battleDoc();
+    // Review CB1-8: an exit whose stock already LEFT the book can bring nobody in — every scoped row is
+    // not_swappable (the filing would be 400 symbol_not_held), never "available" with Pick enabled.
     const out = buildBenchRows({ battle, call: exitCall({ symbol: 'GONE' }), rankingsBySymbol: {}, prices: { asOf: null, bySymbol: { DHR: { price: 1, changePct: 0 } } }, nowMs: NOW });
-    expect(out.rows.find((r) => r.symbol === 'DHR').status).toBe('available');
+    expect(out.rows.find((r) => r.symbol === 'DHR').status).toBe('not_swappable');
+    expect(out.rows.every((r) => r.status === 'not_swappable')).toBe(true);
+    const held = buildBenchRows({ battle, call: exitCall(), rankingsBySymbol: {}, prices: { asOf: null, bySymbol: { DHR: { price: 1, changePct: 0 } } }, nowMs: NOW });
+    expect(held.rows.find((r) => r.symbol === 'DHR').status).toBe('available');
     const own = buildBenchRows({ battle: battleDoc({ watchlist: { hotBench: ['AMD'] } }), call: exitCall(), rankingsBySymbol: {}, prices: { asOf: null, bySymbol: {} }, nowMs: NOW });
     expect(own.rows.map((r) => r.symbol)).not.toContain('AMD'); // held → omitted before any status
   });

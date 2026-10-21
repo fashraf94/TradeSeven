@@ -53,3 +53,15 @@ describe('TacticalRow callMark', () => {
     expect(marks(html)).toHaveLength(1);
   });
 });
+
+// Build 2b review CB5-6: the row is one button (the Why? door); a child image is not announced, so the mark's
+// words join the button's own name — and only when the mark is passed.
+describe('TacticalRow callMark — the accessible name', () => {
+  const whyRow = (props) => strip(renderToString(<TacticalRow leftAsset={PLAYER} rightAsset={CPU} tier="core" onWhy={() => {}} whyName="Why? VLO" whyId="why-core-0" {...props} />));
+  it('with the mark: "Why? VLO · your live command"; without: the shipped "Why? VLO"', () => {
+    expect(whyRow({ callMark: 'command' })).toContain('aria-label="Why? VLO · your live command"');
+    expect(whyRow({ callMark: 'open' })).toContain('aria-label="Why? VLO · an open call"');
+    expect(whyRow({})).toContain('aria-label="Why? VLO"');
+    expect(whyRow({})).not.toContain('your live command');
+  });
+});

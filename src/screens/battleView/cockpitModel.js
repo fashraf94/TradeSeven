@@ -215,13 +215,22 @@ export function isFollowing(command, call, { eventsMap = new Map() } = {}) {
  * join. Each card's calls come newest first; cards come newest first by their
  * newest call.
  *
+ * The command stays live while its SLOT does, not while its answered call is
+ * open (D-10, C-6 rev 3's live test — review CB3-1): once the answered call has
+ * hit or expired under a live slot, its restatements still fold together, on a
+ * card of the command's own (`command:{thread}`), and still read "Following your
+ * call" and offer no answer. A next_check command is judged at the very check
+ * that hears it, so without this D-10 could never fire for one.
+ *
  * @param {object[]} calls
  * @param {{ command?: object|null, eventsMap?: Map }} [opts]  commandOf(...) and the events (D-10)
  * @returns {Array<{ key: string, calls: object[] }>}
  */
 export function foldThreads(calls, { command = null, eventsMap = new Map() } = {}) {
   const open = (Array.isArray(calls) ? calls : []).filter((c) => c?.state === 'open').sort(newestFirst);
-  const commandKey = command && command.call?.state === 'open' ? threadKeyOf(command.call) : null;
+  const commandKey = command
+    ? (command.call?.state === 'open' ? threadKeyOf(command.call) : (nonEmpty(command.threadId) ? `command:${command.threadId}` : null))
+    : null;
   const groups = new Map();
   for (const call of open) {
     let key = threadKeyOf(call) ?? `call:${call.callId}`;
@@ -343,10 +352,16 @@ export function callTag(call, { events = [], evaluations = [], nowMs, slotThread
 /** The states a committed act can stand on (an invalidated call was never open to one). */
 const ACTABLE_STATES = new Set(['open', 'hit', 'expired_unresolved', 'ended_with_battle']);
 
-/** The `retired` event's tag (D-6): the name that moved, the way it moved, the check whose step retired it. */
+/**
+ * The `retired` event's tag (D-6): the name that moved, the way it moved, and the check it moved AT — the check
+ * of the recorded trade (`trade.at`), else the check whose step retired it. They differ on D-6's deferred routes
+ * (an exit after the prompt retires at the next check's step), and the tag says "left the book at" (review CB3-2;
+ * the event's own stored text, a prompt-module renderer, is unchanged).
+ */
 function retiredTag(event) {
   const came = event?.reason === 'pick_already_held';
-  return factTag('event:retired', { symbol: nonEmpty(event?.symbol) ? event.symbol : null, came, check: checkOf(isoOf(event?.at)) });
+  const movedAt = isoOf(event?.trade?.at) ?? isoOf(event?.at);
+  return factTag('event:retired', { symbol: nonEmpty(event?.symbol) ? event.symbol : null, came, check: checkOf(movedAt) });
 }
 
 /**
@@ -582,9 +597,9 @@ export function tileOf(thread, {
   const tagCtx = { evaluations, nowMs, slotThreadId, exchanges, nextDecisionAt, battleExpiresAtMs };
   const tagSource = actedMember ?? filed ?? newest;
   const tag = callTag(tagSource, { events: eventsMap.get(tagSource.callId) ?? [], ...tagCtx });
-  // D-10: the restatements under the live command, when it stands on this card.
-  const commanded = command && live && live.callId === command.call?.callId ? live : null;
-  const following = new Set(commanded ? thread.filter((c) => isFollowing(command, c, { eventsMap })).map((c) => c.callId) : []);
+  // D-10: the restatements under the live command — whether or not its answered call is still open on this card
+  // (the command is live while its slot is; review CB3-1). isFollowing never names the answered call itself.
+  const following = new Set(command ? thread.filter((c) => isFollowing(command, c, { eventsMap })).map((c) => c.callId) : []);
   // D-12 condition 1: the new asks beside the answer the card shows.
   const newAsks = shown && newest.state === 'open'
     ? thread.filter((c) => c !== shown && c.state === 'open' && !answeredCall(c) && !following.has(c.callId) && !withinCoverage(shown, c))
@@ -618,7 +633,7 @@ export function tileOf(thread, {
   const olderAck = !filed && shown && shown !== newest && !answeredCall(newest) && shown.playerResponse.kind === 'ack' ? shown : null;
   let answerLine = null;
   if (filed) {
-    answerLine = COPY.cockpitThreadAnswer(filed.playerResponse.answer, etTime(isoOf(filed.playerResponse.filedAt)), etSlotTime(isoOf(filed.evidence?.priceAsOf)), chosenNameOf(filed, { directive, exchanges }));
+    answerLine = COPY.cockpitThreadAnswer(filed.playerResponse.answer, etTime(isoOf(filed.playerResponse.filedAt)), etSlotTime(isoOf(filed.evidence?.priceAsOf)), chosenNameOf(filed, { directive, exchanges }), { v2, direction: filed.direction });
   } else if (olderAck) {
     answerLine = COPY.cockpitThreadAgreed(etTime(isoOf(olderAck.playerResponse.filedAt)), etSlotTime(isoOf(olderAck.evidence?.priceAsOf)));
   }
@@ -651,7 +666,9 @@ export function tileOf(thread, {
     answerLine,
     buttons,
     blockedLine: blocked && buttons.some((b) => b.row === 'directive') ? block.line : null,
-    step: v2 ? replacementStepFor(target, { v2 }) : null,
+    // The step offers answers too, so it keeps the buttons' own gates: inside the deadline, and not once the
+    // agent acted (the endpoint refuses both — review CB4-5).
+    step: v2 && answerable && !actedMember ? replacementStepFor(target, { v2 }) : null,
     options: v2 && Array.isArray(target.replacementOptions) ? target.replacementOptions : null,
   };
 }
@@ -669,7 +686,7 @@ export function tileOf(thread, {
  */
 export function buildCockpitFeed({
   calls, events, evaluations, directive, nowMs, pending = null, outcomes = {}, showAllEarlier = false, controlEpochLog = null, suppressed = false,
-  exchanges = [], nextDecisionAt = null, battleExpiresAtMs = null, v2 = false,
+  exchanges = [], nextDecisionAt = null, battleExpiresAtMs = null, v2 = false, league = false,
 } = {}) {
   const shown = cockpitCalls(calls).filter((c) => c.kind !== 'pick');
   const eventsMap = eventsByCall(events);
@@ -679,7 +696,7 @@ export function buildCockpitFeed({
   const slotThreadId = liveCallSlotOf({ directive, nowMs, controlEpochLog, suppressed })?.directiveThreadId ?? null;
   const command = commandOf({ directive, calls: shown, nowMs, controlEpochLog, suppressed });
   const ctx = { eventsMap, evaluations, nowMs, block, pending, slotThreadId, command, exchanges, nextDecisionAt, battleExpiresAtMs, directive, v2 };
-  const withRefusal = (tile) => ({ ...tile, refusalLine: refusalLineOf(tile, outcomes?.[tile.target?.callId ?? tile.id] ?? outcomes?.[tile.id] ?? null, { calls: shown, directive, block, nowMs, v2 }) });
+  const withRefusal = (tile) => ({ ...tile, refusalLine: refusalLineOf(tile, outcomes?.[tile.target?.callId ?? tile.id] ?? outcomes?.[tile.id] ?? null, { calls: shown, directive, block, nowMs, v2, league }) });
   const openTiles = foldThreads(shown, { command, eventsMap }).map((t) => withRefusal(tileOf(t.calls, ctx)));
   const resolved = shown
     .filter((c) => c.state !== 'open')
@@ -716,10 +733,16 @@ export function monitoringRow(monitoring, evaluations) {
 export function receiptLineOf(event, call, { evaluations = [], nowMs, exchanges = [] } = {}) {
   const at = isoOf(event?.at);
   switch (event?.kind) {
-    case 'answered':
+    case 'answered': {
+      // D-4's second answer keeps the agreement in `after`: ITS event reads as the agreement it was (review CB3-3).
+      const after = call?.playerResponse?.after;
+      if (after && after.answer === 'go' && msOf(event.at) !== null && msOf(event.at) === msOf(after.filedAt)) {
+        return COCKPIT_FACT_TAGS['answer:ack'].text({ time: etTime(isoOf(after.filedAt)) });
+      }
       return call?.playerResponse?.kind === 'ack'
         ? COCKPIT_FACT_TAGS['answer:ack'].text({ time: etTime(isoOf(call.playerResponse.filedAt) ?? at) })
         : COPY.cockpitReceiptFiled(etTime(isoOf(call?.playerResponse?.filedAt) ?? at));
+    }
     case 'heard':
       return COCKPIT_FACT_TAGS['event:heard'].text({ check: checkOf(isoOf(event.evidence?.promptBuiltAt) ?? promptBuiltAtOf(evaluations, event.evidence?.evalId)) });
     case 'acted':
@@ -866,7 +889,7 @@ export function staleRefusalIds(feed, outcomes) {
  * @param {object} tile
  * @param {{ status: number|null, body: object|null, at?: number, callId?: string }|null} outcome
  */
-export function refusalLineOf(tile, outcome, { calls = [], directive = null, block = null, nowMs, v2 = false } = {}) {
+export function refusalLineOf(tile, outcome, { calls = [], directive = null, block = null, nowMs, v2 = false, league = false } = {}) {
   if (!tile || !outcome) return null;
   const call = tile.calls.find((c) => c.callId === outcome.callId) ?? tile.call;
   // Cockpit Build 2b (D-4): the one second answer — a refused replace after the go acknowledgment still shows its line.
@@ -886,6 +909,6 @@ export function refusalLineOf(tile, outcome, { calls = [], directive = null, blo
   }
   // Cockpit Build 2b (spec §7.3, flag on): the line names the name that can't come in, the agent's counterpart,
   // or the stock that left — the submitted name rides the outcome (useCockpitAnswer), the others the record.
-  const names = { pickSymbol: outcome.pickSymbol ?? null, counterpart: call.counterpart ?? null, symbol: call.symbol ?? null };
+  const names = { pickSymbol: outcome.pickSymbol ?? null, counterpart: call.counterpart ?? null, symbol: call.symbol ?? null, league };
   return cockpitRefusalLine(outcome.status, body, { pendingLine, v2, names });
 }

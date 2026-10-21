@@ -493,3 +493,90 @@ describe('§7.4 words that never appear — every 2b string', () => {
     expect(JSON.stringify(v.strip.chips[0])).not.toMatch(/\badd\b/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The review's fix round (Build 2b review CB3-4, CB4-*, CB5-10, CB6-*).
+import { sheetButtonsOf, whenOf } from './cockpit2bModel';
+import { cockpitRefusalLine } from './battleViewCopy';
+
+describe('review fixes — the view model', () => {
+  it('CB4-2/CB6-3: 2a\'s details sheet under the flag gets the card\'s §6.2 buttons, without the step-opening "Exit instead"', () => {
+    const f = feedOf([holdShot()]);
+    expect(sheetButtonsOf(f.needsYou[0]).map((b) => [b.answer, b.label, b.dot])).toEqual([['hold', 'Hold', false]]);
+    const ent = feedOf([entryAct({ defaultAction: 'hold' })]);
+    expect(sheetButtonsOf(ent.needsYou[0]).map((b) => b.label)).toEqual(['Hold', 'Bring it in']);
+    expect(sheetButtonsOf(ent.needsYou[0], { meter: meterOf(cockpitFiling(7)) }).map((b) => [b.label, b.disabled])).toEqual([['Hold', false], ['No commands left', true]]);
+    expect(JSON.stringify(sheetButtonsOf(ent.needsYou[0]))).not.toMatch(/Go instead|1 message/);
+  });
+
+  it('CB6-6: a league battle\'s override costs a message, and its budget refusal says so', () => {
+    const t = feedOf([entryAct()]).needsYou[0];
+    expect(sheetButtonsOf(t, { league: true }).find((b) => b.row === 'directive').aria).toBe('Hold off · 1 message');
+    expect(sheetButtonsOf(t).find((b) => b.row === 'directive').aria).toBe('Hold off · 1 command');
+    expect(cockpitRefusalLine(409, { reason: 'budget' }, { v2: true, names: { league: true } })).toBe('No messages left — nothing was filed.');
+    expect(cockpitRefusalLine(409, { reason: 'budget' }, { v2: true, names: {} })).toBe('No commands left — nothing was filed.');
+  });
+
+  it('CB4-7: an answer that LEFT the slot does not hide the restated call\'s buttons — the card stays a call card', () => {
+    const old = entryAct({ ...minted('12:00') });
+    file(old, { text: 'Don\'t bring in AMD today.' });
+    const restated = entryAct({ ...minted('12:45'), condition: { side: 'above', level: 164 } });
+    const v = view([old, restated], { battle: { ...BATTLE, directive: null }, ui: { expandedKey: old.callId } });
+    const card = v.strip.chips[0].card;
+    expect(card.mode).toBe('call');
+    expect(card.buttons.map((b) => b.answer)).toEqual(['go', 'hold']);
+  });
+
+  it('CB3-4: an answered call whose command no longer stands reads its fact, never the default word', () => {
+    const c = holdShot();
+    const rec = file(c);
+    const exchanges = [{ source: 'cockpit', hasDirective: true, directiveThreadId: rec.directiveThreadId, directive: rec }];
+    const retired = [{ kind: 'retired', at: at('13:15'), callIds: [c.callId], symbol: 'ZS', reason: 'symbol_not_held' }];
+    const v = view([c], { battle: { ...BATTLE, directive: null }, rawExchanges: exchanges, exchanges, events: retired });
+    expect(v.strip.chips[0].text).toBe('ZS ↓ 290 · command retired');
+    const v2 = view([c], { battle: { ...BATTLE, directive: null }, rawExchanges: exchanges, exchanges });
+    expect(v2.strip.chips[0].text).toBe('ZS ↓ 290 · you answered');
+  });
+
+  it('CB6-2: the bench note is withheld when the check\'s words are the system\'s or the guardrail\'s', () => {
+    const cards = [{ text: 'Forcing exit → MOS.', symbols: ['MOS'] }];
+    expect(benchNoteOf({ cards, footer: COPY.motiveSystem }, 'MOS')).toBeNull();
+    expect(benchNoteOf({ cards, footer: COPY.guardrailForcedFailedFooter }, 'MOS')).toBeNull();
+    expect(benchNoteOf({ cards, footer: null }, 'MOS')).toBe('Forcing exit → MOS.');
+    expect(benchNoteOf({ cards, footer: COPY.downgradedFooter }, 'MOS')).toBe('Forcing exit → MOS.'); // "The agent's own words · …"
+  });
+
+  it('CB6-8: a time on another ET day carries its weekday ("locked until Thu 11:00 AM")', () => {
+    expect(whenOf('2026-10-22T15:00:00.000Z', NOW)).toBe('Thursday 11:00 AM');
+    expect(whenOf('2026-10-21T19:45:00.000Z', NOW)).toBe('3:45 PM');
+    expect(whenOf(null, NOW)).toBeNull();
+  });
+
+  it('CB6-9 / CB4-8: an Earlier row with no level has no double space; ten rows then "Show all · {n}"', () => {
+    expect(COPY.cockpit2bEarlierRow('VLO', '↓', '', 'Dropped')).toBe('VLO ↓ · Dropped');
+    const done = Array.from({ length: 12 }, (_, i) => holdShot({ symbol: `D${i}`, state: 'expired_unresolved', stateChangedAt: at('13:00') + i }));
+    const v = view(done);
+    expect(v.earlier.count).toBe(12);
+    expect(v.earlier.rows).toHaveLength(10);
+    expect(v.earlier.more).toBe('Show all · 12');
+  });
+
+  it('CB4-6 / CB4-10: a spotlight its card no longer needs, and a step its call no longer offers, are marked stale', () => {
+    const zs = ack(holdShot());
+    const v = view([zs, entryAct()], { ui: { spotlightKey: zs.callId, stepOpenKey: zs.callId } });
+    expect(v.spotlightStale).toBe(true);
+    expect(v.stepOpenStale).toBe(true);
+    const live = holdShot();
+    const v2 = view([live], { ui: { spotlightKey: live.callId, stepOpenKey: live.callId } });
+    expect(v2.spotlightStale).toBe(false);
+    expect(v2.stepOpenStale).toBe(false);
+  });
+
+  it('CB4-14 / CB5-10: "Let Shadow choose" reads Sending… in flight; a waiting Pick still names its symbol', () => {
+    const zs = holdShot({ replacementOptions: [{ symbol: 'XOM', source: 'bench' }] });
+    const v = view([zs], { pending: { callId: zs.callId, answer: 'go_now' }, ui: { pending: { callId: zs.callId, answer: 'go_now' } } });
+    expect(v.now.step.letChoose).toBe('Sending…');
+    const sheet = benchSheetOf({ status: 'ready', data: { asOf: null, rows: [{ symbol: 'XOM', status: 'available', rank: 1 }] }, call: exitActNoCp(), step: 'on_card', meter: meterOf(cockpitFiling(7)) });
+    expect(sheet.rows[0].action.aria).toBe('Pick XOM');
+  });
+});

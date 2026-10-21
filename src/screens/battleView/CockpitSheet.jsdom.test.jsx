@@ -294,3 +294,22 @@ describe('focus that never falls to <body> (review L4-3, L5-5)', () => {
     expect(parseInt(q('[data-cockpit-check-link]').style.minHeight, 10)).toBeGreaterThanOrEqual(36);
   });
 });
+
+// Cockpit Build 2b review CB4-2 / CB6-3: under the flag the details sheet answers in §6.2's words (the card's buttons).
+describe('Cockpit Build 2b — the details sheet with the 2b buttons', () => {
+  it('`actions` renders the 2b buttons (bullet, cost aria) in place of 2a\'s; a press answers with its call and answer', async () => {
+    const { sheetButtonsOf } = await import('./cockpit2bModel');
+    const c = { callId: 'b:e:call:9', kind: 'called_shot', evalId: 'e', mintedAt: Date.parse('2026-09-09T14:31:00.000Z'), mintedMode: 'on', symbol: 'AMD', direction: 'entry', heldAtMint: false, slot: 'support', counterpart: 'KO', condition: { side: 'above', level: 161 }, horizon: { phrase: 'this_session', expiresAt: Date.parse('2026-09-09T20:00:00.000Z'), basis: 'this_session' }, defaultAction: 'hold', evidence: { priceAsOf: '2026-09-09T14:30:20.000Z' }, state: 'open', stateChangedAt: 0, playerResponse: null };
+    const nowMs = Date.parse('2026-09-09T15:05:00.000Z');
+    const feed = buildCockpitFeed({ calls: [c], events: [], evaluations: [], directive: null, nowMs, v2: true });
+    const tile = feed.needsYou[0];
+    const onAnswer = vi.fn();
+    act(() => { root.render(<CockpitSheet sheet={sheetOf(tile, { nowMs })} actions={sheetButtonsOf(tile)} onClose={() => {}} onAnswer={onAnswer} />); });
+    const labels = [...container.querySelectorAll('[data-cockpit-answer]')].map((b) => b.textContent);
+    expect(labels).toEqual(['Hold', 'Bring it in']);
+    expect(container.querySelector('[data-cockpit-answer="go_now"]').getAttribute('aria-label')).toBe('Bring it in · 1 command');
+    expect(container.textContent).not.toMatch(/Go instead|1 message/);
+    act(() => { container.querySelector('[data-cockpit-answer="go_now"]').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onAnswer).toHaveBeenCalledWith(c.callId, 'go_now');
+  });
+});

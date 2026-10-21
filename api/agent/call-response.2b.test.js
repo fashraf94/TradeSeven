@@ -348,7 +348,14 @@ describe('the sanctioned rewrite is the only one (D-4 rev 2) — source-pinned',
     const whole = [];
     for (const abs of files) {
       const code = readFileSync(abs, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-      for (const m of code.matchAll(/(?:update|set)\([^;]*?\{\s*playerResponse\b/g)) whole.push(`${relative(resolve(HERE, '..'), abs).replace(/\\/g, '/')}:${m.index}`);
+      // Every write call's argument text (to its statement's end): playerResponse as a KEY in ANY position — after
+      // other keys, after a spread, shorthand, in create() — never only as the first key (review CB1-4). The dotted
+      // 'playerResponse.heardEvalId' key is the one partial write, and does not match (a '.' follows the name).
+      for (const m of code.matchAll(/\b(?:update|set|create)\(/g)) {
+        const end = code.indexOf(';', m.index);
+        const stmt = code.slice(m.index, end === -1 ? m.index + 2000 : end);
+        if (/[{,]\s*['"]?playerResponse['"]?\s*[:,}]/.test(stmt)) whole.push(`${relative(resolve(HERE, '..'), abs).replace(/\\/g, '/')}:${m.index}`);
+      }
     }
     expect(whole.map((w) => w.split(':')[0])).toEqual(['agent/call-response.js', 'agent/call-response.js']);
     const src = readFileSync(resolve(HERE, 'call-response.js'), 'utf8');

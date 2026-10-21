@@ -165,7 +165,8 @@ describe('idempotence, failure and the deadline', () => {
     const env = setup();
     env.db.runTransaction = () => new Promise(() => {}); // never settles
     const started = Date.now();
-    const res = await run(env, { deadlineMs: Date.now() + 120 });
+    // The step keeps a 200 ms reserve for settling (review CB1-2): 400 ms leaves the transaction 200.
+    const res = await run(env, { deadlineMs: Date.now() + 400 });
     expect(res).toEqual({ retired: false, reason: 'unconfirmed' });
     expect(Date.now() - started).toBeLessThan(RETIRE_TX_MS + 500);
     expect(stored(env.db, B).directive).toEqual(env.slot);
@@ -180,6 +181,24 @@ describe('idempotence, failure and the deadline', () => {
     const env2 = setup();
     expect(await run(env2, { deadlineMs: Date.now() - 1 })).toEqual({ retired: false, reason: 'not_started' });
     expect(env2.db.__access.reads).toEqual([]);
+  });
+
+  it('review CB1-2: a commit that lands after the transaction\'s budget but inside the reserve settles as RETIRED — the in-memory slot is dropped', async () => {
+    const env = setup();
+    env.db.__hooks.beforeCommit = async () => { await new Promise((r) => setTimeout(r, 700)); };
+    const res = await run(env, { deadlineMs: Date.now() + RETIRE_TX_MS });
+    expect(res).toEqual({ retired: true, reason: 'symbol_not_held' });
+    expect(env.memory.directive).toBeNull();
+    expect(stored(env.db, B).directive).toBeNull();
+  });
+
+  it('review CB1-2: a commit still in flight past the WHOLE ceiling stays unconfirmed (the heard pass\'s precedent): logged, never thrown', async () => {
+    const env = setup();
+    env.db.__hooks.beforeCommit = async () => { await new Promise((r) => setTimeout(r, 1_200)); };
+    const res = await run(env, { deadlineMs: Date.now() + RETIRE_TX_MS });
+    expect(res).toEqual({ retired: false, reason: 'unconfirmed' });
+    expect(env.memory.directive).toEqual(env.slot);
+    await new Promise((r) => setTimeout(r, 600));
   });
 
   it('the ceiling is the heard pass\'s 800 ms', () => {

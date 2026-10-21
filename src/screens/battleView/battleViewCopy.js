@@ -1022,10 +1022,13 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // A folded thread's directive answer, live or not (Amendment C-6 rev 3), naming the wording it was given on.
   // Cockpit Build 2b (D-4): a chosen name rides the words — "bring in DHR" for a replace, "go instead, bring in DHR"
   // for a named go_now — read from the directive's own record by the caller (never from playerResponse).
-  cockpitThreadAnswer: (answer, filedTime, wordingCheck, pickSymbol = null) => {
+  // Cockpit Build 2b (flag on, review CB6-4): `go_now` is quoted in the words the player tapped there —
+  // "exit instead" on an exit, "bring it in" on an entry (§6.2; V5-2 retires "Go instead").
+  cockpitThreadAnswer: (answer, filedTime, wordingCheck, pickSymbol = null, { v2 = false, direction = null } = {}) => {
     const named = typeof pickSymbol === 'string' && pickSymbol ? pickSymbol : null;
+    const goNow = v2 ? (direction === 'exit' ? 'exit instead' : 'bring it in') : 'go instead';
     const word = answer === 'hold' ? 'hold off'
-      : answer === 'go_now' ? (named ? `go instead, bring in ${named}` : 'go instead')
+      : answer === 'go_now' ? (named ? `${goNow}, bring in ${named}` : goNow)
         : answer === 'replace' && named ? `bring in ${named}` : null;
     if (!word) return null;
     const head = filedTime ? `You said ${word} · ${filedTime}` : `You said ${word}`;
@@ -1111,6 +1114,8 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpit2bBringItIn: 'Bring it in',
   cockpit2bNoCommands: 'No commands left',
   cockpit2bOneCommandAria: (label) => (label ? `${label} · 1 command` : null),
+  // A LEAGUE battle's overrides charge the group's daily chat budget (D-1: the league branch is unchanged).
+  cockpit2bOneMessageAria: (label) => (label ? `${label} · 1 message` : null),
   cockpit2bSending: 'Sending…',
   cockpit2bDone: 'Done',
   // The command card (§5.2 "After an answer"): the canonical text verbatim, then the receipts.
@@ -1146,15 +1151,21 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpit2bWordFollowing: 'following',
   cockpit2bWordUpside: 'upside',
   cockpit2bWordAgreed: 'you agreed',
+  // An answered call whose command no longer stands (review CB3-4): the fact its card's tag already names.
+  cockpit2bWordRetired: 'command retired',
+  cockpit2bWordReplaced: 'replaced',
+  cockpit2bWordAnswered: 'you answered',
   cockpit2bLineMovedShort: 'line moved',
   cockpit2bMore: (n) => `+${n} more`,
   cockpit2bFewer: 'fewer',
   cockpit2bSpotlight: 'Spotlight →',
   cockpit2bChipAria: (text) => (text ? `${text} — open` : null),
+  // The expanded chip's header collapses it (review CB5-10: its name says so).
+  cockpit2bChipAriaCollapse: (text) => (text ? `${text} — close` : null),
   // §5.5 the day line (counts records; never tappable).
   cockpit2bDayLine: (calls, hit, expired, answered) => `Today · ${calls} ${calls === 1 ? 'call' : 'calls'} · ${hit} hit · ${expired} expired · you answered ${answered}`,
   // §5.6 Earlier, collapsed.
-  cockpit2bEarlierRow: (sym, arrow, level, tag) => [`${sym} ${arrow} ${level}`, tag].filter(Boolean).join(' · '),
+  cockpit2bEarlierRow: (sym, arrow, level, tag) => [[sym, arrow, level].filter(Boolean).join(' '), tag].filter(Boolean).join(' · '),
   cockpit2bEarlierToggle: (open) => (open ? 'Hide earlier calls' : 'Show earlier calls'),
   // §6.3 the replace confirmation.
   // A 409 naming a command whose call this screen has not loaded: the command, without a symbol it cannot read.
@@ -1304,7 +1315,8 @@ export function cockpitRefusalLine(status, body = null, { pendingLine = null, v2
   // shows no line; the budget is commands; a name that can't come in, or a stock already gone, says which.
   if (v2) {
     if (status === 409 && reason === 'replace_unconfirmed') return null;
-    if (status === 409 && reason === 'budget') return 'No commands left — nothing was filed.';
+    // A league battle's budget is still the group's daily chat messages (D-1's league branch).
+    if (status === 409 && reason === 'budget') return names.league ? 'No messages left — nothing was filed.' : 'No commands left — nothing was filed.';
     if (status === 400 && error === 'ineligible_action') {
       if (typeof reason === 'string' && reason.startsWith('pick_') && names.pickSymbol) return `${names.pickSymbol} can't come in right now — nothing was filed.`;
       if (reason === 'counterpart_unavailable' && names.counterpart) return `${names.counterpart} can't come in right now — nothing was filed.`;

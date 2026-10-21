@@ -135,7 +135,9 @@ describe('D-3 rev 2 — the usable-price rule (options only)', () => {
   it('a name the minting check\'s observation does not admit is skipped — agent and bench alike', () => {
     const call = firstCall({ candidates: cand('DHR', 'AMD'), rankMap: { PM: 1, JPM: 2 }, obs: observation({ omit: ['DHR', 'PM'] }) });
     expect(call.replacementOptions.map((o) => o.symbol)).toEqual(['AMD', 'JPM']);
-    // The hot bench is never in the model observation (observe.js examines held + the persisted bench): never an option.
+    // A hot-bench name the OBSERVATION does not admit is never an option. (The cron merges the hot bench into the
+    // in-memory bench before the seam, so on an ordinary tick its names ARE observed and can be options; a tick that
+    // re-read the battle before the seam drops that merge — review CB1-3. This row pins the pure rule on a bare book.)
     expect(firstCall({ candidates: cand('PLTR') }).replacementOptions.map((o) => o.symbol)).not.toContain('PLTR');
   });
 

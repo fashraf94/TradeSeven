@@ -20,7 +20,7 @@
 // cockpit filings while the battle is not cockpit-on).
 //
 // Pure, Node-clean and browser-clean: no import. The source literal equals
-// chatHistoryWindow.js COCKPIT_SOURCE (commands.test.js pins it).
+// chatHistoryWindow.js COCKPIT_SOURCE (build2b.answers.test.js pins it).
 
 /** Commands per battle (D-1). Chat keeps its own 10 (directiveFiling.js BATTLE_CHAT_BUDGET). */
 export const COCKPIT_COMMANDS_LIMIT = 7;

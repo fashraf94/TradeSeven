@@ -272,3 +272,85 @@ describe('§5.4 Also live, §5.5 the day line, §5.6 Earlier', () => {
     expect(q('[data-cockpit-earlier-row]').textContent).toBe('ZS ↓ 290 · Expired · by today\'s close');
   });
 });
+
+// ---------------------------------------------------------------------------
+// The review's fix round (CB4-4, CB4-8, CB5-2, CB5-3).
+describe('review fixes — the V5 screen', () => {
+  const focusOn = (el) => act(() => { el.focus(); });
+  const active = () => document.activeElement;
+
+  it('CB5-2: focus never falls to <body> — chip expand/collapse, Exit instead, Cancel, Spotlight', async () => {
+    const vlo = call();
+    const zs = holdShot({ ...minted('12:45'), replacementOptions: [{ symbol: 'XOM', source: 'bench' }] });
+    render({ calls: [vlo, zs], submit: ok() });
+    const chip = q(`[data-cockpit-chip="${zs.callId}"]`);
+    focusOn(chip);
+    await click(chip);
+    expect(active().getAttribute('data-cockpit-chip-toggle')).toBe('1');
+    expect(active().getAttribute('aria-expanded')).toBe('true');
+    await click(active()); // collapse
+    expect(active().getAttribute('data-cockpit-chip')).toBe(zs.callId);
+    await click(active()); // expand again
+    await click(q(`[data-cockpit-card="${zs.callId}"] [data-cockpit-answer="go_now"]`)); // Exit instead → the step
+    expect(q(`[data-cockpit-card="${zs.callId}"] [data-cockpit-step]`).contains(active())).toBe(true);
+    await click(q(`[data-cockpit-card="${zs.callId}"] [data-cockpit-step-cancel]`));
+    expect(active().getAttribute('data-cockpit-answer')).toBe('go_now');
+    await click(q(`[data-cockpit-spotlight="${zs.callId}"]`));
+    expect(active().getAttribute('data-cockpit-tile-open')).toBe('1');
+    expect(q('[data-cockpit-now]').contains(active())).toBe(true);
+    expect(active()).not.toBe(document.body);
+  });
+
+  it('CB5-2 / CB4-4: the confirmation takes focus on Replace; Keep returns it to the pressed control; in flight both wait', async () => {
+    let release;
+    const submit = vi.fn(() => new Promise((r) => { release = r; }));
+    const zs = holdShot({ ...minted('11:30') });
+    const directive = commandOn(zs);
+    const amd = entryAct();
+    render({ calls: [zs, amd], battle: { ...BATTLE, directive }, submit });
+    await click(q('[data-cockpit-now] [data-cockpit-answer="hold"]'));
+    expect(active().getAttribute('data-cockpit-replace')).toBe('1');
+    await click(q('[data-cockpit-keep]'));
+    expect(active().getAttribute('data-cockpit-answer')).toBe('hold');
+    await click(q('[data-cockpit-now] [data-cockpit-answer="hold"]'));
+    await click(q('[data-cockpit-replace]'));
+    expect(submit).toHaveBeenCalledWith(amd.callId, 'hold', { pickSymbol: null, confirmReplace: true });
+    // The flow's own submit is in flight; the screen passes `pending` — here the harness does not, so assert the component contract directly.
+    await act(async () => { release({ status: 200, body: {} }); });
+  });
+
+  it('CB4-4: ReplaceConfirm in flight reads "Sending…" and both buttons wait', async () => {
+    const { ReplaceConfirm } = await import('./Cockpit2b');
+    const onReplace = vi.fn();
+    const onKeep = vi.fn();
+    act(() => { root.render(<ReplaceConfirm line="This replaces your command on ZS — &quot;x&quot;." sending onReplace={onReplace} onKeep={onKeep} />); });
+    expect(q('[data-cockpit-replace]').textContent).toBe('Sending…');
+    expect(q('[data-cockpit-replace]').getAttribute('aria-disabled')).toBe('true');
+    expect(q('[data-cockpit-keep]').getAttribute('aria-disabled')).toBe('true');
+    await click(q('[data-cockpit-keep]'));
+    await click(q('[data-cockpit-replace]'));
+    expect(onKeep).not.toHaveBeenCalled();
+    expect(onReplace).not.toHaveBeenCalled();
+  });
+
+  it('CB4-8: Earlier shows ten, then "Show all · {n}", which asks the screen', async () => {
+    const onShowAllEarlier = vi.fn();
+    const done = Array.from({ length: 12 }, (_, i) => holdShot({ symbol: `D${i}`, state: 'expired_unresolved', stateChangedAt: at('13:00') + i }));
+    const feed = buildCockpitFeed({ calls: done, events: [], evaluations: EVALS, directive: null, nowMs: NOW, v2: true });
+    act(() => { root.render(<Cockpit2b feed={feed} records={{ calls: done }} agent="Shadow" nowMs={NOW} flow={{ request: vi.fn(), confirm: null, heldKey: null }} onShowAllEarlier={onShowAllEarlier} />); });
+    await click(q('[data-cockpit-earlier-toggle]'));
+    expect(qa('[data-cockpit-earlier-row]')).toHaveLength(10);
+    expect(q('[data-cockpit-show-all]').textContent).toBe('Show all · 12');
+    await click(q('[data-cockpit-show-all]'));
+    expect(onShowAllEarlier).toHaveBeenCalled();
+  });
+
+  it('CB5-3: the expanded chip cannot grow past the strip (min-width 0, border-box at 100%)', async () => {
+    const vlo = call();
+    const amd = entryAct({ ...minted('12:45') });
+    render({ calls: [vlo, amd], submit: ok() });
+    await click(q(`[data-cockpit-chip="${amd.callId}"]`));
+    const s = q('[data-cockpit-chip-expanded]').style;
+    expect([s.minWidth, s.maxWidth, s.boxSizing]).toEqual(['0px', '100%', 'border-box']);
+  });
+});

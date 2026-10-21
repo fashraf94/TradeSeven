@@ -32,7 +32,8 @@
 // No sentence is attributed to the agent (V5-7): the plan is the record's
 // symbol, side, level, deadline and default, in the platform's words.
 
-import { fmtPrice, deadlineText, isUpsideCall, checkLabel } from '../../../api/_utils/callRecords/copy.js';
+import { fmtPrice, deadlineText, isUpsideCall, checkLabel, fmtWeekdayEt } from '../../../api/_utils/callRecords/copy.js';
+import { etDateOf } from '../../../api/_utils/callRecords/horizon.js';
 import { canComeIn } from '../../../api/_utils/callRecords/swappable.js';
 import { cockpitCommandsLeft, COCKPIT_COMMANDS_LIMIT } from '../../../api/_utils/callRecords/commands.js';
 import { etTime, etSlotTime } from '../../components/Dashboard/desk/deskCopy';
@@ -147,26 +148,41 @@ export function buttonLabelOf(call, answer) {
   return null;
 }
 
-/** The card's buttons in 2b's words: agreeing free, every override with one bullet; none left → "No commands left", disabled. */
-function buttonsOf(tile, { meter, pending }) {
+/**
+ * The card's buttons in 2b's words: agreeing free, every override with one bullet; none left → "No commands left",
+ * disabled. A LEAGUE battle has no meter — its overrides charge the group's daily chat budget (D-1's league
+ * branch), so the cost reads "· 1 message" there (review CB6-6).
+ */
+function buttonsOf(tile, { meter, pending, league = false }) {
   const target = tile.target ?? tile.call;
   return (tile.buttons || []).map((b) => {
     const override = b.row === 'directive';
     const noneLeft = override && Boolean(meter?.zero);
     const sending = Boolean(pending) && pending.callId === b.callId && pending.answer === b.answer && !nonEmpty(pending.pickSymbol);
     const label = sending ? COPY.cockpit2bSending : (noneLeft ? COPY.cockpit2bNoCommands : buttonLabelOf(target, b.answer));
+    const costAria = league ? COPY.cockpit2bOneMessageAria : COPY.cockpit2bOneCommandAria;
     return {
       answer: b.answer,
       row: b.row,
       callId: b.callId,
       label,
       dot: override && !noneLeft,
-      aria: override && !noneLeft ? COPY.cockpit2bOneCommandAria(label) : label,
+      aria: override && !noneLeft && !sending ? costAria(label) : label,
       disabled: b.disabled || noneLeft,
       // "Exit instead" with no usable counterpart opens the step (§6.2, V5-4) instead of filing.
       opensStep: b.answer === 'go_now' && tile.step === 'after_exit_instead',
     };
   });
+}
+
+/**
+ * 2a's details sheet, under the flag (review CB4-2, CB6-3): the card's own 2b buttons — §6.2's words and costs,
+ * "No commands left" at zero — without the one that opens the step ("Exit instead" with no usable counterpart):
+ * the step lives on the card, and filing from the sheet would skip it (V5-4).
+ */
+export function sheetButtonsOf(tile, { meter = null, pending = null, league = false } = {}) {
+  if (!tile) return [];
+  return buttonsOf(tile, { meter, pending, league }).filter((b) => !b.opensStep);
 }
 
 /** A chip's state at the server's now, by the one test (D-7). */
@@ -205,7 +221,9 @@ export function stepOf(tile, { battle, nowMs, agent, meter, pending = null, held
     filedLine: null,
     noneLeft: meter?.zero ? COPY.cockpit2bNoCommands : null,
     // After "Exit instead" (V5-4): the foot files go_now with no name, or cancels.
-    letChoose: tile.step === 'after_exit_instead' ? COPY.cockpit2bLetChoose(agent) : null,
+    letChoose: tile.step === 'after_exit_instead'
+      ? (Boolean(pending) && pending.callId === call.callId && pending.answer === 'go_now' && !nonEmpty(pending.pickSymbol) ? COPY.cockpit2bSending : COPY.cockpit2bLetChoose(agent))
+      : null,
     letChooseDisabled: Boolean(meter?.zero) || Boolean(pending),
     cancel: tile.step === 'after_exit_instead' ? COPY.cockpit2bCancel : null,
     // After "Confirm exit" (V5-6) the card stays until a pick or Done.
@@ -253,7 +271,7 @@ export function commandReceiptsOf(member, tag, { events = [], evaluations = [] }
  * upside line alone for an upside call (V5-1).
  */
 export function cardViewOf(tile, ctx) {
-  const { agent, nowMs, evaluations = [], directive = null, exchanges = [], battle = null, meter = null, pending = null, eventsMap = new Map(), heldKey = null, slotThread = null } = ctx;
+  const { agent, nowMs, evaluations = [], directive = null, exchanges = [], battle = null, meter = null, pending = null, eventsMap = new Map(), heldKey = null, slotThread = null, league = false, commandKey = null } = ctx;
   const target = tile.target ?? tile.call;
   const oldest = tile.calls[tile.calls.length - 1];
   const key = cardKeyOf(tile);
@@ -277,7 +295,9 @@ export function cardViewOf(tile, ctx) {
   // The directive answer standing on the card: the live command's member, else any open member's filing.
   const filed = tile.calls.find((c) => c.state === 'open' && c.playerResponse?.kind === 'directive' && c.playerResponse.directiveThreadId === slotThread)
     ?? tile.calls.find((c) => c.state === 'open' && c.playerResponse?.kind === 'directive') ?? null;
-  if (filed && !tile.newAsk) {
+  // The command card only while nothing on the card can be answered: a directive that LEFT the slot lets the
+  // restated call be answered again (C-6 rev 3) — that call card leads, the old answer its answer line (CB4-7).
+  if (filed && !tile.newAsk && (tile.buttons || []).length === 0) {
     const record = recordOf(filed, { directive, exchanges });
     const name = chosenNameOf(filed, { directive, exchanges });
     return {
@@ -298,10 +318,13 @@ export function cardViewOf(tile, ctx) {
     plan: lines.plan,
     silence: lines.silence,
     facts: lines.facts,
-    buttons: buttonsOf(tile, { meter, pending }),
+    buttons: buttonsOf(tile, { meter, pending, league }),
     step: stepOf(tile, { battle, nowMs, agent, meter, pending, held: heldKey === key && tile.step === 'on_card' }),
-    // A command standing beside a new ask (D-12 condition 1) keeps its own words under the ask.
-    commandText: tile.newAsk && filed ? (recordOf(filed, { directive, exchanges })?.text ?? null) : null,
+    // A command standing beside a new ask (D-12 condition 1) keeps its own words under the ask; the card of a
+    // command whose answered call has resolved (CB3-1) shows the live slot's own words.
+    commandText: tile.newAsk && filed
+      ? (recordOf(filed, { directive, exchanges })?.text ?? null)
+      : (!filed && commandKey && key === commandKey && nonEmpty(directive?.text) ? directive.text : null),
   };
 }
 
@@ -314,6 +337,14 @@ export function chipWordOf(tile, { commandKey = null } = {}) {
     return { word: following ? COPY.cockpit2bWordFollowing : COPY.cockpit2bWordCommand, yours: true };
   }
   if ((tile.buttons || []).length === 0 && tile.calls.some((c) => c.state === 'open' && c.playerResponse?.kind === 'ack')) return { word: COPY.cockpit2bWordAgreed, yours: false };
+  // An answered call whose command no longer stands (review CB3-4): the word its card's tag names — never the
+  // default word of a call that still asks.
+  if ((tile.buttons || []).length === 0 && tile.calls.some((c) => c.state === 'open' && c.playerResponse?.kind === 'directive')) {
+    const fact = tile.tag?.fact ?? null;
+    if (fact === 'event:retired') return { word: COPY.cockpit2bWordRetired, yours: false };
+    if (fact === 'event:superseded') return { word: COPY.cockpit2bWordReplaced, yours: false };
+    return { word: COPY.cockpit2bWordAnswered, yours: false };
+  }
   if (target.direction === 'exit') return { word: target.defaultAction === 'hold' ? COPY.cockpit2bWordHold : COPY.cockpit2bWordExit, yours: false };
   return { word: target.defaultAction === 'hold' ? COPY.cockpit2bWordWait : COPY.cockpit2bWordEnter, yours: false };
 }
@@ -338,7 +369,11 @@ export function stripChipOf(tile, { commandKey = null } = {}) {
   };
 }
 
-/** The day line (§5.5): over the battle's 'on' records (picks included — every record). A zero part is still shown. */
+/**
+ * The day line (§5.5): over the battle's 'on' records (picks included — every record). A zero part is still shown.
+ * "Today" and "this battle's" coincide: a battle is one trading day (agentBattleService AGENT_BATTLE_DURATION_MODE
+ * 'fullday'), and the cockpit renders only while it is active (review CB6-5, refuted).
+ */
 export function dayLineOf(calls) {
   const on = cockpitCalls(calls);
   const hit = on.filter((c) => c.state === 'hit').length;
@@ -355,7 +390,9 @@ export function earlierOf(feed) {
     tone: t.tag?.tone ?? 'muted',
     text: COPY.cockpit2bEarlierRow(t.call.symbol, arrowOf(t.call.condition?.side), chipLevelOf(t.call.condition?.level), t.tag?.text ?? null),
   }));
-  return { count: feed?.earlierTotal ?? rows.length, rows };
+  const count = feed?.earlierTotal ?? rows.length;
+  // 2a shows ten, then "Show all" (review CB4-8: the count must not promise rows the list hides).
+  return { count, rows, more: count > rows.length ? COPY.cockpitShowAll(count) : null };
 }
 
 /**
@@ -380,12 +417,16 @@ export function buildCockpit2bView({
   const meter = meterOf(rawExchanges, { league });
   const tiles = [...feed.needsYou, ...feed.waiting];
   const command = feed.command ?? null;
-  const commandTile = command ? tiles.find((t) => t.calls.some((c) => c.callId === command.call?.callId)) ?? null : null;
+  // The command's card: the one holding its answered call — or, once that call has resolved under a live slot,
+  // the card of its restatements (review CB3-1).
+  const commandTile = command
+    ? (tiles.find((t) => t.calls.some((c) => c.callId === command.call?.callId)) ?? tiles.find((t) => Array.isArray(t.following) && t.following.length > 0) ?? null)
+    : null;
   const commandKey = commandTile ? cardKeyOf(commandTile) : null;
   const nowTile = chooseNow(tiles, { spotlightKey: ui.spotlightKey ?? null, heldKey: ui.heldKey ?? null, commandKey });
   const ctx = {
     agent, nowMs, evaluations, directive: battle?.directive ?? null, exchanges: rawExchanges, battle, meter,
-    pending: ui.pending ?? null, eventsMap: eventsByCall(events), heldKey: ui.heldKey ?? null,
+    pending: ui.pending ?? null, eventsMap: eventsByCall(events), heldKey: ui.heldKey ?? null, league, commandKey,
     slotThread: liveCallSlotOf({ directive: battle?.directive ?? null, nowMs, controlEpochLog, suppressed })?.directiveThreadId ?? null,
   };
   const others = tiles.filter((t) => t !== nowTile);
@@ -407,6 +448,11 @@ export function buildCockpit2bView({
       fewer: ui.overflow && chips.length > limit ? COPY.cockpit2bFewer : null,
     },
     dayLine: dayLineOf(calls),
+    // A spotlight lasts until its card is answered or resolved (§5.2) — the screen drops a stale one (CB4-6).
+    spotlightStale: Boolean(ui.spotlightKey) && !tiles.some((t) => cardKeyOf(t) === ui.spotlightKey && t.group === 'needsYou'),
+    // The step "Exit instead" opened is the CALL's it opened on, and stands only while that call still offers it
+    // (CB4-10: a later new ask on the same card is another call, and opens with its own buttons).
+    stepOpenStale: Boolean(ui.stepOpenKey) && !tiles.some((t) => (t.target ?? t.call)?.callId === ui.stepOpenKey && t.step === 'after_exit_instead'),
     earlier: earlierOf(feed),
     empty: feed.empty,
     commandKey,
@@ -511,8 +557,24 @@ export function agentListsOf({ evaluations = [], monitoring = null } = {}) {
  * Null when no sentence names it.
  */
 export function benchNoteOf(benchState, symbol) {
+  // The AGENT's words only (V5-7, D-80): a check whose words the selector attributes to the system or the
+  // guardrail (its footer) gives no note (review CB6-2).
+  if (ENGINE_FOOTERS.has(benchState?.footer)) return null;
   const card = (Array.isArray(benchState?.cards) ? benchState.cards : []).find((c) => Array.isArray(c?.symbols) && c.symbols.includes(symbol));
   return nonEmpty(card?.text) ? card.text : null;
+}
+
+/** The footers that name a non-agent author for the check's words (selectWhyState). */
+const ENGINE_FOOTERS = new Set([COPY.motiveSystem, COPY.guardrailForcedFailedFooter]);
+
+/** A record instant as the sheet names it: the minute today, the weekday and minute another day (review CB6-8). */
+export function whenOf(iso, nowMs) {
+  const t = etTime(iso);
+  if (!t) return null;
+  const ms = msOf(iso);
+  if (!finite(nowMs) || etDateOf(ms) === etDateOf(nowMs)) return t;
+  const day = fmtWeekdayEt(ms);
+  return day ? `${day} ${t}` : t;
 }
 
 /** What a pick on this call files (§5.7): `replace` on the card's step, `go_now` with the name after "Exit instead"; null otherwise. */
@@ -537,20 +599,22 @@ export function pickAnswerFor(step) {
  * @param {object|null} p.benchState selectBench(battle)
  * @param {string|null} p.filedText  the filed command's canonical text once a pick lands
  */
-export function benchSheetOf({ status = 'loading', data = null, call = null, step = null, agent = 'Your Agent', agentLists = new Set(), benchState = null, sort = 'rank', meter = null, pending = null, filedText = null }) {
+export function benchSheetOf({ status = 'loading', data = null, call = null, step = null, agent = 'Your Agent', agentLists = new Set(), benchState = null, sort = 'rank', meter = null, pending = null, filedText = null, nowMs = null, refusalLine = null }) {
   const scoped = Boolean(call);
   const answer = scoped ? pickAnswerFor(step) : null;
   const filed = nonEmpty(filedText);
   const waits = Boolean(meter?.zero) || Boolean(pending) || filed || !answer;
   const rows = sortBenchRows(Array.isArray(data?.rows) ? data.rows : [], BENCH_SORTS.includes(sort) ? sort : 'rank').map((r) => {
     let action;
-    if (r.status === 'locked') action = { kind: 'locked', label: COPY.cockpit2bLockedUntil(etTime(r.lockedUntil ?? null)) };
+    if (r.status === 'locked') action = { kind: 'locked', label: COPY.cockpit2bLockedUntil(whenOf(r.lockedUntil ?? null, nowMs)) };
     else if (r.status === 'not_swappable') action = { kind: 'not_swappable', label: COPY.cockpit2bNotSwappable };
     else if (r.status === 'no_price') action = { kind: 'no_price', label: COPY.cockpit2bNoPrice };
     else if (scoped) {
       const sending = Boolean(pending) && pending.callId === call.callId && pending.pickSymbol === r.symbol;
       const label = sending ? COPY.cockpit2bSending : COPY.cockpit2bPick;
-      action = { kind: 'pick', label, answer, disabled: waits, dot: !waits, aria: COPY.cockpit2bOneCommandAria(`${COPY.cockpit2bPick} ${r.symbol}`) };
+      // The name always carries the symbol (review CB5-10); the cost only while it can be spent.
+      const named = `${COPY.cockpit2bPick} ${r.symbol}`;
+      action = { kind: 'pick', label, answer, disabled: waits, dot: !waits, aria: waits ? named : COPY.cockpit2bOneCommandAria(named) };
     } else action = { kind: 'available', label: COPY.cockpit2bAvailable };
     return {
       symbol: r.symbol,
@@ -568,7 +632,7 @@ export function benchSheetOf({ status = 'loading', data = null, call = null, ste
   return {
     scoped,
     title: scoped ? COPY.cockpit2bWho(call.symbol) : COPY.cockpit2bBenchTitle,
-    sub: status === 'ready' ? COPY.cockpit2bBenchSub(rows.length, available, etTime(data?.asOf ?? null)) : null,
+    sub: status === 'ready' ? COPY.cockpit2bBenchSub(rows.length, available, whenOf(data?.asOf ?? null, nowMs)) : null,
     agentListLabel: COPY.cockpit2bAgentListMark(agent),
     sorts: BENCH_SORTS.map((key) => ({ key, label: key === 'rank' ? COPY.cockpit2bSortRank : key === 'move' ? COPY.cockpit2bSortMove : COPY.cockpit2bSortSector, on: key === (BENCH_SORTS.includes(sort) ? sort : 'rank') })),
     rows: status === 'ready' ? rows : [],
@@ -576,6 +640,8 @@ export function benchSheetOf({ status = 'loading', data = null, call = null, ste
     error: status === 'error' ? COPY.cockpit2bBenchError : null,
     noneLeft: scoped && meter?.zero ? COPY.cockpit2bNoCommands : null,
     filedBar: filed ? COPY.cockpit2bFiledBar(filedText) : null,
+    // A refused pick says why ON the sheet (§7.3; review CB4-11, CB6-7) — the card beneath is inert.
+    refusalLine: nonEmpty(refusalLine) ? refusalLine : null,
     done: filed ? COPY.cockpit2bDone : null,
     callId: call?.callId ?? null,
   };

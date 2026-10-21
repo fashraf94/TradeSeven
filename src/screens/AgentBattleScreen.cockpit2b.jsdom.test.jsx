@@ -324,3 +324,64 @@ describe('Cockpit Build 2b — the flag ON, phone', () => {
     expect(q('[data-cockpit-top-row] [data-cockpit-vintage]').textContent).toBe('');
   });
 });
+
+// ---------------------------------------------------------------------------
+// The review's fix round, at the screen (CB4-1, CB4-2/3, CB4-12, CB4-13).
+describe('Cockpit Build 2b — review fixes, at the screen', () => {
+  beforeEach(() => { FLAG.v2 = true; });
+  const ORCL = callRec({ callId: 'ab-1:eval_005:call:2', symbol: 'ORCL', counterpart: 'NOW', condition: { side: 'above', level: 140 }, mintedAt: T('2026-09-01T16:49:00.000Z') });
+  const commanded = () => ({ ...NVDA_EXIT, playerResponse: { answer: 'hold', kind: 'directive', directiveThreadId: 't-cmd', callId: NVDA_EXIT.callId, filedAt: '2026-09-01T16:50:00.000Z', heardEvalId: null }, directiveThreadId: 't-cmd' });
+  const openSheetOf = async (callId) => {
+    const chip = q(`[data-cockpit-chip="${callId}"]`);
+    if (chip && chip.getAttribute('aria-expanded') === 'false') await click(chip);
+    await click(q(`[data-cockpit-tile="${callId}"] [data-cockpit-tile-open]`));
+  };
+
+  it('CB4-2/CB4-3: the details sheet answers in §6.2\'s words — no "Go instead", no "· 1 message"', async () => {
+    FS.docs['agentBattles/ab-1/calls'] = [OPEN];
+    await mount();
+    await openSheetOf(OPEN.callId);
+    const sheet = q('[data-cockpit-sheet]');
+    expect([...sheet.querySelectorAll('[data-cockpit-answer]')].map((b) => b.textContent)).toEqual(['Go if it triggers', 'Hold off']);
+    expect(sheet.textContent).not.toMatch(/Go instead|1 message/);
+  });
+
+  it('CB4-1: a prompt raised in one call\'s sheet never appears on another call\'s sheet, and closing drops it', async () => {
+    FS.docs['agentBattles/ab-1/calls'] = [OPEN, ORCL, commanded()];
+    DOC = { ...LIVE_DOC, directive: LIVE_COMMAND };
+    await mount();
+    await openSheetOf(OPEN.callId);
+    await click(q('[data-cockpit-sheet] [data-cockpit-answer="hold"]'));
+    expect(q('[data-cockpit-sheet] [data-cockpit-replace-confirm]')).toBeTruthy();
+    await click(q('[data-cockpit-sheet-close]'));
+    await openSheetOf(ORCL.callId);
+    expect(q('[data-cockpit-sheet] [data-cockpit-replace-confirm]')).toBeNull();
+    expect(q('[data-cockpit-sheet] [data-cockpit-answer="hold"]')).toBeTruthy();
+    await click(q('[data-cockpit-sheet-close]'));
+    await openSheetOf(OPEN.callId);
+    expect(q('[data-cockpit-sheet] [data-cockpit-replace-confirm]')).toBeNull();
+    expect(answerBodies().filter((b) => b.confirmReplace)).toEqual([]);
+  });
+
+  it('CB4-13: the bench opens on Rank every time', async () => {
+    FS.docs['agentBattles/ab-1/calls'] = [OPEN, NVDA_EXIT];
+    await mount();
+    await click(q('[data-this-turn-research]'));
+    await click(q('[data-cockpit-bench-sort="sector"]'));
+    expect(q('[data-cockpit-bench-sort="sector"]').getAttribute('aria-pressed')).toBe('true');
+    await click(q('[data-cockpit-bench-close]'));
+    await click(q('[data-this-turn-research]'));
+    expect(q('[data-cockpit-bench-sort="rank"]').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('CB4-12: the scoped bench sheet closes when its call resolves (nothing filed from it)', async () => {
+    FS.docs['agentBattles/ab-1/calls'] = [OPEN, NVDA_EXIT];
+    await mount();
+    await click(q('[data-cockpit-browse]'));
+    expect(q('[data-cockpit-bench-sheet]')).toBeTruthy();
+    const resolved = { ...NVDA_EXIT, state: 'expired_unresolved', stateChangedAt: T('2026-09-01T17:00:00.000Z') };
+    await act(async () => { FS.next['agentBattles/ab-1/calls']({ docs: [OPEN, resolved].map((d) => ({ id: d.callId, data: () => d })) }); });
+    await settle();
+    expect(q('[data-cockpit-bench-sheet]')).toBeNull();
+  });
+});

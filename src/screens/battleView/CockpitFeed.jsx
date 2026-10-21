@@ -156,7 +156,9 @@ export function StateTag({ tag }) {
         textTransform: 'uppercase',
         fontWeight: 600,
         color,
-        whiteSpace: 'nowrap',
+        // Cockpit Build 2b (from merge, review CB5-5): a long tag ("Command retired · … at the {t} check") wraps
+        // inside the tile rather than pushing it past a 390 px screen.
+        whiteSpace: 'normal',
         ...(tag.tone === 'yoursOutline' ? { border: `1px solid ${color}`, borderRadius: 6, padding: '1px 6px' } : {}),
       }}
     >
@@ -193,7 +195,7 @@ function Tile({ tile, onAnswer, onOpenSheet }) {
           onClick={openSheet}
           style={{ ...plainButton, display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, width: '100%' }}
         >
-          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
+          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
             <span style={{
               fontFamily: MONO,
               fontSize: 9.5,
@@ -214,7 +216,7 @@ function Tile({ tile, onAnswer, onOpenSheet }) {
                 </span>
               ) : null}
             </span>
-            <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+            <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0 }}>
               {/* Cockpit Build 2b (D-10, from merge): the newest call follows your live command. */}
               {tile.followTag ? <StateTag tag={tile.followTag} /> : null}
               <StateTag tag={tile.tag} />

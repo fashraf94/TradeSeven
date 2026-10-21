@@ -56,7 +56,7 @@ import { runHeardPhase } from '../_utils/callRecords/heard.js';
 import { recordFetchedQuote, freezeObservation, freezeModelObservation, classifyEntryExit, carryExecutorResult, passExaminesHeldPrices } from '../_utils/callRecords/observe.js';
 import { captureDeclarations } from '../_utils/callRecords/validate.js';
 import { bindHorizon, battleExpiryMs } from '../_utils/callRecords/horizon.js';
-import { callsReserveMsFor, runModelCallsPhase } from '../_utils/callRecords/publish.js';
+import { callsReserveMsFor, runModelCallsPhase, TAIL_RESERVE_MS } from '../_utils/callRecords/publish.js';
 // Cockpit Build 2b (Amendment D-6): the retire-on-exit step before the prompt.
 import { retireLeftBook, RETIRE_TX_MS } from '../_utils/callRecords/retire.js';
 import { runCallFlips, runExitCallsHook } from '../_utils/callRecords/flip.js';
@@ -2556,6 +2556,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // early return that used to silently swallow them (Phase-0 item 2).
     if (gameplanHandled === 'skip_haiku') {
       await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, governingPreset, callsCtx, swapIdentityMode });
+      // Cockpit Build 2b (D-6; review CB1-1): every tick a meeting stays pending returns here, and the risk loop
+      // and this R11 pass still move the book — so the retire step runs here too, or a command on a stock that
+      // left would stand until the meeting resolves. No prompt is built on this tick.
+      await retireCommandIfLeft({ db, battleRef, battle, callsCtx });
       finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -2589,17 +2593,15 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // gameplan meeting's legs (route 5: handleGameplanMeeting executes them and
     // returns 'continue' into this tick) — and before every reader of the
     // prompt's directive: the trigger gate, the admission budget, the fenced
-    // prompt build (buildLiveContextBlock) and the heard stamp. A tick that
-    // returned above (proposal or meeting pending) retires at its next check
-    // (D-6); routes after the prompt — the agent's own trade, a suppression-pass
-    // guardrail exit — are the heard pass's (acted) or the next check's. It
-    // runs on a refresh-failure tick too: it reads its own fresh parent.
-    if (callsCtx.mode === 'on' && isCallDirective(battle.directive)) {
-      const retireNowMs = Date.now();
-      // The check has neither its committed evalId nor its prompt yet: both are null on the event (D-6 evidence).
-      const retire = await callsStepAsync(callsCtx, () => retireLeftBook({ db, battleRef, battle, nowMs: retireNowMs, evalId: null, promptBuiltAt: null, deadlineMs: retireNowMs + RETIRE_TX_MS }));
-      if (retire?.retired) console.log(`${LOG_PREFIX} Retired the cockpit command on battle ${battle.id} (${retire.reason}) before the prompt`);
-    }
+    // prompt build (buildLiveContextBlock) and the heard stamp. The meeting
+    // branches above (pending, and created below) run the same step after their
+    // R11 pass (review CB1-1); a pending PROPOSAL returns before it, but
+    // autopilot clears proposals, so that branch does not occur in production
+    // (it retires at the next tick that reaches the step). Routes after the
+    // prompt — the agent's own trade, a suppression-pass guardrail exit — are
+    // the heard pass's (acted) or the next check's. It runs on a refresh-failure
+    // tick too: it reads its own fresh parent.
+    await retireCommandIfLeft({ db, battleRef, battle, callsCtx });
 
     // ---- v2 Ruling 3: unavailable corrected frame ----
     // The calibrated risk pass, forced exits, the proposal and the meeting have
@@ -2677,6 +2679,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // every tick); the pass widens its frequency, never its mechanism.
       if (gameplanTrigger) {
         await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, governingPreset, callsCtx, swapIdentityMode });
+        // Cockpit Build 2b (D-6; review CB1-1): the meeting-CREATED tick returns below after this R11 pass, which
+        // can move the book — retire here, as the pending branch does.
+        await retireCommandIfLeft({ db, battleRef, battle, callsCtx });
         const todayET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
@@ -5775,6 +5780,25 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
 // Exported for the behavioral suite (dual-review hardening: the wiring pins
 // are static-source; this export lets a test EXECUTE the pass with mocked
 // executeSwapServer/capture collaborators — never imported by production code).
+/**
+ * Cockpit Build 2b (Amendment D-6; spec S-7) — RETIRE ON EXIT, the one step. A
+ * live CALL-FAMILY command whose stock left the book is retired at resolved
+ * 'on', in one bounded transaction (retire.js; never throws), so no prompt is
+ * built with it. Its deadline is the step's own ceiling, clipped to the tick's
+ * protected tail like every other calls step (callsBudget; review CB1-12). The
+ * check has neither its committed evalId nor its prompt yet: both are null on
+ * the event (D-6 evidence, by construction of this placement).
+ */
+async function retireCommandIfLeft({ db, battleRef, battle, callsCtx }) {
+  if (callsCtx.mode !== 'on' || !isCallDirective(battle.directive)) return null;
+  const retireNowMs = Date.now();
+  const tailMs = callsCtx.handlerStartMs + TIME_BUDGET_MS - TAIL_RESERVE_MS;
+  const deadlineMs = Math.min(retireNowMs + RETIRE_TX_MS, tailMs);
+  const retire = await callsStepAsync(callsCtx, () => retireLeftBook({ db, battleRef, battle, nowMs: retireNowMs, evalId: null, promptBuiltAt: null, deadlineMs }));
+  if (retire?.retired) console.log(`${LOG_PREFIX} Retired the cockpit command on battle ${battle.id} (${retire.reason}) before the prompt`);
+  return retire ?? null;
+}
+
 export async function runSuppressionDeterministicPass({
   db, battleRef, battle, prices, lockedPositions, stockRegimes,
   statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx,

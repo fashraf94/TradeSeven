@@ -147,3 +147,45 @@ describe('the bench sheet', () => {
     expect(q('[data-cockpit-bench-error]').textContent).toBe('Couldn\'t read the bench right now.');
   });
 });
+
+// ---------------------------------------------------------------------------
+// The review's fix round (CB4-9/CB5-1, CB4-11/CB6-7, CB5-7, CB5-8).
+describe('review fixes — the bench sheet', () => {
+  it('CB4-9/CB5-1: under the research modal the sheet is suspended — inert, not modal, Escape closes the MODAL, not the sheet', () => {
+    const onClose = vi.fn();
+    const onSuspendedEscape = vi.fn();
+    render({ sheet: sheetOf(), onClose, suspended: true, onSuspendedEscape });
+    expect(q('[data-cockpit-bench-layer]').hasAttribute('inert')).toBe(true);
+    expect(q('[data-cockpit-bench-sheet]').hasAttribute('aria-modal')).toBe(false);
+    act(() => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(onSuspendedEscape).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    // Lifted: modal again, and Escape closes the sheet.
+    render({ sheet: sheetOf(), onClose, suspended: false, onSuspendedEscape });
+    expect(q('[data-cockpit-bench-sheet]').getAttribute('aria-modal')).toBe('true');
+    act(() => { document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('CB4-11/CB6-7: a refused pick says why ON the sheet, in a live region', () => {
+    render({ sheet: sheetOf({ refusalLine: 'XOM can\'t come in right now — nothing was filed.' }) });
+    const line = q('[data-cockpit-bench-refusal]');
+    expect(line.getAttribute('data-cockpit-bench-refusal')).toBe('1');
+    expect(line.getAttribute('role')).toBe('status');
+    expect(line.textContent).toBe('XOM can\'t come in right now — nothing was filed.');
+  });
+
+  it('CB5-7: rank and status labels use the secondary token (≥ 4.5:1), and a locked row is not faded', () => {
+    render({ sheet: sheetOf() });
+    const locked = q('[data-cockpit-bench-row="PSX"]');
+    expect(locked.style.opacity).toBe('');
+    expect(locked.querySelector('[data-cockpit-bench-status]').style.color).toBe('var(--ft-text-secondary)');
+  });
+
+  it('CB5-8: the note\'s text stays block-level when expanded (no 16px-button line height)', () => {
+    render({ sheet: sheetOf() });
+    const note = q('[data-cockpit-bench-row="XOM"] [data-cockpit-bench-note]');
+    click(note);
+    expect(q('[data-cockpit-bench-row="XOM"] [data-cockpit-bench-note] > span').style.display).toBe('block');
+  });
+});

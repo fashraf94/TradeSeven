@@ -34,7 +34,7 @@
 //   D-4      the one second answer: `replace` after the `go` acknowledgment —
 //            THE ONE SANCTIONED REWRITE of playerResponse (it keeps the
 //            acknowledgment in `after`; both `answered` events stand). No
-//            other path rewrites a playerResponse (call-response.test.js pins it).
+//            other path rewrites a playerResponse (call-response.2b.test.js pins it).
 //   D-2      the pending check becomes the CONFIRMATION check: a LIVE slot (a
 //            call-family directive by the pending predicate, or an active,
 //            unkilled, unsuppressed ordinary directive) without

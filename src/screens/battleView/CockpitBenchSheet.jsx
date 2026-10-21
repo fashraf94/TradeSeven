@@ -19,6 +19,10 @@
 //   a pick    files exactly what the same chip on the card would file — the
 //             screen's answer flow, with the replace confirmation in place
 //   filed     "✓ Filed · {canonical text}" with Done; every Pick waits
+//   refused   a refused pick says why HERE, in a live region (§7.3) — the card
+//             beneath is inert (review CB4-11)
+//   suspended while the research modal stands over the sheet, the sheet traps
+//             nothing and takes no key (review CB4-9, CB5-1)
 //
 // HAZARD 48: every label sizes an inner <span>. Tokens only; the layer's
 // `smooth` entrance, `instant` under reduced motion.
@@ -50,11 +54,14 @@ function Note({ text }) {
     >
       <span
         style={{
+          // Block-level in both states: inline inside the 16px-forced button it would take the button's line
+          // height when expanded (review CB5-8).
+          display: open ? 'block' : '-webkit-box',
           fontSize: 11.5,
           lineHeight: 1.4,
           color: cssVar('text-secondary'),
           whiteSpace: 'pre-wrap',
-          ...(open ? {} : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
+          ...(open ? {} : { WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
         }}
       >
         {parseEmphasis(text).map((part, i) => (part.strong
@@ -92,7 +99,8 @@ function RowAction({ action, onPick, symbol }) {
       </button>
     );
   }
-  return <span data-cockpit-bench-status={action.kind} style={{ ...mono(10), textAlign: 'right', color: cssVar('text-muted') }}>{action.label}</span>;
+  // Informational text, so it keeps 4.5:1 — the secondary token, as 2a's L5-9 fix (review CB5-7).
+  return <span data-cockpit-bench-status={action.kind} style={{ ...mono(10), textAlign: 'right', color: cssVar('text-secondary') }}>{action.label}</span>;
 }
 
 /**
@@ -114,18 +122,21 @@ export default function CockpitBenchSheet({
   onPick,
   onResearch,
   confirmLine = null,
+  confirmSending = false,
   onConfirmReplace = null,
   onConfirmKeep = null,
+  suspended = false,
+  onSuspendedEscape = null,
 }) {
   const open = Boolean(sheet);
   const titleId = 'cockpit-bench-title';
-  const { panelRef, onKeyDown } = useCockpitModal({ open, onClose, restoreFocus });
+  const { panelRef, onKeyDown } = useCockpitModal({ open, onClose, restoreFocus, suspended, onSuspendedEscape });
   if (!open) return null;
   const phone = !isDesktop;
   const columns = phone ? '18px minmax(0, 1fr) 46px 54px 84px' : '26px minmax(0, 1fr) 56px 64px 104px';
 
   return (
-    <CockpitModalLayer kind="bench" isDesktop={isDesktop} reducedMotion={reducedMotion} bottomInset={bottomInset} titleId={titleId} panelRef={panelRef} onKeyDown={onKeyDown} onClose={onClose}>
+    <CockpitModalLayer kind="bench" isDesktop={isDesktop} reducedMotion={reducedMotion} bottomInset={bottomInset} titleId={titleId} panelRef={panelRef} onKeyDown={onKeyDown} onClose={onClose} suspended={suspended}>
       {sheet.filedBar ? (
         <div data-cockpit-bench-filed="1" role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: `rgba(var(--ft-teal-rgb), 0.08)` }}>
           <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: cssVar('text-primary'), lineHeight: 1.4 }}>{sheet.filedBar}</span>
@@ -174,7 +185,10 @@ export default function CockpitBenchSheet({
       {sheet.loading ? <span role="status" data-cockpit-bench-loading="1" style={{ fontSize: 12.5, color: cssVar('text-secondary') }}>{sheet.loading}</span> : null}
       {sheet.error ? <span role="status" data-cockpit-bench-error="1" style={{ fontSize: 12.5, color: cssVar('text-secondary') }}>{sheet.error}</span> : null}
       {sheet.noneLeft ? <span role="status" style={{ fontSize: 11.5, color: cssVar('amber') }}>{sheet.noneLeft}</span> : null}
-      {confirmLine ? <ReplaceConfirm line={confirmLine} phone={phone} onReplace={onConfirmReplace} onKeep={onConfirmKeep} /> : null}
+      {confirmLine ? <ReplaceConfirm line={confirmLine} phone={phone} sending={confirmSending} onReplace={onConfirmReplace} onKeep={onConfirmKeep} /> : null}
+      <div role="status" aria-live="polite" data-cockpit-bench-refusal={sheet.refusalLine ? '1' : '0'} style={{ fontSize: 11.5, color: cssVar('call-dropped'), minHeight: sheet.refusalLine ? undefined : 0 }}>
+        {sheet.refusalLine}
+      </div>
       {sheet.rows.length > 0 ? (
         <div data-cockpit-bench-rows="1" role="list">
           {sheet.rows.map((r) => (
@@ -191,10 +205,9 @@ export default function CockpitBenchSheet({
                 minHeight: 48,
                 padding: '6px 0',
                 borderBottom: `1px solid rgba(var(--ft-scrim-rgb), 0.07)`,
-                opacity: r.action.kind === 'locked' ? 0.6 : 1,
               }}
             >
-              <span style={mono(10.5, cssVar('text-muted'))}>{r.rank}</span>
+              <span style={mono(10.5)}>{r.rank}</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                 <button
                   type="button"

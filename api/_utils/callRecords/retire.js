@@ -26,23 +26,40 @@
 // so this check's prompt is built without it.
 //
 // THE TRADE: the newest row of the battle's trade log (`trades`, written by the
-// executor — agentSwapExecution.js:494) after the directive's `filedAt` whose
+// executor — agentSwapExecution.js:495) after the directive's `filedAt` whose
 // `symbolOut` — or `symbolIn`, for pick_already_held — is the symbol; null
 // when none is found (the evidence is the book, not the trade).
 //
 // FAILURE: a timeout or an error leaves the slot exactly as it was, is logged,
 // and never throws — the prompt is built as it would have been.
+//
+// A LATE COMMIT (review CB1-2): the race on the transaction does not cancel it,
+// so a commit can land after the ceiling. The transaction therefore gets the
+// step's budget less a reserve (publish.js's REREAD_RESERVE precedent), and an
+// unconfirmed outcome is settled inside that reserve: the transaction's own
+// outcome if it finishes there, else ONE bounded read of the `retired` event it
+// would have written — present → the commit landed, the in-memory slot is
+// dropped and the step reports retired; absent or unread → as before (a commit
+// still in flight past the step's whole ceiling remains the heard pass's
+// precedent: logged, never thrown).
+//
+// EVIDENCE: at this placement (before the prompt) the check has neither its
+// committed evalId nor its prompt, so both are null on the event by
+// construction; `checkLabel` is the step's own instant (D-6's evidence fields
+// cannot be met here — a placement fact, recorded in the build report).
 
 import { withTimeout } from '../intraday/evaluatorHook.js';
 import { isCallDirective } from '../directiveUtils.js';
 import { retireCallDirective, planRetirement } from '../directiveWriter.js';
 import { isCallActionEligible } from './callActions.js';
-import { buildCallEvent, createCallEvent } from './events.js';
+import { buildCallEvent, createCallEvent, callEventRef, eventIdOf } from './events.js';
 import { renderRetiredEvent, RETIRED_REASONS, checkLabel } from './copy.js';
 import { CallsAbort, isCallsTimeout } from './publish.js';
 
 /** The one transaction's ceiling — the heard pass's (heard.js HEARD_TX_MS). */
 export const RETIRE_TX_MS = 800;
+/** Kept back from the transaction for the one settling read (review CB1-2). */
+export const RETIRE_REREAD_RESERVE_MS = 200;
 
 const nonEmpty = (v) => typeof v === 'string' && v.length > 0;
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -101,6 +118,30 @@ export function planRetire({ memorySlot, freshParent, call, atMs }) {
   return { retire: true, reason: verdict.reason, symbol, trade };
 }
 
+/** The transaction's own outcome if it settles before `deadlineMs`, else null (a rejection reads as unsettled). Never throws. */
+async function settleLate(txPromise, deadlineMs) {
+  const leftMs = deadlineMs - Date.now();
+  if (!txPromise || !(leftMs > 0)) return null;
+  try {
+    const outcome = await withTimeout(txPromise, leftMs, 'calls_retire_late');
+    return outcome && typeof outcome === 'object' && typeof outcome.retired === 'boolean' ? outcome : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Does this thread's `retired` event exist? One read, inside the step's remaining time; false when unread. Never throws. */
+export async function retiredEventLanded({ db, battleId, directiveThreadId, deadlineMs }) {
+  const leftMs = deadlineMs - Date.now();
+  if (!(leftMs > 0) || !nonEmpty(battleId) || !nonEmpty(directiveThreadId)) return false;
+  try {
+    const snap = await withTimeout(callEventRef(db, battleId, eventIdOf('retired', { directiveThreadId })).get(), leftMs, 'calls_retire_settle');
+    return Boolean(snap?.exists);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * THE RETIRE STEP. Never throws. Returns `{ retired, reason }`; on a commit the
  * in-memory `battle.directive` is set to null.
@@ -117,12 +158,15 @@ export function planRetire({ memorySlot, freshParent, call, atMs }) {
 export async function retireLeftBook({ db, battleRef, battle, nowMs, evalId = null, promptBuiltAt = null, deadlineMs }) {
   const memorySlot = battle?.directive ?? null;
   if (!isCallDirective(memorySlot)) return { retired: false, reason: 'not_call_family' };
-  const budgetMs = Math.min(RETIRE_TX_MS, deadlineMs - Date.now());
+  const stepMs = Math.min(RETIRE_TX_MS, deadlineMs - Date.now());
+  const budgetMs = stepMs - RETIRE_REREAD_RESERVE_MS;
   if (!(budgetMs > 0)) return { retired: false, reason: 'not_started' };
+  const stepDeadlineMs = Date.now() + stepMs;
   const attemptDeadlineMs = Date.now() + budgetMs;
   const battleId = battleRef.id ?? battle?.id;
+  let txPromise = null;
   try {
-    const outcome = await withTimeout(db.runTransaction(async (tx) => {
+    txPromise = db.runTransaction(async (tx) => {
       if (Date.now() >= attemptDeadlineMs) throw new CallsAbort('deadline');
       const callRef = nonEmpty(memorySlot.callId) ? battleRef.collection('calls').doc(memorySlot.callId) : null;
       const [parentSnap, callSnap] = callRef ? await tx.getAll(battleRef, callRef) : [await tx.get(battleRef), null];
@@ -147,12 +191,27 @@ export async function retireLeftBook({ db, battleRef, battle, nowMs, evalId = nu
         }),
       });
       return { retired: true, reason: plan.reason };
-    }), budgetMs, 'calls_retire');
+    });
+    const outcome = await withTimeout(txPromise, budgetMs, 'calls_retire');
     // After the commit — never before: this check's prompt is built without the directive.
     if (outcome.retired) battle.directive = null;
     return outcome;
   } catch (err) {
     if (err?.callsAbort === 'deadline' || isCallsTimeout(err)) {
+      // Settle it inside the reserve: the transaction's own outcome if it finishes there, else ONE bounded read of
+      // the event it would have written.
+      const late = await settleLate(txPromise, stepDeadlineMs);
+      if (late && late.retired) {
+        battle.directive = null;
+        console.log(`[calls] retire landed late battle=${battleId} thread=${memorySlot.directiveThreadId} (settled by the transaction)`);
+        return { retired: true, reason: late.reason };
+      }
+      if (late) return late;
+      if (await retiredEventLanded({ db, battleId, directiveThreadId: memorySlot.directiveThreadId, deadlineMs: stepDeadlineMs })) {
+        battle.directive = null;
+        console.log(`[calls] retire landed late battle=${battleId} thread=${memorySlot.directiveThreadId} (settled by the event read)`);
+        return { retired: true, reason: 'landed_late' };
+      }
       console.log(`[calls] retire unconfirmed battle=${battleId} thread=${memorySlot.directiveThreadId} (slot left as it was)`);
       return { retired: false, reason: 'unconfirmed' };
     }

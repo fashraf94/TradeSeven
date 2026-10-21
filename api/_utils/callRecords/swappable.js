@@ -10,12 +10,12 @@
 //
 // A RESTATEMENT, NEVER AN EDIT. The swap's own validation is the fenced
 // executor's (BUILD_RULES §1: read and cited, never edited). Its exported
-// `validateTradeDecision` (api/_utils/agentSwapExecution.js:34-97) checks, for
+// `validateTradeDecision` (api/_utils/agentSwapExecution.js:34-96) checks, for
 // a SWAP, the five facts below; swappable.test.js runs both on one table so
 // the two cannot drift apart silently:
 //
-//   pick_is_symbol      IN is OUT                     agentSwapExecution.js:57-58
-//   pick_already_held   IN occupies a book slot       agentSwapExecution.js:59-61 (findAssetInPortfolio :520-533)
+//   pick_is_symbol      IN is OUT                     agentSwapExecution.js:58-59
+//   pick_already_held   IN occupies a book slot       agentSwapExecution.js:60-61 (findAssetInPortfolio :520-533)
 //   pick_not_on_bench   IN on no list the swap takes  agentSwapExecution.js:49-54 (findAssetInBench :538-547;
 //                       — the persisted bench stocks, the bench crypto, the
 //                       watchlist's hot bench; the equipped watchlist alone

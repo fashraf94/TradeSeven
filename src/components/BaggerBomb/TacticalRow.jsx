@@ -401,7 +401,9 @@ function AssetSide({
         role: 'button',
         tabIndex: 0,
         'aria-expanded': whyOpen ? 'true' : 'false',
-        ...(whyName ? { 'aria-label': whyName } : {}),
+        // Cockpit Build 2b (§5.8, review CB5-6): the row is one button, so the call mark's words join its name —
+        // a child image inside a button is not announced. Absent the mark, the shipped name exactly.
+        ...(whyName ? { 'aria-label': callMark ? `${whyName} · ${callMark === 'command' ? BATTLE_VIEW_COPY.cockpit2bDotCommand : BATTLE_VIEW_COPY.cockpit2bDotOpen}` : whyName } : {}),
         ...(describedBy ? { 'aria-describedby': describedBy } : {}),
         onKeyDown: handleWhyKeyDown,
       } : {})}

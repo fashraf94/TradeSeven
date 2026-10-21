@@ -37,7 +37,7 @@ import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { AnswerButtons, StateTag, plainButton } from './CockpitFeed';
-import { ReplaceConfirm } from './Cockpit2b';
+import { ReplaceConfirm, CockpitActions } from './Cockpit2b';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -54,9 +54,18 @@ function canTakeFocus(el) {
  * trapped; Escape closes, also from a focus the page lost; a focus lost to
  * <body> comes back in.
  *
+ * SUSPENDED (Cockpit Build 2b, review CB4-9 / CB5-1): while another modal
+ * stands over this one — the research modal over the bench sheet — the sheet
+ * traps nothing, takes no key and pulls no focus; once it is lifted, a focus
+ * the page lost comes back in (so closing the research modal returns here).
+ *
  * @returns {{ panelRef: object, onKeyDown: (e: KeyboardEvent) => void }}
  */
-export function useCockpitModal({ open, onClose, restoreFocus = null }) {
+export function useCockpitModal({ open, onClose, restoreFocus = null, suspended = false, onSuspendedEscape = null }) {
+  const suspendedRef = React.useRef(suspended);
+  suspendedRef.current = suspended;
+  const suspendedEscapeRef = React.useRef(onSuspendedEscape);
+  suspendedEscapeRef.current = onSuspendedEscape;
   const panelRef = React.useRef(null);
   const returnRef = React.useRef(null);
   const restoreRef = React.useRef(restoreFocus);
@@ -85,7 +94,7 @@ export function useCockpitModal({ open, onClose, restoreFocus = null }) {
 
   // A focus the page LOST (to <body>) while the sheet is open comes back in.
   React.useEffect(() => {
-    if (!open || typeof document === 'undefined') return;
+    if (!open || suspendedRef.current || typeof document === 'undefined') return;
     const active = document.activeElement;
     if ((!active || active === document.body) && panelRef.current) panelRef.current.focus();
   });
@@ -94,6 +103,12 @@ export function useCockpitModal({ open, onClose, restoreFocus = null }) {
   React.useEffect(() => {
     if (!open || typeof document === 'undefined') return undefined;
     const onDocKey = (e) => {
+      if (suspendedRef.current) {
+        // The modal standing over this one has no key handling of its own: Escape closes IT, and the sheet
+        // beneath stays (review CB4-9).
+        if (e.key === 'Escape' && typeof suspendedEscapeRef.current === 'function') { e.preventDefault(); suspendedEscapeRef.current(); }
+        return;
+      }
       const active = document.activeElement;
       const lost = !active || active === document.body;
       if (!lost) return;
@@ -109,6 +124,7 @@ export function useCockpitModal({ open, onClose, restoreFocus = null }) {
   }, [open]);
 
   const onKeyDown = (e) => {
+    if (suspendedRef.current) return;
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeRef.current?.(); return; }
     if (e.key !== 'Tab') return;
     const nodes = [...(panelRef.current?.querySelectorAll(FOCUSABLE) ?? [])];
@@ -136,11 +152,12 @@ const LAYER_ATTRS = Object.freeze({
  * desktop, a backdrop that closes, the `smooth` entrance (`instant` under
  * reduced motion). The 2a sheet's markup, shared with the 2b bench sheet.
  */
-export function CockpitModalLayer({ kind = 'details', isDesktop = false, reducedMotion = false, bottomInset = 0, titleId, panelRef, onKeyDown, onClose, children }) {
+export function CockpitModalLayer({ kind = 'details', isDesktop = false, reducedMotion = false, bottomInset = 0, titleId, panelRef, onKeyDown, onClose, suspended = false, children }) {
   const attrs = LAYER_ATTRS[kind] ?? LAYER_ATTRS.details;
   return (
     <div
       {...{ [attrs.layer]: isDesktop ? 'desktop' : 'mobile' }}
+      {...(suspended ? { inert: true, 'data-cockpit-modal-suspended': '1' } : {})}
       style={{
         position: isDesktop ? 'absolute' : 'fixed',
         inset: 0,
@@ -160,7 +177,7 @@ export function CockpitModalLayer({ kind = 'details', isDesktop = false, reduced
       <motion.div
         ref={panelRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal={suspended ? undefined : 'true'}
         aria-labelledby={titleId}
         {...{ [attrs.panel]: '1' }}
         tabIndex={-1}
@@ -198,6 +215,7 @@ export function CockpitModalLayer({ kind = 'details', isDesktop = false, reduced
  * @param {number} [props.bottomInset]  the phone's browser-chrome inset (the mark's F3 value)
  * @param {() => (HTMLElement|null)} [props.restoreFocus]  where focus goes when the opener cannot take it
  * @param {string|null} [props.confirmLine]  Cockpit Build 2b (flag on, §6.3): the replace confirmation, in place of the buttons
+ * @param {object[]|null} [props.actions]    Cockpit Build 2b (flag on): cockpit2bModel.sheetButtonsOf — §6.2's buttons in place of 2a's
  */
 export default function CockpitSheet({
   sheet,
@@ -210,8 +228,10 @@ export default function CockpitSheet({
   onAnswer,
   onOpenCheck,
   confirmLine = null,
+  confirmSending = false,
   onConfirmReplace = null,
   onConfirmKeep = null,
+  actions = null,
 }) {
   const open = Boolean(sheet);
   const titleId = 'cockpit-sheet-title';
@@ -304,9 +324,12 @@ export default function CockpitSheet({
       {checkGoneLine ? <span role="status" data-cockpit-check-gone="1" style={{ fontSize: 11.5, color: cssVar('text-secondary') }}>{checkGoneLine}</span> : null}
 
       {/* Cockpit Build 2b (flag on, §6.3): an override while a command is live elsewhere asks first, here. */}
+      {/* Under the flag the sheet answers in §6.2's words and costs (review CB4-2, CB6-3): the card's own buttons. */}
       {confirmLine
-        ? <ReplaceConfirm line={confirmLine} phone={!isDesktop} onReplace={onConfirmReplace} onKeep={onConfirmKeep} />
-        : <AnswerButtons buttons={sheet.buttons} onAnswer={onAnswer} />}
+        ? <ReplaceConfirm line={confirmLine} phone={!isDesktop} sending={confirmSending} onReplace={onConfirmReplace} onKeep={onConfirmKeep} />
+        : (Array.isArray(actions)
+          ? <CockpitActions buttons={actions} phone={!isDesktop} onPress={(b) => onAnswer?.(b.callId, b.answer)} />
+          : <AnswerButtons buttons={sheet.buttons} onAnswer={onAnswer} />)}
       {sheet.blockedLine ? <span style={{ fontSize: 11.5, color: cssVar('text-secondary') }}>{sheet.blockedLine}</span> : null}
       <div role="status" aria-live="polite" data-cockpit-sheet-refusal={refusal ? '1' : '0'} style={{ fontSize: 11.5, color: cssVar('call-dropped') }}>{refusal}</div>
     </CockpitModalLayer>
