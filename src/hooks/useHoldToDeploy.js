@@ -47,18 +47,28 @@
 //   CHARGING CANCELS ON EVERY LOSS OF THE GESTURE: pointer up, leave, cancel,
 //   lost pointer capture, the tab going hidden, window blur, disabled becoming
 //   true, enabled becoming false, unmount. Each revokes the claim, clears the
-//   queued frame, resets the display and emits ONE abort. A frame that runs
-//   while the document is hidden cancels instead of committing, so a frame
-//   resumed after a suspension can never commit. The blur/visibility listeners
-//   exist only while charging.
+//   queued frame, resets the display and emits ONE abort. The unmount cancel
+//   is a layout-effect cleanup, so it lands in the commit that removes the
+//   button and no queued frame or beat can run in between. The blur/visibility
+//   listeners exist only while charging. They are what stops D4: browsers
+//   pause animation frames for a hidden tab, so the frame that resumes after a
+//   switch runs VISIBLE, and only the visibilitychange/blur that came first
+//   can have cancelled that hold. A frame that runs while still hidden (an
+//   engine that does not pause) cancels too. Not covered: a suspension or a
+//   long stall that delivers neither event; the frame after it commits, as
+//   before R2 (R2 report §11).
 //
 //   THE THRESHOLD IS THE COMMITMENT BOUNDARY. At p ≥ 1 (or an accepted key)
 //   commitHold(token) decides atomically; only on true does stateRef become
 //   'locked' — before anything else — then the display, the haptic, exactly one
 //   commit, onCommit and the beat. From then on release, leave, cancel, capture
 //   loss, blur and hidden do nothing: "Locked in" stays and the deploy completes
-//   once. A token revoked elsewhere cannot commit; that charge is torn down with
-//   its one abort.
+//   once.
+//
+//   A CLAIM REVOKED FROM OUTSIDE (releaseHold by its holder's owner) is honoured
+//   by every continuation: a charge ends at its next frame with its one abort,
+//   and a committed beat that runs after the revocation deploys nothing and
+//   returns the control to idle.
 //
 //   THE CLAIM LASTS THROUGH THE DEPLOY REQUEST. onComplete runs once, after the
 //   beat; the slot stays locked until its result settles, so no second control
@@ -72,6 +82,7 @@
 //   for S2b's provider: onCommit(token), called synchronously at the boundary,
 //   and beatOwner { commit(token, run) }, which takes the beat instead of this
 //   hook's timer; an owned beat survives unmount and its run releases the claim.
+//   An owner whose commit throws does not take the beat: the hook keeps it.
 //   With neither passed, behaviour is the legacy one above.
 //
 //   KEYBOARD. Enter/Space ignore auto-repeat, claim, commit at once and run the
@@ -158,7 +169,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { isDeploySkyCouplingOn } from '../config/featureFlags';
 import { DEPLOY_INTENT_EVENT } from '../components/warpStateMachine';
-import { claimHold, commitHold, releaseHold } from './holdClaim';
+import { claimHold, commitHold, currentHold, releaseHold } from './holdClaim';
 
 const HOLD_MS = 1300;
 const LOCK_BEAT_MS = 450;
@@ -274,7 +285,7 @@ export default function useHoldToDeploy({
   // The tab going hidden or the window losing focus ends the gesture the
   // player was making (D4, D5). Attached when a charge starts, removed on every
   // exit from it.
-  const attachGestureListeners = () => {
+  const attachGestureListeners = useCallback(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
     const onVisibility = () => { if (document.hidden) cancel(); };
     const onBlur = () => { cancel(); };
@@ -284,7 +295,7 @@ export default function useHoldToDeploy({
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('blur', onBlur);
     };
-  };
+  }, [cancel]);
 
   const fireComplete = useCallback(() => {
     // THE COMMITMENT BOUNDARY (R-R2-5). Only the slot's current charging claim
@@ -320,6 +331,16 @@ export default function useHoldToDeploy({
       ran = true;
       lockTimerRef.current = null;
       beatPendingRef.current = false;
+      // Every continuation validates its token (spec §5.5): a claim revoked
+      // during the beat deploys nothing, and the slot it no longer holds is not
+      // released by it (R2 review L2-4).
+      if (currentHold()?.holdToken !== token) {
+        stateRef.current = 'idle';
+        tokenRef.current = null;
+        setPhase('idle');
+        setProgress(0);
+        return;
+      }
       let result;
       try {
         result = onComplete?.();
@@ -331,25 +352,47 @@ export default function useHoldToDeploy({
       // still surfaces once, as it did when the result was dropped.
       Promise.resolve(result).finally(() => { releaseHold(token); });
     };
+    // The legacy beat is armed BEFORE onCommit runs: an onCommit that unmounts
+    // this control synchronously then finds the timer to cancel (R2 review
+    // L2-2), and the commitment's beat stands even if onCommit throws —
+    // otherwise nothing would ever release the claim.
+    if (!beatOwner) {
+      if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+      lockTimerRef.current = setTimeout(run, lockBeatMs);
+    }
+    let thrown = null;
     try {
       onCommit?.(token);
-    } finally {
-      // The commitment stands even if onCommit throws, so its beat is scheduled
-      // regardless — otherwise nothing would ever release the claim.
-      if (beatOwner) {
+    } catch (err) {
+      thrown = err;
+    }
+    if (beatOwner) {
+      try {
         beatOwner.commit(token, run);
-      } else {
-        if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+      } catch (err) {
+        // An owner that throws has not taken the beat. The hook keeps it, so
+        // its run still releases the claim (R2 review L4-1).
         lockTimerRef.current = setTimeout(run, lockBeatMs);
+        thrown = thrown ?? err;
       }
     }
+    // Every effect of the commitment is in place; now surface the first error.
+    if (thrown) throw thrown;
   }, [cancel, onComplete, onCommit, beatOwner, lockBeatMs]);
 
   const tick = useCallback(() => {
-    // A frame that runs while the document is hidden is a frame resumed after
-    // a suspension: rAF paused, performance.now() did not, so p would jump
-    // straight to 1. It cancels instead of committing (D4, review IR-08).
+    // A frame that runs while the document is still hidden cancels instead of
+    // committing (R-R2-4): performance.now() kept running, so p may have
+    // jumped to 1. Browsers normally pause frames for a hidden tab, so the
+    // frame that resumes runs visible; the visibilitychange/blur listeners are
+    // what cancel that hold (D4, review IR-08).
     if (typeof document !== 'undefined' && document.hidden) {
+      cancel();
+      return;
+    }
+    // A claim revoked from outside ends the charge at the next frame, so two
+    // holds never charge at once (R2 review L4-2).
+    if (currentHold()?.holdToken !== tokenRef.current) {
       cancel();
       return;
     }
@@ -360,6 +403,9 @@ export default function useHoldToDeploy({
     // at its peak — the commit beat then releases from the top rather than from
     // wherever the previous frame happened to sit.
     dispatchIntent(p);
+    // A listener may have ended the charge synchronously: then this frame does
+    // nothing more — no haptic, no next frame (R2 review L3-3).
+    if (stateRef.current !== 'charging') return;
     while (hapticRef.current < HAPTIC_STEPS.length && p >= HAPTIC_STEPS[hapticRef.current]) {
       vibrate(hapticRef.current === HAPTIC_STEPS.length - 1 ? 60 : 12);
       hapticRef.current += 1;
@@ -388,7 +434,7 @@ export default function useHoldToDeploy({
     attachGestureListeners();
     capturePointer(e);
     rafRef.current = requestAnimationFrame(tick);
-  }, [enabled, disabled, controlId, tick]);
+  }, [enabled, disabled, controlId, tick, attachGestureListeners]);
 
   const onKeyDown = useCallback((e) => {
     if (!enabled || disabled) return;
@@ -417,10 +463,11 @@ export default function useHoldToDeploy({
   // the ceremony was dismissed via "Back to hub" and the deploy flag cleared) —
   // otherwise the label would stay stuck on "Locked in". Never while a
   // committed beat is still pending: showing idle then would show cancellation
-  // for a deploy that is about to fire (spec §5.5). The claim is not released
-  // here; its own settle does that.
+  // for a deploy that is about to fire (spec §5.5). Never over a charge that
+  // began after the re-enable rendered (R2 review L2-5). The claim is not
+  // released here; its own settle does that.
   useEffect(() => {
-    if (wasDisabledRef.current && !disabled && !beatPendingRef.current) {
+    if (wasDisabledRef.current && !disabled && !beatPendingRef.current && stateRef.current !== 'charging') {
       if (stateRef.current === 'locked') {
         stateRef.current = 'idle';
         tokenRef.current = null;
@@ -432,7 +479,11 @@ export default function useHoldToDeploy({
     wasDisabledRef.current = disabled;
   }, [disabled]);
 
-  useEffect(() => () => {
+  // A layout-effect cleanup, so it runs in the commit that removes the button:
+  // with a passive cleanup, an unmount from a non-event update (a snapshot, a
+  // shell swap) left a paint in which a queued frame could still commit, or
+  // the beat still deploy, from a button already gone (R2 review L2-1).
+  useLayoutEffect(() => () => {
     clearRaf();
     detachGestureListeners();
     if (lockTimerRef.current) {
@@ -450,13 +501,10 @@ export default function useHoldToDeploy({
     // ever received is a live `progress`, and since the overlay only decays on
     // a terminal it would stay leaning in FOREVER — a sky pinned fast by a hold
     // that no longer exists. A 'locked' unmount needs nothing: fireComplete
-    // already sent its terminal.
-    if (stateRef.current === 'charging') {
-      stateRef.current = 'idle';
-      releaseHold(tokenRef.current);
-      dispatchIntent(null, 'abort');
-    }
-  }, []);
+    // already sent its terminal. cancel() is a no-op unless charging; its
+    // display reset is a no-op on a deleted component.
+    cancel();
+  }, [cancel]);
 
   // Only the button's OWN capture loss ends a charge. A touch is implicitly
   // captured by the element actually touched (the label span, the icon), and
