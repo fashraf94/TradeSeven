@@ -1076,6 +1076,111 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // From the cockpit (§8.2): the label on a chat directive card whose exchange
   // the answer endpoint wrote (`source: 'cockpit'`).
   fromCockpit: 'From the cockpit',
+
+  // ── Cockpit Build 2b — the V5 screen, flag on (spec docs/COCKPIT_BUILD2B_SPEC_V1_0.md §5–§7) ──
+  // `agent` is the battle's own agent name; times arrive formatted ("the 1:30 PM check", "1:32 PM").
+  // No line here is ever attributed to the agent (V5-7): every sentence renders a record field.
+  // §5.1 the commands meter.
+  cockpit2bMeterLeft: (n) => (Number.isFinite(n) && n > 0 ? `· ${n} left` : 'No commands left'),
+  cockpit2bMeterAria: (n, limit) => (Number.isFinite(n) ? `${n} of ${limit} commands left` : null),
+  // §5.2 the Now card.
+  cockpit2bNowHeader: '⚡ Now',
+  cockpit2bQuiet: (agent, next) => {
+    const t = slotLabel(next);
+    return t ? `Nothing needs you · ${agent}'s next check ~${t}` : 'Nothing needs you';
+  },
+  cockpit2bKindExit: 'Exit call',
+  cockpit2bKindHold: 'Hold call',
+  cockpit2bKindEntry: 'Entry call',
+  cockpit2bKindUpside: 'Upside call',
+  cockpit2bKindCommand: (wordingCheck) => (wordingCheck ? `Your command · on the ${wordingCheck} wording` : 'Your command'),
+  cockpit2bFrom: (check) => (check ? `from ${check}` : null),
+  cockpit2bPlanExitAct: (agent, sym, side, price, deadline) => `${agent} plans to exit ${sym} if it goes ${side} ${price}${deadline ? ` ${deadline}` : ''}.`,
+  cockpit2bPlanExitHold: (agent, sym, side, price, deadline) => `${agent} calls ${sym} ${side} ${price}${deadline ? ` ${deadline}` : ''}, and plans to hold it.`,
+  cockpit2bPlanEntryAct: (agent, sym, cp, side, price, deadline) => `${agent} plans to bring in ${sym}${cp ? ` for ${cp}` : ''} if it goes ${side} ${price}${deadline ? ` ${deadline}` : ''}.`,
+  cockpit2bPlanEntryHold: (agent, sym, side, price, deadline) => `${agent} calls ${sym} ${side} ${price}${deadline ? ` ${deadline}` : ''}, and plans to wait.`,
+  cockpit2bSilence: (verb) => (verb ? `If you say nothing, it ${verb}.` : null),
+  // "as of" only beside the price it dates; without the check's cited price the line is the deadline alone.
+  cockpit2bFacts: (deadline, sym, price, check) => [deadline, price ? `${sym} ${price}` : null, price && check ? `as of ${check}` : null].filter(Boolean).join(' · ') || null,
+  // §6.2 the buttons: agreeing first and free; every override carries one bullet.
+  cockpit2bConfirmExit: 'Confirm exit',
+  cockpit2bGoIfTriggers: 'Go if it triggers',
+  cockpit2bHold: 'Hold',
+  cockpit2bHoldOff: 'Hold off',
+  cockpit2bExitInstead: 'Exit instead',
+  cockpit2bBringItIn: 'Bring it in',
+  cockpit2bNoCommands: 'No commands left',
+  cockpit2bOneCommandAria: (label) => (label ? `${label} · 1 command` : null),
+  cockpit2bSending: 'Sending…',
+  cockpit2bDone: 'Done',
+  // The command card (§5.2 "After an answer"): the canonical text verbatim, then the receipts.
+  cockpit2bFiled: (time) => (time ? `Filed ${time}` : 'Filed'),
+  cockpit2bNotYetHeard: 'not yet heard',
+  // Left the slot unheard (killed, expired, replaced, retired): no hearing is promised that cannot come (2a ruling Oct 4).
+  cockpit2bNotHeard: 'not heard',
+  cockpit2bNoCheckLeft: 'no check left today',
+  // §5.3 Who comes in?
+  cockpit2bWho: (sym) => (sym ? `Who comes in for ${sym}?` : null),
+  cockpit2bBrowse: 'Browse the bench →',
+  cockpit2bEyeing: (agent) => `${agent} is eyeing`,
+  cockpit2bByRank: 'From your bench · by rank',
+  cockpit2bChipLocked: 'locked',
+  cockpit2bChipHeld: 'in your book',
+  cockpit2bChipCant: 'can\'t come in',
+  cockpit2bComesIn: (inn, sym) => (inn && sym ? `✓ ${inn} comes in if ${sym} exits · filed` : null),
+  cockpit2bLetChoose: (agent) => `Let ${agent} choose`,
+  cockpit2bCancel: 'Cancel',
+  // §5.4 Also live.
+  cockpit2bAlsoLive: (n) => (Number.isFinite(n) ? `Also live · ${n}` : 'Also live'),
+  cockpit2bWordExit: 'exit',
+  cockpit2bWordHold: 'hold',
+  cockpit2bWordEnter: 'enter',
+  cockpit2bWordWait: 'wait',
+  cockpit2bWordCommand: 'your command',
+  cockpit2bWordFollowing: 'following',
+  cockpit2bWordUpside: 'upside',
+  cockpit2bWordAgreed: 'you agreed',
+  cockpit2bLineMovedShort: 'line moved',
+  cockpit2bMore: (n) => `+${n} more`,
+  cockpit2bFewer: 'fewer',
+  cockpit2bSpotlight: 'Spotlight →',
+  cockpit2bChipAria: (text) => (text ? `${text} — open` : null),
+  // §5.5 the day line (counts records; never tappable).
+  cockpit2bDayLine: (calls, hit, expired, answered) => `Today · ${calls} ${calls === 1 ? 'call' : 'calls'} · ${hit} hit · ${expired} expired · you answered ${answered}`,
+  // §5.6 Earlier, collapsed.
+  cockpit2bEarlierRow: (sym, arrow, level, tag) => [`${sym} ${arrow} ${level}`, tag].filter(Boolean).join(' · '),
+  cockpit2bEarlierToggle: (open) => (open ? 'Hide earlier calls' : 'Show earlier calls'),
+  // §6.3 the replace confirmation.
+  // A 409 naming a command whose call this screen has not loaded: the command, without a symbol it cannot read.
+  cockpit2bReplaceCommand: (sym, text, agent) => `This replaces your command${sym ? ` on ${sym}` : ''} — "${text}". ${agent} stops hearing it at its next check.`,
+  cockpit2bReplaceChat: (text, agent) => `This replaces your chat instruction — "${text}". ${agent} stops hearing it at its next check.`,
+  cockpit2bReplace: 'Replace',
+  cockpit2bKeep: 'Keep current command',
+  // §5.7 the bench sheet (6A).
+  cockpit2bBenchTitle: 'The bench',
+  cockpit2bBenchSub: (n, available, asOf) => [`${n} ${n === 1 ? 'name' : 'names'}`, `${available} available`, asOf ? `prices as of ${asOf}` : null].filter(Boolean).join(' · '),
+  cockpit2bSortRank: 'Rank',
+  cockpit2bSortMove: 'Today\'s move',
+  cockpit2bSortSector: 'Sector',
+  cockpit2bSortName: 'Sort the bench',
+  cockpit2bPick: 'Pick',
+  cockpit2bLockedUntil: (time) => (time ? `locked until ${time}` : 'locked'),
+  cockpit2bNotSwappable: 'can\'t come in',
+  cockpit2bNoPrice: 'no price',
+  cockpit2bAvailable: 'available',
+  cockpit2bFiledBar: (text) => (text ? `✓ Filed · ${text}` : '✓ Filed'),
+  cockpit2bBenchLoading: 'Reading the bench…',
+  cockpit2bBenchError: 'Couldn\'t read the bench right now.',
+  cockpit2bBenchClose: 'Close',
+  cockpit2bAtr: (pct) => (pct ? `ATR ${pct}` : null),
+  cockpit2bResearchSymbol: (sym) => (sym ? `Research ${sym}` : null),
+  // §5.9 the Research pill and the composer line.
+  cockpit2bResearch: 'Research',
+  cockpit2bResearchAria: 'Research · open the bench',
+  cockpit2bComposerLine: (sym) => (sym ? `Sending a directive replaces your cockpit command on ${sym}.` : null),
+  // §5.8 board-row dots.
+  cockpit2bDotCommand: 'your live command',
+  cockpit2bDotOpen: 'an open call',
 });
 
 /**
@@ -1186,9 +1291,20 @@ export const COCKPIT_DROPPED_REASON_TEXT = Object.freeze({
  * the server proved it; the last never does, because the server may have
  * committed. `null` status = no response at all.
  */
-export function cockpitRefusalLine(status, body = null, { pendingLine = null } = {}) {
+export function cockpitRefusalLine(status, body = null, { pendingLine = null, v2 = false, names = {} } = {}) {
   const reason = body && typeof body === 'object' ? body.reason : null;
   const error = body && typeof body === 'object' ? body.error : null;
+  // Cockpit Build 2b (spec §7.3, flag on): the changed rows. replace_unconfirmed opens the confirmation and
+  // shows no line; the budget is commands; a name that can't come in, or a stock already gone, says which.
+  if (v2) {
+    if (status === 409 && reason === 'replace_unconfirmed') return null;
+    if (status === 409 && reason === 'budget') return 'No commands left — nothing was filed.';
+    if (status === 400 && error === 'ineligible_action') {
+      if (typeof reason === 'string' && reason.startsWith('pick_') && names.pickSymbol) return `${names.pickSymbol} can't come in right now — nothing was filed.`;
+      if (reason === 'counterpart_unavailable' && names.counterpart) return `${names.counterpart} can't come in right now — nothing was filed.`;
+      if (reason === 'symbol_not_held' && names.symbol) return `${names.symbol} has already left your book — nothing was filed.`;
+    }
+  }
   if (status === 409) {
     switch (reason) {
       case 'already_answered': return 'You\'ve already answered this call.';

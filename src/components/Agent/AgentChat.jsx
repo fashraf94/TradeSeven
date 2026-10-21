@@ -648,6 +648,12 @@ export default function AgentChat({
   // null when none — sent with every chip filing as expectedDirectiveThreadId.
   // A stale belief is a conflict the server refuses, never a silent overwrite.
   currentDirectiveThreadId = null,
+  // Cockpit Build 2b (spec §5.9, flag on): the slot's live cockpit command —
+  // `{ family, symbol }` from the screen (the slot's `family` and its book
+  // symbol, `action.symbol` or a pick's `swapOut`). While it is a call-family
+  // command, one line above the input says a directive sent here replaces it.
+  // Null flag-off and whenever no cockpit command is live: the composer as shipped.
+  cockpitCommand = null,
 }) {
   // Phase 1 Voice Layer Rework (spec §4.5): chat exchanges are now derived
   // reactively from the chatExchanges prop so Firestore-initiated writes
@@ -1629,6 +1635,13 @@ export default function AgentChat({
         </span>
         <BudgetPips used={activeBudgetUsed} total={activeBudgetLimit} />
       </div>
+
+      {/* Cockpit Build 2b (§5.9): a chat directive replaces the live cockpit command — said before it is sent. */}
+      {cockpitCommand && cockpitCommand.family === 'call' && cockpitCommand.symbol ? (
+        <div data-chat-cockpit-command={cockpitCommand.symbol} style={{ padding: '4px 16px 0', fontSize: 11.5, lineHeight: 1.4, color: cssVar('text-secondary') }}>
+          {BATTLE_VIEW_COPY.cockpit2bComposerLine(cockpitCommand.symbol)}
+        </div>
+      ) : null}
 
       {/* ── Input row ────────────────────────────────────────────────── */}
       <div style={{

@@ -94,6 +94,10 @@ function AssetSide({
   // the gated screen opts in to a second click argument naming it. Absent:
   // the click callbacks receive exactly the asset, as shipped.
   reportClickSide = false,
+  // Cockpit Build 2b (spec §5.8, flag on and cockpit-on only): a 6 px dot
+  // beside the symbol — 'command' (teal) for the live command's book symbol,
+  // 'open' (neutral) for any other open call's. Absent: exactly the shipped side.
+  callMark = null,
 }) {
   // Computed once per side when the row did not hand one down (the standalone
   // AssetSide path). Placed before the early returns so the hook order is the
@@ -310,6 +314,7 @@ function AssetSide({
             }}
           >
             {symbol}
+            {callMark ? <CallMark mark={callMark} /> : null}
           </div>
           <span data-row-quote-status={asset.symbol} style={{ fontSize: '12px', fontWeight: 600, color: HOLO_COLORS.textMuted }}>
             {status}
@@ -476,6 +481,8 @@ function AssetSide({
               </span>
             )}
           </div>
+          {/* Outside the symbol's hover target: its handlers paint e.target, which would wipe the dot. */}
+          {callMark ? <CallMark mark={callMark} /> : null}
           {(() => {
             const pctBlock = (
               <div {...(pctId ? { id: pctId } : {})} style={{ position: 'relative', height: '20px', overflow: 'hidden' }}>
@@ -660,7 +667,33 @@ AssetSide.propTypes = {
   whyId: PropTypes.string,
   showCurrentPrice: PropTypes.bool,
   reportClickSide: PropTypes.bool,
+  callMark: PropTypes.oneOf(['command', 'open']),
 };
+
+/**
+ * Cockpit Build 2b (spec §5.8): the board-row mark — teal for your live
+ * command's book symbol, neutral for an open call's — with its own label.
+ */
+function CallMark({ mark }) {
+  const command = mark === 'command';
+  return (
+    <span
+      data-row-call-mark={mark}
+      role="img"
+      aria-label={command ? BATTLE_VIEW_COPY.cockpit2bDotCommand : BATTLE_VIEW_COPY.cockpit2bDotOpen}
+      style={{
+        display: 'inline-block',
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        marginLeft: 6,
+        verticalAlign: 'middle',
+        background: command ? cssVar('teal') : cssVar('text-muted'),
+      }}
+    />
+  );
+}
+CallMark.propTypes = { mark: PropTypes.oneOf(['command', 'open']).isRequired };
 
 // Tier-specific badge colors
 const TIER_BADGE_STYLES = {
@@ -755,6 +788,9 @@ export default function TacticalRow({
   // Shadow vs CPU quote integrity: name the side in the click callbacks'
   // second argument (§7.2 item 1). Absent: exactly the shipped callbacks.
   reportClickSide = false,
+  // Cockpit Build 2b (spec §5.8): the player's piece's call mark. Passed ONLY
+  // with the flag on and the battle cockpit-on; absent, the row is as shipped.
+  callMark = null,
 }) {
   // The left side's proximity, computed ONCE here and handed to both the
   // label (through AssetSide) and the Why? panel — never derived twice beside
@@ -825,6 +861,7 @@ export default function TacticalRow({
         whyId={whyId}
         showCurrentPrice={showCurrentPrice}
         {...(reportClickSide ? { reportClickSide: true } : {})}
+        {...(callMark ? { callMark } : {})}
       />
 
       {/* Center Allocation Badge */}
@@ -920,6 +957,7 @@ TacticalRow.propTypes = {
   baggerFooter: PropTypes.string,
   reducedMotion: PropTypes.bool,
   reportClickSide: PropTypes.bool,
+  callMark: PropTypes.oneOf(['command', 'open']),
 };
 
 TacticalRow.defaultProps = {

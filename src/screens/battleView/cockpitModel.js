@@ -38,7 +38,7 @@
 import {
   renderCallLine, isUpsideCall, checkLabel, deadlineText, fmtPrice, SAID_UNVERIFIED_LABEL,
 } from '../../../api/_utils/callRecords/copy.js';
-import { tileAnswersFor, replacementStepFor } from '../../../api/_utils/callRecords/answers.js';
+import { tileAnswersFor, replacementStepFor, isGoAcknowledgment } from '../../../api/_utils/callRecords/answers.js';
 import { etDateOf, sessionCloseAfter, nextEligibleSlot } from '../../../api/_utils/callRecords/horizon.js';
 import { deriveKilledDirectiveIds } from '../../../api/_utils/controlPromptRenderer.js';
 import { etTime, etSlotTime } from '../../components/Dashboard/desk/deskCopy';
@@ -673,12 +673,13 @@ export function buildCockpitFeed({
 } = {}) {
   const shown = cockpitCalls(calls).filter((c) => c.kind !== 'pick');
   const eventsMap = eventsByCall(events);
-  const block = overrideBlockOf({ directive, calls: shown, nowMs, controlEpochLog, suppressed });
+  // With v2 (flag on) the endpoint REPLACES the live command after a confirmation (D-2) — nothing blocks.
+  const block = v2 ? null : overrideBlockOf({ directive, calls: shown, nowMs, controlEpochLog, suppressed });
   // The slot's live thread, by the block's own predicate: a filed directive is "not yet heard" only while it is this one.
   const slotThreadId = liveCallSlotOf({ directive, nowMs, controlEpochLog, suppressed })?.directiveThreadId ?? null;
   const command = commandOf({ directive, calls: shown, nowMs, controlEpochLog, suppressed });
   const ctx = { eventsMap, evaluations, nowMs, block, pending, slotThreadId, command, exchanges, nextDecisionAt, battleExpiresAtMs, directive, v2 };
-  const withRefusal = (tile) => ({ ...tile, refusalLine: refusalLineOf(tile, outcomes?.[tile.target?.callId ?? tile.id] ?? outcomes?.[tile.id] ?? null, { calls: shown, directive, block, nowMs }) });
+  const withRefusal = (tile) => ({ ...tile, refusalLine: refusalLineOf(tile, outcomes?.[tile.target?.callId ?? tile.id] ?? outcomes?.[tile.id] ?? null, { calls: shown, directive, block, nowMs, v2 }) });
   const openTiles = foldThreads(shown, { command, eventsMap }).map((t) => withRefusal(tileOf(t.calls, ctx)));
   const resolved = shown
     .filter((c) => c.state !== 'open')
@@ -865,10 +866,11 @@ export function staleRefusalIds(feed, outcomes) {
  * @param {object} tile
  * @param {{ status: number|null, body: object|null, at?: number, callId?: string }|null} outcome
  */
-export function refusalLineOf(tile, outcome, { calls = [], directive = null, block = null, nowMs } = {}) {
+export function refusalLineOf(tile, outcome, { calls = [], directive = null, block = null, nowMs, v2 = false } = {}) {
   if (!tile || !outcome) return null;
   const call = tile.calls.find((c) => c.callId === outcome.callId) ?? tile.call;
-  if (call.state !== 'open' || answeredCall(call)) return null;
+  // Cockpit Build 2b (D-4): the one second answer — a refused replace after the go acknowledgment still shows its line.
+  if (call.state !== 'open' || (answeredCall(call) && !(v2 && isGoAcknowledgment(call.playerResponse)))) return null;
   const body = outcome.body && typeof outcome.body === 'object' ? outcome.body : null;
   let pendingLine = null;
   if (outcome.status === 409 && body?.reason === 'directive_pending') {
@@ -882,5 +884,8 @@ export function refusalLineOf(tile, outcome, { calls = [], directive = null, blo
       pendingLine = COPY.cockpitWaitingActive(slotIsIt && finite(directive.expiresAtMs) ? etTime(isoOf(directive.expiresAtMs)) : null);
     }
   }
-  return cockpitRefusalLine(outcome.status, body, { pendingLine });
+  // Cockpit Build 2b (spec §7.3, flag on): the line names the name that can't come in, the agent's counterpart,
+  // or the stock that left — the submitted name rides the outcome (useCockpitAnswer), the others the record.
+  const names = { pickSymbol: outcome.pickSymbol ?? null, counterpart: call.counterpart ?? null, symbol: call.symbol ?? null };
+  return cockpitRefusalLine(outcome.status, body, { pendingLine, v2, names });
 }

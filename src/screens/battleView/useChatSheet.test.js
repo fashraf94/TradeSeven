@@ -100,3 +100,15 @@ describe('the heights', () => {
     expect(viewportInsetFrom(600)).toBe(0);
   });
 });
+
+// Cockpit Build 2b (spec §5.9): the composer's one line while a cockpit command is live grows peek by a pinned allowance;
+// with no live command the board's clearance is the base peek exactly (the flag-off value).
+describe('sheetPeekPx — the composer line (Cockpit Build 2b)', () => {
+  it('base without the line; base + 20 with it', async () => {
+    const { sheetPeekPx, SHEET_PEEK_COMMAND_LINE_PX } = await import('./useChatSheet');
+    expect(SHEET_PEEK_COMMAND_LINE_PX).toBe(20);
+    expect(sheetPeekPx()).toBe(SHEET_PEEK_PX);
+    expect(sheetPeekPx({ commandLine: false })).toBe(172);
+    expect(sheetPeekPx({ commandLine: true })).toBe(192);
+  });
+});

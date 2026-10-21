@@ -45,7 +45,7 @@ export function toneColor(tone) {
   }
 }
 
-const labelSpan = (size, weight = 600) => ({ fontSize: size, fontWeight: weight, lineHeight: 1.2 });
+export const labelSpan = (size, weight = 600) => ({ fontSize: size, fontWeight: weight, lineHeight: 1.2 });
 
 /** A button reset by hand (no `all: unset`): the browser keeps its focus ring. */
 export const plainButton = Object.freeze({
@@ -59,7 +59,7 @@ export const plainButton = Object.freeze({
   cursor: 'pointer',
 });
 
-function GroupHeader({ label, count = null, dim = false, groupKey }) {
+export function GroupHeader({ label, count = null, dim = false, groupKey }) {
   return (
     <div
       data-cockpit-group={groupKey}
@@ -109,7 +109,7 @@ function GroupHeader({ label, count = null, dim = false, groupKey }) {
 }
 
 /** The shipped transparent teal-outline chip (WhyPanel.jsx's follow-up door). */
-const chipStyle = (disabled) => ({
+export const chipStyle = (disabled) => ({
   background: 'transparent',
   border: `1px solid ${cssVar('call-yours')}`,
   color: cssVar('call-yours'),
@@ -249,7 +249,7 @@ function Tile({ tile, onAnswer, onOpenSheet }) {
   );
 }
 
-function MonitoringRow({ row, onSymbolClick }) {
+export function MonitoringRow({ row, onSymbolClick }) {
   if (!row) return null;
   return (
     <div data-cockpit-monitoring="1" style={{ padding: '10px 12px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>

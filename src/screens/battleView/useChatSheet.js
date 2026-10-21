@@ -36,6 +36,15 @@ const ORDER = Object.freeze([SHEET_DETENT.PEEK, SHEET_DETENT.HALF, SHEET_DETENT.
  * row 39 + the budget row 24 + the one-line input row 105 (review refuter A).
  */
 export const SHEET_PEEK_PX = 172;
+/**
+ * Cockpit Build 2b (spec §5.9): the composer's one line while a cockpit
+ * command is live ("Sending a directive replaces your cockpit command on
+ * {SYM}.") — 4 px of padding over one 11.5 px line at 1.4. Peek grows by
+ * this while the line shows; with no live command it is SHEET_PEEK_PX exactly.
+ */
+export const SHEET_PEEK_COMMAND_LINE_PX = 20;
+/** The board's peek clearance: the base peek, plus the composer line while it shows. */
+export const sheetPeekPx = ({ commandLine = false } = {}) => SHEET_PEEK_PX + (commandLine ? SHEET_PEEK_COMMAND_LINE_PX : 0);
 /** Full leaves this much of the header visible above the sheet. */
 export const SHEET_FULL_TOP_GAP_PX = 56;
 /** Half is this share of the viewport. */

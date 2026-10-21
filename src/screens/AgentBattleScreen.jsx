@@ -49,7 +49,7 @@ import useContentStable from './battleView/useContentStable';
 import ChatSheet from './battleView/ChatSheet';
 import { PeekStrip } from './battleView/PeekStrip';
 import { derivePeekLine } from './battleView/derivePeekLine';
-import { useChatSheet, useViewportHeight, viewportInsetFrom, isSheetOpen, SHEET_PEEK_PX, SHEET_DETENT } from './battleView/useChatSheet';
+import { useChatSheet, useViewportHeight, viewportInsetFrom, isSheetOpen, SHEET_DETENT, sheetPeekPx } from './battleView/useChatSheet';
 import { computeTugOfWarWidth } from './battleView/computeTugOfWarWidth';
 import ArenaHeader, { SwitchCounter } from './battleView/ArenaHeader';
 // Shadow vs CPU quote integrity (SHADOW_CPU_QUOTE_INTEGRITY_ENABLED — dark).
@@ -93,6 +93,12 @@ import { CockpitSwitch, BoardCockpitTrack, PHONE_SCREEN } from './battleView/Boa
 import { buildCockpitFeed, monitoringRow, sheetOf, eventsByCall, latestPromptBuiltAt, checkOf, liveCallSlotOf, staleRefusalIds } from './battleView/cockpitModel';
 // Cockpit Build 2b (spec §8, from merge): the server's clock for deadlines.
 import { useServerNow } from './battleView/useServerClock';
+// Cockpit Build 2b (spec §5–§6, flag on): the V5 screen, its bench sheet and its answer flow.
+import Cockpit2b from './battleView/Cockpit2b';
+import CockpitBenchSheet from './battleView/CockpitBenchSheet';
+import { useCockpit2bAnswer } from './battleView/useCockpit2bAnswer';
+import { useCockpitBench } from '../hooks/useCockpitBench';
+import { cardKeyOf, liveCommandOf, rowMarksOf, replaceLineOf, meterOf, eyeingOf, benchSheetOf, pickAnswerFor } from './battleView/cockpit2bModel';
 import { battleExpiryMs } from '../../api/_utils/callRecords/horizon.js';
 import { BATTLE_CHAT_BUDGET } from '../../api/_utils/directiveFiling.js';
 import { useBaggerMoment } from './battleView/useBaggerMoment';
@@ -2524,12 +2530,28 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         suppressed: ARCHETYPE_INTEGRITY_MODE !== 'enforce',
       })
       : null);
+  // Cockpit Build 2b (spec §5.7, §5.9; flag on): the bench sheet's opening —
+  // `{ callId, step, cardKey }` from a card's "Browse the bench →", or
+  // `{ callId: null }` from the Research pill (browse) — and what it filed.
+  // Declared here, before THIS TURN, because the pill opens it. Client state only.
+  const cockpit2b = Boolean(cockpitOn && isCockpit2bOn());
+  const [cockpitBench, setCockpitBench] = useState(null);
+  const [cockpitBenchSort, setCockpitBenchSort] = useState('rank');
+  const [cockpitBenchFiled, setCockpitBenchFiled] = useState(null);
+  const openCockpitBenchBrowse = useCallback(() => {
+    const invoker = typeof document !== 'undefined' ? document.activeElement : null;
+    setCockpitBenchFiled(null);
+    setCockpitBench({ callId: null, step: null, cardKey: null });
+    // On desktop the sheet is a panel within the pane's Cockpit tab: open it there.
+    if (isDesktop) pane.openPane(PANE_SECTION.COCKPIT, invoker);
+  }, [isDesktop, pane.openPane]);
   const thisTurnStrip = controllerOn && agentBattle ? (
     <ThisTurnStrip
       directive={thisTurnDirective}
       receipts={receipts}
       battleStatus={agentBattle.status ?? null}
       turn={turnLine}
+      {...(cockpit2b ? { onResearch: openCockpitBenchBrowse } : {})}
     />
   ) : null;
 
@@ -2622,7 +2644,39 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     ? sheetOf(cockpitSheetTile, { eventsMap: cockpitEventsMap, evaluations: agentBattle?.evaluations, observation: cockpitObservation, nowMs: cockpitNowMs, exchanges: agentBattle?.chatExchanges ?? [] })
     : null;
   if (cockpitSheetTile) cockpitSheetTileIdRef.current = cockpitSheetTile.id;
-  const cockpitSheetOpen = Boolean(cockpitSheet);
+  // Cockpit Build 2b (flag on): the live call-family command (the endpoint's own predicate), the
+  // answer flow every surface shares (the replace confirmation, the card held after Confirm exit),
+  // the bench read and sheet, and the board-row marks. Every hook runs on every render (hazard 44).
+  const cockpitSuppressed = ARCHETYPE_INTEGRITY_MODE !== 'enforce';
+  const cockpitLive = cockpit2b
+    ? liveCommandOf({ directive: agentBattle?.directive ?? null, nowMs: cockpitNowMs, controlEpochLog: agentBattle?.controlEpochLog ?? null, suppressed: cockpitSuppressed })
+    : null;
+  const cockpitFlow = useCockpit2bAnswer({ submit: cockpitAnswer.submit, live: cockpitLive, calls: cockpitCallsRead.value });
+  const cockpitBenchOpen = Boolean(cockpit2b && cockpitBench);
+  const cockpitBenchRead = useCockpitBench({ battleId: agentBattleId, callId: cockpitBench?.callId ?? null, open: cockpitBenchOpen });
+  const cockpitBenchTile = cockpitBenchOpen && cockpitFeed && cockpitBench.callId
+    ? ([...cockpitFeed.needsYou, ...cockpitFeed.waiting].find((t) => t.calls.some((c) => c.callId === cockpitBench.callId)) ?? null)
+    : null;
+  const cockpitBenchCall = cockpitBench?.callId ? ((Array.isArray(cockpitCallsRead.value) ? cockpitCallsRead.value : []).find((c) => c?.callId === cockpitBench.callId) ?? null) : null;
+  // The step as the card stands NOW (a filed pick ends it, and every Pick then waits).
+  const cockpitBenchStep = cockpitBenchTile?.step ?? null;
+  const cockpitBenchSheet = cockpitBenchOpen ? benchSheetOf({
+    status: cockpitBenchRead.status === 'idle' ? 'loading' : cockpitBenchRead.status,
+    data: cockpitBenchRead.data,
+    call: cockpitBenchCall,
+    step: cockpitBenchStep,
+    agent: agentBattle?.agentContext?.agentName || 'Your Agent',
+    eyeing: eyeingOf({ evaluations: agentBattle?.evaluations, monitoring: cockpitMonitoringRead.value }),
+    benchState,
+    sort: cockpitBenchSort,
+    meter: meterOf(agentBattle?.chatExchanges ?? [], { league: agentBattle?.gameMode === TOURNAMENT_GAME_MODE }),
+    pending: cockpitAnswer.pending,
+    filedText: cockpitBenchFiled,
+  }) : null;
+  const cockpitRowMarks = cockpit2b && cockpitFeed
+    ? rowMarksOf({ feed: cockpitFeed, directive: agentBattle?.directive ?? null, nowMs: cockpitNowMs, controlEpochLog: agentBattle?.controlEpochLog ?? null, suppressed: cockpitSuppressed })
+    : null;
+  const cockpitSheetOpen = Boolean(cockpitSheet) || cockpitBenchOpen;
   const openCockpitSheet = useCallback((tileId) => { setCockpitCheckGone(false); setCockpitSheetCallId(tileId); }, []);
   const closeCockpitSheet = useCallback(() => { setCockpitSheetCallId(null); setCockpitCheckGone(false); }, []);
   // The sheet never outlives what it shows (review L5-7, L4-4): its call left
@@ -2637,6 +2691,11 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   useEffect(() => {
     if (cockpitSheetOrphaned) { setCockpitSheetCallId(null); setCockpitCheckGone(false); }
   }, [cockpitSheetOrphaned]);
+  // The bench sheet follows the same rule: the flag or the cockpit gone, or — on desktop — the pane off Cockpit.
+  const cockpitBenchOrphaned = Boolean(cockpitBench) && (!cockpit2b || (isDesktop && (!pane.open || pane.section !== PANE_SECTION.COCKPIT)));
+  useEffect(() => {
+    if (cockpitBenchOrphaned) { setCockpitBench(null); setCockpitBenchFiled(null); }
+  }, [cockpitBenchOrphaned]);
   useEffect(() => {
     if (!cockpitOn && phoneScreen !== PHONE_SCREEN.BOARD) setPhoneScreen(PHONE_SCREEN.BOARD);
   }, [cockpitOn, phoneScreen]);
@@ -2671,7 +2730,59 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   };
   // A Monitoring chip opens the research modal exactly as a board row does.
   const handleCockpitSymbol = (symbol) => (gatedPath ? handleGatedSymbolClick : handleSymbolClick)({ symbol });
-  const cockpitFeedElement = cockpitOn && cockpitFeed ? (
+  // Cockpit Build 2b (flag on): the V5 screen in the feed's place, on both shells; its answers go through the shared flow.
+  const closeCockpitBench = () => {
+    setCockpitBench(null);
+    setCockpitBenchFiled(null);
+    if (cockpitFlow.confirm?.surface === 'bench') cockpitFlow.keep();
+  };
+  const onCockpitBenchResult = (result) => {
+    if (result?.status !== 200) return;
+    const text = result.body?.directive?.text;
+    setCockpitBenchFiled(typeof text === 'string' && text ? text : (agentBattle?.directive?.callId === cockpitBench?.callId ? agentBattle?.directive?.text ?? null : null));
+  };
+  const handleCockpitBenchPick = (symbol) => {
+    const answer = pickAnswerFor(cockpitBenchStep);
+    if (!answer || !cockpitBenchCall) return;
+    cockpitFlow.request({ surface: 'bench', key: cockpitBench?.cardKey ?? null, step: cockpitBenchStep }, cockpitBenchCall.callId, answer, { pickSymbol: symbol, override: true }).then(onCockpitBenchResult);
+  };
+  // 2a's details sheet under the flag: its overrides confirm first too (§6.3) — in the sheet.
+  const cockpitSheetAnswer = (callId, answer) => {
+    const b = (cockpitSheet?.buttons || []).find((x) => x.callId === callId && x.answer === answer);
+    cockpitFlow.request({ surface: 'sheet', key: cockpitSheetTile ? cardKeyOf(cockpitSheetTile) : null, step: cockpitSheetTile?.step ?? null }, callId, answer, { override: b?.row === 'directive' });
+  };
+  const cockpitConfirmLine = (surface) => (cockpit2b && cockpitFlow.confirm?.surface === surface
+    ? replaceLineOf({ kind: cockpitFlow.confirm.kind, symbol: cockpitFlow.confirm.symbol, text: cockpitFlow.confirm.text, agent: agentBattle?.agentContext?.agentName || 'Your Agent' })
+    : null);
+  const cockpitVintage = BATTLE_VIEW_COPY.cockpitVintage(checkOf(latestPromptBuiltAt(agentBattle?.evaluations)), turnLine?.nextDecisionAt ?? null);
+  const cockpitFeedElement = cockpitOn && cockpitFeed ? (cockpit2b ? (
+    <Cockpit2b
+      feed={cockpitFeed}
+      status={cockpitReadStatus}
+      records={{
+        calls: cockpitCallsRead.value,
+        events: cockpitEventsRead.value,
+        rawExchanges: agentBattle?.chatExchanges ?? [],
+        battle: agentBattle,
+        evaluations: agentBattle?.evaluations,
+        controlEpochLog: agentBattle?.controlEpochLog ?? null,
+        suppressed: cockpitSuppressed,
+      }}
+      agent={agentBattle?.agentContext?.agentName || 'Your Agent'}
+      nowMs={cockpitNowMs}
+      phone={!isDesktop}
+      vintage={isDesktop ? cockpitVintage : null}
+      league={agentBattle?.gameMode === TOURNAMENT_GAME_MODE}
+      nextDecisionAt={turnLine?.nextDecisionAt ?? null}
+      monitoring={cockpitMonitoring}
+      pending={cockpitAnswer.pending}
+      reducedMotion={reducedMotion}
+      flow={cockpitFlow}
+      onOpenSheet={openCockpitSheet}
+      onSymbolClick={handleCockpitSymbol}
+      onOpenBench={({ callId, step, cardKey }) => { setCockpitBenchFiled(null); setCockpitBench({ callId, step, cardKey }); }}
+    />
+  ) : (
     <CockpitFeed
       feed={cockpitFeed}
       status={cockpitReadStatus}
@@ -2693,7 +2804,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       onShowAllEarlier={() => setCockpitShowAllEarlier(true)}
       showAllEarlier={cockpitShowAllEarlier}
     />
-  ) : null;
+  )) : null;
   const cockpitSheetElement = cockpitOn ? (
     <CockpitSheet
       sheet={cockpitSheet}
@@ -2703,8 +2814,25 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       bottomInset={isDesktop ? 0 : viewportInset}
       restoreFocus={restoreCockpitFocus}
       onClose={closeCockpitSheet}
-      onAnswer={cockpitAnswer.submit}
+      onAnswer={cockpit2b ? cockpitSheetAnswer : cockpitAnswer.submit}
       onOpenCheck={handleCockpitOpenCheck}
+      {...(cockpit2b ? { confirmLine: cockpitConfirmLine('sheet'), onConfirmReplace: cockpitFlow.replace, onConfirmKeep: cockpitFlow.keep } : {})}
+    />
+  ) : null;
+  const cockpitBenchElement = cockpit2b ? (
+    <CockpitBenchSheet
+      sheet={cockpitBenchSheet}
+      isDesktop={isDesktop}
+      reducedMotion={reducedMotion}
+      bottomInset={isDesktop ? 0 : viewportInset}
+      restoreFocus={restoreCockpitFocus}
+      onClose={closeCockpitBench}
+      onSort={setCockpitBenchSort}
+      onPick={handleCockpitBenchPick}
+      onResearch={handleCockpitSymbol}
+      confirmLine={cockpitConfirmLine('bench')}
+      onConfirmReplace={() => cockpitFlow.replace().then(onCockpitBenchResult)}
+      onConfirmKeep={cockpitFlow.keep}
     />
   ) : null;
   // The desktop's Cockpit panel: the feed in its own scroller, the sheet a
@@ -2718,6 +2846,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         {cockpitFeedElement}
       </div>
       {cockpitSheetElement}
+      {cockpitBenchElement}
     </div>
   ) : null;
   // The phone's Board · Cockpit (§6): only while cockpit-on; the shipped phone otherwise.
@@ -2881,6 +3010,9 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               // dollars cannot come from two sources (BUILD_RULES §9). Absent
               // flag-off, so the shipped row markup is byte-identical.
               {...(controllerOn ? { showCurrentPrice: true } : {})}
+              // Cockpit Build 2b (§5.8): the call mark beside the player's symbol — ONLY with the flag on
+              // and the battle cockpit-on, so the flag-off goldens photograph the shipped row.
+              {...(cockpitRowMarks && leftAsset?.symbol && cockpitRowMarks[leftAsset.symbol] ? { callMark: cockpitRowMarks[leftAsset.symbol] } : {})}
               // A3.6 (D-97) — the bagger moment. Spread the same way the
               // price is, so flag-off markup is byte-identical.
               //
@@ -3014,6 +3146,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
       // home and one arrival fades in each place it is rendered, once.
       tradeFadeIn={paneOn}
       reducedMotion={reducedMotion}
+      // Cockpit Build 2b (§5.9): while a cockpit command is live, the composer says a directive replaces it.
+      {...(cockpitLive ? { cockpitCommand: { family: 'call', symbol: cockpitLive.symbol } } : {})}
       openCheck={openCheck}
       controllerLayout
       // Item 11: the controller's own line when a send never reaches the
@@ -3504,7 +3638,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
               // F3 NARROWED WHAT THIS BUYS on the phone — see CharacterAvatar's
               // note: a viewport-fixed mark is cleared at the scroll END, not
               // at every scroll position.
-              paddingBottom: paneOn ? AVATAR_CLEARANCE_PX : SHEET_PEEK_PX + 32,
+              paddingBottom: paneOn ? AVATAR_CLEARANCE_PX : sheetPeekPx({ commandLine: Boolean(cockpitLive) }) + 32,
               // F3: no `position: relative` here any more. It existed only to be
               // the phone mark's containing block, and the phone's mark is now
               // fixed to the viewport at the root. Dropping it returns this
@@ -3824,6 +3958,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         {/* Cockpit Build 2a (§7.5): the phone's modal bottom sheet, at the root
             for the same stacking reason the mark is here. */}
         {phoneCockpit ? cockpitSheetElement : null}
+        {phoneCockpit ? cockpitBenchElement : null}
         <div
           data-pane-overlay="1"
           data-pane-open={pane.open ? 'true' : 'false'}

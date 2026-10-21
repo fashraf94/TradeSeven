@@ -3,7 +3,7 @@
 // Cockpit Build 2b — THE COMMANDS COUNT (contract Amendment D, D-1; spec S-5,
 // §4 "Commands used"). ONE pure helper, imported by the answer endpoint
 // (api/agent/call-response.js, which refuses the eighth) and by the cockpit's
-// meter (src/screens/battleView/cockpitModel.js), so the two can never
+// meter (src/screens/battleView/cockpit2bModel.js), so the two can never
 // disagree: both count the same array the same way.
 //
 // THE COUNT IS DERIVED, NOT STORED (D-1): the entries of the battle
