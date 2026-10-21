@@ -78,7 +78,7 @@ function RowAction({ action, onPick, symbol }) {
       <button
         type="button"
         data-cockpit-bench-pick={symbol}
-        aria-label={action.disabled ? action.label : action.aria}
+        aria-label={action.aria}
         aria-disabled={action.disabled ? 'true' : undefined}
         onClick={() => { if (!action.disabled) onPick(symbol); }}
         style={{

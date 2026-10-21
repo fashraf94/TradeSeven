@@ -5730,6 +5730,26 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
   return 'continue';
 }
 
+/**
+ * Cockpit Build 2b (Amendment D-6; spec S-7) — RETIRE ON EXIT, the one step. A
+ * live CALL-FAMILY command whose stock left the book is retired at resolved
+ * 'on', in one bounded transaction (retire.js; never throws), so no prompt is
+ * built with it. Its deadline is the step's own ceiling, clipped to the tick's
+ * protected tail like every other calls step (callsBudget; review CB1-12). The
+ * check has neither its committed evalId nor its prompt yet: both are null on
+ * the event (D-6 evidence, by construction of this placement).
+ */
+// Exported for the behavioral suite (review L7 S9: the tail clip) — never imported by production code.
+export async function retireCommandIfLeft({ db, battleRef, battle, callsCtx }) {
+  if (callsCtx.mode !== 'on' || !isCallDirective(battle.directive)) return null;
+  const retireNowMs = Date.now();
+  const tailMs = callsCtx.handlerStartMs + TIME_BUDGET_MS - TAIL_RESERVE_MS;
+  const deadlineMs = Math.min(retireNowMs + RETIRE_TX_MS, tailMs);
+  const retire = await callsStepAsync(callsCtx, () => retireLeftBook({ db, battleRef, battle, nowMs: retireNowMs, evalId: null, promptBuiltAt: null, deadlineMs }));
+  if (retire?.retired) console.log(`${LOG_PREFIX} Retired the cockpit command on battle ${battle.id} (${retire.reason}) before the prompt`);
+  return retire ?? null;
+}
+
 // ==================== R11 SUPPRESSION-PATH DETERMINISTIC PASS ====================
 
 /**
@@ -5780,25 +5800,6 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
 // Exported for the behavioral suite (dual-review hardening: the wiring pins
 // are static-source; this export lets a test EXECUTE the pass with mocked
 // executeSwapServer/capture collaborators — never imported by production code).
-/**
- * Cockpit Build 2b (Amendment D-6; spec S-7) — RETIRE ON EXIT, the one step. A
- * live CALL-FAMILY command whose stock left the book is retired at resolved
- * 'on', in one bounded transaction (retire.js; never throws), so no prompt is
- * built with it. Its deadline is the step's own ceiling, clipped to the tick's
- * protected tail like every other calls step (callsBudget; review CB1-12). The
- * check has neither its committed evalId nor its prompt yet: both are null on
- * the event (D-6 evidence, by construction of this placement).
- */
-async function retireCommandIfLeft({ db, battleRef, battle, callsCtx }) {
-  if (callsCtx.mode !== 'on' || !isCallDirective(battle.directive)) return null;
-  const retireNowMs = Date.now();
-  const tailMs = callsCtx.handlerStartMs + TIME_BUDGET_MS - TAIL_RESERVE_MS;
-  const deadlineMs = Math.min(retireNowMs + RETIRE_TX_MS, tailMs);
-  const retire = await callsStepAsync(callsCtx, () => retireLeftBook({ db, battleRef, battle, nowMs: retireNowMs, evalId: null, promptBuiltAt: null, deadlineMs }));
-  if (retire?.retired) console.log(`${LOG_PREFIX} Retired the cockpit command on battle ${battle.id} (${retire.reason}) before the prompt`);
-  return retire ?? null;
-}
-
 export async function runSuppressionDeterministicPass({
   db, battleRef, battle, prices, lockedPositions, stockRegimes,
   statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx,

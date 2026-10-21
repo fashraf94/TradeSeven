@@ -374,6 +374,52 @@ describe('Cockpit Build 2b — review fixes, at the screen', () => {
     expect(q('[data-cockpit-bench-sort="rank"]').getAttribute('aria-pressed')).toBe('true');
   });
 
+  // Review L7: an exit on AAPL with no counterpart leads; a live cockpit command stands on NVDA — a Pick on the
+  // AAPL bench sheet raises the replace prompt there.
+  const AAPL_EXIT = callRec({
+    callId: 'ab-1:eval_005:call:3', kind: 'confirmation', symbol: 'AAPL', direction: 'exit', slot: 'star', counterpart: null,
+    condition: { side: 'below', level: 140 }, replacementOptions: [{ symbol: 'NOW', source: 'bench', rank: 4 }], invalidatedReason: null,
+  });
+  const raiseBenchPrompt = async () => {
+    FS.docs['agentBattles/ab-1/calls'] = [AAPL_EXIT, commanded()];
+    DOC = { ...LIVE_DOC, directive: LIVE_COMMAND };
+    await mount();
+    expect(q('[data-cockpit-now]').getAttribute('data-cockpit-now')).toBe(AAPL_EXIT.callId);
+    await click(q('[data-cockpit-browse]'));
+    await click(q('[data-cockpit-bench-pick="NOW"]'));
+    expect(q('[data-cockpit-bench-sheet] [data-cockpit-replace-confirm]')).toBeTruthy();
+  };
+
+  it('review L7 C18 — the bench re-pointed to browse (the Research pill) never wears the scoped call\'s prompt', async () => {
+    await raiseBenchPrompt();
+    await click(q('[data-this-turn-research]'));
+    expect(q('[data-cockpit-bench-sheet] h2').textContent).toBe('The bench');
+    expect(q('[data-cockpit-replace-confirm]')).toBeNull();
+    expect(answerBodies().filter((b) => b.confirmReplace)).toEqual([]);
+  });
+
+  it('review L7 C19b — a bench prompt orphaned with its sheet (the pane leaves Cockpit) is dropped, not revived on the next opening', async () => {
+    await raiseBenchPrompt();
+    await click(q('[data-pane-tab="chat"]'));
+    expect(q('[data-cockpit-bench-sheet]')).toBeNull();
+    await click(q('[data-pane-tab="cockpit"]'));
+    await click(q('[data-cockpit-browse]'));
+    expect(q('[data-cockpit-bench-sheet]')).toBeTruthy();
+    expect(q('[data-cockpit-replace-confirm]')).toBeNull();
+    expect(answerBodies().filter((b) => b.confirmReplace)).toEqual([]);
+  });
+
+  it('review L7 C32b — the bench opens on Rank from the card\'s door too', async () => {
+    FS.docs['agentBattles/ab-1/calls'] = [OPEN, NVDA_EXIT];
+    await mount();
+    await click(q('[data-cockpit-browse]'));
+    await click(q('[data-cockpit-bench-sort="sector"]'));
+    expect(q('[data-cockpit-bench-sort="sector"]').getAttribute('aria-pressed')).toBe('true');
+    await click(q('[data-cockpit-bench-close]'));
+    await click(q('[data-cockpit-browse]'));
+    expect(q('[data-cockpit-bench-sort="rank"]').getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('CB4-12: the scoped bench sheet closes when its call resolves (nothing filed from it)', async () => {
     FS.docs['agentBattles/ab-1/calls'] = [OPEN, NVDA_EXIT];
     await mount();

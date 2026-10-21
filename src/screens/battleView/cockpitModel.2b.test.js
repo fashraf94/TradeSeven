@@ -247,6 +247,8 @@ describe('the new tags (spec §7.1)', () => {
     const filedAt = iso(at('13:05'));
     expect(noCheckLeftToday(filedAt, iso(at('13:30')))).toBe(false);
     expect(noCheckLeftToday(filedAt, iso(T('2026-10-19T13:45:00.000Z')))).toBe(true);
+    // Review L7 F7: a next decision AT the close (a 3:45:00 check's 4:00:00 PM candidate) is after the session.
+    expect(noCheckLeftToday(filedAt, iso(CLOSE))).toBe(true);
     // Withheld (a check running late, or before the first): read from the evaluator schedule.
     expect(noCheckLeftToday(filedAt, null, { nowMs: NOW })).toBe(false);
     expect(noCheckLeftToday(filedAt, null, { nowMs: CLOSE - 60_000 })).toBe(true);
@@ -305,6 +307,18 @@ describe('review CB3-1 — the command is live while its SLOT is, not while its 
     const open = [...f.needsYou, ...f.waiting];
     expect(open).toHaveLength(1);
     expect(open[0].following.sort()).toEqual([r1.callId, r2.callId].sort());
+  });
+  it('review L7 F1 — the command\'s own key holds its restatement: an unanswered call on the SAME plan stays its own card, with its answers', () => {
+    const answered = zsShot();
+    const slot = command(answered, { kind: 'call_go', answer: 'go_now', filedAt: iso(at('13:06')) });
+    answered.state = 'hit';
+    answered.stateChangedAt = at('13:15');
+    const before = zsConf({ ...minted('13:01') }); // minted before the command; no declared event names it
+    const r = zsConf({ ...minted('13:16') });
+    const f = feed([answered, before, r], { directive: slot, events: [declared(r, slot.directiveThreadId)] });
+    expect([...f.needsYou, ...f.waiting]).toHaveLength(2);
+    expect(cardOf(f, before).buttons.length).toBeGreaterThan(0);
+    expect(cardOf(f, r).following).toEqual([r.callId]);
   });
 });
 

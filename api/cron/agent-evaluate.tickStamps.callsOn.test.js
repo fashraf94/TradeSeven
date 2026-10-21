@@ -26,6 +26,8 @@ import { freezeSwapBook } from '../_utils/callRecords/swappable.js';
 import { NON_MODEL_FLIP_EXITS } from '../_utils/callRecords/flip.js';
 import { resolveCaptureSchema } from '../_utils/tickCapture/captureConfig.js';
 import { makeCallsDb, storedDoc, storedCollection, callsTouches } from '../_utils/__fixtures__/callRecordsStore.js';
+import { TAIL_RESERVE_MS } from '../_utils/callRecords/publish.js';
+import { readFileSync } from 'node:fs';
 
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
 const { swapMock } = vi.hoisted(() => ({ swapMock: vi.fn() }));
@@ -91,7 +93,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   };
 });
 
-const { processAgentBattle } = await import('./agent-evaluate.js');
+const { processAgentBattle, retireCommandIfLeft } = await import('./agent-evaluate.js');
 const { TRADE_DECISION_TOOL } = await import('../_utils/agentEvalToolSchema.js');
 const { generateTradeNarration } = await import('../_utils/voiceLayerTradeNarration.js');
 
@@ -993,6 +995,28 @@ describe('Build 2b — retire on exit end to end (Amendment D-6)', () => {
     expect(mocks.create.mock.calls.length).toBe(0); // no prompt on a pending-meeting tick
     expect(db.__store.battle.directive).toBeNull();
     expect(storedCollection(db, 'callEvents')[`${THREAD}:retired`]).toMatchObject({ kind: 'retired', reason: 'symbol_not_held' });
+  });
+
+  it('review L7 S7x — both branches that return after an R11 pass run the retire step after the pass, before the return (source pin; the main pre-prompt call and the pending branch are behavioral above)', () => {
+    const src = readFileSync(new URL('./agent-evaluate.js', import.meta.url), 'utf8');
+    expect(src.match(/await retireCommandIfLeft\(\{ db, battleRef, battle, callsCtx \}\);/g)).toHaveLength(3);
+    const after = (head) => new RegExp(`${head}\\s*\\n\\s*await runSuppressionDeterministicPass\\([^\\n]*\\n(?:\\s*//[^\\n]*\\n)*\\s*await retireCommandIfLeft\\(\\{ db, battleRef, battle, callsCtx \\}\\);`);
+    expect(src).toMatch(after("if \\(gameplanHandled === 'skip_haiku'\\) \\{"));
+    expect(src).toMatch(after('if \\(gameplanTrigger\\) \\{'));
+  });
+
+  it("review L7 S9 — the step takes the tick's protected tail: inside it the step starts nothing (control: the same step early in the tick retires)", async () => {
+    const b = battle();
+    const db = makeCallsDb({ battle: b, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs(), seed: seedOf([xomCall()]) });
+    const battleRef = db.collection('agentBattles').doc(db.__store.battle.id);
+    const memory = { ...b, id: db.__store.battle.id };
+    const late = { mode: 'on', handlerStartMs: Date.now() - (TIME_BUDGET_MS - TAIL_RESERVE_MS - 100), diag: { faults: [] } };
+    expect(await retireCommandIfLeft({ db, battleRef, battle: memory, callsCtx: late })).toEqual({ retired: false, reason: 'not_started' });
+    expect(db.__store.battle.directive).toEqual(slot());
+    expect(storedCollection(db, 'callEvents')).toEqual({});
+    const early = { mode: 'on', handlerStartMs: Date.now(), diag: { faults: [] } };
+    expect(await retireCommandIfLeft({ db, battleRef, battle: memory, callsCtx: early })).toEqual({ retired: true, reason: 'symbol_not_held' });
+    expect(memory.directive).toBeNull();
   });
 
   it("at 'shadow': the step never runs — the slot and the events untouched", async () => {

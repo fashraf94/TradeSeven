@@ -113,6 +113,16 @@ describe('the bench sheet', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('review L7 (C15 at the sheet): a waiting or sending Pick keeps its symbol in its name — at zero commands, after filing, in flight', () => {
+    render({ sheet: sheetOf({ meter: { zero: true } }) });
+    expect(q('[data-cockpit-bench-pick="XOM"]').getAttribute('aria-label')).toBe('Pick XOM');
+    render({ sheet: sheetOf({ filedText: 'If you exit VLO by today\'s close, bring in XOM.' }) });
+    expect(q('[data-cockpit-bench-pick="XOM"]').getAttribute('aria-label')).toBe('Pick XOM');
+    render({ sheet: sheetOf({ pending: { callId: CALL.callId, answer: 'replace', pickSymbol: 'XOM' } }) });
+    expect(q('[data-cockpit-bench-pick="XOM"]').getAttribute('aria-label')).toBe('XOM · Sending…');
+    expect(q('[data-cockpit-bench-pick="XOM"]').textContent).toContain('Sending…');
+  });
+
   it('browse: "The bench", "available", no Pick anywhere', () => {
     render({ sheet: sheetOf({ call: null, step: null }) });
     expect(q('h2').textContent).toBe('The bench');

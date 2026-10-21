@@ -612,9 +612,11 @@ export function benchSheetOf({ status = 'loading', data = null, call = null, ste
     else if (scoped) {
       const sending = Boolean(pending) && pending.callId === call.callId && pending.pickSymbol === r.symbol;
       const label = sending ? COPY.cockpit2bSending : COPY.cockpit2bPick;
-      // The name always carries the symbol (review CB5-10); the cost only while it can be spent.
+      // The name always carries the symbol (review CB5-10; L7): in flight "{SYM} · Sending…" as the card's chips,
+      // waiting "Pick {SYM}", else the pick and its cost.
       const named = `${COPY.cockpit2bPick} ${r.symbol}`;
-      action = { kind: 'pick', label, answer, disabled: waits, dot: !waits, aria: waits ? named : COPY.cockpit2bOneCommandAria(named) };
+      const aria = sending ? `${r.symbol} · ${COPY.cockpit2bSending}` : (waits ? named : COPY.cockpit2bOneCommandAria(named));
+      action = { kind: 'pick', label, answer, disabled: waits, dot: !waits, aria };
     } else action = { kind: 'available', label: COPY.cockpit2bAvailable };
     return {
       symbol: r.symbol,

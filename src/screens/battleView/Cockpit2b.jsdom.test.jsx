@@ -247,6 +247,32 @@ describe('§6.3 the replace confirmation', () => {
 });
 
 describe('§5.4 Also live, §5.5 the day line, §5.6 Earlier', () => {
+  it('review L7 C20 — a spotlight dropped as stale stays dropped when its card later comes back as a new ask', async () => {
+    const vlo = call();
+    const zs = holdShot({ ...minted('12:45') });
+    render({ calls: [vlo, zs], submit: ok() });
+    await click(q(`[data-cockpit-chip="${zs.callId}"]`));
+    await click(q(`[data-cockpit-spotlight="${zs.callId}"]`));
+    expect(q('[data-cockpit-now]').getAttribute('data-cockpit-now')).toBe(zs.callId);
+    // ZS answered by a command that has since left the slot: the card no longer needs you.
+    const answered = { ...zs, playerResponse: { answer: 'go_now', kind: 'directive', directiveThreadId: 'th-gone', callId: zs.callId, filedAt: iso(at('13:05')), heardEvalId: null }, directiveThreadId: 'th-gone' };
+    render({ calls: [vlo, answered], submit: ok() });
+    expect(q('[data-cockpit-now]').getAttribute('data-cockpit-now')).toBe(vlo.callId);
+    // Restated outside the answer's coverage ($295 vs $290): a new ask on the SAME card key — the old spotlight is gone.
+    const restated = holdShot({ ...minted('13:15'), condition: { side: 'below', level: 295 } });
+    render({ calls: [vlo, answered, restated], submit: ok() });
+    expect(q('[data-cockpit-now]').getAttribute('data-cockpit-now')).toBe(vlo.callId);
+  });
+
+  it('review L7 C21 — the opened step is keyed by the CALL it opened on: on a two-call card it stays open', async () => {
+    const first = holdShot({ ...minted('12:00') });
+    const second = holdShot({ ...minted('12:45') });
+    render({ calls: [first, second], submit: ok() });
+    expect(q('[data-cockpit-now]').getAttribute('data-cockpit-now')).toBe(first.callId); // the card's key: its oldest call
+    await click(q('[data-cockpit-answer="go_now"]'));
+    expect(q('[data-cockpit-step="after_exit_instead"]')).not.toBeNull();
+  });
+
   it('a chip expands in place to the card; "Spotlight →" makes it the Now card', async () => {
     const vlo = call();
     const amd = entryAct({ ...minted('12:45') });

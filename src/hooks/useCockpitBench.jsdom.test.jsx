@@ -81,6 +81,15 @@ describe('useCockpitBench', () => {
     await act(async () => { resolve({ status: 'ready', data: BODY }); });
     expect(latest()).toEqual({ status: 'idle', data: null });
   });
+
+  it('review L7 C35b — a REJECTION that lands after the sheet closed is dropped too', async () => {
+    let reject;
+    const request = vi.fn(() => new Promise((_, rej) => { reject = rej; }));
+    await render({ battleId: 'b1', callId: null, open: true, request });
+    await render({ battleId: 'b1', callId: null, open: false, request });
+    await act(async () => { reject(new Error('late')); });
+    expect(latest()).toEqual({ status: 'idle', data: null });
+  });
 });
 
 describe('requestCockpitBench', () => {

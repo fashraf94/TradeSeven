@@ -12,6 +12,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { retireLeftBook, planRetire, findMovingTrade, movedSymbolOf, RETIRE_TX_MS } from './retire.js';
 import { makeCallsFirestore, stored, storedUnder } from '../__fixtures__/callsFirestore.js';
 import { makeTickBattle } from '../__fixtures__/tickStampsHarness.js';
+import { CallsAbort } from './publish.js';
 
 const BATTLE_ID = 'battle-tick-1';
 const NOW = Date.parse('2026-10-15T17:17:00.000Z'); // 13:17 ET
@@ -120,6 +121,15 @@ describe('what retires nothing', () => {
     const env2 = setup({ call: cpCall, slot: slotFor(cpCall, { action: { direction: 'exit', symbol: 'TSLA', slot: 'star', counterpart: 'GONE' } }) });
     expect(await run(env2)).toEqual({ retired: false, reason: 'not_a_book_reason:counterpart_unavailable' });
     expect(storedUnder(env2.db, `${B}/callEvents`)).toEqual({});
+    // Review L7 S5: a chosen name that left the bench (on no bench, no hot bench, not in the book) is not a book
+    // reason either (D-6) — the command stands; the filing test refuses it at the next filing, not the retire step.
+    const goneCall = exitCall({ symbol: 'TSLA' });
+    const goneSlot = slotFor(goneCall, { action: { direction: 'exit', symbol: 'TSLA', slot: 'star', pickSymbol: 'GONE' } });
+    const env3 = setup({ call: goneCall, slot: goneSlot, battle: battleWith(goneSlot) });
+    expect(await run(env3)).toEqual({ retired: false, reason: 'not_a_book_reason:pick_not_on_bench' });
+    expect(stored(env3.db, B).directive).toEqual(goneSlot);
+    expect(env3.memory.directive).toEqual(goneSlot);
+    expect(storedUnder(env3.db, `${B}/callEvents`)).toEqual({});
   });
 
   it('COMPARE-AND-CLEAR: a newer slot (another thread filed meanwhile) is never touched', async () => {
@@ -199,6 +209,17 @@ describe('idempotence, failure and the deadline', () => {
     expect(res).toEqual({ retired: false, reason: 'unconfirmed' });
     expect(env.memory.directive).toEqual(env.slot);
     await new Promise((r) => setTimeout(r, 600));
+  });
+
+  it('review L7 S6b: a transaction that ends in a deadline abort is settled by ONE read of the retired event — landed → retired (the in-memory slot dropped); not landed → unconfirmed', async () => {
+    const landed = setup({ extra: { [`${B}/callEvents/${THREAD}:retired`]: { kind: 'retired', callIds: [exitCall().callId] } } });
+    landed.db.runTransaction = async () => { throw new CallsAbort('deadline'); };
+    expect(await run(landed)).toEqual({ retired: true, reason: 'landed_late' });
+    expect(landed.memory.directive).toBeNull();
+    const missing = setup();
+    missing.db.runTransaction = async () => { throw new CallsAbort('deadline'); };
+    expect(await run(missing)).toEqual({ retired: false, reason: 'unconfirmed' });
+    expect(missing.memory.directive).toEqual(missing.slot);
   });
 
   it('the ceiling is the heard pass\'s 800 ms', () => {

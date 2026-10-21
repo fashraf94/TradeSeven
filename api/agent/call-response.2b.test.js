@@ -358,6 +358,27 @@ describe('the sanctioned rewrite is the only one (D-4 rev 2) — source-pinned',
       }
     }
     expect(whole.map((w) => w.split(':')[0])).toEqual(['agent/call-response.js', 'agent/call-response.js']);
+    // Review L7 S15c / S15d: a write the statement scan cannot see — a hoisted patch object, a computed key, a
+    // property assignment. Outside the endpoint, `playerResponse` appears as an object key, a listed name or an
+    // assignment target in TWO reviewed lines, both in candidate.js: the mint's `playerResponse: null` on a newly
+    // composed call, and the MUTABLE_CALL_FIELDS name list. A new site (a destructuring read included) must be
+    // reviewed and listed here.
+    const keyed = [];
+    for (const abs of files) {
+      const rel = relative(resolve(HERE, '..'), abs).replace(/\\/g, '/');
+      if (rel === 'agent/call-response.js') continue;
+      const code = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      const re = /[{,]\s*['"]?playerResponse['"]?\s*[:,}]|\[\s*['"`]playerResponse['"`]\s*\]|\.playerResponse\s*=(?!=)/g;
+      for (const m of code.matchAll(re)) {
+        const at = code.indexOf('playerResponse', m.index);
+        const eol = code.indexOf('\n', at);
+        keyed.push(`${rel}: ${code.slice(code.lastIndexOf('\n', at) + 1, eol === -1 ? undefined : eol).trim()}`);
+      }
+    }
+    expect(keyed).toEqual([
+      "_utils/callRecords/candidate.js: export const MUTABLE_CALL_FIELDS = Object.freeze(['state', 'stateChangedAt', 'stateSource', 'playerResponse', 'outcome', 'refused']);",
+      '_utils/callRecords/candidate.js: playerResponse: null,',
+    ]);
     const src = readFileSync(resolve(HERE, 'call-response.js'), 'utf8');
     // The directive write is reached only with no answer standing, or the go ack (secondAnswer).
     expect(src).toContain("if (call.playerResponse && !secondAnswer) return refused('already_answered');");

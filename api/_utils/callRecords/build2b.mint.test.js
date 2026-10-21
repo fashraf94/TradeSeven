@@ -84,6 +84,19 @@ describe('D-3 — replacementOptions: order and fill', () => {
     expect(REPLACEMENT_OPTIONS_MAX).toBe(4);
   });
 
+  it('review L7 S13b — the cap by behavior: five passing names (a fifth bench stock) still give exactly four options', () => {
+    const five = freezeSwapBook(battle({ portfolio: { bench: { stocks: [
+      { symbol: 'AMD', isCrypto: false }, { symbol: 'JPM', isCrypto: false }, { symbol: 'DHR', isCrypto: false },
+      { symbol: 'PM', isCrypto: false }, { symbol: 'AMGN', isCrypto: false },
+    ], crypto: null } } }));
+    // The agent fills four; the fifth passing name (AMGN, ranked first on the bench) is cut.
+    const filled = firstCall({ book: five, candidates: cand('DHR', 'AMD', 'JPM', 'PM'), rankMap: { AMGN: 1 } });
+    expect(filled.replacementOptions.map((o) => o.symbol)).toEqual(['DHR', 'AMD', 'JPM', 'PM']);
+    // The bench alone: five ranked passing names → the first four by rank.
+    const benchOnly = firstCall({ book: five, rankMap: { AMGN: 1, PM: 2, JPM: 3, DHR: 4, AMD: 5 } });
+    expect(benchOnly.replacementOptions.map((o) => o.symbol)).toEqual(['AMGN', 'PM', 'JPM', 'DHR']);
+  });
+
   it('the bench by technicalRank ascending; unranked names follow in roster order; rank null when none', () => {
     const call = firstCall({ rankMap: { JPM: 2, PM: 1 } });
     expect(call.replacementOptions).toEqual([

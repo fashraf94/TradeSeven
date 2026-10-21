@@ -284,6 +284,14 @@ describe('keyboard and pointer: the focus ring, the dialog door, Show all, targe
     expect(qa('[data-cockpit-answer]').every((b) => parseInt(b.style.minHeight, 10) >= 36)).toBe(true);
     expect(q(`[data-cockpit-tile="${d.callId}"]`).style.opacity).toBe('');
   });
+  it('review CB5-5 / L7 F17 — a long tag wraps inside the tile: the tag is white-space normal and the tile head wraps (the real-layout measure is in the build report)', () => {
+    const d = call({ symbol: 'MU', state: 'hit', stateChangedAt: T('2026-09-09T14:50:00.000Z') });
+    render({ feed: feedOf([d]) });
+    const tag = q(`[data-cockpit-tile="${d.callId}"] [data-cockpit-tag]`);
+    expect(tag).not.toBeNull();
+    expect(tag.style.whiteSpace).toBe('normal');
+    expect(tag.parentElement.parentElement.style.flexWrap).toBe('wrap');
+  });
   it('the sections are plain groupings: no duplicate landmark names beside their headings', () => {
     render({ feed: feedOf([call()]) });
     expect(qa('section').every((sec) => !sec.hasAttribute('aria-label'))).toBe(true);

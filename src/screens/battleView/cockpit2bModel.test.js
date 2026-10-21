@@ -111,6 +111,9 @@ describe('§5.2 the Now card — the choice', () => {
     // A restatement of the newer card (a later member) does not move its key.
     const restated = entryAct({ ...minted('13:15'), symbol: 'ZS', slot: 'star' });
     expect(view([restated, newer, older]).now.symbol).toBe('AMD');
+    // Review L7 C3: the OLDER card restated later still leads — its oldest call orders it, not its newest.
+    const olderRestated = entryAct({ ...minted('13:15'), symbol: 'AMD' });
+    expect(view([olderRestated, newer, older]).now.symbol).toBe('AMD');
     // Same mint instant → the lowest callId.
     const a = entryAct({ ...minted('12:00'), symbol: 'AMD', callId: 'b:eval_020:call:a' });
     const b = entryAct({ ...minted('12:00'), symbol: 'ZS', slot: 'star', callId: 'b:eval_020:call:b' });
