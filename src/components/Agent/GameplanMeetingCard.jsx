@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ClipboardList, ArrowRight, Check, X, Pencil } from 'lucide-react';
 import { resolveGameplanMeeting, appendBattleLedger } from '../../services/agentService';
+import { etTime } from '../Dashboard/desk/deskCopy';
 
 const hexToRgba = (hex, alpha) => {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -14,6 +15,12 @@ const GameplanMeetingCard = ({ battleId, meeting, tokens }) => {
   const [resolving, setResolving] = useState(false);
 
   if (!meeting || meeting.status !== 'pending') return null;
+
+  // The deadline the server wrote (BUILD_RULES §9): the earlier of 60 minutes
+  // after creation and 4:00 PM ET. Only a string is read (an owner-written
+  // object can throw in new Date), and an unreadable deadline shows no time
+  // rather than an invented one.
+  const deadline = typeof meeting.expiresAt === 'string' ? etTime(meeting.expiresAt) : null;
 
   const handleResolve = async (resolution) => {
     if (resolving || !battleId) return;
@@ -66,9 +73,11 @@ const GameplanMeetingCard = ({ battleId, meeting, tokens }) => {
             Gameplan Meeting
           </span>
         </div>
-        <span style={{ fontSize: '10px', color: tokens.textFaint }}>
-          Expires EOD
-        </span>
+        {deadline && (
+          <span style={{ fontSize: '10px', color: tokens.textFaint }}>
+            {`Expires ${deadline} ET`}
+          </span>
+        )}
       </div>
 
       {/* Diagnosis */}
