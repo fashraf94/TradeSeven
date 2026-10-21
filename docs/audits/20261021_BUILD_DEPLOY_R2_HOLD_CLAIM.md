@@ -8,7 +8,7 @@ Prepared 2026-10-21 by Flash (Claude Code). Prompt: "FantasyTrades Command Cente
 |---|---|
 | **STOP** | **One half of one ruling is not applied and needs your decision before merge.** R-R2-3 asks every pointer down to call `setPointerCapture`. For a **mouse** it is applied. For **touch and pen** it is **stopped**: WebKit's own source shows that moving a touch's capture from the label to the button makes iPhone Safari send a "pointer left" event that React reads as the finger leaving the button, which would cancel the hold (§9.3). The deciding iOS code is closed source and no iPhone was available here, so touch and pen keep exactly the path they had before R2. Question Q1 (§11). |
 | Built as authorized? | **Yes, apart from the STOP above.** R-R2-1 … R-R2-10 applied (§3). Nothing under `api/` changed; no fenced file edited; no call site, shell handler or `agentDeploy.js` touched. |
-| Single-hold parity | **Held.** jsdom: a differential harness rendered the pre-R2 and R2 hook through the real call sites, frame by frame — 114 of 122 rows byte-identical; the 8 that differ are one jsdom-only step where the old hook sent a duplicate abort (§8.2, L1). Real browser (headless Edge, real touch/mouse/keyboard): touch hold, touch on the padding, quick release, mouse hold still and Enter match the old build event for event (§9.1). The four sky tests pass unmodified. One ruled change for desktop mice only: dragging the mouse off the button no longer cancels; releasing does (Q2). |
+| Single-hold parity | **Held.** jsdom: a differential harness rendered the pre-R2 and R2 hook through the real call sites, frame by frame — 114 of 122 rows byte-identical; the 8 that differ are one jsdom-only step where the old hook sent a duplicate abort (§8.2, L1). Real browser — **Chromium only** (headless Edge, real touch/mouse/keyboard): touch hold, touch on the padding, quick release, mouse hold still and Enter match the old build event for event (§9.1). No WebKit or Gecko was available; on iPhone the touch path is the pre-R2 one because of the STOP. The four sky tests pass unmodified. One ruled change for desktop mice only: dragging the mouse off the button no longer cancels; releasing does (Q2). |
 | The defects | **D1–D7 fixed**, each reproduced first by a row that failed on the old hook (§4). Two controls can no longer both deploy (measured in Edge: two fingers deployed twice before, once now). |
 | The claim's lifetime | One hold at a time, app-wide, held from press until the deploy request settles. The review's fix round makes every continuation honour it (§5, §8). Known trade: after a shell remount mid-deploy the new shell's hold is silently denied until the first request settles (Q3). |
 | Checks | Full suite on Linux, CI-shaped, at the test head `72a37037` (main unchanged at `0fc78b02`, so this is the merged tree): **Test Files 1052 passed, 7 skipped; 22,761 tests passed, 0 failed**; exit 0. `lint:gate` and `vite build` exit 0 (§7; re-run on the pushed head, PR description). |
@@ -193,7 +193,7 @@ L5 ran the 53 listed mutants on a snapshot of `5a8f8119`, one at a time (the fiv
 
 The shipped `HoldToDeployButton` was bundled (esbuild) from each tree with two instances (filled A, muted B), every pointer event and sky terminal logged. Harness and results: §13.
 
-### 9.1 Base vs R2 at the code head (`0fc78b02` vs `5a8f8119`)
+### 9.1 Base vs R2 at the code head (`0fc78b02` vs `5a8f8119`), Chromium (headless Edge 155) only
 
 | Scenario | Base | R2 |
 |---|---|---|
