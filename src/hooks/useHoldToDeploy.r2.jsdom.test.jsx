@@ -508,6 +508,24 @@ describe('D5 — window blur and lost pointer capture cancel a charge', () => {
     });
   }
 
+  it('a capture hand-over from the touched label to the button is not a loss: the hold carries on and deploys once', () => {
+    // On touch the pointer is implicitly captured by the element touched, and
+    // the button's own setPointerCapture moves it. Chromium never fires the
+    // label's lostpointercapture for that (measured in headless Edge); an
+    // engine that did would bubble it to the button, which must not cancel.
+    const onComplete = vi.fn();
+    render(<Hold onComplete={onComplete} />);
+    const [b] = buttons();
+    const labelSpan = [...b.querySelectorAll('span')].find((s) => s.textContent === 'Deploy');
+    act(() => { labelSpan.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 3 })); });
+    act(() => { labelSpan.dispatchEvent(new PointerEvent('lostpointercapture', { bubbles: true, pointerId: 3 })); });
+    expect(count('abort')).toBe(0);
+    step(600); step(1300);
+    expect(count('commit')).toBe(1);
+    advance(450);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
   it('the blur and visibility listeners are attached only while charging and removed on every exit', () => {
     render(<Hold />);
     const [b] = buttons();

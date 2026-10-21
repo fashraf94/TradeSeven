@@ -458,6 +458,15 @@ export default function useHoldToDeploy({
     }
   }, []);
 
+  // Only the button's OWN capture loss ends a charge. A touch is implicitly
+  // captured by the element actually touched (the label span, the icon), and
+  // capturePointer moves it to the button. Chromium overwrites that pending
+  // capture before processing it, so the child never fires
+  // lostpointercapture (measured in headless Edge, R2 report §9); an engine
+  // that processed it first would bubble the child's event up here. Either
+  // way that is the hand-over, not a loss.
+  const onLostPointerCapture = (e) => { if (e.target === e.currentTarget) cancel(); };
+
   const active = enabled && !disabled;
   const bind = active
     ? {
@@ -465,7 +474,7 @@ export default function useHoldToDeploy({
         onPointerUp: cancel,
         onPointerLeave: cancel,
         onPointerCancel: cancel,
-        onLostPointerCapture: cancel,
+        onLostPointerCapture,
         onKeyDown,
         onContextMenu: (e) => e.preventDefault(),
       }
