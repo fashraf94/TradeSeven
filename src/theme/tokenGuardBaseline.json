@@ -88,6 +88,7 @@
     "src/screens/battleView/CockpitFeed.jsx": {},
     "src/screens/battleView/CockpitSheet.jsx": {},
     "src/screens/battleView/BoardCockpit.jsx": {},
+    "src/screens/battleView/useServerClock.js": {},
     "src/screens/filmRoomV2/filmRoomModel.js": {},
     "src/screens/filmRoomV2/filmRoomCopy.js": {},
     "src/screens/filmRoomV2/filmRoomData.js": {},

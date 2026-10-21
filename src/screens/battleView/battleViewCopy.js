@@ -987,6 +987,17 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpitKindUpside: 'Upside call',
   cockpitEyebrowFrom: (check) => (check ? `from ${check}` : null),
   cockpitRestated: (check) => (check ? `Restated at ${check}` : 'Restated'),
+  // Cockpit Build 2b (Amendment D-12 rev 4; spec §5.2, from merge): one card per stock plan. A card holding
+  // open calls at more than one level marks the moved line; earlier levels show on expand, newest first.
+  // Nothing on a card ever calls it "one call".
+  cockpitLatestLine: (check) => (check ? `Latest line · ${check}` : 'Latest line'),
+  cockpitLineMoved: (from, to) => (from && to ? `Line moved ${from} → ${to}` : null),
+  cockpitEarlierLevel: (side, price, check) => {
+    if (!price || (side !== 'above' && side !== 'below')) return null;
+    return check ? `${side} ${price} · from ${check}` : `${side} ${price}`;
+  },
+  // D-12 condition 1: a command shown beside a new ask names the line it was given on — never "covering" the new one.
+  cockpitCommandOnLine: (price) => (price ? `Your command · on the ${price} line` : 'Your command'),
   // The sheet's earliest wording of a folded thread (review L6-3).
   cockpitCalledAt: (check) => (check ? `Called at ${check}` : 'Called'),
 
@@ -1009,8 +1020,13 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     : 'Waiting · your last answer is still active.'),
   cockpitOneAtATime: 'One call at a time.',
   // A folded thread's directive answer, live or not (Amendment C-6 rev 3), naming the wording it was given on.
-  cockpitThreadAnswer: (answer, filedTime, wordingCheck) => {
-    const word = answer === 'hold' ? 'hold off' : answer === 'go_now' ? 'go instead' : null;
+  // Cockpit Build 2b (D-4): a chosen name rides the words — "bring in DHR" for a replace, "go instead, bring in DHR"
+  // for a named go_now — read from the directive's own record by the caller (never from playerResponse).
+  cockpitThreadAnswer: (answer, filedTime, wordingCheck, pickSymbol = null) => {
+    const named = typeof pickSymbol === 'string' && pickSymbol ? pickSymbol : null;
+    const word = answer === 'hold' ? 'hold off'
+      : answer === 'go_now' ? (named ? `go instead, bring in ${named}` : 'go instead')
+        : answer === 'replace' && named ? `bring in ${named}` : null;
     if (!word) return null;
     const head = filedTime ? `You said ${word} · ${filedTime}` : `You said ${word}`;
     return wordingCheck ? `${head}, on the ${wordingCheck} wording` : head;
@@ -1049,6 +1065,11 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // answer too, and the `superseded` event does not say which wrote it
   // (founder ruling Oct 4; review L6-11 a).
   cockpitReceiptReplaced: (time) => (time ? `Replaced by a later instruction · ${time}` : 'Replaced by a later instruction'),
+  // Cockpit Build 2b (spec §7.1, from merge): the receipt names the replacing filing's source, as the tag does.
+  cockpitReceiptReplacedBy: (by, time) => {
+    const head = by === 'cockpit' ? 'Replaced by your later command' : (by === 'chat' ? 'Replaced by a chat instruction' : 'Replaced by a later instruction');
+    return time ? `${head} · ${time}` : head;
+  },
   cockpitObservedHit: (price, check) => (price ? (check ? `Hit at ${price} · ${check}` : `Hit at ${price}`) : null),
   cockpitObservedExpired: (price, check) => (price ? (check ? `Expired at ${price} · ${check}` : `Expired at ${price}`) : null),
 
@@ -1086,7 +1107,11 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   // level_non_finite / level_implausible live only in the declarations
   // record's minted[]), so the spec's "· price line out of range" would be a
   // guess for two of the three (review L6-4 — a founder ruling, recorded).
-  'state:invalidated': Object.freeze({ tone: 'dropped', text: () => 'Dropped' }),
+  // Cockpit Build 2b (Amendment D-9; spec §7.2) supersedes the note above for
+  // new records: the call now carries the mint's own reason
+  // (`invalidatedReason`), read through COCKPIT_DROPPED_REASON_TEXT below; a
+  // record without one (minted before 2b) or an unknown reason keeps the bare fact.
+  'state:invalidated': Object.freeze({ tone: 'dropped', text: ({ reason } = {}) => (reason ? `Dropped · ${reason}` : 'Dropped') }),
   'state:expired_unresolved': Object.freeze({ tone: 'muted', text: ({ deadline } = {}) => (deadline ? `Expired · ${deadline}` : 'Expired') }),
   'state:ended_with_battle': Object.freeze({ tone: 'muted', text: () => 'Battle ended' }),
   // The answer on the call (call-response.js playerResponse.kind).
@@ -1101,6 +1126,16 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   // is (ruling R2A-5: filed, heard, agreed).
   'answer:directive': Object.freeze({ tone: 'yours', text: () => 'Filed · not yet heard' }),
   'answer:directive_left_slot': Object.freeze({ tone: 'yours', text: () => 'Filed · not heard' }),
+  // Cockpit Build 2b (spec §7.1, from merge): a filing still the battle's
+  // current one, when no check is left to hear it today — the battle's next
+  // decision time is absent or after the close of the session the filing
+  // falls in (horizon.js sessionCloseAfter). Never "not yet heard" then.
+  'answer:directive_no_check': Object.freeze({ tone: 'yours', text: () => 'Filed · no check left today' }),
+  // Cockpit Build 2b (Amendment D-10, spec §7.1, from merge): a later call the
+  // agent minted under your LIVE command, on its plan, within 1 % of the
+  // answered line, at a check whose `declared` event names the command's
+  // thread (prompt inclusion — never causation). Never on the call you answered.
+  'call:following': Object.freeze({ tone: 'yoursOutline', text: () => 'Following your call' }),
   // The call events (events.js CALL_EVENT_KINDS).
   'event:declared': null, // the mint — the eyebrow's "from the {t} check" already says it
   'event:answered': null, // the answer's own receipt — the tag reads the call's playerResponse
@@ -1109,8 +1144,39 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   'event:no_matching_trade': Object.freeze({ tone: 'muted', text: ({ check } = {}) => (check ? `No matching trade at ${check}` : 'No matching trade') }),
   'event:expired': Object.freeze({ tone: 'muted', text: ({ deadline } = {}) => (deadline ? `Expired · ${deadline}` : 'Expired') }),
   'event:ended_with_battle': Object.freeze({ tone: 'muted', text: () => 'Battle ended' }),
-  // Any later filing — chat, chip or cockpit — writes this event (directiveWriter.js), so the tag names none of them.
-  'event:superseded': Object.freeze({ tone: 'muted', text: () => 'Replaced by a later instruction' }),
+  // Any later filing — chat, chip or cockpit — writes this event (directiveWriter.js). Cockpit Build 2b
+  // (spec §7.1, from merge): the tag names the replacing filing's SOURCE, read from the battle's own
+  // exchange for the event's `supersededBy` thread — `source: 'cockpit'` → your later command; any other
+  // source → a chat instruction. With that exchange not found, the 2a fact: a later instruction.
+  'event:superseded': Object.freeze({
+    tone: 'muted',
+    text: ({ by, time } = {}) => {
+      const head = by === 'cockpit' ? 'Replaced by your later command' : (by === 'chat' ? 'Replaced by a chat instruction' : 'Replaced by a later instruction');
+      return time ? `${head} · ${time}` : head;
+    },
+  }),
+  // Cockpit Build 2b (Amendment D-6): the command retired because its stock left the book (or, for a
+  // chosen name, the name came into the book another way), at the check whose step retired it.
+  'event:retired': Object.freeze({
+    tone: 'muted',
+    text: ({ symbol, came = false, check } = {}) => {
+      if (!symbol) return 'Command retired';
+      const what = came ? `${symbol} came in another way` : `${symbol} left the book`;
+      return check ? `Command retired · ${what} at ${check}` : `Command retired · ${what}`;
+    },
+  }),
+});
+
+/**
+ * Cockpit Build 2b (Amendment D-9; spec §7.2): the mint's invalidation
+ * reasons (api/_utils/callRecords/validate.js invalidationReason — the three
+ * it returns at HEAD), one short line each. Any other reason → the bare
+ * "Dropped" (no row here, no guessed line).
+ */
+export const COCKPIT_DROPPED_REASON_TEXT = Object.freeze({
+  level_implausible: 'price line out of range',
+  level_non_finite: 'no usable price line',
+  no_observation: 'no price at that check',
 });
 
 /**

@@ -15,6 +15,11 @@
 //   reads off   until `{ on: true }` arrives; every error, non-200 and
 //               malformed body reads off — so the layout never changes on
 //               a guess
+//   the clock   Cockpit Build 2b (spec S-9, §4, §8; from merge): the 200 body
+//               carries the server's `serverNowMs`; the hook keeps
+//               `clockOffsetMs = serverNowMs − Date.now()` at receipt (0 until
+//               one arrives), refreshed on every status fetch — the cockpit's
+//               deadlines run on server time
 //
 // Firebase auth is the static getAuth import AgentBattleScreen.jsx (this
 // hook's one consumer) already makes. A lazy import('firebase/auth') here
@@ -36,11 +41,19 @@ export const COCKPIT_STATUS_TIMEOUT_MS = 8_000;
  * answer within COCKPIT_STATUS_TIMEOUT_MS — resolves to `false`. Never throws.
  */
 export async function requestCockpitStatus(battleId) {
+  return (await requestCockpitStatusBody(battleId)).on;
+}
+
+/**
+ * The same ask, with the server's clock (Cockpit Build 2b, S-9): `{ on, serverNowMs }` —
+ * `serverNowMs` null when the answer carried none. Never throws.
+ */
+export async function requestCockpitStatusBody(battleId) {
   const abort = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = abort ? setTimeout(() => abort.abort(), COCKPIT_STATUS_TIMEOUT_MS) : null;
   try {
     const user = getAuth().currentUser;
-    if (!user) return false;
+    if (!user) return { on: false, serverNowMs: null };
     const idToken = await user.getIdToken();
     const res = await fetch(`${COCKPIT_STATUS_PATH}?battleId=${encodeURIComponent(battleId)}`, {
       method: 'GET',
@@ -48,11 +61,12 @@ export async function requestCockpitStatus(battleId) {
       cache: 'no-store',
       ...(abort ? { signal: abort.signal } : {}),
     });
-    if (!res.ok) return false;
+    if (!res.ok) return { on: false, serverNowMs: null };
     const body = await res.json().catch(() => null);
-    return body?.on === true;
+    const serverNowMs = typeof body?.serverNowMs === 'number' && Number.isFinite(body.serverNowMs) ? body.serverNowMs : null;
+    return { on: body?.on === true, serverNowMs };
   } catch {
-    return false;
+    return { on: false, serverNowMs: null };
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -61,12 +75,12 @@ export async function requestCockpitStatus(battleId) {
 /**
  * @param {string|null} battleId
  * @param {{ enabled: boolean, battleStatus?: string|null }} options
- * @returns {{ on: boolean, pending: boolean, recheck: () => void }}
+ * @returns {{ on: boolean, pending: boolean, recheck: () => void, clockOffsetMs: number }}
  *   `pending`: asked, and no answer for THIS battle yet — the screen holds the
  *   chat's seen-marker meanwhile (the first paint is the off layout)
  */
 export function useCockpitStatus(battleId, { enabled = false, battleStatus = null } = {}) {
-  const [answer, setAnswer] = useState({ battleId: null, on: false });
+  const [answer, setAnswer] = useState({ battleId: null, on: false, offset: 0 });
   const [nonce, setNonce] = useState(0);
   const wanted = Boolean(enabled && typeof battleId === 'string' && battleId);
 
@@ -74,12 +88,13 @@ export function useCockpitStatus(battleId, { enabled = false, battleStatus = nul
     if (!wanted) {
       // Already idle → the SAME state object, so a disabled hook never adds a
       // render (the flag-off screen renders exactly as many times as before).
-      setAnswer((prev) => (prev.battleId === null && prev.on === false ? prev : { battleId: null, on: false }));
+      setAnswer((prev) => (prev.battleId === null && prev.on === false ? prev : { battleId: null, on: false, offset: 0 }));
       return undefined;
     }
     let cancelled = false;
-    requestCockpitStatus(battleId).then((on) => {
-      if (!cancelled) setAnswer({ battleId, on });
+    requestCockpitStatusBody(battleId).then(({ on, serverNowMs }) => {
+      // The offset at receipt (2b §4): the server's instant minus the client's, 0 when the body carried none.
+      if (!cancelled) setAnswer({ battleId, on, offset: serverNowMs === null ? 0 : serverNowMs - Date.now() });
     });
     return () => { cancelled = true; };
   }, [wanted, battleId, battleStatus, nonce]);
@@ -90,6 +105,7 @@ export function useCockpitStatus(battleId, { enabled = false, battleStatus = nul
     on: wanted && answer.battleId === battleId && answer.on === true,
     pending: wanted && answer.battleId !== battleId,
     recheck,
+    clockOffsetMs: wanted && answer.battleId === battleId ? answer.offset : 0,
   };
 }
 

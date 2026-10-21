@@ -190,6 +190,8 @@ export default function CockpitSheet({
             </span>
             <h2 id={titleId} style={{ margin: 0, fontSize: 16, fontWeight: 800, lineHeight: 1.3 }}>{sheet.title}</h2>
             <StateTag tag={sheet.tag} />
+            {/* Cockpit Build 2b (D-10, from merge): a restatement under your live command, beside the card's own tag. */}
+            {sheet.followTag ? <StateTag tag={sheet.followTag} /> : null}
           </div>
           <button
             type="button"
@@ -203,6 +205,9 @@ export default function CockpitSheet({
         </div>
 
         {sheet.restatedLine ? <span style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{sheet.restatedLine}</span> : null}
+        {/* Cockpit Build 2b (D-12 rev 4, from merge): the agent moved its line; the earlier wordings are listed below. */}
+        {sheet.lineMoved ? <span data-cockpit-line-moved="1" style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{sheet.lineMoved}</span> : null}
+        {sheet.commandLine ? <span data-cockpit-command-line="1" style={{ fontSize: 12, color: cssVar('call-yours') }}>{sheet.commandLine}</span> : null}
         {sheet.answerLine ? <span style={{ fontSize: 12, color: cssVar('call-yours') }}>{sheet.answerLine}</span> : null}
 
         {sheet.said ? (

@@ -17,6 +17,8 @@ import useAgentBattle from '../hooks/useAgentBattle';
 import AnimatedScore, { formatScoreDisplay } from '../components/shared/AnimatedScore';
 import { AgentPresenceMount } from '../components/AgentPresence';
 import { isAgentPresenceOn, isMatchupsBackdropOn, isBattleViewControllerOn, isCharacterPaneOn, isShowItOn, isShadowCpuQuoteIntegrityOn, isCockpitUiOn, ARCHETYPE_INTEGRITY_MODE } from '../config/featureFlags';
+// Cockpit Build 2b (S-11): read at render, never module scope.
+import { isCockpit2bOn } from '../config/featureFlags';
 import { getAuth } from 'firebase/auth';
 // Phase C §1 — the door's count, from the ONE cap display function (D-122).
 import { countResearchUsed } from '../data/researchCap';
@@ -89,6 +91,9 @@ import CockpitFeed from './battleView/CockpitFeed';
 import CockpitSheet from './battleView/CockpitSheet';
 import { CockpitSwitch, BoardCockpitTrack, PHONE_SCREEN } from './battleView/BoardCockpit';
 import { buildCockpitFeed, monitoringRow, sheetOf, eventsByCall, latestPromptBuiltAt, checkOf, liveCallSlotOf, staleRefusalIds } from './battleView/cockpitModel';
+// Cockpit Build 2b (spec §8, from merge): the server's clock for deadlines.
+import { useServerNow } from './battleView/useServerClock';
+import { battleExpiryMs } from '../../api/_utils/callRecords/horizon.js';
 import { BATTLE_CHAT_BUDGET } from '../../api/_utils/directiveFiling.js';
 import { useBaggerMoment } from './battleView/useBaggerMoment';
 import { baggerMomentFacts, persistedMaxMultiplier, BAGGER_LINE } from './battleView/deriveBaggerMoment';
@@ -2548,7 +2553,19 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     subscribedThreadId: agentBattle?.directive?.directiveThreadId ?? null,
     onUnavailable: cockpitStatus.recheck,
   });
-  const cockpitNowMs = now instanceof Date ? now.getTime() : Date.now();
+  // Cockpit Build 2b (spec §8, from merge): the cockpit runs on the SERVER's clock — the coarse instant plus the
+  // status answer's offset — and one timer at the next open deadline removes a card's buttons exactly then.
+  const cockpitDeadlines = useMemo(
+    () => (cockpitOn ? (Array.isArray(cockpitCallsRead.value) ? cockpitCallsRead.value : []).filter((c) => c?.state === 'open').map((c) => c?.horizon?.expiresAt) : []),
+    [cockpitOn, cockpitCallsRead.value],
+  );
+  const cockpitNowMs = useServerNow({
+    enabled: cockpitOn,
+    coarseNowMs: now instanceof Date ? now.getTime() : Date.now(),
+    offsetMs: cockpitStatus.clockOffsetMs,
+    deadlines: cockpitDeadlines,
+  });
+  const cockpitBattleEndMs = battleExpiryMs(agentBattle);
   const cockpitEventsMap = useMemo(
     () => (cockpitOn ? eventsByCall(cockpitEventsRead.value) : new Map()),
     [cockpitOn, cockpitEventsRead.value],
@@ -2567,7 +2584,13 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     // the integrity mode is read here, at render, and only on the lit path.
     controlEpochLog: agentBattle?.controlEpochLog ?? null,
     suppressed: ARCHETYPE_INTEGRITY_MODE !== 'enforce',
-  }) : null), [cockpitOn, cockpitCallsRead.value, cockpitEventsRead.value, agentBattle?.evaluations, agentBattle?.directive, agentBattle?.controlEpochLog, cockpitNowMs, cockpitAnswer.pending, cockpitAnswer.outcomes, cockpitShowAllEarlier]);
+    // Cockpit Build 2b (spec §7.1, from merge): who replaced a command (the RAW exchanges, never the gated chat
+    // projection), whether a check is left today, and the battle's end; with the 2b flag, each card's step.
+    exchanges: agentBattle?.chatExchanges ?? [],
+    nextDecisionAt: turnLine?.nextDecisionAt ?? null,
+    battleExpiresAtMs: cockpitBattleEndMs,
+    v2: isCockpit2bOn(),
+  }) : null), [cockpitOn, cockpitCallsRead.value, cockpitEventsRead.value, agentBattle?.evaluations, agentBattle?.directive, agentBattle?.controlEpochLog, agentBattle?.chatExchanges, cockpitBattleEndMs, cockpitNowMs, cockpitAnswer.pending, cockpitAnswer.outcomes, cockpitShowAllEarlier, turnLine?.nextDecisionAt]);
   // A refusal line clears for good once the record behind its tile changes —
   // the call resolved or was answered — or the call leaves the feed (founder
   // ruling Oct 5): its outcome is dropped as soon as no tile shows it, so it
@@ -2596,7 +2619,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     Boolean(cockpitOn && cockpitSheetTile && cockpitSheetTile.call.state !== 'open'),
   );
   const cockpitSheet = cockpitSheetTile
-    ? sheetOf(cockpitSheetTile, { eventsMap: cockpitEventsMap, evaluations: agentBattle?.evaluations, observation: cockpitObservation, nowMs: cockpitNowMs })
+    ? sheetOf(cockpitSheetTile, { eventsMap: cockpitEventsMap, evaluations: agentBattle?.evaluations, observation: cockpitObservation, nowMs: cockpitNowMs, exchanges: agentBattle?.chatExchanges ?? [] })
     : null;
   if (cockpitSheetTile) cockpitSheetTileIdRef.current = cockpitSheetTile.id;
   const cockpitSheetOpen = Boolean(cockpitSheet);

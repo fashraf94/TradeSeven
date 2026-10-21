@@ -214,13 +214,24 @@ function Tile({ tile, onAnswer, onOpenSheet }) {
                 </span>
               ) : null}
             </span>
-            <StateTag tag={tile.tag} />
+            <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+              {/* Cockpit Build 2b (D-10, from merge): the newest call follows your live command. */}
+              {tile.followTag ? <StateTag tag={tile.followTag} /> : null}
+              <StateTag tag={tile.tag} />
+            </span>
           </span>
           <span data-cockpit-line="1" style={{ fontSize: 14.5, fontWeight: 700, color: cssVar('text-primary'), lineHeight: 1.35 }}>
             {tile.line}
           </span>
           {tile.restated ? (
             <span data-cockpit-restated="1" style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{tile.restated}</span>
+          ) : null}
+          {/* Cockpit Build 2b (D-12 rev 4, from merge): one card per stock plan — the moved line, and the command's own line beside a new ask. */}
+          {tile.lineMoved ? (
+            <span data-cockpit-line-moved="1" style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{tile.lineMoved}</span>
+          ) : null}
+          {tile.commandLine ? (
+            <span data-cockpit-command-line="1" style={{ fontSize: 12, color: cssVar('call-yours') }}>{tile.commandLine}</span>
           ) : null}
           {tile.answerLine ? (
             <span data-cockpit-thread-answer="1" style={{ fontSize: 12, color: cssVar('call-yours') }}>{tile.answerLine}</span>
