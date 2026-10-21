@@ -6,21 +6,21 @@ Prepared 2026-10-21 by Flash (Claude Code). Prompt: "FantasyTrades Command Cente
 
 | Question | Answer |
 |---|---|
-| **STOP** | **One half of one ruling is not applied and needs your decision before merge.** R-R2-3 asks every pointer down to call `setPointerCapture`. For a **mouse** it is applied. For **touch and pen** it is **stopped**: WebKit's own source shows that moving a touch's capture from the label to the button makes iPhone Safari send a "pointer left" event that React reads as the finger leaving the button, which would cancel the hold (§9.3). The deciding iOS code is closed source and no iPhone was available here, so touch and pen keep exactly the path they had before R2. Question Q1 (§11). |
-| Built as authorized? | **Yes, apart from the STOP above.** R-R2-1 … R-R2-10 applied (§3). Nothing under `api/` changed; no fenced file edited; no call site, shell handler or `agentDeploy.js` touched. |
-| Single-hold parity | **Held.** jsdom: a differential harness rendered the pre-R2 and R2 hook through the real call sites, frame by frame — 114 of 122 rows byte-identical; the 8 that differ are one jsdom-only step where the old hook sent a duplicate abort (§8.2, L1). Real browser — **Chromium only** (headless Edge, real touch/mouse/keyboard): touch hold, touch on the padding, quick release, mouse hold still and Enter match the old build event for event (§9.1). No WebKit or Gecko was available; on iPhone the touch path is the pre-R2 one because of the STOP. The four sky tests pass unmodified. One ruled change for desktop mice only: dragging the mouse off the button no longer cancels; releasing does (Q2). |
+| **Founder rulings (applied)** | **Q1–Q5 answered 2026-10-21; applied in one fix round (§14).** No pointer type is captured (R-R2-3's capture half withdrawn, its claim-first half kept), so touch, pen and mouse take main's pointer path exactly — measured event for event in Chromium, mouse drag-off included. The bounded safety release is added (`HOLD_CLAIM_SAFETY_RELEASE_MS = 180000`). The stall guard is a separate task (§12); second-finger ownership is S2b's (§10). |
+| Built as authorized? | **Yes**, with R-R2-3 as amended by the founder (§3, §14). Nothing under `api/` changed; no fenced file edited; no call site, shell handler or `agentDeploy.js` touched; no pre-existing test edited (the founder-replaced R2 capture rows apart). |
+| Single-hold parity | **Held.** jsdom: a differential harness rendered the pre-R2 and R2 hook through the real call sites, frame by frame — 114 of 122 rows byte-identical; the 8 that differ are one jsdom-only step where the old hook sent a duplicate abort (§8.2, L1). Real browser — **Chromium only** (headless Edge, real touch/mouse/keyboard): every single-hold scenario — touch hold, touch on the padding, quick release, mouse hold still, mouse dragged off, Enter — matches main event for event (§9.1). No WebKit or Gecko was available; no pointer is captured, so every engine gets main's pointer path. The four sky tests pass unmodified. |
 | The defects | **D1–D7 fixed**, each reproduced first by a row that failed on the old hook (§4). Two controls can no longer both deploy (measured in Edge: two fingers deployed twice before, once now). |
-| The claim's lifetime | One hold at a time, app-wide, held from press until the deploy request settles. The review's fix round makes every continuation honour it (§5, §8). Known trade: after a shell remount mid-deploy the new shell's hold is silently denied until the first request settles (Q3). |
-| Checks | Full suite on Linux, CI-shaped, at the test head `72a37037` (main unchanged at `0fc78b02`, so this is the merged tree): **Test Files 1052 passed, 7 skipped; 22,761 tests passed, 0 failed**; exit 0. `lint:gate` and `vite build` exit 0 (§7; re-run on the pushed head, PR description). |
-| Review | BUILD_RULES §2 run: 4 read-only lenses + 3 refuters (one per lens with findings, each on its own snapshot) + the mutating lens L5 last, on the final code. The four lenses: 16 unique findings (24 as reported, four reported twice). **None refuted outright**; sub-claims refuted or recalibrated in six; **no BLOCKER**; one upgraded to a merge gate by its refuter (the STOP). 9 led to code changes (the STOP included), backed by 15 rows that failed first on the build before them; the rest recorded (§8). L5 (on the final code): 48 of 53 listed mutants killed at first; every non-equivalent survivor, and 5 more L5 devised, is now killed by a row added for it; 4 named equivalents remain (§8.4). |
-| Status | Pushed as a **draft** PR, **STOPPED**: no merge, no CI watching. The preview is the smoke surface — **on a real iPhone first** (§11 Q1): hold on the label, the icon and the padding; a quick release; Enter. |
+| The claim's lifetime | One hold at a time, app-wide, held from press until the deploy request settles. The review's fix round makes every continuation honour it (§5, §8). After a shell remount mid-deploy the new shell's hold is denied until the first request settles — now at most 180 s after onComplete ran, by the bounded safety release (Q3, §14). |
+| Checks | Full suite on Linux, CI-shaped, at the code and test head `f1b5a705` (after the founder rulings; `origin/main` re-fetched, still `0fc78b02`, so this is the merged tree): **Test Files 1053 passed, 7 skipped; 22,772 tests passed, 0 failed**; exit 0. `lint:gate` and `vite build` exit 0 there and on the pushed head (§14.5, PR description). |
+| Review | BUILD_RULES §2 run: 4 read-only lenses + 3 refuters (one per lens with findings, each on its own snapshot) + the mutating lens L5 last, on the final code. The four lenses: 16 unique findings (24 as reported, four reported twice). **None refuted outright**; sub-claims refuted or recalibrated in six; **no BLOCKER**; one upgraded to a merge gate by its refuter (the STOP). 9 led to code changes (the STOP included), backed by 15 rows that failed first on the build before them; the rest recorded (§8). L5 (on the final code): 48 of 53 listed mutants killed at first; every non-equivalent survivor, and 5 more L5 devised, is now killed by a row added for it; 4 named equivalents remain (§8.4). Rulings round: one focused lens, a refuter, and 14 mutants of the new code — all killed (§14.4). |
+| Status | Pushed to the draft PR #985, **STOPPED** for the independent Fable review: no merge, no CI watching. The preview is the smoke surface — on a phone and on desktop: one ordinary hold deploys exactly as today; a quick release cancels; Enter deploys. |
 
 ## 1. Branch, HEAD and preamble
 
 - `git fetch origin` first (BUILD_RULES §3). `origin/main` = `0fc78b02` (PR #984). The prompt cites R1 merged at `39053aed` (PR #979); `39053aed` is an ancestor of `0fc78b02` (VERIFIED), so R1 is on the base. Main had moved on since the prompt; the newer commits touch nothing R2 reads (BaggerBomb scoreboard and menu).
 - Worktree branch `claude/deploy-r2-hold-claim-dadf73` (the app's suffix), cut at `0fc78b02`, clean at start. Pushed as `claude/deploy-r2-hold-claim` by refspec.
-- Commits: `af4affb2` R2 build and tests · `27d70178` only the button's own capture loss cancels (amended before any push: its first message claimed a failure that headless Edge then showed Chromium does not have; the message now says "defensive narrowing") · `6cf0c79f` the review fix round · `24d3efcf` a row title (L3-1) · `5a8f8119` capture for a mouse only, touch/pen STOPPED; the L3-3 token compare · `c9be87ac` the draft report · `72a37037` the rows L5 found missing (tests only) · the final report.
-- Code head `5a8f8119` (no code change after it); test head `72a37037`; report head = the PR head.
+- Commits: `af4affb2` R2 build and tests · `27d70178` only the button's own capture loss cancels (amended before any push: its first message claimed a failure that headless Edge then showed Chromium does not have; the message now says "defensive narrowing") · `6cf0c79f` the review fix round · `24d3efcf` a row title (L3-1) · `5a8f8119` capture for a mouse only, touch/pen STOPPED; the L3-3 token compare · `c9be87ac` the draft report · `72a37037` the rows L5 found missing (tests only) · `356d2899`, `56d27736` the report (draft PR #985 opened at `56d27736`) · founder rulings: `c29fff3b` no pointer capture, the safety release · `9630965d` the rulings review's F1-1 fix and rows · `f1b5a705` the cross-cycle F1-1 row · the report (§14).
+- Code and test head `f1b5a705` (after the founder rulings, §14); before them: code `5a8f8119`, tests `72a37037`. Report head = the PR head.
 
 ## 2. Starting check (BUILD_RULES §3)
 
@@ -50,17 +50,17 @@ Every anchor re-read at `0fc78b02` in this session (VERIFIED).
 |---|---|---|
 | R-R2-1 one hold app-wide | `holdClaim.js`: one slot; `claimHold(controlId)` grants a fresh opaque token (`hold_N`) only to an empty slot — a second input on the holding control is denied too — and none without a control id (fails closed); `commitHold(token)` atomic; `releaseHold(token)` only for its own token; `currentHold()` frozen copy; `__resetHoldClaim()` test-only (the token counter is never reset). **Shape reconciliation:** the ruling names the slot `{ token, controlId, phase }`; S2a's selector reads `{ controlId, holdToken, holdEpoch, phase }`. `currentHold()` returns `{ controlId, holdToken, phase }`; `holdEpoch` is left for S2b to stamp, because spec §5.5's `claimHold(controlId, inputId, holdEpoch)` takes it as an input. Each button gets `useId()` as its control id. | `src/hooks/holdClaim.js:41–74`; `HoldToDeployButton.jsx:42–43` |
 | R-R2-2 refs are authoritative | `stateRef` and `tokenRef` written in the call that changes them; React state mirrors for display; no guard reads a rendered phase. | `useHoldToDeploy.js:261–263` |
-| R-R2-3 claim before any effect | Pointer down and Enter/Space claim first; a denied claim returns before any phase, frame, haptic, progress, sky event, capture, timer or onComplete. **`setPointerCapture`: applied for a mouse; STOPPED for touch and pen (§9.3, Q1).** | `:439–455`, `:457–472`; capture `:235–244` |
+| R-R2-3 claim before any effect | Pointer down and Enter/Space claim first; a denied claim returns before any phase, frame, haptic, progress, sky event, timer or onComplete. **Pointer capture withdrawn by the founder (Q1/Q2): no pointer type is captured; `onPointerDown` and `start`'s signature are byte-identical to main's.** | at `f1b5a705`: `:440–455`, `:457–470`, `bind` `:535–545` |
 | R-R2-4 charging cancels on every loss | up / leave / cancel / own `lostpointercapture` / hidden / blur / disabled→true / enabled→false / unmount → one `cancel()` (revoke, clear frame, reset display, one abort). Listeners attach only while charging and detach on every exit. The disabled/enabled cancel and the unmount cancel are **layout** effects, so each lands in the commit that renders it (review L2-1). A frame that runs while the document is hidden cancels. **Correction to the ruling's own rationale:** R-R2-4 says the hidden-frame check makes it so "a resumed frame after a suspension can never commit". It does not: the visibilitychange listener does (hiding fires the event before any frame can run); the frame check is defence in depth (review L3-1). | `cancel` `:284–299`; listeners `:304–314`; tick check `:406`; layout effects `:476–478`, `:504–525`; capture-loss handler `:532` |
 | R-R2-5 threshold = commitment | `commitHold(token)` true → `stateRef = 'locked'` first, then display, haptic, one commit, `onCommit`, the beat. Afterwards every release-type input is a no-op. If the token was revoked, the charge is torn down with its one abort (the prompt said "does nothing"; tearing down is what keeps one abort per stream — BI-2). | `fireComplete` `:316–397` |
 | R-R2-6 keyboard immediate | `e.repeat` ignored; claim → commit → same 450 ms beat; no held-key requirement. | `:457–472` |
-| R-R2-7 claim through the request | The beat's run calls onComplete once; `Promise.resolve(result).finally(release)`; a synchronous throw releases and rethrows. Re-enable reset kept (not during a pending beat or over a live charge). Unmount releases only what nothing else will (BI-1). | run `:345–370`; reset `:487–497`; unmount `:504–525` |
+| R-R2-7 claim through the request | The beat's run calls onComplete once; `Promise.resolve(result).finally(release)`; a synchronous throw releases and rethrows. Re-enable reset kept (not during a pending beat or over a live charge). Unmount releases only what nothing else will (BI-1). **Bounded by the founder's safety release (Q3): 180 s after onComplete ran, by token, not cleared by unmount (§14).** | run `:345–370`; reset `:487–497`; unmount `:504–525` |
 | R-R2-8 beat stays with the hook; seam added | Legacy: unmount during the beat cancels the deploy, as before. `onCommit(token)` synchronous at the boundary; `beatOwner.commit(token, run)` takes the beat instead of the timer and survives unmount; `run` is one-shot. | `:372–396` |
 | R-R2-9 reduced motion | `useReducedMotion()` (house precedent) → `motionToken('fade', { reducedMotion }) === instant` → fill and glow get no transition; the 250 ms drain otherwise unchanged. | `HoldToDeployButton.jsx:53–57`, `:77` |
 | R-R2-10 out of scope | No tap claims; no provider; nothing under `api/`. | — |
 
 **Builder interpretations, as they stand after review:**
-- **BI-1** unmount releases the claim only while charging or when it cancels a legacy beat; once onComplete has run, the request's settle releases it — so a width change mid-request cannot start a second hold (FR-4). Cost: a request that never settles keeps every hold denied until reload (Q3).
+- **BI-1** unmount releases the claim only while charging or when it cancels a legacy beat; once onComplete has run, the request's settle releases it — so a width change mid-request cannot start a second hold (FR-4). Its cost — a request that never settles kept every hold denied until reload — is now bounded at 180 s by the safety release (founder ruling on Q3, §14).
 - **BI-2** a revoked token at the threshold → teardown with one abort.
 - **BI-3** the re-enable reset never runs while a committed beat is pending (spec §5.5 "never display cancellation while a completion callback remains authorized"), nor over a live charge (review L2-5).
 - **BI-4** disabled/enabled and unmount cancellation in layout effects.
@@ -94,6 +94,8 @@ Each row was run against the hook as it was before R2 (`0fc78b02`) and failed th
 
 ## 5. What R2 built, by `file:line` (code head `5a8f8119`)
 
+After the founder rulings the code head is `f1b5a705`; the anchors that changed are in §14.3.
+
 **`src/hooks/holdClaim.js` (new, 73 lines).** The slot `:38`; `claimHold` `:41–48`; `commitHold` `:50–54`; `releaseHold` `:56–60`; `currentHold` `:62–65`; `__resetHoldClaim` `:71–73`. Header `:1–36`.
 
 **`src/hooks/useHoldToDeploy.js`.**
@@ -119,7 +121,7 @@ None edited. The four the prompt names pass unmodified at every commit: `starfie
 
 | Check | Head | Result |
 |---|---|---|
-| Full suite, Linux (WSL private clone, Node 20.20.2, `TZ=UTC`, `--maxWorkers=2`, CI-shaped) | `72a37037` (final code and tests; `origin/main` re-fetched, still `0fc78b02`) | **Test Files 1052 passed, 7 skipped (1059); tests 22,761 passed, 0 failed, 88 skipped; exit 0**; 727 s |
+| Full suite, Linux (WSL private clone, Node 20.20.2, `TZ=UTC`, `--maxWorkers=2`, CI-shaped) | `72a37037` (before the founder rulings; after them see §14.5) | **Test Files 1052 passed, 7 skipped (1059); tests 22,761 passed, 0 failed, 88 skipped; exit 0**; 727 s |
 | Same, pre-review | `af4affb2` | Test Files 1051 passed, 7 skipped (1058); 22,732 passed, 0 failed; exit 0 |
 | Targeted: the five R2 files + the four sky files | `72a37037` | 9 files, 261 tests passed (105 R2 rows) |
 | `lint:gate` | `72a37037` (Linux) | exit 0; re-run at the pushed report head — PR description |
@@ -141,7 +143,7 @@ The cumulative diff is 8 files and ~2,070 changed lines, past the threshold. Eac
 
 | ID | Sev. (after refuter) | Finding | Refuter verdict | Disposition |
 |---|---|---|---|---|
-| L3-Q2 | **MAJOR → merge gate** | Explicit capture on touch is new on every iPhone hold; an engine that sends the hand-over `pointerout` with a null `relatedTarget` makes React cancel the hold | RL3: **PARTLY** — the "lostpointercapture at the button" half REFUTED (spec and WebKit fire it at the previous owner only); the null-`relatedTarget` half **upgraded**: WebKit's iOS touch events have a null `relatedTarget` (`PointerEventIOS.cpp`), a move-target change fires `pointerout` (`PointerCaptureController.cpp`), the open caller targets the capture element; the iOS caller is closed | **STOP** for touch/pen (`5a8f8119`); Q1. Chromium measured safe either way (§9). |
+| L3-Q2 | **MAJOR → merge gate** | Explicit capture on touch is new on every iPhone hold; an engine that sends the hand-over `pointerout` with a null `relatedTarget` makes React cancel the hold | RL3: **PARTLY** — the "lostpointercapture at the button" half REFUTED (spec and WebKit fire it at the previous owner only); the null-`relatedTarget` half **upgraded**: WebKit's iOS touch events have a null `relatedTarget` (`PointerEventIOS.cpp`), a move-target change fires `pointerout` (`PointerCaptureController.cpp`), the open caller targets the capture element; the iOS caller is closed | **STOP** for touch/pen (`5a8f8119`); Q1 → founder ruling: no capture for any pointer type (`c29fff3b`, §14). Chromium measured safe either way (§9). |
 | L2-1 | MINOR | The unmount cleanup was passive: after a non-event unmount a queued frame or the beat could still act from a removed button | **CONFIRMED** — real Edge: a removed button committed in 24/26 trials (false haptic + sky surge, no deploy); the beat-timer half 1/158 in Edge (the jsdom timer row proves nothing about browser ordering — sub-claim recalibrated); "MAJOR for S2b" overstated → MINOR | **Fixed**: layout cleanup (Edge after fix: 0/24) |
 | L2-2 | NIT/MINOR | An `onCommit` that `flushSync`-unmounts its control escaped the cancel | CONFIRMED (seam only) | **Fixed**: beat armed before `onCommit` |
 | L2-3 = L4-1 | MINOR | A throwing `beatOwner.commit` locked the slot forever | CONFIRMED (RL2, RL4) | **Fixed**: the hook keeps the beat (one-shot `run`, so an owner that saved `run` still deploys once) |
@@ -193,18 +195,22 @@ L5 ran the 53 listed mutants on a snapshot of `5a8f8119`, one at a time (the fiv
 
 The shipped `HoldToDeployButton` was bundled (esbuild) from each tree with two instances (filled A, muted B), every pointer event and sky terminal logged. Harness and results: §13.
 
-### 9.1 Base vs R2 at the code head (`0fc78b02` vs `5a8f8119`), Chromium (headless Edge 155) only
+### 9.1 Main vs R2 after the founder rulings (`0fc78b02` vs `c29fff3b`), Chromium (headless Edge 155) only
 
-| Scenario | Base | R2 |
+`c29fff3b` holds the rulings' pointer code; `f1b5a705` changes only the owner path and comments, which this harness does not exercise.
+
+| Scenario | Main | R2 |
 |---|---|---|
 | T1 touch hold on the label, 1.6 s, finger jitter | deploys once; capture on the label | **same events** |
-| T2 touch hold on the padding | deploys once | same |
-| T3 touch release at 600 ms | one abort at release | same |
+| T2 touch hold on the padding | deploys once | same events |
+| T3 touch release at 600 ms | one abort at release | same events |
 | T4 two fingers on A and B | **both deploy** (D2) | A only |
-| M1 mouse hold still | deploys once | deploys once (capture on the button) |
-| M2 mouse drags off at 400 ms, keeps holding, releases outside | abort at the drag-off | **deploys** (the ruled change, Q2) |
-| M3 mouse drags off at 400 ms, releases outside at 800 ms | abort at the drag-off | abort at the release |
+| M1 mouse hold still | deploys once; nothing captured | same events |
+| M2 mouse drags off at 400 ms, keeps holding, releases outside | abort at the drag-off | **same events** |
+| M3 mouse drags off at 400 ms, releases outside at 800 ms | abort at the drag-off | same events |
 | K1 Enter, then held (auto-repeat) | deploys once | deploys once |
+
+Before the rulings (`5a8f8119`, mouse captured) M2 deployed and M3 aborted at the release instead of the drag-off; before the STOP (`27d70178`) touch was captured too.
 
 ### 9.2 Other runs
 
@@ -212,7 +218,7 @@ The shipped `HoldToDeployButton` was bundled (esbuild) from each tree with two i
 - RL3: a touch release behind a 300 ms main-thread task straddling the threshold commits in base and R2 alike (6/6 each); mouse aborts (2/2); with no task the same lift aborts at p 0.93–0.96. In a headless background tab the page stayed "visible" with frames throttled to 1 Hz (not a headed-browser state).
 - Not possible here: hiding or blurring the page in headless; Android's real input pipeline; any WebKit or Gecko (none installed — installing one is a download needing your permission, and Playwright's desktop WebKit would not exercise the iOS touch path anyway).
 
-### 9.3 Why the touch half of R-R2-3 is stopped
+### 9.3 Why no pointer is captured (the evidence behind the STOP, now ruled)
 
 Explicit capture adds nothing for touch: the platform already captures a touch to the element touched. Moving it to the button changes which element the following moves target. What WebKit does then (source read at WebKit `main`):
 - VERIFIED: touch-derived pointer events are created with a null `relatedTarget` (`Source/WebCore/dom/ios/PointerEventIOS.cpp`).
@@ -222,7 +228,7 @@ Explicit capture adds nothing for touch: the platform already captures a touch t
 - ASSUMED, unread: the iOS caller (`WebKitAdditions`, closed). If it targets the capture element as the open one does, the second move of a hold that starts on the label or icon fires `pointerout` on the label with a null `relatedTarget`; React then fires the button's `onPointerLeave` and the hold cancels within tens of milliseconds (jsdom repro: `["abort"]`, no deploy). Before R2 the capture stayed on the label, so the target never changed.
 - Gecko's boundary events on a capture change: not read (ASSUMED unknown).
 
-So touch and pen keep the pre-R2 path exactly (measured identical in Edge, §9.1); the mouse keeps the ruled capture.
+The build stopped the touch and pen half of R-R2-3 on this evidence; the founder then withdrew the capture half for every pointer type (Q1/Q2, §14), so a mouse also keeps main's drag-off cancel. Every pointer takes main's path (measured identical in Edge, §9.1).
 
 ## 10. What S2b inherits
 
@@ -232,29 +238,94 @@ So touch and pen keep the pre-R2 path exactly (measured identical in Edge, §9.1
 - **Gaps L4 listed:** `claimHold` takes neither `inputId` nor `holdEpoch` (spec §5.5); `currentHold()` is pull-only (no subscribe); progress lives in the hook's React state (no owner-tagged store); `HoldToDeployButton` does not forward `onCommit`/`beatOwner`; an owner that abandons a beat has no way to return the control to idle (L4-3b).
 - **`holdEpoch`**: S2a's `canCommit` requires a valid epoch on the hold; S2b stamps it.
 - **A hiding boundary** (Activity/Suspense around a hold) would run the layout cleanup without unmounting; a hidden legacy beat would then show "Locked in". No such boundary wraps the dashboards today.
-- **BI-1**: the in-flight claim and its settle bound (Q3).
+- **BI-1 and the safety release**: the in-flight claim is released by the settle, or by token 180 s after onComplete ran; an unmount clears neither (§14).
+- **Second-finger ownership** (founder ruling on Q5): a denied second finger's lift cancels the first finger's hold (base identical; it can only cancel). S2b closes it with the input id spec §5.5 gives `claimHold(controlId, inputId, holdEpoch)`.
+- **The decide 429 copy** (moved here by the founder from §12): "Deploy already in progress" renders as "Couldn't confirm the deploy" (lost-contact tone; the body carries no `details`, `CeremonyError.jsx:85`) — misleading while the first deploy is still creating the battle (RL4). S2b composes refusal words (R1 report §10).
+- **A note for test authors** (rulings review F1-4): `vi.runAllTimers()` over a hold deploy now advances the fake clock 180 s more and fires the safety release before the settle's microtask; use `advanceTimersByTime` or `runAllTimersAsync`.
+- **An unruled corner** (rulings refuter RF1): an `onCommit` that unmounts the control synchronously, followed by an owner whose `commit` throws without running the beat, arms the fallback after the unmount, so the deploy fires from an unmounted control. Doubly contrived, identical before and after the rulings round; recorded, not changed (a fix would change unruled semantics).
 
-## 11. Founder questions (ranked)
+## 11. Founder questions — answered 2026-10-21
 
-**Q1 — R-R2-3 for touch and pen (the STOP).** Confirm the split (capture for a mouse; touch and pen keep the platform's own capture), or, after a real-iPhone check, rule capture back on for touch. *Recommendation: keep the split.* For touch the capture buys nothing and risks every iPhone hold. To check on a device: on the preview, hold the big deploy button (the Deploy station) and "Deploy without previewing" on the label, on the icon and on the padding; a quick release; Enter. Capture back on for touch is one line (`useHoldToDeploy.js:237`).
-
-**Q2 — Mouse drag-off.** With the ruled mouse capture, dragging the mouse off the button no longer cancels; releasing does (measured, M2/M3). Keep, or capture no pointer at all (then R-R2-3 is not applied anywhere)? *Recommendation: drop the mouse capture too.* A mouse that slides off already cancels on leave, so capture protects nothing, and drag-off-to-cancel is the desktop convention.
-
-**Q3 — The in-flight claim after a remount (BI-1).** Rotating a phone or iPad across 768 px mid-deploy (or back-to-hub, navigate away and back) mounts a shell whose hold looks ready but is silently denied until the first request settles — about 150 s at most while the server is reachable (token refresh 30 s + two 60 s function limits), unbounded if the network stalls. Before R2 a second press started a second deploy that normally ended on "Couldn't confirm the deploy". Options: accept until S2b renders the in-flight record on every width; add a token-scoped safety release about 180 s after onComplete runs; give a denied press visible feedback. *Recommendation (the reviewers'): keep BI-1 and add the bounded release in a follow-up* — it can never free a newer hold.
-
-**Q4 — A stall guard.** A touch release processed after a long main-thread task loses to the threshold frame (pre-existing, measured); a suspension with no visibility event commits on the next frame. A guard needs the release's timestamp compared with the threshold, or a deferred commitment — a design change. Only `starfield.intent.test.jsx:251–258` (must pass unmodified) constrains it. *Recommendation: a separate task.*
-
-**Q5 — Pointer ownership.** A second finger lifting off the same control cancels the first finger's hold (base identical; it can only cancel, never deploy). Fixing it needs the input id the spec's `claimHold(controlId, inputId, holdEpoch)` carries. *Recommendation: leave it to S2b.*
+| Q | Ruling | Applied |
+|---|---|---|
+| Q1 touch/pen capture (the STOP) | **No explicit pointer capture for any pointer type**; R-R2-3's capture half withdrawn, the claim-first half stands; the button's own `onLostPointerCapture` cancel kept as a defensive guard (BI-5) | `c29fff3b` (§14.1) |
+| Q2 mouse drag-off | Same ruling: a mouse dragged off the button cancels on leave, as on main | `c29fff3b` |
+| Q3 the in-flight claim after a remount | **Keep BI-1 and add the bounded safety release now**: `HOLD_CLAIM_SAFETY_RELEASE_MS = 180000` (exported); armed when run calls onComplete; cleared by the settle; a throwing onComplete releases at once; not cleared by unmount; token-scoped | `c29fff3b`, `9630965d`, `f1b5a705` (§14.1–14.2) |
+| Q4 stall guard | A separate task, not R2 | §12, open |
+| Q5 pointer ownership | S2b (`inputId`) | §10 |
 
 ## 12. Found outside R2 (for separate tasking; not fixed)
 
-- `api/agent/decide.js` (fenced): the deploy lock is a check-then-write (read at `:156`, checked at `:181–186`, written at `:215–216`), not a transaction; two near-simultaneous POSTs can both pass it. And a clone-ensure divergence (one request falls back to the ranked agent, the other resolves the clone) locks two different agent documents — a duplicate-battle path that exists today through Retry (RL4).
-- The decide 429 "Deploy already in progress" renders as "Couldn't confirm the deploy" (lost-contact tone; the body carries no `details`, `CeremonyError.jsx:85`) — misleading while the first deploy is still creating the battle (RL4).
-- `starfield.intent.test.jsx:179`'s comment "past the 1300ms hold => fireComplete" is wrong: that second hold reaches p 0.846 (RL3).
-- `featureFlags.js:1836` still says the sky coupling is "FALSE (CURRENT)"; the flag is true at `:1856`.
+- **A gated fenced-server task** (founder ruling): `api/agent/decide.js` (fenced) — the deploy lock is a check-then-write (read at `:156`, checked at `:181–186`, written at `:215–216`), not a transaction, so two near-simultaneous POSTs can both pass it; and a clone-ensure divergence (one request falls back to the ranked agent, the other resolves the clone) locks two different agent documents — a duplicate-battle path that exists today through Retry (RL4).
+- **Open, a separate task** (founder ruling on Q4): a stall guard. A touch release processed after a long main-thread task loses to the threshold frame (pre-existing, measured in Edge, base and R2 alike); a suspension with no visibility event commits on the next frame. A guard needs the release's timestamp compared with the threshold, or a deferred commitment. Only `starfield.intent.test.jsx:251–258` (must pass unmodified) constrains it.
+- **Rides a later change** (founder ruling; `starfield.intent.test.jsx` is not touched): `starfield.intent.test.jsx:179`'s comment "past the 1300ms hold => fireComplete" is wrong (that hold reaches p 0.846, RL3); `featureFlags.js:1836` still says the sky coupling is "FALSE (CURRENT)"; the flag is true at `:1856`.
+- The decide 429 copy moved to S2b's list (§10).
 
 ## 13. Files outside the repository, and next
 
 Scratchpad of this session (`C:/Users/fashr/AppData/Local/Temp/claude/…/scratchpad/`): `failing-first.clean.txt`, `failing-first-review-rows.txt`, `failing-first-capture-rows.txt`, `browser/` (harness, `results-first.json`, `results-fixhead-24d3efcf.json`, `results-5a8f8119.json`), `review/` (brief, findings, `mutants.json`, `mutate.mjs`). Report copy: `C:/Users/fashr/Documents/FantasyTrades/CommandCenter/20261021_BUILD_DEPLOY_R2_HOLD_CLAIM.md`.
 
-**Next:** your answers to Q1–Q5 and the iPhone smoke. Then the independent Fable review.
+**Next:** the independent Fable review of PR #985. Rulings-round artifacts in the same scratchpad: `failing-first-rulings.txt`, `mutation-rulings.txt`, `browser/results-c29fff3b.json`, `review/findings-F1.md`.
+
+## 14. Founder rulings applied (2026-10-21)
+
+Start of the round: `git fetch origin`; branch `claude/deploy-r2-hold-claim-dadf73` at `56d27736` = the remote PR head; clean tree; `origin/main` still `0fc78b02`; PR #985 open, draft, not merged.
+
+### 14.1 The rulings and the commits
+
+| Ruling | What was done | Commit |
+|---|---|---|
+| Q1 + Q2: no explicit pointer capture for any pointer type; R-R2-3's capture half withdrawn, claim-first kept; `onLostPointerCapture` (BI-5) kept as a defensive guard | `capturePointer` deleted; `start` takes no argument again and `onPointerDown` is main's line byte for byte; the header's capture section says no pointer is captured and why; the capture rows replaced (§14.2) | `c29fff3b` |
+| Q3: keep BI-1 and add the bounded safety release | `HOLD_CLAIM_SAFETY_RELEASE_MS = 180000` exported; when run calls onComplete it arms `setTimeout(() => releaseHold(token), 180000)`; the settle clears it and releases as before; a throwing onComplete clears it and releases at once; the timer is a closure local the unmount cleanup cannot reach; it releases by token | `c29fff3b` |
+| Rulings review F1-1 (an owner that runs the beat, then throws, left a dead beat-timer id that a later unmount read as a pending beat, freeing the in-flight claim — inherited from `56d27736`) | the owner-throw fallback re-arms the beat only if the run has not run (`if (!ran)`) | `9630965d` |
+| Rulings review F1-2, F1-3 | rows for an owned beat's safety release and for a revoked beat arming none; "who releases" prose names the safety release (`holdClaim.js`, the hook) | `9630965d`, `f1b5a705` |
+| Q4 stall guard | recorded open, a separate task | §12 |
+| Q5 pointer ownership | recorded for S2b | §10 |
+| §12 items | decide.js lock → a gated fenced-server task; the 429 copy → S2b's list; the two stale comments ride a later change (`starfield.intent.test.jsx` untouched) | §10, §12 |
+
+No pre-existing test was edited: the four sky tests and every non-R2 test are unmodified; of R2's own rows only the capture rows the ruling replaces changed. The new timer forced no edit anywhere (so no STOP).
+
+### 14.2 New rows, failing first
+
+Run against the head before them (logs `failing-first-rulings.txt`, and the F1-1 rows against `c29fff3b`).
+
+| Row | File | On the earlier head | Why |
+|---|---|---|---|
+| a mouse / touch / pen / typeless pointer is never captured (×4) | `useHoldToDeploy.r2.jsdom.test.jsx` | mouse **failed** on `56d27736` ("called 1 times"); touch, pen, typeless passed (already uncaptured there) | the ruling |
+| a mouse dragged off mid-charge cancels on leave: one abort, no onComplete | same | passed (jsdom has no capture semantics) — the real evidence is Edge M2/M3 (§9.1: deployed at `5a8f8119`, aborts now) | guard + Edge |
+| is 180,000 ms | `useHoldToDeploy.safetyRelease.jsdom.test.jsx` | **failed** (`undefined`) | Q3 |
+| a never-settling deploy holds the claim at 179,999 ms and frees it at 180,000; a second control can then claim and deploy | same | **failed** (slot still held) | Q3 |
+| an unmount after onComplete started does not cancel it | same | **failed** (slot still held at the bound) | Q3 |
+| an early settle clears it, and a newer hold claimed afterward survives the 180 s mark | same | **failed** (no timer to count) — its guard value is against a settle that does not clear | Q3 |
+| a first request that settles after its safety release does not free the newer hold | same | **failed** (no release at the bound, so no newer hold) | Q3 |
+| being token-scoped, it never frees a hold claimed after its own was revoked | same | passed (guard) | Q3 |
+| an owned beat run synchronously by its owner gets the safety release too; an owned beat run after the control unmounted | same | passed on `c29fff3b` (guards; F1-2) | F1-2 |
+| an owner that runs the beat and then throws: a later unmount does not free the in-flight claim | same | **failed** on `c29fff3b` | F1-1 |
+| …nor can that owner's commit lose a later committed deploy on the same control (RF1's cross-cycle repro) | same | **failed** on `c29fff3b` | F1-1 |
+| a beat revoked before it runs arms no safety release | same | passed on `c29fff3b` (guard; F1-2) | F1-2 |
+| a synchronously throwing onComplete releases at once and leaves no safety timer behind | same | passed (guard) | Q3 |
+
+Removed (replaced by the ruling): "a mouse pointer down captures the pointer …", "a denied pointer is never captured", "a capture the platform refuses does not break the hold".
+
+### 14.3 What changed, by `file:line` (code head `f1b5a705`)
+
+- `src/hooks/useHoldToDeploy.js`: header "NO POINTER IS CAPTURED" `:42–50`; the claim's lifetime with the safety release `:84–93`; the seam `:95–102`; `HOLD_CLAIM_SAFETY_RELEASE_MS` `:192–197`; `run` `:334–368` (revoked-token return `:342–348`, the safety release armed `:352`, cleared on a throw `:357`, cleared by the settle `:364–367`); owner fallback `if (!ran)` `:392`; `start` `:440–455` (no capture); `bind` `:535–545` (`onPointerDown` main's line; `onLostPointerCapture` `:532`, `:541`).
+- `src/hooks/holdClaim.js`: "who releases" `:33–37`; functions now at `:42–74`.
+- Tests: `src/hooks/useHoldToDeploy.r2.jsdom.test.jsx` (51 rows; capture rows `:423–457`); new `src/hooks/useHoldToDeploy.safetyRelease.jsdom.test.jsx` (12 rows). R2's rows now total 116.
+- Not touched: every call site, both shells, `agentDeploy.js`, the sky files, anything under `api/`, any fenced file.
+
+### 14.4 Review of the round
+
+- **Lens F1** (one focused lens on its own snapshot of `c29fff3b`): parity with main's pointer path — **no findings** (`bind`, `start`, effects at pointerdown identical to main apart from the claim and R2's cancel set; no capture code left; Edge identical to main in every single-hold scenario; BI-5 harmless). The safety release — no BLOCKER or MAJOR: it cannot free a newer hold, survives unmount, StrictMode and the re-enable reset, leaks no timer (five settled deploys leave none), and changes no existing test (no test that renders a hold uses `runAllTimers`; every `getTimerCount` check predates onComplete). Findings: F1-1 MINOR (inherited), F1-2 MINOR (test gap), F1-3 NIT (prose), F1-4 NIT (`runAllTimers` note).
+- **Refuter RF1** (fresh snapshot): F1-1 **CONFIRMED**, and wider — the hole opens at the throw, not after 450 ms, and a cross-cycle repro showed one bad owner commit later losing a well-behaved owner's deploy on the same control; the `if (!ran)` fix is correct and sufficient across six owner shapes (and the alternative, nulling the ref in the one-shot branch, was rejected). F1-2 **CONFIRMED** (mutant "owned beats get no safety release" MINOR; "a timer armed before the revoked check" NIT). F1-3 **PARTLY** (the `:85–86` claim refuted — that paragraph already named the safety release; `:98`'s "its run releases the claim" added as imprecise). F1-4 **CONFIRMED**. One aside, recorded in §10.
+- **Mutation** (builder, on a snapshot of `f1b5a705`, restores SHA-checked independently; log `mutation-rulings.txt`; baseline 116 rows): **14 of 14 killed** — RS1 no safety release (7 rows), RS2 the settle does not clear it (the early-settle row), RS3 it frees the slot's holder rather than its own token (the token-scoped row), RS4 it is tied to the beat ref so unmount clears and releases it (5 rows, the unmount row among them), RS5 the throw path leaves it armed (the throw row), RS6/RS7 the bound off by one millisecond either way (5 and 7 rows), RS8 capture re-added for every pointer (the four never-captured rows), RS9 capture for a mouse only (the mouse row), RS10 the BI-5 guard removed (the bubbled-label row), RS11 leave unbound (the drag-off row), RS12 owned beats get no safety release (3 rows), RS13 a timer armed before the revoked check (3 rows), RS14 the F1-1 fix removed (both F1-1 rows).
+
+### 14.5 Checks
+
+| Check | Head | Result |
+|---|---|---|
+| Full suite, Linux (WSL private clone, Node 20.20.2, `TZ=UTC`, `--maxWorkers=2`, CI-shaped) | `f1b5a705` | **Test Files 1053 passed, 7 skipped (1060); tests 22,772 passed, 0 failed, 88 skipped; exit 0**; 646 s |
+| Targeted: the six R2 files + the four sky files | `f1b5a705` | 10 files, 272 tests passed (116 R2 rows) |
+| `lint:gate` | `f1b5a705` (Linux) | exit 0; re-run at the pushed report head — PR description |
+| `vite build` | `f1b5a705` (Linux) | exit 0 (built in 26 s); re-run at the pushed report head — PR description |
+| Headless Edge, real input | `c29fff3b` vs main | §9.1 — identical to main in every single-hold scenario |
