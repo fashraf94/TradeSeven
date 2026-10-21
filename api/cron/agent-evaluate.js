@@ -119,7 +119,10 @@ import { getArchetypeConfig, resolveHftConfig, KNOB_CONFIG_VERSION } from '../_u
 // with the same inputs — purity guarantees the telemetry can never disagree
 // with what the prompt rendered.
 import { FieldValue } from 'firebase-admin/firestore';
-import { isDirectiveActive, isCallDirective } from '../_utils/directiveUtils.js';
+import { isDirectiveActive } from '../_utils/directiveUtils.js';
+// Cockpit Build 2b (Amendment D-6): the retire step runs only when the in-memory slot is call-family.
+// Its own line: tickStamps.pins pin 1 matches the line above byte for byte against the fenced assembler's.
+import { isCallDirective } from '../_utils/directiveUtils.js';
 import { resolveControls } from '../_utils/controlPromptRenderer.js';
 import { recordControlEpochIfNeeded } from '../_utils/controlSuppressionTelemetry.js';
 import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
