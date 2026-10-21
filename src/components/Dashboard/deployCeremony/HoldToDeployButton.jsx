@@ -17,11 +17,12 @@
 // the copy (spec §4). On completion the label becomes "Locked in" for the ~450ms
 // beat before the overlay mounts.
 
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useId, useState } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { CMD, alpha, readableOn } from '../commandUI';
 import useHoldToDeploy from '../../../hooks/useHoldToDeploy';
 import { isDeploySkyCouplingOn } from '../../../config/featureFlags';
+import { instant, motionToken } from '../../../theme/motion';
 
 export default function HoldToDeployButton({
   variant = 'filled',
@@ -36,14 +37,24 @@ export default function HoldToDeployButton({
   style,
   ariaLabel,
 }) {
-  const { phase, progress, bind, locked } = useHoldToDeploy({ enabled, disabled, onComplete });
+  // R2 (ruling R-R2-1): each instance is its own control in the app-wide hold
+  // claim, so two buttons can never both charge.
+  const controlId = useId();
+  const { phase, progress, bind, locked } = useHoldToDeploy({ enabled, disabled, onComplete, controlId });
   const charging = phase === 'charging';
   const flipped = locked || progress > 0.45;
   const ink = readableOn(accent);
   const shownLabel = locked ? 'Locked in' : label;
+  // R2 (ruling R-R2-9): under OS reduced motion the motion vocabulary's
+  // accessor answers `instant`, and an instant settle is no CSS transition —
+  // the fill and the glow drain at once. With motion allowed the shipped 250ms
+  // drain stands; it is no vocabulary value, and moving it onto one would be a
+  // feel change (BUILD_RULES §11).
+  const reducedMotion = Boolean(useReducedMotion());
+  const instantSettle = motionToken('fade', { reducedMotion }) === instant;
   // Fill snaps per-frame while charging; drains/settles with a transition otherwise
   // (early-release drain ~250ms per spec §4; settle-to-full on lock).
-  const fillTransition = charging ? 'none' : 'width 250ms ease';
+  const fillTransition = charging || instantSettle ? 'none' : 'width 250ms ease';
 
   // ── Charge glow — Delight Layer Task 4 Phase 2, the contained cosmetic pass.
   //
@@ -63,7 +74,7 @@ export default function HoldToDeployButton({
   const glowRadius = 8 + progress * 26;
   const chargeGlow = couplingOn ? `0 0 ${glowRadius.toFixed(1)}px ${alpha(accent, 0.16 + progress * 0.4)}` : undefined;
   // Drains with the fill on an early release; snaps per-frame while charging.
-  const chargeTransition = couplingOn && !charging ? 'box-shadow 250ms ease, border-color 250ms ease' : undefined;
+  const chargeTransition = couplingOn && !charging && !instantSettle ? 'box-shadow 250ms ease, border-color 250ms ease' : undefined;
 
   const holdAria = ariaLabel || `Hold to deploy${label ? ` — ${label}` : ''}. Press and hold, or press Enter to deploy immediately.`;
 
