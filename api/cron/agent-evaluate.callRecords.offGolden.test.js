@@ -151,13 +151,18 @@ const GOLDEN_PATH = resolve(HERE, '../_utils/__fixtures__/callRecordsOffGolden.j
 // the budget_skipped exit's honest message names the requirement, so exactly
 // three strings change, "40s remaining, 44s required" → "…, 64s required", and
 // nothing else. The prior pin was 053396e6bbd3c139540913b35f546444dcd4625eca3e00c9e08a4abe4467d444.
-// Moved a third time by the same VALUE-ONLY reconciliation (Oct 21 2026, the
-// gameplan meeting expires at 4:00 PM ET on any server timezone): the created
-// meeting's expiresAt in the two gameplan_created exits moves
-// "2026-09-09T16:00:00.000Z" (noon EDT, the old local-time setHours on a UTC
-// clock) → "2026-09-09T20:00:00.000Z", and nothing else. The prior pin was
-// f5dee04df16e07cf7441f6e10144e229c0b62e82676dfa135671b7b972d1a312.
-const GOLDEN_SHA256 = 'd9680fd064a79f5f42b583de06e5e1a81e6a053b490e747e8c85d11a45ebaced';
+// Same bytes, new reason (Oct 21 2026, PR #987): the created meeting's
+// expiresAt in the two gameplan_created exits still reads
+// "2026-09-09T16:00:00.000Z", but it is no longer the old local-time
+// setHours(16) on a UTC clock. The meeting now expires at the earlier of
+// 4:00 PM ET and 60 minutes after creation, and FROZEN_NOW is 11:00 AM EDT,
+// so 60 minutes later is 12:00 PM EDT = 16:00Z. These rows cannot tell the old
+// noon bug from the cap; agent-evaluate.gameplanExpiry.test.js guards the
+// timezone fix. The interim head 00a4a4d1 (4:00 PM ET with no cap) moved both
+// values to "2026-09-09T20:00:00.000Z" with pin
+// d9680fd064a79f5f42b583de06e5e1a81e6a053b490e747e8c85d11a45ebaced; the
+// value-only reconciliation back restores the pin below.
+const GOLDEN_SHA256 = 'f5dee04df16e07cf7441f6e10144e229c0b62e82676dfa135671b7b972d1a312';
 const ENV = globalThis.process?.env || {};
 const GENERATE = ENV.GENERATE_CALLS_OFF_GOLDEN === '1';
 if (GENERATE && ENV.CI) throw new Error('GENERATE_CALLS_OFF_GOLDEN is a local, deliberate act — never on CI');

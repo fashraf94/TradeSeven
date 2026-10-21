@@ -6603,10 +6603,15 @@ async function handleGameplanMeeting(db, battleRef, battle, prices, statusFeedEn
   return 'skip_haiku';
 }
 
-// Build EOD expiry: 4:00 PM ET on today's ET date, on any server timezone
-// (exported for its test).
+// The meeting waits at most 60 minutes, and never past 4:00 PM ET.
+const GAMEPLAN_MEETING_MAX_WAIT_MS = 60 * 60 * 1000;
+
+// Build the expiry: the earlier of 4:00 PM ET on today's ET date and 60 minutes
+// after `now` (the meeting's creation), on any server timezone (exported for
+// its test).
 export function gameplanMeetingExpiresAt(now = new Date()) {
-  return new Date(etWallClockToMs(formatDateString(getETDate(now)), 16, 0)).toISOString();
+  const closeMs = etWallClockToMs(formatDateString(getETDate(now)), 16, 0);
+  return new Date(Math.min(closeMs, now.getTime() + GAMEPLAN_MEETING_MAX_WAIT_MS)).toISOString();
 }
 
 /**
