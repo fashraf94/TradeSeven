@@ -277,6 +277,27 @@ describe('D1 — the threshold frame and a release in one frame: event order dec
     advance(2000);
     expect(onComplete).not.toHaveBeenCalled();
   });
+
+  // Fable review FR2-2: "locked before anything else" (R-R2-5) pinned against
+  // the commit dispatch itself.
+  it('a pointerup delivered by a listener on the COMMIT event cannot undo the lock', () => {
+    const onComplete = vi.fn();
+    render(<Hold onComplete={onComplete} />);
+    const [b] = buttons();
+    const releaseOnCommit = (e) => { if (e.detail.reason === 'commit') { ev.up(b); ev.leave(b); ev.blur(); } };
+    window.addEventListener(DEPLOY_INTENT_EVENT, releaseOnCommit);
+    try {
+      act(() => { ev.down(b); });
+      step(600); step(1300);
+    } finally {
+      window.removeEventListener(DEPLOY_INTENT_EVENT, releaseOnCommit);
+    }
+    advance(450);
+    expect(b.textContent).toBe('Locked in');
+    expect(count('abort')).toBe(0);
+    expect(count('commit')).toBe(1);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ===========================================================================
@@ -504,7 +525,7 @@ describe('D4 — switching away mid-hold cannot deploy on return', () => {
 // ===========================================================================
 
 describe('D5 — window blur and lost pointer capture cancel a charge', () => {
-  for (const [name, fire] of [['window blur', () => ev.blur()], ['lost pointer capture', (b) => ev.lost(b)]]) {
+  for (const [name, fire] of [['window blur', () => ev.blur()], ['lost pointer capture', (b) => ev.lost(b)], ['pointercancel', (b) => ev.cancel(b)]]) {
     it(`${name} mid-hold: one abort, the display drains, no deploy`, () => {
       const onComplete = vi.fn();
       render(<Hold onComplete={onComplete} />);
