@@ -13,14 +13,15 @@ Prepared 2026-10-21 by Flash (Claude Code). Prompt: "FantasyTrades Command Cente
 | The claim's lifetime | One hold at a time, app-wide, held from press until the deploy request settles. The review's fix round makes every continuation honour it (§5, §8). After a shell remount mid-deploy the new shell's hold is denied until the first request settles — now at most 180 s after onComplete ran, by the bounded safety release (Q3, §14). |
 | Checks | Full suite on Linux, CI-shaped, at the code and test head `f1b5a705` (after the founder rulings; `origin/main` re-fetched, still `0fc78b02`, so this is the merged tree): **Test Files 1053 passed, 7 skipped; 22,772 tests passed, 0 failed**; exit 0. `lint:gate` and `vite build` exit 0 there and on the pushed head (§14.5, PR description). |
 | Review | BUILD_RULES §2 run: 4 read-only lenses + 3 refuters (one per lens with findings, each on its own snapshot) + the mutating lens L5 last, on the final code. The four lenses: 16 unique findings (24 as reported, four reported twice). **None refuted outright**; sub-claims refuted or recalibrated in six; **no BLOCKER**; one upgraded to a merge gate by its refuter (the STOP). 9 led to code changes (the STOP included), backed by 15 rows that failed first on the build before them; the rest recorded (§8). L5 (on the final code): 48 of 53 listed mutants killed at first; every non-equivalent survivor, and 5 more L5 devised, is now killed by a row added for it; 4 named equivalents remain (§8.4). Rulings round: one focused lens, a refuter, and 14 mutants of the new code — all killed (§14.4). |
-| Status | Pushed to the draft PR #985, **STOPPED** for the independent Fable review: no merge, no CI watching. The preview is the smoke surface — on a phone and on desktop: one ordinary hold deploys exactly as today; a quick release cancels; Enter deploys. |
+| Independent review | **Fable review: MERGE WITH CHANGES** — no code change, two test rows (FR2-1, FR2-2), both applied, each failing under the review's surviving mutant and passing at the head; FR2-3 (BI-2) and FR2-4 already held; FR2-5 restated in §10 (§15). Review: `docs/audits/20261021_FABLE_REVIEW_R2_HOLD_CLAIM.md`. |
+| Status | Pushed to PR #985, **STOPPED**: no merge, no CI watching; the merge is yours. The preview is the smoke surface — on a phone and on desktop: one ordinary hold deploys exactly as today; a quick release cancels; Enter deploys. |
 
 ## 1. Branch, HEAD and preamble
 
 - `git fetch origin` first (BUILD_RULES §3). `origin/main` = `0fc78b02` (PR #984). The prompt cites R1 merged at `39053aed` (PR #979); `39053aed` is an ancestor of `0fc78b02` (VERIFIED), so R1 is on the base. Main had moved on since the prompt; the newer commits touch nothing R2 reads (BaggerBomb scoreboard and menu).
 - Worktree branch `claude/deploy-r2-hold-claim-dadf73` (the app's suffix), cut at `0fc78b02`, clean at start. Pushed as `claude/deploy-r2-hold-claim` by refspec.
-- Commits: `af4affb2` R2 build and tests · `27d70178` only the button's own capture loss cancels (amended before any push: its first message claimed a failure that headless Edge then showed Chromium does not have; the message now says "defensive narrowing") · `6cf0c79f` the review fix round · `24d3efcf` a row title (L3-1) · `5a8f8119` capture for a mouse only, touch/pen STOPPED; the L3-3 token compare · `c9be87ac` the draft report · `72a37037` the rows L5 found missing (tests only) · `356d2899`, `56d27736` the report (draft PR #985 opened at `56d27736`) · founder rulings: `c29fff3b` no pointer capture, the safety release · `9630965d` the rulings review's F1-1 fix and rows · `f1b5a705` the cross-cycle F1-1 row · the report (§14).
-- Code and test head `f1b5a705` (after the founder rulings, §14); before them: code `5a8f8119`, tests `72a37037`. Report head = the PR head.
+- Commits: `af4affb2` R2 build and tests · `27d70178` only the button's own capture loss cancels (amended before any push: its first message claimed a failure that headless Edge then showed Chromium does not have; the message now says "defensive narrowing") · `6cf0c79f` the review fix round · `24d3efcf` a row title (L3-1) · `5a8f8119` capture for a mouse only, touch/pen STOPPED; the L3-3 token compare · `c9be87ac` the draft report · `72a37037` the rows L5 found missing (tests only) · `356d2899`, `56d27736` the report (draft PR #985 opened at `56d27736`) · founder rulings: `c29fff3b` no pointer capture, the safety release · `9630965d` the rulings review's F1-1 fix and rows · `f1b5a705` the cross-cycle F1-1 row · `c86b0d5c` the report (§14) · `795a51b8` the independent review committed unchanged and its two rows · the report (§15).
+- Code head `f1b5a705` (no code change after it); test head = the PR head (the review's two rows, §15); before the rulings: code `5a8f8119`, tests `72a37037`.
 
 ## 2. Starting check (BUILD_RULES §3)
 
@@ -235,7 +236,9 @@ The build stopped the touch and pen half of R-R2-3 on this evidence; the founder
 - **The seam.** `onCommit(token)` (synchronous, after the lock); `beatOwner.commit(token, run)` (the owner's beat survives unmount; `run` is one-shot and releases the claim when onComplete's result settles; an owner that throws does not get the beat). `currentHold()`; `releaseHold(token)` revokes: a charge ends at its next frame, a beat run after the revocation deploys nothing. The cleanest revocation is through props: flipping the control's `enabled`/`disabled` cancels in the same commit.
 - **The legacy unmount-during-beat case** (R-R2-8): in today's shells, unmounting the control during the 450 ms beat cancels the deploy. S2b's provider-owned beat is what closes it.
 - **The tap admission** (R-R2-10, L4-5): the Scouting Board footer, ceremony-off taps and Retry take no claim; a tap during a hold's beat makes two calls (base too).
-- **Gaps L4 listed:** `claimHold` takes neither `inputId` nor `holdEpoch` (spec §5.5); `currentHold()` is pull-only (no subscribe); progress lives in the hook's React state (no owner-tagged store); `HoldToDeployButton` does not forward `onCommit`/`beatOwner`; an owner that abandons a beat has no way to return the control to idle (L4-3b).
+- **Gaps L4 listed:** `claimHold` takes neither `inputId` nor `holdEpoch` (spec §5.5); `currentHold()` is pull-only (no subscribe); progress lives in the hook's React state (no owner-tagged store); `HoldToDeployButton` does not forward `onCommit`/`beatOwner`.
+- **An owner that never runs its beat strands the app-wide slot with no bound** (L4-3b, restated per Fable review FR2-5): the safety release is armed only inside `run`, so a beat taken and never run leaves every hold in the app denied, not just its control stuck on "Locked in". S2b's provider must run the beat or `releaseHold` its token on every exit, including its own unmount.
+- **A synchronous revoke needs a cancel entry** (Fable review FR2-4): an external `releaseHold` of a charging claim is honoured at the hook's next frame (and the props route — flipping `enabled`/`disabled` — cancels in the same commit). If S2b needs the abort and the display reset in the same task as the revoke (an overlay opening while the sky must exhale at once), the seam needs a cancel entry.
 - **`holdEpoch`**: S2a's `canCommit` requires a valid epoch on the hold; S2b stamps it.
 - **A hiding boundary** (Activity/Suspense around a hold) would run the layout cleanup without unmounting; a hidden legacy beat would then show "Locked in". No such boundary wraps the dashboards today.
 - **BI-1 and the safety release**: the in-flight claim is released by the settle, or by token 180 s after onComplete ran; an unmount clears neither (§14).
@@ -265,7 +268,7 @@ The build stopped the touch and pen half of R-R2-3 on this evidence; the founder
 
 Scratchpad of this session (`C:/Users/fashr/AppData/Local/Temp/claude/…/scratchpad/`): `failing-first.clean.txt`, `failing-first-review-rows.txt`, `failing-first-capture-rows.txt`, `browser/` (harness, `results-first.json`, `results-fixhead-24d3efcf.json`, `results-5a8f8119.json`), `review/` (brief, findings, `mutants.json`, `mutate.mjs`). Report copy: `C:/Users/fashr/Documents/FantasyTrades/CommandCenter/20261021_BUILD_DEPLOY_R2_HOLD_CLAIM.md`.
 
-**Next:** the independent Fable review of PR #985. Rulings-round artifacts in the same scratchpad: `failing-first-rulings.txt`, `mutation-rulings.txt`, `browser/results-c29fff3b.json`, `review/findings-F1.md`.
+**Next:** the merge is yours. Rulings-round artifacts in the same scratchpad: `failing-first-rulings.txt`, `mutation-rulings.txt`, `browser/results-c29fff3b.json`, `review/findings-F1.md`; review round: `mutation-fr2.txt`.
 
 ## 14. Founder rulings applied (2026-10-21)
 
@@ -329,3 +332,28 @@ Removed (replaced by the ruling): "a mouse pointer down captures the pointer …
 | `lint:gate` | `f1b5a705` (Linux) | exit 0; re-run at the pushed report head — PR description |
 | `vite build` | `f1b5a705` (Linux) | exit 0 (built in 26 s); re-run at the pushed report head — PR description |
 | Headless Edge, real input | `c29fff3b` vs main | §9.1 — identical to main in every single-hold scenario |
+
+## 15. Independent review
+
+Fable review (Claude Fable 5.1, fresh session, 2026-10-21; head reviewed `c86b0d5c`), committed unchanged as `docs/audits/20261021_FABLE_REVIEW_R2_HOLD_CLAIM.md` (byte-identical to `Documents/FantasyTrades/CommandCenter/`). **Verdict: MERGE WITH CHANGES** — no blocking finding, no code change; two test-only changes. Its parity traces (15 gestures, `main` vs R2 under one fake clock) found no difference; its mutation pass ran 43 mutants (40 killed, 1 equivalent, 2 survived — FR2-1 and FR2-2).
+
+Start of this round: `git fetch origin`; branch at `c86b0d5c` = the remote head; clean; `origin/main` still `0fc78b02`; PR #985 open, not merged (since marked ready for review).
+
+| Finding | Severity | Disposition |
+|---|---|---|
+| **FR2-1** `pointercancel` while charging had no guard row; the review's M08 (`onPointerCancel: () => {}`) passed all 272 rows | MINOR, test | **Applied.** `['pointercancel', (b) => ev.cancel(b)]` added to the D5 exits list in `src/hooks/useHoldToDeploy.r2.jsdom.test.jsx`. Under M08 exactly that row fails ("pointercancel mid-hold: one abort, the display drains, no deploy"); it passes at the head. |
+| **FR2-2** "locked before anything else" (R-R2-5) not pinned against the commit dispatch; the review's M25 (`stateRef.current = 'locked'` moved after `dispatchIntent(null, 'commit')`) passed | MINOR, test | **Applied**, the review's row as written (§2 of the review), beside the D1 rows: "a pointerup delivered by a listener on the COMMIT event cannot undo the lock". Under M25 exactly that row fails; it passes at the head. |
+| **FR2-3** a failed `commitHold` emits one abort where the kickoff said "does nothing" | NIT | **Already held** — BI-2 (§3), guarded by r2review "a claim revoked inside the threshold frame itself cannot commit". |
+| **FR2-4** an external revoke of a charging claim is honoured one frame late | NIT | **Already held** (§10, from L4-2/L3-4); the S2b note it adds — a synchronous revoke needs a cancel entry on the seam — is now in §10. |
+| **FR2-5** an owner that takes the beat and never runs it leaves the slot locked with no bound | NIT | Recorded as L4-3b; **restated in §10** with the review's emphasis (the app-wide slot, not just the control). |
+| **FR2-6** fifteen mutants caught by exactly one row | information | Noted; no change requested. |
+
+No `src/` code changed in this round (neither row needed it). Mutation evidence: both review mutants applied to a snapshot of `c86b0d5c` plus the new rows, one at a time, restores SHA-checked independently (log `mutation-fr2.txt`): baseline 118 R2 rows pass; FR-M08 → 1 failed (the pointercancel D5 row); FR-M25 → 1 failed (the commit-listener row).
+
+**Checks of this round** (test-only, so the full suite is left to CI):
+
+| Check | Head | Result |
+|---|---|---|
+| Targeted: the six R2 files + the four sky files | `795a51b8` (the rows' commit) | 10 files, 274 tests passed (118 R2 rows; `useHoldToDeploy.r2.jsdom.test.jsx` 53) |
+| `lint:gate` | `795a51b8` (Linux) | exit 0; re-run at the pushed report head — PR description |
+| `vite build` | `795a51b8` (Linux) | exit 0 (built in 21 s); re-run at the pushed report head — PR description |
