@@ -35,13 +35,18 @@
 //
 //   ONE HOLD AT A TIME, APP-WIDE. ./holdClaim.js holds a single slot. Pointer
 //   down and Enter/Space each CLAIM it before any effect: a denied claim
-//   returns with no phase change, frame, haptic, progress, sky event, pointer
-//   capture, timer or onComplete. A second control, a second pointer, or a key
-//   on a charging control is denied the same way.
+//   returns with no phase change, frame, haptic, progress, sky event, timer or
+//   onComplete. A second control, a second pointer, or a key on a charging
+//   control is denied the same way.
 //
-//   POINTER CAPTURE (R-R2-3) is taken for a MOUSE only. For touch and pen it is
-//   stopped pending founder review: the platform's own implicit capture stays
-//   in place, exactly as before R2 (capturePointer below; R2 report §11 Q1).
+//   NO POINTER IS CAPTURED (founder ruling on R2 Q1/Q2: R-R2-3's capture half
+//   withdrawn, its claim-first half kept). Every pointer type takes the path it
+//   had before R2: a touch or pen stays implicitly captured by the element
+//   touched, and a mouse dragged off the button cancels on leave. Capturing a
+//   touch on the button would re-target its moves off the label, and WebKit's
+//   touch pointerout carries a null relatedTarget that React reads as leaving
+//   the button; capturing a mouse would stop drag-off from cancelling
+//   (R2 report §9.3, §14).
 //
 //   AUTHORITATIVE STATE IS IN REFS. stateRef ('idle' | 'charging' | 'locked')
 //   and tokenRef are written in the same call that changes them; the React
@@ -80,8 +85,11 @@
 //   beat; the slot stays locked until its result settles, so no second control
 //   can start a hold while one deploy is in flight (Fable R1 review FR-4).
 //   Released by: a cancel; that settle (a synchronous throw included); an
-//   unmount that cancels a beat before it runs. An unmount AFTER onComplete has
-//   run leaves the release to the settle.
+//   unmount that cancels a beat before it runs; and, if the request never
+//   settles, the bounded safety release HOLD_CLAIM_SAFETY_RELEASE_MS after
+//   onComplete ran (founder ruling on Q3). An unmount AFTER onComplete has run
+//   leaves the release to the settle or that bound; neither the unmount nor
+//   the safety release can free a newer hold, because both release by token.
 //
 //   THE BEAT. Unmounting during the 450 ms beat cancels it, as before R2 — a
 //   deploy from an unmounted shell would have no ceremony to show it. The seam
@@ -179,6 +187,12 @@ import { claimHold, commitHold, currentHold, releaseHold } from './holdClaim';
 
 const HOLD_MS = 1300;
 const LOCK_BEAT_MS = 450;
+// The bounded safety release (founder ruling on R2 Q3): a deploy request that
+// has not settled this long after onComplete ran no longer holds the claim. It
+// is past every bound the request has while the server answers (token refresh
+// 30 s, two 60 s function limits), so a stalled network cannot leave every hold
+// in the app dead until a reload.
+export const HOLD_CLAIM_SAFETY_RELEASE_MS = 180000;
 // Haptic ladder — fired once each as the charge crosses these fractions.
 const HAPTIC_STEPS = [0.25, 0.5, 0.75, 1];
 
@@ -213,33 +227,6 @@ function dispatchIntent(progress, reason) {
     }));
   } catch {
     // The sky simply does not lean in. The deploy is unaffected.
-  }
-}
-
-/**
- * Keep a MOUSE pointer on the button for the rest of the gesture (R-R2-3), so
- * its release is delivered here wherever it happens. Feature-detected: jsdom
- * and older engines have no setPointerCapture, and a pointer the platform no
- * longer knows throws. Either way the hold carries on uncaptured, and release,
- * leave and cancel still end it.
- *
- * TOUCH AND PEN ARE NOT CAPTURED — R-R2-3 is stopped for them, pending founder
- * review (R2 report §11 Q1). The platform already captures a touch to the
- * element touched (the label, the icon). Moving it to the button changes the
- * target of the following moves, and WebKit's touch path then fires
- * pointerout at the label with a null relatedTarget — which React reads as
- * leaving the BUTTON, cancelling the hold (WebKit source read, R2 report §9;
- * the iOS caller is closed and unmeasured). Uncaptured, touch and pen keep the
- * path they had before R2 exactly.
- */
-function capturePointer(e) {
-  const el = e?.currentTarget;
-  if (e?.pointerType !== 'mouse') return;
-  if (!el || typeof el.setPointerCapture !== 'function' || e.pointerId == null) return;
-  try {
-    el.setPointerCapture(e.pointerId);
-  } catch {
-    // Not capturable — see above.
   }
 }
 
@@ -357,16 +344,24 @@ export default function useHoldToDeploy({
         setProgress(0);
         return;
       }
+      // The safety release (Q3): token-scoped, so it can never free a newer
+      // hold, and not cleared on unmount — a shell remounted mid-request is the
+      // case it exists for.
+      const safetyRelease = setTimeout(() => { releaseHold(token); }, HOLD_CLAIM_SAFETY_RELEASE_MS);
       let result;
       try {
         result = onComplete?.();
       } catch (err) {
+        clearTimeout(safetyRelease);
         releaseHold(token);
         throw err;
       }
       // R-R2-7: the claim is held until the deploy request settles. A rejection
       // still surfaces once, as it did when the result was dropped.
-      Promise.resolve(result).finally(() => { releaseHold(token); });
+      Promise.resolve(result).finally(() => {
+        clearTimeout(safetyRelease);
+        releaseHold(token);
+      });
     };
     // The legacy beat is armed BEFORE onCommit runs: an onCommit that unmounts
     // this control synchronously then finds the timer to cancel (R2 review
@@ -436,7 +431,7 @@ export default function useHoldToDeploy({
     rafRef.current = requestAnimationFrame(tick);
   }, [holdMs, cancel, fireComplete]);
 
-  const start = useCallback((e) => {
+  const start = useCallback(() => {
     if (!enabled || disabled) return;
     if (stateRef.current !== 'idle') return;
     // Claim before any effect (R-R2-3). A denied claim — another control is
@@ -450,7 +445,6 @@ export default function useHoldToDeploy({
     startRef.current = performance.now();
     clearRaf();
     attachGestureListeners();
-    capturePointer(e);
     rafRef.current = requestAnimationFrame(tick);
   }, [enabled, disabled, controlId, tick, attachGestureListeners]);
 
@@ -524,17 +518,17 @@ export default function useHoldToDeploy({
     cancel();
   }, [cancel]);
 
-  // Only the button's OWN capture loss ends a charge. A touch keeps the
-  // platform's implicit capture on the element actually touched (the label
-  // span, the icon — capturePointer leaves touch alone), and that element's
-  // lostpointercapture bubbles up here when the finger lifts. That is the end
-  // of the gesture, already handled by pointerup, not a loss mid-hold.
+  // Only the button's OWN capture loss ends a charge (a defensive guard: the
+  // hook captures nothing). A touch keeps the platform's implicit capture on
+  // the element actually touched (the label span, the icon), and that
+  // element's lostpointercapture bubbles up here when the finger lifts. That is
+  // the end of the gesture, already handled by pointerup, not a loss mid-hold.
   const onLostPointerCapture = (e) => { if (e.target === e.currentTarget) cancel(); };
 
   const active = enabled && !disabled;
   const bind = active
     ? {
-        onPointerDown: (e) => { if (e.preventDefault) e.preventDefault(); start(e); },
+        onPointerDown: (e) => { if (e.preventDefault) e.preventDefault(); start(); },
         onPointerUp: cancel,
         onPointerLeave: cancel,
         onPointerCancel: cancel,

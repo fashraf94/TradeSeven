@@ -420,22 +420,11 @@ describe('D3 — one control, two inputs: only one starts', () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 
-  it('a mouse pointer down captures the pointer on the button when the platform supports it', () => {
-    const capture = vi.fn();
-    Object.defineProperty(Element.prototype, 'setPointerCapture', { configurable: true, writable: true, value: capture });
-    render(<Hold />);
-    const [b] = buttons();
-    act(() => { ev.down(b, { pointerId: 7, pointerType: 'mouse' }); });
-    expect(capture).toHaveBeenCalledTimes(1);
-    expect(capture).toHaveBeenCalledWith(7);
-    expect(capture.mock.contexts[0]).toBe(b);
-  });
-
-  for (const pointerType of ['touch', 'pen', '']) {
-    it(`a ${pointerType || 'typeless'} pointer is never captured: it keeps the platform's own capture, as before R2`, () => {
-      // R-R2-3 is stopped for touch and pen pending founder review (report §11
-      // Q1): moving a touch's capture to the button re-targets its moves, and
-      // WebKit's touch path then fires pointerout with a null relatedTarget.
+  for (const pointerType of ['mouse', 'touch', 'pen', '']) {
+    it(`a ${pointerType || 'typeless'} pointer is never captured: it takes main's pointer path (founder ruling on Q1/Q2)`, () => {
+      // R-R2-3's capture half is withdrawn: capturing a touch on the button
+      // re-targets its moves off the label (WebKit then fires pointerout with a
+      // null relatedTarget), and capturing a mouse stops drag-off cancelling.
       const capture = vi.fn();
       Object.defineProperty(Element.prototype, 'setPointerCapture', { configurable: true, writable: true, value: capture });
       const onComplete = vi.fn();
@@ -449,28 +438,22 @@ describe('D3 — one control, two inputs: only one starts', () => {
     });
   }
 
-  it('a denied pointer is never captured', () => {
-    const capture = vi.fn();
-    Object.defineProperty(Element.prototype, 'setPointerCapture', { configurable: true, writable: true, value: capture });
-    render(<><Hold label="A" /><Hold label="B" /></>);
-    const [ba, bb] = buttons();
-    act(() => { ev.down(ba, { pointerId: 7, pointerType: 'mouse' }); });
-    act(() => { ev.down(bb, { pointerId: 9, pointerType: 'mouse' }); });
-    expect(capture.mock.calls).toEqual([[7]]);
-  });
-
-  it('a capture the platform refuses does not break the hold', () => {
+  it('a mouse dragged off the button mid-charge cancels on leave: one abort, no onComplete, as on main', () => {
     const onComplete = vi.fn();
-    const refuse = vi.fn(() => { throw new DOMException('no such pointer', 'NotFoundError'); });
-    Object.defineProperty(Element.prototype, 'setPointerCapture', { configurable: true, writable: true, value: refuse });
     render(<Hold onComplete={onComplete} />);
     const [b] = buttons();
-    act(() => { ev.down(b, { pointerId: 7, pointerType: 'mouse' }); });
-    step(600); step(1300);
-    expect(refuse).toHaveBeenCalledTimes(1);
-    expect(count('commit')).toBe(1);
-    advance(450);
-    expect(onComplete).toHaveBeenCalledTimes(1);
+    act(() => { ev.down(b, { pointerId: 1, pointerType: 'mouse' }); });
+    step(400);
+    act(() => { ev.leave(b); });
+    expect(count('abort')).toBe(1);
+    expect(b.textContent).toBe('Deploy');
+    expect(frames.size).toBe(0);
+    act(() => { ev.up(b); });
+    step(1600);
+    advance(1000);
+    expect(count('abort')).toBe(1);
+    expect(count('commit')).toBe(0);
+    expect(onComplete).not.toHaveBeenCalled();
   });
 });
 
