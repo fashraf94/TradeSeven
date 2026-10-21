@@ -2955,7 +2955,8 @@ export function isCockpitUiOn() {
  *      (the shipped state)") reworded to the live state.
  */
 // Pinned by: cockpit2bFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const COCKPIT_2B_ENABLED = false;
+// SMOKE BRANCH ONLY (claude/cockpit-build2b-smoke, never merged): lit for the preview. The build branch ships it false.
+export const COCKPIT_2B_ENABLED = true;
 
 /** The ONE seam for the 2b flag, read at call time by the server and at render by the client: the flag and nothing else. */
 export function isCockpit2bOn() {

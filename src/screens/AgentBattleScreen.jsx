@@ -6,7 +6,9 @@
 //   2. useAgentBattle (agentBattles doc) — status feed, controls, scores, trades, thresholds
 //   3. useWebSocketPrices + EODHD polling — live prices for matchup view
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef, useSyncExternalStore } from 'react';
+// SMOKE BRANCH ONLY (claude/cockpit-build2b-smoke, never merged): ?cockpitFixtures=<variant> runs the cockpit on in-memory records.
+import { cockpitSmokeVariant, createCockpitSmoke } from './cockpitSmokeFixtures';
 import { stockModelRoute, isStock, committedStockContext, validCommittedStockScores } from '../utils/stockThresholdModel.js';
 import { StockRewardDetails } from '../components/draft/ResearchTabs/BaggerBombTab.jsx';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
@@ -206,6 +208,10 @@ const entryPriceOf = (asset, startingPrices) => asset.swapPrice || startingPrice
  * position's qualified current and its retained GENUINE close. Same arithmetic,
  * one copy (the scoring-copy lesson, BUILD_RULES §4).
  */
+// SMOKE: the no-store fallbacks for useSyncExternalStore (stable identities).
+const smokeNoSubscribe = () => () => {};
+const smokeNoState = () => null;
+
 export function StockDispatchRow(props) {
   if (!props.leftAsset?.stockRewardRoute && !props.rightAsset?.stockRewardRoute) return <TacticalRow {...props} />;
   // The model selects facts, not a replacement design. Keep the normal row,
@@ -1188,16 +1194,32 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const gatedFields = useMemo(() => identifiedFields(identifiedBattle), [identifiedBattle]);
   const agentBattleId = integrityOn ? requestedId : legacyBattleId;
   const {
-    battle: agentBattle,
+    battle: agentBattleLoaded,
     statusFeed,
     executionMode,
     pendingProposal,
     strategyPreset,
     gameplanMeeting,
-    chatExchanges: recordChatExchanges,
+    chatExchanges: recordChatExchangesLoaded,
     feedBookmarks,
     loading: battleLoading,
   } = gatedPath ? gatedFields : battleHook;
+  // SMOKE: the fixture store stands in for the cockpit's records AND the battle's slot, exchanges and bench (so the
+  // meter, the step's live test, the composer line and the board dots all read the fixtures). The store moves like the
+  // listener would when the scripted endpoint accepts an answer.
+  const cockpitSmoke = isCockpitUiOn() ? cockpitSmokeVariant() : null;
+  const cockpitSmokeStore = useMemo(() => (cockpitSmoke && agentBattleLoaded
+    ? createCockpitSmoke({ battleId: agentBattleId ?? 'smoke', battle: agentBattleLoaded, evaluations: agentBattleLoaded.evaluations, nowMs: Date.now(), variant: cockpitSmoke })
+    : null), [cockpitSmoke, agentBattleId, Boolean(agentBattleLoaded)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cockpitSmokeState = useSyncExternalStore(cockpitSmokeStore ? cockpitSmokeStore.subscribe : smokeNoSubscribe, cockpitSmokeStore ? cockpitSmokeStore.get : smokeNoState);
+  const agentBattle = useMemo(() => (cockpitSmokeState && agentBattleLoaded ? {
+    ...agentBattleLoaded,
+    directive: cockpitSmokeState.directive,
+    chatExchanges: cockpitSmokeState.chatExchanges,
+    portfolio: { ...(agentBattleLoaded.portfolio || {}), bench: cockpitSmokeState.bench },
+    watchlist: { ...(agentBattleLoaded.watchlist || {}), hotBench: cockpitSmokeState.hotBench },
+  } : agentBattleLoaded), [agentBattleLoaded, cockpitSmokeState]);
+  const recordChatExchanges = cockpitSmokeState ? cockpitSmokeState.chatExchanges : recordChatExchangesLoaded;
 
   // ── Cockpit Build 2a (spec docs/COCKPIT_BUILD2A_SPEC_V1_0.md §4) ──────────
   //
@@ -1210,16 +1232,19 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const cockpitStatus = useCockpitStatus(agentBattleId, {
     // Only for the battle the subscribed document IS (an in-place switch keeps
     // the previous document while the next loads — review L3-6).
-    enabled: cockpitUiOn && agentBattle?.status === 'active' && (agentBattle?.id == null || agentBattle.id === agentBattleId),
+    enabled: cockpitUiOn && !cockpitSmoke && agentBattle?.status === 'active' && (agentBattle?.id == null || agentBattle.id === agentBattleId),
     battleStatus: agentBattle?.status ?? null,
   });
-  const cockpitOn = cockpitUiOn && cockpitStatus.on;
+  const cockpitOn = cockpitUiOn && (Boolean(cockpitSmokeState) || cockpitStatus.on);
   // The readers say what they know (review L3-2): no empty state, tag or
   // receipt is drawn until the calls AND the events are READY; a failed read
   // is its own line.
-  const cockpitCallsRead = useCalls(agentBattleId, cockpitOn);
-  const cockpitMonitoringRead = useMonitoring(agentBattleId, cockpitOn);
-  const cockpitEventsRead = useCallEvents(agentBattleId, cockpitOn);
+  const cockpitCallsLive = useCalls(agentBattleId, cockpitOn && !cockpitSmokeState);
+  const cockpitMonitoringLive = useMonitoring(agentBattleId, cockpitOn && !cockpitSmokeState);
+  const cockpitEventsLive = useCallEvents(agentBattleId, cockpitOn && !cockpitSmokeState);
+  const cockpitCallsRead = cockpitSmokeState ? { status: 'ready', value: cockpitSmokeState.calls } : cockpitCallsLive;
+  const cockpitMonitoringRead = cockpitSmokeState ? { status: 'ready', value: cockpitSmokeState.monitoring } : cockpitMonitoringLive;
+  const cockpitEventsRead = cockpitSmokeState ? { status: 'ready', value: cockpitSmokeState.events } : cockpitEventsLive;
   const cockpitReadStatuses = [cockpitCallsRead.status, cockpitEventsRead.status, cockpitMonitoringRead.status];
   const cockpitReadStatus = cockpitReadStatuses.includes('error')
     ? 'error'
@@ -2580,6 +2605,8 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     battleId: agentBattleId,
     subscribedThreadId: agentBattle?.directive?.directiveThreadId ?? null,
     onUnavailable: cockpitStatus.recheck,
+    // SMOKE: answers go to the fixtures' scripted endpoint, never the real one.
+    ...(cockpitSmokeStore ? { post: cockpitSmokeStore.post } : {}),
   });
   // Cockpit Build 2b (spec §8, from merge): the cockpit runs on the SERVER's clock — the coarse instant plus the
   // status answer's offset — and one timer at the next open deadline removes a card's buttons exactly then.
@@ -2645,7 +2672,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
   const cockpitObservation = useCallObservation(
     agentBattleId,
     cockpitSheetTile?.call?.callId ?? null,
-    Boolean(cockpitOn && cockpitSheetTile && cockpitSheetTile.call.state !== 'open'),
+    Boolean(cockpitOn && !cockpitSmokeState && cockpitSheetTile && cockpitSheetTile.call.state !== 'open'),
   );
   const cockpitSheet = cockpitSheetTile
     ? sheetOf(cockpitSheetTile, { eventsMap: cockpitEventsMap, evaluations: agentBattle?.evaluations, observation: cockpitObservation, nowMs: cockpitNowMs, exchanges: agentBattle?.chatExchanges ?? [] })
@@ -2660,7 +2687,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
     : null;
   const cockpitFlow = useCockpit2bAnswer({ submit: cockpitAnswer.submit, live: cockpitLive, calls: cockpitCallsRead.value });
   const cockpitBenchOpen = Boolean(cockpit2b && cockpitBench);
-  const cockpitBenchRead = useCockpitBench({ battleId: agentBattleId, callId: cockpitBench?.callId ?? null, open: cockpitBenchOpen });
+  const cockpitBenchRead = useCockpitBench({ battleId: agentBattleId, callId: cockpitBench?.callId ?? null, open: cockpitBenchOpen, ...(cockpitSmokeStore ? { request: cockpitSmokeStore.requestBench } : {}) });
   const cockpitBenchTile = cockpitBenchOpen && cockpitFeed && cockpitBench.callId
     ? ([...cockpitFeed.needsYou, ...cockpitFeed.waiting].find((t) => t.calls.some((c) => c.callId === cockpitBench.callId)) ?? null)
     : null;
