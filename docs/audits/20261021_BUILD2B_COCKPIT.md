@@ -572,6 +572,27 @@ Board dots ride on the battle's own held symbols, on both shells.
 - `api/cron/agent-evaluate.js:6787-6790` (at `d7b0566f`): the gameplan meeting's expiry uses `setHours(16)` in host time, which is noon ET on a UTC host. This is a hand-rolled ET bug (BUILD_RULES §6).
 - `AssetResearchModal` has no focus or Escape handling. The bench sheet now defers to it, but the modal itself traps nothing.
 
+### §11 — rulings (founder, 2026-10-21)
+
+| # | Question | Ruling |
+|---|---|---|
+| Q1 | "eyeing" vs the C1 honesty guard | **Keep the built labels** ("From {Agent}'s lists" / "On {Agent}'s list"). The guard's rule stands: the agent is not awake between checks, so no present-tense agent verb. The two shipped "See what it's eyeing" strings outside the guard's scope (CommandDashboard.jsx, ScoutingBoardSheet.jsx) are a separate cleanup task. Contract: record as an erratum to Amendment D-3's label line, to fold into the next amendment; no revision 5 now. |
+| Q2 | Bench sheet price source (voiceLayerCache.benchBriefs; hot-bench names always "no price") | **Accept as built for the pilot.** Do not widen benchBriefs (model-visible to the chat). The hot-bench gap is a follow-up for the price-authority arc, which is where a unified price source lands. |
+| Q3 | CB1-3 mint half: a hot-bench name cannot be a `replacementOptions` entry after `refreshBattleFromDoc` drops the augmentation | **Leave as is.** Re-augmenting changes what the fenced prompt reads. Same follow-up as Q2. |
+| Q4 | CB2-1: the chat calls block shows a replaced or retired command as a standing "answered: …" row | **Not a gate; separate task** after the 2b merge, as the 1a V2-G7 events merge, with its fifth model-visible string through fenced-class review. |
+| Q5 | CB2-2: rare read race → bare "answered: Bring in" | **Fix by option 1** (re-read the battle after the calls read in chat.js) in the same follow-up task as Q4. Not a gate. Owner's nod given for the read-order change. |
+| Q6 | CB1-9: stray `pickSymbol` → `invalid_request` (spec S-5) vs `illegal_answer` (D-4) | **`invalid_request` stands** as built. Record as an erratum to D-4, to fold into the next amendment. |
+| Q7 | CB3-5: "Filed · no check left today" can show for a few seconds while the last check runs | **Keep.** The spec's literal rule gives the same result; do not flip the pin. |
+| Q8 | D-6 evidence: the retired event's `evalId` and `promptBuiltAt` are null by placement | **Acceptable** as the contract's reading. The step runs before the prompt exists; `checkLabel` is the step's own instant. |
+| Q9 | D-8: the battle's end is min(end, now) | **Confirmed.** |
+| Q10 | Server event labels use 24 h text (not shown to the player) | **Fine.** |
+| Q11 | Under the flag, 2a's details sheet answers with the card's §6.2 buttons | **Confirmed.** |
+| Q12 | A refused pick is said in the bench sheet itself | **Confirmed.** |
+| Q13 | "Hold call" is the eyebrow for any hold default, entry or exit | **Confirmed.** |
+| Q14 | The phone top row shows the meter only | **Confirmed.** |
+| Q15 | The Oct 4 source-free "replaced" ruling is superseded by spec §7.1's sourced wording, from merge | **Confirmed.** |
+| Q16 | Protected-store allowlist: the new key for `retire.js::retireLeftBook`'s compare-and-clear of `agentBattles/{battleId}.directive` | **Approved.** It is the same compare-and-clear the heard pass and the sweep already perform. |
+
 ---
 
 ## 12. Where things are
