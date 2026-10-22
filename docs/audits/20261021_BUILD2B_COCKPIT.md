@@ -1,10 +1,10 @@
 # Cockpit Build 2b — spotlight, commands and "Who comes in?", built behind its flag
 
-**Smoke preview (NEVER MERGE, never "Create PR"):** https://trade-seven-hkrm534t0-fais-projects-bc179554.vercel.app
-— branch `claude/cockpit-build2b-smoke` at `b5054503` = code head `08343819` + the same smoke commit (§13). Open a live battle and add `?cockpitFixtures=<variant>` (§9 lists the variants; `?cockpitFixtures=1` is the main one). The first build's preview (`e3656fc7` on `d7b0566f`) predates §13's two fixes.
+**Smoke preview (NEVER MERGE, never "Create PR"):** https://trade-seven-54xz2re7t-fais-projects-bc179554.vercel.app
+— branch `claude/cockpit-build2b-smoke` at `326b79f2` = code head `4baf2ef6` + the same smoke commit (§13, §14). Open a live battle and add `?cockpitFixtures=<variant>` (§9 lists the variants; `?cockpitFixtures=1` is the main one). Earlier previews (`e3656fc7` on `d7b0566f`, `b5054503` on `08343819`) predate §13's and §14's fixes.
 
 **Base:** `origin/main` `0fc78b025eeabe70ed8ac6fb35249cd0bf2d6ba7` (after `git fetch origin`). PR #968 (the 40-second model timeout) is merged there. `docs/audits/20261014_PHASE0_BUILD2B_COCKPIT.md` and `docs/design/COCKPIT_DESIGN_PASS_V1.md` are both present. I proceeded.
-**Branch:** `claude/cockpit-build2b` (pushed from the app's worktree branch `claude/brave-pascal-9b8d26` by refspec) · **code head:** `d7b0566f` at the report, `08343819` after §13's fixes · the report commits are docs only.
+**Branch:** `claude/cockpit-build2b` (pushed from the app's worktree branch `claude/brave-pascal-9b8d26` by refspec) · **code head:** `d7b0566f` at the report, `08343819` after §13's fixes, `4baf2ef6` after §14's (Astra's P2) · the report commits are docs only.
 **Spec:** `docs/COCKPIT_BUILD2B_SPEC_V1_0.md` · **Contract:** `docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_D.md` (revision 4) · **Visual reference:** `docs/design/COCKPIT_V5_MOCKUP.html` · **Rules:** `docs/BUILD_RULES.md` (binding)
 **Date:** 2026-10-21
 
@@ -654,6 +654,65 @@ Code commit `08343819`, on top of `f28851ef`.
 - Self-test 6/6; `vite build` exit 0.
 - Preview: https://trade-seven-hkrm534t0-fais-projects-bc179554.vercel.app (deployment 7242094175, success). The served bundle carries the fixtures and both fixes.
 - The branch was replaced with a lease on its old head `e3656fc7`.
+
+---
+
+## 14. Astra's review: the P2 fixed (2026-10-22)
+
+Astra reviewed `b71c0317` and recommended MERGE WITH CHANGES, with one P2. This round fixes it: code commit `4baf2ef6`, on top of `b71c0317`. The founder's instruction set the fix.
+
+**The defect.** It is live at merge, with the 2b flag off.
+- **When it happens:** a card holds a live command, and the line that needs an answer is OLDER than the headline (the newest call).
+- **What goes wrong:** `cockpitModel.js` `tileOf` binds the buttons to that older call, but every label on the card describes another line:
+  - the headline;
+  - the moved-line marker;
+  - "Your command · on the $L line".
+- **The result:** nothing said which line Confirm answers. In Astra's LLY case, Confirm acknowledged the $1199.76 call under a card headed by $1240.00.
+
+**The fix.**
+- **The headline stays the newest line's** (D-12).
+- **A labelled row** for the target call appears whenever the buttons answer a call other than the headline's. It sits directly above the buttons and gives the line, the level and the check: "Needs your answer · LLY below $1199.76 · from the 12:00 PM check". It is `tileOf` `targetLine`, with its wording in `battleViewCopy.js` `cockpitAnswerTarget`; prices use the card's own `$1199.76` format.
+- **The buttons stay bound** to that call. They are never moved to the answered newest call.
+- **Where the row appears:**
+  - the 2a tile (`CockpitFeed.jsx`);
+  - the details sheet (`CockpitSheet.jsx`, through `sheetOf`);
+  - the 2b card under the flag (`Cockpit2b.jsx`).
+- **The 2b card under the flag** follows the same rule:
+  - the plan sentence is now the newest line's, so the latest-line and line-moved markers agree with it;
+  - the headline drops its silence clause in this case, because it would describe a line your command already answers;
+  - the row names the line the buttons answer.
+
+**Tests.**
+- **The rows you asked for**, at the model level, all with the flag off and on:
+  - an older unanswered line plus a newer answered command (Astra's case);
+  - a newest restatement within 1% of the command plus an older line more than 1% away;
+  - two controls: no command, and the newest call is the one needing an answer.
+- **Rows on the rendered components:**
+  - **the 2a tile:** clicking Confirm answers the older call, the row is the element directly above the buttons, and there is a no-command control;
+  - **the details sheet;**
+  - **the 2b card:** the plan is the newest line's with no silence clause, and Confirm exit answers the older call. Its control keeps the silence clause and shows no row.
+- **The honesty guard** passes with the new wording.
+- **Mutation check:** nine mutants, nine killed, each restore byte-checked:
+  - no row;
+  - the buttons retargeted to the newest call;
+  - a row on every card;
+  - the 2b headline kept on the target;
+  - the silence clause kept;
+  - each of the three renderers dropping the row;
+  - the row losing its level.
+- **Linux, on `4baf2ef6` merged with main `7818a1b3`:**
+  - full suite exit 0: `Test Files 1072 passed | 7 skipped (1079)`, `Tests 23263 passed | 88 skipped (23351)` (the nine added rows are this round's);
+  - `lint:gate` exit 0;
+  - `vite build` exit 0.
+
+**Smoke.**
+- `claude/cockpit-build2b-smoke` was rebuilt at `326b79f2`: `4baf2ef6` plus the same smoke commit (patch id `b02910d5…`).
+- It was replaced with a lease on `b5054503`.
+- Self-test 6/6; `vite build` exit 0.
+- Preview: https://trade-seven-54xz2re7t-fais-projects-bc179554.vercel.app (deployment 7244420035, success). The served bundle carries the fixtures, §13's fixes and the new row's wording.
+- None of the fixture variants contains this case: an older uncovered line beside a newer command. The jsdom rows above are its record.
+
+Astra also recommended MERGE for PR #987, the meeting expiry, with no finding.
 
 ---
 
