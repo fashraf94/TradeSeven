@@ -8,7 +8,10 @@
 
 import { describe, it, expect } from 'vitest';
 import { deployResultFor, isExistingBattleResult, isOrphanedResult } from './deployResult';
-import { DEPLOY_REFUSAL_CODE, DUE_DEPLOY_LINE } from '../../constants/hypothesisRecords';
+import { HYPOTHESIS_NOTICES } from '../../constants/hypothesisRecords';
+
+// A refusal that carries the server's own player line (agentDeploy.js stockAdmissionLine's fallback).
+const STOCK_LINE = 'Measured scoring could not start this battle just now. Try again in a minute.';
 
 // CommandDashboard.jsx / CommandDashboardDesktop.jsx at main 078fe895, the
 // setDeployResult argument, verbatim.
@@ -26,9 +29,10 @@ const RESULTS = {
   created: { outcome: 'created', success: true, agentBattleId: 'battle-new' },
   'refused (no agent)': { outcome: 'refused', success: false, postIssued: false, error: 'no-agent' },
   'refused (auth required)': { outcome: 'refused', success: false, postIssued: false, error: 'auth-required' },
-  'refused (review due)': {
-    outcome: 'refused', code: DEPLOY_REFUSAL_CODE, success: false, status: 409, postIssued: true, httpStatus: 409,
-    error: DEPLOY_REFUSAL_CODE, details: DUE_DEPLOY_LINE, errorPhase: undefined,
+  // Pilot P1c (ruling E1): the review-due 409 is no longer sent or typed by the service; a refusal with the server's line is the stock admission's.
+  'refused (stock admission)': {
+    outcome: 'refused', success: false, status: 503, postIssued: true, httpStatus: 503,
+    error: 'Stock admission unavailable', details: STOCK_LINE, errorPhase: undefined,
   },
   'refused (cooldown)': { outcome: 'refused', reason: 'cooldown', success: false, status: 429, postIssued: true, httpStatus: 429, error: 'Please wait 2 minutes between deploys' },
   'uncertain (network)': { outcome: 'uncertain', success: false, postIssued: true, httpStatus: null, error: 'deploy_network', details: 'Failed to fetch' },
@@ -51,9 +55,24 @@ describe('deployResultFor: created and every other outcome map exactly as before
   });
 
   it('a refusal keeps the server\'s line in details', () => {
-    expect(deployResultFor(RESULTS['refused (review due)'])).toEqual({
-      status: 'error', error: DEPLOY_REFUSAL_CODE, details: DUE_DEPLOY_LINE, httpStatus: 409, postIssued: true, battleId: null,
+    expect(deployResultFor(RESULTS['refused (stock admission)'])).toEqual({
+      status: 'error', error: 'Stock admission unavailable', details: STOCK_LINE, httpStatus: 503, postIssued: true, battleId: null,
     });
+  });
+});
+
+describe('Pilot P1c (founder ruling E1) — a created deploy that carried nothing because the idea is due', () => {
+  it('created with hypothesisNotice review_due → success, the notice beside the real id (the ceremony\'s success screen reads it)', () => {
+    expect(deployResultFor({ ...RESULTS.created, hypothesisNotice: HYPOTHESIS_NOTICES.reviewDue }))
+      .toEqual({ status: 'success', agentBattleId: 'battle-new', hypothesisNotice: 'review_due' });
+  });
+  it('any other value, or none, → exactly the created mapping; a non-created result never carries it', () => {
+    for (const v of [undefined, null, 'other', true]) {
+      expect(deployResultFor({ ...RESULTS.created, hypothesisNotice: v })).toEqual({ status: 'success', agentBattleId: 'battle-new' });
+    }
+    const failed = deployResultFor({ ...RESULTS['uncertain (500)'], hypothesisNotice: 'review_due' });
+    expect('hypothesisNotice' in failed).toBe(false);
+    expect('hypothesisNotice' in deployResultFor({ ...RESULTS['refused (cooldown)'], hypothesisNotice: 'review_due' })).toBe(false);
   });
 });
 

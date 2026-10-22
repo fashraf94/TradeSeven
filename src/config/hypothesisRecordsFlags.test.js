@@ -6,10 +6,12 @@
 // guard keeps honest, and a DARK_BY_DESIGN registration a deliberate flip
 // drops in the same commit.
 //
-// HYPOTHESIS_RECORDS_ENABLED ships FALSE. An accidental flip fails the guard
-// loudly with its runway note; a DELIBERATE flip (the founder's own PR, after
-// the index and rules deploy) moves the first row below to `true` and turns
-// the registration row around, in the same commit.
+// HYPOTHESIS_RECORDS_ENABLED shipped FALSE, and the founder flipped it TRUE in
+// its own PR (#948, 2026-10-09, after the index and rules deploy): the first
+// row below moved to `true` and the registration row turned around, in the
+// same commit, with the flag line and the DARK_BY_DESIGN entry dropped (four
+// edits). A rollback is the same four edits back: the pin to `false`, the
+// registration row to `.toMatch`, and the entry re-added.
 //
 // This file is the pin, not a behaviour test: the gate-off rows (404
 // disabled, no version at save, a review pass with zero reads, a hidden
@@ -27,7 +29,7 @@ const SRC = readFileSync(path.join(HERE, 'featureFlags.js'), 'utf8');
 const GUARD = readFileSync(path.join(HERE, 'flagPinGuard.test.js'), 'utf8');
 
 describe('HYPOTHESIS_RECORDS_ENABLED — the pin (BUILD_RULES §2)', () => {
-  it('is DARK: HYPOTHESIS_RECORDS_ENABLED is false — the build merges dark', () => {
+  it('is LIVE: HYPOTHESIS_RECORDS_ENABLED is true — flipped in the founder\'s own PR (#948)', () => {
     // THE ROW THAT MOVES WITH THE FLIP, in the founder's flip commit itself.
     expect(HYPOTHESIS_RECORDS_ENABLED).toBe(true);
   });
@@ -39,7 +41,7 @@ describe('HYPOTHESIS_RECORDS_ENABLED — the pin (BUILD_RULES §2)', () => {
     expect(preceding).toContain('Pinned by: hypothesisRecordsFlags.test.js');
   });
 
-  it('is registered DARK_BY_DESIGN while it ships false (a deliberate flip drops the entry in the same commit)', () => {
+  it('is NOT registered DARK_BY_DESIGN while it ships true (the flip dropped the entry; a rollback re-adds it)', () => {
     expect(GUARD).not.toMatch(/^\s*HYPOTHESIS_RECORDS_ENABLED:/m);
   });
 

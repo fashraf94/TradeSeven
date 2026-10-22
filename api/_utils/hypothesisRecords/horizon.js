@@ -13,6 +13,11 @@
 //   N       = intraday 2 · swing 10 · positional 30 · longterm 60 (blessed H1–H4);
 //   unspecified → null (no clock; review_due comes at battle end, spec §2.5).
 //
+// Pilot P1c adds the BACKWARD walks (same calendar, same throw): the session
+// before a session (the review window's start, ruling E2), the session an
+// instant ended in (a battle-end window's end), and the start of the last N
+// trading days (the void unwind's look-back, ruling E3).
+//
 // ONE calendar for every symbol, crypto included (companion §6): the calendar
 // of record, api/_utils/marketSchedule.js `getSessionForDate` (itself the
 // re-export of src/utils/marketCalendar.js). An instant or a walk the calendar
@@ -30,6 +35,8 @@ export { HORIZON_WINDOW_SESSIONS };
 /** Calendar days a walk may cover before it is called runaway (60 sessions ≈ 87 days; holidays included). */
 const MAX_WALK_DAYS = 200;
 const DAY_MS = 86_400_000;
+/** 00:00 ET → the regular open (09:30 ET, every trading day — early closes move only the close). */
+const OPEN_AFTER_MIDNIGHT_MS = (9 * 60 + 30) * 60_000;
 
 const ET_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
 
@@ -73,6 +80,82 @@ export function anchorSessionOf(firstDeployedAtMs) {
     etDate = nextEtDate(etDate);
   }
   throw new HorizonClockError('calendar_unavailable', 'no regular session found after the deploy instant');
+}
+
+/** The ET date one calendar day before `etDate` (noon-anchored — DST-safe). */
+function previousEtDate(etDate) {
+  const [y, m, d] = etDate.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 12) - DAY_MS).toISOString().slice(0, 10);
+}
+
+/** The ET calendar date of an epoch-ms instant ('YYYY-MM-DD'). */
+export function etDateOfInstant(ms) {
+  if (typeof ms !== 'number' || !Number.isFinite(ms)) throw new HorizonClockError('invalid_instant', 'ms must be a finite epoch-ms number');
+  return etDateOf(ms);
+}
+
+/**
+ * Pilot P1c (founder ruling E2): the regular session BEFORE the session on
+ * `etDate` — the last trading day strictly earlier, walked back over the
+ * calendar of record (weekends and holidays skipped). The review window
+ * starts at its close: "the last close before the idea went live".
+ *
+ * @returns {{ etDate: string, openMs: number, closeMs: number }}
+ * @throws {HorizonClockError} calendar_unavailable when the walk leaves the calendar
+ */
+export function previousSessionOf(etDate) {
+  let d = etDate;
+  for (let i = 0; i < MAX_WALK_DAYS; i++) {
+    d = previousEtDate(d);
+    const s = sessionOrThrow(d);
+    if (s.isTradingDay) return { etDate: d, openMs: s.openMs, closeMs: s.closeMs };
+  }
+  throw new HorizonClockError('calendar_unavailable', `no regular session within ${MAX_WALK_DAYS} days before ${etDate}`);
+}
+
+/**
+ * Pilot P1c (founder ruling E2): the regular session an instant falls in or
+ * last followed — the latest session whose OPEN is at or before `ms` (a
+ * battle that ended at 11:00 ET ended in that day's session; one that ended
+ * at 20:00 ET, or on a Saturday, in the last session before). A battle-end
+ * review window ends at this session's close.
+ *
+ * @returns {{ etDate: string, openMs: number, closeMs: number }}
+ * @throws {HorizonClockError}
+ */
+export function sessionAtOrBefore(ms) {
+  let d = etDateOfInstant(ms);
+  for (let i = 0; i < MAX_WALK_DAYS; i++) {
+    const s = sessionOrThrow(d);
+    if (s.isTradingDay && s.openMs <= ms) return { etDate: d, openMs: s.openMs, closeMs: s.closeMs };
+    d = previousEtDate(d);
+  }
+  throw new HorizonClockError('calendar_unavailable', `no regular session within ${MAX_WALK_DAYS} days before the instant`);
+}
+
+/**
+ * Pilot P1c (founder ruling E3): the start of "the last N trading days" at
+ * `nowMs` — 00:00 ET of the Nth most recent trading day, counting today when
+ * today is one (whatever the hour). The regular open is 09:30 ET on every
+ * trading day (early closes move only the close), so ET midnight is the open
+ * less 9 h 30 min, DST included.
+ *
+ * @returns {number} epoch ms
+ * @throws {HorizonClockError}
+ */
+export function tradingDaysCutoffMs(nowMs, n) {
+  if (!Number.isInteger(n) || n < 1) throw new HorizonClockError('invalid_instant', 'n must be a positive integer');
+  let d = etDateOfInstant(nowMs);
+  let counted = 0;
+  for (let i = 0; i < MAX_WALK_DAYS; i++) {
+    const s = sessionOrThrow(d);
+    if (s.isTradingDay) {
+      counted += 1;
+      if (counted === n) return s.openMs - OPEN_AFTER_MIDNIGHT_MS;
+    }
+    d = previousEtDate(d);
+  }
+  throw new HorizonClockError('calendar_unavailable', `fewer than ${n} trading days within ${MAX_WALK_DAYS} days`);
 }
 
 /**

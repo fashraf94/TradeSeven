@@ -60,6 +60,16 @@ export function transitionHypothesis(watchlistId, { version, action, expectedSta
   return send(`${base(watchlistId)}/hypothesis-transition`, { method: 'POST', body: JSON.stringify(body) });
 }
 
+/**
+ * Pilot P1c (founder ruling E2) — the review card for one version:
+ * { version, status, window, battles[], listName, agentName, honestLine,
+ *   evidence | null, pending, difference }. 409 review_unavailable /
+ * review_window_open when there is no card (yet).
+ */
+export function getHypothesisReview(watchlistId, version) {
+  return send(`${base(watchlistId)}/hypothesis-versions/${encodeURIComponent(String(version))}/review`, { method: 'GET' });
+}
+
 /** Reaffirm a review-due version: a fresh version in ready, same or edited content. */
 export function reaffirmHypothesis(watchlistId, { version, opId, expectedVersion, statement, horizonEnum }) {
   const body = {

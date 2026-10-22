@@ -1,6 +1,6 @@
 # Mode-Truth Language Tables — V1 (Companion 2 to the Pilot Spec)
 
-**Date:** 23 September 2026 · **Author:** Fable (per R3) · **Status:** **Blessed by founder, 24 Sep 2026** (all five tables, walked through with Fable, no edits) — the only source player-facing strings ship from. **V1.1 — 7 Oct 2026:** table F added (founder decision D5); A–E unchanged. **V1.2 — 7 Oct 2026:** table F gains the profit-target line (founder sign-off Q2 on PR #940); A–E and F's other rows unchanged. **V1.3 — 8 Oct 2026:** table F gains the approved-meeting failure line (founder decision Q3, integrity follow-up 2); A–E and F's other rows unchanged. **V1.4 — 8 Oct 2026:** table G added — the client labels for an execution outcome that could not be confirmed (founder decision Q3, option (a), on the integrity follow-up 2 report); A–F unchanged. **V1.5 — 8 Oct 2026:** table C gains its V1.1 — two `[LIST]` review rows for an idea that names more than one symbol (founder ruling B3, Pilot P1b); table C's other rows and A–B, D–G unchanged. · **Destination:** `docs/specs/`.
+**Date:** 23 September 2026 · **Author:** Fable (per R3) · **Status:** **Blessed by founder, 24 Sep 2026** (all five tables, walked through with Fable, no edits) — the only source player-facing strings ship from. **V1.1 — 7 Oct 2026:** table F added (founder decision D5); A–E unchanged. **V1.2 — 7 Oct 2026:** table F gains the profit-target line (founder sign-off Q2 on PR #940); A–E and F's other rows unchanged. **V1.3 — 8 Oct 2026:** table F gains the approved-meeting failure line (founder decision Q3, integrity follow-up 2); A–E and F's other rows unchanged. **V1.4 — 8 Oct 2026:** table G added — the client labels for an execution outcome that could not be confirmed (founder decision Q3, option (a), on the integrity follow-up 2 report); A–F unchanged. **V1.5 — 8 Oct 2026:** table C gains its V1.1 — two `[LIST]` review rows for an idea that names more than one symbol (founder ruling B3, Pilot P1b); table C's other rows and A–B, D–G unchanged. **V1.6 — 16 Oct 2026:** table C gains its V1.2 — the deploy station's lines for an idea that is due (before and after the deploy), the review card's honest line and labels, and the line for a deploy that never ran (founder rulings E1–E3, Pilot P1c); table C's existing rows and A–B, D–G unchanged. · **Destination:** `docs/specs/`.
 **Scope:** BaggerBomb v1 — every player-facing sentence the agent, tiles, and Film Room use for protective outcomes, intent, hypothesis lifecycle, and evidence availability. **The typed fields govern; these lines render them.** A rendered line that claims beyond its typed fields is a loggable divergence. Placeholders in `[brackets]` are filled from the record, never invented.
 
 ## A. Protective-action outcomes (wire enum → player line)
@@ -37,8 +37,28 @@ Rules: every "waiting" names its missing evidence; every "can't" names its rule;
 | deploy of a due version attempted | "This idea is due for review — reaffirm it first (one tap, same content if you want), and the fresh version deploys." |
 | `review_due` (horizon elapsed), `[LIST]` | "Your [LIST] idea reached its time-frame ([window]). Nothing was sold and nothing was deleted — it's flagged for your review. Reaffirm it to make a fresh version, or retire it." |
 | `review_due` (battle ended, `unspecified`), `[LIST]` | "The battle ended with your [LIST] idea still open-ended. It's flagged for review — reaffirm or retire when you're ready." |
+| deploy with a due idea — the screen before it | "Your [SYM] idea reached its time-frame." |
+| deploy with a due idea — the screen before it, `[LIST]` | "Your [LIST] idea reached its time-frame." |
+| deploy with a due idea — the success screen after it | "This battle is running without your idea — it's still waiting for your review." |
+| the review card | "[AGENT] doesn't act on your ideas yet. This shows how the names did over the idea's time-frame — not what the agent did with it." |
+| `ready` again (`deploy_voided`) | "That battle never ran, so your idea is back to Ready. Its clock hasn't started." |
 
-**Table C V1.1 — 8 Oct 2026 (founder ruling B3, Pilot P1b):** the last two rows are added; the five rows above them are unchanged. `[SYM]` is filled only when the idea names exactly one symbol — its own typed conditions, else the one ticker of the frozen snapshot of the battle that deployed it. Otherwise the review line renders its `[LIST]` row, where `[LIST]` is the frozen list name from that deploying battle's snapshot (found through the version's `lastDeployedBattleId`), never the live list. Neither known → no line; the status alone is shown.
+**Table C V1.1 — 8 Oct 2026 (founder ruling B3, Pilot P1b):** rows 6–7 are added; the five rows above them are unchanged. `[SYM]` is filled only when the idea names exactly one symbol — its own typed conditions, else the one ticker of the frozen snapshot of the battle that deployed it. Otherwise the review line renders its `[LIST]` row, where `[LIST]` is the frozen list name from that deploying battle's snapshot (found through the version's `lastDeployedBattleId`), never the live list. Neither known → no line; the status alone is shown.
+
+**Table C V1.2 — 16 Oct 2026 (founder rulings E1–E3, Pilot P1c; pilot spec Amendment E):** the last five rows and the labels below are added; the seven rows above them are unchanged. (E1) A due idea never blocks a deploy. When the idea's newest deployed version is `review_due` with no ready successor (and its list is committed), the deploy station shows one screen before any deploy call — its title row under V1.1's `[SYM]`/`[LIST]` rule for an idea whose time-frame elapsed; an idea due because its battle ended shows the `review_due` (battle ended, `unspecified`) row above instead, since "reached its time-frame" would claim beyond its record; a version whose clock fell back to a battle-end review (B5), or no name known → the screen shows its buttons with no title — and exactly the three buttons below, in that order — and when the deploy's response says the battle carries nothing for that reason, the ceremony's success screen shows the success-screen row as a link to the list's Idea panel. The due-deploy row ("deploy of a due version attempted") stays as it was; no deploy sends it since E1. (E2) The review card's row fills `[AGENT]` with the agent name the carrying battle froze, never the live agent's. (E3) The `deploy_voided` row renders for a version the review pass returned to `ready` because its only carrying battle never ran.
+
+| Control | Label |
+|---|---|
+| the screen before the deploy, button 1 | "Reaffirm and deploy" |
+| the screen before the deploy, button 2 | "Retire and deploy" |
+| the screen before the deploy, button 3 | "Deploy without it" |
+| the review card, the list-versus-market difference | "Difference" |
+| the review card, the difference's unit (percentage points) | "pts" |
+| the review card, the per-name table (collapsed) | "Each name" |
+| the review card, a name, the list or the market with no price for the window (none in the feed, not priced within the budget, or a failed fetch) | "No data" |
+| the review card, the list's figure when it counts fewer than all of the list's names | "[n] of [N]" |
+| the review card, the carrying battles | "Battles" |
+| the review card, a voided battle's mark | "voided" |
 
 ## D. Evidence availability (tiles and Film Room; §8.3 states)
 
@@ -92,3 +112,5 @@ Rules: the marker is read before every decision state, so no decision label — 
 *V1 — wording blessed by the founder 24 Sep 2026. Amendments version-bump; only the blessed version ships. V1.1 — 7 Oct 2026: table F (founder decision D5). V1.2 — 7 Oct 2026: table F's profit-target line (founder sign-off Q2 on PR #940). V1.3 — 8 Oct 2026: table F's approved-meeting failure line (founder decision Q3, integrity follow-up 2). V1.4 — 8 Oct 2026: table G, the unconfirmed-outcome client labels (founder decision Q3, option (a)).*
 
 *V1.5 — 8 Oct 2026: table C V1.1, the two `[LIST]` review rows (founder ruling B3).*
+
+*V1.6 — 16 Oct 2026: table C V1.2, the due-idea deploy lines, the review card's line and labels, and the void line (founder rulings E1–E3).*

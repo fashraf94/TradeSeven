@@ -107,9 +107,13 @@
     "api/_utils/hypothesisRecords/carriage.js::activateCarriedVersionInTx::update::unresolved": 1,
     "api/_utils/hypothesisRecords/carriage.js::judgeDueAtDeploy::delete::unresolved": 1,
     "api/_utils/hypothesisRecords/carriage.js::judgeDueAtDeploy::update::unresolved": 1,
+    "api/_utils/hypothesisRecords/review.js::claimEvidence::update::unresolved": 2,
+    "api/_utils/hypothesisRecords/review.js::storeEvidence::update::unresolved": 1,
     "api/_utils/hypothesisRecords/reviewPass.js::armReviewRow::set::unresolved": 1,
     "api/_utils/hypothesisRecords/reviewPass.js::reviewOne::delete::unresolved": 2,
     "api/_utils/hypothesisRecords/reviewPass.js::reviewOne::update::unresolved": 1,
+    "api/_utils/hypothesisRecords/reviewPass.js::writeUnwindInTx::delete::unresolved": 1,
+    "api/_utils/hypothesisRecords/reviewPass.js::writeUnwindInTx::update::unresolved": 2,
     "api/_utils/hypothesisRecords/store.js::createPlayerVersion::create::unresolved": 1,
     "api/_utils/hypothesisRecords/store.js::createPlayerVersion::update::unresolved": 2,
     "api/_utils/hypothesisRecords/store.js::reaffirmVersion::create::unresolved": 1,
@@ -239,7 +243,7 @@
     "api/agent/chat.js::handler::update::agents": 1,
     "api/agent/decide.js::clearLock::update::agents": 1,
     "api/agent/decide.js::handler::call:commitActiveRulesProjection#1::agents": 2,
-    "api/agent/decide.js::handler::update::agents": 17,
+    "api/agent/decide.js::handler::update::agents": 16,
     "api/agent/decide.js::runPrescribedTournamentDeploy::update::agents": 4,
     "api/agent/ensure-opener.js::handler::update::unresolved": 1,
     "api/agent/file-directive.js::handler::set::unresolved": 1,
@@ -475,5 +479,10 @@
   },
   "_notes_film_room_b2": {
     "api/_utils/filmRoom/cardStore.js::createCard::create / retireCard::update (unresolved)": "Film Room B2 (Build B spec docs/specs/FILM_ROOM_BUILD_B_CARD_SPEC_V1_20261010.md §4; Amendment G RG-7). HUMAN REVIEW: the plays ledger, agents/{agentId}/plays/{entryId} — a SUBCOLLECTION under the protected agents store, never the agent document itself. ONE tx.create (createCard: the card, id = its create op id, never an overwrite) and ONE tx.update (retireCard: stage → retired, the stage row and version + 1) per function, each inside one runTransaction after every read (the hypothesisRecords/store.js pattern). Unresolved because the ref is built by playRefOf(db, agentId, entryId) — a handle-form tx argument the scanner does not trace to its literal — and because the chain resolves \"plays\" (not protected) at the nearest literal even where it is inlined; the transaction is what makes the cap check (S9) race-safe, so it is allowlisted rather than restructured. Reached from POST /api/film-room/card alone; the one-door census (api/_utils/filmRoom/oneDoor.census.test.js) proves no model path imports this module."
+  },
+  "_notes_pilot_p1c": {
+    "api/_utils/hypothesisRecords/review.js::{claimEvidence,storeEvidence} (update)": "Pilot P1c, founder ruling E2 — the review card's evidence, computed ONCE per version. HUMAN REVIEW: two runTransactions on watchlists/{watchlistId}/hypothesisVersions/v{n}, each a fresh read before its write. claimEvidence: ONE tx.update writing reviewEvidenceClaim { claimedAt, calls } when the version has no evidence and no claim (before any market-data call), or ONE tx.update writing reviewEvidence (every name unavailable, reason interrupted — no call) when an older claim outlived its lease with no evidence; it writes nothing when evidence exists or a live claim stands. storeEvidence: ONE tx.update writing reviewEvidence { computedAt, source eodhd_daily, window, names[], list, market } only when no evidence exists yet and the claim is this request's. Both fields are additive and outside contentHash and LIFECYCLE_FIELDS (as reviewClockFault); neither touches content or lifecycle. NOT a composition-protected store (hypothesisVersions is server-only, allow write: if false). Unresolved for the standard handle-form reason (versionRefOf returns passed as tx.update arguments). Reached only through GET .../hypothesis-versions/{n}/review, behind the record slice's gate (404 disabled before any read when off).",
+    "api/_utils/hypothesisRecords/reviewPass.js::writeUnwindInTx (update 2, delete 1; reviewOne back to update 1, delete 2)": "Pilot P1c, founder ruling E3 — the void unwind's ONE writer, buffered on the caller's transaction: the review pass's own (reviewOne — the row's bounded transaction) and the deploy's (unwindVoidCarriage, called by carriage.js resolveDeployCarriage before it judges or carries an activated version; review L2-1 / L4-4 — one transaction, fresh reads of the row, the version, the battle and, stepping back, the previous battle; acts only while the version is activated; stateSource review_pass or deploy). Two tx.update sites and one tx.delete on the same documents the pass already writes: (only carrying battle) ONE tx.update of watchlists/{watchlistId}/hypothesisVersions/v{n} back to ready (stateSource review_pass, stateReason deploy_voided; firstDeployedAt, reviewDueAt, lastDeployedAt, lastDeployedBattleId and reviewClockFault null; deployedBattleIds []) and ONE tx.delete of its hypothesisReviewQueue row; (earlier carrying battles) ONE tx.update of the same version (deployedBattleIds less this battle; lastDeployedAt / lastDeployedBattleId = the previous battle) and the row re-armed through armReviewRow (its own listed key, one tx.set). NOT a composition-protected store. Unresolved for the standard handle-form reason. The pass returns before any read when the gate is off for everyone.",
+    "api/agent/decide.js::handler::update::agents (17 -> 16)": "Pilot P1c, founder ruling E1 (16 Oct 2026; founder-sanctioned fence entry for decide.js, Part A only). Count 17 -> 16: the P1b deploy refusal is DELETED — its one awaited agentRef.update (deployingAt: null plus, when the ceremony map existed, the deployProgress error stamp) wrote only when the equipped idea was due for review; a due idea now never blocks a deploy (the battle carries nothing and the success response gains hypothesisNotice: 'review_due'). No site was added to decide.js. The carriage race's cooldown restore (P1b, review L2-2) is unchanged."
   }
 }

@@ -289,12 +289,15 @@ export async function transitionVersion(db, { uid, watchlistId, version, action,
  * consistent snapshot (a read-only transaction), so a version created
  * between the two reads can never appear beside a stale pointer (review L2-4).
  */
-export async function listVersions(db, { uid, watchlistId, limit = LIST_LIMIT, withResearch = false }) {
+export async function listVersions(db, { uid, watchlistId, limit = LIST_LIMIT, withResearch = false, withCommitted = false }) {
   return db.runTransaction(async (tx) => {
     const parent = ownedParent(await tx.get(watchlistRefOf(db, watchlistId)), uid);
     const currentVersion = pointerOf(parent);
     const snap = await tx.get(versionsColOf(db, watchlistId).orderBy('version', 'desc').limit(limit));
     const out = { currentVersion, versions: snap.docs.map((d) => d.data()) };
+    // Pilot P1c (review L4-5): is the list committed? A deploy treats an uncommitted equipped list as no equip at
+    // all (watchlistEquip.js resolveEquippedWatchlist), so none of its ideas can ride — the deploy station asks.
+    if (withCommitted) out.listCommitted = parent.status === 'committed';
     // Pilot P2 — the Idea panel's research line: the list's research
     // summaries (newest first), from the same snapshot.
     if (withResearch) {

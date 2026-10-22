@@ -12,8 +12,9 @@
 //   "Existing battle R1" — 200 battleCreated:false: the existing terminal, no
 //     reveal, no Enter, no create callback, no synthetic agent_ id; Open hands
 //     over the owned server document.
-//   "P1b refusal" — a real 409 review-due: the shared line in details, no
-//     Forge action in the shipped ceremony, nothing POSTed again by itself.
+//   "P1b refusal" — retired by Pilot P1c (founder ruling E1: a due idea never
+//     blocks a deploy, so no endpoint sends the 409): one that arrives anyway
+//     is an ordinary refusal — no line promoted, nothing POSTed again by itself.
 // Plus R-R1-6's onPhaseChange echo, and the recovery path (500 after the POST,
 // document found) revealing exactly as before.
 
@@ -368,16 +369,17 @@ describe('review L5 — the rows the mutating lens found missing', () => {
   });
 });
 
-describe('P1b refusal (spec §11.3) — a real 409 review-due through the real machine', () => {
-  it('the shared line in details; the ceremony offers Try again and Back to hub only; nothing POSTs by itself', async () => {
+describe('P1b refusal (spec §11.3) — retired by Pilot P1c (ruling E1): a review-due 409 that arrives anyway is an ordinary refusal', () => {
+  it('no line promoted (the service no longer reads the code); the ceremony offers Try again and Back to hub only; nothing POSTs by itself', async () => {
     // A casual battle IS live on the target: the refusal must not hide behind a reveal of it.
     serverReturns(docOf('battle-earlier', RUNNING_DOC()));
     const result = await serviceResult(json(409, { error: DEPLOY_REFUSAL_CODE, message: DUE_DEPLOY_LINE }));
-    expect(result).toMatchObject({ outcome: 'refused', code: DEPLOY_REFUSAL_CODE, details: DUE_DEPLOY_LINE });
+    expect(result).toMatchObject({ outcome: 'refused', error: DEPLOY_REFUSAL_CODE });
+    expect([result.details, 'code' in result]).toEqual([undefined, false]);
     const posts = globalThis.fetch.mock.calls.length;
     await runTo(deployResultFor(result));
     await waitFor(() => /Deployment (failed|unconfirmed)/.test(text()), 'the error terminal');
-    expect(text()).toContain(DUE_DEPLOY_LINE);
+    expect(text()).not.toContain(DUE_DEPLOY_LINE);
     expect(text()).not.toContain('Deployment complete');
     expect(text()).not.toContain('Already running');
     // The shipped CeremonyError has no Forge action; R1 adds none (the hub's
