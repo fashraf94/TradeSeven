@@ -27,6 +27,15 @@
 // signed-in user from useUser() for the header line. OS reduced motion comes
 // from framer-motion's useReducedMotion, the house precedent.
 //
+// Slice S3 (ruling R-S3-10): given App's `hub` object through the gate, the
+// hub is CONNECTED — hub/useHubReaders.js runs the readers (the identity
+// source, the owner-tagged agent, App's active poll, the ten-game window and
+// its Film Room reviews) and their Games and Deploy sections replace the
+// loading ones, with the actions S3 wires (open a game, open a battle tape,
+// a read's Retry). Without it — the layout fixtures, the tests — nothing is
+// read, as before. The hold stays inert: no deploy handler reaches it before
+// S2b.
+//
 // One tree for the three wide compositions. Desktop, tablet and stacked are
 // one CSS grid whose areas change with the composition; every part keeps its
 // place in the React tree (the stage and panel wrappers switch to
@@ -43,6 +52,7 @@
 import React, { useId, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { useUser } from '../../contexts/UserContext';
+import { BATTLE_TYPE_BAGGERBOMB } from '../../utils/commandCenterLiveBattles';
 import {
   DEFAULT_AREA,
   DEFAULT_PHONE_TAB,
@@ -65,6 +75,7 @@ import { deriveHubDeployState } from './hub/selectors/deployState';
 import { C, HUB_LAYERS, HUB_SCOPED_CSS } from './hub/hubStyle';
 import { shadowTierFor } from './hub/shadowGeometry';
 import { useHubWidth } from './hub/useHubWidth';
+import useHubReaders from './hub/useHubReaders';
 import { useNavClearance } from './hub/useNavClearance';
 import { areaPanelId, areaTabId } from './AreaControls';
 import DeployStrip from './DeployStrip';
@@ -114,7 +125,9 @@ function useShared(sections) {
   const reducedMotion = Boolean(useReducedMotion());
   const idBase = `hub${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const { live, completed } = splitGames(sections.games);
-  const liveGame = live[0] || null;
+  // The strip's game (spec §10): a live BaggerBomb game when there is one — it
+  // is what blocks the hold, and Open targets it — else the first live game.
+  const liveGame = live.find((g) => g.kind === BATTLE_TYPE_BAGGERBOMB) || live[0] || null;
   const display = deployDisplay(sections.deploy, liveGame);
   return {
     user,
@@ -198,7 +211,7 @@ export function wideGrid(composition, hasNext) {
 }
 
 /** The mobile site: header → compact stage → sticky tabs → section, and the strip above BottomNav. */
-function PhoneHub({ sections }) {
+function PhoneHub({ sections, actions: wired = NO_ACTIONS }) {
   const shared = useShared(sections);
   const rootRef = useRef(null);
   const stripRef = useRef(null);
@@ -208,6 +221,7 @@ function PhoneHub({ sections }) {
   const sheet = useHubSheet(rootRef);
   const composition = HUB_COMPOSITIONS.PHONE;
   const actions = {
+    ...wired,
     openHistory: shared.completed.length ? sheet.open('history') : undefined,
   };
   return (
@@ -251,16 +265,18 @@ function PhoneHub({ sections }) {
         loadoutLine={shared.loadoutLine}
         placement={placement}
         onOpenLoadout={() => setTab(PHONE_TABS.LOADOUT)}
+        onOpenGame={actions.openGame}
+        onAction={actions.deployAction}
       />
       {sheet.sheet === 'history' && (
-        <HistorySheet games={sections.games} career={sections.career} phone onClose={sheet.close} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} />
+        <HistorySheet games={sections.games} career={sections.career} phone onClose={sheet.close} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpenGame={actions.openGame} onOpenTape={actions.openTape} />
       )}
     </HubLayoutContext.Provider>
   );
 }
 
 /** The desktop site: Desktop, Tablet or Stacked by the hub's own width. */
-function WideHub({ sections }) {
+function WideHub({ sections, actions: wired = NO_ACTIONS }) {
   const shared = useShared(sections);
   const rootRef = useRef(null);
   const width = useHubWidth(rootRef);
@@ -268,6 +284,7 @@ function WideHub({ sections }) {
   const [area, setArea] = useState(DEFAULT_AREA);
   const sheet = useHubSheet(rootRef);
   const actions = {
+    ...wired,
     openHistory: shared.completed.length ? sheet.open('history') : undefined,
   };
   const desktop = composition === HUB_COMPOSITIONS.DESKTOP;
@@ -299,8 +316,8 @@ function WideHub({ sections }) {
     />
   );
   const side = {
-    games: <GamesSection games={sections.games} onOpenHistory={actions.openHistory} />,
-    deploy: <DeploySection deploy={sections.deploy} loadoutLine={shared.loadoutLine} onOpenLoadout={() => setArea(HUB_AREAS.ARCHETYPE)} />,
+    games: <GamesSection games={sections.games} onOpenHistory={actions.openHistory} onOpenGame={actions.openGame} onOpenTape={actions.openTape} onRetry={actions.retryGames} />,
+    deploy: <DeploySection deploy={sections.deploy} loadoutLine={shared.loadoutLine} onOpenLoadout={() => setArea(HUB_AREAS.ARCHETYPE)} onAction={actions.deployAction} />,
     activity: <ActivitySection activity={sections.activity} />,
     brief: <BriefSection brief={sections.brief} />,
   };
@@ -340,7 +357,7 @@ function WideHub({ sections }) {
         {body}
       </section>
       {sheet.sheet === 'history' && (
-        <HistorySheet games={sections.games} career={sections.career} onClose={sheet.close} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} />
+        <HistorySheet games={sections.games} career={sections.career} onClose={sheet.close} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpenGame={actions.openGame} onOpenTape={actions.openTape} />
       )}
     </HubLayoutContext.Provider>
   );
@@ -353,14 +370,32 @@ function WideHub({ sections }) {
  */
 const HUB_S2A_DEPLOY = deriveHubDeployState(HUB_S2A_DEPLOY_INPUTS);
 const HUB_DEFAULT_SECTIONS = Object.freeze({ ...HUB_S1_SECTIONS, deploy: HUB_S2A_DEPLOY });
+/** No action wired: every control a later slice wires renders disabled. */
+const NO_ACTIONS = Object.freeze({});
+
+/**
+ * Slice S3 (ruling R-S3-10): the hub given App's `hub` object — the readers
+ * run (hub/useHubReaders.js) and their Games and Deploy sections replace the
+ * loading ones; every other section keeps its own until its slice.
+ */
+function ConnectedHub({ site, hub, sections }) {
+  const readers = useHubReaders(hub);
+  const live = { ...sections, ...readers.sections };
+  return site === HUB_SITES.MOBILE
+    ? <PhoneHub sections={live} actions={readers.actions} />
+    : <WideHub sections={live} actions={readers.actions} />;
+}
 
 /**
  * @param {'mobile'|'desktop'} props.site     App's pick, through the gate (ruling R-S1-3)
  * @param {object}             [props.sections] the section props (hub/hubModel.js): the loading
  *   state, with the selector's deploy state; a sections prop without `deploy` takes that one too
+ * @param {object}             [props.hub]    App's data, through the gate (slice S3, R-S3-10):
+ *   with it the readers run; without it (the layout fixtures, the tests) nothing is read
  */
-export default function CommandCenterHub({ site, sections = HUB_DEFAULT_SECTIONS }) {
+export default function CommandCenterHub({ site, sections = HUB_DEFAULT_SECTIONS, hub }) {
   const resolved = sections.deploy ? sections : { ...sections, deploy: HUB_S2A_DEPLOY };
+  if (hub && typeof hub === 'object') return <ConnectedHub key={site} site={site} hub={hub} sections={resolved} />;
   // Keyed by site: a hub handed the other site starts from that site's defaults (ruling R-S1-5).
   return site === HUB_SITES.MOBILE
     ? <PhoneHub key={HUB_SITES.MOBILE} sections={resolved} />

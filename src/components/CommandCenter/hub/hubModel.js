@@ -17,6 +17,11 @@
 //   games       { status, rows: [{ id, mode, opponent, live, clock?, preOpen?,
 //                 detail, outcome?: { text, tone: 'pos'|'neg'|'draw'|'neutral' },
 //                 review?: boolean }] }                                §3, §7
+//               Slice S3 adds: status 'error' (a failed read, nothing
+//               retained); stale, asOf, nextAttemptAt for a retained window
+//               whose latest read failed; and per row kind ('ranked' |
+//               'baggerbomb') and, on a completed row, reviewLine { state,
+//               text, openable } (hub/gamesDisplay.js)                 §3, §6
 //   deploy      deriveHubDeployState's result (selectors/deployState.js):
 //               { displayState, canStart, gateBlocked, freshness: { asOf,
 //                 stale, refreshing }, retryAction, reason, action,
@@ -134,3 +139,5 @@ export function splitGames(games) {
 export const DESKTOP_COMPLETED_LIMIT = 2;
 /** The phone Overview shows a short activity list (the design's limit 3). */
 export const PHONE_ACTIVITY_LIMIT = 3;
+/** The phone Overview shows at most three completed rows (spec §8.2; slice S3). */
+export const PHONE_COMPLETED_LIMIT = 3;

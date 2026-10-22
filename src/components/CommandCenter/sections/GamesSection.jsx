@@ -10,16 +10,42 @@
 // BUILD_RULES §9). The desktop, tablet and stacked compositions show the live
 // rows plus at most two completed rows (§8.2); History opens the whole
 // fetched window.
+//
+// Slice S3: a completed row carries its review line (hub/gamesDisplay.js
+// reviewLineOf) under the row — "Open battle tape" when the helper says the
+// review is ready, otherwise the review's state in the spec's words. A failed
+// read of the window is never an empty history (§3): with nothing retained it
+// says so with Retry; with a retained window it says when that was true.
 
 import React from 'react';
 import { DESKTOP_COMPLETED_LIMIT, splitGames } from '../hub/hubModel';
 import { HUB_COPY as COPY } from '../hub/hubCopy';
+import { formatHubTime } from '../hub/hubDate';
 import { C, HAIR, tint } from '../hub/hubStyle';
-import { EmptyNote, HubLink, LoadingLine, Mono, Row, Section, Tag } from '../HubParts';
+import { EmptyNote, HubLink, Icon, LoadingLine, Mono, Row, Section, Tag } from '../HubParts';
 
 const OUTCOME_TONE = { pos: C.pos, neg: C.neg };
 
-export function GameRow({ game, onOpen, compact = false }) {
+/** A completed row's review line: the tape link when ready, else the review's state. */
+function ReviewLine({ game, onOpenTape }) {
+  const line = game.reviewLine;
+  return (
+    <span data-hub-review={line.state} style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 12, fontSize: 12, color: C.ink2, lineHeight: 1.4 }}>
+      {line.openable ? (
+        <HubLink onPress={onOpenTape ? () => onOpenTape(game) : undefined} ariaLabel={COPY.games.review.openTapeLabel(game.mode, game.opponent, game.detail)} size={12}>
+          {line.text}
+        </HubLink>
+      ) : (
+        <>
+          {line.state === 'checking' ? null : <span aria-hidden="true" style={{ color: C.ink3, display: 'flex' }}><Icon name="film" size={13} /></span>}
+          <span>{line.text}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+export function GameRow({ game, onOpen, onOpenTape, compact = false }) {
   const live = Boolean(game.live);
   const outcome = game.outcome || null;
   const tags = (
@@ -34,7 +60,7 @@ export function GameRow({ game, onOpen, compact = false }) {
       {!live && game.review && <Tag tone="gold" dim>{COPY.games.reviewTag}</Tag>}
     </span>
   );
-  return (
+  const row = (
     <Row
       onPress={onOpen ? () => onOpen(game) : undefined}
       ariaLabel={COPY.games.rowLabel(live, game.mode, game.opponent, live ? COPY.strip.live(game.clock) : outcome?.text || '', !live && game.review, game.detail)}
@@ -50,10 +76,34 @@ export function GameRow({ game, onOpen, compact = false }) {
       {game.detail && <span style={{ display: 'block', fontSize: 12, color: C.ink3, marginTop: 4, lineHeight: 1.4 }}>{game.detail}</span>}
     </Row>
   );
+  if (live || !game.reviewLine) return row;
+  return (
+    <div data-hub-game={game.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {row}
+      <ReviewLine game={game} onOpenTape={onOpenTape} />
+    </div>
+  );
 }
 
-export default function GamesSection({ games, onOpenGame, onOpenHistory }) {
+/** A failed read of the window (spec §3): with nothing retained, the failure and Retry; never "No games yet". */
+export function GamesReadNote({ games, onRetry }) {
+  const at = formatHubTime(games?.nextAttemptAt, { roundUp: true });
+  const asOf = formatHubTime(games?.asOf);
+  const retained = games?.status === 'ready';
+  return (
+    <div data-hub-games-note={retained ? 'stale' : 'error'} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
+      <span>{retained ? COPY.games.staleAsOf(asOf ? COPY.time.et(asOf) : '') : COPY.games.loadFailed}</span>
+      {at && <span>{COPY.sep}{COPY.games.nextAttempt(COPY.time.et(at))}</span>}
+      <span>{COPY.sep}</span>
+      <HubLink onPress={onRetry}>{COPY.games.retry}</HubLink>
+    </div>
+  );
+}
+
+export default function GamesSection({ games, onOpenGame, onOpenTape, onOpenHistory, onRetry }) {
   const ready = games?.status === 'ready';
+  const failed = games?.status === 'error';
+  const stale = ready && games.stale === true;
   const { live, completed } = splitGames(games);
   const shown = [...live, ...completed.slice(0, DESKTOP_COMPLETED_LIMIT)];
   let right = null;
@@ -69,13 +119,15 @@ export default function GamesSection({ games, onOpenGame, onOpenHistory }) {
       data-hub-section="games"
       right={right || history ? <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>{right}{history}</div> : null}
     >
-      {!ready && <LoadingLine>{COPY.games.loading}</LoadingLine>}
+      {!ready && !failed && <LoadingLine>{COPY.games.loading}</LoadingLine>}
+      {(failed || stale) && <GamesReadNote games={games} onRetry={onRetry} />}
       {ready && shown.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {shown.map((g) => <GameRow key={g.id} game={g} onOpen={onOpenGame} />)}
+          {shown.map((g) => <GameRow key={g.id} game={g} onOpen={onOpenGame} onOpenTape={onOpenTape} />)}
         </div>
       )}
-      {ready && shown.length === 0 && <EmptyNote icon="sword" title={COPY.games.empty} sub={COPY.games.emptySub} />}
+      {/* Empty history needs a successful empty read: never after a failed one (spec §3). */}
+      {ready && !stale && shown.length === 0 && <EmptyNote icon="sword" title={COPY.games.empty} sub={COPY.games.emptySub} />}
     </Section>
   );
 }

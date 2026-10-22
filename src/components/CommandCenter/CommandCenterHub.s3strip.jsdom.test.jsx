@@ -17,6 +17,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const { userState } = vi.hoisted(() => ({ userState: { user: { displayName: 'Flash', username: 'flash' } } }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
+// Slice S3: the hub module now imports its readers, which import the Firebase config; nothing here reads.
+vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 
 import CommandCenterHub from './CommandCenterHub';
 import { HUB_COPY as COPY } from './hub/hubCopy';

@@ -53,6 +53,7 @@ const FEED_READERS = {
   'src/components/Agent/StatusFeedTimeline.jsx': 'DEAD — only importer is AgentStrategyTab.ARCHIVED.jsx',
   'src/components/AgentPresence/presenceBinding.js': 'swap actions only — a marked beat is no event',
   'src/components/AgentPresence/useAgentPresence.js': 'pass-through to statusFeedToEvents',
+  'src/components/CommandCenter/hub/gamesDisplay.js': 'Command Center S3 (spec V1.2 §7 finalEvidence): the presence of the platform `battle_complete` entry only — no beat’s message, action or marker is rendered, and a marked beat changes nothing',
   'src/components/Dashboard/desk/AgentDesk.jsx': 'renders the latest line only when it has a message — nothing for a line-less beat',
   'src/components/League/battleArena/statusFeedToVoice.js': 'FIXED: a marked beat is no line in the agent’s voice, dropped before the six-line window',
   'src/components/Tournament/Flat6BattleView.jsx': 'FIXED: a marked beat is dropped before the window (was its raw action `risk_swap_failed`, or pre-execution words; spectators too — the projection carries the marker)',

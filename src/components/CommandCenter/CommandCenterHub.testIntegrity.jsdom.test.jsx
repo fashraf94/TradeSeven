@@ -17,6 +17,8 @@ const { userState, motionState } = vi.hoisted(() => ({
   motionState: { reduced: false },
 }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
+// Slice S3: the hub module now imports its readers, which import the Firebase config; nothing here reads.
+vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 vi.mock('framer-motion', async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, useReducedMotion: () => motionState.reduced };

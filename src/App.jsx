@@ -8916,7 +8916,20 @@ export default function PortfolioDuel() {
               ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} />
               : <DesktopBackground isDesktop={isDesktop} />}
             {dashboardPick.shell === DASHBOARD_SHELLS.HUB
-              ? <CommandCenterHubGate site="mobile" legacy={legacyDashboard} />
+              ? (
+                <CommandCenterHubGate
+                  site="mobile"
+                  legacy={legacyDashboard}
+                  hub={{
+                    // Command Center S3 (R-S3-10): App's data for the hub, one object.
+                    activeBattles: activeAgentBattles,
+                    activePoll: activeAgentBattlesPoll,
+                    refreshActiveBattles,
+                    openGame: handleOpenAgentBattle,
+                    openFilmRoom: (battle) => { setCurrentBattle(battle); setScreen('filmRoom'); },
+                  }}
+                />
+              )
               : legacyDashboard}
           </div>
         </ErrorBoundary>
@@ -8993,6 +9006,14 @@ export default function PortfolioDuel() {
               site="desktop"
               legacy={legacyDesktopDashboard}
               frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>}
+              hub={{
+                // Command Center S3 (R-S3-10): App's data for the hub, one object.
+                activeBattles: activeAgentBattles,
+                activePoll: activeAgentBattlesPoll,
+                refreshActiveBattles,
+                openGame: handleOpenAgentBattle,
+                openFilmRoom: (battle) => { setCurrentBattle(battle); setScreen('filmRoom'); },
+              }}
             />
           ) : legacyDesktopDashboard}
         </div>

@@ -186,6 +186,16 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/hub/selectors/attemptVocabulary.js',
   'src/components/CommandCenter/hub/selectors/deployState.js',
   'src/components/CommandCenter/hub/selectors/ownership.js',
+  // Command Center hub, S3 (the readers: the review coordinator, the outcome selector, the
+  // readers' input shapes, the Games rows and the hooks that join them): no colour and no
+  // motion at all, registered in the commit that introduces them so the whole directory stays
+  // on this list (hazard 34).
+  'src/components/CommandCenter/hub/gamesDisplay.js',
+  'src/components/CommandCenter/hub/reviewScheduler.js',
+  'src/components/CommandCenter/hub/selectors/gameOutcome.js',
+  'src/components/CommandCenter/hub/selectors/readerInputs.js',
+  'src/components/CommandCenter/hub/useHubCompletedBattles.js',
+  'src/components/CommandCenter/hub/useHubReaders.js',
 ];
 
 /**

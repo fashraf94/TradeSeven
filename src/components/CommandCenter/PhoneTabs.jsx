@@ -16,7 +16,7 @@ import React, { useRef } from 'react';
 import { motion } from 'framer-motion';
 import { motionToken } from '../../theme/motion';
 import { AREA_FOR_PHONE_TAB, HUB_AREAS, PHONE_TAB_ORDER, PHONE_TABS, rovingIndex } from './hub/composition';
-import { PHONE_ACTIVITY_LIMIT, splitGames } from './hub/hubModel';
+import { PHONE_ACTIVITY_LIMIT, PHONE_COMPLETED_LIMIT, splitGames } from './hub/hubModel';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { C, HAIR } from './hub/hubStyle';
 import { EmptyNote, Label, LoadingLine, Mono, Row, Section } from './HubParts';
@@ -24,7 +24,7 @@ import { AreaBody, AreaHeading } from './panels/AreaPanel';
 import ActivitySection from './sections/ActivitySection';
 import BriefSection from './sections/BriefSection';
 import { PhoneDeployCard } from './sections/DeploySection';
-import { GameRow } from './sections/GamesSection';
+import { GameRow, GamesReadNote } from './sections/GamesSection';
 import NextActionCard from './sections/NextActionCard';
 
 export const phoneTabId = (idBase, tab) => `${idBase}-tab-${tab}`;
@@ -85,24 +85,30 @@ export function PhoneTabRow({ idBase, tab, onSelect }) {
 function PhoneOverview({ sections, actions }) {
   const { games, nextAction, deploy, activity, brief, career } = sections;
   const ready = games?.status === 'ready';
+  const failed = games?.status === 'error';
+  // A retained window whose latest read failed: never empty-history copy (spec §3; slice S3).
+  const stale = ready && games.stale === true;
   const { live, completed } = splitGames(games);
   const candidate = nextAction?.status === 'ready' ? nextAction.candidate : null;
   const liveGame = live[0] || null;
   const liveIsCandidate = Boolean(liveGame && candidate?.key === 'openGame');
   // The next action's own game is not listed again (ff-mobile.jsx MobileOverview; S1 review L1-2).
-  const reviews = completed.filter((g) => g.review && g.id !== candidate?.id);
+  // Slice S3: every live game is listed, and at most three completed rows (spec §8.2).
+  const liveRows = live.filter((g) => !(liveIsCandidate && g.id === candidate?.id));
+  const reviews = completed.filter((g) => g.review && g.id !== candidate?.id).slice(0, PHONE_COMPLETED_LIMIT);
   const record = career?.status === 'ready' && career.record ? career.record : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {!ready && <LoadingLine>{COPY.games.loading}</LoadingLine>}
-      {ready && !liveGame && !candidate && completed.length === 0 && <EmptyNote icon="sword" title={COPY.games.empty} sub={COPY.games.emptySubPhone} />}
+      {!ready && !failed && <LoadingLine>{COPY.games.loading}</LoadingLine>}
+      {(failed || stale) && <GamesReadNote games={games} onRetry={actions.retryGames} />}
+      {ready && !stale && !liveGame && !candidate && completed.length === 0 && <EmptyNote icon="sword" title={COPY.games.empty} sub={COPY.games.emptySubPhone} />}
       {liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} />}
-      {liveGame && !liveIsCandidate && <GameRow game={liveGame} onOpen={actions.openGame} />}
+      {liveRows.map((g) => <GameRow key={g.id} game={g} onOpen={actions.openGame} />)}
       {candidate && !liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} />}
       {reviews.length > 0 && (
         <Section label={COPY.games.reviewsAvailable}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {reviews.map((g) => <GameRow key={g.id} game={g} onOpen={actions.openGame} />)}
+            {reviews.map((g) => <GameRow key={g.id} game={g} onOpen={actions.openGame} onOpenTape={actions.openTape} />)}
           </div>
         </Section>
       )}

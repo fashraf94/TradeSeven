@@ -392,6 +392,30 @@
     "src/components/CommandCenter/hub/selectors/ownership.js": {
       "count": 0,
       "authority": "Command Center hub S2a (prompt \u00a74; founder ruling R-S1-2) \u2014 the pure deploy selectors and their test fixtures: no JSX, no colour, no motion at all, so zero raw transition literals from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/gamesDisplay.js": {
+      "count": 0,
+      "authority": "Command Center hub S3 (rulings R-S3-7, R-S3-8; founder ruling R-S1-2) \u2014 the Games rows from the readers' records: no JSX, no colour, no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/hub/reviewScheduler.js": {
+      "count": 0,
+      "authority": "Command Center hub S3 (ruling R-S3-6; founder ruling R-S1-2) \u2014 the Film Room coordinator's pure scheduler: no JSX, no colour, no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/hub/selectors/gameOutcome.js": {
+      "count": 0,
+      "authority": "Command Center hub S3 (ruling R-S3-7; founder ruling R-S1-2) \u2014 the pure outcome selector: no JSX, no colour, no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/hub/selectors/readerInputs.js": {
+      "count": 0,
+      "authority": "Command Center hub S3 (ruling R-S3-9; founder ruling R-S1-2) \u2014 the readers' results in the S2a selector's input shapes, pure: no JSX, no colour, no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/hub/useHubCompletedBattles.js": {
+      "count": 0,
+      "authority": "Command Center hub S3 (rulings R-S3-5, R-S3-6; founder ruling R-S1-2) \u2014 the ten-game window's thin hook: no JSX, no colour, no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/hub/useHubReaders.js": {
+      "count": 0,
+      "authority": "Command Center hub S3 (ruling R-S3-10; founder ruling R-S1-2) \u2014 the hook that joins the hub's readers: no JSX, no colour, no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
     }
   }
 }

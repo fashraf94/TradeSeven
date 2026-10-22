@@ -14,7 +14,12 @@
 //   legacy — the legacy shell element exactly as App renders it at this site
 //            with the hub off (the picker's `legacyShell`, wrapper included);
 //   frame  — App's host wrapper for what replaces that shell (desktop: the
-//            sidebar offset). Absent → nothing wraps it (mobile).
+//            sidebar offset). Absent → nothing wraps it (mobile);
+//   hub    — App's data for the hub, ONE object (slice S3, ruling R-S3-10):
+//            the active poll's retained list and metadata, its explicit
+//            refresh, and App's open handlers; later slices add their own
+//            keys to the same object. The gate passes it to the hub unchanged
+//            and reads nothing in it.
 //
 // It renders:
 //   loading  → frame(skeleton) while the hub chunk is in flight;
@@ -207,8 +212,9 @@ export function createCommandCenterHubGate(importHub, { reload = reloadPage } = 
    * @param {'mobile'|'desktop'} props.site    this dashboard site, handed to the hub as is
    * @param {React.ReactElement} props.legacy  the hub-off shell for this site, as App renders it
    * @param {Function}           [props.frame] App's host wrapper for the skeleton and the hub
+   * @param {object}             [props.hub]   App's data for the hub, handed to it as is (slice S3)
    */
-  function CommandCenterHubGate({ site, legacy, frame = unframed }) {
+  function CommandCenterHubGate({ site, legacy, frame = unframed, hub }) {
     const [loads, setLoads] = useState(0);
     const [retrying, setRetrying] = useState(false);
     const [dismissed, setDismissed] = useState(false);
@@ -241,7 +247,7 @@ export function createCommandCenterHubGate(importHub, { reload = reloadPage } = 
       >
         {frame(
           <Suspense fallback={<HubSkeleton />}>
-            <Hub site={site} />
+            <Hub site={site} hub={hub} />
           </Suspense>,
         )}
       </HubLoadBoundary>

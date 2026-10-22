@@ -19,6 +19,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const { userState } = vi.hoisted(() => ({ userState: { user: { displayName: 'Flash', username: 'flash' } } }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
+// Slice S3: the hub module now imports its readers, which import the Firebase config; nothing here reads.
+vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 
 import CommandCenterHub from './CommandCenterHub';
 import DeploySection from './sections/DeploySection';
@@ -94,7 +96,8 @@ describe('production: the hub calls the selector with S2a\'s unresolved inputs (
   it('the hub root calls deriveHubDeployState on HUB_S2A_DEPLOY_INPUTS, and HUB_S1_SECTIONS carries no hand-written deploy', () => {
     const code = readHub('CommandCenterHub.jsx');
     expect(code).toContain('const HUB_S2A_DEPLOY = deriveHubDeployState(HUB_S2A_DEPLOY_INPUTS);');
-    expect(code).toMatch(/export default function CommandCenterHub\(\{ site, sections = HUB_DEFAULT_SECTIONS \}\)/);
+    // Slice S3 adds App's `hub` object (R-S3-10); without it the deploy state is still this one.
+    expect(code).toMatch(/export default function CommandCenterHub\(\{ site, sections = HUB_DEFAULT_SECTIONS, hub \}\)/);
     expect(Object.keys(HUB_S1_SECTIONS)).not.toContain('deploy');
   });
 

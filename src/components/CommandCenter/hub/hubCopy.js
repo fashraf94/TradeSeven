@@ -145,6 +145,47 @@ export const HUB_COPY = Object.freeze({
     reviewsAvailable: 'Reviews available',
     /** A game row's name: what it opens, the game, its outcome, a ready review and its detail line. */
     rowLabel: (live, mode, opponent, outcome, review, detail) => [`${live ? 'Open live game' : 'Open game record'}: ${mode} vs ${opponent}`, outcome, review ? 'review available' : '', detail].filter(Boolean).join(', '),
+
+    // ── Slice S3: the rows' own words (spec §3, §6, §7) ──────────────────
+    /** The opponent line: a BaggerBomb game is against a CPU; a ranked day is scored in its league group. */
+    opponentCpu: 'CPU',
+    opponentGroup: 'League group',
+    /** A live game that has not opened yet: deployed, waiting for the open. */
+    waitingForOpen: 'waiting for the open',
+    timeLeft: (hours, minutes) => (hours > 0 ? `${hours}h ${minutes}m left` : `${minutes}m left`),
+    ending: 'ending',
+    /** A live row's line: its score as recorded, its trades, when it ends. */
+    liveDetail: (score, trades, ends) => [`Score ${score}`, `${trades} trade${trades === 1 ? '' : 's'}`, ends ? `ends ${ends}` : ''].filter(Boolean).join(' · '),
+    /** A score a reader may not show (v2 Ruling 16): a dash, never 0. */
+    scoreUnavailable: '—',
+    /** Spec §7's outcome words; each number is the row's own stored score. */
+    outcomeWon: (score) => `Won ${score}`,
+    outcomeLost: (score) => `Lost ${score}`,
+    outcomeDraw: (score) => `Draw ${score}`,
+    outcomeBanked: 'Day banked · no W/L',
+    outcomeNoResult: 'No result',
+    outcomeEnded: 'Ended',
+    noScoreRecorded: 'no score was recorded',
+    endedDetail: (mine, theirs) => `no final result recorded · last recorded ${mine} vs ${theirs}`,
+    scorePair: (mine, theirs) => `${mine} vs ${theirs}`,
+    /** A detail line from its parts. */
+    detail: (...parts) => parts.filter(Boolean).join(' · '),
+    /** Spec §3: a failed read is never an empty history. */
+    loadFailed: 'Couldn’t load your games',
+    staleAsOf: (time) => (time ? `As of ${time} · couldn’t refresh` : 'Couldn’t refresh'),
+    nextAttempt: (time) => `next attempt at ${time}`,
+    retry: 'Retry',
+    /** Spec §6's review states, exactly where the spec gives the words. */
+    review: Object.freeze({
+      openTape: 'Open battle tape',
+      pending: 'Review pending',
+      unavailable: 'Review unavailable',
+      checking: 'Checking the review',
+      queued: (time) => (time ? `Review check queued · next attempt at ${time}` : 'Review check queued'),
+      timedOut: (time) => (time ? `Review refresh timed out · Retry queued · next attempt at ${time}` : 'Review refresh timed out · Retry queued'),
+      /** A tape link's name: what it opens, and for which game. */
+      openTapeLabel: (mode, opponent, day) => [`Open battle tape: ${mode} vs ${opponent}`, day].filter(Boolean).join(', '),
+    }),
   }),
 
   history: Object.freeze({

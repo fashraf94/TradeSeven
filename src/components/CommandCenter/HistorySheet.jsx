@@ -5,6 +5,9 @@
 // its §7 caption and the completed rows of the same fetched window. Opening
 // it adds no read. It proves the HubSheet primitive; S3 supplies its rows and
 // S5 the career record. In S1 only the layout fixtures can open it.
+//
+// Slice S3: the rows are the ten-game window's, each with its outcome and its
+// review line, opening the game and its battle tape as Games does.
 
 import React from 'react';
 import { splitGames } from './hub/hubModel';
@@ -14,7 +17,7 @@ import HubSheet from './HubSheet';
 import { Mono } from './HubParts';
 import { GameRow } from './sections/GamesSection';
 
-export default function HistorySheet({ games, career, phone, onClose, opener, fallbackFocus, reducedMotion }) {
+export default function HistorySheet({ games, career, phone, onClose, opener, fallbackFocus, reducedMotion, onOpenGame, onOpenTape }) {
   const { completed } = splitGames(games);
   const record = career?.status === 'ready' && career.record ? career.record : null;
   return (
@@ -35,7 +38,7 @@ export default function HistorySheet({ games, career, phone, onClose, opener, fa
         </div>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {completed.map((g) => <GameRow key={g.id} game={g} />)}
+        {completed.map((g) => <GameRow key={g.id} game={g} onOpen={onOpenGame} onOpenTape={onOpenTape} />)}
       </div>
     </HubSheet>
   );
