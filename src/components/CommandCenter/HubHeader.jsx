@@ -7,16 +7,24 @@
 // stay (ruling R-S1-3).
 //
 // On the phone the design's account circle stays as the profile affordance.
-// S5 wires it to the profile (spec §2); in S1 it is a disabled button with its
-// label, a 44 px target around the 34 px circle.
+// S5 wires it to the profile (spec §2); without a handler it is a disabled
+// button with its label, a 44 px target around the 34 px circle.
+//
+// S5 (ruling R-S5-7) adds "Report a bug": the floating ClashBot button is
+// withheld over the hub (it would sit on the phone strip's action), so the
+// report opens from here — the widget stays mounted and answers the same open
+// event the Battle View's overflow uses. An icon with its name as the label on
+// the phone, where a 44 px target is all the room there is; the words on the
+// wider compositions. Without a handler the control is not drawn at all.
 
 import React from 'react';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { C, tint } from './hub/hubStyle';
-import { Eyebrow } from './HubParts';
+import { Eyebrow, HubLink, Icon } from './HubParts';
 
-export default function HubHeader({ dateText, name, phone = false, gutter = 28, onOpenProfile }) {
+export default function HubHeader({ dateText, name, phone = false, gutter = 28, onOpenProfile, onReportBug }) {
   const initial = name ? name.trim().charAt(0).toUpperCase() : '';
+  const canReport = typeof onReportBug === 'function';
   return (
     <header style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, padding: phone ? '10px 14px 0' : `18px ${gutter}px 6px` }}>
       <div style={{ minWidth: 0 }}>
@@ -25,19 +33,38 @@ export default function HubHeader({ dateText, name, phone = false, gutter = 28, 
           {COPY.header.title}
         </h1>
       </div>
-      {phone && (
-        <button
-          type="button"
-          onClick={onOpenProfile}
-          disabled={typeof onOpenProfile !== 'function'}
-          aria-label={COPY.header.profile}
-          data-hub-profile=""
-          style={{ appearance: 'none', font: 'inherit', background: 'transparent', border: 'none', padding: 0, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: typeof onOpenProfile === 'function' ? 'pointer' : 'default' }}
-        >
-          <span aria-hidden="true" style={{ width: 34, height: 34, borderRadius: '50%', border: `1.5px solid ${tint('teal', 0.7)}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: C.ink }}>
-            {initial}
-          </span>
-        </button>
+      {(phone || canReport) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: phone ? 0 : 16, flexShrink: 0 }}>
+          {canReport && (phone ? (
+            <button
+              type="button"
+              onClick={onReportBug}
+              aria-label={COPY.header.reportBug}
+              data-hub-report-bug=""
+              style={{ appearance: 'none', font: 'inherit', background: 'transparent', border: 'none', padding: 0, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer', color: C.ink2 }}
+            >
+              <Icon name="bug" size={19} />
+            </button>
+          ) : (
+            <span data-hub-report-bug="">
+              <HubLink onPress={onReportBug}>{COPY.header.reportBug}</HubLink>
+            </span>
+          ))}
+          {phone && (
+            <button
+              type="button"
+              onClick={onOpenProfile}
+              disabled={typeof onOpenProfile !== 'function'}
+              aria-label={COPY.header.profile}
+              data-hub-profile=""
+              style={{ appearance: 'none', font: 'inherit', background: 'transparent', border: 'none', padding: 0, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: typeof onOpenProfile === 'function' ? 'pointer' : 'default' }}
+            >
+              <span aria-hidden="true" style={{ width: 34, height: 34, borderRadius: '50%', border: `1.5px solid ${tint('teal', 0.7)}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: C.ink }}>
+                {initial}
+              </span>
+            </button>
+          )}
+        </div>
       )}
     </header>
   );

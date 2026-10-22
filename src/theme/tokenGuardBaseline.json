@@ -144,6 +144,18 @@
     "src/components/CommandCenter/hub/selectors/attemptReducer.js": {},
     "src/components/CommandCenter/hub/selectors/attemptVocabulary.js": {},
     "src/components/CommandCenter/hub/selectors/deployState.js": {},
-    "src/components/CommandCenter/hub/selectors/ownership.js": {}
+    "src/components/CommandCenter/hub/selectors/ownership.js": {},
+    "src/components/CommandCenter/LoadoutSheets.jsx": {},
+    "src/components/CommandCenter/hubChrome.js": {},
+    "src/components/CommandCenter/__fixtures__/legacySheetStubs.jsx": {},
+    "src/components/CommandCenter/hub/HubOverlays.jsx": {},
+    "src/components/CommandCenter/hub/archetypeLines.js": {},
+    "src/components/CommandCenter/hub/hubFlags.js": {},
+    "src/components/CommandCenter/hub/loadoutLine.js": {},
+    "src/components/CommandCenter/hub/overlayStack.js": {},
+    "src/components/CommandCenter/hub/useHubLoadout.js": {},
+    "src/components/CommandCenter/hub/useHubRuntime.js": {},
+    "src/components/CommandCenter/hub/useHubSheets.js": {},
+    "src/components/CommandCenter/hub/selectors/loadout.js": {}
   }
 }

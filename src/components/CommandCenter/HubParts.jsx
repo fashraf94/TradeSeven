@@ -75,6 +75,7 @@ const ICON_PATHS = {
   search: <g><circle cx="11" cy="11" r="7" /><path d="M16 16l5 5" /></g>,
   info: <g><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></g>,
   hammer: <g><path d="M14 7l4 4M16 5l3 3-2.5 2.5-3-3L16 5zM13.5 9.5L5 18l1.5 1.5L15 11" /></g>,
+  bug: <g><rect x="8" y="9" width="8" height="10" rx="4" /><path d="M9.5 9a2.5 2.5 0 015 0M12 9v10M5 13h3M16 13h3M5 18h3M16 18h3M6.5 7.5L9 9.5M17.5 7.5L15 9.5" /></g>,
 };
 
 export function Icon({ name, size = 16, weight = 1.7, style }) {

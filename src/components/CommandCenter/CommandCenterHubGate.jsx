@@ -11,6 +11,9 @@
 //            hub composes by its own width AND the site, because a 614 px hub
 //            is the phone on the mobile site and one column on the desktop
 //            site (slice S1, founder ruling R-S1-3);
+//   hub    — App's data and actions for the hub in ONE object (slice S5, ruling
+//            R-S5-9; hub/useHubRuntime.js documents its keys). The gate hands it
+//            on unread, as it does the site: it neither reads nor shapes it;
 //   legacy — the legacy shell element exactly as App renders it at this site
 //            with the hub off (the picker's `legacyShell`, wrapper included);
 //   frame  — App's host wrapper for what replaces that shell (desktop: the
@@ -205,10 +208,11 @@ export function createCommandCenterHubGate(importHub, { reload = reloadPage } = 
 
   /**
    * @param {'mobile'|'desktop'} props.site    this dashboard site, handed to the hub as is
+   * @param {object}             [props.hub]   App's data and actions for the hub, handed to it as is
    * @param {React.ReactElement} props.legacy  the hub-off shell for this site, as App renders it
    * @param {Function}           [props.frame] App's host wrapper for the skeleton and the hub
    */
-  function CommandCenterHubGate({ site, legacy, frame = unframed }) {
+  function CommandCenterHubGate({ site, hub, legacy, frame = unframed }) {
     const [loads, setLoads] = useState(0);
     const [retrying, setRetrying] = useState(false);
     const [dismissed, setDismissed] = useState(false);
@@ -241,7 +245,7 @@ export function createCommandCenterHubGate(importHub, { reload = reloadPage } = 
       >
         {frame(
           <Suspense fallback={<HubSkeleton />}>
-            <Hub site={site} />
+            <Hub site={site} hub={hub} />
           </Suspense>,
         )}
       </HubLoadBoundary>

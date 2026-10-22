@@ -34,6 +34,15 @@
 // helper gives none) "Unavailable", the cooldown "Next deploy at {time}",
 // the in-flight control labels, "Verifying deployment…", "Check
 // deployment", "Enter battle", and the as-of and refresh notes.
+// Slice S5 (the owner's loadout and the retained entry points, rulings
+// R-S5-1 … R-S5-7) adds the Loadout panel's states and labels, the shipped
+// watchlist sheet's words (the shells' own, EquipStation.jsx), the Forge doors'
+// names and "Report a bug". Two labels are the idea-first design note's
+// (docs/design/20261016_DESIGN_NOTE_IDEA_FIRST_FORGE.md): "Universe · N names"
+// and "Plain watchlist · no idea yet". The spec's "Create your agent first"
+// (§3) is reused for resolved absence of the agent. The panel never states an
+// idea's wording or status (that needs the gated idea reader, slice S6) and
+// says nothing about what the agent does with ideas.
 // No string claims learning, improvement, intelligence or an earned tier,
 // counts anything the hub does not hold, or says "since your last visit"
 // (§8.2, §11.3) — the copy guard pins that.
@@ -51,6 +60,8 @@ export const HUB_COPY = Object.freeze({
     eyebrow: (dateText, name) => (name ? `${dateText} · ${name}` : dateText),
     /** The phone's account circle. S5 wires it to the profile; in S1 it is disabled. */
     profile: 'Your profile',
+    /** S5 (ruling R-S5-7): the bug report opens from here, since the floating button is withheld over the hub. */
+    reportBug: 'Report a bug',
   }),
 
   shadow: Object.freeze({
@@ -119,6 +130,47 @@ export const HUB_COPY = Object.freeze({
     /** The strip's and the Deploy card's loadout line while the loadout loads. */
     lineLoading: 'Checking your loadout',
     line: (archetype, watchlist) => `${archetype} · ${watchlist}`,
+
+    // ── S5 (rulings R-S5-1 … R-S5-4): the owner's desired loadout ──────────
+    /** Spec §3: resolved absence of the ranked agent. */
+    noAgent: 'Create your agent first',
+    /** The identity row: the agent's stored name, and the shipped record sheet it opens. */
+    agentFallback: 'Your agent',
+    openRecord: 'Agent record',
+    recordLabel: (name) => `Open the agent record for ${name}`,
+    /** The watchlist card's states. */
+    noWatchlist: 'No watchlist equipped',
+    noWatchlistSub: 'Your agent ranges the full board.',
+    watchlistFallback: 'Watchlist',
+    unavailable: (name) => `${name} (unavailable)`,
+    unavailableNote: 'This list is no longer committed, so your agent is not using it.',
+    listsError: 'Couldn’t load your lists',
+    retry: 'Retry',
+    more: (n) => `+${n} more`,
+    /** The strip's and the Deploy card's line when no list is equipped. */
+    lineNoWatchlist: (archetype) => `${archetype} · No watchlist`,
+    /** R-S5-2, the idea-first labels (design note appendix A): a list is an idea's universe, or plainly a list. */
+    universe: (n) => `Universe · ${n} name${n === 1 ? '' : 's'}`,
+    plainList: 'Plain watchlist · no idea yet',
+    /** The adjustments card, where the shells' traits slot exists. */
+    adjustments: 'Adjustments',
+    changeAdjustments: 'Change adjustments',
+    /** The Forge doors: each names the Forge area it opens (ForgeWorkshop navItems: `watchlists` is "Lists", `traits` is "Character" while its tab is on, else "Traits"). */
+    forgeLists: 'Forge Lists',
+    forgeCharacter: 'Forge Character',
+    forgeTraits: 'Forge Traits',
+  }),
+
+  /** The shipped watchlist sheet's words, the shells' own (EquipStation.jsx), handed to it as props. */
+  watchlistSheet: Object.freeze({
+    title: 'Equip watchlist',
+    subtitle: 'Point your agent at a committed watchlist, or let it range the full board.',
+    empty: 'No committed watchlists yet. Create one in Forge to focus your agent.',
+    none: 'No watchlist',
+    noneSub: 'Let the agent range the full board',
+    untitled: 'Untitled watchlist',
+    tickers: (n) => `${n} tickers`,
+    createInForge: 'Create a watchlist in Forge',
   }),
 
   nextAction: Object.freeze({

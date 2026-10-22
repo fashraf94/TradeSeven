@@ -19,6 +19,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const { userState } = vi.hoisted(() => ({ userState: { user: { displayName: 'Flash', username: 'flash' } } }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
+// S5: the hub root now reaches the shipped sheets and services (their Firebase config validates at import).
+vi.mock('../../firebase/config', () => ({ db: {}, auth: {} }));
 
 import CommandCenterHub from './CommandCenterHub';
 import DeploySection from './sections/DeploySection';
@@ -94,7 +96,8 @@ describe('production: the hub calls the selector with S2a\'s unresolved inputs (
   it('the hub root calls deriveHubDeployState on HUB_S2A_DEPLOY_INPUTS, and HUB_S1_SECTIONS carries no hand-written deploy', () => {
     const code = readHub('CommandCenterHub.jsx');
     expect(code).toContain('const HUB_S2A_DEPLOY = deriveHubDeployState(HUB_S2A_DEPLOY_INPUTS);');
-    expect(code).toMatch(/export default function CommandCenterHub\(\{ site, sections = HUB_DEFAULT_SECTIONS \}\)/);
+    // S5 (ruling R-S5-9) gave the root its `hub` prop; an absent `sections` still means the default sections.
+    expect(code).toMatch(/export default function CommandCenterHub\(\{ site, hub = null, sections = HUB_DEFAULT_SECTIONS \}\)/);
     expect(Object.keys(HUB_S1_SECTIONS)).not.toContain('deploy');
   });
 

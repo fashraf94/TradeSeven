@@ -108,6 +108,7 @@ describe('purity — hub/selectors/ (prompt §4: no React, no Firebase, no timer
       `${SELECTORS}/attemptReducer.js`,
       `${SELECTORS}/attemptVocabulary.js`,
       `${SELECTORS}/deployState.js`,
+      `${SELECTORS}/loadout.js`,
       `${SELECTORS}/ownership.js`,
     ]);
   });
@@ -129,6 +130,8 @@ describe('purity — hub/selectors/ (prompt §4: no React, no Firebase, no timer
     expect(importsOf(`${SELECTORS}/deployState.js`)).toEqual([
       '../../../../constants/leagueTournament', '../../../../utils/commandCenterLiveBattles', './attemptVocabulary', './ownership',
     ]);
+    // S5: the Loadout selector takes every input as an argument; its one import is the shipped equip lock.
+    expect(importsOf(`${SELECTORS}/loadout.js`)).toEqual(['../../../../utils/commandCenterLiveBattles']);
   });
 
   it('the scan flags what it names', () => {

@@ -19,50 +19,45 @@
 //     marked when it closes.
 //
 // Keys are handled on the dialog element itself (React's onKeyDown), so the
-// sheet adds no document listener. Its only effects are focus and the inert
-// marks. Layer: above the strip (40) and BottomNav (50), below the root deploy
-// ceremony (1010) — hub/hubStyle.js HUB_LAYERS.
+// sheet adds no document listener. Its only effect is its registration with the
+// hub's overlay stack (hub/overlayStack.js), which owns the inert marks and the
+// focus return (S5 ruling R-S5-6: one stack for every overlay the hub opens,
+// so sheets closing out of order keep the background inert until the last one
+// closes). Layer: above the strip (40) and BottomNav (50), below the root
+// deploy ceremony (1010) — hub/hubStyle.js HUB_LAYERS.
 //
 // S1 opens one sheet, History, and only from the layout fixtures; production
 // S1 has no completed games to open it from.
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { motionToken } from '../../theme/motion';
 import { HUB_COPY as COPY } from './hub/hubCopy';
+import { useHubOverlays } from './hub/HubOverlays';
+import { inertSiblings } from './hub/overlayStack';
 import { C, HAIR, HAIR_2, HUB_LAYERS, tint } from './hub/hubStyle';
 import { Eyebrow, Icon } from './HubParts';
 
-const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+// S1's primitive, kept for its own rows: the stack is built on it.
+export { inertSiblings };
 
-/** Mark every child of body except `keep` inert; returns the undo. Only elements this call marked are restored. */
-export function inertSiblings(keep) {
-  const marked = [];
-  for (const el of Array.from(document.body.children)) {
-    if (el === keep || el.hasAttribute('inert')) continue;
-    el.setAttribute('inert', '');
-    marked.push(el);
-  }
-  return () => { for (const el of marked) el.removeAttribute('inert'); };
-}
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export default function HubSheet({ title, eyebrow = null, label, phone = false, width = 560, onClose, opener = null, fallbackFocus = null, reducedMotion = false, children }) {
   const overlayRef = useRef(null);
   const dialogRef = useRef(null);
   const closeRef = useRef(null);
+  const stack = useHubOverlays();
+  const sheetId = `sheet${useId()}`;
 
   useEffect(() => {
     const invoker = opener || document.activeElement;
-    const restore = inertSiblings(overlayRef.current);
+    // The stack marks the background inert (never this sheet's own root) and, on close, hands focus back:
+    // to the opener, else the fallback, never <body>. A removed or disabled opener cannot take focus.
+    stack.open(sheetId, { opener: invoker, keep: overlayRef.current });
     closeRef.current?.focus();
-    return () => {
-      restore();
-      // A removed or disabled opener cannot take focus (browsers ignore focus() on a disabled button).
-      const canReturn = invoker && typeof invoker.focus === 'function' && invoker.isConnected && !invoker.disabled;
-      if (canReturn) invoker.focus();
-      if ((!canReturn || document.activeElement !== invoker) && fallbackFocus && fallbackFocus.isConnected) fallbackFocus.focus();
-    };
+    return () => { stack.close(sheetId, { fallback: fallbackFocus }); };
     // The opener and the fallback are read once, at open: the sheet returns focus to what opened it.
   }, []);
 

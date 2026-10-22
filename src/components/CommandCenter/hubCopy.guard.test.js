@@ -257,6 +257,37 @@ describe('the spec\'s own strings, exactly', () => {
   });
 });
 
+describe('S5: the design note\'s labels, exactly, and nothing the hub cannot back about ideas (ruling R-S5-2)', () => {
+  it('"Universe · N names" and "Plain watchlist · no idea yet", and the neutral "N names"', () => {
+    expect(HUB_COPY.loadout.universe(10)).toBe('Universe · 10 names');
+    expect(HUB_COPY.loadout.universe(1)).toBe('Universe · 1 name');
+    expect(HUB_COPY.loadout.plainList).toBe('Plain watchlist · no idea yet');
+    expect(HUB_COPY.loadout.names(3)).toBe('3 names');
+    expect(HUB_COPY.loadout.names(1)).toBe('1 name');
+  });
+
+  it('the committed design note says the same two labels (display agreement with its source)', () => {
+    const note = read('docs/design/20261016_DESIGN_NOTE_IDEA_FIRST_FORGE.md');
+    expect(note).toContain('"Universe · 10 names"');
+    expect(note).toContain('"Plain watchlist · no idea yet"');
+  });
+
+  it('the Forge doors are named for the areas they open', () => {
+    expect([HUB_COPY.loadout.forgeLists, HUB_COPY.loadout.forgeCharacter, HUB_COPY.loadout.forgeTraits]).toEqual(['Forge Lists', 'Forge Character', 'Forge Traits']);
+  });
+
+  it('no hub file reads an idea record or its reader: the idea\'s wording and status belong to slice S6, behind the gated reader', () => {
+    const reach = hubSourceFiles().filter((rel) => /hypothesisVersionService|hypothesisRecords\/|getHypothesis|listHypothes|hypothesisVersions/.test(read(rel).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '')));
+    expect(reach).toEqual([]);
+  });
+
+  it('the Loadout never says what the agent does with an idea (the design note\'s honesty line: the agent does not read ideas yet)', () => {
+    const words = ALL_COPY.filter((s) => /\bidea/i.test(s));
+    expect(words.sort()).toEqual(expect.arrayContaining(['Plain watchlist · no idea yet']));
+    for (const s of words) expect(s, s).not.toMatch(/\b(agent|shadow)\b.*\bidea|\bidea.*\b(agent|shadow)\b/i);
+  });
+});
+
 describe('no claim the hub cannot back (spec §8.2, §11.3)', () => {
   const BANNED = [
     /\blearn/i, /\bimprov/i, /\bintelligen/i, /\bsmart(er)?\b/i, /\bearned\b/i, /\btier\b/i, /getting better/i,

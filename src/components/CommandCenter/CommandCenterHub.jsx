@@ -27,6 +27,13 @@
 // signed-in user from useUser() for the header line. OS reduced motion comes
 // from framer-motion's useReducedMotion, the house precedent.
 //
+// Slice S5 (rulings R-S5-1 … R-S5-9) hands the hub App's data and actions in
+// ONE `hub` prop object (hub/useHubRuntime.js documents its keys; S3 adds its
+// own to the same object). With it the Loadout and the career come from the
+// owner's agent document, the entry points open the shipped sheets, and every
+// overlay registers with one hub-level stack (hub/overlayStack.js). Without it
+// (the S1 fixtures) the hub is the frame it always was.
+//
 // One tree for the three wide compositions. Desktop, tablet and stacked are
 // one CSS grid whose areas change with the composition; every part keeps its
 // place in the React tree (the stage and panel wrappers switch to
@@ -61,6 +68,11 @@ import { deployDisplay } from './hub/deployDisplay';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { formatHubDate, headerName } from './hub/hubDate';
 import { HUB_S1_SECTIONS, HUB_S2A_DEPLOY_INPUTS, splitGames } from './hub/hubModel';
+import { HubOverlayProvider } from './hub/HubOverlays';
+import { loadoutLineOf } from './hub/loadoutLine';
+import { LOADOUT_STATUS } from './hub/selectors/loadout';
+import { HUB_SHEETS } from './hub/useHubSheets';
+import { useHubRuntime } from './hub/useHubRuntime';
 import { deriveHubDeployState } from './hub/selectors/deployState';
 import { C, HUB_LAYERS, HUB_SCOPED_CSS } from './hub/hubStyle';
 import { shadowTierFor } from './hub/shadowGeometry';
@@ -71,6 +83,7 @@ import DeployStrip from './DeployStrip';
 import HistorySheet from './HistorySheet';
 import HubHeader from './HubHeader';
 import { HubLayoutContext } from './HubParts';
+import LoadoutSheets, { SHEET_DOCK } from './LoadoutSheets';
 import AreaPanel from './panels/AreaPanel';
 import { PhonePanel, PhoneTabRow } from './PhoneTabs';
 import ActivitySection from './sections/ActivitySection';
@@ -90,18 +103,9 @@ export function shadowSizeFor(composition, width) {
 /** The three area summaries, in area order. Partnership's is fixed; the others are loading until their reader resolves. */
 export function areaSummaries(sections) {
   const of = (section, loading) => (section?.status === 'ready' && section.summary ? section.summary : loading);
-  return [
-    COPY.partnership.summary,
-    of(sections.research, COPY.research.summaryLoading),
-    of(sections.loadout, COPY.loadout.summaryLoading),
-  ];
-}
-
-export function loadoutLineOf(loadout) {
-  if (loadout?.status === 'ready' && loadout.archetype?.name && loadout.watchlist?.name) {
-    return COPY.loadout.line(loadout.archetype.name, loadout.watchlist.name);
-  }
-  return COPY.loadout.lineLoading;
+  // S5: a resolved absence of the agent is an answer, not a wait.
+  const loadout = sections.loadout?.status === LOADOUT_STATUS.NONE ? COPY.loadout.noAgent : of(sections.loadout, COPY.loadout.summaryLoading);
+  return [COPY.partnership.summary, of(sections.research, COPY.research.summaryLoading), loadout];
 }
 
 const rootStyle = { position: 'relative', zIndex: HUB_LAYERS.page, color: C.ink, outline: 'none' };
@@ -128,24 +132,6 @@ function useShared(sections) {
     loadoutLine: loadoutLineOf(sections.loadout),
     dateText: formatHubDate(new Date()),
     name: headerName(user),
-  };
-}
-
-/**
- * The History sheet's state. `open(kind)` is a click handler: it keeps the
- * control that was clicked, so focus returns there when the sheet closes
- * (Safari does not focus a clicked button), and the hub root is the fallback
- * if that control is gone by then (S1 review L3-3).
- */
-function useHubSheet(rootRef) {
-  const [sheet, setSheet] = useState(null);
-  const openerRef = useRef(null);
-  return {
-    sheet,
-    open: (kind) => (event) => { openerRef.current = event?.currentTarget ?? null; setSheet(kind); },
-    close: () => setSheet(null),
-    opener: openerRef.current,
-    fallback: rootRef.current,
   };
 }
 
@@ -198,17 +184,19 @@ export function wideGrid(composition, hasNext) {
 }
 
 /** The mobile site: header → compact stage → sticky tabs → section, and the strip above BottomNav. */
-function PhoneHub({ sections }) {
-  const shared = useShared(sections);
+function PhoneHub({ hub, sections: given }) {
   const rootRef = useRef(null);
+  const runtime = useHubRuntime({ hub, sections: given, rootRef });
+  const { sections, sheets: sheet } = runtime;
+  const shared = useShared(sections);
   const stripRef = useRef(null);
   const width = useHubWidth(rootRef);
   const placement = useNavClearance(stripRef);
   const [tab, setTab] = useState(DEFAULT_PHONE_TAB);
-  const sheet = useHubSheet(rootRef);
   const composition = HUB_COMPOSITIONS.PHONE;
   const actions = {
-    openHistory: shared.completed.length ? sheet.open('history') : undefined,
+    ...runtime.actions,
+    openHistory: shared.completed.length ? sheet.open(HUB_SHEETS.HISTORY) : undefined,
   };
   return (
     <HubLayoutContext.Provider value={composition}>
@@ -220,6 +208,7 @@ function PhoneHub({ sections }) {
         data-hub-site={HUB_SITES.MOBILE}
         data-hub-composition={composition}
         data-hub-width={width ?? ''}
+        data-hub-modal-open={runtime.modalOpen ? '' : undefined}
         tabIndex={-1}
         style={{
           ...rootStyle, height: '100dvh', overflowY: 'auto', overflowX: 'hidden', paddingBottom: placement.scrollClearance,
@@ -227,7 +216,7 @@ function PhoneHub({ sections }) {
           scrollPaddingTop: PHONE_TAB_ROW_CLEARANCE, scrollPaddingBottom: placement.scrollClearance,
         }}
       >
-        <HubHeader phone dateText={shared.dateText} name={shared.name} />
+        <HubHeader phone dateText={shared.dateText} name={shared.name} onOpenProfile={actions.openProfile} onReportBug={actions.reportBug} />
         <div style={{ padding: '10px 14px 12px' }}>
           <PhoneStage
             size={shadowSizeFor(composition, width)}
@@ -252,23 +241,37 @@ function PhoneHub({ sections }) {
         placement={placement}
         onOpenLoadout={() => setTab(PHONE_TABS.LOADOUT)}
       />
-      {sheet.sheet === 'history' && (
-        <HistorySheet games={sections.games} career={sections.career} phone onClose={sheet.close} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} />
+      {sheet.sheet === HUB_SHEETS.HISTORY && (
+        <HistorySheet games={sections.games} career={sections.career} phone onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} />
+      )}
+      {runtime.live && (
+        <LoadoutSheets
+          sheet={sheet.sheet}
+          traitsEpoch={sheet.traitsEpoch}
+          onClose={runtime.closeSheet}
+          dock={SHEET_DOCK.PHONE}
+          agent={runtime.agent}
+          agentLoading={runtime.agentLoading}
+          lists={runtime.lists}
+          onOpenForgeLists={actions.openForgeLists}
+        />
       )}
     </HubLayoutContext.Provider>
   );
 }
 
 /** The desktop site: Desktop, Tablet or Stacked by the hub's own width. */
-function WideHub({ sections }) {
-  const shared = useShared(sections);
+function WideHub({ hub, sections: given }) {
   const rootRef = useRef(null);
+  const runtime = useHubRuntime({ hub, sections: given, rootRef });
+  const { sections, sheets: sheet } = runtime;
+  const shared = useShared(sections);
   const width = useHubWidth(rootRef);
   const composition = composeHub({ site: HUB_SITES.DESKTOP, width });
   const [area, setArea] = useState(DEFAULT_AREA);
-  const sheet = useHubSheet(rootRef);
   const actions = {
-    openHistory: shared.completed.length ? sheet.open('history') : undefined,
+    ...runtime.actions,
+    openHistory: shared.completed.length ? sheet.open(HUB_SHEETS.HISTORY) : undefined,
   };
   const desktop = composition === HUB_COMPOSITIONS.DESKTOP;
   const tablet = composition === HUB_COMPOSITIONS.TABLET;
@@ -333,14 +336,27 @@ function WideHub({ sections }) {
         data-hub-site={HUB_SITES.DESKTOP}
         data-hub-composition={composition}
         data-hub-width={width ?? ''}
+        data-hub-modal-open={runtime.modalOpen ? '' : undefined}
         tabIndex={-1}
         style={{ ...rootStyle, minHeight: '100vh', overflowX: 'hidden' }}
       >
-        <HubHeader dateText={shared.dateText} name={shared.name} gutter={desktop || tablet ? 28 : gutter} />
+        <HubHeader dateText={shared.dateText} name={shared.name} gutter={desktop || tablet ? 28 : gutter} onOpenProfile={actions.openProfile} onReportBug={actions.reportBug} />
         {body}
       </section>
-      {sheet.sheet === 'history' && (
-        <HistorySheet games={sections.games} career={sections.career} onClose={sheet.close} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} />
+      {sheet.sheet === HUB_SHEETS.HISTORY && (
+        <HistorySheet games={sections.games} career={sections.career} onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} />
+      )}
+      {runtime.live && (
+        <LoadoutSheets
+          sheet={sheet.sheet}
+          traitsEpoch={sheet.traitsEpoch}
+          onClose={runtime.closeSheet}
+          dock={SHEET_DOCK.WIDE}
+          agent={runtime.agent}
+          agentLoading={runtime.agentLoading}
+          lists={runtime.lists}
+          onOpenForgeLists={actions.openForgeLists}
+        />
       )}
     </HubLayoutContext.Provider>
   );
@@ -356,13 +372,19 @@ const HUB_DEFAULT_SECTIONS = Object.freeze({ ...HUB_S1_SECTIONS, deploy: HUB_S2A
 
 /**
  * @param {'mobile'|'desktop'} props.site     App's pick, through the gate (ruling R-S1-3)
+ * @param {object}             [props.hub]    App's data and actions in one object (hub/useHubRuntime.js);
+ *   absent, the sections below are all the hub knows (the S1 frames and their fixtures)
  * @param {object}             [props.sections] the section props (hub/hubModel.js): the loading
  *   state, with the selector's deploy state; a sections prop without `deploy` takes that one too
  */
-export default function CommandCenterHub({ site, sections = HUB_DEFAULT_SECTIONS }) {
+export default function CommandCenterHub({ site, hub = null, sections = HUB_DEFAULT_SECTIONS }) {
   const resolved = sections.deploy ? sections : { ...sections, deploy: HUB_S2A_DEPLOY };
   // Keyed by site: a hub handed the other site starts from that site's defaults (ruling R-S1-5).
-  return site === HUB_SITES.MOBILE
-    ? <PhoneHub key={HUB_SITES.MOBILE} sections={resolved} />
-    : <WideHub key={HUB_SITES.DESKTOP} sections={resolved} />;
+  return (
+    <HubOverlayProvider>
+      {site === HUB_SITES.MOBILE
+        ? <PhoneHub key={HUB_SITES.MOBILE} hub={hub} sections={resolved} />
+        : <WideHub key={HUB_SITES.DESKTOP} hub={hub} sections={resolved} />}
+    </HubOverlayProvider>
+  );
 }
