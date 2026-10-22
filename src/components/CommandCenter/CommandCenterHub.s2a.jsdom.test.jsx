@@ -158,7 +158,7 @@ describe('the layout fixtures: every deploy state is the selector\'s, from the s
 describe('the new states through the real Deploy card (desktop) and strip (phone)', () => {
   const attempt = (phase, over) => deriveHubDeployState(base({ attempt: attemptFor(phase, over) }));
 
-  it('failed, review due: the P1b line verbatim, "Deployment failed" on the strip, Open in the Forge disabled', () => {
+  it('failed, review due: the P1b line verbatim on the card, "Deployment refused" on the strip (S3 ruling R-S3-1), Open in the Forge disabled', () => {
     const deploy = attempt('refused', { result: { kind: 'review_due', line: DUE_DEPLOY_LINE } });
     render(<CommandCenterHub site="desktop" sections={withDeploy(deploy)} />);
     expect(card().getAttribute('data-hub-deploy')).toBe('failed');
@@ -168,8 +168,10 @@ describe('the new states through the real Deploy card (desktop) and strip (phone
     for (const m of mounted) m.unmount();
     mounted = [];
     render(<CommandCenterHub site="mobile" sections={withDeploy(deploy)} />, 390);
-    expect(strip().querySelector('[data-hub-strip-line="1"]').textContent).toBe(COPY.deploy.states.failed);
-    expect(strip().querySelector('[data-hub-strip-line="2"]').textContent).toBe(DUE_DEPLOY_LINE);
+    expect(strip().querySelector('[data-hub-strip-line="1"]').textContent).toBe(COPY.deploy.reviewDueStrip);
+    // The server's line is the card's, never the strip's (R-S3-1): line two is the loadout again.
+    expect(strip().textContent).not.toContain(DUE_DEPLOY_LINE);
+    expect(strip().querySelector('[data-hub-strip-line="2"]').textContent).toBe('Speculator · High-Beta Ten');
     expect(byRole(strip(), 'button', COPY.deploy.openForge)[0].disabled).toBe(true);
     expect(byRole(strip(), 'button', COPY.deploy.holdLabel)).toHaveLength(0);
   });
@@ -196,15 +198,19 @@ describe('the new states through the real Deploy card (desktop) and strip (phone
     expect(card().textContent).toMatch(/Ready to deploy · as of \d{1,2}:\d{2} [AP]M ET/);
   });
 
-  it('the strip\'s two lines wrap in full — no line clamp, no hidden overflow (S1 review L3-13; measured in headless Edge at 360 and 390)', () => {
-    const deploy = attempt('refused', { result: { kind: 'review_due', line: DUE_DEPLOY_LINE } });
-    render(<CommandCenterHub site="mobile" sections={withDeploy(deploy)} />, 360);
-    for (const n of ['1', '2']) {
-      const css = strip().querySelector(`[data-hub-strip-line="${n}"]`).getAttribute('style');
-      expect(css, n).not.toMatch(/line-clamp/);
-      expect(css, n).not.toMatch(/overflow:\s*hidden/);
-      expect(css, n).toMatch(/overflow-wrap:\s*anywhere/);
-    }
+  it('the strip\'s first line clamps at two lines and its second at one, with an ellipsis (S3 ruling R-S3-1; measured in headless Edge at 360, S3 report)', () => {
+    // A live BaggerBomb game blocks deploy: line two is the long block reason behind the live line.
+    render(<CommandCenterHub site="mobile" sections={HUB_LAYOUT_FIXTURES.active.sections} />, 360);
+    const line = (n) => strip().querySelector(`[data-hub-strip-line="${n}"]`).style;
+    expect(line('1').display).toBe('-webkit-box');
+    expect(line('1').webkitLineClamp ?? line('1').WebkitLineClamp).toBe('2');
+    expect(line('1').overflow).toBe('hidden');
+    expect(line('2').whiteSpace).toBe('nowrap');
+    expect(line('2').overflow).toBe('hidden');
+    expect(line('2').textOverflow).toBe('ellipsis');
+    // The status button's name still carries both lines whole.
+    const name = byRole(strip(), 'button').find((b) => /Open loadout$/.test(b.getAttribute('aria-label') || '')).getAttribute('aria-label');
+    expect(name).toContain(`Deploy unavailable · ${DEPLOY_BLOCK_REASON.replace(/[.…]+$/, '')}`);
   });
 
   it('A1-4: on a terminal attempt the card\'s control is named by its phase, never by the hold instruction', () => {

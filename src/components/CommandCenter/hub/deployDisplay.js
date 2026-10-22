@@ -16,6 +16,10 @@
 // display word in §5.2, and here they are only ever the display word the
 // selector chose.
 //
+// Slice S3 (founder ruling R-S3-1): the strip's two lines clamp (DeployStrip),
+// so a word the strip cannot hold whole lives on the card: the review-due
+// refusal reads "Deployment refused" on the strip, its server line on the card.
+//
 // The compositions follow the design's rules: no live hold while an attempt is
 // submitting, verifying, finishing or terminal (the control reports the phase,
 // disabled); Retry on a read error; Open game on an existing battle; an
@@ -147,12 +151,16 @@ export function deployDisplay(deploy, liveGame = null) {
       typeof block.reason === 'string' ? block.reason : '', '')
     : null;
   const blockText = typeof blockStatus === 'string' && blockStatus ? blockStatus : null;
+  // The review-due refusal (slice S3, founder ruling R-S3-1): the strip says
+  // "Deployment refused" with Open in the Forge as its action; the server's
+  // line stays whole on the card (cardLine below), never on the strip.
+  const reviewDue = displayState === 'failed' && deploy?.action === DISPLAY_ACTIONS.OPEN_FORGE_REVIEW;
 
   // The strip (ff-mobile.jsx GameStrip): a live game takes the first line and
   // the Open game action; the deploy state moves to the second line. An
   // attempt keeps the first line over a live game.
   const liveLine = liveGame ? (liveGame.preOpen ? COPY.strip.deployed(liveGame.clock) : COPY.strip.live(liveGame.clock)) : null;
-  const stripLine1 = attemptShown || !liveGame ? status : liveLine;
+  const stripLine1 = reviewDue ? D.reviewDueStrip : attemptShown || !liveGame ? status : liveLine;
   // A stale block says when it was true on every surface (spec §3.1 row 6): the
   // card's note, and on the strip the second line — beside a live game in place
   // of the reason (the live line and Open game already say why), else in place
@@ -171,8 +179,9 @@ export function deployDisplay(deploy, liveGame = null) {
     ? (staleBlock ? D.blockedStaleBehindGame(asOf) : D.blockedBehindGame(reason))
     : WAITING.has(displayState) || READ_ERRORS.has(displayState) ? status : null;
   const stripLine2 = (loadoutLine) => {
-    // A refusal's own words, unchanged, take the second line (spec §5.2).
-    if (displayState === 'failed' && reason) return reason;
+    // A refusal's own words, unchanged, take the second line (spec §5.2) — but
+    // for the review-due refusal, whose line lives on the card (R-S3-1).
+    if (displayState === 'failed' && reason && !reviewDue) return reason;
     if (attemptShown && blockText) return blockText;
     if (!attemptShown && liveGame && gateLine) return gateLine;
     if (staleBlock) return D.staleAsOf(asOf);

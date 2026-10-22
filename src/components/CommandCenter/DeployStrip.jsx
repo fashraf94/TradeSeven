@@ -5,8 +5,8 @@
 // above App's BottomNav at its measured outer height, z-index 40 (page <
 // strip 40 < nav 50 < sheets), outside the tab panel so every tab keeps it.
 //
-// Two lines — status and loadout — and the action slot, from the display
-// table in hub/deployDisplay.js. In production the state is "Checking
+// Two lines — status and loadout, clamped (slice S3, below) — and the action
+// slot, from the display table in hub/deployDisplay.js. In production the state is "Checking
 // eligibility…" with the shipped hold control present and disabled. The
 // status button opens the Loadout tab: local presentation, the one thing the
 // strip does before S2b. Slice S2a: the slot also carries the state's one
@@ -26,13 +26,18 @@ import { cssVar } from '../../theme/cssTokens';
 import { HubButton } from './HubParts';
 import HubHold from './sections/HubHold';
 
-// Both lines wrap in full, never clipped (slice S2a, S1 review L3-13): the S2a
-// vocabulary carries long words a two-line clamp cut at 360 and 390 px in
-// headless Edge — the block reason with no live row (3–4 lines), the block
-// reason behind a live game and a long watchlist beside a ranked game (3 lines
-// at 360), and the review-due refusal (3–4 lines). The strip grows instead, and
-// the page's clearance follows its measured height (useNavClearance).
-const wrap = { display: 'block', overflowWrap: 'anywhere', textWrap: 'pretty' };
+// The strip's height rule (slice S3, founder ruling R-S3-1 on Q-S2A-2): the
+// first line clamps at two lines and the second at one, each with an ellipsis,
+// so the strip keeps the design's height whatever the words. The full words
+// stay on the Deploy card — on the phone, the Loadout tab's card
+// (sections/DeploySection.jsx PhoneDeployCard) — and the status button's
+// accessible name carries both lines whole. The review-due refusal says
+// "Deployment refused" here, with Open in the Forge as its action; the
+// server's line is on the card (hub/deployDisplay.js). S2a's unclamped lines
+// (S1 review L3-13) grew the strip to 117 px at 360; the S3 report records the
+// tallest state measured under this rule.
+const clampTwo = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere', minWidth: 0 };
+const clampOne = { display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
 
 const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutLine, placement, onOpenLoadout, onOpenGame, onDeploy, onAction }, ref) {
   const display = deployDisplay(deploy, liveGame);
@@ -61,9 +66,9 @@ const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutL
       >
         <span style={{ display: 'flex', alignItems: 'flex-start', gap: 7, minWidth: 0 }}>
           <span aria-hidden="true" data-hub-strip-dot={display.dot} style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, marginTop: 5, background: cssVar(display.dot), boxShadow: liveGame ? `0 0 8px ${C.teal}` : 'none' }} />
-          <span data-hub-strip-line="1" style={{ fontSize: 13, fontWeight: 600, color: C.ink, lineHeight: 1.3, ...wrap }}>{line1}</span>
+          <span data-hub-strip-line="1" style={{ fontSize: 13, fontWeight: 600, color: C.ink, lineHeight: 1.3, ...clampTwo }}>{line1}</span>
         </span>
-        <span data-hub-strip-line="2" style={{ fontSize: 11, color: C.ink2, lineHeight: 1.3, paddingLeft: 14, ...wrap }}>{line2}</span>
+        <span data-hub-strip-line="2" style={{ fontSize: 11, color: C.ink2, lineHeight: 1.3, paddingLeft: 14, ...clampOne }}>{line2}</span>
       </button>
       {/* One row, never the design's column: a live game with deploy still ready (spec §10's ranked-only case) would otherwise grow the strip past the design's 63–69 px. */}
       <div style={{ display: 'flex', flexDirection: 'row', gap: 6, flexShrink: 0, alignItems: 'stretch' }}>

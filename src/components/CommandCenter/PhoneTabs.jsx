@@ -23,6 +23,7 @@ import { EmptyNote, Label, LoadingLine, Mono, Row, Section } from './HubParts';
 import { AreaBody, AreaHeading } from './panels/AreaPanel';
 import ActivitySection from './sections/ActivitySection';
 import BriefSection from './sections/BriefSection';
+import { PhoneDeployCard } from './sections/DeploySection';
 import { GameRow } from './sections/GamesSection';
 import NextActionCard from './sections/NextActionCard';
 
@@ -134,6 +135,10 @@ export function PhonePanel({ idBase, tab, sections, actions, reducedMotion }) {
         ) : (
           <>
             <div style={{ marginBottom: 14 }}><AreaHeading area={area} label={label} size={18} gap={9} /></div>
+            {/* Slice S3 (R-S3-1): the strip's clamped words, whole, where its status button leads. */}
+            {tab === PHONE_TABS.LOADOUT && (
+              <div style={{ marginBottom: 16 }}><PhoneDeployCard deploy={sections.deploy} onAction={actions.deployAction} /></div>
+            )}
             <AreaBody area={area} sections={sections} actions={actions} />
           </>
         )}

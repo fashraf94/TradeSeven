@@ -34,6 +34,9 @@
 // helper gives none) "Unavailable", the cooldown "Next deploy at {time}",
 // the in-flight control labels, "Verifying deployment…", "Check
 // deployment", "Enter battle", and the as-of and refresh notes.
+// Slice S3 (the readers) adds the founder's strip words for the review-due
+// refusal, "Deployment refused" (ruling R-S3-1).
+//
 // No string claims learning, improvement, intelligence or an earned tier,
 // counts anything the hub does not hold, or says "since your last visit"
 // (§8.2, §11.3) — the copy guard pins that.
@@ -205,6 +208,8 @@ export const HUB_COPY = Object.freeze({
     }),
     /** A recovered confirmation: the battle is owned and admitted, but nothing proves this request created it (spec §5.2). */
     confirmedRecovered: 'Battle confirmed',
+    /** The strip's words for the review-due refusal (slice S3, founder ruling R-S3-1); the server's line stays on the card. */
+    reviewDueStrip: 'Deployment refused',
     /** The Deploy card's longer line for the in-flight states. */
     cardSubmitting: 'Submitting once · waiting for the game to be created',
     cardConfirmed: 'Deployed · the game appears in Games once its record arrives',
