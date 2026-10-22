@@ -61,7 +61,7 @@
 // the daily feed; until then the route answers without evidence
 // (`evidence: null, pending: 'awaiting_close'`).
 
-import { getStockAnalysisData } from '../marketDataCache.js';
+import { getStockAnalysisData, DAILY_WINDOW_CALENDAR_DAYS } from '../marketDataCache.js';
 import { anchorSessionOf, previousSessionOf, sessionAtOrBefore, etDateOfInstant, HorizonClockError } from './horizon.js';
 import { battleIsTerminal } from './reviewPass.js';
 import { carryingBattleIdsOf } from './model.js';
@@ -189,15 +189,40 @@ function priced(symbol, fetched, window) {
 }
 
 /**
+ * The oldest daily close the market-data authority can return at `nowMs`: it
+ * fetches DAILY_WINDOW_CALENDAR_DAYS (90) calendar days back
+ * (marketDataCache.js fetchDailyOHLCV), less one day of margin for the two
+ * clocks involved. A window starting before it cannot be priced — say so
+ * without spending the budget. Pure.
+ */
+export function dailyWindowFloorOf(nowMs) {
+  return new Date(nowMs - (DAILY_WINDOW_CALENDAR_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Why NO symbol can be priced over this window, before any call: empty, or older than the daily feed reaches. Pure. */
+function unpriceableWindow(window, nowMs) {
+  if (window.empty) return 'empty_window';
+  return window.start.etDate < dailyWindowFloorOf(nowMs) ? 'outside_daily_window' : null;
+}
+
+/** The market-data calls the evidence will make: none for an unpriceable window, else the counted names and the market. Pure. */
+export function plannedCallsOf({ window, names, nowMs }) {
+  return unpriceableWindow(window, nowMs) ? 0 : Math.min(names.length, REVIEW_NAMES_MAX) + 1;
+}
+
+/**
  * Compute the evidence over a closed window: at most REVIEW_NAMES_MAX names
  * and the market, one market-data call each, in parallel. Never throws for a
- * symbol (a failed fetch is that symbol's `unavailable`).
+ * symbol (a failed fetch is that symbol's `unavailable`). A window that
+ * cannot be priced (empty, or starting before the daily feed reaches) makes
+ * no call: every name and the market are unavailable for that reason.
  *
  * @returns {Promise<{ evidence: object, calls: number }>}
  */
 export async function computeReviewEvidence({ window, names, nowMs, fetchDaily = getStockAnalysisData }) {
-  const counted = window.empty ? [] : names.slice(0, REVIEW_NAMES_MAX);
-  const symbols = window.empty ? [] : [...counted, REVIEW_MARKET_SYMBOL];
+  const unpriceable = unpriceableWindow(window, nowMs);
+  const counted = unpriceable ? [] : names.slice(0, REVIEW_NAMES_MAX);
+  const symbols = unpriceable ? [] : [...counted, REVIEW_MARKET_SYMBOL];
   const fetched = await Promise.all(symbols.map(async (symbol) => {
     try {
       const out = await fetchDaily(symbol, { fields: ['daily'], forceRefresh: true });
@@ -208,7 +233,7 @@ export async function computeReviewEvidence({ window, names, nowMs, fetchDaily =
   }));
   const bySymbol = new Map(symbols.map((s, i) => [s, fetched[i]]));
   const nameRows = names.map((symbol, i) => {
-    if (window.empty) return { symbol, status: 'unavailable', reason: 'empty_window' };
+    if (unpriceable) return { symbol, status: 'unavailable', reason: unpriceable };
     if (i >= REVIEW_NAMES_MAX) return { symbol, status: 'unavailable', reason: 'budget' };
     return priced(symbol, bySymbol.get(symbol), window);
   });
@@ -216,8 +241,8 @@ export async function computeReviewEvidence({ window, names, nowMs, fetchDaily =
   const list = ok.length > 0
     ? { status: 'ok', changePct: round2(ok.reduce((sum, r) => sum + r.changePct, 0) / ok.length), counted: ok.length, total: names.length }
     : { status: 'unavailable', reason: names.length === 0 ? 'no_frozen_list' : 'no_name_priced', counted: 0, total: names.length };
-  const marketRow = window.empty
-    ? { symbol: REVIEW_MARKET_SYMBOL, status: 'unavailable', reason: 'empty_window' }
+  const marketRow = unpriceable
+    ? { symbol: REVIEW_MARKET_SYMBOL, status: 'unavailable', reason: unpriceable }
     : priced(REVIEW_MARKET_SYMBOL, bySymbol.get(REVIEW_MARKET_SYMBOL), window);
   return {
     calls: symbols.length,
@@ -352,7 +377,7 @@ async function claimEvidence(db, { watchlistId, version, nowMs, window, names })
       return { evidence };
     }
     const claimedAt = iso(nowMs);
-    const calls = window.empty ? 0 : Math.min(names.length, REVIEW_NAMES_MAX) + 1;
+    const calls = plannedCallsOf({ window, names, nowMs });
     tx.update(ref, { [REVIEW_EVIDENCE_CLAIM_FIELD]: { claimedAt, calls } });
     return { claimed: true, claimedAt };
   });

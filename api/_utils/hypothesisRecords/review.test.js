@@ -278,6 +278,19 @@ describe('the evidence', () => {
     expect(r.body.difference).toBeNull();
     expect(JSON.stringify(r.body.evidence)).not.toContain('null');
   });
+  it('a window starting before the daily feed reaches (90 calendar days back, one day of margin) is UNAVAILABLE outright: ZERO calls, every name and SPY outside_daily_window, stored final', async () => {
+    // Opened 95 days after the window's start: no daily close that old can come back.
+    vi.setSystemTime(new Date(Date.parse('2026-10-12T20:00:00.000Z') + 95 * 86_400_000));
+    const db = seed();
+    const r = await get(db);
+    expect(state.calls).toEqual([]);
+    expect(r.body.evidence.names.every((n) => n.status === 'unavailable' && n.reason === 'outside_daily_window')).toBe(true);
+    expect(r.body.evidence.market).toEqual({ symbol: 'SPY', status: 'unavailable', reason: 'outside_daily_window' });
+    expect(stored(db, vPath(1)).reviewEvidenceClaim.calls).toBe(0);
+    // Inside the reach (89 days back), the names are priced.
+    expect(R.dailyWindowFloorOf(Date.parse('2026-10-12T20:00:00.000Z') + 89 * 86_400_000)).toBe('2026-10-12');
+    expect(R.plannedCallsOf({ window: { empty: false, start: { etDate: '2026-10-12' } }, names: ['A', 'B'], nowMs: Date.parse('2026-10-12T20:00:00.000Z') + 89 * 86_400_000 })).toBe(3);
+  });
   it('the budget: at most 11 calls per version — a twelfth name and beyond is unavailable (budget) with no call', async () => {
     const tickers = Array.from({ length: 13 }, (_, i) => `T${String(i).padStart(2, '0')}`);
     for (const t of tickers) state.daily[t] = series(10, 11);
