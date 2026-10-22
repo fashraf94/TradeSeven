@@ -192,6 +192,10 @@ describe('createOverlayStack — focus returns to each overlay\'s opener', () =>
     const stack = createOverlayStack();
     stack.open('a', { opener });
     expect(isInert(appRoot)).toBe(true);
+    // A real browser drops focus the moment its container goes inert (jsdom does not), so the row does it:
+    // without this the opener would "keep" focus throughout and the return could never fail.
+    opener.blur();
+    expect(document.activeElement).toBe(document.body);
     stack.close('a');
     expect(document.activeElement).toBe(opener);
   });
@@ -244,6 +248,17 @@ describe('createOverlayStack — focus returns to each overlay\'s opener', () =>
     stack.close('b', { fallback });
     expect(document.activeElement).toBe(fallback);
     expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('an opener inside something inert for its own reason cannot take focus either: the fallback does', () => {
+    const fallback = el('section', { id: 'hub-root' });
+    fallback.tabIndex = -1;
+    const frozen = el('div', { inert: true });
+    const trapped = button(frozen, 'trapped');
+    const stack = createOverlayStack();
+    stack.open('a', { opener: trapped });
+    stack.close('a', { fallback });
+    expect(document.activeElement).toBe(fallback);
   });
 
   it('the fallback is for an emptied stack only: with an overlay still open, an unusable opener leaves focus where it is', () => {

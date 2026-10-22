@@ -33,6 +33,7 @@ vi.mock('../Dashboard/EquipSheet', async () => ({ default: (await import('./__fi
 vi.mock('../Dashboard/TraitsSheet', async () => ({ default: (await import('./__fixtures__/legacySheetStubs')).TraitsSheetStub }));
 
 import CommandCenterHub from './CommandCenterHub';
+import LoadoutSheets from './LoadoutSheets';
 import { CLASHBOT_OPEN_EVENT } from '../ClashBot/ClashBotWidget';
 import { readToken } from '../../theme/cssTokens';
 import { HUB_COPY as COPY } from './hub/hubCopy';
@@ -429,6 +430,18 @@ describe('the entry points — each opens its real destination (ruling R-S5-4; s
     expect(listWatchlists).toHaveBeenCalledTimes(2);
   });
 
+  it('the watchlist sheet draws its loading state while the lists are still being read, then the rows', async () => {
+    let release;
+    listWatchlists.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+    await renderHub();
+    click(btn(COPY.loadout.changeWatchlist));
+    expect(document.querySelector('[data-stub-loading]')).not.toBeNull();
+    expect(rowIds()).toEqual([]);
+    await act(async () => { release(LISTS()); await Promise.resolve(); });
+    expect(document.querySelector('[data-stub-loading]')).toBeNull();
+    expect(rowIds()).toEqual(['__none__', 'wl-1', 'wl-2']);
+  });
+
   it('a failed lists read puts a Retry in the sheet instead of a lone "No watchlist" row', async () => {
     listWatchlists.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(LISTS());
     await renderHub();
@@ -529,10 +542,35 @@ describe('every overlay the hub opens registers with one stack (ruling R-S5-6)',
     click(opener);
     expect(isInert(m.host)).toBe(true);
     expect(hubRoot().hasAttribute('data-hub-modal-open')).toBe(true);
+    // A real browser drops focus when its container goes inert (jsdom does not): without this the opener
+    // would "keep" focus throughout and a missing focus return could never show.
+    opener.blur();
+    expect(document.activeElement).not.toBe(opener);
     act(() => { seen.archetype.onClose(); });
     expect(isInert(m.host)).toBe(false);
     expect(hubRoot().hasAttribute('data-hub-modal-open')).toBe(false);
     expect(document.activeElement).toBe(opener);
+  });
+
+  it('the phone site\'s root carries modalOpen too (it is its own root, not the wide one)', async () => {
+    const { m } = await renderHub({ site: 'mobile', hubWidth: 390 });
+    expect(hubRoot().hasAttribute('data-hub-modal-open')).toBe(false);
+    click(btn(COPY.loadout.changeArchetype));
+    expect(isInert(m.host)).toBe(true);
+    expect(hubRoot().hasAttribute('data-hub-modal-open')).toBe(true);
+    act(() => { seen.archetype.onClose(); });
+    expect(hubRoot().hasAttribute('data-hub-modal-open')).toBe(false);
+  });
+
+  it('a site switch with a sheet open (the shell remounts under the same stack) leaves the app root interactive', async () => {
+    const { m } = await renderHub({ site: 'desktop' });
+    click(btn(COPY.loadout.changeArchetype));
+    expect(isInert(m.host)).toBe(true);
+    m.rerender(<CommandCenterHub site="mobile" hub={HUB()} sections={HUB_LAYOUT_FIXTURES.returning.sections} />);
+    await flush();
+    expect(document.querySelector('[data-hub-site="mobile"]')).not.toBeNull();
+    expect(isInert(m.host)).toBe(false);
+    expect(hubRoot().hasAttribute('data-hub-modal-open')).toBe(false);
   });
 
   it('the History sheet (the hub\'s own) registers too, and gives focus back', async () => {
@@ -564,6 +602,23 @@ describe('every overlay the hub opens registers with one stack (ruling R-S5-6)',
     expect(host.onOpenForge).toHaveBeenCalled();
     expect(isInert(outer)).toBe(false);
     outer.remove();
+  });
+});
+
+describe('LoadoutSheets — the sheet\'s own guard', () => {
+  it('an equip with no agent does nothing: no write, no error logged, the sheet not closed — whatever row is pressed', async () => {
+    const onClose = vi.fn();
+    const m = mount(<LoadoutSheets sheet="watchlist" traitsEpoch={0} onClose={onClose} dock="center" agent={null} agentLoading={false} lists={{ status: 'ready', committed: LISTS(), retry: vi.fn() }} onOpenForgeLists={vi.fn()} />);
+    mounted.push(m);
+    click(document.querySelector('[data-row="wl-2"]'));
+    click(document.querySelector('[data-row="__none__"]'));
+    await flush();
+    expect(equipWatchlist).not.toHaveBeenCalled();
+    expect(unequipWatchlist).not.toHaveBeenCalled();
+    // The early return is what keeps the null agent out of the write path: without it `agent.id` throws, the
+    // catch logs it and the finally closes the sheet — the mutant that "no write happened" alone cannot see.
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 

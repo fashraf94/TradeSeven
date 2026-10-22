@@ -78,10 +78,13 @@ describe('names and labels wrap — nothing is ellipsized (ruling R-S5-8: no tru
     expect(render('phone', { loadout: { status: LOADOUT_STATUS.NONE } })).not.toContain('text-overflow');
   });
 
-  it('the long names break where they must instead of clipping', () => {
+  it('the long names break where they must instead of clipping: the agent, the archetype, the list, a chip and the adjustments each carry overflow-wrap: anywhere', () => {
     const html = render('phone');
-    // the agent's name, the archetype's name, the list's name and the chips all carry overflow-wrap: anywhere
-    expect((html.match(/overflow-wrap:anywhere/g) || []).length).toBeGreaterThanOrEqual(4);
+    for (const text of ['A very long agent name that would not fit on one line at all', 'Fundamental Investor', 'Concentrated semiconductor and AI infrastructure momentum names', 'NVDA', '2 traits']) {
+      const at = html.indexOf(`>${text}<`);
+      expect(at, text).toBeGreaterThan(-1);
+      expect(html.slice(html.lastIndexOf('<', at), at), text).toContain('overflow-wrap:anywhere');
+    }
   });
 
   it('the three change buttons wrap their labels (white-space: normal) rather than overflow their card', () => {
