@@ -276,6 +276,15 @@ describe('S5: the design note\'s labels, exactly, and nothing the hub cannot bac
     expect([HUB_COPY.loadout.forgeLists, HUB_COPY.loadout.forgeCharacter, HUB_COPY.loadout.forgeTraits]).toEqual(['Forge Lists', 'Forge Character', 'Forge Traits']);
   });
 
+  // The hub rows compare what is on screen with COPY.* — the same string on both sides — so these two words, which the
+  // rulings quote, are pinned here (lens E5, E5-6).
+  it('the words the rulings quote: "Locked in battle · …" while the loadout is locked (R-S5-1) and the header\'s "Report a bug" (R-S5-7) (E5-6)', () => {
+    expect(HUB_COPY.loadout.nextDeployLocked).toMatch(/^Locked in battle · /);
+    expect(HUB_COPY.loadout.nextDeployLocked).toBe('Locked in battle · changes apply to your next deploy.');
+    expect(HUB_COPY.loadout.nextDeploy).toBe('Changes apply to your next deploy.');
+    expect(HUB_COPY.header.reportBug).toBe('Report a bug');
+  });
+
   it('no hub file reads an idea record or its reader: the idea\'s wording and status belong to slice S6, behind the gated reader', () => {
     const reach = hubSourceFiles().filter((rel) => /hypothesisVersionService|hypothesisRecords\/|getHypothesis|listHypothes|hypothesisVersions/.test(read(rel).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '')));
     expect(reach).toEqual([]);

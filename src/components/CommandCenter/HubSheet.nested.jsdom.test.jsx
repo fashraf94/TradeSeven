@@ -78,6 +78,8 @@ describe('nested sheets: each traps only its own keys', () => {
     press(i1, 'Escape');
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
     expect(document.getElementById('i1')).toBeNull();
+    // the row's own title: focus goes back to the control that opened the inner sheet (E5-13)
+    expect(document.activeElement).toBe(document.getElementById('open-inner'));
   });
 
   it('the outer sheet keeps its own trap and its own Escape', () => {

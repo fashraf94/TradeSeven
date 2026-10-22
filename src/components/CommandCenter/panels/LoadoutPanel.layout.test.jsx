@@ -135,3 +135,25 @@ describe('the states the panel draws', () => {
     expect(html).not.toContain('data-hub-loadout-identity');
   });
 });
+
+describe('the lock, at the panel itself (lens E5, E5-14)', () => {
+  // The runtime already withholds the handlers while the loadout is locked (hub/useHubRuntime.js); the panel keeps its own
+  // check, so a handler handed to it anyway cannot unlock a picker. Static markup: a disabled button carries `disabled=""`.
+  const buttons = (html) => html.split('<button').slice(1).map((part) => ({
+    open: part.slice(0, part.indexOf('>')),
+    text: part.slice(part.indexOf('>'), part.indexOf('</button>')),
+  }));
+  const named = (html, label) => buttons(html).find((b) => b.text.includes(label));
+  const disabled = (b) => /\sdisabled(=""|\s|$)/.test(b.open);
+
+  it('a locked loadout disables the three pickers even when handlers are handed in; the record and the Forge doors stay live', () => {
+    const html = render('desktop', { loadout: loadout({ lockedInGame: true }) });
+    for (const label of ['Change archetype', 'Change watchlist', 'Change adjustments']) expect(disabled(named(html, label)), label).toBe(true);
+    for (const label of ['Agent record', 'Forge Lists']) expect(disabled(named(html, label)), label).toBe(false);
+  });
+
+  it('an unlocked one has them all enabled', () => {
+    const html = render('desktop');
+    for (const label of ['Change archetype', 'Change watchlist', 'Change adjustments']) expect(disabled(named(html, label)), label).toBe(false);
+  });
+});

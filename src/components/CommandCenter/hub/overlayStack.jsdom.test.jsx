@@ -572,6 +572,15 @@ describe('createOverlayStack — focus is never left on <body> (review E3-2, E3-
 });
 
 describe('HubOverlays — focus when the hub is replaced under an open overlay (review E3-2)', () => {
+  // Every state change here is made inside act(); a spy hears React's not-wrapped warning, which a bare run only prints (E5-12).
+  let errorSpy;
+  beforeEach(() => { errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {}); });
+  afterEach(() => {
+    const heard = errorSpy.mock.calls.map((call) => String(call[0]).slice(0, 120));
+    errorSpy.mockRestore();
+    expect(heard).toEqual([]);
+  });
+
   const mountHub = () => {
     const host = el('div', { id: 'old-hub' });
     const root = createRoot(host);
@@ -592,7 +601,7 @@ describe('HubOverlays — focus when the hub is replaced under an open overlay (
 
   it('the new hub\'s shell takes focus when the old hub unmounts with an overlay open and focus has fallen to <body>', () => {
     const { root, stack } = mountHub();
-    stack().open('legacy:archetype', { opener: null });
+    act(() => { stack().open('legacy:archetype', { opener: null }); });
     const shell = newShell();
     expect(document.activeElement).toBe(document.body);
     act(() => { root.unmount(); });
@@ -602,7 +611,7 @@ describe('HubOverlays — focus when the hub is replaced under an open overlay (
 
   it('a focus that is anywhere live is left where it is', () => {
     const { root, stack } = mountHub();
-    stack().open('legacy:archetype', { opener: null });
+    act(() => { stack().open('legacy:archetype', { opener: null }); });
     newShell();
     const elsewhere = button(el('div'), 'elsewhere');
     elsewhere.focus();
@@ -619,7 +628,7 @@ describe('HubOverlays — focus when the hub is replaced under an open overlay (
 
   it('with no new hub (the Forge replaced it) nothing moves and nothing throws', () => {
     const { root, stack } = mountHub();
-    stack().open('legacy:watchlist', { opener: null });
+    act(() => { stack().open('legacy:watchlist', { opener: null }); });
     expect(() => act(() => { root.unmount(); })).not.toThrow();
     expect(document.activeElement).toBe(document.body);
     expect(isInert(appRoot)).toBe(false);
@@ -687,5 +696,37 @@ describe('createOverlayStack — openers owed to overlays closed out of order (r
     stack.close('c');
     expect(document.activeElement).toBe(a1Btn);
     stack.releaseAll();
+  });
+});
+
+describe('createOverlayStack — a landing that does not land, and a stack that is released (lens E5, E5-14)', () => {
+  const fallbackShell = () => {
+    const shell = el('section');
+    shell.tabIndex = -1;
+    return shell;
+  };
+
+  it('an opener that is connected and enabled but cannot take focus (a div with no tabindex) is no landing: focus goes on to the fallback', () => {
+    const stack = createOverlayStack();
+    const opener = el('div', { parent: appRoot });
+    stack.open('a', { opener });
+    const shell = fallbackShell();
+    stack.close('a', { fallback: shell });
+    expect(document.activeElement).not.toBe(opener);
+    expect(document.activeElement).toBe(shell);
+  });
+
+  it('releaseAll leaves the stack as a new one: an opener stranded before it is not owed afterwards', () => {
+    const stack = createOverlayStack();
+    const owed = button(appRoot, 'owed');
+    stack.open('a', { opener: owed });
+    stack.open('b', { opener: button(appRoot, 'b-open') });
+    stack.close('a'); // out of order: its opener is owed
+    stack.releaseAll();
+    stack.open('c', { opener: null });
+    const shell = fallbackShell();
+    stack.close('c', { fallback: shell });
+    expect(document.activeElement).toBe(shell);
+    expect(document.activeElement).not.toBe(owed);
   });
 });

@@ -118,7 +118,7 @@ describe('the real sheets open, close and give the page back', () => {
     click(closeButton());
     expect(isInert(m.host)).toBe(false);
     expect(document.activeElement).toBe(control);
-  });
+  }, 30000); // the file's first row pays the cold render of the real sheets: over the 5 s default under load (E5-7)
 });
 
 describe('re-opening a sheet inside its own exit animation (review E3-1, E2-1)', () => {

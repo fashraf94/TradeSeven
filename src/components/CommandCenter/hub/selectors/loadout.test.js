@@ -98,6 +98,23 @@ describe('deriveWatchlist — the card\'s state (ruling R-S5-1)', () => {
     expect(w({ committed: [list({ name: '' })], agent: agent({ equippedWatchlistName: undefined }) }).name).toBeNull();
   });
 
+  it('a stored name that is blank or not a string is no name, in every state that falls back to it (E5-11)', () => {
+    for (const equippedWatchlistName of ['', '   ', 7, {}, null]) {
+      const label = JSON.stringify(equippedWatchlistName);
+      const given = agent({ equippedWatchlistName });
+      expect(w({ agent: given, listsStatus: LISTS_STATUS.LOADING, committed: [] }).name, `loading ${label}`).toBeNull();
+      expect(w({ agent: given, listsStatus: LISTS_STATUS.ERROR, committed: [] }).name, `error ${label}`).toBeNull();
+      expect(w({ agent: given, committed: [] }).name, `unavailable ${label}`).toBeNull();
+      expect(w({ agent: given, committed: [list({ name: '' })] }).name, `resolved ${label}`).toBeNull();
+    }
+  });
+
+  it('a list name that is blank or not a string is no name: the stored one fills in (E5-11)', () => {
+    for (const name of ['   ', 7, {}, null]) {
+      expect(w({ committed: [list({ name })] }).name, JSON.stringify(name)).toBe('Stored Name');
+    }
+  });
+
   it('a malformed committed argument is an empty one', () => {
     expect(w({ committed: null }).state).toBe(WATCHLIST_STATE.UNAVAILABLE);
     expect(w({ committed: [null, undefined, 5] }).state).toBe(WATCHLIST_STATE.UNAVAILABLE);
@@ -177,6 +194,9 @@ describe('ideaLabelKind — the idea-first labels (ruling R-S5-2; the design not
 describe('symbolsOf — the shells\' ticker normalization', () => {
   it('strings, symbol objects and ticker objects; the rest dropped', () => {
     expect(symbolsOf({ tickers: ['A', { symbol: 'B' }, { ticker: 'C' }, null, {}, 3, '', { symbol: '' }] })).toEqual(['A', 'B', 'C']);
+  });
+  it('an entry that carries both reads as the shells read it: the symbol first (E5-14)', () => {
+    expect(symbolsOf({ tickers: [{ symbol: 'AAA', ticker: 'BBB' }, { ticker: 'CCC' }] })).toEqual(['AAA', 'CCC']);
   });
   it('an absent or malformed list is empty', () => {
     expect(symbolsOf(null)).toEqual([]);

@@ -184,6 +184,28 @@ describe('useHubLoadout — late answers', () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
+  it('a superseded read\'s FAILURE is dropped too: it cannot turn the newest answer into an error or move `readFor` (E5-10)', async () => {
+    const stale = deferred();
+    const newest = deferred();
+    listWatchlists.mockResolvedValueOnce([committed('wl-1')]).mockReturnValueOnce(stale.promise).mockReturnValueOnce(newest.promise);
+    render(true, 'owner-a', 'wl-1');
+    await flush();
+    // two foreign equips in a row: the read issued under wl-2 is superseded by the one issued under wl-3
+    render(true, 'owner-a', 'wl-2');
+    await flush();
+    render(true, 'owner-a', 'wl-3');
+    await flush();
+    await act(async () => { newest.resolve([committed('wl-1'), committed('wl-3')]); await Promise.resolve(); });
+    expect(api.status).toBe(LISTS_STATUS.READY);
+    expect(api.readFor).toBe('wl-3');
+    errorSpy.mockClear();
+    await act(async () => { stale.reject(new Error('late')); await Promise.resolve(); await Promise.resolve(); });
+    expect(api.status).toBe(LISTS_STATUS.READY);
+    expect(api.readFor).toBe('wl-3');
+    expect(api.committed.map((l) => l.watchlistId)).toEqual(['wl-1', 'wl-3']);
+    expect(listWatchlists).toHaveBeenCalledTimes(3);
+  });
+
   it('an answer after the reader was disabled is dropped', async () => {
     const pending = deferred();
     listWatchlists.mockReturnValueOnce(pending.promise);

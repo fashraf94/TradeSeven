@@ -12,19 +12,21 @@
 import React, { act } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { userState, listWatchlists, equipWatchlist, unequipWatchlist, flags, slots } = vi.hoisted(() => ({
+const { userState, listWatchlists, equipWatchlist, unequipWatchlist, flags, slots, mastery } = vi.hoisted(() => ({
   userState: { user: { displayName: 'Flash', username: 'flash' } },
   listWatchlists: vi.fn(),
   equipWatchlist: vi.fn(),
   unequipWatchlist: vi.fn(),
   flags: { current: { concurrencyEnabled: true, hypothesisRecordsOn: true, characterTab: true } },
   slots: { current: [{ id: 'archetype', filled: true }, { id: 'watchlist', filled: true }] },
+  // The mastery surface is dark in production (the hook returns null); a row can light it to see what the hub reads and passes on.
+  mastery: { profile: null, askedFor: [] },
 }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {} }));
 vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists }));
 vi.mock('../../services/agentService', () => ({ equipWatchlist, unequipWatchlist }));
-vi.mock('../../hooks/useMasteryProfile', () => ({ default: () => null }));
+vi.mock('../../hooks/useMasteryProfile', () => ({ default: (userId) => { mastery.askedFor.push(userId); return mastery.profile; } }));
 vi.mock('./hub/hubFlags', () => ({ hubFlags: () => flags.current }));
 vi.mock('../../utils/equipSlots', () => ({ getEquipSlots: () => slots.current }));
 vi.mock('../Dashboard/AgentRecordSheet', async () => ({ default: (await import('./__fixtures__/legacySheetStubs')).AgentRecordSheetStub }));
@@ -32,9 +34,10 @@ vi.mock('../Dashboard/ArchetypePicker', async () => ({ default: (await import('.
 vi.mock('../Dashboard/EquipSheet', async () => ({ default: (await import('./__fixtures__/legacySheetStubs')).EquipSheetStub }));
 vi.mock('../Dashboard/TraitsSheet', async () => ({ default: (await import('./__fixtures__/legacySheetStubs')).TraitsSheetStub }));
 
-import CommandCenterHub from './CommandCenterHub';
+import CommandCenterHub, { areaSummaries } from './CommandCenterHub';
 import LoadoutSheets from './LoadoutSheets';
 import { CLASHBOT_OPEN_EVENT } from '../ClashBot/ClashBotWidget';
+import { getLevelConfig, getNextLevelInfo } from '../../constants/agentProgression';
 import { readToken } from '../../theme/cssTokens';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { LOADOUT_SYMBOL_LIMIT } from './hub/hubModel';
@@ -63,6 +66,8 @@ beforeEach(() => {
   unequipWatchlist.mockResolvedValue({});
   flags.current = { concurrencyEnabled: true, hypothesisRecordsOn: true, characterTab: true };
   slots.current = [{ id: 'archetype', filled: true }, { id: 'watchlist', filled: true }];
+  mastery.profile = null;
+  mastery.askedFor = [];
   resetSeen();
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -753,7 +758,7 @@ describe('review fixes — what the sheets are handed, what the card says about 
         m.unmount();
         mounted = mounted.filter((x) => x !== m);
       }
-    });
+    }, 30000); // six full hub mounts in one row: over the 5 s default under load (E5-7)
 
     it('a record, or a career still loading, does not say unavailable', async () => {
       const { m } = await renderHub();
@@ -789,5 +794,293 @@ describe('review fixes — focus survives a site switch with a sheet open (E3-2)
       m.unmount();
       mounted = mounted.filter((x) => x !== m);
     }
+  });
+});
+
+// ── Test-integrity follow-up (lens E5): the survivors of the fix-round mutation campaign ────────────────
+// What the stack does for EVERY legacy sheet on BOTH sites, what each sheet is handed, and how the watchlist
+// sheet's latch behaves across more than one open. Each row names the finding it closes.
+
+const SITES = [
+  ['desktop', { site: 'desktop', hubWidth: 1280 }, 'center'],
+  ['mobile', { site: 'mobile', hubWidth: 390 }, 'bottom'],
+];
+const TRAITS_SLOTS = () => [{ id: 'archetype', filled: true }, { id: 'watchlist', filled: true }, { id: 'traits', filled: false }];
+const LEGACY_SHEETS = [
+  ['record', () => recordButton(), () => seen.record],
+  ['archetype', () => btn(COPY.loadout.changeArchetype), () => seen.archetype],
+  ['watchlist', () => btn(COPY.loadout.changeWatchlist), () => seen.equip],
+  ['traits', () => btn(COPY.loadout.changeAdjustments), () => seen.traits],
+];
+
+describe('every legacy sheet registers with the one stack, the traits sheet included, on both sites (ruling R-S5-6; E5-1)', () => {
+  const isInert = (node) => node.hasAttribute('inert');
+  const CASES = SITES.flatMap(([site, options]) => LEGACY_SHEETS.map(([sheet, opener, props]) => [`${sheet} on the ${site} site`, options, opener, props]));
+
+  it.each(CASES)('%s: the app root is inert and modalOpen true while it is open; closing restores both and returns focus to its opener', async (_name, options, opener, props) => {
+    slots.current = TRAITS_SLOTS();
+    const { m } = await renderHub(options);
+    const control = opener();
+    control.focus();
+    click(control);
+    expect(isInert(m.host)).toBe(true);
+    expect(hubRoot().hasAttribute('data-hub-modal-open')).toBe(true);
+    // A real browser drops focus when the opener's container goes inert (jsdom does not): without this a missing return could not show.
+    control.blur();
+    act(() => { props().onClose(); });
+    await flush();
+    expect(isInert(m.host)).toBe(false);
+    expect(hubRoot().hasAttribute('data-hub-modal-open')).toBe(false);
+    expect(document.activeElement).toBe(control);
+  });
+
+  it('an opener that cannot take focus back (the equip lock disabled it while the sheet was open): the hub root gets it, never <body> (S1 review L3-3; E5-8)', async () => {
+    const { m } = await renderHub();
+    const opener = btn(COPY.loadout.changeArchetype);
+    opener.focus();
+    click(opener);
+    opener.blur();
+    m.rerender(<CommandCenterHub site="desktop" hub={HUB({ agent: AGENT({ activeBattleId: 'b-1' }) })} sections={HUB_LAYOUT_FIXTURES.returning.sections} />);
+    await flush();
+    expect(btn(COPY.loadout.changeArchetype).disabled).toBe(true);
+    act(() => { seen.archetype.onClose(); });
+    expect(isInert(m.host)).toBe(false);
+    expect(document.activeElement).toBe(hubRoot());
+  });
+});
+
+describe('what each sheet is handed, on each site (ruling R-S5-4; E5-4, E5-5, E5-8)', () => {
+  it.each(SITES)('%s site: the agent, the accent, the loading flag and the site\'s dock reach every sheet, and only the sheet asked for is open', async (_name, options, dock) => {
+    slots.current = TRAITS_SLOTS();
+    mastery.profile = { lit: true };
+    await renderHub({ ...options, hub: HUB({ agentLoading: true, agent: AGENT({ primaryColor: 'player-colour' }) }) });
+    // The traits sheet first: it stays mounted once opened (keyed by the epoch), so it is the one that could stay open under the others.
+    for (const [sheet, opener, props] of [...LEGACY_SHEETS].reverse()) {
+      click(opener());
+      const handed = props();
+      expect(document.querySelectorAll('[role="dialog"]'), `${sheet}: one sheet open at a time`).toHaveLength(1);
+      expect(handed.open, sheet).toBe(true);
+      expect(handed.dock, sheet).toBe(dock);
+      // the quick sheet (EquipSheet) is handed rows, not the agent; the other three are handed the agent
+      if (sheet !== 'watchlist') expect(handed.agent?.id, sheet).toBe('ag-1');
+      // the watchlist sheet takes the shells' fixed teal (EquipStation / EquipBench); the other three the player's colour
+      expect(handed.accent, sheet).toBe(sheet === 'watchlist' ? readToken('teal') : 'player-colour');
+      if (sheet === 'record') expect(handed.loading).toBe(true);
+      act(() => { handed.onClose(); });
+    }
+  });
+
+  it('the record sheet is handed the shells\' level inputs for the games PLAYED, the mastery profile read for the OWNER, and the first avatar colour when the player has none', async () => {
+    mastery.profile = { lit: true };
+    await renderHub({ hub: HUB({ agent: AGENT({ stats: { wins: 2, losses: 1, gamesPlayed: 9 }, avatarColors: ['first-avatar'] }) }) });
+    // premise: nine games, two wins and no game at all are three different answers
+    expect(getLevelConfig(9)).not.toEqual(getLevelConfig(2));
+    expect(getLevelConfig(9)).not.toEqual(getLevelConfig(0));
+    expect(getNextLevelInfo(9)).not.toEqual(getNextLevelInfo(0));
+    click(recordButton());
+    expect(seen.record.levelConfig).toEqual(getLevelConfig(9));
+    expect(seen.record.nextLevelInfo).toEqual(getNextLevelInfo(9));
+    expect(seen.record.masteryProfile).toBe(mastery.profile);
+    expect(new Set(mastery.askedFor)).toEqual(new Set(['u-1']));
+    expect(seen.record.accent).toBe('first-avatar');
+  });
+
+  it('an agent with no games-played count is a level-zero record, not a crash', async () => {
+    await renderHub({ hub: HUB({ agent: AGENT({ stats: { wins: 7, losses: 3 } }) }) });
+    click(recordButton());
+    expect(seen.record.levelConfig).toEqual(getLevelConfig(0));
+    expect(seen.record.nextLevelInfo).toEqual(getNextLevelInfo(0));
+  });
+});
+
+describe('the phone site wires the same sheets the wide site does (E5-4)', () => {
+  const phone = { site: 'mobile', hubWidth: 390 };
+
+  it('the watchlist sheet: the lists the hub read are its rows, and its footer opens the Forge Lists area and closes it', async () => {
+    const { hub } = await renderHub(phone);
+    click(btn(COPY.loadout.changeWatchlist));
+    expect(rowIds()).toEqual(['__none__', 'wl-1', 'wl-2']);
+    expect(document.querySelector('[data-row="wl-1"]').hasAttribute('data-selected')).toBe(true);
+    click(btn(COPY.watchlistSheet.createInForge, document.querySelector('[data-stub="equip"]')));
+    expect(hub.onOpenForge).toHaveBeenCalledTimes(1);
+    expect(hub.onOpenForge).toHaveBeenCalledWith({ area: 'watchlists', returnTo: 'dashboard' });
+    expect(document.querySelector('[data-stub="equip"]')).toBeNull();
+  });
+
+  it('a pick equips through agentService and the lists are read again; so is a close without a pick — the record and the picker close without a re-read', async () => {
+    await renderHub(phone);
+    click(btn(COPY.loadout.changeWatchlist));
+    await act(async () => { click(document.querySelector('[data-row="wl-2"]')); await Promise.resolve(); await Promise.resolve(); });
+    await flush();
+    expect(equipWatchlist).toHaveBeenCalledWith('ag-1', 'wl-2');
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+    click(recordButton());
+    act(() => { seen.record.onClose(); });
+    click(btn(COPY.loadout.changeArchetype));
+    act(() => { seen.archetype.onClose(); });
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+    click(btn(COPY.loadout.changeWatchlist));
+    act(() => { seen.equip.onClose(); });
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(3);
+  });
+
+  it('a failed lists read puts the Retry into the sheet, and the Retry reads again', async () => {
+    listWatchlists.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(LISTS());
+    await renderHub(phone);
+    click(btn(COPY.loadout.changeWatchlist));
+    expect(rowIds()).toEqual([]);
+    click(btn(COPY.loadout.retry, document.querySelector('[data-stub="equip"]')));
+    await flush();
+    expect(rowIds()).toEqual(['__none__', 'wl-1', 'wl-2']);
+  });
+
+  it('the traits sheet REMOUNTS on every open here too (its orphan-cleanup invariant: half of it is the per-open remount)', async () => {
+    slots.current = TRAITS_SLOTS();
+    await renderHub(phone);
+    click(btn(COPY.loadout.changeAdjustments));
+    expect(seen.traitsMounts).toBe(1);
+    act(() => { seen.traits.onClose(); });
+    click(btn(COPY.loadout.changeAdjustments));
+    expect(seen.traitsMounts).toBe(2);
+  });
+});
+
+describe('the watchlist sheet\'s working latch (ruling R-S5-4: the shells\' own equip handler, step for step; E5-2)', () => {
+  const pressRow = async (id) => {
+    await act(async () => { click(document.querySelector(`[data-row="${id}"]`)); await Promise.resolve(); await Promise.resolve(); });
+    await flush();
+  };
+
+  it('a second equip in a later open of the same sheet is a second write: the latch let go after the first', async () => {
+    await renderHub();
+    click(btn(COPY.loadout.changeWatchlist));
+    await pressRow('wl-2');
+    expect(equipWatchlist).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[data-stub="equip"]')).toBeNull();
+    // The sheet stays mounted between opens (as in the shells): a latch left set would freeze every later pick.
+    click(btn(COPY.loadout.changeWatchlist));
+    expect(document.querySelector('[data-row="__none__"]').disabled).toBe(false);
+    await pressRow('__none__');
+    expect(unequipWatchlist).toHaveBeenCalledTimes(1);
+    expect(unequipWatchlist).toHaveBeenCalledWith('ag-1');
+  });
+
+  it('a FAILED equip lets the latch go too', async () => {
+    equipWatchlist.mockRejectedValueOnce(new Error('409'));
+    await renderHub();
+    click(btn(COPY.loadout.changeWatchlist));
+    await pressRow('wl-2');
+    click(btn(COPY.loadout.changeWatchlist));
+    expect(document.querySelector('[data-row="wl-1"]').disabled).toBe(false);
+    await pressRow('wl-1');
+    expect(equipWatchlist).toHaveBeenCalledTimes(2);
+    expect(equipWatchlist).toHaveBeenLastCalledWith('ag-1', 'wl-1');
+  });
+
+  it('while an equip is in flight every row is disabled and a second press — even one that reaches the handler — is no second write; it closes the sheet once, when it settles', async () => {
+    let settle;
+    equipWatchlist.mockReturnValueOnce(new Promise((resolve) => { settle = resolve; }));
+    const onClose = vi.fn();
+    const m = mount(<LoadoutSheets sheet="watchlist" traitsEpoch={0} onClose={onClose} dock="center" agent={AGENT()} agentLoading={false} lists={{ status: 'ready', committed: LISTS().slice(0, 2), retry: vi.fn() }} onOpenForgeLists={vi.fn()} />);
+    mounted.push(m);
+    click(document.querySelector('[data-row="wl-2"]'));
+    expect(equipWatchlist).toHaveBeenCalledTimes(1);
+    expect(seen.equip.rows.every((row) => row.disabled)).toBe(true);
+    // The handler's own guard: the disabled attribute is the sheet's, this is the equip function's.
+    act(() => { seen.equip.rows.find((row) => row.id === 'wl-1').onClick(); });
+    expect(equipWatchlist).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => { settle({}); await Promise.resolve(); await Promise.resolve(); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(seen.equip.rows.some((row) => row.disabled)).toBe(false);
+  });
+});
+
+describe('the watchlist sheet\'s rows agree with the shells\' (E5-9)', () => {
+  it('nothing equipped: "No watchlist" is the selected row and no list row is', async () => {
+    await renderHub({ hub: HUB({ agent: AGENT({ equippedWatchlistId: null, equippedWatchlistName: null }) }) });
+    click(btn(COPY.loadout.changeWatchlist));
+    expect(document.querySelector('[data-row="__none__"]').hasAttribute('data-selected')).toBe(true);
+    expect(document.querySelector('[data-row="wl-1"]').hasAttribute('data-selected')).toBe(false);
+    expect(document.querySelector('[data-row="wl-2"]').hasAttribute('data-selected')).toBe(false);
+  });
+
+  it('a list with no name is "Untitled watchlist" in the sheet, as in the shells', async () => {
+    listWatchlists.mockResolvedValue([
+      { watchlistId: 'wl-7', status: 'committed', tickers: ['A'] },
+      { watchlistId: 'wl-8', name: '', status: 'committed', tickers: ['B', 'C'] },
+    ]);
+    await renderHub();
+    click(btn(COPY.loadout.changeWatchlist));
+    expect(document.querySelector('[data-row="wl-7"]').textContent).toBe(COPY.watchlistSheet.untitled);
+    expect(document.querySelector('[data-row="wl-8"]').textContent).toBe(COPY.watchlistSheet.untitled);
+  });
+});
+
+describe('whose lists these are: the account the agent document names, not the document itself (E5-11)', () => {
+  const rerender = (m, agent) => m.rerender(<CommandCenterHub site="desktop" hub={HUB({ agent })} sections={HUB_LAYOUT_FIXTURES.returning.sections} />);
+
+  it('another agent document of the SAME owner keeps the lists on hand: no blank card, no extra read', async () => {
+    const { m } = await renderHub();
+    expect(listWatchlists).toHaveBeenCalledTimes(1);
+    rerender(m, AGENT({ id: 'ag-2' }));
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(1);
+    expect(card('watchlist').textContent).toContain('Tech Leaders');
+    expect(byText(card('watchlist'), COPY.loadout.loading)).toBeNull();
+  });
+
+  it('a document with no owner id is its own key: another such document is another account\'s, and its lists are read for', async () => {
+    const { m } = await renderHub({ hub: HUB({ agent: AGENT({ ownerId: undefined }) }) });
+    rerender(m, AGENT({ id: 'ag-2', ownerId: undefined }));
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the stage\'s area summaries (E5-11)', () => {
+  it('a resolved absence of the agent is an answer ("Create your agent first"), a loading Loadout is the waiting words, a ready one its line', () => {
+    expect(areaSummaries({ loadout: { status: 'none' } })[2]).toBe(COPY.loadout.noAgent);
+    expect(areaSummaries({ loadout: { status: 'loading' } })[2]).toBe(COPY.loadout.summaryLoading);
+    expect(areaSummaries({ loadout: { status: 'ready', summary: 'Trend Follower · Tech Leaders' } })[2]).toBe('Trend Follower · Tech Leaders');
+    expect(areaSummaries({})[2]).toBe(COPY.loadout.summaryLoading);
+  });
+
+  it('the stage says so too, on the screen: the phone stage\'s Loadout line and the wide site\'s Equipped Archetype control read "Create your agent first"', async () => {
+    const noAgent = HUB({ agent: null, agentLoading: false });
+    const { m } = await renderHub({ site: 'mobile', hubWidth: 390, hub: noAgent });
+    expect(document.querySelector('[data-hub-summary="2"]').textContent).toContain(COPY.loadout.noAgent);
+    m.unmount();
+    mounted = mounted.filter((x) => x !== m);
+    await renderHub({ hub: noAgent });
+    const control = [...document.querySelectorAll('button')].find((node) => node.textContent.startsWith(COPY.areas.names[2]));
+    expect(control.textContent).toContain(COPY.loadout.noAgent);
+  });
+});
+
+describe('the career reaches the History sheet on the phone site too (ruling R-S5-3; E5-N1: the career rows above run the wide site only)', () => {
+  const phone = { site: 'mobile', hubWidth: 390 };
+  const openPhoneHistory = () => {
+    click(byRole(document, 'tab', COPY.phoneTabs.overview)[0]);
+    // the "Game history" row on the Overview (its label carries the completed count of the returning fixture: 3)
+    click(byRole(document, 'button', COPY.history.rowLabel(3))[0]);
+    return document.querySelector('[data-hub-sheet]');
+  };
+
+  it('a valid record: `${wins}W-${losses}L`, with the spec\'s caption', async () => {
+    await renderHub(phone);
+    const sheet = openPhoneHistory();
+    expect(sheet.textContent).toContain('7W-3L');
+    expect(sheet.textContent).toContain(COPY.history.careerCaption);
+  });
+
+  it('a malformed record reads unavailable there too: no zeros, no caption', async () => {
+    await renderHub({ ...phone, hub: HUB({ agent: AGENT({ stats: { wins: '7', losses: 3 } }) }) });
+    const sheet = openPhoneHistory();
+    expect(sheet.textContent).toContain(COPY.history.careerUnavailable);
+    expect(sheet.textContent).not.toContain(COPY.history.careerCaption);
+    expect(sheet.textContent).not.toMatch(/0W-0L|undefined|NaN/);
   });
 });
