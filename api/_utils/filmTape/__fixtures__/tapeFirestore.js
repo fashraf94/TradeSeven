@@ -81,7 +81,11 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
   const noteRead = (label) => { readLog.push(label); if (hooks.beforeRead) hooks.beforeRead(label); };
   let failNextTx = 0;
 
-  const bump = (path) => versions.set(path, (versions.get(path) || 0) + 1);
+  // A write versions its document AND its collection (`col:<prefix>`) and collection group (`group:<name>`), so a
+  // transaction that READ a query over them (tx.get(query), below) conflicts on a document created or deleted
+  // since — as Firestore's own transactions do for a query's result range (Film Room B2: the card store's cap).
+  const parentKeys = (path) => { const parts = path.split('/'); return [`col:${parts.slice(0, -1).join('/')}`, `group:${parts[parts.length - 2]}`]; };
+  const bump = (path) => { for (const k of [path, ...parentKeys(path)]) versions.set(k, (versions.get(k) || 0) + 1); };
   const guard = (op, path) => { if (hooks.beforeWrite) hooks.beforeWrite(op, path); };
   const commit = (path, data, op) => { store.set(path, clone(data)); bump(path); writeLog.push({ op, path }); };
   const put = (path, data, op) => { guard(op, path); commit(path, data, op); };
@@ -167,6 +171,7 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
       },
       get: async () => run(),
       _paths: () => { const s = run(); return s.docs.map((d) => d.ref.path); },
+      _label: label,   // the collection prefix, or group:<name> — a transaction's query read keys its range on it
     };
   }
 
@@ -199,6 +204,21 @@ export function makeTapeDb(initial = {}, { hooks = {} } = {}) {
         const ops = [];
         const tx = {
           get: async (ref) => {
+            // Film Room B2: the Admin SDK's Transaction#get also takes a QUERY (a collection, or a
+            // chain of where / orderBy / limit): every document it returns joins the read set, so a
+            // concurrent write to any of them retries the transaction (the card store's cap check).
+            if (typeof ref._paths === 'function') {
+              const label = `tx:${ref.path ?? 'query'}`;
+              const paths = ref._paths();
+              for (const p of paths) reads.set(p, versions.get(p) || 0);
+              // the query's range too: a document created or deleted in it since conflicts the commit
+              const rangeKey = typeof ref._label !== 'string' ? null : (ref._label.startsWith('group:') ? ref._label : `col:${ref._label}`);
+              if (rangeKey) reads.set(rangeKey, versions.get(rangeKey) || 0);
+              noteRead(label);
+              const docs = paths.map(snapOf);
+              if (hooks.afterTxRead) await hooks.afterTxRead(label, db);
+              return { docs, empty: docs.length === 0, size: docs.length, forEach: (cb) => docs.forEach(cb) };
+            }
             noteRead(`tx:${ref.path}`);
             reads.set(ref.path, versions.get(ref.path) || 0);
             const snap = snapOf(ref.path);
