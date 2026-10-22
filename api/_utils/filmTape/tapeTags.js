@@ -74,6 +74,7 @@ import { TEMPO_DIAL_ENABLED } from '../../../src/config/featureFlags.js';
 import { SITUATIONS, SITUATION_REGISTRY_VERSION } from '../../../src/data/situationRegistry.js';
 import { isCheck } from './candleInputs.js';
 import { coverageOf } from './tapeAssemble.js';
+import { ABSENT_ENTRY_REASON } from './tapeNotes.js';
 import { toMs } from './tapeTime.js';
 import { errorClassOf } from './errorClass.js';
 
@@ -378,8 +379,30 @@ export function tagDay({ inputs, checks, actions, seed = null, trace = null }) {
  * and the actions — the evidence even on a day whose holdings are all on the
  * recorded basis (the unresolved-inputs path returns before the bases are
  * known), and not `checks.stagnation`, as in B1.1 (review Y2-4).
+ *
+ * Film Room B2, Amendment E RE-1 — on a day with NO recomputed holding, the
+ * checks section's ABSENT-ENTRY reason (tapeNotes.js ABSENT_ENTRY_REASON, "tickMs
+ * unavailable where the entry is absent") is set aside: it is about a field the
+ * tagger never reads there — a recorded holding's count, age verdict and winner
+ * input are its records, and RD-5 already reads no evidence on such a day. Every
+ * OTHER checks reason still counts, and the section's own stored status stands
+ * everywhere else. A section's reasons are its note's parts and its caveats
+ * (tapeAssemble.js joins the reasons with "; "; a merge appends the caveats it
+ * keeps the same way): a partial section whose every stated reason is the
+ * absent-entry one reads complete here; a partial section with no stated reason
+ * at all stays partial (nothing is set aside from silence). The stored checks
+ * section itself never moves — only `coverage.tags`, which the writer rewrites
+ * on every pass (tapeMerge.js withTags), so a refresh of such a day moves it
+ * from unavailable to complete: Amendment G RG-10's declared movement.
  */
 const MAX_DATE_MS = 8.64e15;
+/** RE-1 — a section's status with the reasons in `aside` set aside (see above); any other status is its own. */
+export function statusSettingAside(section, aside) {
+  const status = section?.status;
+  if (status !== 'partial' || !aside.length) return status;
+  const parts = [...String(section.note ?? '').split('; '), ...(Array.isArray(section.caveats) ? section.caveats : [])].filter((p) => typeof p === 'string' && p);
+  return parts.length && parts.every((p) => aside.includes(p)) ? 'complete' : status;
+}
 function tagsCoverage(doc, { failure = null, pausedChecks = 0, recorded = false, recomputed = true } = {}) {
   const span = (() => {
     const ms = tagChecks(doc?.checks).map((c) => toMs(c.at)).filter((v) => v !== null && Math.abs(v) <= MAX_DATE_MS).sort((a, b) => a - b);
@@ -389,7 +412,9 @@ function tagsCoverage(doc, { failure = null, pausedChecks = 0, recorded = false,
   if (failure) return coverageOf('unavailable', { span, sources, note: failure });
   const reasons = [];
   for (const section of recomputed ? ['checks', 'evidence'] : ['checks']) {
-    const status = doc?.coverage?.[section]?.status;
+    const stored = doc?.coverage?.[section];
+    // RE-1: with no recomputed holding, the checks section's absent-entry reason is set aside; every other reason counts.
+    const status = section === 'checks' && !recomputed ? statusSettingAside(stored, [ABSENT_ENTRY_REASON]) : stored?.status;
     if (status !== 'complete') reasons.push(`the ${section} section is ${status ?? 'missing'}`);
   }
   const pauses = pausedChecks
