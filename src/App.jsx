@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { fetchWithAuth } from './utils/fetchWithAuth';
 import ClashBotWidget from './components/ClashBot/ClashBotWidget';
 import BugReportAdmin from './components/ClashBot/BugReportAdmin';
@@ -130,6 +130,8 @@ import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMEN
 import { pickCeremonyEntry } from './components/Dashboard/deployCeremony/ceremonyData';
 import { handoffBattleId, isHandoffOwnerCurrent, buildOptimisticBattleEntry, appendOptimisticBattle, ownedCeremonyEntryInputs } from './components/Dashboard/deployHandoff';
 import { signedInUid } from './services/deployIdentity';
+import { useAuthIdentity, readAuthIdentity, isCurrentIdentity } from './services/authIdentity';
+import { initialActivePoll, pollCaptureMatches, activePollRefreshStarted, activePollSettled, createActivePollFlights } from './utils/activeBattlesPoll';
 // Delight Layer Task 2: the battle-weather starfield. Mounted ONLY at the two
 // dashboard sites below, each behind its own flag; every other DesktopBackground
 // mount is untouched (spec V2 R-T2-S5 + Amendment A2).
@@ -2362,6 +2364,54 @@ export default function PortfolioDuel() {
   // poll's source guard pins exactly one setActiveAgentBattles call. Stays {}
   // while COMMAND_CENTER_SYNC_ENABLED is dark, because the fetch never runs.
   const [voiceLayerCaches, setVoiceLayerCaches] = useState({});
+  // Command Center S3 (R-S3-3): the same poll's metadata — whose list is
+  // retained, from when, the latest request's outcome, and whether an explicit
+  // refresh runs (src/utils/activeBattlesPoll.js). Its OWN state, the Sync
+  // Pass 1 precedent above: the poll body keeps its one setActiveAgentBattles,
+  // and today's shells read nothing new.
+  const [activeAgentBattlesPoll, setActiveAgentBattlesPoll] = useState(() => initialActivePoll(readAuthIdentity().authEpoch));
+  // The poll's fetch while it runs (dashboard, page visible), for an
+  // immediate run on an identity change and for refreshActiveBattles.
+  const agentBattlesPollRef = useRef(null);
+  const [agentBattlesFlights] = useState(() => createActivePollFlights({
+    onRefreshStarted: (flight) => {
+      if (isCurrentIdentity(flight.capture)) setActiveAgentBattlesPoll((meta) => activePollRefreshStarted(meta, flight.capture));
+    },
+    onSettled: (flight, outcome) => {
+      if (isCurrentIdentity(flight.capture)) setActiveAgentBattlesPoll((meta) => activePollSettled(meta, flight.capture, outcome, flight.explicit));
+    },
+  }));
+  // An explicit refresh (the hub's eligibility Retry; S2b's provider later):
+  // it joins the run already in flight for this identity, or starts one; it
+  // does nothing while the poll is not running (it runs again on return).
+  const refreshActiveBattles = useCallback(() => {
+    const epoch = readAuthIdentity().authEpoch;
+    let running = agentBattlesFlights.joinable(epoch);
+    if (!running && agentBattlesPollRef.current) {
+      // The run registers itself before its first await, so it is joinable at once.
+      agentBattlesPollRef.current();
+      running = agentBattlesFlights.joinable(epoch);
+    }
+    if (!running) return Promise.resolve(false);
+    agentBattlesFlights.markExplicit(running);
+    return running.done;
+  }, [agentBattlesFlights]);
+  // Command Center S3 (R-S3-2, R-S3-3): the one identity source. On an actual
+  // identity change the former owner's games go at once — cleared HERE, outside
+  // the poll body, whose source guard keeps it from ever blanking the list on
+  // an error — the metadata resets to the new identity, and the poll runs at
+  // once. A layout effect, so no frame shows the former owner's games. The
+  // first answer from Firebase (nothing resolved before it) clears nothing.
+  const authIdentity = useAuthIdentity();
+  const seenAuthIdentityRef = useRef(authIdentity);
+  useLayoutEffect(() => {
+    const previous = seenAuthIdentityRef.current;
+    seenAuthIdentityRef.current = authIdentity;
+    if (previous.authEpoch === authIdentity.authEpoch) return;
+    if (previous.resolved) setActiveAgentBattles((list) => (list.length ? [] : list));
+    setActiveAgentBattlesPoll(initialActivePoll(authIdentity.authEpoch));
+    agentBattlesPollRef.current?.();
+  }, [authIdentity]);
   // Delight Layer Task 2 Phase 2 (R-T2-S1): the starfield's live-game input, a
   // pure projection of the poll result above — ZERO new Firestore reads. It
   // deliberately reuses the SAME source and status filter the "No battle live"
@@ -3908,11 +3958,19 @@ export default function PortfolioDuel() {
     if (screen !== 'dashboard' || !isPageVisible) return;
 
     const fetchAgentBattles = async () => {
+      // Command Center S3 (R-S3-3): the identity this run belongs to, captured
+      // before its first await (refreshActiveBattles marks an explicit run).
+      const capture = readAuthIdentity();
+      const flight = agentBattlesFlights.begin(capture);
       try {
         const { collection, query, where, getDocs, doc, getDoc } = await import('firebase/firestore');
         const { db, auth } = await import('./firebase/config');
         const { TRAINING_CLONE_ID_PREFIX } = await import('./constants/leagueTournament');
         if (!auth.currentUser?.uid) return;
+        // The uid this request queries, and the owner its list is tagged with.
+        // An identity that moved since the capture queries nothing for it.
+        const queriedUid = auth.currentUser.uid;
+        if (!pollCaptureMatches(capture, queriedUid)) return;
 
         // No limit() here — deliberately. The training-clone filter below runs
         // CLIENT-side: a battle doc's only clone marker is its agentId prefix
@@ -3927,7 +3985,7 @@ export default function PortfolioDuel() {
         // read-cost cap unless the clone filter first moves server-side.
         const q = query(
           collection(db, 'agentBattles'),
-          where('ownerId', '==', auth.currentUser.uid),
+          where('ownerId', '==', queriedUid),
           where('status', '==', 'active')
         );
 
@@ -3963,7 +4021,11 @@ export default function PortfolioDuel() {
         }));
         const groupsById = Object.fromEntries(resolved.filter(Boolean));
         const liveBattles = excludeVoidedGroupBattles(battles, groupsById);
+        // S3 (R-S3-3): a completion whose capture is no longer current is
+        // ignored — the former owner's list never lands under a new identity.
+        if (!isCurrentIdentity(capture)) return;
         setActiveAgentBattles(liveBattles);
+        agentBattlesFlights.settle(flight, { ok: true, uid: queriedUid, at: Date.now() });
 
         // Command Center Sync (Pass 1) — the ONE added read, piggybacked on
         // this existing 120s cycle rather than given a poll or a listener of
@@ -4009,12 +4071,21 @@ export default function PortfolioDuel() {
         // (useState([])) is already []. The battle-weather starfield reads this
         // same state, which is why this lands ahead of that feature's flip.
         console.error('Error fetching agent battles (retaining last-known-good):', error);
+        // S3: the failure is recorded in the poll's own metadata; the list stays.
+        agentBattlesFlights.settle(flight, { ok: false, error });
+      } finally {
+        // A run that made no request (nobody signed in, the identity moved) still ends its refresh.
+        agentBattlesFlights.settle(flight, null);
       }
     };
 
+    agentBattlesPollRef.current = fetchAgentBattles;
     fetchAgentBattles();
     const refreshInterval = setInterval(fetchAgentBattles, 120_000);
-    return () => clearInterval(refreshInterval);
+    return () => {
+      clearInterval(refreshInterval);
+      agentBattlesPollRef.current = null;
+    };
   }, [screen, isPageVisible]);
 
   // ⭐ MID-GAME CHALLENGE CHECKING SYSTEM
