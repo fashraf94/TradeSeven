@@ -33,13 +33,13 @@ process.env.TZ = 'UTC';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makeCallsFirestore, stored } from '../__fixtures__/callsFirestore.js';
 
-const state = vi.hoisted(() => ({ db: null, flag: true, calls: [], daily: {}, failing: new Set(), netDown: new Set() }));
+const state = vi.hoisted(() => ({ db: null, flag: true, calls: [], daily: {}, failing: new Set(), netDown: new Set(), security: [] }));
 vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => {
   const real = await importOriginal();
   return { ...real, get HYPOTHESIS_RECORDS_ENABLED() { return state.flag; } };
 });
 vi.mock('../firebaseAdmin.js', () => ({ getFirebaseAdmin: () => state.db }));
-vi.mock('../security.js', async (importOriginal) => ({ ...(await importOriginal()), applySecurityMiddleware: () => false }));
+vi.mock('../security.js', async (importOriginal) => ({ ...(await importOriginal()), applySecurityMiddleware: (req, res, opts) => { state.security.push(opts); return false; } }));
 vi.mock('../authMiddleware.js', async (importOriginal) => ({ ...(await importOriginal()), requireAuth: async (req) => ({ uid: req.headers?.['x-test-uid'] || 'rev-owner-1' }) }));
 /** The EODHD `/eod/` double: one call each, the requested [from, to] honoured, raw rows as EODHD sends them. */
 async function eodhd(url) {
@@ -414,5 +414,142 @@ describe('computed once — the claim', () => {
     ]);
     expect(state.calls.length).toBeLessThanOrEqual(4);
     expect([a.body.evidence ? 'evidence' : a.body.pending, b.body.evidence ? 'evidence' : b.body.pending].sort()).toEqual(['computing', 'evidence']);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// BUILD_RULES §2 mutation lens L5c (the review computation): each row kills a mutant that survived the
+// first pass; the ids are the lens's (RV = review.js, RT = the route, HC = the shared vocabulary).
+
+describe('mutation lens L5c rows — the review computation', () => {
+  it('RV19 — a window the calendar of record cannot place → 409 with the clock\'s typed reason, never a 500, no market call', async () => {
+    // A battle-end window whose last battle ended past the maintained calendar (MAINTAINED_HOLIDAY_YEARS = 2026, 2027).
+    const v = versionDoc({ horizonEnum: 'unspecified', reviewDueAt: null, stateReason: 'battle_ended' });
+    const battles = { 'b-1': battleDoc('b-1'), 'b-2': battleDoc('b-2', { completedAt: '2028-01-04T21:00:00.000Z', expiresAt: '2028-01-05T00:00:00.000Z' }) };
+    vi.setSystemTime(new Date('2028-01-06T12:00:00.000Z'));
+    const r = await get(seed({ version: v, battles }));
+    expect([r.statusCode, r.body.error, r.body.reason]).toEqual([409, 'review_window_open', 'calendar_unavailable']);
+    expect(state.calls).toEqual([]);
+  });
+  it('RV28 — a zero close is no close: that name is unavailable (no_start_close) and the list keeps its figure from the others', async () => {
+    state.daily.AMD = [bar('2026-10-15', 45), bar('2026-10-12', 0)];
+    const r = await get(seed());
+    expect(r.body.evidence.names[1]).toEqual({ symbol: 'AMD', status: 'unavailable', reason: 'no_start_close' });
+    expect(r.body.evidence.list).toEqual({ status: 'ok', changePct: 7.5, counted: 2, total: 3 });
+  });
+  it('RV29 — the stored close is the split- and dividend-adjusted close (mapDailyRows `close`), never the raw one', async () => {
+    const adj = (date, raw, adjusted) => ({ ...bar(date, raw), adjusted_close: adjusted });
+    state.daily.NVDA = [adj('2026-10-15', 1100, 110), adj('2026-10-12', 1000, 100)];
+    const r = await get(seed());
+    expect(r.body.evidence.names[0]).toEqual({ symbol: 'NVDA', status: 'ok', startClose: 100, endClose: 110, changePct: 10 });
+  });
+  it('RV37 — no EODHD key configured: every symbol fails WITHOUT a network call', async () => {
+    delete process.env.EODHD_API_KEY;
+    const r = await get(seed());
+    expect(r.body.evidence.names.map((n) => n.reason)).toEqual(['fetch_failed', 'fetch_failed', 'fetch_failed']);
+    expect(r.body.evidence.market).toEqual({ symbol: 'SPY', status: 'unavailable', reason: 'fetch_failed' });
+    expect(state.calls).toEqual([]);
+  });
+  it('RV39 — every call asks EODHD\'s /eod/ endpoint for DAILY bars as JSON (period=d, fmt=json)', async () => {
+    const urls = [];
+    vi.stubGlobal('fetch', vi.fn(async (url) => { urls.push(new URL(String(url))); return eodhd(url); }));
+    await get(seed());
+    expect(urls).toHaveLength(4);
+    for (const u of urls) expect([u.pathname.startsWith('/api/eod/'), u.searchParams.get('period'), u.searchParams.get('fmt')]).toEqual([true, 'd', 'json']);
+  });
+  it('RV43 — a 200 whose body is not an array of bars is no_data (the feed had nothing), not a failed fetch', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url) => (String(url).includes('/eod/AMD.US') ? { ok: true, status: 200, json: async () => ({ errors: 'none' }) } : eodhd(url))));
+    const r = await get(seed());
+    expect(r.body.evidence.names[1]).toEqual({ symbol: 'AMD', status: 'unavailable', reason: 'no_data' });
+  });
+  it('RV60 — the stored evidence names the window it was priced over (ruling E2: { computedAt, source, window, names, list, market })', async () => {
+    const db = seed();
+    const r = await get(db);
+    expect(Object.keys(stored(db, vPath(1)).reviewEvidence).sort()).toEqual(['computedAt', 'list', 'market', 'names', 'source', 'window']);
+    expect(stored(db, vPath(1)).reviewEvidence.window).toEqual(r.body.window);
+  });
+  it('RV63–RV65 — the interrupted evidence in full: every name, the list (0 of N) and SPY unavailable as interrupted; no difference', async () => {
+    const db = seed({ version: versionDoc({ reviewEvidenceClaim: { claimedAt: new Date(AFTER_SETTLE - R.REVIEW_CLAIM_LEASE_MS - 1).toISOString(), calls: 4 } }) });
+    const r = await get(db);
+    expect(r.body.evidence).toEqual({
+      computedAt: new Date(AFTER_SETTLE).toISOString(), source: 'eodhd_daily', window: r.body.window,
+      names: ['NVDA', 'AMD', 'PLTR'].map((symbol) => ({ symbol, status: 'unavailable', reason: 'interrupted' })),
+      list: { status: 'unavailable', reason: 'interrupted', counted: 0, total: 3 },
+      market: { symbol: 'SPY', status: 'unavailable', reason: 'interrupted' },
+    });
+    expect(r.body.difference).toBeNull();
+  });
+  it('RV71 / RV74 — a list that does not exist, or was deleted → 404 not_found: no version read, no market call', async () => {
+    const gone = seed();
+    gone.__docs.delete(`watchlists/${WL}`);
+    const a = await get(gone);
+    expect([a.statusCode, a.body.error]).toEqual([404, 'not_found']);
+    const deleted = seed({ list: { deletedAt: '2026-10-16T00:00:00.000Z' } });
+    const b = await get(deleted);
+    expect([b.statusCode, b.body.error]).toEqual([404, 'not_found']);
+    expect(deleted.__access.reads.filter((p) => p.includes('/hypothesisVersions/') || p.startsWith('agentBattles/'))).toEqual([]);
+    expect(state.calls).toEqual([]);
+  });
+  it('RV85 / RV86 — a blank frozen agent or list name is no name: no honest line, no list label', async () => {
+    const blank = (id) => battleDoc(id, { agentContext: { ...battleDoc(id).agentContext, agentName: '   ', equippedWatchlist: { watchlistId: WL, name: '  ', tickers: ['NVDA', 'AMD', 'PLTR'] } } });
+    const r = await get(seed({ battles: { 'b-1': blank('b-1'), 'b-2': blank('b-2') } }));
+    expect([r.body.agentName, r.body.honestLine, r.body.listName]).toEqual([null, null, null]);
+    expect(r.body.evidence.names.map((n) => n.symbol)).toEqual(['NVDA', 'AMD', 'PLTR']);
+  });
+  it('RV92 — the settle wait is THREE hours after the window\'s last close: at 2 h 59 min still awaiting_close, no claim, no call', async () => {
+    vi.setSystemTime(new Date(Date.parse(DUE) + 3 * 3_600_000 - 60_000));
+    const db = seed();
+    const r = await get(db);
+    expect([r.body.evidence, r.body.pending]).toEqual([null, 'awaiting_close']);
+    expect(state.calls).toEqual([]);
+    expect('reviewEvidenceClaim' in stored(db, vPath(1))).toBe(false);
+  });
+  it('RV96 / RT05 — the 200 names the list, the version and its status (the route\'s documented shape)', async () => {
+    const r = await get(seed());
+    expect([r.body.watchlistId, r.body.version, r.body.status]).toEqual([WL, 1, 'review_due']);
+  });
+  it('RV100 — the frozen agent name goes into the honest line literally, whatever it holds ($& and $$ too)', async () => {
+    const named = (id) => battleDoc(id, { agentContext: { ...battleDoc(id).agentContext, agentName: 'Cash$&$$' } });
+    const r = await get(seed({ battles: { 'b-1': named('b-1'), 'b-2': named('b-2') } }));
+    expect(r.body.honestLine).toBe("Cash$&$$ doesn't act on your ideas yet. This shows how the names did over the idea's time-frame — not what the agent did with it.");
+  });
+  it('RV102 — the request that computed stores its evidence between this request\'s first read and its claim: this request serves it (not "computing"), ZERO calls', async () => {
+    const claim = { claimedAt: new Date(AFTER_SETTLE - 10_000).toISOString(), calls: 4 };
+    const db = seed({ version: versionDoc({ reviewEvidenceClaim: claim }) });
+    const theirs = { computedAt: new Date(AFTER_SETTLE - 2_000).toISOString(), source: 'eodhd_daily', window: { kind: 'timed' }, names: [], list: { status: 'unavailable', reason: 'no_name_priced', counted: 0, total: 0 }, market: { symbol: 'SPY', status: 'ok', startClose: 500, endClose: 505, changePct: 1 } };
+    let done = false;
+    db.__hooks.afterTxBody = async () => {
+      if (done) return;
+      done = true; // right after this request's read-only ownership read, the computing request stores its evidence
+      db.__docs.set(vPath(1), { ...stored(db, vPath(1)), reviewEvidence: theirs });
+    };
+    const r = await get(db);
+    expect([r.body.evidence, r.body.pending]).toEqual([theirs, null]);
+    expect(state.calls).toEqual([]);
+    expect(stored(db, vPath(1)).reviewEvidenceClaim).toEqual(claim);
+  });
+  it('RV110 / RT07 — a claim\'s lease outlives the longest request (the route\'s maxDuration): a claim that old is still computing, never finalized as interrupted', async () => {
+    const { config } = await import('../../forge/watchlists/[id]/hypothesis-versions/[n]/review.js');
+    const db = seed({ version: versionDoc({ reviewEvidenceClaim: { claimedAt: new Date(AFTER_SETTLE - config.maxDuration * 1000).toISOString(), calls: 4 } }) });
+    const r = await get(db);
+    expect([r.body.evidence, r.body.pending]).toEqual([null, 'computing']);
+    expect(db.__access.writes).toEqual([]);
+  });
+  it('RT06 — the route is rate-limited at 30 requests a minute (its first request can make 11 market calls)', async () => {
+    await get(seed());
+    expect(state.security.at(-1)).toEqual({ rateLimit: { limit: 30, windowMs: 60_000 } });
+  });
+  it('RT01 — GET only: a POST → 405, nothing read', async () => {
+    const db = seed();
+    state.db = db;
+    const r = res();
+    await route({ method: 'POST', headers: {}, query: { id: WL, n: '1' }, body: {} }, r);
+    expect(r.statusCode).toBe(405);
+    expect(db.__access.reads).toEqual([]);
+  });
+  it('HC03 — an INVALIDATED version that had a deploy gets its card (ruling E2: review_due, retired after a deploy, invalidated)', async () => {
+    const r = await get(seed({ version: versionDoc({ status: 'invalidated', stateSource: 'invalidation', stateReason: 'invalidation_met' }) }));
+    expect([r.statusCode, r.body.status]).toEqual([200, 'invalidated']);
+    expect(r.body.evidence.list).toMatchObject({ status: 'ok', counted: 3, total: 3 });
   });
 });

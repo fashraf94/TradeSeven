@@ -215,3 +215,189 @@ describe('the void line (E3)', () => {
     expect(q('idea-voided-line-v2')).toBeNull();
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// BUILD_RULES §2 mutation lens L5c (the review card and the panel's review fetch): each row kills a
+// mutant that survived the first pass; the ids are the lens's (RC = IdeaReviewCard.jsx, IP = IdeaPanel.jsx).
+
+describe('mutation lens L5c rows — the card and the panel', () => {
+  const dueV1 = () => v(1, { status: 'review_due', stateReason: 'horizon_elapsed', ...DEPLOYED });
+  const computing = { ...REVIEW, evidence: null, pending: 'computing', difference: null };
+
+  it('RC01 / RC02 / RC04 / RC06 / RC07 / RC17 — a list that lagged: minus signs kept, a flat SPY unsigned; closes as stored (4 significant figures under $1, 2 decimals from $1); the open toggle says so', async () => {
+    const lagged = {
+      ...REVIEW,
+      evidence: {
+        ...REVIEW.evidence,
+        names: [
+          { symbol: 'NVDA', status: 'ok', startClose: 0.1235, endClose: 0.1358, changePct: 9.96 },
+          { symbol: 'AMD', status: 'ok', startClose: 1, endClose: 0.85, changePct: -15 },
+        ],
+        list: { status: 'ok', changePct: -2.52, counted: 2, total: 2 },
+        market: { symbol: 'SPY', status: 'ok', startClose: 500, endClose: 500, changePct: 0 },
+      },
+      difference: -2.52,
+    };
+    await mount(answer([dueV1()]), lagged);
+    expect(q('idea-review-list').textContent).toBe('AI capex -2.52%');
+    expect(q('idea-review-market').textContent).toBe('SPY 0.00%');
+    expect(q('idea-review-difference').textContent).toBe('Difference -2.52 pts');
+    await click(q('idea-review-names-toggle'));
+    expect(q('idea-review-names-toggle').getAttribute('aria-expanded')).toBe('true');
+    expect(q('idea-review-name-NVDA').textContent).toBe('NVDA 0.1235 → 0.1358 · +9.96%');
+    expect(q('idea-review-name-AMD').textContent).toBe('AMD 1.00 → 0.8500 · -15.00%');
+  });
+
+  it('RC10 / RC12 / RC13 — nothing priced: the list reads "No data" alone, SPY reads "No data", and there is no difference', async () => {
+    const unpriced = {
+      ...REVIEW,
+      evidence: {
+        ...REVIEW.evidence,
+        names: [{ symbol: 'NVDA', status: 'unavailable', reason: 'fetch_failed' }, { symbol: 'AMD', status: 'unavailable', reason: 'no_end_close' }],
+        list: { status: 'unavailable', reason: 'no_name_priced', counted: 0, total: 2 },
+        market: { symbol: 'SPY', status: 'unavailable', reason: 'fetch_failed' },
+      },
+      difference: null,
+    };
+    await mount(answer([dueV1()]), unpriced);
+    expect(q('idea-review-list').textContent).toBe('AI capex No data');
+    expect(q('idea-review-market').textContent).toBe('SPY No data');
+    expect(q('idea-review-difference')).toBeNull();
+    expect(q('idea-review-honest').textContent).toBe(REVIEW.honestLine);
+  });
+
+  it('RC14 / RC26 — no frozen names: no "Each name" toggle; no battle the server vouches for: no battles line', async () => {
+    const bare = {
+      ...REVIEW,
+      battles: [{ battleId: 'b-x', createdAt: null, endedAt: null, voided: false, known: false }],
+      evidence: { ...REVIEW.evidence, names: [], list: { status: 'unavailable', reason: 'no_frozen_list', counted: 0, total: 0 } },
+      difference: null,
+    };
+    await mount(answer([dueV1()]), bare);
+    expect(q('idea-review-row')).not.toBeNull();
+    expect(q('idea-review-names-toggle')).toBeNull();
+    expect(q('idea-review-battles')).toBeNull();
+  });
+
+  it('IP02 — two reviewable versions: the card is the NEWEST one\'s', async () => {
+    await mount(answer([v(1, { status: 'retired', stateReason: 'player_retired', ...DEPLOYED }), v(2, { status: 'review_due', stateReason: 'horizon_elapsed', ...DEPLOYED })]), { ...REVIEW, version: 2 });
+    expect(svc.getHypothesisReview.mock.calls).toEqual([['wl-1', 2]]);
+  });
+
+  it('IP06 / IP09 — still computing after every re-ask: the panel asks 1 + 3 times, then stops', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      svc.listHypothesisVersions.mockResolvedValue(answer([dueV1()]));
+      svc.getHypothesisReview.mockResolvedValue(computing);
+      await act(async () => { root.render(<IdeaPanel watchlistId="wl-1" tokens={DARK_TOKENS} />); });
+      await flush();
+      for (let i = 0; i < 6; i += 1) {
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+        await flush();
+      }
+      expect(svc.getHypothesisReview).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('IP07 — awaiting_close (hours away) is not re-asked', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      svc.listHypothesisVersions.mockResolvedValue(answer([dueV1()]));
+      svc.getHypothesisReview.mockResolvedValue({ ...REVIEW, evidence: null, pending: 'awaiting_close', difference: null });
+      await act(async () => { root.render(<IdeaPanel watchlistId="wl-1" tokens={DARK_TOKENS} />); });
+      await flush();
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      await flush();
+      expect(svc.getHypothesisReview).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('IP05 / IP11 — unmounted while computing: no request once the panel is gone (an answer still in flight, or a re-ask already scheduled)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      svc.listHypothesisVersions.mockResolvedValue(answer([dueV1()]));
+      // (a) the first answer arrives after the panel is gone
+      let release;
+      svc.getHypothesisReview.mockImplementationOnce(() => new Promise((r) => { release = r; })).mockResolvedValue(computing);
+      await act(async () => { root.render(<IdeaPanel watchlistId="wl-1" tokens={DARK_TOKENS} />); });
+      await flush();
+      act(() => root.unmount());
+      root = createRoot(container);
+      await act(async () => { release(computing); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+      expect(svc.getHypothesisReview).toHaveBeenCalledTimes(1);
+      // (b) the answer came, its re-ask is scheduled, then the panel goes
+      svc.getHypothesisReview.mockReset();
+      svc.getHypothesisReview.mockResolvedValue(computing);
+      await act(async () => { root.render(<IdeaPanel watchlistId="wl-1" tokens={DARK_TOKENS} />); });
+      await flush();
+      expect(svc.getHypothesisReview).toHaveBeenCalledTimes(1);
+      act(() => root.unmount());
+      root = createRoot(container);
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+      expect(svc.getHypothesisReview).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('IP12 — a re-ask that fails takes the card away (no stale pending card)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      svc.listHypothesisVersions.mockResolvedValue(answer([dueV1()]));
+      svc.getHypothesisReview.mockResolvedValueOnce(computing).mockRejectedValue(Object.assign(new Error('unavailable'), { status: 503 }));
+      await act(async () => { root.render(<IdeaPanel watchlistId="wl-1" tokens={DARK_TOKENS} />); });
+      await flush();
+      expect(q('idea-review-card')).not.toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      await flush();
+      expect(svc.getHypothesisReview).toHaveBeenCalledTimes(2);
+      expect(q('idea-review-card')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('IP14 / IP16 — the card sits in the current version\'s own block, beside its statement, exactly once (no separate review block)', async () => {
+    await mount(answer([dueV1()]));
+    expect(container.querySelectorAll('[data-testid="idea-review-card"]')).toHaveLength(1);
+    expect(q('idea-review-block')).toBeNull();
+    expect(q('idea-statement').parentElement.contains(q('idea-review-card'))).toBe(true);
+  });
+
+  it('IP15 — a superseded due version\'s card sits in its due block (under its line, beside its Reaffirm), not in a separate block', async () => {
+    await mount(answer([dueV1(), v(2, { status: 'draft', stateReason: 'player_authored' })]));
+    expect(q('idea-superseded-due').contains(q('idea-review-card'))).toBe(true);
+    expect(q('idea-review-block')).toBeNull();
+  });
+
+  it('IP03 / IP17 — a move that changes the reviewed version asks again, and the old answer is not shown meanwhile', async () => {
+    svc.transitionHypothesis.mockResolvedValue({});
+    await mount(answer([dueV1()]));
+    expect(q('idea-review-card')).not.toBeNull();
+    svc.listHypothesisVersions.mockResolvedValue(answer([v(1, { status: 'retired', stateReason: 'player_retired', ...DEPLOYED })]));
+    svc.getHypothesisReview.mockImplementation(() => new Promise(() => {})); // the new answer is still on its way
+    const button = (label) => [...container.querySelectorAll('button')].find((b) => b.textContent === label);
+    await click(button('Retire'));
+    await click(button('Confirm: Retire'));
+    expect(svc.transitionHypothesis).toHaveBeenCalledWith('wl-1', { version: 1, action: 'retire', expectedStatus: 'review_due' });
+    expect(svc.getHypothesisReview).toHaveBeenCalledTimes(2);
+    expect(q('idea-review-card')).toBeNull();
+  });
+
+  it('IP01 / IP04 — re-pointed at another list: the first list\'s card is never shown under the second while its answer is on the way', async () => {
+    await mount(answer([dueV1()]));
+    expect(q('idea-review-card')).not.toBeNull();
+    svc.listHypothesisVersions.mockResolvedValue({ ...answer([dueV1()]), watchlistId: 'wl-2' });
+    svc.getHypothesisReview.mockImplementation(() => new Promise(() => {}));
+    await act(async () => { root.render(<IdeaPanel watchlistId="wl-2" tokens={DARK_TOKENS} />); });
+    await flush();
+    expect(svc.listHypothesisVersions).toHaveBeenLastCalledWith('wl-2');
+    expect(q('idea-panel')).not.toBeNull();
+    expect(q('idea-review-card')).toBeNull();
+  });
+});

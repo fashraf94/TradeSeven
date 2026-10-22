@@ -101,6 +101,8 @@ describe('table C, verbatim', () => {
     expect(countedOfText(3, 3)).toBeNull();
     expect(countedOfText(undefined, 3)).toBeNull();
     expect(countedOfText(2.5, 3)).toBeNull();
+    expect(countedOfText(1, undefined)).toBeNull();
+    expect(countedOfText(1, 2.5)).toBeNull();
   });
   it('the review card\'s honest line is ONE string, the server\'s and the Forge\'s (the review route fills it)', () => {
     expect(REVIEW_HONEST_LINE).toBe(C['the review card']);
