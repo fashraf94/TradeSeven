@@ -1,0 +1,129 @@
+// api/film-room/card.js
+//
+// Film Room B2 item 5 — POST /api/film-room/card (Build B spec §4; Amendment G
+// RG-8, RG-10): the ONE door into the plays ledger. Two operations:
+//
+//   { op: 'create', opId, battleId, etDate, agentId,
+//     moment: { situationId, symbol, fromTickSeq, toTickSeq },
+//     questionId, questionVersion?, note, route }
+//     → 200 { idempotent, card, open, cap }
+//   { op: 'retire', opId, agentId, entryId, expectedVersion }
+//     → 200 { idempotent, card }
+//
+// Gated (api/_utils/filmRoom/cardsGate.js): the mode off, or the owner not
+// admitted → 404 { error: 'disabled' } before any read. Then, for a create,
+// in this order, each a named refusal:
+//   the battle: missing → 404 not_found; not the caller's → 403 forbidden;
+//   the agent not the battle's → 403 forbidden; a mode the tape does not
+//   cover (a tournament battle, RB-5) → 409 untaped;
+//   the tape day: missing, or not the caller's → 404 tape_not_found; no
+//   stored tags → 409 tags_unavailable;
+//   the moment: not one the moments helper derives from the day's STORED
+//   tags.items → 409 moment_not_found; no archetype in the day's inputs → 409
+//   archetype_unknown;
+//   the question: not on the menu for that situation and version → 400
+//   question_not_on_menu;
+//   the note (api/_utils/filmRoom/cardRequest.js): longer than S10 after
+//   trimming, or holding a control character → 400, refused, never stripped;
+//   the store (cardStore.js): the agent not the caller's → 403; the same op id
+//   under a different request → 409 op_conflict; the open-card cap (S9) →
+//   409 cap_reached, naming the cap; a retire whose version does not match →
+//   409 version_conflict; a shelved card → 409 shelved.
+// A rate limit rides the shared security middleware (applyRateLimit). Error
+// bodies carry the code, its sentence and the caller's own ids — never
+// another owner's data.
+//
+// RE-5: nothing here reads a meeting row; no stage rests on one.
+
+import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
+import { gateFilmRoomCardsRoute } from '../_utils/filmRoom/cardsGate.js';
+import { parseCreateBody, parseRetireBody, questionFor, momentOfDay } from '../_utils/filmRoom/cardRequest.js';
+import { createCard, retireCard, CardRouteError, CARD_ROUTE_COPY } from '../_utils/filmRoom/cardStore.js';
+import { readBattle, readTape } from '../_utils/filmTape/tapeSources.js';
+import { isTieredBattle } from '../_utils/filmTape/writeTapeDay.js';
+
+export const config = { maxDuration: 10 };
+
+/** The per-IP window the shared middleware's limiter applies (applyRateLimit). */
+export const CARD_RATE_LIMIT = Object.freeze({ limit: 10, windowMs: 60_000 });
+
+const COPY = Object.freeze({
+  not_found: 'Battle not found.',
+  forbidden: 'Not authorized for this battle.',
+  untaped: 'This battle mode is not taped, so it has no moments to take home.',
+  tape_not_found: 'No tape for this day.',
+  tags_unavailable: 'This day stores no situation tags.',
+  moment_not_found: 'That moment is not one of this day\'s stored moments.',
+  archetype_unknown: 'This day records no archetype, so no card can be filed from it.',
+  question_not_on_menu: 'That question is not on the menu for this situation.',
+  invalid_op: 'op must be create or retire.',
+});
+const refuse = (status, code, extra = {}) => new CardRouteError(status, code, COPY[code] ?? CARD_ROUTE_COPY[code] ?? code, extra);
+
+/** Answer a thrown error: a typed input error → 400, a typed route error → its status, anything else → 500. */
+export function sendCardError(res, err, label) {
+  if (err?.cardInput) return res.status(400).json({ error: err.code, message: err.message });
+  if (err?.cardRoute) return res.status(err.status).json({ error: err.code, message: err.message, ...err.extra });
+  console.error(`[film-room/card:${label}] Error:`, err);
+  return res.status(500).json({ error: 'server_error', message: 'Something went wrong with the card. Try again.' });
+}
+
+/**
+ * The create operation's reads and checks, in the documented order. Returns
+ * the store's payload, or throws a typed refusal.
+ */
+export async function resolveCreate(db, uid, req) {
+  const battle = await readBattle(db, req.battleId);
+  if (!battle) throw refuse(404, 'not_found');
+  if (battle.ownerId !== uid) throw refuse(403, 'forbidden');
+  if (battle.agentId !== req.agentId) throw refuse(403, 'forbidden');
+  if (!isTieredBattle(battle)) throw refuse(409, 'untaped');
+  const tape = await readTape(db, req.battleId, req.etDate);
+  if (!tape || tape.ownerId !== uid) throw refuse(404, 'tape_not_found');
+  if (!Array.isArray(tape.tags?.items)) throw refuse(409, 'tags_unavailable');
+  const found = momentOfDay(tape, req.moment);
+  if (!found) throw refuse(409, 'moment_not_found');
+  const archetypeCodeId = typeof tape.tags?.inputs?.archetypeCodeId === 'string' && tape.tags.inputs.archetypeCodeId ? tape.tags.inputs.archetypeCodeId : null;
+  if (!archetypeCodeId) throw refuse(409, 'archetype_unknown');
+  const question = questionFor(found.moment.situationId, req.questionId, req.questionVersion);
+  if (!question) throw refuse(400, 'question_not_on_menu', { situationId: found.moment.situationId });
+  return {
+    archetypeCodeId,
+    situationId: found.moment.situationId,
+    situationVersion: found.situationVersion,
+    battleId: req.battleId, etDate: req.etDate,
+    symbol: found.moment.symbol, fromTickSeq: found.moment.fromTickSeq, toTickSeq: found.moment.toTickSeq,
+    questionId: question.id, questionVersion: question.version,
+    note: req.note, route: req.route,
+  };
+}
+
+export default async function handler(req, res) {
+  const gate = await gateFilmRoomCardsRoute(req, res, { methods: ['POST'], rateLimit: CARD_RATE_LIMIT });
+  if (!gate) return;
+  const { user } = gate;
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const db = getFirebaseAdmin();
+  const nowIso = new Date().toISOString();
+
+  if (body.op === 'create') {
+    try {
+      const parsed = parseCreateBody(body);
+      const payload = await resolveCreate(db, user.uid, parsed);
+      const out = await createCard(db, { uid: user.uid, agentId: parsed.agentId, opId: parsed.opId, payload, nowIso });
+      return res.status(200).json({ idempotent: out.idempotent, card: out.card, open: out.open, cap: out.cap });
+    } catch (err) {
+      return sendCardError(res, err, 'create');
+    }
+  }
+  if (body.op === 'retire') {
+    try {
+      const parsed = parseRetireBody(body);
+      const out = await retireCard(db, { uid: user.uid, agentId: parsed.agentId, entryId: parsed.entryId, opId: parsed.opId, expectedVersion: parsed.expectedVersion, nowIso });
+      return res.status(200).json({ idempotent: out.idempotent, card: out.card });
+    } catch (err) {
+      return sendCardError(res, err, 'retire');
+    }
+  }
+  return res.status(400).json({ error: 'invalid_op', message: COPY.invalid_op });
+}
