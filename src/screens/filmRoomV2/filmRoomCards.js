@@ -13,7 +13,9 @@
 //              day's tape — review L1-6), again after a create or a retire, or
 //              after a retire the server refused as stale; never a Firestore
 //              read of the ledger from the client (v2 reads only the tape). A
-//              re-read that fails keeps what was read (review L4-4).
+//              re-read that fails keeps what was read (review L4-4), with a
+//              successful write's own result put in where it is newer than
+//              the row kept (Amendment I RI-2).
 //   THE WRITES POST /api/film-room/card — create and retire, each under ONE
 //              op id per form or receipt (a client UUID in the forge-id
 //              class), so a re-tap after a lost answer replays the same
@@ -132,14 +134,23 @@ export function countPathOf(tape, { k, index, symbol }) {
   return { path: derived, basis, source: 'item' };
 }
 
+/** RI-2: `a` is a later version of the entry than `b` — both versions whole numbers, `a`'s the greater. */
+const newerThan = (a, b) => Number.isInteger(a?.version) && Number.isInteger(b?.version) && a.version > b.version;
+
 /**
- * The ledger as the receipt and the lists read it: the counter's cards, with a just-filed card added when the counter
- * does not hold it yet. Where the counter holds the card, ITS row stands whole — the counter is the fresher read
- * (review L4-10).
+ * The ledger as the receipt and the lists read it: the counter's cards, with a write's own result (a create's or a
+ * retire's) added when the counter does not hold the entry yet, and put in place of the counter's row when it is
+ * NEWER by `version` (Amendment I RI-2, Astra B1): a refresh that failed after a successful write never puts an older
+ * stage back on screen. Otherwise the counter's row stands whole — the fresher read (review L4-10). The result
+ * carries no computed `shelved`; it reads false, since the store accepts neither write on a shelved card (a create
+ * under another archetype is refused, RH-5; a shelved card's retire is refused).
  */
 export function ledgerOf(counter, extra = null) {
   const cards = Array.isArray(counter?.cards) ? [...counter.cards] : [];
-  if (isObj(extra) && extra.entryId && !cards.some((c) => c.entryId === extra.entryId)) cards.unshift({ ...extra, shelved: false });
+  if (!isObj(extra) || !extra.entryId) return cards;
+  const at = cards.findIndex((c) => c.entryId === extra.entryId);
+  if (at < 0) cards.unshift({ ...extra, shelved: false });
+  else if (newerThan(extra, cards[at])) cards[at] = { ...extra, shelved: false };
   return cards;
 }
 
@@ -203,23 +214,36 @@ export function useFilmRoomCards({ battle, agentId, api = defaultCardsApi }) {
 
   useEffect(() => { if (on && agentId) refresh(); }, [on, agentId, refresh]);
 
+  // RI-2 (Astra B1): a successful write's own result goes into the cards kept on screen where it is newer than the
+  // counter's row — after a refresh that failed (the error stays said beside it); after one that answered, the
+  // counter already holds the row and nothing changes
+  const keepResult = useCallback((card) => {
+    if (!alive.current) return;
+    setCounter((c) => {
+      if (!c.data) return c;
+      const was = Array.isArray(c.data.cards) ? c.data.cards : [];
+      const cards = ledgerOf(c.data, card);
+      return cards.length === was.length && cards.every((x, i) => x === was[i]) ? c : { ...c, data: { ...c.data, cards } };
+    });
+  }, []);
+
   /** A fresh op id; the form and the receipt each mint ONE and keep it (review L4-9). */
   const mintOpId = useCallback(() => api.newOpId(), [api]);
 
   const create = useCallback(async ({ opId, battleId: b, etDate, moment, questionId, questionVersion, note, route }) => {
     const r = await api.postCard({ op: 'create', opId: opId || api.newOpId(), battleId: b, etDate, agentId, moment: { situationId: moment.situationId, symbol: moment.symbol, fromTickSeq: moment.fromTickSeq, toTickSeq: moment.toTickSeq }, questionId, questionVersion, note, route });
-    if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); return { ok: true, card: r.body.card }; }
+    if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); keepResult(r.body.card); return { ok: true, card: r.body.card }; }
     return { ok: false, code: r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'default') };
-  }, [api, agentId, refresh]);
+  }, [api, agentId, refresh, keepResult]);
 
   const retire = useCallback(async (card, opId = null) => {
     const r = await api.postCard({ op: 'retire', opId: opId || api.newOpId(), agentId, entryId: card.entryId, expectedVersion: card.version });
-    if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); return { ok: true, card: r.body.card }; }
+    if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); keepResult(r.body.card); return { ok: true, card: r.body.card }; }
     const code = r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'retireDefault');
     // the card moved elsewhere (another tab): re-read, so the receipt shows the ledger's row (review L4-10)
     if (code === 'version_conflict' || code === 'illegal_transition') await refresh();
     return { ok: false, code };
-  }, [api, agentId, refresh]);
+  }, [api, agentId, refresh, keepResult]);
 
   return { on, counter, refresh, create, retire, mintOpId };
 }

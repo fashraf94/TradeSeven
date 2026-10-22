@@ -51,6 +51,7 @@ import { makeTapeDb } from '../../../api/_utils/filmTape/__fixtures__/tapeFirest
 import { seedDay, OWNER, AGENT } from '../../../api/_utils/filmTape/__fixtures__/tapeFixtures.js';
 import { stalledDay } from '../../../api/_utils/filmTape/__fixtures__/tagFixtures.js';
 import { buildCounter } from '../../../api/_utils/filmRoom/cardCounter.js';
+import { retireCard } from '../../../api/_utils/filmRoom/cardStore.js';
 import cardHandler from '../../../api/film-room/card.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
@@ -747,5 +748,64 @@ describe('review round — the screen (findings L3-1 … L3-11, L4-2 … L4-10, 
     await m.flush(10);
     expect(m.q('[data-card-receipt] [data-card-next]').textContent).toBe('Retired: nothing happens next.');
     expect(m.q('[data-card-receipt]').textContent).not.toContain(RG5.drill);
+  });
+});
+
+// ── Astra's B2 review (docs/audits/20261022_ASTRA_REVIEW_FILM_ROOM_B2_CARD.md), as Amendment I rules it ──
+describe('Amendment I RI-2 (Astra B1) — a successful write wins on screen when it is newer than the counter\'s row', () => {
+  it('ASTRA_STALE_RETIRE — a Watch card retired, its refresh answering 503: the receipt reads retired, says nothing happens next, shows no Retire; My cards lists it as Retired; the read error is said beside it', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    expect(m.q('[data-card-receipt] [data-card-next]').textContent).toBe(RG5.watch);
+    api.readCounter = async () => ({ ok: false, status: 503, body: { error: 'unavailable' } });
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(10);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ stage: 'retired', version: 2 });
+    const receipt = m.q('[data-card-receipt="op_1"]');
+    expect(receipt.textContent).toContain('Stage · retired');
+    expect(receipt.textContent).not.toContain('Stage · card');
+    expect(receipt.querySelector('[data-card-next]').textContent).toBe('Retired: nothing happens next.');
+    expect(receipt.textContent).not.toContain(RG5.watch);
+    expect(m.buttons('Retire')).toHaveLength(0);
+    const slt = region('since-last-time');
+    expect(slt.querySelector('[data-cards-read-error]')).toBeTruthy();
+    expect(m.qa('[data-my-cards-group="retired"] [data-my-card]').map((b) => b.getAttribute('data-my-card'))).toEqual(['op_1']);
+    expect(m.q('[data-my-cards-group="active"]')).toBeNull();
+    expect(slt.querySelector('[data-watch-card]')).toBeNull();
+    // the screen now says what the ledger holds: every sweep against the ledger as read fresh
+    await sweepAll(fx.tape2, 'stale retire');
+  });
+  it('a newer counter row still wins over an older result: the card retired elsewhere between its create and the refresh — the receipt shows the counter\'s retired row, not the create\'s', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    const read = api.readCounter;
+    let elsewhere = false;
+    api.readCounter = async (agentId) => {
+      if (!elsewhere && t.store.has(`agents/${AGENT}/plays/op_1`)) {
+        elsewhere = true;   // another tab retires the card before this screen's refresh reads the counter
+        await retireCard(state.db, { uid: OWNER, agentId: AGENT, entryId: 'op_1', opId: 'other_tab', expectedVersion: 1, nowIso: '2026-09-26T00:01:00.000Z' });
+      }
+      return read(agentId);
+    };
+    await fileCard();
+    expect(elsewhere).toBe(true);
+    const receipt = m.q('[data-card-receipt="op_1"]');
+    expect(receipt.textContent).toContain('Stage · retired');
+    expect(receipt.querySelector('[data-card-next]').textContent).toBe('Retired: nothing happens next.');
+    expect(m.buttons('Retire')).toHaveLength(0);
+    expect(m.qa('[data-my-cards-group="retired"] [data-my-card]').map((b) => b.getAttribute('data-my-card'))).toEqual(['op_1']);
+  });
+  it('ledgerOf by version: a newer result takes the counter\'s row\'s place; an equal or older one, or one without a version, leaves the row standing; the other rows and their order are untouched', () => {
+    const row = (entryId, version, stage) => ({ entryId, version, stage, shelved: false, note: 'n' });
+    const result = (entryId, version, stage) => ({ entryId, version, stage, note: 'n' });
+    const others = [row('z', 4, 'card'), row('y', 1, 'nominated')];
+    expect(ledgerOf({ cards: [others[0], row('a', 1, 'card'), others[1]] }, result('a', 2, 'retired'))).toEqual([others[0], { ...result('a', 2, 'retired'), shelved: false }, others[1]]);
+    expect(ledgerOf({ cards: [row('a', 3, 'retired')] }, result('a', 2, 'card'))).toEqual([row('a', 3, 'retired')]);
+    expect(ledgerOf({ cards: [row('a', 2, 'retired')] }, result('a', 2, 'card'))).toEqual([row('a', 2, 'retired')]);
+    expect(ledgerOf({ cards: [row('a', 1, 'card')] }, { entryId: 'a', stage: 'retired', note: 'n' })).toEqual([row('a', 1, 'card')]);
+    expect(ledgerOf({ cards: [{ entryId: 'a', stage: 'card', shelved: false }] }, result('a', 2, 'retired'))).toEqual([{ entryId: 'a', stage: 'card', shelved: false }]);
   });
 });
