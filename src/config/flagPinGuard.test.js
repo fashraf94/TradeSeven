@@ -235,6 +235,16 @@ const DARK_BY_DESIGN = {
   //   one line back a step, with its pin row.
   SHADOW_CPU_QUOTE_INTEGRITY_ENABLED:
     'Shadow vs CPU quote integrity (SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md; build record docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md) — built dark; the producer metadata (quoteOrigin, the stock isFallback marker) ships live while this stays false. Flips only in the founder\'s own PR, never a build PR, and no earlier than the first regular US market open after the founder confirms the complete additive metadata path is live in production (R-11). The flip moves the pin in shadowCpuQuoteIntegrityFlags.test.js to true and drops this entry in the same commit; no URL, localStorage or environment override exists',
+  // HYPOTHESIS_RECORDS_ENABLED intentionally ABSENT: the record slice (Pilot
+  // P1a, P2, P1b) flipped true on 2026-10-09 in the founder's flip PR (#948,
+  // the four edits of the P1b report §13 step 4) — the deliberate flip dropped
+  // it here in the same commit, per the guard's own "if DELIBERATE"
+  // instruction. Its pin in hypothesisRecordsFlags.test.js asserts the live
+  // true value AND, turned around, that this entry is gone — a rollback moves
+  // the four lines back together. Re-adding it while it ships true fails the
+  // DARK_BY_DESIGN integrity test below.
+  DIALOGUE_SERVER_PARSE_ENABLED:
+    'Pilot P1c — the parse binding (pilot spec V1.4 §2.8; founder decision E4; build report docs/audits/20261022_BUILD_PILOT_P1C_REVIEW_EXPERIENCE.md). Built dark: with it false the watchlist dialogue\'s paste path stores the client\'s hash-checked parse envelope exactly as on the pre-build main (the off golden, watchlist-dialogue.parseBindingOffGolden.test.js); true, it builds the session and the prompt from the SERVER-stored parse of the drop. Prompt-contributing, so its flip takes the coordinated review. Flips only in the founder\'s own PR, never a build PR — four edits in one commit: the flag line, the pin in dialogueServerParseFlags.test.js to true, that file\'s registration row turned around to assert this entry is gone, and this entry dropped',
   // ANTICIPATION_THRESHOLD_LINT_MODE intentionally ABSENT, and it must stay
   // absent: it is a STRING TRI-STATE ('off' | 'shadow' | 'on'), so buildFlagMap
   // above never sees it (the scan is `*_ENABLED = true|false`) and the

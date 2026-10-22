@@ -40,6 +40,9 @@ import EquipBench from './desktop/EquipBench';
 import DeployCard from './desktop/DeployCard';
 import ScoutingBoardSheet from './ScoutingBoardSheet';
 import DeployCeremony from './deployCeremony/DeployCeremony';
+// Pilot P1c (founder ruling E1): the due-idea screen, before any deploy call.
+import DueIdeaInterstitial from './deployCeremony/DueIdeaInterstitial';
+import { checkDueIdea } from '../../services/dueIdeaCheck';
 // isStarfieldOn (Delight Layer Task 2, spec V2 D4): this component's root paints
 // an OPAQUE CMD.bg over the z0 background slot, so it is what hides the
 // starfield. Flag on => transparent and the field shows through; off =>
@@ -146,9 +149,30 @@ export default function CommandDashboardDesktop({
   // render behind it), for the ceremony-off existing-battle open.
   const deployTargetRef = useRef(null);
   const reportDeployTarget = (id) => { deployTargetRef.current = id; setDeployTargetId(id); };
+  // Pilot P1c (founder ruling E1): a due idea gets ONE screen before any deploy
+  // call, and every button on it deploys — so handleDeploy waits for the choice
+  // and still returns the deploy's own result. The gate ref keeps a second press
+  // from starting a second check; a ceremony retry re-runs the same deploy
+  // without asking again (the choice was made).
+  const [dueIdea, setDueIdea] = useState(null); // { due, proceed }
+  const ideaGateRef = useRef(false);
+  const skipIdeaCheckRef = useRef(false);
 
   const handleDeploy = async () => {
     if (deployDisabled) return { success: false };
+    if (skipIdeaCheckRef.current) {
+      skipIdeaCheckRef.current = false;
+    } else {
+      if (ideaGateRef.current) return { success: false };
+      ideaGateRef.current = true;
+      try {
+        const due = await checkDueIdea(agent);
+        if (due) await new Promise((proceed) => setDueIdea({ due, proceed }));
+      } finally {
+        ideaGateRef.current = false;
+        setDueIdea(null);
+      }
+    }
     // t0 for the stage-duration instrumentation — mirrors the mobile shell.
     ceremonyTiming.startRun();
     if (ceremonyOn) { setCeremonyOpen(true); setDeployResult({ status: 'pending' }); }
@@ -198,6 +222,7 @@ export default function CommandDashboardDesktop({
   const handleCeremonyRetry = () => {
     if (deployDisabled) return;
     setCeremonyRun((r) => r + 1);
+    skipIdeaCheckRef.current = true; // Pilot P1c: the idea choice was already made for this deploy
     handleDeploy();
   };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
@@ -376,6 +401,8 @@ export default function CommandDashboardDesktop({
           onDeploy={handleDeploy}
         />
       )}
+
+      {dueIdea && <DueIdeaInterstitial due={dueIdea.due} accent={accent} onProceed={dueIdea.proceed} />}
 
       {ceremonyOn && ceremonyOpen && (
         <DeployCeremony

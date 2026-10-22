@@ -60,6 +60,8 @@ const StoryDetail = lazy(() => import('./components/FantasyTimes/StoryDetail'));
 const VeraDeepDive = lazy(() => import('./components/FantasyTimes/VeraDeepDive'));
 const SearchDiscover = lazy(() => import('./components/Search/SearchDiscover'));
 const WatchlistEditor = lazy(() => import('./components/Forge/Watchlist/WatchlistEditor'));
+// Pilot P1c (founder rulings E1, E2): the events that open a list's Idea panel and a carrying battle's review.
+import { OPEN_IDEA_EVENT, OPEN_BATTLE_REVIEW_EVENT } from './components/Forge/Watchlist/ideaNavigation';
 // Correlation Lab: lazy now that the flag is live (deferred review NIT #9) — the
 // dev-param screen and the Discover "Correlations" tab both render this.
 const CorrelationLab = lazy(() => import('./components/Research/CorrelationLab'));
@@ -2503,6 +2505,34 @@ export default function PortfolioDuel() {
   useEffect(() => {
     if (showForge) setForgeInitialView('overview');
   }, [showForge]);
+  // Pilot P1c (src/components/Forge/Watchlist/ideaNavigation.js): the deploy
+  // ceremony's "running without your idea" line opens the list's editor, where
+  // its Idea panel lives (ruling E1, OPEN_IDEA_EVENT); the review card's
+  // carrying battles open that battle's Film Room (ruling E2,
+  // OPEN_BATTLE_REVIEW_EVENT — the owner's battle document, as read).
+  useEffect(() => {
+    const onOpenIdea = (event) => {
+      const watchlistId = event?.detail?.watchlistId;
+      if (typeof watchlistId !== 'string' || watchlistId.length === 0) return;
+      setSelectedWatchlistId(watchlistId);
+      setWatchlistEditorReturnScreen('home');
+      setShowForge(false);
+      setScreen('watchlistEditor');
+    };
+    const onOpenBattleReview = (event) => {
+      const battle = event?.detail?.battle;
+      if (!battle || typeof battle.id !== 'string' || battle.id.length === 0) return;
+      setCurrentBattle(battle);
+      setShowForge(false);
+      setScreen('filmRoom');
+    };
+    window.addEventListener(OPEN_IDEA_EVENT, onOpenIdea);
+    window.addEventListener(OPEN_BATTLE_REVIEW_EVENT, onOpenBattleReview);
+    return () => {
+      window.removeEventListener(OPEN_IDEA_EVENT, onOpenIdea);
+      window.removeEventListener(OPEN_BATTLE_REVIEW_EVENT, onOpenBattleReview);
+    };
+  }, []);
 
   // Desktop background state
   const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' && window.innerWidth > 768);

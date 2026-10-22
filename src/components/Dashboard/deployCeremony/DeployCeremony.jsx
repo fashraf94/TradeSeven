@@ -27,6 +27,10 @@ import CeremonyChecklist from './CeremonyChecklist';
 import CeremonyReveal from './CeremonyReveal';
 import CeremonyError from './CeremonyError';
 import CeremonyExisting from './CeremonyExisting';
+// Pilot P1c (founder ruling E1): the "running without your idea" notice and its link.
+import { HYPOTHESIS_NOTICES } from '../../../constants/hypothesisRecords';
+import { LIFECYCLE_LINES } from '../../Forge/Watchlist/ideaCopy';
+import { requestOpenIdea } from '../../Forge/Watchlist/ideaNavigation';
 
 const Z_INDEX = 1010; // above EquipSheet/ScoutingBoardSheet (1000), below tour/watchlist (10000)
 const DEPLOY_LOCK_MS = 120000; // server's per-agent deploy cooldown
@@ -187,6 +191,18 @@ export default function DeployCeremony({
   // already built at deploy time.
   const enterBattle = () => onEnterBattle?.(machine.recoveredBattle || null);
 
+  // Pilot P1c (founder ruling E1): the deploy's own success response said the
+  // battle carries nothing because the equipped idea is due for review (only
+  // a `success` deployResult can say so — deployResult.js). The line links to
+  // the equipped list's Idea panel; the ceremony closes as it opens.
+  const ideaListId = typeof agent?.equippedWatchlistId === 'string' && agent.equippedWatchlistId ? agent.equippedWatchlistId : null;
+  const ideaNotice = deployResult?.status === 'success' && deployResult?.hypothesisNotice === HYPOTHESIS_NOTICES.reviewDue
+    ? {
+        line: LIFECYCLE_LINES.deployRanWithout,
+        onOpen: ideaListId ? () => { onDismiss?.(); requestOpenIdea(ideaListId); } : null,
+      }
+    : null;
+
   let body;
   if (machine.phase === 'error') {
     body = (
@@ -213,6 +229,7 @@ export default function DeployCeremony({
         onEnterBattle={enterBattle}
         onDismiss={onDismiss}
         reduce={reduce}
+        ideaNotice={ideaNotice}
       />
     );
   } else if (machine.phase === 'existing') {

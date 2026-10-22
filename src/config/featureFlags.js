@@ -3132,9 +3132,17 @@ export function isShadowCpuQuoteIntegrityOn() {
  * switch, resolved for the battle's OWNER: a self-select deploy carries a
  * frozen copy of the equipped list's newest ready/activated version
  * (`agentContext.equippedHypothesis`), activates it and arms its review row in
- * the battle-creation transaction, and refuses a deploy whose idea is due for
- * review with no ready version (409 `hypothesis_review_due`, table C's line);
- * the Forge's review lines name [SYM] or the frozen [LIST].
+ * the battle-creation transaction; the Forge's review lines name [SYM] or the
+ * frozen [LIST]. Pilot P1c (founder ruling E1; build report
+ * docs/audits/20261022_BUILD_PILOT_P1C_REVIEW_EXPERIENCE.md) replaced P1b's
+ * refusal of a deploy whose idea is due for review with no ready version (the
+ * 409 `hypothesis_review_due`): that deploy now carries nothing and says so on
+ * its success response (`hypothesisNotice: 'review_due'`), and the deploy
+ * station asks the player first (reaffirm, retire, or deploy without it).
+ * P1c also puts, behind this same switch, the review card's evidence (GET
+ * …/hypothesis-versions/[n]/review — the frozen list against SPY over the
+ * idea's window, computed once and stored on the version) and the review
+ * pass's unwind of a carrying battle that never ran (ruling E3).
  * Nothing the agent sees or trades reads any of it.
  *
  * TRUE is not enough on its own: the gate resolves ON only for owners on the
@@ -3145,11 +3153,12 @@ export function isShadowCpuQuoteIntegrityOn() {
  * writes no pointer, the review pass returns before any read, and the panel
  * renders nothing (the client short-circuits on this constant before any
  * request, and otherwise shows nothing until the server admits the player).
- * DEFAULT false: the build merges dark,
- * and with it false every existing route, write and cron output is
- * byte-identical to the pre-build main.
+ * LIVE since 2026-10-09: the slice merged dark (false) and the founder flipped
+ * it true in its own PR (#948, the four edits below); with it false every
+ * existing route, write and cron output is byte-identical to the pre-build
+ * main.
  *
- * FLIP: its own founder PR, never a build PR, after the hypothesisVersions
+ * FLIP (done 2026-10-09, PR #948): its own founder PR, never a build PR, after the hypothesisVersions
  * collection-group index and the researchWork composite (firestore.indexes.json)
  * and the rules blocks are deployed (the P2 report's flip checklist covers both
  * builds). The flip is FOUR edits in one commit (BUILD_RULES §2; dry-run in the
@@ -3180,6 +3189,59 @@ export const HYPOTHESIS_RECORDS_ENABLED = true;
 /** The ONE consumer seam for the hypothesis-records flag (the allowlist half is server-only). */
 export function isHypothesisRecordsOn() {
   return HYPOTHESIS_RECORDS_ENABLED;
+}
+
+/**
+ * DIALOGUE_SERVER_PARSE_ENABLED — Pilot P1c, THE PARSE BINDING (pilot spec
+ * docs/specs/20260923_BAGGERBOMB_PARTNERSHIP_PILOT_SPEC_V1_4.md §2.8; founder
+ * decision E4, 16 Oct 2026; build report
+ * docs/audits/20261022_BUILD_PILOT_P1C_REVIEW_EXPERIENCE.md). §2.8 calls it
+ * "a behavior change to existing dialogue output" that "ships as its own
+ * founder-approved flip" — this flag is that flip.
+ *
+ * OFF (DEFAULT false — it merges dark): the watchlist dialogue's paste path
+ * (api/forge/watchlist-dialogue.js, a first turn with `parseResult` +
+ * `dropId`) stores the CLIENT's parse envelope as `session.parseResult` once
+ * its contentHash matches the drop record, exactly as today; the dialogue
+ * prompt is built from it. Byte-identical to the pre-build main (the off
+ * golden: api/forge/watchlist-dialogue.parseBindingOffGolden.test.js).
+ *
+ * ON: the paste path loads the SERVER-stored parse for the dropId — the drop
+ * record's `parse` (users/{uid}/signalDrops/{dropId}), else the parse cache
+ * it points to (signalDropCache/{contentHash}) — and stores THAT as
+ * `session.parseResult`; the hash check stays. An honest client (its envelope
+ * equals the stored parse) gets a byte-identical prompt; a client whose
+ * envelope differs gets the server's parse, and the session records
+ * `parseEnvelopeMismatch: true` — never a failed request for it. A drop with
+ * no stored parse at all is refused as a missing drop is (400 unknown_drop).
+ * Theme sessions (no drop record) and continuing turns are unchanged. An
+ * entered source URL stays on the drop record as attribution and changes
+ * nothing about what is parsed (the dialogue never re-parses). Gated on the
+ * flag ALONE — no allowlist: the binding is a correctness fix for every
+ * player, not a pilot surface.
+ *
+ * PROMPT-CONTRIBUTING (the parse feeds the dialogue prompt through
+ * signalDropPrompt.js buildDialogueInputs → voiceLayerPrompt.js): its flip is
+ * reviewed as one (call-record contract V1.4 §2's coordinated review, with a
+ * prompt-bytes lens), though no fenced assembler is touched.
+ *
+ * FLIP: its own founder PR, never a build PR — FOUR edits in one commit
+ * (BUILD_RULES §2; dry-run in the P1c report): this line; the pin in
+ * src/config/dialogueServerParseFlags.test.js to true; that file's
+ * registration row turned around to assert the DARK_BY_DESIGN entry is gone;
+ * and the entry dropped in src/config/flagPinGuard.test.js. Rollback is the
+ * same four edits back: sessions already started keep the parseResult they
+ * stored (and any parseEnvelopeMismatch marker); nothing else changes.
+ *
+ * The server reads the constant itself at call time (a test mocks it with a
+ * getter); isDialogueServerParseOn() is the seam for anything else.
+ */
+// Pinned by: dialogueServerParseFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const DIALOGUE_SERVER_PARSE_ENABLED = false;
+
+/** The ONE consumer seam for the parse-binding flag. */
+export function isDialogueServerParseOn() {
+  return DIALOGUE_SERVER_PARSE_ENABLED;
 }
 
 /**

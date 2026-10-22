@@ -35,6 +35,13 @@
 // allows it (every newer version pre-deploy — reaffirmableGiven, the same
 // predicate the route enforces).
 //
+// Pilot P1c: (ruling E2) the newest deployed version whose window has closed
+// — review_due, or retired / invalidated after a deploy — gets the review
+// card (IdeaReviewCard.jsx) from GET …/hypothesis-versions/{n}/review, under
+// its review line; its carrying battles open their Film Room (App, through
+// ideaNavigation.js). (Ruling E3) a version the review pass returned to Ready
+// because its only carrying battle never ran says so (table C V1.2).
+//
 // Pilot P2: the panel also says what research stands behind the list — the
 // research it came from, and its newest analysis session the agent worked on
 // (ideaCopy.js researchLinesOf), every number a
@@ -45,15 +52,18 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { isHypothesisRecordsOn } from '../../../config/featureFlags';
-import { HORIZON_ENUMS, TERMINAL_STATUSES, STATE_REASONS, legalActionsFor, reaffirmableGiven } from '../../../constants/hypothesisRecords';
+import { HORIZON_ENUMS, TERMINAL_STATUSES, STATE_REASONS, legalActionsFor, reaffirmableGiven, reviewableVersion } from '../../../constants/hypothesisRecords';
 import {
-  listHypothesisVersions, createHypothesisVersion, transitionHypothesis, reaffirmHypothesis, newOpId,
+  listHypothesisVersions, createHypothesisVersion, transitionHypothesis, reaffirmHypothesis, newOpId, getHypothesisReview,
 } from '../../../services/hypothesisVersionService';
 import {
-  LIFECYCLE_LINES, lifecycleLineFor, formatIdeaDate,
+  LIFECYCLE_LINES, lifecycleLineFor, deployVoidedLineFor, formatIdeaDate,
   STATUS_LABELS, ACTION_LABELS, HORIZON_LABELS, HORIZON_SOURCE_LABELS, PANEL_COPY, RESEARCH_COPY, researchLinesOf, noResearchRecorded,
 } from './ideaCopy';
 import SectionLabel from './SectionLabel';
+// Pilot P1c (ruling E2): the review card and the links out of it.
+import IdeaReviewCard from './IdeaReviewCard';
+import { requestOpenBattleReview } from './ideaNavigation';
 
 // The table-C sentence for a version lives in ideaCopy.js (pure — the P1b
 // end-to-end suite renders it in Node); re-exported for the panel's suites.
@@ -96,6 +106,7 @@ export default function IdeaPanel({ watchlistId, tokens }) {
   const [notice, setNotice] = useState(null); // { tone: 'ok' | 'error', text }
   const [editor, setEditor] = useState(null); // { mode, opId, expectedVersion, targetVersion, baseStatement, statement, horizonEnum }
   const [pending, setPending] = useState(null); // { action, version, expectedStatus, missingEvidence }
+  const [review, setReview] = useState(null); // P1c: { key, data } — the review card of the newest reviewable version
 
   const adopt = (data) => setRecord({
     currentVersion: data.currentVersion || 0,
@@ -132,6 +143,20 @@ export default function IdeaPanel({ watchlistId, tokens }) {
       });
     return () => { cancelled = true; };
   }, [enabled, watchlistId]);
+
+  // P1c (ruling E2): the newest deployed version in a reviewable state (the route's own predicate), keyed by
+  // version and status, so a move that changes it asks again. A refusal (window still open, gate) shows nothing.
+  const reviewTarget = phase === 'ready' ? record.versions.find((v) => reviewableVersion(v)) || null : null;
+  const reviewKey = reviewTarget ? `${reviewTarget.version}:${reviewTarget.status}` : null;
+  useEffect(() => {
+    if (!reviewKey) { setReview(null); return undefined; }
+    let cancelled = false;
+    const n = Number(reviewKey.split(':')[0]);
+    getHypothesisReview(watchlistId, n)
+      .then((data) => { if (!cancelled) setReview({ key: reviewKey, data }); })
+      .catch(() => { if (!cancelled) setReview(null); });
+    return () => { cancelled = true; };
+  }, [watchlistId, reviewKey]);
 
   if (!enabled || phase === 'hidden' || phase === 'pending') return null;
 
@@ -185,6 +210,14 @@ export default function IdeaPanel({ watchlistId, tokens }) {
     version, action, expectedStatus, ...(action === 'wait' ? { missingEvidence } : {}),
   }));
   const askAction = (action, v) => setPending({ action, version: v.version, expectedStatus: v.status, missingEvidence: '' });
+  // P1c: a carrying battle's link — the owner's battle document, read on the tap (the client SDK loads only
+  // then), handed to App's Film Room.
+  const openBattle = (battleId) => {
+    import('../../../services/carryingBattleRead')
+      .then(({ readCarryingBattle }) => readCarryingBattle(battleId))
+      .then((battle) => { if (battle) requestOpenBattleReview(battle); })
+      .catch(() => {});
+  };
 
   const actions = current ? legalActionsFor(current.status, { isCurrent: true }) : [];
   const canSaveNew = !current || current.status !== 'review_due';
@@ -197,6 +230,15 @@ export default function IdeaPanel({ watchlistId, tokens }) {
   // P1b — the running idea: the newest activated version, shown here when it is not the current one.
   const newestActivated = record.versions.find((v) => v.status === 'activated') || null;
   const running = newestActivated && newestActivated !== current ? newestActivated : null;
+  // P1c (ruling E3): the current version is Ready again because its only carrying battle never ran.
+  const voidedLine = deployVoidedLineFor(current);
+  // P1c (ruling E2): the card, under the review line of the version it belongs to.
+  const reviewCard = review && review.key === reviewKey && reviewTarget
+    ? <IdeaReviewCard review={review.data} tokens={tokens} onOpenBattle={openBattle} />
+    : null;
+  const reviewOnCurrent = reviewCard && reviewTarget === current;
+  const reviewOnSuperseded = reviewCard && !reviewOnCurrent && reviewTarget === supersededDue;
+  const reviewOwnBlock = reviewCard && !reviewOnCurrent && !reviewOnSuperseded;
   const researchLines = researchLinesOf(record.research, { watchlistId });
   const showNoResearch = researchLines.length === 0 && noResearchRecorded(record.research, current);
   const playerMarked = current?.stateReason === STATE_REASONS.playerMarkedResearched;
@@ -243,6 +285,8 @@ export default function IdeaPanel({ watchlistId, tokens }) {
               <div style={meta(tokens)}>{PANEL_COPY.waitingOn}: {current.missingEvidence}</div>
             )}
             {line && <div style={banner(tokens, tokens.amber)} data-testid="idea-lifecycle-line">{line}</div>}
+            {voidedLine && <div style={banner(tokens, tokens.teal)} data-testid="idea-voided-line">{voidedLine}</div>}
+            {reviewOnCurrent && reviewCard}
           </div>
         )}
 
@@ -266,6 +310,7 @@ export default function IdeaPanel({ watchlistId, tokens }) {
               <span style={chip(tokens, statusColor(tokens, supersededDue.status))}>v{supersededDue.version} · {STATUS_LABELS[supersededDue.status]}</span>
             </div>
             {supersededLine && <div style={banner(tokens, tokens.amber)} data-testid="idea-superseded-line">{supersededLine}</div>}
+            {reviewOnSuperseded && reviewCard}
             {!editor && (
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" disabled={busy} onClick={() => openEditor('reaffirm', supersededDue)} style={btn(tokens.teal, tokens.teal, busy)}>
@@ -273,6 +318,15 @@ export default function IdeaPanel({ watchlistId, tokens }) {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {phase === 'ready' && reviewOwnBlock && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }} data-testid="idea-review-block">
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+              <span style={chip(tokens, statusColor(tokens, reviewTarget.status))}>v{reviewTarget.version} · {STATUS_LABELS[reviewTarget.status]}</span>
+            </div>
+            {reviewCard}
           </div>
         )}
 

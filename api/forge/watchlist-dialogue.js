@@ -51,6 +51,15 @@ import {
   emptyTelemetry, applyTurn, dialogueFunnel, turnPatch,
 } from '../_utils/researchRecords/model.js';
 import { mintWithHost, recordTurnOutcome, researchWorkRefOf, safely } from '../_utils/researchRecords/store.js';
+// Pilot P1c — THE PARSE BINDING (pilot spec §2.8; founder decision E4). With
+// DIALOGUE_SERVER_PARSE_ENABLED the paste path builds its session — and so the
+// dialogue prompt — from the SERVER-stored parse of the drop, never from a
+// client envelope that merely matches the contentHash (see serverParseOf).
+// Off → this file does exactly what it did. Read at call time (a test mocks
+// the constant with a getter). The canonical hash compares the two envelopes
+// key-order-free (Firestore returns map keys alphabetized).
+import { DIALOGUE_SERVER_PARSE_ENABLED } from '../../src/config/featureFlags.js';
+import { canonicalContentHash } from '../_utils/canonicalHash.js';
 
 export const config = { maxDuration: 30 };
 
@@ -719,6 +728,26 @@ export function normalizeDialogueOutput(raw) {
   };
 }
 
+// Pilot P1c — the server-stored parse of a drop, shaped as the envelope the
+// paste path stores (validateParseResult — the same caps and enums the client
+// envelope gets): the drop record's own parse (parse-signal writes it on every
+// drop, cache hit or miss), else the parse cache the drop points to by its
+// contentHash (signalDropCache, 6 h TTL). Null when neither holds a usable
+// parse. Exported for tests.
+export async function serverParseOf(db, dropRecord) {
+  const shaped = (src) => (src && typeof src === 'object' ? validateParseResult({
+    contentHash: dropRecord.contentHash,
+    parse: src.parse,
+    validation: src.validation,
+    shouldBailout: src.shouldBailout,
+    shouldHardCheckpoint: src.shouldHardCheckpoint,
+  }) : null);
+  const fromDrop = shaped(dropRecord);
+  if (fromDrop) return fromDrop;
+  const cacheSnap = await db.collection('signalDropCache').doc(dropRecord.contentHash).get();
+  return cacheSnap.exists ? shaped(cacheSnap.data()) : null;
+}
+
 // ==================== HANDLER ====================
 
 export default async function handler(req, res) {
@@ -983,6 +1012,27 @@ export default async function handler(req, res) {
         });
       }
 
+      // Pilot P1c (§2.8, E4): flag on → the SERVER's parse of this drop is the session's (and the prompt's);
+      // an envelope that differs from it is recorded, never refused. A drop with no stored parse is refused
+      // as a missing drop is. Flag off → the client's hash-checked envelope, as before.
+      let parseResult = validatedParseResult;
+      let parseEnvelopeMismatch = false;
+      if (DIALOGUE_SERVER_PARSE_ENABLED === true) {
+        const serverParse = await serverParseOf(db, dropRecord);
+        if (!serverParse) {
+          return res.status(400).json({
+            error: 'unknown_drop',
+            message:
+              'No signal drop found for this dropId. Call /api/forge/parse-signal first.',
+          });
+        }
+        parseEnvelopeMismatch = canonicalContentHash(serverParse) !== canonicalContentHash(validatedParseResult);
+        if (parseEnvelopeMismatch) {
+          console.warn(`[watchlist-dialogue] parse envelope differs from the stored parse of drop ${dropId} — the stored parse is used`);
+        }
+        parseResult = serverParse;
+      }
+
       sessionRef = sessionsCol.doc();
       const nowIso = new Date().toISOString();
       session = {
@@ -993,7 +1043,7 @@ export default async function handler(req, res) {
         updatedAt: nowIso,
         status: 'active',
         phase: 'explore',
-        parseResult: validatedParseResult,
+        parseResult,
         exchanges: [],
         candidateTickers: [],
         // Phase 2.6: watchlist anatomy state. Thesis set during 'explore';
@@ -1011,6 +1061,8 @@ export default async function handler(req, res) {
         meta: {
           initialAgentName: typeof agent.name === 'string' ? agent.name : 'Gemma',
         },
+        // Pilot P1c: present only when the client's envelope differed from the stored parse.
+        ...(parseEnvelopeMismatch ? { parseEnvelopeMismatch: true } : {}),
       };
       isNewSession = true;
     }

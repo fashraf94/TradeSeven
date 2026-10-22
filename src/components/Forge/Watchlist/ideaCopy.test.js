@@ -12,6 +12,13 @@
 // (src/constants/hypothesisRecords.js DUE_DEPLOY_LINE, re-exported as
 // LIFECYCLE_LINES.dueDeploy); and the §E sweep covers the server-side
 // player strings P1b adds (the refusal and the race message).
+//
+// Pilot P1c (acceptance row 6): table C V1.2 (founder rulings E1–E3) adds
+// five rows — the deploy station's due-idea title ([SYM] and [LIST]), the
+// success screen's line, the review card's honest line ([AGENT]) and the
+// void line — and a labels table (the screen's three buttons, the card's
+// labels). Every one is pinned here against the spec byte for byte, the
+// [SYM]/[LIST] rule decides the title, and the §E sweep covers them all.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -20,9 +27,11 @@ import { describe, it, expect } from 'vitest';
 import {
   LIFECYCLE_LINES, fillLine, ideaSymbolOf, ideaListOf, windowTextOf, formatIdeaDate,
   STATUS_LABELS, ACTION_LABELS, HORIZON_LABELS, HORIZON_SOURCE_LABELS, PANEL_COPY,
+  DUE_DEPLOY_ACTIONS, REVIEW_CARD_LABELS, dueDeployTitleFor, deployVoidedLineFor,
 } from './ideaCopy';
 import {
   HYPOTHESIS_STATUSES, HORIZON_ENUMS, HORIZON_SOURCES, PLAYER_ACTIONS, DUE_DEPLOY_LINE, CARRIAGE_RACE_MESSAGE, DEPLOY_REFUSAL_CODE,
+  REVIEW_HONEST_LINE,
 } from '../../../constants/hypothesisRecords';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -41,10 +50,16 @@ function tableC() {
 
 describe('table C, verbatim', () => {
   const C = tableC();
-  it('the spec\'s table C has exactly the seven rows the panel ships (V1\'s five, then table C V1.1\'s two [LIST] rows)', () => {
+  it('the spec\'s table C has exactly the rows the panel ships (V1\'s five, table C V1.1\'s two [LIST] rows, table C V1.2\'s five rows and its nine labels)', () => {
     expect(Object.keys(C)).toEqual([
       '`review_due` (horizon elapsed)', '`review_due` (battle ended, `unspecified`)', '`invalidated`', 'reaffirmation', 'deploy of a due version attempted',
       '`review_due` (horizon elapsed), `[LIST]`', '`review_due` (battle ended, `unspecified`), `[LIST]`',
+      'deploy with a due idea — the screen before it', 'deploy with a due idea — the screen before it, `[LIST]`',
+      'deploy with a due idea — the success screen after it', 'the review card', '`ready` again (`deploy_voided`)',
+      'the screen before the deploy, button 1', 'the screen before the deploy, button 2', 'the screen before the deploy, button 3',
+      'the review card, the list-versus-market difference', 'the review card, the difference\'s unit (percentage points)',
+      'the review card, the per-name table (collapsed)', 'the review card, a name with no data for the window',
+      'the review card, the carrying battles', 'the review card, a voided battle\'s mark',
     ]);
   });
   it('each shipped line equals its table row byte for byte', () => {
@@ -55,7 +70,39 @@ describe('table C, verbatim', () => {
     expect(LIFECYCLE_LINES.dueDeploy).toBe(C['deploy of a due version attempted']);
     expect(LIFECYCLE_LINES.reviewDueHorizonList).toBe(C['`review_due` (horizon elapsed), `[LIST]`']);
     expect(LIFECYCLE_LINES.reviewDueBattleEndedList).toBe(C['`review_due` (battle ended, `unspecified`), `[LIST]`']);
-    expect(Object.keys(LIFECYCLE_LINES)).toHaveLength(7);
+    // Table C V1.2 (Pilot P1c).
+    expect(LIFECYCLE_LINES.dueDeployTitle).toBe(C['deploy with a due idea — the screen before it']);
+    expect(LIFECYCLE_LINES.dueDeployTitleList).toBe(C['deploy with a due idea — the screen before it, `[LIST]`']);
+    expect(LIFECYCLE_LINES.deployRanWithout).toBe(C['deploy with a due idea — the success screen after it']);
+    expect(LIFECYCLE_LINES.reviewHonest).toBe(C['the review card']);
+    expect(LIFECYCLE_LINES.deployVoided).toBe(C['`ready` again (`deploy_voided`)']);
+    expect(Object.keys(LIFECYCLE_LINES)).toHaveLength(12);
+  });
+  it('table C V1.2\'s labels: the screen\'s three buttons in their order, and the review card\'s labels, byte for byte', () => {
+    expect(DUE_DEPLOY_ACTIONS.map((a) => a.label)).toEqual([
+      C['the screen before the deploy, button 1'], C['the screen before the deploy, button 2'], C['the screen before the deploy, button 3'],
+    ]);
+    expect(DUE_DEPLOY_ACTIONS.map((a) => a.id)).toEqual(['reaffirm', 'retire', 'without']);
+    expect(REVIEW_CARD_LABELS).toEqual({
+      difference: C['the review card, the list-versus-market difference'],
+      points: C['the review card, the difference\'s unit (percentage points)'],
+      names: C['the review card, the per-name table (collapsed)'],
+      noData: C['the review card, a name with no data for the window'],
+      battles: C['the review card, the carrying battles'],
+      voided: C['the review card, a voided battle\'s mark'],
+    });
+  });
+  it('the review card\'s honest line is ONE string, the server\'s and the Forge\'s (the review route fills it)', () => {
+    expect(REVIEW_HONEST_LINE).toBe(C['the review card']);
+    expect(LIFECYCLE_LINES.reviewHonest).toBe(REVIEW_HONEST_LINE);
+  });
+  it('the V1.2 title rows are the V1.1 pair\'s shape: the [LIST] row is the [SYM] row with [SYM] → [LIST] and nothing else', () => {
+    expect(LIFECYCLE_LINES.dueDeployTitleList).toBe(LIFECYCLE_LINES.dueDeployTitle.replace('[SYM]', '[LIST]'));
+  });
+  it('the table C V1.2 note is dated and the header and footer name the version (V1.6)', () => {
+    expect(TABLES).toContain('**Table C V1.2 — 16 Oct 2026 (founder rulings E1–E3, Pilot P1c; pilot spec Amendment E):**');
+    expect(TABLES).toContain('**V1.6 — 16 Oct 2026:** table C gains its V1.2');
+    expect(TABLES).toContain('*V1.6 — 16 Oct 2026: table C V1.2, the due-idea deploy lines, the review card\'s line and labels, and the void line (founder rulings E1–E3).*');
   });
   it('the [LIST] rows are the V1 rows with [SYM] → [LIST] and nothing else (B3: "the existing rows stay unchanged")', () => {
     expect(LIFECYCLE_LINES.reviewDueHorizonList).toBe(LIFECYCLE_LINES.reviewDueHorizon.replace('[SYM]', '[LIST]'));
@@ -86,6 +133,29 @@ describe('placeholders are filled from the record, never invented', () => {
   });
   it('a line with no placeholder is returned unchanged', () => {
     expect(fillLine(LIFECYCLE_LINES.reaffirmed)).toBe(LIFECYCLE_LINES.reaffirmed);
+  });
+  it('[AGENT] (table C V1.2): the frozen agent name, else no line', () => {
+    expect(fillLine(LIFECYCLE_LINES.reviewHonest, { agent: 'Shadow' }))
+      .toBe("Shadow doesn't act on your ideas yet. This shows how the names did over the idea's time-frame — not what the agent did with it.");
+    expect(fillLine(LIFECYCLE_LINES.reviewHonest, {})).toBeNull();
+    expect(fillLine(LIFECYCLE_LINES.reviewHonest, { agent: ' ' })).toBeNull();
+  });
+  it('the due-deploy screen\'s title (E1): [SYM] when the idea names one symbol, else the FROZEN [LIST]; neither → null; only for a due version', () => {
+    const due = { status: 'review_due', activation: [], invalidation: [] };
+    const cond = (symbol) => ({ symbol, side: 'above', level: 1, basis: 'daily_close' });
+    expect(dueDeployTitleFor(due, { name: 'Chips', tickers: ['NVDA'] })).toBe('Your NVDA idea reached its time-frame.');
+    expect(dueDeployTitleFor(due, { name: 'AI capex', tickers: ['NVDA', 'AMD'] })).toBe('Your AI capex idea reached its time-frame.');
+    expect(dueDeployTitleFor({ ...due, activation: [cond('AMD')] }, { name: 'AI capex', tickers: ['NVDA', 'AMD'] })).toBe('Your AMD idea reached its time-frame.');
+    expect(dueDeployTitleFor(due, null)).toBeNull();
+    expect(dueDeployTitleFor(due, { name: '  ', tickers: ['NVDA', 'AMD'] })).toBeNull();
+    expect(dueDeployTitleFor({ ...due, status: 'activated' }, { name: 'Chips', tickers: ['NVDA'] })).toBeNull();
+    expect(dueDeployTitleFor(null)).toBeNull();
+  });
+  it('the void line (E3): only for a version the review pass returned to ready as deploy_voided', () => {
+    expect(deployVoidedLineFor({ status: 'ready', stateReason: 'deploy_voided' })).toBe("That battle never ran, so your idea is back to Ready. Its clock hasn't started.");
+    expect(deployVoidedLineFor({ status: 'ready', stateReason: 'reaffirmed' })).toBeNull();
+    expect(deployVoidedLineFor({ status: 'activated', stateReason: 'deploy_voided' })).toBeNull();
+    expect(deployVoidedLineFor(null)).toBeNull();
   });
   it('[SYM] (founder ruling B3): ONLY when the idea names exactly one symbol — its own conditions, else a ONE-ticker frozen snapshot — never the live list (review L1-2 / L4-6)', () => {
     const cond = (symbol) => ({ symbol, side: 'above', level: 1, basis: 'daily_close' });
@@ -151,6 +221,8 @@ describe('table E — forbidden vocabulary appears nowhere the panel speaks', ()
     ...Object.values(HORIZON_LABELS), ...Object.values(HORIZON_SOURCE_LABELS), ...Object.values(PANEL_COPY),
     // Pilot P1b — the server's player-facing deploy strings (the refusal and the race).
     DUE_DEPLOY_LINE, CARRIAGE_RACE_MESSAGE,
+    // Pilot P1c — table C V1.2's labels (its lines are in LIFECYCLE_LINES above).
+    ...DUE_DEPLOY_ACTIONS.map((a) => a.label), ...Object.values(REVIEW_CARD_LABELS), REVIEW_HONEST_LINE,
   ];
   it('no string matches a forbidden term', () => {
     const hits = ALL.flatMap((s) => FORBIDDEN.filter((re) => re.test(s)).map((re) => `${re} in "${s}"`));

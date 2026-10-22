@@ -11,7 +11,7 @@
 // 1. RESOLUTION, at deploy, before any battle work (resolveDeployCarriage):
 //    which version of the equipped list's idea the battle carries, from the
 //    list's SERVER-WRITTEN version documents only — never a client value and
-//    never the list's pointer (ruling B2). Three outcomes:
+//    never the list's pointer (ruling B2). Two outcomes:
 //      carry   { equippedHypothesis }  the NEWEST version whose status is
 //              `ready` or `activated` (a reaffirmed version is `ready` and
 //              newer, so the fresh version deploys with no re-equip) — but
@@ -19,13 +19,17 @@
 //              that one is `review_due` (B2's "with no ready successor", read
 //              with spec §2.5: "a new deploy requires the future ready version
 //              created by reaffirmation"; review L4-1);
-//      refuse  { status: 409, body }   the idea's newest DEPLOYED version is
-//              `review_due` and no newer version is ready or activated —
-//              table C's due-deploy line, verbatim;
-//      none                            anything else (drafts, terminal
-//              statuses, no list, gate off, no transactional creation path, a
-//              read failure, a corrupt record) — the deploy runs exactly as it
-//              does today.
+//      none                            nothing rides, and the deploy runs
+//              exactly as it does today. Its `reason` says why; ONE reason the
+//              deploy reports: `review_due` { version } — the idea's newest
+//              DEPLOYED version is `review_due` and no newer version is ready
+//              or activated. Pilot P1c, founder ruling E1 (16 Oct 2026; spec
+//              Amendment E): a due idea never blocks a deploy — P1b refused it
+//              here (409); now the battle carries nothing and decide.js adds
+//              `hypothesisNotice: 'review_due'` to its success response. Every
+//              other reason (drafts, terminal statuses, no list, gate off, no
+//              transactional creation path, a read failure, a corrupt record)
+//              is silent.
 //    THE GATE (ruling B1): the record slice's one switch, hypothesisRecordsOnFor
 //    (HYPOTHESIS_RECORDS_ENABLED + the cockpit allowlist) for the battle's
 //    owner. Off → `none` BEFORE ANY READ. Nothing here reads the pilot's
@@ -44,8 +48,8 @@
 //    the deploy judges it with the pass's own rule (activatedReviewDue), in a
 //    judged-once transaction (fresh reads; acts only if still `activated`):
 //    it becomes `review_due` (stateSource 'deploy', the pass's reasons) and
-//    its row is deleted — then B2 applies to what remains (an older ready
-//    version carries; else the refusal).
+//    its row is deleted — then B2 applies: it is now the idea's newest
+//    deployed version and it is due, so nothing older rides (`review_due`).
 //
 // 2. ACTIVATION, inside the battle-creation transaction
 //    (compositionGenerationFence.js commitBattleDocWithPin calls
@@ -60,13 +64,15 @@
 //      ready     → activated: firstDeployedAt, reviewDueAt (computeReviewDueAt,
 //                  the companion §6 clock anchored at the battle's creation
 //                  instant), stateChangedAt, stateSource 'deploy', stateReason
-//                  'deployed', lastDeployedAt, lastDeployedBattleId; the review
+//                  'deployed', lastDeployedAt, lastDeployedBattleId, and (Pilot
+//                  P1c, ruling E2) deployedBattleIds = [the battle]; the review
 //                  row armed (armReviewRow) with the due instant, or null for
 //                  an `unspecified` horizon (a battle-end review).
 //      activated → NO RESTAMP (ruling B6): firstDeployedAt and the due time
 //                  stay anchored to the first deploy; lastDeployedAt and
-//                  lastDeployedBattleId move; the row is re-armed with the SAME
-//                  dueAtMs and the NEW battle id.
+//                  lastDeployedBattleId move, and deployedBattleIds gains the
+//                  battle (P1c; capped — the first id and the newest 49); the
+//                  row is re-armed with the SAME dueAtMs and the NEW battle id.
 //    THE CLOCK FALLBACK (ruling B5): computeReviewDueAt throwing
 //    `calendar_unavailable` never fails the deploy and never leaves a silent
 //    null — the version records the typed marker
@@ -78,12 +84,14 @@ import { hypothesisRecordsOnFor } from './gate.js';
 import {
   WATCHLISTS_COLLECTION, VERSIONS_SUBCOLLECTION, HORIZON_ENUMS, STATE_REASONS,
   versionDocId, isVersionNumber, contentHashOf,
+  DEPLOYED_BATTLE_IDS_FIELD, DEPLOYED_BATTLE_IDS_CAP, carryingBattleIdsOf, withCarryingBattle,
 } from './model.js';
 import { computeReviewDueAt, HorizonClockError } from './horizon.js';
 import { armReviewRow, normalizeReviewRow, reviewRowRef, battleIsTerminal } from './reviewPass.js';
-import {
-  CARRIABLE_STATUSES, DEPLOY_REFUSAL_CODE, DUE_DEPLOY_LINE, CARRIAGE_RACE_MESSAGE,
-} from '../../../src/constants/hypothesisRecords.js';
+import { CARRIABLE_STATUSES, CARRIAGE_RACE_MESSAGE } from '../../../src/constants/hypothesisRecords.js';
+
+/** Pilot P1c (ruling E1): the `none` reason the deploy reports — the idea is due for review and nothing rides. */
+export const REVIEW_DUE_REASON = 'review_due';
 
 /** One page of a resolution's read (newest first) — the Forge list read's own bound (store.js LIST_LIMIT). */
 export const CARRIAGE_SCAN_LIMIT = 100;
@@ -111,6 +119,9 @@ export const DEPLOY_STATE_SOURCE = 'deploy';
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const nonEmpty = (v) => typeof v === 'string' && v.length > 0;
 const isoOrNull = (v) => v === null || (nonEmpty(v) && Number.isFinite(Date.parse(v)));
+
+// Pilot P1c (founder ruling E2): the carrying-battle list lives with the record (model.js), re-exported here.
+export { DEPLOYED_BATTLE_IDS_FIELD, DEPLOYED_BATTLE_IDS_CAP, carryingBattleIdsOf, withCarryingBattle };
 
 /**
  * The race: the carried version's fresh read in the creation transaction
@@ -244,7 +255,7 @@ const none = (reason) => ({ outcome: 'none', reason });
  *   degraded to no equip); `snapshot` the frozen snapshot the battle will
  *   carry; `pin` the deploy's activation pin (dark = no creation transaction).
  * @returns {Promise<{ outcome: 'carry', equippedHypothesis: object, version: number, status: string }
- *   | { outcome: 'refuse', status: 409, body: { error: string, message: string }, version: number }
+ *   | { outcome: 'none', reason: 'review_due', version: number }
  *   | { outcome: 'none', reason: string }>}
  */
 export async function resolveDeployCarriage(db, { ownerUid, watchlistId, watchlist, snapshot, pin }) {
@@ -291,11 +302,12 @@ export async function resolveDeployCarriage(db, { ownerUid, watchlistId, watchli
   //     deployed due version like any other;
   //   · the first DEPLOYED version met is the idea's newest deployed version: when it is due, nothing
   //     older may ride ("a new deploy requires the future ready version created by reaffirmation" —
-  //     spec §2.5; "with no ready successor" — B2), so the deploy is refused; otherwise the walk goes on.
+  //     spec §2.5; "with no ready successor" — B2), so the battle carries nothing and the deploy is told
+  //     `review_due` (ruling E1 — never a refusal); otherwise the walk goes on.
   const nowMs = Date.now();
-  const refuse = (v, why) => {
-    console.log(`[hypothesis] carriage: list ${watchlistId} v${v.version} ${why} — deploy refused`);
-    return { outcome: 'refuse', status: 409, body: { error: DEPLOY_REFUSAL_CODE, message: DUE_DEPLOY_LINE }, version: v.version };
+  const dueNothingRides = (v, why) => {
+    console.log(`[hypothesis] carriage: list ${watchlistId} v${v.version} ${why} — the deploy carries nothing (ruling E1)`);
+    return { outcome: 'none', reason: REVIEW_DUE_REASON, version: v.version };
   };
   let newestDeployedSeen = false;
   for (const v of mine) {
@@ -317,9 +329,11 @@ export async function resolveDeployCarriage(db, { ownerUid, watchlistId, watchli
           try {
             judged = await judgeDueAtDeploy(db, { v, nowMs });
           } catch (err) {
-            // The idea IS due by its own record; it is never carried unjudged (the pass judges it within a tick).
+            // The idea IS due by its own record; it is never carried unjudged (the pass judges it within a
+            // tick). The deploy is told `review_due` as for a judged one (P1c report: until the pass runs the
+            // record still reads `activated` — at most one reflections tick).
             console.warn(`[hypothesis] carriage: list ${watchlistId} v${v.version} due-judgment failed: ${String(err?.message || err).slice(0, 200)}`);
-            return refuse(v, `is due for review (${due}) and could not be judged`);
+            return dueNothingRides(v, `is due for review (${due}) and could not be judged`);
           }
           if (judged === 'moved') return none('state_moved');
           if (judged !== 'not_due') {
@@ -337,7 +351,7 @@ export async function resolveDeployCarriage(db, { ownerUid, watchlistId, watchli
     }
     if (!newestDeployedSeen && nonEmpty(v.firstDeployedAt)) {
       newestDeployedSeen = true;
-      if (v.status === 'review_due') return refuse(v, 'is due for review with no newer ready version');
+      if (v.status === 'review_due') return dueNothingRides(v, 'is due for review with no newer ready version');
     }
   }
   return none('nothing_carriable');
@@ -425,11 +439,18 @@ export function activateCarriedVersionInTx(tx, db, carried, { battleId, battleDo
       lastDeployedAt: at,
       lastDeployedBattleId: battleId,
       ...(fault ? { [REVIEW_CLOCK_FAULT_FIELD]: fault } : {}),
+      // Pilot P1c (ruling E2): the first carrying battle.
+      [DEPLOYED_BATTLE_IDS_FIELD]: [battleId],
     };
   } else {
-    // Ruling B6: an active idea redeploys with its clock untouched.
+    // Ruling B6: an active idea redeploys with its clock untouched; P1c appends the battle (a version
+    // activated before P1c starts its list from the one battle its record names).
     dueAtMs = fresh.reviewDueAt == null ? null : Date.parse(fresh.reviewDueAt);
-    patch = { lastDeployedAt: at, lastDeployedBattleId: battleId };
+    patch = {
+      lastDeployedAt: at,
+      lastDeployedBattleId: battleId,
+      [DEPLOYED_BATTLE_IDS_FIELD]: withCarryingBattle(carryingBattleIdsOf(fresh), battleId),
+    };
   }
   tx.update(ref, patch);
   armReviewRow(tx, db, { userId: fresh.userId, watchlistId: fresh.watchlistId, version: fresh.version, battleId, dueAtMs, armedAt: atMs });
