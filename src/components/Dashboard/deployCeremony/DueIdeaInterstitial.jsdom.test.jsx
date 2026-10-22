@@ -12,9 +12,12 @@
 //     transition route (retire, expected review_due) THEN the deploy; deploy
 //     without it → the deploy alone, no route call;
 //   · a failed step never falls through to a deploy (the advisor's change to
-//     the plan): the server's typed message is shown, the same three buttons
-//     stay, and the next press re-reads the idea first — an idea no longer
-//     due (the lost response landed after all) simply deploys.
+//     the plan): no words appear — no "try again" in any form (review L4-6) —
+//     the same three buttons stay, live again, and the next press re-reads
+//     the idea first — an idea no longer due (the lost response landed after
+//     all) simply deploys; a step that outlasts STEP_TIMEOUT_MS counts as
+//     failed; while a step runs the buttons are busy, never disabled, so
+//     focus stays inside the screen (review L4-13).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
@@ -30,8 +33,8 @@ const svc = vi.hoisted(() => ({
 vi.mock('../../../services/hypothesisVersionService', () => svc);
 vi.mock('../../../hooks/useModalFocus', () => ({ default: () => {} }));
 
-import DueIdeaInterstitial from './DueIdeaInterstitial';
-import { DUE_DEPLOY_ACTIONS, PANEL_COPY } from '../../Forge/Watchlist/ideaCopy';
+import DueIdeaInterstitial, { STEP_TIMEOUT_MS } from './DueIdeaInterstitial';
+import { DUE_DEPLOY_ACTIONS } from '../../Forge/Watchlist/ideaCopy';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -112,21 +115,56 @@ describe('each button\'s sequence', () => {
 });
 
 describe('a failed step never falls through to a deploy', () => {
-  it('a typed refusal (409) → the server\'s own words, NO deploy, the same three buttons standing', async () => {
+  it('a typed refusal (409) → NO deploy, no words (the server\'s "Reload and try again" never shows), the same three buttons live again', async () => {
     svc.reaffirmHypothesis.mockRejectedValue(typed(409, 'version_conflict', 'The idea changed since you loaded it. Reload and try again.'));
     await mount();
+    const before = screen().textContent;
     await press('reaffirm');
     expect(proceeded).toBe(0);
-    expect(screen().querySelector('[data-testid="due-idea-error"]').textContent).toBe('The idea changed since you loaded it. Reload and try again.');
+    expect(screen().textContent).toBe(before);
+    expect(screen().textContent).not.toMatch(/try again/i);
     expect(buttons().map((b) => b.textContent)).toEqual(['Reaffirm and deploy', 'Retire and deploy', 'Deploy without it']);
-    expect(buttons().every((b) => !b.disabled)).toBe(true);
+    expect(buttons().every((b) => !b.disabled && b.getAttribute('aria-disabled') === 'false')).toBe(true);
   });
-  it('a failure with no server words (a lost response) → the Idea panel\'s own failure line, no deploy', async () => {
+  it('a failure with no server words (a lost response) → no deploy, no words', async () => {
     svc.transitionHypothesis.mockRejectedValue(new Error('Failed to fetch'));
     await mount();
+    const before = screen().textContent;
     await press('retire');
     expect(proceeded).toBe(0);
-    expect(screen().querySelector('[data-testid="due-idea-error"]').textContent).toBe(PANEL_COPY.moveFailed);
+    expect(screen().textContent).toBe(before);
+  });
+  it('while a step runs the buttons are busy, never disabled (focus stays inside the screen), and a second press does nothing', async () => {
+    let finish;
+    svc.reaffirmHypothesis.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    await mount();
+    await act(async () => { byAction('reaffirm').click(); });
+    expect(buttons().every((b) => !b.disabled && b.getAttribute('aria-disabled') === 'true')).toBe(true);
+    await act(async () => { byAction('without').click(); });
+    expect(proceeded).toBe(0);
+    await act(async () => { finish({}); });
+    await flush();
+    expect(proceeded).toBe(1);
+    expect(svc.reaffirmHypothesis).toHaveBeenCalledTimes(1);
+  });
+  it(`a step that outlasts STEP_TIMEOUT_MS (${STEP_TIMEOUT_MS} ms) counts as failed: no deploy, the buttons live again, and the next press re-reads first`, async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      svc.transitionHypothesis.mockReturnValue(new Promise(() => {}));
+      await mount();
+      await act(async () => { byAction('retire').click(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(STEP_TIMEOUT_MS); });
+      await flush();
+      expect(proceeded).toBe(0);
+      expect(buttons().every((b) => b.getAttribute('aria-disabled') === 'false')).toBe(true);
+      svc.listHypothesisVersions.mockResolvedValue({ watchlistId: 'wl-1', currentVersion: 3, versions: [{ version: 2, status: 'retired', firstDeployedAt: '2026-10-05T15:00:00.000Z' }] });
+      await act(async () => { byAction('retire').click(); });
+      await flush();
+      expect(svc.listHypothesisVersions).toHaveBeenCalledTimes(1);
+      expect(proceeded).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('the next press re-reads the idea FIRST: still due → the step again with the fresh pointer and a new opId, then the deploy', async () => {
     svc.reaffirmHypothesis.mockRejectedValueOnce(new Error('Failed to fetch')).mockResolvedValueOnce({});
@@ -152,14 +190,15 @@ describe('a failed step never falls through to a deploy', () => {
     expect(svc.reaffirmHypothesis).toHaveBeenCalledTimes(1);
     expect(proceeded).toBe(1);
   });
-  it('the re-read itself fails → said, and still no deploy', async () => {
+  it('the re-read itself fails → still no deploy, still no words', async () => {
     svc.transitionHypothesis.mockRejectedValueOnce(new Error('Failed to fetch'));
     svc.listHypothesisVersions.mockRejectedValue(typed(404, 'disabled', undefined));
     await mount();
+    const before = screen().textContent;
     await press('retire');
     await press('retire');
     expect(proceeded).toBe(0);
-    expect(screen().querySelector('[data-testid="due-idea-error"]')).not.toBeNull();
+    expect(screen().textContent).toBe(before);
   });
   it('Deploy without it after a failure deploys at once (no re-read, no route)', async () => {
     svc.reaffirmHypothesis.mockRejectedValue(new Error('Failed to fetch'));

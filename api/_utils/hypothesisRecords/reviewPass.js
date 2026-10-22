@@ -5,8 +5,8 @@
 // The FIFTH isolated tenant of api/cron/process-pending-reflections.js, after
 // the call sweep, with its own time slice and outcome counters. It never
 // throws. `completeBattle` is untouched (contract Amendment B §B.7 precedent):
-// the pass keys on the version's own `activated` state plus the battle's
-// terminal status, so every way a battle ends is covered, at most one
+// the pass keys on the version's own `activated` state plus the battle's end
+// (terminal; since P1c also past its expiresAt), so every way a battle ends is covered, at most one
 // 15-minute tick late, on a state that grants no authority (R6).
 //
 // P1b (deploy carriage) arms the queue rows at activation, in the battle's
@@ -44,16 +44,24 @@
 // timed-out attempt is UNCONFIRMED — it may commit late; the next pass
 // re-reads and judges once (spec §2.5 "judged once").
 //
+// Pilot P1c — WHEN A BATTLE IS OVER (review L2-3): terminal, or past its own
+// expiresAt (battleIsOver) — the deploy's rule since P1b. An expired battle
+// stays `active` until agent-evaluate completes it on its next weekday tick,
+// so a battle-end review now fires at the expiry, not up to a weekend later.
+//
 // Pilot P1c — THE VOID UNWIND (founder ruling E3, 16 Oct 2026; spec Amendment
-// E). A carrying battle that never ran — terminal with zero evaluations and
-// no trades (battleNeverRan) — is not a deploy of the idea. For a row ARMED
+// E). A carrying battle that never ran — over (as above) with zero
+// evaluations and no trades (battleNeverRan) — is not a deploy of the idea.
+// The DEPLOY applies the same judge first (unwindVoidCarriage, called by
+// carriage.js before it judges or carries an activated version), so the
+// record ends the same whichever reaches the row first. For a row ARMED
 // within the last REVIEW_VOID_TRADING_DAYS (3) trading days (horizon.js
 // tradingDaysCutoffMs), the judge reads the row's battle and, when it never
 // ran and the version is still `activated`, unwinds that carriage instead of
 // any review transition:
-//   · it was the ONLY carrying battle (deployedBattleIds is just it; or, for
-//     a version activated before P1c wrote that list, lastDeployedBattleId is
-//     it AND firstDeployedAt is its createdAt) → the version returns to
+//   · it was the ONLY carrying battle (deployedBattleIds is just it, or — for
+//     a version activated before P1c wrote that list — lastDeployedBattleId
+//     is it; either way firstDeployedAt is its createdAt) → the version returns to
 //     `ready` (stateSource 'review_pass', stateReason 'deploy_voided') with
 //     firstDeployedAt, reviewDueAt, lastDeployedAt, lastDeployedBattleId and
 //     reviewClockFault cleared (null) and deployedBattleIds emptied; the row
@@ -63,9 +71,10 @@
 //     at the previous battle (read in the same transaction for its
 //     createdAt), and the row is re-armed to that battle with the SAME dueAtMs
 //     (armedAt = its creation);
-//   · a pre-P1c version with earlier battles its record cannot name, a void
-//     battle that is not the newest carrying one, or a previous battle that
-//     cannot be read → no unwind; the row is judged as before.
+//   · a version with earlier battles its record cannot name, a void battle
+//     that is not the newest carrying one, or a previous battle that cannot
+//     be read → no unwind; the row is judged as before (counted
+//     `voidUnresolved`).
 // Judged once, in the row's own bounded transaction (fresh reads of the row,
 // the version, the battle and — stepping back — the previous battle; the
 // version must still be `activated`), like the pass's other transitions; a
@@ -153,13 +162,36 @@ export function battleIsTerminal(battle) {
   return isPlainObject(battle) && typeof battle.status === 'string' && battle.status !== 'active';
 }
 
+/** A battle's own expiry instant (a Firestore Timestamp or an ISO string), or NaN. Pure. */
+export function battleExpiresAtMs(battle) {
+  const e = battle?.expiresAt;
+  if (e && typeof e.toDate === 'function') return e.toDate().getTime();
+  return typeof e === 'string' ? Date.parse(e) : NaN;
+}
+
 /**
- * Pilot P1c (ruling E3): did this battle never run? Terminal, with no
- * evaluation on any of the battle's own counters (the evaluations array, the
- * cron's evalSeq, the score state's count) and no trade. Pure.
+ * Has a battle ended at `atMs`? Terminal, or past its own `expiresAt`: an
+ * expired battle stays `active` until agent-evaluate completes it on its next
+ * weekday tick (or the next deploy of its agent does), and it never runs
+ * again meanwhile. ONE rule for the pass's battle-end review, the deploy's
+ * judgment (carriage.js activatedReviewDue) and the review card's window
+ * (review.js) — Pilot P1c review L2-3. Pure.
  */
-export function battleNeverRan(battle) {
-  if (!battleIsTerminal(battle)) return false;
+export function battleIsOver(battle, atMs) {
+  if (battleIsTerminal(battle)) return true;
+  const exp = battleExpiresAtMs(battle);
+  return isPlainObject(battle) && Number.isFinite(exp) && Number.isFinite(atMs) && exp <= atMs;
+}
+
+/**
+ * Pilot P1c (ruling E3): did this battle never run? Over at `atMs`
+ * (battleIsOver), with no evaluation on any of the battle's own counters (the
+ * evaluations array, the cron's evalSeq, the score state's count) and no
+ * trade. An expired battle is completed without a new evaluation
+ * (agent-evaluate.js's expiry branch), so its count is final. Pure.
+ */
+export function battleNeverRan(battle, atMs) {
+  if (!battleIsOver(battle, atMs)) return false;
   const evaluations = Math.max(
     Array.isArray(battle.evaluations) ? battle.evaluations.length : 0,
     finite(battle.cronState?.evalSeq) ? battle.cronState.evalSeq : 0,
@@ -184,7 +216,12 @@ export function voidBranchOf({ version, battleId, battle }) {
   }
   const ids = carryingBattleIdsOf(version);
   if (ids[ids.length - 1] !== battleId) return { unresolved: 'void_not_latest' };
-  if (ids.length === 1) return { branch: 'only' };
+  if (ids.length === 1) {
+    // The clock restarts only when this battle IS the first deploy: a list seeded from a pre-P1c record, or
+    // stepped back to a later battle, may hold one id while an earlier battle that ran stays unnamed (review L2-10).
+    return nonEmpty(version.firstDeployedAt) && version.firstDeployedAt === battle?.createdAt
+      ? { branch: 'only' } : { unresolved: 'void_previous_unknown' };
+  }
   const remaining = ids.slice(0, -1);
   return { branch: 'previous', previousBattleId: remaining[remaining.length - 1], remaining };
 }
@@ -199,7 +236,7 @@ export function voidBranchOf({ version, battleId, battle }) {
 export function decideReview({ row, version, battle, nowMs, unwindFromMs = Infinity }) {
   if (!isPlainObject(version) || version.status !== 'activated') return { act: 'delete_stale' };
   let voidUnresolved = null;
-  if (finite(row.armedAt) && row.armedAt >= unwindFromMs && isPlainObject(battle) && battleNeverRan(battle)) {
+  if (finite(row.armedAt) && row.armedAt >= unwindFromMs && isPlainObject(battle) && battleNeverRan(battle, nowMs)) {
     const v = voidBranchOf({ version, battleId: row.battleId, battle });
     if (!v.unresolved) return { act: 'unwind', ...v };
     voidUnresolved = v.unresolved; // judged as before
@@ -213,7 +250,78 @@ function decideTimedOrBattleEnd({ row, battle, nowMs }) {
     return nowMs >= row.dueAtMs ? { act: 'transition', reason: STATE_REASONS.horizonElapsed } : { act: 'skip', why: 'not_due' };
   }
   if (battle === null) return { act: 'skip', why: 'battle_missing' };
-  return battleIsTerminal(battle) ? { act: 'transition', reason: STATE_REASONS.battleEnded } : { act: 'skip', why: 'battle_live' };
+  return battleIsOver(battle, nowMs) ? { act: 'transition', reason: STATE_REASONS.battleEnded } : { act: 'skip', why: 'battle_live' };
+}
+
+/** The previous carrying battle a step-back points at, read on the caller's transaction; null when it cannot anchor the record. */
+async function previousBattleInTx(tx, db, battleId) {
+  const snap = await tx.get(db.collection('agentBattles').doc(battleId));
+  const prev = snap?.exists ? snap.data() : null;
+  return prev && nonEmpty(prev.createdAt) && Number.isFinite(Date.parse(prev.createdAt)) ? prev : null;
+}
+
+/**
+ * Pilot P1c (ruling E3): the unwind's writes, buffered on the caller's
+ * transaction — the ONE writer the pass (reviewOne) and the deploy
+ * (unwindVoidCarriage) share. `only`: that battle never ran, so this was
+ * never a deploy — Ready again, the clock never started, the row deleted.
+ * `previous`: an earlier carrying battle ran — the record points back at it,
+ * the row is re-armed to it with the SAME dueAtMs (armedAt = its creation),
+ * the clock untouched.
+ */
+function writeUnwindInTx(tx, db, { rowRef, versionRef, row, d, previous, nowIso, source }) {
+  if (d.branch === 'only') {
+    tx.update(versionRef, {
+      status: 'ready', stateChangedAt: nowIso, stateSource: source, stateReason: STATE_REASONS.deployVoided,
+      firstDeployedAt: null, reviewDueAt: null, lastDeployedAt: null, lastDeployedBattleId: null,
+      reviewClockFault: null, [DEPLOYED_BATTLE_IDS_FIELD]: [],
+    });
+    tx.delete(rowRef);
+    return;
+  }
+  tx.update(versionRef, {
+    [DEPLOYED_BATTLE_IDS_FIELD]: d.remaining, lastDeployedAt: previous.createdAt, lastDeployedBattleId: d.previousBattleId,
+  });
+  armReviewRow(tx, db, {
+    userId: row.userId, watchlistId: row.watchlistId, version: row.version, battleId: d.previousBattleId,
+    dueAtMs: row.dueAtMs, armedAt: Date.parse(previous.createdAt),
+  });
+}
+
+/**
+ * Pilot P1c (ruling E3; review L2-1 / L4-4): the void unwind as the DEPLOY
+ * applies it, before it judges or carries an activated version — whichever
+ * of the pass and the next deploy reaches a carrying battle that never ran
+ * first, the record ends the same. ONE transaction: fresh reads of the row,
+ * the version and the row's battle (and, stepping back, the previous
+ * battle); the pass's own decision (decideReview) and writer
+ * (writeUnwindInTx), stamped with the caller's `source`.
+ *
+ * @returns {Promise<'only' | 'previous' | 'kept' | 'moved'>} `kept`: no
+ *   unwind (the fresh reads say the battle ran, or the step-back cannot be
+ *   anchored) — judge the version as before; `moved`: the version is no
+ *   longer `activated`, or its row is gone.
+ */
+export async function unwindVoidCarriage(db, { watchlistId, version, nowMs, unwindFromMs, source }) {
+  const rowRef = reviewRowRef(db, watchlistId, version);
+  const versionRef = versionRefOf(db, watchlistId, version);
+  return db.runTransaction(async (tx) => {
+    const [rowSnap, versionSnap] = await tx.getAll(rowRef, versionRef);
+    const row = rowSnap?.exists ? normalizeReviewRow(rowSnap.data()) : null;
+    const fresh = versionSnap?.exists ? versionSnap.data() : null;
+    if (!row || fresh?.status !== 'activated') return 'moved';
+    const battleSnap = await tx.get(db.collection('agentBattles').doc(row.battleId));
+    const battle = battleSnap?.exists ? battleSnap.data() : null;
+    const d = decideReview({ row, version: fresh, battle, nowMs, unwindFromMs });
+    if (d.act !== 'unwind') return 'kept';
+    let previous = null;
+    if (d.branch === 'previous') {
+      previous = await previousBattleInTx(tx, db, d.previousBattleId);
+      if (!previous) return 'kept';
+    }
+    writeUnwindInTx(tx, db, { rowRef, versionRef, row, d, previous, nowIso: new Date(nowMs).toISOString(), source });
+    return d.branch;
+  });
 }
 
 async function boundedTx(db, deadlineMs, label, body) {
@@ -250,13 +358,12 @@ async function reviewOne({ db, rowId, row, nowMs, nowIso, deadlineMs, unwindFrom
       const battleSnap = await tx.get(db.collection('agentBattles').doc(fresh.battleId));
       battle = battleSnap?.exists ? battleSnap.data() : null;
     }
-    const d = decideReview({ row: fresh, version, battle, nowMs, unwindFromMs });
+    let d = decideReview({ row: fresh, version, battle, nowMs, unwindFromMs });
     let previous = null;
     if (d.act === 'unwind' && d.branch === 'previous') {
-      const prevSnap = await tx.get(db.collection('agentBattles').doc(d.previousBattleId));
-      const prev = prevSnap?.exists ? prevSnap.data() : null;
-      if (!prev || !nonEmpty(prev.createdAt) || !Number.isFinite(Date.parse(prev.createdAt))) return { result: 'skipped', why: 'void_previous_missing' };
-      previous = prev;
+      previous = await previousBattleInTx(tx, db, d.previousBattleId);
+      // A step-back that cannot be anchored is no unwind: the row is judged as before (review L2-5).
+      if (!previous) d = { ...decideTimedOrBattleEnd({ row: fresh, battle, nowMs }), voidUnresolved: 'void_previous_missing' };
     }
     if (d.act === 'skip') return { result: 'skipped', why: d.why, voidUnresolved: d.voidUnresolved ?? null };
     if (Date.now() >= attemptDeadlineMs) throw new ReviewAbort('deadline');
@@ -264,26 +371,9 @@ async function reviewOne({ db, rowId, row, nowMs, nowIso, deadlineMs, unwindFrom
       tx.delete(rowRef);
       return { result: 'stale_deleted' };
     }
-    if (d.act === 'unwind' && d.branch === 'only') {
-      // Ruling E3: that battle never ran, so this was never a deploy — Ready again, the clock never started.
-      tx.update(versionRef, {
-        status: 'ready', stateChangedAt: nowIso, stateSource: REVIEW_SOURCE, stateReason: STATE_REASONS.deployVoided,
-        firstDeployedAt: null, reviewDueAt: null, lastDeployedAt: null, lastDeployedBattleId: null,
-        reviewClockFault: null, [DEPLOYED_BATTLE_IDS_FIELD]: [],
-      });
-      tx.delete(rowRef);
-      return { result: 'unwound', branch: 'only' };
-    }
     if (d.act === 'unwind') {
-      // Ruling E3: an earlier carrying battle ran — the record points back at it; the clock is untouched.
-      tx.update(versionRef, {
-        [DEPLOYED_BATTLE_IDS_FIELD]: d.remaining, lastDeployedAt: previous.createdAt, lastDeployedBattleId: d.previousBattleId,
-      });
-      armReviewRow(tx, db, {
-        userId: fresh.userId, watchlistId: fresh.watchlistId, version: fresh.version, battleId: d.previousBattleId,
-        dueAtMs: fresh.dueAtMs, armedAt: Date.parse(previous.createdAt),
-      });
-      return { result: 'unwound', branch: 'previous' };
+      writeUnwindInTx(tx, db, { rowRef, versionRef, row: fresh, d, previous, nowIso, source: REVIEW_SOURCE });
+      return { result: 'unwound', branch: d.branch };
     }
     tx.update(versionRef, { status: 'review_due', stateChangedAt: nowIso, stateSource: REVIEW_SOURCE, stateReason: d.reason });
     tx.delete(rowRef);
@@ -319,7 +409,8 @@ export async function runHypothesisReviewPass({ db, handlerStartMs, nowMs = Date
   } catch {
     summary.voidLookback = 'calendar_unavailable';
   }
-  // P1c's counters appear only when something happened, so a pass with no void is the pre-P1c summary exactly.
+  // P1c's void counters appear only when something happened. (The 'recent' phase still reads, and counts in
+  // `rows` / `notDue`, each recently armed timed row it visits — one transaction per row per tick.)
   const bump = (key) => { summary[key] = (summary[key] || 0) + 1; };
   const tally = (res) => {
     if (res.voidUnresolved) bump('voidUnresolved');

@@ -253,8 +253,10 @@ const VALID_SIGNAL_DROP = {
   dropId: VALID_DROP_ID,
   userId: 'test-user',
   contentHash: 'abc123',
-  parse: { extractedText: 'Apple is going hard on AI inference' },
-  validation: { validated: [], unsupported: [] },
+  // The drop record parse-signal writes for VALID_PARSE_RESULT (an honest drop): Pilot P1c's server-parse
+  // binding reads it, so these rows run the same path with DIALOGUE_SERVER_PARSE_ENABLED on or off (review L3-1).
+  parse: VALID_PARSE_RESULT.parse,
+  validation: VALID_PARSE_RESULT.validation,
   shouldBailout: false,
   shouldHardCheckpoint: false,
 };

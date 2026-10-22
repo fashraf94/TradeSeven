@@ -3141,8 +3141,9 @@ export function isShadowCpuQuoteIntegrityOn() {
  * station asks the player first (reaffirm, retire, or deploy without it).
  * P1c also puts, behind this same switch, the review card's evidence (GET
  * …/hypothesis-versions/[n]/review — the frozen list against SPY over the
- * idea's window, computed once and stored on the version) and the review
- * pass's unwind of a carrying battle that never ran (ruling E3).
+ * idea's window, computed once and stored on the version) and the unwind of a
+ * carrying battle that never ran (ruling E3) — by the review pass, or by the
+ * next deploy when it reaches the version first.
  * Nothing the agent sees or trades reads any of it.
  *
  * TRUE is not enough on its own: the gate resolves ON only for owners on the
@@ -3199,7 +3200,7 @@ export function isHypothesisRecordsOn() {
  * "a behavior change to existing dialogue output" that "ships as its own
  * founder-approved flip" — this flag is that flip.
  *
- * OFF (DEFAULT false — it merges dark): the watchlist dialogue's paste path
+ * OFF: the watchlist dialogue's paste path
  * (api/forge/watchlist-dialogue.js, a first turn with `parseResult` +
  * `dropId`) stores the CLIENT's parse envelope as `session.parseResult` once
  * its contentHash matches the drop record, exactly as today; the dialogue
@@ -3207,18 +3208,23 @@ export function isHypothesisRecordsOn() {
  * golden: api/forge/watchlist-dialogue.parseBindingOffGolden.test.js).
  *
  * ON: the paste path loads the SERVER-stored parse for the dropId — the drop
- * record's `parse` (users/{uid}/signalDrops/{dropId}), else the parse cache
- * it points to (signalDropCache/{contentHash}) — and stores THAT as
- * `session.parseResult`; the hash check stays. An honest client (its envelope
- * equals the stored parse) gets a byte-identical prompt; a client whose
- * envelope differs gets the server's parse, and the session records
- * `parseEnvelopeMismatch: true` — never a failed request for it. A drop with
- * no stored parse at all is refused as a missing drop is (400 unknown_drop).
- * Theme sessions (no drop record) and continuing turns are unchanged. An
- * entered source URL stays on the drop record as attribution and changes
- * nothing about what is parsed (the dialogue never re-parses). Gated on the
- * flag ALONE — no allowlist: the binding is a correctness fix for every
- * player, not a pilot surface.
+ * record's own `parse` (users/{uid}/signalDrops/{dropId}; never the global
+ * parse cache, which is keyed by content, not by drop — review L3-6) — and
+ * stores THAT as `session.parseResult`; the hash check stays. An honest
+ * client (its envelope equals the stored parse) gets a byte-identical
+ * prompt; a client whose envelope differs gets the server's parse, and the
+ * session records `parseEnvelopeMismatch: true` — never a failed request for
+ * it. A drop with no usable stored parse is refused as a missing drop is
+ * (400 unknown_drop). Theme sessions (no drop record) and continuing turns
+ * are unchanged — so a session STARTED before the flip keeps feeding its
+ * stored client envelope to its later turns (up to its 20 messages; review
+ * L3-3). A URL-type drop keeps its URL on the drop record (`input.url`);
+ * the dialogue never re-parses. (Spec §2.8's "text entry preserves an
+ * entered source URL as attribution" is not built: the text entry drops a
+ * URL typed beside the text before parse-signal — SignalDropEntry.jsx —
+ * and this flag changes nothing there; review L3-5.) Gated on the flag
+ * ALONE — no allowlist: the binding is a correctness fix for every player,
+ * not a pilot surface.
  *
  * PROMPT-CONTRIBUTING (the parse feeds the dialogue prompt through
  * signalDropPrompt.js buildDialogueInputs → voiceLayerPrompt.js): its flip is
@@ -3229,7 +3235,11 @@ export function isHypothesisRecordsOn() {
  * (BUILD_RULES §2; dry-run in the P1c report): this line; the pin in
  * src/config/dialogueServerParseFlags.test.js to true; that file's
  * registration row turned around to assert the DARK_BY_DESIGN entry is gone;
- * and the entry dropped in src/config/flagPinGuard.test.js. Rollback is the
+ * and the entry dropped in src/config/flagPinGuard.test.js (an
+ * "intentionally ABSENT" note in its place). The same commit rewords the
+ * state lines that name the shipped value (BUILD_RULES §2: "any docstring
+ * that calls the old value the DEFAULT"): the pin file's header ("ships
+ * FALSE") and its two row titles ("is DARK", "while it ships false"). Rollback is the
  * same four edits back: sessions already started keep the parseResult they
  * stored (and any parseEnvelopeMismatch marker); nothing else changes.
  *

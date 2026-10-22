@@ -3,8 +3,9 @@
 // Pilot P1c — THE REVIEW CARD'S EVIDENCE (founder ruling E2; build prompt
 // acceptance row 3). The units (review.js) and the route
 // (api/forge/watchlists/[id]/hypothesis-versions/[n]/review.js) over the
-// shared path-keyed store double, with the market-data authority
-// (marketDataCache.js getStockAnalysisData) replaced by a counting double:
+// shared path-keyed store double, with the network (global fetch) replaced by
+// a counting EODHD `/eod/` double — review.js's window fetch and
+// marketDataCache.js's row mapping run for real:
 //   · deployedBattleIds is appended at first deploy and redeploy (the real
 //     creation transaction — carriage.test.js and decide.carriage.test.js pin
 //     the documents);
@@ -19,6 +20,9 @@
 //   · computed ONCE: a second request makes ZERO market-data calls; at most 11
 //     calls per version per lifetime (10 names + SPY); a live claim computes
 //     nothing; a dead one is finalized with no call;
+//   · each call asks for the WINDOW'S OWN DATES, so a window of any age is
+//     priced (review L2-2 / L4-2); a failed call is `fetch_failed` (L2-6);
+//     closes are stored as shown and the change % is theirs (L4-11);
 //   · the honest line, verbatim, with the frozen agent name.
 //
 // Dependency-surface guard (BUILD_RULES §4): review.js, carriage.js and the
@@ -29,7 +33,7 @@ process.env.TZ = 'UTC';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makeCallsFirestore, stored } from '../__fixtures__/callsFirestore.js';
 
-const state = vi.hoisted(() => ({ db: null, flag: true, calls: [], daily: {}, failing: new Set() }));
+const state = vi.hoisted(() => ({ db: null, flag: true, calls: [], daily: {}, failing: new Set(), netDown: new Set() }));
 vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => {
   const real = await importOriginal();
   return { ...real, get HYPOTHESIS_RECORDS_ENABLED() { return state.flag; } };
@@ -37,14 +41,18 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => {
 vi.mock('../firebaseAdmin.js', () => ({ getFirebaseAdmin: () => state.db }));
 vi.mock('../security.js', async (importOriginal) => ({ ...(await importOriginal()), applySecurityMiddleware: () => false }));
 vi.mock('../authMiddleware.js', async (importOriginal) => ({ ...(await importOriginal()), requireAuth: async (req) => ({ uid: req.headers?.['x-test-uid'] || 'rev-owner-1' }) }));
-vi.mock('../marketDataCache.js', async (importOriginal) => ({
-  ...(await importOriginal()),
-  getStockAnalysisData: async (symbol, options) => {
-    state.calls.push({ symbol, options });
-    if (state.failing.has(symbol)) throw new Error('EODHD daily OHLCV responded with 500');
-    return { symbol, daily: state.daily[symbol] ?? [] };
-  },
-}));
+/** The EODHD `/eod/` double: one call each, the requested [from, to] honoured, raw rows as EODHD sends them. */
+async function eodhd(url) {
+  const u = new URL(String(url));
+  const symbol = decodeURIComponent(u.pathname.split('/eod/')[1]).replace(/\.US$/, '');
+  const from = u.searchParams.get('from');
+  const to = u.searchParams.get('to');
+  state.calls.push({ symbol, from, to, key: u.searchParams.get('api_token') });
+  if (state.netDown.has(symbol)) throw new TypeError(`fetch failed for ${u.href}`);
+  if (state.failing.has(symbol)) return { ok: false, status: 500, json: async () => ({}) };
+  const rows = (state.daily[symbol] ?? []).filter((r) => r.date >= from && r.date <= to);
+  return { ok: true, status: 200, json: async () => rows };
+}
 
 const R = await import('./review.js');
 const { REVIEW_HONEST_LINE } = await import('../../../src/constants/hypothesisRecords.js');
@@ -62,7 +70,8 @@ const FIRST = '2026-10-13T17:21:40.668Z';
 const DUE = '2026-10-15T20:00:00.000Z';
 const AFTER_SETTLE = Date.parse(DUE) + R.REVIEW_SETTLE_MS + 60_000;
 
-const bar = (date, close) => ({ date, open: close, high: close, low: close, close, rawClose: close, volume: 1 });
+const bar = (date, close) => ({ date, open: close, high: close, low: close, close, adjusted_close: close, volume: 1 });
+const EODHD_KEY = 'test-eodhd-key-not-real';
 const series = (start, end) => [bar('2026-10-15', end), bar('2026-10-14', (start + end) / 2), bar('2026-10-13', start), bar('2026-10-12', start)];
 
 function versionDoc(over = {}) {
@@ -105,12 +114,17 @@ async function get(db, { n = 1, uid = OWNER } = {}) {
 }
 
 let savedEnv;
+let savedKey;
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(AFTER_SETTLE));
+  vi.stubGlobal('fetch', vi.fn(eodhd));
+  savedKey = process.env.EODHD_API_KEY;
+  process.env.EODHD_API_KEY = EODHD_KEY;
   state.flag = true;
   state.calls = [];
   state.failing = new Set();
+  state.netDown = new Set();
   state.daily = { NVDA: series(100, 110), AMD: series(50, 45), PLTR: series(20, 21), SPY: series(500, 505) };
   savedEnv = process.env[ENV];
   process.env[ENV] = `${OWNER},${OTHER}`;
@@ -120,6 +134,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   if (savedEnv === undefined) delete process.env[ENV]; else process.env[ENV] = savedEnv;
+  if (savedKey === undefined) delete process.env.EODHD_API_KEY; else process.env.EODHD_API_KEY = savedKey;
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -183,6 +199,18 @@ describe('when there is a card', () => {
     expect([r.statusCode, r.body.error, r.body.reason]).toEqual([409, 'review_window_open', 'window_open']);
     expect(state.calls).toEqual([]);
   });
+  it('a window still open is answered before the carrying battles are read (review L2-11): timed → no battle read; battle-end → its last battle only', async () => {
+    vi.setSystemTime(new Date(Date.parse(DUE) - 60_000));
+    const timed = seed();
+    await get(timed);
+    expect(timed.__access.reads.filter((p) => p.startsWith('agentBattles/'))).toEqual([]);
+    vi.setSystemTime(new Date(AFTER_SETTLE));
+    const v = versionDoc({ reviewDueAt: null, horizonEnum: 'unspecified' });
+    const live = seed({ version: v, battles: { 'b-1': battleDoc('b-1'), 'b-2': battleDoc('b-2', { status: 'active', expiresAt: new Date(AFTER_SETTLE + 3_600_000).toISOString(), completedAt: null }) } });
+    const r = await get(live);
+    expect([r.statusCode, r.body.reason]).toEqual([409, 'battle_running']);
+    expect(live.__access.reads.filter((p) => p.startsWith('agentBattles/'))).toEqual(['agentBattles/b-2']);
+  });
 });
 
 describe('the window (the rule as built)', () => {
@@ -225,6 +253,7 @@ describe('the window (the rule as built)', () => {
     expect(r.body.window.empty).toBe(true);
     expect(r.body.evidence.names.every((n) => n.status === 'unavailable' && n.reason === 'empty_window')).toBe(true);
     expect(r.body.evidence.market).toEqual({ symbol: 'SPY', status: 'unavailable', reason: 'empty_window' });
+    expect(r.body.evidence.list).toMatchObject({ status: 'unavailable', reason: 'empty_window' }); // the names' reason (review L2-12)
     expect(state.calls).toEqual([]);
   });
 });
@@ -245,8 +274,11 @@ describe('the evidence', () => {
     expect(r.body.difference).toBe(0.67);
     expect(r.body.listName).toBe('AI capex'); // the frozen name, never 'Renamed live list'
     expect(state.calls.map((c) => c.symbol)).toEqual(['NVDA', 'AMD', 'PLTR', 'SPY']);
-    expect(state.calls.every((c) => c.options.fields.length === 1 && c.options.fields[0] === 'daily' && c.options.forceRefresh === true)).toBe(true);
+    // One call per symbol, for the window's own dates (the close before the anchor → the due close).
+    expect(state.calls.every((c) => c.from === '2026-10-12' && c.to === '2026-10-15')).toBe(true);
     expect(state.calls.map((c) => c.symbol)).not.toContain('TSLA');
+    expect(JSON.stringify(r.body)).not.toContain(EODHD_KEY);
+    expect(JSON.stringify(stored(state.db, vPath(1)))).not.toContain(EODHD_KEY);
   });
   it('stored ONCE on the version (outside content and lifecycle) and served from there: a second request makes ZERO market calls', async () => {
     const db = seed();
@@ -278,18 +310,40 @@ describe('the evidence', () => {
     expect(r.body.difference).toBeNull();
     expect(JSON.stringify(r.body.evidence)).not.toContain('null');
   });
-  it('a window starting before the daily feed reaches (90 calendar days back, one day of margin) is UNAVAILABLE outright: ZERO calls, every name and SPY outside_daily_window, stored final', async () => {
-    // Opened 95 days after the window's start: no daily close that old can come back.
-    vi.setSystemTime(new Date(Date.parse('2026-10-12T20:00:00.000Z') + 95 * 86_400_000));
+  it('a window of ANY age is priced from its own dates (review L2-2 / L4-2): first opened 200 days after it closed, the same closes come back', async () => {
+    vi.setSystemTime(new Date(Date.parse(DUE) + 200 * 86_400_000));
     const db = seed();
     const r = await get(db);
-    expect(state.calls).toEqual([]);
-    expect(r.body.evidence.names.every((n) => n.status === 'unavailable' && n.reason === 'outside_daily_window')).toBe(true);
-    expect(r.body.evidence.market).toEqual({ symbol: 'SPY', status: 'unavailable', reason: 'outside_daily_window' });
-    expect(stored(db, vPath(1)).reviewEvidenceClaim.calls).toBe(0);
-    // Inside the reach (89 days back), the names are priced.
-    expect(R.dailyWindowFloorOf(Date.parse('2026-10-12T20:00:00.000Z') + 89 * 86_400_000)).toBe('2026-10-12');
-    expect(R.plannedCallsOf({ window: { empty: false, start: { etDate: '2026-10-12' } }, names: ['A', 'B'], nowMs: Date.parse('2026-10-12T20:00:00.000Z') + 89 * 86_400_000 })).toBe(3);
+    expect(r.body.evidence.names.map((n) => n.status)).toEqual(['ok', 'ok', 'ok']);
+    expect(r.body.evidence.market).toMatchObject({ status: 'ok', changePct: 1 });
+    expect(state.calls.every((c) => c.from === '2026-10-12' && c.to === '2026-10-15')).toBe(true);
+    expect(stored(db, vPath(1)).reviewEvidenceClaim.calls).toBe(4);
+    expect(R.plannedCallsOf({ window: { empty: false }, names: ['A', 'B'] })).toBe(3);
+    expect(R.plannedCallsOf({ window: { empty: true }, names: ['A', 'B'] })).toBe(0);
+  });
+  it('a failed call is fetch_failed — a non-200 or a network error alike (review L2-6) — and neither the key nor the URL is kept', async () => {
+    state.failing.add('AMD');
+    state.netDown.add('PLTR');
+    const db = seed();
+    const r = await get(db);
+    expect(r.body.evidence.names).toEqual([
+      { symbol: 'NVDA', status: 'ok', startClose: 100, endClose: 110, changePct: 10 },
+      { symbol: 'AMD', status: 'unavailable', reason: 'fetch_failed' },
+      { symbol: 'PLTR', status: 'unavailable', reason: 'fetch_failed' },
+    ]);
+    expect(r.body.evidence.list).toEqual({ status: 'ok', changePct: 10, counted: 1, total: 3 });
+    expect(JSON.stringify(stored(db, vPath(1)))).not.toContain(EODHD_KEY);
+    await expect(R.fetchWindowDaily('PLTR', { from: '2026-10-12', to: '2026-10-15' })).rejects.toThrow('EODHD daily request failed');
+  });
+  it('closes are stored as shown — 2 decimals from $1 up, 4 significant figures below — and the change % is theirs (review L4-11)', async () => {
+    state.daily.NVDA = [bar('2026-10-15', 4.1270), bar('2026-10-12', 4.0049)];
+    state.daily.AMD = [bar('2026-10-15', 0.135791), bar('2026-10-12', 0.123456)];
+    const r = await get(seed());
+    const [nvda, amd] = r.body.evidence.names;
+    expect(nvda).toEqual({ symbol: 'NVDA', status: 'ok', startClose: 4, endClose: 4.13, changePct: 3.25 });
+    expect(amd).toEqual({ symbol: 'AMD', status: 'ok', startClose: 0.1235, endClose: 0.1358, changePct: 9.96 });
+    expect(R.roundClose(181.204)).toBe(181.2);
+    expect(R.roundClose(0.0000123456)).toBe(0.00001235);
   });
   it('the budget: at most 11 calls per version — a twelfth name and beyond is unavailable (budget) with no call', async () => {
     const tickers = Array.from({ length: 13 }, (_, i) => `T${String(i).padStart(2, '0')}`);

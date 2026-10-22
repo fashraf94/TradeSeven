@@ -15,8 +15,14 @@
 //   · a DIFFERING envelope under the right hash: the SERVER's thesis and
 //     horizon reach the prompt — the run is the honest run, byte for byte,
 //     but for `parseEnvelopeMismatch: true` on the session — never a refusal;
-//   · the parse cache stands in for a drop record without a parse; with
-//     neither, the request is refused as a missing drop is (no model call);
+//   · a drop record without a usable parse is refused as a missing drop is
+//     (no model call) — never the global parse cache, keyed by content, not
+//     by drop (review L3-6);
+//   · an honest client whose stored parse is OUTSIDE the dialogue's caps and
+//     enums (what Haiku may return) is still main's run, byte for byte — the
+//     server parse is shaped exactly as the client envelope is (review L3-2);
+//   · an envelope too deep to hash is a mismatch, never a failed request
+//     (review L3-4);
 //   · theme sessions, continuing turns and every pre-parse refusal: main's.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -147,32 +153,78 @@ describe('flag ON — a DIFFERING envelope under the right hash: the server\'s p
   });
 });
 
-describe('flag ON — where the stored parse comes from', () => {
-  it('a drop record without a usable parse: the parse cache it points to (by contentHash) stands in, and an honest client is still main\'s prompt', async () => {
+describe('flag ON — where the stored parse comes from: the drop record, by dropId, alone', () => {
+  it('a drop record without a usable parse → refused as a missing drop is (400 unknown_drop): no model call, no session — never the client\'s envelope, and never the parse cache, even when it holds one (review L3-6)', async () => {
     const s = scenario('paste_honest');
     const dropPath = Object.keys(s.docs).find((p) => p.includes('/signalDrops/'));
     const { parse, validation, ...thin } = s.docs[dropPath];
     s.docs[dropPath] = thin;
+    // The global parse cache is keyed by content (not by drop, not by the note that steered the parse): it is not read.
     s.docs[`signalDropCache/${H.CONTENT_HASH}`] = { contentHash: H.CONTENT_HASH, parse, validation, shouldBailout: false, shouldHardCheckpoint: false };
-    const cap = await runDialogue(s);
-    expect(cap.store.reads).toContain(`signalDropCache/${H.CONTENT_HASH}`);
-    expect(serialized(cap.modelRequests)).toBe(serialized(GOLDEN.scenarios.paste_honest.modelRequests));
-    expect('parseEnvelopeMismatch' in cap.docs[SESSION_PATH]).toBe(false);
-  });
-  it('neither the drop nor the cache holds a parse → refused as a missing drop is (400 unknown_drop): no model call, no session — never the client\'s envelope', async () => {
-    const s = scenario('paste_honest');
-    const dropPath = Object.keys(s.docs).find((p) => p.includes('/signalDrops/'));
-    const { parse, ...thin } = s.docs[dropPath];
-    s.docs[dropPath] = thin;
     const cap = await runDialogue(s);
     expect(cap.response).toEqual({ status: 400, body: { error: 'unknown_drop', message: 'No signal drop found for this dropId. Call /api/forge/parse-signal first.' } });
     expect(cap.modelRequests).toEqual([]);
     expect(cap.store.writes).toEqual([]);
+    expect(cap.store.reads.filter((p) => p.startsWith('signalDropCache/'))).toEqual([]);
   });
-  it('serverParseOf shapes the stored parse exactly as the client envelope is shaped (validateParseResult): equal for an honest drop', async () => {
-    const db = H.makeDialogueDb({});
-    const shaped = await serverParseOf(db, H.dropRecord());
+  it('serverParseOf shapes the stored parse exactly as the client envelope is shaped (validateParseResult): equal for an honest drop; nothing usable → null', () => {
+    const shaped = serverParseOf(H.dropRecord());
     expect(shaped).toEqual(validateParseResult(H.honestEnvelope()));
     expect(shaped.contentHash).toBe(H.CONTENT_HASH);
+    expect(serverParseOf({ ...H.dropRecord(), parse: undefined })).toBeNull();
+    expect(serverParseOf(null)).toBeNull();
+  });
+});
+
+describe('flag ON — an honest client whose stored parse is outside the dialogue\'s caps and enums (review L3-2)', () => {
+  // What Haiku may hand back (after parse-signal's sanitizer): padded and over-cap text, lowercase tickers, an
+  // off-enum label, a relative referencedDate (the tool schema's own example), 25 data points, an extra key.
+  const haikuParse = () => ({
+    extractedText: `  ${'Apple and Nvidia are racing to own AI inference. '.repeat(110)}  `,
+    topic: '  AI inference race  ',
+    tickers: ['aapl', 'nvda'],
+    impliedTickers: ['tsm'],
+    confidence: 1.4,
+    contentType: 'Tweet',
+    signalDirection: 'bullish',
+    timeHorizon: 'positional',
+    referencedDate: 'next week',
+    dataPoints: Array.from({ length: 25 }, (_, i) => ` point ${i + 1} `),
+    sentiment: 'an extra key the dialogue never reads',
+    suspectedInjection: false,
+  });
+  const messy = () => {
+    const s = scenario('paste_honest');
+    const dropPath = Object.keys(s.docs).find((p) => p.includes('/signalDrops/'));
+    s.docs[dropPath] = H.dropRecord({ parse: haikuParse(), validation: H.serverValidation() });
+    s.req.body.parseResult = { ...H.honestEnvelope(), parse: haikuParse(), cached: false };
+    return s;
+  };
+  it('flag ON is the flag-OFF run byte for byte — prompt, response, shadow logs, session — and records no mismatch', async () => {
+    const off = await runDialogue(messy(), { serverParse: false });
+    const on = await runDialogue(messy());
+    expect(off.response.status).toBe(200);
+    expect(off.modelRequests).toHaveLength(1);
+    expect(serialized(on.modelRequests)).toBe(serialized(off.modelRequests));
+    expect(serialized(on.response)).toBe(serialized(off.response));
+    expect(serialized(on.shadow)).toBe(serialized(off.shadow));
+    expect(serialized(on.docs[SESSION_PATH])).toBe(serialized(off.docs[SESSION_PATH]));
+    expect('parseEnvelopeMismatch' in on.docs[SESSION_PATH]).toBe(false);
+    // The caps really bit: the prompt holds the shaped parse, not the raw one.
+    expect(on.modelRequests[0].systemPrompt).not.toContain('next week');
+  });
+});
+
+describe('flag ON — an envelope too deep to hash is a mismatch, never a failed request (review L3-4)', () => {
+  it('a validation map nested 20,000 deep under the right hash: 200, the SERVER\'s parse, the marker set', async () => {
+    const deep = JSON.parse(`${'{"a":'.repeat(20_000)}{}${'}'.repeat(20_000)}`);
+    const s = scenario('paste_honest');
+    s.req.body.parseResult = { ...H.honestEnvelope(), validation: deep };
+    const cap = await runDialogue(s);
+    expect(cap.response.status).toBe(200);
+    expect(cap.modelRequests).toHaveLength(1);
+    const session = cap.docs[SESSION_PATH];
+    expect(session.parseEnvelopeMismatch).toBe(true);
+    expect(session.parseResult.validation).toEqual(H.serverValidation());
   });
 });

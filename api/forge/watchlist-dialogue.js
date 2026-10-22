@@ -730,22 +730,20 @@ export function normalizeDialogueOutput(raw) {
 
 // Pilot P1c — the server-stored parse of a drop, shaped as the envelope the
 // paste path stores (validateParseResult — the same caps and enums the client
-// envelope gets): the drop record's own parse (parse-signal writes it on every
-// drop, cache hit or miss), else the parse cache the drop points to by its
-// contentHash (signalDropCache, 6 h TTL). Null when neither holds a usable
-// parse. Exported for tests.
-export async function serverParseOf(db, dropRecord) {
-  const shaped = (src) => (src && typeof src === 'object' ? validateParseResult({
+// envelope gets): the drop record's own parse, by dropId (§2.8) — parse-signal
+// writes it on every drop, cache hit or miss, and nothing else writes drop
+// records. Null when it holds no usable parse: never another drop's parse
+// (the global parse cache is keyed by content, not by drop or note — review
+// L3-6). Pure; exported for tests.
+export function serverParseOf(dropRecord) {
+  if (!dropRecord || typeof dropRecord !== 'object') return null;
+  return validateParseResult({
     contentHash: dropRecord.contentHash,
-    parse: src.parse,
-    validation: src.validation,
-    shouldBailout: src.shouldBailout,
-    shouldHardCheckpoint: src.shouldHardCheckpoint,
-  }) : null);
-  const fromDrop = shaped(dropRecord);
-  if (fromDrop) return fromDrop;
-  const cacheSnap = await db.collection('signalDropCache').doc(dropRecord.contentHash).get();
-  return cacheSnap.exists ? shaped(cacheSnap.data()) : null;
+    parse: dropRecord.parse,
+    validation: dropRecord.validation,
+    shouldBailout: dropRecord.shouldBailout,
+    shouldHardCheckpoint: dropRecord.shouldHardCheckpoint,
+  });
 }
 
 // ==================== HANDLER ====================
@@ -1018,7 +1016,7 @@ export default async function handler(req, res) {
       let parseResult = validatedParseResult;
       let parseEnvelopeMismatch = false;
       if (DIALOGUE_SERVER_PARSE_ENABLED === true) {
-        const serverParse = await serverParseOf(db, dropRecord);
+        const serverParse = serverParseOf(dropRecord);
         if (!serverParse) {
           return res.status(400).json({
             error: 'unknown_drop',
@@ -1026,7 +1024,13 @@ export default async function handler(req, res) {
               'No signal drop found for this dropId. Call /api/forge/parse-signal first.',
           });
         }
-        parseEnvelopeMismatch = canonicalContentHash(serverParse) !== canonicalContentHash(validatedParseResult);
+        try {
+          parseEnvelopeMismatch = canonicalContentHash(serverParse) !== canonicalContentHash(validatedParseResult);
+        } catch {
+          // An envelope too deep to hash (its `validation` passes through unbounded) differs by definition —
+          // recorded, never a failed request (review L3-4).
+          parseEnvelopeMismatch = true;
+        }
         if (parseEnvelopeMismatch) {
           console.warn(`[watchlist-dialogue] parse envelope differs from the stored parse of drop ${dropId} — the stored parse is used`);
         }

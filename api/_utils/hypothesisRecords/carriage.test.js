@@ -271,6 +271,8 @@ describe('activation — in the REAL creation transaction (createAgentBattle →
     const db = seed([version(1)]);
     const first = await deploy(db, { sibling: (await resolve(db)).equippedHypothesis });
     const afterFirst = stored(db, vPath(1));
+    // The first battle RAN (one evaluation): it has expired by the redeploy, and one that never ran is no deploy (ruling E3).
+    db.__docs.set(`agentBattles/${first.id}`, { ...db.__docs.get(`agentBattles/${first.id}`), cronState: { evalSeq: 1 } });
     vi.setSystemTime(new Date('2026-10-15T15:00:00.000Z'));
     const again = await resolve(db);
     expect(again).toMatchObject({ outcome: 'carry', status: 'activated' });
@@ -524,14 +526,14 @@ describe('L2-1 — an activated version whose review is already due is judged AT
       expect(db.__access.writes).toEqual([]);
     }
   });
-  it('the judgment loses a race (the version moved): carry nothing; a judgment that cannot commit carries nothing and says review_due (a due idea never rides unjudged)', async () => {
+  it('the judgment loses a race (the version moved): carry nothing; a judgment that cannot commit carries nothing and says NOTHING — the record still reads activated (review L4-4), and a due idea never rides unjudged', async () => {
     let db = seed([act1()], { [rowPathOf(1)]: armedRow() });
     db.__hooks.afterQuery = async () => { db.__docs.set(vPath(1), { ...db.__docs.get(vPath(1)), status: 'retired' }); };
     expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'state_moved' });
     db = seed([act1()], { [rowPathOf(1)]: armedRow() });
     const realTx = db.runTransaction;
     db.runTransaction = async () => { throw new Error('ABORTED'); };
-    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'review_due', version: 1 });
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'judgment_failed' });
     db.runTransaction = realTx;
     expect(stored(db, vPath(1)).status).toBe('activated');
   });

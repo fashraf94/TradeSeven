@@ -218,6 +218,13 @@ export default function CommandDashboard({
   const [dueIdea, setDueIdea] = useState(null); // { due, proceed }
   const ideaGateRef = useRef(false);
   const skipIdeaCheckRef = useRef(false);
+  // The waiting deploy's settle (the screen's choice, or 'unmounted'), and deployDisabled as it stands after it.
+  const settleChoiceRef = useRef(null);
+  const deployDisabledRef = useRef(deployDisabled);
+  deployDisabledRef.current = deployDisabled;
+  // Unmounted while the screen waits (App swaps the shells at 768 px): settle the waiting deploy, so the
+  // app-wide hold is released at once (P1c review L1-2).
+  useEffect(() => () => { settleChoiceRef.current?.('unmounted'); }, []);
 
   // G2 (docs/audits/20260720_G2_ACTIVEBATTLEID_CONFLICT_DISCOVERY.md): a competitive pod
   // deploys the user's REAL agent, and /api/agent/decide allows only ONE active battle.
@@ -249,20 +256,32 @@ export default function CommandDashboard({
     if (deployDisabled) return { success: false };
     if (skipIdeaCheckRef.current) {
       skipIdeaCheckRef.current = false;
+      // t0 for the stage-duration instrumentation: the moment the user's deploy
+      // began, which is what the "felt stalled" report is measured from.
+      ceremonyTiming.startRun();
     } else {
       if (ideaGateRef.current) return { success: false };
       ideaGateRef.current = true;
+      // t0 (as above) includes the idea check, which dueIdeaCheck.js bounds (P1c review L1-1).
+      ceremonyTiming.startRun();
       try {
         const due = await checkDueIdea(agent);
-        if (due) await new Promise((proceed) => setDueIdea({ due, proceed }));
+        if (due) {
+          const choice = await new Promise((settle) => {
+            settleChoiceRef.current = settle;
+            setDueIdea({ due, proceed: () => settle('proceed') });
+          });
+          // Unanswered (this shell unmounted), or a battle started while the player chose: this deploy ends
+          // here and the hold is released (P1c review L1-2, L4-13). Otherwise the choice starts the deploy.
+          if (choice !== 'proceed' || deployDisabledRef.current) return { success: false };
+          ceremonyTiming.startRun();
+        }
       } finally {
+        settleChoiceRef.current = null;
         ideaGateRef.current = false;
         setDueIdea(null);
       }
     }
-    // t0 for the stage-duration instrumentation: the moment the user's deploy
-    // began, which is what the "felt stalled" report is measured from.
-    ceremonyTiming.startRun();
     // Flag-on: open the ceremony overlay BEFORE the deploy call (ruling #2), and
     // record our own deploy outcome for the dual-signal reveal (spec §5.3).
     if (ceremonyOn) { setCeremonyOpen(true); setDeployResult({ status: 'pending' }); }

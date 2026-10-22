@@ -110,7 +110,8 @@ describe('the review card (E2)', () => {
     const line = q('idea-lifecycle-line');
     expect(line.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(q('idea-review-window').textContent).toBe('Oct 12, 2026 → Oct 15, 2026');
-    expect(q('idea-review-list').textContent).toBe('AI capex +10.00%');
+    // One of the list's two names priced: the figure says so (review L4-3).
+    expect(q('idea-review-list').textContent).toBe('AI capex +10.00% · 1 of 2');
     expect(q('idea-review-market').textContent).toBe('SPY +1.00%');
     expect(q('idea-review-difference').textContent).toBe('Difference +9.00 pts');
     expect(q('idea-review-names')).toBeNull(); // collapsed
@@ -141,13 +142,36 @@ describe('the review card (E2)', () => {
     await mount(answer([v(1, { status: 'review_due', stateReason: 'horizon_elapsed', ...DEPLOYED })]), Object.assign(new Error('x'), { status: 409, code: 'review_window_open' }));
     expect(q('idea-review-card')).toBeNull();
   });
-  it('evidence still settling (pending): the window, the battles and the line — no numbers', async () => {
+  it('evidence still settling (pending): the window and the battles — no numbers, and no honest line (it says the card shows how the names did — review L4-9)', async () => {
     await mount(answer([v(1, { status: 'review_due', stateReason: 'horizon_elapsed', ...DEPLOYED })]), { ...REVIEW, evidence: null, pending: 'awaiting_close', difference: null });
     expect(q('idea-review-card')).not.toBeNull();
+    expect(q('idea-review-window')).not.toBeNull();
     expect(q('idea-review-row')).toBeNull();
     expect(q('idea-review-names-toggle')).toBeNull();
     expect(q('idea-review-battles')).not.toBeNull();
-    expect(q('idea-review-honest')).not.toBeNull();
+    expect(q('idea-review-honest')).toBeNull();
+  });
+  it('another request is still computing the evidence: the panel asks again, 5 s later, and the card fills in (review L4-9)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      svc.listHypothesisVersions.mockResolvedValue(answer([v(1, { status: 'review_due', stateReason: 'horizon_elapsed', ...DEPLOYED })]));
+      svc.getHypothesisReview.mockReset();
+      svc.getHypothesisReview.mockResolvedValueOnce({ ...REVIEW, evidence: null, pending: 'computing', difference: null }).mockResolvedValue(REVIEW);
+      await act(async () => { root.render(<IdeaPanel watchlistId="wl-1" tokens={DARK_TOKENS} />); });
+      await flush();
+      expect(svc.getHypothesisReview).toHaveBeenCalledTimes(1);
+      expect(q('idea-review-row')).toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      await flush();
+      expect(svc.getHypothesisReview).toHaveBeenCalledTimes(2);
+      expect(q('idea-review-row')).not.toBeNull();
+      expect(q('idea-review-honest')).not.toBeNull();
+      // Settled: no further asking.
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(svc.getHypothesisReview).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('a battle link reads the owner\'s battle and asks App for its Film Room (OPEN_BATTLE_REVIEW_EVENT)', async () => {
     battleRead.readCarryingBattle.mockResolvedValue({ id: 'b-2', ownerId: 'me', status: 'completed' });
@@ -183,5 +207,11 @@ describe('the void line (E3)', () => {
   it('an ordinary ready version shows no such line', async () => {
     await mount(answer([v(1, { status: 'ready', stateReason: 'player_ready' })]));
     expect(q('idea-voided-line')).toBeNull();
+  });
+  it('a NON-current version the unwind returned to Ready says so on its own history row — B2 may carry it next (review L4-12 / L2-9)', async () => {
+    await mount(answer([v(1, { status: 'ready', stateReason: 'deploy_voided' }), v(2, { status: 'draft', stateReason: 'player_created' })]));
+    expect(q('idea-voided-line')).toBeNull(); // the current version (v2) is a draft
+    expect(q('idea-voided-line-v1').textContent).toBe("That battle never ran, so your idea is back to Ready. Its clock hasn't started.");
+    expect(q('idea-voided-line-v2')).toBeNull();
   });
 });

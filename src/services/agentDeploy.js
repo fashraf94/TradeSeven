@@ -379,6 +379,9 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
         battleId: agentBattleId,
         error: 'deploy_handoff',
         details: err?.message || 'The battle was created but could not be opened.',
+        // Pilot P1c (review L4-7): the battle the server created carries nothing for a due idea — the recovered
+        // reveal says so too.
+        ...(data.hypothesisNotice === HYPOTHESIS_NOTICES.reviewDue ? { hypothesisNotice: HYPOTHESIS_NOTICES.reviewDue } : {}),
       };
     }
   }

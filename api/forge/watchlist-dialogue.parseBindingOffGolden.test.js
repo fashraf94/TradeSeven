@@ -66,6 +66,9 @@ const FIXTURE = resolve(HERE, '../_utils/__fixtures__/dialogueParseBindingGolden
 // SHA-256 of the fixture as captured on main (LF). A recapture must come from a main checkout.
 const FIXTURE_SHA256 = '079c1bbd4aa59a15b6910a7a213c721492e5a2ee1e970b4216e744cb50681bb0';
 const GENERATE = process.env.GENERATE_DIALOGUE_PARSE_GOLDEN === '1';
+// P1b's precedent (decide.carriageOffGolden.test.js; review L1-6): capturing is a local, deliberate act, and a
+// capturing run fails on purpose, so it can never pass as a verification.
+if (GENERATE && process.env.CI) throw new Error('GENERATE_DIALOGUE_PARSE_GOLDEN is a local, deliberate act — never on CI');
 const ALLOWLIST_ENV = 'COCKPIT_ALLOWLIST_UIDS';
 const serialized = (v) => JSON.stringify(v, null, 2);
 
@@ -105,6 +108,7 @@ describe('the dialogue\'s off golden — main\'s own capture (acceptance row 5: 
       const scenarios = {};
       for (const name of NAMES) scenarios[name] = await runDialogue(name);
       writeFileSync(FIXTURE, `${serialized({ capturedFrom: 'origin/main ff6248d1 (no P1c source present)', scenarios })}\n`);
+      throw new Error(`frozen fixture written to ${FIXTURE} — this capturing run fails on purpose; re-run WITHOUT GENERATE_DIALOGUE_PARSE_GOLDEN to verify`);
     }, 60_000);
     return;
   }

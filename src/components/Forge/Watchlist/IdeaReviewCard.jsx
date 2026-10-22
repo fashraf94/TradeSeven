@@ -15,16 +15,18 @@
 //   · the battles that carried the idea, each a link to its review (the Film
 //     Room), voided ones marked;
 //   · the honest line, as the server filled it from the frozen agent name.
-// While the evidence is still settling the card shows the window, the
-// battles and the line only. Words: table C V1.2 (ideaCopy.js); colors: the
-// theme tokens the panel already uses.
+// While the evidence is still settling the card shows the window and the
+// battles only — the honest line says the card shows how the names did, so it
+// waits for them (review L4-9). Words: table C V1.2 (ideaCopy.js); colors:
+// the theme tokens the panel already uses.
 
 import React, { useState } from 'react';
-import { REVIEW_CARD_LABELS, formatIdeaDate } from './ideaCopy';
+import { REVIEW_CARD_LABELS, countedOfText, formatIdeaDate } from './ideaCopy';
 
 const fmtPct = (x) => `${x > 0 ? '+' : ''}${x.toFixed(2)}%`;
 const fmtPts = (x) => `${x > 0 ? '+' : ''}${x.toFixed(2)} ${REVIEW_CARD_LABELS.points}`;
-const fmtClose = (x) => x.toFixed(2);
+// As stored (review.js roundClose): 2 decimals from $1 up, 4 significant figures below.
+const fmtClose = (x) => (x >= 1 ? x.toFixed(2) : x.toPrecision(4));
 const isNum = (x) => typeof x === 'number' && Number.isFinite(x);
 
 /**
@@ -53,6 +55,8 @@ export default function IdeaReviewCard({ review, tokens, onOpenBattle }) {
           <span style={{ color: tokens.textSecondary }} data-testid="idea-review-list">
             {listLabel ? `${listLabel} ` : ''}
             {list?.status === 'ok' && isNum(list.changePct) ? fmtPct(list.changePct) : REVIEW_CARD_LABELS.noData}
+            {/* The figure counts only the names priced: say so when that is not all of them (review L4-3). */}
+            {list?.status === 'ok' && countedOfText(list.counted, list.total) ? ` · ${countedOfText(list.counted, list.total)}` : ''}
           </span>
           <span style={{ color: tokens.textMuted }} data-testid="idea-review-market">
             {`${market?.symbol || 'SPY'} `}
@@ -109,7 +113,7 @@ export default function IdeaReviewCard({ review, tokens, onOpenBattle }) {
         </div>
       )}
 
-      {typeof review?.honestLine === 'string' && review.honestLine && (
+      {evidence && typeof review?.honestLine === 'string' && review.honestLine && (
         <p style={{ ...meta(tokens), margin: 0, fontStyle: 'italic' }} data-testid="idea-review-honest">{review.honestLine}</p>
       )}
     </div>

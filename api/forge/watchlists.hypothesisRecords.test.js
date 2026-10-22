@@ -722,6 +722,15 @@ describe('P1b — the frozen list on the versions GET (deployedLists)', () => {
       expect([res.statusCode, res.body.deployedLists]).toEqual([200, {}]);
     }
   });
+  it('P1c (review L4-5): with a due version, whether the list is committed — false for a draft list, true for a committed one; absent without a due version', async () => {
+    for (const [status, committed] of [['committed', true], ['draft', false]]) {
+      seedList({ status }, [DUE_V]);
+      const res = await versions({ method: 'GET' });
+      expect([res.statusCode, res.body.listCommitted]).toEqual([200, committed]);
+    }
+    seedList({ status: 'draft' }, [{ status: 'activated', firstDeployedAt: NOW, lastDeployedBattleId: 'battle-9' }]);
+    expect('listCommitted' in (await versions({ method: 'GET' })).body).toBe(false);
+  });
   it('an unreadable battle never fails the GET: {} and a 200', async () => {
     const db = seedList({}, [DUE_V]);
     const base = db.collection;

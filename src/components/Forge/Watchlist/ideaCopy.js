@@ -54,9 +54,16 @@ export const REVIEW_CARD_LABELS = Object.freeze({
   points: 'pts',
   names: 'Each name',
   noData: 'No data',
+  countedOf: '[n] of [N]',
   battles: 'Battles',
   voided: 'voided',
 });
+
+/** The list figure's "[n] of [N]" (table C V1.2), or null when it counts every name (or the counts are not numbers). */
+export function countedOfText(counted, total) {
+  if (!Number.isInteger(counted) || !Number.isInteger(total) || counted < 0 || counted >= total) return null;
+  return REVIEW_CARD_LABELS.countedOf.replace('[n]', String(counted)).replace('[N]', String(total));
+}
 
 /**
  * Fill a table-C line's placeholders. Returns null when any placeholder the
@@ -142,13 +149,19 @@ export function lifecycleLineFor(version, frozen = null) {
 
 /**
  * Pilot P1c (founder ruling E1; table C V1.2): the deploy station screen's
- * title for a due version — [SYM] when the idea names exactly one symbol
- * (ideaSymbolOf), else the FROZEN list's name (ideaListOf on the GET's
- * `deployedLists[version]`), B3's rule exactly. Neither known → null: the
- * screen shows its three buttons with no title, never an invented one.
+ * title for a due version whose time-frame elapsed (`horizon_elapsed`) —
+ * [SYM] when the idea names exactly one symbol (ideaSymbolOf), else the
+ * FROZEN list's name (ideaListOf on the GET's `deployedLists[version]`), B3's
+ * rule exactly. "Reached its time-frame" is a claim the record must hold
+ * (review L4-1): an idea due because its battle ended shows table C's own
+ * line for that state instead (lifecycleLineFor — the Forge's line, word for
+ * word), and a version whose clock fell back to a battle-end review (B5)
+ * shows none. No name known → null: the screen shows its three buttons with
+ * no title, never an invented one.
  */
 export function dueDeployTitleFor(version, frozen = null) {
   if (!version || version.status !== 'review_due') return null;
+  if (version.stateReason !== 'horizon_elapsed') return lifecycleLineFor(version, frozen);
   const sym = ideaSymbolOf(version, frozen);
   if (sym) return fillLine(LIFECYCLE_LINES.dueDeployTitle, { sym });
   const list = ideaListOf(frozen);
@@ -157,7 +170,8 @@ export function dueDeployTitleFor(version, frozen = null) {
 
 /**
  * Pilot P1c (founder ruling E3; table C V1.2): the line for a version the
- * review pass unwound to Ready because its only carrying battle never ran —
+ * review pass (or the next deploy) unwound to Ready because its only
+ * carrying battle never ran —
  * read from the record's own state (status `ready`, reason `deploy_voided`),
  * never inferred. Null otherwise.
  */

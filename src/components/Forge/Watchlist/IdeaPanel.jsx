@@ -65,6 +65,10 @@ import SectionLabel from './SectionLabel';
 import IdeaReviewCard from './IdeaReviewCard';
 import { requestOpenBattleReview } from './ideaNavigation';
 
+/** P1c: while another request computes a version's evidence, the panel asks again this often, this many times. */
+const REVIEW_RECHECK_MS = 5_000;
+const REVIEW_RECHECKS = 3;
+
 // The table-C sentence for a version lives in ideaCopy.js (pure — the P1b
 // end-to-end suite renders it in Node); re-exported for the panel's suites.
 export { lifecycleLineFor };
@@ -151,11 +155,20 @@ export default function IdeaPanel({ watchlistId, tokens }) {
   useEffect(() => {
     if (!reviewKey) { setReview(null); return undefined; }
     let cancelled = false;
+    let timer = null;
     const n = Number(reviewKey.split(':')[0]);
-    getHypothesisReview(watchlistId, n)
-      .then((data) => { if (!cancelled) setReview({ key: reviewKey, data }); })
-      .catch(() => { if (!cancelled) setReview(null); });
-    return () => { cancelled = true; };
+    const ask = (left) => {
+      getHypothesisReview(watchlistId, n)
+        .then((data) => {
+          if (cancelled) return;
+          setReview({ key: reviewKey, data });
+          // Another request is computing the evidence (seconds): ask again, a few times (review L4-9).
+          if (data?.pending === 'computing' && left > 0) timer = setTimeout(() => ask(left - 1), REVIEW_RECHECK_MS);
+        })
+        .catch(() => { if (!cancelled) setReview(null); });
+    };
+    ask(REVIEW_RECHECKS);
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [watchlistId, reviewKey]);
 
   if (!enabled || phase === 'hidden' || phase === 'pending') return null;
@@ -439,6 +452,10 @@ export default function IdeaPanel({ watchlistId, tokens }) {
                       v{v.version} · {STATUS_LABELS[v.status] || v.status} · {formatIdeaDate(v.createdAt)}
                       {v.successorVersion != null ? ` · → v${v.successorVersion}` : ''} — {excerpt(v.statement)}
                     </span>
+                    {/* P1c (ruling E3; review L4-12 / L2-9): a NON-current version the unwind returned to Ready says so on its own row — B2 may carry it next. */}
+                    {!isCurrent && deployVoidedLineFor(v) && (
+                      <div style={{ marginTop: 2, color: tokens.textSecondary }} data-testid={`idea-voided-line-v${v.version}`}>{deployVoidedLineFor(v)}</div>
+                    )}
                     {closing.length > 0 && !editor && (
                       <span style={{ display: 'inline-flex', gap: 6, marginLeft: 8 }}>
                         {closing.map((a) => (

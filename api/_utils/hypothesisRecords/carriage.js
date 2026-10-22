@@ -50,6 +50,13 @@
 //    it becomes `review_due` (stateSource 'deploy', the pass's reasons) and
 //    its row is deleted — then B2 applies: it is now the idea's newest
 //    deployed version and it is due, so nothing older rides (`review_due`).
+//    A CARRYING BATTLE THAT NEVER RAN (Pilot P1c, ruling E3; review L2-1 /
+//    L4-4): before that judgment, the deploy applies the review pass's own
+//    void unwind to the version's row (reviewPass.js unwindVoidCarriage — the
+//    pass's decision and writer, stateSource 'deploy'), so the record ends the
+//    same whichever reaches the row first: back to `ready`, the version rides
+//    this battle as a first deploy; stepped back to an earlier battle, it is
+//    judged as above.
 //
 // 2. ACTIVATION, inside the battle-creation transaction
 //    (compositionGenerationFence.js commitBattleDocWithPin calls
@@ -86,8 +93,10 @@ import {
   versionDocId, isVersionNumber, contentHashOf,
   DEPLOYED_BATTLE_IDS_FIELD, DEPLOYED_BATTLE_IDS_CAP, carryingBattleIdsOf, withCarryingBattle,
 } from './model.js';
-import { computeReviewDueAt, HorizonClockError } from './horizon.js';
-import { armReviewRow, normalizeReviewRow, reviewRowRef, battleIsTerminal } from './reviewPass.js';
+import { computeReviewDueAt, HorizonClockError, tradingDaysCutoffMs } from './horizon.js';
+import {
+  armReviewRow, normalizeReviewRow, reviewRowRef, battleIsOver, decideReview, unwindVoidCarriage, REVIEW_VOID_TRADING_DAYS,
+} from './reviewPass.js';
 import { CARRIABLE_STATUSES, CARRIAGE_RACE_MESSAGE } from '../../../src/constants/hypothesisRecords.js';
 
 /** Pilot P1c (ruling E1): the `none` reason the deploy reports — the idea is due for review and nothing rides. */
@@ -97,6 +106,8 @@ export const REVIEW_DUE_REASON = 'review_due';
 export const CARRIAGE_SCAN_LIMIT = 100;
 /** The pages a resolution reads at most (1,000 versions); a list longer than that carries nothing (logged). */
 export const CARRIAGE_SCAN_MAX_PAGES = 10;
+/** Pilot P1c (ruling E3): the void-unwind steps one deploy takes (each one transaction); past it, nothing rides and the pass continues. */
+export const CARRIAGE_UNWIND_STEPS_MAX = 5;
 
 /**
  * The frozen sibling's keys, exactly (the build prompt's list; spec §2.4:
@@ -143,19 +154,12 @@ export class HypothesisCarriageError extends Error {
 const versionRefOf = (db, watchlistId, n) => db.collection(WATCHLISTS_COLLECTION).doc(watchlistId)
   .collection(VERSIONS_SUBCOLLECTION).doc(versionDocId(n));
 
-const expiresAtMsOf = (battle) => {
-  const e = battle?.expiresAt;
-  if (e && typeof e.toDate === 'function') return e.toDate().getTime();
-  return typeof e === 'string' ? Date.parse(e) : NaN;
-};
-
 /**
  * Is an ACTIVATED version's review already due at `atMs` (review L2-1)? The
  * review pass's rule (reviewPass.js decideReview) from the version's armed
  * row: a timed row is due once `atMs >= dueAtMs`; a battle-end row once its
- * battle is over — terminal (any status but 'active', the pass's rule) or
- * past its own `expiresAt` (a battle the deploy path itself completes as
- * expired before it creates the next one). No row, or a missing battle, is
+ * battle is over — terminal or past its own `expiresAt` (reviewPass.js
+ * battleIsOver, the one rule since P1c). No row, or a missing battle, is
  * never read as due (the pass's posture). Pure.
  *
  * @returns {string|null} the transition reason (horizon_elapsed | battle_ended), or null
@@ -164,16 +168,20 @@ export function activatedReviewDue({ row, battle, atMs }) {
   if (!row || !Number.isFinite(atMs)) return null;
   if (Number.isFinite(row.dueAtMs)) return atMs >= row.dueAtMs ? STATE_REASONS.horizonElapsed : null;
   if (!isPlainObject(battle)) return null;
-  if (battleIsTerminal(battle)) return STATE_REASONS.battleEnded;
-  const exp = expiresAtMsOf(battle);
-  return Number.isFinite(exp) && exp <= atMs ? STATE_REASONS.battleEnded : null;
+  return battleIsOver(battle, atMs) ? STATE_REASONS.battleEnded : null;
 }
 
-/** The armed row and (for a battle-end row) its battle, read through `get` (a transaction's or plain refs'). */
-async function reviewInputsOf(get, db, v) {
+/**
+ * The armed row and its battle, read through `get` (a transaction's or plain
+ * refs'): the battle of a battle-end row always; of a timed row only when it
+ * was armed at or after `unwindFromMs` (Pilot P1c: the void unwind's
+ * look-back — the default reads none for it).
+ */
+async function reviewInputsOf(get, db, v, { unwindFromMs = Infinity } = {}) {
   const rowSnap = await get(reviewRowRef(db, v.watchlistId, v.version));
   const row = rowSnap?.exists ? normalizeReviewRow(rowSnap.data()) : null;
-  if (!row || Number.isFinite(row.dueAtMs)) return { row, battle: null };
+  const armedRecently = Number.isFinite(row?.armedAt) && row.armedAt >= unwindFromMs;
+  if (!row || (Number.isFinite(row.dueAtMs) && !armedRecently)) return { row, battle: null };
   const battleSnap = await get(db.collection('agentBattles').doc(row.battleId));
   return { row, battle: battleSnap?.exists ? battleSnap.data() : null };
 }
@@ -305,35 +313,79 @@ export async function resolveDeployCarriage(db, { ownerUid, watchlistId, watchli
   //     spec §2.5; "with no ready successor" — B2), so the battle carries nothing and the deploy is told
   //     `review_due` (ruling E1 — never a refusal); otherwise the walk goes on.
   const nowMs = Date.now();
+  // Pilot P1c (ruling E3): the void unwind's look-back, as the pass computes it; a calendar that cannot place it
+  // unwinds nothing (the pass's posture).
+  let unwindFromMs = Infinity;
+  try {
+    unwindFromMs = tradingDaysCutoffMs(nowMs, REVIEW_VOID_TRADING_DAYS);
+  } catch {
+    unwindFromMs = Infinity;
+  }
   const dueNothingRides = (v, why) => {
     console.log(`[hypothesis] carriage: list ${watchlistId} v${v.version} ${why} — the deploy carries nothing (ruling E1)`);
     return { outcome: 'none', reason: REVIEW_DUE_REASON, version: v.version };
   };
+  const readFailed = (v, what, err) => {
+    console.warn(`[hypothesis] carriage: list ${watchlistId} v${v.version} ${what} failed: ${String(err?.message || err).slice(0, 200)} — deploying without carriage`);
+    return none('read_failed');
+  };
   let newestDeployedSeen = false;
-  for (const v of mine) {
+  for (let v of mine) {
     if (CARRIABLE_STATUSES.includes(v.status)) {
       if (!carriableVersion(v, { ownerUid, watchlistId })) {
         console.warn(`[hypothesis] carriage: list ${watchlistId} v${v.version} is not intact — deploying without carriage`);
         return none('corrupt_version');
       }
       if (v.status === 'activated') {
-        let due;
+        let inputs;
         try {
-          due = activatedReviewDue({ ...(await reviewInputsOf((ref) => ref.get(), db, v)), atMs: nowMs });
+          inputs = await reviewInputsOf((ref) => ref.get(), db, v, { unwindFromMs });
         } catch (err) {
-          console.warn(`[hypothesis] carriage: list ${watchlistId} v${v.version} review read failed: ${String(err?.message || err).slice(0, 200)} — deploying without carriage`);
-          return none('read_failed');
+          return readFailed(v, 'review read', err);
         }
+        // Pilot P1c (ruling E3; review L2-1 / L4-4): a carrying battle that never ran was no deploy. The pass's
+        // own unwind first (one transaction per step, fresh reads), as often as it applies — a step back may land
+        // on an earlier battle that never ran either; then the version as it now stands.
+        for (let step = 0; v.status === 'activated'; step++) {
+          if (!inputs.row || decideReview({ row: inputs.row, version: v, battle: inputs.battle, nowMs, unwindFromMs }).act !== 'unwind') break;
+          if (step >= CARRIAGE_UNWIND_STEPS_MAX) {
+            console.warn(`[hypothesis] carriage: list ${watchlistId} v${v.version} still has a carrying battle that never ran after ${step} steps — deploying without carriage (the review pass continues)`);
+            return none('unwind_steps');
+          }
+          let unwound;
+          let fresh = null;
+          try {
+            unwound = await unwindVoidCarriage(db, { watchlistId, version: v.version, nowMs, unwindFromMs, source: DEPLOY_STATE_SOURCE });
+            if (unwound === 'only' || unwound === 'previous') {
+              const snap = await versionRefOf(db, watchlistId, v.version).get();
+              fresh = snap?.exists ? snap.data() : null;
+            }
+          } catch (err) {
+            return readFailed(v, 'void unwind', err);
+          }
+          if (unwound === 'moved') return none('state_moved');
+          if (unwound === 'kept') break;
+          if (!carriableVersion(fresh, { ownerUid, watchlistId })) return none('state_moved');
+          console.log(`[hypothesis] carriage: list ${watchlistId} v${v.version}'s carrying battle never ran — ${unwound === 'only' ? 'Ready again' : 'stepped back to its previous battle'} (ruling E3)`);
+          v = { ...fresh };
+          if (v.status !== 'activated') break;
+          try {
+            inputs = await reviewInputsOf((ref) => ref.get(), db, v, { unwindFromMs });
+          } catch (err) {
+            return readFailed(v, 'review read', err);
+          }
+        }
+        const due = v.status === 'activated' ? activatedReviewDue({ ...inputs, atMs: nowMs }) : null;
         if (due) {
           let judged;
           try {
             judged = await judgeDueAtDeploy(db, { v, nowMs });
           } catch (err) {
-            // The idea IS due by its own record; it is never carried unjudged (the pass judges it within a
-            // tick). The deploy is told `review_due` as for a judged one (P1c report: until the pass runs the
-            // record still reads `activated` — at most one reflections tick).
-            console.warn(`[hypothesis] carriage: list ${watchlistId} v${v.version} due-judgment failed: ${String(err?.message || err).slice(0, 200)}`);
-            return dueNothingRides(v, `is due for review (${due}) and could not be judged`);
+            // The idea IS due by its own record, so it never rides unjudged — but its record still reads
+            // `activated` until the pass judges it (the reflections cron is idle overnight), so the deploy
+            // is not told `review_due` either: nothing rides, silently (review L4-4).
+            console.warn(`[hypothesis] carriage: list ${watchlistId} v${v.version} is due for review (${due}) and its judgment failed: ${String(err?.message || err).slice(0, 200)} — deploying without carriage`);
+            return none('judgment_failed');
           }
           if (judged === 'moved') return none('state_moved');
           if (judged !== 'not_due') {

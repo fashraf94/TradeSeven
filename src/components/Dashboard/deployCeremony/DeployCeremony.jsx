@@ -192,11 +192,14 @@ export default function DeployCeremony({
   const enterBattle = () => onEnterBattle?.(machine.recoveredBattle || null);
 
   // Pilot P1c (founder ruling E1): the deploy's own success response said the
-  // battle carries nothing because the equipped idea is due for review (only
-  // a `success` deployResult can say so — deployResult.js). The line links to
-  // the equipped list's Idea panel; the ceremony closes as it opens.
+  // battle carries nothing because the equipped idea is due for review (a
+  // `success` deployResult, or — review L4-7 — an `error` one pinned to the
+  // battle the server created when the client handoff threw; deployResult.js).
+  // Shown only on a reveal. The line links to the equipped list's Idea panel;
+  // the ceremony closes as it opens.
   const ideaListId = typeof agent?.equippedWatchlistId === 'string' && agent.equippedWatchlistId ? agent.equippedWatchlistId : null;
-  const ideaNotice = deployResult?.status === 'success' && deployResult?.hypothesisNotice === HYPOTHESIS_NOTICES.reviewDue
+  const noticeCarrier = deployResult?.status === 'success' || (deployResult?.status === 'error' && Boolean(deployResult?.battleId));
+  const ideaNotice = noticeCarrier && deployResult?.hypothesisNotice === HYPOTHESIS_NOTICES.reviewDue
     ? {
         line: LIFECYCLE_LINES.deployRanWithout,
         onOpen: ideaListId ? () => { onDismiss?.(); requestOpenIdea(ideaListId); } : null,

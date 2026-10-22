@@ -401,8 +401,7 @@ export default async function handler(req, res) {
 
     // 3d. [Pilot P1b] Deploy carriage: which version of the equipped idea this
     //     battle carries, from the list's server-written versions (gate off →
-    //     nothing, before any read). [Pilot P1c, ruling E1] A due idea never
-    //     blocks the deploy: nothing rides, and the success response says so.
+    //     nothing, before any read).
     const carriage = await resolveDeployCarriage(db, {
       ownerUid: agent.ownerId, watchlistId: agent.equippedWatchlistId ?? null,
       watchlist: equippedWatchlistData, snapshot: equippedWatchlistSnapshot, pin: projectionPin,

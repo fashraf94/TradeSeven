@@ -27,7 +27,7 @@ import { describe, it, expect } from 'vitest';
 import {
   LIFECYCLE_LINES, fillLine, ideaSymbolOf, ideaListOf, windowTextOf, formatIdeaDate,
   STATUS_LABELS, ACTION_LABELS, HORIZON_LABELS, HORIZON_SOURCE_LABELS, PANEL_COPY,
-  DUE_DEPLOY_ACTIONS, REVIEW_CARD_LABELS, dueDeployTitleFor, deployVoidedLineFor,
+  DUE_DEPLOY_ACTIONS, REVIEW_CARD_LABELS, dueDeployTitleFor, deployVoidedLineFor, lifecycleLineFor, countedOfText,
 } from './ideaCopy';
 import {
   HYPOTHESIS_STATUSES, HORIZON_ENUMS, HORIZON_SOURCES, PLAYER_ACTIONS, DUE_DEPLOY_LINE, CARRIAGE_RACE_MESSAGE, DEPLOY_REFUSAL_CODE,
@@ -58,7 +58,9 @@ describe('table C, verbatim', () => {
       'deploy with a due idea — the success screen after it', 'the review card', '`ready` again (`deploy_voided`)',
       'the screen before the deploy, button 1', 'the screen before the deploy, button 2', 'the screen before the deploy, button 3',
       'the review card, the list-versus-market difference', 'the review card, the difference\'s unit (percentage points)',
-      'the review card, the per-name table (collapsed)', 'the review card, a name with no data for the window',
+      'the review card, the per-name table (collapsed)',
+      'the review card, a name, the list or the market with no price for the window (none in the feed, not priced within the budget, or a failed fetch)',
+      'the review card, the list\'s figure when it counts fewer than all of the list\'s names',
       'the review card, the carrying battles', 'the review card, a voided battle\'s mark',
     ]);
   });
@@ -87,10 +89,18 @@ describe('table C, verbatim', () => {
       difference: C['the review card, the list-versus-market difference'],
       points: C['the review card, the difference\'s unit (percentage points)'],
       names: C['the review card, the per-name table (collapsed)'],
-      noData: C['the review card, a name with no data for the window'],
+      noData: C['the review card, a name, the list or the market with no price for the window (none in the feed, not priced within the budget, or a failed fetch)'],
+      countedOf: C['the review card, the list\'s figure when it counts fewer than all of the list\'s names'],
       battles: C['the review card, the carrying battles'],
       voided: C['the review card, a voided battle\'s mark'],
     });
+  });
+  it('the list figure\'s [n] of [N] (review L4-3): only when it counts fewer than all of the list\'s names', () => {
+    expect(countedOfText(10, 25)).toBe('10 of 25');
+    expect(countedOfText(0, 3)).toBe('0 of 3');
+    expect(countedOfText(3, 3)).toBeNull();
+    expect(countedOfText(undefined, 3)).toBeNull();
+    expect(countedOfText(2.5, 3)).toBeNull();
   });
   it('the review card\'s honest line is ONE string, the server\'s and the Forge\'s (the review route fills it)', () => {
     expect(REVIEW_HONEST_LINE).toBe(C['the review card']);
@@ -141,7 +151,7 @@ describe('placeholders are filled from the record, never invented', () => {
     expect(fillLine(LIFECYCLE_LINES.reviewHonest, { agent: ' ' })).toBeNull();
   });
   it('the due-deploy screen\'s title (E1): [SYM] when the idea names one symbol, else the FROZEN [LIST]; neither → null; only for a due version', () => {
-    const due = { status: 'review_due', activation: [], invalidation: [] };
+    const due = { status: 'review_due', stateReason: 'horizon_elapsed', horizonEnum: 'swing', activation: [], invalidation: [] };
     const cond = (symbol) => ({ symbol, side: 'above', level: 1, basis: 'daily_close' });
     expect(dueDeployTitleFor(due, { name: 'Chips', tickers: ['NVDA'] })).toBe('Your NVDA idea reached its time-frame.');
     expect(dueDeployTitleFor(due, { name: 'AI capex', tickers: ['NVDA', 'AMD'] })).toBe('Your AI capex idea reached its time-frame.');
@@ -150,6 +160,15 @@ describe('placeholders are filled from the record, never invented', () => {
     expect(dueDeployTitleFor(due, { name: '  ', tickers: ['NVDA', 'AMD'] })).toBeNull();
     expect(dueDeployTitleFor({ ...due, status: 'activated' }, { name: 'Chips', tickers: ['NVDA'] })).toBeNull();
     expect(dueDeployTitleFor(null)).toBeNull();
+  });
+  it('"reached its time-frame" is claimed only when one elapsed (review L4-1): a battle-ended open-ended idea gets table C\'s own line for that state (the Forge\'s, word for word); a clock-fault version (B5) and any other reason get none', () => {
+    const ended = { status: 'review_due', stateReason: 'battle_ended', horizonEnum: 'unspecified', activation: [], invalidation: [] };
+    const list = { name: 'AI capex', tickers: ['NVDA', 'AMD'] };
+    expect(dueDeployTitleFor(ended, list)).toBe("The battle ended with your AI capex idea still open-ended. It's flagged for review — reaffirm or retire when you're ready.");
+    expect(dueDeployTitleFor(ended, list)).toBe(lifecycleLineFor(ended, list));
+    expect(dueDeployTitleFor(ended, { name: 'Chips', tickers: ['NVDA'] })).toBe("The battle ended with your NVDA idea still open-ended. It's flagged for review — reaffirm or retire when you're ready.");
+    expect(dueDeployTitleFor({ ...ended, horizonEnum: 'swing', reviewClockFault: 'calendar_unavailable' }, list)).toBeNull();
+    expect(dueDeployTitleFor({ ...ended, stateReason: undefined }, list)).toBeNull();
   });
   it('the void line (E3): only for a version the review pass returned to ready as deploy_voided', () => {
     expect(deployVoidedLineFor({ status: 'ready', stateReason: 'deploy_voided' })).toBe("That battle never ran, so your idea is back to Ready. Its clock hasn't started.");

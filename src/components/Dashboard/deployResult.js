@@ -57,5 +57,7 @@ export function deployResultFor(result) {
         // handoff then threw. The battle exists and we are holding its id, so
         // the ceremony pins the reveal to it rather than inferring from status.
         battleId: result?.battleId ?? null,
+        // Pilot P1c (review L4-7): that battle carries nothing for a due idea — the recovered reveal says so.
+        ...(result?.battleId && result?.hypothesisNotice === HYPOTHESIS_NOTICES.reviewDue ? { hypothesisNotice: HYPOTHESIS_NOTICES.reviewDue } : {}),
       };
 }

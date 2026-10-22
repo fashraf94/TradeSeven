@@ -171,6 +171,17 @@ describe('E1 after the deploy — the success screen says the battle runs withou
     expect(notice().textContent).toBe(LINE);
     expect(opens).toEqual([]);
   });
+  it('review L4-7: the battle was created but the client handoff threw → the recovered reveal (pinned to that battle) still says the line', async () => {
+    globalThis.fetch = vi.fn(async (url) => (url === '/api/agent/ensure-casual-clone' ? json(200, { cloneId: CLONE }) : json(200, { ...CREATED_200, hypothesisNotice: 'review_due' })));
+    const result = await deployAgent(RANKED, vi.fn(() => { throw new Error('handoff exploded'); }), () => {});
+    expect(result).toMatchObject({ outcome: 'handoff_failed', battleId: 'battle-new', hypothesisNotice: 'review_due' });
+    const deployResult = deployResultFor(result);
+    expect(deployResult).toMatchObject({ status: 'error', battleId: 'battle-new', hypothesisNotice: 'review_due' });
+    // The verification finds the battle the server created (the recovered path's own read).
+    getDocsFromServerMock.mockResolvedValue({ empty: false, docs: [{ id: 'battle-new', data: () => ({ agentId: CLONE, ownerId: 'uid-1', status: 'active', expiresAt: new Date(Date.now() + 3_600_000).toISOString(), portfolio: { star: [] } }) }] });
+    await revealWith(deployResult);
+    expect(notice().textContent).toBe(LINE);
+  });
   it('a notice value other than review_due is not a notice', async () => {
     await revealWith({ status: 'success', agentBattleId: 'battle-new', hypothesisNotice: 'something_else' });
     expect(notice()).toBeNull();

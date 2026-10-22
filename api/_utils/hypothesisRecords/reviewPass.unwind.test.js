@@ -152,7 +152,7 @@ describe('EARLIER carrying battles → the record points back at the previous ba
     expect(stored(db, vPath())).toEqual({ ...before, deployedBattleIds: ['b-0'], lastDeployedAt: B0_AT, lastDeployedBattleId: 'b-0' });
     expect(stored(db, rowPath())).toEqual({ userId: OWNER, watchlistId: 'wl-u', version: 1, battleId: 'b-0', dueAtMs: Date.parse(DUE), armedAt: Date.parse(B0_AT) });
   });
-  it('the previous battle cannot be read → nothing written (the row stays for the next tick)', async () => {
+  it('the previous battle cannot be read → no unwind: a row not yet due is left alone (judged as before — review L2-5)', async () => {
     const db = store({ [vPath()]: version({ firstDeployedAt: B0_AT, deployedBattleIds: ['b-0', 'b-1'] }), [rowPath()]: row(), 'agentBattles/b-1': neverRan() });
     const before = stored(db, vPath());
     await run(db);
@@ -275,11 +275,52 @@ describe('the \'recent\' phase passes over the rows the other phases own — eac
     expect(second.recentCursorBefore).toEqual({ armedAt: Date.parse(B1_AT) + 2, id: 'wl-r02:1' });
     expect(second.notDue).toBe(22); // the rest of the rows, from the cursor on
   });
-  it('a pass with no void writes the pre-P1c summary exactly (no P1c counter appears)', async () => {
+  it('a pass with no void adds no void counter (they appear only when something happened)', async () => {
     const db = store({ [vPath()]: version(), [rowPath()]: row({ dueAtMs: NOW - 60_000 }), 'agentBattles/b-1': ran({ createdAt: B1_AT }) });
     const res = await run(db);
     expect(res.horizonElapsed).toBe(1);
     for (const k of ['voidUnwound', 'voidSteppedBack', 'voidUnresolved', 'recentCursorBefore', 'recentCursorAfter', 'voidLookback']) expect(k in res, k).toBe(false);
+  });
+});
+
+describe('review fixes — one "over" rule, the step-back judged as before, the first deploy (L2-1, L2-3, L2-5, L2-10)', () => {
+  it('an EXPIRED battle still marked active, with no check and no trade, never ran (the Shadow class): unwound like a voided one', async () => {
+    const shadow = { ownerId: OWNER, status: 'active', createdAt: B1_AT, expiresAt: '2026-10-15T00:00:00.000Z', trades: [] };
+    expect(battleNeverRan(shadow, NOW)).toBe(true);
+    expect(battleNeverRan(shadow, Date.parse('2026-10-14T23:59:00.000Z'))).toBe(false); // before its expiry it may still run
+    expect(battleNeverRan(shadow)).toBe(false); // no instant: the terminal rule alone
+    const db = store({ [vPath()]: version({ horizonEnum: 'unspecified', reviewDueAt: null }), [rowPath()]: row({ dueAtMs: null }), 'agentBattles/b-1': shadow });
+    expect(await run(db)).toMatchObject({ voidUnwound: 1, battleLive: 0 });
+    expect(stored(db, vPath())).toMatchObject({ status: 'ready', stateReason: 'deploy_voided' });
+  });
+  it('a battle-end review fires at the EXPIRY of its battle, not when agent-evaluate later completes it: expired + ran → battle_ended; before the expiry → live', async () => {
+    const expired = ran({ status: 'active', createdAt: B1_AT, expiresAt: '2026-10-15T00:00:00.000Z' });
+    const seedIt = () => store({ [vPath()]: version({ horizonEnum: 'unspecified', reviewDueAt: null }), [rowPath()]: row({ dueAtMs: null }), 'agentBattles/b-1': expired });
+    const db = seedIt();
+    expect(await run(db)).toMatchObject({ battleEnded: 1, battleLive: 0 });
+    expect(stored(db, vPath())).toMatchObject({ status: 'review_due', stateReason: 'battle_ended', stateSource: 'review_pass' });
+    vi.setSystemTime(Date.parse('2026-10-14T23:00:00.000Z'));
+    const early = seedIt();
+    expect(await run(early, { handlerStartMs: Date.now(), nowMs: Date.now() })).toMatchObject({ battleLive: 1, battleEnded: 0 });
+    expect(stored(early, vPath()).status).toBe('activated');
+  });
+  it('a step-back whose previous battle cannot be read is judged as before: a DUE row transitions, counted voidUnresolved', async () => {
+    const due = '2026-10-15T14:00:00.000Z';
+    const db = store({
+      [vPath()]: version({ firstDeployedAt: B0_AT, deployedBattleIds: ['b-0', 'b-1'], reviewDueAt: due }),
+      [rowPath()]: row({ dueAtMs: Date.parse(due) }), 'agentBattles/b-1': neverRan(),
+    });
+    expect(await run(db)).toMatchObject({ horizonElapsed: 1, voidUnresolved: 1 });
+    expect(stored(db, vPath())).toMatchObject({ status: 'review_due', stateReason: 'horizon_elapsed' });
+    expect(stored(db, rowPath())).toBeNull();
+  });
+  it('one carrying battle on the list that is NOT the first deploy (a pre-P1c seed, or a list stepped back to a later battle) is never `only`', async () => {
+    expect(voidBranchOf({ version: version({ firstDeployedAt: B0_AT, deployedBattleIds: ['b-1'] }), battleId: 'b-1', battle: neverRan() })).toEqual({ unresolved: 'void_previous_unknown' });
+    const db = store({ [vPath()]: version({ firstDeployedAt: B0_AT, deployedBattleIds: ['b-1'] }), [rowPath()]: row(), 'agentBattles/b-1': neverRan() });
+    const res = await run(db);
+    expect(res.voidUnwound ?? 0).toBe(0);
+    expect(res.voidUnresolved).toBe(1);
+    expect(stored(db, vPath()).status).toBe('activated');
   });
 });
 

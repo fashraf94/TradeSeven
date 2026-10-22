@@ -15,7 +15,7 @@
 // EquipBench own their own data hooks (DRB / forge+watchlist) so the brief and
 // bench reflect live state without prop-drilling.
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Trophy, Activity, Award } from 'lucide-react';
 import { CMD, Eyebrow, Mono, SectionLabel } from './commandUI';
 import useAgent from '../../hooks/useAgent';
@@ -157,24 +157,42 @@ export default function CommandDashboardDesktop({
   const [dueIdea, setDueIdea] = useState(null); // { due, proceed }
   const ideaGateRef = useRef(false);
   const skipIdeaCheckRef = useRef(false);
+  // The waiting deploy's settle (the screen's choice, or 'unmounted'), and deployDisabled as it stands after it.
+  const settleChoiceRef = useRef(null);
+  const deployDisabledRef = useRef(deployDisabled);
+  deployDisabledRef.current = deployDisabled;
+  // Unmounted while the screen waits (App swaps the shells at 768 px): settle the waiting deploy, so the
+  // app-wide hold is released at once (P1c review L1-2).
+  useEffect(() => () => { settleChoiceRef.current?.('unmounted'); }, []);
 
   const handleDeploy = async () => {
     if (deployDisabled) return { success: false };
     if (skipIdeaCheckRef.current) {
       skipIdeaCheckRef.current = false;
+      // t0 for the stage-duration instrumentation — mirrors the mobile shell.
+      ceremonyTiming.startRun();
     } else {
       if (ideaGateRef.current) return { success: false };
       ideaGateRef.current = true;
+      // t0 includes the idea check (bounded in dueIdeaCheck.js) — mirrors the mobile shell.
+      ceremonyTiming.startRun();
       try {
         const due = await checkDueIdea(agent);
-        if (due) await new Promise((proceed) => setDueIdea({ due, proceed }));
+        if (due) {
+          const choice = await new Promise((settle) => {
+            settleChoiceRef.current = settle;
+            setDueIdea({ due, proceed: () => settle('proceed') });
+          });
+          // Mirrors the mobile shell (P1c review L1-2, L4-13).
+          if (choice !== 'proceed' || deployDisabledRef.current) return { success: false };
+          ceremonyTiming.startRun();
+        }
       } finally {
+        settleChoiceRef.current = null;
         ideaGateRef.current = false;
         setDueIdea(null);
       }
     }
-    // t0 for the stage-duration instrumentation — mirrors the mobile shell.
-    ceremonyTiming.startRun();
     if (ceremonyOn) { setCeremonyOpen(true); setDeployResult({ status: 'pending' }); }
     setDeploying(true);
     let result = { success: false };

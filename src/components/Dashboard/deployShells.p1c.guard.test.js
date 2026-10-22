@@ -3,7 +3,11 @@
 // Pilot P1c — founder ruling E1: both Command dashboards ask the idea check
 // BEFORE any deploy call, show the due-idea screen when it answers, deploy
 // only through the screen's choice, never ask again on a ceremony retry, and
-// App opens the list's Idea panel when the ceremony's notice asks.
+// App opens the list's Idea panel when the ceremony's notice asks. Review
+// fixes: the stage timing starts before the (bounded) check and restarts at
+// the screen's choice (L1-1); a shell unmounted while the screen waits settles
+// the waiting deploy, so the hold is released (L1-2); a battle that started
+// while the player chose stops the deploy (L4-13).
 //
 // A source guard, as R1's deployShells.r1.guard.test.js is (no suite renders
 // either shell's deploy path); the behaviour behind each piece is tested in
@@ -45,23 +49,36 @@ describe.each(SHELLS)('%s — the due-idea screen comes BEFORE any deploy call',
 
   it('handleDeploy asks the check first and, when an idea is due, WAITS for the screen\'s choice — the ceremony and deployAgent come after', () => {
     const body = handleDeploy(src);
+    const timing = body.indexOf('ceremonyTiming.startRun();\n      try {');
     const check = body.indexOf('const due = await checkDueIdea(agent);');
-    const wait = body.indexOf('if (due) await new Promise((proceed) => setDueIdea({ due, proceed }));');
+    const wait = body.indexOf("setDueIdea({ due, proceed: () => settle('proceed') });");
+    const after = body.indexOf("if (choice !== 'proceed' || deployDisabledRef.current) return { success: false };");
     const ceremony = body.indexOf("if (ceremonyOn) { setCeremonyOpen(true); setDeployResult({ status: 'pending' }); }");
     const deploy = body.indexOf('await deployAgent(agent.id, onCreateAgentBattle, reportDeployTarget);');
-    expect([check, wait, ceremony, deploy].every((i) => i > -1)).toBe(true);
+    expect([timing, check, wait, after, ceremony, deploy].every((i) => i > -1)).toBe(true);
+    expect(timing).toBeLessThan(check);
     expect(check).toBeLessThan(wait);
-    expect(wait).toBeLessThan(ceremony);
+    expect(wait).toBeLessThan(after);
+    expect(after).toBeLessThan(ceremony);
     expect(ceremony).toBeLessThan(deploy);
+    // The choice restarts the timing (the player's decision is not a stall).
+    expect(body.slice(after, ceremony)).toContain('ceremonyTiming.startRun();');
     // The disabled check stays first; a second press during the check or the screen starts nothing.
     expect(body.indexOf('if (deployDisabled) return { success: false };')).toBeLessThan(check);
     expect(body).toMatch(/if \(ideaGateRef\.current\) return \{ success: false \};\s*ideaGateRef\.current = true;/);
-    expect(body).toMatch(/\} finally \{\s*ideaGateRef\.current = false;\s*setDueIdea\(null\);\s*\}/);
+    expect(body).toMatch(/\} finally \{\s*settleChoiceRef\.current = null;\s*ideaGateRef\.current = false;\s*setDueIdea\(null\);\s*\}/);
+    expect(body).toContain('settleChoiceRef.current = settle;');
+  });
+
+  it('a shell unmounted while the screen waits settles the waiting deploy (the hold is released at once); deployDisabled is read fresh after the choice', () => {
+    expect(src).toContain("useEffect(() => () => { settleChoiceRef.current?.('unmounted'); }, []);");
+    expect(src).toContain('const settleChoiceRef = useRef(null);');
+    expect(src).toMatch(/const deployDisabledRef = useRef\(deployDisabled\);\s*deployDisabledRef\.current = deployDisabled;/);
   });
 
   it('a ceremony retry re-runs the same deploy without asking again (the choice was made)', () => {
     expect(handleCeremonyRetry(src)).toMatch(/skipIdeaCheckRef\.current = true;\s*handleDeploy\(\);/);
-    expect(handleDeploy(src)).toMatch(/if \(skipIdeaCheckRef\.current\) \{\s*skipIdeaCheckRef\.current = false;\s*\} else \{/);
+    expect(handleDeploy(src)).toMatch(/if \(skipIdeaCheckRef\.current\) \{\s*skipIdeaCheckRef\.current = false;\s*ceremonyTiming\.startRun\(\);\s*\} else \{/);
   });
 
   it('mounts the screen with the due idea and the waiting deploy as its one way forward', () => {

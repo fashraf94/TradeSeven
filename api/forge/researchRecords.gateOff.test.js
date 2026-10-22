@@ -40,10 +40,7 @@ import {
 const state = vi.hoisted(() => ({ flagOn: false, replies: [], calls: [], logs: [] }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   const real = await importOriginal();
-  // Pilot P1c: the parse binding is held OFF here — these goldens were captured from main before it existed
-  // (their drop records differ from their client envelopes on purpose), and the binding has its own suites
-  // (watchlist-dialogue.parseBinding*.test.js), so a flip of DIALOGUE_SERVER_PARSE_ENABLED never moves P2's rows.
-  return { ...real, get HYPOTHESIS_RECORDS_ENABLED() { return state.flagOn; }, get DIALOGUE_SERVER_PARSE_ENABLED() { return false; } };
+  return { ...real, get HYPOTHESIS_RECORDS_ENABLED() { return state.flagOn; } };
 });
 let activeDb = null;
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => activeDb }));
