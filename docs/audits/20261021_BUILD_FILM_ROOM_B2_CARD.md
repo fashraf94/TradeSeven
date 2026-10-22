@@ -271,7 +271,9 @@ CI: the PR's checks run on the pushed head (this report's commit, `docs/` only, 
 
 ### 12.1 The docs (B0)
 
-`bc6f9d38`: Astra's review, Amendment H and Amendment I, each verbatim, with one `docs/README.md` row apiece. Astra's review reached this session twice: once embedded in the prompt between its markers, and once pasted on its own. The committed file is the standalone copy, which is Astra's own file. Its first line is the `# ` title, as every earlier Astra review in `docs/audits/` has. Compared by reading, the embedded copy differs only in that first line's `# `. The review's relative evidence links (`../../evidence/…`, `../../head/…`) point into Astra's own review folder, outside this repository, and are kept as written.
+`bc6f9d38`: Astra's review, Amendment H and Amendment I, with one `docs/README.md` row apiece. Astra's review reached this session twice: once embedded in the prompt between its markers, and once pasted on its own. On the founder's instruction, the file is the copy between the markers, with the `# ` title every earlier Astra review in `docs/audits/` has.
+
+`bc6f9d38` was not verbatim at one spot. The review's line 112, in its section B2, read `collection('plays')` where Astra wrote `collection('pl\u0061ys')`, which made the review say the census misses the plain spelling. The session's file write had decoded the `\u0061` escape; both pastes carry it. The docs commit after this report's first §12 restores the file from the marker copy. Line 112 is the only line that changed. The file's two other escapes, the escaped backticks on line 112 and the `\n` on line 126, were already intact. The review's relative evidence links (`../../evidence/…`, `../../head/…`) point into Astra's own review folder, outside this repository, and are kept as written.
 
 ### 12.2 The fixes
 

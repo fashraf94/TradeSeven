@@ -109,7 +109,7 @@ Proposed: reconcile a successful mutation into the local ledger using its versio
 
 ### B2 — Census can miss equivalent source spellings
 
-**VERIFIED synthetic guard weakness; no current criterion-7 breach found.** `oneDoor.census.test.js:113` misses `import(\`./leaf.js\`)` and `import(variable)`; `:137` misses `collection('pla' + 'ys')`, `collection('plays')` and `collection(String.fromCharCode(...))`. These planted reads/imports evade the guard. They are not present as a discovered current ledger read on a model path.
+**VERIFIED synthetic guard weakness; no current criterion-7 breach found.** `oneDoor.census.test.js:113` misses `import(\`./leaf.js\`)` and `import(variable)`; `:137` misses `collection('pla' + 'ys')`, `collection('pl\u0061ys')` and `collection(String.fromCharCode(...))`. These planted reads/imports evade the guard. They are not present as a discovered current ledger read on a model path.
 
 Proposed: parse imports/expressions, resolve constant strings, and explicitly flag unresolved dynamic imports in protected roots for review. Keep runtime positive controls. No finite regex test warrants the claim “every spelling.” Evidence: [census probe](../../head/api/_utils/filmRoom/oneDoor.census.astra.test.js) and [miss log](../../evidence/probes-initial.log).
 
