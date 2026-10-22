@@ -31,10 +31,10 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => {
 });
 
 const C = await import('./carriage.js');
-const { runHypothesisReviewPass } = await import('./reviewPass.js');
+const { runHypothesisReviewPass, REVIEW_VOID_TRADING_DAYS } = await import('./reviewPass.js');
 const { createAgentBattle } = await import('../agentBattleService.js');
 const { buildVersionDoc } = await import('./model.js');
-const { computeReviewDueAt } = await import('./horizon.js');
+const { computeReviewDueAt, tradingDaysCutoffMs } = await import('./horizon.js');
 
 const OWNER = 'unwind-deploy-owner-1';
 const WL = 'wl-unwind-1';
@@ -252,5 +252,61 @@ describe('one judge — the pass and the deploy end the record the same, and eit
     db.runTransaction = async () => { throw new Error('ABORTED'); };
     expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'read_failed' });
     expect(stored(db, vPath())).toEqual(v);
+  });
+});
+
+// ── The mutation lens's rows (review L5a), each proven red on its mutant and green on the original ──
+describe('L5a mutation lens rows — the void unwind at deploy (C04, C22, C26, C36, C37, C38)', () => {
+  it('C04 — a battle armed EXACTLY at the look-back\'s first instant is inside it (the pass\'s >=): a timed idea whose only battle never ran is Ready again', async () => {
+    const CUT = new Date(tradingDaysCutoffMs(Date.parse(NOW), REVIEW_VOID_TRADING_DAYS)).toISOString(); // Tue 13 Oct 00:00 ET
+    const v = act({ firstDeployedAt: CUT, lastDeployedAt: CUT, stateChangedAt: CUT, reviewDueAt: new Date(dueOf('swing', CUT)).toISOString() });
+    const db = seed({ [vPath()]: v, [rowPath()]: row(v), 'agentBattles/b-1': neverRan({ createdAt: CUT }) });
+    expect(await resolve(db)).toMatchObject({ outcome: 'carry', status: 'ready' });
+    expect(stored(db, vPath())).toEqual({ ...v, ...READY_AGAIN });
+  });
+  it('C22 — a calendar that cannot place the look-back unwinds NOTHING (the pass\'s posture): a battle-end idea whose battle never ran is judged as before — review_due', async () => {
+    const AT = '2028-01-05T15:00:00.000Z'; // past the calendar of record: tradingDaysCutoffMs throws calendar_unavailable
+    expect(() => tradingDaysCutoffMs(Date.parse(AT), REVIEW_VOID_TRADING_DAYS)).toThrow(expect.objectContaining({ code: 'calendar_unavailable' }));
+    vi.setSystemTime(new Date(AT));
+    const B = '2028-01-04T15:38:00.000Z';
+    const v = act({ firstDeployedAt: B, lastDeployedAt: B, stateChangedAt: B, reviewDueAt: null }, UNSPECIFIED);
+    const db = seed({ [vPath()]: v, [rowPath()]: row(v), 'agentBattles/b-1': neverRan({ createdAt: B }) });
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'review_due', version: 1 });
+    expect(stored(db, vPath())).toMatchObject({ status: 'review_due', stateReason: 'battle_ended', firstDeployedAt: B, deployedBattleIds: ['b-1'] });
+  });
+  it('C26 — a TIMED chain (both carrying battles never ran): the step back keeps the look-back, so both unwind and the idea is Ready again', async () => {
+    const due = new Date(dueOf('swing', B0_AT)).toISOString();
+    const v = act({ firstDeployedAt: B0_AT, deployedBattleIds: ['b-0', 'b-1'], reviewDueAt: due });
+    const db = seed({ [vPath()]: v, [rowPath()]: row(v), 'agentBattles/b-1': neverRan(), 'agentBattles/b-0': neverRan({ createdAt: B0_AT }) });
+    expect(await resolve(db)).toMatchObject({ outcome: 'carry', status: 'ready' });
+    expect(stored(db, vPath())).toEqual({ ...v, ...READY_AGAIN });
+  });
+  it('C36 — judged once, a TIMED idea not yet due: the version moved (the player retired it) after the deploy read it → nothing rides; the stale record is never carried', async () => {
+    const v = act();
+    const db = seed({ [vPath()]: v, [rowPath()]: row(v), 'agentBattles/b-1': neverRan() });
+    db.__hooks.afterQuery = async () => { db.__docs.set(vPath(), { ...db.__docs.get(vPath()), status: 'retired', stateSource: 'player', stateReason: 'player_retired' }); };
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'state_moved' });
+    expect(stored(db, vPath())).toMatchObject({ status: 'retired', firstDeployedAt: B1_AT });
+    expect(stored(db, rowPath())).toEqual(row(v));
+  });
+  it('C37 — kept: the step back cannot be anchored (the earlier carrying battle is gone) → no unwind; the version is judged as before (a battle-end idea whose battle is over: review_due)', async () => {
+    const v = act({ firstDeployedAt: B0_AT, deployedBattleIds: ['b-0', 'b-1'], reviewDueAt: null }, UNSPECIFIED);
+    const db = seed({ [vPath()]: v, [rowPath()]: row(v), 'agentBattles/b-1': neverRan() }); // no agentBattles/b-0
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'review_due', version: 1 });
+    expect(stored(db, vPath())).toMatchObject({
+      status: 'review_due', stateSource: 'deploy', stateReason: 'battle_ended', deployedBattleIds: ['b-0', 'b-1'], lastDeployedBattleId: 'b-1',
+    });
+    expect(stored(db, rowPath())).toBeNull();
+  });
+  it('C38 — the version moved between the unwind\'s commit and the deploy\'s re-read (the player retired it): nothing rides (state_moved), never the re-read record', async () => {
+    const v = act({ reviewDueAt: null }, UNSPECIFIED);
+    const db = seed({ [vPath()]: v, [rowPath()]: row(v), 'agentBattles/b-1': neverRan() });
+    db.__hooks.afterCommit = async ({ writes }) => {
+      if (writes.some((w) => w.path === vPath() && w.data?.stateReason === 'deploy_voided')) {
+        db.__docs.set(vPath(), { ...db.__docs.get(vPath()), status: 'retired', stateSource: 'player', stateReason: 'player_retired' });
+      }
+    };
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'state_moved' });
+    expect(stored(db, vPath())).toMatchObject({ status: 'retired' });
   });
 });

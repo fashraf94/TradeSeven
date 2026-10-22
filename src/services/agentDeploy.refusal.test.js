@@ -85,3 +85,15 @@ describe('the retired P1b refusal is an ordinary refusal now', () => {
     expect('code' in out).toBe(false);
   });
 });
+
+// ── The mutation lens's rows (review L5a), each proven red on its mutant and green on the original ──
+describe('L5a mutation lens row — the handoff_failed notice (G02)', () => {
+  it('G02 — a handoff that throws after a 200 carrying any OTHER notice value: handoff_failed with no notice (only review_due is a notice — as on the created path)', async () => {
+    for (const extra of [{ hypothesisNotice: 'something_else' }, { hypothesisNotice: true }]) {
+      globalThis.fetch = vi.fn(async () => respond(200, { ...CREATED_200, ...extra }));
+      const out = await deployAgent('agent-1', vi.fn(() => { throw new Error('handoff exploded'); }));
+      expect(out.outcome, JSON.stringify(extra)).toBe('handoff_failed');
+      expect('hypothesisNotice' in out, JSON.stringify(extra)).toBe(false);
+    }
+  });
+});

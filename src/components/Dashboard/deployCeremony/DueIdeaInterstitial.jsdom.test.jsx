@@ -209,3 +209,59 @@ describe('a failed step never falls through to a deploy', () => {
     expect(proceeded).toBe(1);
   });
 });
+
+// ── The mutation lens's rows (review L5a), each proven red on its mutant and green on the original ──
+describe('L5a mutation lens rows — the screen\'s steps (I05, I07, I09, I11, I14, I19)', () => {
+  it('I05/I14 — the REAFFIRM and the RE-READ are bounded by STEP_TIMEOUT_MS too: a hung one counts as failed — no deploy, the buttons live again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      svc.reaffirmHypothesis.mockReturnValue(new Promise(() => {}));
+      await mount();
+      await act(async () => { byAction('reaffirm').click(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(STEP_TIMEOUT_MS); });
+      await flush();
+      expect(proceeded).toBe(0);
+      expect(buttons().every((b) => b.getAttribute('aria-disabled') === 'false')).toBe(true);
+      // The next press re-reads first — and a hung re-read is bounded the same way.
+      svc.listHypothesisVersions.mockReturnValue(new Promise(() => {}));
+      await act(async () => { byAction('reaffirm').click(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(STEP_TIMEOUT_MS); });
+      await flush();
+      expect(svc.listHypothesisVersions).toHaveBeenCalledTimes(1);
+      expect(svc.reaffirmHypothesis).toHaveBeenCalledTimes(1);
+      expect(proceeded).toBe(0);
+      expect(buttons().every((b) => b.getAttribute('aria-disabled') === 'false')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it.each(['reaffirm', 'retire'])('I09/I11 — %s after a failed step acts on the version the RE-READ names (the idea moved on to another due version), never the stale one', async (id) => {
+    const step = id === 'reaffirm' ? svc.reaffirmHypothesis : svc.transitionHypothesis;
+    step.mockRejectedValueOnce(new Error('Failed to fetch')).mockResolvedValueOnce({});
+    svc.listHypothesisVersions.mockResolvedValue({
+      watchlistId: 'wl-1', currentVersion: 6,
+      versions: [dueVersion({ version: 4 }), { version: 2, status: 'retired', firstDeployedAt: '2026-10-05T15:00:00.000Z', activation: [], invalidation: [] }],
+    });
+    await mount();
+    await press(id);
+    await press(id);
+    expect(step).toHaveBeenCalledTimes(2);
+    expect(step.mock.calls[1][1]).toMatchObject({ version: 4 });
+    expect(proceeded).toBe(1);
+  });
+  it('I07 — the re-read refreshes the screen\'s idea: a step that fails again leaves the RE-READ idea\'s title on screen', async () => {
+    svc.reaffirmHypothesis.mockRejectedValue(new Error('Failed to fetch'));
+    svc.listHypothesisVersions.mockResolvedValue({
+      watchlistId: 'wl-1', currentVersion: 3, versions: [dueVersion({ stateReason: 'horizon_elapsed', horizonEnum: 'swing' })],
+      deployedLists: { 2: { name: 'Chips', tickers: ['NVDA'] } },
+    });
+    await mount({ ...DUE, title: null });
+    await press('reaffirm');
+    await press('reaffirm');
+    expect(proceeded).toBe(0);
+    expect(screen().querySelector('[data-testid="due-idea-title"]')?.textContent).toBe('Your NVDA idea reached its time-frame.');
+  });
+  it('I19 — the step bound is 15 s (pinned, as dueIdeaCheck.test.js pins its 2.5 s)', () => {
+    expect(STEP_TIMEOUT_MS).toBe(15_000);
+  });
+});

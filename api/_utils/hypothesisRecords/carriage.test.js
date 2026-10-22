@@ -707,3 +707,57 @@ describe('mutation lens rows — carriage (C09, C15, C18, C19, C22, C33, C36, C4
     expect(stored(db, vPath(1)).status).toBe('activated');
   });
 });
+
+// ── The mutation lens's rows (review L5a), each proven red on its mutant and green on the original ──
+describe('L5a mutation lens rows — carriage (C08, C52, C53, M01, M02, M06–M09)', () => {
+  it('C08 — a MALFORMED review row (an unusable dueAtMs) is never acted on (normalizeReviewRow — the pass\'s posture): the active idea is carried unjudged, nothing written', async () => {
+    const db = seed([L5act1()], { [rowPath(1)]: L5row({ dueAtMs: '2026-10-12T20:00:00.000Z' }), 'agentBattles/b-old': { ownerId: OWNER, status: 'completed' } });
+    expect(await resolve(db)).toMatchObject({ outcome: 'carry', version: 1, status: 'activated' });
+    expect(db.__access.writes).toEqual([]);
+  });
+  it('C52 — the creation transaction judges "due" at the battle\'s createdAt, not the commit\'s wall clock: an idea due a moment after the battle\'s instant still rides', async () => {
+    const DUE = '2026-10-13T16:00:00.000Z';
+    const db = seed([L5act1({ reviewDueAt: DUE })], { [rowPath(1)]: L5row({ dueAtMs: Date.parse(DUE) }) });
+    const { equippedHypothesis } = await resolve(db);
+    L5beforeTx(db, () => { vi.setSystemTime(new Date('2026-10-13T16:30:00.000Z')); });
+    const { id } = await deploy(db, { sibling: equippedHypothesis });
+    expect(stored(db, `agentBattles/${id}`).createdAt).toBe(NOW);
+    expect(stored(db, vPath(1))).toMatchObject({ status: 'activated', lastDeployedBattleId: id });
+    expect(stored(db, rowPath(1))).toMatchObject({ battleId: id, dueAtMs: Date.parse(DUE) });
+  });
+  it('C53 — the creation transaction reads the row\'s battle TRANSACTIONALLY: the old battle ending between the body and the commit re-runs it, and the now-due idea never rides (the typed race error)', async () => {
+    const db = seed([L5act1({ reviewDueAt: null })], {
+      [rowPath(1)]: L5row({ dueAtMs: null }),
+      'agentBattles/b-old': { ownerId: OWNER, status: 'active', expiresAt: '2026-10-13T20:00:00.000Z' },
+    });
+    const { equippedHypothesis } = await resolve(db);
+    let ended = false;
+    db.__hooks.afterTxBody = async ({ writes }) => {
+      if (ended || !writes.some((w) => w.op === 'create' && w.path.startsWith('agentBattles/'))) return;
+      ended = true;
+      await db.doc('agentBattles/b-old').update({ status: 'completed' });
+    };
+    const err = await deploy(db, { sibling: equippedHypothesis }).catch((e) => e);
+    expect(ended).toBe(true);
+    expect(err).toMatchObject({ code: 'hypothesis_carriage_stale', reason: 'review_due_now' });
+    expect(battlesIn(db)).toEqual(['agentBattles/b-old']); // no new battle
+    expect(stored(db, vPath(1))).toMatchObject({ status: 'activated', lastDeployedBattleId: 'b-old' });
+    expect(stored(db, rowPath(1))).toMatchObject({ battleId: 'b-old' });
+  });
+  it('M01/M02 — a redeploy reads the stored list through carryingBattleIdsOf: blanks and repeats are not carried forward', async () => {
+    const db = seed([L5act1({ reviewDueAt: '2026-10-20T20:00:00.000Z', deployedBattleIds: ['b-0', '', 'b-0', null, 'b-old'] })],
+      { [rowPath(1)]: L5row({ dueAtMs: Date.parse('2026-10-20T20:00:00.000Z') }) });
+    const { equippedHypothesis } = await resolve(db);
+    const { id } = await deploy(db, { sibling: equippedHypothesis });
+    expect(stored(db, vPath(1)).deployedBattleIds).toEqual(['b-0', 'b-old', id]);
+  });
+  it('M06–M09 — deployedBattleIds is capped at 50: the FIRST carrying battle and the newest 49 — a redeploy of a 50-battle idea drops the second-oldest, never the first', async () => {
+    const ids = Array.from({ length: 50 }, (_, i) => `b-${String(i).padStart(2, '0')}`);
+    const db = seed([L5act1({ reviewDueAt: '2026-10-20T20:00:00.000Z', lastDeployedBattleId: ids[49], deployedBattleIds: ids })],
+      { [rowPath(1)]: L5row({ battleId: ids[49], dueAtMs: Date.parse('2026-10-20T20:00:00.000Z') }) });
+    const { equippedHypothesis } = await resolve(db);
+    const { id } = await deploy(db, { sibling: equippedHypothesis });
+    expect(C.DEPLOYED_BATTLE_IDS_CAP).toBe(50);
+    expect(stored(db, vPath(1)).deployedBattleIds).toEqual([ids[0], ...ids.slice(2), id]);
+  });
+});

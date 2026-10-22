@@ -146,3 +146,18 @@ describe('dueDeployPending — the one predicate (src/constants/hypothesisRecord
     }
   });
 });
+
+// ── The mutation lens's rows (review L5a), each proven red on its mutant and green on the original ──
+describe('L5a mutation lens rows — the station\'s predicate and check (P02, P05, P07, P09, K09)', () => {
+  it('P02/P05/P07/P09 — on malformed records the station answers as the resolver does: a non-integer version is no version; an empty firstDeployedAt is no deploy; a duplicated version number (a document whose id disagrees with its version — the resolver drops it, L2-4) is not NEWER; and a newer activated version that never deployed (corrupt — the resolver carries nothing, silently) still lifts the screen', () => {
+    expect(dueDeployPending([v(1, 'review_due', DEPLOYED), v(2.5, 'ready')])?.version).toBe(1);
+    expect(dueDeployPending([v(1, 'review_due', DEPLOYED), v(2, 'review_due', { firstDeployedAt: '' })])?.version).toBe(1);
+    expect(dueDeployPending([v(1, 'review_due', DEPLOYED), v(1, 'ready')])?.version).toBe(1);
+    expect(dueDeployPending([v(1, 'review_due', DEPLOYED), v(2, 'activated')])).toBeNull();
+  });
+  it('K09 — any other failure is warned once per check, and the deploy still runs as before (null)', async () => {
+    svc.listHypothesisVersions.mockRejectedValueOnce(new Error('Failed to fetch'));
+    expect(await checkDueIdea(AGENT)).toBeNull();
+    expect(console.warn).toHaveBeenCalledTimes(1);
+  });
+});
