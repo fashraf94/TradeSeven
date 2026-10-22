@@ -8,14 +8,29 @@ import {
 } from '../services/agentService';
 import { getAgentLevel, getLevelConfig, getNextLevelInfo, AGENT_LEVELS } from '../constants/agentProgression';
 
-const useAgent = (userId) => {
+// Command Center S3 (ruling R-S3-4; spec V1.2 §3, "Ranked agent"): the read's
+// own state, beside the legacy fields. `status` is 'loading' | 'ready' |
+// 'error'; `readError` is the subscription's error (the service hands it over
+// through its optional error callback instead of a null agent); `ownerUid` and
+// `ownerEpoch` name the uid subscribed and the identity epoch the caller gave
+// (`options.ownerEpoch`, from services/authIdentity.js), null until a result
+// arrives; `retry()` subscribes again. `agent`, `loading` and `error` keep
+// their values for every legacy consumer: a failed read still reads as no
+// agent, not loading, no error.
+const LOADING_READ = Object.freeze({ status: 'loading', error: null, ownerUid: null, ownerEpoch: null });
+
+const useAgent = (userId, { ownerEpoch = null } = {}) => {
   const [agent, setAgent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [levelUpEvent, setLevelUpEvent] = useState(null);
+  const [read, setRead] = useState(LOADING_READ);
+  const [retryKey, setRetryKey] = useState(0);
 
   // Real-time Firestore subscription
   useEffect(() => {
+    // A new subscription has resolved for no one yet (no new state if nothing has).
+    setRead((prev) => (prev === LOADING_READ ? prev : LOADING_READ));
     if (!userId) {
       setAgent(null);
       setLoading(false);
@@ -23,14 +38,31 @@ const useAgent = (userId) => {
     }
 
     setLoading(true);
+    const owner = { ownerUid: userId, ownerEpoch };
+    // A torn-down subscription writes nothing, so no answer outlives its owner and epoch.
+    let current = true;
     const unsubscribe = subscribeToUserAgent(userId, (agentData) => {
+      if (!current) return;
       setAgent(agentData);
       setLoading(false);
       setError(null);
+      setRead({ status: 'ready', error: null, ...owner });
+    }, (readError) => {
+      if (!current) return;
+      // The legacy fields take what the old null answer gave them.
+      setAgent(null);
+      setLoading(false);
+      setError(null);
+      setRead({ status: 'error', error: readError, ...owner });
     });
 
-    return () => unsubscribe();
-  }, [userId]);
+    return () => {
+      current = false;
+      unsubscribe();
+    };
+  }, [userId, ownerEpoch, retryKey]);
+
+  const retry = useCallback(() => setRetryKey((k) => k + 1), []);
 
   // ============================================
   // COMPUTED STATE
@@ -222,6 +254,12 @@ const useAgent = (userId) => {
     addDirective: handleAddDirective,
     removeDirective: handleRemoveDirective,
     seedTestAgent: handleSeedTestAgent,
+    // S3 (R-S3-4): the read's own state, owner-tagged.
+    status: read.status,
+    readError: read.error,
+    ownerUid: read.ownerUid,
+    ownerEpoch: read.ownerEpoch,
+    retry,
   };
 };
 
