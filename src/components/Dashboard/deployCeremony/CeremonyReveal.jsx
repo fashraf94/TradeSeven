@@ -11,9 +11,13 @@ import { motion } from 'framer-motion';
 import { Swords, ArrowLeft } from 'lucide-react';
 import { CMD, alpha, readableOn, Mono, Eyebrow, MONO } from '../commandUI';
 
+// Pilot P1c (founder ruling E1): `ideaNotice` — present only when the deploy's
+// response said the battle carries nothing because the equipped idea is due
+// for review — renders table C V1.2's line; the line itself is the link to the
+// list's Idea panel (`onOpen`), or plain text when there is no list to open.
 export default function CeremonyReveal({
   accent = CMD.teal, agentName = 'Your agent', picks = [], monologue = null,
-  onEnterBattle, onDismiss, reduce = false,
+  onEnterBattle, onDismiss, reduce = false, ideaNotice = null,
 }) {
   const ink = readableOn(accent);
 
@@ -63,6 +67,21 @@ export default function CeremonyReveal({
           “{monologue}”
         </motion.blockquote>
       )}
+
+      {ideaNotice && (() => {
+        const noticeStyle = {
+          display: 'block', width: '100%', margin: '0 0 18px', padding: '10px 12px', borderRadius: 12,
+          border: `1px solid ${alpha(CMD.copper, 0.4)}`, background: alpha(CMD.copper, 0.08), color: CMD.ink2,
+          fontFamily: 'inherit', fontSize: 13, lineHeight: 1.5, textAlign: 'left',
+        };
+        return typeof ideaNotice.onOpen === 'function' ? (
+          <button type="button" data-testid="ceremony-idea-notice" onClick={ideaNotice.onOpen} style={{ ...noticeStyle, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3 }}>
+            {ideaNotice.line}
+          </button>
+        ) : (
+          <div data-testid="ceremony-idea-notice" style={noticeStyle}>{ideaNotice.line}</div>
+        );
+      })()}
 
       <motion.button
         type="button"

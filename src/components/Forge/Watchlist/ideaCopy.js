@@ -11,10 +11,14 @@
 // The labels below (status, horizon, actions) are UI labels, not table
 // sentences; none uses table E's forbidden vocabulary (ideaCopy.test.js scans).
 
-import { HORIZON_WINDOW_SESSIONS, DUE_DEPLOY_LINE } from '../../../constants/hypothesisRecords';
+import { HORIZON_WINDOW_SESSIONS, DUE_DEPLOY_LINE, REVIEW_HONEST_LINE, STATE_REASONS } from '../../../constants/hypothesisRecords';
 import { RESEARCH_STAGES } from '../../../constants/researchRecords';
 
-/** Table C, verbatim (V1 rows, and the two [LIST] rows of table C V1.1 — founder ruling B3, 8 Oct 2026). */
+/**
+ * Table C, verbatim (V1 rows, the two [LIST] rows of table C V1.1 — founder
+ * ruling B3, 8 Oct 2026 — and the rows of table C V1.2 — founder rulings
+ * E1–E3, 16 Oct 2026, Pilot P1c).
+ */
 export const LIFECYCLE_LINES = Object.freeze({
   reviewDueHorizon: "Your [SYM] idea reached its time-frame ([window]). Nothing was sold and nothing was deleted — it's flagged for your review. Reaffirm it to make a fresh version, or retire it.",
   reviewDueBattleEnded: "The battle ended with your [SYM] idea still open-ended. It's flagged for review — reaffirm or retire when you're ready.",
@@ -26,7 +30,40 @@ export const LIFECYCLE_LINES = Object.freeze({
   // Table C V1.1 (founder ruling B3): the review lines for an idea that names more than one symbol.
   reviewDueHorizonList: "Your [LIST] idea reached its time-frame ([window]). Nothing was sold and nothing was deleted — it's flagged for your review. Reaffirm it to make a fresh version, or retire it.",
   reviewDueBattleEndedList: "The battle ended with your [LIST] idea still open-ended. It's flagged for review — reaffirm or retire when you're ready.",
+  // Table C V1.2 (ruling E1): the deploy station's screen before a deploy whose idea is due — its title…
+  dueDeployTitle: 'Your [SYM] idea reached its time-frame.',
+  dueDeployTitleList: 'Your [LIST] idea reached its time-frame.',
+  // …and, after a deploy that carried nothing because the idea is due, the ceremony's success screen.
+  deployRanWithout: "This battle is running without your idea — it's still waiting for your review.",
+  // Table C V1.2 (ruling E2): the review card's honest line (the server fills [AGENT]; one shared string).
+  reviewHonest: REVIEW_HONEST_LINE,
+  // Table C V1.2 (ruling E3): a version whose only carrying battle never ran, unwound to Ready.
+  deployVoided: "That battle never ran, so your idea is back to Ready. Its clock hasn't started.",
 });
+
+/** Table C V1.2 (ruling E1): the deploy station screen's three buttons, in this order — no fourth option. */
+export const DUE_DEPLOY_ACTIONS = Object.freeze([
+  Object.freeze({ id: 'reaffirm', label: 'Reaffirm and deploy' }),
+  Object.freeze({ id: 'retire', label: 'Retire and deploy' }),
+  Object.freeze({ id: 'without', label: 'Deploy without it' }),
+]);
+
+/** Table C V1.2 (ruling E2): the review card's labels. */
+export const REVIEW_CARD_LABELS = Object.freeze({
+  difference: 'Difference',
+  points: 'pts',
+  names: 'Each name',
+  noData: 'No data',
+  countedOf: '[n] of [N]',
+  battles: 'Battles',
+  voided: 'voided',
+});
+
+/** The list figure's "[n] of [N]" (table C V1.2), or null when it counts every name (or the counts are not numbers). */
+export function countedOfText(counted, total) {
+  if (!Number.isInteger(counted) || !Number.isInteger(total) || counted < 0 || counted >= total) return null;
+  return REVIEW_CARD_LABELS.countedOf.replace('[n]', String(counted)).replace('[N]', String(total));
+}
 
 /**
  * Fill a table-C line's placeholders. Returns null when any placeholder the
@@ -34,10 +71,11 @@ export const LIFECYCLE_LINES = Object.freeze({
  * blank slot.
  *
  * @param {string} line  a LIFECYCLE_LINES value
- * @param {{ sym?: string|null, list?: string|null, window?: string|null, condition?: string|null }} values
+ * @param {{ sym?: string|null, list?: string|null, window?: string|null, condition?: string|null, agent?: string|null }} values
+ *   `agent` (table C V1.2's [AGENT]) is the name the deploying battle froze, never the live agent's.
  */
-export function fillLine(line, { sym = null, list = null, window = null, condition = null } = {}) {
-  const slots = { '[SYM]': sym, '[LIST]': list, '[window]': window, '[typed condition]': condition };
+export function fillLine(line, { sym = null, list = null, window = null, condition = null, agent = null } = {}) {
+  const slots = { '[SYM]': sym, '[LIST]': list, '[window]': window, '[typed condition]': condition, '[AGENT]': agent };
   let out = line;
   for (const [slot, value] of Object.entries(slots)) {
     if (!out.includes(slot)) continue;
@@ -107,6 +145,38 @@ export function lifecycleLineFor(version, frozen = null) {
     return list ? fillLine(LIFECYCLE_LINES.reviewDueBattleEndedList, { list }) : null;
   }
   return null;
+}
+
+/**
+ * Pilot P1c (founder ruling E1; table C V1.2): the deploy station screen's
+ * title for a due version whose time-frame elapsed (`horizon_elapsed`) —
+ * [SYM] when the idea names exactly one symbol (ideaSymbolOf), else the
+ * FROZEN list's name (ideaListOf on the GET's `deployedLists[version]`), B3's
+ * rule exactly. "Reached its time-frame" is a claim the record must hold
+ * (review L4-1): an idea due because its battle ended shows table C's own
+ * line for that state instead (lifecycleLineFor — the Forge's line, word for
+ * word), and a version whose clock fell back to a battle-end review (B5)
+ * shows none. No name known → null: the screen shows its three buttons with
+ * no title, never an invented one.
+ */
+export function dueDeployTitleFor(version, frozen = null) {
+  if (!version || version.status !== 'review_due') return null;
+  if (version.stateReason !== 'horizon_elapsed') return lifecycleLineFor(version, frozen);
+  const sym = ideaSymbolOf(version, frozen);
+  if (sym) return fillLine(LIFECYCLE_LINES.dueDeployTitle, { sym });
+  const list = ideaListOf(frozen);
+  return list ? fillLine(LIFECYCLE_LINES.dueDeployTitleList, { list }) : null;
+}
+
+/**
+ * Pilot P1c (founder ruling E3; table C V1.2): the line for a version the
+ * review pass (or the next deploy) unwound to Ready because its only
+ * carrying battle never ran —
+ * read from the record's own state (status `ready`, reason `deploy_voided`),
+ * never inferred. Null otherwise.
+ */
+export function deployVoidedLineFor(version) {
+  return version?.status === 'ready' && version?.stateReason === STATE_REASONS.deployVoided ? LIFECYCLE_LINES.deployVoided : null;
 }
 
 export const HORIZON_LABELS = Object.freeze({

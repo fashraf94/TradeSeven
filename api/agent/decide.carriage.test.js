@@ -12,8 +12,11 @@
 //     transaction ALSO reads the version and writes its activation and row;
 //   · the prescribed tournament branch, a deploy with no equip and an
 //     uncommitted list are byte-identical to gate off (zero version reads);
-//   · a due idea is REFUSED before any battle work: no model call, no battle,
-//     the cooldown untouched, the ceremony told "no battle";
+//   · a due idea NEVER blocks the deploy (Pilot P1c, founder ruling E1 — P1b
+//     refused it with a 409): the battle is created carrying nothing, equal to
+//     gate off except the one version read and the response's one notice key
+//     (`hypothesisNotice: 'review_due'`) — on the portfolio refresh too, which
+//     answers exactly as on main;
 //   · drafts only, and an existing active battle, deploy exactly as gate off
 //     (one version read, nothing written to any record);
 //   · B6 redeploy and the B5 clock fallback through the handler;
@@ -23,8 +26,8 @@
 //   · the attacker lens: a client body naming a version is ignored; an equip
 //     pointer to a list the owner does not own carries nothing.
 //   · the §2 review's fixes, through the endpoint: an activated idea whose
-//     review is already due is judged at deploy and refused (L2-1); a newer
-//     due version is never bypassed by an older one (L4-1); the race restores
+//     review is already due is judged at deploy and nothing rides (L2-1); a
+//     newer due version is never bypassed by an older one (L4-1); the race restores
 //     the cooldown (L2-2); a document whose id disagrees with its version is
 //     no version (L2-4); the fence dark carries nothing (L1-1).
 
@@ -80,7 +83,7 @@ const { SCENARIOS, version, DEPLOYED } = await import('../_utils/__fixtures__/de
 const { stored } = await import('../_utils/__fixtures__/callsFirestore.js');
 const { SIBLING_KEYS, siblingOf } = await import('../_utils/hypothesisRecords/carriage.js');
 const { computeReviewDueAt } = await import('../_utils/hypothesisRecords/horizon.js');
-const { DUE_DEPLOY_LINE, CARRIAGE_RACE_MESSAGE } = await import('../../src/constants/hypothesisRecords.js');
+const { CARRIAGE_RACE_MESSAGE, HYPOTHESIS_NOTICES } = await import('../../src/constants/hypothesisRecords.js');
 const { default: handler } = await import('./decide.js');
 const { runHypothesisReviewPass } = await import('../_utils/hypothesisRecords/reviewPass.js');
 const { default: versionsRoute } = await import('../forge/watchlists/[id]/hypothesis-versions.js');
@@ -204,20 +207,21 @@ describe('acceptance row 2 — gate ON, carried: everything the agent and the ma
 });
 
 describe('acceptance row 3 — B2 through the endpoint', () => {
-  it('DUE with no ready successor → 409 with table C\'s line, BEFORE any battle work: no model call, no battle, no record write, the cooldown untouched, the ceremony told no battle', async () => {
+  it('E1 — DUE with no ready successor → the deploy SUCCEEDS carrying nothing: byte-identical to gate off except the one version read and the response\'s one appended key, hypothesisNotice: review_due; no 409 path remains', async () => {
     const { cap } = await run(SCENARIOS.self_select_due_no_ready());
-    expect(cap.response).toEqual({ status: 409, body: { error: 'hypothesis_review_due', message: DUE_DEPLOY_LINE } });
-    expect(cap.modelRequests).toEqual([]);
-    expect(cap.voiceRequests).toEqual([]);
-    expect(Object.keys(cap.docs).filter((p) => p.startsWith('agentBattles/'))).toEqual([]);
-    expect(cap.store.writes.filter((w) => isHyp(w.path))).toEqual([]);
-    const agent = cap.docs[`agents/${H.AGENT_ID}`];
-    expect(agent.deployingAt).toBeNull();
-    expect(agent.lastDeployedAt).toBe('2026-10-12T15:00:00.000Z'); // not consumed
-    expect(agent.lastDecision).toBeUndefined();
-    expect(agent.deployProgress).toMatchObject({ stage: 'error', errorPhase: 'pre_decision' });
-    // The refusal is the last write; nothing after it.
-    expect(cap.store.writes.at(-1)).toMatchObject({ op: 'update', path: `agents/${H.AGENT_ID}`, data: { deployingAt: null, 'deployProgress.stage': 'error', 'deployProgress.errorPhase': 'pre_decision' } });
+    const off = GOLDEN.scenarios.self_select_due_no_ready;
+    expect(off.response.status).toBe(200); // main deployed it with the gate off too
+    expect(cap.response.status).toBe(200);
+    expect(cap.response.body).toEqual({ ...off.response.body, hypothesisNotice: HYPOTHESIS_NOTICES.reviewDue });
+    expect(Object.keys(cap.response.body)).toEqual([...Object.keys(off.response.body), 'hypothesisNotice']);
+    expect(cap.response.body.battleCreated).toBe(true);
+    const id = cap.response.body.agentBattleId;
+    expect('equippedHypothesis' in cap.docs[`agentBattles/${id}`].agentContext).toBe(false);
+    expect(H.hypothesisAccess(cap).queries).toHaveLength(1);
+    expect(H.hypothesisAccess(cap).writes).toEqual([]);
+    // Everything else — prompts, voice opener, shadow logs, the battle, the agent document, every write — is gate off's.
+    const sameResponse = { ...cap, response: { ...cap.response, body: off.response.body } };
+    expect(serialized(withoutRecords(stockAdmissionControlReadStripped(sameResponse, 1)))).toBe(serialized(withoutRecords(off)));
   }, 20_000);
   it('a REAFFIRMED successor deploys (v1 due, v2 ready by reaffirmation → v2 carried and activated; v1 keeps its record)', async () => {
     const due = version(1, { status: 'review_due', ...DEPLOYED('battle-old-1'), stateSource: 'review_pass', stateReason: 'horizon_elapsed', successorVersion: 2 });
@@ -245,6 +249,22 @@ describe('acceptance row 3 — B2 through the endpoint', () => {
     expect(serialized(withoutRecords(cap))).toBe(serialized(withoutRecords(off)));
     expect(cap.docs[vPath(1)]).toEqual(off.docs[vPath(1)]);
   }, 20_000);
+  it('E1 — the portfolio refresh with a DUE idea answers exactly as gate off: 200, no battle, no notice (no battle carries anything) — the P1b refresh-path refusal is gone, so its exemption is moot', async () => {
+    const seedOf = () => ({
+      docs: H.seedDeploy({
+        versions: [version(1, { status: 'review_due', ...DEPLOYED('battle-old-1'), stateSource: 'review_pass', stateReason: 'horizon_elapsed' })],
+        extra: { 'agentBattles/battle-live-1': { agentId: H.AGENT_ID, ownerId: H.OWNER, status: 'active', expiresAt: '2026-10-13T20:00:00.000Z' } },
+      }),
+      req: H.clientRequest(),
+    });
+    const { cap: on } = await run(seedOf());
+    const { cap: offCap } = await run(seedOf(), { gate: 'off' });
+    expect(on.response.status).toBe(200);
+    expect(on.response.body).toMatchObject({ battleCreated: false, existingBattleId: 'battle-live-1' });
+    expect('hypothesisNotice' in on.response.body).toBe(false);
+    expect(H.hypothesisAccess(on).writes).toEqual([]);
+    expect(serialized(withoutRecords(on))).toBe(serialized(withoutRecords(offCap)));
+  }, 30_000);
 });
 
 describe('acceptance row 4 — activation through the endpoint', () => {
@@ -252,7 +272,8 @@ describe('acceptance row 4 — activation through the endpoint', () => {
     const v1 = version(1, { status: 'activated', ...DEPLOYED('battle-old-1') });
     const { cap } = await run({ docs: H.seedDeploy({ versions: [v1] }), req: H.clientRequest() });
     const id = cap.response.body.agentBattleId;
-    expect(cap.docs[vPath(1)]).toEqual({ ...v1, lastDeployedAt: H.FROZEN_NOW, lastDeployedBattleId: id });
+    // Pilot P1c (ruling E2): the battle is appended to deployedBattleIds — started from the one battle a pre-P1c record names.
+    expect(cap.docs[vPath(1)]).toEqual({ ...v1, lastDeployedAt: H.FROZEN_NOW, lastDeployedBattleId: id, deployedBattleIds: ['battle-old-1', id] });
     expect(cap.docs[rowPath(1)]).toEqual({ userId: H.OWNER, watchlistId: H.WATCHLIST_ID, version: 1, battleId: id, dueAtMs: Date.parse(v1.reviewDueAt), armedAt: Date.parse(H.FROZEN_NOW) });
   }, 20_000);
   it('an UNSPECIFIED horizon arms a battle-end row (dueAtMs null)', async () => {
@@ -328,7 +349,8 @@ describe('acceptance row 6 — end to end: deploy → the armed row → the revi
     const row = stored(db, rowPath(1));
     expect(row).toMatchObject({ battleId });
     if (ending === 'battle_ended') {
-      db.__docs.set(`agentBattles/${battleId}`, { ...db.__docs.get(`agentBattles/${battleId}`), status: 'completed' });
+      // A battle that RAN (one evaluation): Pilot P1c's E3 unwinds a carrying battle that never ran instead.
+      db.__docs.set(`agentBattles/${battleId}`, { ...db.__docs.get(`agentBattles/${battleId}`), status: 'completed', cronState: { evalSeq: 1 } });
     } else {
       vi.setSystemTime(new Date(row.dueAtMs + 60_000));
     }
@@ -367,7 +389,8 @@ describe('acceptance row 6 — end to end: deploy → the armed row → the revi
     const docs = H.seedDeploy({ versions: [version(1, {}, { horizonEnum: 'longterm' })], agent: H.agentDoc({ lastDeployedAt: '2027-11-30T15:00:00.000Z' }) });
     const { cap, db } = await run({ docs, req: H.clientRequest() });
     const battleId = cap.response.body.agentBattleId;
-    db.__docs.set(`agentBattles/${battleId}`, { ...db.__docs.get(`agentBattles/${battleId}`), status: 'completed' });
+    // A battle that RAN (one evaluation): Pilot P1c's E3 unwinds a carrying battle that never ran instead.
+    db.__docs.set(`agentBattles/${battleId}`, { ...db.__docs.get(`agentBattles/${battleId}`), status: 'completed', cronState: { evalSeq: 1 } });
     await runHypothesisReviewPass({ db, handlerStartMs: Date.now(), nowMs: Date.now() });
     const res = H.makeRes();
     await versionsRoute({ method: 'GET', headers: {}, query: { id: H.WATCHLIST_ID }, body: {} }, res);
@@ -381,17 +404,17 @@ describe('acceptance row 6 — end to end: deploy → the armed row → the revi
 describe('the §2 review fixes, through the endpoint', () => {
   const rowDoc = (over = {}) => ({ userId: H.OWNER, watchlistId: H.WATCHLIST_ID, version: 1, battleId: 'battle-old-1', dueAtMs: Date.parse('2026-10-12T20:00:00.000Z'), armedAt: Date.parse('2026-10-05T15:00:00.000Z'), ...over });
 
-  it('L2-1 — an ACTIVATED idea whose clock has passed (the pass has not run yet) is judged AT DEPLOY: review_due (stateSource deploy, horizon_elapsed), its row deleted, and the deploy refused before any battle work', async () => {
+  it('L2-1 — an ACTIVATED idea whose clock has passed (the pass has not run yet) is judged AT DEPLOY: review_due (stateSource deploy, horizon_elapsed), its row deleted, and (E1) the deploy succeeds carrying nothing, with the notice', async () => {
     const v1 = version(1, { status: 'activated', ...DEPLOYED('battle-old-1'), reviewDueAt: '2026-10-12T20:00:00.000Z' });
     const docs = H.seedDeploy({ versions: [v1], extra: { [rowPath(1)]: rowDoc() } });
     const { cap } = await run({ docs, req: H.clientRequest() });
-    expect(cap.response).toEqual({ status: 409, body: { error: 'hypothesis_review_due', message: DUE_DEPLOY_LINE } });
-    expect(cap.modelRequests).toEqual([]);
+    expect(cap.response.status).toBe(200);
+    expect(cap.response.body).toMatchObject({ battleCreated: true, hypothesisNotice: HYPOTHESIS_NOTICES.reviewDue });
+    expect('equippedHypothesis' in cap.docs[`agentBattles/${cap.response.body.agentBattleId}`].agentContext).toBe(false);
     expect(cap.docs[vPath(1)]).toEqual({ ...v1, status: 'review_due', stateChangedAt: H.FROZEN_NOW, stateSource: 'deploy', stateReason: 'horizon_elapsed' });
     expect(cap.docs[rowPath(1)]).toBeUndefined();
-    expect(Object.keys(cap.docs).filter((p2) => p2.startsWith('agentBattles/'))).toEqual([]);
   }, 20_000);
-  it('L2-1 — an open-ended idea whose battle is OVER (expired, still marked active — the battle this very deploy would close) is judged battle_ended and refused; its review is never moved onto a new battle', async () => {
+  it('L2-1 — an open-ended idea whose battle is OVER (expired, still marked active — the battle this very deploy would close) is judged battle_ended and (E1) the new battle carries nothing; its review is never moved onto a new battle', async () => {
     const v1 = version(1, { status: 'activated', ...DEPLOYED('battle-old-1'), reviewDueAt: null }, { horizonEnum: 'unspecified', horizonSource: 'default' });
     const docs = H.seedDeploy({
       versions: [v1],
@@ -401,7 +424,9 @@ describe('the §2 review fixes, through the endpoint', () => {
       },
     });
     const { cap } = await run({ docs, req: H.clientRequest() });
-    expect(cap.response.status).toBe(409);
+    expect(cap.response.status).toBe(200);
+    expect(cap.response.body).toMatchObject({ battleCreated: true, hypothesisNotice: HYPOTHESIS_NOTICES.reviewDue });
+    expect('equippedHypothesis' in cap.docs[`agentBattles/${cap.response.body.agentBattleId}`].agentContext).toBe(false);
     expect(cap.docs[vPath(1)]).toMatchObject({ status: 'review_due', stateSource: 'deploy', stateReason: 'battle_ended' });
     expect(cap.docs[rowPath(1)]).toBeUndefined();
   }, 20_000);
@@ -417,15 +442,17 @@ describe('the §2 review fixes, through the endpoint', () => {
     const { cap } = await run({ docs, req: H.clientRequest() });
     const id = cap.response.body.agentBattleId;
     expect(cap.response.status).toBe(200);
-    expect(cap.docs[vPath(1)]).toEqual({ ...v1, lastDeployedAt: H.FROZEN_NOW, lastDeployedBattleId: id });
+    expect(cap.docs[vPath(1)]).toEqual({ ...v1, lastDeployedAt: H.FROZEN_NOW, lastDeployedBattleId: id, deployedBattleIds: ['battle-old-1', id] });
     expect(cap.docs[rowPath(1)]).toMatchObject({ battleId: id, dueAtMs: null });
   }, 20_000);
-  it('L4-1 — a NEWER due version is never bypassed by an older ready or activated one: refused, the older ones untouched', async () => {
+  it('L4-1 — a NEWER due version is never bypassed by an older ready or activated one: (E1) the battle carries nothing, with the notice; the older ones untouched', async () => {
     for (const older of [version(1, { status: 'ready', successorVersion: 2 }), version(1, { status: 'activated', ...DEPLOYED('battle-old-0'), reviewDueAt: '2026-12-31T21:00:00.000Z', successorVersion: 2 })]) {
       const v2 = version(2, { status: 'review_due', ...DEPLOYED('battle-old-1'), stateSource: 'review_pass', stateReason: 'horizon_elapsed' });
       const { cap } = await run({ docs: H.seedDeploy({ versions: [older, v2] }), req: H.clientRequest() });
-      expect([cap.response.status, older.status]).toEqual([409, older.status]);
+      expect([cap.response.status, cap.response.body.hypothesisNotice]).toEqual([200, HYPOTHESIS_NOTICES.reviewDue]);
+      expect('equippedHypothesis' in cap.docs[`agentBattles/${cap.response.body.agentBattleId}`].agentContext).toBe(false);
       expect(cap.docs[vPath(1)]).toEqual(older);
+      expect(cap.docs[vPath(2)]).toEqual(v2);
     }
   }, 30_000);
   it('L2-2 — the race restores the cooldown: the deploy is retriable AT ONCE (the retry is not a 429)', async () => {
@@ -469,11 +496,11 @@ describe('the §2 review fixes, through the endpoint', () => {
 // the first pass; the mutant ids are the lens's (review report §9.2).
 
 describe('mutation lens rows — the endpoint (DC01, DC13, DC19)', () => {
-  it('DC01 — a client body naming a watchlistId cannot dodge the due refusal', async () => {
+  it('DC01 — a client body naming a watchlistId cannot dodge the due notice (E1: nothing rides, and the response says so)', async () => {
     const s = SCENARIOS.self_select_due_no_ready();
     s.req.body = { ...s.req.body, watchlistId: 'wl-forged' };
     const { cap } = await run(s);
-    expect(cap.response.status).toBe(409);
+    expect([cap.response.status, cap.response.body.hypothesisNotice]).toEqual([200, HYPOTHESIS_NOTICES.reviewDue]);
   }, 20_000);
   it('DC19 — a NON-carriage battle failure keeps the cooldown stamp (as on main)', async () => {
     const { cap } = await run(SCENARIOS.self_select_no_equip(), {
@@ -482,8 +509,12 @@ describe('mutation lens rows — the endpoint (DC01, DC13, DC19)', () => {
     expect(cap.response.status).toBe(500);
     expect(cap.docs[`agents/${H.AGENT_ID}`].lastDeployedAt).toBe(H.FROZEN_NOW);
   }, 20_000);
-  it('DC13 — the refusal stamps deployProgress.updatedAt', async () => {
+  it('DC13 (E1) — no refusal remains to stamp the ceremony map: the due deploy\'s agent document and agent writes are gate off\'s exactly (no error stage, the cooldown consumed as on main)', async () => {
     const { cap } = await run(SCENARIOS.self_select_due_no_ready());
-    expect(cap.store.writes.at(-1).data['deployProgress.updatedAt']).toBe(H.FROZEN_NOW);
+    const off = GOLDEN.scenarios.self_select_due_no_ready;
+    expect(cap.docs[`agents/${H.AGENT_ID}`]).toEqual(off.docs[`agents/${H.AGENT_ID}`]);
+    const agentWrites = (c) => c.store.writes.filter((w) => w.path === `agents/${H.AGENT_ID}`);
+    expect(serialized(agentWrites(cap))).toBe(serialized(agentWrites(off)));
+    expect(cap.docs[`agents/${H.AGENT_ID}`].deployProgress?.stage).not.toBe('error');
   }, 20_000);
 });

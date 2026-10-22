@@ -3,7 +3,8 @@
 // Pilot P1b — DEPLOY CARRIAGE, the units (acceptance rows 2–5, 8; founder
 // rulings B2, B3, B5, B6):
 //   · RESOLUTION (B2): newest ready over an older activated; a reaffirmed
-//     successor; due with nothing ready → the refusal, verbatim; drafts or
+//     successor; due with nothing ready → nothing rides, reason `review_due`
+//     (Pilot P1c, founder ruling E1 — P1b refused it with a 409); drafts or
 //     terminal statuses only → nothing; the gate, the pin, a read failure, a
 //     corrupt record and a foreign record — and ONE bounded read.
 //   · ACTIVATION in the REAL creation transaction (createAgentBattle →
@@ -46,7 +47,7 @@ const { buildVersionDoc, contentHashOf } = await import('./model.js');
 const { computeReviewDueAt } = await import('./horizon.js');
 const { resolveProvenance } = await import('../callRecords/candidate.js');
 const { buildResolvedAgentManifest } = await import('../resolvedAgentManifest.js');
-const { DUE_DEPLOY_LINE, CARRIAGE_RACE_MESSAGE, DEPLOY_REFUSAL_CODE } = await import('../../../src/constants/hypothesisRecords.js');
+const { CARRIAGE_RACE_MESSAGE } = await import('../../../src/constants/hypothesisRecords.js');
 
 const OWNER = 'carry-owner-1';
 const OTHER = 'carry-other-2';
@@ -157,7 +158,7 @@ describe('resolution — the gate and the preconditions read NOTHING when they s
   });
 });
 
-describe('resolution — B2: the newest ready/activated version carries; a due idea with nothing ready refuses; else nothing', () => {
+describe('resolution — B2: the newest ready/activated version carries; a due idea with nothing ready carries nothing and says review_due (E1); else nothing', () => {
   it('ONE read: the list\'s versions, newest first, bounded — the automatic single-field index the Forge already uses', async () => {
     const db = seed([version(1)]);
     await resolve(db);
@@ -190,18 +191,18 @@ describe('resolution — B2: the newest ready/activated version carries; a due i
     ]);
     expect(await resolve(db)).toMatchObject({ outcome: 'carry', version: 2, status: 'ready' });
   });
-  it('DUE with no ready successor → refuse: 409 { error: hypothesis_review_due, message: table C\'s due-deploy line, verbatim } — also with newer drafts (B4\'s case)', async () => {
+  it('DUE with no ready successor → nothing rides: { outcome: none, reason: review_due, version } and no write — also with newer drafts (B4\'s case). Pilot P1c, ruling E1: never a refusal (P1b answered 409 here)', async () => {
     const due = version(1, { status: 'review_due', ...DEPLOYED('b-old'), stateSource: 'review_pass', stateReason: 'horizon_elapsed' });
     for (const newer of [[], [version(2, { status: 'draft' })], [version(2, { status: 'researched' }), version(3, { status: 'cancelled' })]]) {
       const db = seed([due, ...newer]);
-      expect(await resolve(db)).toEqual({ outcome: 'refuse', status: 409, body: { error: DEPLOY_REFUSAL_CODE, message: DUE_DEPLOY_LINE }, version: 1 });
+      expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'review_due', version: 1 });
       expect(db.__access.writes).toEqual([]);
     }
-    expect(DUE_DEPLOY_LINE).toBe('This idea is due for review — reaffirm it first (one tap, same content if you want), and the fresh version deploys.');
+    expect(C.REVIEW_DUE_REASON).toBe('review_due');
   });
-  it('the refusal does not depend on the pin (deploy admission is a record rule; carriage alone needs the transaction)', async () => {
+  it('review_due does not depend on the pin (the deploy is told either way; carriage alone needs the transaction)', async () => {
     const db = seed([version(1, { status: 'review_due', ...DEPLOYED('b-old') })]);
-    expect(await resolve(db, { pin: DARK })).toMatchObject({ outcome: 'refuse' });
+    expect(await resolve(db, { pin: DARK })).toEqual({ outcome: 'none', reason: 'review_due', version: 1 });
   });
   it('drafts or terminal statuses only → nothing (deploy exactly as today)', async () => {
     for (const status of ['draft', 'researched', 'waiting_for_evidence', 'rejected', 'cancelled', 'retired']) {
@@ -209,7 +210,7 @@ describe('resolution — B2: the newest ready/activated version carries; a due i
       expect(await resolve(db), status).toEqual({ outcome: 'none', reason: 'nothing_carriable' });
     }
   });
-  it('the NEWEST deployed version decides the refusal: invalidated or retired newest → nothing, even over an older due one', async () => {
+  it('the NEWEST deployed version decides review_due: invalidated or retired newest → nothing (silent), even over an older due one', async () => {
     for (const status of ['invalidated', 'retired']) {
       const db = seed([
         version(1, { status: 'review_due', ...DEPLOYED('b-1') }),
@@ -258,6 +259,7 @@ describe('activation — in the REAL creation transaction (createAgentBattle →
     expect(stored(db, vPath(1))).toEqual({
       ...before, status: 'activated', stateChangedAt: NOW, stateSource: 'deploy', stateReason: 'deployed',
       firstDeployedAt: NOW, reviewDueAt: '2026-10-27T20:00:00.000Z', lastDeployedAt: NOW, lastDeployedBattleId: id,
+      deployedBattleIds: [id], // Pilot P1c (ruling E2): the first carrying battle
     });
     expect(stored(db, rowPath(1))).toEqual({ userId: OWNER, watchlistId: WL, version: 1, battleId: id, dueAtMs, armedAt: Date.parse(NOW) });
     // One transaction committed the battle, the version and the row together.
@@ -269,12 +271,17 @@ describe('activation — in the REAL creation transaction (createAgentBattle →
     const db = seed([version(1)]);
     const first = await deploy(db, { sibling: (await resolve(db)).equippedHypothesis });
     const afterFirst = stored(db, vPath(1));
+    // The first battle RAN (one evaluation): it has expired by the redeploy, and one that never ran is no deploy (ruling E3).
+    db.__docs.set(`agentBattles/${first.id}`, { ...db.__docs.get(`agentBattles/${first.id}`), cronState: { evalSeq: 1 } });
     vi.setSystemTime(new Date('2026-10-15T15:00:00.000Z'));
     const again = await resolve(db);
     expect(again).toMatchObject({ outcome: 'carry', status: 'activated' });
     const second = await deploy(db, { sibling: again.equippedHypothesis });
     expect(second.id).not.toBe(first.id);
-    expect(stored(db, vPath(1))).toEqual({ ...afterFirst, lastDeployedAt: '2026-10-15T15:00:00.000Z', lastDeployedBattleId: second.id });
+    expect(stored(db, vPath(1))).toEqual({
+      ...afterFirst, lastDeployedAt: '2026-10-15T15:00:00.000Z', lastDeployedBattleId: second.id,
+      deployedBattleIds: [first.id, second.id], // Pilot P1c (ruling E2): the battle is appended
+    });
     expect(stored(db, rowPath(1))).toEqual({
       userId: OWNER, watchlistId: WL, version: 1, battleId: second.id,
       dueAtMs: Date.parse(afterFirst.reviewDueAt), armedAt: Date.parse('2026-10-15T15:00:00.000Z'),
@@ -483,30 +490,31 @@ describe('L2-1 — activatedReviewDue: the review pass\'s own rule, from the arm
 
 describe('L2-1 — an activated version whose review is already due is judged AT DEPLOY (judged once), then B2 applies to what remains', () => {
   const act1 = (over = {}) => version(1, { status: 'activated', ...DEPLOYED('b-old', '2026-10-12T20:00:00.000Z'), ...over });
-  it('a passed clock → review_due (stateSource deploy, horizon_elapsed), the row deleted in the same commit, and the deploy refused', async () => {
+  it('a passed clock → review_due (stateSource deploy, horizon_elapsed), the row deleted in the same commit, and nothing rides (review_due)', async () => {
     const db = seed([act1()], { [rowPathOf(1)]: armedRow() });
     const before = stored(db, vPath(1));
-    expect(await resolve(db)).toMatchObject({ outcome: 'refuse', version: 1 });
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'review_due', version: 1 });
     expect(stored(db, vPath(1))).toEqual({ ...before, status: 'review_due', stateChangedAt: NOW, stateSource: 'deploy', stateReason: 'horizon_elapsed' });
     expect(stored(db, rowPathOf(1))).toBeNull();
   });
   it('an ended battle (terminal, or past expiresAt) → battle_ended; a live one → carried with its clock untouched (B6)', async () => {
     for (const [battle, outcome] of [
-      [{ ownerId: OWNER, status: 'completed' }, 'refuse'],
-      [{ ownerId: OWNER, status: 'active', expiresAt: '2026-10-12T20:00:00.000Z' }, 'refuse'],
+      [{ ownerId: OWNER, status: 'completed' }, 'review_due'],
+      [{ ownerId: OWNER, status: 'active', expiresAt: '2026-10-12T20:00:00.000Z' }, 'review_due'],
       [{ ownerId: OWNER, status: 'active', expiresAt: '2026-10-13T20:00:00.000Z' }, 'carry'],
     ]) {
       const db = seed([act1({ reviewDueAt: null })], { [rowPathOf(1)]: armedRow({ dueAtMs: null }), 'agentBattles/b-old': battle });
-      expect((await resolve(db)).outcome, JSON.stringify(battle)).toBe(outcome);
-      expect(stored(db, vPath(1)).status).toBe(outcome === 'refuse' ? 'review_due' : 'activated');
-      if (outcome === 'refuse') expect(stored(db, vPath(1)).stateReason).toBe('battle_ended');
+      const out = await resolve(db);
+      expect(out.outcome === 'carry' ? 'carry' : out.reason, JSON.stringify(battle)).toBe(outcome);
+      expect(stored(db, vPath(1)).status).toBe(outcome === 'review_due' ? 'review_due' : 'activated');
+      if (outcome === 'review_due') expect(stored(db, vPath(1)).stateReason).toBe('battle_ended');
     }
   });
   it('after judging, an OLDER ready version still cannot ride past the newer due one (L4-1); a NEWER ready one (reaffirmed) carries', async () => {
     let db = seed([version(1), act1({ version: 2 })], {});
     db.__docs.set(vPath(2), { ...version(2, { status: 'activated', ...DEPLOYED('b-old', '2026-10-12T20:00:00.000Z') }) });
     db.__docs.set(rowPathOf(2), armedRow({ version: 2 }));
-    expect(await resolve(db)).toMatchObject({ outcome: 'refuse', version: 2 });
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'review_due', version: 2 });
     db = seed([act1(), version(2, { stateReason: 'reaffirmed' })], { [rowPathOf(1)]: armedRow() });
     expect(await resolve(db)).toMatchObject({ outcome: 'carry', version: 2 });
     expect(stored(db, vPath(1)).status).toBe('activated'); // a newer ready version decides before the older one is looked at
@@ -518,14 +526,14 @@ describe('L2-1 — an activated version whose review is already due is judged AT
       expect(db.__access.writes).toEqual([]);
     }
   });
-  it('the judgment loses a race (the version moved): carry nothing; a judgment that cannot commit refuses (a due idea never rides unjudged)', async () => {
+  it('the judgment loses a race (the version moved): carry nothing; a judgment that cannot commit carries nothing and says NOTHING — the record still reads activated (review L4-4), and a due idea never rides unjudged', async () => {
     let db = seed([act1()], { [rowPathOf(1)]: armedRow() });
     db.__hooks.afterQuery = async () => { db.__docs.set(vPath(1), { ...db.__docs.get(vPath(1)), status: 'retired' }); };
     expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'state_moved' });
     db = seed([act1()], { [rowPathOf(1)]: armedRow() });
     const realTx = db.runTransaction;
     db.runTransaction = async () => { throw new Error('ABORTED'); };
-    expect(await resolve(db)).toMatchObject({ outcome: 'refuse', version: 1 });
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'judgment_failed' });
     db.runTransaction = realTx;
     expect(stored(db, vPath(1)).status).toBe('activated');
   });
@@ -542,11 +550,11 @@ describe('L2-1 — an activated version whose review is already due is judged AT
 
 describe('L4-1 — the newest DEPLOYED version decides: a due one admits only a NEWER carriable version', () => {
   const due2 = () => version(2, { status: 'review_due', ...DEPLOYED('b-2'), stateSource: 'review_pass', stateReason: 'horizon_elapsed' });
-  it('an older READY version under a newer due one → refuse (never a superseded idea riding with a fresh clock)', async () => {
-    expect(await resolve(seed([version(1, { successorVersion: 2 }), due2()]))).toMatchObject({ outcome: 'refuse', version: 2 });
+  it('an older READY version under a newer due one → nothing rides, review_due (never a superseded idea riding with a fresh clock)', async () => {
+    expect(await resolve(seed([version(1, { successorVersion: 2 }), due2()]))).toEqual({ outcome: 'none', reason: 'review_due', version: 2 });
   });
-  it('an older ACTIVATED version under a newer due one → refuse', async () => {
-    expect(await resolve(seed([version(1, { status: 'activated', ...DEPLOYED('b-1', '2026-12-31T21:00:00.000Z') }), due2()]))).toMatchObject({ outcome: 'refuse', version: 2 });
+  it('an older ACTIVATED version under a newer due one → nothing rides, review_due', async () => {
+    expect(await resolve(seed([version(1, { status: 'activated', ...DEPLOYED('b-1', '2026-12-31T21:00:00.000Z') }), due2()]))).toEqual({ outcome: 'none', reason: 'review_due', version: 2 });
   });
   it('an older ready version under a newer deployed version that is NOT due (retired, invalidated) → carried (B2 as written)', async () => {
     for (const status of ['retired', 'invalidated']) {
@@ -556,11 +564,11 @@ describe('L4-1 — the newest DEPLOYED version decides: a due one admits only a 
 });
 
 describe('L2-3 / L2-4 — the read: paged past 100, bounded, and only documents whose id is their version', () => {
-  it('a due version below 120 newer drafts is still found (two pages): refused', async () => {
+  it('a due version below 120 newer drafts is still found (two pages): review_due', async () => {
     const versions = [version(1, { status: 'review_due', ...DEPLOYED('b-1') })];
     for (let n = 2; n <= 121; n++) versions.push(version(n, { status: 'draft' }));
     const db = seed(versions);
-    expect(await resolve(db)).toMatchObject({ outcome: 'refuse', version: 1 });
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'review_due', version: 1 });
     expect(db.__access.queries).toHaveLength(2);
     expect(db.__access.queries[1].startAfter).toEqual([22]);
   });
@@ -609,6 +617,7 @@ describe('the census — who names agentContext.equippedHypothesis', () => {
       'api/_utils/callRecords/candidate.js', // P1a's resolveProvenance — {watchlistId, hypothesisVersion} only
       'api/_utils/compositionGenerationFence.js', // a comment; the creation transaction calls carriage.js
       'api/_utils/hypothesisRecords/carriage.js', // the resolver, the fresh read, the frozen-list read
+      'api/_utils/hypothesisRecords/review.js', // Pilot P1c: the review card's check that a battle carried THIS version (watchlistId, hypothesisVersion only)
       'api/_utils/tournamentBattleView.js', // the privacy strip
       'api/agent/decide.js', // the fenced call site (passes the resolver's sibling through)
       'api/tournament/battle-view.js', // a comment
@@ -634,10 +643,10 @@ const L5act1 = (over = {}) => version(1, { status: 'activated', ...DEPLOYED('b-o
 const L5row = (over = {}) => ({ userId: OWNER, watchlistId: WL, version: 1, battleId: 'b-old', dueAtMs: Date.parse('2026-10-12T20:00:00.000Z'), armedAt: 1, ...over });
 const L5beforeTx = (db, fn) => { const real = db.runTransaction; let once = false; db.runTransaction = async (cb) => { if (!once) { once = true; fn(); } return real.call(db, cb); }; };
 describe('mutation lens rows — carriage (C09, C15, C18, C19, C22, C33, C36, C41, C42, R27, T06, A03, A28, R13, R23)', () => {
-  it('C18/C19/R27 — already_due: the pass judged it between the walk read and the judgment -> still refused', async () => {
+  it('C18/C19/R27 — already_due: the pass judged it between the walk read and the judgment -> still review_due', async () => {
     const db = seed([L5act1()], { [rowPath(1)]: L5row() });
     L5beforeTx(db, () => { db.__docs.set(vPath(1), { ...db.__docs.get(vPath(1)), status: 'review_due', stateSource: 'review_pass', stateReason: 'horizon_elapsed' }); db.__docs.delete(rowPath(1)); });
-    expect(await resolve(db)).toMatchObject({ outcome: 'refuse', version: 1 });
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'review_due', version: 1 });
   });
   it('C22 — not_due inside the judgment: the row was re-armed after the walk read -> carried, nothing written', async () => {
     const db = seed([L5act1()], { [rowPath(1)]: L5row() });
@@ -682,12 +691,12 @@ describe('mutation lens rows — carriage (C09, C15, C18, C19, C22, C33, C36, C4
     await deploy(db, { sibling: equippedHypothesis });
     expect(db.__access.reads.filter((p) => p === 'agentBattles/b-old')).toEqual([]);
   });
-  it('R13 — a full page whose last document has no usable version ends the read (no later numeric version can follow it in descending order): the due version on the page still refuses', async () => {
+  it('R13 — a full page whose last document has no usable version ends the read (no later numeric version can follow it in descending order): the due version on the page is still review_due', async () => {
     const versions = [version(1, { status: 'review_due', ...DEPLOYED('b-1') })];
     for (let n = 2; n <= 99; n++) versions.push(version(n, { status: 'draft' }));
     const db = seed(versions);
     db.__docs.set(`watchlists/${WL}/hypothesisVersions/vnull`, { ...version(1, { status: 'draft' }), version: null });
-    expect(await resolve(db)).toMatchObject({ outcome: 'refuse', version: 1 });
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'review_due', version: 1 });
     expect(db.__access.queries).toHaveLength(1);
   });
   it('R23 — the review row cannot be read: nothing carried (never an active idea carried unjudged)', async () => {
@@ -696,5 +705,59 @@ describe('mutation lens rows — carriage (C09, C15, C18, C19, C22, C33, C36, C4
     db.collection = (name) => (name === 'hypothesisReviewQueue' ? { doc: () => ({ get: async () => { throw new Error('UNAVAILABLE'); } }) } : base(name));
     expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'read_failed' });
     expect(stored(db, vPath(1)).status).toBe('activated');
+  });
+});
+
+// ── The mutation lens's rows (review L5a), each proven red on its mutant and green on the original ──
+describe('L5a mutation lens rows — carriage (C08, C52, C53, M01, M02, M06–M09)', () => {
+  it('C08 — a MALFORMED review row (an unusable dueAtMs) is never acted on (normalizeReviewRow — the pass\'s posture): the active idea is carried unjudged, nothing written', async () => {
+    const db = seed([L5act1()], { [rowPath(1)]: L5row({ dueAtMs: '2026-10-12T20:00:00.000Z' }), 'agentBattles/b-old': { ownerId: OWNER, status: 'completed' } });
+    expect(await resolve(db)).toMatchObject({ outcome: 'carry', version: 1, status: 'activated' });
+    expect(db.__access.writes).toEqual([]);
+  });
+  it('C52 — the creation transaction judges "due" at the battle\'s createdAt, not the commit\'s wall clock: an idea due a moment after the battle\'s instant still rides', async () => {
+    const DUE = '2026-10-13T16:00:00.000Z';
+    const db = seed([L5act1({ reviewDueAt: DUE })], { [rowPath(1)]: L5row({ dueAtMs: Date.parse(DUE) }) });
+    const { equippedHypothesis } = await resolve(db);
+    L5beforeTx(db, () => { vi.setSystemTime(new Date('2026-10-13T16:30:00.000Z')); });
+    const { id } = await deploy(db, { sibling: equippedHypothesis });
+    expect(stored(db, `agentBattles/${id}`).createdAt).toBe(NOW);
+    expect(stored(db, vPath(1))).toMatchObject({ status: 'activated', lastDeployedBattleId: id });
+    expect(stored(db, rowPath(1))).toMatchObject({ battleId: id, dueAtMs: Date.parse(DUE) });
+  });
+  it('C53 — the creation transaction reads the row\'s battle TRANSACTIONALLY: the old battle ending between the body and the commit re-runs it, and the now-due idea never rides (the typed race error)', async () => {
+    const db = seed([L5act1({ reviewDueAt: null })], {
+      [rowPath(1)]: L5row({ dueAtMs: null }),
+      'agentBattles/b-old': { ownerId: OWNER, status: 'active', expiresAt: '2026-10-13T20:00:00.000Z' },
+    });
+    const { equippedHypothesis } = await resolve(db);
+    let ended = false;
+    db.__hooks.afterTxBody = async ({ writes }) => {
+      if (ended || !writes.some((w) => w.op === 'create' && w.path.startsWith('agentBattles/'))) return;
+      ended = true;
+      await db.doc('agentBattles/b-old').update({ status: 'completed' });
+    };
+    const err = await deploy(db, { sibling: equippedHypothesis }).catch((e) => e);
+    expect(ended).toBe(true);
+    expect(err).toMatchObject({ code: 'hypothesis_carriage_stale', reason: 'review_due_now' });
+    expect(battlesIn(db)).toEqual(['agentBattles/b-old']); // no new battle
+    expect(stored(db, vPath(1))).toMatchObject({ status: 'activated', lastDeployedBattleId: 'b-old' });
+    expect(stored(db, rowPath(1))).toMatchObject({ battleId: 'b-old' });
+  });
+  it('M01/M02 — a redeploy reads the stored list through carryingBattleIdsOf: blanks and repeats are not carried forward', async () => {
+    const db = seed([L5act1({ reviewDueAt: '2026-10-20T20:00:00.000Z', deployedBattleIds: ['b-0', '', 'b-0', null, 'b-old'] })],
+      { [rowPath(1)]: L5row({ dueAtMs: Date.parse('2026-10-20T20:00:00.000Z') }) });
+    const { equippedHypothesis } = await resolve(db);
+    const { id } = await deploy(db, { sibling: equippedHypothesis });
+    expect(stored(db, vPath(1)).deployedBattleIds).toEqual(['b-0', 'b-old', id]);
+  });
+  it('M06–M09 — deployedBattleIds is capped at 50: the FIRST carrying battle and the newest 49 — a redeploy of a 50-battle idea drops the second-oldest, never the first', async () => {
+    const ids = Array.from({ length: 50 }, (_, i) => `b-${String(i).padStart(2, '0')}`);
+    const db = seed([L5act1({ reviewDueAt: '2026-10-20T20:00:00.000Z', lastDeployedBattleId: ids[49], deployedBattleIds: ids })],
+      { [rowPath(1)]: L5row({ battleId: ids[49], dueAtMs: Date.parse('2026-10-20T20:00:00.000Z') }) });
+    const { equippedHypothesis } = await resolve(db);
+    const { id } = await deploy(db, { sibling: equippedHypothesis });
+    expect(C.DEPLOYED_BATTLE_IDS_CAP).toBe(50);
+    expect(stored(db, vPath(1)).deployedBattleIds).toEqual([ids[0], ...ids.slice(2), id]);
   });
 });

@@ -18,6 +18,7 @@
 // deploy is shown, verified or retried under the new account (spec §5.2, §5.4).
 
 import { DEPLOY_OUTCOMES } from '../../constants/deployOutcomes';
+import { HYPOTHESIS_NOTICES } from '../../constants/hypothesisRecords';
 
 /** The deploy found the agent's running battle instead of creating one. */
 export function isExistingBattleResult(result) {
@@ -40,7 +41,11 @@ export function deployResultFor(result) {
     };
   }
   return result?.success
-    ? { status: 'success', agentBattleId: result.agentBattleId }
+    ? {
+        status: 'success', agentBattleId: result.agentBattleId,
+        // Pilot P1c (founder ruling E1): the battle carries nothing because the idea is due — the success screen says so.
+        ...(result.hypothesisNotice === HYPOTHESIS_NOTICES.reviewDue ? { hypothesisNotice: HYPOTHESIS_NOTICES.reviewDue } : {}),
+      }
     : {
         status: 'error', error: result?.error, details: result?.details,
         // Forwarded for the ceremony's recovered-reveal gate — see the
@@ -52,5 +57,7 @@ export function deployResultFor(result) {
         // handoff then threw. The battle exists and we are holding its id, so
         // the ceremony pins the reveal to it rather than inferring from status.
         battleId: result?.battleId ?? null,
+        // Pilot P1c (review L4-7): that battle carries nothing for a due idea — the recovered reveal says so.
+        ...(result?.battleId && result?.hypothesisNotice === HYPOTHESIS_NOTICES.reviewDue ? { hypothesisNotice: HYPOTHESIS_NOTICES.reviewDue } : {}),
       };
 }

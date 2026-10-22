@@ -401,23 +401,11 @@ export default async function handler(req, res) {
 
     // 3d. [Pilot P1b] Deploy carriage: which version of the equipped idea this
     //     battle carries, from the list's server-written versions (gate off →
-    //     nothing, before any read). A due idea is refused here, before any
-    //     battle work, with table C's line.
+    //     nothing, before any read).
     const carriage = await resolveDeployCarriage(db, {
       ownerUid: agent.ownerId, watchlistId: agent.equippedWatchlistId ?? null,
       watchlist: equippedWatchlistData, snapshot: equippedWatchlistSnapshot, pin: projectionPin,
     });
-    if (carriage.outcome === 'refuse') {
-      await agentRef.update({
-        deployingAt: null,
-        ...(progressInitialized && {
-          'deployProgress.stage': 'error',
-          'deployProgress.errorPhase': 'pre_decision',
-          'deployProgress.updatedAt': new Date().toISOString(),
-        }),
-      });
-      return res.status(carriage.status).json(carriage.body);
-    }
 
     // 4. Fetch recent FantasyTimes stories.
     // Fetch 10 and post-filter to drop Vera deepdives — Phase 1 keeps
@@ -1033,6 +1021,7 @@ export default async function handler(req, res) {
       opponentBench: cpuOpponent.bench,
       innerMonologue: portfolioResult.innerMonologue,
       strategyBrief: strategy.brief,
+      ...(carriage.reason === 'review_due' ? { hypothesisNotice: 'review_due' } : {}),
     });
   } catch (error) {
     console.error('[agent/decide] Error:', error);

@@ -54,7 +54,7 @@ export default async function handler(req, res) {
         const out = await readVersion(db, { uid: user.uid, watchlistId, version: requireVersion(raw) });
         return res.status(200).json({ watchlistId, ...out });
       }
-      const out = await listVersions(db, { uid: user.uid, watchlistId, withResearch: true });
+      const { listCommitted, ...out } = await listVersions(db, { uid: user.uid, watchlistId, withResearch: true, withCommitted: true });
       // Pilot P1b (ruling B3): the newest due version's frozen list — the only one the Forge renders a line for.
       const due = out.versions.find((v) => v?.status === 'review_due');
       if (!due) return res.status(200).json({ watchlistId, ...out });
@@ -65,7 +65,8 @@ export default async function handler(req, res) {
       } catch (err) {
         console.warn(`[hypothesis] frozen list read failed for ${watchlistId} v${due.version}: ${String(err?.message || err).slice(0, 200)}`);
       }
-      return res.status(200).json({ watchlistId, ...out, deployedLists });
+      // Pilot P1c (review L4-5): with a due version, whether the list is committed (the deploy station's question).
+      return res.status(200).json({ watchlistId, ...out, deployedLists, listCommitted });
     } catch (err) {
       return sendHypothesisError(res, err, 'list');
     }
