@@ -624,6 +624,13 @@ export function tileOf(thread, {
     label: sendingThis && pending.answer === answer ? COPY.cockpitSending : answerLabelOf(target, answer),
     disabled: Boolean(pending) || (row === 'directive' && blocked),
   }));
+  // Review (Astra P2, 2026-10-21): the headline stays the newest line's (D-12). When the buttons answer ANOTHER call
+  // — an older new ask beside a live command — that call's own labelled row sits directly above them (its line,
+  // level and check), so the headline, the moved line and "Your command · on the $L line" never stand in for it. The
+  // buttons stay bound to that call; they never move to the newest.
+  const targetLine = target !== newest && buttons.length > 0
+    ? COPY.cockpitAnswerTarget(target.symbol, target.condition?.side, finite(target.condition?.level) ? fmtPrice(target.condition.level) : null, checkOf(target.evidence?.priceAsOf))
+    : null;
   let group = COCKPIT_GROUP.WAITING;
   if (newest.state !== 'open') group = COCKPIT_GROUP.EARLIER;
   else if (buttons.length > 0 && (!threadAnswered || leadAsk)) group = COCKPIT_GROUP.NEEDS_YOU;
@@ -665,6 +672,7 @@ export function tileOf(thread, {
     commandLine: leadAsk && shown?.playerResponse?.kind === 'directive' && finite(shown.condition?.level) ? COPY.cockpitCommandOnLine(fmtPrice(shown.condition.level)) : null,
     answerLine,
     buttons,
+    targetLine,
     blockedLine: blocked && buttons.some((b) => b.row === 'directive') ? block.line : null,
     // The step offers answers too, so it keeps the buttons' own gates: inside the deadline, and not once the
     // agent acted (the endpoint refuses both — review CB4-5).
@@ -835,6 +843,9 @@ export function sheetOf(tile, { eventsMap = new Map(), evaluations = [], observa
     })),
     checkLink: nonEmpty(call.evalId) ? { evalId: call.evalId, label: COPY.cockpitSheetFromCheck(checkOf(call.evidence?.priceAsOf)) } : null,
     buttons: tile.buttons,
+    // Review (Astra P2): the row above the buttons when they answer a line other than the title's.
+    targetLine: tile.targetLine ?? null,
+    targetCallId: tile.targetLine ? (tile.target?.callId ?? null) : null,
     blockedLine: tile.blockedLine,
     refusalLine: tile.refusalLine ?? null,
     answerLine: tile.answerLine,

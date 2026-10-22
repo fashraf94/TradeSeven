@@ -313,3 +313,28 @@ describe('Cockpit Build 2b — the details sheet with the 2b buttons', () => {
     expect(onAnswer).toHaveBeenCalledWith(c.callId, 'go_now');
   });
 });
+
+describe('review (Astra P2) — the details sheet names the line its buttons answer', () => {
+  it('an older unanswered line beside a newer command: the title is the newest line; the row above the buttons names the older one, and Confirm answers it', () => {
+    const lly = (n, level, priceAsOf, mintedIso) => ({
+      ...CALL, callId: `b:eval_010:call:p2-${n}`, kind: 'confirmation', symbol: 'LLY', direction: 'exit', slot: 'core', counterpart: null,
+      condition: { side: 'below', level }, evidence: { priceAsOf }, mintedAt: T(mintedIso), stateChangedAt: T(mintedIso), said: null, saidOk: null,
+    });
+    const older = lly(1, 1199.76, '2026-09-09T14:30:20.000Z', '2026-09-09T14:31:00.000Z');
+    const newer = lly(2, 1240, '2026-09-09T14:45:20.000Z', '2026-09-09T14:46:00.000Z');
+    newer.playerResponse = { answer: 'hold', kind: 'directive', directiveThreadId: 't-p2', callId: newer.callId, filedAt: '2026-09-09T14:50:00.000Z', heardEvalId: null };
+    newer.directiveThreadId = 't-p2';
+    const slot = { family: 'call', text: 'Hold off on the LLY exit until today\'s close.', expiry: 'until_ms', expiresAtMs: T('2026-09-09T20:00:00.000Z'), directiveThreadId: 't-p2', callId: newer.callId, kind: 'call_hold', action: { direction: 'exit', symbol: 'LLY', slot: 'core' } };
+    const f = buildCockpitFeed({ calls: [older, newer], events: [], evaluations: EVALS, directive: slot, nowMs: NOW });
+    const tile = [...f.needsYou, ...f.waiting][0];
+    const sheet = sheetOf(tile, { evaluations: EVALS, nowMs: NOW });
+    const onAnswer = vi.fn();
+    render({ sheet, onAnswer });
+    expect(sheet.title).toContain('$1240.00');
+    const row = q('[data-cockpit-answer-target]');
+    expect(row.textContent).toBe('Needs your answer · LLY below $1199.76 · from the 10:30 AM check');
+    expect(row.nextElementSibling.matches('[data-cockpit-buttons]')).toBe(true);
+    act(() => { q('[data-cockpit-answer="go"]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); });
+    expect(onAnswer).toHaveBeenCalledWith(older.callId, 'go');
+  });
+});

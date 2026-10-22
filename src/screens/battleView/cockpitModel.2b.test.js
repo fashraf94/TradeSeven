@@ -367,3 +367,60 @@ describe('review CB4-5 — the step keeps the buttons\' gates (deadline, acted)'
     expect(cardOf(feed([acted], { v2: true }), acted).step).toBeNull();
   });
 });
+
+describe('review (Astra P2) — when the buttons answer a line other than the headline, that line\'s own row sits above them', () => {
+  const lly = (hhmm, level) => call({ ...minted(hhmm), condition: { side: 'below', level } });
+  const target = (t) => [...new Set(t.buttons.map((b) => b.callId))];
+
+  it('an older unanswered line + a newer answered command: the headline stays the newest line, the row names the older one, and every button answers the older call (flag off and on)', () => {
+    const older = lly('12:00', 1199.76);
+    const newer = lly('13:00', 1240);
+    const slot = command(newer, { kind: 'call_hold', answer: 'hold', filedAt: iso(at('13:05')) });
+    for (const v2 of [false, true]) {
+      const f = feed([older, newer], { directive: slot, v2 });
+      const t = cardOf(f, older);
+      expect(cardOf(f, newer), `v2=${v2}`).toBe(t); // one card per stock plan
+      expect(t.line).toContain('$1240.00');
+      expect(t.lineMoved).toBe('Line moved $1199.76 → $1240.00');
+      expect(t.commandLine).toBe('Your command · on the $1240.00 line');
+      expect(target(t)).toEqual([older.callId]);
+      expect(t.targetLine).toBe('Needs your answer · LLY below $1199.76 · from the 12:00 PM check');
+      expect(t.group).toBe(COCKPIT_GROUP.NEEDS_YOU);
+    }
+  });
+
+  it('a newest restatement within 1 % of the command + an older line more than 1 % away: the buttons answer the older line, never the newest or the answered call', () => {
+    const older = lly('12:00', 1199.76);
+    const answered = lly('12:45', 1240);
+    const slot = command(answered, { kind: 'call_hold', answer: 'hold', filedAt: iso(at('12:50')) });
+    const newest = lly('13:15', 1242); // 0.16 % from the answered level: covered, and it follows the command
+    for (const v2 of [false, true]) {
+      const f = feed([older, answered, newest], { directive: slot, events: [declared(newest, slot.directiveThreadId)], v2 });
+      const t = cardOf(f, newest);
+      expect(cardOf(f, older), `v2=${v2}`).toBe(t);
+      expect(t.line).toContain('$1242.00');
+      expect(target(t)).toEqual([older.callId]);
+      expect(t.targetLine).toBe('Needs your answer · LLY below $1199.76 · from the 12:00 PM check');
+    }
+  });
+
+  it('control — no command: the buttons answer the newest line (the headline), and there is no row', () => {
+    const older = lly('12:00', 1199.76);
+    const newer = lly('13:00', 1240);
+    const t = cardOf(feed([older, newer]), newer);
+    expect(target(t)).toEqual([newer.callId]);
+    expect(t.targetLine).toBeNull();
+  });
+
+  it('control — the newest call is the one needing an answer (an older answered command): the buttons answer the headline, and there is no row', () => {
+    const older = lly('12:00', 1199.76);
+    const slot = command(older, { kind: 'call_hold', answer: 'hold', filedAt: iso(at('12:05')) });
+    const newer = lly('13:00', 1240);
+    for (const v2 of [false, true]) {
+      const t = cardOf(feed([older, newer], { directive: slot, v2 }), newer);
+      expect(target(t), `v2=${v2}`).toEqual([newer.callId]);
+      expect(t.targetLine).toBeNull();
+      expect(t.commandLine).toBe('Your command · on the $1199.76 line');
+    }
+  });
+});

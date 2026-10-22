@@ -320,14 +320,20 @@ export function cardViewOf(tile, ctx) {
       step: name && filed.direction === 'exit' ? filedStepOf(filed, name, { agent }) : null,
     };
   }
-  const lines = planLinesOf(target, { agent, nowMs, evaluations });
+  // Review (Astra P2): the headline is the newest line's (D-12), as on 2a's tile, so the latest-line and moved-line
+  // markers below it agree with it. When the buttons answer another call, that call's labelled row (tile.targetLine)
+  // sits directly above them, and the headline drops its silence clause — it would describe a line your command
+  // already answers.
+  const head = tile.targetLine ? tile.call : target;
+  const lines = planLinesOf(head, { agent, nowMs, evaluations });
   return {
     ...base,
     mode: 'call',
-    eyebrow: kindOf(target),
+    eyebrow: kindOf(head),
     plan: lines.plan,
-    silence: lines.silence,
+    silence: tile.targetLine ? null : lines.silence,
     facts: lines.facts,
+    targetLine: tile.targetLine ?? null,
     buttons: buttonsOf(tile, { meter, pending, league }),
     step: stepOf(tile, { battle, nowMs, agent, meter, pending, held: heldKey === key && tile.step === 'on_card' }),
     // A command standing beside a new ask (D-12 condition 1) keeps its own words under the ask; the card of a

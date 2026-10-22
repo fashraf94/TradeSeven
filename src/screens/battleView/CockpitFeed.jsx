@@ -241,6 +241,10 @@ function Tile({ tile, onAnswer, onOpenSheet }) {
             <span data-cockpit-thread-answer="1" style={{ fontSize: 12, color: cssVar('call-yours') }}>{tile.answerLine}</span>
           ) : null}
         </button>
+        {/* Review (Astra P2): the buttons answer a line other than the headline — that line's own row, directly above them. */}
+        {tile.targetLine && tile.buttons?.length ? (
+          <span data-cockpit-answer-target={tile.target?.callId} style={{ fontSize: 12, fontWeight: 600, color: cssVar('text-primary'), lineHeight: 1.35 }}>{tile.targetLine}</span>
+        ) : null}
         <AnswerButtons buttons={tile.buttons} onAnswer={onAnswer} />
         {tile.blockedLine ? (
           <span data-cockpit-blocked="1" style={{ fontSize: 11.5, color: cssVar('text-secondary') }}>{tile.blockedLine}</span>

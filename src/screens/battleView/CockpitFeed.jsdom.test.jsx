@@ -302,3 +302,41 @@ describe('keyboard and pointer: the focus ring, the dialog door, Show all, targe
     expect(qa('section').every((sec) => !sec.hasAttribute('aria-label'))).toBe(true);
   });
 });
+
+describe('review (Astra P2) — the 2a tile and sheet: the row above the buttons names the line they answer', () => {
+  const lly = (n, level, priceAsOf, mintedIso) => call({
+    callId: `b:eval_010:call:p2-${n}`, kind: 'confirmation', symbol: 'LLY', direction: 'exit', slot: 'core', counterpart: null,
+    condition: { side: 'below', level }, evidence: { priceAsOf }, mintedAt: T(mintedIso), stateChangedAt: T(mintedIso),
+  });
+  const commandOn = (c) => {
+    c.playerResponse = { answer: 'hold', kind: 'directive', directiveThreadId: 't-p2', callId: c.callId, filedAt: '2026-09-09T14:50:00.000Z', heardEvalId: null };
+    c.directiveThreadId = 't-p2';
+    return { family: 'call', text: 'Hold off on the LLY exit until today\'s close.', expiry: 'until_ms', expiresAtMs: T('2026-09-09T20:00:00.000Z'), directiveThreadId: 't-p2', callId: c.callId, kind: 'call_hold', action: { direction: 'exit', symbol: 'LLY', slot: 'core' } };
+  };
+
+  it('an older unanswered line beside a newer command: the headline is the newest line; the row directly above the buttons names the older one; Confirm answers the older call', () => {
+    const older = lly(1, 1199.76, '2026-09-09T14:30:20.000Z', '2026-09-09T14:31:00.000Z');
+    const newer = lly(2, 1240, '2026-09-09T14:45:20.000Z', '2026-09-09T14:46:00.000Z');
+    const slot = commandOn(newer);
+    const onAnswer = vi.fn();
+    render({ feed: feedOf([older, newer], { directive: slot }), onAnswer });
+    const tile = q(`[data-cockpit-tile="${newer.callId}"]`);
+    expect(tile.querySelector('[data-cockpit-line]').textContent).toContain('$1240.00');
+    const row = tile.querySelector('[data-cockpit-answer-target]');
+    expect(row.textContent).toBe('Needs your answer · LLY below $1199.76 · from the 10:30 AM check');
+    expect(row.getAttribute('data-cockpit-answer-target')).toBe(older.callId);
+    expect(row.nextElementSibling.matches('[data-cockpit-buttons]')).toBe(true);
+    click(tile.querySelector('[data-cockpit-answer="go"]'));
+    expect(onAnswer).toHaveBeenCalledWith(older.callId, 'go');
+  });
+
+  it('control: no command — no row, and Confirm answers the headline (the newest call)', () => {
+    const older = lly(3, 1199.76, '2026-09-09T14:30:20.000Z', '2026-09-09T14:31:00.000Z');
+    const newer = lly(4, 1240, '2026-09-09T14:45:20.000Z', '2026-09-09T14:46:00.000Z');
+    const onAnswer = vi.fn();
+    render({ feed: feedOf([older, newer]), onAnswer });
+    expect(q('[data-cockpit-answer-target]')).toBeNull();
+    click(q(`[data-cockpit-tile="${newer.callId}"] [data-cockpit-answer="go"]`));
+    expect(onAnswer).toHaveBeenCalledWith(newer.callId, 'go');
+  });
+});

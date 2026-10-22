@@ -346,6 +346,10 @@ function CardBody({ card, phone, compact = false, confirmLine, confirmSending = 
         {card.commandLine ? <span data-cockpit-command-line="1" style={{ fontSize: 12, color: cssVar('call-yours') }}>{card.commandLine}</span> : null}
       </button>
       <MovedLine card={card} />
+      {/* Review (Astra P2): the buttons answer a line other than the headline's — that line's own row, directly above them. */}
+      {card.mode === 'call' && card.targetLine && card.buttons?.length ? (
+        <span data-cockpit-answer-target={card.callId} style={{ fontSize: 12.5, fontWeight: 600, color: cssVar('text-primary'), lineHeight: 1.35 }}>{card.targetLine}</span>
+      ) : null}
       {confirmLine ? (
         <ReplaceConfirm line={confirmLine} phone={phone} sending={confirmSending} onReplace={handlers.onConfirmReplace} onKeep={handlers.onConfirmKeep} />
       ) : (

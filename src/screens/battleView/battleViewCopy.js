@@ -998,6 +998,12 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   },
   // D-12 condition 1: a command shown beside a new ask names the line it was given on — never "covering" the new one.
   cockpitCommandOnLine: (price) => (price ? `Your command · on the ${price} line` : 'Your command'),
+  // Review (Astra P2, 2026-10-21): when a card's buttons answer a line OTHER than its headline (an older new ask
+  // beside your live command), that line's own row sits directly above them — the line, its level, its check.
+  cockpitAnswerTarget: (sym, side, price, check) => {
+    const line = sym && price && (side === 'above' || side === 'below') ? `${sym} ${side} ${price}` : (sym || null);
+    return ['Needs your answer', line, check ? `from ${check}` : null].filter(Boolean).join(' · ');
+  },
   // The sheet's earliest wording of a folded thread (review L6-3).
   cockpitCalledAt: (check) => (check ? `Called at ${check}` : 'Called'),
 

@@ -406,3 +406,35 @@ describe('before review: the pinned top row, and the agent\'s name', () => {
     expect(container.textContent).not.toMatch(/\bshadow\b/);
   });
 });
+
+describe('review (Astra P2) — the 2b card: the headline is the newest line, the row above the buttons names the line they answer', () => {
+  it('an older line needs the answer beside your newer command: the plan is the newest line\'s (no silence clause), the markers agree with it, the row directly above the buttons names the older line, and Confirm exit answers it', async () => {
+    const submit = ok();
+    const older = call({ ...minted('12:00'), condition: { side: 'below', level: 150 } });
+    const newer = call({ ...minted('12:45'), condition: { side: 'below', level: 158.4 } });
+    const slot = commandOn(newer, 'Hold off on the VLO exit until today\'s close.');
+    render({ calls: [older, newer], battle: { ...BATTLE, directive: slot }, submit });
+    const now = q('[data-cockpit-now]');
+    const plan = now.querySelector('[data-cockpit-plan]').textContent;
+    expect(plan).toContain('$158.40');
+    expect(plan).not.toContain('$150.00');
+    expect(plan).not.toMatch(/If you say nothing/);
+    expect(now.querySelector('[data-cockpit-line-moved]').textContent).toBe('Line moved $150.00 → $158.40');
+    const row = now.querySelector('[data-cockpit-answer-target]');
+    expect(row.textContent).toBe('Needs your answer · VLO below $150.00 · from the 12:00 PM check');
+    expect(row.nextElementSibling.matches('[data-cockpit-buttons]')).toBe(true);
+    await click(now.querySelector('[data-cockpit-answer="go"]'));
+    expect(submit).toHaveBeenCalledWith(older.callId, 'go', { pickSymbol: null, confirmReplace: false });
+  });
+
+  it('control: the newest call is the one needing an answer — the plan describes it, with its silence clause, and there is no row', () => {
+    const older = call({ ...minted('12:00'), condition: { side: 'below', level: 150 } });
+    const slot = commandOn(older, 'Hold off on the VLO exit until today\'s close.');
+    const newer = call({ ...minted('12:45'), condition: { side: 'below', level: 158.4 } });
+    render({ calls: [older, newer], battle: { ...BATTLE, directive: slot }, submit: ok() });
+    const now = q('[data-cockpit-now]');
+    expect(now.querySelector('[data-cockpit-plan]').textContent).toContain('$158.40');
+    expect(now.querySelector('[data-cockpit-plan]').textContent).toMatch(/If you say nothing/);
+    expect(now.querySelector('[data-cockpit-answer-target]')).toBeNull();
+  });
+});

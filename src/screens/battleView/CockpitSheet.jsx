@@ -323,6 +323,10 @@ export default function CockpitSheet({
       ) : null}
       {checkGoneLine ? <span role="status" data-cockpit-check-gone="1" style={{ fontSize: 11.5, color: cssVar('text-secondary') }}>{checkGoneLine}</span> : null}
 
+      {/* Review (Astra P2): the buttons answer a line other than the title — that line's own row, directly above them. */}
+      {sheet.targetLine ? (
+        <span data-cockpit-answer-target={sheet.targetCallId} style={{ fontSize: 12.5, fontWeight: 600, color: cssVar('text-primary'), lineHeight: 1.35 }}>{sheet.targetLine}</span>
+      ) : null}
       {/* Cockpit Build 2b (flag on, §6.3): an override while a command is live elsewhere asks first, here. */}
       {/* Under the flag the sheet answers in §6.2's words and costs (review CB4-2, CB6-3): the card's own buttons. */}
       {confirmLine
