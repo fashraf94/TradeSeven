@@ -162,12 +162,14 @@ describe('the Loadout states (ruling R-S5-1)', () => {
     expect(card('watchlist').textContent).toContain('Tech Leaders');
     let release;
     listWatchlists.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
-    const other = AGENT({ id: 'ag-2', ownerId: 'u-2', equippedWatchlistId: 'wl-9', equippedWatchlistName: 'Other Stored' });
+    // The new account's agent has the SAME list id equipped: the old account's list of that id is on hand, and only the
+    // owner tag keeps it from being shown as the new account's (a different id would be held at "checking" anyway).
+    const other = AGENT({ id: 'ag-2', ownerId: 'u-2', equippedWatchlistId: 'wl-1', equippedWatchlistName: 'Other Stored' });
     m.rerender(<CommandCenterHub site="desktop" hub={HUB({ agent: other })} sections={HUB_LAYOUT_FIXTURES.returning.sections} />);
     await flush();
     expect(card('watchlist').textContent).not.toContain('Tech Leaders');
     expect(card('watchlist').textContent).toContain('Other Stored');
-    await act(async () => { release([{ watchlistId: 'wl-9', name: 'Other List', status: 'committed', tickers: ['ZZZ'] }]); await Promise.resolve(); });
+    await act(async () => { release([{ watchlistId: 'wl-1', name: 'Other List', status: 'committed', tickers: ['ZZZ'] }]); await Promise.resolve(); });
     expect(card('watchlist').textContent).toContain('Other List');
     expect(listWatchlists).toHaveBeenCalledTimes(2);
   });
