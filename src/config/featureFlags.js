@@ -3325,3 +3325,47 @@ export const COMMAND_CENTER_HUB_ENABLED = false;
 export function isCommandCenterHubOn() {
   return COMMAND_CENTER_HUB_ENABLED;
 }
+
+/**
+ * FILM_ROOM_CARDS_MODE — the Film Room's take-home CARD (Build B spec
+ * docs/specs/FILM_ROOM_BUILD_B_CARD_SPEC_V1_20261010.md §7; Amendment G
+ * RG-2, RG-10; build report docs/audits/20261021_BUILD_FILM_ROOM_B2_CARD.md),
+ * a STRING TRI-STATE after the FILM_ROOM_V2_MODE pattern. It resolves
+ * PER BATTLE OWNER (src/utils/filmRoomGate.js on the client;
+ * api/_utils/filmRoom/cardsGate.js on the server):
+ *   'off'       — cards for nobody: the v2 screen's four reserved slots stay
+ *                 empty and the screen is the CURRENT v2 byte for byte (the
+ *                 golden captured at this build's base with FILM_ROOM_V2_MODE
+ *                 'on'); no tag, moment or card renders anywhere; both
+ *                 endpoints (POST /api/film-room/card, GET /api/film-room/counter)
+ *                 answer 404 { error: 'disabled' } before any read.
+ *   'allowlist' — cards only for a battle whose owner the cockpit's
+ *                 SERVER-SIDE allowlist admits: the client reads the existing
+ *                 GET /api/agent/cockpit-status `allowlisted` verdict for the
+ *                 caller's own battle (the same cached verdict v2 used), the
+ *                 server reads the allowlist at call time; the client holds no
+ *                 uid. Everyone else: exactly 'off'.
+ *   'on'        — cards for every owner.
+ * Unknown values resolve to 'off' (fail closed). An untaped battle (RB-5)
+ * opens the legacy screen in every mode and is refused by the card endpoint.
+ * NOTHING THE AGENT SEES OR TRADES READS ANY OF IT: no model path imports the
+ * ledger or reads `plays` (api/_utils/filmRoom/oneDoor.census.test.js), and
+ * the assembled trading prompt is byte-identical with entries at `card` and
+ * `nominated` and with an empty ledger (acceptance C).
+ *
+ * DARK — pinned 'off'. RUNWAY: 'off' → 'allowlist' → 'on', each its own
+ * founder PR, never a build PR, after the `plays` rules and the
+ * `tape (ownerId, etDate)` collection-group index are deployed (Amendment G
+ * RG-7; the build report gives the commands). Each step moves the pin row in
+ * src/config/filmRoomCardsFlags.test.js in the same commit (BUILD_RULES §2).
+ * ROLLBACK: one line, this value back a step, with its pin row. A string
+ * tri-state, so it is pinned DIRECTLY — never a DARK_BY_DESIGN key (the
+ * flag-pin guard scans `*_ENABLED = true|false` only; the FILM_ROOM_V2_MODE /
+ * CALL_RECORDS_MODE precedent) — and noted, by name, in the DARK_BY_DESIGN
+ * block where a reader looks for the dark runway.
+ */
+// Pinned by: filmRoomCardsFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
+export const FILM_ROOM_CARDS_MODE = 'off';
+
+/** The three walked states, in walk order. */
+export const FILM_ROOM_CARDS_MODES = Object.freeze(['off', 'allowlist', 'on']);

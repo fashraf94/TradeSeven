@@ -7,10 +7,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const flags = vi.hoisted(() => ({ mode: 'off', throws: false }));
+const flags = vi.hoisted(() => ({ mode: 'off', throws: false, cards: 'off', cardsThrows: false }));
 vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_ROOM_V2_MODE() { if (flags.throws) throw new Error('hermetic mock omitted the name'); return flags.mode; },
+  get FILM_ROOM_CARDS_MODE() { if (flags.cardsThrows) throw new Error('hermetic mock omitted the name'); return flags.cards; },
 }));
 const auth = vi.hoisted(() => ({ user: { getIdToken: async () => 'token-1' } }));
 vi.mock('firebase/auth', () => ({ getAuth: () => ({ currentUser: auth.user }) }));
@@ -18,10 +19,11 @@ vi.mock('firebase/auth', () => ({ getAuth: () => ({ currentUser: auth.user }) })
 import {
   resolveFilmRoomV2Mode, filmRoomV2On, readFilmRoomVerdict, requestFilmRoomVerdict, resetFilmRoomVerdicts,
   cachedFilmRoomVerdict, resolveFilmRoomV2ForBattle, filmRoomBattleId, FILM_ROOM_VERDICT_PATH,
+  resolveFilmRoomCardsMode, filmRoomCardsOn, resolveFilmRoomCardsForBattle,
 } from './filmRoomGate';
 
 const realFetch = globalThis.fetch;
-beforeEach(() => { flags.mode = 'off'; flags.throws = false; auth.user = { getIdToken: async () => 'token-1' }; resetFilmRoomVerdicts(); });
+beforeEach(() => { flags.mode = 'off'; flags.throws = false; flags.cards = 'off'; flags.cardsThrows = false; auth.user = { getIdToken: async () => 'token-1' }; resetFilmRoomVerdicts(); });
 afterEach(() => { globalThis.fetch = realFetch; });
 
 const respond = (status, body) => vi.fn(async () => ({ ok: status >= 200 && status < 300, status, json: async () => body }));
@@ -156,5 +158,53 @@ describe('review A2L2-6 / A2L2-10 — one verdict per OWNER; the bound covers th
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// ── Film Room B2 — the cards gate (Build B spec §7; Amendment G RG-2) ───────
+
+describe('B2 — the cards mode: read at call time, unknown or unreadable → off; per-owner like v2', () => {
+  it.each([['off', 'off'], ['allowlist', 'allowlist'], ['on', 'on'], ['ON', 'off'], ['', 'off'], [true, 'off'], [undefined, 'off']])('%s → %s', (value, want) => {
+    flags.cards = value;
+    expect(resolveFilmRoomCardsMode()).toBe(want);
+  });
+
+  it('a mock that throws on the name reads off; the v2 mode is not consulted', () => {
+    flags.cardsThrows = true;
+    flags.mode = 'on';
+    expect(resolveFilmRoomCardsMode()).toBe('off');
+  });
+
+  it('per-owner resolution: on for every owner only in on; in allowlist only with a definite yes; never from the v2 mode', () => {
+    expect(filmRoomCardsOn('off', true)).toBe(false);
+    expect(filmRoomCardsOn('on', undefined)).toBe(true);
+    expect(filmRoomCardsOn('allowlist', true)).toBe(true);
+    expect(filmRoomCardsOn('allowlist', false)).toBe(false);
+    expect(filmRoomCardsOn('allowlist', undefined)).toBe(false);
+  });
+
+  it("resolveFilmRoomCardsForBattle: 'off' and 'on' ask nothing; 'allowlist' reads THE verdict (the same cache v2 reads) once per owner", async () => {
+    const readVerdict = vi.fn(async () => true);
+    flags.cards = 'off';
+    expect(await resolveFilmRoomCardsForBattle({ id: 'b1', ownerId: 'u1' }, { readVerdict })).toBe(false);
+    flags.cards = 'on';
+    expect(await resolveFilmRoomCardsForBattle({ id: 'b1', ownerId: 'u1' }, { readVerdict })).toBe(true);
+    expect(readVerdict).not.toHaveBeenCalled();
+    flags.cards = 'allowlist';
+    expect(await resolveFilmRoomCardsForBattle({ id: 'b1', ownerId: 'u1' }, { readVerdict })).toBe(true);
+    expect(readVerdict).toHaveBeenCalledWith('b1', { ownerId: 'u1' });
+    const no = vi.fn(async () => false);
+    expect(await resolveFilmRoomCardsForBattle({ id: 'b1', ownerId: 'u1' }, { readVerdict: no })).toBe(false);
+    const throws = vi.fn(async () => { throw new Error('planted'); });
+    expect(await resolveFilmRoomCardsForBattle({ id: 'b1', ownerId: 'u1' }, { readVerdict: throws })).toBe(false);
+    expect(await resolveFilmRoomCardsForBattle({}, { readVerdict })).toBe(false);   // no battle id: nothing asked
+  });
+
+  it('one cached verdict serves both gates: a v2 answer kept for the owner answers the cards gate without a second request', async () => {
+    const request = vi.fn(async () => ({ ok: true, allowlisted: true }));
+    expect(await readFilmRoomVerdict('b1', { ownerId: 'u1', request })).toBe(true);
+    flags.cards = 'allowlist';
+    expect(await resolveFilmRoomCardsForBattle({ id: 'b1', ownerId: 'u1' })).toBe(true);   // the default reader, the cache
+    expect(request).toHaveBeenCalledTimes(1);
   });
 });

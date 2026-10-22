@@ -213,6 +213,18 @@ const DARK_BY_DESIGN = {
   //   'allowlist' admitted only owners the cockpit's server-side allowlist
   //   admits (GET /api/agent/cockpit-status) — PR #950. 'on' is CURRENT
   //   (2026-10-11, its own founder PR): v2 and Stage 3 for every battle.
+  // FILM_ROOM_CARDS_MODE intentionally ABSENT, and it must stay absent: the
+  // Film Room's take-home card (Build B spec §7; Amendment G RG-2) is a STRING
+  // TRI-STATE ('off' | 'allowlist' | 'on') after the FILM_ROOM_V2_MODE pattern,
+  // so buildFlagMap never sees it and the integrity test below would fail the
+  // key outright. Noted HERE so a flip is loud in the place a reader looks for
+  // the dark runway; filmRoomCardsFlags.test.js asserts both halves.
+  //   Runway: 'off' is CURRENT (B2, 2026-10-21): the v2 screen byte-identical
+  //   to the build's base, both card endpoints 404 disabled. 'allowlist' admits
+  //   only owners the cockpit's server-side allowlist admits (the same
+  //   cockpit-status verdict). 'on' is every owner. Each step is its own
+  //   founder PR after the `plays` rules and the `tape (ownerId, etDate)` index
+  //   are deployed (RG-7), never a build PR.
   //   Never a build PR; each step moves the pin row in filmTapeFlags.test.js
   //   in the same commit (BUILD_RULES §2), and the step to 'on' turned around
   //   film-tape-flip.live.test.js's hub-helper tripwire row. Rollback: one
