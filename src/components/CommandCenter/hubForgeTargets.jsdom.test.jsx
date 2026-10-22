@@ -124,7 +124,7 @@ describe('the model is App\'s text', () => {
       "if (showForge) setForgeInitialView('overview');",
       '}, [showForge]);',
       'const area = forgeAreaOf(request);',
-      'if (area && !showForge) setForgeInitialView(area);',
+      'if (area) setForgeInitialView(area);',
       'setShowForge(true);',
       'initialArea={forgeInitialView}',
     ]) expect(APP_TEXT, line).toContain(line);
@@ -142,7 +142,7 @@ describe.each([['plain', false], ['StrictMode', true]])('App\'s Forge opens, %s'
     }, [showForge]);
     const onOpenForge = (request) => {
       const area = forgeAreaOf(request);
-      if (area && !showForge) setForgeInitialView(area);
+      if (area) setForgeInitialView(area);
       setShowForge(true);
     };
     api.current = { onOpenForge, legacyOpen: () => setShowForge(true), close: () => setShowForge(false) };
@@ -213,14 +213,4 @@ describe.each([['plain', false], ['StrictMode', true]])('App\'s Forge opens, %s'
     expect(shown()).toBe('watchlists');
   });
 
-  it('a bridge call while the Forge is ALREADY open moves nothing and leaves nothing for the next open', async () => {
-    await mountApp();
-    await run(() => api.current.legacyOpen());
-    expect(shown()).toBe('overview');
-    await run(() => api.current.onOpenForge({ area: 'rules' }));
-    expect(shown()).toBe('overview');
-    await run(() => api.current.close());
-    await run(() => api.current.legacyOpen());
-    expect(shown()).toBe('overview');
-  });
 });

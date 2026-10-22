@@ -198,6 +198,7 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/hub/useHubRuntime.js',
   'src/components/CommandCenter/hub/useHubSheets.js',
   'src/components/CommandCenter/hub/selectors/loadout.js',
+  'src/components/CommandCenter/hubFallbackSignal.jsx',
 ];
 
 /**

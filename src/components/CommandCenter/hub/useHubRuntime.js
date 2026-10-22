@@ -8,7 +8,13 @@
 //   hub.agentLoading      that hook's legacy `loading`
 //   hub.activeAgentBattles the active-battle poll, for the equip lock (the shells' own input)
 //   hub.setScreen         App's navigation, for the profile
-//   hub.onOpenForge       App's Forge bridge ({ area, watchlistId, returnTo })
+//   hub.onOpenForge       App's Forge bridge ({ area, watchlistId, returnTo }). Call it from a
+//                         mounted hub's gesture handler: the hub is unmounted while the Forge
+//                         shows, and App does not guard a call made while the Forge is already
+//                         open (the area it names would be read at the NEXT open). Of the
+//                         request only `area` is read; a `watchlistId` alone means the Lists
+//                         area (the Forge cannot open on a particular list) and `returnTo` is
+//                         not read at all, so no label may promise either.
 //
 // With no `hub` (a test of the frames, the S1 fixtures) nothing here reads or
 // derives anything: the sections pass through untouched and every S5 action is

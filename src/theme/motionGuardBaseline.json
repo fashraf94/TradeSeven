@@ -440,6 +440,10 @@
     "src/components/CommandCenter/hub/selectors/loadout.js": {
       "count": 0,
       "authority": "Command Center hub S5 (prompt \u00a73; founder ruling R-S1-2) \u2014 the owner's Loadout, the retained entry points, the overlay stack and the App-side predicates, with the test stand-ins for the shipped sheets: no motion at all, so zero raw transition literals from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hubFallbackSignal.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S5 (prompt \u00a73; founder ruling R-S1-2) \u2014 the owner's Loadout, the retained entry points, the overlay stack and the App-side predicates, with the test stand-ins for the shipped sheets: no motion at all, so zero raw transition literals from birth. Registered in the commit that introduces them."
     }
   }
 }

@@ -57,6 +57,27 @@ describe('hubOwnsDashboard — with the hub flag ON', () => {
     expect(hubOwnsDashboard({ screen: 'dashboard', showForge: false })).toBe(true);
   });
 
+  it('the gate showing its legacy fallback (the hub chunk failed to load) hands the screen back: the hub is not what is on screen (review E1-1)', () => {
+    hubFlag.on = true;
+    expect(hubOwnsDashboard({ screen: 'dashboard', showForge: false, hubFailed: true })).toBe(false);
+    // and only exactly `true` does: nothing else the signal could carry takes the hub's screen away
+    for (const hubFailed of [false, undefined, null, 0, 1, 'true', {}]) {
+      expect(hubOwnsDashboard({ screen: 'dashboard', showForge: false, hubFailed }), JSON.stringify(hubFailed)).toBe(true);
+    }
+    expect(hubOwnsDashboard({ screen: 'dashboard', showForge: false })).toBe(true);
+  });
+
+  it('the fallback never makes the flag-off answer anything but false, and never makes a non-dashboard screen the hub\'s', () => {
+    for (const hubFailed of [true, false, undefined]) {
+      for (const screen of SCREENS) for (const showForge of FORGE) {
+        expect(hubOwnsDashboard({ screen, showForge, hubFailed, hubOn: false }), JSON.stringify({ screen, showForge, hubFailed })).toBe(false);
+      }
+      for (const screen of SCREENS.filter((s) => s !== 'dashboard')) {
+        expect(hubOwnsDashboard({ screen, showForge: false, hubFailed, hubOn: true }), String(screen)).toBe(false);
+      }
+    }
+  });
+
   it('agrees with the picker App uses at both sites, over every input it takes (display agreement, BUILD_RULES §9)', () => {
     for (const hubOn of [true, false, undefined, 'true', 1]) {
       for (const isMobile of [true, false]) {

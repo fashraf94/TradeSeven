@@ -2492,6 +2492,11 @@ export default function PortfolioDuel() {
   // Forge state (replaces Academy)
   const [showForge, setShowForge] = useState(false);
 
+  // Command Center hub S5 (ruling R-S5-7): true while the hub gate shows the legacy shell because the hub's chunk
+  // failed to load. The hub is then not the dashboard on screen, so the floating bug button and the season banner
+  // come back. Set only by the gate's fallback signal; false for everyone else, the hub flag off included.
+  const [hubFallback, setHubFallback] = useState(false);
+
   // Phase 4D — watchlist editor return-path state.
   // forgeInitialView: which Forge tab ForgeLanding boots on. 'discover' at
   // rest; the watchlist editor's onClose sets it to 'watchlists' transiently,
@@ -8665,19 +8670,19 @@ export default function PortfolioDuel() {
   // as setShowForge(true), so the effect above — which resets the view to 'overview'
   // for the NEXT open — runs after the Forge has mounted on the target, exactly as the
   // watchlist editor's return path already depends on. A request that names no area is
-  // the bare setShowForge(true) every other Forge open makes today. The area is set only
-  // while the Forge is closed: an open Forge has read its first area already, and the
-  // reset effect would not run again, so the name would leak into the NEXT open.
+  // the bare setShowForge(true) every other Forge open makes today. Call it from a mounted
+  // hub's gesture handler (the hub is unmounted while the Forge shows): a call made while
+  // the Forge is already open would leave its area for the NEXT open, and is not guarded.
   const onOpenForge = (request) => {
     const area = forgeAreaOf(request);
-    if (area && !showForge) setForgeInitialView(area);
+    if (area) setForgeInitialView(area);
     setShowForge(true);
   };
   const hubProps = { agent: primaryAgent, agentLoading, activeAgentBattles, setScreen, onOpenForge };
   // The floating ClashBot button and the active-season banner are withheld while the hub
   // is the dashboard on screen (S1 founder questions Q2, Q3): both are fixed to the phone
   // strip's corner. False for every screen with the hub flag off.
-  const hubOwnsScreen = hubOwnsDashboard({ screen, showForge });
+  const hubOwnsScreen = hubOwnsDashboard({ screen, showForge, hubFailed: hubFallback });
   const getScreenContent = () => {
 
   // FORGE SCREEN — ForgeLanding is the primary Laboratory view; it renders
@@ -8868,7 +8873,7 @@ export default function PortfolioDuel() {
               ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} />
               : <DesktopBackground isDesktop={isDesktop} />}
             {dashboardPick.shell === DASHBOARD_SHELLS.HUB
-              ? <CommandCenterHubGate site="mobile" hub={hubProps} legacy={legacyDashboard} />
+              ? <CommandCenterHubGate site="mobile" hub={hubProps} legacy={legacyDashboard} onFallback={setHubFallback} />
               : legacyDashboard}
           </div>
         </ErrorBoundary>
@@ -8946,6 +8951,7 @@ export default function PortfolioDuel() {
               hub={hubProps}
               legacy={legacyDesktopDashboard}
               frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>}
+              onFallback={setHubFallback}
             />
           ) : legacyDesktopDashboard}
         </div>

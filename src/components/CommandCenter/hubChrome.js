@@ -13,8 +13,13 @@
 //    site, whatever the other inputs), on the dashboard screen, with no Forge
 //    covering it (App renders the Forge INSTEAD of every screen). With the hub
 //    flag off it is false for every screen, so today's screens are untouched.
-//    A hub chunk that fails to load falls back to the legacy shell WITHOUT the
-//    floating button (the gate decides that, not this): see the S5 report.
+//    While the hub's chunk is still loading the gate shows its skeleton and the
+//    hub still owns the screen (the button would flicker otherwise). If the import
+//    FAILS the gate shows the legacy shell, which has no bug control of its own, and
+//    tells App through `hubFailed` (hub/hubFallbackSignal.jsx): the hub is then not
+//    on screen and the button and the banner come back. One case stays open: a hub
+//    that LOADS and then throws in render lands on the Dashboard boundary's error
+//    screen, with the button still withheld (S5 report, Q-S5-6).
 //
 // 2. forgeAreaOf — which Forge area an `onOpenForge` request names (ruling
 //    R-S5-5). ForgeWorkshop opens on an AREA, read once at mount (`initialArea`
@@ -38,10 +43,11 @@ const AREA_IDS = new Set(Object.values(FORGE_AREAS));
  * @param {object}  p
  * @param {string}  p.screen    App's current screen
  * @param {boolean} p.showForge App's Forge flag
+ * @param {boolean} [p.hubFailed] the gate is showing the legacy fallback (its signal; false for anything but true)
  * @param {boolean} [p.hubOn]   the hub flag; read through its accessor at call time unless handed in
  */
-export function hubOwnsDashboard({ screen, showForge, hubOn = isCommandCenterHubOn() }) {
-  return hubOn === true && screen === 'dashboard' && !showForge;
+export function hubOwnsDashboard({ screen, showForge, hubFailed = false, hubOn = isCommandCenterHubOn() }) {
+  return hubOn === true && screen === 'dashboard' && !showForge && hubFailed !== true;
 }
 
 /**

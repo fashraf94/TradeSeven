@@ -21,9 +21,10 @@
 //   3. the gate renders only on the hub pick, framed on desktop by the same
 //      sidebar offset CommandDashboardDesktop sits in;
 //   4. nothing reaches the hub chunk except the gate's dynamic import, and the
-//      hub-side modules hold no read, timer, listener or effect beyond S1's
-//      listed allowances (the ResizeObservers that measure the hub, the
-//      sheet's focus effect, useUser for the header).
+//      hub-side modules hold no read, timer, listener or effect beyond the
+//      listed allowances (S1: the ResizeObservers that measure the hub, the
+//      sheet's focus effect, useUser for the header; S5: the three effects
+//      below and the gate's fallback signal).
 // Together with the gate suites (rendering the gate is the only thing that
 // calls the import) this is the flag-off guarantee: with the hub flag false
 // the pick is the legacy shell, the gate is never rendered, and the chunk is
@@ -32,6 +33,11 @@
 // S5 moved this guard in the ways its rulings force, and in no other:
 //   - R-S5-9: each gate is handed `hub={hubProps}` beside its site (the pinned
 //     site text, the whole-block row and the gate's own props row moved with it);
+//   - R-S5-7 again, review E1-1: each gate is also handed `onFallback={setHubFallback}`
+//     so App can give the bug button and the season banner back while the legacy
+//     fallback is on screen (the same rows, the gate's import list, and one more
+//     allowance: hubFallbackSignal.jsx's single layout effect, rendered only inside
+//     the gate's fallback, with its own negatives);
 //   - R-S5-7: App's two chrome conditions read hubOwnsDashboard (hubChrome.js),
 //     a third static edge from App into this directory (the edge row), pinned
 //     as text in the S5 rows below;
@@ -127,7 +133,7 @@ describe('S0 mount sites — the mobile site', () => {
 
   it('renders the gate only on the hub pick, handing it its site, the hub\'s props and that same legacy element, unframed', () => {
     expect(BLOCK).toMatch(
-      /\{dashboardPick\.shell === DASHBOARD_SHELLS\.HUB\s*\?\s*<CommandCenterHubGate site="mobile" hub=\{hubProps\} legacy=\{legacyDashboard\} \/>\s*:\s*legacyDashboard\}/,
+      /\{dashboardPick\.shell === DASHBOARD_SHELLS\.HUB\s*\?\s*<CommandCenterHubGate site="mobile" hub=\{hubProps\} legacy=\{legacyDashboard\} onFallback=\{setHubFallback\} \/>\s*:\s*legacyDashboard\}/,
     );
   });
 });
@@ -146,7 +152,7 @@ describe('S0 mount sites — the desktop site', () => {
 
   it('renders the gate only on the hub pick, with its site, the hub\'s props, that legacy element and the sidebar offset as its frame', () => {
     expect(BLOCK).toMatch(
-      /\{dashboardPick\.shell === DASHBOARD_SHELLS\.HUB \? \(\s*<CommandCenterHubGate\s+site="desktop"\s+hub=\{hubProps\}\s+legacy=\{legacyDesktopDashboard\}\s+frame=\{\(hubOutput\) => <div style=\{sidebarOffsetStyle\}>\{hubOutput\}<\/div>\}\s*\/>\s*\) : legacyDesktopDashboard\}/,
+      /\{dashboardPick\.shell === DASHBOARD_SHELLS\.HUB \? \(\s*<CommandCenterHubGate\s+site="desktop"\s+hub=\{hubProps\}\s+legacy=\{legacyDesktopDashboard\}\s+frame=\{\(hubOutput\) => <div style=\{sidebarOffsetStyle\}>\{hubOutput\}<\/div>\}\s+onFallback=\{setHubFallback\}\s*\/>\s*\) : legacyDesktopDashboard\}/,
     );
   });
 });
@@ -175,7 +181,7 @@ describe('S0 mount sites — each site\'s whole tree: the Dashboard boundary, th
     expect(siteTree('if (isMobile) {')).toBe(
       'return ( <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen(\'home\'); }}> <div style={containerStyle}> '
       + '{isStarfieldMobileOn() ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />} '
-      + '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? <CommandCenterHubGate site="mobile" hub={hubProps} legacy={legacyDashboard} /> : legacyDashboard} '
+      + '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? <CommandCenterHubGate site="mobile" hub={hubProps} legacy={legacyDashboard} onFallback={setHubFallback} /> : legacyDashboard} '
       + '</div> </ErrorBoundary>',
     );
   });
@@ -185,7 +191,7 @@ describe('S0 mount sites — each site\'s whole tree: the Dashboard boundary, th
       'return ( <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen(\'home\'); }}> <div style={containerStyle}> '
       + '{isStarfieldOn() ? <StarfieldBackground mode="desktop" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />} '
       + '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? ( <CommandCenterHubGate site="desktop" hub={hubProps} legacy={legacyDesktopDashboard} '
-      + 'frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>} /> ) : legacyDesktopDashboard} '
+      + 'frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>} onFallback={setHubFallback} /> ) : legacyDesktopDashboard} '
       + '</div> </ErrorBoundary>',
     );
   });
@@ -257,7 +263,7 @@ describe('S0 mount sites — the dashboard block from the pick to its end, as a 
       `const legacyDashboard = ( <DashboardComponent ${props('DashboardComponent')} /> );`,
       boundaryOpen,
       '{isStarfieldMobileOn() ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />}',
-      '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? <CommandCenterHubGate site="mobile" hub={hubProps} legacy={legacyDashboard} /> : legacyDashboard}',
+      '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? <CommandCenterHubGate site="mobile" hub={hubProps} legacy={legacyDashboard} onFallback={setHubFallback} /> : legacyDashboard}',
       '</div> </ErrorBoundary> ); }',
       "const sidebarOffsetStyle = { marginLeft: sidebarCollapsed ? '64px' : '220px', transition: 'margin-left 0.2s ease' };",
       'const legacyDesktopDashboard = dashboardPick.legacyShell === DASHBOARD_SHELLS.COMMAND_DASHBOARD_DESKTOP ? (',
@@ -265,7 +271,7 @@ describe('S0 mount sites — the dashboard block from the pick to its end, as a 
       `) : ( <DashboardDesktop ${props('DashboardDesktop')} /> );`,
       boundaryOpen,
       '{isStarfieldOn() ? <StarfieldBackground mode="desktop" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />}',
-      '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? ( <CommandCenterHubGate site="desktop" hub={hubProps} legacy={legacyDesktopDashboard} frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>} /> ) : legacyDesktopDashboard}',
+      '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? ( <CommandCenterHubGate site="desktop" hub={hubProps} legacy={legacyDesktopDashboard} frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>} onFallback={setHubFallback} /> ) : legacyDesktopDashboard}',
       '</div> </ErrorBoundary> ); }',
     ].join(' ');
     const fromPick = BLOCK.slice(BLOCK.indexOf('const dashboardPick = pickDashboardShell('));
@@ -315,8 +321,8 @@ describe('S5 mount sites — the hub\'s props, the Forge bridge and the chrome c
     expect(flat.indexOf('const hubProps')).toBeLessThan(GET_SCREEN_CONTENT);
   });
 
-  it('onOpenForge sets the Forge\'s first area (when the request names one and the Forge is closed) in the SAME handler as showForge, and otherwise is the bare setShowForge(true)', () => {
-    expect(flat).toContain('const onOpenForge = (request) => { const area = forgeAreaOf(request); if (area && !showForge) setForgeInitialView(area); setShowForge(true); };');
+  it('onOpenForge sets the Forge\'s first area (when the request names one) in the SAME handler as showForge, and otherwise is the bare setShowForge(true)', () => {
+    expect(flat).toContain('const onOpenForge = (request) => { const area = forgeAreaOf(request); if (area) setForgeInitialView(area); setShowForge(true); };');
     expect(flat.indexOf('const onOpenForge')).toBeLessThan(GET_SCREEN_CONTENT);
     // setForgeInitialView has exactly three callers: the reset effect, the watchlist editor's return, and this bridge.
     expect(count(/\bsetForgeInitialView\(/)).toBe(3);
@@ -329,7 +335,11 @@ describe('S5 mount sites — the hub\'s props, the Forge bridge and the chrome c
   });
 
   it('the hub\'s chrome predicate is computed once, from the screen and the Forge flag, before the screens are chosen', () => {
-    expect(flat).toContain('const hubOwnsScreen = hubOwnsDashboard({ screen, showForge });');
+    expect(flat).toContain('const hubOwnsScreen = hubOwnsDashboard({ screen, showForge, hubFailed: hubFallback });');
+    // the ONE inert state the fallback signal needs: declared once, set only through the two gates' onFallback
+    expect(flat).toContain('const [hubFallback, setHubFallback] = useState(false);');
+    expect(count(/\bsetHubFallback\b/)).toBe(3);
+    expect(count(/\bhubFallback\b/)).toBe(2);
     expect(count(/\bhubOwnsDashboard\b/)).toBe(2);
     expect(flat.indexOf('const hubOwnsScreen')).toBeLessThan(GET_SCREEN_CONTENT);
     expect(flat).toContain("import { forgeAreaOf, hubOwnsDashboard } from './components/CommandCenter/hubChrome';");
@@ -592,6 +602,8 @@ const ALLOWED_ACTIVITY = Object.freeze({
   [HUB_FILE('hub/useHubLoadout.js')]: ['\\buseEffect\\b'],
   [HUB_FILE('hub/HubOverlays.jsx')]: ['\\buseEffect\\b'],
   [HUB_FILE('hub/useHubSheets.js')]: ['\\buseEffect\\b'],
+  // S5 (review E1-1): the gate's fallback signal, one layout effect in its own file, rendered only inside the fallback.
+  [HUB_FILE('hubFallbackSignal.jsx')]: ['\\buseLayoutEffect\\b'],
 });
 
 function activityInCode(rel, code) {
@@ -606,7 +618,7 @@ function hubDirFiles() {
   return sourceFiles().filter((rel) => rel.startsWith(`${HUB_DIR}/`));
 }
 
-describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its ResizeObservers and useUser', () => {
+describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the listed allowances (S1: the ResizeObservers and useUser; S5: its three effects, the shipped sheets and services it names)', () => {
   it('the hub module\'s whole import graph stays in its directory, but for the permitted shipped modules', () => {
     const { seen, terminals, bare } = graph(HUB_FILE('CommandCenterHub.jsx'));
     expect(seen).toContain(HUB_FILE('hub/hubCopy.js'));
@@ -696,7 +708,8 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
   });
 
   it('the gate\'s only firebase contact is the house error log, used on a failed load', () => {
-    expect(importsOf(GATE).sort()).toEqual(['../../theme/cssTokens', '../ErrorBoundary', './hubGateCopy', 'react']);
+    expect(importsOf(GATE).sort()).toEqual(['../../theme/cssTokens', '../ErrorBoundary', './hubFallbackSignal', './hubGateCopy', 'react']);
+    expect(importsOf(HUB_FILE('hubFallbackSignal.jsx'))).toEqual(['react']);
     expect(stripComments(read(GATE))).toMatch(/import \{ logErrorToFirebase \} from '\.\.\/ErrorBoundary';/);
   });
 
@@ -752,7 +765,7 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
 
   it('the gate hands the hub its site and App\'s props object, and nothing else (ruling R-S5-9)', () => {
     const code = stripComments(read(GATE));
-    expect(code).toMatch(/function CommandCenterHubGate\(\{ site, hub, legacy, frame = unframed \}\)/);
+    expect(code).toMatch(/function CommandCenterHubGate\(\{ site, hub, legacy, frame = unframed, onFallback \}\)/);
     expect(code.match(/<Hub\b[^>]*\/>/g)).toEqual(['<Hub site={site} hub={hub} />']);
   });
 
@@ -788,6 +801,8 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
       [HUB_FILE('hub/useHubLoadout.js')]: ['setInterval(refresh, 60000);', "window.addEventListener('focus', refresh);", 'setTimeout(refresh, 0);', 'useLayoutEffect(() => {});', "document.addEventListener('visibilitychange', refresh);"],
       [HUB_FILE('hub/HubOverlays.jsx')]: ['setTimeout(f, 0);', 'new MutationObserver(cb);', "document.addEventListener('keydown', f);", 'useLayoutEffect(() => {});'],
       [HUB_FILE('hub/useHubSheets.js')]: ['setTimeout(f, 0);', "window.addEventListener('resize', f);", 'useLayoutEffect(() => {});'],
+      // S5 (review E1-1): the signal allows its one layout effect and nothing else: no passive effect, timer, listener or frame callback.
+      [HUB_FILE('hubFallbackSignal.jsx')]: ['useEffect(() => {}, []);', 'setTimeout(f, 0);', "window.addEventListener('focus', f);", 'requestAnimationFrame(f);', 'new ResizeObserver(cb);'],
     };
     for (const [rel, lines] of Object.entries(negatives)) {
       for (const line of lines) expect(activityInCode(rel, line), `${rel}: ${line}`).not.toEqual([]);

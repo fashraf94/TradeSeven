@@ -14,6 +14,10 @@
 //   hub    — App's data and actions for the hub in ONE object (slice S5, ruling
 //            R-S5-9; hub/useHubRuntime.js documents its keys). The gate hands it
 //            on unread, as it does the site: it neither reads nor shapes it;
+//   onFallback — optional, a STABLE function (App's state setter). Called with
+//            true while the legacy fallback is on screen and false when it is not
+//            (slice S5, ruling R-S5-7: the floating bug button and the season
+//            banner are App's to withhold only while the hub is on screen);
 //   legacy — the legacy shell element exactly as App renders it at this site
 //            with the hub off (the picker's `legacyShell`, wrapper included);
 //   frame  — App's host wrapper for what replaces that shell (desktop: the
@@ -52,13 +56,15 @@
 // requests no chunk, only rendering the gate does, and once the chunk has
 // loaded a later visit renders the hub at once with no skeleton flash.
 //
-// The gate adds no read, timer, listener, subscription or effect. With the hub
-// flag off App never renders it, so none of this runs.
+// The gate adds no read, timer, listener or subscription. Its one effect is the
+// fallback signal (hubFallbackSignal.jsx), rendered only inside the fallback. With
+// the hub flag off App never renders the gate, so none of this runs.
 
 import React, { Component, Suspense, lazy, useState } from 'react';
 import { logErrorToFirebase } from '../ErrorBoundary';
 import { cssVar } from '../../theme/cssTokens';
 import { HUB_GATE_COPY as COPY } from './hubGateCopy';
+import HubFallbackSignal from './hubFallbackSignal';
 
 /** The error-log screen name for a failed hub import. */
 export const HUB_LOAD_REPORT = 'Command Center hub (chunk load)';
@@ -211,8 +217,9 @@ export function createCommandCenterHubGate(importHub, { reload = reloadPage } = 
    * @param {object}             [props.hub]   App's data and actions for the hub, handed to it as is
    * @param {React.ReactElement} props.legacy  the hub-off shell for this site, as App renders it
    * @param {Function}           [props.frame] App's host wrapper for the skeleton and the hub
+   * @param {Function}           [props.onFallback] stable; true while the fallback shows, false when it goes
    */
-  function CommandCenterHubGate({ site, hub, legacy, frame = unframed }) {
+  function CommandCenterHubGate({ site, hub, legacy, frame = unframed, onFallback }) {
     const [loads, setLoads] = useState(0);
     const [retrying, setRetrying] = useState(false);
     const [dismissed, setDismissed] = useState(false);
@@ -231,6 +238,7 @@ export function createCommandCenterHubGate(importHub, { reload = reloadPage } = 
         key={loads}
         renderFallback={() => (
           <>
+            <HubFallbackSignal onFallback={onFallback} />
             {!dismissed && (
               <HubLoadNotice
                 retrying={retrying}
