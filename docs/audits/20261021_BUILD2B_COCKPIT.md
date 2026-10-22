@@ -1,10 +1,10 @@
 # Cockpit Build 2b — spotlight, commands and "Who comes in?", built behind its flag
 
-**Smoke preview (NEVER MERGE, never "Create PR"):** https://trade-seven-ifegqs33n-fais-projects-bc179554.vercel.app
-— branch `claude/cockpit-build2b-smoke` at `e3656fc7` = build head `d7b0566f` + one smoke commit. Open a live battle and add `?cockpitFixtures=<variant>` (§9 lists the variants; `?cockpitFixtures=1` is the main one).
+**Smoke preview (NEVER MERGE, never "Create PR"):** https://trade-seven-hkrm534t0-fais-projects-bc179554.vercel.app
+— branch `claude/cockpit-build2b-smoke` at `b5054503` = code head `08343819` + the same smoke commit (§13). Open a live battle and add `?cockpitFixtures=<variant>` (§9 lists the variants; `?cockpitFixtures=1` is the main one). The first build's preview (`e3656fc7` on `d7b0566f`) predates §13's two fixes.
 
 **Base:** `origin/main` `0fc78b025eeabe70ed8ac6fb35249cd0bf2d6ba7` (after `git fetch origin`). PR #968 (the 40-second model timeout) is merged there. `docs/audits/20261014_PHASE0_BUILD2B_COCKPIT.md` and `docs/design/COCKPIT_DESIGN_PASS_V1.md` are both present. I proceeded.
-**Branch:** `claude/cockpit-build2b` (pushed from the app's worktree branch `claude/brave-pascal-9b8d26` by refspec) · **code head:** `d7b0566f` · this report is the next commit (docs only).
+**Branch:** `claude/cockpit-build2b` (pushed from the app's worktree branch `claude/brave-pascal-9b8d26` by refspec) · **code head:** `d7b0566f` at the report, `08343819` after §13's fixes · the report commits are docs only.
 **Spec:** `docs/COCKPIT_BUILD2B_SPEC_V1_0.md` · **Contract:** `docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_D.md` (revision 4) · **Visual reference:** `docs/design/COCKPIT_V5_MOCKUP.html` · **Rules:** `docs/BUILD_RULES.md` (binding)
 **Date:** 2026-10-21
 
@@ -601,6 +601,59 @@ Board dots ride on the battle's own held symbols, on both shells.
 - **Smoke:** `claude/cockpit-build2b-smoke` (never merged).
 - **This report's out-of-repo copy:** `C:\Users\fashr\Documents\FantasyTrades\Cockpit\20261021_BUILD2B_COCKPIT.md`.
 - **The review's working record** (lens texts and verifier verdicts) and the anchor tables were session scratch files. Their content is folded into §3, §8 and Appendix A.
+
+---
+
+## 13. Before Astra's review: two fixes (founder request, 2026-10-21)
+
+Code commit `08343819`, on top of `f28851ef`.
+
+**1. The top row stays pinned.**
+- **The defect:** the top row (the prices' vintage and the commands meter) scrolled out of view when focus moved to the Now card after an answer. The NOW header stayed pinned at the top.
+- **The fix:**
+  - The top row is now `sticky` at `top: 0` on both shells (`Cockpit2b.jsx`, `COCKPIT2B_TOP_ROW_PX = 34`), with a fixed height and an opaque, blurred background above the headers.
+  - The NOW and Monitoring headers pin just below it.
+  - `GroupHeader` gains `stickyTop`, which defaults to 0, so the shipped 2a feed's headers are unchanged.
+- **Measured in headless Edge** on the real component rendered to static HTML, inside each shell's scroll box (desktop: the pane's `data-cockpit-scroll`; phone: the track's cockpit panel). Each run focused the Now card's last button from the top, so the browser scrolls:
+
+| Shell | Layout | Top row | NOW header | Focused button |
+|---|---|---|---|---|
+| desktop | before | −191 to −157 px (out of view) | 0–34 | 134–166 |
+| desktop | after | 0–34 | 34–68 | 134–166, clear of both |
+| phone | before | −258 to −224 px (out of view) | 0–34 | 134–166 |
+| phone | after | 0–34 | 34–68 | 134–166, clear of both |
+
+  The "before" rows put the old styles back in the same page. At rest, at 40 px and at the bottom of the scroll, the top row held 0–34 and the NOW header 34–68 at both box sizes tried (420 and 760/780 px).
+
+**2. The agent's name, capitalized.**
+- **The fix:** `cockpit2bModel.js` `agentNameOf` capitalizes the first letter and keeps the rest as recorded ("shadow" → "Shadow"; a blank name → "Your Agent"). The three entry points that carry the name into the 2b copy take it from there:
+  - the view: plan lines, the quiet line, "From {Agent}'s lists", "Let {Agent} choose";
+  - the bench sheet: "On {Agent}'s list";
+  - the replace line (both kinds).
+- **Unchanged:** the 2a feed's copy and every model-visible text.
+
+**Tests.**
+- **New rows:**
+  - `Cockpit2b.jsdom`: the pinned row and both header offsets on desktop and phone; the name on the mounted screen.
+  - `CockpitFeed.jsdom`: the 2a headers still pin at 0.
+  - `cockpit2bModel`: `agentNameOf`, and the name in every view line, the bench sheet and both replace lines.
+- **Mutation check:** ten mutants, ten killed, each restore byte-checked:
+  - the row back to `static`;
+  - the row's z-index equal to the headers';
+  - each header's offset removed;
+  - `GroupHeader` ignoring `stickyTop`;
+  - a non-zero default for `stickyTop`;
+  - the name passed through raw, in the helper and at each of the three entry points.
+- **Linux, on `08343819` merged with main `7818a1b3`** (main gained PR #985; a clean merge):
+  - full suite exit 0: `Test Files 1072 passed | 7 skipped (1079)`, `Tests 23254 passed | 88 skipped (23342)`;
+  - `lint:gate` exit 0;
+  - `vite build` exit 0.
+
+**Smoke.**
+- `claude/cockpit-build2b-smoke` was rebuilt at `b5054503`: `08343819` plus the same smoke commit, cherry-picked. Its patch id `b02910d5…` matches the first smoke commit's, so the test data is unchanged.
+- Self-test 6/6; `vite build` exit 0.
+- Preview: https://trade-seven-hkrm534t0-fais-projects-bc179554.vercel.app (deployment 7242094175, success). The served bundle carries the fixtures and both fixes.
+- The branch was replaced with a lease on its old head `e3656fc7`.
 
 ---
 
