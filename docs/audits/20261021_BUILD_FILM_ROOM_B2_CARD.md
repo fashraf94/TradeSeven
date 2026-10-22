@@ -13,7 +13,8 @@
 | Mutants (the prompt's eight, plus three of the build's own, plus seventeen on the review round's fixes) | **All killed** (§2, the Mutants column; §9.4). |
 | The §2 review | §9 — five lenses, five refuters, 59 findings (46 confirmed, 12 in part, 1 refuted, 6 added by the refuters); every confirmed one fixed in the review-round commit or ruled in §8; the fixes mutation-checked. The one BLOCKER (a tape with no situations section said "unavailable" and "no moments matched" at once) and the five MAJORs (a born-shelved card; the counter's window; the census missing two model paths; a root pin that could not fail; "+3" on a count; the receipt's sentence on a retired card) are closed. |
 | Final checks | §10 — on the code head `0e5ff526` (= the branch merged with current `origin/main`): the full Linux suite 1,076 files / 23,119 tests, 0 failing; the rules suite 437/437 incl. the 13 `plays` rows; `lint:gate` 0; `vite build` 0. |
-| Rulings asked | §8: thirteen items, none blocking the merge. |
+| Rulings asked | §8: thirteen items, none blocking the merge. Answered by Amendment H (22 Oct). |
+| Astra's review (22 Oct) | §12 — DO NOT MERGE on F1 (a create replay returned a stored entry without checking its own `ownerId`, criterion 4). Fixed by RI-1, and Astra's B1 (a failed refresh after a retire showed the old stage) by RI-2, with every named mutant killed. The merge with `origin/main` at `da337df0` (#986, #987) needed one census oracle entry reconciled (§12.3). The final checks were re-run on that code head, `41db14a4`. |
 
 ## 1. Preamble
 
@@ -250,3 +251,86 @@ CI: the PR's checks run on the pushed head (this report's commit, `docs/` only, 
 - The card route's cold start (refuter R5-1, NIT): `api/film-room/card.js` imports `isTieredBattle` from `writeTapeDay.js`, so its serverless cold start loads the close-pass writer's graph (186 static modules) for one predicate; the counter route was cut to 18 (review L5-4) by moving `sendCardError` into `cardsGate.js`. A leaf predicate module (or `tapeSources.js`) would serve both; not done here because `writeTapeDay.js` is the B1 writer, outside this build's items.
 - The goldens' provenance (review L4-11a): twelve SHA-256 pins plus the capture procedure in the suite's header; `GOLDEN_SOURCE_COMMIT` is a label the files cannot be checked against (they carry no header). A re-capture at the base commit reproduces the pins (done twice, identical); nothing in the tree can prove it without git.
 - Founder actions after merge that are not deploys: the Console index (§6 step 2); a `refresh=1` backfill of the tape days written before the B1 tagger, if the owner is to see their situations rather than the absence sentence (§6).
+
+## 12. Astra's review
+
+**Date:** 22 Oct 2026 · **Executor:** Claude Code (desktop, local Windows + WSL Ubuntu; Opus 5.5) · **Prompt:** the Film Room chat, "Fix prompt — Film Room B2: Astra's finding, and one screen fix" (2026-10-22) · **Governing:** Astra's B2 review (`audits/20261022_ASTRA_REVIEW_FILM_ROOM_B2_CARD.md`; DO NOT MERGE on F1, criterion 4), Build B Amendment H (the founder's rulings on §8) and Amendment I (the rulings on Astra's review), BUILD_RULES.
+
+| Question | Answer |
+|---|---|
+| Astra's F1 (criterion 4) | **Fixed (RI-1).** A create replay returns a stored entry only when that entry's own `ownerId` is the caller's; a missing or another owner gets a foreign op id's refusal, holding no field of the entry. The cap counts only the caller's own entries. |
+| Astra's B1 | **Fixed (RI-2).** A successful create's or retire's own result wins on screen, in the receipt and in My cards, whenever its `version` is newer than the counter's row; a failed refresh no longer puts the old stage back, and its error stays said. |
+| Mutants (the prompt's four, one of this round's own, two on the census reconciliation) | **All killed** (§12.2, §12.3). |
+| The merge with main | **One semantic conflict, reconciled in its own commit** (§12.3). The merge itself was clean, but #986 made the evaluator reach `callRecords/callActions.js`, the module B2's census named as reached only by `call-response.js`. That oracle entry now names `callRecords/answers.js`. No census guarantee row changed. |
+| The cards-off goldens | Untouched: the twelve files' blobs are the same at the PR head and at the code head, and the golden suite is green (§12.4). |
+| Final checks | §12.4 — on the code head `41db14a4` (the branch merged with current `origin/main` at `da337df0`, which holds #986 and #987, plus the census reconciliation): the full Linux suite in a git clone 1,097 files (1,089 passed, 8 skipped), 0 failing; 23,629 tests, 0 failed; the rules suite 440/440 (27 files); `lint:gate` exit 0; `vite build` exit 0. |
+| Amendment H | Committed verbatim; its rulings close §8. RH-1, RH-2 and RH-6 are the screen pass's and come before any flip; the rest accept the build as it stands. |
+| Not done here, as ruled | RI-3 (the source moment re-checked inside the create transaction) lands with RH-6 in the screen pass; RI-4 needs no code; RI-5's spellings are backlog; RI-7 puts this round in the screen pass's review. |
+
+**Preamble.** `git fetch origin` ran first: PR #988 open, draft, head `c84716ef` — the prompt's head. The work ran in the session's worktree branch `claude/film-room-b2-card-fixes-1cd38d`, moved to `c84716ef` before any write, and is pushed by refspec to `claude/film-room-b2-card`. `origin/main` moved during the session, from `7818a1b3` to `8eeb306f` (#986, cockpit 2b) and then to `da337df0` (#987, the meeting expiry). It was merged once, after the fixes, as `bbe23510`, before the final checks. That merge had no textual conflicts: of the housekeeping files the prompt expected, the flags file, the flag guard's list and the protected-store allowlist merged on their own, and main had not touched `docs/README.md`. The full suite on the merge then found one semantic conflict in B2's census, which `41db14a4` reconciles (§12.3).
+
+### 12.1 The docs (B0)
+
+`bc6f9d38`: Astra's review, Amendment H and Amendment I, each verbatim, with one `docs/README.md` row apiece. Astra's review reached this session twice: once embedded in the prompt between its markers, and once pasted on its own. The committed file is the standalone copy, which is Astra's own file. Its first line is the `# ` title, as every earlier Astra review in `docs/audits/` has. Compared by reading, the embedded copy differs only in that first line's `# `. The review's relative evidence links (`../../evidence/…`, `../../head/…`) point into Astra's own review folder, outside this repository, and are kept as written.
+
+### 12.2 The fixes
+
+Each fix is one commit, with its tests in the same commit. Each mutant was applied to the committed tree, its suites were run, and the file was restored (`git checkout --`, tree clean). "n / N" means rows red out of rows run.
+
+| # | Ruling | Change | Commit | Tests | Mutants |
+|---|---|---|---|---|---|
+| 1 | **RI-1** (Astra F1) | `api/_utils/filmRoom/cardStore.js:182–183`: the cap's input is the caller's own entries (`ownerId === uid`), as `readCards` reads them (`:245`). `:189`: before the fingerprint is compared, an existing entry whose own `ownerId` is missing or not the caller's → 409 `op_conflict` with `{ error, message, entryId }`. That is the answer a foreign op id gets: the caller's own op id, and no field of the stored entry. A same-owner replay is the idempotent success, as before. The docstrings say so (`cardStore.js:15–23`, `card.js:30–32`). | `5b7f4f4f` | **Store** (`cardStore.test.js:282`, +3): Astra's repro with only `ownerId` changed (the refusal exact, nothing written, the entry untouched); a missing owner, then the same-owner control (idempotent, `open 1`); the cap (four own cards plus a foreign-owned and an ownerless open entry → the fifth own card files at 5, the sixth is refused at 5, a replay counts 5, `readCards` 5). **Handler** (`card.test.js:307`, +3): Astra's repro through `POST /api/film-room/card`, re-owned alone and with a planted foreign note (the body exactly the refusal; no owner, note or fingerprint in it); a missing owner, then the same-owner 200 idempotent; the cap with a foreign-owned entry. **Real emulator** (`test/rules/filmRoomCardReplayOwner.rules.mjs`, +3, Admin SDK, rides `npm run test:rules`): `ownerId` updated alone; `FieldValue.delete()` then restored; the cap with a foreign-owned and an ownerless entry. | **M1** the replay without the owner check: 6 red (store 2 / 22, handler 2 / 27, emulator 2 / 3). **M2** the cap counting every entry under the agent: 3 red (store 1 / 22, handler 1 / 27, emulator 1 / 3). |
+| 2 | **RI-2** (Astra B1) | `src/screens/filmRoomV2/filmRoomCards.js:138` `newerThan`, and `:148–155` `ledgerOf`. A write's own result takes the counter row's place when its `version` is newer (both whole numbers, the result's greater). It is added when the counter does not hold the entry, as before. Otherwise the counter's row stands, as before (review L4-10). The replacing result reads `shelved: false`, because the store accepts neither write on a shelved card (RH-5's refusal; the retire's `shelved` refusal). `:220–229` adds the hook's `keepResult`, called at `:235` and `:241`: each successful create or retire is folded into the cards the hook keeps, after its refresh. When that refresh answered, it changes nothing (the counter holds the row at that version, and the state object is kept). When the refresh failed, it is the fix, so My cards follow the receipt. The read error the hook already keeps (`[data-cards-read-error]`) stays said beside it. The kept `open` is the counter's last answer, and the form shows a count only from a counter that answered (review L3-6a). | `7a6da84e` | **Screen** (`FilmRoomCards.jsdom.test.jsx:755`, +3): **ASTRA_STALE_RETIRE**: a Watch card is filed and retired, and the refresh answers 503. The ledger holds `retired`, version 2. The receipt reads "Stage · retired", says "Retired: nothing happens next.", and has no Retire button. My cards lists it under Retired, with no active group and no followed Watch card. The read error shows, and every sweep is clean against the ledger read fresh. **A newer counter row still wins**: the card is retired elsewhere between its create and the refresh, and the receipt and My cards show the counter's retired row, not the create's. **`ledgerOf` by version** (pure): newer replaces in place, the order is kept, and an equal, older or unversioned result leaves the row. | **M3** `ledgerOf` keeping the counter's row regardless of version: 2 / 38 (ASTRA_STALE_RETIRE, the pure row). **M4** `ledgerOf` taking the result regardless of version: 4 / 38 (the newer-counter-row row, the pure row, L4-10, acceptance D on the screen). **M5** (this round's own) the retire's result not folded into the kept cards: 1 / 38 (ASTRA_STALE_RETIRE, on My cards). **Control:** the pre-fix `filmRoomCards.js` (at `5b7f4f4f`) under the new rows turns ASTRA_STALE_RETIRE and the pure row red. The row reproduces Astra's B1. |
+
+### 12.3 The merge with main: one census oracle
+
+The first full suite on the merge `bbe23510` failed two rows. One was branch-side:
+
+- **The row:** `oneDoor.census.test.js`, "every root either reaches a module no other root reaches, or is covered whole by another root".
+- **The message:** `api/cron/agent-evaluate.js must not reach api/_utils/callRecords/callActions.js (exclusive to api/agent/call-response.js)`.
+- **Why it went red:** #986 (`51d7c926`, "retire on exit") gave the evaluator the path `agent-evaluate.js → callRecords/retire.js → callActions.js`. That falsified the premise of B2's non-vacuity oracle (`EXCLUSIVE_REACH`), which picked `callActions.js` as the module that proves `call-response.js` is not a redundant root.
+- **What did not change:** the census's guarantee. Every "no module reachable from its roots imports the ledger" and "reads plays by name" row passed on the merge.
+
+**`41db14a4`** changes the one entry to `callRecords/answers.js`, with a comment saying why.
+
+- **The choice:** on the merged tree, `call-response.js` alone reaches two modules, `callRecords/answers.js` and `callRecords/commands.js` (the census's own walker, copied and run over every root). Neither is a root. `answers.js` was picked because it predates #986 and is already in the chat path's `KNOWN_REACH`.
+- **Mutants:** **C1**, the entry back to `callActions.js`: 1 / 32 red (the exclusive-reach row). **C2**, `call-response.js` dropped from the chat roots: 3 / 32 red (the chat path's non-vacuity row, the whole-list pin, the exclusive-reach row).
+- **Out of scope:** this is a semantic conflict the prompt's list of expected conflicts did not name. It touches B2's own test file only, and no product code.
+
+The other red row on `bbe23510` was main's, from #986: `api/_utils/callRecords/publish.test.js`, "the queue read returns after the deadline". Its result was `unconfirmed` where `timeout_absent` was expected. The row races wall-clock deadlines (`RT.slow` against `RT.reread`) inside a 2-worker full run. Run alone in the same clone at `bbe23510` it passed 37 / 37, three times out of three. This round touches nothing in `api/_utils/callRecords/`. It is reported as a load-timing row, not a branch failure; the final run below is the record.
+
+### 12.4 Final checks
+
+The suite, lint and build were run on the code head `41db14a4`: this round's commits, `origin/main` at `da337df0`, and the census reconciliation. The report commit after it changes `docs/` only. `vite build` and `lint:gate` are run again on that commit, the pushed head, before the push, and that result is in the PR text. The rules suite ran on `bbe23510`. The one commit after it changes a default-suite test file only, which the rules runner does not include.
+
+| Check | Where | Result |
+|---|---|---|
+| The full suite, Linux, `TZ=UTC`, CI-shaped (`vitest run --maxWorkers=2`) | WSL Ubuntu, a private **git clone** (`/home/flashash/pd-b2fix`), Node 20.20.2. It is a clone rather than an archive because `scripts/experiments/archetype-menu-dry-run/capture.test.js` needs `.git` metadata (RI-6) | **At `41db14a4`:** **1,097 files: 1,089 passed, 8 skipped, 0 failing; 23,629 tests: 23,540 passed, 89 skipped, 0 failed**; 646 s. `capture.test.js` passed 9 / 9 in the clone, and `publish.test.js` passed. **At `bbe23510` (the merge, before §12.3):** 1,097 files, 2 failed (the census oracle and the `publish.test.js` deadline row, §12.3); 23,629 tests: 23,538 passed, 89 skipped, 2 failed; 669 s. `capture.test.js` passed 9 / 9 in the clone. |
+| The rules suite (`npm run test:rules`, the Firestore emulator) | Windows, an LF `git archive` snapshot of `bbe23510` (Java is on Windows only), its `firestore.rules` byte-identical to the commit | **27 files, 440 tests, 0 failing**. That is the build's 437 plus the three RI-1 emulator rows. |
+| `npm run lint:gate` | the WSL clone, at `41db14a4` and at the pushed head | exit 0 at `41db14a4` (`eslint . --config eslint.gate.config.js --max-warnings 0`, nothing reported). Run again on the pushed head before the push; that result is in the PR text |
+| `npm run build` (vite) | the WSL clone, at `41db14a4` and at the pushed head | exit 0 at `41db14a4`, built in 21.7 s, with the usual advisories only: the chunk-size advisory, and four CSS-minify warnings from comments in `league.css` and `battleArena.css` that have been in the tree since June. Run again on the pushed head before the push; that result is in the PR text |
+| The cards-off goldens | `git rev-parse` of every file in `src/screens/__golden__/` named `filmRoomV2*` (twelve HTML, the capture suite, the helper), at `c84716ef` and at `41db14a4`; the golden suite in both Linux runs and on Windows | Every blob is the same at both commits. `FilmRoomScreenV2.cardsOff.golden.jsdom.test.jsx` is green: 6 / 6 at `bbe23510`, 6 / 6 at `41db14a4` (in the full run, and run alone in the clone after it, the clone's tree clean). The goldens were not re-captured or moved. |
+| The Film Room folders on Windows (the worktree, with RI-1 committed and RI-2 staged to commit) | `src/screens/filmRoomV2`, `src/screens/__golden__`, `api/_utils/filmRoom`, `api/film-room` | 33 files passed, 4 skipped; 640 tests passed, 4 skipped, 0 failed |
+
+CI: the PR's checks run on the pushed head. Their state when this round ended is in its final message and the PR; this file is that head's own commit, so it cannot carry its CI result. CI was read once after the push and not watched or driven (BUILD_RULES §2).
+
+### 12.5 Fence statement
+
+- **Zero BUILD_RULES §1 edits.** `api/cron/agent-evaluate.js` is not touched by this round. The branch's diff against `origin/main` (`da337df0`) names no §1 file and not `agent-evaluate.js`. The merge brought main's own #986/#987 changes to those files as main has them.
+- **No rules, index or flag change beyond what B2 already adds.** For `firestore.rules`, `firestore.indexes.json`, `src/config/featureFlags.js`, `src/config/flagPinGuard.test.js` and `api/_utils/compositionProtectedStoresAllowlist.json`, the branch's added and removed lines against the new main are identical to B2's against the old main (one SHA-256 per file over the `+`/`-` lines, the same before and after the merge). `FILM_ROOM_CARDS_MODE` is still `'off'`.
+- **No merges, no production writes, no deploys, no flag flip.** No PR was merged. The one merge is `origin/main` into this PR's branch, for the final checks. The emulator rows run against the local emulator only (their host guard refuses anything else), under the demo project id.
+- **One test oracle in B2's own census changed because main's import graph changed** (§12.3). That is the `EXCLUSIVE_REACH` entry for `call-response.js`. No census guarantee row, model-path root list or ledger-module list changed.
+- **No new §2 review was run on this round.** Its own commits, main's merge aside, touch 13 files against `c84716ef`:
+  - three source files (`cardStore.js`, `filmRoomCards.js`, and `card.js`, where only a comment changed);
+  - their three test files, the new emulator file and the census test;
+  - five docs (the review, the two amendments, `docs/README.md` and this report).
+
+  Every change is mutation-checked and built. RI-7 puts F1's owner check and RI-2 in the screen pass's review.
+
+### 12.6 Still open, as ruled
+
+- **Required before any flip:** RH-1 (Set's tempo-dial link), RH-2 (a recurrence in another battle opens that battle's day) and RH-6 (an unavailable day gives one answer everywhere: the card endpoint's 409 `tags_unavailable`, the counter's exclusion and its unavailable-day count). All three are screen-pass work.
+- **Also in the screen pass:** RI-3 (the source moment re-checked inside the create transaction), with RH-6, and Astra's source-refresh race re-run then.
+- **Backlog:** RI-5 (the census's obfuscated spellings: template-literal or computed dynamic imports, string-built collection names). Code review and acceptance C remain the guards.
+- **No change needed:** RI-4 (the note's edge whitespace is trimmed, as built).
+- **Deploy steps:** unchanged (§6).
