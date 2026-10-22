@@ -22,6 +22,17 @@ export const WATCHLIST_STATE = Object.freeze({
 });
 /** How the watchlist card labels its names (design note appendix A: the idea leads, the list is its universe). */
 export const IDEA_LABEL = Object.freeze({ UNIVERSE: 'universe', PLAIN: 'plain', NEUTRAL: 'neutral' });
+/**
+ * Whether the server admits this player to idea records (founder ruling Q-S5-4a). The client cannot know it
+ * without a read (featureFlags.js: it "never learns who is admitted"), so S5 passes UNKNOWN and every player sees
+ * the neutral "N names"; S6 supplies ADMITTED or NOT_ADMITTED from its gated reader.
+ */
+export const IDEA_ACCESS = Object.freeze({ UNKNOWN: 'unknown', ADMITTED: 'admitted', NOT_ADMITTED: 'not_admitted' });
+
+/** An access answer as given: anything that is not exactly one of the three words is UNKNOWN. */
+export function ideaAccessOf(value) {
+  return value === IDEA_ACCESS.ADMITTED || value === IDEA_ACCESS.NOT_ADMITTED ? value : IDEA_ACCESS.UNKNOWN;
+}
 export const CAREER_STATUS = Object.freeze({ LOADING: 'loading', READY: 'ready', UNAVAILABLE: 'unavailable' });
 /** The Forge tab the adjustments' door opens, by the tab's own name. */
 export const FORGE_DOOR = Object.freeze({ CHARACTER: 'character', TRAITS: 'traits' });
@@ -29,18 +40,21 @@ export const FORGE_DOOR = Object.freeze({ CHARACTER: 'character', TRAITS: 'trait
 export const LISTS_STATUS = Object.freeze({ LOADING: 'loading', READY: 'ready', ERROR: 'error' });
 
 /**
- * Which label the watchlist card wears (ruling R-S5-2).
- *   - the records flag off, or a malformed pointer: the neutral "N names" — it
- *     claims nothing about ideas (the flag dominates: with the records dark a
- *     stale pointer would name an idea the player cannot see);
- *   - flag on and the pointer absent or null: the plain list, no idea yet;
- *   - flag on and a positive integer: the list is an idea's universe.
+ * Which label the watchlist card wears (ruling R-S5-2, as narrowed by Q-S5-4a).
+ *   - the player not KNOWN to be admitted to idea records (`ideaAccess` anything
+ *     but ADMITTED: unknown, not admitted, or absent), the records flag off, or a
+ *     malformed pointer: the neutral "N names" — it claims nothing about ideas
+ *     (the flag dominates: with the records dark a stale pointer would name an
+ *     idea the player cannot see; and a player the server does not admit has no
+ *     "idea yet" to be told about);
+ *   - admitted, flag on and the pointer absent or null: the plain list, no idea yet;
+ *   - admitted, flag on and a positive integer: the list is an idea's universe.
  * The pointer is `currentHypothesisVersion` on the list document; the server's
  * own reader (api/_utils/hypothesisRecords/model.js currentVersionOf) treats
  * absent and null as 0 and anything but a positive integer as corrupt.
  */
-export function ideaLabelKind(list, hypothesisRecordsOn) {
-  if (hypothesisRecordsOn !== true) return IDEA_LABEL.NEUTRAL;
+export function ideaLabelKind(list, hypothesisRecordsOn, ideaAccess) {
+  if (ideaAccess !== IDEA_ACCESS.ADMITTED || hypothesisRecordsOn !== true) return IDEA_LABEL.NEUTRAL;
   const pointer = list ? list.currentHypothesisVersion : undefined;
   if (pointer === undefined || pointer === null) return IDEA_LABEL.PLAIN;
   return Number.isInteger(pointer) && pointer > 0 ? IDEA_LABEL.UNIVERSE : IDEA_LABEL.NEUTRAL;
@@ -77,7 +91,7 @@ const nonEmpty = (value) => (typeof value === 'string' && value.trim() !== '' ? 
  * not yet an answer and the card reads `loading` while the read for it is in
  * flight. Left out (undefined), the lists are taken to be current.
  */
-export function deriveWatchlist({ agent, committed, listsStatus, listsReadFor, hypothesisRecordsOn }) {
+export function deriveWatchlist({ agent, committed, listsStatus, listsReadFor, hypothesisRecordsOn, ideaAccess }) {
   const id = nonEmpty(agent?.equippedWatchlistId);
   const base = { id, name: null, symbols: [], count: 0, idea: IDEA_LABEL.NEUTRAL };
   if (!id) return { ...base, state: WATCHLIST_STATE.NONE };
@@ -96,7 +110,7 @@ export function deriveWatchlist({ agent, committed, listsStatus, listsReadFor, h
     name: nonEmpty(found.name) || stored,
     symbols,
     count: symbols.length,
-    idea: ideaLabelKind(found, hypothesisRecordsOn),
+    idea: ideaLabelKind(found, hypothesisRecordsOn, ideaAccess),
     state: WATCHLIST_STATE.READY,
   };
 }
@@ -138,10 +152,11 @@ export function equipLockOf({ agent, activeAgentBattles, concurrencyEnabled }) {
  * @param {Array}   p.activeAgentBattles App's active-battle poll (the shells' input)
  * @param {boolean} p.concurrencyEnabled CASUAL_CLONE_CONCURRENCY_ENABLED
  * @param {boolean} p.hypothesisRecordsOn HYPOTHESIS_RECORDS_ENABLED
+ * @param {string}  p.ideaAccess         IDEA_ACCESS: S5 passes UNKNOWN (the neutral label); S6 supplies the server's answer
  * @param {boolean} p.characterTab       RELEASE3_CHARACTER_TAB_ENABLED: the Forge's `traits` area is then "Character"
  */
 export function deriveLoadout({
-  agent, agentLoading, archetype, slots, adjustments, committed, listsStatus, listsReadFor, activeAgentBattles, concurrencyEnabled, hypothesisRecordsOn, characterTab,
+  agent, agentLoading, archetype, slots, adjustments, committed, listsStatus, listsReadFor, activeAgentBattles, concurrencyEnabled, hypothesisRecordsOn, ideaAccess, characterTab,
 }) {
   if (!agent) return { status: agentLoading === true ? LOADOUT_STATUS.LOADING : LOADOUT_STATUS.NONE };
   const lockedInGame = equipLockOf({ agent, activeAgentBattles, concurrencyEnabled });
@@ -150,7 +165,7 @@ export function deriveLoadout({
     status: LOADOUT_STATUS.READY,
     identity: { name: nonEmpty(agent.name) },
     archetype,
-    watchlist: deriveWatchlist({ agent, committed, listsStatus, listsReadFor, hypothesisRecordsOn }),
+    watchlist: deriveWatchlist({ agent, committed, listsStatus, listsReadFor, hypothesisRecordsOn, ideaAccess }),
     // Only where the shells have the slot (TRAIT_SLOT_ENABLED): getEquipSlots decides, as it does for them.
     // `door` names the Forge area the adjustments' Forge action opens: the same `traits` area, whose tab reads
     // "Character" only while RELEASE3_CHARACTER_TAB_ENABLED is on (ForgeWorkshop.jsx navItems).

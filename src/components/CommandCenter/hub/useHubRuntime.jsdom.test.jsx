@@ -25,7 +25,7 @@ vi.mock('../../../utils/equipSlots', () => ({ getEquipSlots: () => slots.current
 
 import { HubOverlayProvider } from './HubOverlays';
 import { HUB_S1_SECTIONS } from './hubModel';
-import { useHubRuntime } from './useHubRuntime';
+import { unreadCountOf, useHubRuntime } from './useHubRuntime';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -119,6 +119,92 @@ describe('useHubRuntime — the actions in each state', () => {
     render(HUB({ onOpenForge: undefined, setScreen: undefined }));
     await flush();
     expect(defined()).toEqual(['openRecord', 'changeArchetype', 'changeWatchlist', 'changeAdjustments', 'retryLists', 'reportBug']);
+  });
+});
+
+describe('useHubRuntime — the phone menu (founder ruling Q-S5-1)', () => {
+  it('openMenu opens the app drawer: it exists only with setSidebarOpen from App, and calls it with exactly true', async () => {
+    const hub = HUB({ setSidebarOpen: vi.fn() });
+    render(hub);
+    await flush();
+    expect(typeof api.actions.openMenu).toBe('function');
+    api.actions.openMenu();
+    expect(hub.setSidebarOpen).toHaveBeenCalledTimes(1);
+    expect(hub.setSidebarOpen).toHaveBeenCalledWith(true);
+    expect(hub.setScreen).not.toHaveBeenCalled();
+  });
+
+  it('it needs nothing but the drawer: with no agent, while the agent loads, and locked in a game it is still offered', async () => {
+    for (const hub of [HUB({ agent: null, agentLoading: true }), HUB({ agent: null }), HUB({ agent: AGENT({ activeBattleId: 'b-1' }) })]) {
+      render({ ...hub, setSidebarOpen: vi.fn() });
+      await flush();
+      expect(typeof api.actions.openMenu).toBe('function');
+      act(() => { root.unmount(); });
+      host.remove();
+      root = null;
+    }
+  });
+
+  it('no setSidebarOpen (or one that is not a function), or no hub at all: no menu action', async () => {
+    for (const hub of [HUB(), HUB({ setSidebarOpen: 'open' }), HUB({ setSidebarOpen: null }), null]) {
+      render(hub);
+      await flush();
+      expect(api.actions.openMenu, String(hub && hub.setSidebarOpen)).toBeUndefined();
+      act(() => { root.unmount(); });
+      host.remove();
+      root = null;
+    }
+  });
+
+  it('unreadCount is the count the hub was handed when it is a positive whole number, else 0', async () => {
+    for (const [given, expected] of [[3, 3], [1, 1], [0, 0], [-2, 0], [2.5, 0], [Number.NaN, 0], [Infinity, 0], ['4', 0], [null, 0], [undefined, 0], [{}, 0]]) {
+      render(HUB({ setSidebarOpen: vi.fn(), unreadCount: given }));
+      await flush();
+      expect(api.unreadCount, String(given)).toBe(expected);
+      act(() => { root.unmount(); });
+      host.remove();
+      root = null;
+    }
+    render(null);
+    await flush();
+    expect(api.unreadCount).toBe(0);
+  });
+
+  it('unreadCountOf is the same rule on its own', () => {
+    expect(unreadCountOf(5)).toBe(5);
+    expect(unreadCountOf(Number.MAX_SAFE_INTEGER)).toBe(Number.MAX_SAFE_INTEGER);
+    for (const bad of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 2, '5', null, undefined, NaN, true]) expect(unreadCountOf(bad), String(bad)).toBe(0);
+  });
+});
+
+describe('useHubRuntime — ideaAccess (founder ruling Q-S5-4a)', () => {
+  const pointerList = () => [{ watchlistId: 'wl-1', name: 'Tech Leaders', status: 'committed', tickers: ['NVDA', 'AAPL'], currentHypothesisVersion: 3 }];
+  const ideaFor = async (hub) => {
+    listWatchlists.mockResolvedValue(pointerList());
+    render(hub);
+    await flush();
+    const idea = api.sections.loadout.watchlist.idea;
+    act(() => { root.unmount(); });
+    host.remove();
+    root = null;
+    return idea;
+  };
+
+  it('S5 passes no answer: the label is neutral for everyone, with the records flag on and an idea pointer on the list', async () => {
+    expect(flags.current.hypothesisRecordsOn).toBe(true);
+    expect(await ideaFor(HUB())).toBe('neutral');
+  });
+
+  it('only the word admitted lights the idea labels; not_admitted, unknown and anything else do not', async () => {
+    expect(await ideaFor(HUB({ ideaAccess: 'admitted' }))).toBe('universe');
+    for (const ideaAccess of ['not_admitted', 'unknown', 'Admitted', true, 1, null, '']) {
+      expect(await ideaFor(HUB({ ideaAccess })), String(ideaAccess)).toBe('neutral');
+    }
+  });
+
+  it('"admitted" does not outrank the records flag: flag off, the label is neutral', async () => {
+    flags.current = { ...flags.current, hypothesisRecordsOn: false };
+    expect(await ideaFor(HUB({ ideaAccess: 'admitted' }))).toBe('neutral');
   });
 });
 

@@ -8,6 +8,8 @@
 //   hub.agentLoading      that hook's legacy `loading`
 //   hub.activeAgentBattles the active-battle poll, for the equip lock (the shells' own input)
 //   hub.setScreen         App's navigation, for the profile
+//   hub.setSidebarOpen    App's drawer opener, for the phone header's menu button (founder ruling Q-S5-1)
+//   hub.unreadCount       App's unread-notification count, for that button's badge
 //   hub.onOpenForge       App's Forge bridge ({ area, watchlistId, returnTo }). Call it from a
 //                         mounted hub's gesture handler: the hub is unmounted while the Forge
 //                         shows, and App does not guard a call made while the Forge is already
@@ -15,6 +17,10 @@
 //                         request only `area` is read; a `watchlistId` alone means the Lists
 //                         area (the Forge cannot open on a particular list) and `returnTo` is
 //                         not read at all, so no label may promise either.
+//   hub.ideaAccess        optional: 'admitted' | 'not_admitted' | 'unknown' (hub/selectors/loadout.js
+//                         IDEA_ACCESS). App passes none in S5, so it is 'unknown' and the watchlist card
+//                         reads the neutral "N names" for everyone (founder ruling Q-S5-4a); slice S6 supplies
+//                         the server's answer from its gated reader. Anything else reads as 'unknown'.
 //
 // With no `hub` (a test of the frames, the S1 fixtures) nothing here reads or
 // derives anything: the sections pass through untouched and every S5 action is
@@ -22,6 +28,7 @@
 //
 // Entry points, each opening the shipped destination (spec §2):
 //   header account button  -> setScreen('profile')
+//   header menu (phone)    -> setSidebarOpen(true): App's drawer (Battle History, Notifications, Rules, Logout)
 //   identity               -> AgentRecordSheet
 //   archetype              -> ArchetypePicker
 //   watchlist              -> EquipSheet (the quick sheet), and the Forge's Lists area
@@ -39,9 +46,14 @@ import { archetypeLines } from './archetypeLines';
 import { hubFlags } from './hubFlags';
 import { useHubModalOpen } from './HubOverlays';
 import { loadoutLineOf } from './loadoutLine';
-import { deriveCareer, deriveLoadout, LOADOUT_STATUS } from './selectors/loadout';
+import { deriveCareer, deriveLoadout, ideaAccessOf, LOADOUT_STATUS } from './selectors/loadout';
 import { useHubLoadout } from './useHubLoadout';
 import { HUB_SHEETS, useHubSheets } from './useHubSheets';
+
+/** The menu badge's number: a positive safe integer as given, else none (an absent or malformed count draws no badge). */
+export function unreadCountOf(value) {
+  return Number.isSafeInteger(value) && value > 0 ? value : 0;
+}
 
 /** The bug report: the widget stays mounted over the hub and opens on this event (ClashBotWidget.jsx). */
 export function reportBug() {
@@ -75,6 +87,7 @@ export function useHubRuntime({ hub, sections, rootRef }) {
       listsReadFor: lists.readFor,
       activeAgentBattles: hub.activeAgentBattles,
       ...hubFlags(),
+      ideaAccess: ideaAccessOf(hub.ideaAccess),
     });
     merged = {
       ...sections,
@@ -107,8 +120,11 @@ export function useHubRuntime({ hub, sections, rootRef }) {
     openForgeCharacter: ready && loadout.adjustments ? forgeDoor({ area: FORGE_AREAS.CHARACTER, returnTo: FORGE_RETURN.DASHBOARD }) : undefined,
     retryLists: ready ? lists.retry : undefined,
     openProfile: live && typeof hub.setScreen === 'function' ? () => hub.setScreen('profile') : undefined,
+    openMenu: live && typeof hub.setSidebarOpen === 'function' ? () => hub.setSidebarOpen(true) : undefined,
     reportBug: live ? reportBug : undefined,
   };
 
-  return { live, sections: merged, actions, sheets, closeSheet, lists, agent, agentLoading, modalOpen };
+  const unreadCount = live ? unreadCountOf(hub.unreadCount) : 0;
+
+  return { live, sections: merged, actions, sheets, closeSheet, lists, agent, agentLoading, modalOpen, unreadCount };
 }

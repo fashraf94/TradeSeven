@@ -8708,7 +8708,7 @@ export default function PortfolioDuel() {
     if (area) setForgeInitialView(area);
     setShowForge(true);
   };
-  const hubProps = { agent: primaryAgent, agentLoading, activeAgentBattles, setScreen, onOpenForge };
+  const hubProps = { agent: primaryAgent, agentLoading, activeAgentBattles, setScreen, onOpenForge, setSidebarOpen, unreadCount };
   // The floating ClashBot button and the active-season banner are withheld while the hub
   // is the dashboard on screen (S1 founder questions Q2, Q3): both are fixed to the phone
   // strip's corner. False for every screen with the hub flag off.

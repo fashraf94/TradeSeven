@@ -6,8 +6,8 @@
 import { describe, expect, it } from 'vitest';
 import { deriveDeployGate } from '../../../../utils/commandCenterLiveBattles';
 import {
-  CAREER_STATUS, FORGE_DOOR, IDEA_LABEL, LISTS_STATUS, LOADOUT_STATUS, WATCHLIST_STATE,
-  deriveCareer, deriveLoadout, deriveWatchlist, equipLockOf, ideaLabelKind, symbolsOf,
+  CAREER_STATUS, FORGE_DOOR, IDEA_ACCESS, IDEA_LABEL, LISTS_STATUS, LOADOUT_STATUS, WATCHLIST_STATE,
+  deriveCareer, deriveLoadout, deriveWatchlist, equipLockOf, ideaAccessOf, ideaLabelKind, symbolsOf,
 } from './loadout';
 
 const archetype = { name: 'Trend Follower', approach: 'Goes where the momentum is.' };
@@ -29,6 +29,7 @@ const loadoutOf = (over = {}) => deriveLoadout({
   activeAgentBattles: [],
   concurrencyEnabled: true,
   hypothesisRecordsOn: true,
+  ideaAccess: IDEA_ACCESS.ADMITTED,
   characterTab: true,
   ...over,
 });
@@ -71,7 +72,7 @@ describe('deriveLoadout — the agent decides the section\'s status (spec §3: l
 });
 
 describe('deriveWatchlist — the card\'s state (ruling R-S5-1)', () => {
-  const w = (over) => deriveWatchlist({ agent: agent(), committed: [list()], listsStatus: LISTS_STATUS.READY, hypothesisRecordsOn: true, ...over });
+  const w = (over) => deriveWatchlist({ agent: agent(), committed: [list()], listsStatus: LISTS_STATUS.READY, hypothesisRecordsOn: true, ideaAccess: IDEA_ACCESS.ADMITTED, ...over });
 
   it('no list equipped: none, whatever the lists say (a blank id is no id)', () => {
     for (const equippedWatchlistId of [undefined, null, '', '   ']) {
@@ -152,7 +153,7 @@ describe('deriveWatchlist — the card\'s state (ruling R-S5-1)', () => {
   });
 });
 
-describe('ideaLabelKind — the idea-first labels (ruling R-S5-2; the design note, appendix A)', () => {
+describe('ideaLabelKind — the idea-first labels (ruling R-S5-2; the design note, appendix A), for a player KNOWN to be admitted (Q-S5-4a)', () => {
   it.each([
     ['a positive integer pointer, records on', { currentHypothesisVersion: 1 }, true, IDEA_LABEL.UNIVERSE],
     ['a later version, records on', { currentHypothesisVersion: 12 }, true, IDEA_LABEL.UNIVERSE],
@@ -168,26 +169,70 @@ describe('ideaLabelKind — the idea-first labels (ruling R-S5-2; the design not
     ['NaN', { currentHypothesisVersion: Number.NaN }, true, IDEA_LABEL.NEUTRAL],
     ['an object', { currentHypothesisVersion: { n: 1 } }, true, IDEA_LABEL.NEUTRAL],
   ])('%s', (_name, doc, flag, expected) => {
-    expect(ideaLabelKind(doc, flag)).toBe(expected);
+    expect(ideaLabelKind(doc, flag, IDEA_ACCESS.ADMITTED)).toBe(expected);
   });
 
   it('only an exact true turns the records on (an undefined or truthy flag fails closed)', () => {
-    for (const flag of [undefined, null, 1, 'true', {}]) expect(ideaLabelKind({ currentHypothesisVersion: 2 }, flag)).toBe(IDEA_LABEL.NEUTRAL);
+    for (const flag of [undefined, null, 1, 'true', {}]) expect(ideaLabelKind({ currentHypothesisVersion: 2 }, flag, IDEA_ACCESS.ADMITTED)).toBe(IDEA_LABEL.NEUTRAL);
   });
 
   it('no list at all is neutral-or-plain by the flag alone, never a throw', () => {
-    expect(ideaLabelKind(null, true)).toBe(IDEA_LABEL.PLAIN);
-    expect(ideaLabelKind(undefined, false)).toBe(IDEA_LABEL.NEUTRAL);
+    expect(ideaLabelKind(null, true, IDEA_ACCESS.ADMITTED)).toBe(IDEA_LABEL.PLAIN);
+    expect(ideaLabelKind(undefined, false, IDEA_ACCESS.ADMITTED)).toBe(IDEA_LABEL.NEUTRAL);
   });
 
   it('the card carries the label of the RESOLVED list only', () => {
-    const w = (doc, on) => deriveWatchlist({ agent: agent(), committed: [list(doc)], listsStatus: LISTS_STATUS.READY, hypothesisRecordsOn: on });
+    const w = (doc, on) => deriveWatchlist({ agent: agent(), committed: [list(doc)], listsStatus: LISTS_STATUS.READY, hypothesisRecordsOn: on, ideaAccess: IDEA_ACCESS.ADMITTED });
     expect(w({ currentHypothesisVersion: 2 }, true).idea).toBe(IDEA_LABEL.UNIVERSE);
     expect(w({}, true).idea).toBe(IDEA_LABEL.PLAIN);
     expect(w({ currentHypothesisVersion: 2 }, false).idea).toBe(IDEA_LABEL.NEUTRAL);
     expect(w({ currentHypothesisVersion: 'x' }, true).idea).toBe(IDEA_LABEL.NEUTRAL);
     // unresolved states claim nothing about ideas
-    expect(deriveWatchlist({ agent: agent(), committed: [], listsStatus: LISTS_STATUS.READY, hypothesisRecordsOn: true }).idea).toBe(IDEA_LABEL.NEUTRAL);
+    expect(deriveWatchlist({ agent: agent(), committed: [], listsStatus: LISTS_STATUS.READY, hypothesisRecordsOn: true, ideaAccess: IDEA_ACCESS.ADMITTED }).idea).toBe(IDEA_LABEL.NEUTRAL);
+  });
+});
+
+describe('ideaAccess — the idea labels wear only for a player KNOWN to be admitted (founder ruling Q-S5-4a)', () => {
+  const POINTERS = [['a positive pointer', { currentHypothesisVersion: 4 }], ['an absent pointer', {}], ['a null pointer', { currentHypothesisVersion: null }]];
+
+  it('the three words, and nothing else: anything that is not exactly "admitted" or "not_admitted" is "unknown"', () => {
+    expect(IDEA_ACCESS).toEqual({ UNKNOWN: 'unknown', ADMITTED: 'admitted', NOT_ADMITTED: 'not_admitted' });
+    expect(ideaAccessOf('admitted')).toBe('admitted');
+    expect(ideaAccessOf('not_admitted')).toBe('not_admitted');
+    expect(ideaAccessOf('unknown')).toBe('unknown');
+    for (const given of [undefined, null, '', 'Admitted', 'ADMITTED', 'admitted ', 'not admitted', true, 1, {}, ['admitted']]) expect(ideaAccessOf(given), String(given)).toBe('unknown');
+  });
+
+  it.each(POINTERS)('%s, records on: UNKNOWN reads the neutral "N names" — and so does NOT_ADMITTED, and so does no answer at all', (_name, doc) => {
+    expect(ideaLabelKind(doc, true, IDEA_ACCESS.UNKNOWN)).toBe(IDEA_LABEL.NEUTRAL);
+    expect(ideaLabelKind(doc, true, IDEA_ACCESS.NOT_ADMITTED)).toBe(IDEA_LABEL.NEUTRAL);
+    expect(ideaLabelKind(doc, true)).toBe(IDEA_LABEL.NEUTRAL);
+    expect(ideaLabelKind(doc, true, undefined)).toBe(IDEA_LABEL.NEUTRAL);
+  });
+
+  it('a word that is not one of the three (a truthy stand-in, a different case) does not admit', () => {
+    for (const given of [true, 1, 'Admitted', 'yes', {}, null]) {
+      expect(ideaLabelKind({ currentHypothesisVersion: 4 }, true, given), String(given)).toBe(IDEA_LABEL.NEUTRAL);
+    }
+  });
+
+  it('admitted, with the records flag on, is the only way to a label; the flag still dominates', () => {
+    expect(ideaLabelKind({ currentHypothesisVersion: 4 }, true, IDEA_ACCESS.ADMITTED)).toBe(IDEA_LABEL.UNIVERSE);
+    expect(ideaLabelKind({}, true, IDEA_ACCESS.ADMITTED)).toBe(IDEA_LABEL.PLAIN);
+    expect(ideaLabelKind({ currentHypothesisVersion: 4 }, false, IDEA_ACCESS.ADMITTED)).toBe(IDEA_LABEL.NEUTRAL);
+  });
+
+  it('the card and the Loadout carry it: no ideaAccess given is the neutral label, with the records on and an idea pointer', () => {
+    const base = { agent: agent(), committed: [list({ currentHypothesisVersion: 4 })], listsStatus: LISTS_STATUS.READY, hypothesisRecordsOn: true };
+    expect(deriveWatchlist(base).idea).toBe(IDEA_LABEL.NEUTRAL);
+    expect(deriveWatchlist({ ...base, ideaAccess: IDEA_ACCESS.UNKNOWN }).idea).toBe(IDEA_LABEL.NEUTRAL);
+    expect(deriveWatchlist({ ...base, ideaAccess: IDEA_ACCESS.NOT_ADMITTED }).idea).toBe(IDEA_LABEL.NEUTRAL);
+    expect(deriveWatchlist({ ...base, ideaAccess: IDEA_ACCESS.ADMITTED }).idea).toBe(IDEA_LABEL.UNIVERSE);
+    const loadout = (ideaAccess) => loadoutOf({ committed: [list({ currentHypothesisVersion: 4 })], ideaAccess }).watchlist.idea;
+    expect(loadout(undefined)).toBe(IDEA_LABEL.NEUTRAL);
+    expect(loadout(IDEA_ACCESS.UNKNOWN)).toBe(IDEA_LABEL.NEUTRAL);
+    expect(loadout(IDEA_ACCESS.NOT_ADMITTED)).toBe(IDEA_LABEL.NEUTRAL);
+    expect(loadout(IDEA_ACCESS.ADMITTED)).toBe(IDEA_LABEL.UNIVERSE);
   });
 });
 

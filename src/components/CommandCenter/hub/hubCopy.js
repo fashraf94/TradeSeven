@@ -39,7 +39,9 @@
 // watchlist sheet's words (the shells' own, EquipStation.jsx), the Forge doors'
 // names and "Report a bug". Two labels are the idea-first design note's
 // (docs/design/20261016_DESIGN_NOTE_IDEA_FIRST_FORGE.md): "Universe · N names"
-// and "Plain watchlist · no idea yet". The spec's "Create your agent first"
+// and "Plain watchlist · no idea yet" — shown only to a player known to be
+// admitted to idea records (founder ruling Q-S5-4a; S5 passes "unknown", so
+// today everyone reads the neutral "N names"). The spec's "Create your agent first"
 // (§3) is reused for resolved absence of the agent. The panel never states an
 // idea's wording or status (that needs the gated idea reader, slice S6) and
 // says nothing about what the agent does with ideas.
@@ -62,6 +64,12 @@ export const HUB_COPY = Object.freeze({
     profile: 'Your profile',
     /** S5 (ruling R-S5-7): the bug report opens from here, since the floating button is withheld over the hub. */
     reportBug: 'Report a bug',
+    /** S5 (founder ruling Q-S5-1): the phone's menu button, where today's phone shell has its hamburger; it opens App's drawer. */
+    menu: 'Open menu',
+    /** The same button's label while notifications are unread (the badge is for the eye; this is for the ear). */
+    menuUnread: (n) => `Open menu, ${n} unread notification${n === 1 ? '' : 's'}`,
+    /** The badge on it: the number, or "<cap>+" above the cap (the shell's own rule; the cap is the header's, not copy). */
+    unreadBadge: (n, cap) => (n > cap ? `${cap}+` : String(n)),
   }),
 
   shadow: Object.freeze({

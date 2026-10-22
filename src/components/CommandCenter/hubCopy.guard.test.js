@@ -285,6 +285,17 @@ describe('S5: the design note\'s labels, exactly, and nothing the hub cannot bac
     expect(HUB_COPY.header.reportBug).toBe('Report a bug');
   });
 
+  // Founder ruling Q-S5-4a: the client cannot know whether the server admits this player to idea records, so S5 passes
+  // "unknown" and every card reads the neutral "N names". Slice S6 supplies the answer from its gated reader; until then
+  // no hub source may hand the card an admitted player. The word appears only where the selector defines and compares it.
+  it('S5 never tells the card the player is admitted: IDEA_ACCESS.ADMITTED and the word admitted are written only in the selector that defines and compares them (Q-S5-4a)', () => {
+    const code = (rel) => read(rel).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+    const users = hubSourceFiles().filter((rel) => /\bIDEA_ACCESS\.ADMITTED\b|['"`]admitted['"`]/.test(code(rel)));
+    expect(users).toEqual([`${DIR}/hub/selectors/loadout.js`]);
+    // what App hands the hub carries no ideaAccess key at all
+    expect(code('src/App.jsx')).not.toMatch(/ideaAccess/);
+  });
+
   it('no hub file reads an idea record or its reader: the idea\'s wording and status belong to slice S6, behind the gated reader', () => {
     const reach = hubSourceFiles().filter((rel) => /hypothesisVersionService|hypothesisRecords\/|getHypothesis|listHypothes|hypothesisVersions/.test(read(rel).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '')));
     expect(reach).toEqual([]);

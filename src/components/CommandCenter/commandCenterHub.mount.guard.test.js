@@ -313,12 +313,28 @@ describe('S5 mount sites — the hub\'s props, the Forge bridge and the chrome c
   const GET_SCREEN_CONTENT = flat.indexOf('const getScreenContent = () => {');
 
   it('hubProps is built OUTSIDE the dashboard block, from values App already holds, and handed to both gates', () => {
-    expect(flat).toContain('const hubProps = { agent: primaryAgent, agentLoading, activeAgentBattles, setScreen, onOpenForge };');
+    expect(flat).toContain('const hubProps = { agent: primaryAgent, agentLoading, activeAgentBattles, setScreen, onOpenForge, setSidebarOpen, unreadCount };');
     expect(BLOCK).not.toContain('hubProps =');
     expect(count(/\bhubProps\b/)).toBe(3);
     expect(BLOCK.match(/hub=\{hubProps\}/g)).toHaveLength(2);
     expect(flat.indexOf('const hubProps')).toBeGreaterThan(-1);
     expect(flat.indexOf('const hubProps')).toBeLessThan(GET_SCREEN_CONTENT);
+  });
+
+  it('the two keys the phone menu needs, the drawer and the unread count, are state App already holds, declared before hubProps and handed to the legacy dashboards too (founder ruling Q-S5-1)', () => {
+    expect(flat).toContain('const [sidebarOpen, setSidebarOpen] = useState(false);');
+    expect(flat).toContain('const [unreadCount, setUnreadCount] = useState(0);');
+    expect(flat.indexOf('const [sidebarOpen, setSidebarOpen]')).toBeLessThan(flat.indexOf('const hubProps'));
+    expect(flat.indexOf('const [unreadCount, setUnreadCount]')).toBeLessThan(flat.indexOf('const hubProps'));
+    expect(flat).toContain('setSidebarOpen={setSidebarOpen} unreadCount={unreadCount}');
+  });
+
+  it('the menu button is wired by the phone composition only: PhoneHub hands the header the action, WideHub does not, and the header draws it for the phone alone', () => {
+    const hubSource = stripComments(read(HUB_FILE('CommandCenterHub.jsx')));
+    expect(hubSource.match(/onOpenMenu=/g)).toHaveLength(1);
+    expect(hubSource.indexOf('onOpenMenu=')).toBeGreaterThan(hubSource.indexOf('function PhoneHub'));
+    expect(hubSource.indexOf('onOpenMenu=')).toBeLessThan(hubSource.indexOf('function WideHub'));
+    expect(stripComments(read(HUB_FILE('HubHeader.jsx')))).toContain("const canMenu = phone && typeof onOpenMenu === 'function';");
   });
 
   it('onOpenForge sets the Forge\'s first area (when the request names one) in the SAME handler as showForge, and otherwise is the bare setShowForge(true)', () => {

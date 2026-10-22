@@ -229,11 +229,11 @@ describe('the Loadout states (ruling R-S5-1)', () => {
   });
 });
 
-describe('the idea-first labels on the watchlist card (ruling R-S5-2; the design note)', () => {
-  const labelOf = async (doc, on) => {
+describe('the idea-first labels on the watchlist card (ruling R-S5-2; the design note), for a player KNOWN to be admitted (Q-S5-4a)', () => {
+  const labelOf = async (doc, on, ideaAccess = 'admitted') => {
     flags.current = { ...flags.current, hypothesisRecordsOn: on };
     listWatchlists.mockResolvedValue([{ watchlistId: 'wl-1', name: 'Tech Leaders', status: 'committed', tickers: ['A', 'B', 'C'], ...doc }]);
-    const { m } = await renderHub();
+    const { m } = await renderHub({ hub: HUB({ ideaAccess }) });
     const text = card('watchlist').textContent;
     m.unmount();
     mounted = mounted.filter((x) => x !== m);
@@ -256,6 +256,46 @@ describe('the idea-first labels on the watchlist card (ruling R-S5-2; the design
       expect(text).not.toContain('Universe');
       expect(text).not.toContain('idea');
     }
+  });
+
+  it('S5 passes no answer, so the default is "unknown": everyone reads the neutral "N names", whatever the pointer and the records flag say (founder ruling Q-S5-4a)', async () => {
+    for (const doc of [{ currentHypothesisVersion: 4 }, {}, { currentHypothesisVersion: null }]) {
+      listWatchlists.mockResolvedValue([{ watchlistId: 'wl-1', name: 'Tech Leaders', status: 'committed', tickers: ['A', 'B', 'C'], ...doc }]);
+      const { m } = await renderHub();
+      const text = card('watchlist').textContent;
+      expect(text, JSON.stringify(doc)).toContain(COPY.loadout.names(3));
+      expect(text).not.toContain('Universe');
+      expect(text).not.toContain('Plain watchlist');
+      expect(text).not.toContain('idea');
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+    }
+  });
+
+  it('"unknown", "not_admitted" and anything that is not one of the three words: the neutral label, even for an idea pointer with the records on', async () => {
+    for (const access of ['unknown', 'not_admitted', null, true, 'Admitted', '']) {
+      const text = await labelOf({ currentHypothesisVersion: 4 }, true, access);
+      expect(text, String(access)).toContain(COPY.loadout.names(3));
+      expect(text, String(access)).not.toContain('Universe');
+    }
+    for (const access of ['unknown', 'not_admitted']) {
+      const text = await labelOf({}, true, access);
+      expect(text, access).not.toContain('Plain watchlist');
+    }
+  });
+
+  it('"admitted" is the only word that turns the labels on, and a change of the answer on the same mount follows', async () => {
+    flags.current = { ...flags.current, hypothesisRecordsOn: true };
+    listWatchlists.mockResolvedValue([{ watchlistId: 'wl-1', name: 'Tech Leaders', status: 'committed', tickers: ['A', 'B', 'C'], currentHypothesisVersion: 4 }]);
+    const { m } = await renderHub();
+    expect(card('watchlist').textContent).toContain(COPY.loadout.names(3));
+    m.rerender(<CommandCenterHub site="desktop" hub={HUB({ ideaAccess: 'admitted' })} sections={HUB_LAYOUT_FIXTURES.returning.sections} />);
+    await flush();
+    expect(card('watchlist').textContent).toContain(COPY.loadout.universe(3));
+    m.rerender(<CommandCenterHub site="desktop" hub={HUB({ ideaAccess: 'not_admitted' })} sections={HUB_LAYOUT_FIXTURES.returning.sections} />);
+    await flush();
+    expect(card('watchlist').textContent).toContain(COPY.loadout.names(3));
+    expect(card('watchlist').textContent).not.toContain('Universe');
   });
 
   it('it never shows an idea\'s statement or status — the card has no such text and the hub reads no idea record', async () => {
@@ -668,7 +708,7 @@ describe('review fixes — what the sheets are handed, what the card says about 
       { watchlistId: 'wl-1', name: 'Tech Leaders', status: 'committed', tickers: ['NVDA', { symbol: 'NVDA' }, { ticker: 'AAPL' }, {}, ''], currentHypothesisVersion: 2 },
       { watchlistId: 'wl-2', name: 'One', status: 'committed', tickers: ['KO'] },
     ]);
-    await renderHub();
+    await renderHub({ hub: HUB({ ideaAccess: 'admitted' }) });
     expect(card('watchlist').textContent).toContain(COPY.loadout.universe(2));
     expect(card('watchlist').textContent.split('NVDA').length - 1).toBe(1);
     click(btn(COPY.loadout.changeWatchlist));
@@ -704,7 +744,7 @@ describe('review fixes — what the sheets are handed, what the card says about 
     expect(card('watchlist').textContent).not.toContain(COPY.loadout.unavailableNote);
     await act(async () => { answer(LISTS()); await Promise.resolve(); });
     expect(card('watchlist').textContent).not.toContain(COPY.loadout.loading);
-    expect(card('watchlist').textContent).toContain(COPY.loadout.plainList);
+    expect(card('watchlist').textContent).toContain(COPY.loadout.names(2));
   });
 
   it('a list that was gone from the start is answered by the mount read: unavailable at once, one read, and a note that claims no cause and no agent behaviour', async () => {
@@ -738,7 +778,7 @@ describe('review fixes — what the sheets are handed, what the card says about 
     click(btn(COPY.loadout.retry, card('watchlist')));
     await flush();
     expect(card('watchlist').textContent).not.toContain(COPY.loadout.listsError);
-    expect(card('watchlist').textContent).toContain(COPY.loadout.plainList);
+    expect(card('watchlist').textContent).toContain(COPY.loadout.names(2));
   });
 
   describe('the career reads unavailable, never zeros (ruling R-S5-3; spec §7)', () => {
@@ -1082,5 +1122,119 @@ describe('the career reaches the History sheet on the phone site too (ruling R-S
     expect(sheet.textContent).toContain(COPY.history.careerUnavailable);
     expect(sheet.textContent).not.toContain(COPY.history.careerCaption);
     expect(sheet.textContent).not.toMatch(/0W-0L|undefined|NaN/);
+  });
+});
+
+// ── The phone menu button (founder ruling Q-S5-1) ───────────────────────────────────────────────────────
+// With the hub on, a phone player had no route to the app's drawer (Battle History, Notifications, Rules &
+// How to Play, Logout): it opened only from the legacy shells' hamburger. The button sits in the hub header
+// before the greeting, calls App's setSidebarOpen(true), and wears the unread count as a badge.
+
+describe('the phone menu button: App\'s drawer, where today\'s phone shell has its hamburger (founder ruling Q-S5-1)', () => {
+  const phone = { site: 'mobile', hubWidth: 390 };
+  const header = () => hubRoot().querySelector('header');
+  const menu = () => document.querySelector('[data-hub-menu]');
+  const badge = () => document.querySelector('[data-hub-menu-badge]');
+  const DRAWER = (over = {}) => HUB({ setSidebarOpen: vi.fn(), unreadCount: 0, ...over });
+  const rerenderPhone = (m, hub) => m.rerender(<CommandCenterHub site="mobile" hub={hub} sections={HUB_LAYOUT_FIXTURES.returning.sections} />);
+
+  it('is drawn on the phone site, labelled for what it opens, and is the header\'s first control — before the greeting and the title', async () => {
+    await renderHub({ ...phone, hub: DRAWER() });
+    expect(menu()).not.toBeNull();
+    expect(menu().getAttribute('aria-label')).toBe(COPY.header.menu);
+    expect(header().contains(menu())).toBe(true);
+    expect(header().querySelector('button')).toBe(menu());
+    expect(menu().compareDocumentPosition(header().querySelector('h1')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const left = header().firstElementChild;
+    expect(left.firstElementChild).toBe(menu());
+    expect(left.textContent).toContain(COPY.header.title);
+  });
+
+  it('opens App\'s drawer: setSidebarOpen(true), once, and nothing else happens — no profile, no Forge, no sheet', async () => {
+    const hub = DRAWER({ unreadCount: 3 });
+    await renderHub({ ...phone, hub });
+    click(menu());
+    expect(hub.setSidebarOpen).toHaveBeenCalledTimes(1);
+    expect(hub.setSidebarOpen).toHaveBeenCalledWith(true);
+    expect(hub.setScreen).not.toHaveBeenCalled();
+    expect(hub.onOpenForge).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector('[data-stub]')).toBeNull();
+    expect(hubRoot().hasAttribute('data-hub-modal-open')).toBe(false);
+  });
+
+  it('the badge is the unread count: none at zero, the number up to nine, "9+" above, and the label says how many', async () => {
+    const seenLabels = [];
+    for (const [count, shown] of [[1, '1'], [3, '3'], [9, '9'], [10, '9+'], [250, '9+']]) {
+      const { m } = await renderHub({ ...phone, hub: DRAWER({ unreadCount: count }) });
+      expect(badge(), String(count)).not.toBeNull();
+      expect(badge().textContent, String(count)).toBe(shown);
+      expect(menu().getAttribute('aria-label'), String(count)).toBe(COPY.header.menuUnread(count));
+      seenLabels.push(menu().getAttribute('aria-label'));
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+    }
+    expect(new Set(seenLabels).size).toBe(5);
+    expect(seenLabels[0]).toBe('Open menu, 1 unread notification');
+    expect(seenLabels[1]).toBe('Open menu, 3 unread notifications');
+    await renderHub({ ...phone, hub: DRAWER({ unreadCount: 0 }) });
+    expect(badge()).toBeNull();
+    expect(menu().getAttribute('aria-label')).toBe(COPY.header.menu);
+  });
+
+  it('an absent or malformed count draws no badge and no number in the label', async () => {
+    for (const count of [undefined, null, 0, -3, 2.5, Number.NaN, Infinity, '4', {}, true]) {
+      const { m } = await renderHub({ ...phone, hub: DRAWER({ unreadCount: count }) });
+      expect(badge(), String(count)).toBeNull();
+      expect(menu().getAttribute('aria-label'), String(count)).toBe(COPY.header.menu);
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+    }
+  });
+
+  it('the badge follows the count on the same mount: it appears, changes and goes away', async () => {
+    const hub = DRAWER({ unreadCount: 0 });
+    const { m } = await renderHub({ ...phone, hub });
+    expect(badge()).toBeNull();
+    rerenderPhone(m, { ...hub, unreadCount: 4 });
+    await flush();
+    expect(badge().textContent).toBe('4');
+    rerenderPhone(m, { ...hub, unreadCount: 12 });
+    await flush();
+    expect(badge().textContent).toBe('9+');
+    rerenderPhone(m, { ...hub, unreadCount: 0 });
+    await flush();
+    expect(badge()).toBeNull();
+    expect(menu()).not.toBeNull();
+  });
+
+  it('the account button is still the profile: it opens setScreen("profile") and does not open the drawer', async () => {
+    const hub = DRAWER({ unreadCount: 2 });
+    await renderHub({ ...phone, hub });
+    click(document.querySelector('[data-hub-profile]'));
+    expect(hub.setScreen).toHaveBeenCalledTimes(1);
+    expect(hub.setScreen).toHaveBeenCalledWith('profile');
+    expect(hub.setSidebarOpen).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-hub-report-bug]')).not.toBeNull();
+  });
+
+  it('is not drawn on the desktop site, at any width, even when App hands the hub the drawer and a count', async () => {
+    for (const hubWidth of [1280, 1000, 820, 700]) {
+      const { m } = await renderHub({ site: 'desktop', hubWidth, hub: DRAWER({ unreadCount: 7 }) });
+      expect(menu(), String(hubWidth)).toBeNull();
+      expect(badge(), String(hubWidth)).toBeNull();
+      expect(document.querySelector('[data-hub-profile]'), String(hubWidth)).toBeNull();
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+    }
+  });
+
+  it('without App\'s setSidebarOpen (the S1 frames, a hub with no drawer to open) the button is not drawn at all — the rest of the header is as it was', async () => {
+    await renderHub({ ...phone, hub: HUB() });
+    expect(menu()).toBeNull();
+    expect(document.querySelector('[data-hub-profile]')).not.toBeNull();
+    expect(document.querySelector('[data-hub-report-bug]')).not.toBeNull();
+    await renderHub({ ...phone, hub: null });
+    expect(menu()).toBeNull();
   });
 });

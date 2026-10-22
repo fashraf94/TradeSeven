@@ -20,8 +20,10 @@
 // The watchlist card wears the idea-first labels of the design note
 // (docs/design/20261016_DESIGN_NOTE_IDEA_FIRST_FORGE.md): "Universe · N names"
 // for a list that is an idea's universe, "Plain watchlist · no idea yet" for
-// one that has none, and the neutral "N names" when the records are off or the
-// pointer is malformed (hub/selectors/loadout.js ideaLabelKind). It never shows
+// one that has none, and the neutral "N names" otherwise (hub/selectors/loadout.js
+// ideaLabelKind). The first two wear only for a player KNOWN to be admitted to
+// idea records (founder ruling Q-S5-4a): S5 does not know, so every player reads
+// the neutral label until slice S6 supplies the server's answer. It never shows
 // an idea's statement or status — that needs the gated idea reader (slice S6).
 //
 // The cards lay out in `repeat(auto-fit, minmax(LOADOUT_CARD_MIN, 1fr))` on the

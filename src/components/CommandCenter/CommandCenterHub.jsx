@@ -216,7 +216,7 @@ function PhoneHub({ hub, sections: given }) {
           scrollPaddingTop: PHONE_TAB_ROW_CLEARANCE, scrollPaddingBottom: placement.scrollClearance,
         }}
       >
-        <HubHeader phone dateText={shared.dateText} name={shared.name} onOpenProfile={actions.openProfile} onReportBug={actions.reportBug} />
+        <HubHeader phone dateText={shared.dateText} name={shared.name} onOpenProfile={actions.openProfile} onReportBug={actions.reportBug} onOpenMenu={actions.openMenu} unreadCount={runtime.unreadCount} />
         <div style={{ padding: '10px 14px 12px' }}>
           <PhoneStage
             size={shadowSizeFor(composition, width)}
