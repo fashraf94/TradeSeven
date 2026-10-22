@@ -222,7 +222,17 @@ export const SPEC_AGGREGATE_CLASSES = Object.freeze({
   'change(sessionOpen.value to bars[last].c)': 'market',
   'sum(bars[].v)': 'market',
   'axis(% from the session open)': 'market',
+  // Film Room B2 (Amendment G RG-3, RG-8), PINNED HERE from the rulings: a moment's number of checks and the
+  // open-card count are counts of stored rows (derived); the typed note's length is a count (derived); the two
+  // founder slots S9 (5 open cards) and S10 (280 characters) are copied from their versioned module (recorded).
+  'count(tags.items[] in a moment)': 'derived',
+  'count(plays[] open)': 'derived',
+  'slot(S9 open cards per agent)': 'recorded',
+  'count(characters in the note)': 'derived',
+  'slot(S10 note characters)': 'recorded',
 });
+/** The founder slots as the rulings fix them (RG-8) — the oracle for the two slot aggregates, never read from production. */
+export const SPEC_CARD_SLOTS = Object.freeze({ S9: 5, S10: 280 });
 
 /**
  * Where each computed number may sit (review A2P2-1): a declared aggregate anywhere else would be a recorded number
@@ -240,6 +250,13 @@ export const SPEC_AGGREGATE_SITES = Object.freeze({
   'count(timing.tradingDays)': '[data-header-subtitle]',
   'change(sessionOpen.value to bars[last].c)': '[data-region="symbol-facts"]',
   'sum(bars[].v)': '[data-region="symbol-facts"]',
+  // B2: a moment's checks sit on a moment row, a recurrence row or a moment's facts (the form, the receipt);
+  // the open count and the cap on the form's open-count line; the note's length and S10 on its count line.
+  'count(tags.items[] in a moment)': '[data-moment-row], [data-recurrence-row], [data-moment-facts]',
+  'count(plays[] open)': '[data-card-form] [data-open-count]',
+  'slot(S9 open cards per agent)': '[data-card-form] [data-open-count]',
+  'count(characters in the note)': '[data-card-form] [data-note-count]',
+  'slot(S10 note characters)': '[data-card-form] [data-note-count]',
 });
 
 /** What a computed number's text says, and how far its format may round it: a count exactly, "+0.53%" to 0.005 %, "604K" to 500, "1.2M" to 50,000. */
@@ -269,6 +286,26 @@ function aggregateOracle(name, el, docs) {
     // pinned by its own rows (filmRoomModel.test.js).
     const days = tradingTimeline(docs.battle);
     return days ? days.length : null;
+  }
+  // B2 — the slots are the rulings' numbers; the open count is counted here from the ledger document the suite passes
+  // (`docs.ledger`: `{ cards }`, each with its computed `shelved`); a moment's checks are counted from the tape's own
+  // stored items by the row's named symbol and from–to — a recurrence row names another day's tape, so it has no oracle.
+  if (name === 'slot(S9 open cards per agent)') return SPEC_CARD_SLOTS.S9;
+  if (name === 'slot(S10 note characters)') return SPEC_CARD_SLOTS.S10;
+  if (name === 'count(plays[] open)') {
+    const cards = Array.isArray(docs.ledger?.cards) ? docs.ledger.cards : null;
+    return cards ? cards.filter((c) => ['card', 'nominated'].includes(c.stage) && c.shelved !== true).length : undefined;
+  }
+  if (name === 'count(characters in the note)') return undefined;   // the typed text's own length: its rows bind it
+  if (name === 'count(tags.items[] in a moment)') {
+    if (el.closest('[data-recurrence-row]')) return undefined;
+    const host = el.closest('[data-moment-row], [data-moment-facts]');
+    const key = host?.getAttribute('data-moment') ?? host?.getAttribute('data-moment-row') ?? null;
+    const m = /^([^:]+):([^:]+):(\d+|x)-(\d+|x)$/.exec(key || '');
+    const items = Array.isArray(docs.tape?.tags?.items) ? docs.tape.tags.items : null;
+    if (!m || !items) return null;
+    if (m[3] === 'x') return items.filter((i) => i.situationId === m[1] && i.symbol === m[2] && !Number.isInteger(i.tickSeq)).length ? 1 : null;
+    return items.filter((i) => i.situationId === m[1] && i.symbol === m[2] && Number.isInteger(i.tickSeq) && i.tickSeq >= Number(m[3]) && i.tickSeq <= Number(m[4])).length;
   }
   const tape = docs.tape;
   if (!tape) return undefined;
@@ -359,6 +396,13 @@ export function axisDefects(container, docs) {
  * its document ('tape', 'series:SYM'). Returns the list of defects (empty when
  * every number is marked by its own path's class and no digit strays).
  */
+/**
+ * Film Room B2: the player's OWN typed words — the note in the card form's textarea (React renders a controlled
+ * textarea's value as its text child) — are neither the screen's voice nor a stored record, so every sweep passes
+ * over a text node whose parent is a textarea, and nothing else: a <p> beside it with the same words is still swept.
+ */
+const isTypedText = (node) => node?.parentElement?.tagName === 'TEXTAREA';
+
 export function sweepNumbers(container, docs) {
   const bad = [];
   for (const el of container.querySelectorAll('[data-num]')) {
@@ -398,7 +442,7 @@ export function sweepNumbers(container, docs) {
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     let text = node.textContent;
-    if (!/\d/.test(text)) continue;
+    if (!/\d/.test(text) || isTypedText(node)) continue;
     const host = node.parentElement;
     // A numeral is exempt only as a MARKED number's one text (review A2L4-6: a bare data-num-text span is not one; A2A3-1).
     if (markedNumberText(host)) continue;
@@ -451,6 +495,8 @@ export const SPEC_QUOTE_CHANNELS = Object.freeze([
   { re: /^directives\[\d+\]\.(canonicalText|retainedDirectiveText)$/, by: 'the stored directive', at: (p) => within(p, 'filedAt') },
   { re: /^plans\[\d+\]\.(signalSummary|threshold)$/, by: 'the stored plan', at: (p) => within(p, 'at') },
   { re: /^battle\.completionMessage\.text$/, by: 'the platform', at: () => ['battle', 'completionMessage', 'at'] },
+  // B2 (spec §6): the player's note on a filed card — the LEDGER document (`docs.ledger`: `{ etDate, cards }`), credited "you"
+  { re: /^cards\[\d+\]\.note$/, by: 'you', at: (p) => within(p, 'createdAt') },
 ]);
 
 /**
@@ -553,7 +599,7 @@ export function quoteDefects(container, docs = {}) {
 export function renderedText(container, docs = {}) {
   const parts = [];
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (!boundQuotationOf(node, docs) && !boundAgentNameOf(node, docs)) parts.push(node.textContent);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (!boundQuotationOf(node, docs) && !boundAgentNameOf(node, docs) && !isTypedText(node)) parts.push(node.textContent);
   for (const el of container.querySelectorAll(TEXT_ATTRIBUTE_SELECTOR)) for (const attr of TEXT_ATTRIBUTES) parts.push(el.getAttribute(attr) || '');
   return parts.join(' \n ');
 }
@@ -570,7 +616,7 @@ function numberWordHits(container, docs) {
   const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const text = node.textContent;
-    if (!NUMBER_WORD.test(text)) continue;
+    if (!NUMBER_WORD.test(text) || isTypedText(node)) continue;
     const host = node.parentElement;
     if (boundQuotationOf(node, docs)) continue;
     if (markedNumberText(host)) continue;

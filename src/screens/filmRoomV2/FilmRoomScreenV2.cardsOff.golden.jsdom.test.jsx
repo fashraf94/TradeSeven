@@ -143,6 +143,21 @@ describe('acceptance J — cards off, or the owner not admitted: the current v2,
     for (const url of fetches) expect(url).toMatch(/^\/api\/agent\/cockpit-status\?battleId=/);
   });
 
+  it("'on' (and 'allowlist' with the owner admitted): NOT the golden — the regions carry the cards release, so the comparison can fail", async () => {
+    const c = CASES.find((x) => x.day === 'sep23' && x.depth === 'glance' && x.layout === 'phone');
+    flags.cards = 'on';
+    const on = await photograph(c);
+    expect(on).not.toBe(golden(c.file));
+    expect(on).toContain('data-cards-region="prepared-case"');
+    expect(on).not.toContain('<div data-reserved-slot="prepared-case"></div>');
+    flags.cards = 'allowlist';
+    resetFilmRoomVerdicts();
+    answer({ on: false, allowlisted: true });
+    const admitted = await photograph(c);
+    expect(admitted).not.toBe(golden(c.file));
+    expect(admitted).toContain('data-cards-region="since-last-time"');
+  });
+
   it("'allowlist', a verdict that fails (500, a malformed body, no user): the golden", async () => {
     flags.cards = 'allowlist';
     const c = CASES.find((x) => x.day === 'sep23' && x.depth === 'study' && x.layout === 'phone');

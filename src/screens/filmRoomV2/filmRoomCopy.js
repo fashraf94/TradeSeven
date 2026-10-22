@@ -196,7 +196,8 @@ export const FILM_ROOM_COPY = Object.freeze({
   showLess: 'Show less',
   // R7: who a quotation's words are, as the tape records it; a stored record with no recorded author is named as
   // the record ("the stored plan"), never given a guessed one
-  quoteBy: { agent: 'the agent', player: 'the player', platform: 'the platform', plan: 'the stored plan', directive: 'the stored directive' },
+  // B2: the player's own note on a filed card is credited "you" (spec §6; the ledger's `note`, bound by path)
+  quoteBy: { agent: 'the agent', player: 'the player', platform: 'the platform', plan: 'the stored plan', directive: 'the stored directive', you: 'you' },
   plans: 'Plans',
   plansNone: 'No plan entries were recorded this day.',
   plansAll: 'All',
@@ -246,6 +247,70 @@ export const FILM_ROOM_COPY = Object.freeze({
   // later-release regions (BA-47) — named, empty
   reservedHeader: ['since-last-time', 'prepared-case'],
   reservedFooter: ['your-call', 'receipt'],
+
+  // Film Room B2 — the card (Build B spec §6; Amendment G RG-2 … RG-9): the four regions' words. They render only
+  // under FILM_ROOM_CARDS_MODE for an admitted owner; otherwise the regions above stay empty (the golden).
+  cards: {
+    sinceLastTime: 'Since last time',
+    preparedCase: 'Prepared case',
+    yourCall: 'Your call',
+    receipt: 'Receipt',
+    moments: 'Moments',
+    momentsNote: 'longest first · a moment is a run of checks when a holding had stalled',
+    momentsNone: "No moments matched this day's situations.",
+    takeHome: 'Take this home',
+    countAgainst: 'count',
+    thresholdWord: 'against a threshold of',
+    checkTag: 'Situation at this check',
+    question: 'Pick a question',
+    note: 'Your note',
+    noteLimit: 'characters',
+    routeTitle: 'What happens next',
+    routes: { watch: 'Watch', drill: 'Practice', set: 'Set' },
+    // RG-5: each route says only what will happen
+    routeNotes: {
+      watch: 'The Film Room counts each time this comes back.',
+      drill: 'The Practice Field opens later; this keeps the moment for it.',
+      set: 'You change the setting yourself; this card changes nothing.',
+    },
+    // RG-9: no link unless exactly one equip route fits the situation — none is claimed here; stated in plain words
+    setRoute: 'Which setting, and where you change it, is your call; this card links nowhere.',
+    openCards: 'Open cards',
+    file: 'File this card',
+    cancel: 'Cancel',
+    filing: 'Filing…',
+    refusals: {
+      cap_reached: 'The open-card cap for this agent is reached. Retire a card first.',
+      moment_not_found: "That moment is not on this day's tape.",
+      disabled: 'Cards are not on for this battle.',
+      note_too_long: 'The note is over its limit.',
+      note_control_char: 'The note holds a character a card cannot keep.',
+      note_empty: 'The note needs some words.',
+      version_conflict: 'This card changed since it was loaded. Reload and try again.',
+      shelved: 'This card is shelved and cannot move.',
+      untaped: 'This battle mode is not taped.',
+      default: 'The card could not be filed.',
+      retireDefault: 'The card could not be retired.',
+    },
+    filedCard: 'The filed card',
+    situation: 'Situation',
+    on: 'on',
+    route: 'Route',
+    stage: 'Stage',
+    stageWords: { card: 'card', nominated: 'nominated for the Practice Field', retired: 'retired' },
+    retire: 'Retire',
+    retiring: 'Retiring…',
+    recurrences: 'Since this card',
+    noRecurrence: 'No recurrence recorded since this card.',
+    noWatchCards: 'No open Watch card.',
+    myCards: 'My cards',
+    groups: { active: 'Active', shelved: 'Shelved', retired: 'Retired' },
+    noCards: 'No cards yet.',
+    shelvedExplainer: 'A card made under another archetype is shelved: kept, not counted as open, and back by itself when the agent returns to that archetype.',
+    loading: 'Loading the cards…',
+    readError: 'The cards could not be read.',
+    openCard: 'Show',
+  },
 });
 
 /**

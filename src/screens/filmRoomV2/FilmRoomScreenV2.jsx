@@ -29,6 +29,10 @@ import { C, card, eyebrow, body, mono, plain, tint, Label, KindLegend, Segmented
 import FilmRoomGlance from './FilmRoomGlance';
 import FilmRoomStudy from './FilmRoomStudy';
 import FilmRoomDeepDive from './FilmRoomDeepDive';
+// Film Room B2 (Build B spec §6; Amendment G RG-2): the card — its gate, its reads and writes, and the four regions'
+// content, rendered in place of the empty reserved regions ONLY when cards resolve on for the battle's owner.
+import { useFilmRoomCards, defaultCardsApi, momentAnchor } from './filmRoomCards';
+import { PreparedCase, YourCall, Receipt, SinceLastTime } from './FilmRoomCardRegions';
 
 const DESKTOP_QUERY = '(min-width: 1024px)';
 
@@ -197,8 +201,9 @@ const pill = (accent) => ({ display: 'inline-flex', alignItems: 'center', gap: 6
  * @param {string}   [props.viewerId] the signed-in viewer's uid (the first-open notice is per viewer)
  * @param {object}   [props.readers]  test seam: { readTape, readSeries }
  * @param {number}   [props.nowMs]    test seam: the instant "scheduled" is judged at
+ * @param {object}   [props.cardsApi] test seam (B2): { readVerdict, readCounter, postCard, newOpId }
  */
-export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', viewerId = null, readers = firestoreReaders, nowMs }) {
+export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', viewerId = null, readers = firestoreReaders, nowMs, cardsApi = defaultCardsApi }) {
   const now = useMemo(() => (Number.isFinite(nowMs) ? nowMs : Date.now()), [nowMs]);
   const battleId = filmRoomBattleId(battle);
   const days = useMemo(() => battleDays(battle), [battle]);
@@ -216,12 +221,47 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const written = Boolean(tape && Array.isArray(tape.checks));
   const seriesState = useSeriesDay(battleId, day, tape?.ownerId ?? null, depth === 'deep' && written, readers);
 
-  const changeDay = (d) => { setDay(d); setSelected(null); setSym(null); };
+  // B2 — the card: the gate per owner, the counter for the battle's agent (once the tape names it), the two writes.
+  const agentId = (typeof tape?.agentId === 'string' && tape.agentId) || (typeof battle?.agentId === 'string' && battle.agentId) || null;
+  const cards = useFilmRoomCards({ battle, agentId: written ? agentId : null, api: cardsApi });
+  const [picked, setPicked] = useState(null);      // the moment the form is open for
+  const [receipt, setReceipt] = useState(null);    // the card the receipt shows
+  const [pendingJump, setPendingJump] = useState(null);
+
+  const changeDay = (d) => { setDay(d); setSelected(null); setSym(null); setPicked(null); setReceipt(null); };
   const openDeep = (s) => { setSym(s); setDepth('deep'); };
   const jump = (id) => {
     const el = typeof document !== 'undefined' ? document.getElementById(id) : null;
     if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+  // a jump lands after the element it names has rendered (the form, the receipt, a moment on another day's tape)
+  useEffect(() => {
+    if (!pendingJump) return;
+    if (pendingJump.when === 'tape' && tapeState.status !== 'ready') return;
+    jump(pendingJump.id);
+    setPendingJump(null);
+  }, [pendingJump, tapeState.status, picked, receipt]);
+  const takeHome = (m) => { setReceipt(null); setPicked(m); setPendingJump({ id: 'your-call' }); };
+  const showCard = (c) => { setPicked(null); setReceipt(c); setPendingJump({ id: 'receipt' }); };
+  /** RG-4: a recurrence of this battle opens its day and moment here; another battle's is left to its link. */
+  const openMoment = (r) => {
+    if (r.battleId !== battleId) return false;
+    if (r.etDate !== day) changeDay(r.etDate);
+    setPendingJump({ id: momentAnchor(r), when: 'tape' });
+    return true;
+  };
+  const onFile = async (req) => {
+    const r = await cards.create(req);
+    if (r.ok) { setPicked(null); setReceipt(r.card); setPendingJump({ id: 'receipt' }); }
+    return r;
+  };
+  const onRetire = async (c) => {
+    const r = await cards.retire(c);
+    if (r.ok) setReceipt(r.card);
+    return r;
+  };
+  const cardsOn = cards.on === true;
+  const cardsProps = cardsOn && written ? { onTakeHome: takeHome } : null;
 
   const parts = headerParts(battle, tape, day);
   const subtitle = [parts.name ? <AgentName key="name" battle={battle} /> : null, parts.archetype, parts.game, parts.length ? <BattleLength key="length" length={parts.length} tape={tape} /> : null, parts.date ? <When key="date">{parts.date}</When> : null].filter(Boolean);
@@ -243,8 +283,8 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
     const status = typeof tape?.passes?.close?.status === 'string' && tape.passes.close.status ? <StoredNote doc={tape} path={['passes', 'close', 'status']} /> : COPY.statusUnknown;
     content = <div data-state="not-written"><EmptyCard>{COPY.closeNotWritten} ({status}).</EmptyCard></div>;
   }
-  else if (depth === 'glance') content = <FilmRoomGlance tape={tape} desktop={desktop} selected={selected} onSelect={setSelected} finalDay={finalDay} />;
-  else if (depth === 'study') content = <FilmRoomStudy tape={tape} desktop={desktop} onDeep={openDeep} selected={selected} onSelect={setSelected} jump={jump} />;
+  else if (depth === 'glance') content = <FilmRoomGlance tape={tape} desktop={desktop} selected={selected} onSelect={setSelected} finalDay={finalDay} cards={cardsProps} />;
+  else if (depth === 'study') content = <FilmRoomStudy tape={tape} desktop={desktop} onDeep={openDeep} selected={selected} onSelect={setSelected} jump={jump} cards={cardsProps} />;
   else content = <FilmRoomDeepDive tape={tape} seriesState={seriesState} sym={sym} onSym={setSym} desktop={desktop} />;
 
   return (
@@ -261,7 +301,12 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
             <span style={pill()}><When>{etDateLabel(day, { short: true }) ?? ''}</When> · {complete ? COPY.battleComplete : COPY.battleActive}</span>
           </div>
         </div>
-        <Reserved region="header" names={COPY.reservedHeader} />
+        {cardsOn ? (
+          <div data-cards-regions="header" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <SinceLastTime tape={tape} counter={cards.counter} onOpenMoment={openMoment} onShowCard={showCard} />
+            {written ? <PreparedCase tape={tape} onTakeHome={takeHome} /> : null}
+          </div>
+        ) : <Reserved region="header" names={COPY.reservedHeader} />}
         <div style={{ display: 'flex', alignItems: desktop ? 'center' : 'stretch', flexDirection: desktop ? 'row' : 'column', gap: desktop ? 16 : 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: desktop ? 16 : 10, minWidth: 0, flex: desktop ? '0 1 auto' : undefined }}>
             <AgentMark battle={battle} size={desktop ? 40 : 34} />
@@ -299,7 +344,12 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
           : <div key={d.id} id={panelIdOf(idBase, d.id)} role="tabpanel" aria-labelledby={tabIdOf(idBase, d.id)} hidden />))}
       </main>
       <footer style={{ padding: 0 }}>
-        <Reserved region="footer" names={COPY.reservedFooter} />
+        {cardsOn ? (
+          <div data-cards-regions="footer" style={{ width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: picked || receipt ? (desktop ? '0 24px 48px' : '0 12px 40px') : 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {picked && written ? <YourCall key={`${day}:${picked.symbol}:${picked.fromTickSeq}`} tape={tape} moment={picked} counter={cards.counter.data} onFile={onFile} onCancel={() => setPicked(null)} /> : null}
+            {receipt ? <Receipt key={receipt.entryId} tape={tape} counter={cards.counter.data} card={receipt} onRetire={onRetire} /> : null}
+          </div>
+        ) : <Reserved region="footer" names={COPY.reservedFooter} />}
       </footer>
     </div>
   );
