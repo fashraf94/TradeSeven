@@ -153,6 +153,8 @@ export function createCallsContext({ mode, handlerStartMs }) {
     held: null,
     // Amendment C-3: the persisted-bench names on cooldown at promptBuiltAt (observe.js), null = unknown.
     locked: null,
+    // Cockpit Build 2b (Amendment D-7 / D-3): the book and the swap's lists frozen at the model seam (observe.js), null = unknown.
+    book: null,
   };
 }
 

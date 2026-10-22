@@ -30,10 +30,17 @@
 // (callsBlock.test.js pins the equality) — the model-visible block does not
 // move by a byte.
 //
+// Cockpit Build 2b (Amendment D-4; spec S-4, S-12): two answer lines join the
+// block — `answered: Bring in DHR` (a replace) and `answered: Go now, bring in
+// DHR` (a go_now with a chosen name) — the name read from the DIRECTIVE
+// RECORD (threads.js selectedPickOf), never from playerResponse. Every v1 row
+// renders byte for byte as before (callsBlock.test.js). Fenced-class reviewed
+// model-visible text (contract V1.4 §2; the 2b report's L2).
+//
 // Model-visible prose: registered in PROMPT_CONTRIBUTING_MODULES.
 
 import { withTimeout } from '../intraday/evaluatorHook.js';
-import { renderCallLine, renderUpsideLine, isUpsideCall, checkLabel, ANSWER_WORDS } from './copy.js';
+import { renderCallLine, renderUpsideLine, isUpsideCall, checkLabel, ANSWER_WORDS, answerWithPick } from './copy.js';
 import { selectedPickOf } from './threads.js';
 
 export const CALLS_BLOCK_CHAR_CAP = 1_200;
@@ -44,6 +51,8 @@ export const RESOLVED_STATES = Object.freeze(['hit', 'expired_unresolved', 'ende
 export const CALLS_BLOCK_HEADING = "CALLS ON THE RECORD (the trading process's called shots: open first, then the five newest resolved — an answer is a request filed to the process, never a trade it has made)";
 
 const nonEmpty = (v) => typeof v === 'string' && v.length > 0;
+/** The answers whose directive can carry a chosen name (the pick; Build 2b's replace and named go_now). */
+const NAMED_ANSWERS = Object.freeze(['pick', 'replace', 'go_now']);
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 
 /** The promptBuiltAt of a retained check, by its evalId. */
@@ -81,8 +90,10 @@ export function renderCallsRow(call, { nowMs = Date.now(), evaluations = [], bat
   const parts = [call.callId, line, call.state ?? 'unknown'];
   const answer = call.playerResponse?.answer;
   // The selected pick lives in the directive's own record (spec §5), never on playerResponse (review L6-2 / L5-3).
-  const pick = answer === 'pick' ? selectedPickOf(battle, call.playerResponse?.directiveThreadId) : null;
-  if (ANSWER_WORDS[answer]) parts.push(`answered: ${ANSWER_WORDS[answer]}${nonEmpty(pick) ? ` ${pick}` : ''}`);
+  // Cockpit Build 2b (D-4): so does a chosen name — `answered: Bring in DHR` for a replace,
+  // `answered: Go now, bring in DHR` for a named go_now; a go_now without one reads as before.
+  const pick = NAMED_ANSWERS.includes(answer) ? selectedPickOf(battle, call.playerResponse?.directiveThreadId) : null;
+  if (ANSWER_WORDS[answer]) parts.push(`answered: ${answerWithPick(answer, pick)}`);
   const fact = renderCallFact(call, { evaluations });
   if (fact) parts.push(fact);
   return `- ${parts.join(' · ')}`;

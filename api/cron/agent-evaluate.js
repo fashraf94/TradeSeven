@@ -56,7 +56,9 @@ import { runHeardPhase } from '../_utils/callRecords/heard.js';
 import { recordFetchedQuote, freezeObservation, freezeModelObservation, classifyEntryExit, carryExecutorResult, passExaminesHeldPrices } from '../_utils/callRecords/observe.js';
 import { captureDeclarations } from '../_utils/callRecords/validate.js';
 import { bindHorizon, battleExpiryMs } from '../_utils/callRecords/horizon.js';
-import { callsReserveMsFor, runModelCallsPhase } from '../_utils/callRecords/publish.js';
+import { callsReserveMsFor, runModelCallsPhase, TAIL_RESERVE_MS } from '../_utils/callRecords/publish.js';
+// Cockpit Build 2b (Amendment D-6): the retire-on-exit step before the prompt.
+import { retireLeftBook, RETIRE_TX_MS } from '../_utils/callRecords/retire.js';
 import { runCallFlips, runExitCallsHook } from '../_utils/callRecords/flip.js';
 import { validateTradeToolResult, INVALID_TOOL_RESULT_CLASS } from '../_utils/agentEvalToolResultValidation.js';
 import { evaluateTriggers, fetchRecentNews, MAX_STORY_WAKE_ATTEMPTS, SEEN_STORY_ID_CAP } from '../_utils/agentTriggerGate.js';
@@ -118,6 +120,9 @@ import { getArchetypeConfig, resolveHftConfig, KNOB_CONFIG_VERSION } from '../_u
 // with what the prompt rendered.
 import { FieldValue } from 'firebase-admin/firestore';
 import { isDirectiveActive } from '../_utils/directiveUtils.js';
+// Cockpit Build 2b (Amendment D-6): the retire step runs only when the in-memory slot is call-family.
+// Its own line: tickStamps.pins pin 1 matches the line above byte for byte against the fenced assembler's.
+import { isCallDirective } from '../_utils/directiveUtils.js';
 import { resolveControls } from '../_utils/controlPromptRenderer.js';
 import { recordControlEpochIfNeeded } from '../_utils/controlSuppressionTelemetry.js';
 import { TEMPO_DIAL_BANDS } from '../_utils/tempoDialBands.js';
@@ -2551,6 +2556,10 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // early return that used to silently swallow them (Phase-0 item 2).
     if (gameplanHandled === 'skip_haiku') {
       await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, governingPreset, callsCtx, swapIdentityMode });
+      // Cockpit Build 2b (D-6; review CB1-1): every tick a meeting stays pending returns here, and the risk loop
+      // and this R11 pass still move the book — so the retire step runs here too, or a command on a stock that
+      // left would stand until the meeting resolves. No prompt is built on this tick.
+      await retireCommandIfLeft({ db, battleRef, battle, callsCtx });
       finalizeCronState(scoreUpdate, { vwapTicks, intradayMomentum: momentumData.vwap, stagnationTicks, lastTickPrice, lastTickTimestamp, vwapFireGuard });
       const existingFeed = battle.statusFeed || [];
       scoreUpdate.statusFeed = [...existingFeed, ...statusFeedEntries].slice(-STATUS_FEED_CAP);
@@ -2573,6 +2582,26 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       if (callsActive(callsCtx.mode)) await callsStepAsync(callsCtx, () => runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS }));
       return;
     }
+
+    // ---- Cockpit Build 2b (Amendment D-6; spec S-7) — retire on exit ----
+    // A live CALL-FAMILY command whose stock left the book is retired here,
+    // at resolved 'on', in one bounded transaction (retire.js; 800 ms, never
+    // throws), so this check's prompt is built without it. THE PLACE, at HEAD:
+    // after the last pre-prompt route that can move the book — the risk loop's
+    // forced exits (re-read in refreshBattleFromDoc, B3 route 2), the pending
+    // proposal's execution (route 6, dormant under autopilot) and an approved
+    // gameplan meeting's legs (route 5: handleGameplanMeeting executes them and
+    // returns 'continue' into this tick) — and before every reader of the
+    // prompt's directive: the trigger gate, the admission budget, the fenced
+    // prompt build (buildLiveContextBlock) and the heard stamp. The meeting
+    // branches above (pending, and created below) run the same step after their
+    // R11 pass (review CB1-1); a pending PROPOSAL returns before it, but
+    // autopilot clears proposals, so that branch does not occur in production
+    // (it retires at the next tick that reaches the step). Routes after the
+    // prompt — the agent's own trade, a suppression-pass guardrail exit — are
+    // the heard pass's (acted) or the next check's. It runs on a refresh-failure
+    // tick too: it reads its own fresh parent.
+    await retireCommandIfLeft({ db, battleRef, battle, callsCtx });
 
     // ---- v2 Ruling 3: unavailable corrected frame ----
     // The calibrated risk pass, forced exits, the proposal and the meeting have
@@ -2650,6 +2679,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       // every tick); the pass widens its frequency, never its mechanism.
       if (gameplanTrigger) {
         await runSuppressionDeterministicPass({ db, battleRef, battle, prices, lockedPositions, stockRegimes, statusFeedEntries, pendingNarrations, summary, tournamentCtx, ctx, currentDay, currentScore, marketPosture, dialClamp, momentumData, technicalScoresMap, attributionAgentId, rankingsResult, vwapTicks, stagnationTicks, governingPreset, callsCtx, swapIdentityMode });
+        // Cockpit Build 2b (D-6; review CB1-1): the meeting-CREATED tick returns below after this R11 pass, which
+        // can move the book — retire here, as the pending branch does.
+        await retireCommandIfLeft({ db, battleRef, battle, callsCtx });
         const todayET = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
         statusFeedEntries.push({
           timestamp: new Date().toISOString(),
@@ -4787,6 +4819,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
         // model's echo). Inert below resolved 'on'.
         heardWriter: runHeardPhase,
         heard: evaluation.heard ?? null,
+        // Cockpit Build 2b (Amendment D-3; spec S-3): the mint's two new inputs, both already in hand —
+        // the LINTED anticipation candidates (the list the entry's `candidates` stamp is composed from)
+        // and `{ symbol: technicalRank }` from the rankings this check's prompt rendered
+        // (momentumData.rankingsMap). No new I/O.
+        anticipationCandidates: Array.isArray(lintedAnticipationCandidates) ? lintedAnticipationCandidates : null,
+        rankMap: momentumData.rankingsMap && typeof momentumData.rankingsMap === 'object'
+          ? Object.fromEntries(Object.entries(momentumData.rankingsMap).map(([symbol, row]) => [symbol, row?.technicalRank ?? null]))
+          : null,
       })
       : runExitCallsHook(callsCtx, { db, battle, timeBudgetMs: TIME_BUDGET_MS })));
     // Capture references (§3.7/§3.9): CONFIRMED publication results only,
@@ -5688,6 +5728,26 @@ async function handlePendingProposal(db, battleRef, battle, prices, statusFeedEn
   await battleRef.update({ pendingProposal: null, proposalHistory: history });
   await refreshBattleFromDoc(battleRef, battle, tournamentCtx);
   return 'continue';
+}
+
+/**
+ * Cockpit Build 2b (Amendment D-6; spec S-7) — RETIRE ON EXIT, the one step. A
+ * live CALL-FAMILY command whose stock left the book is retired at resolved
+ * 'on', in one bounded transaction (retire.js; never throws), so no prompt is
+ * built with it. Its deadline is the step's own ceiling, clipped to the tick's
+ * protected tail like every other calls step (callsBudget; review CB1-12). The
+ * check has neither its committed evalId nor its prompt yet: both are null on
+ * the event (D-6 evidence, by construction of this placement).
+ */
+// Exported for the behavioral suite (review L7 S9: the tail clip) — never imported by production code.
+export async function retireCommandIfLeft({ db, battleRef, battle, callsCtx }) {
+  if (callsCtx.mode !== 'on' || !isCallDirective(battle.directive)) return null;
+  const retireNowMs = Date.now();
+  const tailMs = callsCtx.handlerStartMs + TIME_BUDGET_MS - TAIL_RESERVE_MS;
+  const deadlineMs = Math.min(retireNowMs + RETIRE_TX_MS, tailMs);
+  const retire = await callsStepAsync(callsCtx, () => retireLeftBook({ db, battleRef, battle, nowMs: retireNowMs, evalId: null, promptBuiltAt: null, deadlineMs }));
+  if (retire?.retired) console.log(`${LOG_PREFIX} Retired the cockpit command on battle ${battle.id} (${retire.reason}) before the prompt`);
+  return retire ?? null;
 }
 
 // ==================== R11 SUPPRESSION-PATH DETERMINISTIC PASS ====================

@@ -276,7 +276,9 @@ describe('expiry by basis and the H2 cutoff with the real calendar (spec §8; co
     db.__hooks.afterTxBody = async ({ attempt, writes }) => {
       if (!injected && attempt === 1 && writes.some((w) => w.path.includes('/calls/'))) {
         injected = true;
-        await db.doc(`agentBattles/${B1}`).update({ status: 'completed' });
+        // Cockpit Build 2b (Amendment D-8): the battle completed BEFORE the call's deadline, so the
+        // one-label rule reads ended_with_battle — the fresh read still wins over the active read.
+        await db.doc(`agentBattles/${B1}`).update({ status: 'completed', completedAt: new Date(NOW - 10).toISOString() });
       }
     };
     const res = await run(db);

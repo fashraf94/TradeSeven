@@ -28,6 +28,9 @@
 // FRESH reads of the parent, the call, the receipt and the queue, each event
 // created in that same transaction (spec §10):
 //   · terminal parent → every open call `ended_with_battle` (hit outcomes
+//     — Cockpit Build 2b, Amendment D-8: unless its deadline fell at or
+//     before the battle's end, which reads `expired_unresolved` with the
+//     active path's reason; decideTerminalParentExpiry below —
 //     preserved — only OPEN calls move); completion itself writes nothing to
 //     calls (completeBattle is untouched — Amendment B §7);
 //   · this_session / this_battle / explicit past the deadline → expired_unresolved;
@@ -57,7 +60,7 @@
 import { withTimeout } from '../intraday/evaluatorHook.js';
 import { TICK_STAMPS_ENABLED } from '../../../src/config/featureFlags.js';
 import { resolveCallRecordsMode, resolveGlobalCallRecordsMode } from './mode.js';
-import { sessionCloseAfter } from './horizon.js';
+import { sessionCloseAfter, battleExpiryMs } from './horizon.js';
 import { buildReceipt, receiptPathOf } from './receipt.js';
 import { buildCallEvent, createCallEvent } from './events.js';
 import { renderExpiredEvent, renderEndedWithBattleEvent, renderHeardEvent, renderAnswerExpiredLine, checkLabel } from './copy.js';
@@ -127,6 +130,55 @@ export function decideSweepExpiry(call, nowMs) {
   return nowMs > expiresAt ? { next: 'expired_unresolved', reason: 'past_deadline' } : { next: null, reason: 'before_deadline' };
 }
 
+/** An instant field as epoch ms — a number, an ISO string or a Firestore Timestamp — else NaN. */
+function instantMs(v) {
+  if (finite(v)) return v;
+  if (typeof v === 'string') return Date.parse(v);
+  if (v instanceof Date) return v.getTime();
+  if (v && typeof v.toMillis === 'function') { try { return v.toMillis(); } catch { return Number.NaN; } }
+  return Number.NaN;
+}
+
+/**
+ * The battle's end (Amendment D-8): its completion instant (`completedAt`,
+ * agent-evaluate.js completeBattle), else its scheduled end (`expiresAt`,
+ * horizon.js battleExpiryMs). NaN when neither reads.
+ */
+export function battleEndMs(parent) {
+  const done = instantMs(parent?.completedAt);
+  return Number.isFinite(done) ? done : battleExpiryMs(parent);
+}
+
+/** A call's deadline (D-8): `horizon.expiresAt`, or the H2 cutoff for next_check (nextCheckCutoff). Null when unreadable. */
+export function callDeadlineMs(call) {
+  const expiresAt = call?.horizon?.expiresAt;
+  if (!finite(expiresAt)) return null;
+  if (call.horizon.basis !== 'next_check') return expiresAt;
+  const cutoff = nextCheckCutoff(expiresAt);
+  return 'reason' in cutoff ? null : cutoff.closeMs;
+}
+
+/**
+ * ONE EXPIRY LABEL (Amendment D-8): the state for an OPEN call under a parent
+ * that is no longer active. The deadline is compared with the battle's end
+ * BEFORE the state is chosen, so the same close-of-day deadline never reads
+ * "Expired" or "Battle ended" by when the sweep happened to run:
+ *   deadline at or before the end → expired_unresolved, with the reason the
+ *     active-parent path gives (next_check 'unobserved', else 'past_deadline');
+ *   deadline after the end, or either unreadable → ended_with_battle, as before.
+ * ONE READING, STATED: the end is never later than the maintenance instant —
+ * a parent that left 'active' without a completion instant (its scheduled end
+ * still ahead) cannot have a deadline "passed" that has not come yet.
+ */
+export function decideTerminalParentExpiry(call, parent, nowMs) {
+  const deadline = callDeadlineMs(call);
+  const end = Math.min(battleEndMs(parent), finite(nowMs) ? nowMs : Number.POSITIVE_INFINITY);
+  if (finite(deadline) && Number.isFinite(end) && deadline <= end) {
+    return { next: 'expired_unresolved', reason: call.horizon.basis === 'next_check' ? 'unobserved' : 'past_deadline' };
+  }
+  return { next: 'ended_with_battle', reason: 'battle_ended' };
+}
+
 /** The sweep's receipt: the full shape, source 'sweep', px null, evalId null, the maintenance instant, the reason. */
 export function buildSweepReceipt(call, nowMs, reason) {
   return { ...buildReceipt({ call, evalId: null, observation: { observedAtMs: nowMs, source: SWEEP_SOURCE, symbols: {} } }), reason };
@@ -193,7 +245,7 @@ async function transitionOne({ db, battleId, callId, nowMs, deadlineMs }) {
     if (resolveCallRecordsMode(parent) !== 'on') return { result: 'skipped', reason: 'parent_off' };
     if (receiptSnap?.exists) return { result: 'skipped', reason: 'receipt_exists' };
     let next; let reason;
-    if (parent.status !== 'active') { next = 'ended_with_battle'; reason = 'battle_ended'; } else {
+    if (parent.status !== 'active') { ({ next, reason } = decideTerminalParentExpiry(call, parent, nowMs)); } else {
       const d = decideSweepExpiry(call, nowMs);
       if (!d.next) return { result: 'skipped', reason: d.reason };
       next = d.next; reason = d.reason;
@@ -323,7 +375,7 @@ async function sweepBattle({ db, battleId, parent, row, nowMs, deadlineMs, summa
   for (const call of open) {
     if (Date.now() >= deadlineMs) return { cut: true };
     const terminal = parent.status !== 'active';
-    const decision = terminal ? { next: 'ended_with_battle' } : decideSweepExpiry(call, nowMs);
+    const decision = terminal ? decideTerminalParentExpiry(call, parent, nowMs) : decideSweepExpiry(call, nowMs);
     if (!decision.next) {
       if (decision.reason === 'calendar_unresolvable') { tally('calendarUnresolvable'); console.log(`[calls] sweep calendar unresolvable battle=${battleId} call=${call.callId} slot=${call.horizon?.expiresAt}`); }
       remainingOpen.push(call);

@@ -176,10 +176,29 @@ export function renderCallLine(call, { nowMs = Date.now(), clock = '24h' } = {})
 // ---------------------------------------------------------------------------
 // Event renderers (spec §4, §10) — one per event kind, typed inputs only.
 
-/** The player-facing word for an answer. */
+/** The player-facing word for an answer. `replace` (Cockpit Build 2b, Amendment D-4) reads "Bring in". */
 export const ANSWER_WORDS = Object.freeze({
-  go: 'Go', hold: 'Hold off', go_now: 'Go now', pick: 'Pick', agree: 'Agree', disagree: 'Disagree',
+  go: 'Go', hold: 'Hold off', go_now: 'Go now', pick: 'Pick', agree: 'Agree', disagree: 'Disagree', replace: 'Bring in',
 });
+
+/**
+ * The answer's head with its chosen name, the one phrase the `answered`
+ * event and the chat calls block share (Cockpit Build 2b, D-4):
+ *   pick    + X → "Pick X"          (Build 1a)
+ *   replace + X → "Bring in X"
+ *   go_now  + X → "Go now, bring in X"
+ *   otherwise   → the bare word
+ * Null for an unknown answer. The chosen name is the DIRECTIVE RECORD's
+ * (`action.pickSymbol`) — callers never read it off playerResponse.
+ */
+export function answerWithPick(answer, pickSymbol = null) {
+  const word = ANSWER_WORDS[answer];
+  if (!word) return null;
+  if (!nonEmpty(pickSymbol)) return word;
+  if (answer === 'pick' || answer === 'replace') return `${word} ${pickSymbol}`;
+  if (answer === 'go_now') return `${word}, bring in ${pickSymbol}`;
+  return word;
+}
 
 /** `declared`: up to three call lines; the rest counted. Null with nothing to say. */
 export function renderDeclaredEvent({ calls, nowMs = Date.now() } = {}) {
@@ -190,11 +209,15 @@ export function renderDeclaredEvent({ calls, nowMs = Date.now() } = {}) {
   return `Called: ${shown.join(' · ')}${more > 0 ? ` … ${more} more` : ''}`;
 }
 
-/** `answered`: the answer word (and the pick), then the canonical text when one was filed. */
+/**
+ * `answered`: the answer word (and the pick / chosen name), then the canonical
+ * text when one was filed. "Answered: Bring in DHR — If you exit AMD by
+ * today's close, bring in DHR." (D-4); "Answered: Go now, bring in DHR — …".
+ */
 export function renderAnsweredEvent({ answer, pickSymbol = null, canonicalText = null } = {}) {
-  const word = ANSWER_WORDS[answer];
-  if (!word) return null;
-  const head = answer === 'pick' && nonEmpty(pickSymbol) ? `Answered: ${word} ${pickSymbol}` : `Answered: ${word}`;
+  const phrase = answerWithPick(answer, pickSymbol);
+  if (!phrase) return null;
+  const head = `Answered: ${phrase}`;
   return nonEmpty(canonicalText) ? `${head} — ${canonicalText}` : head;
 }
 
@@ -251,6 +274,35 @@ export function renderEndedWithBattleEvent() {
 export function renderSupersededEvent({ at } = {}) {
   const t = fmtTimeEt(at);
   return t ? `Superseded by a later filing at ${t} ET` : 'Superseded by a later filing';
+}
+
+/**
+ * `retired` (Cockpit Build 2b, Amendment D-6): why a live command left the
+ * slot — the stock it is about left the book, by any route — keyed by the
+ * filing test's BOOK reason (callActions.js isCallActionEligible). The other
+ * failures are not book reasons and retire nothing.
+ */
+export const RETIRED_REASONS = Object.freeze(['symbol_not_held', 'counterpart_not_held', 'swap_out_not_held', 'pick_already_held']);
+export const RETIRED_REASON_TEXT = Object.freeze({
+  symbol_not_held: 'left the book',
+  counterpart_not_held: 'left the book',
+  swap_out_not_held: 'left the book',
+  pick_already_held: 'came into the book another way',
+});
+
+/**
+ * `retired`: "VLO left the book at the 13:17 check · command retired." or
+ * "DHR came into the book another way at the 13:17 check · command retired."
+ * `symbol` is the name that moved (the exit's symbol, the entry's
+ * counterpart, the pick's swap-out — or, for pick_already_held, the chosen
+ * name). The check is the one whose step retired it. Null without a known
+ * reason or a symbol.
+ */
+export function renderRetiredEvent({ symbol, reason, promptBuiltAt = null } = {}) {
+  const what = RETIRED_REASON_TEXT[reason];
+  if (!what || !nonEmpty(symbol)) return null;
+  const label = checkLabel(promptBuiltAt);
+  return `${symbol} ${what}${label ? ` at ${label}` : ''} · command retired.`;
 }
 
 /**
