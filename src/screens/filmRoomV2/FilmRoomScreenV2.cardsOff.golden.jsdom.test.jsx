@@ -138,7 +138,9 @@ describe('acceptance J — cards off, or the owner not admitted: the current v2,
     for (const c of CASES) {
       expect(await photograph(c), c.file).toBe(golden(c.file));
     }
-    // the sep23 battle names its owner; the empty day's battle does too (the harness's battleOf): one ask per owner, cached
+    // the sep23 battle names its owner; the empty day's battle does too (the harness's battleOf): one ask per owner, cached —
+    // and at least one: the verdict IS asked under 'allowlist' (review L4-11b: the bound has a floor)
+    expect(fetches.length).toBeGreaterThanOrEqual(1);
     expect(fetches.length).toBeLessThanOrEqual(2);
     for (const url of fetches) expect(url).toMatch(/^\/api\/agent\/cockpit-status\?battleId=/);
   });

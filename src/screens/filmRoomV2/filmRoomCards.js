@@ -9,11 +9,15 @@
 //              verdict v2 reads; while it has not resolved, cards are OFF and
 //              the screen is the current v2 byte for byte.
 //   THE READS  GET /api/film-room/counter?agentId= — once per screen life for
-//              the battle's agent, again after a create or a retire; never a
-//              Firestore read of the ledger from the client (v2 reads only
-//              the tape).
-//   THE WRITES POST /api/film-room/card — create and retire, each with a fresh
-//              op id (a client UUID in the forge-id class).
+//              the battle's agent (named by the battle document, before any
+//              day's tape — review L1-6), again after a create or a retire, or
+//              after a retire the server refused as stale; never a Firestore
+//              read of the ledger from the client (v2 reads only the tape). A
+//              re-read that fails keeps what was read (review L4-4).
+//   THE WRITES POST /api/film-room/card — create and retire, each under ONE
+//              op id per form or receipt (a client UUID in the forge-id
+//              class), so a re-tap after a lost answer replays the same
+//              operation and the store answers idempotently (review L4-9).
 // The moments come from the one shared helper (src/utils/filmRoomMoments.js),
 // so the screen lists exactly what the endpoint accepts.
 
@@ -71,6 +75,16 @@ export const defaultCardsApi = Object.freeze({ readVerdict: readFilmRoomVerdict,
 
 /** The day's stored tag items, or null when the tape stores none (a day the tagger could not tag). */
 export const tagItemsOf = (tape) => (Array.isArray(tape?.tags?.items) ? tape.tags.items : null);
+/**
+ * The day's situations as the screen may show them: 'absent' — the tape has no `coverage.tags` section or no stored
+ * items (written before the tagger ran; R14 says so as an absence — review L3-1); 'unavailable' — the tagger ran and
+ * said so (RE-1); 'ready'. Every region reads the one state (the prepared case, the check detail — review L1-3).
+ */
+export function tagsStateOf(tape) {
+  const section = tape?.coverage?.tags;
+  if (!isObj(section)) return 'absent';
+  return section.status === 'unavailable' || tagItemsOf(tape) === null ? 'unavailable' : 'ready';
+}
 /** The day's moments, from the stored items alone (the shared helper). */
 export const momentsOfTape = (tape) => momentsOf(tagItemsOf(tape) ?? []);
 /** A moment's key on the screen: "stalled:ACN:4-5". */
@@ -84,7 +98,7 @@ export { momentAnchor };
 export function tagsAtCheck(tape, index) {
   const items = tagItemsOf(tape);
   const check = tape?.checks?.[index];
-  if (!items || !check || !Number.isInteger(check.tickSeq)) return [];
+  if (tagsStateOf(tape) !== 'ready' || !items || !check || !Number.isInteger(check.tickSeq)) return [];
   const moments = momentsOfTape(tape);
   const out = [];
   items.forEach((it, k) => {
@@ -102,7 +116,9 @@ export function tagsAtCheck(tape, index) {
  * copied into the item; on the recomputed basis it is the item's own count
  * (`tags.items[k].count`, declared derived). The recorded path is used only
  * when the record is there and holds the item's count — the number and its
- * class come from one path either way (BUILD_RULES §9).
+ * class come from one path either way (BUILD_RULES §9). `basis` is the day's
+ * declared holding basis for the symbol; `source` says which path was taken
+ * ('record' or 'item' — review L3-11b).
  */
 export function countPathOf(tape, { k, index, symbol }) {
   const basis = tape?.tags?.inputs?.holdingBasis?.[symbol] ?? 'recomputed';
@@ -111,30 +127,32 @@ export function countPathOf(tape, { k, index, symbol }) {
   if (basis === 'recorded') {
     const rec = numberAt(tape, recorded);
     const item = numberAt(tape, derived);
-    if (rec && item && rec.value === item.value) return { path: recorded, basis };
+    if (rec && item && rec.value === item.value) return { path: recorded, basis, source: 'record' };
   }
-  return { path: derived, basis: 'recomputed' };
+  return { path: derived, basis, source: 'item' };
 }
 
-/** The ledger as the receipt and the lists read it: the counter's cards with a just-filed card merged in, newest first. */
+/**
+ * The ledger as the receipt and the lists read it: the counter's cards, with a just-filed card added when the counter
+ * does not hold it yet. Where the counter holds the card, ITS row stands whole — the counter is the fresher read
+ * (review L4-10).
+ */
 export function ledgerOf(counter, extra = null) {
   const cards = Array.isArray(counter?.cards) ? [...counter.cards] : [];
-  if (isObj(extra) && extra.entryId) {
-    const i = cards.findIndex((c) => c.entryId === extra.entryId);
-    if (i >= 0) cards[i] = { ...cards[i], ...extra, shelved: cards[i].shelved }; else cards.unshift({ ...extra, shelved: false });
-  }
+  if (isObj(extra) && extra.entryId && !cards.some((c) => c.entryId === extra.entryId)) cards.unshift({ ...extra, shelved: false });
   return cards;
 }
 
-/** The three lists of My cards: active (open), shelved, retired. */
+/** The lists of My cards: active (open), shelved, retired — and 'other' for a stage this release does not know (never counted as active; review L3-10). */
 export function groupCards(cards) {
-  const active = []; const shelved = []; const retired = [];
+  const active = []; const shelved = []; const retired = []; const other = [];
   for (const c of cards) {
     if (c.stage === 'retired') retired.push(c);
+    else if (c.stage !== 'card' && c.stage !== 'nominated') other.push(c);
     else if (c.shelved) shelved.push(c);
     else active.push(c);
   }
-  return { active, shelved, retired };
+  return { active, shelved, retired, other };
 }
 
 /** The open Watch cards the header follows (RG-4), with their recurrences from the counter. */
@@ -176,26 +194,32 @@ export function useFilmRoomCards({ battle, agentId, api = defaultCardsApi }) {
 
   const refresh = useCallback(async () => {
     if (!on || !agentId) return;
-    setCounter((c) => (c.status === 'ready' ? c : { status: 'loading', data: null }));
+    setCounter((c) => (c.data ? c : { status: 'loading', data: null }));
     const r = await api.readCounter(agentId);
     if (!alive.current) return;
     if (r && r.ok && isObj(r.body)) setCounter({ status: 'ready', data: r.body });
-    else setCounter({ status: 'error', data: null });
+    else setCounter((c) => ({ status: 'error', data: c.data }));   // a failed re-read keeps what was read (review L4-4)
   }, [on, agentId, api]);
 
   useEffect(() => { if (on && agentId) refresh(); }, [on, agentId, refresh]);
 
-  const create = useCallback(async ({ battleId: b, etDate, moment, questionId, questionVersion, note, route }) => {
-    const r = await api.postCard({ op: 'create', opId: api.newOpId(), battleId: b, etDate, agentId, moment: { situationId: moment.situationId, symbol: moment.symbol, fromTickSeq: moment.fromTickSeq, toTickSeq: moment.toTickSeq }, questionId, questionVersion, note, route });
+  /** A fresh op id; the form and the receipt each mint ONE and keep it (review L4-9). */
+  const mintOpId = useCallback(() => api.newOpId(), [api]);
+
+  const create = useCallback(async ({ opId, battleId: b, etDate, moment, questionId, questionVersion, note, route }) => {
+    const r = await api.postCard({ op: 'create', opId: opId || api.newOpId(), battleId: b, etDate, agentId, moment: { situationId: moment.situationId, symbol: moment.symbol, fromTickSeq: moment.fromTickSeq, toTickSeq: moment.toTickSeq }, questionId, questionVersion, note, route });
     if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); return { ok: true, card: r.body.card }; }
     return { ok: false, code: r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'default') };
   }, [api, agentId, refresh]);
 
-  const retire = useCallback(async (card) => {
-    const r = await api.postCard({ op: 'retire', opId: api.newOpId(), agentId, entryId: card.entryId, expectedVersion: card.version });
+  const retire = useCallback(async (card, opId = null) => {
+    const r = await api.postCard({ op: 'retire', opId: opId || api.newOpId(), agentId, entryId: card.entryId, expectedVersion: card.version });
     if (r && r.ok && isObj(r.body) && isObj(r.body.card)) { await refresh(); return { ok: true, card: r.body.card }; }
-    return { ok: false, code: r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'retireDefault') };
+    const code = r?.body?.error ?? (r?.status === 404 ? 'disabled' : 'retireDefault');
+    // the card moved elsewhere (another tab): re-read, so the receipt shows the ledger's row (review L4-10)
+    if (code === 'version_conflict' || code === 'illegal_transition') await refresh();
+    return { ok: false, code };
   }, [api, agentId, refresh]);
 
-  return { on, counter, refresh, create, retire };
+  return { on, counter, refresh, create, retire, mintOpId };
 }

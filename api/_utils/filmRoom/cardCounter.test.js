@@ -6,7 +6,9 @@
 // mutant: counting another agent's days), the field mask, and the whole
 // answer over the tape suites' in-memory Firestore.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
+// DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): cardCounter.js imports src/utils/filmRoomMoments.js, src/utils/tapeSchedule.js and
+// src/constants/filmTape.js; this import of the counter is the runtime guard that they stay Node-clean — never mocked.
 import { makeTapeDb } from '../filmTape/__fixtures__/tapeFirestore.js';
 import { tradingWeekOf, windowOf, weeklyCounts, recurrencesOf, readOwnerTapeDays, buildCounter, isOpenWatchCard, COUNTER_FIELD_MASK, COUNTER_WINDOW_DAYS } from './cardCounter.js';
 import { createCard } from './cardStore.js';
@@ -186,6 +188,40 @@ describe('buildCounter — the whole answer: the window, the weekly counts, the 
     await createCard(t.db, { uid: UID, agentId: A1, opId: 'w1', payload: payload(), nowIso: '2026-10-20T02:00:00.000Z' });
     const out = await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW });
     expect(out.recurrences.w1.map((x) => x.battleId)).not.toContain('b-2');
-    expect(vi.isMockFunction(buildCounter)).toBe(false);
+  });
+});
+
+// ── the review's rows (docs/audits/20261021_BUILD_FILM_ROOM_B2_CARD.md §9) ──
+describe('review L1-2 — the default window is floored at the earliest open Watch card\'s creation day, within the 400-day cap', () => {
+  const NOW = Date.parse('2026-10-28T23:00:00.000Z');   // Oct 28 ET; the default window starts Jun 30
+  const seedOld = (createdAt) => {
+    const t = makeTapeDb({
+      [`agents/${A1}`]: { ownerId: UID, archetype: 'momentum_chaser' },
+      'agentBattles/b-old/tape/2026-06-10': tapeDoc({ battleId: 'b-old', etDate: '2026-06-10', items: [item('2026-06-10', 'MSFT', 2)] }),   // before Jun 30: outside the default window
+      'agentBattles/b-1/tape/2026-10-21': tapeDoc({ battleId: 'b-1', etDate: '2026-10-21', items: [item('2026-10-21', 'MSFT', 2)] }),
+      [`agents/${A1}/plays/w_old`]: { schemaVersion: 1, entryId: 'w_old', ownerId: UID, agentId: A1, createdAt, archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: 2, source: { battleId: 'b-older', etDate: '2026-05-20', symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 }, questionId: 'stalled.want', questionVersion: 1, note: 'Watch.', route: 'watch', slotsVersion: 1, stage: 'card', stageAt: createdAt, stageHistory: [{ stage: 'card', at: createdAt, by: 'player', opId: 'w_old' }], version: 1, opId: 'w_old', opFingerprint: 'f' },
+    });
+    return t;
+  };
+  it('a Watch card from May: the window opens at its creation day, so June\'s recurrence is counted (not "none recorded")', async () => {
+    const t = seedOld('2026-05-21T02:00:00.000Z');
+    const out = await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW });
+    expect(out.window).toEqual({ from: '2026-05-20', to: '2026-10-28' });
+    expect(out.recurrences.w_old.map((x) => x.etDate)).toEqual(['2026-06-10', '2026-10-21']);
+  });
+  it('a Watch card older than the 400-day cap: the window opens at the cap, never earlier; a caller\'s own window is never widened', async () => {
+    const t = seedOld('2024-01-05T02:00:00.000Z');
+    const out = await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW });
+    expect(out.window).toEqual({ from: '2025-09-24', to: '2026-10-28' });   // 400 days inclusive of both ends
+    const asked = await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW, from: '2026-10-01', to: '2026-10-28' });
+    expect(asked.window).toEqual({ from: '2026-10-01', to: '2026-10-28' });
+    expect(asked.recurrences.w_old.map((x) => x.etDate)).toEqual(['2026-10-21']);
+  });
+  it('a retired or shelved Watch card does not widen the window', async () => {
+    const t = seedOld('2026-05-21T02:00:00.000Z');
+    t.store.set(`agents/${A1}/plays/w_old`, { ...t.store.get(`agents/${A1}/plays/w_old`), stage: 'retired' });
+    expect((await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW })).window.from).toBe('2026-06-30');
+    t.store.set(`agents/${A1}/plays/w_old`, { ...t.store.get(`agents/${A1}/plays/w_old`), stage: 'card', archetypeCodeId: 'guardian' });
+    expect((await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW })).window.from).toBe('2026-06-30');
   });
 });

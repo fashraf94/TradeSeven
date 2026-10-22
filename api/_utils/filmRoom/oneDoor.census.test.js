@@ -43,16 +43,59 @@ export const MODEL_PATHS = Object.freeze({
   voice: Object.freeze(['api/_utils/voiceLayerPrompt.js', 'api/_utils/voiceLayerGrounding.js', 'api/cron/voice-layer-cache.js', 'api/agent/ensure-opener.js']),
   reflection: Object.freeze(['api/agent/reflect.js', 'api/cron/process-pending-reflections.js']),
   batchReview: Object.freeze(['api/cron/agent-batch-review.js']),
+  // review L2-1: two more model paths — the debate (the agent document → a system prompt → the model) and the
+  // tournament's agent board production (api/_utils/tournamentAgentBoards.js, reached from the orchestrator and its route)
+  debate: Object.freeze(['api/agent/debate.js']),
+  tournament: Object.freeze(['api/cron/tournament-orchestrator.js', 'api/tournament/produce-agent-boards.js']),
 });
 
-/** What each path's walk must reach — the non-vacuity oracle (a module the path is known to use). */
+/** Every root list, pinned whole (review L4-1): a root dropped from any path reds this, whatever the walk still reaches. */
+export const MODEL_PATH_ROOTS = Object.freeze({
+  evaluator: ['api/cron/agent-evaluate.js', 'api/_utils/agentEvalPromptAssembly.js', 'api/_utils/agentPromptAssembly.js'],
+  deploy: ['api/agent/decide.js'],
+  chat: ['api/agent/chat.js', 'api/agent/call-response.js', 'src/screens/battleView/ChatSheet.jsx', 'src/components/Agent/AgentChat.jsx'],
+  voice: ['api/_utils/voiceLayerPrompt.js', 'api/_utils/voiceLayerGrounding.js', 'api/cron/voice-layer-cache.js', 'api/agent/ensure-opener.js'],
+  reflection: ['api/agent/reflect.js', 'api/cron/process-pending-reflections.js'],
+  batchReview: ['api/cron/agent-batch-review.js'],
+  debate: ['api/agent/debate.js'],
+  tournament: ['api/cron/tournament-orchestrator.js', 'api/tournament/produce-agent-boards.js'],
+});
+
+/** What each path's walk must reach — the non-vacuity oracle: modules the path is known to use, none of them a root of that path (review L2-3). */
 const KNOWN_REACH = Object.freeze({
-  evaluator: ['api/_utils/agentRiskManager.js', 'api/_utils/agentEvalPromptAssembly.js', 'api/_utils/agentEvalToolSchema.js'],
-  deploy: ['api/_utils/agentPromptAssembly.js', 'api/_utils/agentBattleService.js', 'api/_utils/hypothesisRecords/carriage.js'],
-  chat: ['api/_utils/voiceLayerPrompt.js', 'api/_utils/directiveWriter.js'],
-  voice: ['api/_utils/voiceLayerGrounding.js', 'api/_utils/voiceLayerPrompt.js'],
-  reflection: ['api/_utils/agentReflectionUtils.js', 'api/agent/reflect.js'],
-  batchReview: ['api/_utils/voiceLayerPrompt.js', 'api/_utils/agentEvalPromptAssembly.js'],
+  evaluator: ['api/_utils/agentRiskManager.js', 'api/_utils/agentEvalToolSchema.js', 'api/_utils/agentEvalTransport.js'],
+  deploy: ['api/_utils/agentPromptAssembly.js', 'api/_utils/agentBattleService.js', 'api/_utils/deployBuildValidation.js'],
+  chat: ['api/_utils/directiveWriter.js', 'api/_utils/callRecords/callsBlock.js', 'api/_utils/callRecords/answers.js'],
+  voice: ['api/_utils/wireReader.js', 'api/_utils/openerTemplateFloor.js', 'api/_utils/gemmaClient.js'],
+  reflection: ['api/_utils/agentReflectionUtils.js', 'api/_utils/callRecords/sweep.js'],
+  batchReview: ['api/_utils/voiceLayerPrompt.js', 'api/_utils/agentEvalPromptAssembly.js', 'api/_utils/gemmaClient.js'],
+  debate: ['api/_utils/legacyDirectiveSanitize.js', 'api/_utils/tournamentPrices.js'],
+  tournament: ['api/_utils/tournamentAgentBoards.js', 'api/_utils/tournamentAgentDraft.js'],
+});
+/**
+ * Per ROOT (review L2-3 / L4-1): a module ONLY that root reaches — dropping the root loses it from the whole census — or,
+ * for a root whose closure other roots cover whole, the roots that together cover it (dropping it then loses nothing
+ * from the census, and the whole-list pin above is what catches the drop).
+ */
+const EXCLUSIVE_REACH = Object.freeze({
+  'api/cron/agent-evaluate.js': 'api/_utils/agentCronState.js',
+  'api/_utils/agentEvalPromptAssembly.js': { coveredBy: ['api/cron/agent-evaluate.js'] },
+  'api/_utils/agentPromptAssembly.js': { coveredBy: ['api/agent/decide.js'] },
+  'api/agent/decide.js': 'api/_utils/cpuOpponentGenerator.js',
+  'api/agent/chat.js': 'api/_utils/agentCapabilitiesManifest.js',
+  'api/agent/call-response.js': 'api/_utils/callRecords/callActions.js',
+  'src/screens/battleView/ChatSheet.jsx': 'src/screens/battleView/useChatSheet.js',
+  'src/components/Agent/AgentChat.jsx': 'src/components/Agent/TradeTickerCard.jsx',
+  'api/_utils/voiceLayerPrompt.js': { coveredBy: ['api/agent/chat.js'] },
+  'api/_utils/voiceLayerGrounding.js': { coveredBy: ['api/agent/chat.js'] },
+  'api/cron/voice-layer-cache.js': 'api/_utils/wireReader.js',
+  'api/agent/ensure-opener.js': 'api/_utils/openerTemplateFloor.js',
+  'api/agent/reflect.js': { coveredBy: ['api/cron/process-pending-reflections.js'] },
+  'api/cron/process-pending-reflections.js': 'api/_utils/callRecords/sweep.js',
+  'api/cron/agent-batch-review.js': { coveredBy: ['api/cron/agent-evaluate.js', 'api/agent/debate.js'] },
+  'api/agent/debate.js': { coveredBy: ['api/agent/decide.js', 'api/cron/agent-batch-review.js'] },
+  'api/cron/tournament-orchestrator.js': 'api/_utils/tournamentAdvancement.js',
+  'api/tournament/produce-agent-boards.js': { coveredBy: ['api/cron/tournament-orchestrator.js'] },
 });
 
 // ── the walker (the callRecords/allowlist.test.js precedent) ────────────────
@@ -90,7 +133,8 @@ export function closureOf(roots) {
 }
 const chainTo = (parent, file, repo) => { const out = []; for (let at = file; at; at = parent.get(at)) out.unshift(path.relative(repo, at)); return out.join(' → '); };
 /** A read of the ledger by name: a `plays` collection, a collection group, a path segment — in code, comments stripped. */
-const PLAYS_READ = /\b(?:collection|collectionGroup|doc)\s*\(\s*['"]plays['"]|['"]plays['"]|\/plays\//;
+// review L2-4: a template-literal name and a path template ending in `plays` read true too
+const PLAYS_READ = /\b(?:collection|collectionGroup|doc)\s*\(\s*['"`]plays['"`]|['"`]plays['"`]|\/plays(?:\/|['"`]|$)/m;
 
 const abs = (rel) => path.join(REPO, rel);
 const isModule = (name) => /\.(m?js|jsx)$/.test(name) && !/\.test\.(m?js|jsx)$/.test(name) && !/\.ARCHIVED\./.test(name);
@@ -133,13 +177,29 @@ describe('ONE DOOR — no model path reaches the ledger or reads plays', () => {
     expect(sheet.length).toBeGreaterThan(1000);
   });
 
-  it('the deploy and chat paths are in the roots by name (the mutant: a census that skips either)', () => {
+  it('every root list is pinned WHOLE (the mutant: a census that skips the deploy path, the chat path, or any one root — review L4-1)', () => {
+    expect(Object.fromEntries(Object.entries(MODEL_PATHS).map(([k, v]) => [k, [...v]]))).toEqual(MODEL_PATH_ROOTS);
     expect(MODEL_PATHS.deploy).toContain('api/agent/decide.js');
     expect(MODEL_PATHS.chat).toContain('api/agent/chat.js');
-    expect(MODEL_PATHS.evaluator).toContain('api/cron/agent-evaluate.js');
-    expect(MODEL_PATHS.reflection).toContain('api/agent/reflect.js');
-    expect(MODEL_PATHS.batchReview).toContain('api/cron/agent-batch-review.js');
-    expect(Object.keys(MODEL_PATHS).sort()).toEqual(['batchReview', 'chat', 'deploy', 'evaluator', 'reflection', 'voice']);
+    expect(MODEL_PATHS.chat).toContain('api/agent/call-response.js');
+    expect(Object.keys(MODEL_PATHS).sort()).toEqual(['batchReview', 'chat', 'debate', 'deploy', 'evaluator', 'reflection', 'tournament', 'voice']);
+  });
+
+  it('no non-vacuity oracle entry is a root of its own path (review L2-3), and every root either reaches a module no other root reaches, or is covered whole by another root', () => {
+    const allRoots = Object.values(MODEL_PATHS).flat();
+    for (const [name, known] of Object.entries(KNOWN_REACH)) for (const k of known) expect(MODEL_PATHS[name], `${name}: ${k}`).not.toContain(k);
+    expect(Object.keys(EXCLUSIVE_REACH).sort()).toEqual([...allRoots].sort());
+    const closures = new Map(allRoots.map((r) => [r, closureOf([abs(r)]).seen]));
+    const has = (root, rel) => [...closures.get(root)].some((f) => path.resolve(f) === path.resolve(abs(rel)));
+    for (const [root, rule] of Object.entries(EXCLUSIVE_REACH)) {
+      if (typeof rule === 'string') {
+        expect(has(root, rule), `${root} reaches ${rule}`).toBe(true);
+        for (const other of allRoots) if (other !== root) expect(has(other, rule), `${other} must not reach ${rule} (exclusive to ${root})`).toBe(false);
+      } else {
+        for (const by of rule.coveredBy) expect(allRoots, `${by} is a root`).toContain(by);
+        for (const f of closures.get(root)) if (path.resolve(f) !== path.resolve(abs(root))) expect(rule.coveredBy.some((by) => closures.get(by).has(f)), `${rule.coveredBy.join(' + ')} must cover ${path.relative(REPO, f)}`).toBe(true);
+      }
+    }
   });
 });
 
@@ -172,5 +232,19 @@ describe('the walker bites (a guard that cannot fail guards nothing)', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+  it('every spelling of a plays read reads true — a template-literal name, the Admin path form with nothing after plays, a concatenated path (review L2-4) — and a neighbour name does not', () => {
+    const reads = [
+      'db.collection(`plays`)',
+      'db.collection(`agents/${id}/plays`)',
+      "db.collection('agents/' + id + '/plays')",
+      "doc(db, `agents/${id}/plays/${entryId}`)",
+      "db.collectionGroup('plays')",
+      'db.collection("plays")',
+      "collection(db, 'agents', id, 'plays')",
+    ];
+    for (const r of reads) expect(PLAYS_READ.test(r), r).toBe(true);
+    const clean = ["db.collection('playsheets')", "db.collection('replays')", 'const plays = 3;', "db.collection('agents').doc(id).collection('battlePatterns')"];
+    for (const c of clean) expect(PLAYS_READ.test(c), c).toBe(false);
   });
 });

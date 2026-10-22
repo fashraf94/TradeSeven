@@ -56,6 +56,19 @@ export function filmRoomCardsOnFor(uid) {
 export const DISABLED_BODY = Object.freeze({ error: 'disabled' });
 
 /**
+ * Answer a thrown error on either card route: a typed input error → 400, a
+ * typed route error → its status, anything else → 500. Lives here, not in the
+ * card route, so the counter's cold start does not load the card route's whole
+ * graph for one helper (review L5-4).
+ */
+export function sendCardError(res, err, label) {
+  if (err?.cardInput) return res.status(400).json({ error: err.code, message: err.message });
+  if (err?.cardRoute) return res.status(err.status).json({ error: err.code, message: err.message, ...err.extra });
+  console.error(`[film-room/${label}] Error:`, err);
+  return res.status(500).json({ error: 'server_error', message: 'Something went wrong with the card. Try again.' });
+}
+
+/**
  * Run the gate. Resolves the authenticated user, or null when the route has
  * already answered (middleware, disabled, auth or method). Every answer from
  * the gate on carries Cache-Control: no-store (the cockpit-status precedent:

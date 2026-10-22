@@ -13,22 +13,26 @@
 // Gated (api/_utils/filmRoom/cardsGate.js): the mode off, or the owner not
 // admitted → 404 { error: 'disabled' } before any read. Then, for a create,
 // in this order, each a named refusal:
+//   the body (api/_utils/filmRoom/cardRequest.js), before any read: ids in
+//   the forge-id class and never a reserved `__id__`; the note longer than
+//   S10 code points after trimming, empty, or holding a control character →
+//   400, refused, never stripped; an unknown route → 400;
 //   the battle: missing → 404 not_found; not the caller's → 403 forbidden;
 //   the agent not the battle's → 403 forbidden; a mode the tape does not
 //   cover (a tournament battle, RB-5) → 409 untaped;
-//   the tape day: missing, or not the caller's → 404 tape_not_found; no
-//   stored tags → 409 tags_unavailable;
+//   the tape day: unreadable → 503 tape_unreadable; missing, or not the
+//   caller's → 404 tape_not_found; no stored tags → 409 tags_unavailable;
 //   the moment: not one the moments helper derives from the day's STORED
 //   tags.items → 409 moment_not_found; no archetype in the day's inputs → 409
 //   archetype_unknown;
 //   the question: not on the menu for that situation and version → 400
 //   question_not_on_menu;
-//   the note (api/_utils/filmRoom/cardRequest.js): longer than S10 after
-//   trimming, or holding a control character → 400, refused, never stripped;
 //   the store (cardStore.js): the agent not the caller's → 403; the same op id
-//   under a different request → 409 op_conflict; the open-card cap (S9) →
-//   409 cap_reached, naming the cap; a retire whose version does not match →
-//   409 version_conflict; a shelved card → 409 shelved.
+//   under a different request → 409 op_conflict; the day taped under another
+//   archetype than the agent's current one → 409 archetype_changed (a card
+//   would be shelved at birth); the open-card cap (S9) → 409 cap_reached,
+//   naming the cap; a retire whose version does not match → 409
+//   version_conflict; a shelved card → 409 shelved.
 // A rate limit rides the shared security middleware (applyRateLimit). Error
 // bodies carry the code, its sentence and the caller's own ids — never
 // another owner's data.
@@ -36,10 +40,10 @@
 // RE-5: nothing here reads a meeting row; no stage rests on one.
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
-import { gateFilmRoomCardsRoute } from '../_utils/filmRoom/cardsGate.js';
+import { gateFilmRoomCardsRoute, sendCardError } from '../_utils/filmRoom/cardsGate.js';
 import { parseCreateBody, parseRetireBody, questionFor, momentOfDay } from '../_utils/filmRoom/cardRequest.js';
 import { createCard, retireCard, CardRouteError, CARD_ROUTE_COPY } from '../_utils/filmRoom/cardStore.js';
-import { readBattle, readTape } from '../_utils/filmTape/tapeSources.js';
+import { readBattle, tapeRef } from '../_utils/filmTape/tapeSources.js';
 import { isTieredBattle } from '../_utils/filmTape/writeTapeDay.js';
 
 export const config = { maxDuration: 10 };
@@ -52,6 +56,7 @@ const COPY = Object.freeze({
   forbidden: 'Not authorized for this battle.',
   untaped: 'This battle mode is not taped, so it has no moments to take home.',
   tape_not_found: 'No tape for this day.',
+  tape_unreadable: 'The tape for this day could not be read. Try again.',
   tags_unavailable: 'This day stores no situation tags.',
   moment_not_found: 'That moment is not one of this day\'s stored moments.',
   archetype_unknown: 'This day records no archetype, so no card can be filed from it.',
@@ -59,14 +64,10 @@ const COPY = Object.freeze({
   invalid_op: 'op must be create or retire.',
 });
 const refuse = (status, code, extra = {}) => new CardRouteError(status, code, COPY[code] ?? CARD_ROUTE_COPY[code] ?? code, extra);
+export { sendCardError };
 
-/** Answer a thrown error: a typed input error → 400, a typed route error → its status, anything else → 500. */
-export function sendCardError(res, err, label) {
-  if (err?.cardInput) return res.status(400).json({ error: err.code, message: err.message });
-  if (err?.cardRoute) return res.status(err.status).json({ error: err.code, message: err.message, ...err.extra });
-  console.error(`[film-room/card:${label}] Error:`, err);
-  return res.status(500).json({ error: 'server_error', message: 'Something went wrong with the card. Try again.' });
-}
+/** The client's request as the create fingerprint hashes it (review L1-4): what was sent, never what the server resolved. */
+const requestOf = (req) => ({ battleId: req.battleId, etDate: req.etDate, agentId: req.agentId, moment: req.moment, questionId: req.questionId, questionVersion: req.questionVersion, note: req.note, route: req.route });
 
 /**
  * The create operation's reads and checks, in the documented order. Returns
@@ -78,7 +79,17 @@ export async function resolveCreate(db, uid, req) {
   if (battle.ownerId !== uid) throw refuse(403, 'forbidden');
   if (battle.agentId !== req.agentId) throw refuse(403, 'forbidden');
   if (!isTieredBattle(battle)) throw refuse(409, 'untaped');
-  const tape = await readTape(db, req.battleId, req.etDate);
+  // read directly, not through readTape (which reads a failed read as no tape — review L1-9): a tape the read could
+  // not reach is 503 tape_unreadable, never "no tape for this day"
+  let tape;
+  try {
+    const snap = await tapeRef(db, req.battleId, req.etDate).get();
+    tape = snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
+  } catch (err) {
+    // the failure leaves a server trace (review R1-1): the typed 503 is not the 500 branch, which alone logs
+    console.error('[film-room/card] tape read failed:', err?.message ?? err);
+    throw refuse(503, 'tape_unreadable');
+  }
   if (!tape || tape.ownerId !== uid) throw refuse(404, 'tape_not_found');
   if (!Array.isArray(tape.tags?.items)) throw refuse(409, 'tags_unavailable');
   const found = momentOfDay(tape, req.moment);
@@ -110,7 +121,7 @@ export default async function handler(req, res) {
     try {
       const parsed = parseCreateBody(body);
       const payload = await resolveCreate(db, user.uid, parsed);
-      const out = await createCard(db, { uid: user.uid, agentId: parsed.agentId, opId: parsed.opId, payload, nowIso });
+      const out = await createCard(db, { uid: user.uid, agentId: parsed.agentId, opId: parsed.opId, payload, nowIso, request: requestOf(parsed) });
       return res.status(200).json({ idempotent: out.idempotent, card: out.card, open: out.open, cap: out.cap });
     } catch (err) {
       return sendCardError(res, err, 'create');

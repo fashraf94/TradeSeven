@@ -7,6 +7,8 @@
 // tags.items.
 
 import { describe, it, expect } from 'vitest';
+// DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): cardRequest.js imports src/data/situationQuestions.js, src/data/cardSlots.js,
+// src/utils/filmRoomMoments.js and src/utils/tapeSchedule.js; this import is the runtime guard that they stay Node-clean — never mocked.
 import { parseCreateBody, parseRetireBody, normalizeNote, noteLength, questionFor, momentOfDay, NOTE_MAX_CHARS, CONTROL_CHAR } from './cardRequest.js';
 import { CARD_SLOTS } from '../../../src/data/cardSlots.js';
 import { SITUATION_QUESTIONS } from '../../../src/data/situationQuestions.js';
@@ -105,5 +107,23 @@ describe('momentOfDay — only a moment the stored items hold, matched exactly',
   it('the version is the first item\'s; an item with no version gives null, never a guess', () => {
     const t = { tags: { items: [{ ...item('ACN', 4), version: undefined }, item('ACN', 5)] } };
     expect(momentOfDay(t, { situationId: 'stalled', symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 }).situationVersion).toBeNull();
+  });
+});
+
+// ── the review's rows (docs/audits/20261021_BUILD_FILM_ROOM_B2_CARD.md §9) ──
+describe('review L1-5 / L2-5 — every control character (Unicode Cc), C1 included, is refused; review L2-6 — a reserved __id__ is refused', () => {
+  it('C1 controls (U+0080–U+009F) are refused like C0 and DEL; a letter with a diacritic, an emoji and a non-breaking space pass', () => {
+    for (const c of ['\u0085', '\u009c', '\u0080', '\u009f']) expect(code(() => normalizeNote(`let it${c}go`)), JSON.stringify(c)).toBe('note_control_char');
+    expect(normalizeNote('café 😀 x\u00a0y')).toBe('café 😀 x\u00a0y');
+    expect(CONTROL_CHAR.test('\u0085')).toBe(true);
+    expect(CONTROL_CHAR.test('\u2028')).toBe(false);   // a line separator is not Cc: outside the spec's refusal
+  });
+  it('an id of the form __x__ passes the forge-id class but is a reserved Firestore id: refused as an op id, a battle id, an agent id and an entry id', () => {
+    expect(code(() => parseCreateBody({ ...GOOD, opId: '__op__' }))).toBe('invalid_op_id');
+    expect(code(() => parseCreateBody({ ...GOOD, battleId: '__b__' }))).toBe('invalid_battle_id');
+    expect(code(() => parseCreateBody({ ...GOOD, agentId: '__a__' }))).toBe('invalid_agent_id');
+    expect(code(() => parseRetireBody({ opId: 'r1', agentId: 'agent-1', entryId: '__e__', expectedVersion: 1 }))).toBe('invalid_entry_id');
+    expect(parseCreateBody({ ...GOOD, opId: '_op_' }).opId).toBe('_op_');   // one underscore each side is not reserved
+    expect(parseCreateBody({ ...GOOD, opId: '__op' }).opId).toBe('__op');
   });
 });

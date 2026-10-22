@@ -644,7 +644,8 @@ describe('Amendment E RE-1 — a recorded day sets aside the checks section\'s a
       await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NOW });
       const path = tapePath(fx);
       const before = structuredClone(t.store.get(path));
-      // as B1.1 stored it: the checks' partial status counted
+      // the "stored before RE-1" day is the CURRENT writer's output with coverage.tags overridden to what B1.1 stored
+      // (the checks' partial status counted) — a movement check of the refresh, not a pre-RE-1 fixture (review L4-12)
       before.coverage.tags = { ...before.coverage.tags, status: 'unavailable', note: 'stalled unavailable: the checks section is partial' };
       t.store.set(path, before);
       const r = await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NOW + 60_000 });

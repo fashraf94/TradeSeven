@@ -196,7 +196,7 @@ describe('create — every named refusal, in the documented order, with no other
     t.store.set(path, { ...tape, tags: { ...tape.tags, inputs: { ...tape.tags.inputs, archetypeCodeId: null } } });
     expect((await post(create())).body).toMatchObject({ error: 'archetype_unknown' });
   });
-  it('the open-card cap (S9): the sixth open card → 409 cap_reached naming the cap; a retired card frees a place; a shelved one never counted', async () => {
+  it('the open-card cap (S9): the sixth open card → 409 cap_reached naming the cap; a retired card frees a place (a shelved one is the store suite\'s row)', async () => {
     for (let i = 0; i < 5; i += 1) expect((await post(create({ opId: `fill_${i}` }))).statusCode).toBe(200);
     const res = await post(create({ opId: 'op_6' }));
     expect(res.statusCode).toBe(409);
@@ -255,5 +255,49 @@ describe('RE-5 — meetings are never proof: no card path reads a meeting row', 
       const code = readFileSync(resolve(here, rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
       expect(code, rel).not.toMatch(/meeting|gameplan/i);
     }
+  });
+});
+
+// ── the review's rows (docs/audits/20261021_BUILD_FILM_ROOM_B2_CARD.md §9) ──
+describe('review L1-1 / L5-1 — a born-shelved card is never filed: the day\'s archetype must be the agent\'s current one', () => {
+  it('the agent on another archetype than the tape day records: six creates → six 409 archetype_changed, nothing written; the counter shows no card, open 0', async () => {
+    t.store.set(`agents/${AGENT}`, { ownerId: OWNER, name: 'Aurora', archetype: 'contrarian' });
+    for (let i = 0; i < 6; i += 1) {
+      const res = await post(create({ opId: `born_${i}` }));
+      expect(res.statusCode, String(i)).toBe(409);
+      expect(res.body, String(i)).toMatchObject({ error: 'archetype_changed', archetypeCodeId: 'momentum_chaser', current: 'contrarian' });
+    }
+    expect(playWrites()).toEqual([]);
+    t.store.set(`agents/${AGENT}`, { ownerId: OWNER, name: 'Aurora', archetype: 'momentum_chaser' });
+    expect((await post(create({ opId: 'born_0' }))).statusCode).toBe(200);
+  });
+});
+
+describe('review L1-4 / L1-9 / L2-5 / L2-6 — through the handler', () => {
+  it('L1-4: the same body replayed after the stored day\'s version labels moved is the idempotent success', async () => {
+    expect((await post(create())).body.idempotent).toBe(false);
+    const path = `agentBattles/${BATTLE}/tape/${D}`;
+    const tape = t.store.get(path);
+    t.store.set(path, { ...tape, tags: { ...tape.tags, items: tape.tags.items.map((i) => ({ ...i, version: 3 })) } });
+    const again = await post(create());
+    expect(again.statusCode).toBe(200);
+    expect(again.body).toMatchObject({ idempotent: true });
+    expect(again.body.card.situationVersion).toBe(2);
+    expect(playWrites()).toHaveLength(1);
+  });
+  it('L1-9: a tape the read cannot reach is 503 tape_unreadable, never "no tape for this day"', async () => {
+    t = makeTapeDb({ ...fixture.store, [`agents/${AGENT}`]: { ownerId: OWNER, name: 'Aurora', archetype: 'momentum_chaser' } }, { hooks: { beforeRead: (label) => { if (label.includes('/tape/')) throw new Error('firestore down'); } } });
+    state.db = t.db;
+    const res = await post(create());
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toMatchObject({ error: 'tape_unreadable' });
+    expect(Object.keys(res.body).sort()).toEqual(['error', 'message']);
+  });
+  it('L2-5: a C1 control character in the note → 400 note_control_char; L2-6: a reserved __id__ op id → 400 invalid_op_id, never a 500', async () => {
+    expect((await post(create({ note: 'a\u0085b' }))).body).toMatchObject({ error: 'note_control_char' });
+    const res = await post(create({ opId: '__op__' }));
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_op_id' });
+    expect(playWrites()).toEqual([]);
   });
 });

@@ -213,6 +213,10 @@ const DARK_BY_DESIGN = {
   //   'allowlist' admitted only owners the cockpit's server-side allowlist
   //   admits (GET /api/agent/cockpit-status) — PR #950. 'on' is CURRENT
   //   (2026-10-11, its own founder PR): v2 and Stage 3 for every battle.
+  //   Never a build PR; each step moves the pin row in filmTapeFlags.test.js
+  //   in the same commit (BUILD_RULES §2), and the step to 'on' turned around
+  //   film-tape-flip.live.test.js's hub-helper tripwire row. Rollback: one
+  //   line back to 'allowlist', with the pin row and the tripwire row.
   // FILM_ROOM_CARDS_MODE intentionally ABSENT, and it must stay absent: the
   // Film Room's take-home card (Build B spec §7; Amendment G RG-2) is a STRING
   // TRI-STATE ('off' | 'allowlist' | 'on') after the FILM_ROOM_V2_MODE pattern,
@@ -224,11 +228,9 @@ const DARK_BY_DESIGN = {
   //   only owners the cockpit's server-side allowlist admits (the same
   //   cockpit-status verdict). 'on' is every owner. Each step is its own
   //   founder PR after the `plays` rules and the `tape (ownerId, etDate)` index
-  //   are deployed (RG-7), never a build PR.
-  //   Never a build PR; each step moves the pin row in filmTapeFlags.test.js
-  //   in the same commit (BUILD_RULES §2), and the step to 'on' turned around
-  //   film-tape-flip.live.test.js's hub-helper tripwire row. Rollback: one
-  //   line back to 'allowlist', with the pin row and the tripwire row.
+  //   are deployed (RG-7), never a build PR; each step moves the pin row in
+  //   filmRoomCardsFlags.test.js in the same commit (BUILD_RULES §2). Rollback:
+  //   one line back a step, with its pin row.
   SHADOW_CPU_QUOTE_INTEGRITY_ENABLED:
     'Shadow vs CPU quote integrity (SHADOW_CPU_PLACEHOLDER_PRICE_SPEC_V1_6.md; build record docs/audits/20261002_SHADOW_CPU_QUOTE_INTEGRITY_BUILD_REVIEW.md) — built dark; the producer metadata (quoteOrigin, the stock isFallback marker) ships live while this stays false. Flips only in the founder\'s own PR, never a build PR, and no earlier than the first regular US market open after the founder confirms the complete additive metadata path is live in production (R-11). The flip moves the pin in shadowCpuQuoteIntegrityFlags.test.js to true and drops this entry in the same commit; no URL, localStorage or environment override exists',
   // ANTICIPATION_THRESHOLD_LINT_MODE intentionally ABSENT, and it must stay

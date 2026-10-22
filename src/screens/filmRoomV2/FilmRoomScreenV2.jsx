@@ -221,9 +221,11 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const written = Boolean(tape && Array.isArray(tape.checks));
   const seriesState = useSeriesDay(battleId, day, tape?.ownerId ?? null, depth === 'deep' && written, readers);
 
-  // B2 — the card: the gate per owner, the counter for the battle's agent (once the tape names it), the two writes.
-  const agentId = (typeof tape?.agentId === 'string' && tape.agentId) || (typeof battle?.agentId === 'string' && battle.agentId) || null;
-  const cards = useFilmRoomCards({ battle, agentId: written ? agentId : null, api: cardsApi });
+  // B2 — the card: the gate per owner, the counter for the battle's agent — the one the battle document names, read
+  // before any day's tape, so an untaped day still shows the cards (review L1-6) and a day change never re-asks
+  // (review L4-3) — and the two writes.
+  const agentId = (typeof battle?.agentId === 'string' && battle.agentId) || (typeof tape?.agentId === 'string' && tape.agentId) || null;
+  const cards = useFilmRoomCards({ battle, agentId, api: cardsApi });
   const [picked, setPicked] = useState(null);      // the moment the form is open for
   const [receipt, setReceipt] = useState(null);    // the card the receipt shows
   const [pendingJump, setPendingJump] = useState(null);
@@ -255,8 +257,8 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
     if (r.ok) { setPicked(null); setReceipt(r.card); setPendingJump({ id: 'receipt' }); }
     return r;
   };
-  const onRetire = async (c) => {
-    const r = await cards.retire(c);
+  const onRetire = async (c, opId) => {
+    const r = await cards.retire(c, opId);
     if (r.ok) setReceipt(r.card);
     return r;
   };
@@ -303,7 +305,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
         </div>
         {cardsOn ? (
           <div data-cards-regions="header" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <SinceLastTime tape={tape} counter={cards.counter} onOpenMoment={openMoment} onShowCard={showCard} />
+            <SinceLastTime day={day} battleId={battleId} counter={cards.counter} onOpenMoment={openMoment} onShowCard={showCard} />
             {written ? <PreparedCase tape={tape} onTakeHome={takeHome} /> : null}
           </div>
         ) : <Reserved region="header" names={COPY.reservedHeader} />}
@@ -346,8 +348,8 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
       <footer style={{ padding: 0 }}>
         {cardsOn ? (
           <div data-cards-regions="footer" style={{ width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: picked || receipt ? (desktop ? '0 24px 48px' : '0 12px 40px') : 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {picked && written ? <YourCall key={`${day}:${picked.symbol}:${picked.fromTickSeq}`} tape={tape} moment={picked} counter={cards.counter.data} onFile={onFile} onCancel={() => setPicked(null)} /> : null}
-            {receipt ? <Receipt key={receipt.entryId} tape={tape} counter={cards.counter.data} card={receipt} onRetire={onRetire} /> : null}
+            {picked && written ? <YourCall key={`${day}:${picked.symbol}:${picked.fromTickSeq}`} tape={tape} moment={picked} counter={cards.counter} mintOpId={cards.mintOpId} onFile={onFile} onCancel={() => setPicked(null)} /> : null}
+            {receipt ? <Receipt key={receipt.entryId} day={day} counter={cards.counter} card={receipt} mintOpId={cards.mintOpId} onRetire={onRetire} /> : null}
           </div>
         ) : <Reserved region="footer" names={COPY.reservedFooter} />}
       </footer>

@@ -15,10 +15,9 @@
 // composite (ownerId ASC, etDate ASC) — a founder deploy after merge (RG-7).
 
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
-import { gateFilmRoomCardsRoute } from '../_utils/filmRoom/cardsGate.js';
+import { gateFilmRoomCardsRoute, sendCardError } from '../_utils/filmRoom/cardsGate.js';
 import { buildCounter } from '../_utils/filmRoom/cardCounter.js';
 import { isValidForgeId } from '../_utils/idValidation.js';
-import { sendCardError } from './card.js';
 
 export const config = { maxDuration: 10 };
 

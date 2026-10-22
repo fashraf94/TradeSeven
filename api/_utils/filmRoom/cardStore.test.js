@@ -9,6 +9,8 @@
 // transactions, so the cap's race is a row, not a comment).
 
 import { describe, it, expect } from 'vitest';
+// DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): cardStore.js imports src/data/cardSlots.js; this import of the store is the runtime
+// guard that the slots module stays Node-clean — never mocked.
 import { makeTapeDb } from '../filmTape/__fixtures__/tapeFirestore.js';
 import {
   createCard, retireCard, readCards, buildCardDoc, isShelved, isOpen, openCardCount, withShelving, stageForRoute,
@@ -240,6 +242,38 @@ describe('readCards — shelving is computed at read, never written (ruling 5; c
     expect(r.cards.map((c) => c.entryId)).toEqual(['c1']);
     expect(await code(readCards(t.db, { uid: 'intruder', agentId: AGENT }))).toMatchObject({ status: 403, code: 'forbidden' });
     expect(await code(readCards(t.db, { uid: UID, agentId: 'nope' }))).toMatchObject({ status: 404, code: 'agent_not_found' });
+    expect(playWrites(t)).toHaveLength(1);
+  });
+});
+
+// ── the review's rows (docs/audits/20261021_BUILD_FILM_ROOM_B2_CARD.md §9) ──
+describe('review L1-1 / L5-1 — a day taped under another archetype than the agent\'s current one files no card (it would be shelved at birth)', () => {
+  it('six creates under the tape\'s archetype while the agent is on another: every one 409 archetype_changed, nothing written, the cap never bypassed; the same creates file once the agent returns', async () => {
+    const t = fresh(agentDoc({ archetype: 'guardian' }));
+    for (let i = 0; i < 6; i += 1) {
+      const r = await code(createCard(t.db, { uid: UID, agentId: AGENT, opId: `born_${i}`, payload: payload({ archetypeCodeId: 'momentum_chaser' }), nowIso: NOW }));
+      expect(r, String(i)).toMatchObject({ status: 409, code: 'archetype_changed', extra: { archetypeCodeId: 'momentum_chaser', current: 'guardian' } });
+    }
+    expect(playWrites(t)).toEqual([]);
+    expect((await readCards(t.db, { uid: UID, agentId: AGENT })).cards).toEqual([]);
+    t.store.set(`agents/${AGENT}`, agentDoc({ archetype: 'momentum_chaser' }));
+    for (let i = 0; i < 5; i += 1) expect((await createCard(t.db, { uid: UID, agentId: AGENT, opId: `born_${i}`, payload: payload(), nowIso: NOW })).card.stage).toBe('card');
+    expect(await code(createCard(t.db, { uid: UID, agentId: AGENT, opId: 'born_5', payload: payload(), nowIso: NOW }))).toMatchObject({ code: 'cap_reached', extra: { open: 5 } });
+    // a card under the agent's current archetype files; the refusal is about the DAY's archetype, not the agent's
+    expect((await readCards(t.db, { uid: UID, agentId: AGENT })).cards.every((c) => c.shelved === false)).toBe(true);
+  });
+});
+
+describe('review L1-4 — the create fingerprint hashes the client\'s request, not the server-resolved payload', () => {
+  it('the same request after a re-tag moved the stored items\' version label (situationVersion 2 → 3 in the payload) is the idempotent success, not op_conflict', async () => {
+    const t = fresh();
+    const request = { battleId: 'b-1', etDate: '2026-10-20', agentId: AGENT, moment: { situationId: 'stalled', symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 }, questionId: 'stalled.want', questionVersion: null, note: 'Let it go sooner.', route: 'watch' };
+    const a = await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'op_1', payload: payload({ situationVersion: 2 }), nowIso: NOW, request });
+    const b = await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'op_1', payload: payload({ situationVersion: 3 }), nowIso: LATER, request });
+    expect(b).toMatchObject({ idempotent: true, card: a.card });
+    expect(b.card.situationVersion).toBe(2);   // the entry keeps the version it was written under
+    // a DIFFERENT request under the same op id is still a conflict
+    expect(await code(createCard(t.db, { uid: UID, agentId: AGENT, opId: 'op_1', payload: payload(), nowIso: LATER, request: { ...request, note: 'Another.' } }))).toMatchObject({ code: 'op_conflict' });
     expect(playWrites(t)).toHaveLength(1);
   });
 });

@@ -4,6 +4,10 @@
 // B spec §5; Amendment G RG-4): the gate as for the card endpoint, the agent
 // from the query, the window, and the answer's shape over the in-memory
 // Firestore. The counting itself is proven in api/_utils/filmRoom/cardCounter.test.js.
+//
+// DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): the handler imports cardCounter.js, which imports src/utils/filmRoomMoments.js
+// and src/utils/tapeSchedule.js; this Node-environment import of the handler, unmocked, is the runtime proof that the
+// route's src/ imports are plain modules (no browser or React dependency).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 

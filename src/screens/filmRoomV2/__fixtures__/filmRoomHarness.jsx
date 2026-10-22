@@ -287,25 +287,40 @@ function aggregateOracle(name, el, docs) {
     const days = tradingTimeline(docs.battle);
     return days ? days.length : null;
   }
-  // B2 — the slots are the rulings' numbers; the open count is counted here from the ledger document the suite passes
-  // (`docs.ledger`: `{ cards }`, each with its computed `shelved`); a moment's checks are counted from the tape's own
-  // stored items by the row's named symbol and from–to — a recurrence row names another day's tape, so it has no oracle.
+  // B2 — the slots are the rulings' numbers; the open count is counted HERE from the ledger document the suite passes
+  // (`docs.ledger`: `{ cards }`, keyed by entry id) against the agent's archetype the suite passes (`docs.agentArchetype`:
+  // shelving is "made under another archetype", recomputed here, never the counter's own `shelved` — review L3-9c); a
+  // moment's checks are counted from the tape's own stored items by the row's named symbol and from–to, and a
+  // recurrence row's from the day it names among the tapes the suite passes (`docs.tapeDays`, by ET date — review
+  // L3-9b), when that day is this battle's; another battle's day is not among these documents, so it has no oracle.
   if (name === 'slot(S9 open cards per agent)') return SPEC_CARD_SLOTS.S9;
   if (name === 'slot(S10 note characters)') return SPEC_CARD_SLOTS.S10;
   if (name === 'count(plays[] open)') {
-    const cards = Array.isArray(docs.ledger?.cards) ? docs.ledger.cards : null;
-    return cards ? cards.filter((c) => ['card', 'nominated'].includes(c.stage) && c.shelved !== true).length : undefined;
+    const held = docs.ledger?.cards;
+    const cards = Array.isArray(held) ? held : (held && typeof held === 'object' ? Object.values(held) : null);
+    if (!cards || typeof docs.agentArchetype !== 'string') return undefined;
+    return cards.filter((c) => ['card', 'nominated'].includes(c.stage) && c.archetypeCodeId === docs.agentArchetype).length;
   }
   if (name === 'count(characters in the note)') return undefined;   // the typed text's own length: its rows bind it
+  const countMoment = (items, situationId, symbol, from, to) => {
+    if (from === 'x') return items.filter((i) => i.situationId === situationId && i.symbol === symbol && !Number.isInteger(i.tickSeq)).length ? 1 : null;
+    return items.filter((i) => i.situationId === situationId && i.symbol === symbol && Number.isInteger(i.tickSeq) && i.tickSeq >= Number(from) && i.tickSeq <= Number(to)).length;
+  };
   if (name === 'count(tags.items[] in a moment)') {
-    if (el.closest('[data-recurrence-row]')) return undefined;
+    const rr = el.closest('[data-recurrence-row]');
+    if (rr) {
+      const m = /^(.+):(\d{4}-\d{2}-\d{2}):([^:]+):([^:]+):(\d+|x)-(\d+|x)$/.exec(rr.getAttribute('data-recurrence-row') || '');
+      const dayTape = m ? docs.tapeDays?.[m[2]] : null;
+      if (!m || !dayTape || dayTape.battleId !== m[1]) return undefined;
+      const items = Array.isArray(dayTape.tags?.items) ? dayTape.tags.items : null;
+      return items ? countMoment(items, m[3], m[4], m[5], m[6]) : null;
+    }
     const host = el.closest('[data-moment-row], [data-moment-facts]');
     const key = host?.getAttribute('data-moment') ?? host?.getAttribute('data-moment-row') ?? null;
     const m = /^([^:]+):([^:]+):(\d+|x)-(\d+|x)$/.exec(key || '');
     const items = Array.isArray(docs.tape?.tags?.items) ? docs.tape.tags.items : null;
     if (!m || !items) return null;
-    if (m[3] === 'x') return items.filter((i) => i.situationId === m[1] && i.symbol === m[2] && !Number.isInteger(i.tickSeq)).length ? 1 : null;
-    return items.filter((i) => i.situationId === m[1] && i.symbol === m[2] && Number.isInteger(i.tickSeq) && i.tickSeq >= Number(m[3]) && i.tickSeq <= Number(m[4])).length;
+    return countMoment(items, m[1], m[2], m[3], m[4]);
   }
   const tape = docs.tape;
   if (!tape) return undefined;
@@ -399,9 +414,10 @@ export function axisDefects(container, docs) {
 /**
  * Film Room B2: the player's OWN typed words — the note in the card form's textarea (React renders a controlled
  * textarea's value as its text child) — are neither the screen's voice nor a stored record, so every sweep passes
- * over a text node whose parent is a textarea, and nothing else: a <p> beside it with the same words is still swept.
+ * over a text node whose parent is THE NOTE's textarea (`[data-note]`), and nothing else: any other textarea, and a
+ * <p> beside it with the same words, is still swept (review L3-9d).
  */
-const isTypedText = (node) => node?.parentElement?.tagName === 'TEXTAREA';
+const isTypedText = (node) => node?.parentElement?.tagName === 'TEXTAREA' && node.parentElement.hasAttribute('data-note');
 
 export function sweepNumbers(container, docs) {
   const bad = [];
@@ -495,8 +511,9 @@ export const SPEC_QUOTE_CHANNELS = Object.freeze([
   { re: /^directives\[\d+\]\.(canonicalText|retainedDirectiveText)$/, by: 'the stored directive', at: (p) => within(p, 'filedAt') },
   { re: /^plans\[\d+\]\.(signalSummary|threshold)$/, by: 'the stored plan', at: (p) => within(p, 'at') },
   { re: /^battle\.completionMessage\.text$/, by: 'the platform', at: () => ['battle', 'completionMessage', 'at'] },
-  // B2 (spec §6): the player's note on a filed card — the LEDGER document (`docs.ledger`: `{ etDate, cards }`), credited "you"
-  { re: /^cards\[\d+\]\.note$/, by: 'you', at: (p) => within(p, 'createdAt') },
+  // B2 (spec §6): the player's note on a filed card — the LEDGER document (`docs.ledger`: `{ etDate, cards }`, each card
+  // under its OWN entry id, never a position in a list — review L3-9a), credited "you"
+  { re: /^cards\.[A-Za-z0-9_-]+\.note$/, by: 'you', at: (p) => within(p, 'createdAt') },
 ]);
 
 /**

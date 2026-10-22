@@ -71,6 +71,7 @@ export const CARD_ROUTE_COPY = Object.freeze({
   shelved: 'This card is shelved: it was made under another archetype and cannot move until the agent returns to it.',
   illegal_transition: 'That change is not allowed from the card\'s current stage.',
   agent_unresolved: 'This agent records no archetype, so no card can be filed under it.',
+  archetype_changed: 'This day was taped under another archetype than the agent\'s current one, so a card from it would be shelved at birth. Nothing was filed.',
 });
 const fail = (status, code, extra) => new CardRouteError(status, code, CARD_ROUTE_COPY[code], extra);
 
@@ -137,23 +138,41 @@ export function buildCardDoc({ entryId, uid, agentId, opId, opFingerprint, nowIs
   };
 }
 
-const createFingerprint = (agentId, payload) => canonicalContentHash({ kind: 'create', agentId, payload });
+/**
+ * The create fingerprint hashes the CLIENT'S REQUEST (what the caller sent:
+ * the moment, the question, the note, the route, the battle, the day), never
+ * the server-resolved payload — so a replay of the same request after a
+ * re-tag moved the stored items' version labels (RC-1) is still the idempotent
+ * success, as hypothesisRecords/store.js hashes the request it was given
+ * (review L1-4). `request` falls back to the payload for a caller that sends none.
+ */
+const createFingerprint = (agentId, request, payload) => canonicalContentHash({ kind: 'create', agentId, request: request ?? payload });
 const retireFingerprint = (agentId, entryId, expectedVersion) => canonicalContentHash({ kind: 'retire', agentId, entryId, expectedVersion });
 
 /**
  * Create a card. The route has already proved the moment, the question and the
- * note (api/film-room/card.js); here the ownership, the replay, the cap and the
- * write happen in one transaction.
+ * note (api/film-room/card.js); here the ownership, the replay, the archetype,
+ * the cap and the write happen in one transaction.
+ *
+ * THE ARCHETYPE (review L1-1 / L5-1): the card is created under the archetype
+ * the TAPE DAY records (`tags.inputs.archetypeCodeId`, the battle's), and the
+ * cap and the shelving read the agent's CURRENT archetype. A day taped under
+ * an archetype the agent has since left would give a card shelved at birth —
+ * one the cap never counts and nothing "returns" to — so such a create is
+ * REFUSED (409 archetype_changed) rather than filed. Spec §4's shelving
+ * paragraph presupposes a card that starts unshelved; this keeps it so. A
+ * founder ruling on the alternative (stamping the agent's current archetype)
+ * is asked in the build report.
  *
  * @param {object} db
- * @param {{ uid: string, agentId: string, opId: string, nowIso: string,
+ * @param {{ uid: string, agentId: string, opId: string, nowIso: string, request?: object,
  *           payload: { archetypeCodeId: string, situationId: string, situationVersion: number,
  *                      battleId: string, etDate: string, symbol: string, fromTickSeq: number|null, toTickSeq: number|null,
  *                      questionId: string, questionVersion: number, note: string, route: 'watch'|'drill'|'set' } }} p
  * @returns {Promise<{ idempotent: boolean, card: object, open: number, cap: number }>}
  */
-export async function createCard(db, { uid, agentId, opId, payload, nowIso }) {
-  const opFingerprint = createFingerprint(agentId, payload);
+export async function createCard(db, { uid, agentId, opId, payload, nowIso, request = null }) {
+  const opFingerprint = createFingerprint(agentId, request, payload);
   return db.runTransaction(async (tx) => {
     const agent = ownedAgent(await tx.get(agentRefOf(db, agentId)), uid);
     const ref = playRefOf(db, agentId, opId);
@@ -165,6 +184,7 @@ export async function createCard(db, { uid, agentId, opId, payload, nowIso }) {
       if (existing?.opFingerprint === opFingerprint) return { idempotent: true, card: existing, open, cap: OPEN_CARD_CAP };
       throw fail(409, 'op_conflict', { entryId: opId });
     }
+    if (payload.archetypeCodeId !== agent.archetype) throw fail(409, 'archetype_changed', { archetypeCodeId: payload.archetypeCodeId, current: agent.archetype });
     if (open >= OPEN_CARD_CAP) throw fail(409, 'cap_reached', { cap: OPEN_CARD_CAP, open });
     const card = buildCardDoc({ entryId: opId, uid, agentId, opId, opFingerprint, nowIso, payload });
     tx.create(ref, card);

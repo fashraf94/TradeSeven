@@ -37,8 +37,13 @@ const bad = (code, message) => new CardInputError(code, message);
 
 /** S10 — the note's length, in code points, after trimming. */
 export const NOTE_MAX_CHARS = CARD_SLOTS.S10.noteMaxChars;
-/** A C0 control or DEL anywhere in the trimmed note is refused, never stripped (a newline included). */
-export const CONTROL_CHAR = /[\u0000-\u001F\u007F]/;
+/**
+ * Any control character — Unicode category Cc: C0 (U+0000–U+001F, a newline included), DEL and C1 (U+0080–U+009F)
+ * — anywhere in the trimmed note is refused, never stripped (review L1-5 / L2-5: C1 passed the first cut).
+ */
+export const CONTROL_CHAR = /\p{Cc}/u;
+/** Firestore reserves document ids of the form `__…__`; they pass the forge-id class, so they are refused here (review L2-6). */
+const RESERVED_ID = /^__.*__$/;
 
 /** The number of characters a note holds as S10 counts them: code points, after trimming. */
 export const noteLength = (note) => [...String(note ?? '').trim()].length;
@@ -56,14 +61,14 @@ export function normalizeNote(raw) {
   return note;
 }
 
-/** A caller-supplied op id (a client UUID): the forge-id character class. */
+/** A caller-supplied op id (a client UUID): the forge-id character class, and never a reserved `__…__` id (it becomes the entry's id). */
 export function requireOpId(raw) {
-  if (!isValidForgeId(raw)) throw bad('invalid_op_id', `opId must match ${FORGE_ID_REGEX} and be ≤${FORGE_ID_MAX_LEN} chars.`);
+  if (!isValidForgeId(raw) || RESERVED_ID.test(raw)) throw bad('invalid_op_id', `opId must match ${FORGE_ID_REGEX}, be ≤${FORGE_ID_MAX_LEN} chars and not be a reserved __id__.`);
   return raw;
 }
 
 const requireId = (raw, code, name) => {
-  if (!isValidForgeId(raw)) throw bad(code, `${name} must match ${FORGE_ID_REGEX} and be ≤${FORGE_ID_MAX_LEN} chars.`);
+  if (!isValidForgeId(raw) || RESERVED_ID.test(raw)) throw bad(code, `${name} must match ${FORGE_ID_REGEX}, be ≤${FORGE_ID_MAX_LEN} chars and not be a reserved __id__.`);
   return raw;
 };
 const seqOrNull = (v, name) => {

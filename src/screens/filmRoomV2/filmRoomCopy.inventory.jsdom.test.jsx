@@ -75,13 +75,14 @@ const COPY_KEYS = [
   'exitMark', 'entryMark', 'evidenceOverlay', 'evidenceOverlayNote', 'allSymbols', 'close10',
   'reservedHeader[0]', 'reservedHeader[1]', 'reservedFooter[0]', 'reservedFooter[1]',
   // Film Room B2 — the card's regions (Build B spec §6; Amendment G RG-5, RG-9)
-  'cards.sinceLastTime', 'cards.preparedCase', 'cards.yourCall', 'cards.receipt', 'cards.moments', 'cards.momentsNote', 'cards.momentsNone', 'cards.takeHome',
+  'cards.sinceLastTime', 'cards.preparedCase', 'cards.yourCall', 'cards.receipt', 'cards.moments', 'cards.momentsNote', 'cards.momentsNone', 'cards.tagsAbsent', 'cards.takeHome',
   'cards.countAgainst', 'cards.thresholdWord', 'cards.checkTag', 'cards.question', 'cards.note', 'cards.noteLimit', 'cards.routeTitle', 'cards.routes.watch',
-  'cards.routes.drill', 'cards.routes.set', 'cards.routeNotes.watch', 'cards.routeNotes.drill', 'cards.routeNotes.set', 'cards.setRoute', 'cards.openCards', 'cards.file',
+  'cards.routes.drill', 'cards.routes.set', 'cards.routeNotes.watch', 'cards.routeNotes.drill', 'cards.routeNotes.set', 'cards.setRoute', 'cards.openCards', 'cards.openCountLoading', 'cards.openCountUnknown', 'cards.file',
   'cards.cancel', 'cards.filing', 'cards.refusals.cap_reached', 'cards.refusals.moment_not_found', 'cards.refusals.disabled', 'cards.refusals.note_too_long', 'cards.refusals.note_control_char', 'cards.refusals.note_empty',
-  'cards.refusals.version_conflict', 'cards.refusals.shelved', 'cards.refusals.untaped', 'cards.refusals.default', 'cards.refusals.retireDefault', 'cards.filedCard', 'cards.situation', 'cards.on',
-  'cards.route', 'cards.stage', 'cards.stageWords.card', 'cards.stageWords.nominated', 'cards.stageWords.retired', 'cards.retire', 'cards.retiring', 'cards.recurrences',
-  'cards.noRecurrence', 'cards.noWatchCards', 'cards.myCards', 'cards.groups.active', 'cards.groups.shelved', 'cards.groups.retired', 'cards.noCards', 'cards.shelvedExplainer',
+  'cards.refusals.version_conflict', 'cards.refusals.shelved', 'cards.refusals.untaped', 'cards.refusals.archetype_changed', 'cards.refusals.op_conflict', 'cards.refusals.tape_unreadable', 'cards.refusals.tape_not_found',
+  'cards.refusals.tags_unavailable', 'cards.refusals.question_not_on_menu', 'cards.refusals.illegal_transition', 'cards.refusals.forbidden', 'cards.refusals.not_found', 'cards.refusals.default', 'cards.refusals.retireDefault', 'cards.filedCard', 'cards.situation', 'cards.on',
+  'cards.route', 'cards.stage', 'cards.stageWords.card', 'cards.stageWords.nominated', 'cards.stageWords.retired', 'cards.stateNotes.retired', 'cards.stateNotes.shelved', 'cards.retire', 'cards.retiring', 'cards.recurrences',
+  'cards.noRecurrence', 'cards.otherBattle', 'cards.noWatchCards', 'cards.myCards', 'cards.groups.active', 'cards.groups.shelved', 'cards.groups.retired', 'cards.groups.other', 'cards.noCards', 'cards.shelvedExplainer',
   'cards.loading', 'cards.readError', 'cards.openCard',
 ];
 
@@ -197,9 +198,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 240 copy keys, 348 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(300);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 59 keys and quoteBy.you (240 before)
-    expect(inventory()).toHaveLength(412);   // B2: 60 keys, the one live situation's title and its three questions (348 before)
+  it('the inventory\'s size is pinned (the build report states it): 316 copy keys, 428 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(316);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
+    expect(inventory()).toHaveLength(428);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {

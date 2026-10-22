@@ -358,12 +358,17 @@ describe('Astra B5 — a heading INSIDE the bound element is the screen\'s voice
 // ── Film Room B2 — the player's typed words are not the screen's voice ───────
 
 describe('B2 — a textarea holds the player\'s own typed words: every sweep passes over it, and nothing beside it', () => {
-  it('a number word, a forbidden word and a digit typed into the card form\'s textarea are not the screen\'s; the same words in a <p> beside it still bite', () => {
-    const typed = box('<textarea>one of my best ideas, 12 of them</textarea>');
+  it('a number word, a forbidden word and a digit typed into the card form\'s NOTE textarea are not the screen\'s; the same words in a <p> beside it still bite', () => {
+    const typed = box('<textarea data-note="">one of my best ideas, 12 of them</textarea>');
     expect(sweepWords(typed)).toEqual([]);
     expect(sweepNumbers(typed, { tape: sep23Tape })).toEqual([]);
-    const beside = box('<textarea>one</textarea><p>one of my best ideas, 12 of them</p>');
+    const beside = box('<textarea data-note="">one</textarea><p>one of my best ideas, 12 of them</p>');
     expect(sweepWords(beside)).toEqual(['best', 'number word “one”: one of my best ideas, 12 of them']);
     expect(sweepNumbers(beside, { tape: sep23Tape })).toEqual(['stray digit: “one of my best ideas, 12 of them”']);
+  });
+  it('any OTHER textarea is the screen\'s: the same words in a textarea without data-note bite (review L3-9d)', () => {
+    const other = box('<textarea>one of my best ideas, 12 of them</textarea>');
+    expect(sweepWords(other)).toEqual(['best', 'number word “one”: one of my best ideas, 12 of them']);
+    expect(sweepNumbers(other, { tape: sep23Tape })).toEqual(['stray digit: “one of my best ideas, 12 of them”']);
   });
 });

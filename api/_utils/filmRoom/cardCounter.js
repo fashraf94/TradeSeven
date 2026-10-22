@@ -38,7 +38,11 @@ const msOf = (v) => { if (typeof v !== 'string') return null; const ms = Date.pa
 
 /** RG-4 — the fields the counter reads of a tape day, and no other. */
 export const COUNTER_FIELD_MASK = Object.freeze(['tags', 'etDate', 'ownerId', 'agentId', 'battleId']);
-/** The default window: the last 120 calendar days of ET dates (the ruling sheet's "120 days of film"), ending today. */
+/**
+ * The default window: the last 120 calendar days of ET dates, ending today — this build's own choice of a bounded
+ * read (no ruling fixes it; ruling 18's "120 days of film" limits DRILLS, not counting — review R1-2). It is floored at
+ * the earliest open Watch card's creation day (buildCounter), so a Watch card's recurrences are never cut by it.
+ */
 export const COUNTER_WINDOW_DAYS = 120;
 /** The longest window a caller may name, in calendar days. */
 export const COUNTER_WINDOW_MAX_DAYS = 400;
@@ -100,7 +104,9 @@ export async function readOwnerTapeDays(db, { uid, from, to }) {
 
 /**
  * Weekly counts per agent, per situation, per ET trading week:
- * `{ [agentId]: { [situationId]: { [mondayEtDate]: { tags, moments } } } }`. Derived.
+ * `{ [agentId]: { [situationId]: { [mondayEtDate]: { tags, moments } } } }`. Derived. Keyed by EVERY agent of the
+ * caller with a tape day in the window — the owner's own data, as spec §5's "the owner's tape days" reads; the asked
+ * `agentId` scopes the ledger and the recurrences, not this table (review L2-8). No screen reads it in this build.
  */
 export function weeklyCounts(days) {
   const out = {};
@@ -154,9 +160,19 @@ export function recurrencesOf(card, days) {
  * @returns {Promise<{ agentId, archetypeCodeId, window: { from, to }, weekly, cards, open, cap, recurrences: { [entryId]: object[] } }>}
  */
 export async function buildCounter(db, { uid, agentId, nowMs, from = null, to = null }) {
-  const window = windowOf(nowMs, { from, to });
-  if (window.error) return { error: window.error };
-  const [days, ledger] = await Promise.all([readOwnerTapeDays(db, { uid, from: window.from, to: window.to }), readCards(db, { uid, agentId })]);
+  const asked = windowOf(nowMs, { from, to });
+  if (asked.error) return { error: asked.error };
+  // The ledger first: a Watch card older than the window would otherwise have its earlier recurrences silently
+  // dropped and the screen would say none was recorded (review L1-2). The window's start is floored at the earliest
+  // open Watch card's creation day — within the 400-day cap behind `to` — when the caller named no window.
+  const ledger = await readCards(db, { uid, agentId });
+  const window = { ...asked };
+  if (from === null && to === null) {
+    const earliest = ledger.cards.filter((c) => isOpenWatchCard(c, ledger.archetypeCodeId)).map((c) => etDateOf(c.createdAt)).filter(isEtDate).sort()[0] ?? null;
+    const floor = daysBefore(window.to, COUNTER_WINDOW_MAX_DAYS - 1);
+    if (earliest && earliest < window.from) window.from = earliest < floor ? floor : earliest;
+  }
+  const days = await readOwnerTapeDays(db, { uid, from: window.from, to: window.to });
   const recurrences = {};
   for (const card of ledger.cards) if (isOpenWatchCard(card, ledger.archetypeCodeId)) recurrences[card.entryId] = recurrencesOf(card, days);
   return {

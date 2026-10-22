@@ -8,9 +8,12 @@
 //   · doc get / set / update (dot paths) / create / delete, subcollections;
 //   · queries: where(==, in, <, <=, >, >=) on dotted field paths, orderBy,
 //     limit, select; collectionGroup(name);
-//   · runTransaction with OPTIMISTIC concurrency: every doc read in the
-//     transaction is versioned, and a commit whose read set changed retries the
-//     whole function (up to 5 attempts), as Firestore does. `hooks.afterTxRead`
+//   · runTransaction with the fixture's OWN concurrency scheme — optimistic:
+//     every doc read in the transaction is versioned, and a commit whose read
+//     set changed retries the whole function (up to 5 attempts). The Admin
+//     SDK's server-side transactions lock pessimistically instead; what the
+//     two share, and what the suites rely on, is the outcome — a commit over a
+//     stale read never lands (review L4-12). `hooks.afterTxRead`
 //     lets a test land a concurrent write between a transaction's read and its
 //     commit;
 //   · `hooks.beforeWrite(op, path)` runs before every write of any form and

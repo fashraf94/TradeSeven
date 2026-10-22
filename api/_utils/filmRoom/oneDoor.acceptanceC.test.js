@@ -7,21 +7,23 @@
 // (BUILD_RULES §1): the evaluator's system prompt, the identity block, the
 // live-context block and the portfolio CSV (agentEvalPromptAssembly.js), and
 // the deploy path's strategy and portfolio prompts (agentPromptAssembly.js).
-// The Admin SDK handle every assembler would read through is the tape
-// suites' in-memory Firestore, SEEDED with the ledger under the battle's own
-// agent, so a read of `plays` anywhere in the assembly would show in its read
-// log — and none does. The seeded ledger is proven readable (a readCards on
-// the same handle returns the entries), so the comparison is not vacuous.
+// The Admin SDK handle every assembler would read through — both the
+// firebaseAdmin.js handle and firebase-admin/firestore's getFirestore (review
+// L2-2) — is the tape suites' in-memory Firestore, SEEDED with the ledger
+// under the battle's own agent, so a read of `plays` anywhere in the assembly
+// would show in its read log — and none does. The log is proven LIVE, not
+// empty by construction (review L4-5): the battle carries an institutional
+// rule, so the live-context block's institutional fetch reads
+// institutionalHoldings/{symbol} through that very handle, and those reads
+// are in the log. The seeded ledger is proven readable (a readCards on the
+// same handle returns the entries), so the comparison is not vacuous.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const state = vi.hoisted(() => ({ db: null }));
 vi.mock('../firebaseAdmin.js', () => ({ getFirebaseAdmin: () => state.db, getFirebaseAuth: () => ({}) }));
 vi.mock('firebase-admin/app', () => ({ getApps: () => [{}], initializeApp: () => ({}), cert: () => ({}) }));
-vi.mock('firebase-admin/firestore', async (importOriginal) => {
-  const { cacheDbDouble } = await import('../__fixtures__/eodhdQuoteFixtures.js');
-  return { ...(await importOriginal()), getFirestore: () => cacheDbDouble() };
-});
+vi.mock('firebase-admin/firestore', async (importOriginal) => ({ ...(await importOriginal()), getFirestore: () => state.db }));
 
 const { buildEvalSystemPrompt, buildAgentIdentityBlock, buildLiveContextBlock, buildPortfolioCSV } = await import('../agentEvalPromptAssembly.js');
 const { buildStrategySystemPrompt, buildStrategyUserPrompt, buildPortfolioSystemPrompt } = await import('../agentPromptAssembly.js');
@@ -53,8 +55,12 @@ async function handleOf(seeded) {
 const agent = () => ({ id: AGENT, name: 'Aurora', archetype: 'momentum_chaser', memory: [{ gameId: 'g1', score: 12, result: 'win', lesson: 'Stay with winners.' }], consolidatedInsight: 'Patience pays.', evolutionCycle: 2, activeRules: [], personality: { traits: ['patient'] } });
 
 /** Every assembler, called as the model paths call it; the outputs as one object. */
+/** An institutional Forge rule: the one thing that makes the live-context block READ through the Admin handle. */
+const INSTITUTIONAL_RULE = Object.freeze({ id: 'inst-1', category: 'institutional', name: 'Follow the accumulation', text: 'Favor stocks institutions are accumulating.' });
+
 async function assemble() {
-  const battle = makeTickBattle({ agentId: AGENT, ownerId: UID });
+  const base = makeTickBattle({ agentId: AGENT, ownerId: UID });
+  const battle = { ...base, agentContext: { ...base.agentContext, activeRules: [INSTITUTIONAL_RULE] } };
   const prices = makePriceTable();
   const out = {};
   out.evalSystem = buildEvalSystemPrompt('Aurora', 'momentum_chaser', 'baggerbomb_agent', 'momentum_chaser');
@@ -70,7 +76,6 @@ async function assemble() {
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
-  vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -82,7 +87,7 @@ describe('acceptance C — the assembled trading prompt with a ledger is byte-id
     expect(r.open).toBe(2);
   });
 
-  it('every assembler: the same bytes with and without the ledger, and no read of plays in either run', async () => {
+  it('every assembler: the same bytes with and without the ledger, a LIVE read log in both runs (the institutional reads are in it), and no read of plays in either', async () => {
     const empty = await handleOf(false);
     state.db = empty.db;
     const without = await assemble();
@@ -97,7 +102,21 @@ describe('acceptance C — the assembled trading prompt with a ledger is byte-id
       expect(v, k).not.toContain('Let it go sooner');
       expect(v, k).not.toContain('Practice the exit');
     }
-    for (const log of [empty.readLog, seeded.readLog]) expect(log.filter((r) => /plays/.test(r))).toEqual([]);
+    for (const log of [empty.readLog, seeded.readLog]) {
+      // the log is live: the assembly read institutionalHoldings/{symbol} for the portfolio through THIS handle
+      expect(log).toContain('institutionalHoldings/NVDA');
+      expect(log).toContain('institutionalAggregates/latest');
+      expect(log.length).toBeGreaterThan(5);
+      expect(log.filter((r) => /plays/.test(r))).toEqual([]);
+    }
+    // the institutional block really rendered — the rule is read, not just carried
+    expect(withLedger.liveContext).toMatch(/institutional/i);
+  });
+
+  it('the bite for the read log: a prompt path that read plays through the handle would be in the log by name', async () => {
+    const seeded = await handleOf(true);
+    await seeded.db.collection('agents').doc(AGENT).collection('plays').doc('c_card').get();
+    expect(seeded.readLog.filter((r) => /plays/.test(r))).toEqual([`agents/${AGENT}/plays/c_card`]);
   });
 
   it('the bite: a prompt that DID read the ledger would differ — the comparison can fail', async () => {

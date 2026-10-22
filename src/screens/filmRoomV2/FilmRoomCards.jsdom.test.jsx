@@ -54,6 +54,7 @@ import { buildCounter } from '../../../api/_utils/filmRoom/cardCounter.js';
 import cardHandler from '../../../api/film-room/card.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
+import { ledgerOf } from './filmRoomCards';
 import {
   mounter, sep23Tape, sep23Series, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, storedNoteDefects, agentNameDefects,
 } from './__fixtures__/filmRoomHarness';
@@ -98,13 +99,19 @@ beforeAll(async () => {
 const m = mounter();
 const mkRes = () => ({ statusCode: null, body: null, headers: {}, setHeader() {}, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } });
 /** The screen's API seam, routed through the real handler and the real counter over the fake handle. */
-const apiOf = () => ({
-  calls: [],
-  readVerdict: async () => true,
-  readCounter: async (agentId) => { const body = await buildCounter(state.db, { uid: state.uid, agentId, nowMs: Date.parse('2026-09-26T00:00:00.000Z') }); return { ok: !body.error, status: body.error ? 400 : 200, body }; },
-  postCard: async (body) => { const res = mkRes(); await cardHandler({ method: 'POST', headers: {}, body }, res); return { ok: res.statusCode === 200, status: res.statusCode, body: res.body }; },
-  newOpId: (() => { let n = 0; return () => `op_${(n += 1)}`; })(),
-});
+const COUNTER_NOW = Date.parse('2026-09-26T00:00:00.000Z');
+const apiOf = () => {
+  const api = {
+    calls: [],   // every call through the seam: ['counter', agentId] | ['card', body]
+    readVerdict: async () => true,
+    readCounter: async (agentId) => { api.calls.push(['counter', agentId]); const body = await buildCounter(state.db, { uid: state.uid, agentId, nowMs: COUNTER_NOW }); return { ok: !body.error, status: body.error ? 400 : 200, body }; },
+    postCard: async (body) => { api.calls.push(['card', body]); const res = mkRes(); await cardHandler({ method: 'POST', headers: {}, body }, res); return { ok: res.statusCode === 200, status: res.statusCode, body: res.body }; },
+    newOpId: (() => { let n = 0; return () => `op_${(n += 1)}`; })(),
+  };
+  return api;
+};
+const counterCalls = () => api.calls.filter((c) => c[0] === 'counter').length;
+const cardBodies = () => api.calls.filter((c) => c[0] === 'card').map((c) => c[1]);
 let t; let api; let lastBattle = null;
 const battleOf = (over = {}) => ({ id: B, agentBattleId: B, ownerId: OWNER, agentId: AGENT, status: 'completed', completedAt: `${D2}T20:05:00.000Z`, timing: { tradingDays: [D1, D2] }, agentContext: { agentName: 'Momentum chaser', archetype: 'momentum_chaser' }, gameMode: 'baggerbomb_agent', ...over });
 beforeEach(() => {
@@ -125,14 +132,20 @@ async function open({ battle = battleOf(), tapes = { [D1]: fx.tape1, [D2]: fx.ta
 const depth = async (label) => { m.click(m.tab(label)); await m.flush(); };
 const text = () => m.container.textContent;
 const region = (name) => m.q(`[data-cards-region="${name}"]`);
-const docsFor = (tape) => ({ tape, battle: lastBattle ?? battleOf(), ledger: { etDate: tape.etDate, cards: ledgerCards() } });
+/**
+ * The documents the sweeps read: the shown tape, the battle, the ledger (each card under its entry id, as the
+ * quotation path names it), the agent's archetype as the store holds it NOW (the open-count oracle recomputes
+ * shelving from it — review L3-9c) and the battle's tape days by date (a recurrence row's oracle — review L3-9b).
+ */
+const docsFor = (tape, { day = tape?.etDate ?? null, ...over } = {}) => ({ tape, battle: lastBattle ?? battleOf(), ledger: { etDate: day, cards: ledgerMap() }, agentArchetype: t.store.get(`agents/${AGENT}`)?.archetype ?? null, tapeDays: { [D1]: fx.tape1, [D2]: fx.tape2 }, ...over });
 /** The ledger as the counter answers it now (the suite's own read of the fake, for the sweeps' oracle). */
 let lastCounter = null;
-async function ledgerRefresh() { lastCounter = await buildCounter(state.db, { uid: state.uid, agentId: AGENT, nowMs: Date.parse('2026-09-26T00:00:00.000Z') }); }
+async function ledgerRefresh() { lastCounter = await buildCounter(state.db, { uid: state.uid, agentId: AGENT, nowMs: COUNTER_NOW }); }
 const ledgerCards = () => (lastCounter ? lastCounter.cards : []);
-const sweepAll = async (tape, where) => {
+const ledgerMap = () => Object.fromEntries(ledgerCards().map((c) => [c.entryId, c]));
+const sweepAll = async (tape, where, over = {}) => {
   await ledgerRefresh();
-  const docs = docsFor(tape);
+  const docs = docsFor(tape, over);
   expect(sweepNumbers(m.container, docs), where).toEqual([]);
   expect(sweepWords(m.container, docs), where).toEqual([]);
   expect(sweepSigns(m.container), where).toEqual([]);
@@ -141,6 +154,11 @@ const sweepAll = async (tape, where) => {
   expect(agentNameDefects(m.container, docs), where).toEqual([]);
 };
 const setValue = (el, value) => { const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set; setter.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); };
+/** Run `fn` with the clock (Date alone — no timer is faked) set to `iso`: the handler stamps `new Date()` (review L4-8). */
+async function atClock(iso, fn) {
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.parse(iso) });
+  try { return await fn(); } finally { vi.useRealTimers(); }
+}
 async function fileCard({ note = 'Let it go sooner.', route = 'watch', question = 'stalled.want' } = {}) {
   m.click(m.q(`[data-question="${question}"] input`));
   m.click(m.q(`[data-route="${route}"] input`));
@@ -319,7 +337,7 @@ describe('receipt — the filed card (spec §6; R7)', () => {
     expect(receipt.closest('footer')).toBeTruthy();
     expect(m.q('[data-card-form]')).toBeNull();
     const q = receipt.querySelector('[data-quote-path]');
-    expect(q.getAttribute('data-quote-path')).toBe('cards[0].note');
+    expect(q.getAttribute('data-quote-path')).toBe('cards.op_1.note');   // bound by the card's OWN id, never a position (review L3-9a)
     expect(q.getAttribute('data-quote-doc')).toBe('ledger');
     expect(q.textContent).toBe('Let it go sooner.');
     expect(receipt.querySelector('[data-quote-attribution]').textContent).toMatch(/^— you · /);
@@ -354,6 +372,9 @@ describe('receipt — the filed card (spec §6; R7)', () => {
     m.click(m.buttons('Retire')[0]);
     await m.flush(10);
     expect(m.q('[data-card-receipt]').textContent).toContain('Stage · retired');
+    // RG-5 for a retired card: what happens next is nothing, said so — never the route's sentence (review L3-3)
+    expect(m.q('[data-card-receipt] [data-card-next]').textContent).toBe('Retired: nothing happens next.');
+    expect(m.q('[data-card-receipt]').textContent).not.toContain(RG5.watch);
     expect(m.buttons('Retire')).toHaveLength(0);
     expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('retired');
     expect(m.qa('[data-my-cards-group="retired"] [data-my-card]')).toHaveLength(1);
@@ -386,21 +407,10 @@ describe('since-last-time — open Watch cards, their recurrences (RG-4), My car
     expect(m.q('[data-moment-row]').getAttribute('data-moment-row')).toBe('stalled:ACN:4-5');
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
-    // the card must be created AFTER day 1 and BEFORE day 2's moments: the fake clock is the handler's `new Date()`, so plant the creation time
-    await fileCard({ note: 'Watch this.' });
-    const created = t.store.get(`agents/${AGENT}/plays/op_1`);
-    t.store.set(`agents/${AGENT}/plays/op_1`, { ...created, createdAt: `${D1}T23:00:00.000Z` });
-    m.click(m.buttons('Take this home')[0]);   // any refresh: re-open the form, cancel it
-    await m.flush();
-    m.click(m.buttons('Cancel')[0]);
-    await m.flush();
-    // the counter is re-read on the next write; force one through a retire-less path: re-render by switching day and back
-    m.click(m.qa('[data-region="day-picker"] button')[1]);
-    await m.flush(8);
-    await api.readCounter(AGENT);
-    // mount fresh so the header reads the ledger with the planted creation time
-    m.teardown(); m.setup(); globalThis.localStorage.clear();
-    await open();
+    // the card is created AFTER day 1 and BEFORE day 2's moments: the handler stamps `new Date()`, so the clock itself
+    // is set to that evening (review L4-8) — the stored document is never edited by hand
+    await atClock(`${D1}T23:00:00.000Z`, () => fileCard({ note: 'Watch this.' }));
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).createdAt).toBe(`${D1}T23:00:00.000Z`);
     const slt = region('since-last-time');
     const watch = slt.querySelector('[data-watch-card="op_1"]');
     expect(watch).toBeTruthy();
@@ -408,27 +418,50 @@ describe('since-last-time — open Watch cards, their recurrences (RG-4), My car
     const rows = [...watch.querySelectorAll('[data-recurrence-row]')];
     const want = momentsOf(fx.tape2.tags.items).filter((mm) => mm.situationId === 'stalled');
     expect(rows.length).toBe(want.length);
-    const a = rows[0];
-    expect(a.tagName).toBe('A');
-    expect(a.getAttribute('href')).toBe(`#film-room/${B}/${D2}/moment-${want[0].symbol}-${want[0].fromTickSeq}-${want[0].toTickSeq}`);
-    expect(a.querySelector('[data-num-aggregate="count(tags.items[] in a moment)"]').getAttribute('data-num-class')).toBe('derived');
-    expect(a.textContent).not.toMatch(/\$|%/);
-    // this battle's day: opening switches the day (day 2 is already shown: go to day 1 first)
-    m.click(m.qa('[data-region="day-picker"] button')[0]);
-    await m.flush(8);
+    const row = rows[0];
+    // this battle's recurrence is a control that opens its day and moment HERE — never a link to a route the App lacks (review L3-4)
+    expect(row.tagName).toBe('BUTTON');
+    expect(row.getAttribute('href')).toBeNull();
+    expect(row.getAttribute('data-recurrence-row')).toBe(`${B}:${D2}:stalled:${want[0].symbol}:${want[0].fromTickSeq}-${want[0].toTickSeq}`);
+    expect(row.querySelector('[data-num-aggregate="count(tags.items[] in a moment)"]').getAttribute('data-num-class')).toBe('derived');
+    expect(row.textContent).not.toMatch(/\$|%/);
+    expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 24');
     const scrolled = [];
-    Element.prototype.scrollIntoView = function sv() { scrolled.push(this.id); };
-    m.click(region('since-last-time').querySelector('[data-recurrence-row]'));
-    await m.flush(8);
+    const sv = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scroll() { scrolled.push(this.id); };
+    try {
+      m.click(row);
+      await m.flush(8);
+    } finally { Element.prototype.scrollIntoView = sv; }
     expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 25');
     expect(scrolled).toContain(`moment-${want[0].symbol}-${want[0].fromTickSeq}-${want[0].toTickSeq}`);
+    expect(counterCalls()).toBe(2);   // once at open, once after the create — the day change re-asked nothing (review L4-3)
     await sweepAll(fx.tape2, 'since last time');
   });
-  it('another battle\'s recurrence is a plain link: the screen does not navigate (App wiring is not this build\'s)', async () => {
+  it('another battle\'s recurrence (the same agent, another battle day) is NAMED, not linked: the screen opens no other battle (RG-4; review L3-4)', async () => {
+    // the same agent's day in another battle, in the window — the counter lists it among the recurrences
+    t.store.set(`agentBattles/b-elsewhere/tape/${D2}`, { ...fx.tape2, battleId: 'b-elsewhere' });
     await open();
-    const r = { battleId: 'b-elsewhere', etDate: D2, situationId: 'stalled', symbol: 'MSFT', fromTickSeq: 2, toTickSeq: 3, from: fx.tape2.checks[1].at, to: fx.tape2.checks[2].at, checks: 2 };
-    const { recurrenceHref } = await import('./FilmRoomCardRegions');
-    expect(recurrenceHref(r)).toBe('#film-room/b-elsewhere/2026-09-25/moment-MSFT-2-3');
+    m.click(m.qa('[data-region="day-picker"] button')[0]);
+    await m.flush(8);
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await atClock(`${D1}T23:00:00.000Z`, () => fileCard({ note: 'Watch this.' }));
+    const watch = region('since-last-time').querySelector('[data-watch-card="op_1"]');
+    const rows = [...watch.querySelectorAll('[data-recurrence-row]')];
+    const own = rows.filter((r) => r.getAttribute('data-recurrence-row').startsWith(`${B}:`));
+    const elsewhere = rows.filter((r) => r.getAttribute('data-recurrence-row').startsWith('b-elsewhere:'));
+    expect(own.length).toBeGreaterThan(0);
+    expect(elsewhere.length).toBe(own.length);
+    for (const r of elsewhere) {
+      expect(r.tagName).toBe('SPAN');
+      expect(r.hasAttribute('data-recurrence-elsewhere')).toBe(true);
+      expect(r.querySelector('a, button')).toBeNull();
+      expect(r.textContent).toContain('in another battle');
+    }
+    for (const r of own) expect(r.tagName).toBe('BUTTON');
+    expect(watch.querySelector('a')).toBeNull();
+    await sweepAll(fx.tape1, 'elsewhere');
   });
   it('no open Watch card: says so; a Practice card is not followed', async () => {
     await open();
@@ -453,6 +486,13 @@ describe('since-last-time — open Watch cards, their recurrences (RG-4), My car
     expect(m.qa('[data-my-cards-group="active"] [data-my-card]')).toHaveLength(0);
     expect(region('since-last-time').textContent).toContain('A card made under another archetype is shelved');
     expect(region('since-last-time').textContent).toContain('No open Watch card.');
+    // the shelved card's receipt: nothing happens while shelved — not the route's sentence (review L3-3), and no Retire
+    m.click(m.q('[data-my-cards-group="shelved"] [data-my-card]'));
+    await m.flush();
+    expect(m.q('[data-card-receipt] [data-card-next]').textContent).toBe('Shelved: nothing happens while the agent is on another archetype.');
+    expect(m.q('[data-card-receipt]').textContent).not.toContain(RG5.watch);
+    expect(m.buttons('Retire')).toHaveLength(0);
+    await sweepAll(fx.tape2, 'shelved receipt');
     t.store.set(`agents/${AGENT}`, { ownerId: OWNER, name: 'Aurora', archetype: 'momentum_chaser' });
     m.teardown(); m.setup(); globalThis.localStorage.clear();
     await open();
@@ -482,5 +522,230 @@ describe('every sweep at every depth with the regions open — the B2 screen on 
     await sweepAll(fx.tape2, label);
     const notes = m.container.textContent.split('This does not show which protections were armed or checked.').length - 1;
     expect(notes, label).toBe(label === 'Deep dive' && !m.q('[data-region="evidence-overlay"]') ? 0 : 1);
+  });
+});
+
+describe('review round — the screen (findings L3-1 … L3-11, L4-2 … L4-10, R3-1)', () => {
+  const activeOneDay = () => battleOf({ timing: { tradingDays: [D1] }, completedAt: null, status: 'active' });
+  const openCheck4 = async (tape, battle) => {
+    await open({ battle, tapes: { [tape.etDate]: tape } });
+    const i = tape.checks.findIndex((c) => c.tickSeq === 4);
+    await depth('Study');
+    m.click(m.q(`[data-check-row="${i}"]`));
+    await m.flush();
+    return i;
+  };
+  it('L3-1 — a tape with NO situations section: the absence sentence, no coverage line, no "No moments matched", no tag line on a check', async () => {
+    const tape = { ...fx.tape2, coverage: { ...fx.tape2.coverage } };
+    delete tape.tags;
+    delete tape.coverage.tags;
+    await open({ tapes: { [D1]: fx.tape1, [D2]: tape } });
+    const pc = region('prepared-case');
+    expect(pc.getAttribute('data-tags-state')).toBe('absent');
+    expect(pc.textContent).toContain("This day's tape has no situations section.");
+    expect(pc.textContent).not.toContain('unavailable');
+    expect(pc.textContent).not.toContain('No moments matched');
+    expect(pc.querySelector('[data-coverage]')).toBeNull();
+    expect(m.qa('[data-moment-row]')).toEqual([]);
+    expect(m.buttons('Take this home')).toHaveLength(0);
+    const i = tape.checks.findIndex((c) => c.tickSeq === 4);
+    await depth('Study');
+    m.click(m.q(`[data-check-row="${i}"]`));
+    await m.flush();
+    expect(m.q('[data-check-detail]')).toBeTruthy();
+    expect(m.q('[data-check-tag]')).toBeNull();
+    await sweepAll(tape, 'absent');
+  });
+  it('L1-3 — a day the tagger marked unavailable that still STORES items: no rows, and no tag line on its checks either (one answer across the regions)', async () => {
+    const tape = { ...fx.tape1, coverage: { ...fx.tape1.coverage, tags: { ...fx.tape1.coverage.tags, status: 'unavailable', note: 'stalled unavailable: the checks section is partial' } } };
+    expect(tape.tags.items.length).toBeGreaterThan(0);
+    await openCheck4(tape, activeOneDay());
+    expect(region('prepared-case').getAttribute('data-tags-state')).toBe('unavailable');
+    expect(region('prepared-case').querySelector('[data-coverage="unavailable"]')).toBeTruthy();
+    expect(m.qa('[data-moment-row]')).toEqual([]);
+    expect(m.q('[data-check-detail]')).toBeTruthy();
+    expect(m.q('[data-check-tag]')).toBeNull();
+    expect(m.buttons('Take this home')).toHaveLength(0);
+    await sweepAll(tape, 'unavailable with items');
+  });
+  it('L3-2 — the tag line\'s count and threshold are WHOLE counts: "3", never "+3"', async () => {
+    await openCheck4(fx.tape1, activeOneDay());
+    const texts = [...m.q('[data-check-tag="stalled:ACN"]').querySelectorAll('[data-num-text]')].map((n) => n.textContent);
+    expect(texts).toEqual([String(fx.tape1.tags.items[0].count), String(fx.tape1.tags.items[0].effectiveTicksThreshold)]);
+    for (const s of texts) expect(s).toMatch(/^\d+$/);
+  });
+  it('L4-6 — the recorded basis whose record DISAGREES with the item: the count renders from the item\'s path (D), the basis still named recorded, the source the item (the mutant: always R on a recorded day)', async () => {
+    const i = fx.tape1.checks.findIndex((c) => c.tickSeq === 4);
+    const checks = fx.tape1.checks.map((c, k) => (k === i ? { ...c, stagnation: { ...c.stagnation, ACN: { ...c.stagnation.ACN, ticks: c.stagnation.ACN.ticks + 5 } } } : c));
+    const tape = { ...fx.tape1, checks };
+    await openCheck4(tape, activeOneDay());
+    const tag = m.q('[data-check-tag="stalled:ACN"]');
+    expect(tag.getAttribute('data-count-basis')).toBe('recorded');
+    expect(tag.getAttribute('data-count-source')).toBe('item');
+    const nums = [...tag.querySelectorAll('[data-num]')];
+    expect(nums[0].getAttribute('data-num')).toBe('tags.items[0].count');
+    expect(nums[0].getAttribute('data-num-class')).toBe('derived');
+    expect(nums[0].querySelector('[data-num-text]').textContent).toBe(String(fx.tape1.tags.items[0].count));
+    await sweepAll(tape, 'disagreeing record');
+  });
+  it('L3-6a — the form before the counter has answered: words, no number; after the answer the count; a failed read: words, never "not recorded"', async () => {
+    let release;
+    const real = api.readCounter;
+    api.readCounter = (agentId) => new Promise((resolve) => { release = () => real(agentId).then(resolve); });
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    const line = () => m.q('[data-open-count]');
+    expect(line().getAttribute('data-open-count-state')).toBe('loading');
+    expect(line().textContent).toBe('Open cards · still loading');
+    expect(line().querySelector('[data-num-aggregate]')).toBeNull();
+    expect(region('since-last-time').textContent).toContain('Loading the cards…');
+    await sweepAll(fx.tape2, 'counter pending');
+    release();
+    await m.flush(4);
+    expect(line().getAttribute('data-open-count-state')).toBe('ready');
+    expect(line().querySelectorAll('[data-num-aggregate]')).toHaveLength(2);
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    api.readCounter = async () => ({ ok: false, status: 500, body: null });
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    expect(line().getAttribute('data-open-count-state')).toBe('error');
+    expect(line().textContent).toBe('Open cards · could not be read');
+    expect(line().textContent).not.toContain('not recorded');
+    expect(region('since-last-time').querySelector('[data-cards-read-error]').textContent).toBe('The cards could not be read.');
+    expect(region('since-last-time').textContent).not.toContain('Loading the cards…');
+    await sweepAll(fx.tape2, 'counter failed');
+  });
+  it('L3-6b / L4-2 — a day with NO tape: the counter is read all the same (the battle names the agent) and My cards shows', async () => {
+    await open({ tapes: {} });
+    expect(m.q('[data-state="missing"]')).toBeTruthy();
+    expect(counterCalls()).toBe(1);
+    const slt = region('since-last-time');
+    expect(slt.textContent).toContain('My cards');
+    expect(slt.textContent).toContain('No cards yet.');
+    expect(slt.textContent).not.toContain('Loading the cards…');
+    expect(region('prepared-case')).toBeNull();
+    await sweepAll(null, 'untaped day', { day: D2 });
+  });
+  it('L3-7 — on a day with no tape, a card\'s instant keeps its DATE (the shown day is not the card\'s)', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await atClock(`${D1}T23:00:00.000Z`, () => fileCard({ note: 'Watch this.' }));
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open({ tapes: { [D1]: fx.tape1 } });   // day 2, the opening day, has no tape
+    expect(m.q('[data-state="missing"]')).toBeTruthy();
+    const watch = region('since-last-time').querySelector('[data-watch-card="op_1"]');
+    expect(watch.querySelector('[data-time]').textContent).toMatch(/^Sep 24, \d{1,2}:\d{2} [AP]M$/);
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush();
+    expect(m.q('[data-card-receipt] [data-quote-attribution]').textContent).toMatch(/^— you · Sep 24, /);
+    await sweepAll(null, 'untaped receipt', { day: D2 });
+  });
+  it('L3-10 — a stage this release does not know: listed under Other with the record\'s own word, never active; its receipt has no next sentence and no Retire', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    const doc = t.store.get(`agents/${AGENT}/plays/op_1`);
+    t.store.set(`agents/${AGENT}/plays/op_camp`, { ...doc, entryId: 'op_camp', opId: 'op_camp', stage: 'installed', note: 'A camp card.' });
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    await open();
+    expect(m.qa('[data-my-cards-group="active"] [data-my-card]').map((b) => b.getAttribute('data-my-card'))).toEqual(['op_1']);
+    const other = m.q('[data-my-cards-group="other"] [data-my-card="op_camp"]');
+    expect(other).toBeTruthy();
+    expect([...other.querySelectorAll('[data-record-text]')].map((r) => r.textContent)).toContain('installed');
+    m.click(other);
+    await m.flush();
+    const receipt = m.q('[data-card-receipt="op_camp"]');
+    expect([...receipt.querySelectorAll('[data-record-text]')].map((r) => r.textContent)).toContain('installed');
+    expect(receipt.querySelector('[data-card-next]')).toBeNull();
+    expect(m.buttons('Retire')).toHaveLength(0);
+    await sweepAll(fx.tape2, 'other stage');
+  });
+  it('L4-4 — a re-read that fails keeps what was read: the list stays, the error said beside it', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard();
+    expect(m.qa('[data-my-card]')).toHaveLength(1);
+    api.readCounter = async () => ({ ok: false, status: 500, body: null });
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(10);
+    const slt = region('since-last-time');
+    expect(slt.querySelector('[data-cards-read-error]')).toBeTruthy();
+    expect(m.qa('[data-my-card]')).toHaveLength(1);
+    expect(slt.textContent).not.toContain('Loading the cards…');
+  });
+  it('L4-9 — one op id per form: a refused filing re-tapped sends the SAME op id; a lost answer re-tapped replays (one card, not two)', async () => {
+    await open();
+    for (let i = 0; i < 5; i += 1) { m.click(m.buttons('Take this home')[0]); await m.flush(); await fileCard({ note: `Card ${i}.`.replace(/\d/, 'x') }); }
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'One more.' });
+    expect(m.q('[data-card-refusal]').textContent).toContain('cap');
+    const before = cardBodies().length;
+    m.click(m.q('[data-card-form] button[type="submit"]'));   // the re-tap on the same form
+    await m.flush(10);
+    const bodies = cardBodies();
+    expect(bodies.length).toBe(before + 1);
+    expect(bodies[bodies.length - 1].opId).toBe(bodies[bodies.length - 2].opId);
+    expect(m.q('[data-card-form]').getAttribute('data-card-op')).toBe(bodies[bodies.length - 1].opId);
+    // a lost answer: the server files the card, the client never hears; the re-tap replays under the same op id
+    m.teardown(); m.setup(); globalThis.localStorage.clear();
+    t = makeTapeDb({ ...fx.store, [`agents/${AGENT}`]: { ownerId: OWNER, name: 'Aurora', archetype: 'momentum_chaser' } });
+    state.db = t.db; api = apiOf();
+    const real = api.postCard;
+    let lose = true;
+    api.postCard = async (body) => { const r = await real(body); if (lose) { lose = false; return { ok: false, status: 0, body: null }; } return r; };
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Filed once.' });
+    expect(m.q('[data-card-refusal]').textContent).toBe('The card could not be filed.');
+    const plays = () => [...t.store.keys()].filter((k) => k.includes('/plays/'));
+    expect(plays()).toHaveLength(1);
+    m.click(m.q('[data-card-form] button[type="submit"]'));
+    await m.flush(10);
+    expect(m.q('[data-card-receipt]')).toBeTruthy();
+    expect(plays()).toHaveLength(1);
+    expect(m.qa('[data-my-cards-group="active"] [data-my-card]')).toHaveLength(1);
+  });
+  it('L4-10 — ledgerOf: the counter\'s row stands whole where it holds the card; the just-filed card is added only where it does not', () => {
+    const fresh = { entryId: 'a', version: 2, stage: 'retired', shelved: false, note: 'n' };
+    const stale = { entryId: 'a', version: 1, stage: 'card', note: 'n' };
+    expect(ledgerOf({ cards: [fresh] }, stale)).toEqual([fresh]);
+    expect(ledgerOf({ cards: [] }, stale)).toEqual([{ ...stale, shelved: false }]);
+    expect(ledgerOf(null, stale)).toEqual([{ ...stale, shelved: false }]);
+  });
+  it('L3-11e / L3-11c — the note\'s label holds its words alone; Retire is disabled while a retire is pending', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    expect(m.q('[data-note]').closest('label').textContent).toBe('Your note');
+    await fileCard();
+    let release;
+    const real = api.postCard;
+    api.postCard = (body) => new Promise((resolve) => { release = () => real(body).then(resolve); });
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(2);
+    const pending = m.buttons('Retiring…')[0];
+    expect(pending).toBeTruthy();
+    expect(pending.disabled).toBe(true);
+    release();
+    await m.flush(10);
+    expect(m.q('[data-card-receipt]').textContent).toContain('Stage · retired');
+  });
+  it('R3-1 — a retired Practice card: nothing happens next, not the Practice Field sentence', async () => {
+    await open();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ route: 'drill', note: 'Practice the exit.', question: 'stalled.ready' });
+    expect(m.q('[data-card-receipt] [data-card-next]').textContent).toBe(RG5.drill);
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(10);
+    expect(m.q('[data-card-receipt] [data-card-next]').textContent).toBe('Retired: nothing happens next.');
+    expect(m.q('[data-card-receipt]').textContent).not.toContain(RG5.drill);
   });
 });
