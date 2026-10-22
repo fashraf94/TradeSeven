@@ -15,7 +15,7 @@ import { buildCockpitFeed } from './cockpitModel';
 import {
   buildCockpit2bView, chooseNow, nowPriorityOf, planLinesOf, buttonLabelOf, meterOf, cardKeyOf, chipLevelOf,
   stripChipOf, dayLineOf, replaceLineOf, liveCommandOf, rowMarksOf, commandReceiptsOf, STRIP_SHOWN,
-  benchSheetOf, agentListsOf, benchNoteOf, pctText,
+  benchSheetOf, agentListsOf, benchNoteOf, pctText, agentNameOf,
 } from './cockpit2bModel';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 
@@ -581,5 +581,29 @@ describe('review fixes — the view model', () => {
     expect(v.now.step.letChoose).toBe('Sending…');
     const sheet = benchSheetOf({ status: 'ready', data: { asOf: null, rows: [{ symbol: 'XOM', status: 'available', rank: 1 }] }, call: exitActNoCp(), step: 'on_card', meter: meterOf(cockpitFiling(7)) });
     expect(sheet.rows[0].action.aria).toBe('Pick XOM');
+  });
+});
+
+describe('the agent\'s name in the 2b copy: first letter capitalized (a name can be stored lowercase)', () => {
+  it('agentNameOf: the first letter upper-cased, the rest as recorded; blank or missing → "Your Agent"', () => {
+    expect(agentNameOf('shadow')).toBe('Shadow');
+    expect(agentNameOf('Shadow')).toBe('Shadow');
+    expect(agentNameOf('mcAllister')).toBe('McAllister');
+    expect(agentNameOf('  zed ')).toBe('Zed');
+    expect(agentNameOf('')).toBe('Your Agent');
+    expect(agentNameOf(null)).toBe('Your Agent');
+  });
+
+  it('a stored "shadow" reads "Shadow" in every view line, the bench sheet and both replace lines', () => {
+    const viewAs = (calls, agent) => buildCockpit2bView({ feed: feedOf(calls), calls, events: [], rawExchanges: [], battle: BATTLE, agent, nowMs: NOW, evaluations: EVALS, nextDecisionAt: iso(at('13:30')), ui: {} });
+    const v = viewAs([exitActNoCp(), holdShot({ ...minted('12:45') })], 'shadow');
+    expect(v.now.plan).toMatch(/^Shadow plans to exit VLO/);
+    expect(JSON.stringify(v)).toContain('From Shadow\'s lists');
+    expect(JSON.stringify(v)).not.toMatch(/\bshadow\b/);
+    expect(viewAs([], 'shadow').quietLine).toContain('Shadow\'s next check');
+    const sheet = benchSheetOf({ status: 'ready', data: { asOf: null, rows: [{ symbol: 'XOM', status: 'available', rank: 1 }] }, call: exitActNoCp(), step: 'on_card', agent: 'shadow' });
+    expect(sheet.agentListLabel).toBe('On Shadow\'s list');
+    expect(replaceLineOf({ kind: 'cockpit', symbol: 'VLO', text: 'Hold VLO.', agent: 'shadow' })).toContain('Shadow stops hearing it');
+    expect(replaceLineOf({ kind: 'chat', text: 'Sell into strength.', agent: 'shadow' })).toContain('Shadow stops hearing it');
   });
 });

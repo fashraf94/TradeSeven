@@ -292,6 +292,11 @@ describe('keyboard and pointer: the focus ring, the dialog door, Show all, targe
     expect(tag.style.whiteSpace).toBe('normal');
     expect(tag.parentElement.parentElement.style.flexWrap).toBe('wrap');
   });
+  it('the 2a feed\'s group headers still pin at the very top (GroupHeader stickyTop defaults to 0; only the 2b cockpit offsets them)', () => {
+    render({ feed: feedOf([call()]) });
+    const h = q('[data-cockpit-group="needsYou"]');
+    expect([h.style.position, h.style.top]).toEqual(['sticky', '0px']);
+  });
   it('the sections are plain groupings: no duplicate landmark names beside their headings', () => {
     render({ feed: feedOf([call()]) });
     expect(qa('section').every((sec) => !sec.hasAttribute('aria-label'))).toBe(true);

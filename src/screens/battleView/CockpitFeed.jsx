@@ -59,7 +59,9 @@ export const plainButton = Object.freeze({
   cursor: 'pointer',
 });
 
-export function GroupHeader({ label, count = null, dim = false, groupKey }) {
+// `stickyTop`: where the header pins in the scroll — 0 in the 2a feed; the 2b cockpit pins its group headers just
+// below its own pinned top row (Cockpit2b.jsx COCKPIT2B_TOP_ROW_PX).
+export function GroupHeader({ label, count = null, dim = false, groupKey, stickyTop = 0 }) {
   return (
     <div
       data-cockpit-group={groupKey}
@@ -71,7 +73,7 @@ export function GroupHeader({ label, count = null, dim = false, groupKey }) {
         justifyContent: 'space-between',
         padding: '10px 12px 6px',
         position: 'sticky',
-        top: 0,
+        top: stickyTop,
         zIndex: 2,
         background: `linear-gradient(90deg, rgba(var(--ft-teal-rgb), ${dim ? 0.04 : 0.1}), rgba(var(--ft-shadow-rgb), 0.85) 55%)`,
         backdropFilter: 'blur(8px)',

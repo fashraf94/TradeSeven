@@ -55,6 +55,16 @@ const checkOf = (instant) => checkLabel(instant, CLOCK);
 /** The strip's chip budget per shell (§5.4). */
 export const STRIP_SHOWN = Object.freeze({ phone: 4, desktop: 6 });
 
+/**
+ * The agent's name as the 2b cockpit's copy shows it: the first letter capitalized, the rest as recorded (a name
+ * can be stored lowercase, e.g. "shadow"). The view, the bench sheet and the replace line take it from here; the
+ * 2a feed's copy and every model-visible text are unchanged.
+ */
+export function agentNameOf(name) {
+  const s = typeof name === 'string' ? name.trim() : '';
+  return s ? s.charAt(0).toLocaleUpperCase('en-US') + s.slice(1) : 'Your Agent';
+}
+
 /** The commands meter (§5.1), from the RAW battle document's exchanges; none in a league battle (chat's budget is its own there). */
 export function meterOf(rawExchanges, { league = false } = {}) {
   if (league) return null;
@@ -410,10 +420,11 @@ export function earlierOf(feed) {
  * @param {object} p.ui              client state: { spotlightKey, heldKey, expandedKey, overflow, pending }
  */
 export function buildCockpit2bView({
-  feed, calls = [], events = [], rawExchanges = [], battle = null, agent = 'Your Agent', nowMs, phone = false,
+  feed, calls = [], events = [], rawExchanges = [], battle = null, agent: agentRaw = 'Your Agent', nowMs, phone = false,
   evaluations = [], nextDecisionAt = null, league = false, controlEpochLog = null, suppressed = false, ui = {},
 }) {
   if (!feed) return null;
+  const agent = agentNameOf(agentRaw);
   const meter = meterOf(rawExchanges, { league });
   const tiles = [...feed.needsYou, ...feed.waiting];
   const command = feed.command ?? null;
@@ -488,8 +499,9 @@ export function needsReplaceConfirm(live, callId) {
 }
 
 /** The replace confirmation's line (§6.3): a cockpit command (from the slot) or a chat directive (from a 409 body's currentText). */
-export function replaceLineOf({ kind, symbol = null, text, agent }) {
+export function replaceLineOf({ kind, symbol = null, text, agent: agentRaw }) {
   if (!nonEmpty(text)) return null;
+  const agent = agentNameOf(agentRaw);
   return kind === 'cockpit' ? COPY.cockpit2bReplaceCommand(nonEmpty(symbol) ? symbol : null, text, agent) : COPY.cockpit2bReplaceChat(text, agent);
 }
 
@@ -599,7 +611,8 @@ export function pickAnswerFor(step) {
  * @param {object|null} p.benchState selectBench(battle)
  * @param {string|null} p.filedText  the filed command's canonical text once a pick lands
  */
-export function benchSheetOf({ status = 'loading', data = null, call = null, step = null, agent = 'Your Agent', agentLists = new Set(), benchState = null, sort = 'rank', meter = null, pending = null, filedText = null, nowMs = null, refusalLine = null }) {
+export function benchSheetOf({ status = 'loading', data = null, call = null, step = null, agent: agentRaw = 'Your Agent', agentLists = new Set(), benchState = null, sort = 'rank', meter = null, pending = null, filedText = null, nowMs = null, refusalLine = null }) {
+  const agent = agentNameOf(agentRaw);
   const scoped = Boolean(call);
   const answer = scoped ? pickAnswerFor(step) : null;
   const filed = nonEmpty(filedText);

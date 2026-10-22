@@ -87,6 +87,14 @@ const eyebrowStyle = {
 };
 const subEyebrow = { color: cssVar('text-secondary'), fontWeight: 500, letterSpacing: '0.02em', textTransform: 'none' };
 const monoLine = (size = 10.5, color = cssVar('text-secondary')) => ({ fontFamily: MONO, fontSize: size, color, lineHeight: 1.35 });
+
+/**
+ * The top row (the prices' vintage and the commands meter) is pinned at the top of the cockpit's scroll on both
+ * shells — the pane's `data-cockpit-scroll` on desktop, the track's cockpit panel on the phone — and the group
+ * headers pin just below it, so neither scrolls out of view when focus moves to the Now card after an answer.
+ * Its height is fixed so the headers' offset is exact.
+ */
+export const COCKPIT2B_TOP_ROW_PX = 34;
 const sideColor = (side) => (side === 'above' ? cssVar('pos') : side === 'below' ? cssVar('neg') : cssVar('text-secondary'));
 
 /** The commands meter (§5.1): seven dots, filled = left, then "· {n} left" (or "No commands left"). */
@@ -611,7 +619,22 @@ export default function Cockpit2b({
     <div ref={rootRef} data-cockpit-feed="2b" data-cockpit-status={status} style={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}>
       <div
         data-cockpit-top-row="1"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 14px', borderBottom: `1px solid rgba(var(--ft-scrim-rgb), 0.07)`, ...monoLine(10.5) }}
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 3,
+          height: COCKPIT2B_TOP_ROW_PX,
+          boxSizing: 'border-box',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          padding: '0 14px',
+          borderBottom: `1px solid rgba(var(--ft-scrim-rgb), 0.07)`,
+          background: `rgba(var(--ft-shadow-rgb), 0.92)`,
+          backdropFilter: 'blur(8px)',
+          ...monoLine(10.5),
+        }}
       >
         <span data-cockpit-vintage="1" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{vintage}</span>
         <Meter meter={view.meter} />
@@ -622,7 +645,7 @@ export default function Cockpit2b({
       {ready ? (
         <>
           <section data-cockpit-now-section="1">
-            <GroupHeader groupKey="now" label={COPY.cockpit2bNowHeader} count={view.nowCount} />
+            <GroupHeader groupKey="now" label={COPY.cockpit2bNowHeader} count={view.nowCount} stickyTop={COCKPIT2B_TOP_ROW_PX} />
             {view.now ? (
               <NowCard key={`${view.now.key}:${view.now.mode}`} card={view.now} phone={phone} reducedMotion={reducedMotion} confirmLine={confirmLineFor(view.now.key)} confirmSending={confirmSendingFor(view.now.key)} handlers={handlers} />
             ) : (
@@ -670,7 +693,7 @@ export default function Cockpit2b({
       ) : null}
       {monitoring ? (
         <section>
-          <GroupHeader groupKey="monitoring" label={COPY.cockpitGroupMonitoring} />
+          <GroupHeader groupKey="monitoring" label={COPY.cockpitGroupMonitoring} stickyTop={COCKPIT2B_TOP_ROW_PX} />
           <MonitoringRow row={monitoring} onSymbolClick={onSymbolClick} />
         </section>
       ) : null}

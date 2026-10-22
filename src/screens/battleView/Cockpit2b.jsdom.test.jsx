@@ -14,8 +14,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import Cockpit2b from './Cockpit2b';
-import { buildCockpitFeed } from './cockpitModel';
+import Cockpit2b, { COCKPIT2B_TOP_ROW_PX } from './Cockpit2b';
+import { buildCockpitFeed, monitoringRow } from './cockpitModel';
 import { liveCommandOf } from './cockpit2bModel';
 import { useCockpit2bAnswer } from './useCockpit2bAnswer';
 
@@ -64,7 +64,7 @@ const commandOn = (c, text = 'Hold ZS through today\'s close.') => {
 };
 const cockpitFilings = (n) => Array.from({ length: n }, (_, i) => ({ source: 'cockpit', hasDirective: true, directiveThreadId: `x${i}` }));
 
-function Harness({ calls, battle = BATTLE, rawExchanges = [], submit, onOpenSheet = () => {}, onOpenBench = () => {}, phone = false }) {
+function Harness({ calls, battle = BATTLE, rawExchanges = [], submit, onOpenSheet = () => {}, onOpenBench = () => {}, phone = false, agent = 'Shadow', monitoring = null }) {
   const live = liveCommandOf({ directive: battle?.directive ?? null, nowMs: NOW });
   const flow = useCockpit2bAnswer({ submit, live, calls });
   const feed = buildCockpitFeed({ calls, events: [], evaluations: EVALS, directive: battle?.directive ?? null, nowMs: NOW, v2: true, exchanges: rawExchanges, nextDecisionAt: iso(at('13:30')) });
@@ -72,7 +72,8 @@ function Harness({ calls, battle = BATTLE, rawExchanges = [], submit, onOpenShee
     <Cockpit2b
       feed={feed}
       records={{ calls, events: [], rawExchanges, battle, evaluations: EVALS }}
-      agent="Shadow"
+      agent={agent}
+      monitoring={monitoring}
       nowMs={NOW}
       phone={phone}
       vintage="Prices as of the 12:00 PM check · next ~1:30 PM"
@@ -378,5 +379,30 @@ describe('review fixes — the V5 screen', () => {
     await click(q(`[data-cockpit-chip="${amd.callId}"]`));
     const s = q('[data-cockpit-chip-expanded]').style;
     expect([s.minWidth, s.maxWidth, s.boxSizing]).toEqual(['0px', '100%', 'border-box']);
+  });
+});
+
+describe('before review: the pinned top row, and the agent\'s name', () => {
+  it('the top row (vintage + meter) pins at the top of the scroll, above the NOW and Monitoring headers, which pin just below it — desktop and phone', () => {
+    for (const phone of [false, true]) {
+      render({ calls: [call(), entryAct({ ...minted('12:45') })], submit: ok(), phone, monitoring: monitoringRow({ symbols: ['JPM'], evalId: 'eval_020' }, EVALS) });
+      const top = q('[data-cockpit-top-row]');
+      expect(q('[data-cockpit-feed="2b"]').firstElementChild).toBe(top);
+      expect(top.contains(q('[data-cockpit-meter]'))).toBe(true);
+      expect([top.style.position, top.style.top, top.style.height, top.style.boxSizing]).toEqual(['sticky', '0px', `${COCKPIT2B_TOP_ROW_PX}px`, 'border-box']);
+      expect(top.style.background).not.toBe(''); // the scrolled cards do not show through it
+      for (const key of ['now', 'monitoring']) {
+        const h = q(`[data-cockpit-group="${key}"]`);
+        expect([h.style.position, h.style.top], key).toEqual(['sticky', `${COCKPIT2B_TOP_ROW_PX}px`]);
+        expect(Number(top.style.zIndex), key).toBeGreaterThan(Number(h.style.zIndex));
+      }
+    }
+  });
+
+  it('a name stored lowercase renders with its first letter capitalized', () => {
+    render({ calls: [call()], submit: ok(), agent: 'shadow' });
+    expect(container.textContent).toContain('Shadow plans to exit VLO');
+    expect(container.textContent).toContain('From Shadow\'s lists');
+    expect(container.textContent).not.toMatch(/\bshadow\b/);
   });
 });
