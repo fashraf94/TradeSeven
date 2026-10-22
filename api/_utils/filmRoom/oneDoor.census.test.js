@@ -83,7 +83,9 @@ const EXCLUSIVE_REACH = Object.freeze({
   'api/_utils/agentPromptAssembly.js': { coveredBy: ['api/agent/decide.js'] },
   'api/agent/decide.js': 'api/_utils/cpuOpponentGenerator.js',
   'api/agent/chat.js': 'api/_utils/agentCapabilitiesManifest.js',
-  'api/agent/call-response.js': 'api/_utils/callRecords/callActions.js',
+  // answers.js, not callActions.js: since #986 (51d7c926, retire on exit) the evaluator reaches callActions.js through
+  // callRecords/retire.js, so it is no longer this root's alone (the merge with main, build report §12)
+  'api/agent/call-response.js': 'api/_utils/callRecords/answers.js',
   'src/screens/battleView/ChatSheet.jsx': 'src/screens/battleView/useChatSheet.js',
   'src/components/Agent/AgentChat.jsx': 'src/components/Agent/TradeTickerCard.jsx',
   'api/_utils/voiceLayerPrompt.js': { coveredBy: ['api/agent/chat.js'] },
