@@ -66,6 +66,7 @@ export function useHubRuntime({ hub, sections, rootRef }) {
       adjustments: getTraitSlotSummary(agent),
       committed: lists.committed,
       listsStatus: lists.status,
+      listsReadFor: lists.readFor,
       activeAgentBattles: hub.activeAgentBattles,
       ...hubFlags(),
     });

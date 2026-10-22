@@ -28,8 +28,14 @@ export function HubOverlayProvider({ children }) {
   useEffect(() => {
     const stack = stackRef.current;
     // A hub that unmounts with a sheet open (the watchlist sheet's Forge button opens the Forge, which replaces
-    // the dashboard) must not leave the app's root inert behind it.
-    return () => { stack.releaseAll(); };
+    // the dashboard; a site flip remounts the whole hub under the gate's frame) must not leave the app's root inert
+    // behind it. Focus was inside what was removed, so it has fallen to <body>: if a new hub is already on screen
+    // (the site flip) its shell takes it; with none (the Forge) nothing moves. A focus that is anywhere live stays.
+    return () => {
+      const had = stack.depth > 0;
+      stack.releaseAll();
+      if (had && document.activeElement === document.body) document.querySelector('[data-hub="shell"]')?.focus();
+    };
   }, []);
   const value = useMemo(() => ({ stack: stackRef.current, modalOpen }), [modalOpen]);
   return <HubOverlayContext.Provider value={value}>{children}</HubOverlayContext.Provider>;

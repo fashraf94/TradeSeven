@@ -53,9 +53,9 @@ export function useHubSheets(rootRef) {
     heldRef.current = null;
   };
 
-  // The hub going away (the Forge opened, a site switch) frees the background. Focus moves only if it was lost with
-  // the DOM that held it, and then to the new shell if there is one: a site switch must not leave it on <body>.
-  useEffect(() => () => { release('lost'); }, []);
+  // The hub going away (the Forge opened, a site flip) frees the background and moves no focus: the provider
+  // (hub/HubOverlays.jsx) hands it to the new hub's shell if focus fell to <body>.
+  useEffect(() => () => { release(false); }, []);
 
   return {
     sheet,

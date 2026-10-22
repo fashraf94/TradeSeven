@@ -70,8 +70,14 @@ const nonEmpty = (value) => (typeof value === 'string' && value.trim() !== '' ? 
  * equipped but not among them — deleted, or back to draft — is `unavailable`;
  * a read that failed is `error`, which is not the same thing (spec §3: loading
  * and absence are distinct from failure).
+ *
+ * `listsReadFor` is the id that was equipped when those lists were read
+ * (hub/useHubLoadout.js `readFor`). Lists read under ANOTHER id say nothing about
+ * this one — the equip happened elsewhere, after the read — so "not among them" is
+ * not yet an answer and the card reads `loading` while the read for it is in
+ * flight. Left out (undefined), the lists are taken to be current.
  */
-export function deriveWatchlist({ agent, committed, listsStatus, hypothesisRecordsOn }) {
+export function deriveWatchlist({ agent, committed, listsStatus, listsReadFor, hypothesisRecordsOn }) {
   const id = nonEmpty(agent?.equippedWatchlistId);
   const base = { id, name: null, symbols: [], count: 0, idea: IDEA_LABEL.NEUTRAL };
   if (!id) return { ...base, state: WATCHLIST_STATE.NONE };
@@ -80,7 +86,10 @@ export function deriveWatchlist({ agent, committed, listsStatus, hypothesisRecor
   if (listsStatus === LISTS_STATUS.ERROR) return { ...base, name: stored, state: WATCHLIST_STATE.ERROR };
   if (listsStatus !== LISTS_STATUS.READY) return { ...base, name: stored, state: WATCHLIST_STATE.LOADING };
   const found = (Array.isArray(committed) ? committed : []).find((list) => list?.watchlistId === id);
-  if (!found) return { ...base, name: stored, state: WATCHLIST_STATE.UNAVAILABLE };
+  if (!found) {
+    const stale = listsReadFor !== undefined && listsReadFor !== id;
+    return { ...base, name: stored, state: stale ? WATCHLIST_STATE.LOADING : WATCHLIST_STATE.UNAVAILABLE };
+  }
   const symbols = symbolsOf(found);
   return {
     id,
@@ -125,13 +134,14 @@ export function equipLockOf({ agent, activeAgentBattles, concurrencyEnabled }) {
  * @param {{ equipped: boolean, count: number, name: string, sub: string }} p.adjustments  getTraitSlotSummary(agent)
  * @param {Array}   p.committed          the committed lists the reader returned
  * @param {string}  p.listsStatus        LISTS_STATUS
+ * @param {string|null|undefined} p.listsReadFor  the equipped id when the lists were read (hub/useHubLoadout.js)
  * @param {Array}   p.activeAgentBattles App's active-battle poll (the shells' input)
  * @param {boolean} p.concurrencyEnabled CASUAL_CLONE_CONCURRENCY_ENABLED
  * @param {boolean} p.hypothesisRecordsOn HYPOTHESIS_RECORDS_ENABLED
  * @param {boolean} p.characterTab       RELEASE3_CHARACTER_TAB_ENABLED: the Forge's `traits` area is then "Character"
  */
 export function deriveLoadout({
-  agent, agentLoading, archetype, slots, adjustments, committed, listsStatus, activeAgentBattles, concurrencyEnabled, hypothesisRecordsOn, characterTab,
+  agent, agentLoading, archetype, slots, adjustments, committed, listsStatus, listsReadFor, activeAgentBattles, concurrencyEnabled, hypothesisRecordsOn, characterTab,
 }) {
   if (!agent) return { status: agentLoading === true ? LOADOUT_STATUS.LOADING : LOADOUT_STATUS.NONE };
   const lockedInGame = equipLockOf({ agent, activeAgentBattles, concurrencyEnabled });
@@ -140,7 +150,7 @@ export function deriveLoadout({
     status: LOADOUT_STATUS.READY,
     identity: { name: nonEmpty(agent.name) },
     archetype,
-    watchlist: deriveWatchlist({ agent, committed, listsStatus, hypothesisRecordsOn }),
+    watchlist: deriveWatchlist({ agent, committed, listsStatus, listsReadFor, hypothesisRecordsOn }),
     // Only where the shells have the slot (TRAIT_SLOT_ENABLED): getEquipSlots decides, as it does for them.
     // `door` names the Forge area the adjustments' Forge action opens: the same `traits` area, whose tab reads
     // "Character" only while RELEASE3_CHARACTER_TAB_ENABLED is on (ForgeWorkshop.jsx navItems).

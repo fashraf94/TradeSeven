@@ -143,8 +143,8 @@ export const HUB_COPY = Object.freeze({
     noWatchlistSub: 'Your agent ranges the full board.',
     watchlistFallback: 'Watchlist',
     unavailable: (name) => `${name} (unavailable)`,
-    /** What is known and nothing more: the agent document names this list, and the lists just read do not include it. */
-    unavailableNote: 'Your agent has this list equipped, but it isn’t among your committed lists.',
+    /** What is known and nothing more: the agent document names this list, and the lookup among the committed lists did not find it. */
+    unavailableNote: 'Your agent has this list equipped, but we couldn’t find it among your committed lists.',
     listsError: 'Couldn’t load your lists',
     retry: 'Retry',
     more: (n) => `+${n} more`,

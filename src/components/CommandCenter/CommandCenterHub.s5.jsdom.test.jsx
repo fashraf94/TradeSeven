@@ -684,7 +684,32 @@ describe('review fixes — what the sheets are handed, what the card says about 
     expect(card('watchlist').textContent).not.toContain(COPY.loadout.unavailableNote);
   });
 
-  it('a list that is really gone: one extra read, then the plain facts — unavailable, and a note that claims no cause and no agent behaviour', async () => {
+  it('until that read answers the card is checking, not unavailable: the lists on hand were read before the equip', async () => {
+    let answer;
+    listWatchlists.mockResolvedValueOnce(LISTS().slice(0, 1)).mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    const { m } = await renderHub();
+    rerenderWith(m, { equippedWatchlistId: 'wl-2', equippedWatchlistName: 'Defensives' });
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+    expect(card('watchlist').textContent).toContain('Defensives');
+    expect(card('watchlist').textContent).toContain(COPY.loadout.loading);
+    expect(card('watchlist').textContent).not.toContain(COPY.loadout.unavailable('Defensives'));
+    expect(card('watchlist').textContent).not.toContain(COPY.loadout.unavailableNote);
+    await act(async () => { answer(LISTS()); await Promise.resolve(); });
+    expect(card('watchlist').textContent).not.toContain(COPY.loadout.loading);
+    expect(card('watchlist').textContent).toContain(COPY.loadout.plainList);
+  });
+
+  it('a list that was gone from the start is answered by the mount read: unavailable at once, one read, and a note that claims no cause and no agent behaviour', async () => {
+    listWatchlists.mockResolvedValue(LISTS().slice(0, 1));
+    await renderHub({ hub: HUB({ agent: AGENT({ equippedWatchlistId: 'wl-9', equippedWatchlistName: 'Gone One' }) }) });
+    expect(listWatchlists).toHaveBeenCalledTimes(1);
+    expect(card('watchlist').textContent).toContain(COPY.loadout.unavailable('Gone One'));
+    expect(card('watchlist').textContent).toContain(COPY.loadout.unavailableNote);
+    expect(COPY.loadout.unavailableNote).not.toMatch(/no longer|not using|so your agent|deleted|removed/i);
+  });
+
+  it('a list equipped elsewhere that is gone too: one extra read, then the plain facts, and no more reads however it renders', async () => {
     listWatchlists.mockResolvedValue(LISTS().slice(0, 1));
     const { m } = await renderHub();
     rerenderWith(m, { equippedWatchlistId: 'wl-9', equippedWatchlistName: 'Gone One' });
@@ -694,7 +719,19 @@ describe('review fixes — what the sheets are handed, what the card says about 
     expect(listWatchlists).toHaveBeenCalledTimes(2);
     expect(card('watchlist').textContent).toContain(COPY.loadout.unavailable('Gone One'));
     expect(card('watchlist').textContent).toContain(COPY.loadout.unavailableNote);
-    expect(COPY.loadout.unavailableNote).not.toMatch(/no longer|not using|so your agent|deleted|removed/i);
+  });
+
+  it('if the read for the new list fails the card says so, with Retry, and does not say unavailable', async () => {
+    listWatchlists.mockResolvedValueOnce(LISTS().slice(0, 1)).mockRejectedValueOnce(new Error('offline')).mockResolvedValue(LISTS());
+    const { m } = await renderHub();
+    rerenderWith(m, { equippedWatchlistId: 'wl-2', equippedWatchlistName: 'Defensives' });
+    await flush();
+    expect(card('watchlist').textContent).toContain(COPY.loadout.listsError);
+    expect(card('watchlist').textContent).not.toContain(COPY.loadout.unavailableNote);
+    click(btn(COPY.loadout.retry, card('watchlist')));
+    await flush();
+    expect(card('watchlist').textContent).not.toContain(COPY.loadout.listsError);
+    expect(card('watchlist').textContent).toContain(COPY.loadout.plainList);
   });
 
   describe('the career reads unavailable, never zeros (ruling R-S5-3; spec §7)', () => {
@@ -740,7 +777,9 @@ describe('review fixes — focus survives a site switch with a sheet open (E3-2)
       click(control);
       // A browser drops focus the moment the opener's container goes inert; jsdom does not.
       control.blur();
-      m.rerender(<CommandCenterHub site="mobile" hub={HUB()} sections={HUB_LAYOUT_FIXTURES.returning.sections} />);
+      // In production a site flip remounts the whole hub, provider included (the gate's desktop frame wraps it in a
+      // div the phone does not have), so the row remounts it too: a changed key.
+      m.rerender(<CommandCenterHub key="mobile" site="mobile" hub={HUB()} sections={HUB_LAYOUT_FIXTURES.returning.sections} />);
       await flush();
       expect(hubRoot().getAttribute('data-hub-site')).toBe('mobile');
       expect(document.activeElement).toBe(hubRoot());

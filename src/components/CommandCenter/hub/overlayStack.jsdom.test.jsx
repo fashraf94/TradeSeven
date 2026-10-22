@@ -569,58 +569,59 @@ describe('createOverlayStack — focus is never left on <body> (review E3-2, E3-
     stack.releaseAll();
   });
 
-  it('with no opener, no fallback and nothing else open, focus lands on the hub shell (a site switch), never <body>', () => {
+});
+
+describe('HubOverlays — focus when the hub is replaced under an open overlay (review E3-2)', () => {
+  const mountHub = () => {
+    const host = el('div', { id: 'old-hub' });
+    const root = createRoot(host);
+    let seen;
+    function Probe() {
+      seen = useHubOverlays();
+      return null;
+    }
+    act(() => { root.render(<HubOverlayProvider><Probe /></HubOverlayProvider>); });
+    return { root, stack: () => seen };
+  };
+  const newShell = () => {
     const shell = el('section');
     shell.setAttribute('data-hub', 'shell');
     shell.tabIndex = -1;
-    const stack = createOverlayStack();
-    const gone = button(appRoot, 'gone');
-    stack.open('a', { opener: gone });
-    gone.remove();
-    stack.close('a', { fallback: null });
-    expect(document.activeElement).toBe(shell);
-  });
+    return shell;
+  };
 
-  it('a fallback that can take focus wins over the shell', () => {
-    const shell = el('section');
-    shell.setAttribute('data-hub', 'shell');
-    shell.tabIndex = -1;
-    const fallback = el('section', { id: 'fallback' });
-    fallback.tabIndex = -1;
-    const stack = createOverlayStack();
-    const gone = button(appRoot, 'gone');
-    stack.open('a', { opener: gone });
-    gone.remove();
-    stack.close('a', { fallback });
-    expect(document.activeElement).toBe(fallback);
-  });
-
-  it('focus: "lost" moves focus only when it has been lost, and then to the opener', () => {
-    const opener = button(appRoot, 'open');
-    const elsewhere = button(el('div'), 'elsewhere');
-    const stack = createOverlayStack();
-    stack.open('a', { opener });
-    elsewhere.focus();
-    stack.close('a', { focus: 'lost' });
-    expect(document.activeElement).toBe(elsewhere);
-    stack.open('b', { opener });
-    elsewhere.blur();
+  it('the new hub\'s shell takes focus when the old hub unmounts with an overlay open and focus has fallen to <body>', () => {
+    const { root, stack } = mountHub();
+    stack().open('legacy:archetype', { opener: null });
+    const shell = newShell();
     expect(document.activeElement).toBe(document.body);
-    stack.close('b', { focus: 'lost' });
-    expect(document.activeElement).toBe(opener);
+    act(() => { root.unmount(); });
+    expect(document.activeElement).toBe(shell);
+    expect(isInert(appRoot)).toBe(false);
   });
 
-  it('focus: "lost" after an unmount reaches the new shell when the opener and the fallback went with the old one', () => {
-    const oldShell = el('section', { parent: appRoot });
-    const opener = button(oldShell, 'open');
-    const stack = createOverlayStack();
-    stack.open('a', { opener, within: oldShell });
-    opener.blur();
-    oldShell.remove();
-    const newShell = el('section', { parent: appRoot });
-    newShell.setAttribute('data-hub', 'shell');
-    newShell.tabIndex = -1;
-    stack.close('a', { fallback: oldShell, focus: 'lost' });
-    expect(document.activeElement).toBe(newShell);
+  it('a focus that is anywhere live is left where it is', () => {
+    const { root, stack } = mountHub();
+    stack().open('legacy:archetype', { opener: null });
+    newShell();
+    const elsewhere = button(el('div'), 'elsewhere');
+    elsewhere.focus();
+    act(() => { root.unmount(); });
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it('with no overlay open nothing moves, even when focus is on <body> and a shell exists', () => {
+    const { root } = mountHub();
+    const shell = newShell();
+    act(() => { root.unmount(); });
+    expect(document.activeElement).not.toBe(shell);
+  });
+
+  it('with no new hub (the Forge replaced it) nothing moves and nothing throws', () => {
+    const { root, stack } = mountHub();
+    stack().open('legacy:watchlist', { opener: null });
+    expect(() => act(() => { root.unmount(); })).not.toThrow();
+    expect(document.activeElement).toBe(document.body);
+    expect(isInert(appRoot)).toBe(false);
   });
 });

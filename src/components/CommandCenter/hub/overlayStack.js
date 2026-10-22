@@ -17,8 +17,8 @@
 //     order un-inerted #root while the second was still open);
 //   - focus goes back to that overlay's opener, or, if it was closed out of
 //     order, is handed on to the one above it and returned when that closes.
-//     If nothing it is owed can take it, focus lands in the overlay still open,
-//     else on the fallback, else on the hub itself: never left on <body>.
+//     If nothing it is owed can take it, focus lands in the overlay still open
+//     (one registered with `keep`), else on the fallback the caller names.
 //
 // The engine is `inertSiblings`, now reference-counted: each call holds every
 // element it marks, and an element comes out of inert only when the LAST holder
@@ -94,21 +94,12 @@ function tryFocus(el) {
   return document.activeElement === el;
 }
 
-/** Focus has been lost when nothing holds it: the element that had it left the document. */
-const focusLost = () => {
-  const active = document.activeElement;
-  return !active || active === document.body || active === document.documentElement;
-};
-
 /** Where focus can go inside an overlay that is still open: its dialog, else its root. */
 function homeOf(entry) {
   const root = entry?.keep;
   if (!root || !root.isConnected) return null;
   return root.querySelector('[role="dialog"]') || root;
 }
-
-/** The hub's own shell: the last place focus can go when every opener and fallback has been removed (a site switch). */
-const hubShell = () => document.querySelector('[data-hub="shell"]');
 
 /**
  * A stack of overlays, bottom to top. `onChange(open)` fires when the stack
@@ -142,8 +133,7 @@ export function createOverlayStack({ onChange = null } = {}) {
     /**
      * @param {string} id
      * @param {Element|null} fallback where focus lands if no opener can take it and nothing is left open
-     * @param {boolean|'lost'} focus  true moves focus back; false releases without moving it; 'lost' moves it only if
-     *   it has been lost (an unmount: the DOM that held focus is already gone, but a live focus elsewhere is not ours to take)
+     * @param {boolean} focus         false to release without moving focus (an unmount)
      */
     close(id, { fallback = null, focus = true } = {}) {
       const at = entries.findIndex((entry) => entry.id === id);
@@ -151,7 +141,7 @@ export function createOverlayStack({ onChange = null } = {}) {
       const wasTop = at === entries.length - 1;
       const [entry] = entries.splice(at, 1);
       entry.undo();
-      if (focus === true || (focus === 'lost' && focusLost())) {
+      if (focus) {
         if (!wasTop) {
           stranded.push(entry.opener);
         } else {
@@ -163,7 +153,7 @@ export function createOverlayStack({ onChange = null } = {}) {
           if (landedAt < 0) {
             const below = entries[entries.length - 1];
             if (below) tryFocus(homeOf(below));
-            else if (!tryFocus(fallback)) tryFocus(hubShell());
+            else tryFocus(fallback);
           }
         }
       }
@@ -173,7 +163,7 @@ export function createOverlayStack({ onChange = null } = {}) {
       }
     },
 
-    /** Free everything without touching focus: the hub is going away (the Forge opened, a sign-out). */
+    /** Free everything without touching focus: the hub is going away (the Forge opened, a site flip, a sign-out). */
     releaseAll() {
       const open = entries.splice(0);
       stranded = [];

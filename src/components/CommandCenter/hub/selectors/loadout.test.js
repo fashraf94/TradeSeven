@@ -102,6 +102,37 @@ describe('deriveWatchlist — the card\'s state (ruling R-S5-1)', () => {
     expect(w({ committed: null }).state).toBe(WATCHLIST_STATE.UNAVAILABLE);
     expect(w({ committed: [null, undefined, 5] }).state).toBe(WATCHLIST_STATE.UNAVAILABLE);
   });
+
+  describe('lists read under another equipped list say nothing about this one (review E4-2)', () => {
+    const missing = { committed: [list({ watchlistId: 'other' })] };
+
+    it('read under THIS id and still not found: unavailable — the lookup was made for it', () => {
+      expect(w({ ...missing, listsReadFor: 'wl-1' })).toMatchObject({ state: WATCHLIST_STATE.UNAVAILABLE, name: 'Stored Name' });
+    });
+
+    it('read under another id (an equip made elsewhere since), or under none: not an answer yet — loading, under its stored name', () => {
+      for (const listsReadFor of ['wl-0', null]) {
+        expect(w({ ...missing, listsReadFor }), String(listsReadFor)).toMatchObject({ state: WATCHLIST_STATE.LOADING, name: 'Stored Name', symbols: [], count: 0 });
+      }
+    });
+
+    it('no read-for given: the lists are taken as current, as before', () => {
+      expect(w({ ...missing }).state).toBe(WATCHLIST_STATE.UNAVAILABLE);
+      expect(w({ ...missing, listsReadFor: undefined }).state).toBe(WATCHLIST_STATE.UNAVAILABLE);
+    });
+
+    it('a list that IS found is ready whatever the lists were read under', () => {
+      for (const listsReadFor of ['wl-1', 'wl-0', null, undefined]) {
+        expect(w({ listsReadFor }).state, String(listsReadFor)).toBe(WATCHLIST_STATE.READY);
+      }
+    });
+
+    it('the loadout carries it through', () => {
+      const loadout = loadoutOf({ committed: [list({ watchlistId: 'other' })], listsReadFor: 'wl-0' });
+      expect(loadout.watchlist.state).toBe(WATCHLIST_STATE.LOADING);
+      expect(loadoutOf({ committed: [list({ watchlistId: 'other' })], listsReadFor: 'wl-1' }).watchlist.state).toBe(WATCHLIST_STATE.UNAVAILABLE);
+    });
+  });
 });
 
 describe('ideaLabelKind — the idea-first labels (ruling R-S5-2; the design note, appendix A)', () => {

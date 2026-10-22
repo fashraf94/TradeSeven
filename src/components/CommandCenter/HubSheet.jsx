@@ -54,7 +54,8 @@ export default function HubSheet({ title, eyebrow = null, label, phone = false, 
   useEffect(() => {
     const invoker = opener || document.activeElement;
     // The stack marks the background inert (never this sheet's own root) and, on close, hands focus back:
-    // to the opener, else the fallback, never <body>. A removed or disabled opener cannot take focus.
+    // to the opener, else the fallback. A removed or disabled opener cannot take focus. If both are gone
+    // because the whole hub was replaced, the hub's provider hands focus on (hub/HubOverlays.jsx).
     stack.open(sheetId, { opener: invoker, keep: overlayRef.current });
     closeRef.current?.focus();
     return () => { stack.close(sheetId, { fallback: fallbackFocus }); };
