@@ -334,3 +334,103 @@ describe('decideReview — the pure judge, with and without the look-back', () =
     expect(decideReview({ row: row(), version: version({ status: 'review_due' }), battle: neverRan(), nowMs: NOW, unwindFromMs: CUTOFF })).toEqual({ act: 'delete_stale' });
   });
 });
+
+// ── The mutation lens's rows (review L5b), each proven red on its mutant and green on the original ──
+describe('L5b mutation lens rows — the pass', () => {
+  it('P01 a row armed EXACTLY at the look-back cutoff is within it: its battle is read and the void carriage unwound (>=, as the judge)', async () => {
+    const db = store({ [vPath()]: version(), [rowPath()]: row({ armedAt: CUTOFF }), 'agentBattles/b-1': neverRan() });
+    expect(await run(db)).toMatchObject({ voidUnwound: 1 });
+    expect(stored(db, vPath())).toMatchObject({ status: 'ready', stateReason: 'deploy_voided' });
+    expect(stored(db, rowPath())).toBeNull();
+  });
+
+  it('P02 two void carriages in one pass are both counted', async () => {
+    const vPathW = 'watchlists/wl-w/hypothesisVersions/v1';
+    const db = store({
+      [vPath()]: version(), [rowPath()]: row(), 'agentBattles/b-1': neverRan(),
+      [vPathW]: version({ watchlistId: 'wl-w', lastDeployedBattleId: 'b-2', deployedBattleIds: ['b-2'] }),
+      [`${REVIEW_QUEUE_COLLECTION}/wl-w:1`]: row({ watchlistId: 'wl-w', battleId: 'b-2' }), 'agentBattles/b-2': neverRan(),
+    });
+    expect(await run(db)).toMatchObject({ voidUnwound: 2 });
+    expect([stored(db, vPath()).status, stored(db, vPathW).status]).toEqual(['ready', 'ready']);
+  });
+
+  it('P03 a calendar that cannot place the look-back unwinds nothing: the summary says so, no \'recent\' query runs, a due row is judged as before', async () => {
+    const at = Date.parse('2028-03-01T15:00:00Z'); // outside MAINTAINED_HOLIDAY_YEARS (2026, 2027)
+    vi.setSystemTime(at);
+    const db = store({ [vPath()]: version(), [rowPath()]: row({ dueAtMs: at - 60_000, armedAt: at - 3_600_000 }), 'agentBattles/b-1': neverRan() });
+    const res = await run(db, { handlerStartMs: at, nowMs: at });
+    expect(res.voidLookback).toBe('calendar_unavailable');
+    expect(res.voidUnwound ?? 0).toBe(0);
+    expect(res.horizonElapsed).toBe(1);
+    expect(db.__access.queries.some((q) => q.filters.some((f) => f.field === 'armedAt'))).toBe(false);
+  });
+
+  it('P04 a step-back whose previous battle has no parseable createdAt cannot be anchored: judged as before, never a failed transaction', async () => {
+    const due = '2026-10-15T14:00:00.000Z';
+    const db = store({
+      [vPath()]: version({ firstDeployedAt: B0_AT, deployedBattleIds: ['b-0', 'b-1'], reviewDueAt: due }),
+      [rowPath()]: row({ dueAtMs: Date.parse(due) }), 'agentBattles/b-1': neverRan(), 'agentBattles/b-0': ran({ createdAt: 'not-a-date' }),
+    });
+    expect(await run(db)).toMatchObject({ horizonElapsed: 1, voidUnresolved: 1, failed: 0 });
+    expect(stored(db, vPath())).toMatchObject({ status: 'review_due', deployedBattleIds: ['b-0', 'b-1'], lastDeployedBattleId: 'b-1' });
+  });
+
+  it('P05 the previous battle is a fresh read of the unwind\'s own transaction: gone before the commit, the step-back re-runs and is not anchored to it', async () => {
+    const db = store({
+      [vPath()]: version({ firstDeployedAt: B0_AT, deployedBattleIds: ['b-0', 'b-1'] }),
+      [rowPath()]: row(), 'agentBattles/b-1': neverRan(), 'agentBattles/b-0': ran(),
+    });
+    const before = stored(db, vPath());
+    let landed = false;
+    db.__hooks.afterTxBody = async ({ writes }) => {
+      if (landed || !writes.some((w) => w.path === vPath())) return;
+      landed = true;
+      await db.doc('agentBattles/b-0').delete();
+    };
+    const res = await run(db);
+    expect(landed).toBe(true);
+    expect(res.voidSteppedBack ?? 0).toBe(0);
+    expect(stored(db, vPath())).toEqual(before);
+    expect(stored(db, rowPath())).toEqual(row());
+  });
+
+  it('P10 a BATTLE-END row armed BEFORE the look-back still reads its battle for its own review: over → review_due / battle_ended (judged as before, never unwound)', async () => {
+    const old = Date.parse('2026-10-12T15:00:00Z'); // Monday — before Tue 00:00 ET
+    const db = store({
+      [vPath()]: version({ horizonEnum: 'unspecified', reviewDueAt: null }), [rowPath()]: row({ dueAtMs: null, armedAt: old }),
+      'agentBattles/b-1': neverRan(),
+    });
+    const res = await run(db);
+    expect(res).toMatchObject({ battleEnded: 1, battleLive: 0 });
+    expect(res.voidUnwound ?? 0).toBe(0);
+    expect(stored(db, vPath())).toMatchObject({ status: 'review_due', stateReason: 'battle_ended', firstDeployedAt: B1_AT });
+    expect(stored(db, rowPath())).toBeNull();
+  });
+
+  it('P07 the \'recent\' phase passes over a row already due (here exactly at now) that the due phase\'s cursor is past this tick — the due phase judges it on its wrap', async () => {
+    const db = store({
+      [vPath()]: version(), [rowPath()]: row({ dueAtMs: NOW }), 'agentBattles/b-1': ran({ createdAt: B1_AT }),
+      'hypothesisReviewState/cursor': { lastDocId: null, dueLastDueAtMs: NOW, dueLastDocId: 'wl-u:1' },
+    });
+    const res = await run(db);
+    expect(res).toMatchObject({ rows: 0, horizonElapsed: 0 });
+    expect(stored(db, vPath()).status).toBe('activated');
+    const next = await run(db);
+    expect(next).toMatchObject({ rows: 1, horizonElapsed: 1 });
+  });
+
+  it('P09 a missing first deploy never matches a missing createdAt (null is not a stamp): unresolved, with or without the list', () => {
+    const pre = (over) => { const v = version(over); delete v.deployedBattleIds; return v; };
+    const unstamped = neverRan({ createdAt: null });
+    expect(voidBranchOf({ version: pre({ firstDeployedAt: null }), battleId: 'b-1', battle: unstamped })).toEqual({ unresolved: 'void_previous_unknown' });
+    expect(voidBranchOf({ version: version({ firstDeployedAt: null }), battleId: 'b-1', battle: unstamped })).toEqual({ unresolved: 'void_previous_unknown' });
+  });
+
+  it('P08 a stale row (its version no longer activated) never reads its battle — deleted on the version alone', async () => {
+    const db = store({ [vPath()]: version({ status: 'retired' }), [rowPath()]: row(), 'agentBattles/b-1': neverRan() });
+    const res = await run(db);
+    expect(res.staleDeleted).toBe(1);
+    expect(db.__access.reads.filter((p) => p === 'agentBattles/b-1')).toEqual([]);
+  });
+});

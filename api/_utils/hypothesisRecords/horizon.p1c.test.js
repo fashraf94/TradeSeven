@@ -85,3 +85,21 @@ describe('tradingDaysCutoffMs — 00:00 ET of the Nth most recent trading day (t
     expect(() => tradingDaysCutoffMs(at('2026-10-15T15:00:00Z'), 0)).toThrow(HorizonClockError);
   });
 });
+
+// ── The mutation lens's rows (review L5b), each proven red on its mutant and green on the original ──
+describe('L5b mutation lens rows — horizon', () => {
+  const codeOf = (fn) => {
+    try { fn(); } catch (e) { return e instanceof HorizonClockError ? e.code : `untyped:${e?.name}`; }
+    return 'no_throw';
+  };
+  it('HZ1 the typed codes: a malformed instant is invalid_instant; a bad N (zero, negative, fractional) is refused before any walk', () => {
+    expect(codeOf(() => etDateOfInstant('x'))).toBe('invalid_instant');
+    expect(codeOf(() => etDateOfInstant(NaN))).toBe('invalid_instant');
+    for (const n of [0, -1, 2.5]) expect(codeOf(() => tradingDaysCutoffMs(at('2026-10-15T15:00:00Z'), n)), String(n)).toBe('invalid_instant');
+  });
+  it('HZ2 every backward walk is typed at the calendar\'s edge — calendar_unavailable, never an untyped TypeError', () => {
+    expect(codeOf(() => tradingDaysCutoffMs(at('2028-03-01T15:00:00Z'), 3))).toBe('calendar_unavailable');
+    expect(codeOf(() => tradingDaysCutoffMs(at('2026-01-02T15:00:00Z'), 3))).toBe('calendar_unavailable'); // walks back out of 2026
+    expect(codeOf(() => sessionAtOrBefore(at('2028-03-01T15:00:00Z')))).toBe('calendar_unavailable');
+  });
+});

@@ -310,3 +310,67 @@ describe('L5a mutation lens rows — the void unwind at deploy (C04, C22, C26, C
     expect(stored(db, vPath())).toMatchObject({ status: 'retired' });
   });
 });
+
+// ── The mutation lens's rows (review L5b), each proven red on its mutant and green on the original ──
+describe('L5b mutation lens rows — the deploy', () => {
+  // D01 (judged once, a timed idea that moved) is L5a's C36 row above, word for word — kept once.
+  it('D02 the unwind\'s fresh read finds the battle ran after all (its last check landed after the deploy\'s read): kept — judged as before, a timed idea not yet due rides (B6), nothing written', async () => {
+    const v = act();
+    const db = seed({ [vPath()]: v, [rowPath()]: row(v), 'agentBattles/b-1': expiredUnrun() });
+    const tx = db.runTransaction.bind(db);
+    let landed = false;
+    db.runTransaction = async (cb) => {
+      if (!landed) { landed = true; await db.doc('agentBattles/b-1').set(expiredUnrun({ cronState: { evalSeq: 1 } })); }
+      return tx(cb);
+    };
+    expect(await resolve(db)).toMatchObject({ outcome: 'carry', status: 'activated' });
+    expect(landed).toBe(true);
+    expect(stored(db, vPath())).toEqual(v);
+  });
+
+  it('D03 a step-back whose previous battle cannot be read at deploy: kept — judged as before (a timed idea not yet due rides, B6), nothing unwound', async () => {
+    const due = new Date(dueOf('swing', B0_AT)).toISOString();
+    const v = act({ firstDeployedAt: B0_AT, deployedBattleIds: ['b-0', 'b-1'], reviewDueAt: due });
+    const db = seed({ [vPath()]: v, [rowPath()]: row(v), 'agentBattles/b-1': neverRan() });
+    expect(await resolve(db)).toMatchObject({ outcome: 'carry', status: 'activated' });
+    expect(stored(db, vPath())).toEqual(v);
+    expect(stored(db, rowPath())).toEqual(row(v));
+  });
+
+  it('D04 the unwind is a compare-and-set on the version: a move landing between its body and its commit re-runs it on fresh reads — nothing unwound over it', async () => {
+    const v = act();
+    const db = seed({ [vPath()]: v, [rowPath()]: row(v), 'agentBattles/b-1': neverRan() });
+    let landed = false;
+    db.__hooks.afterTxBody = async ({ writes }) => {
+      if (landed || !writes.some((w) => w.path === vPath())) return;
+      landed = true;
+      await db.doc(vPath()).update({ status: 'retired', stateSource: 'player', stateReason: 'player_retired' });
+    };
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'state_moved' });
+    expect(landed).toBe(true);
+    expect(stored(db, vPath())).toMatchObject({ status: 'retired', firstDeployedAt: B1_AT });
+  });
+
+  it('D05 … and on the battle: an evaluation landing between the unwind\'s body and its commit re-runs it — the battle ran, nothing unwound, the idea rides as activated', async () => {
+    const v = act();
+    const db = seed({ [vPath()]: v, [rowPath()]: row(v), 'agentBattles/b-1': expiredUnrun() });
+    let landed = false;
+    db.__hooks.afterTxBody = async ({ writes }) => {
+      if (landed || !writes.some((w) => w.path === vPath())) return;
+      landed = true;
+      await db.doc('agentBattles/b-1').set(expiredUnrun({ cronState: { evalSeq: 1 } }));
+    };
+    expect(await resolve(db)).toMatchObject({ outcome: 'carry', status: 'activated' });
+    expect(landed).toBe(true);
+    expect(stored(db, vPath())).toEqual(v);
+  });
+
+  it('D06 the row is gone by the unwind\'s transaction (the version still reads activated): moved — nothing rides (state_moved), nothing written', async () => {
+    const v = act();
+    const db = seed({ [vPath()]: v, [rowPath()]: row(v), 'agentBattles/b-1': neverRan() });
+    const tx = db.runTransaction.bind(db);
+    db.runTransaction = async (cb) => { db.__docs.delete(rowPath()); return tx(cb); };
+    expect(await resolve(db)).toEqual({ outcome: 'none', reason: 'state_moved' });
+    expect(stored(db, vPath())).toEqual(v);
+  });
+});
