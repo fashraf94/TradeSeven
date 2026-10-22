@@ -413,7 +413,8 @@ describe('S0 hub chunk — reached only through the gate\'s dynamic import', () 
     expect(files.length, 'the src walk found nothing, so this row would be vacuous').toBeGreaterThan(100);
     const refs = files.flatMap((rel) => hubPathLiterals(stripComments(read(rel))).map((ref) => `${rel} ${ref}`));
     expect(refs).toEqual([`${GATE} import(./CommandCenterHub`]);
-  });
+    // Reads every file under src/: 2.4 s alone, over the 5 s default when the suite runs wide.
+  }, 30000);
 
   it('the reference scan is not vacuous: it sees every form a reference can take', () => {
     for (const planted of [
@@ -725,19 +726,22 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     // included, whose only two such literals are its two static imports.
     const outside = sourceFiles().filter((rel) => !rel.startsWith(`${HUB_DIR}/`));
     expect(outside.length, 'the src walk found nothing, so this row would be vacuous').toBeGreaterThan(100);
-    const edges = outside.flatMap((rel) => edgesIntoHub(rel, stripComments(read(rel))));
+    // Each file is read and stripped once and both scans share it: 2.7 s alone with the
+    // two passes reading separately, over the 5 s default when the suite runs wide.
+    const codeOf = new Map(outside.map((rel) => [rel, stripComments(read(rel))]));
+    const edges = outside.flatMap((rel) => edgesIntoHub(rel, codeOf.get(rel)));
     expect(edges.sort()).toEqual([
       `src/App.jsx -> ${HUB_FILE('CommandCenterHubGate.jsx')}`,
       `src/App.jsx -> ${HUB_FILE('hubChrome.js')}`,
       `src/App.jsx -> ${HUB_FILE('pickDashboardShell.js')}`,
     ]);
-    const literals = outside.flatMap((rel) => hubDirLiterals(stripComments(read(rel))).map((lit) => `${rel}: ${lit}`));
+    const literals = outside.flatMap((rel) => hubDirLiterals(codeOf.get(rel)).map((lit) => `${rel}: ${lit}`));
     expect(literals.sort()).toEqual([
       'src/App.jsx: ./components/CommandCenter/CommandCenterHubGate',
       'src/App.jsx: ./components/CommandCenter/hubChrome',
       'src/App.jsx: ./components/CommandCenter/pickDashboardShell',
     ]);
-  });
+  }, 30000);
 
   it('the edge scan is not vacuous: it resolves relative and @/ imports, re-exports and load-time imports into the directory', () => {
     expect(edgesIntoHub('src/components/Navigation/BottomNav.jsx', "import { BOTTOM_NAV_ATTRIBUTE } from '../CommandCenter/hub/navClearance';"))
