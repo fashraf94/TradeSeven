@@ -45,7 +45,7 @@ export function toneColor(tone) {
   }
 }
 
-const labelSpan = (size, weight = 600) => ({ fontSize: size, fontWeight: weight, lineHeight: 1.2 });
+export const labelSpan = (size, weight = 600) => ({ fontSize: size, fontWeight: weight, lineHeight: 1.2 });
 
 /** A button reset by hand (no `all: unset`): the browser keeps its focus ring. */
 export const plainButton = Object.freeze({
@@ -59,7 +59,9 @@ export const plainButton = Object.freeze({
   cursor: 'pointer',
 });
 
-function GroupHeader({ label, count = null, dim = false, groupKey }) {
+// `stickyTop`: where the header pins in the scroll — 0 in the 2a feed; the 2b cockpit pins its group headers just
+// below its own pinned top row (Cockpit2b.jsx COCKPIT2B_TOP_ROW_PX).
+export function GroupHeader({ label, count = null, dim = false, groupKey, stickyTop = 0 }) {
   return (
     <div
       data-cockpit-group={groupKey}
@@ -71,7 +73,7 @@ function GroupHeader({ label, count = null, dim = false, groupKey }) {
         justifyContent: 'space-between',
         padding: '10px 12px 6px',
         position: 'sticky',
-        top: 0,
+        top: stickyTop,
         zIndex: 2,
         background: `linear-gradient(90deg, rgba(var(--ft-teal-rgb), ${dim ? 0.04 : 0.1}), rgba(var(--ft-shadow-rgb), 0.85) 55%)`,
         backdropFilter: 'blur(8px)',
@@ -109,7 +111,7 @@ function GroupHeader({ label, count = null, dim = false, groupKey }) {
 }
 
 /** The shipped transparent teal-outline chip (WhyPanel.jsx's follow-up door). */
-const chipStyle = (disabled) => ({
+export const chipStyle = (disabled) => ({
   background: 'transparent',
   border: `1px solid ${cssVar('call-yours')}`,
   color: cssVar('call-yours'),
@@ -156,7 +158,9 @@ export function StateTag({ tag }) {
         textTransform: 'uppercase',
         fontWeight: 600,
         color,
-        whiteSpace: 'nowrap',
+        // Cockpit Build 2b (from merge, review CB5-5): a long tag ("Command retired · … at the {t} check") wraps
+        // inside the tile rather than pushing it past a 390 px screen.
+        whiteSpace: 'normal',
         ...(tag.tone === 'yoursOutline' ? { border: `1px solid ${color}`, borderRadius: 6, padding: '1px 6px' } : {}),
       }}
     >
@@ -193,7 +197,7 @@ function Tile({ tile, onAnswer, onOpenSheet }) {
           onClick={openSheet}
           style={{ ...plainButton, display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, width: '100%' }}
         >
-          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0 }}>
+          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
             <span style={{
               fontFamily: MONO,
               fontSize: 9.5,
@@ -214,7 +218,11 @@ function Tile({ tile, onAnswer, onOpenSheet }) {
                 </span>
               ) : null}
             </span>
-            <StateTag tag={tile.tag} />
+            <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', minWidth: 0 }}>
+              {/* Cockpit Build 2b (D-10, from merge): the newest call follows your live command. */}
+              {tile.followTag ? <StateTag tag={tile.followTag} /> : null}
+              <StateTag tag={tile.tag} />
+            </span>
           </span>
           <span data-cockpit-line="1" style={{ fontSize: 14.5, fontWeight: 700, color: cssVar('text-primary'), lineHeight: 1.35 }}>
             {tile.line}
@@ -222,10 +230,21 @@ function Tile({ tile, onAnswer, onOpenSheet }) {
           {tile.restated ? (
             <span data-cockpit-restated="1" style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{tile.restated}</span>
           ) : null}
+          {/* Cockpit Build 2b (D-12 rev 4, from merge): one card per stock plan — the moved line, and the command's own line beside a new ask. */}
+          {tile.lineMoved ? (
+            <span data-cockpit-line-moved="1" style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{tile.lineMoved}</span>
+          ) : null}
+          {tile.commandLine ? (
+            <span data-cockpit-command-line="1" style={{ fontSize: 12, color: cssVar('call-yours') }}>{tile.commandLine}</span>
+          ) : null}
           {tile.answerLine ? (
             <span data-cockpit-thread-answer="1" style={{ fontSize: 12, color: cssVar('call-yours') }}>{tile.answerLine}</span>
           ) : null}
         </button>
+        {/* Review (Astra P2): the buttons answer a line other than the headline — that line's own row, directly above them. */}
+        {tile.targetLine && tile.buttons?.length ? (
+          <span data-cockpit-answer-target={tile.target?.callId} style={{ fontSize: 12, fontWeight: 600, color: cssVar('text-primary'), lineHeight: 1.35 }}>{tile.targetLine}</span>
+        ) : null}
         <AnswerButtons buttons={tile.buttons} onAnswer={onAnswer} />
         {tile.blockedLine ? (
           <span data-cockpit-blocked="1" style={{ fontSize: 11.5, color: cssVar('text-secondary') }}>{tile.blockedLine}</span>
@@ -238,7 +257,7 @@ function Tile({ tile, onAnswer, onOpenSheet }) {
   );
 }
 
-function MonitoringRow({ row, onSymbolClick }) {
+export function MonitoringRow({ row, onSymbolClick }) {
   if (!row) return null;
   return (
     <div data-cockpit-monitoring="1" style={{ padding: '10px 12px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>

@@ -2916,6 +2916,54 @@ export function isCockpitUiOn() {
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
+ * COCKPIT BUILD 2b — SPOTLIGHT, COMMANDS AND "WHO COMES IN?" (spec
+ * docs/COCKPIT_BUILD2B_SPEC_V1_0.md S-11, §10; contract Amendment D,
+ * docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_D.md).
+ *
+ * COCKPIT_2B_ENABLED — DARK, default FALSE. When FALSE (the shipped state) the
+ * Build 2a screen renders as shipped plus the fixes the spec's §2 marks "from
+ * merge" (the mint fields, the one swappable test, retire on exit, the one
+ * expiry label, Following your call, one card per stock plan, Acted wins, the
+ * tags, the server's clock for deadlines), and the answer endpoint
+ * (api/agent/call-response.js) behaves as at HEAD for the budget, the pending
+ * check and the answers — except the from-merge counterpart_unavailable check.
+ *
+ * TRUE: the endpoint's D-1 (7 commands, derived), D-2 (replace after one
+ * confirmation) and D-4 (`replace`, `go_now` with a chosen name,
+ * callActions.v2) behavior; the bench read (api/agent/cockpit-bench.js); and
+ * the V5 screen — the Now card, "Who comes in?", Also live, the day line, the
+ * commands meter, the bench sheet, board-row dots, the Research pill and the
+ * chat composer line.
+ *
+ * Read at CALL TIME through isCockpit2bOn() below — the server reads it per
+ * request, the client at render (never a module-scope const in a consumer, the
+ * isCharacterPaneOn rule — the featureFlags vi.mock hazard). The server and the
+ * client read this same accessor. No URL, environment or localStorage
+ * override exists. The founder previews it on the never-merge smoke branch
+ * (claude/cockpit-build2b-smoke), which flips this one line.
+ *
+ * RUNWAY: flips only in the founder's own flip PR (spec §10.2), merged after
+ * 6 PM ET, after the build merges and the founder has smoked the preview.
+ * Never a build PR. No environment change; the allowlist already holds the
+ * founder and FT_QA. Rollback is this one line back to false (spec §10.3).
+ * THE FLIP MAP — one commit (BUILD_RULES §2):
+ *   1. this constant → true;
+ *   2. cockpit2bFlags.test.js: the pin row → true and the registration row
+ *      turned around to assert the DARK_BY_DESIGN entry is gone;
+ *   3. src/config/flagPinGuard.test.js: this flag's DARK_BY_DESIGN entry dropped;
+ *   4. this docstring: the state lines ("DARK, default FALSE", "When FALSE
+ *      (the shipped state)") reworded to the live state.
+ */
+// Pinned by: cockpit2bFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
+export const COCKPIT_2B_ENABLED = false;
+
+/** The ONE seam for the 2b flag, read at call time by the server and at render by the client: the flag and nothing else. */
+export function isCockpit2bOn() {
+  return COCKPIT_2B_ENABLED;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
  * FILM ROOM BUILD A — THE TAPE (spec
  * docs/specs/FILM_ROOM_BUILD_A_TAPE_SPEC_V1_2_20260927.md; build report
  * docs/audits/20260927_BUILD_FILM_TAPE_A1.md).

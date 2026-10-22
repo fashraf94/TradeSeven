@@ -11,6 +11,8 @@
 //   ${evalId}:declared · ${callId}:answered:${answerId} · ${callId}:heard:${evalId}
 //   ${callId}:acted:${evalId} · ${callId}:no_match:${evalId} · ${callId}:expired
 //   ${callId}:ended · ${directiveThreadId}:superseded
+//   ${directiveThreadId}:retired   (Cockpit Build 2b, Amendment D-6: a command
+//                                  retired because its stock left the book)
 //   answerId = ${callId}:answer:${answer}:${pickSymbol ?? ''}
 //
 // AN EVENT IS CREATED INSIDE THE TRANSACTION THAT COMMITS ITS TRANSITION
@@ -30,6 +32,8 @@ export const EVENTS_SUBCOLLECTION = 'callEvents';
 
 export const CALL_EVENT_KINDS = Object.freeze([
   'declared', 'answered', 'heard', 'acted', 'no_matching_trade', 'expired', 'ended_with_battle', 'superseded',
+  // Cockpit Build 2b (Amendment D-6): the ninth kind — every reader that switches on a kind handles it.
+  'retired',
 ]);
 
 const nonEmpty = (v) => typeof v === 'string' && v.length > 0;
@@ -54,6 +58,7 @@ export function eventIdOf(kind, p = {}) {
     case 'expired': return `${need('callId')}:expired`;
     case 'ended_with_battle': return `${need('callId')}:ended`;
     case 'superseded': return `${need('directiveThreadId')}:superseded`;
+    case 'retired': return `${need('directiveThreadId')}:retired`;
     default: throw new Error(`callEvents: unknown kind ${kind}`);
   }
 }

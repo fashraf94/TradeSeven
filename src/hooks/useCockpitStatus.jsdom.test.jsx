@@ -46,6 +46,21 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('Cockpit Build 2b S-9 — the server\'s clock (review L7 F19)', () => {
+  it('clockOffsetMs = serverNowMs − Date.now() at receipt (the other rows carry no serverNowMs: offset 0)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(1_000_000);
+      vi.stubGlobal('fetch', respond(200, { on: true, serverNowMs: 1_001_500 }));
+      await render({ battleId: 'ab-1', enabled: true, battleStatus: 'active' });
+      expect(latest.on).toBe(true);
+      expect(latest.clockOffsetMs).toBe(1500);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('disabled — nothing is requested at all', () => {
   it('flag off / battle not active → no fetch, reads off', async () => {
     const fetchSpy = respond(200, { on: true });

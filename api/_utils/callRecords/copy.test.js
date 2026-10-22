@@ -143,7 +143,8 @@ describe('every event renderer (spec §4, §10)', () => {
     expect(renderAnsweredEvent({ answer: 'disagree' })).toBe('Answered: Disagree');
     expect(renderAnsweredEvent({ answer: 'go_now', canonicalText: 'x' })).toBe('Answered: Go now — x');
     expect(renderAnsweredEvent({ answer: 'ask' })).toBeNull(); // deferred to 1b: no word, no line
-    expect(Object.keys(ANSWER_WORDS)).toEqual(['go', 'hold', 'go_now', 'pick', 'agree', 'disagree']);
+    // Cockpit Build 2b (Amendment D-4): `replace` reads "Bring in".
+    expect(Object.keys(ANSWER_WORDS)).toEqual(['go', 'hold', 'go_now', 'pick', 'agree', 'disagree', 'replace']);
   });
 
   it("heard: 'Heard at the HH:MM check' from that check's promptBuiltAt — prompt inclusion, nothing more", () => {

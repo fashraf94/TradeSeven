@@ -18,6 +18,15 @@
 //   later returns to the corrected value is read fresh (review L3-3).
 //   A 404 cockpit_unavailable asks the screen to re-run the status check.
 //
+// Cockpit Build 2b (spec §6, flag on): `submit(callId, answer, { pickSymbol,
+// confirmReplace })` — the chosen name of a `pick`, `replace` or named
+// `go_now` (D-4), and the replace confirmation's `confirmReplace: true` (D-2).
+// Each key joins the body ONLY when given, so a flag-off answer's body is
+// byte-identical to 2a's. The outcome keeps the chosen name (the refusal line
+// names it); `submit` resolves to `{ status, body }` (null when a second tap
+// was dropped) so the screen can open the confirmation on a 409
+// `replace_unconfirmed`.
+//
 // Firebase auth: the static getAuth import the screen already makes (see
 // useCockpitStatus.js — a lazy import of the auth package costs the main
 // chunk 69 KB).
@@ -27,11 +36,23 @@ import { getAuth } from 'firebase/auth';
 
 export const CALL_RESPONSE_PATH = '/api/agent/call-response';
 
+/** The request body: 2a's four keys, plus the 2b keys only when given (a flag-off body is unchanged). */
+export function answerBody({ battleId, callId, answer, expectedDirectiveThreadId, pickSymbol = null, confirmReplace = false }) {
+  return {
+    battleId,
+    callId,
+    answer,
+    expectedDirectiveThreadId,
+    ...(typeof pickSymbol === 'string' && pickSymbol.length > 0 ? { pickSymbol } : {}),
+    ...(confirmReplace === true ? { confirmReplace: true } : {}),
+  };
+}
+
 /**
  * Send one answer. Resolves to `{ status, body }` — `status: null` when no
  * response arrived at all. Never throws.
  */
-export async function postCallAnswer({ battleId, callId, answer, expectedDirectiveThreadId }) {
+export async function postCallAnswer({ battleId, callId, answer, expectedDirectiveThreadId, pickSymbol = null, confirmReplace = false }) {
   try {
     const user = getAuth().currentUser;
     if (!user) return { status: 401, body: null };
@@ -39,7 +60,7 @@ export async function postCallAnswer({ battleId, callId, answer, expectedDirecti
     const res = await fetch(CALL_RESPONSE_PATH, {
       method: 'POST',
       headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ battleId, callId, answer, expectedDirectiveThreadId }),
+      body: JSON.stringify(answerBody({ battleId, callId, answer, expectedDirectiveThreadId, pickSymbol, confirmReplace })),
     });
     const body = await res.json().catch(() => null);
     return { status: res.status, body };
@@ -56,7 +77,7 @@ export async function postCallAnswer({ battleId, callId, answer, expectedDirecti
  * @param {Function} [p.post]                  injectable for tests; defaults to postCallAnswer
  */
 export function useCockpitAnswer({ battleId, subscribedThreadId = null, onUnavailable = null, post = postCallAnswer }) {
-  const [pending, setPending] = useState(null);       // { callId, answer } | null
+  const [pending, setPending] = useState(null);       // { callId, answer, pickSymbol? } | null
   const [outcomes, setOutcomes] = useState({});       // callId → { status, body, at, callId }
   const [override, setOverride] = useState(null);     // { value, basis, battleId } | null
   const inFlight = useRef(false);
@@ -69,20 +90,23 @@ export function useCockpitAnswer({ battleId, subscribedThreadId = null, onUnavai
     if (override && !holds) setOverride(null);
   }, [override, holds]);
 
-  const submit = useCallback(async (callId, answer) => {
-    if (inFlight.current || !battleId || !callId || !answer) return;
+  const submit = useCallback(async (callId, answer, { pickSymbol = null, confirmReplace = false } = {}) => {
+    if (inFlight.current || !battleId || !callId || !answer) return null;
     inFlight.current = true;
-    setPending({ callId, answer });
+    const named = typeof pickSymbol === 'string' && pickSymbol.length > 0 ? pickSymbol : null;
+    setPending(named ? { callId, answer, pickSymbol: named } : { callId, answer });
     setOutcomes((prev) => { if (!(callId in prev)) return prev; const next = { ...prev }; delete next[callId]; return next; });
-    const { status, body } = await post({ battleId, callId, answer, expectedDirectiveThreadId: belief ?? null });
+    const extra = { ...(named ? { pickSymbol: named } : {}), ...(confirmReplace === true ? { confirmReplace: true } : {}) };
+    const { status, body } = await post({ battleId, callId, answer, expectedDirectiveThreadId: belief ?? null, ...extra });
     inFlight.current = false;
     setPending(null);
-    if (status === 200) return;
-    setOutcomes((prev) => ({ ...prev, [callId]: { status, body, at: Date.now(), callId } }));
+    if (status === 200) return { status, body };
+    setOutcomes((prev) => ({ ...prev, [callId]: { status, body, at: Date.now(), callId, ...(named ? { pickSymbol: named } : {}) } }));
     if (status === 409 && body?.reason === 'belief_mismatch' && Object.prototype.hasOwnProperty.call(body, 'currentDirectiveThreadId')) {
       setOverride({ value: body.currentDirectiveThreadId ?? null, basis: subscribedThreadId, battleId });
     }
     if (status === 404 && body?.error === 'cockpit_unavailable' && typeof onUnavailable === 'function') onUnavailable();
+    return { status, body };
   }, [battleId, belief, post, subscribedThreadId, onUnavailable]);
 
   // A refusal line clears for good once the record behind its tile changes or

@@ -165,6 +165,26 @@
       "count": 0,
       "authority": "Cockpit Build 2a (spec \u00a76, ruling R2A-4) \u2014 the phone's Board \u00b7 Cockpit switch and track: the sliding thumb is a Framer layoutId on transition={motionToken('smooth', { reducedMotion })} (instant under reduced motion), and the track scrolls natively (scroll-snap, never a CSS transition); zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
     },
+    "src/screens/battleView/cockpit2bModel.js": {
+      "count": 0,
+      "authority": "Cockpit Build 2b (spec \u00a75\u2013\u00a77, flag on) \u2014 the V5 screen's pure view model: the meter, the Now card's choice, the plan sentences, the step's chips, the strip, the day line, Earlier and the bench sheet's rows, from the feed and the records. No element, no colour, no motion; zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
+    },
+    "src/screens/battleView/Cockpit2b.jsx": {
+      "count": 0,
+      "authority": "Cockpit Build 2b (spec \u00a75, \u00a76, \u00a79; flag on) \u2014 the V5 cockpit: the Now card, Who comes in, Also live, the day line, Monitoring and Earlier. --ft-* tokens only; card changes and chip expansion use motionToken('smooth'), instant under reduced motion; zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
+    },
+    "src/screens/battleView/CockpitBenchSheet.jsx": {
+      "count": 0,
+      "authority": "Cockpit Build 2b (spec \u00a75.7, \u00a79; flag on) \u2014 the bench sheet (V5's 6A) on 2a's modal layer: the sorts, the rows, the agent's own note, Pick and the filed bar. --ft-* tokens only; its one entrance is the shared layer's motionToken('smooth'), instant under reduced motion; zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
+    },
+    "src/screens/battleView/useCockpit2bAnswer.js": {
+      "count": 0,
+      "authority": "Cockpit Build 2b (spec \u00a76, D-2, V5-6; flag on) \u2014 the answer flow the three surfaces share: the replace confirmation first, the 409 replace_unconfirmed prompt, the card held after Confirm exit. Client state only: no element, no colour, no motion; zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
+    },
+    "src/screens/battleView/useServerClock.js": {
+      "count": 0,
+      "authority": "Cockpit Build 2b (spec \u00a78, from merge) \u2014 the server's clock for deadlines: pure helpers and one hook that keeps a single timer at the next open deadline on server time. No element, no colour, no motion; zero raw transition literals from birth. Registered in the commit that introduces it (hazard 34)."
+    },
     "src/screens/filmRoomV2/filmRoomModel.js": {
       "count": 0,
       "authority": "Film Room A2 (Amendment E BA-41: the skin from the shipped Battle View V4 tokens) \u2014 the v2 screen, token-only (cssVar / rgba(var(--ft-*-rgb))) and with no transition literal from birth. Registered in the commit that introduces it (build prompt \u00a71 item 7)."

@@ -987,6 +987,23 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpitKindUpside: 'Upside call',
   cockpitEyebrowFrom: (check) => (check ? `from ${check}` : null),
   cockpitRestated: (check) => (check ? `Restated at ${check}` : 'Restated'),
+  // Cockpit Build 2b (Amendment D-12 rev 4; spec §5.2, from merge): one card per stock plan. A card holding
+  // open calls at more than one level marks the moved line; earlier levels show on expand, newest first.
+  // Nothing on a card ever calls it "one call".
+  cockpitLatestLine: (check) => (check ? `Latest line · ${check}` : 'Latest line'),
+  cockpitLineMoved: (from, to) => (from && to ? `Line moved ${from} → ${to}` : null),
+  cockpitEarlierLevel: (side, price, check) => {
+    if (!price || (side !== 'above' && side !== 'below')) return null;
+    return check ? `${side} ${price} · from ${check}` : `${side} ${price}`;
+  },
+  // D-12 condition 1: a command shown beside a new ask names the line it was given on — never "covering" the new one.
+  cockpitCommandOnLine: (price) => (price ? `Your command · on the ${price} line` : 'Your command'),
+  // Review (Astra P2, 2026-10-21): when a card's buttons answer a line OTHER than its headline (an older new ask
+  // beside your live command), that line's own row sits directly above them — the line, its level, its check.
+  cockpitAnswerTarget: (sym, side, price, check) => {
+    const line = sym && price && (side === 'above' || side === 'below') ? `${sym} ${side} ${price}` : (sym || null);
+    return ['Needs your answer', line, check ? `from ${check}` : null].filter(Boolean).join(' · ');
+  },
   // The sheet's earliest wording of a folded thread (review L6-3).
   cockpitCalledAt: (check) => (check ? `Called at ${check}` : 'Called'),
 
@@ -1009,8 +1026,16 @@ export const BATTLE_VIEW_COPY = Object.freeze({
     : 'Waiting · your last answer is still active.'),
   cockpitOneAtATime: 'One call at a time.',
   // A folded thread's directive answer, live or not (Amendment C-6 rev 3), naming the wording it was given on.
-  cockpitThreadAnswer: (answer, filedTime, wordingCheck) => {
-    const word = answer === 'hold' ? 'hold off' : answer === 'go_now' ? 'go instead' : null;
+  // Cockpit Build 2b (D-4): a chosen name rides the words — "bring in DHR" for a replace, "go instead, bring in DHR"
+  // for a named go_now — read from the directive's own record by the caller (never from playerResponse).
+  // Cockpit Build 2b (flag on, review CB6-4): `go_now` is quoted in the words the player tapped there —
+  // "exit instead" on an exit, "bring it in" on an entry (§6.2; V5-2 retires "Go instead").
+  cockpitThreadAnswer: (answer, filedTime, wordingCheck, pickSymbol = null, { v2 = false, direction = null } = {}) => {
+    const named = typeof pickSymbol === 'string' && pickSymbol ? pickSymbol : null;
+    const goNow = v2 ? (direction === 'exit' ? 'exit instead' : 'bring it in') : 'go instead';
+    const word = answer === 'hold' ? 'hold off'
+      : answer === 'go_now' ? (named ? `${goNow}, bring in ${named}` : goNow)
+        : answer === 'replace' && named ? `bring in ${named}` : null;
     if (!word) return null;
     const head = filedTime ? `You said ${word} · ${filedTime}` : `You said ${word}`;
     return wordingCheck ? `${head}, on the ${wordingCheck} wording` : head;
@@ -1049,12 +1074,136 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   // answer too, and the `superseded` event does not say which wrote it
   // (founder ruling Oct 4; review L6-11 a).
   cockpitReceiptReplaced: (time) => (time ? `Replaced by a later instruction · ${time}` : 'Replaced by a later instruction'),
+  // Cockpit Build 2b (spec §7.1, from merge): the receipt names the replacing filing's source, as the tag does.
+  cockpitReceiptReplacedBy: (by, time) => {
+    const head = by === 'cockpit' ? 'Replaced by your later command' : (by === 'chat' ? 'Replaced by a chat instruction' : 'Replaced by a later instruction');
+    return time ? `${head} · ${time}` : head;
+  },
   cockpitObservedHit: (price, check) => (price ? (check ? `Hit at ${price} · ${check}` : `Hit at ${price}`) : null),
   cockpitObservedExpired: (price, check) => (price ? (check ? `Expired at ${price} · ${check}` : `Expired at ${price}`) : null),
 
   // From the cockpit (§8.2): the label on a chat directive card whose exchange
   // the answer endpoint wrote (`source: 'cockpit'`).
   fromCockpit: 'From the cockpit',
+
+  // ── Cockpit Build 2b — the V5 screen, flag on (spec docs/COCKPIT_BUILD2B_SPEC_V1_0.md §5–§7) ──
+  // `agent` is the battle's own agent name; times arrive formatted ("the 1:30 PM check", "1:32 PM").
+  // No line here is ever attributed to the agent (V5-7): every sentence renders a record field.
+  // §5.1 the commands meter.
+  cockpit2bMeterLeft: (n) => (Number.isFinite(n) && n > 0 ? `· ${n} left` : 'No commands left'),
+  cockpit2bMeterAria: (n, limit) => (Number.isFinite(n) ? `${n} of ${limit} commands left` : null),
+  // §5.2 the Now card.
+  cockpit2bNowHeader: '⚡ Now',
+  cockpit2bQuiet: (agent, next) => {
+    const t = slotLabel(next);
+    return t ? `Nothing needs you · ${agent}'s next check ~${t}` : 'Nothing needs you';
+  },
+  cockpit2bKindExit: 'Exit call',
+  cockpit2bKindHold: 'Hold call',
+  cockpit2bKindEntry: 'Entry call',
+  cockpit2bKindUpside: 'Upside call',
+  cockpit2bKindCommand: (wordingCheck) => (wordingCheck ? `Your command · on the ${wordingCheck} wording` : 'Your command'),
+  cockpit2bFrom: (check) => (check ? `from ${check}` : null),
+  cockpit2bPlanExitAct: (agent, sym, side, price, deadline) => `${agent} plans to exit ${sym} if it goes ${side} ${price}${deadline ? ` ${deadline}` : ''}.`,
+  cockpit2bPlanExitHold: (agent, sym, side, price, deadline) => `${agent} calls ${sym} ${side} ${price}${deadline ? ` ${deadline}` : ''}, and plans to hold it.`,
+  cockpit2bPlanEntryAct: (agent, sym, cp, side, price, deadline) => `${agent} plans to bring in ${sym}${cp ? ` for ${cp}` : ''} if it goes ${side} ${price}${deadline ? ` ${deadline}` : ''}.`,
+  cockpit2bPlanEntryHold: (agent, sym, side, price, deadline) => `${agent} calls ${sym} ${side} ${price}${deadline ? ` ${deadline}` : ''}, and plans to wait.`,
+  cockpit2bSilence: (verb) => (verb ? `If you say nothing, it ${verb}.` : null),
+  // "as of" only beside the price it dates; without the check's cited price the line is the deadline alone.
+  cockpit2bFacts: (deadline, sym, price, check) => [deadline, price ? `${sym} ${price}` : null, price && check ? `as of ${check}` : null].filter(Boolean).join(' · ') || null,
+  // §6.2 the buttons: agreeing first and free; every override carries one bullet.
+  cockpit2bConfirmExit: 'Confirm exit',
+  cockpit2bGoIfTriggers: 'Go if it triggers',
+  cockpit2bHold: 'Hold',
+  cockpit2bHoldOff: 'Hold off',
+  cockpit2bExitInstead: 'Exit instead',
+  cockpit2bBringItIn: 'Bring it in',
+  cockpit2bNoCommands: 'No commands left',
+  cockpit2bOneCommandAria: (label) => (label ? `${label} · 1 command` : null),
+  // A LEAGUE battle's overrides charge the group's daily chat budget (D-1: the league branch is unchanged).
+  cockpit2bOneMessageAria: (label) => (label ? `${label} · 1 message` : null),
+  cockpit2bSending: 'Sending…',
+  cockpit2bDone: 'Done',
+  // The command card (§5.2 "After an answer"): the canonical text verbatim, then the receipts.
+  cockpit2bFiled: (time) => (time ? `Filed ${time}` : 'Filed'),
+  cockpit2bNotYetHeard: 'not yet heard',
+  // Left the slot unheard (killed, expired, replaced, retired): no hearing is promised that cannot come (2a ruling Oct 4).
+  cockpit2bNotHeard: 'not heard',
+  cockpit2bNoCheckLeft: 'no check left today',
+  // §5.3 Who comes in?
+  cockpit2bWho: (sym) => (sym ? `Who comes in for ${sym}?` : null),
+  cockpit2bBrowse: 'Browse the bench →',
+  // The agent's own names (R2B-5: either of its lists — the newest check's anticipation candidates or its
+  // kept watch list). The spec words the label "{Agent} is eyeing"; the C1 honesty guard
+  // (src/components/Dashboard/desk/deskHonesty.test.js) bans "eyeing" by name as an agent verb, and spec §11
+  // forbids loosening a guard — so the label names the RECORD, the lists, as its sibling names the bench.
+  // A founder question in the build report (keep this, or amend the guard).
+  cockpit2bAgentLists: (agent) => `From ${agent}'s lists`,
+  cockpit2bAgentListMark: (agent) => `On ${agent}'s list`,
+  cockpit2bByRank: 'From your bench · by rank',
+  cockpit2bChipLocked: 'locked',
+  cockpit2bChipHeld: 'in your book',
+  cockpit2bChipCant: 'can\'t come in',
+  cockpit2bComesIn: (inn, sym) => (inn && sym ? `✓ ${inn} comes in if ${sym} exits · filed` : null),
+  cockpit2bLetChoose: (agent) => `Let ${agent} choose`,
+  cockpit2bCancel: 'Cancel',
+  // §5.4 Also live.
+  cockpit2bAlsoLive: (n) => (Number.isFinite(n) ? `Also live · ${n}` : 'Also live'),
+  cockpit2bWordExit: 'exit',
+  cockpit2bWordHold: 'hold',
+  cockpit2bWordEnter: 'enter',
+  cockpit2bWordWait: 'wait',
+  cockpit2bWordCommand: 'your command',
+  cockpit2bWordFollowing: 'following',
+  cockpit2bWordUpside: 'upside',
+  cockpit2bWordAgreed: 'you agreed',
+  // An answered call whose command no longer stands (review CB3-4): the fact its card's tag already names.
+  cockpit2bWordRetired: 'command retired',
+  cockpit2bWordReplaced: 'replaced',
+  cockpit2bWordAnswered: 'you answered',
+  cockpit2bLineMovedShort: 'line moved',
+  cockpit2bMore: (n) => `+${n} more`,
+  cockpit2bFewer: 'fewer',
+  cockpit2bSpotlight: 'Spotlight →',
+  cockpit2bChipAria: (text) => (text ? `${text} — open` : null),
+  // The expanded chip's header collapses it (review CB5-10: its name says so).
+  cockpit2bChipAriaCollapse: (text) => (text ? `${text} — close` : null),
+  // §5.5 the day line (counts records; never tappable).
+  cockpit2bDayLine: (calls, hit, expired, answered) => `Today · ${calls} ${calls === 1 ? 'call' : 'calls'} · ${hit} hit · ${expired} expired · you answered ${answered}`,
+  // §5.6 Earlier, collapsed.
+  cockpit2bEarlierRow: (sym, arrow, level, tag) => [[sym, arrow, level].filter(Boolean).join(' '), tag].filter(Boolean).join(' · '),
+  cockpit2bEarlierToggle: (open) => (open ? 'Hide earlier calls' : 'Show earlier calls'),
+  // §6.3 the replace confirmation.
+  // A 409 naming a command whose call this screen has not loaded: the command, without a symbol it cannot read.
+  cockpit2bReplaceCommand: (sym, text, agent) => `This replaces your command${sym ? ` on ${sym}` : ''} — "${text}". ${agent} stops hearing it at its next check.`,
+  cockpit2bReplaceChat: (text, agent) => `This replaces your chat instruction — "${text}". ${agent} stops hearing it at its next check.`,
+  cockpit2bReplace: 'Replace',
+  cockpit2bKeep: 'Keep current command',
+  // §5.7 the bench sheet (6A).
+  cockpit2bBenchTitle: 'The bench',
+  cockpit2bBenchSub: (n, available, asOf) => [`${n} ${n === 1 ? 'name' : 'names'}`, `${available} available`, asOf ? `prices as of ${asOf}` : null].filter(Boolean).join(' · '),
+  cockpit2bSortRank: 'Rank',
+  cockpit2bSortMove: 'Today\'s move',
+  cockpit2bSortSector: 'Sector',
+  cockpit2bSortName: 'Sort the bench',
+  cockpit2bPick: 'Pick',
+  cockpit2bLockedUntil: (time) => (time ? `locked until ${time}` : 'locked'),
+  cockpit2bNotSwappable: 'can\'t come in',
+  cockpit2bNoPrice: 'no price',
+  cockpit2bAvailable: 'available',
+  cockpit2bFiledBar: (text) => (text ? `✓ Filed · ${text}` : '✓ Filed'),
+  cockpit2bBenchLoading: 'Reading the bench…',
+  cockpit2bBenchError: 'Couldn\'t read the bench right now.',
+  cockpit2bBenchClose: 'Close',
+  cockpit2bAtr: (pct) => (pct ? `ATR ${pct}` : null),
+  cockpit2bResearchSymbol: (sym) => (sym ? `Research ${sym}` : null),
+  // §5.9 the Research pill and the composer line.
+  cockpit2bResearch: 'Research',
+  cockpit2bResearchAria: 'Research · open the bench',
+  cockpit2bComposerLine: (sym) => (sym ? `Sending a directive replaces your cockpit command on ${sym}.` : null),
+  // §5.8 board-row dots.
+  cockpit2bDotCommand: 'your live command',
+  cockpit2bDotOpen: 'an open call',
 });
 
 /**
@@ -1086,7 +1235,11 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   // level_non_finite / level_implausible live only in the declarations
   // record's minted[]), so the spec's "· price line out of range" would be a
   // guess for two of the three (review L6-4 — a founder ruling, recorded).
-  'state:invalidated': Object.freeze({ tone: 'dropped', text: () => 'Dropped' }),
+  // Cockpit Build 2b (Amendment D-9; spec §7.2) supersedes the note above for
+  // new records: the call now carries the mint's own reason
+  // (`invalidatedReason`), read through COCKPIT_DROPPED_REASON_TEXT below; a
+  // record without one (minted before 2b) or an unknown reason keeps the bare fact.
+  'state:invalidated': Object.freeze({ tone: 'dropped', text: ({ reason } = {}) => (reason ? `Dropped · ${reason}` : 'Dropped') }),
   'state:expired_unresolved': Object.freeze({ tone: 'muted', text: ({ deadline } = {}) => (deadline ? `Expired · ${deadline}` : 'Expired') }),
   'state:ended_with_battle': Object.freeze({ tone: 'muted', text: () => 'Battle ended' }),
   // The answer on the call (call-response.js playerResponse.kind).
@@ -1101,6 +1254,16 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   // is (ruling R2A-5: filed, heard, agreed).
   'answer:directive': Object.freeze({ tone: 'yours', text: () => 'Filed · not yet heard' }),
   'answer:directive_left_slot': Object.freeze({ tone: 'yours', text: () => 'Filed · not heard' }),
+  // Cockpit Build 2b (spec §7.1, from merge): a filing still the battle's
+  // current one, when no check is left to hear it today — the battle's next
+  // decision time is absent or after the close of the session the filing
+  // falls in (horizon.js sessionCloseAfter). Never "not yet heard" then.
+  'answer:directive_no_check': Object.freeze({ tone: 'yours', text: () => 'Filed · no check left today' }),
+  // Cockpit Build 2b (Amendment D-10, spec §7.1, from merge): a later call the
+  // agent minted under your LIVE command, on its plan, within 1 % of the
+  // answered line, at a check whose `declared` event names the command's
+  // thread (prompt inclusion — never causation). Never on the call you answered.
+  'call:following': Object.freeze({ tone: 'yoursOutline', text: () => 'Following your call' }),
   // The call events (events.js CALL_EVENT_KINDS).
   'event:declared': null, // the mint — the eyebrow's "from the {t} check" already says it
   'event:answered': null, // the answer's own receipt — the tag reads the call's playerResponse
@@ -1109,8 +1272,39 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   'event:no_matching_trade': Object.freeze({ tone: 'muted', text: ({ check } = {}) => (check ? `No matching trade at ${check}` : 'No matching trade') }),
   'event:expired': Object.freeze({ tone: 'muted', text: ({ deadline } = {}) => (deadline ? `Expired · ${deadline}` : 'Expired') }),
   'event:ended_with_battle': Object.freeze({ tone: 'muted', text: () => 'Battle ended' }),
-  // Any later filing — chat, chip or cockpit — writes this event (directiveWriter.js), so the tag names none of them.
-  'event:superseded': Object.freeze({ tone: 'muted', text: () => 'Replaced by a later instruction' }),
+  // Any later filing — chat, chip or cockpit — writes this event (directiveWriter.js). Cockpit Build 2b
+  // (spec §7.1, from merge): the tag names the replacing filing's SOURCE, read from the battle's own
+  // exchange for the event's `supersededBy` thread — `source: 'cockpit'` → your later command; any other
+  // source → a chat instruction. With that exchange not found, the 2a fact: a later instruction.
+  'event:superseded': Object.freeze({
+    tone: 'muted',
+    text: ({ by, time } = {}) => {
+      const head = by === 'cockpit' ? 'Replaced by your later command' : (by === 'chat' ? 'Replaced by a chat instruction' : 'Replaced by a later instruction');
+      return time ? `${head} · ${time}` : head;
+    },
+  }),
+  // Cockpit Build 2b (Amendment D-6): the command retired because its stock left the book (or, for a
+  // chosen name, the name came into the book another way), at the check whose step retired it.
+  'event:retired': Object.freeze({
+    tone: 'muted',
+    text: ({ symbol, came = false, check } = {}) => {
+      if (!symbol) return 'Command retired';
+      const what = came ? `${symbol} came in another way` : `${symbol} left the book`;
+      return check ? `Command retired · ${what} at ${check}` : `Command retired · ${what}`;
+    },
+  }),
+});
+
+/**
+ * Cockpit Build 2b (Amendment D-9; spec §7.2): the mint's invalidation
+ * reasons (api/_utils/callRecords/validate.js invalidationReason — the three
+ * it returns at HEAD), one short line each. Any other reason → the bare
+ * "Dropped" (no row here, no guessed line).
+ */
+export const COCKPIT_DROPPED_REASON_TEXT = Object.freeze({
+  level_implausible: 'price line out of range',
+  level_non_finite: 'no usable price line',
+  no_observation: 'no price at that check',
 });
 
 /**
@@ -1120,9 +1314,21 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
  * the server proved it; the last never does, because the server may have
  * committed. `null` status = no response at all.
  */
-export function cockpitRefusalLine(status, body = null, { pendingLine = null } = {}) {
+export function cockpitRefusalLine(status, body = null, { pendingLine = null, v2 = false, names = {} } = {}) {
   const reason = body && typeof body === 'object' ? body.reason : null;
   const error = body && typeof body === 'object' ? body.error : null;
+  // Cockpit Build 2b (spec §7.3, flag on): the changed rows. replace_unconfirmed opens the confirmation and
+  // shows no line; the budget is commands; a name that can't come in, or a stock already gone, says which.
+  if (v2) {
+    if (status === 409 && reason === 'replace_unconfirmed') return null;
+    // A league battle's budget is still the group's daily chat messages (D-1's league branch).
+    if (status === 409 && reason === 'budget') return names.league ? 'No messages left — nothing was filed.' : 'No commands left — nothing was filed.';
+    if (status === 400 && error === 'ineligible_action') {
+      if (typeof reason === 'string' && reason.startsWith('pick_') && names.pickSymbol) return `${names.pickSymbol} can't come in right now — nothing was filed.`;
+      if (reason === 'counterpart_unavailable' && names.counterpart) return `${names.counterpart} can't come in right now — nothing was filed.`;
+      if (reason === 'symbol_not_held' && names.symbol) return `${names.symbol} has already left your book — nothing was filed.`;
+    }
+  }
   if (status === 409) {
     switch (reason) {
       case 'already_answered': return 'You\'ve already answered this call.';

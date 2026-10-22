@@ -321,8 +321,12 @@ export function captureRefsFor(candidate, confirmedCallIds) {
  * @param {string|null} p.tickId      the capture tick id, or null (capture off)
  * @param {(ctx: object, opts: { db: object, battle: object, battleId: string, deadlineMs: number }) => Promise<object>} [p.flips]
  *   the flip runner (§3.8: flip.js runCallFlips), injected so this module never imports flip.js
+ * @param {Array|null} p.anticipationCandidates Cockpit Build 2b (D-3): the check's linted anticipation
+ *   candidates — the list its `candidates` stamp is composed from (null = none). Handed to the mint.
+ * @param {Record<string, number|null>|null} p.rankMap Cockpit Build 2b (D-3): `{ symbol: technicalRank }`
+ *   from the rankings the check's prompt rendered (null = unranked). Handed to the mint.
  */
-export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, promptBuiltAt, tickId, flips = null, heardWriter = null, heard = null }) {
+export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, promptBuiltAt, tickId, flips = null, heardWriter = null, heard = null, anticipationCandidates, rankMap }) {
   if (!callsCtx || !callsActive(callsCtx.mode) || callsCtx.exit !== 'model_result' || !callsCtx.evalIdentity) return null;
   const battleId = battle.id;
   const { evalId, evalSeq } = callsCtx.evalIdentity;
@@ -369,8 +373,11 @@ export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, p
       // and the check's resolved mode.
       topLevelWatching: callsCtx.declarations.topLevelWatching,
       held: callsCtx.held ?? null,
-      locked: callsCtx.locked ?? null,
       mintedMode: callsCtx.mode,
+      // Build 2b (Amendment D-7, D-3): the seam's frozen book, and the two lists the options read.
+      book: callsCtx.book ?? null,
+      anticipationCandidates,
+      rankMap,
       universe: callsCtx.universe,
       observation: callsCtx.observation,
       promptBuiltAt,

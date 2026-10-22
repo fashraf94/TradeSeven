@@ -97,10 +97,16 @@ export function planHeard(call, parent, { thread, evalId, promptBuiltAt, executo
   // the request IS the selection, so any present result other than the selected swap — the slot
   // traded for the other option included — is a non-matching trade (review L6-3; a ruling item).
   const legTraded = legMatches(call, executorResult);
-  const noMatch = present && !acted && (call.kind === 'pick' || !legTraded);
+  // Cockpit Build 2b (Amendment D-5): an EXIT whose directive names who comes in (a call_replace, or a
+  // call_go with a chosen name) follows the pick's rules — the request IS the name, so any present
+  // result other than OUT→IN is a non-matching trade, and the shot's silent "leg traded" case does not
+  // apply. A v1 exit directive names nothing (`pick` is null) and keeps the shot's rules.
+  const named = call.kind !== 'pick' && call.direction === 'exit' && nonEmpty(pick);
+  const noMatch = present && !acted && (call.kind === 'pick' || named || !legTraded);
   // Retire: a go / pick directive acted on; and a PICK whose slot was traded for something other than
   // the selection — its swap-out is gone, so the directive can bind nothing (review L6-3 / V2-G2).
-  const retire = (acted && (call.kind === 'pick' || call.defaultAction === 'hold')) || (noMatch && call.kind === 'pick' && legTraded);
+  // D-5: a named directive acted on is retired; so is one whose OUT left for another name (OUT is gone).
+  const retire = (acted && (call.kind === 'pick' || call.defaultAction === 'hold' || named)) || (noMatch && (call.kind === 'pick' || named) && legTraded);
   return { stampHeard, acted, noMatch, retire, legTraded, pick, answerId: directiveRecordOf(parent, thread)?.answerId ?? null };
 }
 

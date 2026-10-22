@@ -70,6 +70,8 @@ describe('createCallsContext — the spec §3.3 shape', () => {
       held: null,
       // Build 2a (Amendment C-3, review L1-3): the bench names on cooldown at promptBuiltAt.
       locked: null,
+      // Build 2b (Amendment D-7 / D-3): the book and the swap's lists, frozen at the model seam.
+      book: null,
     });
   });
 

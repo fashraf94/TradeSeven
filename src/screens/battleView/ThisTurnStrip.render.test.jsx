@@ -160,3 +160,23 @@ describe('This turn — the Heard line', () => {
       .toBe(4);
   });
 });
+
+// Cockpit Build 2b (spec §5.9, flag on): the Research pill opens the bench sheet in browse mode. Absent the
+// handler (flag off) the strip is the shipped markup — no pill, the same root.
+describe('ThisTurnStrip — the Research pill (Cockpit Build 2b)', () => {
+  it('with onResearch: the pill on the right, "Research", labelled as the bench door; the strip\'s content unchanged', () => {
+    const plain = render({ directive: null, receipts: null, battleStatus: 'active', turn: TURN });
+    const withPill = render({ directive: null, receipts: null, battleStatus: 'active', turn: TURN, onResearch: () => {} });
+    expect(withPill).toContain('data-this-turn-research="1"');
+    expect(withPill).toContain('aria-label="Research · open the bench"');
+    expect(withPill).toContain('>Research</span>');
+    expect(plain).not.toContain('data-this-turn-research');
+    // The strip's own words are the same either way.
+    expect(withPill).toContain('Nothing queued');
+  });
+  it('without it: no pill, and the root is the shipped column', () => {
+    const html = render({ directive: DIRECTIVE, receipts: deriveReceipts(EXCHANGES, DIRECTIVE, 'active'), battleStatus: 'active', turn: TURN });
+    expect(html).not.toContain('data-this-turn-research');
+    expect(html).toMatch(/^<div data-this-turn="filed" style="display:flex;flex-direction:column;gap:3px;padding:8px 16px;border-bottom:1px solid rgba\(var\(--ft-scrim-rgb\), 0\.07\)">/);
+  });
+});

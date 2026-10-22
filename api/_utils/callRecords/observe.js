@@ -25,6 +25,8 @@ import { isSettlementQuoteUsable } from '../agentQuoteHealth.js';
 // research route validates against. Guarded by observe.test.js's import.
 import { selectBattleUniverse } from '../../../src/data/battleUniverse.js';
 import { callsActive } from './mode.js';
+// Cockpit Build 2b (Amendment D-7 / D-3): the book and the swap's lists, frozen at the same seam.
+import { freezeSwapBook } from './swappable.js';
 
 /** Where an observation was taken — one per §3.4 row that flips. */
 export const OBSERVATION_SOURCES = Object.freeze([
@@ -124,9 +126,15 @@ export function benchCooldownLocked(battle, atMs) {
  * `promptBuiltAt` (review L1-3: the seam does know lock status). They are the
  * only sources of `heldAtMint` and of counterpart usability; nothing is
  * inferred from prompt text.
+ *
+ * Cockpit Build 2b (Amendment D-7 / D-3; spec S-3): the BOOK is frozen here
+ * too — the tiers, the persisted bench and the hot bench the prompt was built
+ * from (swappable.js freezeSwapBook) — so the mint's "can this name come in?"
+ * reads the seam, never a battle a later swap in this check refreshed.
  */
 export function freezeModelObservation(callsCtx, { heldSymbols, benchSymbols, promptBuiltAt, replacedSymbols, battle }) {
   if (!callsCtx || !callsActive(callsCtx.mode)) return null;
+  callsCtx.book = freezeSwapBook(battle);
   callsCtx.held = Object.freeze((Array.isArray(heldSymbols) ? heldSymbols : []).filter((s) => typeof s === 'string' && s.length > 0));
   callsCtx.universe = Object.freeze([...selectBattleUniverse(battle)]);
   const observedAtMs = typeof promptBuiltAt === 'string' ? Date.parse(promptBuiltAt) : NaN;

@@ -79,6 +79,18 @@ const { processAgentBattle } = await import('./agent-evaluate.js');
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_PATH = resolve(HERE, '../_utils/__fixtures__/meetingCopyBaseline.json');
 /** SHA-256 of the fixture captured from the base tree (moved only by a recapture from such a tree). */
+// Same bytes, new reason (Oct 21 2026, PR #987): the created meeting's
+// expiresAt in created_off and created_shadow still reads
+// "2026-09-09T16:00:00.000Z", but it is no longer the old local-time
+// setHours(16) on a UTC clock. The meeting now expires at the earlier of
+// 4:00 PM ET and 60 minutes after creation, and FROZEN_NOW is 11:00 AM EDT,
+// so 60 minutes later is 12:00 PM EDT = 16:00Z. These rows cannot tell the old
+// noon bug from the cap; agent-evaluate.gameplanExpiry.test.js guards the
+// timezone fix. The interim head 00a4a4d1 (4:00 PM ET with no cap) moved both
+// values to "2026-09-09T20:00:00.000Z" with pin
+// 59b15c4d7d65d127300f8246d02dde52bfee7991b791c16388c273ada0aa83af (a
+// value-only reconciliation, the callRecordsOffGolden precedent); the
+// reconciliation back restores the captured pin below.
 const GOLDEN_SHA256 = '6c4b17d9cf65907f02e3b7326ba234aafb725bd632fca0973d94615464df3b01';
 const ENV = process.env;
 const GENERATE = ENV.GENERATE_MEETING_BASELINE === '1';

@@ -187,3 +187,46 @@ describe('the adopted belief is DROPPED once the subscription moves past it (rev
     expect(hook.belief).toBeNull();
   });
 });
+
+describe('Cockpit Build 2b (spec §6, D-2, D-4) — the 2b keys, only when given', () => {
+  it('answerBody: 2a\'s four keys exactly without them; pickSymbol and confirmReplace: true join only when given', async () => {
+    const { answerBody } = await import('./useCockpitAnswer');
+    const base = { battleId: 'ab-1', callId: 'c1', answer: 'hold', expectedDirectiveThreadId: null };
+    expect(JSON.stringify(answerBody(base))).toBe(JSON.stringify(base));
+    expect(answerBody({ ...base, pickSymbol: '', confirmReplace: false })).toEqual(base);
+    expect(answerBody({ ...base, answer: 'replace', pickSymbol: 'XOM', confirmReplace: true })).toEqual({ ...base, answer: 'replace', pickSymbol: 'XOM', confirmReplace: true });
+  });
+  it('the wire carries them: POST body with pickSymbol and confirmReplace', async () => {
+    const fetchSpy = vi.fn(async () => ({ status: 200, json: async () => ({}) }));
+    vi.stubGlobal('fetch', fetchSpy);
+    await postCallAnswer({ battleId: 'ab-1', callId: 'c1', answer: 'replace', expectedDirectiveThreadId: 't', pickSymbol: 'XOM', confirmReplace: true });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ battleId: 'ab-1', callId: 'c1', answer: 'replace', expectedDirectiveThreadId: 't', pickSymbol: 'XOM', confirmReplace: true });
+  });
+  it('submit(callId, answer, { pickSymbol, confirmReplace }): pending names the pick, the outcome keeps it, the result is returned', async () => {
+    let release;
+    const post = vi.fn(() => new Promise((r) => { release = r; }));
+    render({ post });
+    let done;
+    await act(async () => { done = hook.submit('c1', 'replace', { pickSymbol: 'XOM', confirmReplace: true }); });
+    expect(hook.pending).toEqual({ callId: 'c1', answer: 'replace', pickSymbol: 'XOM' });
+    expect(post).toHaveBeenCalledWith({ battleId: 'ab-1', callId: 'c1', answer: 'replace', expectedDirectiveThreadId: null, pickSymbol: 'XOM', confirmReplace: true });
+    const body = { error: 'refused', reason: 'ineligible_action', eligibility: 'pick_locked' };
+    let result;
+    await act(async () => { release({ status: 400, body }); result = await done; });
+    expect(result).toEqual({ status: 400, body });
+    expect(hook.outcomes.c1).toEqual({ status: 400, body, at: expect.any(Number), callId: 'c1', pickSymbol: 'XOM' });
+  });
+  it('a dropped second tap resolves to null; a 200 resolves to { status, body }', async () => {
+    let release;
+    const post = vi.fn(() => new Promise((r) => { release = r; }));
+    render({ post });
+    let first;
+    await act(async () => { first = hook.submit('c1', 'go'); });
+    let second;
+    await act(async () => { second = await hook.submit('c2', 'go'); });
+    expect(second).toBeNull();
+    let out;
+    await act(async () => { release({ status: 200, body: { callId: 'c1' } }); out = await first; });
+    expect(out).toEqual({ status: 200, body: { callId: 'c1' } });
+  });
+});

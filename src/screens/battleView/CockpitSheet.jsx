@@ -37,6 +37,7 @@ import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 import { AnswerButtons, StateTag, plainButton } from './CockpitFeed';
+import { ReplaceConfirm, CockpitActions } from './Cockpit2b';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -47,33 +48,30 @@ function canTakeFocus(el) {
 }
 
 /**
- * @param {object} props
- * @param {object|null} props.sheet   cockpitModel.sheetOf(...) — null renders nothing
- * @param {boolean} props.isDesktop
- * @param {boolean} props.reducedMotion
- * @param {string|null} props.checkGoneLine  shown after a tap on the check link found no card
- * @param {number} [props.bottomInset]  the phone's browser-chrome inset (the mark's F3 value)
- * @param {() => (HTMLElement|null)} [props.restoreFocus]  where focus goes when the opener cannot take it
+ * THE MODAL'S FOCUS CONTRACT (MODAL and FOCUS BACK above), as one hook — the
+ * 2a sheet's own, shared with the Cockpit Build 2b bench sheet (spec §5.7:
+ * "It uses 2a's sheet"). Focus moves in on open and back on close; Tab is
+ * trapped; Escape closes, also from a focus the page lost; a focus lost to
+ * <body> comes back in.
+ *
+ * SUSPENDED (Cockpit Build 2b, review CB4-9 / CB5-1): while another modal
+ * stands over this one — the research modal over the bench sheet — the sheet
+ * traps nothing, takes no key and pulls no focus; once it is lifted, a focus
+ * the page lost comes back in (so closing the research modal returns here).
+ *
+ * @returns {{ panelRef: object, onKeyDown: (e: KeyboardEvent) => void }}
  */
-export default function CockpitSheet({
-  sheet,
-  isDesktop = false,
-  reducedMotion = false,
-  checkGoneLine = null,
-  bottomInset = 0,
-  restoreFocus = null,
-  onClose,
-  onAnswer,
-  onOpenCheck,
-}) {
+export function useCockpitModal({ open, onClose, restoreFocus = null, suspended = false, onSuspendedEscape = null }) {
+  const suspendedRef = React.useRef(suspended);
+  suspendedRef.current = suspended;
+  const suspendedEscapeRef = React.useRef(onSuspendedEscape);
+  suspendedEscapeRef.current = onSuspendedEscape;
   const panelRef = React.useRef(null);
   const returnRef = React.useRef(null);
   const restoreRef = React.useRef(restoreFocus);
   restoreRef.current = restoreFocus;
   const closeRef = React.useRef(onClose);
   closeRef.current = onClose;
-  const open = Boolean(sheet);
-  const titleId = 'cockpit-sheet-title';
 
   // FOCUS IN on open, BACK on close.
   React.useEffect(() => {
@@ -96,7 +94,7 @@ export default function CockpitSheet({
 
   // A focus the page LOST (to <body>) while the sheet is open comes back in.
   React.useEffect(() => {
-    if (!open || typeof document === 'undefined') return;
+    if (!open || suspendedRef.current || typeof document === 'undefined') return;
     const active = document.activeElement;
     if ((!active || active === document.body) && panelRef.current) panelRef.current.focus();
   });
@@ -105,6 +103,12 @@ export default function CockpitSheet({
   React.useEffect(() => {
     if (!open || typeof document === 'undefined') return undefined;
     const onDocKey = (e) => {
+      if (suspendedRef.current) {
+        // The modal standing over this one has no key handling of its own: Escape closes IT, and the sheet
+        // beneath stays (review CB4-9).
+        if (e.key === 'Escape' && typeof suspendedEscapeRef.current === 'function') { e.preventDefault(); suspendedEscapeRef.current(); }
+        return;
+      }
       const active = document.activeElement;
       const lost = !active || active === document.body;
       if (!lost) return;
@@ -119,10 +123,9 @@ export default function CockpitSheet({
     return () => document.removeEventListener('keydown', onDocKey);
   }, [open]);
 
-  if (!open) return null;
-
   const onKeyDown = (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose?.(); return; }
+    if (suspendedRef.current) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeRef.current?.(); return; }
     if (e.key !== 'Tab') return;
     const nodes = [...(panelRef.current?.querySelectorAll(FOCUSABLE) ?? [])];
     if (nodes.length === 0) { e.preventDefault(); return; }
@@ -135,11 +138,26 @@ export default function CockpitSheet({
     else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
   };
 
-  const refusal = sheet.refusalLine ?? null;
+  return { panelRef, onKeyDown };
+}
 
+/** The layer's data attributes, by sheet: 2a's details sheet keeps its own names exactly. */
+const LAYER_ATTRS = Object.freeze({
+  details: Object.freeze({ layer: 'data-cockpit-sheet-layer', backdrop: 'data-cockpit-sheet-backdrop', panel: 'data-cockpit-sheet' }),
+  bench: Object.freeze({ layer: 'data-cockpit-bench-layer', backdrop: 'data-cockpit-bench-backdrop', panel: 'data-cockpit-bench-sheet' }),
+});
+
+/**
+ * THE MODAL LAYER: a bottom sheet on the phone, a panel inside the pane on
+ * desktop, a backdrop that closes, the `smooth` entrance (`instant` under
+ * reduced motion). The 2a sheet's markup, shared with the 2b bench sheet.
+ */
+export function CockpitModalLayer({ kind = 'details', isDesktop = false, reducedMotion = false, bottomInset = 0, titleId, panelRef, onKeyDown, onClose, suspended = false, children }) {
+  const attrs = LAYER_ATTRS[kind] ?? LAYER_ATTRS.details;
   return (
     <div
-      data-cockpit-sheet-layer={isDesktop ? 'desktop' : 'mobile'}
+      {...{ [attrs.layer]: isDesktop ? 'desktop' : 'mobile' }}
+      {...(suspended ? { inert: true, 'data-cockpit-modal-suspended': '1' } : {})}
       style={{
         position: isDesktop ? 'absolute' : 'fixed',
         inset: 0,
@@ -152,16 +170,16 @@ export default function CockpitSheet({
     >
       <div
         aria-hidden="true"
-        data-cockpit-sheet-backdrop="1"
+        {...{ [attrs.backdrop]: '1' }}
         onClick={onClose}
         style={{ position: 'absolute', inset: 0, background: `rgba(var(--ft-shadow-rgb), 0.6)` }}
       />
       <motion.div
         ref={panelRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal={suspended ? undefined : 'true'}
         aria-labelledby={titleId}
-        data-cockpit-sheet="1"
+        {...{ [attrs.panel]: '1' }}
         tabIndex={-1}
         onKeyDown={onKeyDown}
         initial={reducedMotion ? false : { opacity: 0, y: 24 }}
@@ -182,85 +200,142 @@ export default function CockpitSheet({
           color: cssVar('text-primary'),
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, color: cssVar('teal') }}>
-              {sheet.kindLabel}
-              {sheet.eyebrow ? <span style={{ color: cssVar('text-secondary'), fontWeight: 500, textTransform: 'none', letterSpacing: '0.02em' }}>{' · '}{sheet.eyebrow}</span> : null}
-            </span>
-            <h2 id={titleId} style={{ margin: 0, fontSize: 16, fontWeight: 800, lineHeight: 1.3 }}>{sheet.title}</h2>
-            <StateTag tag={sheet.tag} />
-          </div>
-          <button
-            type="button"
-            data-cockpit-sheet-close="1"
-            aria-label={COPY.cockpitSheetClose}
-            onClick={onClose}
-            style={{ minWidth: 36, minHeight: 36, border: 'none', background: 'transparent', color: cssVar('text-muted'), cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        {sheet.restatedLine ? <span style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{sheet.restatedLine}</span> : null}
-        {sheet.answerLine ? <span style={{ fontSize: 12, color: cssVar('call-yours') }}>{sheet.answerLine}</span> : null}
-
-        {sheet.said ? (
-          <figure data-cockpit-said="1" style={{ margin: 0, padding: '8px 10px', borderLeft: `2px solid ${cssVar('call-yours')}`, background: `rgba(var(--ft-teal-rgb), 0.05)` }}>
-            <blockquote style={{ margin: 0, fontSize: 13, lineHeight: 1.5, fontStyle: 'italic', color: cssVar('text-secondary') }}>{sheet.said.text}</blockquote>
-            <figcaption style={{ marginTop: 4, fontFamily: MONO, fontSize: 9.5, color: cssVar('text-secondary') }}>{sheet.said.label}</figcaption>
-          </figure>
-        ) : null}
-
-        {sheet.facts.length > 0 ? (
-          <dl data-cockpit-facts="1" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-            {sheet.facts.map((f) => (
-              <div key={f.key} data-cockpit-fact={f.key}>
-                <dt style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: cssVar('text-secondary') }}>{f.label}</dt>
-                <dd style={{ margin: '3px 0 0', fontFamily: MONO, fontSize: 12.5 }}>{f.value}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : null}
-
-        {sheet.defaultLine ? <span data-cockpit-default="1" style={{ fontSize: 12.5, color: cssVar('text-secondary') }}>{sheet.defaultLine}</span> : null}
-
-        {sheet.receipts.length > 0 ? (
-          <div data-cockpit-receipts="1" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: cssVar('text-secondary') }}>{COPY.cockpitSheetReceipts}</span>
-            <ol style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 3 }}>
-              {sheet.receipts.map((r) => <li key={r.key} data-cockpit-receipt="1" style={{ fontFamily: MONO, fontSize: 11.5, color: cssVar('text-secondary') }}>{r.text}</li>)}
-            </ol>
-          </div>
-        ) : null}
-
-        {sheet.restated.length > 0 ? (
-          <div data-cockpit-restatements="1" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {sheet.restated.map((r) => (
-              <div key={r.key} data-cockpit-restatement="1" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{r.check}</span>
-                <span style={{ fontSize: 12.5, color: cssVar('text-secondary') }}>{r.line}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        {sheet.checkLink?.label ? (
-          <button
-            type="button"
-            data-cockpit-check-link={sheet.checkLink.evalId}
-            onClick={() => onOpenCheck?.(sheet.checkLink.evalId)}
-            style={{ ...plainButton, alignSelf: 'flex-start', minHeight: 36, display: 'flex', alignItems: 'center' }}
-          >
-            <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, lineHeight: 1.2, color: cssVar('teal') }}>{sheet.checkLink.label}</span>
-          </button>
-        ) : null}
-        {checkGoneLine ? <span role="status" data-cockpit-check-gone="1" style={{ fontSize: 11.5, color: cssVar('text-secondary') }}>{checkGoneLine}</span> : null}
-
-        <AnswerButtons buttons={sheet.buttons} onAnswer={onAnswer} />
-        {sheet.blockedLine ? <span style={{ fontSize: 11.5, color: cssVar('text-secondary') }}>{sheet.blockedLine}</span> : null}
-        <div role="status" aria-live="polite" data-cockpit-sheet-refusal={refusal ? '1' : '0'} style={{ fontSize: 11.5, color: cssVar('call-dropped') }}>{refusal}</div>
+        {children}
       </motion.div>
     </div>
+  );
+}
+
+/**
+ * @param {object} props
+ * @param {object|null} props.sheet   cockpitModel.sheetOf(...) — null renders nothing
+ * @param {boolean} props.isDesktop
+ * @param {boolean} props.reducedMotion
+ * @param {string|null} props.checkGoneLine  shown after a tap on the check link found no card
+ * @param {number} [props.bottomInset]  the phone's browser-chrome inset (the mark's F3 value)
+ * @param {() => (HTMLElement|null)} [props.restoreFocus]  where focus goes when the opener cannot take it
+ * @param {string|null} [props.confirmLine]  Cockpit Build 2b (flag on, §6.3): the replace confirmation, in place of the buttons
+ * @param {object[]|null} [props.actions]    Cockpit Build 2b (flag on): cockpit2bModel.sheetButtonsOf — §6.2's buttons in place of 2a's
+ */
+export default function CockpitSheet({
+  sheet,
+  isDesktop = false,
+  reducedMotion = false,
+  checkGoneLine = null,
+  bottomInset = 0,
+  restoreFocus = null,
+  onClose,
+  onAnswer,
+  onOpenCheck,
+  confirmLine = null,
+  confirmSending = false,
+  onConfirmReplace = null,
+  onConfirmKeep = null,
+  actions = null,
+}) {
+  const open = Boolean(sheet);
+  const titleId = 'cockpit-sheet-title';
+  const { panelRef, onKeyDown } = useCockpitModal({ open, onClose, restoreFocus });
+
+  if (!open) return null;
+
+  const refusal = sheet.refusalLine ?? null;
+
+  return (
+    <CockpitModalLayer kind="details" isDesktop={isDesktop} reducedMotion={reducedMotion} bottomInset={bottomInset} titleId={titleId} panelRef={panelRef} onKeyDown={onKeyDown} onClose={onClose}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', fontWeight: 700, color: cssVar('teal') }}>
+            {sheet.kindLabel}
+            {sheet.eyebrow ? <span style={{ color: cssVar('text-secondary'), fontWeight: 500, textTransform: 'none', letterSpacing: '0.02em' }}>{' · '}{sheet.eyebrow}</span> : null}
+          </span>
+          <h2 id={titleId} style={{ margin: 0, fontSize: 16, fontWeight: 800, lineHeight: 1.3 }}>{sheet.title}</h2>
+          <StateTag tag={sheet.tag} />
+          {/* Cockpit Build 2b (D-10, from merge): a restatement under your live command, beside the card's own tag. */}
+          {sheet.followTag ? <StateTag tag={sheet.followTag} /> : null}
+        </div>
+        <button
+          type="button"
+          data-cockpit-sheet-close="1"
+          aria-label={COPY.cockpitSheetClose}
+          onClick={onClose}
+          style={{ minWidth: 36, minHeight: 36, border: 'none', background: 'transparent', color: cssVar('text-muted'), cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      {sheet.restatedLine ? <span style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{sheet.restatedLine}</span> : null}
+      {/* Cockpit Build 2b (D-12 rev 4, from merge): the agent moved its line; the earlier wordings are listed below. */}
+      {sheet.lineMoved ? <span data-cockpit-line-moved="1" style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{sheet.lineMoved}</span> : null}
+      {sheet.commandLine ? <span data-cockpit-command-line="1" style={{ fontSize: 12, color: cssVar('call-yours') }}>{sheet.commandLine}</span> : null}
+      {sheet.answerLine ? <span style={{ fontSize: 12, color: cssVar('call-yours') }}>{sheet.answerLine}</span> : null}
+
+      {sheet.said ? (
+        <figure data-cockpit-said="1" style={{ margin: 0, padding: '8px 10px', borderLeft: `2px solid ${cssVar('call-yours')}`, background: `rgba(var(--ft-teal-rgb), 0.05)` }}>
+          <blockquote style={{ margin: 0, fontSize: 13, lineHeight: 1.5, fontStyle: 'italic', color: cssVar('text-secondary') }}>{sheet.said.text}</blockquote>
+          <figcaption style={{ marginTop: 4, fontFamily: MONO, fontSize: 9.5, color: cssVar('text-secondary') }}>{sheet.said.label}</figcaption>
+        </figure>
+      ) : null}
+
+      {sheet.facts.length > 0 ? (
+        <dl data-cockpit-facts="1" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+          {sheet.facts.map((f) => (
+            <div key={f.key} data-cockpit-fact={f.key}>
+              <dt style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: cssVar('text-secondary') }}>{f.label}</dt>
+              <dd style={{ margin: '3px 0 0', fontFamily: MONO, fontSize: 12.5 }}>{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+
+      {sheet.defaultLine ? <span data-cockpit-default="1" style={{ fontSize: 12.5, color: cssVar('text-secondary') }}>{sheet.defaultLine}</span> : null}
+
+      {sheet.receipts.length > 0 ? (
+        <div data-cockpit-receipts="1" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: cssVar('text-secondary') }}>{COPY.cockpitSheetReceipts}</span>
+          <ol style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {sheet.receipts.map((r) => <li key={r.key} data-cockpit-receipt="1" style={{ fontFamily: MONO, fontSize: 11.5, color: cssVar('text-secondary') }}>{r.text}</li>)}
+          </ol>
+        </div>
+      ) : null}
+
+      {sheet.restated.length > 0 ? (
+        <div data-cockpit-restatements="1" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {sheet.restated.map((r) => (
+            <div key={r.key} data-cockpit-restatement="1" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontFamily: MONO, fontSize: 10.5, color: cssVar('text-secondary') }}>{r.check}</span>
+              <span style={{ fontSize: 12.5, color: cssVar('text-secondary') }}>{r.line}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {sheet.checkLink?.label ? (
+        <button
+          type="button"
+          data-cockpit-check-link={sheet.checkLink.evalId}
+          onClick={() => onOpenCheck?.(sheet.checkLink.evalId)}
+          style={{ ...plainButton, alignSelf: 'flex-start', minHeight: 36, display: 'flex', alignItems: 'center' }}
+        >
+          <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, lineHeight: 1.2, color: cssVar('teal') }}>{sheet.checkLink.label}</span>
+        </button>
+      ) : null}
+      {checkGoneLine ? <span role="status" data-cockpit-check-gone="1" style={{ fontSize: 11.5, color: cssVar('text-secondary') }}>{checkGoneLine}</span> : null}
+
+      {/* Review (Astra P2): the buttons answer a line other than the title — that line's own row, directly above them. */}
+      {sheet.targetLine ? (
+        <span data-cockpit-answer-target={sheet.targetCallId} style={{ fontSize: 12.5, fontWeight: 600, color: cssVar('text-primary'), lineHeight: 1.35 }}>{sheet.targetLine}</span>
+      ) : null}
+      {/* Cockpit Build 2b (flag on, §6.3): an override while a command is live elsewhere asks first, here. */}
+      {/* Under the flag the sheet answers in §6.2's words and costs (review CB4-2, CB6-3): the card's own buttons. */}
+      {confirmLine
+        ? <ReplaceConfirm line={confirmLine} phone={!isDesktop} sending={confirmSending} onReplace={onConfirmReplace} onKeep={onConfirmKeep} />
+        : (Array.isArray(actions)
+          ? <CockpitActions buttons={actions} phone={!isDesktop} onPress={(b) => onAnswer?.(b.callId, b.answer)} />
+          : <AnswerButtons buttons={sheet.buttons} onAnswer={onAnswer} />)}
+      {sheet.blockedLine ? <span style={{ fontSize: 11.5, color: cssVar('text-secondary') }}>{sheet.blockedLine}</span> : null}
+      <div role="status" aria-live="polite" data-cockpit-sheet-refusal={refusal ? '1' : '0'} style={{ fontSize: 11.5, color: cssVar('call-dropped') }}>{refusal}</div>
+    </CockpitModalLayer>
   );
 }

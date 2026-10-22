@@ -12,6 +12,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makeCallsFirestore, stored, storedUnder, touches } from '../__fixtures__/callsFirestore.js';
 import { makeTickBattle, makeDeclarations, makeObservation, FROZEN_NOW, HELD } from '../__fixtures__/tickStampsHarness.js';
+import { freezeSwapBook } from './swappable.js';
 import { runHeardPhase, planHeard, heardThreadOf, legMatches, executorResultPresent, answerIsLate, selectedPickOf, directiveRecordOf } from './heard.js';
 import { runCallFlips, resetFlipIndexMemo } from './flip.js';
 import { publishDeclarations, runModelCallsPhase } from './publish.js';
@@ -272,6 +273,7 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
   const candidateOf = () => buildMintCandidate({
     battleId: BATTLE_ID, evalId: EVAL, evalSeq: 1, mintedAtMs: NOW + 20_000, raw: makeDeclarations(), universe: UNIVERSE,
     observation: makeObservation(), promptBuiltAt: PROMPT_AT, tickId: `${BATTLE_ID}:1`, battle: committedBattle(), held: [...HELD], mintedMode: 'on',
+    book: freezeSwapBook(committedBattle()), anticipationCandidates: null, rankMap: null,
   });
   const far = () => Date.now() + 5_000;
 
@@ -294,7 +296,7 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
 
   it('a declarations-only check (watching, no call) publishes its record but DECLARES nothing: no declared event (review L2-6)', async () => {
     const db = makeCallsFirestore({ docs: { [`agentBattles/${BATTLE_ID}`]: committedBattle() } });
-    const candidate = buildMintCandidate({ battleId: BATTLE_ID, evalId: EVAL, evalSeq: 1, mintedAtMs: NOW + 20_000, raw: { calledShots: [], watching: ['AMD'], playerAsk: null, fork: null }, universe: UNIVERSE, observation: makeObservation(), promptBuiltAt: PROMPT_AT, tickId: null, battle: committedBattle(), held: [...HELD], mintedMode: 'on' });
+    const candidate = buildMintCandidate({ battleId: BATTLE_ID, evalId: EVAL, evalSeq: 1, mintedAtMs: NOW + 20_000, raw: { calledShots: [], watching: ['AMD'], playerAsk: null, fork: null }, universe: UNIVERSE, observation: makeObservation(), promptBuiltAt: PROMPT_AT, tickId: null, battle: committedBattle(), held: [...HELD], mintedMode: 'on', book: freezeSwapBook(committedBattle()), anticipationCandidates: null, rankMap: null });
     expect(candidate.calls).toEqual([]);
     await publishDeclarations({ db, battleId: BATTLE_ID, candidate, evalSeq: 1, txDeadlineMs: far(), rereadDeadlineMs: far() + 500, events: { enabled: true, nowMs: NOW + 20_000, promptBuiltAt: PROMPT_AT, promptDirectiveThreadId: THREAD, promptDirectiveText: 'x' } });
     expect(events(db)).toEqual({});
@@ -384,7 +386,7 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
     const ordinary = { text: 'Require stronger confirmation before entering', expiry: 'end_of_battle', directiveThreadId: 'thread-ordinary', createdAt: '2026-09-09T14:59:00.000Z' };
     const db = makeDb({ battle: committedBattle({ directive: ordinary, chatExchanges: [exchangeFor(callSlot())] }) });
     const ctx = { ...ctxOn(), evalIdentity: { evalId: EVAL, evalSeq: 1 }, observation: makeObservation(), executorResult: null, universe: UNIVERSE, declarations: { raw: makeDeclarations(), phase: 'expected', validation: { removed: [] } } };
-    const res = await runModelCallsPhase(ctx, { db, battle: stored(db, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: runHeardPhase, heard: HEARD });
+    const res = await runModelCallsPhase(ctx, { db, battle: stored(db, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: runHeardPhase, heard: HEARD, anticipationCandidates: null, rankMap: null });
     expect(res.wire).toBe('written');
     const ev = events(db)[`${EVAL}:declared`];
     expect(ev.promptDirectiveThreadId).toBe(THREAD);
@@ -396,7 +398,7 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
     const db = makeDb({ battle: committedBattle() });
     const ctx = { ...ctxOn(), evalIdentity: { evalId: EVAL, evalSeq: 1 }, observation: makeObservation(), executorResult: null, universe: UNIVERSE, declarations: { raw: makeDeclarations(), phase: 'expected', validation: { removed: [] } } };
     const suppressed = { directiveThreadId: THREAD, suppressed: 'mode_not_enforce' };
-    const res = await runModelCallsPhase(ctx, { db, battle: stored(db, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: runHeardPhase, heard: suppressed });
+    const res = await runModelCallsPhase(ctx, { db, battle: stored(db, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: runHeardPhase, heard: suppressed, anticipationCandidates: null, rankMap: null });
     expect(res.wire).toBe('written');
     const ev = events(db)[`${EVAL}:declared`];
     expect(ev).toBeDefined();
@@ -405,7 +407,7 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
     expect(res.heard).toMatchObject({ stopped: 'suppressed' });
     // The unsuppressed twin carries the inclusion fact.
     const db2 = makeDb({ battle: committedBattle() });
-    const res2 = await runModelCallsPhase({ ...ctx }, { db: db2, battle: stored(db2, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: runHeardPhase, heard: HEARD });
+    const res2 = await runModelCallsPhase({ ...ctx }, { db: db2, battle: stored(db2, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: runHeardPhase, heard: HEARD, anticipationCandidates: null, rankMap: null });
     expect(res2.wire).toBe('written');
     expect(events(db2)[`${EVAL}:declared`]).toMatchObject({ promptDirectiveThreadId: THREAD });
     expect(events(db2)[`${EVAL}:declared`].text).toContain("Directive in this check's prompt: Hold off on the AMD entry until today's close.");
@@ -415,13 +417,13 @@ describe('the events the Build 0 phase creates inside its transactions at resolv
     const db = makeDb({ battle: committedBattle() });
     const ctx = { ...ctxOn(), declarations: null, observation: makeObservation({ observedAtMs: NOW }), executorResult: SWAP_AMD_FOR_KO };
     const writer = vi.fn(runHeardPhase);
-    const res = await runModelCallsPhase(ctx, { db, battle: stored(db, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: writer, heard: HEARD });
+    const res = await runModelCallsPhase(ctx, { db, battle: stored(db, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: writer, heard: HEARD, anticipationCandidates: null, rankMap: null });
     expect(writer).toHaveBeenCalledTimes(1);
     expect(res.heard).toMatchObject({ thread: THREAD, heard: 1, acted: 1 });
     expect(stored(db, `agentBattles/${BATTLE_ID}`).cronState.callsDiag.heard).toMatchObject({ heard: 1, acted: 1 });
     const shadowDb = makeDb({ battle: committedBattle() });
     const writer2 = vi.fn(runHeardPhase);
-    const res2 = await runModelCallsPhase({ ...ctx, mode: 'shadow' }, { db: shadowDb, battle: stored(shadowDb, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: writer2, heard: HEARD });
+    const res2 = await runModelCallsPhase({ ...ctx, mode: 'shadow' }, { db: shadowDb, battle: stored(shadowDb, `agentBattles/${BATTLE_ID}`), timeBudgetMs: 290_000, promptBuiltAt: PROMPT_AT, tickId: null, flips: runCallFlips, heardWriter: writer2, heard: HEARD, anticipationCandidates: null, rankMap: null });
     expect(writer2).not.toHaveBeenCalled();
     expect(res2.heard).toBeNull();
     expect(stored(shadowDb, `agentBattles/${BATTLE_ID}`).cronState.callsDiag).not.toHaveProperty('heard');

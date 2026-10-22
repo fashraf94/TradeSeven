@@ -1,6 +1,6 @@
 # Call Record Field Contract V1.4 — Amendment C (revision 3)
 
-**Date:** 2026-10-03 · **Revision 2:** 2026-10-04 · **Revision 3:** 2026-10-05 · **Author:** Fable · **Status:** draft for blessing (framework chat). Blessing gates the Build 2a **merge**.
+**Date:** 2026-10-03 · **Revision 2:** 2026-10-04 · **Revision 3:** 2026-10-05 · **Author:** Fable · **Status:** **blessed** (framework chat, 2026-10-04/05). C-1 to C-6 live since Build 2a (#928, #930). C-7's placement is superseded by Amendment D-3; C-8 has its writer in Amendment D-4/D-5.
 **Builds on:** `docs/CALL_RECORD_FIELD_CONTRACT_V1_4.md` + Amendment A (`docs/design/COCKPIT_SPEC_V1_3_AMENDMENT_A.md`) + Amendment B rev 2 (`docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_B.md`).
 **Evidence:** the Build 2 discovery, `docs/audits/20261002_PHASE0_BUILD2_COCKPIT.md` (cited D-A1…D-A11, D-B1…D-B10); round 3, `docs/audits/20261002_DECLARATIONS_WORDING_ROUND3.md`; the Build 2a report, `docs/audits/20261003_BUILD2A_COCKPIT_SCREEN.md` (cited 2A-§n and its finding ids).
 **Scope:** C-1 to C-6 have writers and readers in Build 2a. C-7 and C-8 are **reserved for Build 2b**: defined and blessed now, with no writer or reader until 2b.
@@ -110,6 +110,8 @@ Basis: about 1 kept called shot in 11 repeats the previous check's (D-B6). `defa
 
 ## C-7 · Assembled picks (reserved for Build 2b)
 
+*Superseded by Amendment D-3 (`docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_D.md`): the options are stored on the exit call as `replacementOptions`; no assembled pick call is minted.*
+
 Pick calls gain **`origin: 'declared' | 'assembled'`**, and each entry in `options[]` gains **`source: 'agent' | 'bench'`**:
 - `'agent'` — the agent named the symbol at that check (as a counterpart or an entry candidate).
 - `'bench'` — the platform chose the symbol from the bench by a stated, deterministic rule that Build 2b's spec fixes.
@@ -119,6 +121,8 @@ Displays name the source of every option. An assembled pick never claims the age
 ---
 
 ## C-8 · Replacement instruction (reserved for Build 2b)
+
+*Implemented by Amendment D-4 (the `call_replace` writer, `callActions.v2`) and D-5 (its receipts), `docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_D.md`.*
 
 A new call-directive action, **`call_replace`**, in a new registry version **`callActions.v2`**: "if you exit OUT before the deadline, bring in IN."
 

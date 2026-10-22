@@ -22,9 +22,12 @@ import {
   serverMeetingOverrides,
 } from '../_utils/__fixtures__/tickStampsHarness.js';
 import { buildMintCandidate } from '../_utils/callRecords/candidate.js';
+import { freezeSwapBook } from '../_utils/callRecords/swappable.js';
 import { NON_MODEL_FLIP_EXITS } from '../_utils/callRecords/flip.js';
 import { resolveCaptureSchema } from '../_utils/tickCapture/captureConfig.js';
 import { makeCallsDb, storedDoc, storedCollection, callsTouches } from '../_utils/__fixtures__/callRecordsStore.js';
+import { TAIL_RESERVE_MS } from '../_utils/callRecords/publish.js';
+import { readFileSync } from 'node:fs';
 
 const mocks = vi.hoisted(() => ({ getStockAnalysisData: vi.fn(), fetchIntradayBatch: vi.fn(), create: vi.fn() }));
 const { swapMock } = vi.hoisted(() => ({ swapMock: vi.fn() }));
@@ -90,7 +93,7 @@ vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   };
 });
 
-const { processAgentBattle } = await import('./agent-evaluate.js');
+const { processAgentBattle, retireCommandIfLeft } = await import('./agent-evaluate.js');
 const { TRADE_DECISION_TOOL } = await import('../_utils/agentEvalToolSchema.js');
 const { generateTradeNarration } = await import('../_utils/voiceLayerTradeNarration.js');
 
@@ -463,6 +466,7 @@ function earlierCalls(calledShots) {
     universe: ['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', 'BTC', 'AMD', 'JPM'],
     observation: makeObservation({ observedAtMs: EARLIER_MINT_MS - 5_000 }), promptBuiltAt: new Date(EARLIER_MINT_MS - 5_000).toISOString(),
     tickId: null, battle: makeTickBattle(), held: [...HELD], mintedMode: 'shadow',
+    book: freezeSwapBook(makeTickBattle()), anticipationCandidates: null, rankMap: null,
   }).calls.map((c) => JSON.parse(JSON.stringify(c)));
 }
 const seedOf = (calls) => ({ calls: Object.fromEntries(calls.map((c) => [c.callId, c])) });
@@ -924,5 +928,100 @@ describe('Build 1a — heard end to end on the real check (spec §7)', () => {
     expect(storedDoc(db, 'calls', call.callId).playerResponse.heardEvalId).toBeNull();
     expect(storedCollection(db, 'callEvents')).toEqual({});
     expect(db.__store.battle.directive).toEqual(slot);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cockpit Build 2b (Amendment D-6; spec S-7): RETIRE ON EXIT through the real
+// check. A live call-family command whose stock is no longer in the book is
+// retired by the step before the prompt — the directive is NOT in this check's
+// prompt, the entry's heard stamp names no thread, the slot is cleared and the
+// `retired` event is written with the trade that took the stock out. At shadow
+// the step never runs (the slot is inactive there anyway).
+describe('Build 2b — retire on exit end to end (Amendment D-6)', () => {
+  const THREAD = 'thread-retire-e2e';
+  const CLOSE = Date.parse('2026-09-09T20:00:00.000Z');
+  const XOM_ID = 'battle-tick-1:eval_000:call:5';
+  const xomCall = () => ({
+    callId: XOM_ID, kind: 'called_shot', battleId: 'battle-tick-1', evalId: 'eval_000', evalSeq: 0, mintedAt: EARLIER_MINT_MS, mintedMode: 'on',
+    symbol: 'XOM', direction: 'exit', slot: 'star', counterpart: null, counterpartRaw: null, condition: { side: 'below', level: 110 },
+    horizon: { phrase: 'this_session', expiresAt: CLOSE, basis: 'this_session' }, defaultAction: 'hold', said: 'XOM below $110.',
+    evidence: { tickId: null, availability: 'off', priceAsOf: null }, hypothesisRef: null, origin: 'agent_initiative',
+    state: 'open', stateChangedAt: EARLIER_MINT_MS, stateSource: 'mint', directiveThreadId: THREAD, outcome: null, refused: null,
+    playerResponse: { answer: 'go_now', kind: 'directive', directiveThreadId: THREAD, callId: XOM_ID, filedAt: '2026-09-09T14:20:00.000Z', heardEvalId: null },
+  });
+  const slot = () => ({
+    text: "If XOM below $110.00 by today's close, go ahead and exit.", expiry: 'until_ms', directiveThreadId: THREAD, createdAt: '2026-09-09T14:20:00.000Z',
+    family: 'call', expiresAtMs: CLOSE, basis: 'this_session', callId: XOM_ID, kind: 'call_go',
+    action: { direction: 'exit', symbol: 'XOM', slot: 'star' }, answerId: `${XOM_ID}:answer:go_now:`, filedAt: '2026-09-09T14:20:00.000Z', textVersion: 'callActions.v1',
+  });
+  const battle = () => makeTickBattle({
+    directive: slot(), chatExchanges: [],
+    trades: [{ symbolOut: 'XOM', symbolIn: 'TSLA', tier: 'star', slotIndex: 1, swappedOutAt: '2026-09-09T14:40:00.000Z', source: 'risk_manager' }],
+  });
+
+  it("at 'on': the stale command is retired BEFORE the prompt — not in the prompt, not heard, the slot cleared, the retired event carries the trade", async () => {
+    const { db, entry } = await runTick({ mode: 'on', battle: battle(), seed: seedOf([xomCall()]) });
+    const prompt = JSON.stringify(mocks.create.mock.calls[0][0]);
+    expect(prompt).not.toContain('If XOM below $110.00');
+    expect(prompt).not.toContain(`threadId: ${THREAD}`);
+    expect(entry.heard?.directiveThreadId ?? null).toBeNull();
+    expect(db.__store.battle.directive).toBeNull();
+    expect(storedCollection(db, 'callEvents')[`${THREAD}:retired`]).toMatchObject({
+      kind: 'retired', callIds: [XOM_ID], symbol: 'XOM', reason: 'symbol_not_held',
+      trade: { symbolOut: 'XOM', symbolIn: 'TSLA', at: '2026-09-09T14:40:00.000Z', source: 'risk_manager' },
+      evidence: { evalId: null, promptBuiltAt: null },
+    });
+    // The call itself is untouched by the retirement (its own state and answer stand).
+    expect(storedDoc(db, 'calls', XOM_ID).playerResponse).toEqual(xomCall().playerResponse);
+  });
+
+  it("at 'on': a command whose stock is still held is NOT retired — the prompt carries it as before", async () => {
+    const held = { ...slot(), action: { direction: 'exit', symbol: 'TSLA', slot: 'star' }, text: "If TSLA below $110.00 by today's close, go ahead and exit." };
+    const call = { ...xomCall(), symbol: 'TSLA' };
+    const { db } = await runTick({ mode: 'on', battle: makeTickBattle({ directive: held, chatExchanges: [] }), seed: seedOf([call]) });
+    expect(JSON.stringify(mocks.create.mock.calls[0][0])).toContain("If TSLA below $110.00 by today's close, go ahead and exit.");
+    expect(db.__store.battle.directive).toEqual(held);
+    expect(storedCollection(db, 'callEvents')[`${THREAD}:retired`]).toBeUndefined();
+  });
+
+  it("review CB1-1 — a meeting-PENDING check retires too: the risk loop and the R11 pass still move the book there", async () => {
+    const b = makeTickBattle({
+      ...serverMeetingOverrides({ status: 'pending', diagnosis: 'drag', expiresAt: '2026-09-09T23:00:00.000Z', swaps: [] }),
+      directive: slot(), chatExchanges: [],
+      trades: [{ symbolOut: 'XOM', symbolIn: 'TSLA', tier: 'star', slotIndex: 1, swappedOutAt: '2026-09-09T14:40:00.000Z', source: 'risk_manager' }],
+    });
+    const { db } = await runTick({ mode: 'on', battle: b, seed: seedOf([xomCall()]) });
+    expect(mocks.create.mock.calls.length).toBe(0); // no prompt on a pending-meeting tick
+    expect(db.__store.battle.directive).toBeNull();
+    expect(storedCollection(db, 'callEvents')[`${THREAD}:retired`]).toMatchObject({ kind: 'retired', reason: 'symbol_not_held' });
+  });
+
+  it('review L7 S7x — both branches that return after an R11 pass run the retire step after the pass, before the return (source pin; the main pre-prompt call and the pending branch are behavioral above)', () => {
+    const src = readFileSync(new URL('./agent-evaluate.js', import.meta.url), 'utf8');
+    expect(src.match(/await retireCommandIfLeft\(\{ db, battleRef, battle, callsCtx \}\);/g)).toHaveLength(3);
+    const after = (head) => new RegExp(`${head}\\s*\\n\\s*await runSuppressionDeterministicPass\\([^\\n]*\\n(?:\\s*//[^\\n]*\\n)*\\s*await retireCommandIfLeft\\(\\{ db, battleRef, battle, callsCtx \\}\\);`);
+    expect(src).toMatch(after("if \\(gameplanHandled === 'skip_haiku'\\) \\{"));
+    expect(src).toMatch(after('if \\(gameplanTrigger\\) \\{'));
+  });
+
+  it("review L7 S9 — the step takes the tick's protected tail: inside it the step starts nothing (control: the same step early in the tick retires)", async () => {
+    const b = battle();
+    const db = makeCallsDb({ battle: b, rankingsDoc: makeRankingsDoc(), techDocs: makeTechDocs(), seed: seedOf([xomCall()]) });
+    const battleRef = db.collection('agentBattles').doc(db.__store.battle.id);
+    const memory = { ...b, id: db.__store.battle.id };
+    const late = { mode: 'on', handlerStartMs: Date.now() - (TIME_BUDGET_MS - TAIL_RESERVE_MS - 100), diag: { faults: [] } };
+    expect(await retireCommandIfLeft({ db, battleRef, battle: memory, callsCtx: late })).toEqual({ retired: false, reason: 'not_started' });
+    expect(db.__store.battle.directive).toEqual(slot());
+    expect(storedCollection(db, 'callEvents')).toEqual({});
+    const early = { mode: 'on', handlerStartMs: Date.now(), diag: { faults: [] } };
+    expect(await retireCommandIfLeft({ db, battleRef, battle: memory, callsCtx: early })).toEqual({ retired: true, reason: 'symbol_not_held' });
+    expect(memory.directive).toBeNull();
+  });
+
+  it("at 'shadow': the step never runs — the slot and the events untouched", async () => {
+    const { db } = await runTick({ mode: 'shadow', battle: battle(), seed: seedOf([xomCall()]) });
+    expect(db.__store.battle.directive).toEqual(slot());
+    expect(storedCollection(db, 'callEvents')[`${THREAD}:retired`]).toBeUndefined();
   });
 });

@@ -12,6 +12,7 @@ import {
 import { DECLARATION_CAPS, jsonBytes } from './validate.js';
 import { buildResolvedAgentManifest } from '../resolvedAgentManifest.js';
 import { FROZEN_NOW, HELD, makeTickBattle, makeDeclarations, makeObservation } from '../__fixtures__/tickStampsHarness.js';
+import { freezeSwapBook } from './swappable.js';
 
 const UNIVERSE = ['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', 'BTC', 'AMD', 'JPM'];
 const MINT = Date.parse(FROZEN_NOW) + 20_000;
@@ -20,6 +21,8 @@ const base = (over = {}) => ({
   universe: UNIVERSE, observation: makeObservation(), promptBuiltAt: FROZEN_NOW, tickId: 'battle-tick-1:1', battle: makeTickBattle(),
   // Build 2a (Amendment C-2/C-3, C-5): the held set frozen at the model seam, and the check's mode.
   held: [...HELD], mintedMode: 'shadow',
+  // Build 2b (Amendment D-7 / D-3): the seam's frozen book, and the options' two lists (none here).
+  book: freezeSwapBook(makeTickBattle()), anticipationCandidates: null, rankMap: null,
   ...over,
 });
 
@@ -51,8 +54,9 @@ describe('ids, ordinals, kinds', () => {
   it('the wire fields: playerResponse / directiveThreadId / outcome / refused start null; the call wire is not widened', () => {
     const [call] = buildMintCandidate(base()).calls;
     expect(Object.keys(call)).toEqual([
-      'callId', 'kind', 'battleId', 'evalId', 'evalSeq', 'mintedAt', 'mintedMode', 'symbol', 'direction', 'heldAtMint', 'slot', 'counterpart', 'counterpartRaw', 'condition',
-      'horizon', 'defaultAction', 'said', 'saidOk', 'evidence', 'hypothesisRef', 'origin', 'state', 'stateChangedAt', 'stateSource',
+      // Build 2b (Amendment D-3, D-9): replacementOptions after counterpartRaw, invalidatedReason before state.
+      'callId', 'kind', 'battleId', 'evalId', 'evalSeq', 'mintedAt', 'mintedMode', 'symbol', 'direction', 'heldAtMint', 'slot', 'counterpart', 'counterpartRaw', 'replacementOptions', 'condition',
+      'horizon', 'defaultAction', 'said', 'saidOk', 'evidence', 'hypothesisRef', 'origin', 'invalidatedReason', 'state', 'stateChangedAt', 'stateSource',
       'playerResponse', 'directiveThreadId', 'outcome', 'refused',
     ]);
     expect(call.playerResponse).toBeNull();
