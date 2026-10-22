@@ -9,8 +9,13 @@
 //                 the shipped sheets (AgentRecordSheet, ArchetypePicker,
 //                 EquipSheet, TraitsSheet), reused unchanged. They manage
 //                 neither inertness nor focus, so THIS hook registers them with
-//                 the stack — in the click handler that opens them, before they
-//                 mount — and releases them on close and on unmount.
+//                 the stack — in the click handler that opens them — and
+//                 releases them on close and on unmount. It registers them
+//                 `within` the hub: only the app root the hub sits in goes inert,
+//                 never "every child of <body>". The sheets portal into <body> and
+//                 keep their DOM there while they animate out; re-opened inside
+//                 that window a sheet re-uses that node, and marking every body
+//                 child would mark the very sheet being opened (review E3-1).
 //
 // `open(kind)` is a click handler. It keeps the control that was clicked, so
 // focus returns there when the sheet closes (Safari does not focus a clicked
@@ -48,8 +53,9 @@ export function useHubSheets(rootRef) {
     heldRef.current = null;
   };
 
-  // The hub going away (the Forge opened, a site switch) frees the background and moves no focus.
-  useEffect(() => () => { release(false); }, []);
+  // The hub going away (the Forge opened, a site switch) frees the background. Focus moves only if it was lost with
+  // the DOM that held it, and then to the new shell if there is one: a site switch must not leave it on <body>.
+  useEffect(() => () => { release('lost'); }, []);
 
   return {
     sheet,
@@ -60,7 +66,7 @@ export function useHubSheets(rootRef) {
       release(false);
       if (LEGACY.has(kind)) {
         heldRef.current = `legacy:${kind}`;
-        stack.open(heldRef.current, { opener });
+        stack.open(heldRef.current, { opener, within: rootRef.current });
       }
       if (kind === HUB_SHEETS.TRAITS) setTraitsEpoch((epoch) => epoch + 1);
       setSheet(kind);

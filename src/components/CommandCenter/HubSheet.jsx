@@ -62,6 +62,9 @@ export default function HubSheet({ title, eyebrow = null, label, phone = false, 
   }, []);
 
   const onKeyDown = (event) => {
+    // React bubbles a keydown from an overlay rendered among this one's children (a portal elsewhere in the DOM) up
+    // through here. It is that overlay's to trap, not this one's (review E3-4).
+    if (!dialogRef.current?.contains(event.target)) return;
     if (event.key === 'Escape') {
       event.stopPropagation();
       onClose();

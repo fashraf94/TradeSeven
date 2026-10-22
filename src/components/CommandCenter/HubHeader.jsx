@@ -3,8 +3,10 @@
 // Command Center hub, slice S1 — the header (the design's CcHeader, ff-app.jsx;
 // prompt §4.2): an eyebrow with today's date in ET and the player's name, and
 // the title. The mock-up's own top navigation (Compete · News · League ·
-// Forge) is prototype chrome and is not built: the app's sidebar and BottomNav
-// stay (ruling R-S1-3).
+// Forge) is prototype chrome and is not built: the desktop sidebar and BottomNav
+// stay (ruling R-S1-3). On a PHONE the app's drawer (Battle History,
+// Notifications, Rules & How to Play, Logout) opens only from the legacy shell's
+// hamburger, which the hub does not carry: S5 report, founder question Q-S5-1.
 //
 // On the phone the design's account circle stays as the profile affordance.
 // S5 wires it to the profile (spec §2); without a handler it is a disabled

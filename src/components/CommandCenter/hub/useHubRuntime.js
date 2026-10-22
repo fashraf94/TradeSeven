@@ -46,8 +46,13 @@ export function useHubRuntime({ hub, sections, rootRef }) {
   const live = hub != null;
   const agent = live ? hub.agent ?? null : null;
   const agentLoading = live && hub.agentLoading === true;
-  // The lists are the agent's OWNER'S: another owner's never show (hub/useHubLoadout.js ownerKey).
-  const lists = useHubLoadout({ enabled: live && Boolean(agent), ownerKey: agent?.ownerId ?? agent?.id ?? null });
+  // Lists read for another account never show (hub/useHubLoadout.js ownerKey); an equip made elsewhere to a list
+  // this hub has not read is read for once (equippedId).
+  const lists = useHubLoadout({
+    enabled: live && Boolean(agent),
+    ownerKey: agent?.ownerId ?? agent?.id ?? null,
+    equippedId: agent?.equippedWatchlistId || null,
+  });
   const sheets = useHubSheets(rootRef);
   const modalOpen = useHubModalOpen();
 

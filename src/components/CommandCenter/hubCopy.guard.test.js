@@ -75,7 +75,7 @@ const TOKEN_ATTRIBUTES = new Set(['accent', 'icon', 'kind', 'name', 'tone', 'ari
 const TOKEN = /^[a-z][a-zA-Z0-9-]*$/;
 /** Object properties whose string value is shown to the player, in any hub file. */
 const COPY_PROPERTIES = new Set([
-  'label', 'title', 'text', 'sub', 'caption', 'heading', 'message', 'placeholder', 'alt', 'ariaLabel', 'aria-label',
+  'label', 'title', 'text', 'sub', 'subtitle', 'caption', 'heading', 'message', 'placeholder', 'alt', 'ariaLabel', 'aria-label',
   'description', 'summary', 'cta', 'why', 'detail', 'eyebrow', 'hint', 'help', 'empty', 'line', 'line1', 'line2',
   // S2a: the deploy selector's `reason` reaches the strip and the card verbatim (S2a review A5-9).
   'reason',
@@ -281,7 +281,11 @@ describe('S5: the design note\'s labels, exactly, and nothing the hub cannot bac
     expect(reach).toEqual([]);
   });
 
-  it('the Loadout never says what the agent does with an idea (the design note\'s honesty line: the agent does not read ideas yet)', () => {
+  // The design note's point 5 asks every idea surface for one honest line about the agent ("the agent does not read or
+  // act on ideas yet"). That is a claim about the agent's behaviour, which the hub can neither back nor check, so S5's two
+  // labels ship without it and this fence keeps any such sentence out until the idea reader (slice S6) can carry it. The
+  // report puts the question to the founder (Q-S5-4).
+  it('S5 says nothing about what the agent does with an idea: no hub string names the agent and an idea together', () => {
     const words = ALL_COPY.filter((s) => /\bidea/i.test(s));
     expect(words.sort()).toEqual(expect.arrayContaining(['Plain watchlist · no idea yet']));
     for (const s of words) expect(s, s).not.toMatch(/\b(agent|shadow)\b.*\bidea|\bidea.*\b(agent|shadow)\b/i);

@@ -14,7 +14,10 @@
 //   - the tab labels are the words the hub's Forge doors carry.
 // The area bodies, the hooks and the service are stand-ins that mark themselves.
 
-import React, { act } from 'react';
+import React, { StrictMode, act, useEffect, useState } from 'react';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRoot } from 'react-dom/client';
 
@@ -33,7 +36,7 @@ vi.mock('../Forge/workshop/BundleBuildFlow', () => ({ default: () => null }));
 import ForgeWorkshop from '../Forge/workshop/ForgeWorkshop';
 import { RELEASE3_CHARACTER_TAB_ENABLED } from '../../config/featureFlags';
 import { HUB_COPY as COPY } from './hub/hubCopy';
-import { FORGE_AREAS } from './hubChrome';
+import { FORGE_AREAS, forgeAreaOf } from './hubChrome';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -103,5 +106,121 @@ describe('the tabs carry the words the hub\'s Forge doors name (display agreemen
     expect(COPY.loadout.forgeLists.endsWith('Lists')).toBe(true);
     expect(COPY.loadout.forgeCharacter.endsWith('Character')).toBe(true);
     expect(COPY.loadout.forgeTraits.endsWith('Traits')).toBe(true);
+  });
+});
+
+// ── App's Forge state machine, driving the real ForgeWorkshop (review E1-3) ──
+//
+// The model below is App.jsx's own lines (tied to its text by the first row), so the
+// rows run the real sequences: every pre-existing open, the bridge, a stale bridge call.
+
+const APP_TEXT = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'App.jsx'), 'utf8').replace(/\r\n/g, '\n');
+
+describe('the model is App\'s text', () => {
+  it('quotes App.jsx verbatim', () => {
+    for (const line of [
+      'const [showForge, setShowForge] = useState(false);',
+      "const [forgeInitialView, setForgeInitialView] = useState('discover');",
+      "if (showForge) setForgeInitialView('overview');",
+      '}, [showForge]);',
+      'const area = forgeAreaOf(request);',
+      'if (area && !showForge) setForgeInitialView(area);',
+      'setShowForge(true);',
+      'initialArea={forgeInitialView}',
+    ]) expect(APP_TEXT, line).toContain(line);
+  });
+});
+
+describe.each([['plain', false], ['StrictMode', true]])('App\'s Forge opens, %s', (_label, strict) => {
+  const api = { current: null };
+
+  function AppModel() {
+    const [showForge, setShowForge] = useState(false);
+    const [forgeInitialView, setForgeInitialView] = useState('discover');
+    useEffect(() => {
+      if (showForge) setForgeInitialView('overview');
+    }, [showForge]);
+    const onOpenForge = (request) => {
+      const area = forgeAreaOf(request);
+      if (area && !showForge) setForgeInitialView(area);
+      setShowForge(true);
+    };
+    api.current = { onOpenForge, legacyOpen: () => setShowForge(true), close: () => setShowForge(false) };
+    if (showForge) {
+      return <ForgeWorkshop onClose={() => setShowForge(false)} initialArea={forgeInitialView} user={{ uid: 'u' }} agent={{ id: 'a', name: 'Nova' }} />;
+    }
+    return <div data-testid="dashboard" />;
+  }
+
+  async function mountApp() {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => { root.render(strict ? <StrictMode><AppModel /></StrictMode> : <AppModel />); await Promise.resolve(); });
+  }
+  const shown = () => host.querySelector('[data-area]')?.getAttribute('data-area') ?? (host.querySelector('[data-testid="dashboard"]') ? 'DASHBOARD' : null);
+  const run = async (fn) => { await act(async () => { fn(); await Promise.resolve(); }); await flush(); };
+
+  it('every pre-existing open lands on the overview, before and after a bridge open', async () => {
+    await mountApp();
+    expect(shown()).toBe('DASHBOARD');
+    await run(() => api.current.legacyOpen());
+    expect(shown()).toBe('overview');
+    await run(() => api.current.close());
+    await run(() => api.current.onOpenForge({ area: 'watchlists', returnTo: 'dashboard' }));
+    expect(shown()).toBe('watchlists');
+    await run(() => api.current.close());
+    await run(() => api.current.legacyOpen());
+    expect(shown()).toBe('overview');
+  });
+
+  it('no target (undefined, {}, {returnTo}, an event-like object, null) is exactly the bare open', async () => {
+    await mountApp();
+    for (const request of [undefined, {}, { returnTo: 'dashboard' }, { type: 'click' }, null]) {
+      await run(() => api.current.onOpenForge(request));
+      expect(shown(), JSON.stringify(request)).toBe('overview');
+      await run(() => api.current.close());
+    }
+  });
+
+  it('each area the bridge names opens on it, and the next legacy open is the overview again', async () => {
+    await mountApp();
+    for (const area of Object.values(FORGE_AREAS)) {
+      await run(() => api.current.onOpenForge({ area }));
+      expect(shown(), area).toBe(area);
+      await run(() => api.current.close());
+      await run(() => api.current.legacyOpen());
+      expect(shown(), `legacy after ${area}`).toBe('overview');
+      await run(() => api.current.close());
+    }
+  });
+
+  it('two bridge calls in one batch: the last area wins and nothing is left behind; a bridge call and a legacy open in one batch keep the bridge target', async () => {
+    await mountApp();
+    await run(() => { api.current.onOpenForge({ area: 'rules' }); api.current.onOpenForge({ area: 'traits' }); });
+    expect(shown()).toBe('traits');
+    await run(() => api.current.close());
+    await run(() => { api.current.onOpenForge({ area: 'rules' }); api.current.legacyOpen(); });
+    expect(shown()).toBe('rules');
+    await run(() => api.current.close());
+    await run(() => api.current.legacyOpen());
+    expect(shown()).toBe('overview');
+  });
+
+  it('a list id alone opens Lists', async () => {
+    await mountApp();
+    await run(() => api.current.onOpenForge({ watchlistId: 'wl-1', returnTo: 'dashboard' }));
+    expect(shown()).toBe('watchlists');
+  });
+
+  it('a bridge call while the Forge is ALREADY open moves nothing and leaves nothing for the next open', async () => {
+    await mountApp();
+    await run(() => api.current.legacyOpen());
+    expect(shown()).toBe('overview');
+    await run(() => api.current.onOpenForge({ area: 'rules' }));
+    expect(shown()).toBe('overview');
+    await run(() => api.current.close());
+    await run(() => api.current.legacyOpen());
+    expect(shown()).toBe('overview');
   });
 });

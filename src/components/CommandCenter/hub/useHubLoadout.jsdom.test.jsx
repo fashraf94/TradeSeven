@@ -32,17 +32,17 @@ let root;
 let api;
 let errorSpy;
 
-function Harness({ enabled, ownerKey }) {
-  api = useHubLoadout({ enabled, ownerKey });
+function Harness({ enabled, ownerKey, equippedId }) {
+  api = useHubLoadout({ enabled, ownerKey, equippedId });
   return null;
 }
-const render = (enabled, ownerKey = null) => {
+const render = (enabled, ownerKey = null, equippedId = null) => {
   if (!host) {
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
   }
-  act(() => { root.render(<Harness enabled={enabled} ownerKey={ownerKey} />); });
+  act(() => { root.render(<Harness enabled={enabled} ownerKey={ownerKey} equippedId={equippedId} />); });
 };
 
 beforeEach(() => {
@@ -254,5 +254,91 @@ describe("useHubLoadout — whose lists these are (spec §3: drop another owner'
     await flush();
     expect(listWatchlists).toHaveBeenCalledTimes(1);
     expect(api.committed.map((l) => l.watchlistId)).toEqual(['a-list']);
+  });
+});
+
+describe('useHubLoadout — an equip made elsewhere (ruling R-S5-1, "after an equip"; review E4-2)', () => {
+  it('an equipped list the held lists do not know is read for once, and then it is known', async () => {
+    listWatchlists.mockResolvedValueOnce([committed('wl-1')]).mockResolvedValueOnce([committed('wl-1'), committed('wl-2')]);
+    render(true, 'owner-a', 'wl-1');
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(1);
+    // another tab equips a list committed after this hub read: the agent subscription delivers the new id
+    render(true, 'owner-a', 'wl-2');
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+    expect(api.committed.map((l) => l.watchlistId)).toEqual(['wl-1', 'wl-2']);
+    render(true, 'owner-a', 'wl-2');
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+  });
+
+  it('an id that really is gone is read for ONCE, not in a loop — across re-renders and a second answer', async () => {
+    listWatchlists.mockResolvedValue([committed('wl-1')]);
+    render(true, 'owner-a', 'wl-gone');
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 3; i += 1) { render(true, 'owner-a', 'wl-gone'); await flush(); }
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+    expect(api.status).toBe(LISTS_STATUS.READY);
+  });
+
+  it('a different missing id is read for once more', async () => {
+    listWatchlists.mockResolvedValue([committed('wl-1')]);
+    render(true, 'owner-a', 'wl-gone');
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+    render(true, 'owner-a', 'wl-other');
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(3);
+  });
+
+  it('an equipped list the held lists already know costs no extra read; neither does no equipped list', async () => {
+    listWatchlists.mockResolvedValue([committed('wl-1'), committed('wl-2')]);
+    render(true, 'owner-a', 'wl-1');
+    await flush();
+    render(true, 'owner-a', 'wl-2');
+    await flush();
+    render(true, 'owner-a', null);
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the first read: an id the first read has not answered yet is not a second read, and a FAILED first read is Retry's, not a loop", async () => {
+    const pending = deferred();
+    listWatchlists.mockReturnValueOnce(pending.promise);
+    render(true, 'owner-a', 'wl-1');
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(1);
+    await act(async () => { pending.resolve([committed('wl-1')]); await Promise.resolve(); });
+    expect(listWatchlists).toHaveBeenCalledTimes(1);
+
+    listWatchlists.mockReset();
+    act(() => { root.unmount(); });
+    host.remove();
+    host = null;
+    root = null;
+    listWatchlists.mockRejectedValue(new Error('offline'));
+    render(true, 'owner-a', 'wl-9');
+    await flush();
+    expect(api.status).toBe(LISTS_STATUS.ERROR);
+    expect(listWatchlists).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads nothing while disabled, whatever the equipped id', async () => {
+    render(false, 'owner-a', 'wl-1');
+    await flush();
+    expect(listWatchlists).not.toHaveBeenCalled();
+  });
+
+  it('a new account starts afresh: an id asked for under the old owner is asked for again under the new one', async () => {
+    listWatchlists.mockResolvedValue([committed('wl-1')]);
+    render(true, 'owner-a', 'wl-gone');
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+    render(true, 'owner-b', 'wl-gone');
+    await flush();
+    // owner-b: its mount read, and its one extra read for the same id
+    expect(listWatchlists).toHaveBeenCalledTimes(4);
   });
 });

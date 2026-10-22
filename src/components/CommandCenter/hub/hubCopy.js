@@ -143,7 +143,8 @@ export const HUB_COPY = Object.freeze({
     noWatchlistSub: 'Your agent ranges the full board.',
     watchlistFallback: 'Watchlist',
     unavailable: (name) => `${name} (unavailable)`,
-    unavailableNote: 'This list is no longer committed, so your agent is not using it.',
+    /** What is known and nothing more: the agent document names this list, and the lists just read do not include it. */
+    unavailableNote: 'Your agent has this list equipped, but it isn’t among your committed lists.',
     listsError: 'Couldn’t load your lists',
     retry: 'Retry',
     more: (n) => `+${n} more`,
@@ -169,7 +170,7 @@ export const HUB_COPY = Object.freeze({
     none: 'No watchlist',
     noneSub: 'Let the agent range the full board',
     untitled: 'Untitled watchlist',
-    tickers: (n) => `${n} tickers`,
+    tickers: (n) => `${n} ticker${n === 1 ? '' : 's'}`,
     createInForge: 'Create a watchlist in Forge',
   }),
 
@@ -205,6 +206,8 @@ export const HUB_COPY = Object.freeze({
     rowLabel: (n) => `Game history, ${n} completed games`,
     /** Spec §7, exactly. */
     careerCaption: 'career · BaggerBomb vs CPU · as recorded',
+    /** Spec §7: absent or malformed wins and losses read unavailable; totals are never synthesized. */
+    careerUnavailable: 'Career record unavailable',
   }),
 
   deploy: Object.freeze({

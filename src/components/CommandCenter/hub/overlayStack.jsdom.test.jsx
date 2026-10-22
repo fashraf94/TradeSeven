@@ -10,7 +10,7 @@ import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot } from 'react-dom/client';
 import { HubOverlayProvider, useHubModalOpen, useHubOverlays } from './HubOverlays';
-import { createOverlayStack, inertSiblings } from './overlayStack';
+import { appRootOf, createOverlayStack, inertSiblings } from './overlayStack';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -370,5 +370,257 @@ describe('the console stays quiet', () => {
     stack.close('a');
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe('inertSiblings(keep, only) and appRootOf — marking by scope (review E3-1)', () => {
+  it('with `only`, exactly those elements are marked and restored; every other body child is left alone', () => {
+    const a = el();
+    const b = el();
+    const c = el();
+    const undo = inertSiblings(null, [a, b]);
+    expect([appRoot, a, b, c].map(isInert)).toEqual([false, true, true, false]);
+    undo();
+    expect([a, b].map(isInert)).toEqual([false, false]);
+  });
+
+  it('`only` ignores holes, honours `keep`, and is reference-counted with the default form', () => {
+    const a = el();
+    const undoAll = inertSiblings(null);
+    const undoOnly = inertSiblings(a, [null, a, appRoot, undefined]);
+    expect(isInert(appRoot)).toBe(true);
+    undoAll();
+    expect(isInert(appRoot)).toBe(true);
+    undoOnly();
+    expect(isInert(appRoot)).toBe(false);
+  });
+
+  it('appRootOf is the ancestor that is a child of <body>, the element itself when it is one, and null when detached or absent', () => {
+    const inner = el('div', { parent: el('div', { parent: appRoot }) });
+    expect(appRootOf(inner)).toBe(appRoot);
+    expect(appRootOf(appRoot)).toBe(appRoot);
+    expect(appRootOf(document.createElement('div'))).toBeNull();
+    expect(appRootOf(null)).toBeNull();
+  });
+});
+
+describe('createOverlayStack — registering a shipped sheet `within` the hub (review E3-1, E2-1)', () => {
+  it('only the app root the hub sits in goes inert: a body child that is not the app is never marked', () => {
+    const hubHost = el('section', { parent: appRoot });
+    const exiting = el('div', { id: 'exiting-sheet' });
+    const stack = createOverlayStack();
+    stack.open('legacy:archetype', { within: hubHost });
+    expect(isInert(appRoot)).toBe(true);
+    expect(isInert(hubHost)).toBe(false);
+    expect(isInert(exiting)).toBe(false);
+    stack.close('legacy:archetype', { focus: false });
+    expect(isInert(appRoot)).toBe(false);
+  });
+
+  it("close then re-open inside the exit window (the sheet's DOM still in <body>): the re-opened sheet is interactive", () => {
+    const hubHost = el('section', { parent: appRoot });
+    const stack = createOverlayStack();
+    stack.open('legacy:archetype', { within: hubHost });
+    const sheet = el('div', { id: 'sheet' });
+    const close = button(sheet, 'Close');
+    stack.close('legacy:archetype', { focus: false });
+    // the exit animation holds `sheet` in <body> and the opener is activated again: the sheet is re-used
+    stack.open('legacy:archetype', { within: hubHost });
+    expect(isInert(sheet)).toBe(false);
+    expect(close.closest('[inert]')).toBeNull();
+    expect(isInert(appRoot)).toBe(true);
+    stack.close('legacy:archetype', { focus: false });
+    expect(isInert(appRoot)).toBe(false);
+  });
+
+  it('the default registration WOULD mark that sheet: this is why a shipped sheet registers within, not by exclusion', () => {
+    const stack = createOverlayStack();
+    stack.open('legacy:archetype');
+    const sheet = el('div', { id: 'sheet' });
+    stack.close('legacy:archetype', { focus: false });
+    stack.open('legacy:archetype');
+    expect(isInert(sheet)).toBe(true);
+    stack.releaseAll();
+  });
+
+  it('an overlay beneath that registered with `keep` goes inert with the app, and is restored when the upper one closes', () => {
+    const hubHost = el('section', { parent: appRoot });
+    const lower = el('div', { id: 'lower' });
+    const stack = createOverlayStack();
+    stack.open('sheet:a', { keep: lower });
+    const upper = el('div', { id: 'legacy-portal' });
+    stack.open('legacy:b', { within: hubHost });
+    expect(isInert(lower)).toBe(true);
+    expect(isInert(upper)).toBe(false);
+    stack.close('legacy:b', { focus: false });
+    expect(isInert(lower)).toBe(false);
+    expect(isInert(appRoot)).toBe(true);
+    stack.close('sheet:a', { focus: false });
+    expect(isInert(appRoot)).toBe(false);
+  });
+
+  it('two overlays within the same hub hold the app root between them (the last to close frees it)', () => {
+    const hubHost = el('section', { parent: appRoot });
+    const stack = createOverlayStack();
+    stack.open('legacy:a', { within: hubHost });
+    stack.open('legacy:b', { within: hubHost });
+    stack.close('legacy:a', { focus: false });
+    expect(isInert(appRoot)).toBe(true);
+    stack.close('legacy:b', { focus: false });
+    expect(isInert(appRoot)).toBe(false);
+  });
+
+  it('a hub element that is detached (or no element) falls back to the default: every body child but `keep`', () => {
+    const other = el();
+    const stack = createOverlayStack();
+    stack.open('x', { within: document.createElement('section') });
+    expect([appRoot, other].map(isInert)).toEqual([true, true]);
+    stack.releaseAll();
+    stack.open('y', { within: null });
+    expect([appRoot, other].map(isInert)).toEqual([true, true]);
+    stack.releaseAll();
+  });
+});
+
+describe('createOverlayStack — releaseAll and modalOpen (review E3-3)', () => {
+  it('releaseAll tells React the stack is empty, once, and only if something was open', () => {
+    const changes = [];
+    const stack = createOverlayStack({ onChange: (open) => changes.push(open) });
+    stack.releaseAll();
+    expect(changes).toEqual([]);
+    stack.open('a');
+    stack.open('b');
+    stack.releaseAll();
+    expect(changes).toEqual([true, false]);
+    expect(stack.modalOpen).toBe(false);
+    expect(isInert(appRoot)).toBe(false);
+  });
+
+  it('with the provider mounted, a releaseAll leaves modalOpen false in React too (the three exposures agree)', () => {
+    const host = el('div', { id: 'hub-host' });
+    const root = createRoot(host);
+    let api;
+    function Probe() {
+      api = { stack: useHubOverlays(), modalOpen: useHubModalOpen() };
+      return <span data-probe={String(api.modalOpen)} />;
+    }
+    act(() => { root.render(<HubOverlayProvider><Probe /></HubOverlayProvider>); });
+    act(() => { api.stack.open('a'); });
+    expect(host.querySelector('[data-probe]').getAttribute('data-probe')).toBe('true');
+    act(() => { api.stack.releaseAll(); });
+    expect(host.querySelector('[data-probe]').getAttribute('data-probe')).toBe('false');
+    expect(api.stack.modalOpen).toBe(false);
+    act(() => { root.unmount(); });
+  });
+});
+
+describe('createOverlayStack — focus is never left on <body> (review E3-2, E3-4)', () => {
+  it("openers owed to an overlay closed out of order survive an intermediate close: the last one still reaches the first overlay's opener", () => {
+    const openerA = button(appRoot, 'a');
+    const stack = createOverlayStack();
+    stack.open('a', { opener: openerA });
+    const dialogA = el('div', { id: 'dialog-a' });
+    const openerB = button(dialogA, 'b');
+    stack.open('b', { opener: openerB });
+    const dialogB = el('div', { id: 'dialog-b' });
+    const openerC = button(dialogB, 'c');
+    stack.open('c', { opener: openerC });
+    stack.close('a');
+    dialogA.remove();
+    stack.close('c');
+    expect(document.activeElement).toBe(openerC);
+    stack.close('b');
+    expect(document.activeElement).toBe(openerA);
+    expect(isInert(appRoot)).toBe(false);
+  });
+
+  it('a stranded opener that took focus is spent: it is not offered again', () => {
+    const openerA = button(appRoot, 'a');
+    const stack = createOverlayStack();
+    stack.open('a', { opener: openerA });
+    const dialogA = el('div');
+    const openerB = button(dialogA, 'b');
+    stack.open('b', { opener: openerB });
+    stack.close('a');
+    dialogA.remove();
+    stack.close('b');
+    expect(document.activeElement).toBe(openerA);
+    const elsewhere = button(el('div'), 'elsewhere');
+    elsewhere.focus();
+    openerA.remove();
+    stack.open('c', { opener: elsewhere });
+    elsewhere.blur();
+    stack.close('c');
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it('the top overlay closes onto a lower one and its opener is gone: focus goes into the lower overlay, not <body>', () => {
+    const stack = createOverlayStack();
+    const lower = el('div', { id: 'lower' });
+    const dialog = el('div', { parent: lower });
+    dialog.setAttribute('role', 'dialog');
+    dialog.tabIndex = -1;
+    stack.open('lower', { keep: lower, opener: button(appRoot, 'x') });
+    const upperOpener = button(dialog, 'opens upper');
+    stack.open('upper', { opener: upperOpener });
+    upperOpener.remove();
+    stack.close('upper');
+    expect(document.activeElement).toBe(dialog);
+    stack.releaseAll();
+  });
+
+  it('with no opener, no fallback and nothing else open, focus lands on the hub shell (a site switch), never <body>', () => {
+    const shell = el('section');
+    shell.setAttribute('data-hub', 'shell');
+    shell.tabIndex = -1;
+    const stack = createOverlayStack();
+    const gone = button(appRoot, 'gone');
+    stack.open('a', { opener: gone });
+    gone.remove();
+    stack.close('a', { fallback: null });
+    expect(document.activeElement).toBe(shell);
+  });
+
+  it('a fallback that can take focus wins over the shell', () => {
+    const shell = el('section');
+    shell.setAttribute('data-hub', 'shell');
+    shell.tabIndex = -1;
+    const fallback = el('section', { id: 'fallback' });
+    fallback.tabIndex = -1;
+    const stack = createOverlayStack();
+    const gone = button(appRoot, 'gone');
+    stack.open('a', { opener: gone });
+    gone.remove();
+    stack.close('a', { fallback });
+    expect(document.activeElement).toBe(fallback);
+  });
+
+  it('focus: "lost" moves focus only when it has been lost, and then to the opener', () => {
+    const opener = button(appRoot, 'open');
+    const elsewhere = button(el('div'), 'elsewhere');
+    const stack = createOverlayStack();
+    stack.open('a', { opener });
+    elsewhere.focus();
+    stack.close('a', { focus: 'lost' });
+    expect(document.activeElement).toBe(elsewhere);
+    stack.open('b', { opener });
+    elsewhere.blur();
+    expect(document.activeElement).toBe(document.body);
+    stack.close('b', { focus: 'lost' });
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it('focus: "lost" after an unmount reaches the new shell when the opener and the fallback went with the old one', () => {
+    const oldShell = el('section', { parent: appRoot });
+    const opener = button(oldShell, 'open');
+    const stack = createOverlayStack();
+    stack.open('a', { opener, within: oldShell });
+    opener.blur();
+    oldShell.remove();
+    const newShell = el('section', { parent: appRoot });
+    newShell.setAttribute('data-hub', 'shell');
+    newShell.tabIndex = -1;
+    stack.close('a', { fallback: oldShell, focus: 'lost' });
+    expect(document.activeElement).toBe(newShell);
   });
 });

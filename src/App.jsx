@@ -8665,10 +8665,12 @@ export default function PortfolioDuel() {
   // as setShowForge(true), so the effect above — which resets the view to 'overview'
   // for the NEXT open — runs after the Forge has mounted on the target, exactly as the
   // watchlist editor's return path already depends on. A request that names no area is
-  // the bare setShowForge(true) every other Forge open makes today.
+  // the bare setShowForge(true) every other Forge open makes today. The area is set only
+  // while the Forge is closed: an open Forge has read its first area already, and the
+  // reset effect would not run again, so the name would leak into the NEXT open.
   const onOpenForge = (request) => {
     const area = forgeAreaOf(request);
-    if (area) setForgeInitialView(area);
+    if (area && !showForge) setForgeInitialView(area);
     setShowForge(true);
   };
   const hubProps = { agent: primaryAgent, agentLoading, activeAgentBattles, setScreen, onOpenForge };
@@ -12569,8 +12571,10 @@ export default function PortfolioDuel() {
           S5 (ruling R-S5-7): withheld the same way while the hub is the dashboard
           on screen (hubOwnsScreen), at both sites — the button would sit on the
           phone strip's action — and the hub header's "Report a bug" dispatches
-          that same event. This file is imported by no test; `vite build` is its
-          only check (BUILD_RULES §2). */}
+          that same event. This file is imported by one suite (App.xpModal.jsdom, at
+          desktop width), so the S5 edits here are pinned as source text in the hub's
+          mount guard and their decisions are tested in hubChrome.test.js; `vite
+          build` is the rest of its check (BUILD_RULES §2). */}
       {user && (
         <ClashBotWidget
           user={user}

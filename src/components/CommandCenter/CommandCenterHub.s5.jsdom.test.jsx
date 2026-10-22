@@ -593,15 +593,11 @@ describe('every overlay the hub opens registers with one stack (ruling R-S5-6)',
     host.onOpenForge = vi.fn(() => { unmount(); });
     const { m } = await renderHub({ hub: host });
     unmount = () => { m.unmount(); mounted = mounted.filter((x) => x !== m); };
-    const outer = document.createElement('div');
-    outer.id = 'app-root';
-    document.body.appendChild(outer);
     click(btn(COPY.loadout.changeWatchlist));
-    expect(isInert(outer)).toBe(true);
+    expect(isInert(m.host)).toBe(true);
     click(btn(COPY.watchlistSheet.createInForge, document.querySelector('[data-stub="equip"]')));
     expect(host.onOpenForge).toHaveBeenCalled();
-    expect(isInert(outer)).toBe(false);
-    outer.remove();
+    expect(isInert(m.host)).toBe(false);
   });
 });
 
@@ -642,5 +638,115 @@ describe('the career (ruling R-S5-3) reaches the History sheet', () => {
     expect(sheet.textContent).not.toContain('7W');
     expect(sheet.textContent).not.toContain('0W-0L');
     expect(sheet.textContent).not.toContain(COPY.history.careerCaption);
+  });
+});
+
+describe('review fixes — what the sheets are handed, what the card says about a list (E2-6, E4-2, E4-5, E4-7)', () => {
+  const rerenderWith = (m, agentOver) => m.rerender(
+    <CommandCenterHub site="desktop" hub={HUB({ agent: AGENT(agentOver) })} sections={HUB_LAYOUT_FIXTURES.returning.sections} />,
+  );
+
+  it("the watchlist sheet takes the shells' fixed teal whatever the player's colour; the other sheets take the player's", async () => {
+    await renderHub({ hub: HUB({ agent: AGENT({ primaryColor: 'player-colour' }) }) });
+    click(btn(COPY.loadout.changeWatchlist));
+    expect(seen.equip.accent).toBe(readToken('teal'));
+    expect(seen.equip.accent).not.toBe('player-colour');
+    act(() => { seen.equip.onClose(); });
+    click(btn(COPY.loadout.changeArchetype));
+    expect(seen.archetype.accent).toBe('player-colour');
+  });
+
+  it('a list is counted once, by the card and by the sheet: duplicates and malformed entries dropped, the singular for one', async () => {
+    listWatchlists.mockResolvedValue([
+      { watchlistId: 'wl-1', name: 'Tech Leaders', status: 'committed', tickers: ['NVDA', { symbol: 'NVDA' }, { ticker: 'AAPL' }, {}, ''], currentHypothesisVersion: 2 },
+      { watchlistId: 'wl-2', name: 'One', status: 'committed', tickers: ['KO'] },
+    ]);
+    await renderHub();
+    expect(card('watchlist').textContent).toContain(COPY.loadout.universe(2));
+    expect(card('watchlist').textContent.split('NVDA').length - 1).toBe(1);
+    click(btn(COPY.loadout.changeWatchlist));
+    expect(document.querySelector('[data-row-sub="wl-1"]').textContent).toBe(COPY.watchlistSheet.tickers(2));
+    expect(document.querySelector('[data-row-sub="wl-2"]').textContent).toBe(COPY.watchlistSheet.tickers(1));
+    expect(COPY.watchlistSheet.tickers(1)).toBe('1 ticker');
+    expect(COPY.watchlistSheet.tickers(2)).toBe('2 tickers');
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('an equip made elsewhere to a list committed after the hub read: the lists are read once more and the card shows it', async () => {
+    listWatchlists.mockResolvedValueOnce(LISTS().slice(0, 1)).mockResolvedValue(LISTS());
+    const { m } = await renderHub();
+    expect(listWatchlists).toHaveBeenCalledTimes(1);
+    rerenderWith(m, { equippedWatchlistId: 'wl-2', equippedWatchlistName: 'Defensives' });
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+    expect(card('watchlist').textContent).toContain('Defensives');
+    expect(card('watchlist').textContent).not.toContain(COPY.loadout.unavailable('Defensives'));
+    expect(card('watchlist').textContent).not.toContain(COPY.loadout.unavailableNote);
+  });
+
+  it('a list that is really gone: one extra read, then the plain facts — unavailable, and a note that claims no cause and no agent behaviour', async () => {
+    listWatchlists.mockResolvedValue(LISTS().slice(0, 1));
+    const { m } = await renderHub();
+    rerenderWith(m, { equippedWatchlistId: 'wl-9', equippedWatchlistName: 'Gone One' });
+    await flush();
+    rerenderWith(m, { equippedWatchlistId: 'wl-9', equippedWatchlistName: 'Gone One' });
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+    expect(card('watchlist').textContent).toContain(COPY.loadout.unavailable('Gone One'));
+    expect(card('watchlist').textContent).toContain(COPY.loadout.unavailableNote);
+    expect(COPY.loadout.unavailableNote).not.toMatch(/no longer|not using|so your agent|deleted|removed/i);
+  });
+
+  describe('the career reads unavailable, never zeros (ruling R-S5-3; spec §7)', () => {
+    const openHistory = () => {
+      click(byRole(document, 'button', /History/)[0]);
+      return document.querySelector('[data-hub-sheet]');
+    };
+
+    it('absent or malformed wins and losses say so in the History sheet: no record, no caption, no zeros', async () => {
+      for (const stats of [undefined, {}, { wins: '7', losses: 3 }, { wins: -1, losses: 0 }, { wins: 1.5, losses: 0 }, { wins: 3 }]) {
+        const { m } = await renderHub({ hub: HUB({ agent: AGENT({ stats }) }) });
+        const sheet = openHistory();
+        expect(sheet.textContent, JSON.stringify(stats)).toContain(COPY.history.careerUnavailable);
+        expect(sheet.textContent).not.toContain(COPY.history.careerCaption);
+        expect(sheet.textContent).not.toMatch(/0W-0L|undefined|NaN/);
+        click(document.querySelector('[data-hub-sheet-close]'));
+        m.unmount();
+        mounted = mounted.filter((x) => x !== m);
+      }
+    });
+
+    it('a record, or a career still loading, does not say unavailable', async () => {
+      const { m } = await renderHub();
+      expect(openHistory().textContent).not.toContain(COPY.history.careerUnavailable);
+      click(document.querySelector('[data-hub-sheet-close]'));
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+      await renderHub({ hub: HUB({ agent: null, agentLoading: true }) });
+      const sheet = openHistory();
+      expect(sheet.textContent).not.toContain(COPY.history.careerUnavailable);
+      expect(sheet.textContent).not.toContain(COPY.history.careerCaption);
+    });
+  });
+});
+
+describe('review fixes — focus survives a site switch with a sheet open (E3-2)', () => {
+  const isInert = (node) => node.hasAttribute('inert');
+  it("a legacy sheet and the hub's own History sheet: focus lands on the new shell, never <body>", async () => {
+    for (const opener of [() => btn(COPY.loadout.changeArchetype), () => byRole(document, 'button', /History/)[0]]) {
+      const { m } = await renderHub({ site: 'desktop' });
+      const control = opener();
+      control.focus();
+      click(control);
+      // A browser drops focus the moment the opener's container goes inert; jsdom does not.
+      control.blur();
+      m.rerender(<CommandCenterHub site="mobile" hub={HUB()} sections={HUB_LAYOUT_FIXTURES.returning.sections} />);
+      await flush();
+      expect(hubRoot().getAttribute('data-hub-site')).toBe('mobile');
+      expect(document.activeElement).toBe(hubRoot());
+      expect(isInert(m.host)).toBe(false);
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+    }
   });
 });

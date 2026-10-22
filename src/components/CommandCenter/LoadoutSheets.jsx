@@ -11,7 +11,8 @@
 // inertness nor focus.
 //
 // The watchlist rows and the equip handler are EquipStation's / EquipBench's
-// own, step for step: a "No watchlist" row, one row per committed list,
+// own, step for step (and, as theirs does, the sheet takes the fixed teal, not the
+// player's colour): a "No watchlist" row, one row per committed list,
 // `equipWatchlist` / `unequipWatchlist` from agentService, a failure logged
 // and the sheet closed either way. (The shells swallow an equip failure; so
 // does this, to be exactly their write path.) The footer's Forge door opens
@@ -32,7 +33,7 @@ import EquipSheet from '../Dashboard/EquipSheet';
 import TraitsSheet from '../Dashboard/TraitsSheet';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { HUB_SHEETS } from './hub/useHubSheets';
-import { LISTS_STATUS } from './hub/selectors/loadout';
+import { LISTS_STATUS, symbolsOf } from './hub/selectors/loadout';
 import { HubButton } from './HubParts';
 
 /** The shipped sheets' two docks: the phone's bottom sheet, and the wide site's centred dialog. */
@@ -65,7 +66,7 @@ function RecordSheet({ open, onClose, dock, agent, agentLoading, accent }) {
   );
 }
 
-function WatchlistSheet({ open, onClose, dock, agent, lists, accent, onOpenForgeLists }) {
+function WatchlistSheet({ open, onClose, dock, agent, lists, onOpenForgeLists }) {
   const [working, setWorking] = useState(false);
   const equippedId = agent?.equippedWatchlistId || null;
 
@@ -88,7 +89,7 @@ function WatchlistSheet({ open, onClose, dock, agent, lists, accent, onOpenForge
     ...lists.committed.map((list) => ({
       id: list.watchlistId,
       title: list.name || COPY.watchlistSheet.untitled,
-      subtitle: COPY.watchlistSheet.tickers((list.tickers || []).length),
+      subtitle: COPY.watchlistSheet.tickers(symbolsOf(list).length),
       selected: list.watchlistId === equippedId,
       disabled: working,
       onClick: () => equip(list.watchlistId),
@@ -108,7 +109,7 @@ function WatchlistSheet({ open, onClose, dock, agent, lists, accent, onOpenForge
       rows={rows}
       emptyLabel={COPY.watchlistSheet.empty}
       footer={<HubButton kind="accent" full onPress={onOpenForgeLists}>{COPY.watchlistSheet.createInForge}</HubButton>}
-      accent={accent}
+      accent={readToken('teal')}
     >
       {failed ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start', padding: '14px 4px' }}>
@@ -138,7 +139,6 @@ export default function LoadoutSheets({ sheet, traitsEpoch, onClose, dock, agent
         dock={dock}
         agent={agent}
         lists={lists}
-        accent={accent}
         onOpenForgeLists={onOpenForgeLists}
       />
       {traitsEpoch > 0 && (

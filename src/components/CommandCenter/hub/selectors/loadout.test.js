@@ -151,6 +151,16 @@ describe('symbolsOf — the shells\' ticker normalization', () => {
     expect(symbolsOf(null)).toEqual([]);
     expect(symbolsOf({ tickers: 'AAPL' })).toEqual([]);
   });
+  it('each name once, in the order first seen, however it is written (the server dedupes; the count is one number for the card and the sheet)', () => {
+    expect(symbolsOf({ tickers: ['NVDA', { symbol: 'AAPL' }, 'NVDA', { ticker: 'AAPL' }, { symbol: 'MSFT' }, 'AAPL'] })).toEqual(['NVDA', 'AAPL', 'MSFT']);
+    expect(symbolsOf({ tickers: ['A', 'A', 'A'] })).toHaveLength(1);
+  });
+  it('the count the watchlist state carries is that number', () => {
+    const list = { watchlistId: 'w', name: 'W', status: 'committed', tickers: ['A', 'A', { symbol: 'B' }, {}, ''] };
+    const state = deriveWatchlist({ agent: { equippedWatchlistId: 'w' }, committed: [list], listsStatus: 'ready', hypothesisRecordsOn: true });
+    expect(state.count).toBe(2);
+    expect(state.symbols).toEqual(['A', 'B']);
+  });
 });
 
 describe('equipLockOf — ONE predicate for the label and every picker (BUILD_RULES §9)', () => {

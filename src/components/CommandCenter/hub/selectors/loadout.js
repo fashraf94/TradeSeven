@@ -46,12 +46,19 @@ export function ideaLabelKind(list, hypothesisRecordsOn) {
   return Number.isInteger(pointer) && pointer > 0 ? IDEA_LABEL.UNIVERSE : IDEA_LABEL.NEUTRAL;
 }
 
-/** A list's names as the shells draw them (EquipStation tickerLabel): strings, or the symbol / ticker of an object. */
+/**
+ * A list's names as the shells draw them (EquipStation tickerLabel): strings, or the symbol / ticker of an object —
+ * each name once, in order, as the server counts them (its extractTickerSymbols dedupes). ONE count per list: the
+ * card, its label and the watchlist sheet's rows all read this (BUILD_RULES §9).
+ */
 export function symbolsOf(list) {
   const tickers = Array.isArray(list?.tickers) ? list.tickers : [];
-  return tickers
-    .map((t) => (typeof t === 'string' ? t : t?.symbol || t?.ticker))
-    .filter((symbol) => typeof symbol === 'string' && symbol !== '');
+  const names = [];
+  for (const t of tickers) {
+    const symbol = typeof t === 'string' ? t : t?.symbol || t?.ticker;
+    if (typeof symbol === 'string' && symbol !== '' && !names.includes(symbol)) names.push(symbol);
+  }
+  return names;
 }
 
 const nonEmpty = (value) => (typeof value === 'string' && value.trim() !== '' ? value : null);

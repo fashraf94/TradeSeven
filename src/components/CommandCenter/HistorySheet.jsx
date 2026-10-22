@@ -17,6 +17,7 @@ import { GameRow } from './sections/GamesSection';
 export default function HistorySheet({ games, career, phone, onClose, opener, fallbackFocus, reducedMotion }) {
   const { completed } = splitGames(games);
   const record = career?.status === 'ready' && career.record ? career.record : null;
+  const unavailable = career?.status === 'unavailable';
   return (
     <HubSheet
       phone={phone}
@@ -33,6 +34,9 @@ export default function HistorySheet({ games, career, phone, onClose, opener, fa
           <Mono style={{ fontSize: 20, fontWeight: 700, color: C.ink }}>{record}</Mono>
           <span style={{ fontSize: 12.5, color: C.ink3 }}>{COPY.history.careerCaption}</span>
         </div>
+      )}
+      {unavailable && (
+        <div data-hub-career-unavailable="" style={{ marginBottom: 12, fontSize: 12.5, color: C.ink3 }}>{COPY.history.careerUnavailable}</div>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {completed.map((g) => <GameRow key={g.id} game={g} />)}

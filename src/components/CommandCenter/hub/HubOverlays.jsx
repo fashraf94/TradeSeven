@@ -9,7 +9,11 @@ import { createOverlayStack } from './overlayStack';
 
 const HubOverlayContext = createContext(null);
 
-/** The stack used by a sheet rendered outside any hub (a test, a story): one shared instance. */
+/**
+ * The stack used by a sheet rendered outside any hub (a test, a story): one shared instance that is NOT a hub's, so
+ * what registers with it is invisible to every hub's `modalOpen`. An overlay that must count (S2b's Scouting Board
+ * and deploy ceremony) renders inside the hub's provider.
+ */
 let standalone = null;
 const standaloneStack = () => {
   if (!standalone) standalone = createOverlayStack();

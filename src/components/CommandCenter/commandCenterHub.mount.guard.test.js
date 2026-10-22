@@ -38,9 +38,16 @@
 //   - R-S5-1, R-S5-4: the hub now reaches the shipped sheets and services
 //     (PERMITTED_TERMINALS) and has three effects (ALLOWED_ACTIVITY), each with
 //     the negatives that keep it to itself; the selector list gained loadout.js.
-// Nothing it protects was relaxed: the legacy elements' props, the single pick,
-// the single flag read, the lazy chunk, the fixtures fence and the URL fence all
-// pin what they pinned.
+// What it protects, after S5: the legacy elements' props, the single pick, the
+// lazy chunk, the fixtures fence and the URL fence all pin what they pinned. Two
+// things are narrower, and said so: (1) the "single flag read" now covers the
+// pick; hubOwnsDashboard reads the same pure accessor as a default parameter, so
+// App reads it twice per render and the two cannot diverge (review E1-2); (2) the
+// import walk stops at every PERMITTED_TERMINALS module without entering it, so
+// the "no firebase" and "no activity" rows no longer see inside the shipped
+// sheets and services the hub reaches. The S5 rows below name what the hub takes
+// from them (which exports; the one importer of the archetype tables; the only
+// writes), and each terminal's own effects remain its own owner's.
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -308,8 +315,8 @@ describe('S5 mount sites — the hub\'s props, the Forge bridge and the chrome c
     expect(flat.indexOf('const hubProps')).toBeLessThan(GET_SCREEN_CONTENT);
   });
 
-  it('onOpenForge sets the Forge\'s first area (when the request names one) in the SAME handler as showForge, and otherwise is the bare setShowForge(true)', () => {
-    expect(flat).toContain('const onOpenForge = (request) => { const area = forgeAreaOf(request); if (area) setForgeInitialView(area); setShowForge(true); };');
+  it('onOpenForge sets the Forge\'s first area (when the request names one and the Forge is closed) in the SAME handler as showForge, and otherwise is the bare setShowForge(true)', () => {
+    expect(flat).toContain('const onOpenForge = (request) => { const area = forgeAreaOf(request); if (area && !showForge) setForgeInitialView(area); setShowForge(true); };');
     expect(flat.indexOf('const onOpenForge')).toBeLessThan(GET_SCREEN_CONTENT);
     // setForgeInitialView has exactly three callers: the reset effect, the watchlist editor's return, and this bridge.
     expect(count(/\bsetForgeInitialView\(/)).toBe(3);
@@ -875,5 +882,76 @@ describe('S1 hub side — colour and motion only through the tokens (ruling R-S1
     }
     expect(MOTION_KEY.test('transition={motionToken(\'smooth\', { reducedMotion })}')).toBe(false);
     expect(CSS_TRANSITION.test('transition={motionToken(\'smooth\', { reducedMotion })}')).toBe(false);
+  });
+});
+
+// ── S5: what the hub takes from the shipped modules it may now reach is NAMED ─
+//
+// PERMITTED_TERMINALS lets the import walk stop at a whole module, so the walk
+// alone can no longer see which of its exports the hub uses (review E1-2: the
+// closure grew from 48 to 117 modules, and a hub file could have imported
+// `createAgent` from agentService without any row noticing). These rows name
+// the exports. Add to a list only when a ruling says the hub may use more.
+
+/** The names `code` imports from a module whose specifier ends with `tail`: `{ a as b }` → 'a', a default import → 'default'. */
+function importedNames(code, tail) {
+  const names = [];
+  const statement = /import\s+([^'";]+?)\s+from\s+['"]([^'"]+)['"]/g;
+  for (let m = statement.exec(code); m !== null; m = statement.exec(code)) {
+    if (!m[2].endsWith(tail)) continue;
+    const clause = m[1].trim();
+    const braces = clause.match(/\{([^}]*)\}/);
+    if (braces) names.push(...braces[1].split(',').map((n) => n.trim().split(/\s+as\s+/)[0]).filter(Boolean));
+    if (clause.replace(/\{[^}]*\}/, '').replace(/,/g, '').trim()) names.push('default');
+  }
+  return names;
+}
+
+describe('S5 — the exports the hub takes from the shipped services, hooks and flags (review E1-2)', () => {
+  const NAMED = Object.freeze({
+    '/services/agentService': ['equipWatchlist', 'unequipWatchlist'],
+    '/services/forgeWatchlistService': ['listWatchlists'],
+    '/hooks/useMasteryProfile': ['default'],
+    '/ClashBot/ClashBotWidget': ['CLASHBOT_OPEN_EVENT'],
+    '/utils/equipSlots': ['getEquipSlots'],
+    '/utils/traitSlotSummary': ['getTraitSlotSummary'],
+    '/constants/agentProgression': ['getLevelConfig', 'getNextLevelInfo'],
+    '/config/featureFlags': ['CASUAL_CLONE_CONCURRENCY_ENABLED', 'RELEASE3_CHARACTER_TAB_ENABLED', 'isCommandCenterHubOn', 'isHypothesisRecordsOn'],
+    '/data/archetypeDisplay': ['getArchetypeDisplayName'],
+    '/data/archetypeIdentity': ['default', 'getArchetypeIdentity'],
+  });
+
+  it('across every file of the directory, exactly these names and no others', () => {
+    const files = hubDirFiles();
+    for (const [tail, expected] of Object.entries(NAMED)) {
+      const found = [...new Set(files.flatMap((rel) => importedNames(stripComments(read(rel)), tail)))].sort();
+      expect(found, tail).toEqual([...expected].sort());
+    }
+  });
+
+  it('the only writes the hub can make are the two equips: nothing else of agentService, and no other service of the shipped set', () => {
+    const files = hubDirFiles();
+    const writers = files.filter((rel) => importedNames(stripComments(read(rel)), '/services/agentService').length > 0);
+    expect(writers).toEqual([HUB_FILE('LoadoutSheets.jsx')]);
+    const services = files.flatMap((rel) => importsOf(rel).filter((spec) => /\/services\//.test(spec)).map((spec) => `${rel}: ${spec}`));
+    expect(services.sort()).toEqual([
+      `${HUB_FILE('LoadoutSheets.jsx')}: ../../services/agentService`,
+      `${HUB_FILE('hub/useHubLoadout.js')}: ../../../services/forgeWatchlistService`,
+    ].sort());
+  });
+
+  it('the legacy archetype tables are imported by exactly one hub file (the §2.3 ratchet records one line)', () => {
+    const importers = hubDirFiles().filter((rel) => (
+      importedNames(stripComments(read(rel)), '/data/archetypeDisplay').length > 0
+      || importedNames(stripComments(read(rel)), '/data/archetypeIdentity').length > 0
+    ));
+    expect(importers).toEqual([HUB_FILE('hub/archetypeLines.js')]);
+  });
+
+  it('the matcher sees what it should (the rows above are not vacuous)', () => {
+    const code = "import ARCH, { a, b as c } from '../../x/archetypeIdentity';\nimport {\n  one,\n  two,\n} from '../y/agentService';\nimport z from './z';";
+    expect(importedNames(code, '/archetypeIdentity').sort()).toEqual(['a', 'b', 'default']);
+    expect(importedNames(code, '/agentService').sort()).toEqual(['one', 'two']);
+    expect(importedNames(code, '/nothing')).toEqual([]);
   });
 });
