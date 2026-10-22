@@ -118,14 +118,18 @@ describe('the result table: every path, every legacy field, its outcome', () => 
     });
   });
 
-  it('409 review due: refused, the shared line verbatim in details, the typed code beside it', async () => {
+  it('409 review due — retired by Pilot P1c (ruling E1; no endpoint sends it): an ordinary refusal, its message not promoted, no code', async () => {
     stubFetch(json(409, { error: DEPLOY_REFUSAL_CODE, message: DUE_DEPLOY_LINE }));
     const out = await run(vi.fn());
     expect(out).toEqual({
-      outcome: 'refused', code: DEPLOY_REFUSAL_CODE, success: false, status: 409, postIssued: true, httpStatus: 409,
-      error: DEPLOY_REFUSAL_CODE, details: DUE_DEPLOY_LINE, errorPhase: undefined,
+      outcome: 'refused', success: false, status: 409, postIssued: true, httpStatus: 409,
+      error: DEPLOY_REFUSAL_CODE, details: undefined, errorPhase: undefined,
     });
-    expect(out.details).toBe('This idea is due for review — reaffirm it first (one tap, same content if you want), and the fresh version deploys.');
+  });
+
+  it('Pilot P1c (ruling E1) — a created 200 carrying hypothesisNotice review_due: created, the notice beside the real id', async () => {
+    stubFetch(json(200, { ...CREATED_200, hypothesisNotice: 'review_due' }));
+    expect(await run(vi.fn())).toEqual({ outcome: 'created', success: true, agentBattleId: CREATED_200.agentBattleId, hypothesisNotice: 'review_due' });
   });
 
   it.each([
@@ -486,7 +490,7 @@ describe('the hub\'s translator reads every R1 result as spec §5.2 says', () =>
     expect([t.phase, t.ceremony.phase, t.detail.kind, t.detail.battleId]).toEqual(['created', 'verifying', 'handoff', 'battle-new']);
   });
 
-  it('the 409 review-due refusal → refused, its line kept, the confirmed-refusal tone', async () => {
+  it('the 409 review-due refusal → refused, its line kept, the confirmed-refusal tone (Pilot P1c: no endpoint sends it; the service passes no words, so the line is the hub translator\'s own R-S2A-2 fallback)', async () => {
     const t = await translated(json(409, { error: DEPLOY_REFUSAL_CODE, message: DUE_DEPLOY_LINE }));
     expect([t.phase, t.ceremony.errorTone, t.detail.kind, t.detail.line, t.displayState]).toEqual(['refused', 'confirmed', 'review_due', DUE_DEPLOY_LINE, 'failed']);
   });

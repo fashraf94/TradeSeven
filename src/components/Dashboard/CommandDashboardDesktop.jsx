@@ -15,7 +15,7 @@
 // EquipBench own their own data hooks (DRB / forge+watchlist) so the brief and
 // bench reflect live state without prop-drilling.
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Trophy, Activity, Award } from 'lucide-react';
 import { CMD, Eyebrow, Mono, SectionLabel } from './commandUI';
 import useAgent from '../../hooks/useAgent';
@@ -40,6 +40,9 @@ import EquipBench from './desktop/EquipBench';
 import DeployCard from './desktop/DeployCard';
 import ScoutingBoardSheet from './ScoutingBoardSheet';
 import DeployCeremony from './deployCeremony/DeployCeremony';
+// Pilot P1c (founder ruling E1): the due-idea screen, before any deploy call.
+import DueIdeaInterstitial from './deployCeremony/DueIdeaInterstitial';
+import { checkDueIdea } from '../../services/dueIdeaCheck';
 // isStarfieldOn (Delight Layer Task 2, spec V2 D4): this component's root paints
 // an OPAQUE CMD.bg over the z0 background slot, so it is what hides the
 // starfield. Flag on => transparent and the field shows through; off =>
@@ -146,11 +149,50 @@ export default function CommandDashboardDesktop({
   // render behind it), for the ceremony-off existing-battle open.
   const deployTargetRef = useRef(null);
   const reportDeployTarget = (id) => { deployTargetRef.current = id; setDeployTargetId(id); };
+  // Pilot P1c (founder ruling E1): a due idea gets ONE screen before any deploy
+  // call, and every button on it deploys — so handleDeploy waits for the choice
+  // and still returns the deploy's own result. The gate ref keeps a second press
+  // from starting a second check; a ceremony retry re-runs the same deploy
+  // without asking again (the choice was made).
+  const [dueIdea, setDueIdea] = useState(null); // { due, proceed }
+  const ideaGateRef = useRef(false);
+  const skipIdeaCheckRef = useRef(false);
+  // The waiting deploy's settle (the screen's choice, or 'unmounted'), and deployDisabled as it stands after it.
+  const settleChoiceRef = useRef(null);
+  const deployDisabledRef = useRef(deployDisabled);
+  deployDisabledRef.current = deployDisabled;
+  // Unmounted while the screen waits (App swaps the shells at 768 px): settle the waiting deploy, so the
+  // app-wide hold is released at once (P1c review L1-2).
+  useEffect(() => () => { settleChoiceRef.current?.('unmounted'); }, []);
 
   const handleDeploy = async () => {
     if (deployDisabled) return { success: false };
-    // t0 for the stage-duration instrumentation — mirrors the mobile shell.
-    ceremonyTiming.startRun();
+    if (skipIdeaCheckRef.current) {
+      skipIdeaCheckRef.current = false;
+      // t0 for the stage-duration instrumentation — mirrors the mobile shell.
+      ceremonyTiming.startRun();
+    } else {
+      if (ideaGateRef.current) return { success: false };
+      ideaGateRef.current = true;
+      // t0 includes the idea check (bounded in dueIdeaCheck.js) — mirrors the mobile shell.
+      ceremonyTiming.startRun();
+      try {
+        const due = await checkDueIdea(agent);
+        if (due) {
+          const choice = await new Promise((settle) => {
+            settleChoiceRef.current = settle;
+            setDueIdea({ due, proceed: () => settle('proceed') });
+          });
+          // Mirrors the mobile shell (P1c review L1-2, L4-13).
+          if (choice !== 'proceed' || deployDisabledRef.current) return { success: false };
+          ceremonyTiming.startRun();
+        }
+      } finally {
+        settleChoiceRef.current = null;
+        ideaGateRef.current = false;
+        setDueIdea(null);
+      }
+    }
     if (ceremonyOn) { setCeremonyOpen(true); setDeployResult({ status: 'pending' }); }
     setDeploying(true);
     let result = { success: false };
@@ -198,6 +240,7 @@ export default function CommandDashboardDesktop({
   const handleCeremonyRetry = () => {
     if (deployDisabled) return;
     setCeremonyRun((r) => r + 1);
+    skipIdeaCheckRef.current = true; // Pilot P1c: the idea choice was already made for this deploy
     handleDeploy();
   };
   const openFilmRoom = (battle) => { setCurrentBattle?.(battle); setScreen?.('filmRoom'); };
@@ -376,6 +419,8 @@ export default function CommandDashboardDesktop({
           onDeploy={handleDeploy}
         />
       )}
+
+      {dueIdea && <DueIdeaInterstitial due={dueIdea.due} accent={accent} onProceed={dueIdea.proceed} />}
 
       {ceremonyOn && ceremonyOpen && (
         <DeployCeremony

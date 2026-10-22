@@ -26,6 +26,8 @@ const svc = vi.hoisted(() => ({
   transitionHypothesis: vi.fn(),
   reaffirmHypothesis: vi.fn(),
   newOpId: vi.fn(() => 'op-fixed'),
+  // Pilot P1c: the review card's read (its own suite is IdeaPanel.review.jsdom.test.jsx); here no card is shown.
+  getHypothesisReview: vi.fn(),
 }));
 vi.mock('../../../services/hypothesisVersionService', () => svc);
 
@@ -41,6 +43,7 @@ beforeEach(() => {
   state.on = true;
   for (const fn of Object.values(svc)) fn.mockReset?.();
   svc.newOpId.mockImplementation(() => 'op-fixed');
+  svc.getHypothesisReview.mockRejectedValue(Object.assign(new Error('review_window_open'), { status: 409, code: 'review_window_open' }));
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);

@@ -51,6 +51,15 @@ import {
   emptyTelemetry, applyTurn, dialogueFunnel, turnPatch,
 } from '../_utils/researchRecords/model.js';
 import { mintWithHost, recordTurnOutcome, researchWorkRefOf, safely } from '../_utils/researchRecords/store.js';
+// Pilot P1c — THE PARSE BINDING (pilot spec §2.8; founder decision E4). With
+// DIALOGUE_SERVER_PARSE_ENABLED the paste path builds its session — and so the
+// dialogue prompt — from the SERVER-stored parse of the drop, never from a
+// client envelope that merely matches the contentHash (see serverParseOf).
+// Off → this file does exactly what it did. Read at call time (a test mocks
+// the constant with a getter). The canonical hash compares the two envelopes
+// key-order-free (Firestore returns map keys alphabetized).
+import { DIALOGUE_SERVER_PARSE_ENABLED } from '../../src/config/featureFlags.js';
+import { canonicalContentHash } from '../_utils/canonicalHash.js';
 
 export const config = { maxDuration: 30 };
 
@@ -719,6 +728,24 @@ export function normalizeDialogueOutput(raw) {
   };
 }
 
+// Pilot P1c — the server-stored parse of a drop, shaped as the envelope the
+// paste path stores (validateParseResult — the same caps and enums the client
+// envelope gets): the drop record's own parse, by dropId (§2.8) — parse-signal
+// writes it on every drop, cache hit or miss, and nothing else writes drop
+// records. Null when it holds no usable parse: never another drop's parse
+// (the global parse cache is keyed by content, not by drop or note — review
+// L3-6). Pure; exported for tests.
+export function serverParseOf(dropRecord) {
+  if (!dropRecord || typeof dropRecord !== 'object') return null;
+  return validateParseResult({
+    contentHash: dropRecord.contentHash,
+    parse: dropRecord.parse,
+    validation: dropRecord.validation,
+    shouldBailout: dropRecord.shouldBailout,
+    shouldHardCheckpoint: dropRecord.shouldHardCheckpoint,
+  });
+}
+
 // ==================== HANDLER ====================
 
 export default async function handler(req, res) {
@@ -983,6 +1010,33 @@ export default async function handler(req, res) {
         });
       }
 
+      // Pilot P1c (§2.8, E4): flag on → the SERVER's parse of this drop is the session's (and the prompt's);
+      // an envelope that differs from it is recorded, never refused. A drop with no stored parse is refused
+      // as a missing drop is. Flag off → the client's hash-checked envelope, as before.
+      let parseResult = validatedParseResult;
+      let parseEnvelopeMismatch = false;
+      if (DIALOGUE_SERVER_PARSE_ENABLED === true) {
+        const serverParse = serverParseOf(dropRecord);
+        if (!serverParse) {
+          return res.status(400).json({
+            error: 'unknown_drop',
+            message:
+              'No signal drop found for this dropId. Call /api/forge/parse-signal first.',
+          });
+        }
+        try {
+          parseEnvelopeMismatch = canonicalContentHash(serverParse) !== canonicalContentHash(validatedParseResult);
+        } catch {
+          // An envelope too deep to hash (its `validation` passes through unbounded) differs by definition —
+          // recorded, never a failed request (review L3-4).
+          parseEnvelopeMismatch = true;
+        }
+        if (parseEnvelopeMismatch) {
+          console.warn(`[watchlist-dialogue] parse envelope differs from the stored parse of drop ${dropId} — the stored parse is used`);
+        }
+        parseResult = serverParse;
+      }
+
       sessionRef = sessionsCol.doc();
       const nowIso = new Date().toISOString();
       session = {
@@ -993,7 +1047,7 @@ export default async function handler(req, res) {
         updatedAt: nowIso,
         status: 'active',
         phase: 'explore',
-        parseResult: validatedParseResult,
+        parseResult,
         exchanges: [],
         candidateTickers: [],
         // Phase 2.6: watchlist anatomy state. Thesis set during 'explore';
@@ -1011,6 +1065,8 @@ export default async function handler(req, res) {
         meta: {
           initialAgentName: typeof agent.name === 'string' ? agent.name : 'Gemma',
         },
+        // Pilot P1c: present only when the client's envelope differed from the stored parse.
+        ...(parseEnvelopeMismatch ? { parseEnvelopeMismatch: true } : {}),
       };
       isNewSession = true;
     }

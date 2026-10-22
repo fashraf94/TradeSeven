@@ -29,8 +29,8 @@ import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../config/featureFlags';
 // Record-only deploy instrumentation (console; no writes, nothing gates on it).
 // Every export is throw-proof, so these calls cannot affect the deploy contract.
 import * as ceremonyTiming from '../components/Dashboard/deployCeremony/ceremonyTiming';
-// Pilot P1b — the deploy refusal's typed code (founder ruling B2).
-import { DEPLOY_REFUSAL_CODE } from '../constants/hypothesisRecords';
+// Pilot P1c (founder ruling E1) — the one notice a created deploy can carry.
+import { HYPOTHESIS_NOTICES } from '../constants/hypothesisRecords';
 import { DEPLOY_OUTCOMES } from '../constants/deployOutcomes';
 import { stockAdmissionRetryAt, STOCK_PUBLICATION_DELAY_MINUTES } from '../utils/stockAdmissionWindow';
 import { signedInUid } from './deployIdentity';
@@ -278,13 +278,11 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
     }
     // [Deploy Ceremony §10] Forward `details`/`errorPhase` (previously dropped)
     // plus the HTTP status so the ceremony error surface can show something useful.
-    // Pilot P1b: a deploy refused because the equipped idea is due for review
-    // carries its words in `message` — table C's due-deploy line, verbatim —
-    // and the ceremony shows `details`, so that one refusal forwards its line
-    // there. A measured pilot's stock-admission refusal forwards its player
-    // line (v2 Ruling 2). Every other failure forwards exactly what it did before.
-    const refusalLine = data.error === DEPLOY_REFUSAL_CODE && typeof data.message === 'string' ? data.message
-      : stockAdmissionLine(data);
+    // A measured pilot's stock-admission refusal forwards its player line (v2
+    // Ruling 2). Every other failure forwards exactly what it did before.
+    // (Pilot P1c, ruling E1: the P1b due-idea refusal — 409 hypothesis_review_due —
+    // is gone; a due idea never blocks a deploy, so this path no longer reads it.)
+    const refusalLine = stockAdmissionLine(data);
     console.error('[Deploy] Failed:', status, data.error, refusalLine || data.details || '');
     const refused = isDefinitiveRefusal(status) && !mayFollowCommit(status, data);
     const reason = refused && status === 429 ? REFUSAL_REASONS_429[data.error] : undefined;
@@ -292,8 +290,6 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
       outcome: refused ? DEPLOY_OUTCOMES.REFUSED : DEPLOY_OUTCOMES.UNCERTAIN,
       success: false, status, postIssued: true, httpStatus: status,
       error: data.error, details: refusalLine ?? data.details, errorPhase: data.errorPhase,
-      // The P1b refusal's typed code rides beside its line (spec §5.2: Forge action, no auto retry).
-      ...(refused && data.error === DEPLOY_REFUSAL_CODE ? { code: DEPLOY_REFUSAL_CODE } : {}),
       ...(reason ? { reason } : {}),
       // Founder ruling Q3 (R1 amendment): the shared rate limiter's 429 body names
       // its wait in seconds (api/_utils/rateLimit.js). Forwarded as given, from the
@@ -383,9 +379,18 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
         battleId: agentBattleId,
         error: 'deploy_handoff',
         details: err?.message || 'The battle was created but could not be opened.',
+        // Pilot P1c (review L4-7): the battle the server created carries nothing for a due idea — the recovered
+        // reveal says so too.
+        ...(data.hypothesisNotice === HYPOTHESIS_NOTICES.reviewDue ? { hypothesisNotice: HYPOTHESIS_NOTICES.reviewDue } : {}),
       };
     }
   }
 
+  // Pilot P1c (founder ruling E1): the battle was created carrying nothing
+  // because the equipped idea is due for review — the server says so on its
+  // success response, and the notice rides the created outcome to the ceremony.
+  if (data.hypothesisNotice === HYPOTHESIS_NOTICES.reviewDue) {
+    return { outcome: DEPLOY_OUTCOMES.CREATED, success: true, agentBattleId, hypothesisNotice: HYPOTHESIS_NOTICES.reviewDue };
+  }
   return { outcome: DEPLOY_OUTCOMES.CREATED, success: true, agentBattleId };
 }

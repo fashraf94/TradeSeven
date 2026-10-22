@@ -103,8 +103,13 @@ describe('today\'s results (src/services/agentDeploy.js), ruling R-S2A-2: untype
       "error: 'deploy_handoff',",
       'battleId: agentBattleId,',
       'return { outcome: DEPLOY_OUTCOMES.CREATED, success: true, agentBattleId };',
-      'data.error === DEPLOY_REFUSAL_CODE',
     ]) expect(src, fragment).toContain(fragment);
+    // Pilot P1c (founder ruling E1): the deploy endpoint no longer refuses a due
+    // idea, so the service no longer reads the review-due code (its `details`
+    // is the server's own, as for any refusal). This translator keeps its
+    // R-S2A-2 exception; with no words it shows the shared line (the
+    // "words were lost" fixture row).
+    expect(src).not.toContain('DEPLOY_REFUSAL_CODE');
     // The service now types its results: R1 added the outcome this row once said was missing.
     expect(src).toMatch(/\boutcome\s*:/);
   });

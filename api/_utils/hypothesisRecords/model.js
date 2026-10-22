@@ -284,3 +284,32 @@ export function buildSaveVersion({ session, watchlistId, userId, sessionId, nowI
     status: 'researched', stateSource: 'research', stateReason: STATE_REASONS.dialogueCompleted,
   });
 }
+
+/**
+ * Pilot P1c (founder ruling E2): every battle that carried the version, in
+ * deploy order — written by the creation transaction beside lastDeployed*,
+ * additive and outside contentHash and LIFECYCLE_FIELDS (as reviewClockFault).
+ * The review reads the FIRST for the frozen names and the LAST for a
+ * battle-end window; the void unwind (ruling E3) steps back through it.
+ */
+export const DEPLOYED_BATTLE_IDS_FIELD = 'deployedBattleIds';
+/** The most ids kept: the first carrying battle, then the newest 49 (a 60-session idea redeployed daily outgrows 50). */
+export const DEPLOYED_BATTLE_IDS_CAP = 50;
+
+/**
+ * The carrying battles a version records, oldest first: its `deployedBattleIds`,
+ * or — for a version activated before P1c wrote them — its `lastDeployedBattleId`
+ * alone (the NEWEST carrying battle: the only one that record names). Pure.
+ */
+export function carryingBattleIdsOf(v) {
+  const ids = Array.isArray(v?.[DEPLOYED_BATTLE_IDS_FIELD]) ? v[DEPLOYED_BATTLE_IDS_FIELD].filter(nonEmptyString) : [];
+  if (ids.length > 0) return ids.filter((id, i) => ids.indexOf(id) === i);
+  return nonEmptyString(v?.lastDeployedBattleId) ? [v.lastDeployedBattleId] : [];
+}
+
+/** The ids with one more carrying battle, under the cap: the first is kept, then the newest. Pure. */
+export function withCarryingBattle(ids, battleId) {
+  const next = ids.includes(battleId) ? [...ids] : [...ids, battleId];
+  if (next.length <= DEPLOYED_BATTLE_IDS_CAP) return next;
+  return [next[0], ...next.slice(next.length - (DEPLOYED_BATTLE_IDS_CAP - 1))];
+}

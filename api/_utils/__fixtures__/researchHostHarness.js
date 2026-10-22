@@ -72,7 +72,16 @@ export const parseResult = (timeHorizon = 'swing') => ({
   shouldBailout: false,
   shouldHardCheckpoint: false,
 });
-export const signalDropDoc = (timeHorizon = 'swing') => ({ dropId: DROP_ID, userId: OWNER, contentHash: CONTENT_HASH, parse: parseResult(timeHorizon).parse });
+// The drop record parse-signal writes for that envelope — the same parse, validation and flags (an honest
+// drop): Pilot P1c's server-parse binding reads it, so with DIALOGUE_SERVER_PARSE_ENABLED on or off every
+// suite on this harness runs the same path (review L3-1).
+export const signalDropDoc = (timeHorizon = 'swing') => {
+  const envelope = parseResult(timeHorizon);
+  return {
+    dropId: DROP_ID, userId: OWNER, contentHash: CONTENT_HASH,
+    parse: envelope.parse, validation: envelope.validation, shouldBailout: envelope.shouldBailout, shouldHardCheckpoint: envelope.shouldHardCheckpoint,
+  };
+};
 
 /** The screener model's answer: a spec the real screenStocks runs (three of the four matches returned). */
 export const screenReply = (over = {}) => JSON.stringify({
