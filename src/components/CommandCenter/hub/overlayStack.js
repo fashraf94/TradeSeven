@@ -81,9 +81,9 @@ export function inertSiblings(keep, only = null) {
   };
 }
 
-/** The app root an element sits in: its ancestor that is a direct child of <body>, or null. */
+/** The app root an element sits in: its ancestor that is a direct child of <body>, or null (a detached element has none). */
 export function appRootOf(element) {
-  return element && element.isConnected ? element.closest('body > *') : null;
+  return element ? element.closest('body > *') : null;
 }
 
 const canFocus = (el) => Boolean(el) && typeof el.focus === 'function' && el.isConnected && !el.disabled && !el.closest('[inert]');

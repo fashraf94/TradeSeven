@@ -395,3 +395,14 @@ describe('useHubLoadout — an equip made elsewhere (ruling R-S5-1, "after an eq
     expect(api.readFor).toBe('wl-3');
   });
 });
+
+describe('useHubLoadout — disabled means disabled (builder mutant R06)', () => {
+  it('a newly equipped, unknown list costs no read once the reader is disabled', async () => {
+    listWatchlists.mockResolvedValue([committed('wl-1')]);
+    render(true, 'owner-a', 'wl-1');
+    await flush();
+    render(false, 'owner-a', 'wl-2');
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(1);
+  });
+});

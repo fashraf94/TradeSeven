@@ -625,3 +625,67 @@ describe('HubOverlays — focus when the hub is replaced under an open overlay (
     expect(isInert(appRoot)).toBe(false);
   });
 });
+
+describe('createOverlayStack — openers owed to overlays closed out of order (review E3-4c; builder mutants F11, F13)', () => {
+  /** An overlay with a root, a dialog inside it (focusable by script) and a control in the dialog. */
+  const overlay = (id, parent = document.body) => {
+    const root = el('div', { id: `${id}-root`, parent });
+    const dialog = el('div', { parent: root });
+    dialog.setAttribute('role', 'dialog');
+    dialog.tabIndex = -1;
+    return { root, dialog };
+  };
+
+  it('a stranded opener that took focus is spent: a later close whose own opener is gone goes to the overlay below, not back to it', () => {
+    const stack = createOverlayStack();
+    const x = overlay('x');
+    const xBtn = button(x.dialog, 'x-btn');
+    stack.open('x', { keep: x.root, opener: button(appRoot, 'open-x') });
+    const a = overlay('a');
+    stack.open('a', { keep: a.root, opener: xBtn });
+    const bBtn = button(a.dialog, 'b-btn');
+    const b = overlay('b');
+    stack.open('b', { keep: b.root, opener: bBtn });
+    stack.close('a');
+    a.root.remove();
+    stack.close('b');
+    expect(document.activeElement).toBe(xBtn);
+    // x is still open. Another overlay opens from inside it and closes onto an opener that is gone.
+    const cOpener = button(x.dialog, 'c-open');
+    const c = overlay('c');
+    stack.open('c', { keep: c.root, opener: cOpener });
+    cOpener.remove();
+    stack.close('c');
+    expect(document.activeElement).toBe(x.dialog);
+    stack.releaseAll();
+  });
+
+  it('two owed openers are offered newest-closed first, and the older one stays owed', () => {
+    const stack = createOverlayStack();
+    const x = overlay('x');
+    const a1Btn = button(x.dialog, 'a1');
+    const a2Btn = button(x.dialog, 'a2');
+    stack.open('x', { keep: x.root, opener: button(appRoot, 'open-x') });
+    const a1 = overlay('a1');
+    stack.open('a1', { keep: a1.root, opener: a1Btn });
+    const a2 = overlay('a2');
+    stack.open('a2', { keep: a2.root, opener: a2Btn });
+    const bBtn = button(a2.dialog, 'b-btn');
+    const b = overlay('b');
+    stack.open('b', { keep: b.root, opener: bBtn });
+    stack.close('a1');
+    stack.close('a2');
+    a2.root.remove();
+    stack.close('b');
+    expect(document.activeElement).toBe(a2Btn);
+    // the older owed opener is still owed: with a2Btn gone too, a later close that finds nothing of its own reaches a1Btn
+    a2Btn.remove();
+    const cOpener = button(x.dialog, 'c-open');
+    const c = overlay('c');
+    stack.open('c', { keep: c.root, opener: cOpener });
+    cOpener.remove();
+    stack.close('c');
+    expect(document.activeElement).toBe(a1Btn);
+    stack.releaseAll();
+  });
+});
