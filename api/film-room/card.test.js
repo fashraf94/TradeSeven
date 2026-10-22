@@ -35,6 +35,7 @@ const { makeTapeDb } = await import('../_utils/filmTape/__fixtures__/tapeFiresto
 const { seedDay, OWNER, AGENT } = await import('../_utils/filmTape/__fixtures__/tapeFixtures.js');
 const { stalledDay } = await import('../_utils/filmTape/__fixtures__/tagFixtures.js');
 const { momentsOf } = await import('../../src/utils/filmRoomMoments.js');
+const { CARD_ROUTE_COPY } = await import('../_utils/filmRoom/cardStore.js');
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
 
@@ -299,5 +300,47 @@ describe('review L1-4 / L1-9 / L2-5 / L2-6 — through the handler', () => {
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ error: 'invalid_op_id' });
     expect(playWrites()).toEqual([]);
+  });
+});
+
+// ── Astra's B2 review (docs/audits/20261022_ASTRA_REVIEW_FILM_ROOM_B2_CARD.md), as Amendment I rules it ──
+describe('Amendment I RI-1 (Astra F1) — through the handler: a create replay answers only the entry\'s own owner', () => {
+  const entryPath = `agents/${AGENT}/plays/op_1`;
+  // a foreign op id's answer: the code, its sentence and the caller's own op id — nothing of the stored entry
+  const REFUSAL = { error: 'op_conflict', message: CARD_ROUTE_COPY.op_conflict, entryId: 'op_1' };
+  const withoutOwner = (doc) => { const rest = { ...doc }; delete rest.ownerId; return rest; };
+
+  it('Astra\'s repro: the caller\'s entry re-owned to another user (alone, then with a planted foreign note) — the same op id and body → 409 op_conflict holding nothing of the entry; nothing written', async () => {
+    const first = await post(create());
+    expect(first.statusCode).toBe(200);
+    for (const [label, over] of [['another owner', { ownerId: 'someone-else' }], ['another owner and a foreign note', { ownerId: 'someone-else', note: 'A foreign note.' }]]) {
+      t.store.set(entryPath, { ...first.body.card, ...over });
+      const res = await post(create());
+      expect(res.statusCode, label).toBe(409);
+      expect(res.body, label).toEqual(REFUSAL);
+      expect(JSON.stringify(res.body), label).not.toMatch(/someone-else|A foreign note|Let it go sooner|opFingerprint|ownerId/);
+    }
+    expect(playWrites()).toHaveLength(1);
+  });
+
+  it('a missing ownerId → the same refusal; the same owner\'s replay stays idempotent (200, the entry, no second write)', async () => {
+    const first = await post(create());
+    t.store.set(entryPath, withoutOwner(first.body.card));
+    const res = await post(create());
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual(REFUSAL);
+    t.store.set(entryPath, first.body.card);
+    const again = await post(create());
+    expect(again.statusCode).toBe(200);
+    expect(again.body).toEqual({ idempotent: true, card: first.body.card, open: 1, cap: 5 });
+    expect(playWrites()).toHaveLength(1);
+  });
+
+  it('the cap counts the caller\'s own entries: four own + one open entry owned by another user under the same agent → the fifth own card files', async () => {
+    for (let i = 0; i < 4; i += 1) expect((await post(create({ opId: `own_${i}` }))).statusCode).toBe(200);
+    t.store.set(`agents/${AGENT}/plays/foreign`, { ...t.store.get(`agents/${AGENT}/plays/own_0`), entryId: 'foreign', opId: 'foreign', ownerId: 'someone-else' });
+    const res = await post(create({ opId: 'own_4' }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ idempotent: false, open: 5, cap: 5 });
   });
 });

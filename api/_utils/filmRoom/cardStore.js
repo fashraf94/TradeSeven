@@ -15,8 +15,10 @@
 //   create   the entry's id IS the create op id (a client id in the forge-id
 //            class), so a replay finds its own entry: the same op id with the
 //            same request fingerprint is the entry again, an IDEMPOTENT
-//            success; the same op id with a different request → 409
-//            op_conflict. Then the open-card cap (S9: cards at `card` or
+//            success; the same op id with a different request, or on an entry
+//            whose own ownerId is missing or another user's (Amendment I
+//            RI-1) → 409 op_conflict, with nothing of the entry. Then the
+//            open-card cap (S9: the caller's own cards at `card` or
 //            `nominated` that are not shelved) → 409 cap_reached, naming the
 //            cap. Then `tx.create` — never an overwrite.
 //   retire   a compare-and-set on `version`: `expectedVersion` ≠ the stored
@@ -177,11 +179,15 @@ export async function createCard(db, { uid, agentId, opId, payload, nowIso, requ
     const agent = ownedAgent(await tx.get(agentRefOf(db, agentId)), uid);
     const ref = playRefOf(db, agentId, opId);
     const existingSnap = await tx.get(ref);
-    const all = docsOf(await tx.get(playsColOf(db, agentId)));
+    // the cap counts the caller's own entries only, as readCards does (Amendment I RI-1)
+    const all = docsOf(await tx.get(playsColOf(db, agentId))).filter((e) => e.ownerId === uid);
     const open = openCardCount(all, agent.archetype);
     if (existingSnap?.exists) {
       const existing = typeof existingSnap.data === 'function' ? existingSnap.data() : existingSnap.data;
-      if (existing?.opFingerprint === opFingerprint) return { idempotent: true, card: existing, open, cap: OPEN_CARD_CAP };
+      // a replay answers only the entry's OWN owner (RI-1, Astra F1): a missing or another ownerId is refused as a
+      // foreign op id is, and the body holds nothing of the entry
+      if (!isObj(existing) || existing.ownerId !== uid) throw fail(409, 'op_conflict', { entryId: opId });
+      if (existing.opFingerprint === opFingerprint) return { idempotent: true, card: existing, open, cap: OPEN_CARD_CAP };
       throw fail(409, 'op_conflict', { entryId: opId });
     }
     if (payload.archetypeCodeId !== agent.archetype) throw fail(409, 'archetype_changed', { archetypeCodeId: payload.archetypeCodeId, current: agent.archetype });

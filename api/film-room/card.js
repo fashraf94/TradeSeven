@@ -28,7 +28,8 @@
 //   the question: not on the menu for that situation and version → 400
 //   question_not_on_menu;
 //   the store (cardStore.js): the agent not the caller's → 403; the same op id
-//   under a different request → 409 op_conflict; the day taped under another
+//   under a different request, or on an entry whose own owner is not the
+//   caller (Amendment I RI-1) → 409 op_conflict; the day taped under another
 //   archetype than the agent's current one → 409 archetype_changed (a card
 //   would be shelved at birth); the open-card cap (S9) → 409 cap_reached,
 //   naming the cap; a retire whose version does not match → 409

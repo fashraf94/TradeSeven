@@ -277,3 +277,44 @@ describe('review L1-4 — the create fingerprint hashes the client\'s request, n
     expect(playWrites(t)).toHaveLength(1);
   });
 });
+
+// ── Astra's B2 review (docs/audits/20261022_ASTRA_REVIEW_FILM_ROOM_B2_CARD.md), as Amendment I rules it ──
+describe('Amendment I RI-1 (Astra F1) — a create replay answers only the entry\'s own owner; the cap counts only the caller\'s entries', () => {
+  // the refusal a foreign op id gets: the code, its sentence and the caller's own op id — no field of the stored entry
+  const REFUSAL = { status: 409, code: 'op_conflict', extra: { entryId: 'op_1' }, message: CARD_ROUTE_COPY.op_conflict };
+  const withoutOwner = (doc) => { const rest = { ...doc }; delete rest.ownerId; return rest; };
+
+  it('Astra\'s repro: the entry under the caller\'s agent carries another user\'s ownerId, nothing else changed — the same op id and request → 409 op_conflict, nothing of the entry, nothing written', async () => {
+    const t = fresh();
+    const a = await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'op_1', payload: payload(), nowIso: NOW });
+    t.store.set(playPath('op_1'), { ...a.card, ownerId: 'someone-else' });
+    const r = await code(createCard(t.db, { uid: UID, agentId: AGENT, opId: 'op_1', payload: payload(), nowIso: LATER }));
+    expect(r).toEqual(REFUSAL);
+    expect(JSON.stringify(r)).not.toMatch(/someone-else|Let it go sooner|opFingerprint/);
+    expect(playWrites(t)).toHaveLength(1);
+    expect(t.store.get(playPath('op_1'))).toEqual({ ...a.card, ownerId: 'someone-else' });
+  });
+
+  it('a missing ownerId is refused the same way; the same owner\'s replay stays the idempotent success (the control)', async () => {
+    const t = fresh();
+    const a = await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'op_1', payload: payload(), nowIso: NOW });
+    t.store.set(playPath('op_1'), withoutOwner(a.card));
+    expect(await code(createCard(t.db, { uid: UID, agentId: AGENT, opId: 'op_1', payload: payload(), nowIso: LATER }))).toEqual(REFUSAL);
+    t.store.set(playPath('op_1'), a.card);
+    expect(await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'op_1', payload: payload(), nowIso: LATER })).toEqual({ idempotent: true, card: a.card, open: 1, cap: OPEN_CARD_CAP });
+    expect(playWrites(t)).toHaveLength(1);
+  });
+
+  it('the cap ignores an open entry under the caller\'s agent owned by another user or by no one: four own + those two → the fifth own card files, the sixth is refused at 5 (the mutant: the cap counting them)', async () => {
+    const t = fresh();
+    for (let i = 0; i < 4; i += 1) await createCard(t.db, { uid: UID, agentId: AGENT, opId: `own_${i}`, payload: payload(), nowIso: NOW });
+    const own = t.store.get(playPath('own_0'));
+    t.store.set(playPath('foreign'), { ...own, entryId: 'foreign', opId: 'foreign', ownerId: 'someone-else' });
+    t.store.set(playPath('ownerless'), withoutOwner({ ...own, entryId: 'ownerless', opId: 'ownerless' }));
+    expect(await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'own_4', payload: payload(), nowIso: LATER })).toMatchObject({ idempotent: false, open: 5, cap: 5 });
+    expect(await code(createCard(t.db, { uid: UID, agentId: AGENT, opId: 'own_5', payload: payload(), nowIso: LATER }))).toMatchObject({ status: 409, code: 'cap_reached', extra: { cap: 5, open: 5 } });
+    // a replay's count is the caller's own too
+    expect(await createCard(t.db, { uid: UID, agentId: AGENT, opId: 'own_0', payload: payload(), nowIso: LATER })).toMatchObject({ idempotent: true, open: 5 });
+    expect((await readCards(t.db, { uid: UID, agentId: AGENT })).open).toBe(5);
+  });
+});
