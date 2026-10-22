@@ -228,3 +228,76 @@ describe('flag ON — an envelope too deep to hash is a mismatch, never a failed
     expect(session.parseResult.validation).toEqual(H.serverValidation());
   });
 });
+
+
+// ── L5d mutation-lens rows (proposed additions to api/forge/watchlist-dialogue.parseBinding.test.js) ──
+
+describe('flag ON — an honest client whose drop carries a bailout / hard-checkpoint bit (L5d-1)', () => {
+  // parse-signal's classifyBailout sets at most one of the two bits; the drop record and the honest envelope carry the
+  // same pair. serverParseOf must copy both, each from its own field.
+  for (const [shouldBailout, shouldHardCheckpoint] of [[true, false], [false, true]]) {
+    it(`L5d-1 shouldBailout ${shouldBailout} / shouldHardCheckpoint ${shouldHardCheckpoint}: the flag-OFF session byte for byte, no mismatch, the bits kept`, async () => {
+      const flagged = () => {
+        const s = scenario('paste_honest');
+        const dropPath = Object.keys(s.docs).find((p) => p.includes('/signalDrops/'));
+        s.docs[dropPath] = { ...H.dropRecord(), shouldBailout, shouldHardCheckpoint };
+        s.req.body.parseResult = { ...H.honestEnvelope(), shouldBailout, shouldHardCheckpoint };
+        return s;
+      };
+      const off = await runDialogue(flagged(), { serverParse: false });
+      const on = await runDialogue(flagged());
+      expect(off.response.status).toBe(200);
+      expect(serialized(on.docs[SESSION_PATH])).toBe(serialized(off.docs[SESSION_PATH]));
+      expect('parseEnvelopeMismatch' in on.docs[SESSION_PATH]).toBe(false);
+      expect(on.docs[SESSION_PATH].parseResult).toMatchObject({ shouldBailout, shouldHardCheckpoint });
+    });
+  }
+});
+
+describe('flag ON — the mismatch is logged as well as recorded (L5d-2)', () => {
+  it('L5d-2 a differing envelope warns once, naming the drop; an honest client warns nothing', async () => {
+    const differs = () => vi.mocked(console.warn).mock.calls.filter(([m]) => String(m).includes('parse envelope differs'));
+    await runDialogue(scenario('paste_differing_envelope'));
+    expect(differs()).toHaveLength(1);
+    expect(differs()[0][0]).toContain(H.DROP_ID);
+    vi.mocked(console.warn).mockClear();
+    await runDialogue(scenario('paste_honest'));
+    expect(differs()).toHaveLength(0);
+  });
+});
+
+describe('serverParseOf — the stored parse is SHAPED, not passed through (L5d-3)', () => {
+  it('L5d-3 trimmed, upper-cased and capped like the client envelope; a non-object validation is dropped', () => {
+    const raw = {
+      ...H.serverParse(),
+      topic: '  AI inference race  ',
+      tickers: [' aapl ', 'nvda'],
+      impliedTickers: Array.from({ length: 25 }, (_, i) => `t${i}`),
+      dataPoints: ['  Nvidia guided data-centre revenue up 40%  '],
+    };
+    const shaped = serverParseOf(H.dropRecord({ parse: raw }));
+    expect(shaped.parse.topic).toBe('AI inference race');
+    expect(shaped.parse.tickers).toEqual(['AAPL', 'NVDA']);
+    expect(shaped.parse.impliedTickers).toEqual(Array.from({ length: 20 }, (_, i) => `T${i}`));
+    expect(shaped.parse.dataPoints).toEqual(['Nvidia guided data-centre revenue up 40%']);
+    expect(serverParseOf(H.dropRecord({ validation: [{ symbol: 'AAPL', sectorId: 'tech' }] })).validation).toBeNull();
+  });
+});
+
+describe('the contentHash check still guards, flag off and on (L5d-4)', () => {
+  for (const serverParse of [false, true]) {
+    it(`L5d-4 flag ${serverParse ? 'ON' : 'OFF'}: a drop record without a string contentHash is refused even when the envelope carries none`, async () => {
+      const s = scenario('paste_honest');
+      const dropPath = Object.keys(s.docs).find((p) => p.includes('/signalDrops/'));
+      s.docs[dropPath] = { ...H.dropRecord(), contentHash: null };
+      const noHash = H.honestEnvelope();
+      delete noHash.contentHash;
+      s.req.body.parseResult = noHash;
+      const cap = await runDialogue(s, { serverParse });
+      expect(cap.response.status).toBe(400);
+      expect(cap.response.body.error).toBe('parse_result_mismatch');
+      expect(cap.modelRequests).toEqual([]);
+      expect(cap.store.writes).toEqual([]);
+    });
+  }
+});
