@@ -21,6 +21,16 @@ export const counted = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const one = (n) => n === 1;
 
 /**
+ * The checks section's ABSENT-ENTRY reason (tapeAssemble.js): a tick that
+ * names an evaluation entry the battle no longer holds leaves that check's
+ * `tickMs` unknown. Named here, in one place, because the tagger sets exactly
+ * this reason aside on a day with no recomputed holding (Film Room B2, Build B
+ * Amendment E RE-1 — tapeTags.js tagsCoverage): it is about a field the tagger
+ * never reads. The wording is B1's; nothing stored moves.
+ */
+export const ABSENT_ENTRY_REASON = 'tickMs unavailable where the entry is absent';
+
+/**
  * What a check with no record leaves unknown, per section, as the singular
  * and the plural clause (tapeAssemble.js unknownReason).
  */

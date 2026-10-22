@@ -645,6 +645,20 @@
       ]
     },
     {
+      "collectionGroup": "tape",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "etDate",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "researchWork",
       "queryScope": "COLLECTION",
       "fields": [

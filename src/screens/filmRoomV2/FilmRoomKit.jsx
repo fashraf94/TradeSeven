@@ -365,6 +365,7 @@ export function TextButton({ children, onClick, color = C.teal, expanded, contro
   return <button type="button" onClick={onClick} aria-expanded={expanded} aria-controls={controls} style={{ ...plain, color, textDecoration: 'underline', minHeight: 24, alignSelf: 'flex-start' }}><Label>{children}</Label></button>;
 }
 
-export function PrimaryButton({ children, onClick }) {
-  return <button type="button" onClick={onClick} style={{ ...plain, minHeight: 34, padding: '0 14px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint('teal', 0.12), border: `1px solid ${tint('teal', 0.4)}`, color: C.ink }}><Label size={12.5}>{children}</Label></button>;
+/** `disabled` (B2's Retire while a retire is pending) adds its attribute and its dimming ONLY when set: the button's bytes elsewhere are the goldens'. */
+export function PrimaryButton({ children, onClick, disabled = false }) {
+  return <button type="button" onClick={onClick} disabled={disabled || undefined} style={{ ...plain, minHeight: 34, padding: '0 14px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: tint('teal', 0.12), border: `1px solid ${tint('teal', 0.4)}`, color: C.ink, ...(disabled ? { opacity: 0.5 } : {}) }}><Label size={12.5}>{children}</Label></button>;
 }

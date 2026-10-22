@@ -444,6 +444,25 @@ service cloud.firestore {
                     && get(/databases/$(database)/documents/agents/$(agentId)).data.ownerId == request.auth.uid;
         allow write: if false;
       }
+
+      // Film Room B2 — THE PLAYS LEDGER (Build B spec
+      // docs/specs/FILM_ROOM_BUILD_B_CARD_SPEC_V1_20261010.md §4; shared
+      // contract §5): a card and, in the camp's later builds, a play are one
+      // entry at different stages, written only by POST /api/film-room/card
+      // through the Admin SDK (api/_utils/filmRoom/cardStore.js). The document
+      // carries its OWN `ownerId` (the rule reads the document, not the parent
+      // — the tape precedent): the owner reads it, and a LIST is admitted only
+      // when constrained to the caller's own ownerId (rules are not filters);
+      // another user, a privileged-claims context and an anonymous client are
+      // denied; no client write for anyone. Shelving is computed at read, never
+      // written. Proven by test/rules/filmRoomPlaysDenials.rules.mjs
+      // (npm run test:rules); the block text is pinned in the default suite by
+      // api/_utils/filmRoom/rulesIndex.test.js. Deploying the rules is a founder
+      // action after merge (Amendment G RG-7).
+      match /plays/{entryId} {
+        allow read: if request.auth != null && resource.data.ownerId == request.auth.uid;
+        allow write: if false;
+      }
     }
 
     // AGENT BATTLES — Server-managed collection with limited client writes.

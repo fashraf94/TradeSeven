@@ -247,7 +247,7 @@ export function ResultCard({ tape, finalDay = null }) {
   );
 }
 
-export default function FilmRoomGlance({ tape, desktop, selected, onSelect, finalDay = null }) {
+export default function FilmRoomGlance({ tape, desktop, selected, onSelect, finalDay = null, cards = null }) {
   const checksBlock = (
     <Section id="glance-checks" title={COPY.checks} count={<CheckCount tape={tape} />} doc={tape} coverageAt={['coverage', 'checks']} note={COPY.riskNote}>
       <div style={{ ...card, gap: 12 }}>
@@ -257,7 +257,7 @@ export default function FilmRoomGlance({ tape, desktop, selected, onSelect, fina
         </div>
         <ScorePath tape={tape} selected={selected} onSelect={onSelect} height={desktop ? 190 : 130} />
         <CheckStrip tape={tape} selected={selected} onSelect={onSelect} />
-        {selected != null && tape.checks?.[selected] ? <CheckDetail tape={tape} index={selected} onClose={() => onSelect(null)} /> : null}
+        {selected != null && tape.checks?.[selected] ? <CheckDetail tape={tape} index={selected} onClose={() => onSelect(null)} cards={cards} /> : null}
         <span style={{ ...eyebrow, color: C.ink2 }}>{COPY.runsTitle}</span>
         <RunList tape={tape} />
       </div>

@@ -1,0 +1,33 @@
+# Build B spec V1.0 — Amendment H: founder rulings on the B2 report's §8 (2026-10-22)
+
+- **RH-1 — Set's route (RG-9).**
+  - The one setting a player can change that `stalled` reads is the tempo dial, which is live (`TEMPO_DIAL_ENABLED`).
+  - In the screen pass, Set links to the tempo dial on the Forge workshop when the agent's archetype has its stagnation rule on. Set still carries RG-5's sentence.
+  - For an archetype with the rule off, Set states in plain words that no setting changes this situation, with no link.
+- **RH-2 — Recurrences in another battle.**
+  - Every battle is one trading day today, so almost every recurrence is in another battle.
+  - In the screen pass, a recurrence row opens that battle's Film Room day at its moment, through the same App path Battle History uses to open a review.
+  - This is required before any flip.
+- **RH-3 — The note.** Accepted as built:
+  - length is counted in code points after trimming;
+  - every Unicode Cc character is refused, not stripped, newline included;
+  - an empty note is refused.
+- **RH-4 — The counter's window.** Accepted as built: 120 days by default, floored at the oldest open Watch card's creation day, and capped at 400 days.
+- **RH-5 — The tape's archetype against the agent's.**
+  - Accepted as built: a card from a day taped under a different archetype than the agent's current one is refused (409 `archetype_changed`).
+  - A filed card's `archetypeCodeId` is therefore both the day's archetype and the agent's archetype at filing.
+- **RH-6 — An unavailable day gives one answer everywhere.**
+  - A day whose `coverage.tags` is unavailable offers no moments. The screen already shows none.
+  - In the screen pass, the card endpoint refuses its moments (409 `tags_unavailable`), and the counter neither counts it nor lists its recurrences.
+  - The counter reports how many days in its window were unavailable, so the screen can say so.
+  - This is required before any flip.
+- **RH-7 — `slotsVersion`.** Accepted as a written-once ledger field, beside `situationVersion` and `questionVersion`.
+- **RH-8 — "Battle days since the card's date."** Struck from spec §6. The recurrence list, with each recurrence's day, says it.
+- **RH-9 — Weekly counts.** Returned by the counter and not rendered. A later surface may show them.
+- **RH-10 — The slots' class.** S9 and S10 render as recorded (R), on the precedent of the tape's own declaration. The form's cap comes from the counter alone.
+- **RH-11 — The player's typed text.** Accepted: the note textarea (`[data-note]`) is the player's words, not the screen's voice, and is exempt from the copy sweeps. Every other textarea is swept.
+- **RH-12 — The op id.** Accepted: the entry id is the create op id, a client UUID. `retire` keeps its own op id on the stage row.
+- **RH-13 — The recorded count's fallback.** Accepted as built: the check's record (R) where it holds the item's count, otherwise the item's count (D).
+- **RH-14 — Days without a situations section.**
+  - No backfill is needed now. The 2026-10-15 refresh re-tagged every written tiered day from 2026-09-21 to 2026-10-14, and every day since has been tagged by the nightly pass.
+  - The absence sentence stays as the honest answer for any day that has no section.

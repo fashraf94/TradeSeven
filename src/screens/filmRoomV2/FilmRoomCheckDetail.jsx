@@ -13,6 +13,7 @@ import React from 'react';
 import { valueAt, etClock, checkStateOf, riskLines, fmtPlain, fmtPrice } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, card, eyebrow, foot, mono, TapeNum, When, Rec, Row, StateTag, TextButton } from './FilmRoomKit';
+import { CheckTags } from './FilmRoomCardRegions';
 
 const EVIDENCE_NUMBERS = ['px', 'chg', 'atrX', 'vwapDev', 'bbPct'];
 
@@ -39,7 +40,12 @@ export function EvidenceStamp({ tape, index, symbol }) {
   );
 }
 
-export default function CheckDetail({ tape, index, onClose }) {
+/**
+ * @param {object|null} [props.cards]  Film Room B2 (Amendment G RG-2): `{ onTakeHome }` only when cards resolve on for
+ *                                     the battle's owner — the check then shows its situation tag line (CheckTags);
+ *                                     null otherwise, and nothing here changes.
+ */
+export default function CheckDetail({ tape, index, onClose, cards = null }) {
   const c = tape.checks[index];
   const st = checkStateOf(c);
   const risk = riskLines(c);
@@ -52,6 +58,7 @@ export default function CheckDetail({ tape, index, onClose }) {
       </div>
       <StateTag color={st.tone === 'swap' ? C.teal : st.tone === 'failed' ? C.copper : C.ink2}>{st.label}</StateTag>
       {st.key === 'default_hold' ? <span data-default-hold-note="" style={foot}>{COPY.defaultHoldNote}</span> : null}
+      {cards ? <CheckTags tape={tape} index={index} onTakeHome={cards.onTakeHome} /> : null}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         <Row border={false} k={COPY.decision} v={<span style={mono(11, C.ink)}>{c.decision?.final ? COPY.decisionOf(c.decision.original, c.decision.final) : COPY.decisionNone}</span>} />
         {c.scores ? (

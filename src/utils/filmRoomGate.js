@@ -27,7 +27,7 @@
 // holds it in a module-scope const, so a featureFlags mock reaches every read.
 
 import { getAuth } from 'firebase/auth';
-import { FILM_ROOM_V2_MODE, FILM_ROOM_V2_MODES } from '../config/featureFlags';
+import { FILM_ROOM_V2_MODE, FILM_ROOM_V2_MODES, FILM_ROOM_CARDS_MODE, FILM_ROOM_CARDS_MODES } from '../config/featureFlags';
 
 /** The route the server answers on (the cockpit's own; no new endpoint). */
 export const FILM_ROOM_VERDICT_PATH = '/api/agent/cockpit-status';
@@ -162,4 +162,49 @@ export async function resolveFilmRoomV2ForBattle(battle, { readVerdict = readFil
   let verdict = false;
   try { verdict = (await readVerdict(id, { ownerId: typeof battle?.ownerId === 'string' ? battle.ownerId : null })) === true; } catch { verdict = false; }
   return filmRoomV2On(mode, verdict);
+}
+
+// ── Film Room B2 — the CARDS gate (Build B spec §7; Amendment G RG-2) ──────
+//
+// FILM_ROOM_CARDS_MODE ('off' | 'allowlist' | 'on') resolves per battle owner
+// exactly as FILM_ROOM_V2_MODE does, and in 'allowlist' it reads THE SAME
+// cached verdict (readFilmRoomVerdict: the existing cockpit-status
+// `allowlisted` answer for the caller's own battle) — one request per owner
+// per page life, shared with v2's gate; no uid in the client. Everywhere
+// cards do not resolve on, the screen is the current v2 byte for byte: the
+// reserved slots stay empty and nothing is asked of the card endpoints.
+
+/** The cards mode, when it is one of the walked states, else 'off'. Never throws. */
+export function resolveFilmRoomCardsMode() {
+  try {
+    const modes = FILM_ROOM_CARDS_MODES;
+    const mode = FILM_ROOM_CARDS_MODE;
+    return Array.isArray(modes) && modes.includes(mode) ? mode : OFF;
+  } catch {
+    return OFF;
+  }
+}
+
+/** Do cards resolve on for this battle, given the mode and (in 'allowlist') the verdict? Pure; undefined reads as off. */
+export function filmRoomCardsOn(mode, verdict) {
+  if (mode === 'on') return true;
+  if (mode === 'allowlist') return verdict === true;
+  return false;
+}
+
+/**
+ * The per-owner resolution of the cards mode for one battle: 'off' and 'on'
+ * resolve without a request; 'allowlist' asks (once per owner, cached — the
+ * verdict v2's gate also reads).
+ *
+ * @returns {Promise<boolean>}
+ */
+export async function resolveFilmRoomCardsForBattle(battle, { readVerdict = readFilmRoomVerdict } = {}) {
+  const mode = resolveFilmRoomCardsMode();
+  if (mode !== 'allowlist') return filmRoomCardsOn(mode, undefined);
+  const id = filmRoomBattleId(battle);
+  if (!id) return false;
+  let verdict = false;
+  try { verdict = (await readVerdict(id, { ownerId: typeof battle?.ownerId === 'string' ? battle.ownerId : null })) === true; } catch { verdict = false; }
+  return filmRoomCardsOn(mode, verdict);
 }

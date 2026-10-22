@@ -44,6 +44,7 @@ import { stalledDay, epochEntry, quoteOf } from './__fixtures__/tagFixtures.js';
 import { SITUATIONS, SITUATION_REGISTRY_VERSION } from '../../../src/data/situationRegistry.js';
 import { computeB1Census } from '../../../scripts/census-film-room-b1.mjs';
 import { stableStringify } from './tapeMerge.js';
+import { ABSENT_ENTRY_REASON } from './tapeNotes.js';
 
 // Rows write whole fixture days through the real writer (the heavy tape suites' limit).
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
@@ -513,5 +514,146 @@ describe('Amendment D RD-7 (review X2-6) — the daily change and the change sin
     expect(tape.tags.inputs.holdingBasis).toEqual({ ACN: 'recomputed', MSFT: 'recorded', NVDA: 'recorded' });
     // ACN's records (+0.5% on the day) would make it a winner; its basis is recomputed, so −0.4% since entry stalls it
     expect(taggedSyms(tape)).toEqual(['ACN', 'NVDA']);
+  });
+});
+
+// ── Film Room B2, Amendment E RE-1 — coverage on a recorded day ───────────
+// RD-5 reads no evidence on a day with no recomputed holding; RE-1 adds that
+// such a day sets aside the checks section's ABSENT-ENTRY reason too ("tickMs
+// unavailable where the entry is absent", tapeNotes.js ABSENT_ENTRY_REASON):
+// every reason that lowers the evidence section also lowers the checks section
+// through that one reason, which is about a field the tagger never reads. Every
+// other checks reason still counts; a mixed or a fully recomputed day is
+// unchanged. The stored checks section itself never moves.
+describe('Amendment E RE-1 — a recorded day sets aside the checks section\'s absent-entry reason', () => {
+  const DAY = {
+    recorded: [1, 2, 3, 4].map((seq) => rrow(seq, (seq - 1) * 15, { rec: { ACN: R(seq) }, px: { ACN: 300 } })),
+    mixed: [1, 2, 3, 4].map((seq) => rrow(seq, (seq - 1) * 15, { held: ['ACN', 'MSFT'], rec: { ACN: R(seq) }, px: { ACN: 300, MSFT: 420 } })),
+    recomputed: [1, 2, 3, 4].map((seq) => rrow(seq, (seq - 1) * 15, { px: { ACN: 300 + (seq % 2) * 0.01 } })),
+  };
+  const GAP = '1 minted check of this day has no tick record (minted but not captured): tickSeq 2';
+  /** The checks section as tapeAssemble.js writes it for a lost entry: the reason is its note AND its caveat. */
+  const lost = { status: 'partial', note: ABSENT_ENTRY_REASON, caveats: [ABSENT_ENTRY_REASON] };
+  /** …and for an entry the cap may have evicted: a limit — in the note, not a caveat. */
+  const evicted = { status: 'partial', note: ABSENT_ENTRY_REASON, caveats: [] };
+  const tagsFor = (checks, checksSection, evidenceStatus) => tagger.tagTapeDay({
+    battle: { agentContext: { archetype: 'momentum_chaser' } }, dialEnabled: true,
+    doc: { checks, actions: [], coverage: { checks: checksSection, evidence: { status: evidenceStatus } } },
+  });
+
+  it('a FULLY RECORDED day whose checks are partial by the absent-entry reason alone (a lost entry) reads complete, no note, no evidence source', () => {
+    const r = tagsFor(DAY.recorded, lost, 'partial');
+    expect(r.tags.inputs.holdingBasis).toEqual({ ACN: 'recorded' });
+    expect(r.coverage).toMatchObject({ status: 'complete', note: null, sources: ['checks', 'checks.risk', 'actions', 'checks.stagnation'] });
+    expect(r.tags.items.map((i) => i.tickSeq)).toEqual([3, 4]);
+  });
+
+  it('…and by the same reason as a LIMIT (an entry the cap may have evicted): complete too', () => {
+    expect(tagsFor(DAY.recorded, evicted, 'partial').coverage).toMatchObject({ status: 'complete', note: null });
+  });
+
+  it('a MIXED day (MSFT recomputed) with the same sections is unchanged: unavailable, naming the checks and the evidence', () => {
+    const r = tagsFor(DAY.mixed, lost, 'partial');
+    expect(r.tags.inputs.holdingBasis).toEqual({ ACN: 'recorded', MSFT: 'recomputed' });
+    expect(r.coverage).toMatchObject({
+      status: 'unavailable', note: 'stalled unavailable: the checks section is partial; the evidence section is partial',
+      sources: ['checks', 'checks.evidence', 'checks.risk', 'actions', 'checks.stagnation'],
+    });
+  });
+
+  it('a FULLY RECOMPUTED day with the same sections is unchanged: unavailable, naming both', () => {
+    const r = tagsFor(DAY.recomputed, lost, 'partial');
+    expect(r.tags.inputs.holdingBasis).toEqual({ ACN: 'recomputed' });
+    expect(r.coverage).toMatchObject({ status: 'unavailable', note: 'stalled unavailable: the checks section is partial; the evidence section is partial' });
+  });
+
+  it('any OTHER checks reason still counts on a recorded day: a gap beside the absent-entry reason, or alone, keeps stalled unavailable', () => {
+    const beside = { status: 'partial', note: `${GAP}; ${ABSENT_ENTRY_REASON}`, caveats: [GAP, ABSENT_ENTRY_REASON] };
+    expect(tagsFor(DAY.recorded, beside, 'partial').coverage).toMatchObject({ status: 'unavailable', note: 'stalled unavailable: the checks section is partial' });
+    const alone = { status: 'partial', note: GAP, caveats: [GAP] };
+    expect(tagsFor(DAY.recorded, alone, 'complete').coverage).toMatchObject({ status: 'unavailable', note: 'stalled unavailable: the checks section is partial' });
+    // a merged section whose caveat is not in its note still counts
+    const caveatOnly = { status: 'partial', note: ABSENT_ENTRY_REASON, caveats: [ABSENT_ENTRY_REASON, GAP] };
+    expect(tagsFor(DAY.recorded, caveatOnly, 'partial').coverage).toMatchObject({ status: 'unavailable', note: 'stalled unavailable: the checks section is partial' });
+  });
+
+  it('nothing is set aside from silence, or from a section that is not partial', () => {
+    expect(tagsFor(DAY.recorded, { status: 'partial', note: null, caveats: [] }, 'complete').coverage).toMatchObject({ status: 'unavailable', note: 'stalled unavailable: the checks section is partial' });
+    expect(tagsFor(DAY.recorded, { status: 'unavailable', note: ABSENT_ENTRY_REASON }, 'partial').coverage).toMatchObject({ status: 'unavailable', note: 'stalled unavailable: the checks section is unavailable' });
+    expect(tagsFor(DAY.recorded, { status: 'complete', note: null, caveats: [] }, 'partial').coverage).toMatchObject({ status: 'complete' });
+  });
+
+  it('statusSettingAside — the reader alone: partial by the set-aside reason(s) only → complete; anything else is the section\'s own status', () => {
+    const A = ABSENT_ENTRY_REASON;
+    expect(tagger.statusSettingAside({ status: 'partial', note: A, caveats: [A] }, [A])).toBe('complete');
+    expect(tagger.statusSettingAside({ status: 'partial', note: A }, [A])).toBe('complete');
+    expect(tagger.statusSettingAside({ status: 'partial', note: `${GAP}; ${A}` }, [A])).toBe('partial');
+    expect(tagger.statusSettingAside({ status: 'partial', note: A, caveats: [GAP] }, [A])).toBe('partial');
+    expect(tagger.statusSettingAside({ status: 'partial', note: null }, [A])).toBe('partial');
+    expect(tagger.statusSettingAside({ status: 'partial', note: A }, [])).toBe('partial');
+    expect(tagger.statusSettingAside({ status: 'complete', note: null }, [A])).toBe('complete');
+    expect(tagger.statusSettingAside({ status: 'unavailable', note: A }, [A])).toBe('unavailable');
+    expect(tagger.statusSettingAside(undefined, [A])).toBeUndefined();
+  });
+
+  describe('through the real close pass — a recorded day whose tick names an evaluation entry the battle no longer holds', () => {
+    /** The day with the live rule's records on every tick, and check 3's evaluation entry lost (not evicted: the array is under its cap). */
+    const lostEntryDay = async (over = {}) => {
+      const fx = await stalledDay({ battleId: 'b-re1', recordStagnation: true, ...over });
+      fx.battle.evaluations = fx.battle.evaluations.filter((e) => e.evalId !== 'b-re1:e3');
+      return fx;
+    };
+
+    it('the precondition: the checks section is partial by the absent-entry reason ALONE, the evidence section partial, every holding recorded', async () => {
+      const tape = await writeFor(await lostEntryDay());
+      expect(tape.coverage.checks).toMatchObject({ status: 'partial', note: ABSENT_ENTRY_REASON, caveats: [ABSENT_ENTRY_REASON] });
+      expect(tape.coverage.evidence.status).toBe('partial');
+      expect(Object.values(tape.tags.inputs.holdingBasis).every((b) => b === 'recorded')).toBe(true);
+    });
+
+    it('RE-1: stalled reads complete — the items stand, no evidence source, and the stored checks section itself is untouched', async () => {
+      const tape = await writeFor(await lostEntryDay());
+      expect(tape.coverage.tags).toMatchObject({ status: 'complete', note: null, sources: ['checks', 'checks.risk', 'actions', 'checks.stagnation'] });
+      expect(tape.tags.items.length).toBeGreaterThan(0);
+      expect(tape.coverage.checks.status).toBe('partial');
+    });
+
+    it('the same day MIXED (ACN\'s record missing at one check): unchanged — unavailable, naming the checks and the evidence', async () => {
+      const fx = await lostEntryDay();
+      delete fx.ticks.find((tk) => tk.tickSeq === 4).risk.stagnation.ACN;
+      const tape = await writeFor(fx);
+      expect(tape.tags.inputs.holdingBasis.ACN).toBe('recomputed');
+      // the recomputed holding's count pauses at the priceless check too: the note says so after the two sections
+      expect(tape.coverage.tags.status).toBe('unavailable');
+      expect(tape.coverage.tags.note).toMatch(/^stalled unavailable: the checks section is partial; the evidence section is partial(; the count pauses at 1 check that carries no price for a held stock)?$/);
+    });
+
+    it('the same day with a SECOND checks reason (no evaluation-run records, so deferrals cannot be listed): still unavailable, naming the checks', async () => {
+      const fx = await lostEntryDay();
+      fx.runs = [];
+      const tape = await writeFor(fx);
+      expect(Object.values(tape.tags.inputs.holdingBasis).every((b) => b === 'recorded')).toBe(true);
+      expect(tape.coverage.checks.note).toContain(ABSENT_ENTRY_REASON);
+      expect(tape.coverage.checks.note).not.toBe(ABSENT_ENTRY_REASON);
+      expect(tape.coverage.tags).toMatchObject({ status: 'unavailable', note: 'stalled unavailable: the checks section is partial' });
+    });
+
+    it('a refresh of a day stored before RE-1 moves coverage.tags from unavailable to complete and nothing else (Amendment G RG-10, criterion 9)', async () => {
+      const fx = await lostEntryDay();
+      const t = makeTapeDb(seedDay({}, fx));
+      await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NOW });
+      const path = tapePath(fx);
+      const before = structuredClone(t.store.get(path));
+      // the "stored before RE-1" day is the CURRENT writer's output with coverage.tags overridden to what B1.1 stored
+      // (the checks' partial status counted) — a movement check of the refresh, not a pre-RE-1 fixture (review L4-12)
+      before.coverage.tags = { ...before.coverage.tags, status: 'unavailable', note: 'stalled unavailable: the checks section is partial' };
+      t.store.set(path, before);
+      const r = await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NOW + 60_000 });
+      expect(r.status).toBe('written');
+      const after = t.store.get(path);
+      expect(after.coverage.tags).toMatchObject({ status: 'complete', note: null });
+      const strip = (d) => { const c = structuredClone(d); delete c.coverage.tags; delete c.writtenAt; delete c.runCount; delete c.passes.close.writtenAt; return c; };
+      expect(stableStringify(strip(after))).toBe(stableStringify(strip(before)));
+    });
   });
 });

@@ -75,6 +75,14 @@ export const SCREEN_AGGREGATE_CLASSES = Object.freeze({
   'change(sessionOpen.value to bars[last].c)': 'market',
   'sum(bars[].v)': 'market',
   'axis(% from the session open)': 'market',
+  // Film Room B2 (Amendment G RG-3, RG-8): a moment's number of checks is a count of stored tag items (derived);
+  // the open-card count is a count of ledger entries (derived); the typed note's length is a count (derived);
+  // the two founder slots S9 and S10 are copied from their versioned module, as the tape copies its slots (recorded).
+  'count(tags.items[] in a moment)': 'derived',
+  'count(plays[] open)': 'derived',
+  'slot(S9 open cards per agent)': 'recorded',
+  'count(characters in the note)': 'derived',
+  'slot(S10 note characters)': 'recorded',
 });
 
 /**

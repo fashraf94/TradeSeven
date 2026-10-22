@@ -578,11 +578,11 @@ function RationaleSection({ tape, onCheck }) {
 
 // ── checks (BA-7, BA-44) ────────────────────────────────────────────────────
 
-function ChecksSection({ tape, selected, onSelect }) {
+function ChecksSection({ tape, selected, onSelect, cards }) {
   const checks = Array.isArray(tape.checks) ? tape.checks : [];
   return (
     <Section id="checks" title={COPY.checks} count={<CheckCount tape={tape} />} doc={tape} coverageAt={['coverage', 'checks']} note={COPY.riskNote}>
-      {selected != null && checks[selected] ? <CheckDetail tape={tape} index={selected} onClose={() => onSelect(null)} /> : null}
+      {selected != null && checks[selected] ? <CheckDetail tape={tape} index={selected} onClose={() => onSelect(null)} cards={cards} /> : null}
       {checks.length ? (
         <div style={{ ...card, gap: 0, padding: '2px 14px' }}>
           {checks.map((c, i) => {
@@ -619,7 +619,7 @@ function DiagnosticsSection({ tape }) {
   );
 }
 
-export default function FilmRoomStudy({ tape, desktop, onDeep, selected, onSelect, jump }) {
+export default function FilmRoomStudy({ tape, desktop, onDeep, selected, onSelect, jump, cards = null }) {
   const col = { display: 'flex', flexDirection: 'column', gap: 22, minWidth: 0 };
   const sections = {
     holdings: <HoldingsSection key="holdings" tape={tape} onDeep={onDeep} />,
@@ -627,7 +627,7 @@ export default function FilmRoomStudy({ tape, desktop, onDeep, selected, onSelec
     directives: <DirectivesSection key="directives" tape={tape} />,
     plans: <PlansSection key="plans" tape={tape} />,
     rationale: <RationaleSection key="rationale" tape={tape} onCheck={onSelect} />,
-    checks: <ChecksSection key="checks" tape={tape} selected={selected} onSelect={onSelect} />,
+    checks: <ChecksSection key="checks" tape={tape} selected={selected} onSelect={onSelect} cards={cards} />,
     diagnostics: <DiagnosticsSection key="diagnostics" tape={tape} />,
   };
   if (desktop) {

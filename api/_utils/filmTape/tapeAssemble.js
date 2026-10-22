@@ -23,7 +23,7 @@ import { flattenPortfolioServer, flattenBenchServer } from '../agentScoring.js';
 import { tradingTimeline } from '../../../src/utils/tapeSchedule.js';
 // BaggerBomb stock thresholds v2 (Ruling 16): the persisted dispatch, Node-clean (BUILD_RULES §4).
 import { stockModelRoute, displayedStockScores } from '../../../src/utils/stockThresholdModel.js';
-import { NOTES, UNKNOWN_WHAT, counted } from './tapeNotes.js';
+import { NOTES, UNKNOWN_WHAT, counted, ABSENT_ENTRY_REASON } from './tapeNotes.js';
 import { errorClassOf } from './errorClass.js';
 
 /** `evaluations[]` is `slice(-150)` (api/cron/agent-evaluate.js:4257). */
@@ -1241,8 +1241,9 @@ export function assembleTape({
     }
   }
   if (deferralsTruncated) checkReasons.push(caveat('a run record\'s deferred list was truncated — deferrals past its first 200 ids are not listed (deferralsTruncated)'));
-  if (lostEntries) checkReasons.push(caveat('tickMs unavailable where the entry is absent'));
-  else if (entryReasons.length) checkReasons.push(limit('tickMs unavailable where the entry is absent', LIMIT_SOURCES.evaluationsCap));
+  // The one reason the tagger may set aside (B2, Amendment E RE-1 — tapeNotes.js ABSENT_ENTRY_REASON): named, not retyped.
+  if (lostEntries) checkReasons.push(caveat(ABSENT_ENTRY_REASON));
+  else if (entryReasons.length) checkReasons.push(limit(ABSENT_ENTRY_REASON, LIMIT_SOURCES.evaluationsCap));
   const coverage = {
     checks: coverageOf(statusFrom(checkReasons, checks.length > 0), {
       span: checksSpan, sources: ['ticks', 'agentEvalRuns', ...(entries.day.length ? ['evaluations'] : [])], note: texts(checkReasons).join('; ') || null,

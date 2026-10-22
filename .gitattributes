@@ -9,3 +9,6 @@ api/_utils/callRecords/__fixtures__/saidLintCorpus.json text eol=lf
 api/_utils/__fixtures__/meetingCopyBaseline.json text eol=lf
 api/_utils/filmTape/__fixtures__/tagsB1Golden.json text eol=lf
 api/_utils/__fixtures__/stagnationLiveGolden.json text eol=lf
+# Film Room B2: the v2 goldens (the build's base, cards off), pinned by SHA-256 of their checked-out bytes
+# (src/screens/filmRoomV2/FilmRoomScreenV2.cardsOff.golden.jsdom.test.jsx) — LF on every platform.
+src/screens/__golden__/filmRoomV2.*.html text eol=lf
