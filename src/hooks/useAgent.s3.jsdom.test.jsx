@@ -158,3 +158,35 @@ describe('new — the read\'s own state, owner-tagged (R-S3-4)', () => {
     expect(last()).toMatchObject({ status: 'ready', ownerUid: 'uid-A', ownerEpoch: null });
   });
 });
+
+describe('no uid after an answered read adds no render, and reads as nothing resolved (review T1-3)', () => {
+  it('a no-agent user signs out: the prop change renders once, the effect writes nothing (as before S3)', () => {
+    render({ uid: 'uid-A' });
+    act(() => sub().callback(null));
+    const before = renders;
+    render({ uid: undefined });
+    expect(renders - before).toBe(1);
+    expect(legacy(last())).toEqual({ agent: null, loading: false, error: null });
+  });
+
+  it('a failed read, then no uid: the same — one render for the prop, none from the effect', () => {
+    render({ uid: 'uid-A' });
+    act(() => sub().fail(new Error('permission-denied')));
+    const before = renders;
+    render({ uid: undefined });
+    expect(renders - before).toBe(1);
+  });
+
+  it('the hub\'s fields for no uid: loading, no owner, no epoch — and a uid back subscribes again and is ready for it', () => {
+    render({ uid: 'uid-A', options: { ownerEpoch: 4 } });
+    act(() => sub().callback(null));
+    expect(last()).toMatchObject({ status: 'ready', ownerUid: 'uid-A', ownerEpoch: 4 });
+    render({ uid: undefined, options: { ownerEpoch: 5 } });
+    expect(last()).toMatchObject({ status: 'loading', readError: null, ownerUid: null, ownerEpoch: null });
+    render({ uid: 'uid-A', options: { ownerEpoch: 6 } });
+    expect(svc.subs).toHaveLength(2);
+    expect(last()).toMatchObject({ status: 'loading', ownerUid: null });
+    act(() => sub().callback(AGENT));
+    expect(last()).toMatchObject({ status: 'ready', ownerUid: 'uid-A', ownerEpoch: 6 });
+  });
+});

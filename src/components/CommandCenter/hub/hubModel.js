@@ -22,6 +22,9 @@
 //               whose latest read failed; and per row kind ('ranked' |
 //               'baggerbomb') and, on a completed row, reviewLine { state,
 //               text, openable } (hub/gamesDisplay.js)                 §3, §6
+//               and `live`: the poll's live rows, carried whatever the
+//               window's status (liveGamesOf), with `liveResolved` (the
+//               poll has answered for this owner)                      R-S3-8
 //   deploy      deriveHubDeployState's result (selectors/deployState.js):
 //               { displayState, canStart, gateBlocked, freshness: { asOf,
 //                 stale, refreshing }, retryAction, reason, action,
@@ -133,6 +136,15 @@ export const readyRows = (section) => (section?.status === 'ready' && Array.isAr
 export function splitGames(games) {
   const rows = readyRows(games);
   return { live: rows.filter((g) => g.live), completed: rows.filter((g) => !g.live) };
+}
+
+/**
+ * The live rows (slice S3, R-S3-8). On the connected hub they come as the section's own `live` list, from App's poll
+ * (the list the gate reads), and show whatever the completed window's status: a block always has its row. A section
+ * without one (the layout fixtures) keeps S1's rule: rows only once ready.
+ */
+export function liveGamesOf(games) {
+  return Array.isArray(games?.live) ? games.live : splitGames(games).live;
 }
 
 /** Desktop and tablet Games show live rows plus at most two completed rows (spec §8.2). */

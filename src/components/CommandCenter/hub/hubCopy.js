@@ -173,6 +173,8 @@ export const HUB_COPY = Object.freeze({
     /** Spec §3: a failed read is never an empty history. */
     loadFailed: 'Couldn’t load your games',
     staleAsOf: (time) => (time ? `As of ${time} · couldn’t refresh` : 'Couldn’t refresh'),
+    /** A retained window being read again after a failed read (spec §6): the deploy note's words (review T3-3). */
+    refreshingAsOf: (time) => (time ? `Refreshing · as of ${time}` : 'Refreshing'),
     nextAttempt: (time) => `next attempt at ${time}`,
     retry: 'Retry',
     /** Spec §6's review states, exactly where the spec gives the words. */

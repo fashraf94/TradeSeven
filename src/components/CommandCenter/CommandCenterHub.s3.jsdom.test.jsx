@@ -28,6 +28,7 @@ const r = vi.hoisted(() => ({
   agentCalls: [],
   window: null,
   windowCalls: 0,
+  market: { state: 'OPEN', isOpen: true },
 }));
 vi.mock('../../services/authIdentity', () => ({ useAuthIdentity: () => r.identity }));
 vi.mock('../../hooks/useAgent', () => ({
@@ -36,7 +37,7 @@ vi.mock('../../hooks/useAgent', () => ({
 vi.mock('./hub/useHubCompletedBattles', () => ({
   default: () => { r.windowCalls += 1; return r.window; },
 }));
-vi.mock('../../utils/marketSchedule', () => ({ getMarketState: () => ({ state: 'OPEN', isOpen: true }) }));
+vi.mock('../../utils/marketSchedule', () => ({ getMarketState: () => r.market }));
 
 import CommandCenterHub from './CommandCenterHub';
 import { HUB_COPY as COPY } from './hub/hubCopy';
@@ -91,6 +92,7 @@ beforeEach(() => {
   r.agentCalls = [];
   r.window = windowOf(TEN);
   r.windowCalls = 0;
+  r.market = { state: 'OPEN', isOpen: true };
   layout = installFakeLayout();
   removeNav = mountFakeBottomNav();
 });
@@ -112,6 +114,8 @@ const games = () => document.querySelector('[data-hub-section="games"]');
 const strip = () => document.querySelector('[data-hub-strip]');
 const card = () => document.querySelector('[data-hub-deploy]');
 const rowsOf = (scope) => [...scope.querySelectorAll('[data-hub-game-row]')].map((el) => el.closest('button').getAttribute('aria-label'));
+const overview = () => document.querySelector('[data-hub-phone-panel="overview"]');
+const retryButtons = (scope) => byRole(scope, 'button', COPY.games.retry);
 
 describe('Games from the readers (R-S3-8)', () => {
   it('desktop: the live rows in the gate\'s order, then two completed rows with their outcome words and review lines', () => {
@@ -176,6 +180,36 @@ describe('Games from the readers (R-S3-8)', () => {
     click(byRole(strip(), 'button', COPY.deploy.openGame)[0]);
     expect(hub.openGame.mock.calls[0][0]).toBe(BB);
   });
+
+  it.each([
+    ['before the window\'s first read', () => windowOf(null, { status: 'loading', lastSuccessfulAt: null, generation: 0 }), COPY.games.loading],
+    ['after its first read failed', () => windowOf(null, { status: 'error', error: new Error('unavailable'), lastSuccessfulAt: null, generation: 0, nextAttemptAt: NOW + 120000 }), COPY.games.loadFailed],
+  ])('the live rows are the poll\'s whatever the window\'s status — %s (review T0-1)', (_, windowState, note) => {
+    r.window = windowState();
+    const hub = hubOf({ activeBattles: [BB] });
+    render('mobile', hub);
+    expect(strip().getAttribute('data-hub-strip')).toBe('blocked');
+    expect(strip().querySelector('[data-hub-strip-line="1"]').textContent).toMatch(/^Live · /);
+    const overview = document.querySelector('[data-hub-phone-panel="overview"]');
+    expect(rowsOf(overview)).toEqual([expect.stringMatching(/^Open live game: BaggerBomb vs CPU/)]);
+    expect(overview.textContent).toContain(note);
+    for (const m of mounted) m.unmount();
+    mounted = [];
+    render('desktop', hub);
+    expect(rowsOf(games())).toEqual([expect.stringMatching(/^Open live game: BaggerBomb vs CPU/)]);
+    expect(games().textContent).toContain(note);
+    expect(games().textContent).not.toContain(COPY.games.empty);
+  });
+
+  it('a game that has not opened yet is "Deployed · waiting for the open" — on its tag and in its name (review T0-2)', () => {
+    r.market = { state: 'CLOSED_AFTERHOURS', isOpen: false };
+    const fresh = { ...BB, scoreState: { currentScore: 0, tradeCount: 0, evaluationCount: 0, lastScoredAt: null } };
+    render('desktop', hubOf({ activeBattles: [fresh] }));
+    const [label] = rowsOf(games());
+    expect(label).toContain(COPY.strip.deployed(COPY.games.waitingForOpen));
+    expect(label).not.toContain('Live ·');
+    expect(games().textContent).toContain(COPY.strip.deployed(COPY.games.waitingForOpen));
+  });
 });
 
 describe('a failed window read is never an empty history (spec §3)', () => {
@@ -197,10 +231,139 @@ describe('a failed window read is never an empty history (spec §3)', () => {
     expect(overview.textContent).not.toContain(COPY.games.empty);
   });
 
+  it('a first read waiting for the owner\'s rate cap (a return inside the 120 s window) says when it will run (review T0-3)', () => {
+    r.window = windowOf(null, { status: 'loading', lastSuccessfulAt: null, generation: 0, nextAttemptAt: NOW + 120000 });
+    render('desktop', hubOf());
+    expect(games().textContent).toContain(`${COPY.games.loading}${COPY.sep}next attempt at 11:02 AM ET`);
+    for (const m of mounted) m.unmount();
+    mounted = [];
+    render('mobile', hubOf());
+    const overview = document.querySelector('[data-hub-phone-panel="overview"]');
+    expect(overview.textContent).toContain(`${COPY.games.loading}${COPY.sep}next attempt at 11:02 AM ET`);
+  });
+
   it('a successful empty read is the one time "No games yet" shows', () => {
     r.window = windowOf([]);
     render('desktop', hubOf());
     expect(games().textContent).toContain(COPY.games.empty);
+  });
+
+  it('…and only once the poll has answered for this owner: an empty window beside an unknown live list is still checking (review T0R-2)', () => {
+    r.window = windowOf([]);
+    const unanswered = hubOf({ activePoll: pollMeta({ status: 'loading', ownerUid: null, ownerEpoch: null, lastSuccessfulAt: null }) });
+    render('desktop', unanswered);
+    expect(games().textContent).toContain(COPY.games.loading);
+    expect(games().textContent).not.toContain(COPY.games.empty);
+    for (const m of mounted) m.unmount();
+    mounted = [];
+    render('mobile', unanswered);
+    const overview = document.querySelector('[data-hub-phone-panel="overview"]');
+    expect(overview.textContent).toContain(COPY.games.loading);
+    expect(overview.textContent).not.toContain(COPY.games.empty);
+  });
+});
+
+describe('a read in flight is shown as in flight — no second Retry for it (spec §6 "refreshing/queued state accurately"; review T3-3)', () => {
+  const remountMobile = (hub) => {
+    for (const m of mounted) m.unmount();
+    mounted = [];
+    render('mobile', hub);
+  };
+
+  it('nothing retained and the automatic retry running: "Checking your games", not the failure, and no Retry', () => {
+    r.window = windowOf(null, { status: 'error', error: new Error('unavailable'), lastSuccessfulAt: null, generation: 0, checking: true, refreshing: false, nextAttemptAt: null });
+    render('desktop', hubOf());
+    expect(games().textContent).toContain(COPY.games.loading);
+    expect(games().textContent).not.toContain(COPY.games.loadFailed);
+    expect(retryButtons(games())).toHaveLength(0);
+    remountMobile(hubOf());
+    expect(overview().textContent).toContain(COPY.games.loading);
+    expect(overview().textContent).not.toContain(COPY.games.loadFailed);
+    expect(retryButtons(overview())).toHaveLength(0);
+  });
+
+  it('a retained window whose last read failed, read again: "Refreshing · as of {time}", not "couldn’t refresh", and no Retry', () => {
+    r.window = windowOf([], { status: 'error', error: new Error('unavailable'), checking: true, refreshing: true });
+    render('desktop', hubOf());
+    expect(games().textContent).toMatch(/Refreshing · as of \d{1,2}:\d{2} [AP]M ET/);
+    expect(games().textContent).not.toContain('couldn’t refresh');
+    expect(retryButtons(games())).toHaveLength(0);
+    remountMobile(hubOf());
+    expect(overview().textContent).toMatch(/Refreshing · as of \d{1,2}:\d{2} [AP]M ET/);
+    expect(retryButtons(overview())).toHaveLength(0);
+  });
+
+  it('settled failures keep their words, time and one Retry; a healthy window\'s background cycle owes no note', () => {
+    r.window = windowOf(null, { status: 'error', error: new Error('unavailable'), lastSuccessfulAt: null, generation: 0, checking: false, nextAttemptAt: NOW + 120000 });
+    render('desktop', hubOf());
+    expect(games().textContent).toContain(COPY.games.loadFailed);
+    expect(games().textContent).toContain('next attempt at 11:02 AM ET');
+    expect(retryButtons(games())).toHaveLength(1);
+    for (const m of mounted) m.unmount();
+    mounted = [];
+    r.window = windowOf([], { status: 'error', error: new Error('unavailable'), checking: false, nextAttemptAt: NOW + 120000 });
+    render('desktop', hubOf());
+    expect(games().textContent).toMatch(/As of \d{1,2}:\d{2} [AP]M ET · couldn’t refresh/);
+    expect(retryButtons(games())).toHaveLength(1);
+    for (const m of mounted) m.unmount();
+    mounted = [];
+    r.window = windowOf(TEN, { checking: true, refreshing: true });
+    render('desktop', hubOf());
+    expect(games().querySelector('[data-hub-games-note]')).toBeNull();
+    expect(games().textContent).not.toMatch(/Refreshing/);
+  });
+});
+
+describe('the History sheet left open across an identity change (spec §3; review T2-7)', () => {
+  const sheet = () => document.querySelector('[data-hub-sheet-overlay]');
+  const openUnderA = (site) => {
+    const m = render(site, hubOf());
+    if (site === 'mobile') click(byRole(document.body, 'button', /Game history/)[0]);
+    else click(byRole(games(), 'button', COPY.games.history)[0]);
+    expect(sheet().textContent).toContain('10 completed');
+    return m;
+  };
+  const toB = (m, site, windowOver) => {
+    r.identity = { resolved: true, uid: 'uid-B', authEpoch: 3 };
+    r.agent = agentReady({ ownerUid: 'uid-B', ownerEpoch: 3 });
+    r.window = windowOf(null, { status: 'loading', ownerUid: null, ownerEpoch: null, lastSuccessfulAt: null, generation: 0, ...windowOver });
+    m.rerender(<CommandCenterHub site={site} hub={hubOf({ activePoll: pollMeta({ epoch: 3, ownerUid: 'uid-B', ownerEpoch: 3 }) })} />);
+  };
+
+  it.each(['desktop', 'mobile'])('%s: the new owner\'s window still loading — checking, never "0 completed"', (site) => {
+    const m = openUnderA(site);
+    toB(m, site, {});
+    expect(sheet().textContent).not.toMatch(/0 completed/);
+    expect(sheet().textContent).toContain(COPY.games.loading);
+  });
+
+  it.each(['desktop', 'mobile'])('%s: the new owner\'s first read failed — the failure and its Retry, never "0 completed"', (site) => {
+    const m = openUnderA(site);
+    toB(m, site, { status: 'error', error: new Error('unavailable'), nextAttemptAt: NOW + 120000 });
+    expect(sheet().textContent).not.toMatch(/0 completed/);
+    expect(sheet().textContent).toContain(COPY.games.loadFailed);
+    click(byRole(sheet(), 'button', COPY.games.retry)[0]);
+    expect(r.window.refresh).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a game both lists hold (review T0R-1)', () => {
+  it('a completion the window already holds while the poll still holds it live is listed once, live, and opens the poll\'s record', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      r.window = windowOf([{ ...done(1), id: BB.id }, ...TEN.slice(1, 3)]);
+      const hub = hubOf({ activeBattles: [BB] });
+      render('desktop', hub);
+      const labels = rowsOf(games());
+      expect(labels).toHaveLength(3);
+      expect(labels[0]).toMatch(/^Open live game: BaggerBomb vs CPU/);
+      expect(labels.slice(1).every((l) => l.startsWith('Open game record:'))).toBe(true);
+      click([...games().querySelectorAll('[data-hub-game-row="live"]')].map((el) => el.closest('button'))[0]);
+      expect(hub.openGame.mock.calls[0][0]).toBe(BB);
+      expect(errors.mock.calls.some((c) => String(c[0]).includes('same key'))).toBe(false);
+    } finally {
+      errors.mockRestore();
+    }
   });
 });
 

@@ -8,7 +8,11 @@
 //   identity   services/authIdentity.js — the one source App's poll uses too
 //   agent      useAgent(uid, { ownerEpoch }) — the owner-tagged ranked agent
 //   poll       App's retained active list and its metadata, from `hub`
-//              (activeBattles, activePoll); never read again here
+//              (activeBattles, activePoll); never read again here. Read the
+//              list only through ownedLiveList (selectors/readerInputs.js),
+//              never `hub.activeBattles` raw: the render that carries a new
+//              identity can still hold the former owner's list (review T2-10;
+//              S2b's provider too)
 //   completed  useHubCompletedBattles(10) — the window and its reviews
 //
 // It returns the Games and Deploy sections and the actions S3 wires: open a
@@ -33,15 +37,29 @@ import { RETRY_ACTIONS, deriveHubDeployState } from './selectors/deployState';
 import { agentInputOf, authInputOf, completedInputOf, ownedLiveList, pollInputOf } from './selectors/readerInputs';
 import useHubCompletedBattles from './useHubCompletedBattles';
 
-/** The Games section (hub/hubModel.js `games`): loading or error until the window's first read succeeds. */
-function gamesSectionOf(completed, liveRows) {
+/**
+ * The Games section (hub/hubModel.js `games`): loading or error until the window's first read succeeds. The live
+ * rows are the poll's and ride apart from the window's status (`live`, read through liveGamesOf); `liveResolved`
+ * says the poll has answered for this owner, so "No games yet" never stands in for an unknown live list.
+ */
+function gamesSectionOf(completed, liveRows, liveResolved) {
+  const live = Object.freeze([...liveRows]);
   if (completed.battles === null) {
-    return Object.freeze({ status: completed.status === 'error' ? 'error' : 'loading', rows: Object.freeze([]), nextAttemptAt: completed.nextAttemptAt });
+    // A read in flight is checking, not the failure of the one before it (spec §6; review T3-3).
+    const failed = completed.status === 'error' && !completed.checking;
+    return Object.freeze({ status: failed ? 'error' : 'loading', rows: Object.freeze([]), live, liveResolved, nextAttemptAt: completed.nextAttemptAt });
   }
+  // A game the window already holds completed while App's retained list still holds it live is listed once, live —
+  // the gate's own row; the poll dropping it refreshes the window (review T0R-1).
+  const liveIds = new Set(live.map((g) => g.id));
+  const done = completed.battles.filter((b) => !liveIds.has(b.id));
   return Object.freeze({
     status: 'ready',
-    rows: Object.freeze([...liveRows, ...completedGameRows(completed.battles, completed.reviews)]),
+    live,
+    liveResolved,
+    rows: Object.freeze([...live, ...completedGameRows(done, completed.reviews)]),
     stale: completed.status === 'error',
+    refreshing: completed.refreshing === true,
     asOf: completed.lastSuccessfulAt,
     nextAttemptAt: completed.nextAttemptAt,
   });
@@ -85,14 +103,16 @@ export default function useHubReaders(hub) {
     if (previous && previous.ownerKey === ownerKey && previous.at !== poll.lastSuccessfulAt && previous.ids.some((id) => !ids.includes(id))) {
       refresh(REVIEW_TRIGGERS.LIVE_LEFT);
     }
-    // Keyed on the poll's successes: a list change without one (an optimistic entry) is not a transition.
+    // Keyed on the poll's successes: a list change without one (an optimistic entry) is not a transition. App sets
+    // the list and its success in one batch (App.activeBattlesPoll.source.test.js pins the order; review T3-10).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerKey, poll.lastSuccessfulAt, refresh]);
 
   const liveRows = liveGameRows(live, { nowMs: Date.now(), marketState: getMarketState() });
-  const games = gamesSectionOf(completed, liveRows);
+  const games = gamesSectionOf(completed, liveRows, ownerKey !== null);
 
-  const documents = new Map([...live, ...(completed.battles || [])].map((b) => [b.id, b]));
+  // A live row opens the poll's own record, even when the window holds the same id (review T0R-1).
+  const documents = new Map([...(completed.battles || []), ...live].map((b) => [b.id, b]));
   const actions = {
     openGame: typeof hub.openGame === 'function'
       ? (row) => { const doc = documents.get(row?.id); if (doc) hub.openGame(doc); }

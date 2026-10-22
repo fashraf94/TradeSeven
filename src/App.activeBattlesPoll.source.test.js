@@ -6,13 +6,14 @@
 // passing untouched, and does; this file sits beside it and guards only what
 // S3 added.
 //
-// Why source text: the parts that need a query ANSWER — a completion captured
-// for an earlier identity being dropped, A→B→A — cannot be driven through App
-// under vitest here, because App's lazy Firestore imports reach the real SDK
-// on some runs (src/App.activeBattlesPoll.owner.jsdom.test.jsx states the limit
-// and drives what it can). The rules themselves are pure and tested in
-// src/utils/activeBattlesPoll.test.js and src/services/authIdentity.test.js;
-// these rows pin that App calls them in the right place.
+// Source text pins WHERE App calls the rules: the capture before the first
+// await, the check before each write, the metadata only through the runs. The
+// behaviour — a completion captured for an earlier identity dropped, A→B→A —
+// is driven through the real App in src/App.activeBattlesPoll.owner.jsdom.test.jsx
+// (on redirect mocks: a factory mock of App's dynamically imported Firebase
+// modules can fall through to the real ones; review T2-8), and the rules are
+// pure and tested in src/utils/activeBattlesPoll.test.js and
+// src/services/authIdentity.test.js.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -43,6 +44,13 @@ const checks = {
     const firstAwait = body.indexOf('await ');
     return capture > -1 && begin > capture && firstAwait > begin;
   },
+  startsTheClockWithTheCapture(body) {
+    const capture = body.indexOf('const capture = readAuthIdentity();');
+    const started = body.indexOf('const startedAt = Date.now();');
+    const begin = body.indexOf('const flight = agentBattlesFlights.begin(capture);');
+    const firstAwait = body.indexOf('await ');
+    return capture > -1 && started > capture && begin > started && firstAwait > begin;
+  },
   queriesOnlyForTheCapture(body) {
     const match = body.indexOf('if (!pollCaptureMatches(capture, queriedUid)) return;');
     const uid = body.indexOf('const queriedUid = auth.currentUser.uid;');
@@ -50,15 +58,18 @@ const checks = {
     return uid > -1 && match > uid && query > match && /where\('ownerId', '==', queriedUid\)/.test(body);
   },
   dropsAStaleCompletionBeforeTheList(body) {
-    return body.includes('if (!isCurrentIdentity(capture)) return; setActiveAgentBattles(liveBattles); agentBattlesFlights.settle(flight, { ok: true, uid: queriedUid, at: Date.now() });');
+    return body.includes('if (!isCurrentIdentity(capture)) return; setActiveAgentBattles(liveBattles); agentBattlesFlights.settle(flight, { ok: true, uid: queriedUid, at: startedAt });');
   },
   recordsAFailureWithoutTouchingTheList(body) {
     const katch = body.slice(body.indexOf('} catch (error) {'));
-    return /\} catch \(error\) \{ console\.error\([^;]*error\); agentBattlesFlights\.settle\(flight, \{ ok: false, error \}\); \} finally \{ agentBattlesFlights\.settle\(flight, null\); \}/.test(katch)
+    return /\} catch \(error\) \{ console\.error\([^;]*error\); agentBattlesFlights\.settle\(flight, \{ ok: false, error, at: startedAt \}\); \} finally \{ agentBattlesFlights\.settle\(flight, null\); \}/.test(katch)
       && !/setActiveAgentBattles\(/.test(katch);
   },
   metadataOnlyThroughTheRuns(body) {
     return !/setActiveAgentBattlesPoll\(/.test(body);
+  },
+  dropsAStaleCompletionBeforeTheCaches(body) {
+    return body.includes('if (!isCurrentIdentity(capture)) return; setVoiceLayerCaches(');
   },
 };
 
@@ -76,11 +87,13 @@ describe('the poll body (R-S3-3)', () => {
 
   it('the checks bite: each fails on its planted defect', () => {
     const planted = {
-      captureBeforeFirstAwait: BODY.replace('const capture = readAuthIdentity(); const flight = agentBattlesFlights.begin(capture); try {', 'try { await 0; const capture = readAuthIdentity(); const flight = agentBattlesFlights.begin(capture);'),
+      captureBeforeFirstAwait: BODY.replace('const capture = readAuthIdentity(); const startedAt = Date.now(); const flight = agentBattlesFlights.begin(capture); try {', 'try { await 0; const capture = readAuthIdentity(); const startedAt = Date.now(); const flight = agentBattlesFlights.begin(capture);'),
+      startsTheClockWithTheCapture: BODY.replace('const startedAt = Date.now(); const flight = agentBattlesFlights.begin(capture); try {', 'const flight = agentBattlesFlights.begin(capture); try { await 0; const startedAt = Date.now();'),
       queriesOnlyForTheCapture: BODY.replace('if (!pollCaptureMatches(capture, queriedUid)) return;', ''),
       dropsAStaleCompletionBeforeTheList: BODY.replace('if (!isCurrentIdentity(capture)) return; setActiveAgentBattles(liveBattles);', 'setActiveAgentBattles(liveBattles); if (!isCurrentIdentity(capture)) return;'),
-      recordsAFailureWithoutTouchingTheList: BODY.replace('agentBattlesFlights.settle(flight, { ok: false, error });', ''),
+      recordsAFailureWithoutTouchingTheList: BODY.replace('agentBattlesFlights.settle(flight, { ok: false, error, at: startedAt });', ''),
       metadataOnlyThroughTheRuns: BODY.replace('try {', 'try { setActiveAgentBattlesPoll(initialActivePoll(0));'),
+      dropsAStaleCompletionBeforeTheCaches: BODY.replace('if (!isCurrentIdentity(capture)) return; setVoiceLayerCaches(', 'setVoiceLayerCaches('),
     };
     for (const [name, body] of Object.entries(planted)) {
       expect(body, name).not.toBe(BODY);
@@ -102,6 +115,13 @@ describe('the poll effect and the explicit refresh (R-S3-3)', () => {
     expect(refresh).toContain('if (!running && agentBattlesPollRef.current) { agentBattlesPollRef.current(); running = agentBattlesFlights.joinable(epoch); }');
     expect(refresh).toContain('agentBattlesFlights.markExplicit(running); return running.done;');
     expect(refresh).toContain('const epoch = readAuthIdentity().authEpoch;');
+  });
+
+  it('a settle ends the explicit refresh only as the flights say (T2-4): onSettled hands activePollSettled endsRefresh, never the run\'s own flag', () => {
+    const at = APP.indexOf('const [agentBattlesFlights] = useState(');
+    const wiring = squash(APP.slice(at, APP.indexOf('}));', at)));
+    expect(wiring).toContain('onSettled: (flight, outcome, endsRefresh) => { if (isCurrentIdentity(flight.capture)) setActiveAgentBattlesPoll((meta) => activePollSettled(meta, flight.capture, outcome, endsRefresh)); },');
+    expect(wiring).not.toContain('flight.explicit');
   });
 
   it('the metadata lives in its own state, set only by the runs\' callbacks and the identity reset', () => {

@@ -162,3 +162,146 @@ describe('createActivePollFlights — one run per explicit refresh', () => {
     expect(run.explicit).toBe(false);
   });
 });
+
+/** The metadata as App wires it: the flights say whether a settle ends the refresh (`endsRefresh`). */
+function wired(epoch = 1) {
+  const state = { meta: initialActivePoll(epoch) };
+  const flights = createActivePollFlights({
+    onRefreshStarted: (flight) => { state.meta = activePollRefreshStarted(state.meta, flight.capture); },
+    onSettled: (flight, outcome, endsRefresh) => { state.meta = activePollSettled(state.meta, flight.capture, outcome, endsRefresh); },
+  });
+  return { state, flights };
+}
+const B2 = Object.freeze({ resolved: true, uid: 'uid-B', authEpoch: 2 });
+
+describe('a refresh joins a run still out, even after a NEWER run settled (review T2-3)', () => {
+  it('an explicit run still in flight stays joinable after a newer background run settles', () => {
+    const { flights } = wired();
+    const r1 = flights.begin(A1);
+    flights.markExplicit(r1);
+    const r2 = flights.begin(A1);
+    flights.settle(r2, { ok: true, uid: 'uid-A', at: T });
+    expect(r1.settled).toBe(false);
+    expect(flights.joinable(1)).toBe(r1);
+  });
+
+  it('with several runs out, the newest UNSETTLED run of the epoch is the one joined; begin() never joins', () => {
+    const { flights } = wired();
+    const runs = [flights.begin(A1), flights.begin(A1), flights.begin(A1)];
+    expect(new Set(runs).size).toBe(3);
+    flights.settle(runs[2], null);
+    expect(flights.joinable(1)).toBe(runs[1]);
+    flights.settle(runs[1], null);
+    expect(flights.joinable(1)).toBe(runs[0]);
+    flights.settle(runs[0], null);
+    expect(flights.joinable(1)).toBeNull();
+  });
+
+  it('a run of another epoch is never joined, whatever else is out', () => {
+    const { flights } = wired(2);
+    const old = flights.begin(A1);
+    const current = flights.begin(B2);
+    expect(flights.joinable(2)).toBe(current);
+    flights.settle(current, null);
+    expect(old.settled).toBe(false);
+    expect(flights.joinable(2)).toBeNull();
+  });
+});
+
+describe('a refresh ends with the NEWEST explicit run of its epoch (review T2-4)', () => {
+  it('an older explicit run settling does not end `refreshing` while a newer explicit run is out', async () => {
+    const { state, flights } = wired();
+    const r1 = flights.begin(A1);
+    flights.markExplicit(r1);
+    const r2 = flights.begin(A1);
+    flights.markExplicit(r2);
+    flights.settle(r1, { ok: true, uid: 'uid-A', at: T });
+    expect(state.meta.refreshing).toBe(true);
+    let second = false;
+    r2.done.then(() => { second = true; });
+    await Promise.resolve();
+    expect(second).toBe(false);
+    flights.settle(r2, { ok: true, uid: 'uid-A', at: T + 1000 });
+    expect(state.meta.refreshing).toBe(false);
+  });
+
+  it('the same when the older run fails over a pre-refresh error: nothing says the refresh is over', () => {
+    const { state, flights } = wired();
+    flights.settle(flights.begin(A1), { ok: false, error: new Error('unavailable') });
+    expect(state.meta.status).toBe('error');
+    const r1 = flights.begin(A1);
+    flights.markExplicit(r1);
+    const r2 = flights.begin(A1);
+    flights.markExplicit(r2);
+    flights.settle(r1, { ok: false, error: new Error('unavailable') });
+    expect(state.meta.refreshing).toBe(true);
+    flights.settle(r2, { ok: true, uid: 'uid-A', at: T });
+    expect(state.meta).toMatchObject({ status: 'ready', refreshing: false, error: null });
+  });
+
+  it('an older explicit run settling LATE does not end a newer refresh begun after it', () => {
+    const { state, flights } = wired();
+    const r1 = flights.begin(A1);
+    flights.markExplicit(r1);
+    const r2 = flights.begin(A1);
+    flights.markExplicit(r2);
+    flights.settle(r2, { ok: true, uid: 'uid-A', at: T });
+    expect(state.meta.refreshing).toBe(false);
+    const r3 = flights.begin(A1);
+    flights.markExplicit(r3);
+    flights.settle(r1, { ok: true, uid: 'uid-A', at: T - 1000 });
+    expect(state.meta.refreshing).toBe(true);
+    flights.settle(r3, { ok: true, uid: 'uid-A', at: T + 1000 });
+    expect(state.meta.refreshing).toBe(false);
+  });
+
+  it('an older explicit run that stalls cannot hold the refresh open; a background run never ends one; another epoch\'s does not either', () => {
+    const one = wired();
+    const stalled = one.flights.begin(A1);
+    one.flights.markExplicit(stalled);
+    const newer = one.flights.begin(A1);
+    one.flights.markExplicit(newer);
+    one.flights.settle(newer, { ok: true, uid: 'uid-A', at: T });
+    expect(stalled.settled).toBe(false);
+    expect(one.state.meta.refreshing).toBe(false);
+
+    const two = wired();
+    const explicit = two.flights.begin(A1);
+    two.flights.markExplicit(explicit);
+    two.flights.settle(two.flights.begin(A1), { ok: true, uid: 'uid-A', at: T });
+    expect(two.state.meta.refreshing).toBe(true);
+
+    const three = wired(2);
+    const old = three.flights.begin(A1);
+    three.flights.markExplicit(old);
+    const current = three.flights.begin(B2);
+    three.flights.markExplicit(current);
+    three.flights.settle(current, { ok: true, uid: 'uid-B', at: T });
+    expect(three.state.meta.refreshing).toBe(false);
+  });
+});
+
+describe('an older run\'s failure never downgrades a newer success; "as of" is a run\'s start (review T2-5, metadata only)', () => {
+  const ready = () => activePollSettled(initialActivePoll(1), A1, { ok: true, uid: 'uid-A', at: T + 1000 }, false);
+
+  it('a failure whose run BEGAN before the retained success leaves the status ready and the error clear — and still ends its refresh', () => {
+    expect(activePollSettled(ready(), A1, { ok: false, error: new Error('late'), at: T }, false))
+      .toMatchObject({ status: 'ready', error: null, lastSuccessfulAt: T + 1000, ownerUid: 'uid-A', ownerEpoch: 1 });
+    const refreshing = activePollRefreshStarted(ready(), A1);
+    expect(activePollSettled(refreshing, A1, { ok: false, error: new Error('late'), at: T }, true))
+      .toMatchObject({ status: 'ready', error: null, refreshing: false });
+  });
+
+  it('a failure begun AFTER the retained success is real news; one that names no start, or comes first, reaches error', () => {
+    const later = activePollSettled(ready(), A1, { ok: false, error: new Error('real'), at: T + 2000 }, false);
+    expect(later).toMatchObject({ status: 'error', lastSuccessfulAt: T + 1000 });
+    expect(later.error.message).toBe('real');
+    expect(activePollSettled(ready(), A1, { ok: false, error: new Error('blip') }, false)).toMatchObject({ status: 'error' });
+    expect(activePollSettled(initialActivePoll(1), A1, { ok: false, error: new Error('first'), at: T }, false))
+      .toMatchObject({ status: 'error', lastSuccessfulAt: null, ownerUid: null });
+  });
+
+  it('a success stands as given: an older run landing last stamps its own (earlier) start', () => {
+    expect(activePollSettled(ready(), A1, { ok: true, uid: 'uid-A', at: T }, false)).toMatchObject({ status: 'ready', lastSuccessfulAt: T });
+  });
+});

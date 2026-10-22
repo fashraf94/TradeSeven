@@ -146,3 +146,35 @@ describe('completedGameRows and reviewLineOf', () => {
     expect(row.reviewLine.state).toBe('checking');
   });
 });
+
+describe('formatScores at the top of its six decimals, and beyond them (review T4-4, T4-5)', () => {
+  it('four, five and six decimals when that is what separates or shows the numbers', () => {
+    expect(formatScores(0.0001)).toEqual(['+0.0001']);
+    expect(formatScores(-0.00001)).toEqual([`${MINUS}0.00001`]);
+    expect(formatScores(0.000001)).toEqual(['+0.000001']);
+    expect(formatScores(1.000049, 1.000044)).toEqual(['+1.00005', '+1.00004']);
+    expect(formatScores(1.0000049, 1.0000041)).toEqual(['+1.000005', '+1.000004']);
+  });
+
+  it('a margin of float noise: each number by its own digits, signed, to one common length — never equal', () => {
+    expect(formatScores(0.1 + 0.2, 0.3)).toEqual(['+0.30000000000000004', '+0.30000000000000000']);
+    expect(formatScores(1.00000002, 1.00000001)).toEqual(['+1.00000002', '+1.00000001']);
+    expect(formatScores(-1.00000001, -1.00000002)).toEqual([`${MINUS}1.00000001`, `${MINUS}1.00000002`]);
+  });
+
+  it('a score a millionth from zero is not zero, keeps the house sign and is written without an exponent', () => {
+    expect(formatScores(0.0000005)).toEqual(['+0.0000005']);
+    expect(formatScores(-1e-12)).toEqual([`${MINUS}0.000000000001`]);
+    expect(formatScores(1e-12, 0)).toEqual(['+0.000000000001', '0.000000000000']);
+    expect(formatScores(-1e-12, -0)).toEqual([`${MINUS}0.000000000001`, '0.000000000000']);
+    expect(formatScores(1e21)).toEqual(['+1000000000000000000000']);
+    expect(formatScores(1e22, 2e22)).toEqual(['+10000000000000000000000', '+20000000000000000000000']);
+  });
+
+  it('the verdict row at the float-noise margin: the tag and the pair carry the same digits', () => {
+    expect(outcomeDisplay({ kind: K.WON, mine: 0.1 + 0.2, theirs: 0.3 })).toEqual({
+      tag: { text: 'Won +0.30000000000000004', tone: 'pos' },
+      detail: '+0.30000000000000004 vs +0.30000000000000000',
+    });
+  });
+});

@@ -20,6 +20,7 @@ const doc = (i, over = {}) => ({ id: `done_${String(i).padStart(2, '0')}`, owner
 const docsOf = (n) => Array.from({ length: n }, (_, i) => doc(i + 1));
 const after = (ms, value) => new Promise((resolve) => { setTimeout(() => resolve(value), ms); });
 const never = () => new Promise(() => {});
+const failing = () => Promise.reject(new Error('failed-precondition: the query requires an index'));
 const tick = (ms) => vi.advanceTimersByTimeAsync(ms);
 
 /** A scheduler on the fake clock, recording every query, check and state. */
@@ -445,6 +446,170 @@ describe('Review expiry and fairness', () => {
   });
 });
 
+describe('timers, hidden triggers, late answers and freshness (review T3-5)', () => {
+  it('a trigger while hidden queues; nothing starts until the page is visible — a live game ending included', async () => {
+    const h = harness({ docs: () => docsOf(2), check: () => Promise.resolve(UNAVAILABLE) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    h.s.setVisible(false);
+    await tick(200 * S);
+    h.s.trigger(REVIEW_TRIGGERS.LIVE_LEFT);
+    await tick(200 * S);
+    expect(h.queries).toHaveLength(1);
+    h.s.setVisible(true);
+    await tick(1 * S);
+    expect(h.queries).toHaveLength(2);
+  });
+
+  it('a late query answer of an expired cycle never completes the next cycle\'s query', async () => {
+    let releaseFirst;
+    const h = harness({ query: (n) => (n === 1 ? new Promise((resolve) => { releaseFirst = resolve; }) : after(5 * S, docsOf(1))) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(8 * S);
+    h.s.trigger(REVIEW_TRIGGERS.MANUAL);
+    await tick(114 * S);
+    releaseFirst(docsOf(3));
+    await tick(0);
+    expect(h.state().battles).toBeNull();
+    expect(h.state().generation).toBe(0);
+    await tick(4 * S);
+    expect(h.state().battles.map((b) => b.id)).toEqual(['done_01']);
+  });
+
+  it('dispose leaves no timer behind (§6 "Unmount … clears timers")', async () => {
+    const h = harness({ query: () => never() });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    h.s.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('hiding clears the running cycle\'s timers (§6 "Hide clears timers")', async () => {
+    const h = harness({ query: () => never() });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    h.s.setVisible(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('hiding clears the queued cycle\'s timer', async () => {
+    const h = harness({ check: () => Promise.resolve(PENDING) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(h.state().nextAttemptAt).not.toBeNull();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    h.s.setVisible(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('lastSuccessfulAt advances with every accepted window', async () => {
+    const h = harness({ check: () => Promise.resolve(PENDING) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(h.state().lastSuccessfulAt).toBe(T0);
+    await tick(125 * S);
+    expect(h.state().generation).toBe(2);
+    expect(h.state().lastSuccessfulAt).toBe(T0 + 120 * S);
+  });
+});
+
+describe('a backward step of the wall clock (review T3-7, T3R-1)', () => {
+  /** The scheduler on `Date.now() + skew`; a step moves `skew`. Fake timers never step. */
+  function stepped() {
+    let skew = 0;
+    const wall = () => Date.now() + skew;
+    const queries = [];
+    const delays = [];
+    const s = createReviewScheduler({
+      owner: OWNER,
+      clock: { now: wall, setTimer: (fn, ms) => { delays.push(ms); return setTimeout(fn, ms); }, clearTimer: (h) => clearTimeout(h) },
+      queryCompleted: () => { queries.push(wall()); return Promise.resolve(docsOf(2)); },
+      checkReview: () => Promise.resolve(UNAVAILABLE),
+      onChange: () => {},
+    });
+    return { s, queries, delays, wall, step: (ms) => { skew += ms; } };
+  }
+
+  it('after a 30 minute step back the next permitted cycle is at most one window away, and runs then', async () => {
+    const r = stepped();
+    r.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(10 * S);
+    r.step(-1800 * S);
+    r.s.trigger(REVIEW_TRIGGERS.MANUAL);
+    const wait = r.s.getState().nextAttemptAt - r.wall();
+    expect(wait).toBeGreaterThan(0);
+    expect(wait).toBeLessThanOrEqual(120 * S);
+    await tick(125 * S);
+    expect(r.queries).toHaveLength(2);
+  });
+
+  it('a focus 125 s after the step is not swallowed by a last cycle that lies in the future', async () => {
+    const r = stepped();
+    r.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(200 * S);
+    r.step(-1800 * S);
+    r.s.trigger(REVIEW_TRIGGERS.FOCUS);
+    expect(r.queries).toHaveLength(1);
+    await tick(125 * S);
+    r.s.trigger(REVIEW_TRIGGERS.FOCUS);
+    await tick(0);
+    expect(r.queries).toHaveLength(2);
+  });
+
+  it('no timer is asked for past setTimeout\'s limit — a month-long step back must not turn into a hot loop', async () => {
+    const r = stepped();
+    r.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(10 * S);
+    r.step(-30 * 86400 * S);
+    r.s.trigger(REVIEW_TRIGGERS.MANUAL);
+    await tick(1 * S);
+    expect(Math.max(...r.delays)).toBeLessThanOrEqual(2 ** 31 - 1);
+  });
+
+  it('with no step: the next permitted cycle is one window after the helper starts', async () => {
+    const r = stepped();
+    r.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(10 * S);
+    r.s.trigger(REVIEW_TRIGGERS.MANUAL);
+    expect(r.s.getState().nextAttemptAt).toBe(T0 + 120 * S);
+    await tick(115 * S);
+    expect(r.queries).toHaveLength(2);
+  });
+});
+
+describe('the rolling ledger can outlive one scheduler (spec §6 "Every trigger shares this budget"; review T0-3)', () => {
+  it('a second scheduler handed the first one\'s ledger at +30 s queues its mount cycle until the window ages out', async () => {
+    const ledger = { queries: [], helpers: [] };
+    const queries = [];
+    const onLedger = () => createReviewScheduler({
+      owner: OWNER,
+      ledger,
+      clock: { now: () => Date.now(), setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (h) => clearTimeout(h) },
+      queryCompleted: () => { queries.push(Date.now() - T0); return Promise.resolve(docsOf(10)); },
+      checkReview: () => Promise.resolve(READY),
+      onChange: () => {},
+    });
+    const first = onLedger();
+    first.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(1 * S);
+    expect(queries).toEqual([0]);
+    expect(ledger.helpers).toHaveLength(10);
+    first.dispose();
+    await tick(29 * S);
+    const second = onLedger();
+    second.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(1 * S);
+    expect(queries, 'no query for the second scheduler inside the window').toEqual([0]);
+    expect(second.getState().nextAttemptAt).toBe(T0 + 120 * S);
+    await tick(89 * S);
+    expect(queries).toEqual([0, 120 * S]);
+    // A start older than the window is dropped from a ledger that outlives its mounts.
+    expect(ledger.queries).toEqual([T0 + 120 * S]);
+    second.dispose();
+  });
+});
+
 describe('the budget evidence (spec §6): any half-open ten minutes', () => {
   it('a visible hub with a review always pending and a trigger every five seconds for an hour: at most 5 queries, 50 documents, 50 checks per ten minutes', async () => {
     const h = harness({ docs: () => docsOf(10), check: () => after(1 * S, PENDING) });
@@ -471,5 +636,254 @@ describe('the budget evidence (spec §6): any half-open ten minutes', () => {
     expect(worst.checks).toBeLessThanOrEqual(50);
     // ...and the hub did keep refreshing: one cycle every ~121 s for the hour.
     expect(h.queries.length).toBeGreaterThanOrEqual(29);
+  });
+});
+
+describe('review T3-2 — a hide hands a pending Retry to the re-queued cycle: no stale dirty follow-up (spec §6: "retain at most one dirty follow-up", "without a catch-up burst")', () => {
+  // The cycle's query is out for 5 s; the trigger lands at 1 s; the tab hides at 3 s and shows again at 4 s.
+  const run = async ({ hide, reason = REVIEW_TRIGGERS.MANUAL, second = null }) => {
+    const h = harness({ docs: () => docsOf(2), query: () => after(5 * S, docsOf(2)), check: () => Promise.resolve(UNAVAILABLE) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(1 * S);
+    h.s.trigger(reason);
+    await tick(2 * S);
+    if (hide) {
+      h.s.setVisible(false);
+      await tick(1 * S);
+      h.s.setVisible(true);
+    }
+    if (second !== null) {
+      await tick(second - (Date.now() - T0));
+      h.s.trigger(REVIEW_TRIGGERS.MANUAL);
+    }
+    await tick(3000 * S);
+    return h.queries.map((q) => q.at / S);
+  };
+
+  it('control: a Retry during a running cycle yields exactly one follow-up, 120 s after the last helper start', async () => {
+    expect(await run({ hide: false })).toEqual([0, 125]);
+  });
+
+  it.each([REVIEW_TRIGGERS.MANUAL, REVIEW_TRIGGERS.LIVE_LEFT])('a %s trigger, then a hide and a show: the resumed cycle already serves it - no third query', async (reason) => {
+    expect(await run({ hide: true, reason })).toEqual([0, 120]);
+  });
+
+  it('the flag is cleared at the hide, not disabled: a trigger during the RESUMED cycle still earns its one follow-up', async () => {
+    // The resumed cycle starts at 120 s (query out until 125 s); the new Retry lands at 122 s.
+    expect(await run({ hide: true, second: 122 * S })).toEqual([0, 120, 245]);
+  });
+});
+
+describe('review T3-4 — a failed query queues ONE automatic retry per failure episode (spec §6: "queues one retry at permitted time"; "Scheduled work runs only while ... unfinished logical work remains")', () => {
+  it('a permanently failing read, visible for an hour: the attempt and its one retry - no steady timer', async () => {
+    const h = harness({ query: failing });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    // The retry is queued: its time is real, and is shown.
+    expect(h.state()).toMatchObject({ status: 'error', battles: null, generation: 0, nextAttemptAt: T0 + 120 * S });
+    await tick(120 * S);
+    expect(h.queries.map((q) => q.at)).toEqual([0, 120 * S]);
+    // The retry failed too: nothing is queued, so no "next attempt" is promised.
+    expect(h.state()).toMatchObject({ status: 'error', battles: null, nextAttemptAt: null, checking: false });
+    await tick(3600 * S);
+    expect(h.queries).toHaveLength(2);
+  });
+
+  it('after the episode\'s retry, an explicit Retry runs once at its permitted time and earns no automatic retry of its own', async () => {
+    const h = harness({ query: failing });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(600 * S);
+    expect(h.queries).toHaveLength(2);
+    h.s.trigger(REVIEW_TRIGGERS.MANUAL);
+    await tick(0);
+    expect(h.queries.map((q) => q.at)).toEqual([0, 120 * S, 600 * S]);
+    expect(h.state().nextAttemptAt).toBeNull();
+    // A Retry inside the window queues one cycle at the slot and shows its time (a queued retry is a real retry).
+    h.s.trigger(REVIEW_TRIGGERS.MANUAL);
+    expect(h.state().nextAttemptAt).toBe(T0 + 720 * S);
+    await tick(3600 * S);
+    expect(h.queries.map((q) => q.at)).toEqual([0, 120 * S, 600 * S, 720 * S]);
+    expect(h.state().nextAttemptAt).toBeNull();
+  });
+
+  it('a Retry pressed before the slot merges with the queued retry: one query at the slot, and no further automatic retry if it fails', async () => {
+    const h = harness({ query: failing });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(30 * S);
+    h.s.trigger(REVIEW_TRIGGERS.MANUAL);
+    expect(h.state().nextAttemptAt).toBe(T0 + 120 * S);
+    await tick(3600 * S);
+    expect(h.queries.map((q) => q.at)).toEqual([0, 120 * S]);
+  });
+
+  it('a success ends the episode: a later failure owes its own one retry', async () => {
+    // Failed at 0 s, answered at its retry (120 s), then a Retry at 400 s fails and so does its retry.
+    const h = harness({ docs: () => docsOf(1), query: (n) => (n === 2 ? Promise.resolve(docsOf(1)) : failing()), check: () => Promise.resolve(UNAVAILABLE) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(300 * S);
+    expect(h.state()).toMatchObject({ status: 'ready', generation: 1, nextAttemptAt: null });
+    expect(h.queries.map((q) => q.at)).toEqual([0, 120 * S]);
+    await tick(100 * S);
+    h.s.trigger(REVIEW_TRIGGERS.MANUAL);
+    await tick(0);
+    expect(h.state()).toMatchObject({ status: 'error', generation: 1, nextAttemptAt: T0 + 520 * S });
+    await tick(3600 * S);
+    expect(h.queries.map((q) => q.at)).toEqual([0, 120 * S, 400 * S, 520 * S]);
+    expect(h.state()).toMatchObject({ status: 'error', nextAttemptAt: null });
+  });
+
+  it('a tab hidden during the first query: the re-queued cycle is the attempt, its failure earns the one retry, its failure ends the run', async () => {
+    const h = harness({ query: (n) => (n === 1 ? never() : failing()) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(1 * S);
+    h.s.setVisible(false);
+    await tick(1 * S);
+    h.s.setVisible(true);
+    await tick(3600 * S);
+    expect(h.queries.map((q) => q.at)).toEqual([0, 120 * S, 240 * S]);
+    expect(h.state().nextAttemptAt).toBeNull();
+  });
+
+  it('a tab hidden during the RETRY\'s own query: the re-queued cycle is that retry resumed - its failure ends the run, it earns no further retry', async () => {
+    const h = harness({ query: (n) => (n === 2 ? never() : failing()) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);                      // attempt 1 fails at once; its one retry is queued for 120 s
+    await tick(121 * S);                // the retry's query is out and never answers
+    h.s.setVisible(false);
+    await tick(1 * S);
+    h.s.setVisible(true);
+    await tick(3600 * S);
+    expect(h.queries.map((q) => q.at)).toEqual([0, 120 * S, 240 * S]);
+    expect(h.state()).toMatchObject({ status: 'error', nextAttemptAt: null });
+  });
+
+  describe('the hub is never stranded: once the retry has failed, a listed trigger still runs one cycle', () => {
+    // Attempts 1 and 2 fail (the second is the episode's one retry); from the third on the read answers.
+    const spent = async () => {
+      const h = harness({ docs: () => docsOf(1), query: (n) => (n >= 3 ? Promise.resolve(docsOf(1)) : failing()), check: () => Promise.resolve(UNAVAILABLE) });
+      h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+      await tick(300 * S);
+      expect(h.queries.map((q) => q.at)).toEqual([0, 120 * S]);
+      expect(h.state()).toMatchObject({ status: 'error', nextAttemptAt: null });
+      return h;
+    };
+
+    it('window focus, 120 s+ after the last attempt', async () => {
+      const h = await spent();
+      h.s.trigger(REVIEW_TRIGGERS.FOCUS);
+      await tick(0);
+      expect(h.queries.map((q) => q.at)).toEqual([0, 120 * S, 300 * S]);
+      expect(h.state()).toMatchObject({ status: 'ready', generation: 1, nextAttemptAt: null });
+    });
+
+    it('coming back to the tab, 120 s+ after the last attempt', async () => {
+      const h = await spent();
+      h.s.setVisible(false);
+      await tick(60 * S);
+      h.s.setVisible(true);
+      await tick(0);
+      expect(h.queries.map((q) => q.at)).toEqual([0, 120 * S, 360 * S]);
+      expect(h.state()).toMatchObject({ status: 'ready', generation: 1 });
+    });
+  });
+
+  it('control: a pending review keeps its own scheduled cycles through failing queries (spec §6: scheduled refresh while a review is pending)', async () => {
+    const h = harness({ docs: () => docsOf(1), query: (n) => (n === 1 ? Promise.resolve(docsOf(1)) : failing()), check: () => Promise.resolve(PENDING) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(3600 * S);
+    // One query every 120 s for the hour: the pending row, not the failure, is what keeps the schedule.
+    expect(h.queries).toHaveLength(31);
+    expect(h.queries.every((q, i) => q.at === i * 120 * S)).toBe(true);
+    expect(h.state().reviews.done_01.state).toBe(REVIEW_STATES.PENDING);
+  });
+});
+
+describe('review T3-6 — an operation\'s own eight seconds are re-checked when its answer arrives (spec §6: "Late results from expired invocation ... are ignored"; "the next callback checks elapsed time")', () => {
+  // vi's setSystemTime moves the clock and keeps every pending timer's remaining time: the page slept, no callback ran.
+  it('a helper answer that lands after its eight seconds, before its timer has run, is a timeout - never the helper\'s "unavailable"', async () => {
+    const h = harness({ docs: () => docsOf(1), check: () => after(2 * S, UNAVAILABLE) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    vi.setSystemTime(Date.now() + 10 * S);
+    await tick(2 * S);
+    expect(h.state().reviews.done_01).toMatchObject({ state: REVIEW_STATES.TIMED_OUT, result: null });
+    expect(h.state().checking).toBe(false);
+  });
+
+  it('...and the row is retried: unfinished work, queued at the next permitted time', async () => {
+    const answers = [UNAVAILABLE, READY];
+    const h = harness({ docs: () => docsOf(1), check: (b, n) => (n === 1 ? after(2 * S, answers[0]) : Promise.resolve(answers[1])) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    vi.setSystemTime(Date.now() + 10 * S);
+    await tick(2 * S);
+    const slot = h.state().nextAttemptAt;
+    expect(slot).toBe(T0 + 120 * S);
+    await tick(slot - Date.now());
+    expect(h.state().reviews.done_01).toMatchObject({ state: REVIEW_STATES.READY });
+  });
+
+  it('a completed-query answer that lands after its eight seconds, before its timer has run, keeps the prior window and generation', async () => {
+    const h = harness({ query: (n) => (n === 1 ? Promise.resolve(docsOf(2)) : after(2 * S, docsOf(5))), check: () => Promise.resolve(PENDING) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    const good = h.state().battles;
+    await tick(120 * S);
+    expect(h.queries).toHaveLength(2);
+    vi.setSystemTime(Date.now() + 10 * S);
+    await tick(2 * S);
+    expect(h.state()).toMatchObject({ status: 'error', generation: 1, battles: good, checking: false });
+    expect(h.checks).toHaveLength(2);
+  });
+
+  it('an answer landing at exactly its eighth second is a timeout, as its timer would have made it (the boundary)', async () => {
+    // The check answers 2 s after it starts; the page slept 6 s first: the answer's callback runs at exactly start + 8 s.
+    const h = harness({ docs: () => docsOf(1), check: () => after(2 * S, UNAVAILABLE) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    vi.setSystemTime(Date.now() + 6 * S);
+    await tick(2 * S);
+    expect(h.state().reviews.done_01).toMatchObject({ state: REVIEW_STATES.TIMED_OUT, result: null });
+  });
+
+  it('...and a completed-query answer at exactly its eighth second likewise', async () => {
+    const h = harness({ query: (n) => (n === 1 ? Promise.resolve(docsOf(2)) : after(2 * S, docsOf(5))), check: () => Promise.resolve(PENDING) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    await tick(120 * S);
+    vi.setSystemTime(Date.now() + 6 * S);
+    await tick(2 * S);
+    expect(h.state()).toMatchObject({ status: 'error', generation: 1 });
+  });
+
+  it('control: an answer just inside its eight seconds is still the answer (the rows at 7.9 s and 7.99 s are unchanged)', async () => {
+    const h = harness({ docs: () => docsOf(1), query: () => after(7.99 * S, docsOf(1)), check: () => after(7.99 * S, READY) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(16 * S);
+    expect(h.state()).toMatchObject({ status: 'ready', generation: 1 });
+    expect(h.state().reviews.done_01.state).toBe(REVIEW_STATES.READY);
+  });
+});
+
+describe('review T3-9 — a window that repeats an id keeps its first copy (one row, one check, one helper start)', () => {
+  it('[doc 1, doc 1 again, doc 2] is two rows and two checks', async () => {
+    const dup = [doc(1), doc(1, { note: 'second copy' }), doc(2)];
+    const h = harness({ docs: () => dup, check: () => after(1 * S, UNAVAILABLE) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(30 * S);
+    expect(h.checks.map((c) => c.id)).toEqual(['done_01', 'done_02']);
+    expect(h.state().battles).toHaveLength(2);
+    expect(h.state().battles[0]).toBe(dup[0]);
+    expect(Object.keys(h.state().reviews)).toEqual(['done_01', 'done_02']);
+    expect(h.state().inFlight).toBe(0);
+  });
+
+  it('a duplicate that is the owner\'s second copy of a foreign-first id is still kept once', async () => {
+    const dup = [doc(1, { ownerId: 'uid-B' }), doc(1), doc(1, { note: 'again' })];
+    const h = harness({ docs: () => dup, check: () => Promise.resolve(READY) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(h.state().battles).toEqual([dup[1]]);
+    expect(h.checks).toHaveLength(1);
   });
 });

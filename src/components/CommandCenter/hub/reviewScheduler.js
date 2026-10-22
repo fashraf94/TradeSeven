@@ -30,12 +30,20 @@
 //                 old; and a scheduled cycle while a review is pending or work
 //                 is unfinished. All share the cap: a trigger that cannot run
 //                 now queues ONE cycle at the next permitted time; a trigger
-//                 during a cycle leaves at most one dirty follow-up.
+//                 during a cycle leaves at most one dirty follow-up. A failed
+//                 query owes ONE automatic retry per failure episode, queued
+//                 at the next permitted time (published as the next attempt);
+//                 if the retry fails too nothing is queued and only a trigger
+//                 asks again (a success ends the episode; review T3-4).
 //   lifecycle     hiding clears the timers, revokes the cycle's result
 //                 consumers and keeps its unfinished rows and spent rate
 //                 slots; nothing starts while hidden; coming back runs at most
 //                 one cycle. dispose() (unmount, owner change) clears
-//                 everything, and a late answer of any kind is ignored.
+//                 everything but the rate ledger, and a late answer of any
+//                 kind is ignored. The ledger may be handed in: the hook keeps
+//                 one per owner and auth epoch, so a remount (a return from the
+//                 Film Room, a site switch) spends the same budget (§6: "Every
+//                 trigger shares this budget"; review T0-3).
 //
 // Only getReviewAvailability's three fields are read from a check
 // (`ready`, `target`, `availability`); the battle documents are handed over
@@ -100,12 +108,19 @@ class LocalTimeout extends Error {
  * @param {(battle: object) => Promise<{ ready, target, availability }>} p.checkReview
  * @param {(state: object) => void} p.onChange   every new public state
  * @param {boolean} [p.visible]
+ * @param {{ queries: number[], helpers: number[] }} [p.ledger]  the rolling start times, when they outlive this
+ *                                          scheduler (the owner's and epoch's, kept by the hook); else its own
  */
 export function createReviewScheduler({
-  owner, max = 10, clock, queryCompleted, checkReview, onChange, visible = true, budget = REVIEW_BUDGET,
+  owner, max = 10, clock, queryCompleted, checkReview, onChange, visible = true, budget = REVIEW_BUDGET, ledger = null,
 }) {
-  const { now, setTimer, clearTimer } = clock;
-  const starts = { queries: [], helpers: [] };
+  const { setTimer, clearTimer } = clock;
+  const starts = ledger || { queries: [], helpers: [] };
+  /** A start counts for one window; older ones are dropped, so a ledger that outlives a mount stays small. */
+  const record = (list, t) => {
+    list.push(t);
+    while (list.length && list[0] <= t - budget.windowMs) list.shift();
+  };
   const results = new Map();      // battle id → the last real helper answer
   const unfinished = new Map();   // battle id → { cause: started|unstarted|timeout|error|interrupted, lastStartAt }
   let disposed = false;
@@ -116,13 +131,29 @@ export function createReviewScheduler({
   let status = 'loading';
   let error = null;
   let lastCycleAt = null;
-  let queryOwed = false;
+  let retryOwed = false;          // a failed query owes its failure episode's ONE automatic retry...
+  let retrySpent = false;         // ...which this episode has already had; a successful query starts a new episode
   let cursor = 0;
   let cycle = null;
   let queued = null;              // { at, wanted, timer } — the one cycle waiting for admission
   let dirty = false;
   let seq = 0;
   let state = null;
+
+  /**
+   * The clock's reading, with the bookkeeping healed to it (review T3-7). Stamps are wall-clock ms; a backward step of
+   * the clock (NTP, a manual change) would leave every recorded start and the last cycle in the future, where they
+   * never age out for the size of the step. A stamp later than the reading is taken to be the reading: the window
+   * restarts there, never longer than one window, and the printed times stay the wall clock's own.
+   */
+  function now() {
+    const t = clock.now();
+    for (const list of [starts.queries, starts.helpers]) {
+      for (let i = 0; i < list.length; i += 1) if (list[i] > t) list[i] = t;
+    }
+    if (lastCycleAt !== null && lastCycleAt > t) lastCycleAt = t;
+    return t;
+  }
 
   const inWindow = (list, t) => list.filter((s) => s > t - budget.windowMs);
 
@@ -147,9 +178,9 @@ export function createReviewScheduler({
 
   const inView = () => new Set((battles || []).map((b) => b.id));
 
-  /** Work that warrants a scheduled cycle: a pending review, an unfinished row, an owed query. */
+  /** Work that warrants a scheduled cycle: a pending review, an unfinished row, the owed retry of a failed query. */
   function workRemains() {
-    if (queryOwed || status === 'error') return true;
+    if (retryOwed) return true;
     const ids = inView();
     for (const id of unfinished.keys()) if (ids.has(id)) return true;
     for (const [id, r] of results) if (ids.has(id) && r.availability === 'pending') return true;
@@ -241,11 +272,14 @@ export function createReviewScheduler({
 
   function startCycle(t) {
     const id = ++seq;
-    const c = { id, phase: 'query', deadlineAt: t + budget.cycleDeadlineMs, queue: [], inflight: new Map(), queryTimer: null, cycleTimer: null };
+    const c = { id, phase: 'query', startedAt: t, deadlineAt: t + budget.cycleDeadlineMs, queue: [], inflight: new Map(), queryTimer: null, cycleTimer: null };
     cycle = c;
-    starts.queries.push(t);
+    record(starts.queries, t);
     lastCycleAt = t;
-    queryOwed = false;
+    if (retryOwed) {
+      retryOwed = false;
+      retrySpent = true;
+    }
     // Both deadlines run from before the first await: imports and setup count.
     c.queryTimer = setTimer(() => queryFailed(id, new LocalTimeout('the completed query')), budget.queryDeadlineMs);
     c.cycleTimer = setTimer(() => expireCycle(id), budget.cycleDeadlineMs);
@@ -256,6 +290,8 @@ export function createReviewScheduler({
   const current = (id) => !disposed && cycle !== null && cycle.id === id;
   /** After a suspension the next callback checks the clock before anything else. */
   const overdue = (c) => now() >= c.deadlineAt;
+  /** ...and so does an operation's own eight seconds: an answer past them, delivered before its timer's callback has run, is late (review T3-6). */
+  const late = (startedAt, limit) => now() - startedAt >= limit;
 
   function queryDone(id, docs) {
     if (!current(id) || cycle.phase !== 'query') return;
@@ -264,16 +300,27 @@ export function createReviewScheduler({
       expireCycle(id);
       return;
     }
+    if (late(c.startedAt, budget.queryDeadlineMs)) {
+      queryFailed(id, new LocalTimeout('the completed query'));
+      return;
+    }
     if (!Array.isArray(docs)) {
       queryFailed(id, new TypeError('the completed query answered no list'));
       return;
     }
     clearTimer(c.queryTimer);
-    battles = Object.freeze(docs.filter((d) => d && typeof d === 'object' && typeof d.id === 'string' && d.id && d.ownerId === owner.uid));
+    // The owner's own documents, one per id (the first copy): a row is keyed by its id everywhere below (review T3-9).
+    const seenIds = new Set();
+    battles = Object.freeze(docs.filter((d) => {
+      if (!d || typeof d !== 'object' || typeof d.id !== 'string' || !d.id || d.ownerId !== owner.uid || seenIds.has(d.id)) return false;
+      seenIds.add(d.id);
+      return true;
+    }));
     generation += 1;
     lastSuccessfulAt = now();
     status = 'ready';
     error = null;
+    retrySpent = false;
     // A row that left the refreshed window is done.
     const ids = inView();
     for (const key of [...results.keys()]) if (!ids.has(key)) results.delete(key);
@@ -291,7 +338,9 @@ export function createReviewScheduler({
     // The prior window and generation stay; no helper pass runs on unproven data.
     status = 'error';
     error = err ?? null;
-    queryOwed = true;
+    // One automatic retry at the next permitted slot per failure episode; the retry's own failure ends the run.
+    // Pending reviews and unfinished rows keep their own schedule; an explicit trigger is never refused.
+    retryOwed = !retrySpent;
     endCycle(id);
   }
 
@@ -346,7 +395,7 @@ export function createReviewScheduler({
 
   function startCheck(c, doc, t) {
     const inv = ++seq;
-    starts.helpers.push(t);
+    record(starts.helpers, t);
     unfinished.set(doc.id, { cause: 'started', lastStartAt: t });
     const timer = setTimer(() => checkFailed(c.id, doc.id, inv, 'timeout'), budget.helperDeadlineMs);
     c.inflight.set(doc.id, { inv, startedAt: t, timer });
@@ -365,6 +414,11 @@ export function createReviewScheduler({
     if (!f) return;
     if (overdue(cycle)) {
       expireCycle(cid);
+      return;
+    }
+    if (late(f.startedAt, budget.helperDeadlineMs)) {
+      // Past its eight seconds: a timeout (unfinished, retried), whatever the helper says — never an `unavailable` it did not earn on time.
+      checkFailed(cid, rowId, inv, 'timeout');
       return;
     }
     clearTimer(f.timer);
@@ -448,13 +502,15 @@ export function createReviewScheduler({
       if (c) {
         clearTimer(c.queryTimer);
         clearTimer(c.cycleTimer);
-        if (c.phase === 'query') queryOwed = true;
         for (const [rowId, f] of c.inflight) {
           clearTimer(f.timer);
           unfinished.set(rowId, { cause: 'interrupted', lastStartAt: f.startedAt });
         }
         for (const rowId of c.queue) if (!unfinished.has(rowId)) unfinished.set(rowId, { cause: 'unstarted', lastStartAt: null });
         cycle = null;
+        // The re-queued cycle below is a fresh query that starts after every trigger so far: it already serves the
+        // dirty follow-up, so the flag must not outlive the cycle it belonged to (review T3-2).
+        dirty = false;
         if (!queued) queued = { at: admissionAt(now()), wanted: true, timer: null };
       }
       emit();

@@ -16,7 +16,7 @@ import React, { useRef } from 'react';
 import { motion } from 'framer-motion';
 import { motionToken } from '../../theme/motion';
 import { AREA_FOR_PHONE_TAB, HUB_AREAS, PHONE_TAB_ORDER, PHONE_TABS, rovingIndex } from './hub/composition';
-import { PHONE_ACTIVITY_LIMIT, PHONE_COMPLETED_LIMIT, splitGames } from './hub/hubModel';
+import { PHONE_ACTIVITY_LIMIT, PHONE_COMPLETED_LIMIT, liveGamesOf, splitGames } from './hub/hubModel';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { C, HAIR } from './hub/hubStyle';
 import { EmptyNote, Label, LoadingLine, Mono, Row, Section } from './HubParts';
@@ -24,7 +24,7 @@ import { AreaBody, AreaHeading } from './panels/AreaPanel';
 import ActivitySection from './sections/ActivitySection';
 import BriefSection from './sections/BriefSection';
 import { PhoneDeployCard } from './sections/DeploySection';
-import { GameRow, GamesReadNote } from './sections/GamesSection';
+import { GameRow, GamesLoadingLine, GamesReadNote } from './sections/GamesSection';
 import NextActionCard from './sections/NextActionCard';
 
 export const phoneTabId = (idBase, tab) => `${idBase}-tab-${tab}`;
@@ -88,7 +88,9 @@ function PhoneOverview({ sections, actions }) {
   const failed = games?.status === 'error';
   // A retained window whose latest read failed: never empty-history copy (spec §3; slice S3).
   const stale = ready && games.stale === true;
-  const { live, completed } = splitGames(games);
+  const { completed } = splitGames(games);
+  // Slice S3 (R-S3-8): the poll's live rows, whatever the completed window's status.
+  const live = liveGamesOf(games);
   const candidate = nextAction?.status === 'ready' ? nextAction.candidate : null;
   const liveGame = live[0] || null;
   const liveIsCandidate = Boolean(liveGame && candidate?.key === 'openGame');
@@ -99,9 +101,11 @@ function PhoneOverview({ sections, actions }) {
   const record = career?.status === 'ready' && career.record ? career.record : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {!ready && !failed && <LoadingLine>{COPY.games.loading}</LoadingLine>}
+      {!ready && !failed && <GamesLoadingLine games={games} />}
       {(failed || stale) && <GamesReadNote games={games} onRetry={actions.retryGames} />}
-      {ready && !stale && !liveGame && !candidate && completed.length === 0 && <EmptyNote icon="sword" title={COPY.games.empty} sub={COPY.games.emptySubPhone} />}
+      {ready && !stale && !liveGame && !candidate && completed.length === 0 && (games.liveResolved === false
+        ? <LoadingLine>{COPY.games.loading}</LoadingLine>
+        : <EmptyNote icon="sword" title={COPY.games.empty} sub={COPY.games.emptySubPhone} />)}
       {liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} />}
       {liveRows.map((g) => <GameRow key={g.id} game={g} onOpen={actions.openGame} />)}
       {candidate && !liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} />}

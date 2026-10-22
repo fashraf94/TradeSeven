@@ -7,7 +7,10 @@
 // S5 the career record. In S1 only the layout fixtures can open it.
 //
 // Slice S3: the rows are the ten-game window's, each with its outcome and its
-// review line, opening the game and its battle tape as Games does.
+// review line, opening the game and its battle tape as Games does. Only a read
+// window has a count and rows: a sheet left open across an identity change
+// shows the new owner's window loading, or failed with Retry — never an empty
+// history (spec §3; review T2-7).
 
 import React from 'react';
 import { splitGames } from './hub/hubModel';
@@ -15,10 +18,12 @@ import { HUB_COPY as COPY } from './hub/hubCopy';
 import { C } from './hub/hubStyle';
 import HubSheet from './HubSheet';
 import { Mono } from './HubParts';
-import { GameRow } from './sections/GamesSection';
+import { GameRow, GamesLoadingLine, GamesReadNote } from './sections/GamesSection';
 
-export default function HistorySheet({ games, career, phone, onClose, opener, fallbackFocus, reducedMotion, onOpenGame, onOpenTape }) {
+export default function HistorySheet({ games, career, phone, onClose, opener, fallbackFocus, reducedMotion, onOpenGame, onOpenTape, onRetry }) {
   const { completed } = splitGames(games);
+  const ready = games?.status === 'ready';
+  const failed = games?.status === 'error';
   const record = career?.status === 'ready' && career.record ? career.record : null;
   return (
     <HubSheet
@@ -27,7 +32,7 @@ export default function HistorySheet({ games, career, phone, onClose, opener, fa
       opener={opener}
       fallbackFocus={fallbackFocus}
       reducedMotion={reducedMotion}
-      eyebrow={COPY.history.eyebrow(completed.length)}
+      eyebrow={ready ? COPY.history.eyebrow(completed.length) : COPY.history.label}
       title={COPY.history.title}
       label={COPY.history.label}
     >
@@ -37,6 +42,8 @@ export default function HistorySheet({ games, career, phone, onClose, opener, fa
           <span style={{ fontSize: 12.5, color: C.ink3 }}>{COPY.history.careerCaption}</span>
         </div>
       )}
+      {!ready && !failed && <GamesLoadingLine games={games} />}
+      {failed && <GamesReadNote games={games} onRetry={onRetry} />}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {completed.map((g) => <GameRow key={g.id} game={g} onOpen={onOpenGame} onOpenTape={onOpenTape} />)}
       </div>

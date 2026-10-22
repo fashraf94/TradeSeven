@@ -58,17 +58,29 @@ const finite = (n) => typeof n === 'number' && Number.isFinite(n);
 
 const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/;
 
-/** A valid recorded timestamp: an ISO-8601 instant with real fields, or a Firestore timestamp. Arbitrary text is not one. */
+/** The days in a month, February 29 in a leap year (every 4th, not every 100th, but every 400th). No Date: pure. */
+const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const daysIn = (year, month) => (month === 2 && year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : MONTH_DAYS[month - 1]);
+/** A Firestore timestamp's seconds: from 2000-01-01 (the string branch's year floor) to the SDK's own limit, 9999-12-31. */
+const SECONDS_FROM_2000 = 946684800;
+const SECONDS_TO_9999 = 253402300799;
+
+/**
+ * A valid recorded timestamp: an ISO-8601 instant with real fields — a day the calendar has (review T4-3) — or a
+ * Firestore timestamp with real seconds and nanoseconds. Arbitrary text is not one.
+ */
 export function isRecordedTimestamp(value) {
   if (typeof value === 'string') {
     const m = ISO_INSTANT.exec(value);
     if (!m) return false;
     const [year, month, day, hour, minute, second] = m.slice(1, 7).map(Number);
     const offsetOk = m[7] === undefined || (Number(m[7]) <= 23 && Number(m[8]) <= 59);
-    return year >= 2000 && month >= 1 && month <= 12 && day >= 1 && day <= 31 && hour <= 23 && minute <= 59 && second <= 59 && offsetOk;
+    return year >= 2000 && month >= 1 && month <= 12 && day >= 1 && day <= daysIn(year, month) && hour <= 23 && minute <= 59 && second <= 59 && offsetOk;
   }
   if (value && typeof value === 'object') {
-    return finite(value.seconds) && value.seconds > 0 && (value.nanoseconds === undefined || finite(value.nanoseconds));
+    const { seconds, nanoseconds } = value;
+    return finite(seconds) && seconds >= SECONDS_FROM_2000 && seconds <= SECONDS_TO_9999
+      && (nanoseconds === undefined || (finite(nanoseconds) && nanoseconds >= 0 && nanoseconds < 1e9));
   }
   return false;
 }

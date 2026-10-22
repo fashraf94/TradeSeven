@@ -7,6 +7,7 @@
 // repair, tournaments, and the result-unavailable completion.
 
 import { describe, expect, it } from 'vitest';
+import { Timestamp } from 'firebase/firestore';
 import { BANKED_CONTEXT, OUTCOME_KINDS as K, deriveGameOutcome, hasScoringEvidence, isRecordedTimestamp } from './gameOutcome';
 
 const SCORED = Object.freeze({ lastScoredAt: '2026-10-20T19:58:00.000Z', evaluationCount: 41 });
@@ -120,5 +121,50 @@ describe('the §7 table', () => {
   it('nothing at all is no verdict', () => {
     expect(deriveGameOutcome(null).kind).toBe(K.ACTIVE);
     expect(deriveGameOutcome({ status: 'completed' }).kind).toBe(K.NO_RESULT);
+  });
+});
+
+describe('a recorded timestamp\'s calendar and clock are real (review T4-3, T4-5)', () => {
+  it.each([
+    // the last day of every month, and the leap rule: every 4th year, not every 100th, but every 400th
+    '2026-01-31T00:00:00Z', '2026-02-28T23:59:59.999Z', '2026-03-31T00:00:00Z', '2026-04-30T00:00:00Z', '2026-05-31T00:00:00Z', '2026-06-30T00:00:00Z',
+    '2026-07-31T00:00:00Z', '2026-08-31T00:00:00Z', '2026-09-30T00:00:00Z', '2026-10-31T00:00:00Z', '2026-11-30T00:00:00Z', '2026-12-31T23:59:59Z',
+    '2024-02-29T00:00:00Z', '2000-02-29T00:00:00Z', '2400-02-29T00:00:00Z',
+    // what the writers produce, and the fields' own limits
+    '2026-10-20T19:58:00.000Z', '2026-10-20T19:58:00.123456Z', '2026-10-20T19:58:00.123456789Z', '2026-10-20T15:58:00-04:00',
+    '2026-10-20T15:58:00+23:59', '2026-10-20T23:59:59Z', '2026-10-20T23:59:00Z',
+  ])('%s is a recorded timestamp', (value) => {
+    expect(isRecordedTimestamp(value)).toBe(true);
+  });
+
+  it.each([
+    // a day the calendar does not have
+    '2026-02-29T00:00:00Z', '2026-02-30T00:00:00Z', '2026-02-31T00:00:00Z', '2026-04-31T00:00:00Z', '2026-06-31T00:00:00Z', '2026-09-31T00:00:00Z',
+    '2026-11-31T00:00:00Z', '2100-02-29T00:00:00Z', '2026-01-32T00:00:00Z', '2026-10-00T00:00:00Z',
+    // the clock's own limits
+    '2026-10-20T24:00:00Z', '2026-10-20T23:60:00Z', '2026-10-20T23:59:60Z',
+    // offsets out of range, and a fraction beyond nanoseconds
+    '2026-10-20T15:58:00+24:00', '2026-10-20T15:58:00+05:60', '2026-10-20T15:58:00-23:60', '2026-10-20T19:58:00.1234567891Z',
+  ])('%s is not', (value) => {
+    expect(isRecordedTimestamp(value)).toBe(false);
+  });
+
+  it('a Firestore timestamp is real seconds from 2000 to the SDK\'s limit, and real nanoseconds', () => {
+    expect(isRecordedTimestamp(new Timestamp(1792512000, 999999999))).toBe(true);
+    expect(isRecordedTimestamp({ seconds: 1792512000, nanoseconds: 5 })).toBe(true);
+    expect(isRecordedTimestamp({ seconds: 1792512000 })).toBe(true);
+    expect(isRecordedTimestamp({ seconds: 946684800, nanoseconds: 0 })).toBe(true);
+    expect(isRecordedTimestamp({ seconds: 946684799, nanoseconds: 999999999 })).toBe(false);
+    expect(isRecordedTimestamp({ seconds: 253402300799, nanoseconds: 999999999 })).toBe(true);
+    for (const t of [{ seconds: 86400, nanoseconds: 0 }, { seconds: 1, nanoseconds: 0 }, { seconds: 1e20, nanoseconds: 0 }, { seconds: 253402300800, nanoseconds: 0 },
+      { seconds: 1792512000, nanoseconds: -5 }, { seconds: 1792512000, nanoseconds: 1e9 }, { seconds: 1792512000, nanoseconds: NaN },
+      { seconds: 1792512000, nanoseconds: '5' }, { seconds: '1792512000' }, { seconds: NaN }, { seconds: -1 }]) {
+      expect(isRecordedTimestamp(t), JSON.stringify(t)).toBe(false);
+    }
+  });
+
+  it('an impossible date alone is no scoring evidence; a finite positive count still is', () => {
+    expect(hasScoringEvidence({ lastScoredAt: '2026-02-31T00:00:00Z' })).toBe(false);
+    expect(hasScoringEvidence({ lastScoredAt: '2026-02-31T00:00:00Z', evaluationCount: 3 })).toBe(true);
   });
 });

@@ -70,7 +70,7 @@ import {
 import { deployDisplay } from './hub/deployDisplay';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { formatHubDate, headerName } from './hub/hubDate';
-import { HUB_S1_SECTIONS, HUB_S2A_DEPLOY_INPUTS, splitGames } from './hub/hubModel';
+import { HUB_S1_SECTIONS, HUB_S2A_DEPLOY_INPUTS, liveGamesOf, splitGames } from './hub/hubModel';
 import { deriveHubDeployState } from './hub/selectors/deployState';
 import { C, HUB_LAYERS, HUB_SCOPED_CSS } from './hub/hubStyle';
 import { shadowTierFor } from './hub/shadowGeometry';
@@ -124,7 +124,9 @@ function useShared(sections) {
   const { user } = useUser();
   const reducedMotion = Boolean(useReducedMotion());
   const idBase = `hub${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
-  const { live, completed } = splitGames(sections.games);
+  const { completed } = splitGames(sections.games);
+  // Slice S3 (R-S3-8): the poll's live rows, whatever the completed window's status.
+  const live = liveGamesOf(sections.games);
   // The strip's game (spec §10): a live BaggerBomb game when there is one — it
   // is what blocks the hold, and Open targets it — else the first live game.
   const liveGame = live.find((g) => g.kind === BATTLE_TYPE_BAGGERBOMB) || live[0] || null;
@@ -269,7 +271,7 @@ function PhoneHub({ sections, actions: wired = NO_ACTIONS }) {
         onAction={actions.deployAction}
       />
       {sheet.sheet === 'history' && (
-        <HistorySheet games={sections.games} career={sections.career} phone onClose={sheet.close} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpenGame={actions.openGame} onOpenTape={actions.openTape} />
+        <HistorySheet games={sections.games} career={sections.career} phone onClose={sheet.close} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpenGame={actions.openGame} onOpenTape={actions.openTape} onRetry={actions.retryGames} />
       )}
     </HubLayoutContext.Provider>
   );
@@ -357,7 +359,7 @@ function WideHub({ sections, actions: wired = NO_ACTIONS }) {
         {body}
       </section>
       {sheet.sheet === 'history' && (
-        <HistorySheet games={sections.games} career={sections.career} onClose={sheet.close} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpenGame={actions.openGame} onOpenTape={actions.openTape} />
+        <HistorySheet games={sections.games} career={sections.career} onClose={sheet.close} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpenGame={actions.openGame} onOpenTape={actions.openTape} onRetry={actions.retryGames} />
       )}
     </HubLayoutContext.Provider>
   );

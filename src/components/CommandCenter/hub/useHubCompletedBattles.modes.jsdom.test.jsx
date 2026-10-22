@@ -35,7 +35,7 @@ vi.mock('firebase/auth', () => ({
   getAuth: () => ({ currentUser: { uid: 'uid-A', getIdToken: async () => 'token' } }),
 }));
 
-import useHubCompletedBattles from './useHubCompletedBattles';
+import useHubCompletedBattles, { resetHubLedgersForTests } from './useHubCompletedBattles';
 import { resetFilmRoomVerdicts } from '../../../utils/filmRoomGate';
 import { getReviewAvailability } from '../../../utils/reviewAvailability';
 
@@ -76,6 +76,8 @@ const settle = () => act(async () => { for (let i = 0; i < 5; i += 1) await vi.a
 const states = () => Object.fromEntries(Object.entries(seen[seen.length - 1].reviews).map(([k, v]) => [k, v.state]));
 
 beforeEach(() => {
+  // The owner's rate ledger outlives a mount (review T0-3): each row starts with none spent.
+  resetHubLedgersForTests();
   vi.useFakeTimers();
   vi.setSystemTime(T0);
   resetFilmRoomVerdicts();

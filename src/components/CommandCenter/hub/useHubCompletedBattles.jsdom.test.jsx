@@ -7,7 +7,7 @@
 // and focus reach the scheduler; and its default operations are the shared
 // completed read and getReviewAvailability, unmodified.
 
-import React, { act } from 'react';
+import React, { act, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -21,7 +21,7 @@ vi.mock('../../../utils/reviewAvailability', () => ({
   getReviewAvailability: vi.fn((...args) => { ops.checks.push(args); return Promise.resolve({ ready: true, target: 'filmRoom', availability: 'ready' }); }),
 }));
 
-import useHubCompletedBattles, { HUB_COMPLETED_WINDOW } from './useHubCompletedBattles';
+import useHubCompletedBattles, { HUB_COMPLETED_WINDOW, resetHubLedgersForTests } from './useHubCompletedBattles';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const T0 = Date.UTC(2026, 9, 22, 15, 0, 0);
@@ -45,6 +45,8 @@ const last = () => seen[seen.length - 1];
 const docsFor = (uid, n = 2) => Array.from({ length: n }, (_, i) => ({ id: `${uid}_done_${i + 1}`, ownerId: uid, status: 'completed' }));
 
 beforeEach(() => {
+  // The owner's rate ledger outlives a mount (review T0-3): each row starts with none spent.
+  resetHubLedgersForTests();
   vi.useFakeTimers();
   vi.setSystemTime(T0);
   id.current = { resolved: true, uid: 'uid-A', authEpoch: 1 };
@@ -172,5 +174,72 @@ describe('useHubCompletedBattles — the hub\'s ten-game window', () => {
     expect(last().nextAttemptAt).toBe(T0 + 120 * S);
     await act(async () => { await vi.advanceTimersByTimeAsync(110 * S); });
     expect(reads).toEqual([0, 120 * S]);
+  });
+});
+
+describe('the rate cap belongs to the owner and epoch, not to one mount (spec §6 "Every trigger shares this budget"; review T0-3)', () => {
+  const READY = Object.freeze({ ready: true, target: 'filmRoom', availability: 'ready' });
+  let calls;
+  const seams = () => ({
+    queryCompleted: (uid) => { calls.queries.push(Date.now() - T0); return Promise.resolve(docsFor(uid, 10)); },
+    checkReview: () => { calls.checks.push(Date.now() - T0); return Promise.resolve(READY); },
+  });
+  beforeEach(() => { calls = { queries: [], checks: [] }; });
+
+  it('a return inside the 120 s window (the Film Room, a site switch) reads nothing until the permitted time — and says when', async () => {
+    const s = seams();
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    expect(calls.queries).toEqual([0]);
+    expect(calls.checks).toHaveLength(10);
+    act(() => root.unmount());
+    await act(async () => { await vi.advanceTimersByTimeAsync(29 * S); });
+    root = createRoot(host);
+    seen = [];
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    expect(calls.queries, 'no second query inside the window').toEqual([0]);
+    expect(last()).toMatchObject({ status: 'loading', battles: null, nextAttemptAt: T0 + 120 * S });
+    await act(async () => { await vi.advanceTimersByTimeAsync(88.9 * S); });
+    expect(calls.queries).toEqual([0]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0.2 * S); });
+    expect(calls.queries, 'one queued cycle at the permitted time').toEqual([0, 120 * S]);
+    expect(calls.checks).toHaveLength(20);
+    expect(last()).toMatchObject({ status: 'ready', generation: 1 });
+  });
+
+  it('an actual owner change starts afresh: A, then B, then A at a new epoch each read at once', async () => {
+    const s = seams();
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    id.current = { resolved: true, uid: 'uid-B', authEpoch: 2 };
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    id.current = { resolved: true, uid: 'uid-A', authEpoch: 3 };
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    expect(calls.queries).toEqual([0, 1 * S, 2 * S]);
+  });
+
+  it('the development double mount (StrictMode) reads once, at once', async () => {
+    render(<StrictMode><SeamProbe seams={seams()} /></StrictMode>);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    expect(calls.queries).toEqual([0]);
+    expect(last()).toMatchObject({ status: 'ready' });
+  });
+
+  it('a quick bounce — unmounted while its first read is in flight — still spends the slot', async () => {
+    let release;
+    const s = { ...seams(), queryCompleted: () => { calls.queries.push(Date.now() - T0); return new Promise((r) => { release = r; }); } };
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    act(() => root.unmount());
+    await act(async () => { release(docsFor('uid-A', 10)); await vi.advanceTimersByTimeAsync(4700); });
+    root = createRoot(host);
+    seen = [];
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    expect(calls.queries).toEqual([0]);
+    expect(last()).toMatchObject({ status: 'loading', battles: null, nextAttemptAt: T0 + 120 * S });
   });
 });

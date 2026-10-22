@@ -19,7 +19,9 @@
 // disposes the scheduler and starts a fresh one, and a result of another owner
 // or epoch is dropped in render, before any effect runs (spec §3). A failed
 // read never becomes an empty window: `battles` stays the last good one, or
-// null.
+// null. The rate ledger outlives a mount: one per owner and epoch, so a return
+// to the hub inside the 120 s window queues at the permitted time instead of
+// reading again (spec §6; review T0-3).
 //
 // Its activity — the real clock's timers, the page's visibility and focus
 // listeners, the effect that owns the scheduler — is listed in the hub mount
@@ -31,6 +33,28 @@ import { useAuthIdentity } from '../../../services/authIdentity';
 import { fetchRecentCompletedAgentBattles } from '../../../services/completedAgentBattles';
 import { getReviewAvailability } from '../../../utils/reviewAvailability';
 import { REVIEW_TRIGGERS, createReviewScheduler } from './reviewScheduler';
+
+/**
+ * The rate ledgers (spec §6: one completed query and ten helper starts per rolling 120 s "for the same mounted
+ * uid/epoch. Every trigger shares this budget"). Kept per owner and epoch, outside any one mount; only the current
+ * key is kept, so a new owner or epoch starts afresh.
+ */
+const LEDGERS = new Map();
+function ledgerFor(uid, epoch) {
+  const key = `${uid}:${epoch}`;
+  let ledger = LEDGERS.get(key);
+  if (!ledger) {
+    LEDGERS.clear();
+    ledger = { queries: [], helpers: [] };
+    LEDGERS.set(key, ledger);
+  }
+  return ledger;
+}
+
+/** Tests only: forget every ledger. */
+export function resetHubLedgersForTests() {
+  LEDGERS.clear();
+}
 
 /** The window's size (spec §8.2: the ten most recent completed records). */
 export const HUB_COMPLETED_WINDOW = 10;
@@ -78,10 +102,12 @@ export default function useHubCompletedBattles(max = HUB_COMPLETED_WINDOW, seams
   useEffect(() => {
     if (!uid) return undefined;
     const s = seamsRef.current;
+    const clock = s.clock || REAL_CLOCK;
     const scheduler = createReviewScheduler({
       owner: { uid, authEpoch: epoch },
       max,
-      clock: s.clock || REAL_CLOCK,
+      ledger: ledgerFor(uid, epoch),
+      clock,
       queryCompleted: s.queryCompleted || fetchRecentCompletedAgentBattles,
       // The helper, unmodified: the document as it came, and nothing else.
       checkReview: s.checkReview || ((battle) => getReviewAvailability(battle)),
@@ -96,8 +122,11 @@ export default function useHubCompletedBattles(max = HUB_COMPLETED_WINDOW, seams
     const onFocus = () => scheduler.trigger(REVIEW_TRIGGERS.FOCUS);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('focus', onFocus);
-    scheduler.trigger(REVIEW_TRIGGERS.MOUNT);
+    // A tick late: React's development double effect (StrictMode) mounts, unmounts and mounts again at once, and the
+    // discarded effect must not spend the owner's shared slot.
+    const mountTimer = clock.setTimer(() => scheduler.trigger(REVIEW_TRIGGERS.MOUNT), 0);
     return () => {
+      clock.clearTimer(mountTimer);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onFocus);
       scheduler.dispose();

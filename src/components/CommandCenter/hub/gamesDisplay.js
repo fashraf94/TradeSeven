@@ -54,6 +54,31 @@ const signed = (n, decimals) => {
   return n > 0 ? `+${text}` : `${MINUS}${text}`;
 };
 
+/** A number's own shortest round-trip digits, written out in full: String(1e-12) is '1e-12', this is '0.000000000001'. */
+function plainDigits(abs) {
+  const m = /^(\d)(?:\.(\d+))?e([+-]\d+)$/.exec(String(abs));
+  if (!m) return String(abs);
+  const digits = m[1] + (m[2] || '');
+  const exponent = Number(m[3]);
+  return exponent < 0 ? `0.${'0'.repeat(-exponent - 1)}${digits}` : digits + '0'.repeat(exponent - (digits.length - 1));
+}
+
+/**
+ * Beyond six decimals (a margin of float noise, a score a millionth from zero) each stored number is shown by its own
+ * digits, with the house sign, padded to one common length (review T4-4). Two different numbers have different digits
+ * and a non-zero number has a non-zero digit, so it never shows as a draw or as zero; the shown number is the stored one.
+ */
+function preciseScores(scores) {
+  const parts = scores.map((n) => (finite(n) ? plainDigits(Math.abs(n)).split('.') : null));
+  const decimals = Math.max(0, ...parts.map((p) => (p?.[1] ? p[1].length : 0)));
+  return scores.map((n, i) => {
+    if (!parts[i]) return COPY.games.scoreUnavailable;
+    const [whole, fraction = ''] = parts[i];
+    const text = decimals ? `${whole}.${fraction.padEnd(decimals, '0')}` : whole;
+    return n === 0 ? text : `${n > 0 ? '+' : MINUS}${text}`;
+  });
+}
+
 /**
  * The scores as shown: one decimal, more only when needed — so two different
  * stored scores never show as equal (no apparent draw) and a non-zero score
@@ -62,13 +87,15 @@ const signed = (n, decimals) => {
  */
 export function formatScores(...scores) {
   const values = scores.filter(finite);
-  for (let decimals = 1; decimals <= 6; decimals += 1) {
+  // toFixed writes an exponent from 1e21 up.
+  const fixedNotation = values.every((n) => Math.abs(n) < 1e21);
+  for (let decimals = 1; fixedNotation && decimals <= 6; decimals += 1) {
     const texts = values.map((n) => signed(n, decimals));
     const zeroLoss = values.some((n, i) => n !== 0 && Number(texts[i].replace(MINUS, '-')) === 0);
     const collision = values.some((a, i) => values.some((b, j) => j > i && a !== b && texts[i] === texts[j]));
     if (!zeroLoss && !collision) return scores.map((n) => (finite(n) ? signed(n, decimals) : COPY.games.scoreUnavailable));
   }
-  return scores.map((n) => (finite(n) ? String(n) : COPY.games.scoreUnavailable));
+  return preciseScores(scores);
 }
 
 /** A row's outcome words and tone, from deriveGameOutcome's one stored pair. */

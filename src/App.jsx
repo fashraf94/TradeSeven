@@ -2377,8 +2377,8 @@ export default function PortfolioDuel() {
     onRefreshStarted: (flight) => {
       if (isCurrentIdentity(flight.capture)) setActiveAgentBattlesPoll((meta) => activePollRefreshStarted(meta, flight.capture));
     },
-    onSettled: (flight, outcome) => {
-      if (isCurrentIdentity(flight.capture)) setActiveAgentBattlesPoll((meta) => activePollSettled(meta, flight.capture, outcome, flight.explicit));
+    onSettled: (flight, outcome, endsRefresh) => {
+      if (isCurrentIdentity(flight.capture)) setActiveAgentBattlesPoll((meta) => activePollSettled(meta, flight.capture, outcome, endsRefresh));
     },
   }));
   // An explicit refresh (the hub's eligibility Retry; S2b's provider later):
@@ -3961,6 +3961,9 @@ export default function PortfolioDuel() {
       // Command Center S3 (R-S3-3): the identity this run belongs to, captured
       // before its first await (refreshActiveBattles marks an explicit run).
       const capture = readAuthIdentity();
+      // When this request BEGAN: its "as of" if it succeeds, and how old a
+      // failure is against the list held (activePollSettled).
+      const startedAt = Date.now();
       const flight = agentBattlesFlights.begin(capture);
       try {
         const { collection, query, where, getDocs, doc, getDoc } = await import('firebase/firestore');
@@ -4025,7 +4028,7 @@ export default function PortfolioDuel() {
         // ignored — the former owner's list never lands under a new identity.
         if (!isCurrentIdentity(capture)) return;
         setActiveAgentBattles(liveBattles);
-        agentBattlesFlights.settle(flight, { ok: true, uid: queriedUid, at: Date.now() });
+        agentBattlesFlights.settle(flight, { ok: true, uid: queriedUid, at: startedAt });
 
         // Command Center Sync (Pass 1) — the ONE added read, piggybacked on
         // this existing 120s cycle rather than given a poll or a listener of
@@ -4060,6 +4063,8 @@ export default function PortfolioDuel() {
               return null;
             }
           }));
+          // S3 (R-S3-3): the same completion — a former owner's caches never land.
+          if (!isCurrentIdentity(capture)) return;
           setVoiceLayerCaches(Object.fromEntries(cacheEntries.filter(Boolean)));
         }
       } catch (error) {
@@ -4072,7 +4077,7 @@ export default function PortfolioDuel() {
         // same state, which is why this lands ahead of that feature's flip.
         console.error('Error fetching agent battles (retaining last-known-good):', error);
         // S3: the failure is recorded in the poll's own metadata; the list stays.
-        agentBattlesFlights.settle(flight, { ok: false, error });
+        agentBattlesFlights.settle(flight, { ok: false, error, at: startedAt });
       } finally {
         // A run that made no request (nobody signed in, the identity moved) still ends its refresh.
         agentBattlesFlights.settle(flight, null);

@@ -29,14 +29,14 @@ const useAgent = (userId, { ownerEpoch = null } = {}) => {
 
   // Real-time Firestore subscription
   useEffect(() => {
-    // A new subscription has resolved for no one yet (no new state if nothing has).
-    setRead((prev) => (prev === LOADING_READ ? prev : LOADING_READ));
     if (!userId) {
       setAgent(null);
       setLoading(false);
       return;
     }
 
+    // A new subscription has resolved for no one yet (no new state if nothing has).
+    setRead((prev) => (prev === LOADING_READ ? prev : LOADING_READ));
     setLoading(true);
     const owner = { ownerUid: userId, ownerEpoch };
     // A torn-down subscription writes nothing, so no answer outlives its owner and epoch.
@@ -227,6 +227,10 @@ const useAgent = (userId, { ownerEpoch = null } = {}) => {
   // RETURN
   // ============================================
 
+  // No uid reads as nothing resolved — derived here, not written by the effect, so a legacy consumer renders no
+  // more often than before S3 (review T1-3).
+  const shown = userId ? read : LOADING_READ;
+
   return {
     agent,
     loading,
@@ -255,10 +259,10 @@ const useAgent = (userId, { ownerEpoch = null } = {}) => {
     removeDirective: handleRemoveDirective,
     seedTestAgent: handleSeedTestAgent,
     // S3 (R-S3-4): the read's own state, owner-tagged.
-    status: read.status,
-    readError: read.error,
-    ownerUid: read.ownerUid,
-    ownerEpoch: read.ownerEpoch,
+    status: shown.status,
+    readError: shown.error,
+    ownerUid: shown.ownerUid,
+    ownerEpoch: shown.ownerEpoch,
     retry,
   };
 };
