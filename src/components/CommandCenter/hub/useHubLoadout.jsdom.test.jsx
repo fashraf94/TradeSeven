@@ -32,17 +32,17 @@ let root;
 let api;
 let errorSpy;
 
-function Harness({ enabled }) {
-  api = useHubLoadout({ enabled });
+function Harness({ enabled, ownerKey }) {
+  api = useHubLoadout({ enabled, ownerKey });
   return null;
 }
-const render = (enabled) => {
+const render = (enabled, ownerKey = null) => {
   if (!host) {
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
   }
-  act(() => { root.render(<Harness enabled={enabled} />); });
+  act(() => { root.render(<Harness enabled={enabled} ownerKey={ownerKey} />); });
 };
 
 beforeEach(() => {
@@ -204,5 +204,55 @@ describe('useHubLoadout — late answers', () => {
     root = null;
     await act(async () => { pending.reject(new Error('late')); await Promise.resolve(); });
     expect(errorSpy.mock.calls.length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("useHubLoadout — whose lists these are (spec §3: drop another owner's results before the next effect paints)", () => {
+  it("on an owner change the previous owner's lists drop in the same render, before the new read resolves", async () => {
+    listWatchlists.mockResolvedValueOnce([committed('a-list')]);
+    render(true, 'owner-a');
+    await flush();
+    expect(api.committed.map((l) => l.watchlistId)).toEqual(['a-list']);
+    const pending = deferred();
+    listWatchlists.mockReturnValueOnce(pending.promise);
+    render(true, 'owner-b');
+    expect(api.status).toBe(LISTS_STATUS.LOADING);
+    expect(api.committed).toEqual([]);
+    await act(async () => { pending.resolve([committed('b-list')]); await Promise.resolve(); });
+    expect(api.committed.map((l) => l.watchlistId)).toEqual(['b-list']);
+  });
+
+  it('a read still in flight for the previous owner is abandoned: it cannot publish under the new one', async () => {
+    const old = deferred();
+    const fresh = deferred();
+    listWatchlists.mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
+    render(true, 'owner-a');
+    await flush();
+    render(true, 'owner-b');
+    await act(async () => { old.resolve([committed('a-list')]); await Promise.resolve(); });
+    expect(api.committed).toEqual([]);
+    expect(api.status).toBe(LISTS_STATUS.LOADING);
+    await act(async () => { fresh.resolve([committed('b-list')]); await Promise.resolve(); });
+    expect(api.committed.map((l) => l.watchlistId)).toEqual(['b-list']);
+  });
+
+  it("a failed read for the new owner is an error — the previous owner's lists are not kept as a fallback", async () => {
+    listWatchlists.mockResolvedValueOnce([committed('a-list')]).mockRejectedValueOnce(new Error('offline'));
+    render(true, 'owner-a');
+    await flush();
+    render(true, 'owner-b');
+    await flush();
+    expect(api.status).toBe(LISTS_STATUS.ERROR);
+    expect(api.committed).toEqual([]);
+  });
+
+  it('the same owner keeps its lists across a re-render (the key is not a re-read)', async () => {
+    listWatchlists.mockResolvedValue([committed('a-list')]);
+    render(true, 'owner-a');
+    await flush();
+    render(true, 'owner-a');
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(1);
+    expect(api.committed.map((l) => l.watchlistId)).toEqual(['a-list']);
   });
 });

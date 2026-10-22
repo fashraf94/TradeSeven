@@ -156,6 +156,21 @@ describe('the Loadout states (ruling R-S5-1)', () => {
     expect(card('watchlist').textContent).not.toContain('Stored Tech');
   });
 
+  it('on an account change the previous account\'s lists are not shown while the new read is pending (spec §3)', async () => {
+    const { m } = await renderHub();
+    expect(card('watchlist').textContent).toContain('Tech Leaders');
+    let release;
+    listWatchlists.mockReturnValueOnce(new Promise((resolve) => { release = resolve; }));
+    const other = AGENT({ id: 'ag-2', ownerId: 'u-2', equippedWatchlistId: 'wl-9', equippedWatchlistName: 'Other Stored' });
+    m.rerender(<CommandCenterHub site="desktop" hub={HUB({ agent: other })} sections={HUB_LAYOUT_FIXTURES.returning.sections} />);
+    await flush();
+    expect(card('watchlist').textContent).not.toContain('Tech Leaders');
+    expect(card('watchlist').textContent).toContain('Other Stored');
+    await act(async () => { release([{ watchlistId: 'wl-9', name: 'Other List', status: 'committed', tickers: ['ZZZ'] }]); await Promise.resolve(); });
+    expect(card('watchlist').textContent).toContain('Other List');
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+  });
+
   it('no list equipped: the plain "No watchlist equipped" card, no names, no label', async () => {
     await renderHub({ hub: HUB({ agent: AGENT({ equippedWatchlistId: null, equippedWatchlistName: null }) }) });
     expect(byText(card('watchlist'), COPY.loadout.noWatchlist)).not.toBeNull();

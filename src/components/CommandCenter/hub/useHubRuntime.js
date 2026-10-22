@@ -46,7 +46,8 @@ export function useHubRuntime({ hub, sections, rootRef }) {
   const live = hub != null;
   const agent = live ? hub.agent ?? null : null;
   const agentLoading = live && hub.agentLoading === true;
-  const lists = useHubLoadout({ enabled: live && Boolean(agent) });
+  // The lists are the agent's OWNER'S: another owner's never show (hub/useHubLoadout.js ownerKey).
+  const lists = useHubLoadout({ enabled: live && Boolean(agent), ownerKey: agent?.ownerId ?? agent?.id ?? null });
   const sheets = useHubSheets(rootRef);
   const modalOpen = useHubModalOpen();
 
