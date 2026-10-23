@@ -13,7 +13,11 @@ const AGENTS_COLLECTION = 'agents';
 // READ OPERATIONS
 // ============================================
 
-export const subscribeToUserAgent = (ownerId, callback) => {
+// Command Center S3 (ruling R-S3-4; spec V1.2 §3): `onError` is optional. A
+// caller that passes it receives the subscription's error there, and no
+// `callback(null)` — so a failed read is never mistaken for "no agent". Without
+// it the error reads as null, exactly as before.
+export const subscribeToUserAgent = (ownerId, callback, onError) => {
   // No limit(1): a player may also own a training CLONE (Slice 3, same ownerId).
   // The dashboard/Forge surfaces always show the RANKED agent, so exclude clones.
   const q = query(
@@ -30,6 +34,10 @@ export const subscribeToUserAgent = (ownerId, callback) => {
     callback({ id: docSnap.id, ...docSnap.data() });
   }, (error) => {
     console.error('Agent subscription error:', error);
+    if (typeof onError === 'function') {
+      onError(error);
+      return;
+    }
     callback(null);
   });
 };

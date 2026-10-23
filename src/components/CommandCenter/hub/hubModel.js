@@ -17,6 +17,14 @@
 //   games       { status, rows: [{ id, mode, opponent, live, clock?, preOpen?,
 //                 detail, outcome?: { text, tone: 'pos'|'neg'|'draw'|'neutral' },
 //                 review?: boolean }] }                                §3, §7
+//               Slice S3 adds: status 'error' (a failed read, nothing
+//               retained); stale, asOf, nextAttemptAt for a retained window
+//               whose latest read failed; and per row kind ('ranked' |
+//               'baggerbomb') and, on a completed row, reviewLine { state,
+//               text, openable } (hub/gamesDisplay.js)                 §3, §6
+//               and `live`: the poll's live rows, carried whatever the
+//               window's status (liveGamesOf), with `liveResolved` (the
+//               poll has answered for this owner)                      R-S3-8
 //   deploy      deriveHubDeployState's result (selectors/deployState.js):
 //               { displayState, canStart, gateBlocked, freshness: { asOf,
 //                 stale, refreshing }, retryAction, reason, action,
@@ -24,7 +32,7 @@
 //                 retryBlock }                                         §3.1 (S2a)
 //               The hub root fills it from the selector (ruling R-S2A-3);
 //               HUB_S1_SECTIONS carries no hand-written one.
-//   loadout     { status: 'loading' | 'none' | 'ready',                 §2 (S5)
+//   loadout     { status: 'loading' | 'none' | 'error' | 'ready',       §2 (S5)
 //                 identity?: { name }, archetype?: { name, approach },
 //                 watchlist?: { state: 'none' | 'loading' | 'ready' |
 //                   'unavailable' | 'error', id, name, symbols, count,
@@ -32,7 +40,8 @@
 //                 adjustments?: { equipped, name, sub, door } | null,
 //                 lockedInGame?, summary? }
 //               hub/selectors/loadout.js deriveLoadout; `none` is a resolved
-//               absence of the ranked agent, `summary` the root's one-line
+//               absence of the ranked agent, `error` its failed read (the
+//               S3 merge, N-S5-6), `summary` the root's one-line
 //               loadout (the area control's and the stage's words)
 //   research    { status }                                             §8.1 (S6)
 //   activity    { status, rows: [{ id, kind, text, sub, at }] }        §8.2 (S4)
@@ -139,9 +148,20 @@ export function splitGames(games) {
   return { live: rows.filter((g) => g.live), completed: rows.filter((g) => !g.live) };
 }
 
+/**
+ * The live rows (slice S3, R-S3-8). On the connected hub they come as the section's own `live` list, from App's poll
+ * (the list the gate reads), and show whatever the completed window's status: a block always has its row. A section
+ * without one (the layout fixtures) keeps S1's rule: rows only once ready.
+ */
+export function liveGamesOf(games) {
+  return Array.isArray(games?.live) ? games.live : splitGames(games).live;
+}
+
 /** Desktop and tablet Games show live rows plus at most two completed rows (spec §8.2). */
 export const DESKTOP_COMPLETED_LIMIT = 2;
 /** The phone Overview shows a short activity list (the design's limit 3). */
 export const PHONE_ACTIVITY_LIMIT = 3;
+/** The phone Overview shows at most three completed rows (spec §8.2; slice S3). */
+export const PHONE_COMPLETED_LIMIT = 3;
 /** The watchlist card draws this many names, then "+N more": a list can hold far more than a card can read. */
 export const LOADOUT_SYMBOL_LIMIT = 24;

@@ -32,13 +32,28 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const ALL = ['openRecord', 'changeArchetype', 'changeWatchlist', 'changeAdjustments', 'openLoadoutForge', 'openForgeLists', 'openForgeCharacter', 'retryLists', 'openProfile', 'reportBug'];
 const LISTS = () => [{ watchlistId: 'wl-1', name: 'Tech Leaders', status: 'committed', tickers: ['NVDA'] }];
 const AGENT = (over = {}) => ({ id: 'ag-1', ownerId: 'u-1', name: 'Nova', archetype: 'momentum_chaser', equippedWatchlistId: 'wl-1', stats: { wins: 1, losses: 0 }, ...over });
-const HUB = (over = {}) => ({ agent: AGENT(), agentLoading: false, activeAgentBattles: [], setScreen: vi.fn(), onOpenForge: vi.fn(), ...over });
+/**
+ * The S3 merge: App hands the hub no agent; the readers hand the runtime the hub's own owner-tagged read
+ * (`agentRead`). The rows keep S5's terms: `agent` and `agentLoading` become that read, `agentError` its failure.
+ */
+const READS = new WeakMap();
+const HUB = ({ agent = AGENT(), agentLoading = false, agentError = false, activeAgentBattles = [], ...over } = {}) => {
+  const hub = { activeBattles: activeAgentBattles, setScreen: vi.fn(), onOpenForge: vi.fn(), ...over };
+  READS.set(hub, { status: agentError ? 'error' : agentLoading ? 'loading' : 'ready', agent, retry: vi.fn() });
+  return hub;
+};
 
 let host;
 let root;
 let api;
 
 function Probe({ hub, sections }) {
+  const rootRef = useRef(null);
+  api = useHubRuntime({ hub, agentRead: hub ? READS.get(hub) ?? null : null, sections, rootRef });
+  return null;
+}
+/** A shell handed `hub` and no read at all. */
+function ProbeWithout({ hub, sections = HUB_S1_SECTIONS }) {
   const rootRef = useRef(null);
   api = useHubRuntime({ hub, sections, rootRef });
   return null;
@@ -91,6 +106,55 @@ describe('useHubRuntime — the actions in each state', () => {
     await flush();
     expect(api.sections.loadout.status).toBe('none');
     expect(defined()).toEqual(['openProfile', 'reportBug']);
+    expect(api.actions.retryAgent).toBeUndefined();
+  });
+
+  // The S3 merge (N-S5-6): the agent is the hub's owner-tagged read; its failure is the Loadout's error, with a Retry.
+  it('the agent\'s read failed: the error state, the read\'s own Retry and nothing else of the Loadout\'s', async () => {
+    const hub = HUB({ agent: null, agentError: true });
+    render(hub);
+    await flush();
+    expect(api.sections.loadout.status).toBe('error');
+    expect(api.sections.career.status).toBe('unavailable');
+    expect(api.actions.retryAgent).toBe(READS.get(hub).retry);
+    expect(defined()).toEqual(['openProfile', 'reportBug']);
+    expect(listWatchlists).not.toHaveBeenCalled();
+  });
+
+  it('the Retry exists only for a failed read: never while loading, for absence, or for a ready agent', async () => {
+    for (const hub of [HUB({ agent: null, agentLoading: true }), HUB({ agent: null }), HUB(), HUB({ agentError: true })]) {
+      render(hub);
+      await flush();
+      expect(api.actions.retryAgent).toBeUndefined();
+      act(() => { root.unmount(); });
+      host.remove();
+    }
+  });
+
+  it('a hub with no read handed (agentRead absent) is a read not yet answered: loading, never absence', async () => {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => { root.render(<HubOverlayProvider><ProbeWithout hub={{ activeBattles: [] }} /></HubOverlayProvider>); });
+    await flush();
+    expect(api.sections.loadout.status).toBe('loading');
+    expect(api.agent).toBeNull();
+  });
+
+  it('the equip lock reads the poll\'s one live-games key, `activeBattles` (the shells\' own filter: status active)', async () => {
+    // With concurrency on the lock is the agent's own field; the list decides it with concurrency off.
+    flags.current = { ...flags.current, concurrencyEnabled: false };
+    render(HUB({ activeAgentBattles: [{ id: 'b-9', status: 'active', agentId: 'casual-agent-u-1' }] }));
+    await flush();
+    expect(api.sections.loadout.lockedInGame).toBe(true);
+    act(() => { root.unmount(); });
+    host.remove();
+    const old = HUB();
+    old.activeBattles = undefined;
+    old.activeAgentBattles = [{ id: 'b-9', status: 'active', agentId: 'casual-agent-u-1' }];
+    render(old);
+    await flush();
+    expect(api.sections.loadout.lockedInGame, 'the old key is not read').toBe(false);
   });
 
   it('ready and unlocked, without a traits slot: every door but the adjustments\' two', async () => {

@@ -115,13 +115,22 @@ function WatchlistBody({ watchlist, onRetryLists }) {
 
 export default function LoadoutPanel({
   loadout, onOpenRecord, onChangeArchetype, onChangeWatchlist, onChangeAdjustments,
-  onOpenForge, onOpenForgeLists, onOpenForgeCharacter, onRetryLists,
+  onOpenForge, onOpenForgeLists, onOpenForgeCharacter, onRetryLists, onRetryAgent,
 }) {
   const status = loadout?.status || LOADOUT_STATUS.LOADING;
   if (status === LOADOUT_STATUS.NONE) {
     return (
       <div data-hub-panel="loadout" data-hub-status-of={status}>
         <EmptyNote icon="info" title={COPY.loadout.noAgent} />
+      </div>
+    );
+  }
+  // The S3 merge (S5 report N-S5-6): a failed agent read is not absence. It says so and offers the read's Retry.
+  if (status === LOADOUT_STATUS.ERROR) {
+    return (
+      <div data-hub-panel="loadout" data-hub-status-of={status}>
+        <EmptyNote icon="info" title={COPY.loadout.agentUnavailable} />
+        <div style={{ marginTop: 8 }}><HubLink onPress={onRetryAgent}>{COPY.loadout.retry}</HubLink></div>
       </div>
     );
   }

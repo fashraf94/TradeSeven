@@ -108,8 +108,11 @@ describe('purity — hub/selectors/ (prompt §4: no React, no Firebase, no timer
       `${SELECTORS}/attemptReducer.js`,
       `${SELECTORS}/attemptVocabulary.js`,
       `${SELECTORS}/deployState.js`,
+      // S3: the outcome selector (R-S3-7) and the readers' input shapes (R-S3-9).
+      `${SELECTORS}/gameOutcome.js`,
       `${SELECTORS}/loadout.js`,
       `${SELECTORS}/ownership.js`,
+      `${SELECTORS}/readerInputs.js`,
     ]);
   });
 
@@ -130,6 +133,9 @@ describe('purity — hub/selectors/ (prompt §4: no React, no Firebase, no timer
     expect(importsOf(`${SELECTORS}/deployState.js`)).toEqual([
       '../../../../constants/leagueTournament', '../../../../utils/commandCenterLiveBattles', './attemptVocabulary', './ownership',
     ]);
+    // S3: the outcome selector reads one constant; the input shapes, the gate's own owned set.
+    expect(importsOf(`${SELECTORS}/gameOutcome.js`)).toEqual(['../../../../constants/leagueTournament']);
+    expect(importsOf(`${SELECTORS}/readerInputs.js`)).toEqual(['./deployState']);
     // S5: the Loadout selector takes every input as an argument; its one import is the shipped equip lock.
     expect(importsOf(`${SELECTORS}/loadout.js`)).toEqual(['../../../../utils/commandCenterLiveBattles']);
   });

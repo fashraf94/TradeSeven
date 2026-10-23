@@ -11,9 +11,12 @@
 //            hub composes by its own width AND the site, because a 614 px hub
 //            is the phone on the mobile site and one column on the desktop
 //            site (slice S1, founder ruling R-S1-3);
-//   hub    — App's data and actions for the hub in ONE object (slice S5, ruling
-//            R-S5-9; hub/useHubRuntime.js documents its keys). The gate hands it
-//            on unread, as it does the site: it neither reads nor shapes it;
+//   hub    — App's data and actions for the hub in ONE object (slices S3 and S5,
+//            rulings R-S3-10 and R-S5-9): the active poll's retained list and
+//            metadata, its explicit refresh, App's open handlers and S5's keys
+//            (hub/useHubRuntime.js and hub/useHubReaders.js document them). The
+//            gate hands it on unread, as it does the site: it neither reads nor
+//            shapes it;
 //   onFallback — optional, a STABLE function (App's state setter). Called with
 //            true while the legacy fallback is on screen and false when it is not
 //            (slice S5, ruling R-S5-7: the floating bug button and the season

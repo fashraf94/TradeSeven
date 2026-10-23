@@ -54,6 +54,14 @@
 // sheets and services the hub reaches. The S5 rows below name what the hub takes
 // from them (which exports; the one importer of the archetype tables; the only
 // writes), and each terminal's own effects remain its own owner's.
+//
+// S3 merged after S5 (the founder's merge round). App's one `hub={hubProps}`
+// object carries both slices' keys: the live games as one key (activeBattles,
+// the retained poll list), the poll's metadata and refresh, the open handlers
+// and S5's keys. S5's agent keys are gone, because the hub reads the agent
+// through S3's owner-tagged reader. The S5 row that pins the object's text now
+// pins the merged object (HUB_PROPS). S3's own gate-text rows were folded into
+// S5's, which pin `hub={hubProps}` at both sites.
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -81,6 +89,18 @@ function dashboardBlock() {
   return APP.slice(start, end);
 }
 const BLOCK = dashboardBlock();
+
+/**
+ * Slices S3 and S5 (rulings R-S3-10, R-S5-9): App's data and actions for the
+ * hub, ONE object handed to both gates as `hub={hubProps}`, written here as
+ * the whitespace-collapsed App source reads it. The live games are one key
+ * (`activeBattles`, the retained poll list the gate reads) and the agent is
+ * not on it: the hub reads it through its own owner-tagged reader (the S3
+ * merge with S5). A key S2b or S6 adds moves this text with it.
+ */
+const HUB_PROPS = "const hubProps = { activeBattles: activeAgentBattles, activePoll: activeAgentBattlesPoll, refreshActiveBattles, "
+  + "openGame: handleOpenAgentBattle, openFilmRoom: (battle) => { setCurrentBattle(battle); setScreen('filmRoom'); }, "
+  + 'setScreen, onOpenForge, setSidebarOpen, unreadCount, };';
 
 describe('S0 mount sites — one pick, read by both sites', () => {
   it('the pick is made once, inside the dashboard block, from the four named inputs', () => {
@@ -131,7 +151,7 @@ describe('S0 mount sites — the mobile site', () => {
     expect(BLOCK).toMatch(/const legacyDashboard = \(\s*<DashboardComponent\b/);
   });
 
-  it('renders the gate only on the hub pick, handing it its site, the hub\'s props and that same legacy element, unframed', () => {
+  it('renders the gate only on the hub pick, handing it its site, App\'s one hub object (S3, S5) and that same legacy element, unframed', () => {
     expect(BLOCK).toMatch(
       /\{dashboardPick\.shell === DASHBOARD_SHELLS\.HUB\s*\?\s*<CommandCenterHubGate site="mobile" hub=\{hubProps\} legacy=\{legacyDashboard\} onFallback=\{setHubFallback\} \/>\s*:\s*legacyDashboard\}/,
     );
@@ -150,7 +170,7 @@ describe('S0 mount sites — the desktop site', () => {
     expect(desktopShell.slice(0, desktopShell.indexOf('/>'))).toContain('sidebarCollapsed={sidebarCollapsed}');
   });
 
-  it('renders the gate only on the hub pick, with its site, the hub\'s props, that legacy element and the sidebar offset as its frame', () => {
+  it('renders the gate only on the hub pick, with its site, App\'s one hub object (S3, S5), that legacy element and the sidebar offset as its frame', () => {
     expect(BLOCK).toMatch(
       /\{dashboardPick\.shell === DASHBOARD_SHELLS\.HUB \? \(\s*<CommandCenterHubGate\s+site="desktop"\s+hub=\{hubProps\}\s+legacy=\{legacyDesktopDashboard\}\s+frame=\{\(hubOutput\) => <div style=\{sidebarOffsetStyle\}>\{hubOutput\}<\/div>\}\s+onFallback=\{setHubFallback\}\s*\/>\s*\) : legacyDesktopDashboard\}/,
     );
@@ -313,7 +333,7 @@ describe('S5 mount sites — the hub\'s props, the Forge bridge and the chrome c
   const GET_SCREEN_CONTENT = flat.indexOf('const getScreenContent = () => {');
 
   it('hubProps is built OUTSIDE the dashboard block, from values App already holds, and handed to both gates', () => {
-    expect(flat).toContain('const hubProps = { agent: primaryAgent, agentLoading, activeAgentBattles, setScreen, onOpenForge, setSidebarOpen, unreadCount };');
+    expect(flat).toContain(HUB_PROPS);
     expect(BLOCK).not.toContain('hubProps =');
     expect(count(/\bhubProps\b/)).toBe(3);
     expect(BLOCK.match(/hub=\{hubProps\}/g)).toHaveLength(2);
@@ -530,9 +550,22 @@ const PERMITTED_TERMINALS = Object.freeze({
   'src/utils/commandCenterLiveBattles.js': 'deriveDeployGate and DEPLOY_BLOCK_REASON — the retained gate the deploy selector computes (spec §3.1)',
   'src/constants/leagueTournament.js': 'TRAINING_CLONE_ID_PREFIX — the active poll\'s training-clone exclusion (spec §3)',
   'src/constants/hypothesisRecords.js': 'DEPLOY_REFUSAL_CODE and DUE_DEPLOY_LINE — the review-due refusal the translator keeps (ruling R-S2A-2)',
+  // S3 (the readers): the shipped readers and their shipped inputs. Each is already in the
+  // main graph but reviewAvailability.js, which only the hub chunk reaches (the Film Room
+  // coordinator's one helper, spec §6).
+  'src/services/authIdentity.js': 'useAuthIdentity — the one identity source App\'s poll uses too (ruling R-S3-2)',
+  'src/hooks/useAgent.js': 'the owner-tagged ranked agent read (ruling R-S3-4)',
+  'src/services/completedAgentBattles.js': 'the completed read the legacy hook shares — the ten-game window (ruling R-S3-5)',
+  'src/utils/reviewAvailability.js': 'getReviewAvailability, unmodified — the coordinator\'s only Film Room helper (ruling R-S3-6)',
+  'src/utils/stockThresholdModel.js': 'displayedStockScores and STOCK_RESULT_UNAVAILABLE — the scores a reader may show (v2 Ruling 16; R-S3-7)',
+  'src/adapters/baggerbombAdapter.js': 'derivePhase and toMillis — the Desk\'s pre-open rule and the one timestamp normalizer (R-S3-8, spec §8.2)',
+  'src/utils/marketSchedule.js': 'getMarketState — the market clock the pre-open rule reads (R-S3-8)',
+  'src/constants/filmTape.js': 'FILM_ROOM_ROUTE — the helper\'s target, the only route a tape opens (spec §6)',
+  // S3 and S5 both read the flags, so the one terminal carries both reasons.
+  'src/config/featureFlags.js': 'CASUAL_CLONE_CONCURRENCY_ENABLED, read at render as the shells read it (ruling R-S3-9); '
+    + 'the flags the Loadout reads, through hub/hubFlags.js, and the hub flag accessor hubChrome.js reads (rulings R-S5-2, R-S5-7)',
   // S5 (prompt §3): the owner's loadout and the retained entry points reach the shipped sheets, services and flags,
   // all of them already in the main graph (the shells import them), so the hub chunk duplicates none.
-  'src/config/featureFlags.js': 'the flags the Loadout reads, through hub/hubFlags.js, and the hub flag accessor hubChrome.js reads (rulings R-S5-2, R-S5-7)',
   'src/utils/equipSlots.js': 'getEquipSlots — which slots the shells render; the adjustments card follows it (ruling R-S5-1)',
   'src/utils/traitSlotSummary.js': 'getTraitSlotSummary — the adjustments summary (ruling R-S5-1)',
   'src/data/archetypeDisplay.js': "getArchetypeDisplayName, read only through hub/archetypeLines.js — the hub's one §2.3 importer (ruling R-S5-1)",
@@ -614,6 +647,12 @@ const ALLOWED_ACTIVITY = Object.freeze({
   [HUB_FILE('ShadowStage.jsx')]: ['\\bResizeObserver\\b', '\\buseLayoutEffect\\b'],
   [HUB_FILE('HubSheet.jsx')]: ['\\buseEffect\\b'],
   [HUB_FILE('__fixtures__/hubTestKit.js')]: ['\\bResizeObserver\\b'],
+  // S3 (rulings R-S3-5, R-S3-6): the review coordinator's thin hook — the real clock's
+  // timers handed to the pure scheduler (hub/reviewScheduler.js holds none), the page's
+  // visibility and focus listeners, and the effect that owns the scheduler for one owner.
+  [HUB_FILE('hub/useHubCompletedBattles.js')]: ['\\bsetTimeout\\b', '\\baddEventListener\\b', '\\buseEffect\\b'],
+  // S3: the effect that refreshes the window when a live id leaves a successful poll.
+  [HUB_FILE('hub/useHubReaders.js')]: ['\\buseEffect\\b'],
   // S5: the Loadout's lists read (once per mount; never a timer), the overlay stack's provider (it releases the
   // background if the hub unmounts), and the sheet hook's unmount release.
   [HUB_FILE('hub/useHubLoadout.js')]: ['\\buseEffect\\b'],
@@ -662,8 +701,11 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
       HUB_FILE('hub/selectors/attemptReducer.js'),
       HUB_FILE('hub/selectors/attemptVocabulary.js'),
       HUB_FILE('hub/selectors/deployState.js'),
+      // S3: the outcome selector (R-S3-7) and the readers' input shapes (R-S3-9).
+      HUB_FILE('hub/selectors/gameOutcome.js'),
       HUB_FILE('hub/selectors/loadout.js'),
       HUB_FILE('hub/selectors/ownership.js'),
+      HUB_FILE('hub/selectors/readerInputs.js'),
     ]);
     expect(Object.keys(ALLOWED_ACTIVITY).filter((rel) => rel.includes('/selectors/'))).toEqual([]);
     expect(selectors.flatMap(activityIn)).toEqual([]);
@@ -783,10 +825,13 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     expect(hubDirLiterals("import x from './components/Dashboard/CommandDashboard';")).toEqual([]);
   });
 
-  it('the gate hands the hub its site and App\'s props object, and nothing else (ruling R-S5-9)', () => {
+  it('the gate hands the hub its site and App\'s one hub object, and nothing else — reading nothing in it (rulings R-S3-10, R-S5-9)', () => {
     const code = stripComments(read(GATE));
     expect(code).toMatch(/function CommandCenterHubGate\(\{ site, hub, legacy, frame = unframed, onFallback \}\)/);
     expect(code.match(/<Hub\b[^>]*\/>/g)).toEqual(['<Hub site={site} hub={hub} />']);
+    // The gate only forwards it: no member of `hub` is read here.
+    expect(code).not.toMatch(/\bhub\s*(?:\?\.|\.|\[)/);
+    expect(/\bhub\s*(?:\?\.|\.|\[)/.test('const p = hub.activePoll;')).toBe(true);
   });
 
   it('the picker imports nothing and touches no global — it reads only its argument', () => {
@@ -817,6 +862,10 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
       [HUB_FILE('hub/useNavClearance.js')]: ['new MutationObserver(cb);', "window.addEventListener('resize', f);", 'setInterval(f, 100);'],
       [HUB_FILE('ShadowStage.jsx')]: ['useEffect(() => {}, []);', 'requestAnimationFrame(f);'],
       [HUB_FILE('CommandCenterHub.jsx')]: ['new ResizeObserver(cb);', 'useEffect(() => {}, []);'],
+      // S3's two allowances allow only themselves.
+      [HUB_FILE('hub/useHubCompletedBattles.js')]: ['setInterval(f, 1000);', 'requestAnimationFrame(f);', 'new ResizeObserver(cb);', 'useLayoutEffect(() => {});', 'onSnapshot(q, cb);'],
+      [HUB_FILE('hub/useHubReaders.js')]: ['setTimeout(f, 0);', "window.addEventListener('focus', f);", 'useLayoutEffect(() => {});', 'getDocFromServer(ref);'],
+      [HUB_FILE('hub/reviewScheduler.js')]: ['setTimeout(f, 0);', 'useEffect(() => {}, []);', "document.addEventListener('visibilitychange', f);"],
       // S5: each new effect allows its own effect and nothing else — above all, no timer, poll or focus listener on the lists read.
       [HUB_FILE('hub/useHubLoadout.js')]: ['setInterval(refresh, 60000);', "window.addEventListener('focus', refresh);", 'setTimeout(refresh, 0);', 'useLayoutEffect(() => {});', "document.addEventListener('visibilitychange', refresh);"],
       [HUB_FILE('hub/HubOverlays.jsx')]: ['setTimeout(f, 0);', 'new MutationObserver(cb);', "document.addEventListener('keydown', f);", 'useLayoutEffect(() => {});'],
@@ -946,6 +995,10 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
   const NAMED = Object.freeze({
     '/services/agentService': ['equipWatchlist', 'unequipWatchlist'],
     '/services/forgeWatchlistService': ['listWatchlists'],
+    // S3's readers, merged in: the identity source, the completed read and the owner-tagged agent read (reads only).
+    '/services/authIdentity': ['useAuthIdentity'],
+    '/services/completedAgentBattles': ['fetchRecentCompletedAgentBattles'],
+    '/hooks/useAgent': ['default'],
     '/hooks/useMasteryProfile': ['default'],
     '/ClashBot/ClashBotWidget': ['CLASHBOT_OPEN_EVENT'],
     '/utils/equipSlots': ['getEquipSlots'],
@@ -964,6 +1017,18 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     }
   });
 
+  // The S3 merge with S5 (review MR-1): the deploy state and the Loadout take ONE agent read, so the hub reads the agent
+  // in one file, once.
+  it('one agent read in the whole hub: only hub/useHubReaders.js imports useAgent, under that name, and calls it once', () => {
+    const importers = hubDirFiles().filter((rel) => importedNames(stripComments(read(rel)), '/hooks/useAgent').length > 0);
+    expect(importers).toEqual([HUB_FILE('hub/useHubReaders.js')]);
+    const readers = stripComments(read(HUB_FILE('hub/useHubReaders.js')));
+    expect(readers).toContain("import useAgent from '../../../hooks/useAgent';");
+    expect(readers.match(/\buseAgent\(/g)).toHaveLength(1);
+    // The count bites: a second read is two.
+    expect(`${readers}\nconst again = useAgent(signedInUid);`.match(/\buseAgent\(/g)).toHaveLength(2);
+  });
+
   it('the only writes the hub can make are the two equips: nothing else of agentService, and no other service of the shipped set', () => {
     const files = hubDirFiles();
     const writers = files.filter((rel) => importedNames(stripComments(read(rel)), '/services/agentService').length > 0);
@@ -972,6 +1037,10 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     expect(services.sort()).toEqual([
       `${HUB_FILE('LoadoutSheets.jsx')}: ../../services/agentService`,
       `${HUB_FILE('hub/useHubLoadout.js')}: ../../../services/forgeWatchlistService`,
+      // S3's readers (merged in): two reads, no write — their names are pinned in NAMED above.
+      `${HUB_FILE('hub/useHubCompletedBattles.js')}: ../../../services/authIdentity`,
+      `${HUB_FILE('hub/useHubCompletedBattles.js')}: ../../../services/completedAgentBattles`,
+      `${HUB_FILE('hub/useHubReaders.js')}: ../../../services/authIdentity`,
     ].sort());
   });
 

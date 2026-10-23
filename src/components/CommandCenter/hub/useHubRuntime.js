@@ -4,9 +4,15 @@
 // sections and the actions the shells render (ruling R-S5-9: App's data and
 // actions arrive through ONE `hub` prop object; S3 adds its keys to it).
 //
-//   hub.agent             the ranked agent doc — App's useAgent legacy `agent`
-//   hub.agentLoading      that hook's legacy `loading`
-//   hub.activeAgentBattles the active-battle poll, for the equip lock (the shells' own input)
+// The agent is not on `hub` (the S3 merge with S5). It is `agentRead`, the hub's
+// own owner-tagged read (hub/useHubReaders.js, selectors/readerInputs.js
+// loadoutAgentOf), the same read the deploy state takes: { status, agent, retry },
+// the document only when the read is ready and this identity's. A failed read is
+// the Loadout's "Agent unavailable · Retry"; a ready read with no document is
+// absence, "Create your agent first" (S5 report N-S5-6).
+//
+//   hub.activeBattles     the active poll's retained list (the one live-games key the gate reads),
+//                         for the equip lock (the shells' own input)
 //   hub.setScreen         App's navigation, for the profile
 //   hub.setSidebarOpen    App's drawer opener, for the phone header's menu button (founder ruling Q-S5-1)
 //   hub.unreadCount       App's unread-notification count, for that button's badge
@@ -60,10 +66,14 @@ export function reportBug() {
   window.dispatchEvent(new Event(CLASHBOT_OPEN_EVENT));
 }
 
-export function useHubRuntime({ hub, sections, rootRef }) {
+export function useHubRuntime({ hub, agentRead = null, sections, rootRef }) {
   const live = hub != null;
-  const agent = live ? hub.agent ?? null : null;
-  const agentLoading = live && hub.agentLoading === true;
+  const agent = live ? agentRead?.agent ?? null : null;
+  // The read's own statuses ('loading' | 'ready' | 'error'); no read handed (a frame given `hub` alone) is a read
+  // not yet answered.
+  const agentStatus = agentRead?.status ?? 'loading';
+  const agentLoading = live && agentStatus === 'loading';
+  const agentFailed = live && agentStatus === 'error';
   // Lists read for another account never show (hub/useHubLoadout.js ownerKey); an equip made elsewhere to a list
   // this hub has not read is read for once (equippedId).
   const lists = useHubLoadout({
@@ -79,13 +89,14 @@ export function useHubRuntime({ hub, sections, rootRef }) {
     const loadout = deriveLoadout({
       agent,
       agentLoading,
+      agentFailed,
       archetype: archetypeLines(agent?.archetype),
       slots: getEquipSlots(agent),
       adjustments: getTraitSlotSummary(agent),
       committed: lists.committed,
       listsStatus: lists.status,
       listsReadFor: lists.readFor,
-      activeAgentBattles: hub.activeAgentBattles,
+      activeAgentBattles: hub.activeBattles,
       ...hubFlags(),
       ideaAccess: ideaAccessOf(hub.ideaAccess),
     });
@@ -119,6 +130,8 @@ export function useHubRuntime({ hub, sections, rootRef }) {
     openForgeLists: ready ? forgeDoor({ area: FORGE_AREAS.LISTS, returnTo: FORGE_RETURN.DASHBOARD }) : undefined,
     openForgeCharacter: ready && loadout.adjustments ? forgeDoor({ area: FORGE_AREAS.CHARACTER, returnTo: FORGE_RETURN.DASHBOARD }) : undefined,
     retryLists: ready ? lists.retry : undefined,
+    // The agent read's own Retry, offered only by its error state (S5 report N-S5-6).
+    retryAgent: live && loadout?.status === LOADOUT_STATUS.ERROR && typeof agentRead?.retry === 'function' ? agentRead.retry : undefined,
     openProfile: live && typeof hub.setScreen === 'function' ? () => hub.setScreen('profile') : undefined,
     openMenu: live && typeof hub.setSidebarOpen === 'function' ? () => hub.setSidebarOpen(true) : undefined,
     reportBug: live ? reportBug : undefined,

@@ -20,6 +20,12 @@ describe('loadoutLineOf — the states a live loadout has', () => {
     expect(COPY.loadout.noAgent).not.toBe(COPY.loadout.lineLoading);
   });
 
+  it('the agent\'s read failed (the S3 merge, N-S5-6): "Agent unavailable" — neither absence nor a wait', () => {
+    expect(loadoutLineOf({ status: LOADOUT_STATUS.ERROR })).toBe(COPY.loadout.agentUnavailable);
+    expect(COPY.loadout.agentUnavailable).not.toBe(COPY.loadout.noAgent);
+    expect(COPY.loadout.agentUnavailable).not.toBe(COPY.loadout.lineLoading);
+  });
+
   it('nothing resolved yet: the waiting line', () => {
     for (const loadout of [undefined, null, {}, { status: LOADOUT_STATUS.LOADING }]) {
       expect(loadoutLineOf(loadout), JSON.stringify(loadout)).toBe(COPY.loadout.lineLoading);

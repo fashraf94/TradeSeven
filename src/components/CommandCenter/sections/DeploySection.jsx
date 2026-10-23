@@ -13,6 +13,10 @@
 // each renders disabled. A read's Retry and an attempt's Retry are different
 // kinds, so wiring one can never start the other.
 //
+// Slice S3 (founder ruling R-S3-1): the phone's strip clamps its lines, so the
+// same line and note render on the phone's Loadout tab too (PhoneDeployCard),
+// without a hold — the strip keeps the phone's one hold.
+//
 // The state line is not a second live region: the stage's status line is the
 // hub's one (spec §10).
 
@@ -35,11 +39,59 @@ function ActionLink({ action, onAction }) {
   );
 }
 
+/** The state's line with its one action, and the freshness note under it: the card's full words. */
+function DeployLines({ display, onAction }) {
+  const line = display.cardLine;
+  const note = display.cardNote;
+  return (
+    <>
+      {line && (
+        <div data-hub-deploy-line="" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 10, fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
+          {line.icon ? (
+            <span style={{ color: LINE_ICON_COLOR[line.icon], display: 'flex', marginTop: 2 }}><Icon name={line.icon} size={14} /></span>
+          ) : (
+            <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', background: display.dot === 'blue-action' ? C.blue : C.ink2, marginTop: 5, flexShrink: 0 }} />
+          )}
+          <span>
+            {line.text}
+            <ActionLink action={line.action} onAction={onAction} />
+          </span>
+        </div>
+      )}
+      {note && (
+        <div data-hub-deploy-note="" style={{ marginTop: 6, paddingLeft: 22, fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
+          {note.text}
+          <ActionLink action={note.action} onAction={onAction} />
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * The phone's Deploy card, on the Loadout tab (slice S3, founder ruling
+ * R-S3-1): the strip clamps its two lines, so the full words live here — the
+ * state's words, or its line when it has one, and the freshness note, each with
+ * its one action. The hold stays on the strip; this card has none. The strip's
+ * status button opens this tab.
+ */
+export function PhoneDeployCard({ deploy, onAction }) {
+  const display = deployDisplay(deploy);
+  return (
+    <Section label={COPY.deploy.label} data-hub-section="deploy">
+      <Card data-hub-deploy={display.displayState} data-hub-deploy-card="phone" style={{ background: C.surface, paddingTop: 6 }}>
+        <DeployLines
+          display={display.cardLine ? display : { ...display, cardLine: { icon: null, text: display.status, action: null } }}
+          onAction={onAction}
+        />
+      </Card>
+    </Section>
+  );
+}
+
 export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoadout, onAction }) {
   const display = deployDisplay(deploy);
   const tinted = display.displayState === 'ready' || display.displayState === 'ready_stale';
-  const line = display.cardLine;
-  const note = display.cardNote;
   return (
     <Section label={COPY.deploy.label} data-hub-section="deploy">
       <Card
@@ -56,25 +108,7 @@ export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoa
         <div style={{ marginTop: 14 }}>
           <HubHold full canStart={display.canStart} label={display.cardHoldLabel} onDeploy={onDeploy} />
         </div>
-        {line && (
-          <div data-hub-deploy-line="" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 10, fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
-            {line.icon ? (
-              <span style={{ color: LINE_ICON_COLOR[line.icon], display: 'flex', marginTop: 2 }}><Icon name={line.icon} size={14} /></span>
-            ) : (
-              <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', background: display.dot === 'blue-action' ? C.blue : C.ink2, marginTop: 5, flexShrink: 0 }} />
-            )}
-            <span>
-              {line.text}
-              <ActionLink action={line.action} onAction={onAction} />
-            </span>
-          </div>
-        )}
-        {note && (
-          <div data-hub-deploy-note="" style={{ marginTop: 6, paddingLeft: 22, fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
-            {note.text}
-            <ActionLink action={note.action} onAction={onAction} />
-          </div>
-        )}
+        <DeployLines display={display} onAction={onAction} />
         <div data-hub-hold-help="" style={{ marginTop: 10, fontSize: 12.5, color: tinted ? C.ink2 : C.ink3, lineHeight: 1.45 }}>
           <div>{COPY.deploy.pointerHelp}</div>
           <div>{COPY.deploy.keyboardHelp}</div>

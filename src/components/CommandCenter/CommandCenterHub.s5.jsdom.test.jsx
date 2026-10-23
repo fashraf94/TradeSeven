@@ -27,6 +27,12 @@ const { userState, listWatchlists, equipWatchlist, unequipWatchlist, flags, slot
 }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {} }));
+// The S3 merge: App hands the hub no agent; the hub's own owner-tagged read does (hub/useHubReaders.js), and its
+// owner masking has its own rows (CommandCenterHub.s3.jsdom.test.jsx, readerInputs.test.js). Here the readers hand
+// the hub the read HUB() names and leave the fixtures' sections as they are. The read rides on the hub object under a
+// symbol, so a row's spread of it (`{ ...hub, unreadCount }`) keeps it (review MR-7).
+const { READ } = vi.hoisted(() => ({ READ: Symbol('agentRead') }));
+vi.mock('./hub/useHubReaders', () => ({ default: (hub) => ({ sections: {}, actions: {}, agent: hub?.[READ] ?? null }) }));
 vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists }));
 vi.mock('../../services/agentService', () => ({ equipWatchlist, unequipWatchlist }));
 vi.mock('../../hooks/useMasteryProfile', () => ({ default: (userId) => { mastery.askedFor.push(userId); return mastery.profile; } }));
@@ -93,9 +99,18 @@ const AGENT = (over = {}) => ({
   id: 'ag-1', ownerId: 'u-1', name: 'Nova', archetype: 'momentum_chaser',
   equippedWatchlistId: 'wl-1', equippedWatchlistName: 'Stored Tech', stats: { wins: 7, losses: 3, gamesPlayed: 12 }, ...over,
 });
-const HUB = (over = {}) => ({
-  agent: AGENT(), agentLoading: false, activeAgentBattles: [], setScreen: vi.fn(), onOpenForge: vi.fn(), ...over,
-});
+/**
+ * App's hub object in the merged shape (the live games are `activeBattles`). The rows keep S5's terms: `agent` and
+ * `agentLoading`, the hook's two legacy fields, become the agent read the hub's readers hand it, and `agentError`
+ * is that read's failure (N-S5-6).
+ */
+const HUB = ({ agent = AGENT(), agentLoading = false, agentError = false, activeAgentBattles = [], ...over } = {}) => {
+  return {
+    activeBattles: activeAgentBattles, setScreen: vi.fn(), onOpenForge: vi.fn(), ...over,
+    [READ]: { status: agentError ? 'error' : agentLoading ? 'loading' : 'ready', agent, retry: vi.fn() },
+  };
+};
+const readOf = (hub) => hub[READ];
 
 const flush = async () => { await act(async () => { await Promise.resolve(); await Promise.resolve(); }); };
 
@@ -137,6 +152,28 @@ describe('the Loadout states (ruling R-S5-1)', () => {
     expect(panel().querySelector('[data-hub-card]')).toBeNull();
     expect(panel().querySelector('button')).toBeNull();
     expect(listWatchlists).not.toHaveBeenCalled();
+  });
+
+  // The S3 merge (S5 report N-S5-6): the agent is the hub's own owner-tagged read, so its failure is not absence.
+  it('the agent\'s read failed: "Agent unavailable" and its Retry, the read\'s own; no cards, no picker, no lists read', async () => {
+    const hub = HUB({ agent: null, agentError: true });
+    await renderHub({ hub });
+    expect(panel().getAttribute('data-hub-status-of')).toBe('error');
+    expect(byText(panel(), COPY.loadout.agentUnavailable)).not.toBeNull();
+    expect(byText(panel(), COPY.loadout.noAgent)).toBeNull();
+    expect(panel().querySelector('[data-hub-card]')).toBeNull();
+    expect(btn(COPY.loadout.changeArchetype)).toBeNull();
+    expect(listWatchlists).not.toHaveBeenCalled();
+    click(btn(COPY.loadout.retry, panel()));
+    expect(readOf(hub).retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('the agent\'s read failed, on the phone\'s Loadout tab: the same words and the same Retry', async () => {
+    const hub = HUB({ agent: null, agentError: true });
+    await renderHub({ site: 'mobile', hubWidth: 390, hub });
+    expect(panel().getAttribute('data-hub-status-of')).toBe('error');
+    click(btn(COPY.loadout.retry, panel()));
+    expect(readOf(hub).retry).toHaveBeenCalledTimes(1);
   });
 
   it('ready: the archetype\'s name and approach, the list\'s name and names, the stored agent name', async () => {
@@ -1087,6 +1124,8 @@ describe('whose lists these are: the account the agent document names, not the d
 describe('the stage\'s area summaries (E5-11)', () => {
   it('a resolved absence of the agent is an answer ("Create your agent first"), a loading Loadout is the waiting words, a ready one its line', () => {
     expect(areaSummaries({ loadout: { status: 'none' } })[2]).toBe(COPY.loadout.noAgent);
+    // The S3 merge (N-S5-6): a failed agent read is said as such.
+    expect(areaSummaries({ loadout: { status: 'error' } })[2]).toBe(COPY.loadout.agentUnavailable);
     expect(areaSummaries({ loadout: { status: 'loading' } })[2]).toBe(COPY.loadout.summaryLoading);
     expect(areaSummaries({ loadout: { status: 'ready', summary: 'Trend Follower · Tech Leaders' } })[2]).toBe('Trend Follower · Tech Leaders');
     expect(areaSummaries({})[2]).toBe(COPY.loadout.summaryLoading);

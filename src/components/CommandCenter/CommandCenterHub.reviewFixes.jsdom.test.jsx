@@ -10,8 +10,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const { userState } = vi.hoisted(() => ({ userState: { user: { displayName: 'Flash', username: 'flash' } } }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
-// S5: the hub root now reaches the shipped sheets and services (their Firebase config validates at import).
-vi.mock('../../firebase/config', () => ({ db: {}, auth: {} }));
+// Slices S3 and S5: the hub module imports its readers and reaches the shipped sheets and services,
+// all of which import the Firebase config (it validates at import); nothing here reads.
+vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
 
 import CommandCenterHub from './CommandCenterHub';
 import { HUB_COPY as COPY } from './hub/hubCopy';

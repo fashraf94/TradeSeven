@@ -40,6 +40,7 @@ export function AreaBody({ area, sections, actions }) {
       onOpenForgeLists={actions.openForgeLists}
       onOpenForgeCharacter={actions.openForgeCharacter}
       onRetryLists={actions.retryLists}
+      onRetryAgent={actions.retryAgent}
     />
   );
 }

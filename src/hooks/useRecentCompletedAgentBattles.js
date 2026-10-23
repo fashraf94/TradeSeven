@@ -8,11 +8,15 @@
 // Mirrors the battleHistory query in App.jsx (ownerId + status==='completed',
 // ordered by completedAt) with a tiny limit. One-shot read on mount. The
 // real-time "just-ended" watcher remains backlog.
+//
+// Command Center S3 (ruling R-S3-5): the query and the training-clone filter
+// now live in services/completedAgentBattles.js, shared with the hub's
+// ten-game window. This hook's semantics are unchanged: an array, read once per
+// uid and max, a failure swallowed into the list it already had.
 
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db, auth } from '../firebase/config';
-import { TRAINING_CLONE_ID_PREFIX } from '../constants/leagueTournament';
+import { auth } from '../firebase/config';
+import { fetchRecentCompletedAgentBattles } from '../services/completedAgentBattles';
 
 export default function useRecentCompletedAgentBattles(max = 3) {
   const [battles, setBattles] = useState([]);
@@ -26,30 +30,14 @@ export default function useRecentCompletedAgentBattles(max = 3) {
     let cancelled = false;
     (async () => {
       try {
-        const q = query(
-          collection(db, 'agentBattles'),
-          where('ownerId', '==', uid),
-          where('status', '==', 'completed'),
-          orderBy('completedAt', 'desc'),
-          limit(max),
-        );
-        const snap = await getDocs(q);
-        // R5 (design lock): drop TRAINING-clone battles from the ranked Review card,
-        // matching the sibling queries (App.jsx active poll + Film Room) — a battle's
-        // only clone marker is its agentId prefix (the createAgentBattle doc shape,
-        // fenced, carries no clone field). Filter `training-agent-` ONLY, NOT
-        // `casual-agent-`: a BaggerBomb battle runs on the casual clone but is the
-        // user's REAL game — its record + learning are attributed to the ranked agent
-        // and it displays under the parent's inherited name — so it SHOULD appear in
-        // Review. Hiding it would regress from today's real-agent behavior. The two
-        // prefixes are treated differently ON PURPOSE; do not "fix" the asymmetry.
-        if (!cancelled) {
-          setBattles(
-            snap.docs
-              .map((d) => ({ id: d.id, ...d.data() }))
-              .filter((b) => !(typeof b.agentId === 'string' && b.agentId.startsWith(TRAINING_CLONE_ID_PREFIX))),
-          );
-        }
+        // R5 (design lock): the shared read drops TRAINING-clone battles from the
+        // ranked Review card, matching the sibling queries (App.jsx active poll +
+        // Film Room) — `training-agent-` only, NOT `casual-agent-`: a BaggerBomb
+        // battle runs on the casual clone but is the user's REAL game, so it
+        // SHOULD appear in Review. The two prefixes are treated differently ON
+        // PURPOSE; do not "fix" the asymmetry.
+        const list = await fetchRecentCompletedAgentBattles(uid, max);
+        if (!cancelled) setBattles(list);
       } catch (err) {
         // Same composite index as the battleHistory query (already deployed);
         // on any failure, degrade to an empty Review section.

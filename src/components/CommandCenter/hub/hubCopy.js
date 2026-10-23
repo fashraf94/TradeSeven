@@ -34,6 +34,9 @@
 // helper gives none) "Unavailable", the cooldown "Next deploy at {time}",
 // the in-flight control labels, "Verifying deployment…", "Check
 // deployment", "Enter battle", and the as-of and refresh notes.
+// Slice S3 (the readers) adds the founder's strip words for the review-due
+// refusal, "Deployment refused" (ruling R-S3-1).
+//
 // Slice S5 (the owner's loadout and the retained entry points, rulings
 // R-S5-1 … R-S5-7) adds the Loadout panel's states and labels, the shipped
 // watchlist sheet's words (the shells' own, EquipStation.jsx), the Forge doors'
@@ -142,6 +145,8 @@ export const HUB_COPY = Object.freeze({
     // ── S5 (rulings R-S5-1 … R-S5-4): the owner's desired loadout ──────────
     /** Spec §3: resolved absence of the ranked agent. */
     noAgent: 'Create your agent first',
+    /** The S3 merge (S5 report N-S5-6): the agent's read failed — not absence; its Retry is COPY.loadout.retry. The deploy read's own words. */
+    agentUnavailable: 'Agent unavailable',
     /** The identity row: the agent's stored name, and the shipped record sheet it opens. */
     agentFallback: 'Your agent',
     openRecord: 'Agent record',
@@ -203,6 +208,51 @@ export const HUB_COPY = Object.freeze({
     reviewsAvailable: 'Reviews available',
     /** A game row's name: what it opens, the game, its outcome, a ready review and its detail line. */
     rowLabel: (live, mode, opponent, outcome, review, detail) => [`${live ? 'Open live game' : 'Open game record'}: ${mode} vs ${opponent}`, outcome, review ? 'review available' : '', detail].filter(Boolean).join(', '),
+
+    // ── Slice S3: the rows' own words (spec §3, §6, §7) ──────────────────
+    /** The opponent line: a BaggerBomb game is against a CPU; a ranked day is scored in its league group. */
+    opponentCpu: 'CPU',
+    opponentGroup: 'League group',
+    /** A live game that has not opened yet: deployed, waiting for the open. */
+    waitingForOpen: 'waiting for the open',
+    timeLeft: (hours, minutes) => (hours > 0 ? `${hours}h ${minutes}m left` : `${minutes}m left`),
+    ending: 'ending',
+    /** A live row's line: its score as recorded, its trades, when it ends. */
+    liveDetail: (score, trades, ends) => [`Score ${score}`, `${trades} trade${trades === 1 ? '' : 's'}`, ends ? `ends ${ends}` : ''].filter(Boolean).join(' · '),
+    /** A score a reader may not show (v2 Ruling 16): a dash, never 0. */
+    scoreUnavailable: '—',
+    /** Spec §7's outcome words; each number is the row's own stored score. */
+    outcomeWon: (score) => `Won ${score}`,
+    outcomeLost: (score) => `Lost ${score}`,
+    outcomeDraw: (score) => `Draw ${score}`,
+    outcomeBanked: 'Day banked · no W/L',
+    outcomeNoResult: 'No result',
+    outcomeEnded: 'Ended',
+    noScoreRecorded: 'no score was recorded',
+    endedDetail: (mine, theirs) => `no final result recorded · last recorded ${mine} vs ${theirs}`,
+    scorePair: (mine, theirs) => `${mine} vs ${theirs}`,
+    /** A detail line from its parts. */
+    detail: (...parts) => parts.filter(Boolean).join(' · '),
+    /** Spec §3: a failed read is never an empty history. */
+    loadFailed: 'Couldn’t load your games',
+    staleAsOf: (time) => (time ? `As of ${time} · couldn’t refresh` : 'Couldn’t refresh'),
+    /** A retained window being read again after a failed read (spec §6): the deploy note's words (review T3-3). */
+    refreshingAsOf: (time) => (time ? `Refreshing · as of ${time}` : 'Refreshing'),
+    /** Spec §6 as amended (Q-S3-2, A+): a window kept from an earlier visit, not yet read again. */
+    carriedAsOf: (time) => (time ? `As of ${time}` : 'As of your last visit'),
+    nextAttempt: (time) => `next attempt at ${time}`,
+    retry: 'Retry',
+    /** Spec §6's review states, exactly where the spec gives the words. */
+    review: Object.freeze({
+      openTape: 'Open battle tape',
+      pending: 'Review pending',
+      unavailable: 'Review unavailable',
+      checking: 'Checking the review',
+      queued: (time) => (time ? `Review check queued · next attempt at ${time}` : 'Review check queued'),
+      timedOut: (time) => (time ? `Review refresh timed out · Retry queued · next attempt at ${time}` : 'Review refresh timed out · Retry queued'),
+      /** A tape link's name: what it opens, and for which game. */
+      openTapeLabel: (mode, opponent, day) => [`Open battle tape: ${mode} vs ${opponent}`, day].filter(Boolean).join(', '),
+    }),
   }),
 
   history: Object.freeze({
@@ -268,6 +318,8 @@ export const HUB_COPY = Object.freeze({
     }),
     /** A recovered confirmation: the battle is owned and admitted, but nothing proves this request created it (spec §5.2). */
     confirmedRecovered: 'Battle confirmed',
+    /** The strip's words for the review-due refusal (slice S3, founder ruling R-S3-1); the server's line stays on the card. */
+    reviewDueStrip: 'Deployment refused',
     /** The Deploy card's longer line for the in-flight states. */
     cardSubmitting: 'Submitting once · waiting for the game to be created',
     cardConfirmed: 'Deployed · the game appears in Games once its record arrives',

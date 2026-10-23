@@ -47,6 +47,16 @@ describe('deriveLoadout — the agent decides the section\'s status (spec §3: l
     expect(loadoutOf({ agentLoading: true }).status).toBe(LOADOUT_STATUS.READY);
   });
 
+  // The S3 merge (S5 report N-S5-6): the agent is the hub's owner-tagged read, whose error channel splits a failure
+  // from absence.
+  it('error when the read failed — not absence; still loading while the read is out, and a held agent still shows', () => {
+    expect(loadoutOf({ agent: null, agentLoading: false, agentFailed: true })).toEqual({ status: LOADOUT_STATUS.ERROR });
+    expect(loadoutOf({ agent: null, agentLoading: true, agentFailed: true })).toEqual({ status: LOADOUT_STATUS.LOADING });
+    expect(loadoutOf({ agentFailed: true }).status).toBe(LOADOUT_STATUS.READY);
+    expect(loadoutOf({ agent: null, agentLoading: false, agentFailed: false })).toEqual({ status: LOADOUT_STATUS.NONE });
+    expect(loadoutOf({ agent: null, agentLoading: false, agentFailed: 'yes' })).toEqual({ status: LOADOUT_STATUS.NONE });
+  });
+
   it('ready carries the identity, the archetype, the watchlist, the adjustments and the lock', () => {
     const l = loadoutOf();
     expect(l).toMatchObject({

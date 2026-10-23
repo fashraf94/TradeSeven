@@ -282,10 +282,12 @@ describe('the attempt words (§5.2): no live hold while in flight or terminal; o
     expect(deployDisplay({ displayState: 'uncertain', retryBlock: { displayState: 'cooldown', cooldownUntil: null } }).cardNote.text).toBe(COPY.deploy.states.checking);
   });
 
-  it('failed: "Deployment failed", the server\'s line unchanged on line two and the card, Retry or the Forge', () => {
+  it('failed: "Deployment failed", the server\'s line unchanged on line two and the card, Retry or the Forge — the review-due refusal reads "Deployment refused" on the strip, its line on the card only (S3 ruling R-S3-1)', () => {
     const due = deployDisplay({ displayState: 'failed', reason: DUE_DEPLOY_LINE, action: 'openForgeReview' });
-    expect(due.stripLine1).toBe('Deployment failed');
-    expect(due.stripLine2(LOADOUT)).toBe(DUE_DEPLOY_LINE);
+    expect(due.stripLine1).toBe('Deployment refused');
+    expect(due.stripLine2(LOADOUT)).toBe(LOADOUT);
+    expect(due.status).toBe('Deployment failed');
+    expect(due.cardHoldLabel).toBe('Deployment failed');
     expect(due.cardLine).toEqual({ icon: 'info', text: DUE_DEPLOY_LINE, action: { kind: 'openForgeReview', label: 'Open in the Forge' } });
     expect(due.strip.action).toEqual({ kind: 'openForgeReview', label: 'Open in the Forge' });
     const other = deployDisplay({ displayState: 'failed', reason: '', action: 'retry' });

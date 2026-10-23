@@ -16,7 +16,7 @@
 
 import { deriveDeployGate } from '../../../../utils/commandCenterLiveBattles';
 
-export const LOADOUT_STATUS = Object.freeze({ LOADING: 'loading', NONE: 'none', READY: 'ready' });
+export const LOADOUT_STATUS = Object.freeze({ LOADING: 'loading', NONE: 'none', ERROR: 'error', READY: 'ready' });
 export const WATCHLIST_STATE = Object.freeze({
   NONE: 'none', LOADING: 'loading', READY: 'ready', UNAVAILABLE: 'unavailable', ERROR: 'error',
 });
@@ -135,30 +135,35 @@ export function equipLockOf({ agent, activeAgentBattles, concurrencyEnabled }) {
 
 /**
  * The Loadout section (hub/hubModel.js). `status` is the agent's: `loading`
- * until the ranked agent resolves, `none` when it resolved to no agent (the
- * hook has no error channel: a failed subscription also resolves to null), else
- * `ready` — the cards then carry their own states, so a slow lists read never
- * hides the archetype.
+ * until the ranked agent resolves, `error` when its read failed ("Agent
+ * unavailable · Retry"), `none` when it resolved to no agent, else `ready` —
+ * the cards then carry their own states, so a slow lists read never hides the
+ * archetype. Since the S3 merge the agent is the hub's owner-tagged read, whose
+ * error channel splits a failure from absence (S5 report N-S5-6).
  *
  * @param {object}  p
- * @param {object|null} p.agent          the ranked agent doc (the useAgent hook's legacy `agent` field)
- * @param {boolean} p.agentLoading       that hook's legacy `loading` field
+ * @param {object|null} p.agent          the ranked agent doc, from the hub's owner-tagged read (selectors/readerInputs.js loadoutAgentOf)
+ * @param {boolean} p.agentLoading       that read has not answered for this identity
+ * @param {boolean} p.agentFailed        that read failed
  * @param {{ name: string, approach: (string|null) }} p.archetype  hub/archetypeLines.js
  * @param {Array<{ id: string, filled: boolean }>} p.slots  getEquipSlots(agent)
  * @param {{ equipped: boolean, count: number, name: string, sub: string }} p.adjustments  getTraitSlotSummary(agent)
  * @param {Array}   p.committed          the committed lists the reader returned
  * @param {string}  p.listsStatus        LISTS_STATUS
  * @param {string|null|undefined} p.listsReadFor  the equipped id when the lists were read (hub/useHubLoadout.js)
- * @param {Array}   p.activeAgentBattles App's active-battle poll (the shells' input)
+ * @param {Array}   p.activeAgentBattles App's active-battle poll (the shells' input; on the hub object, `activeBattles`)
  * @param {boolean} p.concurrencyEnabled CASUAL_CLONE_CONCURRENCY_ENABLED
  * @param {boolean} p.hypothesisRecordsOn HYPOTHESIS_RECORDS_ENABLED
  * @param {string}  p.ideaAccess         IDEA_ACCESS: S5 passes UNKNOWN (the neutral label); S6 supplies the server's answer
  * @param {boolean} p.characterTab       RELEASE3_CHARACTER_TAB_ENABLED: the Forge's `traits` area is then "Character"
  */
 export function deriveLoadout({
-  agent, agentLoading, archetype, slots, adjustments, committed, listsStatus, listsReadFor, activeAgentBattles, concurrencyEnabled, hypothesisRecordsOn, ideaAccess, characterTab,
+  agent, agentLoading, agentFailed, archetype, slots, adjustments, committed, listsStatus, listsReadFor, activeAgentBattles, concurrencyEnabled, hypothesisRecordsOn, ideaAccess, characterTab,
 }) {
-  if (!agent) return { status: agentLoading === true ? LOADOUT_STATUS.LOADING : LOADOUT_STATUS.NONE };
+  if (!agent) {
+    if (agentLoading === true) return { status: LOADOUT_STATUS.LOADING };
+    return { status: agentFailed === true ? LOADOUT_STATUS.ERROR : LOADOUT_STATUS.NONE };
+  }
   const lockedInGame = equipLockOf({ agent, activeAgentBattles, concurrencyEnabled });
   const hasTraitsSlot = (Array.isArray(slots) ? slots : []).some((slot) => slot?.id === 'traits');
   return {
