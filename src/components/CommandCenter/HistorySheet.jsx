@@ -13,16 +13,34 @@
 // history (spec §3; review T2-7). Since the merge round it also says the
 // window's age as Games does: stale "as of" with Retry, or kept from an
 // earlier visit "as of" with its next read (spec §6; Q-S3-2 A+; review MR-3).
+//
+// Slice S4 (founder ruling Q-S3-6, R-S4-5): a Refresh asks for the window again.
+// It is an explicit trigger, so it shares the rolling budget: when the read can
+// not run now it queues one at the next permitted time and the sheet says when,
+// instead of reading. A stale or kept window already carries its note (Retry, or
+// its next read); a read in flight offers no second control (review T3-3).
 
 import React from 'react';
 import { splitGames } from './hub/hubModel';
 import { HUB_COPY as COPY } from './hub/hubCopy';
+import { formatHubTime } from './hub/hubDate';
 import { C } from './hub/hubStyle';
 import HubSheet from './HubSheet';
-import { Mono } from './HubParts';
+import { HubLink, Mono } from './HubParts';
 import { GameRow, GamesLoadingLine, GamesReadNote, gamesNoteDue } from './sections/GamesSection';
 
-export default function HistorySheet({ games, career, phone, onClose, opener, fallbackFocus, reducedMotion, onOpenGame, onOpenTape, onRetry }) {
+/** The window's Refresh: the link, "Refreshing…" while a read is out, or the next permitted time when one is queued. */
+function HistoryRefresh({ games, onRefresh }) {
+  if (!onRefresh || games?.status !== 'ready' || games.stale === true || games.carried === true) return null;
+  const at = formatHubTime(games.nextAttemptAt, { roundUp: true });
+  let control;
+  if (games.refreshing === true) control = <span data-hub-history-refresh="refreshing">{COPY.history.refreshing}</span>;
+  else if (at) control = <span data-hub-history-refresh="queued">{COPY.history.nextRefresh(COPY.time.et(at))}</span>;
+  else control = <HubLink onPress={onRefresh}>{COPY.history.refresh}</HubLink>;
+  return <div style={{ marginBottom: 10, fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>{control}</div>;
+}
+
+export default function HistorySheet({ games, career, phone, onClose, opener, fallbackFocus, reducedMotion, onOpenGame, onOpenTape, onRetry, onRefresh }) {
   const { completed } = splitGames(games);
   const ready = games?.status === 'ready';
   const failed = games?.status === 'error';
@@ -52,6 +70,7 @@ export default function HistorySheet({ games, career, phone, onClose, opener, fa
       {/* The window's age, as Games says it (spec §6 "show retained as-of data … accurately"; review MR-3): a failed read, a
           stale window, or one kept from an earlier visit (Q-S3-2, A+). */}
       {gamesNoteDue(games) && <GamesReadNote games={games} onRetry={onRetry} />}
+      <HistoryRefresh games={games} onRefresh={onRefresh} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {completed.map((g) => <GameRow key={g.id} game={g} onOpen={onOpenGame} onOpenTape={onOpenTape} />)}
       </div>

@@ -119,13 +119,14 @@ const DISABLED = { background: C.raised, color: C.ink2, border: `1px solid ${HAI
  * The design's FfBtn. With no `onPress` it renders disabled — the S1 rule for
  * every action a later slice wires.
  */
-export function HubButton({ kind = 'secondary', icon, children, onPress, small = false, full = false, ariaLabel, style }) {
+export function HubButton({ kind = 'secondary', icon, children, onPress, small = false, full = false, ariaLabel, style, ...rest }) {
   const phone = usePhone();
   const disabled = typeof onPress !== 'function';
   const height = small && !phone ? 36 : PHONE_TARGET;
   return (
     <button
       type="button"
+      {...rest}
       onClick={disabled ? undefined : onPress}
       disabled={disabled}
       aria-label={ariaLabel}

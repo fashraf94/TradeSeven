@@ -26,8 +26,18 @@
 // and Retry the window. The hold stays inert: no deploy handler is wired
 // before S2b. A live id leaving a SUCCESSFUL poll of this owner refreshes the
 // window, within its rate cap.
+//
+// Slice S4 (rulings R-S4-1 … R-S4-3, R-S4-5) adds, from the same records and with
+// no read, effect or listener of its own: the next action and its Later
+// (hub/nextAction.js, hub/useHubLater.js), the Activity section's INPUTS
+// (`activityInputs`: the Loadout is the runtime's, so hub/useHubRuntime.js finishes
+// the list with it, hub/activityRows.js), and the actions that go with them —
+// `nextAction`, `laterNextAction`, `openActivity` and History's `refreshHistory`. The Daily Regime Brief is the one thing it does read:
+// through the existing brief hook (hub/useHubBrief.js), which owns that read and
+// its one retry — `sections.brief` and `actions.retryBrief`.
 
 import { useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../../../config/featureFlags';
 import { FILM_ROOM_ROUTE } from '../../../constants/filmTape';
 import useAgent from '../../../hooks/useAgent';
@@ -36,10 +46,13 @@ import { getMarketState } from '../../../utils/marketSchedule';
 import { DISPLAY_ACTIONS } from './deployDisplay';
 import { completedGameRows, liveGameRows } from './gamesDisplay';
 import { HUB_S2A_DEPLOY_INPUTS } from './hubModel';
+import { NEXT_ACTION_KINDS, deriveNextAction, firstDeploymentOffer } from './nextAction';
 import { REVIEW_TRIGGERS } from './reviewScheduler';
 import { RETRY_ACTIONS, deriveHubDeployState } from './selectors/deployState';
 import { agentInputOf, authInputOf, completedInputOf, loadoutAgentOf, ownedLiveList, pollInputOf } from './selectors/readerInputs';
+import useHubBrief from './useHubBrief';
 import useHubCompletedBattles from './useHubCompletedBattles';
+import useHubLater from './useHubLater';
 
 /**
  * The Games section (hub/hubModel.js `games`): loading or error until the window's first read succeeds. The live
@@ -83,6 +96,8 @@ export default function useHubReaders(hub) {
   const completed = useHubCompletedBattles();
 
   const auth = authInputOf(identity);
+  const later = useHubLater(auth);
+  const brief = useHubBrief();
   const poll = pollInputOf(hub.activePoll, hub.activeBattles, identity);
   const inputs = Object.freeze({
     ...HUB_S2A_DEPLOY_INPUTS,
@@ -118,21 +133,66 @@ export default function useHubReaders(hub) {
   const liveRows = liveGameRows(live, { nowMs: Date.now(), marketState: getMarketState() });
   const games = gamesSectionOf(completed, liveRows, ownerKey !== null);
 
+  // The Loadout's agent (slice S5) is this same read, never App's (the S3 merge with S5).
+  const loadoutAgent = loadoutAgentOf(inputs.agent, auth, agent.retry);
+
+  // Slice S4: Activity and the next action are projections of the records above (no read of their own), over Games' own rows
+  // so a word, a verdict or an openable tape is said once. Activity's loadout rows need the Loadout (its resolved list and
+  // archetype), which the runtime holds: the readers hand it the games' side, with the age of the window it stands on.
+  const rowsById = new Map(games.rows.map((row) => [row.id, row]));
+  const activityInputs = Object.freeze({
+    battles: completed.battles,
+    failed: completed.status === 'error' && !completed.checking,
+    live,
+    rowsById,
+    nowMs: Date.now(),
+    windowAge: Object.freeze({ asOf: games.asOf ?? null, stale: games.stale === true, carried: games.carried === true }),
+  });
+  const nextInputs = {
+    liveRows,
+    battles: completed.battles,
+    rowsById,
+    firstDeployment: firstDeploymentOffer(inputs),
+    liveResolved: games.liveResolved,
+  };
+  const nextAction = deriveNextAction({ ...nextInputs, dismissed: later.dismissed });
+  const candidate = nextAction.candidate;
+
   // A live row opens the poll's own record, even when the window holds the same id (review T0R-1).
   const documents = new Map([...(completed.battles || []), ...live].map((b) => [b.id, b]));
+  const openGame = typeof hub.openGame === 'function'
+    ? (row) => { const doc = documents.get(row?.id); if (doc) hub.openGame(doc); }
+    : undefined;
+  const openTape = typeof hub.openFilmRoom === 'function'
+    ? (row) => {
+      const doc = documents.get(row?.id);
+      const result = completed.reviews[row?.id]?.result;
+      // The helper's own answer decides: ready, and its target the Film Room route.
+      if (doc && result?.ready === true && result.target === FILM_ROOM_ROUTE) hub.openFilmRoom(doc);
+    }
+    : undefined;
   const actions = {
-    openGame: typeof hub.openGame === 'function'
-      ? (row) => { const doc = documents.get(row?.id); if (doc) hub.openGame(doc); }
-      : undefined,
-    openTape: typeof hub.openFilmRoom === 'function'
-      ? (row) => {
-        const doc = documents.get(row?.id);
-        const result = completed.reviews[row?.id]?.result;
-        // The helper's own answer decides: ready, and its target the Film Room route.
-        if (doc && result?.ready === true && result.target === FILM_ROOM_ROUTE) hub.openFilmRoom(doc);
-      }
-      : undefined,
+    openGame,
+    openTape,
     retryGames: () => refresh(REVIEW_TRIGGERS.MANUAL),
+    // History's Refresh (founder ruling Q-S3-6): an explicit trigger, so it shares the rolling budget.
+    refreshHistory: () => refresh(REVIEW_TRIGGERS.HISTORY),
+    // The next action goes through the same two lookups as the rows (one guard each). The first deployment's hold is not
+    // here: its handler is the deploy action the strip and the card receive, which S2b supplies (R-S4-8).
+    nextAction: candidate?.key === NEXT_ACTION_KINDS.OPEN_GAME && openGame ? () => openGame({ id: candidate.id })
+      : candidate?.key === NEXT_ACTION_KINDS.REVIEW && openTape ? () => openTape({ id: candidate.id })
+        : undefined,
+    // Setting a candidate aside can take the focused Later button with it: the last candidate takes the card, and on the phone a card
+    // that moves between its two slots (a live game's above the rows, a review's below) is mounted afresh. A control that unmounts
+    // drops focus to <body>, so once the render is in, focus follows the card (its Later button) or, with none left, the hub's root.
+    laterNextAction: candidate ? (event) => {
+      const shell = event?.currentTarget?.closest?.('[data-hub="shell"]') ?? null;
+      flushSync(() => later.dismiss(candidate.laterKey));
+      if (shell && !shell.contains(document.activeElement)) (shell.querySelector('[data-hub-next-action] [data-hub-later]') ?? shell).focus();
+    } : undefined,
+    retryBrief: brief.retry,
+    // An Activity row for a game opens that game's record, as Games' row does; a loadout row opens nothing.
+    openActivity: openGame ? (row) => { if (row?.battleId) openGame({ id: row.battleId }); } : undefined,
     // A read's Retry, by the reader the selector names. An attempt's actions are S2b's: none can show before it.
     deployAction: (kind) => {
       if (kind !== DISPLAY_ACTIONS.RETRY_READ) return;
@@ -141,6 +201,5 @@ export default function useHubReaders(hub) {
     },
   };
 
-  // The Loadout's agent (slice S5) is this same read, never App's (the S3 merge with S5).
-  return { sections: { games, deploy }, actions, inputs, agent: loadoutAgentOf(inputs.agent, auth, agent.retry) };
+  return { sections: { games, deploy, activityInputs, nextAction, brief: brief.brief }, actions, inputs, agent: loadoutAgent };
 }

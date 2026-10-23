@@ -580,6 +580,10 @@ const PERMITTED_TERMINALS = Object.freeze({
   'src/components/Dashboard/ArchetypePicker.jsx': 'the shipped archetype picker, reused unchanged (ruling R-S5-4)',
   'src/components/Dashboard/EquipSheet.jsx': 'the shipped watchlist sheet, reused unchanged (ruling R-S5-4)',
   'src/components/Dashboard/TraitsSheet.jsx': 'the shipped traits sheet, reused unchanged (ruling R-S5-4)',
+  // S4 (rulings R-S4-1, R-S4-4): the brief's existing hook, which owns its read and its one retry (the hub adds no read of
+  // its own), and the shared lean kernel Activity asks which standing leans a game would carry (Display-Agreement §9).
+  'src/hooks/useDailyRegimeBrief.js': 'the Daily Regime Brief hook, reused unchanged but for the additive generatedAt (ruling R-S4-4)',
+  'api/_utils/leanRevalidation.js': 'revalidateStandingLeans at its default cap — the call the battle snapshot and the Forge Character tab make; Activity lists only the leans a game would carry (ruling R-S4-1)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -660,6 +664,9 @@ const ALLOWED_ACTIVITY = Object.freeze({
   [HUB_FILE('hub/useHubSheets.js')]: ['\\buseEffect\\b'],
   // S5 (review E1-1): the gate's fallback signal, one layout effect in its own file, rendered only inside the fallback.
   [HUB_FILE('hubFallbackSignal.jsx')]: ['\\buseLayoutEffect\\b'],
+  // S4 (ruling R-S4-3): Later's store. The one pattern covers both storages, so a row below pins that the file names
+  // sessionStorage and never localStorage; it has no effect, timer or listener.
+  [HUB_FILE('hub/useHubLater.js')]: ['\\b(?:local|session)Storage\\b'],
 });
 
 function activityInCode(rel, code) {
@@ -872,6 +879,8 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
       [HUB_FILE('hub/useHubSheets.js')]: ['setTimeout(f, 0);', "window.addEventListener('resize', f);", 'useLayoutEffect(() => {});'],
       // S5 (review E1-1): the signal allows its one layout effect and nothing else: no passive effect, timer, listener or frame callback.
       [HUB_FILE('hubFallbackSignal.jsx')]: ['useEffect(() => {}, []);', 'setTimeout(f, 0);', "window.addEventListener('focus', f);", 'requestAnimationFrame(f);', 'new ResizeObserver(cb);'],
+      // S4: Later's store allows its storage and nothing else — no effect, timer, listener, frame or read.
+      [HUB_FILE('hub/useHubLater.js')]: ['useEffect(() => {}, []);', 'useLayoutEffect(() => {});', 'setTimeout(f, 0);', 'setInterval(f, 1000);', "window.addEventListener('storage', f);", 'requestAnimationFrame(f);', 'getDocs(q);', 'new BroadcastChannel("x");'],
     };
     for (const [rel, lines] of Object.entries(negatives)) {
       for (const line of lines) expect(activityInCode(rel, line), `${rel}: ${line}`).not.toEqual([]);
@@ -1000,6 +1009,9 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     '/services/completedAgentBattles': ['fetchRecentCompletedAgentBattles'],
     '/hooks/useAgent': ['default'],
     '/hooks/useMasteryProfile': ['default'],
+    // S4: the brief's own hook (one default import, in hub/useHubBrief.js) and the lean kernel (one name, in hub/activityRows.js).
+    '/hooks/useDailyRegimeBrief': ['default'],
+    '/api/_utils/leanRevalidation.js': ['revalidateStandingLeans'],
     '/ClashBot/ClashBotWidget': ['CLASHBOT_OPEN_EVENT'],
     '/utils/equipSlots': ['getEquipSlots'],
     '/utils/traitSlotSummary': ['getTraitSlotSummary'],
@@ -1057,5 +1069,42 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     expect(importedNames(code, '/archetypeIdentity').sort()).toEqual(['a', 'b', 'default']);
     expect(importedNames(code, '/agentService').sort()).toEqual(['one', 'two']);
     expect(importedNames(code, '/nothing')).toEqual([]);
+  });
+});
+
+// ── S4: what the hub reads and stores for Activity, the next action, Later and the brief ────────────────────────────
+
+describe('S4 — the brief is read only through the connected readers; Later stores in sessionStorage alone', () => {
+  it('the brief hook is imported by one hub file (hub/useHubBrief.js) and that file is used by one (hub/useHubReaders.js), so a hub without App\'s object reads no brief', () => {
+    const files = hubDirFiles();
+    const importers = files.filter((rel) => importedNames(stripComments(read(rel)), '/hooks/useDailyRegimeBrief').length > 0);
+    expect(importers).toEqual([HUB_FILE('hub/useHubBrief.js')]);
+    const users = files.filter((rel) => importedNames(stripComments(read(rel)), '/hub/useHubBrief').length > 0 || importedNames(stripComments(read(rel)), './useHubBrief').length > 0);
+    expect(users).toEqual([HUB_FILE('hub/useHubReaders.js')]);
+    // ...and neither the shells nor ConnectedHub call it: they only receive its section.
+    expect(stripComments(read(HUB_FILE('CommandCenterHub.jsx')))).not.toMatch(/\buseHubBrief\b|\buseDailyRegimeBrief\b/);
+  });
+
+  it('the hub reads the brief hook once, and calls no other brief or Firestore reader', () => {
+    const brief = stripComments(read(HUB_FILE('hub/useHubBrief.js')));
+    expect(brief.match(/\buseDailyRegimeBrief\(/g)).toHaveLength(1);
+    const readers = stripComments(read(HUB_FILE('hub/useHubReaders.js')));
+    expect(readers.match(/\buseHubBrief\(/g)).toHaveLength(1);
+    expect(`${readers}\nconst again = useHubBrief();`.match(/\buseHubBrief\(/g)).toHaveLength(2);
+  });
+
+  it('Later\'s store is sessionStorage alone: no localStorage, no cookie, no URL; the key is cc.later.{uid}', () => {
+    const later = stripComments(read(HUB_FILE('hub/useHubLater.js')));
+    expect(later).toMatch(/\bsessionStorage\b/);
+    expect(later).not.toMatch(/\blocalStorage\b/);
+    expect(later).not.toMatch(/\bdocument\.cookie\b|\bindexedDB\b/);
+    expect(later).toContain("const PREFIX = 'cc.later.';");
+    // The scan bites: a localStorage use is not sessionStorage.
+    expect(/\blocalStorage\b/.test(`${later}\nlocalStorage.setItem('k', 'v');`)).toBe(true);
+  });
+
+  it('no hub file but Later\'s names a storage at all', () => {
+    const users = hubDirFiles().filter((rel) => /\b(?:local|session)Storage\b/.test(stripComments(read(rel))));
+    expect(users).toEqual([HUB_FILE('hub/useHubLater.js')]);
   });
 });

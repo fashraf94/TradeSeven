@@ -65,6 +65,9 @@ export default function useDailyRegimeBrief() {
   const themes = Array.isArray(data?.themes) ? data.themes : [];
   const forDate = data?.forDate || null;
   const isStale = !!forDate && forDate !== getMarketDateString();
+  // The cron's recorded generation time (api/cron/compute-daily-regime-brief.js: serverTimestamp), as stored: a
+  // Firestore Timestamp, or null when the document carries none. Additive — the two legacy readers ignore it.
+  const generatedAt = data?.generatedAt ?? null;
 
-  return { dailyBrief, keyEvents, themes, forDate, isStale, loading, error, refetch: fetchData };
+  return { dailyBrief, keyEvents, themes, forDate, generatedAt, isStale, loading, error, refetch: fetchData };
 }

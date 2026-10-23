@@ -106,9 +106,9 @@ function PhoneOverview({ sections, actions }) {
       {ready && !stale && !liveGame && !candidate && completed.length === 0 && (games.liveResolved === false
         ? <LoadingLine>{COPY.games.loading}</LoadingLine>
         : <EmptyNote icon="sword" title={COPY.games.empty} sub={COPY.games.emptySubPhone} />)}
-      {liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} />}
+      {liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onDeploy={actions.deploy} onLater={actions.laterNextAction} />}
       {liveRows.map((g) => <GameRow key={g.id} game={g} onOpen={actions.openGame} />)}
-      {candidate && !liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} />}
+      {candidate && !liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onDeploy={actions.deploy} onLater={actions.laterNextAction} />}
       {reviews.length > 0 && (
         <Section label={COPY.games.reviewsAvailable}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -128,7 +128,7 @@ function PhoneOverview({ sections, actions }) {
         </Row>
       )}
       <ActivitySection activity={activity} limit={PHONE_ACTIVITY_LIMIT} onOpen={actions.openActivity} onAll={actions.openAllActivity} />
-      <BriefSection brief={brief} />
+      <BriefSection brief={brief} onRetry={actions.retryBrief} />
     </div>
   );
 }

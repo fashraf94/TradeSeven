@@ -48,6 +48,15 @@
 // failed read is "Agent unavailable · Retry" and a resolved absence is
 // "Create your agent first".
 //
+// Slice S4 (rulings R-S4-1 … R-S4-5): with the same object, Recent activity, the
+// next action with its Later, the Daily Regime Brief and History's Refresh come
+// from the records those readers already hold (hub/useHubReaders.js), and the
+// brief from its existing hook (hub/useHubBrief.js, run by the readers). "All activity · N" opens
+// the activity sheet. The first-deployment card's hold takes ONLY the deploy action,
+// `onDeploy={actions.deploy}`. Nothing defines `actions.deploy` yet, and neither the
+// strip nor the Deploy card is passed one: S2b supplies it under that key to all
+// three surfaces, and until then each hold is disabled.
+//
 // One tree for the three wide compositions. Desktop, tablet and stacked are
 // one CSS grid whose areas change with the composition; every part keeps its
 // place in the React tree (the stage and panel wrappers switch to
@@ -82,7 +91,7 @@ import {
 import { deployDisplay } from './hub/deployDisplay';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { formatHubDate, headerName } from './hub/hubDate';
-import { HUB_S1_SECTIONS, HUB_S2A_DEPLOY_INPUTS, liveGamesOf, splitGames } from './hub/hubModel';
+import { DESKTOP_ACTIVITY_LIMIT, HUB_S1_SECTIONS, HUB_S2A_DEPLOY_INPUTS, liveGamesOf, splitGames } from './hub/hubModel';
 import { HubOverlayProvider } from './hub/HubOverlays';
 import { loadoutLineOf } from './hub/loadoutLine';
 import { LOADOUT_STATUS } from './hub/selectors/loadout';
@@ -94,6 +103,7 @@ import { shadowTierFor } from './hub/shadowGeometry';
 import { useHubWidth } from './hub/useHubWidth';
 import useHubReaders from './hub/useHubReaders';
 import { useNavClearance } from './hub/useNavClearance';
+import ActivitySheet from './ActivitySheet';
 import { areaPanelId, areaTabId } from './AreaControls';
 import DeployStrip from './DeployStrip';
 import HistorySheet from './HistorySheet';
@@ -221,6 +231,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
     ...wired,
     ...runtime.actions,
     openHistory: shared.completed.length ? sheet.open(HUB_SHEETS.HISTORY) : undefined,
+    openAllActivity: sheet.open(HUB_SHEETS.ACTIVITY),
   };
   return (
     <HubLayoutContext.Provider value={composition}>
@@ -268,7 +279,10 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
         onAction={actions.deployAction}
       />
       {sheet.sheet === HUB_SHEETS.HISTORY && (
-        <HistorySheet games={sections.games} career={sections.career} phone onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpenGame={actions.openGame} onOpenTape={actions.openTape} onRetry={actions.retryGames} />
+        <HistorySheet games={sections.games} career={sections.career} phone onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpenGame={actions.openGame} onOpenTape={actions.openTape} onRetry={actions.retryGames} onRefresh={actions.refreshHistory} />
+      )}
+      {sheet.sheet === HUB_SHEETS.ACTIVITY && (
+        <ActivitySheet activity={sections.activity} phone onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpen={actions.openActivity} />
       )}
       {runtime.live && (
         <LoadoutSheets
@@ -299,6 +313,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
     ...wired,
     ...runtime.actions,
     openHistory: shared.completed.length ? sheet.open(HUB_SHEETS.HISTORY) : undefined,
+    openAllActivity: sheet.open(HUB_SHEETS.ACTIVITY),
   };
   const desktop = composition === HUB_COMPOSITIONS.DESKTOP;
   const tablet = composition === HUB_COMPOSITIONS.TABLET;
@@ -331,15 +346,15 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
   const side = {
     games: <GamesSection games={sections.games} onOpenHistory={actions.openHistory} onOpenGame={actions.openGame} onOpenTape={actions.openTape} onRetry={actions.retryGames} />,
     deploy: <DeploySection deploy={sections.deploy} loadoutLine={shared.loadoutLine} onOpenLoadout={() => setArea(HUB_AREAS.ARCHETYPE)} onAction={actions.deployAction} />,
-    activity: <ActivitySection activity={sections.activity} />,
-    brief: <BriefSection brief={sections.brief} />,
+    activity: <ActivitySection activity={sections.activity} limit={DESKTOP_ACTIVITY_LIMIT} onOpen={actions.openActivity} onAll={actions.openAllActivity} />,
+    brief: <BriefSection brief={sections.brief} onRetry={actions.retryBrief} />,
   };
   const hasNext = sections.nextAction?.status === 'ready' && Boolean(sections.nextAction.candidate);
   const grid = wideGrid(composition, hasNext);
   const body = (
     <div data-hub-body={composition} style={{ padding: `14px ${gutter}px ${desktop ? 30 : 28}px`, ...grid.body }}>
       <div data-hub-slot="next" style={{ gridArea: 'next', minWidth: 0, display: hasNext ? 'block' : 'none' }}>
-        <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} />
+        <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} onAct={actions.nextAction} onDeploy={actions.deploy} onLater={actions.laterNextAction} />
       </div>
       <div data-hub-slot="main" style={grid.main}>
         <div data-hub-slot="stage" style={{ gridArea: 'stage', minWidth: 0 }}>{stage}</div>
@@ -371,7 +386,10 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
         {body}
       </section>
       {sheet.sheet === HUB_SHEETS.HISTORY && (
-        <HistorySheet games={sections.games} career={sections.career} onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpenGame={actions.openGame} onOpenTape={actions.openTape} onRetry={actions.retryGames} />
+        <HistorySheet games={sections.games} career={sections.career} onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpenGame={actions.openGame} onOpenTape={actions.openTape} onRetry={actions.retryGames} onRefresh={actions.refreshHistory} />
+      )}
+      {sheet.sheet === HUB_SHEETS.ACTIVITY && (
+        <ActivitySheet activity={sections.activity} onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpen={actions.openActivity} />
       )}
       {runtime.live && (
         <LoadoutSheets

@@ -163,6 +163,11 @@
     "src/components/CommandCenter/hub/useHubRuntime.js": {},
     "src/components/CommandCenter/hub/useHubSheets.js": {},
     "src/components/CommandCenter/hub/selectors/loadout.js": {},
-    "src/components/CommandCenter/hubFallbackSignal.jsx": {}
+    "src/components/CommandCenter/hubFallbackSignal.jsx": {},
+    "src/components/CommandCenter/ActivitySheet.jsx": {},
+    "src/components/CommandCenter/hub/activityRows.js": {},
+    "src/components/CommandCenter/hub/nextAction.js": {},
+    "src/components/CommandCenter/hub/useHubBrief.js": {},
+    "src/components/CommandCenter/hub/useHubLater.js": {}
   }
 }
