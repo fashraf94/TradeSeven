@@ -36,6 +36,12 @@ describe('pollCaptureMatches — a run queries only for the identity it captured
     expect(pollCaptureMatches(A1, null)).toBe(false);
     expect(pollCaptureMatches(null, 'uid-A')).toBe(false);
   });
+  // review T5aR-2: App returns before the call without a uid; this pins the helper's own contract.
+  it('an unresolved capture matches a non-empty uid and nothing else', () => {
+    expect(pollCaptureMatches(UNRESOLVED, 'uid-A')).toBe(true);
+    expect(pollCaptureMatches(UNRESOLVED, '')).toBe(false);
+    expect(pollCaptureMatches(UNRESOLVED, undefined)).toBe(false);
+  });
 });
 
 describe('activePollSettled', () => {
@@ -303,5 +309,46 @@ describe('an older run\'s failure never downgrades a newer success; "as of" is a
 
   it('a success stands as given: an older run landing last stamps its own (earlier) start', () => {
     expect(activePollSettled(ready(), A1, { ok: true, uid: 'uid-A', at: T }, false)).toMatchObject({ status: 'ready', lastSuccessfulAt: T });
+  });
+
+  it('a stale failure that changes nothing a reader shows renders nothing: the same metadata object comes back, so App does not re-render (review T5-6)', () => {
+    const meta = ready();
+    expect(activePollSettled(meta, A1, { ok: false, error: new Error('late'), at: T }, false)).toBe(meta);
+  });
+
+  it('a failure that began in the very millisecond of the retained success is not older than it: it is recorded (review T5-6)', () => {
+    const next = activePollSettled(ready(), A1, { ok: false, error: new Error('tie'), at: T + 1000 }, false);
+    expect(next).toMatchObject({ status: 'error', lastSuccessfulAt: T + 1000 });
+    expect(next.error.message).toBe('tie');
+  });
+});
+
+describe('"Refreshing" ends however the explicit refresh ends (R-S3-3: `refreshing` true only for an explicit refresh; review T5-6)', () => {
+  it('a Retry that fails the way the request before it did still ends: the error stays, "Refreshing" does not', () => {
+    const { state, flights } = wired();
+    flights.settle(flights.begin(A1), { ok: false, error: new Error('unavailable') });
+    expect(state.meta).toMatchObject({ status: 'error', refreshing: false });
+    const retry = flights.begin(A1, true);
+    expect(state.meta.refreshing).toBe(true);
+    flights.settle(retry, { ok: false, error: new Error('unavailable') });
+    expect(state.meta).toMatchObject({ status: 'error', refreshing: false });
+  });
+
+  it('the interval tick that starts while a Retry is out is a BACKGROUND run: it does not hold the refresh open, before or after it settles', () => {
+    const { state, flights } = wired();
+    const retry = flights.begin(A1, true);
+    const intervalTick = flights.begin(A1);
+    expect(state.meta.refreshing).toBe(true);
+    flights.settle(retry, { ok: true, uid: 'uid-A', at: T });
+    expect(state.meta.refreshing).toBe(false);
+    flights.settle(intervalTick, { ok: true, uid: 'uid-A', at: T + 1000 });
+    expect(state.meta.refreshing).toBe(false);
+  });
+});
+
+describe('the retained list is tagged with the uid the request queried (R-S3-3; review T5-6)', () => {
+  it('a first run whose capture names no uid yet (Firebase has not answered) still tags its success with the uid it queried', () => {
+    const next = activePollSettled(initialActivePoll(0), UNRESOLVED, { ok: true, uid: 'uid-A', at: T }, false);
+    expect(next).toMatchObject({ status: 'ready', ownerUid: 'uid-A', ownerEpoch: 0, lastSuccessfulAt: T });
   });
 });

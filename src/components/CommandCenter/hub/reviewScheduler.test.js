@@ -23,6 +23,15 @@ const never = () => new Promise(() => {});
 const failing = () => Promise.reject(new Error('failed-precondition: the query requires an index'));
 const tick = (ms) => vi.advanceTimersByTimeAsync(ms);
 
+// A defect in admission can start cycle after cycle, or re-arm a zero-delay timer, without the fake clock moving, and the
+// suite then hangs instead of reddening a row (review T5-18). Past these counts a stub stops answering (the runaway ends at
+// its own 8 s deadline and the row fails by its own assertions) and a clock stops arming timers (it throws, so the chain
+// ends and the row fails loudly). No row here comes near them: the longest, an hour of triggers, makes 31 reads, 310
+// checks and 390 timers.
+const RUNAWAY_QUERIES = 80;
+const RUNAWAY_CHECKS = 800;
+const RUNAWAY_TIMERS = 5000;
+
 /** A scheduler on the fake clock, recording every query, check and state. */
 function harness({ docs = () => docsOf(10), query, check, visible = true } = {}) {
   const queries = [];
@@ -30,16 +39,27 @@ function harness({ docs = () => docsOf(10), query, check, visible = true } = {})
   const states = [];
   let inflight = 0;
   let maxInflight = 0;
+  let timers = 0;
   const scheduler = createReviewScheduler({
     owner: OWNER,
-    clock: { now: () => Date.now(), setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (h) => clearTimeout(h) },
+    clock: {
+      now: () => Date.now(),
+      setTimer: (fn, ms) => {
+        timers += 1;
+        if (timers > RUNAWAY_TIMERS) throw new Error(`runaway: more than ${RUNAWAY_TIMERS} timers armed`);
+        return setTimeout(fn, ms);
+      },
+      clearTimer: (h) => clearTimeout(h),
+    },
     visible,
     queryCompleted: (uid, max) => {
       queries.push({ at: Date.now() - T0, uid, max });
+      if (queries.length > RUNAWAY_QUERIES) return never();
       return query ? query(queries.length) : Promise.resolve(docs(queries.length));
     },
     checkReview: (battle) => {
       checks.push({ id: battle.id, at: Date.now() - T0, battle });
+      if (checks.length > RUNAWAY_CHECKS) return never();
       inflight += 1;
       maxInflight = Math.max(maxInflight, inflight);
       const p = check ? check(battle, checks.length) : Promise.resolve(READY);
@@ -143,6 +163,24 @@ describe('Review C5 — one coordinator, helper-only, shared cap', () => {
     h.s.trigger(REVIEW_TRIGGERS.FOCUS);
     await tick(0);
     expect(h.queries.map((q) => q.at)).toEqual([0, 120 * S]);
+  });
+
+  // The row above sends only focus (review T5aR-1).
+  it('becoming visible is stale-checked like focus: shown again 30 s after the last cycle it asks for nothing, shown 130 s after it refreshes', async () => {
+    const h = harness({ docs: () => docsOf(2), check: () => Promise.resolve(UNAVAILABLE) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    h.s.setVisible(false);
+    await tick(30 * S);
+    h.s.setVisible(true);
+    await tick(0);
+    expect(h.queries).toHaveLength(1);
+    expect(h.state().nextAttemptAt).toBeNull();
+    h.s.setVisible(false);
+    await tick(100 * S);
+    h.s.setVisible(true);
+    await tick(0);
+    expect(h.queries.map((q) => q.at)).toEqual([0, 130 * S]);
   });
 
   it('a manual trigger inside the window queues one cycle at the next permitted time, never a burst', async () => {
@@ -322,6 +360,70 @@ describe('Review operation deadlines — 8 s query, 8 s per check, 42 s per cycl
     for (const id of ['done_01', 'done_02']) expect(h.state().reviews[id]).toMatchObject({ state: REVIEW_STATES.TIMED_OUT, result: null });
     expect(Object.keys(h.state().reviews.done_01)).toEqual(['state', 'result', 'nextAt']);
   });
+
+  // The helper's three fields are its whole contract (spec §6: "never convert unresolved to a ready link"; "no invented
+  // helper error field"): anything that is not a coherent triple is unfinished work, never a state of its own (review T5-19).
+  it.each([
+    ['null', null],
+    ['an unknown availability word', { ready: false, target: 'filmRoom', availability: 'bogus' }],
+    ['ready:true beside availability pending', { ready: true, target: 'filmRoom', availability: 'pending' }],
+    ['ready:false beside availability ready', { ready: false, target: 'filmRoom', availability: 'ready' }],
+    ['a ready answer with an empty target', { ready: true, target: '', availability: 'ready' }],
+    ['a ready answer with a non-string target', { ready: true, target: 5, availability: 'ready' }],
+    ['a ready answer with no target', { ready: true, availability: 'ready' }],
+  ])('a helper answer that is %s is no answer: the row is unfinished and the cycle ends', async (_name, answer) => {
+    const h = harness({ docs: () => docsOf(1), check: () => Promise.resolve(answer) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(h.state().reviews.done_01).toMatchObject({ state: REVIEW_STATES.TIMED_OUT, result: null });
+    expect(h.state().checking).toBe(false);
+  });
+
+  // The 42 s is measured from the query's start, and the next callback after a suspension checks it (spec §6, review T5-2).
+  // Ten checks that never answer; the first three start at 0 s. The page sleeps (vi's setSystemTime moves the clock and runs
+  // no timer), then their 8 s timers fire, and that first callback reads the wall clock at `wallMs` after the cycle began.
+  // An overdue cycle starts nothing more and queues its unstarted suffix; one that is not goes on with the fourth row.
+  const callbackAt = async (wallMs) => {
+    const h = harness({ docs: () => docsOf(10), check: () => never() });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(1000);
+    vi.setSystemTime(Date.now() + (wallMs - 8000));
+    await tick(7000);
+    return h;
+  };
+
+  it('a callback 41.9 s after the cycle began is not overdue: the freed slots start the next rows', async () => {
+    const h = await callbackAt(41_900);
+    expect(h.checks).toHaveLength(6);
+    expect(h.state().reviews.done_04.state).toBe(REVIEW_STATES.CHECKING);
+  });
+
+  it('a callback at 42 s is overdue: the cycle ends, the three in flight time out and the unstarted suffix is queued', async () => {
+    const h = await callbackAt(42_000);
+    expect(h.checks).toHaveLength(3);
+    const rows = h.state().reviews;
+    expect(['done_01', 'done_02', 'done_03'].map((id) => rows[id].state)).toEqual(Array(3).fill(REVIEW_STATES.TIMED_OUT));
+    expect(rows.done_04.state).toBe(REVIEW_STATES.QUEUED);
+    expect(h.state().checking).toBe(false);
+  });
+
+  it('a completed-query answer that lands after the whole 42 s is a failed read: the page slept past the cycle and no window is taken from it', async () => {
+    const h = harness({ query: () => after(1 * S, docsOf(2)), check: () => Promise.resolve(READY) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    vi.setSystemTime(Date.now() + 45 * S);
+    await tick(1 * S);
+    expect(h.state()).toMatchObject({ status: 'error', checking: false, battles: null, generation: 0 });
+    expect(h.checks).toHaveLength(0);
+  });
+
+  // review T5aR-3
+  it.each([[null], [{}], [undefined]])('a completed-query answer of %j is no list: a failed read, no window, nothing thrown', async (bad) => {
+    const h = harness({ query: () => Promise.resolve(bad), check: () => Promise.resolve(READY) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(h.state()).toMatchObject({ status: 'error', battles: null, checking: false });
+  });
 });
 
 describe('Review expiry and fairness', () => {
@@ -388,21 +490,44 @@ describe('Review expiry and fairness', () => {
     expect(h.state().reviews.done_01.state).toBe(REVIEW_STATES.PENDING);
   });
 
-  it('rows that keep failing are served in rotation: no prefix is checked forever while another starves', async () => {
-    const h = harness({ docs: () => docsOf(6), check: () => never() });
+  /**
+   * Five rows whose checks never answer. Each cycle starts three of them at its first instant and, when those time out
+   * eight seconds later, the other two; all five end it timed out. The next cycle is 128 s on (the last helper start plus
+   * the 120 s window). Returns each cycle's two waves in the order they started, read from the recorded start times —
+   * never from where a tick happened to stop (review T5-1).
+   */
+  async function fiveTimedOutCycles(cycles) {
+    const h = harness({ docs: () => docsOf(5), check: () => never() });
     h.s.trigger(REVIEW_TRIGGERS.MOUNT);
-    const firstOfCycle = [];
-    for (let cycleNo = 0; cycleNo < 4; cycleNo += 1) {
-      const before = h.checks.length;
-      await tick(40 * S);
-      firstOfCycle.push(h.checks[before]?.id);
-      // Each cycle: every row starts within it (six rows, three slots, eight seconds each).
-      await tick(h.state().nextAttemptAt - Date.now());
+    await tick(((cycles - 1) * 128 + 20) * S);
+    const waves = h.queries.map(({ at }) => ({
+      first: h.checks.filter((c) => c.at === at).map((c) => c.id),
+      second: h.checks.filter((c) => c.at === at + 8 * S).map((c) => c.id),
+    }));
+    expect(waves).toHaveLength(cycles);
+    return waves;
+  }
+
+  it('rows that keep timing out are served oldest-started first: the three that began a cycle before the two that began it eight seconds in', async () => {
+    const waves = await fiveTimedOutCycles(4);
+    // The first cycle has no carry-over: window order.
+    expect(waves[0]).toEqual({ first: ['done_01', 'done_02', 'done_03'], second: ['done_04', 'done_05'] });
+    // After it the older last start (done_01..03) goes first, whatever the rotation does inside a group.
+    for (const wave of waves.slice(1)) {
+      expect([...wave.first].sort()).toEqual(['done_01', 'done_02', 'done_03']);
+      expect([...wave.second].sort()).toEqual(['done_04', 'done_05']);
     }
-    const counts = {};
-    for (const c of h.checks) counts[c.id] = (counts[c.id] || 0) + 1;
-    expect(Object.keys(counts).sort()).toEqual(docsOf(6).map((d) => d.id));
-    expect(Math.max(...Object.values(counts)) - Math.min(...Object.values(counts))).toBeLessThanOrEqual(1);
+  });
+
+  it('rows that keep failing are served in rotation: among rows of equal priority each takes the lead in turn, and no row starves', async () => {
+    const waves = await fiveTimedOutCycles(4);
+    // Three rows share the older start and two the newer: over the three cycles that carry work over, every row of each
+    // group leads its wave once or more (spec §6: "rotate the cursor among equal-priority rows" — a fixed order would
+    // inspect the same prefix again and again).
+    expect(new Set(waves.slice(1).map((wave) => wave.first[0]))).toEqual(new Set(['done_01', 'done_02', 'done_03']));
+    expect(new Set(waves.slice(1).map((wave) => wave.second[0]))).toEqual(new Set(['done_04', 'done_05']));
+    // Each cycle still checks every row exactly once.
+    for (const wave of waves) expect([...wave.first, ...wave.second].sort()).toEqual(docsOf(5).map((d) => d.id));
   });
 
   it('a new cycle waits for the prior cycle\'s helper starts to age out before its query — its 42 s start only then', async () => {
@@ -503,6 +628,38 @@ describe('timers, hidden triggers, late answers and freshness (review T3-5)', ()
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  // The same two rules for the cycle's other timers (review T5-19): the queued cycle's at an unmount, the 8 s timers of the
+  // checks in flight at an unmount or a hide, and the 8 s timer of a check that threw.
+  it('dispose clears the queued cycle\'s timer too (a review still pending)', async () => {
+    const h = harness({ docs: () => docsOf(1), check: () => Promise.resolve(PENDING) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(h.state().nextAttemptAt).not.toBeNull();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    h.s.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([
+    ['dispose', (s) => s.dispose()],
+    ['hiding', (s) => s.setVisible(false)],
+  ])('%s with checks in flight clears their 8 s timers', async (_what, end) => {
+    const h = harness({ docs: () => docsOf(2), check: () => never() });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(h.state().inFlight).toBe(2);
+    end(h.s);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('a check that throws leaves no 8 s timer behind', async () => {
+    const h = harness({ docs: () => docsOf(1), check: () => Promise.reject(new Error('boom')) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    h.s.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('lastSuccessfulAt advances with every accepted window', async () => {
     const h = harness({ check: () => Promise.resolve(PENDING) });
     h.s.trigger(REVIEW_TRIGGERS.MOUNT);
@@ -511,6 +668,50 @@ describe('timers, hidden triggers, late answers and freshness (review T3-5)', ()
     await tick(125 * S);
     expect(h.state().generation).toBe(2);
     expect(h.state().lastSuccessfulAt).toBe(T0 + 120 * S);
+  });
+});
+
+describe('the published state: what the hook hands the display (R-S3-5; spec §6 "show retained as-of data and refreshing/queued state accurately", review T5-4)', () => {
+  it('refreshing is true while a cycle runs over a window already read, and only then', async () => {
+    const h = harness({ docs: () => docsOf(2), query: (n) => (n === 1 ? Promise.resolve(docsOf(2)) : after(2 * S, docsOf(2))), check: () => Promise.resolve(PENDING) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(h.state()).toMatchObject({ status: 'ready', checking: false, refreshing: false });
+    await tick(120 * S);
+    expect(h.state()).toMatchObject({ checking: true, refreshing: true });
+    await tick(3 * S);
+    expect(h.state()).toMatchObject({ checking: false, refreshing: false });
+  });
+
+  it('the first read is checking, not refreshing: there is no window to refresh yet', async () => {
+    const h = harness({ query: () => after(2 * S, docsOf(2)), check: () => Promise.resolve(READY) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(1 * S);
+    expect(h.state()).toMatchObject({ checking: true, refreshing: false, battles: null });
+  });
+
+  it('a failed read publishes its error, and the next success clears it', async () => {
+    const boom = new Error('unavailable');
+    const h = harness({ docs: () => docsOf(1), query: (n) => (n === 1 ? Promise.reject(boom) : Promise.resolve(docsOf(1))), check: () => Promise.resolve(UNAVAILABLE) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(h.state()).toMatchObject({ status: 'error', error: boom });
+    await tick(120 * S);
+    expect(h.state()).toMatchObject({ status: 'ready', error: null });
+  });
+
+  it('a queued or timed-out row carries the next permitted time the state publishes — the review line prints it (spec §6 copy)', async () => {
+    // done_01 answers at once; done_02..04 are in flight when the page sleeps 45 s: the cycle ends at the next callback.
+    const h = harness({ check: (b) => (b.id === 'done_01' ? Promise.resolve(READY) : after(2 * S, PENDING)) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    vi.setSystemTime(T0 + 45 * S);
+    await tick(2 * S);
+    const { reviews, nextAttemptAt } = h.state();
+    expect(nextAttemptAt).toBe(T0 + 120 * S);
+    expect(reviews.done_02).toMatchObject({ state: REVIEW_STATES.TIMED_OUT, nextAt: nextAttemptAt });
+    expect(reviews.done_05).toMatchObject({ state: REVIEW_STATES.QUEUED, nextAt: nextAttemptAt });
+    expect(reviews.done_01).toMatchObject({ state: REVIEW_STATES.READY, nextAt: null });
   });
 });
 
@@ -636,6 +837,17 @@ describe('the budget evidence (spec §6): any half-open ten minutes', () => {
     expect(worst.checks).toBeLessThanOrEqual(50);
     // ...and the hub did keep refreshing: one cycle every ~121 s for the hour.
     expect(h.queries.length).toBeGreaterThanOrEqual(29);
+  });
+
+  it('the helper cap is ten starts per rolling 120 s whatever the read returns: twelve documents (ten were asked for) start ten checks, and two wait for the window to roll', async () => {
+    const h = harness({ docs: () => docsOf(12), check: () => Promise.resolve(READY) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(1 * S);
+    expect(h.checks).toHaveLength(10);
+    expect(h.state().reviews.done_11.state).toBe(REVIEW_STATES.QUEUED);
+    expect(h.state().reviews.done_12.state).toBe(REVIEW_STATES.QUEUED);
+    await tick(125 * S);
+    expect(h.checks).toHaveLength(12);
   });
 });
 

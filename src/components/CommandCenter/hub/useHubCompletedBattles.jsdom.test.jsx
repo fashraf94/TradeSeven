@@ -36,8 +36,16 @@ function DefaultProbe() {
   seen.push(useHubCompletedBattles());
   return null;
 }
+// A scheduler defect can start cycle after cycle in zero fake time, and the suite then hangs instead of reddening a row
+// (review T5-18). Past this many reads a seam stops answering, so the runaway ends at its own 8 s deadline and the row fails
+// by its own assertions. No row here makes more than a handful.
+const RUNAWAY_READS = 80;
+function capped(seams) {
+  let reads = 0;
+  return { ...seams, queryCompleted: (...args) => (++reads > RUNAWAY_READS ? new Promise(() => {}) : seams.queryCompleted(...args)) };
+}
 function SeamProbe({ seams }) {
-  seen.push(useHubCompletedBattles(10, seams));
+  seen.push(useHubCompletedBattles(10, capped(seams)));
   return null;
 }
 const render = (el) => act(() => { root.render(el); });
@@ -241,5 +249,80 @@ describe('the rate cap belongs to the owner and epoch, not to one mount (spec §
     await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
     expect(calls.queries).toEqual([0]);
     expect(last()).toMatchObject({ status: 'loading', battles: null, nextAttemptAt: T0 + 120 * S });
+  });
+});
+
+describe('the page and the identity reach the scheduler one fact at a time (spec §3 and §6; review T5-12)', () => {
+  const UNAVAILABLE = Object.freeze({ ready: false, target: 'filmRoom', availability: 'unavailable' });
+  const seamsAt = (reads) => ({
+    queryCompleted: (uid) => { reads.push({ uid, at: Date.now() - T0 }); return Promise.resolve(docsFor(uid, 1)); },
+    checkReview: () => Promise.resolve(UNAVAILABLE),
+  });
+
+  it('the same uid at a new epoch with no render between (A → B → A in one batch): its first render shows nothing of the old window, and it reads afresh at once', async () => {
+    const reads = [];
+    const seams = seamsAt(reads);
+    render(<SeamProbe seams={seams} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    expect(last().battles).toHaveLength(1);
+    id.current = { resolved: true, uid: 'uid-A', authEpoch: 3 };
+    seen = [];
+    await act(async () => { root.render(<SeamProbe seams={seams} />); });
+    expect(seen[0]).toMatchObject({ battles: null, status: 'loading', ownerUid: null });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    // Its own budget, too: a new epoch is a new mounted owner, so the read is not queued behind the first epoch's.
+    expect(reads.map((r) => [r.uid, r.at])).toEqual([['uid-A', 0], ['uid-A', 1 * S]]);
+    expect(last()).toMatchObject({ ownerUid: 'uid-A', ownerEpoch: 3, status: 'ready' });
+  });
+
+  it('the window\'s own focus event refreshes a window 130 s old — once', async () => {
+    const reads = [];
+    render(<SeamProbe seams={seamsAt(reads)} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(130 * S); });
+    expect(reads).toHaveLength(1);
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(reads.map((r) => r.at)).toEqual([0, 130 * S]);
+  });
+
+  it('focus inside 120 s of the last cycle asks for nothing: no read, nothing queued', async () => {
+    const reads = [];
+    render(<SeamProbe seams={seamsAt(reads)} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(reads).toHaveLength(1);
+    expect(last().nextAttemptAt).toBeNull();
+  });
+
+  it('a hub mounted in a hidden page waits to be shown: nothing is read until the page is visible', async () => {
+    visibility = 'hidden';
+    const reads = [];
+    render(<SeamProbe seams={seamsAt(reads)} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5 * S); });
+    expect(reads).toHaveLength(0);
+    visibility = 'visible';
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    expect(reads).toHaveLength(1);
+  });
+
+  it('unmount removes every page listener it added (spec §6 "Unmount … clears timers"; a leaked listener outlives the hub on every site switch)', async () => {
+    // Pass-through spies: React's own listeners still register.
+    const [docAdd, docRemove, winAdd, winRemove] = [document, window].flatMap((target) => ['addEventListener', 'removeEventListener'].map((m) => vi.spyOn(target, m)));
+    try {
+      render(<SeamProbe seams={seamsAt([])} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+      const mine = (spy) => spy.mock.calls.filter(([type]) => type === 'visibilitychange' || type === 'focus');
+      expect(mine(docAdd).map(([type]) => type)).toEqual(['visibilitychange']);
+      expect(mine(winAdd).map(([type]) => type)).toEqual(['focus']);
+      act(() => root.unmount());
+      for (const [add, remove] of [[docAdd, docRemove], [winAdd, winRemove]]) {
+        for (const [type, fn] of mine(add)) expect(mine(remove).some(([t, f]) => t === type && f === fn), type).toBe(true);
+      }
+      root = createRoot(host);
+    } finally {
+      for (const spy of [docAdd, docRemove, winAdd, winRemove]) spy.mockRestore();
+    }
   });
 });
