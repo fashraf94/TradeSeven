@@ -100,6 +100,13 @@ describe('the kinds, their ids and their words (R-S4-1)', () => {
     expect(ids(activity).every((id) => /^(completed|deployed|loadout):/.test(id))).toBe(true);
   });
 
+  it('a record handed in twice is one row of each kind (spec §8.2: dedupe by the kind-specific id)', () => {
+    const activity = run({ battles: [done(1), done(1), done(3)], agent: agentOf() });
+    expect(ids(activity).filter((id) => id === 'completed:done_1')).toHaveLength(1);
+    expect(ids(activity).filter((id) => id === 'deployed:done_1')).toHaveLength(1);
+    expect(new Set(ids(activity)).size).toBe(ids(activity).length);
+  });
+
   it('a time that cannot be read yields no row: a completed record with no completedAt is not listed', () => {
     const broken = { ...done(2), completedAt: 'soon', activatedAt: undefined };
     const activity = run({ battles: [done(1), broken] });
@@ -242,6 +249,8 @@ describe('loadout rows exist only where an equip time is recorded (R-S4-1)', () 
     ['an empty watchlist id', { equippedWatchlistId: '  ' }],
   ])('%s: no watchlist row, and none invented', (_, over) => {
     expect(ids(run({ agent: agentOf(over) })).some((id) => id.startsWith('loadout:'))).toBe(false);
+    // ...also with no completed record at all, where no cutoff stands in the way and the current-state rows are all there is.
+    expect(ids(run({ battles: [], agent: agentOf(over) }))).toEqual([]);
   });
 
   it('a list with no recorded name still has its row, named plainly', () => {
@@ -302,8 +311,18 @@ describe('adjustment rows: the standing leans a game would carry, at their recor
     expect(rows[0].ms).toBe(Date.UTC(2026, 9, 22, 8, 0));
   });
 
+  it('a pin stored twice at the same version is the kernel\'s FIRST one (the second is its duplicate): the first entry\'s time, not the newer', () => {
+    const rows = adjustmentRows(withLeans([
+      lean('SP-01', { equippedAt: iso(Date.UTC(2026, 9, 21, 8, 0)) }),
+      lean('SP-01', { equippedAt: iso(Date.UTC(2026, 9, 22, 8, 0)) }),
+    ]));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ms).toBe(Date.UTC(2026, 9, 21, 8, 0));
+  });
+
   it('an accepted lean with no readable equip time has no row', () => {
     expect(adjustmentRows(withLeans([lean('SP-01', { equippedAt: undefined }), lean('SP-02', { equippedAt: 'x' })]))).toEqual([]);
+    expect(adjustmentRows(withLeans([lean('SP-01', { equippedAt: undefined }), lean('SP-02', { equippedAt: 'x' })], { battles: [] }))).toEqual([]);
   });
 
   it('without the Forge\'s Character tab (RELEASE3_CHARACTER_TAB_ENABLED) leans are not a surface: no adjustment row', () => {

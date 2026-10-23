@@ -82,7 +82,8 @@ describe('the priority (spec §8.2)', () => {
   it('2 · a game whose time cannot be read sorts after those whose time can', () => {
     const odd = done(1, { id: 'g_odd', completedAt: 'whenever' });
     const fine = done(2);
-    expect(pick({ battles: [odd, fine], reviews: readyFor(odd, fine) }).id).toBe('done_2');
+    // Either arrival order: a comparator is called both ways round, and each branch of it must put the unreadable one last.
+    for (const battles of [[odd, fine], [fine, odd]]) expect(pick({ battles, reviews: readyFor(odd, fine) }).id).toBe('done_2');
   });
 
   it('2 · a pending, unavailable, checking, queued or timed-out review is never a candidate', () => {
@@ -111,6 +112,16 @@ describe('the priority (spec §8.2)', () => {
     expect(c.key).toBe(NEXT_ACTION_KINDS.OPEN_GAME);
     const afterLater = pick({ battles, liveDocs: [live('done_1')], reviews: readyFor(...battles), dismissed: new Set(['openGame:done_1']) });
     expect(afterLater).toBeNull();
+  });
+
+  it('2 · and not even from a display row that says its tape is ready: the game is live, so it is no review candidate whatever the rows hold', () => {
+    const battles = [done(1)];
+    const base = inputs({ battles, liveDocs: [live('done_1')], reviews: readyFor(...battles) });
+    // A row set that (wrongly) still carries the completed row of the live game.
+    const withBoth = new Map([...base.rowsById, ...completedGameRows(battles, readyFor(...battles)).map((row) => [row.id, row])]);
+    expect(withBoth.get('done_1').review).toBe(true);
+    const c = deriveNextAction({ ...base, rowsById: withBoth, dismissed: new Set(['openGame:done_1']) }).candidate;
+    expect(c).toBeNull();
   });
 
   it('3 · the first deployment, only when the selector says so', () => {

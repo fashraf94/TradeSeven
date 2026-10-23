@@ -121,7 +121,9 @@ export function formatHubMarketDate(text) {
   if (!m) return '';
   const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
   const probe = new Date(Date.UTC(year, month - 1, day, 12));
-  if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) return '';
+  // A day past the month's end (Feb 30, day 00) rolls the month, a month 00 or 13 rolls the year, and a year under 100 is read as 19xx:
+  // each lands on a different year or month, so these two comparisons are the whole calendar check.
+  if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1) return '';
   const parts = Object.fromEntries(MARKET_DAY_PARTS.formatToParts(probe).map((p) => [p.type, p.value]));
   return `${parts.weekday} ${parts.month} ${parts.day}`;
 }
