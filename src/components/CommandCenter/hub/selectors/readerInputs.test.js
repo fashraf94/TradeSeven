@@ -7,7 +7,7 @@
 // background run, and the owner's live documents only.
 
 import { describe, expect, it } from 'vitest';
-import { agentInputOf, authInputOf, completedInputOf, ownedLiveList, pollInputOf } from './readerInputs';
+import { agentInputOf, authInputOf, completedInputOf, loadoutAgentOf, ownedLiveList, pollInputOf } from './readerInputs';
 import { deriveHubDeployState } from './deployState';
 import { HUB_S2A_DEPLOY_INPUTS } from '../hubModel';
 
@@ -33,6 +33,35 @@ describe('agentInputOf', () => {
       .toEqual({ status: 'error', agent: null, ownerUid: 'uid-A', ownerEpoch: 2, error: failure });
     expect(agentInputOf({ status: 'loading', agent: { id: 'stale' } })).toMatchObject({ status: 'loading', agent: null, ownerUid: null });
     expect(agentInputOf(undefined)).toMatchObject({ status: 'loading' });
+  });
+});
+
+describe('loadoutAgentOf — S5\'s Loadout reads the same owner-tagged read (the S3 merge with S5; N-S5-6)', () => {
+  const AUTH = Object.freeze({ signedIn: true, uid: 'uid-A', authEpoch: 2 });
+  const retry = () => {};
+  const read = (over = {}) => agentInputOf({ status: 'ready', agent: { id: 'ag-A' }, ownerUid: 'uid-A', ownerEpoch: 2, readError: null, ...over });
+
+  it('this identity\'s ready read: the document, ready, and the read\'s own Retry', () => {
+    expect(loadoutAgentOf(read(), AUTH, retry)).toEqual({ status: 'ready', agent: { id: 'ag-A' }, retry });
+    expect(Object.isFrozen(loadoutAgentOf(read(), AUTH, retry))).toBe(true);
+  });
+
+  it('a ready read with no document is absence; a failed read is an error, never absence', () => {
+    expect(loadoutAgentOf(read({ agent: null }), AUTH, retry)).toEqual({ status: 'ready', agent: null, retry });
+    expect(loadoutAgentOf(read({ status: 'error', readError: new Error('denied') }), AUTH, retry)).toEqual({ status: 'error', agent: null, retry });
+  });
+
+  it('another owner\'s read, or this uid\'s at another epoch, is still loading: its document never shows', () => {
+    expect(loadoutAgentOf(read({ ownerUid: 'uid-B' }), AUTH, retry)).toEqual({ status: 'loading', agent: null, retry });
+    expect(loadoutAgentOf(read({ ownerEpoch: 1 }), AUTH, retry)).toEqual({ status: 'loading', agent: null, retry });
+    expect(loadoutAgentOf(read({ status: 'error', ownerUid: 'uid-B' }), AUTH, retry)).toEqual({ status: 'loading', agent: null, retry });
+    expect(loadoutAgentOf(agentInputOf({ status: 'loading' }), AUTH, retry)).toEqual({ status: 'loading', agent: null, retry });
+  });
+
+  it('unresolved identity: loading; signed out: absence, as App\'s own read gave before the merge', () => {
+    expect(loadoutAgentOf(read(), null, retry)).toEqual({ status: 'loading', agent: null, retry });
+    expect(loadoutAgentOf(read(), { signedIn: false }, retry)).toEqual({ status: 'ready', agent: null, retry });
+    expect(loadoutAgentOf(undefined, AUTH, retry)).toEqual({ status: 'loading', agent: null, retry });
   });
 });
 

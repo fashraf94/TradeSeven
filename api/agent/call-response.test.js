@@ -26,6 +26,9 @@ vi.mock('../_utils/callRecords/allowlist.js', async (importOriginal) => ({ ...(a
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get CALL_RECORDS_MODE() { return state.callsMode; },
+  // Cockpit Build 2b ships ON since its flip. This suite is the v1 wire's (the endpoint as at HEAD, 2b
+  // off), so the accessor is forced off here; call-response.2b.test.js drives it on.
+  isCockpit2bOn: () => false,
 }));
 vi.mock('../_utils/agentChatBudget.js', async (importOriginal) => ({ ...(await importOriginal()), resolveBudgetDay: async (_db, battle) => state.resolveImpl(battle) }));
 let activeDb = null;

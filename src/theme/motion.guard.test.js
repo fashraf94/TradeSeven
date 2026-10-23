@@ -196,6 +196,22 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/hub/selectors/readerInputs.js',
   'src/components/CommandCenter/hub/useHubCompletedBattles.js',
   'src/components/CommandCenter/hub/useHubReaders.js',
+  // Command Center hub, S5 (the owner's Loadout, the retained entry points, the
+  // overlay stack and the App-side predicates): token-only and motion-token-only
+  // from birth, registered in the commit that introduces them (hazard 34).
+  'src/components/CommandCenter/LoadoutSheets.jsx',
+  'src/components/CommandCenter/hubChrome.js',
+  'src/components/CommandCenter/__fixtures__/legacySheetStubs.jsx',
+  'src/components/CommandCenter/hub/HubOverlays.jsx',
+  'src/components/CommandCenter/hub/archetypeLines.js',
+  'src/components/CommandCenter/hub/hubFlags.js',
+  'src/components/CommandCenter/hub/loadoutLine.js',
+  'src/components/CommandCenter/hub/overlayStack.js',
+  'src/components/CommandCenter/hub/useHubLoadout.js',
+  'src/components/CommandCenter/hub/useHubRuntime.js',
+  'src/components/CommandCenter/hub/useHubSheets.js',
+  'src/components/CommandCenter/hub/selectors/loadout.js',
+  'src/components/CommandCenter/hubFallbackSignal.jsx',
 ];
 
 /**

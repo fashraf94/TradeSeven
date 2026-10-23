@@ -32,9 +32,15 @@ export function AreaBody({ area, sections, actions }) {
   return (
     <LoadoutPanel
       loadout={sections.loadout}
+      onOpenRecord={actions.openRecord}
       onChangeArchetype={actions.changeArchetype}
       onChangeWatchlist={actions.changeWatchlist}
+      onChangeAdjustments={actions.changeAdjustments}
       onOpenForge={actions.openLoadoutForge}
+      onOpenForgeLists={actions.openForgeLists}
+      onOpenForgeCharacter={actions.openForgeCharacter}
+      onRetryLists={actions.retryLists}
+      onRetryAgent={actions.retryAgent}
     />
   );
 }

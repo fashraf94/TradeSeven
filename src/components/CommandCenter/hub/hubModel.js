@@ -32,13 +32,23 @@
 //                 retryBlock }                                         §3.1 (S2a)
 //               The hub root fills it from the selector (ruling R-S2A-3);
 //               HUB_S1_SECTIONS carries no hand-written one.
-//   loadout     { status, archetype?: { name, approach },
-//                 watchlist?: { name, symbols }, summary?,
-//                 lockedInGame? }                                      §2 (S5)
+//   loadout     { status: 'loading' | 'none' | 'error' | 'ready',       §2 (S5)
+//                 identity?: { name }, archetype?: { name, approach },
+//                 watchlist?: { state: 'none' | 'loading' | 'ready' |
+//                   'unavailable' | 'error', id, name, symbols, count,
+//                   idea: 'universe' | 'plain' | 'neutral' },
+//                 adjustments?: { equipped, name, sub, door } | null,
+//                 lockedInGame?, summary? }
+//               hub/selectors/loadout.js deriveLoadout; `none` is a resolved
+//               absence of the ranked agent, `error` its failed read (the
+//               S3 merge, N-S5-6), `summary` the root's one-line
+//               loadout (the area control's and the stage's words)
 //   research    { status }                                             §8.1 (S6)
 //   activity    { status, rows: [{ id, kind, text, sub, at }] }        §8.2 (S4)
 //   brief       { status, caption?, body? }                            §8.3 (S4)
-//   career      { status, record? }                                    §7 (S5)
+//   career      { status: 'loading' | 'ready' | 'unavailable', record? } §7 (S5)
+//               record is `${wins}W-${losses}L` as stored, draws excluded;
+//               absent or malformed operands read `unavailable`
 //
 // Partnership takes no prop: it is the reserved panel (§8.3), with no read.
 //
@@ -153,3 +163,5 @@ export const DESKTOP_COMPLETED_LIMIT = 2;
 export const PHONE_ACTIVITY_LIMIT = 3;
 /** The phone Overview shows at most three completed rows (spec §8.2; slice S3). */
 export const PHONE_COMPLETED_LIMIT = 3;
+/** The watchlist card draws this many names, then "+N more": a list can hold far more than a card can read. */
+export const LOADOUT_SYMBOL_LIMIT = 24;

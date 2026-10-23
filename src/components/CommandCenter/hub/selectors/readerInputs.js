@@ -17,6 +17,8 @@
 //              background run never reads "Refreshing"
 //   completed  from the ten-game window (R-S3-5), for the first-deployment
 //              candidate only
+//   loadout    loadoutAgentOf: the same agent read, for S5's Loadout (the S3
+//              merge with S5), owner-masked, with the read's status and Retry
 //
 // ownedLiveList is the gate's own owned set (deployState.js ownedLiveBattles
 // over the retained list) for the current identity: Games' live rows come
@@ -42,6 +44,22 @@ export function agentInputOf(reader) {
     ownerEpoch: reader?.ownerEpoch ?? null,
     error: reader?.readError ?? null,
   });
+}
+
+/**
+ * The Loadout's agent (slice S5), from the same owner-tagged read the deploy selector takes (the S3 merge with S5:
+ * App hands the hub no agent). The document shows only when the read is ready and this identity's; a read of
+ * another owner or epoch is still loading. `status` splits the no-document state (S5 report N-S5-6): 'error' is
+ * "Agent unavailable · Retry", a ready read with no document is absence. Signed out there is no agent to read:
+ * absence, as before. `retry` is the read's own Retry, handed through as given.
+ */
+export function loadoutAgentOf(agentInput, auth, retry) {
+  if (!auth) return Object.freeze({ status: LOADING, agent: null, retry });
+  if (auth.signedIn !== true) return Object.freeze({ status: 'ready', agent: null, retry });
+  const mine = agentInput?.ownerUid === auth.uid && agentInput?.ownerEpoch === auth.authEpoch;
+  if (!mine) return Object.freeze({ status: LOADING, agent: null, retry });
+  const status = agentInput.status ?? LOADING;
+  return Object.freeze({ status, agent: status === 'ready' ? agentInput.agent ?? null : null, retry });
 }
 
 export function pollInputOf(meta, list, identity) {

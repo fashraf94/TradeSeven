@@ -38,6 +38,9 @@ vi.mock('./hub/useHubCompletedBattles', () => ({
   default: () => { r.windowCalls += 1; return r.window; },
 }));
 vi.mock('../../utils/marketSchedule', () => ({ getMarketState: () => r.market }));
+// Since the merge with S5 the connected hub also runs S5's Loadout, whose lists read is the network; these rows are
+// about the readers, so it answers no lists (S5's own suites drive it).
+vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists: async () => [] }));
 
 import CommandCenterHub from './CommandCenterHub';
 import { HUB_COPY as COPY } from './hub/hubCopy';
@@ -664,5 +667,56 @@ describe('the Games rows\' marks and notes (S3 review T5-14)', () => {
     mounted.push(m);
     expect(m.host.textContent).toMatch(/Refreshing · as of \d{1,2}:\d{2} [AP]M ET/);
     expect(byRole(m.host, 'button', COPY.games.retry)).toHaveLength(0);
+  });
+});
+
+describe('the merge with S5: one agent source for the deploy state and the Loadout (S5 report N-S5-6)', () => {
+  const loadout = () => document.querySelector('[data-hub-panel="loadout"]');
+  const NOVA = { id: 'agent-a', name: 'Nova', archetype: 'momentum_chaser', stats: { gamesPlayed: 3, wins: 1, losses: 0 } };
+
+  it('this owner\'s ready read: the Loadout shows that agent, and App hands the hub no agent of its own', () => {
+    r.agent = agentReady({ agent: NOVA });
+    render('desktop', hubOf());
+    expect(loadout().getAttribute('data-hub-status-of')).toBe('ready');
+    expect(loadout().textContent).toContain('Nova');
+    expect(r.agentCalls.at(-1)).toEqual([UID, { ownerEpoch: 2 }]);
+  });
+
+  it('another owner\'s read, or this uid\'s at another epoch, never reaches the Loadout: it is still loading', () => {
+    for (const over of [{ ownerUid: 'uid-B' }, { ownerEpoch: 1 }]) {
+      r.agent = agentReady({ agent: { ...NOVA, name: 'Someone Else' }, ...over });
+      const m = render('desktop', hubOf());
+      expect(loadout().getAttribute('data-hub-status-of'), JSON.stringify(over)).toBe('loading');
+      expect(loadout().textContent).not.toContain('Someone Else');
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+    }
+  });
+
+  it('a failed read: "Agent unavailable" and Retry, the read\'s own — never "Create your agent first"', () => {
+    r.agent = agentReady({ status: 'error', agent: null, readError: new Error('permission-denied') });
+    render('desktop', hubOf());
+    expect(loadout().getAttribute('data-hub-status-of')).toBe('error');
+    expect(loadout().textContent).toContain(COPY.loadout.agentUnavailable);
+    expect(loadout().textContent).not.toContain(COPY.loadout.noAgent);
+    click(byRole(loadout(), 'button', COPY.loadout.retry)[0]);
+    expect(r.agent.retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('a ready read with no agent: absence, "Create your agent first", with no Retry', () => {
+    r.agent = agentReady({ agent: null });
+    render('desktop', hubOf());
+    expect(loadout().getAttribute('data-hub-status-of')).toBe('none');
+    expect(loadout().textContent).toContain(COPY.loadout.noAgent);
+    expect(byRole(loadout(), 'button', COPY.loadout.retry)).toHaveLength(0);
+  });
+
+  it('phone: the Loadout tab says the same, and its Retry is the read\'s', () => {
+    r.agent = agentReady({ status: 'error', agent: null, readError: new Error('unavailable') });
+    render('mobile', hubOf());
+    click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
+    expect(loadout().getAttribute('data-hub-status-of')).toBe('error');
+    click(byRole(loadout(), 'button', COPY.loadout.retry)[0]);
+    expect(r.agent.retry).toHaveBeenCalledTimes(1);
   });
 });

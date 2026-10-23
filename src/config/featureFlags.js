@@ -2920,7 +2920,7 @@ export function isCockpitUiOn() {
  * docs/COCKPIT_BUILD2B_SPEC_V1_0.md S-11, §10; contract Amendment D,
  * docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_D.md).
  *
- * COCKPIT_2B_ENABLED — DARK, default FALSE. When FALSE (the shipped state) the
+ * COCKPIT_2B_ENABLED — ON, default TRUE. When FALSE (the rollback) the
  * Build 2a screen renders as shipped plus the fixes the spec's §2 marks "from
  * merge" (the mint fields, the one swappable test, retire on exit, the one
  * expiry label, Following your call, one card per stock plan, Acted wins, the
@@ -2955,7 +2955,7 @@ export function isCockpitUiOn() {
  *      (the shipped state)") reworded to the live state.
  */
 // Pinned by: cockpit2bFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const COCKPIT_2B_ENABLED = false;
+export const COCKPIT_2B_ENABLED = true;
 
 /** The ONE seam for the 2b flag, read at call time by the server and at render by the client: the flag and nothing else. */
 export function isCockpit2bOn() {

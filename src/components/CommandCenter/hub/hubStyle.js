@@ -63,6 +63,22 @@ export const AREA_TOKEN = Object.freeze(['teal', 'teal', 'gold']);
 export const PHONE_TARGET = 44;
 
 /**
+ * The narrowest a Loadout card may be before the cards stack (S5 ruling R-S5-8).
+ * The panel lays its cards in `repeat(auto-fit, minmax(LOADOUT_CARD_MIN px, 1fr))`
+ * on its OWN width, so two cards sit side by side only where each keeps this
+ * much room, and a resize, zoom or rotation changes only CSS (nothing remounts).
+ *
+ * 240 is the measurement (headless Edge, the platform sans — Segoe UI): the
+ * longest display name, "Fundamental Investor", is 201 px at 20 px bold, and the
+ * card's padding is 16 px a side, so a card needs 233 px to keep it on one line;
+ * 240 leaves 7 px for the width of other faces. At 360 and 390 (panel 332 and
+ * 362) the cards stack; at the 614 px stacked hub (panel 524) they sit two up at
+ * 257 px; at the narrowest desktop site (panel 459) they stack. Nothing was
+ * truncated or clipped at any width tried (S5 report, "stacking breakpoint").
+ */
+export const LOADOUT_CARD_MIN = 240;
+
+/**
  * The hub's box model. The design assumes `* { box-sizing: border-box }`
  * (ff-ui.jsx injectFfCSS); the app ships no such rule (its Tailwind v4 build
  * ignores the `@tailwind base` directive in index.css, so every element is

@@ -15,6 +15,10 @@
 //              S2b's provider too)
 //   completed  useHubCompletedBattles(10) — the window and its reviews
 //
+// It also returns `agent`, the same owner-tagged read for S5's Loadout
+// (selectors/readerInputs.js loadoutAgentOf): since the S3 merge with S5 App
+// hands the hub no agent, so the deploy state and the Loadout read one source.
+//
 // It returns the Games and Deploy sections and the actions S3 wires: open a
 // game (App's handleOpenAgentBattle), open a battle tape (App's legacy Film
 // Room path, origin dashboard, only for a ready review whose target is the
@@ -34,7 +38,7 @@ import { completedGameRows, liveGameRows } from './gamesDisplay';
 import { HUB_S2A_DEPLOY_INPUTS } from './hubModel';
 import { REVIEW_TRIGGERS } from './reviewScheduler';
 import { RETRY_ACTIONS, deriveHubDeployState } from './selectors/deployState';
-import { agentInputOf, authInputOf, completedInputOf, ownedLiveList, pollInputOf } from './selectors/readerInputs';
+import { agentInputOf, authInputOf, completedInputOf, loadoutAgentOf, ownedLiveList, pollInputOf } from './selectors/readerInputs';
 import useHubCompletedBattles from './useHubCompletedBattles';
 
 /**
@@ -67,7 +71,8 @@ function gamesSectionOf(completed, liveRows, liveResolved) {
 
 /**
  * @param {object} hub  App's object (CommandCenterHubGate's `hub`): activeBattles, activePoll,
- *                      refreshActiveBattles, openGame, openFilmRoom — and S5's keys
+ *                      refreshActiveBattles, openGame, openFilmRoom — and S5's keys, which
+ *                      hub/useHubRuntime.js reads
  */
 export default function useHubReaders(hub) {
   const identity = useAuthIdentity();
@@ -134,5 +139,6 @@ export default function useHubReaders(hub) {
     },
   };
 
-  return { sections: { games, deploy }, actions, inputs };
+  // The Loadout's agent (slice S5) is this same read, never App's (the S3 merge with S5).
+  return { sections: { games, deploy }, actions, inputs, agent: loadoutAgentOf(inputs.agent, auth, agent.retry) };
 }

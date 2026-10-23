@@ -259,12 +259,17 @@ async function mountWithHub() {
   expect(await waitUntil(() => gate.props !== null && openQueries().length > 0), 'App reached the hub gate and its first poll query is out').toBe(true);
 }
 
-describe('the hub object at both sites (R-S3-10): the same five keys, live', () => {
+describe('the hub object at both sites (R-S3-10, merged with S5\'s R-S5-9): S3\'s five keys and S5\'s four, live — no agent', () => {
   it.each([['desktop', false], ['mobile', true]])('%s: the retained list, the poll\'s metadata, the refresh and both open handlers', async (site, mobile) => {
     viewport.mobile = mobile;
     await mountWithHub();
     expect(gate.props.site).toBe(site);
-    expect(Object.keys(hub()).sort()).toEqual(['activeBattles', 'activePoll', 'openFilmRoom', 'openGame', 'refreshActiveBattles']);
+    // The live games are one key and the agent is none: the hub reads it through its own owner-tagged reader.
+    expect(Object.keys(hub()).sort()).toEqual([
+      'activeBattles', 'activePoll', 'onOpenForge', 'openFilmRoom', 'openGame', 'refreshActiveBattles', 'setScreen', 'setSidebarOpen', 'unreadCount',
+    ]);
+    for (const key of ['onOpenForge', 'setScreen', 'setSidebarOpen']) expect(typeof hub()[key], key).toBe('function');
+    expect(hub().unreadCount).toBe(0);
     expect(hub().activeBattles).toEqual([]);
     expect(hub().activePoll).toMatchObject({ status: 'loading', ownerUid: null, ownerEpoch: null, lastSuccessfulAt: null, error: null, refreshing: false });
     await answer(openQueries()[0], 'uid-A', ['bb_1']);

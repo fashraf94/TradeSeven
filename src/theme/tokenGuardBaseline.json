@@ -150,6 +150,19 @@
     "src/components/CommandCenter/hub/selectors/gameOutcome.js": {},
     "src/components/CommandCenter/hub/selectors/readerInputs.js": {},
     "src/components/CommandCenter/hub/useHubCompletedBattles.js": {},
-    "src/components/CommandCenter/hub/useHubReaders.js": {}
+    "src/components/CommandCenter/hub/useHubReaders.js": {},
+    "src/components/CommandCenter/LoadoutSheets.jsx": {},
+    "src/components/CommandCenter/hubChrome.js": {},
+    "src/components/CommandCenter/__fixtures__/legacySheetStubs.jsx": {},
+    "src/components/CommandCenter/hub/HubOverlays.jsx": {},
+    "src/components/CommandCenter/hub/archetypeLines.js": {},
+    "src/components/CommandCenter/hub/hubFlags.js": {},
+    "src/components/CommandCenter/hub/loadoutLine.js": {},
+    "src/components/CommandCenter/hub/overlayStack.js": {},
+    "src/components/CommandCenter/hub/useHubLoadout.js": {},
+    "src/components/CommandCenter/hub/useHubRuntime.js": {},
+    "src/components/CommandCenter/hub/useHubSheets.js": {},
+    "src/components/CommandCenter/hub/selectors/loadout.js": {},
+    "src/components/CommandCenter/hubFallbackSignal.jsx": {}
   }
 }

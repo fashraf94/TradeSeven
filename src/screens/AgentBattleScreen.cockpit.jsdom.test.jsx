@@ -72,6 +72,9 @@ vi.mock('../config/featureFlags', async (importOriginal) => {
     isBattleViewControllerOn: () => true,
     isCharacterPaneOn: () => true,
     isCockpitUiOn: () => (FLAG.cockpit === null ? actual.isCockpitUiOn() : FLAG.cockpit),
+    // Cockpit Build 2b ships ON since its flip. This suite is the 2a screen's, so the 2b accessor is
+    // forced off here; AgentBattleScreen.cockpit2b.jsdom.test.jsx mounts the 2b screen.
+    isCockpit2bOn: () => false,
   };
 });
 vi.mock('../services/eodhdAPI', () => ({

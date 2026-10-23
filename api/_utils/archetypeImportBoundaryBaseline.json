@@ -41,6 +41,7 @@
   "src/components/Agent/AgentEvolutionTab.ARCHIVED.jsx",
   "src/components/Agent/AgentLeaderboardTab.ARCHIVED.jsx",
   "src/components/Agent/AgentSidebar.ARCHIVED.jsx",
+  "src/components/CommandCenter/hub/archetypeLines.js",
   "src/components/Dashboard/AgentRecordSheet.jsx",
   "src/components/Dashboard/ArchetypePicker.jsx",
   "src/components/Dashboard/DeployStation.jsx",

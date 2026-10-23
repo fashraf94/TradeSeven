@@ -25,6 +25,7 @@ export default function HistorySheet({ games, career, phone, onClose, opener, fa
   const ready = games?.status === 'ready';
   const failed = games?.status === 'error';
   const record = career?.status === 'ready' && career.record ? career.record : null;
+  const unavailable = career?.status === 'unavailable';
   return (
     <HubSheet
       phone={phone}
@@ -41,6 +42,9 @@ export default function HistorySheet({ games, career, phone, onClose, opener, fa
           <Mono style={{ fontSize: 20, fontWeight: 700, color: C.ink }}>{record}</Mono>
           <span style={{ fontSize: 12.5, color: C.ink3 }}>{COPY.history.careerCaption}</span>
         </div>
+      )}
+      {unavailable && (
+        <div data-hub-career-unavailable="" style={{ marginBottom: 12, fontSize: 12.5, color: C.ink3 }}>{COPY.history.careerUnavailable}</div>
       )}
       {!ready && !failed && <GamesLoadingLine games={games} />}
       {failed && <GamesReadNote games={games} onRetry={onRetry} />}

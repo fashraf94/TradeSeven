@@ -21,13 +21,47 @@
 //   3. the gate renders only on the hub pick, framed on desktop by the same
 //      sidebar offset CommandDashboardDesktop sits in;
 //   4. nothing reaches the hub chunk except the gate's dynamic import, and the
-//      hub-side modules hold no read, timer, listener or effect beyond S1's
-//      listed allowances (the ResizeObservers that measure the hub, the
-//      sheet's focus effect, useUser for the header).
+//      hub-side modules hold no read, timer, listener or effect beyond the
+//      listed allowances (S1: the ResizeObservers that measure the hub, the
+//      sheet's focus effect, useUser for the header; S5: the three effects
+//      below and the gate's fallback signal).
 // Together with the gate suites (rendering the gate is the only thing that
 // calls the import) this is the flag-off guarantee: with the hub flag false
 // the pick is the legacy shell, the gate is never rendered, and the chunk is
 // never requested.
+//
+// S5 moved this guard in the ways its rulings force, and in no other:
+//   - R-S5-9: each gate is handed `hub={hubProps}` beside its site (the pinned
+//     site text, the whole-block row and the gate's own props row moved with it);
+//   - R-S5-7 again, review E1-1: each gate is also handed `onFallback={setHubFallback}`
+//     so App can give the bug button and the season banner back while the legacy
+//     fallback is on screen (the same rows, the gate's import list, and one more
+//     allowance: hubFallbackSignal.jsx's single layout effect, rendered only inside
+//     the gate's fallback, with its own negatives);
+//   - R-S5-7: App's two chrome conditions read hubOwnsDashboard (hubChrome.js),
+//     a third static edge from App into this directory (the edge row), pinned
+//     as text in the S5 rows below;
+//   - R-S5-1, R-S5-4: the hub now reaches the shipped sheets and services
+//     (PERMITTED_TERMINALS) and has three effects (ALLOWED_ACTIVITY), each with
+//     the negatives that keep it to itself; the selector list gained loadout.js.
+// What it protects, after S5: the legacy elements' props, the single pick, the
+// lazy chunk, the fixtures fence and the URL fence all pin what they pinned. Two
+// things are narrower, and said so: (1) the "single flag read" now covers the
+// pick; hubOwnsDashboard reads the same pure accessor as a default parameter, so
+// App reads it twice per render and the two cannot diverge (review E1-2); (2) the
+// import walk stops at every PERMITTED_TERMINALS module without entering it, so
+// the "no firebase" and "no activity" rows no longer see inside the shipped
+// sheets and services the hub reaches. The S5 rows below name what the hub takes
+// from them (which exports; the one importer of the archetype tables; the only
+// writes), and each terminal's own effects remain its own owner's.
+//
+// S3 merged after S5 (the founder's merge round). App's one `hub={hubProps}`
+// object carries both slices' keys: the live games as one key (activeBattles,
+// the retained poll list), the poll's metadata and refresh, the open handlers
+// and S5's keys. S5's agent keys are gone, because the hub reads the agent
+// through S3's owner-tagged reader. The S5 row that pins the object's text now
+// pins the merged object (HUB_PROPS). S3's own gate-text rows were folded into
+// S5's, which pin `hub={hubProps}` at both sites.
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -57,15 +91,16 @@ function dashboardBlock() {
 const BLOCK = dashboardBlock();
 
 /**
- * Slice S3 (ruling R-S3-10): each site hands the gate App's data in ONE `hub`
- * object, written here as siteTree() below normalizes a site. S5 adds its own
- * keys to the same object and moves this text with them.
+ * Slices S3 and S5 (rulings R-S3-10, R-S5-9): App's data and actions for the
+ * hub, ONE object handed to both gates as `hub={hubProps}`, written here as
+ * the whitespace-collapsed App source reads it. The live games are one key
+ * (`activeBattles`, the retained poll list the gate reads) and the agent is
+ * not on it: the hub reads it through its own owner-tagged reader (the S3
+ * merge with S5). A key S2b or S6 adds moves this text with it.
  */
-const HUB_OBJECT = "hub={{ activeBattles: activeAgentBattles, activePoll: activeAgentBattlesPoll, refreshActiveBattles, openGame: handleOpenAgentBattle, openFilmRoom: (battle) => { setCurrentBattle(battle); setScreen('filmRoom'); }, }}";
-const normalized = (code) => code.replace(/\{\s*\}/g, '').replace(/\s+/g, ' ').trim();
-const MOBILE_GATE = `{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? ( <CommandCenterHubGate site="mobile" legacy={legacyDashboard} ${HUB_OBJECT} /> ) : legacyDashboard}`;
-const DESKTOP_GATE = '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? ( <CommandCenterHubGate site="desktop" legacy={legacyDesktopDashboard} '
-  + `frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>} ${HUB_OBJECT} /> ) : legacyDesktopDashboard}`;
+const HUB_PROPS = "const hubProps = { activeBattles: activeAgentBattles, activePoll: activeAgentBattlesPoll, refreshActiveBattles, "
+  + "openGame: handleOpenAgentBattle, openFilmRoom: (battle) => { setCurrentBattle(battle); setScreen('filmRoom'); }, "
+  + 'setScreen, onOpenForge, setSidebarOpen, unreadCount, };';
 
 describe('S0 mount sites — one pick, read by both sites', () => {
   it('the pick is made once, inside the dashboard block, from the four named inputs', () => {
@@ -116,8 +151,10 @@ describe('S0 mount sites — the mobile site', () => {
     expect(BLOCK).toMatch(/const legacyDashboard = \(\s*<DashboardComponent\b/);
   });
 
-  it('renders the gate only on the hub pick, handing it its site, that same legacy element, unframed, and App\'s hub object (S3)', () => {
-    expect(normalized(BLOCK)).toContain(MOBILE_GATE);
+  it('renders the gate only on the hub pick, handing it its site, App\'s one hub object (S3, S5) and that same legacy element, unframed', () => {
+    expect(BLOCK).toMatch(
+      /\{dashboardPick\.shell === DASHBOARD_SHELLS\.HUB\s*\?\s*<CommandCenterHubGate site="mobile" hub=\{hubProps\} legacy=\{legacyDashboard\} onFallback=\{setHubFallback\} \/>\s*:\s*legacyDashboard\}/,
+    );
   });
 });
 
@@ -133,8 +170,10 @@ describe('S0 mount sites — the desktop site', () => {
     expect(desktopShell.slice(0, desktopShell.indexOf('/>'))).toContain('sidebarCollapsed={sidebarCollapsed}');
   });
 
-  it('renders the gate only on the hub pick, with its site, that legacy element, the sidebar offset as its frame, and App\'s hub object (S3)', () => {
-    expect(normalized(BLOCK)).toContain(DESKTOP_GATE);
+  it('renders the gate only on the hub pick, with its site, App\'s one hub object (S3, S5), that legacy element and the sidebar offset as its frame', () => {
+    expect(BLOCK).toMatch(
+      /\{dashboardPick\.shell === DASHBOARD_SHELLS\.HUB \? \(\s*<CommandCenterHubGate\s+site="desktop"\s+hub=\{hubProps\}\s+legacy=\{legacyDesktopDashboard\}\s+frame=\{\(hubOutput\) => <div style=\{sidebarOffsetStyle\}>\{hubOutput\}<\/div>\}\s+onFallback=\{setHubFallback\}\s*\/>\s*\) : legacyDesktopDashboard\}/,
+    );
   });
 });
 
@@ -162,7 +201,7 @@ describe('S0 mount sites — each site\'s whole tree: the Dashboard boundary, th
     expect(siteTree('if (isMobile) {')).toBe(
       'return ( <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen(\'home\'); }}> <div style={containerStyle}> '
       + '{isStarfieldMobileOn() ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />} '
-      + `${MOBILE_GATE} `
+      + '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? <CommandCenterHubGate site="mobile" hub={hubProps} legacy={legacyDashboard} onFallback={setHubFallback} /> : legacyDashboard} '
       + '</div> </ErrorBoundary>',
     );
   });
@@ -171,7 +210,8 @@ describe('S0 mount sites — each site\'s whole tree: the Dashboard boundary, th
     expect(siteTree('const legacyDesktopDashboard')).toBe(
       'return ( <ErrorBoundary name="Dashboard" onNavigateDashboard={() => { setScreen(\'home\'); }}> <div style={containerStyle}> '
       + '{isStarfieldOn() ? <StarfieldBackground mode="desktop" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />} '
-      + `${DESKTOP_GATE} `
+      + '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? ( <CommandCenterHubGate site="desktop" hub={hubProps} legacy={legacyDesktopDashboard} '
+      + 'frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>} onFallback={setHubFallback} /> ) : legacyDesktopDashboard} '
       + '</div> </ErrorBoundary>',
     );
   });
@@ -243,7 +283,7 @@ describe('S0 mount sites — the dashboard block from the pick to its end, as a 
       `const legacyDashboard = ( <DashboardComponent ${props('DashboardComponent')} /> );`,
       boundaryOpen,
       '{isStarfieldMobileOn() ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />}',
-      MOBILE_GATE,
+      '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? <CommandCenterHubGate site="mobile" hub={hubProps} legacy={legacyDashboard} onFallback={setHubFallback} /> : legacyDashboard}',
       '</div> </ErrorBoundary> ); }',
       "const sidebarOffsetStyle = { marginLeft: sidebarCollapsed ? '64px' : '220px', transition: 'margin-left 0.2s ease' };",
       'const legacyDesktopDashboard = dashboardPick.legacyShell === DASHBOARD_SHELLS.COMMAND_DASHBOARD_DESKTOP ? (',
@@ -251,7 +291,7 @@ describe('S0 mount sites — the dashboard block from the pick to its end, as a 
       `) : ( <DashboardDesktop ${props('DashboardDesktop')} /> );`,
       boundaryOpen,
       '{isStarfieldOn() ? <StarfieldBackground mode="desktop" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />}',
-      DESKTOP_GATE,
+      '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? ( <CommandCenterHubGate site="desktop" hub={hubProps} legacy={legacyDesktopDashboard} frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>} onFallback={setHubFallback} /> ) : legacyDesktopDashboard}',
       '</div> </ErrorBoundary> ); }',
     ].join(' ');
     const fromPick = BLOCK.slice(BLOCK.indexOf('const dashboardPick = pickDashboardShell('));
@@ -279,6 +319,85 @@ describe('S0 mount sites — each shell is mounted once, and only through the pi
     expect(APP).toContain("import { pickDashboardShell, DASHBOARD_SHELLS } from './components/CommandCenter/pickDashboardShell';");
     // No literal naming the hub module, in any form (hubPathLiterals, below).
     expect(hubPathLiterals(APP)).toEqual([]);
+  });
+});
+
+// ── S5: the hub's props, the Forge bridge and the two chrome conditions ─────
+//
+// App.jsx is imported by one suite, at desktop width, so what S5 added to it is
+// pinned as source text (comments stripped, whitespace collapsed) and the
+// decisions it calls are tested where they live (hubChrome.test.js).
+
+describe('S5 mount sites — the hub\'s props, the Forge bridge and the chrome conditions (rulings R-S5-5, R-S5-7, R-S5-9)', () => {
+  const flat = APP.replace(/\s+/g, ' ');
+  const GET_SCREEN_CONTENT = flat.indexOf('const getScreenContent = () => {');
+
+  it('hubProps is built OUTSIDE the dashboard block, from values App already holds, and handed to both gates', () => {
+    expect(flat).toContain(HUB_PROPS);
+    expect(BLOCK).not.toContain('hubProps =');
+    expect(count(/\bhubProps\b/)).toBe(3);
+    expect(BLOCK.match(/hub=\{hubProps\}/g)).toHaveLength(2);
+    expect(flat.indexOf('const hubProps')).toBeGreaterThan(-1);
+    expect(flat.indexOf('const hubProps')).toBeLessThan(GET_SCREEN_CONTENT);
+  });
+
+  it('the two keys the phone menu needs, the drawer and the unread count, are state App already holds, declared before hubProps and handed to the legacy dashboards too (founder ruling Q-S5-1)', () => {
+    expect(flat).toContain('const [sidebarOpen, setSidebarOpen] = useState(false);');
+    expect(flat).toContain('const [unreadCount, setUnreadCount] = useState(0);');
+    expect(flat.indexOf('const [sidebarOpen, setSidebarOpen]')).toBeLessThan(flat.indexOf('const hubProps'));
+    expect(flat.indexOf('const [unreadCount, setUnreadCount]')).toBeLessThan(flat.indexOf('const hubProps'));
+    expect(flat).toContain('setSidebarOpen={setSidebarOpen} unreadCount={unreadCount}');
+  });
+
+  it('the menu button is wired by the phone composition only: PhoneHub hands the header the action, WideHub does not, and the header draws it for the phone alone', () => {
+    const hubSource = stripComments(read(HUB_FILE('CommandCenterHub.jsx')));
+    expect(hubSource.match(/onOpenMenu=/g)).toHaveLength(1);
+    expect(hubSource.indexOf('onOpenMenu=')).toBeGreaterThan(hubSource.indexOf('function PhoneHub'));
+    expect(hubSource.indexOf('onOpenMenu=')).toBeLessThan(hubSource.indexOf('function WideHub'));
+    expect(stripComments(read(HUB_FILE('HubHeader.jsx')))).toContain("const canMenu = phone && typeof onOpenMenu === 'function';");
+  });
+
+  it('onOpenForge sets the Forge\'s first area (when the request names one) in the SAME handler as showForge, and otherwise is the bare setShowForge(true)', () => {
+    expect(flat).toContain('const onOpenForge = (request) => { const area = forgeAreaOf(request); if (area) setForgeInitialView(area); setShowForge(true); };');
+    expect(flat.indexOf('const onOpenForge')).toBeLessThan(GET_SCREEN_CONTENT);
+    // setForgeInitialView has exactly three callers: the reset effect, the watchlist editor's return, and this bridge.
+    expect(count(/\bsetForgeInitialView\(/)).toBe(3);
+  });
+
+  it('the effect that resets the Forge\'s view for the NEXT open is unchanged, so every existing Forge open still lands on the overview', () => {
+    expect(flat).toContain("useEffect(() => { if (showForge) setForgeInitialView('overview'); }, [showForge]);");
+    expect(flat).toContain("const [forgeInitialView, setForgeInitialView] = useState('discover');");
+    expect(flat).toContain('initialArea={forgeInitialView}');
+  });
+
+  it('the hub\'s chrome predicate is computed once, from the screen and the Forge flag, before the screens are chosen', () => {
+    expect(flat).toContain('const hubOwnsScreen = hubOwnsDashboard({ screen, showForge, hubFailed: hubFallback });');
+    // the ONE inert state the fallback signal needs: declared once, set only through the two gates' onFallback
+    expect(flat).toContain('const [hubFallback, setHubFallback] = useState(false);');
+    expect(count(/\bsetHubFallback\b/)).toBe(3);
+    expect(count(/\bhubFallback\b/)).toBe(2);
+    expect(count(/\bhubOwnsDashboard\b/)).toBe(2);
+    expect(flat.indexOf('const hubOwnsScreen')).toBeLessThan(GET_SCREEN_CONTENT);
+    expect(flat).toContain("import { forgeAreaOf, hubOwnsDashboard } from './components/CommandCenter/hubChrome';");
+  });
+
+  it('the active-season banner is withheld while the hub is the dashboard, and keeps every condition it had', () => {
+    expect(flat).toContain("{user && isMobile && screen !== 'home' && !GAMEPLAY_SCREENS.includes(screen) && activeSeason && activeSeasonEntry && !hubOwnsScreen && (");
+    expect(count(/<ActiveSeasonBanner\b/)).toBe(1);
+  });
+
+  it('the ClashBot widget stays mounted for every signed-in user; only its `hidden` gained the hub condition, beside the Battle View\'s', () => {
+    expect(count(/<ClashBotWidget\b/)).toBe(1);
+    expect(flat).toMatch(/\{user && \( <ClashBotWidget user=\{user\} screen=\{screen\} gameMode=\{gameMode\} currentBattle=\{currentBattle\} colors=\{colors\} isDesktop=\{isDesktop\} hidden=\{\(isCharacterPaneOn\(\) && screen === 'battle' && currentBattle\?\.agentDeployed === true\) \|\| hubOwnsScreen\} \/> \)\}/);
+  });
+
+  it('hubChrome.js stays tiny for the main chunk: it imports the hub flag accessor and nothing else', () => {
+    expect(importsOf('src/components/CommandCenter/hubChrome.js')).toEqual(['../../config/featureFlags']);
+    expect(stripComments(read('src/components/CommandCenter/hubChrome.js'))).not.toMatch(/\b(?:window|document|localStorage|sessionStorage|setTimeout|useEffect|fetch)\b/);
+  });
+
+  it('the legacy shells are still handed no hub prop: S5 added nothing to a legacy element', () => {
+    for (const tag of Object.keys(LEGACY_PROPS_AT_495EE07B)) expect(propsOf(tag).some((line) => /hub/i.test(line)), tag).toBe(false);
   });
 });
 
@@ -330,7 +449,8 @@ describe('S0 hub chunk — reached only through the gate\'s dynamic import', () 
     expect(files.length, 'the src walk found nothing, so this row would be vacuous').toBeGreaterThan(100);
     const refs = files.flatMap((rel) => hubPathLiterals(stripComments(read(rel))).map((ref) => `${rel} ${ref}`));
     expect(refs).toEqual([`${GATE} import(./CommandCenterHub`]);
-  });
+    // Reads every file under src/: 2.4 s alone, over the 5 s default when the suite runs wide.
+  }, 30000);
 
   it('the reference scan is not vacuous: it sees every form a reference can take', () => {
     for (const planted of [
@@ -441,7 +561,25 @@ const PERMITTED_TERMINALS = Object.freeze({
   'src/adapters/baggerbombAdapter.js': 'derivePhase and toMillis — the Desk\'s pre-open rule and the one timestamp normalizer (R-S3-8, spec §8.2)',
   'src/utils/marketSchedule.js': 'getMarketState — the market clock the pre-open rule reads (R-S3-8)',
   'src/constants/filmTape.js': 'FILM_ROOM_ROUTE — the helper\'s target, the only route a tape opens (spec §6)',
-  'src/config/featureFlags.js': 'CASUAL_CLONE_CONCURRENCY_ENABLED, read at render as the shells read it (ruling R-S3-9)',
+  // S3 and S5 both read the flags, so the one terminal carries both reasons.
+  'src/config/featureFlags.js': 'CASUAL_CLONE_CONCURRENCY_ENABLED, read at render as the shells read it (ruling R-S3-9); '
+    + 'the flags the Loadout reads, through hub/hubFlags.js, and the hub flag accessor hubChrome.js reads (rulings R-S5-2, R-S5-7)',
+  // S5 (prompt §3): the owner's loadout and the retained entry points reach the shipped sheets, services and flags,
+  // all of them already in the main graph (the shells import them), so the hub chunk duplicates none.
+  'src/utils/equipSlots.js': 'getEquipSlots — which slots the shells render; the adjustments card follows it (ruling R-S5-1)',
+  'src/utils/traitSlotSummary.js': 'getTraitSlotSummary — the adjustments summary (ruling R-S5-1)',
+  'src/data/archetypeDisplay.js': "getArchetypeDisplayName, read only through hub/archetypeLines.js — the hub's one §2.3 importer (ruling R-S5-1)",
+  'src/data/archetypeIdentity.js': 'the archetype dispositions, read only through hub/archetypeLines.js (ruling R-S5-1)',
+  'src/services/forgeWatchlistService.js': 'listWatchlists — the equipped list resolves against the existing list route, read per mount (ruling R-S5-1)',
+  'src/components/Forge/Watchlist/filterWatchlistsByStatus.js': "the shells' committed-lists filter",
+  'src/services/agentService.js': "equipWatchlist / unequipWatchlist — today's approved writes, from the watchlist sheet (ruling R-S5-4)",
+  'src/hooks/useMasteryProfile.js': "the owner's mastery profile for the agent record sheet — zero reads while the surface is dark",
+  'src/constants/agentProgression.js': "getLevelConfig / getNextLevelInfo — the record sheet's level inputs, the pure functions useAgent uses",
+  'src/components/ClashBot/ClashBotWidget.jsx': "CLASHBOT_OPEN_EVENT — the bug report's open event; the widget stays mounted at App (ruling R-S5-7)",
+  'src/components/Dashboard/AgentRecordSheet.jsx': 'the shipped agent record sheet, reused unchanged (ruling R-S5-4)',
+  'src/components/Dashboard/ArchetypePicker.jsx': 'the shipped archetype picker, reused unchanged (ruling R-S5-4)',
+  'src/components/Dashboard/EquipSheet.jsx': 'the shipped watchlist sheet, reused unchanged (ruling R-S5-4)',
+  'src/components/Dashboard/TraitsSheet.jsx': 'the shipped traits sheet, reused unchanged (ruling R-S5-4)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -515,6 +653,13 @@ const ALLOWED_ACTIVITY = Object.freeze({
   [HUB_FILE('hub/useHubCompletedBattles.js')]: ['\\bsetTimeout\\b', '\\baddEventListener\\b', '\\buseEffect\\b'],
   // S3: the effect that refreshes the window when a live id leaves a successful poll.
   [HUB_FILE('hub/useHubReaders.js')]: ['\\buseEffect\\b'],
+  // S5: the Loadout's lists read (once per mount; never a timer), the overlay stack's provider (it releases the
+  // background if the hub unmounts), and the sheet hook's unmount release.
+  [HUB_FILE('hub/useHubLoadout.js')]: ['\\buseEffect\\b'],
+  [HUB_FILE('hub/HubOverlays.jsx')]: ['\\buseEffect\\b'],
+  [HUB_FILE('hub/useHubSheets.js')]: ['\\buseEffect\\b'],
+  // S5 (review E1-1): the gate's fallback signal, one layout effect in its own file, rendered only inside the fallback.
+  [HUB_FILE('hubFallbackSignal.jsx')]: ['\\buseLayoutEffect\\b'],
 });
 
 function activityInCode(rel, code) {
@@ -529,7 +674,7 @@ function hubDirFiles() {
   return sourceFiles().filter((rel) => rel.startsWith(`${HUB_DIR}/`));
 }
 
-describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its ResizeObservers and useUser', () => {
+describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the listed allowances (S1: the ResizeObservers and useUser; S5: its three effects, the shipped sheets and services it names)', () => {
   it('the hub module\'s whole import graph stays in its directory, but for the permitted shipped modules', () => {
     const { seen, terminals, bare } = graph(HUB_FILE('CommandCenterHub.jsx'));
     expect(seen).toContain(HUB_FILE('hub/hubCopy.js'));
@@ -558,6 +703,7 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
       HUB_FILE('hub/selectors/deployState.js'),
       // S3: the outcome selector (R-S3-7) and the readers' input shapes (R-S3-9).
       HUB_FILE('hub/selectors/gameOutcome.js'),
+      HUB_FILE('hub/selectors/loadout.js'),
       HUB_FILE('hub/selectors/ownership.js'),
       HUB_FILE('hub/selectors/readerInputs.js'),
     ]);
@@ -569,6 +715,7 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
     const { seen } = graph(HUB_FILE('CommandCenterHub.jsx'));
     expect(seen).toEqual(expect.arrayContaining([
       HUB_FILE('hub/selectors/attemptVocabulary.js'), HUB_FILE('hub/selectors/deployState.js'), HUB_FILE('hub/selectors/ownership.js'),
+      HUB_FILE('hub/selectors/loadout.js'),
     ]));
     expect(seen).not.toContain(HUB_FILE('hub/selectors/attemptReducer.js'));
   });
@@ -620,7 +767,8 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
   });
 
   it('the gate\'s only firebase contact is the house error log, used on a failed load', () => {
-    expect(importsOf(GATE).sort()).toEqual(['../../theme/cssTokens', '../ErrorBoundary', './hubGateCopy', 'react']);
+    expect(importsOf(GATE).sort()).toEqual(['../../theme/cssTokens', '../ErrorBoundary', './hubFallbackSignal', './hubGateCopy', 'react']);
+    expect(importsOf(HUB_FILE('hubFallbackSignal.jsx'))).toEqual(['react']);
     expect(stripComments(read(GATE))).toMatch(/import \{ logErrorToFirebase \} from '\.\.\/ErrorBoundary';/);
   });
 
@@ -628,7 +776,7 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
     expect(importsOf('src/components/CommandCenter/hubGateCopy.js')).toEqual([]);
   });
 
-  it('the main graph reaches the hub directory only through App → the gate and App → the picker (S1 review L2-1, L5-8)', () => {
+  it('the main graph reaches the hub directory only through App → the gate, the picker and the chrome predicates (S1 review L2-1, L5-8; S5 R-S5-7)', () => {
     // Every other hub module stays out of the main chunk and out of every page
     // load: no src/ file outside the directory may import one, statically or at
     // load time (`import()`, `require()`, `import.meta.glob()`), relative or
@@ -636,17 +784,22 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
     // included, whose only two such literals are its two static imports.
     const outside = sourceFiles().filter((rel) => !rel.startsWith(`${HUB_DIR}/`));
     expect(outside.length, 'the src walk found nothing, so this row would be vacuous').toBeGreaterThan(100);
-    const edges = outside.flatMap((rel) => edgesIntoHub(rel, stripComments(read(rel))));
+    // Each file is read and stripped once and both scans share it: 2.7 s alone with the
+    // two passes reading separately, over the 5 s default when the suite runs wide.
+    const codeOf = new Map(outside.map((rel) => [rel, stripComments(read(rel))]));
+    const edges = outside.flatMap((rel) => edgesIntoHub(rel, codeOf.get(rel)));
     expect(edges.sort()).toEqual([
       `src/App.jsx -> ${HUB_FILE('CommandCenterHubGate.jsx')}`,
+      `src/App.jsx -> ${HUB_FILE('hubChrome.js')}`,
       `src/App.jsx -> ${HUB_FILE('pickDashboardShell.js')}`,
     ]);
-    const literals = outside.flatMap((rel) => hubDirLiterals(stripComments(read(rel))).map((lit) => `${rel}: ${lit}`));
+    const literals = outside.flatMap((rel) => hubDirLiterals(codeOf.get(rel)).map((lit) => `${rel}: ${lit}`));
     expect(literals.sort()).toEqual([
       'src/App.jsx: ./components/CommandCenter/CommandCenterHubGate',
+      'src/App.jsx: ./components/CommandCenter/hubChrome',
       'src/App.jsx: ./components/CommandCenter/pickDashboardShell',
     ]);
-  });
+  }, 30000);
 
   it('the edge scan is not vacuous: it resolves relative and @/ imports, re-exports and load-time imports into the directory', () => {
     expect(edgesIntoHub('src/components/Navigation/BottomNav.jsx', "import { BOTTOM_NAV_ATTRIBUTE } from '../CommandCenter/hub/navClearance';"))
@@ -672,9 +825,9 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
     expect(hubDirLiterals("import x from './components/Dashboard/CommandDashboard';")).toEqual([]);
   });
 
-  it('the gate hands the hub its site and App\'s hub object (S3, R-S3-10), and nothing else — reading nothing in it', () => {
+  it('the gate hands the hub its site and App\'s one hub object, and nothing else — reading nothing in it (rulings R-S3-10, R-S5-9)', () => {
     const code = stripComments(read(GATE));
-    expect(code).toMatch(/function CommandCenterHubGate\(\{ site, legacy, frame = unframed, hub \}\)/);
+    expect(code).toMatch(/function CommandCenterHubGate\(\{ site, hub, legacy, frame = unframed, onFallback \}\)/);
     expect(code.match(/<Hub\b[^>]*\/>/g)).toEqual(['<Hub site={site} hub={hub} />']);
     // The gate only forwards it: no member of `hub` is read here.
     expect(code).not.toMatch(/\bhub\s*(?:\?\.|\.|\[)/);
@@ -713,6 +866,12 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond its
       [HUB_FILE('hub/useHubCompletedBattles.js')]: ['setInterval(f, 1000);', 'requestAnimationFrame(f);', 'new ResizeObserver(cb);', 'useLayoutEffect(() => {});', 'onSnapshot(q, cb);'],
       [HUB_FILE('hub/useHubReaders.js')]: ['setTimeout(f, 0);', "window.addEventListener('focus', f);", 'useLayoutEffect(() => {});', 'getDocFromServer(ref);'],
       [HUB_FILE('hub/reviewScheduler.js')]: ['setTimeout(f, 0);', 'useEffect(() => {}, []);', "document.addEventListener('visibilitychange', f);"],
+      // S5: each new effect allows its own effect and nothing else — above all, no timer, poll or focus listener on the lists read.
+      [HUB_FILE('hub/useHubLoadout.js')]: ['setInterval(refresh, 60000);', "window.addEventListener('focus', refresh);", 'setTimeout(refresh, 0);', 'useLayoutEffect(() => {});', "document.addEventListener('visibilitychange', refresh);"],
+      [HUB_FILE('hub/HubOverlays.jsx')]: ['setTimeout(f, 0);', 'new MutationObserver(cb);', "document.addEventListener('keydown', f);", 'useLayoutEffect(() => {});'],
+      [HUB_FILE('hub/useHubSheets.js')]: ['setTimeout(f, 0);', "window.addEventListener('resize', f);", 'useLayoutEffect(() => {});'],
+      // S5 (review E1-1): the signal allows its one layout effect and nothing else: no passive effect, timer, listener or frame callback.
+      [HUB_FILE('hubFallbackSignal.jsx')]: ['useEffect(() => {}, []);', 'setTimeout(f, 0);', "window.addEventListener('focus', f);", 'requestAnimationFrame(f);', 'new ResizeObserver(cb);'],
     };
     for (const [rel, lines] of Object.entries(negatives)) {
       for (const line of lines) expect(activityInCode(rel, line), `${rel}: ${line}`).not.toEqual([]);
@@ -807,5 +966,84 @@ describe('S1 hub side — colour and motion only through the tokens (ruling R-S1
     }
     expect(MOTION_KEY.test('transition={motionToken(\'smooth\', { reducedMotion })}')).toBe(false);
     expect(CSS_TRANSITION.test('transition={motionToken(\'smooth\', { reducedMotion })}')).toBe(false);
+  });
+});
+
+// ── S5: what the hub takes from the shipped modules it may now reach is NAMED ─
+//
+// PERMITTED_TERMINALS lets the import walk stop at a whole module, so the walk
+// alone can no longer see which of its exports the hub uses (review E1-2: the
+// closure grew from 48 to 117 modules, and a hub file could have imported
+// `createAgent` from agentService without any row noticing). These rows name
+// the exports. Add to a list only when a ruling says the hub may use more.
+
+/** The names `code` imports from a module whose specifier ends with `tail`: `{ a as b }` → 'a', a default import → 'default'. */
+function importedNames(code, tail) {
+  const names = [];
+  const statement = /import\s+([^'";]+?)\s+from\s+['"]([^'"]+)['"]/g;
+  for (let m = statement.exec(code); m !== null; m = statement.exec(code)) {
+    if (!m[2].endsWith(tail)) continue;
+    const clause = m[1].trim();
+    const braces = clause.match(/\{([^}]*)\}/);
+    if (braces) names.push(...braces[1].split(',').map((n) => n.trim().split(/\s+as\s+/)[0]).filter(Boolean));
+    if (clause.replace(/\{[^}]*\}/, '').replace(/,/g, '').trim()) names.push('default');
+  }
+  return names;
+}
+
+describe('S5 — the exports the hub takes from the shipped services, hooks and flags (review E1-2)', () => {
+  const NAMED = Object.freeze({
+    '/services/agentService': ['equipWatchlist', 'unequipWatchlist'],
+    '/services/forgeWatchlistService': ['listWatchlists'],
+    // S3's readers, merged in: the identity source, the completed read and the owner-tagged agent read (reads only).
+    '/services/authIdentity': ['useAuthIdentity'],
+    '/services/completedAgentBattles': ['fetchRecentCompletedAgentBattles'],
+    '/hooks/useAgent': ['default'],
+    '/hooks/useMasteryProfile': ['default'],
+    '/ClashBot/ClashBotWidget': ['CLASHBOT_OPEN_EVENT'],
+    '/utils/equipSlots': ['getEquipSlots'],
+    '/utils/traitSlotSummary': ['getTraitSlotSummary'],
+    '/constants/agentProgression': ['getLevelConfig', 'getNextLevelInfo'],
+    '/config/featureFlags': ['CASUAL_CLONE_CONCURRENCY_ENABLED', 'RELEASE3_CHARACTER_TAB_ENABLED', 'isCommandCenterHubOn', 'isHypothesisRecordsOn'],
+    '/data/archetypeDisplay': ['getArchetypeDisplayName'],
+    '/data/archetypeIdentity': ['default', 'getArchetypeIdentity'],
+  });
+
+  it('across every file of the directory, exactly these names and no others', () => {
+    const files = hubDirFiles();
+    for (const [tail, expected] of Object.entries(NAMED)) {
+      const found = [...new Set(files.flatMap((rel) => importedNames(stripComments(read(rel)), tail)))].sort();
+      expect(found, tail).toEqual([...expected].sort());
+    }
+  });
+
+  it('the only writes the hub can make are the two equips: nothing else of agentService, and no other service of the shipped set', () => {
+    const files = hubDirFiles();
+    const writers = files.filter((rel) => importedNames(stripComments(read(rel)), '/services/agentService').length > 0);
+    expect(writers).toEqual([HUB_FILE('LoadoutSheets.jsx')]);
+    const services = files.flatMap((rel) => importsOf(rel).filter((spec) => /\/services\//.test(spec)).map((spec) => `${rel}: ${spec}`));
+    expect(services.sort()).toEqual([
+      `${HUB_FILE('LoadoutSheets.jsx')}: ../../services/agentService`,
+      `${HUB_FILE('hub/useHubLoadout.js')}: ../../../services/forgeWatchlistService`,
+      // S3's readers (merged in): two reads, no write — their names are pinned in NAMED above.
+      `${HUB_FILE('hub/useHubCompletedBattles.js')}: ../../../services/authIdentity`,
+      `${HUB_FILE('hub/useHubCompletedBattles.js')}: ../../../services/completedAgentBattles`,
+      `${HUB_FILE('hub/useHubReaders.js')}: ../../../services/authIdentity`,
+    ].sort());
+  });
+
+  it('the legacy archetype tables are imported by exactly one hub file (the §2.3 ratchet records one line)', () => {
+    const importers = hubDirFiles().filter((rel) => (
+      importedNames(stripComments(read(rel)), '/data/archetypeDisplay').length > 0
+      || importedNames(stripComments(read(rel)), '/data/archetypeIdentity').length > 0
+    ));
+    expect(importers).toEqual([HUB_FILE('hub/archetypeLines.js')]);
+  });
+
+  it('the matcher sees what it should (the rows above are not vacuous)', () => {
+    const code = "import ARCH, { a, b as c } from '../../x/archetypeIdentity';\nimport {\n  one,\n  two,\n} from '../y/agentService';\nimport z from './z';";
+    expect(importedNames(code, '/archetypeIdentity').sort()).toEqual(['a', 'b', 'default']);
+    expect(importedNames(code, '/agentService').sort()).toEqual(['one', 'two']);
+    expect(importedNames(code, '/nothing')).toEqual([]);
   });
 });
