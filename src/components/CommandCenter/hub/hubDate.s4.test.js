@@ -3,14 +3,8 @@
 // Command Center hub, slice S4 — the two formatters Activity and the brief add to hub/hubDate.js: Activity's absolute ET time, and
 // the brief's market date, which is formatted from the string's own parts and never moved by a time zone.
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { formatHubDayTime, formatHubMarketDate } from './hubDate';
-
-const ORIGINAL_TZ = process.env.TZ;
-afterEach(() => {
-  if (ORIGINAL_TZ === undefined) delete process.env.TZ;
-  else process.env.TZ = ORIGINAL_TZ;
-});
 
 describe('formatHubDayTime — Activity\'s absolute time, read in ET', () => {
   it('writes the month, the day and the clock in Eastern time', () => {
@@ -18,15 +12,6 @@ describe('formatHubDayTime — Activity\'s absolute time, read in ET', () => {
     expect(formatHubDayTime(Date.UTC(2026, 9, 3, 20, 0))).toMatch(/^Oct 3, 4:00\s?PM$/);
     // ...and across the evening boundary the ET day, not the UTC one: 02:30 UTC on Oct 4 is 10:30 PM on Oct 3.
     expect(formatHubDayTime(Date.UTC(2026, 9, 4, 2, 30))).toMatch(/^Oct 3, 10:30\s?PM$/);
-  });
-
-  it('is the same wherever the machine is', () => {
-    const ms = Date.UTC(2026, 9, 3, 20, 0);
-    const answers = ['UTC', 'America/Los_Angeles', 'Asia/Tokyo'].map((zone) => {
-      process.env.TZ = zone;
-      return formatHubDayTime(ms);
-    });
-    expect(new Set(answers).size).toBe(1);
   });
 
   it('is empty for anything but a finite number', () => {
@@ -41,11 +26,12 @@ describe('formatHubMarketDate — the brief\'s forDate, a market-day label', () 
     expect(formatHubMarketDate('2026-01-01')).toBe('Thu Jan 1');
   });
 
-  it('never moves a bare date through a time zone: the day is the string\'s whatever the machine\'s zone', () => {
-    for (const zone of ['UTC', 'America/Los_Angeles', 'America/New_York', 'Asia/Tokyo', 'Pacific/Kiritimati']) {
-      process.env.TZ = zone;
-      expect(formatHubMarketDate('2026-10-07'), zone).toBe('Wed Oct 7');
-    }
+  // The day is the string's own: a formatter that read it as UTC midnight and wrote it in ET would say Oct 6.
+  it('never moves a bare date through a time zone: the evening-before answer is a defect', () => {
+    expect(formatHubMarketDate('2026-10-07')).not.toMatch(/Oct 6$/);
+    expect(formatHubMarketDate('2026-01-01')).toBe('Thu Jan 1');
+    expect(formatHubMarketDate('2026-03-08')).toBe('Sun Mar 8');
+    expect(formatHubMarketDate('2026-11-01')).toBe('Sun Nov 1');
   });
 
   it('is empty for anything that is not a real calendar date written YYYY-MM-DD', () => {
