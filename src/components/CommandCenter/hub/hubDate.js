@@ -98,10 +98,38 @@ const ET_DAY_TIME = new Intl.DateTimeFormat('en-US', {
   minute: '2-digit',
 });
 
-/** "Oct 3, 4:00 PM" for an instant in ms, read in ET (Activity's absolute time; spec §8.2). '' for anything but a finite number. */
-export function formatHubDayTime(ms) {
+const ET_DAY_TIME_YEAR = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+const ET_DAY_YEAR = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+});
+const ET_YEAR = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric' });
+
+/**
+ * A time from another year than the clock's (both read in ET) carries its year: "Jan 5" for an equip of five years ago would read as
+ * this January. Without a clock (`nowMs` absent or not finite) no year is added.
+ */
+const otherYear = (ms, nowMs) => typeof nowMs === 'number' && Number.isFinite(nowMs) && ET_YEAR.format(new Date(ms)) !== ET_YEAR.format(new Date(nowMs));
+
+/** "Oct 3, 4:00 PM" for an instant in ms, read in ET (Activity's absolute time; spec §8.2); "Oct 3, 2025, 4:00 PM" from another year than `nowMs`'s. '' for anything but a finite number. */
+export function formatHubDayTime(ms, nowMs) {
   if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';
-  return ET_DAY_TIME.format(new Date(ms));
+  return (otherYear(ms, nowMs) ? ET_DAY_TIME_YEAR : ET_DAY_TIME).format(new Date(ms));
+}
+
+/** "Oct 3" for an instant in ms, read in ET; "Oct 3, 2025" from another year than `nowMs`'s. '' for anything but a finite number. */
+export function formatHubDayYear(ms, nowMs) {
+  if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';
+  return (otherYear(ms, nowMs) ? ET_DAY_YEAR : ET_DAY).format(new Date(ms));
 }
 
 const MARKET_DAY_PARTS = new Intl.DateTimeFormat('en-US', {

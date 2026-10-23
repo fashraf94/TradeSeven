@@ -158,8 +158,9 @@ describe('a quick return shows the games and an openable tape at once (R-S4-6, R
     expect(first.sections.games.rows).toHaveLength(10);
     expect(first.sections.games.rows.every((row) => row.reviewLine.openable)).toBe(true);
     expect(first.sections.nextAction.candidate).toMatchObject({ key: 'review', id: 'done_01' });
-    expect(first.sections.activity.status).toBe('ready');
-    expect(first.sections.activity.rows.length).toBeGreaterThan(10);
+    // Activity's inputs: the kept window's ten documents, with the age they stand on (the runtime finishes the list with the Loadout).
+    expect(first.sections.activityInputs.battles).toHaveLength(10);
+    expect(first.sections.activityInputs.windowAge).toMatchObject({ carried: true, stale: false, asOf: T0 });
     // "Open battle tape" opens the Film Room straight away, through the helper's own answer.
     act(() => first.actions.openTape({ id: 'done_03' }));
     expect(openFilmRoom).toHaveBeenCalledTimes(1);
@@ -202,7 +203,7 @@ describe('a quick return shows the games and an openable tape at once (R-S4-6, R
     // Its reviews were never asked (the hub was gone): queued, not openable, and not offered.
     expect(first.sections.games.rows.some((row) => row.reviewLine.openable)).toBe(false);
     expect(first.sections.nextAction.candidate).toBeNull();
-    expect(first.sections.activity.rows.length).toBeGreaterThan(10);
+    expect(first.sections.activityInputs.battles).toHaveLength(10);
     expect(io.reads).toHaveLength(1);
   });
 });

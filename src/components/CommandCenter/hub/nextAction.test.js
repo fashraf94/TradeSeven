@@ -8,7 +8,9 @@ import { describe, expect, it } from 'vitest';
 import { completedGameRows, liveGameRows } from './gamesDisplay';
 import { HUB_COPY as COPY } from './hubCopy';
 import { formatHubDay } from './hubDate';
-import { FIRST_DEPLOYMENT_KEY, NEXT_ACTION_KINDS, deriveNextAction, laterKeyOf } from './nextAction';
+import { FIRST_DEPLOYMENT_KEY, NEXT_ACTION_KINDS, deriveNextAction, firstDeploymentOffer, laterKeyOf } from './nextAction';
+import { firstDeploymentCandidate } from './selectors/deployState';
+import { COOLDOWN, HOLD, BATTLES, agentReady, attemptFor, base, completedReady } from '../__fixtures__/deployStateFixtures';
 
 const UID = 'uid-A';
 const NOW = Date.UTC(2026, 9, 23, 15, 0);
@@ -189,6 +191,52 @@ describe('Later: the next candidate within the same rule, then the next rule (IR
   it('a dismissed set that is not a Set (a malformed hand-in) sets nothing aside', () => {
     expect(deriveNextAction({ ...inputs({ liveDocs: [casual] }), dismissed: ['openGame:bb_live'] }).candidate.id).toBe('bb_live');
     expect(deriveNextAction({ ...inputs({ liveDocs: [casual] }), dismissed: undefined }).candidate.id).toBe('bb_live');
+  });
+});
+
+describe('the live poll must have answered before a later rule is offered (N-2)', () => {
+  it('a ready review waits while whether a game is live is unknown — no card that would swap for a live game\'s the moment the poll answers', () => {
+    const battles = [done(1)];
+    const args = inputs({ battles, reviews: readyFor(...battles), firstDeployment: true });
+    expect(deriveNextAction({ ...args, liveResolved: false })).toEqual({ status: 'loading', candidate: null });
+    expect(deriveNextAction({ ...args, liveResolved: true }).candidate).toMatchObject({ key: 'review' });
+    // Left out, the poll is taken as answered (the frames, which have no poll).
+    expect(deriveNextAction(args).candidate).toMatchObject({ key: 'review' });
+  });
+
+  it('the first deployment waits too; a live game, which needs no wait, does not', () => {
+    expect(deriveNextAction({ ...inputs({ firstDeployment: true }), liveResolved: false }).candidate).toBeNull();
+    expect(deriveNextAction({ ...inputs({ liveDocs: [live('bb_live')], firstDeployment: true }), liveResolved: false }).candidate).toMatchObject({ key: 'openGame' });
+  });
+});
+
+describe('the first-deployment offer holds its card under the owner\'s own hold (N-1: keep panels mounted while charging)', () => {
+  const first = (over = {}) => base({ agent: agentReady({ agent: { id: 'agent-a', stats: { gamesPlayed: 0 } } }), completed: completedReady([]), ...over });
+
+  it('the selector alone says no once the hold is claimed — the reason for setting the hold aside', () => {
+    expect(firstDeploymentCandidate(first())).toBe(true);
+    expect(firstDeploymentCandidate(first({ hold: HOLD }))).toBe(false);
+  });
+
+  it.each(['charging', 'locked'])('the offer stands while this owner\'s hold is %s: the card being pressed does not leave', (phase) => {
+    expect(firstDeploymentOffer(first())).toBe(true);
+    expect(firstDeploymentOffer(first({ hold: { ...HOLD, phase } }))).toBe(true);
+  });
+
+  it('every OTHER block still takes it away: an attempt under way, a cooldown, a live game, a failed or non-empty read, an agent that has played', () => {
+    expect(firstDeploymentOffer(first({ attempt: attemptFor('submitting') }))).toBe(false);
+    expect(firstDeploymentOffer(first({ cooldown: COOLDOWN }))).toBe(false);
+    expect(firstDeploymentOffer(first({ poll: { ...first().poll, liveBattles: [BATTLES.baggerbomb] } }))).toBe(false);
+    expect(firstDeploymentOffer(first({ completed: completedReady([], { status: 'error' }) }))).toBe(false);
+    expect(firstDeploymentOffer(first({ completed: completedReady([{ id: 'done_1' }]) }))).toBe(false);
+    expect(firstDeploymentOffer(base({ agent: agentReady({ agent: { id: 'agent-a', stats: { gamesPlayed: 3 } } }), completed: completedReady([]) }))).toBe(false);
+    expect(firstDeploymentOffer(first({ modalOpen: true }))).toBe(false);
+  });
+
+  it('it does not change what it is given', () => {
+    const given = first({ hold: HOLD });
+    firstDeploymentOffer(given);
+    expect(given.hold).toBe(HOLD);
   });
 });
 

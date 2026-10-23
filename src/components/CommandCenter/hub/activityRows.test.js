@@ -8,10 +8,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { getCanonicalTextVersion } from '../../../data/archetypeAdjustments';
-import { ACTIVITY_KINDS, activitySectionOf, deriveActivity } from './activityRows';
+import { ACTIVITY_KINDS, LOADOUT_KNOWLEDGE, activitySectionOf, deriveActivity, loadoutKnowledgeOf } from './activityRows';
 import { completedGameRows, liveGameRows } from './gamesDisplay';
 import { HUB_COPY as COPY } from './hubCopy';
-import { formatHubDay, formatHubDayTime } from './hubDate';
+import { formatHubDay, formatHubDayTime, formatHubDayYear } from './hubDate';
 
 const UID = 'uid-A';
 const NOW = Date.UTC(2026, 9, 23, 15, 0);
@@ -46,7 +46,11 @@ const rowsFor = (battles, live = []) => new Map(
 const run = (over = {}) => {
   const battles = over.battles ?? [done(1), done(2), done(3)];
   const live = over.live ?? [];
-  return deriveActivity({ battles, live, rowsById: rowsFor(battles, live), agent: null, ...over });
+  // The Loadout card has found the agent's equipped list among the committed ones unless a row says otherwise.
+  const agent = over.agent ?? null;
+  const watchlist = over.watchlist !== undefined ? over.watchlist
+    : (agent && agent.equippedWatchlistId ? { id: agent.equippedWatchlistId, name: agent.equippedWatchlistName ?? null } : null);
+  return deriveActivity({ battles, live, rowsById: rowsFor(battles, live), agent: null, nowMs: NOW, ...over, watchlist });
 };
 const ids = (activity) => activity.rows.map((row) => row.id);
 
@@ -179,7 +183,10 @@ describe('the cutoff: nothing older than the oldest completed record of the wind
   it('with no completed record at all the current-state rows stay, with their "since" wording, and no history is claimed', () => {
     const activity = run({ battles: [], live: [liveDoc('bb_live')], agent: agentOf({ equippedAt: iso(Date.UTC(2020, 0, 5, 15, 0)) }) });
     expect(ids(activity)).toEqual(['deployed:bb_live', 'loadout:watchlist:wl_hb']);
-    expect(activity.rows[1].text).toBe(COPY.activity.watchlistEquipped(formatHubDay(Date.UTC(2020, 0, 5, 15, 0))));
+    // From another year than the clock's: the year is written, so a 2020 equip does not read as this January.
+    expect(activity.rows[1].text).toBe(COPY.activity.watchlistEquipped('Jan 5, 2020'));
+    expect(activity.rows[1].at).toBe(COPY.time.et(formatHubDayTime(Date.UTC(2020, 0, 5, 15, 0), NOW)));
+    expect(activity.rows[1].at).toMatch(/^Jan 5, 2020, 10:00\s?AM ET$/);
   });
 });
 
@@ -253,8 +260,21 @@ describe('loadout rows exist only where an equip time is recorded (R-S4-1)', () 
     expect(ids(run({ battles: [], agent: agentOf(over) }))).toEqual([]);
   });
 
+  it('the row exists only while the Loadout card has FOUND the equipped list among the committed ones (BUILD_RULES §9): a list deleted or taken back to draft is equipped to no game', () => {
+    const agent = agentOf();
+    expect(ids(run({ agent, watchlist: null }))).not.toContain('loadout:watchlist:wl_hb');
+    expect(ids(run({ agent, battles: [], watchlist: null }))).toEqual([]);
+    expect(ids(run({ agent, watchlist: { id: 'wl_other', name: 'Other' } }))).not.toContain('loadout:watchlist:wl_hb');
+    expect(ids(run({ agent, watchlist: { id: 'wl_hb', name: 'High-Beta Ten' } }))).toContain('loadout:watchlist:wl_hb');
+  });
+
+  it('it is named as the card names the list now (a renamed committed list), not by the name stored when it was equipped', () => {
+    const row = run({ agent: agentOf({ equippedWatchlistName: 'High-Beta Ten' }), watchlist: { id: 'wl_hb', name: 'Renamed Ten' } }).rows.find((r) => r.id === 'loadout:watchlist:wl_hb');
+    expect(row.sub).toBe('Renamed Ten');
+  });
+
   it('a list with no recorded name still has its row, named plainly', () => {
-    const row = run({ agent: agentOf({ equippedWatchlistName: '' }) }).rows.find((r) => r.id === 'loadout:watchlist:wl_hb');
+    const row = run({ agent: agentOf({ equippedWatchlistName: '' }), watchlist: { id: 'wl_hb', name: '' } }).rows.find((r) => r.id === 'loadout:watchlist:wl_hb');
     expect(row.sub).toBe(COPY.loadout.watchlistFallback);
   });
 
@@ -320,6 +340,23 @@ describe('adjustment rows: the standing leans a game would carry, at their recor
     expect(rows[0].ms).toBe(Date.UTC(2026, 9, 21, 8, 0));
   });
 
+  it('at the cap a game carries: the Character tab\'s and the snapshot\'s default cap, not the structural maximum — three valid pins show two rows, the earlier equips', () => {
+    const rows = adjustmentRows(withLeans([
+      lean('SP-03', { equippedAt: iso(Date.UTC(2026, 9, 22, 8, 0)) }),
+      lean('SP-01', { equippedAt: iso(Date.UTC(2026, 9, 20, 22, 0)) }),
+      lean('SP-02', { equippedAt: iso(Date.UTC(2026, 9, 21, 8, 0)) }),
+    ]));
+    expect(rows.map((r) => r.id).sort()).toEqual(['loadout:adjustment:SP-01', 'loadout:adjustment:SP-02']);
+  });
+
+  it('a pin whose first copy has no readable time is no row: a later copy never stands in for the one the kernel kept', () => {
+    const rows = adjustmentRows(withLeans([
+      lean('SP-01', { equippedAt: 'garbage' }),
+      lean('SP-01', { equippedAt: iso(Date.UTC(2026, 9, 21, 12, 0)) }),
+    ]));
+    expect(rows).toEqual([]);
+  });
+
   it('an accepted lean with no readable equip time has no row', () => {
     expect(adjustmentRows(withLeans([lean('SP-01', { equippedAt: undefined }), lean('SP-02', { equippedAt: 'x' })]))).toEqual([]);
     expect(adjustmentRows(withLeans([lean('SP-01', { equippedAt: undefined }), lean('SP-02', { equippedAt: 'x' })], { battles: [] }))).toEqual([]);
@@ -339,6 +376,27 @@ describe('adjustment rows: the standing leans a game would carry, at their recor
     for (const agent of [agentOf({ standingLeans: 'SP-01' }), agentOf({ standingLeans: null }), agentOf({ archetype: undefined, standingLeans: [lean('SP-01')] })]) {
       expect(adjustmentRows(run({ agent, characterTab: true }))).toEqual([]);
     }
+  });
+});
+
+describe('the year of a time from another year (spec §8.2: absolute display)', () => {
+  it('this year\'s times carry none; an earlier year\'s do — on the row\'s time and on its "since" date', () => {
+    const old = run({ battles: [], agent: agentOf({ equippedAt: iso(Date.UTC(2025, 9, 3, 20, 0)) }) });
+    expect(old.rows[0].text).toBe('Watchlist equipped · since Oct 3, 2025');
+    expect(old.rows[0].at).toMatch(/^Oct 3, 2025, 4:00\s?PM ET$/);
+    const current = run({ battles: [], agent: agentOf({ equippedAt: iso(Date.UTC(2026, 9, 3, 20, 0)) }) });
+    expect(current.rows[0].text).toBe('Watchlist equipped · since Oct 3');
+    expect(current.rows[0].at).toMatch(/^Oct 3, 4:00\s?PM ET$/);
+  });
+
+  it('the year is the ET year: a New Year\'s Eve evening (UTC already next year) is still the old year', () => {
+    expect(formatHubDayYear(Date.UTC(2026, 0, 1, 3, 0), Date.UTC(2026, 5, 1, 12, 0))).toBe('Dec 31, 2025');
+    expect(formatHubDayYear(Date.UTC(2026, 0, 1, 6, 0), Date.UTC(2026, 5, 1, 12, 0))).toBe('Jan 1');
+  });
+
+  it('without a clock no year is added', () => {
+    expect(formatHubDayYear(Date.UTC(2020, 0, 5, 15, 0))).toBe('Jan 5');
+    expect(formatHubDayTime(Date.UTC(2020, 0, 5, 15, 0))).toMatch(/^Jan 5, 10:00\s?AM$/);
   });
 });
 
@@ -386,6 +444,36 @@ describe('the section: loading, a failed first read, and the projection (spec §
     const section = activitySectionOf({ battles, live: [], rowsById: rowsFor(battles), agent: null });
     expect(section.status).toBe('ready');
     expect(section.rows.length).toBeGreaterThan(0);
+  });
+
+  it('an EMPTY list is "nothing recorded" only when the loadout is settled: while it is loading it is loading, after it failed it is an error (H-4)', () => {
+    const empty = { ...base, battles: [] };
+    expect(activitySectionOf({ ...empty, knowledge: LOADOUT_KNOWLEDGE.PENDING })).toMatchObject({ status: 'loading', rows: [] });
+    expect(activitySectionOf({ ...empty, knowledge: LOADOUT_KNOWLEDGE.FAILED })).toMatchObject({ status: 'error', rows: [] });
+    expect(activitySectionOf({ ...empty, knowledge: LOADOUT_KNOWLEDGE.SETTLED })).toMatchObject({ status: 'ready', rows: [] });
+    // ...and a list that has rows shows them whatever the loadout is doing.
+    const battles = [done(1)];
+    expect(activitySectionOf({ battles, live: [], rowsById: rowsFor(battles), agent: null, knowledge: LOADOUT_KNOWLEDGE.PENDING }).status).toBe('ready');
+  });
+
+  it('the loadout is settled, pending or failed by the Loadout section and its card (loadoutKnowledgeOf)', () => {
+    expect(loadoutKnowledgeOf({ status: 'loading' })).toBe('pending');
+    expect(loadoutKnowledgeOf({ status: 'error' })).toBe('failed');
+    expect(loadoutKnowledgeOf({ status: 'none' })).toBe('settled');
+    expect(loadoutKnowledgeOf({ status: 'ready', watchlist: { state: 'loading' } })).toBe('pending');
+    expect(loadoutKnowledgeOf({ status: 'ready', watchlist: { state: 'error' } })).toBe('failed');
+    for (const state of ['none', 'ready', 'unavailable']) expect(loadoutKnowledgeOf({ status: 'ready', watchlist: { state } }), state).toBe('settled');
+    expect(loadoutKnowledgeOf(null)).toBe('settled');
+  });
+
+  it('a list built from a kept window, or one whose refresh failed, carries that window\'s age (H-5); a current one carries none', () => {
+    const battles = [done(1)];
+    const args = { battles, live: [], rowsById: rowsFor(battles), agent: null };
+    expect(activitySectionOf({ ...args, windowAge: { asOf: NOW - 60000, stale: false, carried: true } })).toMatchObject({ carried: true, stale: false, asOf: NOW - 60000 });
+    expect(activitySectionOf({ ...args, windowAge: { asOf: NOW - 60000, stale: true, carried: true } })).toMatchObject({ stale: true, asOf: NOW - 60000 });
+    const current = activitySectionOf({ ...args, windowAge: { asOf: NOW - 60000, stale: false, carried: false } });
+    expect(current.carried).toBeUndefined();
+    expect(current.stale).toBeUndefined();
   });
 
   it('a window that is read and empty is ready with no rows (the one place "Nothing recorded yet" is true)', () => {

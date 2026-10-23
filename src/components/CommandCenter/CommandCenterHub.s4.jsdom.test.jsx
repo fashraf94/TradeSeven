@@ -11,7 +11,7 @@
 //   - Activity: its rows and words, the sheet behind "All activity · N", and that opening History changes neither rows nor count;
 //   - the brief: every caption and state, and Retry; History's Refresh and the next permitted time.
 
-import React from 'react';
+import React, { act } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { userState } = vi.hoisted(() => ({ userState: { user: { displayName: 'Flash', username: 'flash' } } }));
@@ -23,12 +23,13 @@ const r = vi.hoisted(() => ({
   window: null,
   market: { state: 'OPEN', isOpen: true },
   brief: null,
+  lists: [],
 }));
 vi.mock('../../services/authIdentity', () => ({ useAuthIdentity: () => r.identity }));
 vi.mock('../../hooks/useAgent', () => ({ default: () => r.agent }));
 vi.mock('./hub/useHubCompletedBattles', () => ({ default: () => r.window }));
 vi.mock('../../utils/marketSchedule', () => ({ getMarketState: () => r.market }));
-vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists: async () => [] }));
+vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists: async () => r.lists }));
 vi.mock('../../hooks/useDailyRegimeBrief', () => ({ default: function useDailyRegimeBrief() { return r.brief; } }));
 
 import CommandCenterHub from './CommandCenterHub';
@@ -92,6 +93,7 @@ beforeEach(() => {
   r.window = windowOf(TEN);
   r.market = { state: 'OPEN', isOpen: true };
   r.brief = briefOf();
+  r.lists = [];
   layout = installFakeLayout();
   removeNav = mountFakeBottomNav();
 });
@@ -123,6 +125,14 @@ const dialog = () => document.querySelector('[role="dialog"]');
 const stored = () => JSON.parse(sessionStorage.getItem(laterStorageKey(UID)) || 'null');
 const closeSheet = () => click(byRole(dialog(), 'button', COPY.sheet.close)[0]);
 const set = (hub, ...rest) => ({ ...hub, ...rest[0] });
+const flush = () => act(async () => { await Promise.resolve(); });
+const LIST = { watchlistId: 'wl_hb', name: 'High-Beta Ten', status: 'committed', tickers: ['SLB', 'TSLA'] };
+/** An agent whose equipped list is wl_hb, equipped at `ms` (the document records no other equip time). */
+const equipped = (ms = Date.UTC(2026, 9, 21, 22, 5), over = {}) => {
+  const agent = agentReady({ gamesPlayed: 3 });
+  Object.assign(agent.agent, { equippedWatchlistId: 'wl_hb', equippedWatchlistName: 'High-Beta Ten', equippedAt: iso(ms), ...over });
+  return agent;
+};
 
 describe('the next action (R-S4-2)', () => {
   it('a live game: the card names it, and Open game opens the poll\'s own record', () => {
@@ -207,6 +217,23 @@ describe('a live game is always there on the phone, whatever the window\'s statu
     click(byRole(nextCard(), 'button', COPY.nextAction.openGame)[0]);
     expect(hub.openGame).toHaveBeenCalledTimes(1);
     expect(hub.openGame.mock.calls[0][0]).toBe(BB);
+  });
+});
+
+describe('no later rule is offered before the live poll has answered (N-2)', () => {
+  it('a ready review waits for the poll — it would swap for a live game\'s card the moment the poll answered — and appears once the poll has answered with none', () => {
+    const unanswered = hubOf({ activeBattles: null, activePoll: null });
+    const m = render('desktop', unanswered);
+    expect(nextCard()).toBeNull();
+    m.rerender(<CommandCenterHub site="desktop" hub={hubOf()} />);
+    expect(nextKind()).toBe('review');
+  });
+
+  it('a live game is there the moment the poll answers, and is never preceded by a review card', () => {
+    const m = render('desktop', hubOf({ activeBattles: null, activePoll: null }));
+    expect(nextCard()).toBeNull();
+    m.rerender(<CommandCenterHub site="desktop" hub={hubOf({ activeBattles: [BB] })} />);
+    expect(nextKind()).toBe('openGame');
   });
 });
 
@@ -400,6 +427,30 @@ describe('Later (R-S4-3; IR-12)', () => {
     expect(nextCard()).toBeNull();
   });
 
+  it('the focused Later button hands focus on: to the next card\'s Later, and with none left to the hub\'s root — never to <body> (N-3)', () => {
+    r.window = windowOf([]);
+    render('desktop', hubOf({ activeBattles: [BB, RANKED] }));
+    later().focus();
+    expect(document.activeElement).toBe(later());
+    click(later());
+    expect(nextKind()).toBe('openGame');
+    expect(document.activeElement).toBe(later());
+    click(later());
+    expect(nextCard()).toBeNull();
+    expect(document.activeElement).toBe(document.querySelector('[data-hub="shell"]'));
+  });
+
+  it('on the phone, where a card moves between its two slots (a live game\'s above the rows, a review\'s below), focus follows it too (N-3)', () => {
+    r.window = windowOf(TEN);
+    render('mobile', hubOf({ activeBattles: [BB] }));
+    expect(nextText()).toContain(COPY.nextAction.liveTitle);
+    later().focus();
+    click(later());
+    expect(nextKind()).toBe('review');
+    expect(nextCard().contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(later());
+  });
+
   it('the phone card has its Later too', () => {
     render('mobile', hubOf({ activeBattles: [BB] }));
     click(later());
@@ -422,14 +473,13 @@ describe('Recent activity (R-S4-1)', () => {
     expect(labels).toHaveLength(1 + 3 + 2);
   });
 
-  it('a row for a game opens that game, the poll\'s record for a live one and the window\'s for a completed one; a loadout row opens nothing', () => {
+  it('a row for a game opens that game, the poll\'s record for a live one and the window\'s for a completed one; a loadout row opens nothing', async () => {
     withThree();
-    r.agent = agentReady({ gamesPlayed: 3 });
-    r.agent.agent.equippedWatchlistId = 'wl_hb';
-    r.agent.agent.equippedWatchlistName = 'High-Beta Ten';
-    r.agent.agent.equippedAt = iso(Date.UTC(2026, 9, 21, 22, 5));
+    r.agent = equipped();
+    r.lists = [LIST];
     const hub = hubOf({ activeBattles: [BB] });
     render('desktop', hub);
+    await flush();
     const buttons = [...activitySection().querySelectorAll('[data-hub-activity-row]')].map((el) => el.closest('button'));
     const kinds = [...activitySection().querySelectorAll('[data-hub-activity-row]')].map((el) => el.getAttribute('data-hub-activity-row'));
     const live = buttons[kinds.indexOf('deployed')];
@@ -443,13 +493,14 @@ describe('Recent activity (R-S4-1)', () => {
     expect(loadout.getAttribute('aria-label')).toContain(COPY.activity.watchlistEquipped('Oct 21'));
   });
 
-  it('the watchlist row exists only where an equip time is recorded, and a re-equip replaces it', () => {
+  it('the watchlist row exists only where an equip time is recorded, and a re-equip replaces it', async () => {
     withThree();
-    const agent = agentReady({ gamesPlayed: 3 });
-    agent.agent.equippedWatchlistId = 'wl_hb';
-    agent.agent.equippedWatchlistName = 'High-Beta Ten';
+    r.lists = [LIST];
+    const agent = equipped(null);
+    agent.agent.equippedAt = null;
     r.agent = agent;
     const m = render('desktop', hubOf());
+    await flush();
     expect(activityLabels().some((l) => l.startsWith('Watchlist equipped'))).toBe(false);
     agent.agent.equippedAt = iso(Date.UTC(2026, 9, 21, 22, 5));
     m.rerender(<CommandCenterHub site="desktop" hub={hubOf()} />);
@@ -459,6 +510,57 @@ describe('Recent activity (R-S4-1)', () => {
     const rows = activityLabels().filter((l) => l.startsWith('Watchlist equipped'));
     expect(rows).toHaveLength(1);
     expect(rows[0]).toContain('since Oct 22');
+  });
+
+  it('a list deleted or taken back to draft is equipped to no game: the Loadout card calls it unavailable, so Activity lists no "Watchlist equipped" for it (BUILD_RULES §9)', async () => {
+    withThree();
+    r.agent = equipped();
+    r.lists = [{ ...LIST, status: 'draft' }];
+    render('desktop', hubOf());
+    await flush();
+    expect(document.querySelector('[data-hub-panel="loadout"]').textContent).toContain(COPY.loadout.unavailableNote);
+    expect(activityLabels().some((l) => l.startsWith('Watchlist equipped'))).toBe(false);
+    unmountAll();
+    r.lists = [];
+    render('desktop', hubOf());
+    await flush();
+    expect(activityLabels().some((l) => l.startsWith('Watchlist equipped'))).toBe(false);
+  });
+
+  it('the row names the list as the card does now — a renamed committed list — not as it was named when equipped', async () => {
+    withThree();
+    r.agent = equipped();
+    r.lists = [{ ...LIST, name: 'Renamed Ten' }];
+    render('desktop', hubOf());
+    await flush();
+    const row = activityLabels().find((l) => l.startsWith('Watchlist equipped'));
+    expect(row).toContain('Renamed Ten');
+    expect(row).not.toContain('High-Beta Ten');
+    expect(document.querySelector('[data-hub-panel="loadout"]').textContent).toContain('Renamed Ten');
+  });
+
+  it('while the lists are still being read the watchlist row is not claimed; an empty list is then "loading", not "nothing recorded yet" (H-4)', async () => {
+    r.window = windowOf([]);
+    r.agent = equipped();
+    r.lists = [LIST];
+    render('desktop', hubOf());
+    expect(activitySection().textContent).toContain(COPY.activity.loading);
+    expect(activitySection().textContent).not.toContain(COPY.activity.empty);
+    await flush();
+    expect(activityLabels()).toHaveLength(1);
+    expect(activityLabels()[0]).toContain('Watchlist equipped');
+  });
+
+  it('an agent still being read, or one that failed to read, leaves an empty list loading (or failed), never "nothing recorded yet" (H-4)', () => {
+    r.window = windowOf([]);
+    r.agent = agentReady({ gamesPlayed: 0 }, { status: 'loading', agent: null });
+    render('desktop', hubOf());
+    expect(activitySection().textContent).toContain(COPY.activity.loading);
+    unmountAll();
+    r.agent = agentReady({ gamesPlayed: 0 }, { status: 'error', agent: null, readError: new Error('x') });
+    render('desktop', hubOf());
+    expect(activitySection().textContent).toContain(COPY.activity.unavailable);
+    expect(activitySection().textContent).not.toContain(COPY.activity.empty);
   });
 
   it('an adjustment row: an accepted standing lean at its recorded equip time, never its raw id', () => {
@@ -566,10 +668,26 @@ describe('Recent activity (R-S4-1)', () => {
     expect(activityLabels(overview())).toEqual(rows);
   });
 
-  it('a window whose read failed after a success keeps the rows it holds (the stale note is Games\')', () => {
+  it('a window whose read failed after a success keeps its rows and SAYS how old they are, as Games does (H-5)', () => {
     r.window = windowOf(TEN, { status: 'error', error: new Error('x') });
     render('desktop', hubOf());
     expect(activityLabels().length).toBeGreaterThan(0);
+    const at = formatHubTime(NOW - 60000);
+    expect(activitySection().querySelector('[data-hub-activity-note="stale"]').textContent).toBe(COPY.activity.staleAsOf(COPY.time.et(at)));
+  });
+
+  it('a window kept from an earlier visit says "As of {time}" over its rows — in the section and in the sheet — and a current one says nothing', () => {
+    r.window = windowOf(TEN, { carried: true, nextAttemptAt: NOW + 60000 });
+    render('desktop', hubOf());
+    const at = COPY.time.et(formatHubTime(NOW - 60000));
+    expect(activitySection().querySelector('[data-hub-activity-note="carried"]').textContent).toBe(COPY.activity.asOf(at));
+    click(byRole(activitySection(), 'button', /^All activity · \d+$/)[0]);
+    expect(dialog().querySelector('[data-hub-activity-note="carried"]').textContent).toBe(COPY.activity.asOf(at));
+    closeSheet();
+    unmountAll();
+    r.window = windowOf(TEN);
+    render('desktop', hubOf());
+    expect(activitySection().querySelector('[data-hub-activity-note]')).toBeNull();
   });
 });
 

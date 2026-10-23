@@ -23,9 +23,21 @@
 
 import { HUB_COPY as COPY } from './hubCopy';
 import { formatHubDay, hubMs } from './hubDate';
+import { firstDeploymentCandidate } from './selectors/deployState';
 
 export const NEXT_ACTION_KINDS = Object.freeze({ OPEN_GAME: 'openGame', REVIEW: 'review', DEPLOY: 'deploy' });
 export const FIRST_DEPLOYMENT_KEY = 'deploy:first';
+
+/**
+ * Rule 3's test (spec §3.1; selectors/deployState.js firstDeploymentCandidate) with THIS owner's own hold set aside. A hold that
+ * is charging or locked makes the selector's canStart false for every OTHER control (the owner's matching token is exempted from
+ * its own block only by canCommit); the card whose hold is being pressed must not leave under the finger, or the panel unmounts
+ * mid-charge (the hub's "keep panels mounted while charging", spec §5.5). Every other block still holds — an unresolved
+ * attempt, a live game, a cooldown, a failed or stale read — so the card goes when the deployment is actually under way.
+ */
+export function firstDeploymentOffer(inputs) {
+  return firstDeploymentCandidate({ ...inputs, hold: null });
+}
 
 /** The Later key of an action on a record. The first deployment has no record: its key is the one. */
 export function laterKeyOf(kind, id) {
@@ -57,7 +69,7 @@ function reviewCandidate(doc, row) {
   };
 }
 
-function firstDeploymentCandidate() {
+function firstDeploymentCard() {
   const key = NEXT_ACTION_KINDS.DEPLOY;
   return {
     key,
@@ -86,11 +98,14 @@ const byNewest = (a, b) => {
  * @param {object[]} p.liveRows        Games' live rows, in sortLiveBattles order (hub/gamesDisplay.js liveGameRows)
  * @param {object[]} p.battles         the window's completed documents (empty while unread)
  * @param {Map}      p.rowsById        Games' display rows by id (a completed row's `review` is the tape link's own test)
- * @param {boolean}  p.firstDeployment firstDeploymentCandidate(inputs)
+ * @param {boolean}  p.firstDeployment firstDeploymentOffer(inputs)
+ * @param {boolean}  [p.liveResolved]  the live poll has answered for this owner (Games' `liveResolved`). Until it has, whether a game is
+ *                                    live is unknown, so rule 1 cannot yield and no later rule is offered: a review card would
+ *                                    swap for a live game's the moment the poll answers. Left out, the poll is taken as answered.
  * @param {Set<string>} [p.dismissed]  the Later keys set aside
- * @returns {{ status: 'ready', candidate: null | object }}
+ * @returns {{ status: 'ready' | 'loading', candidate: null | object }}
  */
-export function deriveNextAction({ liveRows, battles, rowsById, firstDeployment, dismissed = new Set() }) {
+export function deriveNextAction({ liveRows, battles, rowsById, firstDeployment, liveResolved, dismissed = new Set() }) {
   const later = dismissed instanceof Set ? dismissed : new Set();
   const rows = rowsById instanceof Map ? rowsById : new Map();
   const liveList = Array.isArray(liveRows) ? liveRows : [];
@@ -100,13 +115,15 @@ export function deriveNextAction({ liveRows, battles, rowsById, firstDeployment,
   const live = liveList.find((row) => !later.has(laterKeyOf(NEXT_ACTION_KINDS.OPEN_GAME, row.id)));
   if (live) return Object.freeze({ status: 'ready', candidate: Object.freeze(liveCandidate(live)) });
 
+  if (liveResolved === false) return Object.freeze({ status: 'loading', candidate: null });
+
   const ready = done
     .filter((doc) => rows.get(doc.id)?.review === true && !later.has(laterKeyOf(NEXT_ACTION_KINDS.REVIEW, doc.id)))
     .sort(byNewest)[0];
   if (ready) return Object.freeze({ status: 'ready', candidate: Object.freeze(reviewCandidate(ready, rows.get(ready.id))) });
 
   if (firstDeployment === true && !later.has(FIRST_DEPLOYMENT_KEY)) {
-    return Object.freeze({ status: 'ready', candidate: Object.freeze(firstDeploymentCandidate()) });
+    return Object.freeze({ status: 'ready', candidate: Object.freeze(firstDeploymentCard()) });
   }
   return Object.freeze({ status: 'ready', candidate: null });
 }

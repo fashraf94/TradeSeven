@@ -10,8 +10,12 @@
 //   uid       cleared on an actual identity change the hub sees resolve — signed
 //             out, or another account — and never on a frame where the identity
 //             has not answered yet (`auth` null), which every cold mount has. A
-//             return to the hub that finds another account's key drops it. Signing
-//             out and back in as the same uid is a change too: the set starts empty.
+//             return to the hub that finds another account's key drops it. A
+//             sign-out the mounted hub sees is a change too: the set starts empty,
+//             even for the same uid. App's own logout leaves the dashboard first
+//             (`logout(); setScreen('home')`), so there the hub never sees the
+//             sign-out: a same-uid sign-in in the same tab finds its Laters (they
+//             go with the tab), and any other account finds none.
 //   storage   every call is guarded. With storage unavailable (private mode, a
 //             blocked or full store) Later still works for the mount, from memory.
 //

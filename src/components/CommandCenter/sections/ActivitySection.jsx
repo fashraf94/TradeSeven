@@ -10,6 +10,7 @@
 import React from 'react';
 import { readyRows } from '../hub/hubModel';
 import { HUB_COPY as COPY } from '../hub/hubCopy';
+import { formatHubTime } from '../hub/hubDate';
 import { C, HAIR, tint } from '../hub/hubStyle';
 import { HubLink, Icon, LoadingLine, Mono, Row, Section } from '../HubParts';
 
@@ -46,6 +47,21 @@ export function ActivityRows({ items, onOpen }) {
 }
 
 /**
+ * The list's age, when it stands on a window kept from an earlier visit or one whose refresh failed (the games' own note says
+ * the same; BUILD_RULES §9: a heading that reads as current must not sit over rows that are not).
+ */
+export function ActivityAgeNote({ activity, style }) {
+  if (activity?.status !== 'ready' || (activity.stale !== true && activity.carried !== true)) return null;
+  const at = formatHubTime(activity.asOf);
+  const time = at ? COPY.time.et(at) : '';
+  return (
+    <div data-hub-activity-note={activity.stale === true ? 'stale' : 'carried'} style={{ fontSize: 12.5, color: C.ink2, lineHeight: 1.45, ...style }}>
+      {activity.stale === true ? COPY.activity.staleAsOf(time) : COPY.activity.asOf(time)}
+    </div>
+  );
+}
+
+/**
  * With a `limit` (the phone Overview's three rows, the side column's ten) and more rows than it, the design's "All activity
  * · N" link follows — N is the projection's own length — and opens the activity sheet (slice S4).
  */
@@ -58,6 +74,7 @@ export default function ActivitySection({ activity, limit = null, onOpen, onAll 
     <Section label={COPY.activity.label} data-hub-section="activity">
       {!ready && !failed && <LoadingLine>{COPY.activity.loading}</LoadingLine>}
       {failed && <div data-hub-activity-note="error" style={{ fontSize: 13, color: C.ink2 }}>{COPY.activity.unavailable}</div>}
+      <ActivityAgeNote activity={activity} />
       {ready && items.length === 0 && <div style={{ fontSize: 13, color: C.ink3 }}>{COPY.activity.empty}</div>}
       {ready && items.length > 0 && <ActivityRows items={items} onOpen={onOpen} />}
       {ready && limit && rows.length > limit && (

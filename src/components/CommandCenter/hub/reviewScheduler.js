@@ -417,8 +417,10 @@ export function createReviewScheduler({
    */
   function lateDone(id, docs) {
     const read = lateRead;
+    // An earlier cycle's answer (its query outlived its local deadline) is not this read's: it must not spend the slot.
+    if (!read || read.id !== id) return;
     lateRead = null;
-    if (!read || read.id !== id || !Array.isArray(docs) || typeof onLate !== 'function') return;
+    if (!Array.isArray(docs) || typeof onLate !== 'function') return;
     const elapsed = clock.now() - read.startedAt;
     if (elapsed >= budget.queryDeadlineMs || elapsed >= budget.cycleDeadlineMs) return;
     onLate(Object.freeze({ battles: ownedWindow(docs, owner.uid), generation: generation + 1, lastSuccessfulAt: clock.now() }));

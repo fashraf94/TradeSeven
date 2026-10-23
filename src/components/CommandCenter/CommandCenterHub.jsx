@@ -52,9 +52,10 @@
 // next action with its Later, the Daily Regime Brief and History's Refresh come
 // from the records those readers already hold (hub/useHubReaders.js), and the
 // brief from its existing hook (hub/useHubBrief.js, run by the readers). "All activity · N" opens
-// the activity sheet. The first-deployment card's hold takes the deploy action the
-// strip and the Deploy card take (`actions.deploy`), which S2b supplies: until
-// then it is absent and the hold stays disabled.
+// the activity sheet. The first-deployment card's hold takes ONLY the deploy action,
+// `onDeploy={actions.deploy}`. Nothing defines `actions.deploy` yet, and neither the
+// strip nor the Deploy card is passed one: S2b supplies it under that key to all
+// three surfaces, and until then each hold is disabled.
 //
 // One tree for the three wide compositions. Desktop, tablet and stacked are
 // one CSS grid whose areas change with the composition; every part keeps its

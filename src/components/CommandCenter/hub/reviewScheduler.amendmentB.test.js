@@ -132,6 +132,32 @@ describe('a first read that lands after dispose() is kept once (Q-S3-9)', () => 
     expect(h.late).toEqual([]);
   });
 
+  it('an EARLIER cycle\'s answer after dispose is not the live first read\'s: it does not spend the one slot (reviewer K-2)', async () => {
+    const late = [];
+    const answers = [];
+    const s = createReviewScheduler({
+      owner: OWNER,
+      clock: { now: () => Date.now(), setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (h) => clearTimeout(h) },
+      queryCompleted: () => new Promise((resolve) => { answers.push(resolve); }),
+      checkReview: () => Promise.resolve(READY),
+      onChange: () => {},
+      onLate: (window) => late.push(window),
+    });
+    s.trigger(REVIEW_TRIGGERS.MOUNT);
+    // Cycle 1's query outlives its 8 s deadline (a failed read); the owed retry starts cycle 2 at the permitted time.
+    await tick(REVIEW_BUDGET.windowMs + 1 * S);
+    expect(answers).toHaveLength(2);
+    s.dispose();
+    // Cycle 1's SDK promise finally resolves — stale, past its deadline, not the read in flight — then cycle 2's, inside its own 8 s.
+    answers[0](docsOf(2));
+    await tick(0);
+    expect(late, 'the stale answer is kept by nobody').toEqual([]);
+    answers[1](docsOf(3));
+    await tick(0);
+    expect(late).toHaveLength(1);
+    expect(late[0].battles).toHaveLength(3);
+  });
+
   it('a scheduler given no onLate loses it quietly, as before', async () => {
     const h = harness({ withLate: false });
     h.s.trigger(REVIEW_TRIGGERS.MOUNT);

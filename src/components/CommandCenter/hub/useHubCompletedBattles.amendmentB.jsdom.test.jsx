@@ -16,6 +16,7 @@ vi.mock('../../../services/authIdentity', () => ({ useAuthIdentity: () => id.cur
 vi.mock('../../../services/completedAgentBattles', () => ({ fetchRecentCompletedAgentBattles: vi.fn(async () => []) }));
 vi.mock('../../../utils/reviewAvailability', () => ({ getReviewAvailability: vi.fn(async () => ({ ready: true, target: 'filmRoom', availability: 'ready' })) }));
 
+import { completedInputOf } from './selectors/readerInputs';
 import useHubCompletedBattles, { resetHubLedgersForTests } from './useHubCompletedBattles';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -182,6 +183,112 @@ describe('a first read that lands after the hub unmounted is kept for its owner 
     await advance(125 * S);
     expect(last()).toMatchObject({ carried: false, generation: 1 });
     expect(last().battles).toHaveLength(4);
+  });
+
+  // Reviewer K-1: the kept window on screen in place of the wait must not hide what the mounted scheduler goes on to publish.
+  describe('a window shown in place of the wait still tells the truth about the scheduler\'s own read (Amendment A, K-1)', () => {
+    /** Reads answered by hand: [0] is the bounced first read, then each later read waits for the test. */
+    function manual() {
+      const pending = [];
+      return {
+        pending,
+        queryCompleted: (uid) => {
+          calls.queries.push({ uid, at: Date.now() - T0 });
+          return new Promise((resolve, reject) => { pending.push({ resolve, reject }); });
+        },
+        checkReview: () => Promise.resolve(READY),
+      };
+    }
+    const landLate = async (s, n = 3) => {
+      await act(async () => { s.pending[0].resolve(docsFor('uid-A', n)); await vi.advanceTimersByTimeAsync(0); });
+      render(s);
+    };
+
+    it('queued: the next attempt it owes shows beside the window, in place of nothing', async () => {
+      const s = manual();
+      render(s);
+      await advance(300);
+      remount();
+      render(s);
+      await advance(1 * S);
+      await landLate(s);
+      expect(last()).toMatchObject({ status: 'ready', carried: true, error: null });
+      expect(last().nextAttemptAt, 'the scheduler\'s own queued time, not a carried state\'s null').toBe(T0 + 120 * S);
+    });
+
+    it('in flight: while the slot\'s read is out the window is refreshing, not idle', async () => {
+      const s = manual();
+      render(s);
+      await advance(300);
+      remount();
+      render(s);
+      await advance(1 * S);
+      await landLate(s);
+      await advance(120 * S);
+      expect(calls.queries.map((q) => q.at)).toEqual([0, 120 * S]);
+      expect(last()).toMatchObject({ status: 'ready', carried: true, checking: true, refreshing: true, nextAttemptAt: null });
+    });
+
+    it('failed: the read that fails is the stale note and Retry — never a clean carried window — and it is no ready, empty read for the first deployment; the owed retry and its failure follow', async () => {
+      const s = manual();
+      render(s);
+      await advance(300);
+      remount();
+      render(s);
+      await advance(1 * S);
+      await landLate(s, 0);
+      expect(last().battles).toEqual([]);
+      expect(completedInputOf(last())).toMatchObject({ status: 'ready', rows: [] });
+      await advance(120 * S);
+      await act(async () => { s.pending[1].reject(new Error('failed-precondition')); await vi.advanceTimersByTimeAsync(0); });
+      expect(last()).toMatchObject({ status: 'error', carried: true, checking: false, refreshing: false });
+      expect(last().error).not.toBeNull();
+      expect(last().battles, 'the window it holds stays').toEqual([]);
+      expect(completedInputOf(last()).status, 'a failed read is never an empty history').toBe('error');
+      expect(last().nextAttemptAt, 'the one owed retry, queued at its permitted time').toBe(T0 + 240 * S);
+      await advance(120 * S);
+      expect(calls.queries.map((q) => q.at)).toEqual([0, 120 * S, 240 * S]);
+      await act(async () => { s.pending[2].reject(new Error('failed-precondition')); await vi.advanceTimersByTimeAsync(0); });
+      expect(last()).toMatchObject({ status: 'error', nextAttemptAt: null });
+    });
+
+    it('and when the scheduler\'s own read succeeds it takes over: its window, no longer carried', async () => {
+      const s = manual();
+      render(s);
+      await advance(300);
+      remount();
+      render(s);
+      await advance(1 * S);
+      await landLate(s);
+      await advance(120 * S);
+      await act(async () => { s.pending[1].resolve(docsFor('uid-A', 4)); await vi.advanceTimersByTimeAsync(0); });
+      expect(last()).toMatchObject({ status: 'ready', carried: false, generation: 1, error: null, checking: false });
+      expect(last().battles).toHaveLength(4);
+    });
+  });
+
+  // Reviewer K-3: "first" is the owner's, not the scheduler's: a hub that was SHOWING a window keeps no later read.
+  it('a hub that was showing a window when it unmounted keeps no later read, even if its own scheduler had none: the shown window stays', async () => {
+    const pending = [];
+    const s = {
+      queryCompleted: (uid) => { calls.queries.push({ uid, at: Date.now() - T0 }); return new Promise((resolve) => { pending.push(resolve); }); },
+      checkReview: () => Promise.resolve(READY),
+    };
+    render(s);
+    await advance(300);
+    remount();
+    render(s);
+    await advance(1 * S);
+    await act(async () => { pending[0](docsFor('uid-A', 3)); await vi.advanceTimersByTimeAsync(0); });
+    render(s);
+    expect(last().battles).toHaveLength(3);
+    await advance(120 * S);
+    expect(calls.queries).toHaveLength(2);
+    remount();
+    await act(async () => { pending[1](docsFor('uid-A', 7)); await vi.advanceTimersByTimeAsync(0); });
+    render(s);
+    expect(seen[0]).toMatchObject({ carried: true, generation: 1 });
+    expect(seen[0].battles, 'the window the hub showed, not the later read').toHaveLength(3);
   });
 
   it('a first read that FAILED after the unmount keeps nothing', async () => {

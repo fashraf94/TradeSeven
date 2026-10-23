@@ -48,11 +48,12 @@ import { CLASHBOT_OPEN_EVENT } from '../../ClashBot/ClashBotWidget';
 import { getEquipSlots } from '../../../utils/equipSlots';
 import { getTraitSlotSummary } from '../../../utils/traitSlotSummary';
 import { FORGE_AREAS, FORGE_RETURN } from '../hubChrome';
+import { activitySectionOf, loadoutKnowledgeOf } from './activityRows';
 import { archetypeLines } from './archetypeLines';
 import { hubFlags } from './hubFlags';
 import { useHubModalOpen } from './HubOverlays';
 import { loadoutLineOf } from './loadoutLine';
-import { deriveCareer, deriveLoadout, ideaAccessOf, LOADOUT_STATUS } from './selectors/loadout';
+import { deriveCareer, deriveLoadout, ideaAccessOf, LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
 import { useHubLoadout } from './useHubLoadout';
 import { HUB_SHEETS, useHubSheets } from './useHubSheets';
 
@@ -86,6 +87,7 @@ export function useHubRuntime({ hub, agentRead = null, sections, rootRef }) {
 
   let merged = sections;
   if (live) {
+    const flags = hubFlags();
     const loadout = deriveLoadout({
       agent,
       agentLoading,
@@ -97,13 +99,28 @@ export function useHubRuntime({ hub, agentRead = null, sections, rootRef }) {
       listsStatus: lists.status,
       listsReadFor: lists.readFor,
       activeAgentBattles: hub.activeBattles,
-      ...hubFlags(),
+      ...flags,
       ideaAccess: ideaAccessOf(hub.ideaAccess),
     });
     merged = {
       ...sections,
       loadout: loadout.status === LOADOUT_STATUS.READY ? { ...loadout, summary: loadoutLineOf(loadout) } : loadout,
       career: deriveCareer({ agent, agentLoading }),
+      // Slice S4 (R-S4-1): Activity's loadout rows are the Loadout's own — the equipped list as the card resolved it (found among the
+      // committed lists, under the name the card shows), the archetype's name — so the list and the card cannot disagree
+      // (BUILD_RULES §9), and an empty list is not "nothing recorded" while the loadout is still unknown.
+      ...(sections.activityInputs ? {
+        activity: activitySectionOf({
+          ...sections.activityInputs,
+          agent,
+          watchlist: loadout.status === LOADOUT_STATUS.READY && loadout.watchlist?.state === WATCHLIST_STATE.READY
+            ? { id: loadout.watchlist.id, name: loadout.watchlist.name }
+            : null,
+          archetypeName: loadout.status === LOADOUT_STATUS.READY ? loadout.archetype?.name ?? null : null,
+          characterTab: flags.characterTab,
+          knowledge: loadoutKnowledgeOf(loadout),
+        }),
+      } : null),
     };
   }
 

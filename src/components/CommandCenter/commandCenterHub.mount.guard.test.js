@@ -583,7 +583,7 @@ const PERMITTED_TERMINALS = Object.freeze({
   // S4 (rulings R-S4-1, R-S4-4): the brief's existing hook, which owns its read and its one retry (the hub adds no read of
   // its own), and the shared lean kernel Activity asks which standing leans a game would carry (Display-Agreement §9).
   'src/hooks/useDailyRegimeBrief.js': 'the Daily Regime Brief hook, reused unchanged but for the additive generatedAt (ruling R-S4-4)',
-  'api/_utils/leanRevalidation.js': 'acceptedStandingLeans — the kernel the battle snapshot and the Forge use; Activity lists only the leans a game would carry (ruling R-S4-1)',
+  'api/_utils/leanRevalidation.js': 'revalidateStandingLeans at its default cap — the call the battle snapshot and the Forge Character tab make; Activity lists only the leans a game would carry (ruling R-S4-1)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -1011,7 +1011,7 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     '/hooks/useMasteryProfile': ['default'],
     // S4: the brief's own hook (one default import, in hub/useHubBrief.js) and the lean kernel (one name, in hub/activityRows.js).
     '/hooks/useDailyRegimeBrief': ['default'],
-    '/api/_utils/leanRevalidation.js': ['acceptedStandingLeans'],
+    '/api/_utils/leanRevalidation.js': ['revalidateStandingLeans'],
     '/ClashBot/ClashBotWidget': ['CLASHBOT_OPEN_EVENT'],
     '/utils/equipSlots': ['getEquipSlots'],
     '/utils/traitSlotSummary': ['getTraitSlotSummary'],

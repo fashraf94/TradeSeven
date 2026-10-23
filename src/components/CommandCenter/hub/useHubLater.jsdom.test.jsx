@@ -115,7 +115,9 @@ describe('an actual identity change clears it (IR-12)', () => {
     expect(stored('uid-A')).toBeNull();
   });
 
-  it('signed out clears it, and signing back in as the same uid starts empty: a sign-out is a change', () => {
+  // A sign-out the MOUNTED hub sees. App's own logout (`logout(); setScreen('home')`) unmounts the dashboard first, so there a same-uid
+  // sign-in in the same tab finds its Laters (next row); the ruling clears them on an actual uid change.
+  it('a sign-out the mounted hub sees clears it, and signing back in as the same uid starts empty', () => {
     mount(A);
     act(() => last().dismiss('openGame:g1'));
     rerender(SIGNED_OUT);
@@ -123,6 +125,14 @@ describe('an actual identity change clears it (IR-12)', () => {
     expect(stored('uid-A')).toBeNull();
     rerender(A);
     expect(last().dismissed.size).toBe(0);
+  });
+
+  it('a same-uid sign-in after a logout that unmounted the hub finds its Laters: the uid did not change, and they go with the tab (N-4)', () => {
+    mount(A);
+    act(() => last().dismiss('openGame:g1'));
+    unmount();
+    mount({ signedIn: true, uid: 'uid-A', authEpoch: 3 });
+    expect(last().dismissed.has('openGame:g1')).toBe(true);
   });
 
   it('a frame where the identity has not answered (auth null) clears nothing — every cold mount has one', () => {

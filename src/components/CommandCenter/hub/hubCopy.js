@@ -372,6 +372,9 @@ export const HUB_COPY = Object.freeze({
     empty: 'Nothing recorded yet.',
     /** The window failed and nothing is retained: the list needs it for its cutoff, and Games carries the Retry. */
     unavailable: 'Couldn’t load your activity',
+    /** The list stands on a window kept from an earlier visit, or one whose refresh failed: its age, as Games says it. */
+    asOf: (time) => (time ? `As of ${time}` : 'As of your last visit'),
+    staleAsOf: (time) => (time ? `As of ${time} · couldn’t refresh` : 'Couldn’t refresh'),
     /** The phone Overview's and the side column's link to the whole list (the design's; the sheet is S4's). */
     all: (n) => `All activity · ${n}`,
     /** An activity row's name: what happened, its line, and when (the visible time; S1 review L3-8). */

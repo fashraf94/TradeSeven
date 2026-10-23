@@ -28,28 +28,27 @@
 // window, within its rate cap.
 //
 // Slice S4 (rulings R-S4-1 … R-S4-3, R-S4-5) adds, from the same records and with
-// no read, effect or listener of its own: the Activity section (hub/activityRows.js),
-// the next action and its Later (hub/nextAction.js, hub/useHubLater.js), and the
-// actions that go with them — `nextAction`, `laterNextAction`, `openActivity` and
-// History's `refreshHistory`. The Daily Regime Brief is the one thing it does read:
+// no read, effect or listener of its own: the next action and its Later
+// (hub/nextAction.js, hub/useHubLater.js), the Activity section's INPUTS
+// (`activityInputs`: the Loadout is the runtime's, so hub/useHubRuntime.js finishes
+// the list with it, hub/activityRows.js), and the actions that go with them —
+// `nextAction`, `laterNextAction`, `openActivity` and History's `refreshHistory`. The Daily Regime Brief is the one thing it does read:
 // through the existing brief hook (hub/useHubBrief.js), which owns that read and
 // its one retry — `sections.brief` and `actions.retryBrief`.
 
 import { useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { CASUAL_CLONE_CONCURRENCY_ENABLED } from '../../../config/featureFlags';
 import { FILM_ROOM_ROUTE } from '../../../constants/filmTape';
 import useAgent from '../../../hooks/useAgent';
 import { useAuthIdentity } from '../../../services/authIdentity';
 import { getMarketState } from '../../../utils/marketSchedule';
-import { activitySectionOf } from './activityRows';
-import { archetypeLines } from './archetypeLines';
 import { DISPLAY_ACTIONS } from './deployDisplay';
 import { completedGameRows, liveGameRows } from './gamesDisplay';
-import { hubFlags } from './hubFlags';
 import { HUB_S2A_DEPLOY_INPUTS } from './hubModel';
-import { NEXT_ACTION_KINDS, deriveNextAction } from './nextAction';
+import { NEXT_ACTION_KINDS, deriveNextAction, firstDeploymentOffer } from './nextAction';
 import { REVIEW_TRIGGERS } from './reviewScheduler';
-import { RETRY_ACTIONS, deriveHubDeployState, firstDeploymentCandidate } from './selectors/deployState';
+import { RETRY_ACTIONS, deriveHubDeployState } from './selectors/deployState';
 import { agentInputOf, authInputOf, completedInputOf, loadoutAgentOf, ownedLiveList, pollInputOf } from './selectors/readerInputs';
 import useHubBrief from './useHubBrief';
 import useHubCompletedBattles from './useHubCompletedBattles';
@@ -138,24 +137,25 @@ export default function useHubReaders(hub) {
   const loadoutAgent = loadoutAgentOf(inputs.agent, auth, agent.retry);
 
   // Slice S4: Activity and the next action are projections of the records above (no read of their own), over Games' own rows
-  // so a word, a verdict or an openable tape is said once.
+  // so a word, a verdict or an openable tape is said once. Activity's loadout rows need the Loadout (its resolved list and
+  // archetype), which the runtime holds: the readers hand it the games' side, with the age of the window it stands on.
   const rowsById = new Map(games.rows.map((row) => [row.id, row]));
-  const activity = activitySectionOf({
+  const activityInputs = Object.freeze({
     battles: completed.battles,
     failed: completed.status === 'error' && !completed.checking,
     live,
     rowsById,
-    agent: loadoutAgent.agent,
-    archetypeName: loadoutAgent.agent ? archetypeLines(loadoutAgent.agent.archetype).name : null,
-    characterTab: hubFlags().characterTab,
+    nowMs: Date.now(),
+    windowAge: Object.freeze({ asOf: games.asOf ?? null, stale: games.stale === true, carried: games.carried === true }),
   });
-  const nextAction = deriveNextAction({
+  const nextInputs = {
     liveRows,
     battles: completed.battles,
     rowsById,
-    firstDeployment: firstDeploymentCandidate(inputs),
-    dismissed: later.dismissed,
-  });
+    firstDeployment: firstDeploymentOffer(inputs),
+    liveResolved: games.liveResolved,
+  };
+  const nextAction = deriveNextAction({ ...nextInputs, dismissed: later.dismissed });
   const candidate = nextAction.candidate;
 
   // A live row opens the poll's own record, even when the window holds the same id (review T0R-1).
@@ -182,7 +182,14 @@ export default function useHubReaders(hub) {
     nextAction: candidate?.key === NEXT_ACTION_KINDS.OPEN_GAME && openGame ? () => openGame({ id: candidate.id })
       : candidate?.key === NEXT_ACTION_KINDS.REVIEW && openTape ? () => openTape({ id: candidate.id })
         : undefined,
-    laterNextAction: candidate ? () => later.dismiss(candidate.laterKey) : undefined,
+    // Setting a candidate aside can take the focused Later button with it: the last candidate takes the card, and on the phone a card
+    // that moves between its two slots (a live game's above the rows, a review's below) is mounted afresh. A control that unmounts
+    // drops focus to <body>, so once the render is in, focus follows the card (its Later button) or, with none left, the hub's root.
+    laterNextAction: candidate ? (event) => {
+      const shell = event?.currentTarget?.closest?.('[data-hub="shell"]') ?? null;
+      flushSync(() => later.dismiss(candidate.laterKey));
+      if (shell && !shell.contains(document.activeElement)) (shell.querySelector('[data-hub-next-action] [data-hub-later]') ?? shell).focus();
+    } : undefined,
     retryBrief: brief.retry,
     // An Activity row for a game opens that game's record, as Games' row does; a loadout row opens nothing.
     openActivity: openGame ? (row) => { if (row?.battleId) openGame({ id: row.battleId }); } : undefined,
@@ -194,5 +201,5 @@ export default function useHubReaders(hub) {
     },
   };
 
-  return { sections: { games, deploy, activity, nextAction, brief: brief.brief }, actions, inputs, agent: loadoutAgent };
+  return { sections: { games, deploy, activityInputs, nextAction, brief: brief.brief }, actions, inputs, agent: loadoutAgent };
 }

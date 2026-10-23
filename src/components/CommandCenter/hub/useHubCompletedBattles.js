@@ -101,6 +101,19 @@ export function resetHubLedgersForTests() {
   OWNERS.clear();
 }
 
+/** A kept window on screen while the mounted scheduler's own first read is out, queued or failed: its flags, the window's rows. */
+function withReadOf(kept, own) {
+  return Object.freeze({
+    ...kept,
+    status: own.status === 'error' ? 'error' : kept.status,
+    error: own.error,
+    checking: own.checking,
+    refreshing: own.checking,
+    inFlight: own.inFlight,
+    nextAttemptAt: own.nextAttemptAt,
+  });
+}
+
 /** The window's size (spec §8.2: the ten most recent completed records). */
 export const HUB_COMPLETED_WINDOW = 10;
 
@@ -162,8 +175,9 @@ export default function useHubCompletedBattles(max = HUB_COMPLETED_WINDOW, seams
       retained: record.window,
       clock,
       queryCompleted: s.queryCompleted || fetchRecentCompletedAgentBattles,
-      // Amendment B (Q-S3-9): a first read that succeeds after this hub unmounted is kept for THIS owner and epoch.
-      onLate: (late) => keepWindow(uid, epoch, { ...late, reviews: {} }),
+      // Amendment B (Q-S3-9): a first read that succeeds after this hub unmounted is kept for THIS owner and epoch — and only if
+      // the owner has no window yet: a hub that was SHOWING one (its own, or one kept before) keeps no later read.
+      onLate: (late) => { if (!keptWindowOf(uid, epoch)) keepWindow(uid, epoch, { ...late, reviews: {} }); },
       // The helper, unmodified: the document as it came, and nothing else.
       checkReview: s.checkReview || ((battle) => getReviewAvailability(battle)),
       onChange: (next) => {
@@ -199,9 +213,11 @@ export default function useHubCompletedBattles(max = HUB_COMPLETED_WINDOW, seams
   // Another owner's or epoch's window is dropped here, in render (spec §3). Before this mount's scheduler has changed
   // anything, a window kept for this owner and epoch shows "as of" its time (Q-S3-2, A+).
   const current = state && uid && state.ownerUid === uid && state.ownerEpoch === epoch ? state : null;
-  // A mounted scheduler that holds no window yet (a first read still out) gives way to a window kept for this owner and
-  // epoch — a first read of an earlier mount that landed after it unmounted (Amendment B, Q-S3-9).
+  // A mounted scheduler that holds no window yet (a first read still out) shows a window kept for this owner and epoch — a first
+  // read of an earlier mount that landed after it unmounted (Amendment B, Q-S3-9) — "as of" its time. The scheduler's own
+  // account of ITS read still shows through it: in flight (refreshing), queued (the next attempt), or failed (the stale note and
+  // Retry, and no ready, empty read for the first deployment), exactly as for any retained window.
   const kept = uid && (!current || current.battles === null) ? carriedState({ uid, authEpoch: epoch }, keptWindowOf(uid, epoch)) : null;
-  const owned = kept || current || unresolved(identity);
+  const owned = (kept && current ? withReadOf(kept, current) : kept) || current || unresolved(identity);
   return { ...owned, refresh };
 }

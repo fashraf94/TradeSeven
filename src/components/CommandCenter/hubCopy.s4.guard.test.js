@@ -65,6 +65,7 @@ describe('no claim the hub cannot back, in S4\'s words as they are rendered (§8
     COPY.activity.completed, COPY.activity.deployed, COPY.activity.completedSub('CPU', 'Lost −101'), COPY.activity.deployedSub('BaggerBomb', 'CPU'),
     COPY.activity.watchlistEquipped('Oct 21'), COPY.activity.adjustmentEquipped('Oct 21'),
     COPY.activity.sheetLabel, COPY.activity.sheetTitle, COPY.activity.sheetEyebrow(21),
+    COPY.activity.asOf('11:00 AM ET'), COPY.activity.asOf(''), COPY.activity.staleAsOf('11:00 AM ET'), COPY.activity.staleAsOf(''),
     COPY.nextAction.label, COPY.nextAction.later, COPY.nextAction.liveTitle, COPY.nextAction.preOpenTitle, COPY.nextAction.openGame,
     COPY.nextAction.liveWhy('Ranked', 'League group', '2h 41m left'), COPY.nextAction.reviewTitle('Oct 3'), COPY.nextAction.reviewTitle(''),
     COPY.nextAction.reviewWhy('CPU', 'Won +11.0'), COPY.nextAction.openReview, COPY.nextAction.firstTitle, COPY.nextAction.firstWhy,
@@ -79,7 +80,7 @@ describe('no claim the hub cannot back, in S4\'s words as they are rendered (§8
   });
 
   it('the sampled words are not empty, so the scan above is not vacuous', () => {
-    expect(rendered.length).toBeGreaterThan(35);
+    expect(rendered.length).toBeGreaterThan(38);
     expect(rendered.every((text) => typeof text === 'string' && text.length > 0)).toBe(true);
   });
 
