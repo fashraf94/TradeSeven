@@ -1650,3 +1650,47 @@ describe('Q-S2b-5 — the ceremony\'s existing-terminal Retry through the owned 
     expect(bridge.onOpenBattle).not.toHaveBeenCalled();
   });
 });
+
+// ── The mutating lens's gaps on the rulings round (S2b report §15) ──────────────────────────────────────────────
+describe('Q-S2b-4 / Q-S2b-5 — the mutating lens\'s gaps, closed', () => {
+  const HANDOFF = () => ({ outcome: 'handoff_failed', success: false, postIssued: true, httpStatus: 200, battleId: 'battle-new', error: 'deploy_handoff' });
+  const RUNNING = () => ({ id: 'battle-running', ownerId: 'uid-A', agentId: 'agent-uid-A', status: 'active' });
+
+  it('Dismiss is a refusal\'s only: a creation the record closed keeps its Enter, through the entry and through the hub\'s action (C2, U1)', async () => {
+    await committedAndOut();
+    posts[0].answer(HANDOFF());
+    await flush();
+    expect(attempt()).toMatchObject({ phase: 'created', ceremonyPhase: 'closed' });
+    expect(state().action).toBe(DISPLAY_ACTIONS.ENTER_BATTLE);
+    act(() => { probe.current.api.dismissRefusal(); });
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.DISMISS); });
+    expect(attempt()).toMatchObject({ phase: 'created', acknowledgedAt: null });
+    expect(state().action).toBe(DISPLAY_ACTIONS.ENTER_BATTLE);
+  });
+
+  it('a read that found its battle is not read again: a later Retry returns it at once (C9)', async () => {
+    h.ceremonyOn = true;
+    h.owned = vi.fn(async () => RUNNING());
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    expect(probe.current.snapshot.hydration.status).toBe('found');
+    let r;
+    await act(async () => { r = await probe.current.api.retryExistingRead(); });
+    await act(async () => { r = await probe.current.api.retryExistingRead(); });
+    expect(r).toEqual({ status: 'found', battle: RUNNING() });
+    expect(h.owned).toHaveBeenCalledTimes(1);
+  });
+
+  it('the existing terminal\'s Retry reads nothing for any other attempt — a creation whose handoff threw included (C11, C13)', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(HANDOFF());
+    await flush();
+    expect(attempt().phase).toBe('created');
+    let r;
+    await act(async () => { r = await probe.current.api.retryExistingRead(); });
+    expect(r).toEqual({ status: 'unavailable', battle: null });
+    expect(h.owned).not.toHaveBeenCalled();
+  });
+});

@@ -138,6 +138,9 @@ describe('Q-S2b-5 — the existing terminal\'s Retry, with and without the provi
     await flush();
     expect(primary().textContent.trim()).toBe('Retry available in 30s');
     expect(primary().getAttribute('aria-disabled')).toBe('true');
+    // The waiting look: CeremonyError's disabled Retry (no fill, the plain cursor).
+    expect(primary().style.background).toBe('transparent');
+    expect(primary().style.cursor).toBe('default');
     act(() => { primary().click(); });
     await flush();
     expect(ownedRead.retry).not.toHaveBeenCalled();
@@ -145,10 +148,47 @@ describe('Q-S2b-5 — the existing terminal\'s Retry, with and without the provi
     expect(primary().textContent.trim()).toBe('Retry available in 18s');
     await act(async () => { vi.advanceTimersByTime(18_000); });
     expect(primary().textContent.trim()).toBe('Retry');
+    expect(primary().style.cursor).toBe('pointer');
     act(() => { primary().click(); });
     await flush();
     expect(ownedRead.retry).toHaveBeenCalledTimes(1);
     expect(h.verify).toHaveBeenCalledTimes(1);
+  });
+
+  it('with `ownedRead`: a wait that ends mid-second opens the Retry at its end, not on the next whole-second tick (review RL-3)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    vi.setSystemTime(1_800_000_000_000);
+    const ownedRead = { retry: vi.fn(async () => ({ status: 'unavailable', battle: null })), retryAt: Date.now() + 30_500 };
+    renderExisting({ ownedRead });
+    await flush();
+    expect(primary().textContent.trim()).toBe('Retry available in 31s');
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    expect(primary().textContent.trim()).toBe('Retry available in 1s');
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(primary().textContent.trim()).toBe('Retry');
+    expect(primary().getAttribute('aria-disabled')).toBeNull();
+    // The countdown stops once the wait is over: no timer is left running (mutating lens X3).
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('with `ownedRead`: an owned read a newer read overtook sets nothing (mutating lens X7, X12)', async () => {
+    let answer;
+    const ownedRead = { retry: vi.fn(() => new Promise((r) => { answer = r; })), retryAt: null };
+    renderExisting({ ownedRead });
+    await flush();
+    act(() => { primary().click(); });
+    expect(lines(EXISTING_COPY.checking)).toHaveLength(1);
+    // The live list now holds the battle and the verifier changed: the R1 read runs again and finds it.
+    act(() => {
+      root.render(<CeremonyExisting agentName="Nova" existingBattleId={RUNNING} liveBattles={[OURS()]} verifyBattle={() => h.verify('casual-agent-uid-1', 'again')} onOpenBattle={vi.fn()} onDismiss={vi.fn()} ownedRead={ownedRead} />);
+    });
+    await flush();
+    expect(primary().textContent.trim()).toBe(EXISTING_COPY.open);
+    await act(async () => { answer({ status: 'unavailable', battle: null }); });
+    await flush();
+    expect(primary().textContent.trim()).toBe(EXISTING_COPY.open);
+    expect(lines(EXISTING_COPY.unavailable)).toHaveLength(0);
   });
 
   it('with `ownedRead`: a battle that is not the server\'s, or not the signed-in owner\'s, stays unavailable — and a read that throws too', async () => {

@@ -15,6 +15,7 @@ import { HUB_COPY as COPY } from './hubCopy';
 import {
   ATTEMPT_PHASES, CEREMONY_PHASES, RECONCILIATION, RESULT_KINDS, displayForAttempt,
 } from './selectors/attemptVocabulary';
+import { deriveHubDeployState } from './selectors/deployState';
 import { DEPLOY_IN_PROGRESS_LINE } from '../../../constants/deployOutcomes';
 import { DUE_DEPLOY_LINE } from '../../../constants/hypothesisRecords';
 
@@ -91,6 +92,11 @@ describe('Q-S2b-4 — Dismiss for a refusal no ceremony shows', () => {
       expect(d.strip, displayState).not.toHaveProperty('dismiss');
       if (d.cardLine) expect(d.cardLine, displayState).not.toHaveProperty('dismiss');
     }
+  });
+
+  it('the selector says no Dismiss for anything but a closed refusal: its default is false (mutating lens S3)', () => {
+    expect(deriveHubDeployState({ auth: { signedIn: false } }).dismiss).toBe(false);
+    expect(deriveHubDeployState(null).dismiss).toBe(false);
   });
 
   it('the label is the copy table\'s, and the action is its own kind, never one an attempt already has', () => {

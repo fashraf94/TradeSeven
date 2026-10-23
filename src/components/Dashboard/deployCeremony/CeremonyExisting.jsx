@@ -80,7 +80,9 @@ export default function CeremonyExisting({
       setClock(t);
       if (t >= retryAt) clearInterval(iv);
     }, 1000);
-    return () => clearInterval(iv);
+    // The Retry opens at the wait's end exactly, not on the next whole-second tick (review RL-3).
+    const end = setTimeout(() => setClock(Date.now()), Math.max(0, retryAt - Date.now()));
+    return () => { clearInterval(iv); clearTimeout(end); };
   }, [retryAt]);
   const waitSecs = retryAt ? Math.max(0, Math.ceil((retryAt - clock) / 1000)) : 0;
 
