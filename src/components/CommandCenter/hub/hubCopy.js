@@ -66,8 +66,8 @@ export const HUB_COPY = Object.freeze({
     reportBug: 'Report a bug',
     /** S5 (founder ruling Q-S5-1): the phone's menu button, where today's phone shell has its hamburger; it opens App's drawer. */
     menu: 'Open menu',
-    /** The same button's label while notifications are unread (the badge is for the eye; this is for the ear). */
-    menuUnread: (n) => `Open menu, ${n} unread notification${n === 1 ? '' : 's'}`,
+    /** The same button's label while notifications are unread (the badge is for the eye; this is for the ear). It takes the badge's own text, so the visible "9+" is part of the name (WCAG 2.5.3, Label in Name). */
+    menuUnread: (shown) => `Open menu, ${shown} unread notification${Number(shown) === 1 ? '' : 's'}`,
     /** The badge on it: the number, or "<cap>+" above the cap (the shell's own rule; the cap is the header's, not copy). */
     unreadBadge: (n, cap) => (n > cap ? `${cap}+` : String(n)),
   }),

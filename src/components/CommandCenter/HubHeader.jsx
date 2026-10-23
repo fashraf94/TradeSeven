@@ -34,11 +34,13 @@ const BADGE_CAP = 9;
 /** The phone's menu button: a 44 px target around the icon, the unread count as a badge on its corner. */
 function MenuButton({ onOpenMenu, unreadCount }) {
   const unread = Number.isSafeInteger(unreadCount) && unreadCount > 0 ? unreadCount : 0;
+  // One string for the eye and the ear: the text the badge shows is also what the name says (Label in Name).
+  const shown = unread > 0 ? COPY.header.unreadBadge(unread, BADGE_CAP) : '';
   return (
     <button
       type="button"
       onClick={onOpenMenu}
-      aria-label={unread > 0 ? COPY.header.menuUnread(unread) : COPY.header.menu}
+      aria-label={shown ? COPY.header.menuUnread(shown) : COPY.header.menu}
       data-hub-menu=""
       style={{ appearance: 'none', font: 'inherit', position: 'relative', background: 'transparent', border: 'none', padding: 0, width: PHONE_TARGET, height: PHONE_TARGET, margin: '0 2px 0 -10px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer', color: C.ink2 }}
     >
@@ -49,7 +51,7 @@ function MenuButton({ onOpenMenu, unreadCount }) {
           data-hub-menu-badge=""
           style={{ position: 'absolute', top: 4, right: 2, minWidth: 16, height: 16, padding: '0 4px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, background: cssVar('red'), color: C.bg, fontSize: 10, fontWeight: 700, lineHeight: 1 }}
         >
-          {COPY.header.unreadBadge(unread, BADGE_CAP)}
+          {shown}
         </span>
       )}
     </button>

@@ -11,6 +11,9 @@
 
 import React, { act } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const { userState, listWatchlists, equipWatchlist, unequipWatchlist, flags, slots, mastery } = vi.hoisted(() => ({
   userState: { user: { displayName: 'Flash', username: 'flash' } },
@@ -38,9 +41,10 @@ import CommandCenterHub, { areaSummaries } from './CommandCenterHub';
 import LoadoutSheets from './LoadoutSheets';
 import { CLASHBOT_OPEN_EVENT } from '../ClashBot/ClashBotWidget';
 import { getLevelConfig, getNextLevelInfo } from '../../constants/agentProgression';
-import { readToken } from '../../theme/cssTokens';
+import { cssVar, readToken } from '../../theme/cssTokens';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { LOADOUT_SYMBOL_LIMIT } from './hub/hubModel';
+import { PHONE_TARGET } from './hub/hubStyle';
 import { HUB_LAYOUT_FIXTURES } from './__fixtures__/hubLayoutFixtures';
 import { resetSeen, seen } from './__fixtures__/legacySheetStubs';
 import { byRole, byText, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav } from './__fixtures__/hubTestKit';
@@ -1163,20 +1167,24 @@ describe('the phone menu button: App\'s drawer, where today\'s phone shell has i
     expect(hubRoot().hasAttribute('data-hub-modal-open')).toBe(false);
   });
 
-  it('the badge is the unread count: none at zero, the number up to nine, "9+" above, and the label says how many', async () => {
+  it('the badge is the unread count: none at zero, the number up to nine, "9+" above, and the label carries the same text', async () => {
     const seenLabels = [];
     for (const [count, shown] of [[1, '1'], [3, '3'], [9, '9'], [10, '9+'], [250, '9+']]) {
       const { m } = await renderHub({ ...phone, hub: DRAWER({ unreadCount: count }) });
       expect(badge(), String(count)).not.toBeNull();
       expect(badge().textContent, String(count)).toBe(shown);
-      expect(menu().getAttribute('aria-label'), String(count)).toBe(COPY.header.menuUnread(count));
+      expect(menu().getAttribute('aria-label'), String(count)).toBe(COPY.header.menuUnread(shown));
+      // Label in Name (WCAG 2.5.3): whatever the badge shows is in the button's name
+      expect(menu().getAttribute('aria-label'), String(count)).toContain(badge().textContent);
       seenLabels.push(menu().getAttribute('aria-label'));
       m.unmount();
       mounted = mounted.filter((x) => x !== m);
     }
-    expect(new Set(seenLabels).size).toBe(5);
+    expect(new Set(seenLabels).size).toBe(4);
     expect(seenLabels[0]).toBe('Open menu, 1 unread notification');
     expect(seenLabels[1]).toBe('Open menu, 3 unread notifications');
+    expect(seenLabels[3]).toBe('Open menu, 9+ unread notifications');
+    expect(seenLabels[4]).toBe(seenLabels[3]);
     await renderHub({ ...phone, hub: DRAWER({ unreadCount: 0 }) });
     expect(badge()).toBeNull();
     expect(menu().getAttribute('aria-label')).toBe(COPY.header.menu);
@@ -1236,5 +1244,69 @@ describe('the phone menu button: App\'s drawer, where today\'s phone shell has i
     expect(document.querySelector('[data-hub-report-bug]')).not.toBeNull();
     await renderHub({ ...phone, hub: null });
     expect(menu()).toBeNull();
+  });
+
+  // ── The two measures a phone control is held to: its target and the badge's contrast ──────────────────
+  // jsdom computes no layout, so the target is the DECLARED box (the bug button's row above reads it the same
+  // way); the contrast is computed from the token values the stylesheet ships, never from a copy of them here.
+
+  const tokensCss = () => readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'theme', 'tokens.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  /** A token's hex as tokens.css declares it, following var() aliases (depth 4, as readToken does). */
+  const tokenHex = (name) => {
+    const css = tokensCss();
+    let value = `var(--ft-${name})`;
+    for (let hop = 0; hop < 4; hop += 1) {
+      const ref = /^var\(--ft-([a-z0-9-]+)\)$/.exec(value);
+      if (!ref) break;
+      const decl = new RegExp(`(?:^|[\\s;{])--ft-${ref[1]}\\s*:\\s*([^;]+);`).exec(css);
+      if (!decl) throw new Error(`tokens.css declares no --ft-${ref[1]}`);
+      value = decl[1].trim();
+    }
+    if (!/^#[0-9a-f]{6}$/i.test(value)) throw new Error(`--ft-${name} does not resolve to a six-digit hex (${value})`);
+    return value;
+  };
+  /** The token a style value names: "var(--ft-red)" reads "red". Anything else (a raw colour, a keyword) reads null. */
+  const tokenNameOf = (styleValue) => { const m = /^var\(--ft-([a-z0-9-]+)\)$/.exec(String(styleValue).trim()); return m ? m[1] : null; };
+  /** WCAG 2.x relative luminance and contrast ratio of two six-digit hex colours. */
+  const luminance = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrastOf = (a, b) => { const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+
+  it('the contrast computation itself is sound: black on white is 21:1, a colour on itself 1:1, and the shipped tokens resolve to hex', () => {
+    expect(contrastOf('#000000', '#ffffff')).toBeCloseTo(21, 5);
+    expect(contrastOf('#ef4444', '#ef4444')).toBeCloseTo(1, 5);
+    expect(tokenHex('red')).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(tokenHex('bg-dashboard')).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+
+  it('is a 44 px target: its declared width and height equal the phone target constant, and that constant is never under 44', async () => {
+    for (const unreadCount of [0, 3, 12]) {
+      const { m } = await renderHub({ ...phone, hub: DRAWER({ unreadCount }) });
+      expect(PHONE_TARGET, 'the phone target constant').toBeGreaterThanOrEqual(44);
+      for (const side of ['width', 'height']) {
+        expect(parseFloat(menu().style[side]), `${side} at ${unreadCount} unread`).toBeGreaterThanOrEqual(PHONE_TARGET);
+        expect(menu().style[side], `${side} at ${unreadCount} unread`).toBe(`${PHONE_TARGET}px`);
+      }
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+    }
+  });
+
+  it('the badge is the dark ink on the red: the page ground token for its text, the red token behind it', async () => {
+    await renderHub({ ...phone, hub: DRAWER({ unreadCount: 3 }) });
+    expect(badge().style.color).toBe(cssVar('bg-dashboard'));
+    expect(badge().style.background).toBe(cssVar('red'));
+  });
+
+  it('the badge text clears 4.5:1 (WCAG AA) on its ground, computed from the token values tokens.css ships', async () => {
+    await renderHub({ ...phone, hub: DRAWER({ unreadCount: 12 }) });
+    const textToken = tokenNameOf(badge().style.color);
+    const groundToken = tokenNameOf(badge().style.background);
+    expect(textToken, `badge text colour "${badge().style.color}" must be a --ft token`).not.toBeNull();
+    expect(groundToken, `badge ground "${badge().style.background}" must be a --ft token`).not.toBeNull();
+    const ratio = contrastOf(tokenHex(textToken), tokenHex(groundToken));
+    expect(ratio, `${textToken} on ${groundToken}: ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
   });
 });
