@@ -11,7 +11,10 @@
 //     error, ownerUid, ownerEpoch, lastSuccessfulAt, generation,
 //     refresh(reason),   an explicit refresh (the scheduler's rate cap holds)
 //     reviews,           { [battleId]: { state, result, nextAt } }
-//     checking, refreshing, nextAttemptAt
+//     checking, refreshing, nextAttemptAt,
+//     carried            true while the window is the one kept from an earlier
+//                        mount of this owner and epoch, not yet read again
+//                        (spec §6 as amended, Q-S3-2 A+); shown "as of" its time
 //   }
 //
 // It reads only while the hub is mounted, for the signed-in owner and epoch of
@@ -21,7 +24,10 @@
 // read never becomes an empty window: `battles` stays the last good one, or
 // null. The rate ledger outlives a mount: one per owner and epoch, so a return
 // to the hub inside the 120 s window queues at the permitted time instead of
-// reading again (spec §6; review T0-3).
+// reading again (spec §6; review T0-3). So does the last successful window,
+// by the founder's amendment of §6's unmount list (Q-S3-2, A+): a return shows
+// it at once "as of" its time and it is read again at the next permitted slot;
+// an owner or epoch change clears it with the ledger.
 //
 // Its activity — the real clock's timers, the page's visibility and focus
 // listeners, the effect that owns the scheduler — is listed in the hub mount
@@ -32,28 +38,37 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthIdentity } from '../../../services/authIdentity';
 import { fetchRecentCompletedAgentBattles } from '../../../services/completedAgentBattles';
 import { getReviewAvailability } from '../../../utils/reviewAvailability';
-import { REVIEW_TRIGGERS, createReviewScheduler } from './reviewScheduler';
+import { REVIEW_TRIGGERS, carriedState, createReviewScheduler } from './reviewScheduler';
 
 /**
- * The rate ledgers (spec §6: one completed query and ten helper starts per rolling 120 s "for the same mounted
- * uid/epoch. Every trigger shares this budget"). Kept per owner and epoch, outside any one mount; only the current
- * key is kept, so a new owner or epoch starts afresh.
+ * What outlives one mount, per owner and epoch: the rate ledger (spec §6: one completed query and ten helper starts
+ * per rolling 120 s "for the same mounted uid/epoch. Every trigger shares this budget") and, by the founder's
+ * amendment of §6's unmount list (Q-S3-2, A+), the last successful window — its documents, generation and as-of
+ * time. Only the current key is kept, so a new owner or epoch starts afresh, with neither.
  */
-const LEDGERS = new Map();
-function ledgerFor(uid, epoch) {
+const OWNERS = new Map();
+function ownerRecord(uid, epoch) {
   const key = `${uid}:${epoch}`;
-  let ledger = LEDGERS.get(key);
-  if (!ledger) {
-    LEDGERS.clear();
-    ledger = { queries: [], helpers: [] };
-    LEDGERS.set(key, ledger);
+  let record = OWNERS.get(key);
+  if (!record) {
+    OWNERS.clear();
+    record = { ledger: { queries: [], helpers: [] }, window: null };
+    OWNERS.set(key, record);
   }
-  return ledger;
+  return record;
+}
+/** The kept window of this owner and epoch, if any. */
+const keptWindowOf = (uid, epoch) => (uid ? OWNERS.get(`${uid}:${epoch}`)?.window ?? null : null);
+/** Keep the latest successful window of this owner and epoch (a failed read keeps the one before: `battles` holds it). */
+function keepWindow(uid, epoch, state) {
+  const record = OWNERS.get(`${uid}:${epoch}`);
+  if (!record || state.battles === null || state.lastSuccessfulAt === null) return;
+  record.window = { battles: state.battles, generation: state.generation, lastSuccessfulAt: state.lastSuccessfulAt };
 }
 
-/** Tests only: forget every ledger. */
+/** Tests only: forget every owner's ledger and kept window. */
 export function resetHubLedgersForTests() {
-  LEDGERS.clear();
+  OWNERS.clear();
 }
 
 /** The window's size (spec §8.2: the ten most recent completed records). */
@@ -81,6 +96,7 @@ function unresolved(identity) {
     refreshing: false,
     inFlight: 0,
     nextAttemptAt: null,
+    carried: false,
     reviews: Object.freeze({}),
     signedIn: Boolean(identity?.resolved && identity.uid),
   });
@@ -103,15 +119,20 @@ export default function useHubCompletedBattles(max = HUB_COMPLETED_WINDOW, seams
     if (!uid) return undefined;
     const s = seamsRef.current;
     const clock = s.clock || REAL_CLOCK;
+    const record = ownerRecord(uid, epoch);
     const scheduler = createReviewScheduler({
       owner: { uid, authEpoch: epoch },
       max,
-      ledger: ledgerFor(uid, epoch),
+      ledger: record.ledger,
+      retained: record.window,
       clock,
       queryCompleted: s.queryCompleted || fetchRecentCompletedAgentBattles,
       // The helper, unmodified: the document as it came, and nothing else.
       checkReview: s.checkReview || ((battle) => getReviewAvailability(battle)),
-      onChange: setState,
+      onChange: (next) => {
+        keepWindow(uid, epoch, next);
+        setState(next);
+      },
       visible: pageVisible(),
     });
     schedulerRef.current = scheduler;
@@ -138,7 +159,11 @@ export default function useHubCompletedBattles(max = HUB_COMPLETED_WINDOW, seams
     schedulerRef.current?.trigger(reason);
   }, []);
 
-  // Another owner's or epoch's window is dropped here, in render (spec §3).
-  const owned = state && uid && state.ownerUid === uid && state.ownerEpoch === epoch ? state : unresolved(identity);
+  // Another owner's or epoch's window is dropped here, in render (spec §3). Before this mount's scheduler has changed
+  // anything, a window kept for this owner and epoch shows "as of" its time (Q-S3-2, A+).
+  const current = state && uid && state.ownerUid === uid && state.ownerEpoch === epoch ? state : null;
+  const owned = current
+    || (uid ? carriedState({ uid, authEpoch: epoch }, keptWindowOf(uid, epoch)) : null)
+    || unresolved(identity);
   return { ...owned, refresh };
 }

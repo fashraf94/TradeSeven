@@ -194,26 +194,36 @@ describe('the rate cap belongs to the owner and epoch, not to one mount (spec §
   });
   beforeEach(() => { calls = { queries: [], checks: [] }; });
 
-  it('a return inside the 120 s window (the Film Room, a site switch) reads nothing until the permitted time — and says when', async () => {
+  // Spec §6 as the founder amended it (Q-S3-2, A+): the last successful window is kept across the remount for the same
+  // owner and epoch and shown "as of" its time; the read waits for the permitted slot (the ledger, as built).
+  it('a return inside the 120 s window (the Film Room, a site switch) shows the kept window "as of" its read at once, reads nothing until the permitted time — and says when', async () => {
     const s = seams();
     render(<SeamProbe seams={s} />);
     await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
     expect(calls.queries).toEqual([0]);
     expect(calls.checks).toHaveLength(10);
+    const firstWindow = last().battles;
     act(() => root.unmount());
     await act(async () => { await vi.advanceTimersByTimeAsync(29 * S); });
     root = createRoot(host);
     seen = [];
     render(<SeamProbe seams={s} />);
+    // The very first render of the remount: the kept window, never a loading frame.
+    expect(seen[0]).toMatchObject({ status: 'ready', carried: true, generation: 1, lastSuccessfulAt: T0, ownerUid: 'uid-A', ownerEpoch: 1 });
+    expect(seen[0].battles.map((b) => b.id)).toEqual(firstWindow.map((b) => b.id));
     await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
     expect(calls.queries, 'no second query inside the window').toEqual([0]);
-    expect(last()).toMatchObject({ status: 'loading', battles: null, nextAttemptAt: T0 + 120 * S });
+    expect(last()).toMatchObject({ status: 'ready', carried: true, generation: 1, lastSuccessfulAt: T0, nextAttemptAt: T0 + 120 * S, checking: false });
+    // Ready caches do not survive the unmount: each kept row's review is queued for the slot, no check started.
+    expect(Object.values(last().reviews).map((r) => r.state)).toEqual(Array(10).fill('queued'));
+    expect(calls.checks).toHaveLength(10);
     await act(async () => { await vi.advanceTimersByTimeAsync(88.9 * S); });
     expect(calls.queries).toEqual([0]);
     await act(async () => { await vi.advanceTimersByTimeAsync(0.2 * S); });
     expect(calls.queries, 'one queued cycle at the permitted time').toEqual([0, 120 * S]);
     expect(calls.checks).toHaveLength(20);
-    expect(last()).toMatchObject({ status: 'ready', generation: 1 });
+    // The read ends the carry; the generation goes on from the kept one.
+    expect(last()).toMatchObject({ status: 'ready', carried: false, generation: 2, lastSuccessfulAt: T0 + 120 * S });
   });
 
   it('an actual owner change starts afresh: A, then B, then A at a new epoch each read at once', async () => {
@@ -324,5 +334,81 @@ describe('the page and the identity reach the scheduler one fact at a time (spec
     } finally {
       for (const spy of [docAdd, docRemove, winAdd, winRemove]) spy.mockRestore();
     }
+  });
+});
+
+describe('the kept window (spec §6 as the founder amended it: Q-S3-2, A+) belongs to the owner and epoch, like the ledger', () => {
+  const READY = Object.freeze({ ready: true, target: 'filmRoom', availability: 'ready' });
+  let reads;
+  const seams = (answer = (uid) => Promise.resolve(docsFor(uid, 3))) => ({
+    queryCompleted: (uid) => { reads.push({ uid, at: Date.now() - T0 }); return answer(uid); },
+    checkReview: () => Promise.resolve(READY),
+  });
+  const remount = () => {
+    act(() => root.unmount());
+    root = createRoot(host);
+    seen = [];
+  };
+  beforeEach(() => { reads = []; });
+
+  it('an owner change clears it: B never sees A\'s kept window, and A at a new epoch starts empty too', async () => {
+    const s = seams();
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    remount();
+    id.current = { resolved: true, uid: 'uid-B', authEpoch: 2 };
+    render(<SeamProbe seams={s} />);
+    expect(seen[0]).toMatchObject({ status: 'loading', battles: null, carried: false });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    expect(last().battles.map((b) => b.ownerId)).toEqual(['uid-B', 'uid-B', 'uid-B']);
+    remount();
+    id.current = { resolved: true, uid: 'uid-A', authEpoch: 3 };
+    render(<SeamProbe seams={s} />);
+    expect(seen[0]).toMatchObject({ status: 'loading', battles: null, carried: false });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    expect(reads.map((r) => r.uid)).toEqual(['uid-A', 'uid-B', 'uid-A']);
+    expect(last()).toMatchObject({ ownerUid: 'uid-A', ownerEpoch: 3, carried: false, generation: 1 });
+  });
+
+  it('only a successful read is kept: a return after a failed first read shows no window, and waits for the slot', async () => {
+    const s = seams(() => Promise.reject(new Error('unavailable')));
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    expect(last()).toMatchObject({ status: 'error', battles: null });
+    remount();
+    render(<SeamProbe seams={s} />);
+    expect(seen[0]).toMatchObject({ status: 'loading', battles: null, carried: false });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    expect(last()).toMatchObject({ status: 'loading', battles: null, carried: false, nextAttemptAt: T0 + 120 * S });
+  });
+
+  it('the kept window follows the latest success: the second visit\'s refresh is what the third visit shows', async () => {
+    let n = 0;
+    const s = seams((uid) => { n += 1; return Promise.resolve(docsFor(uid, n)); });
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    remount();
+    render(<SeamProbe seams={s} />);
+    expect(seen[0]).toMatchObject({ carried: true, generation: 1 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(120 * S); });
+    expect(last()).toMatchObject({ carried: false, generation: 2 });
+    remount();
+    render(<SeamProbe seams={s} />);
+    expect(seen[0]).toMatchObject({ carried: true, generation: 2, lastSuccessfulAt: T0 + 120 * S });
+    expect(seen[0].battles).toHaveLength(2);
+  });
+
+  it('signed out, a kept window shows nothing; signing back in is a new epoch, so it is gone', async () => {
+    const s = seams();
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    remount();
+    id.current = { resolved: true, uid: null, authEpoch: 2 };
+    render(<SeamProbe seams={s} />);
+    expect(last()).toMatchObject({ status: 'loading', battles: null, carried: false });
+    remount();
+    id.current = { resolved: true, uid: 'uid-A', authEpoch: 3 };
+    render(<SeamProbe seams={s} />);
+    expect(seen[0]).toMatchObject({ status: 'loading', battles: null, carried: false });
   });
 });

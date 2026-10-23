@@ -64,6 +64,8 @@ function gamesSectionOf(completed, liveRows, liveResolved) {
     rows: Object.freeze([...live, ...completedGameRows(done, completed.reviews)]),
     stale: completed.status === 'error',
     refreshing: completed.refreshing === true,
+    // Kept from an earlier mount of this owner and epoch, not yet read again (Q-S3-2, A+): shown "as of" its time.
+    carried: completed.carried === true,
     asOf: completed.lastSuccessfulAt,
     nextAttemptAt: completed.nextAttemptAt,
   });

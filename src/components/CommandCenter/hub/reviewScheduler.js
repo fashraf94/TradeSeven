@@ -44,6 +44,15 @@
 //                 one per owner and auth epoch, so a remount (a return from the
 //                 Film Room, a site switch) spends the same budget (§6: "Every
 //                 trigger shares this budget"; review T0-3).
+//   carried       spec §6's unmount list as the founder amended it (Q-S3-2,
+//                 ruling A+): the hook also keeps the owner's and epoch's last
+//                 successful window — its documents, generation and as-of time
+//                 — and hands it in as `retained`. The scheduler starts from it
+//                 (`carried: true`, "as of" its time) and refreshes it at the
+//                 next permitted slot; its first successful read ends the
+//                 carry. Ready caches, unfinished queues, dirty work and result
+//                 consumers still clear on unmount, so each carried row's review
+//                 is an unstarted row. An owner or epoch change starts empty.
 //
 // Only getReviewAvailability's three fields are read from a check
 // (`ready`, `target`, `availability`); the battle documents are handed over
@@ -90,6 +99,51 @@ function helperAnswer(res) {
   return Object.freeze({ ready, target: typeof res.target === 'string' ? res.target : null, availability: res.availability });
 }
 
+/** The owner's own documents, one per id (the first copy): a row is keyed by its id everywhere (review T3-9). */
+function ownedWindow(docs, ownerUid) {
+  const seenIds = new Set();
+  return Object.freeze(docs.filter((d) => {
+    if (!d || typeof d !== 'object' || typeof d.id !== 'string' || !d.id || d.ownerId !== ownerUid || seenIds.has(d.id)) return false;
+    seenIds.add(d.id);
+    return true;
+  }));
+}
+
+/**
+ * A kept window, as a scheduler for `owner` may start from it (Q-S3-2, A+): this owner's documents, a positive whole
+ * generation and a real as-of time — or nothing, so a malformed hand-in starts empty rather than shows a guess.
+ */
+export function carriedWindow(owner, retained) {
+  if (!owner || !retained || typeof retained !== 'object' || !Array.isArray(retained.battles)) return null;
+  if (!Number.isSafeInteger(retained.generation) || retained.generation < 1) return null;
+  if (!Number.isFinite(retained.lastSuccessfulAt)) return null;
+  return Object.freeze({ battles: ownedWindow(retained.battles, owner.uid), generation: retained.generation, lastSuccessfulAt: retained.lastSuccessfulAt });
+}
+
+/**
+ * The public state a scheduler started from `retained` shows before it has done anything: the hook's render between
+ * a remount and the scheduler's first change. Every carried row's review is queued (not yet started this mount).
+ */
+export function carriedState(owner, retained) {
+  const kept = carriedWindow(owner, retained);
+  if (!kept) return null;
+  return Object.freeze({
+    ownerUid: owner.uid,
+    ownerEpoch: owner.authEpoch,
+    status: 'ready',
+    battles: kept.battles,
+    generation: kept.generation,
+    lastSuccessfulAt: kept.lastSuccessfulAt,
+    error: null,
+    checking: false,
+    refreshing: false,
+    inFlight: 0,
+    nextAttemptAt: null,
+    carried: true,
+    reviews: Object.freeze(Object.fromEntries(kept.battles.map((b) => [b.id, Object.freeze({ state: REVIEW_STATES.QUEUED, result: null, nextAt: null })]))),
+  });
+}
+
 const settle = (fn) => new Promise((resolve) => { resolve(fn()); });
 
 class LocalTimeout extends Error {
@@ -110,9 +164,11 @@ class LocalTimeout extends Error {
  * @param {boolean} [p.visible]
  * @param {{ queries: number[], helpers: number[] }} [p.ledger]  the rolling start times, when they outlive this
  *                                          scheduler (the owner's and epoch's, kept by the hook); else its own
+ * @param {{ battles: object[], generation: number, lastSuccessfulAt: number }} [p.retained]  the owner's and epoch's
+ *                                          last successful window, kept by the hook across a remount (Q-S3-2, A+)
  */
 export function createReviewScheduler({
-  owner, max = 10, clock, queryCompleted, checkReview, onChange, visible = true, budget = REVIEW_BUDGET, ledger = null,
+  owner, max = 10, clock, queryCompleted, checkReview, onChange, visible = true, budget = REVIEW_BUDGET, ledger = null, retained = null,
 }) {
   const { setTimer, clearTimer } = clock;
   const starts = ledger || { queries: [], helpers: [] };
@@ -139,6 +195,18 @@ export function createReviewScheduler({
   let dirty = false;
   let seq = 0;
   let state = null;
+  // Q-S3-2 (A+): a kept window starts this scheduler "as of" its time; this scheduler's first successful read ends the carry.
+  let carried = false;
+  const kept = carriedWindow(owner, retained);
+  if (kept) {
+    battles = kept.battles;
+    generation = kept.generation;
+    lastSuccessfulAt = kept.lastSuccessfulAt;
+    status = 'ready';
+    carried = true;
+    // Ready caches did not survive the unmount: every carried row's review is unstarted in this mount.
+    for (const b of battles) unfinished.set(b.id, { cause: 'unstarted', lastStartAt: null });
+  }
 
   /**
    * The clock's reading, with the bookkeeping healed to it (review T3-7). Stamps are wall-clock ms; a backward step of
@@ -213,6 +281,7 @@ export function createReviewScheduler({
       // Logical slots held now: a check past its deadline holds none, though its SDK work may still run.
       inFlight: cycle ? cycle.inflight.size : 0,
       nextAttemptAt: queued ? queued.at : null,
+      carried,
       reviews: Object.freeze(Object.fromEntries((battles || []).map((b) => [b.id, rowOf(b.id)]))),
     });
     onChange(state);
@@ -309,18 +378,13 @@ export function createReviewScheduler({
       return;
     }
     clearTimer(c.queryTimer);
-    // The owner's own documents, one per id (the first copy): a row is keyed by its id everywhere below (review T3-9).
-    const seenIds = new Set();
-    battles = Object.freeze(docs.filter((d) => {
-      if (!d || typeof d !== 'object' || typeof d.id !== 'string' || !d.id || d.ownerId !== owner.uid || seenIds.has(d.id)) return false;
-      seenIds.add(d.id);
-      return true;
-    }));
+    battles = ownedWindow(docs, owner.uid);
     generation += 1;
     lastSuccessfulAt = now();
     status = 'ready';
     error = null;
     retrySpent = false;
+    carried = false;
     // A row that left the refreshed window is done.
     const ids = inView();
     for (const key of [...results.keys()]) if (!ids.has(key)) results.delete(key);

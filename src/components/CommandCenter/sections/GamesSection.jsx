@@ -100,21 +100,38 @@ export function GamesLoadingLine({ games }) {
   );
 }
 
-/** A failed read of the window (spec §3): with nothing retained, the failure and Retry; never "No games yet". */
+/**
+ * The window's read note. A failed read (spec §3): with nothing retained, the failure and Retry, never "No games yet";
+ * with a window retained, "as of" it and Retry. A window kept from an earlier visit (Q-S3-2, A+): "as of" it and its
+ * next read.
+ */
 export function GamesReadNote({ games, onRetry }) {
   const at = formatHubTime(games?.nextAttemptAt, { roundUp: true });
   const asOf = formatHubTime(games?.asOf);
   const retained = games?.status === 'ready';
   // A retained window being read again: say so, and offer no second Retry for the one already running (review T3-3).
   const refreshing = retained && games?.refreshing === true;
+  // A window kept from an earlier visit (Q-S3-2, A+) is not a failure: "as of" its time, its next read, no Retry.
+  const carried = retained && games?.stale !== true && games?.carried === true;
+  const asOfText = asOf ? COPY.time.et(asOf) : '';
+  const text = refreshing ? COPY.games.refreshingAsOf(asOfText)
+    : carried ? COPY.games.carriedAsOf(asOfText)
+      : retained ? COPY.games.staleAsOf(asOfText) : COPY.games.loadFailed;
+  const offerRetry = !refreshing && !carried;
   return (
-    <div data-hub-games-note={retained ? 'stale' : 'error'} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
-      <span>{refreshing ? COPY.games.refreshingAsOf(asOf ? COPY.time.et(asOf) : '') : retained ? COPY.games.staleAsOf(asOf ? COPY.time.et(asOf) : '') : COPY.games.loadFailed}</span>
+    <div data-hub-games-note={carried ? 'carried' : retained ? 'stale' : 'error'} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
+      <span>{text}</span>
       {!refreshing && at && <span>{COPY.sep}{COPY.games.nextAttempt(COPY.time.et(at))}</span>}
-      {!refreshing && <span>{COPY.sep}</span>}
-      {!refreshing && <HubLink onPress={onRetry}>{COPY.games.retry}</HubLink>}
+      {offerRetry && <span>{COPY.sep}</span>}
+      {offerRetry && <HubLink onPress={onRetry}>{COPY.games.retry}</HubLink>}
     </div>
   );
+}
+
+/** A Games read note is due: the read failed, the window held is stale, or it was kept from an earlier visit (A+). */
+export function gamesNoteDue(games) {
+  const ready = games?.status === 'ready';
+  return games?.status === 'error' || (ready && (games.stale === true || games.carried === true));
 }
 
 export default function GamesSection({ games, onOpenGame, onOpenTape, onOpenHistory, onRetry }) {
@@ -139,7 +156,7 @@ export default function GamesSection({ games, onOpenGame, onOpenTape, onOpenHist
       right={right || history ? <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>{right}{history}</div> : null}
     >
       {!ready && !failed && <GamesLoadingLine games={games} />}
-      {(failed || stale) && <GamesReadNote games={games} onRetry={onRetry} />}
+      {gamesNoteDue(games) && <GamesReadNote games={games} onRetry={onRetry} />}
       {shown.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {shown.map((g) => <GameRow key={g.id} game={g} onOpen={onOpenGame} onOpenTape={onOpenTape} />)}

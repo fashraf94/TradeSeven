@@ -24,7 +24,7 @@ import { AreaBody, AreaHeading } from './panels/AreaPanel';
 import ActivitySection from './sections/ActivitySection';
 import BriefSection from './sections/BriefSection';
 import { PhoneDeployCard } from './sections/DeploySection';
-import { GameRow, GamesLoadingLine, GamesReadNote } from './sections/GamesSection';
+import { GameRow, GamesLoadingLine, GamesReadNote, gamesNoteDue } from './sections/GamesSection';
 import NextActionCard from './sections/NextActionCard';
 
 export const phoneTabId = (idBase, tab) => `${idBase}-tab-${tab}`;
@@ -102,7 +102,7 @@ function PhoneOverview({ sections, actions }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       {!ready && !failed && <GamesLoadingLine games={games} />}
-      {(failed || stale) && <GamesReadNote games={games} onRetry={actions.retryGames} />}
+      {gamesNoteDue(games) && <GamesReadNote games={games} onRetry={actions.retryGames} />}
       {ready && !stale && !liveGame && !candidate && completed.length === 0 && (games.liveResolved === false
         ? <LoadingLine>{COPY.games.loading}</LoadingLine>
         : <EmptyNote icon="sword" title={COPY.games.empty} sub={COPY.games.emptySubPhone} />)}

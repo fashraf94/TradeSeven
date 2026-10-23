@@ -720,3 +720,41 @@ describe('the merge with S5: one agent source for the deploy state and the Loado
     expect(r.agent.retry).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('a window kept from an earlier visit (spec §6 as the founder amended it: Q-S3-2, A+)', () => {
+  const carriedNote = (scope) => scope.querySelector('[data-hub-games-note="carried"]');
+
+  it('desktop Games: the kept rows, "As of {time} · next attempt at {time}", and no Retry — it is not a failure', () => {
+    r.window = windowOf(TEN, { carried: true, nextAttemptAt: NOW + 90000 });
+    render('desktop', hubOf());
+    expect(rowsOf(games())).toHaveLength(2);
+    expect(carriedNote(games()).textContent).toMatch(/^As of \d{1,2}:\d{2} [AP]M ET · next attempt at \d{1,2}:\d{2} [AP]M ET$/);
+    expect(retryButtons(games())).toHaveLength(0);
+  });
+
+  it('phone Overview: the same note', () => {
+    r.window = windowOf(TEN, { carried: true, nextAttemptAt: NOW + 90000 });
+    render('mobile', hubOf());
+    expect(carriedNote(overview()).textContent).toMatch(/^As of \d{1,2}:\d{2} [AP]M ET · next attempt at/);
+    expect(retryButtons(overview())).toHaveLength(0);
+  });
+
+  it('while its read is out: "Refreshing · as of {time}"; once read, no note at all', () => {
+    r.window = windowOf(TEN, { carried: true, refreshing: true, checking: true });
+    const m = render('desktop', hubOf());
+    expect(carriedNote(games()).textContent).toMatch(/^Refreshing · as of \d{1,2}:\d{2} [AP]M ET$/);
+    m.unmount();
+    mounted = mounted.filter((x) => x !== m);
+    r.window = windowOf(TEN, { carried: false });
+    render('desktop', hubOf());
+    expect(games().querySelector('[data-hub-games-note]')).toBeNull();
+  });
+
+  it('a kept window whose read failed is the stale note, with Retry', () => {
+    r.window = windowOf(TEN, { carried: true, status: 'error', error: new Error('unavailable') });
+    render('desktop', hubOf());
+    expect(games().querySelector('[data-hub-games-note="stale"]')).not.toBeNull();
+    expect(carriedNote(games())).toBeNull();
+    expect(retryButtons(games())).toHaveLength(1);
+  });
+});

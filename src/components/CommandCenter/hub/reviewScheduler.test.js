@@ -7,7 +7,7 @@
 // documents and fifty helper invocations).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { REVIEW_BUDGET, REVIEW_STATES, REVIEW_TRIGGERS, createReviewScheduler } from './reviewScheduler';
+import { REVIEW_BUDGET, REVIEW_STATES, REVIEW_TRIGGERS, carriedState, carriedWindow, createReviewScheduler } from './reviewScheduler';
 
 const OWNER = Object.freeze({ uid: 'uid-A', authEpoch: 3 });
 const T0 = Date.UTC(2026, 9, 22, 15, 0, 0);
@@ -1097,5 +1097,107 @@ describe('review T3-9 — a window that repeats an id keeps its first copy (one 
     await tick(0);
     expect(h.state().battles).toEqual([dup[1]]);
     expect(h.checks).toHaveLength(1);
+  });
+});
+
+describe('the kept window (spec §6 as the founder amended it: Q-S3-2, A+) — a scheduler can start from the owner\'s last successful window', () => {
+  const KEPT = () => ({ battles: docsOf(3), generation: 4, lastSuccessfulAt: T0 - 30 * S });
+  const kept = ({ retained = KEPT(), ledger = { queries: [T0 - 30 * S], helpers: [] }, query, check } = {}) => {
+    const queries = [];
+    const checks = [];
+    const states = [];
+    const s = createReviewScheduler({
+      owner: OWNER,
+      ledger,
+      retained,
+      clock: { now: () => Date.now(), setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (h) => clearTimeout(h) },
+      queryCompleted: () => { queries.push(Date.now() - T0); return query ? query(queries.length) : Promise.resolve(docsOf(3)); },
+      checkReview: (b) => { checks.push(b.id); return check ? check(b) : Promise.resolve(READY); },
+      onChange: (st) => states.push(st),
+    });
+    return { s, queries, checks, states, state: () => s.getState() };
+  };
+
+  it('it starts carried: the kept documents, generation and as-of time; every row queued for the slot, nothing read before it', async () => {
+    const h = kept();
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(h.queries).toEqual([]);
+    expect(h.state()).toMatchObject({ status: 'ready', carried: true, generation: 4, lastSuccessfulAt: T0 - 30 * S, nextAttemptAt: T0 + 90 * S, checking: false, refreshing: false });
+    expect(h.state().battles.map((b) => b.id)).toEqual(['done_01', 'done_02', 'done_03']);
+    expect(Object.values(h.state().reviews)).toEqual(Array(3).fill({ state: REVIEW_STATES.QUEUED, result: null, nextAt: T0 + 90 * S }));
+    expect(h.checks).toEqual([]);
+    h.s.dispose();
+  });
+
+  it('at the slot it reads again: refreshing while the read is out, then the read ends the carry and the generation goes on', async () => {
+    const h = kept({ query: () => after(2 * S, docsOf(3)) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(90 * S);
+    expect(h.queries).toEqual([90 * S]);
+    expect(h.state()).toMatchObject({ carried: true, refreshing: true, checking: true, generation: 4 });
+    await tick(2 * S);
+    expect(h.state()).toMatchObject({ status: 'ready', carried: false, generation: 5, lastSuccessfulAt: T0 + 92 * S });
+    expect(h.checks).toEqual(['done_01', 'done_02', 'done_03']);
+    h.s.dispose();
+  });
+
+  it('a failed refresh keeps the carried window and says so: error, still carried, the kept as-of time', async () => {
+    const h = kept({ query: () => Promise.reject(new Error('unavailable')) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(90 * S);
+    expect(h.state()).toMatchObject({ status: 'error', carried: true, generation: 4, lastSuccessfulAt: T0 - 30 * S });
+    expect(h.state().battles.map((b) => b.id)).toEqual(['done_01', 'done_02', 'done_03']);
+    h.s.dispose();
+  });
+
+  it('carried rows are served first at the slot (they are unstarted work), ahead of a row new to the refreshed window', async () => {
+    const h = kept({ query: () => Promise.resolve([doc(9), ...docsOf(3)]), check: () => after(1 * S, PENDING) });
+    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(90 * S);
+    expect(h.checks.slice(0, 3)).toEqual(['done_01', 'done_02', 'done_03']);
+    h.s.dispose();
+  });
+
+  it('with the slot free it reads at once, and a kept window of another owner\'s documents, or a malformed one, starts empty', async () => {
+    const free = kept({ ledger: { queries: [], helpers: [] } });
+    free.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(free.queries).toEqual([0]);
+    free.s.dispose();
+    const foreign = kept({ retained: { ...KEPT(), battles: [doc(1, { ownerId: 'uid-B' }), doc(2)] }, ledger: { queries: [T0 - 30 * S], helpers: [] } });
+    foreign.s.trigger(REVIEW_TRIGGERS.MOUNT);
+    await tick(0);
+    expect(foreign.state().battles.map((b) => b.id)).toEqual(['done_02']);
+    foreign.s.dispose();
+    for (const retained of [
+      { ...KEPT(), generation: 0 }, { ...KEPT(), generation: 1.5 }, { ...KEPT(), lastSuccessfulAt: null },
+      { ...KEPT(), lastSuccessfulAt: NaN }, { ...KEPT(), battles: null }, 'kept', null,
+    ]) {
+      const h = kept({ retained });
+      h.s.trigger(REVIEW_TRIGGERS.MOUNT);
+      await tick(0);
+      expect(h.state(), JSON.stringify(retained)).toMatchObject({ status: 'loading', battles: null, carried: false, generation: 0 });
+      h.s.dispose();
+    }
+  });
+});
+
+describe('carriedState — the kept window as the hook shows it before the scheduler has changed anything (Q-S3-2, A+)', () => {
+  it('ready, carried, the kept documents, generation and as-of time, every review queued with no time yet', () => {
+    const st = carriedState(OWNER, { battles: docsOf(2), generation: 2, lastSuccessfulAt: T0 });
+    expect(st).toEqual({
+      ownerUid: 'uid-A', ownerEpoch: 3, status: 'ready', battles: docsOf(2), generation: 2, lastSuccessfulAt: T0,
+      error: null, checking: false, refreshing: false, inFlight: 0, nextAttemptAt: null, carried: true,
+      reviews: { done_01: { state: REVIEW_STATES.QUEUED, result: null, nextAt: null }, done_02: { state: REVIEW_STATES.QUEUED, result: null, nextAt: null } },
+    });
+    expect(Object.isFrozen(st)).toBe(true);
+  });
+
+  it('nothing kept, or nothing usable, is no state at all', () => {
+    expect(carriedState(OWNER, null)).toBeNull();
+    expect(carriedState(OWNER, { battles: docsOf(1), generation: 0, lastSuccessfulAt: T0 })).toBeNull();
+    expect(carriedState(null, { battles: docsOf(1), generation: 1, lastSuccessfulAt: T0 })).toBeNull();
+    expect(carriedWindow(OWNER, { battles: docsOf(1), generation: 1, lastSuccessfulAt: Infinity })).toBeNull();
   });
 });
