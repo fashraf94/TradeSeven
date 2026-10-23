@@ -13,9 +13,9 @@ With the flag off, today's shells, their ceremony and every deploy a player make
 
 | Item | Result |
 |---|---|
-| **Status** | **Draft PR, STOP.** Nothing merged; nothing activated |
-| Branch and head | `claude/command-center-hub-s2b`, cut from `main` `82ea84bb` (fetched; clean tree). Code head `e906d07a` (the last source change; the fix round). Test-only commits `43808d37` and `bc3fc32e` follow; the commit after them adds only this report and its README row. Commits: `cb170e96` build, `8b2eb835` rows, `e906d07a` fix round, `43808d37` and `bc3fc32e` W5 rows |
-| Stop rule | No STOP. Today's shells changed only by R-S2b-9 (a) and (b). No pre-existing behaviour test was edited (only guard manifests and theme registrations, §5). The recovery admission is byte-identical. No fenced file and nothing under `api/` was touched |
+| **Status** | **Draft PR, STOP.** The founder's rulings on Q-S2b-1 … Q-S2b-7 are applied (§15). Nothing merged; nothing activated |
+| Branch and head | `claude/command-center-hub-s2b`, cut from `main` `82ea84bb` (fetched; clean tree; `main` has not moved since). Code head `b047d163`, the founder-rulings round's last source change (§15); the head after it adds only this report's §15 and its README row. Commits: `cb170e96` build, `8b2eb835` rows, `e906d07a` fix round, `43808d37` and `bc3fc32e` W5 rows (tests only), `e7e8761c` this report, `6fc337f5` the founder's rulings, `b047d163` their review round |
+| Stop rule | No STOP. Today's shells changed only by R-S2b-9 (a) and (b), whose (b) the founder's Q-S2b-2 rewords (§15). The build edited no pre-existing behaviour test (only guard manifests and theme registrations, §5). The rulings round edited two S2a/S3 display rows, as Q-S2b-2 directs (§15). The recovery admission is byte-identical. No fenced file and nothing under `api/` was touched |
 | R-S2b-1 · the provider | `src/contexts/DeployAttemptContext.jsx`, wrapping the screen router in App's unified return; App's callbacks are its bridge. Flag off it is a pass-through, read once at mount (§3). This deviates from spec §2's `main.jsx` placement, as the ruling directs |
 | R-S2b-2 · one record | S2a's reducer, with the identity source's auth epoch and three new hold actions. Every `begin` is asked of the hub's own §3.1 table: `canStart` for a tap, `canCommit` at the hold's threshold, the selector's `retry` for a Retry. The live list is read only through `ownedLiveList` |
 | R-S2b-3 · the hold | `claimHold(controlId, inputId, holdEpoch)`. An opt-in `holdSeam` on `useHoldToDeploy` (claim, commit, release, progress); the provider is the hub controls' `beatOwner`; there is a synchronous cancel entry. A denied second finger no longer cancels the first (R2 Q5). Progress goes to an owner-tagged store. Today's shells are unchanged |
@@ -25,12 +25,12 @@ With the flag off, today's shells, their ceremony and every deploy a player make
 | R-S2b-9 · the two live changes | (a) FR-1: an existing answer behind the watchdog now ends on the existing terminal. (b) The 429 "Deploy already in progress" reads "A deploy is already in progress." Each has failing-first rows; the admission and reveal branches have unchanged control rows (§6) |
 | R-S2b-10 | No `hubProps` key was needed: the hub reads the provider through its context. Additions only in the shared hub files (§3) |
 | Flag-off build | 43 chunks in both; 41 identical. The entry chunk is +38,452 B raw (+12,432 B gzip): the provider and the hub selectors it runs. The hub chunk is −3,506 B. No hub preload in `index.html` (§9; Q-S2b-1) |
-| Tests | Full suite on Linux, CI-shaped at `bc3fc32e`: `Test Files  1153 passed \| 8 skipped (1161)`, `Tests  24958 passed \| 89 skipped (25047)`, exit 0. S2b adds 164 rows in nine new files (§4); no pre-existing behaviour test was edited |
-| Mutation | W5 planted **318** mutants on the guards behind the acceptance rows (claim, commit, begin, every identity check, the uncertainty guard, the due-idea gate, the beat, the pass-through, the live changes). Final: **224 killed**, 94 equivalent survivors (each with its reason), 0 open gaps. All 70 gap survivors were closed by rows, and their kills were re-run and confirmed (§8) |
-| `vite build`, `lint:gate` | Both exit 0 on Linux at `bc3fc32e`; both re-run at the pushed head (§7; PR description) |
-| §2 review | Five lenses (W1 parity, W2 ownership, W3 hold and beat, W4 outcomes, W5 test integrity and mutation), with Opus refuters on every MAJOR/BLOCKER claim. 30 findings. The refuters ruled on five claims: 2 CONFIRMED (W2-1 MAJOR, W4-2 BLOCKER for the flip), 3 PARTLY (W3-1, W4-1, W4-3), 0 REFUTED. Every finding is fixed except W2-5 (outside scope) and W4-3 (Q-S2b-5) (§8) |
+| Tests | Full suite on Linux, CI-shaped at `b047d163` (the code head after the founder's rulings): `Test Files  1155 passed \| 8 skipped (1163)`, `Tests  24997 passed \| 89 skipped (25086)`, exit 0. The build added 164 rows in nine new files (§4) and edited no pre-existing behaviour test. The rulings round adds 39 rows in two new files and five extended ones, and edits two S2a/S3 display rows as Q-S2b-2 directs (§15) |
+| Mutation | W5 planted **318** mutants on the guards behind the acceptance rows (claim, commit, begin, every identity check, the uncertainty guard, the due-idea gate, the beat, the pass-through, the live changes). Final: **224 killed**, 94 equivalent survivors (each with its reason), 0 open gaps. All 70 gap survivors were closed by rows, and their kills were re-run and confirmed (§8). The rulings round: 71 mutants, 61 killed, 10 equivalent, 0 open gaps (§15) |
+| `vite build`, `lint:gate` | Both exit 0 on Linux at `bc3fc32e` and again at `b047d163`; both re-run at the pushed head (§7, §15; PR description) |
+| §2 review | Five lenses (W1 parity, W2 ownership, W3 hold and beat, W4 outcomes, W5 test integrity and mutation), with Opus refuters on every MAJOR/BLOCKER claim. 30 findings. The refuters ruled on five claims: 2 CONFIRMED (W2-1 MAJOR, W4-2 BLOCKER for the flip), 3 PARTLY (W3-1, W4-1, W4-3), 0 REFUTED. Every finding is fixed except W2-5 (outside scope) and W4-3 (Q-S2b-5) (§8). The rulings round: one focused lens on the delta, no BLOCKER or MAJOR; RL-3 fixed, RL-1 left to the founder (§15) |
 | Fenced files, `api/` | No fenced file edited. Fenced functions called: none directly. The service the provider calls (`deployAgent`) POSTs to `api/agent/decide.js`, as today's shells do. Nothing under `api/` changed |
-| Founder questions | Q-S2b-1 … Q-S2b-7 (§10); none blocks the draft |
+| Founder questions | Q-S2b-1 … Q-S2b-7 (§10) were ruled on October 23. Q-S2b-1, 3, 6 and 7 are accepted as built; Q-S2b-2, 4 and 5 are applied (§15) |
 
 ## 1. Branch, HEAD and preamble
 
@@ -366,7 +366,7 @@ At the final code head `bc3fc32e`, the Linux `vite build` (exit 0) prints 43 JS 
 
 ## 10. Founder questions
 
-None blocks the draft.
+None blocks the draft. **Ruled October 23, 2026; the rulings and what they changed are in §15.**
 
 - **Q-S2b-1 — the entry chunk grows +12.4 KB gzip.** It carries the provider and the selectors it runs, with the flag off. The alternative is a lazily loaded provider: the hub screen would then wait on a second chunk, or the provider would not exist while a beat runs on another screen. **Asked:** accept the size, or ask for the provider to be split so the reducer and ceremony glue load only with the hub?
 - **Q-S2b-2 — the in-progress words.**
@@ -417,6 +417,7 @@ None blocks the draft.
   6. "See what it’s eyeing" opens the Scouting Board, and its deploy goes through the same ceremony.
   7. With an idea review due, a deploy shows the due-idea screen first.
   8. During the 450 ms "Locked in" beat, cross 768 px: the beat finishes and deploys once.
+  9. The founder's rulings (§15): a refused deploy's eyebrow reads "Deployment refused". To see Dismiss, close the ceremony while a request is out; if it is refused, the strip and the card show Dismiss beside Retry, and Dismiss clears it.
 
 ## 14. Files outside the repository, and next
 
@@ -428,4 +429,117 @@ None blocks the draft.
   - the Linux run outputs (`linux-early/`, `linux-final/`);
   - the build logs.
 
-**Next:** the founder's review of the draft and the smoke preview; then the independent Fable review of S2b. S4's additions to the shared hub files go on top of S2b's (R-S2b-10).
+**Next:** the founder's smoke check of the refreshed preview (§13), then the independent Fable review of S2b on the new head. S4's additions to the shared hub files go on top of S2b's (R-S2b-10).
+
+## 15. Founder rulings applied (October 23, 2026)
+
+The founder ruled on Q-S2b-1 … Q-S2b-7 (§10). One fix round applies them: commit `6fc337f5` (the rulings) and `b047d163` (its review round). Line numbers are at `b047d163`.
+
+| Question | Ruling | What changed |
+|---|---|---|
+| Q-S2b-1 · entry chunk | Accept +12.4 KB gzip; no split | Nothing |
+| Q-S2b-2 · the refusal words | Reword, as part of R-S2b-9b | The ceremony's confirmed-tone eyebrow and in-progress subtext (`CeremonyError.jsx:50–61, :97, :143`); the hub's refusal word (`hubCopy.js:341`). Table below |
+| Q-S2b-3 · the hold words | Accept, with the aria-hidden percentage | Nothing |
+| Q-S2b-4 · a closed ceremony's refusal | Add a plain "Dismiss" on the strip and card | Below |
+| Q-S2b-5 · the existing terminal's Retry | Allow one new optional ceremony prop | Below |
+| Q-S2b-6 · Check deployment's words | Accept "Already running · Open game" outside the ceremony | Nothing |
+| Q-S2b-7 · a cold clone's cooldown | Keep as built; no new listener | Nothing |
+
+**Q-S2b-2, each line before and after.** The ceremony is shared, so lines 1–3 also change in today's two shells.
+
+| # | Surface | Before | After |
+|---|---|---|---|
+| 1 | Ceremony eyebrow, every definitive refusal (the confirmed tone, every error kind) | Deployment failed | Deployment refused |
+| 2 | Ceremony eyebrow, the 429 in-progress refusal | Deployment refused | unchanged |
+| 3 | Ceremony subtext, the 429 in-progress refusal | Your agent is safe. If the deploy already running creates a battle, it will appear on your hub. | Another deploy for your agent is still being set up. If it creates a battle, it will show up with your games. |
+| 4 | Ceremony headlines (every tone and kind, in-progress included) | — | unchanged |
+| 5 | Hub, a definitive refusal: the status line, the strip's first line, the card's line and its control | Deployment failed | Deployment refused |
+| 6 | Hub, the review-due refusal's strip word (S3's R-S3-1) | Deployment refused | unchanged |
+
+- **Kept, and why.** The live region still announces "Deployment failed." for the confirmed tone. It speaks the headline's claim, and the confirmed headlines keep their words ("Deployment failed — no battle was created."). The ruling names the eyebrow and the hub's state word only. Review RL-1 (MINOR) raises it; it is kept as built, and **a one-word change is ready if the founder wants the announcement to say "refused" too.**
+- **The rows.**
+  - `ceremonyFounderRulings.test.jsx`: lines 1–4, each before and after, and lost contact unchanged.
+  - `deployDisplay.rulings.test.js`: line 5 on every hub surface, and lines 5–6 for the review-due refusal.
+  - `hubCopy.guard.test.js`: the copy guard pins the ruled words, and that no copy string and no ceremony literal says "Deployment failed".
+
+**Q-S2b-4, Dismiss.**
+- **When it shows.** On the strip and the card, beside the refusal's own action (Retry, or Open in the Forge). It shows only for a refusal that no ceremony shows: closed while the request was out, or the ceremony flag off. The provider records such a refusal's ceremony phase as `closed`, as it already did for a creation (`DeployAttemptContext.jsx:500–506`).
+- **The chain.**
+  - The vocabulary sets `dismiss` (`attemptVocabulary.js:263–268`).
+  - The selector passes it through (`deployState.js:207`).
+  - The display offers it (`deployDisplay.js:164–165, :227, :263`).
+  - The strip and the card render it (`DeployStrip.jsx:89–93`, `DeploySection.jsx:59`).
+- **What it does.** `useHubDeploy.js:98` calls the provider's `dismissRefusal` (`DeployAttemptContext.jsx:672–676`). That entry acts only on a refusal whose ceremony is closed, so not on an open ceremony's refusal, not on an uncertain attempt and not on a newer attempt a stale press meets. It then runs the existing `dismiss`, which the reducer turns into an acknowledgment that keeps the owner + target cooldown (spec §5.4).
+- **Never for uncertain.** The vocabulary gives an uncertain attempt no `dismiss`, the display offers it on no other state, and the entry refuses it.
+- **The rows.**
+  - The vocabulary and the display, in `deployDisplay.rulings.test.js`.
+  - The provider end to end, in five `Q-S2b-4` rows: closed mid-request, the ceremony off, an open ceremony, uncertain, and a stale press. A sixth row, from the mutating lens, shows that a creation the record closed keeps its Enter.
+  - The real strip and card, in three `CommandCenterHub.s2b` rows.
+
+**Q-S2b-5, the ceremony's existing Retry.**
+- **The prop.** `DeployCeremony` gains one optional prop, `ownedRead` (`DeployCeremony.jsx:50–57, :259`), and hands it to `CeremonyExisting`.
+- **With it.** The terminal's Retry calls `ownedRead.retry` instead of re-running the R1 path (`CeremonyExisting.jsx:72–98, :115–126, :160`). During the read's 30 s wait after a failure (`ownedRead.retryAt`), the button reads "Retry available in Ns" (CeremonyError's own words), is aria-disabled, and reads nothing.
+- **The provider's side.** Only the hub's root ceremony passes the prop: `{ retry: rt.retryExistingRead, retryAt }` (`DeployAttemptContext.jsx:925–945`). `retryExistingRead` (`:576–590`) goes through the one owned read, `hydrate`, so it shares that read's dedup by uid + auth epoch + attempt + battle, its 8 s deadline and its 30 s wait. `hydrate` now returns the read in flight to a second asker (`:159, :542, :572`), so two Retries start one read.
+- **Without it.** Today's two shells pass nothing. The terminal's markup, styles, reads and timers are as before; the R1 effect gains only a sequence bump (`CeremonyExisting.jsx:58`), which nothing reads without the prop.
+- **The rows.**
+  - The terminal with and without the prop, its countdown, an overtaken read, and a static row that the shells never pass it, in `ceremonyFounderRulings.test.jsx`.
+  - The provider's dedup, wait, deadline and owner checks, in five `Q-S2b-5` rows. Two more, from the mutating lens, show that a found read is not read again and that a creation's attempt reads nothing.
+
+**Accepted interpretations** (the founder's list): the provider unmounts with App's onboarding gate; the reducer takes the identity source's epoch; the provider reaches the hub through context, with no `hubProps` key; the post-check half of FR-1 stays in today's shells.
+
+**Recorded for separate tasks:** W2-5 (`dueIdeaCheck`'s closed-gate cache across an identity change) goes to the fix-pack list. The status line's "Idle · nothing running" during an uncertain guard or a live game goes to S7.
+
+**Existing tests edited by this round, as the ruling directs.** Q-S2b-2 says "update the copy guard and the rows":
+- `hub/deployDisplay.test.js`: two S2a/S3 rows pinned "Deployment failed" as the refusal word. Rows "A1-4" and "failed: …" now pin "Deployment refused"; their other assertions are unchanged.
+- `ceremonyInProgress.test.jsx` (S2b's own row): pins the new subtext and the old one's absence.
+- `hubCopy.guard.test.js`: additions only.
+
+**Failing first.** The new and edited rows were run against `e7e8761c`, the head before the rulings: 31 fail and 207 pass (`failing-first-rulings.txt` in the session scratchpad). Five new rows pass on both heads, by design:
+- the lost-contact control;
+- the shells' parity row (Retry without the prop);
+- two "never uncertain" and "no Dismiss without the selector" display guards;
+- the stale-press provider row.
+
+The review round's rows (`b047d163`) are shown differently. RL-3's row fails on `6fc337f5`. Each gap row kills the mutant it was written for (the re-run below).
+
+**The review of the delta.** One focused lens (Sonnet), on an isolated snapshot of `6fc337f5`. It checked the copy in today's shells, Dismiss against the uncertainty guard, and the prop's parity when absent. It ran the new rows and 18 neighbouring files there (361 rows, green). No BLOCKER or MAJOR, so no refuter was needed.
+
+| Id | Severity | Finding | Disposition |
+|---|---|---|---|
+| RL-1 | MINOR | The confirmed tone's live region still announces "Deployment failed." under the "Deployment refused" eyebrow; the new copy guard reads only `CeremonyError.jsx` | Kept as built: it speaks the kept headline, and the ruling names the eyebrow. Left to the founder (above) |
+| RL-2 | NIT | The hub's Dismiss names no attempt: a press meeting a later refused-and-closed attempt would acknowledge it | Recorded. A stale button cannot outlive the re-render a Retry causes; a press during the new request is refused (row "a stale Dismiss…") |
+| RL-3 | NIT | The countdown ticks once a second, so the Retry could stay closed up to ~1 s past the wait | Fixed: a timer at the wait's end (`CeremonyExisting.jsx:83–84`); row "a wait that ends mid-second…" fails on `6fc337f5` |
+| RL-4 | NIT | A read the provider found but the terminal's owner check refuses would loop without reading | Recorded: unreachable — the provider admits only the captured owner's document, and an identity change closes the ceremony |
+
+The lens found the rest sound. In today's shells, only lines 1 and 3 of the table above change. Every refusal no ceremony shows is stamped closed, after the remount check reads its phase. Nothing else reads the stamp. `hydrate`'s new return changes no earlier caller. The terminal without the prop is unchanged.
+
+**Mutation.** The mutating lens (Sonnet) ran on its own snapshot of `6fc337f5`.
+- **The first run.** 69 mutants on the round's new code: 47 killed, 22 survived, none broken. Every guard in `dismissRefusal` and `retryExistingRead`, every `dismiss` gate, the closed stamp, the in-flight dedup and the countdown got at least one.
+- **The gaps.** Twelve survivors were gaps, and `b047d163` adds rows for them:
+  - Dismiss on a closed creation (C2, U1);
+  - a found read read again (C9);
+  - the owned read for a creation (C11, C13);
+  - an overtaken owned read (X7, X12);
+  - the countdown's rounding, its leftover timer and its look (X5, X3, X18, X20);
+  - the selector's default (S3).
+- **The re-run.** The gaps were re-run on a snapshot of `b047d163`, with two new mutants on the RL-3 fix: all 14 killed.
+- **The equivalent survivors (10), each with its reason:**
+  - X8: a read that settles after unmount sets state on an unmounted component, which React 18 ignores.
+  - X11: an owned read starts only from "unavailable", when no earlier read is out, and the press is closed while it runs.
+  - X14: the label, the press and the style all branch on "unavailable" first.
+  - C14, C18: the one read slot is cleared at every attempt's start and at every identity change, so it never holds another attempt's read.
+  - C7: the in-flight record and the read's status are set together, synchronously.
+  - C12: `hydrate` repeats the guard.
+  - C15, C19: the battle and the wait are null unless the read is found or failed.
+  - C16: `hydrate`'s own identity check leaves a stale read loading, so it returns no battle.
+- **Final:** 71 mutants, 61 killed, 10 equivalent, 0 open gaps. Specs and results are in the session scratchpad (`review/RM/_m/`, `review/RM2/_m/`).
+
+**Checks.** `main` was fetched before the round and again before the push: still `82ea84bb`, so nothing was merged.
+
+| Check | Head | Result |
+|---|---|---|
+| Full suite, Linux (`~/pd-ci`, Node 20.20.2, `TZ=UTC`, `--maxWorkers=2`) | `b047d163` | **`Test Files  1155 passed \| 8 skipped (1163)`; `Tests  24997 passed \| 89 skipped (25086)`; exit 0**; 721 s |
+| Early full suite, Linux | `6fc337f5` | `Tests  24991 passed \| 89 skipped`; exit 0 |
+| `lint:gate`, Linux | `b047d163` | exit 0 (`--max-warnings 0`). Re-run at the pushed head: PR description |
+| `vite build`, Linux | `b047d163` | exit 0; 43 JS chunks. The entry is 4,900.64 kB (gzip 1,320.43 kB), +1.81 kB (+0.65 kB gzip) over `bc3fc32e`: the Dismiss, the owned-read Retry and the words. The hub chunk is 109.54 kB. Re-run at the pushed head: PR description |
+| The touched suites, Windows | `6fc337f5` | Green but for `eligibility.test.js`, a CRLF row that also fails on `main` |
