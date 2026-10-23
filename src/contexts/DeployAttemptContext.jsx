@@ -458,17 +458,26 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
       return result;
     }
 
-    if (ceremonyOn && ceremony?.attemptId === attemptId) {
-      if (isOrphanedResult(result)) ceremony = null;
-      else ceremony = { ...ceremony, deployResult: deployResultFor(result) };
+    const phase = state.attempt?.phase;
+    const handTheCeremony = () => {
+      if (!isCurrent() || ceremony?.attemptId !== attemptId) return;
+      ceremony = { ...ceremony, deployResult: deployResultFor(result) };
       changed();
+    };
+    if (ceremonyOn && ceremony?.attemptId === attemptId) {
+      if (isOrphanedResult(result)) { ceremony = null; changed(); }
+      // An existing answer reaches the ceremony once its one owned targeted read has settled (below), so the
+      // existing terminal opens the document that read returned — a league battle included, which the
+      // terminal's own fallback (the target-scoped verifier) cannot resolve. The read has its own deadline.
+      else if (phase !== ATTEMPT_PHASES.EXISTING) handTheCeremony();
     }
 
     try { bridge().refreshActiveBattles?.(); } catch (err) { console.warn('[DeployAttempt] refresh failed:', err?.message || err); }
 
-    const phase = state.attempt?.phase;
-    if (phase === ATTEMPT_PHASES.EXISTING) hydrate({ open: !ceremonyOn });
-    else if (phase === ATTEMPT_PHASES.CREATED && !ceremonyOn && state.attempt?.result?.kind === RESULT_KINDS.CREATED) {
+    if (phase === ATTEMPT_PHASES.EXISTING) {
+      const settled = hydrate({ open: !ceremonyOn });
+      if (ceremonyOn) settled.then(handTheCeremony);
+    } else if (phase === ATTEMPT_PHASES.CREATED && !ceremonyOn && state.attempt?.result?.kind === RESULT_KINDS.CREATED) {
       // Ceremony off: App's handoff navigated at once, as today; that navigation acknowledges the terminal. A
       // handoff that threw navigated nowhere, so its creation stays, "Deployed · Enter battle", for the real id.
       dismiss();
@@ -477,21 +486,22 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
   }
 
   // ── existing-battle hydration (spec §6, ruling R-S2b-5) ────────────────────
+  /** The one owned targeted read of the server's id; resolves (never rejects) once it has settled or was skipped. */
   function hydrate({ open = false } = {}) {
     const a = state.attempt;
     const r = run;
-    if (!a || a.phase !== ATTEMPT_PHASES.EXISTING || !r || r.attemptId !== a.attemptId) return;
+    if (!a || a.phase !== ATTEMPT_PHASES.EXISTING || !r || r.attemptId !== a.attemptId) return Promise.resolve();
     const battleId = realId(a.resolution?.battleId) ?? realId(a.result?.battleId);
-    if (!battleId) return;
+    if (!battleId) return Promise.resolve();
     const key = `${r.capturedUid}:${r.authEpoch}:${a.attemptId}:${battleId}`;
     if (hydration?.key === key) {
-      if (hydration.status !== EXISTING_READ.ERROR) return;
-      if (finite(hydration.retryAt) && now() < hydration.retryAt) return;
+      if (hydration.status !== EXISTING_READ.ERROR) return Promise.resolve();
+      if (finite(hydration.retryAt) && now() < hydration.retryAt) return Promise.resolve();
     }
     hydration = { key, attemptId: a.attemptId, battleId, status: EXISTING_READ.LOADING, battle: null, retryAt: null };
     changed();
     const isCurrent = currentFor(r);
-    within(Promise.resolve().then(() => readOwnedBattle(battleId, r.capturedUid)), EXISTING_READ_DEADLINE_MS)
+    return within(Promise.resolve().then(() => readOwnedBattle(battleId, r.capturedUid)), EXISTING_READ_DEADLINE_MS)
       .then((battle) => (battle === TIMED_OUT ? Promise.reject(new Error('timeout')) : battle))
       .then((battle) => {
         if (!isCurrent() || hydration?.key !== key) return;
@@ -697,6 +707,7 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     retryActionNow,
     nextCooldownEnd,
     tick: changed,
+    isRevoked: () => revoked,
     /** Tests only: the ceremony's live list beside the owned document. */
     liveBattlesFor: () => {
       const a = admission();
@@ -724,21 +735,25 @@ function LiveDeployAttemptProvider({ hubEnabled, bridge, children }) {
   const bridgeRef = useRef(bridge);
   bridgeRef.current = bridge;
   const [, setVersion] = useState(0);
-  const runtimeRef = useRef(null);
-  if (!runtimeRef.current) {
-    runtimeRef.current = createDeployRuntime({
-      getBridge: () => bridgeRef.current,
-      notify: () => setVersion((v) => v + 1),
-    });
-  }
-  const rt = runtimeRef.current;
+  const make = () => createDeployRuntime({
+    getBridge: () => bridgeRef.current,
+    notify: () => setVersion((v) => v + 1),
+  });
+  const [rt, setRuntime] = useState(make);
   const snap = rt.snapshot();
 
-  // The identity, from the one source, synchronously at every change (C2), and the root's revocation (§5.4).
+  // The identity, from the one source, synchronously at every change (C2), and the root's revocation (§5.4): an
+  // unmount revokes the runtime for good. StrictMode's development re-mount runs this cleanup and then this effect
+  // again on the same, now revoked, runtime — before any attempt can exist — so that one start makes a fresh runtime.
   useEffect(() => {
+    if (rt.isRevoked()) {
+      setRuntime(make);
+      return undefined;
+    }
     const off = subscribeAuthIdentity(() => rt.identityChanged(readAuthIdentity()));
     rt.identityChanged(readAuthIdentity());
     return () => { off(); rt.unmount(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rt]);
 
   // A runtime disable, injected (no live toggle exists).

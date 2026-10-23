@@ -1075,6 +1075,8 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
       `${HUB_FILE('hub/useHubCompletedBattles.js')}: ../../../services/authIdentity`,
       `${HUB_FILE('hub/useHubCompletedBattles.js')}: ../../../services/completedAgentBattles`,
       `${HUB_FILE('hub/useHubReaders.js')}: ../../../services/authIdentity`,
+      // S2b: the deploy provider suites' kit reads the same identity source (tests only; no hub module reaches it).
+      `${HUB_FILE('__fixtures__/deployAttemptKit.jsx')}: ../../../services/authIdentity`,
     ].sort());
   });
 
