@@ -273,6 +273,17 @@ describe('loadout rows exist only where an equip time is recorded (R-S4-1)', () 
     expect(row.sub).toBe('Renamed Ten');
   });
 
+  it('a whitespace-only name is no name: the plain one', () => {
+    const row = run({ agent: agentOf(), watchlist: { id: 'wl_hb', name: '   ' } }).rows.find((r) => r.id === 'loadout:watchlist:wl_hb');
+    expect(row.sub).toBe(COPY.loadout.watchlistFallback);
+  });
+
+  it('a live game with no recorded time has no deployed row even where no cutoff stands in the way (no completed record at all)', () => {
+    const timeless = liveDoc('bb_live', { activatedAt: undefined, createdAt: undefined });
+    expect(ids(run({ battles: [], live: [timeless] }))).toEqual([]);
+    expect(ids(run({ battles: [], live: [liveDoc('bb_live', { activatedAt: 'later', createdAt: null })] }))).toEqual([]);
+  });
+
   it('a list with no recorded name still has its row, named plainly', () => {
     const row = run({ agent: agentOf({ equippedWatchlistName: '' }), watchlist: { id: 'wl_hb', name: '' } }).rows.find((r) => r.id === 'loadout:watchlist:wl_hb');
     expect(row.sub).toBe(COPY.loadout.watchlistFallback);

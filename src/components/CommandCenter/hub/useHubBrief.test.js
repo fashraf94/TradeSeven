@@ -6,7 +6,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The pure half only: the hook module reads Firebase's config at load, and the hook itself is driven in useHubBrief.jsdom.test.jsx.
+// The pure half only: the hook module reads Firebase's config at load. The hook's retry (a click never reaches refetch as its isRetry
+// argument) and the brief's states are driven through the hub in CommandCenterHub.s4.jsdom.test.jsx.
 vi.mock('../../../hooks/useDailyRegimeBrief', () => ({ default: () => ({}) }));
 
 import { HUB_COPY as COPY } from './hubCopy';

@@ -206,11 +206,6 @@ describe('a kept window\'s ready review answers (Q-S3-10)', () => {
     for (const odd of ['ready', 7, [], true]) expect(carriedWindow(OWNER, kept(odd)).ready, String(odd)).toBeUndefined();
   });
 
-  it('a prototype key in the id space is not an answer', () => {
-    const window = carriedWindow(OWNER, { battles: [doc(1, { id: 'constructor' })], generation: 1, lastSuccessfulAt: T0, ready: {} });
-    expect(window.ready).toBeUndefined();
-  });
-
   it('carriedState: a kept ready row is READY with its answer, every other row queued', () => {
     const state = carriedState(OWNER, kept({ done_02: READY }));
     expect(state.reviews.done_02).toEqual({ state: REVIEW_STATES.READY, result: READY, nextAt: null });

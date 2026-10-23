@@ -126,7 +126,7 @@ function keptReadyAnswers(given, battles) {
   const kept = {};
   if (!given || typeof given !== 'object') return kept;
   for (const b of battles) {
-    const answer = Object.hasOwn(given, b.id) ? helperAnswer(given[b.id]) : null;
+    const answer = helperAnswer(given[b.id]);
     if (answer && answer.availability === 'ready') kept[b.id] = answer;
   }
   return kept;

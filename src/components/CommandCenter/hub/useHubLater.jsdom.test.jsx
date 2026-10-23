@@ -188,6 +188,18 @@ describe('with storage unavailable, Later still works for the mount (R-S4-3)', (
     expect([...last().dismissed].sort()).toEqual(['openGame:g1', 'openGame:g2']);
   });
 
+  it('the sweep for another account\'s key survives a store whose length or key() throws (a hub mounting with others\' keys about)', () => {
+    vi.spyOn(Storage.prototype, 'length', 'get').mockImplementation(denied);
+    expect(() => mount(A)).not.toThrow();
+    act(() => last().dismiss('openGame:g1'));
+    expect(last().dismissed.has('openGame:g1')).toBe(true);
+    vi.restoreAllMocks();
+    sessionStorage.setItem(laterStorageKey('uid-A'), JSON.stringify(['x']));
+    unmount();
+    vi.spyOn(Storage.prototype, 'key').mockImplementation(denied);
+    expect(() => mount(B)).not.toThrow();
+  });
+
   it('an identity change with storage down still empties the set for the new account', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(denied);
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(denied);

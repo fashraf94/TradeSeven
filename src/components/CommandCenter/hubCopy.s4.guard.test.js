@@ -13,6 +13,8 @@ const BANNED = [
   /\blearn/i, /\bimprov/i, /\bintelligen/i, /\bsmart(er)?\b/i, /\bearned\b/i, /\btier\b/i, /getting better/i,
   /\bevolv/i, /\bgrow(s|th|ing)?\b/i, /since your last visit/i, /\blevel(s|led)? up\b/i, /\bunlock/i,
   /\bsources?\s*·\s*\d/i, /\bremembers?\b/i, /\bsimulat/i, /\bprototype\b/i, /\billustrative\b/i,
+  // R-S4-1: Activity is a projection of records, never an event log or a history of everything.
+  /\bevents?\b/i, /\bhistory of\b/i, /\blog\b/i,
 ];
 
 describe('the spec\'s own words, exactly (§8.2, §8.3)', () => {
@@ -85,7 +87,7 @@ describe('no claim the hub cannot back, in S4\'s words as they are rendered (§8
   });
 
   it('the scan catches what it names', () => {
-    for (const text of ['Shadow learned from this game', 'Since your last visit', 'Sources · 4', 'Shadow is growing']) {
+    for (const text of ['Shadow learned from this game', 'Since your last visit', 'Sources · 4', 'Shadow is growing', 'Activity · 21 events', 'Your activity log']) {
       expect(BANNED.some((re) => re.test(text)), text).toBe(true);
     }
   });
@@ -93,5 +95,36 @@ describe('no claim the hub cannot back, in S4\'s words as they are rendered (§8
   it('the activity row name carries no empty second line: a row with no sub reads "text, time"', () => {
     expect(COPY.activity.rowLabel('Deployed', '', 'Oct 21, 4:05 PM ET')).toBe('Deployed, Oct 21, 4:05 PM ET');
     expect(COPY.activity.rowLabel('Deployed', 'BaggerBomb vs CPU', '')).toBe('Deployed: BaggerBomb vs CPU');
+  });
+});
+
+describe('the rest of the S4 words, literally (review T-10): a reword of any of them is a decision, not an accident', () => {
+  it('the Activity states, its age notes and its sheet', () => {
+    expect(COPY.activity.loading).toBe('Checking your activity');
+    expect(COPY.activity.empty).toBe('Nothing recorded yet.');
+    expect(COPY.activity.unavailable).toBe('Couldn’t load your activity');
+    expect(COPY.activity.asOf('11:00 AM ET')).toBe('As of 11:00 AM ET');
+    expect(COPY.activity.asOf('')).toBe('As of your last visit');
+    expect(COPY.activity.staleAsOf('11:00 AM ET')).toBe('As of 11:00 AM ET · couldn’t refresh');
+    expect(COPY.activity.staleAsOf('')).toBe('Couldn’t refresh');
+    expect(COPY.activity.sheetLabel).toBe('Recent activity');
+    expect(COPY.activity.sheetTitle).toBe('Recent activity');
+    expect(COPY.activity.sheetEyebrow(21)).toBe('Activity · 21');
+  });
+
+  it('the next action buttons, and the review title without a day', () => {
+    expect(COPY.nextAction.openGame).toBe('Open game');
+    expect(COPY.nextAction.openReview).toBe('Open Film Room');
+    expect(COPY.nextAction.reviewTitle('')).toBe('Review your game in the Film Room');
+    expect(COPY.nextAction.firstWhy).toBe('Shadow deploys with your equipped loadout.');
+    expect(COPY.nextAction.preOpenTitle).toBe('Your game is deployed');
+  });
+
+  it('the brief heading and its controls', () => {
+    expect(COPY.brief.label).toBe('Daily Regime Brief');
+    expect(COPY.brief.loading).toBe('Checking the brief');
+    expect(COPY.brief.more).toBe('More');
+    expect(COPY.brief.less).toBe('Less');
+    expect(COPY.brief.retry).toBe('Retry');
   });
 });

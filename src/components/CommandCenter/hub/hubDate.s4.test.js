@@ -35,7 +35,7 @@ describe('formatHubMarketDate — the brief\'s forDate, a market-day label', () 
   });
 
   it('is empty for anything that is not a real calendar date written YYYY-MM-DD', () => {
-    for (const bad of ['', null, undefined, 20261007, '2026-10-7', '2026-13-01', '2026-02-30', '2026-00-10', 'Oct 7', '2026-10-07T00:00:00Z', ' 2026-10-07']) {
+    for (const bad of ['', null, undefined, 20261007, '2026-10-7', '2026-13-01', '2026-02-30', '2026-00-10', 'Oct 7', '2026-10-07T00:00:00Z', ' 2026-10-07', '0050-01-01', '0099-12-31']) {
       expect(formatHubMarketDate(bad), String(bad)).toBe('');
     }
   });

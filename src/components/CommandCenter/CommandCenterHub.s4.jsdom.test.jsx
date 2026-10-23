@@ -24,12 +24,17 @@ const r = vi.hoisted(() => ({
   market: { state: 'OPEN', isOpen: true },
   brief: null,
   lists: [],
+  characterTab: true,
 }));
 vi.mock('../../services/authIdentity', () => ({ useAuthIdentity: () => r.identity }));
 vi.mock('../../hooks/useAgent', () => ({ default: () => r.agent }));
 vi.mock('./hub/useHubCompletedBattles', () => ({ default: () => r.window }));
 vi.mock('../../utils/marketSchedule', () => ({ getMarketState: () => r.market }));
 vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists: async () => r.lists }));
+vi.mock('./hub/hubFlags', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, hubFlags: () => ({ ...actual.hubFlags(), characterTab: r.characterTab }) };
+});
 vi.mock('../../hooks/useDailyRegimeBrief', () => ({ default: function useDailyRegimeBrief() { return r.brief; } }));
 
 import CommandCenterHub from './CommandCenterHub';
@@ -94,6 +99,7 @@ beforeEach(() => {
   r.market = { state: 'OPEN', isOpen: true };
   r.brief = briefOf();
   r.lists = [];
+  r.characterTab = true;
   layout = installFakeLayout();
   removeNav = mountFakeBottomNav();
 });
@@ -156,6 +162,19 @@ describe('the next action (R-S4-2)', () => {
     expect(liveRows[0]).toMatch(/^Open live game: BaggerBomb vs CPU/);
   });
 
+  it('on the phone a live game\'s card sits above the other live rows, and a card of any kind leaves no "No games yet" beside it', () => {
+    r.window = windowOf([]);
+    render('mobile', hubOf({ activeBattles: [BB, RANKED] }));
+    const otherLive = overview().querySelector('[data-hub-game-row="live"]');
+    expect(precedes(nextCard(), otherLive)).toBe(true);
+    expect(nextText()).toMatch(/Score /);
+    unmountAll();
+    r.agent = agentReady({ gamesPlayed: 0 });
+    render('mobile', hubOf());
+    expect(nextKind()).toBe('deploy');
+    expect(overview().textContent).not.toContain(COPY.games.empty);
+  });
+
   it('a game that has not opened yet says it is deployed and waiting for the open (spec §8.2)', () => {
     r.market = { state: 'CLOSED_AFTERHOURS', isOpen: false };
     const fresh = { ...BB, scoreState: { currentScore: 0, tradeCount: 0, evaluationCount: 0, lastScoredAt: null } };
@@ -192,10 +211,14 @@ describe('the next action (R-S4-2)', () => {
     expect(nextKind()).toBe('openGame');
   });
 
-  it('the phone Overview shows the card first, and nothing is listed twice', () => {
+  const precedes = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  it('the phone Overview shows the card before the activity and the brief, and nothing is listed twice', () => {
     render('mobile', hubOf());
     expect(nextKind()).toBe('review');
-    expect(overview().firstElementChild.contains(nextCard()) || overview().contains(nextCard())).toBe(true);
+    expect(overview().contains(nextCard())).toBe(true);
+    expect(precedes(nextCard(), activitySection())).toBe(true);
+    expect(precedes(nextCard(), briefSection())).toBe(true);
     const reviewRows = [...overview().querySelectorAll('[data-hub-game]')].map((el) => el.getAttribute('data-hub-game'));
     expect(reviewRows).not.toContain('done_01');
   });
@@ -471,6 +494,10 @@ describe('Recent activity (R-S4-1)', () => {
     expect(labels[0]).toMatch(/^Deployed: BaggerBomb vs CPU, Oct 23, 9:00\s?AM ET$/);
     expect(labels[1]).toMatch(/^Game completed: vs CPU · Won \+11\.0, Oct 21, 4:05\s?PM ET$/);
     expect(labels).toHaveLength(1 + 3 + 2);
+    // The row SHOWS its time and its second line, not only names them.
+    const completedRow = activitySection().querySelector('[data-hub-activity-row="completed"]').closest('button');
+    expect(completedRow.textContent).toMatch(/Oct 21, 4:05\s?PM ET/);
+    expect(completedRow.textContent).toContain('vs CPU · Won +11.0');
   });
 
   it('a row for a game opens that game, the poll\'s record for a live one and the window\'s for a completed one; a loadout row opens nothing', async () => {
@@ -586,6 +613,16 @@ describe('Recent activity (R-S4-1)', () => {
     expect(row).not.toContain('SP-01');
   });
 
+  it('without the Forge\'s Character tab, standing leans are no surface at the hub level either: no Adjustment row', () => {
+    withThree();
+    const agent = agentReady({ gamesPlayed: 3 });
+    agent.agent.standingLeans = [{ adjustmentId: 'SP-01', version: getCanonicalTextVersion('degen', 'SP-01'), equippedAt: iso(Date.UTC(2026, 9, 21, 23, 30)) }];
+    r.agent = agent;
+    r.characterTab = false;
+    render('desktop', hubOf());
+    expect(activityLabels().some((l) => l.startsWith('Adjustment equipped'))).toBe(false);
+  });
+
   it('the optimistic entry is kept out until the server document replaces it', () => {
     withThree();
     const optimistic = { ...BB, localOrigin: true };
@@ -606,6 +643,13 @@ describe('Recent activity (R-S4-1)', () => {
     render('desktop', hubOf());
     expect(activitySection().textContent).toContain(COPY.activity.unavailable);
     expect(activitySection().textContent).not.toContain(COPY.activity.empty);
+  });
+
+  it('a first read that failed while its owed retry is out is still being read: loading, not "couldn\'t load" (the S3 T3-3 rule)', () => {
+    r.window = windowOf(null, { status: 'error', error: new Error('x'), lastSuccessfulAt: null, generation: 0, checking: true });
+    render('desktop', hubOf());
+    expect(activitySection().textContent).toContain(COPY.activity.loading);
+    expect(activitySection().textContent).not.toContain(COPY.activity.unavailable);
   });
 
   it('a read, empty window with no loadout record says there is nothing recorded yet', () => {
@@ -643,6 +687,26 @@ describe('Recent activity (R-S4-1)', () => {
     expect(dialog().textContent).toContain(COPY.activity.sheetEyebrow(n));
     expect(dialog().getAttribute('aria-modal')).toBe('true');
     expect(document.querySelector('[inert]'), 'the overlay stack made the background inert').not.toBeNull();
+    closeSheet();
+    expect(dialog()).toBeNull();
+  });
+
+  it('on the phone the link opens the ACTIVITY sheet (not History) with all N rows, and its rows and the Overview\'s own rows open their games', () => {
+    const hub = hubOf({ activeBattles: [BB] });
+    render('mobile', hub);
+    const [all] = byRole(overview(), 'button', /^All activity · \d+$/);
+    const n = Number(/(\d+)$/.exec(all.textContent)[1]);
+    // The Overview's own rows (newest first: the live game's deploy row) open the poll's record.
+    click(overview().querySelector('[data-hub-activity-row="deployed"]').closest('button'));
+    expect(hub.openGame.mock.calls[0][0]).toBe(BB);
+    click(all);
+    expect(dialog()).not.toBeNull();
+    expect(dialog().textContent).toContain(COPY.activity.sheetTitle);
+    expect(dialog().textContent).toContain(COPY.activity.label);
+    expect(dialog().textContent).not.toContain(COPY.history.title);
+    expect(activityLabels(dialog())).toHaveLength(n);
+    click([...dialog().querySelectorAll('[data-hub-activity-row="completed"]')][0].closest('button'));
+    expect(hub.openGame.mock.calls[1][0]).toBe(TEN[0]);
     closeSheet();
     expect(dialog()).toBeNull();
   });
@@ -721,23 +785,35 @@ describe('the Daily Regime Brief (R-S4-4)', () => {
     expect(toggle().getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('a stale brief: "Last session\'s brief · for {date}"', () => {
-    r.brief = briefOf({ forDate: '2026-10-20', isStale: true });
+  it('desktop: More takes the two-line clamp off the body, and Less puts it back', () => {
     render('desktop', hubOf());
+    const body = () => briefSection().querySelector('p');
+    const toggle = () => byRole(briefSection(), 'button').find((b) => b.hasAttribute('aria-expanded'));
+    const clamped = body().style.display;
+    click(toggle());
+    expect(body().style.display).toBe('block');
+    click(toggle());
+    expect(body().style.display).toBe(clamped);
+    expect(clamped).not.toBe('block');
+  });
+
+  it.each(['desktop', 'mobile'])('%s: a stale brief: "Last session\'s brief · for {date}"', (site) => {
+    r.brief = briefOf({ forDate: '2026-10-20', isStale: true });
+    render(site, hubOf());
     expect(briefSection().textContent).toContain(`Last session's brief · for Tue Oct 20${COPY.sep}${GEN}`);
     expect(briefSection().textContent).not.toContain('Brief for');
   });
 
-  it('no generatedAt returned: no "Generated" at all — the fetch time is never a publication time', () => {
+  it.each(['desktop', 'mobile'])('%s: no generatedAt returned: no "Generated" at all — the fetch time is never a publication time', (site) => {
     r.brief = briefOf({ generatedAt: null });
-    render('desktop', hubOf());
+    render(site, hubOf());
     expect(briefSection().textContent).toContain('Brief for Fri Oct 23');
     expect(briefSection().textContent).not.toContain('Generated');
   });
 
-  it('missing: "No brief available", and no More / Less to press', () => {
+  it.each(['desktop', 'mobile'])('%s: missing: "No brief available", and no More / Less to press', (site) => {
     r.brief = briefOf({ dailyBrief: null, forDate: null, generatedAt: null });
-    render('desktop', hubOf());
+    render(site, hubOf());
     expect(briefSection().textContent).toContain(COPY.brief.missing);
     expect(byRole(briefSection(), 'button', COPY.brief.more)).toHaveLength(0);
     expect(briefSection().textContent).not.toContain(COPY.brief.loading);
@@ -802,8 +878,8 @@ describe('History\'s Refresh (R-S4-5; founder ruling Q-S3-6)', () => {
     r.window = windowOf(TEN, { nextAttemptAt: NOW + 90000 });
     render('desktop', hubOf());
     openHistory();
-    const at = formatHubTime(NOW + 90000, { roundUp: true });
-    expect(dialog().textContent).toContain(COPY.history.nextRefresh(COPY.time.et(at)));
+    // 15:01:30 UTC is 11:01:30 ET: the next permitted time is never earlier than the bound itself, so it reads 11:02.
+    expect(dialog().textContent).toMatch(/Next refresh at 11:02\s?AM ET/);
     expect(byRole(dialog(), 'button', COPY.history.refresh)).toHaveLength(0);
     expect(r.window.refresh).not.toHaveBeenCalled();
   });
