@@ -3,15 +3,17 @@
 // Cockpit Build 2b — THE FLAG PIN (BUILD_RULES §2; spec
 // docs/COCKPIT_BUILD2B_SPEC_V1_0.md S-11, §10).
 //
-// COCKPIT_2B_ENABLED ships FALSE: the 2b endpoint behavior and the V5 screen
-// are built dark, and the flip is the founder's own PR (spec §10.2). The
-// first row is a tripwire in both directions: an accidental flip lights the
-// commands, the replace confirmation and the new screen for every allowlisted
-// owner; flagPinGuard.test.js turns that into a loud failure naming this
-// file. A deliberate flip runs THE FLIP MAP in the flag's docstring, in one
-// commit: the first row moves to true, the registration row (last) turns
-// around to assert the DARK_BY_DESIGN entry is gone, the entry is dropped,
-// and the docstring's state lines are reworded.
+// COCKPIT_2B_ENABLED shipped FALSE (the 2b endpoint behavior and the V5 screen
+// were built dark) and is now TRUE: the founder's flip PR (spec §10.2) ran THE
+// FLIP MAP in the flag's docstring, in one commit — the first row moved to
+// true, the registration row (last) turned around to assert the
+// DARK_BY_DESIGN entry is gone, the entry was dropped, and the docstring's
+// state lines were reworded. The first row is a tripwire in both directions:
+// an accidental rollback darkens the commands, the replace confirmation and
+// the new screen for every allowlisted owner; flagPinGuard.test.js turns that
+// into a loud failure naming this file. A deliberate rollback (spec §10.3) is
+// the one line back to false, with the first row and the registration row
+// moved back and the DARK_BY_DESIGN entry restored, in one commit.
 //
 // Deliberately pins ONLY this flag (the commandCenterHubFlags.test.js
 // precedent).
@@ -41,13 +43,13 @@ function docstring() {
   return SRC.slice(SRC.lastIndexOf('export function ', idx - 1), idx);
 }
 
-describe('COCKPIT_2B_ENABLED — the dark pin (BUILD_RULES §2)', () => {
-  it('ships DARK — the 2a screen and HEAD\'s endpoint behavior until the founder\'s flip PR', () => {
+describe('COCKPIT_2B_ENABLED — the pin (BUILD_RULES §2)', () => {
+  it('LIT by the founder\'s flip PR (§10.2): COCKPIT_2B_ENABLED is true — the 2b endpoint behavior and the V5 screen, for the allowlisted owners', () => {
     // THE ROW THAT MOVES WITH THE FLIP, in the flip PR's own commit.
-    expect(COCKPIT_2B_ENABLED).toBe(false);
+    expect(COCKPIT_2B_ENABLED).toBe(true);
   });
 
-  it('the accessor returns the flag, so it reads false today', () => {
+  it('the accessor returns the flag, so it reads the live value', () => {
     expect(isCockpit2bOn()).toBe(COCKPIT_2B_ENABLED);
   });
 
@@ -93,7 +95,7 @@ describe('COCKPIT_2B_ENABLED — the dark pin (BUILD_RULES §2)', () => {
     expect(window).toContain(' *   4. this docstring: the state lines');
   });
 
-  it('is registered in the flag-pin guard\'s DARK_BY_DESIGN set (the row the flip turns around)', () => {
-    expect(GUARD).toMatch(/^ {2}COCKPIT_2B_ENABLED:\n/m);
+  it('is NO LONGER registered DARK_BY_DESIGN — the deliberate flip dropped its entry in the same commit', () => {
+    expect(GUARD).not.toMatch(/^ {2}COCKPIT_2B_ENABLED:\n/m);
   });
 });
