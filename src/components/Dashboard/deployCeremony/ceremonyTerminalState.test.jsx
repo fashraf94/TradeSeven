@@ -658,8 +658,9 @@ describe('CeremonyError — the outcome selects the headline', () => {
       .toContain('Nova made its picks, but the battle couldn’t be created.');
     expect(render({ errorTone: 'confirmed', errorKind: 'timeout' }))
       .toContain('Deployment timed out — no battle was created.');
+    // Command Center S2b, founder ruling RL-1: the generic confirmed headline (was "Deployment failed — …").
     expect(render({ errorTone: 'confirmed', errorKind: 'deploy' }))
-      .toContain('Deployment failed — no battle was created.');
+      .toContain('Deployment refused — no battle was created.');
   });
 
   // Lost contact overrides every kind — including server_post, whose confirmed
@@ -725,7 +726,8 @@ describe('DeployCeremony — the recovered path and the honest headline', () => 
   // is one slow CI box away from a flake — and silently couples rows that say
   // nothing about the attempt count to its value.
   const settle = async (timeoutMs = 5000) => {
-    const done = () => /Deployment (complete|failed|unconfirmed)/.test(document.body.textContent || '');
+    // "refused" since Command Center S2b (founder rulings Q-S2b-2, RL-1): the confirmed terminal's word was renamed.
+    const done = () => /Deployment (complete|failed|refused|unconfirmed)/.test(document.body.textContent || '');
     const start = Date.now();
     while (!done() && Date.now() - start < timeoutMs) {
       await act(async () => { await new Promise((r) => setTimeout(r, 40)); });
@@ -873,7 +875,8 @@ describe('DeployCeremony — the recovered path and the honest headline', () => 
     await tick(300);
 
     expect(verifyMock).toHaveBeenCalled();               // the check IS running
-    expect(document.body.textContent).not.toMatch(/Deployment (complete|failed|unconfirmed)/);
+    // "refused" since Command Center S2b (founder rulings Q-S2b-2, RL-1): the word this guard looks for was renamed.
+    expect(document.body.textContent).not.toMatch(/Deployment (complete|failed|refused|unconfirmed)/);
     expect(controls()).toEqual(before);                  // nothing gained, nothing lost
   });
 
@@ -888,6 +891,22 @@ describe('DeployCeremony — the recovered path and the honest headline', () => 
     expect(live).toBeTruthy();
     expect(live.textContent).not.toContain('Deployment failed.');
     expect(live.textContent).toContain('confirm');
+  });
+
+  // Command Center slice S2b, founder ruling RL-1: a confirmed refusal says one word in all three places. Before:
+  // the eyebrow "Deployment failed", the headline "Deployment failed — no battle was created." and the live region
+  // "Deployment failed."; after: "Deployment refused" in each.
+  it('RL-1 — a confirmed refusal: the eyebrow, the headline and the live region all say "Deployment refused"', async () => {
+    verifyMock.mockResolvedValue({ found: false, battle: null });
+    const text = await renderCeremony({
+      serverError: { stage: 'error', deployId: OURS, errorPhase: 'pre_decision' },
+    });
+    expect(text).toContain('Deployment refused — no battle was created.');
+    expect(text).not.toContain('Deployment failed');
+    const eyebrow = [...document.querySelectorAll('*')].filter((el) => el.textContent === 'Deployment refused' && el.children.length === 0);
+    expect(eyebrow).toHaveLength(1);
+    const live = document.querySelector('[aria-live="polite"]');
+    expect(live.textContent).toBe('Deployment refused.');
   });
 
   // The copy contract. Confirmed may assert non-creation; lost contact may not.

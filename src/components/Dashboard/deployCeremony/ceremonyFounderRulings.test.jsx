@@ -62,18 +62,21 @@ const primary = () => container.querySelectorAll('button')[0];
 describe('Q-S2b-2 — the ceremony\'s refusal words, each line before and after', () => {
   const renderError = (props) => act(() => { root.render(<CeremonyError agentName="Nova" {...props} />); });
 
-  it('the eyebrow of every definitive refusal (the confirmed tone, every kind): before "Deployment failed", after "Deployment refused"; each headline keeps its words', () => {
+  it('the eyebrow of every definitive refusal (the confirmed tone, every kind): before "Deployment failed", after "Deployment refused"; the generic headline too (RL-1), the others keep their words', () => {
+    // [before, after] per kind: the generic headline is renamed by RL-1; the two specific ones never said "failed".
     const HEADLINES = {
-      deploy: 'Deployment failed — no battle was created.',
-      server: 'Deployment failed — no battle was created.',
-      server_post: 'Nova made its picks, but the battle couldn’t be created.',
-      timeout: 'Deployment timed out — no battle was created.',
+      deploy: ['Deployment failed — no battle was created.', 'Deployment refused — no battle was created.'],
+      server: ['Deployment failed — no battle was created.', 'Deployment refused — no battle was created.'],
+      server_post: ['Nova made its picks, but the battle couldn’t be created.', 'Nova made its picks, but the battle couldn’t be created.'],
+      timeout: ['Deployment timed out — no battle was created.', 'Deployment timed out — no battle was created.'],
     };
-    for (const [errorKind, headline] of Object.entries(HEADLINES)) {
+    for (const [errorKind, [before, after]] of Object.entries(HEADLINES)) {
       renderError({ errorTone: 'confirmed', errorKind });
       expect(lines('Deployment refused'), errorKind).toHaveLength(1);
       expect(lines('Deployment failed'), errorKind).toHaveLength(0);
-      expect(lines(headline), errorKind).toHaveLength(1);
+      expect(lines(after), errorKind).toHaveLength(1);
+      if (before !== after) expect(container.textContent, errorKind).not.toContain(before);
+      expect(container.textContent).not.toContain('Deployment failed');
       expect(container.textContent).toContain('Your agent is safe. Nothing is stuck — you can try again shortly.');
     }
   });

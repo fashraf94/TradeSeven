@@ -32,10 +32,12 @@ function safeDetails(details) {
 }
 
 // CONFIRMED failures only. Every one of these asserts non-creation, which the
-// verification has actually established.
+// verification has actually established. A definitive outcome is a refusal of
+// this request, and the generic headline says so, as the eyebrow and the live
+// region do (Command Center slice S2b, founder rulings Q-S2b-2 and RL-1).
 const HEADLINE = {
-  deploy: () => 'Deployment failed — no battle was created.',
-  server: () => 'Deployment failed — no battle was created.',
+  deploy: () => 'Deployment refused — no battle was created.',
+  server: () => 'Deployment refused — no battle was created.',
   // errorPhase 'post_decision' softening (spec §8, nice-to-have).
   server_post: (name) => `${name} made its picks, but the battle couldn’t be created.`,
   timeout: () => 'Deployment timed out — no battle was created.',
@@ -48,7 +50,8 @@ const LOST_CONTACT_EYEBROW = 'Deployment unconfirmed';
 const LOST_CONTACT_SUBTEXT = 'Your agent is safe. If the battle was created it will appear on your hub — check there before deploying again.';
 const CONFIRMED_SUBTEXT = 'Your agent is safe. Nothing is stuck — you can try again shortly.';
 // Every definitive outcome (the confirmed tone) is a refusal of this request, and says so: the hub's own word
-// for it (Command Center slice S2b, founder ruling Q-S2b-2). The confirmed headlines keep their words.
+// for it (Command Center slice S2b, founder ruling Q-S2b-2), in the eyebrow, the generic headline above and the
+// ceremony's live region (founder ruling RL-1).
 const REFUSED_EYEBROW = 'Deployment refused';
 
 // IN PROGRESS (Command Center slice S2b, ruling R-S2b-9b). decide's 429 "Deploy

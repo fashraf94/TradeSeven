@@ -174,10 +174,12 @@ export default function DeployCeremony({
   // it renders as theater, so it keeps announcing the stage on screen rather
   // than telling the user about a check they were never shown.
   // Command Center slice S2b (ruling R-S2b-9b): decide's 429 "Deploy already in
-  // progress" is a refusal of this request, said as one (CeremonyError.jsx).
+  // progress" is a refusal of this request, said as one (CeremonyError.jsx). Every
+  // definitive outcome is announced as the refusal its eyebrow and headline name
+  // (founder ruling RL-1).
   const inProgress = deployResult?.status === 'error' && deployResult?.reason === DEPLOY_REFUSAL_REASON_IN_PROGRESS;
   const liveText = machine.phase === 'error'
-    ? (inProgress ? `${DEPLOY_IN_PROGRESS_LINE}.` : machine.errorTone === 'confirmed' ? 'Deployment failed.' : 'Couldn’t confirm the deployment.')
+    ? (inProgress ? `${DEPLOY_IN_PROGRESS_LINE}.` : machine.errorTone === 'confirmed' ? 'Deployment refused.' : 'Couldn’t confirm the deployment.')
     : machine.phase === 'reveal'
       ? `${agentName} is ready for battle.`
       : machine.phase === 'existing'
