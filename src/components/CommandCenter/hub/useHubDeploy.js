@@ -94,6 +94,8 @@ export function useHubDeploy({ deployAttempt, readers, hub }) {
         case DISPLAY_ACTIONS.OPEN_GAME: api.openGame(); break;
         case DISPLAY_ACTIONS.CHECK_DEPLOYMENT: api.checkDeployment(); break;
         case DISPLAY_ACTIONS.RETRY: api.retry(); break;
+        // A refusal no ceremony shows, acknowledged with its cooldown kept; the provider admits nothing else (Q-S2b-4).
+        case DISPLAY_ACTIONS.DISMISS: api.dismissRefusal(); break;
         case DISPLAY_ACTIONS.OPEN_FORGE_REVIEW: {
           // The review-due refusal's one action: that list's Forge editor (spec §5.4). Retry never reaffirms,
           // retires or deploys on the way back; the player's next hold is the intentional Retry, read afresh.

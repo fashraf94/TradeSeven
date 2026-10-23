@@ -11,6 +11,14 @@
 // target-scoped verifier and checks its owner). The owner is read again
 // immediately before the open. A missing or foreign document reads "Couldn't
 // open the running game" with Retry, which reads again and never POSTs.
+//
+// Command Center slice S2b (founder ruling Q-S2b-5): the optional `ownedRead`
+// — `{ retry, retryAt }`, given only by the hub's root ceremony
+// (src/contexts/DeployAttemptContext.jsx) — routes that Retry through the
+// provider's one owned targeted read of the server's id: deduplicated per
+// attempt, with its deadline, and after a failure its 30 s wait (`retryAt`),
+// which the button counts down. Without it (today's shells pass nothing) Retry
+// reads the live list and the verifier again, exactly as before.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, RotateCcw, Swords } from 'lucide-react';
@@ -25,12 +33,16 @@ export const EXISTING_COPY = Object.freeze({
   open: 'Open game',
   unavailable: 'Couldn’t open the running game',
   retry: 'Retry',
+  /** The owned read's wait after a failure (S2b, Q-S2b-5): CeremonyError.jsx's own words for a Retry not yet open. */
+  retryIn: (secs) => `Retry available in ${secs}s`,
   subtext: 'No new game was started.',
 });
 
+const UNAVAILABLE = Object.freeze({ status: 'unavailable', battle: null });
+
 export default function CeremonyExisting({
   accent = CMD.teal, agentName = 'Your agent', existingBattleId = null,
-  liveBattles = null, verifyBattle = null, onOpenBattle, onDismiss,
+  liveBattles = null, verifyBattle = null, onOpenBattle, onDismiss, ownedRead = null,
 }) {
   const ink = readableOn(accent);
   const [found, setFound] = useState({ status: 'checking', battle: null });
@@ -38,15 +50,50 @@ export default function CeremonyExisting({
   // Read at resolution time, so a poll landing mid-read does not restart it.
   const liveRef = useRef(liveBattles);
   liveRef.current = liveBattles;
+  // S2b (Q-S2b-5): every read here has a number, so an owned read a newer read overtook sets nothing.
+  const readSeq = useRef(0);
 
   useEffect(() => {
     let alive = true;
+    readSeq.current += 1;
     setFound({ status: 'checking', battle: null });
     resolveExistingBattle({
       existingBattleId, uid: signedInUid(), liveBattles: liveRef.current, verify: verifyBattle,
     }).then((r) => { if (alive) setFound(r); });
     return () => { alive = false; };
   }, [existingBattleId, verifyBattle, run]);
+
+  // S2b (Q-S2b-5): the provider's owned read, when the hub gives one; its wait after a failure is counted down.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const owned = ownedRead && typeof ownedRead.retry === 'function' ? ownedRead : null;
+  const retryAt = owned && Number.isFinite(owned.retryAt) ? owned.retryAt : 0;
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (!retryAt) return undefined;
+    setClock(Date.now());
+    const iv = setInterval(() => {
+      const t = Date.now();
+      setClock(t);
+      if (t >= retryAt) clearInterval(iv);
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [retryAt]);
+  const waitSecs = retryAt ? Math.max(0, Math.ceil((retryAt - clock) / 1000)) : 0;
+
+  const readOwned = () => {
+    const seq = ++readSeq.current;
+    setFound({ status: 'checking', battle: null });
+    Promise.resolve().then(() => owned.retry()).then((r) => {
+      if (!mounted.current || seq !== readSeq.current) return;
+      // The same owner check as the live list's and the verifier's: the server's id, the signed-in owner.
+      setFound(r?.status === 'found' && ownsExistingBattle(r.battle, existingBattleId, signedInUid())
+        ? { status: 'found', battle: r.battle } : UNAVAILABLE);
+    }, () => { if (mounted.current && seq === readSeq.current) setFound(UNAVAILABLE); });
+  };
 
   const open = () => {
     if (found.status !== 'found') return;
@@ -64,11 +111,16 @@ export default function CeremonyExisting({
   // `disabled`: a focused button that becomes disabled loses focus to <body>
   // (the browser's focus fixup), so after Retry, Enter would do nothing once the
   // read found the game (review L3-2). While the read is pending it is
-  // aria-disabled and its press does nothing.
-  const primaryLive = unavailable || canOpen;
+  // aria-disabled and its press does nothing. So is the owned read's Retry
+  // during its wait (S2b, Q-S2b-5), which never happens without `ownedRead`.
+  const waiting = unavailable && waitSecs > 0;
+  const primaryLive = (unavailable && !waiting) || canOpen;
   const pressPrimary = () => {
-    if (unavailable) setRun((r) => r + 1);
-    else if (canOpen) open();
+    if (unavailable) {
+      if (waiting) return;
+      if (owned) readOwned();
+      else setRun((r) => r + 1);
+    } else if (canOpen) open();
   };
 
   return (
@@ -93,8 +145,8 @@ export default function CeremonyExisting({
           style={unavailable ? {
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, width: '100%',
             padding: '14px', borderRadius: 13, border: `1px solid ${alpha(accent, 0.5)}`,
-            background: alpha(accent, 0.14), color: accent,
-            fontFamily: 'inherit', fontWeight: 700, fontSize: 14.5, cursor: 'pointer',
+            background: waiting ? 'transparent' : alpha(accent, 0.14), color: waiting ? CMD.ink3 : accent,
+            fontFamily: 'inherit', fontWeight: 700, fontSize: 14.5, cursor: waiting ? 'default' : 'pointer',
           } : {
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, width: '100%',
             padding: '15px', borderRadius: 14, border: 'none', fontFamily: 'inherit', fontWeight: 700, fontSize: 15,
@@ -103,7 +155,7 @@ export default function CeremonyExisting({
           }}
         >
           {unavailable
-            ? <><RotateCcw size={16} /> {EXISTING_COPY.retry}</>
+            ? <><RotateCcw size={16} /> {waiting ? EXISTING_COPY.retryIn(waitSecs) : EXISTING_COPY.retry}</>
             : <><Swords size={17} color={canOpen ? ink : CMD.ink3} /> {EXISTING_COPY.open}</>}
         </button>
         <button

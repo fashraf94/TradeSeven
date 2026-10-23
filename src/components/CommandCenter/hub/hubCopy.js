@@ -25,8 +25,9 @@
 // "Ready to deploy · as of {time}", "Finishing deployment", "Deployed",
 // "Battle confirmed", "Already running" + Open game, "Couldn't confirm the
 // deploy", "Sign in required". Two are the shipped ceremony's
-// (CeremonyError.jsx), so the hub and the overlay say the same thing:
-// "Deployment failed" and "Couldn't confirm the deploy". The build's own,
+// (CeremonyError.jsx), so the hub and the overlay say the same thing: the
+// refusal's eyebrow (since S2b "Deployment refused", below) and "Couldn't
+// confirm the deploy". The build's own,
 // where the spec names a state but no words: the agent's loading state says
 // "Checking eligibility…" like the poll's (eligibility cannot be known
 // before the agent, and one line avoids a flicker of two), its error "Agent
@@ -35,7 +36,10 @@
 // the in-flight control labels, "Verifying deployment…", "Check
 // deployment", "Enter battle", and the as-of and refresh notes.
 // Slice S3 (the readers) adds the founder's strip words for the review-due
-// refusal, "Deployment refused" (ruling R-S3-1).
+// refusal, "Deployment refused" (ruling R-S3-1). Slice S2b (founder ruling
+// Q-S2b-2) makes it every definitive refusal's word, here and in the
+// ceremony's eyebrow (CeremonyError.jsx), and adds the closed ceremony's
+// "Dismiss" (Q-S2b-4).
 //
 // Slice S5 (the owner's loadout and the retained entry points, rulings
 // R-S5-1 … R-S5-7) adds the Loadout panel's states and labels, the shipped
@@ -298,6 +302,8 @@ export const HUB_COPY = Object.freeze({
     enterBattle: 'Enter battle',
     checkDeployment: 'Check deployment',
     openForge: 'Open in the Forge',
+    /** Founder ruling Q-S2b-4: a refusal shown with the ceremony closed is acknowledged here, its cooldown kept (spec §5.4). */
+    dismiss: 'Dismiss',
     /** Slice S2b (ruling R-S2b-7): the Scouting Board's entry, the shells' own words (CommandDashboard.jsx). */
     scoutingBoard: 'See what it’s eyeing',
     /**
@@ -331,7 +337,8 @@ export const HUB_COPY = Object.freeze({
       finishing: 'Finishing deployment',
       confirmed: 'Deployed',
       existing: 'Already running',
-      failed: 'Deployment failed',
+      // Every definitive refusal, the review-due one included (founder ruling Q-S2b-2): the ceremony's eyebrow too.
+      failed: 'Deployment refused',
       uncertain: 'Couldn’t confirm the deploy',
     }),
     /** A recovered confirmation: the battle is owned and admitted, but nothing proves this request created it (spec §5.2). */

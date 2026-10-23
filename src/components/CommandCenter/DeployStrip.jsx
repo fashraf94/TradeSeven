@@ -45,7 +45,7 @@ const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutL
   const display = deployDisplay(deploy, liveGame);
   const line1 = display.stripLine1;
   const line2 = display.stripLine2(loadoutLine);
-  const { hold, openGame, action } = display.strip;
+  const { hold, openGame, action, dismiss } = display.strip;
   return (
     <div
       ref={ref}
@@ -83,6 +83,12 @@ const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutL
         {action && (
           <HubButton kind="secondary" onPress={onAction ? () => onAction(action.kind) : undefined} style={{ padding: '0 14px' }}>
             {action.label}
+          </HubButton>
+        )}
+        {/* Founder ruling Q-S2b-4: a refusal no ceremony shows is acknowledged here, beside its own action. */}
+        {dismiss && (
+          <HubButton kind="secondary" onPress={onAction ? () => onAction(dismiss.kind) : undefined} style={{ padding: '0 12px' }}>
+            {dismiss.label}
           </HubButton>
         )}
       </div>

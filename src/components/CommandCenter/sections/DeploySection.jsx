@@ -55,6 +55,8 @@ function DeployLines({ display, onAction }) {
           <span>
             {line.text}
             <ActionLink action={line.action} onAction={onAction} />
+            {/* Founder ruling Q-S2b-4: a refusal no ceremony shows is acknowledged here, beside its own action. */}
+            <ActionLink action={line.dismiss ?? null} onAction={onAction} />
           </span>
         </div>
       )}

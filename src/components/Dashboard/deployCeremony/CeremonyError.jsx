@@ -47,16 +47,18 @@ const LOST_CONTACT_HEADLINE = 'Couldn’t confirm the deploy.';
 const LOST_CONTACT_EYEBROW = 'Deployment unconfirmed';
 const LOST_CONTACT_SUBTEXT = 'Your agent is safe. If the battle was created it will appear on your hub — check there before deploying again.';
 const CONFIRMED_SUBTEXT = 'Your agent is safe. Nothing is stuck — you can try again shortly.';
+// Every definitive outcome (the confirmed tone) is a refusal of this request, and says so: the hub's own word
+// for it (Command Center slice S2b, founder ruling Q-S2b-2). The confirmed headlines keep their words.
+const REFUSED_EYEBROW = 'Deployment refused';
 
 // IN PROGRESS (Command Center slice S2b, ruling R-S2b-9b). decide's 429 "Deploy
 // already in progress" refused THIS request before it did anything, because the
 // agent's other deploy is still running. That is a definitive refusal, not a lost
 // contact, and it claims nothing about the other deploy's battle. The headline is
-// the one line the hub shows too (src/constants/deployOutcomes.js).
+// the one line the hub shows too (src/constants/deployOutcomes.js); the subtext is
+// the founder's (ruling Q-S2b-2).
 const IN_PROGRESS_HEADLINE = `${DEPLOY_IN_PROGRESS_LINE}.`;
-// Refused, not failed: nothing of this request ran (S2b review W1-1). The hub's own word for a refusal.
-const IN_PROGRESS_EYEBROW = 'Deployment refused';
-const IN_PROGRESS_SUBTEXT = 'Your agent is safe. If the deploy already running creates a battle, it will appear on your hub.';
+const IN_PROGRESS_SUBTEXT = 'Another deploy for your agent is still being set up. If it creates a battle, it will show up with your games.';
 
 export default function CeremonyError({
   accent = CMD.copper, agentName = 'Your agent', errorKind = 'deploy',
@@ -92,7 +94,7 @@ export default function CeremonyError({
         <AlertTriangle size={26} color={CMD.copper} />
       </div>
 
-      <Eyebrow color={CMD.copper} style={{ marginBottom: 8 }}>{inProgress === true ? IN_PROGRESS_EYEBROW : confirmed ? 'Deployment failed' : LOST_CONTACT_EYEBROW}</Eyebrow>
+      <Eyebrow color={CMD.copper} style={{ marginBottom: 8 }}>{confirmed ? REFUSED_EYEBROW : LOST_CONTACT_EYEBROW}</Eyebrow>
       <div style={{ fontSize: 18, fontWeight: 600, color: CMD.ink, lineHeight: 1.4, marginBottom: 12 }}>{headline}</div>
 
       {details && (

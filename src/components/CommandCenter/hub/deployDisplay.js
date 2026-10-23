@@ -39,8 +39,11 @@ export const DEPLOY_DISPLAY_STATES = Object.freeze([
   'submitting', 'verifying', 'finishing', 'confirmed', 'existing', 'failed', 'uncertain',
 ]);
 
-/** The actions a display can offer: an attempt's (spec §5.2) and a read's Retry (§3). */
-export const DISPLAY_ACTIONS = Object.freeze({ ...ATTEMPT_ACTIONS, RETRY_READ: 'retryRead' });
+/**
+ * The actions a display can offer: an attempt's (spec §5.2), a read's Retry (§3), and the Dismiss of a refusal no
+ * ceremony shows (§5.4; founder ruling Q-S2b-4), which sits beside the refusal's own action, never in its place.
+ */
+export const DISPLAY_ACTIONS = Object.freeze({ ...ATTEMPT_ACTIONS, RETRY_READ: 'retryRead', DISMISS: 'dismiss' });
 
 const S = COPY.deploy.states;
 const D = COPY.deploy;
@@ -52,6 +55,7 @@ const ACTION_LABEL = Object.freeze({
   [DISPLAY_ACTIONS.OPEN_GAME]: D.openGame,
   [DISPLAY_ACTIONS.CHECK_DEPLOYMENT]: D.checkDeployment,
   [DISPLAY_ACTIONS.OPEN_FORGE_REVIEW]: D.openForge,
+  [DISPLAY_ACTIONS.DISMISS]: D.dismiss,
 });
 const actionOf = (kind) => (Object.hasOwn(ACTION_LABEL, kind) ? Object.freeze({ kind, label: ACTION_LABEL[kind] }) : null);
 
@@ -122,9 +126,9 @@ function holdLabelOf(displayState, recovered) {
  *   processing: boolean,        a hub-started deployment is submitting (Shadow's status)
  *   stripLine1: string,
  *   stripLine2: (loadoutLine: string) => string,
- *   strip: { openGame: boolean, hold: null|{ label: string, secondary: boolean }, action: null|{ kind: string, label: string } },
+ *   strip: { openGame: boolean, hold: null|{ label: string, secondary: boolean }, action: null|{ kind: string, label: string }, dismiss?: { kind: 'dismiss', label: string } },
  *   cardHoldLabel: string,
- *   cardLine: null|{ icon: string|null, text: string, action: null|{ kind: string, label: string } },
+ *   cardLine: null|{ icon: string|null, text: string, action: null|{ kind: string, label: string }, dismiss?: { kind: 'dismiss', label: string } },
  *   cardNote: null|{ text: string, action: null|{ kind: string, label: string } },
  * }}
  */
@@ -155,6 +159,10 @@ export function deployDisplay(deploy, liveGame = null) {
   // "Deployment refused" with Open in the Forge as its action; the server's
   // line stays whole on the card (cardLine below), never on the strip.
   const reviewDue = displayState === 'failed' && deploy?.action === DISPLAY_ACTIONS.OPEN_FORGE_REVIEW;
+  // A refusal no ceremony shows: Dismiss acknowledges it, beside its Retry or Forge action (founder ruling
+  // Q-S2b-4). Only the refusal's display word carries it; the uncertain guard never does.
+  const dismiss = displayState === 'failed' && deploy?.dismiss === true ? actionOf(DISPLAY_ACTIONS.DISMISS) : null;
+  const withDismiss = dismiss ? { dismiss } : {};
 
   // The strip (ff-mobile.jsx GameStrip): a live game takes the first line and
   // the Open game action; the deploy state moves to the second line. An
@@ -216,7 +224,7 @@ export function deployDisplay(deploy, liveGame = null) {
     case 'confirmed':
       cardLine = { icon: 'check', text: recovered ? D.confirmedRecovered : D.cardConfirmed, action: attemptAction }; break;
     case 'failed':
-      cardLine = { icon: 'info', text: reason || status, action: attemptAction }; break;
+      cardLine = { icon: 'info', text: reason || status, action: attemptAction, ...withDismiss }; break;
     case 'existing': case 'uncertain':
       cardLine = { icon: 'info', text: status, action: attemptAction }; break;
     default: break;
@@ -252,6 +260,7 @@ export function deployDisplay(deploy, liveGame = null) {
       openGame: Boolean(liveGame) && !attemptShown,
       hold,
       action: stripAction,
+      ...withDismiss,
     },
     cardHoldLabel: holdLabelOf(displayState, recovered),
     cardLine,

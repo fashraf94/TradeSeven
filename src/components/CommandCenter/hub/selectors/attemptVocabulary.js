@@ -258,10 +258,13 @@ export function displayForAttempt(attempt) {
     case ATTEMPT_PHASES.EXISTING:
       return shown(ATTEMPT_DISPLAY.EXISTING, ATTEMPT_ACTIONS.OPEN_GAME, { battleId });
     case ATTEMPT_PHASES.REFUSED:
+      // A refusal no ceremony shows (closed while the request was out, or the ceremony off) can also be
+      // dismissed from the hub: acknowledged, its cooldown kept (spec §5.4; founder ruling Q-S2b-4). An open
+      // ceremony has its own Back to hub, and an uncertain attempt never has one: its guard stands.
       return shown(
         ATTEMPT_DISPLAY.FAILED,
         result.kind === RESULT_KINDS.REVIEW_DUE ? ATTEMPT_ACTIONS.OPEN_FORGE_REVIEW : ATTEMPT_ACTIONS.RETRY,
-        { line: nonEmptyString(result.line) },
+        { line: nonEmptyString(result.line), dismiss: ceremony === CEREMONY_PHASES.CLOSED },
       );
     case ATTEMPT_PHASES.UNCERTAIN: {
       const status = attempt.reconciliationStatus;

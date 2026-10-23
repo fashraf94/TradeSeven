@@ -156,6 +156,7 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
   let ceremony = null; // { attemptId, key, visible, deployResult, targetAgentId }
   let due = null; // { attemptId, due, proceed, settle }
   let hydration = null; // { key, attemptId, battleId, status, battle, retryAt }
+  let hydrationRead = null; // { key, settled } — the read in flight, which a second ask waits on (Q-S2b-5)
   let recovered = null; // { attemptId, battle } — the document a recovered creation enters
   let version = 0;
   let cached = null;
@@ -496,11 +497,12 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
       // existing terminal opens the document that read returned — a league battle included, which the
       // terminal's own fallback (the target-scoped verifier) cannot resolve. The read has its own deadline.
       else if (phase !== ATTEMPT_PHASES.EXISTING) handTheCeremony();
-    } else if (phase === ATTEMPT_PHASES.CREATED) {
+    } else if (phase === ATTEMPT_PHASES.CREATED || phase === ATTEMPT_PHASES.REFUSED) {
       // No ceremony on screen to carry a creation to its reveal — the flag is off, or the player closed it while
       // the request was out — so the record closes it itself, and the hub shows the creation with its Enter
       // (spec §5.2: "Deployed · Enter battle"), never a "Finishing" or "Verifying" no ceremony will finish
-      // (review W4-1, W4-2).
+      // (review W4-1, W4-2). A refusal no ceremony shows is closed the same way, so the hub offers its Dismiss
+      // beside Retry (founder ruling Q-S2b-4): nothing else would ever acknowledge it.
       apply({ type: T.CEREMONY_PHASE, attemptId, attemptEpoch: r.attemptEpoch, phase: CEREMONY_PHASES.CLOSED, errorTone: null });
     }
 
@@ -523,7 +525,8 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
    * existing answer's server id, or a creation whose App handoff threw (its real id; review W4-5). Deduplicated
    * by uid + auth epoch + attempt id + battle id; a failed read waits EXISTING_READ_RETRY_MS before its explicit
    * Retry. With `open`, a read that succeeds goes on to open (existing) or enter (created) it (review W4-4).
-   * Resolves (never rejects) once the read has settled, or at once when nothing is to be read.
+   * Resolves (never rejects) once the read has settled, or at once when nothing is to be read; an ask while the
+   * same read is out resolves when that read settles, so it starts no second one (founder ruling Q-S2b-5).
    */
   function hydrate({ open = false } = {}) {
     const a = state.attempt;
@@ -536,6 +539,7 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     if (!battleId) return Promise.resolve();
     const key = `${r.capturedUid}:${r.authEpoch}:${a.attemptId}:${battleId}`;
     if (hydration?.key === key) {
+      if (hydration.status === EXISTING_READ.LOADING && hydrationRead?.key === key) return hydrationRead.settled;
       if (hydration.status !== EXISTING_READ.ERROR) return Promise.resolve();
       if (finite(hydration.retryAt) && now() < hydration.retryAt) return Promise.resolve();
     }
@@ -546,7 +550,7 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
       hydration = { ...hydration, status: EXISTING_READ.ERROR, retryAt: now() + EXISTING_READ_RETRY_MS };
       changed();
     };
-    return within(Promise.resolve().then(() => readOwnedBattle(battleId, r.capturedUid)), EXISTING_READ_DEADLINE_MS)
+    const settled = within(Promise.resolve().then(() => readOwnedBattle(battleId, r.capturedUid)), EXISTING_READ_DEADLINE_MS)
       .then((battle) => (battle === TIMED_OUT ? Promise.reject(new Error('timeout')) : battle))
       .then((battle) => {
         if (!isCurrent() || hydration?.key !== key) return;
@@ -565,6 +569,25 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
         console.warn('[DeployAttempt] the battle could not be read:', err?.message || err);
         failed();
       });
+    hydrationRead = { key, settled };
+    return settled;
+  }
+
+  /**
+   * The ceremony's existing-terminal Retry (founder ruling Q-S2b-5), through the one owned read above: the same
+   * dedup, deadline and 30 s wait as the hub's own Retry. Resolves to what the terminal shows; never rejects.
+   */
+  function retryExistingRead() {
+    const a = state.attempt;
+    const r = run;
+    if (!a || !r || r.attemptId !== a.attemptId || a.phase !== ATTEMPT_PHASES.EXISTING) {
+      return Promise.resolve({ status: 'unavailable', battle: null });
+    }
+    return hydrate().then(() => {
+      const h = hydration;
+      const battle = h?.attemptId === a.attemptId && h.status === EXISTING_READ.FOUND ? h.battle : null;
+      return battle && currentFor(r)() ? { status: 'found', battle } : { status: 'unavailable', battle: null };
+    });
   }
 
   // ── reconciliation of an uncertain attempt (§5.4) ──────────────────────────
@@ -639,6 +662,17 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
       try { bridge().clearCeremonyStash?.(battleId); } catch { /* App's */ }
     }
     changed();
+  }
+
+  /**
+   * The hub's Dismiss (founder ruling Q-S2b-4): acknowledges a refusal that no ceremony shows, its owner + target
+   * cooldown kept (spec §5.4). Nothing else: not an open ceremony's refusal (its Back to hub does that), not an
+   * uncertain attempt (its guard stands until reconciliation resolves), not a newer attempt a stale press meets.
+   */
+  function dismissRefusal() {
+    const a = state.attempt;
+    if (!a || a.phase !== ATTEMPT_PHASES.REFUSED || a.ceremonyPhase !== CEREMONY_PHASES.CLOSED) return;
+    dismiss();
   }
 
   function enterBattle(recoveredBattle = null) {
@@ -752,8 +786,10 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     tap: (controlId, { exemptOverlay = false } = {}) => startAttempt({ tap: { controlId, exemptOverlay } }),
     retry,
     dismiss,
+    dismissRefusal,
     enterBattle,
     openGame,
+    retryExistingRead,
     checkDeployment: () => reconcile({ admitted: false }),
     phaseChanged,
     lastDeployedEvidence,
@@ -864,6 +900,7 @@ function LiveDeployAttemptProvider({ hubEnabled, bridge, children }) {
           agentName={agentName}
           directiveCount={extras?.directiveCount || 0}
           offerRetry={offerRetry}
+          hydration={snap.hydration}
         />
       )}
     </DeployAttemptContext.Provider>
@@ -885,7 +922,10 @@ function TargetEvidence({ rt, targetAgentId, uid, authEpoch }) {
 }
 
 /** The hub attempt's ceremony, at the root: the shipped ceremony, its callbacks through the provider's checks. */
-function RootCeremony({ rt, ceremony, attempt, agent, accent, agentName, directiveCount, offerRetry }) {
+function RootCeremony({ rt, ceremony, attempt, agent, accent, agentName, directiveCount, offerRetry, hydration }) {
+  // The existing terminal's Retry goes through the owned read, with that read's wait when it failed (Q-S2b-5).
+  const read = hydration?.attemptId === attempt.attemptId ? hydration : null;
+  const retryAt = read?.status === EXISTING_READ.ERROR && Number.isFinite(read.retryAt) ? read.retryAt : null;
   return (
     <DeployCeremony
       key={ceremony.key}
@@ -902,6 +942,7 @@ function RootCeremony({ rt, ceremony, attempt, agent, accent, agentName, directi
       onOpenBattle={rt.openGame}
       onDismiss={rt.dismiss}
       onRetry={offerRetry && retryAdmitted(rt, attempt) ? rt.retry : undefined}
+      ownedRead={{ retry: rt.retryExistingRead, retryAt }}
     />
   );
 }

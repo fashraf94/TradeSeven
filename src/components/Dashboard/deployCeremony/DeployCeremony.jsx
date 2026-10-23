@@ -47,10 +47,14 @@ const DEPLOY_LOCK_MS = 120000; // server's per-agent deploy cooldown
 //     mount and at every stage-machine transition, echoing the id held at that
 //     moment, so the hub's bridge (S2b) can carry attempt identity. A stale
 //     notification is the consumer's to ignore; the ceremony only echoes.
+// Command Center slice S2b (founder ruling Q-S2b-5) — one more, optional:
+//   - `ownedRead` ({ retry, retryAt }): the existing terminal's Retry goes
+//     through the hub provider's owned targeted read (CeremonyExisting.jsx).
+//     Today's shells pass nothing, and their terminal is unchanged.
 export default function DeployCeremony({
   agent, accent = CMD.teal, agentName = 'Your agent', directiveCount = 0,
   deployResult, targetAgentId = null, onEnterBattle, onDismiss, onRetry,
-  liveBattles = null, onOpenBattle, attemptId = null, onPhaseChange,
+  liveBattles = null, onOpenBattle, attemptId = null, onPhaseChange, ownedRead = null,
 }) {
   const reduce = useReducedMotion();
   const containerRef = useRef(null);
@@ -252,6 +256,7 @@ export default function DeployCeremony({
         verifyBattle={verifyBattle}
         onOpenBattle={onOpenBattle}
         onDismiss={onDismiss}
+        ownedRead={ownedRead}
       />
     );
   } else if (reduce) {

@@ -305,3 +305,51 @@ describe('W5 survivors in the hub (S2b report §8)', () => {
     expect(h.deploy).not.toHaveBeenCalled();
   });
 });
+
+// ── Founder ruling Q-S2b-4 (S2b report §15): Dismiss on the strip and the card ──────────────────────────────────
+describe('Q-S2b-4 — a refusal no ceremony shows has Dismiss on the strip and the card', () => {
+  const IN_PROGRESS = { outcome: 'refused', success: false, postIssued: true, httpStatus: 429, status: 429, error: 'Deploy already in progress', reason: 'in_progress' };
+  const UNCERTAIN = { outcome: 'uncertain', success: false, postIssued: true, httpStatus: null, error: 'deploy_network' };
+  async function deployAndAnswer(scope, answer) {
+    act(() => { pointer(holdIn(scope()), 'pointerdown'); });
+    frameAt(1300);
+    await advance(450);
+    await flush();
+    h.posts[0].answer(answer);
+    await flush();
+  }
+
+  it('mobile: the strip says "Deployment refused" with Retry and Dismiss; Dismiss acknowledges it, and nothing deploys', async () => {
+    render('mobile');
+    await deployAndAnswer(strip, IN_PROGRESS);
+    expect(strip().getAttribute('data-hub-strip')).toBe('failed');
+    expect(strip().textContent).toContain('Deployment refused');
+    expect(byRole(strip(), 'button', COPY.deploy.retry)).toHaveLength(1);
+    const dismiss = byRole(strip(), 'button', COPY.deploy.dismiss);
+    expect(dismiss).toHaveLength(1);
+    click(dismiss[0]);
+    expect(strip().getAttribute('data-hub-strip')).not.toBe('failed');
+    expect(byRole(strip(), 'button', COPY.deploy.dismiss)).toHaveLength(0);
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+
+  it('desktop: the card\'s line carries Retry and Dismiss; Dismiss acknowledges it', async () => {
+    render('desktop');
+    await deployAndAnswer(card, IN_PROGRESS);
+    expect(card().getAttribute('data-hub-deploy')).toBe('failed');
+    const line = card().querySelector('[data-hub-deploy-line]');
+    expect(line.textContent).toContain('A deploy is already in progress');
+    expect(byRole(line, 'button', COPY.deploy.retry)).toHaveLength(1);
+    click(byRole(line, 'button', COPY.deploy.dismiss)[0]);
+    expect(card().getAttribute('data-hub-deploy')).not.toBe('failed');
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+
+  it('desktop: an uncertain answer has Check deployment on the card, and no Dismiss', async () => {
+    render('desktop');
+    await deployAndAnswer(card, UNCERTAIN);
+    expect(card().getAttribute('data-hub-deploy')).toBe('uncertain');
+    expect(byRole(card(), 'button', COPY.deploy.checkDeployment)).toHaveLength(1);
+    expect(byRole(card(), 'button', COPY.deploy.dismiss)).toHaveLength(0);
+  });
+});

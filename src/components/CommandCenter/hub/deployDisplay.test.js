@@ -251,7 +251,8 @@ describe('the attempt words (§5.2): no live hold while in flight or terminal; o
   });
 
   it('A1-4: on a terminal with its own action the card\'s control reports the phase, as in flight — never the hold\'s words', () => {
-    expect(deployDisplay({ displayState: 'failed' }).cardHoldLabel).toBe('Deployment failed');
+    // Founder ruling Q-S2b-2 (S2b): a definitive refusal reads "Deployment refused" (was "Deployment failed").
+    expect(deployDisplay({ displayState: 'failed' }).cardHoldLabel).toBe('Deployment refused');
     expect(deployDisplay({ displayState: 'existing' }).cardHoldLabel).toBe('Already running');
     expect(deployDisplay({ displayState: 'uncertain' }).cardHoldLabel).toBe('Couldn’t confirm the deploy');
     for (const displayState of ['submitting', 'verifying', 'finishing', 'confirmed', 'existing', 'failed', 'uncertain']) {
@@ -282,16 +283,17 @@ describe('the attempt words (§5.2): no live hold while in flight or terminal; o
     expect(deployDisplay({ displayState: 'uncertain', retryBlock: { displayState: 'cooldown', cooldownUntil: null } }).cardNote.text).toBe(COPY.deploy.states.checking);
   });
 
-  it('failed: "Deployment failed", the server\'s line unchanged on line two and the card, Retry or the Forge — the review-due refusal reads "Deployment refused" on the strip, its line on the card only (S3 ruling R-S3-1)', () => {
+  // Founder ruling Q-S2b-2 (S2b): every definitive refusal's word is "Deployment refused" (was "Deployment failed").
+  it('failed: "Deployment refused", the server\'s line unchanged on line two and the card, Retry or the Forge — the review-due refusal reads "Deployment refused" on the strip, its line on the card only (S3 ruling R-S3-1)', () => {
     const due = deployDisplay({ displayState: 'failed', reason: DUE_DEPLOY_LINE, action: 'openForgeReview' });
     expect(due.stripLine1).toBe('Deployment refused');
     expect(due.stripLine2(LOADOUT)).toBe(LOADOUT);
-    expect(due.status).toBe('Deployment failed');
-    expect(due.cardHoldLabel).toBe('Deployment failed');
+    expect(due.status).toBe('Deployment refused');
+    expect(due.cardHoldLabel).toBe('Deployment refused');
     expect(due.cardLine).toEqual({ icon: 'info', text: DUE_DEPLOY_LINE, action: { kind: 'openForgeReview', label: 'Open in the Forge' } });
     expect(due.strip.action).toEqual({ kind: 'openForgeReview', label: 'Open in the Forge' });
     const other = deployDisplay({ displayState: 'failed', reason: '', action: 'retry' });
-    expect(other.cardLine.text).toBe('Deployment failed');
+    expect(other.cardLine.text).toBe('Deployment refused');
     expect(other.stripLine2(LOADOUT)).toBe(LOADOUT);
     expect(other.strip.action).toEqual({ kind: 'retry', label: 'Retry' });
   });

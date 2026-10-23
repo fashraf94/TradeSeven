@@ -145,7 +145,9 @@ describe('429 "Deploy already in progress" — a refusal, said as one (fails bef
     expect(text()).not.toContain('no battle was created');
     expect(text()).toContain('Deployment refused');
     expect(text()).not.toContain('Deployment failed');
-    expect(text()).toContain('If the deploy already running creates a battle, it will appear on your hub.');
+    // Founder ruling Q-S2b-2: the subtext's words.
+    expect(text()).toContain('Another deploy for your agent is still being set up. If it creates a battle, it will show up with your games.');
+    expect(text()).not.toContain('it will appear on your hub');
     expect(live()).toBe('A deploy is already in progress.');
   });
 });

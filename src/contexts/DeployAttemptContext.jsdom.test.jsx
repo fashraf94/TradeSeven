@@ -1485,3 +1485,168 @@ describe('W5 survivors — the confirmation run\'s last four gaps (S2b report §
     expect(deployDisplay({ ...state(), existingRead: read }).cardNote.text).toContain(up);
   });
 });
+
+// ── The founder's rulings on the S2b questions (S2b report §15) ─────────────────────────────────────────────────
+describe('Q-S2b-4 — Dismiss acknowledges a refusal no ceremony shows, and nothing else', () => {
+  const stamp = () => act(() => {
+    probe.current.api.lastDeployedEvidence({ uid: 'uid-A', authEpoch: 1, targetAgentId: attempt().targetAgentId, lastDeployedAtMs: Date.now() });
+  });
+  const bound = () => probe.current.snapshot.state.cooldowns['uid-A']?.[attempt().targetAgentId];
+
+  it('the ceremony closed while the request was out: the refusal is recorded closed, the hub offers Dismiss beside Retry, and Dismiss acknowledges it with the cooldown kept', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    act(() => { probe.current.api.dismiss(); });
+    expect(attempt().phase).toBe('submitting');
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    expect(attempt()).toMatchObject({ phase: 'refused', ceremonyPhase: 'closed' });
+    expect(state()).toMatchObject({ displayState: 'failed', action: DISPLAY_ACTIONS.RETRY, dismiss: true });
+    expect(deployDisplay(state()).strip.dismiss).toEqual({ kind: 'dismiss', label: 'Dismiss' });
+    stamp();
+    const kept = bound();
+    expect(kept).toBe(Date.now() + 120000);
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.DISMISS); });
+    expect(attempt()).toMatchObject({ phase: 'idle', acknowledgedAt: Date.now() });
+    expect(bound()).toBe(kept);
+    expect(state().displayState).toBe('cooldown');
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+
+  it('the ceremony off: a refusal is recorded closed and offers Dismiss', async () => {
+    await committedAndOut();
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    expect(attempt()).toMatchObject({ phase: 'refused', ceremonyPhase: 'closed' });
+    expect(state().dismiss).toBe(true);
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.DISMISS); });
+    expect(attempt().phase).toBe('idle');
+  });
+
+  it('a refusal the open ceremony shows: no Dismiss on the hub, and the entry does nothing (the ceremony\'s Back to hub is its acknowledgment)', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    expect(attempt()).toMatchObject({ phase: 'refused', ceremonyPhase: 'error' });
+    expect(state().dismiss).toBe(false);
+    expect(deployDisplay(state()).strip).not.toHaveProperty('dismiss');
+    act(() => { probe.current.api.dismissRefusal(); });
+    expect(attempt().phase).toBe('refused');
+    expect(container.querySelector('[data-ceremony]')).not.toBeNull();
+  });
+
+  it('never an uncertain attempt: with the ceremony off or closed it offers no Dismiss, and the entry leaves its guard standing', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    act(() => { probe.current.api.dismiss(); });
+    expect(attempt()).toMatchObject({ phase: 'uncertain', ceremonyPhase: 'closed' });
+    expect(state()).toMatchObject({ displayState: 'uncertain', action: DISPLAY_ACTIONS.CHECK_DEPLOYMENT, dismiss: false });
+    act(() => { probe.current.api.dismissRefusal(); });
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.DISMISS); });
+    expect(attempt()).toMatchObject({ phase: 'uncertain', acknowledgedAt: null });
+    expect(state().action).toBe(DISPLAY_ACTIONS.CHECK_DEPLOYMENT);
+  });
+
+  it('a stale Dismiss that meets the Retry\'s new attempt changes nothing', async () => {
+    await committedAndOut();
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    expect(state().action).toBe(DISPLAY_ACTIONS.RETRY);
+    await act(async () => { probe.current.api.retry(); });
+    await flush();
+    expect(posts).toHaveLength(2);
+    const before = probe.current.snapshot.state;
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.DISMISS); });
+    expect(probe.current.snapshot.state).toBe(before);
+    expect(attempt().phase).toBe('submitting');
+  });
+});
+
+describe('Q-S2b-5 — the ceremony\'s existing-terminal Retry through the owned read', () => {
+  const RUNNING = () => ({ id: 'battle-running', ownerId: 'uid-A', agentId: 'agent-uid-A', status: 'active' });
+  const lastCeremony = () => h.ceremonies.at(-1);
+
+  it('the root ceremony is handed the provider\'s owned read: its retry, and no wait while nothing failed', async () => {
+    h.ceremonyOn = true;
+    h.owned = vi.fn(async () => RUNNING());
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    expect(lastCeremony().ownedRead).toEqual({ retry: probe.current.api.retryExistingRead, retryAt: null });
+  });
+
+  it('two asks while the read is out start no second read; both get the battle it returns', async () => {
+    h.ceremonyOn = true;
+    const d = deferred();
+    h.owned = vi.fn(() => d.promise);
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    expect(h.owned).toHaveBeenCalledTimes(1);
+    let first;
+    let second;
+    act(() => { first = probe.current.api.retryExistingRead(); second = probe.current.api.retryExistingRead(); });
+    expect(h.owned).toHaveBeenCalledTimes(1);
+    await act(async () => { d.resolve(RUNNING()); });
+    await flush();
+    await expect(first).resolves.toEqual({ status: 'found', battle: RUNNING() });
+    await expect(second).resolves.toEqual({ status: 'found', battle: RUNNING() });
+    expect(h.owned).toHaveBeenCalledTimes(1);
+    expect(h.verify).not.toHaveBeenCalled();
+  });
+
+  it('after a failed read the ceremony is told when its Retry opens; until then a Retry reads nothing, and after the 30 s it reads again', async () => {
+    h.ceremonyOn = true;
+    h.owned = vi.fn(async () => { throw new Error('denied'); });
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    const opensAt = Date.now() + EXISTING_READ_RETRY_MS;
+    expect(lastCeremony().ownedRead.retryAt).toBe(opensAt);
+    let r;
+    await act(async () => { r = await probe.current.api.retryExistingRead(); });
+    expect(r).toEqual({ status: 'unavailable', battle: null });
+    expect(h.owned).toHaveBeenCalledTimes(1);
+    await advance(EXISTING_READ_RETRY_MS);
+    h.owned = vi.fn(async () => RUNNING());
+    await act(async () => { r = await probe.current.api.retryExistingRead(); });
+    expect(h.owned).toHaveBeenCalledTimes(1);
+    expect(r).toEqual({ status: 'found', battle: RUNNING() });
+    expect(lastCeremony().ownedRead.retryAt).toBeNull();
+  });
+
+  it('a read that never answers ends at its deadline: unavailable, with the wait', async () => {
+    h.ceremonyOn = true;
+    h.owned = vi.fn(() => new Promise(() => {}));
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    let r = 'pending';
+    act(() => { probe.current.api.retryExistingRead().then((v) => { r = v; }); });
+    await advance(7999);
+    expect(r).toBe('pending');
+    await advance(1);
+    await flush();
+    expect(r).toEqual({ status: 'unavailable', battle: null });
+    expect(lastCeremony().ownedRead.retryAt).toBe(Date.now() + EXISTING_READ_RETRY_MS);
+  });
+
+  it('a battle the read returns for another owner, or an attempt that is not existing, is unavailable and reads nothing more', async () => {
+    let r;
+    await act(async () => { r = await probe.current.api.retryExistingRead(); });
+    expect(r).toEqual({ status: 'unavailable', battle: null });
+    expect(h.owned).not.toHaveBeenCalled();
+    h.ceremonyOn = true;
+    h.owned = vi.fn(async () => ({ ...RUNNING(), ownerId: 'uid-B' }));
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    await advance(EXISTING_READ_RETRY_MS);
+    await act(async () => { r = await probe.current.api.retryExistingRead(); });
+    expect(r).toEqual({ status: 'unavailable', battle: null });
+    expect(bridge.onOpenBattle).not.toHaveBeenCalled();
+  });
+});
