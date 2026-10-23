@@ -191,6 +191,25 @@ describe('the next action (R-S4-2)', () => {
   });
 });
 
+// S3 review T0-1: a block always has its live game visible, whatever the completed window's status. Under S4 the phone Overview shows
+// that game as the next action's card (S1 review L1-2: not listed twice), so the invariant is pinned here, on the card.
+describe('a live game is always there on the phone, whatever the window\'s status (S3 review T0-1, by the card)', () => {
+  it.each([
+    ['the window\'s first read still out', () => windowOf(null, { status: 'loading', lastSuccessfulAt: null, generation: 0 })],
+    ['the window\'s first read failed', () => windowOf(null, { status: 'error', error: new Error('unavailable'), lastSuccessfulAt: null, generation: 0, nextAttemptAt: NOW + 120000 })],
+  ])('%s: "Open your live game", and Open game opens the poll\'s own record', (_, windowState) => {
+    r.window = windowState();
+    const hub = hubOf({ activeBattles: [BB] });
+    render('mobile', hub);
+    expect(nextKind()).toBe('openGame');
+    expect(overview().contains(nextCard())).toBe(true);
+    expect(nextText()).toContain(COPY.nextAction.liveTitle);
+    click(byRole(nextCard(), 'button', COPY.nextAction.openGame)[0]);
+    expect(hub.openGame).toHaveBeenCalledTimes(1);
+    expect(hub.openGame.mock.calls[0][0]).toBe(BB);
+  });
+});
+
 describe('the first deployment (spec §3.1; R-S4-2, R-S4-8)', () => {
   const firstTime = (over = {}) => {
     r.agent = agentReady({ gamesPlayed: 0 }, over.agent);
