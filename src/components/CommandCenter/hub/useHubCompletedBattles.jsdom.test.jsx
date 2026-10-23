@@ -412,3 +412,75 @@ describe('the kept window (spec §6 as the founder amended it: Q-S3-2, A+) belon
     expect(seen[0]).toMatchObject({ status: 'loading', battles: null, carried: false });
   });
 });
+
+describe('the kept window is dropped, not just hidden, and never goes back (review MR-5, MR-11)', () => {
+  const READY = Object.freeze({ ready: true, target: 'filmRoom', availability: 'ready' });
+
+  // The identity source never hands a key back (the epoch only grows); these rows do, to see what is still held.
+  it('signed out while the hub is mounted, the kept window is dropped at once: the same key handed back shows nothing', async () => {
+    const reads = [];
+    const s = { queryCompleted: (uid) => { reads.push(Date.now() - T0); return Promise.resolve(docsFor(uid, 3)); }, checkReview: () => Promise.resolve(READY) };
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    id.current = { resolved: true, uid: null, authEpoch: 2 };
+    render(<SeamProbe seams={s} />);
+    act(() => root.unmount());
+    root = createRoot(host);
+    seen = [];
+    id.current = { resolved: true, uid: 'uid-A', authEpoch: 1 };
+    render(<SeamProbe seams={s} />);
+    expect(seen[0]).toMatchObject({ status: 'loading', battles: null, carried: false });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    // The ledger went with it: the read runs at once.
+    expect(reads).toEqual([0, 1 * S]);
+  });
+
+  it('signed out while the hub is away, the next mount drops it — even a signed-out one', async () => {
+    const s = { queryCompleted: (uid) => Promise.resolve(docsFor(uid, 3)), checkReview: () => Promise.resolve(READY) };
+    render(<SeamProbe seams={s} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    act(() => root.unmount());
+    root = createRoot(host);
+    id.current = { resolved: true, uid: null, authEpoch: 2 };
+    render(<SeamProbe seams={s} />);
+    act(() => root.unmount());
+    root = createRoot(host);
+    seen = [];
+    id.current = { resolved: true, uid: 'uid-A', authEpoch: 1 };
+    render(<SeamProbe seams={s} />);
+    expect(seen[0]).toMatchObject({ battles: null, carried: false });
+  });
+
+  it('two mounts at once: a lagging mount\'s older window never replaces a newer kept one', async () => {
+    const firstSeen = [];
+    const secondSeen = [];
+    function Probe({ seams, into }) {
+      into.push(useHubCompletedBattles(10, capped(seams)));
+      return null;
+    }
+    let failFirst = false;
+    const first = { queryCompleted: (uid) => (failFirst ? Promise.reject(new Error('unavailable')) : Promise.resolve(docsFor(uid, 1))), checkReview: () => Promise.resolve(READY) };
+    const second = { queryCompleted: (uid) => Promise.resolve(docsFor(uid, 2)), checkReview: () => Promise.resolve(READY) };
+    render(<Probe seams={first} into={firstSeen} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    const host2 = document.createElement('div');
+    document.body.appendChild(host2);
+    const root2 = createRoot(host2);
+    act(() => { root2.render(<Probe seams={second} into={secondSeen} />); });
+    // The second mount starts from the kept window and reads at the slot: generation 2, kept.
+    await act(async () => { await vi.advanceTimersByTimeAsync(120 * S); });
+    expect(secondSeen.at(-1)).toMatchObject({ generation: 2, carried: false });
+    // The first mount, still at generation 1, now fails a read and publishes its old window again.
+    failFirst = true;
+    await act(async () => { firstSeen.at(-1).refresh(); await vi.advanceTimersByTimeAsync(120 * S); });
+    expect(firstSeen.at(-1)).toMatchObject({ status: 'error', generation: 1 });
+    act(() => root.unmount());
+    act(() => root2.unmount());
+    host2.remove();
+    root = createRoot(host);
+    seen = [];
+    render(<SeamProbe seams={second} />);
+    expect(seen[0]).toMatchObject({ carried: true, generation: 2 });
+    expect(seen[0].battles).toHaveLength(2);
+  });
+});

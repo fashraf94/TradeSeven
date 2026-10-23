@@ -63,6 +63,10 @@ const keptWindowOf = (uid, epoch) => (uid ? OWNERS.get(`${uid}:${epoch}`)?.windo
 function keepWindow(uid, epoch, state) {
   const record = OWNERS.get(`${uid}:${epoch}`);
   if (!record || state.battles === null || state.lastSuccessfulAt === null) return;
+  // Never back to an older window (review MR-11): the generation decides first (it only grows within an owner and
+  // epoch, so a backward clock step cannot reorder it), then the as-of time.
+  const kept = record.window;
+  if (kept && (state.generation < kept.generation || (state.generation === kept.generation && state.lastSuccessfulAt < kept.lastSuccessfulAt))) return;
   record.window = { battles: state.battles, generation: state.generation, lastSuccessfulAt: state.lastSuccessfulAt };
 }
 
@@ -116,7 +120,12 @@ export default function useHubCompletedBattles(max = HUB_COMPLETED_WINDOW, seams
   seamsRef.current = seams;
 
   useEffect(() => {
-    if (!uid) return undefined;
+    if (!uid) {
+      // Signed out (or not yet answered): nothing is read, and no owner's ledger or kept window is held any longer —
+      // dropped here at once while the hub is mounted, at its next mount otherwise (review MR-5).
+      OWNERS.clear();
+      return undefined;
+    }
     const s = seamsRef.current;
     const clock = s.clock || REAL_CLOCK;
     const record = ownerRecord(uid, epoch);

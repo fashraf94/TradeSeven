@@ -26,11 +26,12 @@ const r = vi.hoisted(() => ({
   identity: { resolved: true, uid: 'uid-A', authEpoch: 2 },
   agent: null,
   agentCalls: [],
+  identityCalls: 0,
   window: null,
   windowCalls: 0,
   market: { state: 'OPEN', isOpen: true },
 }));
-vi.mock('../../services/authIdentity', () => ({ useAuthIdentity: () => r.identity }));
+vi.mock('../../services/authIdentity', () => ({ useAuthIdentity: () => { r.identityCalls += 1; return r.identity; } }));
 vi.mock('../../hooks/useAgent', () => ({
   default: (uid, options) => { r.agentCalls.push([uid, options]); return r.agent; },
 }));
@@ -95,6 +96,7 @@ beforeEach(() => {
   r.identity = { resolved: true, uid: UID, authEpoch: 2 };
   r.agent = agentReady();
   r.agentCalls = [];
+  r.identityCalls = 0;
   r.window = windowOf(TEN);
   r.windowCalls = 0;
   r.market = { state: 'OPEN', isOpen: true };
@@ -674,6 +676,15 @@ describe('the merge with S5: one agent source for the deploy state and the Loado
   const loadout = () => document.querySelector('[data-hub-panel="loadout"]');
   const NOVA = { id: 'agent-a', name: 'Nova', archetype: 'momentum_chaser', stats: { gamesPlayed: 3, wins: 1, losses: 0 } };
 
+  // Review MR-1: the Loadout and the deploy state take ONE read. In this suite the readers are the only caller of the identity
+  // source (the window's hook is a stand-in), so one agent read per identity read is one agent read per render.
+  it.each([['desktop'], ['mobile']])('%s: one agent read feeds both the deploy state and the Loadout — useAgent is called once per render, never twice', (site) => {
+    r.agent = agentReady({ agent: NOVA });
+    render(site, hubOf());
+    expect(r.identityCalls).toBeGreaterThan(0);
+    expect(r.agentCalls).toHaveLength(r.identityCalls);
+  });
+
   it('this owner\'s ready read: the Loadout shows that agent, and App hands the hub no agent of its own', () => {
     r.agent = agentReady({ agent: NOVA });
     render('desktop', hubOf());
@@ -748,6 +759,27 @@ describe('a window kept from an earlier visit (spec §6 as the founder amended i
     r.window = windowOf(TEN, { carried: false });
     render('desktop', hubOf());
     expect(games().querySelector('[data-hub-games-note]')).toBeNull();
+  });
+
+  // Review MR-3: History says the window's age as Games does (spec §6 "show retained as-of data … accurately").
+  it('History, on a kept window: the same "as of" note, with no Retry', () => {
+    r.window = windowOf(TEN, { carried: true, nextAttemptAt: NOW + 90000 });
+    render('desktop', hubOf());
+    click(byRole(games(), 'button', COPY.games.history)[0]);
+    const sheet = document.querySelector('[data-hub-sheet-overlay]');
+    expect(rowsOf(sheet)).toHaveLength(10);
+    expect(carriedNote(sheet).textContent).toMatch(/^As of \d{1,2}:\d{2} [AP]M ET · next attempt at /);
+    expect(retryButtons(sheet)).toHaveLength(0);
+  });
+
+  it('History, on a stale window (its latest read failed): the stale note and Retry — the gap the S3 round left (review MR-3)', () => {
+    r.window = windowOf(TEN, { status: 'error', error: new Error('unavailable') });
+    render('desktop', hubOf());
+    click(byRole(games(), 'button', COPY.games.history)[0]);
+    const sheet = document.querySelector('[data-hub-sheet-overlay]');
+    expect(sheet.querySelector('[data-hub-games-note="stale"]')).not.toBeNull();
+    click(retryButtons(sheet)[0]);
+    expect(r.window.refresh).toHaveBeenCalledWith(REVIEW_TRIGGERS.MANUAL);
   });
 
   it('a kept window whose read failed is the stale note, with Retry', () => {

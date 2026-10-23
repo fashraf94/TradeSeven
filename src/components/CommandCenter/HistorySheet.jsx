@@ -10,7 +10,9 @@
 // review line, opening the game and its battle tape as Games does. Only a read
 // window has a count and rows: a sheet left open across an identity change
 // shows the new owner's window loading, or failed with Retry — never an empty
-// history (spec §3; review T2-7).
+// history (spec §3; review T2-7). Since the merge round it also says the
+// window's age as Games does: stale "as of" with Retry, or kept from an
+// earlier visit "as of" with its next read (spec §6; Q-S3-2 A+; review MR-3).
 
 import React from 'react';
 import { splitGames } from './hub/hubModel';
@@ -18,7 +20,7 @@ import { HUB_COPY as COPY } from './hub/hubCopy';
 import { C } from './hub/hubStyle';
 import HubSheet from './HubSheet';
 import { Mono } from './HubParts';
-import { GameRow, GamesLoadingLine, GamesReadNote } from './sections/GamesSection';
+import { GameRow, GamesLoadingLine, GamesReadNote, gamesNoteDue } from './sections/GamesSection';
 
 export default function HistorySheet({ games, career, phone, onClose, opener, fallbackFocus, reducedMotion, onOpenGame, onOpenTape, onRetry }) {
   const { completed } = splitGames(games);
@@ -47,7 +49,9 @@ export default function HistorySheet({ games, career, phone, onClose, opener, fa
         <div data-hub-career-unavailable="" style={{ marginBottom: 12, fontSize: 12.5, color: C.ink3 }}>{COPY.history.careerUnavailable}</div>
       )}
       {!ready && !failed && <GamesLoadingLine games={games} />}
-      {failed && <GamesReadNote games={games} onRetry={onRetry} />}
+      {/* The window's age, as Games says it (spec §6 "show retained as-of data … accurately"; review MR-3): a failed read, a
+          stale window, or one kept from an earlier visit (Q-S3-2, A+). */}
+      {gamesNoteDue(games) && <GamesReadNote games={games} onRetry={onRetry} />}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {completed.map((g) => <GameRow key={g.id} game={g} onOpen={onOpenGame} onOpenTape={onOpenTape} />)}
       </div>

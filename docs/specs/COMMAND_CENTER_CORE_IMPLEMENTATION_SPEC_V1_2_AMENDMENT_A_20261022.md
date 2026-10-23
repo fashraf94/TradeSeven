@@ -24,5 +24,10 @@ The founder's ruling:
 - **Reviews.** Ready caches still clear on unmount, so each kept row's review starts this mount as an unstarted row: "Review check queued", served first at the slot.
 - **Failure.** Only a successful read is kept. If a kept window's read fails, Games shows the stale note "As of {time} · couldn't refresh" with Retry, as for any retained window.
 - **Unchanged.** §6's rate cap, its 120 s window and the per-owner-and-epoch ledger (S3 review T0-3) are unchanged. The kept window adds no read, timer or listener.
+- **"Clears it", precisely.** A kept window is never shown to another owner or epoch: it is keyed by both, and an identity's epoch only grows, so a key never comes back. It is also dropped from memory, with the ledger:
+  - when the hub renders for another owner or epoch;
+  - when the hub renders signed out — at once if the hub is on screen at the sign-out, otherwise at its next mount.
 
-Built in `src/components/CommandCenter/hub/reviewScheduler.js` (`retained`, `carriedWindow`, `carriedState`) and `hub/useHubCompletedBattles.js` (one record per owner and epoch, holding the ledger and the kept window). Pinned by the rows named in the S3 report's section "Merge with S5 and founder rulings".
+  Clearing it while the hub is away would take an identity listener outside the hub, which this amendment does not add.
+
+Built in `src/components/CommandCenter/hub/reviewScheduler.js` (`retained`, `carriedWindow`, `carriedState`) and `hub/useHubCompletedBattles.js` (one record per owner and epoch, holding the ledger and the kept window). Pinned by the rows named in the S3 report's §15, "Merge with S5 and founder rulings" (`docs/audits/20261022_BUILD_COMMAND_CENTER_HUB_S3.md`).

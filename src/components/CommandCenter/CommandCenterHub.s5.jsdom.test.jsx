@@ -29,9 +29,10 @@ vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {} }));
 // The S3 merge: App hands the hub no agent; the hub's own owner-tagged read does (hub/useHubReaders.js), and its
 // owner masking has its own rows (CommandCenterHub.s3.jsdom.test.jsx, readerInputs.test.js). Here the readers hand
-// the hub the read HUB() names and leave the fixtures' sections as they are.
-const { READS } = vi.hoisted(() => ({ READS: new WeakMap() }));
-vi.mock('./hub/useHubReaders', () => ({ default: (hub) => ({ sections: {}, actions: {}, agent: READS.get(hub) ?? null }) }));
+// the hub the read HUB() names and leave the fixtures' sections as they are. The read rides on the hub object under a
+// symbol, so a row's spread of it (`{ ...hub, unreadCount }`) keeps it (review MR-7).
+const { READ } = vi.hoisted(() => ({ READ: Symbol('agentRead') }));
+vi.mock('./hub/useHubReaders', () => ({ default: (hub) => ({ sections: {}, actions: {}, agent: hub?.[READ] ?? null }) }));
 vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists }));
 vi.mock('../../services/agentService', () => ({ equipWatchlist, unequipWatchlist }));
 vi.mock('../../hooks/useMasteryProfile', () => ({ default: (userId) => { mastery.askedFor.push(userId); return mastery.profile; } }));
@@ -104,11 +105,12 @@ const AGENT = (over = {}) => ({
  * is that read's failure (N-S5-6).
  */
 const HUB = ({ agent = AGENT(), agentLoading = false, agentError = false, activeAgentBattles = [], ...over } = {}) => {
-  const hub = { activeBattles: activeAgentBattles, setScreen: vi.fn(), onOpenForge: vi.fn(), ...over };
-  READS.set(hub, { status: agentError ? 'error' : agentLoading ? 'loading' : 'ready', agent, retry: vi.fn() });
-  return hub;
+  return {
+    activeBattles: activeAgentBattles, setScreen: vi.fn(), onOpenForge: vi.fn(), ...over,
+    [READ]: { status: agentError ? 'error' : agentLoading ? 'loading' : 'ready', agent, retry: vi.fn() },
+  };
 };
-const readOf = (hub) => READS.get(hub);
+const readOf = (hub) => hub[READ];
 
 const flush = async () => { await act(async () => { await Promise.resolve(); await Promise.resolve(); }); };
 

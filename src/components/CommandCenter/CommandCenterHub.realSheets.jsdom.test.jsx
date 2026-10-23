@@ -28,9 +28,10 @@ const { userState, listWatchlists, equipWatchlist, unequipWatchlist, changeArche
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {} }));
 // The S3 merge: App hands the hub no agent; the hub's own owner-tagged read does (hub/useHubReaders.js). Here the
-// readers hand the hub the read HUB() names and leave the fixtures' sections as they are.
-const { READS } = vi.hoisted(() => ({ READS: new WeakMap() }));
-vi.mock('./hub/useHubReaders', () => ({ default: (hub) => ({ sections: {}, actions: {}, agent: READS.get(hub) ?? null }) }));
+// readers hand the hub the read HUB() names and leave the fixtures' sections as they are. The read rides on the hub
+// object under a symbol, so a spread of it keeps it (review MR-7).
+const { READ } = vi.hoisted(() => ({ READ: Symbol('agentRead') }));
+vi.mock('./hub/useHubReaders', () => ({ default: (hub) => ({ sections: {}, actions: {}, agent: hub?.[READ] ?? null }) }));
 vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists }));
 vi.mock('../../services/agentService', () => ({ equipWatchlist, unequipWatchlist, changeArchetype }));
 vi.mock('../../hooks/useMasteryProfile', () => ({ default: () => null }));
@@ -84,9 +85,10 @@ const AGENT = (over = {}) => ({
 });
 /** App's hub object in the merged shape; `agent` and `agentLoading` become the agent read the hub's readers hand it. */
 const HUB = ({ agent = AGENT(), agentLoading = false, activeAgentBattles = [], ...over } = {}) => {
-  const hub = { activeBattles: activeAgentBattles, setScreen: vi.fn(), onOpenForge: vi.fn(), ...over };
-  READS.set(hub, { status: agentLoading ? 'loading' : 'ready', agent, retry: vi.fn() });
-  return hub;
+  return {
+    activeBattles: activeAgentBattles, setScreen: vi.fn(), onOpenForge: vi.fn(), ...over,
+    [READ]: { status: agentLoading ? 'loading' : 'ready', agent, retry: vi.fn() },
+  };
 };
 const flush = async () => { await act(async () => { await Promise.resolve(); await Promise.resolve(); }); };
 

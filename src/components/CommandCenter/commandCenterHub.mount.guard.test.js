@@ -1017,6 +1017,18 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     }
   });
 
+  // The S3 merge with S5 (review MR-1): the deploy state and the Loadout take ONE agent read, so the hub reads the agent
+  // in one file, once.
+  it('one agent read in the whole hub: only hub/useHubReaders.js imports useAgent, under that name, and calls it once', () => {
+    const importers = hubDirFiles().filter((rel) => importedNames(stripComments(read(rel)), '/hooks/useAgent').length > 0);
+    expect(importers).toEqual([HUB_FILE('hub/useHubReaders.js')]);
+    const readers = stripComments(read(HUB_FILE('hub/useHubReaders.js')));
+    expect(readers).toContain("import useAgent from '../../../hooks/useAgent';");
+    expect(readers.match(/\buseAgent\(/g)).toHaveLength(1);
+    // The count bites: a second read is two.
+    expect(`${readers}\nconst again = useAgent(signedInUid);`.match(/\buseAgent\(/g)).toHaveLength(2);
+  });
+
   it('the only writes the hub can make are the two equips: nothing else of agentService, and no other service of the shipped set', () => {
     const files = hubDirFiles();
     const writers = files.filter((rel) => importedNames(stripComments(read(rel)), '/services/agentService').length > 0);
