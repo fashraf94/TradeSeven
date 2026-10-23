@@ -483,4 +483,39 @@ describe('the kept window is dropped, not just hidden, and never goes back (revi
     expect(seen[0]).toMatchObject({ carried: true, generation: 2 });
     expect(seen[0].battles).toHaveLength(2);
   });
+
+  it('two mounts at one generation: the later read stays kept when the earlier one publishes again', async () => {
+    const intoA = [];
+    const intoB = [];
+    function Probe({ seams, into }) {
+      into.push(useHubCompletedBattles(10, capped(seams)));
+      return null;
+    }
+    const seamsOf = (n) => ({ queryCompleted: (uid) => Promise.resolve(docsFor(uid, n)), checkReview: () => Promise.resolve(READY) });
+    // A first read at T0, kept; then two mounts start from it and both wait for the slot.
+    render(<SeamProbe seams={seamsOf(1)} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
+    act(() => root.unmount());
+    root = createRoot(host);
+    render(<Probe seams={seamsOf(4)} into={intoA} />);
+    const hostB = document.createElement('div');
+    document.body.appendChild(hostB);
+    const rootB = createRoot(hostB);
+    act(() => { rootB.render(<Probe seams={seamsOf(5)} into={intoB} />); });
+    // A takes the slot at 120 s (generation 2); B, refused by the shared ledger, reads at 240 s (generation 2, later).
+    await act(async () => { await vi.advanceTimersByTimeAsync(240 * S); });
+    expect(intoA.at(-1)).toMatchObject({ generation: 2, lastSuccessfulAt: T0 + 120 * S });
+    expect(intoB.at(-1)).toMatchObject({ generation: 2, lastSuccessfulAt: T0 + 240 * S });
+    // A asks again and is queued: it publishes its older window at the same generation.
+    await act(async () => { intoA.at(-1).refresh(); await vi.advanceTimersByTimeAsync(1 * S); });
+    expect(intoA.at(-1)).toMatchObject({ generation: 2, lastSuccessfulAt: T0 + 120 * S });
+    act(() => root.unmount());
+    act(() => rootB.unmount());
+    hostB.remove();
+    root = createRoot(host);
+    seen = [];
+    render(<SeamProbe seams={seamsOf(5)} />);
+    expect(seen[0]).toMatchObject({ carried: true, generation: 2, lastSuccessfulAt: T0 + 240 * S });
+    expect(seen[0].battles).toHaveLength(5);
+  });
 });
