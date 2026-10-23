@@ -95,3 +95,22 @@ describe('the hold record (spec §5.5)', () => {
     expect(attemptReducer(s, { type: T.AUTH_CHANGED, uid: B, authEpoch: 2 })).toMatchObject({ hold: null, authEpoch: 2 });
   });
 });
+
+// ── Lens W5's reducer rows (S2b report §8) ──
+describe('W5 — the reducer rows', () => {
+  it('RD2 a claim is refused while an unacknowledged attempt stands, even with no hold in the record', () => {
+    let s = initialAttemptState({ uid: 'uid-A', authEpoch: 1 });
+    s = attemptReducer(s, { type: T.BEGIN, attemptId: 'a1', auth: auth(s), targetAgentId: 'agent', startedAt: 1 });
+    s = attemptReducer(s, { type: T.SERVICE_RESULT, attemptId: 'a1', attemptEpoch: s.attempt.attemptEpoch, result: { outcome: 'uncertain', success: false, postIssued: true, httpStatus: null } });
+    s = attemptReducer(s, { type: T.DISMISS, attemptId: 'a1', attemptEpoch: s.attempt.attemptEpoch, at: 2 });
+    expect(s.attempt.phase).toBe('uncertain');
+    expect(s.hold).toBeNull();
+    const next = attemptReducer(s, { type: T.HOLD_CLAIMED, auth: auth(s), controlId: 'card', holdToken: 't1', holdEpoch: 1 });
+    expect(next).toBe(s);
+  });
+  it('RD14 authChanged takes only a valid epoch: a string or a fraction is a stale report', () => {
+    const s = initialAttemptState({ uid: 'uid-A', authEpoch: 1 });
+    expect(attemptReducer(s, { type: T.AUTH_CHANGED, uid: 'uid-B', authEpoch: '5' })).toBe(s);
+    expect(attemptReducer(s, { type: T.AUTH_CHANGED, uid: 'uid-B', authEpoch: 1.5 })).toBe(s);
+  });
+});

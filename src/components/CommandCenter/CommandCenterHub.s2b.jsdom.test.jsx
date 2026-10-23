@@ -280,3 +280,28 @@ describe('the Scouting Board (R-S2b-7)', () => {
     expect(h.deploy).not.toHaveBeenCalled();
   });
 });
+
+describe('W5 survivors in the hub (S2b report §8)', () => {
+  it('CC2: desktop — an area change while the card charges cancels it; no deploy', async () => {
+    render('desktop');
+    act(() => { pointer(holdIn(card()), 'pointerdown'); });
+    frameAt(600);
+    const area = document.querySelector('[data-hub-slot="stage"] [role="tab"][aria-selected="false"]');
+    expect(area).not.toBeNull();
+    click(area);
+    expect(currentHold()).toBeNull();
+    frameAt(1300);
+    await advance(1000);
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+
+  it('CC7: with the provider, a read\'s Retry is still the read\'s — the poll is refreshed, and nothing deploys', async () => {
+    const hub = hubOf();
+    hub.activePoll = { epoch: 1, status: 'error', ownerUid: null, ownerEpoch: null, lastSuccessfulAt: null, error: 'boom', refreshing: false };
+    render('desktop', hub);
+    expect(card().getAttribute('data-hub-deploy')).toBe('eligibility_error');
+    click(byRole(card(), 'button', COPY.deploy.retry)[0]);
+    expect(hub.refreshActiveBattles).toHaveBeenCalledTimes(1);
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+});

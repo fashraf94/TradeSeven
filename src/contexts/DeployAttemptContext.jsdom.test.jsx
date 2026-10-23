@@ -958,3 +958,481 @@ describe('fix round — the review\'s confirmed findings', () => {
     expect(h.ceremonies.at(-1).mount).toBe(firstMount);
   });
 });
+
+const committedAndOut = async (id = CARD) => { holdToThreshold(id); await advance(450); await flush(); };
+
+// ── Lens W5's rows (S2b report §8): each kills a mutant that survived the build's own rows ──────────────────────
+describe('W5 — the mutating lens rows', () => {
+  it('G1 claim admission is the provider own, same task: an overlay opened and a press before any render', () => {
+    act(() => { stack.current.open('sheet', { within: container }); pointer(CARD, 'pointerdown'); });
+    expect(currentHold()).toBeNull();
+    expect(frames.pending()).toBe(0);
+  });
+
+  it('G2 the threshold re-asks the table: a cooldown that appears mid-charge commits nothing', async () => {
+    press(CARD);
+    frameAt(600);
+    act(() => { probe.current.api.lastDeployedEvidence({ uid: 'uid-A', authEpoch: 1, targetAgentId: 'agent-uid-A', lastDeployedAtMs: nowMs }); });
+    frameAt(1300);
+    await advance(1000);
+    expect(h.deploy).not.toHaveBeenCalled();
+    expect(currentHold()).toBeNull();
+  });
+
+  it('G3 a tap is admitted by the table, not only the reducer: a known cooldown refuses it', async () => {
+    act(() => { probe.current.api.lastDeployedEvidence({ uid: 'uid-A', authEpoch: 1, targetAgentId: 'agent-uid-A', lastDeployedAtMs: nowMs }); });
+    let r;
+    await act(async () => { r = await probe.current.deploy.tap(STRIP); });
+    expect(r).toEqual({ success: false });
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+
+  it('G18 a plain tap under an open sheet is refused (only the Scouting Board is exempt, at depth 1)', async () => {
+    act(() => { stack.current.open('sheet', { within: container }); });
+    let r;
+    await act(async () => { r = await probe.current.deploy.tap(STRIP); });
+    expect(r).toEqual({ success: false });
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+
+  it('G4 an identity change while the due-idea CHECK is pending: no screen, no deploy call', async () => {
+    let release;
+    h.due = vi.fn(() => new Promise((r) => { release = r; }));
+    await committedAndOut();
+    signIn('uid-B');
+    await act(async () => { release(null); await Promise.resolve(); });
+    await flush();
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+
+  it('G5 a ceremony that confirmed no battle is clear; one that lost contact is not', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    const id = attempt().attemptId;
+    act(() => { probe.current.api.phaseChanged({ attemptId: id, phase: 'error', errorTone: 'lost_contact' }); });
+    expect(attempt().reconciliationStatus).not.toBe('clear');
+    act(() => { probe.current.api.phaseChanged({ attemptId: id, phase: 'error', errorTone: 'confirmed' }); });
+    expect(attempt().reconciliationStatus).toBe('clear');
+  });
+
+  it('G6 a malformed verifier answer is an error, never a clear result', async () => {
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    h.verify = vi.fn(async () => ({}));
+    await act(async () => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.CHECK_DEPLOYMENT); });
+    await flush();
+    expect(attempt().reconciliationStatus).toBe('error');
+  });
+
+  it('G7 a pointercancel on the owning finger ends the charge through the seam', () => {
+    press(CARD, 3);
+    act(() => { pointer(CARD, 'pointercancel', 3); });
+    expect(currentHold()).toBeNull();
+    expect(reasons()).toEqual(['abort']);
+  });
+
+  it('G7b a denied second finger leaving does not end the first finger charge', () => {
+    press(CARD, 3);
+    press(CARD, 4);
+    act(() => { pointer(CARD, 'pointerout', 4); pointer(CARD, 'pointercancel', 4); });
+    expect(currentHold()).toMatchObject({ phase: 'charging', inputId: 'pointer:3' });
+  });
+
+  it('G11 the claim names the pointer that made it (not a constant)', () => {
+    press(CARD, 5);
+    expect(currentHold()).toMatchObject({ inputId: 'pointer:5' });
+    lift(CARD, 6);
+    expect(currentHold()).toMatchObject({ phase: 'charging' });
+    lift(CARD, 5);
+    expect(currentHold()).toBeNull();
+  });
+
+  it('G8 an identity change in the beat returns the control to idle: a fresh hold can start at once', async () => {
+    holdToThreshold();
+    signIn('uid-B');
+    press(CARD);
+    expect(currentHold()).toMatchObject({ controlId: CARD, phase: 'charging' });
+  });
+
+  it('G10 once the request is out the control no longer says Locked in', async () => {
+    await committedAndOut();
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+    expect(buttonOf(CARD).textContent).not.toContain('Locked in');
+  });
+
+  it('G29 a key commitment snaps the progress store to full', () => {
+    enter(CARD);
+    expect(probe.current.deploy.progress.get()).toMatchObject({ controlId: CARD, progress: 1 });
+  });
+
+  it('G9 an EXISTING answer after the ceremony settled on its error gets a fresh ceremony', async () => {
+    h.ceremonyOn = true;
+    h.owned = vi.fn(async () => ({ id: 'battle-running', ownerId: 'uid-A' }));
+    await committedAndOut();
+    const id = attempt().attemptId;
+    const firstMount = h.ceremonies.at(-1).mount;
+    act(() => { probe.current.api.phaseChanged({ attemptId: id, phase: 'error', errorTone: 'lost_contact' }); });
+    posts[0].answer(EXISTING());
+    await flush();
+    expect(h.ceremonies.at(-1).mount).toBeGreaterThan(firstMount);
+  });
+
+  it('G9b a refusal after the error keeps the one instance', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    const id = attempt().attemptId;
+    const firstMount = h.ceremonies.at(-1).mount;
+    act(() => { probe.current.api.phaseChanged({ attemptId: id, phase: 'error', errorTone: 'lost_contact' }); });
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    expect(h.ceremonies.at(-1).mount).toBe(firstMount);
+  });
+
+  it('G12 dismissing an acknowledged creation releases its stash, and only its own', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(CREATED('battle-xyz'));
+    await flush();
+    act(() => { h.ceremonies.at(-1).onDismiss(); });
+    expect(bridge.clearCeremonyStash).toHaveBeenCalledWith('battle-xyz');
+  });
+
+  it('G13a the owned read has its 8 s deadline, then a 30 s wait', async () => {
+    h.owned = vi.fn(() => new Promise(() => {}));
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    await advance(7900);
+    expect(probe.current.deploy.existingRead.status).toBe('loading');
+    await advance(200);
+    expect(probe.current.deploy.existingRead.status).toBe('error');
+    await advance(29000);
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.OPEN_GAME); });
+    await flush();
+    expect(h.owned).toHaveBeenCalledTimes(1);
+  });
+
+  it('G13b the deployment check has its 8 s deadline', async () => {
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    h.verify = vi.fn(() => new Promise(() => {}));
+    await act(async () => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.CHECK_DEPLOYMENT); });
+    await advance(7900);
+    expect(attempt().reconciliationStatus).toBe('pending');
+    await advance(200);
+    expect(attempt().reconciliationStatus).toBe('error');
+  });
+
+  it('G15 the ceremony offers no Retry for an unresolved uncertain attempt', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    expect(h.ceremonies.at(-1).onRetry).toBeUndefined();
+  });
+
+  it('G15b and offers it for an admitted refusal', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    expect(typeof h.ceremonies.at(-1).onRetry).toBe('function');
+  });
+
+  it('G15c and not for a refusal under a sheet or a cooldown (the table says no)', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer({ ...IN_PROGRESS(), retryAfter: 90 });
+    await flush();
+    expect(h.ceremonies.at(-1).onRetry).toBeUndefined();
+  });
+
+  it('G17 under StrictMode the provider survives the development re-mount', async () => {
+    act(() => { root.unmount(); });
+    root = createRoot(container);
+    act(() => {
+      root.render(
+        <React.StrictMode>
+          <DeployAttemptProvider hubEnabled {...bridge}><HubRoot><FakeHub controls={[CARD]} probe={probe} /></HubRoot></DeployAttemptProvider>
+        </React.StrictMode>,
+      );
+    });
+    signIn('uid-B');
+    holdToThreshold();
+    await advance(450);
+    await flush();
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+
+  it('G19 the reveal Enter carries the battle the gates admitted, though the provider read came back empty', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    const id = attempt().attemptId;
+    act(() => { probe.current.api.phaseChanged({ attemptId: id, phase: 'reveal', errorTone: null }); });
+    await flush();
+    const doc = { id: 'battle-x', ownerId: 'uid-A' };
+    act(() => { h.ceremonies.at(-1).onEnterBattle(doc); });
+    expect(bridge.onEnterBattle).toHaveBeenCalledWith(doc);
+  });
+
+  it('G20 Open game opens only the battle the record names, for its owner', async () => {
+    h.ceremonyOn = true;
+    h.owned = vi.fn(async () => ({ id: 'battle-running', ownerId: 'uid-A' }));
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    act(() => { h.ceremonies.at(-1).onOpenBattle({ id: 'other', ownerId: 'uid-A' }); });
+    act(() => { h.ceremonies.at(-1).onOpenBattle({ id: 'battle-running', ownerId: 'uid-B' }); });
+    expect(bridge.onOpenBattle).not.toHaveBeenCalled();
+  });
+
+  it('G21 deployAgent throwing (its one throw is before the POST) is recorded as never reaching the server — postIssued false, and it fails closed as uncertain', async () => {
+    h.deploy = vi.fn(() => { throw new Error('boom'); });
+    await committedAndOut();
+    expect(attempt().result).toMatchObject({ postIssued: false });
+    expect(attempt().phase).toBe('uncertain');
+  });
+
+  it('G22 a second Check deployment while one is pending issues no second read', async () => {
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    h.verify = vi.fn(() => new Promise(() => {}));
+    await act(async () => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.CHECK_DEPLOYMENT); });
+    await act(async () => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.CHECK_DEPLOYMENT); });
+    expect(h.verify).toHaveBeenCalledTimes(1);
+  });
+
+  it('G24 a stale ceremony report on an uncertain attempt reads nothing', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    act(() => { probe.current.api.phaseChanged({ attemptId: 'attempt_stale', phase: 'reveal', errorTone: null }); });
+    await flush();
+    expect(h.verify).not.toHaveBeenCalled();
+  });
+
+  it('G25 Enter on an attempt that is not a creation enters nothing', async () => {
+    await committedAndOut();
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    act(() => { probe.current.api.enterBattle(); });
+    expect(bridge.onEnterBattle).not.toHaveBeenCalled();
+    expect(attempt().phase).toBe('refused');
+  });
+
+  it('G28 the due-idea screen makes the app behind it inert', async () => {
+    h.due = vi.fn(async () => ({ watchlistId: 'w1', version: 2, currentVersion: 2, title: null }));
+    container.id = 'root';
+    await committedAndOut();
+    expect(container.querySelector('[data-due-screen]')).not.toBeNull();
+    expect(container.hasAttribute('inert')).toBe(true);
+    container.removeAttribute('id');
+  });
+
+  it('G30 unmount while the due-idea screen is open settles the tap', async () => {
+    h.due = vi.fn(async () => ({ watchlistId: 'w1', version: 2, currentVersion: 2, title: null }));
+    let tapped;
+    act(() => { tapped = probe.current.deploy.tap(STRIP); });
+    await flush();
+    act(() => root.unmount());
+    let r;
+    await act(async () => { r = await Promise.race([tapped, new Promise((res) => setTimeout(() => res('hung'), 10))]); });
+    expect(r).toEqual({ success: false });
+    root = createRoot(container);
+  });
+
+  it('G12b an identity change drops the stash of an unacknowledged creation', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(CREATED('battle-xyz'));
+    await flush();
+    signIn('uid-B');
+    expect(bridge.clearCeremonyStash).toHaveBeenCalledWith('battle-xyz');
+  });
+
+  it('G15d and not once the hub is runtime-disabled', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    expect(typeof h.ceremonies.at(-1).onRetry).toBe('function');
+    render({ hubEnabled: false });
+    expect(h.ceremonies.at(-1).onRetry).toBeUndefined();
+  });
+
+  const fillTransition = () => [...container.querySelectorAll('span')].find((s) => s.style.width === '100%')?.style.transition;
+  it('G31a a key commitment snaps the rail (no width transition)', () => {
+    enter(CARD);
+    expect(fillTransition()).toBe('none');
+  });
+  it('G31b a pointer commitment keeps the shipped 250 ms settle', () => {
+    holdToThreshold();
+    expect(fillTransition()).toMatch(/250ms/);
+  });
+
+  it('G32 Open game while the owned read is still loading starts no second read', async () => {
+    let finish;
+    h.owned = vi.fn(() => new Promise((r) => { finish = r; }));
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.OPEN_GAME); });
+    await flush();
+    expect(h.owned).toHaveBeenCalledTimes(1);
+    expect(finish).toBeTypeOf('function');
+  });
+
+  it('G33 each claim carries the provider next hold epoch', () => {
+    press(CARD);
+    expect(currentHold().holdEpoch).toBe(1);
+    lift(CARD);
+    press(STRIP);
+    expect(currentHold().holdEpoch).toBe(2);
+  });
+
+  it('G34 the claim opens the owner-tagged progress at zero, before any frame', () => {
+    press(CARD);
+    expect(probe.current.deploy.progress.get()).toMatchObject({ controlId: CARD, progress: 0 });
+  });
+});
+
+// ── The builder's rows for the W5 survivors it listed without a row (S2b report §8) ─────────────────────────────
+describe('W5 survivors — the remaining gaps, closed', () => {
+  it('X1 (W2-3): an identity change after an acknowledged attempt drops its leftovers — the owned read is gone', async () => {
+    h.owned = vi.fn(async () => { throw new Error('denied'); });
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    expect(probe.current.snapshot.hydration).not.toBeNull();
+    act(() => { probe.current.api.dismiss(); });
+    expect(attempt().phase).toBe('idle');
+    signIn('uid-B');
+    expect(probe.current.snapshot.hydration).toBeNull();
+    expect(probe.current.snapshot.ceremony).toBeNull();
+  });
+
+  it('X2: a repeated report of the same identity changes nothing mid-attempt', async () => {
+    await committedAndOut();
+    const before = probe.current.snapshot.state;
+    act(() => { probe.current.api.identityChanged(readAuthIdentity()); });
+    expect(probe.current.snapshot.state).toBe(before);
+    expect(posts[0].isCurrent()).toBe(true);
+  });
+
+  it('X3: an owned read that returns another battle is no answer — an error, and nothing opens', async () => {
+    h.owned = vi.fn(async () => ({ id: 'battle-other', ownerId: 'uid-A' }));
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    expect(probe.current.deploy.existingRead.status).toBe('error');
+    expect(bridge.onOpenBattle).not.toHaveBeenCalled();
+  });
+
+  it('X4: a deployment check that answers after an identity change changes nothing', async () => {
+    let answer;
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    h.verify = vi.fn(() => new Promise((r) => { answer = r; }));
+    await act(async () => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.CHECK_DEPLOYMENT); });
+    signIn('uid-B');
+    const after = probe.current.snapshot.state;
+    await act(async () => { answer({ found: true, battle: { id: 'battle-x', ownerId: 'uid-A' } }); });
+    await flush();
+    expect(probe.current.snapshot.state).toBe(after);
+    expect(attempt()).toBeNull();
+  });
+
+  it('X5: Check deployment on an attempt that is not uncertain reads nothing', async () => {
+    await committedAndOut();
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    act(() => { probe.current.api.checkDeployment(); });
+    await flush();
+    expect(h.verify).not.toHaveBeenCalled();
+  });
+
+  it('X6: with no ceremony on screen a creation closes its own ceremony phase (closed, not a reveal)', async () => {
+    await committedAndOut();
+    posts[0].answer({ outcome: 'handoff_failed', success: false, postIssued: true, httpStatus: 200, battleId: 'battle-new', error: 'deploy_handoff' });
+    await flush();
+    expect(attempt().ceremonyPhase).toBe('closed');
+  });
+
+  it('X7: the root unmounting clears every timer it holds (an owned read\'s deadline included)', async () => {
+    h.owned = vi.fn(() => new Promise(() => {}));
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    act(() => root.unmount());
+    expect(vi.getTimerCount()).toBe(0);
+    root = createRoot(container);
+  });
+
+  it('X8: the Scouting Board\'s tap is exempt only from the board itself — a second overlay above it refuses it', async () => {
+    act(() => { stack.current.open('board', { within: container }); stack.current.open('above', { within: container }); });
+    let r;
+    await act(async () => { r = await probe.current.deploy.tap('hub-scouting-board', { exemptOverlay: true }); });
+    expect(r).toEqual({ success: false });
+    act(() => { stack.current.close('above', { focus: false }); });
+    act(() => { probe.current.deploy.tap('hub-scouting-board', { exemptOverlay: true }); });
+    await flush();
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+
+  it('X9 (W2-2): a read of the same uid at an earlier epoch (A → B → A) stamps no cooldown', async () => {
+    signIn('uid-B');
+    signIn('uid-A');
+    const stale = { status: 'ready', agent: { id: 'agent-uid-A', ownerId: 'uid-A', lastDeployedAt: new Date(nowMs - 1000).toISOString(), stats: { gamesPlayed: 3 } }, ownerUid: 'uid-A', ownerEpoch: 1, error: null };
+    render({ over: { agent: stale } });
+    expect(probe.current.snapshot.state.cooldowns['uid-A']).toBeUndefined();
+  });
+
+  it('X10 (W2-2): a read still loading stamps no cooldown', async () => {
+    const loading = { status: 'loading', agent: { id: 'agent-uid-A', ownerId: 'uid-A', lastDeployedAt: new Date(nowMs - 1000).toISOString() }, ownerUid: 'uid-A', ownerEpoch: 1, error: null };
+    render({ over: { agent: loading } });
+    expect(probe.current.snapshot.state.cooldowns['uid-A']).toBeUndefined();
+  });
+
+  it('X11: a child\'s capture loss (a lifting finger\'s label) does not end the charge; the button\'s own does', () => {
+    press(CARD);
+    const child = buttonOf(CARD).querySelector('span');
+    act(() => { const e = new Event('lostpointercapture', { bubbles: true }); Object.defineProperty(e, 'pointerId', { value: 1 }); child.dispatchEvent(e); });
+    expect(currentHold()).toMatchObject({ phase: 'charging' });
+    act(() => { pointer(CARD, 'lostpointercapture', 1); });
+    expect(currentHold()).toBeNull();
+  });
+
+  it('X12: the owner-tagged progress is cleared once the request starts', async () => {
+    holdToThreshold();
+    expect(probe.current.deploy.progress.get()).toMatchObject({ progress: 1 });
+    await advance(450);
+    await flush();
+    expect(probe.current.deploy.progress.get()).toBeNull();
+  });
+
+  it('X13: an acknowledgment is stamped with its time', async () => {
+    await committedAndOut();
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    act(() => { probe.current.api.dismiss(); });
+    expect(attempt().acknowledgedAt).toBe(Date.now());
+  });
+
+  it('X14: a claim under a known cooldown is denied before any effect', () => {
+    act(() => { probe.current.api.lastDeployedEvidence({ uid: 'uid-A', authEpoch: 1, targetAgentId: 'agent-uid-A', lastDeployedAtMs: nowMs }); });
+    press(CARD);
+    expect(currentHold()).toBeNull();
+    expect(frames.pending()).toBe(0);
+    expect(sky).toEqual([]);
+  });
+});
