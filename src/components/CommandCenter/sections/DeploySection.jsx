@@ -98,7 +98,7 @@ export function PhoneDeployCard({ deploy, onAction, onOpenBoard }) {
  * Slice S2b: `holdWiring` / `holding` are the deploy provider's wiring for the card's control (hub/useHubDeploy.js);
  * `onOpenBoard` opens the Scouting Board, "See what it's eyeing" (ruling R-S2b-7), when the board is on.
  */
-export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoadout, onAction, holdWiring = null, holding = false, onOpenBoard }) {
+export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoadout, onAction, holdWiring = null, holding = null, onOpenBoard }) {
   const display = deployDisplay(deploy);
   const tinted = display.displayState === 'ready' || display.displayState === 'ready_stale';
   return (

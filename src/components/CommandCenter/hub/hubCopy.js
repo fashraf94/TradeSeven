@@ -282,6 +282,8 @@ export const HUB_COPY = Object.freeze({
     holdShort: 'Deploy',
     holdSubmitting: 'Submitting…',
     holdDeployed: 'Deployed',
+    /** Slice S2b (review W3-3): a committed hold's own word, the shipped control's (HoldToDeployButton.jsx). */
+    holdLocked: 'Locked in',
     holdLabel: 'Hold to deploy. Press and hold, or press Enter or Space to deploy now.',
     /** Spec §5.5, exactly. The shipped hold is 1,300 ms (useHoldToDeploy.js HOLD_MS). */
     pointerHelp: 'Hold for 1.3 s. Release before the hold completes to cancel.',

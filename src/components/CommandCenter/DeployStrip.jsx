@@ -40,8 +40,8 @@ const clampTwo = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 
 const clampOne = { display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
 
 // Slice S2b: `holdWiring` is the deploy provider's wiring for the strip's control (hub/useHubDeploy.js), and
-// `holding` says that control's own hold is the one charging or locked.
-const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutLine, placement, onOpenLoadout, onOpenGame, onDeploy, onAction, holdWiring = null, holding = false }, ref) {
+// `holding` is that control's own hold phase ('charging' | 'locked'), or null.
+const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutLine, placement, onOpenLoadout, onOpenGame, onDeploy, onAction, holdWiring = null, holding = null }, ref) {
   const display = deployDisplay(deploy, liveGame);
   const line1 = display.stripLine1;
   const line2 = display.stripLine2(loadoutLine);

@@ -311,13 +311,28 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     changed();
   }
 
+  /** The slot of a hold that already started its request is freed now, not when the old request settles. */
+  function releaseInFlightHold() {
+    const held = state.hold;
+    if (held && held.phase === HOLD_PHASES.LOCKED) releaseHold(held.holdToken);
+  }
+
   function identityChanged(next) {
     if (revoked || !next || next.authEpoch === identity.authEpoch) return;
     identity = next;
     cancelCharging();
     revokeBeat();
+    // The new account is admitted on its own readiness, never after the old promise (spec §5.4; review W2-1): the
+    // hook's own release, at the old request's settle, is token-scoped and finds nothing then.
+    releaseInFlightHold();
     apply({ type: T.AUTH_CHANGED, uid: next.resolved ? next.uid : null, authEpoch: next.authEpoch });
     cleanupOrphan();
+    // An acknowledged record goes with no orphan to clean: drop what it left for the former owner (review W2-3).
+    run = null;
+    hydration = null;
+    recovered = null;
+    ceremony = null;
+    changed();
   }
 
   function setHubEnabled(enabled) {
@@ -331,6 +346,7 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     cancelCharging();
     // The owner releases a beat it will never run (R2 FR2-5); nothing runs after the root has gone.
     revokeBeat({ runIt: false });
+    releaseInFlightHold();
     if (due) { const d = due; due = null; d.settle('unmounted'); }
     state = attemptReducer(state, { type: T.UNMOUNT });
     revoked = true;
@@ -433,11 +449,12 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
       apply({ type: T.TARGET_RESOLVED, attemptId, attemptEpoch: r.attemptEpoch, targetAgentId: id });
       if (ceremony?.attemptId === attemptId) { ceremony = { ...ceremony, targetAgentId: id }; changed(); }
     };
-    // App's handoff, checked here immediately before it and handed the same check for its own later effects (C2).
+    // App's handoff, checked here immediately before it (C2). App's own checks are R1's — the captured uid against
+    // the signed-in one before each of its effects; the attempt and auth epochs are this check's (review W2-4).
     const onCreate = (portfolio, bench, meta) => {
       if (!isCurrent()) return null;
       const create = bridge().onCreateAgentBattle;
-      return typeof create === 'function' ? create(portfolio, bench, { ...meta, isCurrent }) : null;
+      return typeof create === 'function' ? create(portfolio, bench, meta) : null;
     };
 
     let result;
@@ -451,6 +468,8 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     // An identity change, a newer attempt or the root's unmount: nothing more is shown or done for this one.
     if (!isCurrent()) return result;
 
+    // The ceremony's last report before the answer: a watchdog check may already have ended it on its error.
+    const ceremonyBefore = state.attempt?.ceremonyPhase ?? null;
     apply({ type: T.SERVICE_RESULT, attemptId, attemptEpoch: r.attemptEpoch, result });
     cooldownFromResult(r, result);
     if (state.attempt?.phase === ATTEMPT_PHASES.ORPHANED) {
@@ -459,17 +478,30 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     }
 
     const phase = state.attempt?.phase;
+    // A created or existing answer that lands after the ceremony's own check already settled on "Couldn't
+    // confirm" (its 90 s watchdog fired while the POST was out) cannot reach that latched machine, so the
+    // record and the ceremony would disagree. For a hub attempt the answer gets a fresh ceremony instance,
+    // whose machine reads it from the start (one vocabulary, spec §5.2; the post-check half of R1 FR-1).
+    const remount = ceremonyBefore === CEREMONY_PHASES.ERROR
+      && (phase === ATTEMPT_PHASES.CREATED || phase === ATTEMPT_PHASES.EXISTING);
     const handTheCeremony = () => {
       if (!isCurrent() || ceremony?.attemptId !== attemptId) return;
-      ceremony = { ...ceremony, deployResult: deployResultFor(result) };
+      ceremony = { ...ceremony, deployResult: deployResultFor(result), ...(remount ? { key: `${attemptId}:answer` } : {}) };
       changed();
     };
-    if (ceremonyOn && ceremony?.attemptId === attemptId) {
+    const shown = ceremonyOn && ceremony?.attemptId === attemptId && ceremony.visible === true;
+    if (shown) {
       if (isOrphanedResult(result)) { ceremony = null; changed(); }
       // An existing answer reaches the ceremony once its one owned targeted read has settled (below), so the
       // existing terminal opens the document that read returned — a league battle included, which the
       // terminal's own fallback (the target-scoped verifier) cannot resolve. The read has its own deadline.
       else if (phase !== ATTEMPT_PHASES.EXISTING) handTheCeremony();
+    } else if (phase === ATTEMPT_PHASES.CREATED) {
+      // No ceremony on screen to carry a creation to its reveal — the flag is off, or the player closed it while
+      // the request was out — so the record closes it itself, and the hub shows the creation with its Enter
+      // (spec §5.2: "Deployed · Enter battle"), never a "Finishing" or "Verifying" no ceremony will finish
+      // (review W4-1, W4-2).
+      apply({ type: T.CEREMONY_PHASE, attemptId, attemptEpoch: r.attemptEpoch, phase: CEREMONY_PHASES.CLOSED, errorTone: null });
     }
 
     try { bridge().refreshActiveBattles?.(); } catch (err) { console.warn('[DeployAttempt] refresh failed:', err?.message || err); }
@@ -485,13 +517,22 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     return result;
   }
 
-  // ── existing-battle hydration (spec §6, ruling R-S2b-5) ────────────────────
-  /** The one owned targeted read of the server's id; resolves (never rejects) once it has settled or was skipped. */
+  // ── the owned targeted read (spec §6, ruling R-S2b-5) ──────────────────────
+  /**
+   * The battle document an attempt names, read once by its id and owned (services/ownedBattleRead.js): an
+   * existing answer's server id, or a creation whose App handoff threw (its real id; review W4-5). Deduplicated
+   * by uid + auth epoch + attempt id + battle id; a failed read waits EXISTING_READ_RETRY_MS before its explicit
+   * Retry. With `open`, a read that succeeds goes on to open (existing) or enter (created) it (review W4-4).
+   * Resolves (never rejects) once the read has settled, or at once when nothing is to be read.
+   */
   function hydrate({ open = false } = {}) {
     const a = state.attempt;
     const r = run;
-    if (!a || a.phase !== ATTEMPT_PHASES.EXISTING || !r || r.attemptId !== a.attemptId) return Promise.resolve();
-    const battleId = realId(a.resolution?.battleId) ?? realId(a.result?.battleId);
+    if (!a || !r || r.attemptId !== a.attemptId) return Promise.resolve();
+    const existing = a.phase === ATTEMPT_PHASES.EXISTING;
+    const handoff = a.phase === ATTEMPT_PHASES.CREATED && a.result?.kind === RESULT_KINDS.HANDOFF;
+    if (!existing && !handoff) return Promise.resolve();
+    const battleId = existing ? realId(a.resolution?.battleId) ?? realId(a.result?.battleId) : realId(a.result?.battleId);
     if (!battleId) return Promise.resolve();
     const key = `${r.capturedUid}:${r.authEpoch}:${a.attemptId}:${battleId}`;
     if (hydration?.key === key) {
@@ -501,6 +542,10 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     hydration = { key, attemptId: a.attemptId, battleId, status: EXISTING_READ.LOADING, battle: null, retryAt: null };
     changed();
     const isCurrent = currentFor(r);
+    const failed = () => {
+      hydration = { ...hydration, status: EXISTING_READ.ERROR, retryAt: now() + EXISTING_READ_RETRY_MS };
+      changed();
+    };
     return within(Promise.resolve().then(() => readOwnedBattle(battleId, r.capturedUid)), EXISTING_READ_DEADLINE_MS)
       .then((battle) => (battle === TIMED_OUT ? Promise.reject(new Error('timeout')) : battle))
       .then((battle) => {
@@ -508,16 +553,17 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
         if (battle && battle.id === battleId && battle.ownerId === r.capturedUid) {
           hydration = { ...hydration, status: EXISTING_READ.FOUND, battle };
           changed();
-          if (open) openGame();
+          if (open) {
+            if (existing) openGame();
+            else enterBattle();
+          }
         } else {
-          hydration = { ...hydration, status: EXISTING_READ.ERROR, retryAt: now() + EXISTING_READ_RETRY_MS };
-          changed();
+          failed();
         }
       }, (err) => {
         if (!isCurrent() || hydration?.key !== key) return;
-        console.warn('[DeployAttempt] the running battle could not be read:', err?.message || err);
-        hydration = { ...hydration, status: EXISTING_READ.ERROR, retryAt: now() + EXISTING_READ_RETRY_MS };
-        changed();
+        console.warn('[DeployAttempt] the battle could not be read:', err?.message || err);
+        failed();
       });
   }
 
@@ -539,7 +585,9 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
           return;
         }
         if (!found.found) {
-          apply({ type: T.RECONCILIATION_RESULT, ...tag, status: RECONCILIATION.CLEAR });
+          // After the ceremony's own gates admitted a battle (its reveal), an empty read is lag, not absence: the
+          // attempt stays unresolved — Check again or Enter — and is never acknowledged as clear (review W4-6).
+          apply({ type: T.RECONCILIATION_RESULT, ...tag, status: admitted ? RECONCILIATION.ERROR : RECONCILIATION.CLEAR });
           return;
         }
         const battle = found.battle;
@@ -605,18 +653,18 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
       if (a.reconciliationStatus !== RECONCILIATION.PENDING) apply({ type: T.RECONCILIATION_PENDING, ...tag });
       apply({ type: T.RECONCILIATION_RESULT, ...tag, status: RECONCILIATION.FOUND, battle: { id: doc.id, ownerId: doc.ownerId }, admitted: true });
     }
-    if (state.attempt?.phase !== ATTEMPT_PHASES.CREATED) return;
-    const entry = doc ?? (recovered?.attemptId === a.attemptId ? recovered.battle : null);
-    const handoffId = state.attempt.result?.kind === RESULT_KINDS.HANDOFF ? realId(state.attempt.result.battleId) : null;
-    if (!entry && handoffId) {
-      // A creation whose handoff threw built no battle in App: open the real one by its id, read and owned (§5.2).
-      const isCurrent = currentFor(r);
-      within(Promise.resolve().then(() => readOwnedBattle(handoffId, r.capturedUid)), EXISTING_READ_DEADLINE_MS)
-        .then((battle) => {
-          if (battle === TIMED_OUT || !battle || !isCurrent() || battle.ownerId !== r.capturedUid) return;
-          recovered = { attemptId: a.attemptId, battle };
-          enterBattle(battle);
-        }, (err) => { console.warn('[DeployAttempt] the created battle could not be read:', err?.message || err); });
+    const created = state.attempt;
+    if (created?.phase !== ATTEMPT_PHASES.CREATED) return;
+    // The battle this record names, when it names one: a recovered resolution's, or the handoff's real id. A
+    // document carried in must be that battle (review W4-8).
+    const expectedId = realId(created.resolution?.battleId) ?? (created.result?.kind === RESULT_KINDS.HANDOFF ? realId(created.result.battleId) : null);
+    if (doc && expectedId && doc.id !== expectedId) return;
+    const read = hydration?.attemptId === a.attemptId && hydration.status === EXISTING_READ.FOUND ? hydration.battle : null;
+    const entry = doc ?? (recovered?.attemptId === a.attemptId ? recovered.battle : null) ?? read;
+    if (!entry && created.result?.kind === RESULT_KINDS.HANDOFF) {
+      // A creation whose handoff threw built no battle in App: enter the real one by its id, read and owned
+      // (§5.2), through the one owned read — its failure is shown, and its Retry waits (review W4-5).
+      hydrate({ open: true });
       return;
     }
     // Identity, epoch and the document's owner, again, immediately before the navigation.
@@ -630,7 +678,8 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     if (!a || !r || r.attemptId !== a.attemptId || a.phase !== ATTEMPT_PHASES.EXISTING) return;
     const existingId = realId(a.resolution?.battleId) ?? realId(a.result?.battleId);
     const doc = battle ?? (hydration?.attemptId === a.attemptId && hydration.status === EXISTING_READ.FOUND ? hydration.battle : null);
-    if (!doc) { hydrate(); return; }
+    // Not read yet, or its read failed: the Retry reads again (when its wait is over) and opens what it finds.
+    if (!doc) { hydrate({ open: true }); return; }
     if (!currentFor(r)() || doc.id !== existingId || doc.ownerId !== r.capturedUid) return;
     try { bridge().onOpenBattle?.(doc); } finally { dismiss(); }
   }
@@ -650,7 +699,11 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     if (currentHold()?.holdToken !== c.token) return Promise.resolve({ success: false });
     committed = null;
     progress.clear(c.token);
-    return startAttempt({ hold: c });
+    const started = startAttempt({ hold: c });
+    // startAttempt admits (or not) before its first await. A committed hold that started nothing gives its record
+    // back, or no control could ever claim again (review W3-4); the hook gives the slot back when this settles.
+    if (state.hold?.holdToken === c.token && !state.hold.attemptId) apply({ type: T.HOLD_RELEASED, holdToken: c.token });
+    return started;
   }
 
   /** Does the hub's table offer this attempt's Retry right now (its own words, R-S2b-6)? */
@@ -786,9 +839,13 @@ function LiveDeployAttemptProvider({ hubEnabled, bridge, children }) {
   const accent = agent?.primaryColor || agent?.avatarColors?.[0] || CMD.teal;
   const agentName = agent?.name || bridge.userName || 'your agent';
   const offerRetry = showCeremony && !snap.flagDisabled;
-  // The deploy target's recorded lastDeployedAt is the cooldown's evidence while the attempt stands (spec §5.4).
-  const evidenceTarget = a && a.phase !== ATTEMPT_PHASES.IDLE && a.phase !== ATTEMPT_PHASES.ORPHANED && realId(a.targetAgentId)
-    ? a.targetAgentId : null;
+  // The deploy target's recorded lastDeployedAt is the cooldown's evidence (spec §5.4): read while the attempt
+  // stands, and after its acknowledgment until a bound for its owner and target is known, if its request reached
+  // the server — a stamp that lands after a quick dismissal is not lost (review W4-7).
+  const unacknowledged = a && a.phase !== ATTEMPT_PHASES.IDLE && a.phase !== ATTEMPT_PHASES.ORPHANED;
+  const boundUnknown = a && a.phase === ATTEMPT_PHASES.IDLE && a.result?.postIssued !== false
+    && cooldownFor(snap.state, a.capturedUid, a.targetAgentId).cooldownUntil === null;
+  const evidenceTarget = (unacknowledged || boundUnknown) && realId(a.targetAgentId) ? a.targetAgentId : null;
 
   return (
     <DeployAttemptContext.Provider value={value}>

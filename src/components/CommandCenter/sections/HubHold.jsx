@@ -41,13 +41,18 @@ import { BoltIcon, Label } from '../HubParts';
 
 const OFFERS_HOLD = new Set([COPY.deploy.hold, COPY.deploy.holdShort]);
 
-export default function HubHold({ label, canStart = false, onDeploy, wiring = null, holding = false, full = false, compact = false, style }) {
+export default function HubHold({ label, canStart = false, onDeploy, wiring = null, holding = null, full = false, compact = false, style }) {
   const handler = wiring ? wiring.onComplete : onDeploy;
-  const live = (canStart === true || (Boolean(wiring) && holding === true)) && typeof handler === 'function';
+  // `holding` is this control's own hold phase from the provider ('charging' | 'locked'), or null.
+  const own = Boolean(wiring) && (holding === 'charging' || holding === 'locked');
+  const live = (canStart === true || own) && typeof handler === 'function';
   const accent = readToken('blue-action') || undefined;
+  // A control mounted while its own committed beat runs (a site flip within the 450 ms) has an idle hook: the
+  // provider's record still says committed, so it says "Locked in" too, never the cancellation look (review W3-3).
+  const shown = own && holding === 'locked' ? COPY.deploy.holdLocked : label;
   return (
     <HoldToDeployButton
-      label={<Label size={compact ? 14 : 15} weight={700}>{label}</Label>}
+      label={<Label size={compact ? 14 : 15} weight={700}>{shown}</Label>}
       Icon={BoltIcon}
       iconSize={17}
       accent={accent}

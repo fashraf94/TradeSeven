@@ -25,7 +25,7 @@ vi.mock('../components/Dashboard/deployCeremony/DeployCeremony', () => ({ defaul
 vi.mock('../firebase/config', () => ({ auth: {}, db: {} }));
 vi.mock('firebase/auth', () => ({ onAuthStateChanged: () => () => {} }));
 
-import { COMMAND_CENTER_HUB_ENABLED } from '../config/featureFlags';
+import { isCommandCenterHubOn } from '../config/featureFlags';
 import { DeployAttemptProvider, useDeployAttempt } from './DeployAttemptContext';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -66,13 +66,13 @@ afterEach(() => {
 });
 
 describe('flag off: the provider is a pass-through (spec §4; R-S2b-1)', () => {
-  it('the shipped flag is false, so App\'s provider reads it as off', () => {
-    expect(COMMAND_CENTER_HUB_ENABLED).toBe(false);
-  });
-
+  // The flag's value is pinned in its own suite (commandCenterHubFlags.test.js); a pin here would be a second one
+  // its flip PR must move. The first row reads the flag through the accessor, as App's provider does.
   it.each([['the flag itself (App passes nothing)', undefined], ['an injected false', false]])(
     '%s: the children render alone — no subscription, timer or listener, no context, no ceremony, no bridge call',
     (_name, hubEnabled) => {
+      // While the shipped flag is off, App's case reads it as off; once flipped, only the injected row applies.
+      if (hubEnabled === undefined && isCommandCenterHubOn()) return;
       const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
       const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
       const addWindow = vi.spyOn(window, 'addEventListener');

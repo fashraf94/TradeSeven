@@ -143,7 +143,8 @@ describe('429 "Deploy already in progress" — a refusal, said as one (fails bef
     expect(text()).not.toContain('Couldn’t confirm the deploy.');
     expect(text()).not.toContain('Deployment unconfirmed');
     expect(text()).not.toContain('no battle was created');
-    expect(text()).toContain('Deployment failed');
+    expect(text()).toContain('Deployment refused');
+    expect(text()).not.toContain('Deployment failed');
     expect(text()).toContain('If the deploy already running creates a battle, it will appear on your hub.');
     expect(live()).toBe('A deploy is already in progress.');
   });

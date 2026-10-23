@@ -58,7 +58,12 @@ export function useHubDeploy({ deployAttempt, readers, hub }) {
 
   // The ranked agent's recorded lastDeployedAt: the cooldown's evidence for that target (spec §5.4; S2a A3-9).
   const auth = readers?.inputs?.auth ?? null;
-  const agentDoc = readers?.inputs?.agent?.agent ?? null;
+  // Only this identity's own read: the render that carries a new identity can still hold the former owner's
+  // agent, and its recorded time is never stamped under the new uid (review W2-2).
+  const agentRead = readers?.inputs?.agent ?? null;
+  const ownRead = auth?.signedIn === true && agentRead?.status === 'ready'
+    && agentRead.ownerUid === auth.uid && agentRead.ownerEpoch === auth.authEpoch;
+  const agentDoc = ownRead ? agentRead.agent ?? null : null;
   const lastMs = lastDeployedAtMs(agentDoc?.lastDeployedAt ?? null, Date.now());
   const uid = auth?.signedIn === true ? auth.uid : null;
   const authEpoch = auth?.signedIn === true ? auth.authEpoch : null;
@@ -114,5 +119,10 @@ export function useHubDeploy({ deployAttempt, readers, hub }) {
 
   if (!wiring) return null;
   const snapshot = deployAttempt.snapshot;
-  return { ...wiring, holdPhase: snapshot.state?.hold?.phase ?? null, holdControlId: snapshot.state?.hold?.controlId ?? null, existingRead: snapshot.hydration };
+  // The hold the controls and the status line follow: charging, or committed with its beat still to run. Once the
+  // hold has started its request (begin stamps it with the attempt), the attempt's own words take over everywhere —
+  // the hold record stays with the attempt until it ends, but it no longer speaks (review W3-1, W3-2).
+  const hold = snapshot.state?.hold ?? null;
+  const speaking = hold && !hold.attemptId ? hold : null;
+  return { ...wiring, holdPhase: speaking?.phase ?? null, holdControlId: speaking?.controlId ?? null, existingRead: snapshot.hydration };
 }

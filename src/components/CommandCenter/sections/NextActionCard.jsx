@@ -20,7 +20,7 @@ const CTA_ICON = { openGame: 'sword', review: 'film' };
 
 // Slice S2b (ruling R-S2b-10): the first-deployment candidate's hold is the deploy provider's, as the strip's and
 // the card's are — `holdWiring` / `holding` (hub/useHubDeploy.js). Which candidate shows is S4's.
-export default function NextActionCard({ nextAction, deploy, onAct, onLater, holdWiring = null, holding = false }) {
+export default function NextActionCard({ nextAction, deploy, onAct, onLater, holdWiring = null, holding = null }) {
   const phone = useHubComposition() === 'phone';
   const candidate = nextAction?.status === 'ready' ? nextAction.candidate : null;
   if (!candidate) return null;

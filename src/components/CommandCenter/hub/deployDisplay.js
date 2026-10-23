@@ -226,7 +226,8 @@ export function deployDisplay(deploy, liveGame = null) {
   // when the hub has one for this attempt — reading it, or a read that failed,
   // with the time its Retry (Open game) opens. Never silence after a definitive
   // server answer.
-  const existingRead = displayState === 'existing' && deploy?.existingRead && typeof deploy.existingRead === 'object' ? deploy.existingRead : null;
+  // The same read serves a creation whose handoff threw (its Enter reads the real battle; review W4-5).
+  const existingRead = (displayState === 'existing' || displayState === 'confirmed') && deploy?.existingRead && typeof deploy.existingRead === 'object' ? deploy.existingRead : null;
   const existingNote = existingRead?.status === 'loading' ? D.existingReading
     : existingRead?.status === 'error' ? D.existingRetryAt(etTime(existingRead.retryAt, { roundUp: true })) : null;
 

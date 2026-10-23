@@ -33,8 +33,16 @@
 // its Film Room reviews) and their Games and Deploy sections replace the
 // loading ones, with the actions S3 wires (open a game, open a battle tape,
 // a read's Retry). Without it — the layout fixtures, the tests — nothing is
-// read, as before. The hold stays inert: no deploy handler reaches it before
-// S2b.
+// read, as before.
+//
+// Slice S2b (rulings R-S2b-1 … R-S2b-7): with App's deploy provider above the
+// hub (src/contexts/DeployAttemptContext.jsx — at App's root, so an attempt,
+// its committed beat and its ceremony outlive the hub), the strip's, the
+// Deploy card's and the first-deployment next action's holds are live through
+// the provider's hold seam; "See what it's eyeing" opens the shipped Scouting
+// Board, whose deploy is a tap through the same admission; a tab or area
+// change and any overlay opening cancel an uncommitted hold; the status line
+// announces the hold's phases. Without a provider every hold stays inert.
 //
 // Slice S5 (rulings R-S5-1 … R-S5-9): with the same object the Loadout and
 // the career come from the owner's agent document, the entry points open the
@@ -218,7 +226,7 @@ function deployActionsOf(deploy, sheet, runtime) {
   if (!deploy) return null;
   return {
     nextActionHold: deploy.hold(HUB_DEPLOY_CONTROLS.NEXT_ACTION),
-    nextActionHolding: deploy.holdControlId === HUB_DEPLOY_CONTROLS.NEXT_ACTION,
+    nextActionHolding: deploy.holdControlId === HUB_DEPLOY_CONTROLS.NEXT_ACTION ? deploy.holdPhase : null,
     openBoard: runtime.live && scoutingBoardOn() ? sheet.open(HUB_SHEETS.SCOUTING) : undefined,
   };
 }
@@ -309,7 +317,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
         onOpenGame={actions.openGame}
         onAction={actions.deployAction}
         holdWiring={deploy?.hold(HUB_DEPLOY_CONTROLS.STRIP) ?? null}
-        holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.STRIP}
+        holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.STRIP ? deploy.holdPhase : null}
       />
       {deploy && runtime.live && scoutingBoardOn() && (
         <ScoutingBoard
@@ -398,7 +406,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
         onOpenLoadout={() => selectArea(HUB_AREAS.ARCHETYPE)}
         onAction={actions.deployAction}
         holdWiring={deploy?.hold(HUB_DEPLOY_CONTROLS.CARD) ?? null}
-        holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.CARD}
+        holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.CARD ? deploy.holdPhase : null}
         onOpenBoard={actions.openBoard}
       />
     ),

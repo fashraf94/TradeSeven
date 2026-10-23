@@ -54,6 +54,8 @@ const CONFIRMED_SUBTEXT = 'Your agent is safe. Nothing is stuck — you can try 
 // contact, and it claims nothing about the other deploy's battle. The headline is
 // the one line the hub shows too (src/constants/deployOutcomes.js).
 const IN_PROGRESS_HEADLINE = `${DEPLOY_IN_PROGRESS_LINE}.`;
+// Refused, not failed: nothing of this request ran (S2b review W1-1). The hub's own word for a refusal.
+const IN_PROGRESS_EYEBROW = 'Deployment refused';
 const IN_PROGRESS_SUBTEXT = 'Your agent is safe. If the deploy already running creates a battle, it will appear on your hub.';
 
 export default function CeremonyError({
@@ -90,7 +92,7 @@ export default function CeremonyError({
         <AlertTriangle size={26} color={CMD.copper} />
       </div>
 
-      <Eyebrow color={CMD.copper} style={{ marginBottom: 8 }}>{confirmed ? 'Deployment failed' : LOST_CONTACT_EYEBROW}</Eyebrow>
+      <Eyebrow color={CMD.copper} style={{ marginBottom: 8 }}>{inProgress === true ? IN_PROGRESS_EYEBROW : confirmed ? 'Deployment failed' : LOST_CONTACT_EYEBROW}</Eyebrow>
       <div style={{ fontSize: 18, fontWeight: 600, color: CMD.ink, lineHeight: 1.4, marginBottom: 12 }}>{headline}</div>
 
       {details && (

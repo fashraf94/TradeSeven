@@ -58,7 +58,7 @@ export function FakeHub({ controls, probe, over = {}, hub = {} }) {
     <div data-fake-hub="">
       {controls.map((id) => (
         <div key={id} data-control={id}>
-          <HubHold label="Hold to deploy" canStart={state.canStart} wiring={deploy ? deploy.hold(id) : null} holding={deploy?.holdControlId === id} />
+          <HubHold label="Hold to deploy" canStart={state.canStart} wiring={deploy ? deploy.hold(id) : null} holding={deploy?.holdControlId === id ? deploy.holdPhase : null} />
         </div>
       ))}
     </div>

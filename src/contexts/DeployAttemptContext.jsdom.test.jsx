@@ -28,6 +28,8 @@ const h = vi.hoisted(() => ({
   owned: null,
   ceremonyOn: false,
   ceremonies: [],
+  ceremonyMounts: 0,
+  targetProgress: { deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false },
 }));
 
 vi.mock('firebase/auth', () => ({ onAuthStateChanged: (_auth, cb) => { h.authListeners.push(cb); return () => {}; } }));
@@ -36,7 +38,7 @@ vi.mock('../services/agentDeploy', () => ({ deployAgent: (...args) => h.deploy(.
 vi.mock('../services/dueIdeaCheck', () => ({ checkDueIdea: (...args) => h.due(...args) }));
 vi.mock('../services/agentBattleVerify', () => ({ findActiveBattleForAgent: (...args) => h.verify(...args) }));
 vi.mock('../services/ownedBattleRead', () => ({ readOwnedBattle: (...args) => h.owned(...args) }));
-vi.mock('../hooks/useDeployTargetProgress', () => ({ default: () => ({ deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false }) }));
+vi.mock('../hooks/useDeployTargetProgress', () => ({ default: () => h.targetProgress }));
 vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   isDeploySkyCouplingOn: () => true,
@@ -44,7 +46,12 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
 }));
 // The ceremony's own suite runs the real one; here a stand-in records what the provider hands it.
 vi.mock('../components/Dashboard/deployCeremony/DeployCeremony', () => ({
-  default: (props) => { h.ceremonies.push(props); return <div data-ceremony={props.attemptId} />; },
+  default: function CeremonyStub(props) {
+    // A mount is a fresh ceremony instance (a new key): counted once per instance.
+    const [mount] = React.useState(() => { h.ceremonyMounts += 1; return h.ceremonyMounts; });
+    h.ceremonies.push({ ...props, mount });
+    return <div data-ceremony={props.attemptId} data-ceremony-mount={mount} />;
+  },
 }));
 vi.mock('../components/Dashboard/deployCeremony/DueIdeaInterstitial', () => ({
   default: ({ onProceed }) => <button type="button" data-due-screen="" onClick={onProceed}>Deploy without it</button>,
@@ -104,14 +111,14 @@ function signIn(uid) {
   act(() => { for (const cb of [...h.authListeners]) cb(uid ? { uid } : null); });
 }
 
-function render({ controls = [CARD, STRIP], hubEnabled = true, showHub = true, hub = {} } = {}) {
+function render({ controls = [CARD, STRIP], hubEnabled = true, showHub = true, hub = {}, over = {} } = {}) {
   act(() => {
     root.render(
       <DeployAttemptProvider hubEnabled={hubEnabled} {...bridge}>
         {showHub && (
           <HubRoot>
             <StackProbe probe={stack} />
-            <FakeHub controls={controls} probe={probe} hub={hub} />
+            <FakeHub controls={controls} probe={probe} hub={hub} over={over} />
           </HubRoot>
         )}
       </DeployAttemptProvider>,
@@ -143,6 +150,8 @@ beforeEach(() => {
   h.authListeners = [];
   h.ceremonyOn = false;
   h.ceremonies = [];
+  h.ceremonyMounts = 0;
+  h.targetProgress = { deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false };
   h.due = vi.fn(async () => null);
   h.verify = vi.fn(async () => ({ found: false, battle: null }));
   h.owned = vi.fn(async () => null);
@@ -326,6 +335,24 @@ describe('the hold through the provider — commitment is the boundary (C4)', ()
     await flush();
     expect(h.deploy).toHaveBeenCalledTimes(1);
     expect(reasons()).toEqual(['commit']);
+  });
+
+  it('a blur or a hidden tab while charging cancels through the seam: one abort, the claim back, no deploy', async () => {
+    press(CARD);
+    frameAt(600);
+    act(() => { window.dispatchEvent(new Event('blur')); });
+    expect(currentHold()).toBeNull();
+    expect(probe.current.snapshot.state.hold).toBeNull();
+    expect(reasons()).toEqual(['abort']);
+    press(STRIP);
+    frameAt(900);
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    delete document.hidden;
+    expect(currentHold()).toBeNull();
+    expect(reasons()).toEqual(['abort', 'abort']);
+    await advance(2000);
+    expect(h.deploy).not.toHaveBeenCalled();
   });
 
   it('progress is the owner-tagged store\'s: the charge, by its own control and token', () => {
@@ -648,6 +675,47 @@ describe('lifetime: the root outlives the hub; a runtime disable; the root unmou
     expect(attempt().phase).toBe('idle');
   });
 
+  it('ceremony on: while it is open the app behind it is inert (spec §10); closing it gives the app back', async () => {
+    h.ceremonyOn = true;
+    container.id = 'root';
+    holdToThreshold();
+    await advance(450);
+    await flush();
+    expect(container.hasAttribute('inert')).toBe(true);
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    act(() => { h.ceremonies.at(-1).onDismiss(); });
+    expect(container.hasAttribute('inert')).toBe(false);
+    container.removeAttribute('id');
+  });
+
+  it('ceremony on: an explicit creation\'s Enter goes to App once, after the owner and epoch are checked again', async () => {
+    h.ceremonyOn = true;
+    holdToThreshold();
+    await advance(450);
+    await flush();
+    posts[0].answer(CREATED());
+    await flush();
+    expect(attempt().phase).toBe('created');
+    act(() => { h.ceremonies.at(-1).onEnterBattle(null); });
+    expect(bridge.onEnterBattle).toHaveBeenCalledTimes(1);
+    expect(bridge.onEnterBattle).toHaveBeenCalledWith(null);
+    expect(attempt().phase).toBe('idle');
+  });
+
+  it('ceremony on: an Enter after an identity change enters nothing', async () => {
+    h.ceremonyOn = true;
+    holdToThreshold();
+    await advance(450);
+    await flush();
+    posts[0].answer(CREATED());
+    await flush();
+    const enter = h.ceremonies.at(-1).onEnterBattle;
+    signIn('uid-B');
+    act(() => { enter({ id: 'battle-new', ownerId: 'uid-A' }); enter(null); });
+    expect(bridge.onEnterBattle).not.toHaveBeenCalled();
+  });
+
   it('ceremony on: an identity change closes the ceremony at the change itself, not when the late result arrives', async () => {
     h.ceremonyOn = true;
     holdToThreshold();
@@ -700,5 +768,193 @@ describe('lifetime: the root outlives the hub; a runtime disable; the root unmou
     expect(bridge.onCreateAgentBattle).not.toHaveBeenCalled();
     expect(bridge.refreshActiveBattles).not.toHaveBeenCalled();
     root = createRoot(container);
+  });
+});
+
+// ── The review's fix round (S2b report §8): each row fails on the build head 8b2eb835 ──────────────────────────
+describe('fix round — the review\'s confirmed findings', () => {
+  async function committedAndOut(id = CARD) {
+    holdToThreshold(id);
+    await advance(450);
+    await flush();
+  }
+
+  it('W4-1: ceremony off, a creation whose handoff threw — "Deployed · Enter battle", and Enter reads the real battle and enters it', async () => {
+    const battle = { id: 'battle-new', ownerId: 'uid-A', agentId: 'agent-uid-A', status: 'active' };
+    h.owned = vi.fn(async () => battle);
+    await committedAndOut();
+    posts[0].answer({ outcome: 'handoff_failed', success: false, postIssued: true, httpStatus: 200, battleId: 'battle-new', error: 'deploy_handoff' });
+    await flush();
+    expect(state().displayState).toBe('confirmed');
+    expect(state().action).toBe(DISPLAY_ACTIONS.ENTER_BATTLE);
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.ENTER_BATTLE); });
+    await flush();
+    expect(h.owned).toHaveBeenCalledWith('battle-new', 'uid-A');
+    expect(bridge.onEnterBattle).toHaveBeenCalledWith(battle);
+    expect(attempt().phase).toBe('idle');
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+
+  it('W4-5: …and when that read fails, the card says so and its Retry waits 30 s — no silent dead end, no read storm', async () => {
+    h.owned = vi.fn(async () => { throw new Error('offline'); });
+    await committedAndOut();
+    posts[0].answer({ outcome: 'handoff_failed', success: false, postIssued: true, httpStatus: 200, battleId: 'battle-new', error: 'deploy_handoff' });
+    await flush();
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.ENTER_BATTLE); });
+    await flush();
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.ENTER_BATTLE); });
+    await flush();
+    expect(h.owned).toHaveBeenCalledTimes(1);
+    const display = deployDisplay({ ...state(), existingRead: probe.current.deploy.existingRead });
+    expect(display.cardNote.text).toMatch(/^Couldn’t open the running game/);
+    await advance(EXISTING_READ_RETRY_MS);
+    h.owned = vi.fn(async () => ({ id: 'battle-new', ownerId: 'uid-A' }));
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.ENTER_BATTLE); });
+    await flush();
+    expect(bridge.onEnterBattle).toHaveBeenCalledTimes(1);
+  });
+
+  it('W4-2: ceremony on, closed while the request was out, then created — the hub offers Enter (the stash), never a "Finishing" no ceremony will finish', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    act(() => { h.ceremonies.at(-1).onDismiss(); });
+    expect(container.querySelector('[data-ceremony]')).toBeNull();
+    expect(attempt().phase).toBe('submitting');
+    posts[0].answer(CREATED());
+    await flush();
+    expect(state().displayState).toBe('confirmed');
+    expect(state().action).toBe(DISPLAY_ACTIONS.ENTER_BATTLE);
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.ENTER_BATTLE); });
+    expect(bridge.onEnterBattle).toHaveBeenCalledWith(null);
+    expect(attempt().phase).toBe('idle');
+  });
+
+  it('W2-1: an identity change frees the slot of a hold whose request is still out — the new account\'s hold claims and deploys at once', async () => {
+    await committedAndOut();
+    expect(currentHold()).toMatchObject({ phase: 'locked' });
+    signIn('uid-B');
+    expect(currentHold()).toBeNull();
+    expect(state().canStart).toBe(true);
+    holdToThreshold(STRIP);
+    expect(currentHold()).toMatchObject({ controlId: STRIP, phase: 'locked' });
+    await advance(450);
+    await flush();
+    expect(h.deploy).toHaveBeenCalledTimes(2);
+    expect(attempt()).toMatchObject({ capturedUid: 'uid-B' });
+    // The old request's late settle frees nothing of B's (the hook's release is token-scoped).
+    posts[0].answer(CREATED());
+    await flush();
+    expect(attempt()).toMatchObject({ capturedUid: 'uid-B', phase: 'submitting' });
+  });
+
+  it('W3-1, W3-2: once the hold has started its request, the attempt speaks — no "Locked in" after a refusal, and the control is not live', async () => {
+    await committedAndOut();
+    expect(probe.current.deploy.holdPhase).toBeNull();
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    expect(probe.current.snapshot.state.hold).toMatchObject({ phase: 'locked' }); // the record stays the attempt's
+    expect(probe.current.deploy.holdPhase).toBeNull();
+    expect(probe.current.deploy.holdControlId).toBeNull();
+    expect(buttonOf(CARD).disabled).toBe(true);
+  });
+
+  it('W3-3: a control mounted inside its own committed beat (a site flip) says "Locked in", not the idle look', async () => {
+    holdToThreshold();
+    render({ showHub: false });
+    render();
+    expect(probe.current.deploy.holdPhase).toBe('locked');
+    expect(buttonOf(CARD).textContent).toContain('Locked in');
+    await advance(450);
+    await flush();
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+
+  it('W3-4: a committed hold whose request cannot start gives its record back — the next hold can claim', async () => {
+    const noId = { status: 'ready', agent: { ownerId: 'uid-A', name: 'Nameless', stats: { gamesPlayed: 3 } }, ownerUid: 'uid-A', ownerEpoch: 1, error: null };
+    render({ over: { agent: noId } });
+    holdToThreshold();
+    await advance(450);
+    await flush();
+    expect(h.deploy).not.toHaveBeenCalled();
+    expect(probe.current.snapshot.state.hold).toBeNull();
+    expect(state().canStart).toBe(true);
+  });
+
+  it('W4-4: after a failed owned read, Open game reads again once its wait is over — and opens what it finds', async () => {
+    h.owned = vi.fn(async () => { throw new Error('offline'); });
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    const battle = { id: 'battle-running', ownerId: 'uid-A', status: 'active' };
+    h.owned = vi.fn(async () => battle);
+    await advance(EXISTING_READ_RETRY_MS);
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.OPEN_GAME); });
+    await flush();
+    expect(bridge.onOpenBattle).toHaveBeenCalledWith(battle);
+    expect(attempt().phase).toBe('idle');
+  });
+
+  it('W4-6: the ceremony revealed (its gates admitted a battle) but the provider\'s read came back empty — still unresolved, never acknowledged as clear', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    const id = attempt().attemptId;
+    act(() => { probe.current.api.phaseChanged({ attemptId: id, phase: 'reveal', errorTone: null }); });
+    await flush();
+    expect(attempt()).toMatchObject({ phase: 'uncertain', reconciliationStatus: 'error' });
+    act(() => { h.ceremonies.at(-1).onDismiss(); });
+    expect(attempt().phase).toBe('uncertain');
+    expect(state().action).toBe(DISPLAY_ACTIONS.CHECK_DEPLOYMENT);
+  });
+
+  it('W4-7: the target\'s recorded lastDeployedAt still counts when it lands after a quick dismissal', async () => {
+    await committedAndOut();
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    act(() => { probe.current.api.dismiss(); });
+    expect(attempt().phase).toBe('idle');
+    h.targetProgress = { deployProgress: null, lastDeployedAt: new Date(nowMs - 10000).toISOString(), lastDecision: null, targetKnown: true };
+    render();
+    expect(state().displayState).toBe('cooldown');
+    expect(state().cooldownUntil).toBe(nowMs - 10000 + 120000);
+  });
+
+  it('W4-8: Enter refuses a document that is not the battle the record names', async () => {
+    await committedAndOut();
+    posts[0].answer({ outcome: 'handoff_failed', success: false, postIssued: true, httpStatus: 200, battleId: 'battle-new', error: 'deploy_handoff' });
+    await flush();
+    act(() => { probe.current.api.enterBattle({ id: 'battle-other', ownerId: 'uid-A' }); });
+    expect(bridge.onEnterBattle).not.toHaveBeenCalled();
+    expect(attempt().phase).toBe('created');
+  });
+
+  it('W2-2: a former owner\'s agent, still in the render that carries the new identity, stamps no cooldown under the new uid', async () => {
+    signIn('uid-B');
+    const stale = { status: 'ready', agent: { id: 'agent-uid-A', ownerId: 'uid-A', lastDeployedAt: new Date(nowMs - 1000).toISOString(), stats: { gamesPlayed: 3 } }, ownerUid: 'uid-A', ownerEpoch: 1, error: null };
+    render({ over: { agent: stale } });
+    expect(probe.current.snapshot.state.cooldowns['uid-B']).toBeUndefined();
+  });
+
+  it('the post-check half of FR-1: a creation that answers after the ceremony\'s check already settled on its error gets a fresh ceremony', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    const id = attempt().attemptId;
+    const firstMount = h.ceremonies.at(-1).mount;
+    act(() => { probe.current.api.phaseChanged({ attemptId: id, phase: 'error', errorTone: 'lost_contact' }); });
+    posts[0].answer(CREATED());
+    await flush();
+    expect(h.ceremonies.at(-1).mount).toBeGreaterThan(firstMount);
+    expect(h.ceremonies.at(-1).deployResult).toMatchObject({ status: 'success', agentBattleId: 'battle-new' });
+    expect(container.querySelectorAll('[data-ceremony]')).toHaveLength(1);
+  });
+
+  it('…and an answer that lands while the ceremony is still running keeps the one instance', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    const firstMount = h.ceremonies.at(-1).mount;
+    posts[0].answer(CREATED());
+    await flush();
+    expect(h.ceremonies.at(-1).mount).toBe(firstMount);
   });
 });
