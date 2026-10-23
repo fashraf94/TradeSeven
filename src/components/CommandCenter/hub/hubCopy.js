@@ -187,9 +187,24 @@ export const HUB_COPY = Object.freeze({
     createInForge: 'Create a watchlist in Forge',
   }),
 
+  /**
+   * Slice S4 (spec §8.2): the next action's words. The design's (ff-fixtures.jsx), filled from the record: a live game,
+   * a game deployed and waiting for the open, a ready review, the first deployment.
+   */
   nextAction: Object.freeze({
     label: 'Next action',
     later: 'Later',
+    liveTitle: 'Open your live game',
+    /** Spec §8.2: a pre-open game says it is deployed and waiting for the open. */
+    preOpenTitle: 'Your game is deployed',
+    /** The game, then its clock (`ends` text or "waiting for the open"). */
+    liveWhy: (mode, opponent, clock) => [`${mode} vs ${opponent}`, clock].filter(Boolean).join(' · '),
+    openGame: 'Open game',
+    reviewTitle: (day) => (day ? `Review your ${day} game in the Film Room` : 'Review your game in the Film Room'),
+    reviewWhy: (opponent, outcome) => [`vs ${opponent}`, outcome, 'review available'].filter(Boolean).join(' · '),
+    openReview: 'Open Film Room',
+    firstTitle: 'Play your first BaggerBomb game against a CPU',
+    firstWhy: 'Shadow deploys with your equipped loadout.',
   }),
 
   games: Object.freeze({
@@ -266,6 +281,10 @@ export const HUB_COPY = Object.freeze({
     careerCaption: 'career · BaggerBomb vs CPU · as recorded',
     /** Spec §7: absent or malformed wins and losses read unavailable; totals are never synthesized. */
     careerUnavailable: 'Career record unavailable',
+    /** Slice S4 (founder ruling Q-S3-6): History's Refresh shares the rolling budget; a read that cannot run now says when it may. */
+    refresh: 'Refresh',
+    refreshing: 'Refreshing…',
+    nextRefresh: (time) => `Next refresh at ${time}`,
   }),
 
   deploy: Object.freeze({
@@ -351,17 +370,42 @@ export const HUB_COPY = Object.freeze({
     label: 'Recent activity · your last 10 games and current loadout',
     loading: 'Checking your activity',
     empty: 'Nothing recorded yet.',
-    /** The phone Overview's link to the whole list (the design's; S4 wires its sheet). */
+    /** The window failed and nothing is retained: the list needs it for its cutoff, and Games carries the Retry. */
+    unavailable: 'Couldn’t load your activity',
+    /** The phone Overview's and the side column's link to the whole list (the design's; the sheet is S4's). */
     all: (n) => `All activity · ${n}`,
     /** An activity row's name: what happened, its line, and when (the visible time; S1 review L3-8). */
-    rowLabel: (text, sub, at) => `${text}: ${sub}${at ? `, ${at}` : ''}`,
+    rowLabel: (text, sub, at) => `${text}${sub ? `: ${sub}` : ''}${at ? `, ${at}` : ''}`,
+
+    // ── Slice S4 (spec §8.2): the kinds' own words ───────────────────────
+    completed: 'Game completed',
+    deployed: 'Deployed',
+    completedSub: (opponent, outcome) => [`vs ${opponent}`, outcome].filter(Boolean).join(' · '),
+    deployedSub: (mode, opponent) => `${mode} vs ${opponent}`,
+    watchlistEquipped: (date) => `Watchlist equipped · since ${date}`,
+    adjustmentEquipped: (date) => `Adjustment equipped · since ${date}`,
+    /** The activity sheet: the same list in full. */
+    sheetLabel: 'Recent activity',
+    sheetTitle: 'Recent activity',
+    sheetEyebrow: (n) => `Activity · ${n}`,
   }),
 
+  /**
+   * Slice S4 (spec §3, §8.3). The spec's own: "No brief available", "Couldn't load the brief · Retry", "Brief for {date}",
+   * "Generated {time ET}", "Last session's brief · for {date}". The fetch time is never a publication time, and there is
+   * no sources count (§8.3).
+   */
   brief: Object.freeze({
     label: 'Daily Regime Brief',
     loading: 'Checking the brief',
     more: 'More',
     less: 'Less',
+    missing: 'No brief available',
+    failed: "Couldn't load the brief",
+    retry: 'Retry',
+    forDate: (date) => `Brief for ${date}`,
+    generated: (time) => `Generated ${time}`,
+    stale: (date) => `Last session's brief · for ${date}`,
   }),
 
   sheet: Object.freeze({

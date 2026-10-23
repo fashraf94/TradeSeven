@@ -212,6 +212,13 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/hub/useHubSheets.js',
   'src/components/CommandCenter/hub/selectors/loadout.js',
   'src/components/CommandCenter/hubFallbackSignal.jsx',
+  // Command Center hub, S4 (Activity, the next action and its Later, the brief, the activity sheet):
+  // token-only and motion-token-only from birth, registered in the commit that introduces them (hazard 34).
+  'src/components/CommandCenter/ActivitySheet.jsx',
+  'src/components/CommandCenter/hub/activityRows.js',
+  'src/components/CommandCenter/hub/nextAction.js',
+  'src/components/CommandCenter/hub/useHubBrief.js',
+  'src/components/CommandCenter/hub/useHubLater.js',
 ];
 
 /**

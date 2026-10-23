@@ -29,6 +29,12 @@
 // it at once "as of" its time and it is read again at the next permitted slot;
 // an owner or epoch change clears it with the ledger.
 //
+// Amendment B (S4; founder rulings Q-S3-9, Q-S3-10): a FIRST read that succeeds
+// after the hub unmounted is kept in that owner and epoch's record (the
+// scheduler's `onLate`), never in another's; and the kept window also holds its
+// rows' READY review answers, so a return opens "Open battle tape" at once.
+// Pending, unavailable, timed-out and queued answers are not kept.
+//
 // Its activity — the real clock's timers, the page's visibility and focus
 // listeners, the effect that owns the scheduler — is listed in the hub mount
 // guard's allowances. The review helper is getReviewAvailability, unmodified,
@@ -59,7 +65,25 @@ function ownerRecord(uid, epoch) {
 }
 /** The kept window of this owner and epoch, if any. */
 const keptWindowOf = (uid, epoch) => (uid ? OWNERS.get(`${uid}:${epoch}`)?.window ?? null : null);
-/** Keep the latest successful window of this owner and epoch (a failed read keeps the one before: `battles` holds it). */
+/**
+ * The ready review answers a state holds (Amendment B, Q-S3-10): a row whose review the helper says is ready, with that
+ * answer. Pending, unavailable, timed-out, queued and checking rows are not kept: they are asked again.
+ */
+function readyAnswersOf(state) {
+  const ready = {};
+  for (const battle of state.battles) {
+    const review = state.reviews?.[battle.id];
+    if (review && review.state === 'ready' && review.result && review.result.ready === true) ready[battle.id] = review.result;
+  }
+  return ready;
+}
+
+/**
+ * Keep the latest successful window of this owner and epoch (a failed read keeps the one before: `battles` holds it),
+ * with its rows' ready review answers. A record that does not exist — another owner's or epoch's window, or a signed-out
+ * hub, whose records were dropped — is never written: that is how a late answer is kept for the owner and epoch it was
+ * read for, and for no other.
+ */
 function keepWindow(uid, epoch, state) {
   const record = OWNERS.get(`${uid}:${epoch}`);
   if (!record || state.battles === null || state.lastSuccessfulAt === null) return;
@@ -67,7 +91,11 @@ function keepWindow(uid, epoch, state) {
   // epoch, so a backward clock step cannot reorder it), then the as-of time.
   const kept = record.window;
   if (kept && (state.generation < kept.generation || (state.generation === kept.generation && state.lastSuccessfulAt < kept.lastSuccessfulAt))) return;
-  record.window = { battles: state.battles, generation: state.generation, lastSuccessfulAt: state.lastSuccessfulAt };
+  // A ready answer stays for as long as its row is in the window (the scheduler's own ready cache does the same).
+  const ready = {};
+  for (const battle of state.battles) if (kept?.ready && Object.hasOwn(kept.ready, battle.id)) ready[battle.id] = kept.ready[battle.id];
+  Object.assign(ready, readyAnswersOf(state));
+  record.window = { battles: state.battles, generation: state.generation, lastSuccessfulAt: state.lastSuccessfulAt, ready };
 }
 
 /** Tests only: forget every owner's ledger and kept window. */
@@ -136,6 +164,8 @@ export default function useHubCompletedBattles(max = HUB_COMPLETED_WINDOW, seams
       retained: record.window,
       clock,
       queryCompleted: s.queryCompleted || fetchRecentCompletedAgentBattles,
+      // Amendment B (Q-S3-9): a first read that succeeds after this hub unmounted is kept for THIS owner and epoch.
+      onLate: (late) => keepWindow(uid, epoch, { ...late, reviews: {} }),
       // The helper, unmodified: the document as it came, and nothing else.
       checkReview: s.checkReview || ((battle) => getReviewAvailability(battle)),
       onChange: (next) => {
@@ -171,8 +201,9 @@ export default function useHubCompletedBattles(max = HUB_COMPLETED_WINDOW, seams
   // Another owner's or epoch's window is dropped here, in render (spec §3). Before this mount's scheduler has changed
   // anything, a window kept for this owner and epoch shows "as of" its time (Q-S3-2, A+).
   const current = state && uid && state.ownerUid === uid && state.ownerEpoch === epoch ? state : null;
-  const owned = current
-    || (uid ? carriedState({ uid, authEpoch: epoch }, keptWindowOf(uid, epoch)) : null)
-    || unresolved(identity);
+  // A mounted scheduler that holds no window yet (a first read still out) gives way to a window kept for this owner and
+  // epoch — a first read of an earlier mount that landed after it unmounted (Amendment B, Q-S3-9).
+  const kept = uid && (!current || current.battles === null) ? carriedState({ uid, authEpoch: epoch }, keptWindowOf(uid, epoch)) : null;
+  const owned = kept || current || unresolved(identity);
   return { ...owned, refresh };
 }

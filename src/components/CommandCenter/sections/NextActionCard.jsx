@@ -8,6 +8,13 @@
 //
 // A first-deployment candidate carries the hold control (spec §5.5); any
 // other carries its own button. With no handler each is disabled.
+//
+// Slice S4 (ruling R-S4-8): the candidate comes from hub/nextAction.js. The
+// two handlers are kept apart on purpose. `onAct` opens a game or a review;
+// `onDeploy` is the deploy action — the very one the strip and the Deploy card
+// receive — and is the hold's alone. `onAct` never reaches the hold, so the
+// first-deployment card cannot start a deployment before S2b supplies
+// `onDeploy`: until then the hold renders disabled, like the strip's.
 
 import React from 'react';
 import { deployDisplay } from '../hub/deployDisplay';
@@ -18,7 +25,7 @@ import HubHold from './HubHold';
 
 const CTA_ICON = { openGame: 'sword', review: 'film' };
 
-export default function NextActionCard({ nextAction, deploy, onAct, onLater }) {
+export default function NextActionCard({ nextAction, deploy, onAct, onDeploy, onLater }) {
   const phone = useHubComposition() === 'phone';
   const candidate = nextAction?.status === 'ready' ? nextAction.candidate : null;
   if (!candidate) return null;
@@ -43,7 +50,7 @@ export default function NextActionCard({ nextAction, deploy, onAct, onLater }) {
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         {isDeploy ? (
-          <HubHold full canStart={deployDisplay(deploy).canStart} label={COPY.deploy.hold} onDeploy={onAct} style={{ flex: 1 }} />
+          <HubHold full canStart={deployDisplay(deploy).canStart} label={COPY.deploy.hold} onDeploy={onDeploy} style={{ flex: 1 }} />
         ) : (
           <HubButton kind="primary" icon={CTA_ICON[candidate.key]} onPress={onAct} style={{ flex: 1 }}>{candidate.cta}</HubButton>
         )}

@@ -87,3 +87,41 @@ export function headerName(user) {
   const pick = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '');
   return pick(user?.displayName) || pick(user?.username);
 }
+
+// ── Slice S4: Activity's absolute times and the brief's market date ───────
+
+const ET_DAY_TIME = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+/** "Oct 3, 4:00 PM" for an instant in ms, read in ET (Activity's absolute time; spec §8.2). '' for anything but a finite number. */
+export function formatHubDayTime(ms) {
+  if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';
+  return ET_DAY_TIME.format(new Date(ms));
+}
+
+const MARKET_DAY_PARTS = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'UTC',
+  weekday: 'short',
+  month: 'short',
+  day: 'numeric',
+});
+
+/**
+ * "Tue Oct 7" for a market date written `YYYY-MM-DD` (the brief's `forDate`, already a market-day label in ET). It is
+ * formatted from the string's own parts, at noon UTC read in UTC: never converted through a time zone, which would move
+ * a bare date to the evening before. '' for anything that is not a real calendar date.
+ */
+export function formatHubMarketDate(text) {
+  const m = typeof text === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(text) : null;
+  if (!m) return '';
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const probe = new Date(Date.UTC(year, month - 1, day, 12));
+  if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) return '';
+  const parts = Object.fromEntries(MARKET_DAY_PARTS.formatToParts(probe).map((p) => [p.type, p.value]));
+  return `${parts.weekday} ${parts.month} ${parts.day}`;
+}

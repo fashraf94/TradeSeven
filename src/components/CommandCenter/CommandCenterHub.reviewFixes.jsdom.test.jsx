@@ -252,10 +252,10 @@ describe('S1 review fixes — design fidelity (L1)', () => {
     expect(rows.some((n) => /Diversifier/.test(n))).toBe(true);
   });
 
-  it('L1-3: the phone Overview links to all activity when it shows fewer rows than it holds (disabled until S4)', () => {
+  it('L1-3: the phone Overview links to all activity when it shows fewer rows than it holds (S4 wires it: it opens the activity sheet)', () => {
     renderHub({ site: 'mobile', hubWidth: 390, sections: fixture('long') });
     const [all] = byRole(document.querySelector('[data-hub="shell"]'), 'button', COPY.activity.all(10));
-    expect(all.disabled).toBe(true);
+    expect(all.disabled).toBe(false);
     unmountAll();
     renderHub({ site: 'desktop', hubWidth: 1216, sections: fixture('long') });
     expect(byRole(document.querySelector('[data-hub="shell"]'), 'button', COPY.activity.all(10))).toHaveLength(0);
