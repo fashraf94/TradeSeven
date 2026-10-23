@@ -52,3 +52,27 @@ describe('fetchRecentCompletedAgentBattles', () => {
     await expect(fetchRecentCompletedAgentBattles('uid-A', 10)).rejects.toThrow('failed-precondition');
   });
 });
+
+describe('fetchRecentCompletedAgentBattles — the limit is the caller\'s, and an odd document is not a failed read (S3 review T5-5)', () => {
+  it('the legacy Review card reads 3 and the hub\'s window 10: the query is limited to the max each caller names', async () => {
+    const limits = () => fs.calls.filter((c) => c[0] === 'limit');
+    await fetchRecentCompletedAgentBattles('uid-A', 3);
+    expect(limits()).toEqual([['limit', 3]]);
+    fs.calls = [];
+    await fetchRecentCompletedAgentBattles('uid-A', 10);
+    expect(limits()).toEqual([['limit', 10]]);
+    fs.calls = [];
+    await fetchRecentCompletedAgentBattles('uid-A', 5);
+    expect(limits()).toEqual([['limit', 5]]);
+  });
+
+  it('a document with no agentId (or one that is not text) is kept, never a failed read of the whole window', async () => {
+    fs.answer = async () => snap([
+      { id: 'bare', status: 'completed' },
+      { id: 'odd', agentId: 7, status: 'completed' },
+      { id: 'clone', agentId: 'training-agent-g-uid-A', status: 'completed' },
+    ]);
+    const rows = await fetchRecentCompletedAgentBattles('uid-A', 10);
+    expect(rows.map((b) => b.id)).toEqual(['bare', 'odd']);
+  });
+});

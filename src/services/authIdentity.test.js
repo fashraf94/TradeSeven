@@ -144,3 +144,30 @@ describe('no Firestore read and no timer (R-S3-2)', () => {
     expect([...code.matchAll(/\bonAuthStateChanged\s*\(/g)]).toHaveLength(1);
   });
 });
+
+describe('what the page gets: a module nothing has reset, and every snapshot frozen — a reader cannot rewrite the identity everyone shares (S3 review T5-16)', () => {
+  // Every row above starts from resetAuthIdentityForTests(), which writes the module's initial state itself — so none of
+  // them sees the initial state the PAGE gets. A freshly loaded module is what a page load runs.
+  it('a freshly loaded module is unresolved at epoch 0, and starts no auth listener until its first subscriber', async () => {
+    vi.resetModules();
+    const fresh = await import('./authIdentity');
+    expect(fresh.readAuthIdentity()).toEqual({ resolved: false, uid: null, authEpoch: 0 });
+    expect(Object.isFrozen(fresh.readAuthIdentity())).toBe(true);
+    expect(auth.starts).toBe(0);
+    const unsubscribe = fresh.subscribeAuthIdentity(() => {});
+    expect(auth.starts).toBe(1);
+    unsubscribe();
+  });
+
+  it('a freshly loaded module\'s first answer is epoch 1 — and a changed snapshot is as frozen as the first', async () => {
+    vi.resetModules();
+    const fresh = await import('./authIdentity');
+    fresh.subscribeAuthIdentity(() => {});
+    auth.listeners[auth.listeners.length - 1]({ uid: 'uid-A' });
+    expect(fresh.readAuthIdentity()).toEqual({ resolved: true, uid: 'uid-A', authEpoch: 1 });
+    expect(Object.isFrozen(fresh.readAuthIdentity())).toBe(true);
+    auth.listeners[auth.listeners.length - 1]({ uid: 'uid-B' });
+    expect(fresh.readAuthIdentity()).toEqual({ resolved: true, uid: 'uid-B', authEpoch: 2 });
+    expect(Object.isFrozen(fresh.readAuthIdentity())).toBe(true);
+  });
+});

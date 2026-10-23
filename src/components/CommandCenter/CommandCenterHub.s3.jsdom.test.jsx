@@ -41,6 +41,8 @@ vi.mock('../../utils/marketSchedule', () => ({ getMarketState: () => r.market })
 
 import CommandCenterHub from './CommandCenterHub';
 import { HUB_COPY as COPY } from './hub/hubCopy';
+import { REVIEW_TRIGGERS } from './hub/reviewScheduler';
+import { GamesReadNote } from './sections/GamesSection';
 import { DEPLOY_BLOCK_REASON } from '../../utils/commandCenterLiveBattles';
 import { byRole, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav } from './__fixtures__/hubTestKit';
 
@@ -429,5 +431,238 @@ describe('without `hub`, nothing is read', () => {
     expect(r.agentCalls).toEqual([]);
     expect(r.windowCalls).toBe(0);
     expect(card().getAttribute('data-hub-deploy')).toBe('checking');
+  });
+});
+
+// ── S3 review T5 (the mutating lens, confirmed by its refuter): rows for what no row above could fail on ──────────────
+
+const failedWindow = (over = {}) => windowOf(null, {
+  status: 'error', error: new Error('failed-precondition'), lastSuccessfulAt: null, generation: 0, nextAttemptAt: NOW + 120000, ...over,
+});
+/** The reason a mocked window's refresh was given: the hook's own default (refresh(reason = manual)) when none was. */
+const reasonOf = (call) => call[0] ?? REVIEW_TRIGGERS.MANUAL;
+
+describe('the window is asked with explicit triggers, which the staleness rule cannot swallow (spec §6; S3 review T5-3)', () => {
+  // `focus` and `visible` run only when the last cycle is at least 120 s old; a Retry and a live game ending always ask.
+  it.each(['desktop', 'mobile'])('%s: the Retry of a failed read is a manual refresh', (site) => {
+    r.window = failedWindow();
+    render(site, hubOf());
+    click(retryButtons(site === 'mobile' ? overview() : games())[0]);
+    expect(r.window.refresh).toHaveBeenCalledTimes(1);
+    expect(reasonOf(r.window.refresh.mock.calls[0])).toBe(REVIEW_TRIGGERS.MANUAL);
+  });
+
+  const polled = (ids, at) => hubOf({ activeBattles: ids.map((id) => ({ ...BB, id })), activePoll: pollMeta({ lastSuccessfulAt: at }) });
+
+  it('a successful poll that no longer holds a live id the last one held asks for a refresh, once: liveLeft', () => {
+    const m = render('desktop', polled(['bb_live'], NOW - 60000));
+    r.window.refresh.mockClear();
+    m.rerender(<CommandCenterHub site="desktop" hub={polled([], NOW - 30000)} />);
+    expect(r.window.refresh).toHaveBeenCalledTimes(1);
+    expect(r.window.refresh).toHaveBeenCalledWith(REVIEW_TRIGGERS.LIVE_LEFT);
+    m.rerender(<CommandCenterHub site="desktop" hub={polled([], NOW - 30000)} />);
+    expect(r.window.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('one of two live ids leaving is a game ending as well', () => {
+    const m = render('desktop', polled(['bb_live', 'rk_live'], NOW - 60000));
+    r.window.refresh.mockClear();
+    m.rerender(<CommandCenterHub site="desktop" hub={polled(['rk_live'], NOW - 30000)} />);
+    expect(r.window.refresh).toHaveBeenCalledTimes(1);
+    expect(r.window.refresh).toHaveBeenCalledWith(REVIEW_TRIGGERS.LIVE_LEFT);
+  });
+
+  it('asks for nothing when every live id is still there — a new success, or a new game', () => {
+    const m = render('desktop', polled(['bb_live'], NOW - 60000));
+    r.window.refresh.mockClear();
+    m.rerender(<CommandCenterHub site="desktop" hub={polled(['bb_live'], NOW - 30000)} />);
+    m.rerender(<CommandCenterHub site="desktop" hub={polled(['bb_live', 'rk_live'], NOW - 10000)} />);
+    expect(r.window.refresh).not.toHaveBeenCalled();
+  });
+
+  it('a list change without a new success (an optimistic entry going, say) is not a game ending — even where the effect runs again', () => {
+    const m = render('desktop', polled(['bb_live'], NOW - 60000));
+    // A new window hands the effect a new `refresh`, so it runs again — with a smaller list and no new success.
+    r.window = windowOf(TEN);
+    m.rerender(<CommandCenterHub site="desktop" hub={polled([], NOW - 60000)} />);
+    expect(r.window.refresh).not.toHaveBeenCalled();
+  });
+
+  it('the first successful poll is not a transition', () => {
+    const m = render('desktop', hubOf({ activePoll: pollMeta({ status: 'loading', ownerUid: null, ownerEpoch: null, lastSuccessfulAt: null }) }));
+    r.window.refresh.mockClear();
+    m.rerender(<CommandCenterHub site="desktop" hub={polled(['bb_live'], NOW - 30000)} />);
+    expect(r.window.refresh).not.toHaveBeenCalled();
+  });
+
+  it('another owner\'s poll is not this owner\'s game ending: an account switch asks for nothing', () => {
+    const m = render('desktop', polled(['bb_live'], NOW - 60000));
+    r.identity = { resolved: true, uid: 'uid-B', authEpoch: 3 };
+    r.agent = agentReady({ ownerUid: 'uid-B', ownerEpoch: 3 });
+    r.window = windowOf(null, { status: 'loading', ownerUid: null, ownerEpoch: null, lastSuccessfulAt: null, generation: 0 });
+    m.rerender(<CommandCenterHub site="desktop" hub={hubOf({ activeBattles: [], activePoll: pollMeta({ epoch: 3, ownerUid: 'uid-B', ownerEpoch: 3, lastSuccessfulAt: NOW - 10000 }) })} />);
+    expect(r.window.refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe('"No games yet" waits for a poll THIS identity has answered (R-S3-2; S3 review T5-8)', () => {
+  it('an empty window beside another owner\'s poll metadata is still checking', () => {
+    r.window = windowOf([]);
+    render('desktop', hubOf({ activePoll: pollMeta({ ownerUid: 'uid-B', ownerEpoch: 1, epoch: 2 }) }));
+    expect(games().textContent).toContain(COPY.games.loading);
+    expect(games().textContent).not.toContain(COPY.games.empty);
+  });
+
+  it('...and so is one beside a poll the same uid answered at an earlier epoch: another identity, whatever its uid', () => {
+    r.window = windowOf([]);
+    render('desktop', hubOf({ activePoll: pollMeta({ ownerUid: UID, ownerEpoch: 1, epoch: 2 }) }));
+    expect(games().textContent).toContain(COPY.games.loading);
+    expect(games().textContent).not.toContain(COPY.games.empty);
+  });
+
+  it('...while a poll this identity answered, at this epoch, is the one time the empty history shows (control)', () => {
+    r.window = windowOf([]);
+    render('desktop', hubOf());
+    expect(games().textContent).toContain(COPY.games.empty);
+  });
+});
+
+describe('the connected hub before Firebase has answered: checking, never a crash (S3 review T5-15)', () => {
+  it.each(['desktop', 'mobile'])('%s: an unresolved identity renders the deploy state and the games as checking', (site) => {
+    r.identity = { resolved: false, uid: null, authEpoch: 0 };
+    r.agent = { status: 'loading', agent: null, ownerUid: null, ownerEpoch: null, readError: null, retry: vi.fn() };
+    r.window = windowOf(null, { status: 'loading', lastSuccessfulAt: null, generation: 0, ownerUid: null, ownerEpoch: null });
+    render(site, hubOf({ activePoll: pollMeta({ epoch: 0, status: 'loading', ownerUid: null, ownerEpoch: null, lastSuccessfulAt: null }) }));
+    expect((site === 'mobile' ? strip() : card()).getAttribute(site === 'mobile' ? 'data-hub-strip' : 'data-hub-deploy')).toBe('checking');
+    expect((site === 'mobile' ? overview() : games()).textContent).toContain(COPY.games.loading);
+    expect((site === 'mobile' ? overview() : games()).textContent).not.toContain(COPY.games.empty);
+  });
+});
+
+describe('every row opens what it names (S3 review T5-7)', () => {
+  const sheetEl = () => document.querySelector('[data-hub-sheet-overlay]');
+  const rowButtons = (scope, kind) => [...scope.querySelectorAll(`[data-hub-game-row="${kind}"]`)].map((el) => el.closest('button'));
+
+  it.each(['desktop', 'mobile'])('%s: the History sheet\'s rows open their games and their battle tapes', (site) => {
+    const hub = hubOf();
+    render(site, hub);
+    if (site === 'mobile') click(byRole(document.body, 'button', /Game history/)[0]);
+    else click(byRole(games(), 'button', COPY.games.history)[0]);
+    const rows = rowButtons(sheetEl(), 'completed');
+    expect(rows).toHaveLength(10);
+    click(rows[0]);
+    expect(hub.openGame).toHaveBeenCalledTimes(1);
+    expect(hub.openGame.mock.calls[0][0]).toBe(TEN[0]);
+    click(rows[4]);
+    expect(hub.openGame.mock.calls[1][0]).toBe(TEN[4]);
+    const tapes = byRole(sheetEl(), 'button', /^Open battle tape:/);
+    expect(tapes).toHaveLength(10);
+    click(tapes[0]);
+    expect(hub.openFilmRoom).toHaveBeenCalledTimes(1);
+    expect(hub.openFilmRoom.mock.calls[0][0]).toBe(TEN[0]);
+  });
+
+  it('the phone Overview: a live row opens its game; a completed row opens its game and its battle tape', () => {
+    const hub = hubOf({ activeBattles: [BB] });
+    render('mobile', hub);
+    const [liveRow] = rowButtons(overview(), 'live');
+    click(liveRow);
+    expect(hub.openGame).toHaveBeenCalledTimes(1);
+    expect(hub.openGame.mock.calls[0][0]).toBe(BB);
+    const [completedRow] = rowButtons(overview(), 'completed');
+    click(completedRow);
+    expect(hub.openGame).toHaveBeenCalledTimes(2);
+    expect(hub.openGame.mock.calls[1][0]).toBe(TEN[0]);
+    click(byRole(overview(), 'button', /^Open battle tape:/)[0]);
+    expect(hub.openFilmRoom).toHaveBeenCalledTimes(1);
+    expect(hub.openFilmRoom.mock.calls[0][0]).toBe(TEN[0]);
+  });
+
+  it('a first-poll failure on the phone: the strip\'s Retry and the Loadout card\'s Retry both refresh the poll', () => {
+    const hub = hubOf({ activePoll: pollMeta({ status: 'error', ownerUid: null, ownerEpoch: null, lastSuccessfulAt: null }) });
+    render('mobile', hub);
+    click(byRole(strip(), 'button', COPY.deploy.retry)[0]);
+    expect(hub.refreshActiveBattles).toHaveBeenCalledTimes(1);
+    click(byRole(strip(), 'button').find((b) => /Open loadout$/.test(b.getAttribute('aria-label') || '')));
+    const phoneCard = document.querySelector('[data-hub-deploy-card="phone"]');
+    expect(phoneCard).not.toBeNull();
+    click(byRole(phoneCard, 'button', COPY.deploy.retry)[0]);
+    expect(hub.refreshActiveBattles).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the Games rows\' marks and notes (S3 review T5-14)', () => {
+  const PENDING_ANSWER = Object.freeze({ ready: false, target: 'filmRoom', availability: 'pending' });
+  const reviewTagged = (wrapper) => [...wrapper.querySelectorAll('span')].some((el) => el.textContent === COPY.games.reviewTag);
+
+  it('a row whose review is ready wears the Review tag; one whose review is not, does not', () => {
+    r.window = windowOf(TEN, { reviews: { done_01: { state: 'ready', result: READY, nextAt: null }, done_02: { state: 'pending', result: PENDING_ANSWER, nextAt: null } } });
+    render('desktop', hubOf());
+    const [first, second] = [...games().querySelectorAll('[data-hub-game]')];
+    expect(reviewTagged(first)).toBe(true);
+    expect(reviewTagged(second)).toBe(false);
+  });
+
+  it('a review being checked wears no film icon; a pending one does', () => {
+    r.window = windowOf(TEN, { reviews: { done_01: { state: 'checking', result: null, nextAt: null }, done_02: { state: 'pending', result: PENDING_ANSWER, nextAt: null } } });
+    render('desktop', hubOf());
+    expect(games().querySelector('[data-hub-review="checking"] [aria-hidden="true"]')).toBeNull();
+    expect(games().querySelector('[data-hub-review="pending"] [aria-hidden="true"]')).not.toBeNull();
+  });
+
+  it('a failed first read shows the failure, not "Checking your games" beside it', () => {
+    r.window = failedWindow();
+    render('desktop', hubOf());
+    expect(games().textContent).toContain(COPY.games.loadFailed);
+    expect(games().textContent).not.toContain(COPY.games.loading);
+  });
+
+  it('a live game replaces the completed count with the live one; with none, the section counts its completed games', () => {
+    render('desktop', hubOf({ activeBattles: [BB] }));
+    expect(games().textContent).toContain(COPY.games.liveCount(1));
+    expect(games().textContent).not.toContain(COPY.games.completedCount(10));
+    for (const m of mounted) m.unmount();
+    mounted = [];
+    render('desktop', hubOf());
+    expect(games().textContent).toContain(COPY.games.completedCount(10));
+  });
+
+  it('the next attempt is rounded UP to the minute, on the failure and on the first read waiting for its slot', () => {
+    r.window = failedWindow({ nextAttemptAt: NOW + 120000 + 20000 });
+    render('desktop', hubOf());
+    expect(games().textContent).toContain('next attempt at 11:03 AM ET');
+    for (const m of mounted) m.unmount();
+    mounted = [];
+    r.window = windowOf(null, { status: 'loading', lastSuccessfulAt: null, generation: 0, nextAttemptAt: NOW + 120000 + 20000 });
+    render('desktop', hubOf());
+    expect(games().textContent).toContain(`${COPY.games.loading}${COPY.sep}next attempt at 11:03 AM ET`);
+  });
+
+  it('a retained window whose latest read failed shows when it was true and when the next attempt is — never "No games yet" (desktop too)', () => {
+    r.window = windowOf([], { status: 'error', error: new Error('unavailable'), nextAttemptAt: NOW + 120000 });
+    render('desktop', hubOf());
+    expect(games().querySelector('[data-hub-games-note="stale"]')).not.toBeNull();
+    expect(games().textContent).toMatch(/As of \d{1,2}:\d{2} [AP]M ET · couldn’t refresh/);
+    expect(games().textContent).toContain('next attempt at 11:02 AM ET');
+    expect(games().textContent).not.toContain(COPY.games.empty);
+    expect(games().textContent).not.toContain(COPY.games.emptySub);
+    expect(retryButtons(games())).toHaveLength(1);
+  });
+
+  it('"Refreshing" needs a retained window: a failed first read never reads as the refresh of one, and keeps its Retry', () => {
+    const retry = vi.fn();
+    const m = mount(<GamesReadNote games={{ status: 'error', refreshing: true, asOf: null, nextAttemptAt: NOW + 120000 }} onRetry={retry} />);
+    mounted.push(m);
+    expect(m.host.textContent).toContain(COPY.games.loadFailed);
+    expect(m.host.textContent).not.toContain('Refreshing');
+    click(byRole(m.host, 'button', COPY.games.retry)[0]);
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('...while a retained window being read again says so, and offers no second Retry (control)', () => {
+    const m = mount(<GamesReadNote games={{ status: 'ready', refreshing: true, asOf: NOW - 60000, nextAttemptAt: null }} onRetry={() => {}} />);
+    mounted.push(m);
+    expect(m.host.textContent).toMatch(/Refreshing · as of \d{1,2}:\d{2} [AP]M ET/);
+    expect(byRole(m.host, 'button', COPY.games.retry)).toHaveLength(0);
   });
 });

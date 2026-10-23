@@ -86,14 +86,40 @@ describe('useRecentCompletedAgentBattles — the array its callers read', () => 
     expect(last()).toEqual([]);
   });
 
-  it('an answer that lands after unmount sets nothing', async () => {
-    let release;
-    env.answer = () => new Promise((resolve) => { release = resolve; });
+  // S3 review T5-16: the row that stood here ("an answer that lands after unmount sets nothing") could not fail — a state
+  // set on an unmounted root renders nothing, so `cancelled` could be dropped with every row green. The flag matters where
+  // it is observable: a read that a newer read has superseded (another max, another uid) must not land over the newer one.
+  it('an answer for an earlier max that lands after a newer max\'s is dropped', async () => {
+    let releaseFirst;
+    env.answer = (uid, max) => (max === 3 ? new Promise((resolve) => { releaseFirst = resolve; }) : Promise.resolve([{ id: 'five' }]));
     await render(3);
-    act(() => root.unmount());
-    const count = seen.length;
-    await act(async () => { release([{ id: 'late' }]); });
-    expect(seen).toHaveLength(count);
-    root = createRoot(host);
+    await render(5);
+    expect(last().map((b) => b.id)).toEqual(['five']);
+    await act(async () => { releaseFirst([{ id: 'three-late' }]); });
+    expect(last().map((b) => b.id)).toEqual(['five']);
+  });
+
+  it('an answer for an earlier uid that lands after the next uid\'s is dropped, and the next uid is read for', async () => {
+    const pending = {};
+    env.answer = (uid) => (uid === 'uid-A' ? new Promise((resolve) => { pending.A = resolve; }) : Promise.resolve([{ id: 'for-B' }]));
+    await render(3);
+    env.auth.currentUser = { uid: 'uid-B' };
+    await render(3);
+    expect(env.reads).toEqual([['uid-A', 3], ['uid-B', 3]]);
+    expect(last().map((b) => b.id)).toEqual(['for-B']);
+    await act(async () => { pending.A([{ id: 'for-A-late' }]); });
+    expect(last().map((b) => b.id)).toEqual(['for-B']);
+  });
+
+  it('a uid that arrives after mount (Firebase auth still hydrating) is read for, once', async () => {
+    env.auth.currentUser = null;
+    await render(3);
+    expect(env.reads).toEqual([]);
+    env.auth.currentUser = { uid: 'uid-A' };
+    await render(3);
+    expect(env.reads).toEqual([['uid-A', 3]]);
+    expect(last().map((b) => b.id)).toEqual(['done_1', 'done_2']);
+    await render(3);
+    expect(env.reads).toEqual([['uid-A', 3]]);
   });
 });

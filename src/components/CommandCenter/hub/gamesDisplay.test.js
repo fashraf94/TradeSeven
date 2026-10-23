@@ -178,3 +178,97 @@ describe('formatScores at the top of its six decimals, and beyond them (review T
     });
   });
 });
+
+describe('formatScores at the edges of its range (S3 review T5-14)', () => {
+  it('a very large score with a fraction in its mantissa is written out in full: 1.5e22 is 15 and twenty-one zeros', () => {
+    expect(formatScores(1.5e22, -2.25e22)).toEqual(['+15000000000000000000000', `${MINUS}22500000000000000000000`]);
+  });
+
+  it('a pair that still collides at six decimals shows its own digits, not a seventh rounded decimal', () => {
+    expect(formatScores(1.00000049, 1.00000041)).toEqual(['+1.00000049', '+1.00000041']);
+  });
+
+  it('a score that is not a finite number is a dash — it never reaches the digits of a neighbour', () => {
+    expect(formatScores(NaN, 1)).toEqual([COPY.games.scoreUnavailable, '+1.0']);
+    expect(formatScores(Infinity)).toEqual([COPY.games.scoreUnavailable]);
+    expect(formatScores(-Infinity, 2.5)).toEqual([COPY.games.scoreUnavailable, '+2.5']);
+  });
+});
+
+describe('a live row\'s clock and trades (S3 review T5-14)', () => {
+  const live = (over = {}) => ({ id: 'bb', ownerId: 'u', agentId: 'casual-agent-u', status: 'active', activatedAt: '2026-10-22T13:30:00Z', scoreState: { currentScore: 1, evaluationCount: 2 }, ...over });
+  const clockOf = (expiresAt, nowMs = NOW) => liveGameRows([live({ expiresAt })], { nowMs, marketState: OPEN })[0].clock;
+  const detailOf = (over) => liveGameRows([live({ expiresAt: NOW + 3600000, ...over })], { nowMs: NOW, marketState: OPEN })[0].detail;
+
+  it('the time left rounds to the nearest minute, a half minute up', () => {
+    expect(clockOf(NOW + 25 * 60000 + 29000)).toBe('25m left');
+    expect(clockOf(NOW + 25 * 60000 + 30000)).toBe('26m left');
+    expect(clockOf(NOW + 25 * 60000 + 31000)).toBe('26m left');
+    expect(clockOf(NOW + 31000)).toBe('1m left');
+  });
+
+  it('a game that ends within the minute, or has ended, reads ending', () => {
+    expect(clockOf(NOW + 29000)).toBe(COPY.games.ending);
+    expect(clockOf(NOW)).toBe(COPY.games.ending);
+    expect(clockOf(NOW - 1000)).toBe(COPY.games.ending);
+  });
+
+  it('hours and minutes are written as such: 1h 5m, 1h 0m, 59m', () => {
+    expect(clockOf(NOW + 65 * 60000)).toBe('1h 5m left');
+    expect(clockOf(NOW + 60 * 60000)).toBe('1h 0m left');
+    expect(clockOf(NOW + 59 * 60000)).toBe('59m left');
+  });
+
+  it('no end, or no usable clock, is no clock text', () => {
+    expect(clockOf(null)).toBe('');
+    expect(clockOf(undefined)).toBe('');
+    expect(clockOf(NOW + 60000, NaN)).toBe('');
+  });
+
+  it('the trades are the recorded count; else the trades listed; else none', () => {
+    expect(detailOf({ scoreState: { currentScore: 1, tradeCount: 3 } })).toContain('· 3 trades ·');
+    expect(detailOf({ scoreState: { currentScore: 1, tradeCount: 1 } })).toContain('· 1 trade ·');
+    expect(detailOf({ scoreState: { currentScore: 1 }, trades: [{}, {}] })).toContain('· 2 trades ·');
+    expect(detailOf({ scoreState: { currentScore: 1 } })).toContain('· 0 trades ·');
+  });
+});
+
+describe('a completed row\'s labels, and what its review line opens (S3 review T5-14)', () => {
+  const completed = (over = {}) => ({
+    id: 'c', ownerId: 'u', agentId: 'agent-a', status: 'completed', completedAt: '2026-10-20T20:05:00.000Z',
+    scoreState: { currentScore: 1, opponentScore: 2, evaluationCount: 3 }, statusFeed: [{ action: 'battle_complete' }], ...over,
+  });
+  const FILM_ROOM_ANSWER = { ready: true, target: 'filmRoom', availability: 'ready' };
+
+  it('a ranked day is labelled Ranked, of the ranked kind, against its league group; a BaggerBomb game against a CPU', () => {
+    const [ranked, bagger] = completedGameRows([completed({ id: 'r', groupId: 'g1' }), completed({ id: 'b', agentId: 'casual-agent-u' })], {});
+    expect(ranked).toMatchObject({ mode: 'Ranked', kind: 'ranked', opponent: COPY.games.opponentGroup });
+    expect(bagger).toMatchObject({ mode: 'BaggerBomb', kind: 'baggerbomb', opponent: COPY.games.opponentCpu });
+  });
+
+  it('the next attempt is rounded UP to the minute, never earlier than the time it names', () => {
+    const at = Date.UTC(2026, 9, 22, 15, 2, 20);
+    expect(reviewLineOf({ state: REVIEW_STATES.QUEUED, result: null, nextAt: at }).text).toBe('Review check queued · next attempt at 11:03 AM ET');
+    expect(reviewLineOf({ state: REVIEW_STATES.TIMED_OUT, result: null, nextAt: at }).text).toBe('Review refresh timed out · Retry queued · next attempt at 11:03 AM ET');
+  });
+
+  it('only a ready review whose answer is ready and names the Film Room opens a tape; every other state is words', () => {
+    for (const state of [REVIEW_STATES.PENDING, REVIEW_STATES.UNAVAILABLE, REVIEW_STATES.QUEUED, REVIEW_STATES.TIMED_OUT, REVIEW_STATES.CHECKING, 'not-a-state']) {
+      expect(reviewLineOf({ state, result: FILM_ROOM_ANSWER, nextAt: null }).openable, state).toBe(false);
+    }
+    expect(reviewLineOf({ state: REVIEW_STATES.READY, result: null, nextAt: null }).openable).toBe(false);
+    expect(reviewLineOf({ state: REVIEW_STATES.READY, result: { ready: false, target: 'filmRoom', availability: 'pending' }, nextAt: null }).openable).toBe(false);
+    expect(reviewLineOf({ state: REVIEW_STATES.READY, result: { ready: true, target: 'elsewhere', availability: 'ready' }, nextAt: null }).openable).toBe(false);
+    expect(reviewLineOf({ state: REVIEW_STATES.READY, result: FILM_ROOM_ANSWER, nextAt: null }).openable).toBe(true);
+  });
+
+  it('a row carries the review flag only when its tape opens: a ready state whose answer names another route has none', () => {
+    const reviews = {
+      a: { state: REVIEW_STATES.READY, result: { ready: true, target: 'elsewhere', availability: 'ready' }, nextAt: null },
+      b: { state: REVIEW_STATES.READY, result: FILM_ROOM_ANSWER, nextAt: null },
+    };
+    const [a, b] = completedGameRows([completed({ id: 'a' }), completed({ id: 'b' })], reviews);
+    expect(a.review).toBe(false);
+    expect(b.review).toBe(true);
+  });
+});

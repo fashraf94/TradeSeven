@@ -168,3 +168,41 @@ describe('a recorded timestamp\'s calendar and clock are real (review T4-3, T4-5
     expect(hasScoringEvidence({ lastScoredAt: '2026-02-31T00:00:00Z', evaluationCount: 3 })).toBe(true);
   });
 });
+
+describe('the calendar, month by month (S3 review T5-13)', () => {
+  const at = (year, month, day) => `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T12:00:00.000Z`;
+  const MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+  it('the first of every month is a real day (a score recorded on the 1st counts as recorded); the zeroth is not', () => {
+    for (let month = 1; month <= 12; month += 1) {
+      expect(isRecordedTimestamp(at(2026, month, 1)), `the 1st of month ${month}`).toBe(true);
+      expect(isRecordedTimestamp(at(2026, month, 0)), `the 0th of month ${month}`).toBe(false);
+    }
+  });
+
+  it('every month ends where the calendar ends: its last day is real and the next is not — the seven 31-day months included', () => {
+    MONTH_LENGTHS.forEach((last, index) => {
+      expect(isRecordedTimestamp(at(2026, index + 1, last)), `day ${last} of month ${index + 1}`).toBe(true);
+      expect(isRecordedTimestamp(at(2026, index + 1, last + 1)), `day ${last + 1} of month ${index + 1}`).toBe(false);
+    });
+  });
+
+  it('February has 29 days only in a leap year (every 4th, not every 100th, but every 400th) and never 30', () => {
+    for (const year of [2000, 2024, 2400]) {
+      expect(isRecordedTimestamp(at(year, 2, 29)), `Feb 29 ${year}`).toBe(true);
+      expect(isRecordedTimestamp(at(year, 2, 30)), `Feb 30 ${year}`).toBe(false);
+    }
+    for (const year of [2026, 2100, 2200]) expect(isRecordedTimestamp(at(year, 2, 29)), `Feb 29 ${year}`).toBe(false);
+  });
+});
+
+describe('a completed record with no score state at all (S3 review T5-14)', () => {
+  it('is a verdict-less outcome and never a throw — a field written as null is not an object to read', () => {
+    for (const finalEvidence of [true, false]) {
+      const outcome = deriveGameOutcome(record({ finalEvidence, scoreState: null }));
+      expect(outcome.mine, `final evidence ${finalEvidence}`).toBeNull();
+      expect(outcome.theirs).toBeNull();
+      expect(outcome.kind).toBe(finalEvidence ? K.NO_SCORE : K.NO_RESULT);
+    }
+  });
+});

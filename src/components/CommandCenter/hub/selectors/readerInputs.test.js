@@ -100,3 +100,36 @@ describe('through the S2a selector: real eligibility words, Refreshing only when
     expect(deriveHubDeployState(inputs({ poll: pollInputOf(meta({ epoch: 1, ownerEpoch: 1 }), [BB], A) })).displayState).toBe('account_transition');
   });
 });
+
+describe('the shapes are total: a missing reader, a missing poll, an unresolved identity (S3 review T5-15)', () => {
+  const LOADING_POLL = { status: 'loading', liveBattles: null, ownerUid: null, ownerEpoch: null, lastSuccessfulAt: null, error: null, refreshing: false };
+  const OWNED = { liveBattles: [BB], ownerUid: 'uid-A', ownerEpoch: 2 };
+
+  it('a missing poll\'s metadata is the whole loading shape, whatever the list — and never a throw', () => {
+    for (const bad of [undefined, null, 'x', 5]) expect(pollInputOf(bad, [BB], A), String(bad)).toEqual(LOADING_POLL);
+  });
+
+  it('a missing agent read and a missing window are loading, with no owner', () => {
+    expect(agentInputOf(undefined)).toEqual({ status: 'loading', agent: null, ownerUid: null, ownerEpoch: null, error: null });
+    expect(completedInputOf(undefined)).toEqual({ status: 'loading', rows: [], ownerUid: null, ownerEpoch: null });
+  });
+
+  it('an unresolved or signed-out identity, or no poll, owns no live list — whatever the poll holds', () => {
+    expect(ownedLiveList(OWNED, authInputOf(A)).map((b) => b.id)).toEqual(['bb_1']);
+    expect(ownedLiveList(OWNED, null)).toEqual([]);
+    expect(ownedLiveList(OWNED, undefined)).toEqual([]);
+    expect(ownedLiveList(OWNED, { signedIn: false })).toEqual([]);
+    expect(ownedLiveList(null, authInputOf(A))).toEqual([]);
+    expect(ownedLiveList(undefined, authInputOf(A))).toEqual([]);
+  });
+
+  it('an owner\'s list is that owner\'s at that epoch only: another uid, or the same uid at another epoch, owns nothing here', () => {
+    expect(ownedLiveList({ ...OWNED, ownerUid: 'uid-B' }, authInputOf(A))).toEqual([]);
+    expect(ownedLiveList({ ...OWNED, ownerEpoch: 1 }, authInputOf(A))).toEqual([]);
+    expect(ownedLiveList({ ...OWNED, ownerEpoch: 3 }, authInputOf(A))).toEqual([]);
+  });
+
+  it('a signed-in identity needs a real uid: an empty one is signed out', () => {
+    expect(authInputOf({ resolved: true, uid: '', authEpoch: 1 })).toEqual({ signedIn: false });
+  });
+});
