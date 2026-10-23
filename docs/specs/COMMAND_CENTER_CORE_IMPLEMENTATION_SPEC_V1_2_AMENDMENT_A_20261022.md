@@ -20,7 +20,7 @@ The founder's ruling:
 
 ## What follows from it
 
-- **On a return to the hub** (from the Film Room, or a site switch) inside the 120 s window, Games shows the kept rows at once, with "As of {time} · next attempt at {time}" and no Retry: it is not a failure. While that read is out, the note reads "Refreshing · as of {time}". Once the read succeeds, the note is gone and the generation continues from the kept one.
+- **On a return to the hub** (from the Film Room, or a site switch) inside the 120 s window, Games shows the kept rows at once, with "As of {time} · next attempt at {time}" and no Retry: it is not a failure. The phone Overview and the History sheet show the same note. While that read is out, the note reads "Refreshing · as of {time}". Once the read succeeds, the note is gone and the generation continues from the kept one.
 - **Reviews.** Ready caches still clear on unmount, so each kept row's review starts this mount as an unstarted row: "Review check queued", served first at the slot.
 - **Failure.** Only a successful read is kept. If a kept window's read fails, Games shows the stale note "As of {time} · couldn't refresh" with Retry, as for any retained window.
 - **Unchanged.** §6's rate cap, its 120 s window and the per-owner-and-epoch ledger (S3 review T0-3) are unchanged. The kept window adds no read, timer or listener.

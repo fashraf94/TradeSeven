@@ -23,6 +23,7 @@ Claude Code (Opus 5.5), October 22, 2026, for Flash. The build prompt was the fo
 | Stop rule | Not tripped by a behaviour change. Existing test files were edited — registrations the guards demand of new files, the S2a strip rows R-S3-1 overrules, and one environment mock line in four hub suites; none weakens a pin. Raised as Q-S3-1 (§5). |
 | Founder questions | Q-S3-1 … Q-S3-8 (§12). |
 | Next | The founder's review of the draft PR, Q-S3-1 … Q-S3-8 and the smoke preview (§13); then S2b and S4, which inherit §10 (§14). |
+| Merge with S5 and founder rulings (Oct 22–23) | `main` with S5 (#991) merged: 17 conflicts resolved; one hub object at both gates; one agent source for the deploy state and the Loadout; the Loadout's error state (N-S5-6). Ruling A+ applied: the window is kept across a remount, recorded as Amendment A to spec §6. The rest of Q-S3-1 … Q-S3-8 answered with no code change. The round's lens and refuter found MR-1 … MR-11; MR-1, a MAJOR test gap, is fixed; MR-2 was not a STOP. Mutation 38 / 38 and 6 / 6. Checks on the merged code head 1401c89b, Linux: the full suite exits 0 (Test Files 1144 passed, 8 skipped), and lint:gate and vite build exit 0. The smoke branch is updated. Two new questions, Q-S3-9 and Q-S3-10 (§15). |
 
 ## 1. Branch, HEAD and preamble
 
@@ -92,7 +93,7 @@ Every anchor below was read in this session at the base `ff6248d1` (VERIFIED). N
 **R-S3-5 — one completed window.** `src/services/completedAgentBattles.js:25` is the legacy query (owner, `completed`, newest `completedAt` first, `limit`, training clones out) and throws on failure. The legacy hook keeps its array and its swallow. `useHubCompletedBattles(10)` (`hub/useHubCompletedBattles.js:93`) returns the ruling's shape (plus `reviews`, `checking`, `refreshing`, `nextAttemptAt`) and reads only while the connected hub is mounted.
 
 **R-S3-6 — the coordinator.** `hub/reviewScheduler.js` is pure, on an injected clock; `hub/useHubCompletedBattles.js` is the thin hook. Interpretations, as they stand after review:
-- The rate budget is the owner's and epoch's, not one mount's: the ledger lives in the hook's module scope, keyed `uid:authEpoch`, and is injected (`useHubCompletedBattles.js:42`, `reviewScheduler.js:118`). Everything else clears on unmount, as §6 lists. A return inside the window waits for the permitted slot and says when (T0-3; Q-S3-2).
+- The rate budget is the owner's and epoch's, not one mount's: the ledger lives in the hook's module scope, keyed `uid:authEpoch`, and is injected (`useHubCompletedBattles.js:42`, `reviewScheduler.js:118`). Everything else clears on unmount, as §6 lists. A return inside the window waits for the permitted slot and says when (T0-3; Q-S3-2). Since the merge round, the founder's ruling A+ keeps the last successful window as well, shown "as of" its time (Amendment A to spec §6; §15.5).
 - The mount's trigger runs a tick late, so React's development double effect does not spend the slot (`:127`).
 - Admission reserves the whole ten-helper workload (§6: "reserve capacity for the maximum ten starts").
 - A failed query owes ONE automatic retry per failure episode; a success ends the episode; explicit and lifecycle triggers always run within the cap (T3-4; Q-S3-3).
@@ -410,6 +411,8 @@ The report's copy, byte-identical to this file: `C:\Users\fashr\Documents\Fantas
 
 None blocks S3: the flag is dark, and nothing is wired to deployment.
 
+**Answered** by the founder on October 22, 2026: §15.6 lists the answers, and Q-S3-2 → A+ is §15.5. The merge round asks two new questions, Q-S3-9 and Q-S3-10 (§15.10).
+
 **Q-S3-1 — the stop rule and the edited test files.** §5 lists every pre-existing test file S3 edited: guard registrations of S3's new files, the S2a strip rows R-S3-1 overrules, and one environment mock line in four hub suites. None weakens a pin, and every shell test is untouched. **Asked:** confirm the rule meant behaviour pins, or name the edits to back out.
 
 **Q-S3-2 — the review budget across remounts.** §6 reads as a budget per owner and epoch ("Every trigger shares this budget"; "return from Film Room" is a trigger; the unmount clear-list omits the rate slots), so S3 keeps the ledger across remounts. The consequence: §6 clears the documents on unmount, so a return inside the 120 s window shows "Checking your games · next attempt at {time}" for up to two minutes (the live games show at once). **Asked:** keep this (A); or keep the last window "as of" across remounts for the same owner and epoch, refreshed at the slot (A+, an amendment to §6's unmount list); or per mount (B, where the ten-minute bound does not hold under navigation)?
@@ -450,3 +453,204 @@ None blocks S3: the flag is dark, and nothing is wired to deployment.
   - check the smoke preview (§13).
 - **Then the next slices**, in spec §11.2's order: S2b (the provider, the attempt and the hold) and S4 (next action, Activity, Later, the brief) build on §10. S5, S6 and S7 are untouched.
 - Nothing is merged or activated. `COMMAND_CENTER_HUB_ENABLED` stays `false`.
+
+## 15. Merge with S5 and founder rulings
+
+Claude Code (Opus 5.5), October 22–23, 2026. The founder's message asked for one round:
+- merge `main` (S5, PR #991) and resolve the conflicts under stated rules;
+- apply the rulings on Q-S3-1 … Q-S3-8;
+- one focused review lens, a refuter if it finds anything, then mutate the new rows;
+- the checks on the merged tree;
+- update the smoke branch and the PR description;
+- push and STOP.
+
+**The premise.** When the round began, #991 was still an open draft, and `main` had moved only by #989 (the Build 2b flag flip). The builder asked before merging anything. The founder merged #991, and `main` became `eceb58e4`, with S5 at `0e85e7da`.
+
+**Model setup** as before: the build on Opus with no advisor; the lens, its refuter and the mutation runs on Sonnet or as the builder's harness runs, each on its own snapshot.
+
+### 15.1 Commits
+
+| Commit | What |
+|---|---|
+| `0357b4ac` | The merge of `main` `eceb58e4` (S5, #991; #989): the 17 conflicts resolved under the founder's rules, the one hub object, the one agent source, the Loadout's error state (§15.2–§15.4) |
+| `275b54a3` | Founder ruling Q-S3-2 → A+: the completed window kept across a remount, and its amendment of spec §6 (§15.5) |
+| `b71e3fd8` | The round's review fixes: MR-1, MR-3, MR-5, MR-6, MR-7, MR-11 (§15.7) |
+| `1401c89b` | The kept window's tie-break row (MR-11) — **the code head** |
+| (this report commit) | This section, the Verdict row, §12's answers note and the README rows |
+
+### 15.2 The conflicts and how each was resolved
+
+The app's sync merged `main` and left 17 files in conflict; none is sandbox-protected. Lines are at the code head.
+
+| File | Resolution |
+|---|---|
+| `src/App.jsx` | Both gates take S5's `hub={hubProps}` and `onFallback={setHubFallback}` (`:8991`, `:9066`). `hubProps` (`:8792`) becomes the one merged object (§15.3). S3's inline objects at the two sites are gone. |
+| `CommandCenterHub.jsx` | Both slices kept and joined (§15.3). S5's `useHubRuntime` runs in `PhoneHub`/`WideHub` (`:210`, `:290`), which also take S3's wired `actions` and the readers' `agentRead`. `ConnectedHub` (`:410`) renders inside S5's `HubOverlayProvider` (`:431`). The History sheets take S5's `closeSheet` and S3's open and Retry handlers. The header notes are merged. |
+| `CommandCenterHubGate.jsx` | S5's signature `{ site, hub, legacy, frame, onFallback }`. One header entry for `hub` names both slices. |
+| `HistorySheet.jsx` | S5's career-unavailable line, then S3's read state. |
+| `hub/hubCopy.js`, `hub/hubModel.js` | Unions: S3's notes and keys, then S5's. |
+| The four hub frame suites (`CommandCenterHub.jsdom`, `.reviewFixes`, `.s2a`, `.testIntegrity`) | Both slices had added the same Firebase-config mock. It is folded into one line naming both reasons, keeping S3's superset (`default: {}`). The `.s2a` root-signature pin takes S5's signature, with a comment naming both slices. |
+| `commandCenterHub.mount.guard.test.js` | **Both slices' rows kept.** The details: |
+| ↳ gate-site rows | S5's rows pin `hub={hubProps}` at both sites, so S3's gate-text constants were folded in. Their pin of the object's text moved into S5's `hubProps` row, re-pinned to the merged object (`HUB_PROPS`). |
+| ↳ gate row | S5's signature, plus S3's "no member of `hub` is read" check and its non-vacuity line. |
+| ↳ terminals | Unions; the one `featureFlags.js` terminal carries both slices' reasons, as one key. |
+| ↳ allowances, selector list, plants | Unions. |
+| ↳ S5's service list | Adds S3's two read-only services. Their exact imported names are now pinned (`NAMED`). |
+| `hub/selectors/selectors.purity.guard.test.js` | Union: `gameOutcome.js`, `loadout.js`, and each one's imports. |
+| `src/theme/tokens.guard.test.js`, `motion.guard.test.js`, `tokenGuardBaseline.json`, `motionGuardBaseline.json` | Unions (S3's six files, S5's thirteen), JSON commas fixed and both files parse. |
+| `docs/README.md` | S5's two rows (its design note, its report), then S3's. |
+
+### 15.3 One hub object, one agent source (the founder's merge rules)
+
+- **One object at both gates** (`src/App.jsx:8792`), carrying both slices' keys:
+  - S3's: `activeBattles`, `activePoll`, `refreshActiveBattles`, `openGame`, `openFilmRoom`;
+  - S5's: `setScreen`, `onOpenForge`, `setSidebarOpen`, `unreadCount`.
+
+  The App row of `src/App.activeBattlesPoll.hub.jsdom.test.jsx` pins exactly these nine keys at both sites, driven through the real App. The mount guard pins the object's text.
+- **The live games are one key, `activeBattles`**: the retained poll list the gate reads. S5's `activeAgentBattles` is dropped. S5's lock (`equipLockOf`) reads `hub.activeBattles` (`hub/useHubRuntime.js:99`). The selector's own parameter keeps the shells' name for the same list.
+- **The agent is one source**: S3's owner-tagged reader in `hub/useHubReaders.js`, the same read the deploy selector takes. Its `agent` output (`:145`) is `loadoutAgentOf` (`hub/selectors/readerInputs.js:56`):
+  - the document only when the read is ready and this identity's; another owner's or epoch's read is still loading;
+  - signed out, absence, as App's own read gave;
+  - the read's status and its own Retry.
+
+  `ConnectedHub` hands it to the shells as `agentRead`, and S5's runtime takes it (`hub/useHubRuntime.js:69`). S5's `agent` and `agentLoading` keys are gone from App. The hub reads the agent in one file, once: pinned statically (mount guard `:1022`) and behaviourally (§15.7, MR-1).
+- **The Loadout's "none" splits** (S5 report N-S5-6):
+  - a read error is `error`: "Agent unavailable" with Retry, the read's own `retry` (`hub/selectors/loadout.js:165`, `panels/LoadoutPanel.jsx:129`, `panels/AreaPanel.jsx:43`, `hub/useHubRuntime.js:134`);
+  - a ready read with no document is absence, "Create your agent first", with no Retry.
+
+  S5 rendered the `none` state in three places: the panel, the one-line loadout (the strip's line 2 and the Deploy card) and the stage summary. The split reaches all three: `hub/loadoutLine.js:21` and `CommandCenterHub.jsx:125` say "Agent unavailable" too. Copy: `HUB_COPY.loadout.agentUnavailable` (`hub/hubCopy.js:149`), the deploy read's own words.
+- **What the one source changes for a user** (lens MR, measured in jsdom, not against Firestore):
+  - S5 read App's agent, already resolved when the hub mounted. The Loadout now waits for the hub's own subscription, so its first committed frame at every hub mount is the loading state, until the first snapshot. That includes a return from the Film Room or the Forge and a site flip. Whether a user sees that frame depends on the snapshot landing before paint.
+  - In exchange, the Loadout never shows an agent while its read is out, or the former owner's agent across an identity change, which S5's legacy pair could.
+
+### 15.4 Existing rows touched, and the stop rule
+
+No S3 or S5 row was removed or loosened. The lens and its refuter read every edit in `main-tests-edited.diff` and `s3-tests-edited.diff`. Every edit is one of five kinds:
+- a re-pin to the merged object;
+- a fold of duplicates;
+- a harness translation;
+- an addition;
+- the A+ re-pin the ruling turns around.
+
+| File | Edit |
+|---|---|
+| `CommandCenterHub.s5.jsdom.test.jsx`, `CommandCenterHub.realSheets.jsdom.test.jsx` | **Harness translation.** App no longer hands an agent, so a stand-in `useHubReaders` returns, as the hub's agent read, the agent and loading flag each row names (`HUB()` keeps S5's terms). The read rides on the hub object under a symbol, so a spread keeps it (MR-7). The stand-in leaves the fixtures' sections as they were, and every S5 row reads as before. The reader's own owner masking is pinned where it lives (`readerInputs.test.js`; the S3 hub suite, end to end). New rows: the error state on both sites and its Retry; the area summary's error words. |
+| `hub/useHubRuntime.jsdom.test.jsx` | The same translation, as the probe's `agentRead`. New rows: the error state and its Retry; Retry only for a failed read; no read handed is loading; the lock reads `activeBattles` and not the old key. |
+| `hub/selectors/loadout.test.js`, `hub/loadoutLine.test.js` | Additions: the error status, and its line. |
+| `commandCenterHub.mount.guard.test.js` | §15.2: S5's `hubProps` row re-pinned to the merged object; S3's gate-text rows folded into S5's; S3's no-member check kept; both service lists merged and their names pinned; the one-agent-read row (MR-1). |
+| `src/App.activeBattlesPoll.hub.jsdom.test.jsx` (S3's, from RF-T5b) | Its key-set row re-pinned from S3's five keys to the merged nine. It now also asserts S5's four are functions and the count. |
+| `CommandCenterHub.s3.jsdom.test.jsx` (S3's) | A stand-in for S5's lists service, since the connected hub now runs S5's Loadout. The identity stand-in counts its calls (MR-1). New rows (§15.3, §15.5, §15.7). |
+| `hub/useHubCompletedBattles.jsdom.test.jsx` (S3's) | The remount row re-pinned to A+ (§15.5). New rows. |
+| `CommandCenterHub.merge.jsdom.test.jsx` (new) | MR-1 and MR-7 rows over the real hub and readers, with S5's sheet stand-ins. |
+
+### 15.5 Founder ruling Q-S3-2 → A+: the completed window across a remount
+
+- **Recorded** as `docs/specs/COMMAND_CENTER_CORE_IMPLEMENTATION_SPEC_V1_2_AMENDMENT_A_20261022.md`, an amendment of spec §6's unmount list (line 215), with a README row next to the spec. The spec file is unchanged.
+- **Built:**
+  - **The hook.** `hub/useHubCompletedBattles.js` keeps one record per owner and epoch (`OWNERS`, `:49`): the rate ledger as built, and the last successful window (`keepWindow`, `:63`; never moved back, `:69`).
+    - A new key clears both.
+    - Signed out, both are dropped: at once while the hub is mounted, otherwise at its next mount (`:126`; MR-5).
+    - A remount renders the kept window at once (`carriedState`, `:175`), so there is no loading frame, and hands it to the scheduler (`retained`, `:136`).
+  - **The scheduler.** `hub/reviewScheduler.js` starts from it:
+    - `carriedWindow` (`:116`) accepts only this owner's documents, a whole generation ≥ 1 and a finite time;
+    - the scheduler starts `carried: true` (`:200`), each row's review unstarted, since ready caches still clear;
+    - its first successful read ends the carry (`:387`), and the generation continues.
+  - **The display.** Games, the phone Overview and the History sheet read "As of {time} · next attempt at {time}" with no Retry, since it is not a failure (`sections/GamesSection.jsx:108`, `:132`; `PhoneTabs.jsx:105`; `HistorySheet.jsx:54`; copy `carriedAsOf`, `hub/hubCopy.js:242`). While the read is out they read "Refreshing · as of {time}". A carried window whose read failed is the stale note with Retry.
+- **Rows.** S3's remount row is re-pinned to the ruling: the first render after the return shows the kept window "as of" its read; nothing is read before the slot; every review is queued; the read ends the carry at generation 2. New rows:
+  - scheduler: the seed; the slot's refresh; a failed refresh; carried rows served first; malformed or foreign seeds start empty; `carriedState`;
+  - hook: an owner change, and the same uid at a new epoch, start empty; a failed first read keeps nothing; the latest success is kept; sign-out drops it, mounted or not; never back to an older window, by generation or by time;
+  - display: desktop, phone, History, refreshing, stale.
+- **Unchanged:** the rate cap and the ledger. No read, timer, listener or effect was added; RF-T5b's activity guard pins the hook's manifest and still passes.
+- **What a user sees on a return from the Film Room** inside the 120 s window:
+  - The kept rows show at once "as of" their read.
+  - Their reviews read "Review check queued · next attempt at {time}", so the tape just closed offers no "Open battle tape" until the slot, up to two minutes. Ready caches clear on unmount, as the amended list keeps.
+  - The founder may want that changed (Q-S3-10).
+
+### 15.6 The other rulings
+
+| Question | Ruling | What it changes |
+|---|---|---|
+| Q-S3-1, the stop rule and the edited test files | Accepted | Nothing |
+| Q-S3-3, a failed read's retry | Keep B | Nothing: one automatic retry per failure episode stays |
+| Q-S3-4, the phone Overview's completed rows | Keep the design | Nothing |
+| Q-S3-5, the phone Loadout card | Accepted | Nothing |
+| Q-S3-6, two review states | Accepted; History's Refresh goes to S4 | Nothing here; §15.10 hands it to S4 |
+| Q-S3-7, one listener with the flag off | Confirmed | Nothing |
+| Q-S3-8, the one headless Edge run | Confirmed | Nothing |
+
+### 15.7 Review
+
+- **The lens** (MR, Sonnet, snapshot of `275b54a3`, brief `rev/round2/lens-brief.md`):
+  - it ran the hub, App and theme suites (64 files, 2,214 rows) and a wider set (121 files; only the 3 Windows path-separator rows of `agentReadCensus.guard` failed);
+  - it planted mutants and probed the founder-visible consequences;
+  - it found MR-1 … MR-11.
+- **The refuter** (MRR, Sonnet, a fresh snapshot of `275b54a3`) gave a verdict on each, verified the fixes, and found nothing new.
+
+| ID | Finding | Lens | Refuter | Disposition |
+|---|---|---|---|---|
+| MR-1 | "The agent is one source" had no failing row: a second `useAgent` feeding the Loadout left 1,556 rows green | MAJOR (test gap) | CONFIRMED, MAJOR | FIXED (rows). A static row: only `hub/useHubReaders.js` imports `useAgent`, under that name, and calls it once. A render row: one agent read per render, desktop and phone. Two Retry rows: one `retry` behind every Retry (desktop card and Loadout; phone strip, card and Loadout). |
+| MR-2 | "Agent unavailable" also on the strip line, the card line and the stage summary; duplicated words and several Retry controls for one read. Proposed as a STOP | MINOR, STOP candidate | PARTLY → NIT, not a STOP | No change. S5 rendered the `none` state in exactly those three places, so the split reaches all three. Without it the strip would read "Checking your loadout" (a wait) or "Create your agent first" (the N-S5-6 defect) for a settled failure. The duplication has absence's own shape (S2a's line-2 fallback), and every Retry is one read's (MR-1's rows). Recorded for the founder |
+| MR-3 | The History sheet showed a kept or stale window with no as-of note | MINOR | CONFIRMED, MINOR | FIXED. History shows the read note as Games does (`HistorySheet.jsx:54`), with two rows. The stale half closes an S3 round-1 gap against spec §6 ("Show retained as-of data … accurately") |
+| MR-4 | A quick bounce (unmounted while the first read is out) loses the paid read: no rows for up to 120 s | MINOR | CONFIRMED; the founder's call | No change; Q-S3-9. Recording a late success would change §6's "result consumers clear on unmount" and an S3 row |
+| MR-5 | The kept window stayed in memory after sign-out until another owner's hub mounted; never shown | MINOR | CONFIRMED, MINOR (text, partial code) | FIXED. Signed out, the hook drops every record, at once while mounted or at the next mount, with no new effect or listener; two rows. The amendment says exactly when it leaves memory. In the usual flow, `logout()` then `setScreen('home')`, the hub has already unmounted, so it goes at the next mount |
+| MR-6 | The amendment cited a section that did not exist yet; the README's S3 row was stale | MINOR (docs) | CONFIRMED | FIXED: this section, the amendment's reference, the README rows |
+| MR-7 | S5's stand-in can produce a state the real reader never does (loading with a document), and a spread dropped the read | MINOR / NIT | PARTLY: artificial, not weakened. Routing the stand-in through the real selectors would force edits to S5's assertions, which the rules forbid | Partly fixed. The read rides under a symbol, so a spread keeps it. A reachable row pins the record sheet's loading flag (open it, then the identity moves on). S5's own row is unchanged |
+| MR-8 | The equip lock reads `hub.activeBattles` raw, against the readers' header rule | NIT | NIT | No change: ruled by the founder, and safe (the agent is masked in the identity-change render) |
+| MR-9 | As-of times carry no date; a kept window can outlive a day in an idle tab | NIT | NIT, defer | Recorded for later: the day via `formatHubDay` when not today, across the deploy note too |
+| MR-10 | `completedInputOf` drops `carried` and `lastSuccessfulAt` | NIT | NIT | Handed to S4 (§15.10) |
+| MR-11 | `keepWindow` had no monotonic guard | NIT | NIT (test-only reachable; "generation not lower" leaves ties) | FIXED: the generation decides, then the time; two rows (two live mounts, lower generation; the same generation, older time) |
+
+**Mutation of the new rows.** Each run was on a snapshot, with a green baseline first and a byte-identical restore:
+- **The merge and A+**, at `275b54a3`: **38 / 38** killed, each by the row written for it.
+  - The unification: the owner mask, the epoch, signed-out absence, the error split, the Retry and its offer, the panel branch, the line, the summary, the old agent source, the old list key, the readers' masking, `agentRead` at each site, a dropped key, an added `agent` key, and the overlay provider.
+  - A+: the seed, unstarted rows, the carry's end, the published flag, the seed's bounds, foreign documents, the hook's render fallback, keeping, handing in, the readers' flag, the note, its Retry, its due rule, the phone, and stale precedence.
+- **The fix round**, at `b71e3fd8` and `1401c89b`: 6 real mutants, **6 / 6** killed.
+  - They are: a second agent read feeding the Loadout, no clear on sign-out, no generation guard, no tie-break, History's note back to failures only, and the record sheet's loading flag forced off.
+  - The tie-break survived the first pass. Its row was written and kills it.
+  - One proposed mutant was equivalent (a spread of the read) and was discarded.
+
+### 15.8 Checks (code head `1401c89b`, `main` `eceb58e4` merged)
+
+| Check | Where | Result |
+|---|---|---|
+| Full suite, Linux CI shape | WSL Ubuntu, private clone, Node 20.20.2, `TZ=UTC`, `npm run test:run -- --maxWorkers=2` | **exit 0**. `Test Files  1144 passed \| 8 skipped (1152)`; `Tests  24786 passed \| 89 skipped (24875)`; 0 failed (648 s) |
+| `lint:gate` | `npm run lint:gate`, Linux | **exit 0** |
+| `vite build` | `npm run build`, Linux | **exit 0**. 4,051 modules. The hub chunk `CommandCenterHub-D1iWUKL4.js` is 112.40 kB (gzip 34.60 kB): S3's 91.44 kB plus S5's Loadout, sheets and stack. Entry 4,859.72 kB. `index.html`: 0 `modulepreload`, 0 hub references. Four CSS syntax warnings, present at the base |
+| Earlier, at `275b54a3` (before the review fixes) | the same suite and lint | exit 0, `Test Files  1143 passed \| 8 skipped (1151)`; lint exit 0 |
+| The hub, App and theme suites, Windows | `src/components/CommandCenter`, the App poll and boot suites, `App.xpModal`, `src/theme`, the census, `flagPinGuard` | 65 files, 2,225 / 2,225 at `b71e3fd8` |
+
+### 15.9 The smoke branch
+
+- `claude/command-center-hub-s3-smoke` is reset to this round's pushed head plus the one flag commit (`COMMAND_CENTER_HUB_ENABLED = true`, `src/config/featureFlags.js`). It is a never-merge branch, so it was force-updated with a lease against its old tip `027aedad`.
+- Its new SHA and its preview URL are in the PR description (this report cannot carry its own commit's SHA).
+- No CI runs on it.
+- **The dry run.** The merged head with the flag on, over the 13 test files the flag reaches (681 rows), fails the same 14 rows as before the merge:
+  - the three dark pins;
+  - 9 rows of `App.activeBattlesPoll.owner`;
+  - 2 rows of `App.bootOrder`.
+
+  S5's flag-dependent suites (`hubChrome.test.js`, the gate's fallback suite) pass with the flag on.
+- **What to check on the preview**, beyond §13's list:
+  - the Loadout from the hub's own agent read;
+  - "As of {time}" on a return from the Film Room inside two minutes;
+  - History's note on a kept window.
+
+### 15.10 Next
+
+- **The founder:**
+  - review this round, and the two new questions;
+  - check the smoke preview.
+- **Q-S3-9, the quick bounce** (MR-4). A hub unmounted while its first read is out never shows that read: the slot is spent, and a return shows no rows for up to 120 s. **Asked:** keep it, or record a late success in the owner's record, an amendment to §6's "result consumers clear on unmount"?
+- **Q-S3-10, the reviews of a kept window.** A return inside the window shows the kept rows with "Review check queued", and no "Open battle tape" until the slot, up to 120 s, because ready caches clear on unmount (§6, as amended). **Asked:** keep it, or also keep the ready review answers for the same owner and epoch?
+- **Noted, no question:**
+  - MR-2: the error words on the strip line, the card line and the stage summary, with several Retry controls for one read;
+  - MR-9: undated as-of times;
+  - the Loadout's loading frame at each hub mount (§15.3).
+- **S4 inherits** §10, plus:
+  - History's Refresh (Q-S3-6);
+  - the kept window: `carried` reaches the Games section, but `completedInputOf` drops it, so S4's first-deployment candidate must take it into account (MR-10).
+- **S2b inherits:**
+  - the one hub object: its keys are pinned as text in the mount guard and as a set in the App row, so a key S2b adds moves both;
+  - the gate guard, which pins every reference to `hub`;
+  - the one agent read: the static row fails on a second `useAgent` in the hub.
+- **STOP:** nothing is merged, and `COMMAND_CENTER_HUB_ENABLED` stays `false`.
