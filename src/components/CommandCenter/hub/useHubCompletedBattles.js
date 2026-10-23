@@ -91,11 +91,9 @@ function keepWindow(uid, epoch, state) {
   // epoch, so a backward clock step cannot reorder it), then the as-of time.
   const kept = record.window;
   if (kept && (state.generation < kept.generation || (state.generation === kept.generation && state.lastSuccessfulAt < kept.lastSuccessfulAt))) return;
-  // A ready answer stays for as long as its row is in the window (the scheduler's own ready cache does the same).
-  const ready = {};
-  for (const battle of state.battles) if (kept?.ready && Object.hasOwn(kept.ready, battle.id)) ready[battle.id] = kept.ready[battle.id];
-  Object.assign(ready, readyAnswersOf(state));
-  record.window = { battles: state.battles, generation: state.generation, lastSuccessfulAt: state.lastSuccessfulAt, ready };
+  // A ready answer stays for as long as its row is in the window: the scheduler's own ready cache carries it across reads,
+  // so every state it publishes already holds the answers a kept window should.
+  record.window = { battles: state.battles, generation: state.generation, lastSuccessfulAt: state.lastSuccessfulAt, ready: readyAnswersOf(state) };
 }
 
 /** Tests only: forget every owner's ledger and kept window. */

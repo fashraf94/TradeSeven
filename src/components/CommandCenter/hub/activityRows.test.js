@@ -293,6 +293,15 @@ describe('adjustment rows: the standing leans a game would carry, at their recor
     expect(rows.map((r) => r.id)).toEqual(['loadout:adjustment:SP-04']);
   });
 
+  it('a pin stored twice is one adjustment: the entry the kernel accepted (here the second, the first being a stale version) gives the time', () => {
+    const rows = adjustmentRows(withLeans([
+      lean('SP-01', { version: 99, equippedAt: iso(Date.UTC(2026, 9, 20, 22, 0)) }),
+      lean('SP-01', { equippedAt: iso(Date.UTC(2026, 9, 22, 8, 0)) }),
+    ]));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ms).toBe(Date.UTC(2026, 9, 22, 8, 0));
+  });
+
   it('an accepted lean with no readable equip time has no row', () => {
     expect(adjustmentRows(withLeans([lean('SP-01', { equippedAt: undefined }), lean('SP-02', { equippedAt: 'x' })]))).toEqual([]);
   });

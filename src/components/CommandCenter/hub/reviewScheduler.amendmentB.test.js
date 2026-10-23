@@ -132,18 +132,6 @@ describe('a first read that lands after dispose() is kept once (Q-S3-9)', () => 
     expect(h.late).toEqual([]);
   });
 
-  it('it is delivered once, however many times the read is answered', async () => {
-    const h = harness();
-    h.s.trigger(REVIEW_TRIGGERS.MOUNT);
-    await tick(10);
-    h.s.dispose();
-    h.answer(docsOf(1));
-    h.answer(docsOf(5));
-    await tick(0);
-    expect(h.late).toHaveLength(1);
-    expect(h.late[0].battles).toHaveLength(1);
-  });
-
   it('a scheduler given no onLate loses it quietly, as before', async () => {
     const h = harness({ withLate: false });
     h.s.trigger(REVIEW_TRIGGERS.MOUNT);

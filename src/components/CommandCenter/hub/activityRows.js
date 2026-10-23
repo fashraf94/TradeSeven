@@ -137,7 +137,6 @@ export function deriveActivity({ battles, live, rowsById, agent = null, archetyp
   const deployable = new Map(windowDocs.map((doc) => [doc.id, doc]));
   for (const doc of liveDocs) if (doc.localOrigin !== true) deployable.set(doc.id, doc);
   for (const doc of deployable.values()) {
-    if (doc.localOrigin === true) continue;
     const ms = hubMs(doc.activatedAt) ?? hubMs(doc.createdAt);
     if (ms === null) continue;
     const row = rows.get(doc.id);
