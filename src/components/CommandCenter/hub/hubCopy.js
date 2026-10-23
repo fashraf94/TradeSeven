@@ -83,6 +83,12 @@ export const HUB_COPY = Object.freeze({
     statusIdle: 'Idle · nothing running',
     /** The status line while a hub-started deployment is submitting. */
     statusSubmitting: 'Submitting your deployment',
+    /** Slice S2b: a hub hold's own phases on the status line (spec §5.5, phases only; the build's words). */
+    statusHolding: 'Holding to deploy',
+    /** The shipped control's own word for a committed hold (HoldToDeployButton.jsx). */
+    statusLocked: 'Locked in',
+    /** The charge beside the line, aria-hidden (spec §5.5: "percentage is visible and aria-hidden"). */
+    holdPercent: (n) => `${n}%`,
     /** Shadow's image label: what it shows, and the selected area. */
     imageLabel: (state, areaName) => `Shadow — ${state}${areaName ? `; ${areaName} selected` : ''}`,
     states: Object.freeze({ ambient: 'ambient', still: 'still', processing: 'processing' }),
@@ -290,6 +296,16 @@ export const HUB_COPY = Object.freeze({
     enterBattle: 'Enter battle',
     checkDeployment: 'Check deployment',
     openForge: 'Open in the Forge',
+    /** Slice S2b (ruling R-S2b-7): the Scouting Board's entry, the shells' own words (CommandDashboard.jsx). */
+    scoutingBoard: 'See what it’s eyeing',
+    /**
+     * Slice S2b (ruling R-S2b-5; R1 Fable FR-2): the existing battle's owned read, on the card — reading it, and a read
+     * that failed, with the time its Retry opens (a 30 s per-attempt wait). CeremonyExisting.jsx's own words for a
+     * failed open.
+     */
+    existingReading: 'Opening the running game…',
+    existingUnavailable: 'Couldn’t open the running game',
+    existingRetryAt: (time) => (time ? `Couldn’t open the running game · Retry at ${time}` : 'Couldn’t open the running game'),
     /**
      * The Deploy card's and the strip's words for each display state, in the
      * spec §3.1 / §5.2 vocabulary (C1, C3): the eligibility states, then the

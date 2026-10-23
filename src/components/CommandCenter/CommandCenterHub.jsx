@@ -79,11 +79,15 @@ import {
   TABLET_TOP_ORDER,
   composeHub,
 } from './hub/composition';
-import { deployDisplay } from './hub/deployDisplay';
+import { useDeployAttempt } from '../../contexts/DeployAttemptContext';
+import ScoutingBoardSheet from '../Dashboard/ScoutingBoardSheet';
+import { DISPLAY_ACTIONS, deployDisplay } from './hub/deployDisplay';
 import { HUB_COPY as COPY } from './hub/hubCopy';
+import { scoutingBoardOn } from './hub/hubFlags';
+import { HUB_DEPLOY_CONTROLS, useHubDeploy } from './hub/useHubDeploy';
 import { formatHubDate, headerName } from './hub/hubDate';
 import { HUB_S1_SECTIONS, HUB_S2A_DEPLOY_INPUTS, liveGamesOf, splitGames } from './hub/hubModel';
-import { HubOverlayProvider } from './hub/HubOverlays';
+import { HubOverlayProvider, useHubModalOpen } from './hub/HubOverlays';
 import { loadoutLineOf } from './hub/loadoutLine';
 import { LOADOUT_STATUS } from './hub/selectors/loadout';
 import { HUB_SHEETS } from './hub/useHubSheets';
@@ -99,7 +103,7 @@ import DeployStrip from './DeployStrip';
 import HistorySheet from './HistorySheet';
 import HubHeader from './HubHeader';
 import { HubLayoutContext } from './HubParts';
-import LoadoutSheets, { SHEET_DOCK } from './LoadoutSheets';
+import LoadoutSheets, { SHEET_DOCK, accentOf } from './LoadoutSheets';
 import AreaPanel from './panels/AreaPanel';
 import { PhonePanel, PhoneTabRow } from './PhoneTabs';
 import ActivitySection from './sections/ActivitySection';
@@ -206,8 +210,41 @@ export function wideGrid(composition, hasNext) {
   };
 }
 
+/**
+ * Slice S2b: what the deploy provider's wiring (hub/useHubDeploy.js) adds to a shell's actions — the next action's
+ * hold, and the Scouting Board's entry (ruling R-S2b-7) when its flag is on and the hub is connected.
+ */
+function deployActionsOf(deploy, sheet, runtime) {
+  if (!deploy) return null;
+  return {
+    nextActionHold: deploy.hold(HUB_DEPLOY_CONTROLS.NEXT_ACTION),
+    nextActionHolding: deploy.holdControlId === HUB_DEPLOY_CONTROLS.NEXT_ACTION,
+    openBoard: runtime.live && scoutingBoardOn() ? sheet.open(HUB_SHEETS.SCOUTING) : undefined,
+  };
+}
+
+/**
+ * Slice S2b (ruling R-S2b-7): the shipped Scouting Board, registered `within` the hub's stack by useHubSheets. Its
+ * footer deploy is a tap through the provider's admission, inside its own modal and nowhere else.
+ */
+function ScoutingBoard({ open, onClose, dock, agent, deploy, board, sections, processing }) {
+  return (
+    <ScoutingBoardSheet
+      open={open}
+      onClose={onClose}
+      dock={dock}
+      agent={agent}
+      accent={accentOf(agent)}
+      deploying={processing}
+      deployDisabled={board?.canStart !== true}
+      isLive={sections.deploy?.gateBlocked === true}
+      onDeploy={() => deploy.tap(HUB_DEPLOY_CONTROLS.SCOUTING_BOARD, { exemptOverlay: true })}
+    />
+  );
+}
+
 /** The mobile site: header → compact stage → sticky tabs → section, and the strip above BottomNav. */
-function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null }) {
+function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, deploy = null, board = null }) {
   const rootRef = useRef(null);
   const runtime = useHubRuntime({ hub, agentRead, sections: given, rootRef });
   const { sections, sheets: sheet } = runtime;
@@ -220,8 +257,11 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
   const actions = {
     ...wired,
     ...runtime.actions,
+    ...deployActionsOf(deploy, sheet, runtime),
     openHistory: shared.completed.length ? sheet.open(HUB_SHEETS.HISTORY) : undefined,
   };
+  // Changing area before commitment cancels the charge (spec §5.5); the panels stay mounted while it charges.
+  const selectTab = (next) => { deploy?.cancelCharging(); setTab(next); };
   return (
     <HubLayoutContext.Provider value={composition}>
       <style data-hub-css="">{HUB_SCOPED_CSS}</style>
@@ -250,9 +290,11 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
             selectedArea={AREA_FOR_PHONE_TAB[tab]}
             summaries={shared.summaries}
             reducedMotion={shared.reducedMotion}
+            holdPhase={deploy?.holdPhase ?? null}
+            progress={deploy?.progress ?? null}
           />
         </div>
-        <PhoneTabRow idBase={shared.idBase} tab={tab} onSelect={setTab} />
+        <PhoneTabRow idBase={shared.idBase} tab={tab} onSelect={selectTab} />
         <div style={{ padding: '14px 14px 24px' }}>
           <PhonePanel idBase={shared.idBase} tab={tab} sections={sections} actions={actions} reducedMotion={shared.reducedMotion} />
         </div>
@@ -263,10 +305,24 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
         liveGame={shared.liveGame}
         loadoutLine={shared.loadoutLine}
         placement={placement}
-        onOpenLoadout={() => setTab(PHONE_TABS.LOADOUT)}
+        onOpenLoadout={() => selectTab(PHONE_TABS.LOADOUT)}
         onOpenGame={actions.openGame}
         onAction={actions.deployAction}
+        holdWiring={deploy?.hold(HUB_DEPLOY_CONTROLS.STRIP) ?? null}
+        holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.STRIP}
       />
+      {deploy && runtime.live && scoutingBoardOn() && (
+        <ScoutingBoard
+          open={sheet.sheet === HUB_SHEETS.SCOUTING}
+          onClose={runtime.closeSheet}
+          dock={SHEET_DOCK.PHONE}
+          agent={runtime.agent}
+          deploy={deploy}
+          board={board}
+          sections={sections}
+          processing={shared.display.processing}
+        />
+      )}
       {sheet.sheet === HUB_SHEETS.HISTORY && (
         <HistorySheet games={sections.games} career={sections.career} phone onClose={runtime.closeSheet} opener={sheet.opener} fallbackFocus={sheet.fallback} reducedMotion={shared.reducedMotion} onOpenGame={actions.openGame} onOpenTape={actions.openTape} onRetry={actions.retryGames} />
       )}
@@ -287,7 +343,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
 }
 
 /** The desktop site: Desktop, Tablet or Stacked by the hub's own width. */
-function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null }) {
+function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, deploy = null, board = null }) {
   const rootRef = useRef(null);
   const runtime = useHubRuntime({ hub, agentRead, sections: given, rootRef });
   const { sections, sheets: sheet } = runtime;
@@ -298,8 +354,11 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
   const actions = {
     ...wired,
     ...runtime.actions,
+    ...deployActionsOf(deploy, sheet, runtime),
     openHistory: shared.completed.length ? sheet.open(HUB_SHEETS.HISTORY) : undefined,
   };
+  // Changing area before commitment cancels the charge (spec §5.5).
+  const selectArea = (next) => { deploy?.cancelCharging(); setArea(next); };
   const desktop = composition === HUB_COMPOSITIONS.DESKTOP;
   const tablet = composition === HUB_COMPOSITIONS.TABLET;
   const gutter = desktop ? 28 : tablet ? 24 : 20;
@@ -312,10 +371,12 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
       status={shared.status}
       processing={shared.display.processing}
       selectedArea={area}
-      onSelectArea={setArea}
+      onSelectArea={selectArea}
       summaries={shared.summaries}
       idBase={shared.idBase}
       reducedMotion={shared.reducedMotion}
+      holdPhase={deploy?.holdPhase ?? null}
+      progress={deploy?.progress ?? null}
     />
   );
   const panel = (
@@ -330,7 +391,17 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
   );
   const side = {
     games: <GamesSection games={sections.games} onOpenHistory={actions.openHistory} onOpenGame={actions.openGame} onOpenTape={actions.openTape} onRetry={actions.retryGames} />,
-    deploy: <DeploySection deploy={sections.deploy} loadoutLine={shared.loadoutLine} onOpenLoadout={() => setArea(HUB_AREAS.ARCHETYPE)} onAction={actions.deployAction} />,
+    deploy: (
+      <DeploySection
+        deploy={sections.deploy}
+        loadoutLine={shared.loadoutLine}
+        onOpenLoadout={() => selectArea(HUB_AREAS.ARCHETYPE)}
+        onAction={actions.deployAction}
+        holdWiring={deploy?.hold(HUB_DEPLOY_CONTROLS.CARD) ?? null}
+        holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.CARD}
+        onOpenBoard={actions.openBoard}
+      />
+    ),
     activity: <ActivitySection activity={sections.activity} />,
     brief: <BriefSection brief={sections.brief} />,
   };
@@ -339,7 +410,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
   const body = (
     <div data-hub-body={composition} style={{ padding: `14px ${gutter}px ${desktop ? 30 : 28}px`, ...grid.body }}>
       <div data-hub-slot="next" style={{ gridArea: 'next', minWidth: 0, display: hasNext ? 'block' : 'none' }}>
-        <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} />
+        <NextActionCard nextAction={sections.nextAction} deploy={sections.deploy} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />
       </div>
       <div data-hub-slot="main" style={grid.main}>
         <div data-hub-slot="stage" style={{ gridArea: 'stage', minWidth: 0 }}>{stage}</div>
@@ -385,6 +456,18 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
           onOpenForgeLists={actions.openForgeLists}
         />
       )}
+      {deploy && runtime.live && scoutingBoardOn() && (
+        <ScoutingBoard
+          open={sheet.sheet === HUB_SHEETS.SCOUTING}
+          onClose={runtime.closeSheet}
+          dock={SHEET_DOCK.WIDE}
+          agent={runtime.agent}
+          deploy={deploy}
+          board={board}
+          sections={sections}
+          processing={shared.display.processing}
+        />
+      )}
     </HubLayoutContext.Provider>
   );
 }
@@ -407,12 +490,34 @@ const NO_ACTIONS = Object.freeze({});
  * read as `agentRead`: the one agent source for the deploy state and the
  * Loadout (the S3 merge with S5).
  */
+//
+// Slice S2b (rulings R-S2b-2 … R-S2b-7): with App's deploy provider above it
+// (src/contexts/DeployAttemptContext.jsx), the readers' selector also reads the
+// provider's attempt, hold, cooldown and overlays with the hub's own sheets,
+// and hub/useHubDeploy.js wires the three hold controls, the Scouting Board's
+// tap and the attempt's one action. A read's Retry stays S3's. Without a
+// provider nothing is wired: the hold is inert, as before.
 function ConnectedHub({ site, hub, sections }) {
-  const readers = useHubReaders(hub);
+  const deployAttempt = useDeployAttempt();
+  const hubModalOpen = useHubModalOpen();
+  const readers = useHubReaders(hub, deployAttempt, hubModalOpen);
+  const deploy = useHubDeploy({ deployAttempt, readers, hub });
   const live = { ...sections, ...readers.sections };
+  let actions = readers.actions;
+  let board = null;
+  if (deploy) {
+    const existingRead = deploy.existingRead && deploy.existingRead.attemptId === readers.inputs.attempt?.attemptId ? deploy.existingRead : null;
+    live.deploy = existingRead ? { ...readers.sections.deploy, existingRead } : readers.sections.deploy;
+    actions = {
+      ...readers.actions,
+      deployAction: (kind) => (kind === DISPLAY_ACTIONS.RETRY_READ ? readers.actions.deployAction(kind) : deploy.attemptAction(kind)),
+    };
+    // The board's own deploy is inside its modal: its start is the table with the board itself not counted (spec §10).
+    board = { canStart: deriveHubDeployState({ ...readers.inputs, modalOpen: deployAttempt.snapshot.overlayOpen === true }).canStart === true };
+  }
   return site === HUB_SITES.MOBILE
-    ? <PhoneHub hub={hub} sections={live} actions={readers.actions} agentRead={readers.agent} />
-    : <WideHub hub={hub} sections={live} actions={readers.actions} agentRead={readers.agent} />;
+    ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} deploy={deploy} board={board} />
+    : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} deploy={deploy} board={board} />;
 }
 
 /**
@@ -426,9 +531,12 @@ function ConnectedHub({ site, hub, sections }) {
 export default function CommandCenterHub({ site, hub = null, sections = HUB_DEFAULT_SECTIONS }) {
   const resolved = sections.deploy ? sections : { ...sections, deploy: HUB_S2A_DEPLOY };
   const connected = Boolean(hub) && typeof hub === 'object';
+  // Slice S2b: an overlay opening cancels an uncommitted hub hold in the same task (spec §10; R2 FR2-4).
+  const deployAttempt = useDeployAttempt();
+  const cancelCharging = connected && deployAttempt ? deployAttempt.api.cancelCharging : null;
   // Keyed by site: a hub handed the other site starts from that site's defaults (ruling R-S1-5).
   return (
-    <HubOverlayProvider>
+    <HubOverlayProvider onOpen={cancelCharging}>
       {connected
         ? <ConnectedHub key={site} site={site} hub={hub} sections={resolved} />
         : site === HUB_SITES.MOBILE

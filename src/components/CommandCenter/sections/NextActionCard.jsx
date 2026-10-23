@@ -18,7 +18,9 @@ import HubHold from './HubHold';
 
 const CTA_ICON = { openGame: 'sword', review: 'film' };
 
-export default function NextActionCard({ nextAction, deploy, onAct, onLater }) {
+// Slice S2b (ruling R-S2b-10): the first-deployment candidate's hold is the deploy provider's, as the strip's and
+// the card's are — `holdWiring` / `holding` (hub/useHubDeploy.js). Which candidate shows is S4's.
+export default function NextActionCard({ nextAction, deploy, onAct, onLater, holdWiring = null, holding = false }) {
   const phone = useHubComposition() === 'phone';
   const candidate = nextAction?.status === 'ready' ? nextAction.candidate : null;
   if (!candidate) return null;
@@ -43,7 +45,7 @@ export default function NextActionCard({ nextAction, deploy, onAct, onLater }) {
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         {isDeploy ? (
-          <HubHold full canStart={deployDisplay(deploy).canStart} label={COPY.deploy.hold} onDeploy={onAct} style={{ flex: 1 }} />
+          <HubHold full canStart={deployDisplay(deploy).canStart} label={COPY.deploy.hold} onDeploy={onAct} wiring={holdWiring} holding={holding} style={{ flex: 1 }} />
         ) : (
           <HubButton kind="primary" icon={CTA_ICON[candidate.key]} onPress={onAct} style={{ flex: 1 }}>{candidate.cta}</HubButton>
         )}

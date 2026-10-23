@@ -39,7 +39,9 @@ import HubHold from './sections/HubHold';
 const clampTwo = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere', minWidth: 0 };
 const clampOne = { display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
 
-const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutLine, placement, onOpenLoadout, onOpenGame, onDeploy, onAction }, ref) {
+// Slice S2b: `holdWiring` is the deploy provider's wiring for the strip's control (hub/useHubDeploy.js), and
+// `holding` says that control's own hold is the one charging or locked.
+const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutLine, placement, onOpenLoadout, onOpenGame, onDeploy, onAction, holdWiring = null, holding = false }, ref) {
   const display = deployDisplay(deploy, liveGame);
   const line1 = display.stripLine1;
   const line2 = display.stripLine2(loadoutLine);
@@ -77,7 +79,7 @@ const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutL
             {hold ? COPY.deploy.openGameShort : COPY.deploy.openGame}
           </HubButton>
         )}
-        {hold && <HubHold compact canStart={display.canStart} label={hold.label} onDeploy={onDeploy} />}
+        {hold && <HubHold compact canStart={display.canStart} label={hold.label} onDeploy={onDeploy} wiring={holdWiring} holding={holding} />}
         {action && (
           <HubButton kind="secondary" onPress={onAction ? () => onAction(action.kind) : undefined} style={{ padding: '0 14px' }}>
             {action.label}

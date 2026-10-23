@@ -75,7 +75,7 @@ function DeployLines({ display, onAction }) {
  * its one action. The hold stays on the strip; this card has none. The strip's
  * status button opens this tab.
  */
-export function PhoneDeployCard({ deploy, onAction }) {
+export function PhoneDeployCard({ deploy, onAction, onOpenBoard }) {
   const display = deployDisplay(deploy);
   return (
     <Section label={COPY.deploy.label} data-hub-section="deploy">
@@ -84,12 +84,21 @@ export function PhoneDeployCard({ deploy, onAction }) {
           display={display.cardLine ? display : { ...display, cardLine: { icon: null, text: display.status, action: null } }}
           onAction={onAction}
         />
+        {onOpenBoard && (
+          <div data-hub-scouting-entry="" style={{ marginTop: 10, fontSize: 12.5, lineHeight: 1.45 }}>
+            <HubLink onPress={onOpenBoard}>{COPY.deploy.scoutingBoard}</HubLink>
+          </div>
+        )}
       </Card>
     </Section>
   );
 }
 
-export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoadout, onAction }) {
+/**
+ * Slice S2b: `holdWiring` / `holding` are the deploy provider's wiring for the card's control (hub/useHubDeploy.js);
+ * `onOpenBoard` opens the Scouting Board, "See what it's eyeing" (ruling R-S2b-7), when the board is on.
+ */
+export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoadout, onAction, holdWiring = null, holding = false, onOpenBoard }) {
   const display = deployDisplay(deploy);
   const tinted = display.displayState === 'ready' || display.displayState === 'ready_stale';
   return (
@@ -106,9 +115,14 @@ export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoa
           <HubLink onPress={onOpenLoadout}>{COPY.deploy.loadoutLink}</HubLink>
         </div>
         <div style={{ marginTop: 14 }}>
-          <HubHold full canStart={display.canStart} label={display.cardHoldLabel} onDeploy={onDeploy} />
+          <HubHold full canStart={display.canStart} label={display.cardHoldLabel} onDeploy={onDeploy} wiring={holdWiring} holding={holding} />
         </div>
         <DeployLines display={display} onAction={onAction} />
+        {onOpenBoard && (
+          <div data-hub-scouting-entry="" style={{ marginTop: 10, fontSize: 12.5, lineHeight: 1.45 }}>
+            <HubLink onPress={onOpenBoard}>{COPY.deploy.scoutingBoard}</HubLink>
+          </div>
+        )}
         <div data-hub-hold-help="" style={{ marginTop: 10, fontSize: 12.5, color: tinted ? C.ink2 : C.ink3, lineHeight: 1.45 }}>
           <div>{COPY.deploy.pointerHelp}</div>
           <div>{COPY.deploy.keyboardHelp}</div>

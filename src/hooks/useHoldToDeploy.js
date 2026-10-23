@@ -104,6 +104,25 @@
 //   KEYBOARD. Enter/Space ignore auto-repeat, claim, commit at once and run the
 //   same beat. No held-key requirement, no "release to cancel" for keys.
 //
+//   THE HUB'S SEAM — Command Center slice S2b (ruling R-S2b-3; spec §5.5). A
+//   control given `holdSeam` claims, commits and releases through it instead
+//   of ./holdClaim.js directly (the provider in src/contexts/
+//   DeployAttemptContext.jsx answers each from the hub's §3.1 table and then
+//   from the same slot):
+//     claim(controlId, inputId, cancel)  a token or null, before any effect;
+//                                        `cancel` is this charge's synchronous
+//                                        cancel entry (R2 Fable FR2-4): it ends
+//                                        the charge, its display and its one
+//                                        abort in the caller's task
+//     commit(token)                      the threshold's atomic check
+//     release(token)                     a cancelled charge gives the slot back
+//     progress(token, p)                 each frame's charge, for the
+//                                        provider's owner-tagged store
+//   With a seam the input is part of the claim (`pointer:<id>`, `key`), so a
+//   pointer that does not own the charge — a second finger the claim denied —
+//   cannot end it by lifting or leaving (R2 Q5). Without one — today's shells —
+//   nothing below changes: the same claim, the same bind, the same cancels.
+//
 // ===========================================================================
 // THE DEPLOY-INTENT CHANNEL — Delight Layer Task 4, spec V1 §3
 // THE EVENT CONTRACT OF RECORD. The listener carries a copy; they agree.
@@ -188,7 +207,7 @@ import { DEPLOY_INTENT_EVENT } from '../components/warpStateMachine';
 import { claimHold, commitHold, currentHold, releaseHold } from './holdClaim';
 
 const HOLD_MS = 1300;
-const LOCK_BEAT_MS = 450;
+export const LOCK_BEAT_MS = 450; // exported for the S2b provider's owned beat (src/contexts/DeployAttemptContext.jsx)
 // The bounded safety release (founder ruling on R2 Q3): a deploy request that
 // has not settled this long after onComplete ran no longer holds the claim. It
 // is past every bound the request has while the server answers (token refresh
@@ -197,6 +216,9 @@ const LOCK_BEAT_MS = 450;
 export const HOLD_CLAIM_SAFETY_RELEASE_MS = 180000;
 // Haptic ladder — fired once each as the charge crosses these fractions.
 const HAPTIC_STEPS = [0.25, 0.5, 0.75, 1];
+// S2b — the input a seam claim names (header): the keyboard, or one pointer by its id.
+const KEY_INPUT = 'key';
+const pointerInputOf = (e) => `pointer:${Number.isFinite(e?.pointerId) ? e.pointerId : 'unknown'}`;
 
 function vibrate(ms) {
   try {
@@ -239,11 +261,17 @@ export default function useHoldToDeploy({
   controlId,
   onCommit,
   beatOwner,
+  holdSeam,
   holdMs = HOLD_MS,
   lockBeatMs = LOCK_BEAT_MS,
 } = {}) {
   const [phase, setPhase] = useState('idle'); // display mirror of stateRef
   const [progress, setProgress] = useState(0); // 0..1
+  // S2b: the hub's seam (header), read through a ref so the stable callbacks below see the current one.
+  const seamRef = useRef(holdSeam);
+  seamRef.current = holdSeam;
+  const ownerInputRef = useRef(null); // with a seam: the input that owns the claim
+  const lockInputRef = useRef(null); // with a seam: the input that committed it
 
   // Authoritative (R-R2-2): each is written in the call that changes it, and
   // every guard below reads these — never the rendered phase.
@@ -275,8 +303,10 @@ export default function useHoldToDeploy({
     // charge cancels — a 'locked' completion is committed and irreversible.
     if (stateRef.current !== 'charging') return;
     stateRef.current = 'idle';
-    releaseHold(tokenRef.current);
+    if (seamRef.current) seamRef.current.release(tokenRef.current);
+    else releaseHold(tokenRef.current);
     tokenRef.current = null;
+    ownerInputRef.current = null;
     clearRaf();
     detachGestureListeners();
     hapticRef.current = 0;
@@ -309,7 +339,8 @@ export default function useHoldToDeploy({
     // repeat or reschedule it.
     if (stateRef.current !== 'charging') return;
     const token = tokenRef.current;
-    if (!commitHold(token)) {
+    const seam = seamRef.current;
+    if (!(seam ? seam.commit(token) : commitHold(token))) {
       // The claim was revoked elsewhere: this charge can no longer deploy. End
       // it with its one abort rather than leave it hanging at full charge.
       cancel();
@@ -317,6 +348,10 @@ export default function useHoldToDeploy({
     }
     stateRef.current = 'locked';
     beatPendingRef.current = true;
+    if (seam) {
+      lockInputRef.current = ownerInputRef.current;
+      seam.progress?.(token, 1);
+    }
     clearRaf();
     detachGestureListeners();
     // Enter the "Locked in" beat, then hand off. onComplete opens the ceremony
@@ -365,6 +400,17 @@ export default function useHoldToDeploy({
         clearTimeout(safetyRelease);
         releaseHold(token);
       });
+      // S2b: with the hub's seam the provider's record now speaks for the
+      // attempt (Submitting…, then its terminal), so the control leaves
+      // "Locked in" once onComplete has the request — never a cancellation:
+      // the claim stays held to the settle, and nothing here can start another.
+      if (seamRef.current) {
+        stateRef.current = 'idle';
+        tokenRef.current = null;
+        ownerInputRef.current = null;
+        setPhase('idle');
+        setProgress(0);
+      }
     };
     // The legacy beat is armed BEFORE onCommit runs: an onCommit that unmounts
     // this control synchronously then finds the timer to cancel (R2 review
@@ -416,6 +462,7 @@ export default function useHoldToDeploy({
     }
     const p = Math.min(1, (performance.now() - startRef.current) / holdMs);
     setProgress(p);
+    seamRef.current?.progress?.(token, p);
     // The sky leans in with the finger. Dispatched BEFORE the completion check
     // below, so a hold that reaches 1 hands the terminal event a curve already
     // at its peak — the commit beat then releases from the top rather than from
@@ -437,13 +484,16 @@ export default function useHoldToDeploy({
     rafRef.current = requestAnimationFrame(tick);
   }, [holdMs, cancel, fireComplete]);
 
-  const start = useCallback(() => {
+  const start = useCallback((inputId) => {
     if (!enabled || disabled) return;
     if (stateRef.current !== 'idle') return;
     // Claim before any effect (R-R2-3). A denied claim — another control is
-    // holding, or this one already is — returns here with nothing done.
-    const token = claimHold(controlId);
+    // holding, or this one already is — returns here with nothing done. With
+    // the hub's seam the claim names its input (S2b; header).
+    const seam = seamRef.current;
+    const token = seam ? seam.claim(controlId, inputId, cancel) : claimHold(controlId);
     if (token === null) return;
+    if (seam) ownerInputRef.current = inputId;
     tokenRef.current = token;
     stateRef.current = 'charging';
     setPhase('charging');
@@ -452,7 +502,7 @@ export default function useHoldToDeploy({
     clearRaf();
     attachGestureListeners();
     rafRef.current = requestAnimationFrame(tick);
-  }, [enabled, disabled, controlId, tick, attachGestureListeners]);
+  }, [enabled, disabled, controlId, tick, attachGestureListeners, cancel]);
 
   const onKeyDown = useCallback((e) => {
     if (!enabled || disabled) return;
@@ -461,13 +511,15 @@ export default function useHoldToDeploy({
       // Auto-repeat never deploys, and a key on a charging or locked control is
       // ignored (R-R2-6).
       if (e.repeat || stateRef.current !== 'idle') return;
-      const token = claimHold(controlId);
+      const seam = seamRef.current;
+      const token = seam ? seam.claim(controlId, KEY_INPUT, cancel) : claimHold(controlId);
       if (token === null) return;
+      if (seam) ownerInputRef.current = KEY_INPUT;
       tokenRef.current = token;
       stateRef.current = 'charging';
       fireComplete(); // immediate deploy, no hold (spec §4)
     }
-  }, [enabled, disabled, controlId, fireComplete]);
+  }, [enabled, disabled, controlId, fireComplete, cancel]);
 
   // A control that stops being live mid-charge cancels (R-R2-4): disabled
   // becoming true, or enabled becoming false. A layout effect, so the cancel
@@ -531,8 +583,22 @@ export default function useHoldToDeploy({
   // the end of the gesture, already handled by pointerup, not a loss mid-hold.
   const onLostPointerCapture = (e) => { if (e.target === e.currentTarget) cancel(); };
 
+  // S2b, with a seam only: a pointer ends the charge only if it is the one that started it (R2 Q5).
+  const ownsCharge = (e) => ownerInputRef.current === null || ownerInputRef.current === pointerInputOf(e);
+  const endIfOwner = (e) => { if (ownsCharge(e)) cancel(); };
+
   const active = enabled && !disabled;
-  const bind = active
+  const bind = active && holdSeam
+    ? {
+        onPointerDown: (e) => { if (e.preventDefault) e.preventDefault(); start(pointerInputOf(e)); },
+        onPointerUp: endIfOwner,
+        onPointerLeave: endIfOwner,
+        onPointerCancel: endIfOwner,
+        onLostPointerCapture: (e) => { if (e.target === e.currentTarget) endIfOwner(e); },
+        onKeyDown,
+        onContextMenu: (e) => e.preventDefault(),
+      }
+    : active
     ? {
         onPointerDown: (e) => { if (e.preventDefault) e.preventDefault(); start(); },
         onPointerUp: cancel,
@@ -544,5 +610,7 @@ export default function useHoldToDeploy({
       }
     : {};
 
-  return { phase, progress, bind, isActive: phase !== 'idle', locked: phase === 'locked' };
+  const locked = phase === 'locked';
+  // S2b: a key commitment snaps the rail to full rather than sweeping it (spec §5.5). Without a seam it is never set.
+  return { phase, progress, bind, isActive: phase !== 'idle', locked, lockedByKey: locked && lockInputRef.current === KEY_INPUT };
 }

@@ -22,6 +22,16 @@
 // phase ("Submitting…", "Deployed"), so name and visible text agree (WCAG
 // 2.5.3; S1 review L3-6).
 
+//
+// Slice S2b (ruling R-S2b-3): a connected hub hands each control its `wiring`
+// from the deploy provider (hub/useHubDeploy.js hold(controlId)): the control's
+// stable name, the hold seam, the provider as beatOwner and the committed
+// deploy. The control is live when the state allows a start, AND while its own
+// hold is the one charging or locked (`holding`) — the selector denies every
+// start while a hold stands, its own included, and a control that went
+// disabled mid-charge would cancel it. Without wiring (the frames, the
+// fixtures) nothing changes: it is live only with `onDeploy`.
+
 import React from 'react';
 import { readToken } from '../../../theme/cssTokens';
 import HoldToDeployButton from '../../Dashboard/deployCeremony/HoldToDeployButton';
@@ -31,8 +41,9 @@ import { BoltIcon, Label } from '../HubParts';
 
 const OFFERS_HOLD = new Set([COPY.deploy.hold, COPY.deploy.holdShort]);
 
-export default function HubHold({ label, canStart = false, onDeploy, full = false, compact = false, style }) {
-  const live = canStart === true && typeof onDeploy === 'function';
+export default function HubHold({ label, canStart = false, onDeploy, wiring = null, holding = false, full = false, compact = false, style }) {
+  const handler = wiring ? wiring.onComplete : onDeploy;
+  const live = (canStart === true || (Boolean(wiring) && holding === true)) && typeof handler === 'function';
   const accent = readToken('blue-action') || undefined;
   return (
     <HoldToDeployButton
@@ -42,7 +53,10 @@ export default function HubHold({ label, canStart = false, onDeploy, full = fals
       accent={accent}
       enabled={live}
       disabled={!live}
-      onComplete={live ? onDeploy : undefined}
+      onComplete={live ? handler : undefined}
+      controlId={wiring?.controlId}
+      holdSeam={wiring?.holdSeam}
+      beatOwner={wiring?.beatOwner}
       ariaLabel={OFFERS_HOLD.has(label) ? COPY.deploy.holdLabel : label}
       style={{
         minHeight: compact ? 44 : 48,

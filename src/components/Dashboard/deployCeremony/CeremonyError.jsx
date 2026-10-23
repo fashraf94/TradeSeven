@@ -24,6 +24,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowLeft, RotateCcw } from 'lucide-react';
 import { CMD, alpha, Mono, Eyebrow } from '../commandUI';
+import { DEPLOY_IN_PROGRESS_LINE } from '../../../constants/deployOutcomes';
 
 function safeDetails(details) {
   if (typeof details === 'string') return details;
@@ -47,15 +48,25 @@ const LOST_CONTACT_EYEBROW = 'Deployment unconfirmed';
 const LOST_CONTACT_SUBTEXT = 'Your agent is safe. If the battle was created it will appear on your hub — check there before deploying again.';
 const CONFIRMED_SUBTEXT = 'Your agent is safe. Nothing is stuck — you can try again shortly.';
 
+// IN PROGRESS (Command Center slice S2b, ruling R-S2b-9b). decide's 429 "Deploy
+// already in progress" refused THIS request before it did anything, because the
+// agent's other deploy is still running. That is a definitive refusal, not a lost
+// contact, and it claims nothing about the other deploy's battle. The headline is
+// the one line the hub shows too (src/constants/deployOutcomes.js).
+const IN_PROGRESS_HEADLINE = `${DEPLOY_IN_PROGRESS_LINE}.`;
+const IN_PROGRESS_SUBTEXT = 'Your agent is safe. If the deploy already running creates a battle, it will appear on your hub.';
+
 export default function CeremonyError({
   accent = CMD.copper, agentName = 'Your agent', errorKind = 'deploy',
   errorTone = 'lost_contact',
-  details, cooldownUntil = 0, onRetry, onDismiss,
+  details, cooldownUntil = 0, onRetry, onDismiss, inProgress = false,
 }) {
-  const confirmed = errorTone === 'confirmed';
-  const headline = confirmed
-    ? (HEADLINE[errorKind] || HEADLINE.deploy)(agentName)
-    : LOST_CONTACT_HEADLINE;
+  const confirmed = errorTone === 'confirmed' || inProgress === true;
+  const headline = inProgress === true
+    ? IN_PROGRESS_HEADLINE
+    : confirmed
+      ? (HEADLINE[errorKind] || HEADLINE.deploy)(agentName)
+      : LOST_CONTACT_HEADLINE;
   // Tick a local clock so the retry countdown actually decrements and re-enables
   // when the server's 120s lock expires (the stage machine stops re-rendering
   // once in 'error').
@@ -125,7 +136,7 @@ export default function CeremonyError({
       {/* The existing subtext was already more honest than the headline it sat
           under; on the lost-contact path it now also says where the answer is. */}
       <Mono style={{ display: 'block', fontSize: 10.5, letterSpacing: '0.06em', color: CMD.ink3, marginTop: 14, lineHeight: 1.5 }}>
-        {confirmed ? CONFIRMED_SUBTEXT : LOST_CONTACT_SUBTEXT}
+        {inProgress === true ? IN_PROGRESS_SUBTEXT : confirmed ? CONFIRMED_SUBTEXT : LOST_CONTACT_SUBTEXT}
       </Mono>
     </div>
   );

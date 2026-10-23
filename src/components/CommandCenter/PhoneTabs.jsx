@@ -106,9 +106,9 @@ function PhoneOverview({ sections, actions }) {
       {ready && !stale && !liveGame && !candidate && completed.length === 0 && (games.liveResolved === false
         ? <LoadingLine>{COPY.games.loading}</LoadingLine>
         : <EmptyNote icon="sword" title={COPY.games.empty} sub={COPY.games.emptySubPhone} />)}
-      {liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} />}
+      {liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />}
       {liveRows.map((g) => <GameRow key={g.id} game={g} onOpen={actions.openGame} />)}
-      {candidate && !liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} />}
+      {candidate && !liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />}
       {reviews.length > 0 && (
         <Section label={COPY.games.reviewsAvailable}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -147,7 +147,7 @@ export function PhonePanel({ idBase, tab, sections, actions, reducedMotion }) {
             <div style={{ marginBottom: 14 }}><AreaHeading area={area} label={label} size={18} gap={9} /></div>
             {/* Slice S3 (R-S3-1): the strip's clamped words, whole, where its status button leads. */}
             {tab === PHONE_TABS.LOADOUT && (
-              <div style={{ marginBottom: 16 }}><PhoneDeployCard deploy={sections.deploy} onAction={actions.deployAction} /></div>
+              <div style={{ marginBottom: 16 }}><PhoneDeployCard deploy={sections.deploy} onAction={actions.deployAction} onOpenBoard={actions.openBoard} /></div>
             )}
             <AreaBody area={area} sections={sections} actions={actions} />
           </>

@@ -193,6 +193,9 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/hub/selectors/readerInputs.js',
   'src/components/CommandCenter/hub/useHubCompletedBattles.js',
   'src/components/CommandCenter/hub/useHubReaders.js',
+  // Command Center hub, S2b (the deploy provider's hub side): no colour and no motion, registered in the commit
+  // that introduces it (hazard 34).
+  'src/components/CommandCenter/hub/useHubDeploy.js',
   // Command Center hub, S5 (the owner's Loadout, the retained entry points, the
   // overlay stack and the App-side predicates): token-only and motion-token-only
   // from birth, registered in the commit that introduces them (hazard 34).

@@ -182,6 +182,7 @@ export function deployDisplay(deploy, liveGame = null) {
     // A refusal's own words, unchanged, take the second line (spec §5.2) — but
     // for the review-due refusal, whose line lives on the card (R-S3-1).
     if (displayState === 'failed' && reason && !reviewDue) return reason;
+    if (existingRead?.status === 'error') return D.existingUnavailable;
     if (attemptShown && blockText) return blockText;
     if (!attemptShown && liveGame && gateLine) return gateLine;
     if (staleBlock) return D.staleAsOf(asOf);
@@ -221,10 +222,19 @@ export function deployDisplay(deploy, liveGame = null) {
     default: break;
   }
 
+  // Slice S2b (ruling R-S2b-5; R1 Fable FR-2): the existing battle's owned read,
+  // when the hub has one for this attempt — reading it, or a read that failed,
+  // with the time its Retry (Open game) opens. Never silence after a definitive
+  // server answer.
+  const existingRead = displayState === 'existing' && deploy?.existingRead && typeof deploy.existingRead === 'object' ? deploy.existingRead : null;
+  const existingNote = existingRead?.status === 'loading' ? D.existingReading
+    : existingRead?.status === 'error' ? D.existingRetryAt(etTime(existingRead.retryAt, { roundUp: true })) : null;
+
   // Freshness (spec §3.1): a stale retained list says when it was true and
   // offers the read's Retry; a pending refresh says so, with the retained time.
   let cardNote = null;
-  if (blockText) cardNote = { text: blockText, action: null };
+  if (existingNote) cardNote = { text: existingNote, action: null };
+  else if (blockText) cardNote = { text: blockText, action: null };
   else if (displayState === 'ready_stale') cardNote = { text: D.refreshFailed, action: readRetry };
   else if (displayState === 'blocked' && stale) cardNote = { text: D.staleAsOf(asOf), action: readRetry };
   else if ((displayState === 'ready' || displayState === 'blocked') && refreshing) cardNote = { text: D.refreshing(asOf), action: null };

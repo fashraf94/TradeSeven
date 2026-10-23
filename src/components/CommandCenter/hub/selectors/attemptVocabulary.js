@@ -30,6 +30,7 @@
 // argument.
 
 import { DEPLOY_REFUSAL_CODE, DUE_DEPLOY_LINE } from '../../../../constants/hypothesisRecords';
+import { DEPLOY_IN_PROGRESS_LINE, isInProgressRefusal } from '../../../../constants/deployOutcomes';
 
 /** The provider record's stored phases (spec §5.2). */
 export const ATTEMPT_PHASES = Object.freeze({
@@ -151,8 +152,11 @@ const refused = (result) => {
   const reviewDue = isReviewDue(result);
   // The server's words, unchanged (spec §5.2). The review-due refusal's words are
   // the one shared line (carriage.js answers it verbatim), so a 409 that lost them
-  // in transit still shows the same line, never a generic one.
-  const line = nonEmptyString(result.details) ?? (reviewDue ? DUE_DEPLOY_LINE : null);
+  // in transit still shows the same line, never a generic one. Slice S2b (ruling
+  // R-S2b-9b): decide's 429 "Deploy already in progress" carries no `details`, so
+  // it shows the one line the ceremony shows (src/constants/deployOutcomes.js).
+  const line = nonEmptyString(result.details)
+    ?? (reviewDue ? DUE_DEPLOY_LINE : isInProgressRefusal(result) ? DEPLOY_IN_PROGRESS_LINE : null);
   return translation(
     ATTEMPT_PHASES.REFUSED, CEREMONY_PHASES.ERROR, ERROR_TONES.CONFIRMED, ATTEMPT_DISPLAY.FAILED,
     {
