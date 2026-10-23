@@ -512,6 +512,17 @@ describe('Recent activity (R-S4-1)', () => {
     expect(rows[0]).toContain('since Oct 22');
   });
 
+  it("a time from an earlier year than the clock's carries its year, through the hub's own clock", async () => {
+    r.window = windowOf([]);
+    r.agent = equipped(Date.UTC(2025, 9, 3, 20, 0));
+    r.lists = [LIST];
+    render('desktop', hubOf());
+    await flush();
+    const row = activityLabels().find((l) => l.startsWith('Watchlist equipped'));
+    expect(row).toContain('since Oct 3, 2025');
+    expect(row).toMatch(/Oct 3, 2025, 4:00\s?PM ET$/);
+  });
+
   it('a list deleted or taken back to draft is equipped to no game: the Loadout card calls it unavailable, so Activity lists no "Watchlist equipped" for it (BUILD_RULES §9)', async () => {
     withThree();
     r.agent = equipped();
@@ -571,6 +582,7 @@ describe('Recent activity (R-S4-1)', () => {
     render('desktop', hubOf());
     const row = activityLabels().find((l) => l.startsWith('Adjustment equipped'));
     expect(row).toContain('since Oct 21');
+    expect(row).toContain('Speculator');
     expect(row).not.toContain('SP-01');
   });
 
