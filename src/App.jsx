@@ -127,6 +127,7 @@ import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
 import CommandCenterHubGate from './components/CommandCenter/CommandCenterHubGate';
 import { pickDashboardShell, DASHBOARD_SHELLS } from './components/CommandCenter/pickDashboardShell';
+import { forgeAreaOf, hubOwnsDashboard } from './components/CommandCenter/hubChrome';
 import { excludeVoidedGroupBattles } from './utils/commandCenterLiveBattles';
 import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn, isDeploySkyCouplingOn, isCharacterPaneOn, isCommandCenterHubOn } from './config/featureFlags';
 import { pickCeremonyEntry } from './components/Dashboard/deployCeremony/ceremonyData';
@@ -2492,6 +2493,11 @@ export default function PortfolioDuel() {
 
   // Forge state (replaces Academy)
   const [showForge, setShowForge] = useState(false);
+
+  // Command Center hub S5 (ruling R-S5-7): true while the hub gate shows the legacy shell because the hub's chunk
+  // failed to load. The hub is then not the dashboard on screen, so the floating bug button and the season banner
+  // come back. Set only by the gate's fallback signal; false for everyone else, the hub flag off included.
+  const [hubFallback, setHubFallback] = useState(false);
 
   // Phase 4D — watchlist editor return-path state.
   // forgeInitialView: which Forge tab ForgeLanding boots on. 'discover' at
@@ -8685,6 +8691,28 @@ export default function PortfolioDuel() {
       </div>
     );
   };
+  // Command Center hub S5 (rulings R-S5-5, R-S5-7, R-S5-9). Everything here is cheap
+  // with the hub flag off: a function, an object of values App already holds, and one
+  // pure predicate that is false for every screen.
+  //
+  // onOpenForge is the hub's Forge door. A request that names an area sets the view
+  // ForgeWorkshop mounts on (its `initialArea`, read once at mount) in the SAME batch
+  // as setShowForge(true), so the effect above — which resets the view to 'overview'
+  // for the NEXT open — runs after the Forge has mounted on the target, exactly as the
+  // watchlist editor's return path already depends on. A request that names no area is
+  // the bare setShowForge(true) every other Forge open makes today. Call it from a mounted
+  // hub's gesture handler (the hub is unmounted while the Forge shows): a call made while
+  // the Forge is already open would leave its area for the NEXT open, and is not guarded.
+  const onOpenForge = (request) => {
+    const area = forgeAreaOf(request);
+    if (area) setForgeInitialView(area);
+    setShowForge(true);
+  };
+  const hubProps = { agent: primaryAgent, agentLoading, activeAgentBattles, setScreen, onOpenForge, setSidebarOpen, unreadCount };
+  // The floating ClashBot button and the active-season banner are withheld while the hub
+  // is the dashboard on screen (S1 founder questions Q2, Q3): both are fixed to the phone
+  // strip's corner. False for every screen with the hub flag off.
+  const hubOwnsScreen = hubOwnsDashboard({ screen, showForge, hubFailed: hubFallback });
   const getScreenContent = () => {
 
   // FORGE SCREEN — ForgeLanding is the primary Laboratory view; it renders
@@ -8875,7 +8903,7 @@ export default function PortfolioDuel() {
               ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} />
               : <DesktopBackground isDesktop={isDesktop} />}
             {dashboardPick.shell === DASHBOARD_SHELLS.HUB
-              ? <CommandCenterHubGate site="mobile" legacy={legacyDashboard} />
+              ? <CommandCenterHubGate site="mobile" hub={hubProps} legacy={legacyDashboard} onFallback={setHubFallback} />
               : legacyDashboard}
           </div>
         </ErrorBoundary>
@@ -8950,8 +8978,10 @@ export default function PortfolioDuel() {
             // unwrapped: it carries its own offset, as above.
             <CommandCenterHubGate
               site="desktop"
+              hub={hubProps}
               legacy={legacyDesktopDashboard}
               frame={(hubOutput) => <div style={sidebarOffsetStyle}>{hubOutput}</div>}
+              onFallback={setHubFallback}
             />
           ) : legacyDesktopDashboard}
         </div>
@@ -12489,8 +12519,10 @@ export default function PortfolioDuel() {
       )}
 
 
-      {/* ========== ACTIVE SEASON BANNER — above BottomNav, all authenticated screens ========== */}
-      {user && isMobile && screen !== 'home' && !GAMEPLAY_SCREENS.includes(screen) && activeSeason && activeSeasonEntry && (
+      {/* ========== ACTIVE SEASON BANNER — above BottomNav, all authenticated screens ==========
+          Hub S5 (ruling R-S5-7): withheld while the hub is the dashboard (hubOwnsScreen):
+          at bottom 64 and z 49 it would cover the hub's phone strip (z 40). */}
+      {user && isMobile && screen !== 'home' && !GAMEPLAY_SCREENS.includes(screen) && activeSeason && activeSeasonEntry && !hubOwnsScreen && (
         <div style={{ position: 'fixed', left: 0, right: 0, bottom: 64, zIndex: 49 }}>
           <ActiveSeasonBanner
             season={activeSeason}
@@ -12571,8 +12603,14 @@ export default function PortfolioDuel() {
           stays mounted — the pane's `···` overflow opens this one through
           CLASHBOT_OPEN_EVENT, and a second widget would double the panel and
           its cooldown. The seam is here, at the MOUNT, so neither the widget
-          nor the Battle View needs to know about the other. This file is
-          imported by no test; `vite build` is its only check (BUILD_RULES §2). */}
+          nor the Battle View needs to know about the other. Command Center hub
+          S5 (ruling R-S5-7): withheld the same way while the hub is the dashboard
+          on screen (hubOwnsScreen), at both sites — the button would sit on the
+          phone strip's action — and the hub header's "Report a bug" dispatches
+          that same event. This file is imported by one suite (App.xpModal.jsdom, at
+          desktop width), so the S5 edits here are pinned as source text in the hub's
+          mount guard and their decisions are tested in hubChrome.test.js; `vite
+          build` is the rest of its check (BUILD_RULES §2). */}
       {user && (
         <ClashBotWidget
           user={user}
@@ -12581,7 +12619,7 @@ export default function PortfolioDuel() {
           currentBattle={currentBattle}
           colors={colors}
           isDesktop={isDesktop}
-          hidden={isCharacterPaneOn() && screen === 'battle' && currentBattle?.agentDeployed === true}
+          hidden={(isCharacterPaneOn() && screen === 'battle' && currentBattle?.agentDeployed === true) || hubOwnsScreen}
         />
       )}
     </>

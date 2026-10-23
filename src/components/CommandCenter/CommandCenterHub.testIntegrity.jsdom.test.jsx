@@ -17,6 +17,8 @@ const { userState, motionState } = vi.hoisted(() => ({
   motionState: { reduced: false },
 }));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => userState }));
+// S5: the hub root now reaches the shipped sheets and services (their Firebase config validates at import).
+vi.mock('../../firebase/config', () => ({ db: {}, auth: {} }));
 vi.mock('framer-motion', async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, useReducedMotion: () => motionState.reduced };

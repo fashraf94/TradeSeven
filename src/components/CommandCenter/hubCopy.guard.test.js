@@ -75,7 +75,7 @@ const TOKEN_ATTRIBUTES = new Set(['accent', 'icon', 'kind', 'name', 'tone', 'ari
 const TOKEN = /^[a-z][a-zA-Z0-9-]*$/;
 /** Object properties whose string value is shown to the player, in any hub file. */
 const COPY_PROPERTIES = new Set([
-  'label', 'title', 'text', 'sub', 'caption', 'heading', 'message', 'placeholder', 'alt', 'ariaLabel', 'aria-label',
+  'label', 'title', 'text', 'sub', 'subtitle', 'caption', 'heading', 'message', 'placeholder', 'alt', 'ariaLabel', 'aria-label',
   'description', 'summary', 'cta', 'why', 'detail', 'eyebrow', 'hint', 'help', 'empty', 'line', 'line1', 'line2',
   // S2a: the deploy selector's `reason` reaches the strip and the card verbatim (S2a review A5-9).
   'reason',
@@ -254,6 +254,61 @@ describe('the spec\'s own strings, exactly', () => {
     expect(`${HUB_COPY.shadow.name} · ${HUB_COPY.shadow.role}`).toBe('Shadow · your research partner');
     expect(HUB_COPY.shadow.statusIdle).toBe('Idle · nothing running');
     expect(HUB_COPY.header.title).toBe('Command Center');
+  });
+});
+
+describe('S5: the design note\'s labels, exactly, and nothing the hub cannot back about ideas (ruling R-S5-2)', () => {
+  it('"Universe · N names" and "Plain watchlist · no idea yet", and the neutral "N names"', () => {
+    expect(HUB_COPY.loadout.universe(10)).toBe('Universe · 10 names');
+    expect(HUB_COPY.loadout.universe(1)).toBe('Universe · 1 name');
+    expect(HUB_COPY.loadout.plainList).toBe('Plain watchlist · no idea yet');
+    expect(HUB_COPY.loadout.names(3)).toBe('3 names');
+    expect(HUB_COPY.loadout.names(1)).toBe('1 name');
+  });
+
+  it('the committed design note says the same two labels (display agreement with its source)', () => {
+    const note = read('docs/design/20261016_DESIGN_NOTE_IDEA_FIRST_FORGE.md');
+    expect(note).toContain('"Universe · 10 names"');
+    expect(note).toContain('"Plain watchlist · no idea yet"');
+  });
+
+  it('the Forge doors are named for the areas they open', () => {
+    expect([HUB_COPY.loadout.forgeLists, HUB_COPY.loadout.forgeCharacter, HUB_COPY.loadout.forgeTraits]).toEqual(['Forge Lists', 'Forge Character', 'Forge Traits']);
+  });
+
+  // The hub rows compare what is on screen with COPY.* — the same string on both sides — so these two words, which the
+  // rulings quote, are pinned here (lens E5, E5-6).
+  it('the words the rulings quote: "Locked in battle · …" while the loadout is locked (R-S5-1) and the header\'s "Report a bug" (R-S5-7) (E5-6)', () => {
+    expect(HUB_COPY.loadout.nextDeployLocked).toMatch(/^Locked in battle · /);
+    expect(HUB_COPY.loadout.nextDeployLocked).toBe('Locked in battle · changes apply to your next deploy.');
+    expect(HUB_COPY.loadout.nextDeploy).toBe('Changes apply to your next deploy.');
+    expect(HUB_COPY.header.reportBug).toBe('Report a bug');
+  });
+
+  // Founder ruling Q-S5-4a: the client cannot know whether the server admits this player to idea records, so S5 passes
+  // "unknown" and every card reads the neutral "N names". Slice S6 supplies the answer from its gated reader; until then
+  // no hub source may hand the card an admitted player. The word appears only where the selector defines and compares it.
+  it('S5 never tells the card the player is admitted: IDEA_ACCESS.ADMITTED and the word admitted are written only in the selector that defines and compares them (Q-S5-4a)', () => {
+    const code = (rel) => read(rel).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+    const users = hubSourceFiles().filter((rel) => /\bIDEA_ACCESS\.ADMITTED\b|['"`]admitted['"`]/.test(code(rel)));
+    expect(users).toEqual([`${DIR}/hub/selectors/loadout.js`]);
+    // what App hands the hub carries no ideaAccess key at all
+    expect(code('src/App.jsx')).not.toMatch(/ideaAccess/);
+  });
+
+  it('no hub file reads an idea record or its reader: the idea\'s wording and status belong to slice S6, behind the gated reader', () => {
+    const reach = hubSourceFiles().filter((rel) => /hypothesisVersionService|hypothesisRecords\/|getHypothesis|listHypothes|hypothesisVersions/.test(read(rel).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '')));
+    expect(reach).toEqual([]);
+  });
+
+  // The design note's point 5 asks every idea surface for one honest line about the agent ("the agent does not read or
+  // act on ideas yet"). That is a claim about the agent's behaviour, which the hub can neither back nor check, so S5's two
+  // labels ship without it and this fence keeps any such sentence out until the idea reader (slice S6) can carry it. The
+  // report puts the question to the founder (Q-S5-4).
+  it('S5 says nothing about what the agent does with an idea: no hub string names the agent and an idea together', () => {
+    const words = ALL_COPY.filter((s) => /\bidea/i.test(s));
+    expect(words.sort()).toEqual(expect.arrayContaining(['Plain watchlist · no idea yet']));
+    for (const s of words) expect(s, s).not.toMatch(/\b(agent|shadow)\b.*\bidea|\bidea.*\b(agent|shadow)\b/i);
   });
 });
 
