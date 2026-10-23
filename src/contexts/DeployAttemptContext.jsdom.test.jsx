@@ -62,6 +62,7 @@ import { resetAuthIdentityForTests, readAuthIdentity } from '../services/authIde
 import { __resetHoldClaim, currentHold } from '../hooks/holdClaim';
 import { DeployAttemptProvider, EXISTING_READ_RETRY_MS } from './DeployAttemptContext';
 import { deployDisplay, DISPLAY_ACTIONS } from '../components/CommandCenter/hub/deployDisplay';
+import { formatHubTime } from '../components/CommandCenter/hub/hubDate';
 import { DEPLOY_REFUSAL_CODE, DUE_DEPLOY_LINE } from '../constants/hypothesisRecords';
 import { DEPLOY_IN_PROGRESS_LINE } from '../constants/deployOutcomes';
 import useHoldToDeploy from '../hooks/useHoldToDeploy';
@@ -1434,5 +1435,53 @@ describe('W5 survivors — the remaining gaps, closed', () => {
     expect(currentHold()).toBeNull();
     expect(frames.pending()).toBe(0);
     expect(sky).toEqual([]);
+  });
+});
+
+describe('W5 survivors — the confirmation run\'s last four gaps (S2b report §8)', () => {
+  it('X2b (CX39): a repeated report of the same identity frees no slot and closes no ceremony', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    expect(currentHold()).toMatchObject({ phase: 'locked' });
+    act(() => { probe.current.api.identityChanged(readAuthIdentity()); });
+    expect(currentHold()).toMatchObject({ phase: 'locked' });
+    expect(container.querySelector('[data-ceremony]')).not.toBeNull();
+  });
+
+  it('X15 (CX58): the cooldown follows the attempt\'s resolved target (the clone), not the ranked id', async () => {
+    await committedAndOut();
+    act(() => { posts[0].onTarget('clone-uid-A'); });
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    act(() => { probe.current.api.dismiss(); });
+    act(() => { probe.current.api.lastDeployedEvidence({ uid: 'uid-A', authEpoch: 1, targetAgentId: 'clone-uid-A', lastDeployedAtMs: Date.now() }); });
+    let r;
+    await act(async () => { r = await probe.current.deploy.tap(STRIP); });
+    expect(r).toEqual({ success: false });
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+
+  it('X16 (CX61): a Retry the table withholds starts nothing — a live BaggerBomb appeared after the refusal', async () => {
+    await committedAndOut();
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    expect(state().action).toBe(DISPLAY_ACTIONS.RETRY);
+    const live = { id: 'bb-live', ownerId: 'uid-A', agentId: 'agent-uid-A', status: 'active', groupId: null };
+    render({ over: { poll: { status: 'ready', liveBattles: [live], ownerUid: 'uid-A', ownerEpoch: 1, lastSuccessfulAt: Date.now(), error: null, refreshing: false } } });
+    expect(state().action).toBeNull();
+    await act(async () => { await probe.current.api.retry(); });
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+
+  it('X17 (DD2): the owned read\'s Retry time is the minute it opens, rounded up', async () => {
+    h.owned = vi.fn(async () => { throw new Error('denied'); });
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    const read = probe.current.deploy.existingRead;
+    expect(read.retryAt % 60000).not.toBe(0);
+    const up = formatHubTime(read.retryAt, { roundUp: true });
+    expect(up).not.toBe(formatHubTime(read.retryAt));
+    expect(deployDisplay({ ...state(), existingRead: read }).cardNote.text).toContain(up);
   });
 });
