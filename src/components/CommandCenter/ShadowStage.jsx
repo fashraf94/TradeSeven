@@ -15,38 +15,66 @@
 // The status line is the hub's one live region. It announces phase words only
 // — "Idle · nothing running", or the submitting phase — never a percentage
 // (spec §5.5, §10).
+//
+// Slice S2b: a hub hold's own phases too, "Holding to deploy" and "Locked in"
+// (the keyboard's Locked in, then Submitting). While a hold charges, its
+// percentage shows beside the line, aria-hidden and outside the live region,
+// read from the deploy provider's owner-tagged progress store — the one
+// reader of each frame besides the control itself.
 
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { cssVar, readToken } from '../../theme/cssTokens';
+import { useHoldProgress } from '../../contexts/DeployAttemptContext';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { AREA_TOKEN, C, HAIR, MONO, tint } from './hub/hubStyle';
 import AreaControls from './AreaControls';
 import ShadowStill from './ShadowStill';
 
-export function StatusLine({ processing, small = false, wrap = false, maxWidth }) {
+function statusWords(processing, holdPhase) {
+  if (processing) return COPY.shadow.statusSubmitting;
+  if (holdPhase === 'locked') return COPY.shadow.statusLocked;
+  if (holdPhase === 'charging') return COPY.shadow.statusHolding;
+  return COPY.shadow.statusIdle;
+}
+
+/** The charge in flight, as a percentage: visible, aria-hidden, never in the live region (spec §5.5). */
+function HoldPercent({ progress, small }) {
+  const current = useHoldProgress(progress);
+  if (!current || typeof current.progress !== 'number') return null;
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      data-hub-status=""
-      style={{ display: 'flex', alignItems: wrap ? 'flex-start' : 'center', gap: 7, maxWidth, minWidth: 0 }}
-    >
-      <span
-        aria-hidden="true"
-        style={{
-          width: 6, height: 6, borderRadius: '50%', flexShrink: 0, marginTop: wrap ? 4 : 0,
-          background: processing ? C.teal : C.ink3, boxShadow: processing ? `0 0 8px ${C.teal}` : 'none',
-        }}
-      />
-      <span
-        style={{
-          fontFamily: MONO, fontSize: small ? 10 : 10.5, letterSpacing: '0.08em', textTransform: 'uppercase',
-          color: processing ? C.teal : C.ink2, lineHeight: 1.35, whiteSpace: wrap ? 'normal' : 'nowrap', minWidth: 0,
-        }}
+    <span aria-hidden="true" data-hub-hold-percent="" style={{ fontFamily: MONO, fontSize: small ? 10 : 10.5, color: C.ink2, marginLeft: 6 }}>
+      {COPY.shadow.holdPercent(Math.round(current.progress * 100))}
+    </span>
+  );
+}
+
+export function StatusLine({ processing, small = false, wrap = false, maxWidth, holdPhase = null, progress = null }) {
+  return (
+    <>
+      <div
+        role="status"
+        aria-live="polite"
+        data-hub-status=""
+        style={{ display: 'flex', alignItems: wrap ? 'flex-start' : 'center', gap: 7, maxWidth, minWidth: 0 }}
       >
-        {processing ? COPY.shadow.statusSubmitting : COPY.shadow.statusIdle}
-      </span>
-    </div>
+        <span
+          aria-hidden="true"
+          style={{
+            width: 6, height: 6, borderRadius: '50%', flexShrink: 0, marginTop: wrap ? 4 : 0,
+            background: processing ? C.teal : C.ink3, boxShadow: processing ? `0 0 8px ${C.teal}` : 'none',
+          }}
+        />
+        <span
+          style={{
+            fontFamily: MONO, fontSize: small ? 10 : 10.5, letterSpacing: '0.08em', textTransform: 'uppercase',
+            color: processing ? C.teal : C.ink2, lineHeight: 1.35, whiteSpace: wrap ? 'normal' : 'nowrap', minWidth: 0,
+          }}
+        >
+          {statusWords(processing, holdPhase)}
+        </span>
+      </div>
+      {holdPhase === 'charging' && progress && <HoldPercent progress={progress} small={small} />}
+    </>
   );
 }
 
@@ -86,7 +114,7 @@ export function connectorPath(origin, boxRect, glyphRect) {
 }
 
 /** Desktop, tablet and stacked: Shadow, the status line, and the three area controls. */
-export function ShadowStage({ composition, size, tier, status, processing, selectedArea, onSelectArea, summaries, idBase, reducedMotion }) {
+export function ShadowStage({ composition, size, tier, status, processing, selectedArea, onSelectArea, summaries, idBase, reducedMotion, holdPhase = null, progress = null }) {
   const compact = composition !== 'desktop';
   const stageRef = useRef(null);
   const boxRef = useRef(null);
@@ -132,7 +160,7 @@ export function ShadowStage({ composition, size, tier, status, processing, selec
       <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 26 : 44, position: 'relative' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <ShadowStill size={size} tier={tier} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} boxRef={boxRef} />
-          <StatusLine processing={processing} maxWidth={size + 20} />
+          <StatusLine processing={processing} maxWidth={size + 20} holdPhase={holdPhase} progress={progress} />
         </div>
         <AreaControls
           idBase={idBase}
@@ -152,7 +180,7 @@ export function ShadowStage({ composition, size, tier, status, processing, selec
  * status, and a read-only summary of the three areas beneath. Section
  * navigation is the tab row below the stage.
  */
-export function PhoneStage({ size, tier, status, processing, selectedArea, summaries, reducedMotion }) {
+export function PhoneStage({ size, tier, status, processing, selectedArea, summaries, reducedMotion, holdPhase = null, progress = null }) {
   return (
     <section
       aria-label={COPY.shadow.stageLabel}
@@ -167,7 +195,7 @@ export function PhoneStage({ size, tier, status, processing, selectedArea, summa
         <ShadowStill size={size} tier={tier} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <NameLine stacked />
-          <StatusLine processing={processing} small wrap />
+          <StatusLine processing={processing} small wrap holdPhase={holdPhase} progress={progress} />
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingLeft: 8 }}>

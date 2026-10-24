@@ -24,6 +24,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, ArrowLeft, RotateCcw } from 'lucide-react';
 import { CMD, alpha, Mono, Eyebrow } from '../commandUI';
+import { DEPLOY_IN_PROGRESS_LINE } from '../../../constants/deployOutcomes';
 
 function safeDetails(details) {
   if (typeof details === 'string') return details;
@@ -31,10 +32,12 @@ function safeDetails(details) {
 }
 
 // CONFIRMED failures only. Every one of these asserts non-creation, which the
-// verification has actually established.
+// verification has actually established. A definitive outcome is a refusal of
+// this request, and the generic headline says so, as the eyebrow and the live
+// region do (Command Center slice S2b, founder rulings Q-S2b-2 and RL-1).
 const HEADLINE = {
-  deploy: () => 'Deployment failed — no battle was created.',
-  server: () => 'Deployment failed — no battle was created.',
+  deploy: () => 'Deployment refused — no battle was created.',
+  server: () => 'Deployment refused — no battle was created.',
   // errorPhase 'post_decision' softening (spec §8, nice-to-have).
   server_post: (name) => `${name} made its picks, but the battle couldn’t be created.`,
   timeout: () => 'Deployment timed out — no battle was created.',
@@ -46,16 +49,36 @@ const LOST_CONTACT_HEADLINE = 'Couldn’t confirm the deploy.';
 const LOST_CONTACT_EYEBROW = 'Deployment unconfirmed';
 const LOST_CONTACT_SUBTEXT = 'Your agent is safe. If the battle was created it will appear on your hub — check there before deploying again.';
 const CONFIRMED_SUBTEXT = 'Your agent is safe. Nothing is stuck — you can try again shortly.';
+// Every definitive outcome (the confirmed tone) is a refusal of this request, and says so: the hub's own word
+// for it (Command Center slice S2b, founder ruling Q-S2b-2), in the eyebrow, the generic headline above and the
+// ceremony's live region (founder ruling RL-1).
+const REFUSED_EYEBROW = 'Deployment refused';
+
+// IN PROGRESS (Command Center slice S2b, ruling R-S2b-9b). decide's 429 "Deploy
+// already in progress" refused THIS request before it did anything, because the
+// agent's other deploy is still running. That is a definitive refusal, not a lost
+// contact, and it claims nothing about the other deploy's battle. The headline is
+// the one line the hub shows too (src/constants/deployOutcomes.js); the subtext is
+// the founder's (ruling Q-S2b-2).
+const IN_PROGRESS_HEADLINE = `${DEPLOY_IN_PROGRESS_LINE}.`;
+const IN_PROGRESS_SUBTEXT = 'Another deploy for your agent is still being set up. If it creates a battle, it will show up with your games.';
 
 export default function CeremonyError({
   accent = CMD.copper, agentName = 'Your agent', errorKind = 'deploy',
   errorTone = 'lost_contact',
-  details, cooldownUntil = 0, onRetry, onDismiss,
+  details, cooldownUntil = 0, onRetry, onDismiss, inProgress = false, refused = false,
 }) {
-  const confirmed = errorTone === 'confirmed';
-  const headline = confirmed
-    ? (HEADLINE[errorKind] || HEADLINE.deploy)(agentName)
-    : LOST_CONTACT_HEADLINE;
+  // `refused` (S2b fix round, founder ruling on review FRB-4, extending R-S2b-9b): the service typed this answer
+  // a definitive refusal, so it reads as one — the eyebrow, the generic refusal headline, the server's line in
+  // details — whatever tone the verification reached (a refusal never writes the server's error checkpoint).
+  const confirmed = errorTone === 'confirmed' || inProgress === true || refused === true;
+  const headline = inProgress === true
+    ? IN_PROGRESS_HEADLINE
+    : refused === true
+      ? HEADLINE.deploy(agentName)
+      : confirmed
+        ? (HEADLINE[errorKind] || HEADLINE.deploy)(agentName)
+        : LOST_CONTACT_HEADLINE;
   // Tick a local clock so the retry countdown actually decrements and re-enables
   // when the server's 120s lock expires (the stage machine stops re-rendering
   // once in 'error').
@@ -79,7 +102,7 @@ export default function CeremonyError({
         <AlertTriangle size={26} color={CMD.copper} />
       </div>
 
-      <Eyebrow color={CMD.copper} style={{ marginBottom: 8 }}>{confirmed ? 'Deployment failed' : LOST_CONTACT_EYEBROW}</Eyebrow>
+      <Eyebrow color={CMD.copper} style={{ marginBottom: 8 }}>{confirmed ? REFUSED_EYEBROW : LOST_CONTACT_EYEBROW}</Eyebrow>
       <div style={{ fontSize: 18, fontWeight: 600, color: CMD.ink, lineHeight: 1.4, marginBottom: 12 }}>{headline}</div>
 
       {details && (
@@ -125,7 +148,7 @@ export default function CeremonyError({
       {/* The existing subtext was already more honest than the headline it sat
           under; on the lost-contact path it now also says where the answer is. */}
       <Mono style={{ display: 'block', fontSize: 10.5, letterSpacing: '0.06em', color: CMD.ink3, marginTop: 14, lineHeight: 1.5 }}>
-        {confirmed ? CONFIRMED_SUBTEXT : LOST_CONTACT_SUBTEXT}
+        {inProgress === true ? IN_PROGRESS_SUBTEXT : confirmed ? CONFIRMED_SUBTEXT : LOST_CONTACT_SUBTEXT}
       </Mono>
     </div>
   );

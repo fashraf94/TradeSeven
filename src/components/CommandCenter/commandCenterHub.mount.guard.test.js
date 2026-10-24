@@ -580,6 +580,13 @@ const PERMITTED_TERMINALS = Object.freeze({
   'src/components/Dashboard/ArchetypePicker.jsx': 'the shipped archetype picker, reused unchanged (ruling R-S5-4)',
   'src/components/Dashboard/EquipSheet.jsx': 'the shipped watchlist sheet, reused unchanged (ruling R-S5-4)',
   'src/components/Dashboard/TraitsSheet.jsx': 'the shipped traits sheet, reused unchanged (ruling R-S5-4)',
+  // S2b (rulings R-S2b-1 … R-S2b-7): the deploy provider at App's root — already in the main graph (App imports it) —
+  // whose context and owner-tagged progress store the hub reads; the shipped Scouting Board, mounted in the hub
+  // unchanged (already in the main graph through the Command dashboards); the in-progress refusal's one line, which
+  // the ceremony shows too (already in the main graph through services/agentDeploy).
+  'src/contexts/DeployAttemptContext.jsx': 'useDeployAttempt and useHoldProgress — the root deploy provider the hub admits through (ruling R-S2b-1)',
+  'src/components/Dashboard/ScoutingBoardSheet.jsx': 'the shipped Scouting Board, reused unchanged; its deploy goes through the provider (ruling R-S2b-7)',
+  'src/constants/deployOutcomes.js': 'DEPLOY_IN_PROGRESS_LINE and isInProgressRefusal — the 429 in-progress refusal, one line for ceremony and hub (ruling R-S2b-9b)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -660,6 +667,9 @@ const ALLOWED_ACTIVITY = Object.freeze({
   [HUB_FILE('hub/useHubSheets.js')]: ['\\buseEffect\\b'],
   // S5 (review E1-1): the gate's fallback signal, one layout effect in its own file, rendered only inside the fallback.
   [HUB_FILE('hubFallbackSignal.jsx')]: ['\\buseLayoutEffect\\b'],
+  // S2b (ruling R-S2b-2): the hub's side of the deploy provider — the effect that registers the hub's reader inputs
+  // with it, and the one that reports the ranked agent's lastDeployedAt as cooldown evidence. No timer, listener or read.
+  [HUB_FILE('hub/useHubDeploy.js')]: ['\\buseEffect\\b'],
 });
 
 function activityInCode(rel, code) {
@@ -711,13 +721,14 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     expect(selectors.flatMap(activityIn)).toEqual([]);
     expect(selectors.flatMap(urlSwitchesIn)).toEqual([]);
     // ...and the hub module reaches the selector and the vocabulary, so the walk's terminal
-    // list is exact. The reducer has no caller until S2b's provider, so no chunk carries it yet.
+    // list is exact. S2b: the reducer's cooldownFor shapes the selector's cooldown input
+    // (readerInputs.js attemptInputsOf), so the hub chunk reaches the reducer too; the
+    // provider that runs it is at App's root (the main-graph row below).
     const { seen } = graph(HUB_FILE('CommandCenterHub.jsx'));
     expect(seen).toEqual(expect.arrayContaining([
       HUB_FILE('hub/selectors/attemptVocabulary.js'), HUB_FILE('hub/selectors/deployState.js'), HUB_FILE('hub/selectors/ownership.js'),
-      HUB_FILE('hub/selectors/loadout.js'),
+      HUB_FILE('hub/selectors/loadout.js'), HUB_FILE('hub/selectors/attemptReducer.js'),
     ]));
-    expect(seen).not.toContain(HUB_FILE('hub/selectors/attemptReducer.js'));
   });
 
   it('the allowances are exactly where they are used, so none goes stale', () => {
@@ -788,17 +799,35 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     // two passes reading separately, over the 5 s default when the suite runs wide.
     const codeOf = new Map(outside.map((rel) => [rel, stripComments(read(rel))]));
     const edges = outside.flatMap((rel) => edgesIntoHub(rel, codeOf.get(rel)));
+    // S2b (ruling R-S2b-1): the deploy provider sits at App's root, in the main graph, and runs the hub's own
+    // pure modules — the attempt reducer, the §3.1 selector, the vocabulary, the identity's input shape, the
+    // stack's inert primitive and the recorded-time conversion — so the attempt the hub shows is the attempt the
+    // root admits. Each is pure (selectors.purity.guard.test.js; overlayStack.js is plain DOM, no React). Hub
+    // flag off, the provider is a pass-through and none of them runs (DeployAttemptContext.flagOff test).
+    const PROVIDER = 'src/contexts/DeployAttemptContext.jsx';
     expect(edges.sort()).toEqual([
+      `${PROVIDER} -> ${HUB_FILE('hub/hubDate.js')}`,
+      `${PROVIDER} -> ${HUB_FILE('hub/overlayStack.js')}`,
+      `${PROVIDER} -> ${HUB_FILE('hub/selectors/attemptReducer.js')}`,
+      `${PROVIDER} -> ${HUB_FILE('hub/selectors/attemptVocabulary.js')}`,
+      `${PROVIDER} -> ${HUB_FILE('hub/selectors/deployState.js')}`,
+      `${PROVIDER} -> ${HUB_FILE('hub/selectors/readerInputs.js')}`,
       `src/App.jsx -> ${HUB_FILE('CommandCenterHubGate.jsx')}`,
       `src/App.jsx -> ${HUB_FILE('hubChrome.js')}`,
       `src/App.jsx -> ${HUB_FILE('pickDashboardShell.js')}`,
-    ]);
+    ].sort());
     const literals = outside.flatMap((rel) => hubDirLiterals(codeOf.get(rel)).map((lit) => `${rel}: ${lit}`));
     expect(literals.sort()).toEqual([
+      `${PROVIDER}: ../components/CommandCenter/hub/hubDate`,
+      `${PROVIDER}: ../components/CommandCenter/hub/overlayStack`,
+      `${PROVIDER}: ../components/CommandCenter/hub/selectors/attemptReducer`,
+      `${PROVIDER}: ../components/CommandCenter/hub/selectors/attemptVocabulary`,
+      `${PROVIDER}: ../components/CommandCenter/hub/selectors/deployState`,
+      `${PROVIDER}: ../components/CommandCenter/hub/selectors/readerInputs`,
       'src/App.jsx: ./components/CommandCenter/CommandCenterHubGate',
       'src/App.jsx: ./components/CommandCenter/hubChrome',
       'src/App.jsx: ./components/CommandCenter/pickDashboardShell',
-    ]);
+    ].sort());
   }, 30000);
 
   it('the edge scan is not vacuous: it resolves relative and @/ imports, re-exports and load-time imports into the directory', () => {
@@ -1004,9 +1033,14 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     '/utils/equipSlots': ['getEquipSlots'],
     '/utils/traitSlotSummary': ['getTraitSlotSummary'],
     '/constants/agentProgression': ['getLevelConfig', 'getNextLevelInfo'],
-    '/config/featureFlags': ['CASUAL_CLONE_CONCURRENCY_ENABLED', 'RELEASE3_CHARACTER_TAB_ENABLED', 'isCommandCenterHubOn', 'isHypothesisRecordsOn'],
+    '/config/featureFlags': ['CASUAL_CLONE_CONCURRENCY_ENABLED', 'RELEASE3_CHARACTER_TAB_ENABLED', 'SCOUTING_BOARD_ENABLED', 'isCommandCenterHubOn', 'isHypothesisRecordsOn'],
     '/data/archetypeDisplay': ['getArchetypeDisplayName'],
     '/data/archetypeIdentity': ['default', 'getArchetypeIdentity'],
+    // S2b (rulings R-S2b-1 … R-S2b-7): the deploy provider's context and its progress store, the shipped Scouting
+    // Board, the in-progress refusal's one line, and the board's flag (featureFlags above).
+    '/contexts/DeployAttemptContext': ['useDeployAttempt', 'useHoldProgress'],
+    '/Dashboard/ScoutingBoardSheet': ['default'],
+    '/constants/deployOutcomes': ['DEPLOY_IN_PROGRESS_LINE', 'isInProgressRefusal'],
   });
 
   it('across every file of the directory, exactly these names and no others', () => {
@@ -1041,6 +1075,8 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
       `${HUB_FILE('hub/useHubCompletedBattles.js')}: ../../../services/authIdentity`,
       `${HUB_FILE('hub/useHubCompletedBattles.js')}: ../../../services/completedAgentBattles`,
       `${HUB_FILE('hub/useHubReaders.js')}: ../../../services/authIdentity`,
+      // S2b: the deploy provider suites' kit reads the same identity source (tests only; no hub module reaches it).
+      `${HUB_FILE('__fixtures__/deployAttemptKit.jsx')}: ../../../services/authIdentity`,
     ].sort());
   });
 

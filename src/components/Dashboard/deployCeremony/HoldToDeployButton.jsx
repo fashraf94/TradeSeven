@@ -16,6 +16,12 @@
 // The maturity-derived label (deployText) is PRESERVED — the hold never replaces
 // the copy (spec §4). On completion the label becomes "Locked in" for the ~450ms
 // beat before the overlay mounts.
+//
+// Command Center slice S2b (ruling R-S2b-3): the hub's controls also pass
+// `controlId` (a stable name in place of useId), `onCommit`, `beatOwner` and
+// `holdSeam`, forwarded to the hook as they are (useHoldToDeploy.js, THE HUB'S
+// SEAM). A key commitment through the seam snaps the fill to full (spec §5.5).
+// Today's shells pass none of them, so their buttons are unchanged.
 
 import React, { useId, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -36,11 +42,16 @@ export default function HoldToDeployButton({
   enabled = true,
   style,
   ariaLabel,
+  controlId: namedControl,
+  onCommit,
+  beatOwner,
+  holdSeam,
 }) {
   // R2 (ruling R-R2-1): each instance is its own control in the app-wide hold
   // claim, so two buttons can never both charge.
-  const controlId = useId();
-  const { phase, progress, bind, locked } = useHoldToDeploy({ enabled, disabled, onComplete, controlId });
+  const generatedId = useId();
+  const controlId = namedControl ?? generatedId;
+  const { phase, progress, bind, locked, lockedByKey } = useHoldToDeploy({ enabled, disabled, onComplete, controlId, onCommit, beatOwner, holdSeam });
   const charging = phase === 'charging';
   const flipped = locked || progress > 0.45;
   const ink = readableOn(accent);
@@ -54,7 +65,7 @@ export default function HoldToDeployButton({
   const instantSettle = motionToken('fade', { reducedMotion }) === instant;
   // Fill snaps per-frame while charging; drains/settles with a transition otherwise
   // (early-release drain ~250ms per spec §4; settle-to-full on lock).
-  const fillTransition = charging || instantSettle ? 'none' : 'width 250ms ease';
+  const fillTransition = charging || instantSettle || lockedByKey ? 'none' : 'width 250ms ease';
 
   // ── Charge glow — Delight Layer Task 4 Phase 2, the contained cosmetic pass.
   //

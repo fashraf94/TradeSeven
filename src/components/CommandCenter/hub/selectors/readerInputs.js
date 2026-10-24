@@ -25,6 +25,7 @@
 // from it, so a block always has its row (R-S3-8).
 
 import { ownedLiveBattles } from './deployState';
+import { cooldownFor } from './attemptReducer';
 
 const LOADING = 'loading';
 
@@ -84,6 +85,26 @@ export function completedInputOf(tenGames) {
     rows: Array.isArray(tenGames?.battles) ? tenGames.battles : [],
     ownerUid: tenGames?.ownerUid ?? null,
     ownerEpoch: tenGames?.ownerEpoch ?? null,
+  });
+}
+
+/**
+ * Slice S2b (ruling R-S2b-2): the deploy provider's half of the selector's inputs, from its context snapshot
+ * (src/contexts/DeployAttemptContext.jsx) — the attempt record, the hold record, the owner + target cooldown
+ * (the attempt's resolved target, else the ranked agent's own id), the clock, and `modalOpen`: the hub's
+ * sheets or the provider's own ceremony or due-idea screen. Without a snapshot, nothing: S3's inputs as they were.
+ */
+export function attemptInputsOf(snapshot, { auth, agentId = null, hubModalOpen = false, now = null } = {}) {
+  if (!snapshot || typeof snapshot !== 'object' || !snapshot.state) return null;
+  const state = snapshot.state;
+  const attempt = state.attempt ?? null;
+  const target = attempt?.targetAgentId ?? agentId ?? null;
+  return Object.freeze({
+    attempt,
+    hold: state.hold ?? null,
+    cooldown: auth?.signedIn === true && target ? cooldownFor(state, auth.uid, target) : null,
+    now,
+    modalOpen: hubModalOpen === true || snapshot.overlayOpen === true,
   });
 }
 

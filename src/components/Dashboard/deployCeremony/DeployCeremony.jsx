@@ -31,6 +31,7 @@ import CeremonyExisting from './CeremonyExisting';
 import { HYPOTHESIS_NOTICES } from '../../../constants/hypothesisRecords';
 import { LIFECYCLE_LINES } from '../../Forge/Watchlist/ideaCopy';
 import { requestOpenIdea } from '../../Forge/Watchlist/ideaNavigation';
+import { DEPLOY_IN_PROGRESS_LINE, DEPLOY_REFUSAL_REASON_IN_PROGRESS } from '../../../constants/deployOutcomes';
 
 const Z_INDEX = 1010; // above EquipSheet/ScoutingBoardSheet (1000), below tour/watchlist (10000)
 const DEPLOY_LOCK_MS = 120000; // server's per-agent deploy cooldown
@@ -46,10 +47,14 @@ const DEPLOY_LOCK_MS = 120000; // server's per-agent deploy cooldown
 //     mount and at every stage-machine transition, echoing the id held at that
 //     moment, so the hub's bridge (S2b) can carry attempt identity. A stale
 //     notification is the consumer's to ignore; the ceremony only echoes.
+// Command Center slice S2b (founder ruling Q-S2b-5) — one more, optional:
+//   - `ownedRead` ({ retry, retryAt }): the existing terminal's Retry goes
+//     through the hub provider's owned targeted read (CeremonyExisting.jsx).
+//     Today's shells pass nothing, and their terminal is unchanged.
 export default function DeployCeremony({
   agent, accent = CMD.teal, agentName = 'Your agent', directiveCount = 0,
   deployResult, targetAgentId = null, onEnterBattle, onDismiss, onRetry,
-  liveBattles = null, onOpenBattle, attemptId = null, onPhaseChange,
+  liveBattles = null, onOpenBattle, attemptId = null, onPhaseChange, ownedRead = null,
 }) {
   const reduce = useReducedMotion();
   const containerRef = useRef(null);
@@ -168,8 +173,15 @@ export default function DeployCeremony({
   // Polite live-region announcement (§9). 'verifying' is deliberately absent:
   // it renders as theater, so it keeps announcing the stage on screen rather
   // than telling the user about a check they were never shown.
+  // Command Center slice S2b (ruling R-S2b-9b): decide's 429 "Deploy already in
+  // progress" is a refusal of this request, said as one (CeremonyError.jsx). Every
+  // definitive outcome is announced as the refusal its eyebrow and headline name
+  // (founder ruling RL-1), and so is every refusal the service typed, whatever tone
+  // the verification reached (founder ruling on review FRB-4).
+  const inProgress = deployResult?.status === 'error' && deployResult?.reason === DEPLOY_REFUSAL_REASON_IN_PROGRESS;
+  const refused = deployResult?.status === 'error' && deployResult?.refused === true;
   const liveText = machine.phase === 'error'
-    ? (machine.errorTone === 'confirmed' ? 'Deployment failed.' : 'Couldn’t confirm the deployment.')
+    ? (inProgress ? `${DEPLOY_IN_PROGRESS_LINE}.` : refused || machine.errorTone === 'confirmed' ? 'Deployment refused.' : 'Couldn’t confirm the deployment.')
     : machine.phase === 'reveal'
       ? `${agentName} is ready for battle.`
       : machine.phase === 'existing'
@@ -220,6 +232,8 @@ export default function DeployCeremony({
         cooldownUntil={cooldownUntil}
         onRetry={onRetry}
         onDismiss={onDismiss}
+        inProgress={inProgress}
+        refused={refused}
       />
     );
   } else if (machine.phase === 'reveal') {
@@ -247,6 +261,7 @@ export default function DeployCeremony({
         verifyBattle={verifyBattle}
         onOpenBattle={onOpenBattle}
         onDismiss={onDismiss}
+        ownedRead={ownedRead}
       />
     );
   } else if (reduce) {

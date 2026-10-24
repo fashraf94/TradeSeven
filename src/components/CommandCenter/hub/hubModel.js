@@ -109,6 +109,19 @@
 //   orphanCleaned         { attemptId, attemptEpoch }  (after S2b has run the orphan's local cleanup)
 //   flagDisabled          {}
 //   unmount               {}
+// Slice S2b adds (ruling R-S2b-3), and gives authChanged the identity source's epoch:
+//   authChanged           { uid, authEpoch? }  (authEpoch from services/authIdentity.js; at or
+//                           below the current one is a stale report)
+//   holdClaimed           { auth, controlId, holdToken, holdEpoch }  (after canStart and the slot)
+//   holdCommitted         { auth, holdToken }  (after canCommit and the slot)
+//   holdReleased          { holdToken }  (a cancelled charge, or a beat that deployed nothing)
+//
+// ── S2b: the provider (src/contexts/DeployAttemptContext.jsx) ──────────────
+//
+// The provider supplies attempt, hold, cooldown, now and its own overlay to
+// the selector through the context's `inputs`; the hub adds the readers and
+// its sheets' modalOpen (hub/useHubDeploy.js) and registers the result back,
+// so the provider admits from the same table the hub shows.
 
 export const HUB_S1_SECTIONS = Object.freeze({
   nextAction: Object.freeze({ status: 'loading', candidate: null }),

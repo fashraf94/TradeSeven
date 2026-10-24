@@ -36,9 +36,12 @@ export const HUB_SHEETS = Object.freeze({
   ARCHETYPE: 'archetype',
   WATCHLIST: 'watchlist',
   TRAITS: 'traits',
+  // Slice S2b (ruling R-S2b-7): the Scouting Board, the shipped EquipSheet wrapper — registered `within`, like the
+  // four shipped sheets above (S5 §13: it repeats the exit-animation defect otherwise).
+  SCOUTING: 'scouting',
 });
 
-const LEGACY = new Set([HUB_SHEETS.RECORD, HUB_SHEETS.ARCHETYPE, HUB_SHEETS.WATCHLIST, HUB_SHEETS.TRAITS]);
+const LEGACY = new Set([HUB_SHEETS.RECORD, HUB_SHEETS.ARCHETYPE, HUB_SHEETS.WATCHLIST, HUB_SHEETS.TRAITS, HUB_SHEETS.SCOUTING]);
 
 export function useHubSheets(rootRef) {
   const stack = useHubOverlays();

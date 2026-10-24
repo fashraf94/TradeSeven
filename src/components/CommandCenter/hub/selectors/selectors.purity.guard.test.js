@@ -128,14 +128,16 @@ describe('purity — hub/selectors/ (prompt §4: no React, no Firebase, no timer
       return out.sort();
     };
     expect(importsOf(`${SELECTORS}/ownership.js`)).toEqual([]);
-    expect(importsOf(`${SELECTORS}/attemptVocabulary.js`)).toEqual(['../../../../constants/hypothesisRecords']);
+    // S2b (ruling R-S2b-9b): the vocabulary also reads the in-progress refusal's one line.
+    expect(importsOf(`${SELECTORS}/attemptVocabulary.js`)).toEqual(['../../../../constants/deployOutcomes', '../../../../constants/hypothesisRecords']);
     expect(importsOf(`${SELECTORS}/attemptReducer.js`)).toEqual(['./attemptVocabulary', './ownership']);
     expect(importsOf(`${SELECTORS}/deployState.js`)).toEqual([
       '../../../../constants/leagueTournament', '../../../../utils/commandCenterLiveBattles', './attemptVocabulary', './ownership',
     ]);
     // S3: the outcome selector reads one constant; the input shapes, the gate's own owned set.
     expect(importsOf(`${SELECTORS}/gameOutcome.js`)).toEqual(['../../../../constants/leagueTournament']);
-    expect(importsOf(`${SELECTORS}/readerInputs.js`)).toEqual(['./deployState']);
+    // S2b (ruling R-S2b-2): the provider's half of the inputs takes the reducer's cooldownFor.
+    expect(importsOf(`${SELECTORS}/readerInputs.js`)).toEqual(['./attemptReducer', './deployState']);
     // S5: the Loadout selector takes every input as an argument; its one import is the shipped equip lock.
     expect(importsOf(`${SELECTORS}/loadout.js`)).toEqual(['../../../../utils/commandCenterLiveBattles']);
   });

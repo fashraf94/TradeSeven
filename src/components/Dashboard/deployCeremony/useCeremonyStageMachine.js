@@ -377,6 +377,21 @@ export default function useCeremonyStageMachine({
         return;
       }
 
+      // Command Center slice S2b (ruling R-S2b-9a; R1 Fable review FR-1): the
+      // server's explicit "already running" answer can arrive while the latch
+      // holds the machine — the 90 s watchdog fired before the POST answered —
+      // and `evaluate` never sees it. Re-read the client's own result here, at
+      // resolution time, and commit the `existing` terminal before any tone is
+      // computed: the server said the agent already has a running battle, so
+      // "Couldn't confirm" would be wrong. The admission above ran first and is
+      // unchanged; an existing answer can never pass it (a 200 is not a 500, and
+      // it carries no battle id).
+      if (inRef.current.deployStatus === 'existing') {
+        phaseRef.current = 'existing';
+        setPhase('existing');
+        return;
+      }
+
       // No battle found (or no answer). Re-read the server signal at RESOLUTION
       // time: the latch has held the machine still, so a terminal error that
       // landed during the check would otherwise be missed.
