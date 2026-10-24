@@ -13,9 +13,9 @@ With the flag off, today's shells, their ceremony and every deploy a player make
 
 | Item | Result |
 |---|---|
-| **Status** | **Draft PR, STOP.** The founder's rulings on Q-S2b-1 … Q-S2b-7 are applied (§15). Nothing merged; nothing activated |
-| Branch and head | `claude/command-center-hub-s2b`, cut from `main` `82ea84bb` (fetched; clean tree; `main` has not moved since). Code head `b047d163`, the founder-rulings round's last source change (§15); the head after it adds only this report's §15 and its README row. Commits: `cb170e96` build, `8b2eb835` rows, `e906d07a` fix round, `43808d37` and `bc3fc32e` W5 rows (tests only), `e7e8761c` this report, `6fc337f5` the founder's rulings, `b047d163` their review round |
-| Stop rule | No STOP. Today's shells changed only by R-S2b-9 (a) and (b), whose (b) the founder's Q-S2b-2 rewords (§15). The build edited no pre-existing behaviour test (only guard manifests and theme registrations, §5). The rulings round edited two S2a/S3 display rows, as Q-S2b-2 directs (§15). The recovery admission is byte-identical. No fenced file and nothing under `api/` was touched |
+| **Status** | **Draft PR, STOP.** The founder's rulings on Q-S2b-1 … Q-S2b-7 (§15) and on the independent review's FRB-1 … FRB-9 (§16) are applied. Nothing merged; nothing activated |
+| Branch and head | `claude/command-center-hub-s2b`, cut from `main` `82ea84bb` (fetched; clean tree; `main` has not moved since). Code head `500719d3`, the independent review's fix round (§16); the head after it adds only this report's §16. Commits: `cb170e96` build, `8b2eb835` rows, `e906d07a` fix round, `43808d37` and `bc3fc32e` W5 rows (tests only), `e7e8761c` this report, `6fc337f5` the founder's rulings, `b047d163` their review round, `c82a41c6` RL-1, `6010dfb0` the independent review (unchanged), `60f6fb1c` its fix round, `0b150530` and `500719d3` that round's review and mutation rows |
+| Stop rule | No STOP. Today's shells changed by R-S2b-9 (a) and (b), and by what the founder ruled extends (b): Q-S2b-2, RL-1 and FRB-4 (§15, §16). The build edited no pre-existing behaviour test (only guard manifests and theme registrations, §5). The rulings rounds edited the pre-existing rows they name, as their rulings direct (§15, §16). The recovery admission is byte-identical. No fenced file and nothing under `api/` was touched |
 | R-S2b-1 · the provider | `src/contexts/DeployAttemptContext.jsx`, wrapping the screen router in App's unified return; App's callbacks are its bridge. Flag off it is a pass-through, read once at mount (§3). This deviates from spec §2's `main.jsx` placement, as the ruling directs |
 | R-S2b-2 · one record | S2a's reducer, with the identity source's auth epoch and three new hold actions. Every `begin` is asked of the hub's own §3.1 table: `canStart` for a tap, `canCommit` at the hold's threshold, the selector's `retry` for a Retry. The live list is read only through `ownedLiveList` |
 | R-S2b-3 · the hold | `claimHold(controlId, inputId, holdEpoch)`. An opt-in `holdSeam` on `useHoldToDeploy` (claim, commit, release, progress); the provider is the hub controls' `beatOwner`; there is a synchronous cancel entry. A denied second finger no longer cancels the first (R2 Q5). Progress goes to an owner-tagged store. Today's shells are unchanged |
@@ -25,12 +25,13 @@ With the flag off, today's shells, their ceremony and every deploy a player make
 | R-S2b-9 · the two live changes | (a) FR-1: an existing answer behind the watchdog now ends on the existing terminal. (b) The 429 "Deploy already in progress" reads "A deploy is already in progress." Each has failing-first rows; the admission and reveal branches have unchanged control rows (§6) |
 | R-S2b-10 | No `hubProps` key was needed: the hub reads the provider through its context. Additions only in the shared hub files (§3) |
 | Flag-off build | 43 chunks in both; 41 identical. The entry chunk is +38,452 B raw (+12,432 B gzip): the provider and the hub selectors it runs. The hub chunk is −3,506 B. No hub preload in `index.html` (§9; Q-S2b-1) |
-| Tests | Full suite on Linux, CI-shaped at `b047d163` (the code head after the founder's rulings): `Test Files  1155 passed \| 8 skipped (1163)`, `Tests  24997 passed \| 89 skipped (25086)`, exit 0. The build added 164 rows in nine new files (§4) and edited no pre-existing behaviour test. The rulings round adds 39 rows in two new files and five extended ones, and edits two S2a/S3 display rows as Q-S2b-2 directs (§15) |
-| Mutation | W5 planted **318** mutants on the guards behind the acceptance rows (claim, commit, begin, every identity check, the uncertainty guard, the due-idea gate, the beat, the pass-through, the live changes). Final: **224 killed**, 94 equivalent survivors (each with its reason), 0 open gaps. All 70 gap survivors were closed by rows, and their kills were re-run and confirmed (§8). The rulings round: 71 mutants, 61 killed, 10 equivalent, 0 open gaps (§15) |
-| `vite build`, `lint:gate` | Both exit 0 on Linux at `bc3fc32e` and again at `b047d163`; both re-run at the pushed head (§7, §15; PR description) |
-| §2 review | Five lenses (W1 parity, W2 ownership, W3 hold and beat, W4 outcomes, W5 test integrity and mutation), with Opus refuters on every MAJOR/BLOCKER claim. 30 findings. The refuters ruled on five claims: 2 CONFIRMED (W2-1 MAJOR, W4-2 BLOCKER for the flip), 3 PARTLY (W3-1, W4-1, W4-3), 0 REFUTED. Every finding is fixed except W2-5 (outside scope) and W4-3 (Q-S2b-5) (§8). The rulings round: one focused lens on the delta, no BLOCKER or MAJOR; RL-3 fixed, RL-1 left to the founder (§15) |
+| Tests | Full suite on Linux, CI-shaped at `500719d3` (the code head after the independent review's fix round): `Test Files  1158 passed \| 8 skipped (1166)`, `Tests  25037 passed \| 89 skipped (25126)`, exit 0. The build added 164 rows in nine new files (§4) and edited no pre-existing behaviour test. The founder-rulings round added 39 rows (§15) and RL-1 one; the review's fix round adds 39 more, in three new files and four extended ones. Both rounds edit only the pre-existing rows their rulings direct (§15, §16) |
+| Mutation | W5 planted **318** mutants on the guards behind the acceptance rows (claim, commit, begin, every identity check, the uncertainty guard, the due-idea gate, the beat, the pass-through, the live changes). Final: **224 killed**, 94 equivalent survivors (each with its reason), 0 open gaps. All 70 gap survivors were closed by rows, and their kills were re-run and confirmed (§8). The rulings round: 71 mutants, 61 killed, 10 equivalent, 0 open gaps (§15). The independent review's fix round: 63 mutants, 58 killed, 5 equivalent, 0 open gaps (§16) |
+| `vite build`, `lint:gate` | Both exit 0 on Linux at `bc3fc32e`, at `b047d163` and at `500719d3`; both re-run at the pushed head (§7, §15, §16; PR description) |
+| §2 review | Five lenses (W1 parity, W2 ownership, W3 hold and beat, W4 outcomes, W5 test integrity and mutation), with Opus refuters on every MAJOR/BLOCKER claim. 30 findings. The refuters ruled on five claims: 2 CONFIRMED (W2-1 MAJOR, W4-2 BLOCKER for the flip), 3 PARTLY (W3-1, W4-1, W4-3), 0 REFUTED. Every finding is fixed except W2-5 (outside scope) and W4-3 (Q-S2b-5) (§8). The rulings round: one focused lens on the delta, no BLOCKER or MAJOR; RL-3 fixed, RL-1 changed by the founder's ruling (§15). The independent review's fix round: one focused lens, no BLOCKER or MAJOR; RF-1 and RF-2 fixed, RF-3 … RF-5 recorded (§16) |
 | Fenced files, `api/` | No fenced file edited. Fenced functions called: none directly. The service the provider calls (`deployAgent`) POSTs to `api/agent/decide.js`, as today's shells do. Nothing under `api/` changed |
 | Founder questions | Q-S2b-1 … Q-S2b-7 (§10) were ruled on October 23. Q-S2b-1, 3, 6 and 7 are accepted as built; Q-S2b-2, 4 and 5 are applied (§15) |
+| Independent review | Fable, at `5e192c9b` (`docs/audits/20261023_FABLE_REVIEW_S2B_PROVIDER.md`, committed unchanged): DO NOT MERGE by the letter (FRB-1, FRB-2), MERGE WITH CHANGES once FRB-1 is waived. The founder waived FRB-1 and ruled FRB-2 … FRB-9; all applied in one fix round (§16) |
 
 ## 1. Branch, HEAD and preamble
 
@@ -418,6 +419,7 @@ None blocks the draft. **Ruled October 23, 2026; the rulings and what they chang
   7. With an idea review due, a deploy shows the due-idea screen first.
   8. During the 450 ms "Locked in" beat, cross 768 px: the beat finishes and deploys once.
   9. The founder's rulings (§15): a refused deploy's eyebrow reads "Deployment refused". To see Dismiss, close the ceremony while a request is out; if it is refused, the strip and the card show Dismiss beside Retry, and Dismiss clears it.
+  10. The independent review's fix round (§16): any refused deploy — a second deploy inside the 2-minute cooldown is the easy one to cause — reads "Deployment refused — no battle was created." in the ceremony, never "Couldn't confirm the deploy", with Try again or its countdown.
 
 ## 14. Files outside the repository, and next
 
@@ -429,7 +431,7 @@ None blocks the draft. **Ruled October 23, 2026; the rulings and what they chang
   - the Linux run outputs (`linux-early/`, `linux-final/`);
   - the build logs.
 
-**Next:** the founder's smoke check of the refreshed preview (§13), then the independent Fable review of S2b on the new head. S4's additions to the shared hub files go on top of S2b's (R-S2b-10).
+**Next:** the founder's smoke check of the refreshed preview (§13) and the merge decision; the independent Fable review is in and applied (§16). S4's additions to the shared hub files go on top of S2b's (R-S2b-10).
 
 ## 15. Founder rulings applied (October 23, 2026)
 
@@ -544,3 +546,101 @@ The lens found the rest sound. In today's shells, only lines 1 and 3 of the tabl
 | `lint:gate`, Linux | `b047d163` | exit 0 (`--max-warnings 0`). Re-run at the pushed head: PR description |
 | `vite build`, Linux | `b047d163` | exit 0; 43 JS chunks. The entry is 4,900.64 kB (gzip 1,320.43 kB), +1.81 kB (+0.65 kB gzip) over `bc3fc32e`: the Dismiss, the owned-read Retry and the words. The hub chunk is 109.54 kB. Re-run at the pushed head: PR description |
 | The touched suites, Windows | `6fc337f5` | Green but for `eligibility.test.js`, a CRLF row that also fails on `main` |
+
+## 16. Independent review and fix round (October 24, 2026)
+
+**The review.** The independent Fable review of S2b is `docs/audits/20261023_FABLE_REVIEW_S2B_PROVIDER.md`, committed unchanged in `6010dfb0` (sha256 `cdcd645d…`, identical to the delivered file). It reviewed `5e192c9b`.
+- **Verdict:** DO NOT MERGE by the letter of the brief (FRB-1, FRB-2). MERGE WITH CHANGES once FRB-1 is waived.
+- **Rulings:** the founder ruled on FRB-1 … FRB-9, and one fix round applies them: `60f6fb1c` (the fixes and the review's rows), `0b150530` (its own review round) and `500719d3` (its last mutation rows).
+- **Line numbers** below are at `0b150530`; `500719d3` changes tests only.
+
+| Finding | Severity | Ruling | What changed | Rows |
+|---|---|---|---|---|
+| FRB-1 · today's shells' refusal words | BLOCKER (criterion 4) | Waived: Q-S2b-2 and RL-1 extend R-S2b-9b | Nothing | Appendix B, its expectations set to the ruled words (`fableReview.flagOff.jsdom.test.jsx`) |
+| FRB-2 · the 409 review-due's Forge action, ceremony on | BLOCKER (criterion 5) | Apply the review's provider fix | `dismiss()`: Back to hub on a review-due refusal closes the ceremony and records it `closed` instead of acknowledging (`DeployAttemptContext.jsx:681–692`). The hub then shows the line with Open in the Forge and Dismiss, which acknowledge it | Appendix A rows 4–5; three provider rows |
+| FRB-3 · an existing answer, the watchdog latching inside the owned read's wait | MAJOR | Apply the review's fix | The fresh ceremony is decided again at hand-off time, from the record's reported phase (`:507–514`) | Appendix A row 1; two provider rows |
+| FRB-4 · refusals read as lost contact in the ceremony | MAJOR | Option (a), a deliberate live change extending R-S2b-9b | `deployResultFor` forwards `refused: true` for every typed refusal (`deployResult.js:65–68`). The shared ceremony reads it the way it reads the in-progress reason: `CeremonyError.jsx:66–80` and `DeployCeremony.jsx:176–184, :236`. Table below | Appendix A row 3; five ceremony rows |
+| FRB-5 · a creation answering while the check is in flight | MINOR | Apply the review's fix | It remounts the ceremony, as an answer after the check already does (`:502–505`) | Appendix A row 2; one provider row |
+| FRB-6 · no Retry or countdown under a provider-known cooldown | MINOR | Hand `onRetry` whenever the phase admits a Retry in principle | `RootCeremony` (`:996`), `retryInPrinciple` (`:1003–1012`). The press still goes through `retry()` → the table, and starts nothing when blocked. `retryActionNow` is gone (no caller) | Appendix A row 6; G15c; two provider rows |
+| FRB-7 · the evidence listener outliving its use | NIT | End it once the target is known and no stamp can arrive | `evidenceRead` (`:388–392`), `TargetEvidence` (`:947–956`), `stampCanArrive` (`:958–975`), the `exhausted` mount condition (`:914–917`) | Eight provider rows, the listener watched as its subscription |
+| FRB-8 · the poll refreshed after every outcome | NIT | Refresh after created and existing answers only | `if (answered) refreshActive()` (`:533`) | Two provider rows, with the review's M27 (an orphaned answer refreshes nothing) |
+| FRB-9 · no ceremony Retry while the hub is unmounted | NIT | Record only, plus a unit row for the owned read's owner check (M33) | Nothing | `src/services/ownedBattleRead.test.js` (5 rows) |
+
+**FRB-4, before and after.** The ceremony is shared, so this applies in both shells (hub flag off) and in the hub's root ceremony.
+
+| Outcome | Before | After |
+|---|---|---|
+| A typed refusal: a 4xx, the 429 cooldown, the limiter's 429, the 503 pricing and stock-admission refusals, a 409, the no-POST preflights (`no-agent`, `auth-required`) | Eyebrow "Deployment unconfirmed"; headline "Couldn't confirm the deploy."; subtext "…check there before deploying again."; live region "Couldn't confirm the deployment." | Eyebrow "Deployment refused"; headline "Deployment refused — no battle was created."; subtext "Your agent is safe. Nothing is stuck — you can try again shortly."; live region "Deployment refused." |
+| The 429 in-progress refusal | R-S2b-9b's words | Unchanged |
+| An uncertain or untyped result (network, 500, a malformed 200, the 503 `corrected_creation_failed`, a shell catch) | Lost contact | Unchanged |
+
+- **What stays the same:** the server's line (details), and Try again or its countdown.
+- **The before column:** it is what a typed refusal showed unless a server error checkpoint gave the confirmed tone.
+- **What cannot happen:** a typed refusal still cannot reach the recovered reveal or the existing terminal. The stage machine, its reported tone and the recovery admission are unchanged.
+
+**Interpretations, for the founder.**
+- **FRB-6's "refused":** read as a refusal whose action is a Retry. A review-due refusal's action is the Forge (§5.4), and the table never offers it a Retry, so the ceremony gives it no "Try again" that would do nothing.
+- **FRB-2:** applied in `dismiss()`, as the review wrote it. The hub's Forge action and its Dismiss still acknowledge the refusal, because they run with the ceremony already closed.
+- **The review's appendix A:**
+  - **Row 4** asserted a Forge control inside the ceremony. The ruled fix routes the Forge through Back to hub, so the row's last assertion follows that route. The changed lines are marked "S2b fix round".
+  - **Appendix B's expectations** are set to the ruled words, as directed.
+  - **The other appendix rows** run as written.
+
+**Existing tests this round edited, as the rulings direct.**
+- **`deployResult.test.js` (R1):**
+  - The parity table's refused results gain `refused: true` beside the pre-R1 fields.
+  - "A refusal keeps the server's line" gains it too.
+  - Every other outcome still maps field for field.
+- **`ceremonyExisting.test.jsx` (R1):** two waits for the error terminal, and two "no error terminal" guards, learn the renamed word "refused". The P1b row also asserts it.
+- **`ceremonyInProgress.test.jsx` (S2b's own):**
+  - The 429 cooldown control row moved to FRB-4's words, as a before/after row.
+  - The mapping-shape row gains the refused fact, plus two rows showing that uncertain and untyped results carry none.
+- **`DeployAttemptContext.jsdom.test.jsx` (S2b's own):** G15c follows FRB-6. The target-progress stand-in now records reads and mounts like the real listener.
+- **Kept, on purpose:**
+  - `ceremonyWatchdogExisting`'s control "a 429 refusal during the check … lost contact" pins the machine's tone, which FRB-4 leaves alone.
+  - `ceremonyTerminalState`'s "a refused deploy (429) never reveals" uses a hand-built result with no refused fact, so lost contact is right for it.
+
+**Failing first.** The round's new and edited rows were run against `5e192c9b`: 23 fail and 187 pass (`failing-first-fableround.txt` in the session scratchpad). The rows that pass on both heads do so by design:
+- the controls;
+- the M27 and M33 contract rows;
+- appendix B, whose ruled words `5e192c9b` already had.
+
+**The review of the delta.** One focused lens (Sonnet) ran on an isolated snapshot of `60f6fb1c`. It looked at three things: the refusal words in today's shells, outcome by outcome; the hand-off timing; and Back to hub on a review-due refusal, with the other provider changes. It found no BLOCKER or MAJOR, so no refuter was needed.
+
+| Id | Severity | Finding | Disposition |
+|---|---|---|---|
+| RF-1 | MINOR | FRB-7 ended the listener after its first snapshot. For the 429 cooldown, whose evidence is an existing stamp, a stale or empty first snapshot would leave no cooldown, and the hub's Retry would meet a second 429 | Fixed in `0b150530`: the cooldown 429, like the in-progress one, keeps listening until its bound is known (`stampCanArrive`) |
+| RF-2 | MINOR | With no refresh after an uncertain answer, a deployment check that finds the battle left the hub's live list stale for up to the poll's 2 minutes | Fixed: the reconciliation that finds the owned battle (existing or recovered) refreshes the poll (`:648–650`; spec §6) |
+| RF-3 | MINOR | The ceremony's countdown reads only the target's stamp. Under the limiter's Retry-After it shows "Try again", which does nothing until the wait passes | Recorded. Closing it needs the record's bound as a new ceremony prop, which the FRB-6 ruling excludes ("No new ceremony prop") |
+| RF-4 | NIT | FRB-5's remount also covers a handoff-failed creation, whose latched machine would have revealed by itself | Recorded: harmless (a fresh verification, no lost answer, no POST); the review's fix kept as written |
+| RF-5 | NIT | A refused record's stored tone is overwritten by the machine's lost-contact report | Recorded: nothing reads the record's tone (`displayForAttempt` ignores it) |
+
+The lens checked every outcome's words in the shells and found them as the table above says. It found the hand-off decisions single and current, and no path where Back to hub on a review-due refusal leaves an attempt that nothing can acknowledge.
+
+**Mutation.** The mutating lens (Sonnet) ran on its own snapshot of `60f6fb1c`.
+- **The first run.** 59 mutants on the round's new code: 47 killed, 12 survived, none broken.
+- **The gaps (7), all in the provider:**
+  - an existing answer during the check must keep its ceremony (two mutants on FRB-5's phase clause);
+  - `evidenceRead`'s dedupe and its notification;
+  - the listener staying alive while the request is out;
+  - a review-due refusal ending it;
+  - a refusal's document arriving after the answer still being read.
+- **The rows.** `0b150530` and `500719d3` add rows for all seven.
+- **The re-run.** On a snapshot of the review-round commit, with four new mutants on RF-1 and RF-2, the gap and RF mutants were all killed (11 of 11). Two of them needed the last two rows (`500719d3`).
+- **The equivalent survivors (5), each with its reason:**
+  - FRB-2's phase clause: a review-due result exists only on a refused record.
+  - `evidenceRead`'s revoked guard: the listener is gone once the root revokes.
+  - `stampCanArrive`'s submitting clause, dropped: while a request is out the record has no result, so the final branch answers the same.
+  - `retryInPrinciple`'s uncertain phase check: a clear reconciliation leaves uncertain only by acknowledgment (the ceremony then hidden) or a Retry (a new record).
+  - `DeployCeremony`'s status check: the refused fact is set only inside the error shape.
+- **Final:** 63 mutants, 58 killed, 5 equivalent, 0 open gaps. Specs and results are in the session scratchpad (`review/RM3/_m/`, `review/RM4/_m/`).
+
+**Checks.** `main` was fetched before the round and again before the push: still `82ea84bb`, so nothing was merged.
+
+| Check | Head | Result |
+|---|---|---|
+| Full suite, Linux (`~/pd-ci`, Node 20.20.2, `TZ=UTC`, `--maxWorkers=2`) | `500719d3` | **`Test Files  1158 passed \| 8 skipped (1166)`; `Tests  25037 passed \| 89 skipped (25126)`; exit 0**; 672 s |
+| Earlier full suites, Linux | `60f6fb1c`; `0b150530` | `Tests  25028 passed`; `25035 passed`; exit 0 both |
+| `lint:gate`, Linux | `500719d3` | exit 0 (`--max-warnings 0`). Re-run at the pushed head: PR description |
+| `vite build`, Linux | `500719d3` | exit 0; 43 JS chunks. The entry is 4,901.43 kB (gzip 1,320.64 kB), +0.79 kB (+0.21 kB gzip) over `b047d163`. The hub chunk is 109.54 kB. Re-run at the pushed head: PR description |
+| The touched suites, Windows | `60f6fb1c`; `0b150530` | Green but for `eligibility.test.js` and `agentReadCensus.guard.test.js`, Windows-only rows that also fail on `main` |
