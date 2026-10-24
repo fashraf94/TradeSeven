@@ -679,6 +679,29 @@ describe('Recent activity (R-S4-1)', () => {
     expect(byRole(overview(), 'button', COPY.activity.all(n))).toHaveLength(1);
   });
 
+  it('exactly as many rows as the limit: no "All activity" link (it would hold nothing); one more row and the link says so — desktop five, phone three', () => {
+    // A completed game is a `completed` row, and a `deployed` row too while its deployment is not older than the oldest completion:
+    // k games give 2k − 1 rows; a live game adds its `deployed` row.
+    r.window = windowOf([done(1), done(2), done(3)]);
+    render('desktop', hubOf());
+    expect(activityLabels()).toHaveLength(5);
+    expect(byRole(activitySection(), 'button', /^All activity · \d+$/)).toHaveLength(0);
+    unmountAll();
+    r.window = windowOf([done(1), done(2)]);
+    render('mobile', hubOf());
+    expect(activityLabels(overview())).toHaveLength(3);
+    expect(byRole(overview(), 'button', /^All activity · \d+$/)).toHaveLength(0);
+    unmountAll();
+    render('mobile', hubOf({ activeBattles: [BB] }));
+    expect(activityLabels(overview())).toHaveLength(3);
+    expect(byRole(overview(), 'button', COPY.activity.all(4))).toHaveLength(1);
+    unmountAll();
+    r.window = windowOf([done(1), done(2), done(3)]);
+    render('desktop', hubOf({ activeBattles: [BB] }));
+    expect(activityLabels()).toHaveLength(5);
+    expect(byRole(activitySection(), 'button', COPY.activity.all(6))).toHaveLength(1);
+  });
+
   it('"All activity · N" opens the activity sheet with all N rows, in the overlay stack (the background goes inert); Close returns focus', () => {
     render('desktop', hubOf({ activeBattles: [BB] }));
     const [all] = byRole(activitySection(), 'button', /^All activity · \d+$/);

@@ -10,9 +10,10 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const id = vi.hoisted(() => ({ current: { resolved: true, uid: 'uid-A', authEpoch: 2 } }));
+const ag = vi.hoisted(() => ({ directives: undefined }));
 vi.mock('../../../services/authIdentity', () => ({ useAuthIdentity: () => id.current }));
 vi.mock('../../../hooks/useAgent', () => ({
-  default: () => ({ status: 'ready', agent: { id: 'agent-a', archetype: 'degen', stats: { gamesPlayed: 3 } }, ownerUid: 'uid-A', ownerEpoch: 2, readError: null, retry: () => {} }),
+  default: () => ({ status: 'ready', agent: { id: 'agent-a', archetype: 'degen', stats: { gamesPlayed: 3 } }, ownerUid: 'uid-A', ownerEpoch: 2, readError: null, retry: () => {}, activeDirectives: ag.directives }),
 }));
 const io = vi.hoisted(() => ({ reads: [], checks: [], answer: null, check: null }));
 vi.mock('../../../services/completedAgentBattles', () => ({
@@ -205,5 +206,59 @@ describe('a quick return shows the games and an openable tape at once (R-S4-6, R
     expect(first.sections.nextAction.candidate).toBeNull();
     expect(first.sections.activityInputs.battles).toHaveLength(10);
     expect(io.reads).toHaveLength(1);
+  });
+});
+
+// ── The merge with S2b (merge round, Oct 24, 2026): the readers hand the deploy provider what only they hold ──────────────────────
+describe('the readers hand S2b\'s provider the owned live set and the ceremony\'s directive count (merge of S4 into S2b\'s ConnectedHub)', () => {
+  const LIVE_DOC = { id: 'bb_live', ownerId: UID, agentId: `casual-agent-${UID}`, status: 'active', activatedAt: new Date(T0 - 2 * 3600 * 1000).toISOString(), expiresAt: new Date(T0 + 3 * 3600 * 1000).toISOString(), scoreState: { currentScore: 3.1, tradeCount: 1, evaluationCount: 4 } };
+  const OTHER_DOC = { ...LIVE_DOC, id: 'bb_other', ownerId: 'uid-B' };
+  let hubWith;
+  function LiveProbe() {
+    seen.push(useHubReaders(hubWith));
+    return null;
+  }
+
+  afterEach(() => { ag.directives = undefined; });
+
+  it('`liveBattles` is the owner\'s own documents from the poll\'s list, and only those', async () => {
+    hubWith = { ...HUB, activeBattles: [LIVE_DOC, OTHER_DOC] };
+    act(() => { root.render(<LiveProbe />); });
+    await advance(1 * S);
+    expect(last().liveBattles.map((b) => b.id)).toEqual(['bb_live']);
+    expect(last().sections.games.live.map((g) => g.id)).toEqual(['bb_live']);
+  });
+
+  it('with no live game the set is empty, not absent', async () => {
+    hubWith = { ...HUB, activeBattles: [] };
+    act(() => { root.render(<LiveProbe />); });
+    await advance(1 * S);
+    expect(last().liveBattles).toEqual([]);
+  });
+
+  it('`ceremonyAgent.directiveCount` counts the agent\'s active directives, and is 0 when it has none or the read has no list', async () => {
+    hubWith = { ...HUB };
+    ag.directives = [{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }];
+    act(() => { root.render(<LiveProbe />); });
+    await advance(1 * S);
+    expect(last().ceremonyAgent).toEqual({ directiveCount: 3 });
+    expect(Object.isFrozen(last().ceremonyAgent)).toBe(true);
+    ag.directives = undefined;
+    remount();
+    act(() => { root.render(<LiveProbe />); });
+    await advance(1 * S);
+    expect(last().ceremonyAgent).toEqual({ directiveCount: 0 });
+  });
+
+  it('S4\'s sections and actions ride in the same return (nothing of either slice was lost in the merge)', async () => {
+    hubWith = { ...HUB };
+    act(() => { root.render(<LiveProbe />); });
+    await advance(1 * S);
+    expect(Object.keys(last().sections).sort()).toEqual(['activityInputs', 'brief', 'deploy', 'games', 'nextAction']);
+    for (const key of ['openGame', 'openTape', 'refreshHistory', 'nextAction', 'laterNextAction', 'retryBrief', 'openActivity', 'deployAction', 'retryGames']) {
+      expect(Object.keys(last().actions), key).toContain(key);
+    }
+    expect(last().inputs.auth).toMatchObject({ signedIn: true, uid: UID });
+    expect(last().agent).toBeTruthy();
   });
 });

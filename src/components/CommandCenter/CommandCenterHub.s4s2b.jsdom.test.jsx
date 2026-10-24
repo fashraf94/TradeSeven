@@ -256,6 +256,32 @@ describe('the first-deployment card with S2b\'s real hold (merge of S4 and S2b)'
     expect(h.deploy).not.toHaveBeenCalled();
   });
 
+  it('setting the live game aside with Later does not put the first deployment in its place: a game is live, so there is nothing to offer', async () => {
+    const hub = hubOf({ activeBattles: [LIVE] });
+    render('desktop', hub);
+    await flush();
+    expect(nextKind()).toBe('openGame');
+    click(nextCard().querySelector('[data-hub-later]'));
+    expect(nextCard(), 'the live game is still live').toBeNull();
+    expect(h.deploy).not.toHaveBeenCalled();
+  });
+
+  it('mobile: while the STRIP\'s hold charges the card stays offered (its own hold is not the one set aside) but its hold is denied — one hold at a time, both ways', async () => {
+    render('mobile');
+    const stripHold = holdIn(strip());
+    const cardHold = holdIn(nextCard());
+    expect(cardHold.disabled).toBe(false);
+    act(() => { pointer(stripHold, 'pointerdown'); });
+    frameAt(650);
+    expect(currentHold()).toMatchObject({ controlId: 'hub-deploy-strip', phase: 'charging' });
+    expect(nextKind(), 'the offer sets any standing hold aside, so the card does not flicker').toBe('deploy');
+    expect(holdIn(nextCard()).disabled, 'but another control\'s charge denies this one').toBe(true);
+    frameAt(1300);
+    await advance(450);
+    await flush();
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+
   it('a player who has played gets no first-deployment card; the Deploy card\'s own hold is the way in, and it deploys once', async () => {
     h.gamesPlayed = 4;
     render('desktop');
