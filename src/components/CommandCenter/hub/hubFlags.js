@@ -13,9 +13,16 @@
 //                       navItems); the hub names that door after the tab.
 // Anything but exactly `true` reads false.
 
+//
+// Slice S2b (ruling R-S2b-7) reads one more, the Scouting Board's
+// SCOUTING_BOARD_ENABLED, as `scoutingBoard`: whether the hub offers "See what
+// it's eyeing" and mounts the shipped sheet, as the shells do. The Loadout's
+// selectors never receive it (the hub root reads it apart).
+
 import {
   CASUAL_CLONE_CONCURRENCY_ENABLED,
   RELEASE3_CHARACTER_TAB_ENABLED,
+  SCOUTING_BOARD_ENABLED,
   isHypothesisRecordsOn,
 } from '../../../config/featureFlags';
 
@@ -25,4 +32,9 @@ export function hubFlags() {
     hypothesisRecordsOn: isHypothesisRecordsOn() === true,
     characterTab: RELEASE3_CHARACTER_TAB_ENABLED === true,
   };
+}
+
+/** Slice S2b: the Scouting Board's flag, as the shells read it (anything but exactly `true` reads false). */
+export function scoutingBoardOn() {
+  return SCOUTING_BOARD_ENABLED === true;
 }

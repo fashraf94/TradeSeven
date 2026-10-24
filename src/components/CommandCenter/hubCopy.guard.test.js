@@ -350,3 +350,32 @@ describe('display agreement with the shipped hold (BUILD_RULES §9)', () => {
     expect(HUB_COPY.deploy.pointerHelp).toContain(`${(1300 / 1000).toFixed(1)} s`);
   });
 });
+
+// The founder's rulings on the S2b report's questions (S2b report §15). The hub rows compare what is on screen with
+// COPY.* — the same string on both sides — so the words the rulings quote are pinned here.
+describe('S2b: the words the founder\'s rulings quote, exactly (Q-S2b-2, Q-S2b-4, RL-1)', () => {
+  it('every definitive refusal reads "Deployment refused" (before: "Deployment failed"), the review-due strip word included', () => {
+    expect(HUB_COPY.deploy.states.failed).toBe('Deployment refused');
+    expect(HUB_COPY.deploy.reviewDueStrip).toBe('Deployment refused');
+    expect(ALL_COPY).not.toContain('Deployment failed');
+  });
+
+  it('the closed ceremony\'s acknowledgment is "Dismiss"', () => {
+    expect(HUB_COPY.deploy.dismiss).toBe('Dismiss');
+  });
+
+  it('the ceremony says the same words: its refusal eyebrow, its generic refusal headline, its live region, and the in-progress subtext', () => {
+    const src = read('src/components/Dashboard/deployCeremony/CeremonyError.jsx');
+    expect(src).toContain(`const REFUSED_EYEBROW = '${HUB_COPY.deploy.states.failed}';`);
+    expect(src).toContain("const IN_PROGRESS_SUBTEXT = 'Another deploy for your agent is still being set up. If it creates a battle, it will show up with your games.';");
+    // RL-1: the generic confirmed headline and the live region say the eyebrow's word (before: "Deployment failed").
+    expect(src).toContain(`deploy: () => '${HUB_COPY.deploy.states.failed} — no battle was created.',`);
+    expect(src).toContain(`server: () => '${HUB_COPY.deploy.states.failed} — no battle was created.',`);
+    const ceremony = read('src/components/Dashboard/deployCeremony/DeployCeremony.jsx');
+    expect(ceremony).toContain(`machine.errorTone === 'confirmed' ? '${HUB_COPY.deploy.states.failed}.'`);
+    // No string either file renders begins with the old word (the RL-1 review's blind spot: the live region).
+    for (const [file, code] of [['CeremonyError.jsx', src], ['DeployCeremony.jsx', ceremony]]) {
+      expect(code, file).not.toMatch(/['"`]Deployment failed/);
+    }
+  });
+});

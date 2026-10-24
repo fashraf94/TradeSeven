@@ -114,6 +114,19 @@
 //   orphanCleaned         { attemptId, attemptEpoch }  (after S2b has run the orphan's local cleanup)
 //   flagDisabled          {}
 //   unmount               {}
+// Slice S2b adds (ruling R-S2b-3), and gives authChanged the identity source's epoch:
+//   authChanged           { uid, authEpoch? }  (authEpoch from services/authIdentity.js; at or
+//                           below the current one is a stale report)
+//   holdClaimed           { auth, controlId, holdToken, holdEpoch }  (after canStart and the slot)
+//   holdCommitted         { auth, holdToken }  (after canCommit and the slot)
+//   holdReleased          { holdToken }  (a cancelled charge, or a beat that deployed nothing)
+//
+// ── S2b: the provider (src/contexts/DeployAttemptContext.jsx) ──────────────
+//
+// The provider supplies attempt, hold, cooldown, now and its own overlay to
+// the selector through the context's `inputs`; the hub adds the readers and
+// its sheets' modalOpen (hub/useHubDeploy.js) and registers the result back,
+// so the provider admits from the same table the hub shows.
 
 export const HUB_S1_SECTIONS = Object.freeze({
   nextAction: Object.freeze({ status: 'loading', candidate: null }),
@@ -166,8 +179,12 @@ export function liveGamesOf(games) {
 export const DESKTOP_COMPLETED_LIMIT = 2;
 /** The phone Overview shows a short activity list (the design's limit 3). */
 export const PHONE_ACTIVITY_LIMIT = 3;
-/** The side column's activity list (the design's long scenario: ten rows); "All activity · N" opens the rest (slice S4). */
-export const DESKTOP_ACTIVITY_LIMIT = 10;
+/**
+ * The side column's activity list: five rows, and "All activity · N" opens the rest (slice S4; founder ruling Q-S4-8, Oct 24, 2026).
+ * The committed mock-up fixes no desktop count — its side column renders the whole fixture list (ff-side.jsx ActivitySection with no
+ * `limit`; only the phone's Overview passes one, 3) — so the ruling's default stands.
+ */
+export const DESKTOP_ACTIVITY_LIMIT = 5;
 /** The phone Overview shows at most three completed rows (spec §8.2; slice S3). */
 export const PHONE_COMPLETED_LIMIT = 3;
 /** The watchlist card draws this many names, then "+N more": a list can hold far more than a card can read. */

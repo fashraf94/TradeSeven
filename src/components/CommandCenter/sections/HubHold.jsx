@@ -22,6 +22,16 @@
 // phase ("Submitting…", "Deployed"), so name and visible text agree (WCAG
 // 2.5.3; S1 review L3-6).
 
+//
+// Slice S2b (ruling R-S2b-3): a connected hub hands each control its `wiring`
+// from the deploy provider (hub/useHubDeploy.js hold(controlId)): the control's
+// stable name, the hold seam, the provider as beatOwner and the committed
+// deploy. The control is live when the state allows a start, AND while its own
+// hold is the one charging or locked (`holding`) — the selector denies every
+// start while a hold stands, its own included, and a control that went
+// disabled mid-charge would cancel it. Without wiring (the frames, the
+// fixtures) nothing changes: it is live only with `onDeploy`.
+
 import React from 'react';
 import { readToken } from '../../../theme/cssTokens';
 import HoldToDeployButton from '../../Dashboard/deployCeremony/HoldToDeployButton';
@@ -31,18 +41,27 @@ import { BoltIcon, Label } from '../HubParts';
 
 const OFFERS_HOLD = new Set([COPY.deploy.hold, COPY.deploy.holdShort]);
 
-export default function HubHold({ label, canStart = false, onDeploy, full = false, compact = false, style }) {
-  const live = canStart === true && typeof onDeploy === 'function';
+export default function HubHold({ label, canStart = false, onDeploy, wiring = null, holding = null, full = false, compact = false, style }) {
+  const handler = wiring ? wiring.onComplete : onDeploy;
+  // `holding` is this control's own hold phase from the provider ('charging' | 'locked'), or null.
+  const own = Boolean(wiring) && (holding === 'charging' || holding === 'locked');
+  const live = (canStart === true || own) && typeof handler === 'function';
   const accent = readToken('blue-action') || undefined;
+  // A control mounted while its own committed beat runs (a site flip within the 450 ms) has an idle hook: the
+  // provider's record still says committed, so it says "Locked in" too, never the cancellation look (review W3-3).
+  const shown = own && holding === 'locked' ? COPY.deploy.holdLocked : label;
   return (
     <HoldToDeployButton
-      label={<Label size={compact ? 14 : 15} weight={700}>{label}</Label>}
+      label={<Label size={compact ? 14 : 15} weight={700}>{shown}</Label>}
       Icon={BoltIcon}
       iconSize={17}
       accent={accent}
       enabled={live}
       disabled={!live}
-      onComplete={live ? onDeploy : undefined}
+      onComplete={live ? handler : undefined}
+      controlId={wiring?.controlId}
+      holdSeam={wiring?.holdSeam}
+      beatOwner={wiring?.beatOwner}
       ariaLabel={OFFERS_HOLD.has(label) ? COPY.deploy.holdLabel : label}
       style={{
         minHeight: compact ? 44 : 48,

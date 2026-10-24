@@ -23,9 +23,15 @@
 // game (App's handleOpenAgentBattle), open a battle tape (App's legacy Film
 // Room path, origin dashboard, only for a ready review whose target is the
 // Film Room route), Retry a read (the agent's, or an explicit poll refresh),
-// and Retry the window. The hold stays inert: no deploy handler is wired
-// before S2b. A live id leaving a SUCCESSFUL poll of this owner refreshes the
-// window, within its rate cap.
+// and Retry the window. A live id leaving a SUCCESSFUL poll of this owner
+// refreshes the window, within its rate cap.
+//
+// Slice S2b: given the deploy provider's context, the selector also reads the
+// provider's attempt, hold, cooldown and open overlays with the hub's own
+// sheets (selectors/readerInputs.js attemptInputsOf), and the result carries
+// the owned live set and the ceremony's directive count for the provider
+// (hub/useHubDeploy.js wires the controls). Without one nothing changes: the
+// hold stays inert.
 //
 // Slice S4 (rulings R-S4-1 … R-S4-3, R-S4-5) adds, from the same records and with
 // no read, effect or listener of its own: the next action and its Later
@@ -49,7 +55,7 @@ import { HUB_S2A_DEPLOY_INPUTS } from './hubModel';
 import { NEXT_ACTION_KINDS, deriveNextAction, firstDeploymentOffer } from './nextAction';
 import { REVIEW_TRIGGERS } from './reviewScheduler';
 import { RETRY_ACTIONS, deriveHubDeployState } from './selectors/deployState';
-import { agentInputOf, authInputOf, completedInputOf, loadoutAgentOf, ownedLiveList, pollInputOf } from './selectors/readerInputs';
+import { agentInputOf, attemptInputsOf, authInputOf, completedInputOf, loadoutAgentOf, ownedLiveList, pollInputOf } from './selectors/readerInputs';
 import useHubBrief from './useHubBrief';
 import useHubCompletedBattles from './useHubCompletedBattles';
 import useHubLater from './useHubLater';
@@ -88,8 +94,11 @@ function gamesSectionOf(completed, liveRows, liveResolved) {
  * @param {object} hub  App's object (CommandCenterHubGate's `hub`): activeBattles, activePoll,
  *                      refreshActiveBattles, openGame, openFilmRoom — and S5's keys, which
  *                      hub/useHubRuntime.js reads
+ * @param {null|{ snapshot }} [deployAttempt]  slice S2b: the deploy provider's context
+ *                      (src/contexts/DeployAttemptContext.jsx), or null without one
+ * @param {boolean} [hubModalOpen]  slice S2b: the hub's overlay stack's modalOpen
  */
-export default function useHubReaders(hub) {
+export default function useHubReaders(hub, deployAttempt = null, hubModalOpen = false) {
   const identity = useAuthIdentity();
   const signedInUid = identity.resolved && identity.uid ? identity.uid : null;
   const agent = useAgent(signedInUid, { ownerEpoch: identity.authEpoch });
@@ -99,14 +108,19 @@ export default function useHubReaders(hub) {
   const later = useHubLater(auth);
   const brief = useHubBrief();
   const poll = pollInputOf(hub.activePoll, hub.activeBattles, identity);
+  const agentInput = agentInputOf(agent);
   const inputs = Object.freeze({
     ...HUB_S2A_DEPLOY_INPUTS,
     auth,
-    agent: agentInputOf(agent),
+    agent: agentInput,
     poll,
     completed: completedInputOf(completed),
     // As the shells read it: at render.
     concurrencyEnabled: CASUAL_CLONE_CONCURRENCY_ENABLED,
+    // Slice S2b: the provider's attempt, hold, cooldown and overlays, with this render's clock (none without one).
+    ...attemptInputsOf(deployAttempt?.snapshot ?? null, {
+      auth, agentId: agentInput.agent?.id ?? null, hubModalOpen, now: Date.now(),
+    }),
   });
   const deploy = deriveHubDeployState(inputs);
 
@@ -201,5 +215,14 @@ export default function useHubReaders(hub) {
     },
   };
 
-  return { sections: { games, deploy, activityInputs, nextAction, brief: brief.brief }, actions, inputs, agent: loadoutAgent };
+  // The Loadout's agent (slice S5) is this same read, never App's (the S3 merge with S5). Slice S2b: the gate's owned
+  // live set and the ceremony's directive count, for the deploy provider (hub/useHubDeploy.js).
+  return {
+    sections: { games, deploy, activityInputs, nextAction, brief: brief.brief },
+    actions,
+    inputs,
+    agent: loadoutAgent,
+    liveBattles: live,
+    ceremonyAgent: Object.freeze({ directiveCount: Array.isArray(agent?.activeDirectives) ? agent.activeDirectives.length : 0 }),
+  };
 }

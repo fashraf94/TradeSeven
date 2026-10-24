@@ -30,12 +30,20 @@
 // AND the record's captured identity still matches (ownership.js isCurrent).
 // A rejected or stale action returns the SAME state object, so a caller can
 // tell (`next === prev`).
+//
+// Slice S2b (rulings R-S2b-2, R-S2b-3): the provider's auth epoch IS the
+// identity source's (src/services/authIdentity.js), so reader results tagged
+// with that epoch compare against the attempt's: `initialAttemptState` and
+// `authChanged` take it, and the epoch never goes down. The hold record gains
+// its three actions — claimed (charging), committed (locked) and released — and
+// a hold that admits a request is stamped with that request's attempt id, so a
+// release that arrives after it cannot drop the hold the attempt now owns.
 
 import {
   ATTEMPT_PHASES, CEREMONY_PHASES, ERROR_TONES, HOLD_PHASES, RECONCILIATION, RESOLUTION_KINDS,
   realId, translateServiceResult,
 } from './attemptVocabulary';
-import { captureIdentity, isCurrent, signedIn, validUid } from './ownership';
+import { captureIdentity, isCurrent, signedIn, validEpoch, validUid } from './ownership';
 
 /**
  * The server's per-agent deploy cooldown: decide.js answers 429 inside 120 s of
@@ -58,17 +66,24 @@ export const ATTEMPT_ACTION_TYPES = Object.freeze({
   ORPHAN_CLEANED: 'orphanCleaned',
   FLAG_DISABLED: 'flagDisabled',
   UNMOUNT: 'unmount',
+  // S2b (ruling R-S2b-3)
+  HOLD_CLAIMED: 'holdClaimed',
+  HOLD_COMMITTED: 'holdCommitted',
+  HOLD_RELEASED: 'holdReleased',
 });
 const T = ATTEMPT_ACTION_TYPES;
 
 const finite = (n) => typeof n === 'number' && Number.isFinite(n);
 const freeze = Object.freeze;
 
-/** The reducer's starting state for a provider mounted with `uid` signed in (or null). */
-export function initialAttemptState({ uid = null } = {}) {
+/**
+ * The reducer's starting state for a provider mounted with `uid` signed in (or null), at the identity
+ * source's `authEpoch` (S2b; 0 when not given or not an epoch).
+ */
+export function initialAttemptState({ uid = null, authEpoch = 0 } = {}) {
   return freeze({
     authUid: validUid(uid) ? uid : null,
-    authEpoch: 0,
+    authEpoch: validEpoch(authEpoch) ? authEpoch : 0,
     attemptEpoch: 0,
     attempt: null,
     hold: null,
@@ -167,7 +182,9 @@ function begin(state, action) {
   // overlay was dismissed, an orphan not yet cleaned — keeps the guard.
   if (unacknowledged(state.attempt) || foreignHold(state, action)) return state;
   const attempt = makeAttempt(state, action, action.targetAgentId);
-  return freeze({ ...state, attemptEpoch: attempt.attemptEpoch, attempt });
+  // S2b: the committed hold now belongs to this request (holdReleased below cannot drop it).
+  const hold = own ? freeze({ ...state.hold, attemptId: attempt.attemptId }) : state.hold;
+  return freeze({ ...state, attemptEpoch: attempt.attemptEpoch, attempt, hold });
 }
 
 function targetResolved(state, action) {
@@ -311,10 +328,13 @@ const orphan = (attempt) => (unacknowledged(attempt)
 
 function authChanged(state, action) {
   // Every identity change, A → B → A included, is a new auth epoch and an invalidation.
+  // S2b: the identity source's epoch, when given; one at or below the current is a stale report.
+  const given = Object.hasOwn(action, 'authEpoch') ? action.authEpoch : null;
+  if (given !== null && !(validEpoch(given) && given > state.authEpoch)) return state;
   return freeze({
     ...state,
     authUid: validUid(action.uid) ? action.uid : null,
-    authEpoch: state.authEpoch + 1,
+    authEpoch: given ?? state.authEpoch + 1,
     attemptEpoch: state.attemptEpoch + 1,
     attempt: orphan(state.attempt),
     hold: null,
@@ -341,6 +361,41 @@ function unmount(state) {
   return freeze({ ...state, revoked: true, attemptEpoch: state.attemptEpoch + 1, attempt: orphan(state.attempt), hold: null });
 }
 
+const validName = (v) => typeof v === 'string' && v.length > 0;
+
+/**
+ * S2b (ruling R-S2b-3): a control's claim, admitted by the provider from canStart before the
+ * slot granted it (spec §5.5). The record is the selector's `hold` input: one at a time, none
+ * while an attempt stands, none with the flag disabled, none for another identity.
+ */
+function holdClaimed(state, action) {
+  if (state.flagDisabled || !authMatches(state, action.auth)) return state;
+  if (!validName(action.controlId) || !validName(action.holdToken) || !validEpoch(action.holdEpoch)) return state;
+  if (activeHold(state.hold) || unacknowledged(state.attempt)) return state;
+  return freeze({
+    ...state,
+    hold: freeze({ controlId: action.controlId, holdToken: action.holdToken, holdEpoch: action.holdEpoch, phase: HOLD_PHASES.CHARGING }),
+  });
+}
+
+/** The threshold's commitment of the charging hold whose token this is (after canCommit and the slot agreed). */
+function holdCommitted(state, action) {
+  const h = state.hold;
+  if (state.flagDisabled || !authMatches(state, action.auth)) return state;
+  if (!h || h.phase !== HOLD_PHASES.CHARGING || h.holdToken !== action.holdToken) return state;
+  return freeze({ ...state, hold: freeze({ ...h, phase: HOLD_PHASES.LOCKED }) });
+}
+
+/**
+ * A hold given back: a cancelled charge, or a committed one whose beat deployed nothing. A hold
+ * that admitted a request belongs to that attempt until the attempt ends (begin stamps it).
+ */
+function holdReleased(state, action) {
+  const h = state.hold;
+  if (!h || h.holdToken !== action.holdToken || validName(h.attemptId)) return state;
+  return freeze({ ...state, hold: null });
+}
+
 const HANDLERS = {
   [T.BEGIN]: begin,
   [T.TARGET_RESOLVED]: targetResolved,
@@ -355,6 +410,9 @@ const HANDLERS = {
   [T.ORPHAN_CLEANED]: orphanCleaned,
   [T.FLAG_DISABLED]: flagDisabled,
   [T.UNMOUNT]: unmount,
+  [T.HOLD_CLAIMED]: holdClaimed,
+  [T.HOLD_COMMITTED]: holdCommitted,
+  [T.HOLD_RELEASED]: holdReleased,
 };
 
 /**

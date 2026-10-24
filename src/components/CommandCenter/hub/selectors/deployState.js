@@ -110,6 +110,7 @@ const state = (displayState, canStart, rest = {}) => Object.freeze({
   cooldownUntil: null,
   holdControlId: null,
   retryBlock: null,
+  dismiss: false,
   ...rest,
 });
 
@@ -147,6 +148,8 @@ function freshnessOf(poll, gate) {
  *   retryBlock: null|{ displayState, reason, cooldownUntil },
  *                                       why an attempt's Retry is withheld: the row a
  *                                       replacing request would meet now
+ *   dismiss: boolean,                   a refusal no ceremony shows may be acknowledged
+ *                                       here (founder ruling Q-S2b-4); never an uncertain one
  * }}
  */
 export function deriveHubDeployState(inputs) {
@@ -201,6 +204,7 @@ export function deriveHubDeployState(inputs) {
       recovered: shown.recovered === true,
       battleId: shown.battleId ?? null,
       retryBlock,
+      dismiss: shown.dismiss === true,
     });
   }
   // ...or this owner's hold: it can only have been claimed from a ready state, so

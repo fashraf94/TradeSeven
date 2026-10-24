@@ -22,6 +22,15 @@
 // own SERVICE_OUTCOMES (hub/selectors/attemptVocabulary.js) holds the same six
 // values, and src/constants/deployOutcomes.test.js keeps the two equal.
 
+// Command Center slice S2b (ruling R-S2b-9b; R2 report §10): decide.js's 429
+// "Deploy already in progress" is typed `refused` with `reason: 'in_progress'`
+// (agentDeploy.js REFUSAL_REASONS_429). It is a refusal of THIS request while the
+// agent's other deploy runs, never a lost contact, and the ceremony
+// (CeremonyError.jsx) and the hub (attemptVocabulary.js) both show this one line,
+// so the two cannot disagree (BUILD_RULES §9).
+export const DEPLOY_REFUSAL_REASON_IN_PROGRESS = 'in_progress';
+export const DEPLOY_IN_PROGRESS_LINE = 'A deploy is already in progress';
+
 export const DEPLOY_OUTCOMES = Object.freeze({
   CREATED: 'created',
   EXISTING_BATTLE: 'existing_battle',
@@ -30,3 +39,8 @@ export const DEPLOY_OUTCOMES = Object.freeze({
   HANDOFF_FAILED: 'handoff_failed',
   ORPHANED: 'orphaned',
 });
+
+/** The definitive 429 refusal of this request: another deploy for the agent is running. */
+export function isInProgressRefusal(result) {
+  return result?.outcome === DEPLOY_OUTCOMES.REFUSED && result?.reason === DEPLOY_REFUSAL_REASON_IN_PROGRESS;
+}

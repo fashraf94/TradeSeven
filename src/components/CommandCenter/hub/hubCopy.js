@@ -25,8 +25,9 @@
 // "Ready to deploy · as of {time}", "Finishing deployment", "Deployed",
 // "Battle confirmed", "Already running" + Open game, "Couldn't confirm the
 // deploy", "Sign in required". Two are the shipped ceremony's
-// (CeremonyError.jsx), so the hub and the overlay say the same thing:
-// "Deployment failed" and "Couldn't confirm the deploy". The build's own,
+// (CeremonyError.jsx), so the hub and the overlay say the same thing: the
+// refusal's eyebrow (since S2b "Deployment refused", below) and "Couldn't
+// confirm the deploy". The build's own,
 // where the spec names a state but no words: the agent's loading state says
 // "Checking eligibility…" like the poll's (eligibility cannot be known
 // before the agent, and one line avoids a flicker of two), its error "Agent
@@ -35,7 +36,10 @@
 // the in-flight control labels, "Verifying deployment…", "Check
 // deployment", "Enter battle", and the as-of and refresh notes.
 // Slice S3 (the readers) adds the founder's strip words for the review-due
-// refusal, "Deployment refused" (ruling R-S3-1).
+// refusal, "Deployment refused" (ruling R-S3-1). Slice S2b (founder ruling
+// Q-S2b-2) makes it every definitive refusal's word, here and in the
+// ceremony's eyebrow (CeremonyError.jsx), and adds the closed ceremony's
+// "Dismiss" (Q-S2b-4).
 //
 // Slice S5 (the owner's loadout and the retained entry points, rulings
 // R-S5-1 … R-S5-7) adds the Loadout panel's states and labels, the shipped
@@ -83,6 +87,12 @@ export const HUB_COPY = Object.freeze({
     statusIdle: 'Idle · nothing running',
     /** The status line while a hub-started deployment is submitting. */
     statusSubmitting: 'Submitting your deployment',
+    /** Slice S2b: a hub hold's own phases on the status line (spec §5.5, phases only; the build's words). */
+    statusHolding: 'Holding to deploy',
+    /** The shipped control's own word for a committed hold (HoldToDeployButton.jsx). */
+    statusLocked: 'Locked in',
+    /** The charge beside the line, aria-hidden (spec §5.5: "percentage is visible and aria-hidden"). */
+    holdPercent: (n) => `${n}%`,
     /** Shadow's image label: what it shows, and the selected area. */
     imageLabel: (state, areaName) => `Shadow — ${state}${areaName ? `; ${areaName} selected` : ''}`,
     states: Object.freeze({ ambient: 'ambient', still: 'still', processing: 'processing' }),
@@ -295,6 +305,8 @@ export const HUB_COPY = Object.freeze({
     holdShort: 'Deploy',
     holdSubmitting: 'Submitting…',
     holdDeployed: 'Deployed',
+    /** Slice S2b (review W3-3): a committed hold's own word, the shipped control's (HoldToDeployButton.jsx). */
+    holdLocked: 'Locked in',
     holdLabel: 'Hold to deploy. Press and hold, or press Enter or Space to deploy now.',
     /** Spec §5.5, exactly. The shipped hold is 1,300 ms (useHoldToDeploy.js HOLD_MS). */
     pointerHelp: 'Hold for 1.3 s. Release before the hold completes to cancel.',
@@ -309,6 +321,18 @@ export const HUB_COPY = Object.freeze({
     enterBattle: 'Enter battle',
     checkDeployment: 'Check deployment',
     openForge: 'Open in the Forge',
+    /** Founder ruling Q-S2b-4: a refusal shown with the ceremony closed is acknowledged here, its cooldown kept (spec §5.4). */
+    dismiss: 'Dismiss',
+    /** Slice S2b (ruling R-S2b-7): the Scouting Board's entry, the shells' own words (CommandDashboard.jsx). */
+    scoutingBoard: 'See what it’s eyeing',
+    /**
+     * Slice S2b (ruling R-S2b-5; R1 Fable FR-2): the existing battle's owned read, on the card — reading it, and a read
+     * that failed, with the time its Retry opens (a 30 s per-attempt wait). CeremonyExisting.jsx's own words for a
+     * failed open.
+     */
+    existingReading: 'Opening the running game…',
+    existingUnavailable: 'Couldn’t open the running game',
+    existingRetryAt: (time) => (time ? `Couldn’t open the running game · Retry at ${time}` : 'Couldn’t open the running game'),
     /**
      * The Deploy card's and the strip's words for each display state, in the
      * spec §3.1 / §5.2 vocabulary (C1, C3): the eligibility states, then the
@@ -332,7 +356,8 @@ export const HUB_COPY = Object.freeze({
       finishing: 'Finishing deployment',
       confirmed: 'Deployed',
       existing: 'Already running',
-      failed: 'Deployment failed',
+      // Every definitive refusal, the review-due one included (founder ruling Q-S2b-2): the ceremony's eyebrow too.
+      failed: 'Deployment refused',
       uncertain: 'Couldn’t confirm the deploy',
     }),
     /** A recovered confirmation: the battle is owned and admitted, but nothing proves this request created it (spec §5.2). */

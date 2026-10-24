@@ -17,7 +17,7 @@
 // the ceremony instead (isOrphanedResult), so nothing about the former owner's
 // deploy is shown, verified or retried under the new account (spec §5.2, §5.4).
 
-import { DEPLOY_OUTCOMES } from '../../constants/deployOutcomes';
+import { DEPLOY_OUTCOMES, DEPLOY_REFUSAL_REASON_IN_PROGRESS, isInProgressRefusal } from '../../constants/deployOutcomes';
 import { HYPOTHESIS_NOTICES } from '../../constants/hypothesisRecords';
 
 /** The deploy found the agent's running battle instead of creating one. */
@@ -59,5 +59,12 @@ export function deployResultFor(result) {
         battleId: result?.battleId ?? null,
         // Pilot P1c (review L4-7): that battle carries nothing for a due idea — the recovered reveal says so.
         ...(result?.battleId && result?.hypothesisNotice === HYPOTHESIS_NOTICES.reviewDue ? { hypothesisNotice: HYPOTHESIS_NOTICES.reviewDue } : {}),
+        // Command Center slice S2b (ruling R-S2b-9b): decide's 429 "Deploy already in
+        // progress" — the error surface reads it as that refusal, not as lost contact.
+        ...(isInProgressRefusal(result) ? { reason: DEPLOY_REFUSAL_REASON_IN_PROGRESS } : {}),
+        // S2b fix round (founder ruling on review FRB-4, extending R-S2b-9b): every typed
+        // refusal — the no-POST preflights included — reads as a refusal, never as lost
+        // contact. An uncertain or untyped result carries no such fact and keeps those words.
+        ...(result?.outcome === DEPLOY_OUTCOMES.REFUSED ? { refused: true } : {}),
       };
 }

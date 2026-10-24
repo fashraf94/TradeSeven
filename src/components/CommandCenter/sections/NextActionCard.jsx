@@ -7,14 +7,13 @@
 // fixtures show the card.
 //
 // A first-deployment candidate carries the hold control (spec §5.5); any
-// other carries its own button. With no handler each is disabled.
+// other carries its own button. With no handler each is disabled: the hold has
+// no handler but the provider's wiring.
 //
-// Slice S4 (ruling R-S4-8): the candidate comes from hub/nextAction.js. The
-// two handlers are kept apart on purpose. `onAct` opens a game or a review;
-// `onDeploy` is the deploy action — the very one the strip and the Deploy card
-// receive — and is the hold's alone. `onAct` never reaches the hold, so the
-// first-deployment card cannot start a deployment before S2b supplies
-// `onDeploy`: until then the hold renders disabled, like the strip's.
+// Slice S4 (ruling R-S4-8): the candidate comes from hub/nextAction.js. `onAct`
+// opens a game or a review; the connected hub gives it none for the first
+// deployment, whose hold is the deploy provider's alone (slice S2b: `holdWiring`
+// / `holding`, below), so opening a game can never start a deployment.
 
 import React from 'react';
 import { deployDisplay } from '../hub/deployDisplay';
@@ -25,7 +24,9 @@ import HubHold from './HubHold';
 
 const CTA_ICON = { openGame: 'sword', review: 'film' };
 
-export default function NextActionCard({ nextAction, deploy, onAct, onDeploy, onLater }) {
+// Slice S2b (ruling R-S2b-10): the first-deployment candidate's hold is the deploy provider's, as the strip's and
+// the card's are — `holdWiring` / `holding` (hub/useHubDeploy.js). Which candidate shows is S4's.
+export default function NextActionCard({ nextAction, deploy, onAct, onLater, holdWiring = null, holding = null }) {
   const phone = useHubComposition() === 'phone';
   const candidate = nextAction?.status === 'ready' ? nextAction.candidate : null;
   if (!candidate) return null;
@@ -50,7 +51,7 @@ export default function NextActionCard({ nextAction, deploy, onAct, onDeploy, on
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         {isDeploy ? (
-          <HubHold full canStart={deployDisplay(deploy).canStart} label={COPY.deploy.hold} onDeploy={onDeploy} style={{ flex: 1 }} />
+          <HubHold full canStart={deployDisplay(deploy).canStart} label={COPY.deploy.hold} wiring={holdWiring} holding={holding} style={{ flex: 1 }} />
         ) : (
           <HubButton kind="primary" icon={CTA_ICON[candidate.key]} onPress={onAct} style={{ flex: 1 }}>{candidate.cta}</HubButton>
         )}

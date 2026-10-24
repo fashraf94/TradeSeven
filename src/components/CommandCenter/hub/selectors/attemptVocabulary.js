@@ -30,6 +30,7 @@
 // argument.
 
 import { DEPLOY_REFUSAL_CODE, DUE_DEPLOY_LINE } from '../../../../constants/hypothesisRecords';
+import { DEPLOY_IN_PROGRESS_LINE, isInProgressRefusal } from '../../../../constants/deployOutcomes';
 
 /** The provider record's stored phases (spec §5.2). */
 export const ATTEMPT_PHASES = Object.freeze({
@@ -151,8 +152,11 @@ const refused = (result) => {
   const reviewDue = isReviewDue(result);
   // The server's words, unchanged (spec §5.2). The review-due refusal's words are
   // the one shared line (carriage.js answers it verbatim), so a 409 that lost them
-  // in transit still shows the same line, never a generic one.
-  const line = nonEmptyString(result.details) ?? (reviewDue ? DUE_DEPLOY_LINE : null);
+  // in transit still shows the same line, never a generic one. Slice S2b (ruling
+  // R-S2b-9b): decide's 429 "Deploy already in progress" carries no `details`, so
+  // it shows the one line the ceremony shows (src/constants/deployOutcomes.js).
+  const line = nonEmptyString(result.details)
+    ?? (reviewDue ? DUE_DEPLOY_LINE : isInProgressRefusal(result) ? DEPLOY_IN_PROGRESS_LINE : null);
   return translation(
     ATTEMPT_PHASES.REFUSED, CEREMONY_PHASES.ERROR, ERROR_TONES.CONFIRMED, ATTEMPT_DISPLAY.FAILED,
     {
@@ -254,10 +258,13 @@ export function displayForAttempt(attempt) {
     case ATTEMPT_PHASES.EXISTING:
       return shown(ATTEMPT_DISPLAY.EXISTING, ATTEMPT_ACTIONS.OPEN_GAME, { battleId });
     case ATTEMPT_PHASES.REFUSED:
+      // A refusal no ceremony shows (closed while the request was out, or the ceremony off) can also be
+      // dismissed from the hub: acknowledged, its cooldown kept (spec §5.4; founder ruling Q-S2b-4). An open
+      // ceremony has its own Back to hub, and an uncertain attempt never has one: its guard stands.
       return shown(
         ATTEMPT_DISPLAY.FAILED,
         result.kind === RESULT_KINDS.REVIEW_DUE ? ATTEMPT_ACTIONS.OPEN_FORGE_REVIEW : ATTEMPT_ACTIONS.RETRY,
-        { line: nonEmptyString(result.line) },
+        { line: nonEmptyString(result.line), dismiss: ceremony === CEREMONY_PHASES.CLOSED },
       );
     case ATTEMPT_PHASES.UNCERTAIN: {
       const status = attempt.reconciliationStatus;

@@ -275,7 +275,7 @@ describe('the first deployment (spec §3.1; R-S4-2, R-S4-8)', () => {
     expect(nextCard().textContent).toContain(COPY.deploy.hold);
   });
 
-  it('the hold is inert until S2b supplies the deploy action: disabled, and completing it deploys nothing — the same as the strip\'s', () => {
+  it('without a deploy provider the hold is inert: disabled, and completing it deploys nothing — the same as the strip\'s', () => {
     firstTime();
     const hub = hubOf();
     render('desktop', hub);
@@ -289,18 +289,19 @@ describe('the first deployment (spec §3.1; R-S4-2, R-S4-8)', () => {
     expect(byRole(nextCard(), 'button', COPY.deploy.holdLabel)[0].disabled).toBe(true);
   });
 
-  it('the hold takes the deploy action and nothing else: the card\'s onAct never reaches it, its onDeploy does (R-S4-8)', () => {
+  it('the hold takes the provider\'s wiring and nothing else: the card\'s onAct never reaches it (R-S4-8; S2b\'s holdWiring)', () => {
     const candidate = { status: 'ready', candidate: { key: 'deploy', id: null, title: 'T', why: 'W', cta: 'Deploy' } };
     const deploy = { displayState: 'ready', canStart: true, gateBlocked: false, freshness: { asOf: NOW, stale: false, refreshing: false }, retryAction: null, reason: null, action: null, recovered: false, battleId: null, cooldownUntil: null, holdControlId: null, retryBlock: null };
     const onAct = vi.fn();
-    const onDeploy = vi.fn();
+    const onComplete = vi.fn();
     const m = mount(<NextActionCard nextAction={candidate} deploy={deploy} onAct={onAct} />);
     mounted.push(m);
     const [withActOnly] = byRole(document.body, 'button', COPY.deploy.holdLabel);
     expect(withActOnly.disabled, 'a handler for opening things is not a handler for deploying').toBe(true);
-    m.rerender(<NextActionCard nextAction={candidate} deploy={deploy} onAct={onAct} onDeploy={onDeploy} />);
-    expect(byRole(document.body, 'button', COPY.deploy.holdLabel)[0].disabled).toBe(false);
+    m.rerender(<NextActionCard nextAction={candidate} deploy={deploy} onAct={onAct} holdWiring={{ controlId: 'hub-next-action', onComplete }} />);
+    expect(byRole(document.body, 'button', COPY.deploy.holdLabel)[0].disabled, 'the provider\'s wiring arms it').toBe(false);
     expect(onAct).not.toHaveBeenCalled();
+    expect(onComplete).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -493,7 +494,9 @@ describe('Recent activity (R-S4-1)', () => {
     const labels = activityLabels();
     expect(labels[0]).toMatch(/^Deployed: BaggerBomb vs CPU, Oct 23, 9:00\s?AM ET$/);
     expect(labels[1]).toMatch(/^Game completed: vs CPU · Won \+11\.0, Oct 21, 4:05\s?PM ET$/);
-    expect(labels).toHaveLength(1 + 3 + 2);
+    // The projection holds 1 + 3 + 2 rows; the side column shows five (Q-S4-8) and "All activity · 6" holds the rest.
+    expect(labels).toHaveLength(5);
+    expect(byRole(activitySection(), 'button', COPY.activity.all(1 + 3 + 2))).toHaveLength(1);
     // The row SHOWS its time and its second line, not only names them.
     const completedRow = activitySection().querySelector('[data-hub-activity-row="completed"]').closest('button');
     expect(completedRow.textContent).toMatch(/Oct 21, 4:05\s?PM ET/);
@@ -663,13 +666,13 @@ describe('Recent activity (R-S4-1)', () => {
     expect(activitySection().textContent).not.toMatch(/learn|improv|grow|since your last visit|intelligen/i);
   });
 
-  it('the side column shows ten rows and links to the rest; the phone shows three; both link "All activity · N" with the projection\'s own count', () => {
+  it('the side column shows five rows (the mock-up fixes none; Q-S4-8) and links to the rest; the phone shows three; both link "All activity · N" with the projection\'s own count', () => {
     render('desktop', hubOf({ activeBattles: [BB] }));
     const total = activityLabels().length;
-    expect(total).toBe(10);
+    expect(total).toBe(5);
     const [all] = byRole(activitySection(), 'button', /^All activity · \d+$/);
     const n = Number(/(\d+)$/.exec(all.textContent)[1]);
-    expect(n).toBeGreaterThan(10);
+    expect(n).toBeGreaterThan(5);
     unmountAll();
     render('mobile', hubOf({ activeBattles: [BB] }));
     expect(activityLabels(overview())).toHaveLength(3);

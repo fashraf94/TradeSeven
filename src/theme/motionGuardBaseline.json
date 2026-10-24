@@ -417,6 +417,14 @@
       "count": 0,
       "authority": "Command Center hub S3 (ruling R-S3-10; founder ruling R-S1-2) \u2014 the hook that joins the hub's readers: no JSX, no colour, no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
     },
+    "src/components/CommandCenter/hub/useHubDeploy.js": {
+      "count": 0,
+      "authority": "Command Center hub S2b (ruling R-S2b-2; founder ruling R-S1-2) — the hub's side of the deploy provider: no JSX, no colour, no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/__fixtures__/deployAttemptKit.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S2b — the deploy provider suites' test kit (a stand-in hub root with the real hold controls): no motion at all, so zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
     "src/components/CommandCenter/LoadoutSheets.jsx": {
       "count": 0,
       "authority": "Command Center hub S5 (prompt \u00a73; founder ruling R-S1-2) \u2014 the owner's Loadout, the retained entry points, the overlay stack and the App-side predicates, with the test stand-ins for the shipped sheets: no motion at all, so zero raw transition literals from birth. Registered in the commit that introduces them."

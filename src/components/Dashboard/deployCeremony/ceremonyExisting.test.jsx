@@ -195,7 +195,8 @@ describe('Existing battle R1 (spec §11.3) — the real machine with 200 battleC
     expect(text()).toContain('No new game was started.');
     expect(text()).not.toContain('Deployment complete');
     expect(text()).not.toContain('ready for battle');
-    expect(text()).not.toMatch(/Deployment (failed|unconfirmed)/);
+    // "refused" since Command Center S2b (founder rulings Q-S2b-2, RL-1, FRB-4): the refusal's word was renamed.
+    expect(text()).not.toMatch(/Deployment (failed|refused|unconfirmed)/);
     expect(button('Enter the battle')).toBeUndefined();
     expect(entered).toBeUndefined();
     expect(createCb).not.toHaveBeenCalled();
@@ -275,7 +276,8 @@ describe('Existing battle R1 (spec §11.3) — the real machine with 200 battleC
     renderWith({ stage: 'error', deployId: OURS, updatedAt: `${OURS}-4` }, { status: 'error', postIssued: true, httpStatus: 500, existingBattleId: RUNNING_ID });
     await tick(400);
     expect(text()).toContain('Already running');
-    expect(text()).not.toMatch(/Deployment (failed|unconfirmed)/);
+    // "refused" since Command Center S2b (founder rulings Q-S2b-2, RL-1, FRB-4): the refusal's word was renamed.
+    expect(text()).not.toMatch(/Deployment (failed|refused|unconfirmed)/);
     expect(notes.map((n) => n.phase)).toEqual(['theater', 'existing']);
   });
 
@@ -378,7 +380,9 @@ describe('P1b refusal (spec §11.3) — retired by Pilot P1c (ruling E1): a revi
     expect([result.details, 'code' in result]).toEqual([undefined, false]);
     const posts = globalThis.fetch.mock.calls.length;
     await runTo(deployResultFor(result));
-    await waitFor(() => /Deployment (failed|unconfirmed)/.test(text()), 'the error terminal');
+    // S2b fix round (founder ruling on review FRB-4): a typed refusal reads "Deployment refused" (was "unconfirmed").
+    await waitFor(() => /Deployment (failed|refused|unconfirmed)/.test(text()), 'the error terminal');
+    expect(text()).toContain('Deployment refused');
     expect(text()).not.toContain(DUE_DEPLOY_LINE);
     expect(text()).not.toContain('Deployment complete');
     expect(text()).not.toContain('Already running');
@@ -411,7 +415,8 @@ describe('onPhaseChange (R-R1-6) — every phase, echoing the attempt id it was 
     renderWith({ stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1` }, { status: 'pending' }, { attemptId: 'att-2' });
     await tick();
     renderWith({ stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1` }, deployResultFor(result), { attemptId: 'att-2' });
-    await waitFor(() => /Deployment (failed|unconfirmed)/.test(text()), 'the error terminal');
+    // "refused" since the S2b fix round (founder ruling on review FRB-4); the machine's tone below is unchanged.
+    await waitFor(() => /Deployment (failed|refused|unconfirmed)/.test(text()), 'the error terminal');
     expect(notes.map((n) => n.phase)).toEqual(['theater', 'verifying', 'error']);
     expect(notes[0].attemptId).toBe('att-1');
     expect(notes.slice(1).map((n) => n.attemptId)).toEqual(['att-2', 'att-2']);

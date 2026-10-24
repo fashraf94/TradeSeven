@@ -20,11 +20,24 @@ const standaloneStack = () => {
   return standalone;
 };
 
-/** The hub root's provider. */
-export function HubOverlayProvider({ children }) {
+/**
+ * The hub root's provider. Slice S2b: `onOpen` is called synchronously when the stack goes from empty to open, in
+ * the task that opened the overlay — the deploy provider's cancel of an uncommitted hold (spec §10: "An overlay
+ * opening pre-commit cancels that hold"; R2 Fable FR2-4).
+ */
+export function HubOverlayProvider({ children, onOpen = null }) {
   const [modalOpen, setModalOpen] = useState(false);
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
   const stackRef = useRef(null);
-  if (!stackRef.current) stackRef.current = createOverlayStack({ onChange: setModalOpen });
+  if (!stackRef.current) {
+    stackRef.current = createOverlayStack({
+      onChange: (open) => {
+        setModalOpen(open);
+        if (open && typeof onOpenRef.current === 'function') onOpenRef.current();
+      },
+    });
+  }
   useEffect(() => {
     const stack = stackRef.current;
     // A hub that unmounts with a sheet open (the watchlist sheet's Forge button opens the Forge, which replaces

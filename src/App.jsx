@@ -126,6 +126,7 @@ import DashboardDesktop from './components/Dashboard/DashboardDesktop';
 import CommandDashboard from './components/Dashboard/CommandDashboard';
 import CommandDashboardDesktop from './components/Dashboard/CommandDashboardDesktop';
 import CommandCenterHubGate from './components/CommandCenter/CommandCenterHubGate';
+import { DeployAttemptProvider } from './contexts/DeployAttemptContext';
 import { pickDashboardShell, DASHBOARD_SHELLS } from './components/CommandCenter/pickDashboardShell';
 import { forgeAreaOf, hubOwnsDashboard } from './components/CommandCenter/hubChrome';
 import { excludeVoidedGroupBattles } from './utils/commandCenterLiveBattles';
@@ -6739,6 +6740,14 @@ export default function PortfolioDuel() {
   // R1 (ruling R-R1-5; review L2-1): the uid the stashed battle was handed off
   // for, set beside the stash, so Enter can check its owner before navigating.
   const pendingCeremonyOwnerRef = useRef(null);
+  // Command Center S2b (spec V1.2 §5.4): the hub's deploy provider releases the stash
+  // of a creation it acknowledged without entering it, or of an attempt orphaned by an
+  // account change — only the stash of that battle, never a newer one.
+  const clearCeremonyStash = (battleId) => {
+    if (!battleId || pendingCeremonyBattleRef.current?.id !== battleId) return;
+    pendingCeremonyBattleRef.current = null;
+    pendingCeremonyOwnerRef.current = null;
+  };
   const enterAgentBattle = (battleObj) => {
     if (!battleObj) return;
     setActiveBattleId(battleObj.id);
@@ -10336,8 +10345,20 @@ export default function PortfolioDuel() {
         </ErrorBoundary>
       </div>
 
-      {/* Active screen content from routing */}
-      {screenContent}
+      {/* Active screen content from routing. Command Center S2b (ruling R-S2b-1): the
+          hub's deploy provider wraps it here, where App never remounts across screens
+          or widths, with App's deploy callbacks as its bridge. Hub flag off, it is a
+          pass-through (src/contexts/DeployAttemptContext.jsx). */}
+      <DeployAttemptProvider
+        onCreateAgentBattle={handleCreateAgentTrainingBattle}
+        onEnterBattle={handleEnterCeremonyBattle}
+        onOpenBattle={handleOpenAgentBattle}
+        refreshActiveBattles={refreshActiveBattles}
+        clearCeremonyStash={clearCeremonyStash}
+        userName={user?.username}
+      >
+        {screenContent}
+      </DeployAttemptProvider>
 
       {/* ========== DESKTOP SIDEBAR (Phase 3) ========== */}
       {user && !isMobile && !GAMEPLAY_SCREENS.includes(screen) && screen !== 'home' && (
