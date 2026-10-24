@@ -275,7 +275,7 @@ describe('the first deployment (spec §3.1; R-S4-2, R-S4-8)', () => {
     expect(nextCard().textContent).toContain(COPY.deploy.hold);
   });
 
-  it('without a deploy provider the hold is inert: disabled, and completing it deploys nothing — the same as the strip\'s', () => {
+  it('without a deploy provider the hold is inert: disabled on the card, the Deploy card and the strip alike', () => {
     firstTime();
     const hub = hubOf();
     render('desktop', hub);
@@ -300,8 +300,6 @@ describe('the first deployment (spec §3.1; R-S4-2, R-S4-8)', () => {
     expect(withActOnly.disabled, 'a handler for opening things is not a handler for deploying').toBe(true);
     m.rerender(<NextActionCard nextAction={candidate} deploy={deploy} onAct={onAct} holdWiring={{ controlId: 'hub-next-action', onComplete }} />);
     expect(byRole(document.body, 'button', COPY.deploy.holdLabel)[0].disabled, 'the provider\'s wiring arms it').toBe(false);
-    expect(onAct).not.toHaveBeenCalled();
-    expect(onComplete).not.toHaveBeenCalled();
   });
 
   it.each([

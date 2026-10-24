@@ -62,7 +62,7 @@ export function ActivityAgeNote({ activity, style }) {
 }
 
 /**
- * With a `limit` (the phone Overview's three rows, the side column's ten) and more rows than it, the design's "All activity
+ * With a `limit` (the phone Overview's three rows, the side column's five) and more rows than it, the design's "All activity
  * · N" link follows — N is the projection's own length — and opens the activity sheet (slice S4).
  */
 export default function ActivitySection({ activity, limit = null, onOpen, onAll }) {

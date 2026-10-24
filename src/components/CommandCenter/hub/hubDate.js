@@ -90,54 +90,58 @@ export function headerName(user) {
 
 // ── Slice S4: Activity's absolute times and the brief's market date ───────
 
-const ET_DAY_TIME = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'America/New_York',
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-});
+/** A formatter built on first use: this file is in the main bundle (the deploy provider imports it), so a player with the hub off
+ * pays for none of S4's at boot. */
+const once = (make) => { let value; return () => { if (value === undefined) value = make(); return value; }; };
 
-const ET_DAY_TIME_YEAR = new Intl.DateTimeFormat('en-US', {
+const etDayTime = once(() => new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+}));
+
+const etDayTimeYear = once(() => new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/New_York',
   year: 'numeric',
   month: 'short',
   day: 'numeric',
   hour: 'numeric',
   minute: '2-digit',
-});
-const ET_DAY_YEAR = new Intl.DateTimeFormat('en-US', {
+}));
+const etDayYear = once(() => new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/New_York',
   year: 'numeric',
   month: 'short',
   day: 'numeric',
-});
-const ET_YEAR = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric' });
+}));
+const etYear = once(() => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric' }));
 
 /**
  * A time from another year than the clock's (both read in ET) carries its year: "Jan 5" for an equip of five years ago would read as
  * this January. Without a clock (`nowMs` absent or not finite) no year is added.
  */
-const otherYear = (ms, nowMs) => typeof nowMs === 'number' && Number.isFinite(nowMs) && ET_YEAR.format(new Date(ms)) !== ET_YEAR.format(new Date(nowMs));
+const otherYear = (ms, nowMs) => typeof nowMs === 'number' && Number.isFinite(nowMs) && etYear().format(new Date(ms)) !== etYear().format(new Date(nowMs));
 
 /** "Oct 3, 4:00 PM" for an instant in ms, read in ET (Activity's absolute time; spec §8.2); "Oct 3, 2025, 4:00 PM" from another year than `nowMs`'s. '' for anything but a finite number. */
 export function formatHubDayTime(ms, nowMs) {
   if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';
-  return (otherYear(ms, nowMs) ? ET_DAY_TIME_YEAR : ET_DAY_TIME).format(new Date(ms));
+  return (otherYear(ms, nowMs) ? etDayTimeYear() : etDayTime()).format(new Date(ms));
 }
 
 /** "Oct 3" for an instant in ms, read in ET; "Oct 3, 2025" from another year than `nowMs`'s. '' for anything but a finite number. */
 export function formatHubDayYear(ms, nowMs) {
   if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';
-  return (otherYear(ms, nowMs) ? ET_DAY_YEAR : ET_DAY).format(new Date(ms));
+  return (otherYear(ms, nowMs) ? etDayYear() : ET_DAY).format(new Date(ms));
 }
 
-const MARKET_DAY_PARTS = new Intl.DateTimeFormat('en-US', {
+const marketDayParts = once(() => new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
   weekday: 'short',
   month: 'short',
   day: 'numeric',
-});
+}));
 
 /**
  * "Tue Oct 7" for a market date written `YYYY-MM-DD` (the brief's `forDate`, already a market-day label in ET). It is
@@ -152,6 +156,6 @@ export function formatHubMarketDate(text) {
   // A day past the month's end (Feb 30, day 00) rolls the month, a month 00 or 13 rolls the year, and a year under 100 is read as 19xx:
   // each lands on a different year or month, so these two comparisons are the whole calendar check.
   if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1) return '';
-  const parts = Object.fromEntries(MARKET_DAY_PARTS.formatToParts(probe).map((p) => [p.type, p.value]));
+  const parts = Object.fromEntries(marketDayParts().formatToParts(probe).map((p) => [p.type, p.value]));
   return `${parts.weekday} ${parts.month} ${parts.day}`;
 }

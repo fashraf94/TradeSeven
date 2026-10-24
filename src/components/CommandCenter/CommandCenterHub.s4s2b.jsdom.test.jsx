@@ -71,6 +71,7 @@ import { __resetHoldClaim, currentHold } from '../../hooks/holdClaim';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { byRole, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav } from './__fixtures__/hubTestKit';
 import { createFrames } from './__fixtures__/deployAttemptKit';
+import { buildOptimisticBattleEntry } from '../Dashboard/deployHandoff';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -169,7 +170,8 @@ describe('the first-deployment card with S2b\'s real hold (merge of S4 and S2b)'
     expect(currentHold()).toMatchObject({ controlId: NEXT, phase: 'charging' });
     for (const ms of [325, 650, 975]) {
       frameAt(ms);
-      // The selector denies every start while a hold stands, its own included; the OFFER sets that one hold aside.
+      // The selector denies every start while a hold stands, its own included; the OFFER sets that one hold aside. (Frames write
+      // the progress store only; the renders that matter are the claim above and the lock below.)
       expect(nextCard(), `still offered at ${ms} ms`).toBe(card);
       expect(holdIn(nextCard()), 'the very control being pressed').toBe(hold);
       expect(hold.disabled).toBe(false);
@@ -202,7 +204,7 @@ describe('the first-deployment card with S2b\'s real hold (merge of S4 and S2b)'
     expect(h.deploy).toHaveBeenCalledTimes(1);
   });
 
-  it('once the deployment is under way the offer ends: the card is gone, no second request can start, and the answer changes nothing', async () => {
+  it('once the deployment is under way the offer ends: the card is gone while the attempt stands, and no second request can start', async () => {
     render('desktop');
     act(() => { pointer(holdIn(nextCard()), 'pointerdown'); });
     frameAt(1300);
@@ -211,9 +213,25 @@ describe('the first-deployment card with S2b\'s real hold (merge of S4 and S2b)'
     expect(h.deploy).toHaveBeenCalledTimes(1);
     expect(nextCard(), 'the attempt stands: a deployment is not a thing to offer').toBeNull();
     await advance(3000);
+    expect(nextCard(), 'and it still stands after the wait').toBeNull();
     expect(h.deploy).toHaveBeenCalledTimes(1);
+  });
+
+  it('after the answer App\'s handoff has put the new game in the live list (the optimistic entry): the card is that game, never the first deployment again (lens M-1)', async () => {
+    const hub = hubOf();
+    const { m } = render('desktop', hub);
+    act(() => { pointer(holdIn(nextCard()), 'pointerdown'); });
+    frameAt(1300);
+    await advance(450);
+    await flush();
     h.posts[0].answer({ outcome: 'created', success: true, agentBattleId: 'battle-new' });
     await flush();
+    // The entry App's handoff appends (App.jsx setActiveAgentBattles(appendOptimisticBattle(...))), built by the same function.
+    const entry = buildOptimisticBattleEntry({ agentBattleId: 'battle-new', ownerUid: 'uid-A', agentId: 'agent-uid-A', expiresAt: iso(T0 + 3 * HOUR), nowIso: iso(T0 + 2000), startingPrices: {} });
+    m.rerender(tree('desktop', { ...hub, activeBattles: [entry] }));
+    await flush();
+    expect(nextKind()).toBe('openGame');
+    expect(byRole(nextCard(), 'button', COPY.deploy.holdLabel)).toHaveLength(0);
     expect(h.deploy).toHaveBeenCalledTimes(1);
   });
 
