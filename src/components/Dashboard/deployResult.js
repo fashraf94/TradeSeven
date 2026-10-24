@@ -62,5 +62,9 @@ export function deployResultFor(result) {
         // Command Center slice S2b (ruling R-S2b-9b): decide's 429 "Deploy already in
         // progress" — the error surface reads it as that refusal, not as lost contact.
         ...(isInProgressRefusal(result) ? { reason: DEPLOY_REFUSAL_REASON_IN_PROGRESS } : {}),
+        // S2b fix round (founder ruling on review FRB-4, extending R-S2b-9b): every typed
+        // refusal — the no-POST preflights included — reads as a refusal, never as lost
+        // contact. An uncertain or untyped result carries no such fact and keeps those words.
+        ...(result?.outcome === DEPLOY_OUTCOMES.REFUSED ? { refused: true } : {}),
       };
 }

@@ -86,6 +86,7 @@ import { LOCK_BEAT_MS } from '../hooks/useHoldToDeploy';
 import { isCommandCenterHubOn, isDeployCeremonyOn } from '../config/featureFlags';
 import { CMD } from '../components/Dashboard/commandUI';
 import { deployResultFor, isOrphanedResult } from '../components/Dashboard/deployResult';
+import { isInProgressRefusal } from '../constants/deployOutcomes';
 import * as ceremonyTiming from '../components/Dashboard/deployCeremony/ceremonyTiming';
 import DeployCeremony from '../components/Dashboard/deployCeremony/DeployCeremony';
 import DueIdeaInterstitial from '../components/Dashboard/deployCeremony/DueIdeaInterstitial';
@@ -157,6 +158,7 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
   let due = null; // { attemptId, due, proceed, settle }
   let hydration = null; // { key, attemptId, battleId, status, battle, retryAt }
   let hydrationRead = null; // { key, settled } — the read in flight, which a second ask waits on (Q-S2b-5)
+  let evidenceSeen = null; // the attempt id whose target document the evidence listener has read once (FRB-7)
   let recovered = null; // { attemptId, battle } — the document a recovered creation enters
   let version = 0;
   let cached = null;
@@ -377,6 +379,13 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     apply({ type: T.COOLDOWN_EVIDENCE, ownerUid: uid, authEpoch, targetAgentId, lastDeployedAtMs });
   }
 
+  /** The evidence listener has read this attempt's target document once (its stamp, if any, already reported). */
+  function evidenceRead(attemptId) {
+    if (revoked || evidenceSeen === attemptId) return;
+    evidenceSeen = attemptId;
+    changed();
+  }
+
   async function startAttempt({ hold = null, tap = null, retryOf = null }) {
     if (revoked) return { success: false };
     const auth = authInputOf(readAuthIdentity());
@@ -483,11 +492,19 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     // confirm" (its 90 s watchdog fired while the POST was out) cannot reach that latched machine, so the
     // record and the ceremony would disagree. For a hub attempt the answer gets a fresh ceremony instance,
     // whose machine reads it from the start (one vocabulary, spec §5.2; the post-check half of R1 FR-1).
-    const remount = ceremonyBefore === CEREMONY_PHASES.ERROR
-      && (phase === ATTEMPT_PHASES.CREATED || phase === ATTEMPT_PHASES.EXISTING);
+    // A creation that answers while that check is still in flight is remounted too: the latched machine would
+    // end it on "Couldn't confirm" (independent review FRB-5).
+    const answered = phase === ATTEMPT_PHASES.CREATED || phase === ATTEMPT_PHASES.EXISTING;
+    const latchedBefore = ceremonyBefore === CEREMONY_PHASES.ERROR
+      || (ceremonyBefore === CEREMONY_PHASES.VERIFYING && phase === ATTEMPT_PHASES.CREATED);
+    const remount = latchedBefore && answered;
     const handTheCeremony = () => {
       if (!isCurrent() || ceremony?.attemptId !== attemptId) return;
-      ceremony = { ...ceremony, deployResult: deployResultFor(result), ...(remount ? { key: `${attemptId}:answer` } : {}) };
+      // Decided again at hand-off time: an existing answer waits for its owned read, and the watchdog's check
+      // can latch the error inside that wait (independent review FRB-3).
+      const latchedSince = state.attempt?.ceremonyPhase === CEREMONY_PHASES.ERROR;
+      const fresh = remount || (latchedSince && answered);
+      ceremony = { ...ceremony, deployResult: deployResultFor(result), ...(fresh ? { key: `${attemptId}:answer` } : {}) };
       changed();
     };
     const shown = ceremonyOn && ceremony?.attemptId === attemptId && ceremony.visible === true;
@@ -506,7 +523,11 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
       apply({ type: T.CEREMONY_PHASE, attemptId, attemptEpoch: r.attemptEpoch, phase: CEREMONY_PHASES.CLOSED, errorTone: null });
     }
 
-    try { bridge().refreshActiveBattles?.(); } catch (err) { console.warn('[DeployAttempt] refresh failed:', err?.message || err); }
+    // The owned active poll learns of a battle only after a created or existing answer; a refusal or an uncertain
+    // answer changes no battle the poll could show (spec §6; independent review FRB-8).
+    if (answered) {
+      try { bridge().refreshActiveBattles?.(); } catch (err) { console.warn('[DeployAttempt] refresh failed:', err?.message || err); }
+    }
 
     if (phase === ATTEMPT_PHASES.EXISTING) {
       const settled = hydrate({ open: !ceremonyOn });
@@ -655,6 +676,14 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     const a = state.attempt;
     if (!a || !run || run.attemptId !== a.attemptId) return;
     if (ceremony?.attemptId === a.attemptId) ceremony = { ...ceremony, visible: false };
+    // A review-due refusal's primary action is the Forge (spec §5.4), which lives on the hub. Back to hub from its
+    // ceremony therefore closes the ceremony and keeps the refusal: the hub shows its line with "Open in the Forge"
+    // and Dismiss. Once closed, the Forge action and Dismiss acknowledge it (independent review FRB-2).
+    if (a.phase === ATTEMPT_PHASES.REFUSED && a.result?.kind === RESULT_KINDS.REVIEW_DUE && a.ceremonyPhase !== CEREMONY_PHASES.CLOSED) {
+      apply({ type: T.CEREMONY_PHASE, attemptId: a.attemptId, attemptEpoch: a.attemptEpoch, phase: CEREMONY_PHASES.CLOSED, errorTone: null });
+      changed();
+      return;
+    }
     const battleId = a.phase === ATTEMPT_PHASES.CREATED ? realId(a.result?.battleId) : null;
     apply({ type: T.DISMISS, attemptId: a.attemptId, attemptEpoch: a.attemptEpoch, at: now() });
     // The matching stash goes with an acknowledged creation (spec §5.4); Enter has already taken it when it entered.
@@ -740,12 +769,6 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     return started;
   }
 
-  /** Does the hub's table offer this attempt's Retry right now (its own words, R-S2b-6)? */
-  function retryActionNow() {
-    const a = admission();
-    return Boolean(a) && !state.flagDisabled && deriveHubDeployState(a.inputs).action === ATTEMPT_ACTIONS.RETRY;
-  }
-
   function registerInputs(getter) {
     inputsGetter = getter;
     return () => { if (inputsGetter === getter) inputsGetter = null; };
@@ -767,6 +790,7 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
       ceremony,
       due,
       hydration,
+      evidenceSeen,
       flagDisabled: state.flagDisabled === true,
     });
     return cached;
@@ -793,7 +817,7 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     checkDeployment: () => reconcile({ admitted: false }),
     phaseChanged,
     lastDeployedEvidence,
-    retryActionNow,
+    evidenceRead,
     nextCooldownEnd,
     tick: changed,
     isRevoked: () => revoked,
@@ -881,13 +905,16 @@ function LiveDeployAttemptProvider({ hubEnabled, bridge, children }) {
   const unacknowledged = a && a.phase !== ATTEMPT_PHASES.IDLE && a.phase !== ATTEMPT_PHASES.ORPHANED;
   const boundUnknown = a && a.phase === ATTEMPT_PHASES.IDLE && a.result?.postIssued !== false
     && cooldownFor(snap.state, a.capturedUid, a.targetAgentId).cooldownUntil === null;
-  const evidenceTarget = (unacknowledged || boundUnknown) && realId(a.targetAgentId) ? a.targetAgentId : null;
+  // Once the target's document has been read and no stamp can still arrive for this attempt, the listener ends
+  // (independent review FRB-7).
+  const exhausted = a && snap.evidenceSeen === a.attemptId && !stampCanArrive(a);
+  const evidenceTarget = (unacknowledged || boundUnknown) && !exhausted && realId(a.targetAgentId) ? a.targetAgentId : null;
 
   return (
     <DeployAttemptContext.Provider value={value}>
       {children}
       {evidenceTarget && (
-        <TargetEvidence key={`${a.attemptId}:${evidenceTarget}`} rt={rt} targetAgentId={evidenceTarget} uid={a.capturedUid} authEpoch={a.authEpoch} />
+        <TargetEvidence key={`${a.attemptId}:${evidenceTarget}`} rt={rt} attemptId={a.attemptId} targetAgentId={evidenceTarget} uid={a.capturedUid} authEpoch={a.authEpoch} />
       )}
       {snap.due && <DueIdeaInterstitial key={snap.due.attemptId} due={snap.due.due} accent={accent} onProceed={snap.due.proceed} />}
       {showCeremony && (
@@ -911,14 +938,28 @@ function LiveDeployAttemptProvider({ hubEnabled, bridge, children }) {
  * The deploy target's recorded lastDeployedAt, from the target's own document (decide.js stamps it on a creation
  * and on an existing answer), as cooldown evidence for its owner and target. The same listener the ceremony keeps.
  */
-function TargetEvidence({ rt, targetAgentId, uid, authEpoch }) {
+function TargetEvidence({ rt, attemptId, targetAgentId, uid, authEpoch }) {
   const { lastDeployedAt, targetKnown } = useDeployTargetProgress(targetAgentId);
   useEffect(() => {
     if (!targetKnown) return;
     const ms = lastDeployedAtMs(lastDeployedAt, Date.now());
     if (ms !== null) rt.lastDeployedEvidence({ uid, authEpoch, targetAgentId, lastDeployedAtMs: ms });
-  }, [rt, targetKnown, lastDeployedAt, uid, authEpoch, targetAgentId]);
+    rt.evidenceRead(attemptId);
+  }, [rt, attemptId, targetKnown, lastDeployedAt, uid, authEpoch, targetAgentId]);
   return null;
+}
+
+/**
+ * Can the deploy target's lastDeployedAt still change for this attempt? decide.js stamps it on a creation and on
+ * an existing answer, so while a request is out, and after any answer but a refusal, it can. A refusal is
+ * answered before the decision write and stamps nothing — except the in-progress 429, whose other deploy still
+ * can (independent review FRB-7).
+ */
+function stampCanArrive(a) {
+  if (a.phase === ATTEMPT_PHASES.SUBMITTING) return true;
+  const kind = a.result?.kind;
+  if (kind === RESULT_KINDS.REFUSED || kind === RESULT_KINDS.REVIEW_DUE) return isInProgressRefusal(a.result?.evidence);
+  return true;
 }
 
 /** The hub attempt's ceremony, at the root: the shipped ceremony, its callbacks through the provider's checks. */
@@ -941,19 +982,20 @@ function RootCeremony({ rt, ceremony, attempt, agent, accent, agentName, directi
       onEnterBattle={rt.enterBattle}
       onOpenBattle={rt.openGame}
       onDismiss={rt.dismiss}
-      onRetry={offerRetry && retryAdmitted(rt, attempt) ? rt.retry : undefined}
+      onRetry={offerRetry && retryInPrinciple(attempt) ? rt.retry : undefined}
       ownedRead={{ retry: rt.retryExistingRead, retryAt }}
     />
   );
 }
 
 /**
- * The ceremony offers Retry only when the hub's own table does (spec §5.4): a refusal, or an uncertain attempt
- * whose reconciliation came back clear, with the replacing request admitted now. An unresolved uncertainty has
- * no Retry — Check deployment first — and nothing is ever replayed on its own.
+ * The ceremony offers Retry whenever the record's phase admits one in principle (spec §5.4): a refusal whose
+ * action is a Retry (a review-due refusal's is the Forge), or an uncertain attempt whose reconciliation came back
+ * clear. So, like the shells, it shows "Try again" or its countdown under a cooldown (independent review FRB-6).
+ * The press re-asks the hub's table (`retry` → startAttempt) and starts nothing while anything blocks it. An
+ * unresolved uncertainty has no Retry — Check deployment first — and nothing is ever replayed on its own.
  */
-function retryAdmitted(rt, attempt) {
-  const clear = attempt.phase === ATTEMPT_PHASES.UNCERTAIN && attempt.reconciliationStatus === RECONCILIATION.CLEAR;
-  if (attempt.phase !== ATTEMPT_PHASES.REFUSED && !clear) return false;
-  return rt.retryActionNow() === true;
+function retryInPrinciple(attempt) {
+  if (attempt.phase === ATTEMPT_PHASES.REFUSED) return attempt.result?.kind !== RESULT_KINDS.REVIEW_DUE;
+  return attempt.phase === ATTEMPT_PHASES.UNCERTAIN && attempt.reconciliationStatus === RECONCILIATION.CLEAR;
 }

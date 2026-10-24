@@ -98,6 +98,37 @@ describe('Q-S2b-2 — the ceremony\'s refusal words, each line before and after'
   });
 });
 
+describe('FRB-4 (founder ruling, option a) — a typed refusal reads as one, whatever tone the check reached', () => {
+  const renderError = (props) => act(() => { root.render(<CeremonyError agentName="Nova" {...props} />); });
+
+  it('refused over the lost-contact tone: the eyebrow, the refusal headline, the confirmed subtext and the server\'s line — never lost contact', () => {
+    renderError({ errorTone: 'lost_contact', errorKind: 'deploy', refused: true, details: 'Please wait 2 minutes between deploys', onRetry: () => {} });
+    expect(lines('Deployment refused')).toHaveLength(1);
+    expect(lines('Deployment refused — no battle was created.')).toHaveLength(1);
+    expect(container.textContent).toContain('Your agent is safe. Nothing is stuck — you can try again shortly.');
+    expect(container.textContent).toContain('Please wait 2 minutes between deploys');
+    expect(primary().textContent.trim()).toBe('Try again');
+    expect(container.textContent).not.toContain('Deployment unconfirmed');
+    expect(container.textContent).not.toContain('Couldn’t confirm the deploy.');
+  });
+
+  it('the refusal headline is the generic one for every kind the check named (a refusal never timed out or made picks)', () => {
+    for (const errorKind of ['deploy', 'server', 'server_post', 'timeout']) {
+      renderError({ errorTone: 'lost_contact', errorKind, refused: true });
+      expect(lines('Deployment refused — no battle was created.'), errorKind).toHaveLength(1);
+    }
+  });
+
+  it('the in-progress refusal keeps its own headline and subtext; without the fact, lost contact keeps its words', () => {
+    renderError({ errorTone: 'lost_contact', refused: true, inProgress: true });
+    expect(lines('A deploy is already in progress.')).toHaveLength(1);
+    expect(container.textContent).toContain('Another deploy for your agent is still being set up.');
+    renderError({ errorTone: 'lost_contact', errorKind: 'deploy' });
+    expect(lines('Deployment unconfirmed')).toHaveLength(1);
+    expect(lines('Couldn’t confirm the deploy.')).toHaveLength(1);
+  });
+});
+
 describe('Q-S2b-5 — the existing terminal\'s Retry, with and without the provider\'s owned read', () => {
   const renderExisting = (props = {}) => act(() => {
     root.render(<CeremonyExisting agentName="Nova" existingBattleId={RUNNING} liveBattles={[]} verifyBattle={() => h.verify('casual-agent-uid-1')} onOpenBattle={props.onOpenBattle ?? vi.fn()} onDismiss={vi.fn()} {...props} />);

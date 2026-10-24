@@ -152,15 +152,49 @@ describe('429 "Deploy already in progress" — a refusal, said as one (fails bef
   });
 });
 
-describe('CONTROL — every other answer keeps its words', () => {
-  it('the 429 cooldown ("Please wait 2 minutes between deploys") is unchanged: lost contact, as before', async () => {
+// S2b fix round, founder ruling on review FRB-4 (option a, extending R-S2b-9b): every typed refusal reads as a
+// refusal in the shared ceremony, in both shells and the hub. The 429 cooldown row below moved from lost contact
+// to those words. Before: eyebrow "Deployment unconfirmed", headline "Couldn't confirm the deploy.", subtext
+// "…check there before deploying again.", live region "Couldn't confirm the deployment.". After: "Deployment
+// refused", "Deployment refused — no battle was created.", "…you can try again shortly.", "Deployment refused.".
+describe('FRB-4 — a typed refusal reads as one: the 429 cooldown, before and after', () => {
+  it('the 429 cooldown ("Please wait 2 minutes between deploys"): the refusal\'s words, never lost contact; Try again as today', async () => {
     const result = await ceremonyFor(json(429, { error: 'Please wait 2 minutes between deploys' }));
     expect(result.reason).toBe('cooldown');
     expect(deployResultFor(result)).not.toHaveProperty('reason');
-    await waitFor(() => text().includes('Couldn’t confirm the deploy.'), 'lost contact');
+    expect(deployResultFor(result)).toMatchObject({ status: 'error', refused: true });
+    await waitFor(() => text().includes('Deployment refused — no battle was created.'), 'the refusal');
+    // after
+    expect(text()).toContain('Deployment refused');
+    expect(text()).toContain('Your agent is safe. Nothing is stuck — you can try again shortly.');
+    expect(live()).toBe('Deployment refused.');
+    expect(text()).toMatch(/Try again|Retry available in \d+s/);
+    // before
+    expect(text()).not.toContain('Deployment unconfirmed');
+    expect(text()).not.toContain('Couldn’t confirm the deploy.');
+    expect(text()).not.toContain('check there before deploying again');
     expect(text()).not.toContain('A deploy is already in progress');
   });
 
+  it('a no-POST preflight refusal (no agent) reads as a refusal too, from the real service and mapping', async () => {
+    globalThis.fetch = vi.fn();
+    const result = await deployAgent(null, vi.fn(), () => {});
+    expect(result).toMatchObject({ outcome: 'refused', postIssued: false, error: 'no-agent' });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    const deployResult = deployResultFor(result);
+    expect(deployResult).toMatchObject({ status: 'error', refused: true, postIssued: false });
+    renderWith(null, { status: 'pending' });
+    renderWith({ stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1` }, { status: 'pending' });
+    await act(async () => { await new Promise((r) => setTimeout(r, 150)); });
+    renderWith({ stage: 'strategy_running', deployId: OURS, updatedAt: `${OURS}-1` }, deployResult);
+    await waitFor(() => text().includes('Deployment refused — no battle was created.'), 'the refusal');
+    expect(live()).toBe('Deployment refused.');
+    expect(text()).not.toContain('Deployment unconfirmed');
+    expect(text()).not.toContain('Couldn’t confirm the deploy.');
+  });
+});
+
+describe('CONTROL — every other answer keeps its words', () => {
   it('a 500 after the POST is unchanged: lost contact when nothing is found', async () => {
     await ceremonyFor(json(500, { error: 'boom' }));
     await waitFor(() => text().includes('Couldn’t confirm the deploy.'), 'lost contact');
@@ -168,9 +202,13 @@ describe('CONTROL — every other answer keeps its words', () => {
   });
 
   it('the mapping\'s other shapes carry no reason at all (a key only the in-progress refusal adds)', () => {
+    // A typed refusal carries its fact since the S2b fix round (FRB-4); the reason stays the in-progress one's only.
     expect(deployResultFor({ outcome: 'refused', success: false, status: 400, httpStatus: 400, postIssued: true, error: 'bad' })).toStrictEqual({
-      status: 'error', error: 'bad', details: undefined, httpStatus: 400, postIssued: true, battleId: null,
+      status: 'error', error: 'bad', details: undefined, httpStatus: 400, postIssued: true, battleId: null, refused: true,
     });
+    // An uncertain or untyped result never carries the refusal's fact.
+    expect(deployResultFor({ outcome: 'uncertain', success: false, httpStatus: 500, postIssued: true, error: 'boom' })).not.toHaveProperty('refused');
+    expect(deployResultFor({ success: false, httpStatus: 400, postIssued: true, error: 'bad' })).not.toHaveProperty('refused');
     expect(deployResultFor({ outcome: 'refused', success: false, httpStatus: 429, postIssued: true, error: 'x', reason: 'cooldown' })).not.toHaveProperty('reason');
     // Typed in_progress only with the refused outcome: an untyped look-alike is not promoted.
     expect(deployResultFor({ success: false, httpStatus: 429, postIssued: true, reason: 'in_progress' })).not.toHaveProperty('reason');

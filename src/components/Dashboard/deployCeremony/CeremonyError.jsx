@@ -66,14 +66,19 @@ const IN_PROGRESS_SUBTEXT = 'Another deploy for your agent is still being set up
 export default function CeremonyError({
   accent = CMD.copper, agentName = 'Your agent', errorKind = 'deploy',
   errorTone = 'lost_contact',
-  details, cooldownUntil = 0, onRetry, onDismiss, inProgress = false,
+  details, cooldownUntil = 0, onRetry, onDismiss, inProgress = false, refused = false,
 }) {
-  const confirmed = errorTone === 'confirmed' || inProgress === true;
+  // `refused` (S2b fix round, founder ruling on review FRB-4, extending R-S2b-9b): the service typed this answer
+  // a definitive refusal, so it reads as one — the eyebrow, the generic refusal headline, the server's line in
+  // details — whatever tone the verification reached (a refusal never writes the server's error checkpoint).
+  const confirmed = errorTone === 'confirmed' || inProgress === true || refused === true;
   const headline = inProgress === true
     ? IN_PROGRESS_HEADLINE
-    : confirmed
-      ? (HEADLINE[errorKind] || HEADLINE.deploy)(agentName)
-      : LOST_CONTACT_HEADLINE;
+    : refused === true
+      ? HEADLINE.deploy(agentName)
+      : confirmed
+        ? (HEADLINE[errorKind] || HEADLINE.deploy)(agentName)
+        : LOST_CONTACT_HEADLINE;
   // Tick a local clock so the retry countdown actually decrements and re-enables
   // when the server's 120s lock expires (the stage machine stops re-rendering
   // once in 'error').

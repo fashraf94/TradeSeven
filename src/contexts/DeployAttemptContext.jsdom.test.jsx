@@ -30,6 +30,8 @@ const h = vi.hoisted(() => ({
   ceremonies: [],
   ceremonyMounts: 0,
   targetProgress: { deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false },
+  // Every render of the target listener (the ceremony is a stand-in here, so only the provider's evidence listener).
+  targetReads: [],
 }));
 
 vi.mock('firebase/auth', () => ({ onAuthStateChanged: (_auth, cb) => { h.authListeners.push(cb); return () => {}; } }));
@@ -38,7 +40,7 @@ vi.mock('../services/agentDeploy', () => ({ deployAgent: (...args) => h.deploy(.
 vi.mock('../services/dueIdeaCheck', () => ({ checkDueIdea: (...args) => h.due(...args) }));
 vi.mock('../services/agentBattleVerify', () => ({ findActiveBattleForAgent: (...args) => h.verify(...args) }));
 vi.mock('../services/ownedBattleRead', () => ({ readOwnedBattle: (...args) => h.owned(...args) }));
-vi.mock('../hooks/useDeployTargetProgress', () => ({ default: () => h.targetProgress }));
+vi.mock('../hooks/useDeployTargetProgress', () => ({ default: (id) => { h.targetReads.push(id); return h.targetProgress; } }));
 vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   isDeploySkyCouplingOn: () => true,
@@ -153,6 +155,7 @@ beforeEach(() => {
   h.ceremonies = [];
   h.ceremonyMounts = 0;
   h.targetProgress = { deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false };
+  h.targetReads = [];
   h.due = vi.fn(async () => null);
   h.verify = vi.fn(async () => ({ found: false, battle: null }));
   h.owned = vi.fn(async () => null);
@@ -1144,12 +1147,22 @@ describe('W5 — the mutating lens rows', () => {
     expect(typeof h.ceremonies.at(-1).onRetry).toBe('function');
   });
 
-  it('G15c and not for a refusal under a sheet or a cooldown (the table says no)', async () => {
+  // S2b fix round, founder ruling on review FRB-6. Before: a refusal under a cooldown got no Retry from the
+  // ceremony (the table said no), so it showed neither Retry nor a countdown. After: the ceremony has it whenever
+  // the phase admits a Retry in principle, and the press re-asks the table and starts nothing while blocked.
+  it('G15c and, under a cooldown, still offers it (FRB-6) — its press re-asks the table and starts nothing', async () => {
     h.ceremonyOn = true;
     await committedAndOut();
     posts[0].answer({ ...IN_PROGRESS(), retryAfter: 90 });
     await flush();
-    expect(h.ceremonies.at(-1).onRetry).toBeUndefined();
+    expect(state().retryBlock).toMatchObject({ displayState: 'cooldown' });
+    const onRetry = h.ceremonies.at(-1).onRetry;
+    expect(typeof onRetry).toBe('function');
+    let r;
+    await act(async () => { r = await onRetry(); });
+    expect(r).toEqual({ success: false });
+    expect(h.deploy).toHaveBeenCalledTimes(1);
+    expect(attempt().phase).toBe('refused');
   });
 
   it('G17 under StrictMode the provider survives the development re-mount', async () => {
@@ -1692,5 +1705,205 @@ describe('Q-S2b-4 / Q-S2b-5 — the mutating lens\'s gaps, closed', () => {
     await act(async () => { r = await probe.current.api.retryExistingRead(); });
     expect(r).toEqual({ status: 'unavailable', battle: null });
     expect(h.owned).not.toHaveBeenCalled();
+  });
+});
+
+// ── The independent review's fix round (S2b report §16): the founder's rulings on FRB-2 … FRB-8 ──────────────────
+describe('Independent review fix round — the provider (FRB-2, FRB-3, FRB-5 … FRB-8)', () => {
+  const FORBIDDEN = () => ({ outcome: 'refused', success: false, postIssued: true, httpStatus: 403, status: 403, error: 'Forbidden' });
+  const ORPHANED = () => ({ outcome: 'orphaned', success: false, postIssued: true });
+  const RUNNING = () => ({ id: 'battle-running', ownerId: 'uid-A', agentId: 'agent-uid-A', status: 'active' });
+  const report = (phase, errorTone = null) => act(() => { probe.current.api.phaseChanged({ attemptId: attempt().attemptId, phase, errorTone }); });
+
+  it('FRB-2: Back to hub on a review-due refusal closes the ceremony and keeps the refusal — the hub offers Open in the Forge and Dismiss', async () => {
+    const onOpenForge = vi.fn();
+    render({ hub: { onOpenForge } });
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(REVIEW_DUE());
+    await flush();
+    expect(container.querySelector('[data-ceremony]')).not.toBeNull();
+    act(() => { h.ceremonies.at(-1).onDismiss(); });
+    expect(container.querySelector('[data-ceremony]')).toBeNull();
+    expect(attempt()).toMatchObject({ phase: 'refused', ceremonyPhase: 'closed', acknowledgedAt: null });
+    expect(state()).toMatchObject({ displayState: 'failed', action: DISPLAY_ACTIONS.OPEN_FORGE_REVIEW, dismiss: true });
+    // The Forge action now acknowledges it and opens the list, as on the hub with no ceremony in the way.
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.OPEN_FORGE_REVIEW); });
+    expect(onOpenForge).toHaveBeenCalledTimes(1);
+    expect(attempt().phase).toBe('idle');
+  });
+
+  it('FRB-2: …and Dismiss acknowledges it too, once the ceremony is closed', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(REVIEW_DUE());
+    await flush();
+    act(() => { h.ceremonies.at(-1).onDismiss(); });
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.DISMISS); });
+    expect(attempt().phase).toBe('idle');
+  });
+
+  it('FRB-2 control: Back to hub on any other refusal acknowledges it, as before', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(FORBIDDEN());
+    await flush();
+    act(() => { h.ceremonies.at(-1).onDismiss(); });
+    expect(attempt()).toMatchObject({ phase: 'idle', acknowledgedAt: Date.now() });
+  });
+
+  it('FRB-3: an existing answer whose ceremony latched its error while the owned read was out is handed to a fresh ceremony', async () => {
+    h.ceremonyOn = true;
+    const read = deferred();
+    h.owned = vi.fn(() => read.promise);
+    await committedAndOut();
+    const mounts = h.ceremonyMounts;
+    posts[0].answer(EXISTING());
+    await flush();
+    report('error', 'lost_contact');
+    await act(async () => { read.resolve(RUNNING()); });
+    await flush();
+    expect(h.ceremonies.at(-1).deployResult).toMatchObject({ status: 'existing', existingBattleId: 'battle-running' });
+    expect(h.ceremonyMounts).toBe(mounts + 1);
+  });
+
+  it('FRB-3 control: an existing answer whose ceremony never latched is handed to the same ceremony', async () => {
+    h.ceremonyOn = true;
+    h.owned = vi.fn(async () => RUNNING());
+    await committedAndOut();
+    const mounts = h.ceremonyMounts;
+    posts[0].answer(EXISTING());
+    await flush();
+    await flush();
+    expect(h.ceremonies.at(-1).deployResult).toMatchObject({ status: 'existing' });
+    expect(h.ceremonyMounts).toBe(mounts);
+  });
+
+  it('FRB-5: a creation that answers while the ceremony\'s check is in flight gets a fresh ceremony; an uncertain answer does not', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    report('verifying');
+    let mounts = h.ceremonyMounts;
+    posts[0].answer(CREATED());
+    await flush();
+    expect(h.ceremonies.at(-1).deployResult).toMatchObject({ status: 'success', agentBattleId: 'battle-new' });
+    expect(h.ceremonyMounts).toBe(mounts + 1);
+    act(() => { probe.current.api.dismiss(); });
+    // Control: an uncertain answer during the check stays with the machine that is checking.
+    await advance(120000);
+    await committedAndOut();
+    report('verifying');
+    mounts = h.ceremonyMounts;
+    posts[1].answer(UNCERTAIN());
+    await flush();
+    expect(h.ceremonyMounts).toBe(mounts);
+  });
+
+  it('FRB-6: a review-due refusal gets no Retry from the ceremony (its action is the Forge); a clear uncertain attempt does', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(REVIEW_DUE());
+    await flush();
+    expect(h.ceremonies.at(-1).onRetry).toBeUndefined();
+    act(() => { h.ceremonies.at(-1).onDismiss(); });
+    act(() => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.DISMISS); });
+    await advance(120000);
+    await committedAndOut();
+    posts[1].answer(UNCERTAIN());
+    await flush();
+    expect(h.ceremonies.at(-1).onRetry).toBeUndefined();
+    h.verify = vi.fn(async () => ({ found: false, battle: null }));
+    await act(async () => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.CHECK_DEPLOYMENT); });
+    await flush();
+    expect(attempt().reconciliationStatus).toBe('clear');
+    expect(typeof h.ceremonies.at(-1).onRetry).toBe('function');
+  });
+
+  it('FRB-6: a plain refusal\'s Retry from the ceremony starts one new request when nothing blocks it', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(FORBIDDEN());
+    await flush();
+    await act(async () => { h.ceremonies.at(-1).onRetry(); });
+    await flush();
+    expect(posts).toHaveLength(2);
+  });
+
+  it('FRB-7: a refusal answered before the decision write ends the evidence listener once the target is read — its stamp still reported', async () => {
+    const stampMs = Date.now() - 10000;
+    h.targetProgress = { deployProgress: null, lastDeployedAt: new Date(stampMs).toISOString(), lastDecision: null, targetKnown: true };
+    await committedAndOut();
+    const target = attempt().targetAgentId;
+    expect(h.targetReads).toContain(target);
+    posts[0].answer(FORBIDDEN());
+    await flush();
+    expect(probe.current.snapshot.state.cooldowns['uid-A'][target]).toBe(stampMs + 120000);
+    const reads = h.targetReads.length;
+    act(() => { probe.current.api.dismiss(); });
+    act(() => { probe.current.api.tick(); });
+    expect(h.targetReads.length).toBe(reads);
+  });
+
+  it('FRB-7: …and with no stamp at all it ends too, instead of waiting for one that cannot come', async () => {
+    h.targetProgress = { deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: true };
+    await committedAndOut();
+    posts[0].answer(FORBIDDEN());
+    await flush();
+    const reads = h.targetReads.length;
+    act(() => { probe.current.api.dismiss(); });
+    act(() => { probe.current.api.tick(); });
+    expect(attempt().phase).toBe('idle');
+    expect(h.targetReads.length).toBe(reads);
+  });
+
+  it('FRB-7 controls: the in-progress refusal and a creation keep listening while a stamp can still arrive', async () => {
+    h.targetProgress = { deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: true };
+    await committedAndOut();
+    posts[0].answer(IN_PROGRESS());
+    await flush();
+    act(() => { probe.current.api.dismiss(); });
+    let reads = h.targetReads.length;
+    act(() => { probe.current.api.tick(); });
+    expect(h.targetReads.length).toBeGreaterThan(reads);
+    await advance(120000);
+    await committedAndOut();
+    posts[1].onCreate({}, {}, { agentBattleId: 'battle-new', ownerUid: 'uid-A' });
+    posts[1].answer(CREATED());
+    await flush();
+    expect(attempt().phase).toBe('idle');
+    reads = h.targetReads.length;
+    act(() => { probe.current.api.tick(); });
+    expect(h.targetReads.length).toBeGreaterThan(reads);
+  });
+
+  it('FRB-8: a refused or an uncertain answer refreshes nothing; an existing answer refreshes the poll once', async () => {
+    await committedAndOut();
+    posts[0].answer(FORBIDDEN());
+    await flush();
+    act(() => { probe.current.api.dismiss(); });
+    expect(bridge.refreshActiveBattles).not.toHaveBeenCalled();
+    await advance(120000);
+    await committedAndOut();
+    posts[1].answer(UNCERTAIN());
+    await flush();
+    expect(bridge.refreshActiveBattles).not.toHaveBeenCalled();
+    signIn('uid-B');
+    await committedAndOut();
+    posts[2].answer(EXISTING());
+    await flush();
+    expect(bridge.refreshActiveBattles).toHaveBeenCalledTimes(1);
+  });
+
+  it('FRB-8 (review M27): an orphaned answer refreshes nothing — a late one after an identity change, or one typed orphaned', async () => {
+    await committedAndOut();
+    signIn('uid-B');
+    posts[0].answer(CREATED());
+    await flush();
+    expect(bridge.refreshActiveBattles).not.toHaveBeenCalled();
+    await committedAndOut();
+    posts[1].answer(ORPHANED());
+    await flush();
+    expect(attempt()?.phase ?? 'none').not.toBe('created');
+    expect(bridge.refreshActiveBattles).not.toHaveBeenCalled();
   });
 });

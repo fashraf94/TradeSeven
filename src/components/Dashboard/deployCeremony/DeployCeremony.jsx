@@ -176,10 +176,12 @@ export default function DeployCeremony({
   // Command Center slice S2b (ruling R-S2b-9b): decide's 429 "Deploy already in
   // progress" is a refusal of this request, said as one (CeremonyError.jsx). Every
   // definitive outcome is announced as the refusal its eyebrow and headline name
-  // (founder ruling RL-1).
+  // (founder ruling RL-1), and so is every refusal the service typed, whatever tone
+  // the verification reached (founder ruling on review FRB-4).
   const inProgress = deployResult?.status === 'error' && deployResult?.reason === DEPLOY_REFUSAL_REASON_IN_PROGRESS;
+  const refused = deployResult?.status === 'error' && deployResult?.refused === true;
   const liveText = machine.phase === 'error'
-    ? (inProgress ? `${DEPLOY_IN_PROGRESS_LINE}.` : machine.errorTone === 'confirmed' ? 'Deployment refused.' : 'Couldn’t confirm the deployment.')
+    ? (inProgress ? `${DEPLOY_IN_PROGRESS_LINE}.` : refused || machine.errorTone === 'confirmed' ? 'Deployment refused.' : 'Couldn’t confirm the deployment.')
     : machine.phase === 'reveal'
       ? `${agentName} is ready for battle.`
       : machine.phase === 'existing'
@@ -231,6 +233,7 @@ export default function DeployCeremony({
         onRetry={onRetry}
         onDismiss={onDismiss}
         inProgress={inProgress}
+        refused={refused}
       />
     );
   } else if (machine.phase === 'reveal') {

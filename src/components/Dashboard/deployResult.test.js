@@ -45,9 +45,14 @@ const RESULTS = {
   'the shell default': { success: false },
 };
 
-describe('deployResultFor: created and every other outcome map exactly as before R1', () => {
+// Command Center S2b fix round (founder ruling on review FRB-4, extending R-S2b-9b): a typed refusal also
+// carries `refused: true`, so the ceremony reads it as a refusal. Before: the pre-R1 fields alone; after: those
+// fields plus that one key. Every other outcome maps exactly as before.
+const REFUSAL_FACT = (result) => (result?.outcome === 'refused' ? { refused: true } : {});
+
+describe('deployResultFor: created and every other outcome map exactly as before R1 (a refusal adds its fact, S2b FRB-4)', () => {
   it.each(Object.entries(RESULTS))('%s → the pre-R1 mapping, field for field', (_label, result) => {
-    expect(deployResultFor(result)).toEqual(PRE_R1_MAPPING(result));
+    expect(deployResultFor(result)).toEqual({ ...PRE_R1_MAPPING(result), ...REFUSAL_FACT(result) });
   });
 
   it('created → success with the real id', () => {
@@ -57,6 +62,7 @@ describe('deployResultFor: created and every other outcome map exactly as before
   it('a refusal keeps the server\'s line in details', () => {
     expect(deployResultFor(RESULTS['refused (stock admission)'])).toEqual({
       status: 'error', error: 'Stock admission unavailable', details: STOCK_LINE, httpStatus: 503, postIssued: true, battleId: null,
+      refused: true,
     });
   });
 });
