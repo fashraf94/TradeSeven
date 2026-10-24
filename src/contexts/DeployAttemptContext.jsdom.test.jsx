@@ -2023,3 +2023,26 @@ describe('Fix-round review — RF-2 and the mutating lens\'s hand-off gap', () =
     expect(h.ceremonyMounts).toBe(mounts);
   });
 });
+
+describe('Fix-round mutation re-run — the last two gaps', () => {
+  it('FRB-7 (mutating lens): a late document with no stamp still ends the listener, by its own report alone', async () => {
+    await committedAndOut();
+    posts[0].answer({ outcome: 'refused', success: false, postIssued: true, httpStatus: 403, status: 403, error: 'Forbidden' });
+    await flush();
+    expect(h.listeners).toBe(1);
+    h.targetProgress = { deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: true };
+    act(() => { probe.current.api.tick(); });
+    expect(h.listeners).toBe(0);
+  });
+
+  it('RF-2: a deployment check that finds another owner\'s battle resolves nothing and refreshes nothing', async () => {
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    h.verify = vi.fn(async () => ({ found: true, battle: { id: 'battle-other', ownerId: 'uid-B', status: 'active' } }));
+    await act(async () => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.CHECK_DEPLOYMENT); });
+    await flush();
+    expect(attempt()).toMatchObject({ phase: 'uncertain', reconciliationStatus: 'error' });
+    expect(bridge.refreshActiveBattles).not.toHaveBeenCalled();
+  });
+});
