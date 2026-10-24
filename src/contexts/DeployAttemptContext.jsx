@@ -379,6 +379,11 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     apply({ type: T.COOLDOWN_EVIDENCE, ownerUid: uid, authEpoch, targetAgentId, lastDeployedAtMs });
   }
 
+  /** The owned active poll, read again because a battle it could show was created or found (spec §6). */
+  function refreshActive() {
+    try { bridge().refreshActiveBattles?.(); } catch (err) { console.warn('[DeployAttempt] refresh failed:', err?.message || err); }
+  }
+
   /** The evidence listener has read this attempt's target document once (its stamp, if any, already reported). */
   function evidenceRead(attemptId) {
     if (revoked || evidenceSeen === attemptId) return;
@@ -525,9 +530,7 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
 
     // The owned active poll learns of a battle only after a created or existing answer; a refusal or an uncertain
     // answer changes no battle the poll could show (spec §6; independent review FRB-8).
-    if (answered) {
-      try { bridge().refreshActiveBattles?.(); } catch (err) { console.warn('[DeployAttempt] refresh failed:', err?.message || err); }
-    }
+    if (answered) refreshActive();
 
     if (phase === ATTEMPT_PHASES.EXISTING) {
       const settled = hydrate({ open: !ceremonyOn });
@@ -642,6 +645,9 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
         } else if (now2?.phase === ATTEMPT_PHASES.EXISTING && battle?.ownerId === r.capturedUid) {
           hydration = { key: `${r.capturedUid}:${r.authEpoch}:${a.attemptId}:${battle.id}`, attemptId: a.attemptId, battleId: battle.id, status: EXISTING_READ.FOUND, battle, retryAt: null };
         }
+        // An uncertain answer refreshed nothing (FRB-8); the reconciliation that finds its owned battle — existing
+        // or recovered — is the poll's trigger instead (spec §6; fix-round review RF-2).
+        if (now2?.phase === ATTEMPT_PHASES.CREATED || now2?.phase === ATTEMPT_PHASES.EXISTING) refreshActive();
         changed();
       }, (err) => {
         if (!isCurrent()) return;
@@ -952,13 +958,18 @@ function TargetEvidence({ rt, attemptId, targetAgentId, uid, authEpoch }) {
 /**
  * Can the deploy target's lastDeployedAt still change for this attempt? decide.js stamps it on a creation and on
  * an existing answer, so while a request is out, and after any answer but a refusal, it can. A refusal is
- * answered before the decision write and stamps nothing — except the in-progress 429, whose other deploy still
- * can (independent review FRB-7).
+ * answered before the decision write and stamps nothing (independent review FRB-7) — but for two 429s the stamp
+ * that matters is another deploy's: the in-progress one's still running, and the 2-minute cooldown's already
+ * written, which a stale or empty first snapshot may not show yet. Those keep listening until the bound is known
+ * (fix-round review RF-1). `'cooldown'` is agentDeploy.js's REFUSAL_REASONS_429 reason for that 429.
  */
 function stampCanArrive(a) {
   if (a.phase === ATTEMPT_PHASES.SUBMITTING) return true;
   const kind = a.result?.kind;
-  if (kind === RESULT_KINDS.REFUSED || kind === RESULT_KINDS.REVIEW_DUE) return isInProgressRefusal(a.result?.evidence);
+  if (kind === RESULT_KINDS.REFUSED || kind === RESULT_KINDS.REVIEW_DUE) {
+    const evidence = a.result?.evidence;
+    return isInProgressRefusal(evidence) || evidence?.reason === 'cooldown';
+  }
   return true;
 }
 

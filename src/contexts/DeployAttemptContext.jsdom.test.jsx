@@ -30,8 +30,10 @@ const h = vi.hoisted(() => ({
   ceremonies: [],
   ceremonyMounts: 0,
   targetProgress: { deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false },
-  // Every render of the target listener (the ceremony is a stand-in here, so only the provider's evidence listener).
+  // Every render of the target listener (the ceremony is a stand-in here, so only the provider's evidence listener),
+  // and how many are subscribed now.
   targetReads: [],
+  listeners: 0,
 }));
 
 vi.mock('firebase/auth', () => ({ onAuthStateChanged: (_auth, cb) => { h.authListeners.push(cb); return () => {}; } }));
@@ -40,7 +42,20 @@ vi.mock('../services/agentDeploy', () => ({ deployAgent: (...args) => h.deploy(.
 vi.mock('../services/dueIdeaCheck', () => ({ checkDueIdea: (...args) => h.due(...args) }));
 vi.mock('../services/agentBattleVerify', () => ({ findActiveBattleForAgent: (...args) => h.verify(...args) }));
 vi.mock('../services/ownedBattleRead', () => ({ readOwnedBattle: (...args) => h.owned(...args) }));
-vi.mock('../hooks/useDeployTargetProgress', () => ({ default: (id) => { h.targetReads.push(id); return h.targetProgress; } }));
+vi.mock('../hooks/useDeployTargetProgress', async () => {
+  const { useEffect } = await import('react');
+  // The listener's lifetime is its mount, as the real hook's onSnapshot subscription is (independent review FRB-7).
+  function useTargetStandIn(id) {
+    h.targetReads.push(id);
+    useEffect(() => {
+      if (!id) return undefined;
+      h.listeners += 1;
+      return () => { h.listeners -= 1; };
+    }, [id]);
+    return h.targetProgress;
+  }
+  return { default: useTargetStandIn };
+});
 vi.mock('../config/featureFlags', async (importOriginal) => ({
   ...(await importOriginal()),
   isDeploySkyCouplingOn: () => true,
@@ -156,6 +171,7 @@ beforeEach(() => {
   h.ceremonyMounts = 0;
   h.targetProgress = { deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false };
   h.targetReads = [];
+  h.listeners = 0;
   h.due = vi.fn(async () => null);
   h.verify = vi.fn(async () => ({ found: false, battle: null }));
   h.owned = vi.fn(async () => null);
@@ -1829,51 +1845,98 @@ describe('Independent review fix round — the provider (FRB-2, FRB-3, FRB-5 …
     expect(posts).toHaveLength(2);
   });
 
+  // FRB-7: the evidence listener's lifetime, watched as its subscription (h.listeners), as the real hook's onSnapshot.
+  const known = (lastDeployedAt = null) => ({ deployProgress: null, lastDeployedAt, lastDecision: null, targetKnown: true });
+
   it('FRB-7: a refusal answered before the decision write ends the evidence listener once the target is read — its stamp still reported', async () => {
     const stampMs = Date.now() - 10000;
-    h.targetProgress = { deployProgress: null, lastDeployedAt: new Date(stampMs).toISOString(), lastDecision: null, targetKnown: true };
+    h.targetProgress = known(new Date(stampMs).toISOString());
     await committedAndOut();
     const target = attempt().targetAgentId;
-    expect(h.targetReads).toContain(target);
+    expect(h.listeners).toBe(1);
     posts[0].answer(FORBIDDEN());
     await flush();
     expect(probe.current.snapshot.state.cooldowns['uid-A'][target]).toBe(stampMs + 120000);
-    const reads = h.targetReads.length;
-    act(() => { probe.current.api.dismiss(); });
-    act(() => { probe.current.api.tick(); });
-    expect(h.targetReads.length).toBe(reads);
+    expect(h.listeners).toBe(0);
   });
 
   it('FRB-7: …and with no stamp at all it ends too, instead of waiting for one that cannot come', async () => {
-    h.targetProgress = { deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: true };
+    h.targetProgress = known();
     await committedAndOut();
     posts[0].answer(FORBIDDEN());
     await flush();
-    const reads = h.targetReads.length;
+    expect(h.listeners).toBe(0);
     act(() => { probe.current.api.dismiss(); });
-    act(() => { probe.current.api.tick(); });
     expect(attempt().phase).toBe('idle');
-    expect(h.targetReads.length).toBe(reads);
+    expect(h.listeners).toBe(0);
   });
 
-  it('FRB-7 controls: the in-progress refusal and a creation keep listening while a stamp can still arrive', async () => {
-    h.targetProgress = { deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: true };
+  it('FRB-7: a review-due refusal ends it the same way', async () => {
+    h.targetProgress = known();
+    await committedAndOut();
+    posts[0].answer(REVIEW_DUE());
+    await flush();
+    expect(h.listeners).toBe(0);
+  });
+
+  it('FRB-7 (mutating lens): a document read while the request is out does not end the listener — the creation\'s stamp is still recorded', async () => {
+    h.targetProgress = known();
+    await committedAndOut();
+    act(() => { probe.current.api.tick(); });
+    expect(h.listeners).toBe(1);
+    const target = attempt().targetAgentId;
+    posts[0].onCreate({}, {}, { agentBattleId: 'battle-new', ownerUid: 'uid-A' });
+    posts[0].answer(CREATED());
+    await flush();
+    expect(attempt().phase).toBe('idle');
+    expect(h.listeners).toBe(1);
+    const stampMs = Date.now();
+    h.targetProgress = known(new Date(stampMs).toISOString());
+    act(() => { probe.current.api.tick(); });
+    expect(probe.current.snapshot.state.cooldowns['uid-A'][target]).toBe(stampMs + 120000);
+    expect(h.listeners).toBe(0);
+  });
+
+  it('FRB-7 (mutating lens): a refusal whose document arrives after the answer is still read once, and the listener ends without another event', async () => {
+    await committedAndOut();
+    const target = attempt().targetAgentId;
+    posts[0].answer(FORBIDDEN());
+    await flush();
+    expect(h.listeners).toBe(1);
+    const stampMs = Date.now() - 30000;
+    h.targetProgress = known(new Date(stampMs).toISOString());
+    act(() => { probe.current.api.tick(); });
+    expect(probe.current.snapshot.state.cooldowns['uid-A'][target]).toBe(stampMs + 120000);
+    expect(h.listeners).toBe(0);
+  });
+
+  it('FRB-7 (mutating lens): a second report of the same read changes nothing', async () => {
+    h.targetProgress = known();
+    await committedAndOut();
+    const id = attempt().attemptId;
+    const version = probe.current.snapshot.version;
+    act(() => { probe.current.api.evidenceRead(id); });
+    expect(probe.current.snapshot.version).toBe(version);
+  });
+
+  it('FRB-7 controls: the in-progress refusal, the 429 cooldown (RF-1) and a creation keep listening while a stamp can still arrive or show', async () => {
+    h.targetProgress = known();
     await committedAndOut();
     posts[0].answer(IN_PROGRESS());
     await flush();
     act(() => { probe.current.api.dismiss(); });
-    let reads = h.targetReads.length;
-    act(() => { probe.current.api.tick(); });
-    expect(h.targetReads.length).toBeGreaterThan(reads);
-    await advance(120000);
+    expect(h.listeners).toBe(1);
+    // The 2-minute cooldown 429: its stamp exists, though a first snapshot may not show it yet (fix-round RF-1).
+    signIn('uid-B');
     await committedAndOut();
-    posts[1].onCreate({}, {}, { agentBattleId: 'battle-new', ownerUid: 'uid-A' });
-    posts[1].answer(CREATED());
+    posts[1].answer({ outcome: 'refused', success: false, postIssued: true, httpStatus: 429, status: 429, error: 'Please wait 2 minutes between deploys', reason: 'cooldown' });
     await flush();
-    expect(attempt().phase).toBe('idle');
-    reads = h.targetReads.length;
     act(() => { probe.current.api.tick(); });
-    expect(h.targetReads.length).toBeGreaterThan(reads);
+    expect(h.listeners).toBe(1);
+    const stampMs = Date.now() - 20000;
+    h.targetProgress = known(new Date(stampMs).toISOString());
+    act(() => { probe.current.api.tick(); });
+    expect(probe.current.snapshot.state.cooldowns['uid-B'][attempt().targetAgentId]).toBe(stampMs + 120000);
   });
 
   it('FRB-8: a refused or an uncertain answer refreshes nothing; an existing answer refreshes the poll once', async () => {
@@ -1905,5 +1968,58 @@ describe('Independent review fix round — the provider (FRB-2, FRB-3, FRB-5 …
     await flush();
     expect(attempt()?.phase ?? 'none').not.toBe('created');
     expect(bridge.refreshActiveBattles).not.toHaveBeenCalled();
+  });
+});
+
+// ── The fix round's own review (RF-1 … RF-5) and mutating lens: the rows they asked for ────────────────────────────
+describe('Fix-round review — RF-2 and the mutating lens\'s hand-off gap', () => {
+  const RUNNING = () => ({ id: 'battle-running', ownerId: 'uid-A', agentId: 'agent-uid-A', status: 'active' });
+  const report = (phase, errorTone = null) => act(() => { probe.current.api.phaseChanged({ attemptId: attempt().attemptId, phase, errorTone }); });
+
+  it('RF-2: an uncertain answer refreshes nothing, and the deployment check that finds its battle refreshes the poll once', async () => {
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    expect(bridge.refreshActiveBattles).not.toHaveBeenCalled();
+    h.verify = vi.fn(async () => ({ found: true, battle: RUNNING() }));
+    await act(async () => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.CHECK_DEPLOYMENT); });
+    await flush();
+    expect(attempt().phase).toBe('existing');
+    expect(bridge.refreshActiveBattles).toHaveBeenCalledTimes(1);
+  });
+
+  it('RF-2: …and so does the ceremony\'s admitted reveal (a recovered creation); a clear check refreshes nothing', async () => {
+    h.ceremonyOn = true;
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    h.verify = vi.fn(async () => ({ found: true, battle: RUNNING() }));
+    report('reveal');
+    await flush();
+    expect(attempt()).toMatchObject({ phase: 'created', resolution: { kind: 'recovered' } });
+    expect(bridge.refreshActiveBattles).toHaveBeenCalledTimes(1);
+    act(() => { probe.current.api.dismiss(); });
+    await advance(120000);
+    await committedAndOut();
+    posts[1].answer(UNCERTAIN());
+    await flush();
+    h.verify = vi.fn(async () => ({ found: false, battle: null }));
+    await act(async () => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.CHECK_DEPLOYMENT); });
+    await flush();
+    expect(attempt().reconciliationStatus).toBe('clear');
+    expect(bridge.refreshActiveBattles).toHaveBeenCalledTimes(1);
+  });
+
+  it('mutating lens: an existing answer while the ceremony\'s check runs keeps the same ceremony — the machine reads it at resolution (R-S2b-9a)', async () => {
+    h.ceremonyOn = true;
+    h.owned = vi.fn(async () => RUNNING());
+    await committedAndOut();
+    report('verifying');
+    const mounts = h.ceremonyMounts;
+    posts[0].answer(EXISTING());
+    await flush();
+    await flush();
+    expect(h.ceremonies.at(-1).deployResult).toMatchObject({ status: 'existing' });
+    expect(h.ceremonyMounts).toBe(mounts);
   });
 });
