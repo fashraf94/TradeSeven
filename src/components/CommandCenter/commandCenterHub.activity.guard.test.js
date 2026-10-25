@@ -140,8 +140,8 @@ describe('S3\'s hooks hold exactly the activity they were allowed (S3 review T5-
 // commandCenterHub.mount.guard.test.js allows ShadowCanvas.jsx five PATTERNS (a frame request, an observer, a listener,
 // a timeout, an effect); a pattern allowed once is allowed any number of times. This pins what the canvas actually
 // DOES, from the parsed source: every frame it requests and cancels, the one observer it builds and disconnects, the one
-// listener it adds and removes (by event name), the one timeout it sets and clears, and its three effects — the
-// canvas's lifetime, the pause that follows the ceremony, and the response. A fourth effect, a second listener, a
+// listener it adds and removes (by event name), the one timeout it sets and clears, and its four effects — the
+// canvas's lifetime, the pause that follows the ceremony, the response, and the still's flash timer. A fourth effect, a second listener, a
 // timer in the loop or a second observer fails here until a ruling says it may. The pure modules hold none.
 const SHADOW_CANVAS = [
   'cancelAnimationFrame',
@@ -157,11 +157,12 @@ const SHADOW_CANVAS = [
   'useEffect',
   'useEffect',
   'useEffect',
+  'useEffect',
 ];
 const SHADOW_PURE = ['shadowCanvas.js', 'shadowBloom.js', 'shadowStatus.js'];
 
 describe('S7: Shadow\'s canvas holds exactly the activity it was allowed (R-S7-1, R-S7-5)', () => {
-  it('ShadowCanvas.jsx: three effects, one frame loop (two requests, one cancel), one observer, one visibility listener (removed again) and one timeout (cleared)', () => {
+  it('ShadowCanvas.jsx: four effects, one frame loop (two requests, one cancel), one observer, one visibility listener (removed again) and one timeout (cleared)', () => {
     expect(activityOf(readShell('ShadowCanvas.jsx'), parseJsx)).toEqual(SHADOW_CANVAS);
   });
 

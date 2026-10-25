@@ -69,6 +69,21 @@ describe('routing — the canvas, or the still on every other route (R-S7-1)', (
     expect(draw({ status: 'nonsense', selectedArea: 7 }).host.querySelector('canvas').getAttribute('aria-label')).toBe('Shadow — ambient');
   });
 
+  it('an area that is not 0, 1 or 2 is no area: it draws exactly the unselected form, and names none', () => {
+    const run = (selectedArea) => {
+      const m = draw({ selectedArea, tier: 'mid' });
+      tick(3);
+      const out = JSON.stringify([kit.log.strokeStyles, kit.log.arcs]);
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+      return out;
+    };
+    const none = run(null);
+    expect(run(7)).toBe(none);
+    expect(run(-1)).toBe(none);
+    expect(run(1)).not.toBe(none);
+  });
+
   it('hands its box to the stage through boxRef, as the still does', () => {
     const ref = React.createRef();
     draw({ boxRef: ref });
@@ -570,6 +585,36 @@ describe('the response — the center bloom, and the still\'s brief flash (R-S7-
       expect(flashing(m)).toBe(true);
       act(() => { vi.advanceTimersByTime(120); });
       expect(flashing(m)).toBe(false);
+    });
+
+    it('a response behind the ceremony is owed: no flash while paused, one when it releases — however many arrived — and none after', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const m = draw(props);
+      m.rerender(element({ ...props, paused: true }));
+      m.rerender(element({ ...props, paused: true, areaEvent: 1 }));
+      m.rerender(element({ ...props, paused: true, areaEvent: 2, createdAttemptId: 'a-1' }));
+      expect(flashing(m)).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(flashing(m)).toBe(false);
+      m.rerender(element({ ...props, paused: false, areaEvent: 2, createdAttemptId: 'a-1' }));
+      expect(flashing(m)).toBe(true);
+      expect(vi.getTimerCount()).toBe(1);
+      act(() => { vi.advanceTimersByTime(420); });
+      expect(flashing(m)).toBe(false);
+      // Nothing is owed any more: pausing and releasing again flashes nothing.
+      m.rerender(element({ ...props, paused: true, areaEvent: 2, createdAttemptId: 'a-1' }));
+      m.rerender(element({ ...props, paused: false, areaEvent: 2, createdAttemptId: 'a-1' }));
+      expect(flashing(m)).toBe(false);
+    });
+
+    it('an unmount while a flash is owed leaves no timer', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const m = draw({ ...props, paused: true });
+      m.rerender(element({ ...props, paused: true, areaEvent: 1 }));
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+      expect(vi.getTimerCount()).toBe(0);
     });
 
     it('nothing flashes at mount, on a re-render, or for a selected-area change alone', () => {

@@ -145,6 +145,33 @@ describe('stepFx — ambient signals and flares, deterministic under an injected
     expect(elsewhere.signals[0].i).toBe(0);
   });
 
+  it('the cap is a cap: with two ambient signals already travelling none is added (and the spawn clock still moves); processing allows five', () => {
+    const live = () => ({ i: 0, u: 0.5, v: 0.01 });
+    const at = (existing, processing) => {
+      const fx = createFx();
+      for (let k = 0; k < existing; k += 1) fx.signals.push(live());
+      stepFx(fx, { t: 1, dt: 0, speed: 1, processing, sel: null, strands }, half);
+      return fx;
+    };
+    expect(at(1, false).signals).toHaveLength(2);
+    expect(at(2, false).signals).toHaveLength(2);
+    expect(at(2, false).nextSpawn).toBeCloseTo(1 + 1.4 + 0.5 * 1.6, 10);
+    expect(at(4, true).signals).toHaveLength(5);
+    expect(at(5, true).signals).toHaveLength(5);
+    expect(at(5, true).nextSpawn).toBeCloseTo(1.35, 10);
+  });
+
+  it('the family bias is 70%: a draw under it picks inside the family, a draw over it picks anywhere', () => {
+    const pick = (first, second) => {
+      const fx = createFx();
+      const draws = [first, second, 0.5];
+      stepFx(fx, { t: 1, dt: 0, speed: 1, processing: false, sel: 2, strands }, () => draws.shift() ?? 0.5);
+      return fx.signals[0].i;
+    };
+    expect(pick(0.69, 0.3)).toBe(16);
+    expect(pick(0.71, 0.3)).toBe(6);
+  });
+
   it('area 0 is an area: the first family is picked from like any other (not mistaken for no selection)', () => {
     const fx = createFx();
     const draws = [0.1, 0.99, 0.5];
@@ -269,6 +296,20 @@ describe('drawShadow — one frame', () => {
     const none = frame('low', 3, { sel: null });
     const one = frame('low', 3, { sel: 1 });
     expect(one.log.strokes.map(alphaOf)).not.toEqual(none.log.strokes.map(alphaOf));
+    // Low draws two runs per strand, in the rig's depth order: the selected family's runs against the rest.
+    const ratio = (f, sel) => {
+      const mean = (list) => list.reduce((s, x) => s + x, 0) / list.length;
+      const alphas = f.log.strokes.map(alphaOf);
+      const inFamily = [];
+      const rest = [];
+      f.rig.order.forEach((strand, k) => {
+        const bucket = f.rig.strands[strand].fam === sel ? inFamily : rest;
+        bucket.push(alphas[2 * k], alphas[2 * k + 1]);
+      });
+      return mean(inFamily) / mean(rest);
+    };
+    // The geometry leans a little too, so compare with the unselected ratio: 1.35 / 0.62 is the extra the alpha adds.
+    expect(ratio(one, 1) / ratio(none, 1)).toBeGreaterThan(1.8);
   });
 
   it('a signal draws a head with its glow and four trailing dots; one at the start of its strand has a shorter tail', () => {

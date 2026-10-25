@@ -100,18 +100,50 @@ describe('only phases are announced', () => {
   });
 });
 
-describe('liveReadKnown — has the owned live read answered?', () => {
-  it('the connected hub says so itself (liveResolved), whatever the completed window says', () => {
-    expect(liveReadKnown({ status: 'loading', liveResolved: true })).toBe(true);
-    expect(liveReadKnown({ status: 'ready', liveResolved: false })).toBe(false);
+describe('a game deployed after hours is not "in progress" (review C-1; BUILD_RULES §9)', () => {
+  it('games waiting for the open say what the strip says, built from the strip\'s own copy — and never "in progress"', () => {
+    expect(words({ waitingCount: 1 })).toBe('Deployed · waiting for the open');
+    expect(words({ waitingCount: 2 })).toBe('Deployed · waiting for the open');
+    expect(words({ waitingCount: 1 })).toBe(COPY.strip.deployed(COPY.games.waitingForOpen));
+  });
+
+  it('one that has opened beats one still waiting, and the count is the opened ones alone', () => {
+    expect(words({ liveCount: 1, waitingCount: 1 })).toBe('Live game in progress');
+    expect(words({ liveCount: 2, waitingCount: 3 })).toBe('2 live games in progress');
+  });
+
+  it('an attempt shown still beats it, and so does nothing below: the waiting phrase is rule 5\'s', () => {
+    expect(words({ waitingCount: 1, display: display('uncertain') })).toBe('Couldn’t confirm the deploy');
+    expect(words({ waitingCount: 1, liveKnown: false })).toBe('Deployed · waiting for the open');
+  });
+});
+
+describe('liveReadKnown — can the owned live read be said to be known?', () => {
+  it('the connected hub says so itself (liveResolved), whatever the completed window or the gate says', () => {
+    expect(liveReadKnown({ status: 'loading', liveResolved: true }, { gateBlocked: null })).toBe(true);
+    expect(liveReadKnown({ status: 'ready', liveResolved: false }, { gateBlocked: false })).toBe(false);
     expect(liveReadKnown({ status: 'error', liveResolved: false })).toBe(false);
   });
 
-  it('without that key (the layout fixtures) a ready section is known, a loading one is not', () => {
-    expect(liveReadKnown({ status: 'ready', rows: [] })).toBe(true);
-    expect(liveReadKnown({ status: 'loading', rows: [] })).toBe(false);
-    expect(liveReadKnown({ status: 'error', rows: [] })).toBe(false);
-    expect(liveReadKnown(undefined)).toBe(false);
-    expect(liveReadKnown(null)).toBe(false);
+  it('without that key (the layout fixtures) the live read\'s own answer is the selector\'s gate, never the completed window\'s status', () => {
+    expect(liveReadKnown({ status: 'ready', rows: [] }, { gateBlocked: false })).toBe(true);
+    expect(liveReadKnown({ status: 'ready', rows: [] }, { gateBlocked: true })).toBe(true);
+    expect(liveReadKnown({ status: 'ready', rows: [] }, { gateBlocked: null })).toBe(false);
+    expect(liveReadKnown({ status: 'loading', rows: [] }, { gateBlocked: false })).toBe(true);
+    expect(liveReadKnown({ status: 'ready', rows: [] })).toBe(false);
+    expect(liveReadKnown(undefined, undefined)).toBe(false);
+    expect(liveReadKnown(null, null)).toBe(false);
+  });
+
+  it('a failed refresh takes the knowledge back — nothing running cannot be said from stale data — and a refresh in flight does not', () => {
+    expect(liveReadKnown({ liveResolved: true }, { freshness: { stale: true } })).toBe(false);
+    expect(liveReadKnown({ status: 'ready' }, { gateBlocked: false, freshness: { stale: true } })).toBe(false);
+    expect(liveReadKnown({ liveResolved: true }, { freshness: { stale: false, refreshing: true } })).toBe(true);
+    expect(liveReadKnown({ status: 'ready' }, { gateBlocked: false, freshness: { stale: false, refreshing: true } })).toBe(true);
+  });
+
+  it('with the knowledge gone and nothing live the line says "Idle"; a retained live game is still said', () => {
+    expect(words({ liveKnown: liveReadKnown({ liveResolved: true }, { freshness: { stale: true } }) })).toBe('Idle');
+    expect(words({ liveCount: 1, liveKnown: liveReadKnown({ liveResolved: true }, { freshness: { stale: true } }) })).toBe('Live game in progress');
   });
 });

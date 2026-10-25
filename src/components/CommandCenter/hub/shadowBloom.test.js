@@ -59,10 +59,14 @@ describe('stepBloom — the two triggers', () => {
     expect(memo).toEqual({ areaEvent: 1, seen: 'a-1', key: 1 });
   });
 
-  it('a selection does not forget the attempt it has seen', () => {
+  it('a selection does not forget the attempt it has seen, whatever else rides along (null, an empty or a malformed id)', () => {
     let memo = stepBloom(seedBloom({}), { createdAttemptId: 'a-1' });
     memo = stepBloom(memo, { areaEvent: 1, createdAttemptId: null });
     expect(memo.seen).toBe('a-1');
-    expect(stepBloom(memo, { areaEvent: 1, createdAttemptId: 'a-1' })).toBe(memo);
+    for (const [n, junk] of [[2, ''], [3, 0], [4, 7], [5, {}]]) {
+      memo = stepBloom(memo, { areaEvent: n, createdAttemptId: junk });
+      expect(memo.seen, String(junk)).toBe('a-1');
+    }
+    expect(stepBloom(memo, { areaEvent: 5, createdAttemptId: 'a-1' })).toBe(memo);
   });
 });

@@ -302,6 +302,29 @@ describe('the status line (R-S7-7)', () => {
     expect(status()).toBe('2 live games in progress');
   });
 
+  it('a game deployed after hours says what the strip and the Games row say, not "in progress" (review C-1)', () => {
+    const active = fixture('active');
+    const waiting = (r) => (r.live ? { ...r, preOpen: true, clock: COPY.games.waitingForOpen } : r);
+    const sections = { ...active, games: { ...active.games, rows: active.games.rows.map(waiting) } };
+    renderFrame({ site: 'desktop', hubWidth: 1216, sections });
+    expect(status()).toBe('Deployed · waiting for the open');
+    expect(status()).toBe(COPY.strip.deployed(COPY.games.waitingForOpen));
+    const phone = renderFrame({ site: 'mobile', hubWidth: 390, sections });
+    expect(document.querySelector('[data-hub-strip-line]').textContent).toBe(status());
+    phone.unmount();
+    mounted = mounted.filter((x) => x !== phone);
+    // One that has opened beside one still waiting: the opened one is what is "in progress".
+    const mixed = { ...active, games: { ...active.games, rows: [...active.games.rows, { ...waiting(active.games.rows.find((r) => r.live)), id: 'game_waiting' }] } };
+    mixed.games.rows = mixed.games.rows.map((r, i) => (i === 0 ? active.games.rows[0] : r));
+    renderFrame({ site: 'desktop', hubWidth: 1216, sections: mixed });
+    expect([...document.querySelectorAll('[data-hub-status]')].at(-1).textContent).toBe('Live game in progress');
+  });
+
+  it('the checking fixture (games resolved, the live poll not): "Idle", not "nothing running" (review C-2)', () => {
+    renderFrame({ site: 'desktop', hubWidth: 1216, sections: fixture('checking') });
+    expect(status()).toBe('Idle');
+  });
+
   it.each([
     ['verifying', 'Verifying deployment…'], ['finishing', 'Finishing deployment'], ['confirmed', 'Deployed'], ['existing', 'Already running'],
     ['failed', 'Deployment refused'], ['uncertain', 'Couldn’t confirm the deploy'], ['submitting', 'Submitting your deployment'],
@@ -349,7 +372,7 @@ describe('the response to an area selection (R-S7-3)', () => {
     expect(bloomRuns(200)).toBe(0);
   });
 
-  it('a sheet opening, a refresh and a resize are not responses', () => {
+  it('a sheet opening and a resize are not responses (a poll refresh is covered in the connected rows below)', () => {
     renderFrame({ site: 'desktop', hubWidth: 1216, sections: fixture('returning') });
     tick(3);
     click(byRole(document, 'button', COPY.games.history)[0]);
@@ -475,6 +498,46 @@ describe('connected: processing follows the attempt (R-S7-3)', () => {
     expect(bloomRuns(340)).toBe(0);
   });
 
+  it('rule 6 on the connected hub: the owned live read answers "Idle · nothing running"; before it answers, or for another owner\'s list, "Idle" (review C-5)', async () => {
+    const owner = { epoch: 1, status: 'ready', ownerUid: 'uid-A', ownerEpoch: 1, lastSuccessfulAt: T0 - 30000, error: null, refreshing: false };
+    const run = async (poll, battles = []) => {
+      const { m } = renderConnected('desktop', { ...hubOf(), activePoll: poll, activeBattles: battles });
+      await flush();
+      const text = status();
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+      vi.useRealTimers();
+      return text;
+    };
+    expect(await run(owner)).toBe('Idle · nothing running');
+    expect(await run({ epoch: 1, status: 'loading', ownerUid: null, ownerEpoch: null, lastSuccessfulAt: null, error: null, refreshing: false })).toBe('Idle');
+    expect(await run({ ...owner, ownerUid: 'uid-B' })).toBe('Idle');
+    expect(await run({ ...owner, ownerEpoch: 9 })).toBe('Idle');
+  });
+
+  it('a failed refresh: an empty retained list claims nothing ("Idle"); a retained live game is still said (review C-3)', async () => {
+    const stale = { epoch: 1, status: 'error', ownerUid: 'uid-A', ownerEpoch: 1, lastSuccessfulAt: T0 - 300000, error: 'unavailable', refreshing: false };
+    const game = { id: 'game_live', ownerId: 'uid-A', agentId: 'casual-agent-uid-A', status: 'active', activatedAt: '2026-10-25T14:30:00Z' };
+    const run = async (battles) => {
+      const { m } = renderConnected('desktop', { ...hubOf(), activePoll: stale, activeBattles: battles });
+      await flush();
+      const text = status();
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+      vi.useRealTimers();
+      return text;
+    };
+    expect(await run([])).toBe('Idle');
+    expect(await run([game])).toBe('Live game in progress');
+  });
+
+  it('a refresh in flight over an answered, empty list does not flicker the line to "Idle"', async () => {
+    const refreshing = { epoch: 1, status: 'loading', ownerUid: 'uid-A', ownerEpoch: 1, lastSuccessfulAt: T0 - 30000, error: null, refreshing: true };
+    renderConnected('desktop', { ...hubOf(), activePoll: refreshing });
+    await flush();
+    expect(status()).toBe('Idle · nothing running');
+  });
+
   it('a connected hub with no attempt: ambient, no response, however many frames', async () => {
     renderConnected('desktop');
     await flush();
@@ -521,6 +584,21 @@ describe('connected: a created terminal on the hub blooms once per attempt (R-S7
     tick(100);
     expect(status()).toBe('Deployed');
     expect(bloomRuns(340)).toBe(2);
+  });
+
+  it('a poll refresh (new retained objects, no change of attempt) is not a response, with a created terminal on screen', async () => {
+    const { m, hub } = renderConnected('desktop');
+    await deployViaHold();
+    closeCeremony();
+    await answer(CREATED);
+    tick(100);
+    expect(bloomRuns(340)).toBe(1);
+    for (let i = 0; i < 4; i += 1) {
+      m.rerender(tree('desktop', { ...hub, activeBattles: [], activePoll: { ...hub.activePoll, lastSuccessfulAt: T0 + i + 1 } }));
+    }
+    tick(200);
+    expect(status()).toBe('Deployed');
+    expect(bloomRuns(340)).toBe(1);
   });
 
   it('the phone follows the same attempt: processing, then one response for the created terminal', async () => {
@@ -601,6 +679,21 @@ describe('connected: the root ceremony covers the page, so Shadow pauses (R-S7-5
     await flush();
     expect(probe.current.snapshot.overlayOpen).toBe(false);
     expect(kit.raf.queue).toHaveLength(1);
+  });
+
+  it('under reduced motion a created terminal behind the ceremony flashes the still once the page is back (the flash is owed, not spent behind it)', async () => {
+    h.reduced = true;
+    renderConnected('desktop');
+    await deployViaHold();
+    await answer(CREATED);
+    await reveal();
+    expect(status()).toBe('Deployed');
+    expect(box().hasAttribute('data-shadow-flash')).toBe(false);
+    closeCeremony();
+    await flush();
+    expect(box().hasAttribute('data-shadow-flash')).toBe(true);
+    await advance(420);
+    expect(box().hasAttribute('data-shadow-flash')).toBe(false);
   });
 
   it('no ceremony, no pause: the loop runs through a deployment that has none', async () => {

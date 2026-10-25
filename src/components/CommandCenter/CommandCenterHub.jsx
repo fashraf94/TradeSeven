@@ -191,8 +191,11 @@ function useShared(sections, attemptId = null) {
     // included — named by its attempt id, so Shadow answers once per attempt. An existing, refused or uncertain
     // terminal is never this.
     createdAttemptId: display.displayState === 'confirmed' && typeof attemptId === 'string' && attemptId ? attemptId : null,
-    liveCount: live.length,
-    liveKnown: liveReadKnown(sections.games),
+    // Slice S7 (review C-1, C-3): the games that have opened, the games deployed and waiting for the open, and whether the
+    // owned live read can be said to be known — the line says what the strip and the Games rows say.
+    liveCount: live.filter((g) => !g.preOpen).length,
+    waitingCount: live.filter((g) => g.preOpen).length,
+    liveKnown: liveReadKnown(sections.games, sections.deploy),
     summaries: areaSummaries(sections),
     loadoutLine: loadoutLineOf(sections.loadout),
     dateText: formatHubDate(new Date()),
@@ -202,7 +205,7 @@ function useShared(sections, attemptId = null) {
 
 /** Slice S7 (ruling R-S7-7): the status line's words, from the hold, the deploy display and the owned live read. */
 function statusWordsOf(deploy, shared) {
-  return shadowStatusWords({ holdPhase: deploy?.holdPhase ?? null, display: shared.display, liveCount: shared.liveCount, liveKnown: shared.liveKnown });
+  return shadowStatusWords({ holdPhase: deploy?.holdPhase ?? null, display: shared.display, liveCount: shared.liveCount, waitingCount: shared.waitingCount, liveKnown: shared.liveKnown });
 }
 
 const SIDE_PARTS = new Set(['games', 'deploy', 'activity', 'brief']);

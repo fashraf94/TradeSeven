@@ -125,6 +125,12 @@ describe('ShadowStill — the flash (slice S7)', () => {
     expect(coreLit).toBeCloseTo(Math.min(1, coreRest * 1.25), 8);
   });
 
+  it('never lifts a stroke past full opacity (the design\'s min(1, …); at the still\'s pinned moment the brightest strand is below 0.7, so the cap is a guard and not reachable here)', () => {
+    for (const selectedArea of [null, 0, 1, 2]) {
+      for (const o of opacities(draw({ tier: 'mid', selectedArea, flash: true }))) expect(o).toBeLessThanOrEqual(1);
+    }
+  });
+
   it('draws the same geometry flashing or not: only opacity moves, and with no flash nothing changed from S1', () => {
     const paths = (h) => [...h.querySelectorAll('path')].map((p) => p.getAttribute('d'));
     expect(paths(draw({ tier: 'mid', selectedArea: 1, flash: true }))).toEqual(paths(draw({ tier: 'mid', selectedArea: 1 })));

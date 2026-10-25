@@ -399,6 +399,10 @@ describe('S7: the status line\'s words, exactly (ruling R-S7-7)', () => {
     for (const s of strings(HUB_COPY.shadow)) expect(card, s).not.toContain(s);
   });
 
+  it('"Locked in" is one word on the line and on the control: the line takes the shipped control’s (review C-6)', () => {
+    expect(HUB_COPY.shadow.statusLocked).toBe(HUB_COPY.deploy.holdLocked);
+  });
+
   it('the line carries no percentage, and the image label names the state (ambient, still, processing) and the area', () => {
     expect(HUB_COPY.shadow.states).toEqual({ ambient: 'ambient', still: 'still', processing: 'processing' });
     expect(HUB_COPY.shadow.imageLabel('processing', 'Partnership')).toBe('Shadow — processing; Partnership selected');

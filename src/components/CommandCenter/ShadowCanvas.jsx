@@ -22,7 +22,8 @@
 //   - the response bloom, only when the hub's two triggers move (hub/shadowBloom.js:
 //     a new area selection, an attempt's created terminal once per attempt id).
 //     Under the still it is the design's brief flash, FLASH_MS long, whose
-//     timeout is cleared on unmount.
+//     timeout is cleared on unmount; one that arrives while the root ceremony
+//     covers the page is owed and shown when the page is back.
 //
 // LIFETIME (R-S7-5): the frame loop stops when the document is hidden, when the
 // box is offscreen (IntersectionObserver) and while `paused` (the hub passes it
@@ -64,7 +65,8 @@ export default function ShadowCanvas({
   const sel = selectedArea === 0 || selectedArea === 1 || selectedArea === 2 ? selectedArea : null;
   const processing = status === 'processing';
   const [failed, setFailed] = useState(false);
-  const [flash, setFlash] = useState(false);
+  // The still's flash: 0 is off, anything else is the running one (a new number restarts its 420 ms).
+  const [flash, setFlash] = useState(0);
   const still = reducedMotion || stillOnly || failed;
 
   // The response's memo, stepped while rendering (no effect): a trigger already there at mount is the past.
@@ -157,24 +159,40 @@ export default function ShadowCanvas({
     };
   }, [size, tier, still]);
 
+  // The still's flash is OWED while the ceremony covers the page and paid when it releases, as the canvas's own clock
+  // holds a bloom until the loop runs again: a response that arrives behind the ceremony is seen on return (review A-3).
+  const owedFlashRef = useRef(false);
+  const flushFlashRef = useRef(null);
+  flushFlashRef.current = () => {
+    if (!owedFlashRef.current || !liveRef.current.still || liveRef.current.paused) return;
+    owedFlashRef.current = false;
+    setFlash((n) => n + 1);
+  };
+
   // The ceremony (or any cover the hub names) pausing or releasing the loop, with no restart of the canvas.
   useEffect(() => {
     if (syncRef.current) syncRef.current();
+    flushFlashRef.current();
   }, [paused]);
 
   // The response: a bloom on the canvas's clock, or the still's brief flash.
   const answeredRef = useRef(bloom.key);
   useEffect(() => {
-    if (answeredRef.current === bloom.key) return undefined;
+    if (answeredRef.current === bloom.key) return;
     answeredRef.current = bloom.key;
-    if (!liveRef.current.still) {
+    if (liveRef.current.still) {
+      owedFlashRef.current = true;
+      flushFlashRef.current();
+    } else {
       triggerBloom(fxRef.current, clockRef.current);
-      return undefined;
     }
-    setFlash(true);
-    const id = setTimeout(() => setFlash(false), FLASH_MS);
-    return () => clearTimeout(id);
   }, [bloom.key]);
+
+  useEffect(() => {
+    if (!flash) return undefined;
+    const id = setTimeout(() => setFlash(0), FLASH_MS);
+    return () => clearTimeout(id);
+  }, [flash]);
 
   if (still) {
     return (
@@ -184,7 +202,7 @@ export default function ShadowCanvas({
         status={STILL}
         selectedArea={sel}
         reducedMotion={reducedMotion}
-        flash={flash}
+        flash={flash > 0}
         boxRef={boxRef}
       />
     );
