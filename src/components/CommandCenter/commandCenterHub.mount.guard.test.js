@@ -1111,6 +1111,13 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     ].sort());
   });
 
+  // S6 (review H-3): the server's own ticker filter is called, not copied, and from one place — the module that decides what the
+  // agent is handed — so no second hub file grows its own idea of which names the deploy keeps.
+  it('the deploy\'s ticker filter (api/_utils/watchlistEquip.js) is imported by exactly one hub file', () => {
+    const importers = hubDirFiles().filter((rel) => importedNames(stripComments(read(rel)), '/api/_utils/watchlistEquip.js').length > 0);
+    expect(importers).toEqual([HUB_FILE('hub/researchView.js')]);
+  });
+
   it('the legacy archetype tables are imported by exactly one hub file (the §2.3 ratchet records one line)', () => {
     const importers = hubDirFiles().filter((rel) => (
       importedNames(stripComments(read(rel)), '/data/archetypeDisplay').length > 0

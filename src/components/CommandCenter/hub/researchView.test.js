@@ -238,6 +238,8 @@ describe('the honest line (ruling R-S6-6): one wording per case, chosen from wha
 
   it('(a) compares what the PROMPT carries (whitespace collapsed), so the same words over two lines are still the idea', () => {
     expect(honestLineKindOf({ thesis: 'Semis lead\nfor ten   sessions.', statement: 'Semis lead for ten sessions.' })).toBe(HONEST_LINE.THESIS_IS_IDEA);
+    // ...and the other way round: the statement is the one set over several lines.
+    expect(honestLineKindOf({ thesis: 'Semis lead for ten sessions.', statement: ' Semis lead\nfor ten   sessions. ' })).toBe(HONEST_LINE.THESIS_IS_IDEA);
   });
 
   it('the prompt keeps only the first PROMPT_THESIS_CAP characters of the thesis, so a longer idea is NOT read as the thesis whole (b), cut or not', () => {
