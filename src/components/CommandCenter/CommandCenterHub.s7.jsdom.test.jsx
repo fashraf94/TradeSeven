@@ -395,6 +395,48 @@ describe('the response to an area selection (R-S7-3)', () => {
   });
 });
 
+// Every wide composition answers an area selection the same way (the lens T review: only the 1216 px hub was driven).
+describe.each([[1216, 340], [770, 260], [614, 260]])('the response to an area selection at a hub %i px wide (R-S7-3)', (hubWidth, size) => {
+  const areaTabs = () => [...document.querySelectorAll('[data-hub-slot="stage"] [role="tab"]')];
+  const labelled = () => box().querySelector('canvas').getAttribute('aria-label');
+
+  it('each of the three areas, chosen from another, blooms once and names itself; choosing the current area again does not', () => {
+    renderFrame({ site: 'desktop', hubWidth, sections: fixture('returning') });
+    expect(box().style.width).toBe(`${size}px`);
+    tick(3);
+    expect(areaTabs()).toHaveLength(3);
+    expect(labelled()).toBe('Shadow — ambient; Equipped Archetype selected');
+    let runs = 0;
+    for (const [index, name] of [[0, 'Partnership'], [1, 'Shared Research'], [2, 'Equipped Archetype']]) {
+      click(areaTabs()[index]);
+      tick(5);
+      runs += 1;
+      expect(labelled()).toBe(`Shadow — ambient; ${name} selected`);
+      expect(bloomRuns(size)).toBe(runs);
+      tick(80);
+      click(areaTabs()[index]);
+      tick(80);
+      expect(bloomRuns(size)).toBe(runs);
+    }
+  });
+
+  it('the Loadout link on the Deploy card is a selection of the Equipped Archetype: a response from another area, none from itself', () => {
+    renderFrame({ site: 'desktop', hubWidth, sections: fixture('returning') });
+    tick(3);
+    const door = () => byRole(document, 'button', COPY.deploy.loadoutLink)[0];
+    click(door());
+    tick(80);
+    expect(bloomRuns(size)).toBe(0);
+    click(areaTabs()[0]);
+    tick(80);
+    expect(bloomRuns(size)).toBe(1);
+    click(door());
+    tick(5);
+    expect(labelled()).toBe('Shadow — ambient; Equipped Archetype selected');
+    expect(bloomRuns(size)).toBe(2);
+  });
+});
+
 // ── The connected hub, inside App's deploy provider ────────────────────────────────────────────────────────────────
 //
 // With the ceremony off, App's handoff navigates at once and acknowledges the creation (provider: "that navigation
@@ -424,11 +466,11 @@ const flush = async () => { await act(async () => { await Promise.resolve(); awa
 const advance = async (ms) => { await act(async () => { vi.advanceTimersByTime(ms); }); };
 const signIn = (uid) => act(() => { for (const cb of [...h.authListeners]) cb(uid ? { uid } : null); });
 
-function renderConnected(site = 'desktop', hub = hubOf()) {
+function renderConnected(site = 'desktop', hub = hubOf(), width = null) {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
   vi.setSystemTime(T0);
   vi.spyOn(performance, 'now').mockImplementation(() => kit.state.now);
-  layout.state.hubWidth = site === 'mobile' ? 390 : 1216;
+  layout.state.hubWidth = width ?? (site === 'mobile' ? 390 : 1216);
   const m = mount(tree(site, hub));
   mounted.push(m);
   signIn('uid-A');
@@ -702,5 +744,45 @@ describe('connected: the root ceremony covers the page, so Shadow pauses (R-S7-5
     await deployViaHold();
     expect(probe.current.snapshot.overlayOpen).toBe(false);
     expect(kit.raf.queue).toHaveLength(1);
+  });
+});
+
+// The tablet and stacked compositions mount the same Shadow under the same provider; their size is the only difference
+// (the lens T review: the connected rows ran at 1216 px and 390 px alone).
+describe.each([[770, 260], [614, 260]])('connected, the wide site at %i px: the same attempt, the same pause (R-S7-3, R-S7-5)', (width, size) => {
+  beforeEach(() => { h.ceremony = true; });
+
+  it('processing while submitting, one response for the created terminal however long it stays, and the line says "Deployed"', async () => {
+    renderConnected('desktop', hubOf(), width);
+    expect(box().style.width).toBe(`${size}px`);
+    expect(label()).toBe('ambient');
+    await deployViaHold();
+    expect(label()).toBe('processing');
+    closeCeremony();
+    await answer(CREATED);
+    tick(120);
+    expect(label()).toBe('ambient');
+    expect(status()).toBe('Deployed');
+    expect(bloomRuns(size)).toBe(1);
+    tick(200);
+    expect(bloomRuns(size)).toBe(1);
+  });
+
+  it('the loop stops behind the ceremony, a response that arrives behind it plays once the page is back, and the box keeps its size', async () => {
+    renderConnected('desktop', hubOf(), width);
+    tick(3);
+    await deployViaHold();
+    expect(probe.current.snapshot.overlayOpen).toBe(true);
+    expect(kit.raf.queue).toHaveLength(0);
+    await answer(CREATED);
+    await reveal();
+    tick(5);
+    expect(bloomRuns(size)).toBe(0);
+    closeCeremony();
+    await flush();
+    expect(kit.raf.queue).toHaveLength(1);
+    tick(5);
+    expect(bloomRuns(size)).toBe(1);
+    expect(box().style.width).toBe(`${size}px`);
   });
 });

@@ -170,19 +170,27 @@ export default function ShadowCanvas({
 
   // The still's flash is OWED while the ceremony covers the page and paid when it releases, as the canvas's own clock
   // holds a bloom until the loop runs again: a response that arrives behind the ceremony is seen on return (review A-3).
+  // The debt is the still's: when the route is the canvas the response is answered on its clock, so the debt is dropped
+  // rather than paid at some later release (review T-13).
   const owedFlashRef = useRef(false);
   const flushFlashRef = useRef(null);
   flushFlashRef.current = () => {
-    if (!owedFlashRef.current || !liveRef.current.still || liveRef.current.paused) return;
+    if (!owedFlashRef.current) return;
+    if (!liveRef.current.still) {
+      owedFlashRef.current = false;
+      return;
+    }
+    if (liveRef.current.paused) return;
     owedFlashRef.current = false;
     setFlash((n) => n + 1);
   };
 
-  // The ceremony (or any cover the hub names) pausing or releasing the loop, with no restart of the canvas.
+  // The ceremony (or any cover the hub names) pausing or releasing the loop, with no restart of the canvas; a change of
+  // route settles the still's debt too.
   useEffect(() => {
     if (syncRef.current) syncRef.current();
     flushFlashRef.current();
-  }, [paused]);
+  }, [paused, still]);
 
   // The response: a bloom on the canvas's clock, or the still's brief flash.
   const answeredRef = useRef(bloom.key);

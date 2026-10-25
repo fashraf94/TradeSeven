@@ -35,21 +35,43 @@ export function installFakeCanvas({ context = 'ok' } = {}) {
     iface: globalThis.CanvasRenderingContext2D,
   };
 
+  // A real 2D context is strict where a stand-in is not: it throws on a non-finite gradient or arc argument or a negative
+  // radius, ignores a colour it cannot parse, and a canvas whose backing store is resized loses its transform. The stand-in
+  // refuses what a real one refuses, and records the order of a resize against a transform (`ops`).
+  const finite = (...values) => values.every((v) => typeof v === 'number' && Number.isFinite(v));
+  const RGBA = /^rgba\((\d{1,3}),(\d{1,3}),(\d{1,3}),(\d*\.?\d+(?:e-?\d+)?)\)$/;
   const makeContext = () => {
-    const log = { frames: [], strokeStyles: [], arcs: [], setTransform: [], gradients: 0 };
+    const log = { frames: [], strokeStyles: [], arcs: [], setTransform: [], gradients: 0, stops: [], fills: [], ops: [] };
     let frame = null;
     const ctx = {
       lineCap: '', lineJoin: '', lineWidth: 0, strokeStyle: '', fillStyle: '',
       clearRect() { frame = { strokes: 0, arcs: 0 }; log.frames.push(frame); },
-      fillRect() {},
+      fillRect(x, y, w, h) { if (!finite(x, y, w, h)) throw new TypeError('fillRect: non-finite argument'); },
       beginPath() {},
-      moveTo() {},
-      lineTo() {},
-      fill() {},
-      arc(x, y, r) { log.arcs.push([x, y, r]); if (frame) frame.arcs += 1; },
+      moveTo(x, y) { if (!finite(x, y)) throw new TypeError('moveTo: non-finite argument'); },
+      lineTo(x, y) { if (!finite(x, y)) throw new TypeError('lineTo: non-finite argument'); },
+      fill() { log.fills.push(typeof ctx.fillStyle === 'string' ? ctx.fillStyle : 'gradient'); },
+      arc(x, y, r) {
+        if (!finite(x, y, r)) throw new TypeError('arc: non-finite argument');
+        if (r < 0) throw new RangeError('arc: negative radius');
+        log.arcs.push([x, y, r]);
+        if (frame) frame.arcs += 1;
+      },
       stroke() { log.strokeStyles.push(ctx.strokeStyle); if (frame) frame.strokes += 1; },
-      createRadialGradient() { log.gradients += 1; return { addColorStop() {} }; },
-      setTransform(...args) { log.setTransform.push(args); },
+      createRadialGradient(x0, y0, r0, x1, y1, r1) {
+        if (!finite(x0, y0, r0, x1, y1, r1)) throw new TypeError('createRadialGradient: non-finite argument');
+        if (r0 < 0 || r1 < 0) throw new RangeError('createRadialGradient: negative radius');
+        log.gradients += 1;
+        return {
+          addColorStop(offset, color) {
+            if (!finite(offset) || offset < 0 || offset > 1) throw new RangeError('addColorStop: offset outside 0 … 1');
+            const m = RGBA.exec(color);
+            if (!m || !finite(Number(m[4])) || [m[1], m[2], m[3]].some((c) => Number(c) > 255)) throw new SyntaxError(`addColorStop: unparseable colour ${color}`);
+            log.stops.push({ offset, color, base: `${m[1]},${m[2]},${m[3]}`, alpha: Number(m[4]) });
+          },
+        };
+      },
+      setTransform(...args) { log.ops.push('transform'); log.setTransform.push(args); },
     };
     return { ctx, log };
   };
@@ -62,6 +84,11 @@ export function installFakeCanvas({ context = 'ok' } = {}) {
       const made = makeContext();
       byCanvas.set(this, made);
       contexts.push(made);
+      // The backing store's size: assigning width or height is a resize (a real context loses its transform then).
+      for (const dimension of ['width', 'height']) {
+        const own = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, dimension);
+        Object.defineProperty(this, dimension, { configurable: true, get() { return own.get.call(this); }, set(v) { made.log.ops.push('resize'); own.set.call(this, v); } });
+      }
     }
     return byCanvas.get(this).ctx;
   };
