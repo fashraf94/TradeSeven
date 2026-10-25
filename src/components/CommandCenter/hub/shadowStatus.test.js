@@ -8,7 +8,8 @@
 import { describe, expect, it } from 'vitest';
 import { deployDisplay } from './deployDisplay';
 import { HUB_COPY as COPY } from './hubCopy';
-import { liveReadKnown, shadowStatusWords } from './shadowStatus';
+import { ATTEMPT_WORDS, HOLD, liveReadKnown, shadowStatusWords } from './shadowStatus';
+import { ATTEMPT_DISPLAY, HOLD_PHASES } from './selectors/attemptVocabulary';
 
 const display = (displayState, extra = {}) => deployDisplay({ displayState, canStart: false, ...extra });
 const words = (over = {}) => shadowStatusWords({ holdPhase: null, display: display('ready', { canStart: true }), liveCount: 0, liveKnown: true, ...over });
@@ -145,5 +146,18 @@ describe('liveReadKnown — can the owned live read be said to be known?', () =>
   it('with the knowledge gone and nothing live the line says "Idle"; a retained live game is still said', () => {
     expect(words({ liveKnown: liveReadKnown({ liveResolved: true }, { freshness: { stale: true } }) })).toBe('Idle');
     expect(words({ liveCount: 1, liveKnown: liveReadKnown({ liveResolved: true }, { freshness: { stale: true } }) })).toBe('Live game in progress');
+  });
+});
+
+describe('the tokens spelled here are the vocabulary’s (kept out of the entry chunk, so pinned here)', () => {
+  it('the hold phases', () => {
+    expect(HOLD.CHARGING).toBe(HOLD_PHASES.CHARGING);
+    expect(HOLD.LOCKED).toBe(HOLD_PHASES.LOCKED);
+    expect(Object.keys(HOLD)).toHaveLength(2);
+  });
+
+  it('the attempt display words the line takes from the card', () => {
+    for (const [key, word] of Object.entries(ATTEMPT_WORDS)) expect(ATTEMPT_DISPLAY[key], key).toBe(word);
+    expect(Object.keys(ATTEMPT_WORDS).sort()).toEqual(['CONFIRMED', 'EXISTING', 'FAILED', 'FINISHING', 'UNCERTAIN', 'VERIFYING']);
   });
 });

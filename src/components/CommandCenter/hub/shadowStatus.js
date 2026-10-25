@@ -36,10 +36,18 @@
 // Pure: no React, no clock.
 
 import { HUB_COPY as COPY } from './hubCopy';
-import { ATTEMPT_DISPLAY, HOLD_PHASES } from './selectors/attemptVocabulary';
 
-const IN_FLIGHT_WORDS = new Set([ATTEMPT_DISPLAY.VERIFYING, ATTEMPT_DISPLAY.FINISHING]);
-const TERMINAL_WORDS = new Set([ATTEMPT_DISPLAY.CONFIRMED, ATTEMPT_DISPLAY.EXISTING, ATTEMPT_DISPLAY.FAILED, ATTEMPT_DISPLAY.UNCERTAIN]);
+// The vocabulary's own tokens (hub/selectors/attemptVocabulary.js ATTEMPT_DISPLAY and HOLD_PHASES), spelled here and not
+// imported: the deploy provider at App's root imports that module, so every binding the hub chunk takes from it is another
+// export in the ENTRY chunk (measured: two imports, +18 bytes there). The hub's own earlier code (ShadowStage's old
+// statusWords) spelled the hold phases the same way. shadowStatus.test.js pins each token equal to the vocabulary's.
+export const HOLD = Object.freeze({ CHARGING: 'charging', LOCKED: 'locked' });
+export const ATTEMPT_WORDS = Object.freeze({
+  VERIFYING: 'verifying', FINISHING: 'finishing', CONFIRMED: 'confirmed', EXISTING: 'existing', FAILED: 'failed', UNCERTAIN: 'uncertain',
+});
+
+const IN_FLIGHT_WORDS = new Set([ATTEMPT_WORDS.VERIFYING, ATTEMPT_WORDS.FINISHING]);
+const TERMINAL_WORDS = new Set([ATTEMPT_WORDS.CONFIRMED, ATTEMPT_WORDS.EXISTING, ATTEMPT_WORDS.FAILED, ATTEMPT_WORDS.UNCERTAIN]);
 
 /**
  * Whether the owned live read can be said to be known. The connected hub's Games section says whether it has answered
@@ -68,8 +76,8 @@ export function liveReadKnown(games, deploy) {
  */
 export function shadowStatusWords({ holdPhase = null, display, liveCount = 0, waitingCount = 0, liveKnown = false }) {
   const S = COPY.shadow;
-  if (holdPhase === HOLD_PHASES.LOCKED) return S.statusLocked;
-  if (holdPhase === HOLD_PHASES.CHARGING) return S.statusHolding;
+  if (holdPhase === HOLD.LOCKED) return S.statusLocked;
+  if (holdPhase === HOLD.CHARGING) return S.statusHolding;
   if (display?.processing === true) return S.statusSubmitting;
   const state = display?.displayState;
   if (IN_FLIGHT_WORDS.has(state) || TERMINAL_WORDS.has(state)) return display.status;
