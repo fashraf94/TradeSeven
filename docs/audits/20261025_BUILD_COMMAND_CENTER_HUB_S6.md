@@ -9,29 +9,31 @@ Not in S6, and not touched: the Shadow canvas and the status line (S7, a paralle
 | Item | Result |
 |---|---|
 | **Status** | **Draft PR, STOP.** Nothing merged; nothing activated. The flag is `false` at the PR head. |
-| Branch and head | {{BRANCH_HEAD}} |
+| Branch and head | Local branch `claude/advisor-opus-ed1d1c` (the desktop app's worktree name, cut at `27514b1a`), pushed as the prompt's `claude/command-center-hub-s6`. The code head is `e23e2db1`; the commits after it add only this report and its README row (§1). `main` was `27514b1a` at the last fetch. |
 | Starting check | Every anchor matches (§2). No stop condition held. The honest line can be made true by one of the three wordings, per list (§3, R-S6-6). |
 | R-S6-1 (Q-S4-12, Q-S4-13) | Built first, in its own commit. A hub sheet no longer withdraws the first-deployment card; a failed refresh that kept an EMPTY window of the same owner no longer withdraws it. The pins that moved are listed in §5 (no stop). |
 | R-S6-2 The reader | `hub/useHubResearch.js`: keyed uid + authEpoch + equipped list id; one request in flight per key; stale answers ignored; cleared on an owner, list or key loss; reads on mount, a list change, the watchlist sheet's return, an explicit Retry (30 s per key, judged at the press); a trigger during a request marks it dirty for ONE follow-up; no timer, no read per tab switch. Hub chunk only (§3). |
 | R-S6-3 The panel | One state each of spec §8.1's table (gate off with zero requests; typed `disabled` apart from "no idea"; loading; no equipped list; no idea; pointer with no matching version; a current idea; `review_due`; request error), exactly as ruled (§3). |
 | R-S6-4 `ideaAccess` | To the letter: a successful response (status `ready`, with its data) → admitted; typed `disabled` or the client gate off → not admitted; loading or error → unknown (a refresh in flight keeps `ready`, so the labels do not flicker; one that fails takes them back to the neutral "N names"). The reader's answer wins over S5's `hub.ideaAccess` seam. S5's copy-guard row now requires the admission to come from the reader (§3, §5). |
 | R-S6-5 "Deploying with" | On the desktop Deploy card and the phone's Loadout-tab card, only when admitted, the answer is current, the newest version is `ready` or `activated`, no version is `review_due`, the response is whole, and the Loadout card is ready for the same list with at least one name; N is the card's own count (§3). |
-| R-S6-6 The honest line | Chosen per list: (a) the list's `thesis` is the idea's current statement, (b) any other thesis, (c) none. Shown only for a list the agent can deploy with. Evidence in §2 (VERIFIED). **A finding for the founder: the Forge's list editor also writes `thesis`** (Q-S6-1). |
+| R-S6-6 The honest line | Chosen per list: (a) what the prompt carries of the list's `thesis` (its first 200 characters) is the idea's current statement, (b) any other thesis, (c) none. Shown only for a list the agent can deploy with. Evidence in §2 (VERIFIED; the Forge's list editor also writes `thesis`, but only on DRAFT lists, so for a deployable list (b) is exactly "the thesis the list was saved with"). **Q-S6-1:** a long idea gets (b), not (a), because the prompt cuts the thesis at 200 characters. |
 | R-S6-7 Activity | `idea.created:{list}:v{n}` and `idea.state:{list}:v{n}:{status}` for the pointer's version only; the same cutoff; a revision is never a new idea; "Nothing recorded yet" waits for the reader (§3). |
-| R-S6-8 S7 lane | `ShadowStage.jsx`, the status line and the canvas are untouched. In the shared files S6 added and did not rewrite. {{MAIN_STATE}} |
-| Review | {{REVIEW_SUMMARY}} |
-| Mutation | Builder passes: 174 mutants planted on the acceptance rows; 169 killed, 5 equivalent (reasoned in §6). {{T_SUMMARY}} |
-| `vite build` | {{BUILD_SUMMARY}} |
-| `lint:gate` | {{LINT_SUMMARY}} |
-| Full suite (Linux, CI-shaped) | {{SUITE_SUMMARY}} |
-| Fenced files, `api/` | None edited. Nothing under `api/` changed. S6's product code calls no fenced function. |
-| Stop rule | Not tripped (§5): the pins that moved are the ones R-S6-1 names (and their jsdom twins), plus guard rows that S4/S5 wrote as hand-offs to S6 (§5). |
-| Founder questions | Q-S6-1 … Q-S6-{{LASTQ}} (§9). |
+| R-S6-8 S7 lane | `ShadowStage.jsx`, the status line and the canvas are untouched. In the shared files S6 added and did not rewrite. `origin/main` did not move during the build (fetched at the start, before the review and before the final checks): nothing to merge, and no S7 branch existed on origin at the last fetch. |
+| Review | Three lenses (H honesty and copy, R the reader's ownership and triggers, D "Deploying with" / labels / Activity / R-S6-1), a refuter per lens, and the mutating lens last (§7). **19 distinct findings (H 9, R 4, D 3 once D-4 = H-4 is counted once, and three nits); 14 sent to refuters: 8 CONFIRMED / 6 PARTLY / 0 REFUTED;** the 5 nits (H-8, H-9, and D's three) not refuted. Fixed, except D-1, which stays to the ruling's letter and is Q-S6-2. Lens T: 197 mutants, 137 killed, 59 survived (about 25 equivalent), 1 broken; the real gaps are pinned (§7.3). |
+| Mutation | Builder: 265 mutants in six passes on the acceptance rows; 258 killed, 7 equivalent (reasoned in §7.2); every real survivor pinned. Lens T: 197 more, its gaps pinned and re-planted (37 re-planted mutants, all killed). |
+| `vite build` | Exit 0 (Linux), at the code head and at the report head. The hub stays a lazy chunk. **Entry chunk 4,901.81 → 4,901.83 kB (+0.02 kB; gzip 1,320.75 → 1,320.77): byte-identical after hash normalization up to its final `export{…}` clause, which carries 2 more bindings (548 → 550) because the hub chunk now takes 88 bindings from it instead of 80; no changed file is in its source map; the same 43 chunks, no new shared chunk.** Hub chunk 124.91 → 140.13 kB (gzip 38.16 → 42.74; +15.22 kB, S6's own code). R-S6-1 touches hub-only files and adds nothing to the entry (§8). |
+| `lint:gate` | Exit 0 (Linux), at the code head and at the report head. |
+| Full suite (Linux, `TZ=UTC`, `--maxWorkers=8`, `flock`) | At the report head `176a6908`: **`Test Files  1176 passed \| 8 skipped (1184)`, `Tests  25597 passed \| 89 skipped (25686)`, 0 failed.** (The first full run, at the code head before the theme guards were updated, had exactly two red rows, both "every file under `src/components/CommandCenter/` is on this list (hazard 34)"; fixed in `e23e2db1`, §5 item 5.) |
+| Flag-on dry run | The smoke state (flag `true`), full suite on Linux: **14 failing rows in 4 files, the same 14 as S3's and S4's, all by design** (`App.activeBattlesPoll.owner` 9, `App.bootOrder` 2, `commandCenterHubFlags` 1, `flagPinGuard` 2: the dark pin and the legacy-shell parity rows). S6 adds no red row (§8). |
+| Fenced files, `api/` | None edited. Nothing under `api/` changed (`git diff --name-only 27514b1a..HEAD` lists no `api/` path). S6's product code calls no fenced function; it calls the non-fenced `api/_utils/watchlistEquip.js` `extractTickerSymbols` (S4's `leanRevalidation` precedent), and one test READS the fenced `api/_utils/agentPromptAssembly.js` source as text for a tripwire (reading, not editing, not calling). |
+| Stop rule | Not tripped (§5): the pins that moved are the ones R-S6-1 names (and their jsdom twins), plus guard rows that S4/S5 wrote as hand-offs to S6, plus two registrations the theme guards demand of new files. One item is a judgement call and is Q-S6-6 (the `learn` ban exempts the founder's three lines). |
+| Founder questions | Q-S6-1 … Q-S6-8 (§9). None blocks the PR. |
 | Next | The founder's review of the draft PR and the smoke preview (§10); S7 and S8 inherit §11. |
 
 ## 1. Branch, HEAD and preamble
 
 - `git fetch origin` was the first step (BUILD_RULES §3); `origin/main` was `27514b1a`, the base. The local branch is the desktop app's worktree name `claude/advisor-opus-ed1d1c` (cut at `27514b1a`, clean tree, as reported at the start); it is pushed as the prompt's `claude/command-center-hub-s6` with an explicit refspec (`HEAD:refs/heads/claude/command-center-hub-s6`), so the PR head carries the prompt's name.
+- **Commits:** `8e473425` R-S6-1; `ca6e3163` and `c6fcdf10` the reader, panel, labels, Deploy line, honest line, Activity rows and their suites; `63e3411b` builder mutation round 1; `94f978c3` and `8663cbcf` the review round's fixes; `ee4f5726` mutation round 3; `5e492cf2` R-S6-4 and R-S6-5 back to the ruling's letter; `7e26e521` lens T's survivors; `e23e2db1` the theme-guard registrations (**the code head**); then this report and its README row. Line numbers in this report are at `e23e2db1`.
 - Linux checks ran in a git worktree of the shared `~/pd-ci` clone (`~/pd-ci-s6`, `node_modules` linked to the clone's; same lockfile hash `22fa2b71904c`), because the S7 lane shares the clone. `npm ci` was not needed. The worktree is removed at the end (`unlink` of the link first). No clone was created.
 - The suite ran with `TZ=UTC`, `--maxWorkers=8`, under `flock /tmp/pd-suite.lock`, as the machine rules ask.
 
@@ -81,7 +83,7 @@ It is said only about a list the agent can deploy with: the Loadout card ready f
 
 **R-S6-7 · Activity** (`hub/activityRows.js:88` `ideaEvents`; descriptor `hub/researchView.js:253` `ideaActivityOf`). For the pointer's version only, while the answer is current: `idea.created:{list}:v{n}` at `createdAt` ("Idea saved") and `idea.state:{list}:v{n}:{status}` at `stateChangedAt` ("Idea · {Forge status word}"); the same cutoff as every other kind; nothing invented for an unreadable time or a status with no word; a revision is a different pair of ids, never a second idea. `hub/activityRows.js:234,255` join the reader to `loadoutKnowledgeOf`, so "Nothing recorded yet" waits for it (loading while the idea is out, "couldn't load" only when the list is otherwise empty and the read failed with nothing held).
 
-**R-S6-8 · The S7 lane.** `ShadowStage.jsx`, the status line and the canvas are untouched. In the shared files S6 added: new props and keys in `CommandCenterHub.jsx`, `hub/hubCopy.js`, `hub/hubModel.js` (comment only), the two guard manifests (additions only, and the exact-string rows the rulings named). {{MAIN_STATE}}
+**R-S6-8 · The S7 lane.** `ShadowStage.jsx`, the status line and the canvas are untouched. In the shared files S6 added: new props and keys in `CommandCenterHub.jsx`, `hub/hubCopy.js`, `hub/hubModel.js` (comment only), the two guard manifests (additions only, and the exact-string rows the rulings named). `origin/main` did not move during the build (fetched at the start, before the review and before the final checks): nothing to merge, and no S7 branch existed on origin at the last fetch.
 
 ## 4. Files, by `file:line`
 
@@ -130,7 +132,7 @@ The stop rule is "a pre-existing test of behaviour must be edited". Six pre-exis
 
 ## 7. The §2 review record
 
-The diff passes the BUILD_RULES §2 threshold (23 files, about 3,200 lines against `main`), so the multi-lens adversarial review ran: three read-only lenses on their own `git archive` snapshots at `63e3411b` (H honesty and copy, R the reader's ownership and triggers, D "Deploying with", the labels, Activity and R-S6-1), then one refuter per lens on a fresh snapshot of the same head, told to refute every finding with a concrete repro, then the mutating lens last on its own tree at the final head (§7.3). All Sonnet 5.5. No real-browser run. The advisor was not consulted by any of them.
+The diff passes the BUILD_RULES §2 threshold (29 files and about 3,650 lines against `main`, 27 and about 3,200 without this report and its README row; the threshold is 10 files or 1,500 lines), so the multi-lens adversarial review ran: three read-only lenses on their own `git archive` snapshots at `63e3411b` (H honesty and copy, R the reader's ownership and triggers, D "Deploying with", the labels, Activity and R-S6-1), then one refuter per lens on a fresh snapshot of the same head, told to refute every finding with a concrete repro, then the mutating lens last on its own tree at the final head (§7.3). All Sonnet 5.5. No real-browser run. The advisor was not consulted by any of them.
 
 **7.1 Findings, verdicts and dispositions.** A refuter verdict is CONFIRMED, PARTLY (real but narrower) or REFUTED. Zero findings were refuted; every finding below is fixed in `94f978c3`/`8663cbcf`/`ee4f5726` unless the disposition says otherwise.
 
@@ -167,7 +169,20 @@ Checked and found sound by the lenses (VERIFIED in their trees): the three hones
 
 ## 8. Checks
 
-{{CHECKS}}
+All on Linux in a git worktree of `~/pd-ci` (`~/pd-ci-s6`, `node_modules` linked to the clone's, Node 20.20.2 as CI), `TZ=UTC`, the full suite at `--maxWorkers=8` under `flock /tmp/pd-suite.lock`. No subagent was running tests during a suite.
+
+| Check | Result |
+|---|---|
+| `npm run lint:gate` | exit 0 at `7e26e521`, at `176a6908` and at the pushed head |
+| Full suite, code head `7e26e521` | 2 red rows, both theme guards (`src/theme/tokens.guard.test.js`, `motion.guard.test.js`: the two new hub files were not registered, hazard 34); the rest green (25,587 passed) |
+| Full suite, `e23e2db1` + report (`176a6908`) | **0 failed**; 1,176 files passed, 8 skipped (1,184); 25,597 rows passed, 89 skipped (25,686) |
+| `vite build`, base `27514b1a` and head | exit 0 both; chunk lists identical (43); sizes below |
+| Flag-on dry run (flag `true` in the worktree, then restored) | 14 failing rows in 4 files, the same 14 as S3/S4, S6 adds none |
+| Rules suite | not run: no `firestore.rules` change |
+| `git diff --name-only 27514b1a..HEAD` | no `api/` path, no fenced file, no `vercel.json`, `package.json` or rules path (29 files) |
+
+**Bundle, in full.** Entry chunk `index`: 4,901.81 kB / 1,320.75 gzip at the base, 4,901.83 kB / 1,320.77 at the head; 4,901,806 → 4,901,826 bytes. Both were normalized for chunk-name hashes and compared: everything before the chunk's final `export{…}` clause is identical byte for byte; the clause has 548 bindings at the base and 550 at the head (two aliases only in the head, none only in the base). The hub chunk imports 80 bindings from the entry at the base and 88 at the head (S6's code takes more shared modules from it); the two additional export aliases are the +20 bytes. None of the 29 changed files is in the entry's source map (1,151 sources). Hub chunk `CommandCenterHub`: 124.91 → 140.13 kB (gzip 38.16 → 42.74).
+**Flag-on dry run, in full.** The 14 rows: `src/App.activeBattlesPoll.owner.jsdom.test.jsx` (9: "App reached the dashboard and rendered the legacy desktop shell", which is false by design with the hub on), `src/App.bootOrder.jsdom.test.jsx` (2, the same), `src/config/commandCenterHubFlags.test.js` (1, the dark pin) and `src/config/flagPinGuard.test.js` (2, the dark-by-design entry). No S6 row is among them.
 
 ## 9. Founder questions
 
@@ -184,7 +199,17 @@ None blocks the PR. Each states what was built.
 
 ## 10. The smoke state
 
-{{SMOKE}}
+`claude/command-center-hub-s6-smoke` is the build head plus ONE commit that sets `COMMAND_CENTER_HUB_ENABLED` to `true` (`src/config/featureFlags.js:3442`). **NEVER MERGE; no PR.** Its commit and Vercel preview URL are in the PR description (a report cannot hold the sha of a branch cut from the commit that holds it). It was made in a temporary detached worktree and pushed by refspec; nothing was committed on the build branch for it.
+
+Its CI shows the flag-on red rows above (by design). **The founder's checklist, on an allowlisted account and on one that is not:**
+1. Research tab / area: the allowlisted account shows its equipped list's idea (statement, status word, version, time-frame, recorded dates, at most two research lines, "1 idea on {list}") and the honest line under it; the other shows "Research records aren't available on this account" with no Forge door and no count. An account with no equipped list shows "Equip a watchlist in the Forge to see its idea here"; a list with no idea shows "No idea yet on {list}".
+2. Loadout: the watchlist card reads "Universe · N names" (list with an idea) or "Plain watchlist · no idea yet" for the allowlisted account, and the neutral "N names" for the other.
+3. Deploy card (desktop) and the Loadout tab (phone): "Deploying with: {statement} · N names" for a list whose newest version is Ready or Activated with no review-due version; nothing otherwise; nothing beside "Already running".
+4. The honest line: which of the three wordings the list gets (thesis = the idea's text → the first; any other → the second; none → the third), and that it never appears on a list that is not deployable.
+5. Activity: "Idea saved" and "Idea · {status}" for the current idea; a revision does not add a second idea.
+6. "Open in the Forge": it opens the Forge's Lists area; closing the Forge returns to the dashboard and reads the idea once.
+7. The first-deployment card (a first-time account): open the archetype sheet over it; the card stays, its hold disabled; close the sheet.
+Also at 390 and 1440 px: a long idea statement wraps, the Deploy line clamps to three lines.
 
 ## 11. What S7 and S8 inherit
 
