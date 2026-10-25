@@ -369,6 +369,8 @@ One focused lens, on Sonnet, on an isolated `git archive` snapshot of `d5b5c62b`
 
 Nothing was found in the other dimensions: the set-aside cannot start a deployment `canStart` would deny (the claim and the threshold `canCommit` both run the full selector, the latter with `hold: null`, the offer's own input), the unwired path is inert, refused/uncertain/existing attempts keep the card away, a site flip cancels a charge and keeps the card, a sign-out mid-charge leaves no hold, the Enter key deploys once; the theme and mount-guard registrations of both slices are intact; `DeployAttemptProvider` is a pass-through flag off and `useDailyRegimeBrief`'s change is additive; the merged return lost nothing.
 
+The lens read `d5b5c62b`. Three commits came after its snapshot — `b193e56a` (rows only), `5f16e77d` (its own fixes M-1, M-5, M-6 and the first half of M-7) and `b14d3973` (the move of S4's date helpers into `hub/activityDates.js`, which changed product code) — and were **not lens-reviewed**: they are covered by the full suite on the final head, by the 32 mutants below, and by `hub/hubDate.s4.test.js`'s main-bundle rows.
+
 ### 13.6 Mutation
 
 32 mutants on the code behind the new rows (28 on the merge's rows, 4 on the date module), on a snapshot of `d5b5c62b` (own-hold set-aside; the offer's other inputs; the card's wiring; the hub's and the phone's pass-throughs; the control id and the holding phase; the readers' offer and returns; the first-deployment rule; the desktop limit). **Of the 28, 21 were killed; 7 survived and 6 of those were gaps:**
@@ -417,4 +419,5 @@ The only module that differs in the entry chunk's source map is `src/hooks/useDa
 - **S2b's names are settled** (Q-S4-10 is answered by this merge). S4's `actions.deploy` never existed in the merged tree.
 - **S6** still adds `idea` rows and joins its reader to `loadoutKnowledgeOf` (§11).
 - **S8** adds to §11's list: the first-deployment card's hold with real input at 390 and 1440 px on the smoke preview (hold, quick release, Enter, a sheet opened mid-charge, a site flip mid-charge), the Activity side column at five rows, and Q-S4-11.
+- **A constraint every later slice now has:** anything added to the hub modules the deploy provider imports — `hub/hubDate.js`, `hub/overlayStack.js`, `hub/selectors/attemptReducer.js`, `attemptVocabulary.js`, `deployState.js` and `readerInputs.js` — ships to every player with the flag off, because the provider sits at App's root. The mount guard pins those edges (the exact list of outside imports into the hub) but not their contents; that is how S4's date helpers reached the entry chunk (M-7). New hub code goes in a module only the lazy hub chunk imports, and a flag-off bundle comparison against `main` belongs in every slice's checks.
 - **The activation checklist** gains the `TRAIT_SLOT_ENABLED` item (13.3).
