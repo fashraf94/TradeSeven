@@ -149,6 +149,18 @@ describe('routing — the canvas, or the still on every other route (R-S7-1)', (
     }
   });
 
+  it('an engine with no 2D interface at all is unavailable without being asked: the still, and getContext is never called', () => {
+    kit.restore();
+    kit = installFakeCanvas({ context: 'absent' });
+    const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext');
+    const m = draw({ status: 'processing' });
+    expect(typeof globalThis.CanvasRenderingContext2D).toBe('undefined');
+    expect(m.host.querySelector('canvas')).toBeNull();
+    expect(m.host.querySelector('svg').getAttribute('aria-label')).toBe('Shadow — still');
+    expect(spy).not.toHaveBeenCalled();
+    expect(kit.raf.requested).toBe(0);
+  });
+
   it('under reduced motion the canvas never asks for a context: getContext is not even called', () => {
     const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext');
     draw({ reducedMotion: true });

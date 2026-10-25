@@ -31,6 +31,8 @@ export function installFakeCanvas({ context = 'ok' } = {}) {
     remove: document.removeEventListener,
     hidden: Object.getOwnPropertyDescriptor(Document.prototype, 'hidden'),
     dpr: window.devicePixelRatio,
+    hadInterface: Object.hasOwn(globalThis, 'CanvasRenderingContext2D'),
+    iface: globalThis.CanvasRenderingContext2D,
   };
 
   const makeContext = () => {
@@ -63,6 +65,9 @@ export function installFakeCanvas({ context = 'ok' } = {}) {
     }
     return byCanvas.get(this).ctx;
   };
+
+  // jsdom has no 2D interface; a browser always does, and ShadowCanvas asks for a context only where it exists.
+  if (state.context !== 'absent') globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {};
 
   globalThis.requestAnimationFrame = (cb) => { raf.id += 1; raf.requested += 1; raf.queue.push({ id: raf.id, cb }); return raf.id; };
   globalThis.cancelAnimationFrame = (id) => { raf.cancelled += 1; raf.queue = raf.queue.filter((f) => f.id !== id); };
@@ -127,6 +132,7 @@ export function installFakeCanvas({ context = 'ok' } = {}) {
       if (originals.io === undefined) delete globalThis.IntersectionObserver; else globalThis.IntersectionObserver = originals.io;
       document.addEventListener = originals.add;
       document.removeEventListener = originals.remove;
+      if (originals.hadInterface) globalThis.CanvasRenderingContext2D = originals.iface; else delete globalThis.CanvasRenderingContext2D;
       if (originals.hidden) Object.defineProperty(document, 'hidden', originals.hidden); else delete document.hidden;
       Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: originals.dpr });
     },

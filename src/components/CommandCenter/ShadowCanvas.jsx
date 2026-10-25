@@ -86,11 +86,15 @@ export default function ShadowCanvas({
     if (still) return undefined;
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
+    // No 2D interface at all is "unavailable" without asking: an engine without it (jsdom, say) is not asked for a
+    // context it would only complain about. Anywhere it exists, `getContext` returning nothing or throwing is the same answer.
     let ctx = null;
-    try {
-      ctx = canvas.getContext('2d');
-    } catch {
-      ctx = null;
+    if (typeof CanvasRenderingContext2D === 'function') {
+      try {
+        ctx = canvas.getContext('2d');
+      } catch {
+        ctx = null;
+      }
     }
     const colors = shadowColors(readToken('teal'), readToken('teal-2'), readToken('white'));
     if (!ctx || !colors) {
