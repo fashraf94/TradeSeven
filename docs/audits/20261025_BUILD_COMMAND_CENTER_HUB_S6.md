@@ -134,7 +134,7 @@ The stop rule is "a pre-existing test of behaviour must be edited". Six pre-exis
 
 The diff passes the BUILD_RULES §2 threshold (29 files and about 3,650 lines against `main`, 27 and about 3,200 without this report and its README row; the threshold is 10 files or 1,500 lines), so the multi-lens adversarial review ran: three read-only lenses on their own `git archive` snapshots at `63e3411b` (H honesty and copy, R the reader's ownership and triggers, D "Deploying with", the labels, Activity and R-S6-1), then one refuter per lens on a fresh snapshot of the same head, told to refute every finding with a concrete repro, then the mutating lens last on its own tree at the final head (§7.3). All Sonnet 5.5. No real-browser run. The advisor was not consulted by any of them.
 
-**7.1 Findings, verdicts and dispositions.** A refuter verdict is CONFIRMED, PARTLY (real but narrower) or REFUTED. Zero findings were refuted; every finding below is fixed in `94f978c3`/`8663cbcf`/`ee4f5726` unless the disposition says otherwise.
+**7.1 Findings, verdicts and dispositions.** A refuter verdict is CONFIRMED, PARTLY (real but narrower) or REFUTED. Zero findings were refuted; every finding below is fixed in `94f978c3` / `8663cbcf` (the review round; the rows that pin them came with `ee4f5726` and `7e26e521`) unless the disposition says otherwise.
 
 | Id | Finding (one line) | Refuter | Disposition |
 |---|---|---|---|
