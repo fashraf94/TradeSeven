@@ -9,7 +9,7 @@ Not in S4, and not touched: the deploy action and its wiring (S2b, parallel), Re
 | Item | Result |
 |---|---|
 | **Status** | **Draft PR, STOP.** Nothing merged; nothing activated. The flag is `false` at the PR head. |
-| Branch and head | Local branch `claude/dreamy-payne-ea9e2d` (the desktop app's worktree name), pushed as the prompt's `claude/command-center-hub-s4`; cut from `main` `82ea84bb` (fetched; clean tree). Code head `201de4ab`; the commit after it adds only this report and its README row (§1). |
+| Branch and head | Local branch `claude/dreamy-payne-ea9e2d` (the desktop app's worktree name), pushed as the prompt's `claude/command-center-hub-s4`. **After the merge round (Oct 24, §13):** `main` `7d0daf10` (S2b, #993) is merged in and the code head is `b14d3973`; the commit after it adds only this report's §13 and its README row. Before it, the build was cut from `main` `82ea84bb` and its code head was `201de4ab` (§1 – §12 describe that build). |
 | Starting check | Every seam the rulings lean on matches at the base (§2). No stop condition held. |
 | R-S4-1 Activity | A bounded projection of records, never an event log: kinds `completed`, `deployed`, `loadout` (watchlist, adjustment); `idea` reserved for S6. Newest first, then kind order, then id; absolute ET with a year when not this year's; nothing older than the oldest completed record of the window; the optimistic entry excluded; History changes neither rows nor count. "All activity · N" opens an Activity sheet in S5's overlay stack (§3). |
 | R-S4-2 Next action | The three rules in order, then none: an owned live game in `sortLiveBattles` order (a pre-open game says deployed and waiting for the open); the newest helper-READY review; the first deployment, only on a ready, empty completed read with no live game, finite `gamesPlayed === 0` and `canStart` (§3). |
@@ -17,21 +17,22 @@ Not in S4, and not touched: the deploy action and its wiring (S2b, parallel), Re
 | R-S4-4 Brief | More/Less on the body; the captions and states as ruled; `generatedAt` added additively to `useDailyRegimeBrief` (`src/hooks/useDailyRegimeBrief.js:70`), the two legacy callers unchanged and pinned. No fetch time shown as a publication time; no sources count (§3). |
 | R-S4-5 History Refresh | `completed.refresh('history')` through the scheduler's rolling budget; a queued read shows its next permitted time (§3). |
 | R-S4-6, R-S4-7 | Recorded as Amendment B to spec §6: `docs/specs/COMMAND_CENTER_CORE_IMPLEMENTATION_SPEC_V1_2_AMENDMENT_B_20261023.md` (README row added); the spec file is unchanged. A late first read is kept per owner and epoch; the kept window keeps its rows' READY review answers. The rows are listed in §8. |
-| R-S4-8 | Added rather than rewrote in the shared hub files. `actions.deploy` is passed to the card and defined nowhere yet, as ruled. A trial merge of S2b's pushed branch conflicts in five files and one prop name differs (§11, Q-S4-10). |
+| R-S4-8 | Added rather than rewrote in the shared hub files. S2b merged (#993) and its names won (Q-S4-10): `NextActionCard` takes `holdWiring` / `holding`; S4's `onDeploy` prop and its pass-throughs are gone (§13). |
 | §2 review | Four lenses K (the kept window), N (the next action and Later), H (honesty of Activity) and T (test integrity, mutating); refuters for K, N and H. **32 findings: K, N and H 19 (17 CONFIRMED / 2 PARTLY / 0 REFUTED); T 13 (a mutating lens, no refuter ran: §7).** All fixed or answered with a founder question (§7). |
 | Mutation | Builder passes: 133 mutants (99 + 34); T lens: 326 mutants; closure pass: 24 of 24 re-planted survivors killed at the head, 20 of them survived at the pre-closure head (§7). |
-| `vite build` | Exit 0 at the code head `201de4ab` (Linux). The hub stays a lazy chunk and `index.html` names it nowhere. Hub chunk 128.06 kB / 38.99 kB gzip against 112.40 kB / 34.60 kB at the base (+15.66 kB / +4.39 kB gzip, S4's own code); the entry chunk 4,859.78 kB against 4,859.72 kB (+0.06 kB) (§6). |
-| `lint:gate` | Exit 0 at `201de4ab` (Linux). |
-| Full suite (Linux, CI-shaped) | Exit 0 at `201de4ab`: `Test Files  1156 passed \| 8 skipped (1164)`, 25,076 rows passed, 0 failed (§6). S4's 12 new test files hold 266 rows. |
-| Flag-on dry run | The smoke state (flag `true`), full suite on Linux: 14 failing rows in 4 files — the same 14 as S3's, all by design (§9). S4 adds no red row. |
+| `vite build` | Exit 0 at the code head `201de4ab` (Linux). The hub stays a lazy chunk and `index.html` names it nowhere. Hub chunk 128.06 kB / 38.99 kB gzip against 112.40 kB / 34.60 kB at the base (+15.66 kB / +4.39 kB gzip, S4's own code); the entry chunk 4,859.78 kB against 4,859.72 kB (+0.06 kB) (§6). *(at the build head `201de4ab`; the merged tree: §13.7.)* |
+| `lint:gate` | Exit 0 at `201de4ab` (Linux). *(at the build head `201de4ab`; the merged tree: §13.7.)* |
+| Full suite (Linux, CI-shaped) | Exit 0 at `201de4ab`: `Test Files  1156 passed \| 8 skipped (1164)`, 25,076 rows passed, 0 failed (§6). S4's 12 new test files hold 266 rows. *(at the build head `201de4ab`; the merged tree: §13.7.)* |
+| Flag-on dry run | The smoke state (flag `true`), full suite on Linux: 14 failing rows in 4 files — the same 14 as S3's, all by design (§9). S4 adds no red row. *(at the build head `201de4ab`; the merged tree: §13.7.)* |
 | Fenced files, `api/` | None edited. Nothing under `api/` changed (`git diff 82ea84bb..HEAD --name-only` lists no `api/` path). S4's product code calls no fenced function; it calls the non-fenced `revalidateStandingLeans` (`api/_utils/leanRevalidation.js:181`, from `src/components/CommandCenter/hub/activityRows.js:70`), which BUILD_RULES §1 does not list. `src/hooks/useDailyRegimeBrief.js` is not listed either. |
 | Stop rule | Not tripped by a behaviour change to today's (flag-off) behaviour. Existing test files were edited — registrations the guards demand of new files, rows that pin S1/S3 hub states which the amendment or S4 now changes, and one environment mock line; none weakens a pin of live behaviour. Raised as Q-S4-1 (§5). |
-| Founder questions | Q-S4-1 … Q-S4-11 (§10). |
-| Next | The founder's review of the draft PR and the smoke preview (§9); then the merge round with S2b (§11). |
+| Founder questions | Q-S4-1 … Q-S4-11 (§10), answered in §13.3; new: Q-S4-12, Q-S4-13 (§13.9). |
+| Next | The founder's review of the draft PR (as merged with S2b) and the smoke preview (§9, §13.8); S6, S7 and S8 inherit §11 as updated by §13.10. |
+| Merge with S2b and founder rulings (Oct 24) | `main` `7d0daf10` (S2b, #993) merged: six conflicts, S2b's `holdWiring` / `holding` win and S4's `onDeploy` is gone; the first-deployment card's hold stays mounted while its own hold charges and deploys once through the real provider (11 rows). Rulings applied: Q-S4-1, 3, 4, 9 confirmed, 2, 6, 7 as built, **Q-S4-5 recorded for the `TRAIT_SLOT_ENABLED` flip, Q-S4-8 → the desktop Activity count is 5** (the mock-up fixes none), Q-S4-11 → S8. One lens (M): 7 findings, none MAJOR (no refuter); 32 mutants, every gap closed; S4's date helpers moved to a hub-only module so the entry chunk carries none (+0.38 kB over `main`). Checks on the merged tree: full suite exit 0 (`1171 passed \| 8 skipped (1179)`, 25,349 rows), `lint:gate` exit 0, `vite build` exit 0, flag-on dry run the same 14 by-design rows (§13). |
 
 ## 1. Branch, HEAD and preamble
 
-- `git fetch origin` ran first. `origin/main` was `82ea84bb` (the merge of PR #992, the S3 build), the branch's base; a fetch before the final checks found it unchanged, so there was nothing to merge and the checks ran on the tree that is pushed.
+- `git fetch origin` ran first. `origin/main` was `82ea84bb` (the merge of PR #992, the S3 build), the branch's base; a fetch before the final checks found it unchanged, so there was nothing to merge and the checks ran on the tree that is pushed. (The merge round's own fetch, on Oct 24, is in §13.1.)
 - Local branch `claude/dreamy-payne-ea9e2d`, pushed by refspec as `claude/command-center-hub-s4`.
 - Model setup as the prompt asked: Sonnet 5.5 at High effort, an Opus advisor consulted at three points only (after the starting check, on the STOP-rule reading, and before this report); review agents do not consult the advisor.
 - Commits since the base:
@@ -76,7 +77,7 @@ Files and lines are at the code head `201de4ab`.
 - Display: `hub/hubDate.js:124` `formatHubDayTime`, `:130` `formatHubDayYear` (absolute ET; the year only when it is not this year's).
 - The heading is `hub/hubCopy.js:370` "Recent activity · your last 10 games and current loadout". `hub/hubCopy.js:368` is the table: no "event", "log" or "history of" word survives the copy guard (`hubCopy.s4.guard.test.js`).
 - `:216` `activitySectionOf` finishes the section where the Loadout is known (`hub/useHubRuntime.js:113`), so the readers pass only the inputs (`hub/useHubReaders.js:143` `activityInputs`). Opening History neither adds nor removes a row.
-- `sections/ActivitySection.jsx:68` (desktop limit 10, `hub/hubModel.js:170`; phone 3), `:23` `ActivityRows`, `:53` `ActivityAgeNote`; "All activity · N" opens `ActivitySheet.jsx:19` through `openAllActivity` (`CommandCenterHub.jsx:234`, `:316`), kind `ACTIVITY` in `hub/useHubSheets.js:36` — registered in S5's overlay stack. A row opens its game only when it carries a `battleId`.
+- `sections/ActivitySection.jsx:68` (desktop limit 10 at the build head, 5 since the merge round — §13.3; `hub/hubModel.js:170` then; phone 3), `:23` `ActivityRows`, `:53` `ActivityAgeNote`; "All activity · N" opens `ActivitySheet.jsx:19` through `openAllActivity` (`CommandCenterHub.jsx:234`, `:316`), kind `ACTIVITY` in `hub/useHubSheets.js:36` — registered in S5's overlay stack. A row opens its game only when it carries a `battleId`.
 
 **R-S4-2 Next action.**
 - `hub/nextAction.js:108` `deriveNextAction({ liveRows, battles, rowsById, firstDeployment, liveResolved, dismissed })` returns `{ status, candidate }`. Rule 1 takes the first owned live row in `sortLiveBattles` order (`:47`; a pre-open game says "Your game is deployed" and waiting for the open). Rule 2 is the newest review whose `rowsById` row has `review === true` — the same test as the tape link — by `completedAt` then id (`:60`); a pending, unavailable, timed-out or queued answer is never offered. Rule 3 is the first deployment (`:72`, `firstDeploymentOffer` `:38`).
@@ -106,7 +107,7 @@ Files and lines are at the code head `201de4ab`.
 3. **Later survives App's real logout.** App unmounts the dashboard before the identity resolves to signed out, so a same-uid sign-in in the same tab finds its Laters. A sign-out the mounted hub sees clears them. (N-4, Q-S4-6.)
 4. **A late read is kept only if it is the owner's first, and only while the owner has no window yet.** (K-3, Q-S4-2.)
 5. **The brief is read once per hub mount** (its one automatic retry included); a bounce re-reads. (Q-S4-7.)
-6. **The desktop section lists up to 10 rows, the phone Overview 3** (`PHONE_ACTIVITY_LIMIT`); the sheet lists all. (Q-S4-8.)
+6. **The desktop section lists up to 10 rows at the build head (5 since the founder's ruling Q-S4-8, §13.3), the phone Overview 3** (`PHONE_ACTIVITY_LIMIT`); the sheet lists all. (Q-S4-8.)
 7. **Rule 2 and the first deployment wait for the live poll to answer** (`liveResolved`): until then rule 1 is unknown, so the card says "loading" rather than guess (review N-2). With a poll that never answers they stay hidden. (Q-S4-9.)
 8. **The first-deployment offer sets the owner's own hold aside** (`firstDeploymentOffer` passes `hold: null`): once S2b's hold is charging the card must not unmount under the pointer (review N-1). `canStart` stays false on the hold surfaces themselves.
 9. **The empty Activity list waits for what is unknown.** While the Loadout is loading or failed it is "loading" / "couldn't load", not "Nothing recorded yet" (`hub/activityRows.js:196` `LOADOUT_KNOWLEDGE`, review H-4).
@@ -252,12 +253,14 @@ S4 adds no red row (the brief hook under App changed none). The smoke branch's C
 
 **The founder's checklist on the preview** (no real-browser runs were made in this slice; S8 re-runs them):
 1. The next action for a live game, then — once it ends — for a ready review; Later, and the next candidate that replaces it.
-2. Recent activity on the phone Overview (three rows) and "All activity · N" (the sheet); on desktop (ten rows).
+2. Recent activity on the phone Overview (three rows) and "All activity · N" (the sheet); on desktop (ten rows at the build head, five since §13.3).
 3. The brief: More/Less, the caption ("Brief for {date}", "Generated {time ET}" when the cron stored it).
 4. History's Refresh, and its "Next refresh at {time}" inside the cap.
 5. A quick return from the Film Room shows the games, and an openable tape, at once.
 
 ## 10. Founder questions
+
+*Answered on Oct 24 (§13.3): Q-S4-1, 3, 4, 9 confirmed; Q-S4-2, 6, 7 accepted as built; Q-S4-5 recorded for the `TRAIT_SLOT_ENABLED` flip; Q-S4-8 → five rows; Q-S4-10 answered by the merge; Q-S4-11 → S8.*
 
 - **Q-S4-1.** The stop-rule reading: the pre-existing test files S4 edited (§5) change hub-only states; none pins today's flag-off behaviour. Confirm (as Q-S3-1).
 - **Q-S4-2.** Amendment B keeps only the owner's first late read, and only while no window is held (K-3). Widen it to every late success?
@@ -273,7 +276,7 @@ S4 adds no red row (the brief hook under App changed none). The smoke branch's C
 
 ## 11. What S2b, S6, S7 and S8 inherit
 
-**S2b (and the merge round).** S2b is on origin (`claude/command-center-hub-s2b`, `e7e8761c`). A trial merge of it into this head, in a scratch worktree and aborted, conflicts in five files: `CommandCenterHub.jsx` (3 hunks), `PhoneTabs.jsx` (1), `commandCenterHub.mount.guard.test.js` (2), `hub/useHubReaders.js` (3) and `sections/NextActionCard.jsx` (2); `hub/hubCopy.js`, `hub/hubModel.js`, `hub/useHubSheets.js`, the theme guards and `docs/README.md` merge cleanly. Nothing was resolved (the merge round's job).
+**S2b (and the merge round) — done in §13.** *(What follows is the trial merge made before it, kept as written.)* S2b is on origin (`claude/command-center-hub-s2b`, `e7e8761c`). A trial merge of it into this head, in a scratch worktree and aborted, conflicts in five files: `CommandCenterHub.jsx` (3 hunks), `PhoneTabs.jsx` (1), `commandCenterHub.mount.guard.test.js` (2), `hub/useHubReaders.js` (3) and `sections/NextActionCard.jsx` (2); `hub/hubCopy.js`, `hub/hubModel.js`, `hub/useHubSheets.js`, the theme guards and `docs/README.md` merge cleanly. Nothing was resolved (the merge round's job).
 - **Names.** S4's `NextActionCard` takes `onDeploy` and the hub passes `onDeploy={actions.deploy}` (`CommandCenterHub.jsx:357`, `PhoneTabs.jsx:109,111`); `actions.deploy` is defined nowhere. S2b's card takes `holdWiring` and `holding` (from `deployActionsOf`, `actions.nextActionHold` on the phone) and passes `onAct` to its hold's `onDeploy`. At the merge, S2b's names win and S4's `onDeploy` prop and its three pass-throughs go (Q-S4-10). The hub already has `actions.deployAction` (the Deploy card's `onAction`, S2a); that is not a rename candidate.
 - **Behaviour S4 depends on.** Hold surfaces get `canStart = false` while the owner's own hold is charging; S4's offer sets the own hold aside so the card stays mounted (N-1). The optimistic entry (`localOrigin: true`) and the provider's record stay out of Activity: the record is not an event.
 - **Shared names.** `hub/useHubReaders.js` returns `sections: { games, deploy, activityInputs, nextAction, brief }` and the `actions` above; S2b adds its half of the inputs next to them.
@@ -291,5 +294,127 @@ S4 adds no red row (the brief hook under App changed none). The smoke branch's C
 
 - **Linux checks ran in a git worktree of `~/pd-ci`, not in `~/pd-ci` itself.** Another session shares that clone and moved its HEAD under my first full-suite run, so that run was discarded (it showed failures in files S4 never touched). The final runs used `~/pd-ci-s4`, a worktree sharing the clone's object store, with `node_modules` symlinked to the clone's. No new clone was created; the worktree is removed with `unlink` of the symlink first.
 - `hubDate.s4.test.js` first set `process.env.TZ` and crashed the Linux worker; the TZ plumbing was removed (`31cbe8bd`). The tests rely on the hub's own `America/New_York` formatter.
-- A trial merge of S2b was made only to count conflicts; no S2b file is in this branch.
+- A trial merge of S2b was made only to count conflicts; no S2b file was in this branch until the merge round (§13).
+- The merge round ran its Linux checks the same way (a worktree of `~/pd-ci`), and merged through the desktop app's sync (`sync_with_base_branch`), which left the six conflicts for hand resolution.
 - 🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+## 13. Merge with S2b and founder rulings (Oct 24, 2026)
+
+The founder's merge-round prompt of Oct 24: `main` moved (S2b, #993, merged); one round — merge `main`, S2b's names win (Q-S4-10), keep the next action's own-hold set-aside (N-1) working with S2b's real hold, apply the rulings, one focused lens on the merge (a refuter for any MAJOR), mutate the new rows, check the merged tree, update the smoke branch and the PR, push, STOP. Sections 1 – 12 describe the build as it stood at `201de4ab`; where this round changed one of their statements, this section says so and the older line is marked.
+
+### 13.1 Branch, HEAD and the merge
+
+- `git fetch origin` ran first. The branch was `claude/dreamy-payne-ea9e2d` at `15914588` (the pushed head), tree clean; `origin/main` was `7d0daf10` (the merge of PR #993, S2b), 17 commits ahead of the base `82ea84bb`.
+- The merge ran through the desktop app's sync (`sync_with_base_branch`): six conflicted files — the trial merge of §11 found five; `docs/README.md` is the sixth, because S2b's two README rows landed where S4's did.
+- Commits since `15914588`:
+
+| Commit | What |
+|---|---|
+| `d5b5c62b` | The merge of `main` `7d0daf10`: the six resolutions (below), S4's `onDeploy` removed, the new rows `CommandCenterHub.s4s2b.jsdom.test.jsx`, the Q-S4-8 limit |
+| `b193e56a` | The mutation pass's six gaps closed (seven rows in three files) |
+| `5f16e77d` | The merge lens's fixes M-1, M-5, M-6 and the first half of M-7 |
+| `b14d3973` | S4's date helpers move to a hub-only module, `hub/activityDates.js` (the second half of M-7) — **the code head** |
+| (the report commit) | This section and the README row |
+
+### 13.2 The six conflicts, and how each was resolved
+
+| File | Hunks | Resolution |
+|---|---|---|
+| `sections/NextActionCard.jsx` | 2 | S2b's signature `({ nextAction, deploy, onAct, onLater, holdWiring = null, holding = null })` and its hold. S4's `onDeploy` prop is gone. One line differs from S2b's: `HubHold` is not given `onDeploy={onAct}` (`:54`), so the card's open action can never arm the hold — the S4 invariant "opening a game never starts a deployment", which the S4 row pinned, now holds with the provider's wiring as the only way in |
+| `CommandCenterHub.jsx` | 3 | Imports: S4's `DESKTOP_ACTIVITY_LIMIT` with S2b's `useHubModalOpen` (`:105`). The side column: S2b's `DeploySection` with its wiring, S4's `ActivitySection` and `BriefSection` (`:417–427`). The card: `onAct`, `onLater`, `holdWiring={actions.nextActionHold}`, `holding={actions.nextActionHolding}` (`:435`) |
+| `PhoneTabs.jsx` | 1 | S2b's two card slots (`:109`, `:111`): `holdWiring` and `holding` through `actions.nextActionHold` / `actions.nextActionHolding`; no `onDeploy` |
+| `hub/useHubReaders.js` | 3 | S2b's attempt inputs (`attemptInputsOf`, `:121`) beside S4's brief hook; the return carries S4's `sections` (`games`, `deploy`, `activityInputs`, `nextAction`, `brief`) and `actions` with S2b's `inputs`, `agent`, `liveBattles` (`:225`) and `ceremonyAgent` (`:226`); the header comment holds both slices' paragraphs |
+| `commandCenterHub.mount.guard.test.js` | 2 | Both slices' registrations: S2b's three terminals and its `useHubDeploy.js` effect allowance, S4's two terminals and Later's storage |
+| `docs/README.md` | 1 | S2b's two rows, then S4's |
+
+Nothing else needed a hand: `hub/hubCopy.js`, `hub/hubModel.js`, `hub/useHubSheets.js` and the theme guards merged cleanly. No fenced file, and nothing under `api/`, differs from `main` in this branch's diff.
+
+### 13.3 The founder's rulings, as applied
+
+| Ruling | Applied |
+|---|---|
+| Q-S4-1, 3, 4, 9 confirmed | Nothing to change: §5's edited rows stand (their reading is confirmed); a kept empty window counts for the first deployment and a stale one does not; the default lean cap; the review and first-deployment cards wait for the live poll |
+| Q-S4-2, 6, 7 accepted as built | Nothing to change (the late read is the owner's first only; Later survives a same-uid re-login in the tab; the brief is read once per mount) |
+| Q-S4-5 → recorded for the `TRAIT_SLOT_ENABLED` flip | **Recorded here as an item of the activation checklist, nothing built:** when `TRAIT_SLOT_ENABLED` (`src/config/featureFlags.js:118`, false) turns on, Activity's "Adjustment equipped" rows (standing leans, `hub/activityRows.js`) and the Loadout's Adjustments card (the trait slot) must be reconciled in the flip PR, the same commit (BUILD_RULES §9 and the flag-flip rule of §2): one source of "adjustment", or one word for each |
+| Q-S4-8 → the design's desktop count, else 5 | The committed mock-up fixes no desktop count: `ff-side.jsx`'s `ActivitySection` (bundled module `5b2af642…`) cuts `st.activity` only `if (limit)`, the phone's Overview is the one caller that passes one (`limit={3}`), and the desktop side column renders it with none (the whole fixture). So `DESKTOP_ACTIVITY_LIMIT` is **5** (`hub/hubModel.js:187`, was 10), and "All activity · N" holds the rest. Rows: `CommandCenterHub.s4.jsdom.test.jsx` (the five-row side column; exactly five rows has no link; six has "All activity · 6"); the S1 row L1-3's second half (`CommandCenterHub.reviewFixes.jsdom.test.jsx`) said the desktop shows the whole fixture and links nothing — restated: five rows and an enabled "All activity · 10". The older "ten" in §3, §9 and §10 is marked below |
+| Q-S4-11 → S8 | Carried to S8 (§11) |
+
+### 13.4 The next action's hold with S2b's real hold (N-1)
+
+`hub/nextAction.js:38` `firstDeploymentOffer(inputs)` is still `firstDeploymentCandidate({ ...inputs, hold: null })`. `inputs` now carries S2b's `attempt`, `hold`, `cooldown`, `now` and `modalOpen` (`readerInputs.js attemptInputsOf`), so every block of the S2a/S2b table other than the hold still takes the card away; the hold alone is set aside, so the control being pressed does not leave and the charge is not cancelled by its own unmount. The card's hold is live while it is the card's own hold that stands (`HubHold`'s `own`, keyed to `hub-next-action`), and denied while any other control's does.
+
+`CommandCenterHub.s4s2b.jsdom.test.jsx` (11 rows) drives the hub inside the real `DeployAttemptProvider`, with S2b's harness (the identity source real; the agent read and the window stand-ins; the service and ceremony stand-ins):
+- the desktop card's hold charges to its threshold with the card and the very hold node mounted throughout, locks, and deploys exactly once after the beat (`:163`);
+- the phone's Overview card the same, and while it charges the strip's hold is denied (`:190`); while the strip's charges the card stays and its hold is denied (`:287`);
+- once the deployment is under way the card is gone while the attempt stands, and no second request starts (`:207`); after the answer, with App's optimistic entry (`buildOptimisticBattleEntry`) in the live list, the card is that game (`:220`);
+- a release before the threshold cancels and the card is still offered (`:238`); Later during a charge sets the card aside and no hold stands, nothing deploys (`:252`);
+- a live game takes the card, and setting it aside with Later does not put the first deployment in its place (`:266`, `:277`); a player who has played gets no card and the Deploy card's hold deploys once (`:303`);
+- the names: the hub files pass `holdWiring` / `holding`, and `onDeploy` / `actions.deploy` appear nowhere in them or in `NextActionCard` (`:317`).
+
+`hub/useHubReaders.s4.integration.jsdom.test.jsx` gained four rows (`:213`): the readers' return carries S2b's `liveBattles` (the owner's own documents only) and `ceremonyAgent.directiveCount`, and S4's sections and actions in the same return — nothing of either slice was lost in the resolution. The two rows of `CommandCenterHub.s4.jsdom.test.jsx` that spoke of `onDeploy` are restated under S2b's names (the hold is armed by the wiring and by nothing the card's `onAct` carries; without a provider the hold is inert).
+
+### 13.5 The review (one lens, M)
+
+One focused lens, on Sonnet, on an isolated `git archive` snapshot of `d5b5c62b` (`node_modules` junctioned; it ran its own throwaway tests under `scratch/`): the next action's hold with S2b's provider, both slices' rows green, flag-off parity, and the merged readers. It ran the hub, provider and theme suites (77 files, 2,656 rows green), 18 flag-off and shared-path files and 30 deploy-path files (all green). **No BLOCKER and no MAJOR, so no refuter was needed.** Seven findings:
+
+| ID | Severity | Claim | Disposition |
+|---|---|---|---|
+| M-1 | MINOR | Row 3 of the merge file said the answer "changes nothing" but looked at the card only before it; in the harness (poll list stays empty) the first-deployment card and a second request return after a `created` answer | **Fixed.** In production App's handoff appends the optimistic entry before the answer settles, so the card is the new game (the lens's own production-shaped test showed `openGame`, no hold). The row now says what it pins, and a new row rebuilds App's entry with `buildOptimisticBattleEntry` and asserts the live-game card (`:220`) |
+| M-2 | MINOR | A hub sheet that opens withdraws the first-deployment card (`modalOpen` feeds the offer): on desktop the next slot is `display:none` and the grid reflows behind the scrim; on the phone the "No games yet" note takes its place; it returns when the sheet closes | **Left, asked:** S4's own pin (`hub/nextAction.test.js`, "every OTHER block…") says a modal takes it away, and the lens read it as intended. Cosmetic, behind the scrim. **Q-S4-12** |
+| M-3 | MINOR | A failed refresh of the completed read mid-charge withdraws the card and cancels the hold (the selector wants a ready read); the strip's identical hold would still commit | **Left, per design** (Q-S4-3: a stale window does not count; `nextAction.js:36` names it). A live game or a foreign owner mid-charge also cancels, correctly. **Q-S4-13** |
+| M-4 | NIT | Later pressed in the 450 ms locked beat stores `deploy:first` while the deploy still goes; after a refusal and Dismiss the card does not return in the tab | Left: a 450 ms window; the Deploy card's hold stays live, no capability is lost |
+| M-5 | NIT | Rows overclaim: a title says "completing it deploys nothing" though nothing is pressed; two `not.toHaveBeenCalled` assertions had nothing pressed; the frame loop re-checks one render | **Fixed.** Titles say what is asserted; the vacuous assertions are gone; the loop's comment says frames write only the progress store. The lens's mutations: the offer without its set-aside turns three rows red, setting the attempt aside turns one red; setting the cooldown or the modal aside is caught by `nextAction.test.js` (`:228`, `:233`), so no pin is weakened |
+| M-6 | NIT | `ActivitySection.jsx:65` and §3 of this report still say "ten" | **Fixed** (the comment; the report lines are marked) |
+| M-7 | NIT (flag-off, static) | `hub/hubDate.js` is in the main bundle (the deploy provider imports it) and S4 had added five module-scope `Intl.DateTimeFormat` constructions that run at boot for every player, hub off | **Fixed, twice.** First the five were built on first use. Then the merge's flag-off bundle comparison showed S4's date helpers also *shipping* in the entry chunk (+1.75 kB, +0.47 kB gzip over `main`, for the same reason), so they moved to `hub/activityDates.js`, which only the lazy hub chunk imports; `hub/hubDate.js` is back to S3's contents. S3's own three formatters are untouched. Rows in `hub/hubDate.s4.test.js`: the main-bundle file names none of them, and none is built at load; the mount guard's exact list of outside edges into the hub still holds, so no file outside the hub can import the new module |
+
+Nothing was found in the other dimensions: the set-aside cannot start a deployment `canStart` would deny (the claim and the threshold `canCommit` both run the full selector, the latter with `hold: null`, the offer's own input), the unwired path is inert, refused/uncertain/existing attempts keep the card away, a site flip cancels a charge and keeps the card, a sign-out mid-charge leaves no hold, the Enter key deploys once; the theme and mount-guard registrations of both slices are intact; `DeployAttemptProvider` is a pass-through flag off and `useDailyRegimeBrief`'s change is additive; the merged return lost nothing.
+
+### 13.6 Mutation
+
+32 mutants on the code behind the new rows (28 on the merge's rows, 4 on the date module), on a snapshot of `d5b5c62b` (own-hold set-aside; the offer's other inputs; the card's wiring; the hub's and the phone's pass-throughs; the control id and the holding phase; the readers' offer and returns; the first-deployment rule; the desktop limit). **Of the 28, 21 were killed; 7 survived and 6 of those were gaps:**
+
+| Survivor | Gap | Row that now kills it |
+|---|---|---|
+| N3 (the offer ignores the live poll) | a live game set aside with Later would have put the first deployment in its place | `s4s2b` `:277` |
+| W5, H8 (the card's hold always arms; the holding phase of any control) | another control's charge would not deny the card's hold | `s4s2b` `:287` |
+| R4, R5 (the readers drop `liveBattles` / `ceremonyAgent`) | the merge's own return was unpinned | `useHubReaders.s4.integration` `:213` |
+| L5 (the "All activity" link at `>=` the limit) | a link that holds nothing | `s4` "exactly as many rows as the limit" |
+
+The seventh, R3 (the connected hub hands the deploy candidate a no-op `onAct`), is equivalent since the card no longer passes `onAct` to the hold. All six re-planted survivors are killed at the tested tree. The four on the date module (a formatter built at load, the main-bundle file importing the helpers, a derivation importing a date module the guard does not list, a formatter built twice) are all killed.
+
+### 13.7 Checks on the merged tree
+
+At the code head `5f16e77d`, on Linux in a git worktree of the one reusable clone `~/pd-ci` (as in §12), one run at a time:
+
+| Check | Result |
+|---|---|
+| Full suite, CI shape (`--maxWorkers=2`) | exit 0; `Test Files  1171 passed \| 8 skipped (1179)`; `Tests  25349 passed \| 89 skipped (25438)`; 0 failed. An earlier run at `5f16e77d` (before the date helpers moved) was green too: 1171 files, 25,343 rows; the 6 more rows are the two new date rows and the two rows each theme guard gets for the new file |
+| `npm run lint:gate` | exit 0 |
+| `npm run build` | exit 0; 4,061 modules; the hub stays a lazy chunk and `index.html` names it nowhere |
+| Flag-on dry run (the smoke state), full suite | `Test Files  4 failed \| 1167 passed \| 8 skipped (1179)`, `Tests  14 failed \| 25335 passed`: the same 14 rows in the same 4 files as S3's and the build's (3 dark pins: `commandCenterHubFlags.test.js` 1, `flagPinGuard.test.js` 2; 9 in `App.activeBattlesPoll.owner.jsdom.test.jsx`; 2 in `App.bootOrder.jsdom.test.jsx`), all by design. S2b and S4 together add no red row |
+| Fenced files, `api/` | `git diff origin/main..HEAD --name-only` lists no `api/` path (46 files, the hub, its tests, the theme guards, the brief hook and docs); no fenced file edited, none called |
+
+Bundle, measured at `main` `7d0daf10` (S2b merged) and at the code head, same toolchain:
+
+| Chunk | `main` `7d0daf10` | `b14d3973` | Delta |
+|---|---|---|---|
+| `CommandCenterHub-*.js` | 109.54 kB / 33.90 kB gzip | 124.91 kB / 38.16 kB gzip | +15.37 kB / +4.26 kB gzip (S4's own code) |
+| `index-*.js` (the entry; hub off) | 4,901.43 kB / 1,320.64 kB gzip | 4,901.81 kB / 1,320.75 kB gzip | +0.38 kB / +0.11 kB gzip |
+
+The only module that differs in the entry chunk's source map is `src/hooks/useDailyRegimeBrief.js` (the one `generatedAt` line); `hub/hubDate.js` is byte-identical to `main`'s. The 0.38 kB is more than that line alone; the rest is not attributed. For comparison, with S4's date helpers still inside `hub/hubDate.js` the entry was 4,903.18 kB (+1.75 kB) — the reason they moved (M-7).
+
+### 13.8 Smoke state
+
+`claude/command-center-hub-s4-smoke` is rebuilt on the new PR head with the one flag commit; its CI shows the flag-on red rows below (by design). Rebuilt on the PR head (the report commit) with the one flag commit setting `COMMAND_CENTER_HUB_ENABLED` to `true` (`src/config/featureFlags.js:3442`). **NEVER MERGE; no PR.** Its commit and Vercel preview URL are in the PR description. The founder's checklist (§9) holds, with the first-deployment card's hold added: on a first-time account (an agent with no games played) hold the card's "Hold to deploy" at 390 and at 1440 px, release early once, then hold to the end.
+
+### 13.9 New founder questions
+
+- **Q-S4-12.** While a hub sheet is open the first-deployment card is withdrawn and returns when the sheet closes (M-2). Keep, or keep the card mounted behind the sheet with its hold disabled (one more input set aside in the offer, `modalOpen: false`, and one pin of `nextAction.test.js` restated)?
+- **Q-S4-13.** A failed refresh of the completed read while the card's hold charges withdraws the card and cancels the hold (M-3), where the strip's hold would commit. Keep (a stale read is not a ready, empty one), or let a charge in progress ride through it?
+
+### 13.10 What changes for the slices that follow
+
+- **S2b's names are settled** (Q-S4-10 is answered by this merge). S4's `actions.deploy` never existed in the merged tree.
+- **S6** still adds `idea` rows and joins its reader to `loadoutKnowledgeOf` (§11).
+- **S8** adds to §11's list: the first-deployment card's hold with real input at 390 and 1440 px on the smoke preview (hold, quick release, Enter, a sheet opened mid-charge, a site flip mid-charge), the Activity side column at five rows, and Q-S4-11.
+- **The activation checklist** gains the `TRAIT_SLOT_ENABLED` item (13.3).
