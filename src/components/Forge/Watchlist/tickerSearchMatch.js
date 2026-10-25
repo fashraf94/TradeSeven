@@ -10,9 +10,12 @@ import {
   TICKER_TO_INDUSTRY,
   TICKER_TO_SECTOR,
   STOCK_UNIVERSE,
+  isRetiredStock,
 } from '../../../../api/_utils/rankingConfig.js';
 
-const UNIVERSE = Object.keys(TICKER_TO_TYPE).map((symbol) => ({
+// BR-3: a retired stock keeps its labels for existing watchlists, but is not
+// offered as a new add (rankingConfig.js RETIRED_STOCKS).
+const UNIVERSE = Object.keys(TICKER_TO_TYPE).filter((symbol) => !isRetiredStock(symbol)).map((symbol) => ({
   symbol,
   type: TICKER_TO_TYPE[symbol],
   industry: TICKER_TO_INDUSTRY[symbol] || '',

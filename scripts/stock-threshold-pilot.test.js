@@ -20,10 +20,38 @@ function controlStore(initial) {
 }
 
 describe('scripts/stock-threshold-pilot-control.mjs', () => {
-  it('parses only the three actions; enable needs owners; show is read-only', () => {
-    expect(parseArgs(['enable', '--owner', 'a', '--owner', 'b', '--owner', 'a'])).toEqual({ action: 'enable', ownerIds: ['a', 'b'], apply: false });
-    expect(parseArgs(['disable', '--apply'])).toEqual({ action: 'disable', ownerIds: [], apply: true });
-    for (const bad of [[], ['all'], ['enable'], ['enable', '--owner'], ['disable', '--owner', 'a'], ['show', '--apply'], ['enable', '--owner', 'a', '--force']]) expect(() => parseArgs(bad), JSON.stringify(bad)).toThrow();
+  it('parses only the three actions; enable needs --all or owners, never both; show is read-only', () => {
+    expect(parseArgs(['enable', '--owner', 'a', '--owner', 'b', '--owner', 'a'])).toEqual({ action: 'enable', ownerIds: ['a', 'b'], all: false, apply: false });
+    expect(parseArgs(['disable', '--apply'])).toEqual({ action: 'disable', ownerIds: [], all: false, apply: true });
+    // BR-4: the broad-release switch.
+    expect(parseArgs(['enable', '--all'])).toEqual({ action: 'enable', ownerIds: [], all: true, apply: false });
+    expect(parseArgs(['enable', '--all', '--apply'])).toEqual({ action: 'enable', ownerIds: [], all: true, apply: true });
+    for (const bad of [[], ['all'], ['enable'], ['enable', '--owner'], ['disable', '--owner', 'a'], ['show', '--apply'], ['enable', '--owner', 'a', '--force'],
+      ['enable', '--all', '--owner', 'a'], ['enable', '--owner', 'a', '--all'], ['disable', '--all'], ['show', '--all'], ['enable', '--owner', '--all']]) expect(() => parseArgs(bad), JSON.stringify(bad)).toThrow();
+  });
+  it('enable --all builds the exact schema-2 document the server accepts: every owner selected, the epoch advanced (BR-4)', () => {
+    const on = buildControlDocument({ schemaVersion: 2, enabled: true, epoch: 4, model: { ...STOCK_MODEL }, audience: { mode: 'allowlist', ownerIds: ['owner-a'] } }, { action: 'enable', all: true });
+    expect(on).toEqual({ schemaVersion: 2, enabled: true, epoch: 5, model: { ...STOCK_MODEL }, audience: { mode: 'all' } });
+    expect(validStockAdmissionControl(on)).toBe(true);
+    for (const id of ['owner-a', 'owner-b', 'anyone']) expect(stockAdmissionSelects(on, id), id).toBe(true);
+    for (const id of [undefined, null, '', 42]) expect(stockAdmissionSelects(on, id), String(id)).toBe(false);
+    // disable keeps the 'all' audience (closed by enabled: false), never an empty allowlist.
+    const off = buildControlDocument(on, { action: 'disable' });
+    expect(off).toEqual({ schemaVersion: 2, enabled: false, epoch: 6, model: { ...STOCK_MODEL }, audience: { mode: 'all' } });
+    expect(validStockAdmissionControl(off)).toBe(false); expect(stockAdmissionSelects(off, 'owner-a')).toBe(false);
+  });
+  it('enable --all through run(): a dry run prints the document and writes nothing; --apply writes it, show reads it', async () => {
+    const s = controlStore(); const log = vi.fn();
+    const dry = await runControl(['enable', '--all'], { db: s.db, log });
+    expect(dry.written).toBe(false); expect(s.writes).toEqual([]);
+    const printed = log.mock.calls.flat().join('\n');
+    expect(printed).toContain(JSON.stringify(dry.next, null, 2)); expect(printed).toContain('enabled for every owner');
+    const wet = await runControl(['enable', '--all', '--apply'], { db: s.db, log: () => {} });
+    expect(wet.written).toBe(true); expect(s.doc).toEqual({ schemaVersion: 2, enabled: true, epoch: 1, model: { ...STOCK_MODEL }, audience: { mode: 'all' } });
+    const showLog = vi.fn(); await runControl(['show'], { db: s.db, log: showLog });
+    expect(showLog.mock.calls.flat().join('\n')).toContain('enabled for every owner');
+    await runControl(['disable', '--apply'], { db: s.db, log: () => {} });
+    expect(s.doc).toMatchObject({ enabled: false, epoch: 2, audience: { mode: 'all' } }); expect(s.writes).toHaveLength(2);
   });
   it('enable builds the exact schema-2 allowlist document the server accepts; disable closes it; the epoch always advances', () => {
     const on = buildControlDocument(null, { action: 'enable', ownerIds: ['owner-a'] });

@@ -1,24 +1,24 @@
 // BaggerBomb stock thresholds v2 (docs/approvals/BAGGERBOMB_STOCK_THRESHOLDS_V2_PILOT_20261015.md):
-// Rulings 1, 2, 6, 7, 8 and 9 through the real model, admission, collector,
+// Rulings 1, 6, 7, 8 and 9 through the real model, admission, collector,
 // common swap writer and creation service. Only the network, the clock and the
 // admission flag are doubles. The real import of src/utils/stockThresholdModel.js
 // below is its Node dependency-surface guard (BUILD_RULES §4): never mock it.
-// First import: the fenced computeFullDayExpiry derives its instant from the process
-// zone, and the evening-window rows read it, so this file runs in UTC like CI and
-// production (blockers review BK3-1).
+// BR-2 (Oct 25, 2026) retired Ruling 2's late-start refusal and P2's evening
+// window; their successor rows (late-day starts play the next session, the
+// publication wait, the sweep) are in stockThresholdBroadRelease.test.js, which
+// runs under any process zone. First import: the tournament row below goes
+// through the fenced computeFullDayExpiry, which derives its instant from the
+// process zone, so this file runs in UTC like CI and production (BK3-1).
 import './__fixtures__/pinTimezoneUtc.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const selector = vi.hoisted(() => ({ enabled: true }));
 vi.mock('../../src/config/featureFlags.js', async original => ({ ...await original(), get STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED() { return selector.enabled; } }));
-import { prepareStockCreation, stockCreationDb, scoreCorrectedPosition, lateStartRefusal, STOCK_LATE_START_CUTOFF_MINUTES, decisionQuote, bindStockReceipt, readCorrectedInputs } from './stockThresholdAdmission.js';
+import { prepareStockCreation, stockCreationDb, scoreCorrectedPosition, decisionQuote, bindStockReceipt, readCorrectedInputs } from './stockThresholdAdmission.js';
 import { collectStockObservation, wellFormedFigi } from './stockThresholdMeasurementProvider.js';
 import { validStockAdmissionControl, stockAdmissionSelects, STOCK_APPROVAL, APPROVED_STOCK_POLICY } from './stockThresholdPolicyRegistry.js';
 import { commitBattleDocWithPin } from './compositionGenerationFence.js';
 import { executeSwapServer } from './agentSwapExecution.js';
 import { canonicalContentHash } from './canonicalHash.js';
-import { getSessionForDate, etWallClockToMs } from '../../src/utils/marketCalendar.js';
-// The real import of the shared creation window is its Node dependency-surface guard (BUILD_RULES §4): never mock it.
-import { eveningWindowRefusal, stockAdmissionRetryAt, NIGHT_GAME_CLOSE, STOCK_PUBLICATION_DELAY_MINUTES } from '../../src/utils/stockAdmissionWindow.js';
 import { STOCK_MODEL, stockRewardContext, initialRewardHistory, stockModelRoute } from '../../src/utils/stockThresholdModel.js';
 import { stockObservation, stockRows, stockWriterDb, correctedStockBattle, STOCK_TEST_NOW, stockTestClock, STOCK_CREATION_NOW, stockCreationClock } from './__fixtures__/stockThresholdHarness.js';
 
@@ -33,7 +33,7 @@ const q = (price, asOf, observedAt = STOCK_TEST_NOW) => ({ price, asOf, observed
 const inputStore = (battle, inputs) => stockWriterDb({ [`agentBattles/${battle.id}`]: battle, ...inputs, 'indexIntelligence/stockRankings': { stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }] } });
 const control = (over = {}) => ({ schemaVersion: 2, enabled: true, epoch: 1, model: { ...STOCK_MODEL }, audience: { mode: 'allowlist', ownerIds: ['owner-pilot'] }, ...over });
 // expiresAt is the fence's stock-only full-day expiry for both creation clocks used
-// here (Oct 15 after the close and Oct 16 in session): Oct 16, 16:00 ET (P2 reads it).
+// here (Oct 15 after the close and Oct 16 in session): Oct 16, 16:00 ET.
 const creationDoc = (ownerId = 'owner-pilot', expiresAt = '2026-10-16T20:00:00.000Z') => ({ ownerId, expiresAt, gameMode: 'baggerbomb_agent', duration: 'fullday', portfolio: { star: [{ symbol: 'AAPL', baseATR: 2.5 }], core: [], support: [], startingPrices: {} }, opponent: { portfolio: { star: [{ symbol: 'MSFT', baseATR: 3 }], core: [], support: [] } }, scoring: {}, scoreState: {} });
 const creationStore = ctl => stockWriterDb({ 'indexIntelligence/stockRankings': { stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }] }, ...(ctl === undefined ? {} : { 'stockThresholdControl/admission': ctl }) });
 
@@ -113,39 +113,6 @@ describe('Ruling 1: the fill quote provider time is the reward lower bound', () 
   });
 });
 
-describe('Ruling 2: late-start cutoff at 45 minutes before the calendar close', () => {
-  const at = (date, minutesBeforeClose, extraMs = 0) => new Date(getSessionForDate(date).closeMs - minutesBeforeClose * 60000 + extraMs).toISOString();
-  it.each([['normal', '2026-10-14', '15:15'], ['early close', '2026-11-27', '12:15']])('%s day: refused from 45 minutes before close (%s ET), open one millisecond earlier', (_, date, et) => {
-    expect(STOCK_LATE_START_CUTOFF_MINUTES).toBe(45);
-    expect(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }).format(Date.parse(at(date, 45)))).toBe(et);
-    expect(lateStartRefusal(at(date, 46))).toBe(null);
-    expect(lateStartRefusal(at(date, 45, -1))).toBe(null);
-    expect(lateStartRefusal(at(date, 45))).toBe('late_start_cutoff');
-    expect(lateStartRefusal(at(date, 44))).toBe('late_start_cutoff');
-    expect(lateStartRefusal(at(date, 0, -1))).toBe('late_start_cutoff');
-    expect(lateStartRefusal(at(date, 0))).toBe(null); // the close itself: the publication window governs from here
-  });
-  it('weekends and holidays have no cutoff; a malformed instant refuses', () => {
-    expect(lateStartRefusal('2026-10-17T19:30:00.000Z')).toBe(null);
-    expect(lateStartRefusal('2026-11-26T19:30:00.000Z')).toBe(null);
-    expect(lateStartRefusal('not-an-instant')).toBe('invalid_creation_instant');
-  });
-  it('a selected creation is refused before any measurement GET; a non-listed owner stays legacy at the same instant', async () => {
-    const collector = vi.fn(); const h = creationStore(control());
-    const now = () => new Date(at('2026-10-14', 30));
-    await expect(prepareStockCreation(creationDoc(), { db: h.db, collector, now })).rejects.toMatchObject({ name: 'StockThresholdRefusal', reason: 'late_start_cutoff', retriable: true });
-    expect(await prepareStockCreation(creationDoc('owner-other'), { db: h.db, collector, now })).toBe(null);
-    expect(collector).not.toHaveBeenCalled();
-  });
-  it('the 16:00–16:15 ET publication window still refuses before any GET', async () => {
-    const fetcher = vi.fn();
-    const closeMs = getSessionForDate('2026-10-14').closeMs;
-    expect(lateStartRefusal(new Date(closeMs + 5 * 60000).toISOString())).toBe(null);
-    await expect(collectStockObservation('AAPL', 2.5, { fetcher, now: () => new Date(closeMs + 5 * 60000) })).rejects.toMatchObject({ reason: 'publication_window_not_open' });
-    expect(fetcher).not.toHaveBeenCalled();
-  });
-});
-
 describe('Ruling 7: off-hours creation and the source session closing quote (Phase 0 §C3)', () => {
   // §C3: the closing bar was served at 16:15:20 ET stamped exactly 16:00:00, then
   // stamps crept to 16:01–16:23 at the unchanged close. Before it, 15:59:00.
@@ -183,14 +150,16 @@ describe('Ruling 7: off-hours creation and the source session closing quote (Pha
   });
 });
 
-describe('Ruling 6: the control document is the only on-switch (allowlist on ownerId)', () => {
-  it('the shipped selector is true, and only an enabled schema-2 allowlist naming the owner selects', () => {
+describe('Ruling 6: the control document is the only on-switch (allowlist on ownerId; BR-4 adds { mode: \'all\' })', () => {
+  it('the shipped selector is true, and only an enabled schema-2 allowlist naming the owner, or exactly { mode: \'all\' }, selects', () => {
     expect(validStockAdmissionControl(control())).toBe(true);
     expect(stockAdmissionSelects(control(), 'owner-pilot')).toBe(true);
     expect(stockAdmissionSelects(control(), 'owner-other')).toBe(false);
     for (const [label, c] of [
       ['missing', null], ['disabled', control({ enabled: false })], ['old schema', control({ schemaVersion: 1 })], ['old schema without audience', { schemaVersion: 1, enabled: true, epoch: 1, model: { ...STOCK_MODEL } }],
-      ['no audience', control({ audience: undefined })], ['mode all', control({ audience: { mode: 'all' } })], ['mode all with ids', control({ audience: { mode: 'all', ownerIds: ['owner-pilot'] } })],
+      // BR-4: 'all' opens only as exactly { mode: 'all' }; an 'all' carrying leftover ids or any other key stays closed.
+      ['no audience', control({ audience: undefined })], ['mode all with ids', control({ audience: { mode: 'all', ownerIds: ['owner-pilot'] } })], ['mode all with an empty list', control({ audience: { mode: 'all', ownerIds: [] } })],
+      ['mode all with another key', control({ audience: { mode: 'all', note: 'x' } })], ['mode ALL', control({ audience: { mode: 'ALL' } })], ['mode everyone', control({ audience: { mode: 'everyone' } })], ['array audience', control({ audience: ['all'] })], ['disabled all', control({ enabled: false, audience: { mode: 'all' } })],
       ['empty allowlist', control({ audience: { mode: 'allowlist', ownerIds: [] } })], ['non-string id', control({ audience: { mode: 'allowlist', ownerIds: [42] } })], ['empty id', control({ audience: { mode: 'allowlist', ownerIds: [''] } })],
       ['bad epoch', control({ epoch: 0 })], ['v1 model', control({ model: { ...STOCK_MODEL, modelId: 'stock_measured_atr14_fullday_v1' } })], ['unparseable', 'garbage'],
     ]) {
@@ -200,13 +169,18 @@ describe('Ruling 6: the control document is the only on-switch (allowlist on own
       expect(validStockAdmissionControl(c), label).toBe(false);
     }
     expect(stockAdmissionSelects(control(), undefined)).toBe(false);
+    // BR-4: the open 'all' audience selects every owner, and still needs an owner id.
+    const all = control({ audience: { mode: 'all' } });
+    expect(validStockAdmissionControl(all)).toBe(true);
+    for (const id of ['owner-pilot', 'owner-other', 'anyone']) expect(stockAdmissionSelects(all, id), id).toBe(true);
+    for (const id of [undefined, null, '', 42]) expect(stockAdmissionSelects(all, id), String(id)).toBe(false);
     // One malformed id closes the whole document, even for a listed owner (review B1-3).
     for (const ownerIds of [['owner-pilot', 42], ['owner-pilot', '']]) expect(stockAdmissionSelects(control({ audience: { mode: 'allowlist', ownerIds } }), 'owner-pilot'), JSON.stringify(ownerIds)).toBe(false);
     expect(STOCK_APPROVAL).toMatchObject({ modelId: 'stock_measured_atr14_fullday_v2', approvedPolicyRef: 'owner_baggerbomb_stock_thresholds_v2_20261015@v1' });
   });
   it.each([
     ['no control document', undefined], ['a disabled control', control({ enabled: false })], ['an old-schema control', { schemaVersion: 1, enabled: true, epoch: 1, model: { ...STOCK_MODEL } }],
-    ['an "all" audience', control({ audience: { mode: 'all' } })], ['an allowlist without this owner', control({ audience: { mode: 'allowlist', ownerIds: ['someone-else'] } })],
+    ['an "all" audience carrying ids', control({ audience: { mode: 'all', ownerIds: ['owner-pilot'] } })], ['a disabled "all" audience', control({ enabled: false, audience: { mode: 'all' } })], ['an allowlist without this owner', control({ audience: { mode: 'allowlist', ownerIds: ['someone-else'] } })],
   ])('flag true with %s is legacy (null) and makes zero collector calls', async (_, ctl) => {
     const collector = vi.fn(); const h = creationStore(ctl);
     expect(await prepareStockCreation(creationDoc(), { db: h.db, collector, now: stockCreationClock })).toBe(null);
@@ -231,7 +205,8 @@ describe('Ruling 6: the control document is the only on-switch (allowlist on own
     };
     const ok = await run(); const ref = await ok.commit;
     expect(stockModelRoute({ id: ref.id, ...ok.h.store.get(`agentBattles/${ref.id}`) }).status).toBe('corrected');
-    for (const mutate of [c => { c.audience.ownerIds = ['someone-else']; }, c => { c.enabled = false; }, c => { c.epoch = 2; }]) {
+    // BR-4: switching the audience from the allowlist to 'all' mid-flight is a change too.
+    for (const mutate of [c => { c.audience.ownerIds = ['someone-else']; }, c => { c.enabled = false; }, c => { c.epoch = 2; }, c => { c.audience = { mode: 'all' }; }]) {
       const r = await run(mutate);
       await expect(r.commit).rejects.toMatchObject({ reason: 'creation_selection_changed' }); expect(r.h.writes).toEqual([]);
     }
@@ -445,136 +420,3 @@ describe('security identity follow-up (P1, build report §6a Option A): ISIN, el
   });
 });
 
-describe('evening window (P2, build report §6b option (a)): a pilot battle that would expire before any session can score it is refused', () => {
-  const ET = (date, hh, mm, ss = 0) => etWallClockToMs(date, hh, mm) + ss * 1000;
-  const iso = ms => new Date(ms).toISOString();
-  const crypto = { symbol: 'BTC-USD.CC', isCrypto: true, baseATR: 5 };
-  // createAgentBattle under the faked clock: the fenced computeFullDayExpiry sets
-  // expiresAt, so these rows read the battle's own expiry, never a clock literal.
-  // The provider is offline, so a creation that passes every window check reaches
-  // its first GET and is refused provider_failure; one refused by a window check
-  // never calls fetch.
-  async function createAt(ms, { roster = 'crypto', ownerId = 'owner-pilot', ctl = control() } = {}) {
-    selector.enabled = true;
-    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(ms));
-    const fetchSpy = vi.fn(async () => { throw Error('offline'); }); vi.stubGlobal('fetch', fetchSpy);
-    const { createAgentBattle } = await import('./agentBattleService.js');
-    const { makeCompositionStoreDouble } = await import('./__fixtures__/compositionStoreDouble.js');
-    const composition = makeCompositionStoreDouble(); const added = [];
-    const db = {
-      doc: path => ({ path, id: path.split('/').at(-1), get: async () => (ctl === null ? { exists: false, data: () => undefined } : { exists: true, data: () => structuredClone(ctl) }) }),
-      collection: name => composition.collection(name) ?? { add: async doc => { added.push(doc); return { id: 'battle-1' }; }, doc: id => ({ id: id ?? 'battle-1', path: `${name}/${id ?? 'battle-1'}` }) },
-      runTransaction: async fn => fn({ get: async ref => ref.get(), create: async (r, doc) => { added.push(doc); }, update: () => {} }),
-    };
-    const portfolio = { star: [{ symbol: 'AAPL', baseATR: 2.5 }], core: [], support: roster === 'crypto' ? [{ ...crypto }] : [] };
-    const agent = { id: 'agent-1', ownerId, name: 'Cipher', archetype: 'diversifier', lastDecision: { portfolio, bench: { stocks: [], crypto: null }, watchlist: { active: [], hotBench: [], monitoring: [] } } };
-    const result = await createAgentBattle(db, agent, {}, {}, { duration: 'fullday', opponent: { portfolio: { star: [{ symbol: 'MSFT', baseATR: 2.5 }], core: [], support: [] } } }).then(r => ({ r }), e => ({ e }));
-    vi.useRealTimers();
-    return { ...result, added, fetchSpy };
-  }
-  it('runs in the production process zone (UTC): the fenced computeFullDayExpiry derives its instant from it', () => {
-    // Under another zone the fence's expiry shifts by the zone offset (pre-existing,
-    // out of scope); the first import pins UTC, and this row fails first, by name,
-    // if a pool ever ignores that pin (worker threads do).
-    expect(new Date(Date.UTC(2026, 9, 21)).getTimezoneOffset()).toBe(0);
-  });
-  const refusedBy = async (ms, opts) => { const c = await createAt(ms, opts); return { reason: c.e?.reason ?? null, fetched: c.fetchSpy.mock.calls.length, c }; };
-  // The fence's expiry for a roster created at ms (legacy: ctl null = no control document).
-  const fenceExpiry = async (ms, roster = 'crypto') => (await createAt(ms, { roster, ctl: null })).r.expiresAt;
-
-  it.each([
-    ['16:00 (the close)', 16, 0, 0], ['16:05 (inside the publication window)', 16, 5, 0], ['16:15', 16, 15, 0], ['18:00', 18, 0, 0], ['19:59', 19, 59, 0], ['19:59:59', 19, 59, 59],
-  ])('regular weekday, crypto roster, %s ET: evening_window before any GET', async (_, hh, mm, ss) => {
-    const r = await refusedBy(ET('2026-10-21', hh, mm, ss));
-    expect(r.c.e).toMatchObject({ name: 'StockThresholdRefusal', reason: 'evening_window', retriable: true });
-    expect(r.fetched).toBe(0); expect(r.c.added).toEqual([]);
-  });
-  it('the late start and the evening window leave no gap at the close', async () => {
-    expect((await refusedBy(ET('2026-10-21', 15, 59, 59))).reason).toBe('late_start_cutoff');
-    expect((await refusedBy(ET('2026-10-21', 16, 0, 0))).reason).toBe('evening_window');
-  });
-  it.each([
-    ['20:00 (the Night Game close)', '2026-10-21', 20, 0], ['20:15', '2026-10-21', 20, 15], ['23:30', '2026-10-21', 23, 30], ['pre-open 08:00', '2026-10-22', 8, 0], ['in session 10:00', '2026-10-22', 10, 0],
-  ])('crypto roster at %s ET is allowed: the window passes and the collector makes its first GET', async (_, date, hh, mm) => {
-    const r = await refusedBy(ET(date, hh, mm));
-    expect(r.reason).toBe('provider_failure'); expect(r.fetched).toBeGreaterThan(0);
-  });
-  it('Friday evening is refused; Saturday is allowed', async () => {
-    expect(await fenceExpiry(ET('2026-10-23', 18, 0))).toBe(iso(ET('2026-10-23', 20, 0)));
-    expect((await refusedBy(ET('2026-10-23', 18, 0))).reason).toBe('evening_window');
-    expect(await fenceExpiry(ET('2026-10-24', 12, 0))).toBe(iso(ET('2026-10-26', 20, 0)));
-    const sat = await refusedBy(ET('2026-10-24', 12, 0));
-    expect(sat.reason).toBe('provider_failure'); expect(sat.fetched).toBeGreaterThan(0);
-  });
-  it('early-close day (Nov 27): refused from 12:15 ET until its expiry moves to the next session; there is no Night Game', async () => {
-    // A crypto roster on an early-close day expires at the 13:00 close, so its
-    // "evening expiry" is the close itself; from 13:00 it expires Monday 20:00.
-    expect(await fenceExpiry(ET('2026-11-27', 12, 30))).toBe(iso(ET('2026-11-27', 13, 0)));
-    expect(await fenceExpiry(ET('2026-11-27', 13, 0))).toBe(iso(ET('2026-11-30', 20, 0)));
-    expect((await refusedBy(ET('2026-11-27', 12, 14, 59))).reason).toBe('provider_failure');
-    for (const [hh, mm, ss] of [[12, 15, 0], [12, 45, 0], [12, 59, 59]]) expect((await refusedBy(ET('2026-11-27', hh, mm, ss))).reason, `${hh}:${mm}:${ss}`).toBe('late_start_cutoff');
-    for (const [hh, mm, ss] of [[13, 0, 0], [13, 14, 59]]) { const r = await refusedBy(ET('2026-11-27', hh, mm, ss)); expect(r.reason, `${hh}:${mm}:${ss}`).toBe('publication_window_not_open'); expect(r.fetched).toBe(0); }
-    const open = await refusedBy(ET('2026-11-27', 13, 15, 0));
-    expect(open.reason).toBe('provider_failure'); expect(open.fetched).toBeGreaterThan(0);
-  });
-  it('a stock-only roster after the close is allowed: it plays the next session', async () => {
-    expect(await fenceExpiry(ET('2026-10-21', 18, 0), 'stocks')).toBe(iso(ET('2026-10-22', 16, 0)));
-    const r = await refusedBy(ET('2026-10-21', 18, 0), { roster: 'stocks' });
-    expect(r.reason).toBe('provider_failure'); expect(r.fetched).toBeGreaterThan(0);
-  });
-  it('a non-allowlisted owner in the window keeps the legacy battle, with zero collector calls', async () => {
-    const r = await refusedBy(ET('2026-10-21', 18, 0), { ownerId: 'owner-other' });
-    expect(r.c.e).toBeUndefined(); expect(r.fetched).toBe(0);
-    expect(r.c.added).toHaveLength(1); expect(Object.hasOwn(r.c.added[0].scoring, 'stockThresholdModel')).toBe(false);
-    expect(r.c.added[0].expiresAt).toBe(iso(ET('2026-10-21', 20, 0)));
-  });
-  it('outside a session a selected creation needs a readable expiry; during a session the expiry is not read', async () => {
-    const collector = vi.fn(); const h = creationStore(control());
-    await expect(prepareStockCreation(creationDoc('owner-pilot', 'not-an-instant'), { db: h.db, collector, now: () => new Date(ET('2026-10-21', 20, 30)) })).rejects.toMatchObject({ reason: 'invalid_battle_expiry', retriable: true });
-    await expect(prepareStockCreation(creationDoc('owner-pilot', null), { db: h.db, collector, now: () => new Date(ET('2026-10-24', 12, 0)) })).rejects.toMatchObject({ reason: 'invalid_battle_expiry' });
-    expect(collector).not.toHaveBeenCalled();
-    expect(eveningWindowRefusal(iso(ET('2026-10-21', 10, 0)), 'not-an-instant')).toBe(null);
-    expect(eveningWindowRefusal(iso(ET('2026-10-21', 8, 0)), undefined)).toBe(null);
-    expect(eveningWindowRefusal('not-an-instant', iso(ET('2026-10-21', 20, 0)))).toBe('invalid_creation_instant');
-    expect(eveningWindowRefusal('2028-01-04T23:00:00.000Z', '2028-01-05T01:00:00.000Z')).toBe('calendar_missing');
-    // Exactly at the next open is still before any evaluating tick: refused only when strictly before.
-    expect(eveningWindowRefusal(iso(ET('2026-10-21', 18, 0)), iso(ET('2026-10-22', 9, 30) - 1))).toBe('evening_window');
-    expect(eveningWindowRefusal(iso(ET('2026-10-21', 18, 0)), iso(ET('2026-10-22', 9, 30)))).toBe(null);
-  });
-  it('sweep: every refused instant names a retry time that is the first instant the same rule accepts (EDT week and the EST Thanksgiving week)', async () => {
-    // Every 15 minutes, a crypto roster (tiered rosters always carry one). The rule
-    // is the server's own: the late start, the evening window on the fence's
-    // expiry, and the collector's publication window (real code, offline GET).
-    const collectorWindow = async ms => collectStockObservation('AAPL', 2.5, { now: () => new Date(ms), fetcher: async () => { throw Error('offline'); } }).then(() => null, e => (e.reason === 'provider_failure' ? null : e.reason));
-    const refusal = async ms => lateStartRefusal(iso(ms)) || eveningWindowRefusal(iso(ms), await fenceExpiry(ms)) || collectorWindow(ms);
-    const days = [['2026-10-19', 7], ['2026-11-23', 8]];
-    let refused = 0, named = 0;
-    for (const [start, n] of days) {
-      const from = ET(start, 0, 0);
-      for (let ms = from; ms < from + n * 86_400_000; ms += 15 * 60000) {
-        const reason = await refusal(ms);
-        if (!reason) continue;
-        refused++;
-        if (reason !== 'late_start_cutoff' && reason !== 'evening_window') continue;
-        named++;
-        const retry = stockAdmissionRetryAt(iso(ms));
-        expect(retry, iso(ms)).toBeGreaterThan(ms);
-        expect(await refusal(retry), `${iso(ms)} → ${iso(retry)}`).toBe(null);
-        expect(await refusal(retry - 1000), `${iso(ms)} → ${iso(retry)} − 1 s`).not.toBe(null);
-      }
-    }
-    // Nine regular weekdays × 19 instants (late start 15:15–15:45, evening 16:00–19:45) = 171, plus the
-    // early close's late start (12:15–12:45) = 174 named; its 13:00 publication window is the one more refusal.
-    expect({ refused, named }).toEqual({ refused: 175, named: 174 });
-  }, 240_000);
-  it('the retry time is the Night Game close on a regular day and the end of the publication window on an early-close day', () => {
-    expect(NIGHT_GAME_CLOSE).toEqual({ hour: 20, minute: 0 });
-    // The shared delay is the hashed publication rule's own minimum (blockers review BK2-7).
-    expect(STOCK_PUBLICATION_DELAY_MINUTES).toBe(APPROVED_STOCK_POLICY.publicationRule.minimumMinutesAfterScheduledClose); expect(STOCK_PUBLICATION_DELAY_MINUTES).toBe(15);
-    expect(stockAdmissionRetryAt(iso(ET('2026-10-21', 15, 30)))).toBe(ET('2026-10-21', 20, 0));
-    expect(stockAdmissionRetryAt(iso(ET('2026-10-21', 18, 0)))).toBe(ET('2026-10-21', 20, 0));
-    expect(stockAdmissionRetryAt(iso(ET('2026-11-27', 12, 30)))).toBe(ET('2026-11-27', 13, 15));
-    expect(stockAdmissionRetryAt(iso(ET('2026-10-24', 12, 0)))).toBe(null);
-    expect(stockAdmissionRetryAt('not-an-instant')).toBe(null);
-  });
-});

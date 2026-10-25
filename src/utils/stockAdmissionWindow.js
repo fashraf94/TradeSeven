@@ -1,9 +1,12 @@
-// BaggerBomb stock thresholds v2: the measured pilot's creation window (build
-// report §6b, option (a), Flash's ruling P2). One module holds the server
-// refusal (api/_utils/stockThresholdAdmission.js prepareStockCreation) and the
-// player's retry time (src/services/agentDeploy.js), so the two cannot drift.
-// Pure and Node-clean: the calendar of record only, no clock read. api/ imports
-// it under BUILD_RULES §4; stockThresholdV2.test.js imports it unmocked.
+// BaggerBomb's full-day creation window. One module holds the tiered full-day
+// target (BR-2, Flash, Oct 25, 2026: late-day starts play the next trading day;
+// read by the fenced createAgentBattle, api/_utils/agentBattleService.js), the
+// collector's publication wait (api/_utils/stockThresholdMeasurementProvider.js)
+// and the player's reopening time (src/services/agentDeploy.js), so the three
+// cannot drift. Pure and Node-clean: the calendar of record only, no clock read
+// and no process time zone. api/ imports it under BUILD_RULES §4;
+// stockThresholdBroadRelease.test.js and stockThresholdV2.test.js import it
+// unmocked.
 import { getSessionForDate, etWallClockToMs } from './marketCalendar.js';
 import { instantMs } from './stockThresholdModel.js';
 
@@ -12,17 +15,30 @@ import { instantMs } from './stockThresholdModel.js';
 // this constant).
 export const STOCK_PUBLICATION_DELAY_MINUTES = 15;
 // The crypto "Night Game" close that a tiered battle's expiry carries on a
-// regular trading day (api/_utils/marketSchedule.js getNextMarketClose with
-// cryptoExtended, read by the fenced computeFullDayExpiry; there is none on an
-// early-close day). Only the retry time reads it; the refusal reads the
-// battle's own expiresAt. stockThresholdV2.test.js pins the two together
-// through the real creation path.
+// regular trading day (none on an early-close day): the rule of
+// api/_utils/marketSchedule.js getNextMarketClose with cryptoExtended, which
+// the tournament path keeps. stockThresholdBroadRelease.test.js pins the two
+// together outside the late-day window.
 export const NIGHT_GAME_CLOSE = Object.freeze({ hour: 20, minute: 0 });
+// BR-2: a tiered full-day battle created from this many minutes before a
+// trading day's calendar close (15:15 ET; 12:15 ET on early-close days) plays
+// the next session. A code constant recorded in the approval document, not hashed.
+export const LATE_DAY_START_MINUTES = 45;
 
+const ET_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
+const ET_HOUR = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', hourCycle: 'h23' });
 export const etDateOf = ms => {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(ms);
+  const parts = ET_DATE.formatToParts(ms);
   const part = type => parts.find(p => p.type === type).value;
   return `${part('year')}-${part('month')}-${part('day')}`;
+};
+const etHourOf = ms => Number(ET_HOUR.format(ms));
+// The calendar's tables are constants, so each ET date's session is looked up
+// once per process (the sessions are frozen; a date outside the tables stays null).
+const SESSIONS = new Map();
+const sessionOn = etDate => {
+  if (!SESSIONS.has(etDate)) { const s = getSessionForDate(etDate); SESSIONS.set(etDate, s && Object.freeze(s)); }
+  return SESSIONS.get(etDate);
 };
 // The first trading session after an ET date, walking the calendar's tables.
 // Null when the walk leaves the maintained horizon.
@@ -30,44 +46,41 @@ function nextSessionAfter(etDate) {
   let cursor = Date.parse(`${etDate}T12:00:00Z`);
   for (let i = 0; i < 15; i++) {
     cursor += 86_400_000;
-    const session = getSessionForDate(new Date(cursor).toISOString().slice(0, 10));
+    const session = sessionOn(new Date(cursor).toISOString().slice(0, 10));
     if (!session) return null;
     if (session.isTradingDay) return session;
   }
   return null;
 }
 
-// A selected creation outside a trading session (after the current session's
-// close, or on a weekend or holiday) is refused when the battle's own expiry
-// falls before the next session opens: no evaluating tick could ever score it.
-// Before or during the current session the battle plays that session, so the
-// expiry is not read. The 45-minute late-start refusal ends at the close, where
-// this one begins, so the two leave no gap.
-export function eveningWindowRefusal(began, expiresAt) {
-  const ms = instantMs(began);
-  if (ms === null) return 'invalid_creation_instant';
-  const current = getSessionForDate(etDateOf(ms));
-  if (!current) return 'calendar_missing';
-  if (current.isTradingDay && ms < current.closeMs) return null;
-  const expiry = instantMs(expiresAt);
-  if (expiry === null) return 'invalid_battle_expiry';
-  const next = nextSessionAfter(current.etDate);
-  if (!next) return 'calendar_missing';
-  return expiry < next.openMs ? 'evening_window' : null;
+// BR-2: the full day a tiered battle created at `atMs` plays. On a trading day
+// before the late-day start it is that session; from the late-day start, and
+// on a weekend or holiday, it is the next session. The expiry is the session's
+// close, or the Night Game close for a roster holding crypto on a regular day.
+// Outside the late-day window this is the old getNextMarketClose rule exactly
+// (stockThresholdBroadRelease.test.js sweeps the two against each other).
+// { status: 'calendar_missing' } when the creation date or the next session
+// lies outside the maintained tables: never a guess. `localClose` is
+// `effectiveCloseHour` as 'HH:00', so expiresAt, tradingDays and localClose
+// all come from one instant.
+export function tieredFullDayTarget(atMs, hasCrypto) {
+  if (!Number.isFinite(atMs)) return { status: 'invalid_creation_instant' };
+  const current = sessionOn(etDateOf(atMs));
+  if (!current) return { status: 'calendar_missing' };
+  const session = current.isTradingDay && atMs < current.closeMs - LATE_DAY_START_MINUTES * 60000 ? current : nextSessionAfter(current.etDate);
+  if (!session) return { status: 'calendar_missing' };
+  const expiresMs = hasCrypto && !session.isEarlyClose ? etWallClockToMs(session.etDate, NIGHT_GAME_CLOSE.hour, NIGHT_GAME_CLOSE.minute) : session.closeMs;
+  return { status: 'ok', expiresAt: new Date(expiresMs).toISOString(), targetDateStr: session.etDate, effectiveCloseHour: etHourOf(expiresMs) };
 }
 
-// The retry time named to a player refused with late_start_cutoff or
-// evening_window: the first instant on that ET date at which a tiered pilot
-// creation is accepted again. A tiered roster always holds crypto (the
-// mandatory crypto slot, api/_utils/gameModePolicy.js), so on a regular day it
-// is the Night Game close the refused battle would have expired at; on an
-// early-close day there is no Night Game and it is the end of the publication
-// window. Null when `at` is malformed or not on a trading day.
-export function stockAdmissionRetryAt(at) {
+// The instant the collector's publication wait ends on the ET date of `at`:
+// 15 minutes after that session's close (4:15 PM ET; 1:15 PM on early-close
+// days). The player line names it when a measured creation is refused
+// publication_window_not_open. Null when `at` is malformed or not on a
+// trading day.
+export function stockPublicationOpensAt(at) {
   const ms = instantMs(at);
   if (ms === null) return null;
-  const session = getSessionForDate(etDateOf(ms));
-  if (!session?.isTradingDay) return null;
-  const published = session.closeMs + STOCK_PUBLICATION_DELAY_MINUTES * 60000;
-  return session.isEarlyClose ? published : Math.max(published, etWallClockToMs(session.etDate, NIGHT_GAME_CLOSE.hour, NIGHT_GAME_CLOSE.minute));
+  const session = sessionOn(etDateOf(ms));
+  return session?.isTradingDay ? session.closeMs + STOCK_PUBLICATION_DELAY_MINUTES * 60000 : null;
 }
