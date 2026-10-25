@@ -8,10 +8,7 @@ October 25, 2026. Fable (Claude.ai) wrote the prompt and Flash blessed the rulin
 2. **When a battle can start and when it plays.** A battle can start at any time except 4:00–4:15 PM ET (1:00–1:15 PM on early-close days). Before 3:15 PM ET it plays that day. From 3:15 PM ET (12:15 PM on early closes), in the evening and at weekends it plays the next trading day, and a crypto roster runs to 8 PM ET that day.
 3. **The stock list.** The 11 dead tickers can no longer be picked; 228 stocks remain and none were added. Old battles that hold them are untouched. Switching on waits until Monday's rankings refresh drops them, and the switch script enforces that.
 4. **Data cost.** A battle uses about 174 EODHD calls (144 to start, 12 per stock swap). At 24 battles a day that is about 4,200 calls, roughly 4% of the 100K daily cap.
-5. **Before switching on, please decide three things.**
-   - An agent with an ETF in its equipped watchlist (KRE today, 5 agents) is refused whenever it picks that ETF.
-   - A battle started between 3:15 and 3:44 PM also plays that day's last checks.
-   - An agent cannot start a new battle until its last measured battle settles, about 9 AM ET the next weekday.
+5. **Three things to know when you switch on** (§5): an agent whose equipped watchlist holds an ETF (KRE today, 5 agents) is refused whenever it picks it; a battle started 3:15–3:44 PM ET also plays that day's last checks; and an agent can't start its next battle until its last measured one settles, at 9 AM ET the next weekday (8 AM from Nov 1).
 
 ## Verdict
 
@@ -26,7 +23,7 @@ October 25, 2026. Fable (Claude.ai) wrote the prompt and Flash blessed the rulin
 | Full Linux suite at the code-final head | **PASS.** Test Files 1172 passed, 8 skipped (1180); Tests 25362 passed, 89 skipped; EXIT=0 (`6e60e76a`, quiet run) | §3 |
 | `lint:gate` / `vite build` | **PASS.** EXIT=0 / EXIT=0 at `6e60e76a` (also at `36f4bf86` and `527113ba`) | §3 |
 | Review (BUILD_RULES §2) | **Done.** 3 lenses on isolated snapshots, then an independent refuter on every finding: 10 CONFIRMED, 2 PARTLY, 1 REFUTED. 51 mutant runs: every non-equivalent mutant was killed except one NIT. | §4 |
-| Switch-on (step 3) | **NOT DONE.** It waits for the merge, the deploy, Monday's rankings refresh and your answers in §5. | §6 |
+| Switch-on (step 3) | **NOT DONE.** It runs when you say "deployed", once the rankings refresh has dropped the 11 (the script enforces that). | §6 |
 
 ## Preamble
 
@@ -304,7 +301,9 @@ A refused creation that gets past the window checks still spends its GETs. Examp
 - Film Room, Wire validator and injection guard unchanged for the 11;
 - no 15:15–24:00 real-clock time bomb in 36 files at 5 instants.
 
-## 5. Questions for Flash (please answer before step 3)
+## 5. Questions for Flash
+
+None of these is a data-integrity problem, and switching on shrinks Q2's legacy exposure. Saying "deployed" alone runs step 3. Say "wait" instead if you want a Q1 or Q2 change first.
 
 **Q1 — Equipped ETFs.** decide.js lets an agent place a ticker from its equipped watchlist even when it is not a ranked stock ("Option 8C"). The measured model cannot measure such a ticker (an ETF fails the Common Stock identity check), so once everyone is measured, that deploy is refused retriably every time the agent picks it, after the model calls ran. Today 5 agents' equipped watchlists hold KRE. Options:
 - (a) Accept it, and tell those players.
@@ -317,7 +316,7 @@ A refused creation that gets past the window checks still spends its GETs. Examp
 - Options: (a) accept, since everyone is measured once `all` is on; or (b) a follow-up that skips a battle before its first trading day in `api/cron/agent-evaluate.js`. That file is not fenced, but it is a behaviour change Fable should write.
 - My lean is (b), soon. Until then, switch on promptly after the deploy so the legacy route sees few late-day starts.
 
-**Q3 — Redeploying the same agent.** An agent whose measured battle expired at 20:00 ET cannot start its next battle until that battle settles, at the next weekday's first run (13:00 UTC: 9:00 AM ET in summer, 8:00 AM in winter). Old-math battles were settled on the spot at deploy. So after `all`, a player cannot redeploy the same agent that evening or over the weekend; other agents are unaffected. This is pre-existing pilot behaviour that `all` extends to everyone. Accept, or ask for an evening settlement run?
+**Q3 — Redeploying the same agent.** An agent whose measured battle expired at 20:00 ET cannot start its next battle until that battle settles, at the next weekday's first run (13:00 UTC: 9:00 AM ET until Oct 30, 8:00 AM ET from Nov 1). Old-math battles were settled on the spot at deploy. So after `all`, a player cannot redeploy the same agent that evening or over the weekend; other agents are unaffected. This is pre-existing pilot behaviour that `all` extends to everyone. Accept, or ask for an evening settlement run?
 
 **Q4 — The 2028 calendar.** From Fri Dec 31, 2027, 3:15 PM ET, every BaggerBomb creation is refused until the 2028 NYSE tables are added (some tests go red from the same instant). Adding them is a small calendar task; I suggest scheduling it for early December 2027.
 
@@ -330,7 +329,7 @@ A refused creation that gets past the window checks still spends its GETs. Examp
    - I confirm production is at or after the merge commit.
    - I check that `indexIntelligence/stockRankings` no longer lists any of the 11. The script also refuses otherwise. The first weekday rebuild after the deploy is Mon 10:30 UTC.
    - I run `show`, then `enable --all` (dry run, showing the document), then `--apply`, then `show`.
-3. **Q1–Q3 decide whether to wait:** if you want (b) for Q1 or Q2 first, step 3 waits for that follow-up.
+3. **"deployed" alone is enough** to run step 3, with the rankings check still enforced. Say "wait" if you want the (b) follow-up for Q1 or Q2 first.
 
 ## 7. Reported, not changed
 
