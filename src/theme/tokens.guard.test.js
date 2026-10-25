@@ -221,6 +221,10 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/hub/nextAction.js',
   'src/components/CommandCenter/hub/useHubBrief.js',
   'src/components/CommandCenter/hub/useHubLater.js',
+  // Command Center hub, S6 (the idea reader and what it means for the screen): token-only and motion-token-only from birth,
+  // registered in the commit that introduces them (hazard 34).
+  'src/components/CommandCenter/hub/researchView.js',
+  'src/components/CommandCenter/hub/useHubResearch.js',
 ];
 
 /**

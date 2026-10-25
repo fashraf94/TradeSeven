@@ -171,6 +171,8 @@
     "src/components/CommandCenter/hub/activityDates.js": {},
     "src/components/CommandCenter/hub/nextAction.js": {},
     "src/components/CommandCenter/hub/useHubBrief.js": {},
-    "src/components/CommandCenter/hub/useHubLater.js": {}
+    "src/components/CommandCenter/hub/useHubLater.js": {},
+    "src/components/CommandCenter/hub/researchView.js": {},
+    "src/components/CommandCenter/hub/useHubResearch.js": {}
   }
 }
