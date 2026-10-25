@@ -46,10 +46,12 @@ The pilot shape (`enable --owner <uid>`) carries `"audience": { "mode": "allowli
   - tournaments and other modes never read the control document;
   - every tiered full-day creation reads it once;
   - an unselected owner returns `null` before any measurement GET, so its creation and its errors are exactly today's legacy ones (`createAgentBattle` keys its refusal wrapper on that per-battle selection).
-- **A selected creation is refused retriably in only these cases:**
+- **Every refusal of a selected creation is retriable.** The ones a player meets in practice:
   - during the collector's publication wait, from the calendar close to 15 minutes after it (16:00–16:15 ET; 13:00–13:15 ET on early-close days);
-  - whenever the collector cannot qualify both sides' stocks: provider failure, identity, catalog exception, `current_ranked_membership_missing`;
-  - when the previous measured battle of the same agent has expired but not yet settled (`prior_corrected_battle_requires_settlement`, decide.js). Settlement runs at the next weekday's first evaluation run, so an agent whose measured battle expired at 20:00 ET cannot redeploy until about 09:00 ET on the next weekday.
+  - when the collector cannot qualify a stock on either side: provider failure, security identity (an ETF fails it), catalog exception (the 11 retired tickers);
+  - at commit, when a stock is not in the current `stockRankings` (`current_ranked_membership_missing`) or the control document changed (`creation_selection_changed`);
+  - when the previous measured battle of the same agent has expired but not yet settled (`prior_corrected_battle_requires_settlement`, decide.js). Settlement runs at the next weekday's first evaluation run, 13:00 UTC (09:00 ET in daylight time, 08:00 ET in standard time), so an agent whose measured battle expired at 20:00 ET cannot redeploy until then. The same unsettled battle also holds back that agent's tournament deploy (decide.js `refuseUnsettledStockTournamentBattle`); the orchestrator retries every 10 minutes and settlement lands before the open.
+  - Internal checks (`calibrated_unit_missing`, `unsupported_stock_direction`, `approval_not_effective`, `corrected_creation_failed`, `missing_atomic_battle_create`) refuse the same way.
 - **Refused for every tiered creation, legacy too:** from Fri Dec 31, 2027, 15:15 ET (`calendar_missing`). The next session is in 2028, outside the calendar's tables. Adding the 2028 tables to `src/utils/marketCalendar.js` removes it.
 - The player sees one short line (`src/services/agentDeploy.js` `stockAdmissionLine`). The publication wait reads "Measured battles open again at 4:15 PM ET." (1:15 PM on early-close days). The time comes from the browser's clock when the refusal arrives, because the fenced `decide.js` 503 carries only the reason.
 
@@ -67,7 +69,7 @@ There is no time-of-day block any more. The late-start (`late_start_cutoff`) and
 
 - **Every tiered roster carries crypto**, so on a regular day a battle created from 15:15 ET runs to 20:00 ET of the next session. A Friday battle created from 15:15 ET plays Monday. A battle created the day before Thanksgiving plays the Friday early close and ends at 13:00 ET (no Night Game).
 - **Legacy creations follow the same rule.** That ends the old evening 0–0 draws, where a crypto battle created 16:15–20:00 ET expired unplayed.
-- **The rest of the creation day still counts.** Nothing holds a late-day battle's evaluation until its session, so one created 15:15–15:59 ET is also evaluated by that day's 15:30 and 15:45 ticks. The daily cron records `day1` that evening (approval record, build readings).
+- **The rest of the creation day still counts.** Nothing holds a late-day battle's evaluation until its session, so one created 15:15–15:59 ET is also evaluated by that day's 15:30 and 15:45 ticks. The daily cron records `day1` that evening, and those ticks and swaps appear on no Film Room tape (it writes only `tradingDays`). See the approval record's build readings.
 - **Tournament creation is unchanged.** It keeps `computeFullDayExpiry`, which still derives its instant from the process zone (UTC on Vercel and CI).
 - **Each refused attempt costs model calls.** A refusal comes at battle creation, after `decide.js` has run its model calls and replaced the agent's shown decision. The cooldown is restored, so the player can retry at once.
 
@@ -86,13 +88,13 @@ CIK and LEI are never used. The rule is not hashed and the v2 policy hash does n
 
 - **They are out of `STOCK_UNIVERSE` and `ALL_TICKERS`** (`api/_utils/rankingConfig.js`). No cron fetches or ranks them, and no successors were added.
 - **They keep their labels.** Each stays in `RETIRED_STOCKS` with its last sector, and in `TICKER_TO_SECTOR` / `TYPE` / `INDUSTRY`. Existing battles, Film Room tapes, watchlists and Wire documents that hold one read as before. The ticker validator and the Forge add search refuse new picks of them.
-- **The CPU's and the agent's pool is `indexIntelligence/stockRankings`.** That document keeps its old list until `compute-index-intelligence` next runs on a weekday after the deploy (10:30 and 11:30 UTC, then hourly 14:00–20:00 UTC). It lists 7 of the 11 as of Oct 25 (AVB, CTRA, EA, EQR, MMC, PARA, WBD). Until the rebuild, a measured creation that draws one is refused retriably (`catalog_unavailable`). Hence the precondition below.
+- **The CPU's pool, and the agent's ranked pool, is `indexIntelligence/stockRankings`.** (The agent can also place a ticker from its equipped watchlist; no committed production watchlist held one of the 11 on Oct 25, and new adds are refused.) That document keeps its old list until `compute-index-intelligence` next runs on a weekday after the deploy (10:30 and 11:30 UTC, then hourly 14:00–20:00 UTC). It lists 7 of the 11 as of Oct 25 (AVB, CTRA, EA, EQR, MMC, PARA, WBD). Until the rebuild, a measured creation that draws one is refused retriably (`catalog_unavailable`). Hence the precondition below.
 
 ## Switching on for everyone (a separate, authorized step)
 
 1. **Confirm the deploy.** Vercel production must be at or after the broad-release merge commit, and crons must run (they do not on preview).
 2. **Have the credentials.** `.env.local` with the Admin credentials must be present in the checkout you run from (`scripts/loadLocalEnv.js`).
-3. **Confirm `indexIntelligence/stockRankings` no longer lists any of the 11.** It is a read-only check. If it still does, wait for the next weekday rankings run.
+3. **Confirm `indexIntelligence/stockRankings` no longer lists any of the 11.** `enable --all` reads it and says so; `--apply` refuses while one remains or the document is missing. If it still does, wait for the next weekday rankings run.
 4. **Read the current document:**
 
    ```bash

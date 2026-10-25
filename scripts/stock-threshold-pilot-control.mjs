@@ -26,12 +26,23 @@
 //   node scripts/stock-threshold-pilot-control.mjs disable [--apply]
 //
 // PRECONDITION for `enable --all`: the broad-release build is merged and
-// deployed, and indexIntelligence/stockRankings no longer lists the 11
-// retired tickers (runbook, "Switching on for everyone").
+// deployed (runbook, "Switching on for everyone"). The script itself refuses
+// `enable --all --apply` while indexIntelligence/stockRankings — the CPU's and
+// the agent's pool — still lists any of the 11 retired tickers (BR-3), or is
+// missing; a dry run says so. It only reads that document.
 
 import { pathToFileURL } from 'node:url';
 import { STOCK_MODEL, stockContent } from '../src/utils/stockThresholdModel.js';
 import { STOCK_ADMISSION_CONTROL_PATH, STOCK_ADMISSION_CONTROL_SCHEMA, validStockAdmissionControl, stockAdmissionSelects, isAllAudience } from '../api/_utils/stockThresholdPolicyRegistry.js';
+import { isRetiredStock } from '../api/_utils/rankingConfig.js';
+
+export const STOCK_RANKINGS_PATH = 'indexIntelligence/stockRankings';
+/** Why `enable --all` must wait, from the rankings document; null when it may proceed. */
+export function rankingsBlocker(rankings) {
+  if (!rankings || !Array.isArray(rankings.stocks)) return `${STOCK_RANKINGS_PATH} is missing or has no stocks list`;
+  const stale = [...new Set(rankings.stocks.map(s => s?.symbol).filter(isRetiredStock))];
+  return stale.length ? `${STOCK_RANKINGS_PATH} still lists retired ticker(s) ${stale.join(', ')}: wait for the next weekday rankings run` : null;
+}
 
 const MODEL = Object.freeze({ ...STOCK_MODEL });
 const USAGE = 'usage: show | enable --all [--apply] | enable --owner <uid> [--owner <uid>] [--apply] | disable [--apply]';
@@ -96,6 +107,12 @@ export async function run(argv, { db, log = console.log } = {}) {
   log(`${apply ? 'WRITING' : 'DRY RUN — would write'} ${STOCK_ADMISSION_CONTROL_PATH}:\n${JSON.stringify(next, null, 2)}`);
   log(`after: ${describeControl(next)}`);
   for (const id of ownerIds) log(`  ${id}: ${stockAdmissionSelects(next, id) ? 'selected' : 'not selected'}`);
+  if (action === 'enable' && all) {
+    const rankingsSnap = await db.doc(STOCK_RANKINGS_PATH).get();
+    const blocker = rankingsBlocker(rankingsSnap.exists ? rankingsSnap.data() : null);
+    log(`${STOCK_RANKINGS_PATH}: ${blocker ?? 'lists none of the retired tickers'}`);
+    if (blocker && apply) throw new Error(`refusing enable --all: ${blocker}`);
+  }
   if (!apply) { log('Nothing written. Re-run with --apply to write exactly this document.'); return { action, written: false, current, next }; }
   await ref.set(next);
   const check = (await ref.get()).data();

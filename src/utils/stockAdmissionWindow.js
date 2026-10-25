@@ -5,8 +5,8 @@
 // and the player's reopening time (src/services/agentDeploy.js), so the three
 // cannot drift. Pure and Node-clean: the calendar of record only, no clock read
 // and no process time zone. api/ imports it under BUILD_RULES §4;
-// stockThresholdBroadRelease.test.js and stockThresholdV2.test.js import it
-// unmocked.
+// stockThresholdBroadRelease.test.js imports it unmocked (its dependency-surface
+// guard), and the collector's tests reach it through the real provider.
 import { getSessionForDate, etWallClockToMs } from './marketCalendar.js';
 import { instantMs } from './stockThresholdModel.js';
 

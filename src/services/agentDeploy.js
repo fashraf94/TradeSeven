@@ -35,9 +35,11 @@ import { DEPLOY_OUTCOMES } from '../constants/deployOutcomes';
 import { stockPublicationOpensAt, STOCK_PUBLICATION_DELAY_MINUTES } from '../utils/stockAdmissionWindow';
 import { signedInUid } from './deployIdentity';
 
-// BaggerBomb measured thresholds (v2 Ruling 6, BR-4): only a selected
-// creation can be refused this way. The server's 503 carries `reason`; the
-// ceremony shows `details`, so the reason becomes one short player line.
+// BaggerBomb measured thresholds (v2 Ruling 6, BR-4): a selected creation
+// can be refused this way, and — past the market calendar's maintained years
+// (BR-2, `calendar_missing`) — any tiered creation. The server's 503 carries
+// `reason`; the ceremony shows `details`, so the reason becomes one short
+// player line.
 export const STOCK_ADMISSION_ERROR = 'Stock admission unavailable';
 // BR-2: the collector's publication wait names the time it ends, from the
 // same module as the server rule (src/utils/stockAdmissionWindow.js). The 503
@@ -48,6 +50,8 @@ const etClock = ms => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_
 const STOCK_ADMISSION_LINES = {
   publication_window_not_open: `Measured battles reopen ${STOCK_PUBLICATION_DELAY_MINUTES} minutes after the market close. Try again shortly.`,
   prior_corrected_battle_requires_settlement: 'Your previous measured battle is still settling. Try again after it completes.',
+  // BR-2: no retry helps until the next year's market calendar is added (src/utils/marketCalendar.js).
+  calendar_missing: "New battles can't be scheduled yet: next year's market calendar isn't loaded.",
 };
 export function stockAdmissionLine(data, now = new Date()) {
   if (data?.error !== STOCK_ADMISSION_ERROR) return null;

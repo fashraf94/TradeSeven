@@ -3,7 +3,7 @@
 // live-battle verifier. Real modules; the store is an in-memory double.
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { parseArgs, buildControlDocument, run as runControl } from './stock-threshold-pilot-control.mjs';
+import { parseArgs, buildControlDocument, run as runControl, rankingsBlocker, STOCK_RANKINGS_PATH } from './stock-threshold-pilot-control.mjs';
 import { run as runVerify, verifyBattle } from './stock-threshold-pilot-verify.mjs';
 import { validStockAdmissionControl, stockAdmissionSelects } from '../api/_utils/stockThresholdPolicyRegistry.js';
 import { STOCK_MODEL } from '../src/utils/stockThresholdModel.js';
@@ -14,9 +14,12 @@ const oldKey = process.env.EODHD_API_KEY;
 beforeAll(() => { process.env.EODHD_API_KEY = 'isolated-key'; });
 afterAll(() => { if (oldKey === undefined) delete process.env.EODHD_API_KEY; else process.env.EODHD_API_KEY = oldKey; });
 
-function controlStore(initial) {
+// The rankings document defaults to a rebuilt one (BR-3: no retired ticker); pass
+// `null` for a missing one. Only the control document is ever written.
+function controlStore(initial, rankings = { stocks: [{ symbol: 'AAPL' }, { symbol: 'MSFT' }] }) {
   let doc = initial ? structuredClone(initial) : undefined; const writes = []; const reads = [];
-  return { writes, reads, get doc() { return doc; }, db: { doc: path => ({ get: async () => { reads.push(path); return { exists: doc !== undefined, data: () => structuredClone(doc) }; }, set: async v => { writes.push([path, structuredClone(v)]); doc = structuredClone(v); } }) } };
+  const rankingsRef = { get: async () => { reads.push(STOCK_RANKINGS_PATH); return { exists: rankings !== null, data: () => structuredClone(rankings ?? undefined) }; }, set: async () => { throw Error('the rankings document is read-only here'); } };
+  return { writes, reads, get doc() { return doc; }, db: { doc: path => (path === STOCK_RANKINGS_PATH ? rankingsRef : { get: async () => { reads.push(path); return { exists: doc !== undefined, data: () => structuredClone(doc) }; }, set: async v => { writes.push([path, structuredClone(v)]); doc = structuredClone(v); } }) } };
 }
 
 describe('scripts/stock-threshold-pilot-control.mjs', () => {
@@ -52,6 +55,25 @@ describe('scripts/stock-threshold-pilot-control.mjs', () => {
     expect(showLog.mock.calls.flat().join('\n')).toContain('enabled for every owner');
     await runControl(['disable', '--apply'], { db: s.db, log: () => {} });
     expect(s.doc).toMatchObject({ enabled: false, epoch: 2, audience: { mode: 'all' } }); expect(s.writes).toHaveLength(2);
+  });
+  it('enable --all --apply refuses, writing nothing, while stockRankings still lists a retired ticker or is missing; the dry run says why (BR-3)', async () => {
+    for (const [label, rankings, why] of [
+      ['stale', { stocks: [{ symbol: 'AAPL' }, { symbol: 'EA' }, { symbol: 'WBD' }, { symbol: 'EA' }] }, 'still lists retired ticker(s) EA, WBD'],
+      ['missing', null, 'is missing or has no stocks list'],
+      ['no list', { updatedAt: 'x' }, 'is missing or has no stocks list'],
+    ]) {
+      const s = controlStore(undefined, rankings); const log = vi.fn();
+      const dry = await runControl(['enable', '--all'], { db: s.db, log });
+      expect(dry.written, label).toBe(false); expect(log.mock.calls.flat().join('\n'), label).toContain(why);
+      await expect(runControl(['enable', '--all', '--apply'], { db: s.db, log: () => {} }), label).rejects.toThrow(`refusing enable --all: ${STOCK_RANKINGS_PATH} ${why}`);
+      expect(s.writes, label).toEqual([]); expect(s.reads, label).toContain(STOCK_RANKINGS_PATH);
+    }
+    expect(rankingsBlocker({ stocks: [{ symbol: 'AAPL' }, null, {}] })).toBe(null);
+    // The pilot form and disable never read the rankings document.
+    const s = controlStore(undefined, null);
+    await runControl(['enable', '--owner', 'owner-a', '--apply'], { db: s.db, log: () => {} });
+    await runControl(['disable', '--apply'], { db: s.db, log: () => {} });
+    expect(s.writes).toHaveLength(2); expect(s.reads).not.toContain(STOCK_RANKINGS_PATH);
   });
   it('enable builds the exact schema-2 allowlist document the server accepts; disable closes it; the epoch always advances', () => {
     const on = buildControlDocument(null, { action: 'enable', ownerIds: ['owner-a'] });

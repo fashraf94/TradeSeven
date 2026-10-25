@@ -54,7 +54,7 @@ describe('the measured refusal reads as one clear player line', () => {
   it.each([
     ['prior_corrected_battle_requires_settlement', 'Your previous measured battle is still settling. Try again after it completes.'],
     ['provider_failure', GENERIC],
-    ['calendar_missing', GENERIC],
+    ['calendar_missing', "New battles can't be scheduled yet: next year's market calendar isn't loaded."],
     [undefined, GENERIC],
   ])('reason %s maps to its line', async (reason, line) => {
     globalThis.fetch = vi.fn(async () => respond(503, { error: STOCK_ADMISSION_ERROR, reason, retriable: true }));

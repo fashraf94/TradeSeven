@@ -107,7 +107,8 @@ describe('BR-2: a late-day start plays the next trading session (createAgentBatt
     ['fall DST weekend 2027 (Fri Nov 5 → Mon Nov 8)', '2027-11-05', '2027-11-05', '2027-11-08'],
   ];
   it.each(DAYS)('%s: expiresAt, tradingDays and localClose for crypto and stock-only rosters', async (_, date, today, next) => {
-    const cutoff = getSessionForDate(date).closeMs - LATE_DAY_START_MINUTES * MIN;
+    // A literal 45, not the imported constant, so a changed constant fails these rows too (review BRA-3).
+    const cutoff = getSessionForDate(date).closeMs - 45 * MIN;
     for (const [hh, mm] of TIMES) {
       const ms = ET(date, hh, mm);
       for (const roster of ['crypto', 'stocks']) {
@@ -222,6 +223,20 @@ describe('BR-2 sweep: every 15 minutes from Oct 25, 2026 through Dec 31, 2027, n
     // 35 quarter hours from the late-day start to midnight on a regular trading day (15:15–23:45), 47 on an early close (12:15–23:45).
     expect(counts.late).toBe(counts.lateExpected);
   }, 600_000);
+  it('under a process zone east of UTC (Asia/Kolkata, UTC+5:30) the target still follows the ET date, not the local one (review BRA-4)', () => {
+    const prev = process.env.TZ;
+    process.env.TZ = 'Asia/Kolkata';
+    try {
+      expect(new Date(Date.UTC(2026, 9, 21)).getTimezoneOffset()).toBe(-330);
+      // 14:30–15:14 ET is already the next local date in Kolkata; the battle still plays the ET day.
+      for (const [date, hh, mm, plays] of [['2026-10-21', 14, 30, '2026-10-21'], ['2026-10-21', 15, 0, '2026-10-21'], ['2026-10-21', 15, 14, '2026-10-21'], ['2026-10-21', 15, 15, '2026-10-22'], ['2026-10-23', 15, 0, '2026-10-23'], ['2026-10-23', 15, 30, '2026-10-26'], ['2026-11-25', 15, 10, '2026-11-25'], ['2026-11-27', 12, 10, '2026-11-27']]) {
+        for (const hasCrypto of [true, false]) {
+          const t = tieredFullDayTarget(ET(date, hh, mm), hasCrypto);
+          expect({ expiresAt: t.expiresAt, tradingDays: [t.targetDateStr], localClose: `${t.effectiveCloseHour}:00` }, `${date} ${hh}:${mm} crypto=${hasCrypto}`).toEqual(expected(plays, hasCrypto ? 'crypto' : 'stocks'));
+        }
+      }
+    } finally { if (prev === undefined) delete process.env.TZ; else process.env.TZ = prev; }
+  });
   it('in the production zone (UTC) the old conversion gives the same instant outside the late-day window', () => {
     const prev = process.env.TZ;
     process.env.TZ = 'UTC';
@@ -353,7 +368,10 @@ describe('BR-3: the 11 dead tickers leave the pickable universe and keep their l
     for (const t of RETIRED) expect(searchUniverse(t).map(m => m.symbol), t).not.toContain(t);
     expect(searchUniverse('AAPL')[0].symbol).toBe('AAPL');
   });
-  it('the rankings cron fetches and ranks ALL_TICKERS only, so its rebuilt stockRankings (the CPU and agent pool) cannot list them', () => {
+  // The ranked pool only: decide.js also folds an equipped watchlist's tickers into the
+  // agent's pool (watchlistEquip.js foldEquippedTickers), which the row below and the
+  // validator/search rows above cover from the other side (no new adds; measured refuses).
+  it('the rankings cron fetches and ranks ALL_TICKERS only, so its rebuilt stockRankings (the CPU pool and the agent ranked pool) cannot list them', () => {
     const src = readFileSync(new URL('../cron/compute-index-intelligence.js', import.meta.url), 'utf8');
     expect(src).toContain('fetchBatch(ALL_TICKERS, 10, 500)'); expect(src).toContain('for (const sym of ALL_TICKERS)');
     // A pool rebuilt from ALL_TICKERS: the CPU never draws a retired name, in 300 random draws.
