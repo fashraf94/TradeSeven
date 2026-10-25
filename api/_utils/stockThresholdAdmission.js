@@ -6,8 +6,6 @@ import { canonicalContentHash } from './canonicalHash.js';
 import { resolveStockApproval, STOCK_APPROVAL, STOCK_ADMISSION_CONTROL_PATH, validStockAdmissionControl, stockAdmissionSelects } from './stockThresholdPolicyRegistry.js';
 import { collectStockObservation, qualifyStockObservation, refuseStock, StockThresholdRefusal } from './stockThresholdMeasurementProvider.js';
 import { calculateAssetScoreServer } from './agentScoring.js';
-import { getSessionForDate } from '../../src/utils/marketCalendar.js';
-import { etDateOf, eveningWindowRefusal } from '../../src/utils/stockAdmissionWindow.js';
 
 export const stockAdmissionEnabled = () => Object.hasOwn(flags, 'STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED') && flags.STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED === true;
 export function effectiveStockPercentage(measuredPct) {
@@ -38,23 +36,15 @@ async function readEligibility(tx, db, symbols) {
   const ranked = new Set((snap.data()?.stocks || []).map(s => s.symbol));
   if (!snap.exists || symbols.some(s => !ranked.has(s))) refuseStock('current_ranked_membership_missing');
 }
-// v2 Ruling 2: corrected creation is refused from 45 minutes before the calendar
-// close (15:15 ET; 12:15 ET on early-close days), measured at the creation's
-// began instant against the session's own closeMs, never a clock literal. A code
-// constant recorded in the pilot approval document, deliberately not hashed.
-export const STOCK_LATE_START_CUTOFF_MINUTES = 45;
-export function lateStartRefusal(began) {
-  const ms = instantMs(began);
-  if (ms === null) return 'invalid_creation_instant';
-  const session = getSessionForDate(etDateOf(ms));
-  if (!session) return 'calendar_missing';
-  return session.isTradingDay && ms >= session.closeMs - STOCK_LATE_START_CUTOFF_MINUTES * 60000 && ms < session.closeMs ? 'late_start_cutoff' : null;
-}
-// v2 Ruling 6: the control document is the only on-switch. A missing, unreadable,
-// disabled, unparseable or old-schema control, or one whose allowlist does not name
-// this owner, keeps today's legacy creation with no measurement read (null). Only a
-// selected (allowlisted) creation can be refused, and every refusal is retriable.
-export async function prepareStockCreation(battleDoc, { db, collector = collectStockObservation, now = () => new Date() } = {}) {
+// v2 Ruling 6 and BR-4: the control document is the only on-switch. A missing,
+// unreadable, disabled, unparseable or old-schema control, or an allowlist that
+// does not name this owner, keeps today's legacy creation with no measurement read
+// (null); an open `{ mode: 'all' }` audience selects every owner. Only a selected
+// creation can be refused, and every refusal is retriable. BR-2 removed the
+// late-start and evening-window refusals: a late-day battle plays the next
+// session instead (the fenced createAgentBattle sets its expiry), and the
+// collector's publication wait is the one creation-time window left.
+export async function prepareStockCreation(battleDoc, { db, collector = collectStockObservation } = {}) {
   if (!stockAdmissionEnabled()) return null;
   if (battleDoc.gameMode !== 'baggerbomb_agent' || battleDoc.duration !== 'fullday' || !battleDoc.opponent?.portfolio) return null;
   if (!db) return null;
@@ -66,12 +56,6 @@ export async function prepareStockCreation(battleDoc, { db, collector = collectS
     return null;
   }
   if (!stockAdmissionSelects(control, battleDoc.ownerId)) return null;
-  // P2 (build report §6b, option (a)): from the close until the next session can
-  // score it, a battle whose own expiry comes first is refused (evening_window).
-  // Pilot-only narrowing of Ruling 7; legacy and tournaments never get here.
-  const began = now().toISOString();
-  const outOfWindow = lateStartRefusal(began) || eveningWindowRefusal(began, battleDoc.expiresAt);
-  if (outOfWindow) refuseStock(outOfWindow);
   const observations = [];
   try {
     for (const p of positions(battleDoc)) {

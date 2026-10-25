@@ -182,7 +182,17 @@ export const WIRE_VALIDATOR_VERSION = '1.7.0';
 // moves mechanically as the constant host, so THREE per-file hashes move.
 // TICKER_TO_SECTOR untouched (no validator bump). Editorial gate off
 // (EDITORIAL_REVIEW_ENABLED=false), so the gateEpoch reset is dormant.
-export const WIRE_GENERATION_VERSION = 23;
+// v24 (BaggerBomb broad release BR-3, Oct 25, 2026): the value lock on
+// rankingConfig#ALL_TICKERS fires — the 11 RETIRED_STOCKS (AVB, CTRA, EA,
+// EQR, HES, IPG, K, MMC, PARA, WBA, WBD: merged, delisted or reused) leave the
+// stock universe, so the consensus block (fantasyTimesConsensus.js) now treats
+// them as off-universe; no story bytes change otherwise. TICKER_TO_SECTOR
+// keeps every retired name with its last sector (its value hash does not move),
+// so the Wire universe and validation are unchanged and
+// assessTickerUniverseCaveat does not fire (no validator bump); this file
+// moves mechanically as the constant host. Editorial gate off, so the
+// gateEpoch reset is dormant.
+export const WIRE_GENERATION_VERSION = 24;
 export const WIRE_DIGEST_RENDERER_VERSION = '1.0.0';
 
 // ── N3 editorial version constants (Spec V1.2 N3, F-M3/F-M4) ──────────────

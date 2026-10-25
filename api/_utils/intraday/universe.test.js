@@ -8,9 +8,10 @@ import { UNIVERSE_STOCKS, INDEX_SYMBOLS, actionableFromBattles, toVendorStock, t
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 describe('the universe', () => {
-  it('is the 255 real-time symbols of compute-index-intelligence (5 index + 11 sector ETFs + 239 stocks)', () => {
-    expect(UNIVERSE_STOCKS).toHaveLength(255);
-    expect(new Set(UNIVERSE_STOCKS).size).toBe(255);
+  it('is the 244 real-time symbols of compute-index-intelligence (5 index + 11 sector ETFs + 228 stocks)', () => {
+    // BR-3 (Oct 25, 2026): 255 less the 11 retired stocks (rankingConfig.js RETIRED_STOCKS).
+    expect(UNIVERSE_STOCKS).toHaveLength(244);
+    expect(new Set(UNIVERSE_STOCKS).size).toBe(244);
     expect(Object.isFrozen(UNIVERSE_STOCKS)).toBe(true);
   });
   it('INDEX_SYMBOLS is pinned to compute-index-intelligence.js INDEX_SYMBOLS', () => {
