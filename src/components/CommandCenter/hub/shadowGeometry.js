@@ -34,6 +34,18 @@ export const SH_TIERS = Object.freeze({
   low: Object.freeze({ per: 5, pts: 26, glow: false }),
 });
 
+/**
+ * Slice S7: the canvas-only half of the design's tiers, kept apart so SH_TIERS (and S1's parity digest over it) is
+ * untouched. `chunks` is how many runs a strand is stroked in, so its depth shades along its length; `dpr` caps the
+ * canvas's backing store. The hub draws only low (phone) and mid (everything else): `high` is the design's and is
+ * never selected (spec §10; shadowTierFor).
+ */
+export const SH_CANVAS = Object.freeze({
+  high: Object.freeze({ chunks: 4, dpr: 2 }),
+  mid: Object.freeze({ chunks: 3, dpr: 2 }),
+  low: Object.freeze({ chunks: 2, dpr: 1.5 }),
+});
+
 /** The still's moment and its yaw (the design's reduced-motion yaw). */
 export const SH_STILL_T = 7.3;
 export const SH_STILL_YAW = 0.25;

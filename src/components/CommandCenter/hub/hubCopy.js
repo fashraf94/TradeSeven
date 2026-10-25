@@ -93,6 +93,15 @@ export const HUB_COPY = Object.freeze({
     statusLocked: 'Locked in',
     /** The charge beside the line, aria-hidden (spec §5.5: "percentage is visible and aria-hidden"). */
     holdPercent: (n) => `${n}%`,
+    /**
+     * Slice S7 (ruling R-S7-7; hub/shadowStatus.js): the line's two live-game phrases, for an owned live game with no
+     * attempt shown, and the line while the owned live read is not known — it claims nothing then, not even "nothing
+     * running". An attempt's own words (verifying, deployed, already running, refused, unconfirmed) are the Deploy
+     * card's, COPY.deploy.states, never repeated here.
+     */
+    statusLiveOne: 'Live game in progress',
+    statusLiveMany: (n) => `${n} live games in progress`,
+    statusIdleUnknown: 'Idle',
     /** Shadow's image label: what it shows, and the selected area. */
     imageLabel: (state, areaName) => `Shadow — ${state}${areaName ? `; ${areaName} selected` : ''}`,
     states: Object.freeze({ ambient: 'ambient', still: 'still', processing: 'processing' }),

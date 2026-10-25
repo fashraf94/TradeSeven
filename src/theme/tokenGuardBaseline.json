@@ -171,6 +171,11 @@
     "src/components/CommandCenter/hub/activityDates.js": {},
     "src/components/CommandCenter/hub/nextAction.js": {},
     "src/components/CommandCenter/hub/useHubBrief.js": {},
-    "src/components/CommandCenter/hub/useHubLater.js": {}
+    "src/components/CommandCenter/hub/useHubLater.js": {},
+    "src/components/CommandCenter/ShadowCanvas.jsx": {},
+    "src/components/CommandCenter/hub/shadowBloom.js": {},
+    "src/components/CommandCenter/hub/shadowCanvas.js": {},
+    "src/components/CommandCenter/hub/shadowStatus.js": {},
+    "src/components/CommandCenter/__fixtures__/shadowCanvasKit.js": {}
   }
 }

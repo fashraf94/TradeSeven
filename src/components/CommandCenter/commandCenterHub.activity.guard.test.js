@@ -17,12 +17,16 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Parser } from 'acorn';
+import acornJsx from 'acorn-jsx';
 import { describe, expect, it } from 'vitest';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const HUB = path.join(HERE, 'hub');
 const read = (name) => readFileSync(path.join(HUB, name), 'utf8').replace(/\r\n/g, '\n');
+// Slice S7: a file beside the shells, not under hub/ (ShadowCanvas.jsx).
+const readShell = (name) => readFileSync(path.join(HERE, name), 'utf8').replace(/\r\n/g, '\n');
 const parse = (code) => Parser.parse(code, { ecmaVersion: 'latest', sourceType: 'module' });
+const parseJsx = (code) => Parser.extend(acornJsx()).parse(code, { ecmaVersion: 'latest', sourceType: 'module' });
 
 /** The calls that start something running: an effect, a timer, a listener, a frame, a read. */
 const ACTIVITY_CALLS = new Set([
@@ -30,6 +34,8 @@ const ACTIVITY_CALLS = new Set([
   'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'setTimer', 'clearTimer',
   'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'queueMicrotask',
   'addEventListener', 'removeEventListener', 'fetch', 'getDoc', 'getDocs', 'onSnapshot', 'onAuthStateChanged',
+  // Slice S7: an observer's two calls (its construction is counted as `new <Name>`, below).
+  'observe', 'disconnect',
 ]);
 
 function walk(node, visit) {
@@ -43,9 +49,14 @@ function walk(node, visit) {
 }
 
 /** Every activity call of a module, sorted: `receiver.name` and, for a listener, the event it names. */
-function activityOf(code) {
+function activityOf(code, parser = parse) {
   const found = [];
-  walk(parse(code), (node) => {
+  walk(parser(code), (node) => {
+    // Slice S7: an observer is constructed, not called: `new IntersectionObserver(…)` counts as itself.
+    if (node.type === 'NewExpression' && node.callee.type === 'Identifier' && /Observer$/.test(node.callee.name)) {
+      found.push(`new ${node.callee.name}`);
+      return;
+    }
     if (node.type !== 'CallExpression') return;
     const { callee } = node;
     let name = null;
@@ -116,5 +127,65 @@ describe('S3\'s hooks hold exactly the activity they were allowed (S3 review T5-
     const quiet = "// setTimeout(f, 1); useEffect(g)\nconst note = 'window.addEventListener(\"focus\", f)';\n/* getDocs(q) */";
     expect(activityOf(quiet)).toEqual([]);
     expect(activityOf("window.addEventListener('focus', f); document.removeEventListener(name, f);")).toEqual(['document.removeEventListener ?', "window.addEventListener 'focus'"]);
+  });
+
+  it('an observer is counted, built and called: `new IntersectionObserver`, observe and disconnect', () => {
+    expect(activityOf('const o = new IntersectionObserver(cb); o.observe(el); o.disconnect();'))
+      .toEqual(['new IntersectionObserver', 'o.disconnect', 'o.observe']);
+  });
+});
+
+// ── Slice S7 (rulings R-S7-1, R-S7-5): Shadow, moving — call by call ─────────
+//
+// commandCenterHub.mount.guard.test.js allows ShadowCanvas.jsx five PATTERNS (a frame request, an observer, a listener,
+// a timeout, an effect); a pattern allowed once is allowed any number of times. This pins what the canvas actually
+// DOES, from the parsed source: every frame it requests and cancels, the one observer it builds and disconnects, the one
+// listener it adds and removes (by event name), the one timeout it sets and clears, and its three effects — the
+// canvas's lifetime, the pause that follows the ceremony, and the response. A fourth effect, a second listener, a
+// timer in the loop or a second observer fails here until a ruling says it may. The pure modules hold none.
+const SHADOW_CANVAS = [
+  'cancelAnimationFrame',
+  'clearTimeout',
+  "document.addEventListener 'visibilitychange'",
+  "document.removeEventListener 'visibilitychange'",
+  'new IntersectionObserver',
+  'observer.disconnect',
+  'observer.observe',
+  'requestAnimationFrame',
+  'requestAnimationFrame',
+  'setTimeout',
+  'useEffect',
+  'useEffect',
+  'useEffect',
+];
+const SHADOW_PURE = ['shadowCanvas.js', 'shadowBloom.js', 'shadowStatus.js'];
+
+describe('S7: Shadow\'s canvas holds exactly the activity it was allowed (R-S7-1, R-S7-5)', () => {
+  it('ShadowCanvas.jsx: three effects, one frame loop (two requests, one cancel), one observer, one visibility listener (removed again) and one timeout (cleared)', () => {
+    expect(activityOf(readShell('ShadowCanvas.jsx'), parseJsx)).toEqual(SHADOW_CANVAS);
+  });
+
+  it('the pure modules (the drawing and its effects state, the response rule, the status words) hold no activity at all', () => {
+    for (const file of SHADOW_PURE) expect(activityOf(read(file)), file).toEqual([]);
+  });
+
+  it('the scan bites: each activity added to the canvas changes its list', () => {
+    const plants = {
+      'a second listener': "window.addEventListener('resize', () => {});",
+      'a keydown listener': "document.addEventListener('keydown', () => {});",
+      'a media-query listener': "mq.addEventListener('change', () => {});",
+      'a second observer': 'const second = new ResizeObserver(() => {});',
+      'an observer built elsewhere': 'const io = new IntersectionObserver(() => {});',
+      'a second timer': 'setTimeout(() => {}, 1000);',
+      'an interval': 'setInterval(() => {}, 1000);',
+      'a third frame request': 'requestAnimationFrame(() => {});',
+      'a fourth effect': 'useEffect(() => {}, []);',
+      'a layout effect': 'useLayoutEffect(() => {}, []);',
+      'a read': 'getDocs(q);',
+    };
+    for (const [what, snippet] of Object.entries(plants)) {
+      expect(activityOf(`${readShell('ShadowCanvas.jsx')}\n${snippet}\n`, parseJsx), `ShadowCanvas.jsx: ${what}`).not.toEqual(SHADOW_CANVAS);
+      for (const file of SHADOW_PURE) expect(activityOf(`${read(file)}\n${snippet}\n`), `${file}: ${what}`).not.toEqual([]);
+    }
   });
 });

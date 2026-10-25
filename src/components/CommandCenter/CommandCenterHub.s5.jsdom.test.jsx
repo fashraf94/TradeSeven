@@ -36,7 +36,8 @@ vi.mock('./hub/useHubReaders', () => ({ default: (hub) => ({ sections: {}, actio
 vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists }));
 vi.mock('../../services/agentService', () => ({ equipWatchlist, unequipWatchlist }));
 vi.mock('../../hooks/useMasteryProfile', () => ({ default: (userId) => { mastery.askedFor.push(userId); return mastery.profile; } }));
-vi.mock('./hub/hubFlags', () => ({ hubFlags: () => flags.current }));
+// Slice S7: a partial mock — the real module's other exports (PHONE_SHADOW, ruling R-S7-6) stay, only hubFlags() is stubbed.
+vi.mock('./hub/hubFlags', async (importOriginal) => ({ ...(await importOriginal()), hubFlags: () => flags.current }));
 vi.mock('../../utils/equipSlots', () => ({ getEquipSlots: () => slots.current }));
 vi.mock('../Dashboard/AgentRecordSheet', async () => ({ default: (await import('./__fixtures__/legacySheetStubs')).AgentRecordSheetStub }));
 vi.mock('../Dashboard/ArchetypePicker', async () => ({ default: (await import('./__fixtures__/legacySheetStubs')).ArchetypePickerStub }));

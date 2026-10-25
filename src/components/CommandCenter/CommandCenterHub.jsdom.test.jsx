@@ -32,6 +32,7 @@ import { HUB_COPY as COPY } from './hub/hubCopy';
 import { HUB_LAYERS } from './hub/hubStyle';
 import { HUB_LAYOUT_FIXTURES, HUB_LAYOUT_FIXTURE_NAMES, HUB_TEST_SHELLS, SIDEBAR } from './__fixtures__/hubLayoutFixtures';
 import { byRole, byText, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav, press } from './__fixtures__/hubTestKit';
+import { installFakeCanvas } from './__fixtures__/shadowCanvasKit';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -434,8 +435,11 @@ describe('S1 header and status', () => {
     expect(n.host.textContent).not.toMatch(/Tester/);
   });
 
+  // Slice S7 (R-S7-7, founder-approved edit): the idle words are said once the owned live read is KNOWN — a fixture whose
+  // games have resolved, none of them live. With the default loading sections the line says "Idle" and claims nothing
+  // (CommandCenterHub.s7.jsdom.test.jsx pins that row).
   it('the status line is the one live region and says the idle words', () => {
-    const { host } = renderHub({ site: 'desktop', hubWidth: 1216 });
+    const { host } = renderHub({ site: 'desktop', hubWidth: 1216, sections: fixture('returning') });
     const live = host.querySelectorAll('[aria-live]');
     expect(live).toHaveLength(1);
     expect(live[0].getAttribute('role')).toBe('status');
@@ -443,10 +447,19 @@ describe('S1 header and status', () => {
     expect(live[0].textContent).toBe(COPY.shadow.statusIdle);
   });
 
+  // Slice S7 (R-S7-4, founder-approved edit): Shadow reads "processing" only while it is DRAWING processing, so the row gives
+  // jsdom the canvas it lacks; without one Shadow is the still and reads "still" (pinned in CommandCenterHub.s7.jsdom.test.jsx).
   it('a submitting deployment (fixture) turns the status line and Shadow\'s label to processing', () => {
-    const { host } = renderHub({ site: 'desktop', hubWidth: 1216, sections: { ...fixture('returning'), deploy: { displayState: 'submitting', canStart: false } } });
-    expect(host.querySelector('[data-hub-status]').textContent).toBe(COPY.shadow.statusSubmitting);
-    expect(host.querySelector('[data-shadow-box]').getAttribute('data-shadow-status')).toBe('processing');
+    const canvas = installFakeCanvas();
+    try {
+      const m = renderHub({ site: 'desktop', hubWidth: 1216, sections: { ...fixture('returning'), deploy: { displayState: 'submitting', canStart: false } } });
+      expect(m.host.querySelector('[data-hub-status]').textContent).toBe(COPY.shadow.statusSubmitting);
+      expect(m.host.querySelector('[data-shadow-box]').getAttribute('data-shadow-status')).toBe('processing');
+      m.unmount();
+      mounted = mounted.filter((x) => x !== m);
+    } finally {
+      canvas.restore();
+    }
   });
 
   it('Shadow draws low on the phone (200 px, 196 under 375) and mid elsewhere (340 desktop, 260 tablet and stacked)', () => {
