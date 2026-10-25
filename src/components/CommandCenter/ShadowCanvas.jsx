@@ -46,6 +46,24 @@ import ShadowStill from './ShadowStill';
 /** The reduced-motion response: the still's brief lift, the design's 420 ms. */
 export const FLASH_MS = 420;
 
+// SMOKE ONLY (claude/command-center-hub-s7-smoke, NEVER MERGE): the readout's numbers. One sample per frame, the last 60 s.
+const SMOKE_WINDOW_MS = 60000;
+function smokeStats(samples, now) {
+  while (samples.length && now - samples[0].t > SMOKE_WINDOW_MS) samples.shift();
+  const n = samples.length;
+  if (n < 2) return 'collecting…';
+  const span = (samples[n - 1].t - samples[0].t) / 1000;
+  const costs = samples.map((x) => x.cost).sort((a, b) => a - b);
+  const avg = costs.reduce((a, b) => a + b, 0) / n;
+  const p95 = costs[Math.min(n - 1, Math.floor(n * 0.95))];
+  let late = 0;
+  for (let i = 1; i < n; i += 1) if (samples[i].t - samples[i - 1].t > 25) late += 1;
+  const last1 = samples.filter((x) => now - x.t <= 1000);
+  const win = Math.min(span, SMOKE_WINDOW_MS / 1000).toFixed(0);
+  return 'fps ' + last1.length + ' · cost ' + (last1.reduce((a, x) => a + x.cost, 0) / Math.max(1, last1.length)).toFixed(2) + ' ms\n'
+    + win + ' s: ' + (n / span).toFixed(1) + ' fps · avg ' + avg.toFixed(2) + ' · p95 ' + p95.toFixed(2) + ' ms · late ' + ((late / (n - 1)) * 100).toFixed(1) + '%';
+}
+
 /** The state word the still carries on every fallback route. */
 const STILL = 'still';
 
@@ -108,6 +126,12 @@ export default function ShadowCanvas({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const fx = fxRef.current;
     fitFx(fx, rig.strands.length);
+    const readout = document.createElement('div');
+    readout.setAttribute('data-shadow-readout', '');
+    readout.style.cssText = 'position:fixed;top:4px;right:4px;z-index:2147483647;padding:3px 6px;border-radius:6px;background:rgba(0,0,0,.72);color:#fff;font:10px/1.35 ui-monospace,monospace;white-space:pre;pointer-events:none';
+    document.body.appendChild(readout);
+    const samples = [];
+    let shownAt = 0;
 
     let raf = 0;
     let last = 0;
@@ -128,8 +152,11 @@ export default function ShadowCanvas({
       const P = liveRef.current;
       const speed = P.processing ? 1.6 : 1;
       clockRef.current += dt * speed;
+      const c0 = performance.now();
       stepFx(fx, { t: clockRef.current, dt, speed, processing: P.processing, sel: P.sel, strands: rig.strands }, P.random);
       drawNow(clockRef.current);
+      samples.push({ t: now, cost: performance.now() - c0 });
+      if (now - shownAt > 500) { shownAt = now; readout.textContent = smokeStats(samples, now); }
       raf = requestAnimationFrame(frame);
     };
     const start = () => {
@@ -164,6 +191,7 @@ export default function ShadowCanvas({
       stop();
       if (observer) observer.disconnect();
       document.removeEventListener('visibilitychange', sync);
+      readout.remove();
       syncRef.current = null;
     };
   }, [size, tier, still]);
