@@ -106,6 +106,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const m of mounted) m.unmount();
   mounted = [];
+  sessionStorage.clear();
   removeNav();
   layout.restore();
   vi.useRealTimers();
@@ -123,6 +124,10 @@ const card = () => document.querySelector('[data-hub-deploy]');
 const rowsOf = (scope) => [...scope.querySelectorAll('[data-hub-game-row]')].map((el) => el.closest('button').getAttribute('aria-label'));
 const overview = () => document.querySelector('[data-hub-phone-panel="overview"]');
 const retryButtons = (scope) => byRole(scope, 'button', COPY.games.retry);
+// Slice S4: a live game on the phone Overview is the next action's card and is not listed twice (S1 review L1-2). The rows below
+// are about the Overview's own live ROWS, so they set that action aside first (Later's store, hub/useHubLater.js); the card
+// itself is pinned in CommandCenterHub.s4.jsdom.test.jsx.
+const setAsideNextAction = (...keys) => sessionStorage.setItem(`cc.later.${UID}`, JSON.stringify(keys));
 
 describe('Games from the readers (R-S3-8)', () => {
   it('desktop: the live rows in the gate\'s order, then two completed rows with their outcome words and review lines', () => {
@@ -194,6 +199,7 @@ describe('Games from the readers (R-S3-8)', () => {
   ])('the live rows are the poll\'s whatever the window\'s status — %s (review T0-1)', (_, windowState, note) => {
     r.window = windowState();
     const hub = hubOf({ activeBattles: [BB] });
+    setAsideNextAction(`openGame:${BB.id}`);
     render('mobile', hub);
     expect(strip().getAttribute('data-hub-strip')).toBe('blocked');
     expect(strip().querySelector('[data-hub-strip-line="1"]').textContent).toMatch(/^Live · /);
@@ -569,6 +575,8 @@ describe('every row opens what it names (S3 review T5-7)', () => {
 
   it('the phone Overview: a live row opens its game; a completed row opens its game and its battle tape', () => {
     const hub = hubOf({ activeBattles: [BB] });
+    // The live game, and every ready review, so the Overview lists its rows as it did before there was an action to draw.
+    setAsideNextAction(`openGame:${BB.id}`, ...TEN.map((d) => `review:${d.id}`));
     render('mobile', hub);
     const [liveRow] = rowButtons(overview(), 'live');
     click(liveRow);

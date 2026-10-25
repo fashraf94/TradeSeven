@@ -214,14 +214,15 @@ describe('the rate cap belongs to the owner and epoch, not to one mount (spec §
     await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
     expect(calls.queries, 'no second query inside the window').toEqual([0]);
     expect(last()).toMatchObject({ status: 'ready', carried: true, generation: 1, lastSuccessfulAt: T0, nextAttemptAt: T0 + 120 * S, checking: false });
-    // Ready caches do not survive the unmount: each kept row's review is queued for the slot, no check started.
-    expect(Object.values(last().reviews).map((r) => r.state)).toEqual(Array(10).fill('queued'));
+    // Amendment B (Q-S3-10): a kept row's READY review answer survives the unmount, so it is ready at once and no check
+    // starts for it. (Every other state is queued for the slot: the scheduler rows pin that.)
+    expect(Object.values(last().reviews).map((r) => r.state)).toEqual(Array(10).fill('ready'));
     expect(calls.checks).toHaveLength(10);
     await act(async () => { await vi.advanceTimersByTimeAsync(88.9 * S); });
     expect(calls.queries).toEqual([0]);
     await act(async () => { await vi.advanceTimersByTimeAsync(0.2 * S); });
     expect(calls.queries, 'one queued cycle at the permitted time').toEqual([0, 120 * S]);
-    expect(calls.checks).toHaveLength(20);
+    expect(calls.checks, 'a kept ready answer is not asked again').toHaveLength(10);
     // The read ends the carry; the generation goes on from the kept one.
     expect(last()).toMatchObject({ status: 'ready', carried: false, generation: 2, lastSuccessfulAt: T0 + 120 * S });
   });
@@ -246,6 +247,8 @@ describe('the rate cap belongs to the owner and epoch, not to one mount (spec §
     expect(last()).toMatchObject({ status: 'ready' });
   });
 
+  // Amendment B (Q-S3-9): the slot is still spent; the first read that succeeds after the unmount is now KEPT, so the return shows
+  // it "as of" its read instead of no rows (the scheduler and hook rows of the amendment pin the bounds).
   it('a quick bounce — unmounted while its first read is in flight — still spends the slot', async () => {
     let release;
     const s = { ...seams(), queryCompleted: () => { calls.queries.push(Date.now() - T0); return new Promise((r) => { release = r; }); } };
@@ -258,7 +261,8 @@ describe('the rate cap belongs to the owner and epoch, not to one mount (spec §
     render(<SeamProbe seams={s} />);
     await act(async () => { await vi.advanceTimersByTimeAsync(1 * S); });
     expect(calls.queries).toEqual([0]);
-    expect(last()).toMatchObject({ status: 'loading', battles: null, nextAttemptAt: T0 + 120 * S });
+    expect(last()).toMatchObject({ status: 'ready', carried: true, generation: 1, nextAttemptAt: T0 + 120 * S });
+    expect(last().battles).toHaveLength(10);
   });
 });
 

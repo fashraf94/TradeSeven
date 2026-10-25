@@ -24,6 +24,9 @@ vi.mock('../../../utils/reviewAvailability', () => ({
   getReviewAvailability: vi.fn(async () => ({ ready: true, target: 'filmRoom', availability: 'ready' })),
 }));
 vi.mock('../../../utils/marketSchedule', () => ({ getMarketState: () => ({ state: 'OPEN', isOpen: true }) }));
+// Slice S4: the readers also run the brief's hook (hub/useHubBrief.js), whose module reads Firebase's config at load. These rows are
+// about the window and its reviews, so the brief answers nothing (CommandCenterHub.s4.jsdom.test.jsx drives it).
+vi.mock('../../../hooks/useDailyRegimeBrief', () => ({ default: function useDailyRegimeBrief() { return { dailyBrief: null, forDate: null, generatedAt: null, isStale: false, loading: true, error: null, refetch: () => {} }; } }));
 
 import useHubReaders from './useHubReaders';
 import { resetHubLedgersForTests } from './useHubCompletedBattles';

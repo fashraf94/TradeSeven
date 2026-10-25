@@ -128,7 +128,7 @@ function PhoneOverview({ sections, actions }) {
         </Row>
       )}
       <ActivitySection activity={activity} limit={PHONE_ACTIVITY_LIMIT} onOpen={actions.openActivity} onAll={actions.openAllActivity} />
-      <BriefSection brief={brief} />
+      <BriefSection brief={brief} onRetry={actions.retryBrief} />
     </div>
   );
 }

@@ -252,13 +252,18 @@ describe('S1 review fixes — design fidelity (L1)', () => {
     expect(rows.some((n) => /Diversifier/.test(n))).toBe(true);
   });
 
-  it('L1-3: the phone Overview links to all activity when it shows fewer rows than it holds (disabled until S4)', () => {
+  it('L1-3: the phone Overview links to all activity when it shows fewer rows than it holds (S4 wires it: it opens the activity sheet)', () => {
     renderHub({ site: 'mobile', hubWidth: 390, sections: fixture('long') });
     const [all] = byRole(document.querySelector('[data-hub="shell"]'), 'button', COPY.activity.all(10));
-    expect(all.disabled).toBe(true);
+    expect(all.disabled).toBe(false);
     unmountAll();
     renderHub({ site: 'desktop', hubWidth: 1216, sections: fixture('long') });
-    expect(byRole(document.querySelector('[data-hub="shell"]'), 'button', COPY.activity.all(10))).toHaveLength(0);
+    // Founder ruling Q-S4-8 (Oct 24, 2026): the mock-up fixes no desktop count, so the side column shows five rows and
+    // "All activity · N" holds the rest (this row said the desktop lists the whole fixture and links nothing).
+    const section = document.querySelector('[data-hub-section="activity"]');
+    expect(section.querySelectorAll('[data-hub-activity-row]')).toHaveLength(5);
+    const [deskAll] = byRole(section, 'button', COPY.activity.all(10));
+    expect(deskAll.disabled).toBe(false);
   });
 
   it('L1-4: the Forge line keeps the design\'s words: the locked variant in a live game, and its tail', () => {

@@ -5,6 +5,7 @@
 //
 //   'history'     the hub's own HubSheet, which registers itself with the
 //                 overlay stack when it mounts;
+//   'activity'    the same, for "All activity · N" (slice S4);
 //   'record' 'archetype' 'watchlist' 'traits'
 //                 the shipped sheets (AgentRecordSheet, ArchetypePicker,
 //                 EquipSheet, TraitsSheet), reused unchanged. They manage
@@ -32,6 +33,7 @@ import { useHubOverlays } from './HubOverlays';
 
 export const HUB_SHEETS = Object.freeze({
   HISTORY: 'history',
+  ACTIVITY: 'activity',
   RECORD: 'record',
   ARCHETYPE: 'archetype',
   WATCHLIST: 'watchlist',

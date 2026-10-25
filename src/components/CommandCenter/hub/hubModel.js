@@ -44,8 +44,13 @@
 //               S3 merge, N-S5-6), `summary` the root's one-line
 //               loadout (the area control's and the stage's words)
 //   research    { status }                                             §8.1 (S6)
-//   activity    { status, rows: [{ id, kind, text, sub, at }] }        §8.2 (S4)
-//   brief       { status, caption?, body? }                            §8.3 (S4)
+//   activity    { status: 'loading' | 'error' | 'ready', rows: [{ id, kind,
+//                 text, sub, at, ms, battleId? }] }                    §8.2 (S4)
+//               hub/activityRows.js: a projection of the owner's records, newest
+//               first; `battleId` on a game's row (it opens that game)
+//   brief       { status: 'loading' | 'error' | 'missing' | 'ready',
+//                 caption?, body? }                                     §8.3 (S4)
+//               hub/useHubBrief.js briefSectionOf
 //   career      { status: 'loading' | 'ready' | 'unavailable', record? } §7 (S5)
 //               record is `${wins}W-${losses}L` as stored, draws excluded;
 //               absent or malformed operands read `unavailable`
@@ -174,6 +179,12 @@ export function liveGamesOf(games) {
 export const DESKTOP_COMPLETED_LIMIT = 2;
 /** The phone Overview shows a short activity list (the design's limit 3). */
 export const PHONE_ACTIVITY_LIMIT = 3;
+/**
+ * The side column's activity list: five rows, and "All activity · N" opens the rest (slice S4; founder ruling Q-S4-8, Oct 24, 2026).
+ * The committed mock-up fixes no desktop count — its side column renders the whole fixture list (ff-side.jsx ActivitySection with no
+ * `limit`; only the phone's Overview passes one, 3) — so the ruling's default stands.
+ */
+export const DESKTOP_ACTIVITY_LIMIT = 5;
 /** The phone Overview shows at most three completed rows (spec §8.2; slice S3). */
 export const PHONE_COMPLETED_LIMIT = 3;
 /** The watchlist card draws this many names, then "+N more": a list can hold far more than a card can read. */

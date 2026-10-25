@@ -7,7 +7,13 @@
 // fixtures show the card.
 //
 // A first-deployment candidate carries the hold control (spec §5.5); any
-// other carries its own button. With no handler each is disabled.
+// other carries its own button. With no handler each is disabled: the hold has
+// no handler but the provider's wiring.
+//
+// Slice S4 (ruling R-S4-8): the candidate comes from hub/nextAction.js. `onAct`
+// opens a game or a review; the connected hub gives it none for the first
+// deployment, whose hold is the deploy provider's alone (slice S2b: `holdWiring`
+// / `holding`, below), so opening a game can never start a deployment.
 
 import React from 'react';
 import { deployDisplay } from '../hub/deployDisplay';
@@ -45,11 +51,11 @@ export default function NextActionCard({ nextAction, deploy, onAct, onLater, hol
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         {isDeploy ? (
-          <HubHold full canStart={deployDisplay(deploy).canStart} label={COPY.deploy.hold} onDeploy={onAct} wiring={holdWiring} holding={holding} style={{ flex: 1 }} />
+          <HubHold full canStart={deployDisplay(deploy).canStart} label={COPY.deploy.hold} wiring={holdWiring} holding={holding} style={{ flex: 1 }} />
         ) : (
           <HubButton kind="primary" icon={CTA_ICON[candidate.key]} onPress={onAct} style={{ flex: 1 }}>{candidate.cta}</HubButton>
         )}
-        <HubButton kind="ghost" onPress={onLater}>{COPY.nextAction.later}</HubButton>
+        <HubButton kind="ghost" onPress={onLater} data-hub-later="">{COPY.nextAction.later}</HubButton>
       </div>
     </section>
   );

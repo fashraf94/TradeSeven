@@ -476,6 +476,30 @@
     "src/components/CommandCenter/hubFallbackSignal.jsx": {
       "count": 0,
       "authority": "Command Center hub S5 (prompt \u00a73; founder ruling R-S1-2) \u2014 the owner's Loadout, the retained entry points, the overlay stack and the App-side predicates, with the test stand-ins for the shipped sheets: no motion at all, so zero raw transition literals from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/ActivitySheet.jsx": {
+      "count": 0,
+      "authority": "Command Center hub S4 (rulings R-S4-1 \u2026 R-S4-5; founder ruling R-S1-2) \u2014 Activity, the next action and its Later, the brief and the activity sheet: no colour of its own and no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/hub/activityRows.js": {
+      "count": 0,
+      "authority": "Command Center hub S4 (rulings R-S4-1 \u2026 R-S4-5; founder ruling R-S1-2) \u2014 Activity, the next action and its Later, the brief and the activity sheet: no colour of its own and no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/hub/activityDates.js": {
+      "count": 0,
+      "authority": "Command Center hub S4 (rulings R-S4-1 \u2026 R-S4-5; founder ruling R-S1-2) \u2014 Activity, the next action and its Later, the brief and the activity sheet: no colour of its own and no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/hub/nextAction.js": {
+      "count": 0,
+      "authority": "Command Center hub S4 (rulings R-S4-1 \u2026 R-S4-5; founder ruling R-S1-2) \u2014 Activity, the next action and its Later, the brief and the activity sheet: no colour of its own and no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/hub/useHubBrief.js": {
+      "count": 0,
+      "authority": "Command Center hub S4 (rulings R-S4-1 \u2026 R-S4-5; founder ruling R-S1-2) \u2014 Activity, the next action and its Later, the brief and the activity sheet: no colour of its own and no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
+    },
+    "src/components/CommandCenter/hub/useHubLater.js": {
+      "count": 0,
+      "authority": "Command Center hub S4 (rulings R-S4-1 \u2026 R-S4-5; founder ruling R-S1-2) \u2014 Activity, the next action and its Later, the brief and the activity sheet: no colour of its own and no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
     }
   }
 }

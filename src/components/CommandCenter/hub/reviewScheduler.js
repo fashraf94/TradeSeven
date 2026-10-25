@@ -40,7 +40,10 @@
 //                 slots; nothing starts while hidden; coming back runs at most
 //                 one cycle. dispose() (unmount, owner change) clears
 //                 everything but the rate ledger, and a late answer of any
-//                 kind is ignored. The ledger may be handed in: the hook keeps
+//                 kind is ignored — but one: the answer of a FIRST read that
+//                 was out at dispose goes to `onLate` once (Amendment B,
+//                 Q-S3-9), inside the query's own deadlines. The ledger may be
+//                 handed in: the hook keeps
 //                 one per owner and auth epoch, so a remount (a return from the
 //                 Film Room, a site switch) spends the same budget (§6: "Every
 //                 trigger shares this budget"; review T0-3).
@@ -50,9 +53,12 @@
 //                 — and hands it in as `retained`. The scheduler starts from it
 //                 (`carried: true`, "as of" its time) and refreshes it at the
 //                 next permitted slot; its first successful read ends the
-//                 carry. Ready caches, unfinished queues, dirty work and result
-//                 consumers still clear on unmount, so each carried row's review
-//                 is an unstarted row. An owner or epoch change starts empty.
+//                 carry. Unfinished queues, dirty work and result consumers
+//                 still clear on unmount, so a carried row's review is an
+//                 unstarted row — except a row whose review was READY: that
+//                 answer is kept with the window and handed in as
+//                 `retained.ready` (Amendment B, Q-S3-10), so it opens at once.
+//                 An owner or epoch change starts empty.
 //
 // Only getReviewAvailability's three fields are read from a check
 // (`ready`, `target`, `availability`); the battle documents are handed over
@@ -86,6 +92,8 @@ export const REVIEW_TRIGGERS = Object.freeze({
   LIVE_LEFT: 'liveLeft',
   FOCUS: 'focus',
   VISIBLE: 'visible',
+  /** Slice S4 (founder ruling Q-S3-6): History's Refresh. An explicit trigger, so it shares the rolling cap with the rest (§6). */
+  HISTORY: 'history',
 });
 
 const AVAILABILITY = new Set(['ready', 'pending', 'unavailable']);
@@ -110,14 +118,37 @@ function ownedWindow(docs, ownerUid) {
 }
 
 /**
+ * The ready review answers a kept window brings back (Amendment B, Q-S3-10): for a row of THIS window, the helper's own
+ * answer, if it is a real one and says ready. Pending, unavailable, timed-out and queued answers are not kept: they are
+ * asked again, as before. Anything malformed is dropped.
+ */
+function keptReadyAnswers(given, battles) {
+  const kept = {};
+  if (!given || typeof given !== 'object') return kept;
+  for (const b of battles) {
+    const answer = helperAnswer(given[b.id]);
+    if (answer && answer.availability === 'ready') kept[b.id] = answer;
+  }
+  return kept;
+}
+
+/**
  * A kept window, as a scheduler for `owner` may start from it (Q-S3-2, A+): this owner's documents, a positive whole
- * generation and a real as-of time — or nothing, so a malformed hand-in starts empty rather than shows a guess.
+ * generation and a real as-of time — or nothing, so a malformed hand-in starts empty rather than shows a guess. With them,
+ * the ready review answers of its rows (Amendment B), when it has any.
  */
 export function carriedWindow(owner, retained) {
   if (!owner || !retained || typeof retained !== 'object' || !Array.isArray(retained.battles)) return null;
   if (!Number.isSafeInteger(retained.generation) || retained.generation < 1) return null;
   if (!Number.isFinite(retained.lastSuccessfulAt)) return null;
-  return Object.freeze({ battles: ownedWindow(retained.battles, owner.uid), generation: retained.generation, lastSuccessfulAt: retained.lastSuccessfulAt });
+  const battles = ownedWindow(retained.battles, owner.uid);
+  const ready = keptReadyAnswers(retained.ready, battles);
+  return Object.freeze({
+    battles,
+    generation: retained.generation,
+    lastSuccessfulAt: retained.lastSuccessfulAt,
+    ...(Object.keys(ready).length ? { ready: Object.freeze(ready) } : {}),
+  });
 }
 
 /**
@@ -140,7 +171,13 @@ export function carriedState(owner, retained) {
     inFlight: 0,
     nextAttemptAt: null,
     carried: true,
-    reviews: Object.freeze(Object.fromEntries(kept.battles.map((b) => [b.id, Object.freeze({ state: REVIEW_STATES.QUEUED, result: null, nextAt: null })]))),
+    // A kept ready answer is ready at once (Amendment B): "Open battle tape" works on the first frame of a return.
+    reviews: Object.freeze(Object.fromEntries(kept.battles.map((b) => {
+      const answer = kept.ready?.[b.id];
+      return [b.id, Object.freeze(answer
+        ? { state: REVIEW_STATES.READY, result: answer, nextAt: null }
+        : { state: REVIEW_STATES.QUEUED, result: null, nextAt: null })];
+    }))),
   });
 }
 
@@ -164,11 +201,15 @@ class LocalTimeout extends Error {
  * @param {boolean} [p.visible]
  * @param {{ queries: number[], helpers: number[] }} [p.ledger]  the rolling start times, when they outlive this
  *                                          scheduler (the owner's and epoch's, kept by the hook); else its own
- * @param {{ battles: object[], generation: number, lastSuccessfulAt: number }} [p.retained]  the owner's and epoch's
- *                                          last successful window, kept by the hook across a remount (Q-S3-2, A+)
+ * @param {{ battles: object[], generation: number, lastSuccessfulAt: number, ready?: object }} [p.retained]  the owner's and
+ *                                          epoch's last successful window, kept by the hook across a remount (Q-S3-2, A+),
+ *                                          with the ready review answers of its rows (Amendment B)
+ * @param {(window: { battles: object[], generation: number, lastSuccessfulAt: number }) => void} [p.onLate]  Amendment B: a
+ *                                          FIRST read that succeeds after dispose() is handed here, once, for the hook to keep
+ *                                          for this owner and epoch (never for another: the hook keys it)
  */
 export function createReviewScheduler({
-  owner, max = 10, clock, queryCompleted, checkReview, onChange, visible = true, budget = REVIEW_BUDGET, ledger = null, retained = null,
+  owner, max = 10, clock, queryCompleted, checkReview, onChange, visible = true, budget = REVIEW_BUDGET, ledger = null, retained = null, onLate = null,
 }) {
   const { setTimer, clearTimer } = clock;
   const starts = ledger || { queries: [], helpers: [] };
@@ -180,6 +221,7 @@ export function createReviewScheduler({
   const results = new Map();      // battle id → the last real helper answer
   const unfinished = new Map();   // battle id → { cause: started|unstarted|timeout|error|interrupted, lastStartAt }
   let disposed = false;
+  let lateRead = null;            // dispose() left a FIRST read out: { id, startedAt } — its one answer may still be kept (Amendment B)
   let isVisible = visible !== false;
   let battles = null;
   let generation = 0;
@@ -204,8 +246,13 @@ export function createReviewScheduler({
     lastSuccessfulAt = kept.lastSuccessfulAt;
     status = 'ready';
     carried = true;
-    // Ready caches did not survive the unmount: every carried row's review is unstarted in this mount.
-    for (const b of battles) unfinished.set(b.id, { cause: 'unstarted', lastStartAt: null });
+    // Amendment B (Q-S3-10): a kept ready answer is this mount's ready cache; every other carried row's review (pending,
+    // unavailable, timed out, queued) did not survive the unmount and is unstarted in this mount.
+    for (const b of battles) {
+      const answer = kept.ready?.[b.id];
+      if (answer) results.set(b.id, answer);
+      else unfinished.set(b.id, { cause: 'unstarted', lastStartAt: null });
+    }
   }
 
   /**
@@ -341,7 +388,8 @@ export function createReviewScheduler({
 
   function startCycle(t) {
     const id = ++seq;
-    const c = { id, phase: 'query', startedAt: t, deadlineAt: t + budget.cycleDeadlineMs, queue: [], inflight: new Map(), queryTimer: null, cycleTimer: null };
+    // `firstRead`: this scheduler holds no window yet (a kept one counts), so this query's answer would be the owner's first.
+    const c = { id, phase: 'query', firstRead: battles === null, startedAt: t, deadlineAt: t + budget.cycleDeadlineMs, queue: [], inflight: new Map(), queryTimer: null, cycleTimer: null };
     cycle = c;
     record(starts.queries, t);
     lastCycleAt = t;
@@ -362,7 +410,27 @@ export function createReviewScheduler({
   /** ...and so does an operation's own eight seconds: an answer past them, delivered before its timer's callback has run, is late (review T3-6). */
   const late = (startedAt, limit) => now() - startedAt >= limit;
 
+  /**
+   * Amendment B (founder ruling Q-S3-9): the answer of a FIRST read that was out when the hub unmounted. It is kept only if
+   * a mounted scheduler would have accepted it — a list, inside the query's own 8 s and the cycle's 42 s — and only once; the
+   * hook files it under the owner and epoch it was started for, and nowhere else.
+   */
+  function lateDone(id, docs) {
+    const read = lateRead;
+    // An earlier cycle's answer (its query outlived its local deadline) is not this read's: it must not spend the slot.
+    if (!read || read.id !== id) return;
+    lateRead = null;
+    if (!Array.isArray(docs) || typeof onLate !== 'function') return;
+    const elapsed = clock.now() - read.startedAt;
+    if (elapsed >= budget.queryDeadlineMs || elapsed >= budget.cycleDeadlineMs) return;
+    onLate(Object.freeze({ battles: ownedWindow(docs, owner.uid), generation: generation + 1, lastSuccessfulAt: clock.now() }));
+  }
+
   function queryDone(id, docs) {
+    if (disposed) {
+      lateDone(id, docs);
+      return;
+    }
     if (!current(id) || cycle.phase !== 'query') return;
     const c = cycle;
     if (overdue(c)) {
@@ -590,6 +658,7 @@ export function createReviewScheduler({
   function dispose() {
     if (disposed) return;
     disposed = true;
+    if (cycle && cycle.phase === 'query' && cycle.firstRead && typeof onLate === 'function') lateRead = { id: cycle.id, startedAt: cycle.startedAt };
     if (queued && queued.timer != null) clearTimer(queued.timer);
     if (cycle) {
       clearTimer(cycle.queryTimer);
