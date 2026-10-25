@@ -263,7 +263,7 @@ describe('the Research panel, one row per state of spec §8.1\'s table (ruling R
   });
 
   it('a current idea: the exact statement, the Forge\'s status word, the version, the time-frame, the recorded times, "1 idea on {list}"', async () => {
-    const statement = 'Semis lead for ten sessions.\nWatch NVDA first.';
+    const statement = '  Semis lead for ten sessions.\nWatch NVDA first.  ';
     svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { statement, status: 'ready' })] }));
     await phoneResearch();
     expect(statusOf()).toBe('ready');
@@ -403,6 +403,22 @@ describe('the idea labels follow the reader (ruling R-S6-4)', () => {
     unmountAll();
     svc.listHypothesisVersions.mockRejectedValue(new Error('offline'));
     expect(await label()).not.toMatch(/Universe|Plain watchlist/);
+  });
+
+  it('S5\'s `hub.ideaAccess` seam stands only while the reader holds nothing: the reader\'s answer wins over it, either way', async () => {
+    // The reader answered (admitted): a hub that says not_admitted does not override it.
+    await renderHub('mobile', { hub: hubOf({ ideaAccess: 'not_admitted' }), tab: COPY.phoneTabs.loadout });
+    expect(watchlistCard().textContent).toContain('Universe · 3 names');
+    unmountAll();
+    // The reader answered (not admitted): a hub that says admitted does not override it.
+    svc.listHypothesisVersions.mockRejectedValue(Object.assign(new Error('off'), { status: 404, code: 'disabled' }));
+    await renderHub('mobile', { hub: hubOf({ ideaAccess: 'admitted' }), tab: COPY.phoneTabs.loadout });
+    expect(watchlistCard().textContent).not.toMatch(/Universe|Plain watchlist/);
+    unmountAll();
+    // The reader holds nothing yet: the seam stands.
+    svc.listHypothesisVersions.mockReturnValue(new Promise(() => {}));
+    await renderHub('mobile', { hub: hubOf({ ideaAccess: 'admitted' }), tab: COPY.phoneTabs.loadout });
+    expect(watchlistCard().textContent).toContain('Universe · 3 names');
   });
 
   it('a refresh that fails does not take the label back: the answer held is the answer', async () => {

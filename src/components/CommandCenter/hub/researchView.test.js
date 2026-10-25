@@ -85,6 +85,8 @@ describe('the Research section, one row per state of spec §8.1\'s table', () =>
     expect(derive({ loadout: loadoutOf({ watchlist: card({ state: WATCHLIST_STATE.NONE, id: null }) }), read: readOf({ status: RESEARCH_READ.IDLE, listId: null, data: null }) }).status).toBe(RESEARCH_STATE.NO_LIST);
     expect(derive({ loadout: { status: LOADOUT_STATUS.NONE }, read: readOf({ status: RESEARCH_READ.IDLE, listId: null, data: null }) }).status).toBe(RESEARCH_STATE.NO_LIST);
     expect(COPY.research.noList).toBe('Equip a watchlist in the Forge to see its idea here');
+    // The card's absence is what says it, not the reader's list id alone.
+    expect(derive({ loadout: loadoutOf({ watchlist: card({ state: WATCHLIST_STATE.NONE, id: null }) }) }).status).toBe(RESEARCH_STATE.NO_LIST);
   });
 
   it('currentVersion 0 → "No idea yet on {list}": a successful no-idea state, whatever versions the response holds', () => {
@@ -100,6 +102,9 @@ describe('the Research section, one row per state of spec §8.1\'s table', () =>
     expect(section.status).toBe(RESEARCH_STATE.UNAVAILABLE);
     expect(section.idea).toBeUndefined();
     expect(pointerVersionOf(dataOf({ currentVersion: 5, versions: [V(4), V(6)] }))).toBeNull();
+    // A zero pointer is no pointer: not even a (malformed) version numbered 0 is its match.
+    expect(pointerVersionOf(dataOf({ currentVersion: 0, versions: [V(0), V(1)] }))).toBeNull();
+    expect(pointerVersionOf(null)).toBeNull();
   });
 
   it('a request error with nothing held → "Couldn\'t load your idea · Retry"', () => {
@@ -173,6 +178,10 @@ describe('a current idea (ruling R-S6-3)', () => {
   it('a version that holds no statement text draws an empty statement, not another version\'s', () => {
     const idea = derive({ read: readOf({ data: dataOf({ versions: [V(1, { statement: undefined })] }) }) }).idea;
     expect(idea.statement).toBe('');
+    // ...not the newest version's, when the pointer names an older one.
+    const older = derive({ read: readOf({ data: dataOf({ currentVersion: 1, versions: [V(2, { statement: 'The newest.' }), V(1, { statement: undefined })], versionCount: 2 }) }) }).idea;
+    expect(older.version).toBe(1);
+    expect(older.statement).toBe('');
   });
 
   it('the list\'s name falls back to words, never to a list that is not this one', () => {

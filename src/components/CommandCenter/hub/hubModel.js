@@ -43,7 +43,12 @@
 //               absence of the ranked agent, `error` its failed read (the
 //               S3 merge, N-S5-6), `summary` the root's one-line
 //               loadout (the area control's and the stage's words)
-//   research    { status }                                             §8.1 (S6)
+//   research    { status: 'gate_off' | 'disabled' | 'loading' | 'no_list' | 'no_idea' | 'unavailable' | 'error' | 'ready',   §8.1 (S6)
+//                 listName?, summary?, idea?: { version, status, statusLabel, statement, timeFrame, savedOn,
+//                 statusSince, reviewDue, research: [{ id, line, state }], count, honest }, stale?, asOf?, retryNotBefore? }
+//               hub/researchView.js deriveResearch, from the idea reader's held answer (hub/useHubResearch.js)
+//   deployingWith  { statement, count, version } | null             design note point 3 (S6)
+//               hub/researchView.js deployingWithOf: the newest version's statement and the Loadout card's own count
 //   activity    { status: 'loading' | 'error' | 'ready', rows: [{ id, kind,
 //                 text, sub, at, ms, battleId? }] }                    §8.2 (S4)
 //               hub/activityRows.js: a projection of the owner's records, newest

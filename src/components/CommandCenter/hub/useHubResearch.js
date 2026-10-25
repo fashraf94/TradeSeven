@@ -121,8 +121,10 @@ export default function useHubResearch({ auth, listId, gateOn }) {
 
   useEffect(() => {
     if (!key) {
-      // Nothing to ask about: a request still out belongs to no one now, and its answer is ignored.
+      // Nothing to ask about (the account, the list or the gate went): a request still out belongs to no one now and its answer
+      // is ignored, and what was held is cleared, so a list found again is read afresh and shows nothing of the one before.
       flight.current = { key: null, seq: flight.current.seq + 1, inflight: false, dirty: false };
+      setState(EMPTY);
       return;
     }
     start(key, id, false);

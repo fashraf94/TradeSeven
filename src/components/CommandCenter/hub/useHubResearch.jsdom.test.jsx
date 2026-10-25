@@ -29,11 +29,14 @@ function deferred() {
 let root;
 let host;
 let latest;
+// Every render's result, in order: what a render held is judged here, not only what the tree settled to.
+let renders;
 let props;
 let errorSpy;
 
 function Probe(p) {
   latest = useHubResearch(p);
+  renders.push({ key: latest.key, status: latest.status, data: latest.data });
   return null;
 }
 const render = (over = {}, { strict = false } = {}) => {
@@ -49,6 +52,7 @@ const settle = async () => { await act(async () => { await Promise.resolve(); aw
 
 beforeEach(() => {
   listHypothesisVersions.mockReset();
+  renders = [];
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -67,6 +71,7 @@ describe('what is read, and when', () => {
     await settle();
     expect(latest.status).toBe(RESEARCH_READ.GATE_OFF);
     expect(latest.key).toBeNull();
+    expect(latest.listId, 'the list is named only for a key that reads').toBeNull();
     latest.invalidate();
     latest.retry();
     await settle();
@@ -81,7 +86,7 @@ describe('what is read, and when', () => {
   });
 
   it('nothing to ask about: signed out, unresolved, or no equipped list → idle, no request', async () => {
-    for (const over of [{ auth: null }, { auth: { signedIn: false } }, { listId: null }, { listId: '' }, { auth: AUTH('') }]) {
+    for (const over of [{ auth: null }, { auth: { signedIn: false } }, { auth: { signedIn: false, uid: 'u-1', authEpoch: 1 } }, { listId: null }, { listId: '' }, { auth: AUTH('') }]) {
       render(over);
       await settle();
       expect(latest.status, JSON.stringify(over)).toBe(RESEARCH_READ.IDLE);
@@ -137,6 +142,10 @@ describe('what is read, and when', () => {
     held.resolve(BODY('wl-2'));
     await settle();
     expect(latest.data.versions[0].statement).toBe('Idea on wl-2');
+    // In EVERY render, not only the one the tree settled to: no render for wl-2 ever held wl-1's idea.
+    const forNew = renders.filter((r) => r.key === 'u-1:1:wl-2');
+    expect(forNew.length).toBeGreaterThan(0);
+    for (const r of forNew) expect(r.data === null || r.data.versions[0].statement === 'Idea on wl-2').toBe(true);
   });
 
   it('an owner or an epoch change clears and reads again; a late answer for the former owner is dropped', async () => {
@@ -170,11 +179,51 @@ describe('what is read, and when', () => {
     await settle();
     expect(latest).toMatchObject({ status: RESEARCH_READ.IDLE, data: null });
     // ...and coming back to the same list reads it afresh, not from the answer that was dropped.
-    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    const again = deferred();
+    listHypothesisVersions.mockReturnValueOnce(again.promise);
     rerender({ listId: 'wl-1' });
+    expect(latest).toMatchObject({ status: RESEARCH_READ.LOADING, data: null });
     await settle();
     expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    again.resolve(BODY('wl-1'));
+    await settle();
     expect(latest.status).toBe(RESEARCH_READ.READY);
+    // A list held, lost and found again is a list change both ways: what was held before the loss does not come back.
+    listHypothesisVersions.mockResolvedValue(BODY('wl-1'));
+    rerender({ listId: null });
+    const third = deferred();
+    listHypothesisVersions.mockReturnValueOnce(third.promise);
+    rerender({ listId: 'wl-1' });
+    expect(latest.data).toBeNull();
+    third.resolve(BODY('wl-1'));
+    await settle();
+  });
+
+  it('a late answer for a key that was left changes nothing for the key now asked: not its data, and not its one-request-in-flight', async () => {
+    const old = deferred();
+    const now = deferred();
+    listHypothesisVersions.mockReturnValueOnce(old.promise).mockReturnValueOnce(now.promise).mockResolvedValue(BODY('wl-2'));
+    render();
+    rerender({ listId: 'wl-2' });
+    // The old key fails late: wl-2\'s request must still count as in flight, so a return marks it dirty instead of starting a second.
+    old.reject(new Error('late'));
+    await settle();
+    act(() => latest.invalidate());
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    now.resolve(BODY('wl-2'));
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(3);
+    // ...and the same for a late success.
+    const old2 = deferred();
+    const now2 = deferred();
+    listHypothesisVersions.mockReset();
+    listHypothesisVersions.mockReturnValueOnce(old2.promise).mockReturnValueOnce(now2.promise).mockResolvedValue(BODY('wl-3'));
+    rerender({ listId: 'wl-9' });
+    rerender({ listId: 'wl-3' });
+    old2.resolve(BODY('wl-9'));
+    await settle();
+    act(() => latest.invalidate());
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
   });
 
   it('an answer that lands after the hub is gone does nothing', async () => {
@@ -186,6 +235,33 @@ describe('what is read, and when', () => {
     out.resolve(BODY('wl-1'));
     await settle();
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('...and it starts no follow-up read, even when a return marked the request dirty before the hub went', async () => {
+    const out = deferred();
+    listHypothesisVersions.mockReturnValueOnce(out.promise);
+    render();
+    act(() => latest.invalidate());
+    act(() => root.unmount());
+    root = createRoot(host);
+    out.resolve(BODY('wl-1'));
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(1);
+    // The same for a failure.
+    const failing = deferred();
+    listHypothesisVersions.mockReset();
+    listHypothesisVersions.mockReturnValueOnce(failing.promise);
+    render();
+    act(() => latest.invalidate());
+    act(() => root.unmount());
+    root = createRoot(host);
+    failing.reject(new Error('gone'));
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(1);
+  });
+
+  it('the wait before a second manual Retry is the spec\'s 30 seconds', () => {
+    expect(RETRY_COOLDOWN_MS).toBe(30_000);
   });
 });
 

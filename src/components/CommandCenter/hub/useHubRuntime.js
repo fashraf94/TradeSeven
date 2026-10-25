@@ -24,9 +24,14 @@
 //                         area (the Forge cannot open on a particular list) and `returnTo` is
 //                         not read at all, so no label may promise either.
 //   hub.ideaAccess        optional: 'admitted' | 'not_admitted' | 'unknown' (hub/selectors/loadout.js
-//                         IDEA_ACCESS). App passes none in S5, so it is 'unknown' and the watchlist card
-//                         reads the neutral "N names" for everyone (founder ruling Q-S5-4a); slice S6 supplies
-//                         the server's answer from its gated reader. Anything else reads as 'unknown'.
+//                         IDEA_ACCESS). App passes none, and the watchlist card reads the neutral "N names"
+//                         unless the hub is told the player is admitted (founder ruling Q-S5-4a). Since slice S6
+//                         (ruling R-S6-4) that answer comes from the hub's own idea reader (`researchRead`,
+//                         hub/useHubResearch.js through hub/researchView.js researchAccessOf) whenever the reader
+//                         holds one; this key stands only while it holds nothing (a frame, a suite with no
+//                         reader). Anything else reads as 'unknown'.
+//   researchRead          the idea reader's answer (slice S6): the Research section, "Deploying with", the idea
+//                         labels and Activity's idea rows are derived from it here, with the Loadout's list.
 //
 // With no `hub` (a test of the frames, the S1 fixtures) nothing here reads or
 // derives anything: the sections pass through untouched and every S5 action is

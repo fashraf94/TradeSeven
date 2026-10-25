@@ -64,6 +64,12 @@
 // strip's and the Deploy card's are (`holdWiring` / `holding`, slice S2b); the card
 // stays while its own hold charges (hub/nextAction.js firstDeploymentOffer).
 //
+// Slice S6 (rulings R-S6-1 … R-S6-7): the Research panel shows the equipped list's current idea from the existing list reader
+// (hub/useHubResearch.js, called in ConnectedHub beside the readers), with the Forge's Lists area as its only action; the same held
+// answer decides whether the watchlist card wears the idea-first labels, whether the Deploy card says "Deploying with", which
+// honest line the panel carries, and Activity's two idea rows (hub/researchView.js). Nothing is written. The first-deployment card
+// stays under an open sheet and through a failed refresh of an empty window (hub/nextAction.js).
+//
 // One tree for the three wide compositions. Desktop, tablet and stacked are
 // one CSS grid whose areas change with the composition; every part keeps its
 // place in the React tree (the stage and panel wrappers switch to
