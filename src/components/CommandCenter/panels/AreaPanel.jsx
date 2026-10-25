@@ -28,7 +28,7 @@ import ResearchPanel from './ResearchPanel';
 
 export function AreaBody({ area, sections, actions }) {
   if (area === HUB_AREAS.PARTNERSHIP) return <PartnershipPanel />;
-  if (area === HUB_AREAS.RESEARCH) return <ResearchPanel research={sections.research} onOpenForge={actions.openResearchForge} />;
+  if (area === HUB_AREAS.RESEARCH) return <ResearchPanel research={sections.research} onOpenForge={actions.openResearchForge} onRetry={actions.retryResearch} />;
   return (
     <LoadoutPanel
       loadout={sections.loadout}

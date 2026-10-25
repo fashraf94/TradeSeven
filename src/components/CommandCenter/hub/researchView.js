@@ -1,0 +1,215 @@
+// src/components/CommandCenter/hub/researchView.js
+//
+// Command Center hub, slice S6 (rulings R-S6-3 … R-S6-7; spec V1.2 §8.1, §8.2; design note points 3 and 5) — what the
+// idea reader's answer means for the screen. Pure: it reads only its arguments, so a row can drive every case without a
+// mock. The reader itself is hub/useHubResearch.js; this module owns the read's vocabulary, the Research panel's section,
+// the admission the Loadout's labels need, "Deploying with", the honest line's choice and the Activity descriptor.
+//
+// ONE record, several readers of it: the panel, the Deploy card, the watchlist card's label and Activity all derive from
+// the same held answer (BUILD_RULES §9), so none of them can disagree with another about what the player's idea is.
+//
+// "Current idea" is the PARENT POINTER (`currentVersion`), never the greatest version the hub guesses (spec §8.1). Only
+// "Deploying with" looks at the newest version, because that is the one the deploy's carriage rule picks
+// (api/_utils/hypothesisRecords/carriage.js): the server decides what a battle carries, and this module does not guess
+// beyond that rule's common case.
+
+import { CARRIABLE_STATUSES } from '../../../constants/hypothesisRecords';
+import { HORIZON_LABELS, STATUS_LABELS, formatIdeaDate, lifecycleLineFor, researchLinesOf, windowTextOf } from '../../Forge/Watchlist/ideaCopy';
+import { HUB_COPY as COPY } from './hubCopy';
+import { IDEA_ACCESS, LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
+
+/** The reader's states (hub/useHubResearch.js). `idle`: nothing to read — signed out, or no list equipped. */
+export const RESEARCH_READ = Object.freeze({
+  GATE_OFF: 'gate_off',
+  IDLE: 'idle',
+  LOADING: 'loading',
+  READY: 'ready',
+  DISABLED: 'disabled',
+  ERROR: 'error',
+});
+
+/** The Research section's states (spec §8.1's table, one each). */
+export const RESEARCH_STATE = Object.freeze({
+  GATE_OFF: 'gate_off',
+  DISABLED: 'disabled',
+  LOADING: 'loading',
+  NO_LIST: 'no_list',
+  NO_IDEA: 'no_idea',
+  UNAVAILABLE: 'unavailable',
+  ERROR: 'error',
+  READY: 'ready',
+});
+
+/** Which of the three honest lines a list gets (ruling R-S6-6; hub/hubCopy.js research.honest). */
+export const HONEST_LINE = Object.freeze({ THESIS_IS_IDEA: 'thesis_is_idea', THESIS_SAVED: 'thesis_saved', NO_THESIS: 'no_thesis' });
+
+const REVIEW_DUE = 'review_due';
+
+/**
+ * The most versions the list route returns (api/_utils/hypothesisRecords/store.js LIST_LIMIT). A response that reaches it may
+ * have left older versions out, so "no deployed version is review due" cannot be shown from it.
+ */
+export const VERSION_PAGE_MAX = 100;
+
+const nonEmpty = (value) => (typeof value === 'string' && value.trim() !== '' ? value : null);
+
+/**
+ * Whether the server admits this player to idea records, as far as the reader knows (ruling R-S6-4):
+ *   - the client gate off, or the typed `disabled` answer → not admitted;
+ *   - an answer HELD for this owner and list → admitted. A refresh in flight does not unsay it (the status stays what it
+ *     was), and nor does one that failed: the answer held is the answer;
+ *   - anything else — loading, an error with nothing held, nothing to read, no reader at all — unknown.
+ * This module and hub/selectors/loadout.js are the only places that produce `admitted` (hubCopy.guard.test.js).
+ */
+export function researchAccessOf(read) {
+  if (!read || typeof read !== 'object') return IDEA_ACCESS.UNKNOWN;
+  if (read.status === RESEARCH_READ.GATE_OFF || read.status === RESEARCH_READ.DISABLED) return IDEA_ACCESS.NOT_ADMITTED;
+  return read.data ? IDEA_ACCESS.ADMITTED : IDEA_ACCESS.UNKNOWN;
+}
+
+/** The version document the parent pointer names, or null. Never another version in its place. */
+export function pointerVersionOf(data) {
+  if (!data || !Number.isInteger(data.currentVersion) || data.currentVersion < 1) return null;
+  return (Array.isArray(data.versions) ? data.versions : []).find((v) => v?.version === data.currentVersion) ?? null;
+}
+
+/** The greatest version number the response holds — the one the deploy's carriage rule looks at first. */
+function newestVersionOf(data) {
+  let newest = null;
+  for (const v of Array.isArray(data?.versions) ? data.versions : []) {
+    if (v && Number.isInteger(v.version) && (newest === null || v.version > newest.version)) newest = v;
+  }
+  return newest;
+}
+
+/**
+ * Which honest line this list gets (ruling R-S6-6), chosen by what the code shows reaches the agent. At every deploy
+ * api/agent/decide.js reads the LIVE list document and puts its `thesis` into the prompt (decide.js:430-437 →
+ * agentPromptAssembly.js:136-150); no idea-version writer touches that field. So:
+ *   - no thesis on the list (blank, absent or not text) → the agent reads no idea at all;
+ *   - the thesis IS the idea's current statement (trimmed, exact) → the agent reads the idea as the list's thesis;
+ *   - any other thesis → the agent reads the thesis saved on the list, not the idea's later versions.
+ * `statement` is the current idea's recorded statement.
+ */
+export function honestLineKindOf({ thesis, statement }) {
+  const saved = nonEmpty(thesis);
+  if (saved === null) return HONEST_LINE.NO_THESIS;
+  return saved.trim() === String(statement ?? '').trim() ? HONEST_LINE.THESIS_IS_IDEA : HONEST_LINE.THESIS_SAVED;
+}
+
+/**
+ * The honest line is said only about a list the agent can deploy with: the Loadout card has found it among the committed
+ * lists (an uncommitted or deleted list is dropped at deploy — api/_utils/watchlistEquip.js resolveEquippedWatchlist) and it
+ * holds a name (the prompt carries nothing for an empty list). That is also the only time the hub holds the list document
+ * whose thesis decides the wording.
+ */
+function honestKindFor({ watchlist, listDoc, statement }) {
+  if (!watchlist || watchlist.state !== WATCHLIST_STATE.READY || !(watchlist.count >= 1) || !listDoc || typeof listDoc !== 'object') return null;
+  return honestLineKindOf({ thesis: listDoc.thesis, statement });
+}
+
+function ideaOf(version, data, listId, listName, honest) {
+  const statusLabel = STATUS_LABELS[version.status] ?? null;
+  const frozen = data.deployedLists && typeof data.deployedLists === 'object' ? data.deployedLists[version.version] ?? null : null;
+  const savedOn = formatIdeaDate(version.createdAt);
+  const since = formatIdeaDate(version.stateChangedAt);
+  return Object.freeze({
+    version: version.version,
+    status: version.status,
+    statusLabel,
+    statement: typeof version.statement === 'string' ? version.statement : '',
+    timeFrame: windowTextOf(version.horizonEnum) ?? HORIZON_LABELS[version.horizonEnum] ?? null,
+    savedOn: savedOn ? COPY.research.savedOn(savedOn) : null,
+    statusSince: since ? COPY.research.statusSince(since) : null,
+    // A due idea says so in the Forge's own (blessed) words, with the frozen list it rode in; nothing is offered to act on it.
+    reviewDue: version.status === REVIEW_DUE ? lifecycleLineFor(version, frozen) : null,
+    research: Object.freeze(researchLinesOf(data.research, { watchlistId: listId })),
+    count: COPY.research.oneIdea(listName),
+    honest,
+  });
+}
+
+/**
+ * The Research section (spec §8.1's table).
+ *
+ * @param {object}      p
+ * @param {object|null} p.read      the reader's answer (hub/useHubResearch.js), or null when there is no reader
+ * @param {object|null} p.loadout   the Loadout section (hub/selectors/loadout.js deriveLoadout): the agent's state and the
+ *                                  equipped list as the card resolved it
+ * @param {object|null} p.listDoc   the equipped list's document among the committed lists, once found (its `thesis`)
+ * @returns {object} { status: RESEARCH_STATE, listName, idea?, stale?, asOf?, retryNotBefore?, summary }
+ */
+export function deriveResearch({ read, loadout, listDoc = null }) {
+  const section = (status, extra = {}) => Object.freeze({ status, ...extra });
+  if (!read || read.status === RESEARCH_READ.GATE_OFF) return section(RESEARCH_STATE.GATE_OFF, { summary: COPY.research.summary.gateOff });
+  if (read.status === RESEARCH_READ.DISABLED) return section(RESEARCH_STATE.DISABLED, { summary: COPY.research.summary.disabled });
+
+  // The agent decides which list there is to ask about: nothing old-owner or old-list ever shows while it is unknown.
+  const loadoutStatus = loadout?.status;
+  if (!loadout || loadoutStatus === LOADOUT_STATUS.LOADING) return section(RESEARCH_STATE.LOADING, {});
+  if (loadoutStatus === LOADOUT_STATUS.ERROR) return section(RESEARCH_STATE.ERROR, { summary: COPY.research.summary.error });
+  const watchlist = loadoutStatus === LOADOUT_STATUS.READY ? loadout.watchlist : null;
+  if (!watchlist || watchlist.state === WATCHLIST_STATE.NONE || !read.listId) return section(RESEARCH_STATE.NO_LIST, { summary: COPY.research.summary.noList });
+  // The reader asks about the agent's equipped list and the card resolves that same id; an answer for another list is never shown.
+  if (watchlist.id !== read.listId) return section(RESEARCH_STATE.LOADING, {});
+
+  const listName = nonEmpty(watchlist.name) ?? COPY.research.thisList;
+  const held = read.data;
+  if (!held) {
+    if (read.status === RESEARCH_READ.ERROR) return section(RESEARCH_STATE.ERROR, { listName, summary: COPY.research.summary.error, retryNotBefore: read.retryNotBefore ?? null });
+    return section(RESEARCH_STATE.LOADING, { listName });
+  }
+  if (held.currentVersion === 0) return section(RESEARCH_STATE.NO_IDEA, { listName, summary: COPY.research.summary.noIdea, ...staleOf(read) });
+  const version = pointerVersionOf(held);
+  if (!version) return section(RESEARCH_STATE.UNAVAILABLE, { listName, summary: COPY.research.summary.pointerUnavailable, ...staleOf(read) });
+  const honest = honestKindFor({ watchlist, listDoc, statement: version.statement });
+  const idea = ideaOf(version, held, read.listId, listName, honest);
+  return section(RESEARCH_STATE.READY, { listName, idea, summary: idea.statusLabel ?? COPY.research.summary.pointerUnavailable, ...staleOf(read) });
+}
+
+/** A failed refresh that kept this owner's and list's answer: the data stays, with its age and the wait before a Retry. */
+function staleOf(read) {
+  return read.status === RESEARCH_READ.ERROR ? { stale: true, asOf: read.asOf ?? null, retryNotBefore: read.retryNotBefore ?? null } : {};
+}
+
+/**
+ * "Deploying with: {statement} · N names" (ruling R-S6-5; design note point 3), or null — the hub shows a line only for the
+ * carriage rule's common case and never guesses beyond it:
+ *   - the player is known to be admitted and the answer is current (not a refresh that failed);
+ *   - the response is whole (a page at the route's limit may have left a due version out) and holds no `review_due` version;
+ *   - its newest version is carriable (`ready` or `activated`) and has a statement;
+ *   - the Loadout card is ready for THIS list with at least one name, and N is that card's own count (symbolsOf), so the
+ *     two cards cannot disagree.
+ * The newest version is the one the deploy's carriage picks (not necessarily the pointer's).
+ */
+export function deployingWithOf({ read, watchlist }) {
+  if (researchAccessOf(read) !== IDEA_ACCESS.ADMITTED || read.status !== RESEARCH_READ.READY) return null;
+  const data = read.data;
+  if (!Array.isArray(data.versions) || data.versionCount >= VERSION_PAGE_MAX) return null;
+  if (!watchlist || watchlist.state !== WATCHLIST_STATE.READY || watchlist.id !== read.listId || !(watchlist.count >= 1)) return null;
+  if (data.versions.some((v) => v?.status === REVIEW_DUE)) return null;
+  const newest = newestVersionOf(data);
+  const statement = nonEmpty(newest?.statement);
+  if (!newest || !CARRIABLE_STATUSES.includes(newest.status) || statement === null) return null;
+  return Object.freeze({ statement, count: watchlist.count, version: newest.version });
+}
+
+/**
+ * Activity's idea descriptor (spec §8.2): the CURRENT idea only — the pointer's version — with the times the record holds.
+ * A revision is a new version of the same idea, so there is exactly one descriptor per list, however many versions it has.
+ * null with no held answer, no current idea, or a pointer that matches no version (nothing is invented).
+ */
+export function ideaActivityOf({ read, watchlist }) {
+  const data = read?.data;
+  const version = pointerVersionOf(data);
+  if (!version || !watchlist || watchlist.state !== WATCHLIST_STATE.READY || watchlist.id !== read.listId) return null;
+  return Object.freeze({
+    listId: read.listId,
+    listName: nonEmpty(watchlist.name),
+    version: version.version,
+    status: version.status,
+    statusLabel: STATUS_LABELS[version.status] ?? null,
+    createdAt: version.createdAt ?? null,
+    stateChangedAt: version.stateChangedAt ?? null,
+  });
+}

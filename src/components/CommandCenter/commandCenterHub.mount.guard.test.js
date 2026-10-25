@@ -591,6 +591,11 @@ const PERMITTED_TERMINALS = Object.freeze({
   'src/contexts/DeployAttemptContext.jsx': 'useDeployAttempt and useHoldProgress — the root deploy provider the hub admits through (ruling R-S2b-1)',
   'src/components/Dashboard/ScoutingBoardSheet.jsx': 'the shipped Scouting Board, reused unchanged; its deploy goes through the provider (ruling R-S2b-7)',
   'src/constants/deployOutcomes.js': 'DEPLOY_IN_PROGRESS_LINE and isInProgressRefusal — the 429 in-progress refusal, one line for ceremony and hub (ruling R-S2b-9b)',
+  // S6 (rulings R-S6-2, R-S6-3): the equipped list's idea, through the existing list reader (GET only; the service's writers are never imported),
+  // and the Forge's own words for it — status and time-frame labels, the blessed review-due line, the research lines. Both are
+  // Node-clean, already in the main graph (the deploy station reads the same service), and recorded here, not entered.
+  'src/services/hypothesisVersionService.js': 'listHypothesisVersions — the existing idea list reader; no writer is imported (ruling R-S6-2)',
+  'src/components/Forge/Watchlist/ideaCopy.js': "the Forge's idea words: STATUS_LABELS, HORIZON_LABELS, windowTextOf, formatIdeaDate, lifecycleLineFor, researchLinesOf (ruling R-S6-3)",
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -677,6 +682,9 @@ const ALLOWED_ACTIVITY = Object.freeze({
   // S2b (ruling R-S2b-2): the hub's side of the deploy provider — the effect that registers the hub's reader inputs
   // with it, and the one that reports the ranked agent's lastDeployedAt as cooldown evidence. No timer, listener or read.
   [HUB_FILE('hub/useHubDeploy.js')]: ['\\buseEffect\\b'],
+  // S6 (ruling R-S6-2): the idea reader — the effects that read for a key and keep the answer's owner and list current. The read
+  // is a service call on a trigger (mount, a list change, a return, a Retry); no timer, listener, poll or per-tab read.
+  [HUB_FILE('hub/useHubResearch.js')]: ['\\buseEffect\\b'],
 });
 
 function activityInCode(rel, code) {
@@ -909,6 +917,8 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
       // S5 (review E1-1): the signal allows its one layout effect and nothing else: no passive effect, timer, listener or frame callback.
       [HUB_FILE('hubFallbackSignal.jsx')]: ['useEffect(() => {}, []);', 'setTimeout(f, 0);', "window.addEventListener('focus', f);", 'requestAnimationFrame(f);', 'new ResizeObserver(cb);'],
       // S4: Later's store allows its storage and nothing else — no effect, timer, listener, frame or read.
+      // S6: the idea reader allows its effects and nothing else — no timer (the 30 s wait is judged at the press), listener or poll.
+      [HUB_FILE('hub/useHubResearch.js')]: ['setTimeout(f, 30000);', 'setInterval(f, 1000);', "window.addEventListener('focus', f);", "document.addEventListener('visibilitychange', f);", 'useLayoutEffect(() => {});', 'requestAnimationFrame(f);', 'getDocs(q);'],
       [HUB_FILE('hub/useHubLater.js')]: ['useEffect(() => {}, []);', 'useLayoutEffect(() => {});', 'setTimeout(f, 0);', 'setInterval(f, 1000);', "window.addEventListener('storage', f);", 'requestAnimationFrame(f);', 'getDocs(q);', 'new BroadcastChannel("x");'],
     };
     for (const [rel, lines] of Object.entries(negatives)) {
@@ -1053,6 +1063,9 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     '/contexts/DeployAttemptContext': ['useDeployAttempt', 'useHoldProgress'],
     '/Dashboard/ScoutingBoardSheet': ['default'],
     '/constants/deployOutcomes': ['DEPLOY_IN_PROGRESS_LINE', 'isInProgressRefusal'],
+    // S6 (rulings R-S6-2, R-S6-3): ONE name from the idea service — the reader — and the Forge's idea words, read-only.
+    '/services/hypothesisVersionService': ['listHypothesisVersions'],
+    '/Forge/Watchlist/ideaCopy': ['HORIZON_LABELS', 'STATUS_LABELS', 'formatIdeaDate', 'lifecycleLineFor', 'researchLinesOf', 'windowTextOf'],
   });
 
   it('across every file of the directory, exactly these names and no others', () => {
@@ -1087,6 +1100,8 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
       `${HUB_FILE('hub/useHubCompletedBattles.js')}: ../../../services/authIdentity`,
       `${HUB_FILE('hub/useHubCompletedBattles.js')}: ../../../services/completedAgentBattles`,
       `${HUB_FILE('hub/useHubReaders.js')}: ../../../services/authIdentity`,
+      // S6: the idea list reader — a GET; its writers (createHypothesisVersion, transitionHypothesis, reaffirmHypothesis) are never imported.
+      `${HUB_FILE('hub/useHubResearch.js')}: ../../../services/hypothesisVersionService`,
       // S2b: the deploy provider suites' kit reads the same identity source (tests only; no hub module reaches it).
       `${HUB_FILE('__fixtures__/deployAttemptKit.jsx')}: ../../../services/authIdentity`,
     ].sort());

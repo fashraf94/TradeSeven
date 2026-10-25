@@ -99,7 +99,7 @@ import { useDeployAttempt } from '../../contexts/DeployAttemptContext';
 import ScoutingBoardSheet from '../Dashboard/ScoutingBoardSheet';
 import { DISPLAY_ACTIONS, deployDisplay } from './hub/deployDisplay';
 import { HUB_COPY as COPY } from './hub/hubCopy';
-import { scoutingBoardOn } from './hub/hubFlags';
+import { hubFlags, scoutingBoardOn } from './hub/hubFlags';
 import { HUB_DEPLOY_CONTROLS, useHubDeploy } from './hub/useHubDeploy';
 import { formatHubDate, headerName } from './hub/hubDate';
 import { DESKTOP_ACTIVITY_LIMIT, HUB_S1_SECTIONS, HUB_S2A_DEPLOY_INPUTS, liveGamesOf, splitGames } from './hub/hubModel';
@@ -113,6 +113,7 @@ import { C, HUB_LAYERS, HUB_SCOPED_CSS } from './hub/hubStyle';
 import { shadowTierFor } from './hub/shadowGeometry';
 import { useHubWidth } from './hub/useHubWidth';
 import useHubReaders from './hub/useHubReaders';
+import useHubResearch from './hub/useHubResearch';
 import { useNavClearance } from './hub/useNavClearance';
 import ActivitySheet from './ActivitySheet';
 import { areaPanelId, areaTabId } from './AreaControls';
@@ -145,7 +146,10 @@ export function areaSummaries(sections) {
   const loadout = status === LOADOUT_STATUS.NONE ? COPY.loadout.noAgent
     : status === LOADOUT_STATUS.ERROR ? COPY.loadout.agentUnavailable
       : of(sections.loadout, COPY.loadout.summaryLoading);
-  return [COPY.partnership.summary, of(sections.research, COPY.research.summaryLoading), loadout];
+  // S6: every settled Research state has its own one-line summary (hub/researchView.js deriveResearch); a loading one has none.
+  const research = sections.research;
+  const researchLine = research && research.status !== 'loading' && typeof research.summary === 'string' && research.summary ? research.summary : COPY.research.summaryLoading;
+  return [COPY.partnership.summary, researchLine, loadout];
 }
 
 const rootStyle = { position: 'relative', zIndex: HUB_LAYERS.page, color: C.ink, outline: 'none' };
@@ -261,9 +265,9 @@ function ScoutingBoard({ open, onClose, dock, agent, deploy, board, sections, pr
 }
 
 /** The mobile site: header → compact stage → sticky tabs → section, and the strip above BottomNav. */
-function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, deploy = null, board = null }) {
+function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null }) {
   const rootRef = useRef(null);
-  const runtime = useHubRuntime({ hub, agentRead, sections: given, rootRef });
+  const runtime = useHubRuntime({ hub, agentRead, sections: given, rootRef, researchRead });
   const { sections, sheets: sheet } = runtime;
   const shared = useShared(sections);
   const stripRef = useRef(null);
@@ -364,9 +368,9 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
 }
 
 /** The desktop site: Desktop, Tablet or Stacked by the hub's own width. */
-function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, deploy = null, board = null }) {
+function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null }) {
   const rootRef = useRef(null);
-  const runtime = useHubRuntime({ hub, agentRead, sections: given, rootRef });
+  const runtime = useHubRuntime({ hub, agentRead, sections: given, rootRef, researchRead });
   const { sections, sheets: sheet } = runtime;
   const shared = useShared(sections);
   const width = useHubWidth(rootRef);
@@ -422,6 +426,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
         holdWiring={deploy?.hold(HUB_DEPLOY_CONTROLS.CARD) ?? null}
         holding={deploy?.holdControlId === HUB_DEPLOY_CONTROLS.CARD ? deploy.holdPhase : null}
         onOpenBoard={actions.openBoard}
+        idea={sections.deployingWith ?? null}
       />
     ),
     activity: <ActivitySection activity={sections.activity} limit={DESKTOP_ACTIVITY_LIMIT} onOpen={actions.openActivity} onAll={actions.openAllActivity} />,
@@ -526,6 +531,11 @@ function ConnectedHub({ site, hub, sections }) {
   const deployAttempt = useDeployAttempt();
   const hubModalOpen = useHubModalOpen();
   const readers = useHubReaders(hub, deployAttempt, hubModalOpen);
+  // Slice S6 (ruling R-S6-2): the equipped list's idea, read for this owner and epoch and the agent's equipped list, once per
+  // trigger (hub/useHubResearch.js). Called here beside the readers rather than inside them: the readers' own integration suites
+  // render them alone, without the Firebase configuration the idea service's auth wrapper loads. Hub chunk only — nothing the
+  // root deploy provider imports reaches it.
+  const research = useHubResearch({ auth: readers.inputs?.auth ?? null, listId: readers.agent?.agent?.equippedWatchlistId ?? null, gateOn: hubFlags().hypothesisRecordsOn });
   const deploy = useHubDeploy({ deployAttempt, readers, hub });
   const live = { ...sections, ...readers.sections };
   let actions = readers.actions;
@@ -541,8 +551,8 @@ function ConnectedHub({ site, hub, sections }) {
     board = { canStart: deriveHubDeployState({ ...readers.inputs, modalOpen: deployAttempt.snapshot.overlayOpen === true }).canStart === true };
   }
   return site === HUB_SITES.MOBILE
-    ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} deploy={deploy} board={board} />
-    : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} deploy={deploy} board={board} />;
+    ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} />
+    : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} />;
 }
 
 /**

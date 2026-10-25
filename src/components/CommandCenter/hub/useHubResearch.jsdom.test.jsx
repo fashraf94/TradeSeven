@@ -1,0 +1,400 @@
+// @vitest-environment jsdom
+//
+// Command Center hub, slice S6 (ruling R-S6-2; spec V1.2 §8.1) — the idea reader: a captured uid + authEpoch + equipped-list key,
+// one request in flight per key, stale answers ignored, cleared on an owner or list change, reads on mount / a list change /
+// a confirmed return / an explicit Retry, a dirty mark for ONE follow-up, a 30 s manual wait, and no timer.
+
+import React, { StrictMode, act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { listHypothesisVersions } = vi.hoisted(() => ({ listHypothesisVersions: vi.fn() }));
+vi.mock('../../../services/hypothesisVersionService', () => ({ listHypothesisVersions }));
+
+import useHubResearch, { RETRY_COOLDOWN_MS } from './useHubResearch';
+import { RESEARCH_READ } from './researchView';
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+const AUTH = (uid = 'u-1', authEpoch = 1) => ({ signedIn: true, uid, authEpoch });
+const BODY = (listId, over = {}) => ({ watchlistId: listId, currentVersion: 1, versions: [{ version: 1, statement: `Idea on ${listId}`, status: 'draft' }], research: [], ...over });
+
+/** A promise a row settles by hand. */
+function deferred() {
+  let resolve; let reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
+let root;
+let host;
+let latest;
+let props;
+let errorSpy;
+
+function Probe(p) {
+  latest = useHubResearch(p);
+  return null;
+}
+const render = (over = {}, { strict = false } = {}) => {
+  props = { auth: AUTH(), listId: 'wl-1', gateOn: true, ...over };
+  const el = <Probe {...props} />;
+  act(() => { root.render(strict ? <StrictMode>{el}</StrictMode> : el); });
+};
+const rerender = (over) => {
+  props = { ...props, ...over };
+  act(() => { root.render(<Probe {...props} />); });
+};
+const settle = async () => { await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); }); };
+
+beforeEach(() => {
+  listHypothesisVersions.mockReset();
+  host = document.createElement('div');
+  document.body.appendChild(host);
+  root = createRoot(host);
+  errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+});
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+  errorSpy.mockRestore();
+  vi.useRealTimers();
+});
+
+describe('what is read, and when', () => {
+  it('the client gate off: nothing is asked, whatever else is known', async () => {
+    render({ gateOn: false });
+    await settle();
+    expect(latest.status).toBe(RESEARCH_READ.GATE_OFF);
+    expect(latest.key).toBeNull();
+    latest.invalidate();
+    latest.retry();
+    await settle();
+    expect(listHypothesisVersions).not.toHaveBeenCalled();
+    // Anything but exactly true is off.
+    for (const gateOn of [undefined, null, 1, 'true']) {
+      rerender({ gateOn });
+      await settle();
+      expect(latest.status, String(gateOn)).toBe(RESEARCH_READ.GATE_OFF);
+    }
+    expect(listHypothesisVersions).not.toHaveBeenCalled();
+  });
+
+  it('nothing to ask about: signed out, unresolved, or no equipped list → idle, no request', async () => {
+    for (const over of [{ auth: null }, { auth: { signedIn: false } }, { listId: null }, { listId: '' }, { auth: AUTH('') }]) {
+      render(over);
+      await settle();
+      expect(latest.status, JSON.stringify(over)).toBe(RESEARCH_READ.IDLE);
+    }
+    expect(listHypothesisVersions).not.toHaveBeenCalled();
+  });
+
+  it('on mount with a known list: ONE request for that list, then the answer is held with its time', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(7_000);
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    render();
+    expect(latest.status).toBe(RESEARCH_READ.LOADING);
+    expect(latest.data).toBeNull();
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(1);
+    expect(listHypothesisVersions).toHaveBeenCalledWith('wl-1');
+    expect(latest).toMatchObject({ status: RESEARCH_READ.READY, key: 'u-1:1:wl-1', listId: 'wl-1', asOf: 7_000, refreshing: false });
+    expect(latest.data).toMatchObject({ currentVersion: 1, versionCount: 1 });
+    now.mockRestore();
+  });
+
+  it('React\'s double effect reads once (the key\'s own first read does not mark itself dirty)', async () => {
+    listHypothesisVersions.mockResolvedValue(BODY('wl-1'));
+    render({}, { strict: true });
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(1);
+    expect(latest.status).toBe(RESEARCH_READ.READY);
+  });
+
+  it('a re-render with the same key reads nothing more, and there is no timer: ten minutes later still one request', async () => {
+    vi.useFakeTimers();
+    listHypothesisVersions.mockResolvedValue(BODY('wl-1'));
+    render();
+    await settle();
+    rerender({});
+    rerender({ gateOn: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10 * 60 * 1000); });
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(1);
+  });
+
+  it('a list change reads the new list, and the former list\'s idea never shows for the new key (cleared in render)', async () => {
+    listHypothesisVersions.mockImplementation((id) => Promise.resolve(BODY(id)));
+    render();
+    await settle();
+    expect(latest.data.versions[0].statement).toBe('Idea on wl-1');
+    const held = deferred();
+    listHypothesisVersions.mockReturnValueOnce(held.promise);
+    rerender({ listId: 'wl-2' });
+    // The very render that brings the new key holds nothing of the old one.
+    expect(latest).toMatchObject({ key: 'u-1:1:wl-2', status: RESEARCH_READ.LOADING, data: null });
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenLastCalledWith('wl-2');
+    held.resolve(BODY('wl-2'));
+    await settle();
+    expect(latest.data.versions[0].statement).toBe('Idea on wl-2');
+  });
+
+  it('an owner or an epoch change clears and reads again; a late answer for the former owner is dropped', async () => {
+    const first = deferred();
+    listHypothesisVersions.mockReturnValueOnce(first.promise);
+    render();
+    const second = deferred();
+    listHypothesisVersions.mockReturnValueOnce(second.promise);
+    rerender({ auth: AUTH('u-2', 1) });
+    expect(latest).toMatchObject({ key: 'u-2:1:wl-1', status: RESEARCH_READ.LOADING, data: null });
+    first.resolve(BODY('wl-1', { currentVersion: 7 }));
+    await settle();
+    expect(latest.data, 'u-1\'s answer is not u-2\'s').toBeNull();
+    second.resolve(BODY('wl-1', { currentVersion: 2, versions: [{ version: 2, statement: 'u-2 idea', status: 'draft' }] }));
+    await settle();
+    expect(latest.data.currentVersion).toBe(2);
+    // The same user in a new auth epoch is a new owner.
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    rerender({ auth: AUTH('u-2', 2) });
+    expect(latest).toMatchObject({ key: 'u-2:2:wl-1', data: null });
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(3);
+  });
+
+  it('losing the list or the account while a request is out: its answer is ignored, and nothing shows', async () => {
+    const out = deferred();
+    listHypothesisVersions.mockReturnValueOnce(out.promise);
+    render();
+    rerender({ listId: null });
+    out.resolve(BODY('wl-1'));
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.IDLE, data: null });
+    // ...and coming back to the same list reads it afresh, not from the answer that was dropped.
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    rerender({ listId: 'wl-1' });
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    expect(latest.status).toBe(RESEARCH_READ.READY);
+  });
+
+  it('an answer that lands after the hub is gone does nothing', async () => {
+    const out = deferred();
+    listHypothesisVersions.mockReturnValueOnce(out.promise);
+    render();
+    act(() => root.unmount());
+    root = createRoot(host);
+    out.resolve(BODY('wl-1'));
+    await settle();
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('a confirmed return (invalidate): once, even when the equipped id is unchanged', () => {
+  it('an unchanged list is read once more', async () => {
+    listHypothesisVersions.mockResolvedValue(BODY('wl-1'));
+    render();
+    await settle();
+    act(() => latest.invalidate());
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    expect(latest.status).toBe(RESEARCH_READ.READY);
+  });
+
+  it('the held idea stays on screen while it is read again (a refresh is not a loading state)', async () => {
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    render();
+    await settle();
+    const again = deferred();
+    listHypothesisVersions.mockReturnValueOnce(again.promise);
+    act(() => latest.invalidate());
+    expect(latest).toMatchObject({ status: RESEARCH_READ.READY, refreshing: true });
+    expect(latest.data).not.toBeNull();
+    again.resolve(BODY('wl-1', { currentVersion: 2, versions: [{ version: 2, statement: 'Changed in the Forge', status: 'ready' }] }));
+    await settle();
+    expect(latest).toMatchObject({ refreshing: false });
+    expect(latest.data.currentVersion).toBe(2);
+  });
+
+  it('triggers during a request mark it dirty — ONE fresh read follows, however many came', async () => {
+    const first = deferred();
+    listHypothesisVersions.mockReturnValueOnce(first.promise);
+    render();
+    act(() => { latest.invalidate(); latest.invalidate(); latest.invalidate(); });
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(1);
+    listHypothesisVersions.mockResolvedValue(BODY('wl-1', { currentVersion: 3, versions: [{ version: 3, statement: 'Fresh', status: 'draft' }] }));
+    first.resolve(BODY('wl-1'));
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    expect(latest.data.currentVersion).toBe(3);
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+  });
+
+  it('a trigger with the follow-up already running marks THAT dirty: still one read at a time per key', async () => {
+    const first = deferred();
+    const second = deferred();
+    listHypothesisVersions.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise).mockResolvedValue(BODY('wl-1'));
+    render();
+    act(() => latest.invalidate());
+    first.resolve(BODY('wl-1'));
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    act(() => latest.invalidate());
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    second.resolve(BODY('wl-1'));
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(3);
+  });
+
+  it('an equip racing a return: the equip\'s read is for the new list, the return marks IT dirty, the old list\'s answer is ignored, and the reads are three', async () => {
+    const old = deferred();
+    const equip = deferred();
+    listHypothesisVersions.mockReturnValueOnce(old.promise).mockReturnValueOnce(equip.promise).mockResolvedValue(BODY('wl-2', { currentVersion: 9, versions: [{ version: 9, statement: 'Settled', status: 'ready' }] }));
+    render();
+    rerender({ listId: 'wl-2' });
+    act(() => latest.invalidate());
+    old.resolve(BODY('wl-1', { currentVersion: 5 }));
+    await settle();
+    expect(latest.data, 'wl-1\'s answer is not wl-2\'s').toBeNull();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    equip.resolve(BODY('wl-2'));
+    await settle();
+    expect(listHypothesisVersions.mock.calls.map(([id]) => id)).toEqual(['wl-1', 'wl-2', 'wl-2']);
+    expect(latest.data.currentVersion).toBe(9);
+  });
+
+  it('with nothing to ask about a return reads nothing', async () => {
+    render({ listId: null });
+    act(() => latest.invalidate());
+    await settle();
+    expect(listHypothesisVersions).not.toHaveBeenCalled();
+  });
+});
+
+describe('what the answer is', () => {
+  it('the typed `disabled` answer is its own state: not an error, no data, and no follow-up read', async () => {
+    const out = deferred();
+    listHypothesisVersions.mockReturnValueOnce(out.promise);
+    render();
+    act(() => latest.invalidate());
+    out.reject(Object.assign(new Error('off'), { status: 404, code: 'disabled' }));
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.DISABLED, data: null });
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(1);
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('any other failure is an error: nothing held, nothing inferred', async () => {
+    listHypothesisVersions.mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 500, code: 'request_failed' }));
+    render();
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.ERROR, data: null });
+    expect(errorSpy).toHaveBeenCalled();
+    // A list the server cannot find is an error too, not "no idea".
+    listHypothesisVersions.mockRejectedValueOnce(Object.assign(new Error('nf'), { status: 404, code: 'not_found' }));
+    rerender({ listId: 'wl-2' });
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.ERROR, data: null });
+  });
+
+  it('a failed refresh keeps the answer held for THIS key, as an error with its age; another key keeps nothing', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(4_000);
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    render();
+    await settle();
+    listHypothesisVersions.mockRejectedValueOnce(new Error('later'));
+    act(() => latest.invalidate());
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.ERROR, asOf: 4_000, refreshing: false });
+    expect(latest.data).not.toBeNull();
+    listHypothesisVersions.mockRejectedValueOnce(new Error('other'));
+    rerender({ listId: 'wl-2' });
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.ERROR, data: null, asOf: null });
+    now.mockRestore();
+  });
+
+  it.each([
+    ['a body for another list', BODY('wl-OTHER')],
+    ['no versions array', { watchlistId: 'wl-1', currentVersion: 1 }],
+    ['a pointer that is not a whole number', BODY('wl-1', { currentVersion: 1.5 })],
+    ['a negative pointer', BODY('wl-1', { currentVersion: -1 })],
+    ['nothing', null],
+  ])('%s is not the list\'s answer: an error', async (_, body) => {
+    listHypothesisVersions.mockResolvedValueOnce(body);
+    render();
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.ERROR, data: null });
+  });
+
+  it('what is kept: the pointer, the versions (malformed documents set aside, the count taken before), the research and the frozen lists', async () => {
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1', {
+      currentVersion: 2,
+      versions: [{ version: 2, status: 'ready' }, null, { statement: 'no number' }, { version: 0 }, { version: 1, status: 'draft' }],
+      research: [{ researchWorkId: 'r' }],
+      deployedLists: { 1: { battleId: 'b', name: 'L', tickers: ['X'] } },
+    }));
+    render();
+    await settle();
+    expect(latest.data.versions.map((v) => v.version)).toEqual([2, 1]);
+    expect(latest.data.versionCount).toBe(5);
+    expect(latest.data.research).toEqual([{ researchWorkId: 'r' }]);
+    expect(latest.data.deployedLists[1].name).toBe('L');
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    act(() => latest.invalidate());
+    await settle();
+    expect(latest.data.research).toEqual([]);
+    expect(latest.data.deployedLists).toEqual({});
+  });
+});
+
+describe('an explicit Retry: one per 30 s per key, judged at the press', () => {
+  it('a Retry reads; a second inside the wait does not, and says when the next opens', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    listHypothesisVersions.mockRejectedValueOnce(new Error('down'));
+    render();
+    await settle();
+    expect(latest.status).toBe(RESEARCH_READ.ERROR);
+    listHypothesisVersions.mockRejectedValueOnce(new Error('still down'));
+    act(() => latest.retry());
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    clock.mockReturnValue(1_000_000 + RETRY_COOLDOWN_MS - 1);
+    act(() => latest.retry());
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    expect(latest.retryNotBefore).toBe(1_000_000 + RETRY_COOLDOWN_MS);
+    // At the wait\'s end it reads.
+    clock.mockReturnValue(1_000_000 + RETRY_COOLDOWN_MS);
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    act(() => latest.retry());
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(3);
+    expect(latest).toMatchObject({ status: RESEARCH_READ.READY, retryNotBefore: null });
+    clock.mockRestore();
+  });
+
+  it('the wait is per key: a Retry on another list is its own', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(5_000);
+    listHypothesisVersions.mockRejectedValue(new Error('down'));
+    render();
+    await settle();
+    act(() => latest.retry());
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    rerender({ listId: 'wl-2' });
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(3);
+    act(() => latest.retry());
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(4);
+    clock.mockRestore();
+  });
+
+  it('a Retry with nothing to ask about reads nothing', async () => {
+    render({ listId: null });
+    act(() => latest.retry());
+    await settle();
+    expect(listHypothesisVersions).not.toHaveBeenCalled();
+  });
+});

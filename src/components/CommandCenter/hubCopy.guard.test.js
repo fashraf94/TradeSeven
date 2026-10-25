@@ -165,6 +165,17 @@ function strings(table) {
 const SOURCE_COPY = COPY_TABLES.flatMap((rel) => sourceStrings(read(rel)));
 const ALL_COPY = [...strings(HUB_COPY), ...strings(HUB_GATE_COPY), ...SOURCE_COPY];
 
+/**
+ * Slice S6 (founder ruling R-S6-6): the design note's point 5, in the founder's three wordings — the ONLY strings in the hub that
+ * pair the agent with an idea, and the only ones that say "learn", which they DENY. The banned-claim row forbids claiming it; these
+ * exact strings are exempt from it and from the pairing fence, and nothing else is.
+ */
+const HONEST_LINES = Object.freeze([
+  "Your agent gives this list's names priority and reads the idea as the list's thesis. It doesn't learn from your ideas or their reviews yet.",
+  "Your agent gives this list's names priority and reads the thesis the list was saved with, not later versions of your idea. It doesn't learn from your ideas or their reviews yet.",
+  "Your agent gives this list's names priority. It doesn't read or learn from your ideas yet.",
+]);
+
 describe('copy centralization — every user-visible string is in a copy table', () => {
   it('no file under src/components/CommandCenter/ writes copy in place', () => {
     const files = hubSourceFiles();
@@ -285,30 +296,47 @@ describe('S5: the design note\'s labels, exactly, and nothing the hub cannot bac
     expect(HUB_COPY.header.reportBug).toBe('Report a bug');
   });
 
-  // Founder ruling Q-S5-4a: the client cannot know whether the server admits this player to idea records, so S5 passes
-  // "unknown" and every card reads the neutral "N names". Slice S6 supplies the answer from its gated reader; until then
-  // no hub source may hand the card an admitted player. The word appears only where the selector defines and compares it.
-  it('S5 never tells the card the player is admitted: IDEA_ACCESS.ADMITTED and the word admitted are written only in the selector that defines and compares them (Q-S5-4a)', () => {
+  // Founder ruling Q-S5-4a: the client cannot know whether the server admits this player to idea records. S5 passed "unknown"
+  // and every card read the neutral "N names". Slice S6 (ruling R-S6-4) supplies the answer from its gated reader: the word
+  // `admitted` is produced in exactly two places — the selector that defines and compares it, and the module that maps the
+  // reader's held answer to it (hub/researchView.js researchAccessOf). No other hub source hands the card an admitted player.
+  it('the admission comes from the idea reader: IDEA_ACCESS.ADMITTED and the word admitted are written only in the selector that defines them and the reader mapping (Q-S5-4a; R-S6-4)', () => {
     const code = (rel) => read(rel).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
     const users = hubSourceFiles().filter((rel) => /\bIDEA_ACCESS\.ADMITTED\b|['"`]admitted['"`]/.test(code(rel)));
-    expect(users).toEqual([`${DIR}/hub/selectors/loadout.js`]);
+    expect(users).toEqual([`${DIR}/hub/researchView.js`, `${DIR}/hub/selectors/loadout.js`]);
     // what App hands the hub carries no ideaAccess key at all
     expect(code('src/App.jsx')).not.toMatch(/ideaAccess/);
   });
 
-  it('no hub file reads an idea record or its reader: the idea\'s wording and status belong to slice S6, behind the gated reader', () => {
+  it('one hub file reads an idea record, and it is the gated reader (S5 fenced every file; slice S6 admits exactly this one)', () => {
     const reach = hubSourceFiles().filter((rel) => /hypothesisVersionService|hypothesisRecords\/|getHypothesis|listHypothes|hypothesisVersions/.test(read(rel).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '')));
-    expect(reach).toEqual([]);
+    expect(reach).toEqual([`${DIR}/hub/useHubResearch.js`]);
+    // ...and it takes the reader and no writer of the idea service.
+    const reader = read(`${DIR}/hub/useHubResearch.js`).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+    expect(reader).toContain("import { listHypothesisVersions } from '../../../services/hypothesisVersionService';");
+    for (const writer of ['createHypothesisVersion', 'transitionHypothesis', 'reaffirmHypothesis', 'newOpId']) {
+      expect(hubSourceFiles().filter((rel) => read(rel).includes(writer)), writer).toEqual([]);
+    }
   });
 
   // The design note's point 5 asks every idea surface for one honest line about the agent ("the agent does not read or
   // act on ideas yet"). That is a claim about the agent's behaviour, which the hub can neither back nor check, so S5's two
   // labels ship without it and this fence keeps any such sentence out until the idea reader (slice S6) can carry it. The
   // report puts the question to the founder (Q-S5-4).
-  it('S5 says nothing about what the agent does with an idea: no hub string names the agent and an idea together', () => {
+  const PAIRS = /\b(agent|shadow)\b.*\bidea|\bidea.*\b(agent|shadow)\b/i;
+  it('no hub string names the agent and an idea together but the founder\'s three honest lines, which are exactly those three (ruling R-S6-6)', () => {
     const words = ALL_COPY.filter((s) => /\bidea/i.test(s));
     expect(words.sort()).toEqual(expect.arrayContaining(['Plain watchlist · no idea yet']));
-    for (const s of words) expect(s, s).not.toMatch(/\b(agent|shadow)\b.*\bidea|\bidea.*\b(agent|shadow)\b/i);
+    const pairing = [...new Set(words.filter((s) => PAIRS.test(s)))].sort();
+    expect(pairing).toEqual([...HONEST_LINES].sort());
+    expect(Object.values(HUB_COPY.research.honest).sort()).toEqual([...HONEST_LINES].sort());
+  });
+
+  it('the fence still bites: a claim that the agent learns from, or uses, an idea is not one of the three', () => {
+    for (const claim of ['Your agent learns from your ideas.', 'Shadow reads your idea before every game.', 'Your idea improves your agent.', "Your agent reads the idea as the list's thesis. It learns from your ideas."]) {
+      expect(HONEST_LINES, claim).not.toContain(claim);
+      expect(PAIRS.test(claim) || /\blearn/i.test(claim), claim).toBe(true);
+    }
   });
 });
 
@@ -320,8 +348,19 @@ describe('no claim the hub cannot back (spec §8.2, §11.3)', () => {
   ];
 
   it('no string in either copy table matches a banned claim', () => {
-    const hits = ALL_COPY.flatMap((s) => BANNED.filter((re) => re.test(s)).map((re) => `${re.source}: ${s}`));
+    // Slice S6: the founder's three honest lines deny learning; exactly those strings are exempt (HONEST_LINES).
+    const hits = ALL_COPY.filter((s) => !HONEST_LINES.includes(s)).flatMap((s) => BANNED.filter((re) => re.test(s)).map((re) => `${re.source}: ${s}`));
     expect(hits).toEqual([]);
+  });
+
+  it('the exemption is the three exact strings: each denies learning, and a one-word change to any of them is a banned claim again', () => {
+    for (const line of HONEST_LINES) {
+      expect(ALL_COPY, line).toContain(line);
+      expect(line, line).toMatch(/\b(doesn't|does not)\b[^.]*\blearn\b/);
+      const claim = line.replace("doesn't", 'does');
+      expect(HONEST_LINES).not.toContain(claim);
+      expect(BANNED.some((re) => re.test(claim)), claim).toBe(true);
+    }
   });
 
   it('the banned list catches what it names', () => {
@@ -337,9 +376,10 @@ describe('no claim the hub cannot back (spec §8.2, §11.3)', () => {
     expect(seen.flatMap((s) => s.match(/\d+(\.\d+)?/g) || [])).toEqual(['1']);
   });
 
-  it('no copy carries a count the hub does not hold: the only numbers written are the spec\'s 1.3 s and 10 games', () => {
+  it('no copy carries a count the hub does not hold: the only numbers written are the spec\'s 1.3 s, 10 games and "1 idea on {list}" (§8.1)', () => {
     const numbers = ALL_COPY.flatMap((s) => s.replace(/ARG\d+/g, '').match(/\d+(\.\d+)?/g) || []);
-    expect([...new Set(numbers)].sort()).toEqual(['1.3', '10']);
+    expect([...new Set(numbers)].sort()).toEqual(['1', '1.3', '10']);
+    expect(HUB_COPY.research.oneIdea('ARG0')).toBe('1 idea on ARG0');
   });
 });
 

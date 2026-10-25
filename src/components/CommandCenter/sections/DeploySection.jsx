@@ -71,17 +71,38 @@ function DeployLines({ display, onAction }) {
 }
 
 /**
+ * Slice S6 (ruling R-S6-5; design note point 3): `idea` is the section hub/researchView.js deployingWithOf builds — the newest
+ * version's recorded statement and the Loadout card's own name count — or null, and then no line is drawn. The server decides
+ * what a battle carries; this line is shown only for the carriage rule's common case. A long statement wraps and is clamped to
+ * three lines for the card's sake; the whole text is in the DOM and in the line's title.
+ */
+function DeployingWith({ idea }) {
+  if (!idea) return null;
+  const text = COPY.deploy.deployingWith(idea.statement, COPY.loadout.names(idea.count));
+  return (
+    <div
+      data-hub-deploying-with=""
+      title={text}
+      style={{ fontSize: 12.5, color: C.ink2, marginTop: 6, lineHeight: 1.5, overflowWrap: 'anywhere', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden' }}
+    >
+      {text}
+    </div>
+  );
+}
+
+/**
  * The phone's Deploy card, on the Loadout tab (slice S3, founder ruling
  * R-S3-1): the strip clamps its two lines, so the full words live here — the
  * state's words, or its line when it has one, and the freshness note, each with
  * its one action. The hold stays on the strip; this card has none. The strip's
  * status button opens this tab.
  */
-export function PhoneDeployCard({ deploy, onAction, onOpenBoard }) {
+export function PhoneDeployCard({ deploy, onAction, onOpenBoard, idea = null }) {
   const display = deployDisplay(deploy);
   return (
     <Section label={COPY.deploy.label} data-hub-section="deploy">
       <Card data-hub-deploy={display.displayState} data-hub-deploy-card="phone" style={{ background: C.surface, paddingTop: 6 }}>
+        <DeployingWith idea={idea} />
         <DeployLines
           display={display.cardLine ? display : { ...display, cardLine: { icon: null, text: display.status, action: null } }}
           onAction={onAction}
@@ -100,7 +121,7 @@ export function PhoneDeployCard({ deploy, onAction, onOpenBoard }) {
  * Slice S2b: `holdWiring` / `holding` are the deploy provider's wiring for the card's control (hub/useHubDeploy.js);
  * `onOpenBoard` opens the Scouting Board, "See what it's eyeing" (ruling R-S2b-7), when the board is on.
  */
-export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoadout, onAction, holdWiring = null, holding = null, onOpenBoard }) {
+export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoadout, onAction, holdWiring = null, holding = null, onOpenBoard, idea = null }) {
   const display = deployDisplay(deploy);
   const tinted = display.displayState === 'ready' || display.displayState === 'ready_stale';
   return (
@@ -116,6 +137,7 @@ export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoa
           <span>{COPY.sep}</span>
           <HubLink onPress={onOpenLoadout}>{COPY.deploy.loadoutLink}</HubLink>
         </div>
+        <DeployingWith idea={idea} />
         <div style={{ marginTop: 14 }}>
           <HubHold full canStart={display.canStart} label={display.cardHoldLabel} onDeploy={onDeploy} wiring={holdWiring} holding={holding} />
         </div>
