@@ -103,6 +103,14 @@ export function installFakeCanvas({ context = 'ok' } = {}) {
       act(() => { for (const f of due) f.cb(state.now); });
       return due.length;
     },
+    /** An entry for EVERY observer, disconnected ones too — an engine that delivers what was queued before disconnect(). */
+    intersectStale(isIntersecting) {
+      act(() => { for (const o of observers) o.callback([{ isIntersecting }], o); });
+    },
+    /** One delivery with several entries, oldest first: the latest is the box's state. */
+    intersectBatch(states) {
+      act(() => { for (const o of observers.filter((x) => !x.disconnected)) o.callback(states.map((isIntersecting) => ({ isIntersecting })), o); });
+    },
     /** Tell the live observers the box is on screen (true) or off it (false). */
     intersect(isIntersecting) {
       act(() => { for (const o of observers.filter((x) => !x.disconnected)) o.callback([{ isIntersecting }], o); });

@@ -109,6 +109,9 @@ export default function ShadowCanvas({
     let last = 0;
     let running = false;
     let visible = true;
+    // A disposed run never starts again: an observer entry queued before disconnect() may still be delivered by an
+    // engine that does not drop it, and must not revive this run's loop (review B-2).
+    let disposed = false;
     const drawNow = (t) => {
       const P = liveRef.current;
       drawShadow(ctx, size, t, rig, { sel: P.sel, processing: P.processing }, fx, colors);
@@ -126,7 +129,7 @@ export default function ShadowCanvas({
       raf = requestAnimationFrame(frame);
     };
     const start = () => {
-      if (running) return;
+      if (running || disposed) return;
       running = true;
       last = 0;
       raf = requestAnimationFrame(frame);
@@ -143,6 +146,7 @@ export default function ShadowCanvas({
     syncRef.current = sync;
     const observer = typeof IntersectionObserver === 'function'
       ? new IntersectionObserver((entries) => {
+        if (disposed) return;
         visible = entries[entries.length - 1].isIntersecting;
         sync();
       }, { threshold: 0 })
@@ -152,6 +156,7 @@ export default function ShadowCanvas({
     drawNow(clockRef.current);
     sync();
     return () => {
+      disposed = true;
       stop();
       if (observer) observer.disconnect();
       document.removeEventListener('visibilitychange', sync);

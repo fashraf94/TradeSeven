@@ -54,6 +54,12 @@ describe('stepBloom — the two triggers', () => {
     }
   });
 
+  it('a NaN counter settles: the same NaN is no new selection (a render-phase step must converge)', () => {
+    const memo = seedBloom({ areaEvent: Number.NaN });
+    expect(stepBloom(memo, { areaEvent: Number.NaN })).toBe(memo);
+    expect(stepBloom(memo, { areaEvent: 1 }).key).toBe(1);
+  });
+
   it('both triggers in one step are one response, and both are remembered', () => {
     const memo = stepBloom(seedBloom({ areaEvent: 0 }), { areaEvent: 1, createdAttemptId: 'a-1' });
     expect(memo).toEqual({ areaEvent: 1, seen: 'a-1', key: 1 });

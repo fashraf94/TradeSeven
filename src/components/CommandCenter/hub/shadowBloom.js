@@ -25,7 +25,8 @@ export function seedBloom({ areaEvent = 0, createdAttemptId = null } = {}) {
  * triggers arrived in the same step.
  */
 export function stepBloom(memo, { areaEvent = 0, createdAttemptId = null } = {}) {
-  const selected = areaEvent !== memo.areaEvent;
+  // Object.is, so a counter that is NaN still settles (a render-phase step must converge; review B-9).
+  const selected = !Object.is(areaEvent, memo.areaEvent);
   const created = typeof createdAttemptId === 'string' && createdAttemptId !== '' && createdAttemptId !== memo.seen;
   if (!selected && !created) return memo;
   return Object.freeze({

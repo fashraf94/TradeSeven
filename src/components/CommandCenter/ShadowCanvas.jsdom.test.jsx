@@ -397,6 +397,69 @@ describe('cleanup — an unmount, a size change, a tier change and a route chang
     expect(kit.log.arcs.every((arc) => arc.every(Number.isFinite))).toBe(true);
   });
 
+  it('an observer entry delivered after disconnect does not revive a disposed run (a size change, an unmount)', () => {
+    const m = draw({ size: 200 });
+    tick();
+    m.rerender(element({ size: 300 }));
+    kit.intersectStale(true);
+    expect(kit.raf.queue).toHaveLength(1);
+    const frames = kit.log.frames.length;
+    tick();
+    expect(kit.log.frames).toHaveLength(frames + 1);
+    m.unmount();
+    mounted = mounted.filter((x) => x !== m);
+    kit.intersectStale(true);
+    expect(kit.raf.queue).toHaveLength(0);
+  });
+
+  it('the cleanup forgets its sync: a pause released after the canvas has gone starts nothing (review B-5)', () => {
+    const m = draw({ paused: true });
+    m.rerender(element({ paused: true, reducedMotion: true }));
+    expect(m.host.querySelector('canvas')).toBeNull();
+    m.rerender(element({ paused: false, reducedMotion: true }));
+    expect(kit.raf.queue).toHaveLength(0);
+    expect(kit.raf.requested).toBe(0);
+  });
+
+  it('the first frame after a restart advances the clock by one frame, not by the whole gap (review B-6)', () => {
+    draw({ size: 200, status: 'processing' });
+    tick(5);
+    kit.setHidden(true);
+    kit.setHidden(false);
+    kit.tick(100000);
+    const t = 5 * 0.016 * 1.6 + 0.016 * 1.6;
+    const { log } = kit.contexts.at(-1);
+    const start = log.frames.slice(0, -1).reduce((n, f) => n + f.arcs, 0);
+    expect(log.arcs[start][2]).toBeCloseTo(R(200) * 0.11 * (1 + 0.18 * Math.sin(t * 5)), 10);
+  });
+
+  it('the latest entry of an observer delivery is the box\'s state (a batch ending offscreen stops, ending onscreen resumes)', () => {
+    draw({});
+    kit.intersectBatch([true, false]);
+    expect(kit.raf.queue).toHaveLength(0);
+    kit.intersectBatch([false, true]);
+    expect(kit.raf.queue).toHaveLength(1);
+  });
+
+  it('a flash begun on the still ends on its own clock even if the canvas showed meanwhile: no stale lit still (review B-1)', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const m = draw({ reducedMotion: true });
+    m.rerender(element({ reducedMotion: true, areaEvent: 1 }));
+    expect(box(m).hasAttribute('data-shadow-flash')).toBe(true);
+    m.rerender(element({ reducedMotion: false, areaEvent: 1 }));
+    m.rerender(element({ reducedMotion: false, areaEvent: 2 }));
+    act(() => { vi.advanceTimersByTime(5000); });
+    m.rerender(element({ reducedMotion: true, areaEvent: 2 }));
+    expect(box(m).hasAttribute('data-shadow-flash')).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('a counter that is NaN still settles: the render-phase step converges (review B-9)', () => {
+    const m = draw({ areaEvent: Number.NaN });
+    expect(() => m.rerender(element({ areaEvent: Number.NaN }))).not.toThrow();
+    expect(m.host.querySelector('canvas')).not.toBeNull();
+  });
+
   it('a re-render with the same size and tier keeps the loop: no observer or listener churn', () => {
     const m = draw({});
     for (let i = 0; i < 4; i += 1) m.rerender(element({ selectedArea: i % 3, status: i % 2 ? 'processing' : 'ambient' }));
