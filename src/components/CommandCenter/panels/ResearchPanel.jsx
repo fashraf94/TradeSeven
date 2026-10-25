@@ -131,7 +131,8 @@ export default function ResearchPanel({ research, onOpenForge, onRetry }) {
   const status = research?.status || RESEARCH_STATE.LOADING;
   // Where there is nothing to open (a release or an account without records), the Forge action is not drawn.
   const door = status !== RESEARCH_STATE.GATE_OFF && status !== RESEARCH_STATE.DISABLED;
-  const due = status === RESEARCH_STATE.READY && Boolean(research.idea?.reviewDue);
+  // A review-due idea points at the Forge's review whether or not the route gave the frozen list its sentence is filled from.
+  const due = status === RESEARCH_STATE.READY && research.idea?.status === 'review_due';
   return (
     <div data-hub-panel="research" data-hub-status-of={status} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* The design's header row: the eyebrow, and the action on the right (ff-stage.jsx ResearchPanel). */}

@@ -554,6 +554,52 @@ describe('an explicit Retry: one per 30 s per key, judged at the press', () => {
     expect(latest.status).toBe(RESEARCH_READ.READY);
   });
 
+  it('a return that arrived during a read which then FAILS still gets its one follow-up read', async () => {
+    const first = deferred();
+    listHypothesisVersions.mockReturnValueOnce(first.promise).mockResolvedValue(BODY('wl-1', { currentVersion: 3, versions: [{ version: 3, statement: 'After the return', status: 'draft' }] }));
+    render();
+    act(() => latest.invalidate());
+    first.reject(new Error('down'));
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    expect(latest).toMatchObject({ status: RESEARCH_READ.READY });
+    expect(latest.data.currentVersion).toBe(3);
+  });
+
+  it('the Retry wait belongs to the owner and epoch as well as the list: the same list under a new epoch is its own key', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(2_000_000);
+    listHypothesisVersions.mockRejectedValue(new Error('down'));
+    render();
+    await settle();
+    act(() => latest.retry());
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    rerender({ auth: AUTH('u-1', 2) });
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(3);
+    act(() => latest.retry());
+    await settle();
+    expect(listHypothesisVersions, 'a Retry under the new epoch is the first for that key').toHaveBeenCalledTimes(4);
+    clock.mockRestore();
+  });
+
+  it('a good answer ends the refused press\'s note (it is cleared by success, not left for the panel to hide)', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(3_000_000);
+    listHypothesisVersions.mockRejectedValueOnce(new Error('down')).mockRejectedValueOnce(new Error('down'));
+    render();
+    await settle();
+    act(() => latest.retry());
+    await settle();
+    clock.mockReturnValue(3_005_000);
+    act(() => latest.retry());
+    expect(latest.retryNotBefore).toBe(3_030_000);
+    listHypothesisVersions.mockResolvedValue(BODY('wl-1'));
+    act(() => latest.invalidate());
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.READY, retryNotBefore: null });
+    clock.mockRestore();
+  });
+
   it('a Retry with nothing to ask about reads nothing', async () => {
     render({ listId: null });
     act(() => latest.retry());

@@ -344,6 +344,27 @@ describe('S5: the design note\'s labels, exactly, and nothing the hub cannot bac
   });
 });
 
+describe('S6: the research words, exactly (the spec\'s §8.1 table and the hub\'s own)', () => {
+  it('the table\'s strings are the spec\'s, and the other words the panel and the stage use are pinned so a row that compares a word with itself cannot hide a change', () => {
+    const R = HUB_COPY.research;
+    expect([R.gateOff, R.disabled, R.noList, R.noIdea('L'), R.error]).toEqual([
+      "Research records aren't part of this release", "Research records aren't available on this account",
+      'Equip a watchlist in the Forge to see its idea here', 'No idea yet on L', "Couldn't load your idea",
+    ]);
+    expect([R.oneIdea('L'), R.retry, R.openForge, R.reviewInForge, R.ideas, R.loading, R.summaryLoading, R.thisList, R.version(3), R.savedOn('D'), R.statusSince('D')]).toEqual([
+      '1 idea on L', 'Retry', 'Open in the Forge', 'Review in the Forge', 'Ideas', 'Checking your research', 'Checking your research', 'your equipped list', 'Version 3', 'Saved D', 'Status since D',
+    ]);
+    expect(R.pointerUnavailable('L')).toBe("The saved idea for L isn't available");
+    expect(R.retryAt('T')).toBe('You can try again at T');
+    expect(R.asOf('T')).toBe('As of T · couldn’t refresh');
+    expect(R.summary).toEqual({
+      gateOff: 'Not in this release', disabled: 'Not on this account', noList: 'No list equipped', noIdea: 'No idea yet', pointerUnavailable: 'Unavailable', error: 'Couldn’t load',
+    });
+    expect(HUB_COPY.deploy.deployingWith('S', '3 names')).toBe('Deploying with: S · 3 names');
+    expect([HUB_COPY.activity.ideaSaved, HUB_COPY.activity.ideaState('Ready')]).toEqual(['Idea saved', 'Idea · Ready']);
+  });
+});
+
 describe('no claim the hub cannot back (spec §8.2, §11.3)', () => {
   const BANNED = [
     /\blearn/i, /\bimprov/i, /\bintelligen/i, /\bsmart(er)?\b/i, /\bearned\b/i, /\btier\b/i, /getting better/i,

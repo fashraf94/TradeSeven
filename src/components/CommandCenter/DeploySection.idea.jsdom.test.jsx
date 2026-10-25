@@ -10,7 +10,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { DEPLOY_DISPLAY_STATES } from './hub/deployDisplay';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import DeploySection, { PhoneDeployCard } from './sections/DeploySection';
-import { injectTokens, mount } from './__fixtures__/hubTestKit';
+import { byRole, injectTokens, mount } from './__fixtures__/hubTestKit';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -44,6 +44,16 @@ describe('"Deploying with" is drawn where a deploy can be started, and only ther
       expect(drawn !== null, `${state}: ${host === desktop.host ? 'desktop' : 'phone'}`).toBe(startable);
       if (startable) expect(drawn.textContent).toBe(COPY.deploy.deployingWith(IDEA.statement, COPY.loadout.names(IDEA.count)));
     }
+  });
+
+  it('on the desktop card the line stands between the loadout line and the hold, not below the state lines', () => {
+    const card = mount(<DeploySection deploy={deployIn('ready')} loadoutLine="Archetype · Watchlist" idea={IDEA} />);
+    mounted.push(card);
+    const drawn = line(card.host);
+    const hold = byRole(card.host, 'button', COPY.deploy.holdLabel)[0];
+    expect(drawn.compareDocumentPosition(hold) & Node.DOCUMENT_POSITION_FOLLOWING, 'the line comes before the hold').toBeTruthy();
+    const stateLine = card.host.querySelector('[data-hub-hold-help]');
+    expect(drawn.compareDocumentPosition(stateLine) & Node.DOCUMENT_POSITION_FOLLOWING, 'and before the helper lines').toBeTruthy();
   });
 
   it('no idea → no line, in any state; the whole statement is in the line\'s title, and the count wording is the Loadout card\'s', () => {

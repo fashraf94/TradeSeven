@@ -100,6 +100,35 @@ describe('the Research section, one row per state of spec §8.1\'s table', () =>
     expect(derive({ loadout: loadoutOf({ watchlist: card({ state: WATCHLIST_STATE.NONE, id: null }) }) }).status).toBe(RESEARCH_STATE.NO_LIST);
   });
 
+  it('a ready card with an idle reader (no list id to ask about) is "no list", not a wait for an answer that cannot come', () => {
+    expect(derive({ read: readOf({ status: RESEARCH_READ.IDLE, listId: null, data: null }) }).status).toBe(RESEARCH_STATE.NO_LIST);
+    expect(derive({ read: readOf({ listId: null }) }).status).toBe(RESEARCH_STATE.NO_LIST);
+  });
+
+  it('each settled state carries its own one-line summary for the stage (and only a loading one has none)', () => {
+    const S = COPY.research.summary;
+    const pick = (over) => derive(over).summary;
+    expect(pick({ read: readOf({ status: RESEARCH_READ.GATE_OFF, data: null, listId: null }) })).toBe(S.gateOff);
+    expect(pick({ read: readOf({ status: RESEARCH_READ.DISABLED, data: null }) })).toBe(S.disabled);
+    expect(pick({ loadout: loadoutOf({ watchlist: card({ state: WATCHLIST_STATE.NONE, id: null }) }) })).toBe(S.noList);
+    expect(pick({ read: readOf({ data: dataOf({ currentVersion: 0, versions: [], versionCount: 0 }) }) })).toBe(S.noIdea);
+    expect(pick({ read: readOf({ data: dataOf({ currentVersion: 5, versions: [V(4)], versionCount: 1 }) }) })).toBe(S.pointerUnavailable);
+    expect(pick({ read: readOf({ status: RESEARCH_READ.ERROR, data: null }) })).toBe(S.error);
+    expect(pick({ loadout: { status: LOADOUT_STATUS.ERROR } })).toBe(S.error);
+    expect(pick({ read: readOf({ data: dataOf({ versions: [V(1, { status: 'ready' })] }) }) })).toBe('Ready');
+    expect(pick({ loadout: { status: LOADOUT_STATUS.LOADING } })).toBeUndefined();
+    expect(new Set(Object.values(S)).size, 'no two states share a summary word').toBe(Object.keys(S).length);
+  });
+
+  it('a status the Forge has no word for is never shown as a raw token: no chip, and the unavailable summary stands in for the word', () => {
+    const section = derive({ read: readOf({ data: dataOf({ versions: [V(1, { status: 'archived_by_robots' })] }) }) });
+    expect(section.idea.statusLabel).toBeNull();
+    expect(section.summary).toBe(COPY.research.summary.pointerUnavailable);
+    expect(JSON.stringify(section)).not.toContain('archived_by_robots"statusLabel');
+    const idea = ideaActivityOf({ read: readOf({ data: dataOf({ versions: [V(1, { status: 'archived_by_robots' })] }) }), watchlist: card() });
+    expect(idea.statusLabel).toBeNull();
+  });
+
   it('currentVersion 0 → "No idea yet on {list}": a successful no-idea state, whatever versions the response holds', () => {
     const section = derive({ read: readOf({ data: dataOf({ currentVersion: 0, versions: [], versionCount: 0 }) }) });
     expect(section).toMatchObject({ status: RESEARCH_STATE.NO_IDEA, listName: 'Tech Leaders' });
@@ -268,6 +297,20 @@ describe('the honest line (ruling R-S6-6): one wording per case, chosen from wha
     expect(honestLineKindOf({ thesis: 'Old thesis text', statement })).toBe(HONEST_LINE.THESIS_SAVED);
     expect(honestLineKindOf({ thesis: statement.toLowerCase(), statement })).toBe(HONEST_LINE.THESIS_SAVED);
     expect(honestLineKindOf({ thesis: `${statement} And a long tail.`, statement })).toBe(HONEST_LINE.THESIS_SAVED);
+  });
+
+  it('the line is judged against the POINTER\'s statement, never the newest version\'s', () => {
+    const versions = [V(2, { statement: 'A newer, different idea.' }), V(1, { statement })];
+    const read = readOf({ data: dataOf({ currentVersion: 1, versions, versionCount: 2 }) });
+    expect(derive({ read, listDoc: LISTDOC({ thesis: statement }) }).idea.honest).toBe(HONEST_LINE.THESIS_IS_IDEA);
+    expect(derive({ read, listDoc: LISTDOC({ thesis: 'A newer, different idea.' }) }).idea.honest).toBe(HONEST_LINE.THESIS_SAVED);
+  });
+
+  it('a version with no statement text, against a list that has a thesis, is (b) — and nothing throws', () => {
+    expect(honestLineKindOf({ thesis: 'Old thesis', statement: undefined })).toBe(HONEST_LINE.THESIS_SAVED);
+    expect(honestLineKindOf({ thesis: 'Old thesis', statement: null })).toBe(HONEST_LINE.THESIS_SAVED);
+    const read = readOf({ data: dataOf({ versions: [V(1, { statement: undefined })] }) });
+    expect(derive({ read, listDoc: LISTDOC({ thesis: 'Old thesis' }) }).idea.honest).toBe(HONEST_LINE.THESIS_SAVED);
   });
 
   it('on the section: each case lands on the list\'s own wording, and the three wordings are the founder\'s', () => {

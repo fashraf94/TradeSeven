@@ -291,6 +291,37 @@ describe('the Research panel, one row per state of spec §8.1\'s table (ruling R
     expect(panel().querySelector('[data-hub-idea-count]').textContent).toBe('1 idea on Tech Leaders');
   });
 
+  it('the card\'s meta line is its three recorded pieces in order, and absent when the record holds none', async () => {
+    await phoneResearch();
+    expect(panel().querySelector('[data-hub-idea-meta]').textContent).toBe('Swing, 10 trading sessions · Saved Oct 22, 2026 · Status since Oct 22, 2026');
+    expect(panel().querySelector('[data-hub-idea-statement]').getAttribute('style')).toContain('white-space: pre-wrap');
+    unmountAll();
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { horizonEnum: undefined, createdAt: undefined, stateChangedAt: undefined })] }));
+    await phoneResearch();
+    expect(statusOf()).toBe('ready');
+    expect(panel().querySelector('[data-hub-idea-meta]')).toBeNull();
+  });
+
+  it('the status chip wears the Forge\'s status in the hub\'s tones', async () => {
+    for (const [status, tone] of [['ready', 'teal'], ['activated', 'teal'], ['review_due', 'copper'], ['researched', 'gold'], ['draft', 'dim'], ['retired', 'dim']]) {
+      svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status })] }));
+      await phoneResearch();
+      expect(panel().querySelector('[data-hub-idea-status]').getAttribute('data-hub-idea-status'), status).toBe(status);
+      expect(panel().querySelector('[data-hub-tag]').getAttribute('data-hub-tag'), status).toBe(tone);
+      unmountAll();
+    }
+  });
+
+  it('a recorded research line says when its research is still open (the line\'s state suffix)', async () => {
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ research: [SIGNALDROP, ANALYSIS] }));
+    await phoneResearch();
+    const lines = [...panel().querySelectorAll('[data-hub-idea-research] li')];
+    expect(lines).toHaveLength(2);
+    expect(lines[0].textContent).toBe('Researched with your agent: 25 candidates · 10 kept');
+    expect(lines[1].textContent).toContain('Research still open');
+    expect(lines[1].textContent).toContain(' · ');
+  });
+
   it('four versions of one idea are ONE idea: the pointer\'s version, "1 idea on {list}", nothing of the others', async () => {
     svc.listHypothesisVersions.mockResolvedValue(BODY({
       currentVersion: 3, versions: [V(4, { status: 'draft' }), V(3, { status: 'ready' }), V(2, { status: 'retired' }), V(1, { status: 'rejected' })],
@@ -325,6 +356,26 @@ describe('the Research panel, one row per state of spec §8.1\'s table (ruling R
     expect(labels).toEqual([COPY.research.reviewInForge]);
     click(forgeButton());
     expect(hub.onOpenForge).toHaveBeenCalledWith({ area: FORGE_AREAS.LISTS, returnTo: FORGE_RETURN.DASHBOARD });
+  });
+
+  it('review due with no frozen list to fill the sentence from: no invented line, and the door still says "Review in the Forge"', async () => {
+    const due = V(1, { status: 'review_due', stateReason: 'horizon_elapsed', firstDeployedAt: iso(T.created) });
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [due], deployedLists: {} }));
+    await phoneResearch();
+    expect(panel().querySelector('[data-hub-idea-due]')).toBeNull();
+    expect(byRole(panel(), 'button', COPY.research.reviewInForge)).toHaveLength(1);
+    expect(byRole(panel(), 'button', COPY.research.openForge)).toHaveLength(0);
+  });
+
+  it('the agent\'s read failed: "Couldn\'t load" and the Retry is the AGENT\'s read — the idea reader has nothing to ask yet', async () => {
+    const agentRetry = vi.fn();
+    r.agent = { status: 'error', agent: null, ownerUid: UID, ownerEpoch: 2, readError: new Error('x'), retry: agentRetry };
+    await phoneResearch();
+    expect(statusOf()).toBe('error');
+    expect(panelText()).toContain("Couldn't load your idea");
+    click(retryButton());
+    expect(agentRetry).toHaveBeenCalledTimes(1);
+    expect(svc.listHypothesisVersions).not.toHaveBeenCalled();
   });
 
   it('a failed refresh keeps only this owner\'s and list\'s idea, with its age and a Retry', async () => {
@@ -402,9 +453,19 @@ describe('the Research panel, one row per state of spec §8.1\'s table (ruling R
     for (const [status, line] of [['gate_off', COPY.research.summary.gateOff], ['disabled', COPY.research.summary.disabled], ['no_list', COPY.research.summary.noList], ['no_idea', COPY.research.summary.noIdea], ['error', COPY.research.summary.error]]) {
       expect(summary({ status, summary: line }), status).toBe(line);
     }
+    // ...and through the real hub, on the phone stage's own Research line (the panel's body also says "No idea yet", so the body is not the proof).
+    const stageLine = () => document.querySelector('[data-hub-summary="1"]').textContent;
+    svc.listHypothesisVersions.mockReturnValue(new Promise(() => {}));
+    await phoneResearch();
+    expect(stageLine()).toBe(COPY.areas.shortNames[1] + COPY.areas.summaryTail(COPY.research.summaryLoading));
+    unmountAll();
     svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 0, versions: [] }));
     await phoneResearch();
-    expect(document.body.textContent).toContain(COPY.research.summary.noIdea);
+    expect(stageLine()).toBe(COPY.areas.shortNames[1] + COPY.areas.summaryTail(COPY.research.summary.noIdea));
+    unmountAll();
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status: 'ready' })] }));
+    await phoneResearch();
+    expect(stageLine()).toBe(COPY.areas.shortNames[1] + COPY.areas.summaryTail('Ready'));
   });
 });
 
@@ -728,6 +789,16 @@ describe('the honest line (ruling R-S6-6): one wording per case, under the idea,
       expect(honest(), statusOf()).toBeNull();
       expect(document.body.textContent).not.toMatch(/names priority/);
     }
+  });
+
+  it('the equipped list\'s OWN document decides it — the first committed list\'s thesis and names do not', async () => {
+    r.lists = [LIST({ watchlistId: 'wl-0', name: 'Other', thesis: 'Another list\'s thesis.', tickers: [{ symbol: '^GSPC' }] }), LIST({ thesis: STATEMENT })];
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { statement: STATEMENT, status: 'ready' })] }));
+    await phoneResearch();
+    expect(honest().getAttribute('data-hub-honest-line')).toBe('thesis_is_idea');
+    unmountAll();
+    await renderHub('desktop');
+    expect(deployLine()).not.toBeNull();
   });
 
   it('only about a list the agent can deploy with: the card unavailable (not among the committed lists) or empty → no line; the idea still shows', async () => {
