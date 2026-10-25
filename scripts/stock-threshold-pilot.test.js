@@ -61,11 +61,15 @@ describe('scripts/stock-threshold-pilot-control.mjs', () => {
       ['stale', { stocks: [{ symbol: 'AAPL' }, { symbol: 'EA' }, { symbol: 'WBD' }, { symbol: 'EA' }] }, 'still lists retired ticker(s) EA, WBD'],
       ['missing', null, 'is missing or has no stocks list'],
       ['no list', { updatedAt: 'x' }, 'is missing or has no stocks list'],
+      ['empty list', { stocks: [] }, 'is missing or has no stocks list'],
     ]) {
       const s = controlStore(undefined, rankings); const log = vi.fn();
       const dry = await runControl(['enable', '--all'], { db: s.db, log });
       expect(dry.written, label).toBe(false); expect(log.mock.calls.flat().join('\n'), label).toContain(why);
-      await expect(runControl(['enable', '--all', '--apply'], { db: s.db, log: () => {} }), label).rejects.toThrow(`refusing enable --all: ${STOCK_RANKINGS_PATH} ${why}`);
+      const applyLog = vi.fn();
+      await expect(runControl(['enable', '--all', '--apply'], { db: s.db, log: applyLog }), label).rejects.toThrow(`refusing enable --all: ${STOCK_RANKINGS_PATH} ${why}`);
+      // A refused --apply never announces a write (review refuter, BRB-3 NIT).
+      expect(applyLog.mock.calls.flat().join(' '), label).not.toContain('WRITING');
       expect(s.writes, label).toEqual([]); expect(s.reads, label).toContain(STOCK_RANKINGS_PATH);
     }
     expect(rankingsBlocker({ stocks: [{ symbol: 'AAPL' }, null, {}] })).toBe(null);

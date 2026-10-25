@@ -27,9 +27,9 @@
 //
 // PRECONDITION for `enable --all`: the broad-release build is merged and
 // deployed (runbook, "Switching on for everyone"). The script itself refuses
-// `enable --all --apply` while indexIntelligence/stockRankings — the CPU's and
-// the agent's pool — still lists any of the 11 retired tickers (BR-3), or is
-// missing; a dry run says so. It only reads that document.
+// `enable --all --apply` while indexIntelligence/stockRankings — the CPU's pool
+// and the agent's ranked pool — still lists any of the 11 retired tickers (BR-3),
+// or is missing or empty; a dry run says so. It only reads that document.
 
 import { pathToFileURL } from 'node:url';
 import { STOCK_MODEL, stockContent } from '../src/utils/stockThresholdModel.js';
@@ -39,7 +39,7 @@ import { isRetiredStock } from '../api/_utils/rankingConfig.js';
 export const STOCK_RANKINGS_PATH = 'indexIntelligence/stockRankings';
 /** Why `enable --all` must wait, from the rankings document; null when it may proceed. */
 export function rankingsBlocker(rankings) {
-  if (!rankings || !Array.isArray(rankings.stocks)) return `${STOCK_RANKINGS_PATH} is missing or has no stocks list`;
+  if (!rankings || !Array.isArray(rankings.stocks) || rankings.stocks.length === 0) return `${STOCK_RANKINGS_PATH} is missing or has no stocks list`;
   const stale = [...new Set(rankings.stocks.map(s => s?.symbol).filter(isRetiredStock))];
   return stale.length ? `${STOCK_RANKINGS_PATH} still lists retired ticker(s) ${stale.join(', ')}: wait for the next weekday rankings run` : null;
 }
@@ -104,15 +104,16 @@ export async function run(argv, { db, log = console.log } = {}) {
   log(`selects: ${describeControl(current)}`);
   if (action === 'show') return { action, written: false, current };
   const next = buildControlDocument(current, { action, ownerIds, all });
-  log(`${apply ? 'WRITING' : 'DRY RUN — would write'} ${STOCK_ADMISSION_CONTROL_PATH}:\n${JSON.stringify(next, null, 2)}`);
-  log(`after: ${describeControl(next)}`);
-  for (const id of ownerIds) log(`  ${id}: ${stockAdmissionSelects(next, id) ? 'selected' : 'not selected'}`);
+  // BR-3 precondition, checked before anything is announced as written.
   if (action === 'enable' && all) {
     const rankingsSnap = await db.doc(STOCK_RANKINGS_PATH).get();
     const blocker = rankingsBlocker(rankingsSnap.exists ? rankingsSnap.data() : null);
     log(`${STOCK_RANKINGS_PATH}: ${blocker ?? 'lists none of the retired tickers'}`);
     if (blocker && apply) throw new Error(`refusing enable --all: ${blocker}`);
   }
+  log(`${apply ? 'WRITING' : 'DRY RUN — would write'} ${STOCK_ADMISSION_CONTROL_PATH}:\n${JSON.stringify(next, null, 2)}`);
+  log(`after: ${describeControl(next)}`);
+  for (const id of ownerIds) log(`  ${id}: ${stockAdmissionSelects(next, id) ? 'selected' : 'not selected'}`);
   if (!apply) { log('Nothing written. Re-run with --apply to write exactly this document.'); return { action, written: false, current, next }; }
   await ref.set(next);
   const check = (await ref.get()).data();

@@ -88,9 +88,10 @@ export const STOCK_UNIVERSE = {
 // delisted or, in PARA's case, reused by a different company
 // (docs/audits/BAGGERBOMB_MEASUREMENT_CLOSEOUT_20261012.md §exceptions). No
 // successors are added. They are out of STOCK_UNIVERSE and ALL_TICKERS, so no
-// cron fetches or ranks them and indexIntelligence/stockRankings, the CPU's and
-// the agent's pool, no longer lists them; the Forge add search and the ticker
-// validator refuse new picks of them. Each keeps its last sector here and in the
+// cron fetches or ranks them and indexIntelligence/stockRankings (the CPU's pool
+// and the agent's ranked pool) no longer lists them; the Forge add search and the
+// ticker validator refuse new picks of them (an equipped watchlist that already
+// holds one can still offer it to the agent, and a measured creation refuses it). Each keeps its last sector here and in the
 // label maps below (TICKER_TO_SECTOR / TYPE / INDUSTRY), so existing battles,
 // Film Room tapes, watchlists and Wire documents that hold one read exactly as
 // before.
