@@ -187,6 +187,8 @@ describe('R-S7-2 — no device probe, no clock of its own, no second media query
   it('frames that arrive slowly never thin the strands or change the tier: every frame draws the whole tier (no self-downgrade)', () => {
     const m = draw({ tier: 'mid' });
     for (let i = 0; i < 40; i += 1) kit.tick(300);
+    // The loop never gave up on slow frames: the mount's draw and one frame per tick.
+    expect(kit.log.frames).toHaveLength(41);
     expect(kit.log.frames.every((f) => f.strokes === 126)).toBe(true);
     expect(kit.log.ops).toEqual(['resize', 'resize', 'transform']);
     expect(kit.observers).toHaveLength(1);
