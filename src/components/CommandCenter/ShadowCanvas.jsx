@@ -185,12 +185,12 @@ export default function ShadowCanvas({
     setFlash((n) => n + 1);
   };
 
-  // The ceremony (or any cover the hub names) pausing or releasing the loop, with no restart of the canvas; a change of
-  // route settles the still's debt too.
+  // The ceremony (or any cover the hub names) pausing or releasing the loop, with no restart of the canvas. A debt exists
+  // only while the page is covered, so a release is the one moment it is settled, paid by the still and dropped by the canvas.
   useEffect(() => {
     if (syncRef.current) syncRef.current();
     flushFlashRef.current();
-  }, [paused, still]);
+  }, [paused]);
 
   // The response: a bloom on the canvas's clock, or the still's brief flash.
   const answeredRef = useRef(bloom.key);
