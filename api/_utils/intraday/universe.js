@@ -1,8 +1,8 @@
 // api/_utils/intraday/universe.js
 //
 // Intraday Data — Build 1, contract §4: the universe list and the actionable
-// set. The universe is the 255 real-time symbols of compute-index-intelligence
-// (5 index + 11 sector ETFs + 239 stocks, assembled at
+// set. The universe is the 244 real-time symbols of compute-index-intelligence
+// (5 index + 11 sector ETFs + 228 stocks since BR-3, assembled at
 // api/cron/compute-index-intelligence.js:738-742) plus every crypto symbol
 // held or benched in an active battle. The actionable set is held ∪ bench
 // across active battles, recomputed each sweep.

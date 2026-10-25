@@ -34,6 +34,12 @@ describe('searchUniverse', () => {
     expect(results.some((r) => r.symbol === 'AAPL')).toBe(false);
   });
 
+  it('BR-3: never offers a retired stock as a new add', () => {
+    for (const t of ['AVB', 'CTRA', 'EA', 'EQR', 'HES', 'IPG', 'K', 'MMC', 'PARA', 'WBA', 'WBD']) {
+      expect(searchUniverse(t).some((r) => r.symbol === t), t).toBe(false);
+    }
+    expect(searchUniverse('KMB').some((r) => r.symbol === 'KMB')).toBe(true);
+  });
   it('returns nothing at capacity or for an empty query', () => {
     expect(searchUniverse('AAPL', { atCap: true })).toEqual([]);
     expect(searchUniverse('')).toEqual([]);

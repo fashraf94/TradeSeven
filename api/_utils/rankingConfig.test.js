@@ -3,6 +3,8 @@
 // Sprint 6 Phase 4.5a — universe expansion coverage. The original universe
 // (239 stocks across 11 GICS sectors) gains 11 Tier 1 sector ETFs and 28
 // Tier 2 industry ETFs in this phase. Total TICKER_TO_SECTOR size: 278.
+// BR-3 (Oct 25, 2026): 11 dead stocks left the universe (239 → 228), and keep
+// their labels, so TICKER_TO_SECTOR / TYPE / INDUSTRY stay at 278.
 //
 // Tests are grouped per the audit's verification matrix V-1 through V-12.
 
@@ -16,11 +18,14 @@ import {
   SECTOR_ETFS,
   INDUSTRY_ETFS,
   INDUSTRY_ETF_THEMES,
+  RETIRED_STOCKS,
 } from './rankingConfig.js';
 
 describe('rankingConfig — Phase 4.5a universe expansion', () => {
-  it('V-1: preserves all 239 original stocks in TICKER_TO_SECTOR', () => {
-    expect(ALL_TICKERS).toHaveLength(239);
+  it('V-1: preserves the 228 universe stocks and the 11 retired ones in TICKER_TO_SECTOR', () => {
+    // BR-3: 239 less the 11 retired stocks, which keep their sector label.
+    expect(ALL_TICKERS).toHaveLength(228);
+    for (const t of [...ALL_TICKERS, ...Object.keys(RETIRED_STOCKS)]) expect(TICKER_TO_SECTOR[t], t).toBeTruthy();
     const spotChecks = {
       AAPL: 'XLK', MSFT: 'XLK', NVDA: 'XLK',
       JPM: 'XLF', 'BRK-B': 'XLF',
@@ -133,7 +138,7 @@ describe('rankingConfig — Phase 4.5a universe expansion', () => {
     ]);
   });
 
-  it('V-9: total TICKER_TO_SECTOR size = 278 (239 + 11 + 28)', () => {
+  it('V-9: total TICKER_TO_SECTOR size = 278 (228 + 11 retired + 11 + 28)', () => {
     expect(Object.keys(TICKER_TO_SECTOR)).toHaveLength(278);
     expect(Object.keys(TICKER_TO_TYPE)).toHaveLength(278);
   });
@@ -178,9 +183,9 @@ describe('rankingConfig — Phase 4.5a universe expansion', () => {
     }
   });
 
-  it('V-11: all 239 stocks have a non-empty string industry', () => {
-    expect(ALL_TICKERS).toHaveLength(239);
-    for (const ticker of ALL_TICKERS) {
+  it('V-11: all 228 universe stocks and the 11 retired ones have a non-empty string industry', () => {
+    expect(ALL_TICKERS).toHaveLength(228);
+    for (const ticker of [...ALL_TICKERS, ...Object.keys(RETIRED_STOCKS)]) {
       expect(typeof TICKER_TO_INDUSTRY[ticker]).toBe('string');
       expect(TICKER_TO_INDUSTRY[ticker].length).toBeGreaterThan(0);
     }
