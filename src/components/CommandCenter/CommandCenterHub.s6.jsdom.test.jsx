@@ -231,6 +231,20 @@ describe('the Research panel, one row per state of spec §8.1\'s table (ruling R
     expect(panelText()).toContain('Idea v4');
   });
 
+  it('a Retry over an unavailable pointer refused inside the wait says when the next opens (the link is drawn in that state too)', async () => {
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 5, versions: [V(4)] }));
+    await phoneResearch();
+    expect(statusOf()).toBe('unavailable');
+    click(retryButton());
+    await flush();
+    expect(svc.listHypothesisVersions).toHaveBeenCalledTimes(2);
+    vi.setSystemTime(NOW + 5_000);
+    click(retryButton());
+    await flush();
+    expect(svc.listHypothesisVersions).toHaveBeenCalledTimes(2);
+    expect(panelText()).toMatch(/You can try again at \d{1,2}:\d{2}\s?[AP]M ET/);
+  });
+
   it('a request error: "Couldn\'t load your idea · Retry"', async () => {
     svc.listHypothesisVersions.mockRejectedValue(new Error('offline'));
     await phoneResearch();

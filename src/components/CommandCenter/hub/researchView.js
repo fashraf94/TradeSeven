@@ -198,7 +198,8 @@ export function deriveResearch({ read, loadout, listDoc = null }) {
   }
   if (held.currentVersion === 0) return section(RESEARCH_STATE.NO_IDEA, { listName, summary: COPY.research.summary.noIdea, ...staleOf(read) });
   const version = pointerVersionOf(held);
-  if (!version) return section(RESEARCH_STATE.UNAVAILABLE, { listName, summary: COPY.research.summary.pointerUnavailable, ...staleOf(read) });
+  // Its Retry is drawn whether or not the answer is stale, so a press refused inside the wait is said here too.
+  if (!version) return section(RESEARCH_STATE.UNAVAILABLE, { listName, summary: COPY.research.summary.pointerUnavailable, retryNotBefore: read.retryNotBefore ?? null, ...staleOf(read) });
   const honest = honestKindFor({ watchlist, listDoc, statement: version.statement });
   const idea = ideaOf(version, held, read.listId, listName, honest);
   return section(RESEARCH_STATE.READY, { listName, idea, summary: idea.statusLabel ?? COPY.research.summary.pointerUnavailable, ...staleOf(read) });
