@@ -591,6 +591,18 @@ describe('connected: the root ceremony covers the page, so Shadow pauses (R-S7-5
     expect(bloomRuns(340)).toBe(1);
   });
 
+  it('the phone pauses behind the ceremony too, and resumes when it closes', async () => {
+    renderConnected('mobile');
+    tick(3);
+    await deployViaHold(strip);
+    expect(probe.current.snapshot.overlayOpen).toBe(true);
+    expect(kit.raf.queue).toHaveLength(0);
+    closeCeremony();
+    await flush();
+    expect(probe.current.snapshot.overlayOpen).toBe(false);
+    expect(kit.raf.queue).toHaveLength(1);
+  });
+
   it('no ceremony, no pause: the loop runs through a deployment that has none', async () => {
     h.ceremony = false;
     renderConnected('desktop');

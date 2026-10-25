@@ -372,6 +372,16 @@ describe('cleanup — an unmount, a size change, a tier change and a route chang
     expect(kit.log.frames.at(-1).strokes).toBe(21 * 3 * 2);
   });
 
+  it('a tier change drops the effects that name a strand the new tier lacks: nothing is drawn from a missing strand', () => {
+    const m = draw({ tier: 'mid' });
+    tick(60);
+    // The quiet random puts the first signal on the last of mid's 21 strands; low has 15.
+    m.rerender(element({ tier: 'low' }));
+    tick(3);
+    expect(kit.log.arcs.length).toBeGreaterThan(0);
+    expect(kit.log.arcs.every((arc) => arc.every(Number.isFinite))).toBe(true);
+  });
+
   it('a re-render with the same size and tier keeps the loop: no observer or listener churn', () => {
     const m = draw({});
     for (let i = 0; i < 4; i += 1) m.rerender(element({ selectedArea: i % 3, status: i % 2 ? 'processing' : 'ambient' }));
@@ -441,6 +451,16 @@ describe('the response — the center bloom, and the still\'s brief flash (R-S7-
     expect(d.slice(1, 55)).toEqual(new Array(54).fill(2));
     expect(d.slice(58, 74)).toEqual(new Array(16).fill(1));
     expect(d.slice(77)).toEqual(new Array(d.length - 77).fill(0));
+  });
+
+  it('a response late in a session blooms at once: it is stamped on Shadow\'s clock now, not at zero', () => {
+    const { subject, diff } = pair();
+    tick(100);
+    subject.rerender(element({ areaEvent: 1 }));
+    tick();
+    expect(diff().at(-1)).toBe(2);
+    tick(30);
+    expect(diff().at(-1)).toBe(2);
   });
 
   it('re-rendering with the same areaEvent, or changing only the selected area, is no response (a tab switch, a re-select)', () => {

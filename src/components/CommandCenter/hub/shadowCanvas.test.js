@@ -130,17 +130,27 @@ describe('stepFx — ambient signals and flares, deterministic under an injected
 
   it('with an area selected, 70% of signals ride that family\'s strands (the design\'s pick)', () => {
     const family = (i) => strands[i].fam;
-    const inFamily = new Array(200).fill(0).map((_, n) => {
+    const picked = new Array(200).fill(0).map((_, n) => {
       const fx = createFx();
       const draws = [0.1, n / 200, 0.5];
       stepFx(fx, { t: 1, dt: 0.016, speed: 1, processing: false, sel: 2, strands }, () => draws.shift() ?? 0.5);
-      return family(fx.signals[0].i);
+      return fx.signals[0].i;
     });
-    expect(inFamily.every((f) => f === 2)).toBe(true);
+    expect(picked.every((i) => family(i) === 2)).toBe(true);
+    // ...spread over the whole family (strands 14 to 20), not parked on one.
+    expect(new Set(picked)).toEqual(new Set([14, 15, 16, 17, 18, 19, 20]));
     const elsewhere = createFx();
     const draws = [0.9, 0.0, 0.5];
     stepFx(elsewhere, { t: 1, dt: 0.016, speed: 1, processing: false, sel: 2, strands }, () => draws.shift() ?? 0.5);
     expect(elsewhere.signals[0].i).toBe(0);
+  });
+
+  it('area 0 is an area: the first family is picked from like any other (not mistaken for no selection)', () => {
+    const fx = createFx();
+    const draws = [0.1, 0.99, 0.5];
+    stepFx(fx, { t: 1, dt: 0.016, speed: 1, processing: false, sel: 0, strands }, () => draws.shift() ?? 0.5);
+    expect(fx.signals[0].i).toBe(6);
+    expect(strands[6].fam).toBe(0);
   });
 
   it('a strand flare starts at 1.5 s on a strand, and ends after BLOOM_SECONDS', () => {
@@ -151,6 +161,7 @@ describe('stepFx — ambient signals and flares, deterministic under an injected
     expect(fx.blooms).toHaveLength(1);
     expect(fx.blooms[0]).toMatchObject({ t0: 1.51, u: 0.3 + 0.5 * 0.4 });
     expect(fx.blooms[0].center).toBeUndefined();
+    expect(fx.nextBloom).toBeCloseTo(1.51 + 2.2 + 0.5 * 2.5, 10);
     stepFx(fx, { t: 1.51 + BLOOM_SECONDS - 0.01, dt: 0.016, speed: 1, processing: false, sel: null, strands }, half);
     expect(fx.blooms).toHaveLength(1);
     stepFx(fx, { t: 1.51 + BLOOM_SECONDS + 0.01, dt: 0.016, speed: 1, processing: false, sel: null, strands }, half);
@@ -287,10 +298,29 @@ describe('drawShadow — one frame', () => {
 
   it('fitFx drops effects that name a strand a smaller tier lacks, and keeps the center bloom', () => {
     const fx = createFx();
-    fx.signals.push({ i: 20, u: 0.1, v: 0.3 }, { i: 3, u: 0.1, v: 0.3 });
-    fx.blooms.push({ i: 18, u: 0.5, t0: 0 }, { center: true, t0: 0 }, { i: 2, u: 0.5, t0: 0 });
+    fx.signals.push({ i: 20, u: 0.1, v: 0.3 }, { i: 15, u: 0.1, v: 0.3 }, { i: 14, u: 0.1, v: 0.3 }, { i: 3, u: 0.1, v: 0.3 });
+    fx.blooms.push({ i: 18, u: 0.5, t0: 0 }, { center: true, t0: 0 }, { i: 15, u: 0.5, t0: 0 }, { i: 14, u: 0.5, t0: 0 }, { i: 2, u: 0.5, t0: 0 });
     fitFx(fx, 15);
-    expect(fx.signals.map((s) => s.i)).toEqual([3]);
-    expect(fx.blooms.map((b) => (b.center ? 'center' : b.i))).toEqual(['center', 2]);
+    // Strand 15 does not exist in a 15-strand tier (0 to 14).
+    expect(fx.signals.map((s) => s.i)).toEqual([14, 3]);
+    expect(fx.blooms.map((b) => (b.center ? 'center' : b.i))).toEqual(['center', 14, 2]);
+  });
+
+  it('strands are drawn back to front: the order is by mean depth, far first', () => {
+    const { rig } = frame('mid', 4.4, { sel: null });
+    for (let k = 1; k < rig.order.length; k += 1) expect(rig.depth[rig.order[k - 1]]).toBeLessThanOrEqual(rig.depth[rig.order[k]]);
+    expect(rig.order).not.toEqual([...rig.order].sort((a, b) => a - b));
+  });
+
+  it('depth shades colour: the nearer the run, the nearer its colour to the near token — and the more opaque it is', () => {
+    const red = shadowColors('#ff0000', '#0000ff', '#ffffff');
+    const rig = createShadowRig('low');
+    const { ctx, log } = recorder();
+    drawShadow(ctx, 250, 3, rig, { sel: null, processing: false }, createFx(), red);
+    const runs = log.strokes.map((s) => ({ a: alphaOf(s), r: rgbOf(s)[0], b: rgbOf(s)[2] }));
+    runs.sort((x, y) => x.a - y.a);
+    for (let k = 1; k < runs.length; k += 1) expect(runs[k].r).toBeGreaterThanOrEqual(runs[k - 1].r);
+    expect(runs.at(-1).r).toBeGreaterThan(runs[0].r);
+    expect(runs.at(-1).b).toBeLessThan(runs[0].b);
   });
 });
