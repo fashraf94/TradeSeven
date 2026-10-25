@@ -89,7 +89,7 @@ const hubOf = (over = {}) => ({
   activeBattles: [], activePoll: pollMeta(), refreshActiveBattles: vi.fn(), openGame: vi.fn(), openFilmRoom: vi.fn(), onOpenForge: vi.fn(), setScreen: vi.fn(), ...over,
 });
 
-const LIST = (over = {}) => ({ watchlistId: 'wl-1', name: 'Tech Leaders', status: 'committed', tickers: ['NVDA', 'AAPL', 'MSFT'], currentHypothesisVersion: 1, thesis: '', ...over });
+const LIST = (over = {}) => ({ watchlistId: 'wl-1', name: 'Tech Leaders', status: 'committed', tickers: [{ symbol: 'NVDA' }, { symbol: 'AAPL' }, { symbol: 'MSFT' }], currentHypothesisVersion: 1, thesis: '', ...over });
 const V = (n, over = {}) => ({
   version: n, statement: `Idea v${n}: semis lead for ten sessions.`, status: 'draft', horizonEnum: 'swing', createdAt: iso(T.created), stateChangedAt: iso(T.state), ...over,
 });
@@ -331,6 +331,42 @@ describe('the Research panel, one row per state of spec §8.1\'s table (ruling R
     expect(hub.onOpenForge).not.toHaveBeenCalled();
   });
 
+  it('a Retry over a kept answer shows that it is being read, and a refused press\'s note goes with the wait', async () => {
+    await phoneResearch();
+    svc.listHypothesisVersions.mockRejectedValue(new Error('offline'));
+    click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
+    click(byRole(document, 'button', COPY.loadout.changeWatchlist)[0]);
+    act(() => { seen.equip.onClose(); });
+    await flush();
+    click(byRole(document, 'tab', COPY.phoneTabs.research)[0]);
+    expect(panel().querySelector('[data-hub-research-stale]')).not.toBeNull();
+    // The first Retry (the wait opens at the press) is read; a second inside it is refused with a note.
+    svc.listHypothesisVersions.mockReturnValue(new Promise(() => {}));
+    click(retryButton());
+    await flush();
+    expect(panel().querySelector('[data-hub-research-stale] [data-hub-loading]')).not.toBeNull();
+    expect(retryButton()).toBeNull();
+    expect(panelText()).toContain('Idea v1');
+  });
+
+  it('a refused press says when the next Retry opens only while that wait stands', async () => {
+    svc.listHypothesisVersions.mockRejectedValue(new Error('offline'));
+    await phoneResearch();
+    click(retryButton());
+    await flush();
+    vi.setSystemTime(NOW + 10_000);
+    click(retryButton());
+    await flush();
+    expect(panel().querySelector('[data-hub-research-wait]')).not.toBeNull();
+    // The wait has ended; nothing has re-read since, so the note must not outlive it on a re-render.
+    vi.setSystemTime(NOW + 40_000);
+    act(() => { window.dispatchEvent(new Event('resize')); });
+    click(byRole(document, 'tab', COPY.phoneTabs.overview)[0]);
+    click(byRole(document, 'tab', COPY.phoneTabs.research)[0]);
+    expect(panel().querySelector('[data-hub-research-wait]')).toBeNull();
+    expect(retryButton()).not.toBeNull();
+  });
+
   it('the list changing clears the idea at once: the new list\'s read is out, and the old list\'s idea is gone', async () => {
     const { m } = await phoneResearch();
     expect(panelText()).toContain('Idea v1');
@@ -452,11 +488,18 @@ describe('"Deploying with" on the Deploy card (ruling R-S6-5)', () => {
     expect(document.body.textContent).not.toContain('Deploying with');
   });
 
-  it('a review-due version anywhere, or not admitted, or the gate off: no line', async () => {
-    svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 2, versions: [V(2, { status: 'ready' }), V(1, { status: 'review_due' })] }));
+  it('a reaffirmed idea keeps its line (the old version stays review_due for good; the newer ready one is what the server carries); a due version that is the newest has none', async () => {
+    const due = V(1, { status: 'review_due', firstDeployedAt: iso(T.created) });
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 2, versions: [V(2, { status: 'ready' }), due] }));
+    await renderHub('desktop');
+    expect(text()).toBe('Deploying with: Idea v2: semis lead for ten sessions. · 3 names');
+    unmountAll();
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 2, versions: [V(2, { status: 'review_due', firstDeployedAt: iso(T.created) }), V(1, { status: 'ready' })] }));
     await renderHub('desktop');
     expect(deployLine()).toBeNull();
-    unmountAll();
+  });
+
+  it('not admitted, or the gate off: no line', async () => {
     svc.listHypothesisVersions.mockRejectedValue(Object.assign(new Error('off'), { code: 'disabled' }));
     await renderHub('desktop');
     expect(deployLine()).toBeNull();
@@ -467,7 +510,7 @@ describe('"Deploying with" on the Deploy card (ruling R-S6-5)', () => {
   });
 
   it('N is the Loadout card\'s own count, each name once: the two cards cannot disagree', async () => {
-    r.lists = [LIST({ tickers: ['NVDA', 'NVDA', { symbol: 'AAPL' }, { ticker: 'AAPL' }, 'MSFT'] })];
+    r.lists = [LIST({ tickers: [{ symbol: 'NVDA' }, { symbol: 'NVDA' }, { symbol: 'AAPL' }, { ticker: 'AAPL' }, { symbol: 'MSFT' }] })];
     svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status: 'ready' })] }));
     await renderHub('mobile', { tab: COPY.phoneTabs.loadout });
     expect(watchlistCard().textContent).toContain('Universe · 3 names');
@@ -497,6 +540,114 @@ describe('"Deploying with" on the Deploy card (ruling R-S6-5)', () => {
   });
 });
 
+describe('"Deploying with": where the card can start a deploy, and where the deploy would carry it', () => {
+  it('drawn beside a deploy that can be started; not beside one that cannot (checking, no agent, a game already running)', async () => {
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status: 'ready' })] }));
+    await renderHub('desktop');
+    expect(deployLine()).not.toBeNull();
+    unmountAll();
+    // A live game: the card says it is running, and the running battle froze its own version — the line would name the wrong one.
+    const live = { id: 'bb_live', ownerId: UID, agentId: `casual-agent-${UID}`, status: 'active', activatedAt: iso(NOW - 2 * HOUR), expiresAt: iso(NOW + 3 * HOUR), scoreState: { currentScore: 1, tradeCount: 0, evaluationCount: 1 } };
+    await renderHub('desktop', { hub: hubOf({ activeBattles: [live] }) });
+    expect(document.querySelector('[data-hub-deploy]').getAttribute('data-hub-deploy')).not.toMatch(/^ready/);
+    expect(deployLine()).toBeNull();
+  });
+
+  it('an activated idea whose recorded review time has passed is not shown (the deploy judges it due and carries nothing); a later one is', async () => {
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status: 'activated', reviewDueAt: iso(NOW - 60_000) })] }));
+    await renderHub('desktop');
+    expect(deployLine()).toBeNull();
+    unmountAll();
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status: 'activated', reviewDueAt: iso(NOW + 3 * HOUR) })] }));
+    await renderHub('desktop');
+    expect(deployLine()).not.toBeNull();
+  });
+
+  it('a list whose names the deploy drops (none passes the server\'s filter) is handed to the agent as nothing: no line, no honest line', async () => {
+    r.lists = [LIST({ tickers: [{ symbol: '^GSPC' }, { symbol: 'BRK/B' }] })];
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status: 'ready' })] }));
+    await renderHub('desktop');
+    expect(deployLine()).toBeNull();
+    unmountAll();
+    await phoneResearch();
+    expect(statusOf()).toBe('ready');
+    expect(honest()).toBeNull();
+  });
+});
+
+describe('the label and the panel say the same pointer (BUILD_RULES §9, review D-3)', () => {
+  const cardText = async () => {
+    await renderHub('mobile', { tab: COPY.phoneTabs.loadout });
+    return watchlistCard().textContent;
+  };
+
+  it('the list document lags the reader: no pointer on the document, an idea on the reader → "Universe"; the reverse → "Plain"', async () => {
+    r.lists = [LIST({ currentHypothesisVersion: undefined })];
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status: 'ready' })] }));
+    expect(await cardText()).toContain('Universe · 3 names');
+    unmountAll();
+    r.lists = [LIST({ currentHypothesisVersion: 3 })];
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 0, versions: [] }));
+    const text = await cardText();
+    expect(text).toContain(COPY.loadout.plainList);
+    expect(text).not.toContain('Universe');
+  });
+
+  it('while the reader holds nothing the document\'s pointer stands (S5)', async () => {
+    r.lists = [LIST({ currentHypothesisVersion: 2 })];
+    svc.listHypothesisVersions.mockReturnValue(new Promise(() => {}));
+    expect(await cardText()).not.toMatch(/Universe|Plain watchlist/);
+  });
+});
+
+describe('an equipped list the committed lists do not hold (review D-2)', () => {
+  it('the route answers not_found: the panel says there is no usable list — no "Couldn\'t load" and no Retry that could never work — and Activity is not an error', async () => {
+    r.lists = [];
+    svc.listHypothesisVersions.mockRejectedValue(Object.assign(new Error('nf'), { status: 404, code: 'not_found' }));
+    r.window = windowOf([]);
+    r.agent = agentReady({ equippedAt: undefined });
+    await phoneResearch();
+    expect(statusOf()).toBe('no_list');
+    expect(panelText()).not.toContain("Couldn't load your idea");
+    expect(retryButton()).toBeNull();
+    unmountAll();
+    await renderHub('desktop');
+    expect(activityText()).toContain(COPY.activity.empty);
+    expect(activityText()).not.toContain(COPY.activity.unavailable);
+  });
+});
+
+describe('a kept answer says how old it is in every state it can be kept in (review H-1)', () => {
+  it('"No idea yet" kept through a failed refresh carries the as-of note and its Retry, as a kept idea does', async () => {
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 0, versions: [] }));
+    await phoneResearch();
+    expect(statusOf()).toBe('no_idea');
+    expect(panel().querySelector('[data-hub-research-stale]')).toBeNull();
+    svc.listHypothesisVersions.mockRejectedValue(new Error('offline'));
+    click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
+    click(byRole(document, 'button', COPY.loadout.changeWatchlist)[0]);
+    act(() => { seen.equip.onClose(); });
+    await flush();
+    click(byRole(document, 'tab', COPY.phoneTabs.research)[0]);
+    expect(statusOf()).toBe('no_idea');
+    expect(panelText()).toMatch(/As of \d{1,2}:\d{2}\s?[AP]M ET · couldn.t refresh/);
+    expect(retryButton()).not.toBeNull();
+  });
+
+  it('so does an unavailable pointer', async () => {
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 5, versions: [V(4)] }));
+    await phoneResearch();
+    expect(statusOf()).toBe('unavailable');
+    svc.listHypothesisVersions.mockRejectedValue(new Error('offline'));
+    click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
+    click(byRole(document, 'button', COPY.loadout.changeWatchlist)[0]);
+    act(() => { seen.equip.onClose(); });
+    await flush();
+    click(byRole(document, 'tab', COPY.phoneTabs.research)[0]);
+    expect(panelText()).toMatch(/As of \d{1,2}:\d{2}\s?[AP]M ET · couldn.t refresh/);
+  });
+});
+
 describe('the honest line (ruling R-S6-6): one wording per case, under the idea, and nowhere else', () => {
   const STATEMENT = 'Semis lead for ten sessions.';
   const withThesis = async (thesis, statement = STATEMENT) => {
@@ -522,6 +673,12 @@ describe('the honest line (ruling R-S6-6): one wording per case, under the idea,
     const line = await withThesis('');
     expect(line.getAttribute('data-hub-honest-line')).toBe('no_thesis');
     expect(line.textContent).toBe("Your agent gives this list's names priority. It doesn't read or learn from your ideas yet.");
+  });
+
+  it('an idea longer than the prompt\'s 200 characters is not "read as the thesis" whole: the same long text on both sides is (b)', async () => {
+    const long = `${'Semis lead for ten sessions. '.repeat(10)}Watch NVDA first.`;
+    const line = await withThesis(long, long);
+    expect(line.getAttribute('data-hub-honest-line')).toBe('thesis_saved');
   });
 
   it('exactly one of the three, and inside the idea\'s card', async () => {
@@ -584,6 +741,17 @@ describe('Activity\'s idea rows (ruling R-S6-7)', () => {
     expect(activityText()).toContain('Idea saved');
     expect(activityText()).toContain('Idea · Ready');
     expect(activitySection().querySelectorAll('[data-hub-activity-row="idea"]').length).toBe(2);
+  });
+
+  it('a refresh that failed takes the idea rows with it (Activity carries no age note for them); the panel keeps its idea with one', async () => {
+    ready();
+    await renderHub('desktop');
+    expect(activitySection().querySelectorAll('[data-hub-activity-row="idea"]').length).toBe(2);
+    svc.listHypothesisVersions.mockRejectedValue(new Error('offline'));
+    click(byRole(document, 'button', COPY.loadout.changeWatchlist)[0]);
+    act(() => { seen.equip.onClose(); });
+    await flush();
+    expect(activitySection().querySelectorAll('[data-hub-activity-row="idea"]').length).toBe(0);
   });
 
   it('a revision is not a new idea: four versions, one pair of rows', async () => {

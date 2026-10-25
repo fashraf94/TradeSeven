@@ -175,6 +175,8 @@ const HONEST_LINES = Object.freeze([
   "Your agent gives this list's names priority and reads the thesis the list was saved with, not later versions of your idea. It doesn't learn from your ideas or their reviews yet.",
   "Your agent gives this list's names priority. It doesn't read or learn from your ideas yet.",
 ]);
+/** The exemption, as one function: the banned-claim row and the pairing row both filter through it, so a loosened match shows in one place. */
+const outsideHonest = (s) => !HONEST_LINES.includes(s);
 
 describe('copy centralization — every user-visible string is in a copy table', () => {
   it('no file under src/components/CommandCenter/ writes copy in place', () => {
@@ -328,6 +330,8 @@ describe('S5: the design note\'s labels, exactly, and nothing the hub cannot bac
     const words = ALL_COPY.filter((s) => /\bidea/i.test(s));
     expect(words.sort()).toEqual(expect.arrayContaining(['Plain watchlist · no idea yet']));
     const pairing = [...new Set(words.filter((s) => PAIRS.test(s)))].sort();
+    // The pairing fence filters through the same exact-string exemption: a string is allowed to pair only by being one of the three.
+    expect(words.filter((s) => PAIRS.test(s) && outsideHonest(s))).toEqual([]);
     expect(pairing).toEqual([...HONEST_LINES].sort());
     expect(Object.values(HUB_COPY.research.honest).sort()).toEqual([...HONEST_LINES].sort());
   });
@@ -349,8 +353,18 @@ describe('no claim the hub cannot back (spec §8.2, §11.3)', () => {
 
   it('no string in either copy table matches a banned claim', () => {
     // Slice S6: the founder's three honest lines deny learning; exactly those strings are exempt (HONEST_LINES).
-    const hits = ALL_COPY.filter((s) => !HONEST_LINES.includes(s)).flatMap((s) => BANNED.filter((re) => re.test(s)).map((re) => `${re.source}: ${s}`));
+    const hits = ALL_COPY.filter(outsideHonest).flatMap((s) => BANNED.filter((re) => re.test(s)).map((re) => `${re.source}: ${s}`));
     expect(hits).toEqual([]);
+  });
+
+  it('the exemption matches whole strings only: an honest line with anything added or cut is outside it, and is a banned claim', () => {
+    for (const line of HONEST_LINES) {
+      expect(outsideHonest(line), line).toBe(false);
+      for (const planted of [`${line} Shadow learns your style.`, `Shadow learns your style. ${line}`, line.slice(0, 40), line.slice(0, -1), `${line} `, line.toUpperCase()]) {
+        expect(outsideHonest(planted), planted).toBe(true);
+      }
+    }
+    expect(BANNED.some((re) => re.test(`${HONEST_LINES[2]} Shadow learns your style.`))).toBe(true);
   });
 
   it('the exemption is the three exact strings: each denies learning, and a one-word change to any of them is a banned claim again', () => {

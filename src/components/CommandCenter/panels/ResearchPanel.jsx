@@ -30,7 +30,8 @@ const HONEST_COPY = Object.freeze({
 
 /** "Retry" and, after one pressed inside the 30 s wait, when the next opens (said at the press; no timer). */
 function RetryLine({ onRetry, retryNotBefore }) {
-  const at = typeof retryNotBefore === 'number' ? COPY.time.et(formatHubTime(retryNotBefore, { roundUp: true })) : null;
+  // A wait that has ended is not said: the note is shown only while it still stands.
+  const at = typeof retryNotBefore === 'number' && retryNotBefore > Date.now() ? COPY.time.et(formatHubTime(retryNotBefore, { roundUp: true })) : null;
   return (
     <div data-hub-research-retry="" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
       <HubLink onPress={onRetry}>{COPY.research.retry}</HubLink>
@@ -39,11 +40,27 @@ function RetryLine({ onRetry, retryNotBefore }) {
   );
 }
 
+/** A kept answer's Retry — or, while that Retry is out, the loading line in its place (a press that is being read must show it). */
+function RetryOrLoading({ research, onRetry }) {
+  return research.refreshing ? <LoadingLine>{COPY.research.loading}</LoadingLine> : <RetryLine onRetry={onRetry} retryNotBefore={research.retryNotBefore} />;
+}
+
+/** An answer kept through a failed refresh says how old it is, with the Retry (spec §8.1: "retain only same-owner/list data with as-of annotation") — in every state that can be kept. */
+function StaleNote({ research, onRetry }) {
+  if (!research.stale) return null;
+  const asOf = typeof research.asOf === 'number' ? COPY.research.asOf(COPY.time.et(formatHubTime(research.asOf))) : null;
+  return (
+    <div data-hub-research-stale="">
+      {asOf && <div style={{ fontSize: 12.5, color: C.ink3 }}>{asOf}</div>}
+      <RetryOrLoading research={research} onRetry={onRetry} />
+    </div>
+  );
+}
+
 function IdeaCard({ research, onRetry }) {
   const { idea } = research;
   const tone = STATUS_TONE[idea.status];
   const meta = [idea.timeFrame, idea.savedOn, idea.statusSince].filter(Boolean);
-  const asOf = research.stale && typeof research.asOf === 'number' ? COPY.research.asOf(COPY.time.et(formatHubTime(research.asOf))) : null;
   return (
     <Card data-hub-card="idea" data-hub-idea-status={idea.status} style={{ background: C.bg, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -69,12 +86,7 @@ function IdeaCard({ research, onRetry }) {
       )}
       <div data-hub-idea-count="" style={{ fontSize: 12.5, color: C.ink3, borderTop: `1px solid ${HAIR}`, paddingTop: 10, ...wrap }}>{idea.count}</div>
       {idea.honest && <div data-hub-honest-line={idea.honest} style={{ fontSize: 12.5, color: C.ink3, lineHeight: 1.55, ...wrap }}>{HONEST_COPY[idea.honest]}</div>}
-      {research.stale && (
-        <div data-hub-research-stale="">
-          {asOf && <div style={{ fontSize: 12.5, color: C.ink3 }}>{asOf}</div>}
-          <RetryLine onRetry={onRetry} retryNotBefore={research.retryNotBefore} />
-        </div>
-      )}
+      <StaleNote research={research} onRetry={onRetry} />
     </Card>
   );
 }
@@ -91,14 +103,14 @@ function Body({ research, onRetry }) {
       return (
         <div>
           <EmptyNote icon="info" title={COPY.research.noIdea(research.listName)} />
-          {research.stale && <RetryLine onRetry={onRetry} retryNotBefore={research.retryNotBefore} />}
+          <StaleNote research={research} onRetry={onRetry} />
         </div>
       );
     case RESEARCH_STATE.UNAVAILABLE:
       return (
         <div>
           <EmptyNote icon="info" title={COPY.research.pointerUnavailable(research.listName)} />
-          <RetryLine onRetry={onRetry} retryNotBefore={research.retryNotBefore} />
+          {research.stale ? <StaleNote research={research} onRetry={onRetry} /> : <RetryOrLoading research={research} onRetry={onRetry} />}
         </div>
       );
     case RESEARCH_STATE.ERROR:

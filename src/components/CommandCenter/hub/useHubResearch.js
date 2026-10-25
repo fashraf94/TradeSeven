@@ -32,6 +32,12 @@ import { RESEARCH_READ } from './researchView';
 
 /** Spec §8.1: "Manual cooldown 30 seconds per key". */
 export const RETRY_COOLDOWN_MS = 30_000;
+/**
+ * A request out longer than a Retry's own wait is taken as stalled (the route answers within 10 s; only a client-side stall, such as
+ * the auth token's, gets past that). A trigger arriving after it supersedes the request instead of waiting behind it, so the panel
+ * is never left on a read that will not come. Judged at the trigger: there is no timer.
+ */
+export const STALLED_AFTER_MS = RETRY_COOLDOWN_MS;
 
 const EMPTY = Object.freeze({ key: null, status: RESEARCH_READ.LOADING, data: null, asOf: null, refreshing: false, retryNotBefore: null });
 
@@ -61,7 +67,7 @@ export default function useHubResearch({ auth, listId, gateOn }) {
   const [state, setState] = useState(EMPTY);
   // The request in flight: its key, a sequence number (the newest request is the only one that may publish), and whether a
   // trigger came in during it.
-  const flight = useRef({ key: null, seq: 0, inflight: false, dirty: false });
+  const flight = useRef({ key: null, seq: 0, inflight: false, dirty: false, startedAt: 0 });
   const mounted = useRef(true);
   const waits = useRef(new Map());
   const current = useRef({ key, id });
@@ -77,16 +83,20 @@ export default function useHubResearch({ auth, listId, gateOn }) {
   const start = useCallback((forKey, forId, asTrigger) => {
     const f = flight.current;
     if (f.key === forKey && f.inflight) {
-      if (asTrigger) f.dirty = true;
-      return;
+      const stalled = asTrigger && Date.now() - f.startedAt >= STALLED_AFTER_MS;
+      if (!stalled) {
+        if (asTrigger) f.dirty = true;
+        return;
+      }
     }
     f.key = forKey;
     f.inflight = true;
     f.dirty = false;
+    f.startedAt = Date.now();
     f.seq += 1;
     const mine = f.seq;
     setState((held) => (held.key === forKey
-      ? { ...held, refreshing: held.data !== null, status: held.data ? held.status : RESEARCH_READ.LOADING }
+      ? { ...held, refreshing: held.data !== null, status: held.data || held.status === RESEARCH_READ.DISABLED ? held.status : RESEARCH_READ.LOADING }
       : { ...EMPTY, key: forKey }));
 
     const followUp = () => {
@@ -94,7 +104,13 @@ export default function useHubResearch({ auth, listId, gateOn }) {
       flight.current.dirty = false;
       start(forKey, forId, false);
     };
-    listHypothesisVersions(forId).then(
+    let pending;
+    try {
+      pending = Promise.resolve(listHypothesisVersions(forId));
+    } catch (error) {
+      pending = Promise.reject(error);
+    }
+    pending.then(
       (body) => {
         if (!mounted.current || flight.current.seq !== mine) return;
         flight.current.inflight = false;
@@ -123,7 +139,7 @@ export default function useHubResearch({ auth, listId, gateOn }) {
     if (!key) {
       // Nothing to ask about (the account, the list or the gate went): a request still out belongs to no one now and its answer
       // is ignored, and what was held is cleared, so a list found again is read afresh and shows nothing of the one before.
-      flight.current = { key: null, seq: flight.current.seq + 1, inflight: false, dirty: false };
+      flight.current = { key: null, seq: flight.current.seq + 1, inflight: false, dirty: false, startedAt: 0 };
       setState(EMPTY);
       return;
     }
@@ -145,6 +161,7 @@ export default function useHubResearch({ auth, listId, gateOn }) {
       return;
     }
     waits.current.set(k, now);
+    setState((held) => (held.key === k && held.retryNotBefore !== null ? { ...held, retryNotBefore: null } : held));
     start(k, i, true);
   }, [start]);
 

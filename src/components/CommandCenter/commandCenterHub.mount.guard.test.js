@@ -596,6 +596,9 @@ const PERMITTED_TERMINALS = Object.freeze({
   // Node-clean, already in the main graph (the deploy station reads the same service), and recorded here, not entered.
   'src/services/hypothesisVersionService.js': 'listHypothesisVersions — the existing idea list reader; no writer is imported (ruling R-S6-2)',
   'src/components/Forge/Watchlist/ideaCopy.js': "the Forge's idea words: STATUS_LABELS, HORIZON_LABELS, windowTextOf, formatIdeaDate, lifecycleLineFor, researchLinesOf (ruling R-S6-3)",
+  // S6 (review H-3): the deploy's OWN ticker filter, called not copied — how many of a list's names the agent is handed. The honest line
+  // and "Deploying with" are said only for a list the agent is handed. Pure and import-free; not fenced (BUILD_RULES §1).
+  'api/_utils/watchlistEquip.js': 'extractTickerSymbols — the server\'s filter of a list\'s names (review H-3)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -1066,6 +1069,7 @@ describe('S5 — the exports the hub takes from the shipped services, hooks and 
     // S6 (rulings R-S6-2, R-S6-3): ONE name from the idea service — the reader — and the Forge's idea words, read-only.
     '/services/hypothesisVersionService': ['listHypothesisVersions'],
     '/Forge/Watchlist/ideaCopy': ['HORIZON_LABELS', 'STATUS_LABELS', 'formatIdeaDate', 'lifecycleLineFor', 'researchLinesOf', 'windowTextOf'],
+    '/api/_utils/watchlistEquip.js': ['extractTickerSymbols'],
   });
 
   it('across every file of the directory, exactly these names and no others', () => {

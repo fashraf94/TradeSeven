@@ -76,8 +76,10 @@ function DeployLines({ display, onAction }) {
  * what a battle carries; this line is shown only for the carriage rule's common case. A long statement wraps and is clamped to
  * three lines for the card's sake; the whole text is in the DOM and in the line's title.
  */
-function DeployingWith({ idea }) {
-  if (!idea) return null;
+function DeployingWith({ idea, displayState }) {
+  // The line names what the NEXT deploy carries, so it is drawn where a deploy can be started — not beside a running, refused,
+  // blocked or still-checking state, where it would name a version the battle in hand never froze (review H-5).
+  if (!idea || (displayState !== 'ready' && displayState !== 'ready_stale')) return null;
   const text = COPY.deploy.deployingWith(idea.statement, COPY.loadout.names(idea.count));
   return (
     <div
@@ -102,7 +104,7 @@ export function PhoneDeployCard({ deploy, onAction, onOpenBoard, idea = null }) 
   return (
     <Section label={COPY.deploy.label} data-hub-section="deploy">
       <Card data-hub-deploy={display.displayState} data-hub-deploy-card="phone" style={{ background: C.surface, paddingTop: 6 }}>
-        <DeployingWith idea={idea} />
+        <DeployingWith idea={idea} displayState={display.displayState} />
         <DeployLines
           display={display.cardLine ? display : { ...display, cardLine: { icon: null, text: display.status, action: null } }}
           onAction={onAction}
@@ -137,7 +139,7 @@ export default function DeploySection({ deploy, loadoutLine, onDeploy, onOpenLoa
           <span>{COPY.sep}</span>
           <HubLink onPress={onOpenLoadout}>{COPY.deploy.loadoutLink}</HubLink>
         </div>
-        <DeployingWith idea={idea} />
+        <DeployingWith idea={idea} displayState={display.displayState} />
         <div style={{ marginTop: 14 }}>
           <HubHold full canStart={display.canStart} label={display.cardHoldLabel} onDeploy={onDeploy} wiring={holdWiring} holding={holding} />
         </div>

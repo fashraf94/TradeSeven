@@ -13,9 +13,11 @@
 // (api/_utils/hypothesisRecords/carriage.js): the server decides what a battle carries, and this module does not guess
 // beyond that rule's common case.
 
+import { extractTickerSymbols } from '../../../../api/_utils/watchlistEquip.js';
 import { CARRIABLE_STATUSES } from '../../../constants/hypothesisRecords';
 import { HORIZON_LABELS, STATUS_LABELS, formatIdeaDate, lifecycleLineFor, researchLinesOf, windowTextOf } from '../../Forge/Watchlist/ideaCopy';
 import { HUB_COPY as COPY } from './hubCopy';
+import { hubMs } from './hubDate';
 import { IDEA_ACCESS, LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
 
 /** The reader's states (hub/useHubResearch.js). `idle`: nothing to read — signed out, or no list equipped. */
@@ -44,6 +46,14 @@ export const RESEARCH_STATE = Object.freeze({
 export const HONEST_LINE = Object.freeze({ THESIS_IS_IDEA: 'thesis_is_idea', THESIS_SAVED: 'thesis_saved', NO_THESIS: 'no_thesis' });
 
 const REVIEW_DUE = 'review_due';
+const ACTIVATED = 'activated';
+
+/**
+ * How much of the list's thesis the agent's prompt carries: api/_utils/agentPromptAssembly.js sanitizeRuleText keeps its first 200
+ * characters and collapses whitespace (a source tripwire in researchView.test.js reads the line). An idea longer than that is read
+ * only in part, so the honest line cannot say the agent "reads the idea" as the thesis.
+ */
+export const PROMPT_THESIS_CAP = 200;
 
 /**
  * The most versions the list route returns (api/_utils/hypothesisRecords/store.js LIST_LIMIT). A response that reaches it may
@@ -73,6 +83,15 @@ export function pointerVersionOf(data) {
   return (Array.isArray(data.versions) ? data.versions : []).find((v) => v?.version === data.currentVersion) ?? null;
 }
 
+/**
+ * The pointer the watchlist card's label wears (BUILD_RULES §9): the reader's own `currentVersion` for the list it answered —
+ * null when it says there is no idea — once it holds one. undefined when it holds nothing (then the list document's pointer stands).
+ */
+export function ideaPointerOf(read) {
+  if (!read || !read.data || !read.listId || !Number.isInteger(read.data.currentVersion)) return undefined;
+  return { listId: read.listId, version: read.data.currentVersion > 0 ? read.data.currentVersion : null };
+}
+
 /** The greatest version number the response holds — the one the deploy's carriage rule looks at first. */
 function newestVersionOf(data) {
   let newest = null;
@@ -87,24 +106,37 @@ function newestVersionOf(data) {
  * api/agent/decide.js reads the LIVE list document and puts its `thesis` into the prompt (decide.js:430-437 →
  * agentPromptAssembly.js:136-150); no idea-version writer touches that field. So:
  *   - no thesis on the list (blank, absent or not text) → the agent reads no idea at all;
- *   - the thesis IS the idea's current statement (trimmed, exact) → the agent reads the idea as the list's thesis;
- *   - any other thesis → the agent reads the thesis saved on the list, not the idea's later versions.
+ *   - what the prompt carries of the thesis (its first PROMPT_THESIS_CAP characters, whitespace collapsed) IS the idea's current
+ *     statement (whitespace collapsed) → the agent reads the idea as the list's thesis;
+ *   - any other thesis — a different text, or the same text cut short by the prompt's cap — → the agent reads the thesis saved on
+ *     the list, not the idea's later versions.
  * `statement` is the current idea's recorded statement.
  */
 export function honestLineKindOf({ thesis, statement }) {
   const saved = nonEmpty(thesis);
   if (saved === null) return HONEST_LINE.NO_THESIS;
-  return saved.trim() === String(statement ?? '').trim() ? HONEST_LINE.THESIS_IS_IDEA : HONEST_LINE.THESIS_SAVED;
+  const collapse = (text) => text.replace(/\s+/g, ' ').trim();
+  return collapse(saved.slice(0, PROMPT_THESIS_CAP)) === collapse(String(statement ?? '')) ? HONEST_LINE.THESIS_IS_IDEA : HONEST_LINE.THESIS_SAVED;
+}
+
+/**
+ * How many of the list's names the DEPLOY keeps: the server's own filter (api/_utils/watchlistEquip.js extractTickerSymbols — trimmed,
+ * upper-cased, symbol-shaped, once each). The Loadout card's count (symbolsOf) is the shells' and may be higher; this is what decides
+ * whether the agent is handed the list at all (agentPromptAssembly.js emits nothing when none survives).
+ */
+function deployKeptNames(listDoc) {
+  return listDoc && typeof listDoc === 'object' ? extractTickerSymbols(listDoc.tickers).length : 0;
 }
 
 /**
  * The honest line is said only about a list the agent can deploy with: the Loadout card has found it among the committed
- * lists (an uncommitted or deleted list is dropped at deploy — api/_utils/watchlistEquip.js resolveEquippedWatchlist) and it
- * holds a name (the prompt carries nothing for an empty list). That is also the only time the hub holds the list document
- * whose thesis decides the wording.
+ * lists (an uncommitted or deleted list is dropped at deploy — api/_utils/watchlistEquip.js resolveEquippedWatchlist) and the deploy
+ * keeps at least one of its names (the prompt carries nothing for a list none of whose names survive the server's filter). That is
+ * also the only time the hub holds the list document whose thesis decides the wording.
  */
 function honestKindFor({ watchlist, listDoc, statement }) {
   if (!watchlist || watchlist.state !== WATCHLIST_STATE.READY || !(watchlist.count >= 1) || !listDoc || typeof listDoc !== 'object') return null;
+  if (deployKeptNames(listDoc) < 1) return null;
   return honestLineKindOf({ thesis: listDoc.thesis, statement });
 }
 
@@ -156,7 +188,12 @@ export function deriveResearch({ read, loadout, listDoc = null }) {
   const listName = nonEmpty(watchlist.name) ?? COPY.research.thisList;
   const held = read.data;
   if (!held) {
-    if (read.status === RESEARCH_READ.ERROR) return section(RESEARCH_STATE.ERROR, { listName, summary: COPY.research.summary.error, retryNotBefore: read.retryNotBefore ?? null });
+    if (read.status === RESEARCH_READ.ERROR) {
+      // An equipped list the committed lists do not hold (deleted, or taken back to draft) has no idea record the route will give:
+      // it answers not_found, and a Retry could never succeed. That is an absence of a usable list, not a failed read.
+      if (watchlist.state === WATCHLIST_STATE.UNAVAILABLE) return section(RESEARCH_STATE.NO_LIST, { summary: COPY.research.summary.noList });
+      return section(RESEARCH_STATE.ERROR, { listName, summary: COPY.research.summary.error, retryNotBefore: read.retryNotBefore ?? null });
+    }
     return section(RESEARCH_STATE.LOADING, { listName });
   }
   if (held.currentVersion === 0) return section(RESEARCH_STATE.NO_IDEA, { listName, summary: COPY.research.summary.noIdea, ...staleOf(read) });
@@ -169,37 +206,51 @@ export function deriveResearch({ read, loadout, listDoc = null }) {
 
 /** A failed refresh that kept this owner's and list's answer: the data stays, with its age and the wait before a Retry. */
 function staleOf(read) {
-  return read.status === RESEARCH_READ.ERROR ? { stale: true, asOf: read.asOf ?? null, retryNotBefore: read.retryNotBefore ?? null } : {};
+  return read.status === RESEARCH_READ.ERROR
+    ? { stale: true, asOf: read.asOf ?? null, retryNotBefore: read.retryNotBefore ?? null, refreshing: read.refreshing === true }
+    : {};
 }
 
 /**
  * "Deploying with: {statement} · N names" (ruling R-S6-5; design note point 3), or null — the hub shows a line only for the
  * carriage rule's common case and never guesses beyond it:
  *   - the player is known to be admitted and the answer is current (not a refresh that failed);
- *   - the response is whole (a page at the route's limit may have left a due version out) and holds no `review_due` version;
- *   - its newest version is carriable (`ready` or `activated`) and has a statement;
+ *   - the response is whole (a page at the route's limit may have left a due version out);
+ *   - its newest version is carriable (`ready` or `activated`) and has a statement. That is the carriage rule: the newest
+ *     carriable version rides, and it rides even when an older version of the idea is `review_due` (a reaffirm leaves the old
+ *     version due for good and makes a fresh ready one — api/_utils/hypothesisRecords/carriage.js; the shared predicate
+ *     `dueDeployPending`, src/constants/hypothesisRecords.js, is null whenever the newest version is carriable). An
+ *     `activated` version whose recorded review time has passed is not shown: the deploy judges it due and carries nothing
+ *     (a battle-end review has no recorded time, and stays an accepted limit);
  *   - the Loadout card is ready for THIS list with at least one name, and N is that card's own count (symbolsOf), so the
- *     two cards cannot disagree.
- * The newest version is the one the deploy's carriage picks (not necessarily the pointer's).
+ *     two cards cannot disagree; the deploy also keeps at least one of those names (the server's filter), or it hands the agent
+ *     no list at all.
+ * The newest version is the one the deploy's carriage picks (not necessarily the pointer's). `nowMs` is the clock.
  */
-export function deployingWithOf({ read, watchlist }) {
+export function deployingWithOf({ read, watchlist, listDoc = null, nowMs = null }) {
   if (researchAccessOf(read) !== IDEA_ACCESS.ADMITTED || read.status !== RESEARCH_READ.READY) return null;
   const data = read.data;
   if (!Array.isArray(data.versions) || data.versionCount >= VERSION_PAGE_MAX) return null;
   if (!watchlist || watchlist.state !== WATCHLIST_STATE.READY || watchlist.id !== read.listId || !(watchlist.count >= 1)) return null;
-  if (data.versions.some((v) => v?.status === REVIEW_DUE)) return null;
   const newest = newestVersionOf(data);
   const statement = nonEmpty(newest?.statement);
   if (!newest || !CARRIABLE_STATUSES.includes(newest.status) || statement === null) return null;
+  if (deployKeptNames(listDoc) < 1) return null;
+  if (newest.status === ACTIVATED && typeof nowMs === 'number') {
+    const dueMs = hubMs(newest.reviewDueAt);
+    if (dueMs !== null && dueMs <= nowMs) return null;
+  }
   return Object.freeze({ statement, count: watchlist.count, version: newest.version });
 }
 
 /**
  * Activity's idea descriptor (spec §8.2): the CURRENT idea only — the pointer's version — with the times the record holds.
  * A revision is a new version of the same idea, so there is exactly one descriptor per list, however many versions it has.
- * null with no held answer, no current idea, or a pointer that matches no version (nothing is invented).
+ * null with no current answer (a refresh that failed is not asserted: Activity carries no age note for it), no current idea, or a
+ * pointer that matches no version (nothing is invented).
  */
 export function ideaActivityOf({ read, watchlist }) {
+  if (read?.status !== RESEARCH_READ.READY) return null;
   const data = read?.data;
   const version = pointerVersionOf(data);
   if (!version || !watchlist || watchlist.state !== WATCHLIST_STATE.READY || watchlist.id !== read.listId) return null;

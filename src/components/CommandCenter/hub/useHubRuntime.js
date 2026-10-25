@@ -58,7 +58,7 @@ import { archetypeLines } from './archetypeLines';
 import { hubFlags } from './hubFlags';
 import { useHubModalOpen } from './HubOverlays';
 import { loadoutLineOf } from './loadoutLine';
-import { deployingWithOf, deriveResearch, ideaActivityOf, researchAccessOf } from './researchView';
+import { deployingWithOf, deriveResearch, ideaActivityOf, ideaPointerOf, researchAccessOf } from './researchView';
 import { deriveCareer, deriveLoadout, ideaAccessOf, IDEA_ACCESS, LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
 import { useHubLoadout } from './useHubLoadout';
 import { HUB_SHEETS, useHubSheets } from './useHubSheets';
@@ -113,6 +113,8 @@ export function useHubRuntime({ hub, agentRead = null, sections, rootRef, resear
       activeAgentBattles: hub.activeBattles,
       ...flags,
       ideaAccess,
+      // Slice S6 (BUILD_RULES §9): the label's pointer is the idea reader's once it holds the list's answer.
+      ideaPointer: ideaPointerOf(researchRead),
     });
     // The equipped list's own document (its `thesis` decides the honest line), once the lists have it among the committed ones.
     const listId = loadout.status === LOADOUT_STATUS.READY ? loadout.watchlist?.id : null;
@@ -125,7 +127,7 @@ export function useHubRuntime({ hub, agentRead = null, sections, rootRef, resear
       career: deriveCareer({ agent, agentLoading }),
       // Slice S6: the Research panel's section and the Deploy card's idea line, both from the one held answer (hub/researchView.js).
       // With no reader (a frame, a suite that stands one in) the sections are what they were handed.
-      ...(research ? { research, deployingWith: deployingWithOf({ read: researchRead, watchlist: watchlistCard }) } : null),
+      ...(research ? { research, deployingWith: deployingWithOf({ read: researchRead, watchlist: watchlistCard, listDoc, nowMs: Date.now() }) } : null),
       // Slice S4 (R-S4-1): Activity's loadout rows are the Loadout's own — the equipped list as the card resolved it (found among the
       // committed lists, under the name the card shows), the archetype's name — so the list and the card cannot disagree
       // (BUILD_RULES §9), and an empty list is not "nothing recorded" while the loadout is still unknown.

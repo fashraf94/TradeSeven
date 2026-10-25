@@ -4,14 +4,17 @@
 // means for the screen, on the pure derivations. The reader is pinned in useHubResearch.jsdom.test.jsx and the whole hub in
 // CommandCenterHub.s6.jsdom.test.jsx.
 
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { CARRIABLE_STATUSES } from '../../../constants/hypothesisRecords';
+import { CARRIABLE_STATUSES, dueDeployPending } from '../../../constants/hypothesisRecords';
 import { HORIZON_LABELS, STATUS_LABELS, lifecycleLineFor, researchLinesOf } from '../../Forge/Watchlist/ideaCopy';
 import { HUB_COPY as COPY } from './hubCopy';
 import {
-  HONEST_LINE, RESEARCH_READ, RESEARCH_STATE, VERSION_PAGE_MAX, deployingWithOf, deriveResearch, honestLineKindOf, ideaActivityOf, pointerVersionOf, researchAccessOf,
+  HONEST_LINE, PROMPT_THESIS_CAP, RESEARCH_READ, RESEARCH_STATE, VERSION_PAGE_MAX, deployingWithOf, deriveResearch, honestLineKindOf, ideaActivityOf, ideaPointerOf, pointerVersionOf, researchAccessOf,
 } from './researchView';
-import { IDEA_ACCESS, LOADOUT_STATUS, WATCHLIST_STATE, symbolsOf } from './selectors/loadout';
+import { IDEA_ACCESS, IDEA_LABEL, LISTS_STATUS, LOADOUT_STATUS, WATCHLIST_STATE, deriveWatchlist, symbolsOf } from './selectors/loadout';
 
 const T0 = '2026-10-01T14:00:00.000Z';
 const T1 = '2026-10-06T15:30:00.000Z';
@@ -26,7 +29,10 @@ const readOf = (over = {}) => ({
 });
 const card = (over = {}) => ({ id: 'wl-1', name: 'Tech Leaders', state: WATCHLIST_STATE.READY, symbols: ['NVDA', 'AAPL', 'MSFT'], count: 3, idea: 'universe', ...over });
 const loadoutOf = (over = {}) => ({ status: LOADOUT_STATUS.READY, watchlist: card(), ...over });
-const derive = (over = {}) => deriveResearch({ read: readOf(), loadout: loadoutOf(), listDoc: { watchlistId: 'wl-1', thesis: '' }, ...over });
+// The list document as the lists route returns it: tickers are objects (the server's filter reads `symbol`), thesis is the list's own.
+const LISTDOC = (over = {}) => ({ watchlistId: 'wl-1', thesis: '', tickers: [{ symbol: 'NVDA' }, { symbol: 'AAPL' }, { symbol: 'MSFT' }], ...over });
+const derive = (over = {}) => deriveResearch({ read: readOf(), loadout: loadoutOf(), listDoc: LISTDOC(), ...over });
+const NOW_MS = Date.parse('2026-10-25T15:00:00.000Z');
 
 // A research record as the route summarises it (api/_utils/researchRecords/model.js recordSummaryOf), one per origin.
 const SUMMARY = {
@@ -230,7 +236,28 @@ describe('the honest line (ruling R-S6-6): one wording per case, chosen from wha
     expect(honestLineKindOf({ thesis: `  ${statement}\n`, statement: statement })).toBe(HONEST_LINE.THESIS_IS_IDEA);
   });
 
-  it('(b) any other thesis: the one the list was saved with, a revision\'s statement, or one longer than the statement cap', () => {
+  it('(a) compares what the PROMPT carries (whitespace collapsed), so the same words over two lines are still the idea', () => {
+    expect(honestLineKindOf({ thesis: 'Semis lead\nfor ten   sessions.', statement: 'Semis lead for ten sessions.' })).toBe(HONEST_LINE.THESIS_IS_IDEA);
+  });
+
+  it('the prompt keeps only the first PROMPT_THESIS_CAP characters of the thesis, so a longer idea is NOT read as the thesis whole (b), cut or not', () => {
+    const long = `${'Semis lead for ten sessions. '.repeat(10)}Watch NVDA first.`.trim();
+    expect(long.length).toBeGreaterThan(PROMPT_THESIS_CAP);
+    expect(honestLineKindOf({ thesis: long, statement: long })).toBe(HONEST_LINE.THESIS_SAVED);
+    const exactly = 'x'.repeat(PROMPT_THESIS_CAP);
+    expect(honestLineKindOf({ thesis: exactly, statement: exactly })).toBe(HONEST_LINE.THESIS_IS_IDEA);
+    expect(honestLineKindOf({ thesis: `${exactly}y`, statement: `${exactly}y` })).toBe(HONEST_LINE.THESIS_SAVED);
+  });
+
+  it('the cap is the prompt\'s: api/_utils/agentPromptAssembly.js sanitizeRuleText slices the first 200 characters (source tripwire; the file is read, not imported)', () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(path.resolve(here, '../../../../api/_utils/agentPromptAssembly.js'), 'utf8');
+    const body = source.slice(source.indexOf('export function sanitizeRuleText'));
+    expect(body.slice(0, 400)).toContain(`text.slice(0, ${PROMPT_THESIS_CAP})`);
+    expect(PROMPT_THESIS_CAP).toBe(200);
+  });
+
+  it('(b) any other thesis: the one the list was saved with, a revision\'s statement, or a longer text', () => {
     expect(honestLineKindOf({ thesis: 'Old thesis text', statement })).toBe(HONEST_LINE.THESIS_SAVED);
     expect(honestLineKindOf({ thesis: statement.toLowerCase(), statement })).toBe(HONEST_LINE.THESIS_SAVED);
     expect(honestLineKindOf({ thesis: `${statement} And a long tail.`, statement })).toBe(HONEST_LINE.THESIS_SAVED);
@@ -238,7 +265,7 @@ describe('the honest line (ruling R-S6-6): one wording per case, chosen from wha
 
   it('on the section: each case lands on the list\'s own wording, and the three wordings are the founder\'s', () => {
     const ideaRead = readOf({ data: dataOf({ versions: [V(1, { statement })] }) });
-    const kindFor = (thesis) => derive({ read: ideaRead, listDoc: { watchlistId: 'wl-1', thesis } }).idea.honest;
+    const kindFor = (thesis) => derive({ read: ideaRead, listDoc: LISTDOC({ thesis }) }).idea.honest;
     expect(kindFor('')).toBe(HONEST_LINE.NO_THESIS);
     expect(kindFor(statement)).toBe(HONEST_LINE.THESIS_IS_IDEA);
     expect(kindFor('The list was saved with this.')).toBe(HONEST_LINE.THESIS_SAVED);
@@ -248,8 +275,8 @@ describe('the honest line (ruling R-S6-6): one wording per case, chosen from wha
   });
 
   it('a later version of the idea turns (a) into (b): the thesis does not follow the idea', () => {
-    const asV1 = derive({ read: readOf({ data: dataOf({ currentVersion: 1, versions: [V(1, { statement })] }) }), listDoc: { thesis: statement } }).idea.honest;
-    const asV2 = derive({ read: readOf({ data: dataOf({ currentVersion: 2, versions: [V(2, { statement: 'A revised idea.' }), V(1, { statement })] }) }), listDoc: { thesis: statement } }).idea.honest;
+    const asV1 = derive({ read: readOf({ data: dataOf({ currentVersion: 1, versions: [V(1, { statement })] }) }), listDoc: LISTDOC({ thesis: statement }) }).idea.honest;
+    const asV2 = derive({ read: readOf({ data: dataOf({ currentVersion: 2, versions: [V(2, { statement: 'A revised idea.' }), V(1, { statement })] }) }), listDoc: LISTDOC({ thesis: statement }) }).idea.honest;
     expect(asV1).toBe(HONEST_LINE.THESIS_IS_IDEA);
     expect(asV2).toBe(HONEST_LINE.THESIS_SAVED);
   });
@@ -264,14 +291,20 @@ describe('the honest line (ruling R-S6-6): one wording per case, chosen from wha
     expect(derive({ listDoc: null }).idea.honest).toBeNull();
     expect(derive({ listDoc: undefined }).idea.honest).toBeNull();
     expect(derive().idea.honest).toBe(HONEST_LINE.NO_THESIS);
+    // ...and only when the deploy keeps one of its names: the server's filter drops these, and the prompt then carries no list.
+    for (const tickers of [[], [{ symbol: '^GSPC' }], [{ symbol: 'BRK/B' }, { symbol: ' ' }], ['NVDA'], [{ ticker: 'NVDA' }], undefined]) {
+      expect(derive({ listDoc: LISTDOC({ tickers }) }).idea.honest, JSON.stringify(tickers)).toBeNull();
+    }
+    expect(derive({ listDoc: LISTDOC({ tickers: [{ symbol: '^GSPC' }, { symbol: ' brk.b ' }] }) }).idea.honest).toBe(HONEST_LINE.NO_THESIS);
   });
 });
 
 describe('"Deploying with" (ruling R-S6-5): the carriage rule\'s common case, and nothing it has to guess', () => {
   const rd = (versions, over = {}) => readOf({ data: dataOf({ versions, versionCount: versions.length, currentVersion: versions[0]?.version ?? 0 }), ...over });
-  const line = (versions, over = {}, watchlist = card()) => deployingWithOf({ read: rd(versions, over), watchlist });
+  const dw = (args) => deployingWithOf({ listDoc: LISTDOC(), nowMs: NOW_MS, watchlist: card(), ...args });
+  const line = (versions, over = {}, watchlist = card()) => dw({ read: rd(versions, over), watchlist });
 
-  it('the newest version ready or activated, no version review due: the newest\'s statement and the card\'s own count', () => {
+  it('the newest version ready or activated: the newest\'s statement and the card\'s own count', () => {
     for (const status of CARRIABLE_STATUSES) {
       expect(line([V(2, { status }), V(1, { status: 'retired' })]), status).toEqual({ statement: 'Idea v2: tech beats the market', count: 3, version: 2 });
     }
@@ -281,21 +314,26 @@ describe('"Deploying with" (ruling R-S6-5): the carriage rule\'s common case, an
     expect(line([V(2, { status }), V(1, { status: 'ready' })])).toBeNull();
   });
 
-  it('a review-due version anywhere → no line, even under a newer ready one (the hub shows the common case only)', () => {
-    expect(line([V(3, { status: 'ready' }), V(2, { status: 'review_due' }), V(1, { status: 'retired' })])).toBeNull();
-    expect(line([V(3, { status: 'activated' }), V(2, { status: 'retired' })])).not.toBeNull();
+  it('a reaffirmed idea keeps its line: the old version stays review_due for good, and the NEWER ready or activated one is what the server carries', () => {
+    const due = { status: 'review_due', firstDeployedAt: T0, stateReason: 'horizon_elapsed' };
+    expect(line([V(2, { status: 'ready' }), V(1, due)])).toEqual({ statement: 'Idea v2: tech beats the market', count: 3, version: 2 });
+    expect(line([V(3, { status: 'activated' }), V(2, due), V(1, { status: 'retired' })])).not.toBeNull();
+    // ...and the shared predicate of the deploy station (BUILD_RULES §9) agrees: nothing is due-pending when the newest is carriable.
+    expect(dueDeployPending([V(2, { status: 'ready' }), V(1, due)])).toBeNull();
+    // A due version that is itself the newest is not carriable, whatever sits under it.
+    expect(line([V(3, due), V(2, { status: 'ready' })])).toBeNull();
   });
 
   it('the statement is the NEWEST version\'s — the one carriage picks — not the pointer\'s', () => {
     const versions = [V(3, { status: 'ready', statement: 'The newest.' }), V(2, { status: 'activated', statement: 'The pointer.' })];
     const read = readOf({ data: dataOf({ currentVersion: 2, versions, versionCount: 2 }) });
-    expect(deployingWithOf({ read, watchlist: card() }).statement).toBe('The newest.');
-    // ...and the panel's current idea is the pointer's: two different questions with two different answers.
+    expect(dw({ read }).statement).toBe('The newest.');
+    // ...and the panel\'s current idea is the pointer\'s: two different questions with two different answers.
     expect(deriveResearch({ read, loadout: loadoutOf(), listDoc: null }).idea.statement).toBe('The pointer.');
   });
 
   it('the count is the Loadout card\'s own (symbolsOf: each name once, objects by symbol or ticker)', () => {
-    const doc = { tickers: ['NVDA', 'NVDA', { symbol: 'AAPL' }, { ticker: 'MSFT' }, '', { nothing: 1 }] };
+    const doc = { tickers: [{ symbol: 'NVDA' }, { symbol: 'NVDA' }, { symbol: 'AAPL' }, { ticker: 'MSFT' }, '', { nothing: 1 }] };
     const symbols = symbolsOf(doc);
     expect(symbols).toEqual(['NVDA', 'AAPL', 'MSFT']);
     expect(line([V(1, { status: 'ready' })], {}, card({ symbols, count: symbols.length })).count).toBe(symbols.length);
@@ -303,14 +341,38 @@ describe('"Deploying with" (ruling R-S6-5): the carriage rule\'s common case, an
     expect(COPY.deploy.deployingWith('S', COPY.loadout.names(1))).toBe('Deploying with: S · 1 name');
   });
 
+  it('the deploy must keep at least one of the list\'s names (the server\'s filter), or the agent is handed no list: no line', () => {
+    const v = [V(1, { status: 'ready' })];
+    for (const tickers of [[], [{ symbol: '^GSPC' }, { symbol: 'BRK/B' }], ['NVDA', 'AAPL'], undefined]) {
+      expect(dw({ read: rd(v), listDoc: LISTDOC({ tickers }) }), JSON.stringify(tickers)).toBeNull();
+    }
+    expect(dw({ read: rd(v), listDoc: null })).toBeNull();
+    // One surviving name is enough; the count shown is still the card\'s.
+    expect(dw({ read: rd(v), listDoc: LISTDOC({ tickers: [{ symbol: '^GSPC' }, { symbol: 'brk.b' }] }) }).count).toBe(3);
+  });
+
+  it('an `activated` newest version whose recorded review time has passed is not shown: the deploy judges it due and carries nothing', () => {
+    const past = new Date(NOW_MS - 60_000).toISOString();
+    const future = new Date(NOW_MS + 3_600_000).toISOString();
+    expect(line([V(1, { status: 'activated', reviewDueAt: past })])).toBeNull();
+    expect(line([V(1, { status: 'activated', reviewDueAt: new Date(NOW_MS).toISOString() })]), 'due at this very instant').toBeNull();
+    expect(line([V(1, { status: 'activated', reviewDueAt: future })])).not.toBeNull();
+    // A battle-end review has no recorded time (the hub cannot know it): shown; and a ready version has no clock yet.
+    expect(line([V(1, { status: 'activated', reviewDueAt: null })])).not.toBeNull();
+    expect(line([V(1, { status: 'activated' })])).not.toBeNull();
+    expect(line([V(1, { status: 'ready', reviewDueAt: past })])).not.toBeNull();
+    // Without a clock handed in nothing is guessed.
+    expect(deployingWithOf({ read: rd([V(1, { status: 'activated', reviewDueAt: past })]), watchlist: card(), listDoc: LISTDOC() })).not.toBeNull();
+  });
+
   it('not admitted, or nothing current held → no line: disabled, gate off, idle, loading, error with nothing, and a refresh that failed', () => {
     const v = [V(1, { status: 'ready' })];
     for (const status of [RESEARCH_READ.DISABLED, RESEARCH_READ.GATE_OFF, RESEARCH_READ.IDLE, RESEARCH_READ.LOADING, RESEARCH_READ.ERROR]) {
-      expect(deployingWithOf({ read: readOf({ status, data: null }), watchlist: card() }), status).toBeNull();
+      expect(dw({ read: readOf({ status, data: null }) }), status).toBeNull();
     }
     expect(line(v, { status: RESEARCH_READ.ERROR }), 'a stale answer is not asserted').toBeNull();
     expect(line(v, { status: RESEARCH_READ.READY, refreshing: true })).not.toBeNull();
-    expect(deployingWithOf({ read: null, watchlist: card() })).toBeNull();
+    expect(dw({ read: null })).toBeNull();
   });
 
   it('the Loadout card must be ready for THIS list with at least one name', () => {
@@ -319,15 +381,15 @@ describe('"Deploying with" (ruling R-S6-5): the carriage rule\'s common case, an
       card({ state: WATCHLIST_STATE.LOADING }), card({ state: WATCHLIST_STATE.UNAVAILABLE }), card({ state: WATCHLIST_STATE.ERROR }),
       card({ state: WATCHLIST_STATE.NONE }), card({ id: 'wl-other' }), card({ count: 0, symbols: [] }), null,
     ]) {
-      expect(deployingWithOf({ read: rd(v), watchlist }), JSON.stringify(watchlist)).toBeNull();
+      expect(dw({ read: rd(v), watchlist }), JSON.stringify(watchlist)).toBeNull();
     }
   });
 
-  it('a whole response only: a page at the route\'s limit may have left a due version out', () => {
+  it('a whole response only: a page at the route\'s limit may have left a version out', () => {
     const v = [V(2, { status: 'ready' })];
     expect(VERSION_PAGE_MAX).toBe(100);
-    expect(deployingWithOf({ read: readOf({ data: dataOf({ versions: v, versionCount: 99, currentVersion: 2 }) }), watchlist: card() })).not.toBeNull();
-    expect(deployingWithOf({ read: readOf({ data: dataOf({ versions: v, versionCount: 100, currentVersion: 2 }) }), watchlist: card() })).toBeNull();
+    expect(dw({ read: readOf({ data: dataOf({ versions: v, versionCount: 99, currentVersion: 2 }) }) })).not.toBeNull();
+    expect(dw({ read: readOf({ data: dataOf({ versions: v, versionCount: 100, currentVersion: 2 }) }) })).toBeNull();
   });
 
   it('a statement that is blank or missing → no line (nothing is invented)', () => {
@@ -340,11 +402,67 @@ describe('"Deploying with" (ruling R-S6-5): the carriage rule\'s common case, an
   });
 });
 
+describe('an equipped list the committed lists do not hold (deleted, or taken back to draft)', () => {
+  const unavailable = loadoutOf({ watchlist: card({ state: WATCHLIST_STATE.UNAVAILABLE, symbols: [], count: 0 }) });
+
+  it('the route answers not_found and a Retry could never succeed: that is "no usable list", not "couldn\'t load your idea"', () => {
+    const section = derive({ loadout: unavailable, read: readOf({ status: RESEARCH_READ.ERROR, data: null }) });
+    expect(section.status).toBe(RESEARCH_STATE.NO_LIST);
+    expect(section.summary).toBe(COPY.research.summary.noList);
+  });
+
+  it('a genuine failure for a list that IS held is still an error with its Retry', () => {
+    expect(derive({ read: readOf({ status: RESEARCH_READ.ERROR, data: null }) }).status).toBe(RESEARCH_STATE.ERROR);
+  });
+
+  it('an idea the route does give for it (a draft list keeps its versions) is shown as it is, with no honest line and no Deploy line', () => {
+    const section = derive({ loadout: unavailable });
+    expect(section.status).toBe(RESEARCH_STATE.READY);
+    expect(section.idea.honest).toBeNull();
+    expect(deployingWithOf({ read: readOf({ data: dataOf({ versions: [V(1, { status: 'ready' })] }) }), watchlist: unavailable.watchlist, listDoc: LISTDOC(), nowMs: NOW_MS })).toBeNull();
+  });
+});
+
+describe('the label wears the reader\'s pointer once it holds the list\'s answer (BUILD_RULES §9)', () => {
+  const agent = { id: 'a1', equippedWatchlistId: 'wl-1', equippedWatchlistName: 'Tech Leaders' };
+  const base = { agent, committed: [{ watchlistId: 'wl-1', name: 'Tech Leaders', tickers: [{ symbol: 'NVDA' }], currentHypothesisVersion: undefined }], listsStatus: LISTS_STATUS.READY, hypothesisRecordsOn: true, ideaAccess: IDEA_ACCESS.ADMITTED };
+  const kind = (pointer, doc) => deriveWatchlist({ ...base, committed: [{ ...base.committed[0], currentHypothesisVersion: doc }], ideaPointer: pointer }).idea;
+
+  it('ideaPointerOf: the reader\'s currentVersion for its list (null for none), or undefined while it holds nothing', () => {
+    expect(ideaPointerOf(readOf())).toEqual({ listId: 'wl-1', version: 1 });
+    expect(ideaPointerOf(readOf({ data: dataOf({ currentVersion: 0, versions: [], versionCount: 0 }) }))).toEqual({ listId: 'wl-1', version: null });
+    for (const read of [null, undefined, readOf({ data: null }), readOf({ listId: null }), readOf({ data: dataOf({ currentVersion: 'x' }) })]) expect(ideaPointerOf(read)).toBeUndefined();
+  });
+
+  it('the list document\'s pointer lags the reader\'s: the label follows the reader (the panel\'s answer), either way', () => {
+    expect(kind({ listId: 'wl-1', version: 1 }, undefined)).toBe(IDEA_LABEL.UNIVERSE);
+    expect(kind({ listId: 'wl-1', version: null }, 2)).toBe(IDEA_LABEL.PLAIN);
+  });
+
+  it('without a pointer for THIS list the list document\'s stands (S5): none given, or one for another list', () => {
+    expect(kind(undefined, 2)).toBe(IDEA_LABEL.UNIVERSE);
+    expect(kind(undefined, undefined)).toBe(IDEA_LABEL.PLAIN);
+    expect(kind({ listId: 'wl-OTHER', version: null }, 2)).toBe(IDEA_LABEL.UNIVERSE);
+  });
+
+  it('a reader pointer never makes a label for a player not known to be admitted', () => {
+    expect(deriveWatchlist({ ...base, ideaAccess: IDEA_ACCESS.UNKNOWN, ideaPointer: { listId: 'wl-1', version: 1 } }).idea).toBe(IDEA_LABEL.NEUTRAL);
+    expect(deriveWatchlist({ ...base, hypothesisRecordsOn: false, ideaPointer: { listId: 'wl-1', version: 1 } }).idea).toBe(IDEA_LABEL.NEUTRAL);
+  });
+});
+
 describe('Activity\'s descriptor (ruling R-S6-7): the current idea only', () => {
   it('the pointer\'s version, with the times the record holds and its status word', () => {
     const versions = [V(4), V(3), V(2, { status: 'ready', createdAt: T0, stateChangedAt: T1 }), V(1)];
     const idea = ideaActivityOf({ read: readOf({ data: dataOf({ currentVersion: 2, versions, versionCount: 4 }) }), watchlist: card() });
     expect(idea).toEqual({ listId: 'wl-1', listName: 'Tech Leaders', version: 2, status: 'ready', statusLabel: 'Ready', createdAt: T0, stateChangedAt: T1 });
+  });
+
+  it('a refresh that failed is not asserted: no descriptor, so no row without an age note; a refresh in flight is', () => {
+    const versions = [V(2, { status: 'ready' })];
+    const data = dataOf({ currentVersion: 2, versions, versionCount: 1 });
+    expect(ideaActivityOf({ read: readOf({ data, status: RESEARCH_READ.ERROR }), watchlist: card() })).toBeNull();
+    expect(ideaActivityOf({ read: readOf({ data, refreshing: true }), watchlist: card() })).not.toBeNull();
   });
 
   it('none without an idea held, a current idea, a matching version, or a ready card for this list', () => {

@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { listHypothesisVersions } = vi.hoisted(() => ({ listHypothesisVersions: vi.fn() }));
 vi.mock('../../../services/hypothesisVersionService', () => ({ listHypothesisVersions }));
 
-import useHubResearch, { RETRY_COOLDOWN_MS } from './useHubResearch';
+import useHubResearch, { RETRY_COOLDOWN_MS, STALLED_AFTER_MS } from './useHubResearch';
 import { RESEARCH_READ } from './researchView';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -465,6 +465,93 @@ describe('an explicit Retry: one per 30 s per key, judged at the press', () => {
     await settle();
     expect(listHypothesisVersions).toHaveBeenCalledTimes(4);
     clock.mockRestore();
+  });
+
+  it('an accepted Retry takes the note of a refused one with it: a wait that has ended is not left on the panel', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    listHypothesisVersions.mockRejectedValue(new Error('down'));
+    render();
+    await settle();
+    act(() => latest.retry());
+    await settle();
+    clock.mockReturnValue(1_005_000);
+    act(() => latest.retry());
+    expect(latest.retryNotBefore).toBe(1_030_000);
+    clock.mockReturnValue(1_100_000);
+    act(() => latest.retry());
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(3);
+    expect(latest).toMatchObject({ status: RESEARCH_READ.ERROR, retryNotBefore: null });
+    clock.mockRestore();
+  });
+
+  it('a Retry pressed while the read is out waits behind it and is one follow-up', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    const first = deferred();
+    listHypothesisVersions.mockReturnValueOnce(first.promise).mockResolvedValue(BODY('wl-1'));
+    render();
+    act(() => latest.retry());
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(1);
+    first.resolve(BODY('wl-1'));
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    clock.mockRestore();
+  });
+
+  it('a read that never settles does not wedge the panel: a trigger after the Retry wait supersedes it, and its late answer is ignored', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    const stuck = deferred();
+    listHypothesisVersions.mockReturnValueOnce(stuck.promise).mockResolvedValue(BODY('wl-1', { currentVersion: 4, versions: [{ version: 4, statement: 'Fresh', status: 'draft' }] }));
+    render();
+    await settle();
+    expect(latest.status).toBe(RESEARCH_READ.LOADING);
+    // Inside the wait it is still the request in flight: a trigger only marks it dirty.
+    clock.mockReturnValue(1_000_000 + STALLED_AFTER_MS - 1);
+    act(() => latest.invalidate());
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(1);
+    // After it, the trigger supersedes it.
+    clock.mockReturnValue(1_000_000 + STALLED_AFTER_MS);
+    act(() => latest.invalidate());
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    expect(latest).toMatchObject({ status: RESEARCH_READ.READY });
+    expect(latest.data.currentVersion).toBe(4);
+    stuck.resolve(BODY('wl-1', { currentVersion: 9 }));
+    await settle();
+    expect(latest.data.currentVersion, 'the superseded read\'s answer is ignored').toBe(4);
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    clock.mockRestore();
+  });
+
+  it('the stalled-after wait is the Retry\'s own 30 s', () => {
+    expect(STALLED_AFTER_MS).toBe(RETRY_COOLDOWN_MS);
+  });
+
+  it('a service call that throws before it returns a promise is a failed read, not a request that never settles', async () => {
+    listHypothesisVersions.mockImplementationOnce(() => { throw new Error('URI malformed'); }).mockResolvedValue(BODY('wl-1'));
+    render();
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.ERROR, data: null });
+    expect(errorSpy).toHaveBeenCalled();
+    act(() => latest.invalidate());
+    await settle();
+    expect(listHypothesisVersions).toHaveBeenCalledTimes(2);
+    expect(latest.status).toBe(RESEARCH_READ.READY);
+  });
+
+  it('an account the server does not admit stays "disabled" while it is asked again (no flash of loading)', async () => {
+    listHypothesisVersions.mockRejectedValueOnce(Object.assign(new Error('off'), { code: 'disabled' }));
+    render();
+    await settle();
+    expect(latest.status).toBe(RESEARCH_READ.DISABLED);
+    const again = deferred();
+    listHypothesisVersions.mockReturnValueOnce(again.promise);
+    act(() => latest.invalidate());
+    expect(latest.status).toBe(RESEARCH_READ.DISABLED);
+    expect(renders.some((r) => r.status === RESEARCH_READ.LOADING && r.key === latest.key && renders.indexOf(r) > 1)).toBe(false);
+    again.resolve(BODY('wl-1'));
+    await settle();
+    expect(latest.status).toBe(RESEARCH_READ.READY);
   });
 
   it('a Retry with nothing to ask about reads nothing', async () => {
