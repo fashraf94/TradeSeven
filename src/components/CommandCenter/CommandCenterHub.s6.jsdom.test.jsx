@@ -471,14 +471,24 @@ describe('the idea labels follow the reader (ruling R-S6-4)', () => {
     expect(watchlistCard().textContent).toContain('Universe · 3 names');
   });
 
-  it('a refresh that fails does not take the label back: the answer held is the answer', async () => {
+  it('a refresh in flight keeps the label; one that FAILED takes it back to the neutral words (error → unknown, as ruled), and a good one returns it', async () => {
     await renderHub('mobile', { tab: COPY.phoneTabs.loadout });
+    expect(watchlistCard().textContent).toContain('Universe · 3 names');
+    let finish;
+    svc.listHypothesisVersions.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    click(byRole(document, 'button', COPY.loadout.changeWatchlist)[0]);
+    act(() => { seen.equip.onClose(); });
+    await flush();
+    expect(watchlistCard().textContent, 'while the read is out').toContain('Universe · 3 names');
+    await act(async () => { finish(BODY()); await Promise.resolve(); await Promise.resolve(); });
+    await flush();
     expect(watchlistCard().textContent).toContain('Universe · 3 names');
     svc.listHypothesisVersions.mockRejectedValue(new Error('offline'));
     click(byRole(document, 'button', COPY.loadout.changeWatchlist)[0]);
     act(() => { seen.equip.onClose(); });
     await flush();
-    expect(watchlistCard().textContent).toContain('Universe · 3 names');
+    expect(watchlistCard().textContent).not.toMatch(/Universe|Plain watchlist/);
+    expect(watchlistCard().textContent).toContain('3 names');
   });
 });
 
@@ -502,11 +512,11 @@ describe('"Deploying with" on the Deploy card (ruling R-S6-5)', () => {
     expect(document.body.textContent).not.toContain('Deploying with');
   });
 
-  it('a reaffirmed idea keeps its line (the old version stays review_due for good; the newer ready one is what the server carries); a due version that is the newest has none', async () => {
+  it('no deployed version is review_due (R-S6-5 to the letter): none shows a line — a reaffirmed idea too, though the server carries its newer ready version (Q-S6-2)', async () => {
     const due = V(1, { status: 'review_due', firstDeployedAt: iso(T.created) });
     svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 2, versions: [V(2, { status: 'ready' }), due] }));
     await renderHub('desktop');
-    expect(text()).toBe('Deploying with: Idea v2: semis lead for ten sessions. · 3 names');
+    expect(deployLine()).toBeNull();
     unmountAll();
     svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 2, versions: [V(2, { status: 'review_due', firstDeployedAt: iso(T.created) }), V(1, { status: 'ready' })] }));
     await renderHub('desktop');

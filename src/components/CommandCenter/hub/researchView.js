@@ -66,15 +66,16 @@ const nonEmpty = (value) => (typeof value === 'string' && value.trim() !== '' ? 
 /**
  * Whether the server admits this player to idea records, as far as the reader knows (ruling R-S6-4):
  *   - the client gate off, or the typed `disabled` answer → not admitted;
- *   - an answer HELD for this owner and list → admitted. A refresh in flight does not unsay it (the status stays what it
- *     was), and nor does one that failed: the answer held is the answer;
- *   - anything else — loading, an error with nothing held, nothing to read, no reader at all — unknown.
+ *   - a successful answer for this owner and list (status `ready`, with its data) → admitted. A refresh in flight does not unsay
+ *     it: the status stays `ready` while it is read again (`refreshing`);
+ *   - anything else — loading, an error (even over an answer held from before), nothing to read, no reader at all — unknown, as
+ *     ruled (R-S6-4). The label then goes neutral, which claims nothing and so cannot contradict a stale panel.
  * This module and hub/selectors/loadout.js are the only places that produce `admitted` (hubCopy.guard.test.js).
  */
 export function researchAccessOf(read) {
   if (!read || typeof read !== 'object') return IDEA_ACCESS.UNKNOWN;
   if (read.status === RESEARCH_READ.GATE_OFF || read.status === RESEARCH_READ.DISABLED) return IDEA_ACCESS.NOT_ADMITTED;
-  return read.data ? IDEA_ACCESS.ADMITTED : IDEA_ACCESS.UNKNOWN;
+  return read.status === RESEARCH_READ.READY && read.data ? IDEA_ACCESS.ADMITTED : IDEA_ACCESS.UNKNOWN;
 }
 
 /** The version document the parent pointer names, or null. Never another version in its place. */
@@ -216,13 +217,15 @@ function staleOf(read) {
  * "Deploying with: {statement} · N names" (ruling R-S6-5; design note point 3), or null — the hub shows a line only for the
  * carriage rule's common case and never guesses beyond it:
  *   - the player is known to be admitted and the answer is current (not a refresh that failed);
- *   - the response is whole (a page at the route's limit may have left a due version out);
- *   - its newest version is carriable (`ready` or `activated`) and has a statement. That is the carriage rule: the newest
- *     carriable version rides, and it rides even when an older version of the idea is `review_due` (a reaffirm leaves the old
- *     version due for good and makes a fresh ready one — api/_utils/hypothesisRecords/carriage.js; the shared predicate
- *     `dueDeployPending`, src/constants/hypothesisRecords.js, is null whenever the newest version is carriable). An
- *     `activated` version whose recorded review time has passed is not shown: the deploy judges it due and carries nothing
- *     (a battle-end review has no recorded time, and stays an accepted limit);
+ *   - the response is whole (a page at the route's limit may have left a due version out) and holds no `review_due` version —
+ *     R-S6-5's "no deployed version is review_due", to the letter. This is NARROWER than the carriage rule, which carries the newest
+ *     ready or activated version even over an older due one (a reaffirm leaves the old version due for good and makes a fresh ready
+ *     one — api/_utils/hypothesisRecords/carriage.js; `dueDeployPending`, src/constants/hypothesisRecords.js, is null then). So a
+ *     reaffirmed idea shows no line here though the server carries it: the safe side, raised as Q-S6-2. The one-line alternative is
+ *     to replace the scan with `dueDeployPending(data.versions) !== null`;
+ *   - its newest version is carriable (`ready` or `activated`) and has a statement. An `activated` version whose recorded review
+ *     time has passed is not shown: the deploy judges it due and carries nothing (a battle-end review has no recorded time, and
+ *     stays an accepted limit);
  *   - the Loadout card is ready for THIS list with at least one name, and N is that card's own count (symbolsOf), so the
  *     two cards cannot disagree; the deploy also keeps at least one of those names (the server's filter), or it hands the agent
  *     no list at all.
@@ -233,6 +236,7 @@ export function deployingWithOf({ read, watchlist, listDoc = null, nowMs = null 
   const data = read.data;
   if (!Array.isArray(data.versions) || data.versionCount >= VERSION_PAGE_MAX) return null;
   if (!watchlist || watchlist.state !== WATCHLIST_STATE.READY || watchlist.id !== read.listId || !(watchlist.count >= 1)) return null;
+  if (data.versions.some((v) => v?.status === REVIEW_DUE)) return null;
   const newest = newestVersionOf(data);
   const statement = nonEmpty(newest?.statement);
   if (!newest || !CARRIABLE_STATUSES.includes(newest.status) || statement === null) return null;

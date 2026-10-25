@@ -55,10 +55,15 @@ describe('the reader\'s admission (ruling R-S6-4)', () => {
     expect(researchAccessOf('admitted')).toBe(IDEA_ACCESS.UNKNOWN);
   });
 
-  it('the answer HELD is the answer: a refresh in flight or one that failed does not take the admission back, and nothing held is not admitted', () => {
+  it('loading or error → unknown (R-S6-4): a refresh in flight keeps the admission (the status stays ready), a refresh that FAILED does not', () => {
     expect(researchAccessOf(readOf({ refreshing: true }))).toBe(IDEA_ACCESS.ADMITTED);
-    expect(researchAccessOf(readOf({ status: RESEARCH_READ.ERROR }))).toBe(IDEA_ACCESS.ADMITTED);
+    // Even over an answer held from before: the label goes neutral, which claims nothing and cannot contradict a stale panel.
+    expect(researchAccessOf(readOf({ status: RESEARCH_READ.ERROR }))).toBe(IDEA_ACCESS.UNKNOWN);
     expect(researchAccessOf(readOf({ status: RESEARCH_READ.LOADING, data: null }))).toBe(IDEA_ACCESS.UNKNOWN);
+    // A status other than ready with data riding along (a half-built read) is not an answer.
+    expect(researchAccessOf(readOf({ status: RESEARCH_READ.LOADING }))).toBe(IDEA_ACCESS.UNKNOWN);
+    // ...and a `ready` status with nothing held is not an answer either.
+    expect(researchAccessOf(readOf({ status: RESEARCH_READ.READY, data: null }))).toBe(IDEA_ACCESS.UNKNOWN);
   });
 });
 
@@ -316,14 +321,21 @@ describe('"Deploying with" (ruling R-S6-5): the carriage rule\'s common case, an
     expect(line([V(2, { status }), V(1, { status: 'ready' })])).toBeNull();
   });
 
-  it('a reaffirmed idea keeps its line: the old version stays review_due for good, and the NEWER ready or activated one is what the server carries', () => {
+  it('no deployed version is review_due (R-S6-5, to the letter): a due version anywhere → no line, even under a NEWER ready one the server would carry (Q-S6-2)', () => {
     const due = { status: 'review_due', firstDeployedAt: T0, stateReason: 'horizon_elapsed' };
-    expect(line([V(2, { status: 'ready' }), V(1, due)])).toEqual({ statement: 'Idea v2: tech beats the market', count: 3, version: 2 });
-    expect(line([V(3, { status: 'activated' }), V(2, due), V(1, { status: 'retired' })])).not.toBeNull();
-    // ...and the shared predicate of the deploy station (BUILD_RULES §9) agrees: nothing is due-pending when the newest is carriable.
-    expect(dueDeployPending([V(2, { status: 'ready' }), V(1, due)])).toBeNull();
-    // A due version that is itself the newest is not carriable, whatever sits under it.
+    expect(line([V(2, { status: 'ready' }), V(1, due)])).toBeNull();
+    expect(line([V(3, { status: 'activated' }), V(2, due), V(1, { status: 'retired' })])).toBeNull();
     expect(line([V(3, due), V(2, { status: 'ready' })])).toBeNull();
+    // The same lists without the due version show it; a retired or rejected one does not hide the line.
+    expect(line([V(2, { status: 'ready' }), V(1, { status: 'retired' })])).not.toBeNull();
+    expect(line([V(3, { status: 'activated' }), V(2, { status: 'rejected' }), V(1, { status: 'cancelled' })])).not.toBeNull();
+  });
+
+  it('Q-S6-2\'s alternative, pinned so the one-line change is a decision and not a surprise: the deploy station\'s shared predicate is null for exactly the reaffirmed lists the scan hides', () => {
+    const due = { status: 'review_due', firstDeployedAt: T0 };
+    expect(dueDeployPending([V(2, { status: 'ready' }), V(1, due)])).toBeNull();
+    expect(dueDeployPending([V(3, { status: 'activated' }), V(2, due)])).toBeNull();
+    expect(dueDeployPending([V(3, due), V(2, { status: 'ready' })])).not.toBeNull();
   });
 
   it('the statement is the NEWEST version\'s — the one carriage picks — not the pointer\'s', () => {
