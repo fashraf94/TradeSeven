@@ -168,6 +168,7 @@
     "src/components/CommandCenter/hubFallbackSignal.jsx": {},
     "src/components/CommandCenter/ActivitySheet.jsx": {},
     "src/components/CommandCenter/hub/activityRows.js": {},
+    "src/components/CommandCenter/hub/activityDates.js": {},
     "src/components/CommandCenter/hub/nextAction.js": {},
     "src/components/CommandCenter/hub/useHubBrief.js": {},
     "src/components/CommandCenter/hub/useHubLater.js": {}

@@ -22,7 +22,8 @@
 
 import useDailyRegimeBrief from '../../../hooks/useDailyRegimeBrief';
 import { HUB_COPY as COPY } from './hubCopy';
-import { formatHubMarketDate, formatHubTime, hubMs } from './hubDate';
+import { formatHubMarketDate } from './activityDates';
+import { formatHubTime, hubMs } from './hubDate';
 
 /** The caption's parts that the document supports, in the spec's words; '' when it supports none. */
 export function briefCaption({ forDate, generatedAt, isStale }) {

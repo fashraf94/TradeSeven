@@ -8,7 +8,7 @@
 //
 // The scan parses each module (acorn) so a comment or a string never counts. A module may import only what is listed for it, and
 // touches no global of the page, the clock, a timer, the network, storage, the environment or randomness. `Intl` is allowed to
-// neither: hub/hubDate.js owns every formatter, so the derivations never build one.
+// neither: hub/hubDate.js and hub/activityDates.js own every formatter, so the derivations never build one.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -22,7 +22,7 @@ const parse = (code) => Parser.parse(code, { ecmaVersion: 'latest', sourceType: 
 
 /** What each module may import: its siblings in the hub, the copy table, and (activity) the shared lean kernel. */
 const ALLOWED_IMPORTS = Object.freeze({
-  'activityRows.js': [/^\.\.\/\.\.\/\.\.\/\.\.\/api\/_utils\/leanRevalidation\.js$/, /^\.\/hubCopy$/, /^\.\/hubDate$/, /^\.\/selectors\/loadout$/],
+  'activityRows.js': [/^\.\.\/\.\.\/\.\.\/\.\.\/api\/_utils\/leanRevalidation\.js$/, /^\.\/activityDates$/, /^\.\/hubCopy$/, /^\.\/hubDate$/, /^\.\/selectors\/loadout$/],
   'nextAction.js': [/^\.\/hubCopy$/, /^\.\/hubDate$/, /^\.\/selectors\/deployState$/],
 });
 

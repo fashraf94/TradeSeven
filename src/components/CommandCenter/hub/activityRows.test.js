@@ -11,7 +11,8 @@ import { getCanonicalTextVersion } from '../../../data/archetypeAdjustments';
 import { ACTIVITY_KINDS, LOADOUT_KNOWLEDGE, activitySectionOf, deriveActivity, loadoutKnowledgeOf } from './activityRows';
 import { completedGameRows, liveGameRows } from './gamesDisplay';
 import { HUB_COPY as COPY } from './hubCopy';
-import { formatHubDay, formatHubDayTime, formatHubDayYear } from './hubDate';
+import { formatHubDayTime, formatHubDayYear } from './activityDates';
+import { formatHubDay } from './hubDate';
 
 const UID = 'uid-A';
 const NOW = Date.UTC(2026, 9, 23, 15, 0);

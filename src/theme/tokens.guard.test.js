@@ -217,6 +217,7 @@ const GUARDED_FILES = [
   // token-only and motion-token-only from birth, registered in the commit that introduces them (hazard 34).
   'src/components/CommandCenter/ActivitySheet.jsx',
   'src/components/CommandCenter/hub/activityRows.js',
+  'src/components/CommandCenter/hub/activityDates.js',
   'src/components/CommandCenter/hub/nextAction.js',
   'src/components/CommandCenter/hub/useHubBrief.js',
   'src/components/CommandCenter/hub/useHubLater.js',

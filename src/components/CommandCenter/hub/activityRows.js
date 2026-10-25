@@ -46,7 +46,8 @@
 
 import { revalidateStandingLeans } from '../../../../api/_utils/leanRevalidation.js';
 import { HUB_COPY as COPY } from './hubCopy';
-import { formatHubDayTime, formatHubDayYear, hubMs } from './hubDate';
+import { formatHubDayTime, formatHubDayYear } from './activityDates';
+import { hubMs } from './hubDate';
 import { LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
 
 export const ACTIVITY_KINDS = Object.freeze({ COMPLETED: 'completed', DEPLOYED: 'deployed', LOADOUT: 'loadout', IDEA: 'idea' });

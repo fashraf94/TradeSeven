@@ -1,10 +1,12 @@
 // src/components/CommandCenter/hub/hubDate.s4.test.js
 //
-// Command Center hub, slice S4 — the two formatters Activity and the brief add to hub/hubDate.js: Activity's absolute ET time, and
+// Command Center hub, slice S4 — the two formatters Activity and the brief add (hub/activityDates.js, apart from hub/hubDate.js, which the main bundle carries): Activity's absolute ET time, and
 // the brief's market date, which is formatted from the string's own parts and never moved by a time zone.
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { formatHubDayTime, formatHubMarketDate } from './hubDate';
+import { formatHubDayTime, formatHubMarketDate } from './activityDates';
 
 describe('formatHubDayTime — Activity\'s absolute time, read in ET', () => {
   it('writes the month, the day and the clock in Eastern time', () => {
@@ -43,5 +45,23 @@ describe('formatHubMarketDate — the brief\'s forDate, a market-day label', () 
   it('knows leap day', () => {
     expect(formatHubMarketDate('2028-02-29')).toBe('Tue Feb 29');
     expect(formatHubMarketDate('2027-02-29')).toBe('');
+  });
+});
+
+describe('S4\'s helpers stay out of the main bundle (merge round: the deploy provider imports hub/hubDate.js)', () => {
+  const src = (name) => readFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), 'utf8').replace(/\r\n/g, '\n');
+
+  it('hub/hubDate.js — which App\'s root reaches — names none of them and imports nothing from the module that holds them', () => {
+    const main = src('hubDate.js');
+    expect(main).not.toMatch(/formatHubDayTime|formatHubDayYear|formatHubMarketDate|activityDates/);
+    expect(src('activityDates.js')).toMatch(/export function formatHubDayTime/);
+    expect(src('activityDates.js')).toMatch(/export function formatHubMarketDate/);
+  });
+
+  it('and builds no Intl formatter of S4\'s at module load: each is made on first use', () => {
+    const code = src('activityDates.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const topLevel = code.split('\n').filter((line) => /^const \w+ = new Intl\./.test(line));
+    expect(topLevel).toEqual([]);
+    expect((code.match(/new Intl\.DateTimeFormat/g) || []).length).toBe(5);
   });
 });
