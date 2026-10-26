@@ -226,6 +226,7 @@ export const config = { maxDuration: 300 };
 const LOG_PREFIX = '[AgentEval]';
 const EVALUATING_LOCK_TIMEOUT_MS = 120_000; // 2 minutes
 const TIME_BUDGET_MS = 290_000; // 290s — leave 10s buffer under the 300s maxDuration for cleanup/response
+const SETTLE_PATTERN_LOG_TIMEOUT_MS = 10_000; // F1: the settle-only run's wait for its pattern logs
 
 let anthropicClient = null;
 function getAnthropicClient() {
@@ -391,7 +392,10 @@ export default async function handler(req, res) {
     // above), so the pattern logs land first (each already catches its own
     // failure).
     if (settleOnly) {
-      await Promise.allSettled(patternLogs);
+      // Bounded like the run document (review MTV-2): the completions are
+      // already committed, so a stalled log costs only that log.
+      await withTimeout(Promise.allSettled(patternLogs), SETTLE_PATTERN_LOG_TIMEOUT_MS, 'settle_pattern_logs')
+        .catch(err => console.error(`${LOG_PREFIX} [settle] pattern logs not confirmed: ${err.message}`));
       console.log(`${LOG_PREFIX} [settle] expiry sweep only: ${summary.expired} completed, ${activeBattles.length} still active`);
       return respond(200, { mode: 'settle', expired: summary.expired, completionSkipped: summary.completionSkipped, masteryDeferredCompletions: summary.masteryDeferredCompletions, errors: summary.errors, duration: Date.now() - startTime });
     }

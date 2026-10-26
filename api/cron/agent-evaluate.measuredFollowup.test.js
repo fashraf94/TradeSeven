@@ -293,7 +293,9 @@ describe('F1 — the mode branch runs the expiry sweep and never evaluates', () 
   });
 
   it('a settle run with nothing expired completes nothing and still never evaluates', async () => {
-    const live = tieredBattle('mon-battle', ET('2026-10-30', 21, 0));
+    // Live and NOT dormant (its list starts on Friday), so only the mode
+    // branch keeps it untouched (review MTV-3).
+    const live = tieredBattle('mon-battle', ET('2026-10-30', 21, 0), { timing: { tradingDays: ['2026-10-30'] } });
     world.db = makeWorldDb({ 'agentBattles/mon-battle': live });
     world.listing = () => [structuredClone(live)];
     vi.setSystemTime(new Date(Date.UTC(2026, 9, 31, 2, 0)));
