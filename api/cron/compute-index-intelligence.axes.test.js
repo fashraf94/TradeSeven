@@ -117,8 +117,10 @@ describe('compute-index-intelligence — Phase A axis block wiring', () => {
     // entries (/api/cron/intraday-poll, /api/cron/intraday-validate — contract
     // §5.1 / §10.1, G10); 43 with the Film Room tape's close and candle
     // passes (/api/cron/film-tape-close, /api/cron/film-tape-candles — tape
-    // spec V1.2 §5–§6). The axis block itself still adds none.
-    expect((vercel.match(/"schedule"/g) || []).length).toBe(43);
+    // spec V1.2 §5–§6); 44 with the BaggerBomb evening settlement
+    // (/api/cron/agent-evaluate?mode=settle — ruling F1, Oct 25, 2026). The
+    // axis block itself still adds none.
+    expect((vercel.match(/"schedule"/g) || []).length).toBe(44);
     expect(vercel).toMatch(/"\/api\/cron\/intraday-poll"/);
     expect(vercel).toMatch(/"\/api\/cron\/intraday-validate"/);
     expect(vercel).not.toMatch(/rankingSnapshots/);
