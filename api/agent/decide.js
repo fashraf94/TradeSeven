@@ -40,6 +40,7 @@ import { selectBriefExcerpt } from '../_utils/deployCeremonyExcerpt.js';
 import {
   resolveEquippedWatchlist,
   extractTickerSymbols,
+  rankedEquippedTickers,
   foldEquippedTickers,
   unionEquippedIntoHotBench,
   buildEquippedSnapshot,
@@ -469,10 +470,22 @@ export default async function handler(req, res) {
 
     // Validate shortlist — ensure all tickers exist in universe
     const validSymbols = new Set(stockUniverse.map((s) => s.symbol));
+    // [F2, Flash Oct 25 2026; approved fence contact] This path is tiered
+    // only (the tournament deploy returned above): an equipped ticker outside
+    // the ranked universe (an ETF such as KRE) cannot be measured, so it is
+    // never a candidate. The narrowed list feeds the fold below, the Haiku
+    // equipped note and the hotBench union; the Sonnet prompt above and the
+    // battle's watchlist snapshot keep the full list, so the agent still
+    // watches it.
+    const rankedEquipped = rankedEquippedTickers(equippedSymbols, validSymbols);
+    if (rankedEquipped.length < equippedSymbols.length) {
+      console.log(`[Phase5B1] ${equippedSymbols.length - rankedEquipped.length} equipped ticker(s) outside the ranked universe watched, not folded (F2)`);
+    }
+    equippedSymbols = rankedEquipped;
     // [Phase5B1] Fold equipped tickers into the shortlist. Equipped tickers
-    // survive the universe filter even when off-universe (Option 8C);
-    // augmentedValidSymbols extends validSymbols so validatePortfolio() below
-    // does not reject an off-universe equipped ticker that Haiku picks.
+    // are elevated past Sonnet's picks. Since F2 they are all ranked here, so
+    // the fold's off-universe branch (Option 8C) is empty on this path and
+    // augmentedValidSymbols equals validSymbols.
     const fold = foldEquippedTickers({
       shortlist: strategy.shortlist,
       equippedSymbols,

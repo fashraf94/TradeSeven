@@ -9,7 +9,9 @@
 // Behaviour-preserving move: the cap values and the capString / capTickersArray
 // logic are byte-identical to their previous in-[id].js definitions. The
 // [id].js PATCH suite is the regression proof.
-//
+
+import { isRetiredStock } from './rankingConfig.js';
+
 // Field caps locked in Phase 4A audit Section 9.
 export const NAME_MAX_LEN = 100;
 export const NOTES_MAX_LEN = 2000;
@@ -54,4 +56,24 @@ export function capTickersArray(value, nowIso) {
     if (out.length >= TICKERS_MAX_COUNT) break;
   }
   return out;
+}
+
+// F4 (Flash, Oct 25, 2026; BR-3 hardening): the retired stocks a save would
+// ADD — retired symbols in the new list that the stored list does not hold.
+// A list that already holds one still saves and reads; a new pick is refused.
+// The Forge add search and the ticker validator never offer one, so what this
+// catches is a crafted request, a dialogue session proposed before BR-3, or a
+// screen run on a stockRankings document from before BR-3.
+export function newlyAddedRetiredTickers(nextTickers, storedTickers = []) {
+  const symbolOf = (t) => (typeof t?.symbol === 'string' ? t.symbol.trim().toUpperCase() : '');
+  const stored = new Set((Array.isArray(storedTickers) ? storedTickers : []).map(symbolOf));
+  const next = new Set((Array.isArray(nextTickers) ? nextTickers : []).map(symbolOf));
+  return [...next].filter((s) => isRetiredStock(s) && !stored.has(s));
+}
+
+export function retiredTickerRefusal(symbols) {
+  return {
+    error: 'retired_ticker',
+    message: `${symbols.join(', ')} ${symbols.length === 1 ? 'has' : 'have'} left the stock universe and can't be added to a watchlist.`,
+  };
 }

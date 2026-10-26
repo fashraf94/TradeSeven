@@ -410,6 +410,16 @@ describe('row 5 — the screener → list link', () => {
     expect(stored(activeDb, `watchlists/${second.body.watchlistId}`)).toMatchObject({ sourceSessionId: SCREENER_SESSION, researchWorkId: null });
     expect(rec(SCREENER_RW)).toEqual(closed); // subject set once; a closed record never moves
   });
+  it('F4 (Oct 25, 2026): a retired ticker refuses the screener save before anything is written — no list, the record still open', async () => {
+    setDb({ 'indexIntelligence/stockRankings': rankingsDoc() });
+    await screenFirst();
+    const open = rec(SCREENER_RW);
+    const res = await create({ tickers: [{ symbol: 'NVDA' }, { symbol: 'EA' }] });
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('retired_ticker');
+    expect(Object.keys(storedUnder(activeDb, 'watchlists'))).toEqual([]);
+    expect(rec(SCREENER_RW)).toEqual(open);
+  });
   it('gate off: sourceSessionId null exactly as before, and no researchWorkId key', async () => {
     state.flagOn = false;
     setDb({ 'indexIntelligence/stockRankings': rankingsDoc(), 'researchSessions/rs-1': screenerSession({ researchWorkId: 'rs_rs-1' }) });

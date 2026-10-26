@@ -279,8 +279,9 @@ describe('agent-evaluate cron — Phase 5B1 equipped-watchlist hotBench union', 
   const source = readFileSync(SOURCE_PATH, 'utf-8');
 
   it('imports unionEquippedIntoHotBench from the shared helper', () => {
+    // F2 (Oct 25, 2026) imports rankedEquippedTickers from the same module.
     expect(source).toMatch(
-      /import\s*\{\s*unionEquippedIntoHotBench\s*\}\s*from\s*'\.\.\/_utils\/watchlistEquip\.js'/,
+      /import\s*\{[^}]*\bunionEquippedIntoHotBench\b[^}]*\}\s*from\s*'\.\.\/_utils\/watchlistEquip\.js'/,
     );
   });
 

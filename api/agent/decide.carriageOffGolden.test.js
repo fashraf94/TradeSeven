@@ -57,6 +57,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tournamentSettlementGoldenPair } from '../_utils/__fixtures__/tournamentSettlementGolden.js';
 import { stockAdmissionControlReadStripped, STOCK_ADMISSION_CONTROL_READS } from '../_utils/__fixtures__/stockAdmissionGolden.js';
+import { rankedEquipGolden } from '../_utils/__fixtures__/rankedEquipGolden.js';
 
 const state = vi.hoisted(() => ({ db: null, anthropic: null, gemmaCalls: [], shadow: { decisions: [], firstMessages: [] }, flag: false, fence: true }));
 
@@ -179,7 +180,9 @@ describe('deploy with the record slice OFF — byte-identical to main (P1b accep
     throw new Error(`frozen fixture written to ${GOLDEN_PATH} — this generating run fails on purpose; re-run WITHOUT GENERATE_DEPLOY_CARRIAGE_OFF_GOLDEN to verify`);
   }, 120_000);
 
-  const golden = existsSync(GOLDEN_PATH) ? JSON.parse(lf(GOLDEN_PATH)) : null;
+  // F2 (measured-thresholds follow-up): the frozen fixture as the ranked-only
+  // equip fold makes it — PLTR (off the harness universe) watched, not folded.
+  const golden = existsSync(GOLDEN_PATH) ? rankedEquipGolden(JSON.parse(lf(GOLDEN_PATH))) : null;
 
   it('the fixture file is exactly the one captured from main (SHA-256 of its LF bytes)', () => {
     expect(createHash('sha256').update(lf(GOLDEN_PATH)).digest('hex')).toBe(GOLDEN_SHA256);

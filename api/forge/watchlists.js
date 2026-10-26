@@ -37,6 +37,8 @@ import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idVa
 import {
   capString,
   capTickersArray,
+  newlyAddedRetiredTickers,
+  retiredTickerRefusal,
   NAME_MAX_LEN,
   NOTES_MAX_LEN,
 } from '../_utils/watchlistValidation.js';
@@ -291,6 +293,9 @@ async function handleCreateFromTickers({ req, res, user }) {
         message: 'At least one valid ticker is required to create a watchlist.',
       });
     }
+    // F4: a new list has no stored tickers, so any retired stock is an add.
+    const retired = newlyAddedRetiredTickers(tickers);
+    if (retired.length > 0) return res.status(400).json(retiredTickerRefusal(retired));
 
     // Strings: capString returns null only when the field isn't a string —
     // treat absent/non-string as the empty default.
@@ -446,6 +451,8 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
   // body below writes exactly what it wrote before the build.
   const hypothesisOn = hypothesisRecordsOnFor(user.uid);
   let txResult;
+  // F4: the retired symbols a refused save would have added (set in the body).
+  let retiredRefused = null;
   try {
     txResult = await db.runTransaction(async (tx) => {
       const freshSnap = await tx.get(sessionRef);
@@ -497,6 +504,11 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
           addedBy: 'agent',
           addedAt: nowIso,
         }));
+      // F4: a session proposed before BR-3 can still hold a retired stock
+      // (proposals are validated since). A new list has no stored tickers, so
+      // it is an add: refused before any write, the session left as it was.
+      retiredRefused = newlyAddedRetiredTickers(tickers);
+      if (retiredRefused.length > 0) throw new Error(SENTINEL_PREFIX + 'retired_ticker');
 
       const anatomy =
         session.anatomy && typeof session.anatomy === 'object' && !Array.isArray(session.anatomy)
@@ -573,6 +585,7 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
   } catch (txErr) {
     if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
       const code = txErr.message.slice(SENTINEL_PREFIX.length);
+      if (code === 'retired_ticker' && retiredRefused?.length) return res.status(400).json(retiredTickerRefusal(retiredRefused));
       const mapped = SENTINEL_TO_HTTP[code];
       if (mapped) {
         const [statusCode, errorKey] = mapped;

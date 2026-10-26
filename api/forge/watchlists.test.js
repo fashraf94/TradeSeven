@@ -1672,3 +1672,131 @@ describe('POST /api/forge/watchlists/[id]/notes', () => {
     expect(log.notesLength).toBe(5);
   });
 });
+
+// ============================================================
+// F4 (Flash, Oct 25, 2026; BR-3 hardening) — the save endpoints refuse a
+// NEWLY ADDED retired stock (rankingConfig.js RETIRED_STOCKS). The PATCH
+// compares against the stored list its own transaction read, so a list that
+// already holds one still saves (and reads); create-from-tickers has no stored
+// list, so any retired stock is an add.
+// ============================================================
+
+describe('F4 — retired stocks are never added to a watchlist', () => {
+  const tickerRow = (symbol) => ({ symbol, reasoning: '', category: 'core', addedBy: 'user', addedAt: '2026-10-01T14:00:00.000Z' });
+
+  it('PATCH refuses a new retired ticker (400 retired_ticker) and writes nothing', async () => {
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST } } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { name: 'renamed', tickers: [tickerRow('AAPL'), tickerRow('ea')] } });
+    await itemHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'retired_ticker', message: "EA has left the stock universe and can't be added to a watchlist." });
+    expect(fixture.state.watchlistDocs['wl-1']).toEqual(DRAFT_WATCHLIST);
+  });
+
+  it('PATCH of a list that already holds a retired ticker still saves, keeping it', async () => {
+    const stored = { ...DRAFT_WATCHLIST, tickers: [tickerRow('AAPL'), tickerRow('EA')] };
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': stored } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { tickers: [tickerRow('AAPL'), tickerRow('EA'), tickerRow('MSFT')] } });
+    await itemHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(fixture.state.watchlistDocs['wl-1'].tickers.map((t) => t.symbol)).toEqual(['AAPL', 'EA', 'MSFT']);
+
+    // ...and it still reads.
+    const get = makeReqRes({ method: 'GET', query: { id: 'wl-1' } });
+    await itemHandler(get.req, get.res);
+    expect(get.res.statusCode).toBe(200);
+    expect(get.res.body.watchlist.tickers.map((t) => t.symbol)).toEqual(['AAPL', 'EA', 'MSFT']);
+  });
+
+  it('PATCH names only the retired tickers being added, not the ones already held', async () => {
+    const stored = { ...DRAFT_WATCHLIST, tickers: [tickerRow('AAPL'), tickerRow('EA')] };
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': stored } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { tickers: [tickerRow('EA'), tickerRow('WBD'), tickerRow('K')] } });
+    await itemHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.message).toBe("WBD, K have left the stock universe and can't be added to a watchlist.");
+    expect(fixture.state.watchlistDocs['wl-1']).toEqual(stored);
+  });
+
+  it('PATCH that removes a held retired ticker saves', async () => {
+    const stored = { ...DRAFT_WATCHLIST, tickers: [tickerRow('AAPL'), tickerRow('EA')] };
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': stored } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { tickers: [tickerRow('AAPL')] } });
+    await itemHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(fixture.state.watchlistDocs['wl-1'].tickers.map((t) => t.symbol)).toEqual(['AAPL']);
+  });
+
+  it('create-from-tickers refuses a retired ticker and allocates nothing', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'POST', body: { tickers: [{ symbol: 'MSFT' }, { symbol: 'WBA' }] } });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'retired_ticker', message: "WBA has left the stock universe and can't be added to a watchlist." });
+    expect(fixture.state.watchlistDocs).toEqual({});
+  });
+
+  it('a symbol padded past the 12-character cap (stored trimmed back to EA) is still refused, on PATCH and on create', async () => {
+    // capTickersArray trims, then cuts at 12 — 'EA' + 10 spaces + 'X' would be
+    // stored as 'EA' plus padding, which every reader trims back to EA.
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST } } });
+    activeFirestore = fixture.db;
+    const patch = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { tickers: [tickerRow('AAPL'), tickerRow(`EA${' '.repeat(10)}X`)] } });
+    await itemHandler(patch.req, patch.res);
+    expect(patch.res.statusCode).toBe(400);
+    expect(fixture.state.watchlistDocs['wl-1']).toEqual(DRAFT_WATCHLIST);
+    const create = makeReqRes({ method: 'POST', body: { tickers: [{ symbol: 'MSFT' }, { symbol: `WBD${' '.repeat(9)}Z` }] } });
+    await createHandler(create.req, create.res);
+    expect(create.res.statusCode).toBe(400);
+    expect(fixture.state.watchlistDocs['new-watchlist-456']).toBeUndefined();
+  });
+
+  it('a stored lowercase symbol counts as held (re-saved as EA, it is not an add); a duplicate add is named once', async () => {
+    const stored = { ...DRAFT_WATCHLIST, tickers: [tickerRow('AAPL'), { ...tickerRow('EA'), symbol: 'ea ' }] };
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': stored } });
+    activeFirestore = fixture.db;
+    const ok = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { tickers: [tickerRow('AAPL'), tickerRow('EA')] } });
+    await itemHandler(ok.req, ok.res);
+    expect(ok.res.statusCode).toBe(200);
+    const dup = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { tickers: [tickerRow('EA'), tickerRow('WBD'), tickerRow('wbd')] } });
+    await itemHandler(dup.req, dup.res);
+    expect(dup.res.statusCode).toBe(400);
+    expect(dup.res.body.message).toBe("WBD has left the stock universe and can't be added to a watchlist.");
+  });
+
+  it('the dialogue save refuses a session that still proposes a retired ticker (proposed before BR-3): no list, the session untouched', async () => {
+    const session = { ...ACTIVE_SESSION, candidateTickers: [...ACTIVE_SESSION.candidateTickers, { symbol: 'EA', reasoning: 'Old pick', category: 'discovery', slot: 'discovery', status: 'kept', proposedAt: '2026-10-20T12:00:00.000Z', proposedAtPhase: 'propose' }] };
+    const fixture = makeFakeFirestore({ sessionDocs: { 'session-1': session } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ body: VALID_BODY });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'retired_ticker', message: "EA has left the stock universe and can't be added to a watchlist." });
+    expect(fixture.state.watchlistDocs).toEqual({});
+    expect(fixture.state.sessionDocs['session-1']).toEqual(session);
+  });
+
+  it('the dialogue save of a session that only REMOVED a retired ticker is unchanged', async () => {
+    const session = { ...ACTIVE_SESSION, candidateTickers: [...ACTIVE_SESSION.candidateTickers, { symbol: 'EA', reasoning: 'Old pick', category: 'discovery', slot: null, status: 'removed', proposedAt: '2026-10-20T12:00:00.000Z', proposedAtPhase: 'refine' }] };
+    const fixture = makeFakeFirestore({ sessionDocs: { 'session-1': session } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ body: VALID_BODY });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(fixture.state.watchlistDocs['new-watchlist-456'].tickers.map((t) => t.symbol)).toEqual(['AAPL', 'NVDA']);
+  });
+
+  it('create-from-tickers without one is unchanged', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'POST', body: { tickers: [{ symbol: 'MSFT' }, { symbol: 'KRE' }] } });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(fixture.state.watchlistDocs['new-watchlist-456'].tickers.map((t) => t.symbol)).toEqual(['MSFT', 'KRE']);
+  });
+});
