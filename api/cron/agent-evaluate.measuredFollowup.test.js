@@ -292,6 +292,19 @@ describe('F1 — the mode branch runs the expiry sweep and never evaluates', () 
     expect(r.body.mode).toBeUndefined();
   });
 
+  // Review MTM-3: only `settle` selects the mode; any other value is the
+  // ordinary run (the same world as the control row).
+  it('a mode other than settle is the ordinary run: it locks the live battle', async () => {
+    const live = tieredBattle('mon-battle', ET('2026-10-30', 21, 0), { timing: { tradingDays: ['2026-10-30'] } });
+    world.db = makeWorldDb({ 'agentBattles/mon-battle': live });
+    world.listing = () => [structuredClone(live)];
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 31, 2, 0)));
+    const r = await runHandler({ mode: 'intraday' });
+    expect(r.body.mode).toBeUndefined();
+    expect(mocks.repairSweep).toHaveBeenCalledTimes(1);
+    expect(world.db.writes.some(w => w.path === 'agentBattles/mon-battle' && typeof w.payload?.['cronState.evaluatingAt'] === 'string')).toBe(true);
+  });
+
   it('a settle run with nothing expired completes nothing and still never evaluates', async () => {
     // Live and NOT dormant (its list starts on Friday), so only the mode
     // branch keeps it untouched (review MTV-3).
@@ -401,6 +414,28 @@ describe('F3 — through processAgentBattle', () => {
     expect(db.collection).not.toHaveBeenCalled();
   });
 
+  // Review MTM-1: the row above uses an incomplete stamp (its route is
+  // `unavailable`); this one is a real measured battle on the corrected route.
+  it('a measured battle on the corrected route is held back before its first day — before the route check, no transaction, no read', async () => {
+    const { stockModelRoute, STOCK_MODEL } = await import('../../src/utils/stockThresholdModel.js');
+    vi.setSystemTime(new Date('2026-10-14T14:02:00.000Z')); // Wed Oct 14, 10:02 AM ET
+    const battle = {
+      id: 'measured-2', gameMode: 'baggerbomb_agent', duration: 'fullday', status: 'active',
+      portfolio: { star: [{ symbol: 'AAPL', baseATR: 2.5 }], core: [], support: [], bench: { stocks: [], crypto: null } },
+      opponent: { portfolio: { star: [{ symbol: 'MSFT', baseATR: 2.5 }], core: [], support: [] } },
+      scoring: { stockThresholdModel: { ...STOCK_MODEL, admittedAt: '2026-10-14T14:00:00.000Z' } },
+      timing: { tradingDays: ['2026-10-15'] },
+    };
+    expect(stockModelRoute(battle).status).toBe('corrected');
+    const db = { runTransaction: vi.fn(async () => { throw new Error('no transaction may run'); }), collection: vi.fn(() => { throw new Error('no read may run'); }), doc: vi.fn(() => { throw new Error('no read may run'); }) };
+    const summary = { skipped: 0, errors: 0 };
+    await processAgentBattle(db, battle, summary);
+    expect(summary).toEqual({ skipped: 1, dormant: 1, errors: 0 });
+    expect(db.runTransaction).not.toHaveBeenCalled();
+    expect(db.collection).not.toHaveBeenCalled();
+    expect(db.doc).not.toHaveBeenCalled();
+  });
+
   it('tournaments are unchanged: a flat6 battle whose list starts tomorrow is still evaluated', async () => {
     const battle = makeTickBattle({ gameMode: 'baggerbomb_tournament', timing: { ...makeTickBattle().timing, tradingDays: [SEP10] } });
     const r = await tick(battle);
@@ -457,6 +492,17 @@ describe('F2 — the refresh (agent-evaluate.js) folds only ranked equipped tick
     expect(withEtf.update.watchlist.hotBench).toContain('S095');
     expect(withEtf.update.watchlist).toEqual({ ...without.update.watchlist, lastRefreshed: withEtf.update.watchlist.lastRefreshed });
     expect(withEtf.db.__store.battle.agentContext.equippedWatchlist.tickers).toEqual(['KRE', 'S095']);
+  });
+
+  // Review MTM-2: a battle created before F2 may already hold the ETF on its
+  // stored hotBench; the first refresh after the deploy drops it.
+  it.each([[true], [false]])('menu flag %s: a stored hotBench that already holds KRE loses it at the refresh', async (menu) => {
+    flags.menu = menu;
+    const battle = equippedBattle(['KRE', 'S095']);
+    battle.watchlist = { active: [], hotBench: ['KRE', 'S001'], monitoring: ['S002'] };
+    const { update } = await refreshTick(battle);
+    expect(update.watchlist.hotBench).not.toContain('KRE');
+    expect(update.watchlist.hotBench).toContain('S095');
   });
 
   it('a legacy tiered document without a gameMode follows the same rule', async () => {
