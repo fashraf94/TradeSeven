@@ -76,3 +76,22 @@ describe('hubFlags — against the shipped featureFlags', () => {
     });
   });
 });
+
+// ── Slice S7 (ruling R-S7-6): the phone's Shadow is one constant ────────────────────────────────────────────────────
+describe('PHONE_SHADOW — the phone fallback is one constant', () => {
+  it('ships as "canvas": the phone draws the moving Shadow until a device validation says otherwise', async () => {
+    vi.doUnmock(FEATURE_FLAGS);
+    vi.resetModules();
+    const { PHONE_SHADOW } = await import('./hubFlags');
+    expect(PHONE_SHADOW).toBe('canvas');
+  });
+
+  it('is one of the two forms the stage understands, and the stage compares it to "still" alone', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { PHONE_SHADOW } = await vi.importActual('./hubFlags');
+    expect(['canvas', 'still']).toContain(PHONE_SHADOW);
+    const hub = readFileSync(new URL('../CommandCenterHub.jsx', import.meta.url), 'utf8');
+    expect(hub.match(/PHONE_SHADOW/g)).toHaveLength(3);
+    expect(hub).toContain("stillOnly={PHONE_SHADOW === 'still'}");
+  });
+});

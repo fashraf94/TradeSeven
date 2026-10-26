@@ -688,6 +688,12 @@ const ALLOWED_ACTIVITY = Object.freeze({
   // S6 (ruling R-S6-2): the idea reader — the effects that read for a key and keep the answer's owner and list current. The read
   // is a service call on a trigger (mount, a list change, a return, a Retry); no timer, listener, poll or per-tab read.
   [HUB_FILE('hub/useHubResearch.js')]: ['\\buseEffect\\b'],
+  // Slice S7 (rulings R-S7-1, R-S7-5): Shadow's canvas — its frame loop, the offscreen observer, the one visibility listener, the
+  // still flash's one timeout and its effects. Call by call, in commandCenterHub.activity.guard.test.js; the pure modules
+  // (hub/shadowCanvas.js, shadowBloom.js, shadowStatus.js) hold none.
+  [HUB_FILE('ShadowCanvas.jsx')]: ['\\brequestAnimationFrame\\b', '\\bIntersectionObserver\\b', '\\baddEventListener\\b', '\\bsetTimeout\\b', '\\buseEffect\\b'],
+  // ...and the tests' stand-ins for those three (frames, the observer, the visibility listener count); tests only.
+  [HUB_FILE('__fixtures__/shadowCanvasKit.js')]: ['\\brequestAnimationFrame\\b', '\\bIntersectionObserver\\b', '\\baddEventListener\\b'],
 });
 
 function activityInCode(rel, code) {
@@ -923,6 +929,12 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
       // S6: the idea reader allows its effects and nothing else — no timer (the 30 s wait is judged at the press), listener or poll.
       [HUB_FILE('hub/useHubResearch.js')]: ['setTimeout(f, 30000);', 'setInterval(f, 1000);', "window.addEventListener('focus', f);", "document.addEventListener('visibilitychange', f);", 'useLayoutEffect(() => {});', 'requestAnimationFrame(f);', 'getDocs(q);'],
       [HUB_FILE('hub/useHubLater.js')]: ['useEffect(() => {}, []);', 'useLayoutEffect(() => {});', 'setTimeout(f, 0);', 'setInterval(f, 1000);', "window.addEventListener('storage', f);", 'requestAnimationFrame(f);', 'getDocs(q);', 'new BroadcastChannel("x");'],
+      // S7: the canvas allows its loop, its observer, its listener, its timer and its passive effects and nothing else; the pure modules allow nothing.
+      [HUB_FILE('ShadowCanvas.jsx')]: ['setInterval(f, 100);', 'new ResizeObserver(cb);', 'new MutationObserver(cb);', 'useLayoutEffect(() => {});', "window.matchMedia('(prefers-reduced-motion: reduce)');", 'window.onfocus = () => {};', 'getDocs(q);', 'queueMicrotask(f);', "sessionStorage.setItem('k', 'v');"],
+      [HUB_FILE('__fixtures__/shadowCanvasKit.js')]: ['setTimeout(f, 0);', 'new ResizeObserver(cb);', 'useEffect(() => {}, []);', 'new MutationObserver(cb);'],
+      [HUB_FILE('hub/shadowCanvas.js')]: ['requestAnimationFrame(f);', 'setTimeout(f, 0);', 'useEffect(() => {}, []);', 'new IntersectionObserver(cb);', "document.addEventListener('visibilitychange', f);"],
+      [HUB_FILE('hub/shadowBloom.js')]: ['setTimeout(f, 0);', 'useEffect(() => {}, []);', 'requestAnimationFrame(f);'],
+      [HUB_FILE('hub/shadowStatus.js')]: ['setTimeout(f, 0);', 'useEffect(() => {}, []);', "window.addEventListener('focus', f);"],
     };
     for (const [rel, lines] of Object.entries(negatives)) {
       for (const line of lines) expect(activityInCode(rel, line), `${rel}: ${line}`).not.toEqual([]);

@@ -32,27 +32,31 @@ import * as ceremonyTiming from '../components/Dashboard/deployCeremony/ceremony
 // Pilot P1c (founder ruling E1) — the one notice a created deploy can carry.
 import { HYPOTHESIS_NOTICES } from '../constants/hypothesisRecords';
 import { DEPLOY_OUTCOMES } from '../constants/deployOutcomes';
-import { stockAdmissionRetryAt, STOCK_PUBLICATION_DELAY_MINUTES } from '../utils/stockAdmissionWindow';
+import { stockPublicationOpensAt, STOCK_PUBLICATION_DELAY_MINUTES } from '../utils/stockAdmissionWindow';
 import { signedInUid } from './deployIdentity';
 
-// BaggerBomb stock thresholds v2 (Rulings 2 and 6): only an allowlisted pilot
-// creation can be refused this way. The server's 503 carries `reason`; the
-// ceremony shows `details`, so the reason becomes one short player line.
+// BaggerBomb measured thresholds (v2 Ruling 6, BR-4): a selected creation
+// can be refused this way, and — past the market calendar's maintained years
+// (BR-2, `calendar_missing`) — any tiered creation. The server's 503 carries
+// `reason`; the ceremony shows `details`, so the reason becomes one short
+// player line.
 export const STOCK_ADMISSION_ERROR = 'Stock admission unavailable';
-// The late start and the evening window (P2) name the retry time, derived
-// from the same rule as the server refusal (src/utils/stockAdmissionWindow.js).
-// The 503 carries only the reason, so the time comes from this browser's clock
-// when the refusal arrives (blockers review BK2-6).
-const RETRY_TIME_REASONS = new Set(['late_start_cutoff', 'evening_window']);
+// BR-2: the collector's publication wait names the time it ends, from the
+// same module as the server rule (src/utils/stockAdmissionWindow.js). The 503
+// carries only the reason, so the time comes from this browser's clock when
+// the refusal arrives (blockers review BK2-6); off a trading day it falls back
+// to the plain line.
 const etClock = ms => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(ms).replace(/\s/g, ' ');
 const STOCK_ADMISSION_LINES = {
   publication_window_not_open: `Measured battles reopen ${STOCK_PUBLICATION_DELAY_MINUTES} minutes after the market close. Try again shortly.`,
   prior_corrected_battle_requires_settlement: 'Your previous measured battle is still settling. Try again after it completes.',
+  // BR-2: no retry helps until the next year's market calendar is added (src/utils/marketCalendar.js).
+  calendar_missing: "New battles can't be scheduled yet: next year's market calendar isn't loaded.",
 };
 export function stockAdmissionLine(data, now = new Date()) {
   if (data?.error !== STOCK_ADMISSION_ERROR) return null;
-  const retryAt = RETRY_TIME_REASONS.has(data.reason) ? stockAdmissionRetryAt(now.toISOString()) : null;
-  if (retryAt !== null) return `Measured battles can't start this late in the day. Try again after ${etClock(retryAt)} ET.`;
+  const opensAt = data.reason === 'publication_window_not_open' ? stockPublicationOpensAt(now.toISOString()) : null;
+  if (opensAt !== null) return `Measured battles open again at ${etClock(opensAt)} ET.`;
   return STOCK_ADMISSION_LINES[data.reason] ?? 'Measured scoring could not start this battle just now. Try again in a minute.';
 }
 
@@ -278,8 +282,8 @@ export async function deployAgent(agentId, onCreateAgentBattle, onDeployTargetRe
     }
     // [Deploy Ceremony §10] Forward `details`/`errorPhase` (previously dropped)
     // plus the HTTP status so the ceremony error surface can show something useful.
-    // A measured pilot's stock-admission refusal forwards its player line (v2
-    // Ruling 2). Every other failure forwards exactly what it did before.
+    // A measured creation's stock-admission refusal forwards its player line
+    // (BR-2). Every other failure forwards exactly what it did before.
     // (Pilot P1c, ruling E1: the P1b due-idea refusal — 409 hypothesis_review_due —
     // is gone; a due idea never blocks a deploy, so this path no longer reads it.)
     const refusalLine = stockAdmissionLine(data);

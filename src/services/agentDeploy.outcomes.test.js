@@ -177,10 +177,15 @@ describe('the result table: every path, every legacy field, its outcome', () => 
 
   it('503 stock admission: refused, with its player line', async () => {
     stubFetch(json(503, { error: 'Stock admission unavailable', reason: 'publication_window_not_open', retriable: true }));
-    expect(await run(vi.fn())).toEqual({
-      outcome: 'refused', success: false, status: 503, postIssued: true, httpStatus: 503,
-      error: 'Stock admission unavailable', details: 'Measured battles reopen 15 minutes after the market close. Try again shortly.', errorPhase: undefined,
-    });
+    // BR-2: the line names the end of the publication wait from the refusal's own
+    // clock (Wed Oct 21 2026, 16:05 ET), so this row pins that clock.
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-21T20:05:00.000Z'));
+    try {
+      expect(await run(vi.fn())).toEqual({
+        outcome: 'refused', success: false, status: 503, postIssued: true, httpStatus: 503,
+        error: 'Stock admission unavailable', details: 'Measured battles open again at 4:15 PM ET.', errorPhase: undefined,
+      });
+    } finally { vi.useRealTimers(); }
   });
 
   it.each([

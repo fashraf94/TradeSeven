@@ -70,6 +70,18 @@
 // honest line the panel carries, and Activity's two idea rows (hub/researchView.js). Nothing is written. The first-deployment card
 // stays under an open sheet and through a failed refresh of an empty window (hub/nextAction.js).
 //
+// Slice S7 (rulings R-S7-1 … R-S7-7): Shadow is ShadowCanvas, moving — ambient by
+// default, quickened only while a hub-started deployment is submitting, answering
+// with the response bloom to a new area selection (the wide compositions' area
+// controls; the phone's tabs are tab switches and never bloom) and to an
+// attempt's created terminal, once per attempt. It draws the still instead for
+// reduced motion (this file's one `reducedMotion`), with no canvas, and on the
+// phone when hub/hubFlags.js PHONE_SHADOW says 'still'. It pauses while the root
+// deploy ceremony covers the page (`coverOpen`, the provider's own overlay
+// signal). The status line's words are hub/shadowStatus.js's. This file holds no
+// effect, timer or listener for any of it: the loop and its cleanup are
+// ShadowCanvas's.
+//
 // One tree for the three wide compositions. Desktop, tablet and stacked are
 // one CSS grid whose areas change with the composition; every part keeps its
 // place in the React tree (the stage and panel wrappers switch to
@@ -105,7 +117,7 @@ import { useDeployAttempt } from '../../contexts/DeployAttemptContext';
 import ScoutingBoardSheet from '../Dashboard/ScoutingBoardSheet';
 import { DISPLAY_ACTIONS, deployDisplay } from './hub/deployDisplay';
 import { HUB_COPY as COPY } from './hub/hubCopy';
-import { hubFlags, scoutingBoardOn } from './hub/hubFlags';
+import { PHONE_SHADOW, hubFlags, scoutingBoardOn } from './hub/hubFlags';
 import { HUB_DEPLOY_CONTROLS, useHubDeploy } from './hub/useHubDeploy';
 import { formatHubDate, headerName } from './hub/hubDate';
 import { DESKTOP_ACTIVITY_LIMIT, HUB_S1_SECTIONS, HUB_S2A_DEPLOY_INPUTS, liveGamesOf, splitGames } from './hub/hubModel';
@@ -117,6 +129,7 @@ import { useHubRuntime } from './hub/useHubRuntime';
 import { deriveHubDeployState } from './hub/selectors/deployState';
 import { C, HUB_LAYERS, HUB_SCOPED_CSS } from './hub/hubStyle';
 import { shadowTierFor } from './hub/shadowGeometry';
+import { liveReadKnown, shadowStatusWords } from './hub/shadowStatus';
 import { useHubWidth } from './hub/useHubWidth';
 import useHubReaders from './hub/useHubReaders';
 import useHubResearch from './hub/useHubResearch';
@@ -163,7 +176,7 @@ const rootStyle = { position: 'relative', zIndex: HUB_LAYERS.page, color: C.ink,
 /** The phone's sticky tab row (4 + 46 + 1 px) and a little air: the pane's top scroll padding. */
 const PHONE_TAB_ROW_CLEARANCE = 56;
 
-function useShared(sections) {
+function useShared(sections, attemptId = null) {
   const { user } = useUser();
   const reducedMotion = Boolean(useReducedMotion());
   const idBase = `hub${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
@@ -181,12 +194,28 @@ function useShared(sections) {
     completed,
     liveGame,
     display,
-    status: display.processing ? 'processing' : 'still',
+    // Slice S7 (R-S7-3): Shadow moves only while a hub-started deployment is submitting; otherwise it is ambient.
+    // Whether it draws the still instead (reduced motion, no canvas, the phone constant) is ShadowCanvas's call.
+    status: display.processing ? 'processing' : 'ambient',
+    // The response's second trigger (R-S7-3): an attempt's created terminal — the display word `confirmed`, recovered
+    // included — named by its attempt id, so Shadow answers once per attempt. An existing, refused or uncertain
+    // terminal is never this.
+    createdAttemptId: display.displayState === 'confirmed' && typeof attemptId === 'string' && attemptId ? attemptId : null,
+    // Slice S7 (review C-1, C-3): the games that have opened, the games deployed and waiting for the open, and whether the
+    // owned live read can be said to be known — the line says what the strip and the Games rows say.
+    liveCount: live.filter((g) => !g.preOpen).length,
+    waitingCount: live.filter((g) => g.preOpen).length,
+    liveKnown: liveReadKnown(sections.games, sections.deploy),
     summaries: areaSummaries(sections),
     loadoutLine: loadoutLineOf(sections.loadout),
     dateText: formatHubDate(new Date()),
     name: headerName(user),
   };
+}
+
+/** Slice S7 (ruling R-S7-7): the status line's words, from the hold, the deploy display and the owned live read. */
+function statusWordsOf(deploy, shared) {
+  return shadowStatusWords({ holdPhase: deploy?.holdPhase ?? null, display: shared.display, liveCount: shared.liveCount, waitingCount: shared.waitingCount, liveKnown: shared.liveKnown });
 }
 
 const SIDE_PARTS = new Set(['games', 'deploy', 'activity', 'brief']);
@@ -271,11 +300,11 @@ function ScoutingBoard({ open, onClose, dock, agent, deploy, board, sections, pr
 }
 
 /** The mobile site: header → compact stage → sticky tabs → section, and the strip above BottomNav. */
-function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null }) {
+function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null, attemptId = null, coverOpen = false }) {
   const rootRef = useRef(null);
   const runtime = useHubRuntime({ hub, agentRead, sections: given, rootRef, researchRead });
   const { sections, sheets: sheet } = runtime;
-  const shared = useShared(sections);
+  const shared = useShared(sections, attemptId);
   const stripRef = useRef(null);
   const width = useHubWidth(rootRef);
   const placement = useNavClearance(stripRef);
@@ -315,9 +344,13 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
             tier={shadowTierFor(composition)}
             status={shared.status}
             processing={shared.display.processing}
+            words={statusWordsOf(deploy, shared)}
             selectedArea={AREA_FOR_PHONE_TAB[tab]}
             summaries={shared.summaries}
             reducedMotion={shared.reducedMotion}
+            createdAttemptId={shared.createdAttemptId}
+            paused={coverOpen}
+            stillOnly={PHONE_SHADOW === 'still'}
             holdPhase={deploy?.holdPhase ?? null}
             progress={deploy?.progress ?? null}
           />
@@ -374,14 +407,16 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
 }
 
 /** The desktop site: Desktop, Tablet or Stacked by the hub's own width. */
-function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null }) {
+function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, agentRead = null, researchRead = null, deploy = null, board = null, attemptId = null, coverOpen = false }) {
   const rootRef = useRef(null);
   const runtime = useHubRuntime({ hub, agentRead, sections: given, rootRef, researchRead });
   const { sections, sheets: sheet } = runtime;
-  const shared = useShared(sections);
+  const shared = useShared(sections, attemptId);
   const width = useHubWidth(rootRef);
   const composition = composeHub({ site: HUB_SITES.DESKTOP, width });
   const [area, setArea] = useState(DEFAULT_AREA);
+  // Slice S7 (R-S7-3): each selection that CHANGED the area is one response for Shadow; re-selecting the current area is none.
+  const [areaEvent, setAreaEvent] = useState(0);
   const actions = {
     ...wired,
     ...runtime.actions,
@@ -390,7 +425,7 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
     openAllActivity: sheet.open(HUB_SHEETS.ACTIVITY),
   };
   // Changing area before commitment cancels the charge (spec §5.5).
-  const selectArea = (next) => { deploy?.cancelCharging(); setArea(next); };
+  const selectArea = (next) => { deploy?.cancelCharging(); if (next !== area) setAreaEvent((n) => n + 1); setArea(next); };
   const desktop = composition === HUB_COMPOSITIONS.DESKTOP;
   const tablet = composition === HUB_COMPOSITIONS.TABLET;
   const gutter = desktop ? 28 : tablet ? 24 : 20;
@@ -402,11 +437,15 @@ function WideHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, age
       tier={shadowTierFor(composition)}
       status={shared.status}
       processing={shared.display.processing}
+      words={statusWordsOf(deploy, shared)}
       selectedArea={area}
       onSelectArea={selectArea}
       summaries={shared.summaries}
       idBase={shared.idBase}
       reducedMotion={shared.reducedMotion}
+      areaEvent={areaEvent}
+      createdAttemptId={shared.createdAttemptId}
+      paused={coverOpen}
       holdPhase={deploy?.holdPhase ?? null}
       progress={deploy?.progress ?? null}
     />
@@ -556,9 +595,12 @@ function ConnectedHub({ site, hub, sections }) {
     // The board's own deploy is inside its modal: its start is the table with the board itself not counted (spec §10).
     board = { canStart: deriveHubDeployState({ ...readers.inputs, modalOpen: deployAttempt.snapshot.overlayOpen === true }).canStart === true };
   }
+  // Slice S7: the provider's attempt id and whether its ceremony covers the page — Shadow's response and pause (R-S7-3, R-S7-5).
+  const attemptId = readers.inputs?.attempt?.attemptId ?? null;
+  const coverOpen = deployAttempt?.snapshot?.overlayOpen === true;
   return site === HUB_SITES.MOBILE
-    ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} />
-    : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} />;
+    ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
+    : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />;
 }
 
 /**

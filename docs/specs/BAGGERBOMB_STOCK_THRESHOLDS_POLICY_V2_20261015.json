@@ -195,8 +195,8 @@
   "hashAlgorithm": "sha256_of_stableStringify_recursively_sorted_object_keys_preserved_array_order_UTF8",
   "hashSource": "api/_utils/canonicalHash.js:20",
   "unhashedCodeConstants": {
-    "lateStartCutoffMinutes": 45,
-    "lateStartCutoffSource": "api/_utils/stockThresholdAdmission.js STOCK_LATE_START_CUTOFF_MINUTES (v2 Ruling 2)"
+    "lateDayStartMinutes": 45,
+    "lateDayStartSource": "src/utils/stockAdmissionWindow.js LATE_DAY_START_MINUTES (BR-2, Oct 25, 2026: a tiered full-day battle created from 45 minutes before a trading day's calendar close plays the next session; it supersedes v2 Ruling 2's late-start refusal, which used the same 45 minutes)"
   },
   "rulingEvidence": {
     "offHoursCreation": "Phase 0 report section C3 (final, polling ended 16:50 ET Oct 15 2026; docs/audits/BAGGERBOMB_THRESHOLDS_PHASE0_REPORT_20261015.md): the 16:00 ET closing bar was served at 16:15:20 ET stamped exactly 16:00:00 at the official close; later stamps crept to 16:01-16:04 (HUM 16:23) at the unchanged close; no after-hours movement. Before that bar arrives the feed can still serve the 15:59:00 minute bar, which the at-or-after-close rule refuses (retriable). The collector check stockThresholdMeasurementProvider.js (quote stamp >= source-session closeMs) already implements this rule; no tolerance was added. Overnight and pre-open stamps were not measured."

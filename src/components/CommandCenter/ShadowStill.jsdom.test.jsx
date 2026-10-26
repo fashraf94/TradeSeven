@@ -104,3 +104,37 @@ describe('ShadowStill — its label names what it shows', () => {
     expect(paths(b)).toEqual(paths(a));
   });
 });
+
+// ── Slice S7: the still's flash — the reduced-motion form of the response bloom (ShadowCanvas.jsx owns its 420 ms) ──
+describe('ShadowStill — the flash (slice S7)', () => {
+  const opacities = (host) => [...host.querySelectorAll('[data-shadow-strand] path:last-child')].map((p) => Number(p.getAttribute('stroke-opacity')));
+  const stops = (host) => [...host.querySelectorAll('stop')].map((s) => Number(s.getAttribute('stop-opacity')));
+
+  it('lifts the glow and the strands by the design\'s 1.25 (capped at 1), and says so on the box', () => {
+    const rest = draw({ tier: 'low' });
+    const lit = draw({ tier: 'low', flash: true });
+    expect(lit.querySelector('[data-shadow-box]').hasAttribute('data-shadow-flash')).toBe(true);
+    expect(rest.querySelector('[data-shadow-box]').hasAttribute('data-shadow-flash')).toBe(false);
+    const a = opacities(rest);
+    const b = opacities(lit);
+    b.forEach((o, i) => expect(o).toBeCloseTo(Math.min(1, a[i] * 1.25), 6));
+    // Stops in document order: the halo's three, then the core's three (0.95, 0.55, 0), then the echo nodes'.
+    const [haloRest, , , , coreRest] = stops(rest);
+    const [haloLit, , , , coreLit] = stops(lit);
+    expect(haloLit).toBeCloseTo(haloRest * 1.25, 8);
+    expect(coreLit).toBeCloseTo(Math.min(1, coreRest * 1.25), 8);
+  });
+
+  it('never lifts a stroke past full opacity (the design\'s min(1, …); at the still\'s pinned moment the brightest strand is below 0.7, so the cap is a guard and not reachable here)', () => {
+    for (const selectedArea of [null, 0, 1, 2]) {
+      for (const o of opacities(draw({ tier: 'mid', selectedArea, flash: true }))) expect(o).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('draws the same geometry flashing or not: only opacity moves, and with no flash nothing changed from S1', () => {
+    const paths = (h) => [...h.querySelectorAll('path')].map((p) => p.getAttribute('d'));
+    expect(paths(draw({ tier: 'mid', selectedArea: 1, flash: true }))).toEqual(paths(draw({ tier: 'mid', selectedArea: 1 })));
+    expect(stops(draw({}))[0]).toBe(0.1);
+    expect(stops(draw({}))[4]).toBe(0.55);
+  });
+});

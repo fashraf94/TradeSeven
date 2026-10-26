@@ -3386,10 +3386,12 @@ export const SWAP_IDENTITY_MODES = Object.freeze(['off', 'shadow', 'enforce']);
 export const CRYPTO_SLOT_PROMPT_ENABLED = true;
 
 // New battle selection only. Existing games dispatch from their saved tuple.
-// v2 Ruling 6 (docs/approvals/BAGGERBOMB_STOCK_THRESHOLDS_V2_PILOT_20261015.md):
+// v2 Ruling 6 and BR-4 (docs/approvals/BAGGERBOMB_STOCK_THRESHOLDS_V2_PILOT_20261015.md):
 // ships true, and the server control document stockThresholdControl/admission
-// is the only on-switch. With no enabled schema-2 allowlist control naming the
-// owner, every creation is today's legacy creation with zero measurement reads.
+// is the only on-switch. An enabled schema-2 control selects either an
+// allowlist of owners or, with exactly { mode: 'all' }, every owner's tiered
+// full-day creation (never a tournament). With no such control, every creation
+// is today's legacy creation with zero measurement reads.
 // Rollback: disable the control document (no deploy needed).
 // Pinned by: stockThresholdModel.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
 export const STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED = true;

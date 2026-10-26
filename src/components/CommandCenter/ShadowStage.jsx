@@ -6,15 +6,17 @@
 // design's Stage and PhoneStage, ff-stage.jsx; spec §1 keeps the enlarged
 // Shadow and its readable adjacent text).
 //
-// Shadow is ShadowStill, a fixed box (ruling R-S1-1). The connector anchors to
+// Shadow is ShadowCanvas since slice S7 (the moving form, which draws the
+// ShadowStill when motion is reduced, when it has no canvas or when the phone
+// constant says so), a fixed box (ruling R-S1-1). The connector anchors to
 // that box and to the selected control's ring, never to a filament: it runs
 // from the middle of the box's right edge to the ring's left edge. One
 // ResizeObserver on the stage re-measures it; with no layout (a zero-size box)
 // it draws nothing.
 //
 // The status line is the hub's one live region. It announces phase words only
-// — "Idle · nothing running", or the submitting phase — never a percentage
-// (spec §5.5, §10).
+// — never a percentage (spec §5.5, §10). Since slice S7 its words are
+// hub/shadowStatus.js's (ruling R-S7-7), chosen by the hub and handed in.
 //
 // Slice S2b: a hub hold's own phases too, "Holding to deploy" and "Locked in"
 // (the keyboard's Locked in, then Submitting). While a hold charges, its
@@ -28,14 +30,7 @@ import { useHoldProgress } from '../../contexts/DeployAttemptContext';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { AREA_TOKEN, C, HAIR, MONO, tint } from './hub/hubStyle';
 import AreaControls from './AreaControls';
-import ShadowStill from './ShadowStill';
-
-function statusWords(processing, holdPhase) {
-  if (processing) return COPY.shadow.statusSubmitting;
-  if (holdPhase === 'locked') return COPY.shadow.statusLocked;
-  if (holdPhase === 'charging') return COPY.shadow.statusHolding;
-  return COPY.shadow.statusIdle;
-}
+import ShadowCanvas from './ShadowCanvas';
 
 /** The charge in flight, as a percentage: visible, aria-hidden, never in the live region (spec §5.5). */
 function HoldPercent({ progress, small }) {
@@ -48,7 +43,7 @@ function HoldPercent({ progress, small }) {
   );
 }
 
-export function StatusLine({ processing, small = false, wrap = false, maxWidth, holdPhase = null, progress = null }) {
+export function StatusLine({ processing, words, small = false, wrap = false, maxWidth, holdPhase = null, progress = null }) {
   return (
     <>
       <div
@@ -70,7 +65,7 @@ export function StatusLine({ processing, small = false, wrap = false, maxWidth, 
             color: processing ? C.teal : C.ink2, lineHeight: 1.35, whiteSpace: wrap ? 'normal' : 'nowrap', minWidth: 0,
           }}
         >
-          {statusWords(processing, holdPhase)}
+          {words}
         </span>
       </div>
       {holdPhase === 'charging' && progress && <HoldPercent progress={progress} small={small} />}
@@ -114,7 +109,7 @@ export function connectorPath(origin, boxRect, glyphRect) {
 }
 
 /** Desktop, tablet and stacked: Shadow, the status line, and the three area controls. */
-export function ShadowStage({ composition, size, tier, status, processing, selectedArea, onSelectArea, summaries, idBase, reducedMotion, holdPhase = null, progress = null }) {
+export function ShadowStage({ composition, size, tier, status, processing, words, selectedArea, onSelectArea, summaries, idBase, reducedMotion, areaEvent = 0, createdAttemptId = null, paused = false, holdPhase = null, progress = null }) {
   const compact = composition !== 'desktop';
   const stageRef = useRef(null);
   const boxRef = useRef(null);
@@ -159,8 +154,8 @@ export function ShadowStage({ composition, size, tier, status, processing, selec
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 26 : 44, position: 'relative' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <ShadowStill size={size} tier={tier} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} boxRef={boxRef} />
-          <StatusLine processing={processing} maxWidth={size + 20} holdPhase={holdPhase} progress={progress} />
+          <ShadowCanvas size={size} tier={tier} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} areaEvent={areaEvent} createdAttemptId={createdAttemptId} paused={paused} boxRef={boxRef} />
+          <StatusLine processing={processing} words={words} maxWidth={size + 20} holdPhase={holdPhase} progress={progress} />
         </div>
         <AreaControls
           idBase={idBase}
@@ -180,7 +175,7 @@ export function ShadowStage({ composition, size, tier, status, processing, selec
  * status, and a read-only summary of the three areas beneath. Section
  * navigation is the tab row below the stage.
  */
-export function PhoneStage({ size, tier, status, processing, selectedArea, summaries, reducedMotion, holdPhase = null, progress = null }) {
+export function PhoneStage({ size, tier, status, processing, words, selectedArea, summaries, reducedMotion, createdAttemptId = null, paused = false, stillOnly = false, holdPhase = null, progress = null }) {
   return (
     <section
       aria-label={COPY.shadow.stageLabel}
@@ -192,10 +187,10 @@ export function PhoneStage({ size, tier, status, processing, selectedArea, summa
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <ShadowStill size={size} tier={tier} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} />
+        <ShadowCanvas size={size} tier={tier} status={status} selectedArea={selectedArea} reducedMotion={reducedMotion} createdAttemptId={createdAttemptId} paused={paused} stillOnly={stillOnly} />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <NameLine stacked />
-          <StatusLine processing={processing} small wrap holdPhase={holdPhase} progress={progress} />
+          <StatusLine processing={processing} words={words} small wrap holdPhase={holdPhase} progress={progress} />
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, paddingLeft: 8 }}>

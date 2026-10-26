@@ -28,6 +28,10 @@ import { MANIFEST_WRITE_ENABLED } from '../../src/config/featureFlags.js';
 import { buildResolvedAgentManifest } from './resolvedAgentManifest.js';
 import { prepareStockCreation, stockCreationDb } from './stockThresholdAdmission.js';
 import { StockThresholdRefusal } from './stockThresholdMeasurementProvider.js';
+// BR-2 — the tiered full day, from the calendar of record. Node-clean src
+// import (BUILD_RULES §4); stockThresholdBroadRelease.test.js imports it
+// unmocked, and that import is the dependency-surface guard.
+import { tieredFullDayTarget } from '../../src/utils/stockAdmissionWindow.js';
 import {
   pinActivationDescriptor, assertProjectionCurrent,
   manifestGenerationStamp, commitBattleDocWithPin,
@@ -117,7 +121,11 @@ export async function createAgentBattle(db, agentData, thresholds, startingPrice
   let tradingDays, expiresAt, localClose;
 
   if (AGENT_BATTLE_DURATION_MODE === 'fullday') {
-    const fullDay = computeFullDayExpiry(portfolio);
+    // BR-2 (Flash, Oct 25, 2026; approved fence contact, this rule only): a
+    // tiered battle's full day comes from the calendar at its creation instant,
+    // with no process time zone; from 45 minutes before a trading day's close
+    // it plays the next session. Tournaments keep computeFullDayExpiry.
+    const fullDay = gameMode === TIERED_GAME_MODE ? tieredFullDay(portfolio, Date.parse(now)) : computeFullDayExpiry(portfolio);
     tradingDays = [fullDay.targetDateStr];
     expiresAt = fullDay.expiresAt;
     localClose = `${String(fullDay.effectiveCloseHour).padStart(2, '0')}:00`;
@@ -402,6 +410,17 @@ function hasCryptoInPortfolio(portfolio) {
   if (!portfolio) return false;
   const allSlots = [...(portfolio.star || []), ...(portfolio.core || []), ...(portfolio.support || [])];
   return allSlots.some(slot => slot?.isCrypto === true);
+}
+
+/**
+ * BR-2: the tiered full day (src/utils/stockAdmissionWindow.js
+ * tieredFullDayTarget). A creation the calendar cannot place (past its
+ * maintained tables) is refused, retriably, never given a guessed expiry.
+ */
+function tieredFullDay(portfolio, atMs) {
+  const target = tieredFullDayTarget(atMs, hasCryptoInPortfolio(portfolio));
+  if (target.status !== 'ok') throw new StockThresholdRefusal(target.status);
+  return target;
 }
 
 /**

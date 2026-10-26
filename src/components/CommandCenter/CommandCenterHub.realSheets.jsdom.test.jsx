@@ -35,7 +35,8 @@ vi.mock('./hub/useHubReaders', () => ({ default: (hub) => ({ sections: {}, actio
 vi.mock('../../services/forgeWatchlistService', () => ({ listWatchlists }));
 vi.mock('../../services/agentService', () => ({ equipWatchlist, unequipWatchlist, changeArchetype }));
 vi.mock('../../hooks/useMasteryProfile', () => ({ default: () => null }));
-vi.mock('./hub/hubFlags', () => ({ hubFlags: () => flags.current }));
+// Slice S7: a partial mock — the real module's other exports (PHONE_SHADOW, ruling R-S7-6) stay, only hubFlags() is stubbed.
+vi.mock('./hub/hubFlags', async (importOriginal) => ({ ...(await importOriginal()), hubFlags: () => flags.current }));
 vi.mock('../../utils/equipSlots', () => ({ getEquipSlots: () => slots.current }));
 
 import CommandCenterHub from './CommandCenterHub';

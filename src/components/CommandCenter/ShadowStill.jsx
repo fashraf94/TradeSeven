@@ -15,6 +15,9 @@
 //   selectedArea  0 | 1 | 2 | null — the selected relationship area's family
 //                 leans out, the others recede (the design's focus)
 //   reducedMotion the same geometry with no motion; the still has none to drop
+//   flash         slice S7: the reduced-motion form of the response bloom — the design's brief
+//                 lift of the glow and the strands (drawStill(flash): ×1.25, capped at 1), which the
+//                 owner of the response clears itself after 420 ms
 //   boxRef        the stage box element, the one thing the stage measures
 // Nothing outside reads a filament point: the area controls, the dotted
 // connector and the status line anchor to the box's edges and the controls'
@@ -31,7 +34,7 @@ import { readToken } from '../../theme/cssTokens';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { SH_ECHO_NODES, mixHex, stillPaths } from './hub/shadowGeometry';
 
-export default function ShadowStill({ size, tier = 'mid', status = 'still', selectedArea = null, reducedMotion = false, boxRef }) {
+export default function ShadowStill({ size, tier = 'mid', status = 'still', selectedArea = null, reducedMotion = false, flash = false, boxRef }) {
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const sel = selectedArea === 0 || selectedArea === 1 || selectedArea === 2 ? selectedArea : null;
   const paths = useMemo(() => stillPaths(tier, sel), [tier, sel]);
@@ -40,6 +43,7 @@ export default function ShadowStill({ size, tier = 'mid', status = 'still', sele
   const core = readToken('white');
   const state = COPY.shadow.states[status] || COPY.shadow.states.still;
   const areaName = sel == null ? null : COPY.areas.names[sel];
+  const lift = flash ? 1.25 : 1;
 
   return (
     <div
@@ -47,6 +51,7 @@ export default function ShadowStill({ size, tier = 'mid', status = 'still', sele
       data-shadow-box=""
       data-shadow-status={state}
       data-shadow-reduced-motion={reducedMotion ? 'true' : 'false'}
+      data-shadow-flash={flash ? '' : undefined}
       style={{ width: size, height: size, flexShrink: 0 }}
     >
       <svg
@@ -60,13 +65,13 @@ export default function ShadowStill({ size, tier = 'mid', status = 'still', sele
       >
         <defs>
           <radialGradient id={`h${uid}`}>
-            <stop offset="0" stopColor={near} stopOpacity="0.1" />
+            <stop offset="0" stopColor={near} stopOpacity={0.1 * lift} />
             <stop offset="0.55" stopColor={near} stopOpacity="0.035" />
             <stop offset="1" stopColor={near} stopOpacity="0" />
           </radialGradient>
           <radialGradient id={`c${uid}`}>
             <stop offset="0" stopColor={core} stopOpacity="0.95" />
-            <stop offset="0.35" stopColor={near} stopOpacity="0.55" />
+            <stop offset="0.35" stopColor={near} stopOpacity={Math.min(1, 0.55 * lift)} />
             <stop offset="1" stopColor={near} stopOpacity="0" />
           </radialGradient>
           <radialGradient id={`n${uid}`}>
@@ -78,12 +83,13 @@ export default function ShadowStill({ size, tier = 'mid', status = 'still', sele
         <circle r="1.15" fill={`url(#h${uid})`} />
         {paths.map((p, i) => {
           const stroke = mixHex(far, near, p.depth);
+          const alpha = Math.min(1, p.alpha * lift);
           return (
             <g key={i} data-shadow-strand="">
               {p.glow && (
-                <path d={p.d} fill="none" stroke={stroke} strokeOpacity={p.alpha * 0.16} strokeWidth={p.glowWidth} strokeLinecap="round" strokeLinejoin="round" />
+                <path d={p.d} fill="none" stroke={stroke} strokeOpacity={alpha * 0.16} strokeWidth={p.glowWidth} strokeLinecap="round" strokeLinejoin="round" />
               )}
-              <path d={p.d} fill="none" stroke={stroke} strokeOpacity={p.alpha} strokeWidth={p.width} strokeLinecap="round" strokeLinejoin="round" />
+              <path d={p.d} fill="none" stroke={stroke} strokeOpacity={alpha} strokeWidth={p.width} strokeLinecap="round" strokeLinejoin="round" />
             </g>
           );
         })}

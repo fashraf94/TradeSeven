@@ -228,6 +228,13 @@ const GUARDED_FILES = [
   // registered in the commit that introduces them (hazard 34).
   'src/components/CommandCenter/hub/researchView.js',
   'src/components/CommandCenter/hub/useHubResearch.js',
+  // Command Center hub, S7 (Shadow moving: the canvas, its response and its status words): token-only and
+  // motion-token-only from birth, registered in the commit that introduces them (hazard 34).
+  'src/components/CommandCenter/ShadowCanvas.jsx',
+  'src/components/CommandCenter/hub/shadowBloom.js',
+  'src/components/CommandCenter/hub/shadowCanvas.js',
+  'src/components/CommandCenter/hub/shadowStatus.js',
+  'src/components/CommandCenter/__fixtures__/shadowCanvasKit.js',
 ];
 
 /**

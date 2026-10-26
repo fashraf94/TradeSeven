@@ -52,6 +52,12 @@ describe('validateTickers — Phase 4.5a ETF universe', () => {
     expect(result.unsupported).toEqual([]);
   });
 
+  it('BR-3: a retired stock is unsupported for a new pick, though its sector label stays (rankingConfig.js RETIRED_STOCKS)', () => {
+    const result = validateTickers(['EA', 'wbd', 'PARA', 'AAPL']);
+    expect(result.validated).toEqual([{ symbol: 'AAPL', sectorId: 'XLK' }]);
+    expect(result.unsupported).toEqual(['EA', 'WBD', 'PARA']);
+  });
+
   it('normalizeTicker exported helper preserves Phase 1 contract', () => {
     expect(normalizeTicker('brk.b')).toBe('BRK-B');
     expect(normalizeTicker('  smh  ')).toBe('SMH');
