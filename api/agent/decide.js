@@ -483,9 +483,9 @@ export default async function handler(req, res) {
     }
     equippedSymbols = rankedEquipped;
     // [Phase5B1] Fold equipped tickers into the shortlist. Equipped tickers
-    // survive the universe filter even when off-universe (Option 8C);
-    // augmentedValidSymbols extends validSymbols so validatePortfolio() below
-    // does not reject an off-universe equipped ticker that Haiku picks.
+    // are elevated past Sonnet's picks. Since F2 they are all ranked here, so
+    // the fold's off-universe branch (Option 8C) is empty on this path and
+    // augmentedValidSymbols equals validSymbols.
     const fold = foldEquippedTickers({
       shortlist: strategy.shortlist,
       equippedSymbols,

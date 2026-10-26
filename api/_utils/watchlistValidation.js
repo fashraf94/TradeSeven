@@ -61,8 +61,9 @@ export function capTickersArray(value, nowIso) {
 // F4 (Flash, Oct 25, 2026; BR-3 hardening): the retired stocks a save would
 // ADD — retired symbols in the new list that the stored list does not hold.
 // A list that already holds one still saves and reads; a new pick is refused.
-// The Forge add search and the ticker validator never offer one, so this
-// closes the crafted-request path only.
+// The Forge add search and the ticker validator never offer one, so what this
+// catches is a crafted request, a dialogue session proposed before BR-3, or a
+// screen run on a stockRankings document from before BR-3.
 export function newlyAddedRetiredTickers(nextTickers, storedTickers = []) {
   const symbolOf = (t) => (typeof t?.symbol === 'string' ? t.symbol.trim().toUpperCase() : '');
   const stored = new Set((Array.isArray(storedTickers) ? storedTickers : []).map(symbolOf));
