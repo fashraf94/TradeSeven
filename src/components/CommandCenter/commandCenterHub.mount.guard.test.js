@@ -677,6 +677,12 @@ const ALLOWED_ACTIVITY = Object.freeze({
   // S2b (ruling R-S2b-2): the hub's side of the deploy provider — the effect that registers the hub's reader inputs
   // with it, and the one that reports the ranked agent's lastDeployedAt as cooldown evidence. No timer, listener or read.
   [HUB_FILE('hub/useHubDeploy.js')]: ['\\buseEffect\\b'],
+  // Slice S7 (rulings R-S7-1, R-S7-5): Shadow's canvas — its frame loop, the offscreen observer, the one visibility listener, the
+  // still flash's one timeout and its effects. Call by call, in commandCenterHub.activity.guard.test.js; the pure modules
+  // (hub/shadowCanvas.js, shadowBloom.js, shadowStatus.js) hold none.
+  [HUB_FILE('ShadowCanvas.jsx')]: ['\\brequestAnimationFrame\\b', '\\bIntersectionObserver\\b', '\\baddEventListener\\b', '\\bsetTimeout\\b', '\\buseEffect\\b'],
+  // ...and the tests' stand-ins for those three (frames, the observer, the visibility listener count); tests only.
+  [HUB_FILE('__fixtures__/shadowCanvasKit.js')]: ['\\brequestAnimationFrame\\b', '\\bIntersectionObserver\\b', '\\baddEventListener\\b'],
 });
 
 function activityInCode(rel, code) {
@@ -910,6 +916,12 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
       [HUB_FILE('hubFallbackSignal.jsx')]: ['useEffect(() => {}, []);', 'setTimeout(f, 0);', "window.addEventListener('focus', f);", 'requestAnimationFrame(f);', 'new ResizeObserver(cb);'],
       // S4: Later's store allows its storage and nothing else — no effect, timer, listener, frame or read.
       [HUB_FILE('hub/useHubLater.js')]: ['useEffect(() => {}, []);', 'useLayoutEffect(() => {});', 'setTimeout(f, 0);', 'setInterval(f, 1000);', "window.addEventListener('storage', f);", 'requestAnimationFrame(f);', 'getDocs(q);', 'new BroadcastChannel("x");'],
+      // S7: the canvas allows its loop, its observer, its listener, its timer and its passive effects and nothing else; the pure modules allow nothing.
+      [HUB_FILE('ShadowCanvas.jsx')]: ['setInterval(f, 100);', 'new ResizeObserver(cb);', 'new MutationObserver(cb);', 'useLayoutEffect(() => {});', "window.matchMedia('(prefers-reduced-motion: reduce)');", 'window.onfocus = () => {};', 'getDocs(q);', 'queueMicrotask(f);', "sessionStorage.setItem('k', 'v');"],
+      [HUB_FILE('__fixtures__/shadowCanvasKit.js')]: ['setTimeout(f, 0);', 'new ResizeObserver(cb);', 'useEffect(() => {}, []);', 'new MutationObserver(cb);'],
+      [HUB_FILE('hub/shadowCanvas.js')]: ['requestAnimationFrame(f);', 'setTimeout(f, 0);', 'useEffect(() => {}, []);', 'new IntersectionObserver(cb);', "document.addEventListener('visibilitychange', f);"],
+      [HUB_FILE('hub/shadowBloom.js')]: ['setTimeout(f, 0);', 'useEffect(() => {}, []);', 'requestAnimationFrame(f);'],
+      [HUB_FILE('hub/shadowStatus.js')]: ['setTimeout(f, 0);', 'useEffect(() => {}, []);', "window.addEventListener('focus', f);"],
     };
     for (const [rel, lines] of Object.entries(negatives)) {
       for (const line of lines) expect(activityInCode(rel, line), `${rel}: ${line}`).not.toEqual([]);

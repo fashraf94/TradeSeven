@@ -38,3 +38,12 @@ export function hubFlags() {
 export function scoutingBoardOn() {
   return SCOUTING_BOARD_ENABLED === true;
 }
+
+/**
+ * Slice S7 (ruling R-S7-6; spec V1.2 §10): which Shadow the PHONE draws — 'canvas' (the moving one) or 'still'
+ * (hub/shadowGeometry.js at rest). The device validation decides it: if the phone check misses its targets
+ * (60 fps, scripting ≤ 6 ms a frame, dropped frames ≤ 2%), the fix is this one value, 'still', with the device and
+ * run recorded — never a redesign of the sky or of Shadow. Tablet, desktop and stacked ignore it. Pinned by
+ * hubFlags.test.js.
+ */
+export const PHONE_SHADOW = 'canvas';

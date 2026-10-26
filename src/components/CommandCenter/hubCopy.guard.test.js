@@ -379,3 +379,33 @@ describe('S2b: the words the founder\'s rulings quote, exactly (Q-S2b-2, Q-S2b-4
     }
   });
 });
+
+// ── Slice S7: the status line's words (ruling R-S7-7) ──────────────────────────────────────────────────────────────
+describe('S7: the status line\'s words, exactly (ruling R-S7-7)', () => {
+  it('the words the ruling quotes', () => {
+    expect(HUB_COPY.shadow.statusHolding).toBe('Holding to deploy');
+    expect(HUB_COPY.shadow.statusLocked).toBe('Locked in');
+    expect(HUB_COPY.shadow.statusSubmitting).toBe('Submitting your deployment');
+    expect(HUB_COPY.shadow.statusLiveOne).toBe('Live game in progress');
+    expect(HUB_COPY.shadow.statusLiveMany(3)).toBe('3 live games in progress');
+    expect(HUB_COPY.shadow.statusIdleUnknown).toBe('Idle');
+    expect(HUB_COPY.shadow.statusIdle).toBe('Idle · nothing running');
+  });
+
+  it('an attempt\'s words are the Deploy card\'s own, said once: the shadow block repeats none of them', () => {
+    const card = ['verifying', 'finishing', 'confirmed', 'existing', 'failed', 'uncertain'].map((k) => HUB_COPY.deploy.states[k]);
+    card.push(HUB_COPY.deploy.confirmedRecovered);
+    expect(card).toEqual(['Verifying deployment…', 'Finishing deployment', 'Deployed', 'Already running', 'Deployment refused', 'Couldn’t confirm the deploy', 'Battle confirmed']);
+    for (const s of strings(HUB_COPY.shadow)) expect(card, s).not.toContain(s);
+  });
+
+  it('"Locked in" is one word on the line and on the control: the line takes the shipped control’s (review C-6)', () => {
+    expect(HUB_COPY.shadow.statusLocked).toBe(HUB_COPY.deploy.holdLocked);
+  });
+
+  it('the line carries no percentage, and the image label names the state (ambient, still, processing) and the area', () => {
+    expect(HUB_COPY.shadow.states).toEqual({ ambient: 'ambient', still: 'still', processing: 'processing' });
+    expect(HUB_COPY.shadow.imageLabel('processing', 'Partnership')).toBe('Shadow — processing; Partnership selected');
+    for (const w of [HUB_COPY.shadow.statusLiveOne, HUB_COPY.shadow.statusLiveMany(2), HUB_COPY.shadow.statusIdleUnknown]) expect(w).not.toMatch(/%/);
+  });
+});
