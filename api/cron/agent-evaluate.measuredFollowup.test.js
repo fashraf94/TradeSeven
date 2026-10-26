@@ -466,6 +466,17 @@ describe('F2 — the refresh (agent-evaluate.js) folds only ranked equipped tick
     expect(update.watchlist.hotBench).toContain('S095');
   });
 
+  // Review MT2-3: the gameMode half of the discriminator on its own — a flat6
+  // battle whose tournament context does not resolve still refolds its whole
+  // snapshot.
+  it('a flat6 battle with no resolved tournament context keeps the off-list ticker (gameMode half)', async () => {
+    flags.menu = false;
+    expect(mocks.tournament).toBeNull();
+    const { update } = await refreshTick(equippedBattle(['S095', 'KRE'], { gameMode: 'baggerbomb_tournament' }));
+    expect(update.watchlist.hotBench).toContain('KRE');
+    expect(update.watchlist.hotBench).toContain('S095');
+  });
+
   it.each(['baggerbomb_tournament', 'league'])('%s is byte-identical to before: the off-list ticker is still unioned in', async (gameMode) => {
     mocks.tournament = { heldByOthers: new Set(['S009']), groupId: 'group', agentId: 'agent-1' };
     // The archetypeMenu suite's characterized old-path list, plus KRE appended

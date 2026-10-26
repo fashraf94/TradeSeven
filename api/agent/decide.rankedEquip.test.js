@@ -67,13 +67,13 @@ const STRATEGY = 'submit_strategy';
 const PORTFOLIO = 'submit_portfolio';
 const UNIVERSE_SYMBOLS = new Set(H.UNIVERSE.map((s) => s.symbol));
 
-/** A model double whose portfolio answer the row chooses (first call and retry alike). */
-function anthropicPicking(portfolioInput = H.PORTFOLIO_INPUT) {
+/** A model double whose strategy and portfolio answers the row chooses (first call and retry alike). */
+function anthropicPicking(portfolioInput = H.PORTFOLIO_INPUT, strategyInput = H.STRATEGY_INPUT) {
   const calls = [];
   const create = async (args) => {
     calls.push(JSON.parse(JSON.stringify(args)));
     const tool = args.tool_choice?.name;
-    const input = tool === STRATEGY ? H.STRATEGY_INPUT : portfolioInput;
+    const input = tool === STRATEGY ? strategyInput : portfolioInput;
     return { content: [{ type: 'tool_use', id: `toolu_${calls.length}`, name: tool, input: JSON.parse(JSON.stringify(input)) }], usage: { input_tokens: 1000, output_tokens: 100 } };
   };
   return { calls, create };
@@ -181,6 +181,18 @@ describe('F2 — a tiered creation through the real deploy', () => {
     expect(JSON.stringify(haiku[1].messages)).toContain('Unknown stock: KRE');
     expect(rosterOf(battle)).not.toContain('KRE');
     expect(battle.watchlist.hotBench).not.toContain('KRE');
+  });
+
+  // Review MT2-2: the Sonnet prompt (fenced, unchanged) still asks it to
+  // shortlist every equipped ticker, so the path it encourages is covered too.
+  it('a shortlist in which Sonnet names the ETF itself still never offers it: dropped from the shortlist, no Haiku row, no hotBench', async () => {
+    const strategy = { brief: 'Lean into regional banks: KRE first.', shortlist: ['KRE', ...H.STRATEGY_INPUT.shortlist] };
+    const { battle, agent, haiku } = await deploy({ tickers: ['NVDA', 'KRE', 'WMT'], anthropic: anthropicPicking(H.PORTFOLIO_INPUT, strategy) });
+    expect(agent.lastDecision.shortlist).not.toContain('KRE');
+    expect(agent.lastDecision.shortlist.slice(0, 16)).toEqual(H.STRATEGY_INPUT.shortlist);
+    expect(availableRows(haiku[0].system)).not.toContain('KRE');
+    expect(battle.watchlist.hotBench).not.toContain('KRE');
+    expect(rosterOf(battle)).not.toContain('KRE');
   });
 
   it('a ranked equipped stock the model picks is accepted as before', async () => {
