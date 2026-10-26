@@ -158,6 +158,10 @@
       "schedule": "*/15 13,14,15,16,17,18,19,20,21 * * 1-5"
     },
     {
+      "path": "/api/cron/agent-evaluate?mode=settle",
+      "schedule": "0 2 * * 2-6"
+    },
+    {
       "path": "/api/cron/intraday-poll",
       "schedule": "* 13-21 * * 1-5"
     },

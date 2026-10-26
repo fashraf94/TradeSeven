@@ -4,6 +4,7 @@
 // Queries agentBattles collection, computes scores, optionally calls Haiku for trade decisions.
 //
 // Schedule: */15 13,14,15,16,17,18,19,20,21 * * 1-5
+// Plus ?mode=settle at 0 2 * * 2-6: the weekday-evening expiry sweep only (F1).
 
 import Anthropic from '@anthropic-ai/sdk';
 import { stockModelRoute, isStock, positions as stockPositions, finite as finiteStock, STOCK_RESULT_UNAVAILABLE } from '../../src/utils/stockThresholdModel.js';
@@ -30,7 +31,7 @@ import { getStockAnalysisData, fetchIntradayBatch, fetchIntradayCandles, filterT
 import { assessRequiredQuotes } from '../_utils/agentQuoteHealth.js';
 import { resolveBadgeBaseline } from '../_utils/baselineValidation.js';
 import { findActiveAgentBattles } from '../_utils/agentBattleService.js';
-import { unionEquippedIntoHotBench } from '../_utils/watchlistEquip.js';
+import { unionEquippedIntoHotBench, rankedEquippedTickers } from '../_utils/watchlistEquip.js';
 import { buildArchetypeCandidateMenu } from '../_utils/archetypeCandidateMenu.js';
 import {
   calculateAssetScoreServer,
@@ -183,7 +184,7 @@ import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 // C-2 fix: the mode config is the flat-stamp authority (flatMultiplier: 1.0
 // flat6 / null tiered) — the same resolver the executor's incoming-swap stamp
 // already uses.
-import { resolveModeConfig } from '../../src/constants/agentGameModes.js';
+import { resolveModeConfig, TIERED_GAME_MODE } from '../../src/constants/agentGameModes.js';
 // Per-Battle Loadout + Concurrency Phase 1 — attribution redirects. A BaggerBomb
 // battle runs on the persistent casual clone, but its record + corpus belong to
 // the PARENT ranked agent. resolveAttributionAgentId (async — the corpus sites)
@@ -277,10 +278,18 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // F1 (Flash, Oct 25, 2026): `?mode=settle` is the weekday-evening run
+  // (vercel.json `0 2 * * 2-6`, after agent-daily-scores at 01:45 UTC). It runs
+  // the expiry sweep (step 2) and nothing else — no repair sweeps, no market
+  // gate, no evaluation, no run record — so a battle that expired at 20:00 ET
+  // settles that night and its agent can start the next battle.
+  const settleOnly = req.query?.mode === 'settle';
+
   const db = getFirebaseAdmin();
   const startTime = Date.now();
   // `lockSkipped` and `deferred` split what `skipped` used to conflate (R2);
-  // `skipped` stays their sum, so the response only gains keys.
+  // `skipped` stays their sum (plus F3's `dormant` battles, counted apart in
+  // processAgentBattle), so the response only gains keys.
   const summary = { evaluated: 0, triggered: 0, swapped: 0, held: 0, errors: 0, skipped: 0, expired: 0, lockSkipped: 0, deferred: 0 };
   // THE RUN'S OWN RECORD (always on). Set the moment this invocation becomes
   // an evaluation run — past the market-hours gate, so ~26 per weekday — and
@@ -372,6 +381,12 @@ export default async function handler(req, res) {
       } else {
         activeBattles.push(battle);
       }
+    }
+
+    // F1: the settle-only run ends with the expiry sweep.
+    if (settleOnly) {
+      console.log(`${LOG_PREFIX} [settle] expiry sweep only: ${summary.expired} completed, ${activeBattles.length} still active`);
+      return respond(200, { mode: 'settle', expired: summary.expired, completionSkipped: summary.completionSkipped, masteryDeferredCompletions: summary.masteryDeferredCompletions, errors: summary.errors, duration: Date.now() - startTime });
     }
 
     // ---- 2b. Mastery repair sweep (Spec V2 §5.3) — stamps-only, hosted on
@@ -850,7 +865,30 @@ function buildPoolEmptyFeedEntry({ message, symbolOut, symbolIn = null, regime =
   };
 }
 
+/**
+ * F3 (Flash, Oct 25, 2026): a BaggerBomb (tiered) battle is not played before
+ * the ET date of its first trading day. BR-2 sends a battle created from 45
+ * minutes before a close, or overnight, to the NEXT session; without this gate
+ * the rest of the creation day's checks would still run it. Measured and
+ * legacy battles alike; tournaments and other modes, and a battle with no
+ * trading-day list, are never held back. `todayET` is the file's own ET date
+ * (getETDate, Intl America/New_York). Pure, for the unit rows.
+ */
+export function beforeFirstTradingDay(battle, todayET = formatDateString(getETDate())) {
+  if (battle?.gameMode != null && battle.gameMode !== TIERED_GAME_MODE) return false;
+  const first = battle?.timing?.tradingDays?.[0];
+  return typeof first === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(first) && todayET < first;
+}
+
 export async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map(), masteryFlagView = DARK_FLAG_VIEW, intradayContext = null) {
+  // F3: before its first trading day a tiered battle is skipped — no lock, no
+  // capture, no score write. Counted in `skipped` and on its own (`dormant`),
+  // never as an error. The expiry sweep in the handler does not pass here.
+  if (beforeFirstTradingDay(battle)) {
+    summary.dormant = (summary.dormant || 0) + 1;
+    summary.skipped++;
+    return;
+  }
   const stockRoute = stockModelRoute(battle);
   if (stockRoute.status === 'unavailable') { summary.errors++; return; }
   const correctedStockGame = stockRoute.status === 'corrected';
@@ -1496,6 +1534,16 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
       const rebuildHotBench = shouldRebuildHotBench({ isNewTradingDay, rankingsComputedMs, lastHotBenchComputedMs });
 
       if (rebuildHotBench && battle.watchlist) {
+        // F2 (Flash, Oct 25, 2026): a BaggerBomb (tiered) battle refolds only
+        // the equipped tickers in the ranked universe (watchlistEquip.js
+        // rankedEquippedTickers, the rule decide.js applied at creation). The
+        // frozen snapshot keeps the full list; tournament and other modes
+        // refold it whole, as before.
+        const snapshotEquipped = battle.agentContext?.equippedWatchlist?.tickers || [];
+        const tieredRefresh = !tournamentCtx && (battle.gameMode == null || battle.gameMode === TIERED_GAME_MODE);
+        const refreshEquipped = tieredRefresh
+          ? rankedEquippedTickers(snapshotEquipped, new Set(stockRankingsArray.map(s => s.symbol)))
+          : snapshotEquipped;
         // Preserve the frozen archetype's candidate preferences in BaggerBomb.
         // League/tournament and unknown identities retain the legacy policy.
         const archetypeMenu = buildArchetypeCandidateMenu({
@@ -1504,7 +1552,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           archetype: ctx.archetype,
           rankings: stockRankingsArray,
           excludeSymbols: new Set([...portfolioSymbols, ...benchSymbols]),
-          equippedTickers: battle.agentContext?.equippedWatchlist?.tickers || [],
+          equippedTickers: refreshEquipped,
           onEvent: () => console.warn(`${LOG_PREFIX} [archetype-menu] legacy refresh: unknown archetype battle=${battle.id}`, { archetype: ctx.archetype }),
         });
         let newHotBench;
@@ -1528,7 +1576,7 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
           // refresh cycle (Q9). The rankings-based rebuild above drops equipped
           // tickers that aren't top-15 by baggerBombFit; the union re-admits
           // them. Soft cap 20 — equipped tickers always survive the cap.
-          const equippedTickers = battle.agentContext?.equippedWatchlist?.tickers || [];
+          const equippedTickers = refreshEquipped;
           if (equippedTickers.length > 0) {
             const beforeLen = newHotBench.length;
             newHotBench = unionEquippedIntoHotBench({

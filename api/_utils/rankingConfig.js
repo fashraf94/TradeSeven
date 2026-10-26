@@ -89,9 +89,11 @@ export const STOCK_UNIVERSE = {
 // (docs/audits/BAGGERBOMB_MEASUREMENT_CLOSEOUT_20261012.md §exceptions). No
 // successors are added. They are out of STOCK_UNIVERSE and ALL_TICKERS, so no
 // cron fetches or ranks them and indexIntelligence/stockRankings (the CPU's pool
-// and the agent's ranked pool) no longer lists them; the Forge add search and the
-// ticker validator refuse new picks of them (an equipped watchlist that already
-// holds one can still offer it to the agent, and a measured creation refuses it). Each keeps its last sector here and in the
+// and the agent's ranked pool) no longer lists them; the Forge add search, the
+// ticker validator and the watchlist save endpoints refuse new picks of them
+// (F4, Oct 25, 2026); a watchlist that already holds one keeps it, but a
+// BaggerBomb creation or refresh never folds it into the agent's candidates
+// (F2: watchlistEquip.js rankedEquippedTickers). Each keeps its last sector here and in the
 // label maps below (TICKER_TO_SECTOR / TYPE / INDUSTRY), so existing battles,
 // Film Room tapes, watchlists and Wire documents that hold one read exactly as
 // before.

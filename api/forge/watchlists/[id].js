@@ -30,6 +30,8 @@ import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../../_utils/i
 import {
   capString,
   capTickersArray,
+  newlyAddedRetiredTickers,
+  retiredTickerRefusal,
   NAME_MAX_LEN,
   NOTES_MAX_LEN,
 } from '../../_utils/watchlistValidation.js';
@@ -227,6 +229,12 @@ async function db_runPatchTx({ db, watchlistRef, user, updates, hasContent }) {
         statusCode: 409,
         message: 'Cannot edit a committed watchlist directly.',
       };
+    }
+    // F4: a retired stock may stay on a list that already holds it, but never
+    // be added — compared against the stored list this transaction just read.
+    if (updates.tickers) {
+      const retired = newlyAddedRetiredTickers(updates.tickers, data.tickers);
+      if (retired.length > 0) return { ...retiredTickerRefusal(retired), statusCode: 400 };
     }
     if (hasContent) {
       tx.update(watchlistRef, updates);

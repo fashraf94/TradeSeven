@@ -37,6 +37,8 @@ import { isValidForgeId, FORGE_ID_REGEX, FORGE_ID_MAX_LEN } from '../_utils/idVa
 import {
   capString,
   capTickersArray,
+  newlyAddedRetiredTickers,
+  retiredTickerRefusal,
   NAME_MAX_LEN,
   NOTES_MAX_LEN,
 } from '../_utils/watchlistValidation.js';
@@ -291,6 +293,9 @@ async function handleCreateFromTickers({ req, res, user }) {
         message: 'At least one valid ticker is required to create a watchlist.',
       });
     }
+    // F4: a new list has no stored tickers, so any retired stock is an add.
+    const retired = newlyAddedRetiredTickers(tickers);
+    if (retired.length > 0) return res.status(400).json(retiredTickerRefusal(retired));
 
     // Strings: capString returns null only when the field isn't a string —
     // treat absent/non-string as the empty default.

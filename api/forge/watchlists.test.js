@@ -1672,3 +1672,81 @@ describe('POST /api/forge/watchlists/[id]/notes', () => {
     expect(log.notesLength).toBe(5);
   });
 });
+
+// ============================================================
+// F4 (Flash, Oct 25, 2026; BR-3 hardening) — the save endpoints refuse a
+// NEWLY ADDED retired stock (rankingConfig.js RETIRED_STOCKS). The PATCH
+// compares against the stored list its own transaction read, so a list that
+// already holds one still saves (and reads); create-from-tickers has no stored
+// list, so any retired stock is an add.
+// ============================================================
+
+describe('F4 — retired stocks are never added to a watchlist', () => {
+  const tickerRow = (symbol) => ({ symbol, reasoning: '', category: 'core', addedBy: 'user', addedAt: '2026-10-01T14:00:00.000Z' });
+
+  it('PATCH refuses a new retired ticker (400 retired_ticker) and writes nothing', async () => {
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': { ...DRAFT_WATCHLIST } } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { name: 'renamed', tickers: [tickerRow('AAPL'), tickerRow('ea')] } });
+    await itemHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'retired_ticker', message: "EA has left the stock universe and can't be added to a watchlist." });
+    expect(fixture.state.watchlistDocs['wl-1']).toEqual(DRAFT_WATCHLIST);
+  });
+
+  it('PATCH of a list that already holds a retired ticker still saves, keeping it', async () => {
+    const stored = { ...DRAFT_WATCHLIST, tickers: [tickerRow('AAPL'), tickerRow('EA')] };
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': stored } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { tickers: [tickerRow('AAPL'), tickerRow('EA'), tickerRow('MSFT')] } });
+    await itemHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(fixture.state.watchlistDocs['wl-1'].tickers.map((t) => t.symbol)).toEqual(['AAPL', 'EA', 'MSFT']);
+
+    // ...and it still reads.
+    const get = makeReqRes({ method: 'GET', query: { id: 'wl-1' } });
+    await itemHandler(get.req, get.res);
+    expect(get.res.statusCode).toBe(200);
+    expect(get.res.body.watchlist.tickers.map((t) => t.symbol)).toEqual(['AAPL', 'EA', 'MSFT']);
+  });
+
+  it('PATCH names only the retired tickers being added, not the ones already held', async () => {
+    const stored = { ...DRAFT_WATCHLIST, tickers: [tickerRow('AAPL'), tickerRow('EA')] };
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': stored } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { tickers: [tickerRow('EA'), tickerRow('WBD'), tickerRow('K')] } });
+    await itemHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.message).toBe("WBD, K have left the stock universe and can't be added to a watchlist.");
+    expect(fixture.state.watchlistDocs['wl-1']).toEqual(stored);
+  });
+
+  it('PATCH that removes a held retired ticker saves', async () => {
+    const stored = { ...DRAFT_WATCHLIST, tickers: [tickerRow('AAPL'), tickerRow('EA')] };
+    const fixture = makeFakeFirestore({ watchlistDocs: { 'wl-1': stored } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { tickers: [tickerRow('AAPL')] } });
+    await itemHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(fixture.state.watchlistDocs['wl-1'].tickers.map((t) => t.symbol)).toEqual(['AAPL']);
+  });
+
+  it('create-from-tickers refuses a retired ticker and allocates nothing', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'POST', body: { tickers: [{ symbol: 'MSFT' }, { symbol: 'WBA' }] } });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'retired_ticker', message: "WBA has left the stock universe and can't be added to a watchlist." });
+    expect(fixture.state.watchlistDocs).toEqual({});
+  });
+
+  it('create-from-tickers without one is unchanged', async () => {
+    const fixture = makeFakeFirestore();
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ method: 'POST', body: { tickers: [{ symbol: 'MSFT' }, { symbol: 'KRE' }] } });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(fixture.state.watchlistDocs['new-watchlist-456'].tickers.map((t) => t.symbol)).toEqual(['MSFT', 'KRE']);
+  });
+});

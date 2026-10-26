@@ -39,6 +39,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tournamentSettlementGoldenPair } from '../_utils/__fixtures__/tournamentSettlementGolden.js';
 import { stockAdmissionControlReadStripped, STOCK_ADMISSION_CONTROL_READS } from '../_utils/__fixtures__/stockAdmissionGolden.js';
+import { rankedEquipGolden } from '../_utils/__fixtures__/rankedEquipGolden.js';
 
 const state = vi.hoisted(() => ({ db: null, anthropic: null, gemmaCalls: [], shadow: { decisions: [], firstMessages: [] }, flag: false, fence: true }));
 
@@ -90,7 +91,9 @@ const { default: versionsRoute } = await import('../forge/watchlists/[id]/hypoth
 const { lifecycleLineFor } = await import('../../src/components/Forge/Watchlist/ideaCopy.js');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const GOLDEN = JSON.parse(readFileSync(resolve(HERE, '../_utils/__fixtures__/deployCarriageOffGolden.json'), 'utf8').replace(/\r\n/g, '\n'));
+// F2 (measured-thresholds follow-up): main's capture as the ranked-only equip
+// fold makes it — PLTR (off the harness universe) watched, not folded.
+const GOLDEN = rankedEquipGolden(JSON.parse(readFileSync(resolve(HERE, '../_utils/__fixtures__/deployCarriageOffGolden.json'), 'utf8').replace(/\r\n/g, '\n')));
 const ALLOWLIST_ENV = 'COCKPIT_ALLOWLIST_UIDS';
 const vPath = (n) => `watchlists/${H.WATCHLIST_ID}/hypothesisVersions/v${n}`;
 const rowPath = (n) => `hypothesisReviewQueue/${H.WATCHLIST_ID}:${n}`;

@@ -7,10 +7,10 @@
 //
 // Consumed by:
 //   * api/agent/decide.js            — resolveEquippedWatchlist, extractTickerSymbols,
-//                                       foldEquippedTickers, unionEquippedIntoHotBench,
-//                                       buildEquippedSnapshot
+//                                       rankedEquippedTickers, foldEquippedTickers,
+//                                       unionEquippedIntoHotBench, buildEquippedSnapshot
 //   * api/_utils/agentBattleService  — (snapshot shape produced here)
-//   * api/cron/agent-evaluate.js     — unionEquippedIntoHotBench
+//   * api/cron/agent-evaluate.js     — rankedEquippedTickers, unionEquippedIntoHotBench
 
 // Ticker symbols are uppercase alphanumerics plus '.' and '-' (e.g. BRK.B),
 // capped at 12 chars. Anything else is a malformed entry and is dropped.
@@ -99,6 +99,22 @@ export function foldEquippedTickers({ shortlist, equippedSymbols, validSymbols }
     offUniverseTickers,
     augmentedValidSymbols,
   };
+}
+
+/**
+ * F2 (Flash, Oct 25, 2026): the equipped tickers a BaggerBomb (tiered) battle
+ * may take as candidates — those in the ranked stock universe. An off-list
+ * one (an ETF such as KRE) cannot be measured, so it stays on the agent's
+ * watchlist but is never folded into the shortlist or the hotBench. The ONE
+ * rule for both sites: decide.js at creation, agent-evaluate.js at refresh.
+ * Tournament and other modes never call it, so their folds are unchanged.
+ *
+ * @param {string[]} equippedTickers - clean equipped symbols.
+ * @param {Set<string>} rankedSymbols - the stockRankings symbols.
+ * @returns {string[]}
+ */
+export function rankedEquippedTickers(equippedTickers, rankedSymbols) {
+  return (Array.isArray(equippedTickers) ? equippedTickers : []).filter((t) => rankedSymbols.has(t));
 }
 
 /**
