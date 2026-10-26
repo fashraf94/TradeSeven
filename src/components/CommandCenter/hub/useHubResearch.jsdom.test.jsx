@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { listHypothesisVersions } = vi.hoisted(() => ({ listHypothesisVersions: vi.fn() }));
 vi.mock('../../../services/hypothesisVersionService', () => ({ listHypothesisVersions }));
 
-import useHubResearch, { RETRY_COOLDOWN_MS, STALLED_AFTER_MS } from './useHubResearch';
+import useHubResearch, { RETRY_COOLDOWN_MS, STALLED_AFTER_MS, forgetResearchAdmission } from './useHubResearch';
 import { RESEARCH_READ } from './researchView';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -52,6 +52,8 @@ const settle = async () => { await act(async () => { await Promise.resolve(); aw
 
 beforeEach(() => {
   listHypothesisVersions.mockReset();
+  // What the account is remembered to be outlives a mount (Q-S6-4): every row starts from nothing.
+  forgetResearchAdmission();
   renders = [];
   host = document.createElement('div');
   document.body.appendChild(host);
@@ -605,5 +607,199 @@ describe('an explicit Retry: one per 30 s per key, judged at the press', () => {
     act(() => latest.retry());
     await settle();
     expect(listHypothesisVersions).not.toHaveBeenCalled();
+  });
+});
+
+describe('admission belongs to the account (founder rulings Q-S6-4 and Q-S6-8)', () => {
+  const DISABLED = () => Object.assign(new Error('off'), { status: 404, code: 'disabled' });
+  const FAILED = () => Object.assign(new Error('boom'), { status: 500, code: 'request_failed' });
+  const remount = () => {
+    act(() => root.unmount());
+    root = createRoot(host);
+  };
+
+  it('nothing is remembered before an answer: loading, and an error with no earlier answer, carry none', async () => {
+    listHypothesisVersions.mockRejectedValueOnce(FAILED());
+    render();
+    expect(latest.lastAnswer).toBeNull();
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.ERROR, lastAnswer: null });
+    // no reader at all: nothing to remember either
+    rerender({ gateOn: false });
+    expect(latest.lastAnswer).toBeNull();
+  });
+
+  it('a successful read is remembered for the account, whatever list it was for', async () => {
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    render();
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.READY, lastAnswer: RESEARCH_READ.READY });
+  });
+
+  it('it survives a list change: the next list is loading (its own view cleared) while the account stays remembered, in the very render of the change', async () => {
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    render();
+    await settle();
+    const second = deferred();
+    listHypothesisVersions.mockReturnValueOnce(second.promise);
+    renders = [];
+    rerender({ listId: 'wl-2' });
+    expect(renders[0]).toMatchObject({ key: 'u-1:1:wl-2', status: RESEARCH_READ.LOADING, data: null });
+    expect(renders[0]).toBeDefined();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.LOADING, data: null, lastAnswer: RESEARCH_READ.READY });
+    // ...and losing the list altogether (idle) keeps it too: it is the account's, not the list's
+    rerender({ listId: null });
+    expect(latest).toMatchObject({ status: RESEARCH_READ.IDLE, lastAnswer: RESEARCH_READ.READY });
+  });
+
+  it('it survives a failed refresh, with the old answer held or not', async () => {
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    render();
+    await settle();
+    listHypothesisVersions.mockRejectedValueOnce(FAILED());
+    act(() => latest.invalidate());
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.ERROR, lastAnswer: RESEARCH_READ.READY });
+    expect(latest.data, 'the old answer is still held for this list').not.toBeNull();
+    // another list whose first read FAILS: nothing held for it, the account still remembered
+    listHypothesisVersions.mockRejectedValueOnce(FAILED());
+    rerender({ listId: 'wl-2' });
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.ERROR, data: null, lastAnswer: RESEARCH_READ.READY });
+  });
+
+  it('it survives a hub remount (module memory, not the hook\'s state): the first render of the new mount already has it', async () => {
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    render();
+    await settle();
+    remount();
+    const out = deferred();
+    listHypothesisVersions.mockReturnValueOnce(out.promise);
+    renders = [];
+    let first = null;
+    function Spy(p) {
+      const r = useHubResearch(p);
+      if (first === null) first = { status: r.status, data: r.data, lastAnswer: r.lastAnswer };
+      return null;
+    }
+    act(() => { root.render(<Spy {...props} />); });
+    expect(first).toEqual({ status: RESEARCH_READ.LOADING, data: null, lastAnswer: RESEARCH_READ.READY });
+  });
+
+  it('a remembered answer is never written to storage', async () => {
+    const set = vi.spyOn(Storage.prototype, 'setItem');
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    render();
+    await settle();
+    listHypothesisVersions.mockRejectedValueOnce(DISABLED());
+    rerender({ listId: 'wl-2' });
+    await settle();
+    expect(set).not.toHaveBeenCalled();
+    expect(document.cookie).toBe('');
+    set.mockRestore();
+  });
+
+  it('a typed disabled replaces it, and the next success replaces that: the latest settled answer for the account', async () => {
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    render();
+    await settle();
+    expect(latest.lastAnswer).toBe(RESEARCH_READ.READY);
+    listHypothesisVersions.mockRejectedValueOnce(DISABLED());
+    rerender({ listId: 'wl-2' });
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.DISABLED, lastAnswer: RESEARCH_READ.DISABLED });
+    // a list change keeps the refusal while the next list loads
+    const third = deferred();
+    listHypothesisVersions.mockReturnValueOnce(third.promise);
+    rerender({ listId: 'wl-3' });
+    expect(latest).toMatchObject({ status: RESEARCH_READ.LOADING, lastAnswer: RESEARCH_READ.DISABLED });
+    third.resolve(BODY('wl-3'));
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.READY, lastAnswer: RESEARCH_READ.READY });
+  });
+
+  it('another account or another epoch starts with nothing: in the very render that brings it, and for good', async () => {
+    listHypothesisVersions.mockResolvedValue(BODY('wl-1'));
+    render();
+    await settle();
+    expect(latest.lastAnswer).toBe(RESEARCH_READ.READY);
+    const out = deferred();
+    listHypothesisVersions.mockReturnValueOnce(out.promise);
+    renders = [];
+    let seen = [];
+    function Spy(p) {
+      const r = useHubResearch(p);
+      seen.push(r.lastAnswer);
+      return null;
+    }
+    act(() => { root.render(<Spy {...props} auth={AUTH('u-2', 1)} />); });
+    expect(seen[0], 'no render of the new owner holds the former one\'s answer').toBeNull();
+    // back to the first account: its memory was let go when the owner changed
+    seen = [];
+    act(() => { root.render(<Spy {...props} auth={AUTH('u-1', 1)} />); });
+    expect(seen[0]).toBeNull();
+    out.resolve(BODY('wl-1'));
+    await settle();
+    // a new epoch of the same account is another owner too
+    seen = [];
+    const next = deferred();
+    listHypothesisVersions.mockReturnValueOnce(next.promise);
+    act(() => { root.render(<Spy {...props} auth={AUTH('u-1', 2)} />); });
+    expect(seen[0]).toBeNull();
+  });
+
+  it('signing out forgets it: signed out, and again signed in as the same account, nothing is remembered until a read settles', async () => {
+    listHypothesisVersions.mockResolvedValueOnce(BODY('wl-1'));
+    render();
+    await settle();
+    expect(latest.lastAnswer).toBe(RESEARCH_READ.READY);
+    rerender({ auth: null });
+    expect(latest).toMatchObject({ status: RESEARCH_READ.IDLE, lastAnswer: null });
+    const out = deferred();
+    listHypothesisVersions.mockReturnValueOnce(out.promise);
+    rerender({ auth: AUTH() });
+    expect(latest).toMatchObject({ status: RESEARCH_READ.LOADING, lastAnswer: null });
+    out.resolve(BODY('wl-1'));
+    await settle();
+    expect(latest.lastAnswer).toBe(RESEARCH_READ.READY);
+  });
+
+  it('an answer that arrives after the hub is gone, or for a list the hub moved on from, writes nothing', async () => {
+    const late = deferred();
+    listHypothesisVersions.mockReturnValueOnce(late.promise);
+    render();
+    const second = deferred();
+    listHypothesisVersions.mockReturnValueOnce(second.promise);
+    rerender({ listId: 'wl-2' });
+    late.resolve(BODY('wl-1'));
+    await settle();
+    expect(latest, 'the superseded list\'s success remembers nothing').toMatchObject({ status: RESEARCH_READ.LOADING, lastAnswer: null });
+    act(() => root.unmount());
+    second.resolve(BODY('wl-2'));
+    await settle();
+    root = createRoot(host);
+    render();
+    expect(latest.lastAnswer, 'nor one that landed after the unmount').toBeNull();
+  });
+
+  it('a malformed answer (the wrong list, or no versions) is not a success: nothing is remembered', async () => {
+    listHypothesisVersions.mockResolvedValueOnce({ watchlistId: 'other', currentVersion: 1, versions: [] });
+    render();
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.ERROR, lastAnswer: null });
+    listHypothesisVersions.mockResolvedValueOnce({ watchlistId: 'wl-2', currentVersion: 1 });
+    rerender({ listId: 'wl-2' });
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.ERROR, lastAnswer: null });
+  });
+
+  it('React\'s double render and effect do not lose it, and the owner key tolerates a colon in the list id', async () => {
+    listHypothesisVersions.mockResolvedValue(BODY('wl:odd:1'));
+    render({ listId: 'wl:odd:1' }, { strict: true });
+    await settle();
+    expect(latest).toMatchObject({ status: RESEARCH_READ.READY, lastAnswer: RESEARCH_READ.READY });
+    remount();
+    act(() => { root.render(<StrictMode><Probe {...props} listId="wl:odd:2" /></StrictMode>); });
+    expect(latest.lastAnswer).toBe(RESEARCH_READ.READY);
   });
 });

@@ -83,7 +83,9 @@ function acceptedLeans(agent) {
 /**
  * The current idea's two events (spec §8.2; slice S6). `idea` is hub/researchView.js ideaActivityOf's descriptor: the pointer's
  * version, with the times the record holds. A time that cannot be read yields no row, and a status with no label yields no state
- * row: nothing is invented. Both rows are the version's, so a later version is a different pair of ids.
+ * row: nothing is invented. Both rows are the version's, so a later version is a different pair of ids. The state row appears only
+ * when the state time differs from the saved time — a real state change happened (Q-S6-3); a brand-new idea shows "Idea saved"
+ * alone.
  */
 function ideaEvents(idea, { nowMs }) {
   if (!idea || typeof idea !== 'object') return [];
@@ -97,7 +99,7 @@ function ideaEvents(idea, { nowMs }) {
   }
   const stateMs = hubMs(idea.stateChangedAt);
   const status = nonEmpty(idea.status);
-  if (stateMs !== null && status && nonEmpty(idea.statusLabel)) {
+  if (stateMs !== null && stateMs !== createdMs && status && nonEmpty(idea.statusLabel)) {
     events.push({ ms: stateMs, kind: ACTIVITY_KINDS.IDEA, id: `idea.state:${list}:v${idea.version}:${status}`, text: COPY.activity.ideaState(idea.statusLabel), sub });
   }
   return events;

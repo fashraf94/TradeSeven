@@ -14,7 +14,7 @@
 // beyond that rule's common case.
 
 import { extractTickerSymbols } from '../../../../api/_utils/watchlistEquip.js';
-import { CARRIABLE_STATUSES } from '../../../constants/hypothesisRecords';
+import { CARRIABLE_STATUSES, dueDeployPending } from '../../../constants/hypothesisRecords';
 import { HORIZON_LABELS, STATUS_LABELS, formatIdeaDate, lifecycleLineFor, researchLinesOf, windowTextOf } from '../../Forge/Watchlist/ideaCopy';
 import { HUB_COPY as COPY } from './hubCopy';
 import { hubMs } from './hubDate';
@@ -42,8 +42,11 @@ export const RESEARCH_STATE = Object.freeze({
   READY: 'ready',
 });
 
-/** Which of the three honest lines a list gets (ruling R-S6-6; hub/hubCopy.js research.honest). */
-export const HONEST_LINE = Object.freeze({ THESIS_IS_IDEA: 'thesis_is_idea', THESIS_SAVED: 'thesis_saved', NO_THESIS: 'no_thesis' });
+/**
+ * Which of the four honest lines a list gets (rulings R-S6-6 and Q-S6-1; hub/hubCopy.js research.honest). `THESIS_CUT` is the
+ * fourth: the list's thesis is longer than the part of it the prompt carries.
+ */
+export const HONEST_LINE = Object.freeze({ THESIS_IS_IDEA: 'thesis_is_idea', THESIS_SAVED: 'thesis_saved', THESIS_CUT: 'thesis_cut', NO_THESIS: 'no_thesis' });
 
 const REVIEW_DUE = 'review_due';
 const ACTIVATED = 'activated';
@@ -64,18 +67,24 @@ export const VERSION_PAGE_MAX = 100;
 const nonEmpty = (value) => (typeof value === 'string' && value.trim() !== '' ? value : null);
 
 /**
- * Whether the server admits this player to idea records, as far as the reader knows (ruling R-S6-4):
+ * Whether the server admits this player to idea records, as far as the hub knows (rulings R-S6-4, Q-S6-4 and Q-S6-8: admission
+ * belongs to the ACCOUNT, not to the list on screen):
  *   - the client gate off, or the typed `disabled` answer → not admitted;
  *   - a successful answer for this owner and list (status `ready`, with its data) → admitted. A refresh in flight does not unsay
  *     it: the status stays `ready` while it is read again (`refreshing`);
- *   - anything else — loading, an error (even over an answer held from before), nothing to read, no reader at all — unknown, as
- *     ruled (R-S6-4). The label then goes neutral, which claims nothing and so cannot contradict a stale panel.
+ *   - otherwise the reader's `lastAnswer` — the last settled answer for this uid + authEpoch, kept in module memory across a list
+ *     change, a hub remount and a failed refresh (hub/useHubResearch.js) — decides: a success → admitted, a typed `disabled` →
+ *     not admitted;
+ *   - with nothing remembered — loading or an error with no earlier answer, nothing to read, no reader at all — unknown. The
+ *     label then goes neutral, which claims nothing.
  * This module and hub/selectors/loadout.js are the only places that produce `admitted` (hubCopy.guard.test.js).
  */
 export function researchAccessOf(read) {
   if (!read || typeof read !== 'object') return IDEA_ACCESS.UNKNOWN;
   if (read.status === RESEARCH_READ.GATE_OFF || read.status === RESEARCH_READ.DISABLED) return IDEA_ACCESS.NOT_ADMITTED;
-  return read.status === RESEARCH_READ.READY && read.data ? IDEA_ACCESS.ADMITTED : IDEA_ACCESS.UNKNOWN;
+  if (read.status === RESEARCH_READ.READY && read.data) return IDEA_ACCESS.ADMITTED;
+  if (read.lastAnswer === RESEARCH_READ.READY) return IDEA_ACCESS.ADMITTED;
+  return read.lastAnswer === RESEARCH_READ.DISABLED ? IDEA_ACCESS.NOT_ADMITTED : IDEA_ACCESS.UNKNOWN;
 }
 
 /** The version document the parent pointer names, or null. Never another version in its place. */
@@ -107,17 +116,19 @@ function newestVersionOf(data) {
  * api/agent/decide.js reads the LIVE list document and puts its `thesis` into the prompt (decide.js:430-437 →
  * agentPromptAssembly.js:136-150); no idea-version writer touches that field. So:
  *   - no thesis on the list (blank, absent or not text) → the agent reads no idea at all;
- *   - what the prompt carries of the thesis (its first PROMPT_THESIS_CAP characters, whitespace collapsed) IS the idea's current
- *     statement (whitespace collapsed) → the agent reads the idea as the list's thesis;
- *   - any other thesis — a different text, or the same text cut short by the prompt's cap — → the agent reads the thesis saved on
- *     the list, not the idea's later versions.
- * `statement` is the current idea's recorded statement.
+ *   - a thesis longer than the part of it the prompt carries (more than PROMPT_THESIS_CAP characters, with something other than
+ *     blanks after the cut — Q-S6-1) → the agent reads only the start of the thesis saved on the list, whatever the idea says;
+ *   - a thesis that fits and IS the idea's current statement (whitespace collapsed) → the agent reads the idea as the list's thesis;
+ *   - any other thesis that fits — a different text — → the agent reads the thesis saved on the list, not the idea's later versions.
+ * `statement` is the current idea's recorded statement. The sanitizer's own phrase rewrites (api/_utils/agentPromptAssembly.js
+ * sanitizeRuleText) are an accepted limit: they are not modelled here (Q-S6-5).
  */
 export function honestLineKindOf({ thesis, statement }) {
   const saved = nonEmpty(thesis);
   if (saved === null) return HONEST_LINE.NO_THESIS;
+  if (saved.slice(PROMPT_THESIS_CAP).trim() !== '') return HONEST_LINE.THESIS_CUT;
   const collapse = (text) => text.replace(/\s+/g, ' ').trim();
-  return collapse(saved.slice(0, PROMPT_THESIS_CAP)) === collapse(String(statement ?? '')) ? HONEST_LINE.THESIS_IS_IDEA : HONEST_LINE.THESIS_SAVED;
+  return collapse(saved) === collapse(String(statement ?? '')) ? HONEST_LINE.THESIS_IS_IDEA : HONEST_LINE.THESIS_SAVED;
 }
 
 /**
@@ -217,12 +228,12 @@ function staleOf(read) {
  * "Deploying with: {statement} · N names" (ruling R-S6-5; design note point 3), or null — the hub shows a line only for the
  * carriage rule's common case and never guesses beyond it:
  *   - the player is known to be admitted and the answer is current (not a refresh that failed);
- *   - the response is whole (a page at the route's limit may have left a due version out) and holds no `review_due` version —
- *     R-S6-5's "no deployed version is review_due", to the letter. This is NARROWER than the carriage rule, which carries the newest
- *     ready or activated version even over an older due one (a reaffirm leaves the old version due for good and makes a fresh ready
- *     one — api/_utils/hypothesisRecords/carriage.js; `dueDeployPending`, src/constants/hypothesisRecords.js, is null then). So a
- *     reaffirmed idea shows no line here though the server carries it: the safe side, raised as Q-S6-2. The one-line alternative is
- *     to replace the scan with `dueDeployPending(data.versions) !== null`;
+ *   - the response is whole (a page at the route's limit may have left a due version out) and the deploy station's own predicate
+ *     finds nothing due — `dueDeployPending(data.versions) === null` (src/constants/hypothesisRecords.js; founder ruling Q-S6-2,
+ *     which loosened R-S6-5's first reading, "no deployed version is review_due"). That predicate is the carriage rule's
+ *     (api/_utils/hypothesisRecords/carriage.js): an older due version does not hide the line once a newer ready or activated
+ *     version exists (a reaffirm leaves the old version due for good and makes a fresh ready one), and a due newest-deployed version
+ *     with nothing carriable above it does. Pinned against the real resolver in researchView.agreement.test.js;
  *   - its newest version is carriable (`ready` or `activated`) and has a statement. An `activated` version whose recorded review
  *     time has passed is not shown: the deploy judges it due and carries nothing (a battle-end review has no recorded time, and
  *     stays an accepted limit);
@@ -236,7 +247,7 @@ export function deployingWithOf({ read, watchlist, listDoc = null, nowMs = null 
   const data = read.data;
   if (!Array.isArray(data.versions) || data.versionCount >= VERSION_PAGE_MAX) return null;
   if (!watchlist || watchlist.state !== WATCHLIST_STATE.READY || watchlist.id !== read.listId || !(watchlist.count >= 1)) return null;
-  if (data.versions.some((v) => v?.status === REVIEW_DUE)) return null;
+  if (dueDeployPending(data.versions) !== null) return null;
   const newest = newestVersionOf(data);
   const statement = nonEmpty(newest?.statement);
   if (!newest || !CARRIABLE_STATUSES.includes(newest.status) || statement === null) return null;

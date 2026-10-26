@@ -172,13 +172,15 @@ export const HUB_COPY = Object.freeze({
       error: 'Couldn’t load',
     }),
     /**
-     * Design note point 5, the honest line — the founder's three wordings (S6 ruling R-S6-6), chosen per list by what the
-     * code shows reaches the agent (hub/researchView.js honestLineKindOf). Exactly these three strings may pair the agent
+     * Design note point 5, the honest line — the founder's four wordings (S6 rulings R-S6-6 and Q-S6-1), chosen per list by what
+     * the code shows reaches the agent (hub/researchView.js honestLineKindOf). Exactly these four strings may pair the agent
      * with an idea (hubCopy.guard.test.js).
      */
     honest: Object.freeze({
       thesisIsIdea: "Your agent gives this list's names priority and reads the idea as the list's thesis. It doesn't learn from your ideas or their reviews yet.",
       thesisSaved: "Your agent gives this list's names priority and reads the thesis the list was saved with, not later versions of your idea. It doesn't learn from your ideas or their reviews yet.",
+      // Q-S6-1: the list's thesis is longer than the part of it the prompt carries (the first 200 characters).
+      thesisCut: "Your agent gives this list's names priority and reads only the start of the thesis the list was saved with, not later versions of your idea. It doesn't learn from your ideas or their reviews yet.",
       noThesis: "Your agent gives this list's names priority. It doesn't read or learn from your ideas yet.",
     }),
   }),

@@ -42,7 +42,7 @@ const SUMMARY = {
   analysis2: { researchWorkId: 'rw_d', watchlistId: 'wl-1', origin: 'analysis', completions: 1, state: 'closed', stages: { selectedForInvestigation: 9, investigationsCompleted: 9 } },
 };
 
-describe('the reader\'s admission (ruling R-S6-4)', () => {
+describe('the reader\'s admission (rulings R-S6-4, Q-S6-4, Q-S6-8: admission belongs to the account)', () => {
   it('a held answer is admitted; the gate off and the typed disabled answer are not admitted; everything else is unknown', () => {
     expect(researchAccessOf(readOf())).toBe(IDEA_ACCESS.ADMITTED);
     expect(researchAccessOf(readOf({ status: RESEARCH_READ.GATE_OFF, data: null }))).toBe(IDEA_ACCESS.NOT_ADMITTED);
@@ -55,15 +55,42 @@ describe('the reader\'s admission (ruling R-S6-4)', () => {
     expect(researchAccessOf('admitted')).toBe(IDEA_ACCESS.UNKNOWN);
   });
 
-  it('loading or error → unknown (R-S6-4): a refresh in flight keeps the admission (the status stays ready), a refresh that FAILED does not', () => {
+  it('with nothing remembered, loading or error → unknown (R-S6-4): a refresh in flight keeps the admission (the status stays ready), a refresh that FAILED has only what the account remembers', () => {
     expect(researchAccessOf(readOf({ refreshing: true }))).toBe(IDEA_ACCESS.ADMITTED);
-    // Even over an answer held from before: the label goes neutral, which claims nothing and cannot contradict a stale panel.
+    // Over an answer held from before but nothing remembered: the label goes neutral, which claims nothing.
     expect(researchAccessOf(readOf({ status: RESEARCH_READ.ERROR }))).toBe(IDEA_ACCESS.UNKNOWN);
     expect(researchAccessOf(readOf({ status: RESEARCH_READ.LOADING, data: null }))).toBe(IDEA_ACCESS.UNKNOWN);
     // A status other than ready with data riding along (a half-built read) is not an answer.
     expect(researchAccessOf(readOf({ status: RESEARCH_READ.LOADING }))).toBe(IDEA_ACCESS.UNKNOWN);
     // ...and a `ready` status with nothing held is not an answer either.
     expect(researchAccessOf(readOf({ status: RESEARCH_READ.READY, data: null }))).toBe(IDEA_ACCESS.UNKNOWN);
+    for (const lastAnswer of [undefined, null, '', 'admitted', 'not_admitted', RESEARCH_READ.ERROR, RESEARCH_READ.LOADING, RESEARCH_READ.IDLE, true]) {
+      expect(researchAccessOf(readOf({ status: RESEARCH_READ.LOADING, data: null, lastAnswer })), String(lastAnswer)).toBe(IDEA_ACCESS.UNKNOWN);
+    }
+  });
+
+  it('a remembered success keeps the account admitted across a list change (loading), a failed refresh (error, with or without the old data) and a read that is idle again (Q-S6-4, Q-S6-8)', () => {
+    const lastAnswer = RESEARCH_READ.READY;
+    for (const over of [
+      { status: RESEARCH_READ.LOADING, data: null }, { status: RESEARCH_READ.ERROR, data: null }, { status: RESEARCH_READ.ERROR },
+      { status: RESEARCH_READ.IDLE, data: null, listId: null }, { status: RESEARCH_READ.READY, data: null },
+    ]) {
+      expect(researchAccessOf(readOf({ ...over, lastAnswer })), over.status).toBe(IDEA_ACCESS.ADMITTED);
+    }
+  });
+
+  it('a remembered typed disabled keeps the account not admitted while the next list loads or fails (Q-S6-4)', () => {
+    const lastAnswer = RESEARCH_READ.DISABLED;
+    for (const status of [RESEARCH_READ.LOADING, RESEARCH_READ.ERROR, RESEARCH_READ.IDLE]) {
+      expect(researchAccessOf(readOf({ status, data: null, lastAnswer })), status).toBe(IDEA_ACCESS.NOT_ADMITTED);
+    }
+  });
+
+  it('the answer in hand outranks the memory: a typed disabled replaces a remembered success, and a held success a remembered disabled (Q-S6-4)', () => {
+    expect(researchAccessOf(readOf({ status: RESEARCH_READ.DISABLED, data: null, lastAnswer: RESEARCH_READ.READY }))).toBe(IDEA_ACCESS.NOT_ADMITTED);
+    expect(researchAccessOf(readOf({ lastAnswer: RESEARCH_READ.DISABLED }))).toBe(IDEA_ACCESS.ADMITTED);
+    // The client gate off is not the account's answer: nothing remembered can admit past it.
+    expect(researchAccessOf(readOf({ status: RESEARCH_READ.GATE_OFF, data: null, lastAnswer: RESEARCH_READ.READY }))).toBe(IDEA_ACCESS.NOT_ADMITTED);
   });
 });
 
@@ -259,7 +286,7 @@ describe('review due (spec §8.1: the due copy, the frozen list, the Forge, no m
   });
 });
 
-describe('the honest line (ruling R-S6-6): one wording per case, chosen from what reaches the agent', () => {
+describe('the honest line (rulings R-S6-6, Q-S6-1): one wording per case, chosen from what reaches the agent', () => {
   const statement = 'Semis lead for ten sessions.';
   it('(c) no thesis on the list: blank, absent, whitespace or not text', () => {
     for (const thesis of ['', '   ', undefined, null, 7, {}]) expect(honestLineKindOf({ thesis, statement }), String(thesis)).toBe(HONEST_LINE.NO_THESIS);
@@ -276,13 +303,33 @@ describe('the honest line (ruling R-S6-6): one wording per case, chosen from wha
     expect(honestLineKindOf({ thesis: 'Semis lead for ten sessions.', statement: ' Semis lead\nfor ten   sessions. ' })).toBe(HONEST_LINE.THESIS_IS_IDEA);
   });
 
-  it('the prompt keeps only the first PROMPT_THESIS_CAP characters of the thesis, so a longer idea is NOT read as the thesis whole (b), cut or not', () => {
+  it('(d) the prompt keeps only the first PROMPT_THESIS_CAP characters of the thesis, so a longer thesis is the fourth wording — even when it equals the idea (Q-S6-1)', () => {
     const long = `${'Semis lead for ten sessions. '.repeat(10)}Watch NVDA first.`.trim();
     expect(long.length).toBeGreaterThan(PROMPT_THESIS_CAP);
-    expect(honestLineKindOf({ thesis: long, statement: long })).toBe(HONEST_LINE.THESIS_SAVED);
+    expect(honestLineKindOf({ thesis: long, statement: long })).toBe(HONEST_LINE.THESIS_CUT);
+    expect(honestLineKindOf({ thesis: long, statement: 'Something else entirely.' })).toBe(HONEST_LINE.THESIS_CUT);
     const exactly = 'x'.repeat(PROMPT_THESIS_CAP);
-    expect(honestLineKindOf({ thesis: exactly, statement: exactly })).toBe(HONEST_LINE.THESIS_IS_IDEA);
-    expect(honestLineKindOf({ thesis: `${exactly}y`, statement: `${exactly}y` })).toBe(HONEST_LINE.THESIS_SAVED);
+    expect(honestLineKindOf({ thesis: exactly, statement: exactly }), 'exactly at the cap fits').toBe(HONEST_LINE.THESIS_IS_IDEA);
+    expect(honestLineKindOf({ thesis: `${exactly}y`, statement: `${exactly}y` }), 'one over').toBe(HONEST_LINE.THESIS_CUT);
+    expect(honestLineKindOf({ thesis: `${exactly}y`, statement: exactly }), 'one over, not the idea').toBe(HONEST_LINE.THESIS_CUT);
+    // what the cut takes decides, not the idea: the first 200 are the idea, the rest is more text
+    expect(honestLineKindOf({ thesis: `${exactly} and then more`, statement: exactly })).toBe(HONEST_LINE.THESIS_CUT);
+  });
+
+  it('(d) is about text lost to the cut, not length: blanks after the cap lose nothing, and the cap counts raw characters before whitespace is collapsed', () => {
+    const exactly = 'x'.repeat(PROMPT_THESIS_CAP);
+    expect(honestLineKindOf({ thesis: `${exactly}   \n `, statement: exactly })).toBe(HONEST_LINE.THESIS_IS_IDEA);
+    expect(honestLineKindOf({ thesis: `${exactly}   \n y`, statement: exactly })).toBe(HONEST_LINE.THESIS_CUT);
+    // sanitizeRuleText slices the RAW text first: 199 letters and a blank fit, but a letter after a run of blanks past the cap is cut
+    const spaced = `${'x'.repeat(PROMPT_THESIS_CAP - 1)}${' '.repeat(5)}z`;
+    expect(spaced.length).toBeGreaterThan(PROMPT_THESIS_CAP);
+    expect(honestLineKindOf({ thesis: spaced, statement: 'x'.repeat(PROMPT_THESIS_CAP - 1) })).toBe(HONEST_LINE.THESIS_CUT);
+    // a short thesis padded with leading blanks past the cap loses its start of text: cut
+    expect(honestLineKindOf({ thesis: `${' '.repeat(PROMPT_THESIS_CAP)}Semis lead.`, statement: 'Semis lead.' })).toBe(HONEST_LINE.THESIS_CUT);
+  });
+
+  it('no thesis is never (d), and (d) never reaches a list with no thesis: blank text past the cap is still no thesis', () => {
+    expect(honestLineKindOf({ thesis: ' '.repeat(PROMPT_THESIS_CAP + 50), statement })).toBe(HONEST_LINE.NO_THESIS);
   });
 
   it('the cap is the prompt\'s: api/_utils/agentPromptAssembly.js sanitizeRuleText slices the first 200 characters (source tripwire; the file is read, not imported)', () => {
@@ -293,10 +340,12 @@ describe('the honest line (ruling R-S6-6): one wording per case, chosen from wha
     expect(PROMPT_THESIS_CAP).toBe(200);
   });
 
-  it('(b) any other thesis: the one the list was saved with, a revision\'s statement, or a longer text', () => {
+  it('(b) any other thesis that fits: the one the list was saved with, a revision\'s statement, or a longer text that still fits', () => {
     expect(honestLineKindOf({ thesis: 'Old thesis text', statement })).toBe(HONEST_LINE.THESIS_SAVED);
     expect(honestLineKindOf({ thesis: statement.toLowerCase(), statement })).toBe(HONEST_LINE.THESIS_SAVED);
     expect(honestLineKindOf({ thesis: `${statement} And a long tail.`, statement })).toBe(HONEST_LINE.THESIS_SAVED);
+    // fits exactly at the cap but is not the idea: still (b), not (d)
+    expect(honestLineKindOf({ thesis: 'y'.repeat(PROMPT_THESIS_CAP), statement })).toBe(HONEST_LINE.THESIS_SAVED);
   });
 
   it('the line is judged against the POINTER\'s statement, never the newest version\'s', () => {
@@ -313,12 +362,16 @@ describe('the honest line (ruling R-S6-6): one wording per case, chosen from wha
     expect(derive({ read, listDoc: LISTDOC({ thesis: 'Old thesis' }) }).idea.honest).toBe(HONEST_LINE.THESIS_SAVED);
   });
 
-  it('on the section: each case lands on the list\'s own wording, and the three wordings are the founder\'s', () => {
+  it('on the section: each case lands on the list\'s own wording, and the four wordings are the founder\'s', () => {
     const ideaRead = readOf({ data: dataOf({ versions: [V(1, { statement })] }) });
     const kindFor = (thesis) => derive({ read: ideaRead, listDoc: LISTDOC({ thesis }) }).idea.honest;
     expect(kindFor('')).toBe(HONEST_LINE.NO_THESIS);
     expect(kindFor(statement)).toBe(HONEST_LINE.THESIS_IS_IDEA);
     expect(kindFor('The list was saved with this.')).toBe(HONEST_LINE.THESIS_SAVED);
+    expect(kindFor(`${statement} ${'More and more of the same idea. '.repeat(8)}`)).toBe(HONEST_LINE.THESIS_CUT);
+    expect(COPY.research.honest.thesisCut).toBe("Your agent gives this list's names priority and reads only the start of the thesis the list was saved with, not later versions of your idea. It doesn't learn from your ideas or their reviews yet.");
+    expect(Object.keys(COPY.research.honest).sort()).toEqual(['noThesis', 'thesisCut', 'thesisIsIdea', 'thesisSaved']);
+    expect(Object.values(HONEST_LINE).sort()).toEqual(['no_thesis', 'thesis_cut', 'thesis_is_idea', 'thesis_saved']);
     expect(COPY.research.honest.thesisIsIdea).toBe("Your agent gives this list's names priority and reads the idea as the list's thesis. It doesn't learn from your ideas or their reviews yet.");
     expect(COPY.research.honest.thesisSaved).toBe("Your agent gives this list's names priority and reads the thesis the list was saved with, not later versions of your idea. It doesn't learn from your ideas or their reviews yet.");
     expect(COPY.research.honest.noThesis).toBe("Your agent gives this list's names priority. It doesn't read or learn from your ideas yet.");
@@ -364,21 +417,41 @@ describe('"Deploying with" (ruling R-S6-5): the carriage rule\'s common case, an
     expect(line([V(2, { status }), V(1, { status: 'ready' })])).toBeNull();
   });
 
-  it('no deployed version is review_due (R-S6-5, to the letter): a due version anywhere → no line, even under a NEWER ready one the server would carry (Q-S6-2)', () => {
+  it('the carriage rule (Q-S6-2): an older due version under a NEWER ready or activated one — a reaffirmed idea — shows the newest\'s line, as the server carries it', () => {
     const due = { status: 'review_due', firstDeployedAt: T0, stateReason: 'horizon_elapsed' };
-    expect(line([V(2, { status: 'ready' }), V(1, due)])).toBeNull();
-    expect(line([V(3, { status: 'activated' }), V(2, due), V(1, { status: 'retired' })])).toBeNull();
-    expect(line([V(3, due), V(2, { status: 'ready' })])).toBeNull();
-    // The same lists without the due version show it; a retired or rejected one does not hide the line.
+    expect(line([V(2, { status: 'ready' }), V(1, due)])).toEqual({ statement: 'Idea v2: tech beats the market', count: 3, version: 2 });
+    expect(line([V(3, { status: 'activated' }), V(2, due), V(1, { status: 'retired' })])).toMatchObject({ version: 3 });
+    // a retired or rejected version does not hide the line either
     expect(line([V(2, { status: 'ready' }), V(1, { status: 'retired' })])).not.toBeNull();
     expect(line([V(3, { status: 'activated' }), V(2, { status: 'rejected' }), V(1, { status: 'cancelled' })])).not.toBeNull();
   });
 
-  it('Q-S6-2\'s alternative, pinned so the one-line change is a decision and not a surprise: the deploy station\'s shared predicate is null for exactly the reaffirmed lists the scan hides', () => {
+  it('the deploy station\'s predicate, to the letter: the newest DEPLOYED version due with nothing carriable above it → no line', () => {
+    const due = { status: 'review_due', firstDeployedAt: T0, stateReason: 'horizon_elapsed' };
+    // a due newest-deployed version with a ready version BELOW it (an older one never rides over a due newer one)
+    expect(line([V(3, due), V(2, { status: 'ready' })])).toBeNull();
+    // a due version with nothing above it, and a draft above it (a draft cannot ride)
+    expect(line([V(2, { status: 'draft' }), V(1, due)])).toBeNull();
+    // a due version that was never deployed has no deploy to be due for: the predicate ignores it
+    expect(line([V(2, { status: 'ready' }), V(1, { status: 'review_due' })])).not.toBeNull();
+  });
+
+  it('it IS dueDeployPending: the line is hidden exactly when the shared predicate names a version (swapped fixtures, one rule)', () => {
     const due = { status: 'review_due', firstDeployedAt: T0 };
-    expect(dueDeployPending([V(2, { status: 'ready' }), V(1, due)])).toBeNull();
-    expect(dueDeployPending([V(3, { status: 'activated' }), V(2, due)])).toBeNull();
-    expect(dueDeployPending([V(3, due), V(2, { status: 'ready' })])).not.toBeNull();
+    const cases = [
+      [V(2, { status: 'ready' }), V(1, due)],
+      [V(3, { status: 'activated' }), V(2, due)],
+      [V(3, due), V(2, { status: 'ready' })],
+      [V(2, { status: 'draft' }), V(1, due)],
+      [V(1, due)],
+      [V(1, { status: 'ready' })],
+    ];
+    for (const versions of cases) {
+      const pending = dueDeployPending(versions) !== null;
+      const newestCarriable = CARRIABLE_STATUSES.includes(versions[0].status);
+      // when the predicate names a due version the line is hidden; when it does not, the line shows exactly if the newest version can ride
+      expect(line(versions) === null, JSON.stringify(versions.map((v) => `${v.version}:${v.status}`))).toBe(pending || !newestCarriable);
+    }
   });
 
   it('the statement is the NEWEST version\'s — the one carriage picks — not the pointer\'s', () => {

@@ -166,7 +166,7 @@ const SOURCE_COPY = COPY_TABLES.flatMap((rel) => sourceStrings(read(rel)));
 const ALL_COPY = [...strings(HUB_COPY), ...strings(HUB_GATE_COPY), ...SOURCE_COPY];
 
 /**
- * Slice S6 (founder ruling R-S6-6): the design note's point 5, in the founder's three wordings — the ONLY strings in the hub that
+ * Slice S6 (founder rulings R-S6-6 and Q-S6-1): the design note's point 5, in the founder's four wordings — the ONLY strings in the hub that
  * pair the agent with an idea, and the only ones that say "learn", which they DENY. The banned-claim row forbids claiming it; these
  * exact strings are exempt from it and from the pairing fence, and nothing else is.
  */
@@ -174,6 +174,7 @@ const HONEST_LINES = Object.freeze([
   "Your agent gives this list's names priority and reads the idea as the list's thesis. It doesn't learn from your ideas or their reviews yet.",
   "Your agent gives this list's names priority and reads the thesis the list was saved with, not later versions of your idea. It doesn't learn from your ideas or their reviews yet.",
   "Your agent gives this list's names priority. It doesn't read or learn from your ideas yet.",
+  "Your agent gives this list's names priority and reads only the start of the thesis the list was saved with, not later versions of your idea. It doesn't learn from your ideas or their reviews yet.",
 ]);
 /** The exemption, as one function: the banned-claim row and the pairing row both filter through it, so a loosened match shows in one place. */
 const outsideHonest = (s) => !HONEST_LINES.includes(s);
@@ -326,18 +327,18 @@ describe('S5: the design note\'s labels, exactly, and nothing the hub cannot bac
   // labels ship without it and this fence keeps any such sentence out until the idea reader (slice S6) can carry it. The
   // report puts the question to the founder (Q-S5-4).
   const PAIRS = /\b(agent|shadow)\b.*\bidea|\bidea.*\b(agent|shadow)\b/i;
-  it('no hub string names the agent and an idea together but the founder\'s three honest lines, which are exactly those three (ruling R-S6-6)', () => {
+  it('no hub string names the agent and an idea together but the founder\'s four honest lines, which are exactly those four (rulings R-S6-6, Q-S6-1)', () => {
     const words = ALL_COPY.filter((s) => /\bidea/i.test(s));
     expect(words.sort()).toEqual(expect.arrayContaining(['Plain watchlist · no idea yet']));
     const pairing = [...new Set(words.filter((s) => PAIRS.test(s)))].sort();
-    // The pairing fence filters through the same exact-string exemption: a string is allowed to pair only by being one of the three.
+    // The pairing fence filters through the same exact-string exemption: a string is allowed to pair only by being one of the four.
     expect(words.filter((s) => PAIRS.test(s) && outsideHonest(s))).toEqual([]);
     expect(pairing).toEqual([...HONEST_LINES].sort());
     expect(Object.values(HUB_COPY.research.honest).sort()).toEqual([...HONEST_LINES].sort());
   });
 
-  it('the fence still bites: a claim that the agent learns from, or uses, an idea is not one of the three', () => {
-    for (const claim of ['Your agent learns from your ideas.', 'Shadow reads your idea before every game.', 'Your idea improves your agent.', "Your agent reads the idea as the list's thesis. It learns from your ideas."]) {
+  it('the fence still bites: a claim that the agent learns from, or uses, an idea is not one of the four', () => {
+    for (const claim of ['Your agent learns from your ideas.', 'Shadow reads your idea before every game.', 'Your idea improves your agent.', "Your agent reads the idea as the list's thesis. It learns from your ideas.", 'Your agent reads only the start of your idea. It learns from your ideas.']) {
       expect(HONEST_LINES, claim).not.toContain(claim);
       expect(PAIRS.test(claim) || /\blearn/i.test(claim), claim).toBe(true);
     }
@@ -373,7 +374,7 @@ describe('no claim the hub cannot back (spec §8.2, §11.3)', () => {
   ];
 
   it('no string in either copy table matches a banned claim', () => {
-    // Slice S6: the founder's three honest lines deny learning; exactly those strings are exempt (HONEST_LINES).
+    // Slice S6: the founder's four honest lines deny learning; exactly those strings are exempt (HONEST_LINES; Q-S6-6).
     const hits = ALL_COPY.filter(outsideHonest).flatMap((s) => BANNED.filter((re) => re.test(s)).map((re) => `${re.source}: ${s}`));
     expect(hits).toEqual([]);
   });
@@ -388,7 +389,7 @@ describe('no claim the hub cannot back (spec §8.2, §11.3)', () => {
     expect(BANNED.some((re) => re.test(`${HONEST_LINES[2]} Shadow learns your style.`))).toBe(true);
   });
 
-  it('the exemption is the three exact strings: each denies learning, and a one-word change to any of them is a banned claim again', () => {
+  it('the exemption is the four exact strings: each denies learning, and a one-word change to any of them is a banned claim again', () => {
     for (const line of HONEST_LINES) {
       expect(ALL_COPY, line).toContain(line);
       expect(line, line).toMatch(/\b(doesn't|does not)\b[^.]*\blearn\b/);

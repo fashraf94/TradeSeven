@@ -25,6 +25,7 @@ const STATUS_TONE = Object.freeze({ ready: 'teal', activated: 'teal', review_due
 const HONEST_COPY = Object.freeze({
   [HONEST_LINE.THESIS_IS_IDEA]: COPY.research.honest.thesisIsIdea,
   [HONEST_LINE.THESIS_SAVED]: COPY.research.honest.thesisSaved,
+  [HONEST_LINE.THESIS_CUT]: COPY.research.honest.thesisCut,
   [HONEST_LINE.NO_THESIS]: COPY.research.honest.noThesis,
 });
 

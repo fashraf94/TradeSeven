@@ -50,6 +50,30 @@ describe('the current idea\'s two events', () => {
     expect(COPY.activity.ideaState('Review due')).toBe('Idea · Review due');
   });
 
+  // Q-S6-3: a brand-new idea records one time twice (saved and in its first state); that is one event, not two.
+  it('a brand-new idea (stateChangedAt equals createdAt) shows "Idea saved" alone; a real state change adds its row', () => {
+    const fresh = { ...IDEA, stateChangedAt: IDEA.createdAt };
+    expect(ideaRows(run({ idea: fresh })).map((r) => r.id)).toEqual(['idea.created:wl_hb:v2']);
+    expect(ideaRows(run({ idea: fresh }))[0]).toMatchObject({ text: 'Idea saved', ms: T.created });
+    // the same instant written another way is still the same instant
+    expect(ideaRows(run({ idea: { ...fresh, createdAt: '2026-10-22T14:00:00Z', stateChangedAt: '2026-10-22T14:00:00.000Z' } })).map((r) => r.id)).toEqual(['idea.created:wl_hb:v2']);
+    // one millisecond later is a state change
+    expect(ideaRows(run({ idea: { ...fresh, stateChangedAt: iso(T.created + 1) } })).map((r) => r.id).sort()).toEqual(['idea.created:wl_hb:v2', 'idea.state:wl_hb:v2:ready']);
+    // ...and so is a state time BEFORE the saved time: it differs, so nothing here second-guesses the record
+    expect(ideaRows(run({ idea: { ...fresh, stateChangedAt: iso(T.created - 1) } })).map((r) => r.id).sort()).toEqual(['idea.created:wl_hb:v2', 'idea.state:wl_hb:v2:ready']);
+  });
+
+  it('a brand-new idea in another status still shows "Idea saved" alone (the status word is not a second event)', () => {
+    for (const [status, statusLabel] of [['draft', 'Draft'], ['researched', 'Researched'], ['ready', 'Ready']]) {
+      expect(ideaRows(run({ idea: { ...IDEA, status, statusLabel, stateChangedAt: IDEA.createdAt } })).map((r) => r.id), status).toEqual(['idea.created:wl_hb:v2']);
+    }
+  });
+
+  it('a state time with no readable saved time still shows (the two cannot be shown to be one event)', () => {
+    expect(ideaRows(run({ idea: { ...IDEA, createdAt: null } })).map((r) => r.id)).toEqual(['idea.state:wl_hb:v2:ready']);
+    expect(ideaRows(run({ idea: { ...IDEA, createdAt: 'whenever' } })).map((r) => r.id)).toEqual(['idea.state:wl_hb:v2:ready']);
+  });
+
   it('a state row names the status it recorded: another status is another id, and the word comes from the record', () => {
     const rows = ideaRows(run({ idea: { ...IDEA, status: 'review_due', statusLabel: 'Review due' } }));
     expect(rows.map((r) => r.id)).toContain('idea.state:wl_hb:v2:review_due');
@@ -102,8 +126,15 @@ describe('the same cutoff, order and dedupe as every other kind', () => {
     const activity = run({
       battles, agent, watchlist: { id: 'wl_hb', name: 'High-Beta Ten' }, idea: { ...IDEA, createdAt: iso(at1), stateChangedAt: iso(at1) },
     });
+    // (a brand-new idea has one row; Q-S6-3)
     expect(activity.rows.filter((r) => r.ms === at1).map((r) => r.id)).toEqual([
-      'completed:done_1', 'loadout:watchlist:wl_hb', 'idea.created:wl_hb:v2', 'idea.state:wl_hb:v2:ready',
+      'completed:done_1', 'loadout:watchlist:wl_hb', 'idea.created:wl_hb:v2',
+    ]);
+    const changed = run({
+      battles, agent, watchlist: { id: 'wl_hb', name: 'High-Beta Ten' }, idea: { ...IDEA, createdAt: iso(T.created), stateChangedAt: iso(at1) },
+    });
+    expect(changed.rows.filter((r) => r.ms === at1).map((r) => r.id)).toEqual([
+      'completed:done_1', 'loadout:watchlist:wl_hb', 'idea.state:wl_hb:v2:ready',
     ]);
   });
 
@@ -178,7 +209,7 @@ describe('from the reader\'s answer to the rows (ideaActivityOf → deriveActivi
     status: RESEARCH_READ.READY, listId: 'wl_hb', asOf: 1,
     data: {
       currentVersion: 4, versionCount: 4,
-      versions: [1, 2, 3, 4].map((n) => ({ version: n, status: n === 4 ? 'ready' : 'retired', createdAt: iso(T.created + n * 3600_000), stateChangedAt: iso(T.created + n * 3600_000) })),
+      versions: [1, 2, 3, 4].map((n) => ({ version: n, status: n === 4 ? 'ready' : 'retired', createdAt: iso(T.created + n * 3600_000), stateChangedAt: iso(T.created + n * 3600_000 + 1_800_000) })),
       research: [], deployedLists: {},
     },
     ...over,

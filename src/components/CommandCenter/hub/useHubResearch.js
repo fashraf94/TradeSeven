@@ -11,6 +11,8 @@
 //     asOf,          when that answer was read (ms), for the "as of" note of a kept answer
 //     refreshing,    a request is in flight over a held answer
 //     retryNotBefore a Retry pressed inside the 30 s wait: when it opens (ms), else null
+//     lastAnswer,    the last settled answer for this uid + authEpoch, whatever list it was for: RESEARCH_READ.READY (a read
+//                    succeeded) or RESEARCH_READ.DISABLED (the typed answer), else null. Kept in hub-chunk module memory (below)
 //     invalidate(),  a confirmed return (the watchlist sheet closed): read once more, even when the id is unchanged
 //     retry(),       an explicit Retry, at most one per 30 s per key
 //   }
@@ -25,6 +27,13 @@
 // current one — judged in render, before any effect runs). The 30 s wait is enforced at the press, not by a timer.
 //
 // `gateOn` false (the client gate for idea records) reads nothing at all.
+//
+// ADMISSION BELONGS TO THE ACCOUNT (founder rulings Q-S6-4 and Q-S6-8). Once a read has settled for this uid + authEpoch, that
+// answer — admitted (a success) or not (the typed `disabled`) — outlives a list change, a hub remount and a failed refresh, as
+// `lastAnswer`. It lives in module memory of the hub chunk only (no storage), with the lifetime rules of the kept completed
+// window (hub/useHubCompletedBattles.js): one owner and epoch at a time — a new owner or epoch starts with nothing, a signed-out
+// hub forgets it — and a later answer for the same owner replaces it. Only the CURRENT mount's settled answers are kept: one that
+// arrives after the hub unmounted, or for a key the hub has moved on from, is dropped before it can write.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { listHypothesisVersions } from '../../../services/hypothesisVersionService';
@@ -56,13 +65,30 @@ function dataOf(body, listId) {
   });
 }
 
+// The account's last settled answer: { owner: `${uid}:${authEpoch}`, answer: RESEARCH_READ.READY | RESEARCH_READ.DISABLED }, or null.
+let remembered = null;
+
+const ownerKeyOf = (uid, epoch) => (uid ? `${uid}:${epoch}` : null);
+const rememberedFor = (owner) => (owner && remembered && remembered.owner === owner ? remembered.answer : null);
+
+/** Keep the owner's latest settled answer (replacing any: another owner's, or this one's earlier answer). */
+function remember(owner, answer) {
+  remembered = { owner, answer };
+}
+
+/** Tests only: forget the remembered answer. */
+export function forgetResearchAdmission() {
+  remembered = null;
+}
+
 /** A request that failed: the held answer of this key stays (with its age); a key with none is an error. */
 const failedAt = (held, key) => (held.key === key ? { ...held, status: RESEARCH_READ.ERROR, refreshing: false } : { ...EMPTY, key, status: RESEARCH_READ.ERROR });
 
 export default function useHubResearch({ auth, listId, gateOn }) {
   const uid = auth && auth.signedIn === true && typeof auth.uid === 'string' && auth.uid !== '' ? auth.uid : null;
   const id = typeof listId === 'string' && listId !== '' ? listId : null;
-  const key = gateOn === true && uid && id ? `${uid}:${auth.authEpoch}:${id}` : null;
+  const owner = ownerKeyOf(uid, auth?.authEpoch);
+  const key = gateOn === true && owner && id ? `${owner}:${id}` : null;
 
   const [state, setState] = useState(EMPTY);
   // The request in flight: its key, a sequence number (the newest request is the only one that may publish), and whether a
@@ -73,6 +99,11 @@ export default function useHubResearch({ auth, listId, gateOn }) {
   const current = useRef({ key, id });
 
   useEffect(() => { current.current = { key, id }; }, [key, id]);
+  // One owner and epoch at a time: a new owner or epoch, or a signed-out hub, leaves nothing remembered (render already reads
+  // nothing for an owner the memory is not for; this lets go of it).
+  useEffect(() => {
+    if (remembered && remembered.owner !== owner) remembered = null;
+  }, [owner]);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
@@ -115,7 +146,10 @@ export default function useHubResearch({ auth, listId, gateOn }) {
         if (!mounted.current || flight.current.seq !== mine) return;
         flight.current.inflight = false;
         const data = dataOf(body, forId);
-        if (data) setState({ key: forKey, status: RESEARCH_READ.READY, data, asOf: Date.now(), refreshing: false, retryNotBefore: null });
+        if (data) {
+          remember(forKey.slice(0, forKey.length - forId.length - 1), RESEARCH_READ.READY);
+          setState({ key: forKey, status: RESEARCH_READ.READY, data, asOf: Date.now(), refreshing: false, retryNotBefore: null });
+        }
         else setState((held) => failedAt(held, forKey));
         followUp();
       },
@@ -125,6 +159,7 @@ export default function useHubResearch({ auth, listId, gateOn }) {
         // The typed answer for an account the server does not admit: not an error, and not an empty list.
         if (error && error.code === 'disabled') {
           flight.current.dirty = false;
+          remember(forKey.slice(0, forKey.length - forId.length - 1), RESEARCH_READ.DISABLED);
           setState({ ...EMPTY, key: forKey, status: RESEARCH_READ.DISABLED });
           return;
         }
@@ -179,6 +214,7 @@ export default function useHubResearch({ auth, listId, gateOn }) {
     asOf: view?.asOf ?? null,
     refreshing: view?.refreshing === true,
     retryNotBefore: view?.retryNotBefore ?? null,
+    lastAnswer: rememberedFor(owner),
     invalidate,
     retry,
   };

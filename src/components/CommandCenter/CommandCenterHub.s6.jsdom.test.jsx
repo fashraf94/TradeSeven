@@ -52,6 +52,7 @@ vi.mock('../Dashboard/EquipSheet', async () => ({ default: (await import('./__fi
 vi.mock('../Dashboard/TraitsSheet', async () => ({ default: (await import('./__fixtures__/legacySheetStubs')).TraitsSheetStub }));
 
 import CommandCenterHub, { areaSummaries } from './CommandCenterHub';
+import { forgetResearchAdmission } from './hub/useHubResearch';
 import { FORGE_AREAS, FORGE_RETURN } from './hubChrome';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { resetSeen, seen } from './__fixtures__/legacySheetStubs';
@@ -110,6 +111,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
   sessionStorage.clear();
+  // The account's admission outlives a mount (Q-S6-4): each row starts from nothing remembered.
+  forgetResearchAdmission();
   for (const fn of Object.values(svc)) fn.mockReset();
   for (const fn of Object.values(agentWrites)) fn.mockReset();
   svc.listHypothesisVersions.mockImplementation(async () => BODY());
@@ -474,7 +477,7 @@ function unmountAll() {
   mounted = [];
 }
 
-describe('the idea labels follow the reader (ruling R-S6-4)', () => {
+describe('the idea labels follow the reader (rulings R-S6-4, Q-S6-4, Q-S6-8)', () => {
   const label = async (site = 'mobile') => {
     await renderHub(site, { tab: COPY.phoneTabs.loadout });
     return watchlistCard().textContent;
@@ -526,13 +529,18 @@ describe('the idea labels follow the reader (ruling R-S6-4)', () => {
     await renderHub('mobile', { hub: hubOf({ ideaAccess: 'admitted' }), tab: COPY.phoneTabs.loadout });
     expect(watchlistCard().textContent).not.toMatch(/Universe|Plain watchlist/);
     unmountAll();
-    // The reader holds nothing yet: the seam stands.
+    // The account was last refused: that is what the reader holds, and the seam does not override it while the next read is out.
     svc.listHypothesisVersions.mockReturnValue(new Promise(() => {}));
+    await renderHub('mobile', { hub: hubOf({ ideaAccess: 'admitted' }), tab: COPY.phoneTabs.loadout });
+    expect(watchlistCard().textContent).not.toMatch(/Universe|Plain watchlist/);
+    unmountAll();
+    // The reader holds nothing at all (nothing answered, nothing remembered): the seam stands.
+    forgetResearchAdmission();
     await renderHub('mobile', { hub: hubOf({ ideaAccess: 'admitted' }), tab: COPY.phoneTabs.loadout });
     expect(watchlistCard().textContent).toContain('Universe · 3 names');
   });
 
-  it('a refresh in flight keeps the label; one that FAILED takes it back to the neutral words (error → unknown, as ruled), and a good one returns it', async () => {
+  it('a refresh in flight keeps the label, and so does one that FAILED (admission belongs to the account, Q-S6-8); the panel still tells the truth about its own list', async () => {
     await renderHub('mobile', { tab: COPY.phoneTabs.loadout });
     expect(watchlistCard().textContent).toContain('Universe · 3 names');
     let finish;
@@ -548,12 +556,72 @@ describe('the idea labels follow the reader (ruling R-S6-4)', () => {
     click(byRole(document, 'button', COPY.loadout.changeWatchlist)[0]);
     act(() => { seen.equip.onClose(); });
     await flush();
+    expect(watchlistCard().textContent, 'after a failed refresh').toContain('Universe · 3 names');
+    expect(watchlistCard().textContent).not.toContain(COPY.loadout.plainList);
+  });
+
+  it('...and the Research panel is unchanged by that: after a failed refresh it still shows its own list\'s kept idea with its age and a Retry, while the label keeps the idea words', async () => {
+    await phoneResearch();
+    expect(statusOf()).toBe('ready');
+    svc.listHypothesisVersions.mockRejectedValue(new Error('offline'));
+    click(byRole(document, 'tab', COPY.phoneTabs.loadout)[0]);
+    click(byRole(document, 'button', COPY.loadout.changeWatchlist)[0]);
+    act(() => { seen.equip.onClose(); });
+    await flush();
+    expect(watchlistCard().textContent).toContain('Universe · 3 names');
+    click(byRole(document, 'tab', COPY.phoneTabs.research)[0]);
+    expect(statusOf()).toBe('ready');
+    expect(panel().querySelector('[data-hub-research-stale]')).not.toBeNull();
+    expect(panelText()).toContain('Idea v1');
+    expect(retryButton()).not.toBeNull();
+  });
+
+  it('a list change keeps the account admitted while the next list loads, for a list whose own record carries an idea (the label is that list\'s, the admission the account\'s)', async () => {
+    const { m } = await renderHub('mobile', { tab: COPY.phoneTabs.loadout });
+    expect(watchlistCard().textContent).toContain('Universe · 3 names');
+    svc.listHypothesisVersions.mockReturnValue(new Promise(() => {}));
+    r.lists = [LIST(), LIST({ watchlistId: 'wl-2', name: 'Defensives', currentHypothesisVersion: 2, tickers: [{ symbol: 'XLU' }, { symbol: 'XLP' }] })];
+    r.agent = agentReady({ equippedWatchlistId: 'wl-2', equippedWatchlistName: 'Defensives' });
+    act(() => { m.rerender(<CommandCenterHub site="mobile" hub={hubOf()} />); });
+    await flush();
+    expect(svc.listHypothesisVersions).toHaveBeenLastCalledWith('wl-2');
+    expect(watchlistCard().textContent).toContain('Defensives');
+    expect(watchlistCard().textContent, 'wl-2\'s read is still out').toContain('Universe · 2 names');
+  });
+
+  it('a hub remount keeps it: the Forge round trip comes back to the idea label while the first read is still out', async () => {
+    await renderHub('mobile', { tab: COPY.phoneTabs.loadout });
+    expect(watchlistCard().textContent).toContain('Universe · 3 names');
+    unmountAll();
+    svc.listHypothesisVersions.mockReturnValue(new Promise(() => {}));
+    await renderHub('mobile', { tab: COPY.phoneTabs.loadout });
+    expect(watchlistCard().textContent).toContain('Universe · 3 names');
+  });
+
+  it('a refused account stays refused across a remount until a read says otherwise', async () => {
+    svc.listHypothesisVersions.mockRejectedValue(Object.assign(new Error('off'), { status: 404, code: 'disabled' }));
+    expect(await label()).not.toMatch(/Universe|Plain watchlist/);
+    unmountAll();
+    svc.listHypothesisVersions.mockReturnValue(new Promise(() => {}));
+    expect(await label()).not.toMatch(/Universe|Plain watchlist/);
+    unmountAll();
+    svc.listHypothesisVersions.mockResolvedValue(BODY());
+    expect(await label()).toContain('Universe · 3 names');
+  });
+
+  it('another account or epoch starts with nothing: the new owner\'s label is the neutral one until its own read answers', async () => {
+    const { m } = await renderHub('mobile', { tab: COPY.phoneTabs.loadout });
+    expect(watchlistCard().textContent).toContain('Universe · 3 names');
+    svc.listHypothesisVersions.mockReturnValue(new Promise(() => {}));
+    r.identity = { resolved: true, uid: 'uid-B', authEpoch: 3 };
+    r.agent = { ...agentReady({ ownerId: 'uid-B' }), ownerUid: 'uid-B', ownerEpoch: 3 };
+    act(() => { m.rerender(<CommandCenterHub site="mobile" hub={hubOf()} />); });
+    await flush();
     expect(watchlistCard().textContent).not.toMatch(/Universe|Plain watchlist/);
-    expect(watchlistCard().textContent).toContain('3 names');
   });
 });
 
-describe('"Deploying with" on the Deploy card (ruling R-S6-5)', () => {
+describe('"Deploying with" on the Deploy card (rulings R-S6-5, Q-S6-2)', () => {
   const text = () => deployLine()?.textContent ?? null;
 
   it('the newest version ready or activated: "Deploying with: {statement} · N names" — on the desktop card and on the phone\'s Loadout tab', async () => {
@@ -573,15 +641,21 @@ describe('"Deploying with" on the Deploy card (ruling R-S6-5)', () => {
     expect(document.body.textContent).not.toContain('Deploying with');
   });
 
-  it('no deployed version is review_due (R-S6-5 to the letter): none shows a line — a reaffirmed idea too, though the server carries its newer ready version (Q-S6-2)', async () => {
+  it('the carriage rule (Q-S6-2): a reaffirmed idea — an older deployed version due, a newer ready one — shows the newer one\'s line, as the server carries it', async () => {
     const due = V(1, { status: 'review_due', firstDeployedAt: iso(T.created) });
     svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 2, versions: [V(2, { status: 'ready' }), due] }));
     await renderHub('desktop');
-    expect(deployLine()).toBeNull();
+    expect(text()).toBe('Deploying with: Idea v2: semis lead for ten sessions. · 3 names');
     unmountAll();
+    // ...and the newest version DUE (a deployed version nothing newer replaces) is what the deploy station warns about: no line
     svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 2, versions: [V(2, { status: 'review_due', firstDeployedAt: iso(T.created) }), V(1, { status: 'ready' })] }));
     await renderHub('desktop');
     expect(deployLine()).toBeNull();
+    unmountAll();
+    // the same on the phone, beside the Loadout
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ currentVersion: 3, versions: [V(3, { status: 'activated' }), V(2, { status: 'review_due', firstDeployedAt: iso(T.created) }), V(1, { status: 'retired' })] }));
+    await renderHub('mobile', { tab: COPY.phoneTabs.loadout });
+    expect(document.querySelector('[data-hub-deploy-card="phone"] [data-hub-deploying-with]').textContent).toBe('Deploying with: Idea v3: semis lead for ten sessions. · 3 names');
   });
 
   it('not admitted, or the gate off: no line', async () => {
@@ -733,7 +807,7 @@ describe('a kept answer says how old it is in every state it can be kept in (rev
   });
 });
 
-describe('the honest line (ruling R-S6-6): one wording per case, under the idea, and nowhere else', () => {
+describe('the honest line (rulings R-S6-6, Q-S6-1): one wording per case, under the idea, and nowhere else', () => {
   const STATEMENT = 'Semis lead for ten sessions.';
   const withThesis = async (thesis, statement = STATEMENT) => {
     r.lists = [LIST({ thesis })];
@@ -760,13 +834,21 @@ describe('the honest line (ruling R-S6-6): one wording per case, under the idea,
     expect(line.textContent).toBe("Your agent gives this list's names priority. It doesn't read or learn from your ideas yet.");
   });
 
-  it('an idea longer than the prompt\'s 200 characters is not "read as the thesis" whole: the same long text on both sides is (b)', async () => {
+  it('(d) a thesis longer than the prompt\'s 200 characters is read only in part: the fourth wording, even with the same long text on both sides', async () => {
     const long = `${'Semis lead for ten sessions. '.repeat(10)}Watch NVDA first.`;
     const line = await withThesis(long, long);
-    expect(line.getAttribute('data-hub-honest-line')).toBe('thesis_saved');
+    expect(line.getAttribute('data-hub-honest-line')).toBe('thesis_cut');
+    expect(line.textContent).toBe("Your agent gives this list's names priority and reads only the start of the thesis the list was saved with, not later versions of your idea. It doesn't learn from your ideas or their reviews yet.");
   });
 
-  it('exactly one of the three, and inside the idea\'s card', async () => {
+  it('(d) is decided by the list\'s thesis alone: a short idea over a long saved thesis is (d); a long idea over a short thesis is (b)', async () => {
+    const long = `${'Semis lead for ten sessions. '.repeat(10)}Watch NVDA first.`;
+    expect((await withThesis(long, STATEMENT)).getAttribute('data-hub-honest-line')).toBe('thesis_cut');
+    unmountAll();
+    expect((await withThesis('A short thesis.', long)).getAttribute('data-hub-honest-line')).toBe('thesis_saved');
+  });
+
+  it('exactly one of the four, and inside the idea\'s card', async () => {
     await withThesis(STATEMENT);
     expect(document.querySelectorAll('[data-hub-honest-line]')).toHaveLength(1);
     expect(panel().querySelector('[data-hub-card="idea"] [data-hub-honest-line]')).not.toBeNull();
@@ -835,6 +917,19 @@ describe('Activity\'s idea rows (ruling R-S6-7)', () => {
     await renderHub('desktop');
     expect(activityText()).toContain('Idea saved');
     expect(activityText()).toContain('Idea · Ready');
+    expect(activitySection().querySelectorAll('[data-hub-activity-row="idea"]').length).toBe(2);
+  });
+
+  it('a brand-new idea (saved and in its first state at one instant) shows "Idea saved" alone — one idea row, not two (Q-S6-3)', async () => {
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status: 'draft', stateChangedAt: iso(T.created) })] }));
+    await renderHub('desktop');
+    expect(activityText()).toContain('Idea saved');
+    expect(activityText()).not.toContain('Idea · Draft');
+    expect(activitySection().querySelectorAll('[data-hub-activity-row="idea"]').length).toBe(1);
+    unmountAll();
+    // a real state change adds its row
+    svc.listHypothesisVersions.mockResolvedValue(BODY({ versions: [V(1, { status: 'ready' })] }));
+    await renderHub('desktop');
     expect(activitySection().querySelectorAll('[data-hub-activity-row="idea"]').length).toBe(2);
   });
 
