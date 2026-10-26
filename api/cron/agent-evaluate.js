@@ -342,6 +342,9 @@ export default async function handler(req, res) {
     // ---- 2. Complete expired battles (runs regardless of market hours) ----
     const allBattles = await findActiveAgentBattles(db);
     const activeBattles = [];
+    // The non-blocking pattern logs, held so the settle-only run (F1) can let
+    // them land before it responds; the other runs never wait on them.
+    const patternLogs = [];
 
     for (const battle of allBattles) {
       if (battle.expiresAt && new Date(battle.expiresAt) < new Date()) {
@@ -354,9 +357,9 @@ export default async function handler(req, res) {
           if (completion.committed) {
             // Log battle pattern for earned trait detection (Phase 2 pre-warm, non-blocking).
             // v2 Ruling 4: a result-unavailable battle logs nothing.
-            if (completion.disposition?.completionContext !== RESULT_UNAVAILABLE_CONTEXT) logBattlePattern(battle.agentId, battle.id, battle).catch(err => {
+            if (completion.disposition?.completionContext !== RESULT_UNAVAILABLE_CONTEXT) patternLogs.push(logBattlePattern(battle.agentId, battle.id, battle).catch(err => {
               console.error(`${LOG_PREFIX} Pattern logging failed for battle ${battle.id}:`, err.message);
-            });
+            }));
             // Reflection is handled by the dedicated process-pending-reflections cron,
             // gated by the pendingReflection flag set inside completeBattle().
             summary.expired++;
@@ -383,8 +386,12 @@ export default async function handler(req, res) {
       }
     }
 
-    // F1: the settle-only run ends with the expiry sweep.
+    // F1: the settle-only run ends with the expiry sweep. It responds at once,
+    // and a function may be frozen once its response ends (see `evalRun`
+    // above), so the pattern logs land first (each already catches its own
+    // failure).
     if (settleOnly) {
+      await Promise.allSettled(patternLogs);
       console.log(`${LOG_PREFIX} [settle] expiry sweep only: ${summary.expired} completed, ${activeBattles.length} still active`);
       return respond(200, { mode: 'settle', expired: summary.expired, completionSkipped: summary.completionSkipped, masteryDeferredCompletions: summary.masteryDeferredCompletions, errors: summary.errors, duration: Date.now() - startTime });
     }

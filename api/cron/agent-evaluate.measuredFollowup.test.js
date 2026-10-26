@@ -115,10 +115,11 @@ function makeWorldDb(docsByPath) {
     update: async (payload) => { writes.push({ path: `${col}/${id}`, payload }); apply(`${col}/${id}`, payload); },
     set: async (payload) => { writes.push({ path: `${col}/${id}`, set: payload }); },
   });
+  const queries = [];
   const q = { where: () => q, orderBy: () => q, limit: () => q, get: async () => ({ docs: [], empty: true, size: 0 }) };
   return {
-    docs, writes, transactions: 0,
-    collection(col) { return { doc: id => ref(col, id), where: () => q, orderBy: () => q, limit: () => q, get: q.get }; },
+    docs, writes, queries, transactions: 0,
+    collection(col) { return { doc: id => ref(col, id), where: (...a) => { queries.push([col, ...a]); return q; }, orderBy: () => q, limit: () => q, get: q.get }; },
     async getAll(...refs) { return Promise.all(refs.map(r => r.get())); },
     async runTransaction(cb) {
       this.transactions++;
@@ -223,8 +224,11 @@ describe('F1 — the mode branch runs the expiry sweep and never evaluates', () 
   // doubled OPEN, so only the mode branch can keep the live battle untouched.
   it.each([['EDT', '2026-10-30', '2026-11-02'], ['EST', '2026-11-06', '2026-11-09']])('%s: a Friday-evening battle settles Friday evening; the live battle is never locked', async (_label, friday, monday) => {
     const done = tieredBattle('fri-battle', ET(friday, 10, 0));
-    const live = tieredBattle('mon-battle', ET(friday, 21, 0)); // created after the close → Monday's session
-    expect(live.timing.tradingDays).toEqual([monday]);
+    // A live battle that is NOT dormant (its list starts on Friday, F3 would
+    // play it) and has not expired: only the mode branch keeps it untouched
+    // (review MT1-3).
+    const live = tieredBattle('mon-battle', ET(friday, 21, 0), { timing: { tradingDays: [friday] } });
+    expect(Date.parse(live.expiresAt)).toBe(ET(monday, 20, 0));
     world.db = makeWorldDb({ 'agentBattles/fri-battle': done, 'agentBattles/mon-battle': live });
     world.listing = () => [structuredClone(done), structuredClone(live)];
     const runAt = nextFire(cronEntry(SETTLE_PATH), Date.parse(done.expiresAt));
@@ -243,9 +247,30 @@ describe('F1 — the mode branch runs the expiry sweep and never evaluates', () 
     expect(world.db.docs.get('agentBattles/mon-battle')).toEqual(live);
     expect(world.db.writes.some(w => w.path.startsWith('agentEvalRuns/'))).toBe(false);
     expect(mocks.repairSweep).not.toHaveBeenCalled();
+    expect(world.db.queries).toEqual([]); // no bare-GC repair query (step 2c, review MT1-4)
     expect(mocks.openSweep).not.toHaveBeenCalled();
     expect(mocks.create).not.toHaveBeenCalled();
     expect(mocks.marketOpen).not.toHaveBeenCalled();
+  });
+
+  // Review MT1-2: the settle run responds right after its loop, so the
+  // non-blocking pattern log must land before the response is sent.
+  it('the pattern log of a settled battle lands before the response', async () => {
+    const { logBattlePattern } = await import('../_utils/battlePatternLogger.js');
+    const order = [];
+    logBattlePattern.mockImplementationOnce(async (_agentId, battleId) => {
+      order.push(`pattern:start:${battleId}`);
+      await new Promise(resolve => setImmediate(resolve));
+      await new Promise(resolve => setImmediate(resolve));
+      order.push(`pattern:written:${battleId}`);
+    });
+    const done = tieredBattle('fri-battle', ET('2026-10-30', 10, 0));
+    world.db = makeWorldDb({ 'agentBattles/fri-battle': done });
+    world.listing = () => [structuredClone(done)];
+    vi.setSystemTime(new Date(nextFire(cronEntry(SETTLE_PATH), Date.parse(done.expiresAt))));
+    const r = { statusCode: null, status(c) { r.statusCode = c; return r; }, json() { order.push('response'); return r; } };
+    await cron.default({ headers: { authorization: 'Bearer followup-secret' }, query: { mode: 'settle' } }, r);
+    expect(order).toEqual(['pattern:start:fri-battle', 'pattern:written:fri-battle', 'response']);
   });
 
   // Control: the SAME world without the mode reaches the market gate (doubled
