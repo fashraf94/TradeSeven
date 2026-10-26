@@ -4,6 +4,8 @@ Claude Code (Sonnet 5.5 at High effort, with an Opus 5.5 advisor consulted at th
 
 Not in S6, and not touched: the Shadow canvas and the status line (S7, a parallel lane), any hub write (the hub invokes no create, reaffirm, ready, wait, reject, cancel, retire or mark-researched transition), a cross-list ideas count or the growth rings, the optional extra research-stage detail, anything under `api/`.
 
+> **Fix round (Oct 25, 2026): see §13.** The founder has ruled on Q-S6-1 … Q-S6-8 and `main` (S7, #997, and #995) is merged in. §§1–12 and the table below describe the build at `560aa168`; where they disagree with §13 (R-S6-4 and R-S6-5 "to the letter", three honest wordings, one pair of idea rows, the open questions of §9), §13 governs.
+
 ## Verdict
 
 | Item | Result |
@@ -233,4 +235,101 @@ Also at 390 and 1440 px: a long idea statement wraps, the Deploy line clamps to 
 - **R-S6-4 and "held through an error".** Built to the prompt's "loading or error → unknown". Lenses H and R judged the alternative (an answer held for this key stays admitted through a failed refresh; the key carries uid and epoch and a typed `disabled` replaces the data) sound; it is Q-S6-8, not shipped.
 - **The prompt's "refuters on isolated `git archive` snapshots … all on Sonnet"** was followed (§7). Subagent hygiene: reviewers wrote only inside their trees except three stray scratch files outside them (a temp script and two files under `/tmp`), each deleted by its author and disclosed in the report; no repository path was touched by any of them (the main worktree's `git status` showed only this branch's work throughout).
 - **No clone was created**; the Linux worktree `~/pd-ci-s6` is removed at the end (§8).
+
+## 13. Fix round and merge (Oct 25, 2026)
+
+The founder's rulings on Q-S6-1 … Q-S6-8, `main` merged in (S7, #997, and the BaggerBomb broad release, #995), and a refreshed smoke branch. Same model setup (Sonnet 5.5 at High; the Opus advisor consulted once, before the push). **Where §§1–12 disagree with this section, this section governs:** they describe the build at `560aa168` (R-S6-4 and R-S6-5 "to the letter", three honest wordings, one idea-row pair, eight open questions).
+
+### 13.1 Heads
+
+| | |
+|---|---|
+| Before this round | PR head `560aa168`; code head `e23e2db1`; base `27514b1a` |
+| `main` merged | `17b614e8` (the merge of #997; `main` also holds #995) |
+| Merge commit | `dcfafcdf` (seven conflicts, §13.2) |
+| Rulings, code and tests | `ad3fd8be` (**code head of this round**) |
+| Report and README | {{REPORT_COMMITS}} |
+| PR head | {{PR_HEAD}} |
+| Smoke | `claude/command-center-hub-s6-smoke` @ {{SMOKE_SHA}} (one flag-true commit on the PR head; NEVER MERGE, no PR); preview {{PREVIEW}} |
+
+Precondition (the prompt: "send this only after #997 is merged"): `origin/main` `17b614e8` is "Merge pull request #997 from fashraf94/claude/command-center-hub-s7". Checked at the start.
+
+### 13.2 The merge: seven conflicts, both sides kept in every one
+
+`git fetch origin`, then `git merge origin/main` into `claude/advisor-opus-ed1d1c`; exactly the seven files the prompt named conflicted, no others. Nothing either slice added was removed.
+
+| File | The conflict | Resolution |
+|---|---|---|
+| `docs/README.md` | S6's row and S7's row added at the same place | Both rows kept, S6's first |
+| `src/components/CommandCenter/CommandCenterHub.jsx` (five regions) | (1) the header comment: S6's paragraph vs S7's; (2) the `hubFlags` import (`hubFlags, scoutingBoardOn` vs `PHONE_SHADOW, scoutingBoardOn`); (3) `PhoneHub`'s props; (4) `WideHub`'s props; (5) the `ConnectedHub` render call | (1) both paragraphs, a bare `//` between; (2) `import { PHONE_SHADOW, hubFlags, scoutingBoardOn }`; (3) and (4) both prop sets: `researchRead` (S6) with `attemptId`, `coverOpen` (S7); (5) both elements carry `researchRead={research}` and `attemptId={attemptId} coverOpen={coverOpen}`. S7's Shadow wiring (status words in `useShared`, `areaEvent`, `createdAttemptId`, `coverOpen`, `PHONE_SHADOW`) and S6's reader wiring (`useHubResearch` in `ConnectedHub`, `researchRead` into `useHubRuntime`) both stand |
+| `commandCenterHub.mount.guard.test.js` | S6's `useHubResearch.js` effect allowance vs S7's `ShadowCanvas.jsx` and `shadowCanvasKit.js` allowances | Both entries kept in the one allowance table |
+| `src/theme/tokens.guard.test.js`, `motion.guard.test.js` | S6's two registered files (`researchView.js`, `useHubResearch.js`) vs S7's five (`ShadowCanvas.jsx`, `shadowBloom.js`, `shadowCanvas.js`, `shadowStatus.js`, `shadowCanvasKit.js`) | All seven in `GUARDED_FILES`, each block with its own comment (hazard 34) |
+| `src/theme/tokenGuardBaseline.json`, `motionGuardBaseline.json` | The same seven entries; JSON, so a comma / closing brace to repair | All seven entries; both files parse (`JSON.parse`) and the guards pass |
+
+Two files git merged without conflict that both slices edited: `hub/hubCopy.js` (S7's status words and S6's `research` / `deploy` / `activity` blocks) and `hubCopy.guard.test.js` (S7's rows and S6's honest-line rows). The suites below are the check that the textual merge is also a semantic one: the whole `src/components/CommandCenter` and `src/theme` directories on Windows right after the merge (88 files, 3,048 rows) had only the five rows this round's rulings are meant to flip.
+
+### 13.3 The rulings, as applied
+
+| Ruling | Built | Where (at `ad3fd8be`) |
+|---|---|---|
+| **Q-S6-1** a fourth honest line | `HONEST_LINE.THESIS_CUT` and `research.honest.thesisCut`, the founder's (d) word for word. A thesis is "cut" when more than `PROMPT_THESIS_CAP` (200) raw characters of it were left out by the prompt AND something other than blanks was left out. (d) wins over (a)/(b): a long thesis is (d) whether or not it equals the idea. (a) = fits and equals the current statement (whitespace collapsed); (b) = any other thesis that fits; (c) = no thesis. The sanitizer's phrase rewrites stay an accepted limit (comment on `honestLineKindOf`). | `hub/researchView.js:49` (`HONEST_LINE`), `:126-132` (`honestLineKindOf`, the cut at `:129`); `hub/hubCopy.js:183`; `panels/ResearchPanel.jsx:28` |
+| **Q-S6-6** the copy guard | `HONEST_LINES` is the four exact strings; the banned-claim row, the pairing row, the "one-word change is a banned claim again" row and the planted variants (`+ suffix`, `prefix +`, slice, `slice(0,-1)`, trailing blank, upper case, and a "reads only the start … It learns from your ideas" claim) run over all four | `hubCopy.guard.test.js` (`HONEST_LINES`, the four rows that name it) |
+| **Q-S6-2** the carriage rule | The `review_due` scan in `deployingWithOf` is `dueDeployPending(data.versions) !== null → null`, the deploy station's own predicate. The two rows flipped (a reaffirmed idea shows the newer version's line, on the desktop card and the phone's Loadout tab); the alternative row stayed as the pin (now "it IS dueDeployPending"). Every other condition of R-S6-5 is unchanged. **Pinned against the resolver:** `researchView.agreement.test.js` runs the real `resolveDeployCarriage` over the 1,463 shared lists of `dueIdea.agreement.test.js` and asserts that whenever the hub shows a line, the resolver carries that very version. **One thing found:** once the newest version is `ready` or `activated` (a condition that stays, R-S6-5's "newest is carriable"), `dueDeployPending` is always null (a carriable newest is either the newest deployed version itself, which is not `review_due`, or newer than every deployed one); a second row of the agreement file proves it over all 1,463 lists. So the predicate cannot change an answer today; it is the statement of the rule and a guard if the newest-version condition is ever relaxed. It is therefore an equivalent mutant (G12, §13.5). | `hub/researchView.js:17` (import), `:245-250` (`deployingWithOf`, the predicate at `:250`); `hub/researchView.agreement.test.js` |
+| **Q-S6-3** one row for a new idea | The `idea.state` row only when `stateChangedAt` and `createdAt` are different instants (milliseconds compared, not strings); a brand-new idea lists "Idea saved" alone. A state time with no readable saved time still shows (they cannot be shown to be one event) | `hub/activityRows.js:102` |
+| **Q-S6-4, Q-S6-8** admission belongs to the account | `useHubResearch` keeps the last settled answer for this uid + authEpoch (`READY` after a success, `DISABLED` after the typed answer) in module memory of the hub chunk (no storage), and returns it as `lastAnswer`. `researchAccessOf`: gate off or a typed `disabled` in hand → not admitted; a held success → admitted; else `lastAnswer` (success → admitted, `disabled` → not admitted); nothing remembered → unknown, as before. It survives a list change, a hub remount and a failed refresh. A typed `disabled` replaces a remembered success and the next success replaces that; a new owner or epoch starts with nothing in the very render that brings it (judged in render), a signed-out hub forgets it (the effect on the owner), exactly the completed window's rule (`useHubCompletedBattles.js`: one owner and epoch at a time). Only the current mount's current key writes: an answer after the unmount, or for a list the hub moved on from, is dropped before it can. **The Research panel is unchanged:** it still shows its own list's state and as-of note (a row in the S6 hub suite asserts it beside the label). | `hub/useHubResearch.js:69-82` (memory), `:105` (the let-go effect), `:150`, `:162` (the two writes), `:217` (`lastAnswer`); `hub/researchView.js:82-88` (`researchAccessOf`) |
+| **Q-S6-5** | Accepted; the four limits of "Deploying with" stand as §9 states them | none |
+| **Q-S6-7** | Kept: the reader stays in `ConnectedHub` | `CommandCenterHub.jsx` (`useHubResearch` call in `ConnectedHub`) |
+
+**Read-only still.** The round adds no hub write, no storage, no request beyond one default list request per trigger, and nothing under `api/` (`git diff --name-only 27514b1a..HEAD` lists no `api/` path; the new agreement test imports the real resolver and the deploy harness for reading, as `dueIdea.agreement.test.js` does).
+
+### 13.4 Rows changed and added
+
+Only S6's own files changed in this round (11 files, +660 −66 at `ad3fd8be`); **no pre-existing test of another slice was edited** (S7's suites came in with the merge and pass unedited). Row counts, before → after: `researchView.test.js` 76 → 82; `useHubResearch.jsdom.test.jsx` 39 → 51; `activityRows.idea.test.js` 18 → 21; `CommandCenterHub.s6.jsdom.test.jsx` 71 → 78; `researchView.agreement.test.js` new, 2 rows; `hubCopy.guard.test.js` the same rows over four lines instead of three.
+
+S6's own rows that the rulings flip (the stop rule does not apply: they are this slice's, and the rulings are the reason):
+
+| Row | Ruling | Now |
+|---|---|---|
+| `researchView.test.js` "no deployed version is review_due (R-S6-5, to the letter)…" and `CommandCenterHub.s6.jsdom.test.jsx` the same title | Q-S6-2 | **Flipped:** a reaffirmed idea shows the newer version's line (desktop card, phone Loadout tab); a due newest-deployed version with nothing carriable above it still shows none |
+| `researchView.test.js` "Q-S6-2's alternative, pinned…" | Q-S6-2 | **Kept as the pin**, now "it IS dueDeployPending": the line is hidden exactly when the shared predicate names a version or the newest version cannot ride |
+| `researchView.test.js` "the prompt keeps only the first PROMPT_THESIS_CAP characters… (b)" and the `CommandCenterHub.s6` long-thesis row | Q-S6-1 | **(b) → (d)**; plus rows for the cap's edges (exactly 200 fits; one over is cut; blanks after the cap lose nothing; a letter past a run of blanks is cut; leading blanks count against the cap), and for (d) deciding on the thesis alone |
+| `researchView.test.js` "loading or error → unknown…" | Q-S6-4, Q-S6-8 | Re-scoped to "with nothing remembered"; three new rows for the memory (remembered success, remembered `disabled`, the answer in hand outranks the memory) |
+| `CommandCenterHub.s6` "a refresh in flight keeps the label; one that FAILED takes it back…" | Q-S6-8 | **Flipped:** a failed refresh keeps the idea label; a companion row shows the Research panel still shows its own list's kept idea, its age and a Retry |
+| `CommandCenterHub.s6` "S5's `hub.ideaAccess` seam stands only while the reader holds nothing" | Q-S6-4 | Third part now needs nothing remembered (`forgetResearchAdmission()`), and a new part: a remembered refusal beats the seam |
+| `activityRows.idea.test.js` three rows | Q-S6-3 | Fixtures now carry distinct times (a real state change); the at-one-instant ordering row has one idea row; new rows for the new-idea case |
+
+New rows: the reader (12: nothing remembered before an answer; remembered after a success; across a list change, in the very render of the change; across a failed refresh with and without the old data; across a remount, in the first render; never written to storage; `disabled` replaces and is replaced; another account or epoch starts with nothing; signing out forgets; a late or superseded answer writes nothing; a malformed answer is not a success; React's double render and a colon in the list id); the hub (7: a list change, a remount, a refused account across a remount, another account, the panel unchanged, "Idea saved" alone, the fourth line in the panel and (d) deciding alone); the agreement file (2: the line against the real resolver over 1,463 lists; the predicate-versus-newest-version proof).
+
+### 13.5 Mutation (only the rows these rulings change)
+
+30 mutants, each a single edit in a `git archive` snapshot of `ad3fd8be` (LF, `node_modules` linked), each run against the targeted suites until one fails (the prompt's cap; the snapshot is removed, the link unlinked first). **29 killed, 1 survived — the survivor is equivalent.**
+
+| Ruling | Mutants | Result |
+|---|---|---|
+| Q-S6-1 | G01 the cut counts blanks; G02 never cut; G03 and G04 the cap one late / one early; G05 cut only when the thesis is not the idea; G07 (b) → (d) for every other thesis; G08 the panel wears (b) for (d); G09 a word of the copy | 8 killed |
+| Q-S6-2 | G10 the old `review_due` scan; G11 the predicate inverted; G12 the predicate dropped; G13 the newest-carriable condition dropped | G10, G11, G13 killed; **G12 survives: equivalent** |
+| Q-S6-3 | G14 the state row always; G15 only when later; G16 inverted; G17 compared as strings | 4 killed |
+| Q-S6-4, Q-S6-8 | G18 and G19 `lastAnswer` ignored (success / disabled); G20 the memory outranks a typed `disabled`; G21 it outranks the gate off; G22 and G23 the success / `disabled` not remembered; G24 `disabled` remembered as a success; G25 the memory ignores its owner; G26 the owner without the epoch; G28 never let go; G29 signed-out not let go; G30 a superseded answer writes; G31 keyed by the list; G32 `lastAnswer` dropped | 14 killed |
+
+**G12, why it survives.** `dueDeployPending` names a version only when the newest-deployed version is `review_due` with nothing carriable above it; once the newest version is `ready` or `activated` (a condition that stays) it is always null. `researchView.agreement.test.js` proves that over all 1,463 lists, so the predicate cannot change an answer today. It is kept because the ruling says to use it and because it keeps the rule from drifting if the newest-version condition (Q-S6-5 iii) is ever relaxed. Two further mutants (a near-duplicate of G01 and an off-by-one of the owner slice) were left out to stay at the cap.
+
+### 13.6 Checks on the merged tree
+
+{{CHECKS}}
+
+### 13.7 The smoke checklist, updated (replaces §10's items 3 and 4)
+
+1. Deploy card / phone Loadout tab: "Deploying with" now also shows for a **reaffirmed** idea (an older version due, a newer one Ready or Activated); it is still hidden when the newest version is itself due, a draft, or otherwise not Ready/Activated.
+2. The honest line: the fourth wording appears on a list whose thesis is longer than 200 characters (the dialogue-saved list from a long first idea is the usual one).
+3. Activity: a brand-new idea shows "Idea saved" alone; "Idea · {status}" appears after a real state change.
+4. Loadout label: switch the equipped list, or leave and come back from the Forge; the "Universe · N names" label does not flicker back to "N names" for the length of a read.
+
+### 13.8 Notes
+
+- **The admission memory is the reader's own module state**, not a new file: the copy guard's "one reader file" row, the single-service-import row and the mount guard's allowances all stand unedited, and `useHubResearch.js` writes the word `admitted` nowhere (it remembers `RESEARCH_READ.READY` / `DISABLED`; `researchAccessOf` maps them). `forgetResearchAdmission()` is exported for tests only, as the completed window's reset is.
+- **A late answer is not kept.** The completed window keeps a first read that lands after the hub unmounted (Amendment B); the admission does not: the reader drops an answer after the unmount or for a list the hub moved on from, and the next mount reads again anyway. Say so if you want it kept.
+- **S7's readout rows do not apply.** The prompt expects exactly the 14 by-design flag-on rows because S7's readout is not on `main`; §13.6 has the count.
+- **Console noise.** `CommandCenterHub.s4.jsdom.test.jsx` mounts the connected hub without mocking the idea service and prints seven `[CommandCenterHub] research read failed: … Failed to parse URL` lines from the reader's one request (the S2a, S2b, S3, S5 and S7 suites print none). It is a logged failure the reader handles (status `error`), not a failing row, and S4's suite is unedited by S6 or by this round. Nothing was edited to silence it.
+- **Smoke checklist:** §10's items 3 and 4 are replaced by §13.7; the rest of §10 stands.
+
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
