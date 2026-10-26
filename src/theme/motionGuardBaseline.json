@@ -501,6 +501,14 @@
       "count": 0,
       "authority": "Command Center hub S4 (rulings R-S4-1 \u2026 R-S4-5; founder ruling R-S1-2) \u2014 Activity, the next action and its Later, the brief and the activity sheet: no colour of its own and no motion, so zero raw transition literals from birth. Registered in the commit that introduces it."
     },
+    "src/components/CommandCenter/hub/researchView.js": {
+      "count": 0,
+      "authority": "Command Center hub S6 (rulings R-S6-2 \u2026 R-S6-7; founder ruling R-S1-2) \u2014 the idea reader and its derivations (researchView, useHubResearch): no colour of its own and no motion, so zero raw transition literals from birth. Registered in the commit that introduces them."
+    },
+    "src/components/CommandCenter/hub/useHubResearch.js": {
+      "count": 0,
+      "authority": "Command Center hub S6 (rulings R-S6-2 \u2026 R-S6-7; founder ruling R-S1-2) \u2014 the idea reader and its derivations (researchView, useHubResearch): no colour of its own and no motion, so zero raw transition literals from birth. Registered in the commit that introduces them."
+    },
     "src/components/CommandCenter/ShadowCanvas.jsx": {
       "count": 0,
       "authority": "Command Center hub S7 (spec V1.2 section 10; rulings R-S7-1 to R-S7-7; founder ruling R-S1-2) - Shadow moving: colours only through readToken, canvas drawing with no CSS transition or animation, zero raw transition literals from birth. Registered in the commit that introduces it."

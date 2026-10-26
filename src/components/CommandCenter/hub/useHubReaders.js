@@ -166,7 +166,8 @@ export default function useHubReaders(hub, deployAttempt = null, hubModalOpen = 
     liveRows,
     battles: completed.battles,
     rowsById,
-    firstDeployment: firstDeploymentOffer(inputs),
+    // R-S6-1: the offer survives a failed refresh that kept an empty window (`battles` is an array only once a read succeeded).
+    firstDeployment: firstDeploymentOffer(inputs, { windowHeld: Array.isArray(completed.battles) }),
     liveResolved: games.liveResolved,
   };
   const nextAction = deriveNextAction({ ...nextInputs, dismissed: later.dismissed });

@@ -135,10 +135,54 @@ export const HUB_COPY = Object.freeze({
   research: Object.freeze({
     summaryLoading: 'Checking your research',
     loading: 'Checking your research',
-    /** The Forge action. S6 wires it; in S1 it is disabled. */
+    /** The Forge action: the Forge's Lists area, where the idea is kept (slice S6; the hub writes nothing). */
     openForge: 'Open in the Forge',
     /** The panel's eyebrow, over its content (the design's header row). */
     ideas: 'Ideas',
+
+    // ── Slice S6 (spec §8.1's table, word for word where it quotes) ──────────
+    gateOff: "Research records aren't part of this release",
+    disabled: "Research records aren't available on this account",
+    noList: 'Equip a watchlist in the Forge to see its idea here',
+    noIdea: (list) => `No idea yet on ${list}`,
+    /** A positive pointer with no matching version: nothing else is picked in its place. */
+    pointerUnavailable: (list) => `The saved idea for ${list} isn't available`,
+    /** "Couldn't load your idea · Retry": the line, then the Retry link beside it. */
+    error: "Couldn't load your idea",
+    retry: 'Retry',
+    /** After a Retry pressed inside the 30 s wait: when it opens (spec §8.1; no timer, said at the press). */
+    retryAt: (time) => `You can try again at ${time}`,
+    /** Data kept through a failed refresh, said with its age (same owner and list only). */
+    asOf: (time) => `As of ${time} · couldn’t refresh`,
+    /** The list's name when none is known yet. */
+    thisList: 'your equipped list',
+    oneIdea: (list) => `1 idea on ${list}`,
+    version: (n) => `Version ${n}`,
+    savedOn: (date) => `Saved ${date}`,
+    statusSince: (date) => `Status since ${date}`,
+    /** The review-due idea's destination (the Forge's Lists area, where its review card lives). */
+    reviewInForge: 'Review in the Forge',
+    /** The stage's one-line area summary, for the states that have no status word of their own. */
+    summary: Object.freeze({
+      gateOff: 'Not in this release',
+      disabled: 'Not on this account',
+      noList: 'No list equipped',
+      noIdea: 'No idea yet',
+      pointerUnavailable: 'Unavailable',
+      error: 'Couldn’t load',
+    }),
+    /**
+     * Design note point 5, the honest line — the founder's four wordings (S6 rulings R-S6-6 and Q-S6-1), chosen per list by what
+     * the code shows reaches the agent (hub/researchView.js honestLineKindOf). Exactly these four strings may pair the agent
+     * with an idea (hubCopy.guard.test.js).
+     */
+    honest: Object.freeze({
+      thesisIsIdea: "Your agent gives this list's names priority and reads the idea as the list's thesis. It doesn't learn from your ideas or their reviews yet.",
+      thesisSaved: "Your agent gives this list's names priority and reads the thesis the list was saved with, not later versions of your idea. It doesn't learn from your ideas or their reviews yet.",
+      // Q-S6-1: the list's thesis is longer than the part of it the prompt carries (the first 200 characters).
+      thesisCut: "Your agent gives this list's names priority and reads only the start of the thesis the list was saved with, not later versions of your idea. It doesn't learn from your ideas or their reviews yet.",
+      noThesis: "Your agent gives this list's names priority. It doesn't read or learn from your ideas yet.",
+    }),
   }),
 
   loadout: Object.freeze({
@@ -335,6 +379,11 @@ export const HUB_COPY = Object.freeze({
     /** Slice S2b (ruling R-S2b-7): the Scouting Board's entry, the shells' own words (CommandDashboard.jsx). */
     scoutingBoard: 'See what it’s eyeing',
     /**
+     * Slice S6 (ruling R-S6-5; design note point 3): the Deploy card's idea line. `names` is the Loadout card's own count
+     * in its own words (loadout.names), so the two cards cannot disagree.
+     */
+    deployingWith: (statement, names) => `Deploying with: ${statement} · ${names}`,
+    /**
      * Slice S2b (ruling R-S2b-5; R1 Fable FR-2): the existing battle's owned read, on the card — reading it, and a read
      * that failed, with the time its Retry opens (a 30 s per-attempt wait). CeremonyExisting.jsx's own words for a
      * failed open.
@@ -421,6 +470,9 @@ export const HUB_COPY = Object.freeze({
     deployedSub: (mode, opponent) => `${mode} vs ${opponent}`,
     watchlistEquipped: (date) => `Watchlist equipped · since ${date}`,
     adjustmentEquipped: (date) => `Adjustment equipped · since ${date}`,
+    /** Slice S6 (spec §8.2): the current idea's two events; a revision is never a new idea. */
+    ideaSaved: 'Idea saved',
+    ideaState: (label) => `Idea · ${label}`,
     /** The activity sheet: the same list in full. */
     sheetLabel: 'Recent activity',
     sheetTitle: 'Recent activity',

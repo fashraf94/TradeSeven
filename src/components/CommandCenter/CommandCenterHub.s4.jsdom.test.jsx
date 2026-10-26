@@ -309,7 +309,6 @@ describe('the first deployment (spec §3.1; R-S4-2, R-S4-8)', () => {
     ['the completed read has games', () => { r.agent = agentReady({ gamesPlayed: 0 }); r.window = windowOf([done(1)], { reviews: {} }); }],
     ['the completed read has not answered', () => { r.agent = agentReady({ gamesPlayed: 0 }); r.window = windowOf(null, { status: 'loading', lastSuccessfulAt: null, generation: 0 }); }],
     ['the completed read failed and nothing is retained', () => { r.agent = agentReady({ gamesPlayed: 0 }); r.window = windowOf(null, { status: 'error', error: new Error('x'), lastSuccessfulAt: null, generation: 0 }); }],
-    ['an empty window whose latest read failed (a failure is never an empty history)', () => { r.agent = agentReady({ gamesPlayed: 0 }); r.window = windowOf([], { status: 'error', error: new Error('x') }); }],
     ['the agent has not answered', () => { r.agent = agentReady({ gamesPlayed: 0 }, { status: 'loading', agent: null }); r.window = windowOf([]); }],
     ['the agent read failed', () => { r.agent = agentReady({ gamesPlayed: 0 }, { status: 'error', agent: null, readError: new Error('x') }); r.window = windowOf([]); }],
   ])('not offered when %s', (_, arrange) => {
@@ -330,14 +329,32 @@ describe('the first deployment (spec §3.1; R-S4-2, R-S4-8)', () => {
     expect(nextCard()).toBeNull();
   });
 
-  it('a window kept from an earlier visit (empty, "as of" its read) counts, as Games shows the same empty history; one whose refresh failed does not', () => {
+  it('a window kept from an earlier visit (empty, "as of" its read) counts, as Games shows the same empty history; so does one whose refresh failed (Q-S4-13)', () => {
     firstTime({ window: { carried: true } });
     render('desktop', hubOf());
     expect(nextKind()).toBe('deploy');
     unmountAll();
+    // R-S6-1 (Q-S4-13) restated this half: a failed refresh that kept the empty window no longer takes the offer away.
     firstTime({ window: { carried: true, status: 'error', error: new Error('x') } });
     render('desktop', hubOf());
-    expect(nextCard()).toBeNull();
+    expect(nextKind()).toBe('deploy');
+  });
+
+  // R-S6-1 (Q-S4-13) restated the pin that said "a failure is never an empty history" for this card: a failed REFRESH that
+  // kept the last good window leaves the offer standing while the window is still empty and the owner is the same; a first read
+  // that failed with nothing retained (the row above) still offers nothing.
+  it('an empty window whose latest read failed is still offered: the refresh failed, the history did not change (Q-S4-13)', () => {
+    r.agent = agentReady({ gamesPlayed: 0 });
+    r.window = windowOf([], { status: 'error', error: new Error('x') });
+    render('desktop', hubOf());
+    expect(nextKind()).toBe('deploy');
+  });
+
+  it('a kept window that is no longer empty withdraws it', () => {
+    r.agent = agentReady({ gamesPlayed: 0 });
+    r.window = windowOf([done(1)], { status: 'error', error: new Error('x') });
+    render('desktop', hubOf());
+    expect(nextKind()).not.toBe('deploy');
   });
 });
 

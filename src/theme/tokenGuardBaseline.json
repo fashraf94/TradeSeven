@@ -172,6 +172,8 @@
     "src/components/CommandCenter/hub/nextAction.js": {},
     "src/components/CommandCenter/hub/useHubBrief.js": {},
     "src/components/CommandCenter/hub/useHubLater.js": {},
+    "src/components/CommandCenter/hub/researchView.js": {},
+    "src/components/CommandCenter/hub/useHubResearch.js": {},
     "src/components/CommandCenter/ShadowCanvas.jsx": {},
     "src/components/CommandCenter/hub/shadowBloom.js": {},
     "src/components/CommandCenter/hub/shadowCanvas.js": {},

@@ -24,9 +24,14 @@
 //                         area (the Forge cannot open on a particular list) and `returnTo` is
 //                         not read at all, so no label may promise either.
 //   hub.ideaAccess        optional: 'admitted' | 'not_admitted' | 'unknown' (hub/selectors/loadout.js
-//                         IDEA_ACCESS). App passes none in S5, so it is 'unknown' and the watchlist card
-//                         reads the neutral "N names" for everyone (founder ruling Q-S5-4a); slice S6 supplies
-//                         the server's answer from its gated reader. Anything else reads as 'unknown'.
+//                         IDEA_ACCESS). App passes none, and the watchlist card reads the neutral "N names"
+//                         unless the hub is told the player is admitted (founder ruling Q-S5-4a). Since slice S6
+//                         (ruling R-S6-4) that answer comes from the hub's own idea reader (`researchRead`,
+//                         hub/useHubResearch.js through hub/researchView.js researchAccessOf) whenever the reader
+//                         holds one; this key stands only while it holds nothing (a frame, a suite with no
+//                         reader). Anything else reads as 'unknown'.
+//   researchRead          the idea reader's answer (slice S6): the Research section, "Deploying with", the idea
+//                         labels and Activity's idea rows are derived from it here, with the Loadout's list.
 //
 // With no `hub` (a test of the frames, the S1 fixtures) nothing here reads or
 // derives anything: the sections pass through untouched and every S5 action is
@@ -48,12 +53,13 @@ import { CLASHBOT_OPEN_EVENT } from '../../ClashBot/ClashBotWidget';
 import { getEquipSlots } from '../../../utils/equipSlots';
 import { getTraitSlotSummary } from '../../../utils/traitSlotSummary';
 import { FORGE_AREAS, FORGE_RETURN } from '../hubChrome';
-import { activitySectionOf, loadoutKnowledgeOf } from './activityRows';
+import { activitySectionOf, ideaKnowledgeOf, loadoutKnowledgeOf } from './activityRows';
 import { archetypeLines } from './archetypeLines';
 import { hubFlags } from './hubFlags';
 import { useHubModalOpen } from './HubOverlays';
 import { loadoutLineOf } from './loadoutLine';
-import { deriveCareer, deriveLoadout, ideaAccessOf, LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
+import { deployingWithOf, deriveResearch, ideaActivityOf, ideaPointerOf, researchAccessOf } from './researchView';
+import { deriveCareer, deriveLoadout, ideaAccessOf, IDEA_ACCESS, LOADOUT_STATUS, WATCHLIST_STATE } from './selectors/loadout';
 import { useHubLoadout } from './useHubLoadout';
 import { HUB_SHEETS, useHubSheets } from './useHubSheets';
 
@@ -67,7 +73,7 @@ export function reportBug() {
   window.dispatchEvent(new Event(CLASHBOT_OPEN_EVENT));
 }
 
-export function useHubRuntime({ hub, agentRead = null, sections, rootRef }) {
+export function useHubRuntime({ hub, agentRead = null, sections, rootRef, researchRead = null }) {
   const live = hub != null;
   const agent = live ? agentRead?.agent ?? null : null;
   // The read's own statuses ('loading' | 'ready' | 'error'); no read handed (a frame given `hub` alone) is a read
@@ -86,8 +92,14 @@ export function useHubRuntime({ hub, agentRead = null, sections, rootRef }) {
   const modalOpen = useHubModalOpen();
 
   let merged = sections;
+  let research = null;
   if (live) {
     const flags = hubFlags();
+    // Slice S6 (ruling R-S6-4): whether the player is admitted to idea records comes from the idea reader (hub/useHubResearch.js)
+    // once it holds an answer for this owner and list. `hub.ideaAccess` — S5's input, which App never sets — stands only
+    // while the reader holds nothing (no reader, or none yet).
+    const readerAccess = researchAccessOf(researchRead);
+    const ideaAccess = readerAccess !== IDEA_ACCESS.UNKNOWN ? readerAccess : ideaAccessOf(hub.ideaAccess);
     const loadout = deriveLoadout({
       agent,
       agentLoading,
@@ -100,12 +112,22 @@ export function useHubRuntime({ hub, agentRead = null, sections, rootRef }) {
       listsReadFor: lists.readFor,
       activeAgentBattles: hub.activeBattles,
       ...flags,
-      ideaAccess: ideaAccessOf(hub.ideaAccess),
+      ideaAccess,
+      // Slice S6 (BUILD_RULES §9): the label's pointer is the idea reader's once it holds the list's answer.
+      ideaPointer: ideaPointerOf(researchRead),
     });
+    // The equipped list's own document (its `thesis` decides the honest line), once the lists have it among the committed ones.
+    const listId = loadout.status === LOADOUT_STATUS.READY ? loadout.watchlist?.id : null;
+    const listDoc = listId ? lists.committed.find((list) => list?.watchlistId === listId) ?? null : null;
+    research = researchRead ? deriveResearch({ read: researchRead, loadout, listDoc }) : null;
+    const watchlistCard = loadout.status === LOADOUT_STATUS.READY ? loadout.watchlist : null;
     merged = {
       ...sections,
       loadout: loadout.status === LOADOUT_STATUS.READY ? { ...loadout, summary: loadoutLineOf(loadout) } : loadout,
       career: deriveCareer({ agent, agentLoading }),
+      // Slice S6: the Research panel's section and the Deploy card's idea line, both from the one held answer (hub/researchView.js).
+      // With no reader (a frame, a suite that stands one in) the sections are what they were handed.
+      ...(research ? { research, deployingWith: deployingWithOf({ read: researchRead, watchlist: watchlistCard, listDoc, nowMs: Date.now() }) } : null),
       // Slice S4 (R-S4-1): Activity's loadout rows are the Loadout's own — the equipped list as the card resolved it (found among the
       // committed lists, under the name the card shows), the archetype's name — so the list and the card cannot disagree
       // (BUILD_RULES §9), and an empty list is not "nothing recorded" while the loadout is still unknown.
@@ -118,7 +140,9 @@ export function useHubRuntime({ hub, agentRead = null, sections, rootRef }) {
             : null,
           archetypeName: loadout.status === LOADOUT_STATUS.READY ? loadout.archetype?.name ?? null : null,
           characterTab: flags.characterTab,
-          knowledge: loadoutKnowledgeOf(loadout),
+          // Slice S6: the current idea's two rows, and the reader joined to what is still unknown (H-4: "Nothing recorded yet" waits).
+          idea: researchRead ? ideaActivityOf({ read: researchRead, watchlist: watchlistCard }) : null,
+          knowledge: loadoutKnowledgeOf(loadout, ideaKnowledgeOf(research)),
         }),
       } : null),
     };
@@ -133,7 +157,11 @@ export function useHubRuntime({ hub, agentRead = null, sections, rootRef }) {
   const closeSheet = () => {
     const was = sheets.sheet;
     sheets.close();
-    if (was === HUB_SHEETS.WATCHLIST) lists.refresh();
+    // Slice S6 (ruling R-S6-2): the return from the watchlist sheet also reads the idea once more, even when the equipped id is unchanged.
+    if (was === HUB_SHEETS.WATCHLIST) {
+      lists.refresh();
+      researchRead?.invalidate?.();
+    }
   };
   const forgeDoor = (request) => (canForge ? () => { sheets.close(); hub.onOpenForge(request); } : undefined);
 
@@ -147,6 +175,12 @@ export function useHubRuntime({ hub, agentRead = null, sections, rootRef }) {
     openForgeLists: ready ? forgeDoor({ area: FORGE_AREAS.LISTS, returnTo: FORGE_RETURN.DASHBOARD }) : undefined,
     openForgeCharacter: ready && loadout.adjustments ? forgeDoor({ area: FORGE_AREAS.CHARACTER, returnTo: FORGE_RETURN.DASHBOARD }) : undefined,
     retryLists: ready ? lists.retry : undefined,
+    // Slice S6: the Research panel's Forge action opens the Lists area, where the idea is kept (the Forge cannot open on a particular
+    // list, so no label promises one), and its Retry is the reader's — or the agent's own, while the agent's read is what failed.
+    openResearchForge: forgeDoor({ area: FORGE_AREAS.LISTS, returnTo: FORGE_RETURN.DASHBOARD }),
+    retryResearch: !live || !researchRead ? undefined
+      : loadout?.status === LOADOUT_STATUS.ERROR ? (typeof agentRead?.retry === 'function' ? agentRead.retry : undefined)
+        : researchRead.retry,
     // The agent read's own Retry, offered only by its error state (S5 report N-S5-6).
     retryAgent: live && loadout?.status === LOADOUT_STATUS.ERROR && typeof agentRead?.retry === 'function' ? agentRead.retry : undefined,
     openProfile: live && typeof hub.setScreen === 'function' ? () => hub.setScreen('profile') : undefined,

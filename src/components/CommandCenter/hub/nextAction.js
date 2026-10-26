@@ -33,10 +33,23 @@ export const FIRST_DEPLOYMENT_KEY = 'deploy:first';
  * is charging or locked makes the selector's canStart false for every OTHER control (the owner's matching token is exempted from
  * its own block only by canCommit); the card whose hold is being pressed must not leave under the finger, or the panel unmounts
  * mid-charge (the hub's "keep panels mounted while charging", spec §5.5). Every other block still holds — an unresolved
- * attempt, a live game, a cooldown, a failed or stale read — so the card goes when the deployment is actually under way.
+ * attempt, a live game, a cooldown, a window that is not empty or never read — so the card goes when the deployment is
+ * actually under way.
+ *
+ * Two founder rulings of slice S6 (R-S6-1) move the card's staying power:
+ *   Q-S4-12  an open hub sheet (`modalOpen`) is set aside too. The card stays mounted behind the scrim; its hold is the
+ *            disabled one the strip's and the Deploy card's are, because the deploy state it is drawn from still has
+ *            `modalOpen` and so a false canStart (sections/NextActionCard.jsx).
+ *   Q-S4-13  a failed refresh of the completed read that kept the last good window does not take the offer away while that
+ *            window is still EMPTY and the owner is unchanged. `windowHeld` says the reader holds a window at all
+ *            (`completed.battles` is an array): the input's `rows: []` reads the same for a first read that never
+ *            succeeded, which is still no offer. A non-empty window, an owner or epoch change (the selector's own owner
+ *            test) and a window never read all still withdraw it. The hold's own canCommit at the threshold stays the safety.
  */
-export function firstDeploymentOffer(inputs) {
-  return firstDeploymentCandidate({ ...inputs, hold: null });
+export function firstDeploymentOffer(inputs, { windowHeld = false } = {}) {
+  const completed = inputs?.completed;
+  const kept = windowHeld === true && completed?.status === 'error' && Array.isArray(completed.rows) && completed.rows.length === 0;
+  return firstDeploymentCandidate({ ...inputs, completed: kept ? { ...completed, status: 'ready' } : completed, hold: null, modalOpen: false });
 }
 
 /** The Later key of an action on a record. The first deployment has no record: its key is the one. */

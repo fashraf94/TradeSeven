@@ -91,7 +91,7 @@ const nonEmpty = (value) => (typeof value === 'string' && value.trim() !== '' ? 
  * not yet an answer and the card reads `loading` while the read for it is in
  * flight. Left out (undefined), the lists are taken to be current.
  */
-export function deriveWatchlist({ agent, committed, listsStatus, listsReadFor, hypothesisRecordsOn, ideaAccess }) {
+export function deriveWatchlist({ agent, committed, listsStatus, listsReadFor, hypothesisRecordsOn, ideaAccess, ideaPointer }) {
   const id = nonEmpty(agent?.equippedWatchlistId);
   const base = { id, name: null, symbols: [], count: 0, idea: IDEA_LABEL.NEUTRAL };
   if (!id) return { ...base, state: WATCHLIST_STATE.NONE };
@@ -110,7 +110,10 @@ export function deriveWatchlist({ agent, committed, listsStatus, listsReadFor, h
     name: nonEmpty(found.name) || stored,
     symbols,
     count: symbols.length,
-    idea: ideaLabelKind(found, hypothesisRecordsOn, ideaAccess),
+    // Slice S6 (BUILD_RULES §9): once the idea reader holds this list's answer, the label wears ITS pointer — the one the Research
+    // panel, "Deploying with" and Activity read — not the list document's, which can lag it (the two refresh apart). Without one
+    // (a frame, a reader with nothing held) the list document's pointer stands, as in S5.
+    idea: ideaLabelKind(ideaPointer && ideaPointer.listId === id ? { ...found, currentHypothesisVersion: ideaPointer.version } : found, hypothesisRecordsOn, ideaAccess),
     state: WATCHLIST_STATE.READY,
   };
 }
@@ -155,10 +158,11 @@ export function equipLockOf({ agent, activeAgentBattles, concurrencyEnabled }) {
  * @param {boolean} p.concurrencyEnabled CASUAL_CLONE_CONCURRENCY_ENABLED
  * @param {boolean} p.hypothesisRecordsOn HYPOTHESIS_RECORDS_ENABLED
  * @param {string}  p.ideaAccess         IDEA_ACCESS: S5 passes UNKNOWN (the neutral label); S6 supplies the server's answer
+ * @param {{ listId: string, version: (number|null) }} [p.ideaPointer]  slice S6: the idea reader's pointer for the equipped list (null = no idea), when it holds one
  * @param {boolean} p.characterTab       RELEASE3_CHARACTER_TAB_ENABLED: the Forge's `traits` area is then "Character"
  */
 export function deriveLoadout({
-  agent, agentLoading, agentFailed, archetype, slots, adjustments, committed, listsStatus, listsReadFor, activeAgentBattles, concurrencyEnabled, hypothesisRecordsOn, ideaAccess, characterTab,
+  agent, agentLoading, agentFailed, archetype, slots, adjustments, committed, listsStatus, listsReadFor, activeAgentBattles, concurrencyEnabled, hypothesisRecordsOn, ideaAccess, ideaPointer, characterTab,
 }) {
   if (!agent) {
     if (agentLoading === true) return { status: LOADOUT_STATUS.LOADING };
@@ -170,7 +174,7 @@ export function deriveLoadout({
     status: LOADOUT_STATUS.READY,
     identity: { name: nonEmpty(agent.name) },
     archetype,
-    watchlist: deriveWatchlist({ agent, committed, listsStatus, listsReadFor, hypothesisRecordsOn, ideaAccess }),
+    watchlist: deriveWatchlist({ agent, committed, listsStatus, listsReadFor, hypothesisRecordsOn, ideaAccess, ideaPointer }),
     // Only where the shells have the slot (TRAIT_SLOT_ENABLED): getEquipSlots decides, as it does for them.
     // `door` names the Forge area the adjustments' Forge action opens: the same `traits` area, whose tab reads
     // "Character" only while RELEASE3_CHARACTER_TAB_ENABLED is on (ForgeWorkshop.jsx navItems).

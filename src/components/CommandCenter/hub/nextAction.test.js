@@ -223,20 +223,87 @@ describe('the first-deployment offer holds its card under the owner\'s own hold 
     expect(firstDeploymentOffer(first({ hold: { ...HOLD, phase } }))).toBe(true);
   });
 
-  it('every OTHER block still takes it away: an attempt under way, a cooldown, a live game, a failed or non-empty read, an agent that has played', () => {
+  it('every OTHER block still takes it away: an attempt under way, a cooldown, a live game, a read never made or a non-empty one, an agent that has played', () => {
     expect(firstDeploymentOffer(first({ attempt: attemptFor('submitting') }))).toBe(false);
     expect(firstDeploymentOffer(first({ cooldown: COOLDOWN }))).toBe(false);
     expect(firstDeploymentOffer(first({ poll: { ...first().poll, liveBattles: [BATTLES.baggerbomb] } }))).toBe(false);
+    // R-S6-1 (Q-S4-13) restated this pin: a failed read with NO window ever held is still no offer — the input's empty rows
+    // read the same for it as for a kept empty window, which is why the reader says whether it holds one.
     expect(firstDeploymentOffer(first({ completed: completedReady([], { status: 'error' }) }))).toBe(false);
+    expect(firstDeploymentOffer(first({ completed: completedReady([], { status: 'error' }) }), { windowHeld: false })).toBe(false);
     expect(firstDeploymentOffer(first({ completed: completedReady([{ id: 'done_1' }]) }))).toBe(false);
     expect(firstDeploymentOffer(base({ agent: agentReady({ agent: { id: 'agent-a', stats: { gamesPlayed: 3 } } }), completed: completedReady([]) }))).toBe(false);
-    expect(firstDeploymentOffer(first({ modalOpen: true }))).toBe(false);
   });
 
   it('it does not change what it is given', () => {
-    const given = first({ hold: HOLD });
+    const given = first({ hold: HOLD, modalOpen: true });
     firstDeploymentOffer(given);
     expect(given.hold).toBe(HOLD);
+    expect(given.modalOpen).toBe(true);
+  });
+});
+
+describe('R-S6-1 · Q-S4-12: a hub sheet that opens does not withdraw the first-deployment card', () => {
+  const first = (over = {}) => base({ agent: agentReady({ agent: { id: 'agent-a', stats: { gamesPlayed: 0 } } }), completed: completedReady([]), ...over });
+
+  it('the offer stands with a sheet open — the pin that said a modal takes it away is restated', () => {
+    expect(firstDeploymentOffer(first())).toBe(true);
+    expect(firstDeploymentOffer(first({ modalOpen: true }))).toBe(true);
+    // The selector alone still says no: the card's own hold stays disabled through it (the deploy state keeps modalOpen).
+    expect(firstDeploymentCandidate(first({ modalOpen: true }))).toBe(false);
+  });
+
+  it('every other block still holds under an open sheet: an attempt, a cooldown, a live game', () => {
+    expect(firstDeploymentOffer(first({ modalOpen: true, attempt: attemptFor('submitting') }))).toBe(false);
+    expect(firstDeploymentOffer(first({ modalOpen: true, cooldown: COOLDOWN }))).toBe(false);
+    expect(firstDeploymentOffer(first({ modalOpen: true, poll: { ...first().poll, liveBattles: [BATTLES.baggerbomb] } }))).toBe(false);
+  });
+});
+
+describe('R-S6-1 · Q-S4-13: a failed refresh that kept an empty window does not withdraw the offer', () => {
+  const first = (over = {}) => base({ agent: agentReady({ agent: { id: 'agent-a', stats: { gamesPlayed: 0 } } }), completed: completedReady([]), ...over });
+  const held = { windowHeld: true };
+  const failed = (over = {}) => first({ completed: completedReady([], { status: 'error', ...over }) });
+
+  it('a kept, still-empty window of the same owner keeps the offer through a failed refresh', () => {
+    expect(firstDeploymentOffer(failed(), held)).toBe(true);
+    // ...with the owner's hold charging, which is the case the ruling is for.
+    expect(firstDeploymentOffer(failed({}), held)).toBe(true);
+    expect(firstDeploymentOffer(first({ hold: HOLD, completed: completedReady([], { status: 'error' }) }), held)).toBe(true);
+  });
+
+  it('a window never read (no window held) is not an empty one: no offer', () => {
+    expect(firstDeploymentOffer(failed(), { windowHeld: false })).toBe(false);
+    expect(firstDeploymentOffer(failed())).toBe(false);
+  });
+
+  it('a non-empty window withdraws it, failed or not', () => {
+    expect(firstDeploymentOffer(first({ completed: completedReady([{ id: 'done_1' }], { status: 'error' }) }), held)).toBe(false);
+    expect(firstDeploymentOffer(first({ completed: completedReady([{ id: 'done_1' }]) }), held)).toBe(false);
+  });
+
+  it('an owner or epoch change withdraws it: the held window belongs to the former owner', () => {
+    expect(firstDeploymentOffer(failed({ ownerUid: 'uid-B' }), held)).toBe(false);
+    expect(firstDeploymentOffer(failed({ ownerEpoch: 99 }), held)).toBe(false);
+    expect(firstDeploymentOffer(failed({ ownerUid: null, ownerEpoch: null }), held)).toBe(false);
+  });
+
+  it('a read still loading, or one that never settled, is not a kept window', () => {
+    expect(firstDeploymentOffer(first({ completed: completedReady([], { status: 'loading' }) }), held)).toBe(false);
+  });
+
+  it('every other block holds: an attempt, a cooldown, a live game, an agent that has played', () => {
+    expect(firstDeploymentOffer(failed({}), held)).toBe(true);
+    expect(firstDeploymentOffer({ ...failed(), attempt: attemptFor('submitting') }, held)).toBe(false);
+    expect(firstDeploymentOffer({ ...failed(), cooldown: COOLDOWN }, held)).toBe(false);
+    expect(firstDeploymentOffer({ ...failed(), poll: { ...first().poll, liveBattles: [BATTLES.baggerbomb] } }, held)).toBe(false);
+    expect(firstDeploymentOffer({ ...failed(), agent: agentReady({ agent: { id: 'agent-a', stats: { gamesPlayed: 3 } } }) }, held)).toBe(false);
+  });
+
+  it('it does not change what it is given', () => {
+    const given = failed();
+    firstDeploymentOffer(given, held);
+    expect(given.completed.status).toBe('error');
   });
 });
 

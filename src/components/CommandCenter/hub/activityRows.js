@@ -21,7 +21,12 @@
 //                                     taken back to draft is not equipped to any game)
 //             loadout:adjustment:{id} at that standing lean's recorded `equippedAt`,
 //                                     for the leans a game would carry
-//             (idea rows are S6's: the idea reader is its)
+//             idea.created:{list}:v{n} at the CURRENT idea's recorded `createdAt` ("Idea saved") and
+//             idea.state:{list}:v{n}:{status} at its `stateChangedAt` ("Idea · {recorded status}"), for the one
+//                                     version the list's pointer names, once the idea reader (slice S6,
+//                                     hub/researchView.js ideaActivityOf) holds it. A revision is a new version of
+//                                     the same idea, never a new idea: only the version the pointer names has rows,
+//                                     so a list with four versions lists one idea's two events, not four ideas'
 //   times     one normalizer (hubDate.js hubMs), shown as absolute ET, with the year
 //             when it is not this year's. A record with no readable time yields NO
 //             row, and a loadout row exists only where an equip time is recorded:
@@ -75,6 +80,31 @@ function acceptedLeans(agent) {
   }
 }
 
+/**
+ * The current idea's two events (spec §8.2; slice S6). `idea` is hub/researchView.js ideaActivityOf's descriptor: the pointer's
+ * version, with the times the record holds. A time that cannot be read yields no row, and a status with no label yields no state
+ * row: nothing is invented. Both rows are the version's, so a later version is a different pair of ids. The state row appears only
+ * when the state time differs from the saved time — a real state change happened (Q-S6-3); a brand-new idea shows "Idea saved"
+ * alone.
+ */
+function ideaEvents(idea, { nowMs }) {
+  if (!idea || typeof idea !== 'object') return [];
+  const list = nonEmpty(idea.listId);
+  if (!list || !Number.isSafeInteger(idea.version) || idea.version < 1) return [];
+  const sub = nonEmpty(idea.listName) || COPY.loadout.watchlistFallback;
+  const events = [];
+  const createdMs = hubMs(idea.createdAt);
+  if (createdMs !== null) {
+    events.push({ ms: createdMs, kind: ACTIVITY_KINDS.IDEA, id: `idea.created:${list}:v${idea.version}`, text: COPY.activity.ideaSaved, sub });
+  }
+  const stateMs = hubMs(idea.stateChangedAt);
+  const status = nonEmpty(idea.status);
+  if (stateMs !== null && stateMs !== createdMs && status && nonEmpty(idea.statusLabel)) {
+    events.push({ ms: stateMs, kind: ACTIVITY_KINDS.IDEA, id: `idea.state:${list}:v${idea.version}:${status}`, text: COPY.activity.ideaState(idea.statusLabel), sub });
+  }
+  return events;
+}
+
 /** The loadout's recorded equips: the equipped watchlist the card resolved, and the accepted standing leans. */
 function loadoutEvents(agent, { archetypeName, characterTab, watchlist, nowMs }) {
   const events = [];
@@ -123,10 +153,11 @@ function loadoutEvents(agent, { archetypeName, characterTab, watchlist, nowMs })
  *                                    among the committed lists (state `ready`); anything else leaves no watchlist row
  * @param {string|null} [p.archetypeName]
  * @param {boolean}  [p.characterTab] RELEASE3_CHARACTER_TAB_ENABLED
+ * @param {object|null} [p.idea]      the current idea's descriptor (hub/researchView.js ideaActivityOf), once the idea reader holds it
  * @param {number}   [p.nowMs]        the clock, for the year of a time from another year
  * @returns {{ status: 'ready', rows: object[] }}
  */
-export function deriveActivity({ battles, live, rowsById, agent = null, watchlist = null, archetypeName = null, characterTab = false, nowMs }) {
+export function deriveActivity({ battles, live, rowsById, agent = null, watchlist = null, archetypeName = null, characterTab = false, idea = null, nowMs }) {
   const windowDocs = (Array.isArray(battles) ? battles : []).filter((doc) => doc && typeof doc.id === 'string');
   const liveDocs = (Array.isArray(live) ? live : []).filter((doc) => doc && typeof doc.id === 'string');
   const liveIds = new Set(liveDocs.map((doc) => doc.id));
@@ -169,6 +200,7 @@ export function deriveActivity({ battles, live, rowsById, agent = null, watchlis
   }
 
   if (agent && typeof agent === 'object') events.push(...loadoutEvents(agent, { archetypeName, characterTab, watchlist, nowMs }));
+  events.push(...ideaEvents(idea, { nowMs }));
 
   const ordered = events
     .filter((event) => event.ms >= cutoff)
@@ -196,14 +228,35 @@ export function deriveActivity({ battles, live, rowsById, agent = null, watchlis
 /** What the loadout side of the list is: still unknown (loading), failed, or settled — present or genuinely absent. */
 export const LOADOUT_KNOWLEDGE = Object.freeze({ PENDING: 'pending', FAILED: 'failed', SETTLED: 'settled' });
 
-/** The Loadout section's status and its watchlist card's state, as how much of the loadout is known. */
-export function loadoutKnowledgeOf(loadout) {
+/**
+ * The Loadout section's status and its watchlist card's state, as how much of the loadout is known — joined (slice S6) to how
+ * much of the current idea is: `ideas` is ideaKnowledgeOf(the Research section). The list is "nothing recorded" only when
+ * neither is still unknown (H-4), so an idea row that may yet arrive is waited for.
+ */
+export function loadoutKnowledgeOf(loadout, ideas = LOADOUT_KNOWLEDGE.SETTLED) {
+  const own = loadoutOwnKnowledgeOf(loadout);
+  if (own !== LOADOUT_KNOWLEDGE.SETTLED) return own;
+  return ideas === LOADOUT_KNOWLEDGE.PENDING || ideas === LOADOUT_KNOWLEDGE.FAILED ? ideas : LOADOUT_KNOWLEDGE.SETTLED;
+}
+
+function loadoutOwnKnowledgeOf(loadout) {
   if (!loadout) return LOADOUT_KNOWLEDGE.SETTLED;
   if (loadout.status === LOADOUT_STATUS.LOADING) return LOADOUT_KNOWLEDGE.PENDING;
   if (loadout.status === LOADOUT_STATUS.ERROR) return LOADOUT_KNOWLEDGE.FAILED;
   const state = loadout.watchlist?.state;
   if (state === WATCHLIST_STATE.LOADING) return LOADOUT_KNOWLEDGE.PENDING;
   if (state === WATCHLIST_STATE.ERROR) return LOADOUT_KNOWLEDGE.FAILED;
+  return LOADOUT_KNOWLEDGE.SETTLED;
+}
+
+/**
+ * How much of the current idea is known, from the Research section's state (hub/researchView.js RESEARCH_STATE): its reader
+ * still out is pending, a failed one with nothing held is failed; every settled answer — an idea, none, no list, a gate that is
+ * off, an account the server does not admit — is a settled one. (The state words are written here as the section holds them.)
+ */
+export function ideaKnowledgeOf(research) {
+  if (research?.status === 'loading') return LOADOUT_KNOWLEDGE.PENDING;
+  if (research?.status === 'error') return LOADOUT_KNOWLEDGE.FAILED;
   return LOADOUT_KNOWLEDGE.SETTLED;
 }
 
@@ -215,12 +268,12 @@ export function loadoutKnowledgeOf(loadout) {
  * so a list built from a kept or a failed-to-refresh window says so as Games does.
  */
 export function activitySectionOf({
-  battles, failed = false, live, rowsById, agent, watchlist, archetypeName, characterTab, nowMs, knowledge = LOADOUT_KNOWLEDGE.SETTLED, windowAge = null,
+  battles, failed = false, live, rowsById, agent, watchlist, archetypeName, characterTab, idea = null, nowMs, knowledge = LOADOUT_KNOWLEDGE.SETTLED, windowAge = null,
 }) {
   if (battles === null || battles === undefined) {
     return Object.freeze({ status: failed ? 'error' : 'loading', rows: Object.freeze([]) });
   }
-  const section = deriveActivity({ battles, live, rowsById, agent, watchlist, archetypeName, characterTab, nowMs });
+  const section = deriveActivity({ battles, live, rowsById, agent, watchlist, archetypeName, characterTab, idea, nowMs });
   if (section.rows.length === 0 && knowledge !== LOADOUT_KNOWLEDGE.SETTLED) {
     return Object.freeze({ status: knowledge === LOADOUT_KNOWLEDGE.FAILED ? 'error' : 'loading', rows: section.rows });
   }
