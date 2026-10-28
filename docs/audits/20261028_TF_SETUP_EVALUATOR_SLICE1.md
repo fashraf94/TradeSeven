@@ -11,8 +11,8 @@ Every number below carries its class: **recorded** (read from a stored record or
 | **Status** | **Draft PR pushed, STOP.** Nothing merged, nothing deployed, no flag, no cron, no writer, no live use, no production capture read. (The push and PR state are in §19.) |
 | Branch and head | Local branch `claude/measured-trend-evidence-slice-1-1c45de` (the desktop app's worktree name, cut at `origin/main` `24495eba`), pushed by refspec as the prompt's `claude/tf-setup-evaluator-slice1`. Code head: `e7907900` — the review fix round is `c9c02fc4` (+ `f3ae1bd1`), the mutating lens's test round `a2264f48` (+ `d04e2918`, `e7907900`); the source modules have not changed since `c9c02fc4`. The commits after it carry this report and its README row (§19). |
 | Preamble | `git fetch origin` first; `origin/main` = `24495eba` (26 Oct, the #998 merge), unchanged through the build; working tree clean at the start; every §2 anchor VERIFIED (§2); no STOP condition held. |
-| Slice 1 required items (V3 §1) | 1 thresholds and identity: built (§4). 2 the pure entry and holding evaluator: built (§5). 3 the rule-agnostic daily-bars adapter: built (§6). 4 tests, golden, baseline, mutation: 354 rows in seven new files, all green on Windows and Linux; 70 of 70 mutants killed (§8, §9). 5 the first replay over the saved 13 Oct capture: run, 29 of the 60 allowed EODHD calls, reported as coverage with ten receipts (§10). 6 this report with the review record (§17) and the docs commit (§11). |
-| Engineering correctness | Every defined rule and unknown path has a row asserting its correct result; every synthetic scenario (49) reproduces its complete record from the committed golden; the verdict recomputed from each record's own `checks` and `patterns` equals the record's; 70 mutants each red at least one row (§9). |
+| Slice 1 required items (V3 §1) | 1 thresholds and identity: built (§4). 2 the pure entry and holding evaluator: built (§5). 3 the rule-agnostic daily-bars adapter: built (§6). 4 tests, golden, baseline, mutation: 358 rows in seven new files, all green on Windows and Linux; 79 of 79 mutants killed (§8, §9). 5 the first replay over the saved 13 Oct capture: run, 29 of the 60 allowed EODHD calls, reported as coverage with ten receipts (§10). 6 this report with the review record (§17) and the docs commit (§11). |
+| Engineering correctness | Every defined rule and unknown path has a row asserting its correct result; every synthetic scenario (49) reproduces its complete record from the committed golden; the verdict recomputed from each record's own `checks` and `patterns` equals the record's; 79 mutants each red at least one row (§9). |
 | Golden baseline | **Initial baseline creation.** The base revision carries no evaluator, golden or baseline, so the cross-revision check reports `mode: initial`, verifies the working tree's own integrity and claims no historical comparison. The rejection cases (a changed golden under an unchanged id, a rewritten or removed history entry, a sha mismatch at either ref, an id change without a new entry, a thresholds-hash change without a new `setupVersion`) are proven on controlled fixtures (19 rows) and by mutant M20 on the real files (§7, §9). The single entry was re-recorded during the build (after the review fix round and after the mutating lens's scenarios), before any base revision carried it (§7). |
 | Replay coverage | 486 woken Trend Follower checks, 33 proposed and 14 executed swap-ins (all 14 coincide with their proposals), 18 incoming and 16 outgoing names, 29 battles; **33 moments** (one row per moment), 36 (symbol, asOf, role) pairs. Entry verdicts by pair: 3 `valid/pullback_resume`, 10 `invalid(regime)`, 5 `invalid(no_setup)`, 1 `unknown(basis_discontinuity)`. Data-unknown share 1 of 19 equity entry pairs = **5.3%**, within the one-quarter limit (§10). |
 | Behavioral differentiation | **Not measured** by slice 1 (M3 after P4). The join to the Oct 14 scorer's control units reached **17 moments, below the 20-moment floor: "coverage insufficient for any behavioral statement"**, and none is made (§10.8). |
@@ -116,7 +116,7 @@ No historical comparison is claimed: there is no earlier baseline. The rejection
 
 ## 8. The fixture matrix and the test files
 
-Seven new test files, **354 rows** (`thresholds.test.js` 7 · `tfSetupV1.entry.test.js` 150 · `tfSetupV1.holding.test.js` 45 · `dailyBarsAdapter.test.js` 55 · `golden.test.js` 55 · `tf-setup-corpus-replay.test.js` 23 · `tf-setup-golden-baseline-check.test.js` 19), all green on Windows (the mutation baseline run) and on Linux (§18). Every V3 §9.1–§9.5 and §9.7 row has a test; §9.6 (historical cases) is omitted because no case was supplied (the founder's instruction). Real imports throughout (the dependency-surface guards named in each file's header); `pinTimezoneUtc.js` first in every file that builds a `Date`; no network; nothing mocked.
+Seven new test files, **358 rows** (`thresholds.test.js` 7 · `tfSetupV1.entry.test.js` 151 · `tfSetupV1.holding.test.js` 45 · `dailyBarsAdapter.test.js` 55 · `golden.test.js` 55 · `tf-setup-corpus-replay.test.js` 26 · `tf-setup-golden-baseline-check.test.js` 19), all green on Windows (the mutation baseline run) and on Linux (§18). Every V3 §9.1–§9.5 and §9.7 row has a test; §9.6 (historical cases) is omitted because no case was supplied (the founder's instruction). Real imports throughout (the dependency-surface guards named in each file's header); `pinTimezoneUtc.js` first in every file that builds a `Date`; no network; nothing mocked.
 
 The golden scenarios and their pinned outcomes (derived; every row also asserted in the entry/holding test files):
 
@@ -172,7 +172,7 @@ One observation for the record: `regime_flip` cannot be true in isolation — th
 
 ## 9. The mutation table (V3 §9.8)
 
-Run on a scratch `git archive` tree of the code head (never committed; `node_modules` junctioned; `TZ=UTC`), one mutant at a time with the seven test files, the file restored after each and the tree proved identical to the committed blobs afterwards. **Pass 3 (at the mutating lens's round, `a2264f48` → `e7907900`): baseline 354/354; 70 of 70 killed; no survivor** — every §9.8 mutant (M1–M20), twenty-nine from the four non-mutating lenses and their refuters (M4b, M21–M49), and twenty from the mutating lens TE3 (M50–M69). Pass 2 (at `c9c02fc4` + `f3ae1bd1`) was 49 of 49; pass 1 (at `78d37087`, before the fix round) 34 of 34, its first run discarded because the driver had snapshotted the golden after M20's regeneration — the driver was fixed and the pass re-run clean. Three corrections are recorded as such: M42's find string matched two lines and was narrowed; M45 survived until a row was added for a plan and a report on the same dirty tree; M50 survived TE3's own proposed row (with `C` below `SMA_slow` the dropped middle inequality still reads false) until a scenario with `C` above both averages was added — the kill is by the golden and a named row.
+Run on a scratch `git archive` tree of the code head (never committed; `node_modules` junctioned; `TZ=UTC`), one mutant at a time with the seven test files, the file restored after each and the tree proved identical to the committed blobs afterwards. **Pass 4 (at the refuter TEV3's rows, `c5602832`): baseline 358/358; 9 of 9 killed (M70–M78). Pass 3 (at the mutating lens's round, `a2264f48` → `e7907900`): baseline 354/354; 70 of 70 killed. Together 79 of 79, no survivor** — every §9.8 mutant (M1–M20), twenty-nine from the four non-mutating lenses and their refuters (M4b, M21–M49), twenty from the mutating lens TE3 (M50–M69) and nine from its refuter TEV3 (M70–M78). Pass 2 (at `c9c02fc4` + `f3ae1bd1`) was 49 of 49; pass 1 (at `78d37087`, before the fix round) 34 of 34, its first run discarded because the driver had snapshotted the golden after M20's regeneration — the driver was fixed and the pass re-run clean. Three corrections are recorded as such: M42's find string matched two lines and was narrowed; M45 survived until a row was added for a plan and a report on the same dirty tree; M50 survived TE3's own proposed row (with `C` below `SMA_slow` the dropped middle inequality still reads false) until a scenario with `C` above both averages was added — the kill is by the golden and a named row.
 
 | Mutant | What changed | Result | A row that went red |
 |---|---|---|---|
@@ -246,6 +246,15 @@ Run on a scratch `git archive` tree of the code head (never committed; `node_mod
 | M67 | TE3 T18: tickId prefix without the colon | KILLED (1) | replay: `b10:3` under `b1` is flagged |
 | M68 | TE3 T21: `bar0.value` nulled when unusable | KILLED (5) | golden: `volume_bar0_zero`; entry: the observed value preserved |
 | M69 | the holding gate `>` instead of `>=` at 55 | KILLED (5) | golden: `holding_regime_unknown_only`; holding: 55 bars evaluate |
+| M70 | TEV3-1: the adapter refuses exactly `minBars` rows (`<` → `<=`) | KILLED (1) | adapter: exactly 55 rows is ok |
+| M71 | TEV3-2: the join ignores `controlMainRows` | KILLED (1) | replay: a moment keyed only in the scorer's main control set joins |
+| M72 | TEV3-3: drift ignores the evaluate-time provenance | KILLED (1) | replay: a report at another head than its evaluate is DRIFT |
+| M73 | TEV3-4: refusal records carry no `checks` | KILLED (2) | entry: the nine ids on a refusal; holding: the seven |
+| M74 | TEV3-5: the join's `status` guard dropped | KILLED (1) | replay: a `not_scored` point does not join |
+| M75 | TEV3-5: the join's numeric-delta guard dropped | KILLED (1) | replay: a scored point without a delta does not join |
+| M76 | TEV3-6: only the last entry's sha format checked | KILLED (1) | baseline: entry 0's malformed sha fails integrity |
+| M77 | TEV3-7: the adjustment's `missingDates` array shared with the input | KILLED (1) | entry: the record's dates array is a copy |
+| M78 | TEV3-8: `pickReceipts` no longer skips entry-less rows | KILLED (1) | replay: an unfetched pair is skipped, never thrown on |
 
 ## 10. The first replay run (V3 §10)
 
@@ -426,7 +435,7 @@ Slice 2 (the `setupVerdicts/{sessionDate}` writer and the menu label) is not bui
 
 ## 14. Five separate conclusions (never merged)
 
-1. **Engineering correctness — established.** Every rule and unknown path has a row asserting its correct result; the golden pins every scenario's complete record under `tf-setup-v1/sem-1`; the verdict recomputed from each record's own `checks` and `patterns` equals the record's; 70 mutants all killed; the adapter's ten rules each guarded; the replay's helpers hermetically tested; the cross-revision check's rejection cases proven on fixtures and on the real files; the review's two HIGH findings (provenance, the double-counted moments) fixed and re-proven.
+1. **Engineering correctness — established.** Every rule and unknown path has a row asserting its correct result; the golden pins every scenario's complete record under `tf-setup-v1/sem-1`; the verdict recomputed from each record's own `checks` and `patterns` equals the record's; 79 mutants all killed; the adapter's ten rules each guarded; the replay's helpers hermetically tested; the cross-revision check's rejection cases proven on fixtures and on the real files; the review's two HIGH findings (provenance, the double-counted moments) fixed and re-proven.
 2. **Replay coverage — reported, bounded.** 36 pairs over 33 moments from 486 woken checks; 29 calls; data-unknown 5.3%; one honest refusal (a corporate-action basis break); the anchor absent on every holding row; verdicts dated to the prior session on date-only evidence.
 3. **Behavioral differentiation — not measured** (M3 after P4). The join reached 17 moments, below the 20-moment floor; no statement.
 4. **Partnership usefulness — not claimed.** The founder's read of the ten receipts (§10.7) blesses or amends the basis.
@@ -459,12 +468,142 @@ Slice 2 (the `setupVerdicts/{sessionDate}` writer and the menu label) is not bui
 
 ## 17. The BUILD_RULES §2 review record
 
-<!-- REVIEW -->
+The diff crossed BUILD_RULES §2's threshold (at `c5602832`, the code and test head: 20 files, +17,826 lines, −1 line). Five lenses, each a subagent on its own `git -c core.autocrlf=false archive` tree under the session scratchpad with `node_modules` junctioned, read-only on git and on the shared working tree; a refuter per lens on its own tree, instructed to refute every finding with a reproduction; the mutating lens (TE3, test integrity) last, on its own tree of the fixed head. Finding ids take the unused prefix `TE` (lenses TE1–TE5, refuters TEV1–TEV5), chosen after a grep of the ids the repository already cites. Reviewers returned findings as text; nothing they wrote touched the repository. The four non-mutating lenses reviewed `78d37087`; the fix round `c9c02fc4` answered them; TE3 reviewed the fixed head.
+
+### 17.1 Lenses and what each covered
+
+| Lens | Scope | Findings | Refuter's verdicts |
+|---|---|---|---|
+| TE1 domain correctness | every operator and boundary, the windows, the regime and C1 rules, the volume policy, null prices, the record contract, the holding, determinism, the strategy card, the fixture arithmetic | 5 (1 MED, 3 LOW, 1 NIT) | TEV1: 5 CONFIRMED (+2 found) |
+| TE2 adapter, calendar, cutoff | the expected session, the never-a-fallback rule, ordering, adjacency across the maintained years, raw prices and volumes, the split heuristic and provenance, the replay's cutoff and fetch window, the output contract, the adapter rows | 9 (1 MED, 3 LOW, 5 NIT) | TEV2: 8 CONFIRMED, 1 PARTLY (+3 found) |
+| TE3 test integrity (mutating) | §9 completeness, vacuous and tautological rows, the golden/baseline tripwire, its own mutants, the dependency-surface guards, hygiene | see 17.3 | TEV3: see 17.3 |
+| TE4 read-only guarantees, secrets, redaction | every write and read of the two scripts, the key's paths, identifiers in committed-able outputs, the cap, no Firestore / model, the baseline script's git use, provenance | 8 (1 HIGH, 1 MED, 4 LOW, 2 NIT) | TEV4: 6 CONFIRMED, 2 PARTLY (+3 found) |
+| TE5 cross-document consistency and scope | §1 exclusions, the fence, §3's file list, the §5 record vs its consumers (slice 2, ID-1, Amendment A), SEMANTICS_NOTES vs §4.2, C1's wording, the README rows, the review doc's bytes, the replay scope, §12 boundaries | 12 (1 HIGH, 2 MED, 7 LOW, 2 NIT) | TEV5: 11 CONFIRMED, 1 PARTLY (+4 found) |
+
+Claims attacked and NOT broken (each lens listed its own): every equality boundary and window; MIN_COMPLETED_BARS; the six §6.4 rules in order; the volume policy; null-price handling through `priceSlice`; the record's reconstructibility (entry); the holding's independence; determinism; the strategy card byte-identical; the fixture arithmetic re-derived by hand; the expected-session rule across DST days, midnight boundaries, early closes and a Saturday clock; the never-a-fallback rule under oldest-first, duplicate and weekend-first inputs; adjacency equal to the calendar on all 728 maintained dates under nine time zones; the window cut; the CTVA refusal confined to windows straddling the step; the cutoff (no evaluation can read the check's own session); the fetch pad (≥ 87 sessions in any 130-day window through 2027); every write of both scripts enumerated and inside the run folder; `owner` never read; raw ids out of `summary.json` / `report.md` by an allowlist; the key in the URL only, every error path redacted; the cap refuse-before-increment and persisted before the fetch; one `fetch` call site, no Firestore, no model; the review doc's sha; C1 append-only; the README diff; the golden in canonical form; the thresholds and notes; the fence; the §4 import guards; §1's exclusions; the §5 fields ID-1 and Amendment A need; §8's ten rules in order; §10's scope, filter, counts, cutoff, cap and report shape.
+
+### 17.2 Findings and dispositions
+
+Severity is the lens's; the verdict is the refuter's. "Fixed" means the fix is in `c9c02fc4` (or `f3ae1bd1`), with a row and, where listed, a mutant that pins it.
+
+| Id | Sev. | Finding | Verdict | Disposition |
+|---|---|---|---|---|
+| TE4-1 | HIGH | The replay's `summary.json` / `report.md` quoted plan-time provenance (head, dirty, script and module shas); the first run's report named a head and "(clean)" that did not produce its verdicts (the second `evaluate` ran with the script edited, uncommitted) | CONFIRMED (TEV4: the report's content was only producible by the later script) | **Fixed** — every command stamps head, dirty flag, script and module shas; `evaluate` and `report` refuse a dirty tree (`--allow-dirty` recorded) and `report` refuses a script that changed since `evaluate` (`--allow-drift`); the summary carries plan, evaluate and report provenance and a `drift` flag; the report prints a DRIFT line. Run 2 re-run at one clean head (§10). Rows; mutant M45 |
+| TE5-1 | HIGH | A moment whose proposed and executed swap coincide became two rows, double-counting 14 moments in every per-row table and in the join (30 "joined rows") | CONFIRMED (TEV5: the double count is real; the lens's "30 > 28" inference was wrong — the join set is the scorer's control units, which can exceed 28) | **Fixed** — one row of kind `both`; the join counts a moment once; run 2: 33 moments, 17 joined → below the floor, no statement (§10.8). Rows; mutants M41, M42 |
+| TE1-1 | MED | V3 §6.4 rule 5's "ATR null → unknown" branch had no scenario and no row; a mutant deleting it survived | CONFIRMED (TEV1: 258/258 green under the mutant; reachable only by direct callers, the adapter refuses a null low first) | **Fixed** — scenario `c1_pullback_null_atr`, an entry row; mutant M4b |
+| TE2-1 | MED | A window whose every adjustedClose is 0 (or negative) read `metadata: present` and `heuristic_ok` (0/0 ratios are NaN and never trip) | CONFIRMED (TEV2 reproduced; a single zero tripped under the wrong name) | **Fixed** — `present` requires finite and > 0; `adjusted_close_nonpositive`; rows; mutant M38; `SEMANTICS_NOTES`. D11, D14, Q-TE-12 |
+| TE4-2 | MED | `bars --fixture` shared the run's cache file: with `--refetch` it shortened the planned series silently, without it the fixture was not written; `evaluate` never checked the cache window; the repo-tree write was not in the manifest | PARTLY (TEV4: `evaluations.json` did show the shortened window; the summary and report did not; `--symbol` outside the plan was fetchable) | **Fixed** — fixture fetches use `bars/<SYMBOL>@<asOf>.json`; `evaluate` refuses a cache ending before `asOf` by name; `stamp` records flags and written paths; a symbol outside the plan only with `--fixture` |
+| TE5-2 | MED | `evidenceClass.bars` left §5's enum: the fixture's `'synthetic'` pinned in the golden; null on every adapter refusal | CONFIRMED (TEV5: honesty argues for admitting `'synthetic'` instead) | **Fixed** — refusals carry `evidenceClass` (mutant M49); the fixture uses `'later_reconstruction'` with `source: 'synthetic'`; Q-TE-4 asks whether to admit the third value |
+| TE5-3 | MED | The holding evaluator had no bar minimum: a 52-bar series read `broken` while the entry side read `unknown(insufficient_history)` | CONFIRMED (TEV5: a tightening that fails safe; `holding_short_history` unchanged) | **Fixed** — every holding check unknown below 55 with `history` on the record; scenario `holding_history_54_close_below_slow`; mutant M35. D12, Q-TE-2 |
+| TE1-2 = TE5-6 | LOW | The holding record's `patterns` could not be reconstructed from its own checks; and a pattern failure printed beside a held name is the misread A6 warns of | CONFIRMED / PARTLY (TEV1: reconstructible from `factsUsed` + `pullbackLows`; TEV5: dropping is safest for A6, but it departs from §5's common block) | **Fixed** — holding records carry no `patterns`; mutant M43. D4, Q-TE-5 |
+| TE1-3 | LOW | A non-positive anchor was `supplied` and `structure_break` deterministically false | CONFIRMED (TEV1: a corrupt input, never a swing low; fails safe) | **Fixed** — `isPrice`; `absent`; note; rows for 0, −0, −1; scenario `holding_anchor_zero`; mutant M36. D13, Q-TE-11 |
+| TE1-4 | LOW | `chain()` short-circuited on a false pair so the mirror regime checks disagreed on the same null fact; its comment was wrong | CONFIRMED (TEV1: no verdict effect, no golden change) | **Fixed** — unknown-first chain; row; mutant M37 |
+| TE2-2 | LOW | A weekend or holiday row inside the window was refused as `missing_bar` naming a session that was present | CONFIRMED (TEV2) | **Fixed** — `unordered_bars { why: 'non_session_date', date }` before the adjacency walk; rows; mutant M40. D10, Q-TE-9 |
+| TE2-3 | LOW | `mapDailyRows` drops a row with a null high/low before the adapter, so the session reads `missing_bar` and the mapper's count never reached the report | CONFIRMED (TEV2) | **Fixed in the replay** — refusals carry `mapperDropped`; a missing session whose raw row is in the payload is named `mapper_dropped_row` with the null fields; the EODHD line counts the drops; the adapter's header states it. The mapper is outside the fence (§16) |
+| TE2-4 | LOW | The "removed weekend date → ok" row removed nothing | CONFIRMED (TEV2: 90 rows before and after) | **Fixed** — the calendar-day fixture is refused by name and ok once filtered to sessions, with the removal asserted |
+| TE4-3 | LOW | `--symbol` / `--asOf` and the capture's symbols flowed unvalidated into file names and the URL | CONFIRMED (TEV4: a path escape needs a 200 JSON array from EODHD for the mangled path; a guard gap) | **Fixed** — `SYMBOL_RE`, a real-date check, plan membership; malformed symbols listed and never fetched; rows |
+| TE4-4 | LOW | Provenance "in every output" held only by co-location for `rows.local.json`, the bars files and `evaluations.json` | CONFIRMED (TEV4) | **Fixed** — `evaluations.json` and the bars files carry a provenance block; the header names `manifest.json` as the provenance of record |
+| TE4-5 | LOW | `summary.json` carried the capture's key NAMES (incl. `owner`); the test's `"owner"` assertion passed only because its manifest had no `keys` | PARTLY (TEV4: names only, not a leak under the prompt's wording; the test was vacuous) | **Fixed** — `keys` stay in the manifest; the test plants `keys` and asserts on planted values; mutant M48 |
+| TE4-6 | LOW | The cap is per run folder and per process | CONFIRMED (TEV4) | **Documented** in the script header |
+| TE5-4 | LOW | Two files outside §3's list; the "imports only" sentences no longer literal | CONFIRMED (TEV5: justified, must be reported) | **Reported** — D1, D2 |
+| TE5-5 | LOW | A price-defeated pattern with an unknown volume reads `untestable` (the letter) | CONFIRMED | **Founder question** Q-TE-1 |
+| TE5-7 | LOW | The swing tie rule was pinned by the golden but named nowhere in `SEMANTICS_NOTES` | CONFIRMED | **Fixed** — a note |
+| TE5-8 | LOW | The baseline check ordered history by `sem-<n>` alone, so `tf-setup-v2/sem-1` after `v1/sem-1` was rejected | CONFIRMED (TEV5 probe) | **Fixed** — ordered by `(setupVersion, seq)`; rows; mutant M46 |
+| TE5-9 | LOW | "unknown verdicts 1" beside a row table showing 2 | CONFIRMED | **Fixed** — "distinct equity (symbol, asOf) entry pairs: N unknown of M attempted" |
+| TE5-10 | LOW | The README row described this report before it existed | CONFIRMED (by design; closed before the PR) | **Closed** by this report |
+| TE1-5 | NIT | `sourceMeta` shared by reference (TEV1: `refusal.detail` too) | CONFIRMED | **Fixed** — copied; rows |
+| TE2-5 | NIT | The split threshold was asymmetric; the stated "above 10%" tripped at 9.1% in the dividend direction | PARTLY (TEV2 corrected the crossover to 9.09%; the lens's symmetric form would still trip above 9.09%) | **Fixed** — `1 − min/max > 0.10`; rows at 9.5% and 11% in both directions; mutant M39; note. D14, Q-TE-13 |
+| TE2-6 | NIT | Ordering and date-format checks run over the whole input (over-refusal only) | CONFIRMED | **Documented** — D6 |
+| TE2-7 | NIT | Refusals carried the requested `asOf` only | CONFIRMED | **Fixed** — `expected` on refusals |
+| TE2-8 | NIT | A never-fetched symbol read `missing_bar` with its cause only in `detail` | CONFIRMED (TEV2: the failures were on the EODHD line already) | **Fixed** — `unfetchedPairs` counted and printed beside the unknown table |
+| TE2-9 | NIT | `getPreviousSessionDate('2026-02-30')` walks to a real date; the replay regex-checked `etDate` only | CONFIRMED (TEV2: a UTC round trip, not `Date.parse`) | **Fixed in the replay** (`isRealDate`; mutant M47); the calendar module is outside the fence (§16) |
+| TE4-7 | NIT | `redactEodhd` masked the parameter, not a bare key | CONFIRMED | **Fixed** — the key value masked in fetch errors |
+| TE4-8 | NIT | `*.local.*` is a convention, not a `.gitignore` rule; `report` printed the home path | CONFIRMED | **Fixed** (relative paths); `.gitignore` is outside the fence (§16) |
+| TE5-11 | NIT | The `reason` enum on `unknown` is the union of §6.4's and the adapter's | CONFIRMED | **Documented** — §13 |
+| TE5-12 | NIT | Naming follows V3 §5, not the definition's phrasing | CONFIRMED | **Documented** — §13, Q-TE-10 |
+| TEV1-1 | NIT | `pullbackLows` recorded a non-price low by `isNum` while the check read `isPrice` | found by the refuter | **Fixed** — row; mutant M44 |
+| TEV1-2 | NIT | A guard row compared `deriveRegime` with itself on the insufficient-history branch | found by the refuter | **Fixed** — the plain assertion |
+| TEV2-1 | NIT | `checks` absent on early refusals, present with nulls later | found by the refuter | **Fixed** — one `checks` shape on every result; row |
+| TEV2-2 | NIT | `calendar_missing` conflated a malformed `asOf` with an unmaintained year | found by the refuter | **Fixed** — `why: 'malformed_date'`; row |
+| TEV2-3 | NIT | Rows dated after today folded into `dropped` silently | found by the refuter | **Fixed** — `droppedAfterToday`; row |
+| TEV4-1 | LOW | A null dirty state rendered "(clean)"; a null head printed | found by the refuter | **Fixed** — three-state rendering; `plan` stops without a head or tree state |
+| TEV4-2 | LOW | The cache's `payloadSha256` was written but never checked | found by the refuter | **Fixed** — `evaluate` stops on a mismatch; run 2's 29 files verified |
+| TEV4-3 | NIT | `loadEnv` merges every variable; only the key is read | found by the refuter | **Noted** (the growth replay's shape) |
+| TEV5-1 | — | The join set is the scorer's control units, not its 28 record moments; the decision report §6's sentence is out of step | found by the refuter | **Documented** — §10.8 and the replay's report line |
+| TEV5-2 | — | The golden had 40 records, not 39 | found by the refuter | noted (43 after the fix round) |
+| TEV5-3 | — | A fix to `selectPopulation` invalidates `rows.local.json`; the report must be regenerated through `plan → evaluate → report` | found by the refuter | **Done** — run 2, the cache reused (§10) |
+| TEV5-4 | — | The golden's pre-merge regeneration under `sem-1` must be stated | found by the refuter | **Stated** — §7, Q-TE-8 |
+
+Refuted in part (the only refutations): TE4-2's "silently" (the shortened window was visible in `evaluations.json`); TE4-5's "leak" (names, never values); TE2-5's numbers (9.09% is the crossover and does not trip); TE5-6's "contract breach" (the letter of §5 carries `patterns` on holding records — the fix is a deviation, hence Q-TE-5); TE5-1's "30 > 28 proves duplication" (the control units exceed 28 legitimately; the duplication was proven from the code and run 2's count).
+
+### 17.3 Lens TE3 (test integrity, mutating) and refuter TEV3
+
+Lens TE3 reviewed the fixed head `c9c02fc4` on its own tree with its own mutation harness (23 mutants, four of them controls that died as expected; every file restored and sha-verified). It found no product defect — every survivor's discriminating fixture behaved correctly on the clean tree — and thirteen coverage gaps. Refuter TEV3 installed each mutant in place on its own tree, re-ran the 316-row suite and the proposed probe clean and mutated, and restored byte-for-byte: 12 CONFIRMED, 1 PARTLY (TE3-1's survivor is real, its proposed row is wrong), 0 REFUTED, plus eight more survivors of its own with verified kill rows (TEV3-1 … TEV3-8). The build answered with scenarios and rows at `a2264f48`, `d04e2918`, `e7907900` (the mutating lens's round) and `c5602832` (the refuter's rows), and re-ran the mutants: 29 of 29 killed (M50–M78).
+
+| Id | Sev. | Finding (a mutant that survived 316 rows) | Verdict | Disposition |
+|---|---|---|---|---|
+| TE3-1 | HIGH | The regime stack's middle inequality (`SMA_fast > SMA_slow`) was discriminated by no row and no scenario: `bounce_fast_below_slow` also fails the rising test, and no scenario had `C` above both averages with the slow one above the fast | PARTLY (TEV3: the survivor is real; the lens's proposed row keeps `C` below `SMA_slow`, so the dropped inequality still reads false under the mutant — the build's own M50 run showed the same) | **Fixed** — scenarios `stack_fast_below_slow_rising` (slow rising, stack false) and `stack_middle_inequality_only` (`C` 110 above both averages, `SMA_fast` 95.75 < `SMA_slow` 101.3, rising); rows; mutant M50 |
+| TE3-2 | MED | `deriveChartLeg` ignoring `regime_flip` survived: its only independent effect is the unknown path (a true `regime_flip` always comes with `close_below_slow`) | CONFIRMED | **Fixed** — scenario `holding_regime_unknown_only` (55 bars, a null close at bar 52); row; mutant M52 |
+| TE3-3 | MED | The adjacency loop stopping one pair before the window's oldest edge survived | CONFIRMED | **Fixed** — rows for the newest and the oldest gap; mutant M54 |
+| TE3-4 | MED | `today` as the UTC date survived (every `now` in the file had the same date in UTC and ET) | CONFIRMED | **Fixed** — a row at 22:00 ET (02:00Z next day); mutant M64 |
+| TE3-5 | MED | The adapter's price check without `high` survived | CONFIRMED | **Fixed** — rows for a zero and a negative high; mutant M53 |
+| TE3-6 | MED | The `previousEtDate` null → `calendar_missing` branch had no row | CONFIRMED | **Fixed** — rows through `expectedCompletedSession` and `buildDailyEvidence`; mutant M55 |
+| TE3-7 | MED | The downtrend's second condition (`slow_falling`) was not discriminated | CONFIRMED | **Fixed** — scenarios `stack_down_slow_not_falling` and `holding_stack_down_slow_not_falling`; rows; mutant M51 |
+| TE3-8 | MED | `close_below_slow` and `structure_break` with `<=` survived (no scenario at equality) | CONFIRMED | **Fixed** — scenario `holding_boundaries_equal` and a one-cent-below row; mutants M62, M63 |
+| TE3-9 | MED | The join's ±1 tie band and the one-quarter limit were unpinned at their boundaries | CONFIRMED | **Fixed** — rows at 1, 0.5, −1, 1.5, −1.5 and at a share of exactly 0.25; mutants M56, M57 |
+| TE3-10 | MED | Receipt ordering was not isolated from alphabetical order | CONFIRMED | **Fixed** — a row where the earliest check carries the later symbol; mutant M58 |
+| TE3-11 | LOW | The swing tie rule and the preserved unusable bar-0 volume were pinned only by the golden | CONFIRMED | **Fixed** — named rows (`flat_slow_sma`'s tie date; the −5 / 0 values); mutants M61, M68 |
+| TE3-12 | LOW | Guard rows missing: `minBars` validation, a nested refusal detail, the tick-id colon, equal `recordedAt` | CONFIRMED (TEV3: the `minBars` row must assert the typed message, not `TypeError` alone, because `minBars` 0 throws an untyped one under the mutant) | **Fixed** — rows (`toThrow(/positive integer/)`); mutants M65, M66, M67, M59 |
+| TE3-13 | LOW | The cross-revision check has no teeth until an entry is on `main`; the regeneration was read on the branch | CONFIRMED | **Stated** — §7 |
+| TE3 note | — | `swingLow` reading bar 0 was killed only by the adapter's end-to-end row and the golden | CONFIRMED (TEV3: seven rows, none named) | **Fixed** — a named row (a bar-0 low of 90 is not the swing low); mutant M60 |
+| TEV3-1 | MED | The adapter refusing exactly `minBars` rows survived | found by the refuter | **Fixed** — a 55-row ok row; mutant M70 |
+| TEV3-2 | MED | The join ignoring `controlMainRows` survived (the scorer writes two control sets) | found by the refuter | **Fixed** — a row keyed only in the main set; mutant M71 |
+| TEV3-3 | MED | Drift ignoring the evaluate-time provenance survived | found by the refuter | **Fixed** — rows with `evaluate` at another head or dirty; mutant M72 |
+| TEV3-4 | MED | Refusal records with no `checks` survived (an all-unknown assertion is vacuous on an empty array) | found by the refuter | **Fixed** — the nine and the seven ids pinned on refusals; mutant M73. Stated by design: a refusal's reason is the adapter's, not reproducible from its own checks, so the §9 recompute row rightly covers ok records only |
+| TEV3-5 | LOW | The join's `status` and numeric-delta guards each survived alone | found by the refuter | **Fixed** — a row with a `not_scored` point and a scored point without a delta; mutants M74, M75 |
+| TEV3-6 | LOW | A historical entry's sha format was unchecked by any row | found by the refuter | **Fixed** — a row; mutant M76 |
+| TEV3-7 | LOW | The adjustment's `missingDates` array shared with the input survived (every fixture's was empty) | found by the refuter | **Fixed** — a row on a non-empty fixture; mutant M77 |
+| TEV3-8 | LOW | `pickReceipts` no longer skipping entry-less rows survived (it would throw on an unfetched pair) | found by the refuter | **Fixed** — a row; mutant M78 |
+
+Equivalent mutants both sides considered and did not count: the ATR and SMA windows one bar longer (the primitives slice to their period); dropping `asOf === today` in the incomplete-session branch; `jump >= SPLIT_RATIO_JUMP` (1 − 0.9 is 0.0999… in binary, so the exact-10% boundary is unreachable); `volWindowComplete` with `>=` (at 20 bars only 19 window bars exist); the holding's `sufficient ? deriveRegime : 'unknown'` guard below 55 bars (`SMA_slow_5ago` is always null there).
+
+### 17.4 Totals
+
+| | Count |
+|---|---|
+| Lenses | 5, each on its own snapshot tree; TE3 (mutating) last, on the fixed head |
+| Refuters | 5, one per lens, each on its own tree |
+| Distinct findings | 55 (34 by the four non-mutating lenses, 13 by TE3; 8 found by refuters TEV1/TEV2/TEV4/TEV5, 8 by TEV3 — of which 2 were noted beside a lens finding and counted once) |
+| CONFIRMED | 43 |
+| PARTLY | 6 (TE4-2, TE4-5, TE2-5, TE5-6, TE5-1's inference, TE3-1's row) |
+| REFUTED outright | 0 |
+| Fixed in this PR | 46 (every CONFIRMED or PARTLY item that named a defect or a missing row) |
+| Documented, raised as a founder question, or named as a follow-up outside the fence | 9 |
+| Mutants, all passes | 79 run (M1–M78 with M4b), 79 killed, 0 surviving; 3 needed a second row or a narrowed find string before they died (M42, M45, M50), each recorded in §9 |
 
 ## 18. Final checks
 
-<!-- FINAL -->
+Every check below ran in CI shape on Linux: WSL Ubuntu, a detached worktree of the shared `~/pd-ci` clone at the named commit (fetched by full SHA from the Windows repository, `node_modules` symlinked, the lockfile hash `22fa2b71904c` equal on both sides so no `npm ci` was needed), `TZ=UTC`, the full suite under `flock /tmp/pd-suite.lock` with `--maxWorkers=8`, Node v22.22.2 (the Node 20 runtime the CI workflow pins is not installed in this WSL; the repository's own CI run on the PR is the record for that version). The branch was cut at `origin/main` `24495eba` and `origin/main` did not move during the build (re-fetched before the push), so the merged tree is the branch itself.
+
+| Head | What it is | Full suite | `npm run lint:gate` | `vite build` | Baseline check |
+|---|---|---|---|---|---|
+| `78d37087` | the code before the review | 1,196 files passed, 8 skipped; 26,260 rows passed, 89 skipped, 0 failed; 272 s | exit 0 | exit 0 (15.9 s) | PASS, `initial` |
+| `c9c02fc4` | the review fix round | 1,196 / 8; 26,285 passed, 89 skipped, 0 failed; 303 s | exit 0 | exit 0 (19.8 s) | PASS, `initial` |
+| `e7907900` | the mutating lens's rows and scenarios | 1,196 / 8; 26,323 passed, 89 skipped, 0 failed; 214 s | exit 0 | exit 0 (15.5 s) | PASS, `initial` (the output is in §7) |
+| `c5602832` | the code and test head (the refuter TEV3's rows) | 1,196 / 8; **26,327 passed, 89 skipped, 0 failed**; 260 s | exit 0 | exit 0 (13.1 s); entry chunk `index-BvBYFcJi.js` 4,902.07 kB, gzip 1,320.89 kB — byte-identical to the base's (no `src/` change) | PASS, `initial` (§7's four lines with HEAD `c5602832`) |
+| the pushed head | this report's final commit (this document only after `c5602832`) | run after this commit, by full SHA; the figures are quoted in the PR description | same run | same run | same run |
+
+The seven new files are 358 of those rows; the other 25,969 are the suite `main` already carries, untouched by this build. Platform-only rows: none observed (every run was on Linux; the Windows runs of the seven new files were green as well, 358/358). The Firestore rules suite was not run: nothing under `firestore.rules` changed.
 
 ## 19. Delivery state
 
-<!-- DELIVERY -->
+| Item | State |
+|---|---|
+| Branch | `claude/tf-setup-evaluator-slice1` on `origin`, pushed by refspec `HEAD:refs/heads/claude/tf-setup-evaluator-slice1` from the build worktree's branch (V3 §13); cut at `origin/main` `24495eba`, which did not move during the build (re-fetched before the push), so the merged tree is the branch itself |
+| Commits | `6f3f275d` (the slice) · `f3d5d38f` (C1, the review doc byte-identical, the README rows) · `ed34f212` · `78d37087` · `c9c02fc4` (the review fix round) · `10f534b2` (report, first draft) · `f3ae1bd1` (M45's row) · `ea88228e` (report, second draft) · `a2264f48`, `d04e2918`, `e7907900` (the mutating lens's round) · `de981027` (report, third draft) · `c5602832` (the refuter TEV3's rows) · this commit (the report's §0, §8, §9, §17, §18 and §19) |
+| Code and test head | `c5602832`; every commit after it changes this document only |
+| Pull request | a **draft** against `main`, opened from the pushed head after this commit with `open-pr.mjs` (REST, `draft: true`; no `gh` on this machine). Its number is recorded in the PR and in the delivery message, not in this report: the report is committed before the PR exists, and a later commit carrying the number would move the pushed head past the one §18 checked |
+| Final checks on the pushed head | run on Linux after this commit, by full SHA (§18's last row); the figures are quoted in the PR description |
+| Delivered | the draft PR; this report (the verdict table §0; the review record §17; the final checks §18); the test results (§8, §18), the review results (§17), the replay coverage (§10) and the ten evidence receipts (§10.7); the open questions Q-TE-1 … Q-TE-13 (§15) |
+| STOP | delivery ends at pushed (V3 §13; BUILD_RULES §2, pushed ≠ merged): no CI watching, no review request, no merge, no flag, no cron, no deploy, no activation, no live wiring, no production capture expansion. The follow-ups in §16 wait for the founder's instruction |
+| Merge-readiness | not asserted by this build; the founder decides after reading §15 |
