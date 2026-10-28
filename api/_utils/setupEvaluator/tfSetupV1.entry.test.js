@@ -90,9 +90,10 @@ describe('regime (definition §2)', () => {
 
   it('C above both averages with SMA_fast below SMA_slow and SMA_slow rising is no_trend: only the middle inequality fails (review TE3-1, mutant M50)', () => {
     const r = run('stack_middle_inequality_only');
-    expect(Object.fromEntries(['C', 'SMA_fast', 'SMA_slow', 'SMA_slow_5ago'].map((k) => [k, r.factsUsed[k].value]))).toEqual({ C: 110, SMA_fast: 97.25, SMA_slow: 101.3, SMA_slow_5ago: 99.5 });
+    // SMA_fast = (110 + 19 × 95) / 20 = 1915 / 20 = 95.75; SMA_slow = (110 + 19 × 95 + 30 × 105) / 50 = 5065 / 50 = 101.3; SMA_slow_5ago = (15 × 95 + 30 × 105 + 5 × 80) / 50 = 4975 / 50 = 99.5
+    expect(Object.fromEntries(['C', 'SMA_fast', 'SMA_slow', 'SMA_slow_5ago'].map((k) => [k, r.factsUsed[k].value]))).toEqual({ C: 110, SMA_fast: 95.75, SMA_slow: 101.3, SMA_slow_5ago: 99.5 });
     expect(checkOf(r, 'slow_rising').result).toBe(true);
-    expect(checkOf(r, 'regime_stack')).toMatchObject({ lhs: [110, 97.25], rhs: [97.25, 101.3], result: false });
+    expect(checkOf(r, 'regime_stack')).toMatchObject({ lhs: [110, 95.75], rhs: [95.75, 101.3], result: false });
     expect([r.verdict, r.reason, r.regime]).toEqual(['invalid', 'regime', 'no_trend']);
   });
 
