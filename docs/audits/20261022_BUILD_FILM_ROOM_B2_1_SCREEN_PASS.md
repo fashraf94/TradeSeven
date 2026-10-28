@@ -229,7 +229,7 @@ Every check ran on the branch merged with current `origin/main` (`62380f14`, re-
 | Rules suite (`npm run test:rules`, Firestore emulator) | Windows (WSL has no Java); an LF git archive of `7c92c31e` | 27 files, 440 rows, all passed (27 / 440 at `afb17dc1` too) |
 | `npm run lint:gate` | the same archive | exit 0, no warning |
 | `vite build` | the WSL clone at `7c92c31e`; then the same WSL clone checked out at this report's own commit (a Linux checkout, LF), the last check before the push | built at `7c92c31e` (the `FilmRoomScreenV2` chunk 100.69 kB). The pushed head's build is recorded in the PR description |
-| Goldens (RJ-9) | LF git archives of `46a29b51`, then `07dc3d58`: the capture harness twice each | 12 / 12 byte-identical across the runs and to the committed goldens; the comparison suite 6 / 6; the map (§3) re-run at the head: 2 unchanged, 10 mapped, none unmapped |
+| Goldens (RJ-9) | git archives of `46a29b51` (a plain archive: CRLF sources on this machine), then of `07dc3d58` (LF, the record): the capture harness twice each | 12 / 12 byte-identical across the runs and to the committed goldens; the comparison suite 6 / 6; the map (§3) re-run at the head: 2 unchanged, 10 mapped, none unmapped |
 
 Why the review did not catch the guard: its lenses ran each item's suites and the Film Room's, not every guard in the repo. The hub's mount guard walks every `src/` file, and only a full suite reaches it. Run 1 caught it before the push.
 
