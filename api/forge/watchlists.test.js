@@ -1808,6 +1808,32 @@ describe('F4 — retired stocks are never added to a watchlist', () => {
     expect(fixture.state.sessionDocs['session-1']).toEqual(session);
   });
 
+  // Review CL2-6/CL2-7.
+  it('C4: the in-transaction race (pre-tx reads active, the tx re-read finds it completed) answers idempotent without droppedRetired', async () => {
+    const proposing = sessionWith({ symbol: 'EA', reasoning: 'Old pick', category: 'discovery', slot: 'discovery', status: 'kept', proposedAt: '2026-10-20T12:00:00.000Z', proposedAtPhase: 'propose' });
+    const fixture = makeFakeFirestore({
+      sessionDocs: { 'session-1': proposing },
+      inTxSessionOverride: { ...proposing, status: 'completed', dropListId: 'racing-watchlist-999' },
+    });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ body: VALID_BODY });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ watchlistId: 'racing-watchlist-999', idempotent: true });
+    expect('droppedRetired' in res.body).toBe(false);
+  });
+
+  it('C4: a dialogue that proposed nothing at all keeps the path it always had — it saves, nothing is dropped or refused', async () => {
+    const empty = { ...ACTIVE_SESSION, candidateTickers: [] };
+    const fixture = makeFakeFirestore({ sessionDocs: { 'session-1': empty } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ body: VALID_BODY });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.tickerCount).toBe(0);
+    expect('droppedRetired' in res.body).toBe(false);
+  });
+
   it('C4: a double-tap that replays an already-saved dialogue is idempotent and carries no droppedRetired', async () => {
     const saved = { ...sessionWith({ symbol: 'EA', reasoning: 'Old pick', category: 'discovery', slot: 'discovery', status: 'kept', proposedAt: '2026-10-20T12:00:00.000Z', proposedAtPhase: 'propose' }), status: 'completed', dropListId: 'wl-existing' };
     const fixture = makeFakeFirestore({ sessionDocs: { 'session-1': saved } });

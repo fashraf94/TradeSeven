@@ -91,6 +91,11 @@ describe('ids, ordinals, kinds', () => {
       expect(mintFork(['AMD', 'JPM'], { book: at('2026-09-09T15:10:00.000Z') }).removed).toEqual([{ source: 'fork', index: null, reason: 'cannot_come_in' }]);
     });
 
+    it('the instant is the check\'s promptBuiltAt, not the later mint instant: a cooldown that ends between them still locks', () => {
+      const b = equippedBattle(); b.portfolio.bench.stocks[0] = { ...b.portfolio.bench.stocks[0], cooldownUntil: '2026-09-09T15:00:10.000Z' }; // FROZEN_NOW + 10 s; the mint is FROZEN_NOW + 20 s
+      expect(mintFork(['AMD', 'JPM'], { book: freezeSwapBook(b) }).removed).toEqual([{ source: 'fork', index: null, reason: 'cannot_come_in' }]);
+    });
+
     it('the test runs against the seam\'s frozen book, never the live battle', () => {
       const frozen = equippedBattle(); frozen.watchlist = { ...frozen.watchlist, hotBench: ['KRE'] };
       expect(mintFork(['KRE', 'JPM'], { book: freezeSwapBook(frozen) }).calls).toHaveLength(1); // on the hot bench at the seam

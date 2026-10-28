@@ -20,6 +20,9 @@ import { createRoot } from 'react-dom/client';
 const net = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('../../../utils/fetchWithAuth', () => ({ fetchWithAuth: (...args) => net.fetch(...args) }));
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { useWatchlistAutosave } from './useWatchlistAutosave';
 import SaveStateIndicator from './SaveStateIndicator';
 import { DARK_TOKENS } from '../../../theme/tokens';
@@ -56,6 +59,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe('C4 — the editor passes the refusal to the indicator (review CL2-2)', () => {
+  // No suite renders WatchlistEditor (see the IdeaPanel test), so its wiring is pinned in the source: the hook's
+  // `saveError` is read and handed to SaveStateIndicator, or the editor reverts to "Couldn't save" + Retry.
+  const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'WatchlistEditor.jsx'), 'utf8').replace(/\r\n/g, '\n');
+  it('reads saveError from the hook and hands it to SaveStateIndicator', () => {
+    expect(source).toMatch(/const \{[^}]*\bsaveError\b[^}]*\} = useWatchlistAutosave\(/);
+    expect(source).toContain('saveError={saveError}');
+  });
+});
+
 describe('C4 — a save refused for a retired ticker', () => {
   it('says which symbol to remove, from the payload, and offers no Retry', async () => {
     net.fetch.mockResolvedValue(REFUSED);
@@ -76,6 +89,32 @@ describe('C4 — a save refused for a retired ticker', () => {
     await settle();
     expect(text()).toBe('');
     expect(net.fetch).toHaveBeenCalledTimes(1); // no PATCH for a no-op
+  });
+
+  // Review CL2-3: the PATCH that adds the ticker is slow (a cold start, longer than the 1 s debounce); the player
+  // removes the ticker meanwhile and the no-op flush clears the queue; the refusal then arrives for an edit that
+  // no longer exists. It must not paint a line naming a ticker that is gone, with no Retry, until the next edit.
+  it('a refusal that arrives after the ticker was removed again is stale: no line, nothing stuck on Saving', async () => {
+    let refuse;
+    net.fetch.mockImplementation(() => new Promise((resolve) => { refuse = () => resolve(REFUSED); }));
+    act(() => api.queueSave({ tickers: [{ symbol: 'AAPL' }, { symbol: 'KRE' }] }));
+    await settle(); // the PATCH is in flight
+    expect(text()).toContain('Saving');
+    act(() => api.queueSave({ tickers: [{ symbol: 'AAPL' }] })); // KRE removed again: equal to the stored list
+    await settle(); // the no-op flush
+    await act(async () => { refuse(); await vi.advanceTimersByTimeAsync(0); });
+    expect(text()).toBe('');
+    expect(host.querySelector('[role="alert"]')).toBe(null);
+    expect(net.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('a refusal for an edit that is still the latest one is shown (the queue still holds it)', async () => {
+    let refuse;
+    net.fetch.mockImplementation(() => new Promise((resolve) => { refuse = () => resolve(REFUSED); }));
+    act(() => api.queueSave({ tickers: [{ symbol: 'AAPL' }, { symbol: 'KRE' }] }));
+    await settle();
+    await act(async () => { refuse(); await vi.advanceTimersByTimeAsync(0); });
+    expect(text()).toBe('KRE is no longer available. Remove it to save.');
   });
 
   it('a save that goes through after a refusal clears it and says Saved', async () => {

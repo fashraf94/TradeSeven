@@ -220,7 +220,7 @@ describe('the save handler says what the server left out (C4)', () => {
   const source = readFileSync(new URL('./WatchlistChat.jsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   it('reads retiredDroppedLine from data.droppedRetired and toasts it before onViewWatchlist', () => {
     const line = source.indexOf('retiredDroppedLine(data.droppedRetired)');
-    const toast = source.indexOf('showToast(droppedLine)');
+    const toast = source.indexOf("showToast(droppedLine, 'info')");
     const open = source.indexOf('onViewWatchlist(data.watchlistId)');
     expect(line).toBeGreaterThan(-1);
     expect(toast).toBeGreaterThan(line);

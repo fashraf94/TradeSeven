@@ -91,9 +91,16 @@ export function useWatchlistAutosave(watchlistId) {
         if (controllerRef.current !== controller) return; // superseded — swallow
         if (err?.name === 'AbortError') return;
         controllerRef.current = null;
-        setSaveError(err?.code === 'retired_ticker' && Array.isArray(err.symbols) && err.symbols.length > 0
-          ? { code: 'retired_ticker', symbols: err.symbols }
-          : null);
+        const retired = err?.code === 'retired_ticker' && Array.isArray(err.symbols) && err.symbols.length > 0;
+        if (retired && pendingRef.current === null) {
+          // Review CL2-3: a no-op flush cleared the queue while this PATCH was in flight, i.e. the refused
+          // edit (the retired ticker) was undone in the meantime. The line would name a ticker that is gone
+          // and offer no Retry, so there is nothing to show.
+          setSaveError(null);
+          setSaveState((s) => nextSaveState(s, 'stale_refusal'));
+          return;
+        }
+        setSaveError(retired ? { code: 'retired_ticker', symbols: err.symbols } : null);
         setSaveState((s) => nextSaveState(s, 'error'));
       });
   }, [watchlistId]);

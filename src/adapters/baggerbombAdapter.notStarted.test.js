@@ -12,7 +12,7 @@
 // Every case injects its own `now` and `marketState` (the adapter's rule); the
 // predicate is the one the crons use (src/utils/tieredFirstTradingDay.js).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { buildBaggerbombAdapter, deriveStartsAtEt, derivePhase, notStartedYet, PHASE } from './baggerbombAdapter.js';
 import { deriveTurnLine, TURN_STATE } from '../screens/battleView/deriveTurnLine.js';
 import { DESK_COPY } from '../components/Dashboard/desk/deskCopy.js';
@@ -99,7 +99,12 @@ describe('C5 — a battle before its first trading day is not LIVE', () => {
     expect(derivePhase(b, OPEN, ET('2026-10-27', 11, 0))).toBe(PHASE.LIVE);
   });
 
+  // Review CL3-6: the real clock is faked to Oct 26, BEFORE the battle's first day, so a derivePhase that fell back
+  // to Date.now() when given no clock would read PRE_OPEN here — and this row would go red.
+  afterEach(() => { vi.useRealTimers(); });
   it('with no clock the phase is exactly what it was — nothing is read', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(ET('2026-10-26', 15, 30)));
     const b = battle(['2026-10-27']);
     expect(derivePhase(b, OPEN)).toBe(PHASE.LIVE);
     expect(derivePhase(b, OPEN, null)).toBe(PHASE.LIVE);
@@ -118,8 +123,11 @@ describe('C5 — a battle before its first trading day is not LIVE', () => {
     }
   });
 
-  it('a completed battle is POST_CLOSE whatever its list says', () => {
-    expect(derivePhase(battle(['2026-10-27'], { status: 'completed' }), OPEN, ET('2026-10-26', 15, 30))).toBe(PHASE.POST_CLOSE);
+  it('a completed battle is POST_CLOSE whatever its list says, and starts nothing (review CL3-7)', () => {
+    const done = battle(['2026-10-27'], { status: 'completed' });
+    expect(derivePhase(done, OPEN, ET('2026-10-26', 15, 30))).toBe(PHASE.POST_CLOSE);
+    expect(deriveStartsAtEt(done, ET('2026-10-26', 15, 30))).toBe(null);
+    expect(buildBaggerbombAdapter(done, null, null, ET('2026-10-26', 15, 30), OPEN).startsAtEt).toBe(null);
   });
 
   it('a day outside the maintained calendar is still not LIVE, but names no time', () => {

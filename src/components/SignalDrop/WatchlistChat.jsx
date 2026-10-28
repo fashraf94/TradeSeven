@@ -613,7 +613,7 @@ export default function WatchlistChat({
       // C4: a dialogue that still held a retired name saved without it; say so
       // (from the names the server returned) before the editor opens.
       const droppedLine = retiredDroppedLine(data.droppedRetired);
-      if (droppedLine && typeof showToast === 'function') showToast(droppedLine);
+      if (droppedLine && typeof showToast === 'function') showToast(droppedLine, 'info');
       if (data.watchlistId && typeof onViewWatchlist === 'function') {
         onViewWatchlist(data.watchlistId);
         return;

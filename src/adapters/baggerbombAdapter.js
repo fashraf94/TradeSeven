@@ -165,7 +165,7 @@ export function notStartedYet(battle, nowMs) {
  * has no session for the day. Both surfaces read THIS string (BUILD_RULES §9).
  */
 export function deriveStartsAtEt(battle, nowMs) {
-  if (!notStartedYet(battle, nowMs)) return null;
+  if (battle?.status === 'completed' || !notStartedYet(battle, nowMs)) return null;
   const openMs = firstSessionOpenMs(battle);
   return openMs === null ? null : etStamp(new Date(openMs).toISOString());
 }

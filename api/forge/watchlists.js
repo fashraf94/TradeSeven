@@ -459,6 +459,9 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
   try {
     txResult = await db.runTransaction(async (tx) => {
       const freshSnap = await tx.get(sessionRef);
+      // C4 (review CL2-6): a retry of this body starts clean — a prior attempt's dropped names must not
+      // leak into the response of an attempt that finds the session already completed.
+      droppedRetired = [];
       if (!freshSnap.exists) throw new Error(SENTINEL_PREFIX + 'session_not_found');
       const session = freshSnap.data();
 

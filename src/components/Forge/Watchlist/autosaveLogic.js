@@ -55,6 +55,10 @@ export function nextSaveState(current, event) {
       return 'saved';
     case 'error':
       return 'error';
+    case 'stale_refusal':
+      // A refusal arrived for an edit that was undone while its PATCH was in flight
+      // (review CL2-3): nothing is left to fix or retry, so a pending save settles.
+      return current === 'saving' ? 'idle' : current;
     case 'noop':
       // Nothing is left to save (the edit that failed was undone, e.g. the
       // retired ticker was removed): a failed badge has nothing to retry.

@@ -13,6 +13,8 @@ import { describe, expect, it } from 'vitest';
 import { HUB_COPY as COPY } from './hubCopy';
 import { formatHubTimeOnDay } from './hubDate';
 import { liveGameRows } from './gamesDisplay';
+import { deployDisplay } from './deployDisplay';
+import { DESK_COPY } from '../../Dashboard/desk/deskCopy';
 import { etWallClockToMs } from '../../../utils/marketCalendar';
 
 const ET = (date, h, m = 0) => etWallClockToMs(date, h, m);
@@ -89,6 +91,21 @@ describe('C5 — a game before its first trading day is waiting, and says when i
     const row = rowOf(game('2026-10-27', { gameMode: 'baggerbomb_tournament', scoreState: { currentScore: 0, tradeCount: 0, evaluationCount: 1 } }), ET('2026-10-26', 15, 30), OPEN);
     expect(row.preOpen).toBe(false);
     expect(row.clock).not.toMatch(/^Starts/);
+    // Review CL3-8: the whole line, not only the clock. C5's end-time rule applies to every live row (the ruling:
+    // "names the day when it isn't today"), so this tournament, ending tomorrow, names the day too.
+    expect(row.detail).toBe('Score 0.0 · 0 trades · ends Tue 8:00 PM ET');
+  });
+
+  // Review CL3-9: the strip line comes out of the real deployDisplay, and the two "Starts ..." templates (the hub's
+  // and the Desk's) are one sentence.
+  it('the deploy strip first line, from deployDisplay itself, is "Deployed · Starts Tue 9:30 AM ET"', () => {
+    const row = rowOf(game('2026-10-27'), ET('2026-10-26', 15, 30), OPEN);
+    const strip = deployDisplay({ displayState: 'ready', canStart: false }, row);
+    expect(strip.stripLine1).toBe('Deployed · Starts Tue 9:30 AM ET');
+  });
+
+  it('the hub row and the Desk say the same "Starts" sentence', () => {
+    expect(COPY.games.startsAt('Tue 9:30 AM ET')).toBe(DESK_COPY.postureStarts('Tue 9:30 AM ET'));
   });
 
   it('a game whose first day is outside the calendar is waiting, with the plain words', () => {
