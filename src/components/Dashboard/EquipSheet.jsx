@@ -21,8 +21,16 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Check } from 'lucide-react';
 import { CMD, alpha } from './commandUI';
+import { cssVar } from '../../theme/cssTokens';
 
-const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+/**
+ * A keyboard-only focus outline on the sheet's Close and row buttons (founder ruling Q-S8F-2): `:focus-visible`, so a
+ * pointer or a touch shows none. The buttons' inline `all: 'unset'` takes their outline with it, so the rule is
+ * `!important` to win over it. The hub's own focus colour (hub/hubStyle.js HUB_FOCUS_CSS), as a token.
+ */
+const CONTROL_FOCUS_CSS = `[data-equip-sheet-control]:focus-visible { outline: 2px solid ${cssVar('teal')} !important; outline-offset: 2px !important; }`;
+
+const FOCUSABLE ='button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export default function EquipSheet({ open, onClose, title, subtitle, loading, rows = [], emptyLabel, footer, accent, dock = 'bottom', children }) {
   // 'bottom' = mobile bottom sheet (default, unchanged); 'center' = desktop modal.
@@ -136,6 +144,7 @@ export default function EquipSheet({ open, onClose, title, subtitle, loading, ro
               boxShadow: center ? '0 30px 80px rgba(0,0,0,0.6)' : '0 -20px 60px rgba(0,0,0,0.5)',
             }}
           >
+            <style>{CONTROL_FOCUS_CSS}</style>
             {!center && (
               <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 10 }}>
                 <div style={{ width: 38, height: 4.5, borderRadius: 99, background: CMD.hair2 }} />
@@ -151,6 +160,7 @@ export default function EquipSheet({ open, onClose, title, subtitle, loading, ro
                 ref={closeRef}
                 onClick={onClose}
                 aria-label="Close"
+                data-equip-sheet-control=""
                 style={{ all: 'unset', width: 32, height: 32, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: CMD.surface, cursor: 'pointer' }}
               >
                 <X size={16} color={CMD.ink2} />
@@ -170,6 +180,7 @@ export default function EquipSheet({ open, onClose, title, subtitle, loading, ro
                   <button
                     key={row.id}
                     type="button"
+                    data-equip-sheet-control=""
                     onClick={row.onClick}
                     disabled={row.disabled}
                     style={{

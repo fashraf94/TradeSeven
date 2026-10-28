@@ -227,3 +227,27 @@ describe('review fixes L4 — the sheet\'s keys', () => {
     expect(tab.defaultPrevented).toBe(false);
   });
 });
+
+// Founder ruling Q-S8F-2 (the build's review, L1-2): the sheet's Close and row buttons show a keyboard-only focus
+// outline. jsdom computes no :focus-visible, so this row pins the rule and what it reaches; headless Edge measured the
+// outline itself (Tab shows it, a click does not; the S8 fix build report §13).
+describe('founder ruling Q-S8F-2 — a keyboard-only focus outline on Close and the rows', () => {
+  it('Close and every row carry the marker; the sheet carries one :focus-visible rule, the teal token, !important over the inline all: unset', async () => {
+    const rows = [{ id: 'a', title: 'First' }, { id: 'b', title: 'Second' }];
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <EquipSheet open onClose={vi.fn()} title="Equip watchlist" rows={rows} footer={<button type="button">Footer</button>} accent="#22c55e" />,
+      );
+    });
+    const dialog = document.querySelector('[role="dialog"]');
+    const css = [...dialog.querySelectorAll('style')].map((s) => s.textContent).join('\n');
+    expect(css).toBe('[data-equip-sheet-control]:focus-visible { outline: 2px solid var(--ft-teal) !important; outline-offset: 2px !important; }');
+    const marked = [...dialog.querySelectorAll('[data-equip-sheet-control]')];
+    expect(marked.map((b) => b.getAttribute('aria-label') || b.textContent)).toEqual(['Close', 'First', 'Second']);
+    // Only those: the footer and any child control keep their own styles.
+    expect(marked.includes([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Footer'))).toBe(false);
+  });
+});
