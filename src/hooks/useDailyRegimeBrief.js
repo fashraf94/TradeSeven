@@ -30,6 +30,9 @@ export default function useDailyRegimeBrief() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const loadedRef = useRef(false);
+  // False once the reader has unmounted: the one retry below waits 1.5 s, and a reader gone by then reads nothing
+  // (Command Center S8 review S8-13; the hub and both legacy shells call this hook).
+  const aliveRef = useRef(true);
 
   const fetchData = useCallback(async (isRetry = false) => {
     setLoading(true);
@@ -47,12 +50,18 @@ export default function useDailyRegimeBrief() {
       // Auto-retry once after a short delay (covers transient network errors).
       if (!isRetry) {
         await new Promise(r => setTimeout(r, 1500));
+        if (!aliveRef.current) return undefined;
         return fetchData(true);
       }
       setError(err.message || 'Failed to load the daily brief');
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
   }, []);
 
   useEffect(() => {

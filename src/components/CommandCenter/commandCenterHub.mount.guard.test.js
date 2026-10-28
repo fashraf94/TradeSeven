@@ -602,7 +602,7 @@ const PERMITTED_TERMINALS = Object.freeze({
   'src/components/Dashboard/TraitsSheet.jsx': 'the shipped traits sheet, reused unchanged (ruling R-S5-4)',
   // S4 (rulings R-S4-1, R-S4-4): the brief's existing hook, which owns its read and its one retry (the hub adds no read of
   // its own), and the shared lean kernel Activity asks which standing leans a game would carry (Display-Agreement §9).
-  'src/hooks/useDailyRegimeBrief.js': 'the Daily Regime Brief hook, reused unchanged but for the additive generatedAt (ruling R-S4-4)',
+  'src/hooks/useDailyRegimeBrief.js': 'the Daily Regime Brief hook, reused unchanged but for the additive generatedAt (ruling R-S4-4) and its retry\'s unmount check (ruling R-S8F-4)',
   'api/_utils/leanRevalidation.js': 'revalidateStandingLeans at its default cap — the call the battle snapshot and the Forge Character tab make; Activity lists only the leans a game would carry (ruling R-S4-1)',
   // S2b (rulings R-S2b-1 … R-S2b-7): the deploy provider at App's root — already in the main graph (App imports it) —
   // whose context and owner-tagged progress store the hub reads; the shipped Scouting Board, mounted in the hub
