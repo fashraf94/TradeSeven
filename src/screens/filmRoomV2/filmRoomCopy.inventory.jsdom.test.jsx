@@ -74,7 +74,7 @@ const COPY_KEYS = [
   'meetings', 'meetingsNote', 'meetingsNone', 'meetingsAbsent', 'meetingAt()', 'meetingOutcome.approved', 'meetingOutcome.rejected', 'meetingOutcome.expired',
   'meetingResolvedBy', 'meetingInstants.created', 'meetingInstants.deadline', 'meetingInstants.resolved', 'meetingLegs', 'meetingLegNotCopied', 'meetingDiagnosis', 'runMeeting',
   'deepPrice', 'noChart.before', 'noChart.reasons.crypto_not_supported', 'noChart.reasons.no_bars', 'noChartRecorded', 'recordedPrices', 'deepNoSymbols', 'seriesReadError', 'evidenceCoverage', 'checksIn1', 'sessionOpen', 'sessionHigh', 'sessionLow', 'lastBarClose',
-  'changeOpenToClose', 'volumeSession', 'axisPrice', 'axisPercent', 'market', 'sector()', 'sectorNone', 'volume', 'rebased', 'inTheBook', 'sectorLine', 'sectorLineNone',
+  'changeOpenToClose', 'volumeSession', 'axisPrice', 'axisPercent', 'market', 'sector()', 'sectorNone', 'volume', 'rebased', 'inTheBook', 'companyNameNotOnFile', 'sectorLine', 'sectorLineNone',
   'exitMark', 'entryMark', 'entryFor', 'evidenceOverlay', 'evidenceOverlayNote', 'allSymbols', 'close10',
   'reservedHeader[0]', 'reservedHeader[1]', 'reservedFooter[0]', 'reservedFooter[1]',
   // Film Room B2 — the card's regions (Build B spec §6; Amendment G RG-5, RG-9)
@@ -203,9 +203,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 339 copy keys, 468 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(339);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
-    expect(inventory()).toHaveLength(468);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
+  it('the inventory\'s size is pinned (the build report states it): 340 copy keys, 469 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(340);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
+    expect(inventory()).toHaveLength(469);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {

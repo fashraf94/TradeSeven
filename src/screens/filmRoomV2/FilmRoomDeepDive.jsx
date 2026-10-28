@@ -52,9 +52,20 @@ export function displayNameOf(sym) {
   if (typeof name !== 'string' || !name || name === sym) return null;
   return FORBIDDEN.some((re) => re.test(name)) ? null : name;
 }
+/**
+ * B2.1 A5 (FR-05; Amendment J RJ-5): whether the directory holds a company name for the symbol at all. A name equal to
+ * the symbol ("AMD") is on file — the symbol says it, and nothing is repeated, as before; so is a name withheld for a
+ * forbidden word (R4(d)'s fallback). RJ-5's sentence is true only of a symbol the directory lacks.
+ */
+export function companyNameOnFile(sym) {
+  const name = typeof sym === 'string' ? COMPANY_NAMES[sym] : null;
+  return typeof name === 'string' && Boolean(name);
+}
 function DisplayName({ sym, style }) {
   const name = displayNameOf(sym);
-  return name ? <span data-display-name={sym} style={style}>{name}</span> : null;
+  if (name) return <span data-display-name={sym} style={style}>{name}</span>;
+  // RJ-5: a symbol the directory lacks says so — no name is guessed
+  return companyNameOnFile(sym) ? null : <span data-display-name-missing={sym} style={style}>{COPY.companyNameNotOnFile}</span>;
 }
 
 const PCT_AXIS = 'axis(% from the session open)';

@@ -258,6 +258,7 @@ export const FILM_ROOM_COPY = Object.freeze({
   volume: 'Volume',
   rebased: 'rebased to the session open',
   inTheBook: 'On the day',
+  companyNameNotOnFile: 'Company name not on file',   // B2.1 A5 (FR-05; RJ-5): the directory lacks the symbol — no name is guessed
   sectorLine: 'Sector line',
   sectorLineNone: 'none · market line only',
   exitMark: 'Exit',

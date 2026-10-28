@@ -251,7 +251,23 @@ describe('addendum R4(a)/(b)/(d) — the restored facts, axes and name', () => {
     expect(m.q('[data-region="symbol-facts"]').textContent.startsWith('ETN')).toBe(true);
   });
 
-  it('review A2P1-2: a directory name holding a forbidden word ("Best Buy") is shown as the symbol alone', () => {
+  it('B2.1 A5 (FR-05, RJ-5): a symbol the directory lacks says "Company name not on file" beside it and on the chart — no name is guessed', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} start="ETN" />);
+    expect(COMPANY_NAMES.ETN).toBeUndefined();
+    expect(m.q('[data-region="symbol-facts"] [data-display-name-missing="ETN"]').textContent).toBe('Company name not on file');
+    expect(m.q('#deep-chart [data-display-name-missing="ETN"]').textContent).toBe('Company name not on file');
+    expect(m.q('[data-display-name]')).toBeNull();
+    expect(sweepWords(m.container, docsFor(sep23Tape, sep23Series))).toEqual([]);
+    // a name on file — even one equal to its symbol ("AMD") — never reads "not on file"
+    m.click(chip('AMD'));
+    expect(COMPANY_NAMES.AMD).toBe('AMD');
+    expect(m.q('[data-display-name-missing]')).toBeNull();
+    m.click(chip('MSFT'));
+    expect(m.q('[data-display-name-missing]')).toBeNull();
+    expect(m.q('#deep-chart [data-display-name="MSFT"]').textContent).toBe('Microsoft');
+  });
+
+  it('review A2P1-2: a directory name holding a forbidden word ("Best Buy") is shown as the symbol alone — it IS on file, so never "not on file" (A5)', () => {
     expect(COMPANY_NAMES.BBY).toBe('Best Buy');
     expect(displayNameOf('BBY')).toBeNull();
     expect(displayNameOf('MSFT')).toBe('Microsoft');
@@ -261,6 +277,7 @@ describe('addendum R4(a)/(b)/(d) — the restored facts, axes and name', () => {
     m.render(<Harness tape={t} series={series} start="BBY" />);
     expect(m.q('[data-region="price-chart"]').getAttribute('data-symbol')).toBe('BBY');
     expect(m.q('[data-display-name]')).toBeNull();
+    expect(m.q('[data-display-name-missing]')).toBeNull();
     expect(sweepWords(m.container, docsFor(t, series))).toEqual([]);
   });
 });
