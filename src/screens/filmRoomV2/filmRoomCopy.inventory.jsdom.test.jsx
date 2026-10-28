@@ -23,7 +23,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import * as copyModule from './filmRoomCopy';
 import { FILM_ROOM_COPY, REPLAY_SENTENCE, DIRECTIVE_EXPLAINER, PROVENANCE_LABELS, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE, CLASS_LETTER } from './filmRoomCopy';
-import { EXIT_MAKER_WORDS, PLAN_DIRECTIONS, CHECK_STATE_WORDS, CHECK_STATE_TONES, checkStateOf, exitMakerOf, entryMakerOf, riskLines, riskSummary, deriveHoldings, roleOf, directiveCardOf } from './filmRoomModel';
+import { EXIT_MAKER_WORDS, PLAN_DIRECTIONS, CHECK_STATE_WORDS, CHECK_STATE_TONES, ROLE_WORDS, HOLDINGS_NOTES, RISK_WORDS, DIRECTIVE_CARD_WORDS, checkStateOf, exitMakerOf, entryMakerOf, riskLines, riskSummary, deriveHoldings, roleOf, directiveCardOf } from './filmRoomModel';
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
 import { SITUATIONS, LIVE_SITUATION_IDS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
@@ -124,6 +124,11 @@ const EXIT_MAKER_KEYS = ['agent.short', 'agent.swap', 'agent.exit', 'agent.entry
 // review A2FV3-7: the check states' words, a keyed table — pinned like the copy
 const CHECK_STATE_KEYS = ['default_hold', 'swap', 'hold', 'completed', 'no_trigger', 'budget_skipped', 'deferred', 'gameplan_created', 'gameplan_pending', 'proposal_pending', 'degraded_quotes', 'cpu_passive', 'tick_error', 'no_record', 'unknown'];
 const PLAN_DIRECTION_KEYS = ['potential_entry', 'potential_exit'];
+// B2.1 A8 (A2F3-7, the rest): the composers' words, keyed tables pinned like the check states' — a new word fails until it is listed and swept
+const ROLE_WORD_KEYS = ['exitedAt', 'enteredAt', 'unrecordedTime', 'swapBy', 'held', 'planned', 'series'];
+const HOLDINGS_NOTE_KEYS = ['noRisk', 'notReconciled', 'derived'];
+const RISK_WORD_KEYS = ['recorded', 'hold', 'none', 'actionNotRecorded'];
+const DIRECTIVE_CARD_KEYS = ['filed', 'notFiled'];
 
 // ── the model's composed words, from every branch of each reader ──────────────────────────────────────────────────
 const CHECK_ROWS = [
@@ -167,6 +172,10 @@ function inventory() {
   for (const k of EXIT_MAKER_KEYS) out.push([`EXIT_MAKER_WORDS.${k}`, leaf(EXIT_MAKER_WORDS, k)]);
   for (const k of PLAN_DIRECTION_KEYS) out.push([`PLAN_DIRECTIONS.${k}`, PLAN_DIRECTIONS[k]]);
   for (const k of CHECK_STATE_KEYS) out.push([`CHECK_STATE_WORDS.${k}`, CHECK_STATE_WORDS[k]]);
+  for (const k of ROLE_WORD_KEYS) out.push([`ROLE_WORDS.${k}`, ROLE_WORDS[k]]);
+  for (const k of HOLDINGS_NOTE_KEYS) out.push([`HOLDINGS_NOTES.${k}`, HOLDINGS_NOTES[k]]);
+  for (const k of RISK_WORD_KEYS) out.push([`RISK_WORDS.${k}`, RISK_WORDS[k]]);
+  for (const k of DIRECTIVE_CARD_KEYS) out.push([`DIRECTIVE_CARD_WORDS.${k}`, DIRECTIVE_CARD_WORDS[k]]);
   out.push(...modelWords());
   out.push(['INTRADAY_DIAGNOSTIC_HEADER', INTRADAY_DIAGNOSTIC_HEADER]);
   // B2: the situation titles and the question menu the regions say in the screen's own voice (data modules, swept here)
@@ -195,6 +204,10 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     expect(keysOf(EXIT_MAKER_WORDS)).toEqual(EXIT_MAKER_KEYS);
     expect(keysOf(PLAN_DIRECTIONS)).toEqual(PLAN_DIRECTION_KEYS);
     expect(keysOf(CHECK_STATE_WORDS)).toEqual(CHECK_STATE_KEYS);
+    expect(keysOf(ROLE_WORDS)).toEqual(ROLE_WORD_KEYS);
+    expect(keysOf(HOLDINGS_NOTES)).toEqual(HOLDINGS_NOTE_KEYS);
+    expect(keysOf(RISK_WORDS)).toEqual(RISK_WORD_KEYS);
+    expect(keysOf(DIRECTIVE_CARD_WORDS)).toEqual(DIRECTIVE_CARD_KEYS);
     // every state a check row can be read as has its words: each tone's state, and each word's state is read
     for (const s of Object.keys(CHECK_STATE_TONES)) expect(CHECK_STATE_WORDS[s], s).toBe(checkStateOf({ state: s }).label);
     expect(CHECK_ROWS.map((r) => checkStateOf(r).key).filter((k, i, a) => a.indexOf(k) === i).sort()).toEqual([...CHECK_STATE_KEYS].sort());
@@ -208,9 +221,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 352 copy keys, 482 swept entries', () => {
+  it('the inventory\'s size is pinned (the build report states it): 352 copy keys, 498 swept entries', () => {
     expect(COPY_KEYS).toHaveLength(352);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
-    expect(inventory()).toHaveLength(482);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
+    expect(inventory()).toHaveLength(498);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {

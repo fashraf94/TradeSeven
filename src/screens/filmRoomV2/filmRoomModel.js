@@ -373,24 +373,37 @@ export function checkRuns(tape) {
   return runs.map((r) => ({ ...r, count: r.indices.length }));
 }
 
+/**
+ * BA-7's words for a recorded risk decision — the screen's own copy, as a table the copy inventory pins key by key
+ * (B2.1 A8, A2F3-7, after CHECK_STATE_WORDS): the lead, the HOLD line, the none line, an unrecorded action.
+ */
+export const RISK_WORDS = Object.freeze({
+  recorded: 'Risk decision recorded:',
+  hold: 'Risk decision recorded: HOLD',
+  none: 'No risk decision recorded',
+  actionNotRecorded: 'not recorded',
+});
+/** One recorded risk decision's words: "Risk decision recorded: HOLD", or the action with its reason. */
+export const riskText = (action, reason) => (action === 'HOLD' ? RISK_WORDS.hold : `${RISK_WORDS.recorded} ${action}${str(reason) ? ` · ${reason}` : ''}`);
+
 /** BA-7 / BA-44 — a check's recorded risk decisions, one line per symbol; null → "No risk decision recorded". */
 export function riskLines(row) {
   const risk = row?.risk;
   if (!isObj(risk) || !Object.keys(risk).length) return null;
   return Object.keys(risk).sort().map((sym) => {
     const v = risk[sym] || {};
-    const action = str(v.action) ?? 'not recorded';
-    return { symbol: sym, text: action === 'HOLD' ? 'Risk decision recorded: HOLD' : `Risk decision recorded: ${action}${str(v.reason) ? ` · ${v.reason}` : ''}`, action };
+    const action = str(v.action) ?? RISK_WORDS.actionNotRecorded;
+    return { symbol: sym, text: riskText(action, v.reason), action };
   });
 }
 
 /** One summary line for a check's risk record (the strip and the rows). */
 export function riskSummary(row) {
   const lines = riskLines(row);
-  if (!lines) return 'No risk decision recorded';
+  if (!lines) return RISK_WORDS.none;
   const fired = lines.filter((l) => l.action !== 'HOLD');
-  if (!fired.length) return 'Risk decision recorded: HOLD';
-  return fired.map((l) => `${l.text.replace('Risk decision recorded: ', `Risk decision recorded: ${l.symbol} `)}`).join(' · ');
+  if (!fired.length) return RISK_WORDS.hold;
+  return fired.map((l) => `${l.text.replace(`${RISK_WORDS.recorded} `, `${RISK_WORDS.recorded} ${l.symbol} `)}`).join(' · ');
 }
 
 // ── actions (BA-6, BA-11, BA-38; Amendment E F1, BA-47) ─────────────────────
@@ -490,12 +503,19 @@ export function forkRuns(list) {
  * at or after that check. When the two disagree, or no check recorded a risk
  * decision, the grid is not drawn and the reason is the coverage line.
  */
+/** The held set's coverage notes — the screen's own words, a table the copy inventory pins (B2.1 A8, A2F3-7). */
+export const HOLDINGS_NOTES = Object.freeze({
+  noRisk: 'no check recorded a risk decision this day, so the held set cannot be derived',
+  notReconciled: 'the recorded risk decisions and swaps of this day do not reconcile into a held set, so the grid is not drawn',
+  derived: 'derived from recorded values: the first and last checks\' risk decisions and the day\'s swaps',
+});
+
 export function deriveHoldings(tape) {
   const checks = Array.isArray(tape?.checks) ? tape.checks : [];
   const actions = Array.isArray(tape?.actions) ? tape.actions : [];
   const withRisk = checks.map((c, i) => ({ c, i })).filter(({ c }) => isObj(c.risk) && Object.keys(c.risk).length);
   if (!withRisk.length) {
-    return { status: 'unavailable', note: 'no check recorded a risk decision this day, so the held set cannot be derived', start: null, end: null, changes: [] };
+    return { status: 'unavailable', note: HOLDINGS_NOTES.noRisk, start: null, end: null, changes: [] };
   }
   const first = withRisk[0];
   const last = withRisk[withRisk.length - 1];
@@ -534,11 +554,11 @@ export function deriveHoldings(tape) {
   }
   const agrees = expectAtLast.size === lastKeys.size && [...expectAtLast].every((s) => lastKeys.has(s));
   if (!consistent || !agrees) {
-    return { status: 'unavailable', note: 'the recorded risk decisions and swaps of this day do not reconcile into a held set, so the grid is not drawn', start: null, end: null, changes: [] };
+    return { status: 'unavailable', note: HOLDINGS_NOTES.notReconciled, start: null, end: null, changes: [] };
   }
   return {
     status: 'derived',
-    note: 'derived from recorded values: the first and last checks\' risk decisions and the day\'s swaps',
+    note: HOLDINGS_NOTES.derived,
     start: { at: first.c.at, symbols: slots.map((x) => x.start) },
     end: { at: last.c.at, symbols: slots.map((x) => x.end) },
     slots,
@@ -553,9 +573,10 @@ export function deriveHoldings(tape) {
  * (canonicalText, retainedDirectiveText) is never composed into them: it renders as a quotation of its own path
  * (Amendment E addendum 2, R7; review A2A1-5).
  */
+export const DIRECTIVE_CARD_WORDS = Object.freeze({ filed: 'Directive filed', notFiled: 'No new directive filed' });
 export function directiveCardOf(d) {
-  if (d?.cardState === 'committed') return { filed: true, title: 'Directive filed' };
-  return { filed: false, title: 'No new directive filed' };
+  if (d?.cardState === 'committed') return { filed: true, title: DIRECTIVE_CARD_WORDS.filed };
+  return { filed: false, title: DIRECTIVE_CARD_WORDS.notFiled };
 }
 
 // ── meetings (Build B spec §3 T2; Amendment J RJ-1) ─────────────────────────
@@ -665,26 +686,38 @@ export function evidenceMarkers(tape, symbol) {
   return out;
 }
 
+/** A symbol's role words — the screen's own copy, a table the copy inventory pins key by key (B2.1 A8, A2F3-7). */
+export const ROLE_WORDS = Object.freeze({
+  exitedAt: 'exited at',
+  enteredAt: 'entered at',
+  unrecordedTime: 'an unrecorded time',
+  swapBy: 'a swap by',
+  held: 'held at the first and the last risk record',
+  planned: 'named in a plan',
+  series: 'price series',
+});
+
 /** The role a symbol had on the day, from the tape's own rows (never guessed). */
 export function roleOf(tape, symbol, holdings) {
+  const W = ROLE_WORDS;
   const actions = Array.isArray(tape?.actions) ? tape.actions : [];
   const exited = actions.map((a, i) => ({ a, i })).find(({ a }) => a.symbolOut === symbol);
   const entered = actions.map((a, i) => ({ a, i })).find(({ a }) => a.symbolIn === symbol);
   // A recorded swap is stated before "held": a name bought before the first risk record is in the
   // start set too, and must never read as held all along (review A2V1-11).
-  if (exited) return { kind: 'exited', text: `exited at ${etClock(exited.a.at) ?? 'an unrecorded time'} · ${exitMakerOf(exited.a).label}`, action: exited.i };
+  if (exited) return { kind: 'exited', text: `${W.exitedAt} ${etClock(exited.a.at) ?? W.unrecordedTime} · ${exitMakerOf(exited.a).label}`, action: exited.i };
   if (entered) {
     // The tape records who made the EXIT of the swap that brought the name in, not who chose it (review A2L1-12).
     const who = exitMakerOf(entered.a);
-    const by = `a swap by ${EXIT_MAKER_WORDS[who.by].swap}${who.by === 'platform' && entered.a.exitReason ? ` · ${entered.a.exitReason}` : ''}`;
-    return { kind: 'entered', text: `entered at ${etClock(entered.a.at) ?? 'an unrecorded time'} · ${by}`, action: entered.i };
+    const by = `${W.swapBy} ${EXIT_MAKER_WORDS[who.by].swap}${who.by === 'platform' && entered.a.exitReason ? ` · ${entered.a.exitReason}` : ''}`;
+    return { kind: 'entered', text: `${W.enteredAt} ${etClock(entered.a.at) ?? W.unrecordedTime} · ${by}`, action: entered.i };
   }
   if (holdings?.status === 'derived' && holdings.start.symbols.includes(symbol) && holdings.end.symbols.includes(symbol)) {
-    return { kind: 'held', text: 'held at the first and the last risk record', action: null };
+    return { kind: 'held', text: W.held, action: null };
   }
   const planned = (Array.isArray(tape?.plans) ? tape.plans : []).some((p) => p.symbol === symbol);
-  if (planned) return { kind: 'planned', text: 'named in a plan', action: null };
-  return { kind: 'series', text: 'price series', action: null };
+  if (planned) return { kind: 'planned', text: W.planned, action: null };
+  return { kind: 'series', text: W.series, action: null };
 }
 
 /**

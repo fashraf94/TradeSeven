@@ -10,7 +10,7 @@
 // per screen, never repeated here.
 
 import React from 'react';
-import { valueAt, etClock, checkStateOf, riskLines, fmtPlain, fmtPrice } from './filmRoomModel';
+import { valueAt, etClock, checkStateOf, riskLines, riskText, fmtPlain, fmtPrice } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, card, eyebrow, foot, mono, TapeNum, When, Rec, Row, StateTag, TextButton } from './FilmRoomKit';
 import { CheckTags } from './FilmRoomCardRegions';
@@ -23,7 +23,7 @@ export function EvidenceStamp({ tape, index, symbol }) {
   if (!e) return null;
   const at = valueAt(tape, ['checks', index, 'evidenceAt']);
   // BA-7's words for a recorded risk decision, here as the stamp recorded it (review A2L1-7).
-  const risk = e.risk ? (e.risk.action === 'HOLD' ? 'Risk decision recorded: HOLD' : `Risk decision recorded: ${e.risk.action}${e.risk.reason ? ` · ${e.risk.reason}` : ''}`) : COPY.notRecorded;
+  const risk = e.risk ? riskText(e.risk.action, e.risk.reason) : COPY.notRecorded;
   return (
     <div data-evidence={`${index}:${symbol}`} style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0' }}>
