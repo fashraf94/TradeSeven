@@ -38,7 +38,7 @@ const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
 export default function WatchlistEditor({ watchlistId, onClose }) {
   const { tokens } = useTheme();
-  const { saveState, queueSave, retry, setBaseline } = useWatchlistAutosave(watchlistId);
+  const { saveState, saveError, queueSave, retry, setBaseline } = useWatchlistAutosave(watchlistId);
 
   const [loadState, setLoadState] = useState('loading'); // loading | error | loaded
   const [errorMessage, setErrorMessage] = useState('');
@@ -211,7 +211,7 @@ export default function WatchlistEditor({ watchlistId, onClose }) {
               {tickers.length} / {TICKER_CAP}
             </span>
             {!readOnly && (
-              <SaveStateIndicator tokens={tokens} saveState={saveState} onRetry={retry} />
+              <SaveStateIndicator tokens={tokens} saveState={saveState} saveError={saveError} onRetry={retry} />
             )}
             <div style={{ flex: 1 }} />
             {readOnly ? (

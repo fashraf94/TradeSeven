@@ -22,9 +22,10 @@
 // COCKPIT BUILD 2b (contract Amendment D, D-1 / D-2 / D-4 / D-7; spec
 // docs/COCKPIT_BUILD2B_SPEC_V1_0.md S-5). Behind isCockpit2bOn(), read per
 // request. With the flag OFF this endpoint behaves exactly as at HEAD for the
-// budget, the pending check and the answers; its ONE from-merge change is
-// D-7's `counterpart_unavailable` at the eligibility step (callActions.js). With
-// the flag ON:
+// budget, the pending check and the answers; its from-merge changes are D-7's
+// `counterpart_unavailable` and, since the BaggerBomb cleanup (C3, Oct 2026), a
+// pick judged by canComeIn instead of the universe, both at the eligibility step
+// (callActions.js). With the flag ON:
 //   wire     `replace` is an answer and requires `pickSymbol`; `go_now` may
 //            carry one; `confirmReplace` is an optional boolean; `pickSymbol`
 //            on any other answer is 400 invalid_request. After the parent

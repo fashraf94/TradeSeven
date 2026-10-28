@@ -46,6 +46,7 @@ import WatchlistAnatomyPanel from './WatchlistAnatomyPanel';
 import ChatBubble from './components/ChatBubble';
 import ActionChip from './components/ActionChip';
 import TypingIndicator from './components/TypingIndicator';
+import { retiredDroppedLine } from '../../utils/retiredTickerCopy';
 
 const REQUEST_TIMEOUT_MS = 25_000;
 const CONCURRENT_RETRY_DELAY_MS = 500;
@@ -609,6 +610,10 @@ export default function WatchlistChat({
       // Phase 4B: navigate straight into the editor to refine the saved
       // watchlist. This unmounts the dialogue, so skip the onClose() below.
       const data = await response.json().catch(() => ({}));
+      // C4: a dialogue that still held a retired name saved without it; say so
+      // (from the names the server returned) before the editor opens.
+      const droppedLine = retiredDroppedLine(data.droppedRetired);
+      if (droppedLine && typeof showToast === 'function') showToast(droppedLine, 'info');
       if (data.watchlistId && typeof onViewWatchlist === 'function') {
         onViewWatchlist(data.watchlistId);
         return;

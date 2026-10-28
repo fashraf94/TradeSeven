@@ -62,6 +62,21 @@ const ET_DAY = new Intl.DateTimeFormat('en-US', {
   day: 'numeric',
 });
 
+const ET_WEEKDAY = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' });
+const ET_DATE_KEY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
+
+/**
+ * "8:00 PM" when `ms` is on the same ET day as `nowMs`, "Tue 8:00 PM" on any
+ * other (BaggerBomb cleanup C5: a game that ends tomorrow says so). With no
+ * usable `nowMs` it is the bare time, as it was. '' for anything but a finite ms.
+ */
+export function formatHubTimeOnDay(ms, nowMs) {
+  const time = formatHubTime(ms);
+  if (!time || typeof nowMs !== 'number' || !Number.isFinite(nowMs)) return time;
+  if (ET_DATE_KEY.format(new Date(ms)) === ET_DATE_KEY.format(new Date(nowMs))) return time;
+  return `${ET_WEEKDAY.format(new Date(ms))} ${time}`;
+}
+
 /** "Oct 3" for an instant in ms, read in ET. '' for anything but a finite number. */
 export function formatHubDay(ms) {
   if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';

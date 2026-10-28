@@ -27,6 +27,7 @@ import { TAB_KEYS, tabLabels } from './agentBattleTabs';
 // Everything imported from ./battleView renders ONLY under the flag; flag-off
 // the screen is byte-identical to the tabbed screen it was before Phase A.
 import { getMarketState } from '../utils/marketSchedule';
+import { etDateOf, firstTradingDayOf } from '../utils/tieredFirstTradingDay.js';
 import { deriveTurnLine } from './battleView/deriveTurnLine';
 import { selectSymbolRoster } from './battleView/selectSymbolRoster';
 import { countMentions, mergeRecordedTape } from './battleView/scopeTape';
@@ -274,7 +275,15 @@ export function enrichHeldPosition(asset, tier, { curPrice, previousClose, start
     return d.toLocaleDateString('en-US', { timeZone: 'America/New_York' });
   };
   const activationTs = activatedAt || createdAt;
-  const isActivationDay = activationTs ? toEtDate(Date.now()) === toEtDate(activationTs) : true;
+  // BaggerBomb cleanup C2 (review CL1-1): a tiered battle's activation day is its first trading day (BR-2: a
+  // battle deployed in the last 45 minutes before a close plays the NEXT session), exactly as agent-evaluate.js
+  // and agent-daily-scores.js now read it; `activatedAt` only when the battle names none. Tournaments and other
+  // modes name none here, so they keep the `activatedAt` comparison unchanged. `stockBattle` is the battle
+  // document at both call sites.
+  const firstDay = firstTradingDayOf(stockBattle);
+  const isActivationDay = firstDay
+    ? etDateOf(Date.now()) === firstDay
+    : (activationTs ? toEtDate(Date.now()) === toEtDate(activationTs) : true);
 
   // Threshold baseline must match the asset's entry into the portfolio.
   // For swapped-in assets, swapPrice prevents retroactive BaggerBomb credit

@@ -21,6 +21,7 @@ import { toMs, inDay, etDateOf, etDayBounds, sessionFor, previousSession, within
 import { historyListOf, meetingLegsOf, meetingOf } from '../playerFieldReaders.js';
 import { flattenPortfolioServer, flattenBenchServer } from '../agentScoring.js';
 import { tradingTimeline } from '../../../src/utils/tapeSchedule.js';
+import { firstTradingDayOf } from '../../../src/utils/tieredFirstTradingDay.js';
 // BaggerBomb stock thresholds v2 (Ruling 16): the persisted dispatch, Node-clean (BUILD_RULES §4).
 import { stockModelRoute, displayedStockScores } from '../../../src/utils/stockThresholdModel.js';
 import { NOTES, UNKNOWN_WHAT, counted, ABSENT_ENTRY_REASON } from './tapeNotes.js';
@@ -396,7 +397,7 @@ export const swapKey = (at, out, inn) => `swap:${at}|${out}|${inn}`;
  * the evaluator scores against `swapPrice`, else the activation day's starting
  * price, else the Guard-2-validated previousClose — which nothing records.
  */
-export function ghostBaseline({ receipt, entryPrice, swappedOutAt, activatedAt }) {
+export function ghostBaseline({ receipt, entryPrice, swappedOutAt, activatedAt, firstTradingDay = null }) {
   const gr = receipt?.guardrailReplay;
   if (num(entryPrice) === null || num(entryPrice) <= 0) return { value: null, basis: null, source: null };
   if (gr && gr.outgoingSwappedInDay != null) {
@@ -406,7 +407,9 @@ export function ghostBaseline({ receipt, entryPrice, swappedOutAt, activatedAt }
     return { value: entryPrice, basis: 'swap_price', source: 'receipt.guardrailReplay.outgoingSwappedInDay' };
   }
   const swapDay = etDateOf(swappedOutAt);
-  const activationDay = etDateOf(activatedAt);
+  // BaggerBomb cleanup C2: a tiered battle's activation day is its first trading day (the evaluator's own
+  // test, agent-evaluate.js), else the ET date of `activatedAt`; `firstTradingDay` is null for other modes.
+  const activationDay = firstTradingDay || etDateOf(activatedAt);
   if (receipt && swapDay && activationDay && swapDay === activationDay) {
     // The evaluator's own isActivationDay test (agent-evaluate.js:1085-1088):
     // with no swapPrice, entry = startingPrice, and the baseline is the same.
@@ -428,7 +431,7 @@ export function buildReplayInputs({ row, receipt, trade, battle }) {
   const direction = str(trade?.direction);
 
   const ghostEntry = row.entryPrice;
-  const baseline = ghostBaseline({ receipt, entryPrice: ghostEntry, swappedOutAt: row.at, activatedAt: battle?.activatedAt });
+  const baseline = ghostBaseline({ receipt, entryPrice: ghostEntry, swappedOutAt: row.at, activatedAt: battle?.activatedAt, firstTradingDay: firstTradingDayOf(battle) });
   const ghost = {
     entryPrice: ghostEntry,
     atr: num(gr?.outgoingBaseATR),

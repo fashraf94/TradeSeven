@@ -71,9 +71,28 @@ export function newlyAddedRetiredTickers(nextTickers, storedTickers = []) {
   return [...next].filter((s) => isRetiredStock(s) && !stored.has(s));
 }
 
+// C4 (Flash, Oct 27, 2026): a saved DIALOGUE is not refused for an old retired
+// candidate — its retired names are dropped and the rest saved. Splits the list
+// the way newlyAddedRetiredTickers reads a symbol (trimmed, upper-cased), keeping
+// each kept row as it came and naming each dropped symbol once, in list order.
+export function splitRetiredTickers(tickers) {
+  const kept = [];
+  const dropped = [];
+  for (const t of Array.isArray(tickers) ? tickers : []) {
+    const symbol = typeof t?.symbol === 'string' ? t.symbol.trim().toUpperCase() : '';
+    if (symbol && isRetiredStock(symbol)) {
+      if (!dropped.includes(symbol)) dropped.push(symbol);
+    } else kept.push(t);
+  }
+  return { kept, dropped };
+}
+
+// `symbols` names what was refused so the editor can say which one to remove
+// (#998 MT3-6) from the payload, never by re-parsing the message.
 export function retiredTickerRefusal(symbols) {
   return {
     error: 'retired_ticker',
     message: `${symbols.join(', ')} ${symbols.length === 1 ? 'has' : 'have'} left the stock universe and can't be added to a watchlist.`,
+    symbols: [...symbols],
   };
 }

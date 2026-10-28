@@ -892,6 +892,9 @@ describe('agent-evaluate cron — P2 tournament ledger wiring (agent-market excl
       // runs the real executor on prices built by the real producer to prove an
       // unpriced swap-in commits nothing — a test consumer, not a new call site.
       'api/_utils/agentSwapExecution.invalidQuote.test.js',
+      // BaggerBomb cleanup C2 (founder-sanctioned fence contact, Oct 28, 2026): the Guard 3 activation-day rows
+      // run the real executor over the sibling tests' in-memory Firestore — a test consumer, not a new call site.
+      'api/_utils/agentSwapExecution.firstDay.test.js',
     ]);
     const apiRoot = resolve(__dirname, '..');
     const offenders = [];

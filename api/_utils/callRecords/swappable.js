@@ -105,6 +105,25 @@ export function canComeIn({ battle, out, slot = null, inSymbol, atMs }) {
 }
 
 /**
+ * BaggerBomb cleanup C3 (Flash, Oct 27, 2026): the test a fork option must pass,
+ * built ONCE for both seams that judge a declarations block — the pre-commit
+ * capture (agent-evaluate.js, which stamps the entry's `declarationsPhase`) and
+ * the mint (candidate.js) — so the entry's "expected" can never promise a record
+ * the mint then removes (review CL2-1). It is canComeIn on the seam's frozen
+ * `book` at the check's own instant (`promptBuiltAt`): out = the fork's swapOut,
+ * slot = the fork's slot. An unknown seam (no book) proves nothing usable, the
+ * counterpartUsable stance, so its forks are removed.
+ *
+ * @param {{ book: object|null|undefined, promptBuiltAt: string|null|undefined }} seam
+ * @returns {(option: { slot: string, swapOut: string, symbol: string }) => boolean}
+ */
+export function forkUsableFor({ book, promptBuiltAt } = {}) {
+  const atMs = typeof promptBuiltAt === 'string' ? Date.parse(promptBuiltAt) : Number.NaN;
+  return ({ slot, swapOut, symbol }) => Boolean(book) && typeof book === 'object'
+    && canComeIn({ battle: book, out: swapOut, slot, inSymbol: symbol, atMs }).ok;
+}
+
+/**
  * Every name on the swap's lists, in ROSTER ORDER — the persisted bench
  * stocks, then the bench crypto, then the hot bench — deduped. The lists the
  * executor reads (findAssetInBench, the hot-bench match), not the universe.

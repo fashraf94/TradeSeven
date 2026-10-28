@@ -188,6 +188,8 @@ async function handlePatch({ watchlistRef, watchlistId, user, req, res }) {
       return res.status(txResult.statusCode).json({
         error: txResult.error,
         message: txResult.message,
+        // C4: a retired_ticker refusal names the symbols, for the editor's own line.
+        ...(Array.isArray(txResult.symbols) ? { symbols: txResult.symbols } : {}),
       });
     }
 
