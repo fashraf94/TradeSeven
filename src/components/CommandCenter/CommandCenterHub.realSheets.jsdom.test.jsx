@@ -314,3 +314,47 @@ describe('the real sheets are dialogs (the S8 review S8-8; ruling R-S8F-6)', () 
     expect(restores).toHaveBeenCalledTimes(1);
   }, 30000);
 });
+
+// The build's own review, lens L1 (L1-1, CONFIRMED by its refuter): picking an archetype swaps the cards for the confirm
+// step, so the focused card unmounts and focus falls to <body>, where no key reaches the dialog's own handler. Those keys
+// are still the sheet's: Escape closes it, and Tab goes back inside.
+describe('review fix L1-1: focus that fell out of an open sheet', () => {
+  async function pickACard() {
+    const { m } = await renderHub();
+    const control = btn(COPY.loadout.changeArchetype);
+    control.focus();
+    click(control);
+    const [dialog] = liveDialogs();
+    const card = dialog.querySelector('button[aria-pressed="false"]:not([disabled])');
+    expect(card, 'an archetype card to pick').toBeTruthy();
+    card.focus();
+    click(card);
+    expect(document.getElementById(dialog.getAttribute('aria-labelledby'))?.textContent).toMatch(/^Change to /);
+    expect(document.activeElement).toBe(document.body);
+    return { m, control, dialog };
+  }
+
+  it('Escape with focus on <body> still closes the sheet, and focus returns to the opener', async () => {
+    const { m, control } = await pickACard();
+    key(document.body, 'Escape');
+    expect(isInert(m.host)).toBe(false);
+    expect(document.activeElement).toBe(control);
+  }, 30000);
+
+  it('Tab and Shift+Tab with focus on <body> go back into the sheet, never into the page behind it', async () => {
+    const { dialog } = await pickACard();
+    expect(key(document.body, 'Tab').defaultPrevented).toBe(true);
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    document.activeElement.blur();
+    expect(document.activeElement).toBe(document.body);
+    expect(key(document.body, 'Tab', { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  }, 30000);
+
+  it('a key on <body> while no sheet is open is not a sheet\'s', async () => {
+    const { m } = await renderHub();
+    const event = key(document.body, 'Tab');
+    expect(event.defaultPrevented).toBe(false);
+    expect(isInert(m.host)).toBe(false);
+  });
+});

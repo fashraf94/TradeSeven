@@ -108,11 +108,15 @@ describe('the Scouting Board is a dialog, with no host around it (the S8 review 
     expect(document.activeElement).toBe(opener);
   });
 
-  it('Escape from a key event that did not start inside the sheet is not the sheet\'s', async () => {
+  it('Escape from a control outside the sheet is not the sheet\'s (focus nowhere — <body> — is: review fix L1-1)', async () => {
     const onClose = await renderHost();
     await act(async () => { api.open(); });
-    key(document.body, 'Escape');
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    key(outside, 'Escape');
     expect(onClose).not.toHaveBeenCalled();
+    key(document.body, 'Escape');
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
 

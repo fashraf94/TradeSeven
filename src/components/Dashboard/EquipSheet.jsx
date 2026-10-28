@@ -30,6 +30,9 @@ export default function EquipSheet({ open, onClose, title, subtitle, loading, ro
   const titleId = `equip-sheet-title${useId()}`;
   const dialogRef = useRef(null);
   const closeRef = useRef(null);
+  // The latest onClose, for the document listener below (registered once per open).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -44,15 +47,14 @@ export default function EquipSheet({ open, onClose, title, subtitle, loading, ro
     };
   }, [open]);
 
-  const onKeyDown = (event) => {
-    // A keydown from an overlay rendered among this sheet's children (a portal elsewhere in the DOM) is that overlay's.
-    if (!dialogRef.current?.contains(event.target)) return;
+  /** Escape closes; Tab and Shift+Tab cycle inside. Focus outside the cycle (on the dialog, or nowhere) re-enters it. */
+  const handleKey = (event) => {
     if (event.key === 'Escape') {
       event.stopPropagation();
-      onClose?.();
+      onCloseRef.current?.();
       return;
     }
-    if (event.key !== 'Tab') return;
+    if (event.key !== 'Tab' || !dialogRef.current) return;
     const nodes = [...dialogRef.current.querySelectorAll(FOCUSABLE)];
     if (!nodes.length) return;
     const first = nodes[0];
@@ -69,6 +71,29 @@ export default function EquipSheet({ open, onClose, title, subtitle, loading, ro
       first.focus();
     }
   };
+
+  const onKeyDown = (event) => {
+    // A keydown from an overlay rendered among this sheet's children (a portal elsewhere in the DOM) is that overlay's.
+    if (!dialogRef.current?.contains(event.target)) return;
+    handleKey(event);
+  };
+
+  // Focus can fall out of an open sheet without leaving it: the control that had it unmounts (the archetype picker swaps
+  // its cards for the confirm step) and focus drops to <body>, where no key reaches the dialog's own handler. Those keys
+  // are still the sheet's (the build's review, L1-1) — unless the sheet sits under an overlay that made it inert.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onStrayKey = (event) => {
+      if (event.target !== document.body) return;
+      const dialog = dialogRef.current;
+      if (!dialog || !dialog.isConnected || dialog.closest('[inert]')) return;
+      handleKey(event);
+    };
+    document.addEventListener('keydown', onStrayKey);
+    return () => document.removeEventListener('keydown', onStrayKey);
+    // handleKey reads only refs and the DOM.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // Portaled to <body>: the Command Dashboard shells' roots are stacking
   // contexts (position relative + zIndex 1), which would cap this overlay's
