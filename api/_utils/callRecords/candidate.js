@@ -76,7 +76,7 @@
 import { validateDeclarations, invalidationReason, sortRemovedInSourceOrder, removedRecordFields, DECLARATION_CAPS, jsonBytes } from './validate.js';
 import { bindHorizon, battleExpiryMs } from './horizon.js';
 import { saidPassesLint } from './copy.js';
-import { canComeIn, swappableNames } from './swappable.js';
+import { canComeIn, swappableNames, forkUsableFor } from './swappable.js';
 import { composeCandidatesStamp } from '../tickStamps.js';
 
 /** The modes a record can be minted under (Amendment C-5). */
@@ -386,12 +386,9 @@ export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw,
     battleExpiresAtMs: battleExpiryMs(battle),
   });
   // BaggerBomb cleanup C3: a fork option must pass the same canComeIn test as an exit's replacement, on the
-  // seam's frozen book at the check's own instant. An unknown seam (no book) proves nothing usable — the
-  // counterpartUsable stance — so its forks are removed (the universe is unknown there too).
-  const forkAtMs = typeof promptBuiltAt === 'string' ? Date.parse(promptBuiltAt) : Number.NaN;
-  const forkUsable = ({ slot, swapOut, symbol }) => Boolean(book) && typeof book === 'object'
-    && canComeIn({ battle: book, out: swapOut, slot, inSymbol: symbol, atMs: forkAtMs }).ok;
-  const validation = validateDeclarations(raw, { universe, resolveHorizon, topLevelWatching, forkUsable });
+  // seam's frozen book at the check's own instant — the SAME test (swappable.js forkUsableFor) the pre-commit
+  // capture used, so an entry stamped "expected" never promises a record this mint removes (review CL2-1).
+  const validation = validateDeclarations(raw, { universe, resolveHorizon, topLevelWatching, forkUsable: forkUsableFor({ book, promptBuiltAt }) });
   const removed = [...validation.removed];
   if (!validation.validated) {
     return deepFreeze({ record: null, calls: [], newOpen: [], removed, canonical: { record: null, calls: {} }, publicationBytes: 0 });

@@ -426,6 +426,35 @@ describe('Build 2a — Amendment C end to end on the real check', () => {
   });
 });
 
+// BaggerBomb cleanup C3 (review CL2-1): the pre-commit capture and the mint judge a fork by ONE test (swappable.js
+// forkUsableFor), so the entry's `declarationsPhase` never promises a record the mint then removes — the wire would
+// read `failed` and the Film Room would count a check that "expected a declarations record that is absent".
+describe('C3 — a fork over a name that cannot come in is judged alike at the capture and at the mint', () => {
+  const forkOnly = (symbols) => ({ calledShots: [], watching: [], playerAsk: null, fork: { slot: 'support', swapOut: 'KO', options: symbols.map((symbol) => ({ symbol, why: 'w' })), said: 'pick one' } });
+  const equippedBattle = () => {
+    const b = makeTickBattle();
+    b.agentContext = { ...b.agentContext, equippedWatchlist: { watchlistId: 'wl-1', name: 'Banks', tickers: ['KRE', 'JPM'] } };
+    return b;
+  };
+
+  it('on · an equipped-only ETF (in the universe, on no swap list): phase none, no record, no wire, no pick', async () => {
+    const { db, entry } = await runTick({ mode: 'on', battle: equippedBattle(), result: makeHoldResult({ declarations: forkOnly(['KRE', 'JPM']) }) });
+    expect(entry.declarationsPhase).toBe('none');
+    expect(storedCollection(db, 'declarations')).toEqual({});
+    expect(storedCollection(db, 'calls')).toEqual({});
+    expect(db.__store.battle.cronState).not.toHaveProperty('declarationsPhase');
+    expect(db.__store.battle.cronState.callsDiag).toMatchObject({ evalId: entry.evalId, phaseResult: 'none' });
+  });
+
+  it('on · control: the same fork over ranked bench names is expected and minted as one pick', async () => {
+    const { db, entry } = await runTick({ mode: 'on', battle: equippedBattle(), result: makeHoldResult({ declarations: forkOnly(['AMD', 'JPM']) }) });
+    expect(entry.declarationsPhase).toBe('expected');
+    expect(storedDoc(db, 'declarations', entry.evalId).fork).toMatchObject({ slot: 'support', swapOut: 'KO' });
+    expect(Object.values(storedCollection(db, 'calls')).map((c) => c.kind)).toEqual(['pick']);
+    expect(db.__store.battle.cronState.declarationsPhase).toEqual({ evalId: entry.evalId, phase: 'written' });
+  });
+});
+
 describe('§3.12 row 6 — the budget on the model path', () => {
   // Re-based Oct 15, 2026 (the eval model timeout 20s → 40s): the requirement
   // is 64,000 at off and 68,000 at shadow/on (44,000 / 48,000 before).

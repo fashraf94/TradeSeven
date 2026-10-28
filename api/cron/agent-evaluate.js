@@ -57,6 +57,7 @@ import { resolveCallRecordsMode, createCallsContext, attachCheckContext, callsAc
 import { runHeardPhase } from '../_utils/callRecords/heard.js';
 import { recordFetchedQuote, freezeObservation, freezeModelObservation, classifyEntryExit, carryExecutorResult, passExaminesHeldPrices } from '../_utils/callRecords/observe.js';
 import { captureDeclarations } from '../_utils/callRecords/validate.js';
+import { forkUsableFor } from '../_utils/callRecords/swappable.js';
 import { bindHorizon, battleExpiryMs } from '../_utils/callRecords/horizon.js';
 import { callsReserveMsFor, runModelCallsPhase, TAIL_RESERVE_MS } from '../_utils/callRecords/publish.js';
 // Cockpit Build 2b (Amendment D-6): the retire-on-exit step before the prompt.
@@ -3245,6 +3246,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               universe: callsCtx.universe,
               resolveHorizon: bindHorizon({ promptBuiltAtMs: Date.parse(promptBuiltAt), mintedAtMs: Date.now(), battleExpiresAtMs: battleExpiryMs(battle) }),
               topLevelWatching: toolUse.input?.watching,
+              // C3 (review CL2-1): the same fork test the mint applies, on the book frozen at the model
+              // seam above, so the entry's `declarationsPhase` is judged by what the mint will keep.
+              forkUsable: forkUsableFor({ book: callsCtx.book, promptBuiltAt }),
             });
           });
         } else if (!toolUse) {
