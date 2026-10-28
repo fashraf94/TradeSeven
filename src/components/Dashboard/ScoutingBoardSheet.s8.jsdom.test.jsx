@@ -251,3 +251,52 @@ describe('founder ruling Q-S8F-2 — a keyboard-only focus outline on Close and 
     expect(marked.includes([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Footer'))).toBe(false);
   });
 });
+
+// Founder ruling Q-S8F-4 (the S8 review's own S8-5 row: "the sheet names the day of the read it shows"): the ranked list's
+// heading and the watchlist's off-universe line follow the subtitle's day rule.
+describe('founder ruling Q-S8F-4 — the heading and the off-universe line say the read\'s day', () => {
+  const board = (asOf) => ({
+    archetypeLabel: 'Degen', asOf, empty: false,
+    ranked: [{ symbol: 'TSLA', sectorName: 'Autos', archetypeScore: 71.2, inWatchlist: false, chip: null }],
+    watchlist: { inUniverse: [], offUniverse: [{ symbol: 'ZZZ' }] },
+  });
+  async function sheetAt(nowIso, asOf) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(nowIso));
+    fetches.answer = Promise.resolve({ ok: true, status: 200, json: async () => board(asOf) });
+    await renderHost();
+    await act(async () => { api.open(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    const text = document.querySelector('[role="dialog"]').textContent;
+    expect(text).toContain('TSLA');
+    expect(text).toContain('ZZZ');
+    return text;
+  }
+
+  it('a Saturday with Friday\'s ranking: no "today" anywhere in the sheet; every line names Friday', async () => {
+    const text = await sheetAt('2026-10-24T16:00:00Z', '2026-10-23T20:00:00.000Z');
+    expect(text).not.toMatch(/today/i);
+    expect(text).toContain("Ranked from Friday's read");
+    expect(text).toContain("In Degen's wheelhouse on Friday's read");
+    expect(text).toContain('in your watchlist · outside Friday’s ranked universe');
+  });
+
+  it("today's ranking: today, as before", async () => {
+    const text = await sheetAt('2026-10-27T15:00:00Z', '2026-10-27T11:02:00Z');
+    expect(text).toContain("In Degen's wheelhouse today");
+    expect(text).toContain('in your watchlist · outside today’s ranked universe');
+  });
+
+  it('a ranking a week old or more: its date, on every line', async () => {
+    const text = await sheetAt('2026-10-27T15:00:00Z', '2026-10-16T11:02:00Z');
+    expect(text).toContain("In Degen's wheelhouse on Oct 16's read");
+    expect(text).toContain('in your watchlist · outside Oct 16’s ranked universe');
+  });
+
+  it('a ranking with no time on it: no line names a day, and none says today', async () => {
+    const text = await sheetAt('2026-10-27T15:00:00Z', null);
+    expect(text).not.toMatch(/today/i);
+    expect(text).toContain("In Degen's wheelhouse");
+    expect(text).toContain('in your watchlist · outside the ranked universe');
+  });
+});
