@@ -55,10 +55,14 @@ import { etClock, etDateLabel, etWhen, fmtCount } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, eyebrow, foot, mono, plain, tint, AggNum, TapeNum, When, Rec, Coverage, Quotation, TextButton, PrimaryButton, Label } from './FilmRoomKit';
 import { tagsStateOf, momentsOfTape, momentKey, momentAnchor, tagsAtCheck, countPathOf, ledgerOf, groupCards, watchCardsOf } from './filmRoomCards';
-// B2.1 B1: the Forge's area ids (hub S5's FORGE_AREAS, read, never changed) — Set opens the Character area, where the tempo dial is
-import { FORGE_AREAS } from '../../components/CommandCenter/hubChrome';
 
 const T = COPY.cards;
+/**
+ * B2.1 B1 — the Forge area Set opens: hub S5's `FORGE_AREAS.CHARACTER`, where the tempo dial is. Held here as its
+ * value, because no module outside the hub's directory may import one (the hub's mount guard; S1 review L2-1); the
+ * card tests pin it to the hub's own constant through `forgeAreaOf`.
+ */
+const FORGE_CHARACTER_AREA = 'traits';
 const titleOf = (situationId) => SITUATIONS[situationId]?.title ?? situationId;
 const questionsFor = (situationId) => SITUATION_QUESTIONS.filter((q) => q.situationId === situationId);
 const noteLength = (s) => [...String(s ?? '').trim()].length;
@@ -216,7 +220,7 @@ export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel, on
         {/* RH-1 / RJ-8: the one setting that reaches `stalled` is the tempo dial — linked only while the day's stagnation rule is on */}
         {setRule === 'on' && onOpenForge ? (
           <span data-set-link="" style={{ paddingLeft: 24 }}>
-            <TextButton onClick={() => onOpenForge({ area: FORGE_AREAS.CHARACTER })}>{T.setTempoLink}</TextButton>
+            <TextButton onClick={() => onOpenForge({ area: FORGE_CHARACTER_AREA })}>{T.setTempoLink}</TextButton>
           </span>
         ) : null}
       </fieldset>

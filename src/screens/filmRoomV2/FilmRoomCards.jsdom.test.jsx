@@ -885,7 +885,7 @@ describe('B2.1 B1 (Amendment H RH-1; Amendment J RJ-8) — Set\'s link to the te
     expect(link.textContent).toBe('Tempo dial · Forge workshop');
     m.click(link);
     expect(asked).toEqual([{ area: 'traits' }]);
-    expect(forgeAreaOf(asked[0])).toBe(FORGE_AREAS.CHARACTER);
+    expect(forgeAreaOf(asked[0])).toBe(FORGE_AREAS.CHARACTER);   // the Film Room holds the area as a value (the hub's mount guard): this pins it to the hub's own
     expect(cardBodies()).toEqual([]);   // the link files nothing
     await sweepAll(fx.tape2, 'set link');
   });
