@@ -202,8 +202,9 @@ const pill = (accent) => ({ display: 'inline-flex', alignItems: 'center', gap: 6
  * @param {object}   [props.readers]  test seam: { readTape, readSeries }
  * @param {number}   [props.nowMs]    test seam: the instant "scheduled" is judged at
  * @param {object}   [props.cardsApi] test seam (B2): { readVerdict, readCounter, postCard, newOpId }
+ * @param {Function} [props.onOpenForge] B2.1 B1 (RH-1): App's Forge door (hub S5), `({ area })` — Set's link to the tempo dial
  */
-export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', viewerId = null, readers = firestoreReaders, nowMs, cardsApi = defaultCardsApi }) {
+export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', viewerId = null, readers = firestoreReaders, nowMs, cardsApi = defaultCardsApi, onOpenForge = null }) {
   const now = useMemo(() => (Number.isFinite(nowMs) ? nowMs : Date.now()), [nowMs]);
   const battleId = filmRoomBattleId(battle);
   const days = useMemo(() => battleDays(battle), [battle]);
@@ -361,7 +362,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
       <footer style={{ padding: 0 }}>
         {cardsOn ? (
           <div data-cards-regions="footer" style={{ width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: picked || receipt ? (desktop ? '0 24px 48px' : '0 12px 40px') : 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {picked && written ? <YourCall key={`${day}:${picked.symbol}:${picked.fromTickSeq}`} tape={tape} moment={picked} counter={cards.counter} mintOpId={cards.mintOpId} onFile={onFile} onCancel={() => setPicked(null)} /> : null}
+            {picked && written ? <YourCall key={`${day}:${picked.symbol}:${picked.fromTickSeq}`} tape={tape} moment={picked} counter={cards.counter} mintOpId={cards.mintOpId} onFile={onFile} onCancel={() => setPicked(null)} onOpenForge={onOpenForge} /> : null}
             {receipt ? <Receipt key={receipt.entryId} day={day} counter={cards.counter} card={receipt} mintOpId={cards.mintOpId} onRetire={onRetire} /> : null}
           </div>
         ) : <Reserved region="footer" names={COPY.reservedFooter} />}

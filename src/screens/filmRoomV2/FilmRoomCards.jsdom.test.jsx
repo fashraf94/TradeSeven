@@ -56,6 +56,7 @@ import cardHandler from '../../../api/film-room/card.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
 import { ledgerOf } from './filmRoomCards';
+import { FORGE_AREAS, forgeAreaOf } from '../../components/CommandCenter/hubChrome';
 import {
   mounter, sep23Tape, sep23Series, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, storedNoteDefects, agentNameDefects,
 } from './__fixtures__/filmRoomHarness';
@@ -298,7 +299,9 @@ describe('your-call — the form (spec §6; RG-5, RG-8, RG-9)', () => {
     expect(m.qa('[data-question]').map((l) => l.textContent)).toEqual(SITUATION_QUESTIONS.map((q) => q.text));
     for (const r of ['watch', 'drill', 'set']) expect(m.q(`[data-route="${r}"]`).textContent).toContain(RG5[r]);
     expect(m.q('[data-route="set"]').querySelector('a')).toBeNull();
-    expect(m.q('[data-route="set"]').textContent).toContain('this card links nowhere');
+    // B2.1 B1: this mount hands the screen no Forge door, so Set shows no link even with the day's rule on
+    expect(fx.tape1.tags.inputs.forcedRotation.enabled).toBe(true);
+    expect(m.q('[data-set-link]')).toBeNull();
     const noteCount = form.querySelector('[data-note-count]');
     expect([...noteCount.querySelectorAll('[data-num-aggregate]')].map((n) => [n.getAttribute('data-num-aggregate'), n.getAttribute('data-num-class'), n.getAttribute('data-agg-value')])).toEqual([['count(characters in the note)', 'derived', '0'], ['slot(S10 note characters)', 'recorded', '280']]);
     const openCount = form.querySelector('[data-open-count]');
@@ -837,5 +840,54 @@ describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no r
   it('no unavailable day: no such line', async () => {
     await open();
     expect(m.q('[data-unavailable-days]')).toBeNull();
+  });
+});
+
+describe('B2.1 B1 (Amendment H RH-1; Amendment J RJ-8) — Set\'s link to the tempo dial, by the day\'s stagnation rule', () => {
+  const RULE_OFF = 'You change the setting yourself; this card changes nothing. No setting changes this situation for this archetype.';
+  async function formOn(tape, onOpenForge) {
+    lastBattle = battleOf();
+    m.render(<FilmRoomScreenV2 battle={lastBattle} onBack={() => {}} viewerId="viewer-1" readers={readersOf({ [D1]: tape, [D2]: tape.etDate === D2 ? tape : fx.tape2 }, [])} nowMs={NOW} cardsApi={api} onOpenForge={onOpenForge} />);
+    await m.flush(8);
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+  }
+
+  it('the rule on (the day\'s tags.inputs): RG-5\'s sentence, and "Tempo dial · Forge workshop", which opens the Forge on its Character area — the hub\'s own door, nothing else', async () => {
+    const asked = [];
+    await formOn(fx.tape2, (request) => asked.push(request));
+    expect(fx.tape2.tags.inputs.forcedRotation.enabled).toBe(true);
+    expect(m.q('[data-route-note="set"]').textContent).toBe(RG5.set);
+    const link = m.q('[data-set-link] button');
+    expect(link.textContent).toBe('Tempo dial · Forge workshop');
+    m.click(link);
+    expect(asked).toEqual([{ area: 'traits' }]);
+    expect(forgeAreaOf(asked[0])).toBe(FORGE_AREAS.CHARACTER);
+    expect(cardBodies()).toEqual([]);   // the link files nothing
+    await sweepAll(fx.tape2, 'set link');
+  });
+
+  it('the rule off (an archetype whose stagnation rule is off): RJ-8\'s no-link sentence, and no link (the mutant: Set linking to the dial with the rule off)', async () => {
+    const off = structuredClone(fx.tape2);
+    off.tags.inputs.forcedRotation.enabled = false;
+    await formOn(off, () => {});
+    expect(m.q('[data-route-note="set"]').textContent).toBe(RULE_OFF);
+    expect(m.q('[data-set-link]')).toBeNull();
+    await sweepAll(off, 'rule off');
+  });
+
+  it('a tape that stores no such input: RG-5\'s sentence alone — neither the link nor "no setting changes it"', async () => {
+    const unknown = structuredClone(fx.tape2);
+    delete unknown.tags.inputs.forcedRotation;
+    await formOn(unknown, () => {});
+    expect(m.q('[data-route-note="set"]').textContent).toBe(RG5.set);
+    expect(m.q('[data-set-link]')).toBeNull();
+  });
+
+  it('the real archetype with its rule off (guardian) stores enabled: false — the input the screen reads', async () => {
+    const g = await stalledDay({ battleId: 'b-guardian', archetype: 'guardian', recordStagnation: false, etDate: D1 });
+    const tg = makeTapeDb(seedDay({}, g));
+    await writeTapeDay('b-guardian', D1, { db: tg.db, now: NIGHT(D1) });
+    expect(tg.store.get(`agentBattles/b-guardian/tape/${D1}`).tags.inputs.forcedRotation.enabled).toBe(false);
   });
 });

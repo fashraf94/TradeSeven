@@ -230,11 +230,13 @@ describe("RB-5 — a tiered battle, or one whose mode is absent or unknown, keep
       remount('on');
       const onBack = () => {};
       const onReturn = () => {};
-      act(() => root.render(<FilmRoomRoute battle={battle} onBack={onBack} origin="battleHistory" onReturn={onReturn} />));
+      const onOpenForge = () => {};   // B2.1 B1 (RH-1): App's Forge door, handed through to v2 alone
+      act(() => root.render(<FilmRoomRoute battle={battle} onBack={onBack} origin="battleHistory" onReturn={onReturn} onOpenForge={onOpenForge} />));
       expect(await waitForV2(), label).toBeTruthy();
       expect(received.v2.length, label).toBeGreaterThan(0);
       for (const p of received.v2) {
-        expect(Object.keys(p).sort(), label).toEqual(['backTo', 'battle', 'onBack', 'viewerId']);
+        expect(Object.keys(p).sort(), label).toEqual(['backTo', 'battle', 'onBack', 'onOpenForge', 'viewerId']);
+        expect(p.onOpenForge, label).toBe(onOpenForge);
         expect(p.battle, label).toBe(battle);
         expect(p.onBack, label).toBe(onReturn);
         expect(p.backTo, label).toBe('battleHistory');

@@ -311,8 +311,10 @@ export const FILM_ROOM_COPY = Object.freeze({
       drill: 'The Practice Field opens later; this keeps the moment for it.',
       set: 'You change the setting yourself; this card changes nothing.',
     },
-    // RG-9: no link unless exactly one equip route fits the situation — none is claimed here; stated in plain words
-    setRoute: 'Which setting, and where you change it, is your call; this card links nowhere.',
+    // B2.1 B1 (Amendment H RH-1; Amendment J RJ-8): with the day's stagnation rule on, Set links the one setting that
+    // reaches this situation — the tempo dial, in the Forge workshop; with it off, it says no setting changes it
+    setTempoLink: 'Tempo dial · Forge workshop',
+    setRuleOff: 'No setting changes this situation for this archetype.',
     openCards: 'Open cards',
     // the count line before the counter has answered, and when it could not: words, no number (R14)
     openCountLoading: 'Open cards · still loading',

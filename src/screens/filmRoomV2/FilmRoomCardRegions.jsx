@@ -53,6 +53,8 @@ import { etClock, etDateLabel, etWhen, fmtCount } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, eyebrow, foot, mono, plain, tint, AggNum, TapeNum, When, Rec, Coverage, Quotation, TextButton, PrimaryButton, Label } from './FilmRoomKit';
 import { tagsStateOf, momentsOfTape, momentKey, momentAnchor, tagsAtCheck, countPathOf, ledgerOf, groupCards, watchCardsOf } from './filmRoomCards';
+// B2.1 B1: the Forge's area ids (hub S5's FORGE_AREAS, read, never changed) — Set opens the Character area, where the tempo dial is
+import { FORGE_AREAS } from '../../components/CommandCenter/hubChrome';
 
 const T = COPY.cards;
 const titleOf = (situationId) => SITUATIONS[situationId]?.title ?? situationId;
@@ -64,6 +66,16 @@ const CONTROL_CHAR = /\p{Cc}/u;
 /** A stage or route word: the copy's, or the record's own value where the copy has none (never the screen's voice for an unknown id). */
 const wordOf = (table, id) => (Object.prototype.hasOwnProperty.call(table, id) ? table[id] : <Rec>{String(id)}</Rec>);
 const OPEN_STAGES = ['card', 'nominated'];
+
+/**
+ * B2.1 B1 (Amendment H RH-1; RJ-8) — the day's stagnation rule, as the tagger stored what it used
+ * (`tags.inputs.forcedRotation.enabled`): 'on' (Set links the tempo dial), 'off' (Set says no setting changes this
+ * situation for this archetype), or 'unknown' when the tape stores no such input (Set says only RG-5's sentence).
+ */
+export function setRuleOf(tape) {
+  const enabled = tape?.tags?.inputs?.forcedRotation?.enabled;
+  return enabled === true ? 'on' : enabled === false ? 'off' : 'unknown';
+}
 
 /** A moment's facts: the symbol, its from–to as instants, its number of checks (derived). */
 function MomentFacts({ moment, size = 11.5 }) {
@@ -133,8 +145,11 @@ export function CheckTags({ tape, index, onTakeHome }) {
  *                                   the line is words
  * @param {Function} props.mintOpId  a fresh op id, minted ONCE per form (review L4-9)
  */
-export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel }) {
+export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel, onOpenForge = null }) {
   const id = useId().replace(/[^A-Za-z0-9_-]/g, '');
+  // RH-1 / RJ-8: is the day's stagnation rule on? Read from the tape (what the tagger used), nothing Node-only: 'on',
+  // 'off', or 'unknown' (no inputs stored) — which claims neither the link nor "no setting changes it"
+  const setRule = setRuleOf(tape);
   const questions = questionsFor(moment.situationId);
   const [questionId, setQuestionId] = useState(questions[0]?.id ?? null);
   const [route, setRoute] = useState('watch');
@@ -191,11 +206,16 @@ export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel }) 
             <input type="radio" name={`${id}-route`} value={r} checked={route === r} onChange={() => setRoute(r)} />
             <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span style={mono(11.5, C.ink, { fontWeight: 700 })}>{T.routes[r]}</span>
-              <span style={foot}>{T.routeNotes[r]}</span>
-              {r === 'set' ? <span style={foot}>{T.setRoute}</span> : null}
+              <span data-route-note={r} style={foot}>{T.routeNotes[r]}{r === 'set' && setRule === 'off' ? <> {T.setRuleOff}</> : null}</span>
             </span>
           </label>
         ))}
+        {/* RH-1 / RJ-8: the one setting that reaches `stalled` is the tempo dial — linked only while the day's stagnation rule is on */}
+        {setRule === 'on' && onOpenForge ? (
+          <span data-set-link="" style={{ paddingLeft: 24 }}>
+            <TextButton onClick={() => onOpenForge({ area: FORGE_AREAS.CHARACTER })}>{T.setTempoLink}</TextButton>
+          </span>
+        ) : null}
       </fieldset>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <span data-open-count="" data-open-count-state={countState} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...mono(10.5, C.ink2) }}>
