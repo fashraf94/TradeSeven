@@ -328,6 +328,10 @@ export function createDeployRuntime({ getBridge, notify, now = () => Date.now() 
     // The new account is admitted on its own readiness, never after the old promise (spec §5.4; review W2-1): the
     // hook's own release, at the old request's settle, is token-scoped and finds nothing then.
     releaseInFlightHold();
+    // The former attempt's deadlines go with it (spec §5.4; S8 review S8-12): an owned read's or a deployment check's 8 s
+    // timer would only resolve a race its own `isCurrent()` already ignores. Nothing awaits that race after the change.
+    for (const id of timers) clearTimeout(id);
+    timers.clear();
     apply({ type: T.AUTH_CHANGED, uid: next.resolved ? next.uid : null, authEpoch: next.authEpoch });
     cleanupOrphan();
     // An acknowledged record goes with no orphan to clean: drop what it left for the former owner (review W2-3).
