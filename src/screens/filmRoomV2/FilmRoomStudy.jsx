@@ -31,6 +31,7 @@ import React, { useState } from 'react';
 import {
   valueAt, etClock, checkStateOf, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, lastPointPath, deriveHoldings,
   directiveCardOf, rationaleTimeline, planGroups, PLAN_DIRECTIONS, EXIT_MAKER_WORDS, fmtPrice, fmtPriceDelta, fmtCount, isNum, toMs, etWhen, forkRuns,
+  meetingAnchor, meetingsStateOf,
 } from './filmRoomModel';
 // The replay's own coverage line sits under the swaps' (BA-20: every section its coverage).
 import { FILM_ROOM_COPY as COPY, REPLAY_SENTENCE, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE, DIRECTIVE_EXPLAINER } from './filmRoomCopy';
@@ -481,6 +482,69 @@ function DirectivesSection({ tape }) {
   );
 }
 
+// ── meetings (Build B spec §3 T2, acceptance H; Amendment J RJ-1) ───────────
+
+/** One recorded instant of a meeting: its label and its clock — with its date when it is not the tape's day — or "not recorded". */
+function MeetingInstant({ label, instant, etDate, border = true }) {
+  const when = etWhen(instant, etDate);
+  return <Row border={border} k={label} v={<span style={mono(11, C.ink)}>{when ? <When>{when}</When> : COPY.notRecorded}</span>} />;
+}
+
+/**
+ * One meeting as the history records it (RJ-1): its created, deadline (the stored `expiresAt`, as recorded) and
+ * resolved instants; its outcome and who resolved it, as stored; its legs; and its diagnosis — platform-composed text,
+ * an R7 quotation credited "the platform" at the meeting's `createdAt`. A word the copy does not know is the record's
+ * own value (Rec), never the screen's. Nothing here says whether the proposal was right (RE-5).
+ */
+function MeetingCard({ tape, index }) {
+  const mt = tape.meetings[index];
+  const known = Object.prototype.hasOwnProperty.call(COPY.meetingOutcome, mt?.status);
+  const legs = Array.isArray(mt?.legs) ? mt.legs : [];
+  const sym = (s) => (typeof s === 'string' && s ? <Rec>{s}</Rec> : <span style={{ color: C.ink3 }}>{COPY.meetingLegNotCopied}</span>);
+  return (
+    <article id={meetingAnchor(index)} data-meeting-card={index} style={{ ...card, gap: 8, borderLeft: `3px solid ${C.gold}` }}>
+      <span style={{ ...eyebrow, color: C.gold }}><When>{COPY.meetingAt(etWhen(mt?.createdAt, tape.etDate) ?? COPY.notRecorded)}</When></span>
+      <span data-meeting-outcome={known ? mt.status : 'unknown'} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', ...mono(10.5, C.ink2) }}>
+        <StateTag color={C.gold}>{known ? COPY.meetingOutcome[mt.status] : <Rec>{String(mt?.status ?? '')}</Rec>}</StateTag>
+        <span>{COPY.meetingResolvedBy} {typeof mt?.resolvedBy === 'string' && mt.resolvedBy ? <Rec>{mt.resolvedBy}</Rec> : COPY.notRecorded}</span>
+      </span>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <MeetingInstant border={false} label={COPY.meetingInstants.created} instant={mt?.createdAt} etDate={tape.etDate} />
+        <MeetingInstant label={COPY.meetingInstants.deadline} instant={mt?.expiresAt} etDate={tape.etDate} />
+        <MeetingInstant label={COPY.meetingInstants.resolved} instant={mt?.resolvedAt} etDate={tape.etDate} />
+        <Row k={COPY.meetingLegs} v={(
+          <span data-meeting-legs={index} style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, ...mono(11, C.ink) }}>
+            {legs.length ? legs.map((l, k) => <span key={k} data-meeting-leg={k}>{sym(l?.symbolOut)} <span style={{ color: C.ink3 }}>→</span> {sym(l?.symbolIn)}</span>) : COPY.notRecorded}
+          </span>
+        )} />
+      </div>
+      {typeof mt?.diagnosis === 'string' && mt.diagnosis ? (
+        <div data-meeting-diagnosis={index} style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+          <span style={mono(9.5, C.ink3, { letterSpacing: '0.12em', textTransform: 'uppercase', lineHeight: 1.3 })}>{COPY.meetingDiagnosis}</span>
+          <Quotation doc={tape} path={['meetings', index, 'diagnosis']} by="platform" at={['meetings', index, 'createdAt']} size={12.5} />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+/**
+ * Study's Meetings (spec §3; acceptance H): the stored `meetings[]` under `coverage.meetings`'s own line (R1). A day
+ * with none says so in one line; a tape with no meetings section says THAT, as an absence (R14) — never a coverage
+ * line the tape does not store.
+ */
+function MeetingsSection({ tape }) {
+  if (meetingsStateOf(tape) === 'absent') return <Section id="meetings" title={COPY.meetings}><EmptyCard>{COPY.meetingsAbsent}</EmptyCard></Section>;
+  const list = Array.isArray(tape.meetings) ? tape.meetings : [];
+  return (
+    <Section id="meetings" title={COPY.meetings} doc={tape} coverageAt={['coverage', 'meetings']} note={list.length ? COPY.meetingsNote : null}>
+      {list.length
+        ? <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{list.map((mt, i) => <MeetingCard key={mt?.key || i} tape={tape} index={i} />)}</div>
+        : <EmptyCard>{COPY.meetingsNone}</EmptyCard>}
+    </Section>
+  );
+}
+
 // ── plans (BA-10) ───────────────────────────────────────────────────────────
 
 function PlansSection({ tape }) {
@@ -625,6 +689,7 @@ export default function FilmRoomStudy({ tape, desktop, onDeep, selected, onSelec
     holdings: <HoldingsSection key="holdings" tape={tape} onDeep={onDeep} />,
     swaps: <SwapsSection key="swaps" tape={tape} desktop={desktop} onDeep={onDeep} />,
     directives: <DirectivesSection key="directives" tape={tape} />,
+    meetings: <MeetingsSection key="meetings" tape={tape} />,
     plans: <PlansSection key="plans" tape={tape} />,
     rationale: <RationaleSection key="rationale" tape={tape} onCheck={onSelect} />,
     checks: <ChecksSection key="checks" tape={tape} selected={selected} onSelect={onSelect} cards={cards} />,
@@ -634,7 +699,7 @@ export default function FilmRoomStudy({ tape, desktop, onDeep, selected, onSelec
     return (
       <div data-depth="study" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,3fr) minmax(0,2fr)', gap: 24, alignItems: 'start' }}>
         <div style={col}>{sections.holdings}{sections.swaps}{sections.plans}</div>
-        <div style={col}>{sections.directives}{sections.rationale}{sections.checks}{sections.diagnostics}</div>
+        <div style={col}>{sections.directives}{sections.meetings}{sections.rationale}{sections.checks}{sections.diagnostics}</div>
       </div>
     );
   }
@@ -643,7 +708,7 @@ export default function FilmRoomStudy({ tape, desktop, onDeep, selected, onSelec
       <div data-region="study-jumps" style={{ display: 'flex', gap: 6, overflowX: 'auto', margin: '-2px 0' }}>
         {COPY.jumps.map(([id, label]) => <Chip key={id} onClick={() => jump(id)}>{label}</Chip>)}
       </div>
-      {sections.holdings}{sections.swaps}{sections.directives}{sections.plans}{sections.rationale}{sections.checks}{sections.diagnostics}
+      {sections.holdings}{sections.swaps}{sections.directives}{sections.meetings}{sections.plans}{sections.rationale}{sections.checks}{sections.diagnostics}
     </div>
   );
 }

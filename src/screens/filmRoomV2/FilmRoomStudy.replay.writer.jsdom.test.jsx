@@ -637,7 +637,11 @@ describe('Astra F1 — a replay is drawn only when it emits visible geometry: a 
     expect(days.full.coverage.rationale.note).toContain(W4[0]);
     const preW4 = structuredClone(days.full);
     preW4.coverage.rationale.note = preW4.coverage.rationale.note.split(W4[0]).join(W4[1]);
-    const html = [false, true].map((desktop) => { mount(preW4, desktop); return stableIds(m.container.innerHTML); });
+    // Film Room B2.1 A1 adds Study's Meetings section and, on phones, its jump chip (Amendment J RJ-1, RJ-9 — a declared
+    // change for every player). They are taken out, whole, before the ids are renumbered; every other byte is still the
+    // pre-R15 renderer's.
+    const withoutA1 = (h) => h.replace(/<section id="meetings" data-section="meetings"[\s\S]*?<\/section>/, '').replace(/<button type="button" aria-pressed="false"[^>]*><span[^>]*>Meetings<\/span><\/button>/, '');
+    const html = [false, true].map((desktop) => { mount(preW4, desktop); return stableIds(withoutA1(m.container.innerHTML)); });
     expect(html.every((h) => h.includes('data-swap-card') && !h.includes('data-replay-none'))).toBe(true);   // every card drawn
     // the SHA-256 of the whole Study's HTML at each width as 6d5898af's renderer drew it (captured from that commit, on
     // Linux, the same under TZ=UTC and America/Chicago, the row alone and the whole file)
@@ -647,7 +651,7 @@ describe('Astra F1 — a replay is drawn only when it emits visible geometry: a 
     ]);
     // the same sequence on a fresh root (phone, then desktop), as the pinned renders were made
     m.teardown(); m.setup();
-    const live = [false, true].map((desktop) => { mount(days.full, desktop); return stableIds(m.container.innerHTML); });
+    const live = [false, true].map((desktop) => { mount(days.full, desktop); return stableIds(withoutA1(m.container.innerHTML)); });
     live.forEach((h, i) => {
       expect(h).toContain(W4[0]);
       expect(h.split(W4[0]).join(W4[1])).toBe(html[i]);

@@ -21,7 +21,7 @@ import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMoun
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { filmRoomBattleId } from '../../utils/filmRoomGate';
 import { isSessionDate, isBattleDay, closePassStartMs, closePassEndMs, closePassWillTape, validFinalTradingDay, etDateOf } from '../../utils/tapeSchedule';
-import { etClock, etDateLabel, tradingTimeline } from './filmRoomModel';
+import { etClock, etDateLabel, tradingTimeline, meetingAnchor } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { useTapeDay, useSeriesDay, firestoreReaders } from './filmRoomData';
 import { hasSeenFirstOpen, markFirstOpenSeen } from './filmRoomSeen';
@@ -243,6 +243,8 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
     jump(pendingJump.id);
     setPendingJump(null);
   }, [pendingJump, tapeState.status, picked, receipt]);
+  // B2.1 A1: a run of "awaiting approval" checks opens its meeting in Study — a door that changes the depth
+  const openMeeting = (i) => { setDepth('study'); setPendingJump({ id: meetingAnchor(i) }); };
   const takeHome = (m) => { setReceipt(null); setPicked(m); setPendingJump({ id: 'your-call' }); };
   const showCard = (c) => { setPicked(null); setReceipt(c); setPendingJump({ id: 'receipt' }); };
   /** RG-4: a recurrence of this battle opens its day and moment here; another battle's is left to its link. */
@@ -285,7 +287,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
     const status = typeof tape?.passes?.close?.status === 'string' && tape.passes.close.status ? <StoredNote doc={tape} path={['passes', 'close', 'status']} /> : COPY.statusUnknown;
     content = <div data-state="not-written"><EmptyCard>{COPY.closeNotWritten} ({status}).</EmptyCard></div>;
   }
-  else if (depth === 'glance') content = <FilmRoomGlance tape={tape} desktop={desktop} selected={selected} onSelect={setSelected} finalDay={finalDay} cards={cardsProps} />;
+  else if (depth === 'glance') content = <FilmRoomGlance tape={tape} desktop={desktop} selected={selected} onSelect={setSelected} finalDay={finalDay} cards={cardsProps} onOpenMeeting={openMeeting} />;
   else if (depth === 'study') content = <FilmRoomStudy tape={tape} desktop={desktop} onDeep={openDeep} selected={selected} onSelect={setSelected} jump={jump} cards={cardsProps} />;
   else content = <FilmRoomDeepDive tape={tape} seriesState={seriesState} sym={sym} onSym={setSym} desktop={desktop} />;
 

@@ -125,7 +125,7 @@ export const FILM_ROOM_COPY = Object.freeze({
   close: 'Close',
 
   // Study (BA-41 F1–F4, BA-45, BA-46, BA-47)
-  jumps: [['holdings', 'Holdings'], ['swaps', 'Swaps'], ['directives', 'Directives'], ['plans', 'Plans'], ['rationale', 'Rationale'], ['checks', 'Checks']],
+  jumps: [['holdings', 'Holdings'], ['swaps', 'Swaps'], ['directives', 'Directives'], ['meetings', 'Meetings'], ['plans', 'Plans'], ['rationale', 'Rationale'], ['checks', 'Checks']],
   holdings: 'Holdings',
   holdingsStart: 'Start',
   holdingsEnd: 'End',
@@ -212,6 +212,24 @@ export const FILM_ROOM_COPY = Object.freeze({
   checksNone: 'No checks were recorded this day.',
   diagnostics: 'Diagnostics',
   diagnosticsPresent: 'Intraday diagnostic views were recorded for this battle-day.',
+
+  // B2.1 A1 — Meetings (Build B spec §3 T2, acceptance H; Amendment J RJ-1): each meeting as the history records it —
+  // its instants, its outcome and who resolved it, its legs, and its diagnosis as the platform's quoted words. The
+  // section says nothing about whether a proposal was right (RE-5: the owner's record, never proof).
+  meetings: 'Meetings',
+  meetingsNote: 'as the meeting history records them',
+  meetingsNone: 'No gameplan meeting was created this day.',
+  // R14: a tape with no meetings section at all (written before the meetings were taped) — an absence, said as one
+  meetingsAbsent: "This day's tape has no meetings section.",
+  meetingAt: (clock) => `Meeting · ${clock}`,
+  meetingOutcome: { approved: 'approved', rejected: 'rejected', expired: 'expired' },
+  meetingResolvedBy: 'resolved by',
+  meetingInstants: { created: 'Created', deadline: 'Deadline, as recorded', resolved: 'Resolved' },
+  meetingLegs: 'Legs',
+  meetingLegNotCopied: 'not copied',
+  meetingDiagnosis: 'Diagnosis',
+  // the check strip's run of "plan pending · awaiting approval" checks, inside a meeting's life: a door to that meeting
+  runMeeting: 'Its meeting',
 
   // Deep dive (BA-12, BA-13, BA-43)
   deepPrice: 'Price',

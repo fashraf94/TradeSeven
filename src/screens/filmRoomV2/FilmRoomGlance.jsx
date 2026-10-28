@@ -7,9 +7,9 @@
 // from the day, only for a completed battle, with the platform's own words.
 
 import React from 'react';
-import { valueAt, etClock, checkStateOf, checkRuns, checkStateLegend, isNum, exitMakerOf, toMs } from './filmRoomModel';
+import { valueAt, etClock, checkStateOf, checkRuns, checkStateLegend, isNum, exitMakerOf, toMs, meetingOfRun } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
-import { C, card, eyebrow, foot, mono, plain, TapeNum, CountNum, CheckCount, When, StoredNote, Section, Row, Quotation, StateTag, Door } from './FilmRoomKit';
+import { C, card, eyebrow, foot, mono, plain, TapeNum, CountNum, CheckCount, When, StoredNote, Section, Row, Quotation, StateTag, Door, TextButton } from './FilmRoomKit';
 import CheckDetail from './FilmRoomCheckDetail';
 
 // ── the pips: one per check row, by tone ───────────────────────────────────
@@ -178,8 +178,12 @@ export function CheckStrip({ tape, selected, onSelect }) {
   );
 }
 
-/** F5 — the checks as runs: the state, the time span, the count. */
-function RunList({ tape }) {
+/**
+ * F5 — the checks as runs: the state, the time span, the count. A run of "plan pending · awaiting approval" checks
+ * whose first check falls inside a stored meeting's life is a door to that meeting in Study (B2.1 A1; meetingOfRun
+ * matches by instants, never by the day).
+ */
+function RunList({ tape, onOpenMeeting = null }) {
   const runs = checkRuns(tape);
   if (!runs.length) return <span style={foot}>{COPY.noChecks}</span>;
   return (
@@ -189,11 +193,13 @@ function RunList({ tape }) {
         const kinds = r.group === 'completed'
           ? Object.entries(r.kinds).map(([kind, count]) => <span key={kind}> · <CountNum value={count} aggregate="count(checks[] in a run)" /> {COPY.runKinds[kind] || kind}</span>)
           : null;
+        const meeting = onOpenMeeting ? meetingOfRun(tape, r) : null;
         return (
           <div key={k} data-run={r.group} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
             <span style={{ width: 9, height: 9, flexShrink: 0, marginTop: 3 }}><Pip tone={r.tone} /></span>
             <span style={mono(10, C.ink2, { lineHeight: 1.6 })}>
               {span} · {r.group === 'completed' ? COPY.runCompleted : r.label} · <CountNum value={r.count} aggregate="count(checks[] in a run)" /> {COPY.checksIn}{kinds}
+              {meeting !== null ? <> · <span data-run-meeting={meeting}><TextButton onClick={() => onOpenMeeting(meeting)}>{COPY.runMeeting}</TextButton></span></> : null}
             </span>
           </div>
         );
@@ -247,7 +253,7 @@ export function ResultCard({ tape, finalDay = null }) {
   );
 }
 
-export default function FilmRoomGlance({ tape, desktop, selected, onSelect, finalDay = null, cards = null }) {
+export default function FilmRoomGlance({ tape, desktop, selected, onSelect, finalDay = null, cards = null, onOpenMeeting = null }) {
   const checksBlock = (
     <Section id="glance-checks" title={COPY.checks} count={<CheckCount tape={tape} />} doc={tape} coverageAt={['coverage', 'checks']} note={COPY.riskNote}>
       <div style={{ ...card, gap: 12 }}>
@@ -259,7 +265,7 @@ export default function FilmRoomGlance({ tape, desktop, selected, onSelect, fina
         <CheckStrip tape={tape} selected={selected} onSelect={onSelect} />
         {selected != null && tape.checks?.[selected] ? <CheckDetail tape={tape} index={selected} onClose={() => onSelect(null)} cards={cards} /> : null}
         <span style={{ ...eyebrow, color: C.ink2 }}>{COPY.runsTitle}</span>
-        <RunList tape={tape} />
+        <RunList tape={tape} onOpenMeeting={onOpenMeeting} />
       </div>
     </Section>
   );

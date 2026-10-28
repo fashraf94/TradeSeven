@@ -510,6 +510,39 @@ export function directiveCardOf(d) {
   return { filed: false, title: 'No new directive filed' };
 }
 
+// ── meetings (Build B spec §3 T2; Amendment J RJ-1) ─────────────────────────
+
+/** The anchor each meeting card is addressable by: `meeting-1`, `meeting-2`, … for its place in the stored section. */
+export const meetingAnchor = (i) => `meeting-${i + 1}`;
+
+/**
+ * The day's meetings as the screen may show them: 'absent' — the tape has no meetings section at all (no
+ * `coverage.meetings`: written before the meetings were taped), said as an absence (R14); 'ready' otherwise.
+ */
+export const meetingsStateOf = (tape) => (isObj(tape?.coverage?.meetings) ? 'ready' : 'absent');
+
+/**
+ * The meeting a run of "plan pending · awaiting approval" checks waits on, matched by INSTANTS, never by the day: the
+ * run's first check falls inside the meeting's life — at or after its `createdAt`, at or before its `resolvedAt`, else
+ * its stored deadline (`expiresAt`). A meeting whose life the record cannot bound (no created instant, or neither a
+ * resolved instant nor a deadline) matches nothing; of several, the latest created. Its index in `tape.meetings`, or
+ * null.
+ */
+export function meetingOfRun(tape, run) {
+  if (run?.group !== 'gameplan_pending') return null;
+  const from = toMs(run.from);
+  if (from === null) return null;
+  const meetings = Array.isArray(tape?.meetings) ? tape.meetings : [];
+  let best = null;
+  meetings.forEach((m, i) => {
+    const created = toMs(m?.createdAt);
+    const end = toMs(m?.resolvedAt) ?? toMs(m?.expiresAt);
+    if (created === null || end === null || from < created || from > end) return;
+    if (best === null || created >= toMs(meetings[best].createdAt)) best = i;
+  });
+  return best;
+}
+
 // ── rationale timeline (BA-46) ──────────────────────────────────────────────
 
 /**

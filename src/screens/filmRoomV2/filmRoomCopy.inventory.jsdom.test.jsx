@@ -58,7 +58,7 @@ const COPY_KEYS = [
   'scoreParts.active', 'scoreParts.banked', 'scoreParts.total', 'evidenceTitle', 'evidenceLabel', 'evidenceNone',
   'evidenceFields.px', 'evidenceFields.chg', 'evidenceFields.atrX', 'evidenceFields.atrXMeasured', 'evidenceFields.vwapDev', 'evidenceFields.bbPct', 'evidenceFields.nr7', 'evidenceFields.regime', 'evidenceFields.risk',
   'yes', 'no', 'notRecorded', 'close',
-  'jumps[0][0]', 'jumps[0][1]', 'jumps[1][0]', 'jumps[1][1]', 'jumps[2][0]', 'jumps[2][1]', 'jumps[3][0]', 'jumps[3][1]', 'jumps[4][0]', 'jumps[4][1]', 'jumps[5][0]', 'jumps[5][1]',
+  'jumps[0][0]', 'jumps[0][1]', 'jumps[1][0]', 'jumps[1][1]', 'jumps[2][0]', 'jumps[2][1]', 'jumps[3][0]', 'jumps[3][1]', 'jumps[4][0]', 'jumps[4][1]', 'jumps[5][0]', 'jumps[5][1]', 'jumps[6][0]', 'jumps[6][1]',
   'holdings', 'holdingsStart', 'holdingsEnd', 'holdingsAt()', 'swapByMaker.agent', 'swapByMaker.platform', 'swapByMaker.other', 'swapMakerNote', 'tapForDeep',
   'swaps', 'swapsNone', 'swapWord', 'slot', 'banked', 'platformQuote', 'fork', 'holdPath', 'swapPath', 'heldLine()', 'boughtLine()', 'rebuiltDashed', 'rebuiltDots', 'rebuiltDashedDots', 'hypothetical', 'laterTrades',
   'gap', 'gapNote', 'closedLeg', 'closedLegNote', 'replayNone', 'replayNotDrawn', 'replayNoneSeeCoverage', 'replayCrypto', 'split',
@@ -70,6 +70,9 @@ const COPY_KEYS = [
   'quoteBy.agent', 'quoteBy.player', 'quoteBy.platform', 'quoteBy.plan', 'quoteBy.directive', 'quoteBy.you',
   'plans', 'plansNone', 'plansAll', 'threshold', 'atPlan', 'atClose', 'rationale', 'rationaleNone', 'rationaleLabel()', 'stateEntry()', 'stateEntryNote', 'checksNone',
   'diagnostics', 'diagnosticsPresent',
+  // B2.1 A1 — Meetings (spec §3; acceptance H; Amendment J RJ-1)
+  'meetings', 'meetingsNote', 'meetingsNone', 'meetingsAbsent', 'meetingAt()', 'meetingOutcome.approved', 'meetingOutcome.rejected', 'meetingOutcome.expired',
+  'meetingResolvedBy', 'meetingInstants.created', 'meetingInstants.deadline', 'meetingInstants.resolved', 'meetingLegs', 'meetingLegNotCopied', 'meetingDiagnosis', 'runMeeting',
   'deepPrice', 'deepNoSeries()', 'deepNoSymbols', 'seriesReadError', 'evidenceCoverage', 'checksIn1', 'sessionOpen', 'sessionHigh', 'sessionLow', 'lastBarClose',
   'changeOpenToClose', 'volumeSession', 'axisPrice', 'axisPercent', 'market', 'sector()', 'sectorNone', 'volume', 'rebased', 'inTheBook', 'sectorLine', 'sectorLineNone',
   'exitMark', 'entryMark', 'evidenceOverlay', 'evidenceOverlayNote', 'allSymbols', 'close10',
@@ -109,6 +112,7 @@ const SAMPLE_CALLS = {
   'stateEntry()': [['12:15 PM', 'check skipped · budget']],
   'deepNoSeries()': [['INTC']],
   'sector()': [['XLK']],
+  'meetingAt()': [['2:15 PM'], ['Sep 22, 8:30 PM']],
 };
 
 const COPY_EXPORTS = ['CLASS_LETTER', 'DIRECTIVE_EXPLAINER', 'FILM_ROOM_COPY', 'FORBIDDEN_WORDS', 'LOCKED_BASIS_NOTE', 'PROVENANCE_LABELS', 'REPLAY_SENTENCE', 'REPLAY_VERSION_NOTE'];
@@ -198,9 +202,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 316 copy keys, 428 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(316);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
-    expect(inventory()).toHaveLength(428);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
+  it('the inventory\'s size is pinned (the build report states it): 334 copy keys, 447 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(334);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
+    expect(inventory()).toHaveLength(447);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {

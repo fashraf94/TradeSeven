@@ -511,6 +511,9 @@ export const SPEC_QUOTE_CHANNELS = Object.freeze([
   { re: /^directives\[\d+\]\.(canonicalText|retainedDirectiveText)$/, by: 'the stored directive', at: (p) => within(p, 'filedAt') },
   { re: /^plans\[\d+\]\.(signalSummary|threshold)$/, by: 'the stored plan', at: (p) => within(p, 'at') },
   { re: /^battle\.completionMessage\.text$/, by: 'the platform', at: () => ['battle', 'completionMessage', 'at'] },
+  // B2.1 A1 (Amendment J RJ-1): a meeting's diagnosis is platform-composed text, credited "the platform" at the
+  // meeting's own createdAt; its numbers are quoted words
+  { re: /^meetings\[\d+\]\.diagnosis$/, by: 'the platform', at: (p) => within(p, 'createdAt') },
   // B2 (spec §6): the player's note on a filed card — the LEDGER document (`docs.ledger`: `{ etDate, cards }`, each card
   // under its OWN entry id, never a position in a list — review L3-9a), credited "you"
   { re: /^cards\.[A-Za-z0-9_-]+\.note$/, by: 'you', at: (p) => within(p, 'createdAt') },
