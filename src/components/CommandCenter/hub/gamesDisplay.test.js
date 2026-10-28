@@ -294,3 +294,38 @@ describe('a live row says whether it is past its end: the flag the one count rea
     expect(rowOf(NOW - 60000, OPEN, NaN).ending).toBe(false);
   });
 });
+
+// The S8 review's S8-4 and K-9 (ruling R-S8F-9): a date from another year carries its year; "ends" names its short day
+// when the end is not today.
+describe('dates on the Games rows (S8-4)', () => {
+  const live = (over = {}) => ({ id: 'bb', ownerId: 'u', agentId: 'casual-agent-u', status: 'active', activatedAt: '2026-10-22T13:30:00Z', scoreState: { currentScore: 1, tradeCount: 0, evaluationCount: 2 }, ...over });
+  const completedOn = (iso) => ({ id: 'c1', ownerId: 'u', agentId: 'casual-agent-u', status: 'completed', completedAt: iso, scoreState: { currentScore: 2, opponentScore: 1 }, statusFeed: [{ action: 'battle_complete' }] });
+
+  it("a completed game from another year than the clock's carries its year; this year's does not; without a clock none", () => {
+    expect(completedGameRows([completedOn('2025-12-03T21:05:00Z')], {}, NOW)[0].detail).toMatch(/^Dec 3, 2025 · /);
+    expect(completedGameRows([completedOn('2026-10-03T20:05:00Z')], {}, NOW)[0].detail).toMatch(/^Oct 3 · /);
+    expect(completedGameRows([completedOn('2025-12-03T21:05:00Z')], {})[0].detail).toMatch(/^Dec 3 · /);
+  });
+
+  it('the year is read in ET: 11:30 PM ET on Dec 31, 2025 is 2025, though UTC has turned the year', () => {
+    expect(completedGameRows([completedOn('2026-01-01T04:30:00Z')], {}, NOW)[0].detail).toMatch(/^Dec 31, 2025 · /);
+  });
+
+  it('"ends" names the short day when the end is not today (ET); today\'s end is the time alone', () => {
+    // NOW is Thu Oct 22, 2026, 11:00 AM ET.
+    const tomorrow = liveGameRows([live({ expiresAt: '2026-10-23T20:00:00Z' })], { nowMs: NOW, marketState: OPEN })[0];
+    expect(tomorrow.detail).toBe('Score +1.0 · 0 trades · ends Fri 4:00 PM ET');
+    const today = liveGameRows([live({ expiresAt: '2026-10-22T20:00:00Z' })], { nowMs: NOW, marketState: OPEN })[0];
+    expect(today.detail).toBe('Score +1.0 · 0 trades · ends 4:00 PM ET');
+    // 11:30 PM ET the same evening is still today in ET, though UTC has turned the day.
+    const lateToday = liveGameRows([live({ expiresAt: '2026-10-23T03:30:00Z' })], { nowMs: NOW, marketState: OPEN })[0];
+    expect(lateToday.detail).toBe('Score +1.0 · 0 trades · ends 11:30 PM ET');
+  });
+
+  it('a game deployed after hours on Friday, waiting for the open: it ends on Monday, and says so', () => {
+    const fridayEvening = Date.UTC(2026, 9, 23, 22, 0);
+    const row = liveGameRows([live({ expiresAt: '2026-10-26T20:00:00Z', scoreState: { currentScore: 0, tradeCount: 0, evaluationCount: 0 } })], { nowMs: fridayEvening, marketState: CLOSED })[0];
+    expect(row.preOpen).toBe(true);
+    expect(row.detail).toContain('ends Mon 4:00 PM ET');
+  });
+});

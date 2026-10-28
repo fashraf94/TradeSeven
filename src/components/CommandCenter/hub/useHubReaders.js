@@ -84,7 +84,8 @@ function gamesSectionOf(completed, liveRows, liveResolved, freshness) {
     live,
     liveResolved,
     ...liveAge,
-    rows: Object.freeze([...live, ...completedGameRows(done, completed.reviews)]),
+    // A game from another year carries its year (the S8 review's S8-4; ruling R-S8F-9).
+    rows: Object.freeze([...live, ...completedGameRows(done, completed.reviews, Date.now())]),
     stale: completed.status === 'error',
     refreshing: completed.refreshing === true,
     // Kept from an earlier mount of this owner and epoch, not yet read again (Q-S3-2, A+): shown "as of" its time.
@@ -175,6 +176,8 @@ export default function useHubReaders(hub, deployAttempt = null, hubModalOpen = 
     liveResolved: games.liveResolved,
     // The live candidate carries the retained list's age after a failed poll, as the Games rows do (ruling R-S8F-8).
     liveFreshness: deploy.freshness,
+    // A review's day from another year carries its year (ruling R-S8F-9).
+    nowMs: Date.now(),
   };
   const nextAction = deriveNextAction({ ...nextInputs, dismissed: later.dismissed });
   const candidate = nextAction.candidate;

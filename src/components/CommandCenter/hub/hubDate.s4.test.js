@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { formatHubDayTime, formatHubMarketDate } from './activityDates';
+import { formatHubDayTime, formatHubMarketDate, formatHubOtherDay } from './activityDates';
 
 describe('formatHubDayTime — Activity\'s absolute time, read in ET', () => {
   it('writes the month, the day and the clock in Eastern time', () => {
@@ -62,6 +62,25 @@ describe('S4\'s helpers stay out of the main bundle (merge round: the deploy pro
     const code = src('activityDates.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const topLevel = code.split('\n').filter((line) => /^const \w+ = new Intl\./.test(line));
     expect(topLevel).toEqual([]);
-    expect((code.match(/new Intl\.DateTimeFormat/g) || []).length).toBe(5);
+    // Six since the S8 fix build (ruling R-S8F-9): the short weekday a live game's "ends" names when that is not today.
+    expect((code.match(/new Intl\.DateTimeFormat/g) || []).length).toBe(6);
+  });
+});
+
+describe("formatHubOtherDay — a live game's end on another ET day (the S8 fix build, ruling R-S8F-9)", () => {
+  // Tue Oct 27, 2026, 11:00 AM ET.
+  const NOW9 = Date.UTC(2026, 9, 27, 15, 0);
+  it('another ET calendar day: its short weekday; the same day: nothing', () => {
+    expect(formatHubOtherDay(Date.UTC(2026, 9, 28, 20, 0), NOW9)).toBe('Wed');
+    expect(formatHubOtherDay(Date.UTC(2026, 9, 27, 20, 0), NOW9)).toBe('');
+    expect(formatHubOtherDay(Date.UTC(2026, 9, 28, 3, 59), NOW9)).toBe('');
+    expect(formatHubOtherDay(Date.UTC(2026, 9, 28, 4, 0), NOW9)).toBe('Wed');
+    expect(formatHubOtherDay(Date.UTC(2025, 9, 27, 15, 0), NOW9)).toBe('Mon');
+  });
+
+  it('no time or no clock: nothing', () => {
+    expect(formatHubOtherDay(null, NOW9)).toBe('');
+    expect(formatHubOtherDay(NOW9, null)).toBe('');
+    expect(formatHubOtherDay(Number.NaN, NOW9)).toBe('');
   });
 });

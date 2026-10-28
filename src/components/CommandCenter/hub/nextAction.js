@@ -22,7 +22,8 @@
 // record, and a new game or a new review is a new key.
 
 import { HUB_COPY as COPY } from './hubCopy';
-import { formatHubDay, formatHubTime, hubMs } from './hubDate';
+import { formatHubTime, hubMs } from './hubDate';
+import { formatHubDayYear } from './activityDates';
 import { firstDeploymentCandidate } from './selectors/deployState';
 
 export const NEXT_ACTION_KINDS = Object.freeze({ OPEN_GAME: 'openGame', REVIEW: 'review', DEPLOY: 'deploy' });
@@ -75,12 +76,13 @@ function liveCandidate(row, liveFreshness) {
   };
 }
 
-function reviewCandidate(doc, row) {
+function reviewCandidate(doc, row, nowMs) {
   const key = NEXT_ACTION_KINDS.REVIEW;
   return {
     key,
     id: doc.id,
-    title: COPY.nextAction.reviewTitle(formatHubDay(hubMs(doc.completedAt))),
+    // A game from another year carries its year, as its Games row does (the S8 review's S8-4; ruling R-S8F-9).
+    title: COPY.nextAction.reviewTitle(formatHubDayYear(hubMs(doc.completedAt), nowMs)),
     why: COPY.nextAction.reviewWhy(row.opponent, row.outcome?.text || ''),
     cta: COPY.nextAction.openReview,
     laterKey: laterKeyOf(key, doc.id),
@@ -123,9 +125,10 @@ const byNewest = (a, b) => {
  * @param {Set<string>} [p.dismissed]  the Later keys set aside
  * @param {{ stale: boolean, asOf: number|null }} [p.liveFreshness]  the Deploy card's freshness of the live list
  *                                    (selectors/deployState.js): stale, the live candidate's detail carries its age
+ * @param {number}   [p.nowMs]         the clock: a review's day from another year carries its year (none without one)
  * @returns {{ status: 'ready' | 'loading', candidate: null | object }}
  */
-export function deriveNextAction({ liveRows, battles, rowsById, firstDeployment, liveResolved, liveFreshness = null, dismissed = new Set() }) {
+export function deriveNextAction({ liveRows, battles, rowsById, firstDeployment, liveResolved, liveFreshness = null, nowMs = null, dismissed = new Set() }) {
   const later = dismissed instanceof Set ? dismissed : new Set();
   const rows = rowsById instanceof Map ? rowsById : new Map();
   const liveList = Array.isArray(liveRows) ? liveRows : [];
@@ -140,7 +143,7 @@ export function deriveNextAction({ liveRows, battles, rowsById, firstDeployment,
   const ready = done
     .filter((doc) => rows.get(doc.id)?.review === true && !later.has(laterKeyOf(NEXT_ACTION_KINDS.REVIEW, doc.id)))
     .sort(byNewest)[0];
-  if (ready) return Object.freeze({ status: 'ready', candidate: Object.freeze(reviewCandidate(ready, rows.get(ready.id))) });
+  if (ready) return Object.freeze({ status: 'ready', candidate: Object.freeze(reviewCandidate(ready, rows.get(ready.id), nowMs)) });
 
   if (firstDeployment === true && !later.has(FIRST_DEPLOYMENT_KEY)) {
     return Object.freeze({ status: 'ready', candidate: Object.freeze(firstDeploymentCard()) });

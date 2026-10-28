@@ -23,7 +23,8 @@ const parse = (code) => Parser.parse(code, { ecmaVersion: 'latest', sourceType: 
 /** What each module may import: its siblings in the hub, the copy table, and (activity) the shared lean kernel. */
 const ALLOWED_IMPORTS = Object.freeze({
   'activityRows.js': [/^\.\.\/\.\.\/\.\.\/\.\.\/api\/_utils\/leanRevalidation\.js$/, /^\.\/activityDates$/, /^\.\/hubCopy$/, /^\.\/hubDate$/, /^\.\/selectors\/loadout$/],
-  'nextAction.js': [/^\.\/hubCopy$/, /^\.\/hubDate$/, /^\.\/selectors\/deployState$/],
+  // The S8 fix build (ruling R-S8F-9): a review's day from another year carries its year, through activityDates.js.
+  'nextAction.js': [/^\.\/activityDates$/, /^\.\/hubCopy$/, /^\.\/hubDate$/, /^\.\/selectors\/deployState$/],
 });
 
 const IMPURE_GLOBALS = new Set([

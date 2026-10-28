@@ -23,7 +23,8 @@ import { STOCK_RESULT_UNAVAILABLE, displayedStockScores } from '../../../utils/s
 import { FILM_ROOM_ROUTE } from '../../../constants/filmTape';
 import { PHASE, derivePhase } from '../../../adapters/baggerbombAdapter';
 import { HUB_COPY as COPY } from './hubCopy';
-import { formatHubDay, formatHubTime, hubMs } from './hubDate';
+import { formatHubTime, hubMs } from './hubDate';
+import { formatHubDayYear, formatHubOtherDay } from './activityDates';
 import { OUTCOME_KINDS, deriveGameOutcome } from './selectors/gameOutcome';
 import { REVIEW_STATES } from './reviewScheduler';
 
@@ -138,7 +139,8 @@ export function liveGameRows(battles, { nowMs, marketState }) {
     const [score] = formatScores(shown.currentScore);
     const tradeCount = battle.scoreState?.tradeCount;
     const trades = finite(tradeCount) ? tradeCount : (Array.isArray(battle.trades) ? battle.trades.length : 0);
-    const ends = endsMs === null ? '' : COPY.time.et(formatHubTime(endsMs));
+    // A game sent to the next session (deployed from 15:15 ET, or on a weekend) ends on another day: say which (S8-4).
+    const ends = endsMs === null ? '' : COPY.games.endsWhen(COPY.time.et(formatHubTime(endsMs)), formatHubOtherDay(endsMs, nowMs));
     return Object.freeze({
       id: battle.id,
       kind: classifyBattleType(battle),
@@ -171,11 +173,15 @@ export function reviewLineOf(row) {
   }
 }
 
-/** The completed rows: the window's documents, newest first, each with its outcome and review line. */
-export function completedGameRows(battles, reviews = {}) {
+/**
+ * The completed rows: the window's documents, newest first, each with its outcome and review line. A game from another
+ * year than `nowMs`'s carries its year, as Activity's times do (the S8 review's S8-4, K-9; ruling R-S8F-9); without a
+ * clock no year is added.
+ */
+export function completedGameRows(battles, reviews = {}, nowMs = null) {
   return (Array.isArray(battles) ? battles : []).map((battle) => {
     const display = outcomeDisplay(deriveGameOutcome(outcomeInputOf(battle)));
-    const day = formatHubDay(hubMs(battle.completedAt));
+    const day = formatHubDayYear(hubMs(battle.completedAt), nowMs);
     const reviewLine = reviewLineOf(reviews[battle.id]);
     return Object.freeze({
       id: battle.id,

@@ -9,6 +9,8 @@
 //                        time is the strip's "Live · ending" on the status line, never "in progress".
 //   R-S8F-8 (S8-3)       after a failed poll the retained live rows and the next action's live candidate say "As of
 //                        {time} · couldn't refresh", from the Deploy card's own freshness.
+//   R-S8F-9 (S8-4, K-9)  a date from another year carries its year (Games and History rows, the tape link, the next
+//                        action's title); "ends" names its short day when the end is not today.
 
 import React from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -164,5 +166,36 @@ describe('R-S8F-8 — retained live rows carry their age after a failed poll (S8
     render('desktop', hubOf({ activeBattles: [bb('bb_live')] }));
     expect(games().querySelector('[data-hub-games-live-note]')).toBeNull();
     expect(nextAction().textContent).not.toMatch(/couldn.t refresh/i);
+  });
+});
+
+// The S8 review's S8-4 and K-9 (ruling R-S8F-9), its lens Q5-3 repro rebuilt: a date from another year carries its year on
+// the Games rows, the tape link and the next action's title; "ends" names its day when that is not today.
+describe('R-S8F-9 — dates (S8-4, K-9)', () => {
+  const OLD = done(1, { id: 'done_old', completedAt: '2025-12-03T21:05:00.000Z' });
+
+  it('a game from December 2025 on October 27, 2026: the Games row, the tape link and the next action say "Dec 3, 2025"', () => {
+    r.window = windowOf([OLD]);
+    render('desktop', hubOf());
+    const row = games().querySelector('[data-hub-game-row="completed"]').closest('button');
+    expect(row.getAttribute('aria-label')).toContain('Dec 3, 2025');
+    expect(games().textContent).toContain('Dec 3, 2025');
+    const tape = [...games().querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') || '').startsWith('Open battle tape'));
+    expect(tape.getAttribute('aria-label')).toContain('Dec 3, 2025');
+    expect(document.querySelector('[data-hub-next-action]').textContent).toContain(COPY.nextAction.reviewTitle('Dec 3, 2025'));
+  });
+
+  it("this year's games carry no year, as before", () => {
+    render('desktop', hubOf());
+    expect(games().textContent).toContain('Oct 25');
+    expect(games().textContent).not.toMatch(/Oct 25, 2026/);
+  });
+
+  it("a game deployed after hours on Tuesday ends at Wednesday's close: its row says \"ends Wed 4:00 PM ET\"", () => {
+    r.market = { state: 'CLOSED', isOpen: false };
+    render('desktop', hubOf({ activeBattles: [bb('bb_wait', { expiresAt: '2026-10-28T20:00:00Z', scoreState: WAITING })] }));
+    const row = games().querySelector('[data-hub-game-row="live"]').closest('button');
+    expect(row.textContent).toContain(COPY.strip.deployed(COPY.games.waitingForOpen));
+    expect(row.textContent).toContain('ends Wed 4:00 PM ET');
   });
 });

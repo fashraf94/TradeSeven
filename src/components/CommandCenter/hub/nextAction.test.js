@@ -354,3 +354,16 @@ describe('the live candidate after a failed poll carries the retained list\'s ag
     expect(c.detail).toBeUndefined();
   });
 });
+
+// The S8 review's S8-4 and K-9 (ruling R-S8F-9): the review card's day carries its year when it is from another year.
+describe("the review title's day (S8-4)", () => {
+  it('a game from another year: "Review your Dec 3, 2025 game in the Film Room"; this year\'s, the day alone', () => {
+    const old = done(1, { id: 'old', completedAt: '2025-12-03T21:05:00.000Z' });
+    const c = deriveNextAction({ ...inputs({ battles: [old], reviews: readyFor(old) }), nowMs: NOW }).candidate;
+    expect(c.title).toBe(COPY.nextAction.reviewTitle('Dec 3, 2025'));
+    const recent = done(1);
+    const d = deriveNextAction({ ...inputs({ battles: [recent], reviews: readyFor(recent) }), nowMs: NOW }).candidate;
+    expect(d.title).toBe(COPY.nextAction.reviewTitle(formatHubDay(Date.parse(recent.completedAt))));
+    expect(d.title).not.toMatch(/2026/);
+  });
+});

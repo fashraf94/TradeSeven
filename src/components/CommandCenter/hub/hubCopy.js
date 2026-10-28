@@ -297,6 +297,8 @@ export const HUB_COPY = Object.freeze({
     ending: 'ending',
     /** A live row's line: its score as recorded, its trades, when it ends. */
     liveDetail: (score, trades, ends) => [`Score ${score}`, `${trades} trade${trades === 1 ? '' : 's'}`, ends ? `ends ${ends}` : ''].filter(Boolean).join(' · '),
+    /** When a live game ends: its time, after its short day when that is not today (the S8 review's S8-4; ruling R-S8F-9). */
+    endsWhen: (time, day) => (day ? `${day} ${time}` : time),
     /** A score a reader may not show (v2 Ruling 16): a dash, never 0. */
     scoreUnavailable: '—',
     /** Spec §7's outcome words; each number is the row's own stored score. */
