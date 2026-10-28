@@ -50,6 +50,8 @@ function boxes(w) {
   const top = parseFloat(lab.style.top);
   let left;
   if (lab.style.right) left = w - (Number(lab.style.right.match(/^calc\((-?[\d.]+)% \+ 2px\)$/)[1]) / 100) * w - 2 - width;
+  // B2.1 A8 (B6): at a measured plot the label is placed in px, clamped inside it (lastCloseLeftPx)
+  else if (/^-?[\d.]+px$/.test(lab.style.left)) left = parseFloat(lab.style.left);
   else left = (Number(lab.style.left.match(/^calc\((-?[\d.]+)% \+ 4px\)$/)[1]) / 100) * w + 4;
   const label = { left, right: left + width, top, bottom: top + 13 };
   const markers = m.qa('[data-evidence-marker]').map((b) => {

@@ -27,7 +27,7 @@
 // so an incomplete series ends where its bars end, with the tail blank, and
 // "close" always names the session-close instant (Amendment E addendum 2, F2).
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, seriesDomain, closePoints, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES, notChartedReasonOf, entryMakerOf } from './filmRoomModel';
 import { classOfNumber } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
@@ -92,11 +92,14 @@ export const lastCloseLabelPx = (text) => Math.ceil(String(text).length * 6.2) +
  * px (the chart's height is fixed), so a band clear of every near marker is clear at every width. The swap labels'
  * row is a band too when the symbol has one. Positions are in the chart's 0–1000 domain (x) and px (y).
  */
-export function lastCloseTop({ endX, endY, before, labelPx, markers = [], swapRow = false, maxTop, floorTop, plotPx = 0 }) {
+export function lastCloseTop({ endX, endY, before, labelPx, markers = [], swapRow = false, maxTop, floorTop, plotPx = 0, leftPx = null }) {
   const k = 1000 / (plotPx > 0 ? plotPx : MIN_PLOT_PX);   // domain units per px: at the measured plot, else the narrowest
-  const near = markers.filter((mk) => (before
-    ? endX - mk.x > -(MARKER_HALF - 2) * k && endX - mk.x < (labelPx + 2 + MARKER_HALF) * k
-    : mk.x - endX > -(MARKER_HALF - 4) * k && mk.x - endX < (labelPx + 4 + MARKER_HALF) * k));
+  // B2.1 A8 (B6): at a measured plot the label's box is where lastCloseLeftPx clamped it — its columns are exact
+  const near = markers.filter((mk) => (leftPx !== null && plotPx > 0
+    ? (mk.x / 1000) * plotPx + MARKER_HALF > leftPx && (mk.x / 1000) * plotPx - MARKER_HALF < leftPx + labelPx
+    : before
+      ? endX - mk.x > -(MARKER_HALF - 2) * k && endX - mk.x < (labelPx + 2 + MARKER_HALF) * k
+      : mk.x - endX > -(MARKER_HALF - 4) * k && mk.x - endX < (labelPx + 4 + MARKER_HALF) * k));
   const bands = near.map((mk) => [mk.y - MARKER_HALF - 1, mk.y + MARKER_HALF + 1]);
   if (swapRow) bands.push([-Infinity, SWAP_ROW]);
   const clear = (t) => t >= 0 && t <= maxTop && bands.every(([a, b]) => t + LABEL_H <= a || t >= b);
@@ -107,6 +110,44 @@ export function lastCloseTop({ endX, endY, before, labelPx, markers = [], swapRo
     if (clear(below + d)) return below + d;
   }
   return Math.min(floorTop, maxTop);
+}
+
+/**
+ * B2.1 A8 (B6; Astra's follow-up review) — the last close's label's LEFT edge in px inside the MEASURED plot: just
+ * before its line's end (`before`) or just after it, then clamped so the whole box — `labelPx`, the upper bound of its
+ * width — stays inside the plot, never out over the % axis's gutter. null where nothing lays the plot out (the CSS
+ * anchors then stand, as before).
+ */
+export function lastCloseLeftPx({ endX, before, labelPx, plotPx = 0 }) {
+  if (!(plotPx > 0)) return null;
+  const endPx = (endX / 1000) * plotPx;
+  const desired = before ? endPx - 2 - labelPx : endPx + 4;
+  return Math.max(0, Math.min(desired, plotPx - labelPx));
+}
+
+/**
+ * B2.1 A8 (A2F2-4) — where each swap label sits, clamped inside the price-chart REGION (the plot and its two axis
+ * gutters, `-padL` to `plotPx + padR` in px from the plot's left edge), from its natural one-line width `w` as laid
+ * out: anchored 6 px before its line (`right`) or after it, then moved in so neither end leaves the region — the
+ * leading "Exit ·" / "Entry ·" and the clock are never cut off. When a label is wider than the whole region (a phone),
+ * every label moves to a LANE above the plot (`lane`), each wrapping within the region from its clamped place. null
+ * until every label has a measured width at a measured plot: the CSS anchors stand then, as before.
+ *
+ * @param {{ i: number, lineX: number, right: boolean, w: number }[]} labels  lineX in px from the plot's left edge
+ * @returns {null | { lane: boolean, at: { [i: number]: number }, lo: number, regionW: number }}
+ */
+export function swapLabelLayout({ labels, plotPx = 0, padL = PAD_L, padR = PAD_R }) {
+  if (!(plotPx > 0) || !labels.length || labels.some((l) => !(l.w > 0))) return null;
+  const lo = -padL;
+  const hi = plotPx + padR;
+  const regionW = hi - lo;
+  const at = {};
+  for (const l of labels) {
+    const w = Math.min(l.w, regionW);
+    const desired = l.right ? l.lineX - 6 - w : l.lineX + 6;
+    at[l.i] = Math.max(lo, Math.min(desired, hi - w));
+  }
+  return { lane: labels.some((l) => l.w > regionW), at, lo, regionW };
 }
 
 /** A line of closes rebased to `base` (another series drawn on this symbol's price scale), or null. */
@@ -132,6 +173,17 @@ function usePlotWidth() {
 
 function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, onMark, height = 250 }) {
   const [plotPx, plotRef] = usePlotWidth();
+  // B2.1 A8 (A2F2-4): each swap label's natural one-line width, measured once it has laid out at its CSS anchor (none
+  // where nothing lays it out); a new set of labels (another symbol, another day) is measured afresh
+  const swapEls = useRef({});
+  const [swapWidths, setSwapWidths] = useState({ key: null, w: {} });
+  const swapKey = `${sym}|${(Array.isArray(tape.actions) ? tape.actions : []).map((a, i) => (a.symbolOut === sym || a.symbolIn === sym ? `${i}:${a.at}` : '')).join(',')}`;
+  useLayoutEffect(() => {
+    if (swapWidths.key === swapKey) return;
+    const w = {};
+    for (const [i, el] of Object.entries(swapEls.current)) { const b = el?.getBoundingClientRect?.(); if (b && b.width > 0) w[i] = b.width; }
+    if (Object.keys(w).length) setSwapWidths({ key: swapKey, w });
+  });
   const bars = Array.isArray(doc.bars) ? doc.bars : [];
   const open = doc.sessionOpen?.value;
   // The time domain is the tape day's TRADING SESSION from the calendar the writers use — never the bars' extent:
@@ -175,12 +227,42 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   // The last close's label keeps clear of every evidence marker near it and of the swap labels' row (lastCloseTop).
   const lastClose = bars[bars.length - 1]?.c;
   const markerPoints = marks.map((mk) => ({ x: x(toMs(mk.at)), y: y(valueAt(tape, ['checks', mk.index, 'evidence', sym, 'px'])) })).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  // A2F2-4: the swap labels clamped inside the chart region — on the plot's top row, or in a lane above it on a phone
+  const timed = actions.filter(({ a }) => toMs(a.at) !== null);
+  const swapLayout = swapWidths.key === swapKey
+    ? swapLabelLayout({ labels: timed.map(({ a, i }) => ({ i, lineX: (x(toMs(a.at)) / 1000) * plotPx, right: x(toMs(a.at)) > 600, w: swapWidths.w[i] })), plotPx })
+    : null;
+  const lane = Boolean(swapLayout?.lane);
+  // B6: the last close's box clamped inside the measured plot, its band chosen with that box
+  const lastLabelPx = isNum(lastClose) ? lastCloseLabelPx(fmtPrice(lastClose)) : 0;
+  const lastLeft = isNum(lastClose) ? lastCloseLeftPx({ endX: lastEndX, before: lastEndX > 500, labelPx: lastLabelPx, plotPx }) : null;
   const lastTop = isNum(lastClose) ? lastCloseTop({
-    endX: lastEndX, endY: y(lastClose), before: lastEndX > 500, labelPx: lastCloseLabelPx(fmtPrice(lastClose)),
-    markers: markerPoints, swapRow: actions.some(({ a }) => toMs(a.at) !== null), maxTop: height - LABEL_H, floorTop: padT + ih + MARKER_HALF + 2, plotPx,
+    endX: lastEndX, endY: y(lastClose), before: lastEndX > 500, labelPx: lastLabelPx,
+    markers: markerPoints, swapRow: !lane && timed.length > 0, maxTop: height - LABEL_H, floorTop: padT + ih + MARKER_HALF + 2, plotPx, leftPx: lastLeft,
   }) : null;
+  const swapLabel = (a, i) => {
+    const who = exitMakerOf(a);
+    const ms = toMs(a.at);
+    const right = x(ms) > 600;
+    const font = mono(9.5, who.by === 'agent' ? C.teal : C.ink2, { fontWeight: 600 });
+    // unmeasured: the CSS anchors, style for style as before; measured: clamped on the top row, or wrapped in the lane
+    const style = !swapLayout
+      ? { position: 'absolute', top: 0, ...(right ? { right: `calc(${100 - x(ms) / 10}% + 6px)` } : { left: `calc(${pct(ms)} + 6px)` }), display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', ...font }
+      : lane
+        ? { alignSelf: 'flex-start', display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 5, marginLeft: swapLayout.at[i] - swapLayout.lo, maxWidth: swapLayout.regionW - (swapLayout.at[i] - swapLayout.lo), whiteSpace: 'normal', ...font, lineHeight: 1.3 }
+        : { position: 'absolute', top: 0, left: swapLayout.at[i], display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', ...font };
+    return (
+      <span key={`l${i}`} ref={(el) => { if (el) swapEls.current[i] = el; else delete swapEls.current[i]; }} data-swap-label={i} style={style}>
+        {/* the sold name keeps "Exit · {time} · {maker}"; the bought name reads its entry, never "Exit by …" (RJ-4) */}
+        {a.symbolOut === sym
+          ? <>{COPY.exitMark} · <When>{etClock(a.at)}</When> · {who.label}</>
+          : <>{COPY.entryMark} · <When>{etClock(a.at)}</When> · {COPY.entryFor} <Rec>{a.symbolOut}</Rec> · {entryMakerOf(a).label}</>}
+      </span>
+    );
+  };
   return (
     <div data-region="price-chart" data-symbol={sym} style={{ position: 'relative', width: '100%', boxSizing: 'border-box', padding: `0 ${PAD_R}px 0 ${PAD_L}px` }}>
+      {lane ? <div data-swap-lane="" style={{ display: 'flex', flexDirection: 'column', gap: 3, margin: `0 -${PAD_R}px 6px -${PAD_L}px` }}>{timed.map(({ a, i }) => swapLabel(a, i))}</div> : null}
       <div ref={plotRef} data-plot="" data-plot-px={plotPx || undefined} data-domain-start={new Date(startMs).toISOString()} data-domain-end={new Date(endMs).toISOString()} style={{ position: 'relative', width: '100%', height }}>
         <svg width="100%" height={height} viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-label={`${sym} · ${COPY.deepPrice}`} style={{ display: 'block', overflow: 'visible', width: '100%', height }}>
           {ticks.filter((v) => v !== 0).map((v) => <line key={v} data-gridline="" x1="0" x2="1000" y1={y(open * (1 + v))} y2={y(open * (1 + v))} style={{ stroke: C.hair }} vectorEffect="non-scaling-stroke" />)}
@@ -207,7 +289,7 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
         {/* just before that end when it lies right of the middle, just after it otherwise, so it never runs into the axis gutter (review A2A2-2). */}
         {/* …above its line's end when that is clear, else the nearest clear band — never over a marker or the swap labels' row. */}
         {/* Its box is exactly LABEL_H tall from `top` (flex, line-height 1) — the box lastCloseTop places, never a line box the page's font sets. */}
-        {lastTop !== null ? <span data-axis-record="lastClose" style={{ position: 'absolute', display: 'flex', alignItems: 'center', height: LABEL_H, lineHeight: 1, ...(lastEndX > 500 ? { right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)` } : { left: `calc(${(lastEndX / 10).toFixed(3)}% + 4px)` }), top: lastTop }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
+        {lastTop !== null ? <span data-axis-record="lastClose" style={{ position: 'absolute', display: 'flex', alignItems: 'center', height: LABEL_H, lineHeight: 1, ...(lastLeft !== null ? { left: lastLeft } : lastEndX > 500 ? { right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)` } : { left: `calc(${(lastEndX / 10).toFixed(3)}% + 4px)` }), top: lastTop }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
         {/* the evidence overlay (BA-43) */}
         {marks.map((m) => {
           const px = valueAt(tape, ['checks', m.index, 'evidence', sym, 'px']);
@@ -230,20 +312,7 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
             </button>
           );
         })}
-        {actions.map(({ a, i }) => {
-          const ms = toMs(a.at);
-          if (ms === null) return null;
-          const who = exitMakerOf(a);
-          const right = x(ms) > 600;
-          return (
-            <span key={`l${i}`} data-swap-label={i} style={{ position: 'absolute', top: 0, ...(right ? { right: `calc(${100 - x(ms) / 10}% + 6px)` } : { left: `calc(${pct(ms)} + 6px)` }), display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', ...mono(9.5, who.by === 'agent' ? C.teal : C.ink2, { fontWeight: 600 }) }}>
-              {/* the sold name keeps "Exit · {time} · {maker}"; the bought name reads its entry, never "Exit by …" (RJ-4) */}
-              {a.symbolOut === sym
-                ? <>{COPY.exitMark} · <When>{etClock(a.at)}</When> · {who.label}</>
-                : <>{COPY.entryMark} · <When>{etClock(a.at)}</When> · {COPY.entryFor} <Rec>{a.symbolOut}</Rec> · {entryMakerOf(a).label}</>}
-            </span>
-          );
-        })}
+        {lane ? null : timed.map(({ a, i }) => swapLabel(a, i))}
       </div>
       {/* the time axis: the session open, the intermediate ticks, the close — instants, as the design of record writes them */}
       <div data-time-axis="" style={{ position: 'relative', height: 12, marginTop: 4, ...mono(9, C.ink3) }}>
