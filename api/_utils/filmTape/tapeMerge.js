@@ -46,7 +46,7 @@
 
 import { createHash } from 'node:crypto';
 import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE, AWAITING_CANDLES_NOTE } from '../../../src/constants/filmTape.js';
-import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf, MEETINGS_PER_DAY_MAX } from './tapeAssemble.js';
+import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf, meetingsCoverageOf, MEETINGS_PER_DAY_MAX } from './tapeAssemble.js';
 import { candleInputFingerprint, changedInputParts, replayLogicVersionOf, REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
 import { modernNotes } from './tapeNotes.js';
@@ -409,8 +409,9 @@ function battleWinner(stored, assembled, canonicalBattle) {
  * @returns {{ doc: object, changed: boolean, carried: object }}
  */
 export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false, resolveResult = null, tagDay = null, sizeBudget = TAPE_SIZE_BUDGET_BYTES }) {
-  // The read's limits (BA-26 amended) steer the coverage merge; they are never stored.
-  const { readLimits = {}, ...assembled } = isObj(assembledIn) ? assembledIn : {};
+  // The read's limits (BA-26 amended) steer the coverage merge, and what it saw of the meeting history (RE-3) the
+  // meetings' coverage; neither is ever stored.
+  const { readLimits = {}, meetingsRead = null, ...assembled } = isObj(assembledIn) ? assembledIn : {};
   const isSkipped = assembled?.passes?.close?.status === 'skipped_mode';
   if (!isObj(stored) || !isObj(stored.passes?.close)) {
     const doc = { ...assembled, writtenAt: nowIso, firstWrittenAt: nowIso, runCount: 1 };
@@ -578,9 +579,6 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
     if (isObj(cov) && closedOutNote(cov.note, merged.passes.candles) !== cov.note) cov = { ...cov, note: closedOutNote(cov.note, merged.passes.candles) };
     merged.coverage[section] = cov;
   }
-  // B1 T2: the meetings' coverage is the new read's — the history only grows
-  // (an append-only list) — preserved from the stored copy for any row it kept.
-  let meetingsCov = assembled.coverage?.meetings ?? stored.coverage?.meetings ?? null;
   // B1 review B-2: the day's cap holds for the MERGED rows too, so re-planted
   // meetings never grow the section across refreshes. Amendment D RD-6: the
   // cap keeps the stored rows first, then the new ones by creation time (the
@@ -593,9 +591,14 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       ...merged.meetings.filter((m) => !storedMeetings.has(m.key)),
     ].slice(0, MEETINGS_PER_DAY_MAX));
     merged.meetings = merged.meetings.filter((m) => keep.has(m));
-    const kept = String(meetingsCov?.note ?? '').split('; ').filter((part) => part && !/ past \d+ in a day not copied$/.test(part));
-    meetingsCov = { ...(isObj(meetingsCov) ? meetingsCov : {}), status: 'partial', note: [...kept, `${meetingOverflow === 1 ? '1 meeting' : `${meetingOverflow} meetings`} past ${MEETINGS_PER_DAY_MAX} in a day not copied`].join('; ') };
   }
+  // Build B Amendment E RE-3: the meetings' coverage describes the rows the tape STORES — its span theirs, its note
+  // the stored rows' own omissions as the stored note states them, those of each row this read adds, and what of the
+  // history as this read saw it the section does not hold — so a refused rewrite (RD-6) moves none of it
+  // (tapeAssemble.js meetingsCoverageOf). A read with no account of what it saw (none handed in) keeps the read's own.
+  const meetingsCov = meetingsRead
+    ? meetingsCoverageOf({ rows: merged.meetings, read: meetingsRead, storedRows: stored.meetings, storedNote: stored.coverage?.meetings?.note ?? null })
+    : (assembled.coverage?.meetings ?? stored.coverage?.meetings ?? null);
   if (isObj(meetingsCov)) {
     merged.coverage.meetings = carriedAny(carried.meetings)
       ? { ...meetingsCov, preservedFrom: stored.coverage?.meetings?.preservedFrom ?? stored.writtenAt ?? null }
