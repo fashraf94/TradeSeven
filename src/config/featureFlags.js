@@ -3441,7 +3441,7 @@ export const STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED = true;
  *      (the shipped state)") reworded to the live state.
  */
 // Pinned by: commandCenterHubFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const COMMAND_CENTER_HUB_ENABLED = false;
+export const COMMAND_CENTER_HUB_ENABLED = true;
 
 /** The ONE consumer seam for the hub flag, read at render: the flag and nothing else. */
 export function isCommandCenterHubOn() {
