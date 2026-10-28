@@ -83,6 +83,9 @@ export const SCREEN_AGGREGATE_CLASSES = Object.freeze({
   'slot(S9 open cards per agent)': 'recorded',
   'count(characters in the note)': 'derived',
   'slot(S10 note characters)': 'recorded',
+  // B2.1 A7 (Amendment J RJ-7): Glance's coverage line counts the symbols the candle pass did not chart — a count of
+  // stored rows (coverage.series.notCharted), so derived.
+  'count(coverage.series.notCharted[])': 'derived',
 });
 
 /**
@@ -106,6 +109,37 @@ export function checkCounts(tape) {
   const seqs = [...range, ...(Array.isArray(close?.gaps) ? close.gaps.filter(Number.isInteger) : [])];
   const m = seqs.length && !unplaced ? Math.max(...seqs) - Math.min(...seqs) + 1 : null;
   return { n, m: m !== null && m >= n ? m : null };
+}
+
+// ── Glance's one coverage line (B2.1 A7; Amendment J RJ-7) ──────────────────
+
+/**
+ * The sections Glance's one line sums up, in the screen's order: every coverage section the v2 screen renders —
+ * `tags` aside (cards only, RG-2; the prepared case shows its own line) and `calls` aside (v2 renders no call).
+ */
+export const GLANCE_COVERAGE_SECTIONS = Object.freeze(['checks', 'actions', 'directives', 'meetings', 'plans', 'rationale', 'evidence', 'replay', 'series']);
+const COVERAGE_STATUS_RANK = Object.freeze({ unavailable: 0, partial: 1, complete: 2 });
+
+/**
+ * The day's coverage as ONE line (RJ-7): each section that is not complete, by its stored status — named on the line
+ * with its stored note — and the worst of them; none → "complete for every section". The series section counts the
+ * symbols the candle pass did not chart (its W5 list): a series section stored complete with any is read as partial,
+ * "n symbols not charted", n a derived count. A section the tape does not store is not on the line (its own depth says
+ * the absence); an unknown status reads as unavailable.
+ */
+export function coverageSummaryOf(tape) {
+  const sections = [];
+  for (const section of GLANCE_COVERAGE_SECTIONS) {
+    const cov = tape?.coverage?.[section];
+    if (!isObj(cov)) continue;
+    const stored = Object.prototype.hasOwnProperty.call(COVERAGE_STATUS_RANK, cov.status) ? cov.status : 'unavailable';
+    const notCharted = section === 'series' && Array.isArray(cov.notCharted) ? cov.notCharted.length : 0;
+    const status = stored === 'complete' && notCharted ? 'partial' : stored;
+    if (status === 'complete') continue;
+    sections.push({ section, status, note: stored !== 'complete' && typeof cov.note === 'string' && cov.note ? cov.note : null, notCharted });
+  }
+  const status = sections.reduce((w, e) => (COVERAGE_STATUS_RANK[e.status] < COVERAGE_STATUS_RANK[w] ? e.status : w), 'complete');
+  return { status, sections };
 }
 
 // ── time (ET wall clock; instants stay the tape's strings) ──────────────────

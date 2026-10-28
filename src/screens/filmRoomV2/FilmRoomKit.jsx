@@ -194,7 +194,17 @@ export function KindLegend({ style }) {
 
 // ── coverage (BA-20) ────────────────────────────────────────────────────────
 
-const COVERAGE_COLOR = { complete: C.ink2, partial: C.gold, unavailable: C.ink3 };
+export const COVERAGE_COLOR = { complete: C.ink2, partial: C.gold, unavailable: C.ink3 };
+
+/** The coverage status swatch: filled for complete, half for partial, hollow for unavailable. */
+export function CoverageSwatch({ status }) {
+  const c = COVERAGE_COLOR[status] ?? COVERAGE_COLOR.unavailable;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', height: 15 }}>
+      <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, display: 'inline-block', background: status === 'complete' ? c : status === 'partial' ? `linear-gradient(90deg, ${c} 50%, transparent 50%)` : 'transparent', boxShadow: `inset 0 0 0 1px ${c}` }} />
+    </span>
+  );
+}
 
 /**
  * The coverage line every section opens with: the tape's own status and note. `doc` + `at` name the tape's coverage
@@ -223,9 +233,10 @@ export function Coverage({ doc = null, at = null, coverage: made = null, fallbac
 
 /**
  * A section: its title (with its count, when it has one), its coverage line, an optional note, its body. The coverage
- * line is the tape's section at `coverageAt` in `doc` (its note bound by path), or a `coverage` the screen made.
+ * line is the tape's section at `coverageAt` in `doc` (its note bound by path), or a `coverage` the screen made, or —
+ * B2.1 A7 — a whole line handed in (`coverageLine`: Glance's one summary of the day's coverage).
  */
-export function Section({ id, title, count, doc = null, coverageAt = null, coverage, coverageNote, note, right, children, label }) {
+export function Section({ id, title, count, doc = null, coverageAt = null, coverage, coverageNote, coverageLine = null, note, right, children, label }) {
   return (
     <section id={id} data-section={id || label || title} style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10, padding: '4px 2px 0', flexWrap: 'wrap' }}>
@@ -235,7 +246,7 @@ export function Section({ id, title, count, doc = null, coverageAt = null, cover
         </div>
         {right}
       </div>
-      {(coverageAt || coverage !== undefined || coverageNote) && <Coverage doc={doc} at={coverageAt} coverage={coverage} fallbackNote={coverageNote} style={{ padding: '0 2px' }} />}
+      {coverageLine ?? ((coverageAt || coverage !== undefined || coverageNote) && <Coverage doc={doc} at={coverageAt} coverage={coverage} fallbackNote={coverageNote} style={{ padding: '0 2px' }} />)}
       {note && <span style={{ ...foot, padding: '0 2px', display: 'block' }}>{note}</span>}
       {children}
     </section>

@@ -48,6 +48,10 @@ const COPY_KEYS = [
   'loading', 'noTape', 'noTapeScheduled.before', 'noTapeScheduled.after', 'noTapeLater', 'noTapeUnavailable', 'readError', 'earlierDay', 'openLastDay()', 'skippedMode', 'closeNotWritten', 'statusUnknown',
   'countOf', 'countRecorded', 'slots',
   'coverage', 'replayCoverage', 'coverageLabel.complete', 'coverageLabel.partial', 'coverageLabel.unavailable', 'preservedFrom',
+  // B2.1 A7 — Glance's one coverage line (RJ-7)
+  'coverageSummary.every', 'coverageSummary.except', 'coverageSummary.sections.checks', 'coverageSummary.sections.actions', 'coverageSummary.sections.directives',
+  'coverageSummary.sections.meetings', 'coverageSummary.sections.plans', 'coverageSummary.sections.rationale', 'coverageSummary.sections.evidence', 'coverageSummary.sections.replay',
+  'coverageSummary.sections.series', 'coverageSummary.notCharted()',
   'recordedScoreAt()', 'recordedScore', 'dayChange', 'dayChangeBasis.battle_start', 'dayChangeBasis.prior_day_tape', 'dayChangeBasis.unavailable',
   'firstCheckAt()', 'noChecks', 'scorePath', 'scorePathNote', 'battleStartLine', 'checks', 'runsTitle', 'runCompleted',
   'runKinds.hold', 'runKinds.swap', 'runKinds.default_hold', 'runKinds.completed',
@@ -112,6 +116,7 @@ const SAMPLE_CALLS = {
   'stateEntry()': [['12:15 PM', 'check skipped · budget']],
   'sector()': [['XLK']],
   'meetingAt()': [['2:15 PM'], ['Sep 22, 8:30 PM']],
+  'coverageSummary.notCharted()': [[1], [2]],
 };
 
 const COPY_EXPORTS = ['CLASS_LETTER', 'DIRECTIVE_EXPLAINER', 'FILM_ROOM_COPY', 'FORBIDDEN_WORDS', 'LOCKED_BASIS_NOTE', 'PROVENANCE_LABELS', 'REPLAY_SENTENCE', 'REPLAY_VERSION_NOTE'];
@@ -203,9 +208,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 340 copy keys, 469 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(340);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
-    expect(inventory()).toHaveLength(469);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
+  it('the inventory\'s size is pinned (the build report states it): 352 copy keys, 482 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(352);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
+    expect(inventory()).toHaveLength(482);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {

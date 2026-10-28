@@ -111,8 +111,9 @@ describe('F5 — the score path with the check runs', () => {
   it('the checks coverage line opens the section, and the "protections" note appears exactly once — with a check open too', () => {
     m.render(<Harness tape={sep23Tape} />);
     m.click(m.q('[data-check-pip="10"]'));
-    expect(m.q('#glance-checks [data-coverage]').getAttribute('data-coverage')).toBe('partial');
-    expect(m.q('#glance-checks').textContent).toContain(sep23Tape.coverage.checks.note);
+    // B2.1 A7 (RJ-7): the section opens with the day's ONE coverage line, which names the partial checks section with its stored note
+    expect(m.q('#glance-checks [data-coverage-summary]').getAttribute('data-coverage-summary')).toBe('partial');
+    expect(m.q('#glance-checks [data-coverage-section="checks"]').textContent).toContain(sep23Tape.coverage.checks.note);
     const n = m.container.textContent.split('This does not show which protections were armed or checked.').length - 1;
     expect(n).toBe(1);
   });
@@ -266,18 +267,80 @@ describe('the sweeps (BA-42, BA-41)', () => {
   });
 });
 
-describe('review A2L4-10 — the Glance checks section opens with the tape\'s coverage line in all three states', () => {
-  it.each(['complete', 'partial', 'unavailable'])('%s', (status) => {
+describe('review A2L4-10, as B2.1 A7 (Amendment J RJ-7) reads it — the Glance checks section opens with the day\'s ONE coverage line', () => {
+  it.each(['complete', 'partial', 'unavailable'])('the checks section %s: named with its status and stored note when it is not complete, left off the line when it is', (status) => {
     const t = clone(sep23Tape);
     t.coverage.checks = { ...t.coverage.checks, status, note: `${status} checks note` };
     m.render(<Harness tape={t} />);
-    const line = m.q('#glance-checks [data-coverage]');
-    expect(line.getAttribute('data-coverage')).toBe(status);
-    expect(line.textContent).toContain(`${status} checks note`);
+    const entry = m.q('#glance-checks [data-coverage-summary] [data-coverage-section="checks"]');
+    if (status === 'complete') {
+      expect(entry).toBeNull();
+      expect(m.q('#glance-checks').textContent).not.toContain('complete checks note');
+    } else {
+      expect(entry.textContent).toContain(`checks (${status} — ${status} checks note)`);
+      expect(entry.querySelector('[data-stored-note="coverage.checks.note"]').textContent).toBe(`${status} checks note`);
+    }
   });
 
-  it('the empty day: the checks section still opens with its coverage line, unavailable', () => {
+  it('the empty day: the line is unavailable at worst, naming the checks section with its stored reason', () => {
     m.render(<Harness tape={emptyTape} />);
-    expect(m.q('#glance-checks [data-coverage]').getAttribute('data-coverage')).toBe('unavailable');
+    expect(m.q('#glance-checks [data-coverage-summary]').getAttribute('data-coverage-summary')).toBe('unavailable');
+    expect(m.q('[data-coverage-section="checks"]').textContent).toContain(`checks (unavailable — ${emptyTape.coverage.checks.note})`);
+  });
+
+  it('ONE line: Glance renders no per-section coverage line at all — the repeated "complete" lines are folded into it', () => {
+    for (const tape of [sep23Tape, emptyTape]) {
+      m.render(<Harness tape={tape} />);
+      expect(m.qa('[data-coverage-summary]')).toHaveLength(1);
+      expect(m.qa('[data-coverage]')).toHaveLength(0);
+    }
+  });
+
+  it('RJ-7\'s example: every other section complete, the series section with one symbol not charted — "complete except: series (partial — 1 symbol not charted)", the count marked derived', () => {
+    const t = clone(sep23Tape);
+    t.coverage.checks = { ...t.coverage.checks, status: 'complete', note: null };
+    m.render(<Harness tape={t} />);
+    const line = m.q('[data-coverage-summary]');
+    expect(line.getAttribute('data-coverage-summary')).toBe('partial');
+    const text = line.textContent.replace(/\s+/g, ' ');
+    expect(text).toBe('Coverage · complete except: series (partial — 1D symbol not charted)');
+    const count = line.querySelector('[data-num-aggregate="count(coverage.series.notCharted[])"]');
+    expect(count.getAttribute('data-num-class')).toBe('derived');
+    expect(count.querySelector('[data-kind-mark]').getAttribute('data-kind-mark')).toBe('derived');
+    expect(sweepNumbers(m.container, { tape: t })).toEqual([]);
+  });
+
+  it('every section complete and every symbol charted: "Coverage · complete for every section"', () => {
+    const t = clone(sep23Tape);
+    for (const k of Object.keys(t.coverage)) t.coverage[k] = { ...t.coverage[k], status: 'complete' };
+    t.coverage.series.notCharted = [];
+    m.render(<Harness tape={t} />);
+    const line = m.q('[data-coverage-summary]');
+    expect(line.getAttribute('data-coverage-summary')).toBe('complete');
+    expect(line.textContent).toBe('Coverage · complete for every section');
+  });
+
+  it('two symbols not charted beside a partial series section: its stored reason, then the plural count', () => {
+    const t = clone(sep23Tape);
+    t.coverage.checks = { ...t.coverage.checks, status: 'complete', note: null };
+    t.coverage.series = { ...t.coverage.series, status: 'partial', note: 'no bars for: DE', notCharted: [{ symbol: 'BTC', reason: 'crypto_not_supported' }, { symbol: 'DE', reason: 'no_bars' }] };
+    m.render(<Harness tape={t} />);
+    expect(m.q('[data-coverage-section="series"]').textContent.replace(/\s+/g, ' ')).toBe('series (partial — no bars for: DE; 2D symbols not charted)');
+    expect(sweepNumbers(m.container, { tape: t })).toEqual([]);
+  });
+
+  it('tags (cards only, RG-2) and calls (never rendered) are not on the line, whatever they say', () => {
+    expect(sep23Tape.coverage.tags.status).toBe('unavailable');
+    m.render(<Harness tape={sep23Tape} />);
+    expect(m.q('[data-coverage-section="tags"]')).toBeNull();
+    expect(m.q('[data-coverage-section="calls"]')).toBeNull();
+    expect(m.q('[data-coverage-summary]').textContent).not.toContain(sep23Tape.coverage.tags.note);
+  });
+
+  it('a section the tape does not store is not on the line (its own depth says the absence)', () => {
+    const t = clone(sep23Tape);
+    delete t.coverage.meetings;
+    m.render(<Harness tape={t} />);
+    expect(m.q('[data-coverage-section="meetings"]')).toBeNull();
   });
 });

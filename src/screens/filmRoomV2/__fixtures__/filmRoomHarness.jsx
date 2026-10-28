@@ -230,6 +230,8 @@ export const SPEC_AGGREGATE_CLASSES = Object.freeze({
   'slot(S9 open cards per agent)': 'recorded',
   'count(characters in the note)': 'derived',
   'slot(S10 note characters)': 'recorded',
+  // B2.1 A7 (Amendment J RJ-7, PINNED HERE): Glance's coverage line counts the symbols the candle pass did not chart — stored rows, derived
+  'count(coverage.series.notCharted[])': 'derived',
 });
 /** The founder slots as the rulings fix them (RG-8) — the oracle for the two slot aggregates, never read from production. */
 export const SPEC_CARD_SLOTS = Object.freeze({ S9: 5, S10: 280 });
@@ -257,6 +259,7 @@ export const SPEC_AGGREGATE_SITES = Object.freeze({
   'slot(S9 open cards per agent)': '[data-card-form] [data-open-count]',
   'count(characters in the note)': '[data-card-form] [data-note-count]',
   'slot(S10 note characters)': '[data-card-form] [data-note-count]',
+  'count(coverage.series.notCharted[])': '[data-coverage-summary] [data-coverage-section="series"]',
 });
 
 /** What a computed number's text says, and how far its format may round it: a count exactly, "+0.53%" to 0.005 %, "604K" to 500, "1.2M" to 50,000. */
@@ -302,6 +305,8 @@ function aggregateOracle(name, el, docs) {
     return cards.filter((c) => ['card', 'nominated'].includes(c.stage) && c.archetypeCodeId === docs.agentArchetype).length;
   }
   if (name === 'count(characters in the note)') return undefined;   // the typed text's own length: its rows bind it
+  // B2.1 A7: the series section's not-charted list, counted HERE from the tape
+  if (name === 'count(coverage.series.notCharted[])') { const l = docs.tape?.coverage?.series?.notCharted; return Array.isArray(l) ? l.length : null; }
   const countMoment = (items, situationId, symbol, from, to) => {
     if (from === 'x') return items.filter((i) => i.situationId === situationId && i.symbol === symbol && !Number.isInteger(i.tickSeq)).length ? 1 : null;
     return items.filter((i) => i.situationId === situationId && i.symbol === symbol && Number.isInteger(i.tickSeq) && i.tickSeq >= Number(from) && i.tickSeq <= Number(to)).length;

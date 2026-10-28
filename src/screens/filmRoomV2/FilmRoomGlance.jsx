@@ -7,9 +7,9 @@
 // from the day, only for a completed battle, with the platform's own words.
 
 import React from 'react';
-import { valueAt, etClock, checkStateOf, checkRuns, checkStateLegend, isNum, exitMakerOf, toMs, meetingOfRun } from './filmRoomModel';
+import { valueAt, etClock, checkStateOf, checkRuns, checkStateLegend, isNum, exitMakerOf, toMs, meetingOfRun, coverageSummaryOf } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
-import { C, card, eyebrow, foot, mono, plain, TapeNum, CountNum, CheckCount, When, StoredNote, Section, Row, Quotation, StateTag, Door, TextButton } from './FilmRoomKit';
+import { C, card, eyebrow, foot, mono, plain, TapeNum, AggNum, CountNum, CheckCount, When, StoredNote, Section, Row, Quotation, StateTag, Door, TextButton, CoverageSwatch, COVERAGE_COLOR } from './FilmRoomKit';
 import CheckDetail from './FilmRoomCheckDetail';
 
 // ── the pips: one per check row, by tone ───────────────────────────────────
@@ -208,6 +208,40 @@ function RunList({ tape, onOpenMeeting = null }) {
   );
 }
 
+/**
+ * B2.1 A7 (Amendment J RJ-7) — the day's coverage as ONE line, in place of a section-by-section run of "complete"
+ * lines: "Coverage · complete for every section", or "Coverage · complete except: …" naming each section that is not
+ * complete with its stored reason (bound by path, R1) and the series section's not-charted count (derived, marked).
+ */
+function CoverageSummary({ tape }) {
+  const sum = coverageSummaryOf(tape);
+  const W = COPY.coverageSummary;
+  return (
+    <div data-coverage-summary={sum.status} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, minWidth: 0, padding: '0 2px' }}>
+      <CoverageSwatch status={sum.status} />
+      <span style={mono(10.5, C.ink3, { lineHeight: 1.45 })}>
+        {COPY.coverage} · {sum.sections.length ? (
+          <>
+            {W.except}{' '}
+            {sum.sections.map((e, i) => (
+              <React.Fragment key={e.section}>
+                {i ? '; ' : null}
+                <span data-coverage-section={e.section}>
+                  {W.sections[e.section]} (<span style={{ color: COVERAGE_COLOR[e.status], fontWeight: 600 }}>{COPY.coverageLabel[e.status]}</span>
+                  {e.note || e.notCharted ? ' — ' : null}
+                  {e.note ? <StoredNote doc={tape} path={['coverage', e.section, 'note']} /> : null}
+                  {e.note && e.notCharted ? '; ' : null}
+                  {e.notCharted ? <><AggNum value={e.notCharted} aggregate="count(coverage.series.notCharted[])" size={10} weight={500} color={C.ink3} style={{ verticalAlign: 'middle' }} /> {W.notCharted(e.notCharted)}</> : null})
+                </span>
+              </React.Fragment>
+            ))}
+          </>
+        ) : <span style={{ color: COVERAGE_COLOR.complete, fontWeight: 600 }}>{W.every}</span>}
+      </span>
+    </div>
+  );
+}
+
 /** The battle's final result, apart from the day; only for a completed battle (BA-4, BA-39). */
 export function ResultCard({ tape, finalDay = null }) {
   const b = tape.battle;
@@ -255,7 +289,7 @@ export function ResultCard({ tape, finalDay = null }) {
 
 export default function FilmRoomGlance({ tape, desktop, selected, onSelect, finalDay = null, cards = null, onOpenMeeting = null }) {
   const checksBlock = (
-    <Section id="glance-checks" title={COPY.checks} count={<CheckCount tape={tape} />} doc={tape} coverageAt={['coverage', 'checks']} note={COPY.riskNote}>
+    <Section id="glance-checks" title={COPY.checks} count={<CheckCount tape={tape} />} coverageLine={<CoverageSummary tape={tape} />} note={COPY.riskNote}>
       <div style={{ ...card, gap: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ ...eyebrow, color: C.ink2 }}>{COPY.scorePath}</span>

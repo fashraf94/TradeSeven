@@ -49,14 +49,14 @@ export const GOLDEN_SOURCE_COMMIT = '7818a1b315589dd95cffbf3708df685fa3d9eb9d';
 export const GOLDEN_SHA256 = Object.freeze({
   'filmRoomV2.empty.deep.desktop.html': '9be5322258a2c59a15c8611594a1ba91a118505d9a193aabb96604f4478ab836',
   'filmRoomV2.empty.deep.phone.html': '7f519599fa5f107a2c7d6378537f01b2eaf47d90db69d0af824bec055da826b0',
-  'filmRoomV2.empty.glance.desktop.html': 'e118c5e0a4e4fd4268ee579adc03fd49b3edd070ef421ec60d12d00e219b92c1',
-  'filmRoomV2.empty.glance.phone.html': '7b65da90c20806e4c69d942e21d3c157433b5103490c198cf0f910109490ed1d',
+  'filmRoomV2.empty.glance.desktop.html': 'a180e9c23d87ea365269d461a474c797921ca163aae60aed6a2124c4d2092a45',
+  'filmRoomV2.empty.glance.phone.html': '5d61ab17b5459828dc89bf3b7a3c2901f4cd01a06c0e174d0ae307d3884762c3',
   'filmRoomV2.empty.study.desktop.html': '3aa485b731fbb93426017efb9f67311f140ff93a89616fa82b624accaae2b17c',
   'filmRoomV2.empty.study.phone.html': 'f720ba842e3b00f68f31f75a6d5b3124e1dcd53bcb3120c0e81352f6b7f12e4f',
   'filmRoomV2.sep23.deep.desktop.html': 'ef6f1b7090937ecfc668171f9077e9859ce1365b7110d4cbe3ecea52a9da8c88',
   'filmRoomV2.sep23.deep.phone.html': 'f4c58da1a83493fb8ddc33191d318333421cee7b51fc2350860eb3d4c3aa9e59',
-  'filmRoomV2.sep23.glance.desktop.html': '2c16fda49f04cd4c1c829685027173cf9c985736279af2dba98424b26b358b5c',
-  'filmRoomV2.sep23.glance.phone.html': '43dbe719f987a7f66862714bbc85bfdad2971f25b48c73ea4e5541b8b1baed34',
+  'filmRoomV2.sep23.glance.desktop.html': '4639519037dc720c1603bdd45dd5d558a7a7576428376202bd2d4452ef2d566f',
+  'filmRoomV2.sep23.glance.phone.html': 'd59c474a5eabafddcf03a8ae712b574ce597d8257af0d19cbf3c6cfe3ce7e17f',
   'filmRoomV2.sep23.study.desktop.html': '935fbe924176e3c85837e077cf3fa46450eb982d8b978d6f58693db29e586e6a',
   'filmRoomV2.sep23.study.phone.html': '1bff4834b76a05f2d6d940bde57ea76a5bdc32b69496615f04804b369be49b0f',
 });

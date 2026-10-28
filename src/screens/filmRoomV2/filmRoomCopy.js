@@ -66,6 +66,15 @@ export const FILM_ROOM_COPY = Object.freeze({
   replayCoverage: 'Replay coverage',
   coverageLabel: { complete: 'complete', partial: 'partial', unavailable: 'unavailable' },
   preservedFrom: 'preserved from an earlier run',
+  // B2.1 A7 (Amendment J RJ-7): Glance's ONE line of the day's coverage — "Coverage · complete for every section", or
+  // "Coverage · complete except: series (partial — 1 symbol not charted)", each section that is not complete named
+  // with its stored reason
+  coverageSummary: {
+    every: 'complete for every section',
+    except: 'complete except:',
+    sections: { checks: 'checks', actions: 'swaps', directives: 'directives', meetings: 'meetings', plans: 'plans', rationale: 'rationale', evidence: 'evidence', replay: 'replays', series: 'series' },
+    notCharted: (n) => (n === 1 ? 'symbol not charted' : 'symbols not charted'),
+  },
 
   // Glance (BA-4; F5)
   recordedScoreAt: (clock) => `Recorded score at ${clock} ET`,
