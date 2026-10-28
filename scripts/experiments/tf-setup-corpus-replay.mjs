@@ -379,7 +379,7 @@ export function summarize({ rows, pairs, counts, plan, join, manifest }) {
   for (const r of entryRows) {
     inc(verdicts, verdictClass(r.entry));
     inc(regimes, r.entry.regime);
-    inc(patterns, `breakout:${r.entry.patterns.breakout}|pullback_resume:${r.entry.patterns.pullback_resume}`);
+    inc(patterns, `breakout ${r.entry.patterns.breakout} / pullback_resume ${r.entry.patterns.pullback_resume}`);
     if (r.entry.verdict === 'unknown') inc(unknownReasons, r.entry.reason);
     if (r.entry.verdict === 'invalid') inc(invalidReasons, r.entry.reason);
     if (r.entry.verdict === 'valid') inc(validPatterns, r.entry.pattern);
@@ -439,7 +439,7 @@ export function renderReport(s) {
   out.push(table('invalid by reason', s.invalidByReason, ['Reason', 'Rows']));
   out.push(table('unknown by reason', s.unknownByReason, ['Reason', 'Rows']));
   out.push(table('Regime', s.regimes, ['Regime', 'Rows']));
-  out.push(table('Pattern assessments', s.patterns, ['breakout | pullback_resume', 'Rows']));
+  out.push(table('Pattern assessments', s.patterns, ['breakout / pullback_resume', 'Rows']));
   out.push(table('Missing facts (rows naming each)', s.missingFacts, ['Fact', 'Rows']));
   out.push('## Holding (outgoing name, anchor absent)', '');
   out.push(table('chartLeg', s.holding.chartLeg, ['chartLeg', 'Rows']));
@@ -623,7 +623,7 @@ function evaluate(flags) {
     }
     const key = `${pair.symbol}|${pair.asOf}|${pair.role}`;
     const record = pair.role === 'entry' ? evaluateTfEntry(evidence) : evaluateTfHolding(evidence, { anchorSwingLow: null });
-    results[key] = { symbol: pair.symbol, asOf: pair.asOf, role: pair.role, adapter: evidence.ok ? { ok: true, checks: evidence.checks, dropped: evidence.dropped, mapperDropped: evidence.mapperDropped ?? null, bars: evidence.bars.length } : { ok: false, reason: evidence.reason, detail: evidence.detail }, record };
+    results[key] = { symbol: pair.symbol, asOf: pair.asOf, role: pair.role, adapter: evidence.ok ? { ok: true, checks: evidence.checks, dropped: evidence.dropped, mapperDropped: evidence.mapperDropped ?? null, bars: evidence.bars.length } : { ok: false, reason: evidence.reason, detail: evidence.detail, checks: evidence.checks ?? null }, record };
     pairResults.push({ ...pair, result: pair.role === 'entry' ? { verdict: record.verdict, reason: record.reason, pattern: record.pattern, regime: record.regime } : { chartLeg: record.chartLeg, reasons: record.reasons } });
   }
   for (const row of rows) {
@@ -632,7 +632,7 @@ function evaluate(flags) {
     const h = row.symbolOut ? results[`${row.symbolOut}|${row.asOf}|holding`] : null;
     row.symbol = row.symbolIn;
     row.entry = e ? e.record : null;
-    row.checks = e?.adapter.ok ? e.adapter.checks : null;
+    row.checks = e?.adapter.checks ?? null;
     row.holding = h ? h.record : null;
     if (!e) row.unevaluated = isCryptoSymbol(row.symbolIn) ? 'crypto' : 'no_pair';
   }
