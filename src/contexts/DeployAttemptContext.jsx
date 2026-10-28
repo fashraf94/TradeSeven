@@ -73,7 +73,7 @@ import { ATTEMPT_ACTION_TYPES as T, attemptReducer, cooldownFor, initialAttemptS
 import { ATTEMPT_ACTIONS, ATTEMPT_PHASES, CEREMONY_PHASES, ERROR_TONES, HOLD_PHASES, RECONCILIATION, RESULT_KINDS, realId } from '../components/CommandCenter/hub/selectors/attemptVocabulary';
 import { canCommit, deriveHubDeployState } from '../components/CommandCenter/hub/selectors/deployState';
 import { authInputOf } from '../components/CommandCenter/hub/selectors/readerInputs';
-import { inertSiblings } from '../components/CommandCenter/hub/overlayStack';
+import { inertSiblings, tryFocus } from '../components/CommandCenter/hub/overlayStack';
 import { lastDeployedAtMs } from '../components/CommandCenter/hub/hubDate';
 import useDeployTargetProgress from '../hooks/useDeployTargetProgress';
 import { readAuthIdentity, subscribeAuthIdentity } from '../services/authIdentity';
@@ -101,6 +101,18 @@ export const RECONCILE_DEADLINE_MS = 8000;
 export const EXISTING_READ = Object.freeze({ LOADING: 'loading', FOUND: 'found', ERROR: 'error' });
 
 const DeployAttemptContext = createContext(null);
+
+/**
+ * The two overlays this provider draws portal their dialog straight into <body> (DueIdeaInterstitial.jsx,
+ * DeployCeremony.jsx), each under a class of its own on that root. Their root is what stays interactive while the rest of
+ * the page is inert (S8 review S8-14). Null when it is not a child of <body> (the provider suites' in-place stand-ins).
+ */
+const OVERLAY_ROOT_CLASS = Object.freeze({ due: 'due-idea-interstitial', ceremony: 'deploy-ceremony-overlay' });
+function overlayRootOf(overlayKey) {
+  const kind = overlayKey.slice(0, overlayKey.indexOf(':'));
+  const roots = document.querySelectorAll(`body > .${OVERLAY_ROOT_CLASS[kind]}`);
+  return roots.length ? roots[roots.length - 1] : null;
+}
 
 /** The provider's `{ snapshot, api }`, or null with the hub flag off or outside a provider. */
 export function useDeployAttempt() {
@@ -890,19 +902,41 @@ function LiveDeployAttemptProvider({ hubEnabled, bridge, children }) {
     return () => clearTimeout(id);
   }, [rt, snap.version]);
 
-  // While the root ceremony or the due-idea screen is open, the app behind it is inert (spec §10).
-  const overlayOpen = snap.overlayOpen;
-  useEffect(() => {
-    if (!overlayOpen) return undefined;
-    const root = document.getElementById('root');
-    return root ? inertSiblings(null, [root]) : undefined;
-  }, [overlayOpen]);
-
   const value = useMemo(() => Object.freeze({ snapshot: snap, api: rt }), [rt, snap]);
 
   const a = snap.state.attempt;
   const c = snap.ceremony;
   const showCeremony = Boolean(c?.visible) && a && a.attemptId === c.attemptId && a.phase !== ATTEMPT_PHASES.ORPHANED;
+
+  // While the root ceremony or the due-idea screen is open, everything behind it is inert (spec §10; the S8 review's
+  // S8-14, ruling R-S8F-5): every child of <body> but the overlay's own root — the app root, and a hub sheet's portal
+  // beneath it too (the Scouting Board's, whose footer may open the due-idea screen over it), through the refcounted
+  // primitive the hub's stack holds its marks with, so a sheet still open beneath keeps the app root inert. The effect
+  // is keyed on the overlay on screen, so the due screen → ceremony swap (one sequence, `overlayOpen` true throughout)
+  // moves the kept root from the one to the other.
+  const overlayKey = snap.due ? `due:${snap.due.attemptId}` : showCeremony ? `ceremony:${c.key}` : null;
+  const invokerRef = useRef(null);
+  useEffect(() => {
+    if (!overlayKey) return undefined;
+    // The control the sequence was opened from, taken before its focus goes inert (a browser drops focus from an
+    // inert subtree); kept through the swap, so the close goes back to it and not to the screen that came between.
+    if (invokerRef.current === null) invokerRef.current = { element: document.activeElement };
+    const own = overlayRootOf(overlayKey);
+    if (own) return inertSiblings(own);
+    // An overlay whose root is not in <body> (a stand-in drawn in place): the app root alone, as before.
+    const appRoot = document.getElementById('root');
+    return appRoot ? inertSiblings(null, [appRoot]) : undefined;
+  }, [overlayKey]);
+  // On close (the S8 review's S8-15): the mark above is released first — its cleanup runs before this — then focus goes
+  // to the captured invoker, or, gone or disabled, to the hub's shell. The overlay's own restore ran while the page was
+  // still inert, so this is the one that lands.
+  useEffect(() => {
+    if (overlayKey || invokerRef.current === null) return;
+    const invoker = invokerRef.current.element;
+    invokerRef.current = null;
+    if (invoker && invoker !== document.body && tryFocus(invoker)) return;
+    tryFocus(document.querySelector('[data-hub="shell"]'));
+  }, [overlayKey]);
   const agent = rt.agentFor();
   const extras = rt.ceremonyAgentFor();
   // The shells' own expressions (CommandDashboard.jsx, CommandDashboardDesktop.jsx), over the attempt's agent.

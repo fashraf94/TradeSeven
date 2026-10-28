@@ -88,7 +88,8 @@ export function appRootOf(element) {
 
 const canFocus = (el) => Boolean(el) && typeof el.focus === 'function' && el.isConnected && !el.disabled && !el.closest('[inert]');
 
-function tryFocus(el) {
+/** Focus an element that can take it (connected, enabled, not inert); true when it did. The deploy provider's overlays use it too. */
+export function tryFocus(el) {
   if (!canFocus(el)) return false;
   el.focus();
   return document.activeElement === el;
