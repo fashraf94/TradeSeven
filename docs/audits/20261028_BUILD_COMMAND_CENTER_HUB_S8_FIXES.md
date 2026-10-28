@@ -441,3 +441,90 @@ Options:
 - **(a)** Keep as built.
 - **(b)** The header's tag and the status line take the first waiting row's clock ("Deployed · Starts Wed 9:30 AM ET"), so they say what the rows and the strip say.
 - **(c)** Reword the aggregate phrase so it is true at any hour (for example, "Deployed · not started yet").
+
+### 14.6 The founder's ruling on Q-S8F-5: (b), one wording for a waiting game everywhere
+
+The ruling: the Games header (every live game waiting) and the status line (waiting games, none opened) use exactly the strip's phrase, "Deployed · Starts {day time} ET", from the waiting game that starts soonest. They fall back to "Deployed · waiting for the open" only when no start time is known, as the row does. The phrase is built once and feeds the strip, the header and the status line; no new string. The stop rule was unchanged. One commit: `23e077fe`, the code head.
+
+**What changed (`file:line` at `23e077fe`):**
+
+| Where | What |
+|---|---|
+| `hub/gamesDisplay.js:175` | `waitingLineOf(liveRows)`: `COPY.strip.deployed(clock)`, where the clock is the waiting row's own "Starts …" from the row that starts soonest, else `COPY.games.waitingForOpen`. Built from existing copy only. |
+| `hub/gamesDisplay.js:160` | Each live row carries `startsOn`, the ET date its "Starts …" names, while its clock says one, else null. Every session opens at 9:30 ET (`utils/marketCalendar.js:15–16`), so the earliest date is the soonest start. The adapter says a start only for a game whose first trading day is `timing.tradingDays[0]`, a valid ET date still ahead, so that entry is the day its "Starts …" names. |
+| `CommandCenterHub.jsx:192` | The hub builds the phrase once and hands it to its display, the strip (`:374`) and the status line (`:225`). |
+| `hub/deployDisplay.js:137`, `:173`; `DeployStrip.jsx:46` | The strip says the phrase when its game is waiting. |
+| `hub/shadowStatus.js:85`, `:94` | The status line says it for waiting games with none opened. |
+| `sections/GamesSection.jsx:168` | The Games header says it when every live game is waiting, through the same builder over the same `games.live`, as it reads `liveCountsOf`. |
+
+Without a phrase handed in, `deployDisplay` keeps its game's own "Deployed · {clock}" and `shadowStatusWords` keeps "Deployed · waiting for the open". Their existing rows and direct callers are unchanged.
+
+**Two constraints shaped how `startsOn` is read:**
+- **The mount guard.** My first build imported `utils/tieredFirstTradingDay.js` for `firstTradingDayOf`. The S1 mount guard (`commandCenterHub.mount.guard.test.js`, "the hub module's whole import graph stays in its directory, but for the permitted shipped modules") went red: the module is not in its `PERMITTED_TERMINALS`. Editing that pre-existing guard is a stop-rule trigger, so the import is gone. The row reads the same entry under the same condition instead.
+- **The entry chunk.** No file of this round ships in the entry chunk (§14.4's attribution), and no new name is imported from one that does.
+
+**Rows (red on `dfdefdb3`, the pre-ruling head; green at `23e077fe`):**
+
+| Row | Red before | Green after |
+|---|---|---|
+| `CommandCenterHub.s8.jsdom` "L3-4 the all-waiting header says the row's own phrase, 'Deployed · Starts Wed 9:30 AM ET', as the status line does". The ruling's L3-4 row: its test game now has a start time. | `expected 'GamesDeployed · waiting for the openH…' to contain 'Deployed · Starts Wed 9:30 AM ET'` | green |
+| "L3-4, no start time known (a game without its trading days): the row, the header and the status line say 'Deployed · waiting for the open'". The fallback row the ruling keeps. | green (control) | green |
+| "Q-S8F-5 — … the soonest start", desktop: two waiting games, Thursday's first in the list. The header and the status line say Wednesday's start, and each row keeps its own. | `expected 'GamesDeployed · waiting for the openH…' to contain 'Deployed · Starts Wed 9:30 AM ET'` | green |
+| The same, phone: the strip says Wednesday's start, though its game is Thursday's. | `expected 'Deployed · Starts Thu 9:30 AM ETDeplo…' to contain 'Deployed · Starts Wed 9:30 AM ET'` | green |
+| The #999 rows (§14.2), desktop and phone: the header and the status line now in the row's words. They pinned (a) and move with the answer. | `expected 'Deployed · waiting for the open' to be 'Deployed · Starts Wed 9:30 AM ET'` | green |
+| `gamesDisplay.test.js` "waitingLineOf — the one waiting phrase" (4 rows): the soonest start whatever the list order; a known start beside an unknown one; none known; an opened game beside a waiting one. | `waitingLineOf is not a function`; no `startsOn` | green |
+
+**Headless Edge (the real hub on the harness of the S8 review's lens Q4, served from an LF snapshot of `23e077fe` with the flag set `true` in the snapshot only).** A waiting game that starts the next weekday ("Thu"), and one with no start known (`?market=closed`). Each phrase's text box was measured against its own element, every ancestor that clips, and the viewport:
+
+| Width | Composition | Start known: "Deployed · Starts Thu 9:30 AM ET" | No start known: "Deployed · waiting for the open" |
+|---|---|---|---|
+| 360 × 780 | phone | Status line: 3 lines, nothing clipped. Strip: 2 lines of its 2-line clamp, nothing hidden (scroll height 34 = box 34 px) | The same: status line 3 lines, strip 2 lines |
+| 390 × 844 | phone | Status line: 2 lines. Strip: 1 line. Nothing clipped | The same |
+| 1280 × 800, sidebar open | tablet | Status line, Games header tag and row tag: 1 line each, inside their boxes and the viewport | The same |
+| 1280 × 800, sidebar collapsed | desktop | The same | The same |
+
+- **No clipping anywhere.** No ellipsis, no element overflow, no text past a clipping ancestor or the viewport.
+- **The strip's 1.0 px.** The strip's text box reaches 1.0 px below its line box, the font's glyph box against its line height. That is the same for both phrases and is not hidden text.
+- **The status line already wrapped.** At 360 and 390 the status line wraps in its column beside Shadow, as the old phrase did.
+- The phone has no Games header (its tabs are Overview, Research, Partnership and Loadout).
+
+**Mutation (cap 10, on this round's rows): all 10 killed.** Each file was restored byte-identical (sha256 compared), and the tree was committed before the round.
+
+| # | Mutant | Killed by |
+|---|---|---|
+| Q01 | the first known start, not the soonest | the soonest rows (unit, desktop, phone) |
+| Q02 | the latest start | the soonest rows (unit, desktop, phone) |
+| Q03 | the phrase never says a start | 8 rows |
+| Q04 | the fallback lost | both no-start rows (unit, L3-4) |
+| Q05 | a waiting row with no known start can be chosen | the unit "a start known for one … and not another" |
+| Q06 | the header keeps the old phrase | L3-4, Q-S8F-5 desktop, #999 desktop |
+| Q07 | the status line keeps the old phrase | 5 rows |
+| Q08 | the hub does not hand the status line the phrase | 5 rows |
+| Q09 | the strip says its own game's clock | Q-S8F-5 phone |
+| Q10 | `DeployStrip` does not hand on the phrase | Q-S8F-5 phone |
+
+**Checks (Linux, code head `23e077fe`):**
+
+| Check | Result |
+|---|---|
+| `vite build` | Exit 0. The hub chunk is `CommandCenterHub-Clxaa7zZ.js` at 151,505 B (+341 against `dfdefdb3`'s 151,164 B) |
+| Entry chunk | **Unchanged in size and code**: `index-CWe8xobf.js`, 4,830,272 B, as `dfdefdb3`'s `index-ConuQaGW.js` (rebuilt in the same worktree to compare); gzip 1,303,111 B (−2). Details below the table |
+| `npm run lint:gate` | Exit 0, no output |
+| Full suite, `TZ=UTC`, `--maxWorkers=8`, under `flock /tmp/pd-suite.lock` | **Exit 0. `Test Files  1202 passed \| 8 skipped (1210)`; `Tests  26200 passed \| 89 skipped (26289)`** (+7: this round's new rows); 299 s |
+| Flag-on dry run | **Exactly the 14 by-design rows**: `App.activeBattlesPoll.owner` 9, `App.bootOrder` 2, `commandCenterHubFlags` 1, `flagPinGuard` 2 (`Tests  14 failed \| 26186 passed \| 89 skipped (26289)`); the flag was restored and the tree is clean |
+
+**Why the entry chunk's name changed though nothing in it did.** I compared the two entry chunks byte by byte:
+- No source's bytes differ (sourcemap attribution), and every file of this round is absent from the entry, as are `DashboardLoop.jsx` and `DashboardDesktop.jsx`.
+- 1,226 bytes differ, in 80 runs:
+  - **62 runs are chunk-name hashes.** The hub chunk changed, so its name in the entry changed, so the entry's own name changed. Every lazy chunk that imports from the entry then has a new name, and the entry lists those names.
+  - **The other 18 are in the last statement, `export{…}`.** It exports the same 549 bindings under the same alias names, only paired differently.
+- With the chunk-name hashes masked, everything before that statement is identical.
+
+**What a player sees with the flag off:** nothing new. Every file of this round is the hub's, and the hub is not drawn with the flag off.
+
+**The smoke** is rebuilt as the new PR head plus the flag-true commit, pushed with `--force-with-lease`.
+
+**The checklist (§10) item from §14.5 now reads, on the smoke preview:**
+- [ ] Deploy between 3:15 and 4:00 PM ET. The row, the strip, the Games header and the status line all say "Deployed · Starts {next session} 9:30 AM ET", and the next action says "Your game is deployed".
+
+**No new founder questions.**
