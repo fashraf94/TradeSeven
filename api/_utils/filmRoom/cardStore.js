@@ -34,8 +34,18 @@
 //
 // ONE DOOR (contract §7; RE-5): nothing here is reached from any model path
 // (oneDoor.census.test.js walks them), and nothing here reads a meeting row.
+//
+// THE AGENT (Build B Amendment K RK-1): the ledger is learning, so it follows
+// the platform's attribution rule — a card lives under the battle's
+// ATTRIBUTION agent: a casual clone's parent (the player's ranked agent),
+// the battle's own agent otherwise, by the platform's one resolver
+// (api/_utils/casualClone.js). Nothing is ever filed, retired or counted under
+// a casual clone: a clone the resolver cannot resolve is refused, 503
+// attribution_unavailable. The tape keeps the battle's own agentId.
 
 import { canonicalContentHash } from '../canonicalHash.js';
+import { resolveAttributionAgentId, resolveRecordTargetId } from '../casualClone.js';
+import { casualCloneDocId, isCasualCloneId } from '../../../src/constants/leagueTournament.js';
 import { CARD_SLOTS, CARD_SLOTS_VERSION } from '../../../src/data/cardSlots.js';
 
 export const PLAYS_SUBCOLLECTION = 'plays';
@@ -74,12 +84,52 @@ export const CARD_ROUTE_COPY = Object.freeze({
   illegal_transition: 'That change is not allowed from the card\'s current stage.',
   agent_unresolved: 'This agent records no archetype, so no card can be filed under it.',
   archetype_changed: 'This day was taped under another archetype than the agent\'s current one, so a card from it would be shelved at birth. Nothing was filed.',
+  attribution_unavailable: 'This battle ran on your casual agent, and the ranked agent its cards belong to could not be found. Nothing was changed; try again.',
 });
 const fail = (status, code, extra) => new CardRouteError(status, code, CARD_ROUTE_COPY[code], extra);
 
 export const agentRefOf = (db, agentId) => db.collection('agents').doc(agentId);
 export const playsColOf = (db, agentId) => agentRefOf(db, agentId).collection(PLAYS_SUBCOLLECTION);
 export const playRefOf = (db, agentId, entryId) => playsColOf(db, agentId).doc(entryId);
+
+// ── the attribution agent (RK-1) ────────────────────────────────────────────
+
+/**
+ * RK-1 — the agent a card is filed, replayed and retired under: the attribution agent of `agentId` (a battle's own
+ * agent, or the one the screen names), by the platform's async resolver — a casual clone's parent, verified owned by
+ * the clone's owner; anything else unchanged. The resolver never throws: a clone it cannot resolve (no clone
+ * document, no rankedAgentId, a parent another owner holds, a failed read) comes back as the clone itself, and
+ * nothing is ever filed under a clone, so that answer is refused — 503 attribution_unavailable, before any write.
+ */
+export async function attributionAgentOf(db, agentId) {
+  const resolved = await resolveAttributionAgentId(db, { agentId });
+  if (isCasualCloneId(resolved)) throw fail(503, 'attribution_unavailable', { agentId });
+  return resolved;
+}
+
+/**
+ * RK-1 — the counter's attribution: ONE read of the owner's own clone document (`agents/casual-agent-{uid}`), then
+ * the platform's pure resolver (resolveRecordTargetId) for every agent id the counter meets — the asked agent and
+ * each tape day's. Only the owner's clone maps to its parent; any other id maps to itself (the resolver handed no
+ * clone document), so another owner's clone is never counted as the owner's agent. A clone document that is
+ * missing, names no rankedAgentId or is not the owner's leaves the clone mapped to itself. A read that fails is
+ * refused (503 attribution_unavailable), never answered as "no recurrence".
+ *
+ * @returns {Promise<{ cloneId: string, targetOf: (agentId: string) => string }>}
+ */
+export async function ownerAttributionOf(db, uid) {
+  const cloneId = casualCloneDocId(uid);
+  let clone = null;
+  try {
+    const snap = await agentRefOf(db, cloneId).get();
+    const data = snap?.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
+    clone = isObj(data) && data.ownerId === uid ? data : null;
+  } catch (err) {
+    console.error('[film-room/cards] clone read failed:', err?.message ?? err);
+    throw fail(503, 'attribution_unavailable');
+  }
+  return { cloneId, targetOf: (agentId) => resolveRecordTargetId(agentId, agentId === cloneId ? clone : null) };
+}
 
 /** The agent as its owner may see it: missing → agent_not_found; another owner → forbidden; no archetype → agent_unresolved. */
 function ownedAgent(snap, uid) {
@@ -196,6 +246,11 @@ export async function replayCreate(db, { uid, agentId, opId, request }) {
  * paragraph presupposes a card that starts unshelved; this keeps it so. A
  * founder ruling on the alternative (stamping the agent's current archetype)
  * is asked in the build report.
+ *
+ * THE AGENT (RK-1): `agentId` is the battle's ATTRIBUTION agent, which the
+ * route resolves (attributionAgentOf) — so the ownership, the cap, the
+ * archetype and the entry's path are all the parent's for a casual clone's
+ * battle, and the clone is never written.
  *
  * @param {object} db
  * @param {{ uid: string, agentId: string, opId: string, nowIso: string, request?: object,

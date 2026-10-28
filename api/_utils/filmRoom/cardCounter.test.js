@@ -6,9 +6,10 @@
 // mutant: counting another agent's days), the field mask, and the whole
 // answer over the tape suites' in-memory Firestore.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): cardCounter.js imports src/utils/filmRoomMoments.js, src/utils/tapeSchedule.js and
-// src/constants/filmTape.js; this import of the counter is the runtime guard that they stay Node-clean — never mocked.
+// src/constants/filmTape.js, and through the store (Amendment K RK-1) api/_utils/casualClone.js and
+// src/constants/leagueTournament.js; this import of the counter is the runtime guard that they stay Node-clean — never mocked.
 import { makeTapeDb } from '../filmTape/__fixtures__/tapeFirestore.js';
 import { tradingWeekOf, windowOf, weeklyCounts, recurrencesOf, readOwnerTapeDays, readOwnerTapeWindow, unavailableDaysOf, buildCounter, isOpenWatchCard, COUNTER_FIELD_MASK, COUNTER_WINDOW_DAYS } from './cardCounter.js';
 import { createCard } from './cardStore.js';
@@ -265,5 +266,84 @@ describe('B2.1 B3 (Amendment H RH-6) — an unavailable day gives one answer: ne
     const { days, unavailable: un } = await readOwnerTapeWindow(t.db, { uid: UID, from: '2026-10-01', to: '2026-10-31' });
     expect(days).toHaveLength(3);
     expect(un).toEqual([]);
+  });
+});
+
+// Build B Amendment K RK-1 — the counter answers for the ATTRIBUTION agent: the owner's casual clone's days count for
+// its parent (the ranked agent), by one read of the owner's clone document and the platform's resolver; another
+// owner's clone never counts. The same rows run on the real emulator in test/rules/filmRoomCardAttribution.rules.mjs.
+describe('RK-1 — the counter answers for the attribution agent (the casual clone\'s parent)', () => {
+  const NOW = Date.parse('2026-10-28T23:00:00.000Z');
+  const CLONE = `casual-agent-${UID}`;
+  const FOREIGN_CLONE = `casual-agent-${OTHER}`;
+  const payload = (over = {}) => ({ archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: 2, battleId: 'b-1', etDate: '2026-10-19', symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5, questionId: 'stalled.want', questionVersion: 1, note: 'Let it go.', route: 'watch', ...over });
+  const unavailable = (doc) => ({ ...doc, coverage: { tags: { status: 'unavailable', note: 'stalled unavailable: checks partial' } } });
+  /** The parent A1 (ranked); the owner's clone naming it; a ranked day (b-1), a clone day (b-c), an unavailable clone day, and two days on ANOTHER owner's clone — tape days the owner owns, the shape the mutant would count. */
+  const seed = (clone = { ownerId: UID, archetype: 'momentum_chaser', rankedAgentId: A1 }, hooks = {}) => makeTapeDb({
+    [`agents/${A1}`]: { ownerId: UID, archetype: 'momentum_chaser' },
+    ...(clone ? { [`agents/${CLONE}`]: clone } : {}),
+    [`agents/${FOREIGN_CLONE}`]: { ownerId: OTHER, archetype: 'momentum_chaser', rankedAgentId: A1 },
+    'agentBattles/b-1/tape/2026-10-19': tapeDoc({ battleId: 'b-1', etDate: '2026-10-19', items: [item('2026-10-19', 'ACN', 4), item('2026-10-19', 'ACN', 5)] }),
+    'agentBattles/b-c/tape/2026-10-21': tapeDoc({ battleId: 'b-c', etDate: '2026-10-21', agentId: CLONE, items: [item('2026-10-21', 'MSFT', 2)] }),
+    'agentBattles/b-c2/tape/2026-10-22': unavailable(tapeDoc({ battleId: 'b-c2', etDate: '2026-10-22', agentId: CLONE, items: null })),
+    'agentBattles/b-f/tape/2026-10-23': tapeDoc({ battleId: 'b-f', etDate: '2026-10-23', agentId: FOREIGN_CLONE, items: [item('2026-10-23', 'XOM', 6)] }),
+    'agentBattles/b-f2/tape/2026-10-24': unavailable(tapeDoc({ battleId: 'b-f2', etDate: '2026-10-24', agentId: FOREIGN_CLONE, items: null })),
+  }, { hooks });
+  const watchCard = (t) => createCard(t.db, { uid: UID, agentId: A1, opId: 'w1', payload: payload(), nowIso: '2026-10-20T02:00:00.000Z' });
+
+  it('recurrencesOf / unavailableDaysOf by the resolver: a clone day recurs and counts for the parent; any other id maps to itself', () => {
+    const targetOf = (id) => (id === CLONE ? A1 : id);
+    const card = { entryId: 'w1', agentId: A1, situationId: 'stalled', createdAt: '2026-10-20T02:00:00.000Z', source: { battleId: 'b-1', etDate: '2026-10-19', symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 } };
+    const days = [day('b-c', '2026-10-21', [item('2026-10-21', 'MSFT', 2)], { agentId: CLONE }), day('b-f', '2026-10-23', [item('2026-10-23', 'XOM', 6)], { agentId: FOREIGN_CLONE })];
+    expect(recurrencesOf(card, days, targetOf).map((x) => [x.battleId, x.symbol])).toEqual([['b-c', 'MSFT']]);
+    expect(recurrencesOf(card, days)).toEqual([]);   // without the resolver the clone's day is the clone's
+    expect(unavailableDaysOf([{ agentId: CLONE }, { agentId: A1 }, { agentId: FOREIGN_CLONE }], targetOf)).toEqual({ [A1]: 2, [FOREIGN_CLONE]: 1 });
+  });
+
+  it('asked with the clone (the battle\'s own agent): the answer names the parent, its ledger, the clone day\'s recurrence of a card filed from a ranked day, and the clone\'s unavailable day under the parent — never another owner\'s clone (the mutants: the clone day left out; another owner\'s clone counted)', async () => {
+    const t = seed();
+    await watchCard(t);
+    for (const asked of [CLONE, A1]) {
+      const out = await buildCounter(t.db, { uid: UID, agentId: asked, nowMs: NOW });
+      expect(out).toMatchObject({ agentId: asked, attributionAgentId: A1, archetypeCodeId: 'momentum_chaser', open: 1, cap: 5 });
+      expect(out.cards.map((c) => [c.entryId, c.agentId])).toEqual([['w1', A1]]);
+      expect(out.recurrences.w1.map((x) => [x.battleId, x.etDate, x.symbol])).toEqual([['b-c', '2026-10-21', 'MSFT']]);
+      expect(out.unavailableDays[A1]).toBe(1);
+      expect(out.unavailableDays[FOREIGN_CLONE]).toBe(1);   // the other owner's clone's day is that clone's, never the parent's
+    }
+    // one read of the owner's clone document per answer; nothing written
+    t.readLog.length = 0;
+    await buildCounter(t.db, { uid: UID, agentId: CLONE, nowMs: NOW });
+    expect(t.readLog.filter((p) => p === `agents/${CLONE}`)).toHaveLength(1);
+    expect(t.readLog).not.toContain(`agents/${FOREIGN_CLONE}`);
+    expect(t.writeLog.filter((w) => !w.path.includes('/plays/w1'))).toEqual([]);
+  });
+
+  it('the owner\'s clone the resolver cannot resolve — no document, no rankedAgentId, a document another owner holds, a parent another owner holds — is refused 503 attribution_unavailable; nothing is read under it', async () => {
+    const cases = [
+      ['no clone document', null],
+      ['no rankedAgentId', { ownerId: UID, archetype: 'momentum_chaser' }],
+      ['the document another owner\'s', { ownerId: OTHER, archetype: 'momentum_chaser', rankedAgentId: A1 }],
+      ['a parent another owner holds', { ownerId: UID, archetype: 'momentum_chaser', rankedAgentId: 'agent-9' }],
+    ];
+    for (const [label, clone] of cases) {
+      const t = seed(clone);
+      t.store.set('agents/agent-9', { ownerId: OTHER, archetype: 'momentum_chaser' });
+      await expect(buildCounter(t.db, { uid: UID, agentId: CLONE, nowMs: NOW }), label).rejects.toMatchObject({ cardRoute: true, status: 503, code: 'attribution_unavailable', extra: { agentId: CLONE } });
+      expect(t.readLog.some((p) => p.includes('/plays')), label).toBe(false);
+      // the ranked agent itself still answers — its own days alone, the unresolved clone's days not among them
+      if (label !== 'a parent another owner holds') {
+        const out = await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW });
+        expect(out.attributionAgentId, label).toBe(A1);
+        expect(out.unavailableDays[A1], label).toBeUndefined();
+      }
+    }
+  });
+
+  it('a clone document that cannot be read → 503 attribution_unavailable, never an answer with no recurrence', async () => {
+    const t = seed(undefined, { beforeRead: (label) => { if (label === `agents/${CLONE}`) throw new Error('UNAVAILABLE'); } });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW })).rejects.toMatchObject({ status: 503, code: 'attribution_unavailable' });
+    vi.restoreAllMocks();
   });
 });

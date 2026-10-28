@@ -364,15 +364,17 @@ function CardRow({ card, onShow }) {
  * @param {object}      props.counter   the hook's counter state `{ status, data }`; data read earlier is kept through
  *                                      a failed re-read (review L4-4), with the error said beside it
  */
-export function SinceLastTime({ day = null, battleId = null, agentId = null, counter, onOpenMoment, onOpenBattle = null, onShowCard }) {
+export function SinceLastTime({ day = null, battleId = null, counter, onOpenMoment, onOpenBattle = null, onShowCard }) {
   const data = counter?.data ?? null;
   const cards = ledgerOf(data);
   const watching = watchCardsOf(data, cards);
   const groups = groupCards(cards);
   const loading = !data && (counter?.status === 'loading' || counter?.status === 'idle');
   // B2.1 B3 (Amendment H RH-6; RJ-7's style): the days in the counter's window whose situations could not be read —
-  // neither counted nor listed as recurrences — said as one line with their count (derived)
-  const unread = Number.isInteger(data?.unavailableDays?.[agentId]) ? data.unavailableDays[agentId] : 0;
+  // neither counted nor listed as recurrences — said as one line with their count (derived), under the agent the
+  // counter answered for (Amendment K RK-1: the attribution agent — a casual clone's parent, never the clone)
+  const answeredFor = typeof data?.attributionAgentId === 'string' ? data.attributionAgentId : null;
+  const unread = answeredFor && Number.isInteger(data?.unavailableDays?.[answeredFor]) ? data.unavailableDays[answeredFor] : 0;
   return (
     <section data-cards-region="since-last-time" style={regionStyle}>
       <span style={{ ...eyebrow, color: C.teal }}>{T.sinceLastTime}</span>

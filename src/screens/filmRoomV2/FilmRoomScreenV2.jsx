@@ -235,7 +235,8 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
 
   // B2 — the card: the gate per owner, the counter for the battle's agent — the one the battle document names, read
   // before any day's tape, so an untaped day still shows the cards (review L1-6) and a day change never re-asks
-  // (review L4-3) — and the two writes.
+  // (review L4-3) — and the two writes. The server answers for, files under and retires under that agent's
+  // ATTRIBUTION agent (Amendment K RK-1: a casual clone's parent); the screen sends the battle's own.
   const agentId = (typeof battle?.agentId === 'string' && battle.agentId) || (typeof tape?.agentId === 'string' && tape.agentId) || null;
   const cards = useFilmRoomCards({ battle, agentId, api: cardsApi });
   const [picked, setPicked] = useState(null);      // the moment the form is open for
@@ -352,7 +353,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
         </div>
         {cardsOn ? (
           <div data-cards-regions="header" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <SinceLastTime day={day} battleId={battleId} agentId={agentId} counter={cards.counter} onOpenMoment={openMoment} onOpenBattle={openBattle} onShowCard={showCard} />
+            <SinceLastTime day={day} battleId={battleId} counter={cards.counter} onOpenMoment={openMoment} onOpenBattle={openBattle} onShowCard={showCard} />
             {written ? <PreparedCase tape={tape} onTakeHome={takeHome} opened={opened} /> : null}
           </div>
         ) : <Reserved region="header" names={COPY.reservedHeader} />}

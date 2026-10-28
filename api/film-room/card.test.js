@@ -8,7 +8,9 @@
 // day's STORED tags.items (the mutant: a moment the items do not hold).
 //
 // Dependency-surface guard (BUILD_RULES §4): the route, the request boundary,
-// the store, the moments helper and the tape writer are the real modules;
+// the store, the moments helper, the tape writer and the platform's
+// attribution resolver (api/_utils/casualClone.js, and through it
+// src/constants/leagueTournament.js — Amendment K RK-1) are the real modules;
 // only the security middleware, the auth middleware, the Admin SDK handle and
 // the two flags are doubled — and the question menu, as a getter over the real
 // one that a single row (review SPR-T-1) points at a bumped copy.
@@ -520,5 +522,113 @@ describe('B2.1 B3 — RH-6: an unavailable day offers no moment; RI-3: the sourc
     expect(res.statusCode).toBe(200);
     expect(res.body.card.source).toEqual({ battleId: BATTLE, etDate: D, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 });
     expect(playWrites()).toHaveLength(1);
+  });
+});
+
+// Build B Amendment K RK-1 — the card is filed, replayed and retired under the battle's ATTRIBUTION agent: a casual
+// clone's parent, by the platform's resolver (api/_utils/casualClone.js); a clone the resolver cannot resolve is refused
+// 503 attribution_unavailable with nothing written. The same rows run on the real emulator in
+// test/rules/filmRoomCardAttribution.rules.mjs.
+describe('RK-1 — through the handler: a casual clone\'s battle files under the parent, never the clone', () => {
+  const CLONE = `casual-agent-${OWNER}`;
+  const CB = 'b-clone';
+  const cloneAt = (over = {}) => ({ ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT, ...over });
+  /** A clone battle over the same real tape day: the battle and its tape name the clone, as the platform's fence rule keeps them. */
+  function seedClone(clone = cloneAt()) {
+    t.store.set(`agentBattles/${CB}`, { ...fixture.battle, id: CB, agentId: CLONE });
+    t.store.set(`agentBattles/${CB}/tape/${D}`, { ...t.store.get(`agentBattles/${BATTLE}/tape/${D}`), battleId: CB, agentId: CLONE });
+    if (clone) t.store.set(`agents/${CLONE}`, clone); else t.store.delete(`agents/${CLONE}`);
+  }
+  const cloneCreate = (over = {}) => create({ battleId: CB, agentId: CLONE, ...over });
+  const cloneWrites = () => t.writeLog.filter((w) => w.path.startsWith(`agents/${CLONE}`));
+
+  it('a clone battle files under the parent: the entry at agents/{parent}/plays, its agentId the parent; the request still names the battle\'s own agent, and nothing is written under the clone (the mutant: filed under the clone)', async () => {
+    seedClone();
+    const res = await post(cloneCreate());
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card).toMatchObject({ entryId: 'op_1', ownerId: OWNER, agentId: AGENT, source: { battleId: CB, etDate: D, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 } });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toEqual(res.body.card);
+    expect(t.store.get(`agents/${CLONE}/plays/op_1`)).toBeUndefined();
+    expect(cloneWrites()).toEqual([]);
+    // the client never chooses another agent: the parent named for the clone's battle is not the battle's agent
+    const named = await post(cloneCreate({ opId: 'op_2', agentId: AGENT }));
+    expect(named.statusCode).toBe(403);
+    expect(named.body.error).toBe('forbidden');
+  });
+
+  it('a ranked battle files under itself, as before', async () => {
+    seedClone();
+    const res = await post(create());
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card.agentId).toBe(AGENT);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toEqual(res.body.card);
+  });
+
+  it('a clone the resolver falls back on — no clone document, no rankedAgentId, a parent another owner holds — is refused 503 attribution_unavailable, before any tape read, nothing written (the mutant: a fallen-back resolution filing under the clone)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    t.store.set('agents/agent-9', { ownerId: 'someone-else', archetype: 'momentum_chaser' });
+    for (const [label, clone] of [['no clone document', null], ['no rankedAgentId', cloneAt({ rankedAgentId: undefined })], ['a parent another owner holds', cloneAt({ rankedAgentId: 'agent-9' })]]) {
+      seedClone(clone);
+      t.readLog.length = 0;
+      const res = await post(cloneCreate());
+      expect(res.statusCode, label).toBe(503);
+      expect(res.body, label).toEqual({ error: 'attribution_unavailable', message: CARD_ROUTE_COPY.attribution_unavailable, agentId: CLONE });
+      expect(t.readLog.some((p) => p.includes('/tape/')), label).toBe(false);
+      expect(playWrites(), label).toEqual([]);
+    }
+  });
+
+  it('the archetype checks read the parent: the clone on the tape\'s archetype and the parent on another → 409 archetype_changed, nothing written; the clone stale and the parent on the tape\'s → files (the mutant: the check reading the clone)', async () => {
+    seedClone(cloneAt({ archetype: 'momentum_chaser' }));
+    t.store.set(`agents/${AGENT}`, { ownerId: OWNER, name: 'Aurora', archetype: 'guardian' });
+    const drifted = await post(cloneCreate());
+    expect(drifted.statusCode).toBe(409);
+    expect(drifted.body.error).toBe('archetype_changed');
+    expect(playWrites()).toEqual([]);
+    seedClone(cloneAt({ archetype: 'guardian' }));
+    t.store.set(`agents/${AGENT}`, { ownerId: OWNER, name: 'Aurora', archetype: 'momentum_chaser' });
+    const filed = await post(cloneCreate());
+    expect(filed.statusCode).toBe(200);
+    expect(filed.body.card).toMatchObject({ agentId: AGENT, archetypeCodeId: 'momentum_chaser' });
+  });
+
+  it('review SPR-C-3\'s replay looks under the parent: the clone battle\'s day turned unavailable, the same op id and request → 200, the one card', async () => {
+    seedClone();
+    const first = await post(cloneCreate());
+    expect(first.statusCode).toBe(200);
+    const key = `agentBattles/${CB}/tape/${D}`;
+    const tape = t.store.get(key);
+    t.store.set(key, { ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
+    const again = await post(cloneCreate());
+    expect(again.statusCode).toBe(200);
+    expect(again.body).toMatchObject({ idempotent: true, card: first.body.card });
+    expect(playWrites()).toHaveLength(1);
+  });
+
+  it('retire names the agent the screen knows and is keyed on its attribution agent: the clone\'s id retires the parent\'s card; an unresolvable clone → 503, nothing written', async () => {
+    seedClone();
+    expect((await post(cloneCreate())).statusCode).toBe(200);
+    const ok = await post({ op: 'retire', opId: 'r1', agentId: CLONE, entryId: 'op_1', expectedVersion: 1 });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.body.card).toMatchObject({ agentId: AGENT, stage: 'retired', version: 2 });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('retired');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    seedClone(cloneAt({ rankedAgentId: undefined }));
+    const before = playWrites().length;
+    const refused = await post({ op: 'retire', opId: 'r2', agentId: CLONE, entryId: 'op_1', expectedVersion: 2 });
+    expect(refused.statusCode).toBe(503);
+    expect(refused.body.error).toBe('attribution_unavailable');
+    expect(playWrites()).toHaveLength(before);
+  });
+
+  it('the cap counts the parent\'s cards across clone and ranked battles: three from the clone\'s, two from the ranked → the sixth refused at 5', async () => {
+    seedClone();
+    for (const [i, over] of [cloneCreate(), cloneCreate(), cloneCreate(), create(), create()].entries()) {
+      expect((await post({ ...over, opId: `op_c${i}` })).statusCode).toBe(200);
+    }
+    const sixth = await post(cloneCreate({ opId: 'op_c6' }));
+    expect(sixth.statusCode).toBe(409);
+    expect(sixth.body).toMatchObject({ error: 'cap_reached', cap: 5, open: 5 });
+    expect([...t.store.keys()].filter((k) => k.startsWith(`agents/${AGENT}/plays/`))).toHaveLength(5);
   });
 });

@@ -852,6 +852,32 @@ describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no r
     expect(region('since-last-time').querySelector('[data-unavailable-days]').textContent.replace(/\s+/g, ' ')).toBe('Recurrences · 1D day in this window could not be read');
   });
 
+  it('Amendment K RK-1 — a casual clone\'s battle: the screen sends the battle\'s own agent; the card files under the parent; the counter answers for the parent, its unavailable day counted under the parent and the clone day\'s moment a recurrence (the mutant: the line read under the clone)', async () => {
+    const CLONE = `casual-agent-${OWNER}`;
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    const unavailableTape = (tape) => ({ ...tape, agentId: CLONE, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
+    const tape1 = { ...fx.tape1, agentId: CLONE };
+    t.store.set(`agentBattles/${B}`, { ...fx.battle, agentId: CLONE });
+    t.store.set(`agentBattles/${B}/tape/${D1}`, tape1);
+    t.store.set(`agentBattles/${B}/tape/${D2}`, { ...fx.tape2, agentId: CLONE });
+    // a third clone battle whose day could not be read: it attributes to the parent too
+    t.store.set(`agentBattles/b-clone-unread/tape/${D2}`, { ...unavailableTape(fx.tape2), battleId: 'b-clone-unread' });
+    await open({ battle: battleOf({ agentId: CLONE }), tapes: { [D1]: tape1, [D2]: { ...fx.tape2, agentId: CLONE } } });
+    m.click(m.qa('[data-region="day-picker"] button')[0]);
+    await m.flush(8);
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await atClock(`${D1}T23:00:00.000Z`, () => fileCard({ note: 'Watch this.' }));
+    expect(cardBodies()[0].agentId).toBe(CLONE);
+    expect(api.calls.filter((c) => c[0] === 'counter').every((c) => c[1] === CLONE)).toBe(true);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ agentId: AGENT, source: { battleId: B, etDate: D1 } });
+    expect([...t.store.keys()].filter((k) => k.startsWith(`agents/${CLONE}/plays`))).toEqual([]);
+    const slt = region('since-last-time');
+    expect(slt.querySelector('[data-watch-card="op_1"] [data-recurrence-row]')).toBeTruthy();   // day 2 of the clone's battle recurs
+    expect(slt.querySelector('[data-my-card="op_1"]')).toBeTruthy();
+    expect(slt.querySelector('[data-unavailable-days]').textContent.replace(/\s+/g, ' ')).toBe('Recurrences · 1D day in this window could not be read');
+  });
+
   it('review SPR-T-8 — two of its own: RJ-7\'s plural (the mutant: the line always singular)', async () => {
     for (const [d, tape] of [[D1, fx.tape1], [D2, fx.tape2]]) {
       t.store.set(`agentBattles/${B}/tape/${d}`, { ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });

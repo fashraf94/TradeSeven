@@ -6,10 +6,16 @@
 // (api/_utils/filmRoom/cardsGate.js). It reads the owner's tape days in the
 // window through the Admin SDK with the field mask `tags`, `etDate`,
 // `ownerId`, `agentId`, `battleId`, and the agent's ledger, and answers
-//   { agentId, archetypeCodeId, window: { from, to },
+//   { agentId, attributionAgentId, archetypeCodeId, window: { from, to },
 //     weekly: { [agentId]: { [situationId]: { [mondayEtDate]: { tags, moments } } } },
 //     cards: [ …with each card's computed `shelved` ], open, cap,
-//     recurrences: { [entryId]: [{ battleId, etDate, symbol, fromTickSeq, toTickSeq, from, to, checks }] } }
+//     recurrences: { [entryId]: [{ battleId, etDate, symbol, fromTickSeq, toTickSeq, from, to, checks }] },
+//     unavailableDays: { [attributionAgentId]: n } }
+// Build B Amendment K RK-1: `agentId` is the agent asked (the battle's own,
+// as the screen knows it); the answer is FOR its attribution agent,
+// `attributionAgentId` — a casual clone's parent — whose ledger it reads and
+// whose tape days (the clone's and its own) it counts. The owner's clone the
+// resolver cannot resolve → 503 attribution_unavailable.
 // Every count is derived. The logic is api/_utils/filmRoom/cardCounter.js;
 // the index it needs is firestore.indexes.json's tape COLLECTION_GROUP
 // composite (ownerId ASC, etDate ASC) — a founder deploy after merge (RG-7).
