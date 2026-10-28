@@ -85,6 +85,12 @@ describe('ids, ordinals, kinds', () => {
       expect(crypto.removed).toEqual([{ source: 'fork', index: null, reason: 'cannot_come_in' }]);
     });
 
+    it('a cooldown is judged at the check\'s own instant: one that ended before it does not lock, one that ends after it does', () => {
+      const at = (cooldownUntil) => { const b = equippedBattle(); b.portfolio.bench.stocks[0] = { ...b.portfolio.bench.stocks[0], cooldownUntil }; return freezeSwapBook(b); };
+      expect(mintFork(['AMD', 'JPM'], { book: at('2026-09-09T14:00:00.000Z') }).calls).toHaveLength(1); // ended an hour before FROZEN_NOW
+      expect(mintFork(['AMD', 'JPM'], { book: at('2026-09-09T15:10:00.000Z') }).removed).toEqual([{ source: 'fork', index: null, reason: 'cannot_come_in' }]);
+    });
+
     it('the test runs against the seam\'s frozen book, never the live battle', () => {
       const frozen = equippedBattle(); frozen.watchlist = { ...frozen.watchlist, hotBench: ['KRE'] };
       expect(mintFork(['KRE', 'JPM'], { book: freezeSwapBook(frozen) }).calls).toHaveLength(1); // on the hot bench at the seam
