@@ -45,7 +45,7 @@
 import { getFirebaseAdmin } from '../_utils/firebaseAdmin.js';
 import { gateFilmRoomCardsRoute, sendCardError } from '../_utils/filmRoom/cardsGate.js';
 import { parseCreateBody, parseRetireBody, questionFor, momentOfDay } from '../_utils/filmRoom/cardRequest.js';
-import { createCard, retireCard, CardRouteError, CARD_ROUTE_COPY } from '../_utils/filmRoom/cardStore.js';
+import { createCard, replayCreate, retireCard, CardRouteError, CARD_ROUTE_COPY } from '../_utils/filmRoom/cardStore.js';
 import { readBattle, tapeRef } from '../_utils/filmTape/tapeSources.js';
 import { isTieredBattle } from '../_utils/filmTape/writeTapeDay.js';
 
@@ -62,6 +62,8 @@ const COPY = Object.freeze({
   tape_unreadable: 'The tape for this day could not be read. Try again.',
   tags_unavailable: 'This day offers no moment: its situations were not tagged, or could not be read.',
   moment_not_found: 'That moment is not one of this day\'s stored moments.',
+  // B2.1 review SPR-C-2: the day was re-tagged under another situation version between the route's read and the commit
+  source_changed: 'This day\'s tape changed while the card was being filed. Nothing was filed; try again.',
   archetype_unknown: 'This day records no archetype, so no card can be filed from it.',
   question_not_on_menu: 'That question is not on the menu for this situation.',
   invalid_op: 'op must be create or retire.',
@@ -89,11 +91,18 @@ export function sourceOfDay(tape, uid, moment) {
   return { moment: found.moment, situationVersion: found.situationVersion, archetypeCodeId };
 }
 
+/** gRPC ABORTED: a transaction's contention, which the Admin SDK retries. */
+const GRPC_ABORTED = 10;
+
 /**
  * RI-3 (Astra B3) — the source moment checked again INSIDE the create transaction: the tape day re-read through the
  * transaction and held to sourceOfDay once more, and to what the route resolved (its moment, situation version and
  * archetype), so a re-write between the route's read and the commit can never file a card for a moment, a coverage or
- * a version the tape no longer holds. A tape the transaction cannot read refuses as the route's own read would.
+ * a version the tape no longer holds. A tape the transaction cannot read refuses as the route's own read would —
+ * except a contention abort (gRPC ABORTED), rethrown as it came so the SDK retries the transaction, as it retries every
+ * other read here (review SPR-RC-1). The moment itself is pinned by sourceOfDay's exact match; what can still move
+ * under it is answered by what moved (review SPR-C-2): the day's archetype → 409 archetype_changed, the store's own
+ * refusal for a day taped under another archetype than the agent's; its situation version → 409 source_changed.
  */
 export function verifySourceIn(db, uid, req, payload) {
   return async (tx) => {
@@ -102,15 +111,18 @@ export function verifySourceIn(db, uid, req, payload) {
       const snap = await tx.get(tapeRef(db, req.battleId, req.etDate));
       tape = snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
     } catch (err) {
-      if (err?.cardRoute) throw err;
+      if (err?.cardRoute || err?.code === GRPC_ABORTED) throw err;
       console.error('[film-room/card] tape re-read failed:', err?.message ?? err);
       throw refuse(503, 'tape_unreadable');
     }
     const again = sourceOfDay(tape, uid, req.moment);
-    if (again.archetypeCodeId !== payload.archetypeCodeId || again.situationVersion !== payload.situationVersion
-      || again.moment.fromTickSeq !== payload.fromTickSeq || again.moment.toTickSeq !== payload.toTickSeq) throw refuse(409, 'moment_not_found');
+    if (again.archetypeCodeId !== payload.archetypeCodeId) throw refuse(409, 'archetype_changed', { archetypeCodeId: again.archetypeCodeId });
+    if (again.situationVersion !== payload.situationVersion) throw refuse(409, 'source_changed');
   };
 }
+
+/** The route's refusals that judge the SOURCE day — a replay of a card already filed under the op id answers instead. */
+const SOURCE_REFUSALS = new Set(['tape_not_found', 'tags_unavailable', 'moment_not_found', 'archetype_unknown', 'question_not_on_menu']);
 
 /**
  * The create operation's reads and checks, in the documented order. Returns
@@ -159,7 +171,17 @@ export default async function handler(req, res) {
   if (body.op === 'create') {
     try {
       const parsed = parseCreateBody(body);
-      const payload = await resolveCreate(db, user.uid, parsed);
+      let payload;
+      try {
+        payload = await resolveCreate(db, user.uid, parsed);
+      } catch (err) {
+        // B2.1 review SPR-C-3: a lost answer re-tapped (review L4-9) after the day changed — the source checks judge a
+        // NEW card; a card already filed under this op id for this request is replayed, as createCard would
+        if (!(err instanceof CardRouteError) || !SOURCE_REFUSALS.has(err.code)) throw err;
+        const replay = await replayCreate(db, { uid: user.uid, agentId: parsed.agentId, opId: parsed.opId, request: requestOf(parsed) });
+        if (!replay) throw err;
+        return res.status(200).json({ idempotent: replay.idempotent, card: replay.card, open: replay.open, cap: replay.cap });
+      }
       const out = await createCard(db, { uid: user.uid, agentId: parsed.agentId, opId: parsed.opId, payload, nowIso, request: requestOf(parsed), verifySource: verifySourceIn(db, user.uid, parsed, payload) });
       return res.status(200).json({ idempotent: out.idempotent, card: out.card, open: out.open, cap: out.cap });
     } catch (err) {

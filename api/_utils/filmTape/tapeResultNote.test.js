@@ -56,11 +56,15 @@ describe('the note\'s words, as ruled', () => {
   });
 });
 
-describe('noCheckRan — the rows the screen counts as checks', () => {
-  it('no rows, or only deferrals and missing records: no check ran', () => {
+describe('noCheckRan — did any check run (a deferral is not one; a minted check with no record is)', () => {
+  it('no rows, or only deferrals: no check ran', () => {
     expect(noCheckRan([])).toBe(true);
     expect(noCheckRan(undefined)).toBe(true);
-    expect(noCheckRan([{ state: 'deferred' }, { state: 'no_record' }])).toBe(true);
+    expect(noCheckRan([{ state: 'deferred' }, { state: 'deferred' }])).toBe(true);
+  });
+  it('review SPR-W-3 — a minted check with no record RAN (admitted, its outcome unknown): not "no check ran"', () => {
+    expect(noCheckRan([{ state: 'no_record' }])).toBe(false);
+    expect(noCheckRan([{ state: 'deferred' }, { state: 'no_record' }])).toBe(false);
   });
   it('any recorded check — a no-trigger check included — ran', () => {
     expect(noCheckRan([{ state: 'no_trigger' }])).toBe(false);
@@ -97,6 +101,32 @@ describe('through the writer', () => {
     const after = tapeOf(t, fx);
     expect(after.battle).toEqual(now.battle);
   });
+
+  it('review SPR-W-4 — the merge reads the MERGED day\'s checks: a re-write whose read holds no check at all keeps the stored rows, and the note still names the missing score (the mutant: the merge reading the new read\'s checks)', async () => {
+    const fx = await sep23Day({ battleId: 'b-a3-lostread' });
+    delete fx.battle.scoreState.opponentScore;
+    const t = await write(fx, SEP23_NIGHT);
+    expect(tapeOf(t, fx).battle.result.note).toBe('opponent score never recorded');
+    // the read sees nothing of the day's checks: no tick, no evaluation entry, no minted number
+    for (const k of [...t.store.keys()]) if (k.startsWith(`agentBattles/${fx.battleId}/ticks/`)) t.store.delete(k);
+    const battleKey = `agentBattles/${fx.battleId}`;
+    t.store.set(battleKey, { ...t.store.get(battleKey), evaluations: [], cronState: { tickSeq: 0 } });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: SEP23_NIGHT + 60_000 });
+    errSpy.mockRestore();
+    const after = tapeOf(t, fx);
+    expect(after.checks.length).toBeGreaterThan(0);   // the stored rows stand (monotone)
+    expect(noCheckRan(after.checks)).toBe(false);
+    expect(after.battle.result.note).toBe('opponent score never recorded');
+  });
+
+  it('review SPR-W-3 — a day whose only rows are minted checks with no record (three admitted, none recorded): the missing score is named — "no check ran" would contradict "Checks · 0 of 3"', async () => {
+    const fx = await emptyDay({ battleId: 'b-a3-minted' });
+    fx.battle.cronState = { tickSeq: 3 };
+    const tape = tapeOf(await write(fx, EMPTY_NIGHT), fx);
+    expect(tape.checks.map((r) => r.state)).toEqual(['no_record', 'no_record', 'no_record']);
+    expect(tape.battle.result).toEqual({ value: null, basis: 'unavailable', note: 'opponent score never recorded' });
+  });
 });
 
 describe('completionRecorded reads the same fact — a final day that ran no check is not re-written on every pass', () => {
@@ -104,6 +134,15 @@ describe('completionRecorded reads the same fact — a final day that ran no che
     const fx = await emptyDay({ battleId: 'b-a3-recorded' });
     const t = await write(fx, EMPTY_NIGHT);
     const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    expect(completionRecorded(tapeOf(t, fx), { ...battle, id: fx.battleId })).toBe(true);
+  });
+  it('review SPR-W-4 — and a final day that RAN its checks, a score missing, records its block too (the mutant: completionRecorded always reading "no check")', async () => {
+    const fx = await sep23Day({ battleId: 'b-a3-ran' });
+    delete fx.battle.scoreState.opponentScore;
+    const t = await write(fx, SEP23_NIGHT);
+    const battle = t.store.get(`agentBattles/${fx.battleId}`);
+    expect(battle.status).toBe('completed');
+    expect(tapeOf(t, fx).battle.result.note).toBe('opponent score never recorded');
     expect(completionRecorded(tapeOf(t, fx), { ...battle, id: fx.battleId })).toBe(true);
   });
   it('the block built without the day\'s fact would not match (the mutant: completionRecorded blind to the checks)', async () => {

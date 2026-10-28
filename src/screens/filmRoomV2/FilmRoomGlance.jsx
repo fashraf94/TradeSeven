@@ -227,7 +227,9 @@ function CoverageSummary({ tape }) {
               <React.Fragment key={e.section}>
                 {i ? '; ' : null}
                 <span data-coverage-section={e.section}>
-                  {W.sections[e.section]} (<span style={{ color: COVERAGE_COLOR[e.status], fontWeight: 600 }}>{COPY.coverageLabel[e.status]}</span>
+                  {W.sections[e.section]} ({e.status === 'absent'
+                    ? <span style={{ color: C.ink2, fontWeight: 600 }}>{W.absent}</span>
+                    : <span style={{ color: COVERAGE_COLOR[e.status], fontWeight: 600 }}>{COPY.coverageLabel[e.status]}</span>}
                   {e.note || e.notCharted ? ' — ' : null}
                   {e.note ? <StoredNote doc={tape} path={['coverage', e.section, 'note']} /> : null}
                   {e.note && e.notCharted ? '; ' : null}

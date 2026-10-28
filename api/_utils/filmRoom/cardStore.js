@@ -152,6 +152,37 @@ const createFingerprint = (agentId, request, payload) => canonicalContentHash({ 
 const retireFingerprint = (agentId, entryId, expectedVersion) => canonicalContentHash({ kind: 'retire', agentId, entryId, expectedVersion });
 
 /**
+ * A create's opening reads, inside its transaction: the caller's agent, the entry under the op id, the caller's open
+ * count. An entry already filed under the op id is the REPLAY (`replay`, the idempotent answer) — answered only to the
+ * entry's own owner and only for the same request (RI-1, Astra F1; otherwise 409 op_conflict, the body holding nothing
+ * of the entry); none → `replay: null`.
+ */
+async function createReads(tx, db, { uid, agentId, opId, opFingerprint }) {
+  const agent = ownedAgent(await tx.get(agentRefOf(db, agentId)), uid);
+  const ref = playRefOf(db, agentId, opId);
+  const existingSnap = await tx.get(ref);
+  // the cap counts the caller's own entries only, as readCards does (Amendment I RI-1)
+  const all = docsOf(await tx.get(playsColOf(db, agentId))).filter((e) => e.ownerId === uid);
+  const open = openCardCount(all, agent.archetype);
+  if (!existingSnap?.exists) return { agent, ref, open, replay: null };
+  const existing = typeof existingSnap.data === 'function' ? existingSnap.data() : existingSnap.data;
+  if (!isObj(existing) || existing.ownerId !== uid) throw fail(409, 'op_conflict', { entryId: opId });
+  if (existing.opFingerprint === opFingerprint) return { agent, ref, open, replay: { idempotent: true, card: existing, open, cap: OPEN_CARD_CAP } };
+  throw fail(409, 'op_conflict', { entryId: opId });
+}
+
+/**
+ * B2.1 review SPR-C-3 — a create's REPLAY alone: the card already filed under this op id for this request (the same
+ * idempotent answer createCard gives), or null when none is. The route asks it when its own source checks refuse, so a
+ * lost answer re-tapped (review L4-9) gets its filed card back even after the day has changed since — the source
+ * checks judge a NEW card, never one already filed.
+ */
+export async function replayCreate(db, { uid, agentId, opId, request }) {
+  const opFingerprint = createFingerprint(agentId, request, null);
+  return db.runTransaction(async (tx) => (await createReads(tx, db, { uid, agentId, opId, opFingerprint })).replay);
+}
+
+/**
  * Create a card. The route has already proved the moment, the question and the
  * note (api/film-room/card.js); here the ownership, the replay, the archetype,
  * the cap and the write happen in one transaction.
@@ -176,20 +207,8 @@ const retireFingerprint = (agentId, entryId, expectedVersion) => canonicalConten
 export async function createCard(db, { uid, agentId, opId, payload, nowIso, request = null, verifySource = null }) {
   const opFingerprint = createFingerprint(agentId, request, payload);
   return db.runTransaction(async (tx) => {
-    const agent = ownedAgent(await tx.get(agentRefOf(db, agentId)), uid);
-    const ref = playRefOf(db, agentId, opId);
-    const existingSnap = await tx.get(ref);
-    // the cap counts the caller's own entries only, as readCards does (Amendment I RI-1)
-    const all = docsOf(await tx.get(playsColOf(db, agentId))).filter((e) => e.ownerId === uid);
-    const open = openCardCount(all, agent.archetype);
-    if (existingSnap?.exists) {
-      const existing = typeof existingSnap.data === 'function' ? existingSnap.data() : existingSnap.data;
-      // a replay answers only the entry's OWN owner (RI-1, Astra F1): a missing or another ownerId is refused as a
-      // foreign op id is, and the body holds nothing of the entry
-      if (!isObj(existing) || existing.ownerId !== uid) throw fail(409, 'op_conflict', { entryId: opId });
-      if (existing.opFingerprint === opFingerprint) return { idempotent: true, card: existing, open, cap: OPEN_CARD_CAP };
-      throw fail(409, 'op_conflict', { entryId: opId });
-    }
+    const { agent, ref, open, replay } = await createReads(tx, db, { uid, agentId, opId, opFingerprint });
+    if (replay) return replay;
     // Amendment I RI-3 (Astra B3): the source day is re-read and its coverage and exact moment checked again HERE,
     // inside the transaction that files the card (the route hands its checks in — api/film-room/card.js
     // verifySourceIn — so this store imports no tape module): a re-write between the route's read and this commit

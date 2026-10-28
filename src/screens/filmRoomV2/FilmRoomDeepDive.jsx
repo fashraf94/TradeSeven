@@ -28,7 +28,7 @@
 // "close" always names the session-close instant (Amendment E addendum 2, F2).
 
 import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, seriesDomain, closePoints, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES, notChartedReasonOf, entryMakerOf } from './filmRoomModel';
+import { valueAt, etClock, deepSymbols, evidenceMarkers, recordedPricesOf, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, seriesDomain, closePoints, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES, notChartedReasonOf, entryMakerOf } from './filmRoomModel';
 import { classOfNumber } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
 import { FILM_ROOM_COPY as COPY, FORBIDDEN_WORDS } from './filmRoomCopy';
@@ -115,14 +115,17 @@ export function lastCloseTop({ endX, endY, before, labelPx, markers = [], swapRo
 /**
  * B2.1 A8 (B6; Astra's follow-up review) — the last close's label's LEFT edge in px inside the MEASURED plot: just
  * before its line's end (`before`) or just after it, then clamped so the whole box — `labelPx`, the upper bound of its
- * width — stays inside the plot, never out over the % axis's gutter. null where nothing lays the plot out (the CSS
- * anchors then stand, as before).
+ * width — stays inside the plot, never out over the % axis's gutter. null where nothing lays the plot out, AND where
+ * the label fits at its anchor (review SPR-L-6: `labelPx` is an upper bound, so placing every label by it moved each
+ * one ~8 px off its line's end): the CSS anchors then stand, as before. The clamp moves only a label its anchor would
+ * put out of the plot.
  */
 export function lastCloseLeftPx({ endX, before, labelPx, plotPx = 0 }) {
   if (!(plotPx > 0)) return null;
   const endPx = (endX / 1000) * plotPx;
   const desired = before ? endPx - 2 - labelPx : endPx + 4;
-  return Math.max(0, Math.min(desired, plotPx - labelPx));
+  const clamped = Math.max(0, Math.min(desired, plotPx - labelPx));
+  return clamped === desired ? null : clamped;
 }
 
 /**
@@ -472,8 +475,9 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
   const sectionLine = (uncharted) => (uncharted && seriesState?.status === 'ready' && tape.coverage?.series?.status === 'complete' ? null : ['coverage', 'series']);
   // RJ-2 / FR-02: markers sit on a drawn chart only. With no series read for the symbol there is no chart, so no marker
   // can be drawn: the marker instructions do not render, and the stamps' recorded prices are listed by check instead.
-  const marks = current ? evidenceMarkers(tape, current) : [];
   const charted = Boolean(doc);
+  // with no chart, every check holding a price is listed — a stamp whose instant was not recorded included (review SPR-S-4)
+  const marks = !current ? [] : charted ? evidenceMarkers(tape, current) : recordedPricesOf(tape, current);
   const evidence = marks.length ? (
     <div data-region="evidence-overlay" data-evidence-mode={charted ? undefined : 'list'} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span style={{ ...eyebrow, color: C.gold }}>{COPY.evidenceOverlay}</span>

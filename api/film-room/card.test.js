@@ -29,7 +29,7 @@ vi.mock('../_utils/authMiddleware.js', () => ({
 }));
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => state.db }));
 
-const { default: handler, CARD_RATE_LIMIT } = await import('./card.js');
+const { default: handler, CARD_RATE_LIMIT, verifySourceIn } = await import('./card.js');
 const { writeTapeDay } = await import('../_utils/filmTape/writeTapeDay.js');
 const { makeTapeDb } = await import('../_utils/filmTape/__fixtures__/tapeFirestore.js');
 const { seedDay, OWNER, AGENT } = await import('../_utils/filmTape/__fixtures__/tapeFixtures.js');
@@ -413,6 +413,77 @@ describe('B2.1 B3 — RH-6: an unavailable day offers no moment; RI-3: the sourc
     expect(res.body.error).toBe('tags_unavailable');
     expect(playWrites()).toEqual([]);
     expect(t.store.get(tapeKey).coverage.tags.status).toBe('unavailable');
+  });
+
+  it('review SPR-C-1 — the re-read is the TRANSACTION\'s own: a re-write landing after it and before the commit (the moment 4–5 gone) retries the transaction and is refused, never filed (the mutant: a plain read inside the callback)', async () => {
+    let tapeReads = 0;
+    let fired = false;
+    const hooks = {
+      beforeRead: (label) => {
+        if (!label.endsWith(tapeKey)) return;
+        tapeReads += 1;
+        if (tapeReads !== 2 || fired) return;   // the second tape read: the one inside the create transaction
+        fired = true;
+        queueMicrotask(() => { const tape = t.store.get(tapeKey); t.docRef(tapeKey).set({ ...tape, tags: { ...tape.tags, items: tape.tags.items.filter((i) => i.tickSeq === 5) } }); });
+      },
+    };
+    t = makeTapeDb(Object.fromEntries([...t.store.entries()]), { hooks });
+    state.db = t.db;
+    const res = await post(create());
+    expect(fired).toBe(true);
+    expect(t.readLog.filter((l) => l.endsWith(tapeKey))[1]).toBe(`tx:${tapeKey}`);
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('moment_not_found');
+    expect(playWrites()).toEqual([]);
+    expect(t.store.get(tapeKey).tags.items.map((i) => i.tickSeq)).toEqual([5]);
+  });
+
+  it('review SPR-C-2 — what moved under an unchanged moment is named: a re-tag under another situation version → 409 source_changed; the day\'s archetype → 409 archetype_changed; nothing written', async () => {
+    raceBeforeCommit(async () => { const tape = t.store.get(tapeKey); t.store.set(tapeKey, { ...tape, tags: { ...tape.tags, items: tape.tags.items.map((i) => ({ ...i, version: 3 })) } }); });
+    let res = await post(create());
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('source_changed');
+    expect(playWrites()).toEqual([]);
+    t.store.set(tapeKey, fixture.store[tapeKey]);
+    raceBeforeCommit(async () => { const tape = t.store.get(tapeKey); t.store.set(tapeKey, { ...tape, tags: { ...tape.tags, inputs: { ...tape.tags.inputs, archetypeCodeId: 'guardian' } } }); });
+    res = await post(create({ opId: 'op_2' }));
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('archetype_changed');
+    expect(playWrites()).toEqual([]);
+  });
+
+  it('review SPR-C-3 — a lost answer re-tapped with the same op id after the day changed replays its filed card (200, idempotent, one card); other words under that op id stay op_conflict; a NEW op id is refused', async () => {
+    const first = await post(create());
+    expect(first.statusCode).toBe(200);
+    const tape = t.store.get(tapeKey);
+    t.store.set(tapeKey, { ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
+    const again = await post(create());
+    expect(again.statusCode).toBe(200);
+    expect(again.body.idempotent).toBe(true);
+    expect(again.body.card).toEqual(first.body.card);
+    expect(playWrites()).toHaveLength(1);
+    const other = await post(create({ note: 'Other words.' }));
+    expect(other.statusCode).toBe(409);
+    expect(other.body.error).toBe('op_conflict');
+    const fresh = await post(create({ opId: 'op_9' }));
+    expect(fresh.statusCode).toBe(409);
+    expect(fresh.body.error).toBe('tags_unavailable');
+    // the moment moved since (a re-write): the replay answers too
+    t.store.set(tapeKey, { ...tape, tags: { ...tape.tags, items: tape.tags.items.filter((i) => i.tickSeq === 5) } });
+    const moved = await post(create());
+    expect(moved.statusCode).toBe(200);
+    expect(moved.body.idempotent).toBe(true);
+    expect(playWrites()).toHaveLength(1);
+  });
+
+  it('review SPR-RC-1 — a contention abort (gRPC ABORTED) on the transaction\'s re-read is rethrown as it came, for the SDK to retry; any other failure is 503 tape_unreadable', async () => {
+    const check = verifySourceIn(t.db, OWNER, create(), {});
+    const aborted = Object.assign(new Error('10 ABORTED: Too much contention'), { code: 10 });
+    await expect(check({ get: async () => { throw aborted; } })).rejects.toBe(aborted);
+    const down = await check({ get: async () => { throw Object.assign(new Error('14 UNAVAILABLE'), { code: 14 }); } }).catch((e) => e);
+    expect([down.status, down.code]).toEqual([503, 'tape_unreadable']);
+    const plain = await check({ get: async () => { throw new Error('boom'); } }).catch((e) => e);
+    expect([plain.status, plain.code]).toEqual([503, 'tape_unreadable']);
   });
 
   it('the control: an UNCHANGED day re-merged between the check and the commit still files — 200, one card, its source the moment as stored', async () => {

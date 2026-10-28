@@ -15,7 +15,7 @@
 //             Study or Deep dive; a day with no tape says so, and names a
 //             scheduled pass only when one is actually scheduled (§7)
 
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { FILM_TAPE_WRITE_ENABLED, isAgentPresenceOn } from '../../config/featureFlags';
 import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
@@ -37,6 +37,9 @@ import { PreparedCase, YourCall, Receipt, SinceLastTime } from './FilmRoomCardRe
 import { requestOpenBattleReview, battleReviewAtOf } from '../../components/Forge/Watchlist/ideaNavigation';
 
 const DESKTOP_QUERY = '(min-width: 1024px)';
+
+/** The element holding the focus now (null outside a browser). */
+const focusedNow = () => (typeof document !== 'undefined' ? document.activeElement : null);
 
 /** Desktop layout at ≥ 1024 px; the phone layout otherwise (and wherever matchMedia is absent). */
 const mediaQuery = () => (typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(DESKTOP_QUERY) : null);
@@ -220,6 +223,8 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const [sym, setSym] = useState(null);
   const [notice, setNotice] = useState(() => !hasSeenFirstOpen(viewerId));
   const desktop = useDesktop();
+  const mounted = useRef(true);   // review SPR-L-2: a read that lands after unmount opens nothing
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const idBase = `film-room${useId().replace(/[^A-Za-z0-9_-]/g, '')}`;   // the depth tabs' and panels' ids
   useEffect(() => { if (notice) markFirstOpenSeen(viewerId); }, [notice, viewerId]);
 
@@ -237,7 +242,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const [receipt, setReceipt] = useState(null);    // the card the receipt shows
   // B2.1 B2: a moment opened from another battle's recurrence is jumped to once the prepared case lists it (the cards'
   // gate answers after the tape), and stays marked as the one opened, as a recurrence of this battle marks its own
-  const [pendingJump, setPendingJump] = useState(() => (at ? { id: momentAnchor(at.moment), when: 'moment', focus: true } : null));
+  const [pendingJump, setPendingJump] = useState(() => (at ? { id: momentAnchor(at.moment), when: 'moment', focus: true, from: focusedNow() } : null));
   const [opened, setOpened] = useState(() => (at ? momentKey(at.moment) : null));
 
   const changeDay = (d) => { setDay(d); setSelected(null); setSym(null); setPicked(null); setReceipt(null); setOpened(null); setPendingJump(null); };
@@ -262,6 +267,10 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
     if (!pendingJump) return;
     if ((pendingJump.when === 'tape' || pendingJump.when === 'moment') && tapeState.status !== 'ready') return;
     if (pendingJump.when === 'moment' && (typeof document === 'undefined' || !document.getElementById(pendingJump.id))) return;
+    // review SPR-L-3: a jump that waited for a read never takes the focus (or the scroll) from where the player has
+    // since put it — a depth tab, a jump chip; it lands only while the focus is still where the tap left it, or nowhere
+    const now = focusedNow();
+    if ('from' in pendingJump && now && now !== pendingJump.from && now !== document.body) { setPendingJump(null); return; }
     jump(pendingJump.id, pendingJump);
     setPendingJump(null);
   }, [pendingJump, tapeState.status, picked, receipt, cards.on]);
@@ -274,7 +283,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
     if (r.battleId !== battleId) return false;
     if (r.etDate !== day) changeDay(r.etDate);
     setOpened(momentKey(r));
-    setPendingJump({ id: momentAnchor(r), when: 'tape', focus: true });
+    setPendingJump({ id: momentAnchor(r), when: 'tape', focus: true, from: focusedNow() });
     return true;
   };
   /**
@@ -285,6 +294,8 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const openBattle = async (r) => {
     if (r.battleId === battleId || typeof readers.readBattle !== 'function') return false;
     const read = await readers.readBattle(r.battleId);
+    // review SPR-L-2: a read that answers after the player has left the Film Room opens nothing
+    if (!mounted.current) return false;
     if (read?.status !== 'ready' || filmRoomBattleId(read.battle) !== r.battleId) return false;
     return requestOpenBattleReview(read.battle, { etDate: r.etDate, moment: r });
   };

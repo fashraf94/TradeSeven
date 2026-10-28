@@ -53,10 +53,11 @@ const MEETING_2 = {
 };
 const ROSTER = Object.freeze({ star: [{ symbol: 'INTC' }, { symbol: 'AMD' }], core: [], support: [], bench: { stocks: [{ symbol: 'ORCL' }], crypto: null } });
 
-async function writtenDay(history, battleId) {
+async function writtenDay(history, battleId, over = {}) {
   const fx = await sep23Day({ battleId });
   fx.battle.portfolio = { ...fx.battle.portfolio, ...ROSTER };
   fx.battle.gameplanMeetingHistory = history;
+  Object.assign(fx.battle, over);
   const bars = { ...sep23Bars(), ORCL: sessionRows(SEP23, () => 181.2, { volume: 1500 }) };
   const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   const out = await buildTapeDay(fx, { night: SEP23_NIGHT, morning: SEP23_MORNING, bars });
@@ -142,8 +143,34 @@ describe('acceptance H — a meeting renders with its legs, outcome and instants
     await open(sep23Tape, [], 'Study');
     const sec = m.q('#meetings');
     expect(sec.querySelector('[data-coverage]').getAttribute('data-coverage')).toBe('complete');
-    expect(sec.textContent).toContain('No gameplan meeting was created this day.');
+    expect(sec.textContent).toContain('No gameplan meeting was recorded this day.');
     expect(sec.querySelectorAll('[data-meeting-card]')).toHaveLength(0);
+  });
+
+  it('review SPR-S-1 — an empty list under a section that is NOT complete never says no meeting was created: a meeting left pending at the battle\'s end (unfiled), a history that is not a list — the real writer\'s days', async () => {
+    const unfiled = await writtenDay([], 'b-meet-unfiled', {
+      gameplanMeeting: { id: 'gpm_x', createdAt: `${SEP23}T14:15:10.000Z`, status: 'pending', expiresAt: `${SEP23}T15:15:10.000Z`, diagnosis: DIAGNOSIS_1, suggestedSwaps: [] },
+    });
+    const unreadable = await writtenDay({ not: 'a list' }, 'b-meet-unreadable');
+    for (const [label, day, status] of [['unfiled', unfiled, 'partial'], ['unreadable', unreadable, 'unavailable']]) {
+      expect(day.tape.meetings, label).toEqual([]);
+      expect(day.tape.coverage.meetings.status, label).toBe(status);
+      await open(day.tape, day.series, 'Study');
+      const sec = m.q('#meetings');
+      expect(sec.querySelector('[data-coverage]').getAttribute('data-coverage'), label).toBe(status);
+      expect(sec.querySelector('[data-stored-note="coverage.meetings.note"]').textContent, label).toBe(day.tape.coverage.meetings.note);
+      expect(sec.textContent, label).not.toContain('No gameplan meeting was recorded this day.');
+      expect(sec.textContent, label).toContain("This day's tape stores no gameplan meeting.");
+      clean(docsOf(day), label);
+    }
+  });
+
+  it('review SPR-S-5 — a meeting recorded with NO leg (the evaluator\'s losing-streak trigger proposes no swap): "no leg recorded", never "not recorded"', async () => {
+    const noLeg = await writtenDay([{ ...MEETING_1, id: 'gpm_noleg', suggestedSwaps: [] }], 'b-meet-noleg');
+    expect(noLeg.tape.meetings[0].legs).toEqual([]);
+    await open(noLeg.tape, noLeg.series, 'Study');
+    expect(m.q('[data-meeting-legs="0"]').textContent).toBe('no leg recorded');
+    clean(docsOf(noLeg), 'no leg');
   });
 
   it('a tape with no meetings section (written before they were taped): the absence, said as one — no coverage line, no "no meeting" claim (R14)', async () => {
@@ -154,7 +181,7 @@ describe('acceptance H — a meeting renders with its legs, outcome and instants
     const sec = m.q('#meetings');
     expect(sec.textContent).toContain("This day's tape has no meetings section.");
     expect(sec.querySelector('[data-coverage]')).toBeNull();
-    expect(sec.textContent).not.toContain('No gameplan meeting was created this day.');
+    expect(sec.textContent).not.toContain('No gameplan meeting was recorded this day.');
   });
 
   it('a partial section: its stored reason, verbatim, on the coverage line', async () => {

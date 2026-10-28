@@ -74,6 +74,8 @@ export const FILM_ROOM_COPY = Object.freeze({
     except: 'complete except:',
     sections: { checks: 'checks', actions: 'swaps', directives: 'directives', meetings: 'meetings', plans: 'plans', rationale: 'rationale', evidence: 'evidence', replay: 'replays', series: 'series' },
     notCharted: (n) => (n === 1 ? 'symbol not charted' : 'symbols not charted'),
+    // review SPR-S-2: a section the tape does not store (written before it was taped), named as an absence (R14)
+    absent: 'not on this tape',
   },
 
   // Glance (BA-4; F5)
@@ -227,7 +229,10 @@ export const FILM_ROOM_COPY = Object.freeze({
   // section says nothing about whether a proposal was right (RE-5: the owner's record, never proof).
   meetings: 'Meetings',
   meetingsNote: 'as the meeting history records them',
-  meetingsNone: 'No gameplan meeting was created this day.',
+  // the owner's record, never proof (RE-5; review SPR-RS-3): "recorded", as every other empty sentence says
+  meetingsNone: 'No gameplan meeting was recorded this day.',
+  // review SPR-S-1: an empty list under a section that is NOT complete — a meeting may have been created, not stored
+  meetingsNoneStored: "This day's tape stores no gameplan meeting.",
   // R14: a tape with no meetings section at all (written before the meetings were taped) — an absence, said as one
   meetingsAbsent: "This day's tape has no meetings section.",
   meetingAt: (clock) => `Meeting · ${clock}`,
@@ -236,6 +241,8 @@ export const FILM_ROOM_COPY = Object.freeze({
   meetingInstants: { created: 'Created', deadline: 'Deadline, as recorded', resolved: 'Resolved' },
   meetingLegs: 'Legs',
   meetingLegNotCopied: 'not copied',
+  // review SPR-S-5: true of an EMPTY legs list (a meeting proposing no swap) and of a missing one alike
+  meetingLegsNone: 'no leg recorded',
   meetingDiagnosis: 'Diagnosis',
   // the check strip's run of "plan pending · awaiting approval" checks, inside a meeting's life: a door to that meeting
   runMeeting: 'Its meeting',
@@ -325,6 +332,8 @@ export const FILM_ROOM_COPY = Object.freeze({
     refusals: {
       cap_reached: 'The open-card cap for this agent is reached. Retire a card first.',
       moment_not_found: "That moment is not on this day's tape.",
+      // B2.1 review SPR-C-2: the day was re-tagged while the card was being filed (nothing was filed)
+      source_changed: "This day's tape changed while the card was being filed. Try again.",
       disabled: 'Cards are not on for this battle.',
       note_too_long: 'The note is over its limit.',
       note_control_char: 'The note holds a character a card cannot keep.',

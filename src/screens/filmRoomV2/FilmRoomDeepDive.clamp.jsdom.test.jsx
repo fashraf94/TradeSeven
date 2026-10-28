@@ -28,10 +28,13 @@ describe('lastCloseLeftPx — B6: the label\'s box inside the measured plot', ()
     expect(left + labelPx).toBeLessThanOrEqual(156.4);
     expect(left).toBeCloseTo(156.4 - labelPx, 5);
   });
-  it('room after the line\'s end: just after it, as before; before the end: right edge 2 px before it, clamped at 0', () => {
-    expect(lastCloseLeftPx({ endX: 200, before: false, labelPx: 50, plotPx: 300 })).toBeCloseTo(64, 5);
-    expect(lastCloseLeftPx({ endX: 900, before: true, labelPx: 50, plotPx: 300 })).toBeCloseTo(218, 5);
+  it('review SPR-L-6 — a label that fits at its anchor keeps the CSS anchor (null): labelPx is an upper bound, and placing by it moved every label off its line\'s end', () => {
+    expect(lastCloseLeftPx({ endX: 200, before: false, labelPx: 50, plotPx: 300 })).toBeNull();
+    expect(lastCloseLeftPx({ endX: 900, before: true, labelPx: 50, plotPx: 300 })).toBeNull();
+  });
+  it('a label its anchor would put out of the plot is clamped inside: before the end, at 0; after it, against the right edge', () => {
     expect(lastCloseLeftPx({ endX: 100, before: true, labelPx: 50, plotPx: 300 })).toBe(0);
+    expect(lastCloseLeftPx({ endX: 900, before: false, labelPx: 50, plotPx: 300 })).toBeCloseTo(250, 5);
   });
 });
 

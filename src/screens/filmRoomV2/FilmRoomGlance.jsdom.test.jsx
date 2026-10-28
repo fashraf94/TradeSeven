@@ -337,10 +337,19 @@ describe('review A2L4-10, as B2.1 A7 (Amendment J RJ-7) reads it — the Glance 
     expect(m.q('[data-coverage-summary]').textContent).not.toContain(sep23Tape.coverage.tags.note);
   });
 
-  it('a section the tape does not store is not on the line (its own depth says the absence)', () => {
+  it('review SPR-S-2 — a section the tape does not store (a tape written before it was taped) is named on the line as an absence, and the line is never "complete for every section" (R14)', () => {
     const t = clone(sep23Tape);
+    for (const k of Object.keys(t.coverage)) t.coverage[k] = { ...t.coverage[k], status: 'complete', note: null };
+    t.coverage.series.notCharted = [];
+    delete t.meetings;
     delete t.coverage.meetings;
+    delete t.coverage.replay;
     m.render(<Harness tape={t} />);
-    expect(m.q('[data-coverage-section="meetings"]')).toBeNull();
+    const line = m.q('[data-coverage-summary]');
+    expect(line.getAttribute('data-coverage-summary')).toBe('partial');
+    expect(line.textContent.replace(/\s+/g, ' ')).toBe('Coverage · complete except: meetings (not on this tape); replays (not on this tape)');
+    expect(line.textContent).not.toContain('complete for every section');
+    expect(sweepNumbers(m.container, { tape: t })).toEqual([]);
+    expect(sweepWords(m.container, { tape: t })).toEqual([]);
   });
 });

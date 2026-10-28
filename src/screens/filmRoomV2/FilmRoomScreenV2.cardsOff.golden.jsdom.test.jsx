@@ -5,12 +5,15 @@
 // Film Room B2 item 8 / acceptance J — WITH CARDS OFF, OR THE OWNER NOT
 // ADMITTED, THE SCREEN IS THE CURRENT v2, BYTE FOR BYTE (Build B spec §7, §8
 // criterion 5; Amendment G RG-2, RG-10: "the current v2" is the screen at
-// this build's base with FILM_ROOM_V2_MODE 'on'). The twelve goldens under
-// src/screens/__golden__/filmRoomV2.*.html were captured from a `git archive`
-// of the base commit 7818a1b3 — NOT from this tree — by
-// captureFilmRoomV2Golden.jsdom.test.jsx run twice (identical) in a scratch
-// extraction; their SHA-256 is pinned below, so the label inside this file
-// proves nothing by itself. This suite mounts the CURRENT FilmRoomScreenV2
+// the goldens' source commit with FILM_ROOM_V2_MODE 'on'). The twelve goldens
+// under src/screens/__golden__/filmRoomV2.*.html were captured first from B2's
+// base (7818a1b3), then RE-CAPTURED at the head of B2.1, the screen pass
+// (Amendment J RJ-9: Part A changes v2 for every player on purpose; every
+// difference from B2's goldens maps to a named Part A item, recorded in
+// docs/audits/20261022_BUILD_FILM_ROOM_B2_1_SCREEN_PASS.md) — each time from
+// a `git archive` of that commit by captureFilmRoomV2Golden.jsdom.test.jsx run
+// twice (identical) in a scratch extraction. Their SHA-256 is pinned below, so
+// the label inside this file proves nothing by itself. This suite mounts the CURRENT FilmRoomScreenV2
 // under the same harness, fixtures, clock and zone, renumbers React's useId
 // values the same way, and asserts string equality:
 //   FILM_ROOM_CARDS_MODE 'off'                        → the golden, no request
@@ -43,7 +46,7 @@ import { resetFilmRoomVerdicts } from '../../utils/filmRoomGate';
 import { mounter, sep23Tape, sep23Series, emptyTape, emptySeries, battleOf, readersOf, NOW } from './__fixtures__/filmRoomHarness';
 import { renumberIds, GOLDEN_DEPTHS, GOLDEN_LAYOUTS, goldenName } from '../__golden__/filmRoomV2Golden.js';
 
-/** The base commit the goldens were captured from. */
+/** The commit the goldens were captured from (B2.1's code head; B2's base 7818a1b3 before it). */
 export const GOLDEN_SOURCE_COMMIT = '7818a1b315589dd95cffbf3708df685fa3d9eb9d';
 /** Each golden's SHA-256 as captured (the review C-9 pattern). */
 export const GOLDEN_SHA256 = Object.freeze({
@@ -51,14 +54,14 @@ export const GOLDEN_SHA256 = Object.freeze({
   'filmRoomV2.empty.deep.phone.html': '7f519599fa5f107a2c7d6378537f01b2eaf47d90db69d0af824bec055da826b0',
   'filmRoomV2.empty.glance.desktop.html': 'a180e9c23d87ea365269d461a474c797921ca163aae60aed6a2124c4d2092a45',
   'filmRoomV2.empty.glance.phone.html': '5d61ab17b5459828dc89bf3b7a3c2901f4cd01a06c0e174d0ae307d3884762c3',
-  'filmRoomV2.empty.study.desktop.html': '3aa485b731fbb93426017efb9f67311f140ff93a89616fa82b624accaae2b17c',
-  'filmRoomV2.empty.study.phone.html': 'f720ba842e3b00f68f31f75a6d5b3124e1dcd53bcb3120c0e81352f6b7f12e4f',
+  'filmRoomV2.empty.study.desktop.html': '2dc16ebe1d6fa2fa5045967514c73dcf5c6164727cfd34ea489c59e80996cc2a',
+  'filmRoomV2.empty.study.phone.html': '5f5e7dbe3d8e05b129dd9c94e5fc9763dea318171e141a42184d45d3b268fcb3',
   'filmRoomV2.sep23.deep.desktop.html': 'ef6f1b7090937ecfc668171f9077e9859ce1365b7110d4cbe3ecea52a9da8c88',
   'filmRoomV2.sep23.deep.phone.html': 'f4c58da1a83493fb8ddc33191d318333421cee7b51fc2350860eb3d4c3aa9e59',
   'filmRoomV2.sep23.glance.desktop.html': '4639519037dc720c1603bdd45dd5d558a7a7576428376202bd2d4452ef2d566f',
   'filmRoomV2.sep23.glance.phone.html': 'd59c474a5eabafddcf03a8ae712b574ce597d8257af0d19cbf3c6cfe3ce7e17f',
-  'filmRoomV2.sep23.study.desktop.html': '935fbe924176e3c85837e077cf3fa46450eb982d8b978d6f58693db29e586e6a',
-  'filmRoomV2.sep23.study.phone.html': '1bff4834b76a05f2d6d940bde57ea76a5bdc32b69496615f04804b369be49b0f',
+  'filmRoomV2.sep23.study.desktop.html': '093131f510f6a6a661df1f344bc3ab02d811020eca9586acb60afa51d4f2f2e9',
+  'filmRoomV2.sep23.study.phone.html': '7cb135976584fe5a74923bc7c41cf9b805ef55add26787238035ef8a95118b5c',
 });
 const DAYS = [['sep23', sep23Tape, sep23Series], ['empty', emptyTape, emptySeries]];
 const CASES = GOLDEN_LAYOUTS.flatMap((layout) => DAYS.flatMap(([day, tape, series]) => GOLDEN_DEPTHS.map(([label, depth]) => ({ layout, day, tape, series, label, depth, file: goldenName(day, depth, layout) }))));
@@ -101,8 +104,8 @@ async function photograph(c) {
 }
 const answer = (body, status = 200) => { globalThis.fetch = vi.fn(async (url) => { fetches.push(String(url)); return { ok: status === 200, status, json: async () => body }; }); };
 
-describe('the goldens are the base\'s photographs (not empty, not this tree\'s, not the cards release)', () => {
-  it('every golden file is exactly the one captured from the base commit (SHA-256 pinned), LF only, with every case photographed', () => {
+describe('the goldens are the source commit\'s photographs (not empty, not pasted from a run, not the cards release)', () => {
+  it('every golden file is exactly the one captured from the source commit (SHA-256 pinned), LF only, with every case photographed', () => {
     expect(CASES.map((c) => c.file).sort()).toEqual(Object.keys(GOLDEN_SHA256).sort());
     for (const [name, sha] of Object.entries(GOLDEN_SHA256)) {
       const bytes = goldenBytes(name);

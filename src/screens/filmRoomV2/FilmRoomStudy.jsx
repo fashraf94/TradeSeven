@@ -514,7 +514,7 @@ function MeetingCard({ tape, index }) {
         <MeetingInstant label={COPY.meetingInstants.resolved} instant={mt?.resolvedAt} etDate={tape.etDate} />
         <Row k={COPY.meetingLegs} v={(
           <span data-meeting-legs={index} style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, ...mono(11, C.ink) }}>
-            {legs.length ? legs.map((l, k) => <span key={k} data-meeting-leg={k}>{sym(l?.symbolOut)} <span style={{ color: C.ink3 }}>→</span> {sym(l?.symbolIn)}</span>) : COPY.notRecorded}
+            {legs.length ? legs.map((l, k) => <span key={k} data-meeting-leg={k}>{sym(l?.symbolOut)} <span style={{ color: C.ink3 }}>→</span> {sym(l?.symbolIn)}</span>) : COPY.meetingLegsNone}
           </span>
         )} />
       </div>
@@ -530,17 +530,20 @@ function MeetingCard({ tape, index }) {
 
 /**
  * Study's Meetings (spec §3; acceptance H): the stored `meetings[]` under `coverage.meetings`'s own line (R1). A day
- * with none says so in one line; a tape with no meetings section says THAT, as an absence (R14) — never a coverage
- * line the tape does not store.
+ * with none says so in one line — "no meeting was created" only when the section is stored COMPLETE; otherwise (a
+ * meeting left unfiled, a history that could not be read) only that the tape stores none, the coverage line saying why
+ * (review SPR-S-1). A tape with no meetings section says THAT, as an absence (R14) — never a coverage line the tape
+ * does not store.
  */
 function MeetingsSection({ tape }) {
   if (meetingsStateOf(tape) === 'absent') return <Section id="meetings" title={COPY.meetings}><EmptyCard>{COPY.meetingsAbsent}</EmptyCard></Section>;
   const list = Array.isArray(tape.meetings) ? tape.meetings : [];
+  const complete = tape.coverage.meetings.status === 'complete';
   return (
     <Section id="meetings" title={COPY.meetings} doc={tape} coverageAt={['coverage', 'meetings']} note={list.length ? COPY.meetingsNote : null}>
       {list.length
         ? <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{list.map((mt, i) => <MeetingCard key={mt?.key || i} tape={tape} index={i} />)}</div>
-        : <EmptyCard>{COPY.meetingsNone}</EmptyCard>}
+        : <EmptyCard>{complete ? COPY.meetingsNone : COPY.meetingsNoneStored}</EmptyCard>}
     </Section>
   );
 }

@@ -289,6 +289,18 @@ describe('Amendment E RE-3 (B2.1 C1) — coverage.meetings describes the rows th
     expect(after.coverage.meetings).toMatchObject({ status: 'complete', note: null, span: tape.coverage.meetings.span, preservedFrom: tape.writtenAt });
   });
 
+  it('review SPR-W-2 — a stored meeting whose record is rewritten to an outcome the section does not copy is still held: the note does not call it "not copied"; a NEW such record still counts', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-re3-outcome' });
+    expect(tape.coverage.meetings).toMatchObject({ status: 'complete', note: null });
+    await refresh(fx, t, [HISTORY[0], { ...HISTORY[1], status: 'pending' }, HISTORY[2]], NIGHT + 60_000);
+    const after = t.store.get(path(fx));
+    expect(after.meetings).toEqual(tape.meetings);
+    expect(after.coverage.meetings).toMatchObject({ status: 'complete', note: null });
+    // a record of the day the section never held, with another outcome: counted, as before
+    await refresh(fx, t, [HISTORY[0], HISTORY[1], HISTORY[2], meeting('gpm_3', `${D}T18:00:00.000Z`, 'cancelled', [['ACN', 'ORCL']])], NIGHT + 120_000);
+    expect(t.store.get(path(fx)).coverage.meetings).toMatchObject({ status: 'partial', note: '1 meeting record of this day with an outcome other than approved, rejected or expired not copied' });
+  });
+
   it('a stored row\'s dropped diagnosis keeps its note when the owner shortens the words under its key', async () => {
     const long = meeting('gpm_1', `${D}T15:10:00.000Z`, 'rejected', [['ACN', 'ORCL']], { diagnosis: 'w'.repeat(MEETING_DIAGNOSIS_MAX + 1) });
     const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: [long, HISTORY[2]] }, { battleId: 'b-re3-words' });

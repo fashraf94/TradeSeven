@@ -833,6 +833,23 @@ describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no r
     await open();
     expect(m.q('[data-unavailable-days]')).toBeNull();
   });
+
+  it('review SPR-C-4 — another agent\'s unavailable days are that agent\'s: the line counts the battle\'s own agent alone', async () => {
+    const other = 'agent-other';
+    for (const d of [D1, D2]) {
+      t.store.set(`agentBattles/b-other-agent/tape/${d}`, { ...fx.tape2, etDate: d, battleId: 'b-other-agent', agentId: other, coverage: { ...fx.tape2.coverage, tags: { ...fx.tape2.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
+    }
+    const counter = await buildCounter(state.db, { uid: state.uid, agentId: AGENT, nowMs: COUNTER_NOW });
+    expect(counter.unavailableDays[other]).toBe(2);
+    expect(counter.unavailableDays[AGENT] ?? 0).toBe(0);
+    await open();
+    expect(m.q('[data-unavailable-days]')).toBeNull();
+    // and beside one of its own, the line says its own one
+    t.store.set(`agentBattles/${B}/tape/${D2}`, { ...fx.tape2, coverage: { ...fx.tape2.coverage, tags: { ...fx.tape2.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
+    m.teardown(); m.setup();
+    await open();
+    expect(region('since-last-time').querySelector('[data-unavailable-days]').textContent.replace(/\s+/g, ' ')).toBe('Recurrences · 1D day in this window could not be read');
+  });
 });
 
 describe('B2.1 B1 (Amendment H RH-1; Amendment J RJ-8) — Set\'s link to the tempo dial, by the day\'s stagnation rule', () => {
@@ -1027,6 +1044,39 @@ describe('B2.1 B2 (Amendment H RH-2) — a recurrence in another battle opens th
       expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 24');
     }
     await sweepAll(fx.tape1, 'unreadable');
+  });
+
+  it('review SPR-L-2 — a read that answers after the player left the Film Room opens nothing', async () => {
+    let release;
+    const { elsewhere } = await watchCardWithElsewhere({ readBattle: () => new Promise((r) => { release = () => r({ status: 'ready', battle: elseBattle() }); }) });
+    m.click(elsewhere[0]);
+    await m.flush(2);
+    m.teardown(); m.setup();   // back: the screen unmounts while the read is out
+    release();
+    await m.flush(4);
+    expect(events).toEqual([]);
+  });
+
+  it('review SPR-L-3 — the deferred jump never takes the focus from where the player has since put it: a depth tab focused while the cards\' gate is out keeps it; the moment is still marked', async () => {
+    state.cards = 'allowlist';
+    let admit = null;
+    api.readVerdict = () => new Promise((r) => { admit = () => r(true); });
+    await open({ battle: elseBattle(), tapes: { [D2]: elseTape() }, openAt: { ...wantAt(), battleId: ELSE } });
+    const study = m.tab('Study');
+    m.click(study);
+    await m.flush();
+    m.tab('Study').focus();
+    expect(document.activeElement).toBe(m.tab('Study'));
+    const scrolled = [];
+    const sv = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scroll() { scrolled.push(this.id); };
+    try {
+      admit();
+      await m.flush(8);
+    } finally { Element.prototype.scrollIntoView = sv; }
+    expect(document.activeElement).toBe(m.tab('Study'));
+    expect(scrolled).toEqual([]);
+    expect(m.q('[data-moment-opened]')).toBeTruthy();
   });
 
   it('while the battle is read the row takes no second tap', async () => {

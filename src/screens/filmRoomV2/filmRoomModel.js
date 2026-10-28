@@ -127,21 +127,25 @@ const COVERAGE_STATUS_RANK = Object.freeze({ unavailable: 0, partial: 1, complet
  * The day's coverage as ONE line (RJ-7): each section that is not complete, by its stored status — named on the line
  * with its stored note — and the worst of them; none → "complete for every section". The series section counts the
  * symbols the candle pass did not chart (its W5 list): a series section stored complete with any is read as partial,
- * "n symbols not charted", n a derived count. A section the tape does not store is not on the line (its own depth says
- * the absence); an unknown status reads as unavailable.
+ * "n symbols not charted", n a derived count. A section the tape does not store (a tape written before that section
+ * was taped) is named on the line as absent — "not on this tape" — and the line is then not complete (R14; review
+ * SPR-S-2: skipping it said "complete for every section" of a tape that lacks one); an unknown status reads as
+ * unavailable.
  */
 export function coverageSummaryOf(tape) {
   const sections = [];
   for (const section of GLANCE_COVERAGE_SECTIONS) {
     const cov = tape?.coverage?.[section];
-    if (!isObj(cov)) continue;
+    if (!isObj(cov)) { sections.push({ section, status: 'absent', note: null, notCharted: 0 }); continue; }
     const stored = Object.prototype.hasOwnProperty.call(COVERAGE_STATUS_RANK, cov.status) ? cov.status : 'unavailable';
     const notCharted = section === 'series' && Array.isArray(cov.notCharted) ? cov.notCharted.length : 0;
     const status = stored === 'complete' && notCharted ? 'partial' : stored;
     if (status === 'complete') continue;
     sections.push({ section, status, note: stored !== 'complete' && typeof cov.note === 'string' && cov.note ? cov.note : null, notCharted });
   }
-  const status = sections.reduce((w, e) => (COVERAGE_STATUS_RANK[e.status] < COVERAGE_STATUS_RANK[w] ? e.status : w), 'complete');
+  // an absent section makes the line partial: the day is not covered in full, and nothing says it failed
+  const rankOf = (s) => (s === 'absent' ? 'partial' : s);
+  const status = sections.reduce((w, e) => (COVERAGE_STATUS_RANK[rankOf(e.status)] < COVERAGE_STATUS_RANK[w] ? rankOf(e.status) : w), 'complete');
   return { status, sections };
 }
 
@@ -685,6 +689,20 @@ export function evidenceMarkers(tape, symbol) {
     // BA-43: a marker sits AT evidenceAt — a stamp whose instant was not recorded gets no marker (review A2L1-8).
     if (!isObj(e) || !isNum(e.px) || toMs(c.evidenceAt) === null) return;
     out.push({ index, at: c.evidenceAt, stampedAt: c.evidenceAt });
+  });
+  return out;
+}
+
+/**
+ * B2.1 A2 (RJ-2; review SPR-S-4): the checks that hold a recorded price for `symbol` — EVERY one, its stamp instant
+ * recorded or not: that rule places a marker on a chart (evidenceMarkers); a row of the no-chart list is labelled by its
+ * check's own time. `{ index }` per check, in the tape's order.
+ */
+export function recordedPricesOf(tape, symbol) {
+  const out = [];
+  (Array.isArray(tape?.checks) ? tape.checks : []).forEach((c, index) => {
+    const e = isObj(c?.evidence) ? c.evidence[symbol] : null;
+    if (isObj(e) && isNum(e.px)) out.push({ index });
   });
   return out;
 }

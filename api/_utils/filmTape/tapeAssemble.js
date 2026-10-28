@@ -877,11 +877,15 @@ export function buildMeetings({ battle, bounds, finalDay = false }) {
   const ofDay = history.filter((m) => inDay(instant(m.createdAt), bounds));
   const rows = [];
   const omittedOf = [];   // per row, in `rows` order: what of that meeting was not copied
-  let unrecognised = 0;
+  const unrecognised = [];   // each record with another outcome, by the key its row would carry (review SPR-W-2)
   const roster = rosterOf(battle);
   const seen = {};
   for (const m of ofDay.sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt))) {
-    if (!MEETING_STATUSES.includes(m.status)) { unrecognised += 1; continue; }
+    if (!MEETING_STATUSES.includes(m.status)) {
+      const mid = str(m.id);
+      unrecognised.push(`${mid && mid.length <= MEETING_ID_MAX ? mid : 'meeting'}|${m.createdAt}`);
+      continue;
+    }
     const omitted = { ...NO_MEETING_OMISSIONS };
     const legSymbol = (v) => {
       const t = ticker(v);
@@ -989,9 +993,12 @@ export function meetingsCoverageOf({ rows, read, storedRows = [], storedNote = n
   }
   const held = new Set(rows.map((r) => r.key));
   const overflow = (read.keys || []).filter((k) => !held.has(k)).length;
+  // review SPR-W-2: a record whose outcome is not one the section copies counts as "not copied" only when the section
+  // does not already hold that meeting — a stored row whose record was rewritten to another outcome is still held
+  const unrecognised = (Array.isArray(read.unrecognised) ? read.unrecognised : []).filter((k) => !held.has(k)).length;
   const notes = [
     ...(read.unfiled ? [read.unfiled] : []),
-    ...(read.unrecognised ? [`${counted(read.unrecognised, 'meeting record', 'meeting records')} of this day with an outcome other than approved, rejected or expired not copied`] : []),
+    ...(unrecognised ? [`${counted(unrecognised, 'meeting record', 'meeting records')} of this day with an outcome other than approved, rejected or expired not copied`] : []),
     ...rowParts,
     ...(overflow ? [`${counted(overflow, 'meeting', 'meetings')} past ${MEETINGS_PER_DAY_MAX} in a day not copied`] : []),
   ];
@@ -1059,11 +1066,12 @@ export const NO_OPPONENT_NOTE = 'no opponent: the battle was created without a C
 /** B2.1 A3 (FR-03; Build B Amendment J RJ-3) — the result's note when a score is missing and no check ran this day (verbatim). */
 export const NO_CHECK_RAN_NOTE = 'no check ran this day, so no score was recorded';
 /**
- * B2.1 A3 — did no check run this day? No row of `checks[]` records a check — the deferrals and the missing records
- * aside (NON_CHECK_STATES): the same rows the screen counts as "Checks · n" (filmRoomModel.js checkCounts), so the
- * note and the count read one source (BUILD_RULES §9).
+ * B2.1 A3 — did no check run this day? Every row of `checks[]` is a deferral, or there is none. A MINTED check with
+ * no record (`no_record`) ran: the evaluator numbers a check in the transaction that admits it
+ * (api/cron/agent-evaluate.js), so a missing record is a check that ran and left nothing behind — its outcome is
+ * unknown, not absent (review SPR-W-3: the screen's "Checks · 0 of 3" beside "no check ran" contradicted itself).
  */
-export const noCheckRan = (checks) => !(Array.isArray(checks) ? checks : []).some((r) => !NON_CHECK_STATES.includes(r?.state));
+export const noCheckRan = (checks) => (Array.isArray(checks) ? checks : []).every((r) => r?.state === 'deferred');
 
 /**
  * BA-39 — a battle's result from its completion block's own facts. A battle

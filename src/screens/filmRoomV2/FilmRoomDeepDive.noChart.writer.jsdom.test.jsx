@@ -132,6 +132,17 @@ describe('a held name the provider returned no bars for, through the real passes
     clean(docsOf(noBars.tape, noBars.series), 'DE stamp open');
   });
 
+  it('review SPR-S-4 — the list holds EVERY check that holds a price, its stamp instant recorded or not (that rule places a chart marker, not a list row)', async () => {
+    const t = clone(noBars.tape);
+    const first = t.checks.findIndex((c) => typeof c.evidence?.DE?.px === 'number');
+    t.checks[first].evidenceAt = null;
+    await deepAt(t, noBars.series, 'DE');
+    const holding = t.checks.map((c, i) => ({ c, i })).filter(({ c }) => typeof c.evidence?.DE?.px === 'number').map(({ i }) => String(i));
+    expect(m.qa('[data-recorded-price]').map((r) => r.getAttribute('data-recorded-price'))).toEqual(holding);
+    expect(holding).toContain(String(first));
+    clean(docsOf(t, noBars.series), 'DE list, an unstamped instant');
+  });
+
   it('a charted name the same day keeps the markers and their instructions', async () => {
     await deepAt(noBars.tape, noBars.series, 'INTC');
     const ev = m.q('[data-region="evidence-overlay"]');
