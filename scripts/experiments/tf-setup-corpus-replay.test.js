@@ -259,6 +259,12 @@ describe('the summary and the report carry counts only, with plan- and report-ti
     expect(summarize({ ...base, reportProvenance: { ...prov, dirty: true } }).provenance.drift).toBe(true);
     expect(summarize({ ...base, reportProvenance: { ...prov, dirty: null } }).provenance.drift).toBe(true);
     expect(summarize({ ...base, reportProvenance: prov }).provenance.drift).toBe(false);
+    // plan AND report on the same dirty tree agree with each other and are still drift: a dirty tree never passes as clean (mutant M45)
+    const dirtyProv = { ...prov, dirty: true };
+    const dirtyManifest = { ...manifest, dirty: true, provenance: { plan: dirtyProv, evaluate: dirtyProv } };
+    expect(summarize({ ...base, manifest: dirtyManifest, reportProvenance: dirtyProv }).provenance.drift).toBe(true);
+    const unknownProv = { ...prov, dirty: null };
+    expect(summarize({ ...base, manifest: { ...manifest, provenance: { plan: unknownProv, evaluate: unknownProv } }, reportProvenance: unknownProv }).provenance.drift).toBe(true);
   });
   it('renderReport: the sections, the distinct-pairs statement, the join line, the provenance lines, no raw id', () => {
     const s = summarize({ rows, pairs, counts, plan, join: { available: true, joined: 2, byClass: { 'valid/breakout': { beat: 1, lost: 1, tied: 0 } }, sufficient: false }, manifest, reportProvenance: prov });
