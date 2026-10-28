@@ -80,6 +80,16 @@ describe('expectedCompletedSession — the calendar before any row (resolution p
   it('a past asOf is complete whatever the clock reads', () => {
     expect(expectedCompletedSession({ asOf: '2026-06-10', now: new Date('2026-06-15T13:30:00Z') })).toMatchObject({ ok: true, expected: '2026-06-10', completedSession: 'complete' });
   });
+  it('today is the ET date, not the UTC date: at 22:00 ET on the 15th (02:00Z on the 16th) the 16th is still in the future (review TE3-4)', () => {
+    const now = new Date('2026-06-16T02:00:00Z');
+    expect(expectedCompletedSession({ asOf: '2026-06-16', now })).toMatchObject({ ok: false, reason: 'asOf_in_future', detail: { asOf: '2026-06-16', today: '2026-06-15' } });
+    expect(expectedCompletedSession({ asOf: '2026-06-15', now })).toMatchObject({ ok: true, expected: '2026-06-15', completedSession: 'complete', today: '2026-06-15' });
+  });
+  it('today before the close with no maintained previous session is calendar_missing, named, and never a missing_bar (review TE3-6)', () => {
+    const now = new Date('2026-01-02T15:00:00Z');
+    expect(expectedCompletedSession({ asOf: '2026-01-02', now })).toEqual({ ok: false, reason: 'calendar_missing', detail: { asOf: '2026-01-02', today: '2026-01-02', why: 'previous_session_outside_maintained_years' } });
+    expect(build(tradingPayload({ end: '2026-01-02' }), { asOf: '2026-01-02', now })).toMatchObject({ ok: false, reason: 'calendar_missing', detail: { why: 'previous_session_outside_maintained_years' }, expected: null });
+  });
   it('the clock is injected: a missing or invalid now throws, never falls back to Date.now()', () => {
     expect(() => expectedCompletedSession({ asOf: END })).toThrow(TypeError);
     expect(() => expectedCompletedSession({ asOf: END, now: new Date('garbage') })).toThrow(TypeError);
@@ -167,6 +177,14 @@ describe('adjacency inside the maintained years', () => {
     const r = build(payload.filter((row) => row.date !== gone));
     expect(r).toMatchObject({ ok: false, reason: 'missing_bar', detail: { expected: gone, latest: older, after: newer } });
   });
+  it('the gap check reaches both edges of the window: the newest pair and the oldest pair (review TE3-3)', () => {
+    const payload = tradingPayload();
+    const newestGap = build(payload.filter((row) => row.date !== payload[1].date));
+    expect(newestGap).toMatchObject({ ok: false, reason: 'missing_bar', detail: { expected: payload[1].date, latest: payload[2].date, after: payload[0].date } });
+    const oldestGap = build(payload.filter((row) => row.date !== payload[54].date));
+    expect(oldestGap).toMatchObject({ ok: false, reason: 'missing_bar', detail: { expected: payload[54].date, latest: payload[55].date, after: payload[53].date } });
+    expect(build(payload.filter((row) => row.date !== payload[55].date)).ok).toBe(true); // the first row outside the window may be missing
+  });
   it('weekend and holiday dates are not expected: the fixture\'s calendar-day rows refuse by name, and removing them gives ok (review TE2-4)', () => {
     const calendarDays = eodPayload(90); // consecutive calendar days ending 2026-06-15, weekends and Memorial Day included
     const sessionsOnly = calendarDays.filter((row) => getSessionForDate(row.date)?.isTradingDay === true);
@@ -206,6 +224,21 @@ describe('prices and volumes inside the window', () => {
     const payload = tradingPayload();
     payload[7].low = -1;
     expect(build(payload)).toMatchObject({ ok: false, reason: 'missing_fact', detail: { fact: 'low', date: payload[7].date, value: -1 } });
+  });
+  it('a zero or negative high is missing_fact (review TE3-5)', () => {
+    const negative = tradingPayload();
+    negative[4].high = -1;
+    expect(build(negative)).toMatchObject({ ok: false, reason: 'missing_fact', detail: { fact: 'high', date: negative[4].date, value: -1 } });
+    const zero = tradingPayload();
+    zero[4].high = 0;
+    expect(build(zero)).toMatchObject({ ok: false, reason: 'missing_fact', detail: { fact: 'high', date: zero[4].date, value: 0 } });
+  });
+  it('minBars is the caller\'s and must be a positive integer (review TE3-12)', () => {
+    const rows = mapDailyRows(tradingPayload()).rows;
+    for (const bad of [undefined, null, 0, -1, 1.5, '55']) {
+      expect(() => buildDailyEvidence({ rows, asOf: END, now: DAY_AFTER, minBars: bad, source: 'eodhd_eod', symbol: 'TEST' }), String(bad)).toThrow(TypeError);
+    }
+    expect(buildDailyEvidence({ rows, asOf: END, now: DAY_AFTER, minBars: 55, source: 'eodhd_eod', symbol: 'TEST' }).ok).toBe(true);
   });
   it('a null raw close is missing_fact even when the adjusted close is present (never filled from it)', () => {
     const payload = tradingPayload();

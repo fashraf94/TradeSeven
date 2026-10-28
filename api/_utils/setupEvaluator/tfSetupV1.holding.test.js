@@ -70,6 +70,33 @@ describe('the absent anchor (ID-1 unbuilt)', () => {
   });
 });
 
+describe('the unknown path and the boundaries (reviews TE3-2, TE3-7, TE3-8)', () => {
+  it('regime_flip alone unknown (a null close at bar 52 on 55 bars) makes the chart leg unknown, never intact', () => {
+    const r = run('holding_regime_unknown_only');
+    expect(holdingResults(r)).toEqual({ close_below_slow: false, structure_break: false, regime_flip: 'unknown' });
+    expect(r.missing).toEqual(['SMA_slow_5ago']);
+    expect(r.history).toEqual({ count: 55, required: 55, sufficient: true });
+    expect([r.chartLeg, r.reasons, r.regime]).toEqual(['unknown', [], 'unknown']);
+  });
+  it('the mirror stack with SMA_slow not falling is no_trend: close_below_slow true, regime_flip false', () => {
+    const r = run('holding_stack_down_slow_not_falling');
+    expect(holdingResults(r)).toEqual({ close_below_slow: true, structure_break: false, regime_flip: false });
+    expect([r.chartLeg, r.reasons, r.regime]).toEqual(['broken', ['close_below_slow'], 'no_trend']);
+  });
+  it('close_below_slow and structure_break are strict: C equal to SMA_slow and to the anchor is intact; one cent below breaks both', () => {
+    const r = run('holding_boundaries_equal');
+    expect(checkOf(r, 'close_below_slow')).toMatchObject({ lhs: 100, op: '<', rhs: 100, result: false });
+    expect(checkOf(r, 'structure_break')).toMatchObject({ lhs: 100, op: '<', rhs: 100, result: false });
+    expect([r.chartLeg, r.reasons, r.regime]).toEqual(['intact', [], 'no_trend']);
+    // one cent below on an otherwise flat series: C 99.99 < SMA_fast 99.9995 < SMA_slow 99.9998 and SMA_slow < SMA_slow_5ago 100 — by the definition a downtrend, so all three break
+    const below = evaluateTfHolding(evidenceOf(buildBars({ closeAt: (i) => (i === 0 ? 99.99 : 100) })), { anchorSwingLow: 100 });
+    expect(checkOf(below, 'close_below_slow')).toMatchObject({ lhs: 99.99, rhs: 99.9998, result: true });
+    expect(checkOf(below, 'structure_break')).toMatchObject({ lhs: 99.99, rhs: 100, result: true });
+    expect(holdingResults(below)).toEqual({ close_below_slow: true, structure_break: true, regime_flip: true });
+    expect([below.chartLeg, below.reasons, below.regime]).toEqual(['broken', ['close_below_slow', 'structure_break', 'regime_flip'], 'downtrend']);
+  });
+});
+
 describe('the holding shares MIN_COMPLETED_BARS (review TE5-3)', () => {
   it('54 bars with C below SMA_slow and above the anchor: every holding check unknown, history insufficient', () => {
     const r = run('holding_history_54_close_below_slow');

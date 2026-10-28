@@ -132,7 +132,9 @@ export const SCENARIOS = Object.freeze({
   at_extension_guard: { kind: 'entry', expect: 'valid/pullback_resume with C exactly at SMA_fast + 2 ATR (ATR 1.1875)', build: () => evidenceOf(tight((b) => { b[2].low = BASE_SMA_FAST; b[13].high += 1.25; })) },
   flat_slow_sma: { kind: 'entry', expect: 'invalid(regime)/no_trend: stack true, SMA_slow equals SMA_slow_5ago', build: () => evidenceOf(buildBars({ closeAt: (i) => (i <= 4 || (i >= 50 && i <= 54) ? 101 : 100) })) },
   downtrend_mirror: { kind: 'entry', expect: 'invalid(regime)/downtrend', build: () => evidenceOf(buildBars({ closeAt: (i) => BASE_CLOSE + BASE_SLOPE * i })) },
-  bounce_fast_below_slow: { kind: 'entry', expect: 'invalid(regime)/no_trend: C > SMA_fast but SMA_fast < SMA_slow', build: () => evidenceOf(buildBars({ closeAt: (i) => (i <= 19 ? BASE_CLOSE - BASE_SLOPE * i : 105) })) },
+  bounce_fast_below_slow: { kind: 'entry', expect: 'invalid(regime)/no_trend: C > SMA_fast but SMA_fast < SMA_slow (SMA_slow not rising)', build: () => evidenceOf(buildBars({ closeAt: (i) => (i <= 19 ? BASE_CLOSE - BASE_SLOPE * i : 105) })) },
+  stack_fast_below_slow_rising: { kind: 'entry', expect: 'invalid(regime)/no_trend: C 100 > SMA_fast 97.625 but SMA_fast < SMA_slow 102.05 while SMA_slow IS rising (102.05 > 100.1) — the stack\'s middle inequality alone decides (review TE3-1)', build: () => evidenceOf(buildBars({ closeAt: (i) => (i >= 50 ? 80 : i >= 20 ? 105 : BASE_CLOSE - BASE_SLOPE * i) })) },
+  stack_down_slow_not_falling: { kind: 'entry', expect: 'invalid(regime)/no_trend: C 90.25 < SMA_fast 92.625 < SMA_slow 97.05 but SMA_slow is NOT falling (97.05 > 92.975) — the downtrend needs both conditions (review TE3-7)', build: () => evidenceOf(buildBars({ closeAt: (i) => (i >= 50 ? 50 : i >= 20 ? 100 : 95 - BASE_SLOPE * (19 - i)) })) },
   bars_54: { kind: 'entry', expect: 'unknown(insufficient_history)', build: () => evidenceOf(buildBars({ n: 54 })) },
   bars_55: { kind: 'entry', expect: 'evaluable at exactly 55 bars: invalid(no_setup)', build: () => evidenceOf(buildBars({ n: 55 })) },
   // ---- C1, the volume policy
@@ -163,6 +165,9 @@ export const SCENARIOS = Object.freeze({
   holding_short_history: { kind: 'holding', options: {}, expect: 'all unknown on 10 bars with no anchor', build: () => evidenceOf(buildBars({ n: 10 })) },
   holding_history_54_close_below_slow: { kind: 'holding', options: { anchorSwingLow: 80 }, expect: 'all unknown on 54 bars although C < SMA_slow and C > the anchor: the holding shares MIN_COMPLETED_BARS', build: () => evidenceOf(buildBars({ n: 54, patch: (b) => { setClose(b, 0, 85); } })) },
   holding_anchor_zero: { kind: 'holding', options: { anchorSwingLow: 0 }, expect: 'unknown: a non-positive anchor is not a price and reads absent', build: () => evidenceOf(base()) },
+  holding_stack_down_slow_not_falling: { kind: 'holding', options: { anchorSwingLow: 40 }, expect: 'broken [close_below_slow] only: the mirror stack holds but SMA_slow is not falling, so regime_flip is false (review TE3-7)', build: () => evidenceOf(buildBars({ closeAt: (i) => (i >= 50 ? 50 : i >= 20 ? 100 : 95 - BASE_SLOPE * (19 - i)) })) },
+  holding_regime_unknown_only: { kind: 'holding', options: { anchorSwingLow: 90 }, expect: 'unknown: 55 bars with a null close at bar 52 leave only SMA_slow_5ago null, so regime_flip alone is unknown and the chart leg is unknown, never intact (review TE3-2)', build: () => evidenceOf(buildBars({ n: 55, patch: (b) => { b[52].close = null; } })) },
+  holding_boundaries_equal: { kind: 'holding', options: { anchorSwingLow: 100 }, expect: 'intact: a flat series at 100 with the anchor at 100 — close_below_slow and structure_break are strict < (review TE3-8)', build: () => evidenceOf(buildBars({ closeAt: () => 100 })) },
 });
 
 export const SCENARIO_NAMES = Object.freeze(Object.keys(SCENARIOS));

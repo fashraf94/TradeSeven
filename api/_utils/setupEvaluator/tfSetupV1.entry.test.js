@@ -59,6 +59,13 @@ describe('regime (definition §2)', () => {
     expect(checkOf(r, 'slow_rising')).toMatchObject({ lhs: 100.1, rhs: 100.1, result: false });
   });
 
+  it('a tie on the swing extreme records the most recent bar\'s date (SEMANTICS_NOTES; review TE3-11)', () => {
+    const ev = SCENARIOS.flat_slow_sma.build();
+    const r = evaluateTfEntry(ev);
+    expect([1, 2, 3, 4].map((i) => ev.bars[i].high)).toEqual([102.5, 102.5, 102.5, 102.5]);
+    expect(r.evidence.swingHigh).toEqual({ value: 102.5, date: ev.bars[1].date });
+  });
+
   it('the downtrend mirror is invalid(regime) with regime downtrend', () => {
     const r = run('downtrend_mirror');
     expect([r.verdict, r.reason, r.regime]).toEqual(['invalid', 'regime', 'downtrend']);
@@ -71,6 +78,29 @@ describe('regime (definition §2)', () => {
     expect([r.verdict, r.reason, r.regime]).toEqual(['invalid', 'regime', 'no_trend']);
     expect(r.factsUsed.C.value).toBeGreaterThan(r.factsUsed.SMA_fast.value);
     expect(r.factsUsed.SMA_fast.value).toBeLessThan(r.factsUsed.SMA_slow.value);
+  });
+
+  it('the stack\'s middle inequality decides on its own: C > SMA_slow > SMA_fast with SMA_slow rising is no_trend, not uptrend (review TE3-1)', () => {
+    const r = run('stack_fast_below_slow_rising');
+    expect(Object.fromEntries(['C', 'SMA_fast', 'SMA_slow', 'SMA_slow_5ago'].map((k) => [k, r.factsUsed[k].value]))).toEqual({ C: 100, SMA_fast: 97.625, SMA_slow: 102.05, SMA_slow_5ago: 100.1 });
+    expect(checkOf(r, 'slow_rising')).toMatchObject({ lhs: 102.05, rhs: 100.1, result: true });
+    expect(checkOf(r, 'regime_stack')).toEqual({ id: 'regime_stack', lhs: [100, 97.625], op: '>', rhs: [97.625, 102.05], result: false, facts: ['C', 'SMA_fast', 'SMA_slow'] });
+    expect([r.verdict, r.reason, r.regime]).toEqual(['invalid', 'regime', 'no_trend']);
+  });
+
+  it('the downtrend needs both conditions: the mirror stack with SMA_slow not falling is no_trend, not downtrend (review TE3-7)', () => {
+    const r = run('stack_down_slow_not_falling');
+    expect(Object.fromEntries(['C', 'SMA_fast', 'SMA_slow', 'SMA_slow_5ago'].map((k) => [k, r.factsUsed[k].value]))).toEqual({ C: 90.25, SMA_fast: 92.625, SMA_slow: 97.05, SMA_slow_5ago: 92.975 });
+    expect(checkOf(r, 'regime_stack_down').result).toBe(true);
+    expect(checkOf(r, 'slow_falling')).toMatchObject({ lhs: 97.05, rhs: 92.975, result: false });
+    expect([r.verdict, r.reason, r.regime]).toEqual(['invalid', 'regime', 'no_trend']);
+  });
+
+  it('swingLow reads bars 1..20 only: a bar-0 low below every other low does not become the swing low', () => {
+    const ev = evidenceOf(buildBars({ patch: (b) => { b[0].low = 90; } }));
+    const r = evaluateTfEntry(ev);
+    expect(r.evidence.swingLow).toEqual({ value: 93.5, date: ev.bars[20].date });
+    expect(r.factsUsed.swingLow.value).toBe(93.5);
   });
 
   it('a null regime fact makes the verdict unknown(missing_fact) with regime unknown and every other fact still recorded', () => {
@@ -230,6 +260,8 @@ describe('C1 — pattern-scoped missing facts (FD-P3-1 option (a)) and the volum
     expect(r.factsUsed.V.value).toBeNull();
     expect(r.factsUsed.V_avg.value).toBe(1_000_000);
     expect(r.evidence.volume.bar0).toMatchObject({ usable: false, reason });
+    // the observed value is preserved on the record even when unusable (review TE3-11): −5 for the negative case, 0 for zero, null otherwise
+    expect(r.evidence.volume.bar0.value).toBe(reason === 'negative' ? -5 : reason === 'zero' ? 0 : null);
     expect(r.missing).toEqual(['V']);
     expect(r.patterns.breakout).toBe('untestable');
     expect([r.verdict, r.reason]).toEqual(['unknown', 'missing_fact']);
@@ -304,6 +336,10 @@ describe('an adapter refusal', () => {
     expect(r.refusal).toEqual({ reason: 'missing_bar', detail: { expected: '2026-10-09', latest: '2026-10-08' } });
     expect(r.refusal.detail).not.toBe(detail); // copied, never shared (review TEV1)
     expect(r.evidenceClass).toEqual({ bars: 'later_reconstruction', verdict: 'derived' });
+    const nested = { expected: '2026-10-09', nullFields: ['high'] };
+    const n = evaluateTfEntry({ ok: false, reason: 'missing_bar', detail: nested, asOf: '2026-10-09', basis: 'raw', source: 'eodhd_eod' });
+    expect(n.refusal.detail).toEqual(nested);
+    expect(n.refusal.detail.nullFields).not.toBe(nested.nullFields); // a deep copy: nested arrays are not shared either (review TE3-12)
     expect(r.missing).toEqual([...FACT_NAMES]);
     expect(r.checks.every((c) => c.result === 'unknown')).toBe(true);
     expect(r.patterns).toEqual({ breakout: 'untestable', pullback_resume: 'untestable' });

@@ -46,6 +46,9 @@ describe('in-revision integrity (checkBaselineIntegrity)', () => {
   it('passes a consistent one-entry history', () => {
     expect(checkBaselineIntegrity(base)).toEqual([]);
   });
+  it('two entries recorded at the same instant are in order (recordedAt is non-decreasing, not strictly increasing; review TE3-12)', () => {
+    expect(checkBaselineIntegrity(side([e1, { ...e2, recordedAt: e1.recordedAt }], sha2, 'tf-setup-v1/sem-2'))).toEqual([]);
+  });
   it('fails when the last sha or id does not match the module', () => {
     expect(checkBaselineIntegrity(side([e1], sha2, 'tf-setup-v1/sem-1')).join(' ')).toMatch(/does not match the golden's canonical sha/);
     expect(checkBaselineIntegrity(side([e1], sha1, 'tf-setup-v1/sem-2')).join(' ')).toMatch(/is not the module's SEMANTICS_ID/);

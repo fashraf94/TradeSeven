@@ -28,6 +28,7 @@ describe('the capture\'s fields are re-verified before the path is defined', () 
   it('refuses a second time-shaped field, a tickId outside its battle, an impossible date, or a missing decision field', () => {
     expect(verifyCaptureFields([rec({ capturedAt: '2026-10-13T14:00:00Z' })]).problems.join(' ')).toMatch(/time-shaped fields are \["capturedAt","etDate"\]/);
     expect(verifyCaptureFields([rec({ tickId: 'other:3' })]).problems.join(' ')).toMatch(/tickId that is not <battleId>:<seq>/);
+    expect(verifyCaptureFields([rec({ battleId: 'b1', tickId: 'b10:3' })]).problems.join(' ')).toMatch(/tickId that is not <battleId>:<seq>/); // the colon is part of the prefix (review TE3-12)
     expect(verifyCaptureFields([rec({ etDate: '2026-02-30' })]).problems.join(' ')).toMatch(/not a real calendar date/); // review TE2-9
     expect(verifyCaptureFields([rec({}, { finalSymbolIn: undefined })]).ok).toBe(true); // present as a key, even undefined → in
     const { finalSymbolIn, ...noKey } = rec().decision;
@@ -187,6 +188,13 @@ describe('receipt selection', () => {
     expect(pickReceipts(rows, 3)).toHaveLength(3);
     expect(RECEIPT_COUNT).toBe(10);
   });
+  it('the earliest check wins inside a class even when its symbol sorts later (review TE3-10)', () => {
+    const rows = [
+      row('A', '2026-10-05', entryRecord({ verdict: 'valid', pattern: 'breakout' })),
+      row('Z', '2026-09-22', entryRecord({ verdict: 'valid', pattern: 'breakout' })),
+    ];
+    expect(pickReceipts(rows, 2).map((r) => r.symbol)).toEqual(['Z', 'A']);
+  });
 });
 
 describe('the join to the Oct 14 scorer', () => {
@@ -211,6 +219,12 @@ describe('the join to the Oct 14 scorer', () => {
   it('counts a moment once even if two rows share the tick and the call (review TE5-1)', () => {
     const dup = [...rows, { ...rows[0], kind: 'executed' }];
     expect(joinScorer(dup, scorer).joined).toBe(2);
+  });
+  it('the tie band is exactly ±1 point: 1, 0.5 and −1 are ties, 1.5 beats, −1.5 loses (review TE3-9)', () => {
+    const deltas = [1, 0.5, -1, 1.5, -1.5];
+    const r2 = deltas.map((d, i) => row('S' + i, '2026-10-12', entryRecord({ verdict: 'valid', pattern: 'breakout' }), { battleId: `t${i}`, tickId: `t${i}:1`, symbolOut: 'OUT' }));
+    const s2 = { controlRows: deltas.map((d, i) => ({ k: `t${i}__t${i}:1`, call: `SWAP:OUT>S${i}`, primary: { points: { status: 'scored', delta: d } } })) };
+    expect(joinScorer(r2, s2).byClass['valid/breakout']).toEqual({ beat: 1, lost: 1, tied: 3 });
   });
   it('is unavailable without a results file, and says so', () => {
     expect(joinScorer(rows, null)).toEqual({ available: false, joined: 0, byClass: {} });
@@ -251,6 +265,13 @@ describe('the summary and the report carry counts only, with plan- and report-ti
     expect(s.provenance).toMatchObject({ plan: prov, evaluate: prov, report: prov, drift: false });
     expect(s.provenance.capture).toEqual({ file: 'records.json', records: 3, sha256: 'cc'.repeat(32), timeFields: ['etDate'] });
     expect(JSON.stringify(s)).not.toMatch(/SECRET-BATTLE-ID|OWNER-NEVER-READ|"owner"|"keys"/);
+  });
+  it('the one-quarter limit is strict: a share of exactly 0.25 is within (review TE3-9)', () => {
+    const four = ['A', 'B', 'C', 'D'].map((sym, i) => ({ symbol: sym, asOf: '2026-10-12', role: 'entry', rows: 1, result: { verdict: i === 0 ? 'unknown' : 'valid' } }));
+    const s = summarize({ rows: [], pairs: four, counts, plan, join: { available: false, joined: 0, byClass: {} }, manifest, reportProvenance: prov });
+    expect(s.dataUnknown).toMatchObject({ unknown: 1, attempted: 4, share: 0.25, aboveLimit: false });
+    const five = [...four, { symbol: 'E', asOf: '2026-10-12', role: 'entry', rows: 1, result: { verdict: 'unknown' } }];
+    expect(summarize({ rows: [], pairs: five, counts, plan, join: { available: false, joined: 0, byClass: {} }, manifest, reportProvenance: prov }).dataUnknown.aboveLimit).toBe(true);
   });
   it('a report produced at another head, script or on a dirty or unknown tree carries drift: true (review TE4-1)', () => {
     const base = { rows, pairs, counts, plan, join: { available: false, joined: 0, byClass: {} }, manifest };
