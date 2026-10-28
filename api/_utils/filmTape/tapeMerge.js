@@ -49,7 +49,7 @@ import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE, AWAITING_
 import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf, noCheckRan, meetingsCoverageOf, MEETINGS_PER_DAY_MAX } from './tapeAssemble.js';
 import { candleInputFingerprint, changedInputParts, replayLogicVersionOf, REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
-import { modernNotes } from './tapeNotes.js';
+import { modernNotes, NOTES } from './tapeNotes.js';
 import { fitTapeToBudget, TAPE_SIZE_BUDGET_BYTES } from './tapeSize.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -306,7 +306,10 @@ const UNOBSERVED = `${UNRESOLVED_DEPENDENCY}: a read assembled before this secti
  * dependencies changed it adds one. Every other CAVEAT — a fact about the day's record that
  * either run learned (a truncated deferral list, a gap, an unknown check) —
  * always lowers it: caveats are unioned and never dropped, the note carries
- * every one, and the status is at most `partial` while any stands. So the
+ * every one, and the status is at most `partial` while any stands — with ONE
+ * exception, applied after this union to the checks section alone: an
+ * unattributed-gap caveat the tape's own stored rows prove wrong (Build B
+ * Amendment K RK-9, attributedCaveats). So the
  * status is the lower of what the later run can vouch for and what the
  * earlier run recorded. `unknownChecks` keeps the larger count.
  */
@@ -347,6 +350,44 @@ function mergeCoverage(section, storedDoc, newCov, carried, { limits = [], depen
     base.unknownChecks = Math.max(Number.isInteger(storedCov.unknownChecks) ? storedCov.unknownChecks : 0, Number.isInteger(newCov?.unknownChecks) ? newCov.unknownChecks : 0);
   }
   return base;
+}
+
+/** The seqs an unattributed-gap caveat names (NOTES.gapsUnattributed), or null when `text` is not one — checked by composing it back. */
+function unattributedSeqsOf(text) {
+  const m = typeof text === 'string' ? /\(tickSeq ([\d, ]+)\)$/.exec(text) : null;
+  if (!m) return null;
+  const seqs = m[1].split(', ').map(Number);
+  return seqs.every(Number.isInteger) && NOTES.gapsUnattributed(seqs.length, m[1]) === text ? seqs : null;
+}
+
+/**
+ * Build B Amendment K RK-9 (X3-5) — THE STORED ATTRIBUTION STANDS. The checks section's unattributed-gap caveat names
+ * minted seqs whose day a read could not tell ("… adjacent to this day has no record and its day cannot be
+ * established"). A seq the tape's own stored rows attribute to the day (its `no_record` row in the merged checks —
+ * `gaps`) was told by the first write, made before the next session began, so the seq was minted on that day; a later
+ * read that can no longer tell it does not override it. Such a caveat is rewritten to name only the rest, or dropped
+ * when none is left — in `caveats` and in the note alike. This is the one exception to "caveats are unioned and never
+ * dropped" (mergeCoverage): a caveat the tape's own stored rows prove wrong. Every other caveat is untouched, and a
+ * section with no such caveat comes back as it was.
+ */
+function attributedCaveats(cov, gaps) {
+  if (!isObj(cov) || !gaps.length) return cov;
+  let moved = false;
+  const fix = (text) => {
+    const seqs = unattributedSeqsOf(text);
+    if (!seqs) return text;
+    const rest = seqs.filter((s) => !gaps.includes(s));
+    if (rest.length === seqs.length) return text;
+    moved = true;
+    return rest.length ? NOTES.gapsUnattributed(rest.length, rest.join(', ')) : null;
+  };
+  const caveats = Array.isArray(cov.caveats) ? cov.caveats.map(fix) : null;
+  const parts = typeof cov.note === 'string' ? cov.note.split('; ').map(fix) : null;
+  if (!moved) return cov;
+  const out = { ...cov };
+  if (caveats) out.caveats = [...new Set(caveats.filter(Boolean))];
+  if (parts) out.note = [...new Set(parts.filter(Boolean))].join('; ') || null;
+  return out;
 }
 
 function keySet(rows) { return new Set((Array.isArray(rows) ? rows : []).map((r) => r?.key).filter(Boolean)); }
@@ -535,7 +576,9 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
     ...merged.checks.filter((r) => r.state === 'no_record' && Number.isInteger(r.tickSeq)).map((r) => r.tickSeq),
     ...(assembled.passes.close.gaps || []),
   ])].filter((g) => !seqs.includes(g)).sort((a, b) => a - b);
-  const unattributed = (assembled.passes.close.unattributedGaps || []).filter((s) => !seqs.includes(s));
+  // RK-9 (X3-5): a seq the merged rows hold as the day's own gap is never also listed as unattributed — the stored
+  // attribution stands against a later read that can no longer tell the seq's day
+  const unattributed = (assembled.passes.close.unattributedGaps || []).filter((s) => !seqs.includes(s) && !gaps.includes(s));
   const entryOnly = merged.checks.some((r) => r.rowSource === 'entry');
   merged.passes = {
     close: {
@@ -568,6 +611,9 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       observed: sectionDependsOn(section, assembled),
     });
   }
+  // RK-9 (X3-5): the checks section's unattributed caveat follows the same gaps — the one caveat the tape's own stored
+  // rows can prove wrong (attributedCaveats); every other caveat stays as the union left it
+  merged.coverage.checks = attributedCaveats(merged.coverage.checks, gaps);
   // BA-38 (review AD2-2): the replays an earlier replay logic built, by swap.
   const outdated = (merged.actions || []).filter((a) => builtByEarlierLogic(a?.replay)).map((a) => `${a.symbolOut} → ${a.symbolIn}`);
   for (const section of CANDLE_COVERAGE_SECTIONS) {
