@@ -19,6 +19,14 @@
 // the hub chunk fails to load, so the fallback and the flag-off render come
 // from one function and cannot drift apart.
 //
+// The S8 fix build (ruling R-S8F-1, the S8 review's S8-1): App reads only
+// `shell`, for the hub decision. It builds each site's legacy ELEMENT from the
+// two dashboard constants directly — the same inputs, the same truthiness —
+// because Rollup folds a ternary on an imported literal but not a branch on this
+// function's return value: built from `legacyShell`, the retired DashboardLoop
+// and DashboardDesktop shipped in the entry chunk to every player. The table in
+// pickDashboardShell.test.js still pins `legacyShell` for the gate's suites.
+//
 // Pure: it reads only its argument — no flag module, no window, no clock. App
 // owns the wrappers (the desktop sidebar offset), the starfield and the
 // background; the picker never sees them.

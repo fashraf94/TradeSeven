@@ -55,6 +55,17 @@
 // from them (which exports; the one importer of the archetype tables; the only
 // writes), and each terminal's own effects remain its own owner's.
 //
+// The S8 fix build moved the S0 rows one way, by ruling R-S8F-1 (the S8 review's
+// S8-1): each site's LEGACY element is decided from its dashboard constant again,
+// `COMMAND_DASHBOARD_ENABLED ? CommandDashboard : DashboardLoop` and
+// `COMMAND_DASHBOARD_DESKTOP_ENABLED ? … : <DashboardDesktop …/>`, because Rollup
+// folds a ternary on an imported literal and cannot fold one on a function's
+// return value: through the pick, the two retired dashboards and the modules only
+// they reach shipped in the entry chunk to every player (+75.8 kB raw). The pick
+// still makes the hub decision, and only that (`dashboardPick.shell`); its
+// `legacyShell` names the same shell from the same constants for the gate's own
+// suites. The rows that pinned "only through the pick" pin the constants now.
+//
 // S3 merged after S5 (the founder's merge round). App's one `hub={hubProps}`
 // object carries both slices' keys: the live games as one key (activeBattles,
 // the retained poll list), the poll's metadata and refresh, the open handlers
@@ -134,19 +145,28 @@ describe('S0 mount sites — one pick, read by both sites', () => {
     expect(count(/\bisCommandCenterHubOn\b/)).toBe(2);
   });
 
-  it('the two dashboard flags reach the sites only through the pick — no direct ternary survives', () => {
-    // Each appears in the featureFlags import and in the pick, nowhere else.
-    expect(count(/\bCOMMAND_DASHBOARD_ENABLED\b/)).toBe(2);
-    expect(count(/\bCOMMAND_DASHBOARD_DESKTOP_ENABLED\b/)).toBe(2);
-    expect(APP).not.toMatch(/\bCOMMAND_DASHBOARD_ENABLED\s*\?/);
-    expect(APP).not.toMatch(/\bCOMMAND_DASHBOARD_DESKTOP_ENABLED\s*\?/);
+  it('S8-1: each dashboard flag reaches its site twice — the pick, and the one ternary that decides the legacy element', () => {
+    // The featureFlags import, the pick and the site's ternary, nowhere else: a ternary on the imported literal is
+    // what Rollup folds, so the dead shell leaves the bundle (ruling R-S8F-1).
+    expect(count(/\bCOMMAND_DASHBOARD_ENABLED\b/)).toBe(3);
+    expect(count(/\bCOMMAND_DASHBOARD_DESKTOP_ENABLED\b/)).toBe(3);
+    expect(count(/\bCOMMAND_DASHBOARD_ENABLED\s*\?/)).toBe(1);
+    expect(count(/\bCOMMAND_DASHBOARD_DESKTOP_ENABLED\s*\?/)).toBe(1);
+  });
+
+  it('S8-1: the pick decides the hub and nothing else — App never reads its legacyShell', () => {
+    // A legacy element chosen from the pick's return value is a branch Rollup cannot fold (+75.8 kB raw on the entry
+    // chunk at 05b73287). The pick's `shell` is read once per site.
+    expect(count(/\bdashboardPick\.legacyShell\b/)).toBe(0);
+    expect(count(/\bdashboardPick\.shell === DASHBOARD_SHELLS\.HUB\b/)).toBe(2);
+    expect(count(/\bdashboardPick\b/)).toBe(3);
   });
 });
 
 describe('S0 mount sites — the mobile site', () => {
-  it('chooses CommandDashboard or DashboardLoop from the pick\'s legacy shell', () => {
+  it('chooses CommandDashboard or DashboardLoop from COMMAND_DASHBOARD_ENABLED itself (S8-1)', () => {
     expect(BLOCK).toContain(
-      'const DashboardComponent = dashboardPick.legacyShell === DASHBOARD_SHELLS.COMMAND_DASHBOARD ? CommandDashboard : DashboardLoop;',
+      'const DashboardComponent = COMMAND_DASHBOARD_ENABLED ? CommandDashboard : DashboardLoop;',
     );
     expect(BLOCK).toMatch(/const legacyDashboard = \(\s*<DashboardComponent\b/);
   });
@@ -164,7 +184,7 @@ describe('S0 mount sites — the desktop site', () => {
       "const sidebarOffsetStyle = { marginLeft: sidebarCollapsed ? '64px' : '220px', transition: 'margin-left 0.2s ease' };",
     );
     expect(BLOCK).toMatch(
-      /const legacyDesktopDashboard = dashboardPick\.legacyShell === DASHBOARD_SHELLS\.COMMAND_DASHBOARD_DESKTOP \? \(\s*<div style=\{sidebarOffsetStyle\}>\s*<CommandDashboardDesktop\b[\s\S]*?\/>\s*<\/div>\s*\) : \(\s*<DashboardDesktop\b/,
+      /const legacyDesktopDashboard = COMMAND_DASHBOARD_DESKTOP_ENABLED \? \(\s*<div style=\{sidebarOffsetStyle\}>\s*<CommandDashboardDesktop\b[\s\S]*?\/>\s*<\/div>\s*\) : \(\s*<DashboardDesktop\b/,
     );
     const desktopShell = BLOCK.slice(BLOCK.indexOf('<DashboardDesktop'));
     expect(desktopShell.slice(0, desktopShell.indexOf('/>'))).toContain('sidebarCollapsed={sidebarCollapsed}');
@@ -279,14 +299,14 @@ describe('S0 mount sites — the dashboard block from the pick to its end, as a 
     const expected = [
       'const dashboardPick = pickDashboardShell({ hubOn: isCommandCenterHubOn(), isMobile, mobileDashboardOn: COMMAND_DASHBOARD_ENABLED, desktopDashboardOn: COMMAND_DASHBOARD_DESKTOP_ENABLED, });',
       'if (isMobile) {',
-      'const DashboardComponent = dashboardPick.legacyShell === DASHBOARD_SHELLS.COMMAND_DASHBOARD ? CommandDashboard : DashboardLoop;',
+      'const DashboardComponent = COMMAND_DASHBOARD_ENABLED ? CommandDashboard : DashboardLoop;',
       `const legacyDashboard = ( <DashboardComponent ${props('DashboardComponent')} /> );`,
       boundaryOpen,
       '{isStarfieldMobileOn() ? <StarfieldBackground mode="mobile" liveGames={starfieldLiveGames} /> : <DesktopBackground isDesktop={isDesktop} />}',
       '{dashboardPick.shell === DASHBOARD_SHELLS.HUB ? <CommandCenterHubGate site="mobile" hub={hubProps} legacy={legacyDashboard} onFallback={setHubFallback} /> : legacyDashboard}',
       '</div> </ErrorBoundary> ); }',
       "const sidebarOffsetStyle = { marginLeft: sidebarCollapsed ? '64px' : '220px', transition: 'margin-left 0.2s ease' };",
-      'const legacyDesktopDashboard = dashboardPick.legacyShell === DASHBOARD_SHELLS.COMMAND_DASHBOARD_DESKTOP ? (',
+      'const legacyDesktopDashboard = COMMAND_DASHBOARD_DESKTOP_ENABLED ? (',
       `<div style={sidebarOffsetStyle}> <CommandDashboardDesktop ${props('CommandDashboardDesktop')} /> </div>`,
       `) : ( <DashboardDesktop ${props('DashboardDesktop')} /> );`,
       boundaryOpen,
