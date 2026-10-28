@@ -13,11 +13,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import React, { act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 
 const fetches = vi.hoisted(() => ({ answer: null }));
 vi.mock('../../utils/fetchWithAuth', () => ({ fetchWithAuth: vi.fn(() => fetches.answer ?? new Promise(() => {})) }));
 
 const { default: ScoutingBoardSheet } = await import('./ScoutingBoardSheet');
+const { default: EquipSheet } = await import('./EquipSheet');
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -163,7 +165,8 @@ describe("the board's read, by its day (S8-5)", () => {
 describe('review fix L3-1: a ranking from another year', () => {
   const board = (asOf) => ({ archetypeLabel: 'Degen', asOf, empty: false, ranked: [{ symbol: 'NVDA', archetypeScore: 81.2 }], watchlist: { inUniverse: [], offUniverse: [] } });
 
-  it('"Ranked from Oct 16, 2025\'s read" a year on; this year\'s older read stays "Oct 16\'s"', async () => {
+  // This year's older read ("Oct 16's", no year) is the "a week old or more" row above.
+  it('"Ranked from Oct 16, 2025\'s read" a year on', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-27T15:00:00Z'));
     fetches.answer = Promise.resolve({ ok: true, status: 200, json: async () => board('2025-10-16T11:02:00Z') });
@@ -171,5 +174,56 @@ describe('review fix L3-1: a ranking from another year', () => {
     await act(async () => { api.open(); });
     await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
     expect(document.querySelector('[role="dialog"]').textContent).toContain("Ranked from Oct 16, 2025's read");
+  });
+});
+
+// The build's own review, the mutating lens L4: three of its survivors on the sheet's keys (M25, M31, M32), closed.
+describe('review fixes L4 — the sheet\'s keys', () => {
+  it('M25: Escape is the sheet\'s alone — it does not also reach a listener on the page, from Close or from <body>', async () => {
+    const onClose = await renderHost();
+    await act(async () => { api.open(); });
+    const pageKeys = vi.fn();
+    window.addEventListener('keydown', pageKeys);
+    try {
+      key(document.querySelector('button[aria-label="Close"]'), 'Escape');
+      expect(onClose).toHaveBeenCalledTimes(1);
+      await act(async () => { api.open(); });
+      document.activeElement.blur();
+      key(document.body, 'Escape');
+      expect(onClose).toHaveBeenCalledTimes(2);
+      expect(pageKeys).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', pageKeys);
+    }
+  });
+
+  it('M31: the <body> key listener goes with the sheet: closed and opened again, one Escape closes it once', async () => {
+    const onClose = await renderHost();
+    await act(async () => { api.open(); });
+    await act(async () => { document.querySelector('button[aria-label="Close"]').click(); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    key(document.body, 'Escape');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await act(async () => { api.open(); });
+    document.activeElement.blur();
+    key(document.body, 'Escape');
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('M32: a key from an overlay rendered among the sheet\'s children (a portal elsewhere in the DOM) is that overlay\'s', async () => {
+    const onClose = vi.fn();
+    function PortalChild() {
+      return createPortal(<button type="button" data-child-portal="">Inner</button>, document.body);
+    }
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => { root.render(<EquipSheet open onClose={onClose} title="Sheet"><PortalChild /></EquipSheet>); });
+    const inner = document.querySelector('[data-child-portal]');
+    inner.focus();
+    key(inner, 'Escape');
+    expect(onClose).not.toHaveBeenCalled();
+    const tab = key(inner, 'Tab');
+    expect(tab.defaultPrevented).toBe(false);
   });
 });

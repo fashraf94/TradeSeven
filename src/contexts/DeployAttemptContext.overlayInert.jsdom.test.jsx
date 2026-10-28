@@ -88,6 +88,7 @@ let probe;
 const stackProbe = { current: null };
 let board;
 let posts;
+let boardCloses;
 
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 const flush = async () => { await act(async () => { for (let i = 0; i < 8; i += 1) await Promise.resolve(); }); };
@@ -122,7 +123,7 @@ function Shell() {
       <StackProbe probe={stackProbe} />
       <ScoutingBoardSheet
         open={boardOpen}
-        onClose={() => setBoardOpen(false)}
+        onClose={() => { boardCloses += 1; setBoardOpen(false); }}
         agent={{ archetype: 'momentum_chaser' }}
         accent="#22c55e"
         deploying={false}
@@ -144,6 +145,7 @@ beforeEach(() => {
   h.due = null;
   h.targetProgress = { deployProgress: null, lastDeployedAt: null, lastDecision: null, targetKnown: false };
   posts = [];
+  boardCloses = 0;
   h.deploy = vi.fn((agentId, onCreate, onTarget) => {
     const d = deferred();
     posts.push({ agentId, answer: d.resolve });
@@ -373,4 +375,71 @@ describe('K-5 rebuilt — each hub sheet beneath the due screen and the ceremony
       expect(inertChildren()).toEqual([]);
     },
   );
+});
+
+// The build's own review, the mutating lens L4: four of its survivors (M10, M16, M17, M30), closed with a row each.
+describe('review fixes L4 — what the overlay rows did not pin', () => {
+  it('M16: a sequence opened with focus nowhere (<body>) ends on the hub\'s shell, never left on <body>', async () => {
+    act(() => { document.activeElement?.blur?.(); });
+    expect(document.activeElement).toBe(document.body);
+    await tapFrom(null);
+    expect(ceremonyRoot()).not.toBeNull();
+    await refuseAndSettle();
+    await act(async () => { button('Back to hub').click(); });
+    await flush();
+    expect(document.activeElement).toBe(shell());
+  });
+
+  it('M17: an invoker still connected but no longer focusable gives way to the shell (a focus() that did not land is not a restore)', async () => {
+    const control = document.createElement('div');
+    control.tabIndex = 0;
+    shell().appendChild(control);
+    await tapFrom(control);
+    await refuseAndSettle();
+    control.removeAttribute('tabindex');
+    await act(async () => { button('Back to hub').click(); });
+    await flush();
+    expect(control.isConnected).toBe(true);
+    expect(document.activeElement).toBe(shell());
+  });
+
+  it('M10: the effect is re-keyed at the due screen → ceremony swap: what joined <body> under the due screen is inert under the ceremony', async () => {
+    h.due = DUE;
+    await tapFrom(hold());
+    expect(dueRoot()).not.toBeNull();
+    const late = document.createElement('div');
+    late.innerHTML = '<button type="button">Late</button>';
+    document.body.appendChild(late);
+    await act(async () => { button('Deploy without it').click(); });
+    await flush();
+    expect(ceremonyRoot()).not.toBeNull();
+    expect(inert(late)).toBe(true);
+    expect(inert(ceremonyRoot())).toBe(false);
+    await refuseAndSettle();
+    await act(async () => { button('Back to hub').click(); });
+    await flush();
+    expect(inertChildren()).toEqual([]);
+  });
+
+  it('M30: the Scouting Board beneath the due screen takes no key pressed with focus nowhere: Escape leaves it open, Tab is not trapped into it', async () => {
+    h.due = DUE;
+    stackProbe.current.open('legacy:scouting', { opener: hold(), within: shell() });
+    board.open();
+    await flush();
+    const boardDeploy = button('Deploy this agent');
+    await act(async () => { boardDeploy.focus(); boardDeploy.click(); });
+    await flush();
+    act(() => { frames.run(nowMs); });
+    expect(dueRoot()).not.toBeNull();
+    expect(inert(bodyChild(boardDeploy))).toBe(true);
+    act(() => { document.activeElement?.blur?.(); });
+    expect(document.activeElement).toBe(document.body);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    act(() => { document.body.dispatchEvent(escape); });
+    expect(boardCloses).toBe(0);
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    act(() => { document.body.dispatchEvent(tab); });
+    expect(tab.defaultPrevented).toBe(false);
+    expect(bodyChild(boardDeploy).contains(document.activeElement)).toBe(false);
+  });
 });
