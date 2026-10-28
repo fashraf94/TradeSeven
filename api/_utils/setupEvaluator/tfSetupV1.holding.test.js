@@ -152,7 +152,7 @@ describe('short history and refusals', () => {
     expect(holdingResults(r)).toEqual({ close_below_slow: 'unknown', structure_break: 'unknown', regime_flip: 'unknown' });
     expect([r.chartLeg, r.reasons, r.regime]).toEqual(['unknown', [], 'unknown']);
     expect(r.anchorSwingLow).toEqual({ value: 90, provenance: 'supplied' });
-    expect(r.refusal).toEqual({ reason: 'insufficient_history', detail: { required: 55, available: 40 } });
+    expect(r.refusal).toEqual({ reason: 'insufficient_history', detail: { required: 55, available: 40 }, expected: null }); // this hand-made refusal names no expected session (closeout)
     expect(r.missing).toEqual([...FACT_NAMES]);
     expect(r.history).toEqual({ count: 0, required: 55, sufficient: false });
     expect(r).not.toHaveProperty('patterns');

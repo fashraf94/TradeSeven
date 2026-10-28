@@ -16,8 +16,9 @@ import { eodPayload } from '../__fixtures__/eodPayload.js';
 import { mapDailyRows } from '../marketDataCache.js';
 import { getPreviousSessionDate, getSessionForDate, isMarketHoliday } from '../marketSchedule.js';
 import { buildDailyEvidence, attachAdjustedClose, expectedCompletedSession, ADAPTER_REFUSALS, SPLIT_RATIO_JUMP, BASIS } from './dailyBarsAdapter.js';
-import { evaluateTfEntry } from './tfSetupV1.js';
+import { evaluateTfEntry, evaluateTfHolding } from './tfSetupV1.js';
 import { MIN_COMPLETED_BARS } from './thresholds.js';
+import { evidenceOf, buildBars } from './__fixtures__/syntheticBars.js';
 
 // ---------------------------------------------------------------- the fixture, re-dated onto sessions
 
@@ -440,5 +441,94 @@ describe('the ok result and the end-to-end record', () => {
     const r = evaluateTfEntry(build(tradingPayload({ n: 40 })));
     expect([r.verdict, r.reason]).toEqual(['unknown', 'insufficient_history']);
     expect(r.refusal.detail).toEqual({ required: 55, available: 40 });
+  });
+});
+
+describe('provenance on refused evidence (closeout, 28 Oct 2026)', () => {
+  const BEFORE_CLOSE = new Date('2026-06-15T19:59:00Z'); // 3:59 PM ET on END: the expected session is the previous one
+  /** Each refusal path, early (before the calendar names a session) and late, with the requested and expected dates it must keep apart. */
+  const REFUSALS = [
+    ['unsupported_symbol_class', END, null, (o) => build(tradingPayload(), { symbol: 'BTC-USD.CC', ...o })],
+    ['calendar_missing', '2026-02-30', null, (o) => build(tradingPayload(), { asOf: '2026-02-30', ...o })],
+    ['asOf_not_a_session', '2026-06-13', null, (o) => build(tradingPayload(), { asOf: '2026-06-13', ...o })],
+    ['asOf_in_future', '2026-06-16', null, (o) => build(tradingPayload(), { asOf: '2026-06-16', now: new Date('2026-06-15T20:00:00Z'), ...o })],
+    ['missing_bar', END, '2026-06-12', (o) => build(tradingPayload().filter((row) => row.date !== '2026-06-12'), { now: BEFORE_CLOSE, ...o })],
+    ['unordered_bars', END, END, (o) => {
+      const payload = tradingPayload();
+      const rows = attachAdjustedClose(mapDailyRows(payload).rows, payload);
+      [rows[1], rows[2]] = [rows[2], rows[1]];
+      return build(payload, { rows, ...o });
+    }],
+    ['insufficient_history', END, '2026-06-12', (o) => build(tradingPayload({ n: 40 }), { now: BEFORE_CLOSE, ...o })],
+    ['missing_fact', END, END, (o) => { const p = tradingPayload(); p[4].close = 0; p[4].adjusted_close = 0; return build(p, o); }],
+    ['basis_discontinuity', END, END, (o) => build(tradingPayload().map((row, i) => (i >= 10 ? { ...row, open: row.open * 2, high: row.high * 2, low: row.low * 2, close: row.close * 2 } : row)), o)],
+  ];
+  const withoutMeta = ({ sourceMeta, ...rest }) => { void sourceMeta; return rest; };
+
+  it('the table covers all nine adapter refusals', () => {
+    expect(REFUSALS.map(([reason]) => reason).sort()).toEqual([...ADAPTER_REFUSALS].sort());
+  });
+
+  it.each(REFUSALS)('%s keeps the supplied sourceMeta (a copy) and both dates, through the entry and the holding record', (reason, requested, expected, make) => {
+    const ev = make({});
+    expect([ev.ok, ev.reason]).toEqual([false, reason]);
+    expect(ev.sourceMeta).toEqual(SOURCE_META);
+    expect(ev.sourceMeta).not.toBe(SOURCE_META);
+    expect([ev.asOf, ev.expected]).toEqual([requested, expected]);
+    if (reason === 'basis_discontinuity') expect(ev.adjustment).toEqual({ metadata: 'present', missingDates: [] });
+
+    const entry = evaluateTfEntry(ev);
+    const holding = evaluateTfHolding(ev, { anchorSwingLow: 90 });
+    for (const rec of [entry, holding]) {
+      expect(rec.sourceMeta).toEqual(SOURCE_META);
+      expect(rec.sourceMeta).not.toBe(ev.sourceMeta);
+      expect([rec.asOf, rec.requestedAsOf]).toEqual([requested, requested]);
+      expect(rec.refusal).toMatchObject({ reason, expected });
+      expect(rec.evidenceClass).toEqual({ bars: 'later_reconstruction', verdict: 'derived' });
+    }
+    expect([entry.verdict, entry.reason, entry.pattern, entry.regime]).toEqual(['unknown', reason, null, 'unknown']);
+    expect([holding.chartLeg, holding.reasons, holding.regime]).toEqual(['unknown', [], 'unknown']);
+  });
+
+  it.each(REFUSALS)('%s without sourceMeta carries null, never an invented one, and the records differ only there', (reason, requested, expected, make) => {
+    const ev = make({ sourceMeta: null });
+    expect(ev.sourceMeta).toBeNull();
+    const withMeta = make({});
+    for (const evaluate of [(e) => evaluateTfEntry(e), (e) => evaluateTfHolding(e, { anchorSwingLow: 90 })]) {
+      const bare = evaluate(ev);
+      expect(bare.sourceMeta).toBeNull();
+      expect(withoutMeta(bare)).toEqual(withoutMeta(evaluate(withMeta))); // provenance never changes a verdict, a check or a date
+    }
+  });
+
+  it('a partial sourceMeta keeps only the keys it came with, on a refusal and on an ok result; none supplied is null', () => {
+    const partial = { fetchedAt: '2026-06-16T12:00:00.000Z' };
+    expect(build(tradingPayload({ n: 40 }), { sourceMeta: partial }).sourceMeta).toEqual(partial);
+    expect(build(tradingPayload(), { sourceMeta: partial }).sourceMeta).toEqual(partial);
+    const payload = tradingPayload();
+    const rows = attachAdjustedClose(mapDailyRows(payload).rows, payload);
+    expect(buildDailyEvidence({ rows, asOf: END, now: DAY_AFTER, minBars: MIN_COMPLETED_BARS }).sourceMeta).toBeNull();
+    expect(buildDailyEvidence({ rows: rows.slice(0, 40), asOf: END, now: DAY_AFTER, minBars: MIN_COMPLETED_BARS }).sourceMeta).toBeNull();
+    expect(evaluateTfEntry(buildDailyEvidence({ rows: rows.slice(0, 40), asOf: END, now: DAY_AFTER, minBars: MIN_COMPLETED_BARS })).sourceMeta).toBeNull();
+  });
+
+  it('an ok result copies sourceMeta, and its records keep the session as asOf and the request as requestedAsOf', () => {
+    expect(build(tradingPayload()).sourceMeta).not.toBe(SOURCE_META);
+    const ev = build(tradingPayload(), { now: BEFORE_CLOSE });
+    expect([ev.ok, ev.asOf, ev.requestedAsOf]).toEqual([true, '2026-06-12', END]);
+    for (const rec of [evaluateTfEntry(ev), evaluateTfHolding(ev)]) {
+      expect([rec.asOf, rec.requestedAsOf]).toEqual(['2026-06-12', END]);
+      expect(rec.sourceMeta).toEqual(SOURCE_META);
+      expect(rec).not.toHaveProperty('refusal');
+    }
+    const complete = evaluateTfEntry(build(tradingPayload()));
+    expect([complete.asOf, complete.requestedAsOf]).toEqual([END, END]);
+  });
+
+  it('the bars class: the adapter defaults to later_reconstruction on every result, never synthetic; only the synthetic fixture is synthetic (Q-TE-4)', () => {
+    expect(build(tradingPayload()).evidenceClass).toEqual({ bars: 'later_reconstruction' });
+    expect(build(tradingPayload({ n: 40 })).evidenceClass).toEqual({ bars: 'later_reconstruction' });
+    expect(evidenceOf(buildBars()).evidenceClass).toEqual({ bars: 'synthetic' });
+    expect(evaluateTfEntry(evidenceOf(buildBars())).evidenceClass).toEqual({ bars: 'synthetic', verdict: 'derived' });
   });
 });

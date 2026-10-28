@@ -47,6 +47,15 @@
 // own checks.
 //
 // Records carry no owner and no raw battle id.
+//
+// THE TWO DATES (closeout, 28 Oct 2026): every record carries `asOf` and
+// `requestedAsOf`. On a record from ok evidence `asOf` is the completed
+// session the verdict is dated to and `requestedAsOf` the caller's date (they
+// differ when the request was today before the close). On a refusal record
+// `asOf` and `requestedAsOf` are both the caller's date, and
+// `refusal.expected` is the calendar's expected session, null when the
+// adapter refused before naming it. `sourceMeta` is the evidence's own, copied,
+// or null; never invented.
 
 import { TF_SETUP_V1_THRESHOLDS as T, MIN_COMPLETED_BARS, describeRuleSet } from './thresholds.js';
 import { classifyVolume } from './volumePolicy.js';
@@ -285,7 +294,7 @@ export function deriveEntryVerdict({ checks, patterns, barCount }) {
  * record (BUILD_RULES §9) nor read safely beside a held name (Amendment A,
  * A6) — reviews TE1-2 / TE5-6.
  */
-function commonBlock(evidence, computed, checks, patterns) {
+function commonBlock(evidence, computed, checks, patterns, { requestedAsOf = evidence.requestedAsOf ?? null } = {}) {
   const { facts } = computed;
   const asOf = evidence.asOf ?? null;
   const basis = evidence.basis ?? null;
@@ -296,6 +305,7 @@ function commonBlock(evidence, computed, checks, patterns) {
   const block = {
     ruleSet: describeRuleSet(),
     asOf,
+    requestedAsOf,
     basis,
     source,
     sourceMeta,
@@ -312,15 +322,18 @@ function commonBlock(evidence, computed, checks, patterns) {
   return block;
 }
 
-/** The record for an adapter refusal: every fact null, every check unknown, verdict unknown with the typed reason. */
+/**
+ * The record for an adapter refusal: every fact null, every check unknown, verdict unknown with the typed reason.
+ * A refusal's `asOf` is the caller's date, so it is also `requestedAsOf`; the expected session rides in `refusal`.
+ */
 function refusalRecord(evidence, { withPatterns = true } = {}) {
   const computed = computeTfFacts({ bars: [] });
   const checks = entryChecks(computed.facts, []);
   const patterns = withPatterns ? derivePatterns(checks) : null;
   const detail = evidence.detail && typeof evidence.detail === 'object' ? JSON.parse(JSON.stringify(evidence.detail)) : (evidence.detail ?? null);
   return {
-    ...commonBlock(evidence, computed, checks, patterns),
-    refusal: { reason: evidence.reason ?? null, detail },
+    ...commonBlock(evidence, computed, checks, patterns, { requestedAsOf: evidence.asOf ?? null }),
+    refusal: { reason: evidence.reason ?? null, detail, expected: evidence.expected ?? null },
   };
 }
 

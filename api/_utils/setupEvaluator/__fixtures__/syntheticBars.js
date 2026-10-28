@@ -75,8 +75,9 @@ export function evidenceOf(bars, { symbol = 'SYN', adjustment = { metadata: 'abs
     basis: 'raw',
     source: 'synthetic',
     sourceMeta: { fetchedAt: '2026-10-28T00:00:00.000Z', from: frozen[frozen.length - 1].date, to: frozen[0].date },
-    // The §5 enum is closed; `source: 'synthetic'` says what these bars are (review TE5-2).
-    evidenceClass: { bars: 'later_reconstruction' },
+    // Synthetic test evidence carries its own bars class (founder ruling Q-TE-4, 28 Oct 2026, the closeout);
+    // provider bars are never labelled so: the adapter's default stays 'later_reconstruction'.
+    evidenceClass: { bars: 'synthetic' },
     checks: { completedSession: 'complete', adjacency: 'ok', splitCheck: 'not_available', splitCheckReason: 'adjustment_metadata_absent' },
     adjustment,
     dropped: 0,

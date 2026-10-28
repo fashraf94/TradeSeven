@@ -18,12 +18,21 @@
 // calendar_missing, asOf_not_a_session, asOf_in_future, missing_bar,
 // unordered_bars, insufficient_history, missing_fact, basis_discontinuity.
 //
+// PROVENANCE (closeout, 28 Oct 2026): every result, ok or refused, carries a
+// copy of the caller's `sourceMeta` (e.g. { fetchedAt, from, to }) with only
+// the keys the caller supplied, or null when none was supplied — never filled
+// from the bars. A refusal carries the requested `asOf` and the calendar's
+// `expected` session (null when the refusal comes before the calendar has
+// named it); an ok result carries the session as `asOf` and the request as
+// `requestedAsOf`.
+//
 // THE SPLIT HEURISTIC AND ITS LIMITS (carried into every report that cites
 // it): with adjustment metadata present on every window row (a finite
 // adjustedClose GREATER THAN ZERO on each — review TE2-1: a vendor's zero
 // adjusted close is not metadata), the ratio adjustedClose / close is compared
-// day over day, symmetrically (max / min − 1, review TE2-5), and a change
-// above 10% is `basis_discontinuity`. It needs the vendor's adjustment already
+// day over day, symmetrically (1 − min / max of the two days' ratios, review
+// TE2-5; founder ruling Q-TE-13), and a change above 10% is
+// `basis_discontinuity`. It needs the vendor's adjustment already
 // applied; a special dividend above 10% trips it; a restated series is
 // invisible to it; it is not proof of split-free data. A ratio of 1 proves
 // nothing and is never used to infer that metadata was present.
@@ -112,7 +121,9 @@ export function attachAdjustedClose(rows, payload) {
  * @param {string} [args.source] e.g. 'eodhd_eod'
  * @param {object} [args.sourceMeta] e.g. { fetchedAt, from, to }
  * @param {string} [args.symbol]
- * @param {'later_reconstruction'|'contemporaneous'} [args.barsClass] what the bars are to the verdict's date
+ * @param {'later_reconstruction'|'contemporaneous'|'synthetic'} [args.barsClass] what the bars are to the verdict's date;
+ *   provider bars are `later_reconstruction` (the default) or `contemporaneous`; `synthetic` is for synthetic test
+ *   evidence only (founder ruling Q-TE-4) and is never the default
  */
 export function buildDailyEvidence({ rows, asOf, now, minBars, source = null, sourceMeta = null, symbol = null, barsClass = 'later_reconstruction' } = {}) {
   assertNow(now);
@@ -121,7 +132,9 @@ export function buildDailyEvidence({ rows, asOf, now, minBars, source = null, so
   let expectedSession = null;
   // One `checks` shape on every result, refusals included (review TEV2-1): each field null until its step has run.
   const checks = { completedSession: null, adjacency: null, splitCheck: null, splitCheckReason: null };
-  const refuse = (reason, detail, extra = {}) => ({ ok: false, reason, detail, asOf: asOf ?? null, expected: expectedSession, basis: BASIS, source, symbol, evidenceClass: { bars: barsClass }, checks, ...extra });
+  // The caller's sourceMeta is copied onto every result, refusals included (closeout, 28 Oct 2026): only the supplied keys, never invented.
+  const meta = sourceMeta && typeof sourceMeta === 'object' ? { ...sourceMeta } : null;
+  const refuse = (reason, detail, extra = {}) => ({ ok: false, reason, detail, asOf: asOf ?? null, expected: expectedSession, basis: BASIS, source, sourceMeta: meta, symbol, evidenceClass: { bars: barsClass }, checks, ...extra });
 
   // 1. The symbol class.
   if (symbol && isCryptoSymbol(symbol)) return refuse('unsupported_symbol_class', { symbol });
@@ -228,7 +241,7 @@ export function buildDailyEvidence({ rows, asOf, now, minBars, source = null, so
     requestedAsOf: asOf,
     basis: BASIS,
     source,
-    sourceMeta,
+    sourceMeta: meta,
     evidenceClass: { bars: barsClass },
     checks,
     adjustment,

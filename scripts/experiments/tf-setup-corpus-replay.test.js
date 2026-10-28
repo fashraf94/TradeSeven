@@ -10,8 +10,9 @@ import { describe, it, expect } from 'vitest';
 import {
   CALL_CAP, FROM_PAD_DAYS, MIN_JOINED_ROWS, RECEIPT_COUNT, SYMBOL_RE, isRealDate,
   verifyCaptureFields, selectPopulation, asOfFor, redactRow, planFor, makeCounter, eodUrl, redactEodhd,
-  pickReceipts, joinScorer, summarize, renderReport, verdictClass, hashBattleId,
+  pickReceipts, joinScorer, summarize, renderReport, verdictClass, hashBattleId, unreadPairEvidence, SOURCE,
 } from './tf-setup-corpus-replay.mjs';
+import { evaluateTfEntry, evaluateTfHolding } from '../../api/_utils/setupEvaluator/tfSetupV1.js';
 
 const rec = (over = {}, decision = {}) => ({
   k: 'b1/b1:3', battleId: 'b1', tickId: 'b1:3', archetype: 'momentum_chaser', owner: 'OWNER-NEVER-READ', ownerClass: 'non_cpu', etDate: '2026-10-13', woken: true,
@@ -324,5 +325,32 @@ describe('the summary and the report carry counts only, with plan- and report-ti
     expect(drifted).toContain('**DRIFT:');
     expect(drifted).toContain('- report: HEAD `def` (tree state unknown)');
     expect(drifted).toContain('join unavailable');
+  });
+});
+
+describe('a pair the adapter never sees (closeout, 28 Oct 2026)', () => {
+  const pair = { symbol: 'XYZ', asOf: '2026-10-06', role: 'entry' };
+  it('a cache whose window ends before asOf carries the cache\'s own fetchedAt, from and to, and later_reconstruction bars, into both records', () => {
+    const cached = { fetchedAt: '2026-10-28T16:20:26.000Z', from: '2026-05-14', to: '2026-10-01', payload: [] };
+    const ev = unreadPairEvidence({ pair, cached });
+    expect(ev).toMatchObject({ ok: false, reason: 'missing_bar', detail: { expected: '2026-10-06', latest: '2026-10-01', why: 'cache window ends before asOf' }, asOf: '2026-10-06', source: SOURCE, symbol: 'XYZ' });
+    expect(ev.sourceMeta).toEqual({ fetchedAt: '2026-10-28T16:20:26.000Z', from: '2026-05-14', to: '2026-10-01' });
+    expect(ev.evidenceClass).toEqual({ bars: 'later_reconstruction' });
+    for (const rec of [evaluateTfEntry(ev), evaluateTfHolding(ev)]) {
+      expect(rec.sourceMeta).toEqual(ev.sourceMeta);
+      expect([rec.asOf, rec.requestedAsOf, rec.refusal.reason, rec.refusal.expected]).toEqual(['2026-10-06', '2026-10-06', 'missing_bar', null]);
+      expect(rec.evidenceClass).toEqual({ bars: 'later_reconstruction', verdict: 'derived' });
+    }
+    expect([evaluateTfEntry(ev).verdict, evaluateTfEntry(ev).reason, evaluateTfHolding(ev).chartLeg]).toEqual(['unknown', 'missing_bar', 'unknown']);
+  });
+  it('an unfetched symbol has no provenance to carry: sourceMeta is null, never invented, and the failure is named', () => {
+    const ev = unreadPairEvidence({ pair, failure: 'HTTP 404' });
+    expect(ev).toMatchObject({ ok: false, reason: 'missing_bar', detail: { expected: '2026-10-06', latest: null, why: 'unfetched: HTTP 404' } });
+    expect(ev.sourceMeta).toBeNull();
+    expect(unreadPairEvidence({ pair }).detail.why).toBe('unfetched: not fetched');
+    for (const rec of [evaluateTfEntry(ev), evaluateTfHolding(ev)]) {
+      expect(rec.sourceMeta).toBeNull();
+      expect([rec.verdict ?? rec.chartLeg, rec.requestedAsOf]).toEqual(['unknown', '2026-10-06']);
+    }
   });
 });

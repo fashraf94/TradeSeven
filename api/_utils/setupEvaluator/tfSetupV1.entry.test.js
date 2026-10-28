@@ -342,7 +342,8 @@ describe('an adapter refusal', () => {
     const detail = { expected: '2026-10-09', latest: '2026-10-08' };
     const r = evaluateTfEntry({ ok: false, reason: 'missing_bar', detail, asOf: '2026-10-09', basis: 'raw', source: 'eodhd_eod', symbol: 'X', evidenceClass: { bars: 'later_reconstruction' } });
     expect([r.verdict, r.reason, r.regime, r.pattern]).toEqual(['unknown', 'missing_bar', 'unknown', null]);
-    expect(r.refusal).toEqual({ reason: 'missing_bar', detail: { expected: '2026-10-09', latest: '2026-10-08' } });
+    expect(r.refusal).toEqual({ reason: 'missing_bar', detail: { expected: '2026-10-09', latest: '2026-10-08' }, expected: null }); // this hand-made refusal names no expected session
+    expect([r.asOf, r.requestedAsOf, r.sourceMeta]).toEqual(['2026-10-09', '2026-10-09', null]); // a refusal's asOf is the request; no sourceMeta supplied, none invented (closeout)
     expect(r.refusal.detail).not.toBe(detail); // copied, never shared (review TEV1)
     expect(r.evidenceClass).toEqual({ bars: 'later_reconstruction', verdict: 'derived' });
     const nested = { expected: '2026-10-09', nullFields: ['high'] };
@@ -363,8 +364,9 @@ describe('the record (V3 §5)', () => {
     const r = run(name);
     expect(r.ruleSet).toEqual({ setupVersion: 'tf-setup-v1', thresholdsHash: THRESHOLDS_HASH, semanticsId: SEMANTICS_ID });
     expect(r.basis).toBe('raw');
-    expect(r.evidenceClass).toEqual({ bars: 'later_reconstruction', verdict: 'derived' });
+    expect(r.evidenceClass).toEqual({ bars: 'synthetic', verdict: 'derived' }); // synthetic test evidence (founder ruling Q-TE-4)
     expect(r.source).toBe('synthetic');
+    expect([r.asOf, r.requestedAsOf]).toEqual([SCENARIOS[name].build().asOf, SCENARIOS[name].build().requestedAsOf]);
     expect(Object.keys(r.factsUsed)).toEqual([...FACT_NAMES]);
     for (const f of FACT_NAMES) expect(r.factsUsed[f]).toMatchObject({ asOf: r.asOf, source: 'synthetic', basis: 'raw' });
     expect(r.checks.map((c) => c.id)).toEqual(['regime_stack', 'slow_rising', 'regime_stack_down', 'slow_falling', 'breakout_close', 'breakout_volume', 'pullback_touch', 'pullback_close', 'extension']);

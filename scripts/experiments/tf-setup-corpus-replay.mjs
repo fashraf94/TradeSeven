@@ -312,6 +312,19 @@ export function planFor(rows) {
   return { pairs: list, symbols, calls: symbols.length, from, to, cryptoSkipped: [...crypto].sort(), malformedSkipped: [...malformed].sort(), calendarMissing };
 }
 
+/**
+ * The evidence for a planned pair the adapter never sees (closeout, 28 Oct 2026): no cache file (an unfetched
+ * symbol), or a cache whose window ends before asOf. A cache's own fetchedAt / from / to are carried as
+ * `sourceMeta` and its bars stay `later_reconstruction`; with no cache there is no provenance to carry, so
+ * `sourceMeta` is null — never invented. Neither consulted the calendar, so neither names an expected session.
+ */
+export function unreadPairEvidence({ pair, cached = null, failure = null }) {
+  if (!cached) {
+    return { ok: false, reason: 'missing_bar', detail: { expected: pair.asOf, latest: null, why: failure ? `unfetched: ${failure}` : 'unfetched: not fetched' }, asOf: pair.asOf, basis: 'raw', source: SOURCE, sourceMeta: null, symbol: pair.symbol };
+  }
+  return { ok: false, reason: 'missing_bar', detail: { expected: pair.asOf, latest: cached.to, why: 'cache window ends before asOf' }, asOf: pair.asOf, basis: 'raw', source: SOURCE, sourceMeta: { fetchedAt: cached.fetchedAt, from: cached.from, to: cached.to }, symbol: pair.symbol, evidenceClass: { bars: 'later_reconstruction' } };
+}
+
 // ---------------------------------------------------------------- the call counter and the fetch
 
 /** Refuses a request past the cap BEFORE it is made; records every request it lets through. */
@@ -714,13 +727,13 @@ function evaluate(flags) {
     let evidence;
     let mapperDropped = null;
     if (!existsSync(file)) {
-      evidence = { ok: false, reason: 'missing_bar', detail: { expected: pair.asOf, latest: null, why: manifest.eodhd.failures[pair.symbol] ? `unfetched: ${manifest.eodhd.failures[pair.symbol]}` : 'unfetched: not fetched' }, asOf: pair.asOf, basis: 'raw', source: SOURCE, symbol: pair.symbol };
+      evidence = unreadPairEvidence({ pair, failure: manifest.eodhd.failures[pair.symbol] ?? null });
     } else {
       const cached = readJson(file);
       // The cache's integrity hash is checked before any bar is read (review TEV4-2): a hand-edited cache never evaluates as fetched.
       if (cached.payloadSha256 !== sha256(JSON.stringify(cached.payload))) stop(`evaluate: ${relRun(file)} does not match its payloadSha256; the cache was altered after the fetch`);
       if (typeof cached.to === 'string' && cached.to < pair.asOf) {
-        evidence = { ok: false, reason: 'missing_bar', detail: { expected: pair.asOf, latest: cached.to, why: 'cache window ends before asOf' }, asOf: pair.asOf, basis: 'raw', source: SOURCE, symbol: pair.symbol };
+        evidence = unreadPairEvidence({ pair, cached });
       } else {
         const sourceMeta = { fetchedAt: cached.fetchedAt, from: cached.from, to: cached.to };
         const { rows: mapped, dropped } = mapDailyRows(cached.payload);
