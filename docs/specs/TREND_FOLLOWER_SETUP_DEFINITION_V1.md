@@ -95,3 +95,27 @@ Appended by the Measured Trend Evidence slice 1 build (P3, the pure evaluator) u
 - Otherwise the verdict is `unknown`, listing the missing facts. A missing breakout volume (`V` or `V_avg`) does not invalidate a supported pullback-and-resume.
 - **Raw basis (FD-P3-2).** Every fact is computed on the raw (unadjusted) close, high, low and volume; the adjusted close serves only a split heuristic with stated limits, never a fact.
 - Thresholds and patterns are unchanged, and `setupVersion = tf-setup-v1` is unchanged. This clarification is recorded under the semantics id `tf-setup-v1/sem-1` (`api/_utils/setupEvaluator/thresholds.js`, `SEMANTICS_NOTES`). Future rule changes (any number or pattern) remain subject to §7 and mint a new `setupVersion`.
+## Clarification C2 — 28 Oct 2026 (founder rulings on the slice 1 questions; the record contract)
+
+Appended by the Measured Trend Evidence slice 1 closeout under the founder's rulings of 28 Oct 2026 on the build's questions Q-TE-1 to Q-TE-13. Nothing above this heading changes, C1 included. Thresholds, patterns, `setupVersion = tf-setup-v1` and the semantics id `tf-setup-v1/sem-1` are unchanged, and no verdict changes.
+
+**How the evaluator reads §1–§5:**
+
+- **Unknown stays conservative (Q-TE-1).** A pattern with one check false and another check unknown is `untestable`, not `failed`, so the verdict is `unknown(missing_fact)` rather than `invalid(no_setup)`. Each check keeps its own result: `true`, `false` or `unknown`.
+- **Holding history (Q-TE-2).** The holding checks need the same 55 completed bars as the adapter's window. Below that every holding check is `unknown`, and the record's `history` says so.
+- **Corporate actions (Q-TE-3).** A window that straddles a basis discontinuity is refused as `basis_discontinuity`. Normalizing corporate actions is later adapter work.
+- **Holding reasons (Q-TE-7).** `regime_flip` stays an explanatory reason, although a downtrend always also shows `close_below_slow`.
+- **Non-session rows (Q-TE-9).** A window row dated on a weekend or a holiday is refused as `unordered_bars`, with `detail.why = 'non_session_date'`.
+- **The anchor (Q-TE-11).** A null, non-finite or non-positive anchor swing low is unavailable, so `structure_break` is `unknown`.
+- **Adjustment metadata (Q-TE-12)** is present only when every window row carries a finite adjusted close greater than zero.
+- **The split heuristic (Q-TE-13)** trips when `1 − min / max` of two consecutive days' adjusted-to-raw ratios exceeds 0.10.
+
+**The record contract (Q-TE-4, Q-TE-5, Q-TE-10).** The implemented field names are authoritative. Where §1–§5 call `regime` a fact in `factsUsed` and name the pattern `setupPattern`, the records carry the shape below.
+
+- **Every record:** `ruleSet { setupVersion, thresholdsHash, semanticsId }`, `asOf`, `requestedAsOf`, `basis`, `source`, `sourceMeta`, `evidenceClass { bars, verdict: 'derived' }`, `evidence { bars, windows, pullbackLows, swingHigh, swingLow, volume, adjustment }`, `factsUsed` (the nine facts, each `{ value, asOf, source, basis }`), `missing` and `checks`.
+- **Entry records:** `patterns`, `verdict`, `reason`, `pattern` (the definition's `setupPattern`), `patternsSatisfied` and `regime`. `regime` is a derived top-level field, not a fact in `factsUsed`. Pattern assessments belong on entry records only (Q-TE-5).
+- **Holding records:** `regime`, `history { count, required, sufficient }`, `chartLeg`, `reasons` and `anchorSwingLow { value, provenance }`. They carry no `patterns`.
+- **Refusal records** also carry `refusal { reason, detail, expected }`.
+- **The bars class** is one of `later_reconstruction`, `contemporaneous` or `synthetic`. `synthetic` labels synthetic test evidence only (Q-TE-4). Provider evidence is never labelled `synthetic`, and historical replay bars are `later_reconstruction`.
+- **The two dates.** On a record from ok evidence, `asOf` is the completed session the verdict is dated to and `requestedAsOf` is the caller's date. On a refusal record both are the caller's date, and `refusal.expected` is the calendar's expected session, or null when the refusal came before the calendar named one.
+- **Provenance.** `sourceMeta` is the source's own `{ fetchedAt, from, to }`, copied with only the keys supplied, on refused evidence as on ok evidence. It is null when none was supplied, and it is never filled from the bars.
