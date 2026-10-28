@@ -47,7 +47,7 @@ import { mounter, sep23Tape, sep23Series, emptyTape, emptySeries, battleOf, read
 import { renumberIds, GOLDEN_DEPTHS, GOLDEN_LAYOUTS, goldenName } from '../__golden__/filmRoomV2Golden.js';
 
 /** The commit the goldens were captured from (B2.1's code head; B2's base 7818a1b3 before it). */
-export const GOLDEN_SOURCE_COMMIT = '46a29b513310a3eb02cee7bee4a91f26abd5fa59';
+export const GOLDEN_SOURCE_COMMIT = '07dc3d585fefc00e0bc7ef44dca29ad61b9024a7';
 /** Each golden's SHA-256 as captured (the review C-9 pattern). */
 export const GOLDEN_SHA256 = Object.freeze({
   'filmRoomV2.empty.deep.desktop.html': '9be5322258a2c59a15c8611594a1ba91a118505d9a193aabb96604f4478ab836',
