@@ -83,3 +83,15 @@ The evaluator is a pure function of the §1 fact set and this definition's froze
 | H1–H4 | horizon windows (sessions) | 2 / 10 / 30 / 60 |
 
 *V1 — structure authored per R5; numbers blessed by the founder 24 Sep 2026. `setupVersion = tf-setup-v1` binds exactly these values; any change mints a new version.*
+
+## Clarification C1 — 28 Oct 2026 (founder ruling FD-P3-1)
+
+Appended by the Measured Trend Evidence slice 1 build (P3, the pure evaluator) under the founder's rulings of 28 Oct 2026. Nothing above this heading changes; the text is byte-identical to the blessed V1.
+
+- **Missing facts are pattern-scoped (FD-P3-1, option (a)).** §1's "any fact missing, non-finite, or staler than the last completed session makes the verdict `unknown`" is read per §5: a missing fact makes `unknown` the conditions that consume it, not the whole verdict.
+- `valid` requires a fully supported pattern (every check of that pattern true), the Uptrend regime, and a completed extension check.
+- `invalid(regime)` requires only the regime facts (`C`, `SMA_fast`, `SMA_slow`, and `SMA_slow` five bars ago).
+- `invalid(no_setup)` requires every pattern fully evaluable and failed.
+- Otherwise the verdict is `unknown`, listing the missing facts. A missing breakout volume (`V` or `V_avg`) does not invalidate a supported pullback-and-resume.
+- **Raw basis (FD-P3-2).** Every fact is computed on the raw (unadjusted) close, high, low and volume; the adjusted close serves only a split heuristic with stated limits, never a fact.
+- Thresholds and patterns are unchanged, and `setupVersion = tf-setup-v1` is unchanged. This clarification is recorded under the semantics id `tf-setup-v1/sem-1` (`api/_utils/setupEvaluator/thresholds.js`, `SEMANTICS_NOTES`). Future rule changes (any number or pattern) remain subject to §7 and mint a new `setupVersion`.
