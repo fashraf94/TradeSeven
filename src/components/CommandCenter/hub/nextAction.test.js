@@ -321,3 +321,36 @@ describe('shape', () => {
     expect(deriveNextAction({ ...odd, battles: [null, { completedAt: 'x' }, 'y', ...odd.battles] }).candidate.id).toBe('done_1');
   });
 });
+
+// The S8 review's S8-3 (ruling R-S8F-8; spec §3): after a failed poll the live game is the retained list's, so the card
+// says when that was true — the Games rows' own words, from the Deploy card's freshness.
+describe('the live candidate after a failed poll carries the retained list\'s age (S8-3)', () => {
+  const asOf = NOW - 90 * 60000;
+  const at = (ms) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
+
+  it('stale: its detail says "As of {time} ET · couldn\'t refresh" ahead of the row\'s own line', () => {
+    const c = deriveNextAction({ ...inputs({ liveDocs: [live('bb_live')] }), liveFreshness: { stale: true, asOf } }).candidate;
+    expect(c.key).toBe(NEXT_ACTION_KINDS.OPEN_GAME);
+    expect(c.detail).toBe(COPY.games.detail(COPY.games.staleAsOf(COPY.time.et(at(asOf))), inputs({ liveDocs: [live('bb_live')] }).liveRows[0].detail));
+    expect(c.detail.startsWith(`As of ${at(asOf)} ET · couldn’t refresh · Score`)).toBe(true);
+  });
+
+  it('stale with no time on record: "Couldn\'t refresh", never a made-up time', () => {
+    const c = deriveNextAction({ ...inputs({ liveDocs: [live('bb_live')] }), liveFreshness: { stale: true, asOf: null } }).candidate;
+    expect(c.detail.startsWith('Couldn’t refresh · Score')).toBe(true);
+  });
+
+  it('fresh, refreshing or not handed: the row\'s own line, unchanged', () => {
+    const own = inputs({ liveDocs: [live('bb_live')] }).liveRows[0].detail;
+    for (const liveFreshness of [{ stale: false, asOf }, { stale: false, asOf, refreshing: true }, null, undefined]) {
+      expect(deriveNextAction({ ...inputs({ liveDocs: [live('bb_live')] }), liveFreshness }).candidate.detail).toBe(own);
+    }
+  });
+
+  it('a review or the first deployment is not a live game: no age on them', () => {
+    const battles = [done(1)];
+    const c = deriveNextAction({ ...inputs({ battles, reviews: readyFor(...battles) }), liveFreshness: { stale: true, asOf } }).candidate;
+    expect(c.key).toBe(NEXT_ACTION_KINDS.REVIEW);
+    expect(c.detail).toBeUndefined();
+  });
+});

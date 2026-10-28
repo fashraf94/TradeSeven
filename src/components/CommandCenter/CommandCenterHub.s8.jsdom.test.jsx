@@ -7,6 +7,8 @@
 //   R-S8F-7 (S8-2, K-1)  one count of live games, read by the Games header and Shadow's status line: "N live" counts the
 //                        games that have opened; a list all waiting for the open says so; every opened game past its end
 //                        time is the strip's "Live · ending" on the status line, never "in progress".
+//   R-S8F-8 (S8-3)       after a failed poll the retained live rows and the next action's live candidate say "As of
+//                        {time} · couldn't refresh", from the Deploy card's own freshness.
 
 import React from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -132,5 +134,35 @@ describe('R-S8F-7 — one count of live games for the Games header and the statu
   it('one opened game still running beside one past its end: "in progress" — the line says "ending" only when every opened game is', () => {
     render('desktop', hubOf({ activeBattles: [bb('bb_over', { expiresAt: '2026-10-27T14:00:00Z' }), bb('bb_run', { activatedAt: '2026-10-27T13:40:00Z' })] }));
     expect(statusLine().textContent).toBe(COPY.shadow.statusLiveMany(2));
+  });
+});
+
+// The S8 review's S8-3 (ruling R-S8F-8; spec §3, "retained owned games show 'as of {time}' and the error"): after a
+// failed poll, the Games live rows and the next action's live candidate say when the retained list was true — the Deploy
+// card's own freshness, in the same words.
+describe('R-S8F-8 — retained live rows carry their age after a failed poll (S8-3)', () => {
+  const ASOF = NOW - 90 * 60000;
+  const at = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(new Date(ASOF));
+  const stale = () => hubOf({ activeBattles: [bb('bb_live')], activePoll: pollMeta({ status: 'error', error: new Error('poll failed'), lastSuccessfulAt: ASOF }) });
+  const nextAction = () => document.querySelector('[data-hub-next-action]');
+
+  it('desktop: the live row says "As of {time} · couldn\'t refresh", the card says the same time, and the next action carries it', () => {
+    render('desktop', stale());
+    const note = games().querySelector('[data-hub-games-live-note="stale"]');
+    expect(note?.textContent).toBe(COPY.games.staleAsOf(COPY.time.et(at)));
+    expect(document.querySelector('[data-hub-deploy]').textContent).toContain(`${at} ET`);
+    expect(nextAction().textContent).toContain(COPY.games.staleAsOf(COPY.time.et(at)));
+  });
+
+  it('phone: no live rows of its own, so the next action carries the age; the strip says the same time', () => {
+    render('mobile', stale());
+    expect(nextAction().textContent).toContain(COPY.games.staleAsOf(COPY.time.et(at)));
+    expect(strip().textContent).toContain(`${at} ET`);
+  });
+
+  it('a poll that answered: no age on the live rows or the next action', () => {
+    render('desktop', hubOf({ activeBattles: [bb('bb_live')] }));
+    expect(games().querySelector('[data-hub-games-live-note]')).toBeNull();
+    expect(nextAction().textContent).not.toMatch(/couldn.t refresh/i);
   });
 });

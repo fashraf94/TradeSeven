@@ -22,7 +22,7 @@
 // record, and a new game or a new review is a new key.
 
 import { HUB_COPY as COPY } from './hubCopy';
-import { formatHubDay, hubMs } from './hubDate';
+import { formatHubDay, formatHubTime, hubMs } from './hubDate';
 import { firstDeploymentCandidate } from './selectors/deployState';
 
 export const NEXT_ACTION_KINDS = Object.freeze({ OPEN_GAME: 'openGame', REVIEW: 'review', DEPLOY: 'deploy' });
@@ -57,14 +57,19 @@ export function laterKeyOf(kind, id) {
   return kind === NEXT_ACTION_KINDS.DEPLOY ? FIRST_DEPLOYMENT_KEY : `${kind}:${id}`;
 }
 
-function liveCandidate(row) {
+function liveCandidate(row, liveFreshness) {
   const key = NEXT_ACTION_KINDS.OPEN_GAME;
+  // After a failed poll the live game is the retained list's: its detail says when that was true, in the Games rows'
+  // own words, from the Deploy card's freshness (the S8 review's S8-3; ruling R-S8F-8).
+  const asOf = formatHubTime(liveFreshness?.asOf);
+  const age = liveFreshness?.stale === true ? COPY.games.staleAsOf(asOf ? COPY.time.et(asOf) : '') : '';
+  const detail = COPY.games.detail(age, row.detail);
   return {
     key,
     id: row.id,
     title: row.preOpen ? COPY.nextAction.preOpenTitle : COPY.nextAction.liveTitle,
     why: COPY.nextAction.liveWhy(row.mode, row.opponent, row.clock),
-    ...(row.detail ? { detail: row.detail } : {}),
+    ...(detail ? { detail } : {}),
     cta: COPY.nextAction.openGame,
     laterKey: laterKeyOf(key, row.id),
   };
@@ -116,9 +121,11 @@ const byNewest = (a, b) => {
  *                                    live is unknown, so rule 1 cannot yield and no later rule is offered: a review card would
  *                                    swap for a live game's the moment the poll answers. Left out, the poll is taken as answered.
  * @param {Set<string>} [p.dismissed]  the Later keys set aside
+ * @param {{ stale: boolean, asOf: number|null }} [p.liveFreshness]  the Deploy card's freshness of the live list
+ *                                    (selectors/deployState.js): stale, the live candidate's detail carries its age
  * @returns {{ status: 'ready' | 'loading', candidate: null | object }}
  */
-export function deriveNextAction({ liveRows, battles, rowsById, firstDeployment, liveResolved, dismissed = new Set() }) {
+export function deriveNextAction({ liveRows, battles, rowsById, firstDeployment, liveResolved, liveFreshness = null, dismissed = new Set() }) {
   const later = dismissed instanceof Set ? dismissed : new Set();
   const rows = rowsById instanceof Map ? rowsById : new Map();
   const liveList = Array.isArray(liveRows) ? liveRows : [];
@@ -126,7 +133,7 @@ export function deriveNextAction({ liveRows, battles, rowsById, firstDeployment,
   const done = (Array.isArray(battles) ? battles : []).filter((doc) => doc && typeof doc.id === 'string' && !liveIds.has(doc.id));
 
   const live = liveList.find((row) => !later.has(laterKeyOf(NEXT_ACTION_KINDS.OPEN_GAME, row.id)));
-  if (live) return Object.freeze({ status: 'ready', candidate: Object.freeze(liveCandidate(live)) });
+  if (live) return Object.freeze({ status: 'ready', candidate: Object.freeze(liveCandidate(live, liveFreshness)) });
 
   if (liveResolved === false) return Object.freeze({ status: 'loading', candidate: null });
 

@@ -161,6 +161,13 @@ export default function GamesSection({ games, onOpenGame, onOpenTape, onOpenHist
     >
       {!ready && !failed && <GamesLoadingLine games={games} />}
       {gamesNoteDue(games) && <GamesReadNote games={games} onRetry={onRetry} />}
+      {/* The live rows are the poll's retained list: after a failed poll they say when it was true, as the Deploy card
+          does (spec §3; the S8 review's S8-3, ruling R-S8F-8). The card carries the poll's Retry. */}
+      {live.length > 0 && games?.liveStale === true && (
+        <div data-hub-games-live-note="stale" style={{ fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
+          {COPY.games.staleAsOf(formatHubTime(games.liveAsOf) ? COPY.time.et(formatHubTime(games.liveAsOf)) : '')}
+        </div>
+      )}
       {shown.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {shown.map((g) => <GameRow key={g.id} game={g} onOpen={onOpenGame} onOpenTape={onOpenTape} />)}
