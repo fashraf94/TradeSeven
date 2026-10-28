@@ -611,7 +611,10 @@ const HARD_CEILING_MS = config.maxDuration * 1000;
  * handler. SCOPED TO THE LOOP: `battlesTotal` is the loop's population (the
  * active battles left after expiry) and `evaluated` the battles the LOOP
  * evaluated — the response's `evaluated` also counts expiry completions, which
- * are not the loop's work. `deferredBattleIds` holds the first
+ * are not the loop's work. Every battle of `battlesTotal` lands in exactly one of
+ * `evaluated`, `lockSkipped`, `dormant` (before its first trading day, F3) and
+ * `deferred` — or in none of them when its tick ended in an error or an early
+ * return, which the response's own counts carry. `deferredBattleIds` holds the first
  * EVAL_RUN_DEFERRED_ID_CAP ids in loop order; `deferredTruncated` counts the rest.
  */
 export function composeEvalRunRecord({ startTime, endTime, battlesTotal, evaluated, summary, deferredBattleIds }) {
@@ -624,6 +627,9 @@ export function composeEvalRunRecord({ startTime, endTime, battlesTotal, evaluat
     battlesTotal,
     evaluated,
     lockSkipped: summary.lockSkipped || 0,
+    // BaggerBomb cleanup C6 (#998 MT1-6): battles held back before their first trading day
+    // (F3), counted in `battlesTotal` but in no other bucket until now.
+    dormant: summary.dormant || 0,
     deferred: deferredBattleIds.length,
     deferredBattleIds: listed,
     deferredTruncated: deferredBattleIds.length - listed.length,
