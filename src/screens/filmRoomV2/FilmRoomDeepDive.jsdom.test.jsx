@@ -53,17 +53,34 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     expect(m.q('[data-volume-bar]')).toBeNull();
   });
 
-  it('a swap on the symbol is marked at its recorded time, with who made it — the sold name its exit, the bought name its entry (B2.1 A4, FR-04, RJ-4)', () => {
+  it('a swap on the symbol is marked at its recorded time, with who made it — the sold name its exit, the bought name its entry (B2.1 A4, FR-04, RJ-4; Amendment K RK-5: the sold name\'s maker in RJ-4\'s words)', () => {
     m.render(<Harness tape={sep23Tape} series={sep23Series} start="MSFT" />);
     expect(m.q('[data-swap-mark="0"]')).toBeTruthy();
-    expect(m.q('[data-swap-label="0"]').textContent).toBe('Exit · 12:45 PM · Exit by platform rule · stagnation');
+    expect(m.q('[data-swap-label="0"]').textContent).toBe('Exit · 12:45 PM · by platform rule · stagnation');
     m.click(chip('PLTR'));
     expect(m.q('[data-swap-label="1"]').textContent).toBe('Entry · 2:00 PM · in for DE · by the agent');
+    m.click(chip('DE'));
+    expect(m.q('[data-swap-label="1"]').textContent).toBe('Exit · 2:00 PM · by the agent');
     m.click(chip('CRWD'));
     expect(m.q('[data-swap-label="0"]').textContent).toBe('Entry · 12:45 PM · in for MSFT · by platform rule · stagnation');
   });
 
-  it('FR-04: no bought name\'s annotation reads "Exit by …" — every swap\'s bought name, against its sold name\'s', () => {
+  it('Amendment K RK-5 — the sold name\'s maker: the agent, a platform rule with its reason, the gameplan meeting, a maker not recorded; "Exit by" never on the chart (the mutant: "Exit by" back on the sold name)', () => {
+    const planted = (mechanism, exitReason) => { const t = clone(sep23Tape); t.actions[0] = { ...t.actions[0], mechanism, exitReason }; return t; };
+    for (const [mechanism, exitReason, maker] of [
+      ['agent_decision', null, 'by the agent'],
+      ['platform_risk_manager', 'stagnation', 'by platform rule · stagnation'],
+      ['archetype_rotation', null, 'by platform rule · rule not recorded'],
+      ['gameplan_meeting', null, 'by the gameplan meeting'],
+      [undefined, null, 'maker not recorded'],
+    ]) {
+      m.render(<Harness key={String(mechanism)} tape={planted(mechanism, exitReason)} series={sep23Series} start="MSFT" />);
+      expect(m.q('[data-swap-label="0"]').textContent, String(mechanism)).toBe(`Exit · 12:45 PM · ${maker}`);
+      expect(m.q('[data-region="price-chart"]').textContent, String(mechanism)).not.toMatch(/Exit by|Exit maker/);
+    }
+  });
+
+  it('FR-04 / RK-5: no swap annotation on the chart reads "Exit by …" — every swap\'s bought name and sold name', () => {
     m.render(<Harness tape={sep23Tape} series={sep23Series} start="MSFT" />);
     sep23Tape.actions.forEach((a, i) => {
       m.click(chip(a.symbolIn));
@@ -71,7 +88,9 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
       expect(entry, a.symbolIn).toMatch(new RegExp(`^Entry · .+ · in for ${a.symbolOut} · by `));
       expect(entry, a.symbolIn).not.toMatch(/Exit/);
       m.click(chip(a.symbolOut));
-      expect(m.q(`[data-swap-label="${i}"]`).textContent, a.symbolOut).toMatch(/^Exit · .+ · Exit /);
+      const exit = m.q(`[data-swap-label="${i}"]`).textContent;
+      expect(exit, a.symbolOut).toMatch(/^Exit · .+ · by /);
+      expect(exit, a.symbolOut).not.toMatch(/Exit by/);
     });
   });
 

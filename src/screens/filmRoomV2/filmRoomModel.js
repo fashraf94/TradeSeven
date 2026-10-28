@@ -465,7 +465,9 @@ export function exitMakerOf(action) {
 
 /**
  * B2.1 A4 (FR-04; RJ-4) — who made the swap, as the BOUGHT name's annotation says it: never "Exit by …" on the name
- * that came in. The same recorded mechanism as exitMakerOf, the same reason beside a platform rule.
+ * that came in. The same recorded mechanism as exitMakerOf, the same reason beside a platform rule. Since Amendment K
+ * RK-5 the chart's SOLD-name annotation reads the same makers ("Exit · {time} · {maker}"); exitMakerOf's words stay
+ * everywhere else (Glance, Study, the symbol's facts).
  */
 export function entryMakerOf(action) {
   const W = EXIT_MAKER_WORDS;

@@ -256,9 +256,11 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
         : { position: 'absolute', top: 0, left: swapLayout.at[i], display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', ...font };
     return (
       <span key={`l${i}`} ref={(el) => { if (el) swapEls.current[i] = el; else delete swapEls.current[i]; }} data-swap-label={i} style={style}>
-        {/* the sold name keeps "Exit · {time} · {maker}"; the bought name reads its entry, never "Exit by …" (RJ-4) */}
+        {/* the sold name reads "Exit · {time} · {maker}" with RJ-4's makers — "Exit by" said once, never twice (Amendment K
+            RK-5; the chart annotation alone: every other use of the exit words is unchanged); the bought name reads its
+            entry, never "Exit by …" (RJ-4) */}
         {a.symbolOut === sym
-          ? <>{COPY.exitMark} · <When>{etClock(a.at)}</When> · {who.label}</>
+          ? <>{COPY.exitMark} · <When>{etClock(a.at)}</When> · {entryMakerOf(a).label}</>
           : <>{COPY.entryMark} · <When>{etClock(a.at)}</When> · {COPY.entryFor} <Rec>{a.symbolOut}</Rec> · {entryMakerOf(a).label}</>}
       </span>
     );
