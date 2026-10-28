@@ -11,6 +11,10 @@
 // The REAL executeSwapServer and the REAL scorer run over the same in-memory Firestore double the sibling
 // executor tests use; only the daily-series fetch and the clock are doubles. Tournaments and other modes
 // carry a `tradingDays` list too and must be byte-identical.
+//
+// DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): agentSwapExecution.js now imports the Node-clean
+// src/utils/tieredFirstTradingDay.js. This file imports the executor — and so that module — for real, never
+// mocked, so a browser-only dependency entering its graph explodes here in the Node test environment.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -93,6 +97,21 @@ describe('Guard 3 — the activation day follows the first trading day (tiered b
     const base = await swapAt(battleData({ activatedAt: MON_320PM_ET }));
     for (const timing of [{}, { tradingDays: [] }, { tradingDays: ['Oct 27'] }, { tradingDays: [null] }]) {
       expect((await swapAt(battleData({ activatedAt: MON_320PM_ET, timing }))).lockedPoints, JSON.stringify(timing)).toBe(base.lockedPoints);
+    }
+  });
+
+  it('a document with no gameMode is the original tiered game: it follows its first trading day too', async () => {
+    const sameDay = await swapAt(battleData({ activatedAt: TUE_9AM_ET, timing: { tradingDays: ['2026-10-27'] } }));
+    const noMode = battleData({ activatedAt: MON_320PM_ET, timing: { tradingDays: ['2026-10-27'] } });
+    delete noMode.gameMode;
+    expect((await swapAt(noMode)).lockedPoints).toBe(sameDay.lockedPoints);
+  });
+
+  it('any other mode is byte-identical, like a tournament: only a tiered battle reads its list', async () => {
+    for (const gameMode of ['standard', 'league', '']) {
+      const withList = await swapAt(battleData({ gameMode, activatedAt: MON_320PM_ET, timing: { tradingDays: ['2026-10-27'] } }));
+      const noList = await swapAt(battleData({ gameMode, activatedAt: MON_320PM_ET }));
+      expect(withList, JSON.stringify(gameMode)).toEqual(noList);
     }
   });
 
