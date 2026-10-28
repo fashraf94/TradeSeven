@@ -11,8 +11,11 @@
 // injected `now`. It imports the calendar of record (api/_utils/marketSchedule.js,
 // which re-exports src/utils/marketCalendar.js) and two marketDataCache.js
 // helpers (toEtParts, isCryptoSymbol); the shared volume policy classifies
-// volumes without altering them. It knows no Trend Follower rule: `minBars`
-// is the caller's (the evaluator's MIN_COMPLETED_BARS).
+// volumes without altering them; the shared evidence values
+// (./evidenceValues.js, the fix round after Astra's review) supply the exact
+// decimal arithmetic of the split heuristic and the owned copy of the caller's
+// metadata. It knows no Trend Follower rule: `minBars` is the caller's (the
+// evaluator's MIN_COMPLETED_BARS).
 //
 // Refusal reasons (typed, never prose): unsupported_symbol_class,
 // calendar_missing, asOf_not_a_session, asOf_in_future, missing_bar,
@@ -21,7 +24,8 @@
 // PROVENANCE (closeout, 28 Oct 2026): every result, ok or refused, carries a
 // copy of the caller's `sourceMeta` (e.g. { fetchedAt, from, to }) with only
 // the keys the caller supplied, or null when none was supplied — never filled
-// from the bars. A refusal carries the requested `asOf` and the calendar's
+// from the bars. Since the fix round the copy is deep for JSON-like nested
+// values, so no later change to the caller's object reaches a result. A refusal carries the requested `asOf` and the calendar's
 // `expected` session (null when the refusal comes before the calendar has
 // named it); an ok result carries the session as `asOf` and the request as
 // `requestedAsOf`.
@@ -32,7 +36,11 @@
 // adjusted close is not metadata), the ratio adjustedClose / close is compared
 // day over day, symmetrically (1 − min / max of the two days' ratios, review
 // TE2-5; founder ruling Q-TE-13), and a change above 10% is
-// `basis_discontinuity`. It needs the vendor's adjustment already
+// `basis_discontinuity`. The comparison is exact decimal arithmetic on the four
+// prices, cross-multiplied (fix round, Astra F1): it trips when min / max is
+// below 0.9, so a step of exactly 10% (adjusted 72 against 80 on equal raw
+// closes) never trips, in either direction. A tripped step records both days'
+// raw and adjusted closes in its detail. It needs the vendor's adjustment already
 // applied; a special dividend above 10% trips it; a restated series is
 // invisible to it; it is not proof of split-free data. A ratio of 1 proves
 // nothing and is never used to infer that metadata was present.
@@ -47,10 +55,13 @@
 import { getSessionForDate, getPreviousTradingDay, MAINTAINED_HOLIDAY_YEARS } from '../marketSchedule.js';
 import { toEtParts, isCryptoSymbol } from '../marketDataCache.js';
 import { classifyVolume } from './volumePolicy.js';
+import { toDecimal, multiplyDecimal, subtractDecimal, compareDecimal, copyData } from './evidenceValues.js';
 
 export const BASIS = 'raw';
 /** A day-over-day change of the adjusted/raw ratio above this trips the heuristic. */
 export const SPLIT_RATIO_JUMP = 0.10;
+/** 1 − SPLIT_RATIO_JUMP as an exact decimal (0.9): a step trips when min / max of the two ratios is below it. */
+const SPLIT_KEEP = subtractDecimal(toDecimal(1), toDecimal(SPLIT_RATIO_JUMP));
 export const ADAPTER_REFUSALS = Object.freeze([
   'unsupported_symbol_class', 'calendar_missing', 'asOf_not_a_session', 'asOf_in_future', 'missing_bar',
   'unordered_bars', 'insufficient_history', 'missing_fact', 'basis_discontinuity',
@@ -133,7 +144,8 @@ export function buildDailyEvidence({ rows, asOf, now, minBars, source = null, so
   // One `checks` shape on every result, refusals included (review TEV2-1): each field null until its step has run.
   const checks = { completedSession: null, adjacency: null, splitCheck: null, splitCheckReason: null };
   // The caller's sourceMeta is copied onto every result, refusals included (closeout, 28 Oct 2026): only the supplied keys, never invented.
-  const meta = sourceMeta && typeof sourceMeta === 'object' ? { ...sourceMeta } : null;
+  // The copy is deep for JSON-like nested values (fix round): the result owns its metadata.
+  const meta = sourceMeta && typeof sourceMeta === 'object' ? copyData({ ...sourceMeta }) : null;
   const refuse = (reason, detail, extra = {}) => ({ ok: false, reason, detail, asOf: asOf ?? null, expected: expectedSession, basis: BASIS, source, sourceMeta: meta, symbol, evidenceClass: { bars: barsClass }, checks, ...extra });
 
   // 1. The symbol class.
@@ -222,12 +234,23 @@ export function buildDailyEvidence({ rows, asOf, now, minBars, source = null, so
   } else {
     adjustment = { metadata: 'present', missingDates: [] };
     for (let i = 0; i + 1 < window.length; i++) {
-      const ratioAfter = window[i].adjustedClose / window[i].close;
-      const ratioBefore = window[i + 1].adjustedClose / window[i + 1].close;
-      const jump = 1 - Math.min(ratioAfter, ratioBefore) / Math.max(ratioAfter, ratioBefore); // symmetric, "above 10%" in either direction (review TE2-5)
-      if (jump > SPLIT_RATIO_JUMP) {
+      const after = window[i];
+      const before = window[i + 1];
+      // 1 − min / max of the two ratios exceeds 0.10 ⟺ min / max < 0.9 ⟺ lo < 0.9 · hi, where lo and hi are the two
+      // cross-multiplied products adjAfter · closeBefore and adjBefore · closeAfter (all positive). Exact: no float, no tolerance.
+      const x = multiplyDecimal(toDecimal(after.adjustedClose), toDecimal(before.close));
+      const y = multiplyDecimal(toDecimal(before.adjustedClose), toDecimal(after.close));
+      const [lo, hi] = compareDecimal(x, y) <= 0 ? [x, y] : [y, x];
+      if (compareDecimal(lo, multiplyDecimal(SPLIT_KEEP, hi)) < 0) {
         checks.splitCheck = 'tripped';
-        return refuse('basis_discontinuity', { date: window[i].date, ratioBefore, ratioAfter }, { checks, adjustment });
+        const detail = {
+          date: after.date,
+          ratioBefore: before.adjustedClose / before.close,
+          ratioAfter: after.adjustedClose / after.close,
+          after: { date: after.date, close: after.close, adjustedClose: after.adjustedClose },
+          before: { date: before.date, close: before.close, adjustedClose: before.adjustedClose },
+        };
+        return refuse('basis_discontinuity', detail, { checks, adjustment });
       }
     }
     checks.splitCheck = 'heuristic_ok';

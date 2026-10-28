@@ -19,6 +19,7 @@ import { buildDailyEvidence, attachAdjustedClose, expectedCompletedSession, ADAP
 import { evaluateTfEntry, evaluateTfHolding } from './tfSetupV1.js';
 import { MIN_COMPLETED_BARS } from './thresholds.js';
 import { evidenceOf, buildBars } from './__fixtures__/syntheticBars.js';
+import { toDecimal, addDecimal, subtractDecimal, multiplyDecimal, compareDecimal, divideByInteger, toNumber, copyData } from './evidenceValues.js';
 
 // ---------------------------------------------------------------- the fixture, re-dated onto sessions
 
@@ -530,5 +531,165 @@ describe('provenance on refused evidence (closeout, 28 Oct 2026)', () => {
     expect(build(tradingPayload({ n: 40 })).evidenceClass).toEqual({ bars: 'later_reconstruction' });
     expect(evidenceOf(buildBars()).evidenceClass).toEqual({ bars: 'synthetic' });
     expect(evaluateTfEntry(evidenceOf(buildBars())).evidenceClass).toEqual({ bars: 'synthetic', verdict: 'derived' });
+  });
+});
+
+describe('the split heuristic at its exact boundary (the fix round after Astra\'s review, F1)', () => {
+  const ASTRA_END = '2026-10-09';
+  const ASTRA_NOW = new Date('2026-10-10T12:00:00Z');
+  /** Astra's reproduction: 55 adjacent sessions to 2026-10-09; bar 0 raw close `close0` with adjusted `adj0`, every other bar raw `closeOthers` with adjusted `adjOthers`; high/low = close ± 1% (101 / 99 at 100, as the review's; a fixed ± 1 would make a low of 0 at a close of 1, a missing_fact before the split step). */
+  function flat({ adj0, adjOthers, close0 = 100, closeOthers = 100, n = 55 }) {
+    return sessionDatesBack(ASTRA_END, n).map((date, i) => {
+      const close = i === 0 ? close0 : closeOthers;
+      return { date, open: close, high: close * 1.01, low: close * 0.99, close, adjusted_close: i === 0 ? adj0 : adjOthers, volume: 1_000_000 };
+    });
+  }
+  const buildFlat = (opts) => build(flat(opts), { asOf: ASTRA_END, now: ASTRA_NOW });
+
+  it.each([
+    ['72 on bar 0, 80 before it', { adj0: 72, adjOthers: 80 }],
+    ['80 on bar 0, 72 before it (reversed)', { adj0: 80, adjOthers: 72 }],
+  ])('recreated Astra regression F1: adjusted closes %s on raw closes 100 — exactly 10% is not above 10%, so the window evaluates', (label, opts) => {
+    const ev = buildFlat(opts);
+    expect(ev.ok).toBe(true);
+    expect(ev.checks.splitCheck).toBe('heuristic_ok');
+    expect(ev.adjustment).toEqual({ metadata: 'present', missingDates: [] });
+    const entry = evaluateTfEntry(ev);
+    expect([entry.verdict, entry.reason, entry.regime]).toEqual(['invalid', 'regime', 'no_trend']);
+    expect(evaluateTfHolding(ev, { anchorSwingLow: 90 }).chartLeg).toBe('intact');
+  });
+
+  it.each([
+    ['genuinely above 10% (71.99 against 80)', { adj0: 71.99, adjOthers: 80 }, 'tripped'],
+    ['genuinely above 10%, reversed (80 against 71.99)', { adj0: 80, adjOthers: 71.99 }, 'tripped'],
+    ['genuinely below 10% (72.01 against 80)', { adj0: 72.01, adjOthers: 80 }, 'heuristic_ok'],
+    ['genuinely below 10%, reversed (80 against 72.01)', { adj0: 80, adjOthers: 72.01 }, 'heuristic_ok'],
+  ])('%s: %s', (label, opts, splitCheck) => {
+    const ev = buildFlat(opts);
+    expect(ev.checks.splitCheck).toBe(splitCheck);
+    expect(ev.ok).toBe(splitCheck !== 'tripped');
+  });
+
+  /** Exact 10% steps between bar 0 and the rest: (adj0 / close0) is exactly 0.9 × (adjOthers / closeOthers). */
+  const EXACT = [
+    { adj0: 36, close0: 50, adjOthers: 80, closeOthers: 100 },
+    { adj0: 9, close0: 10, adjOthers: 10, closeOthers: 10 },
+    { adj0: 81, close0: 100, adjOthers: 90, closeOthers: 100 },
+    { adj0: 0.27, close0: 1, adjOthers: 0.3, closeOthers: 1 },
+    { adj0: 11.106, close0: 12.34, adjOthers: 12.34, closeOthers: 12.34 },
+    { adj0: 49.95, close0: 55.5, adjOthers: 55.5, closeOthers: 55.5 },
+    { adj0: 89.991, close0: 99.99, adjOthers: 99.99, closeOthers: 99.99 },
+    { adj0: 111.1104, close0: 123.456, adjOthers: 123.456, closeOthers: 123.456 },
+    { adj0: 12.6, close0: 14, adjOthers: 7, closeOthers: 7 },
+    { adj0: 0.72, close0: 1, adjOthers: 0.8, closeOthers: 1 },
+  ];
+  const swap = ({ adj0, close0, adjOthers, closeOthers }) => ({ adj0: adjOthers, close0: closeOthers, adjOthers: adj0, closeOthers: close0 });
+
+  it.each(EXACT)('an exact 10% step never trips, in both directions; one ten-thousandth further it does: %o', (pair) => {
+    expect(buildFlat(pair).checks.splitCheck).toBe('heuristic_ok');
+    expect(buildFlat(swap(pair)).checks.splitCheck).toBe('heuristic_ok');
+    expect(buildFlat({ ...pair, adj0: Number((pair.adj0 - 0.0001).toFixed(6)) }).checks.splitCheck).toBe('tripped'); // the lower ratio a little lower: above 10%
+    expect(buildFlat({ ...pair, adj0: Number((pair.adj0 + 0.0001).toFixed(6)) }).checks.splitCheck).toBe('heuristic_ok'); // a little higher: below 10%
+  });
+
+  it('a tripped step records both days\' raw and adjusted closes, so the refusal explains its own decision', () => {
+    const ev = buildFlat({ adj0: 71.99, adjOthers: 80 });
+    const [d0, d1] = sessionDatesBack(ASTRA_END, 2);
+    expect(ev).toMatchObject({ ok: false, reason: 'basis_discontinuity' });
+    expect(ev.detail).toMatchObject({ date: d0, after: { date: d0, close: 100, adjustedClose: 71.99 }, before: { date: d1, close: 100, adjustedClose: 80 } });
+    expect(evaluateTfEntry(ev).refusal.detail.after).toEqual({ date: d0, close: 100, adjustedClose: 71.99 });
+  });
+});
+
+describe('sourceMeta ownership: supported nested metadata is deep-copied (the fix round after Astra\'s review)', () => {
+  const nested = () => ({ fetchedAt: '2026-06-16T12:00:00.000Z', from: '2026-02-01', to: END, context: { batch: 'original', tags: ['a', { k: 1 }] } });
+  const PATHS = [
+    ['an ok result', (o) => build(tradingPayload(), o)],
+    ['a refusal', (o) => build(tradingPayload({ n: 40 }), o)],
+  ];
+
+  it.each(PATHS)('%s: a later change to the caller\'s nested metadata changes neither the evidence nor its records', (label, make) => {
+    const meta = nested();
+    const ev = make({ sourceMeta: meta });
+    const entry = evaluateTfEntry(ev);
+    const holding = evaluateTfHolding(ev);
+    meta.context.batch = 'changed'; meta.context.tags.push('b'); meta.context.tags[1].k = 2; meta.fetchedAt = 'changed';
+    for (const x of [ev, entry, holding]) expect(x.sourceMeta).toEqual(nested());
+  });
+
+  it.each(PATHS)('%s: a later change to the evidence\'s nested metadata does not change the records already made', (label, make) => {
+    const ev = make({ sourceMeta: nested() });
+    const entry = evaluateTfEntry(ev);
+    const holding = evaluateTfHolding(ev);
+    ev.sourceMeta.context.batch = 'changed'; ev.sourceMeta.context.tags.push('b'); ev.sourceMeta.context.tags[1].k = 2;
+    for (const x of [entry, holding]) expect(x.sourceMeta).toEqual(nested());
+  });
+
+  it('ownership keeps the shape: null stays null; supplied keys stay as supplied, an undefined value included; scalars are unchanged', () => {
+    for (const make of PATHS.map(([, m]) => m)) {
+      expect(make({ sourceMeta: null }).sourceMeta).toBeNull();
+      const partial = make({ sourceMeta: { fetchedAt: undefined, to: END } });
+      expect(Object.keys(partial.sourceMeta)).toEqual(['fetchedAt', 'to']);
+      expect(Object.keys(evaluateTfEntry(partial).sourceMeta)).toEqual(['fetchedAt', 'to']);
+      expect(make({}).sourceMeta).toEqual(SOURCE_META);
+    }
+  });
+});
+
+describe('evidenceValues: exact decimals and owned copies (the fix round after Astra\'s review)', () => {
+  it('reads each double as the shortest decimal that round-trips, the exponent forms String() emits included', () => {
+    expect(toDecimal(0.72)).toEqual({ m: 72n, e: -2 });
+    expect(toDecimal(100)).toEqual({ m: 100n, e: 0 });
+    expect(toDecimal(1e21)).toEqual({ m: 1n, e: 21 });
+    expect(toDecimal(1.5e-7)).toEqual({ m: 15n, e: -8 });
+    expect(toDecimal(-2.25)).toEqual({ m: -225n, e: -2 });
+    expect(toDecimal(-0)).toEqual({ m: 0n, e: 0 });
+    for (const bad of [NaN, Infinity, -Infinity, null, undefined, '1']) expect(toDecimal(bad)).toBeNull();
+    for (const x of [0.1, 109.54, 4.77, 123.3276, 1e21, 1.5e-7, 2423634.375, 5e-324, Number.MAX_VALUE]) expect(toNumber(toDecimal(x))).toBe(x);
+  });
+
+  it('the three boundaries, exactly: 100 + 2 × 4.77 = 109.54; 1.5 × 2.2 = 3.3; 72 · 100 = 0.9 · (80 · 100)', () => {
+    expect(100 + 2 * 4.77).toBe(109.53999999999999); // what the old code recorded
+    expect(toNumber(addDecimal(toDecimal(100), multiplyDecimal(toDecimal(2), toDecimal(4.77))))).toBe(109.54);
+    expect(1.5 * 2.2).toBe(3.3000000000000003);
+    expect(toNumber(multiplyDecimal(toDecimal(1.5), toDecimal(2.2)))).toBe(3.3);
+    const keep = subtractDecimal(toDecimal(1), toDecimal(0.1));
+    expect(compareDecimal(multiplyDecimal(toDecimal(72), toDecimal(100)), multiplyDecimal(keep, multiplyDecimal(toDecimal(80), toDecimal(100))))).toBe(0);
+    expect(compareDecimal(toDecimal(0.1), toDecimal(0.2))).toBe(-1);
+    expect(compareDecimal(toDecimal(1e21), toDecimal(999999999999999900000))).toBe(1);
+  });
+
+  it('cross-multiplication is verified, not assumed: in floating point 2 × 3.3 >= 3 × 2.2 is false; exactly it is an equality', () => {
+    expect(2 * 3.3 >= 3 * 2.2).toBe(false);
+    expect(compareDecimal(multiplyDecimal(toDecimal(2), toDecimal(3.3)), multiplyDecimal(toDecimal(3), toDecimal(2.2)))).toBe(0);
+  });
+
+  it('divideByInteger is exact for a terminating quotient: the mean of twenty 0.1 is 0.1, not 0.10000000000000002', () => {
+    let floatSum = 0;
+    let exact = toDecimal(0);
+    for (let i = 0; i < 20; i++) { floatSum += 0.1; exact = addDecimal(exact, toDecimal(0.1)); }
+    expect(floatSum / 20).toBe(0.10000000000000002);
+    expect(toNumber(divideByInteger(exact, 20))).toBe(0.1);
+    expect(toNumber(divideByInteger(toDecimal(32315125), 20))).toBe(1615756.25); // integer volumes: the same double as sum / 20
+    expect(divideByInteger(toDecimal(1), 3).e).toBe(-30); // a non-terminating quotient is rounded at 30 more digits (not reached: 20 terminates)
+  });
+
+  it('copyData: plain objects and arrays at every depth, undefined values kept, shared and cyclic references reproduced, other values carried as they are', () => {
+    const shared = { k: 1 };
+    const src = { a: { b: [1, { c: 2 }] }, u: undefined, s: shared, t: shared, d: new Date(0) };
+    src.self = src;
+    const out = copyData(src);
+    expect(out).not.toBe(src);
+    expect(out.a).not.toBe(src.a);
+    expect(out.a.b).not.toBe(src.a.b);
+    expect(out.a.b[1]).not.toBe(src.a.b[1]);
+    expect(out.a.b).toEqual([1, { c: 2 }]);
+    expect(Object.keys(out)).toEqual(['a', 'u', 's', 't', 'd', 'self']);
+    expect(out.s).toBe(out.t);
+    expect(out.s).not.toBe(shared);
+    expect(out.self).toBe(out);
+    expect(out.d).toBe(src.d); // not JSON-like: carried as it is, never refused
+    expect(copyData(null)).toBeNull();
+    expect(copyData('x')).toBe('x');
   });
 });

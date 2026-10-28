@@ -9,8 +9,10 @@
 //
 // Pure: a function of the evidence it is handed and the frozen threshold
 // object. No clock, no I/O, no fetch, no store. It imports thresholds.js, the
-// shared volume policy, and calculateSMA / calculateATR from
-// api/_utils/technicalCalculations.js (pure math) and nothing else. It never
+// shared volume policy, the shared evidence values (./evidenceValues.js: exact
+// decimals and owned metadata copies, the fix round after Astra's review), and
+// calculateSMA / calculateATR from api/_utils/technicalCalculations.js (pure
+// math) and nothing else. It never
 // executes, fires or suppresses anything: `unknown` forbids entry and is never
 // a protective signal; a chartLeg result alone never decides a holding policy.
 //
@@ -54,11 +56,22 @@
 // differ when the request was today before the close). On a refusal record
 // `asOf` and `requestedAsOf` are both the caller's date, and
 // `refusal.expected` is the calendar's expected session, null when the
-// adapter refused before naming it. `sourceMeta` is the evidence's own, copied,
-// or null; never invented.
+// adapter refused before naming it. `sourceMeta` is the evidence's own, copied
+// deep for JSON-like nested values (fix round), or null; never invented.
+//
+// THE NUMERICAL POLICY (fix round after Astra's review, F1; SEMANTICS_NOTES):
+// the two derived thresholds a check records are computed exactly in decimal
+// from the record's own facts and recorded as the correctly rounded double of
+// the exact value: the extension guard SMA_fast + 2.0 × ATR from the two
+// 4-decimal facts as they are, and the breakout volume floor 1.5 × V_avg, where
+// V_avg is the exact mean of the twenty volumes. The shared comparison stays
+// strict IEEE with no tolerance, so every recorded result is the plain
+// comparison of its recorded lhs and rhs. No raw price, volume or V_avg is
+// rounded to a fixed number of decimals.
 
 import { TF_SETUP_V1_THRESHOLDS as T, MIN_COMPLETED_BARS, describeRuleSet } from './thresholds.js';
 import { classifyVolume } from './volumePolicy.js';
+import { toDecimal, addDecimal, multiplyDecimal, divideByInteger, toNumber, copyData } from './evidenceValues.js';
 import { calculateSMA, calculateATR } from '../technicalCalculations.js';
 
 export const FACT_NAMES = Object.freeze(['C', 'SMA_fast', 'SMA_slow', 'SMA_slow_5ago', 'swingHigh', 'swingLow', 'ATR', 'V', 'V_avg']);
@@ -153,13 +166,14 @@ export function computeTfFacts(evidence) {
   };
   const unusable = [];
   let barsUsable = 0;
-  let volSum = 0;
+  let volSum = { m: 0n, e: 0 }; // exact decimal sum (fix round F1): a float sum of 0.1 twenty times is 2.0000000000000004
   const volWindowComplete = n > volLen;
   for (let i = 1; i <= volLen && i < n; i++) {
     const cls = classifyVolume(bars[i].volume);
-    if (cls.usable) { barsUsable += 1; volSum += bars[i].volume; } else unusable.push({ date: bars[i].date, reason: cls.reason });
+    if (cls.usable) { barsUsable += 1; volSum = addDecimal(volSum, toDecimal(bars[i].volume)); } else unusable.push({ date: bars[i].date, reason: cls.reason });
   }
-  const V_avg = volWindowComplete && barsUsable === volLen ? volSum / volLen : null;
+  // The exact mean, recorded as its correctly rounded double: unchanged for integer volumes, exact for decimal ones.
+  const V_avg = volWindowComplete && barsUsable === volLen ? toNumber(divideByInteger(volSum, volLen)) : null;
 
   // The three dated lows the touch check compares: a non-price low is recorded as null, exactly as the check reads it (review TEV1-1).
   const pullbackLows = [];
@@ -223,8 +237,9 @@ export function entryChecks(facts, pullbackLows) {
   const lows = pullbackLows.map((p) => p.low);
   const touchComplete = lows.length === T.pullbackTouchWindowBars && lows.every(isPrice);
   const minLow = touchComplete ? Math.min(...lows) : null;
-  const volumeFloor = isNum(V_avg) ? T.breakoutVolumeMultiple * V_avg : null;
-  const guard = isNum(SMA_fast) && isNum(ATR) ? SMA_fast + T.extensionGuardAtrMultiple * ATR : null;
+  // The derived thresholds, exact in decimal from the facts as recorded, then the correctly rounded double (fix round F1).
+  const volumeFloor = isNum(V_avg) ? toNumber(multiplyDecimal(toDecimal(T.breakoutVolumeMultiple), toDecimal(V_avg))) : null;
+  const guard = isNum(SMA_fast) && isNum(ATR) ? toNumber(addDecimal(toDecimal(SMA_fast), multiplyDecimal(toDecimal(T.extensionGuardAtrMultiple), toDecimal(ATR)))) : null;
   return [
     check('regime_stack', [C, SMA_fast], '>', [SMA_fast, SMA_slow], chain('>', [C, SMA_fast], [SMA_fast, SMA_slow]), ['C', 'SMA_fast', 'SMA_slow']),
     check('slow_rising', SMA_slow, '>', SMA_slow_5ago, compare('>', SMA_slow, SMA_slow_5ago), ['SMA_slow', 'SMA_slow_5ago']),
@@ -301,7 +316,7 @@ function commonBlock(evidence, computed, checks, patterns, { requestedAsOf = evi
   const source = evidence.source ?? null;
   const factsUsed = {};
   for (const name of FACT_NAMES) factsUsed[name] = { value: facts[name], asOf, source, basis };
-  const sourceMeta = evidence.sourceMeta && typeof evidence.sourceMeta === 'object' ? { ...evidence.sourceMeta } : null;
+  const sourceMeta = evidence.sourceMeta && typeof evidence.sourceMeta === 'object' ? copyData({ ...evidence.sourceMeta }) : null; // owned, deep for nested values (fix round)
   const block = {
     ruleSet: describeRuleSet(),
     asOf,

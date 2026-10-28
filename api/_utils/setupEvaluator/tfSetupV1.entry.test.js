@@ -11,7 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  evaluateTfEntry, computeTfFacts, deriveEntryVerdict, deriveRegime, derivePatterns,
+  evaluateTfEntry, computeTfFacts, deriveEntryVerdict, deriveRegime, derivePatterns, entryChecks,
   FACT_NAMES, PATTERN_ORDER,
 } from './tfSetupV1.js';
 import { THRESHOLDS_HASH, SEMANTICS_ID, MIN_COMPLETED_BARS } from './thresholds.js';
@@ -418,5 +418,63 @@ describe('the record (V3 §5)', () => {
     const r = evaluateTfEntry(ev);
     expect(r.evidence.adjustment).toEqual({ metadata: 'absent', missingDates: ['2026-10-01', '2026-09-30'] });
     expect(r.evidence.adjustment.missingDates).not.toBe(ev.adjustment.missingDates);
+  });
+});
+
+describe('computed-threshold boundaries (the fix round after Astra\'s review, F1)', () => {
+  const verdictOf = (r) => `${r.verdict}/${r.pattern ?? r.reason}`;
+
+  it.each([
+    ['extension_decimal_guard_exact', 'valid/pullback_resume', 109.54, true],
+    ['extension_decimal_guard_above', 'invalid/extended', 109.5401, false],
+    ['extension_decimal_guard_below', 'valid/pullback_resume', 109.5399, true],
+  ])('%s: the extension check alone decides the verdict (%s); the guard is recorded as 109.54', (name, verdict, c, result) => {
+    const r = run(name);
+    expect(verdictOf(r)).toBe(verdict);
+    expect([r.factsUsed.SMA_fast.value, r.factsUsed.ATR.value, r.factsUsed.C.value]).toEqual([100, 4.77, c]);
+    expect(r.regime).toBe('uptrend');
+    expect(r.patterns).toEqual({ breakout: 'failed', pullback_resume: 'satisfied' });
+    expect(checkOf(r, 'extension')).toMatchObject({ lhs: c, op: '<=', rhs: 109.54, result });
+  });
+
+  it.each([
+    ['breakout_volume_decimal_exact', 'valid/breakout', 3.3, 2.2, 3.3, true],
+    ['breakout_volume_decimal_below', 'invalid/no_setup', 3.2999, 2.2, 3.3, false],
+    ['breakout_volume_decimal_above', 'valid/breakout', 3.3001, 2.2, 3.3, true],
+    ['breakout_volume_decimal_mean_exact', 'valid/breakout', 0.15, 0.1, 0.15, true],
+  ])('%s: the volume floor decides the breakout (%s); V_avg and the floor are recorded exactly', (name, verdict, v, avg, floor, result) => {
+    const r = run(name);
+    expect(verdictOf(r)).toBe(verdict);
+    expect([r.factsUsed.V.value, r.factsUsed.V_avg.value, r.evidence.volume.avg.value]).toEqual([v, avg, avg]);
+    expect(checkOf(r, 'breakout_volume')).toMatchObject({ lhs: v, op: '>=', rhs: floor, result });
+  });
+
+  const facts = (over) => ({ C: 100, SMA_fast: 90, SMA_slow: 80, SMA_slow_5ago: 70, swingHigh: 200, swingLow: 50, ATR: 1, V: 1, V_avg: 1, ...over });
+  const lows = [{ date: 'd0', low: 95 }, { date: 'd1', low: 95 }, { date: 'd2', low: 95 }];
+  const at = (over, id) => entryChecks(facts(over), lows).find((c) => c.id === id);
+
+  it('the extension guard from facts alone: exact, one ten-thousandth either side, and a replay-shaped pair', () => {
+    expect(at({ C: 109.54, SMA_fast: 100, ATR: 4.77 }, 'extension')).toMatchObject({ rhs: 109.54, result: true });
+    expect(at({ C: 109.5401, SMA_fast: 100, ATR: 4.77 }, 'extension')).toMatchObject({ rhs: 109.54, result: false });
+    expect(at({ C: 109.5399, SMA_fast: 100, ATR: 4.77 }, 'extension')).toMatchObject({ rhs: 109.54, result: true });
+    expect(at({ C: 354.0589, SMA_fast: 339.4345, ATR: 7.3122 }, 'extension')).toMatchObject({ rhs: 354.0589, result: true });
+    expect(at({ C: 354.059, SMA_fast: 339.4345, ATR: 7.3122 }, 'extension').result).toBe(false);
+  });
+
+  it('the volume floor from facts alone: decimal and realistic integer volumes, exact and either side', () => {
+    expect(at({ V: 3.3, V_avg: 2.2 }, 'breakout_volume')).toMatchObject({ rhs: 3.3, result: true });
+    expect(at({ V: 3.2999, V_avg: 2.2 }, 'breakout_volume').result).toBe(false);
+    expect(at({ V: 3.3001, V_avg: 2.2 }, 'breakout_volume').result).toBe(true);
+    expect(at({ V: 2423634.375, V_avg: 1615756.25 }, 'breakout_volume')).toMatchObject({ rhs: 2423634.375, result: true });
+    expect(at({ V: 2423635, V_avg: 1615756.25 }, 'breakout_volume').result).toBe(true);
+    expect(at({ V: 2423634, V_avg: 1615756.25 }, 'breakout_volume').result).toBe(false);
+  });
+
+  it('the comparisons without arithmetic stay strict or inclusive as approved, at exact equality', () => {
+    expect(at({ C: 100, SMA_fast: 100 }, 'regime_stack').result).toBe(false); // strict
+    expect(at({ C: 100, SMA_fast: 100 }, 'pullback_close').result).toBe(false); // strict
+    expect(at({ SMA_slow: 80, SMA_slow_5ago: 80 }, 'slow_rising').result).toBe(false); // strict
+    expect(at({ C: 200, swingHigh: 200 }, 'breakout_close').result).toBe(true); // inclusive
+    expect(entryChecks(facts({ SMA_fast: 95 }), lows).find((c) => c.id === 'pullback_touch').result).toBe(true); // inclusive at equality
   });
 });

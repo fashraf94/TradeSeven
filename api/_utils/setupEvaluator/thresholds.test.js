@@ -81,6 +81,9 @@ describe('tf-setup-v1 thresholds (definition §8, blessed 24 Sep 2026)', () => {
     expect(text).toMatch(/4-decimal/);
     expect(text).toMatch(/breakout_close C >= swingHigh/);
     expect(text).toMatch(/pullback_touch min\(low\[0\.\.2\]\) <= SMA_fast/);
+    expect(text).toMatch(/Numerical policy .*computed exactly in decimal/); // the fix round after Astra's review
+    expect(text).toMatch(/never with a tolerance/);
+    expect(text).toMatch(/a step of exactly 10% never trips/);
   });
 
   it('describeRuleSet returns the frozen identity every record carries', () => {

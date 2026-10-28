@@ -354,3 +354,21 @@ describe('a pair the adapter never sees (closeout, 28 Oct 2026)', () => {
     }
   });
 });
+
+describe('recreated Astra regression F2 (the fix round after Astra\'s review)', () => {
+  it('an unfetched pair carries the historical bars class into the entry and the holding record, with no invented fetch or calendar metadata', () => {
+    const ev = unreadPairEvidence({ pair: { symbol: 'MU', asOf: '2026-10-09' }, failure: 'call cap reached' });
+    expect(ev.evidenceClass).toEqual({ bars: 'later_reconstruction' });
+    expect(ev.sourceMeta).toBeNull();
+    const entry = evaluateTfEntry(ev);
+    const holding = evaluateTfHolding(ev);
+    for (const rec of [entry, holding]) {
+      expect(rec.evidenceClass).toEqual({ bars: 'later_reconstruction', verdict: 'derived' });
+      expect(rec.sourceMeta).toBeNull();
+      expect(rec.refusal).toEqual({ reason: 'missing_bar', detail: { expected: '2026-10-09', latest: null, why: 'unfetched: call cap reached' }, expected: null });
+      expect([rec.asOf, rec.requestedAsOf]).toEqual(['2026-10-09', '2026-10-09']);
+    }
+    expect([entry.verdict, entry.reason, entry.pattern, entry.regime]).toEqual(['unknown', 'missing_bar', null, 'unknown']);
+    expect([holding.chartLeg, holding.reasons, holding.regime]).toEqual(['unknown', [], 'unknown']);
+  });
+});

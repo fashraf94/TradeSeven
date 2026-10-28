@@ -314,13 +314,14 @@ export function planFor(rows) {
 
 /**
  * The evidence for a planned pair the adapter never sees (closeout, 28 Oct 2026): no cache file (an unfetched
- * symbol), or a cache whose window ends before asOf. A cache's own fetchedAt / from / to are carried as
- * `sourceMeta` and its bars stay `later_reconstruction`; with no cache there is no provenance to carry, so
- * `sourceMeta` is null — never invented. Neither consulted the calendar, so neither names an expected session.
+ * symbol), or a cache whose window ends before asOf. Both are historical replay pairs, so both carry the bars
+ * class `later_reconstruction` (the unfetched branch since the fix round, Astra F2). A cache's own fetchedAt /
+ * from / to are carried as `sourceMeta`; with no cache there is no provenance to carry, so `sourceMeta` is null —
+ * never invented. Neither consulted the calendar, so neither names an expected session.
  */
 export function unreadPairEvidence({ pair, cached = null, failure = null }) {
   if (!cached) {
-    return { ok: false, reason: 'missing_bar', detail: { expected: pair.asOf, latest: null, why: failure ? `unfetched: ${failure}` : 'unfetched: not fetched' }, asOf: pair.asOf, basis: 'raw', source: SOURCE, sourceMeta: null, symbol: pair.symbol };
+    return { ok: false, reason: 'missing_bar', detail: { expected: pair.asOf, latest: null, why: failure ? `unfetched: ${failure}` : 'unfetched: not fetched' }, asOf: pair.asOf, basis: 'raw', source: SOURCE, sourceMeta: null, symbol: pair.symbol, evidenceClass: { bars: 'later_reconstruction' } };
   }
   return { ok: false, reason: 'missing_bar', detail: { expected: pair.asOf, latest: cached.to, why: 'cache window ends before asOf' }, asOf: pair.asOf, basis: 'raw', source: SOURCE, sourceMeta: { fetchedAt: cached.fetchedAt, from: cached.from, to: cached.to }, symbol: pair.symbol, evidenceClass: { bars: 'later_reconstruction' } };
 }

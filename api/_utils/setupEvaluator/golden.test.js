@@ -87,3 +87,30 @@ describe('the append-only baseline (in-revision)', () => {
     expect(canonicalSha256(currentGolden())).toBe(baseline[baseline.length - 1].goldenSha256);
   });
 });
+
+describe('every recorded check explains its own result (the fix round after Astra\'s review)', () => {
+  const plain = (op, a, b) => {
+    switch (op) {
+      case '>': return a > b;
+      case '<': return a < b;
+      case '>=': return a >= b;
+      case '<=': return a <= b;
+      case '===': return a === b;
+      default: throw new Error(`unexpected operator ${op}`);
+    }
+  };
+  it('in the committed golden and in the records computed now, each true/false result is the plain IEEE comparison of the recorded lhs and rhs', () => {
+    let checked = 0;
+    for (const set of [golden, currentGolden()]) {
+      for (const rec of [...Object.values(set.entry), ...Object.values(set.holding)]) {
+        for (const c of rec.checks) {
+          if (c.result === 'unknown') continue;
+          const pairs = Array.isArray(c.lhs) ? c.lhs.map((l, i) => [l, c.rhs[i]]) : [[c.lhs, c.rhs]];
+          expect(pairs.every(([l, r]) => plain(c.op, l, r)), `${c.id}: ${JSON.stringify(c.lhs)} ${c.op} ${JSON.stringify(c.rhs)}`).toBe(c.result);
+          checked += 1;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(800);
+  });
+});

@@ -25,8 +25,11 @@
 // ATR = 1 and the extension guard (97.625 + 2 = 99.625) sits BELOW C = 100:
 // a satisfied pattern there is invalid(extended). Adding 1.25 to bar 13's
 // high (inside the ATR window, outside bars 0..2) with the bar-2 touch makes
-// ATR exactly 1.1875 and the guard exactly 100 = C: the "at the guard" case,
-// with every number dyadic so the equality is exact in floating point.
+// ATR exactly 1.1875 and the guard exactly 100 = C: the "at the guard" case.
+// Its numbers happen to be dyadic, so floating point never tested the guard's
+// arithmetic; the decimal boundary scenarios below do (the fix round after
+// Astra's review, F1): 100 + 2 × 4.77 is 109.53999999999999 in floating point,
+// and the evaluator now computes every derived threshold exactly in decimal.
 
 import { getPreviousSessionDate } from '../../../../src/utils/marketCalendar.js';
 
@@ -112,6 +115,29 @@ const tight = (patch = null) => buildBars({ range: TIGHT_RANGE, patch });
 const base = (patch = null) => buildBars({ patch });
 
 /**
+ * The decimal extension-guard series (fix round F1). Bars 2..19 close 100 (± 1.5), bars 20..59 close 95, so
+ * SMA_slow = 97 rises from SMA_slow_5ago = 96.5. Bar 1 closes at 200 − C, so SMA_fast = 100. Bar 0 (high 110,
+ * low 100) and bar 1 (high 100, low `bar1Low`) make the 14 true ranges sum to 66.78: (110 − bar1Close) +
+ * (100 − bar1Low) + 12 × 3. So ATR = 4.77 and the guard SMA_fast + 2·ATR = 109.54 in decimal. Bar 1's low
+ * touches SMA_fast (pullback satisfied); V = V_avg fails the breakout; the extension check alone decides.
+ */
+const decimalGuard = (c, bar1Close, bar1Low) => evidenceOf(buildBars({
+  closeAt: (i) => (i <= 19 ? 100 : 95),
+  patch: (b) => {
+    Object.assign(b[0], { open: c, close: c, high: 110, low: 100 });
+    Object.assign(b[1], { open: bar1Close, close: bar1Close, high: 100, low: bar1Low });
+  },
+}));
+
+/**
+ * Decimal volumes (fix round F1): every bar `each`, bar 0 at `v`, bar 0 closing a quarter above swingHigh as
+ * breakout_volume_exact_1_5x does. With `each` 2.2 the 1.5 × floor is 3.3 in decimal (1.5 × 2.2 is
+ * 3.3000000000000003 in floating point); with `each` 0.1 the floating-point mean of the twenty volumes is
+ * itself 0.10000000000000002, so only an exact mean puts the floor at 0.15.
+ */
+const decimalVolume = (each, v) => evidenceOf(base((b) => { setClose(b, 0, BASE_SWING_HIGH + 0.25); for (const bar of b) bar.volume = each; b[0].volume = v; }));
+
+/**
  * The scenario catalogue. `kind` is 'entry' or 'holding'; `options` are the
  * holding call's second argument. `expect` is a note for the reader; the
  * tests assert the real records and the golden pins them whole.
@@ -155,6 +181,14 @@ export const SCENARIOS = Object.freeze({
   // ---- missing price facts
   null_high_bar5: { kind: 'entry', expect: 'unknown(missing_fact): swingHigh and ATR null', build: () => evidenceOf(base((b) => { b[5].high = null; })) },
   null_high_bar20: { kind: 'entry', expect: 'unknown(missing_fact): swingHigh null, ATR intact', build: () => evidenceOf(base((b) => { b[20].high = null; })) },
+  // ---- computed-threshold boundaries (the fix round after Astra's review, F1)
+  extension_decimal_guard_exact: { kind: 'entry', expect: 'valid/pullback_resume: C 109.54 exactly at the guard 100 + 2 × 4.77 (decimal)', build: () => decimalGuard(109.54, 90.46, 88.76) },
+  extension_decimal_guard_above: { kind: 'entry', expect: 'invalid(extended): C 109.5401, one ten-thousandth above the guard 109.54', build: () => decimalGuard(109.5401, 90.4599, 88.7601) },
+  extension_decimal_guard_below: { kind: 'entry', expect: 'valid/pullback_resume: C 109.5399, one ten-thousandth below the guard 109.54', build: () => decimalGuard(109.5399, 90.4601, 88.7599) },
+  breakout_volume_decimal_exact: { kind: 'entry', expect: 'valid/breakout: V 3.3 exactly at 1.5 × V_avg 2.2 (decimal)', build: () => decimalVolume(2.2, 3.3) },
+  breakout_volume_decimal_below: { kind: 'entry', expect: 'invalid(no_setup): V 3.2999, just below the floor 3.3', build: () => decimalVolume(2.2, 3.2999) },
+  breakout_volume_decimal_above: { kind: 'entry', expect: 'valid/breakout: V 3.3001, just above the floor 3.3', build: () => decimalVolume(2.2, 3.3001) },
+  breakout_volume_decimal_mean_exact: { kind: 'entry', expect: 'valid/breakout: twenty volumes of 0.1, V 0.15 exactly at the floor; the exact mean is 0.1', build: () => decimalVolume(0.1, 0.15) },
   // ---- holding
   holding_close_below_slow: { kind: 'holding', options: { anchorSwingLow: 80 }, expect: 'broken [close_below_slow]: a sharp drop at bar 0 to 85, no_trend', build: () => evidenceOf(base((b) => { setClose(b, 0, 85); })) },
   holding_structure_break: { kind: 'holding', options: { anchorSwingLow: 100.5 }, expect: 'broken [structure_break]: C 100 below the anchor 100.5', build: () => evidenceOf(base()) },
