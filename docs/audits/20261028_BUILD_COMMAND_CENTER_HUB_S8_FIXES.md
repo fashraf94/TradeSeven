@@ -252,3 +252,69 @@ S8-6 (the copy guards' ratchet) · S8-7 (the Agent record sheet's wording stays)
 - The traits sheet in Edge (`TRAIT_SLOT_ENABLED` is off; it was driven in jsdom).
 - The legacy shells' sheets in Edge: their single restore is covered in jsdom (the Scouting Board with no host); the founder's checklist covers them on the preview.
 - The deployed build: pushed is not deployed (BUILD_RULES §2).
+
+## 13. The founder's rulings on Q-S8F-1 … Q-S8F-4 (October 28, 2026)
+
+The same branch and PR (#1000). The stop rule was unchanged. Four commits on top of `d63dea92`, then the mutation round; the code head is now `dfcfb072`.
+
+| Question | Ruling | What changed | Red before | Green after |
+|---|---|---|---|---|
+| **Q-S8F-1** (L2-1) | Yes | After the ceremony, focus goes to the opener the hub's stack still owes ("See what it's eyeing"), while it is in the document and enabled, before the shell. When a sheet's close cannot give focus back because the page is inert under the provider's overlay, the stack records its opener (`hub/overlayStack.js:103–110`, `:172`). The provider's close tries that opener first, then the captured invoker, then `[data-hub="shell"]` (`src/contexts/DeployAttemptContext.jsx:943–945`). A sequence starts owing nothing (`:926`). | `DeployAttemptContext.overlayInert.jsdom` "created from the board, then Back to hub": focus on the shell (at `d63dea92`); "… while the closed board is still leaving": focus on the leaving footer (the invoker-first order of `390f98e7`, mutant N06) | green; two controls green both sides (the opener disabled → the shell; an opener owed from before the sequence → not used) |
+| **Q-S8F-2** (L1-2) | Yes; an accepted live change for the legacy shells | `EquipSheet.jsx:31` (`CONTROL_FOCUS_CSS`), `:147` (the scoped `<style>`), `:163`, `:183` (the marker on Close and the rows). The rule is `[data-equip-sheet-control]:focus-visible { outline: 2px solid var(--ft-teal) !important; outline-offset: 2px !important; }`, using the hub's own focus colour (`hub/hubStyle.js` `HUB_FOCUS_CSS`) as a token through `cssVar`. It is `!important` because the buttons' inline `all: 'unset'` takes their outline with it. Only Close and the rows carry the marker; the footer and child controls keep their own styles. | `ScoutingBoardSheet.s8.jsdom` "Close and every row carry the marker …": no rule (`expected '' to be …`) | green |
+| **Q-S8F-3** (L2-2) | Keep as built | Nothing; backlog | — | — |
+| **Q-S8F-4** | Yes; an accepted live change | `ScoutingBoardSheet.jsx:85–100` (`readDayOf`: today, the day, or none), `:153–164` (one `readDay` feeds the subtitle, the ranked heading and the off-universe line), `:221`, `:239`. Today: "In Degen's wheelhouse today" / "outside today's ranked universe", as before. Otherwise: "In Degen's wheelhouse on Friday's read" / "outside Friday's ranked universe" (a date a week or more old, and its year from another year). A ranking with no readable time names no day: "In Degen's wheelhouse" / "outside the ranked universe". The empty board's "today's ranked board isn't in yet" lines are unchanged (no ranking is on show). | `ScoutingBoardSheet.s8.jsdom`: Saturday with Friday's ranking (no "today" anywhere: the S8 review's own row's test), a week-old ranking, no time: 3 failed at `a045dec5` | green; the today control green both sides |
+
+### 13.1 What a player sees with the flag off, now
+
+The four accepted changes of §2, plus the two these rulings accept:
+
+| # | Change | Before | After |
+|---|---|---|---|
+| 5 | **Q-S8F-2, the sheet's focus outline** (every sheet on `EquipSheet`) | Keyboard focus on Close and the rows was invisible (`all: unset`) | A 2 px teal outline on keyboard focus only (Tab); none for a click or a touch |
+| 6 | **Q-S8F-4, the board's heading and off-universe line** | "In Degen's wheelhouse today" and "outside today's ranked universe" whatever the ranking's day | The same words for today's ranking; the read's day otherwise ("on Friday's read", "outside Friday's ranked universe") |
+
+Q-S8F-1 is hub-only: the provider is a pass-through with the flag off. The legacy shells have no overlay stack, so nothing is ever owed there.
+
+### 13.2 Headless Edge, Q-S8F-2
+
+The real `EquipSheet` from an LF snapshot of `a045dec5`, with `tokens.css`, rendered by a throwaway Vite page as a legacy shell opens it (an opener and two rows), in headless Edge through `playwright-core`, at 390 × 844 (bottom dock) and 1280 × 800 (centred dialog):
+
+| Interaction | 390 | 1280 |
+|---|---|---|
+| Tab to the opener, Enter: focus on Close | outline `solid 2px rgb(94, 234, 212)` (`--ft-teal` = `#5eead4`), `:focus-visible` true | the same |
+| Tab to the first row | `solid 2px rgb(94, 234, 212)` | the same |
+| A click on the opener: focus on Close (by script) | outline `none`, `:focus-visible` false | the same |
+| A click on a row | `none`, `:focus-visible` false | the same |
+| **Before** (`390f98e7`'s sheet): Tab, Enter, Close; Tab, a row | `none` on both, though `:focus-visible` matched | the same |
+
+### 13.3 Mutation (cap 20, on this round's rows only)
+
+17 distinct edits: 16 planted against the new rows, plus N06 re-planted in its inverse form after the order changed.
+- **Q-S8F-1:** N01 (owed never recorded) killed; N05 (the owed opener never tried) killed; N02 (owed recorded without the inert test) survived, equivalent, because owed focus is taken only inside a provider sequence, when the page is always inert.
+- **N03 and N04 survived the first run.** N03 is `takeOwedFocus` not clearing; N04 is no discard at the start of a sequence. The "owed from before the sequence" row was vacuous: the stack's own release removed the inert the row had set by hand, so nothing was ever owed. The row now marks the shell inert, outside the stack's own marks, and both mutants are killed.
+- **N06 (the owed opener tried before the invoker) survived the first run, and led to reading the ruling's order again.** Q-S8F-1 says to restore to the owed opener and then fall back to the shell. An owed opener exists only when a sheet closed under the ceremony, so the invoker is that sheet's own footer, gone or still leaving. The close now tries the owed opener first. The old order, re-planted, is killed by the new "still leaving" row.
+- **Q-S8F-2:** N07 (no rule), N08 (no `!important`), N09 (`:focus` instead of `:focus-visible`), N10 (Close unmarked) and N11 (rows unmarked): all killed.
+- **Q-S8F-4:** N12 (heading always "today"), N13 (off-universe always "today"), N14 and N16 (no day reads "today"), N15 (the heading drops "'s read"): all killed.
+- Every mutated file was restored byte-identical (sha256 compared per mutant).
+- **Totals:** 15 of 16 planted mutants killed, 1 equivalent.
+
+### 13.4 Checks (Linux, code head `dfcfb072`)
+
+| Check | Result |
+|---|---|
+| `vite build` | Exit 0; hub chunk `CommandCenterHub-CSG8yQ1h.js` 151,424 B (unchanged) |
+| Entry chunk | `index-CoSovhZM.js` 4,827,957 B (gzip 1,302,468 B): **−74,112 raw / −18,425 gzip against `main`**; +594 raw / +114 gzip against `3430e39a` (`EquipSheet.jsx` +218, `ScoutingBoardSheet.jsx` +226, `overlayStack.js` +126, `DeployAttemptContext.jsx` +15). `DashboardLoop.jsx` and `DashboardDesktop.jsx` still absent; `main` and `3430e39a` rebuilt in the same worktree reproduce their earlier hashes |
+| `npm run lint:gate` | Exit 0, no output |
+| Full suite, `TZ=UTC`, `--maxWorkers=8`, under `flock /tmp/pd-suite.lock` | **Exit 0. `Test Files  1193 passed \| 8 skipped (1201)`; `Tests  26068 passed \| 89 skipped (26157)`; 322 s** |
+| Flag-on dry run | **Exactly the 14 by-design rows**: `App.activeBattlesPoll.owner` 9, `App.bootOrder` 2, `commandCenterHubFlags` 1, `flagPinGuard` 2 (`Tests  14 failed \| 26054 passed \| 89 skipped (26157)`); the flag restored |
+
+### 13.5 Founder questions and backlog
+
+- No new questions.
+- Q-S8F-3 is moved to the backlog (§11).
+- **The smoke branch is rebuilt** as the new PR head plus the flag-true commit (pushed with `--force-with-lease`).
+- **The checklist (§10) gains, on the PR's preview:**
+  - [ ] Tab into the archetype picker: Close and its rows show a teal outline; a mouse click shows none.
+  - [ ] On a weekend, the Scouting Board's heading says "on Friday's read", not "today".
+- **On the smoke preview:**
+  - [ ] Deploy from the Scouting Board until the ceremony shows, then "Back to hub": focus is on "See what it's eyeing".
