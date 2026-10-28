@@ -7,6 +7,8 @@
 //   R-S8F-6 (the S8 review's S8-8)  the shared sheet it is built on is a dialog. Here with no host around it (the
 //           legacy shells' case): role, aria-modal, its title as its name, focus on Close, Tab kept inside, Escape
 //           closes, and the sheet itself returns focus to what opened it.
+//   R-S8F-12 (the S8 review's S8-5)  "Ranked from today's read" only when the ranking is from today's ET date;
+//           otherwise "Ranked from {day}'s read".
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import React, { act, useState } from 'react';
@@ -111,5 +113,44 @@ describe('the Scouting Board is a dialog, with no host around it (the S8 review 
     await act(async () => { api.open(); });
     key(document.body, 'Escape');
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+// The S8 review's S8-5 (ruling R-S8F-12): the board ranks on weekday mornings (compute-rankings, 11:00 UTC), so on a
+// weekend and before the run it holds an earlier day's ranking. "Ranked from today's read" only for today's ET date.
+describe("the board's read, by its day (S8-5)", () => {
+  const board = (asOf) => ({ archetypeLabel: 'Degen', asOf, empty: false, ranked: [{ symbol: 'NVDA', archetypeScore: 81.2 }], watchlist: { inUniverse: [], offUniverse: [] } });
+  async function subtitleAt(nowIso, asOf) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(nowIso));
+    fetches.answer = Promise.resolve({ ok: true, status: 200, json: async () => board(asOf) });
+    await renderHost();
+    await act(async () => { api.open(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(document.getElementById(dialog.getAttribute('aria-labelledby'))?.textContent).toBe('What Degen is eyeing');
+    return dialog.textContent;
+  }
+
+  it("today's run, read the same ET day: \"Ranked from today's read\"", async () => {
+    expect(await subtitleAt('2026-10-27T15:00:00Z', '2026-10-27T11:02:00Z')).toContain("Ranked from today's read");
+  });
+
+  it("a Saturday: Friday's ranking is \"Friday's read\", never today's", async () => {
+    const text = await subtitleAt('2026-10-24T16:00:00Z', '2026-10-23T11:02:00Z');
+    expect(text).toContain("Ranked from Friday's read");
+    expect(text).not.toMatch(/today's read/);
+  });
+
+  it("a weekday before the 11:00 UTC run: the previous session's ranking (Monday's on Tuesday morning)", async () => {
+    expect(await subtitleAt('2026-10-27T10:00:00Z', '2026-10-26T11:02:00Z')).toContain("Ranked from Monday's read");
+  });
+
+  it('the day is the ET day: a run at 10 PM ET Monday read on Tuesday is Monday\'s, though UTC calls it Tuesday', async () => {
+    expect(await subtitleAt('2026-10-27T19:00:00Z', '2026-10-27T02:00:00Z')).toContain("Ranked from Monday's read");
+  });
+
+  it('a ranking a week old or more names its date', async () => {
+    expect(await subtitleAt('2026-10-27T15:00:00Z', '2026-10-16T11:02:00Z')).toContain("Ranked from Oct 16's read");
   });
 });

@@ -66,6 +66,31 @@ function OffUniverseRow({ row }) {
   );
 }
 
+const DAY_MS = 86400000;
+/** An instant's ET calendar date as a day count, for comparing days (never a hand-rolled offset). */
+function etDayNumber(date) {
+  const [y, m, d] = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(date).split('-').map(Number);
+  return Date.UTC(y, m - 1, d) / DAY_MS;
+}
+
+/**
+ * Which read the board was ranked from (Command Center S8 fix build, ruling R-S8F-12; the S8 review's S8-5). The ranking
+ * runs on weekday mornings (compute-rankings, 11:00 UTC), so on a weekend or before that run the board holds an earlier
+ * day's: "today's read" only when `asOf` is today's ET date; within the week, that day's name ("Friday's read"); older,
+ * its date ("Oct 16's read"). An `asOf` that is not a time names no read.
+ */
+function readLabelOf(asOf, nowMs = Date.now()) {
+  const at = new Date(asOf);
+  if (!asOf || Number.isNaN(at.getTime())) return null;
+  const daysAgo = etDayNumber(new Date(nowMs)) - etDayNumber(at);
+  if (daysAgo === 0) return "Ranked from today's read";
+  const day = daysAgo > 0 && daysAgo < 7
+    ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'long' }).format(at)
+    : new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' }).format(at);
+  return `Ranked from ${day}'s read`;
+}
+
 function SkeletonRows() {
   return (
     <div>
@@ -120,7 +145,7 @@ export default function ScoutingBoardSheet({
   const title = label ? `What ${label} is eyeing` : 'Scouting the board';
   const subtitle =
     state.status === 'loading' ? 'Reading the board…'
-      : (state.status === 'ready' && data?.asOf) ? "Ranked from today's read"
+      : (state.status === 'ready' && data?.asOf) ? (readLabelOf(data.asOf) ?? undefined)
         : undefined;
 
   const deployBusy = deployDisabled || deploying;
