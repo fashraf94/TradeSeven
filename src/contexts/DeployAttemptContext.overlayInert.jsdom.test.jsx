@@ -55,6 +55,7 @@ vi.mock('../config/featureFlags', async (importOriginal) => ({
 import { resetAuthIdentityForTests } from '../services/authIdentity';
 import { __resetHoldClaim } from '../hooks/holdClaim';
 import { DeployAttemptProvider } from './DeployAttemptContext';
+import { MotionGlobalConfig } from 'framer-motion';
 import ScoutingBoardSheet from '../components/Dashboard/ScoutingBoardSheet';
 import { HUB_DEPLOY_CONTROLS } from '../components/CommandCenter/hub/useHubDeploy';
 import { FakeHub, HubRoot, StackProbe, createFrames } from '../components/CommandCenter/__fixtures__/deployAttemptKit';
@@ -121,9 +122,12 @@ function Shell() {
     <div data-hub="shell" tabIndex={-1}>
       <FakeHub controls={[CARD]} probe={probe} />
       <StackProbe probe={stackProbe} />
+      {/* The hub's "See what it's eyeing": the board's opener, as the stack holds it. */}
+      <button type="button" data-board-opener="">See what it&apos;s eyeing</button>
       <ScoutingBoardSheet
         open={boardOpen}
-        onClose={() => { boardCloses += 1; setBoardOpen(false); }}
+        // As the hub closes it (hub/useHubSheets.js): the stack's close, focus included, then the sheet.
+        onClose={() => { boardCloses += 1; stackProbe.current?.close('legacy:scouting', { fallback: shell() }); setBoardOpen(false); }}
         agent={{ archetype: 'momentum_chaser' }}
         accent="#22c55e"
         deploying={false}
@@ -441,5 +445,69 @@ describe('review fixes L4 — what the overlay rows did not pin', () => {
     act(() => { document.body.dispatchEvent(tab); });
     expect(tab.defaultPrevented).toBe(false);
     expect(bodyChild(boardDeploy).contains(document.activeElement)).toBe(false);
+  });
+});
+
+// Founder ruling Q-S8F-1 (the build's review, L2-1): a Scouting Board deploy that answers "created" closes the board
+// while the ceremony is up, so the stack's own restore cannot land (the page is inert). On "Back to hub" focus goes to
+// the opener the stack still owes — "See what it's eyeing" — when it is still there and enabled, before the shell.
+describe('founder ruling Q-S8F-1 — the opener the hub\'s stack still owes', () => {
+  const CREATED = () => ({ outcome: 'created', success: true, agentBattleId: 'battle-new' });
+  const boardOpener = () => document.querySelector('[data-board-opener]');
+  // framer-motion's exits never finish under jsdom's stubbed frames: skip the animations, as a finished exit.
+  beforeEach(() => { MotionGlobalConfig.skipAnimations = true; });
+  afterEach(() => { MotionGlobalConfig.skipAnimations = false; });
+
+  async function deployFromTheBoard() {
+    act(() => { boardOpener().focus(); });
+    act(() => { stackProbe.current.open('legacy:scouting', { opener: boardOpener(), within: shell() }); });
+    board.open();
+    await flush();
+    const boardDeploy = button('Deploy this agent');
+    await act(async () => { boardDeploy.focus(); boardDeploy.click(); });
+    await flush();
+    act(() => { frames.run(nowMs); });
+    expect(ceremonyRoot()).not.toBeNull();
+    await act(async () => { posts[0].answer(CREATED()); });
+    await flush();
+    await flush();
+    // The board closed itself under the ceremony; its opener could not take focus then.
+    expect(boardCloses).toBe(1);
+    expect(document.activeElement).not.toBe(boardOpener());
+    // Its exit (instant here: animations are skipped in this describe; under a second in a browser) took its footer —
+    // the captured invoker — out of the document.
+    expect(button('Deploy this agent')).toBeUndefined();
+  }
+
+  it('"created" from the board, then Back to hub: focus returns to "See what it\'s eyeing", not to the shell', async () => {
+    await deployFromTheBoard();
+    await act(async () => { button('Back to hub').click(); });
+    await flush();
+    expect(ceremonyRoot()).toBeNull();
+    expect(inertChildren()).toEqual([]);
+    expect(document.activeElement).toBe(boardOpener());
+  });
+
+  it('the opener disabled by then: the shell', async () => {
+    await deployFromTheBoard();
+    boardOpener().disabled = true;
+    await act(async () => { button('Back to hub').click(); });
+    await flush();
+    expect(document.activeElement).toBe(shell());
+  });
+
+  it('an opener owed from before the sequence is not this sequence\'s: a later ceremony whose invoker is disabled ends on the shell', async () => {
+    // A sheet closed while the page was inert for another reason leaves its opener owed.
+    act(() => { stackProbe.current.open('legacy:record', { opener: boardOpener(), within: shell() }); });
+    expect(inert(container)).toBe(true);
+    container.setAttribute('inert', '');
+    act(() => { stackProbe.current.close('legacy:record', { fallback: shell() }); });
+    container.removeAttribute('inert');
+    await tapFrom(hold());
+    await refuseAndSettle(LIMITER_429());
+    await act(async () => { button('Back to hub').click(); });
+    await flush();
+    expect(hold().disabled).toBe(true);
+    expect(document.activeElement).toBe(shell());
   });
 });

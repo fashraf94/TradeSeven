@@ -95,6 +95,20 @@ export function tryFocus(el) {
   return document.activeElement === el;
 }
 
+/**
+ * The opener a sheet's close could not give focus back to because the page was inert under the deploy provider's own
+ * overlay — a Scouting Board deploy that answers "created" closes the board while the ceremony is up. The provider hands
+ * it back when its overlay closes (founder ruling Q-S8F-1). One at a time, taken once.
+ */
+let owedFocus = null;
+
+/** The opener a close still owes focus to, or null; taking it clears it. */
+export function takeOwedFocus() {
+  const owed = owedFocus;
+  owedFocus = null;
+  return owed;
+}
+
 /** Where focus can go inside an overlay that is still open: its dialog, else its root. */
 function homeOf(entry) {
   const root = entry?.keep;
@@ -153,8 +167,9 @@ export function createOverlayStack({ onChange = null } = {}) {
           if (landedAt > 0) stranded = stranded.slice(0, stranded.length - landedAt);
           if (landedAt < 0) {
             const below = entries[entries.length - 1];
-            if (below) tryFocus(homeOf(below));
-            else tryFocus(fallback);
+            const landed = below ? tryFocus(homeOf(below)) : tryFocus(fallback);
+            // Nothing could take it because the page is inert under another overlay: the opener is owed (Q-S8F-1).
+            if (!landed && !below && entry.opener?.isConnected && entry.opener.closest('[inert]')) owedFocus = entry.opener;
           }
         }
       }

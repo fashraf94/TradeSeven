@@ -73,7 +73,7 @@ import { ATTEMPT_ACTION_TYPES as T, attemptReducer, cooldownFor, initialAttemptS
 import { ATTEMPT_ACTIONS, ATTEMPT_PHASES, CEREMONY_PHASES, ERROR_TONES, HOLD_PHASES, RECONCILIATION, RESULT_KINDS, realId } from '../components/CommandCenter/hub/selectors/attemptVocabulary';
 import { canCommit, deriveHubDeployState } from '../components/CommandCenter/hub/selectors/deployState';
 import { authInputOf } from '../components/CommandCenter/hub/selectors/readerInputs';
-import { inertSiblings, tryFocus } from '../components/CommandCenter/hub/overlayStack';
+import { inertSiblings, takeOwedFocus, tryFocus } from '../components/CommandCenter/hub/overlayStack';
 import { lastDeployedAtMs } from '../components/CommandCenter/hub/hubDate';
 import useDeployTargetProgress from '../hooks/useDeployTargetProgress';
 import { readAuthIdentity, subscribeAuthIdentity } from '../services/authIdentity';
@@ -920,7 +920,11 @@ function LiveDeployAttemptProvider({ hubEnabled, bridge, children }) {
     if (!overlayKey) return undefined;
     // The control the sequence was opened from, taken before its focus goes inert (a browser drops focus from an
     // inert subtree); kept through the swap, so the close goes back to it and not to the screen that came between.
-    if (invokerRef.current === null) invokerRef.current = { element: document.activeElement };
+    if (invokerRef.current === null) {
+      invokerRef.current = { element: document.activeElement };
+      // A sequence starts owing nothing: an opener owed from before it is not this sequence's to return to.
+      takeOwedFocus();
+    }
     const own = overlayRootOf(overlayKey);
     if (own) return inertSiblings(own);
     // An overlay whose root is not in <body> (a stand-in drawn in place): the app root alone, as before.
@@ -928,13 +932,15 @@ function LiveDeployAttemptProvider({ hubEnabled, bridge, children }) {
     return appRoot ? inertSiblings(null, [appRoot]) : undefined;
   }, [overlayKey]);
   // On close (the S8 review's S8-15): the mark above is released first — its cleanup runs before this — then focus goes
-  // to the captured invoker, or, gone or disabled, to the hub's shell. The overlay's own restore ran while the page was
-  // still inert, so this is the one that lands.
+  // to the captured invoker; gone or disabled, to the opener a hub sheet's close still owes (founder ruling Q-S8F-1: the
+  // Scouting Board closed itself under the ceremony, so "See what it's eyeing"); else to the hub's shell. The overlay's
+  // own restore ran while the page was still inert, so this is the one that lands.
   useEffect(() => {
     if (overlayKey || invokerRef.current === null) return;
     const invoker = invokerRef.current.element;
     invokerRef.current = null;
     if (invoker && invoker !== document.body && tryFocus(invoker)) return;
+    if (tryFocus(takeOwedFocus())) return;
     tryFocus(document.querySelector('[data-hub="shell"]'));
   }, [overlayKey]);
   const agent = rt.agentFor();
