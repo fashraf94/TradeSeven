@@ -475,6 +475,12 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
   // FR-02 / RJ-2: the series section's "complete" never stands beside a symbol shown with no series — that symbol says
   // its own state instead (NoChart). A section that is NOT complete keeps its line and its stored reason.
   const sectionLine = (uncharted) => (uncharted && seriesState?.status === 'ready' && tape.coverage?.series?.status === 'complete' ? null : ['coverage', 'series']);
+  // Build B Amendment K RK-11: a CHARTED symbol speaks for itself — "Chart recorded for {symbol}" in the coverage line's
+  // place, never the series section's status beside one symbol's chart (Glance's coverage line keeps the status and
+  // its reasons; the all-symbols grid keeps the section's line)
+  const chartedLine = doc && current ? (
+    <span data-chart-recorded={current} style={{ ...mono(10.5, C.ink3, { lineHeight: 1.45 }), padding: '0 2px' }}>{COPY.chartRecordedFor}<Rec>{current}</Rec></span>
+  ) : null;
   // RJ-2 / FR-02: markers sit on a drawn chart only. With no series read for the symbol there is no chart, so no marker
   // can be drawn: the marker instructions do not render, and the stamps' recorded prices are listed by check instead.
   const charted = Boolean(doc);
@@ -499,7 +505,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
     </div>
   ) : null;
   const chart = (
-    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} doc={tape} coverageAt={sectionLine(current && !doc)}>
+    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} doc={tape} coverageAt={sectionLine(current && !doc)} coverageLine={chartedLine}>
       <div style={{ ...card, gap: 10 }}>
         {chartBody}
         {evidence}

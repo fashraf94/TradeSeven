@@ -253,6 +253,9 @@ export const FILM_ROOM_COPY = Object.freeze({
   // (coverage.series.notCharted, the candle pass's W5), else the plain sentence — never the section's "complete"
   noChart: { before: 'No chart for ', reasons: { crypto_not_supported: 'crypto is not charted', no_bars: 'no bars were returned for it' } },
   noChartRecorded: 'No chart was recorded for this symbol.',
+  // Build B Amendment K RK-11: beside a CHARTED symbol, Deep dive says the symbol's own state — never the series
+  // section's status, which stays on Glance's coverage line with its reasons; the symbol follows as record text
+  chartRecordedFor: 'Chart recorded for ',
   // with no chart there is no marker: the stamps' recorded prices, listed by check (RJ-2)
   recordedPrices: 'The price the agent was shown at each check, as recorded · tap a check for its stamp',
   deepNoSymbols: 'No series were recorded for this day.',

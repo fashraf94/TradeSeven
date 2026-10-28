@@ -117,6 +117,33 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     expect(m.q('[data-region="price-chart"]')).toBeNull();
   });
 
+  it('Amendment K RK-11 — the Sep-23 day: AMD, charted, reads "Chart recorded for AMD", never the series section\'s status; BTC, not charted, says its own state as built (the mutant: the section\'s status beside a charted symbol)', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} start="AMD" />);
+    const chartSection = () => m.q('[data-section="deep-chart"]');
+    expect(chartSection().querySelector('[data-chart-recorded]').textContent).toBe('Chart recorded for AMD');
+    expect(chartSection().querySelector('[data-chart-recorded] [data-record-text]').textContent).toBe('AMD');
+    expect(chartSection().querySelector(':scope > [data-coverage]')).toBeNull();
+    expect(chartSection().textContent).not.toMatch(/Coverage · (complete|partial|unavailable)/);
+    m.click(chip('BTC'));
+    expect(chartSection().querySelector('[data-chart-recorded]')).toBeNull();
+    expect(m.q('[data-no-series="BTC"]').textContent).toBe('No chart for BTC: crypto is not charted.');
+    expect(chartSection().querySelector(':scope > [data-coverage]')).toBeNull();   // RJ-2 as built: no "complete" beside a symbol with no series
+  });
+
+  it('RK-11 — a fully charted day, and a day whose series section is partial: each charted symbol reads its own line; the desktop grid keeps the section\'s line as built', () => {
+    const full = clone(sep23Tape);
+    full.coverage.series = { ...full.coverage.series, notCharted: [] };
+    m.render(<Harness key="full" tape={full} series={sep23Series} start="MSFT" />);
+    expect(m.q('[data-section="deep-chart"] [data-chart-recorded]').textContent).toBe('Chart recorded for MSFT');
+    expect(m.q('[data-section="deep-chart"] > [data-coverage]')).toBeNull();
+    const partial = clone(sep23Tape);
+    partial.coverage.series = { ...partial.coverage.series, status: 'partial', note: 'bars missing for 2 symbols' };
+    m.render(<Harness key="partial" tape={partial} series={sep23Series} start="MSFT" desktop />);
+    expect(m.q('[data-section="deep-chart"] [data-chart-recorded]').textContent).toBe('Chart recorded for MSFT');
+    expect(m.q('[data-section="deep-chart"]').textContent).not.toContain('bars missing for 2 symbols');
+    expect(m.q('[data-section="deep-all"] [data-coverage="partial"]').textContent).toContain('bars missing for 2 symbols');
+  });
+
   it('desktop: every symbol at a glance, price only, each last close marked market', () => {
     m.render(<Harness tape={sep23Tape} series={sep23Series} desktop />);
     const minis = m.qa('[data-mini]');
@@ -398,18 +425,21 @@ describe('BA-43 — the evidence overlay', () => {
 });
 
 describe('coverage, the empty day, the sweeps', () => {
-  it.each(['complete', 'partial', 'unavailable'])('the chart section opens with the series coverage line, %s', (status) => {
+  it.each(['complete', 'partial', 'unavailable'])('the series section %s: the charted symbol\'s chart reads its own line (Amendment K RK-11); the all-symbols grid keeps the section\'s line where it is not complete', (status) => {
     const t = { ...sep23Tape, coverage: { ...sep23Tape.coverage, series: { ...sep23Tape.coverage.series, status, note: `${status} series note` } } };
     m.render(<Harness tape={t} series={sep23Series} desktop />);
-    // B2.1 A2 (FR-02, RJ-2): the grid offers BTC, which has no series — so the section's "complete" is withheld there,
-    // and BTC says its own state; a section that is not complete keeps its line beside it
-    for (const id of status === 'complete' ? ['deep-chart'] : ['deep-chart', 'deep-all']) {
-      expect(m.q(`#${id} [data-coverage]`).getAttribute('data-coverage'), id).toBe(status);
-      expect(m.q(`#${id} [data-coverage]`).textContent).toContain(`${status} series note`);
-    }
+    // RK-11: AMD (the first symbol) is charted — "Chart recorded for AMD", never the section's status or its note beside it
+    expect(m.q('#deep-chart > [data-chart-recorded]').textContent).toBe('Chart recorded for AMD');
+    expect(m.q('#deep-chart > [data-coverage]')).toBeNull();
+    expect(m.q('#deep-chart').textContent).not.toContain(`${status} series note`);
+    // B2.1 A2 (FR-02, RJ-2), as built: the grid offers BTC, which has no series — so the section's "complete" is withheld
+    // there, and BTC says its own state; a section that is not complete keeps its line beside it
     if (status === 'complete') {
-      expect(m.q('#deep-all [data-coverage]')).toBeNull();
+      expect(m.q('#deep-all > [data-coverage]')).toBeNull();
       expect(m.q('[data-mini="BTC"] [data-no-chart="BTC"]').textContent).toBe('No chart for BTC: crypto is not charted.');
+    } else {
+      expect(m.q('#deep-all > [data-coverage]').getAttribute('data-coverage')).toBe(status);
+      expect(m.q('#deep-all > [data-coverage]').textContent).toContain(`${status} series note`);
     }
   });
 

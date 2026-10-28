@@ -77,7 +77,7 @@ const COPY_KEYS = [
   // B2.1 A1 — Meetings (spec §3; acceptance H; Amendment J RJ-1)
   'meetings', 'meetingsNote', 'meetingsNone', 'meetingsNoneStored', 'meetingsAbsent', 'meetingAt()', 'meetingOutcome.approved', 'meetingOutcome.rejected', 'meetingOutcome.expired',
   'meetingResolvedBy', 'meetingInstants.created', 'meetingInstants.deadline', 'meetingInstants.resolved', 'meetingLegs', 'meetingLegNotCopied', 'meetingLegsNone', 'meetingDiagnosis', 'runMeeting',
-  'deepPrice', 'noChart.before', 'noChart.reasons.crypto_not_supported', 'noChart.reasons.no_bars', 'noChartRecorded', 'recordedPrices', 'deepNoSymbols', 'seriesReadError', 'evidenceCoverage', 'checksIn1', 'sessionOpen', 'sessionHigh', 'sessionLow', 'lastBarClose',
+  'deepPrice', 'noChart.before', 'noChart.reasons.crypto_not_supported', 'noChart.reasons.no_bars', 'noChartRecorded', 'chartRecordedFor', 'recordedPrices', 'deepNoSymbols', 'seriesReadError', 'evidenceCoverage', 'checksIn1', 'sessionOpen', 'sessionHigh', 'sessionLow', 'lastBarClose',
   'changeOpenToClose', 'volumeSession', 'axisPrice', 'axisPercent', 'market', 'sector()', 'sectorNone', 'volume', 'rebased', 'inTheBook', 'companyNameNotOnFile', 'sectorLine', 'sectorLineNone',
   'exitMark', 'entryMark', 'entryFor', 'evidenceOverlay', 'evidenceOverlayNote', 'allSymbols', 'close10',
   'reservedHeader[0]', 'reservedHeader[1]', 'reservedFooter[0]', 'reservedFooter[1]',
@@ -222,9 +222,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 361 copy keys, 508 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(361);   // Amendment K RK-2: cards.setNoTempo (360 before); Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
-    expect(inventory()).toHaveLength(508);   // RK-2: one entry (507 before); B2: 76 keys, the one live situation's title and its three questions (348 before)
+  it('the inventory\'s size is pinned (the build report states it): 362 copy keys, 509 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(362);   // Amendment K RK-11: chartRecordedFor (361 before); RK-2: cards.setNoTempo (360 before); Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
+    expect(inventory()).toHaveLength(509);   // RK-11: one entry (508 before); RK-2: one entry (507 before); B2: 76 keys, the one live situation's title and its three questions (348 before)
   });
 
   it('B2.1 A8 (A2F1-7): every fixed-digit exemption is bound to its copy key — the harness\x27s pinned text is production\x27s at that key, and every entry of the inventory that spells a digit is pinned', () => {
