@@ -327,7 +327,7 @@ The sequence:
 - `git fetch origin`, then `origin/main` merged into the branch as `1034b2b0` (parents `285ac5d0` and `62380f14`).
 - One commit of rows after it: `31ba188d`, the code head.
 
-`hubCopy.js`, `activityDates.js` and `hubDate.js` are now byte-identical to `main`'s. Against the new `main` the PR is 42 files, +2,857 / −93 (18 source files, +388 / −67). Nothing is under `api/`, no file is fenced, and no `firestore.rules`, `vercel.json` or `package*` file changes.
+`hubCopy.js`, `activityDates.js` and `hubDate.js` are now byte-identical to `main`'s. Against the new `main`, measured at the code head `31ba188d`, the PR is 42 files, +2,857 / −93 (18 source files, +388 / −67). Nothing is under `api/`, no file is fenced, and no `firestore.rules`, `vercel.json` or `package*` file changes.
 
 ### 14.1 The conflict and its resolution
 
@@ -379,7 +379,7 @@ I added three rows (`CommandCenterHub.s8.jsdom.test.jsx:240`). They are set on T
 | Phone: the strip, the status line, the next action and the Overview's own live row say the same | `expected 'Live · 24h 30m leftDeploy unavailable…' to contain 'Deployed · Starts Wed 9:30 AM ET'` | green |
 | Control: at the same instant, a game whose first trading day is today reads live on every surface | green | green |
 
-The header and the status line say "waiting for the open", while the row and the strip say when the game starts. Both say waiting; only the rows carry a single start time. This round leaves that wording unchanged.
+Every surface says waiting, as the ruling asked. The words differ, though: the header and the status line say "waiting for the open", while the row and the strip say when the game starts. That is Q-S8F-5 (§14.5). The desktop row above pins the header's words as built, and it moves with the answer.
 
 ### 14.3 Mutation (cap 10, on the new rows only)
 
@@ -421,9 +421,23 @@ On Windows, the hub folder and the adapter (89 files) ran green but for one load
 
 - **Nothing new from the merge.** The PR's flag-off changes are still §2's four and §13.1's two. `formatHubTimeOnDay` and the C5 rows are drawn only by the hub. #999's live changes (the Desk, the Battle View, the crons) are `main`'s, already merged.
 - **The smoke branch is rebuilt** as the new PR head plus the flag-true commit, pushed with `--force-with-lease`.
-- **No new founder questions.**
+- **One new founder question, Q-S8F-5** (below).
 - **The checklist (§10) gains, on the smoke preview:**
   - [ ] Deploy between 3:15 and 4:00 PM ET. The hub says the game is waiting everywhere:
     - the row and the strip: "Deployed · Starts {next session} 9:30 AM ET";
     - the Games header and the status line: "Deployed · waiting for the open";
     - the next action: "Your game is deployed".
+
+**Q-S8F-5: the waiting wording after the merge (BUILD_RULES §9).**
+
+- **What a player sees.** Since #999, a game before its first trading day says when it starts on its row and the strip: "Deployed · Starts Wed 9:30 AM ET". The Games header's tag and the status line keep the aggregate "Deployed · waiting for the open" (`sections/GamesSection.jsx:166`, `hub/shadowStatus.js:92`).
+- **The rule this bends.** Both say waiting, so the ruling's check holds. But one fact now has two phrasings, which S8's own L3-4 fix was meant to rule out. Its row (`CommandCenterHub.s8.jsdom` "L3-4 the all-waiting header …") still passes only because its fixture is the old shape, with no `timing.tradingDays`.
+- **How often.** BR-2 gives every game created from 45 minutes before a close, or overnight, a next-session `timing.tradingDays[0]` (`src/utils/tieredFirstTradingDay.js:6–8`). In production, then, every after-hours game reads "Starts …" on its row and "waiting for the open" on the header.
+- **Between 3:15 and 4:00 PM ET** the header says "waiting for the open" while the market is open.
+- **Where the old phrase still fits.** The rows' own "waiting for the open" remains for a game on its first trading day before the open.
+- **Why it isn't changed here.** A wording change goes beyond the ruling, which the stop rule forbids.
+
+Options:
+- **(a)** Keep as built.
+- **(b)** The header's tag and the status line take the first waiting row's clock ("Deployed · Starts Wed 9:30 AM ET"), so they say what the rows and the strip say.
+- **(c)** Reword the aggregate phrase so it is true at any hour (for example, "Deployed · not started yet").
