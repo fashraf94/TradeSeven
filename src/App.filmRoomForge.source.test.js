@@ -13,8 +13,9 @@
 //     closing it only clears showForge — so the Film Room shows again;
 //   · the Film Room's back destination is recorded only while another screen
 //     shows, so a Forge visit leaves it as it was;
-//   · the Forge's Character area (on: RELEASE3_CHARACTER_TAB_ENABLED) is the
-//     one that holds the tempo dial.
+//   · the Forge's Character area (shown while RELEASE3_CHARACTER_TAB_ENABLED is
+//     on — read through the workshop's gate, never pinned here) is the one
+//     that holds the tempo dial.
 // What does NOT survive the round trip is stated in the build report: the Film
 // Room remounts, so its day, depth and open form start fresh.
 
@@ -23,7 +24,6 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FORGE_AREAS, forgeAreaOf } from './components/CommandCenter/hubChrome';
-import { RELEASE3_CHARACTER_TAB_ENABLED } from './config/featureFlags';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const read = (rel) => readFileSync(path.join(HERE, rel), 'utf8').replace(/\r\n/g, '\n');
@@ -59,8 +59,11 @@ describe('B2.1 B1 — Set opens the Forge through App\'s own door, and closing i
 
   it('the request Set sends names the Character area, which holds the tempo dial', () => {
     expect(forgeAreaOf({ area: FORGE_AREAS.CHARACTER })).toBe('traits');
-    expect(RELEASE3_CHARACTER_TAB_ENABLED).toBe(true);
+    // The Character area shows while RELEASE3_CHARACTER_TAB_ENABLED is on (it is, live) — read through the workshop's
+    // own gate, not pinned here: a flag's pins belong to its flip commit (src/config/flagPinGuard.test.js). With it
+    // off, the `03` slot is Traits and the dial is not there.
     const workshop = read('components/Forge/workshop/ForgeWorkshop.jsx');
+    expect(workshop).toMatch(/const characterOn =\s*RELEASE3_CHARACTER_TAB_ENABLED \|\|/);
     expect(workshop).toMatch(/\} else if \(characterOn\) \{\s*body = \(\s*<CharacterArea/);
     expect(read('components/Forge/workshop/character/CharacterArea.jsx')).toContain('<TempoControl ');
   });
