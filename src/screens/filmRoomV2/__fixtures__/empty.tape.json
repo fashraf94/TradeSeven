@@ -176,7 +176,8 @@
         "eodhd_1m"
       ],
       "preservedFrom": null,
-      "note": null
+      "note": null,
+      "notCharted": []
     },
     "tags": {
       "status": "unavailable",

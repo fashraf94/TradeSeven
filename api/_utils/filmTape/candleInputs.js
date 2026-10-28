@@ -97,6 +97,33 @@ export function symbolPlan(tape) {
     .sort((a, b) => (a.symbol < b.symbol ? -1 : 1));
 }
 
+/**
+ * B2.1 C2 — W5, per-symbol series coverage (Build B Amendment A RB-4): each HELD, TRADED or PLANNED symbol of the day
+ * — the names symbolPlan reads as held, sold or planned, crypto included — that the candle pass did not chart, with its
+ * reason in the writer's own words: `crypto_not_supported` (never charted; symbolPlan leaves crypto out) or `no_bars`
+ * (requested, and no attempt has obtained a bar — the series note's "no bars for"). `missing` is the symbols with no
+ * series document, saved or new. Sorted by symbol. It reads the tape only: no bar, no price, no request.
+ *
+ * @returns {{ symbol: string, reason: 'crypto_not_supported'|'no_bars' }[]}
+ */
+export function notChartedOf(tape, { missing = [] } = {}) {
+  const named = new Set();
+  const add = (sym) => { if (typeof sym === 'string' && sym) named.add(sym); };
+  for (const c of Array.isArray(tape?.checks) ? tape.checks : []) {
+    for (const s of Object.keys(isObj(c?.risk) ? c.risk : {})) add(s);
+    for (const s of Object.keys(isObj(c?.evidence) ? c.evidence : {})) add(s);
+  }
+  for (const a of Array.isArray(tape?.actions) ? tape.actions : []) { add(a?.symbolOut); add(a?.symbolIn); }
+  for (const p of Array.isArray(tape?.plans) ? tape.plans : []) add(p?.symbol);
+  for (const s of Object.keys(isObj(tape?.comparables?.sectors) ? tape.comparables.sectors : {})) add(s);
+  const out = [];
+  for (const symbol of [...named].sort()) {
+    if (isCryptoSymbol(symbol)) out.push({ symbol, reason: 'crypto_not_supported' });
+    else if (missing.includes(symbol)) out.push({ symbol, reason: 'no_bars' });
+  }
+  return out;
+}
+
 /** B1 T2 — at most this many meeting-leg symbols a day join the set (a server meeting proposes at most two legs, each with one new name). */
 export const MEETING_SYMBOLS_PER_DAY_MAX = 4;
 

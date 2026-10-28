@@ -45,6 +45,14 @@ export const CANDLE_COVERAGE_SECTIONS = Object.freeze(['replay', 'series']);
  * the A2 screen and the export render none of them (B2 renders the card).
  */
 export const B1_COVERAGE_SECTIONS = Object.freeze(['tags', 'meetings']);
+/**
+ * Film Room B2.1 C2 — W5, per-symbol series coverage (Build B Amendment A RB-4), a DECLARED NEW FIELD:
+ * `coverage.series.notCharted[]`, `{ symbol, reason }` per held, traded or planned symbol the candle pass did not
+ * chart, sorted by symbol (api/_utils/filmTape/candleInputs.js notChartedOf). Candle-owned like the rest of the
+ * section; it holds no number. The reasons, in the writer's own words: never charted, crypto; and requested with no
+ * bar obtained by any attempt. A day no candle pass has written carries no list.
+ */
+export const SERIES_NOT_CHARTED_REASONS = Object.freeze(['crypto_not_supported', 'no_bars']);
 
 // ── BA-8: check states ──────────────────────────────────────────────────────
 // A tick-backed check takes its capture `exitReason`, except that a
