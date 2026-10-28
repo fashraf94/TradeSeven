@@ -231,27 +231,38 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const [pendingJump, setPendingJump] = useState(null);
 
   const changeDay = (d) => { setDay(d); setSelected(null); setSym(null); setPicked(null); setReceipt(null); };
-  const openDeep = (s) => { setSym(s); setDepth('deep'); };
-  const jump = (id) => {
+  /**
+   * B2.1 A8 (A2F2-5): a door inside the panel that changes the day or the depth unmounts the panel holding the focus,
+   * so focus is put on the NEW panel — or on the place the door opens (a meeting's card, a moment) — once it has
+   * rendered, instead of dropping to the page. An element that takes no focus of its own is given tabindex -1 then.
+   */
+  const panelOf = (d) => ({ id: panelIdOf(idBase, d), focus: true, scroll: false });
+  const openDeep = (s) => { setSym(s); setDepth('deep'); setPendingJump(panelOf('deep')); };
+  const jump = (id, { focus = false, scroll = true } = {}) => {
     const el = typeof document !== 'undefined' ? document.getElementById(id) : null;
-    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (!el) return;
+    if (scroll && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (focus && typeof el.focus === 'function') {
+      if (el.tabIndex < 0 && !el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+      el.focus({ preventScroll: scroll });
+    }
   };
   // a jump lands after the element it names has rendered (the form, the receipt, a moment on another day's tape)
   useEffect(() => {
     if (!pendingJump) return;
     if (pendingJump.when === 'tape' && tapeState.status !== 'ready') return;
-    jump(pendingJump.id);
+    jump(pendingJump.id, pendingJump);
     setPendingJump(null);
   }, [pendingJump, tapeState.status, picked, receipt]);
-  // B2.1 A1: a run of "awaiting approval" checks opens its meeting in Study — a door that changes the depth
-  const openMeeting = (i) => { setDepth('study'); setPendingJump({ id: meetingAnchor(i) }); };
+  // B2.1 A1: a run of "awaiting approval" checks opens its meeting in Study — a door that changes the depth (A2F2-5: the card takes the focus)
+  const openMeeting = (i) => { setDepth('study'); setPendingJump({ id: meetingAnchor(i), focus: true }); };
   const takeHome = (m) => { setReceipt(null); setPicked(m); setPendingJump({ id: 'your-call' }); };
   const showCard = (c) => { setPicked(null); setReceipt(c); setPendingJump({ id: 'receipt' }); };
   /** RG-4: a recurrence of this battle opens its day and moment here; another battle's is left to its link. */
   const openMoment = (r) => {
     if (r.battleId !== battleId) return false;
     if (r.etDate !== day) changeDay(r.etDate);
-    setPendingJump({ id: momentAnchor(r), when: 'tape' });
+    setPendingJump({ id: momentAnchor(r), when: 'tape', focus: true });
     return true;
   };
   const onFile = async (req) => {
@@ -273,7 +284,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const complete = battle?.status === 'completed' || tape?.battle?.status === 'completed';
   const lastDay = days.length ? days[days.length - 1] : null;
   const finalDay = complete && lastDay && day !== lastDay && tape?.battle?.status !== 'completed'
-    ? { label: etDateLabel(lastDay, { short: true }), open: () => changeDay(lastDay) }
+    ? { label: etDateLabel(lastDay, { short: true }), open: () => { changeDay(lastDay); setPendingJump(panelOf(depth)); } }
     : null;
 
   let content;

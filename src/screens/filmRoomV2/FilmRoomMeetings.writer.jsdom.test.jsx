@@ -196,6 +196,8 @@ describe('the "awaiting approval" run links to its meeting when the INSTANTS mat
     await m.flush();
     expect(m.tab('Study').getAttribute('aria-selected')).toBe('true');
     expect(m.q(`#${meetingAnchor(0)}`)).not.toBeNull();
+    // A8 (A2F2-5): the door changed the depth — the meeting's card takes the focus, never the page
+    expect(document.activeElement).toBe(m.q(`#${meetingAnchor(0)}`));
   });
 
   it('the same day whose only meeting came after the run: no link (the mutant: a match by date alone)', async () => {
