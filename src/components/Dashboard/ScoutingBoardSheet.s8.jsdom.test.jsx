@@ -154,3 +154,18 @@ describe("the board's read, by its day (S8-5)", () => {
     expect(await subtitleAt('2026-10-27T15:00:00Z', '2026-10-16T11:02:00Z')).toContain("Ranked from Oct 16's read");
   });
 });
+
+// The build's own review, lens L3 (L3-1): a ranking from another year names its year, as the hub's dates do.
+describe('review fix L3-1: a ranking from another year', () => {
+  const board = (asOf) => ({ archetypeLabel: 'Degen', asOf, empty: false, ranked: [{ symbol: 'NVDA', archetypeScore: 81.2 }], watchlist: { inUniverse: [], offUniverse: [] } });
+
+  it('"Ranked from Oct 16, 2025\'s read" a year on; this year\'s older read stays "Oct 16\'s"', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-27T15:00:00Z'));
+    fetches.answer = Promise.resolve({ ok: true, status: 200, json: async () => board('2025-10-16T11:02:00Z') });
+    await renderHost();
+    await act(async () => { api.open(); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    expect(document.querySelector('[role="dialog"]').textContent).toContain("Ranked from Oct 16, 2025's read");
+  });
+});

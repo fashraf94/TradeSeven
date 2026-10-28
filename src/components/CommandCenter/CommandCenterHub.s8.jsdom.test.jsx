@@ -199,3 +199,36 @@ describe('R-S8F-9 — dates (S8-4, K-9)', () => {
     expect(row.textContent).toContain('ends Wed 4:00 PM ET');
   });
 });
+
+// The build's own review, lens L3 (L3-2, L3-4): the phone Overview lists live rows of its own (every live game but the
+// next action's); after a failed poll they carry the age too. And the all-waiting header tag is the rows' own phrase.
+describe('review fixes L3-2, L3-4', () => {
+  const ASOF = NOW - 90 * 60000;
+  const at = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(new Date(ASOF));
+  const overview = () => document.querySelector('[data-hub-phone-panel="overview"]');
+
+  it('L3-2 phone, two live games and a failed poll: the Overview\'s live row carries "As of {time} · couldn\'t refresh" as the card does', () => {
+    render('mobile', hubOf({
+      activeBattles: [bb('bb_one'), bb('bb_two', { activatedAt: '2026-10-27T13:40:00Z' })],
+      activePoll: pollMeta({ status: 'error', error: new Error('poll failed'), lastSuccessfulAt: ASOF }),
+    }));
+    const rows = overview().querySelectorAll('[data-hub-game-row="live"]');
+    expect(rows).toHaveLength(1);
+    const note = overview().querySelector('[data-hub-games-live-note="stale"]');
+    expect(note?.textContent).toBe(COPY.games.staleAsOf(COPY.time.et(at)));
+    expect(document.querySelector('[data-hub-next-action]').textContent).toContain(COPY.games.staleAsOf(COPY.time.et(at)));
+  });
+
+  it('L3-2 phone, a poll that answered: no note over the Overview\'s live rows', () => {
+    render('mobile', hubOf({ activeBattles: [bb('bb_one'), bb('bb_two', { activatedAt: '2026-10-27T13:40:00Z' })] }));
+    expect(overview().querySelectorAll('[data-hub-game-row="live"]')).toHaveLength(1);
+    expect(overview().querySelector('[data-hub-games-live-note]')).toBeNull();
+  });
+
+  it('L3-4 the all-waiting header says "Deployed · waiting for the open", as the rows, the strip and the status line do', () => {
+    r.market = { state: 'CLOSED', isOpen: false };
+    render('desktop', hubOf({ activeBattles: [bb('bb_wait', { scoreState: WAITING })] }));
+    expect(gamesHeader().textContent).toContain(COPY.strip.deployed(COPY.games.waitingForOpen));
+    expect(statusLine().textContent).toBe(COPY.strip.deployed(COPY.games.waitingForOpen));
+  });
+});

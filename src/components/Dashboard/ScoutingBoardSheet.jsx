@@ -78,16 +78,21 @@ function etDayNumber(date) {
  * Which read the board was ranked from (Command Center S8 fix build, ruling R-S8F-12; the S8 review's S8-5). The ranking
  * runs on weekday mornings (compute-rankings, 11:00 UTC), so on a weekend or before that run the board holds an earlier
  * day's: "today's read" only when `asOf` is today's ET date; within the week, that day's name ("Friday's read"); older,
- * its date ("Oct 16's read"). An `asOf` that is not a time names no read.
+ * its date ("Oct 16's read"), with its year when that is not this year (review L3-1, as the hub's dates do). An `asOf` that
+ * is not a time names no read.
  */
 function readLabelOf(asOf, nowMs = Date.now()) {
   const at = new Date(asOf);
   if (!asOf || Number.isNaN(at.getTime())) return null;
-  const daysAgo = etDayNumber(new Date(nowMs)) - etDayNumber(at);
+  const now = new Date(nowMs);
+  const daysAgo = etDayNumber(now) - etDayNumber(at);
   if (daysAgo === 0) return "Ranked from today's read";
+  const yearOf = (date) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric' }).format(date);
   const day = daysAgo > 0 && daysAgo < 7
     ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'long' }).format(at)
-    : new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric' }).format(at);
+    : new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', month: 'short', day: 'numeric', ...(yearOf(at) === yearOf(now) ? {} : { year: 'numeric' }),
+    }).format(at);
   return `Ranked from ${day}'s read`;
 }
 

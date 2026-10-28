@@ -128,6 +128,21 @@ export function GamesReadNote({ games, onRetry }) {
   );
 }
 
+/**
+ * The live rows' age after a failed poll: they are the poll's retained list, so they say when it was true, as the Deploy
+ * card does (spec §3; the S8 review's S8-3, ruling R-S8F-8). Nothing otherwise. Over every list of live rows: Games, and
+ * the phone Overview's own (review L3-2). The card carries the poll's Retry.
+ */
+export function GamesLiveNote({ games }) {
+  if (games?.liveStale !== true) return null;
+  const at = formatHubTime(games.liveAsOf);
+  return (
+    <div data-hub-games-live-note="stale" style={{ fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
+      {COPY.games.staleAsOf(at ? COPY.time.et(at) : '')}
+    </div>
+  );
+}
+
 /** A Games read note is due: the read failed, the window held is stale, or it was kept from an earlier visit (A+). */
 export function gamesNoteDue(games) {
   const ready = games?.status === 'ready';
@@ -147,7 +162,8 @@ export default function GamesSection({ games, onOpenGame, onOpenTape, onOpenHist
   const counts = liveCountsOf(games);
   let right = null;
   if (counts.opened) right = <Tag tone="teal">{COPY.games.liveCount(counts.opened)}</Tag>;
-  else if (counts.waiting) right = <Tag tone="teal">{COPY.games.waitingForOpen}</Tag>;
+  // The waiting phrase as the rows, the strip and the status line say it (review L3-4).
+  else if (counts.waiting) right = <Tag tone="teal">{COPY.strip.deployed(COPY.games.waitingForOpen)}</Tag>;
   // The design shows the completed count whenever no game is live, "0 completed" included (S1 review L1-10).
   else if (ready) right = <Mono style={{ fontSize: 11, color: C.ink3 }}>{COPY.games.completedCount(completed.length)}</Mono>;
   const history = ready && completed.length > DESKTOP_COMPLETED_LIMIT && onOpenHistory
@@ -161,13 +177,7 @@ export default function GamesSection({ games, onOpenGame, onOpenTape, onOpenHist
     >
       {!ready && !failed && <GamesLoadingLine games={games} />}
       {gamesNoteDue(games) && <GamesReadNote games={games} onRetry={onRetry} />}
-      {/* The live rows are the poll's retained list: after a failed poll they say when it was true, as the Deploy card
-          does (spec §3; the S8 review's S8-3, ruling R-S8F-8). The card carries the poll's Retry. */}
-      {live.length > 0 && games?.liveStale === true && (
-        <div data-hub-games-live-note="stale" style={{ fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
-          {COPY.games.staleAsOf(formatHubTime(games.liveAsOf) ? COPY.time.et(formatHubTime(games.liveAsOf)) : '')}
-        </div>
-      )}
+      {live.length > 0 && <GamesLiveNote games={games} />}
       {shown.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {shown.map((g) => <GameRow key={g.id} game={g} onOpen={onOpenGame} onOpenTape={onOpenTape} />)}
