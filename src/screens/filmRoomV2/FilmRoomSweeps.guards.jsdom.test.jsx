@@ -23,7 +23,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { Coverage, MissingInputs, StoredNote, Quotation } from './FilmRoomKit';
-import { mounter, sep23Tape, clone, sweepNumbers, sweepWords, quoteDefects, boundQuotationOf, storedNoteDefects, boundStoredNoteOf, agentNameDefects, boundAgentNameOf, SPEC_STORED_NOTE_PATHS } from './__fixtures__/filmRoomHarness';
+import { mounter, sep23Tape, clone, sweepNumbers, sweepWords, quoteDefects, boundQuotationOf, storedNoteDefects, boundStoredNoteOf, agentNameDefects, boundAgentNameOf, SPEC_STORED_NOTE_PATHS, SPEC_FIXED_DIGIT_COPY } from './__fixtures__/filmRoomHarness';
 
 const box = (html) => { const el = document.createElement('div'); el.innerHTML = html; return el; };
 const m = mounter();
@@ -130,6 +130,27 @@ describe('Astra B2 — the stored-note number exemption is bound by path, never 
     m.render(<Coverage coverage={{ status: 'unavailable', note: 'one 73' }} />);
     expect(m.q('[data-stored-note]')).toBeNull();
     expect(sweepNumbers(m.container, { tape: noted('one 73') })).toEqual(['stray digit: “one 73”']);
+  });
+});
+
+describe('B2.1 A8 (A2F1-7) — the fixed-digit copy is exempt by its copy key, whole, never by a phrase found inside other text', () => {
+  const mount = (html) => { m.container.innerHTML = html; return m.container; };
+  it('each pinned entry, alone, passes; RJ-6\x27s delay sentence among them', () => {
+    for (const text of Object.values(SPEC_FIXED_DIGIT_COPY)) {
+      const p = document.createElement('p'); p.textContent = text;
+      m.container.replaceChildren(p);
+      expect(sweepNumbers(m.container, {}), text).toEqual([]);
+    }
+    expect(SPEC_FIXED_DIGIT_COPY['FILM_ROOM_COPY.evidenceOverlayNote']).toContain('15–20 minutes');
+  });
+  it('the same phrases inside other words are stray digits — the string match this replaces passed them (the mutant)', () => {
+    for (const html of ['<p>the quote runs about 15–20 minutes behind the bars</p>', '<p>rebuilt from 1-minute bars, 3 of them</p>', '<p>nr7 nr7</p>', '<span title="market data · EODHD 1-minute bars">x</span>']) {
+      expect(sweepNumbers(mount(html), {}).length, html).toBeGreaterThan(0);
+    }
+  });
+  it('a pinned entry as an attribute (a marker\x27s label) passes; with a word added it does not', () => {
+    expect(sweepNumbers(mount(`<span title="${SPEC_FIXED_DIGIT_COPY['PROVENANCE_LABELS.market']}">x</span>`), {})).toEqual([]);
+    expect(sweepNumbers(mount(`<span aria-label="${SPEC_FIXED_DIGIT_COPY['PROVENANCE_LABELS.market']} 2">x</span>`), {}).length).toBeGreaterThan(0);
   });
 });
 

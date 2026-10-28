@@ -201,8 +201,29 @@ export const TEXT_ATTRIBUTES = Object.freeze(['aria-label', 'title', 'aria-descr
 const TEXT_ATTRIBUTE_SELECTOR = TEXT_ATTRIBUTES.map((a) => `[${a}]`).join(', ');
 
 const TIME_PATTERNS = [/\b\d{1,2}:\d{2}( (AM|PM))?\b/g, /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/g, /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}\b/g, /\d{4}-\d{2}-\d{2}T[\d:.]+Z/g];
-/** The fixed copy that spells a digit: the class labels' bar widths, the quote-delay note, an evidence field's name. */
-export const FIXED_DIGIT_COPY = ['1-minute', '10-minute', '15–20 minutes', 'nr7'];
+/**
+ * The fixed copy that spells a digit — the class labels' bar widths, the quote-delay notes, an evidence field's name —
+ * BOUND BY COPY KEY (B2.1 A8, A2F1-7; Amendment J RJ-6): each copy entry that holds one, PINNED HERE by its key with its
+ * text (a row of the inventory suite proves production holds exactly this text at exactly this key). A text node, or
+ * a text attribute, is exempt only when it IS one of these entries, whole — never because a phrase like "15–20
+ * minutes" is found somewhere inside other text (the string match this replaces exempted it anywhere).
+ */
+export const SPEC_FIXED_DIGIT_COPY = Object.freeze({
+  'FILM_ROOM_COPY.evidenceOverlayNote': 'A marker may sit off the bar line: the price the agent was shown came from a quote that runs about 15–20 minutes behind the bars, and the bars are not smoothed.',
+  'FILM_ROOM_COPY.rebuiltDashed': 'dashed · rebuilt from 1-minute bars',
+  'FILM_ROOM_COPY.rebuiltDots': 'dots · rebuilt from 1-minute bars',
+  'FILM_ROOM_COPY.rebuiltDashedDots': 'dashed lines and dots · rebuilt from 1-minute bars',
+  'FILM_ROOM_COPY.splitRows.barAtSwap': '1-minute bar at the swap',
+  'FILM_ROOM_COPY.fillRows.barAtSwap': '1-minute bar at the swap',
+  'FILM_ROOM_COPY.lastBarClose': 'Close · the last 10-minute bar',
+  'FILM_ROOM_COPY.evidenceFields.nr7': 'nr7',
+  LOCKED_BASIS_NOTE: "Banked points and the bought entry use the platform's quote, delayed about 15–20 minutes; rebuilt values use completed 1-minute bars.",
+  'PROVENANCE_LABELS.rebuilt': "rebuilt from 1-minute bars at the battle's check times",
+  'PROVENANCE_LABELS.market': 'market data · EODHD 1-minute bars, aggregated',
+});
+const FIXED_DIGIT_TEXTS = new Set(Object.values(SPEC_FIXED_DIGIT_COPY));
+/** Is this text, whole, one of the pinned fixed-digit copy entries? */
+export const isFixedDigitCopy = (text) => FIXED_DIGIT_TEXTS.has(text);
 
 /**
  * The class of every number the screen computes, PINNED HERE from Amendment E's addendum R4(a) — never read
@@ -478,9 +499,10 @@ export function sweepNumbers(container, docs) {
     if (boundStoredNoteOf(host, docs)) continue;
     // R13: the agent’s name, bound to its stored field, is a stored display name — not a number the screen states.
     if (boundAgentNameOf(host, docs)) continue;
+    // A2F1-7: a fixed-digit copy entry, bound by its key — the WHOLE text node is one of them, or nothing is exempt
+    if (isFixedDigitCopy(node.textContent)) continue;
     if (host.closest('[data-time]')) for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
     if (host.closest('[data-identifier]')) text = text.replace(/#swap-\d+/g, ' ');
-    for (const s of FIXED_DIGIT_COPY) text = text.split(s).join(' ');
     if (/\d/.test(text)) bad.push(`stray digit: “${node.textContent.trim().slice(0, 80)}”`);
   }
   // Attributes a screen reader or a hover shows are rendered output too (review A2L4-6; every one of them, A2AV1-N1).
@@ -488,9 +510,10 @@ export function sweepNumbers(container, docs) {
     for (const attr of TEXT_ATTRIBUTES) {
       let text = el.getAttribute(attr);
       if (!text || !/\d/.test(text)) continue;
+      // no stored-string exemption in an attribute: an attribute is always the screen's (R7; Astra B2) — a fixed-digit
+      // copy entry, whole, bound by its key (A2F1-7), is the screen's own fixed phrase
+      if (isFixedDigitCopy(text)) continue;
       for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
-      // no stored-string exemption in an attribute: an attribute is always the screen's (R7; Astra B2)
-      for (const s of FIXED_DIGIT_COPY) text = text.split(s).join(' ');
       if (/\d/.test(text)) bad.push(`stray digit in ${attr}: “${el.getAttribute(attr).slice(0, 80)}”`);
     }
   }

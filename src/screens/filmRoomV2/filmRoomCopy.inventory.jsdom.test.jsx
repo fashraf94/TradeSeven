@@ -28,7 +28,7 @@ import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
 import { SITUATIONS, LIVE_SITUATION_IDS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { KindMark } from './FilmRoomKit';
-import { sweepWords, sep23Tape, clone } from './__fixtures__/filmRoomHarness';
+import { sweepWords, sep23Tape, clone, SPEC_FIXED_DIGIT_COPY } from './__fixtures__/filmRoomHarness';
 
 /** Every leaf key of a copy table: `a.b`, `list[0]`, `fn()`. */
 function keysOf(v, p = '', out = []) {
@@ -224,6 +224,17 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
   it('the inventory\'s size is pinned (the build report states it): 352 copy keys, 498 swept entries', () => {
     expect(COPY_KEYS).toHaveLength(352);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
     expect(inventory()).toHaveLength(498);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
+  });
+
+  it('B2.1 A8 (A2F1-7): every fixed-digit exemption is bound to its copy key — the harness\x27s pinned text is production\x27s at that key, and every entry of the inventory that spells a digit is pinned', () => {
+    const at = (key) => (key.startsWith('FILM_ROOM_COPY.') ? leaf(FILM_ROOM_COPY, key.slice('FILM_ROOM_COPY.'.length)) : key === 'LOCKED_BASIS_NOTE' ? LOCKED_BASIS_NOTE : key.startsWith('PROVENANCE_LABELS.') ? PROVENANCE_LABELS[key.slice('PROVENANCE_LABELS.'.length)] : undefined);
+    for (const [key, text] of Object.entries(SPEC_FIXED_DIGIT_COPY)) expect(at(key), key).toBe(text);
+    const pinned = new Set(Object.keys(SPEC_FIXED_DIGIT_COPY).map((k) => k.replace(/^FILM_ROOM_COPY\./, '')));
+    // a function key's sample calls carry the caller's clocks and counts, and a reader's words its clocks (each renders
+    // them as an instant or a marked number): only a digit outside a clock is a fixed phrase
+    const digits = inventory().filter(([key, text]) => /\d/.test(text.replace(/\b\d{1,2}:\d{2}( (AM|PM))?\b/g, '')) && !/#\d+$/.test(key)).map(([key]) => key);
+    expect(digits.filter((k) => !pinned.has(k))).toEqual([]);
+    expect(digits.sort()).toEqual([...pinned].sort());
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {
