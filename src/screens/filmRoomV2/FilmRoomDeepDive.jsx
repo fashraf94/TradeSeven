@@ -28,7 +28,7 @@
 // "close" always names the session-close instant (Amendment E addendum 2, F2).
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, seriesDomain, closePoints, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
+import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, seriesDomain, closePoints, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES, notChartedReasonOf } from './filmRoomModel';
 import { classOfNumber } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
 import { FILM_ROOM_COPY as COPY, FORBIDDEN_WORDS } from './filmRoomCopy';
@@ -247,6 +247,37 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   );
 }
 
+/**
+ * B2.1 A2 (FR-02; Amendment J RJ-2) — a symbol with no series, said as ITS OWN state: the reason the tape records for
+ * it (the candle pass's W5 list), else the plain sentence. Never the section's "complete" beside it.
+ */
+function NoChart({ tape, sym }) {
+  const reason = notChartedReasonOf(tape, sym, COPY.noChart.reasons);
+  return (
+    <span data-no-chart={sym} data-no-chart-reason={reason ?? 'none'}>
+      {reason ? <>{COPY.noChart.before}<Rec>{sym}</Rec>: {COPY.noChart.reasons[reason]}.</> : COPY.noChartRecorded}
+    </span>
+  );
+}
+
+/**
+ * RJ-2: with no chart there is no marker, so the stamps' recorded prices are listed by check instead, each opening
+ * its stamp — every price by its path, with its class.
+ */
+function RecordedPrices({ tape, sym, marks, selected, onMark }) {
+  return (
+    <div data-region="recorded-prices" style={{ display: 'flex', flexDirection: 'column' }}>
+      <span style={{ ...foot, paddingBottom: 2 }}>{COPY.recordedPrices}</span>
+      {marks.map((mk) => (
+        <button key={mk.index} type="button" data-recorded-price={mk.index} aria-pressed={selected === mk.index} onClick={() => onMark(selected === mk.index ? null : mk.index)} style={{ ...plain, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '5px 0', borderTop: `1px solid ${C.hair}`, width: '100%' }}>
+          <span style={mono(10.5, C.ink2)}><When>{COPY.checkAt(etClock(tape.checks[mk.index]?.at) ?? '')}</When></span>
+          <TapeNum doc={tape} path={['checks', mk.index, 'evidence', sym, 'px']} fmt={fmtPrice} size={11.5} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** A line's marker: the class its own series document declares for the numbers it draws (F2; review A2L1-9). No document → no marker. */
 function LineMark({ doc, path }) {
   if (!doc) return null;
@@ -312,7 +343,7 @@ function SmallMultiples({ tape, series, symbols, sym, onSym }) {
               <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}><Rec>{s}</Rec></span>
               {bars.length ? <TapeNum doc={doc} docLabel={`series:${s}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={10.5} weight={500} color={C.ink2} /> : null}
             </span>
-            {cs.length ? <svg viewBox="0 0 100 40" preserveAspectRatio="none" data-mini-domain-start={timed ? new Date(startMs).toISOString() : undefined} data-mini-domain-end={timed ? new Date(endMs).toISOString() : undefined} style={{ width: '100%', height: 40, display: 'block' }} aria-hidden="true"><path data-mini-line={s} d={d} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.3 }} vectorEffect="non-scaling-stroke" /></svg> : <span style={mono(9, C.ink3)}>{COPY.deepNoSeries(s)}</span>}
+            {cs.length ? <svg viewBox="0 0 100 40" preserveAspectRatio="none" data-mini-domain-start={timed ? new Date(startMs).toISOString() : undefined} data-mini-domain-end={timed ? new Date(endMs).toISOString() : undefined} style={{ width: '100%', height: 40, display: 'block' }} aria-hidden="true"><path data-mini-line={s} d={d} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.3 }} vectorEffect="non-scaling-stroke" /></svg> : <span style={mono(9, C.ink3)}><NoChart tape={tape} sym={s} /></span>}
           </button>
         );
       })}
@@ -342,7 +373,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
   // A failed read is said as a failed read — never as "no series" (review A2L3-2).
   else if (seriesState?.status === 'error') chartBody = <span data-state="series-error" style={foot}>{COPY.seriesReadError}</span>;
   else if (!current) chartBody = <span style={foot}>{COPY.deepNoSymbols}</span>;
-  else if (!doc) chartBody = <span data-no-series={current} style={foot}><Rec>{COPY.deepNoSeries(current)}</Rec></span>;
+  else if (!doc) chartBody = <span data-no-series={current} style={foot}><NoChart tape={tape} sym={current} /></span>;
   else {
     chartBody = (
       <>
@@ -353,11 +384,18 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
       </>
     );
   }
-  const evidence = current && evidenceMarkers(tape, current).length ? (
-    <div data-region="evidence-overlay" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+  // FR-02 / RJ-2: the series section's "complete" never stands beside a symbol shown with no series — that symbol says
+  // its own state instead (NoChart). A section that is NOT complete keeps its line and its stored reason.
+  const sectionLine = (uncharted) => (uncharted && seriesState?.status === 'ready' && tape.coverage?.series?.status === 'complete' ? null : ['coverage', 'series']);
+  // RJ-2 / FR-02: markers sit on a drawn chart only. With no series read for the symbol there is no chart, so no marker
+  // can be drawn: the marker instructions do not render, and the stamps' recorded prices are listed by check instead.
+  const marks = current ? evidenceMarkers(tape, current) : [];
+  const charted = Boolean(doc);
+  const evidence = marks.length ? (
+    <div data-region="evidence-overlay" data-evidence-mode={charted ? undefined : 'list'} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span style={{ ...eyebrow, color: C.gold }}>{COPY.evidenceOverlay}</span>
       <Coverage label={COPY.evidenceCoverage} doc={tape} at={['coverage', 'evidence']} />
-      <span style={foot}>{COPY.evidenceOverlayNote}</span>
+      {charted ? <span style={foot}>{COPY.evidenceOverlayNote}</span> : <RecordedPrices tape={tape} sym={current} marks={marks} selected={mark} onMark={setMark} />}
       <span style={foot}>{COPY.riskNote}</span>
       {mark != null && tape.checks?.[mark] ? (
         <div data-evidence-panel={mark} style={{ ...card, background: C.wash, gap: 6 }}>
@@ -372,7 +410,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
     </div>
   ) : null;
   const chart = (
-    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} doc={tape} coverageAt={['coverage', 'series']}>
+    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} doc={tape} coverageAt={sectionLine(current && !doc)}>
       <div style={{ ...card, gap: 10 }}>
         {chartBody}
         {evidence}
@@ -387,7 +425,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
           {chart}
           <div style={{ paddingTop: 22 }}>{doc ? <SymbolFacts tape={tape} doc={doc} sym={current} holdings={holdings} sectorEtf={sectorEtf} /> : null}</div>
         </div>
-        <Section id="deep-all" title={COPY.allSymbols} doc={tape} coverageAt={['coverage', 'series']}>
+        <Section id="deep-all" title={COPY.allSymbols} doc={tape} coverageAt={sectionLine(symbols.some((s) => !seriesOf(series, s)))}>
           <SmallMultiples tape={tape} series={series} symbols={symbols} sym={current} onSym={(s) => { setMark(null); onSym(s); }} />
         </Section>
       </div>

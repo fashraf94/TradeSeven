@@ -53,7 +53,7 @@ export const GOLDEN_SHA256 = Object.freeze({
   'filmRoomV2.empty.glance.phone.html': 'c4ac65561fb116bddec75bb7381b16d6b36e8bc2e60bb16df3e73b619f47858c',
   'filmRoomV2.empty.study.desktop.html': '3aa485b731fbb93426017efb9f67311f140ff93a89616fa82b624accaae2b17c',
   'filmRoomV2.empty.study.phone.html': 'f720ba842e3b00f68f31f75a6d5b3124e1dcd53bcb3120c0e81352f6b7f12e4f',
-  'filmRoomV2.sep23.deep.desktop.html': '00c2769e6efc0469e044259b4cdffa45d6df4ec97513a9cc9e67fb866515d041',
+  'filmRoomV2.sep23.deep.desktop.html': 'f05a384539f10ddb0c461b386a80beb57d407a9a281c70fdffb3befef212b22a',
   'filmRoomV2.sep23.deep.phone.html': '3e2f707375d1fa99112f243c533fe7e3d0e895b3848df2d18aec63e2af851f1b',
   'filmRoomV2.sep23.glance.desktop.html': '2c16fda49f04cd4c1c829685027173cf9c985736279af2dba98424b26b358b5c',
   'filmRoomV2.sep23.glance.phone.html': '43dbe719f987a7f66862714bbc85bfdad2971f25b48c73ea4e5541b8b1baed34',

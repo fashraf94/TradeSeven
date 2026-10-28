@@ -233,7 +233,12 @@ export const FILM_ROOM_COPY = Object.freeze({
 
   // Deep dive (BA-12, BA-13, BA-43)
   deepPrice: 'Price',
-  deepNoSeries: (sym) => `No series for ${sym}.`,
+  // B2.1 A2 (FR-02; Amendment J RJ-2): a symbol with no series says ITS OWN state — the reason the tape records
+  // (coverage.series.notCharted, the candle pass's W5), else the plain sentence — never the section's "complete"
+  noChart: { before: 'No chart for ', reasons: { crypto_not_supported: 'crypto is not charted', no_bars: 'no bars were returned for it' } },
+  noChartRecorded: 'No chart was recorded for this symbol.',
+  // with no chart there is no marker: the stamps' recorded prices, listed by check (RJ-2)
+  recordedPrices: 'The price the agent was shown at each check, as recorded · tap a check for its stamp',
   deepNoSymbols: 'No series were recorded for this day.',
   seriesReadError: 'The series for this day could not be read.',
   evidenceCoverage: 'Evidence coverage',

@@ -78,9 +78,9 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     expect(facts.textContent).toContain('XLI');
   });
 
-  it('a symbol with no series says so — nothing drawn for it', () => {
+  it('a symbol with no series says so — nothing drawn for it (B2.1 A2: its own state, the reason the tape records)', () => {
     m.render(<Harness tape={sep23Tape} series={sep23Series} start="BTC" />);
-    expect(m.q('[data-no-series="BTC"]').textContent).toBe('No series for BTC.');
+    expect(m.q('[data-no-series="BTC"]').textContent).toBe('No chart for BTC: crypto is not charted.');
     expect(m.q('[data-region="price-chart"]')).toBeNull();
   });
 
@@ -347,9 +347,15 @@ describe('coverage, the empty day, the sweeps', () => {
   it.each(['complete', 'partial', 'unavailable'])('the chart section opens with the series coverage line, %s', (status) => {
     const t = { ...sep23Tape, coverage: { ...sep23Tape.coverage, series: { ...sep23Tape.coverage.series, status, note: `${status} series note` } } };
     m.render(<Harness tape={t} series={sep23Series} desktop />);
-    for (const id of ['deep-chart', 'deep-all']) {
+    // B2.1 A2 (FR-02, RJ-2): the grid offers BTC, which has no series — so the section's "complete" is withheld there,
+    // and BTC says its own state; a section that is not complete keeps its line beside it
+    for (const id of status === 'complete' ? ['deep-chart'] : ['deep-chart', 'deep-all']) {
       expect(m.q(`#${id} [data-coverage]`).getAttribute('data-coverage'), id).toBe(status);
       expect(m.q(`#${id} [data-coverage]`).textContent).toContain(`${status} series note`);
+    }
+    if (status === 'complete') {
+      expect(m.q('#deep-all [data-coverage]')).toBeNull();
+      expect(m.q('[data-mini="BTC"] [data-no-chart="BTC"]').textContent).toBe('No chart for BTC: crypto is not charted.');
     }
   });
 

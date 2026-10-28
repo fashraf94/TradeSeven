@@ -138,9 +138,10 @@ describe('lens 1 — what the screen says', () => {
     expect(carets[0].getAttribute('data-after-last-check')).toBe('no');
   });
 
-  it('A2L1-16: the empty day never says "No series for ."', () => {
+  it('A2L1-16: the empty day never says "No series for ." (nor, since B2.1 A2, "No chart for :")', () => {
     m.render(<Deep tape={emptyTape} series={emptySeries} start={null} />);
     expect(m.container.textContent).not.toContain('No series for .');
+    expect(m.container.textContent).not.toContain('No chart for :');
   });
 });
 
@@ -162,6 +163,7 @@ describe('lens 3 — reads and lifecycle', () => {
     m.render(<FilmRoomDeepDive tape={sep23Tape} seriesState={{ status: 'error', series: [] }} sym="AMD" onSym={() => {}} />);
     expect(m.q('[data-state="series-error"]').textContent).toBe('The series for this day could not be read.');
     expect(m.container.textContent).not.toContain('No series for');
+    expect(m.q('[data-no-chart]')).toBeNull();   // B2.1 A2: a failed read is never a symbol's "no chart"
   });
 
   it('A2L3-3 / A2L3-4: switching to an already-read day starts its depth fresh — no carried marker, no carried plan filter', async () => {

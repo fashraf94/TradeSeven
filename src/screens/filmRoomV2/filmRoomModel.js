@@ -593,6 +593,18 @@ export function deepSymbols(tape, seriesDocs, holdings) {
   return order;
 }
 
+/**
+ * B2.1 A2 (FR-02; RJ-2): the reason the tape records for a symbol it did not chart — the candle pass's W5 list,
+ * `coverage.series.notCharted` — when it is one the screen has words for (`known`); null when the tape records none
+ * (a day no candle pass wrote, a tape from before W5) or one the screen does not know: the plain sentence then.
+ */
+export function notChartedReasonOf(tape, symbol, known) {
+  const list = tape?.coverage?.series?.notCharted;
+  if (!Array.isArray(list)) return null;
+  const hit = list.find((e) => isObj(e) && e.symbol === symbol);
+  return hit && typeof hit.reason === 'string' && Object.prototype.hasOwnProperty.call(known, hit.reason) ? hit.reason : null;
+}
+
 /** BA-43 — the evidence stamps recorded for `symbol`, one per check that carries one, with the check's index. */
 export function evidenceMarkers(tape, symbol) {
   const out = [];
