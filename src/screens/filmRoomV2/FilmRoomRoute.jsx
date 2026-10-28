@@ -51,8 +51,9 @@ function viewerUid() {
  * @param {string}   [props.origin]  v2 only: where the Film Room was opened from (filmRoomBack.js), the back label's destination
  * @param {Function} [props.onReturn] v2 only: returns there; absent → v2 uses onBack
  * @param {Function} [props.onOpenForge] v2 only (B2.1 B1, RH-1): App's Forge door — the card form's Set links the tempo dial through it
+ * @param {object}   [props.openAt] v2 only (B2.1 B2, RH-2): the day and moment another battle's recurrence opened this battle at
  */
-export default function FilmRoomRoute({ battle, onBack, origin = 'unknown', onReturn = null, onOpenForge = null }) {
+export default function FilmRoomRoute({ battle, onBack, origin = 'unknown', onReturn = null, onOpenForge = null, openAt = null }) {
   const mode = resolveFilmRoomV2Mode();
   const battleId = filmRoomBattleId(battle);
   const ownerId = typeof battle?.ownerId === 'string' ? battle.ownerId : null;
@@ -71,7 +72,8 @@ export default function FilmRoomRoute({ battle, onBack, origin = 'unknown', onRe
   if (!taped || !filmRoomV2On(mode, verdict)) return <FilmRoomScreen battle={battle} onBack={onBack} />;
   return (
     <Suspense fallback={<div data-state="loading-v2" style={{ minHeight: '100vh', background: C.bg, ...mono(12, C.ink3, { padding: 40, textAlign: 'center' }) }}>{COPY.loading}</div>}>
-      <FilmRoomScreenV2 battle={battle} onBack={onReturn || onBack} backTo={origin} viewerId={viewerUid()} onOpenForge={onOpenForge} />
+      {/* keyed by the battle: a recurrence that opens another battle (B2.1 B2) mounts its screen afresh, on its own day */}
+      <FilmRoomScreenV2 key={battleId ?? ''} battle={battle} onBack={onReturn || onBack} backTo={origin} viewerId={viewerUid()} onOpenForge={onOpenForge} openAt={openAt} />
     </Suspense>
   );
 }

@@ -231,12 +231,14 @@ describe("RB-5 — a tiered battle, or one whose mode is absent or unknown, keep
       const onBack = () => {};
       const onReturn = () => {};
       const onOpenForge = () => {};   // B2.1 B1 (RH-1): App's Forge door, handed through to v2 alone
-      act(() => root.render(<FilmRoomRoute battle={battle} onBack={onBack} origin="battleHistory" onReturn={onReturn} onOpenForge={onOpenForge} />));
+      const openAt = Object.freeze({ battleId: battle.id, etDate: '2026-09-23', moment: {} });   // B2.1 B2 (RH-2): handed through as given; v2 checks it
+      act(() => root.render(<FilmRoomRoute battle={battle} onBack={onBack} origin="battleHistory" onReturn={onReturn} onOpenForge={onOpenForge} openAt={openAt} />));
       expect(await waitForV2(), label).toBeTruthy();
       expect(received.v2.length, label).toBeGreaterThan(0);
       for (const p of received.v2) {
-        expect(Object.keys(p).sort(), label).toEqual(['backTo', 'battle', 'onBack', 'onOpenForge', 'viewerId']);
+        expect(Object.keys(p).sort(), label).toEqual(['backTo', 'battle', 'onBack', 'onOpenForge', 'openAt', 'viewerId']);
         expect(p.onOpenForge, label).toBe(onOpenForge);
+        expect(p.openAt, label).toBe(openAt);
         expect(p.battle, label).toBe(battle);
         expect(p.onBack, label).toBe(onReturn);
         expect(p.backTo, label).toBe('battleHistory');
@@ -246,6 +248,25 @@ describe("RB-5 — a tiered battle, or one whose mode is absent or unknown, keep
       expect(legacy.mounts, label).toBe(0);
       expect(fetches, label).toEqual([]);
     }
+  });
+
+  it("B2.1 B2 (RH-2): another battle handed to the route mounts v2 afresh — keyed by the battle, so it opens on its own day; the same battle re-rendered keeps its screen", async () => {
+    remount('on');
+    act(() => root.render(<FilmRoomRoute battle={BATTLE_PROP} onBack={() => {}} />));
+    expect(await waitForV2()).toBeTruthy();
+    const first = container.querySelector('[data-screen="film-room-v2"]');
+    received.v2 = [];
+    act(() => root.render(<FilmRoomRoute battle={BATTLE_PROP} onBack={() => {}} openAt={null} />));
+    await settle(2);
+    expect(container.querySelector('[data-screen="film-room-v2"]')).toBe(first);
+    expect(received.v2.every((p) => p.openAt === null)).toBe(true);   // App's null for every other way in
+    const other = Object.freeze({ ...BATTLE_PROP, id: 'golden-film-battle-2', agentBattleId: 'golden-film-battle-2' });
+    act(() => root.render(<FilmRoomRoute battle={other} onBack={() => {}} />));
+    expect(await waitForV2()).toBeTruthy();
+    const second = container.querySelector('[data-screen="film-room-v2"]');
+    expect(second).toBeTruthy();
+    expect(second).not.toBe(first);
+    expect(first.isConnected).toBe(false);
   });
 
   it("'allowlist', admitted: v2 for each — the verdict is still asked for a battle the tape covers", async () => {

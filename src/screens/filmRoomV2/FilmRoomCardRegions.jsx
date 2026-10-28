@@ -33,10 +33,12 @@
 //                   (review L3-3) — and Retire.
 //   since-last-time (header) each open Watch card with its recurrences since
 //                   the card's date, each opening its battle day and moment
-//                   here when it is this battle's, named "in another battle"
-//                   otherwise (RG-4; the App has no route to another battle's
-//                   Film Room — review L3-4); and My cards: active, shelved,
-//                   retired, with shelving explained in plain words.
+//                   here when it is this battle's (RG-4); one "in another
+//                   battle" opens THAT battle's Film Room day at its moment,
+//                   through App's P1c door (B2.1 B2, Amendment H RH-2), or
+//                   says it could not be read; and My cards: active, shelved,
+//                   retired, with shelving explained in plain words. The
+//                   moment a recurrence opened is marked in the prepared case.
 // Every number carries its marker (BA-42, R4(a): the screen's aggregates are
 // declared in SCREEN_AGGREGATE_CLASSES); every instant is marked as one, with
 // its date when it is not the shown day's (review L3-7); the note reaches the
@@ -92,7 +94,8 @@ const regionStyle = { display: 'flex', flexDirection: 'column', gap: 8, padding:
 
 // ── prepared case (header) ──────────────────────────────────────────────────
 
-export function PreparedCase({ tape, onTakeHome }) {
+/** @param {string|null} [props.opened] B2.1 B2: the moment a recurrence opened (its momentKey) — marked as the one opened */
+export function PreparedCase({ tape, onTakeHome, opened = null }) {
   const state = tagsStateOf(tape);
   const moments = state === 'ready' ? momentsOfTape(tape) : [];
   return (
@@ -103,7 +106,7 @@ export function PreparedCase({ tape, onTakeHome }) {
       {state === 'ready' && !moments.length ? <span style={foot}>{T.momentsNone}</span> : null}
       {moments.length ? <span style={foot}>{T.momentsNote}</span> : null}
       {moments.map((m) => (
-        <div key={momentKey(m)} id={momentAnchor(m)} data-moment-row={momentKey(m)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '6px 0', borderTop: `1px solid ${C.hair}` }}>
+        <div key={momentKey(m)} id={momentAnchor(m)} data-moment-row={momentKey(m)} data-moment-opened={opened === momentKey(m) ? '' : undefined} aria-current={opened === momentKey(m) ? 'true' : undefined} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '6px 0', borderTop: `1px solid ${C.hair}`, ...(opened === momentKey(m) ? { boxShadow: `inset 3px 0 0 ${C.teal}`, paddingLeft: 8 } : null) }}>
           <MomentFacts moment={m} />
           <TextButton onClick={() => onTakeHome(m)}>{T.takeHome}</TextButton>
         </div>
@@ -308,14 +311,27 @@ function RecurrenceFacts({ r }) {
   );
 }
 
-/** RG-4: this battle's recurrence opens its day and moment here; another battle's is named, since this screen opens no other battle. */
-function Recurrence({ r, own, onOpenMoment }) {
+/**
+ * RG-4: this battle's recurrence opens its day and moment here. B2.1 B2 (Amendment H RH-2): another battle's opens
+ * that battle's Film Room day at its moment — `onOpenBattle` reads the battle and answers false when it could not, and
+ * the row says so beside itself, nothing opened.
+ */
+function Recurrence({ r, own, onOpenMoment, onOpenBattle }) {
+  const [state, setState] = useState('idle');   // 'reading' while the battle is read; 'unreadable' after a failed read
   if (!own) {
+    const open = async () => {
+      setState('reading');
+      const ok = await Promise.resolve(onOpenBattle ? onOpenBattle(r) : false).catch(() => false);
+      if (!ok) setState('unreadable');   // on success the App opens the other battle, and this screen is gone
+    };
     return (
-      <span data-recurrence-row={recurrenceKey(r)} data-recurrence-elsewhere="" style={{ ...recurrenceRow, color: C.ink2 }}>
-        <RecurrenceFacts r={r} />
-        <span style={foot}>{T.otherBattle}</span>
-      </span>
+      <>
+        <button type="button" data-recurrence-row={recurrenceKey(r)} data-recurrence-elsewhere="" onClick={open} disabled={state === 'reading'} style={{ ...plain, ...recurrenceRow, color: C.teal, textAlign: 'left' }}>
+          <RecurrenceFacts r={r} />
+          <span style={foot}>{T.otherBattle}</span>
+        </button>
+        {state === 'unreadable' ? <span data-recurrence-unreadable="" role="status" style={{ ...foot, color: C.copper }}>{T.otherBattleUnreadable}</span> : null}
+      </>
     );
   }
   return (
@@ -339,11 +355,12 @@ function CardRow({ card, onShow }) {
 
 /**
  * @param {string|null} props.day       the day the screen shows (review L3-7)
- * @param {string|null} props.battleId  this battle — its recurrences open here, another battle's are named (RG-4)
+ * @param {string|null} props.battleId  this battle — its recurrences open here (RG-4); another battle's open that
+ *                                      battle through `onOpenBattle` (B2.1 B2, RH-2)
  * @param {object}      props.counter   the hook's counter state `{ status, data }`; data read earlier is kept through
  *                                      a failed re-read (review L4-4), with the error said beside it
  */
-export function SinceLastTime({ day = null, battleId = null, agentId = null, counter, onOpenMoment, onShowCard }) {
+export function SinceLastTime({ day = null, battleId = null, agentId = null, counter, onOpenMoment, onOpenBattle = null, onShowCard }) {
   const data = counter?.data ?? null;
   const cards = ledgerOf(data);
   const watching = watchCardsOf(data, cards);
@@ -363,7 +380,7 @@ export function SinceLastTime({ day = null, battleId = null, agentId = null, cou
         <div key={c.entryId} data-watch-card={c.entryId} style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 0', borderTop: `1px solid ${C.hair}` }}>
           <span style={mono(11, C.ink2)}>{titleOf(c.situationId)} · <Rec>{c.source?.symbol ?? ''}</Rec> · <When>{etWhen(c.createdAt, day) ?? ''}</When></span>
           <span style={{ ...eyebrow, color: C.ink3 }}>{T.recurrences}</span>
-          {recurrences.length ? recurrences.map((r) => <Recurrence key={recurrenceKey(r)} r={r} own={battleId !== null && r.battleId === battleId} onOpenMoment={onOpenMoment} />) : <span style={foot}>{T.noRecurrence}</span>}
+          {recurrences.length ? recurrences.map((r) => <Recurrence key={recurrenceKey(r)} r={r} own={battleId !== null && r.battleId === battleId} onOpenMoment={onOpenMoment} onOpenBattle={onOpenBattle} />) : <span style={foot}>{T.noRecurrence}</span>}
         </div>
       ))}
       {data ? (

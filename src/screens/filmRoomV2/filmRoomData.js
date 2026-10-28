@@ -7,7 +7,10 @@
 //     query constrained to the tape's own `ownerId` (the rules allow a list only
 //     so — "rules are not filters", test/rules/filmTapeDenials.rules.mjs);
 //   * NEVER a subscription — no onSnapshot here or anywhere in v2, and never a
-//     read of the battle document (the route already holds it).
+//     read of the battle document (the route already holds it) — except, on a
+//     tap of a recurrence in ANOTHER battle (B2.1 B2, Amendment H RH-2), ONE
+//     getDoc of that battle's document, which the owner may read, to open its
+//     Film Room day; a read that fails says so and opens nothing.
 //
 // A get of a tape that does not exist is DENIED by the rules (resource is
 // null), exactly like a tape the caller does not own: both read as "no tape".
@@ -50,6 +53,16 @@ export const firestoreReaders = Object.freeze({
       return { status: 'ready', series: (snap?.docs || []).map((d) => d.data()) };
     } catch {
       return { status: 'error', series: [] };
+    }
+  },
+  // B2.1 B2: another battle's document, read once on a tap — never for the battle on screen
+  async readBattle(battleId) {
+    try {
+      const { doc, getDoc, db } = await firestore();
+      const snap = await getDoc(doc(db, 'agentBattles', battleId));
+      return snap && snap.exists() ? { status: 'ready', battle: { id: snap.id ?? battleId, ...snap.data() } } : { status: 'missing', battle: null };
+    } catch {
+      return { status: 'error', battle: null };
     }
   },
 });

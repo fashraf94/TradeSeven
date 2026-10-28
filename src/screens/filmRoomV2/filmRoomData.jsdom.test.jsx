@@ -88,6 +88,21 @@ describe('the Firestore readers', () => {
   });
 });
 
+describe('B2.1 B2 (Amendment H RH-2) — another battle\'s document, read on a tap', () => {
+  it('ONE getDoc of agentBattles/{id}, the id kept on the battle; missing, denied or failed reads say so', async () => {
+    fs.docs['agentBattles/b-other'] = { ownerId: sep23Tape.ownerId, status: 'completed' };
+    expect(await firestoreReaders.readBattle('b-other')).toEqual({ status: 'ready', battle: { id: 'b-other', ownerId: sep23Tape.ownerId, status: 'completed' } });
+    expect(fs.calls).toEqual([['getDoc', 'agentBattles/b-other']]);
+    expect(await firestoreReaders.readBattle('b-none')).toEqual({ status: 'missing', battle: null });
+    fs.denied.add('agentBattles/b-other');
+    expect(await firestoreReaders.readBattle('b-other')).toEqual({ status: 'error', battle: null });
+    fs.denied.clear();
+    fs.fail = true;
+    expect(await firestoreReaders.readBattle('b-other')).toEqual({ status: 'error', battle: null });
+    expect(fs.calls.every(([kind]) => kind === 'getDoc')).toBe(true);   // never a subscription
+  });
+});
+
 describe('review A2V3-2 — a series answer from the offline cache is not the record', () => {
   it('offline, getDocs answers from the cache without an error: that reads as a failed read, never "no series"', async () => {
     fs.docs[SERIES_PATH] = sep23Series;

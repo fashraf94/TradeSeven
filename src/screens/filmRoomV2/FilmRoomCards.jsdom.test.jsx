@@ -21,8 +21,10 @@
 //                    Retire
 //   since-last-time  each open Watch card with its recurrences on the same
 //                    agent's later days, linked to their battle day and moment
-//                    (RG-4); My cards active · shelved · retired, shelving
-//                    explained (acceptance D on the screen)
+//                    (RG-4) — in another battle through App's P1c door, or
+//                    said unreadable (B2.1 B2, RH-2); My cards active ·
+//                    shelved · retired, shelving explained (acceptance D on
+//                    the screen)
 //   the sweeps       numbers and their classes, words, signs, quotations,
 //                    stored notes, the agent's name — clean at every depth
 //                    with every region open
@@ -57,6 +59,7 @@ import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
 import { ledgerOf } from './filmRoomCards';
 import { FORGE_AREAS, forgeAreaOf } from '../../components/CommandCenter/hubChrome';
+import { OPEN_BATTLE_REVIEW_EVENT } from '../../components/Forge/Watchlist/ideaNavigation';
 import {
   mounter, sep23Tape, sep23Series, readersOf, NOW, sweepNumbers, sweepWords, sweepSigns, quoteDefects, storedNoteDefects, agentNameDefects,
 } from './__fixtures__/filmRoomHarness';
@@ -126,9 +129,13 @@ beforeEach(() => {
 });
 afterEach(() => { m.teardown(); vi.restoreAllMocks(); });
 
-async function open({ battle = battleOf(), tapes = { [D1]: fx.tape1, [D2]: fx.tape2 }, series = [] } = {}) {
+let lastReaders = null;
+/** `readBattle` (B2.1 B2): the readers' read of another battle's document; `openAt`: what App hands the screen it opens. */
+async function open({ battle = battleOf(), tapes = { [D1]: fx.tape1, [D2]: fx.tape2 }, series = [], readBattle = null, openAt = undefined } = {}) {
   lastBattle = battle;
-  m.render(<FilmRoomScreenV2 battle={battle} onBack={() => {}} viewerId="viewer-1" readers={readersOf(tapes, series)} nowMs={NOW} cardsApi={api} />);
+  lastReaders = readersOf(tapes, series);
+  if (readBattle) lastReaders.readBattle = readBattle;
+  m.render(<FilmRoomScreenV2 battle={battle} onBack={() => {}} viewerId="viewer-1" readers={lastReaders} nowMs={NOW} cardsApi={api} openAt={openAt} />);
   await m.flush(8);
 }
 const depth = async (label) => { m.click(m.tab(label)); await m.flush(); };
@@ -439,33 +446,18 @@ describe('since-last-time — open Watch cards, their recurrences (RG-4), My car
     } finally { Element.prototype.scrollIntoView = sv; }
     expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 25');
     expect(scrolled).toContain(`moment-${want[0].symbol}-${want[0].fromTickSeq}-${want[0].toTickSeq}`);
+    // B2.1 B2: the moment opened is the one marked in the prepared case, and holds the focus
+    const opened = m.q('[data-moment-opened]');
+    expect(opened.getAttribute('data-moment-row')).toBe(`stalled:${want[0].symbol}:${want[0].fromTickSeq}-${want[0].toTickSeq}`);
+    expect(opened.getAttribute('aria-current')).toBe('true');
+    expect(document.activeElement).toBe(opened);
+    expect(m.qa('[aria-current="true"][data-moment-row]')).toHaveLength(1);
     expect(counterCalls()).toBe(2);   // once at open, once after the create — the day change re-asked nothing (review L4-3)
     await sweepAll(fx.tape2, 'since last time');
-  });
-  it('another battle\'s recurrence (the same agent, another battle day) is NAMED, not linked: the screen opens no other battle (RG-4; review L3-4)', async () => {
-    // the same agent's day in another battle, in the window — the counter lists it among the recurrences
-    t.store.set(`agentBattles/b-elsewhere/tape/${D2}`, { ...fx.tape2, battleId: 'b-elsewhere' });
-    await open();
+    // a day picked by hand clears the mark
     m.click(m.qa('[data-region="day-picker"] button')[0]);
     await m.flush(8);
-    m.click(m.buttons('Take this home')[0]);
-    await m.flush();
-    await atClock(`${D1}T23:00:00.000Z`, () => fileCard({ note: 'Watch this.' }));
-    const watch = region('since-last-time').querySelector('[data-watch-card="op_1"]');
-    const rows = [...watch.querySelectorAll('[data-recurrence-row]')];
-    const own = rows.filter((r) => r.getAttribute('data-recurrence-row').startsWith(`${B}:`));
-    const elsewhere = rows.filter((r) => r.getAttribute('data-recurrence-row').startsWith('b-elsewhere:'));
-    expect(own.length).toBeGreaterThan(0);
-    expect(elsewhere.length).toBe(own.length);
-    for (const r of elsewhere) {
-      expect(r.tagName).toBe('SPAN');
-      expect(r.hasAttribute('data-recurrence-elsewhere')).toBe(true);
-      expect(r.querySelector('a, button')).toBeNull();
-      expect(r.textContent).toContain('in another battle');
-    }
-    for (const r of own) expect(r.tagName).toBe('BUTTON');
-    expect(watch.querySelector('a')).toBeNull();
-    await sweepAll(fx.tape1, 'elsewhere');
+    expect(m.q('[data-moment-opened]')).toBeNull();
   });
   it('no open Watch card: says so; a Practice card is not followed', async () => {
     await open();
@@ -889,5 +881,166 @@ describe('B2.1 B1 (Amendment H RH-1; Amendment J RJ-8) — Set\'s link to the te
     const tg = makeTapeDb(seedDay({}, g));
     await writeTapeDay('b-guardian', D1, { db: tg.db, now: NIGHT(D1) });
     expect(tg.store.get(`agentBattles/b-guardian/tape/${D1}`).tags.inputs.forcedRotation.enabled).toBe(false);
+  });
+});
+
+describe('B2.1 B2 (Amendment H RH-2) — a recurrence in another battle opens that battle\'s Film Room day at its moment', () => {
+  const ELSE = 'b-elsewhere';
+  const D3 = '2026-09-28';   // the next session (Sep 26 is a Saturday)
+  // the same agent's other battle: days D2 and D3, completed — so it opens on D3 by default, and D2 only when asked
+  const elseBattle = () => battleOf({ id: ELSE, agentBattleId: ELSE, timing: { tradingDays: [D2, D3] }, completedAt: `${D3}T20:05:00.000Z` });
+  const elseTape = () => ({ ...fx.tape2, battleId: ELSE });
+  let events;
+  const onEvent = (e) => events.push(e.detail);
+  beforeEach(() => { events = []; window.addEventListener(OPEN_BATTLE_REVIEW_EVENT, onEvent); });
+  afterEach(() => { window.removeEventListener(OPEN_BATTLE_REVIEW_EVENT, onEvent); });
+
+  /** A Watch card filed from day 1 of this battle, with the other battle's day 2 in the counter's window. */
+  async function watchCardWithElsewhere(opts = {}) {
+    t.store.set(`agentBattles/${ELSE}/tape/${D2}`, elseTape());
+    await open(opts);
+    m.click(m.qa('[data-region="day-picker"] button')[0]);
+    await m.flush(8);
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await atClock(`${D1}T23:00:00.000Z`, () => fileCard({ note: 'Watch this.' }));
+    const watch = region('since-last-time').querySelector('[data-watch-card="op_1"]');
+    const rows = [...watch.querySelectorAll('[data-recurrence-row]')];
+    const own = rows.filter((r) => r.getAttribute('data-recurrence-row').startsWith(`${B}:`));
+    const elsewhere = rows.filter((r) => r.getAttribute('data-recurrence-row').startsWith(`${ELSE}:`));
+    expect(own.length).toBeGreaterThan(0);
+    expect(elsewhere.length).toBe(own.length);
+    return { watch, own, elsewhere };
+  }
+  const want = () => momentsOf(fx.tape2.tags.items).filter((mm) => mm.situationId === 'stalled')[0];
+  const wantAt = () => { const w = want(); return { etDate: D2, moment: { situationId: 'stalled', symbol: w.symbol, fromTickSeq: w.fromTickSeq, toTickSeq: w.toTickSeq } }; };
+
+  it('the row is a control: one read of that battle\'s document, then P1c\'s event with the battle, its day and its moment — this screen reads nothing of it', async () => {
+    const reads = [];
+    const other = elseBattle();
+    const { watch, own, elsewhere } = await watchCardWithElsewhere({ readBattle: async (id) => { reads.push(id); return { status: 'ready', battle: other }; } });
+    for (const r of elsewhere) {
+      expect(r.tagName).toBe('BUTTON');
+      expect(r.hasAttribute('data-recurrence-elsewhere')).toBe(true);
+      expect(r.getAttribute('href')).toBeNull();
+      expect(r.textContent).toContain('in another battle');
+    }
+    for (const r of own) expect(r.tagName).toBe('BUTTON');
+    expect(watch.querySelector('a')).toBeNull();
+    await sweepAll(fx.tape1, 'elsewhere');
+    const before = lastReaders.calls.length;
+    m.click(elsewhere[0]);
+    await m.flush(8);
+    expect(reads).toEqual([ELSE]);
+    expect(events).toHaveLength(1);
+    expect(events[0].battle).toBe(other);
+    expect(events[0].at).toEqual(wantAt());
+    expect(m.q('[data-recurrence-unreadable]')).toBeNull();
+    // the screen on show stays as it was until App opens the other battle: its day, and no tape or series of the other battle read here
+    expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 24');
+    expect(lastReaders.calls.slice(before).filter((c) => c[1] === ELSE)).toEqual([]);
+  });
+
+  it('the screen App opens for it (the battle, and the event\'s day and moment): that day, the moment selected — marked, focused, scrolled to', async () => {
+    await watchCardWithElsewhere({ readBattle: async () => ({ status: 'ready', battle: elseBattle() }) });
+    m.click(m.q(`[data-recurrence-row^="${ELSE}:"]`));
+    await m.flush(8);
+    expect(events).toHaveLength(1);
+    const detail = events[0];
+    // what App's listener does: the battle, and the day and moment for it (src/App.jsx onOpenBattleReview)
+    m.teardown(); m.setup();
+    const scrolled = [];
+    const sv = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scroll() { scrolled.push(this.id); };
+    try {
+      await open({ battle: detail.battle, tapes: { [D2]: elseTape() }, openAt: { ...detail.at, battleId: detail.battle.id } });
+      await m.flush(8);
+    } finally { Element.prototype.scrollIntoView = sv; }
+    const w = want();
+    expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 25');
+    const row = m.q('[data-moment-opened]');
+    expect(row).toBeTruthy();
+    expect(row.getAttribute('data-moment-row')).toBe(`stalled:${w.symbol}:${w.fromTickSeq}-${w.toTickSeq}`);
+    expect(row.getAttribute('aria-current')).toBe('true');
+    expect(document.activeElement).toBe(row);
+    expect(scrolled).toContain(`moment-${w.symbol}-${w.fromTickSeq}-${w.toTickSeq}`);
+    expect(lastReaders.calls.filter((c) => c[0] === 'tape').map((c) => [c[1], c[2]])).toEqual([[ELSE, D2]]);   // the default day was never read
+    await sweepAll(elseTape(), 'opened at the moment');
+  });
+
+  it('the cards\' gate answering after the tape (\'allowlist\', the flip\'s first step): the jump waits for the moment\'s row, then marks and focuses it', async () => {
+    state.cards = 'allowlist';
+    let admit = null;
+    api.readVerdict = () => new Promise((r) => { admit = () => r(true); });
+    await open({ battle: elseBattle(), tapes: { [D2]: elseTape() }, openAt: { ...wantAt(), battleId: ELSE } });
+    // the tape is on screen, the cards are not yet: the empty reserved regions, no moment row, nothing focused
+    expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 25');
+    expect(m.qa('[data-reserved-slot]')).toHaveLength(4);
+    expect(m.q('[data-moment-row]')).toBeNull();
+    expect(typeof admit).toBe('function');
+    admit();
+    await m.flush(8);
+    const w = want();
+    const row = m.q('[data-moment-opened]');
+    expect(row).toBeTruthy();
+    expect(row.getAttribute('data-moment-row')).toBe(`stalled:${w.symbol}:${w.fromTickSeq}-${w.toTickSeq}`);
+    expect(document.activeElement).toBe(row);
+  });
+
+  it('P1c\'s own event (no day, no moment) opens that battle as before, on its default day, nothing marked; a day and moment for another battle are ignored', async () => {
+    await open({ battle: elseBattle(), tapes: { [D2]: elseTape() } });
+    expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 28');
+    expect(m.q('[data-moment-opened]')).toBeNull();
+    m.teardown(); m.setup();
+    await open({ battle: elseBattle(), tapes: { [D2]: elseTape() }, openAt: { ...wantAt(), battleId: B } });
+    expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 28');
+    expect(m.q('[data-moment-opened]')).toBeNull();
+    m.teardown(); m.setup();
+    // a malformed one (no moment) is ignored the same way
+    await open({ battle: elseBattle(), tapes: { [D2]: elseTape() }, openAt: { etDate: D2, battleId: ELSE } });
+    expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 28');
+  });
+
+  it('a battle that cannot be read: the row says so beside itself, and nothing opens — missing, failed, thrown, another battle\'s id, no reader', async () => {
+    const answers = [
+      async () => ({ status: 'missing', battle: null }),
+      async () => ({ status: 'error', battle: null }),
+      async () => { throw new Error('unavailable'); },
+      async () => ({ status: 'ready', battle: { ...elseBattle(), id: 'b-someone-else', agentBattleId: 'b-someone-else' } }),
+      null,
+    ];
+    for (const readBattle of answers) {
+      m.teardown(); m.setup();
+      t = makeTapeDb({ ...fx.store, [`agents/${AGENT}`]: { ownerId: OWNER, name: 'Aurora', archetype: 'momentum_chaser' } });
+      state.db = t.db;
+      api = apiOf();
+      events = [];
+      const { elsewhere } = await watchCardWithElsewhere({ readBattle });
+      m.click(elsewhere[0]);
+      await m.flush(8);
+      const said = m.qa('[data-recurrence-unreadable]');
+      expect(said).toHaveLength(1);
+      expect(said[0].textContent).toBe('That battle could not be read, so it was not opened.');
+      expect(said[0].previousElementSibling).toBe(elsewhere[0]);
+      expect(elsewhere[0].disabled).toBe(false);   // a later tap may try again
+      expect(events).toEqual([]);
+      expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 24');
+    }
+    await sweepAll(fx.tape1, 'unreadable');
+  });
+
+  it('while the battle is read the row takes no second tap', async () => {
+    let release;
+    const reads = [];
+    const { elsewhere } = await watchCardWithElsewhere({ readBattle: (id) => { reads.push(id); return new Promise((r) => { release = () => r({ status: 'ready', battle: elseBattle() }); }); } });
+    m.click(elsewhere[0]);
+    await m.flush(2);
+    expect(elsewhere[0].disabled).toBe(true);
+    m.click(elsewhere[0]);
+    await m.flush(2);
+    expect(reads).toEqual([ELSE]);
+    release();
+    await m.flush(8);
+    expect(events).toHaveLength(1);
   });
 });

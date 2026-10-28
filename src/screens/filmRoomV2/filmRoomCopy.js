@@ -362,8 +362,10 @@ export const FILM_ROOM_COPY = Object.freeze({
     // B2.1 B3 (RH-6), in RJ-7's style: "Recurrences · {n} days in this window could not be read"
     recurrencesWord: 'Recurrences',
     unavailableDays: (n) => (n === 1 ? 'day in this window could not be read' : 'days in this window could not be read'),
-    // RG-4: a recurrence in another battle is named, not linked — the screen opens only its own battle's days
+    // B2.1 B2 (RH-2): a recurrence in another battle opens that battle's Film Room day at its moment; when the battle
+    // cannot be read, the row says so and nothing opens
     otherBattle: 'in another battle',
+    otherBattleUnreadable: 'That battle could not be read, so it was not opened.',
     noWatchCards: 'No open Watch card.',
     myCards: 'My cards',
     groups: { active: 'Active', shelved: 'Shelved', retired: 'Retired', other: 'Other' },
