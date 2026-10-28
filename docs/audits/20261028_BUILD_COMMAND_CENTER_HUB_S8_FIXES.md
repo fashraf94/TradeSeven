@@ -318,3 +318,112 @@ The real `EquipSheet` from an LF snapshot of `a045dec5`, with `tokens.css`, rend
   - [ ] On a weekend, the Scouting Board's heading says "on Friday's read", not "today".
 - **On the smoke preview:**
   - [ ] Deploy from the Scouting Board until the ceremony shows, then "Back to hub": focus is on "See what it's eyeing".
+
+## 14. The merge with `main` at `62380f14` (#999, BaggerBomb cleanup; October 28, 2026)
+
+`main` moved while #1000 waited. PR #999 changed `hub/gamesDisplay.js`, `hub/hubCopy.js` and `hub/hubDate.js`, and #1000 conflicted with it in `hub/gamesDisplay.js`. This is the same branch and PR, with the stop rule unchanged.
+
+The sequence:
+- `git fetch origin`, then `origin/main` merged into the branch as `1034b2b0` (parents `285ac5d0` and `62380f14`).
+- One commit of rows after it: `31ba188d`, the code head.
+
+`hubCopy.js`, `activityDates.js` and `hubDate.js` are now byte-identical to `main`'s. Against the new `main` the PR is 42 files, +2,857 / −93 (18 source files, +388 / −67). Nothing is under `api/`, no file is fenced, and no `firestore.rules`, `vercel.json` or `package*` file changes.
+
+### 14.1 The conflict and its resolution
+
+Both sides changed `liveGameRows` (`hub/gamesDisplay.js:133`):
+
+| | S8 (`285ac5d0`) | `main` (`62380f14`) | Merged |
+|---|---|---|---|
+| Waiting or live | `derivePhase(battle, marketState)` | `derivePhase(battle, marketState, nowMs)` (#999 C5: a game before its first trading day is waiting, even with the market open) | `main`'s (`:137`) |
+| A waiting game's clock | "waiting for the open" | "Starts Wed 9:30 AM ET" (`deriveStartsAtEt`, `:138`), else "waiting for the open" | `main`'s (`:156`) |
+| "ends" on another day | `COPY.games.endsWhen(…, formatHubOtherDay(…))` (`activityDates.js`) | `COPY.time.et(formatHubTimeOnDay(…))` (`hubDate.js:73`) | `main`'s (`:146`), the one helper |
+| An opened game past its end | `ending` and `minutesLeft` (R-S8F-7) | — | S8's (`:119`, `:155`) |
+| A completed game from another year | `formatHubDayYear` (R-S8F-9) | `formatHubDay` | S8's (`:187`) |
+
+**The two "ends" helpers gave the same text, so S8's is gone.** Before removing it, I ran both side by side in the merged tree over 283,178 pairs, with no difference:
+- ends from three days before the clock to four days after, every 23 minutes;
+- clocks every 37 minutes across March's and November's DST changes, the year's turn and a weekend;
+- the ET-midnight edges and a year apart;
+- seven unusable clocks.
+
+So, by the ruling:
+- `formatHubOtherDay` (and its weekday formatter) and `COPY.games.endsWhen` are removed.
+- S8's rows for them are re-pointed at `formatHubTimeOnDay` (`hubDate.s4.test.js:72`). They use the same instants, now expecting the whole time: "Wed 4:00 PM", "11:59 PM", "Wed 12:00 AM", "Mon 11:00 AM" for a year back, and the bare time with no clock. The `activityDates.js` formatter count is back to `main`'s 5.
+- S8's Games rows check the finished text and pass unchanged: `gamesDisplay.test.js` "dates on the Games rows (S8-4)" and the `CommandCenterHub.s8.jsdom` R-S8F-9 rows.
+
+S8's helper lived in the hub's lazy chunk. `main`'s lives in `hubDate.js`, which ships in the entry chunk (#999's own placement).
+
+### 14.2 One `derivePhase` call for every surface (BUILD_RULES §9)
+
+Every hub surface that says live or waiting reads the rows of the one call at `hub/useHubReaders.js:152`: `liveGameRows(live, { nowMs: Date.now(), marketState: getMarketState() })`. It is the only `derivePhase` in `src/components/CommandCenter`. `gamesSectionOf` copies those rows into `games.live` (`:69`), and the next action takes the same array (`:171`).
+
+| Surface | What it reads | Where it decides |
+|---|---|---|
+| The Games rows (desktop and tablet) | `row.preOpen`, `row.clock` | `sections/GamesSection.jsx:52` |
+| The Games header | `liveCountsOf(games)` (`hub/hubModel.js:189`) | `GamesSection.jsx:162`, `:166` |
+| The status line | the same counts (`CommandCenterHub.jsx:186`, `:208–210`) | `hub/shadowStatus.js:91–92` |
+| The strip | the first live row (`CommandCenterHub.jsx:189–190`) | `hub/deployDisplay.js:170` |
+| The next-action card | `liveRows` | `hub/nextAction.js:71` |
+| The phone Overview | `liveGamesOf(games)` (`PhoneTabs.jsx:93`, `:99`) | the same `GameRow` (`GamesSection.jsx:52`) |
+
+No row covered a game deployed between 3:15 and 4:00 PM ET on the connected hub:
+- S8's waiting rows use the old rule (no evaluation, market closed).
+- `main`'s C5 rows check `liveGameRows` and `deployDisplay` on their own.
+
+I added three rows (`CommandCenterHub.s8.jsdom.test.jsx:240`). They are set on Tuesday at 3:30 PM ET with the market open, for a game whose first trading day is Wednesday:
+
+| Row | Red before (`285ac5d0`, the pre-merge head) | Green after |
+|---|---|---|
+| Desktop: the Games header and the status line say "Deployed · waiting for the open"; the row says "Deployed · Starts Wed 9:30 AM ET" and "ends Wed 4:00 PM ET"; the next action is "Your game is deployed"; nothing says live | `expected 'Games1 liveHistory' not to match /\d+ live/` | green |
+| Phone: the strip, the status line, the next action and the Overview's own live row say the same | `expected 'Live · 24h 30m leftDeploy unavailable…' to contain 'Deployed · Starts Wed 9:30 AM ET'` | green |
+| Control: at the same instant, a game whose first trading day is today reads live on every surface | green | green |
+
+The header and the status line say "waiting for the open", while the row and the strip say when the game starts. Both say waiting; only the rows carry a single start time. This round leaves that wording unchanged.
+
+### 14.3 Mutation (cap 10, on the new rows only)
+
+All 10 mutants were killed against the new describe. Each file was restored byte-identical (sha256 compared), and the tree was committed before the round.
+
+| # | Mutant | Killed by |
+|---|---|---|
+| M01 | `derivePhase` without the row's clock (S8's side of the conflict, `gamesDisplay.js:137`) | desktop, phone |
+| M02 | the reader hands the rows no clock (`useHubReaders.js:152`) | desktop, phone |
+| M03 | `liveCountsOf` counts a waiting game as opened | desktop, phone |
+| M04 | the status line counts waiting games as live (`CommandCenterHub.jsx:208`) | desktop, phone |
+| M05 | the next action's title ignores `preOpen` | desktop, phone |
+| M06 | the strip ignores `preOpen` | phone |
+| M07 | the row tag ignores `preOpen` | desktop, phone |
+| M08 | the header drops its waiting tag | desktop |
+| M09 | the waiting clock never says when it starts | desktop, phone |
+| M10 | every game not completed reads waiting | the control |
+
+### 14.4 Checks (Linux, code head `31ba188d`)
+
+| Check | Result |
+|---|---|
+| `vite build` | Exit 0 on the code head and on the new `main`. The hub chunk is `CommandCenterHub-CFpUpqdh.js` at 151,164 B: `main`'s is 150,172 B, and at `dfcfb072` it was 151,424 B (S8's helper and its copy left; #999's C5 code came in) |
+| Entry chunk | `index-ConuQaGW.js`, 4,830,272 B (gzip 1,303,113 B), against the new `main`'s `index-CLx1U8Yq.js`, 4,904,384 B (gzip 1,321,424 B): **−74,112 raw / −18,311 gzip** (detail below the table) |
+| `npm run lint:gate` | Exit 0, no output |
+| Full suite, `TZ=UTC`, `--maxWorkers=8`, under `flock /tmp/pd-suite.lock` | **Exit 0. `Test Files  1202 passed \| 8 skipped (1210)`; `Tests  26193 passed \| 89 skipped (26282)`; 277 s** |
+| Flag-on dry run | **Exactly the 14 by-design rows**: `App.activeBattlesPoll.owner` 9, `App.bootOrder` 2, `commandCenterHubFlags` 1, `flagPinGuard` 2 (`Tests  14 failed \| 26179 passed \| 89 skipped (26282)`); the flag was restored and the tree is clean |
+
+**The entry chunk's raw delta is the same as against the old `main`, and the sourcemap attribution says why:**
+- The merge changed nothing the entry chunk carries from this PR. `hubCopy.js`, `activityDates.js` and `gamesDisplay.js` are not in it, and `hubDate.js` is 1,340 B on both sides.
+- #999's own entry-chunk additions, +2,315 B, are on both sides.
+- `DashboardLoop.jsx` and `DashboardDesktop.jsx` are still absent (`main` carries them at 14,070 B and 11,377 B).
+- The PR's other entry bytes are as in §13.4: `EquipSheet.jsx` +1,540, `ScoutingBoardSheet.jsx` +965, `DeployAttemptContext.jsx` +616, `CommandCenterHubGate.jsx` +163, `overlayStack.js` +124 and `useDailyRegimeBrief.js` +86.
+- 42 sources differ by 1–3 B (the minifier's names), net +90.
+
+On Windows, the hub folder and the adapter (89 files) ran green but for one load timeout. `CommandCenterHub.testIntegrity.jsdom` hit its 5 s limit with six workers and passes alone; Linux is the record.
+
+### 14.5 What a player sees with the flag off, the smoke, and questions
+
+- **Nothing new from the merge.** The PR's flag-off changes are still §2's four and §13.1's two. `formatHubTimeOnDay` and the C5 rows are drawn only by the hub. #999's live changes (the Desk, the Battle View, the crons) are `main`'s, already merged.
+- **The smoke branch is rebuilt** as the new PR head plus the flag-true commit, pushed with `--force-with-lease`.
+- **No new founder questions.**
+- **The checklist (§10) gains, on the smoke preview:**
+  - [ ] Deploy between 3:15 and 4:00 PM ET. The hub says the game is waiting everywhere:
+    - the row and the strip: "Deployed · Starts {next session} 9:30 AM ET";
+    - the Games header and the status line: "Deployed · waiting for the open";
+    - the next action: "Your game is deployed".
