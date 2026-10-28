@@ -368,9 +368,11 @@ describe('BR-3: the 11 dead tickers leave the pickable universe and keep their l
     for (const t of RETIRED) expect(searchUniverse(t).map(m => m.symbol), t).not.toContain(t);
     expect(searchUniverse('AAPL')[0].symbol).toBe('AAPL');
   });
-  // The ranked pool only: decide.js also folds an equipped watchlist's tickers into the
-  // agent's pool (watchlistEquip.js foldEquippedTickers), which the row below and the
-  // validator/search rows above cover from the other side (no new adds; measured refuses).
+  // The ranked pool only: decide.js also folds an equipped watchlist's RANKED tickers into
+  // the agent's pool (watchlistEquip.js rankedEquippedTickers, then foldEquippedTickers; F2,
+  // Oct 25) — an equipped name outside the ranked universe stays on the snapshot, unfolded.
+  // The row below and the validator/search rows above cover the pool from the other side
+  // (no new adds; measured refuses).
   it('the rankings cron fetches and ranks ALL_TICKERS only, so its rebuilt stockRankings (the CPU pool and the agent ranked pool) cannot list them', () => {
     const src = readFileSync(new URL('../cron/compute-index-intelligence.js', import.meta.url), 'utf8');
     expect(src).toContain('fetchBatch(ALL_TICKERS, 10, 500)'); expect(src).toContain('for (const sym of ALL_TICKERS)');

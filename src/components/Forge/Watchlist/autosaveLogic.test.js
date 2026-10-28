@@ -65,4 +65,16 @@ describe('nextSaveState — indicator state machine', () => {
     expect(nextSaveState('saving', 'fade')).toBe('saving');
     expect(nextSaveState('error', 'fade')).toBe('error');
   });
+
+  // Review CL2-3: a refusal for an edit that was undone in flight settles a pending save and nothing else.
+  it('stale_refusal settles saving to idle and leaves every other state alone', () => {
+    expect(nextSaveState('saving', 'stale_refusal')).toBe('idle');
+    for (const s of ['idle', 'saved', 'error']) expect(nextSaveState(s, 'stale_refusal')).toBe(s);
+  });
+
+  // C4: the edit that failed was undone (the retired ticker was removed) — nothing is left to retry.
+  it('noop clears a failed badge and leaves every other state alone', () => {
+    expect(nextSaveState('error', 'noop')).toBe('idle');
+    for (const s of ['idle', 'saving', 'saved']) expect(nextSaveState(s, 'noop')).toBe(s);
+  });
 });

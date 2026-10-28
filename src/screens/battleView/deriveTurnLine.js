@@ -19,7 +19,7 @@
 //   live      → DESK_COPY.postureLive     `Checked 12:47 PM · next ~1:02 PM`
 //   lastToday → DESK_COPY.postureLastOfSession `Checked 3:46 PM · last check today`
 //   late      → DESK_COPY.postureLate     `Last check 12:47 PM · next was due ~1:02 PM`
-//   preOpen   → DESK_COPY.posturePreOpen  `First check at 9:30 AM ET`
+//   preOpen   → DESK_COPY.postureStarts   `First check at 9:30 AM ET`, or `Starts Tue 9:30 AM ET` before the battle's first trading day
 //   closed    → DESK_COPY.postureClosed   `Market closed · last check 3:45 PM · next Tue 9:30 AM ET`
 //   complete  → DESK_COPY.postureComplete `Battle complete`
 // plus the Desk's own LIVE-with-no-eval degrade (`First check coming up`).
@@ -157,7 +157,8 @@ export function deriveTurnLine(battle, now, marketState) {
     text = DESK_COPY.postureComplete;
   } else if (phase === PHASE.PRE_OPEN) {
     state = TURN_STATE.PRE_OPEN;
-    text = DESK_COPY.posturePreOpen;
+    // C5: "Starts Tue 9:30 AM ET" while the first trading day is a later day, else the same-day line.
+    text = DESK_COPY.postureStarts(sync.startsAtEt);
   } else if (phase === PHASE.LIVE_CLOSED) {
     state = TURN_STATE.CLOSED;
     text = DESK_COPY.postureClosed(nextOpenEt, lastCheckedAt);

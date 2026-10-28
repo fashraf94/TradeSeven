@@ -22,6 +22,7 @@ import {
 import { answerIdOf } from './events.js';
 import { ARCHETYPE_KEYS, getAllowlist, isValidAdjustmentId, getCanonicalText } from '../../../src/data/archetypeAdjustments.js';
 import { makeTickBattle } from '../__fixtures__/tickStampsHarness.js';
+import { isInBattleUniverse } from '../../../src/data/battleUniverse.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const T = (iso) => Date.parse(iso);
@@ -155,12 +156,53 @@ describe('eligibility NOW (spec §5 row 7) — a dead slot or a moved symbol nev
     expect(isCallActionEligible('call_pick', pick(), battle(), { pickSymbol: 'AMD' })).toEqual({ ok: true });
     expect(isCallActionEligible('call_pick', pick(), battle(), { pickSymbol: 'MSFT' })).toEqual({ ok: false, reason: 'pick_not_an_option' }); // not an option
     expect(isCallActionEligible('call_pick', pick(), battle(), { pickSymbol: null })).toEqual({ ok: false, reason: 'pick_not_an_option' });
-    expect(isCallActionEligible('call_pick', pick({ options: [{ symbol: 'ZZZZ' }] }), battle(), { pickSymbol: 'ZZZZ' })).toEqual({ ok: false, reason: 'pick_outside_universe' });
+    // C3: a name on no swap list can never come in — the universe is no longer the test, so the reason is canComeIn's.
+    expect(isCallActionEligible('call_pick', pick({ options: [{ symbol: 'ZZZZ' }] }), battle(), { pickSymbol: 'ZZZZ' })).toEqual({ ok: false, reason: 'pick_not_on_bench' });
     const held = battle(); held.portfolio.core.push({ symbol: 'JPM', name: 'JPMorgan' });
     expect(isCallActionEligible('call_pick', pick(), held, { pickSymbol: 'JPM' })).toEqual({ ok: false, reason: 'pick_already_held' });
     expect(isCallActionEligible('call_pick', pick({ swapOut: 'PG' }), battle(), { pickSymbol: 'JPM' })).toEqual({ ok: true });
     expect(isCallActionEligible('call_pick', pick({ swapOut: 'NVDA' }), battle(), { pickSymbol: 'JPM' })).toEqual({ ok: false, reason: 'swap_out_not_held' });
     expect(isCallActionEligible('call_x', pick(), battle(), { pickSymbol: 'JPM' })).toEqual({ ok: false, reason: 'unknown_kind' });
+  });
+
+  // BaggerBomb cleanup C3 (Flash, Oct 27, 2026; #998 MT2-1): a pick must be able to come in — the swap's own lists
+  // through canComeIn, the rule an exit's replacement already passes. The battle universe holds the equipped
+  // snapshot, so an equipped-only ticker (KRE) used to be offered, filed and then refused by the executor.
+  describe('call_pick — canComeIn, not the universe (C3)', () => {
+    const equipped = () => {
+      const b = battle();
+      b.agentContext = { ...b.agentContext, equippedWatchlist: { watchlistId: 'wl-1', name: 'Banks', tickers: ['KRE', 'JPM'] } };
+      return b;
+    };
+    const kre = () => pick({ options: [{ symbol: 'KRE', why: 'a' }, { symbol: 'JPM', why: 'b' }] });
+
+    it('an equipped ETF that is on no swap list is refused as a pick, though it is in the battle universe', () => {
+      expect(isInBattleUniverse(equipped(), 'KRE')).toBe(true); // the old test passed it
+      expect(isCallActionEligible('call_pick', kre(), equipped(), { pickSymbol: 'KRE' })).toEqual({ ok: false, reason: 'pick_not_on_bench' });
+    });
+
+    it('the ranked bench names are still offered', () => {
+      // JPM is equipped AND on the persisted bench: it comes in. AMD is bench-only: it comes in.
+      expect(isCallActionEligible('call_pick', kre(), equipped(), { pickSymbol: 'JPM' })).toEqual({ ok: true });
+      expect(isCallActionEligible('call_pick', pick(), equipped(), { pickSymbol: 'AMD' })).toEqual({ ok: true });
+    });
+
+    it('a hot-bench name can come in (the swap takes the watchlist\'s hot bench)', () => {
+      const b = equipped(); b.watchlist = { ...b.watchlist, hotBench: ['KRE'] };
+      expect(isCallActionEligible('call_pick', kre(), b, { pickSymbol: 'KRE' })).toEqual({ ok: true });
+    });
+
+    it('the book reasons stay first: a held name and a moved swap-out are still the D-6 book reasons', () => {
+      const held = equipped(); held.portfolio.core.push({ symbol: 'JPM', name: 'JPMorgan' });
+      expect(isCallActionEligible('call_pick', kre(), held, { pickSymbol: 'JPM' })).toEqual({ ok: false, reason: 'pick_already_held' });
+      expect(isCallActionEligible('call_pick', pick({ swapOut: 'NVDA', options: [{ symbol: 'KRE' }, { symbol: 'JPM' }] }), equipped(), { pickSymbol: 'KRE' })).toEqual({ ok: false, reason: 'swap_out_not_held' });
+    });
+
+    it('a cooldown-locked bench name and the wrong class are refused with their own reasons', () => {
+      const locked = battle(); locked.portfolio.bench.stocks[0] = { ...locked.portfolio.bench.stocks[0], cooldownUntil: '2099-01-01T00:00:00.000Z' };
+      expect(isCallActionEligible('call_pick', pick(), locked, { pickSymbol: 'AMD' })).toEqual({ ok: false, reason: 'pick_locked' });
+      expect(isCallActionEligible('call_pick', pick({ swapOut: 'BTC' }), battle(), { pickSymbol: 'JPM' })).toEqual({ ok: false, reason: 'pick_wrong_class' });
+    });
   });
 });
 

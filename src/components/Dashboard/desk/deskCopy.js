@@ -159,6 +159,14 @@ export const DESK_COPY = Object.freeze({
   // "9:30 ET" beside them read as a different kind of time.
   posturePreOpen: 'First check at 9:30 AM ET',
 
+  // PRE_OPEN, and the battle's first trading day is a LATER day (BaggerBomb
+  // cleanup C5 — a battle deployed in the last 45 minutes before a close, or
+  // overnight, plays the NEXT session). A bare "First check at 9:30 AM ET" would
+  // read as today's; this names the day. The adapter's `startsAtEt` is the one
+  // source ("Tue 9:30 AM ET", from the calendar of record), so the Desk, the
+  // Battle View turn line and the hub row cannot disagree (BUILD_RULES §9).
+  postureStarts: (startsAtEt) => (typeof startsAtEt === 'string' && startsAtEt ? `Starts ${startsAtEt}` : DESK_COPY.posturePreOpen),
+
   // LIVE, and the due check has not landed (Phase A, D-62 / handover lock #5).
   // Still discrete: the last check that DID run, and the one that WAS due —
   // past tense, tilde kept, because the cron is not a metronome and "was due"

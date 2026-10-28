@@ -31,6 +31,9 @@ import {
   calculateAssetScoreServer,
 } from '../_utils/agentScoring.js';
 import { getCurrentTradingDayServer } from '../_utils/agentEvalPromptAssembly.js';
+// BaggerBomb cleanup C1 / C2: the shared first-trading-day rule (a Node-clean
+// src/ module, BUILD_RULES §4; agent-evaluate imports the same one).
+import { beforeFirstTradingDay, firstTradingDayOf } from '../../src/utils/tieredFirstTradingDay.js';
 
 function logInfo(msg, extra = {}) {
   console.log(`[agent-daily-scores] ${msg}`, extra);
@@ -47,6 +50,18 @@ function logError(msg, extra = {}) {
 async function resetBattleDaily(db, battleDoc, currentPrices, dailyBySymbol = {}) {
   const battle = { id: battleDoc.id, ...battleDoc.data() };
   const battleId = battle.id;
+  const todayET = formatDateString(getETDate());
+
+  // C1 (Flash, Oct 27, 2026): a tiered battle that has not reached its first
+  // trading day (BR-2: created in the last 45 minutes before a close, or
+  // overnight, so it plays the NEXT session) gets nothing tonight — nothing is
+  // banked, recorded or reset, and a measured battle writes nothing and
+  // refuses nothing. Without this, getCurrentTradingDayServer answers "day 1"
+  // for a date before the list and the creation evening recorded as day 1,
+  // leaving the battle's real first night "already recorded". Placed before the
+  // corrected-route branch so measured and legacy battles are held alike;
+  // tournaments and other modes never are.
+  if (beforeFirstTradingDay(battle, todayET)) return { status: 'skipped', reason: 'before_first_trading_day' };
 
   // Determine current trading day for this battle
   const tradingDays = battle.timing?.tradingDays || [];
@@ -62,10 +77,12 @@ async function resetBattleDaily(db, battleDoc, currentPrices, dailyBySymbol = {}
   }
 
   // ---- Activation-day gate (mirrors agent-evaluate.js Phase 1 logic) ----
-  const todayET = formatDateString(getETDate());
-  const activationDateET = battle.activatedAt
+  // C2 (Oct 27, 2026): the same activation day as agent-evaluate's gate — a
+  // tiered battle's first trading day, else `activatedAt` — so the night's
+  // banked badge points use the baseline the day's evaluations scored from.
+  const activationDateET = firstTradingDayOf(battle) ?? (battle.activatedAt
     ? formatDateString(new Date(new Date(battle.activatedAt).toLocaleString('en-US', { timeZone: 'America/New_York' })))
-    : todayET;
+    : todayET);
   const isActivationDay = todayET === activationDateET;
   // Guard 2 cutoff for crypto (24/7, UTC-dated daily bars).
   const utcToday = new Date().toISOString().slice(0, 10);

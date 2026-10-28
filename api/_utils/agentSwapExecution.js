@@ -12,6 +12,7 @@ import {
   flattenBenchServer,
 } from './agentScoring.js';
 import { resolveThresholdBaseline } from './baselineValidation.js';
+import { firstTradingDayOf } from '../../src/utils/tieredFirstTradingDay.js';
 import { getStockAnalysisData } from './marketDataCache.js';
 import { getETDate, formatDateString } from './marketSchedule.js';
 // P4 mode config (founder ruling D1) — Node-clean src import under the revised
@@ -245,9 +246,12 @@ export async function executeSwapServer(db, battleId, battle, resolvedTier, reso
   // P6 §8: one clock reading for every pre-transaction date.
   const startedAt = clock();
   const todayET = formatDateString(getETDate(startedAt));
-  const activationDateET = battle?.activatedAt
+  // BaggerBomb cleanup C2 (founder-sanctioned fence contact, Oct 28, 2026; this expression only): a tiered
+  // battle's activation day is its first trading day — the day agent-evaluate.js and agent-daily-scores.js now
+  // score from — else `activatedAt`. Null for tournaments and other modes, so they are unchanged.
+  const activationDateET = firstTradingDayOf(battle) ?? (battle?.activatedAt
     ? formatDateString(getETDate(new Date(battle.activatedAt)))
-    : todayET;
+    : todayET);
   const isActivationDay = todayET === activationDateET;
   const utcToday = startedAt.toISOString().slice(0, 10);
 

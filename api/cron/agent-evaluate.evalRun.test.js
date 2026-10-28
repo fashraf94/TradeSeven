@@ -7,7 +7,9 @@
 //       authoritative final update.
 //   D2  agentEvalRuns/{runId}, one measurement document per evaluation run,
 //       ALWAYS ON: `lockSkipped` and `deferred` counted apart (`skipped` stays
-//       their sum), the deferred battles listed, the write bounded and
+//       their sum, plus F3's `dormant` battles, which are counted apart too and
+//       persisted — so the sum is exact only for a run with no dormant battle),
+//       the deferred battles listed, the write bounded and
 //       non-fatal, and sent BEFORE the response.
 //   D3  the deferred beat, dark behind EVAL_DEFERRED_BEAT_ENABLED: one
 //       `check_deferred` status-feed entry per unreached battle, capped at 25,
@@ -115,9 +117,9 @@ const FROZEN_MS = Date.parse(FROZEN_NOW);
 const iso = (offsetMs) => new Date(FROZEN_MS + offsetMs).toISOString();
 const advance = (ms) => { vi.setSystemTime(new Date(Date.now() + ms)); };
 
-/** The 13 run-document keys, in the order the build prompt lists them. */
+/** The 14 run-document keys: the build prompt's 13, in its order, plus C6's `dormant` after `lockSkipped`. */
 const RUN_KEYS = [
-  'startedAt', 'endedAt', 'wallMs', 'budgetMs', 'battlesTotal', 'evaluated', 'lockSkipped',
+  'startedAt', 'endedAt', 'wallMs', 'budgetMs', 'battlesTotal', 'evaluated', 'lockSkipped', 'dormant',
   'deferred', 'deferredBattleIds', 'deferredTruncated', 'triggered', 'modelCalls', 'budgetSkipped',
 ];
 const TICK_MS = 97_000; // three ticks = 291 s > TIME_BUDGET_MS (290 s): the loop breaks before the fourth
@@ -317,6 +319,7 @@ describe('D2 — agentEvalRuns/{runId}: one record per evaluation run, always on
       battlesTotal: 6,
       evaluated: 3, // N
       lockSkipped: 0,
+      dormant: 0, // C6: counted on the record, none here
       deferred: 3, // total − N
       deferredBattleIds: ['c4', 'c5', 'c6'],
       deferredTruncated: 0,
@@ -353,6 +356,25 @@ describe('D2 — agentEvalRuns/{runId}: one record per evaluation run, always on
     expect(res.payload).toMatchObject({ evaluated: 3, lockSkipped: 1, deferred: 2, skipped: 3 });
     expect(res.payload.skipped).toBe(res.payload.lockSkipped + res.payload.deferred);
     expect(run.data).toMatchObject({ battlesTotal: 6, evaluated: 3, lockSkipped: 1, deferred: 2, deferredBattleIds: ['c5', 'c6'] });
+  });
+
+  // BaggerBomb cleanup C6 (#998 MT1-6): a battle held back before its first trading day (F3) is a bucket of its own on
+  // the run document, so `battlesTotal` adds up: evaluated + lockSkipped + dormant + deferred.
+  it('C6 — a dormant battle is counted on the run document, and battlesTotal adds up', async () => {
+    const dormant = cpuBattle('z1', { gameMode: 'baggerbomb_agent', timing: { tradingDays: ['2026-09-10'] } }); // starts tomorrow (the run is Sep 9, 11:00 ET)
+    const battles = [...cpuBattles('c', 3), dormant];
+    battles[1].cronState.evaluatingAt = FROZEN_NOW; // c2's lock is held by another invocation
+    const { res, run } = await runHandler(battles);
+    expect(run.data).toMatchObject({ battlesTotal: 4, evaluated: 2, lockSkipped: 1, dormant: 1, deferred: 0 });
+    const { battlesTotal, evaluated, lockSkipped, dormant: held, deferred } = run.data;
+    expect(evaluated + lockSkipped + held + deferred).toBe(battlesTotal);
+    expect(res.payload).toMatchObject({ dormant: 1, lockSkipped: 1, skipped: 2 }); // the response's own sum, unchanged
+  });
+
+  it('C6 — a run with no dormant battle records dormant: 0, and skipped is still lockSkipped + deferred', async () => {
+    const { res, run } = await runHandler(cpuBattles('c', 2));
+    expect(run.data.dormant).toBe(0);
+    expect(res.payload.skipped).toBe(run.data.lockSkipped + run.data.deferred);
   });
 
   it('the response only GAINS keys: every key it carried before is still there, `lockSkipped` and `deferred` beside them', async () => {

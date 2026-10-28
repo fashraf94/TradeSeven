@@ -57,6 +57,7 @@ import { resolveCallRecordsMode, createCallsContext, attachCheckContext, callsAc
 import { runHeardPhase } from '../_utils/callRecords/heard.js';
 import { recordFetchedQuote, freezeObservation, freezeModelObservation, classifyEntryExit, carryExecutorResult, passExaminesHeldPrices } from '../_utils/callRecords/observe.js';
 import { captureDeclarations } from '../_utils/callRecords/validate.js';
+import { forkUsableFor } from '../_utils/callRecords/swappable.js';
 import { bindHorizon, battleExpiryMs } from '../_utils/callRecords/horizon.js';
 import { callsReserveMsFor, runModelCallsPhase, TAIL_RESERVE_MS } from '../_utils/callRecords/publish.js';
 // Cockpit Build 2b (Amendment D-6): the retire-on-exit step before the prompt.
@@ -185,6 +186,9 @@ import { TOURNAMENT_GAME_MODE } from '../../src/constants/leagueTournament.js';
 // flat6 / null tiered) — the same resolver the executor's incoming-swap stamp
 // already uses.
 import { resolveModeConfig, TIERED_GAME_MODE } from '../../src/constants/agentGameModes.js';
+// BaggerBomb cleanup C1 / C2: the shared first-trading-day predicate (a Node-clean
+// src/ module, BUILD_RULES §4 — the daily scoring cron imports the same one).
+import { beforeFirstTradingDay as beforeFirstTradingDayOn, firstTradingDayOf } from '../../src/utils/tieredFirstTradingDay.js';
 // Per-Battle Loadout + Concurrency Phase 1 — attribution redirects. A BaggerBomb
 // battle runs on the persistent casual clone, but its record + corpus belong to
 // the PARENT ranked agent. resolveAttributionAgentId (async — the corpus sites)
@@ -608,7 +612,10 @@ const HARD_CEILING_MS = config.maxDuration * 1000;
  * handler. SCOPED TO THE LOOP: `battlesTotal` is the loop's population (the
  * active battles left after expiry) and `evaluated` the battles the LOOP
  * evaluated — the response's `evaluated` also counts expiry completions, which
- * are not the loop's work. `deferredBattleIds` holds the first
+ * are not the loop's work. Every battle of `battlesTotal` lands in exactly one of
+ * `evaluated`, `lockSkipped`, `dormant` (before its first trading day, F3) and
+ * `deferred` — or in none of them when its tick ended in an error or an early
+ * return, which the response's own counts carry. `deferredBattleIds` holds the first
  * EVAL_RUN_DEFERRED_ID_CAP ids in loop order; `deferredTruncated` counts the rest.
  */
 export function composeEvalRunRecord({ startTime, endTime, battlesTotal, evaluated, summary, deferredBattleIds }) {
@@ -621,6 +628,9 @@ export function composeEvalRunRecord({ startTime, endTime, battlesTotal, evaluat
     battlesTotal,
     evaluated,
     lockSkipped: summary.lockSkipped || 0,
+    // BaggerBomb cleanup C6 (#998 MT1-6): battles held back before their first trading day
+    // (F3), counted in `battlesTotal` but in no other bucket until now.
+    dormant: summary.dormant || 0,
     deferred: deferredBattleIds.length,
     deferredBattleIds: listed,
     deferredTruncated: deferredBattleIds.length - listed.length,
@@ -884,11 +894,13 @@ function buildPoolEmptyFeedEntry({ message, symbolOut, symbolIn = null, regime =
  * legacy battles alike; tournaments and other modes, and a battle with no
  * trading-day list, are never held back. `todayET` is the file's own ET date
  * (getETDate, Intl America/New_York). Pure, for the unit rows.
+ *
+ * C1 (Flash, Oct 27, 2026): the rule itself now lives in
+ * src/utils/tieredFirstTradingDay.js, shared with agent-daily-scores; this
+ * export keeps the clock default and the existing call sites.
  */
 export function beforeFirstTradingDay(battle, todayET = formatDateString(getETDate())) {
-  if (battle?.gameMode != null && battle.gameMode !== TIERED_GAME_MODE) return false;
-  const first = battle?.timing?.tradingDays?.[0];
-  return typeof first === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(first) && todayET < first;
+  return beforeFirstTradingDayOn(battle, todayET);
 }
 
 export async function processAgentBattle(db, battle, summary, cronStartTime = Date.now(), tournamentGroupCache = new Map(), masteryFlagView = DARK_FLAG_VIEW, intradayContext = null) {
@@ -1221,9 +1233,14 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
     // don't pre-trigger badges. On day 2+, baseline rolls to previousClose for
     // fresh daily threshold detection — matching V4's daily-reset gameplay.
     const todayET = formatDateString(getETDate());
-    const activationDateET = battle.activatedAt
+    // C2 (Flash, Oct 27, 2026): a tiered battle's activation day is its first
+    // trading day — a battle created in the last 45 minutes or overnight plays
+    // the NEXT session (BR-2), whose baseline is the creation price the score
+    // runs from, not the previous close. Falls back to `activatedAt` when the
+    // list is absent; every other mode keeps `activatedAt` exactly as before.
+    const activationDateET = firstTradingDayOf(battle) ?? (battle.activatedAt
       ? formatDateString(new Date(new Date(battle.activatedAt).toLocaleString('en-US', { timeZone: 'America/New_York' })))
-      : todayET;  // defensive fallback if activatedAt missing (should never happen on new battles)
+      : todayET);  // defensive fallback if activatedAt missing (should never happen on new battles)
     const isActivationDay = todayET === activationDateET;
     // Guard 2 cutoff for crypto (24/7, UTC-dated daily bars).
     const utcToday = new Date().toISOString().slice(0, 10);
@@ -3229,6 +3246,9 @@ export async function processAgentBattle(db, battle, summary, cronStartTime = Da
               universe: callsCtx.universe,
               resolveHorizon: bindHorizon({ promptBuiltAtMs: Date.parse(promptBuiltAt), mintedAtMs: Date.now(), battleExpiresAtMs: battleExpiryMs(battle) }),
               topLevelWatching: toolUse.input?.watching,
+              // C3 (review CL2-1): the same fork test the mint applies, on the book frozen at the model
+              // seam above, so the entry's `declarationsPhase` is judged by what the mint will keep.
+              forkUsable: forkUsableFor({ book: callsCtx.book, promptBuiltAt }),
             });
           });
         } else if (!toolUse) {
