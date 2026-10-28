@@ -23,7 +23,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import * as copyModule from './filmRoomCopy';
 import { FILM_ROOM_COPY, REPLAY_SENTENCE, DIRECTIVE_EXPLAINER, PROVENANCE_LABELS, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE, CLASS_LETTER } from './filmRoomCopy';
-import { EXIT_MAKER_WORDS, PLAN_DIRECTIONS, CHECK_STATE_WORDS, CHECK_STATE_TONES, checkStateOf, exitMakerOf, riskLines, riskSummary, deriveHoldings, roleOf, directiveCardOf } from './filmRoomModel';
+import { EXIT_MAKER_WORDS, PLAN_DIRECTIONS, CHECK_STATE_WORDS, CHECK_STATE_TONES, checkStateOf, exitMakerOf, entryMakerOf, riskLines, riskSummary, deriveHoldings, roleOf, directiveCardOf } from './filmRoomModel';
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
 import { SITUATIONS, LIVE_SITUATION_IDS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
@@ -75,7 +75,7 @@ const COPY_KEYS = [
   'meetingResolvedBy', 'meetingInstants.created', 'meetingInstants.deadline', 'meetingInstants.resolved', 'meetingLegs', 'meetingLegNotCopied', 'meetingDiagnosis', 'runMeeting',
   'deepPrice', 'noChart.before', 'noChart.reasons.crypto_not_supported', 'noChart.reasons.no_bars', 'noChartRecorded', 'recordedPrices', 'deepNoSymbols', 'seriesReadError', 'evidenceCoverage', 'checksIn1', 'sessionOpen', 'sessionHigh', 'sessionLow', 'lastBarClose',
   'changeOpenToClose', 'volumeSession', 'axisPrice', 'axisPercent', 'market', 'sector()', 'sectorNone', 'volume', 'rebased', 'inTheBook', 'sectorLine', 'sectorLineNone',
-  'exitMark', 'entryMark', 'evidenceOverlay', 'evidenceOverlayNote', 'allSymbols', 'close10',
+  'exitMark', 'entryMark', 'entryFor', 'evidenceOverlay', 'evidenceOverlayNote', 'allSymbols', 'close10',
   'reservedHeader[0]', 'reservedHeader[1]', 'reservedFooter[0]', 'reservedFooter[1]',
   // Film Room B2 — the card's regions (Build B spec §6; Amendment G RG-5, RG-9)
   'cards.sinceLastTime', 'cards.preparedCase', 'cards.yourCall', 'cards.receipt', 'cards.moments', 'cards.momentsNote', 'cards.momentsNone', 'cards.tagsAbsent', 'cards.takeHome',
@@ -115,7 +115,7 @@ const SAMPLE_CALLS = {
 };
 
 const COPY_EXPORTS = ['CLASS_LETTER', 'DIRECTIVE_EXPLAINER', 'FILM_ROOM_COPY', 'FORBIDDEN_WORDS', 'LOCKED_BASIS_NOTE', 'PROVENANCE_LABELS', 'REPLAY_SENTENCE', 'REPLAY_VERSION_NOTE'];
-const EXIT_MAKER_KEYS = ['agent.short', 'agent.swap', 'agent.exit', 'platform.short', 'platform.swap', 'platform.exit', 'platform.noReason', 'gameplan.short', 'gameplan.swap', 'gameplan.exit', 'unrecorded.short', 'unrecorded.swap', 'unrecorded.exit'];
+const EXIT_MAKER_KEYS = ['agent.short', 'agent.swap', 'agent.exit', 'agent.entry', 'platform.short', 'platform.swap', 'platform.exit', 'platform.noReason', 'platform.entry', 'gameplan.short', 'gameplan.swap', 'gameplan.exit', 'gameplan.entry', 'unrecorded.short', 'unrecorded.swap', 'unrecorded.exit', 'unrecorded.entry'];
 // review A2FV3-7: the check states' words, a keyed table — pinned like the copy
 const CHECK_STATE_KEYS = ['default_hold', 'swap', 'hold', 'completed', 'no_trigger', 'budget_skipped', 'deferred', 'gameplan_created', 'gameplan_pending', 'proposal_pending', 'degraded_quotes', 'cpu_passive', 'tick_error', 'no_record', 'unknown'];
 const PLAN_DIRECTION_KEYS = ['potential_entry', 'potential_exit'];
@@ -131,6 +131,8 @@ function modelWords() {
   const out = [];
   CHECK_ROWS.forEach((r) => out.push([`checkStateOf(${r.state}${r.decision ? ` ${r.decision.final}${r.decision.holdKind ? ' default' : ''}` : ''})`, checkStateOf(r).label]));
   for (const mechanism of MECHANISMS) for (const exitReason of ['stagnation', undefined]) out.push([`exitMakerOf(${mechanism}, ${exitReason})`, exitMakerOf({ mechanism, exitReason }).label]);
+  // B2.1 A4 (RJ-4): the bought name's maker, on every branch
+  for (const mechanism of MECHANISMS) for (const exitReason of ['stagnation', undefined]) out.push([`entryMakerOf(${mechanism}, ${exitReason})`, entryMakerOf({ mechanism, exitReason }).label]);
   const risky = { risk: { DE: { action: 'SWAP_OUT', reason: 'stagnation' }, MSFT: { action: 'HOLD' }, X: {} } };
   out.push(['riskSummary(none)', riskSummary({})], ['riskSummary(hold)', riskSummary({ risk: { MSFT: { action: 'HOLD' } } })], ['riskSummary(fired)', riskSummary(risky)]);
   riskLines(risky).forEach((l, i) => out.push([`riskLines[${i}]`, l.text]));
@@ -201,9 +203,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 338 copy keys, 451 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(338);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
-    expect(inventory()).toHaveLength(451);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
+  it('the inventory\'s size is pinned (the build report states it): 339 copy keys, 468 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(339);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
+    expect(inventory()).toHaveLength(468);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {

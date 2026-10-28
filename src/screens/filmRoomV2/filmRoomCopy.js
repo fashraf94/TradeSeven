@@ -262,6 +262,7 @@ export const FILM_ROOM_COPY = Object.freeze({
   sectorLineNone: 'none · market line only',
   exitMark: 'Exit',
   entryMark: 'Entry',
+  entryFor: 'in for',   // B2.1 A4 (RJ-4): "Entry · {time} · in for {sold symbol} · {maker}"
   evidenceOverlay: 'Evidence at each check',
   evidenceOverlayNote: "A marker may sit off the bar line: the platform's quote runs about 15–20 minutes behind the bars. The difference is that delay, not smoothed.",
   allSymbols: 'All symbols',

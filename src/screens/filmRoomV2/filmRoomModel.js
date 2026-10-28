@@ -389,10 +389,12 @@ export function swapOrdinals(tape) {
  * folded into another maker (review A2L1-1).
  */
 export const EXIT_MAKER_WORDS = Object.freeze({
-  agent: Object.freeze({ short: 'agent', swap: 'the agent', exit: 'Exit by the agent · its own decision' }),
-  platform: Object.freeze({ short: 'rule', swap: 'a platform rule', exit: 'Exit by platform rule', noReason: 'rule not recorded' }),
-  gameplan: Object.freeze({ short: 'meeting', swap: 'the gameplan meeting', exit: 'Exit by the gameplan meeting' }),
-  unrecorded: Object.freeze({ short: 'not recorded', swap: 'a maker not recorded', exit: 'Exit maker not recorded' }),
+  // `entry` (B2.1 A4, FR-04; Amendment J RJ-4): the maker as the BOUGHT name's annotation says it — "by the agent",
+  // "by platform rule · {reason}"; the gameplan meeting's and an unrecorded maker's are this build's words, in kind
+  agent: Object.freeze({ short: 'agent', swap: 'the agent', exit: 'Exit by the agent · its own decision', entry: 'by the agent' }),
+  platform: Object.freeze({ short: 'rule', swap: 'a platform rule', exit: 'Exit by platform rule', noReason: 'rule not recorded', entry: 'by platform rule' }),
+  gameplan: Object.freeze({ short: 'meeting', swap: 'the gameplan meeting', exit: 'Exit by the gameplan meeting', entry: 'by the gameplan meeting' }),
+  unrecorded: Object.freeze({ short: 'not recorded', swap: 'a maker not recorded', exit: 'Exit maker not recorded', entry: 'maker not recorded' }),
 });
 /** The recorded mechanisms that are platform rules (each says "Exit by platform rule · <reason>"). */
 const PLATFORM_MECHANISMS = Object.freeze(['platform_risk_manager', 'archetype_rotation', 'guardrail']);
@@ -405,6 +407,18 @@ export function exitMakerOf(action) {
   if (PLATFORM_MECHANISMS.includes(m)) return { by: 'platform', label: `${W.platform.exit} · ${reason ?? W.platform.noReason}` };
   if (m === 'gameplan_meeting') return { by: 'gameplan', label: withReason(W.gameplan.exit) };
   return { by: 'unrecorded', label: withReason(W.unrecorded.exit) };
+}
+
+/**
+ * B2.1 A4 (FR-04; RJ-4) — who made the swap, as the BOUGHT name's annotation says it: never "Exit by …" on the name
+ * that came in. The same recorded mechanism as exitMakerOf, the same reason beside a platform rule.
+ */
+export function entryMakerOf(action) {
+  const W = EXIT_MAKER_WORDS;
+  const { by } = exitMakerOf(action);
+  if (by === 'platform') return { by, label: `${W.platform.entry} · ${str(action?.exitReason) ?? W.platform.noReason}` };
+  const reason = by === 'agent' ? null : str(action?.exitReason);
+  return { by, label: reason ? `${W[by].entry} · ${reason}` : W[by].entry };
 }
 
 /** The last point of a path array (the close), as a concrete path into the tape, or null. */

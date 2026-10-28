@@ -28,7 +28,7 @@
 // "close" always names the session-close instant (Amendment E addendum 2, F2).
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, seriesDomain, closePoints, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES, notChartedReasonOf } from './filmRoomModel';
+import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, seriesDomain, closePoints, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES, notChartedReasonOf, entryMakerOf } from './filmRoomModel';
 import { classOfNumber } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
 import { FILM_ROOM_COPY as COPY, FORBIDDEN_WORDS } from './filmRoomCopy';
@@ -226,7 +226,10 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
           const right = x(ms) > 600;
           return (
             <span key={`l${i}`} data-swap-label={i} style={{ position: 'absolute', top: 0, ...(right ? { right: `calc(${100 - x(ms) / 10}% + 6px)` } : { left: `calc(${pct(ms)} + 6px)` }), display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', ...mono(9.5, who.by === 'agent' ? C.teal : C.ink2, { fontWeight: 600 }) }}>
-              {a.symbolOut === sym ? COPY.exitMark : COPY.entryMark} · <When>{etClock(a.at)}</When> · {who.label}
+              {/* the sold name keeps "Exit · {time} · {maker}"; the bought name reads its entry, never "Exit by …" (RJ-4) */}
+              {a.symbolOut === sym
+                ? <>{COPY.exitMark} · <When>{etClock(a.at)}</When> · {who.label}</>
+                : <>{COPY.entryMark} · <When>{etClock(a.at)}</When> · {COPY.entryFor} <Rec>{a.symbolOut}</Rec> · {entryMakerOf(a).label}</>}
             </span>
           );
         })}

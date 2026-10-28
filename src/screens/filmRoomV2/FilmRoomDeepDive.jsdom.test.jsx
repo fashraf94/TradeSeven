@@ -53,12 +53,26 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     expect(m.q('[data-volume-bar]')).toBeNull();
   });
 
-  it('a swap on the symbol is marked at its recorded time, with who made the exit', () => {
+  it('a swap on the symbol is marked at its recorded time, with who made it — the sold name its exit, the bought name its entry (B2.1 A4, FR-04, RJ-4)', () => {
     m.render(<Harness tape={sep23Tape} series={sep23Series} start="MSFT" />);
     expect(m.q('[data-swap-mark="0"]')).toBeTruthy();
     expect(m.q('[data-swap-label="0"]').textContent).toBe('Exit · 12:45 PM · Exit by platform rule · stagnation');
     m.click(chip('PLTR'));
-    expect(m.q('[data-swap-label="1"]').textContent).toBe('Entry · 2:00 PM · Exit by the agent · its own decision');
+    expect(m.q('[data-swap-label="1"]').textContent).toBe('Entry · 2:00 PM · in for DE · by the agent');
+    m.click(chip('CRWD'));
+    expect(m.q('[data-swap-label="0"]').textContent).toBe('Entry · 12:45 PM · in for MSFT · by platform rule · stagnation');
+  });
+
+  it('FR-04: no bought name\'s annotation reads "Exit by …" — every swap\'s bought name, against its sold name\'s', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} start="MSFT" />);
+    sep23Tape.actions.forEach((a, i) => {
+      m.click(chip(a.symbolIn));
+      const entry = m.q(`[data-swap-label="${i}"]`).textContent;
+      expect(entry, a.symbolIn).toMatch(new RegExp(`^Entry · .+ · in for ${a.symbolOut} · by `));
+      expect(entry, a.symbolIn).not.toMatch(/Exit/);
+      m.click(chip(a.symbolOut));
+      expect(m.q(`[data-swap-label="${i}"]`).textContent, a.symbolOut).toMatch(/^Exit · .+ · Exit /);
+    });
   });
 
   it('side facts: the record\'s own prices (the session open, the last close), market class; the role from the tape — no session high or low (A2L1-4)', () => {
