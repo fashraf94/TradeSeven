@@ -154,9 +154,30 @@ export function liveGameRows(battles, { nowMs, marketState }) {
       // Opened and past its end time: the clock reads "ending" (hub/hubModel.js liveCountsOf counts it; ruling R-S8F-7).
       ending: !preOpen && minutes !== null && minutes <= 0,
       clock: preOpen ? (startsAtEt ? COPY.games.startsAt(startsAtEt) : COPY.games.waitingForOpen) : timeLeft(minutes),
+      // While the clock says when it starts: the ET date it starts on, else null (waitingLineOf below). The adapter says
+      // a start only for a game whose first trading day is `timing.tradingDays[0]`, a valid ET date still ahead
+      // (utils/tieredFirstTradingDay.js firstTradingDayOf), so that entry is the day its "Starts …" names.
+      startsOn: preOpen && startsAtEt ? battle.timing.tradingDays[0] : null,
       detail: COPY.games.liveDetail(score, trades, ends),
     });
   });
+}
+
+/**
+ * The one phrase for games deployed and waiting (founder ruling Q-S8F-5 (b); BUILD_RULES §9): the strip's
+ * "Deployed · {clock}" with the clock of the waiting row that starts soonest ("Starts Wed 9:30 AM ET"), or
+ * "Deployed · waiting for the open" when no waiting row's start is known, as such a row says. Every session opens
+ * at 9:30 ET (utils/marketCalendar.js), so the earliest first trading day is the soonest start. The strip, the Games
+ * header (every live game waiting) and the status line (none opened) all say this.
+ *
+ * @param {object[]} liveRows the live rows (liveGameRows; hub/hubModel.js liveGamesOf)
+ */
+export function waitingLineOf(liveRows) {
+  let soonest = null;
+  for (const row of Array.isArray(liveRows) ? liveRows : []) {
+    if (row?.preOpen === true && typeof row.startsOn === 'string' && (soonest === null || row.startsOn < soonest.startsOn)) soonest = row;
+  }
+  return COPY.strip.deployed(soonest ? soonest.clock : COPY.games.waitingForOpen);
 }
 
 /** A completed row's review line (spec §6), from the coordinator's row state. */

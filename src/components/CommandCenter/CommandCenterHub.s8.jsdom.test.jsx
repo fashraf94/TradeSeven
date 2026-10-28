@@ -225,18 +225,62 @@ describe('review fixes L3-2, L3-4', () => {
     expect(overview().querySelector('[data-hub-games-live-note]')).toBeNull();
   });
 
-  it('L3-4 the all-waiting header says "Deployed · waiting for the open", as the rows, the strip and the status line do', () => {
+  // Ruling Q-S8F-5 (b): the test game has a start time, as a game deployed after hours now does (its first trading day,
+  // `timing.tradingDays[0]`, is the next session's).
+  it('L3-4 the all-waiting header says the row\'s own phrase, "Deployed · Starts Wed 9:30 AM ET", as the status line does', () => {
+    r.market = { state: 'CLOSED', isOpen: false };
+    render('desktop', hubOf({ activeBattles: [bb('bb_wait', { expiresAt: '2026-10-28T20:00:00Z', timing: { tradingDays: ['2026-10-28'] }, scoreState: WAITING })] }));
+    const phrase = COPY.strip.deployed(COPY.games.startsAt('Wed 9:30 AM ET'));
+    expect(games().querySelector('[data-hub-game-row="live"]').closest('button').textContent).toContain(phrase);
+    expect(gamesHeader().textContent).toContain(phrase);
+    expect(statusLine().textContent).toBe(phrase);
+  });
+
+  it('L3-4, no start time known (a game without its trading days): the row, the header and the status line say "Deployed · waiting for the open"', () => {
     r.market = { state: 'CLOSED', isOpen: false };
     render('desktop', hubOf({ activeBattles: [bb('bb_wait', { scoreState: WAITING })] }));
-    expect(gamesHeader().textContent).toContain(COPY.strip.deployed(COPY.games.waitingForOpen));
-    expect(statusLine().textContent).toBe(COPY.strip.deployed(COPY.games.waitingForOpen));
+    const phrase = COPY.strip.deployed(COPY.games.waitingForOpen);
+    expect(games().querySelector('[data-hub-game-row="live"]').closest('button').textContent).toContain(phrase);
+    expect(gamesHeader().textContent).toContain(phrase);
+    expect(statusLine().textContent).toBe(phrase);
+  });
+});
+
+// Founder ruling Q-S8F-5 (b): one wording for a waiting game everywhere. The strip, the Games header (every live game
+// waiting) and the status line (none opened) say the strip's "Deployed · {clock}" from the waiting game that starts
+// soonest (hub/gamesDisplay.js waitingLineOf); each row keeps its own clock.
+describe('Q-S8F-5 — one wording for a waiting game everywhere: the soonest start', () => {
+  const SOONER = COPY.strip.deployed(COPY.games.startsAt('Wed 9:30 AM ET'));
+  const LATER = COPY.strip.deployed(COPY.games.startsAt('Thu 9:30 AM ET'));
+  // The Thursday game was deployed last, so it leads the list and is the strip's game.
+  const two = () => hubOf({ activeBattles: [
+    bb('bb_thu', { activatedAt: '2026-10-27T14:50:00Z', expiresAt: '2026-10-29T20:00:00Z', timing: { tradingDays: ['2026-10-29'] }, scoreState: WAITING }),
+    bb('bb_wed', { activatedAt: '2026-10-27T14:40:00Z', expiresAt: '2026-10-28T20:00:00Z', timing: { tradingDays: ['2026-10-28'] }, scoreState: WAITING }),
+  ] });
+
+  it('desktop: the header and the status line say the soonest start; each row keeps its own', () => {
+    render('desktop', two());
+    const rows = [...games().querySelectorAll('[data-hub-game-row="live"]')].map((el) => el.closest('button').textContent);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain(LATER);
+    expect(rows[1]).toContain(SOONER);
+    expect(gamesHeader().textContent).toContain(SOONER);
+    expect(statusLine().textContent).toBe(SOONER);
+  });
+
+  it("phone: the strip says the soonest start too, though its game is the Thursday one", () => {
+    render('mobile', two());
+    expect(strip().textContent).toContain(SOONER);
+    expect(strip().textContent).not.toContain(LATER);
+    expect(statusLine().textContent).toBe(SOONER);
   });
 });
 
 // The merge with #999 (BaggerBomb cleanup C5): a game deployed from 3:15 PM ET plays the NEXT session. Before its first
 // trading day it is waiting, with the market open, and every surface says so from the one hub/gamesDisplay.js
 // liveGameRows call (derivePhase with the row's own clock): the Games header and the status line (hub/hubModel.js
-// liveCountsOf), the row, the strip, the next action and the phone Overview's own live row.
+// liveCountsOf), the row, the strip, the next action and the phone Overview's own live row. Since ruling Q-S8F-5 the
+// header and the status line say the row's own "Deployed · Starts Wed 9:30 AM ET" (hub/gamesDisplay.js waitingLineOf).
 describe('the #999 merge — a game deployed between 3:15 and 4:00 PM ET reads as waiting everywhere', () => {
   // Tuesday, Oct 27, 2026, 3:30 PM ET: the market is open.
   const LATE = Date.UTC(2026, 9, 27, 19, 30);
@@ -253,11 +297,11 @@ describe('the #999 merge — a game deployed between 3:15 and 4:00 PM ET reads a
     r.market = { state: 'OPEN', isOpen: true };
   });
 
-  it('desktop: the Games header, the status line, the row and the next action say waiting; nothing says live', () => {
+  it('desktop: the Games header, the status line, the row and the next action say waiting (the header and the line in the row\'s words); nothing says live', () => {
     render('desktop', hubOf({ activeBattles: [late('bb_late')] }));
     expect(gamesHeader().textContent).not.toMatch(/\d+ live/);
-    expect(gamesHeader().textContent).toContain(COPY.strip.deployed(COPY.games.waitingForOpen));
-    expect(statusLine().textContent).toBe(COPY.strip.deployed(COPY.games.waitingForOpen));
+    expect(gamesHeader().textContent).toContain(COPY.strip.deployed(STARTS));
+    expect(statusLine().textContent).toBe(COPY.strip.deployed(STARTS));
     const row = games().querySelector('[data-hub-game-row="live"]').closest('button');
     expect(row.textContent).toContain(COPY.strip.deployed(STARTS));
     expect(row.textContent).toContain('ends Wed 4:00 PM ET');
@@ -269,7 +313,7 @@ describe('the #999 merge — a game deployed between 3:15 and 4:00 PM ET reads a
     render('mobile', hubOf({ activeBattles: [late('bb_late'), late('bb_late2', { activatedAt: '2026-10-27T19:25:00Z' })] }));
     expect(strip().textContent).toContain(COPY.strip.deployed(STARTS));
     expect(strip().textContent).not.toContain(COPY.strip.live(''));
-    expect(statusLine().textContent).toBe(COPY.strip.deployed(COPY.games.waitingForOpen));
+    expect(statusLine().textContent).toBe(COPY.strip.deployed(STARTS));
     expect(nextAction().textContent).toContain(COPY.nextAction.preOpenTitle);
     const rows = overview().querySelectorAll('[data-hub-game-row="live"]');
     expect(rows).toHaveLength(1);

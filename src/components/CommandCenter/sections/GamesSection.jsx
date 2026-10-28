@@ -19,6 +19,7 @@
 
 import React from 'react';
 import { DESKTOP_COMPLETED_LIMIT, liveCountsOf, liveGamesOf, splitGames } from '../hub/hubModel';
+import { waitingLineOf } from '../hub/gamesDisplay';
 import { HUB_COPY as COPY } from '../hub/hubCopy';
 import { formatHubTime } from '../hub/hubDate';
 import { C, HAIR, tint } from '../hub/hubStyle';
@@ -162,8 +163,9 @@ export default function GamesSection({ games, onOpenGame, onOpenTape, onOpenHist
   const counts = liveCountsOf(games);
   let right = null;
   if (counts.opened) right = <Tag tone="teal">{COPY.games.liveCount(counts.opened)}</Tag>;
-  // The waiting phrase as the rows, the strip and the status line say it (review L3-4).
-  else if (counts.waiting) right = <Tag tone="teal">{COPY.strip.deployed(COPY.games.waitingForOpen)}</Tag>;
+  // Every live game waiting: the hub's one waiting phrase, as the strip and the status line say it (review L3-4;
+  // ruling Q-S8F-5: the soonest start when one is known).
+  else if (counts.waiting) right = <Tag tone="teal">{waitingLineOf(live)}</Tag>;
   // The design shows the completed count whenever no game is live, "0 completed" included (S1 review L1-10).
   else if (ready) right = <Mono style={{ fontSize: 11, color: C.ink3 }}>{COPY.games.completedCount(completed.length)}</Mono>;
   const history = ready && completed.length > DESKTOP_COMPLETED_LIMIT && onOpenHistory

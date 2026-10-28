@@ -116,6 +116,7 @@ import {
 import { useDeployAttempt } from '../../contexts/DeployAttemptContext';
 import ScoutingBoardSheet from '../Dashboard/ScoutingBoardSheet';
 import { DISPLAY_ACTIONS, deployDisplay } from './hub/deployDisplay';
+import { waitingLineOf } from './hub/gamesDisplay';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { PHONE_SHADOW, hubFlags, scoutingBoardOn } from './hub/hubFlags';
 import { HUB_DEPLOY_CONTROLS, useHubDeploy } from './hub/useHubDeploy';
@@ -187,13 +188,16 @@ function useShared(sections, attemptId = null) {
   // The strip's game (spec §10): a live BaggerBomb game when there is one — it
   // is what blocks the hold, and Open targets it — else the first live game.
   const liveGame = live.find((g) => g.kind === BATTLE_TYPE_BAGGERBOMB) || live[0] || null;
-  const display = deployDisplay(sections.deploy, liveGame);
+  // The one waiting phrase (ruling Q-S8F-5): the strip, the Games header and the status line say it.
+  const waitingLine = waitingLineOf(live);
+  const display = deployDisplay(sections.deploy, liveGame, waitingLine);
   return {
     user,
     reducedMotion,
     idBase,
     completed,
     liveGame,
+    waitingLine,
     display,
     // Slice S7 (R-S7-3): Shadow moves only while a hub-started deployment is submitting; otherwise it is ambient.
     // Whether it draws the still instead (reduced motion, no canvas, the phone constant) is ShadowCanvas's call.
@@ -218,7 +222,7 @@ function useShared(sections, attemptId = null) {
 
 /** Slice S7 (ruling R-S7-7): the status line's words, from the hold, the deploy display and the owned live read. */
 function statusWordsOf(deploy, shared) {
-  return shadowStatusWords({ holdPhase: deploy?.holdPhase ?? null, display: shared.display, liveCount: shared.liveCount, waitingCount: shared.waitingCount, allEnding: shared.allEnding, liveKnown: shared.liveKnown });
+  return shadowStatusWords({ holdPhase: deploy?.holdPhase ?? null, display: shared.display, liveCount: shared.liveCount, waitingCount: shared.waitingCount, waitingLine: shared.waitingLine, allEnding: shared.allEnding, liveKnown: shared.liveKnown });
 }
 
 const SIDE_PARTS = new Set(['games', 'deploy', 'activity', 'brief']);
@@ -367,6 +371,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
         ref={stripRef}
         deploy={sections.deploy}
         liveGame={shared.liveGame}
+        waitingLine={shared.waitingLine}
         loadoutLine={shared.loadoutLine}
         placement={placement}
         onOpenLoadout={() => selectTab(PHONE_TABS.LOADOUT)}

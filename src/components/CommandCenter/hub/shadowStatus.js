@@ -21,9 +21,10 @@
 // card and the strip, so the line and the card cannot disagree (BUILD_RULES §9).
 //
 // Rule 5 counts the games the screen calls live. A game deployed after hours is
-// in the owned live list but has not opened: the strip and the Games row say
-// "Deployed · waiting for the open", so that is the line's phrase for a list of
-// such games alone (built from the strip's own copy, never a second string), and
+// in the owned live list but has not opened: for a list of such games alone the
+// line says the strip's own phrase, the hub's one waiting line ("Deployed ·
+// Starts Wed 9:30 AM ET", or "Deployed · waiting for the open" when no start is
+// known; hub/gamesDisplay.js waitingLineOf, ruling Q-S8F-5), and
 // "in progress" counts only the games that have opened (review C-1). When every
 // opened game is past its end time the strip and the rows say "Live · ending",
 // and so does the line, from the same copy, never "in progress" (the S8 review's
@@ -75,12 +76,13 @@ export function liveReadKnown(games, deploy) {
  *   display: { displayState: string, status: string, processing: boolean },
  *   liveCount: number,      owned live games that have opened
  *   waitingCount: number,   owned live games deployed and waiting for the open
+ *   waitingLine?: string,   the hub's one waiting phrase (hub/gamesDisplay.js waitingLineOf; ruling Q-S8F-5)
  *   allEnding: boolean,     every opened game is past its end time
  *   liveKnown: boolean
  * }} input
  * @returns {string} the line's words
  */
-export function shadowStatusWords({ holdPhase = null, display, liveCount = 0, waitingCount = 0, allEnding = false, liveKnown = false }) {
+export function shadowStatusWords({ holdPhase = null, display, liveCount = 0, waitingCount = 0, waitingLine = COPY.strip.deployed(COPY.games.waitingForOpen), allEnding = false, liveKnown = false }) {
   const S = COPY.shadow;
   if (holdPhase === HOLD.LOCKED) return S.statusLocked;
   if (holdPhase === HOLD.CHARGING) return S.statusHolding;
@@ -89,7 +91,7 @@ export function shadowStatusWords({ holdPhase = null, display, liveCount = 0, wa
   if (IN_FLIGHT_WORDS.has(state) || TERMINAL_WORDS.has(state)) return display.status;
   if (liveCount > 0 && allEnding === true) return COPY.strip.live(COPY.games.ending);
   if (liveCount > 0) return liveCount === 1 ? S.statusLiveOne : S.statusLiveMany(liveCount);
-  if (waitingCount > 0) return COPY.strip.deployed(COPY.games.waitingForOpen);
+  if (waitingCount > 0) return waitingLine;
   if (!liveKnown) return S.statusIdleUnknown;
   return S.statusIdle;
 }
