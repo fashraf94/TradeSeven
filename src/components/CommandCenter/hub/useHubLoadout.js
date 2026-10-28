@@ -52,6 +52,10 @@ const NOTHING_READ = Object.freeze({ status: LISTS_STATUS.LOADING, committed: Ob
 
 export function useHubLoadout({ enabled, ownerKey = null, equippedId = null }) {
   const [state, setState] = useState({ ownerKey: null, ...NOTHING_READ });
+  // The key is the uid alone, so the same account signing out and in again (another tab's sign-out leaves this hub
+  // mounted) returns under the same key. The reader is disabled in between — no agent — and what it holds goes in that
+  // render, so an earlier epoch's lists are never served under the new one (S8 review S8-11; ruling R-S8F-2; spec §3).
+  if (!enabled && state.ownerKey !== null) setState({ ownerKey: null, ...NOTHING_READ });
   const latest = useRef(0);
   const mounted = useRef(true);
   // The equipped id as of the latest commit: a read records the id it was issued under.
