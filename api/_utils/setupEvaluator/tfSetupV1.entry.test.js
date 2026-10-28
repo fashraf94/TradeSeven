@@ -84,6 +84,14 @@ describe('regime (definition §2)', () => {
     expect(checkOf(r, 'regime_stack').result).toBe('unknown');
     expect(checkOf(r, 'slow_rising').result).toBe('unknown');
   });
+
+  it('the chained regime checks read unknown symmetrically: a false first pair never hides a null operand (review TE1-4)', () => {
+    const ev = evidenceOf(buildBars({ patch: (b) => { b[0].close = 97; b[0].open = 97; b[0].high = 98.5; b[0].low = 95.5; b[30].close = null; } }));
+    const r = evaluateTfEntry(ev);
+    expect(checkOf(r, 'regime_stack')).toMatchObject({ lhs: [97, 97.475], rhs: [97.475, null], result: 'unknown' });
+    expect(checkOf(r, 'regime_stack_down')).toMatchObject({ result: 'unknown' });
+    expect([r.verdict, r.reason, r.regime]).toEqual(['unknown', 'missing_fact', 'unknown']);
+  });
 });
 
 describe('pattern A, breakout (definition §3; S3, S5, S7)', () => {
@@ -258,6 +266,21 @@ describe('missing price facts', () => {
     expect(r.patterns).toEqual({ breakout: 'untestable', pullback_resume: 'failed' });
   });
 
+  it('a satisfied pullback whose ATR is null is unknown(missing_fact) with the pattern listed, never valid (V3 §6.4 rule 5; review TE1-1)', () => {
+    const r = run('c1_pullback_null_atr');
+    expect([r.verdict, r.reason, r.regime, r.pattern, r.patternsSatisfied]).toEqual(['unknown', 'missing_fact', 'uptrend', null, ['pullback_resume']]);
+    expect(r.missing).toEqual(['swingLow', 'ATR']);
+    expect(r.patterns).toEqual({ breakout: 'failed', pullback_resume: 'satisfied' });
+    expect(checkOf(r, 'extension')).toMatchObject({ lhs: 100, rhs: null, result: 'unknown' });
+    expect(checkOf(r, 'pullback_touch').result).toBe(true);
+  });
+
+  it('a non-price low inside the touch window is recorded as null in pullbackLows, exactly as the check reads it (review TEV1-1)', () => {
+    const r = evaluateTfEntry(evidenceOf(buildBars({ patch: (b) => { b[0].low = 0; } })));
+    expect(r.evidence.pullbackLows[0].low).toBeNull();
+    expect(checkOf(r, 'pullback_touch')).toMatchObject({ lhs: null, result: 'unknown' });
+  });
+
   it('a null high at bar 20 leaves only swingHigh null (ATR reads bars 0..14)', () => {
     const r = run('null_high_bar20');
     expect(r.missing).toEqual(['swingHigh']);
@@ -275,9 +298,12 @@ describe('missing price facts', () => {
 
 describe('an adapter refusal', () => {
   it('is unknown with the adapter\'s typed reason, every fact null, every check unknown, both patterns untestable', () => {
-    const r = evaluateTfEntry({ ok: false, reason: 'missing_bar', detail: { expected: '2026-10-09', latest: '2026-10-08' }, asOf: '2026-10-09', basis: 'raw', source: 'eodhd_eod', symbol: 'X' });
+    const detail = { expected: '2026-10-09', latest: '2026-10-08' };
+    const r = evaluateTfEntry({ ok: false, reason: 'missing_bar', detail, asOf: '2026-10-09', basis: 'raw', source: 'eodhd_eod', symbol: 'X', evidenceClass: { bars: 'later_reconstruction' } });
     expect([r.verdict, r.reason, r.regime, r.pattern]).toEqual(['unknown', 'missing_bar', 'unknown', null]);
     expect(r.refusal).toEqual({ reason: 'missing_bar', detail: { expected: '2026-10-09', latest: '2026-10-08' } });
+    expect(r.refusal.detail).not.toBe(detail); // copied, never shared (review TEV1)
+    expect(r.evidenceClass).toEqual({ bars: 'later_reconstruction', verdict: 'derived' });
     expect(r.missing).toEqual([...FACT_NAMES]);
     expect(r.checks.every((c) => c.result === 'unknown')).toBe(true);
     expect(r.patterns).toEqual({ breakout: 'untestable', pullback_resume: 'untestable' });
@@ -291,7 +317,8 @@ describe('the record (V3 §5)', () => {
     const r = run(name);
     expect(r.ruleSet).toEqual({ setupVersion: 'tf-setup-v1', thresholdsHash: THRESHOLDS_HASH, semanticsId: SEMANTICS_ID });
     expect(r.basis).toBe('raw');
-    expect(r.evidenceClass).toEqual({ bars: 'synthetic', verdict: 'derived' });
+    expect(r.evidenceClass).toEqual({ bars: 'later_reconstruction', verdict: 'derived' });
+    expect(r.source).toBe('synthetic');
     expect(Object.keys(r.factsUsed)).toEqual([...FACT_NAMES]);
     for (const f of FACT_NAMES) expect(r.factsUsed[f]).toMatchObject({ asOf: r.asOf, source: 'synthetic', basis: 'raw' });
     expect(r.checks.map((c) => c.id)).toEqual(['regime_stack', 'slow_rising', 'regime_stack_down', 'slow_falling', 'breakout_close', 'breakout_volume', 'pullback_touch', 'pullback_close', 'extension']);
@@ -320,11 +347,11 @@ describe('the record (V3 §5)', () => {
     const r = run(name);
     const again = deriveEntryVerdict({ checks: r.checks, patterns: r.patterns, barCount: r.evidence.bars.count });
     expect(again).toEqual({ verdict: r.verdict, reason: r.reason, pattern: r.pattern, patternsSatisfied: r.patternsSatisfied, regime: r.regime });
-    expect(deriveRegime(r.checks)).toBe(r.regime === 'unknown' && r.reason === 'insufficient_history' ? deriveRegime(r.checks) : r.regime);
+    expect(deriveRegime(r.checks)).toBe(r.regime); // on insufficient_history the regime is unknown because SMA_slow_5ago is null, so this holds plainly (review TEV1-2)
     expect(derivePatterns(r.checks)).toEqual(r.patterns);
   });
 
-  it.each(ENTRY_SCENARIOS)('%s is deterministic and leaves its frozen input unmutated', (name) => {
+  it.each(ENTRY_SCENARIOS)('%s is deterministic, leaves its frozen input unmutated and shares no object with it', (name) => {
     const ev = SCENARIOS[name].build();
     const before = JSON.stringify(ev);
     const a = evaluateTfEntry(ev);
@@ -333,5 +360,8 @@ describe('the record (V3 §5)', () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
     expect(JSON.stringify(ev)).toBe(before);
     expect(Object.isFrozen(ev.bars)).toBe(true);
+    expect(a.sourceMeta).toEqual(ev.sourceMeta);
+    expect(a.sourceMeta).not.toBe(ev.sourceMeta); // copied (review TE1-5)
+    expect(a.evidence.adjustment).not.toBe(ev.adjustment);
   });
 });

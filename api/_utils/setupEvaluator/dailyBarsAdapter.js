@@ -19,12 +19,21 @@
 // unordered_bars, insufficient_history, missing_fact, basis_discontinuity.
 //
 // THE SPLIT HEURISTIC AND ITS LIMITS (carried into every report that cites
-// it): with adjustment metadata present on every window row, the ratio
-// adjustedClose / close is compared day over day and a change above 10% is
-// `basis_discontinuity`. It needs the vendor's adjustment already applied; a
-// special dividend above 10% trips it; a restated series is invisible to it;
-// it is not proof of split-free data. A ratio of 1 proves nothing and is
-// never used to infer that metadata was present.
+// it): with adjustment metadata present on every window row (a finite
+// adjustedClose GREATER THAN ZERO on each — review TE2-1: a vendor's zero
+// adjusted close is not metadata), the ratio adjustedClose / close is compared
+// day over day, symmetrically (max / min − 1, review TE2-5), and a change
+// above 10% is `basis_discontinuity`. It needs the vendor's adjustment already
+// applied; a special dividend above 10% trips it; a restated series is
+// invisible to it; it is not proof of split-free data. A ratio of 1 proves
+// nothing and is never used to infer that metadata was present.
+//
+// UPSTREAM NOTE (review TE2-3): mapDailyRows drops a row whose close (after
+// the adjusted fallback), high or low is not finite BEFORE this adapter sees
+// it, so such a session reads here as `missing_bar` (the gap), not as
+// `missing_fact`; the mapper's drop count is the caller's to carry. Rows with
+// a finite but non-positive price, or a null raw close beside a finite
+// adjusted one, do reach this adapter and read `missing_fact`.
 
 import { getSessionForDate, getPreviousTradingDay, MAINTAINED_HOLIDAY_YEARS } from '../marketSchedule.js';
 import { toEtParts, isCryptoSymbol } from '../marketDataCache.js';
@@ -62,7 +71,11 @@ function assertNow(now) {
 export function expectedCompletedSession({ asOf, now } = {}) {
   assertNow(now);
   const session = getSessionForDate(asOf);
-  if (!session) return { ok: false, reason: 'calendar_missing', detail: { asOf: asOf ?? null, maintainedYears: [...MAINTAINED_HOLIDAY_YEARS] } };
+  if (!session) {
+    // A malformed or impossible date is named as such; an unmaintained year keeps the plain reason (review TEV2-2).
+    const malformed = typeof asOf !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(asOf) || Number.isNaN(Date.parse(`${asOf}T12:00:00Z`)) || new Date(`${asOf}T12:00:00Z`).toISOString().slice(0, 10) !== asOf;
+    return { ok: false, reason: 'calendar_missing', detail: { asOf: asOf ?? null, maintainedYears: [...MAINTAINED_HOLIDAY_YEARS], ...(malformed ? { why: 'malformed_date' } : {}) } };
+  }
   if (!session.isTradingDay) return { ok: false, reason: 'asOf_not_a_session', detail: { asOf } };
   const today = toEtParts(now).dateStr;
   if (asOf > today) return { ok: false, reason: 'asOf_in_future', detail: { asOf, today } };
@@ -104,7 +117,11 @@ export function attachAdjustedClose(rows, payload) {
 export function buildDailyEvidence({ rows, asOf, now, minBars, source = null, sourceMeta = null, symbol = null, barsClass = 'later_reconstruction' } = {}) {
   assertNow(now);
   if (!Number.isInteger(minBars) || minBars < 1) throw new TypeError('dailyBarsAdapter: `minBars` must be a positive integer supplied by the caller');
-  const refuse = (reason, detail, extra = {}) => ({ ok: false, reason, detail, asOf: asOf ?? null, basis: BASIS, source, symbol, ...extra });
+  // Refusals carry the requested asOf, the expected session once the calendar has named it (review TE2-7), and the bars class (review TE5-2).
+  let expectedSession = null;
+  // One `checks` shape on every result, refusals included (review TEV2-1): each field null until its step has run.
+  const checks = { completedSession: null, adjacency: null, splitCheck: null, splitCheckReason: null };
+  const refuse = (reason, detail, extra = {}) => ({ ok: false, reason, detail, asOf: asOf ?? null, expected: expectedSession, basis: BASIS, source, symbol, evidenceClass: { bars: barsClass }, checks, ...extra });
 
   // 1. The symbol class.
   if (symbol && isCryptoSymbol(symbol)) return refuse('unsupported_symbol_class', { symbol });
@@ -112,8 +129,9 @@ export function buildDailyEvidence({ rows, asOf, now, minBars, source = null, so
   // 2. The expected completed session, from the calendar, before any row is read.
   const session = expectedCompletedSession({ asOf, now });
   if (!session.ok) return refuse(session.reason, session.detail);
-  const { expected, completedSession } = session;
-  const checks = { completedSession, adjacency: null, splitCheck: null, splitCheckReason: null };
+  const { expected, completedSession, today } = session;
+  expectedSession = expected;
+  checks.completedSession = completedSession;
 
   // 3. Map to the raw basis and drop every row after the expected session.
   const input = Array.isArray(rows) ? rows : [];
@@ -123,8 +141,9 @@ export function buildDailyEvidence({ rows, asOf, now, minBars, source = null, so
   }
   const mapped = [];
   let dropped = 0;
+  let droppedAfterToday = 0; // a row dated after today's ET date is impossible for a completed-session feed; counted apart (review TEV2-3)
   for (const r of input) {
-    if (r.date > expected) { dropped += 1; continue; }
+    if (r.date > expected) { dropped += 1; if (r.date > today) droppedAfterToday += 1; continue; }
     const bar = {
       date: r.date,
       open: toNum(r.open),
@@ -152,7 +171,10 @@ export function buildDailyEvidence({ rows, asOf, now, minBars, source = null, so
   const window = mapped.slice(0, minBars);
 
   // 7. Prices inside the window: null or non-positive is a missing fact, never dropped, never filled. Volumes are classified, values preserved.
+  //    A window row dated on a non-session (a weekend or a holiday the calendar knows) is a shape error, refused by name (review TE2-2).
   for (const bar of window) {
+    const rowSession = getSessionForDate(bar.date);
+    if (rowSession && !rowSession.isTradingDay) return refuse('unordered_bars', { index: window.indexOf(bar), date: bar.date, why: 'non_session_date' }, { checks });
     for (const fact of ['close', 'high', 'low']) {
       if (!isNum(bar[fact]) || bar[fact] <= 0) return refuse('missing_fact', { fact, date: bar.date, value: bar[fact] }, { checks });
     }
@@ -170,24 +192,27 @@ export function buildDailyEvidence({ rows, asOf, now, minBars, source = null, so
   }
   checks.adjacency = adjacencyAvailable ? 'ok' : 'not_available';
 
-  // 9. The split heuristic, only with explicit provenance.
+  // 9. The split heuristic, only with explicit provenance: metadata is present only when EVERY window row carries a
+  //    finite adjustedClose greater than zero (review TE2-1: 0/0 ratios would pass a NaN comparison silently).
   const anyKey = window.some((bar) => hasOwn(bar, 'adjustedClose'));
   const missingDates = window.filter((bar) => !hasOwn(bar, 'adjustedClose') || !isNum(bar.adjustedClose)).map((bar) => bar.date);
+  const nonPositiveDates = window.filter((bar) => hasOwn(bar, 'adjustedClose') && isNum(bar.adjustedClose) && bar.adjustedClose <= 0).map((bar) => bar.date);
   let adjustment;
   if (!anyKey) {
     adjustment = { metadata: 'absent', missingDates: [] };
     checks.splitCheck = 'not_available';
     checks.splitCheckReason = 'adjustment_metadata_absent';
-  } else if (missingDates.length > 0) {
-    adjustment = { metadata: 'absent', missingDates };
+  } else if (missingDates.length > 0 || nonPositiveDates.length > 0) {
+    adjustment = { metadata: 'absent', missingDates: [...missingDates, ...nonPositiveDates].sort().reverse() };
     checks.splitCheck = 'not_available';
-    checks.splitCheckReason = 'adjusted_close_missing';
+    checks.splitCheckReason = missingDates.length > 0 ? 'adjusted_close_missing' : 'adjusted_close_nonpositive';
   } else {
     adjustment = { metadata: 'present', missingDates: [] };
     for (let i = 0; i + 1 < window.length; i++) {
       const ratioAfter = window[i].adjustedClose / window[i].close;
       const ratioBefore = window[i + 1].adjustedClose / window[i + 1].close;
-      if (Math.abs(ratioAfter / ratioBefore - 1) > SPLIT_RATIO_JUMP) {
+      const jump = 1 - Math.min(ratioAfter, ratioBefore) / Math.max(ratioAfter, ratioBefore); // symmetric, "above 10%" in either direction (review TE2-5)
+      if (jump > SPLIT_RATIO_JUMP) {
         checks.splitCheck = 'tripped';
         return refuse('basis_discontinuity', { date: window[i].date, ratioBefore, ratioAfter }, { checks, adjustment });
       }
@@ -208,6 +233,7 @@ export function buildDailyEvidence({ rows, asOf, now, minBars, source = null, so
     checks,
     adjustment,
     dropped,
+    droppedAfterToday,
     bars: window,
   };
 }

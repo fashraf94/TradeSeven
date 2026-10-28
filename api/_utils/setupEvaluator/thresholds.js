@@ -74,6 +74,9 @@ export const SEMANTICS_NOTES = Object.freeze([
   'Calendar-expected session: the adapter computes the expected completed session from the calendar before reading rows (asOf must be a trading day in the maintained years and not in the future; today before the close means the previous session); rows after it are dropped and the newest remaining row must be that session, never an older fallback.',
   'Split heuristic and provenance: with adjustment metadata present on every window row, a day-over-day change above 10% in adjustedClose / close is basis_discontinuity; without it the check is not_available. A ratio of 1 proves nothing and presence is never inferred.',
   'Regime: uptrend when regime_stack and slow_rising are both true; downtrend when both mirrors are true; otherwise no_trend; unknown when any regime fact is null.',
+  'Swing extremes on a tie: the most recent bar (the lowest index) supplies the recorded date.',
+  'Holding: the chart leg shares MIN_COMPLETED_BARS — below it every holding check is unknown; the anchor swing low is a price, so null, non-finite or non-positive reads absent and structure_break is unknown; holding records carry no pattern assessment.',
+  'Split heuristic threshold: symmetric — 1 − min(ratioAfter, ratioBefore) / max(ratioAfter, ratioBefore) > 0.10, so a step above 10% trips in either direction and a step of 10% or less never does; adjustment metadata is present only when every window adjustedClose is finite and greater than zero; a window row dated on a non-session is refused.',
 ]);
 
 /** The smallest bar count that fills every window above (SMA_slow_5ago reads bars 5..54). */

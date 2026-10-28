@@ -197,7 +197,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -474,7 +474,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -754,7 +754,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -1032,7 +1032,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -1313,7 +1313,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -1591,7 +1591,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -1871,7 +1871,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -2149,7 +2149,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -2427,7 +2427,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -2707,7 +2707,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -2775,6 +2775,289 @@
         "pullback_resume": "failed"
       },
       "patternsSatisfied": [],
+      "reason": "missing_fact",
+      "regime": "uptrend",
+      "ruleSet": {
+        "semanticsId": "tf-setup-v1/sem-1",
+        "setupVersion": "tf-setup-v1",
+        "thresholdsHash": "26f3f411b566"
+      },
+      "source": "synthetic",
+      "sourceMeta": {
+        "fetchedAt": "2026-10-28T00:00:00.000Z",
+        "from": "2026-07-17",
+        "to": "2026-10-09"
+      },
+      "verdict": "unknown"
+    },
+    "c1_pullback_null_atr": {
+      "asOf": "2026-10-09",
+      "basis": "raw",
+      "checks": [
+        {
+          "facts": [
+            "C",
+            "SMA_fast",
+            "SMA_slow"
+          ],
+          "id": "regime_stack",
+          "lhs": [
+            100,
+            97.625
+          ],
+          "op": ">",
+          "result": true,
+          "rhs": [
+            97.625,
+            93.875
+          ]
+        },
+        {
+          "facts": [
+            "SMA_slow",
+            "SMA_slow_5ago"
+          ],
+          "id": "slow_rising",
+          "lhs": 93.875,
+          "op": ">",
+          "result": true,
+          "rhs": 92.625
+        },
+        {
+          "facts": [
+            "C",
+            "SMA_fast",
+            "SMA_slow"
+          ],
+          "id": "regime_stack_down",
+          "lhs": [
+            100,
+            97.625
+          ],
+          "op": "<",
+          "result": false,
+          "rhs": [
+            97.625,
+            93.875
+          ]
+        },
+        {
+          "facts": [
+            "SMA_slow",
+            "SMA_slow_5ago"
+          ],
+          "id": "slow_falling",
+          "lhs": 93.875,
+          "op": "<",
+          "result": false,
+          "rhs": 92.625
+        },
+        {
+          "facts": [
+            "C",
+            "swingHigh"
+          ],
+          "id": "breakout_close",
+          "lhs": 100,
+          "op": ">=",
+          "result": false,
+          "rhs": 101.25
+        },
+        {
+          "facts": [
+            "V",
+            "V_avg"
+          ],
+          "id": "breakout_volume",
+          "lhs": 1000000,
+          "op": ">=",
+          "result": false,
+          "rhs": 1500000
+        },
+        {
+          "facts": [
+            "pullbackLows",
+            "SMA_fast"
+          ],
+          "id": "pullback_touch",
+          "lhs": 97.625,
+          "op": "<=",
+          "result": true,
+          "rhs": 97.625
+        },
+        {
+          "facts": [
+            "C",
+            "SMA_fast"
+          ],
+          "id": "pullback_close",
+          "lhs": 100,
+          "op": ">",
+          "result": true,
+          "rhs": 97.625
+        },
+        {
+          "facts": [
+            "C",
+            "SMA_fast",
+            "ATR"
+          ],
+          "id": "extension",
+          "lhs": 100,
+          "op": "<=",
+          "result": "unknown",
+          "rhs": null
+        }
+      ],
+      "evidence": {
+        "adjustment": {
+          "metadata": "absent",
+          "missingDates": []
+        },
+        "bars": {
+          "count": 60,
+          "newest": "2026-10-09",
+          "oldest": "2026-07-17"
+        },
+        "pullbackLows": [
+          {
+            "date": "2026-10-09",
+            "low": 98.5
+          },
+          {
+            "date": "2026-10-08",
+            "low": 98.25
+          },
+          {
+            "date": "2026-10-07",
+            "low": 97.625
+          }
+        ],
+        "swingHigh": {
+          "date": "2026-10-08",
+          "value": 101.25
+        },
+        "swingLow": {
+          "date": null,
+          "value": null
+        },
+        "volume": {
+          "avg": {
+            "barsRequired": 20,
+            "barsUsable": 20,
+            "unusable": [],
+            "value": 1000000
+          },
+          "bar0": {
+            "date": "2026-10-09",
+            "reason": null,
+            "usable": true,
+            "value": 1000000
+          }
+        },
+        "windows": {
+          "atr": {
+            "from": "2026-09-21",
+            "to": "2026-10-09"
+          },
+          "pullbackTouch": {
+            "from": "2026-10-07",
+            "to": "2026-10-09"
+          },
+          "smaFast": {
+            "from": "2026-09-14",
+            "to": "2026-10-09"
+          },
+          "smaSlow": {
+            "from": "2026-07-31",
+            "to": "2026-10-09"
+          },
+          "smaSlowPrior": {
+            "from": "2026-07-24",
+            "to": "2026-10-02"
+          },
+          "swing": {
+            "from": "2026-09-11",
+            "to": "2026-10-08"
+          },
+          "volumeAvg": {
+            "from": "2026-09-11",
+            "to": "2026-10-08"
+          }
+        }
+      },
+      "evidenceClass": {
+        "bars": "later_reconstruction",
+        "verdict": "derived"
+      },
+      "factsUsed": {
+        "ATR": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": null
+        },
+        "C": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 100
+        },
+        "SMA_fast": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 97.625
+        },
+        "SMA_slow": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 93.875
+        },
+        "SMA_slow_5ago": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 92.625
+        },
+        "V": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 1000000
+        },
+        "V_avg": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 1000000
+        },
+        "swingHigh": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 101.25
+        },
+        "swingLow": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": null
+        }
+      },
+      "missing": [
+        "swingLow",
+        "ATR"
+      ],
+      "pattern": null,
+      "patterns": {
+        "breakout": "failed",
+        "pullback_resume": "satisfied"
+      },
+      "patternsSatisfied": [
+        "pullback_resume"
+      ],
       "reason": "missing_fact",
       "regime": "uptrend",
       "ruleSet": {
@@ -2987,7 +3270,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -3274,7 +3557,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -3556,7 +3839,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -3834,7 +4117,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -4112,7 +4395,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -4390,7 +4673,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -4670,7 +4953,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -4950,7 +5233,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -5228,7 +5511,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -5508,7 +5791,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -5789,7 +6072,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -6069,7 +6352,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -6347,7 +6630,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -6625,7 +6908,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -6905,7 +7188,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -7185,7 +7468,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -7465,7 +7748,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -7750,7 +8033,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -8035,7 +8318,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -8320,7 +8603,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -8605,7 +8888,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -8868,7 +9151,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -8927,11 +9210,12 @@
           "value": 93.5
         }
       },
-      "missing": [],
-      "patterns": {
-        "breakout": "failed",
-        "pullback_resume": "failed"
+      "history": {
+        "count": 60,
+        "required": 55,
+        "sufficient": true
       },
+      "missing": [],
       "reasons": [],
       "regime": "uptrend",
       "ruleSet": {
@@ -9124,7 +9408,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -9183,15 +9467,273 @@
           "value": 93.5
         }
       },
-      "missing": [],
-      "patterns": {
-        "breakout": "failed",
-        "pullback_resume": "failed"
+      "history": {
+        "count": 60,
+        "required": 55,
+        "sufficient": true
       },
+      "missing": [],
       "reasons": [
         "close_below_slow"
       ],
       "regime": "no_trend",
+      "ruleSet": {
+        "semanticsId": "tf-setup-v1/sem-1",
+        "setupVersion": "tf-setup-v1",
+        "thresholdsHash": "26f3f411b566"
+      },
+      "source": "synthetic",
+      "sourceMeta": {
+        "fetchedAt": "2026-10-28T00:00:00.000Z",
+        "from": "2026-07-17",
+        "to": "2026-10-09"
+      }
+    },
+    "holding_anchor_zero": {
+      "anchorSwingLow": {
+        "provenance": "absent",
+        "value": null
+      },
+      "asOf": "2026-10-09",
+      "basis": "raw",
+      "chartLeg": "unknown",
+      "checks": [
+        {
+          "facts": [
+            "C",
+            "SMA_fast",
+            "SMA_slow"
+          ],
+          "id": "regime_stack",
+          "lhs": [
+            100,
+            97.625
+          ],
+          "op": ">",
+          "result": true,
+          "rhs": [
+            97.625,
+            93.875
+          ]
+        },
+        {
+          "facts": [
+            "SMA_slow",
+            "SMA_slow_5ago"
+          ],
+          "id": "slow_rising",
+          "lhs": 93.875,
+          "op": ">",
+          "result": true,
+          "rhs": 92.625
+        },
+        {
+          "facts": [
+            "C",
+            "SMA_fast",
+            "SMA_slow"
+          ],
+          "id": "regime_stack_down",
+          "lhs": [
+            100,
+            97.625
+          ],
+          "op": "<",
+          "result": false,
+          "rhs": [
+            97.625,
+            93.875
+          ]
+        },
+        {
+          "facts": [
+            "SMA_slow",
+            "SMA_slow_5ago"
+          ],
+          "id": "slow_falling",
+          "lhs": 93.875,
+          "op": "<",
+          "result": false,
+          "rhs": 92.625
+        },
+        {
+          "facts": [
+            "C",
+            "SMA_slow"
+          ],
+          "id": "close_below_slow",
+          "lhs": 100,
+          "op": "<",
+          "result": false,
+          "rhs": 93.875
+        },
+        {
+          "facts": [
+            "C",
+            "anchorSwingLow"
+          ],
+          "id": "structure_break",
+          "lhs": 100,
+          "op": "<",
+          "result": "unknown",
+          "rhs": null
+        },
+        {
+          "facts": [
+            "regime"
+          ],
+          "id": "regime_flip",
+          "lhs": "uptrend",
+          "op": "===",
+          "result": false,
+          "rhs": "downtrend"
+        }
+      ],
+      "evidence": {
+        "adjustment": {
+          "metadata": "absent",
+          "missingDates": []
+        },
+        "bars": {
+          "count": 60,
+          "newest": "2026-10-09",
+          "oldest": "2026-07-17"
+        },
+        "pullbackLows": [
+          {
+            "date": "2026-10-09",
+            "low": 98.5
+          },
+          {
+            "date": "2026-10-08",
+            "low": 98.25
+          },
+          {
+            "date": "2026-10-07",
+            "low": 98
+          }
+        ],
+        "swingHigh": {
+          "date": "2026-10-08",
+          "value": 101.25
+        },
+        "swingLow": {
+          "date": "2026-09-11",
+          "value": 93.5
+        },
+        "volume": {
+          "avg": {
+            "barsRequired": 20,
+            "barsUsable": 20,
+            "unusable": [],
+            "value": 1000000
+          },
+          "bar0": {
+            "date": "2026-10-09",
+            "reason": null,
+            "usable": true,
+            "value": 1000000
+          }
+        },
+        "windows": {
+          "atr": {
+            "from": "2026-09-21",
+            "to": "2026-10-09"
+          },
+          "pullbackTouch": {
+            "from": "2026-10-07",
+            "to": "2026-10-09"
+          },
+          "smaFast": {
+            "from": "2026-09-14",
+            "to": "2026-10-09"
+          },
+          "smaSlow": {
+            "from": "2026-07-31",
+            "to": "2026-10-09"
+          },
+          "smaSlowPrior": {
+            "from": "2026-07-24",
+            "to": "2026-10-02"
+          },
+          "swing": {
+            "from": "2026-09-11",
+            "to": "2026-10-08"
+          },
+          "volumeAvg": {
+            "from": "2026-09-11",
+            "to": "2026-10-08"
+          }
+        }
+      },
+      "evidenceClass": {
+        "bars": "later_reconstruction",
+        "verdict": "derived"
+      },
+      "factsUsed": {
+        "ATR": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 3
+        },
+        "C": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 100
+        },
+        "SMA_fast": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 97.625
+        },
+        "SMA_slow": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 93.875
+        },
+        "SMA_slow_5ago": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 92.625
+        },
+        "V": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 1000000
+        },
+        "V_avg": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 1000000
+        },
+        "swingHigh": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 101.25
+        },
+        "swingLow": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 93.5
+        }
+      },
+      "history": {
+        "count": 60,
+        "required": 55,
+        "sufficient": true
+      },
+      "missing": [],
+      "reasons": [],
+      "regime": "uptrend",
       "ruleSet": {
         "semanticsId": "tf-setup-v1/sem-1",
         "setupVersion": "tf-setup-v1",
@@ -9382,7 +9924,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -9441,11 +9983,12 @@
           "value": 93.5
         }
       },
-      "missing": [],
-      "patterns": {
-        "breakout": "failed",
-        "pullback_resume": "failed"
+      "history": {
+        "count": 60,
+        "required": 55,
+        "sufficient": true
       },
+      "missing": [],
       "reasons": [
         "close_below_slow"
       ],
@@ -9640,7 +10183,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -9699,11 +10242,12 @@
           "value": 94.5
         }
       },
-      "missing": [],
-      "patterns": {
-        "breakout": "failed",
-        "pullback_resume": "satisfied"
+      "history": {
+        "count": 60,
+        "required": 55,
+        "sufficient": true
       },
+      "missing": [],
       "reasons": [],
       "regime": "uptrend",
       "ruleSet": {
@@ -9715,6 +10259,262 @@
       "sourceMeta": {
         "fetchedAt": "2026-10-28T00:00:00.000Z",
         "from": "2026-07-17",
+        "to": "2026-10-09"
+      }
+    },
+    "holding_history_54_close_below_slow": {
+      "anchorSwingLow": {
+        "provenance": "supplied",
+        "value": 80
+      },
+      "asOf": "2026-10-09",
+      "basis": "raw",
+      "chartLeg": "unknown",
+      "checks": [
+        {
+          "facts": [
+            "C",
+            "SMA_fast",
+            "SMA_slow"
+          ],
+          "id": "regime_stack",
+          "lhs": [
+            85,
+            96.875
+          ],
+          "op": ">",
+          "result": false,
+          "rhs": [
+            96.875,
+            93.575
+          ]
+        },
+        {
+          "facts": [
+            "SMA_slow",
+            "SMA_slow_5ago"
+          ],
+          "id": "slow_rising",
+          "lhs": 93.575,
+          "op": ">",
+          "result": "unknown",
+          "rhs": null
+        },
+        {
+          "facts": [
+            "C",
+            "SMA_fast",
+            "SMA_slow"
+          ],
+          "id": "regime_stack_down",
+          "lhs": [
+            85,
+            96.875
+          ],
+          "op": "<",
+          "result": false,
+          "rhs": [
+            96.875,
+            93.575
+          ]
+        },
+        {
+          "facts": [
+            "SMA_slow",
+            "SMA_slow_5ago"
+          ],
+          "id": "slow_falling",
+          "lhs": 93.575,
+          "op": "<",
+          "result": "unknown",
+          "rhs": null
+        },
+        {
+          "facts": [
+            "C",
+            "SMA_slow"
+          ],
+          "id": "close_below_slow",
+          "lhs": 85,
+          "op": "<",
+          "result": "unknown",
+          "rhs": 93.575
+        },
+        {
+          "facts": [
+            "C",
+            "anchorSwingLow"
+          ],
+          "id": "structure_break",
+          "lhs": 85,
+          "op": "<",
+          "result": "unknown",
+          "rhs": 80
+        },
+        {
+          "facts": [
+            "regime"
+          ],
+          "id": "regime_flip",
+          "lhs": "unknown",
+          "op": "===",
+          "result": "unknown",
+          "rhs": "downtrend"
+        }
+      ],
+      "evidence": {
+        "adjustment": {
+          "metadata": "absent",
+          "missingDates": []
+        },
+        "bars": {
+          "count": 54,
+          "newest": "2026-10-09",
+          "oldest": "2026-07-27"
+        },
+        "pullbackLows": [
+          {
+            "date": "2026-10-09",
+            "low": 83.5
+          },
+          {
+            "date": "2026-10-08",
+            "low": 98.25
+          },
+          {
+            "date": "2026-10-07",
+            "low": 98
+          }
+        ],
+        "swingHigh": {
+          "date": "2026-10-08",
+          "value": 101.25
+        },
+        "swingLow": {
+          "date": "2026-09-11",
+          "value": 93.5
+        },
+        "volume": {
+          "avg": {
+            "barsRequired": 20,
+            "barsUsable": 20,
+            "unusable": [],
+            "value": 1000000
+          },
+          "bar0": {
+            "date": "2026-10-09",
+            "reason": null,
+            "usable": true,
+            "value": 1000000
+          }
+        },
+        "windows": {
+          "atr": {
+            "from": "2026-09-21",
+            "to": "2026-10-09"
+          },
+          "pullbackTouch": {
+            "from": "2026-10-07",
+            "to": "2026-10-09"
+          },
+          "smaFast": {
+            "from": "2026-09-14",
+            "to": "2026-10-09"
+          },
+          "smaSlow": {
+            "from": "2026-07-31",
+            "to": "2026-10-09"
+          },
+          "smaSlowPrior": null,
+          "swing": {
+            "from": "2026-09-11",
+            "to": "2026-10-08"
+          },
+          "volumeAvg": {
+            "from": "2026-09-11",
+            "to": "2026-10-08"
+          }
+        }
+      },
+      "evidenceClass": {
+        "bars": "later_reconstruction",
+        "verdict": "derived"
+      },
+      "factsUsed": {
+        "ATR": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 3.9464
+        },
+        "C": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 85
+        },
+        "SMA_fast": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 96.875
+        },
+        "SMA_slow": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 93.575
+        },
+        "SMA_slow_5ago": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": null
+        },
+        "V": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 1000000
+        },
+        "V_avg": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 1000000
+        },
+        "swingHigh": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 101.25
+        },
+        "swingLow": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 93.5
+        }
+      },
+      "history": {
+        "count": 54,
+        "required": 55,
+        "sufficient": false
+      },
+      "missing": [
+        "SMA_slow_5ago"
+      ],
+      "reasons": [],
+      "regime": "unknown",
+      "ruleSet": {
+        "semanticsId": "tf-setup-v1/sem-1",
+        "setupVersion": "tf-setup-v1",
+        "thresholdsHash": "26f3f411b566"
+      },
+      "source": "synthetic",
+      "sourceMeta": {
+        "fetchedAt": "2026-10-28T00:00:00.000Z",
+        "from": "2026-07-27",
         "to": "2026-10-09"
       }
     },
@@ -9896,7 +10696,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -9955,11 +10755,12 @@
           "value": 93.5
         }
       },
-      "missing": [],
-      "patterns": {
-        "breakout": "failed",
-        "pullback_resume": "failed"
+      "history": {
+        "count": 60,
+        "required": 55,
+        "sufficient": true
       },
+      "missing": [],
       "reasons": [],
       "regime": "uptrend",
       "ruleSet": {
@@ -10152,7 +10953,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -10211,11 +11012,12 @@
           "value": 93.5
         }
       },
-      "missing": [],
-      "patterns": {
-        "breakout": "failed",
-        "pullback_resume": "failed"
+      "history": {
+        "count": 60,
+        "required": 55,
+        "sufficient": true
       },
+      "missing": [],
       "reasons": [],
       "regime": "uptrend",
       "ruleSet": {
@@ -10408,7 +11210,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -10467,11 +11269,12 @@
           "value": 98.75
         }
       },
-      "missing": [],
-      "patterns": {
-        "breakout": "failed",
-        "pullback_resume": "failed"
+      "history": {
+        "count": 60,
+        "required": 55,
+        "sufficient": true
       },
+      "missing": [],
       "reasons": [
         "close_below_slow",
         "regime_flip"
@@ -10649,7 +11452,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -10708,6 +11511,11 @@
           "value": null
         }
       },
+      "history": {
+        "count": 10,
+        "required": 55,
+        "sufficient": false
+      },
       "missing": [
         "SMA_fast",
         "SMA_slow",
@@ -10717,10 +11525,6 @@
         "ATR",
         "V_avg"
       ],
-      "patterns": {
-        "breakout": "untestable",
-        "pullback_resume": "untestable"
-      },
       "reasons": [],
       "regime": "unknown",
       "ruleSet": {
@@ -10913,7 +11717,7 @@
         }
       },
       "evidenceClass": {
-        "bars": "synthetic",
+        "bars": "later_reconstruction",
         "verdict": "derived"
       },
       "factsUsed": {
@@ -10972,11 +11776,12 @@
           "value": 93.5
         }
       },
-      "missing": [],
-      "patterns": {
-        "breakout": "failed",
-        "pullback_resume": "failed"
+      "history": {
+        "count": 60,
+        "required": 55,
+        "sufficient": true
       },
+      "missing": [],
       "reasons": [
         "structure_break"
       ],

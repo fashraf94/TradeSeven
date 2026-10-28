@@ -75,7 +75,8 @@ export function evidenceOf(bars, { symbol = 'SYN', adjustment = { metadata: 'abs
     basis: 'raw',
     source: 'synthetic',
     sourceMeta: { fetchedAt: '2026-10-28T00:00:00.000Z', from: frozen[frozen.length - 1].date, to: frozen[0].date },
-    evidenceClass: { bars: 'synthetic' },
+    // The §5 enum is closed; `source: 'synthetic'` says what these bars are (review TE5-2).
+    evidenceClass: { bars: 'later_reconstruction' },
     checks: { completedSession: 'complete', adjacency: 'ok', splitCheck: 'not_available', splitCheckReason: 'adjustment_metadata_absent' },
     adjustment,
     dropped: 0,
@@ -138,6 +139,7 @@ export const SCENARIOS = Object.freeze({
   c1_pullback_null_bar0_volume: { kind: 'entry', expect: 'valid/pullback_resume, missing [V], breakout untestable', build: () => evidenceOf(base((b) => { b[2].low = BASE_SMA_FAST; b[0].volume = null; })) },
   c1_breakout_price_unusable_volume: { kind: 'entry', expect: 'unknown(missing_fact), not no_setup: breakout price with a null volume and no pullback', build: () => evidenceOf(base((b) => { setClose(b, 0, BASE_SWING_HIGH); b[0].volume = null; })) },
   c1_zero_volume_in_window: { kind: 'entry', expect: 'valid/pullback_resume, missing [V_avg]: one zero volume inside bars 1..20', build: () => evidenceOf(base((b) => { b[2].low = BASE_SMA_FAST; b[7].volume = 0; })) },
+  c1_pullback_null_atr: { kind: 'entry', expect: 'unknown(missing_fact): the pullback is satisfied but a null low at bar 10 leaves ATR (and swingLow) null, so the extension check is unknown (V3 §6.4 rule 5)', build: () => evidenceOf(base((b) => { b[2].low = BASE_SMA_FAST; b[10].low = null; })) },
   volume_bar0_null: { kind: 'entry', expect: 'V null, reason null', build: () => evidenceOf(base((b) => { b[0].volume = null; })) },
   volume_bar0_zero: { kind: 'entry', expect: 'V null, reason zero', build: () => evidenceOf(base((b) => { b[0].volume = 0; })) },
   volume_bar0_negative: { kind: 'entry', expect: 'V null, reason negative', build: () => evidenceOf(base((b) => { b[0].volume = -5; })) },
@@ -159,6 +161,8 @@ export const SCENARIOS = Object.freeze({
   holding_extended_series_intact: { kind: 'holding', options: { anchorSwingLow: 90 }, expect: 'intact for the series whose entry is invalid(extended)', build: () => evidenceOf(tight((b) => { b[2].low = BASE_SMA_FAST; })) },
   holding_no_setup_series_intact: { kind: 'holding', options: { anchorSwingLow: 90 }, expect: 'intact for the series whose entry is invalid(no_setup)', build: () => evidenceOf(base((b) => { setClose(b, 0, BASE_SWING_HIGH - 0.01); })) },
   holding_short_history: { kind: 'holding', options: {}, expect: 'all unknown on 10 bars with no anchor', build: () => evidenceOf(buildBars({ n: 10 })) },
+  holding_history_54_close_below_slow: { kind: 'holding', options: { anchorSwingLow: 80 }, expect: 'all unknown on 54 bars although C < SMA_slow and C > the anchor: the holding shares MIN_COMPLETED_BARS', build: () => evidenceOf(buildBars({ n: 54, patch: (b) => { setClose(b, 0, 85); } })) },
+  holding_anchor_zero: { kind: 'holding', options: { anchorSwingLow: 0 }, expect: 'unknown: a non-positive anchor is not a price and reads absent', build: () => evidenceOf(base()) },
 });
 
 export const SCENARIO_NAMES = Object.freeze(Object.keys(SCENARIOS));

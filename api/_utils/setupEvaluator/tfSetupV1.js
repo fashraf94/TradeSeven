@@ -152,8 +152,9 @@ export function computeTfFacts(evidence) {
   }
   const V_avg = volWindowComplete && barsUsable === volLen ? volSum / volLen : null;
 
+  // The three dated lows the touch check compares: a non-price low is recorded as null, exactly as the check reads it (review TEV1-1).
   const pullbackLows = [];
-  for (let i = 0; i < touch && i < n; i++) pullbackLows.push({ date: bars[i].date, low: isNum(bars[i].low) ? bars[i].low : null });
+  for (let i = 0; i < touch && i < n; i++) pullbackLows.push({ date: bars[i].date, low: isPrice(bars[i].low) ? bars[i].low : null });
 
   return {
     facts: { C, SMA_fast, SMA_slow, SMA_slow_5ago, swingHigh: swingHigh.value, swingLow: swingLow.value, ATR, V, V_avg },
@@ -192,13 +193,14 @@ function compare(op, a, b) {
   }
 }
 
-/** A chained comparison lhs[i] op rhs[i] for every i; unknown when any operand is not a number. */
+/**
+ * A chained comparison lhs[i] op rhs[i] for every i: unknown when ANY operand
+ * is not a number (checked over every pair first, so the mirror checks agree
+ * on the same facts; review TE1-4), else true only when every pair holds.
+ */
 function chain(op, lhs, rhs) {
-  for (let i = 0; i < lhs.length; i++) {
-    const r = compare(op, lhs[i], rhs[i]);
-    if (r === 'unknown') return 'unknown';
-    if (r === false) return false;
-  }
+  for (let i = 0; i < lhs.length; i++) if (!isNum(lhs[i]) || !isNum(rhs[i])) return 'unknown';
+  for (let i = 0; i < lhs.length; i++) if (compare(op, lhs[i], rhs[i]) === false) return false;
   return true;
 }
 
@@ -276,6 +278,13 @@ export function deriveEntryVerdict({ checks, patterns, barCount }) {
 
 // ---------------------------------------------------------------- records
 
+/**
+ * The block every record shares (V3 §5). `patterns` is carried on ENTRY
+ * records only: a holding record's checks do not include the pattern checks,
+ * so a pattern assessment there could neither be reconstructed from the
+ * record (BUILD_RULES §9) nor read safely beside a held name (Amendment A,
+ * A6) — reviews TE1-2 / TE5-6.
+ */
 function commonBlock(evidence, computed, checks, patterns) {
   const { facts } = computed;
   const asOf = evidence.asOf ?? null;
@@ -283,12 +292,13 @@ function commonBlock(evidence, computed, checks, patterns) {
   const source = evidence.source ?? null;
   const factsUsed = {};
   for (const name of FACT_NAMES) factsUsed[name] = { value: facts[name], asOf, source, basis };
-  return {
+  const sourceMeta = evidence.sourceMeta && typeof evidence.sourceMeta === 'object' ? { ...evidence.sourceMeta } : null;
+  const block = {
     ruleSet: describeRuleSet(),
     asOf,
     basis,
     source,
-    sourceMeta: evidence.sourceMeta ?? null,
+    sourceMeta,
     evidenceClass: { bars: evidence.evidenceClass?.bars ?? null, verdict: 'derived' },
     evidence: {
       ...computed.evidence,
@@ -296,19 +306,21 @@ function commonBlock(evidence, computed, checks, patterns) {
     },
     factsUsed,
     missing: FACT_NAMES.filter((name) => facts[name] === null),
-    patterns,
-    checks,
   };
+  if (patterns) block.patterns = patterns;
+  block.checks = checks;
+  return block;
 }
 
 /** The record for an adapter refusal: every fact null, every check unknown, verdict unknown with the typed reason. */
-function refusalRecord(evidence) {
+function refusalRecord(evidence, { withPatterns = true } = {}) {
   const computed = computeTfFacts({ bars: [] });
   const checks = entryChecks(computed.facts, []);
-  const patterns = derivePatterns(checks);
+  const patterns = withPatterns ? derivePatterns(checks) : null;
+  const detail = evidence.detail && typeof evidence.detail === 'object' ? JSON.parse(JSON.stringify(evidence.detail)) : (evidence.detail ?? null);
   return {
     ...commonBlock(evidence, computed, checks, patterns),
-    refusal: { reason: evidence.reason ?? null, detail: evidence.detail ?? null },
+    refusal: { reason: evidence.reason ?? null, detail },
   };
 }
 
@@ -339,15 +351,18 @@ export function deriveChartLeg(checks) {
 
 /**
  * Holding assessment of the chart leg (definition §4; Amendment A, A6).
- * A separate function and record: it never reads an entry verdict. The
- * anchor swing low is ID-1's record, never re-derived here; absent or
- * non-finite, `structure_break` is unknown and the provenance says so.
+ * A separate function and record: it never reads an entry verdict and
+ * carries no `patterns`. The anchor swing low is ID-1's record, never
+ * re-derived here; it is a price — absent, non-finite or non-positive, it
+ * reads `absent` and `structure_break` is unknown (review TE1-3). Below
+ * MIN_COMPLETED_BARS every holding check is unknown, as the entry side's
+ * `insufficient_history` (review TE5-3): `history` says so on the record.
  */
 export function evaluateTfHolding(evidence, { anchorSwingLow = null } = {}) {
-  const anchorSupplied = isNum(anchorSwingLow);
+  const anchorSupplied = isPrice(anchorSwingLow);
   const anchor = { value: anchorSupplied ? anchorSwingLow : null, provenance: anchorSupplied ? 'supplied' : 'absent' };
   if (!evidence || evidence.ok === false) {
-    const base = refusalRecord(evidence ?? {});
+    const base = refusalRecord(evidence ?? {}, { withPatterns: false });
     const regimeChecks = base.checks.filter((c) => REGIME_CHECKS.includes(c.id));
     const checks = [
       ...regimeChecks,
@@ -355,21 +370,23 @@ export function evaluateTfHolding(evidence, { anchorSwingLow = null } = {}) {
       check('structure_break', null, '<', anchor.value, 'unknown', ['C', 'anchorSwingLow']),
       check('regime_flip', 'unknown', '===', 'downtrend', 'unknown', ['regime']),
     ];
-    return { ...base, checks, regime: 'unknown', chartLeg: 'unknown', reasons: [], anchorSwingLow: anchor };
+    return { ...base, checks, regime: 'unknown', history: { count: 0, required: MIN_COMPLETED_BARS, sufficient: false }, chartLeg: 'unknown', reasons: [], anchorSwingLow: anchor };
   }
   const computed = computeTfFacts(evidence);
   const { C, SMA_slow } = computed.facts;
+  const count = computed.evidence.bars.count;
+  const sufficient = count >= MIN_COMPLETED_BARS;
+  const gated = (result) => (sufficient ? result : 'unknown');
   const allEntry = entryChecks(computed.facts, computed.evidence.pullbackLows);
   const regimeChecks = allEntry.filter((c) => REGIME_CHECKS.includes(c.id));
-  const regime = deriveRegime(regimeChecks);
-  const patterns = derivePatterns(allEntry);
+  const regime = sufficient ? deriveRegime(regimeChecks) : 'unknown';
   const checks = [
     ...regimeChecks,
-    check('close_below_slow', C, '<', SMA_slow, compare('<', C, SMA_slow), ['C', 'SMA_slow']),
-    check('structure_break', C, '<', anchor.value, compare('<', C, anchor.value), ['C', 'anchorSwingLow']),
+    check('close_below_slow', C, '<', SMA_slow, gated(compare('<', C, SMA_slow)), ['C', 'SMA_slow']),
+    check('structure_break', C, '<', anchor.value, gated(compare('<', C, anchor.value)), ['C', 'anchorSwingLow']),
     check('regime_flip', regime, '===', 'downtrend', regime === 'unknown' ? 'unknown' : regime === 'downtrend', ['regime']),
   ];
   const chartLeg = deriveChartLeg(checks);
   const reasons = HOLDING_CHECKS.filter((id) => byId(checks)[id].result === true);
-  return { ...commonBlock(evidence, computed, checks, patterns), regime, chartLeg, reasons, anchorSwingLow: anchor };
+  return { ...commonBlock(evidence, computed, checks, null), regime, history: { count, required: MIN_COMPLETED_BARS, sufficient }, chartLeg, reasons, anchorSwingLow: anchor };
 }

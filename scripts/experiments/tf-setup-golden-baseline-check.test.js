@@ -7,7 +7,7 @@
 // Pure: compareRevisions never touches git or files.
 
 import { describe, it, expect } from 'vitest';
-import { canonicalJson, canonicalSha256, semanticsSeq, checkBaselineIntegrity, compareRevisions } from './tf-setup-golden-baseline-check.mjs';
+import { canonicalJson, canonicalSha256, semanticsSeq, semanticsOrder, checkBaselineIntegrity, compareRevisions } from './tf-setup-golden-baseline-check.mjs';
 
 const golden1 = { entry: { a: { verdict: 'valid', checks: [{ id: 'x', result: true }] } }, semanticsId: 'tf-setup-v1/sem-1' };
 const golden2 = { entry: { a: { verdict: 'invalid', checks: [{ id: 'x', result: false }] } }, semanticsId: 'tf-setup-v1/sem-2' };
@@ -26,11 +26,19 @@ describe('canonical bytes', () => {
     expect(canonicalSha256(JSON.parse(text.replace(/\n/g, '\r\n')))).toBe(canonicalSha256(JSON.parse(text)));
     expect(canonicalSha256({ a: 1 })).not.toBe(canonicalSha256({ a: 2 }));
   });
-  it('semanticsSeq reads the sem-<n> suffix', () => {
+  it('semanticsSeq reads the sem-<n> suffix; semanticsOrder reads (version, seq)', () => {
     expect(semanticsSeq('tf-setup-v1/sem-1')).toBe(1);
     expect(semanticsSeq('tf-setup-v2/sem-12')).toBe(12);
     expect(semanticsSeq('tf-setup-v1')).toBeNull();
     expect(semanticsSeq(null)).toBeNull();
+    expect(semanticsOrder('tf-setup-v2/sem-1')).toEqual({ version: 2, seq: 1 });
+    expect(semanticsOrder('v2/sem-1')).toBeNull();
+  });
+  it('the history is ordered by setupVersion then sem, so a new version may restart at sem-1 (review TE5-8)', () => {
+    const v2 = { ...e2, semanticsId: 'tf-setup-v2/sem-1' };
+    expect(checkBaselineIntegrity(side([e1, v2], sha2, 'tf-setup-v2/sem-1'))).toEqual([]);
+    const back = { ...e2, semanticsId: 'tf-setup-v1/sem-2', recordedAt: '2026-12-01T00:00:00.000Z' };
+    expect(checkBaselineIntegrity(side([e1, v2, { ...back, goldenSha256: sha1 }], sha1, 'tf-setup-v1/sem-2')).join(' ')).toMatch(/does not follow tf-setup-v2\/sem-1/);
   });
 });
 
@@ -45,7 +53,7 @@ describe('in-revision integrity (checkBaselineIntegrity)', () => {
   it('fails on duplicate, out-of-order or malformed ids, a non-ISO recordedAt, a missing note, or an empty history', () => {
     expect(checkBaselineIntegrity(side([e1, { ...e2, semanticsId: 'tf-setup-v1/sem-1' }], sha2, 'tf-setup-v1/sem-1')).join(' ')).toMatch(/not unique/);
     expect(checkBaselineIntegrity(side([e2, e1], sha1, 'tf-setup-v1/sem-1')).join(' ')).toMatch(/does not follow/);
-    expect(checkBaselineIntegrity(side([{ ...e1, semanticsId: 'sem1' }], sha1, 'sem1')).join(' ')).toMatch(/is not <version>\/sem-<n>/);
+    expect(checkBaselineIntegrity(side([{ ...e1, semanticsId: 'sem1' }], sha1, 'sem1')).join(' ')).toMatch(/is not tf-setup-v<n>\/sem-<n>/);
     expect(checkBaselineIntegrity(side([{ ...e1, recordedAt: 'yesterday' }], sha1, 'tf-setup-v1/sem-1')).join(' ')).toMatch(/not an ISO instant/);
     expect(checkBaselineIntegrity(side([{ ...e1, note: '' }], sha1, 'tf-setup-v1/sem-1')).join(' ')).toMatch(/has no note/);
     expect(checkBaselineIntegrity(side([e1, { ...e2, recordedAt: '2026-10-01T00:00:00Z' }], sha2, 'tf-setup-v1/sem-2')).join(' ')).toMatch(/recordedAt precedes/);

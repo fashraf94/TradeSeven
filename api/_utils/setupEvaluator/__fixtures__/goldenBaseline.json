@@ -1,8 +1,8 @@
 [
   {
     "semanticsId": "tf-setup-v1/sem-1",
-    "goldenSha256": "d3501e5fcd5af6f4675094449ebeebadad61b60f55ddb67276c2b685a395f9b2",
-    "recordedAt": "2026-10-28T16:14:20.772Z",
-    "note": "Initial baseline, slice 1 build (28 Oct 2026): the golden-verdict fixture under tf-setup-v1/sem-1 — clarification C1 (FD-P3-1 option (a), pattern-scoped missing facts), the raw basis (FD-P3-2), the §6.3 volume policy, the calendar-expected session rule and the split-heuristic provenance rule. Initial baseline creation: no earlier baseline exists at the base revision."
+    "goldenSha256": "34e3ec85ccefd9b503994f611bb37e20a3aaa86eca4e8fd3017ade4a0bb58c2c",
+    "recordedAt": "2026-10-28T16:59:57.578Z",
+    "note": "Initial baseline, slice 1 build (28 Oct 2026): the golden-verdict fixture under tf-setup-v1/sem-1 — clarification C1 (FD-P3-1 option (a), pattern-scoped missing facts), the raw basis (FD-P3-2), the §6.3 volume policy, the calendar-expected session rule and the split-heuristic provenance rule. Initial baseline creation: no earlier baseline exists at the base revision. Re-recorded once during the build after the §2 review fix round (three scenarios added, holding records without pattern assessments, symmetric regime chains), before any base revision carried an entry."
   }
 ]

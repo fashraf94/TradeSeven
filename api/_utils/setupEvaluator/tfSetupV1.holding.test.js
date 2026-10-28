@@ -57,12 +57,33 @@ describe('the absent anchor (ID-1 unbuilt)', () => {
     expect(r.anchorSwingLow.provenance).toBe('absent');
   });
 
-  it('a non-finite anchor is absent, never compared', () => {
-    for (const bad of [NaN, Infinity, '100', undefined, null]) {
+  it('a non-finite or non-positive anchor is absent, never compared (the anchor is a price; review TE1-3)', () => {
+    for (const bad of [NaN, Infinity, '100', undefined, null, 0, -0, -1]) {
       const r = evaluateTfHolding(SCENARIOS.holding_intact_with_anchor.build(), { anchorSwingLow: bad });
       expect(r.anchorSwingLow, String(bad)).toEqual({ value: null, provenance: 'absent' });
       expect(checkOf(r, 'structure_break').result).toBe('unknown');
+      expect(r.chartLeg).toBe('unknown');
     }
+    const r = run('holding_anchor_zero');
+    expect(holdingResults(r)).toEqual({ close_below_slow: false, structure_break: 'unknown', regime_flip: false });
+    expect([r.chartLeg, r.anchorSwingLow]).toEqual(['unknown', { value: null, provenance: 'absent' }]);
+  });
+});
+
+describe('the holding shares MIN_COMPLETED_BARS (review TE5-3)', () => {
+  it('54 bars with C below SMA_slow and above the anchor: every holding check unknown, history insufficient', () => {
+    const r = run('holding_history_54_close_below_slow');
+    expect(holdingResults(r)).toEqual({ close_below_slow: 'unknown', structure_break: 'unknown', regime_flip: 'unknown' });
+    expect(checkOf(r, 'close_below_slow')).toMatchObject({ lhs: 85, result: 'unknown' }); // the facts are recorded, the result gated
+    expect(checkOf(r, 'close_below_slow').rhs).toBeGreaterThan(85);
+    expect([r.chartLeg, r.reasons, r.regime]).toEqual(['unknown', [], 'unknown']);
+    expect(r.history).toEqual({ count: 54, required: 55, sufficient: false });
+    expect(r.anchorSwingLow).toEqual({ value: 80, provenance: 'supplied' });
+  });
+  it('55 bars evaluate; the history block says so', () => {
+    const r = evaluateTfHolding(evidenceOf(buildBars({ n: 55, patch: (b) => { b[0].close = 85; b[0].open = 85; b[0].high = 86.5; b[0].low = 83.5; } })), { anchorSwingLow: 80 });
+    expect(r.history).toEqual({ count: 55, required: 55, sufficient: true });
+    expect([r.chartLeg, r.reasons]).toEqual(['broken', ['close_below_slow']]);
   });
 });
 
@@ -96,6 +117,7 @@ describe('short history and refusals', () => {
     expect(holdingResults(r)).toEqual({ close_below_slow: 'unknown', structure_break: 'unknown', regime_flip: 'unknown' });
     expect([r.chartLeg, r.reasons, r.regime]).toEqual(['unknown', [], 'unknown']);
     expect(r.missing).toEqual(['SMA_fast', 'SMA_slow', 'SMA_slow_5ago', 'swingHigh', 'swingLow', 'ATR', 'V_avg']);
+    expect(r.history).toEqual({ count: 10, required: 55, sufficient: false });
   });
 
   it('an adapter refusal is unknown throughout, with the anchor still recorded', () => {
@@ -105,18 +127,22 @@ describe('short history and refusals', () => {
     expect(r.anchorSwingLow).toEqual({ value: 90, provenance: 'supplied' });
     expect(r.refusal).toEqual({ reason: 'insufficient_history', detail: { required: 55, available: 40 } });
     expect(r.missing).toEqual([...FACT_NAMES]);
+    expect(r.history).toEqual({ count: 0, required: 55, sufficient: false });
+    expect(r).not.toHaveProperty('patterns');
   });
 });
 
 describe('the record (V3 §5, §7)', () => {
-  it.each(HOLDING_SCENARIOS)('%s has no verdict, no pattern, carries ruleSet / evidence / patterns / checks, and its chartLeg derives from its checks', (name) => {
+  it.each(HOLDING_SCENARIOS)('%s has no verdict, no pattern and no pattern assessment, carries ruleSet / evidence / checks / history, and its chartLeg derives from its checks', (name) => {
     const r = run(name);
     expect(r).not.toHaveProperty('verdict');
     expect(r).not.toHaveProperty('pattern');
     expect(r).not.toHaveProperty('patternsSatisfied');
+    expect(r).not.toHaveProperty('patterns'); // a held name's record never carries an entry pattern assessment (Amendment A, A6; reviews TE1-2 / TE5-6)
     expect(r.ruleSet).toEqual({ setupVersion: 'tf-setup-v1', thresholdsHash: THRESHOLDS_HASH, semanticsId: SEMANTICS_ID });
     expect(r.checks.map((c) => c.id)).toEqual(['regime_stack', 'slow_rising', 'regime_stack_down', 'slow_falling', 'close_below_slow', 'structure_break', 'regime_flip']);
-    expect(Object.keys(r.patterns)).toEqual(['breakout', 'pullback_resume']);
+    expect(r.history).toEqual({ count: r.evidence.bars.count, required: 55, sufficient: r.evidence.bars.count >= 55 });
+    if (!r.history.sufficient) expect(holdingResults(r)).toEqual({ close_below_slow: 'unknown', structure_break: 'unknown', regime_flip: 'unknown' });
     expect(deriveChartLeg(r.checks)).toBe(r.chartLeg);
     expect(r.reasons).toEqual(HOLDING_CHECKS.filter((id) => checkOf(r, id).result === true));
     expect(JSON.stringify(r)).not.toMatch(/owner|battleId/);

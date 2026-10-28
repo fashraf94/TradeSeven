@@ -14,7 +14,7 @@ import '../__fixtures__/pinTimezoneUtc.js';
 import { describe, it, expect } from 'vitest';
 import { eodPayload } from '../__fixtures__/eodPayload.js';
 import { mapDailyRows } from '../marketDataCache.js';
-import { getPreviousSessionDate, isMarketHoliday } from '../marketSchedule.js';
+import { getPreviousSessionDate, getSessionForDate, isMarketHoliday } from '../marketSchedule.js';
 import { buildDailyEvidence, attachAdjustedClose, expectedCompletedSession, ADAPTER_REFUSALS, SPLIT_RATIO_JUMP, BASIS } from './dailyBarsAdapter.js';
 import { evaluateTfEntry } from './tfSetupV1.js';
 import { MIN_COMPLETED_BARS } from './thresholds.js';
@@ -105,7 +105,23 @@ describe('the expected row (resolution point 2) and the window', () => {
   it('the current row present but the expected previous-session row missing is missing_bar with the expected date and the older row, never a fallback', () => {
     const payload = tradingPayload().filter((row) => row.date !== '2026-06-12');
     const r = build(payload, { now: new Date('2026-06-15T19:59:00Z') });
-    expect(r).toMatchObject({ ok: false, reason: 'missing_bar', detail: { expected: '2026-06-12', latest: '2026-06-11' }, asOf: END, basis: 'raw' });
+    expect(r).toMatchObject({ ok: false, reason: 'missing_bar', detail: { expected: '2026-06-12', latest: '2026-06-11' }, asOf: END, expected: '2026-06-12', basis: 'raw', evidenceClass: { bars: 'later_reconstruction' } });
+  });
+  it('every refusal carries the requested asOf, the expected session once the calendar named it, the bars class and one checks shape (reviews TE2-7, TE5-2, TEV2-1)', () => {
+    expect(build(tradingPayload(), { symbol: 'BTC-USD.CC' })).toMatchObject({ expected: null, evidenceClass: { bars: 'later_reconstruction' }, checks: { completedSession: null, adjacency: null, splitCheck: null, splitCheckReason: null } });
+    expect(build(tradingPayload({ n: 40 }))).toMatchObject({ reason: 'insufficient_history', asOf: END, expected: END, evidenceClass: { bars: 'later_reconstruction' }, checks: { completedSession: 'complete', adjacency: null } });
+    expect(build(tradingPayload(), { barsClass: 'contemporaneous', symbol: 'BTC' })).toMatchObject({ evidenceClass: { bars: 'contemporaneous' } });
+    expect(build(tradingPayload(), { asOf: '2026-02-30' })).toMatchObject({ reason: 'calendar_missing', detail: { why: 'malformed_date' }, checks: { completedSession: null } });
+    expect(build(tradingPayload(), { asOf: '2025-06-13' }).detail).not.toHaveProperty('why');
+  });
+  it('rows dated after today\'s ET date are dropped and counted apart (review TEV2-3)', () => {
+    const payload = tradingPayload();
+    const future = [{ ...payload[0], date: '2026-06-17' }, { ...payload[0], date: '2026-06-16' }, ...payload];
+    const r = build(future, { now: new Date('2026-06-15T20:00:00Z') });
+    expect(r.ok).toBe(true);
+    expect([r.dropped, r.droppedAfterToday]).toEqual([2, 2]);
+    const r2 = build(payload, { now: new Date('2026-06-15T19:59:00Z') });
+    expect([r2.dropped, r2.droppedAfterToday]).toEqual([1, 0]);
   });
   it('an asOf newer than every row is missing_bar with latest = the newest row', () => {
     const r = build(tradingPayload({ end: '2026-06-12' }));
@@ -151,11 +167,20 @@ describe('adjacency inside the maintained years', () => {
     const r = build(payload.filter((row) => row.date !== gone));
     expect(r).toMatchObject({ ok: false, reason: 'missing_bar', detail: { expected: gone, latest: older, after: newer } });
   });
-  it('a removed weekend date changes nothing: ok', () => {
-    const payload = tradingPayload().filter((row) => row.date !== '2026-06-13');
-    const r = build(payload);
+  it('weekend and holiday dates are not expected: the fixture\'s calendar-day rows refuse by name, and removing them gives ok (review TE2-4)', () => {
+    const calendarDays = eodPayload(90); // consecutive calendar days ending 2026-06-15, weekends and Memorial Day included
+    const sessionsOnly = calendarDays.filter((row) => getSessionForDate(row.date)?.isTradingDay === true);
+    expect(calendarDays.length - sessionsOnly.length).toBeGreaterThan(20);
+    expect(build(calendarDays)).toMatchObject({ ok: false, reason: 'unordered_bars', detail: { why: 'non_session_date', date: '2026-06-14' } });
+    const r = build(sessionsOnly);
     expect(r.ok).toBe(true);
     expect(r.checks.adjacency).toBe('ok');
+  });
+  it('a vendor row dated on a Saturday inside the window is refused by name, not as a missing session (review TE2-2)', () => {
+    const payload = tradingPayload();
+    const saturday = { ...payload[1], date: '2026-06-13' };
+    const withSaturday = [payload[0], saturday, ...payload.slice(1)];
+    expect(build(withSaturday)).toMatchObject({ ok: false, reason: 'unordered_bars', detail: { why: 'non_session_date', date: '2026-06-13', index: 1 }, expected: END });
   });
   it('a window partly in 2025 reports adjacency not_available', () => {
     const r = build(tradingPayload({ end: '2026-01-15', n: 90 }), { asOf: '2026-01-15', now: new Date('2026-01-16T12:00:00Z') });
@@ -275,9 +300,35 @@ describe('adjustment provenance and the split heuristic (resolution point 3)', (
     expect(r.checks.splitCheck).toBe('heuristic_ok');
     expect(SPLIT_RATIO_JUMP).toBe(0.10);
   });
+  it('the threshold is symmetric: a 9.5% step is ok in either direction, 11% trips in either (review TE2-5)', () => {
+    const step = (factor) => tradingPayload().map((row, i) => (i >= 15 ? { ...row, adjusted_close: row.close * factor } : row));
+    expect(build(step(0.905)).ok).toBe(true);
+    expect(build(step(1 / 0.905)).ok).toBe(true);
+    expect(build(step(0.89))).toMatchObject({ ok: false, reason: 'basis_discontinuity' });
+    expect(build(step(1 / 0.89))).toMatchObject({ ok: false, reason: 'basis_discontinuity' });
+  });
   it('a special dividend above 10% trips it (the stated limit)', () => {
     const payload = tradingPayload().map((row, i) => (i >= 15 ? { ...row, adjusted_close: row.close * 0.88 } : row));
     expect(build(payload)).toMatchObject({ ok: false, reason: 'basis_discontinuity' });
+  });
+  it('a zero or negative adjusted close is not metadata: absent with reason adjusted_close_nonpositive, the heuristic never runs (review TE2-1)', () => {
+    const allZero = tradingPayload().map((row) => ({ ...row, adjusted_close: 0 }));
+    const r = build(allZero);
+    expect(r.ok).toBe(true);
+    expect(r.adjustment.metadata).toBe('absent');
+    expect(r.adjustment.missingDates).toHaveLength(55);
+    expect(r.checks).toMatchObject({ splitCheck: 'not_available', splitCheckReason: 'adjusted_close_nonpositive' });
+    const oneZero = tradingPayload().map((row, i) => (i === 9 ? { ...row, adjusted_close: 0 } : row));
+    const r2 = build(oneZero);
+    expect(r2.ok).toBe(true);
+    expect(r2.adjustment).toEqual({ metadata: 'absent', missingDates: [oneZero[9].date] });
+    expect(r2.checks.splitCheckReason).toBe('adjusted_close_nonpositive');
+    const negative = tradingPayload().map((row) => ({ ...row, adjusted_close: -row.close }));
+    expect(build(negative).checks.splitCheckReason).toBe('adjusted_close_nonpositive');
+    const mixed = tradingPayload().map((row, i) => (i === 3 ? { ...row, adjusted_close: null } : i === 4 ? { ...row, adjusted_close: 0 } : row));
+    const r3 = build(mixed);
+    expect(r3.adjustment.missingDates).toEqual([mixed[3].date, mixed[4].date]);
+    expect(r3.checks.splitCheckReason).toBe('adjusted_close_missing'); // a missing value outranks a non-positive one in the reason
   });
 });
 

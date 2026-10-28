@@ -67,6 +67,14 @@ export function semanticsSeq(id) {
   return m ? Number(m[1]) : null;
 }
 
+/** 'tf-setup-v2/sem-1' → { version: 2, seq: 1 }; the history is ordered by (version, seq), so a new setupVersion may restart at sem-1 (review TE5-8). */
+export function semanticsOrder(id) {
+  const m = typeof id === 'string' ? /^tf-setup-v(\d+)\/sem-(\d+)$/.exec(id) : null;
+  return m ? { version: Number(m[1]), seq: Number(m[2]) } : null;
+}
+
+const orderFollows = (a, b) => a && b && (b.version > a.version || (b.version === a.version && b.seq > a.seq));
+
 // ---------------------------------------------------------------- the rules
 
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
@@ -82,7 +90,7 @@ export function checkBaselineIntegrity({ baseline, goldenSha, semanticsId }, lab
   if (!Array.isArray(baseline) || baseline.length === 0) return [`${label}: goldenBaseline.json is not a non-empty array`];
   baseline.forEach((e, i) => {
     if (!e || typeof e !== 'object') { failures.push(`${label}: entry ${i} is not an object`); return; }
-    if (semanticsSeq(e.semanticsId) === null) failures.push(`${label}: entry ${i} semanticsId ${JSON.stringify(e.semanticsId)} is not <version>/sem-<n>`);
+    if (semanticsOrder(e.semanticsId) === null) failures.push(`${label}: entry ${i} semanticsId ${JSON.stringify(e.semanticsId)} is not tf-setup-v<n>/sem-<n>`);
     if (typeof e.goldenSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(e.goldenSha256)) failures.push(`${label}: entry ${i} goldenSha256 is not a sha256 hex`);
     if (typeof e.recordedAt !== 'string' || !ISO_RE.test(e.recordedAt)) failures.push(`${label}: entry ${i} recordedAt is not an ISO instant`);
     if (typeof e.note !== 'string' || !e.note.trim()) failures.push(`${label}: entry ${i} has no note`);
@@ -90,8 +98,8 @@ export function checkBaselineIntegrity({ baseline, goldenSha, semanticsId }, lab
   const ids = baseline.map((e) => e?.semanticsId);
   if (new Set(ids).size !== ids.length) failures.push(`${label}: semanticsIds are not unique`);
   for (let i = 1; i < baseline.length; i++) {
-    const a = semanticsSeq(baseline[i - 1]?.semanticsId); const b = semanticsSeq(baseline[i]?.semanticsId);
-    if (a !== null && b !== null && !(b > a)) failures.push(`${label}: entry ${i} (${ids[i]}) does not follow ${ids[i - 1]}`);
+    const a = semanticsOrder(baseline[i - 1]?.semanticsId); const b = semanticsOrder(baseline[i]?.semanticsId);
+    if (a && b && !orderFollows(a, b)) failures.push(`${label}: entry ${i} (${ids[i]}) does not follow ${ids[i - 1]} (ordered by setupVersion, then sem)`);
     if (typeof baseline[i - 1]?.recordedAt === 'string' && typeof baseline[i]?.recordedAt === 'string' && baseline[i].recordedAt < baseline[i - 1].recordedAt) failures.push(`${label}: entry ${i} recordedAt precedes entry ${i - 1}`);
   }
   const last = baseline[baseline.length - 1];
