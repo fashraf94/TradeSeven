@@ -249,8 +249,14 @@ const DARK_BY_DESIGN = {
   // true value AND, turned around, that this entry is gone — a rollback moves
   // the four lines back together. Re-adding it while it ships true fails the
   // DARK_BY_DESIGN integrity test below.
-  DIALOGUE_SERVER_PARSE_ENABLED:
-    'Pilot P1c — the parse binding (pilot spec V1.4 §2.8; founder decision E4; build report docs/audits/20261022_BUILD_PILOT_P1C_REVIEW_EXPERIENCE.md). Built dark: with it false the watchlist dialogue\'s paste path stores the client\'s hash-checked parse envelope exactly as on the pre-build main (the off golden, watchlist-dialogue.parseBindingOffGolden.test.js); true, it builds the session and the prompt from the SERVER-stored parse of the drop. Prompt-contributing, so its flip takes the coordinated review. Flips only in the founder\'s own PR, never a build PR — four edits in one commit: the flag line, the pin in dialogueServerParseFlags.test.js to true, that file\'s registration row turned around to assert this entry is gone, and this entry dropped',
+  // DIALOGUE_SERVER_PARSE_ENABLED intentionally ABSENT: the Pilot P1c parse
+  // binding flipped true on 2026-10-28 in the founder's own flip PR (P1c Part D,
+  // the four edits of the P1c report §13) — the deliberate flip drops it here
+  // in the same commit, per the guard's own "if DELIBERATE" instruction. Its
+  // pin in dialogueServerParseFlags.test.js asserts the live true value AND,
+  // turned around, that this entry is gone — a rollback moves the four lines
+  // back together. Re-adding it while it ships true fails the DARK_BY_DESIGN
+  // integrity test below.
   // ANTICIPATION_THRESHOLD_LINT_MODE intentionally ABSENT, and it must stay
   // absent: it is a STRING TRI-STATE ('off' | 'shadow' | 'on'), so buildFlagMap
   // above never sees it (the scan is `*_ENABLED = true|false`) and the
