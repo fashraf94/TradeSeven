@@ -13,8 +13,8 @@ Every number below carries its class: **recorded** (read from a stored record or
 | Preamble | `git fetch origin` first; `origin/main` = `24495eba` (26 Oct, the #998 merge), unchanged through the build; working tree clean at the start; every §2 anchor VERIFIED (§2); no STOP condition held. |
 | Slice 1 required items (V3 §1) | 1 thresholds and identity: built (§4). 2 the pure entry and holding evaluator: built (§5). 3 the rule-agnostic daily-bars adapter: built (§6). 4 tests, golden, baseline, mutation: 358 rows in seven new files at the build head (382 after the closeout, §20), all green on Windows and Linux; 79 of 79 mutants killed (§8, §9). 5 the first replay over the saved 13 Oct capture: run, 29 of the 60 allowed EODHD calls, reported as coverage with ten receipts (§10). 6 this report with the review record (§17) and the docs commit (§11). |
 | Engineering correctness | Every defined rule and unknown path has a row asserting its correct result; every synthetic scenario (49) reproduces its complete record from the committed golden; the verdict recomputed from each record's own `checks` and `patterns` equals the record's; 79 mutants each red at least one row (§9). The closeout's corrections are covered by their own rows and eight spot mutants (§20.6), not by the 79. |
-| Golden baseline | **Initial baseline creation.** The base revision carries no evaluator, golden or baseline, so the cross-revision check reports `mode: initial`, verifies the working tree's own integrity and claims no historical comparison. The rejection cases (a changed golden under an unchanged id, a rewritten or removed history entry, a sha mismatch at either ref, an id change without a new entry, a thresholds-hash change without a new `setupVersion`) are proven on controlled fixtures (19 rows) and by mutant M20 on the real files (§7, §9). The single entry was re-recorded during the build (after the review fix round and after the mutating lens's scenarios), before any base revision carried it (§7). **The closeout re-recorded it a fourth time, still before acceptance:** `471fce6f…` → `796e75d1…` (the `synthetic` bars class and the added `requestedAsOf`; no verdict changed), and the entry's note now carries the full trail with every previous and new hash (§20.4). `main` still carries no baseline at `62380f14`, so this remains initial baseline creation. |
-| Replay coverage | 486 woken Trend Follower checks, 33 proposed and 14 executed swap-ins (all 14 coincide with their proposals), 18 incoming and 16 outgoing names, 29 battles; **33 moments** (one row per moment), 36 (symbol, asOf, role) pairs. Entry verdicts by pair: 3 `valid/pullback_resume`, 10 `invalid(regime)`, 5 `invalid(no_setup)`, 1 `unknown(basis_discontinuity)`. Data-unknown share 1 of 19 equity entry pairs = **5.3%**, within the one-quarter limit (§10). Since the closeout the run of record is run 3, `tfs-20261028T194805`, made from the cached payloads with 0 calls and identical to run 2 in every count, the join and the ten receipts (§20.5). |
+| Golden baseline | **Initial baseline creation.** The base revision carries no evaluator, golden or baseline, so the cross-revision check reports `mode: initial`, verifies the working tree's own integrity and claims no historical comparison. The rejection cases (a changed golden under an unchanged id, a rewritten or removed history entry, a sha mismatch at either ref, an id change without a new entry, a thresholds-hash change without a new `setupVersion`) are proven on controlled fixtures (19 rows) and by mutant M20 on the real files (§7, §9). The single entry was re-recorded during the build (after the review fix round and after the mutating lens's scenarios), before any base revision carried it (§7). **The closeout re-recorded it a fourth time, still before acceptance:** `471fce6f…` → `796e75d1…` (the `synthetic` bars class and the added `requestedAsOf`; no verdict changed), and the entry's note now carries the full trail with every previous and new hash (§20.4). `main` still carries no baseline at `62380f14`, so this remains initial baseline creation. **The fix round re-recorded it a fifth time, still before acceptance:** `796e75d1…` → `767d2263…`, with seven boundary scenarios added and the 49 existing records unchanged (§21.6). |
+| Replay coverage | 486 woken Trend Follower checks, 33 proposed and 14 executed swap-ins (all 14 coincide with their proposals), 18 incoming and 16 outgoing names, 29 battles; **33 moments** (one row per moment), 36 (symbol, asOf, role) pairs. Entry verdicts by pair: 3 `valid/pullback_resume`, 10 `invalid(regime)`, 5 `invalid(no_setup)`, 1 `unknown(basis_discontinuity)`. Data-unknown share 1 of 19 equity entry pairs = **5.3%**, within the one-quarter limit (§10). Since the closeout the run of record is run 3, `tfs-20261028T194805`, made from the cached payloads with 0 calls and identical to run 2 in every count, the join and the ten receipts (§20.5). Since the fix round it is run 4, `tfs-20261028T210004`: no verdict changed, and eight recorded thresholds and the CTVA refusal's detail did (§21.7). |
 | Behavioral differentiation | **Not measured** by slice 1 (M3 after P4). The join to the Oct 14 scorer's control units reached **17 moments, below the 20-moment floor: "coverage insufficient for any behavioral statement"**, and none is made (§10.8). |
 | Partnership usefulness | **Not claimed.** The founder's read of the ten receipts (§10.7) is the completion step for the basis. |
 | Market performance | **Not claimed.** |
@@ -23,6 +23,7 @@ Every number below carries its class: **recorded** (read from a stored record or
 | Review | BUILD_RULES §2 review at the threshold (20 files, +17,766 lines at the code head): five lenses on their own `git archive` trees, a refuter per lens, the mutating lens last on the fixed head — the record is §17. It covers the build head `c5602832`, **not the closeout's code** (§20): that is the independent Astra review's, which is the next step. |
 | Final checks | Linux (WSL, `TZ=UTC`, `--maxWorkers=8`, `flock`): at the fix-round code head `c9c02fc4` the full suite 26,285 passed, 89 skipped, 0 failed, `lint:gate` 0, `vite build` 0, the baseline check PASS (initial); the run at the pushed head is §18. |
 | Founder questions | Q-TE-1 … Q-TE-13 (§15), **all ruled by the founder on 28 Oct 2026**; the rulings are recorded in §15 and, where they bear on the definition, in its clarification C2. |
+| Fix round after the independent review (§21) | Astra's review of `20cc4b2a` required changes on F1 (computed-threshold boundaries) and F2 (the unfetched replay pair's bars class). Both are repaired at `5f76475d`, nested `sourceMeta` is deep-copied, and the numerical policy is in `SEMANTICS_NOTES` and the definition's C3. No rule, threshold or operator changed; three new exact-boundary scenarios record corrected verdicts. 449 rows; 14 of 14 spot mutants killed. |
 | Preview URL | Not applicable (no UI, no endpoint, no cron). |
 
 ## 1. Preamble
@@ -98,8 +99,8 @@ An upstream fact, stated in the adapter's header and in the replay's report (rev
 
 ## 7. The golden-verdict fixture and the baseline (V3 §4.3)
 
-- `__fixtures__/syntheticBars.js`: 49 deterministic scenarios (35 entry, 14 holding) on hand-checkable arithmetic (closes 100 − 0.25·i, range ±1.5 or ±0.5, one volume); dates walk the calendar of record backwards from 2026-10-09. The "at the guard" scenario is constructed so every number is dyadic and `C = SMA_fast + 2·ATR` exactly (ATR 1.1875, guard 100.0000 = C). The fixture labels its evidence `source: 'synthetic'` and, since the closeout, `evidenceClass.bars: 'synthetic'` (the founder's ruling on Q-TE-4; it read `'later_reconstruction'` before, §20).
-- `__fixtures__/goldenVerdicts.json` (canonical form: sorted keys, 2-space, LF): the complete record of every scenario under `tf-setup-v1 / 26f3f411b566 / tf-setup-v1/sem-1`; canonical SHA-256 `796e75d1486c5581245edf43cdcd79f52b0f2d4e49010d0f8ba9ec79a8424b03` since the closeout (derived; `471fce6fdd094753c6e02720b81425fcd853f426ec61a07ca9ab7aca192cf4e9` at the build head; the trail is §20.4).
+- `__fixtures__/syntheticBars.js`: 49 deterministic scenarios (35 entry, 14 holding; 56 since the fix round, 42 entry, §21.6) on hand-checkable arithmetic (closes 100 − 0.25·i, range ±1.5 or ±0.5, one volume); dates walk the calendar of record backwards from 2026-10-09. The "at the guard" scenario is constructed so every number is dyadic and `C = SMA_fast + 2·ATR` exactly (ATR 1.1875, guard 100.0000 = C). The fixture labels its evidence `source: 'synthetic'` and, since the closeout, `evidenceClass.bars: 'synthetic'` (the founder's ruling on Q-TE-4; it read `'later_reconstruction'` before, §20).
+- `__fixtures__/goldenVerdicts.json` (canonical form: sorted keys, 2-space, LF): the complete record of every scenario under `tf-setup-v1 / 26f3f411b566 / tf-setup-v1/sem-1`; canonical SHA-256 `767d22633672745d632cd7612e90d37c295b276692d60bdcd8f408f09105f32d` since the fix round (derived; `796e75d1…` at the closeout and `471fce6fdd094753c6e02720b81425fcd853f426ec61a07ca9ab7aca192cf4e9` at the build head; the trail is §20.4 and §21.6).
 - `__fixtures__/goldenBaseline.json`: one entry — `{ semanticsId: 'tf-setup-v1/sem-1', goldenSha256: '471fce6f…', recordedAt: '2026-10-28T17:36:40.299Z', note: 'Initial baseline … Initial baseline creation: no earlier baseline exists at the base revision. Re-recorded during the build, before any base revision carried an entry: after the §2 review fix round (three scenarios added, holding records without pattern assessments, symmetric regime chains) and after the mutating lens (six scenarios added …).' }`. **The re-recording is stated, not hidden:** the first entry (golden `d3501e5f…`, recorded 16:14 UTC) was replaced after the review fix round changed the catalogue and the holding record shape (`34e3ec85…`), and again after the mutating lens added six scenarios (`471fce6f…`); the base revision carries no baseline, so the §4.3 append-only rule had nothing to append to, and the cross-revision check against the base stays in `initial` mode — it has no teeth until an entry is on `main` (lens TE3-13), which is why the review's refuters read the regenerations on the branch, not against the base. After merge, the same kind of change costs a new entry (Q-TE-8). **The closeout re-recorded the entry once more before acceptance** (`471fce6f…` → `796e75d1…`, recordedAt `2026-10-28T19:45:07.229Z`), and the note now lists all four regenerations with their previous and new hashes (§20.4).
 - In-revision (`golden.test.js`, 55 rows): every scenario reproduces its full record; the file is in canonical form; the baseline's last entry carries the golden's canonical sha and `SEMANTICS_ID`; ids unique and in order; `recordedAt` ISO; the note names C1 and FD-P3-1; the golden computed now hashes to the last entry's sha.
 - Cross-revision (`scripts/experiments/tf-setup-golden-baseline-check.mjs --base <ref>`): reads the baseline, the golden and `thresholds.js` at the base ref via `git show` (the base `thresholds.js` is imported from a temp copy, removed afterwards) and at the working tree; `compareRevisions` is pure and tested on controlled fixtures (19 rows); the history is ordered by `(setupVersion, sem)` so a new `setupVersion` may restart at `sem-1` (review TE5-8). **Output against the merge-base** (`git merge-base HEAD origin/main` = `24495eba`), recorded at the code head:
@@ -116,7 +117,7 @@ No historical comparison is claimed: there is no earlier baseline. The rejection
 
 ## 8. The fixture matrix and the test files
 
-Seven new test files, **358 rows** (`thresholds.test.js` 7 · `tfSetupV1.entry.test.js` 151 · `tfSetupV1.holding.test.js` 45 · `dailyBarsAdapter.test.js` 55 · `golden.test.js` 55 · `tf-setup-corpus-replay.test.js` 26 · `tf-setup-golden-baseline-check.test.js` 19; **382** after the closeout, with `dailyBarsAdapter.test.js` at 77 and `tf-setup-corpus-replay.test.js` at 28, §20), all green on Windows (the mutation baseline run) and on Linux (§18). Every V3 §9.1–§9.5 and §9.7 row has a test; §9.6 (historical cases) is omitted because no case was supplied (the founder's instruction). Real imports throughout (the dependency-surface guards named in each file's header); `pinTimezoneUtc.js` first in every file that builds a `Date`; no network; nothing mocked.
+Seven new test files, **358 rows** (`thresholds.test.js` 7 · `tfSetupV1.entry.test.js` 151 · `tfSetupV1.holding.test.js` 45 · `dailyBarsAdapter.test.js` 55 · `golden.test.js` 55 · `tf-setup-corpus-replay.test.js` 26 · `tf-setup-golden-baseline-check.test.js` 19; **382** after the closeout, with `dailyBarsAdapter.test.js` at 77 and `tf-setup-corpus-replay.test.js` at 28, §20; **449** after the fix round, §21.5), all green on Windows (the mutation baseline run) and on Linux (§18). Every V3 §9.1–§9.5 and §9.7 row has a test; §9.6 (historical cases) is omitted because no case was supplied (the founder's instruction). Real imports throughout (the dependency-surface guards named in each file's header); `pinTimezoneUtc.js` first in every file that builds a `Date`; no network; nothing mocked.
 
 The golden scenarios and their pinned outcomes (derived; every row also asserted in the entry/holding test files):
 
@@ -258,7 +259,7 @@ Run on a scratch `git archive` tree of the code head (never committed; `node_mod
 
 ## 10. The first replay run (V3 §10)
 
-Three runs were made, all in `%USERPROFILE%\tf-setup-replay-runs\` (outside the repo; `rows.local.json` carries battle and tick ids and is never committed; `manifest.json`, `evaluations.json`, `summary.json` and `report.md` carry none). **Since the closeout the run of record is run 3, `tfs-20261028T194805` (§20.5), identical to run 2 in every count, the join and the ten receipts; this section describes run 2, `tfs-20261028T170355`,** produced at head `10f534b2` (clean, plan / evaluate / report provenance identical, no drift) after the review fix round; it reused run 1's 29 cached EODHD payloads (each re-verified against its `payloadSha256`; 0 new calls). **Run 1, `tfs-20261028T162026`** (plan and bars at `ed34f212`, 29 calls), is superseded: it emitted two rows for each of the 14 moments whose proposed and executed swap coincide (review TE5-1), so its per-row tables and its 30-row join double-counted them; its (symbol, asOf, role) evaluations are identical to run 2's. The founder's "60-call" limit was spent once: 29 calls in total.
+Four runs were made, all in `%USERPROFILE%\tf-setup-replay-runs\` (outside the repo; `rows.local.json` carries battle and tick ids and is never committed; `manifest.json`, `evaluations.json`, `summary.json` and `report.md` carry none). **Since the fix round the run of record is run 4, `tfs-20261028T210004` (§21.7). Like run 3, the closeout's `tfs-20261028T194805` (§20.5), it is identical to run 2 in every verdict, count, join and receipt selection, and §10.7 shows run 4's receipts. The rest of this section describes run 2, `tfs-20261028T170355`,** produced at head `10f534b2` (clean, plan / evaluate / report provenance identical, no drift) after the review fix round; it reused run 1's 29 cached EODHD payloads (each re-verified against its `payloadSha256`; 0 new calls). **Run 1, `tfs-20261028T162026`** (plan and bars at `ed34f212`, 29 calls), is superseded: it emitted two rows for each of the 14 moments whose proposed and executed swap coincide (review TE5-1), so its per-row tables and its 30-row join double-counted them; its (symbol, asOf, role) evaluations are identical to run 2's. The founder's "60-call" limit was spent once: 29 calls in total.
 
 Provenance recorded in run 2's manifest and in every output: HEAD `10f534b2` at every command, tree clean at every command, script sha `a256088277e1…`, module hashes (`thresholds a288db4b7414…`, `volumePolicy f05f58a3c53f…`, `tfSetupV1 55c1acb7d711…`, `dailyBarsAdapter 90ca74210f25…`), `ruleSet { tf-setup-v1, 26f3f411b566, tf-setup-v1/sem-1 }`, the capture's sha `8bc76a9e20d0…`, size, record count and time fields, the run instant `2026-10-28T17:03:58.481Z`. Commands: `selftest` (8/8) · `plan` · `bars` (29 cached) · `evaluate` · `report`.
 
@@ -315,7 +316,7 @@ Provenance recorded in run 2's manifest and in every output: HEAD `10f534b2` at 
 
 **10.6 Data-unknown share.** Over distinct equity (symbol, asOf) entry pairs: 1 unknown of 19 attempted = **5.3%** (limit one quarter: within; nothing rejected). The one unknown is `CTVA` as of 2026-10-06: `basis_discontinuity` at 2026-10-01 — the adjusted/raw ratio is 0.1500 on the rows before that date and 1 after (the vendor's adjustment factor shows a corporate action on 1 Oct 2026 that the raw series carries as a ~6.7× price step), so every window straddling it is refused as designed; the refuter TEV2 reproduced the behaviour on a synthetic series and confirmed the refusal is confined to windows that straddle the step. The verdict is honest (`unknown`, never `invalid`); how a split-adjusted raw series could serve such windows is an adapter question for a later slice, not a definition change (Q-TE-3). Crypto: `BTC` on the outgoing side of 12 moments, not fetched, reported separately; `calendar_missing` 0; malformed symbols 0; unfetched pairs 0; mapper-dropped rows 0.
 
-**10.7 The ten receipts** (the earliest check per verdict class until ten; derived; rendered by the replay's own report so no number is retyped):
+**10.7 The ten receipts** (the earliest check per verdict class until ten; derived; rendered by the replay's own report so no number is retyped). Since the fix round these are run 4's. Five check lines differ from runs 2 and 3, each only in the last digits of a recorded extension guard or volume floor (§21.7):
 
 #### Receipt 1: DHR as of 2026-09-25 — invalid(no_setup), regime uptrend
 
@@ -345,7 +346,7 @@ Provenance recorded in run 2's manifest and in every output: HEAD `10f534b2` at 
 
 - facts: C=1043.96, SMA_fast=963.4595, SMA_slow=928.5502, SMA_slow_5ago=927.5794, swingHigh=1042.4, swingLow=887.61, ATR=44.3664, V=28174400, V_avg=24835970
 - missing: []; patterns: {"breakout":"failed","pullback_resume":"satisfied"}
-- checks: regime_stack [1043.96,963.4595] > [963.4595,928.5502] → true; slow_rising 928.5502 > 927.5794 → true; regime_stack_down [1043.96,963.4595] < [963.4595,928.5502] → false; slow_falling 928.5502 < 927.5794 → false; breakout_close 1043.96 >= 1042.4 → true; breakout_volume 28174400 >= 37253955 → false; pullback_touch 953.5 <= 963.4595 → true; pullback_close 1043.96 > 963.4595 → true; extension 1043.96 <= 1052.1923000000002 → true
+- checks: regime_stack [1043.96,963.4595] > [963.4595,928.5502] → true; slow_rising 928.5502 > 927.5794 → true; regime_stack_down [1043.96,963.4595] < [963.4595,928.5502] → false; slow_falling 928.5502 < 927.5794 → false; breakout_close 1043.96 >= 1042.4 → true; breakout_volume 28174400 >= 37253955 → false; pullback_touch 953.5 <= 963.4595 → true; pullback_close 1043.96 > 963.4595 → true; extension 1043.96 <= 1052.1923 → true
 - volume: bar0 {"date":"2026-09-21","value":28174400,"usable":true,"reason":null}; avg {"value":24835970,"barsUsable":20,"unusable":[]}
 - adjustment: {"metadata":"present","missingDates":[]}; splitCheck heuristic_ok
 
@@ -369,7 +370,7 @@ Provenance recorded in run 2's manifest and in every output: HEAD `10f534b2` at 
 
 - facts: C=374.57, SMA_fast=356.121, SMA_slow=354.5816, SMA_slow_5ago=350.4122, swingHigh=387.33, swingLow=321.39, ATR=18.8336, V=8105300, V_avg=7043580.25
 - missing: []; patterns: {"breakout":"failed","pullback_resume":"satisfied"}
-- checks: regime_stack [374.57,356.121] > [356.121,354.5816] → true; slow_rising 354.5816 > 350.4122 → true; regime_stack_down [374.57,356.121] < [356.121,354.5816] → false; slow_falling 354.5816 < 350.4122 → false; breakout_close 374.57 >= 387.33 → false; breakout_volume 8105300 >= 10565370.375 → false; pullback_touch 356 <= 356.121 → true; pullback_close 374.57 > 356.121 → true; extension 374.57 <= 393.78819999999996 → true
+- checks: regime_stack [374.57,356.121] > [356.121,354.5816] → true; slow_rising 354.5816 > 350.4122 → true; regime_stack_down [374.57,356.121] < [356.121,354.5816] → false; slow_falling 354.5816 < 350.4122 → false; breakout_close 374.57 >= 387.33 → false; breakout_volume 8105300 >= 10565370.375 → false; pullback_touch 356 <= 356.121 → true; pullback_close 374.57 > 356.121 → true; extension 374.57 <= 393.7882 → true
 - volume: bar0 {"date":"2026-09-22","value":8105300,"usable":true,"reason":null}; avg {"value":7043580.25,"barsUsable":20,"unusable":[]}
 - adjustment: {"metadata":"present","missingDates":[]}; splitCheck heuristic_ok
 
@@ -377,7 +378,7 @@ Provenance recorded in run 2's manifest and in every output: HEAD `10f534b2` at 
 
 - facts: C=631.75, SMA_fast=574.1985, SMA_slow=515.7302, SMA_slow_5ago=506.9552, swingHigh=645.46, swingLow=458, ATR=24.7886, V=13717500, V_avg=22703815
 - missing: []; patterns: {"breakout":"failed","pullback_resume":"failed"}
-- checks: regime_stack [631.75,574.1985] > [574.1985,515.7302] → true; slow_rising 515.7302 > 506.9552 → true; regime_stack_down [631.75,574.1985] < [574.1985,515.7302] → false; slow_falling 515.7302 < 506.9552 → false; breakout_close 631.75 >= 645.46 → false; breakout_volume 13717500 >= 34055722.5 → false; pullback_touch 601.5 <= 574.1985 → false; pullback_close 631.75 > 574.1985 → true; extension 631.75 <= 623.7756999999999 → false
+- checks: regime_stack [631.75,574.1985] > [574.1985,515.7302] → true; slow_rising 515.7302 > 506.9552 → true; regime_stack_down [631.75,574.1985] < [574.1985,515.7302] → false; slow_falling 515.7302 < 506.9552 → false; breakout_close 631.75 >= 645.46 → false; breakout_volume 13717500 >= 34055722.5 → false; pullback_touch 601.5 <= 574.1985 → false; pullback_close 631.75 > 574.1985 → true; extension 631.75 <= 623.7757 → false
 - volume: bar0 {"date":"2026-10-05","value":13717500,"usable":true,"reason":null}; avg {"value":22703815,"barsUsable":20,"unusable":[]}
 - adjustment: {"metadata":"present","missingDates":[]}; splitCheck heuristic_ok
 
@@ -385,7 +386,7 @@ Provenance recorded in run 2's manifest and in every output: HEAD `10f534b2` at 
 
 - facts: C=330.31, SMA_fast=332.0655, SMA_slow=319.337, SMA_slow_5ago=313.2948, swingHigh=384.56, swingLow=303.89, ATR=13.9869, V=5712000, V_avg=5599780
 - missing: []; patterns: {"breakout":"failed","pullback_resume":"failed"}
-- checks: regime_stack [330.31,332.0655] > [332.0655,319.337] → false; slow_rising 319.337 > 313.2948 → true; regime_stack_down [330.31,332.0655] < [332.0655,319.337] → false; slow_falling 319.337 < 313.2948 → false; breakout_close 330.31 >= 384.56 → false; breakout_volume 5712000 >= 8399670 → false; pullback_touch 316.63 <= 332.0655 → true; pullback_close 330.31 > 332.0655 → false; extension 330.31 <= 360.03929999999997 → true
+- checks: regime_stack [330.31,332.0655] > [332.0655,319.337] → false; slow_rising 319.337 > 313.2948 → true; regime_stack_down [330.31,332.0655] < [332.0655,319.337] → false; slow_falling 319.337 < 313.2948 → false; breakout_close 330.31 >= 384.56 → false; breakout_volume 5712000 >= 8399670 → false; pullback_touch 316.63 <= 332.0655 → true; pullback_close 330.31 > 332.0655 → false; extension 330.31 <= 360.0393 → true
 - volume: bar0 {"date":"2026-09-29","value":5712000,"usable":true,"reason":null}; avg {"value":5599780,"barsUsable":20,"unusable":[]}
 - adjustment: {"metadata":"present","missingDates":[]}; splitCheck heuristic_ok
 
@@ -393,7 +394,7 @@ Provenance recorded in run 2's manifest and in every output: HEAD `10f534b2` at 
 
 - facts: C=184.99, SMA_fast=176.508, SMA_slow=160.4842, SMA_slow_5ago=155.6074, swingHigh=188.37, swingLow=164.55, ATR=7.0527, V=21991700, V_avg=27899425.6
 - missing: []; patterns: {"breakout":"failed","pullback_resume":"satisfied"}
-- checks: regime_stack [184.99,176.508] > [176.508,160.4842] → true; slow_rising 160.4842 > 155.6074 → true; regime_stack_down [184.99,176.508] < [176.508,160.4842] → false; slow_falling 160.4842 < 155.6074 → false; breakout_close 184.99 >= 188.37 → false; breakout_volume 21991700 >= 41849138.400000006 → false; pullback_touch 172 <= 176.508 → true; pullback_close 184.99 > 176.508 → true; extension 184.99 <= 190.6134 → true
+- checks: regime_stack [184.99,176.508] > [176.508,160.4842] → true; slow_rising 160.4842 > 155.6074 → true; regime_stack_down [184.99,176.508] < [176.508,160.4842] → false; slow_falling 160.4842 < 155.6074 → false; breakout_close 184.99 >= 188.37 → false; breakout_volume 21991700 >= 41849138.4 → false; pullback_touch 172 <= 176.508 → true; pullback_close 184.99 > 176.508 → true; extension 184.99 <= 190.6134 → true
 - volume: bar0 {"date":"2026-09-22","value":21991700,"usable":true,"reason":null}; avg {"value":27899425.6,"barsUsable":20,"unusable":[]}
 - adjustment: {"metadata":"present","missingDates":[]}; splitCheck heuristic_ok
 
@@ -409,6 +410,7 @@ Provenance recorded in run 2's manifest and in every output: HEAD `10f534b2` at 
 - **The review** `docs/audits/20261021_FABLE_REVIEW_ARCHETYPE_PROPOSAL.md`: committed byte-identical; the committed blob is 29,558 bytes, SHA-256 `74c7261188f080a5f766a300e22264666c6df5ee8d9f99e5def890bc5becbb14` (recorded, equal to the founder's file; re-verified by lens TE5 in its snapshot).
 - **README rows**: the definition's row gained one sentence naming C1; rows added for the review and for this report after the changed-moments row (the report row was committed with the first draft, before the record it describes existed — review TE5-10; this report closes that gap before the PR is read).
 - **C2 appended at the closeout** to the same file, after C1: the founder's rulings that bear on the definition (Q-TE-1, -2, -3, -7, -9, -11, -12, -13) and the record contract (Q-TE-4, -5, -10). The diff is **24 insertions, 0 deletions**; the LF-normalized working copy begins byte for byte with `main`'s blob and with the C1 version. The README's definition row gained one sentence naming C2, and the report's row a closeout clause (§20).
+- **C3 appended at the fix round** to the same file, after C2: the numerical policy only (§21.6). It adds lines and removes none; the LF-normalized working copy begins byte for byte with the C2 version. The README's definition row gained one sentence naming C3, and the report's row a fix-round clause.
 - **Not committed by this build**: the Growth Loop Map (Film Room B2.1's), Practice Field V3 and Amendment A, the decision report, the resolution summary, the V3 prompt. No docs-only PR.
 
 ## 12. Deviations from the prompt's letter (each reported, none hidden)
@@ -431,6 +433,8 @@ Provenance recorded in run 2's manifest and in every output: HEAD `10f534b2` at 
 | D14 | **Calculation refinements under `sem-1`, pre-merge:** adjustment metadata requires every window adjustedClose finite and > 0; the split threshold is the symmetric `1 − min/max > 0.10`; both named in `SEMANTICS_NOTES` and pinned by rows and mutants | Both are review findings (TE2-1, TE2-5) fixed before any base revision carried the semantics id; the baseline is initial, so no entry is owed yet. After merge, either change would be `sem-2`. Q-TE-12, Q-TE-13. |
 | D15 | **Closeout, additive:** every record carries `requestedAsOf`; a refusal record carries `refusal.expected`; refused evidence carries the caller's `sourceMeta` | The founder's closeout instruction (provenance on refused evidence, with the requested date and the expected session kept apart). V3 §5 lists `asOf` and `sourceMeta` only; the record's `asOf` keeps its meaning. Recorded in the definition's C2 (Q-TE-10). |
 | D16 | **Closeout:** `evidenceClass.bars` admits `'synthetic'`, beside V3 §5's two values | The founder's ruling on Q-TE-4: synthetic test evidence only. The adapter's default and the replay stay `later_reconstruction`; recorded in C2. |
+| D17 | **Fix round:** a new pure module, `api/_utils/setupEvaluator/evidenceValues.js` (no imports), holds the exact decimals and the owned metadata copy that the adapter and the evaluator share | Not in V3 §3's file list. The precedent is D1's shared volume policy; both module headers name it (§21.9). |
+| D18 | **Fix round, additive:** a `basis_discontinuity` refusal's detail gains `after` and `before`, each `{ date, close, adjustedClose }` | So the refusal's recorded operands explain its exact decision (§21.2). |
 
 ## 13. Boundaries and handoff dependencies (V3 §12, preserved)
 
@@ -465,7 +469,7 @@ Slice 2 (the `setupVerdicts/{sessionDate}` writer and the menu label) is not bui
 ## 16. The STOP list, follow-ups and out-of-fence items
 
 - STOP conditions (V3 §0, §2): none held. Fence contact: none. Scope creep past §3: the two extra files of §12 D1–D2, reported, not scoped out.
-- **CI follow-up** (one line, edits `.github/workflows/tests.yml`): run `node scripts/experiments/tf-setup-golden-baseline-check.mjs --base <merge-base with main>` as a CI step so a golden regenerated under an unchanged `SEMANTICS_ID` can never pass CI. Until then the script runs in a build's final checks (§18).
+- **CI follow-up, the immediate one after the initial merge and before any later evaluator change** (Astra's review, §21.10; one line, edits `.github/workflows/tests.yml`): run `node scripts/experiments/tf-setup-golden-baseline-check.mjs --base <merge-base with main>` as a CI step so a golden regenerated under an unchanged `SEMANTICS_ID` can never pass CI. Until then the script runs in a build's final checks (§18).
 - **Out of the fence, reported for separate tasking** (BUILD_RULES §3): `.gitignore` carries `*.local` but not `*.local.json` (review TE4-8; the run folders live outside any repo, so the rule only matters for a copy into the tree); `src/utils/marketCalendar.js` `getPreviousSessionDate` does not validate the day of month (`2026-02-30` walks to `2026-02-27`; review TE2-9; the replay guards itself); `mapDailyRows` drops a row with a non-finite high or low before any adapter sees it, so such a session reads as `missing_bar` downstream (review TE2-3; named, not fixed).
 - **Later work named by the founder's rulings:** corporate-action normalization in the adapter (Q-TE-3); test-catalog versioning for the golden guard (Q-TE-8).
 - Not in slice 1 and not assumed built: everything in V3 §1's exclusion list.
@@ -569,7 +573,7 @@ Lens TE3 reviewed the fixed head `c9c02fc4` on its own tree with its own mutatio
 | TEV3-7 | LOW | The adjustment's `missingDates` array shared with the input survived (every fixture's was empty) | found by the refuter | **Fixed** — a row on a non-empty fixture; mutant M77 |
 | TEV3-8 | LOW | `pickReceipts` no longer skipping entry-less rows survived (it would throw on an unfetched pair) | found by the refuter | **Fixed** — a row; mutant M78 |
 
-Equivalent mutants both sides considered and did not count: the ATR and SMA windows one bar longer (the primitives slice to their period); dropping `asOf === today` in the incomplete-session branch; `jump >= SPLIT_RATIO_JUMP` (1 − 0.9 is 0.0999… in binary, so the exact-10% boundary is unreachable); `volWindowComplete` with `>=` (at 20 bars only 19 window bars exist); the holding's `sufficient ? deriveRegime : 'unknown'` guard below 55 bars (`SMA_slow_5ago` is always null there).
+**Erratum (§21.9):** the `jump >= SPLIT_RATIO_JUMP` entry below was wrong. Exact-10% steps such as 72 against 80 are reachable, and the fix round made the split exact and pinned its strict operator (MN1). Equivalent mutants both sides considered and did not count: the ATR and SMA windows one bar longer (the primitives slice to their period); dropping `asOf === today` in the incomplete-session branch; `jump >= SPLIT_RATIO_JUMP` (1 − 0.9 is 0.0999… in binary, so the exact-10% boundary is unreachable); `volWindowComplete` with `>=` (at 20 bars only 19 window bars exist); the holding's `sufficient ? deriveRegime : 'unknown'` guard below 55 bars (`SMA_slow_5ago` is always null there).
 
 ### 17.4 Totals
 
@@ -597,6 +601,7 @@ Every check below ran in CI shape on Linux: WSL Ubuntu, a detached worktree of t
 | `c5602832` | the code and test head (the refuter TEV3's rows) | 1,196 / 8; **26,327 passed, 89 skipped, 0 failed**; 260 s | exit 0 | exit 0 (13.1 s); entry chunk `index-BvBYFcJi.js` 4,902.07 kB, gzip 1,320.89 kB — byte-identical to the base's (no `src/` change) | PASS, `initial` (§7's four lines with HEAD `c5602832`) |
 | `d7037574` | the build's pushed head (this document only after `c5602832`) | 1,196 / 8; 26,327 passed, 89 skipped, 0 failed; 253 s | exit 0 | exit 0 (12.8 s); the same entry chunk | PASS, `initial` |
 | `8522e656` | **the closeout**: the corrections at `4c033d1f` with `origin/main` `62380f14` merged (§20) | 1,205 / 8; **26,473 passed, 89 skipped, 0 failed**; 278 s | exit 0 | exit 0 (14.0 s); entry chunk `index-CLx1U8Yq.js` 4,904.38 kB, gzip 1,321.42 kB — larger than at the build because #999 changed `src/` on `main`; this PR changes no `src/` file | PASS, `initial`, against the new merge-base `62380f14` |
+| `5f76475d` | **the fix round** (§21): F1, F2 and the metadata copy, on the tree that already holds `origin/main` `62380f14` | 1,205 / 8; **26,540 passed, 89 skipped, 0 failed**; 199 s (67 more rows than at `8522e656`: the fix round's) | exit 0 | exit 0 (13.3 s); the same entry chunk `index-CLx1U8Yq.js`, 4,904.38 kB | PASS, `initial`, against `62380f14` |
 
 The seven new files are 358 of those rows; the other 25,969 are the suite `main` already carries, untouched by this build. At `8522e656` the seven files are 382 of 26,473 rows; the other 26,091 are `main`'s at `62380f14`. The closeout's pushed head is its documents commit on top of `8522e656` (this report, the definition's C2, the README rows); its `vite build` and baseline check ran on Linux before the push and are quoted in the PR description. Platform-only rows: none observed (every run was on Linux; the Windows runs of the seven new files were green as well, 358/358). The Firestore rules suite was not run: nothing under `firestore.rules` changed.
 
@@ -605,14 +610,15 @@ The seven new files are 358 of those rows; the other 25,969 are the suite `main`
 | Item | State |
 |---|---|
 | Branch | `claude/tf-setup-evaluator-slice1` on `origin`, pushed by refspec `HEAD:refs/heads/claude/tf-setup-evaluator-slice1` from the build worktree's branch (V3 §13); cut at `origin/main` `24495eba`, which did not move during the build (re-fetched before the push), so the merged tree was the branch itself at the build. At the closeout `origin/main` had moved to `62380f14` (the #999 merge); it was merged into the branch at `8522e656`, and the merge-base for the cross-revision check is now `62380f14` (§20) |
-| Commits | `6f3f275d` (the slice) · `f3d5d38f` (C1, the review doc byte-identical, the README rows) · `ed34f212` · `78d37087` · `c9c02fc4` (the review fix round) · `10f534b2` (report, first draft) · `f3ae1bd1` (M45's row) · `ea88228e` (report, second draft) · `a2264f48`, `d04e2918`, `e7907900` (the mutating lens's round) · `de981027` (report, third draft) · `c5602832` (the refuter TEV3's rows) · `d7037574` (the report's §0, §8, §9, §17, §18 and §19) · closeout: `4c033d1f` (the three corrections, the golden re-recorded), `8522e656` (`origin/main` merged), then the closeout's documents commit (this report, the definition's C2, the README rows) |
-| Code and test head | `c5602832` at the build; `4c033d1f` at the closeout, after which only the merge of `origin/main` and documents follow |
+| Commits | `6f3f275d` (the slice) · `f3d5d38f` (C1, the review doc byte-identical, the README rows) · `ed34f212` · `78d37087` · `c9c02fc4` (the review fix round) · `10f534b2` (report, first draft) · `f3ae1bd1` (M45's row) · `ea88228e` (report, second draft) · `a2264f48`, `d04e2918`, `e7907900` (the mutating lens's round) · `de981027` (report, third draft) · `c5602832` (the refuter TEV3's rows) · `d7037574` (the report's §0, §8, §9, §17, §18 and §19) · closeout: `4c033d1f` (the three corrections, the golden re-recorded), `8522e656` (`origin/main` merged), then the closeout's documents commit (this report, the definition's C2, the README rows) · fix round: `5f76475d` (F1, F2, the metadata copy, the golden re-recorded), then its documents commit (this report's §21, the definition's C3, the README rows) |
+| Code and test head | `c5602832` at the build; `4c033d1f` at the closeout; `5f76475d` at the fix round, after which only documents follow |
 | Pull request | a **draft** against `main`, opened from the pushed head after this commit with `open-pr.mjs` (REST, `draft: true`; no `gh` on this machine). Its number is recorded in the PR and in the delivery message, not in this report: the report is committed before the PR exists, and a later commit carrying the number would move the pushed head past the one §18 checked |
 | Final checks on the pushed head | run on Linux after this commit, by full SHA (§18's last row); the figures are quoted in the PR description |
 | Delivered | the draft PR; this report (the verdict table §0; the review record §17; the final checks §18); the test results (§8, §18), the review results (§17), the replay coverage (§10) and the ten evidence receipts (§10.7); the open questions Q-TE-1 … Q-TE-13 (§15) |
 | STOP | delivery ends at pushed (V3 §13; BUILD_RULES §2, pushed ≠ merged): no CI watching, no review request, no merge, no flag, no cron, no deploy, no activation, no live wiring, no production capture expansion. The follow-ups in §16 wait for the founder's instruction |
 | Pull request at the closeout | #1001, still a **draft**; its description updated at the closeout by a body-only REST call, the draft flag untouched |
-| Merge-readiness | not asserted; the independent Astra review of the closeout branch is the next step |
+| Pull request at the fix round | #1001, still a **draft**; its description updated again by a body-only REST call |
+| Merge-readiness | not asserted; Astra's focused recheck of the fix-round head is the next step |
 
 ## 20. Closeout (28 Oct 2026, after the founder's rulings)
 
@@ -700,3 +706,166 @@ The golden was regenerated once at the closeout. Every regeneration is listed be
 - The follow-ups of §16, now with the two later-work items the rulings named: corporate-action normalization (Q-TE-3) and test-catalog versioning for the golden guard (Q-TE-8).
 - The founder's read of the ten receipts (§10.7), which are unchanged.
 - STOP: the PR stays a draft. Nothing is merged, deployed, activated or wired.
+
+## 21. Fix round after Astra's independent review (28 Oct 2026)
+
+Claude Code (Claude Opus 5.5), in the same session, under the founder's fix-round instruction after Astra's independent read-only review of head `20cc4b2a` over base `62380f14`. The review's recommendation was **CHANGES REQUIRED** on two P2 findings: F1, computed-threshold boundaries, and F2, the unfetched replay pair's bars class. It added optional metadata hardening, and it named CI wiring of the golden guard as the immediate follow-up after the initial merge. The scope stayed inside V3: only files this PR introduced, plus the two permitted documents. There were no fenced edits, live consumers, provider calls or production reads, and nothing was merged, deployed or activated. The prior five-lens review and mutation campaigns were not repeated.
+
+### 21.1 State at the start (VERIFIED)
+
+- The branch was at `20cc4b2a`, equal to the PR head on `origin`, with a clean tree.
+- `origin/main` was `62380f14`, unchanged, and the merge-base was `62380f14`.
+- `main` holds no `api/_utils/setupEvaluator/` file, established by listing the tree, not by a missing ref. No evaluator baseline has been accepted, so this is still initial baseline creation.
+- **Astra's four external regression files were not on this machine** (Downloads, Documents and Desktop were searched). The four are **recreated** from the review's explicit reproductions and named "recreated Astra regression" in the tests: two for F1 (72 against 80, and reversed) and two for F2 (the entry record and the holding record).
+
+### 21.2 F1 — the derived thresholds at their exact boundaries
+
+**Finding (CONFIRMED, all three calculations).** Each approved rule defines its boundary in decimal; floating point missed it:
+
+| Calculation | Rule | Input at the boundary | Floating point gave | Effect before the fix |
+|---|---|---|---|---|
+| Split heuristic | trips when `1 − min / max` **exceeds** 0.10 | adjusted 72 against 80 on raw closes 100 | `1 − 0.72 / 0.8 = 0.10000000000000009` | refused as `basis_discontinuity`, in both directions |
+| Extension guard | `C ≤ SMA_fast + 2.0 × ATR` (inclusive) | SMA_fast 100, ATR 4.77, C 109.54 | guard `109.53999999999999` | `invalid(extended)` instead of valid |
+| Breakout volume floor | `V ≥ 1.5 × V_avg` (inclusive) | V_avg 2.2, V 3.3 | floor `3.3000000000000003` | the breakout fails |
+| (the mean itself) | `V_avg` = mean of the twenty volumes | twenty volumes of 0.1, V 0.15 | mean `0.10000000000000002` | the floor misses even with an exact multiply |
+
+Cross-multiplication in floating point is no cure: `2 × 3.3 ≥ 3 × 2.2` is false in floating point and an equality in exact arithmetic (pinned by a row).
+
+**Repair: the numerical policy.** It is recorded in `SEMANTICS_NOTES` (`api/_utils/setupEvaluator/thresholds.js:79`) and in the definition's clarification C3.
+
+- **The decimals.** Every operand is read as the shortest decimal that round-trips to its double (`api/_utils/setupEvaluator/evidenceValues.js:34`). For any input of at most 15 significant digits, that is exactly the decimal its source wrote. Arithmetic on those decimals is exact integer (BigInt) arithmetic. The correctly rounded double of an exact result is JavaScript's own decimal parse (`:84`).
+- **The split heuristic** (`api/_utils/setupEvaluator/dailyBarsAdapter.js:241-250`):
+  - `1 − min / max > 0.10` holds exactly when `lo < 0.9 · hi`, where `lo` and `hi` are the two cross-multiplied products `adjAfter · closeBefore` and `adjBefore · closeAfter`. All four prices are positive here.
+  - This is decided exactly. There is no recorded comparison here, so no error bound is needed, and a step of exactly 10% never trips.
+  - A tripped step now records both days' raw and adjusted closes in its detail, so the refusal explains its own decision. The float ratios stay as information only.
+- **The extension guard** (`api/_utils/setupEvaluator/tfSetupV1.js:242`) is `SMA_fast + 2.0 × ATR`, computed exactly from the two facts **as recorded** and recorded as the double nearest the exact value. This is how it preserves the facts' 4-decimal semantics:
+  - SMA and ATR are defined as the 4-decimal results of `calculateSMA` and `calculateATR`, and they enter the sum as exactly those 4-decimal values.
+  - Nothing is re-rounded to 4 decimals. The guard is the exact decimal the definition names, and the only rounding left is the final conversion to a double, which every recorded number undergoes anyway.
+- **The volume floor** (`:241`) is `1.5 × V_avg`, computed exactly from the recorded `V_avg`. `V_avg` is now the exact mean of the twenty volumes (`:169`, `:176`). For integer volumes this is the same double as before, because a float sum of integers below 2^53 is exact and its quotient correctly rounded. Every replay `V_avg` is unchanged (§21.7). For decimal volumes it is the true mean.
+- **No tolerance, anywhere.** The shared comparison function is unchanged strict IEEE. Each threshold the record carries is the correctly rounded value of its exact decimal, so the recorded result is always the plain comparison of the recorded `lhs` and `rhs`. A new golden guard row checks this for every boolean check of every golden record, computed and committed. Run 4's 264 boolean checks were checked the same way, with 0 contradictions.
+- **The error bound for the two recorded comparisons.** The shared comparison agrees with the exact decimal comparison unless the two operands' exact decimals differ by less than one ulp of the threshold and round to the same double.
+  - For a close with at most 6 decimals against a 4-decimal guard, the smallest nonzero difference is 1e−6. That falls below one ulp only above a guard of about 4.5 × 10^9, a share price no market has.
+  - For integer volumes against a floor of at most 3 decimals, the smallest difference is 0.001. That falls below one ulp only above about 4.5 × 10^12 shares.
+  - **Immediately outside the boundary**, one ten-thousandth either side, the rows show the correct result: guard 109.5401 and 109.5399, floor 3.3001 and 3.2999, and the split's adjusted closes ± 0.0001 on ten exact pairs.
+- **Unchanged:** every approved formula, threshold, strict or inclusive operator, and missing-fact rule. The comparisons without arithmetic stay strict or inclusive exactly as before, at equality, pinned by a row:
+  - regime, slope and `pullback_close` strict;
+  - `breakout_close` and `pullback_touch` inclusive;
+  - the holding's `close_below_slow` and `structure_break` strict, unchanged and pinned by `holding_boundaries_equal`.
+
+### 21.3 F2 — the unfetched replay pair's bars class
+
+The no-cache branch of the replay's unread-pair helper now carries `evidenceClass.bars = 'later_reconstruction'`, like its short-cache sibling (`scripts/experiments/tf-setup-corpus-replay.mjs:324-326`). `sourceMeta` stays null and `refusal.expected` stays null. The recreated regression checks both records, `{ bars: 'later_reconstruction', verdict: 'derived' }`, with the outcomes unchanged (entry `unknown(missing_bar)`, holding `chartLeg unknown`) and no fetch or calendar metadata invented. No saved replay row was affected, because every planned symbol had a cache.
+
+### 21.4 Metadata ownership
+
+- **The copy.** Both boundaries copy `{ ...sourceMeta }` through `copyData` (`dailyBarsAdapter.js:148`, `tfSetupV1.js:319`; `evidenceValues.js:111`). Plain objects and arrays are copied at every depth; keys whose value is undefined are kept; shared and cyclic references are reproduced inside the copy.
+- **What stays the same.** The top level is exactly what the earlier shallow copy made. Null stays null, partial keys stay as supplied, and scalars are unchanged.
+- **Unsupported values** are not JSON-like, for example a `Date`. They are carried as they are and never refused.
+- **The rows** mutate the caller's nested object after the adapter call, and the evidence's nested object after evaluation, on an ok path and a refused path. No result changes in any of the four.
+
+### 21.5 Regressions, and the red before the fix
+
+**The rows were written before the fix and run on the unfixed code.** 30 rows failed:
+- the extension trio, the volume quartet and the two facts-level boundary rows (their recorded thresholds were the float values);
+- four of the ten exact-10% split sweep rows;
+- both recreated F1 regressions, the tripped-detail row, the recreated F2 regression and the four nested-metadata rows;
+- the golden coverage and sha rows, and the seven new scenarios' reproduce rows.
+
+The self-consistency guard passed on the old code, because the old code was consistent but wrong.
+
+Two of the four failing sweep rows, the pairs on a raw close of 1, failed because of the test fixture, not the float rule. A fixed ± 1 range made a low of 0, a `missing_fact` before the split step was reached. After the fix the range was corrected to ± 1%, which still gives Astra's 101 / 99 at 100. Measured directly on the corrected sweep, **the old float rule wrongly trips 6 of the 20 exact-10% directions**: 36 / 50 against 80 / 100, 111.1104 against 123.456, and 0.72 against 0.8, each in both directions. The other 14 pass only because floating-point rounding happens to land below 0.1.
+
+| Test file | Rows before | Rows now | Added |
+|---|---|---|---|
+| `thresholds.test.js` | 7 | 7 | three expectations on the policy note |
+| `tfSetupV1.entry.test.js` | 151 | 182 | the trios and quartet, facts-level boundaries, strictness at equality, and the seven scenarios' record rows |
+| `tfSetupV1.holding.test.js` | 45 | 45 | — |
+| `dailyBarsAdapter.test.js` | 77 | 104 | two recreated F1 regressions, both-direction trios, the ten-pair exact sweep, the tripped detail, metadata ownership (5), the shared module's units (5) |
+| `golden.test.js` | 55 | 63 | seven scenarios and the self-consistency guard |
+| `tf-setup-corpus-replay.test.js` | 28 | 29 | the recreated F2 regression (entry and holding) |
+| `tf-setup-golden-baseline-check.test.js` | 19 | 19 | — |
+| **Total** | **382** | **449** | **67** |
+
+### 21.6 Semantics, the definition's C3, and the baseline
+
+- **The policy is written down.** It is the 14th entry of `SEMANTICS_NOTES`, and `docs/specs/TREND_FOLLOWER_SETUP_DEFINITION_V1.md` gains **Clarification C3**: the numerical policy only, appended after C2, with the text above it byte-identical. `SEMANTICS_ID` stays `tf-setup-v1/sem-1`. These repairs complete the initial `sem-1` implementation before acceptance, as instructed.
+- **The baseline, still initial.** `main` carries no evaluator file at `62380f14`, by listing, so this remains initial baseline creation. The golden changed, so the one `sem-1` entry was re-recorded in place. Its history note is kept, and it appends **transition (5)**, `796e75d1486c5581245edf43cdcd79f52b0f2d4e49010d0f8ba9ec79a8424b03` → `767d22633672745d632cd7612e90d37c295b276692d60bdcd8f408f09105f32d` (recordedAt `2026-10-28T20:57:11.289Z`), with its reasons. The generator refused to run unless the committed entry and golden were `796e75d1…`, and unless its claims below held.
+
+The changes in transition 5, reported separately:
+
+| Kind | Change |
+|---|---|
+| Added scenarios | 7 (56 in all: 42 entry, 14 holding). `extension_decimal_guard_exact` valid/pullback_resume, `_above` invalid(extended), `_below` valid/pullback_resume; `breakout_volume_decimal_exact` valid/breakout, `_below` invalid(no_setup), `_above` valid/breakout, `_mean_exact` valid/breakout |
+| **Corrected verdicts** | the three exact-boundary scenarios: `extension_decimal_guard_exact`, `breakout_volume_decimal_exact`, `breakout_volume_decimal_mean_exact`. Under the old float thresholds they evaluate `invalid(extended)`, `invalid(no_setup)` and `invalid(no_setup)`, observed on the unfixed code. This is a correction, not unchanged behavior |
+| Existing records | **none changed**: all 49 are identical in canonical form. The histogram and patience diffs show 1,965 insertions and 0 deletions; the default algorithm's apparent deletions are line alignment between similar sorted blocks |
+| Existing verdicts, checks, operands | none changed. Every existing synthetic threshold was already dyadic, which is why the old scenarios never caught F1 |
+
+- **The guard is not weakened** (Q-TE-8). Against the merge-base `62380f14` the check reports `mode: initial` and PASS. Against the previous PR head `20cc4b2a` it **fails by design**, exit 1, with three named failures: entry 0 rewritten; the golden bytes changed under the unchanged `SEMANTICS_ID`; no entry appended. That is the post-acceptance rule, which first applies once an entry is on `main`.
+
+### 21.7 The cached replay: run 4 of record
+
+- **The run.** `tfs-20261028T210004` was planned at `5f76475d` (clean) from the saved capture (sha `8bc76a9e20d0…`, as before). Run 3's 29 payload files were copied byte for byte, and each re-verified against its `payloadSha256`. `bars` was not run, so the manifest records 0 calls. `evaluate` and `report` ran at `5f76475d`, clean, with no drift. Runs 1–3 are untouched.
+- **Compared with run 3, every record and summary field:**
+  - **No verdict changed** on any of the 36 (symbol, asOf, role) records, entry or holding. Every count, the data-unknown share (1 of 19, 5.3%), the 17-moment join and the receipt selection are identical.
+  - `summary.json` differs in 23 keys: the run id, two timestamps, 15 provenance stamps (head, script and three module hashes per command; `volumePolicy` unchanged) and 5 receipt operands, listed below.
+  - **Operand changes with unchanged verdicts**, all in `evaluations.json`. The extension guard's recorded `rhs` changed on 6 entry records:
+    - AMD 2026-10-05: `623.7756999999999` → `623.7757`
+    - GEV 2026-09-30: `1006.7678000000001` → `1006.7678`
+    - MPC 2026-10-06: `438.71659999999997` → `438.7166`
+    - MU 2026-09-21: `1052.1923000000002` → `1052.1923`
+    - PANW 2026-09-22: `393.78819999999996` → `393.7882`
+    - SNOW 2026-09-29: `360.03929999999997` → `360.0393`
+  - The volume floor's `rhs` changed on 2 entry records:
+    - COP 2026-10-07: `10386370.274999999` → `10386370.275`
+    - PLTR 2026-09-22: `41849138.400000006` → `41849138.4`
+  - **Evidence change on the refusal.** CTVA as of 2026-10-06 (`basis_discontinuity`) gains `detail.after` `{ 2026-10-01, close 12.57, adjusted 12.57 }` and `detail.before` `{ 2026-09-30, close 77.6499, adjusted 11.6504 }`, on its adapter result and its record.
+  - Nothing else changed. No fact changed, `V_avg` included, because the volumes are integers. No check result, pattern, date or provenance field of a record changed.
+- **The receipts.** `report.md` differs in 11 lines: the title, the timestamp, three provenance lines, the run instant and five receipts' check lines, each only the extension guard's or volume floor's last digits. §10.7 is re-spliced from run 4's own report.
+
+### 21.8 Verification
+
+| Check | Result |
+|---|---|
+| The seven slice test files, Windows (TZ=UTC) | **449 of 449** |
+| The new regressions before the fix | 30 red on the unfixed code; all green after (§21.5) |
+| Spot mutants on the new handling | **14 of 14 killed**, each counted only with all 449 rows collected and the file restored byte for byte (below) |
+| `lint:gate` config on the slice files, Windows | exit 0 |
+| Linux, CI shape, at the code commit `5f76475d` (contains `origin/main` `62380f14`, which has not moved) | 1,205 files passed, 8 skipped; **26,540 rows passed, 89 skipped, 0 failed** (199 s; 67 more than the closeout's run, the rows of §21.5); `npm run lint:gate` exit 0; `vite build` exit 0, the same entry chunk; Node v22.22.2, `TZ=UTC`, `--maxWorkers=8`, under `flock` |
+| Baseline check against the merge-base `62380f14` | PASS, `mode: initial` (files absent on `main` by listing) |
+| Baseline check against `20cc4b2a` | FAIL by design, exit 1, the three expected failures |
+
+| Mutant | Change | Result (red rows of 449) |
+|---|---|---|
+| MN1 | split: the strict "exceeds" made inclusive (`<` → `<=`) | KILLED (12) |
+| MN2 | split: back to the floating-point jump | KILLED (5) |
+| MN3 | split: `lo` and `hi` swapped | KILLED (18) |
+| MN4 | split: the tripped detail drops the after-day closes | KILLED (1) |
+| MN5 | extension: the inclusive guard made strict (`<=` → `<`) | KILLED (7) |
+| MN6 | extension: the guard back to floating point | KILLED (8) |
+| MN7 | volume: the inclusive floor made strict (`>=` → `>`) | KILLED (11) |
+| MN8 | volume: the floor back to floating point | KILLED (10) |
+| MN9 | volume: `V_avg` back to the floating-point mean | KILLED (3) |
+| MN10 | metadata: the adapter's copy made shallow | KILLED (2) |
+| MN11 | metadata: the evaluator's copy made shallow | KILLED (2) |
+| MN12 | metadata: undefined-valued keys dropped | KILLED (2) |
+| MN13 | decimals: the shortest form's exponent ignored | KILLED (2) |
+| MN14 | F2: the unfetched pair loses its bars class | KILLED (1) |
+
+The mutant runner read each file's bytes, applied the edits, required each find string to match exactly once, ran the seven files, and wrote the original bytes back. It checked the file's raw hash against the committed blob before and after each mutant, and no `git checkout` was used. The closeout's CRLF artifact (§20.6) therefore cannot recur.
+
+### 21.9 Errata and deviations
+
+- **Erratum to §17.3.** The equivalent-mutant note called `jump >= SPLIT_RATIO_JUMP` unreachable at exactly 10%, because `1 − 0.9` is `0.0999…` in binary. That generalized from one pair. Exact-rational steps such as 72 against 80 are reachable, and in floating point some of them were wrongly tripped (Astra F1). The split is now exact, and its strict operator is pinned by MN1.
+- **Erratum to the fixture header.** It said the at-the-guard scenario was built dyadic "so the equality is exact in floating point". That is why the old scenarios never tested the guard's arithmetic, and the header now says so.
+- **D17.** A new pure module, `api/_utils/setupEvaluator/evidenceValues.js` (no imports), holds the exact decimals and the owned copy that the adapter and the evaluator share. It is not in V3 §3's file list, on the precedent of D1's shared volume policy. Both module headers' "imports … and nothing else" sentences name it. BUILD_RULES §4 is about `api/` importing `src/`, and this module imports nothing.
+- **D18 (additive).** A `basis_discontinuity` refusal's detail gains `after` and `before`, each `{ date, close, adjustedClose }`, beside the existing date and float ratios.
+
+### 21.10 Changed files, and what stays open
+
+- **Code** (`5f76475d`): `evidenceValues.js` (new), `dailyBarsAdapter.js`, `tfSetupV1.js`, `thresholds.js` (one note) and `scripts/experiments/tf-setup-corpus-replay.mjs`.
+- **Fixtures:** `__fixtures__/syntheticBars.js` (seven scenarios, the header), `goldenVerdicts.json` and `goldenBaseline.json`.
+- **Tests:** `dailyBarsAdapter.test.js`, `tfSetupV1.entry.test.js`, `golden.test.js`, `thresholds.test.js` and `tf-setup-corpus-replay.test.js`.
+- **Documents:** this report (§0 pointers, the §10.7 re-splice, the §17.3 pointer, §18, §19, this section), the definition's C3 and the README rows.
+- **The CI guard wiring stays the immediate separate follow-up after the initial merge, before any later evaluator change.** It needs a trusted base revision and enough history to compute the merge-base, with no shallow-clone or missing-ref shortcut taken as "initial" (Astra's notes). It is not in this PR.
+- Astra also noted a P4 Phase 0 documentation follow-up: the pilot spec's `setupEvaluatorVersion` shorthand should become the full `ruleSet` triple. It is recorded here and not acted on.
+- STOP: the PR stays a draft. Astra's focused recheck of this head is next.

@@ -119,3 +119,14 @@ Appended by the Measured Trend Evidence slice 1 closeout under the founder's rul
 - **The bars class** is one of `later_reconstruction`, `contemporaneous` or `synthetic`. `synthetic` labels synthetic test evidence only (Q-TE-4). Provider evidence is never labelled `synthetic`, and historical replay bars are `later_reconstruction`.
 - **The two dates.** On a record from ok evidence, `asOf` is the completed session the verdict is dated to and `requestedAsOf` is the caller's date. On a refusal record both are the caller's date, and `refusal.expected` is the calendar's expected session, or null when the refusal came before the calendar named one.
 - **Provenance.** `sourceMeta` is the source's own `{ fetchedAt, from, to }`, copied with only the keys supplied, on refused evidence as on ok evidence. It is null when none was supplied, and it is never filled from the bars.
+## Clarification C3 — 28 Oct 2026 (the numerical policy; the fix round after the independent review)
+
+Appended by the Measured Trend Evidence slice 1 fix round after Astra's independent review of PR #1001 (finding F1). Nothing above this heading changes, C1 and C2 included. Thresholds, patterns, operators, `setupVersion = tf-setup-v1` and the semantics id `tf-setup-v1/sem-1` are unchanged. This completes the initial `sem-1` implementation before its baseline is accepted.
+
+- **Boundaries are met in decimal.** The derived thresholds are computed exactly on the decimal values of their operands, never in floating point and never with a tolerance:
+  - the extension guard `SMA_fast + 2.0 × ATR`, from the two 4-decimal facts as they are;
+  - the breakout volume floor `1.5 × V_avg`, with `V_avg` the exact mean of the twenty volumes;
+  - the split heuristic's two adjusted-to-raw ratios, compared by exact cross-multiplication.
+- **Equality follows the approved operator.** A close exactly at the guard passes the inclusive extension check. A volume exactly at the floor passes the inclusive volume check. A split step of exactly 10% does not exceed 0.10, so it never trips.
+- **The record explains itself.** A check records each threshold as the double nearest its exact value, and every recorded result is the plain comparison of the recorded `lhs` and `rhs`. A tripped split step records both days' raw and adjusted closes in the refusal's detail.
+- **Nothing else is rounded.** No raw price, volume or `V_avg` is rounded to a fixed number of decimals. SMA and ATR keep their 4-decimal values.
