@@ -1113,6 +1113,39 @@ describe('B2.1 B2 (Amendment H RH-2) — a recurrence in another battle opens th
     await sweepAll(elseTape(), 'opened at the moment');
   });
 
+  it('Amendment K RK-4 — a cross-battle open applies once: opened at its day and moment, moved to another day, then remounted (the Forge replaced the screen, then closed) → the default view, no moment marked (the mutant: `at` applied on a second mount)', async () => {
+    let used = 0;
+    /** What App holds (src/App.jsx): the open, cleared once the Film Room says it has used it; the Forge renders in the screen's place. */
+    function AppHolder({ show }) {
+      const [openAt, setOpenAt] = React.useState(() => ({ ...wantAt(), battleId: ELSE }));
+      return show
+        ? <FilmRoomScreenV2 battle={lastBattle} onBack={() => {}} viewerId="viewer-1" readers={lastReaders} nowMs={NOW} cardsApi={api} openAt={openAt} onOpenAtUsed={() => { used += 1; setOpenAt(null); }} />
+        : <div data-forge-stand-in="" />;
+    }
+    lastBattle = elseBattle();
+    lastReaders = readersOf({ [D2]: elseTape(), [D3]: { ...elseTape(), etDate: D3 } }, []);
+    const pressed = () => m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent;
+    m.render(<AppHolder show />);
+    await m.flush(8);
+    expect(pressed()).toContain('Sep 25');
+    expect(m.q('[data-moment-opened]')).toBeTruthy();
+    expect(used).toBe(1);
+    // the player moves on: day 3
+    m.click(m.qa('[data-region="day-picker"] button')[1]);
+    await m.flush(8);
+    expect(pressed()).toContain('Sep 28');
+    // the Forge's round trip remounts the Film Room: its default view (the completed battle's last day, Glance), nothing marked
+    m.render(<AppHolder show={false} />);
+    await m.flush(2);
+    expect(m.q('[data-screen="film-room-v2"]')).toBeNull();
+    m.render(<AppHolder show />);
+    await m.flush(8);
+    expect(pressed()).toContain('Sep 28');
+    expect(m.q('[data-moment-opened]')).toBeNull();
+    expect(m.q('[role="tab"][aria-selected="true"]').textContent).toBe('Glance');
+    expect(used).toBe(1);
+  });
+
   it('the cards\' gate answering after the tape (\'allowlist\', the flip\'s first step): the jump waits for the moment\'s row, then marks and focuses it', async () => {
     state.cards = 'allowlist';
     let admit = null;

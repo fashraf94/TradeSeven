@@ -231,14 +231,16 @@ describe("RB-5 — a tiered battle, or one whose mode is absent or unknown, keep
       const onBack = () => {};
       const onReturn = () => {};
       const onOpenForge = () => {};   // B2.1 B1 (RH-1): App's Forge door, handed through to v2 alone
+      const onOpenAtUsed = () => {};   // Amendment K RK-4: App's clear, handed through to v2 alone
       const openAt = Object.freeze({ battleId: battle.id, etDate: '2026-09-23', moment: {} });   // B2.1 B2 (RH-2): handed through as given; v2 checks it
-      act(() => root.render(<FilmRoomRoute battle={battle} onBack={onBack} origin="battleHistory" onReturn={onReturn} onOpenForge={onOpenForge} openAt={openAt} />));
+      act(() => root.render(<FilmRoomRoute battle={battle} onBack={onBack} origin="battleHistory" onReturn={onReturn} onOpenForge={onOpenForge} openAt={openAt} onOpenAtUsed={onOpenAtUsed} />));
       expect(await waitForV2(), label).toBeTruthy();
       expect(received.v2.length, label).toBeGreaterThan(0);
       for (const p of received.v2) {
-        expect(Object.keys(p).sort(), label).toEqual(['backTo', 'battle', 'onBack', 'onOpenForge', 'openAt', 'viewerId']);
+        expect(Object.keys(p).sort(), label).toEqual(['backTo', 'battle', 'onBack', 'onOpenAtUsed', 'onOpenForge', 'openAt', 'viewerId']);
         expect(p.onOpenForge, label).toBe(onOpenForge);
         expect(p.openAt, label).toBe(openAt);
+        expect(p.onOpenAtUsed, label).toBe(onOpenAtUsed);
         expect(p.battle, label).toBe(battle);
         expect(p.onBack, label).toBe(onReturn);
         expect(p.backTo, label).toBe('battleHistory');

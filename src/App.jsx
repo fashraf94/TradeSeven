@@ -2564,7 +2564,10 @@ export default function PortfolioDuel() {
   }, [showForge]);
   // Film Room B2.1 B2 (Build B Amendment H RH-2): the day and moment the open
   // event names, for the battle it opens — a card's recurrence in another
-  // battle; null for every other way in. Cleared once the Film Room is left.
+  // battle; null for every other way in. Applied ONCE (Amendment K RK-4):
+  // cleared as soon as the Film Room has used it, so any later remount — the
+  // return from the Forge included — opens its default view; and cleared once
+  // the Film Room is left.
   const [filmRoomOpenAt, setFilmRoomOpenAt] = useState(null);
   // Pilot P1c (src/components/Forge/Watchlist/ideaNavigation.js): the deploy
   // ceremony's "running without your idea" line opens the list's editor, where
@@ -9718,6 +9721,8 @@ export default function PortfolioDuel() {
             onOpenForge={onOpenForge}
             // B2.1 B2 (RH-2): the day and moment another battle's recurrence opened this battle at
             openAt={filmRoomOpenAt}
+            // Amendment K RK-4: applied once — the Film Room says it has used them, and they are cleared
+            onOpenAtUsed={() => setFilmRoomOpenAt(null)}
           />
         </ErrorBoundary>
       </div>

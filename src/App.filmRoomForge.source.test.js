@@ -60,7 +60,7 @@ describe('B2.1 B1 — Set opens the Forge through App\'s own door, and closing i
     expect(CODE).toMatch(/if \(screen !== 'filmRoom'\) filmRoomFromRef\.current = \{ screen, battle: currentBattle \};/);
   });
 
-  it('B2.1 B2: the Forge round trip keeps a day and moment another battle\'s recurrence opened — it is cleared only when the Film Room is left', () => {
+  it('Amendment K RK-4: the Forge door itself touches no open — by the time Set\'s link is tapped the Film Room has used it and App has cleared it (the screen\'s own row: FilmRoomCards.jsdom, RK-4)', () => {
     expect(block('const onOpenForge = (request) => {', '};')).not.toContain('setFilmRoomOpenAt');
   });
 
@@ -84,7 +84,10 @@ describe('B2.1 B1 — Set opens the Forge through App\'s own door, and closing i
 //   · the listener keeps P1c's statements and adds one: the day and moment,
 //     for the battle it opens, or null when the event names none;
 //   · App hands them to the Film Room's route, which checks them (v2 alone);
-//   · they are cleared once the Film Room is left, so no later way in reuses them;
+//   · they apply once (Amendment K RK-4): v2 says it has used them and App
+//     clears them, so a later remount — the return from the Forge — opens the
+//     default view; and they are cleared once the Film Room is left, so no
+//     later way in reuses them;
 //   · back keeps its destination: the listener never touches filmRoomFromRef,
 //     which is recorded only while another screen shows — opening another
 //     battle from the Film Room leaves it where the player first came from,
@@ -95,11 +98,12 @@ describe('B2.1 B2 — another battle\'s recurrence opens through P1c\'s door, an
 
   it('the listener keeps P1c\'s statements, then sets the day and moment for the battle it opens — null when the event names none', () => {
     expect(listener()).toMatch(/setCurrentBattle\(battle\);\s*setShowForge\(false\);\s*setScreen\('filmRoom'\);\s*setFilmRoomOpenAt\(event\.detail\.at \? \{ \.\.\.event\.detail\.at, battleId: battle\.id \} : null\);\s*$/);
-    expect(CODE.match(/setFilmRoomOpenAt\(/g)).toHaveLength(2);   // the listener, and the clear below — nothing else sets it
+    expect(CODE.match(/setFilmRoomOpenAt\(/g)).toHaveLength(3);   // the listener, the clear once used (RK-4) and the clear below — nothing else sets it
   });
 
-  it('the route gets them — the one element', () => {
+  it('the route gets them — the one element — with the clear the Film Room calls once it has used them (Amendment K RK-4)', () => {
     expect(block('<FilmRoomRoute', '/>')).toContain('openAt={filmRoomOpenAt}');
+    expect(block('<FilmRoomRoute', '/>')).toMatch(/onOpenAtUsed=\{\(\) => setFilmRoomOpenAt\(null\)\}/);
   });
 
   it('they are cleared once the Film Room is left', () => {

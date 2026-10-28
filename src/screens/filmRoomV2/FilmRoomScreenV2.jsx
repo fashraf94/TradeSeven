@@ -211,12 +211,17 @@ const pill = (accent) => ({ display: 'inline-flex', alignItems: 'center', gap: 6
  * @param {object}   [props.openAt]   B2.1 B2 (RH-2): `{ battleId, etDate, moment }` from App — another battle's
  *                                    recurrence opened this one; the screen opens on that day, at that moment. Read
  *                                    at mount, for this battle only; anything else opens the default day as before.
+ * @param {Function} [props.onOpenAtUsed] Amendment K RK-4: called once, at mount, when `openAt` was handed in — App
+ *                                    clears it, so the open applies once and any later remount (the return from the
+ *                                    Forge included) opens the default view, never a moment the player has left
  */
-export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', viewerId = null, readers = firestoreReaders, nowMs, cardsApi = defaultCardsApi, onOpenForge = null, openAt = null }) {
+export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', viewerId = null, readers = firestoreReaders, nowMs, cardsApi = defaultCardsApi, onOpenForge = null, openAt = null, onOpenAtUsed = null }) {
   const now = useMemo(() => (Number.isFinite(nowMs) ? nowMs : Date.now()), [nowMs]);
   const battleId = filmRoomBattleId(battle);
   const days = useMemo(() => battleDays(battle), [battle]);
   const [at] = useState(() => (openAt && openAt.battleId === battleId ? battleReviewAtOf(openAt, battleId) : null));
+  // RK-4: the open is used — read into `at` above — so where App holds it, it is cleared now
+  useEffect(() => { if (openAt && typeof onOpenAtUsed === 'function') onOpenAtUsed(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const [day, setDay] = useState(() => at?.etDate ?? defaultDay(battle, days, now));
   const [depth, setDepth] = useState('glance');
   const [selected, setSelected] = useState(null);
