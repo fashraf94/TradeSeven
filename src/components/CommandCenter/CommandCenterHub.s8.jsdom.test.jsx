@@ -232,3 +232,54 @@ describe('review fixes L3-2, L3-4', () => {
     expect(statusLine().textContent).toBe(COPY.strip.deployed(COPY.games.waitingForOpen));
   });
 });
+
+// The merge with #999 (BaggerBomb cleanup C5): a game deployed from 3:15 PM ET plays the NEXT session. Before its first
+// trading day it is waiting, with the market open, and every surface says so from the one hub/gamesDisplay.js
+// liveGameRows call (derivePhase with the row's own clock): the Games header and the status line (hub/hubModel.js
+// liveCountsOf), the row, the strip, the next action and the phone Overview's own live row.
+describe('the #999 merge — a game deployed between 3:15 and 4:00 PM ET reads as waiting everywhere', () => {
+  // Tuesday, Oct 27, 2026, 3:30 PM ET: the market is open.
+  const LATE = Date.UTC(2026, 9, 27, 19, 30);
+  const STARTS = 'Starts Wed 9:30 AM ET';
+  /** Deployed at 3:20 PM ET: its first trading day is Wednesday's session, which it ends at Wednesday's close. */
+  const late = (id, over = {}) => bb(id, {
+    activatedAt: '2026-10-27T19:20:00Z', expiresAt: '2026-10-28T20:00:00Z', timing: { tradingDays: ['2026-10-28'] }, scoreState: WAITING, ...over,
+  });
+  const nextAction = () => document.querySelector('[data-hub-next-action]');
+  const overview = () => document.querySelector('[data-hub-phone-panel="overview"]');
+
+  beforeEach(() => {
+    vi.setSystemTime(LATE);
+    r.market = { state: 'OPEN', isOpen: true };
+  });
+
+  it('desktop: the Games header, the status line, the row and the next action say waiting; nothing says live', () => {
+    render('desktop', hubOf({ activeBattles: [late('bb_late')] }));
+    expect(gamesHeader().textContent).not.toMatch(/\d+ live/);
+    expect(gamesHeader().textContent).toContain(COPY.strip.deployed(COPY.games.waitingForOpen));
+    expect(statusLine().textContent).toBe(COPY.strip.deployed(COPY.games.waitingForOpen));
+    const row = games().querySelector('[data-hub-game-row="live"]').closest('button');
+    expect(row.textContent).toContain(COPY.strip.deployed(STARTS));
+    expect(row.textContent).toContain('ends Wed 4:00 PM ET');
+    expect(nextAction().textContent).toContain(COPY.nextAction.preOpenTitle);
+    expect(nextAction().textContent).not.toContain(COPY.nextAction.liveTitle);
+  });
+
+  it("phone: the strip, the status line, the next action and the Overview's own live row say waiting", () => {
+    render('mobile', hubOf({ activeBattles: [late('bb_late'), late('bb_late2', { activatedAt: '2026-10-27T19:25:00Z' })] }));
+    expect(strip().textContent).toContain(COPY.strip.deployed(STARTS));
+    expect(strip().textContent).not.toContain(COPY.strip.live(''));
+    expect(statusLine().textContent).toBe(COPY.strip.deployed(COPY.games.waitingForOpen));
+    expect(nextAction().textContent).toContain(COPY.nextAction.preOpenTitle);
+    const rows = overview().querySelectorAll('[data-hub-game-row="live"]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].closest('button').textContent).toContain(COPY.strip.deployed(STARTS));
+  });
+
+  it('control: at the same instant, a game whose first trading day is today reads live on every surface', () => {
+    render('desktop', hubOf({ activeBattles: [late('bb_today', { activatedAt: '2026-10-27T13:30:00Z', expiresAt: '2026-10-27T20:00:00Z', timing: { tradingDays: ['2026-10-27'] }, scoreState: { currentScore: 3.1, tradeCount: 1, evaluationCount: 4 } })] }));
+    expect(gamesHeader().textContent).toContain(COPY.games.liveCount(1));
+    expect(statusLine().textContent).toBe(COPY.shadow.statusLiveOne);
+    expect(nextAction().textContent).toContain(COPY.nextAction.liveTitle);
+  });
+});
