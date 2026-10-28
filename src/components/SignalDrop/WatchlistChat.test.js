@@ -6,6 +6,7 @@
 // this repo doesn't ship a jsdom + React Testing Library setup.
 
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 // Neutralize module-load side effects so we can import the named pure
 // helpers without booting Firebase. WatchlistChat.jsx imports
@@ -209,5 +210,20 @@ describe('buildSaveRequest', () => {
     // helper only returns the documented three-field shape.
     const result = buildSaveRequest('session-1', 'agent-1', 'drop-1');
     expect(Object.keys(result).sort()).toEqual(['agentId', 'dropId', 'sessionId']);
+  });
+});
+
+// BaggerBomb cleanup C4: the save handler tells the player when a dialogue saved without a retired name.
+// WatchlistChat is not rendered by this suite (no jsdom + RTL here), so the wiring is pinned in the source:
+// the line comes from the server's droppedRetired names and is shown BEFORE the editor opens (which returns).
+describe('the save handler says what the server left out (C4)', () => {
+  const source = readFileSync(new URL('./WatchlistChat.jsx', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  it('reads retiredDroppedLine from data.droppedRetired and toasts it before onViewWatchlist', () => {
+    const line = source.indexOf('retiredDroppedLine(data.droppedRetired)');
+    const toast = source.indexOf('showToast(droppedLine)');
+    const open = source.indexOf('onViewWatchlist(data.watchlistId)');
+    expect(line).toBeGreaterThan(-1);
+    expect(toast).toBeGreaterThan(line);
+    expect(open).toBeGreaterThan(toast);
   });
 });

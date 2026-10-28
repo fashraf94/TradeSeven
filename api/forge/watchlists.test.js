@@ -1690,7 +1690,8 @@ describe('F4 — retired stocks are never added to a watchlist', () => {
     const { req, res } = makeReqRes({ method: 'PATCH', query: { id: 'wl-1' }, body: { name: 'renamed', tickers: [tickerRow('AAPL'), tickerRow('ea')] } });
     await itemHandler(req, res);
     expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'retired_ticker', message: "EA has left the stock universe and can't be added to a watchlist." });
+    // C4: the refusal names the symbols, for the editor's own line.
+    expect(res.body).toEqual({ error: 'retired_ticker', message: "EA has left the stock universe and can't be added to a watchlist.", symbols: ['EA'] });
     expect(fixture.state.watchlistDocs['wl-1']).toEqual(DRAFT_WATCHLIST);
   });
 
@@ -1737,7 +1738,7 @@ describe('F4 — retired stocks are never added to a watchlist', () => {
     const { req, res } = makeReqRes({ method: 'POST', body: { tickers: [{ symbol: 'MSFT' }, { symbol: 'WBA' }] } });
     await createHandler(req, res);
     expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'retired_ticker', message: "WBA has left the stock universe and can't be added to a watchlist." });
+    expect(res.body).toEqual({ error: 'retired_ticker', message: "WBA has left the stock universe and can't be added to a watchlist.", symbols: ['WBA'] });
     expect(fixture.state.watchlistDocs).toEqual({});
   });
 
@@ -1769,16 +1770,53 @@ describe('F4 — retired stocks are never added to a watchlist', () => {
     expect(dup.res.body.message).toBe("WBD has left the stock universe and can't be added to a watchlist.");
   });
 
-  it('the dialogue save refuses a session that still proposes a retired ticker (proposed before BR-3): no list, the session untouched', async () => {
-    const session = { ...ACTIVE_SESSION, candidateTickers: [...ACTIVE_SESSION.candidateTickers, { symbol: 'EA', reasoning: 'Old pick', category: 'discovery', slot: 'discovery', status: 'kept', proposedAt: '2026-10-20T12:00:00.000Z', proposedAtPhase: 'propose' }] };
+  // C4 (Flash, Oct 27, 2026; was F4's refusal): the chat client treats any failed save as "abandon", so a dialogue
+  // proposed before BR-3 that still holds a retired name is not refused — the retired names are dropped, the rest
+  // is saved, and the response names what was dropped. An all-retired dialogue is refused (no_valid_tickers).
+  const sessionWith = (...extra) => ({ ...ACTIVE_SESSION, candidateTickers: [...ACTIVE_SESSION.candidateTickers, ...extra] });
+
+  it('C4: the dialogue save of a session that still proposes a retired ticker saves the rest without it, and names what it dropped', async () => {
+    const session = sessionWith({ symbol: 'EA', reasoning: 'Old pick', category: 'discovery', slot: 'discovery', status: 'kept', proposedAt: '2026-10-20T12:00:00.000Z', proposedAtPhase: 'propose' }, { symbol: 'wba ', reasoning: 'Old pick', category: 'discovery', slot: 'discovery', status: 'kept', proposedAt: '2026-10-20T12:00:00.000Z', proposedAtPhase: 'propose' });
+    const fixture = makeFakeFirestore({ sessionDocs: { 'session-1': session } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ body: VALID_BODY });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ watchlistId: 'new-watchlist-456', status: 'draft', tickerCount: 2, idempotent: false, droppedRetired: ['EA', 'WBA'] });
+    expect(fixture.state.watchlistDocs['new-watchlist-456'].tickers.map((t) => t.symbol)).toEqual(['AAPL', 'NVDA']);
+    expect(fixture.state.sessionDocs['session-1'].status).toBe('completed');
+  });
+
+  it('C4: a dialogue with no retired name answers exactly as before — no droppedRetired key', async () => {
+    const fixture = makeFakeFirestore({ sessionDocs: { 'session-1': { ...ACTIVE_SESSION } } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ body: VALID_BODY });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect('droppedRetired' in res.body).toBe(false);
+  });
+
+  it('C4: a dialogue left with nothing after the drop is refused as the empty-list path (no_valid_tickers): no list, the session untouched', async () => {
+    const session = { ...ACTIVE_SESSION, candidateTickers: [{ symbol: 'EA', reasoning: 'Old pick', category: 'discovery', slot: 'discovery', status: 'kept', proposedAt: '2026-10-20T12:00:00.000Z', proposedAtPhase: 'propose' }, { symbol: 'WBA', reasoning: 'Old pick', category: 'discovery', slot: 'discovery', status: 'kept', proposedAt: '2026-10-20T12:00:00.000Z', proposedAtPhase: 'propose' }, { symbol: 'KRE', reasoning: 'Old pick', category: 'discovery', slot: 'discovery', status: 'removed', proposedAt: '2026-10-20T12:00:00.000Z', proposedAtPhase: 'propose' }] };
     const fixture = makeFakeFirestore({ sessionDocs: { 'session-1': session } });
     activeFirestore = fixture.db;
     const { req, res } = makeReqRes({ body: VALID_BODY });
     await createHandler(req, res);
     expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'retired_ticker', message: "EA has left the stock universe and can't be added to a watchlist." });
+    expect(res.body).toEqual({ error: 'no_valid_tickers', message: 'At least one valid ticker is required to create a watchlist.', droppedRetired: ['EA', 'WBA'] });
     expect(fixture.state.watchlistDocs).toEqual({});
     expect(fixture.state.sessionDocs['session-1']).toEqual(session);
+  });
+
+  it('C4: a double-tap that replays an already-saved dialogue is idempotent and carries no droppedRetired', async () => {
+    const saved = { ...sessionWith({ symbol: 'EA', reasoning: 'Old pick', category: 'discovery', slot: 'discovery', status: 'kept', proposedAt: '2026-10-20T12:00:00.000Z', proposedAtPhase: 'propose' }), status: 'completed', dropListId: 'wl-existing' };
+    const fixture = makeFakeFirestore({ sessionDocs: { 'session-1': saved } });
+    activeFirestore = fixture.db;
+    const { req, res } = makeReqRes({ body: VALID_BODY });
+    await createHandler(req, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ watchlistId: 'wl-existing', idempotent: true });
+    expect('droppedRetired' in res.body).toBe(false);
   });
 
   it('the dialogue save of a session that only REMOVED a retired ticker is unchanged', async () => {

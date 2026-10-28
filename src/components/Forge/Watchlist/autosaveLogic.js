@@ -55,6 +55,10 @@ export function nextSaveState(current, event) {
       return 'saved';
     case 'error':
       return 'error';
+    case 'noop':
+      // Nothing is left to save (the edit that failed was undone, e.g. the
+      // retired ticker was removed): a failed badge has nothing to retry.
+      return current === 'error' ? 'idle' : current;
     case 'fade':
       // The "Saved" badge fades to idle — but only when a newer save hasn't
       // already moved us back into 'saving' or 'error'.

@@ -25,6 +25,9 @@ const RATE_LIMIT = { limit: 28, windowMs: 60_000 };
 
 export function useWatchlistAutosave(watchlistId) {
   const [saveState, setSaveState] = useState('idle');
+  // C4: why the last save failed, when the server named a cause a retry cannot
+  // fix (a retired ticker). Null for every other failure, while saving, and once saved.
+  const [saveError, setSaveError] = useState(null);
 
   const baselineRef = useRef({}); // last server-confirmed field set
   const pendingRef = useRef(null); // queued unsaved fields
@@ -46,6 +49,9 @@ export function useWatchlistAutosave(watchlistId) {
     // No-op skip — the queued edit already matches the server state.
     if (fieldsEqual(payload, baselineRef.current)) {
       pendingRef.current = null;
+      // C4: undoing the edit that was refused leaves nothing to save — clear its error.
+      setSaveState((s) => nextSaveState(s, 'noop'));
+      setSaveError(null);
       return;
     }
 
@@ -65,6 +71,7 @@ export function useWatchlistAutosave(watchlistId) {
     controllerRef.current = controller;
 
     setSaveState((s) => nextSaveState(s, 'flush_start'));
+    setSaveError(null);
 
     patchWatchlist(watchlistId, payload, { signal: controller.signal })
       .then(() => {
@@ -84,6 +91,9 @@ export function useWatchlistAutosave(watchlistId) {
         if (controllerRef.current !== controller) return; // superseded — swallow
         if (err?.name === 'AbortError') return;
         controllerRef.current = null;
+        setSaveError(err?.code === 'retired_ticker' && Array.isArray(err.symbols) && err.symbols.length > 0
+          ? { code: 'retired_ticker', symbols: err.symbols }
+          : null);
         setSaveState((s) => nextSaveState(s, 'error'));
       });
   }, [watchlistId]);
@@ -117,7 +127,7 @@ export function useWatchlistAutosave(watchlistId) {
     };
   }, []);
 
-  return { saveState, queueSave, retry, setBaseline };
+  return { saveState, saveError, queueSave, retry, setBaseline };
 }
 
 export default useWatchlistAutosave;

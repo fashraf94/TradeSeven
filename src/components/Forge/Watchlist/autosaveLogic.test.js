@@ -65,4 +65,10 @@ describe('nextSaveState — indicator state machine', () => {
     expect(nextSaveState('saving', 'fade')).toBe('saving');
     expect(nextSaveState('error', 'fade')).toBe('error');
   });
+
+  // C4: the edit that failed was undone (the retired ticker was removed) — nothing is left to retry.
+  it('noop clears a failed badge and leaves every other state alone', () => {
+    expect(nextSaveState('error', 'noop')).toBe('idle');
+    for (const s of ['idle', 'saving', 'saved']) expect(nextSaveState(s, 'noop')).toBe(s);
+  });
 });
