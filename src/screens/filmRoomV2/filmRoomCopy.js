@@ -265,7 +265,9 @@ export const FILM_ROOM_COPY = Object.freeze({
   entryMark: 'Entry',
   entryFor: 'in for',   // B2.1 A4 (RJ-4): "Entry · {time} · in for {sold symbol} · {maker}"
   evidenceOverlay: 'Evidence at each check',
-  evidenceOverlayNote: "A marker may sit off the bar line: the platform's quote runs about 15–20 minutes behind the bars. The difference is that delay, not smoothed.",
+  // B2.1 A6 (Amendment J RJ-6), verbatim: it claims no cause for any particular gap; its digits are a fixed phrase,
+  // exempt by this copy key (A2F1-7)
+  evidenceOverlayNote: 'A marker may sit off the bar line: the price the agent was shown came from a quote that runs about 15–20 minutes behind the bars, and the bars are not smoothed.',
   allSymbols: 'All symbols',
   close10: 'close',
 

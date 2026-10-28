@@ -342,7 +342,11 @@ describe('BA-43 — the evidence overlay', () => {
     const differs = stamped.filter(({ c }) => atCheck.has(c.at) && atCheck.get(c.at) !== c.evidence[sym].px);
     expect(differs.length).toBeGreaterThan(0);
     m.render(<Harness tape={sep23Tape} series={sep23Series} start={sym} />);
-    expect(m.q('[data-region="evidence-overlay"]').textContent).toContain("A marker may sit off the bar line: the platform's quote runs about 15–20 minutes behind the bars. The difference is that delay, not smoothed.");
+    // B2.1 A6 (Amendment J RJ-6), verbatim — claiming no cause for any particular gap; the old wording ("The difference
+    // is that delay") is gone
+    const ev = m.q('[data-region="evidence-overlay"]').textContent;
+    expect(ev).toContain('A marker may sit off the bar line: the price the agent was shown came from a quote that runs about 15–20 minutes behind the bars, and the bars are not smoothed.');
+    expect(ev).not.toContain('The difference is that delay');
   });
 
   it('opening a marker lists the stamp, labelled "Recorded at the check · what the agent was given · the platform\'s quote"', () => {
