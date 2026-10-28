@@ -1,0 +1,59 @@
+# Build B spec V1.0 — Amendment K: founder rulings on the B2.1 report (2026-10-28)
+
+- **RK-1 — The ledger belongs to the player's agent, not the casual clone.**
+  - Since 2026-08-19 every BaggerBomb deploy runs on the player's casual clone (`casual-agent-{uid}`). The platform redirects a casual battle's record and learning to the clone's parent, the player's ranked agent, through one resolver (`resolveAttributionAgentId` / `resolveRecordTargetId`, `api/_utils/casualClone.js`). The plays ledger is learning, so it follows the same rule.
+  - **Filing.** A card is filed under the battle's attribution agent: the parent for a casual-clone battle, the battle's own agent otherwise. The server resolves it from the battle, using the platform's resolver. The client never chooses a different agent.
+  - **No filing under the clone.** When a clone battle's attribution can't be resolved (the resolver falls back to the clone), the create is refused with 503 `attribution_unavailable`.
+  - **The counter** answers for the attribution agent: its cards, its open count and cap, and recurrences and unavailable days from every tape day whose battle attributes to that agent, both the clone's days and the agent's own.
+  - **Archetype checks** read the attribution agent's archetype: the store's refusal, and RH-5's `archetype_changed` and shelving.
+  - **The tape is unchanged.** It records the battle's own `agentId`, as the platform's fence rule requires.
+  - **No migration.** No card exists in production; cards have been `'off'` since #988.
+- **RK-2 — Set links only where the battle ran with a tempo (SPR-L-1, SPR-C-5).**
+  - **Why.** The clone inherits neither the tempo dial nor standing leans (`INHERITED_LOADOUT_FIELDS`). A casual battle therefore runs at the default tempo whatever the Forge's dial says, and its tape records `tags.inputs.tempoDesired: null`.
+  - **The link.** Set links to the dial only when all of these hold:
+    - the day's stagnation rule is on;
+    - the tape records the tempo the battle ran with (`tempoDesired` is not null);
+    - the Forge's Character tab and the tempo dial are both switched on (`RELEASE3_CHARACTER_TAB_ENABLED`, `TEMPO_DIAL_ENABLED`).
+  - **No recorded tempo.** When the rule is on and no tempo is recorded, Set reads *"You change the setting yourself; this card changes nothing. No tempo setting was recorded for this battle."*, with no link.
+  - **Rule off:** RJ-8's no-link sentence, as built. **No stored input:** RG-5's sentence alone, as built.
+  - **Later.** Carrying the dial and the leans to the clone is a platform decision, routed to the Command Center chat. If it lands, tapes record the tempo and the link appears with no Film Room change.
+- **RK-3 — Set's link is on the receipt, not the form (SPR-L-4, SPR-RC-2).**
+  - The link shows only on a filed card's receipt, so a trip to the Forge can't discard an unfiled note.
+  - The form shows Set's sentence without the link. The receipt shows the sentence, with the link where RK-2 allows it.
+- **RK-4 — A cross-battle open applies once (report §8, the B1 question).**
+  - The day and moment a recurrence opens are applied once, then cleared.
+  - Any later remount opens the Film Room on its default view, never on a moment the player has left. That includes the return from the Forge.
+- **RK-5 — The sold name's maker (SPR-S-6).**
+  - On the chart, the sold symbol's swap annotation reads *"Exit · {time} · {maker}"*, with RJ-4's makers: "by the agent", "by platform rule · {reason}". The repeated "Exit by" goes.
+  - The build's two further makers stand: "by the gameplan meeting" and "maker not recorded".
+  - The change is scoped to the chart annotation. Every other use of the exit words stays as it is.
+- **RK-6 — The diagnosis credit stands (SPR-S-7).**
+  - It stays "— the platform".
+  - An owner can plant text only in their own meeting history, which only they see. The diagnosis never leaves in league film.
+- **RK-7 — "No check ran", as built (SPR-W-3).** Confirmed. A minted check with no record ran, so its day keeps the missing-score note.
+- **RK-8 — No opponent first (SPR-W-6).** Confirmed. With no opponent, the no-opponent note explains the result, and RJ-3 isn't reached.
+- **RK-9 — X3-5: the stored attribution stands (C3).**
+  - **Why now.** Multi-day battles are adopted as a second format (FD-1, 28 Oct), so X3-5 will be live on the allowlist.
+  - **The ruling.** The first write's attribution is the better-informed one. It was made before the next session began, so the lost seq was minted on that day. A later read that can no longer tell the seq's day doesn't override it.
+  - **The fix.** The merge filters the unattributed seqs against the merged gaps. It removes an unattributed caveat for any seq the tape's own stored rows attribute to the day, and rewrites the caveat to name only the rest.
+  - **The one exception to "caveats are unioned and never dropped":** a caveat the tape's own stored rows prove wrong. Every other caveat stays merge-monotone.
+  - **Where.** Merge-only, in `tapeMerge.js`. No assembly change.
+  - **Stored tapes.** Any stored tape carrying the double listing is cleaned by the next `refresh=1`.
+- **RK-10 — The unavailable-day line's place (SPR-C-6).**
+  - The line shows only when at least one open Watch card lists recurrences. With no open Watch card, there's no line.
+  - The window stays as built.
+- **RK-11 — A charted symbol speaks for itself (report §8, cross-lens).**
+  - Deep dive never shows the series section's status beside one symbol's chart.
+  - Beside a charted symbol it reads *"Chart recorded for {symbol}"*. The section's status and its reasons stay on Glance's coverage line.
+- **RK-12 — The declared items are accepted.**
+  - A pre-C1 note keeps its counts (SPR-W-1).
+  - The route's battle key (SPR-RG-1).
+  - One re-write of an old completed day (SPR-RW-1).
+  - `coverage.meetings.sources` (SPR-W-5).
+  - Deep dive's charted predicate (SPR-S-3).
+  - Swap-label widths measured once (SPR-L-7).
+  - The one legacy paint under `'allowlist'` (SPR-L-5).
+- **RK-13 — Cards-off changes in this round are declared.**
+  - Only RK-5 and RK-11 change the cards-off screen.
+  - The re-captured goldens' differences from this PR's committed goldens map to those two and nothing else.
+  - RK-9 moves stored fields only on a multi-day re-write: `passes.close.unattributedGaps` and `coverage.checks.note`.
