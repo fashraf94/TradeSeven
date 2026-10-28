@@ -173,7 +173,7 @@ const retireFingerprint = (agentId, entryId, expectedVersion) => canonicalConten
  *                      questionId: string, questionVersion: number, note: string, route: 'watch'|'drill'|'set' } }} p
  * @returns {Promise<{ idempotent: boolean, card: object, open: number, cap: number }>}
  */
-export async function createCard(db, { uid, agentId, opId, payload, nowIso, request = null }) {
+export async function createCard(db, { uid, agentId, opId, payload, nowIso, request = null, verifySource = null }) {
   const opFingerprint = createFingerprint(agentId, request, payload);
   return db.runTransaction(async (tx) => {
     const agent = ownedAgent(await tx.get(agentRefOf(db, agentId)), uid);
@@ -190,6 +190,11 @@ export async function createCard(db, { uid, agentId, opId, payload, nowIso, requ
       if (existing.opFingerprint === opFingerprint) return { idempotent: true, card: existing, open, cap: OPEN_CARD_CAP };
       throw fail(409, 'op_conflict', { entryId: opId });
     }
+    // Amendment I RI-3 (Astra B3): the source day is re-read and its coverage and exact moment checked again HERE,
+    // inside the transaction that files the card (the route hands its checks in — api/film-room/card.js
+    // verifySourceIn — so this store imports no tape module): a re-write between the route's read and this commit
+    // refuses rather than filing a card for a moment the tape no longer holds. A read, so it precedes the write.
+    if (verifySource) await verifySource(tx);
     if (payload.archetypeCodeId !== agent.archetype) throw fail(409, 'archetype_changed', { archetypeCodeId: payload.archetypeCodeId, current: agent.archetype });
     if (open >= OPEN_CARD_CAP) throw fail(409, 'cap_reached', { cap: OPEN_CARD_CAP, open });
     const card = buildCardDoc({ entryId: opId, uid, agentId, opId, opFingerprint, nowIso, payload });

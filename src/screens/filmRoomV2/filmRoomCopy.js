@@ -357,6 +357,9 @@ export const FILM_ROOM_COPY = Object.freeze({
     retiring: 'Retiring…',
     recurrences: 'Since this card',
     noRecurrence: 'No recurrence recorded since this card.',
+    // B2.1 B3 (RH-6), in RJ-7's style: "Recurrences · {n} days in this window could not be read"
+    recurrencesWord: 'Recurrences',
+    unavailableDays: (n) => (n === 1 ? 'day in this window could not be read' : 'days in this window could not be read'),
     // RG-4: a recurrence in another battle is named, not linked — the screen opens only its own battle's days
     otherBattle: 'in another battle',
     noWatchCards: 'No open Watch card.',

@@ -21,10 +21,12 @@
 //   the agent not the battle's → 403 forbidden; a mode the tape does not
 //   cover (a tournament battle, RB-5) → 409 untaped;
 //   the tape day: unreadable → 503 tape_unreadable; missing, or not the
-//   caller's → 404 tape_not_found; no stored tags → 409 tags_unavailable;
+//   caller's → 404 tape_not_found; its situations unavailable (B2.1 B3,
+//   Amendment H RH-6) or no stored tags → 409 tags_unavailable;
 //   the moment: not one the moments helper derives from the day's STORED
 //   tags.items → 409 moment_not_found; no archetype in the day's inputs → 409
-//   archetype_unknown;
+//   archetype_unknown — the day's checks (sourceOfDay) run AGAIN inside the
+//   create transaction on its own re-read of the tape (Amendment I RI-3);
 //   the question: not on the menu for that situation and version → 400
 //   question_not_on_menu;
 //   the store (cardStore.js): the agent not the caller's → 403; the same op id
@@ -58,7 +60,7 @@ const COPY = Object.freeze({
   untaped: 'This battle mode is not taped, so it has no moments to take home.',
   tape_not_found: 'No tape for this day.',
   tape_unreadable: 'The tape for this day could not be read. Try again.',
-  tags_unavailable: 'This day stores no situation tags.',
+  tags_unavailable: 'This day offers no moment: its situations were not tagged, or could not be read.',
   moment_not_found: 'That moment is not one of this day\'s stored moments.',
   archetype_unknown: 'This day records no archetype, so no card can be filed from it.',
   question_not_on_menu: 'That question is not on the menu for this situation.',
@@ -69,6 +71,46 @@ export { sendCardError };
 
 /** The client's request as the create fingerprint hashes it (review L1-4): what was sent, never what the server resolved. */
 const requestOf = (req) => ({ battleId: req.battleId, etDate: req.etDate, agentId: req.agentId, moment: req.moment, questionId: req.questionId, questionVersion: req.questionVersion, note: req.note, route: req.route });
+
+/**
+ * The source day's checks, in order — the ONE rule the route applies to its own read and the create transaction to
+ * its re-read (Amendment I RI-3): the tape is the caller's; its situations are not unavailable and it stores items
+ * (B2.1 B3, Amendment H RH-6: an unavailable day offers no moment — 409 tags_unavailable); the moment is EXACTLY one
+ * the moments helper derives from its stored items (409 moment_not_found); the day records its archetype (409
+ * archetype_unknown). Returns the moment, its situation version and the archetype.
+ */
+export function sourceOfDay(tape, uid, moment) {
+  if (!tape || tape.ownerId !== uid) throw refuse(404, 'tape_not_found');
+  if (tape.coverage?.tags?.status === 'unavailable' || !Array.isArray(tape.tags?.items)) throw refuse(409, 'tags_unavailable');
+  const found = momentOfDay(tape, moment);
+  if (!found) throw refuse(409, 'moment_not_found');
+  const archetypeCodeId = typeof tape.tags?.inputs?.archetypeCodeId === 'string' && tape.tags.inputs.archetypeCodeId ? tape.tags.inputs.archetypeCodeId : null;
+  if (!archetypeCodeId) throw refuse(409, 'archetype_unknown');
+  return { moment: found.moment, situationVersion: found.situationVersion, archetypeCodeId };
+}
+
+/**
+ * RI-3 (Astra B3) — the source moment checked again INSIDE the create transaction: the tape day re-read through the
+ * transaction and held to sourceOfDay once more, and to what the route resolved (its moment, situation version and
+ * archetype), so a re-write between the route's read and the commit can never file a card for a moment, a coverage or
+ * a version the tape no longer holds. A tape the transaction cannot read refuses as the route's own read would.
+ */
+export function verifySourceIn(db, uid, req, payload) {
+  return async (tx) => {
+    let tape;
+    try {
+      const snap = await tx.get(tapeRef(db, req.battleId, req.etDate));
+      tape = snap && snap.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
+    } catch (err) {
+      if (err?.cardRoute) throw err;
+      console.error('[film-room/card] tape re-read failed:', err?.message ?? err);
+      throw refuse(503, 'tape_unreadable');
+    }
+    const again = sourceOfDay(tape, uid, req.moment);
+    if (again.archetypeCodeId !== payload.archetypeCodeId || again.situationVersion !== payload.situationVersion
+      || again.moment.fromTickSeq !== payload.fromTickSeq || again.moment.toTickSeq !== payload.toTickSeq) throw refuse(409, 'moment_not_found');
+  };
+}
 
 /**
  * The create operation's reads and checks, in the documented order. Returns
@@ -91,12 +133,8 @@ export async function resolveCreate(db, uid, req) {
     console.error('[film-room/card] tape read failed:', err?.message ?? err);
     throw refuse(503, 'tape_unreadable');
   }
-  if (!tape || tape.ownerId !== uid) throw refuse(404, 'tape_not_found');
-  if (!Array.isArray(tape.tags?.items)) throw refuse(409, 'tags_unavailable');
-  const found = momentOfDay(tape, req.moment);
-  if (!found) throw refuse(409, 'moment_not_found');
-  const archetypeCodeId = typeof tape.tags?.inputs?.archetypeCodeId === 'string' && tape.tags.inputs.archetypeCodeId ? tape.tags.inputs.archetypeCodeId : null;
-  if (!archetypeCodeId) throw refuse(409, 'archetype_unknown');
+  const found = sourceOfDay(tape, uid, req.moment);
+  const { archetypeCodeId } = found;
   const question = questionFor(found.moment.situationId, req.questionId, req.questionVersion);
   if (!question) throw refuse(400, 'question_not_on_menu', { situationId: found.moment.situationId });
   return {
@@ -122,7 +160,7 @@ export default async function handler(req, res) {
     try {
       const parsed = parseCreateBody(body);
       const payload = await resolveCreate(db, user.uid, parsed);
-      const out = await createCard(db, { uid: user.uid, agentId: parsed.agentId, opId: parsed.opId, payload, nowIso, request: requestOf(parsed) });
+      const out = await createCard(db, { uid: user.uid, agentId: parsed.agentId, opId: parsed.opId, payload, nowIso, request: requestOf(parsed), verifySource: verifySourceIn(db, user.uid, parsed, payload) });
       return res.status(200).json({ idempotent: out.idempotent, card: out.card, open: out.open, cap: out.cap });
     } catch (err) {
       return sendCardError(res, err, 'create');

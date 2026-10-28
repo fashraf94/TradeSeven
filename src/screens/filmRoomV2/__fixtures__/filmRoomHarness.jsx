@@ -253,6 +253,8 @@ export const SPEC_AGGREGATE_CLASSES = Object.freeze({
   'slot(S10 note characters)': 'recorded',
   // B2.1 A7 (Amendment J RJ-7, PINNED HERE): Glance's coverage line counts the symbols the candle pass did not chart — stored rows, derived
   'count(coverage.series.notCharted[])': 'derived',
+  // B2.1 B3 (Amendment H RH-6, PINNED HERE): the counter's unavailable days in its window — a count of tape days, derived
+  'count(tape days with situations unavailable)': 'derived',
 });
 /** The founder slots as the rulings fix them (RG-8) — the oracle for the two slot aggregates, never read from production. */
 export const SPEC_CARD_SLOTS = Object.freeze({ S9: 5, S10: 280 });
@@ -281,6 +283,7 @@ export const SPEC_AGGREGATE_SITES = Object.freeze({
   'count(characters in the note)': '[data-card-form] [data-note-count]',
   'slot(S10 note characters)': '[data-card-form] [data-note-count]',
   'count(coverage.series.notCharted[])': '[data-coverage-summary] [data-coverage-section="series"]',
+  'count(tape days with situations unavailable)': '[data-cards-region="since-last-time"] [data-unavailable-days]',
 });
 
 /** What a computed number's text says, and how far its format may round it: a count exactly, "+0.53%" to 0.005 %, "604K" to 500, "1.2M" to 50,000. */
@@ -328,6 +331,8 @@ function aggregateOracle(name, el, docs) {
   if (name === 'count(characters in the note)') return undefined;   // the typed text's own length: its rows bind it
   // B2.1 A7: the series section's not-charted list, counted HERE from the tape
   if (name === 'count(coverage.series.notCharted[])') { const l = docs.tape?.coverage?.series?.notCharted; return Array.isArray(l) ? l.length : null; }
+  // B2.1 B3: the unavailable days, counted HERE from the tape days the suite passes (`docs.windowDays`: every tape day the counter's window holds for the agent)
+  if (name === 'count(tape days with situations unavailable)') return Array.isArray(docs.windowDays) ? docs.windowDays.filter((d) => d?.coverage?.tags?.status === 'unavailable').length : undefined;
   const countMoment = (items, situationId, symbol, from, to) => {
     if (from === 'x') return items.filter((i) => i.situationId === situationId && i.symbol === symbol && !Number.isInteger(i.tickSeq)).length ? 1 : null;
     return items.filter((i) => i.situationId === situationId && i.symbol === symbol && Number.isInteger(i.tickSeq) && i.tickSeq >= Number(from) && i.tickSeq <= Number(to)).length;

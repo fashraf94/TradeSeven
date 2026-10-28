@@ -323,17 +323,21 @@ function CardRow({ card, onShow }) {
  * @param {object}      props.counter   the hook's counter state `{ status, data }`; data read earlier is kept through
  *                                      a failed re-read (review L4-4), with the error said beside it
  */
-export function SinceLastTime({ day = null, battleId = null, counter, onOpenMoment, onShowCard }) {
+export function SinceLastTime({ day = null, battleId = null, agentId = null, counter, onOpenMoment, onShowCard }) {
   const data = counter?.data ?? null;
   const cards = ledgerOf(data);
   const watching = watchCardsOf(data, cards);
   const groups = groupCards(cards);
   const loading = !data && (counter?.status === 'loading' || counter?.status === 'idle');
+  // B2.1 B3 (Amendment H RH-6; RJ-7's style): the days in the counter's window whose situations could not be read —
+  // neither counted nor listed as recurrences — said as one line with their count (derived)
+  const unread = Number.isInteger(data?.unavailableDays?.[agentId]) ? data.unavailableDays[agentId] : 0;
   return (
     <section data-cards-region="since-last-time" style={regionStyle}>
       <span style={{ ...eyebrow, color: C.teal }}>{T.sinceLastTime}</span>
       {loading ? <span style={foot}>{T.loading}</span> : null}
       {counter?.status === 'error' ? <span data-cards-read-error="" style={foot}>{T.readError}</span> : null}
+      {unread > 0 ? <span data-unavailable-days="" style={{ ...foot, display: 'inline-flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>{T.recurrencesWord} · <AggNum value={unread} aggregate="count(tape days with situations unavailable)" size={10} /> {T.unavailableDays(unread)}</span> : null}
       {data && !watching.length ? <span style={foot}>{T.noWatchCards}</span> : null}
       {watching.map(({ card: c, recurrences }) => (
         <div key={c.entryId} data-watch-card={c.entryId} style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 0', borderTop: `1px solid ${C.hair}` }}>

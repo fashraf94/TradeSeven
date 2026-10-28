@@ -344,3 +344,82 @@ describe('Amendment I RI-1 (Astra F1) — through the handler: a create replay a
     expect(res.body).toMatchObject({ idempotent: false, open: 5, cap: 5 });
   });
 });
+
+describe('B2.1 B3 — RH-6: an unavailable day offers no moment; RI-3: the source moment is checked again inside the create transaction', () => {
+  const tapeKey = `agentBattles/${BATTLE}/tape/${D}`;
+  const tickKeyOf = (seq) => [...t.store.keys()].find((k) => k.startsWith(`agentBattles/${BATTLE}/ticks/`) && t.store.get(k)?.tickSeq === seq);
+  /** Run `race` once, between the route's read of the tape and the create transaction (the writer re-merging the day then). */
+  function raceBeforeCommit(race) {
+    const realRun = t.db.runTransaction.bind(t.db);
+    let pending = race;
+    t.db.runTransaction = async (fn, opts) => {
+      if (pending) { const r = pending; pending = null; t.db.runTransaction = realRun; await r(); }
+      return realRun(fn, opts);
+    };
+  }
+  const rewrite = () => writeTapeDay(BATTLE, D, { db: t.db, now: NIGHT + 86_400_000 });
+
+  it('the fixture day\'s situations are complete (the precondition of the race rows)', () => {
+    expect(t.store.get(tapeKey).coverage.tags.status).toBe('complete');
+  });
+
+  it('RH-6: a day whose situations are unavailable — items stored or not — refuses its moment 409 tags_unavailable, nothing written', async () => {
+    const tape = t.store.get(tapeKey);
+    t.store.set(tapeKey, { ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
+    const res = await post(create());
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('tags_unavailable');
+    expect(playWrites()).toEqual([]);
+  });
+
+  it('ASTRA_REAL_SOURCE_RACE on an UNAVAILABLE day (a check lost, the moment 4–4): refused up front — and restoring the check before the commit changes nothing', async () => {
+    const k5 = tickKeyOf(5);
+    const tick5 = t.store.get(k5);
+    t.store.delete(k5);
+    t.store.delete(tapeKey);
+    await writeTapeDay(BATTLE, D, { db: t.db, now: NIGHT });
+    const incomplete = t.store.get(tapeKey);
+    expect(incomplete.coverage.tags.status).toBe('unavailable');
+    expect(incomplete.tags.items.map((i) => [i.symbol, i.tickSeq])).toEqual([['ACN', 4]]);
+    raceBeforeCommit(async () => { t.store.set(k5, tick5); await rewrite(); });
+    const res = await post(create({ moment: { ...MOMENT, toTickSeq: 4 } }));
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('tags_unavailable');
+    expect(playWrites()).toEqual([]);
+  });
+
+  it('ASTRA_REAL_SOURCE_RACE on a COMPLETE day: the writer re-merges the day between the route\'s check and the commit, the moment moves 4–5 → 5–5 — refused 409 moment_not_found, nothing written (the mutant: the transaction trusting the route\'s read)', async () => {
+    const k4 = tickKeyOf(4);
+    raceBeforeCommit(async () => {
+      const tick = structuredClone(t.store.get(k4));
+      tick.risk.stagnation.ACN = { ...tick.risk.stagnation.ACN, ticks: 0 };   // a corrected capture: check 4 no longer stalled
+      t.store.set(k4, tick);
+      await rewrite();
+    });
+    const res = await post(create());
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('moment_not_found');
+    expect(playWrites()).toEqual([]);
+    const after = t.store.get(tapeKey);
+    expect(after.coverage.tags.status).toBe('complete');
+    expect(after.tags.items.map((i) => [i.symbol, i.tickSeq])).toEqual([['ACN', 5]]);
+  });
+
+  it('a re-write between the check and the commit that leaves the day UNAVAILABLE (a check lost) is refused 409 tags_unavailable inside the transaction', async () => {
+    const k2 = tickKeyOf(2);
+    raceBeforeCommit(async () => { t.store.delete(k2); await rewrite(); });
+    const res = await post(create());
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('tags_unavailable');
+    expect(playWrites()).toEqual([]);
+    expect(t.store.get(tapeKey).coverage.tags.status).toBe('unavailable');
+  });
+
+  it('the control: an UNCHANGED day re-merged between the check and the commit still files — 200, one card, its source the moment as stored', async () => {
+    raceBeforeCommit(async () => { await rewrite(); });
+    const res = await post(create());
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card.source).toEqual({ battleId: BATTLE, etDate: D, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 });
+    expect(playWrites()).toHaveLength(1);
+  });
+});

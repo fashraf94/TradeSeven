@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 // DEPENDENCY-SURFACE GUARD (BUILD_RULES §4): cardCounter.js imports src/utils/filmRoomMoments.js, src/utils/tapeSchedule.js and
 // src/constants/filmTape.js; this import of the counter is the runtime guard that they stay Node-clean — never mocked.
 import { makeTapeDb } from '../filmTape/__fixtures__/tapeFirestore.js';
-import { tradingWeekOf, windowOf, weeklyCounts, recurrencesOf, readOwnerTapeDays, buildCounter, isOpenWatchCard, COUNTER_FIELD_MASK, COUNTER_WINDOW_DAYS } from './cardCounter.js';
+import { tradingWeekOf, windowOf, weeklyCounts, recurrencesOf, readOwnerTapeDays, readOwnerTapeWindow, unavailableDaysOf, buildCounter, isOpenWatchCard, COUNTER_FIELD_MASK, COUNTER_WINDOW_DAYS } from './cardCounter.js';
 import { createCard } from './cardStore.js';
 import { MOMENT_KEYS } from '../../../src/utils/filmRoomMoments.js';
 
@@ -124,13 +124,13 @@ describe('readOwnerTapeDays — the owner\'s days in the window, through the col
     expect(days.map((d) => [d.battleId, d.etDate, d.agentId, d.items.length])).toEqual([['b-1', '2026-10-19', A1, 1], ['b-1', '2026-10-21', A1, 0], ['b-2', '2026-10-27', A2, 1]]);
     expect(t.readLog).toEqual(['group:tape']);
   });
-  it('asks with the field mask — tags, etDate, ownerId, agentId, battleId — and nothing else', async () => {
-    expect(COUNTER_FIELD_MASK).toEqual(['tags', 'etDate', 'ownerId', 'agentId', 'battleId']);
+  it('asks with the field mask — tags, etDate, ownerId, agentId, battleId and (B2.1 B3, RH-6) coverage.tags.status — and nothing else', async () => {
+    expect(COUNTER_FIELD_MASK).toEqual(['tags', 'etDate', 'ownerId', 'agentId', 'battleId', 'coverage.tags.status']);
     const selected = [];
     const q = { where: () => q, select: (...f) => { selected.push(f); return q; }, get: async () => ({ docs: [] }) };
     const db = { collectionGroup: (name) => { selected.push([`group:${name}`]); return q; } };
     expect(await readOwnerTapeDays(db, { uid: UID, from: '2026-10-01', to: '2026-10-31' })).toEqual([]);
-    expect(selected).toEqual([['group:tape'], ['tags', 'etDate', 'ownerId', 'agentId', 'battleId']]);
+    expect(selected).toEqual([['group:tape'], ['tags', 'etDate', 'ownerId', 'agentId', 'battleId', 'coverage.tags.status']]);
   });
   it('a document that names another owner, however it got into the result, is dropped here too', async () => {
     const q = { where: () => q, select: () => q, get: async () => ({ docs: [{ data: () => tapeDoc({ battleId: 'b-x', etDate: '2026-10-20', ownerId: OTHER, items: [item('2026-10-20', 'XOM', 2)] }) }] }) };
@@ -223,5 +223,47 @@ describe('review L1-2 — the default window is floored at the earliest open Wat
     expect((await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW })).window.from).toBe('2026-06-30');
     t.store.set(`agents/${A1}/plays/w_old`, { ...t.store.get(`agents/${A1}/plays/w_old`), stage: 'card', archetypeCodeId: 'guardian' });
     expect((await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW })).window.from).toBe('2026-06-30');
+  });
+});
+
+describe('B2.1 B3 (Amendment H RH-6) — an unavailable day gives one answer: neither counted nor a recurrence, only counted as unavailable', () => {
+  const NOW = Date.parse('2026-10-28T23:00:00.000Z');
+  const payload = (over = {}) => ({ archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: 2, battleId: 'b-1', etDate: '2026-10-19', symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5, questionId: 'stalled.want', questionVersion: 1, note: 'Let it go.', route: 'watch', ...over });
+  const unavailable = (doc) => ({ ...doc, coverage: { tags: { status: 'unavailable', note: 'stalled unavailable: checks partial' } } });
+  const seed = () => makeTapeDb({
+    [`agents/${A1}`]: { ownerId: UID, archetype: 'momentum_chaser' },
+    'agentBattles/b-1/tape/2026-10-19': tapeDoc({ battleId: 'b-1', etDate: '2026-10-19', items: [item('2026-10-19', 'ACN', 4), item('2026-10-19', 'ACN', 5)] }),
+    // a later day that STORES items under an unavailable coverage — the case RH-6 names
+    'agentBattles/b-1/tape/2026-10-21': unavailable(tapeDoc({ battleId: 'b-1', etDate: '2026-10-21', items: [item('2026-10-21', 'MSFT', 2)] })),
+    'agentBattles/b-3/tape/2026-10-22': unavailable(tapeDoc({ battleId: 'b-3', etDate: '2026-10-22', items: null })),
+    'agentBattles/b-2/tape/2026-10-27': unavailable(tapeDoc({ battleId: 'b-2', etDate: '2026-10-27', agentId: A2, items: [item('2026-10-27', 'NVDA', 3)] })),
+    'agentBattles/b-4/tape/2026-10-23': tapeDoc({ battleId: 'b-4', etDate: '2026-10-23', items: [item('2026-10-23', 'XOM', 6)] }),
+  });
+
+  it('readOwnerTapeWindow: the unavailable days apart, items or none; the usable days as before', async () => {
+    const { days, unavailable: un } = await readOwnerTapeWindow(seed().db, { uid: UID, from: '2026-10-01', to: '2026-10-31' });
+    expect(days.map((d) => [d.battleId, d.etDate])).toEqual([['b-1', '2026-10-19'], ['b-4', '2026-10-23']]);
+    expect(un).toEqual([{ battleId: 'b-1', etDate: '2026-10-21', agentId: A1 }, { battleId: 'b-3', etDate: '2026-10-22', agentId: A1 }, { battleId: 'b-2', etDate: '2026-10-27', agentId: A2 }]);
+  });
+
+  it('buildCounter: the unavailable day\'s moment is no recurrence and no weekly count; the answer reports the unavailable days per agent (the mutant: the counter counting an unavailable day)', async () => {
+    const t = seed();
+    await createCard(t.db, { uid: UID, agentId: A1, opId: 'w1', payload: payload(), nowIso: '2026-10-20T02:00:00.000Z' });
+    const out = await buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW });
+    expect(out.recurrences.w1.map((x) => [x.battleId, x.etDate, x.symbol])).toEqual([['b-4', '2026-10-23', 'XOM']]);
+    expect(out.weekly).toEqual({ [A1]: { stalled: { '2026-10-19': { tags: 3, moments: 2 } } } });
+    expect(out.unavailableDays).toEqual({ [A1]: 2, [A2]: 1 });
+    expect(unavailableDaysOf([])).toEqual({});
+  });
+
+  it('a day whose situations are complete, partial or absent is not "unavailable": only the stored status says so', async () => {
+    const t = makeTapeDb({
+      'agentBattles/b-1/tape/2026-10-19': { ...tapeDoc({ battleId: 'b-1', etDate: '2026-10-19', items: [item('2026-10-19', 'ACN', 4)] }), coverage: { tags: { status: 'complete' } } },
+      'agentBattles/b-1/tape/2026-10-20': { ...tapeDoc({ battleId: 'b-1', etDate: '2026-10-20', items: [item('2026-10-20', 'ACN', 4)] }), coverage: { tags: { status: 'partial' } } },
+      'agentBattles/b-1/tape/2026-10-21': tapeDoc({ battleId: 'b-1', etDate: '2026-10-21', items: [item('2026-10-21', 'ACN', 4)] }),
+    });
+    const { days, unavailable: un } = await readOwnerTapeWindow(t.db, { uid: UID, from: '2026-10-01', to: '2026-10-31' });
+    expect(days).toHaveLength(3);
+    expect(un).toEqual([]);
   });
 });

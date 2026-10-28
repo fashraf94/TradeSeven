@@ -809,3 +809,33 @@ describe('Amendment I RI-2 (Astra B1) — a successful write wins on screen when
     expect(ledgerOf({ cards: [{ entryId: 'a', stage: 'card', shelved: false }] }, result('a', 2, 'retired'))).toEqual([{ entryId: 'a', stage: 'card', shelved: false }]);
   });
 });
+
+describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7\'s style', () => {
+  it('day 2\'s situations unavailable: day 1\'s Watch card lists no recurrence from it; "Recurrences · 1 day in this window could not be read", the count derived', async () => {
+    await open();
+    await depth('Glance');
+    // a Watch card on day 1, whose recurrences would be day 2's moments
+    m.click(m.qa('[data-day-picker] button, [data-region="day-picker"] button')[0]); await m.flush();
+    m.click(m.qa('[data-cards-region="prepared-case"] button').find((b) => b.textContent === 'Take this home')); await m.flush();
+    await atClock(`${D1}T21:00:00.000Z`, () => fileCard({ route: 'watch' }));
+    expect(m.q('[data-card-receipt]')).not.toBeNull();
+    const k2 = `agentBattles/${B}/tape/${D2}`;
+    const before = await buildCounter(state.db, { uid: state.uid, agentId: AGENT, nowMs: COUNTER_NOW });
+    const watch = Object.keys(before.recurrences)[0];
+    expect(before.recurrences[watch].length).toBeGreaterThan(0);   // day 2's moments recur, while day 2 is readable
+    t.store.set(k2, { ...fx.tape2, coverage: { ...fx.tape2.coverage, tags: { ...fx.tape2.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
+    m.teardown(); m.setup();
+    await open();
+    const since = region('since-last-time');
+    expect(since.querySelectorAll('[data-recurrence-row]')).toHaveLength(0);
+    const line = since.querySelector('[data-unavailable-days]');
+    expect(line.textContent.replace(/\s+/g, ' ')).toBe('Recurrences · 1D day in this window could not be read');
+    expect(line.querySelector('[data-num-aggregate]').getAttribute('data-num-class')).toBe('derived');
+    await sweepAll(fx.tape2, 'unavailable day', { windowDays: [fx.tape1, t.store.get(k2)] });
+  });
+
+  it('no unavailable day: no such line', async () => {
+    await open();
+    expect(m.q('[data-unavailable-days]')).toBeNull();
+  });
+});

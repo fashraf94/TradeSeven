@@ -89,7 +89,7 @@ const COPY_KEYS = [
   'cards.refusals.version_conflict', 'cards.refusals.shelved', 'cards.refusals.untaped', 'cards.refusals.archetype_changed', 'cards.refusals.op_conflict', 'cards.refusals.tape_unreadable', 'cards.refusals.tape_not_found',
   'cards.refusals.tags_unavailable', 'cards.refusals.question_not_on_menu', 'cards.refusals.illegal_transition', 'cards.refusals.forbidden', 'cards.refusals.not_found', 'cards.refusals.default', 'cards.refusals.retireDefault', 'cards.filedCard', 'cards.situation', 'cards.on',
   'cards.route', 'cards.stage', 'cards.stageWords.card', 'cards.stageWords.nominated', 'cards.stageWords.retired', 'cards.stateNotes.retired', 'cards.stateNotes.shelved', 'cards.retire', 'cards.retiring', 'cards.recurrences',
-  'cards.noRecurrence', 'cards.otherBattle', 'cards.noWatchCards', 'cards.myCards', 'cards.groups.active', 'cards.groups.shelved', 'cards.groups.retired', 'cards.groups.other', 'cards.noCards', 'cards.shelvedExplainer',
+  'cards.noRecurrence', 'cards.recurrencesWord', 'cards.unavailableDays()', 'cards.otherBattle', 'cards.noWatchCards', 'cards.myCards', 'cards.groups.active', 'cards.groups.shelved', 'cards.groups.retired', 'cards.groups.other', 'cards.noCards', 'cards.shelvedExplainer',
   'cards.loading', 'cards.readError', 'cards.openCard',
 ];
 
@@ -117,6 +117,7 @@ const SAMPLE_CALLS = {
   'sector()': [['XLK']],
   'meetingAt()': [['2:15 PM'], ['Sep 22, 8:30 PM']],
   'coverageSummary.notCharted()': [[1], [2]],
+  'cards.unavailableDays()': [[1], [3]],
 };
 
 const COPY_EXPORTS = ['CLASS_LETTER', 'DIRECTIVE_EXPLAINER', 'FILM_ROOM_COPY', 'FORBIDDEN_WORDS', 'LOCKED_BASIS_NOTE', 'PROVENANCE_LABELS', 'REPLAY_SENTENCE', 'REPLAY_VERSION_NOTE'];
@@ -221,9 +222,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 352 copy keys, 498 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(352);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
-    expect(inventory()).toHaveLength(498);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
+  it('the inventory\'s size is pinned (the build report states it): 354 copy keys, 501 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(354);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
+    expect(inventory()).toHaveLength(501);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
   });
 
   it('B2.1 A8 (A2F1-7): every fixed-digit exemption is bound to its copy key — the harness\x27s pinned text is production\x27s at that key, and every entry of the inventory that spells a digit is pinned', () => {

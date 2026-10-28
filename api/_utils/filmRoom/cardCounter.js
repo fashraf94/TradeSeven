@@ -36,8 +36,12 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
 const msOf = (v) => { if (typeof v !== 'string') return null; const ms = Date.parse(v); return Number.isFinite(ms) ? ms : null; };
 
-/** RG-4 — the fields the counter reads of a tape day, and no other. */
-export const COUNTER_FIELD_MASK = Object.freeze(['tags', 'etDate', 'ownerId', 'agentId', 'battleId']);
+/**
+ * RG-4 — the fields the counter reads of a tape day, and no other. B2.1 B3 (Amendment H RH-6) adds the situations'
+ * coverage STATUS alone (`coverage.tags.status`, never its note or sources): a day whose situations are unavailable
+ * gives one answer everywhere — it is neither counted nor listed as a recurrence, only counted as unavailable.
+ */
+export const COUNTER_FIELD_MASK = Object.freeze(['tags', 'etDate', 'ownerId', 'agentId', 'battleId', 'coverage.tags.status']);
 /**
  * The default window: the last 120 calendar days of ET dates, ending today — this build's own choice of a bounded
  * read (no ruling fixes it; ruling 18's "120 days of film" limits DRILLS, not counting — review R1-2). It is floored at
@@ -81,25 +85,43 @@ export function windowOf(nowMs, { from = null, to = null } = {}) {
   return { from, to };
 }
 
+const byDay = (a, b) => (a.etDate < b.etDate ? -1 : a.etDate > b.etDate ? 1 : a.battleId < b.battleId ? -1 : 1);
+
 /**
- * The owner's tape days in the window, each as `{ battleId, etDate, agentId, items }`
- * — only days that STORE tag items (a day the tagger could not tag, a skipped
- * mode, a failed day store none and are left out). Read with the field mask.
+ * The owner's tape days in the window, read once with the field mask: `days`, each `{ battleId, etDate, agentId,
+ * items }` — only days that STORE tag items and whose situations are not unavailable (a day the tagger could not tag,
+ * a skipped mode, a failed day store none and are left out) — and `unavailable`, each `{ battleId, etDate, agentId }`:
+ * the days whose `coverage.tags` is unavailable (B2.1 B3, RH-6), items or none. Both oldest first.
  */
-export async function readOwnerTapeDays(db, { uid, from, to }) {
+export async function readOwnerTapeWindow(db, { uid, from, to }) {
   const snap = await db.collectionGroup(TAPE_SUBCOLLECTION)
     .where('ownerId', '==', uid).where('etDate', '>=', from).where('etDate', '<=', to)
     .select(...COUNTER_FIELD_MASK).get();
-  const out = [];
+  const days = [];
+  const unavailable = [];
   for (const d of snap?.docs || []) {
     const data = typeof d.data === 'function' ? d.data() : d.data;
     if (!isObj(data) || data.ownerId !== uid) continue;
     if (!isEtDate(data.etDate) || !str(data.agentId) || !str(data.battleId)) continue;
+    // RH-6: one answer everywhere — an unavailable day offers no moment, so it is neither counted nor a recurrence
+    if (data.coverage?.tags?.status === 'unavailable') { unavailable.push({ battleId: data.battleId, etDate: data.etDate, agentId: data.agentId }); continue; }
     const items = Array.isArray(data.tags?.items) ? data.tags.items : null;
     if (!items) continue;
-    out.push({ battleId: data.battleId, etDate: data.etDate, agentId: data.agentId, items });
+    days.push({ battleId: data.battleId, etDate: data.etDate, agentId: data.agentId, items });
   }
-  return out.sort((a, b) => (a.etDate < b.etDate ? -1 : a.etDate > b.etDate ? 1 : a.battleId < b.battleId ? -1 : 1));
+  return { days: days.sort(byDay), unavailable: unavailable.sort(byDay) };
+}
+
+/** The usable days alone (readOwnerTapeWindow's `days`). */
+export async function readOwnerTapeDays(db, range) {
+  return (await readOwnerTapeWindow(db, range)).days;
+}
+
+/** RH-6 — how many days in the window could not be read, per agent: `{ [agentId]: n }`. Derived. */
+export function unavailableDaysOf(unavailable) {
+  const out = {};
+  for (const d of unavailable) out[d.agentId] = (out[d.agentId] ?? 0) + 1;
+  return out;
 }
 
 /**
@@ -157,7 +179,7 @@ export function recurrencesOf(card, days) {
 /**
  * The counter's whole answer for one owner and one agent.
  *
- * @returns {Promise<{ agentId, archetypeCodeId, window: { from, to }, weekly, cards, open, cap, recurrences: { [entryId]: object[] } }>}
+ * @returns {Promise<{ agentId, archetypeCodeId, window: { from, to }, weekly, cards, open, cap, recurrences: { [entryId]: object[] }, unavailableDays: { [agentId]: number } }>}
  */
 export async function buildCounter(db, { uid, agentId, nowMs, from = null, to = null }) {
   const asked = windowOf(nowMs, { from, to });
@@ -172,12 +194,14 @@ export async function buildCounter(db, { uid, agentId, nowMs, from = null, to = 
     const floor = daysBefore(window.to, COUNTER_WINDOW_MAX_DAYS - 1);
     if (earliest && earliest < window.from) window.from = earliest < floor ? floor : earliest;
   }
-  const days = await readOwnerTapeDays(db, { uid, from: window.from, to: window.to });
+  const { days, unavailable } = await readOwnerTapeWindow(db, { uid, from: window.from, to: window.to });
   const recurrences = {};
   for (const card of ledger.cards) if (isOpenWatchCard(card, ledger.archetypeCodeId)) recurrences[card.entryId] = recurrencesOf(card, days);
   return {
     agentId, archetypeCodeId: ledger.archetypeCodeId, window, weekly: weeklyCounts(days),
     cards: ledger.cards, open: ledger.open, cap: ledger.cap, recurrences,
+    // RH-6: the days in the window whose situations could not be read, per agent (the screen says so, RJ-7's style)
+    unavailableDays: unavailableDaysOf(unavailable),
   };
 }
 

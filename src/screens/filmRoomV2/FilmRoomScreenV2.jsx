@@ -318,7 +318,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
         </div>
         {cardsOn ? (
           <div data-cards-regions="header" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <SinceLastTime day={day} battleId={battleId} counter={cards.counter} onOpenMoment={openMoment} onShowCard={showCard} />
+            <SinceLastTime day={day} battleId={battleId} agentId={agentId} counter={cards.counter} onOpenMoment={openMoment} onShowCard={showCard} />
             {written ? <PreparedCase tape={tape} onTakeHome={takeHome} /> : null}
           </div>
         ) : <Reserved region="header" names={COPY.reservedHeader} />}

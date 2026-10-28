@@ -86,6 +86,9 @@ export const SCREEN_AGGREGATE_CLASSES = Object.freeze({
   // B2.1 A7 (Amendment J RJ-7): Glance's coverage line counts the symbols the candle pass did not chart — a count of
   // stored rows (coverage.series.notCharted), so derived.
   'count(coverage.series.notCharted[])': 'derived',
+  // B2.1 B3 (Amendment H RH-6): the counter's count of the days in its window whose situations could not be read —
+  // a count of tape days, derived
+  'count(tape days with situations unavailable)': 'derived',
 });
 
 /**
