@@ -122,14 +122,18 @@ describe('the record (V3 §5, §7)', () => {
     expect(JSON.stringify(r)).not.toMatch(/owner|battleId/);
   });
 
-  it('the holding never reads the entry verdict: the same evidence gives the same chart leg whether or not an entry record exists', () => {
-    const ev = evidenceOf(buildBars({ patch: (b) => { b[2].low = 97.625; } }));
-    const entry = evaluateTfEntry(ev);
-    expect(entry.verdict).toBe('valid');
-    const withEntry = evaluateTfHolding({ ...ev, entry }, { anchorSwingLow: 90 });
-    const without = evaluateTfHolding(ev, { anchorSwingLow: 90 });
-    expect(withEntry).toEqual(without);
-    expect(without.chartLeg).toBe('intact');
+  it('the holding never reads the entry verdict: the same evidence gives the same chart leg with a valid, an invalid or no entry record attached', () => {
+    const valid = evidenceOf(buildBars({ patch: (b) => { b[2].low = 97.625; } }));
+    const validEntry = evaluateTfEntry(valid);
+    expect(validEntry.verdict).toBe('valid');
+    expect(evaluateTfHolding({ ...valid, entry: validEntry }, { anchorSwingLow: 90 })).toEqual(evaluateTfHolding(valid, { anchorSwingLow: 90 }));
+    const extended = SCENARIOS.holding_extended_series_intact.build();
+    const invalidEntry = evaluateTfEntry(extended);
+    expect([invalidEntry.verdict, invalidEntry.reason]).toEqual(['invalid', 'extended']);
+    const withInvalid = evaluateTfHolding({ ...extended, entry: invalidEntry, verdict: 'invalid', reason: 'extended' }, { anchorSwingLow: 90 });
+    expect(withInvalid).toEqual(evaluateTfHolding(extended, { anchorSwingLow: 90 }));
+    expect(withInvalid.chartLeg).toBe('intact');
+    expect(withInvalid).not.toHaveProperty('verdict');
   });
 
   it.each(HOLDING_SCENARIOS)('%s is deterministic and leaves its frozen input unmutated', (name) => {
