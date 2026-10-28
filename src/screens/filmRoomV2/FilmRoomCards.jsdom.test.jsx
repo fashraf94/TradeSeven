@@ -56,7 +56,7 @@ import { makeTapeDb } from '../../../api/_utils/filmTape/__fixtures__/tapeFirest
 import { seedDay, OWNER, AGENT } from '../../../api/_utils/filmTape/__fixtures__/tapeFixtures.js';
 import { stalledDay } from '../../../api/_utils/filmTape/__fixtures__/tagFixtures.js';
 import { buildCounter } from '../../../api/_utils/filmRoom/cardCounter.js';
-import { retireCard } from '../../../api/_utils/filmRoom/cardStore.js';
+import { retireCard, createCard } from '../../../api/_utils/filmRoom/cardStore.js';
 import cardHandler from '../../../api/film-room/card.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
@@ -819,6 +819,41 @@ describe('Amendment I RI-2 (Astra B1) — a successful write wins on screen when
 });
 
 describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no recurrence from it, and the count of such days said in RJ-7\'s style', () => {
+  /** A card filed straight into the ledger (the real store) from day 1's moment, before day 2 — a Watch card's list is what the line explains (Amendment K RK-10). */
+  const seedCard = (route) => createCard(state.db, {
+    uid: OWNER, agentId: AGENT, opId: `seed_${route}`, nowIso: `${D1}T23:00:00.000Z`,
+    payload: { archetypeCodeId: 'momentum_chaser', situationId: 'stalled', situationVersion: fx.tape1.tags.items[0].version, battleId: B, etDate: D1, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5, questionId: 'stalled.want', questionVersion: 1, note: 'Watch this.', route },
+  });
+  const unreadable = (tape) => ({ ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
+
+  it('Amendment K RK-10 — no open Watch card: no line, however many days could not be read — none filed, a Practice card, a retired Watch card (the mutant: the unavailable-day line with no open Watch card)', async () => {
+    for (const [d, tape] of [[D1, fx.tape1], [D2, fx.tape2]]) t.store.set(`agentBattles/${B}/tape/${d}`, unreadable(tape));
+    expect((await buildCounter(state.db, { uid: state.uid, agentId: AGENT, nowMs: COUNTER_NOW })).unavailableDays[AGENT]).toBe(2);
+    await open();
+    expect(region('since-last-time').textContent).toContain('No open Watch card.');
+    expect(m.q('[data-unavailable-days]')).toBeNull();
+    await seedCard('drill');
+    m.teardown(); m.setup();
+    await open();
+    expect(m.q('[data-my-card="seed_drill"]')).toBeTruthy();
+    expect(m.q('[data-unavailable-days]')).toBeNull();
+    await seedCard('watch');
+    await retireCard(state.db, { uid: OWNER, agentId: AGENT, entryId: 'seed_watch', opId: 'r_seed', expectedVersion: 1, nowIso: `${D2}T23:00:00.000Z` });
+    m.teardown(); m.setup();
+    await open();
+    expect(m.q('[data-my-cards-group="retired"] [data-my-card="seed_watch"]')).toBeTruthy();
+    expect(m.q('[data-unavailable-days]')).toBeNull();
+  });
+
+  it('RK-10 — one open Watch card: the line as built, beside its list', async () => {
+    await seedCard('watch');
+    for (const [d, tape] of [[D1, fx.tape1], [D2, fx.tape2]]) t.store.set(`agentBattles/${B}/tape/${d}`, unreadable(tape));
+    await open();
+    const since = region('since-last-time');
+    expect(since.querySelector('[data-watch-card="seed_watch"]')).toBeTruthy();
+    expect(since.querySelector('[data-unavailable-days]').textContent.replace(/\s+/g, ' ')).toBe('Recurrences · 2D days in this window could not be read');
+  });
+
   it('day 2\'s situations unavailable: day 1\'s Watch card lists no recurrence from it; "Recurrences · 1 day in this window could not be read", the count derived', async () => {
     await open();
     await depth('Glance');
@@ -848,6 +883,7 @@ describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no r
   });
 
   it('review SPR-C-4 — another agent\'s unavailable days are that agent\'s: the line counts the battle\'s own agent alone', async () => {
+    await seedCard('watch');   // RK-10: the line shows only beside an open Watch card
     const other = 'agent-other';
     for (const d of [D1, D2]) {
       t.store.set(`agentBattles/b-other-agent/tape/${d}`, { ...fx.tape2, etDate: d, battleId: 'b-other-agent', agentId: other, coverage: { ...fx.tape2.coverage, tags: { ...fx.tape2.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
@@ -891,6 +927,7 @@ describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no r
   });
 
   it('review SPR-T-8 — two of its own: RJ-7\'s plural (the mutant: the line always singular)', async () => {
+    await seedCard('watch');   // RK-10: beside an open Watch card
     for (const [d, tape] of [[D1, fx.tape1], [D2, fx.tape2]]) {
       t.store.set(`agentBattles/${B}/tape/${d}`, { ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
     }

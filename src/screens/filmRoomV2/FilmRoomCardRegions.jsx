@@ -416,7 +416,8 @@ export function SinceLastTime({ day = null, battleId = null, counter, onOpenMome
       <span style={{ ...eyebrow, color: C.teal }}>{T.sinceLastTime}</span>
       {loading ? <span style={foot}>{T.loading}</span> : null}
       {counter?.status === 'error' ? <span data-cards-read-error="" style={foot}>{T.readError}</span> : null}
-      {unread > 0 ? <span data-unavailable-days="" style={{ ...foot, display: 'inline-flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>{T.recurrencesWord} · <AggNum value={unread} aggregate="count(tape days with situations unavailable)" size={10} /> {T.unavailableDays(unread)}</span> : null}
+      {/* Amendment K RK-10: the line explains a Watch card's list, so it shows only beside one — with no open Watch card, no line */}
+      {unread > 0 && watching.length > 0 ? <span data-unavailable-days="" style={{ ...foot, display: 'inline-flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>{T.recurrencesWord} · <AggNum value={unread} aggregate="count(tape days with situations unavailable)" size={10} /> {T.unavailableDays(unread)}</span> : null}
       {data && !watching.length ? <span style={foot}>{T.noWatchCards}</span> : null}
       {watching.map(({ card: c, recurrences }) => (
         <div key={c.entryId} data-watch-card={c.entryId} style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 0', borderTop: `1px solid ${C.hair}` }}>
