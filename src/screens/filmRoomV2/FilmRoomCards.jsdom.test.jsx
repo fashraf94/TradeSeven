@@ -37,11 +37,14 @@ process.env.TZ = 'UTC';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 
-const state = vi.hoisted(() => ({ cards: 'on', db: null, uid: 'owner-1' }));
+const state = vi.hoisted(() => ({ cards: 'on', db: null, uid: 'owner-1', characterTab: true, tempoDial: true }));
 vi.mock('../../config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_ROOM_CARDS_MODE() { return state.cards; },
   get FILM_TAPE_WRITE_ENABLED() { return true; },
+  // Amendment K RK-2: Set's link needs the Forge's Character tab and the tempo dial on (both live); a row turns each off
+  get RELEASE3_CHARACTER_TAB_ENABLED() { return state.characterTab; },
+  get TEMPO_DIAL_ENABLED() { return state.tempoDial; },
 }));
 vi.mock('../../../api/_utils/security.js', () => ({ applySecurityMiddleware: () => false }));
 vi.mock('../../../api/_utils/authMiddleware.js', () => ({ requireAuth: async () => ({ uid: state.uid }) }));
@@ -58,7 +61,7 @@ import cardHandler from '../../../api/film-room/card.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
 import { ledgerOf } from './filmRoomCards';
-import { setRuleOf } from './FilmRoomCardRegions';
+import { setRuleOf, setStateOf } from './FilmRoomCardRegions';
 import { FORGE_AREAS, forgeAreaOf } from '../../components/CommandCenter/hubChrome';
 import { OPEN_BATTLE_REVIEW_EVENT } from '../../components/Forge/Watchlist/ideaNavigation';
 import {
@@ -99,7 +102,16 @@ beforeAll(async () => {
   await writeTapeDay('b-recomputed', D1, { db: tr.db, now: NIGHT(D1) });
   const recomputed = tr.store.get(`agentBattles/b-recomputed/tape/${D1}`);
   expect(Object.values(recomputed.tags.inputs.holdingBasis).every((b) => b === 'recomputed')).toBe(true);
-  fx = { store: Object.fromEntries([...t.store.entries()]), battle: d2.battle, tape1, tape2, recomputed, recomputedBattle: r1.battle };
+  // Amendment K RK-2: day 2 again, run with a tempo the player set (agentContext.dials) — the ranked agent's battle; the
+  // fixture's own days record none (tags.inputs.tempoDesired null), as a casual clone's battle does
+  const d2t = await stalledDay({ battleId: B, recordStagnation: true, etDate: D2, dials: { tempo: 'standard' }, over: { ...two, status: 'completed', completedAt: `${D2}T20:05:00.000Z` } });
+  const tt = makeTapeDb(seedDay({}, d2t));
+  await writeTapeDay(B, D2, { db: tt.db, now: NIGHT(D2) });
+  const tape2Tempo = tt.store.get(`agentBattles/${B}/tape/${D2}`);
+  expect(tape2.tags.inputs.tempoDesired).toBeNull();
+  expect(tape2Tempo.tags.inputs.tempoDesired).toBe('standard');
+  expect(momentsOf(tape2Tempo.tags.items)).toEqual(momentsOf(tape2.tags.items));
+  fx = { store: Object.fromEntries([...t.store.entries()]), battle: d2.battle, tape1, tape2, tape2Tempo, recomputed, recomputedBattle: r1.battle };
 });
 
 const m = mounter();
@@ -121,7 +133,7 @@ const cardBodies = () => api.calls.filter((c) => c[0] === 'card').map((c) => c[1
 let t; let api; let lastBattle = null;
 const battleOf = (over = {}) => ({ id: B, agentBattleId: B, ownerId: OWNER, agentId: AGENT, status: 'completed', completedAt: `${D2}T20:05:00.000Z`, timing: { tradingDays: [D1, D2] }, agentContext: { agentName: 'Momentum chaser', archetype: 'momentum_chaser' }, gameMode: 'baggerbomb_agent', ...over });
 beforeEach(() => {
-  state.cards = 'on'; state.uid = OWNER;
+  state.cards = 'on'; state.uid = OWNER; state.characterTab = true; state.tempoDial = true;
   t = makeTapeDb({ ...fx.store, [`agents/${AGENT}`]: { ownerId: OWNER, name: 'Aurora', archetype: 'momentum_chaser' } });
   state.db = t.db;
   api = apiOf();
@@ -887,49 +899,125 @@ describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no r
   });
 });
 
-describe('B2.1 B1 (Amendment H RH-1; Amendment J RJ-8) — Set\'s link to the tempo dial, by the day\'s stagnation rule', () => {
+describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and its link to the tempo dial on the filed card\'s receipt', () => {
   const RULE_OFF = 'You change the setting yourself; this card changes nothing. No setting changes this situation for this archetype.';
-  async function formOn(tape, onOpenForge) {
+  const NO_TEMPO = 'You change the setting yourself; this card changes nothing. No tempo setting was recorded for this battle.';
+  /** The screen on `tape`'s day (stored for the handler too), the form opened on its first moment; `file` files a Set card. */
+  async function setOn(tape, onOpenForge, { file = true } = {}) {
+    t.store.set(`agentBattles/${B}/tape/${tape.etDate}`, tape);
     lastBattle = battleOf();
-    m.render(<FilmRoomScreenV2 battle={lastBattle} onBack={() => {}} viewerId="viewer-1" readers={readersOf({ [D1]: tape, [D2]: tape.etDate === D2 ? tape : fx.tape2 }, [])} nowMs={NOW} cardsApi={api} onOpenForge={onOpenForge} />);
+    m.render(<FilmRoomScreenV2 battle={lastBattle} onBack={() => {}} viewerId="viewer-1" readers={readersOf({ [D1]: fx.tape1, [D2]: fx.tape2, [tape.etDate]: tape }, [])} nowMs={NOW} cardsApi={api} onOpenForge={onOpenForge} />);
     await m.flush(8);
+    if (tape.etDate === D1) { m.click(m.qa('[data-region="day-picker"] button')[0]); await m.flush(8); }
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
+    if (file) await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
   }
+  const formSet = () => m.q('[data-route-note="set"]').textContent;
+  const receiptNext = () => m.q('[data-card-receipt] [data-card-next]').textContent;
 
   it('review SPR-T-9 — the rule as stored, exactly: true is on, false is off, anything else (a 1, a string) unknown', () => {
     const ruleOf = (enabled) => setRuleOf({ tags: { inputs: { forcedRotation: { enabled } } } });
     expect([ruleOf(true), ruleOf(false), ruleOf(1), ruleOf('true'), ruleOf(0), setRuleOf(null)]).toEqual(['on', 'off', 'unknown', 'unknown', 'unknown', 'unknown']);
   });
 
-  it('the rule on (the day\'s tags.inputs): RG-5\'s sentence, and "Tempo dial · Forge workshop", which opens the Forge on its Character area — the hub\'s own door, nothing else', async () => {
+  it('RK-2 — setStateOf: the link only when the rule is on, a tempo is recorded and both Forge flags are on; each condition alone turns it off', () => {
+    const day = (enabled, tempoDesired) => ({ tags: { inputs: { forcedRotation: enabled === undefined ? undefined : { enabled }, tempoDesired } } });
+    expect(setStateOf(day(true, 'standard'))).toEqual({ say: null, link: true });
+    expect(setStateOf(day(false, 'standard'))).toEqual({ say: 'ruleOff', link: false });
+    expect(setStateOf(day(true, null))).toEqual({ say: 'noTempo', link: false });
+    expect(setStateOf(day(true, undefined))).toEqual({ say: 'noTempo', link: false });
+    expect(setStateOf(day(undefined, 'standard'))).toEqual({ say: null, link: false });
+    state.characterTab = false;
+    expect(setStateOf(day(true, 'standard'))).toEqual({ say: null, link: false });
+    state.characterTab = true; state.tempoDial = false;
+    expect(setStateOf(day(true, 'standard'))).toEqual({ say: null, link: false });
+  });
+
+  it('all of RK-2\'s conditions hold: the FORM says RG-5\'s sentence with no link (RK-3); the filed card\'s RECEIPT holds "Tempo dial · Forge workshop", which opens the Forge on its Character area — the hub\'s own door, nothing filed (the mutant: the link inside the form)', async () => {
     const asked = [];
-    await formOn(fx.tape2, (request) => asked.push(request));
-    expect(fx.tape2.tags.inputs.forcedRotation.enabled).toBe(true);
-    expect(m.q('[data-route-note="set"]').textContent).toBe(RG5.set);
-    const link = m.q('[data-set-link] button');
+    await setOn(fx.tape2Tempo, (request) => asked.push(request), { file: false });
+    expect(fx.tape2Tempo.tags.inputs.forcedRotation.enabled).toBe(true);
+    expect(formSet()).toBe(RG5.set);
+    expect(m.q('[data-card-form] [data-set-link]')).toBeNull();
+    expect(m.q('[data-set-link]')).toBeNull();
+    await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
+    expect(receiptNext()).toBe(RG5.set);
+    const link = m.q('[data-card-receipt] [data-set-link] button');
     expect(link.textContent).toBe('Tempo dial · Forge workshop');
+    const filed = cardBodies().length;
     m.click(link);
     expect(asked).toEqual([{ area: 'traits' }]);
     expect(forgeAreaOf(asked[0])).toBe(FORGE_AREAS.CHARACTER);   // the Film Room holds the area as a value (the hub's mount guard): this pins it to the hub's own
-    expect(cardBodies()).toEqual([]);   // the link files nothing
-    await sweepAll(fx.tape2, 'set link');
+    expect(cardBodies()).toHaveLength(filed);   // the link files nothing
+    await sweepAll(fx.tape2Tempo, 'set link');
   });
 
-  it('the rule off (an archetype whose stagnation rule is off): RJ-8\'s no-link sentence, and no link (the mutant: Set linking to the dial with the rule off)', async () => {
-    const off = structuredClone(fx.tape2);
+  it('the casual day — the rule on, no tempo recorded (tempoDesired null, the fixture\'s own day): RK-2\'s sentence on the form and the receipt, and no link anywhere (the mutant: Set linking with tempoDesired null)', async () => {
+    await setOn(fx.tape2, () => {}, { file: false });
+    expect(fx.tape2.tags.inputs.forcedRotation.enabled).toBe(true);
+    expect(formSet()).toBe(NO_TEMPO);
+    await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
+    expect(receiptNext()).toBe(NO_TEMPO);
+    expect(m.q('[data-set-link]')).toBeNull();
+    await sweepAll(fx.tape2, 'no tempo');
+  });
+
+  it('each condition on its own turns the receipt\'s link off: the rule off (RJ-8\'s sentence), either Forge flag off (RG-5\'s sentence alone) (the mutants: Set linking with the rule off, or with either Forge flag off)', async () => {
+    const off = structuredClone(fx.tape2Tempo);
     off.tags.inputs.forcedRotation.enabled = false;
-    await formOn(off, () => {});
-    expect(m.q('[data-route-note="set"]').textContent).toBe(RULE_OFF);
+    await setOn(off, () => {});
+    expect(receiptNext()).toBe(RULE_OFF);
+    expect(m.q('[data-set-link]')).toBeNull();
+    for (const flag of ['characterTab', 'tempoDial']) {
+      m.teardown(); m.setup();
+      state.characterTab = flag !== 'characterTab'; state.tempoDial = flag !== 'tempoDial';
+      await setOn(fx.tape2Tempo, () => {});
+      expect(receiptNext(), flag).toBe(RG5.set);
+      expect(m.q('[data-set-link]'), flag).toBeNull();
+    }
+    // the control: both back on, the same day's Set card links
+    m.teardown(); m.setup();
+    state.characterTab = true; state.tempoDial = true;
+    await setOn(fx.tape2Tempo, () => {});
+    expect(m.q('[data-card-receipt] [data-set-link] button')).toBeTruthy();
+  });
+
+  it('the rule off on the form: RJ-8\'s no-link sentence, no link', async () => {
+    const off = structuredClone(fx.tape2Tempo);
+    off.tags.inputs.forcedRotation.enabled = false;
+    await setOn(off, () => {}, { file: false });
+    expect(formSet()).toBe(RULE_OFF);
     expect(m.q('[data-set-link]')).toBeNull();
     await sweepAll(off, 'rule off');
   });
 
-  it('a tape that stores no such input: RG-5\'s sentence alone — neither the link nor "no setting changes it"', async () => {
-    const unknown = structuredClone(fx.tape2);
+  it('a tape that stores no such input: RG-5\'s sentence alone, on the form and the receipt — neither the link nor any further words', async () => {
+    const unknown = structuredClone(fx.tape2Tempo);
     delete unknown.tags.inputs.forcedRotation;
-    await formOn(unknown, () => {});
-    expect(m.q('[data-route-note="set"]').textContent).toBe(RG5.set);
+    await setOn(unknown, () => {}, { file: false });
+    expect(formSet()).toBe(RG5.set);
+    await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
+    expect(receiptNext()).toBe(RG5.set);
+    expect(m.q('[data-set-link]')).toBeNull();
+  });
+
+  it('a Set card\'s receipt shown from another day (My cards) cannot judge its source day: RG-5\'s sentence alone, no link; back on its own day, the link', async () => {
+    await setOn(fx.tape2Tempo, () => {});
+    expect(m.q('[data-card-receipt] [data-set-link]')).toBeTruthy();
+    m.click(m.qa('[data-region="day-picker"] button')[0]);   // day 1: the receipt closes with the day
+    await m.flush(8);
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush(4);
+    expect(receiptNext()).toBe(RG5.set);
+    expect(m.q('[data-set-link]')).toBeNull();
+  });
+
+  it('a retired Set card\'s receipt says nothing happens next, and holds no link', async () => {
+    await setOn(fx.tape2Tempo, () => {});
+    m.click(m.buttons('Retire')[0]);
+    await m.flush(10);
+    expect(receiptNext()).toBe('Retired: nothing happens next.');
     expect(m.q('[data-set-link]')).toBeNull();
   });
 

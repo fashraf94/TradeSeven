@@ -322,6 +322,9 @@ export const FILM_ROOM_COPY = Object.freeze({
     // reaches this situation — the tempo dial, in the Forge workshop; with it off, it says no setting changes it
     setTempoLink: 'Tempo dial · Forge workshop',
     setRuleOff: 'No setting changes this situation for this archetype.',
+    // Build B Amendment K RK-2: the rule on, but the tape records no tempo the battle ran with (a casual clone's battle
+    // runs at the default tempo; the clone inherits no dial) — said after RG-5's sentence, with no link
+    setNoTempo: 'No tempo setting was recorded for this battle.',
     openCards: 'Open cards',
     // the count line before the counter has answered, and when it could not: words, no number (R14)
     openCountLoading: 'Open cards · still loading',
