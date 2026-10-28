@@ -10,11 +10,12 @@
 // Dependency-surface guard (BUILD_RULES §4): the route, the request boundary,
 // the store, the moments helper and the tape writer are the real modules;
 // only the security middleware, the auth middleware, the Admin SDK handle and
-// the two flags are doubled.
+// the two flags are doubled — and the question menu, as a getter over the real
+// one that a single row (review SPR-T-1) points at a bumped copy.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 
-const state = vi.hoisted(() => ({ mode: 'on', uid: 'owner-1', authFails: false, middlewareHandles: false, db: null, middlewareCalls: [] }));
+const state = vi.hoisted(() => ({ mode: 'on', uid: 'owner-1', authFails: false, middlewareHandles: false, db: null, middlewareCalls: [], menu: null }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_ROOM_CARDS_MODE() { return state.mode; },
@@ -28,6 +29,10 @@ vi.mock('../_utils/authMiddleware.js', () => ({
   },
 }));
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => state.db }));
+vi.mock('../../src/data/situationQuestions.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, get SITUATION_QUESTIONS() { return state.menu ?? real.SITUATION_QUESTIONS; } };
+});
 
 const { default: handler, CARD_RATE_LIMIT, verifySourceIn } = await import('./card.js');
 const { writeTapeDay } = await import('../_utils/filmTape/writeTapeDay.js');
@@ -36,6 +41,7 @@ const { seedDay, OWNER, AGENT } = await import('../_utils/filmTape/__fixtures__/
 const { stalledDay } = await import('../_utils/filmTape/__fixtures__/tagFixtures.js');
 const { momentsOf } = await import('../../src/utils/filmRoomMoments.js');
 const { CARD_ROUTE_COPY } = await import('../_utils/filmRoom/cardStore.js');
+const { SITUATION_QUESTIONS: MENU } = await import('../../src/data/situationQuestions.js');
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
 
@@ -67,7 +73,7 @@ const create = (over = {}) => ({ op: 'create', opId: 'op_1', battleId: BATTLE, e
 
 let t;
 beforeEach(() => {
-  state.mode = 'on'; state.uid = OWNER; state.authFails = false; state.middlewareHandles = false; state.middlewareCalls = [];
+  state.mode = 'on'; state.uid = OWNER; state.authFails = false; state.middlewareHandles = false; state.middlewareCalls = []; state.menu = null;
   process.env.COCKPIT_ALLOWLIST_UIDS = OWNER;
   t = makeTapeDb({
     ...fixture.store,
@@ -474,6 +480,28 @@ describe('B2.1 B3 — RH-6: an unavailable day offers no moment; RI-3: the sourc
     expect(moved.statusCode).toBe(200);
     expect(moved.body.idempotent).toBe(true);
     expect(playWrites()).toHaveLength(1);
+  });
+
+  it('review SPR-T-1 — the replay answers for every refusal a changed day or menu can bring: the question\'s version moved on, the day\'s archetype gone, the tape gone — each re-tap a 200 idempotent replay of the one card', async () => {
+    const first = await post(create({ questionVersion: 1 }));
+    expect(first.statusCode).toBe(200);
+    const tape = t.store.get(tapeKey);
+    const replays = async (why) => {
+      const again = await post(create({ questionVersion: 1 }));
+      expect([again.statusCode, again.body.idempotent], why).toEqual([200, true]);
+      expect(again.body.card, why).toEqual(first.body.card);
+      expect(playWrites(), why).toHaveLength(1);
+    };
+    state.menu = MENU.map((q) => (q.id === 'stalled.want' ? { ...q, version: 2 } : q));
+    expect((await post(create({ opId: 'op_7', questionVersion: 1 }))).body.error).toBe('question_not_on_menu');
+    await replays('question_not_on_menu');
+    state.menu = null;
+    t.store.set(tapeKey, { ...tape, tags: { ...tape.tags, inputs: { ...tape.tags.inputs, archetypeCodeId: null } } });
+    expect((await post(create({ opId: 'op_8', questionVersion: 1 }))).body.error).toBe('archetype_unknown');
+    await replays('archetype_unknown');
+    t.store.delete(tapeKey);
+    expect((await post(create({ opId: 'op_6', questionVersion: 1 }))).body.error).toBe('tape_not_found');
+    await replays('tape_not_found');
   });
 
   it('review SPR-RC-1 — a contention abort (gRPC ABORTED) on the transaction\'s re-read is rethrown as it came, for the SDK to retry; any other failure is 503 tape_unreadable', async () => {

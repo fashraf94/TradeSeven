@@ -143,6 +143,16 @@ describe('a held name the provider returned no bars for, through the real passes
     clean(docsOf(t, noBars.series), 'DE list, an unstamped instant');
   });
 
+  it('review SPR-T-3 — a check whose stored price is null (an NA quote; tapeAssemble stores px as num(v.px)) holds no price: it is not listed', async () => {
+    const t = clone(noBars.tape);
+    const priced = t.checks.map((c, i) => ({ c, i })).filter(({ c }) => typeof c.evidence?.DE?.px === 'number').map(({ i }) => i);
+    expect(priced.length).toBeGreaterThan(1);
+    t.checks[priced[0]].evidence.DE.px = null;
+    await deepAt(t, noBars.series, 'DE');
+    expect(m.qa('[data-recorded-price]').map((r) => r.getAttribute('data-recorded-price'))).toEqual(priced.slice(1).map(String));
+    clean(docsOf(t, noBars.series), 'DE list, a null price');
+  });
+
   it('a charted name the same day keeps the markers and their instructions', async () => {
     await deepAt(noBars.tape, noBars.series, 'INTC');
     const ev = m.q('[data-region="evidence-overlay"]');

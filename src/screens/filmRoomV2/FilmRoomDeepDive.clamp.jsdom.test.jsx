@@ -11,7 +11,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import FilmRoomDeepDive, { swapLabelLayout, lastCloseLeftPx, lastCloseLabelPx } from './FilmRoomDeepDive';
+import FilmRoomDeepDive, { swapLabelLayout, lastCloseLeftPx, lastCloseLabelPx, lastCloseTop } from './FilmRoomDeepDive';
 import { mounter, sep23Tape, sep23Series, clone, sweepNumbers, sweepWords } from './__fixtures__/filmRoomHarness';
 
 const m = mounter();
@@ -35,6 +35,22 @@ describe('lastCloseLeftPx — B6: the label\'s box inside the measured plot', ()
   it('a label its anchor would put out of the plot is clamped inside: before the end, at 0; after it, against the right edge', () => {
     expect(lastCloseLeftPx({ endX: 100, before: true, labelPx: 50, plotPx: 300 })).toBe(0);
     expect(lastCloseLeftPx({ endX: 900, before: false, labelPx: 50, plotPx: 300 })).toBeCloseTo(250, 5);
+  });
+});
+
+describe('lastCloseTop — B6: a clamped label clears the markers under its CLAMPED box', () => {
+  it('review SPR-T-5 — on a 156 px plot, a marker under the clamped box but outside the anchor\'s columns: the label leaves that marker\'s band (the mutant: the anchor\'s columns judged instead)', () => {
+    const plotPx = 156;
+    const labelPx = lastCloseLabelPx('7,500,000.00');
+    const leftPx = lastCloseLeftPx({ endX: 950, before: false, labelPx, plotPx });
+    expect(leftPx).toBeCloseTo(plotPx - labelPx, 5);
+    const marker = { x: (80 / plotPx) * 1000, y: 50 };   // at 80 px: inside the clamped box's columns, far left of the line's end
+    const at = { endX: 950, endY: 60, before: false, labelPx, markers: [marker], maxTop: 150, floorTop: 140, plotPx };
+    const band = [marker.y - 12 - 1, marker.y + 12 + 1];
+    const top = lastCloseTop({ ...at, leftPx });
+    expect(top + 13 <= band[0] || top >= band[1]).toBe(true);
+    // the control: unclamped (no measured box), the anchor's columns miss the marker and the label keeps its usual place
+    expect(lastCloseTop({ ...at, leftPx: null })).toBe(60 - 16);
   });
 });
 

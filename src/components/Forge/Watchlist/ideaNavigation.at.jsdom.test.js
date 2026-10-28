@@ -50,6 +50,7 @@ describe('B2.1 B2 — the open event\'s optional day and moment, additive to P1c
     const bad = [
       { moment: MOMENT },
       { etDate: '2026-9-25', moment: MOMENT },
+      { etDate: '2026-09-25T00:00', moment: MOMENT },   // review SPR-T-9: the whole string a date, anchored
       { etDate: 20260925, moment: MOMENT },
       { etDate: '2026-09-25' },
       { etDate: '2026-09-25', moment: { ...MOMENT, situationId: '' } },

@@ -62,6 +62,17 @@ describe('notChartedOf — the held, traded or planned symbols not charted, with
     const listed = notChartedOf(tape, { missing: ['SPY', 'XLK', 'ZZZQ', 'DOGE'] }).map((e) => e.symbol);
     for (const s of ['SPY', 'XLK', 'ZZZQ', 'DOGE']) expect(listed).not.toContain(s);
   });
+  it('review SPR-T-2 — each source named on its own: a name only in a check\'s evidence, only sold, only in the sectors map', () => {
+    expect(notChartedOf({
+      checks: [{ evidence: { SOL: {} } }],
+      actions: [{ symbolOut: 'DOGE', symbolIn: 'ACN' }],
+      comparables: { sectors: { ZZZQ: 'XLK' } },
+    }, { missing: ['ZZZQ'] })).toEqual([
+      { symbol: 'DOGE', reason: 'crypto_not_supported' },
+      { symbol: 'SOL', reason: 'crypto_not_supported' },
+      { symbol: 'ZZZQ', reason: 'no_bars' },
+    ]);
+  });
   it('nothing missing and no crypto: an empty list', () => {
     expect(notChartedOf({ checks: [{ risk: { ACN: {} } }] }, { missing: [] })).toEqual([]);
     expect(notChartedOf({}, {})).toEqual([]);

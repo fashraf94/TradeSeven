@@ -121,6 +121,12 @@ describe('acceptance H — a meeting renders with its legs, outcome and instants
     clean(docsOf(both), 'Study');
   });
 
+  it('review SPR-T-7 — the outcome\'s resolver is the record\'s own text, marked as such, never the screen\'s words (the mutant: resolvedBy rendered unmarked)', async () => {
+    await open(both.tape, both.series, 'Study');
+    const outcome = m.qa('[data-meeting-card]')[0].querySelector('[data-meeting-outcome]');
+    expect([...outcome.querySelectorAll('[data-record-text]')].map((r) => r.textContent)).toEqual(['coach']);
+  });
+
   it('the diagnosis\'s numbers are exempt only as the bound quotation: the same words outside it are stray digits (the mutant: the diagnosis rendered outside a quotation)', async () => {
     await open(both.tape, both.series, 'Study');
     const docs = docsOf(both);
@@ -210,6 +216,15 @@ describe('the "awaiting approval" run links to its meeting when the INSTANTS mat
     t.meetings[0].expiresAt = null;                          // nothing bounds its life: no match
     expect(meetingOfRun(t, run)).toBeNull();
     expect(meetingOfRun(both.tape, checkRuns(both.tape).find((r) => r.group === 'completed'))).toBeNull();
+  });
+
+  it('review SPR-T-6 — of several meetings whose lives hold the run\'s first check, the latest created; a run starting at a meeting\'s createdAt is inside its life', () => {
+    const run = { group: 'gameplan_pending', from: `${SEP23}T14:30:20.000Z` };
+    const early = { createdAt: `${SEP23}T14:00:00.000Z`, resolvedAt: null, expiresAt: `${SEP23}T16:00:00.000Z` };
+    const later = { createdAt: `${SEP23}T14:20:00.000Z`, resolvedAt: null, expiresAt: `${SEP23}T15:00:00.000Z` };
+    expect(meetingOfRun({ meetings: [early, later] }, run)).toBe(1);
+    expect(meetingOfRun({ meetings: [later, early] }, run)).toBe(0);
+    expect(meetingOfRun({ meetings: [{ ...early, createdAt: run.from }] }, run)).toBe(0);
   });
 
   it('Glance: the run carries "Its meeting"; it opens Study at that meeting\'s card', async () => {

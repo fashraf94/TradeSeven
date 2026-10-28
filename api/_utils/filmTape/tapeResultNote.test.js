@@ -120,6 +120,29 @@ describe('through the writer', () => {
     expect(after.battle.result.note).toBe('opponent score never recorded');
   });
 
+  it('review SPR-T-4 — and the other way: a day stored with no check (RJ-3\'s note), whose re-write reads the day\'s recorded checks, names the missing score (the mutant: the merge reading the STORED checks)', async () => {
+    const fx = await sep23Day({ battleId: 'b-a3-foundread' });
+    delete fx.battle.scoreState.opponentScore;
+    const t = makeTapeDb(seedDay({}, fx));
+    const battleKey = `agentBattles/${fx.battleId}`;
+    const ticks = [...t.store.entries()].filter(([k]) => k.startsWith(`${battleKey}/ticks/`));
+    const battle = t.store.get(battleKey);
+    for (const [k] of ticks) t.store.delete(k);
+    t.store.set(battleKey, { ...battle, evaluations: [], cronState: { tickSeq: 0 } });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: SEP23_NIGHT });
+    expect(tapeOf(t, fx).checks).toEqual([]);
+    expect(tapeOf(t, fx).battle.result.note).toBe(NO_CHECK_RAN_NOTE);
+    // the day's checks are read after all
+    for (const [k, v] of ticks) t.store.set(k, v);
+    t.store.set(battleKey, battle);
+    await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: SEP23_NIGHT + 60_000 });
+    errSpy.mockRestore();
+    const after = tapeOf(t, fx);
+    expect(noCheckRan(after.checks)).toBe(false);
+    expect(after.battle.result.note).toBe('opponent score never recorded');
+  });
+
   it('review SPR-W-3 — a day whose only rows are minted checks with no record (three admitted, none recorded): the missing score is named — "no check ran" would contradict "Checks · 0 of 3"', async () => {
     const fx = await emptyDay({ battleId: 'b-a3-minted' });
     fx.battle.cronState = { tickSeq: 3 };

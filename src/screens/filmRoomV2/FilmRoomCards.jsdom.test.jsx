@@ -58,6 +58,7 @@ import cardHandler from '../../../api/film-room/card.js';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { momentsOf } from '../../utils/filmRoomMoments';
 import { ledgerOf } from './filmRoomCards';
+import { setRuleOf } from './FilmRoomCardRegions';
 import { FORGE_AREAS, forgeAreaOf } from '../../components/CommandCenter/hubChrome';
 import { OPEN_BATTLE_REVIEW_EVENT } from '../../components/Forge/Watchlist/ideaNavigation';
 import {
@@ -850,6 +851,14 @@ describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no r
     await open();
     expect(region('since-last-time').querySelector('[data-unavailable-days]').textContent.replace(/\s+/g, ' ')).toBe('Recurrences · 1D day in this window could not be read');
   });
+
+  it('review SPR-T-8 — two of its own: RJ-7\'s plural (the mutant: the line always singular)', async () => {
+    for (const [d, tape] of [[D1, fx.tape1], [D2, fx.tape2]]) {
+      t.store.set(`agentBattles/${B}/tape/${d}`, { ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
+    }
+    await open();
+    expect(region('since-last-time').querySelector('[data-unavailable-days]').textContent.replace(/\s+/g, ' ')).toBe('Recurrences · 2D days in this window could not be read');
+  });
 });
 
 describe('B2.1 B1 (Amendment H RH-1; Amendment J RJ-8) — Set\'s link to the tempo dial, by the day\'s stagnation rule', () => {
@@ -861,6 +870,11 @@ describe('B2.1 B1 (Amendment H RH-1; Amendment J RJ-8) — Set\'s link to the te
     m.click(m.buttons('Take this home')[0]);
     await m.flush();
   }
+
+  it('review SPR-T-9 — the rule as stored, exactly: true is on, false is off, anything else (a 1, a string) unknown', () => {
+    const ruleOf = (enabled) => setRuleOf({ tags: { inputs: { forcedRotation: { enabled } } } });
+    expect([ruleOf(true), ruleOf(false), ruleOf(1), ruleOf('true'), ruleOf(0), setRuleOf(null)]).toEqual(['on', 'off', 'unknown', 'unknown', 'unknown', 'unknown']);
+  });
 
   it('the rule on (the day\'s tags.inputs): RG-5\'s sentence, and "Tempo dial · Forge workshop", which opens the Forge on its Character area — the hub\'s own door, nothing else', async () => {
     const asked = [];

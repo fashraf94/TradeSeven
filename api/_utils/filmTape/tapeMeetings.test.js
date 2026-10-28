@@ -276,6 +276,7 @@ describe('Amendment E RE-3 (B2.1 C1) — coverage.meetings describes the rows th
     expect(meetingRowOmissionsOf("1 leg past the 2 a meeting proposes not copied; 2 leg symbols outside the battle's portfolio and bench not copied")).toEqual({ legs: 1, legSymbols: 2, words: 0, ids: 0 });
     expect(meetingRowOmissionsOf(`${RD3_FINAL}; 4 meetings past 26 in a day not copied`)).toEqual({ legs: 0, legSymbols: 0, words: 0, ids: 0 });
     expect(meetingRowOmissionsOf(null)).toEqual({ legs: 0, legSymbols: 0, words: 0, ids: 0 });
+    expect(meetingRowOmissionsOf('12 legs past the 2 a meeting proposes not copied').legs).toBe(12);   // review SPR-T-9: every digit of the count
   });
 
   it('a REFUSED rewrite (RD-6) that would add omissions moves no part of the note: the stored row stands, and so does what is said of it', async () => {
