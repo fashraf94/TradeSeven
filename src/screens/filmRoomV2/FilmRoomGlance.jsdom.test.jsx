@@ -220,11 +220,12 @@ describe('the final result, apart from the day (BA-4, BA-39)', () => {
     expect(quoteDefects(m.container, { tape: sep23Tape })).toEqual([]);
   });
 
-  it('the empty day: result unavailable, the missing score named, the platform\'s "Result: Draw." beside it', () => {
+  it('the empty day: result unavailable, its stored note (B2.1 A3, FR-03, RJ-3: no check ran), the platform\'s "Result: Draw." beside it', () => {
     m.render(<Harness tape={emptyTape} />);
     const r = m.q('[data-region="final-result"]');
     expect(r.querySelector('[data-result]').getAttribute('data-result')).toBe('unavailable');
-    expect(r.textContent).toContain('opponent score never recorded');
+    expect(r.querySelector('[data-stored-note="battle.result.note"]').textContent).toBe('no check ran this day, so no score was recorded');
+    expect(r.textContent).not.toContain('never recorded');
     expect(r.querySelector('[data-quote-path="battle.completionMessage.text"]').textContent).toBe('Result: Draw.');
     expect(quoteDefects(m.container, { tape: emptyTape })).toEqual([]);
     expect(r.querySelector('[data-num]')).toBeNull();

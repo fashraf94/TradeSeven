@@ -44,7 +44,7 @@ import { sessionFor } from './tapeTime.js';
 import { formatTapeMarkdown } from './tapeExport.js';
 import { makeTapeDb } from './__fixtures__/tapeFirestore.js';
 import { seedDay, capturedDay, completedDay, CPU_OPPONENT } from './__fixtures__/tapeFixtures.js';
-import { buildBattleBlock } from './tapeAssemble.js';
+import { buildBattleBlock, NO_CHECK_RAN_NOTE } from './tapeAssemble.js';
 import { mergeTape } from './tapeMerge.js';
 import { resolveBattleResult } from './battleResult.js';
 import { flatRows, fetcherOf } from './__fixtures__/tapeBars.js';
@@ -452,7 +452,8 @@ describe('BA-39 (Q2) — a battle result is derived only from two recorded final
     await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
     const tape = tapeOf(t, fx.battleId);
     expect(tape.battle.final).toEqual({ total: 0, opponent: null, at: COMPLETED_AT });
-    expect(tape.battle.result).toEqual({ value: null, basis: 'unavailable', note: 'opponent score never recorded' });
+    // B2.1 A3 (RJ-3): the never-scored day ran no check, so its note says that, rather than naming a score
+    expect(tape.battle.result).toEqual({ value: null, basis: 'unavailable', note: NO_CHECK_RAN_NOTE });
   });
 
   it('Q2: a stored tape that already carries the derived "draw", re-merged, becomes unavailable', async () => {
@@ -464,7 +465,7 @@ describe('BA-39 (Q2) — a battle result is derived only from two recorded final
     t.store.set(tapePath(fx.battleId), { ...stored, battle: { status: 'completed', completedAt: COMPLETED_AT, final: { total: 0, opponent: null, at: COMPLETED_AT }, result: { value: 'draw', basis: 'derived' } } });
     const r = await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT + 60_000 });
     expect(r.status).toBe('written');
-    expect(tapeOf(t, fx.battleId).battle.result).toEqual({ value: null, basis: 'unavailable', note: 'opponent score never recorded' });
+    expect(tapeOf(t, fx.battleId).battle.result).toEqual({ value: null, basis: 'unavailable', note: NO_CHECK_RAN_NOTE });   // B2.1 A3: no check ran
   });
 
   it('Q2: the result is recomputed from the merged final scores on every merge — never kept by rank, even when the stored block wins the tie', async () => {
@@ -475,7 +476,7 @@ describe('BA-39 (Q2) — a battle result is derived only from two recorded final
     // no canonical re-read: on equal lifecycle rank the stored completion block stands (BA-27 amended) — its result does not
     const drawn = { ...tape, battle: { ...tape.battle, result: { value: 'draw', basis: 'derived' } } };
     expect(mergeTape(drawn, structuredClone(tape), { nowIso: new Date(NIGHT + 60_000).toISOString(), withinWindow: true, resolveResult: resolveBattleResult }).doc.battle.result)
-      .toEqual({ value: null, basis: 'unavailable', note: 'opponent score never recorded' });
+      .toEqual({ value: null, basis: 'unavailable', note: NO_CHECK_RAN_NOTE });   // B2.1 A3: the merged day ran no check
     // a stored block whose derived result disagrees with its own final scores: the scores decide
     const scored = { ...tape, battle: { ...tape.battle, final: { total: 9, opponent: 50, at: COMPLETED_AT }, result: { value: 'win', basis: 'derived' } } };
     const assembled = { ...structuredClone(tape), battle: { ...scored.battle } };
@@ -544,7 +545,7 @@ describe('BA-39 (Q2) — battle.completionMessage: the platform\'s own words at 
     const t = makeTapeDb(seedDay({}, fx));
     await writeTapeDay(fx.battleId, D, { db: t.db, now: NIGHT });
     const md = formatTapeMarkdown(tapeOf(t, fx.battleId), []);
-    expect(md).toContain('result: — (basis `unavailable`) · “opponent score never recorded”');
+    expect(md).toContain('result: — (basis `unavailable`) · “' + NO_CHECK_RAN_NOTE + '”');   // B2.1 A3: no check ran this day
     expect(md).toContain(`- Platform recorded at completion: “${DRAW_TEXT}” — at 4:05 PM ET · \`${COMPLETED_AT}\``);
     expect(md).not.toContain('UNCLASSIFIED');
   });

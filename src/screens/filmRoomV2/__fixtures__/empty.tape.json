@@ -213,7 +213,7 @@
     "result": {
       "value": null,
       "basis": "unavailable",
-      "note": "opponent score never recorded"
+      "note": "no check ran this day, so no score was recorded"
     },
     "completionMessage": {
       "text": "Result: Draw.",

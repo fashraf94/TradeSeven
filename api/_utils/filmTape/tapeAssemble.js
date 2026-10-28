@@ -1056,6 +1056,14 @@ export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entry
 const SCORE_NAMES = Object.freeze({ total: 'agent score', opponent: 'opponent score' });
 /** B1 T1 — the result's note for a battle created without an opponent (score.opponentBasis `none`). */
 export const NO_OPPONENT_NOTE = 'no opponent: the battle was created without a CPU opponent';
+/** B2.1 A3 (FR-03; Build B Amendment J RJ-3) — the result's note when a score is missing and no check ran this day (verbatim). */
+export const NO_CHECK_RAN_NOTE = 'no check ran this day, so no score was recorded';
+/**
+ * B2.1 A3 — did no check run this day? No row of `checks[]` records a check — the deferrals and the missing records
+ * aside (NON_CHECK_STATES): the same rows the screen counts as "Checks · n" (filmRoomModel.js checkCounts), so the
+ * note and the count read one source (BUILD_RULES §9).
+ */
+export const noCheckRan = (checks) => !(Array.isArray(checks) ? checks : []).some((r) => !NON_CHECK_STATES.includes(r?.state));
 
 /**
  * BA-39 — a battle's result from its completion block's own facts. A battle
@@ -1072,14 +1080,19 @@ export const NO_OPPONENT_NOTE = 'no opponent: the battle was created without a C
  * every merge (tapeMerge.js recomputes it from the merged final scores, a
  * kept completion block included). The platform's completion message is a
  * separate record (completionMessageOf), quoted as its words, never this.
+ *
+ * B2.1 A3 (FR-03; Amendment J RJ-3): when a score is missing and the tape day
+ * ran no check (`noCheck`, noCheckRan over the day's rows), the note says
+ * exactly that — NO_CHECK_RAN_NOTE — rather than naming a score that was never
+ * at stake; otherwise it names the missing scores, as before.
  */
-export function battleResultOf({ status, stored = null, final = null, derive = null, noOpponent = false }) {
+export function battleResultOf({ status, stored = null, final = null, derive = null, noOpponent = false, noCheck = false }) {
   // B1 T1 (contract E): a battle created without an opponent has no result against one — never a tie read from a 0, never a stored one.
   if (noOpponent) return status === 'completed' ? { value: null, basis: 'unavailable', note: NO_OPPONENT_NOTE } : { value: null, basis: 'not_completed' };
   if (stored) return { value: stored, basis: 'stored' };
   if (status !== 'completed') return { value: null, basis: 'not_completed' };
   const missing = ['total', 'opponent'].filter((k) => num(final?.[k]) === null);
-  if (missing.length) return { value: null, basis: 'unavailable', note: `${missing.map((k) => SCORE_NAMES[k]).join(' and ')} never recorded` };
+  if (missing.length) return { value: null, basis: 'unavailable', note: noCheck ? NO_CHECK_RAN_NOTE : `${missing.map((k) => SCORE_NAMES[k]).join(' and ')} never recorded` };
   return { value: derive ? derive(final) : null, basis: 'derived' };
 }
 
@@ -1098,7 +1111,8 @@ export function completionMessageOf(battle) {
   return null;
 }
 
-export function buildBattleBlock({ battle, resolveResult }) {
+/** `noCheck` (B2.1 A3): the tape day ran no check (noCheckRan over its rows) — it picks the result note's words only. */
+export function buildBattleBlock({ battle, resolveResult, noCheck = false }) {
   const status = str(battle?.status);
   const completed = status === 'completed';
   const stored = ['win', 'loss', 'draw'].includes(battle?.result) ? battle.result : null;
@@ -1118,7 +1132,7 @@ export function buildBattleBlock({ battle, resolveResult }) {
     status,
     completedAt: str(battle?.completedAt),
     final,
-    result: battleResultOf({ status, stored, final, derive, noOpponent }),
+    result: battleResultOf({ status, stored, final, derive, noOpponent, noCheck }),
     completionMessage: completed ? completionMessageOf(battle) : null,
     // v2 Ruling 16: a stamped battle's block says so, so a later merge — which
     // holds only the final scores — keeps this assembly's corrected-aware
@@ -1455,7 +1469,7 @@ export function assembleTape({
     },
     coverage,
     score,
-    battle: buildBattleBlock({ battle, resolveResult }),
+    battle: buildBattleBlock({ battle, resolveResult, noCheck: noCheckRan(checks) }),
     checks,
     actions,
     directives,

@@ -46,7 +46,7 @@
 
 import { createHash } from 'node:crypto';
 import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE, AWAITING_CANDLES_NOTE } from '../../../src/constants/filmTape.js';
-import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf, meetingsCoverageOf, MEETINGS_PER_DAY_MAX } from './tapeAssemble.js';
+import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf, noCheckRan, meetingsCoverageOf, MEETINGS_PER_DAY_MAX } from './tapeAssemble.js';
 import { candleInputFingerprint, changedInputParts, replayLogicVersionOf, REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
 import { modernNotes } from './tapeNotes.js';
@@ -499,6 +499,8 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       stored: block.result?.basis === 'stored' ? block.result.value : null,
       final,
       noOpponent,
+      // B2.1 A3 (RJ-3): the note's words read the MERGED day's checks (noCheckRan), as the result does its scores
+      noCheck: noCheckRan(merged.checks),
       derive: (f) => {
         // v2 Ruling 16: a measured-model block keeps the result its assembly
         // derived from the full battle (the corrected gate); the merge holds
