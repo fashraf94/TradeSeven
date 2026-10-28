@@ -115,11 +115,21 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); delete process.env.E
 // v2: `cpuSymbol` places the CPU's lifetime on its own ticker; `undated` strips
 // the provider timestamp from those symbols' quotes (they still pass the M1
 // quote gate), so that side's reward context is unavailable this tick.
-async function stockTick(variant = 'final', { quoteLagSec = 0, failRefreshRead = false, cpuSymbol = 'AAPL', undated = [], meeting = true } = {}) {
+async function stockTick(variant = 'final', { quoteLagSec = 0, failRefreshRead = false, cpuSymbol = 'AAPL', undated = [], meeting = true, nextSessionCrypto = false } = {}) {
   const { battle: corrected, inputs } = await correctedStockBattle({ cpuSymbol });
   const original = makeTickBattle();
   const battle = { ...original, ...corrected, timing: { tradingDays: ['2026-10-14'], currentTradingDay: 1 }, cronState: { ...original.cronState, lastGameplanDate: '10/14/2026' }, scoreState: { ...original.scoreState, ...corrected.scoreState }, scoring: { ...original.scoring, ...corrected.scoring } };
   if (variant === 'passive') battle.isCpu = true;
+  // BaggerBomb cleanup C2 (review CL1-4): a measured battle deployed the afternoon BEFORE its only trading day (BR-2),
+  // holding the crypto slot, which a measured battle still scores on the legacy path. BTC is bought at 67,000 and
+  // quotes 67,450 against a previous close of 75,000.
+  if (nextSessionCrypto) {
+    battle.activatedAt = battle.createdAt = '2026-10-13T19:20:00.000Z';
+    battle.portfolio = { ...battle.portfolio, support: [{ symbol: 'BTC', baseATR: 5, isCrypto: true }], startingPrices: { ...battle.portfolio.startingPrices, BTC: 67000 } };
+    mocks.getStockAnalysisData.mockImplementation(async symbol => ({ price: symbol === 'BTC'
+      ? { current: 67450, previousClose: 75000, changePercent: -10, timestamp: Date.parse(STOCK_TEST_NOW) / 1000 }
+      : { current: 103.27, previousClose: 103.27, changePercent: 0, timestamp: Date.parse(STOCK_TEST_NOW) / 1000 }, daily: [] }));
+  }
   if (variant === 'gameplan_pending') { battle.gameplanMeeting = { id: 'meeting', createdAt: STOCK_TEST_NOW, expiresAt: '2026-10-14T14:12:00Z', status: 'pending', suggestedSwaps: [] }; battle.cronState.gameplanMeeting = { meetingId: 'meeting', createdAt: STOCK_TEST_NOW, expiresAt: '2026-10-14T14:12:00Z', legs: [] }; }
   if (variant === 'trigger_skipped') { battle.evaluations = [{ evalId: 'prior', timestamp: STOCK_TEST_NOW, decision: 'hold', scores: { active: 3, banked: 4, total: 7 } }]; battle.cronState.lastTriggeredAt = STOCK_TEST_NOW; }
   if (variant === 'proposal_pending') { runtime.launch = 'manual'; battle.pendingProposal = { id: 'proposal', mode: 'manual', symbolOut: 'AAPL', symbolIn: 'MSFT', createdAt: STOCK_TEST_NOW, expiresAt: '2026-10-14T14:12:00Z' }; }
@@ -180,6 +190,17 @@ async function stockTick(variant = 'final', { quoteLagSec = 0, failRefreshRead =
   try { await processAgentBattle(db, battle, summary, Date.now(), new Map(), { everEnabled: false }); } catch (err) { if (!failRefreshRead) throw err; thrown = err; }
   return { db, battle, summary, thrown };
 }
+describe('C2 — a measured battle deployed for the next session scores its crypto slot from the creation price on day 1', () => {
+  it('BTC baselines at the creation price (not the previous close) on its first trading day', async () => {
+    const { db } = await stockTick('final', { nextSessionCrypto: true });
+    const battle = db.__store.battle;
+    expect(battle.timing.tradingDays).toEqual(['2026-10-14']);
+    expect(battle.scoring.stockThresholdModel).toBeTruthy(); // the corrected route
+    const history = battle.thresholdHistory?.BTC;
+    expect(history, JSON.stringify(Object.keys(battle.thresholdHistory || {}))).toBeTruthy();
+    expect(history.minMultiplier).toBe(0); // up from 67,000; against the 75,000 previous close it would read as a deep loss
+  });
+});
 describe('corrected evaluator and settlement use pinned model with admission false', () => {
   it.each(['risk', 'haiku', 'approved', 'expired', 'suppression', 'meeting'])('real common swap writer on evaluator route %s', async route => {
     const { db } = await stockTick(route);
