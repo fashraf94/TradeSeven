@@ -58,6 +58,7 @@ describe('in-revision integrity (checkBaselineIntegrity)', () => {
     expect(checkBaselineIntegrity(side([e2, e1], sha1, 'tf-setup-v1/sem-1')).join(' ')).toMatch(/does not follow/);
     expect(checkBaselineIntegrity(side([{ ...e1, semanticsId: 'sem1' }], sha1, 'sem1')).join(' ')).toMatch(/is not tf-setup-v<n>\/sem-<n>/);
     expect(checkBaselineIntegrity(side([{ ...e1, recordedAt: 'yesterday' }], sha1, 'tf-setup-v1/sem-1')).join(' ')).toMatch(/not an ISO instant/);
+    expect(checkBaselineIntegrity(side([{ ...e1, goldenSha256: 'abc' }, e2], sha2, 'tf-setup-v1/sem-2')).join(' ')).toMatch(/entry 0 goldenSha256 is not a sha256 hex/); // a historical entry's sha is checked too (review TEV3-6)
     expect(checkBaselineIntegrity(side([{ ...e1, note: '' }], sha1, 'tf-setup-v1/sem-1')).join(' ')).toMatch(/has no note/);
     expect(checkBaselineIntegrity(side([e1, { ...e2, recordedAt: '2026-10-01T00:00:00Z' }], sha2, 'tf-setup-v1/sem-2')).join(' ')).toMatch(/recordedAt precedes/);
     expect(checkBaselineIntegrity(side([], sha1, 'tf-setup-v1/sem-1')).join(' ')).toMatch(/not a non-empty array/);

@@ -195,6 +195,10 @@ describe('receipt selection', () => {
     ];
     expect(pickReceipts(rows, 2).map((r) => r.symbol)).toEqual(['Z', 'A']);
   });
+  it('a row without an entry record (an unfetched pair) is skipped, never thrown on (review TEV3-8)', () => {
+    const rows = [row('X', '2026-10-05', null), row('MU', '2026-10-06', entryRecord({ verdict: 'valid', pattern: 'breakout' }))];
+    expect(pickReceipts(rows, 10).map((r) => r.symbol)).toEqual(['MU']);
+  });
 });
 
 describe('the join to the Oct 14 scorer', () => {
@@ -228,6 +232,19 @@ describe('the join to the Oct 14 scorer', () => {
   });
   it('is unavailable without a results file, and says so', () => {
     expect(joinScorer(rows, null)).toEqual({ available: false, joined: 0, byClass: {} });
+  });
+  it('reads both of the scorer\'s control sets: a moment keyed only in controlMainRows joins (review TEV3-2)', () => {
+    const mainOnly = { controlRows: [], controlMainRows: [{ k: 'b1__b1:3', call: 'SWAP:GOOGL>MU', primary: { points: { status: 'scored', delta: 5 } } }] };
+    expect(joinScorer(rows, mainOnly)).toMatchObject({ joined: 1, byClass: { 'valid/breakout': { beat: 1, lost: 0, tied: 0 } } });
+  });
+  it('joins scored points with a numeric delta only: a not_scored point and a scored point without a delta are excluded (review TEV3-5)', () => {
+    const odd = {
+      controlRows: [
+        { k: 'b1__b1:3', call: 'SWAP:GOOGL>MU', primary: { points: { status: 'not_scored', delta: 7 } } },
+        { k: 'b2__b2:1', call: 'SWAP:PANW>AMD', primary: { points: { status: 'scored', delta: null } } },
+      ],
+    };
+    expect(joinScorer(rows, odd)).toEqual({ available: true, joined: 0, byClass: {}, sufficient: false });
   });
 });
 
@@ -286,6 +303,9 @@ describe('the summary and the report carry counts only, with plan- and report-ti
     expect(summarize({ ...base, manifest: dirtyManifest, reportProvenance: dirtyProv }).provenance.drift).toBe(true);
     const unknownProv = { ...prov, dirty: null };
     expect(summarize({ ...base, manifest: { ...manifest, provenance: { plan: unknownProv, evaluate: unknownProv } }, reportProvenance: unknownProv }).provenance.drift).toBe(true);
+    // evaluate at another head while plan and report agree is drift too (review TEV3-3)
+    expect(summarize({ ...base, manifest: { ...manifest, provenance: { plan: prov, evaluate: { ...prov, head: 'xyz' } } }, reportProvenance: prov }).provenance.drift).toBe(true);
+    expect(summarize({ ...base, manifest: { ...manifest, provenance: { plan: prov, evaluate: { ...prov, dirty: true } } }, reportProvenance: prov }).provenance.drift).toBe(true);
   });
   it('renderReport: the sections, the distinct-pairs statement, the join line, the provenance lines, no raw id', () => {
     const s = summarize({ rows, pairs, counts, plan, join: { available: true, joined: 2, byClass: { 'valid/breakout': { beat: 1, lost: 1, tied: 0 } }, sufficient: false }, manifest, reportProvenance: prov });

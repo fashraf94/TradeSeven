@@ -142,9 +142,12 @@ describe('the expected row (resolution point 2) and the window', () => {
     expect(r.ok).toBe(true);
     expect([r.asOf, r.dropped, r.bars[0].date]).toEqual(['2026-06-10', 3, '2026-06-10']);
   });
-  it('54 rows is insufficient_history for a 55-bar window', () => {
+  it('54 rows is insufficient_history for a 55-bar window; exactly 55 rows is ok (review TEV3-1)', () => {
     const r = build(tradingPayload({ n: 54 }));
     expect(r).toMatchObject({ ok: false, reason: 'insufficient_history', detail: { required: 55, available: 54 } });
+    const exact = build(tradingPayload({ n: 55 }));
+    expect(exact.ok).toBe(true);
+    expect(exact.bars).toHaveLength(55);
   });
   it('the window is exactly minBars rows, newest first', () => {
     const r = build(tradingPayload({ n: 90 }));
@@ -236,7 +239,7 @@ describe('prices and volumes inside the window', () => {
   it('minBars is the caller\'s and must be a positive integer (review TE3-12)', () => {
     const rows = mapDailyRows(tradingPayload()).rows;
     for (const bad of [undefined, null, 0, -1, 1.5, '55']) {
-      expect(() => buildDailyEvidence({ rows, asOf: END, now: DAY_AFTER, minBars: bad, source: 'eodhd_eod', symbol: 'TEST' }), String(bad)).toThrow(TypeError);
+      expect(() => buildDailyEvidence({ rows, asOf: END, now: DAY_AFTER, minBars: bad, source: 'eodhd_eod', symbol: 'TEST' }), String(bad)).toThrow(/positive integer/);
     }
     expect(buildDailyEvidence({ rows, asOf: END, now: DAY_AFTER, minBars: 55, source: 'eodhd_eod', symbol: 'TEST' }).ok).toBe(true);
   });

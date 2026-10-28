@@ -156,6 +156,8 @@ describe('short history and refusals', () => {
     expect(r.missing).toEqual([...FACT_NAMES]);
     expect(r.history).toEqual({ count: 0, required: 55, sufficient: false });
     expect(r).not.toHaveProperty('patterns');
+    expect(r.checks.map((c) => c.id)).toEqual(['regime_stack', 'slow_rising', 'regime_stack_down', 'slow_falling', 'close_below_slow', 'structure_break', 'regime_flip']); // all seven, each unknown (review TEV3-4)
+    expect(r.checks.every((c) => c.result === 'unknown')).toBe(true);
   });
 });
 

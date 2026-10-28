@@ -350,6 +350,7 @@ describe('an adapter refusal', () => {
     expect(n.refusal.detail).toEqual(nested);
     expect(n.refusal.detail.nullFields).not.toBe(nested.nullFields); // a deep copy: nested arrays are not shared either (review TE3-12)
     expect(r.missing).toEqual([...FACT_NAMES]);
+    expect(r.checks.map((c) => c.id)).toEqual(['regime_stack', 'slow_rising', 'regime_stack_down', 'slow_falling', 'breakout_close', 'breakout_volume', 'pullback_touch', 'pullback_close', 'extension']); // all nine, each unknown (review TEV3-4)
     expect(r.checks.every((c) => c.result === 'unknown')).toBe(true);
     expect(r.patterns).toEqual({ breakout: 'untestable', pullback_resume: 'untestable' });
     expect(r.evidence.bars).toEqual({ count: 0, newest: null, oldest: null });
@@ -408,5 +409,12 @@ describe('the record (V3 §5)', () => {
     expect(a.sourceMeta).toEqual(ev.sourceMeta);
     expect(a.sourceMeta).not.toBe(ev.sourceMeta); // copied (review TE1-5)
     expect(a.evidence.adjustment).not.toBe(ev.adjustment);
+  });
+
+  it('the adjustment block is copied down to its dates array (review TEV3-7)', () => {
+    const ev = evidenceOf(buildBars(), { adjustment: { metadata: 'absent', missingDates: ['2026-10-01', '2026-09-30'] } });
+    const r = evaluateTfEntry(ev);
+    expect(r.evidence.adjustment).toEqual({ metadata: 'absent', missingDates: ['2026-10-01', '2026-09-30'] });
+    expect(r.evidence.adjustment.missingDates).not.toBe(ev.adjustment.missingDates);
   });
 });
