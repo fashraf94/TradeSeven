@@ -180,6 +180,22 @@ export function liveGamesOf(games) {
   return Array.isArray(games?.live) ? games.live : splitGames(games).live;
 }
 
+/**
+ * The live games, counted once (the S8 review's S8-2 and K-1; ruling R-S8F-7): `opened`, the games that have opened;
+ * `waiting`, those deployed and waiting for the open (a row's `preOpen`); and `allEnding`, every opened game past its end
+ * time (a row's `ending`, the "ending" its clock shows). The Games header and Shadow's status line both read this, so
+ * neither calls a game live that the rows and the strip say is waiting, or "in progress" one the strip says is ending.
+ */
+export function liveCountsOf(games) {
+  const live = liveGamesOf(games);
+  const opened = live.filter((g) => !g.preOpen);
+  return Object.freeze({
+    opened: opened.length,
+    waiting: live.length - opened.length,
+    allEnding: opened.length > 0 && opened.every((g) => g.ending === true),
+  });
+}
+
 /** Desktop and tablet Games show live rows plus at most two completed rows (spec §8.2). */
 export const DESKTOP_COMPLETED_LIMIT = 2;
 /** The phone Overview shows a short activity list (the design's limit 3). */

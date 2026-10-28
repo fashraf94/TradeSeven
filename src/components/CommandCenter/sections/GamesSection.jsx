@@ -18,7 +18,7 @@
 // says so with Retry; with a retained window it says when that was true.
 
 import React from 'react';
-import { DESKTOP_COMPLETED_LIMIT, liveGamesOf, splitGames } from '../hub/hubModel';
+import { DESKTOP_COMPLETED_LIMIT, liveCountsOf, liveGamesOf, splitGames } from '../hub/hubModel';
 import { HUB_COPY as COPY } from '../hub/hubCopy';
 import { formatHubTime } from '../hub/hubDate';
 import { C, HAIR, tint } from '../hub/hubStyle';
@@ -142,8 +142,12 @@ export default function GamesSection({ games, onOpenGame, onOpenTape, onOpenHist
   // Slice S3 (R-S3-8): the poll's live rows show whatever the window's status; completed rows once it is read.
   const live = liveGamesOf(games);
   const shown = [...live, ...completed.slice(0, DESKTOP_COMPLETED_LIMIT)];
+  // "N live" counts the games that have opened; a list of games all waiting for the open says so, as their rows do
+  // (the S8 review's S8-2; ruling R-S8F-7: the one count the status line reads too).
+  const counts = liveCountsOf(games);
   let right = null;
-  if (live.length) right = <Tag tone="teal">{COPY.games.liveCount(live.length)}</Tag>;
+  if (counts.opened) right = <Tag tone="teal">{COPY.games.liveCount(counts.opened)}</Tag>;
+  else if (counts.waiting) right = <Tag tone="teal">{COPY.games.waitingForOpen}</Tag>;
   // The design shows the completed count whenever no game is live, "0 completed" included (S1 review L1-10).
   else if (ready) right = <Mono style={{ fontSize: 11, color: C.ink3 }}>{COPY.games.completedCount(completed.length)}</Mono>;
   const history = ready && completed.length > DESKTOP_COMPLETED_LIMIT && onOpenHistory

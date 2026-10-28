@@ -114,9 +114,11 @@ export function outcomeDisplay(result) {
 
 const opponentOf = (battle) => (classifyBattleType(battle) === BATTLE_TYPE_RANKED ? COPY.games.opponentGroup : COPY.games.opponentCpu);
 
-function timeLeft(endsMs, nowMs) {
-  if (endsMs === null || !finite(nowMs)) return '';
-  const minutes = Math.round((endsMs - nowMs) / 60000);
+/** Whole minutes to a game's end, or null with no end or no clock. At or below zero its clock reads "ending". */
+const minutesLeft = (endsMs, nowMs) => (endsMs === null || !finite(nowMs) ? null : Math.round((endsMs - nowMs) / 60000));
+
+function timeLeft(minutes) {
+  if (minutes === null) return '';
   if (minutes <= 0) return COPY.games.ending;
   return COPY.games.timeLeft(Math.floor(minutes / 60), minutes % 60);
 }
@@ -131,6 +133,7 @@ export function liveGameRows(battles, { nowMs, marketState }) {
   return sortLiveBattles(Array.isArray(battles) ? battles : []).map((battle) => {
     const preOpen = derivePhase(battle, marketState) === PHASE.PRE_OPEN;
     const endsMs = hubMs(battle.expiresAt);
+    const minutes = minutesLeft(endsMs, nowMs);
     const shown = displayedStockScores(battle);
     const [score] = formatScores(shown.currentScore);
     const tradeCount = battle.scoreState?.tradeCount;
@@ -143,7 +146,9 @@ export function liveGameRows(battles, { nowMs, marketState }) {
       opponent: opponentOf(battle),
       live: true,
       preOpen,
-      clock: preOpen ? COPY.games.waitingForOpen : timeLeft(endsMs, nowMs),
+      // Opened and past its end time: the clock reads "ending" (hub/hubModel.js liveCountsOf counts it; ruling R-S8F-7).
+      ending: !preOpen && minutes !== null && minutes <= 0,
+      clock: preOpen ? COPY.games.waitingForOpen : timeLeft(minutes),
       detail: COPY.games.liveDetail(score, trades, ends),
     });
   });

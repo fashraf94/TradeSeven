@@ -272,3 +272,25 @@ describe('a completed row\'s labels, and what its review line opens (S3 review T
     expect(b.review).toBe(true);
   });
 });
+
+describe('a live row says whether it is past its end: the flag the one count reads (the S8 review K-1; ruling R-S8F-7)', () => {
+  const live = (over = {}) => ({ id: 'bb', ownerId: 'u', agentId: 'casual-agent-u', status: 'active', activatedAt: '2026-10-22T13:30:00Z', scoreState: { currentScore: 1, evaluationCount: 2 }, ...over });
+  const rowOf = (expiresAt, marketState = OPEN, nowMs = NOW) => liveGameRows([live({ expiresAt })], { nowMs, marketState })[0];
+
+  it('`ending` is true exactly when the clock reads "ending"', () => {
+    for (const ends of [NOW + 29000, NOW, NOW - 3600000]) {
+      expect(rowOf(ends)).toMatchObject({ ending: true, clock: COPY.games.ending });
+    }
+    for (const ends of [NOW + 31000, NOW + 3600000]) {
+      expect(rowOf(ends).ending).toBe(false);
+      expect(rowOf(ends).clock).not.toBe(COPY.games.ending);
+    }
+  });
+
+  it('never for a game waiting for the open, nor without an end or a clock', () => {
+    const waiting = liveGameRows([live({ expiresAt: NOW - 3600000, scoreState: { currentScore: 0, evaluationCount: 0 } })], { nowMs: NOW, marketState: CLOSED })[0];
+    expect(waiting).toMatchObject({ preOpen: true, ending: false });
+    expect(rowOf(null).ending).toBe(false);
+    expect(rowOf(NOW - 60000, OPEN, NaN).ending).toBe(false);
+  });
+});
