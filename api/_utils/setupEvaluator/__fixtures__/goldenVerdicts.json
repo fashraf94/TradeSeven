@@ -6989,6 +6989,284 @@
       },
       "verdict": "invalid"
     },
+    "stack_middle_inequality_only": {
+      "asOf": "2026-10-09",
+      "basis": "raw",
+      "checks": [
+        {
+          "facts": [
+            "C",
+            "SMA_fast",
+            "SMA_slow"
+          ],
+          "id": "regime_stack",
+          "lhs": [
+            110,
+            95.75
+          ],
+          "op": ">",
+          "result": false,
+          "rhs": [
+            95.75,
+            101.3
+          ]
+        },
+        {
+          "facts": [
+            "SMA_slow",
+            "SMA_slow_5ago"
+          ],
+          "id": "slow_rising",
+          "lhs": 101.3,
+          "op": ">",
+          "result": true,
+          "rhs": 99.5
+        },
+        {
+          "facts": [
+            "C",
+            "SMA_fast",
+            "SMA_slow"
+          ],
+          "id": "regime_stack_down",
+          "lhs": [
+            110,
+            95.75
+          ],
+          "op": "<",
+          "result": false,
+          "rhs": [
+            95.75,
+            101.3
+          ]
+        },
+        {
+          "facts": [
+            "SMA_slow",
+            "SMA_slow_5ago"
+          ],
+          "id": "slow_falling",
+          "lhs": 101.3,
+          "op": "<",
+          "result": false,
+          "rhs": 99.5
+        },
+        {
+          "facts": [
+            "C",
+            "swingHigh"
+          ],
+          "id": "breakout_close",
+          "lhs": 110,
+          "op": ">=",
+          "result": true,
+          "rhs": 106.5
+        },
+        {
+          "facts": [
+            "V",
+            "V_avg"
+          ],
+          "id": "breakout_volume",
+          "lhs": 1000000,
+          "op": ">=",
+          "result": false,
+          "rhs": 1500000
+        },
+        {
+          "facts": [
+            "pullbackLows",
+            "SMA_fast"
+          ],
+          "id": "pullback_touch",
+          "lhs": 93.5,
+          "op": "<=",
+          "result": true,
+          "rhs": 95.75
+        },
+        {
+          "facts": [
+            "C",
+            "SMA_fast"
+          ],
+          "id": "pullback_close",
+          "lhs": 110,
+          "op": ">",
+          "result": true,
+          "rhs": 95.75
+        },
+        {
+          "facts": [
+            "C",
+            "SMA_fast",
+            "ATR"
+          ],
+          "id": "extension",
+          "lhs": 110,
+          "op": "<=",
+          "result": false,
+          "rhs": 103.6786
+        }
+      ],
+      "evidence": {
+        "adjustment": {
+          "metadata": "absent",
+          "missingDates": []
+        },
+        "bars": {
+          "count": 60,
+          "newest": "2026-10-09",
+          "oldest": "2026-07-17"
+        },
+        "pullbackLows": [
+          {
+            "date": "2026-10-09",
+            "low": 108.5
+          },
+          {
+            "date": "2026-10-08",
+            "low": 93.5
+          },
+          {
+            "date": "2026-10-07",
+            "low": 93.5
+          }
+        ],
+        "swingHigh": {
+          "date": "2026-09-11",
+          "value": 106.5
+        },
+        "swingLow": {
+          "date": "2026-10-08",
+          "value": 93.5
+        },
+        "volume": {
+          "avg": {
+            "barsRequired": 20,
+            "barsUsable": 20,
+            "unusable": [],
+            "value": 1000000
+          },
+          "bar0": {
+            "date": "2026-10-09",
+            "reason": null,
+            "usable": true,
+            "value": 1000000
+          }
+        },
+        "windows": {
+          "atr": {
+            "from": "2026-09-21",
+            "to": "2026-10-09"
+          },
+          "pullbackTouch": {
+            "from": "2026-10-07",
+            "to": "2026-10-09"
+          },
+          "smaFast": {
+            "from": "2026-09-14",
+            "to": "2026-10-09"
+          },
+          "smaSlow": {
+            "from": "2026-07-31",
+            "to": "2026-10-09"
+          },
+          "smaSlowPrior": {
+            "from": "2026-07-24",
+            "to": "2026-10-02"
+          },
+          "swing": {
+            "from": "2026-09-11",
+            "to": "2026-10-08"
+          },
+          "volumeAvg": {
+            "from": "2026-09-11",
+            "to": "2026-10-08"
+          }
+        }
+      },
+      "evidenceClass": {
+        "bars": "later_reconstruction",
+        "verdict": "derived"
+      },
+      "factsUsed": {
+        "ATR": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 3.9643
+        },
+        "C": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 110
+        },
+        "SMA_fast": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 95.75
+        },
+        "SMA_slow": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 101.3
+        },
+        "SMA_slow_5ago": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 99.5
+        },
+        "V": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 1000000
+        },
+        "V_avg": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 1000000
+        },
+        "swingHigh": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 106.5
+        },
+        "swingLow": {
+          "asOf": "2026-10-09",
+          "basis": "raw",
+          "source": "synthetic",
+          "value": 93.5
+        }
+      },
+      "missing": [],
+      "pattern": null,
+      "patterns": {
+        "breakout": "failed",
+        "pullback_resume": "satisfied"
+      },
+      "patternsSatisfied": [],
+      "reason": "regime",
+      "regime": "no_trend",
+      "ruleSet": {
+        "semanticsId": "tf-setup-v1/sem-1",
+        "setupVersion": "tf-setup-v1",
+        "thresholdsHash": "26f3f411b566"
+      },
+      "source": "synthetic",
+      "sourceMeta": {
+        "fetchedAt": "2026-10-28T00:00:00.000Z",
+        "from": "2026-07-17",
+        "to": "2026-10-09"
+      },
+      "verdict": "invalid"
+    },
     "uptrend_no_setup": {
       "asOf": "2026-10-09",
       "basis": "raw",

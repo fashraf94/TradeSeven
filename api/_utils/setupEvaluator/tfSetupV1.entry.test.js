@@ -88,6 +88,14 @@ describe('regime (definition §2)', () => {
     expect([r.verdict, r.reason, r.regime]).toEqual(['invalid', 'regime', 'no_trend']);
   });
 
+  it('C above both averages with SMA_fast below SMA_slow and SMA_slow rising is no_trend: only the middle inequality fails (review TE3-1, mutant M50)', () => {
+    const r = run('stack_middle_inequality_only');
+    expect(Object.fromEntries(['C', 'SMA_fast', 'SMA_slow', 'SMA_slow_5ago'].map((k) => [k, r.factsUsed[k].value]))).toEqual({ C: 110, SMA_fast: 97.25, SMA_slow: 101.3, SMA_slow_5ago: 99.5 });
+    expect(checkOf(r, 'slow_rising').result).toBe(true);
+    expect(checkOf(r, 'regime_stack')).toMatchObject({ lhs: [110, 97.25], rhs: [97.25, 101.3], result: false });
+    expect([r.verdict, r.reason, r.regime]).toEqual(['invalid', 'regime', 'no_trend']);
+  });
+
   it('the downtrend needs both conditions: the mirror stack with SMA_slow not falling is no_trend, not downtrend (review TE3-7)', () => {
     const r = run('stack_down_slow_not_falling');
     expect(Object.fromEntries(['C', 'SMA_fast', 'SMA_slow', 'SMA_slow_5ago'].map((k) => [k, r.factsUsed[k].value]))).toEqual({ C: 90.25, SMA_fast: 92.625, SMA_slow: 97.05, SMA_slow_5ago: 92.975 });

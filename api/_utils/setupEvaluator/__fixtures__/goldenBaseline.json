@@ -1,8 +1,8 @@
 [
   {
     "semanticsId": "tf-setup-v1/sem-1",
-    "goldenSha256": "b54a38dc0ac372d4123f873cbf6bca903cbe0111b8fe01051386378fc442cae0",
-    "recordedAt": "2026-10-28T17:30:25.347Z",
-    "note": "Initial baseline, slice 1 build (28 Oct 2026): the golden-verdict fixture under tf-setup-v1/sem-1 — clarification C1 (FD-P3-1 option (a), pattern-scoped missing facts), the raw basis (FD-P3-2), the §6.3 volume policy, the calendar-expected session rule and the split-heuristic provenance rule. Initial baseline creation: no earlier baseline exists at the base revision. Re-recorded twice during the build, before any base revision carried an entry: after the §2 review fix round (three scenarios added, holding records without pattern assessments, symmetric regime chains) and after the mutating lens (five scenarios added for the regime stack, the downtrend, the holding boundaries and the unknown path)."
+    "goldenSha256": "471fce6fdd094753c6e02720b81425fcd853f426ec61a07ca9ab7aca192cf4e9",
+    "recordedAt": "2026-10-28T17:36:40.299Z",
+    "note": "Initial baseline, slice 1 build (28 Oct 2026): the golden-verdict fixture under tf-setup-v1/sem-1 — clarification C1 (FD-P3-1 option (a), pattern-scoped missing facts), the raw basis (FD-P3-2), the §6.3 volume policy, the calendar-expected session rule and the split-heuristic provenance rule. Initial baseline creation: no earlier baseline exists at the base revision. Re-recorded during the build, before any base revision carried an entry: after the §2 review fix round (three scenarios added, holding records without pattern assessments, symmetric regime chains) and after the mutating lens (six scenarios added for the regime stack, the downtrend, the holding boundaries and the unknown path)."
   }
 ]
