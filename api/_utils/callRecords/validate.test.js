@@ -167,6 +167,27 @@ describe('fork and playerAsk — the options rules', () => {
     expect(run({ fork: fork({ options: [{ symbol: 'amd', why: 'x' }, { symbol: 'JPM', why: 'y' }] }) }).removed[0].reason).toBe('outside_universe');
   });
 
+  // BaggerBomb cleanup C3: the optional `forkUsable` hook is the swap's own "can it come in?" test (candidate.js
+  // hands it canComeIn). Absent, the universe alone is judged — every existing caller is unchanged.
+  it('C3: forkUsable removes a fork with an option that cannot come in, reason cannot_come_in; absent, the universe alone decides', () => {
+    const two = fork({ slot: 'support', swapOut: 'KO', options: [{ symbol: 'AMD', why: 'x' }, { symbol: 'JPM', why: 'y' }] });
+    const asked = [];
+    const usable = ({ slot, swapOut, symbol }) => { asked.push([slot, swapOut, symbol]); return symbol !== 'JPM'; };
+    const refused = run({ fork: two }, { forkUsable: usable });
+    expect(refused.removed).toEqual([{ source: 'fork', index: null, reason: 'cannot_come_in' }]);
+    expect(refused.validated).toBe(null);
+    expect(asked.some(([slot, swapOut, symbol]) => slot === 'support' && swapOut === 'KO' && symbol === 'JPM')).toBe(true); // asked per option, with the fork's own slot and swapOut
+    expect(run({ fork: two }, { forkUsable: () => true }).removed).toEqual([]);
+    expect(run({ fork: two }, { forkUsable: () => true }).calls).toHaveLength(1);
+    expect(run({ fork: two }).removed).toEqual([]); // no hook: unchanged
+    expect(run({ fork: two }, { forkUsable: null }).removed).toEqual([]);
+  });
+
+  it('C3: the universe test still comes first — an option outside it is outside_universe even when the hook would refuse it', () => {
+    const out = fork({ options: [{ symbol: 'AMD', why: 'x' }, { symbol: 'HOOD', why: 'y' }] });
+    expect(run({ fork: out }, { forkUsable: () => false }).removed).toEqual([{ source: 'fork', index: null, reason: 'outside_universe' }]);
+  });
+
   it('a fork option missing `why`, a fork without swapOut or said, is malformed', () => {
     for (const bad of [fork({ options: [{ symbol: 'AMD' }, { symbol: 'JPM', why: 'y' }] }), fork({ swapOut: undefined }), fork({ said: '' }), fork({ slot: 'bench' })]) {
       expect(run({ fork: bad }).removed).toEqual([{ source: 'fork', index: null, reason: 'malformed' }]);

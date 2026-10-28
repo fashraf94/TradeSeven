@@ -54,7 +54,6 @@
 
 import { fmtPrice, deadlineText } from './copy.js';
 import { answerIdOf } from './events.js';
-import { isInBattleUniverse } from '../../../src/data/battleUniverse.js';
 import { canComeIn } from './swappable.js';
 
 export const CALL_DIRECTIVE_FAMILY = 'call';
@@ -148,9 +147,13 @@ function heldIn(battle, tier) {
  * already moved must not receive text implying a still-available trade.
  *   call_hold / call_go — the slot tier exists; an exit's symbol is still held
  *     there; an entry's counterpart (when declared) is still held there.
- *   call_pick — the selected option is one of the stored options, in the
- *     battle universe, not held anywhere; the slot tier exists and still holds
- *     the stored swapOut.
+ *   call_pick — the selected option is one of the stored options, not held
+ *     anywhere; the slot tier exists and still holds the stored swapOut; and
+ *     (BaggerBomb cleanup C3) the selected name can come in for that swapOut —
+ *     canComeIn, the swap's own lists, the test an exit's replacement already
+ *     passes. The battle universe is not the test: it holds the equipped
+ *     snapshot, so an equipped-only ticker (KRE) was in it and could be
+ *     offered, filed and then refused by the executor.
  * Build 2b (D-7):
  *   call_go on an exit whose agent counterpart no longer passes canComeIn →
  *     counterpart_unavailable (from merge);
@@ -168,10 +171,11 @@ export function isCallActionEligible(kind, call, battle, { pickSymbol = null, at
   if (kind === 'call_pick') {
     const options = Array.isArray(call?.options) ? call.options.map((o) => o?.symbol) : [];
     if (!nonEmpty(pickSymbol) || !options.includes(pickSymbol)) return { ok: false, reason: 'pick_not_an_option' };
-    if (!isInBattleUniverse(battle, pickSymbol)) return { ok: false, reason: 'pick_outside_universe' };
     if (TIERS.some((t) => (heldIn(battle, t) || []).includes(pickSymbol))) return { ok: false, reason: 'pick_already_held' };
     if (!nonEmpty(call?.swapOut) || !held.includes(call.swapOut)) return { ok: false, reason: 'swap_out_not_held' };
-    return { ok: true };
+    // The two book reasons above stay first (retire.js reads them as D-6 book reasons); the rest is canComeIn's.
+    const verdict = canComeIn({ battle, out: call.swapOut, slot, inSymbol: pickSymbol, atMs });
+    return verdict.ok ? { ok: true } : { ok: false, reason: verdict.reason };
   }
   if (call?.direction === 'exit') {
     if (!held.includes(call.symbol)) return { ok: false, reason: 'symbol_not_held' };

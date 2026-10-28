@@ -385,7 +385,13 @@ export function buildMintCandidate({ battleId, evalId, evalSeq, mintedAtMs, raw,
     mintedAtMs,
     battleExpiresAtMs: battleExpiryMs(battle),
   });
-  const validation = validateDeclarations(raw, { universe, resolveHorizon, topLevelWatching });
+  // BaggerBomb cleanup C3: a fork option must pass the same canComeIn test as an exit's replacement, on the
+  // seam's frozen book at the check's own instant. An unknown seam (no book) proves nothing usable — the
+  // counterpartUsable stance — so its forks are removed (the universe is unknown there too).
+  const forkAtMs = typeof promptBuiltAt === 'string' ? Date.parse(promptBuiltAt) : Number.NaN;
+  const forkUsable = ({ slot, swapOut, symbol }) => Boolean(book) && typeof book === 'object'
+    && canComeIn({ battle: book, out: swapOut, slot, inSymbol: symbol, atMs: forkAtMs }).ok;
+  const validation = validateDeclarations(raw, { universe, resolveHorizon, topLevelWatching, forkUsable });
   const removed = [...validation.removed];
   if (!validation.validated) {
     return deepFreeze({ record: null, calls: [], newOpen: [], removed, canonical: { record: null, calls: {} }, publicationBytes: 0 });

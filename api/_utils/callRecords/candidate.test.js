@@ -51,6 +51,51 @@ describe('ids, ordinals, kinds', () => {
     expect(pick.horizon).toEqual({ phrase: 'next_check', expiresAt: Date.parse('2026-09-09T15:15:00.000Z'), basis: 'next_check' });
   });
 
+  // BaggerBomb cleanup C3 (Flash, Oct 27, 2026; #998 MT2-1): a fork option must be able to come in — the same
+  // canComeIn test an exit's replacement options pass, on the seam's frozen book at the check's instant. The
+  // battle universe holds the equipped snapshot; the swap's lists do not.
+  describe('C3 — fork options use the swap lists through canComeIn', () => {
+    const equippedBattle = () => {
+      const b = makeTickBattle();
+      b.agentContext = { ...b.agentContext, equippedWatchlist: { watchlistId: 'wl-1', name: 'Banks', tickers: ['KRE', 'JPM'] } };
+      return b;
+    };
+    const fork = (symbols) => ({ fork: { slot: 'support', swapOut: 'KO', options: symbols.map((symbol) => ({ symbol, why: 'w' })), said: 'pick one' } });
+    const mintFork = (symbols, over = {}) => buildMintCandidate(base({ raw: fork(symbols), universe: [...UNIVERSE, 'KRE'], battle: equippedBattle(), book: freezeSwapBook(equippedBattle()), ...over }));
+
+    it('an equipped ETF on no swap list is never offered: the fork is removed, and the record holds no pick', () => {
+      const c = mintFork(['KRE', 'JPM']);
+      expect(c.record).toBe(null);
+      expect(c.calls).toEqual([]);
+      expect(c.removed).toEqual([{ source: 'fork', index: null, reason: 'cannot_come_in' }]);
+    });
+
+    it('control: the same fork over ranked bench names mints a pick with both options', () => {
+      const c = mintFork(['AMD', 'JPM']);
+      expect(c.calls).toHaveLength(1);
+      expect(c.calls[0].options.map((o) => o.symbol)).toEqual(['AMD', 'JPM']);
+      expect(c.removed).toEqual([]);
+    });
+
+    it('a name that is held, locked at the check\'s instant, or the wrong class is not offered either', () => {
+      expect(mintFork(['PG', 'JPM']).removed).toEqual([{ source: 'fork', index: null, reason: 'cannot_come_in' }]); // PG is held
+      const locked = equippedBattle(); locked.portfolio.bench.stocks[0] = { ...locked.portfolio.bench.stocks[0], cooldownUntil: '2099-01-01T00:00:00.000Z' };
+      expect(mintFork(['AMD', 'JPM'], { book: freezeSwapBook(locked) }).removed).toEqual([{ source: 'fork', index: null, reason: 'cannot_come_in' }]);
+      const crypto = buildMintCandidate(base({ raw: { fork: { slot: 'support', swapOut: 'BTC', options: [{ symbol: 'AMD', why: 'w' }, { symbol: 'JPM', why: 'w' }], said: 's' } } }));
+      expect(crypto.removed).toEqual([{ source: 'fork', index: null, reason: 'cannot_come_in' }]);
+    });
+
+    it('the test runs against the seam\'s frozen book, never the live battle', () => {
+      const frozen = equippedBattle(); frozen.watchlist = { ...frozen.watchlist, hotBench: ['KRE'] };
+      expect(mintFork(['KRE', 'JPM'], { book: freezeSwapBook(frozen) }).calls).toHaveLength(1); // on the hot bench at the seam
+      expect(mintFork(['KRE', 'JPM'], { book: freezeSwapBook(equippedBattle()), battle: frozen }).removed).toEqual([{ source: 'fork', index: null, reason: 'cannot_come_in' }]);
+    });
+
+    it('an unknown seam (no book) proves nothing usable, as for a counterpart: the fork is removed', () => {
+      expect(mintFork(['AMD', 'JPM'], { book: null }).removed).toEqual([{ source: 'fork', index: null, reason: 'cannot_come_in' }]);
+    });
+  });
+
   it('the wire fields: playerResponse / directiveThreadId / outcome / refused start null; the call wire is not widened', () => {
     const [call] = buildMintCandidate(base()).calls;
     expect(Object.keys(call)).toEqual([
