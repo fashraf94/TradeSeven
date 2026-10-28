@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   etDateOf, etDayBounds, closePassWindowFor, nextCandleRunEtDate, candleWindowStart, withinCandleWindow, sessionDatesBetween,
 } from './tapeTime.js';
-import { gapAnalysis, orderChecks, ghostBaseline, tickState } from './tapeAssemble.js';
+import { gapAnalysis, orderChecks, ghostBaseline, buildReplayInputs, tickState } from './tapeAssemble.js';
 import { mergeRows, sanitizeForFirestore, sameContent } from './tapeMerge.js';
 import { classOfNumber, numbersWithClasses, TAPE_NUMBER_CLASSES, SERIES_NUMBER_CLASSES, PROVENANCE_CLASSES } from '../../../src/constants/filmTape.js';
 
@@ -109,6 +109,42 @@ describe('ghostBaseline — the evaluator\'s precedence, from recorded facts onl
     expect(ghostBaseline({ receipt: { guardrailReplay: {} }, entryPrice: 50, swappedOutAt: at, activatedAt: '2026-09-23T23:00:00Z' }))
       .toEqual({ value: null, basis: 'previous_close', source: null });
     expect(ghostBaseline({ receipt: null, entryPrice: 50, swappedOutAt: at, activatedAt: '2026-09-24T12:00:00Z' }).value).toBeNull();
+  });
+});
+
+// BaggerBomb cleanup C2 (founder-sanctioned, Oct 28, 2026): a tiered battle deployed for the NEXT session has its
+// activation day on that session, not on the ET date of `activatedAt`, so the ghost leg of a swap on that day
+// is scored from the starting price — the evaluator's own test.
+describe('ghostBaseline — the activation day is the first trading day of a tiered battle (C2)', () => {
+  const swapTue = '2026-10-27T15:00:00Z'; // Tue 11:00 ET
+  const monActivation = '2026-10-26T19:20:00Z'; // deployed Mon 3:20 PM ET
+  const receipt = { guardrailReplay: {} };
+  it('a swap on the first trading day, though activatedAt is the day before → the starting price = the entry', () => {
+    expect(ghostBaseline({ receipt, entryPrice: 100, swappedOutAt: swapTue, activatedAt: monActivation, firstTradingDay: '2026-10-27' }))
+      .toMatchObject({ value: 100, basis: 'starting_price' });
+  });
+  it('without a first trading day the answer is exactly what it was — activatedAt decides (previous close, unrecorded)', () => {
+    for (const none of [undefined, null, '']) {
+      expect(ghostBaseline({ receipt, entryPrice: 100, swappedOutAt: swapTue, activatedAt: monActivation, firstTradingDay: none }))
+        .toEqual({ value: null, basis: 'previous_close', source: null });
+    }
+    expect(ghostBaseline({ receipt, entryPrice: 100, swappedOutAt: swapTue, activatedAt: monActivation }))
+      .toEqual({ value: null, basis: 'previous_close', source: null });
+  });
+  it('a swap after the first trading day is the previous close again; a recorded swap price still wins', () => {
+    expect(ghostBaseline({ receipt, entryPrice: 100, swappedOutAt: '2026-10-28T15:00:00Z', activatedAt: monActivation, firstTradingDay: '2026-10-27' }))
+      .toEqual({ value: null, basis: 'previous_close', source: null });
+    expect(ghostBaseline({ receipt: { guardrailReplay: { outgoingSwappedInDay: 1 } }, entryPrice: 100, swappedOutAt: swapTue, activatedAt: monActivation, firstTradingDay: '2026-10-27' }))
+      .toMatchObject({ value: 100, basis: 'swap_price' });
+  });
+  it('through buildReplayInputs: a tiered battle with a first day gets the starting-price baseline; a tournament with the same list does not', () => {
+    const row = { entryPrice: 100, at: swapTue, entryPriceSource: 'trades.entryPrice', inBasis: { price: 150 }, inBasisSource: 'receipt.entryMark' };
+    const rec = { guardrailReplay: { outgoingBaseATR: 2.5, thresholdHistory: { maxMultiplier: 0, minMultiplier: 0 } }, resolvedTier: 'star', entryATR: 2.5, entryAtrSource: 'x' };
+    const trade = { tier: 'star', direction: 'long' };
+    const tiered = { activatedAt: monActivation, gameMode: 'baggerbomb_agent', timing: { tradingDays: ['2026-10-27'] } };
+    const tournament = { ...tiered, gameMode: 'baggerbomb_tournament' };
+    expect(buildReplayInputs({ row, receipt: rec, trade, battle: tiered }).replayInputs.ghost.thresholdBaseline).toEqual({ value: 100, basis: 'starting_price' });
+    expect(buildReplayInputs({ row, receipt: rec, trade, battle: tournament }).replayInputs.ghost).toBeNull(); // no baseline: the ghost leg stays unreplayed
   });
 });
 

@@ -10,6 +10,8 @@ import { describe, it, expect } from 'vitest';
 import {
   capString,
   capTickersArray,
+  retiredTickerRefusal,
+  splitRetiredTickers,
   NAME_MAX_LEN,
   NOTES_MAX_LEN,
   TICKERS_MAX_COUNT,
@@ -80,5 +82,30 @@ describe('capTickersArray', () => {
 
     const many = Array.from({ length: 45 }, (_, i) => ({ symbol: `T${i}` }));
     expect(capTickersArray(many, NOW)).toHaveLength(TICKERS_MAX_COUNT);
+  });
+});
+
+// BaggerBomb cleanup C4 (Flash, Oct 27, 2026): the dialogue save drops retired names instead of refusing.
+describe('splitRetiredTickers / retiredTickerRefusal (C4)', () => {
+  it('keeps every row that is not retired, as it came, and names each dropped symbol once, in list order', () => {
+    const rows = [{ symbol: 'AAPL', n: 1 }, { symbol: 'ea ' }, { symbol: 'NVDA', n: 2 }, { symbol: 'EA' }, { symbol: 'WBA' }];
+    const { kept, dropped } = splitRetiredTickers(rows);
+    expect(kept).toEqual([{ symbol: 'AAPL', n: 1 }, { symbol: 'NVDA', n: 2 }]);
+    expect(kept[0]).toBe(rows[0]); // the same row, not a copy
+    expect(dropped).toEqual(['EA', 'WBA']);
+  });
+
+  it('a list with none, an empty list and a non-list drop nothing; a malformed row is kept for the caller to judge', () => {
+    expect(splitRetiredTickers([{ symbol: 'AAPL' }])).toEqual({ kept: [{ symbol: 'AAPL' }], dropped: [] });
+    expect(splitRetiredTickers([])).toEqual({ kept: [], dropped: [] });
+    expect(splitRetiredTickers(null)).toEqual({ kept: [], dropped: [] });
+    expect(splitRetiredTickers([{ symbol: 123 }, null]).dropped).toEqual([]);
+  });
+
+  it('the refusal carries the symbols as a copy, for the editor line', () => {
+    const symbols = ['EA', 'WBA'];
+    const refusal = retiredTickerRefusal(symbols);
+    expect(refusal).toEqual({ error: 'retired_ticker', message: "EA, WBA have left the stock universe and can't be added to a watchlist.", symbols: ['EA', 'WBA'] });
+    expect(refusal.symbols).not.toBe(symbols);
   });
 });

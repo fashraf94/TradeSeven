@@ -31,7 +31,9 @@ export function buildArchetypeCandidateMenu({
   const initialSet = new Set(initial);
   const merged = [...initial, ...equipped.filter(symbol => !initialSet.has(symbol))];
 
-  // Equipped names always survive, including off-universe names and >20.
+  // Equipped names always survive, including >20. The caller hands over only the
+  // equipped names that are in the ranked universe (F2, Oct 25: an equipped name
+  // outside it, such as KRE, stays on the snapshot and never reaches the hotBench).
   // Under pressure, trim NON-equipped names in archetype rank order. The
   // shared legacy equip helper intentionally retains its fit-based policy.
   let hotBench = merged;

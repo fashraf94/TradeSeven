@@ -252,10 +252,26 @@ describe('actions (BA-5, BA-6) and the replay inputs', () => {
   it('an original pick sold on a non-activation day: the baseline is the unrecorded previousClose — the ghost leg is null, never guessed', async () => {
     const fx = await capturedDay();
     fx.battle.activatedAt = '2026-09-23T23:00:00.000Z'; // deployed the evening before (ET 2026-09-23)
+    // C2: a tiered battle's activation day is its first trading day, so the swap day is "day 2" only when the
+    // battle's list started the day before (this row used to rely on activatedAt alone; since BR-2 a battle
+    // deployed the evening before plays the swap day as its FIRST day — the next row).
+    fx.battle.timing = { ...fx.battle.timing, tradingDays: ['2026-09-23', '2026-09-24'] };
     const { tape } = await writeFor(fx);
     expect(tape.actions[0].replayInputs.ghost).toBeNull();
     expect(tape.actions[0].replayMissing).toEqual(['ghost.thresholdBaseline']);
     expect(tape.actions[0].replayInputs.bought).not.toBeNull();
+  });
+
+  // BaggerBomb cleanup C2 (founder-sanctioned, Oct 28, 2026): deployed the evening before FOR the next session, so
+  // the swap day is the battle's first trading day — the evaluator scores it from the starting price, and so does
+  // the ghost leg. (A tournament with the same list keeps the activatedAt rule: tapePure.test.js, buildReplayInputs.)
+  it('C2: a battle deployed the evening before for the next session, sold on its first trading day: the baseline is the starting price = the entry', async () => {
+    const fx = await capturedDay();
+    fx.battle.activatedAt = '2026-09-23T23:00:00.000Z';
+    expect(fx.battle.timing.tradingDays).toEqual(['2026-09-24']); // the fixture's one trading day is the swap day
+    const { tape } = await writeFor(fx);
+    expect(tape.actions[0].replayInputs.ghost.thresholdBaseline).toMatchObject({ basis: 'starting_price', value: tape.actions[0].replayInputs.ghost.entryPrice });
+    expect(tape.actions[0].replayMissing).not.toContain('ghost.thresholdBaseline');
   });
 
   it('a position swapped in the same day scores against its swapPrice: baseline = the recorded entry, basis swap_price', async () => {

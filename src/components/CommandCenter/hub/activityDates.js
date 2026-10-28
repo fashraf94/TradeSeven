@@ -52,19 +52,6 @@ export function formatHubDayYear(ms, nowMs) {
   return otherYear(ms, nowMs) ? etDayYear().format(new Date(ms)) : formatHubDay(ms);
 }
 
-const etWeekday = once(() => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' }));
-
-/**
- * "Wed" for an instant in ms when it falls on another ET calendar day than `nowMs`'s ("Oct 3, 2025" compared, so the
- * year counts too); '' on the same day, and without a clock or a time (the S8 fix build, ruling R-S8F-9: a live game's
- * "ends" names its day when that is not today — a game deployed from 15:15 ET or on a weekend ends at the next session's
- * close).
- */
-export function formatHubOtherDay(ms, nowMs) {
-  if (typeof ms !== 'number' || !Number.isFinite(ms) || typeof nowMs !== 'number' || !Number.isFinite(nowMs)) return '';
-  return etDayYear().format(new Date(ms)) === etDayYear().format(new Date(nowMs)) ? '' : etWeekday().format(new Date(ms));
-}
-
 const marketDayParts = once(() => new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
   weekday: 'short',

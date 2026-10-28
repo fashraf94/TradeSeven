@@ -6,7 +6,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { formatHubDayTime, formatHubMarketDate, formatHubOtherDay } from './activityDates';
+import { formatHubDayTime, formatHubMarketDate } from './activityDates';
+import { formatHubTimeOnDay } from './hubDate';
 
 describe('formatHubDayTime — Activity\'s absolute time, read in ET', () => {
   it('writes the month, the day and the clock in Eastern time', () => {
@@ -62,25 +63,27 @@ describe('S4\'s helpers stay out of the main bundle (merge round: the deploy pro
     const code = src('activityDates.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const topLevel = code.split('\n').filter((line) => /^const \w+ = new Intl\./.test(line));
     expect(topLevel).toEqual([]);
-    // Six since the S8 fix build (ruling R-S8F-9): the short weekday a live game's "ends" names when that is not today.
-    expect((code.match(/new Intl\.DateTimeFormat/g) || []).length).toBe(6);
+    expect((code.match(/new Intl\.DateTimeFormat/g) || []).length).toBe(5);
   });
 });
 
-describe("formatHubOtherDay — a live game's end on another ET day (the S8 fix build, ruling R-S8F-9)", () => {
+// The S8 fix build's rows for ruling R-S8F-9, re-pointed at main's one helper when #999 (BaggerBomb cleanup C5) brought the same
+// rule: hub/hubDate.js formatHubTimeOnDay. Its outputs and S8's own helper's were compared over 283,178 pairs: no difference.
+describe("formatHubTimeOnDay — a live game's end on another ET day (ruling R-S8F-9; one helper since the #999 merge)", () => {
   // Tue Oct 27, 2026, 11:00 AM ET.
   const NOW9 = Date.UTC(2026, 9, 27, 15, 0);
-  it('another ET calendar day: its short weekday; the same day: nothing', () => {
-    expect(formatHubOtherDay(Date.UTC(2026, 9, 28, 20, 0), NOW9)).toBe('Wed');
-    expect(formatHubOtherDay(Date.UTC(2026, 9, 27, 20, 0), NOW9)).toBe('');
-    expect(formatHubOtherDay(Date.UTC(2026, 9, 28, 3, 59), NOW9)).toBe('');
-    expect(formatHubOtherDay(Date.UTC(2026, 9, 28, 4, 0), NOW9)).toBe('Wed');
-    expect(formatHubOtherDay(Date.UTC(2025, 9, 27, 15, 0), NOW9)).toBe('Mon');
+  it('another ET calendar day: its short weekday before the time; the same day: the time alone', () => {
+    expect(formatHubTimeOnDay(Date.UTC(2026, 9, 28, 20, 0), NOW9)).toMatch(/^Wed 4:00\sPM$/);
+    expect(formatHubTimeOnDay(Date.UTC(2026, 9, 27, 20, 0), NOW9)).toMatch(/^4:00\sPM$/);
+    expect(formatHubTimeOnDay(Date.UTC(2026, 9, 28, 3, 59), NOW9)).toMatch(/^11:59\sPM$/);
+    expect(formatHubTimeOnDay(Date.UTC(2026, 9, 28, 4, 0), NOW9)).toMatch(/^Wed 12:00\sAM$/);
+    // A year back is another day too: the weekday, as before.
+    expect(formatHubTimeOnDay(Date.UTC(2025, 9, 27, 15, 0), NOW9)).toMatch(/^Mon 11:00\sAM$/);
   });
 
-  it('no time or no clock: nothing', () => {
-    expect(formatHubOtherDay(null, NOW9)).toBe('');
-    expect(formatHubOtherDay(NOW9, null)).toBe('');
-    expect(formatHubOtherDay(Number.NaN, NOW9)).toBe('');
+  it('no time: nothing; no clock: the time alone', () => {
+    expect(formatHubTimeOnDay(null, NOW9)).toBe('');
+    expect(formatHubTimeOnDay(NOW9, null)).toMatch(/^11:00\sAM$/);
+    expect(formatHubTimeOnDay(Number.NaN, NOW9)).toBe('');
   });
 });

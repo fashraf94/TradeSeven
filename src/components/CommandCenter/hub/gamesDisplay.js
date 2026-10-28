@@ -21,10 +21,10 @@
 import { BATTLE_TYPE_RANKED, battleTypeLabel, classifyBattleType, sortLiveBattles } from '../../../utils/commandCenterLiveBattles';
 import { STOCK_RESULT_UNAVAILABLE, displayedStockScores } from '../../../utils/stockThresholdModel';
 import { FILM_ROOM_ROUTE } from '../../../constants/filmTape';
-import { PHASE, derivePhase } from '../../../adapters/baggerbombAdapter';
+import { PHASE, derivePhase, deriveStartsAtEt } from '../../../adapters/baggerbombAdapter';
 import { HUB_COPY as COPY } from './hubCopy';
-import { formatHubTime, hubMs } from './hubDate';
-import { formatHubDayYear, formatHubOtherDay } from './activityDates';
+import { formatHubTime, formatHubTimeOnDay, hubMs } from './hubDate';
+import { formatHubDayYear } from './activityDates';
 import { OUTCOME_KINDS, deriveGameOutcome } from './selectors/gameOutcome';
 import { REVIEW_STATES } from './reviewScheduler';
 
@@ -132,15 +132,18 @@ function timeLeft(minutes) {
  */
 export function liveGameRows(battles, { nowMs, marketState }) {
   return sortLiveBattles(Array.isArray(battles) ? battles : []).map((battle) => {
-    const preOpen = derivePhase(battle, marketState) === PHASE.PRE_OPEN;
+    // C5: `nowMs` is the clock this row already takes. A game before its first trading
+    // day is waiting, not live, and says when it starts (the adapter's one derivation).
+    const preOpen = derivePhase(battle, marketState, nowMs) === PHASE.PRE_OPEN;
+    const startsAtEt = deriveStartsAtEt(battle, nowMs);
     const endsMs = hubMs(battle.expiresAt);
     const minutes = minutesLeft(endsMs, nowMs);
     const shown = displayedStockScores(battle);
     const [score] = formatScores(shown.currentScore);
     const tradeCount = battle.scoreState?.tradeCount;
     const trades = finite(tradeCount) ? tradeCount : (Array.isArray(battle.trades) ? battle.trades.length : 0);
-    // A game sent to the next session (deployed from 15:15 ET, or on a weekend) ends on another day: say which (S8-4).
-    const ends = endsMs === null ? '' : COPY.games.endsWhen(COPY.time.et(formatHubTime(endsMs)), formatHubOtherDay(endsMs, nowMs));
+    // C5: an end on another ET day names the day ("ends Tue 8:00 PM ET"); the S8 review's S8-4 is the same rule, one helper.
+    const ends = endsMs === null ? '' : COPY.time.et(formatHubTimeOnDay(endsMs, nowMs));
     return Object.freeze({
       id: battle.id,
       kind: classifyBattleType(battle),
@@ -150,7 +153,7 @@ export function liveGameRows(battles, { nowMs, marketState }) {
       preOpen,
       // Opened and past its end time: the clock reads "ending" (hub/hubModel.js liveCountsOf counts it; ruling R-S8F-7).
       ending: !preOpen && minutes !== null && minutes <= 0,
-      clock: preOpen ? COPY.games.waitingForOpen : timeLeft(minutes),
+      clock: preOpen ? (startsAtEt ? COPY.games.startsAt(startsAtEt) : COPY.games.waitingForOpen) : timeLeft(minutes),
       detail: COPY.games.liveDetail(score, trades, ends),
     });
   });

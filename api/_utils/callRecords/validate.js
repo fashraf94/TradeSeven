@@ -94,6 +94,7 @@ export const REMOVAL_REASONS = Object.freeze([
   'oversize',                   // a string, a count or the document cap exceeded
   'too_few_options',            // a fork or a playerAsk with fewer than two options
   'outside_universe',           // a fork option naming a symbol outside the battle universe
+  'cannot_come_in',             // a fork option naming a name the swap's lists cannot bring in (swappable.js canComeIn, D-7): an equipped-only ticker, a held or locked name, the wrong class
   'explicit_invalid',           // an explicit expiry at or before the mint instant (§5)
   'no_slot_before_battle_end',  // next_check with no eligible slot before the battle ends (§5)
   'calendar_unavailable',       // the trading calendar is not maintained for the instant (§5)
@@ -180,7 +181,7 @@ function checkPlayerAsk(raw) {
   return { ok: true, row: { question, options: [...options], ...(absentOrBlank(symbol) ? {} : { symbol }) } };
 }
 
-function checkFork(raw, universe) {
+function checkFork(raw, universe, forkUsable = null) {
   if (!isPlainObject(raw)) return { ok: false, reason: 'malformed' };
   const { slot, swapOut, options, said } = raw;
   if (!SLOTS.includes(slot)) return { ok: false, reason: 'malformed' };
@@ -197,6 +198,11 @@ function checkFork(raw, universe) {
   // Exact membership: the universe's own spelling, never a case-folded guess.
   const members = new Set(Array.isArray(universe) ? universe : []);
   if (options.some((o) => !members.has(o.symbol))) return { ok: false, reason: 'outside_universe' };
+  // BaggerBomb cleanup C3: a fork option must also be able to come in — the same
+  // test the exit options and the filing use (candidate.js hands the seam's
+  // canComeIn in). The universe holds the equipped snapshot, which the swap's
+  // lists do not: an equipped-only ticker such as KRE is in one and never the other.
+  if (typeof forkUsable === 'function' && options.some((o) => !forkUsable({ slot, swapOut, symbol: o.symbol }))) return { ok: false, reason: 'cannot_come_in' };
   return {
     ok: true,
     row: { slot, swapOut, options: options.map((o) => ({ symbol: o.symbol, why: o.why })), said },
@@ -254,6 +260,8 @@ export function readsTopLevelWatching(block, topLevelWatching) {
  * @param {unknown} block the model's `declarations` value (a detached copy)
  * @param {object}  [ctx]
  * @param {string[]} [ctx.universe] the battle universe frozen at the prompt seam (fork options)
+ * @param {(option: { slot: string, swapOut: string, symbol: string }) => boolean} [ctx.forkUsable]
+ *   BaggerBomb cleanup C3: whether a fork option can come in for the fork's swapOut in its slot; absent, only the universe is judged
  * @param {(phrase: string, expiresAtMs?: number) => ({ expiresAtMs: number, basis: string } | { reason: string })} [ctx.resolveHorizon]
  *   the horizon resolver bound to this check's instants; when absent, horizons are not judged
  * @param {unknown} [ctx.topLevelWatching] the SAME accepted tool input's top-level `watching`
@@ -266,7 +274,7 @@ export function readsTopLevelWatching(block, topLevelWatching) {
  *   watchingSource: 'declarations' | 'top_level' | null,
  * }}
  */
-export function validateDeclarations(block, { universe = [], resolveHorizon = null, topLevelWatching = undefined } = {}) {
+export function validateDeclarations(block, { universe = [], resolveHorizon = null, topLevelWatching = undefined, forkUsable = null } = {}) {
   const removed = [];
   const empty = { validated: null, removed, calls: [], phase: 'none', watchingSource: null };
   const topLevel = readsTopLevelWatching(block, topLevelWatching);
@@ -323,7 +331,7 @@ export function validateDeclarations(block, { universe = [], resolveHorizon = nu
   }
 
   if (!absent(rows.fork)) {
-    const checked = checkFork(rows.fork, universe);
+    const checked = checkFork(rows.fork, universe, forkUsable);
     if (!checked.ok) removed.push({ source: 'fork', index: null, reason: checked.reason });
     else {
       const h = judgeHorizon('next_check');

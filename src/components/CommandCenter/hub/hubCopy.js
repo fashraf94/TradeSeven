@@ -293,12 +293,12 @@ export const HUB_COPY = Object.freeze({
     opponentGroup: 'League group',
     /** A live game that has not opened yet: deployed, waiting for the open. */
     waitingForOpen: 'waiting for the open',
+    /** C5: a game before its first trading day (deployed late, plays the next session): when it starts, e.g. "Tue 9:30 AM ET". */
+    startsAt: (when) => `Starts ${when}`,
     timeLeft: (hours, minutes) => (hours > 0 ? `${hours}h ${minutes}m left` : `${minutes}m left`),
     ending: 'ending',
     /** A live row's line: its score as recorded, its trades, when it ends. */
     liveDetail: (score, trades, ends) => [`Score ${score}`, `${trades} trade${trades === 1 ? '' : 's'}`, ends ? `ends ${ends}` : ''].filter(Boolean).join(' · '),
-    /** When a live game ends: its time, after its short day when that is not today (the S8 review's S8-4; ruling R-S8F-9). */
-    endsWhen: (time, day) => (day ? `${day} ${time}` : time),
     /** A score a reader may not show (v2 Ruling 16): a dash, never 0. */
     scoreUnavailable: '—',
     /** Spec §7's outcome words; each number is the row's own stored score. */
