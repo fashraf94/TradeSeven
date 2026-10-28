@@ -932,15 +932,16 @@ function LiveDeployAttemptProvider({ hubEnabled, bridge, children }) {
     return appRoot ? inertSiblings(null, [appRoot]) : undefined;
   }, [overlayKey]);
   // On close (the S8 review's S8-15): the mark above is released first — its cleanup runs before this — then focus goes
-  // to the captured invoker; gone or disabled, to the opener a hub sheet's close still owes (founder ruling Q-S8F-1: the
-  // Scouting Board closed itself under the ceremony, so "See what it's eyeing"); else to the hub's shell. The overlay's
-  // own restore ran while the page was still inert, so this is the one that lands.
+  // to the opener a hub sheet's close still owes, when there is one (founder ruling Q-S8F-1: the Scouting Board closed
+  // itself under the ceremony, so "See what it's eyeing" — the captured invoker was that sheet's own footer, gone or still
+  // leaving); else to the captured invoker; else, gone or disabled, to the hub's shell. The overlay's own restore ran while
+  // the page was still inert, so this is the one that lands.
   useEffect(() => {
     if (overlayKey || invokerRef.current === null) return;
     const invoker = invokerRef.current.element;
     invokerRef.current = null;
-    if (invoker && invoker !== document.body && tryFocus(invoker)) return;
     if (tryFocus(takeOwedFocus())) return;
+    if (invoker && invoker !== document.body && tryFocus(invoker)) return;
     tryFocus(document.querySelector('[data-hub="shell"]'));
   }, [overlayKey]);
   const agent = rt.agentFor();

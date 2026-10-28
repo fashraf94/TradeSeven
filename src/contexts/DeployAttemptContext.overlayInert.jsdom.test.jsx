@@ -497,17 +497,45 @@ describe('founder ruling Q-S8F-1 — the opener the hub\'s stack still owes', ()
   });
 
   it('an opener owed from before the sequence is not this sequence\'s: a later ceremony whose invoker is disabled ends on the shell', async () => {
-    // A sheet closed while the page was inert for another reason leaves its opener owed.
+    // A sheet closed while the page was inert for another reason (the shell marked here, not by the stack, so the
+    // stack's own release leaves it) leaves its opener owed: the close could not give focus back.
     act(() => { stackProbe.current.open('legacy:record', { opener: boardOpener(), within: shell() }); });
-    expect(inert(container)).toBe(true);
-    container.setAttribute('inert', '');
+    shell().setAttribute('inert', '');
     act(() => { stackProbe.current.close('legacy:record', { fallback: shell() }); });
-    container.removeAttribute('inert');
+    expect(document.activeElement).not.toBe(boardOpener());
+    shell().removeAttribute('inert');
+    expect(boardOpener().disabled).toBe(false);
     await tapFrom(hold());
     await refuseAndSettle(LIMITER_429());
     await act(async () => { button('Back to hub').click(); });
     await flush();
     expect(hold().disabled).toBe(true);
     expect(document.activeElement).toBe(shell());
+  });
+});
+
+// Founder ruling Q-S8F-1, its order: the owed opener before the captured invoker. Here the closed board is still
+// animating out (jsdom never finishes its exit), so its footer — the invoker — is still in the document and enabled.
+describe('founder ruling Q-S8F-1 — the owed opener comes before the invoker', () => {
+  it('Back to hub while the closed board is still leaving: focus goes to "See what it\'s eyeing", not to the leaving footer', async () => {
+    const opener = document.querySelector('[data-board-opener]');
+    act(() => { opener.focus(); });
+    act(() => { stackProbe.current.open('legacy:scouting', { opener, within: shell() }); });
+    board.open();
+    await flush();
+    const boardDeploy = button('Deploy this agent');
+    await act(async () => { boardDeploy.focus(); boardDeploy.click(); });
+    await flush();
+    act(() => { frames.run(nowMs); });
+    await act(async () => { posts[0].answer({ outcome: 'created', success: true, agentBattleId: 'battle-new' }); });
+    await flush();
+    await flush();
+    expect(boardCloses).toBe(1);
+    // The footer is leaving, not gone: connected and enabled.
+    expect(boardDeploy.isConnected).toBe(true);
+    expect(boardDeploy.disabled).toBe(false);
+    await act(async () => { button('Back to hub').click(); });
+    await flush();
+    expect(document.activeElement).toBe(opener);
   });
 });
