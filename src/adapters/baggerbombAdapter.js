@@ -27,7 +27,9 @@ import { classifyBattleType, battleTypeLabel } from '../utils/commandCenterLiveB
 // The cron's slot width, from the module that FLOORS to it — one constant, so
 // the gate below and the label it protects cannot drift apart (D-83, §9).
 // `deskCopy` is a leaf: it imports nothing, so there is no cycle.
-import { SLOT_MS } from '../components/Dashboard/desk/deskCopy';
+import { SLOT_MS, etStamp } from '../components/Dashboard/desk/deskCopy';
+// BaggerBomb cleanup C5: the SAME first-trading-day predicate the crons use (Node-clean, zero clock reads here).
+import { beforeFirstTradingDay, etDateOf, firstSessionOpenMs } from '../utils/tieredFirstTradingDay.js';
 // Table G (V1.4): the unconfirmed-outcome marker, as data (zero-import).
 import { feedBeatUnconfirmed } from '../data/executionOutcome';
 // BaggerBomb stock thresholds v2 (Ruling 16): the committed-score display rule.
@@ -145,6 +147,30 @@ function etDayOfInstant(ms) {
 }
 
 /**
+ * C5 (Flash, Oct 27, 2026): has this tiered battle not reached its first trading
+ * day, at the ET date of `nowMs` (the caller's own instant, epoch ms)? The one
+ * predicate the crons use (src/utils/tieredFirstTradingDay.js). False without a
+ * usable clock.
+ */
+export function notStartedYet(battle, nowMs) {
+  const today = etDateOf(nowMs);
+  return today !== null && beforeFirstTradingDay(battle, today);
+}
+
+/**
+ * C5: when a not-yet-started battle starts, as the text "Tue 9:30 AM ET" — the
+ * first trading day's open from the calendar of record (a TRUE instant, so Intl
+ * is exact: a weekend, a holiday eve and a DST change all land on the real next
+ * session). Null once it has started, for any other mode, and when the calendar
+ * has no session for the day. Both surfaces read THIS string (BUILD_RULES §9).
+ */
+export function deriveStartsAtEt(battle, nowMs) {
+  if (!notStartedYet(battle, nowMs)) return null;
+  const openMs = firstSessionOpenMs(battle);
+  return openMs === null ? null : etStamp(new Date(openMs).toISOString());
+}
+
+/**
  * Derive the phase (framework §4). Never stored — always derived.
  *
  * PRE_OPEN's marker is `scoreState.evaluationCount`, NOT a statusFeed entry.
@@ -154,8 +180,12 @@ function etDayOfInstant(ms) {
  * evaluation counter is written every cycle (agent-evaluate.js:2723), so it is
  * the honest marker (PASS1_PHASE0_STOP_RULINGS_AND_GO.md §7, framework C-3).
  */
-export function derivePhase(battle, marketState) {
+export function derivePhase(battle, marketState, nowMs = null) {
   if (battle?.status === 'completed') return PHASE.POST_CLOSE;
+  // C5: a tiered battle before its first trading day has not started — it is
+  // never LIVE, whatever the market is doing (the creation afternoon). Only with
+  // the caller's own clock: without `nowMs` nothing is read and nothing changes.
+  if (notStartedYet(battle, nowMs)) return PHASE.PRE_OPEN;
   if (marketState?.state === 'OPEN') return PHASE.LIVE;
 
   const evaluationCount = battle?.scoreState?.evaluationCount;
@@ -479,7 +509,8 @@ export function deriveDebriefPending(battle) {
 export function buildBaggerbombAdapter(battle, voiceLayerCacheDoc, agent, now, marketState) {
   if (!battle) return null;
 
-  const phase = derivePhase(battle, marketState);
+  const nowMs = toMillis(now);
+  const phase = derivePhase(battle, marketState, nowMs);
   const briefs = voiceLayerCacheDoc?.portfolioBriefs;
 
   // lastCheckedAt is the scoring stamp, written on every eval cycle
@@ -488,7 +519,6 @@ export function buildBaggerbombAdapter(battle, voiceLayerCacheDoc, agent, now, m
   const lastCheckedAt = toIso(battle?.scoreState?.lastScoredAt);
 
   const proximityAsOf = toIso(voiceLayerCacheDoc?.updatedAt);
-  const nowMs = toMillis(now);
   const asOfMs = toMillis(proximityAsOf);
 
   // Staleness gates the LIVE phase ONLY. During open market, numbers computed
@@ -520,6 +550,10 @@ export function buildBaggerbombAdapter(battle, voiceLayerCacheDoc, agent, now, m
     },
 
     phase,
+
+    // C5: "Tue 9:30 AM ET" while the battle has not reached its first trading
+    // day, else null. The Desk and the Battle View turn line say "Starts …" from this.
+    startsAtEt: deriveStartsAtEt(battle, nowMs),
 
     // Same derivation ManageStation.jsx:32-33 already uses, so the Desk and
     // the Manage rail cannot disagree about the score (BUILD_RULES §9).

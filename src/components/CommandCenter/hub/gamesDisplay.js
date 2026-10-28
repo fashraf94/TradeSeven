@@ -21,9 +21,9 @@
 import { BATTLE_TYPE_RANKED, battleTypeLabel, classifyBattleType, sortLiveBattles } from '../../../utils/commandCenterLiveBattles';
 import { STOCK_RESULT_UNAVAILABLE, displayedStockScores } from '../../../utils/stockThresholdModel';
 import { FILM_ROOM_ROUTE } from '../../../constants/filmTape';
-import { PHASE, derivePhase } from '../../../adapters/baggerbombAdapter';
+import { PHASE, derivePhase, deriveStartsAtEt } from '../../../adapters/baggerbombAdapter';
 import { HUB_COPY as COPY } from './hubCopy';
-import { formatHubDay, formatHubTime, hubMs } from './hubDate';
+import { formatHubDay, formatHubTime, formatHubTimeOnDay, hubMs } from './hubDate';
 import { OUTCOME_KINDS, deriveGameOutcome } from './selectors/gameOutcome';
 import { REVIEW_STATES } from './reviewScheduler';
 
@@ -129,13 +129,17 @@ function timeLeft(endsMs, nowMs) {
  */
 export function liveGameRows(battles, { nowMs, marketState }) {
   return sortLiveBattles(Array.isArray(battles) ? battles : []).map((battle) => {
-    const preOpen = derivePhase(battle, marketState) === PHASE.PRE_OPEN;
+    // C5: `nowMs` is the clock this row already takes. A game before its first trading
+    // day is waiting, not live, and says when it starts (the adapter's one derivation).
+    const preOpen = derivePhase(battle, marketState, nowMs) === PHASE.PRE_OPEN;
+    const startsAtEt = deriveStartsAtEt(battle, nowMs);
     const endsMs = hubMs(battle.expiresAt);
     const shown = displayedStockScores(battle);
     const [score] = formatScores(shown.currentScore);
     const tradeCount = battle.scoreState?.tradeCount;
     const trades = finite(tradeCount) ? tradeCount : (Array.isArray(battle.trades) ? battle.trades.length : 0);
-    const ends = endsMs === null ? '' : COPY.time.et(formatHubTime(endsMs));
+    // C5: an end on another ET day names the day ("ends Tue 8:00 PM ET").
+    const ends = endsMs === null ? '' : COPY.time.et(formatHubTimeOnDay(endsMs, nowMs));
     return Object.freeze({
       id: battle.id,
       kind: classifyBattleType(battle),
@@ -143,7 +147,7 @@ export function liveGameRows(battles, { nowMs, marketState }) {
       opponent: opponentOf(battle),
       live: true,
       preOpen,
-      clock: preOpen ? COPY.games.waitingForOpen : timeLeft(endsMs, nowMs),
+      clock: preOpen ? (startsAtEt ? COPY.games.startsAt(startsAtEt) : COPY.games.waitingForOpen) : timeLeft(endsMs, nowMs),
       detail: COPY.games.liveDetail(score, trades, ends),
     });
   });
