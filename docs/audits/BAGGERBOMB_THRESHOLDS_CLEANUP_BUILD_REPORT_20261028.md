@@ -5,24 +5,24 @@
 - **A battle that starts tomorrow:** it no longer reads LIVE. It says "Starts Tue 9:30 AM ET" (the next real session, from the calendar; Mon for a Friday evening, Fri after Thanksgiving) and its end time says "ends Tue 8:00 PM ET". The nightly scoring job skips it the evening it is created, so its real first night records as day 1, and day 1 is scored from the creation price. Most of the new screens are behind flags that are off today (§5); the turn line on the battle screen and the battle card are live now.
 - **KRE in the cockpit:** it stays on the watchlist as a watch name. The cockpit never offers it as a fork option and refuses it as a pick; the ranked bench names are still offered.
 - **An old dialogue:** a dialogue that still holds a retired ticker now saves without it, and the chat says which names were left out. If every name was retired, the save is refused as an empty list. In the editor, adding a retired name shows "KRE is no longer available. Remove it to save." and no Retry button.
-- **One thing needs you:** C2 makes two older places disagree with the new day-1 baseline: the fenced swap executor (`agentSwapExecution.js:248-258`) and the Film Room's ghost baseline (§9, Q3). Nothing was written to production.
+- **Your rulings are in (Oct 28):** the fenced swap executor and the Film Room ghost baseline now follow the first trading day too, one expression each, on this same PR, so C2 and all its mirrors land together (§2). Q1 later, Q2 and Q4 kept as built. Nothing was written to production.
 
 ## Verdict
 
 | Item | Result |
 |---|---|
-| Branch / PR | local branch `claude/baggerbomb-thresholds-cleanup-fbb502` (the app's suffix), pushed as `claude/baggerbomb-thresholds-cleanup` → the PR opened from it (its number does not exist until this report is committed; it is in the PR's own page and in my hand-off message). Base `24495eba` (= `origin/main`, re-fetched before the final suite and before push). Code-final `dea2ac6b`; the PR head adds the report and the review record only |
+| Branch / PR | [PR #999](https://github.com/fashraf94/TradeSeven/pull/999): local branch `claude/baggerbomb-thresholds-cleanup-fbb502` (the app's suffix), pushed as `claude/baggerbomb-thresholds-cleanup`. Base `24495eba` (= `origin/main`, re-fetched before every suite and every push). Code-final `e94e6b76`; the PR head adds the report and the review record only |
 | Health read | §0: on for 2 owners; evening run clean, never exercised; no stuck battle; **not a STOP** |
 | C1 nightly job skips a battle before its first day | Built; shared module `src/utils/tieredFirstTradingDay.js` |
-| C2 day-1 baseline follows the first day | Built in the evaluate gate, **and** in the two mirrors of it that C2 would otherwise leave disagreeing: `agent-daily-scores.js` and the battle card (`AgentBattleScreen.jsx`) |
+| C2 day-1 baseline follows the first day | Built in the evaluate gate **and in all four of its mirrors**: `agent-daily-scores.js`, the battle card (`AgentBattleScreen.jsx`), and — under your Oct 28 sanction — the fenced swap executor's Guard 3 (`agentSwapExecution.js:252`) and the Film Room ghost baseline (`tapeAssemble.js:412`) |
 | C3 cockpit never offers a pick that can't come in | Built at the mint, the pre-commit capture, and `call_pick` |
 | C4 retired tickers dropped from old dialogues | Built; the editor line and the chat toast included |
 | C5 honest status before the first day | Built on the adapter, the Desk, the turn line and the hub row |
 | C6 loose ends | Built: `dormant` on the run record; three stale comments |
-| Tests and checks | Full Linux suite exit 0 at code-final `dea2ac6b`: Test Files 1197 passed, 8 skipped (1205); Tests 26,078 passed, 89 skipped (26,167). `lint:gate` exit 0. `vite build` exit 0 (code-final and the pushed head) |
-| Review (BUILD_RULES §2: 49 files, 1,734 lines) | 3 lenses + a refuting verifier. 23 findings: 19 CONFIRMED, 2 CONFIRMED-AS-QUESTION, 2 REFUTED; no BLOCKER. 15 fixed in this branch (some findings share a fix), the rest reported. 42 builder mutants, 1 survived at first and was closed (§8) |
-| Fenced files | **None edited, none in the diff** (checked by the builder and all three lenses). Fenced functions *called* by the code paths the diff touches (none edited): `getCurrentTradingDayServer` (`agentEvalPromptAssembly.js:1376`), `calculateAssetScoreServer` and `flattenPortfolioServer` (`agentScoring.js`). C1 and C2 change what is fed to the scoring concept (when a night counts and which price a day-1 badge reads from), as ruled, not the scoring code |
-| Questions for Flash | 4 (§10). None blocks merging |
+| Tests and checks | Full Linux suite exit 0 at code-final `e94e6b76`: Test Files 1198 passed, 8 skipped (1206); Tests 26,091 passed, 89 skipped (26,180). `lint:gate` exit 0. `vite build` exit 0 (code-final and the pushed head) |
+| Review (BUILD_RULES §2: 55 files, 1,931 lines) | 3 lenses + a refuting verifier on 23 findings (19 CONFIRMED, 2 CONFIRMED-AS-QUESTION, 2 REFUTED; no BLOCKER; 16 fixed here), then a second refuting verifier on the sanctioned executor hunk (hunk SOUND; one red CI guard found and fixed; two thin rows closed). 50 builder mutants, 1 survived at first and was closed (§8) |
+| Fenced files | **One fenced file edited, under your Oct 28 sanction and limited to what you named: `api/_utils/agentSwapExecution.js`** — an import, a 3-line comment and Guard 3's activation-day expression (`firstTradingDayOf(battle) ?? <the old activatedAt expression>`, :252); 6 insertions, 2 deletions. No other fenced file is in the diff. Fenced functions *called* by the code paths the diff touches: `getCurrentTradingDayServer` (`agentEvalPromptAssembly.js:1376`), `calculateAssetScoreServer` and `flattenPortfolioServer` (`agentScoring.js`). C1 and C2 change what is fed to the scoring concept (when a night counts and which price a day-1 badge reads from), as ruled, not the scoring code |
+| Rulings received | Q1 yes, later (when Command Center sync is switched on); Q2 keep the narrow reading; Q3 sanctioned and done; Q4 keep the fork whole (§10). Nothing open |
 | Production | Read-only reads only (§0). No writes |
 
 ## Preamble
@@ -30,7 +30,8 @@
 - `git fetch origin` first. Branch `claude/baggerbomb-thresholds-cleanup-fbb502`, HEAD at start `24495eba` = `origin/main`, clean tree. `origin/main` contains #998 (`beforeFirstTradingDay`, `api/cron/agent-evaluate.js:888` at that head). VERIFIED. Re-fetched before the final suite: `origin/main` still `24495eba`.
 - Read: `docs/BUILD_RULES.md`; #998's report §6–§8 (and §1–§3 for the F3 and ordering context).
 - The app suffixed the local branch (`-fbb502`); the PR head is `claude/baggerbomb-thresholds-cleanup`, pushed by refspec.
-- `.env.local` copied into the git-ignored worktree root for the health read (names never printed).
+- `.env.local` copied into the git-ignored worktree root for the health read (names never printed); removed afterwards.
+- **Continuation, Oct 28 (after the first push):** Flash sanctioned fence contact "limited to the one-line activation-day change in agentSwapExecution.js Guard 3 (firstTradingDayOf(battle) ?? activatedAt) and the matching ghostBaseline line in tapeAssemble.js", on this branch, with rows for both, one refuting verifier on the executor hunk, a full re-run, and this report updated. Done in §2, §7, §8 and §10.
 
 ## 0. Health read (production, read-only)
 
@@ -63,7 +64,10 @@ Read on 2026-10-28 about 14:17 UTC. Only Firestore `.get()` queries, `stock-thre
   - `agent-daily-scores.js:83` — its comment says it "mirrors agent-evaluate". After C1 its first night is day 1; banked against `activatedAt` it would use the previous close while the day was scored from the creation price.
   - `AgentBattleScreen.jsx:283` (`enrichHeldPosition`, found by the review, CL1-1) — the battle card also mirrors the server gate. Probe: creation 100, Monday close 103, Tuesday 99, ATR 2.5: the card showed Bust + Crash (−50) where the server scores −20 with no badges.
 - **Tests.** `agent-evaluate.firstDayBaseline.test.js` (10 rows: NVDA and BTC; next-session, same-day, day 2, no list, tournament); `agent-evaluate.stockThresholds.test.js` "C2" row (a measured battle's crypto slot); `AgentBattleScreen.enrichFirstDay.test.jsx` (3 rows); the daily-scores C2 rows. Mutants: see §8.
-- **Two other places still use `activatedAt`: see §9** (the fenced executor; the Film Room ghost baseline).
+- **The sanctioned fence contact (Oct 28).** The two remaining mirrors, found by the review (CL1-2), now follow the first trading day:
+  - **`api/_utils/agentSwapExecution.js` Guard 3 (FENCED; the only fenced file edited).** The hunk is an import (:15), a 3-line comment and the activation-day expression (:252), `firstTradingDayOf(battle) ?? (battle?.activatedAt ? … : todayET)`. Nothing else in the file changed: the refuting verifier compared git blob hashes of the file with and without the hunk. It is null for tournaments and every other mode, so those are byte-identical (the whole `tx.update` payload compared with `toEqual`, flat6 included); a same-day tiered battle is byte-identical too. What it fixes (verifier probe through the real executor): creation 100, Monday close 103, Tuesday 104, star tier, ATR 2.5 — the live card scored 125 (bagger + doubleBagger) and the swap locked 80; now both are 125. It agrees with the evaluator's gate in 2,000 of 2,000 randomised battles (TZ=UTC and Asia/Tokyo, across the Nov 1 clock change), and the daily-series pre-fetch is correctly skipped on the first day. The only runtime caller is `agent-evaluate.js`, after the dormant gate, so a swap before the first trading day is unreachable.
+  - **`api/_utils/filmTape/tapeAssemble.js` `ghostBaseline` (not fenced).** A new optional `firstTradingDay` (:400); `activationDay = firstTradingDay || etDateOf(activatedAt)` (:412); `buildReplayInputs` passes `firstTradingDayOf(battle)` (:434). A swap on a next-session battle's first day now replays its ghost leg from the starting price instead of listing it as missing `ghost.thresholdBaseline`.
+  - **Rows.** `agentSwapExecution.firstDay.test.js` (8): next-session equals same-day; the creation price scores (not the old, smaller lock); no daily fetch on the first day; day 2 and a no-list battle fall back; a no-mode document is tiered; other modes and a tournament byte-identical. `tapePure.test.js` (4 `ghostBaseline` / `buildReplayInputs` rows) and `writeTapeDay.test.js` (1 end-to-end row). One existing tape row's fixture was updated: it modelled "deployed the evening before, so the swap day is day 2", which has not been true of a tiered battle since BR-2; it now sets a list whose first day is the day before. `agent-evaluate.test.js`: the repo-level guard on `executeSwapServer` consumers lists the new test file (the verifier found it red).
 
 ## 3. C3 — the cockpit never offers a pick that can't come in
 
@@ -106,57 +110,51 @@ Read on 2026-10-28 about 14:17 UTC. Only Firestore `.get()` queries, `stock-thre
 
 | Check | Commit | Result |
 |---|---|---|
-| Full suite, Linux (WSL Ubuntu, a worktree of the shared LF clone; Node 20.20.2; `TZ=UTC`; `--maxWorkers=8`; under `flock /tmp/pd-suite.lock`) | code-final `dea2ac6b` | **exit 0**. Test Files 1197 passed, 8 skipped (1205); Tests 26,078 passed, 89 skipped (26,167); 232 s. Read from the `Test Files` / `Tests` lines and the recorded exit code |
-| `npm run lint:gate` | `dea2ac6b` | exit 0 |
-| `vite build` | `dea2ac6b`, and the pushed head (LF archive, §11) | exit 0 (the CSS-syntax warnings are the existing ones) |
-| First full suite, for the record | `895dc293` | exit 1: one row, `film-tape-backfill.e2e` "next candle morning…", 5.2 s against its 5 s limit while lint and other work shared the machine; 3.3 s alone on the same commit. The final run, with the machine otherwise idle, was clean |
+| Full suite, Linux (WSL Ubuntu, a worktree of the shared LF clone; Node 20.20.2; `TZ=UTC`; `--maxWorkers=8`; under `flock /tmp/pd-suite.lock`) | code-final `e94e6b76` | **exit 0**. Test Files 1198 passed, 8 skipped (1206); Tests 26,091 passed, 89 skipped (26,180); 260 s. Read from the `Test Files` / `Tests` lines and the recorded exit code |
+| `npm run lint:gate` | `e94e6b76` | exit 0 |
+| `vite build` | `e94e6b76`, and the pushed head (LF, Linux, §11) | exit 0 (the CSS-syntax warnings are the existing ones) |
+| Earlier full suites, for the record | `895dc293`; `dea2ac6b` | `895dc293`: exit 1, one row, `film-tape-backfill.e2e` "next candle morning…" at 5.2 s against its 5 s limit while lint and other work shared the machine (3.3 s alone on the same commit). `dea2ac6b` (before the sanctioned fence change): exit 0, 1197 files / 26,078 rows. Both superseded by the row above |
 
-The Firestore rules suite was not run: no rules file changed. On the Windows (CRLF) worktree the targeted runs show the known platform-only rows (`agent-evaluate.evalRun` "exactly ONE block"); Linux is the record. The suite grew by 8 files and 109 rows over #998's 1189 / 25,969.
+The Firestore rules suite was not run: no rules file changed. On the Windows (CRLF) worktree the targeted runs show the known platform-only rows (`agent-evaluate.evalRun` "exactly ONE block", `tapeWiring`); Linux is the record. The suite grew by 9 files and 122 rows over #998's 1189 / 25,969.
 
 ## 8. Review (BUILD_RULES §2)
 
 Full record: `docs/audits/BAGGERBOMB_THRESHOLDS_CLEANUP_REVIEW_20261028.md` (every finding, verdict and disposition).
 
-- 49 files and 1,734 changed lines at code-final (28 non-test files, 456 lines): above both thresholds.
-- Three lenses on separate `git archive` snapshots (CL1 crons; CL2 cockpit and watchlists; CL3 client and cross-cutting), then a refuting verifier (CLV) on a fourth. Each reviewer was read-only on git and on the builder's tree.
-- 23 findings: **19 CONFIRMED, 2 CONFIRMED-AS-QUESTION (CL2-7, CL3-1), 2 REFUTED (CL3-5 unreachable in production; CL3-8 not a defect).** No BLOCKER. The verifier downgraded CL2-1 and CL3-5 and upgraded CL1-4.
-- Fixed in this branch: CL1-1, CL1-3, CL1-4, CL1-5, CL2-1, CL2-2, CL2-3, CL2-5, CL2-6, CL2-7 (pinned), CL2-8 (a, c), CL3-6, CL3-7, CL3-8, CL3-9. Reported: CL1-2 (fenced), CL3-1, CL3-2, CL3-3, CL3-4, CL2-4 (accepted).
-- The two largest finds: CL1-1 (the battle card, a client mirror of the gate that I had not found) and CL2-1 (the capture seam); the review also corrected the first draft of my own C6 comment.
-- Mutation: 42 builder mutants — 33 for the rulings (C1+C2 6, C3 7, C4 10, C5 9, C6 1) and 9 for the review round; each restored from a commit. 1 survived (the fork's cooldown instant) and was closed. Each lens ran its own (about 90 in all); every real survivor they found became a row. **No separate mutation-verifier agent ran after the fixes**; the review-round rows rest on the builder's 9 mutants.
+- 55 files and 1,931 changed lines at code-final (30 non-test files, 473 lines): above both thresholds.
+- **Round 1 (C1–C6):** three lenses on separate `git archive` snapshots (CL1 crons; CL2 cockpit and watchlists; CL3 client and cross-cutting), then a refuting verifier (CLV) on a fourth. Each reviewer was read-only on git and on the builder's tree. 23 findings: **19 CONFIRMED, 2 CONFIRMED-AS-QUESTION (CL2-7, CL3-1), 2 REFUTED (CL3-5 unreachable in production; CL3-8 not a defect).** No BLOCKER. The verifier downgraded CL2-1 and CL3-5 and upgraded CL1-4.
+- Fixed in this branch: CL1-1, CL1-2 (after your sanction), CL1-3, CL1-4, CL1-5, CL2-1, CL2-2, CL2-3, CL2-5, CL2-6, CL2-7 (pinned), CL2-8 (a, c), CL3-6, CL3-7, CL3-8, CL3-9. Reported: CL3-1 (your "later"), CL3-2, CL3-3, CL3-4, CL2-4 (accepted).
+- **Round 2 (the sanctioned executor hunk), a second refuting verifier (CLV2), as you asked:** nine questions, each to be refuted with a repro. **The hunk is SOUND** (scope: exact blob match; agreement with the evaluator: 2,000/2,000 randomised battles in two time zones; tournaments, other modes and same-day tiered battles byte-identical; the pre-fetch skip; unreachable before the first day; import boundary clean). **One real defect, mine, now fixed:** the repo-level guard "executeSwapServer has no consumers outside the fenced module and this wrapped cron" (`agent-evaluate.test.js`) failed because my new test calls the executor and was not on its allow-list. Two thin rows closed: the new rows used only `baggerbomb_agent` and `baggerbomb_tournament`, so a no-mode document and the other modes were pinned by nothing; and the §4 dependency-surface comment was missing on the new test. Two of its mutants are equivalent or unreachable (`??` → `||`; a first-day rule that applies only when the day is not in the future, which only differs on a dormant day no caller reaches).
+- Mutation: 50 builder mutants — 33 for the rulings (C1+C2 6, C3 7, C4 10, C5 9, C6 1), 9 for the round-1 fixes, 8 for the sanctioned change and its verifier's gaps (executor 3, ghost baseline 3, no-mode document 1, other modes 1); each restored from a commit. 1 survived (the fork's cooldown instant) and was closed. Each lens ran its own (about 90 in all) and the second verifier 12; every real survivor became a row. **No separate mutation-verifier agent ran**; the later rows rest on the builder's mutants.
 
 ## 9. Reported, not changed
 
-- **CL1-2 — the other two mirrors of the activation-day rule (needs a founder ruling; follow-up).** After C2 the evaluator scores a next-session battle's first day from the creation price. Two places still read `activatedAt`:
-  - **`api/_utils/agentSwapExecution.js:248-258` (FENCED, called, not edited).** Guard 3 baselines a held-from-start position at the previous close on that day. Verifier probe through the real executor: creation 100, Monday close 103, Tuesday price 104, star tier, ATR 2.5 — the live card scores 125 (bagger + doubleBagger); a swap locks `lockedPoints` 80. The banked locked points come out 45 below the card just before the swap, with the badges gone. It affects held-from-start positions on legacy battles and the crypto slot of measured battles (measured stocks swap through `executeCorrectedStockSwap`). Before C2 it agreed with the evaluator. The fix is one line (`firstTradingDayOf(battle) ?? activatedAt`); it needs your word on fence contact.
-  - **`api/_utils/filmTape/tapeAssemble.js:399-413` `ghostBaseline` (not fenced).** For a swap on that day it returns no baseline (`previous_close`), so the Film Room lists the ghost leg as missing `ghost.thresholdBaseline`. Same one-line shape; it has its own Film Room pins, so I left it for the same follow-up as the executor.
-- **CL3-1 (a ruling question).** `src/components/Dashboard/ManageStation.jsx:37,102`: the dashboard card for a battle still says "Battle live" and shows a countdown for a not-started battle. `COMMAND_CENTER_SYNC_ENABLED` is off, so the card is untouched today; with it on, the Desk above says "Starts …". C5 names the adapter and the hub row; Q1.
+- **Resolved by your sanction:** CL1-2 (the fenced executor and the Film Room ghost baseline) — §2.
+- **CL3-1 — the dashboard card (`ManageStation.jsx:37,102`)** still says "Battle live" and shows a countdown for a not-started battle. Your ruling (Q1): yes, but later, when Command Center sync is switched on. `COMMAND_CENTER_SYNC_ENABLED` is off, so nothing is user-visible today. **Recorded for the sync switch-on:** feed the adapter's `startsAtEt` into the card and drop the "live" eyebrow and the countdown while `PRE_OPEN`.
 - **CL3-2.** The optimistic just-deployed entry (`deployHandoff.js:48-69`) carries no `timing`, so the hub row and the Desk read LIVE until the next poll (about 120 s). Both are dark; the fix needs the deploy response to carry the first day.
-- **CL3-3 / CL3-4.** The hub's Games section tag counts a waiting game as "live" (`GamesSection.jsx:146`), and the Shadow status line says "waiting for the open" (`shadowStatus.js:85`, pinned by `shadowStatus.test.js:106-108`) where the row says "Starts …". Both are existing hub decisions, both hub-dark.
-- **`voice-layer-cache.js:394-399`** computes proximity from the previous close regardless of the activation day: it will disagree with the C2 baseline on a next-session battle's first day. Pre-existing; not changed.
+- **CL3-3 / CL3-4.** The hub's Games section tag counts a waiting game as "live" (`GamesSection.jsx:146`), and the Shadow status line says "waiting for the open" (`shadowStatus.js:85`, pinned by `shadowStatus.test.js:106-108`) where the row says "Starts …". Both are existing hub decisions, both hub-dark; best done with Q1's switch-on.
+- **`voice-layer-cache.js:394-399`** computes proximity from the previous close regardless of the activation day: it will disagree with the C2 baseline on a next-session battle's first day. Pre-existing; not changed (the one remaining mirror I know of; not named in your sanction).
 - **`CommandDashboard.jsx:250`** passes the market's next-close date as the casual battle's end date to `casualDeployMissesPodSession`; for a deploy at 15:15–16:00 ET the battle plays and ends tomorrow, so the pod-conflict warning can miss it. Pre-existing, BR-2 interplay. The comment in `leagueTournament.js` now says what the argument must be.
+- **Line citations in comments drift** by 1–4 lines in other files that cite `agentSwapExecution.js` (swappable.js and its test, cockpit-bench, retire.js, platformGuardrails, filmTape.js, deriveBaggerMoment.js, captureReceipt.js, and others, per the verifier). Comment-only; no test pins them.
 - **Rollout (CL1-6).** A battle created after Oct 25 whose creation night already ran under the old cron would log `already_recorded` on its real first night. None exists: the health read found no tiered battle created since Oct 24.
-- A fork over a name that cannot come in is removed whole (the `outside_universe` precedent), not trimmed to the options that can; trimming would break the fork's own `said` text. Q4.
 - `etDateOf` is null for out-of-range numbers (fixed). A regex-valid but impossible first-day string such as `2026-13-45` would hold a battle back; it cannot arise from creation (old F3 behaviour).
 - Accepted as ruled: Q2 of #998 (the fenced prompt wording), the BRK.B spelling, the `gameModePolicy.js` hash.
 
-## 10. Questions for Flash
+## 10. Rulings received (Oct 28), from the four questions in the first report
 
-None blocks merging.
+- **Q1 — the dashboard card.** Yes, but later, when Command Center sync is switched on. Recorded in §9; no change now.
+- **Q2 — C4's empty list.** Keep the narrow reading: refuse only when dropping the retired names empties the list. Pinned by a row; unchanged.
+- **Q3 — the fence contact.** Sanctioned, limited to the Guard 3 activation-day expression and the matching `ghostBaseline` line, on this PR. Done (§2); verified by a refuting verifier (§8).
+- **Q4 — a fork with one option that can't come in.** Keep the fork whole. Unchanged.
 
-**Q1 — Is the dashboard card (`ManageStation`) inside C5's "everywhere it would show LIVE"?** Today it is dark (sync off), so nothing user-visible changes either way. If yes, a small follow-up feeds the adapter's `startsAtEt` into the card. My lean: yes, when sync is switched on.
-
-**Q2 — C4's empty list.** I refuse only when dropping the retired names empties the list; a dialogue that proposed nothing still saves an empty draft, as it always did. Refusing every empty result would also change that old behaviour. My lean: keep the narrow reading.
-
-**Q3 — The activation-day follow-up.** The fenced executor (`agentSwapExecution.js:248-258`) and the Film Room ghost baseline need the same one-line change as the evaluator. Do you sanction the fence contact? My lean: yes, as one small follow-up, before measured / legacy next-session battles start appearing (a late-afternoon deploy is the normal case).
-
-**Q4 — A fork with one option that can't come in.** It is removed whole. Trimming it to the options that can would leave a fork whose `said` text may name the dropped one. My lean: keep it whole.
+Nothing is open.
 
 ## 11. Delivery state
 
-- Branch `claude/baggerbomb-thresholds-cleanup` (pushed by refspec from `claude/baggerbomb-thresholds-cleanup-fbb502`); code-final `dea2ac6b`; the PR head adds this report and the review record only (docs; `vite build` run on that exact head).
+- [PR #999](https://github.com/fashraf94/TradeSeven/pull/999), branch `claude/baggerbomb-thresholds-cleanup` (pushed by refspec from `claude/baggerbomb-thresholds-cleanup-fbb502`); code-final `e94e6b76`; the PR head adds this report and the review record only (docs; `vite build` run on that exact head).
 - **STOP.** Not merged; CI not watched; no auto-merge (BUILD_RULES §2).
 - After merge and deploy:
   - nothing changes for a same-day battle;
-  - the first next-session battle (a tiered deploy after 3:15 PM ET) should show "Starts <next session> 9:30 AM ET" on the battle screen's turn line, should not be touched by that evening's 8:45 PM scoring job, and should record `day1` the next evening;
+  - the first next-session battle (a tiered deploy after 3:15 PM ET) should show "Starts <next session> 9:30 AM ET" on the battle screen's turn line, should not be touched by that evening's 8:45 PM scoring job, should record `day1` the next evening, and should lock the same points at a swap that its live card shows;
   - the first evening settle run with a real expired battle is still the open proof for F1.
 - No production follow-up is owed by this build. #995's step 3 (`enable --all`) is unchanged and still waits on your word.

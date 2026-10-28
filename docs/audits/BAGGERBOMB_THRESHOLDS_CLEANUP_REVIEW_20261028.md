@@ -1,27 +1,28 @@
 # BaggerBomb measured thresholds — cleanup after the broad release: review record (Oct 28, 2026)
 
-Review of the cumulative branch diff of `claude/baggerbomb-thresholds-cleanup-fbb502` against `origin/main` `24495eba` (BUILD_RULES §2: 49 files and 1,734 changed lines at code-final, 28 of them non-test files and 456 lines; above the 10-file / 1,500-line threshold). Build report: `docs/audits/BAGGERBOMB_THRESHOLDS_CLEANUP_BUILD_REPORT_20261028.md`.
+Review of the cumulative branch diff of `claude/baggerbomb-thresholds-cleanup-fbb502` against `origin/main` `24495eba` (BUILD_RULES §2: 55 files and 1,931 changed lines at code-final `e94e6b76`, 30 of them non-test files and 473 lines; above the 10-file / 1,500-line threshold). Build report: `docs/audits/BAGGERBOMB_THRESHOLDS_CLEANUP_BUILD_REPORT_20261028.md`.
 
 ## Method
 
-- **Reviewed commit:** `895dc293` (code complete for C1–C6). Findings were fixed on top of it; the code-final commit is named in the build report.
+- **Round 1 reviewed commit:** `895dc293` (code complete for C1–C6). Findings were fixed on top of it.
+- **Round 2 reviewed commit:** `bc631091` (Flash's Oct 28 sanction: the fenced executor's Guard 3 and the Film Room ghost baseline). See "Round 2" below. The code-final commit is `e94e6b76`.
 - **Lenses (3, in parallel, each on its own snapshot tree):** `git archive` extraction under the session scratchpad with `node_modules` junctioned to the parent install; read-only on git and on the builder's tree; mutants run inside the snapshot and reverted.
   - **CL1:** C1, C2, C6 (the two crons, the shared module, the run record, the stale prose).
   - **CL2:** C3 and C4 (the cockpit rule, the watchlist save, the editor).
   - **CL3:** C5 and cross-cutting (client status, import boundary, scope, display agreement).
 - **Refuting verifier (CLV):** one agent on a fourth snapshot, handed all 23 findings and told to refute each with a repro; it ran probes against the real functions, read the feature-flag values itself, and answered two direct questions (the fenced executor, the stale editor line).
-- **Mutation:** the builder mutation-checked every ruling's rows (33 mutants, each restored from a commit; one survived at first and was closed) and every row added by the review round (9 mutants, all killed); each lens ran its own mutants. **No separate mutation-verifier agent was run after the fixes**; the review-round rows are covered by the builder's 9 mutants only.
+- **Mutation:** the builder mutation-checked every ruling's rows (33 mutants, each restored from a commit; one survived at first and was closed), every row added by the round-1 fixes (9 mutants, all killed) and the sanctioned change (8 mutants, all killed): 50 in all; each lens ran its own, and the round-2 verifier ran 12. **No separate mutation-verifier agent was run after the fixes**; the later rows are covered by the builder's mutants.
 - **Id prefixes:** `CL1-` / `CL2-` / `CL3-` for the lenses, `CLV-` for the verifier. None was in use in the repo.
 - **Environment caveats the reviewers hit:** their snapshots were CRLF on disk (not LF as briefed), so a handful of rows that read file text or `firestore.rules` failed there for platform reasons (`firestore.rules` exact-string row in `agent-evaluate.evalRun.test.js`, `tickCoherence`, `tickStamps.pins`, `decisionRecord`, `tapeWiring`); none is caused by the diff. Linux is the record.
 
 ## Result
 
-23 lens findings. **19 CONFIRMED, 2 CONFIRMED-AS-QUESTION, 2 REFUTED.** No BLOCKER. No fenced file is in the diff (checked by all three lenses and again by the builder). The verifier added five items the lenses missed (below).
+23 lens findings. **19 CONFIRMED, 2 CONFIRMED-AS-QUESTION, 2 REFUTED.** No BLOCKER. In round 1 no fenced file was in the diff (checked by all three lenses and again by the builder); the sanctioned change of round 2 is the one fenced edit. The verifier added five items the lenses missed (below).
 
 | Id | Sev. (verified) | Finding | Verdict | Disposition |
 |---|---|---|---|---|
 | CL1-1 | MAJOR | `AgentBattleScreen.jsx` `enrichHeldPosition` mirrors the server's day-1 gate from `activatedAt`; after C2 the battle card shows a phantom Bust/Crash (−50 instead of −20) on a next-session battle's first day. Also bites the crypto slot of every measured BR-2 battle | CONFIRMED (probe: −50, badges bust+crash) | **Fixed** (`dea2ac6b`): reads `firstTradingDayOf(stockBattle)`; 3 rows |
-| CL1-2 | MAJOR, **fenced** | `agentSwapExecution.js:248-258` Guard 3 keys the activation day on `activatedAt`: on a next-session battle's first day a swap locks 80 points where the card shows 125 (bagger + doubleBagger). `filmTape/tapeAssemble.js` `ghostBaseline` (:399-413) returns no baseline for the same case | CONFIRMED (probe through the real executor) | **Reported, not changed** (fence; needs a founder ruling). Not a merge blocker |
+| CL1-2 | MAJOR, **fenced** | `agentSwapExecution.js:248-258` Guard 3 keys the activation day on `activatedAt`: on a next-session battle's first day a swap locks 80 points where the card shows 125 (bagger + doubleBagger). `filmTape/tapeAssemble.js` `ghostBaseline` (:399-413) returns no baseline for the same case | CONFIRMED (probe through the real executor) | **Fixed (Oct 28), after Flash's sanction** limited to the Guard 3 expression and the matching `ghostBaseline` line, on the same PR: `agentSwapExecution.js:252`, `tapeAssemble.js:412,434`. Verified by the round-2 verifier below |
 | CL1-3 | MINOR | the new prose in `leagueTournament.js` was false (history clause; early-close days end 1:00 PM; the one caller passes the market's next close, not the battle's end date) | CONFIRMED | **Fixed** (`c9e86403`); the caller (`CommandDashboard.jsx:250`) is a reported follow-up |
 | CL1-4 | MEDIUM (up from MINOR) | no row proves C2 for a measured battle's crypto slot | CONFIRMED (mutant survived) | **Fixed** (`3662747f`): a measured next-session BTC row; mutant now killed |
 | CL1-5 | NIT | `etDateOf(1e20)` throws RangeError; `'2026-13-45'` holds a battle back | CONFIRMED (nit; unreachable) | **Fixed** the throw (`c9e86403`); the malformed date is old F3 behaviour, unreachable, left |
@@ -61,6 +62,24 @@ Review of the cumulative branch diff of `claude/baggerbomb-thresholds-cleanup-fb
 
 The first draft of the C6 comment on `composeEvalRunRecord` said every battle of `battlesTotal` lands in exactly one bucket; CL1 checked it against the loop and it holds only with the stated exceptions (a tick that ends in an error or an early return, such as degraded quotes). The comment already says so.
 
+## Round 2 — the sanctioned fence contact (Oct 28, 2026)
+
+Flash sanctioned, on this PR, "the one-line activation-day change in agentSwapExecution.js Guard 3 (firstTradingDayOf(battle) ?? activatedAt) and the matching ghostBaseline line in tapeAssemble.js", with rows for both and one refuting verifier on the executor hunk. Reviewed at `bc631091` by a single verifier (CLV2) on a fifth snapshot, read-only on git and the builder's tree, told to refute nine claims with repros.
+
+| # | Claim | Verdict | Evidence |
+|---|---|---|---|
+| 1 | the hunk is exactly the sanctioned change (import, 3-line comment, the expression) | SOUND | `git hash-object --no-filters`: the post-image blob matches the diff; the pre-image blob matches the file with the hunk reverted |
+| 2 | the executor's day-1 gate equals the evaluator's in every case | SOUND | property test, 2,000 random battles (modes, `activatedAt` shapes, lists valid and malformed; 70 half-hourly days across the Nov 1 clock change; TZ=UTC and Asia/Tokyo): 2000/2000; Mon-evening, Fri-evening, holiday-eve and overnight deploys lock 125 (was 80) |
+| 3 | tournaments and other modes byte-identical | SOUND | whole `tx.update` payload `toEqual` the pre-change one for `baggerbomb_tournament` (flat6), `standard` and an unknown mode, with same-day and two-day lists |
+| 4 | same-day tiered battles byte-identical | SOUND | whole payload `toEqual`, and the fetch behaviour equal |
+| 5 | the side effects of `isActivationDay` (daily-series pre-fetch; baseline resolver) | SOUND | the resolver returns `startingPrice` before reading `daily`; with a missing, 0, NaN or null-map starting price the fetch still happens and the path falls to the previous close, as the old same-day code did |
+| 6 | reachability: no caller reaches the executor before the first trading day | SOUND (unreachable) | the only runtime caller is `agent-evaluate.js` (6 sites, all under `processAgentBattle` after the F3 gate at :910, or functions called only from it); the expiry sweep never calls it |
+| 7 | import boundary and tripwires | **REFUTED** (one real defect) | the repo-level guard "executeSwapServer has no consumers outside the fenced module and this wrapped cron" (`agent-evaluate.test.js`) failed: the new test file calls the executor and was not on its allow-list. Not a Windows artefact. **Fixed** (`e94e6b76`): added with a comment, like the `invalidQuote` and `flat6` entries. Also a minor: the new test lacked the BUILD_RULES §4 dependency-surface comment — **fixed**. No test pins the executor's hash, line numbers or import list; comment-only line citations elsewhere drift by 1–4 lines (listed in the build report) |
+| 8 | the new rows fail under the defect they name | CONCERN (minor) | 12 mutants: 8 killed; survivors: `??` → `||` (equivalent: the helper returns null or a non-empty date); a first-day rule applied only when the day is not in the future (differs only on a dormant day no caller reaches); a document with no `gameMode` treated as non-tiered, and the other modes treated as tiered (the rows used only `baggerbomb_agent` and `baggerbomb_tournament`). **Closed** with two rows (a no-mode document; `standard` / `league` / empty), both mutants now killed |
+| 9 | anything else | none | the rows pass in UTC, America/New_York, Asia/Tokyo, Pacific/Auckland and Europe/London; the related suites pass; the ~27 other red rows in its wider sweeps were Windows-only (CRLF/backslash paths) and none imports the executor or the helper |
+
+Round 2 verdict: **the hunk is sound; one real defect (a CI guard I had not updated) and two thin rows, all fixed.**
+
 ## Open for the next prompt (carried to the build report)
 
-CL1-2 (fenced executor; Film Room ghost baseline), CL3-1, CL3-2, CL3-3, CL3-4, the `CommandDashboard.jsx:250` caller, `voice-layer-cache.js:394-399`.
+CL3-1 (the dashboard card — Flash: later, when sync is switched on), CL3-2, CL3-3, CL3-4, the `CommandDashboard.jsx:250` caller, `voice-layer-cache.js:394-399`.
