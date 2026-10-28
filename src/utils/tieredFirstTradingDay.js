@@ -57,7 +57,8 @@ const ET_DAY = new Intl.DateTimeFormat('en-CA', {
 
 /** The ET calendar date ('YYYY-MM-DD') of a true instant in epoch ms; null for anything else. */
 export function etDateOf(ms) {
-  if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
+  // An out-of-range number (1e20) is no instant: Intl would throw on it (review CL1-5).
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || Number.isNaN(new Date(ms).getTime())) return null;
   const parts = ET_DAY.formatToParts(new Date(ms));
   const get = (type) => parts.find((p) => p.type === type)?.value;
   return get('year') && get('month') && get('day') ? `${get('year')}-${get('month')}-${get('day')}` : null;

@@ -752,8 +752,9 @@ export function selectMyMostRecentCompletedGroup(docs) {
  * G2 honest-warning predicate (docs/audits/20260720_G2_ACTIVEBATTLEID_CONFLICT_DISCOVERY.md).
  * A casual (vs-CPU) Command-Center deploy creates a 'fullday' battle whose one trading day
  * is today or — deployed in the last 45 minutes before a close, or overnight — the next
- * session (BR-2), and which ends at 8:00 PM ET that day (`expiryEtDate`, as of Oct 2026;
- * it was the 4:00 PM close before). Because a competitive pod deploys the user's REAL
+ * session (BR-2), and which ends at 8:00 PM ET that day (1:00 PM on an early-close day;
+ * `expiryEtDate` is that ET date — a caller must pass the battle's own end date, e.g.
+ * tieredFullDayTarget().targetDateStr, not the market clock's next close). Because a competitive pod deploys the user's REAL
  * agent and `/api/agent/decide` allows only one active battle, a casual battle still live
  * at the pod's next session silently locks the agent out of it. This predicate is the
  * window test: the deploy conflicts when the pod's next session opens ON OR BEFORE the

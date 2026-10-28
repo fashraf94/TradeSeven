@@ -78,7 +78,7 @@ describe('etDateOf', () => {
   });
 
   it('is null for anything but a finite number', () => {
-    for (const bad of [null, undefined, '2026-09-10', NaN, Infinity]) expect(etDateOf(bad)).toBe(null);
+    for (const bad of [null, undefined, '2026-09-10', NaN, Infinity, 1e20, -1e20, 8.64e15 + 1]) expect(etDateOf(bad)).toBe(null);
   });
 });
 
