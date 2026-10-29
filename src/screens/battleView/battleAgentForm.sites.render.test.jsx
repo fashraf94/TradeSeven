@@ -49,7 +49,8 @@ describe('flag on: the forms take the robot head\'s place', () => {
       expect(seen.slots.map((s) => [s.side || 'player', s.size])).toEqual([['player', px], ['opponent', px]]);
       expect(html).toContain('data-arena-form="player"');
       expect(html).toContain('data-arena-form="opponent"');
-      expect(html).toContain(`width:${px}px;height:${px}px;margin:${margin}`);
+      // Both boxes — the player's and the opponent's — each carry the overhang.
+      expect(html.split(`width:${px}px;height:${px}px;margin:${margin};flex-shrink:0`)).toHaveLength(3);
       expect(html).toContain('>CPU</span>');
       expect(html).not.toContain('data-arena-face');
       expect(seen.faces).toHaveLength(0);
