@@ -39,6 +39,7 @@
 import { momentsOf, sameMoment, MOMENT_KEYS } from '../../../src/utils/filmRoomMoments.js';
 import { etDateOf, isEtDate, nextCalendarDate } from '../../../src/utils/tapeSchedule.js';
 import { TAPE_SUBCOLLECTION } from '../../../src/constants/filmTape.js';
+import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
 import { readCards, isOpen, ownerAttributionOf, CardRouteError, CARD_ROUTE_COPY } from './cardStore.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -194,9 +195,10 @@ const unavailable503 = (agentId) => new CardRouteError(503, 'attribution_unavail
 
 /**
  * The counter's whole answer for one owner and the agent the screen knows, ANSWERED FOR that agent's attribution agent
- * (RK-1, `attributionAgentId`): its ledger and every tape day that attributes to it. The owner's own casual clone that
- * cannot be resolved (its document missing or without a parent, or the parent not the owner's — the resolver's
- * fallback) → 503 attribution_unavailable: no ledger is read under a clone.
+ * (RK-1, `attributionAgentId`): its ledger and every tape day that attributes to it. An answer that would be FOR a
+ * casual clone — the owner's own clone unresolved (its document missing or without a parent, or the parent not the
+ * owner's — the resolver's fallback), or any clone-named agent — → 503 attribution_unavailable, as the create refuses
+ * it (cardStore.js attributionAgentOf; review KR1-1): no ledger is read under a clone.
  *
  * @returns {Promise<{ agentId, attributionAgentId, archetypeCodeId, window: { from, to }, weekly, cards, open, cap, recurrences: { [entryId]: object[] }, unavailableDays: { [agentId]: number } }>}
  */
@@ -204,9 +206,17 @@ export async function buildCounter(db, { uid, agentId, nowMs, from = null, to = 
   const asked = windowOf(nowMs, { from, to });
   if (asked.error) return { error: asked.error };
   // RK-1: one read of the owner's clone document; every id the counter meets goes through the platform's resolver
-  const { cloneId, targetOf } = await ownerAttributionOf(db, uid);
+  let attribution;
+  try {
+    attribution = await ownerAttributionOf(db, uid);
+  } catch (err) {
+    // the clone read failed (review KR1-7): the same refusal, naming the agent asked
+    if (err?.code === 'attribution_unavailable') throw unavailable503(agentId);
+    throw err;
+  }
+  const { targetOf } = attribution;
   const target = targetOf(agentId);
-  if (target === cloneId) throw unavailable503(agentId);
+  if (isCasualCloneId(target)) throw unavailable503(agentId);
   // The ledger first: a Watch card older than the window would otherwise have its earlier recurrences silently
   // dropped and the screen would say none was recorded (review L1-2). The window's start is floored at the earliest
   // open Watch card's creation day — within the 400-day cap behind `to` — when the caller named no window.

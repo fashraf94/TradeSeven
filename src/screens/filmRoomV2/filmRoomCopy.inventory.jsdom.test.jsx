@@ -86,7 +86,7 @@ const COPY_KEYS = [
   'cards.countAgainst', 'cards.thresholdWord', 'cards.checkTag', 'cards.question', 'cards.note', 'cards.noteLimit', 'cards.routeTitle', 'cards.routes.watch',
   'cards.routes.drill', 'cards.routes.set', 'cards.routeNotes.watch', 'cards.routeNotes.drill', 'cards.routeNotes.set', 'cards.setTempoLink', 'cards.setRuleOff', 'cards.setNoTempo', 'cards.openCards', 'cards.openCountLoading', 'cards.openCountUnknown', 'cards.file',
   'cards.cancel', 'cards.filing', 'cards.refusals.cap_reached', 'cards.refusals.moment_not_found', 'cards.refusals.source_changed', 'cards.refusals.disabled', 'cards.refusals.note_too_long', 'cards.refusals.note_control_char', 'cards.refusals.note_empty',
-  'cards.refusals.version_conflict', 'cards.refusals.shelved', 'cards.refusals.untaped', 'cards.refusals.archetype_changed', 'cards.refusals.op_conflict', 'cards.refusals.tape_unreadable', 'cards.refusals.tape_not_found',
+  'cards.refusals.version_conflict', 'cards.refusals.shelved', 'cards.refusals.untaped', 'cards.refusals.archetype_changed', 'cards.refusals.op_conflict', 'cards.refusals.tape_unreadable', 'cards.refusals.attribution_unavailable', 'cards.refusals.tape_not_found',
   'cards.refusals.tags_unavailable', 'cards.refusals.question_not_on_menu', 'cards.refusals.illegal_transition', 'cards.refusals.forbidden', 'cards.refusals.not_found', 'cards.refusals.default', 'cards.refusals.retireDefault', 'cards.filedCard', 'cards.situation', 'cards.on',
   'cards.route', 'cards.stage', 'cards.stageWords.card', 'cards.stageWords.nominated', 'cards.stageWords.retired', 'cards.stateNotes.retired', 'cards.stateNotes.shelved', 'cards.retire', 'cards.retiring', 'cards.recurrences',
   'cards.noRecurrence', 'cards.recurrencesWord', 'cards.unavailableDays()', 'cards.otherBattle', 'cards.otherBattleUnreadable', 'cards.noWatchCards', 'cards.myCards', 'cards.groups.active', 'cards.groups.shelved', 'cards.groups.retired', 'cards.groups.other', 'cards.noCards', 'cards.shelvedExplainer',
@@ -222,9 +222,9 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 362 copy keys, 509 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(362);   // Amendment K RK-11: chartRecordedFor (361 before); RK-2: cards.setNoTempo (360 before); Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
-    expect(inventory()).toHaveLength(509);   // RK-11: one entry (508 before); RK-2: one entry (507 before); B2: 76 keys, the one live situation's title and its three questions (348 before)
+  it('the inventory\'s size is pinned (the build report states it): 363 copy keys, 510 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(363);   // review KRV1-1: cards.refusals.attribution_unavailable (362 before); Amendment K RK-11: chartRecordedFor (361 before); RK-2: cards.setNoTempo (360 before); Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
+    expect(inventory()).toHaveLength(510);   // KRV1-1: one entry (509 before); RK-11: one entry (508 before); RK-2: one entry (507 before); B2: 76 keys, the one live situation's title and its three questions (348 before)
   });
 
   it('B2.1 A8 (A2F1-7): every fixed-digit exemption is bound to its copy key — the harness\x27s pinned text is production\x27s at that key, and every entry of the inventory that spells a digit is pinned', () => {

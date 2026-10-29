@@ -73,8 +73,12 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
       ['archetype_rotation', null, 'by platform rule · rule not recorded'],
       ['gameplan_meeting', null, 'by the gameplan meeting'],
       [undefined, null, 'maker not recorded'],
+      // review KR4-2 / KRV4: a stored reason is said after the meeting and after an unrecorded maker — every real meeting
+      // swap carries 'gameplan_rotation' (tapeAssemble.js maps the mechanism from it); an unrecorded maker any other code
+      ['gameplan_meeting', 'gameplan_rotation', 'by the gameplan meeting · gameplan_rotation'],
+      [undefined, 'legacy_code', 'maker not recorded · legacy_code'],
     ]) {
-      m.render(<Harness key={String(mechanism)} tape={planted(mechanism, exitReason)} series={sep23Series} start="MSFT" />);
+      m.render(<Harness key={`${mechanism}:${exitReason}`} tape={planted(mechanism, exitReason)} series={sep23Series} start="MSFT" />);
       expect(m.q('[data-swap-label="0"]').textContent, String(mechanism)).toBe(`Exit · 12:45 PM · ${maker}`);
       expect(m.q('[data-region="price-chart"]').textContent, String(mechanism)).not.toMatch(/Exit by|Exit maker/);
     }

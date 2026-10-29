@@ -84,7 +84,7 @@ export const CARD_ROUTE_COPY = Object.freeze({
   illegal_transition: 'That change is not allowed from the card\'s current stage.',
   agent_unresolved: 'This agent records no archetype, so no card can be filed under it.',
   archetype_changed: 'This day was taped under another archetype than the agent\'s current one, so a card from it would be shelved at birth. Nothing was filed.',
-  attribution_unavailable: 'This battle ran on your casual agent, and the ranked agent its cards belong to could not be found. Nothing was changed; try again.',
+  attribution_unavailable: 'The agent these cards belong to could not be resolved. Nothing was changed; try again.',
 });
 const fail = (status, code, extra) => new CardRouteError(status, code, CARD_ROUTE_COPY[code], extra);
 

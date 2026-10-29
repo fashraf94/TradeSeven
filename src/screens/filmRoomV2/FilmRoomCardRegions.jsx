@@ -90,9 +90,9 @@ export function setRuleOf(tape) {
 /**
  * Build B Amendment K RK-2 (SPR-L-1, SPR-C-5) — what Set says for a day, and whether its link to the tempo dial may
  * show: `{ say, link }`. `say` is the words after RG-5's sentence: 'ruleOff' (RJ-8's no-link sentence), 'noTempo' (the
- * rule is on but the tape records no tempo the battle ran with — `tags.inputs.tempoDesired` null: a casual clone's
- * battle, which runs at the default tempo whatever the dial says), or null (RG-5's sentence alone: no stored input, or
- * a recorded tempo). `link` holds only when ALL of: the rule is on, the tape records the tempo, and the Forge's
+ * rule is on but the tape records no tempo set on the battle — `tags.inputs.tempoDesired` null: a casual clone's battle,
+ * which inherits no dial, or an agent whose dial was never set; both run at the default tempo — review KRV2-1), or null
+ * (RG-5's sentence alone: no stored input, or a recorded tempo). `link` holds only when ALL of: the rule is on, the tape records the tempo, and the Forge's
  * Character tab and the tempo dial are both switched on (RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED). Where the
  * link shows is RK-3's: on a filed card's receipt, never the form.
  */

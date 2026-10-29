@@ -103,7 +103,7 @@ beforeAll(async () => {
   const recomputed = tr.store.get(`agentBattles/b-recomputed/tape/${D1}`);
   expect(Object.values(recomputed.tags.inputs.holdingBasis).every((b) => b === 'recomputed')).toBe(true);
   // Amendment K RK-2: day 2 again, run with a tempo the player set (agentContext.dials) — the ranked agent's battle; the
-  // fixture's own days record none (tags.inputs.tempoDesired null), as a casual clone's battle does
+  // fixture's own days record none (tags.inputs.tempoDesired null): the dial never set — as on every casual clone's battle, and on a ranked one whose owner never moved the dial (review KR2-1)
   const d2t = await stalledDay({ battleId: B, recordStagnation: true, etDate: D2, dials: { tempo: 'standard' }, over: { ...two, status: 'completed', completedAt: `${D2}T20:05:00.000Z` } });
   const tt = makeTapeDb(seedDay({}, d2t));
   await writeTapeDay(B, D2, { db: tt.db, now: NIGHT(D2) });
@@ -122,7 +122,12 @@ const apiOf = () => {
   const api = {
     calls: [],   // every call through the seam: ['counter', agentId] | ['card', body]
     readVerdict: async () => true,
-    readCounter: async (agentId) => { api.calls.push(['counter', agentId]); const body = await buildCounter(state.db, { uid: state.uid, agentId, nowMs: COUNTER_NOW }); return { ok: !body.error, status: body.error ? 400 : 200, body }; },
+    readCounter: async (agentId) => {
+      api.calls.push(['counter', agentId]);
+      // a typed refusal answers as the endpoint sends it (api/film-room/counter.js → sendCardError), never a throw
+      try { const body = await buildCounter(state.db, { uid: state.uid, agentId, nowMs: COUNTER_NOW }); return { ok: !body.error, status: body.error ? 400 : 200, body }; }
+      catch (err) { if (!err?.cardRoute) throw err; return { ok: false, status: err.status, body: { error: err.code, message: err.message, ...err.extra } }; }
+    },
     postCard: async (body) => { api.calls.push(['card', body]); const res = mkRes(); await cardHandler({ method: 'POST', headers: {}, body }, res); return { ok: res.statusCode === 200, status: res.statusCode, body: res.body }; },
     newOpId: (() => { let n = 0; return () => `op_${(n += 1)}`; })(),
   };
@@ -926,6 +931,20 @@ describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no r
     expect(slt.querySelector('[data-unavailable-days]').textContent.replace(/\s+/g, ' ')).toBe('Recurrences · 1D day in this window could not be read');
   });
 
+  it('review KRV1-1 — a casual clone\'s battle whose clone cannot be resolved: the form says so in its own words (and to try again); the counter\'s refusal is a read error beside My cards; nothing is filed', async () => {
+    const CLONE = `casual-agent-${OWNER}`;
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser' });   // no rankedAgentId
+    t.store.set(`agentBattles/${B}`, { ...fx.battle, agentId: CLONE });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await open({ battle: battleOf({ agentId: CLONE }) });
+    expect(region('since-last-time').querySelector('[data-cards-read-error]')).toBeTruthy();
+    m.click(m.buttons('Take this home')[0]);
+    await m.flush();
+    await fileCard({ note: 'Watch this.' });
+    expect(m.q('[data-card-refusal]').textContent).toBe('The agent this card belongs to could not be resolved. Nothing was changed. Try again.');
+    expect([...t.store.keys()].filter((k) => k.includes('/plays/'))).toEqual([]);
+  });
+
   it('review SPR-T-8 — two of its own: RJ-7\'s plural (the mutant: the line always singular)', async () => {
     await seedCard('watch');   // RK-10: beside an open Watch card
     for (const [d, tape] of [[D1, fx.tape1], [D2, fx.tape2]]) {
@@ -990,7 +1009,7 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
     await sweepAll(fx.tape2Tempo, 'set link');
   });
 
-  it('the casual day — the rule on, no tempo recorded (tempoDesired null, the fixture\'s own day): RK-2\'s sentence on the form and the receipt, and no link anywhere (the mutant: Set linking with tempoDesired null)', async () => {
+  it('no tempo recorded — the rule on, tempoDesired null (the fixture\'s own day: the dial never set, as every casual clone\'s day records): RK-2\'s sentence on the form and the receipt, and no link anywhere (the mutant: Set linking with tempoDesired null)', async () => {
     await setOn(fx.tape2, () => {}, { file: false });
     expect(fx.tape2.tags.inputs.forcedRotation.enabled).toBe(true);
     expect(formSet()).toBe(NO_TEMPO);
@@ -1047,6 +1066,45 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
     m.click(m.q('[data-my-card="op_1"]'));
     await m.flush(4);
     expect(receiptNext()).toBe(RG5.set);
+    expect(m.q('[data-set-link]')).toBeNull();
+    // review KR2-4: back on its own day, the same card's receipt links again
+    m.click(m.qa('[data-region="day-picker"] button')[1]);
+    await m.flush(8);
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush(4);
+    expect(receiptNext()).toBe(RG5.set);
+    expect(m.q('[data-card-receipt] [data-set-link] button')).toBeTruthy();
+  });
+
+  /** The screen for `battle` over `tapes`, with the Forge door — no form opened. */
+  async function screenOf(battle, tapes) {
+    lastBattle = battle;
+    m.render(<FilmRoomScreenV2 battle={battle} onBack={() => {}} viewerId="viewer-1" readers={readersOf(tapes, [])} nowMs={NOW} cardsApi={api} onOpenForge={() => {}} />);
+    await m.flush(8);
+  }
+
+  it('review KR2-3 — a Set card\'s receipt beside the SAME date of ANOTHER battle cannot judge its source day: RG-5\'s sentence alone, no link (the mutant: the source day matched by its date alone)', async () => {
+    await setOn(fx.tape2Tempo, () => {});
+    expect(m.q('[data-card-receipt] [data-set-link]')).toBeTruthy();
+    m.teardown(); m.setup();
+    const C = 'b-same-date';
+    await screenOf(battleOf({ id: C, agentBattleId: C }), { [D1]: { ...fx.tape1, battleId: C }, [D2]: { ...fx.tape2Tempo, battleId: C } });
+    expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 25');
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush(4);
+    expect(receiptNext()).toBe(RG5.set);
+    expect(m.q('[data-set-link]')).toBeNull();
+  });
+
+  it('review KR2-3 — a SHELVED Set card\'s receipt on its own day says it is shelved, and holds no link (the mutant: the link gated on the stage alone)', async () => {
+    await setOn(fx.tape2Tempo, () => {});
+    expect(m.q('[data-card-receipt] [data-set-link]')).toBeTruthy();
+    t.store.set(`agents/${AGENT}`, { ownerId: OWNER, name: 'Aurora', archetype: 'guardian' });
+    m.teardown(); m.setup();
+    await screenOf(battleOf(), { [D1]: fx.tape1, [D2]: fx.tape2Tempo });
+    m.click(m.q('[data-my-card="op_1"]'));
+    await m.flush(4);
+    expect(receiptNext()).toBe('Shelved: nothing happens while the agent is on another archetype.');
     expect(m.q('[data-set-link]')).toBeNull();
   });
 
@@ -1167,10 +1225,12 @@ describe('B2.1 B2 (Amendment H RH-2) — a recurrence in another battle opens th
     expect(pressed()).toContain('Sep 25');
     expect(m.q('[data-moment-opened]')).toBeTruthy();
     expect(used).toBe(1);
-    // the player moves on: day 3
+    // the player moves on: day 3, and Study (review KR2-4: a view the default is not, so the remount's view is told apart)
     m.click(m.qa('[data-region="day-picker"] button')[1]);
     await m.flush(8);
     expect(pressed()).toContain('Sep 28');
+    await depth('Study');
+    expect(m.q('[role="tab"][aria-selected="true"]').textContent).toBe('Study');
     // the Forge's round trip remounts the Film Room: its default view (the completed battle's last day, Glance), nothing marked
     m.render(<AppHolder show={false} />);
     await m.flush(2);

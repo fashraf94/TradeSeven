@@ -343,7 +343,31 @@ describe('RK-1 — the counter answers for the attribution agent (the casual clo
   it('a clone document that cannot be read → 503 attribution_unavailable, never an answer with no recurrence', async () => {
     const t = seed(undefined, { beforeRead: (label) => { if (label === `agents/${CLONE}`) throw new Error('UNAVAILABLE'); } });
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    await expect(buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW })).rejects.toMatchObject({ status: 503, code: 'attribution_unavailable' });
+    await expect(buildCounter(t.db, { uid: UID, agentId: A1, nowMs: NOW })).rejects.toMatchObject({ status: 503, code: 'attribution_unavailable', extra: { agentId: A1 } });   // review KR1-7: the agent asked
     vi.restoreAllMocks();
+  });
+
+  it('review KR1-1 — an answer that would be FOR any casual clone is refused, as the create refuses it: a clone-named agent asked directly, and the owner\'s clone whose parent is itself a clone; no ledger read under either (the mutant: only the owner\'s own clone id refused)', async () => {
+    const SQUAT = 'casual-agent-zzz';
+    const t = seed({ ownerId: UID, archetype: 'momentum_chaser', rankedAgentId: SQUAT });
+    t.store.set(`agents/${SQUAT}`, { ownerId: UID, archetype: 'momentum_chaser' });
+    for (const asked of [SQUAT, CLONE]) {
+      t.readLog.length = 0;
+      await expect(buildCounter(t.db, { uid: UID, agentId: asked, nowMs: NOW }), asked).rejects.toMatchObject({ status: 503, code: 'attribution_unavailable', extra: { agentId: asked } });
+      expect(t.readLog.some((p) => p.includes('/plays')), asked).toBe(false);
+    }
+  });
+
+  it('review KR1-6 — shelving on the counter\'s read is the PARENT\'s archetype: the clone stale and the parent on the card\'s archetype → open; the parent moved on and the clone on the card\'s → shelved (the mutant: shelving by the clone)', async () => {
+    const t = seed({ ownerId: UID, archetype: 'guardian', rankedAgentId: A1 });
+    await watchCard(t);
+    const open = await buildCounter(t.db, { uid: UID, agentId: CLONE, nowMs: NOW });
+    expect(open.cards.map((c) => [c.entryId, c.shelved])).toEqual([['w1', false]]);
+    expect(open).toMatchObject({ archetypeCodeId: 'momentum_chaser', open: 1 });
+    t.store.set(`agents/${A1}`, { ownerId: UID, archetype: 'guardian' });
+    t.store.set(`agents/${CLONE}`, { ownerId: UID, archetype: 'momentum_chaser', rankedAgentId: A1 });
+    const shelved = await buildCounter(t.db, { uid: UID, agentId: CLONE, nowMs: NOW });
+    expect(shelved.cards.map((c) => [c.entryId, c.shelved])).toEqual([['w1', true]]);
+    expect(shelved).toMatchObject({ archetypeCodeId: 'guardian', open: 0, recurrences: {} });
   });
 });

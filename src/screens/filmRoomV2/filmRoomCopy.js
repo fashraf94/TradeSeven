@@ -325,8 +325,8 @@ export const FILM_ROOM_COPY = Object.freeze({
     // reaches this situation — the tempo dial, in the Forge workshop; with it off, it says no setting changes it
     setTempoLink: 'Tempo dial · Forge workshop',
     setRuleOff: 'No setting changes this situation for this archetype.',
-    // Build B Amendment K RK-2: the rule on, but the tape records no tempo the battle ran with (a casual clone's battle
-    // runs at the default tempo; the clone inherits no dial) — said after RG-5's sentence, with no link
+    // Build B Amendment K RK-2: the rule on, but the tape records no tempo set on the battle (a casual clone inherits no
+    // dial; an agent whose dial was never set records none either) — said after RG-5's sentence, with no link
     setNoTempo: 'No tempo setting was recorded for this battle.',
     openCards: 'Open cards',
     // the count line before the counter has answered, and when it could not: words, no number (R14)
@@ -350,6 +350,8 @@ export const FILM_ROOM_COPY = Object.freeze({
       archetype_changed: "The agent is on another archetype than this day's tape records. This card cannot be filed.",
       op_conflict: 'This id was already used for a card with other words.',
       tape_unreadable: 'The tape for this day could not be read. Try again.',
+      // Amendment K RK-1 (review KRV1-1): the agent the card belongs to — a casual clone's parent — could not be resolved
+      attribution_unavailable: 'The agent this card belongs to could not be resolved. Nothing was changed. Try again.',
       tape_not_found: 'No tape for this day.',
       tags_unavailable: "This day's tape has no situations to take home.",
       question_not_on_menu: 'That question is not on the menu for this situation.',

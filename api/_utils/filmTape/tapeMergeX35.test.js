@@ -158,3 +158,98 @@ describe('RK-9 — X3-5: a stored row\'s attribution stands against a later read
     expect((await s.write(NIGHT3 + 86_400_000)).status).toBe('unchanged');
   });
 });
+
+/** Plant `extra` caveats into the stored checks section (its caveats and its note), as an earlier merge would have left them. */
+function plant(s, extra) {
+  const stored = s.tape();
+  const cov = stored.coverage.checks;
+  s.t.store.set(s.key, { ...stored, coverage: { ...stored.coverage, checks: { ...cov, caveats: [...cov.caveats, ...extra], note: [cov.note, ...extra].filter(Boolean).join('; ') } } });
+}
+const occurrences = (text, part) => text.split(part).length - 1;
+
+describe('RK-9 — the §2 review\'s rows (KR3-1 … KR3-3): only the rewritten caveat moves; every other part of the note stays whole', () => {
+  it('review KR3-1 — two entry-only caveats whose text holds "; " (different counts, the same tail) both stay whole in the note through the rewrite (the mutant: every note part deduplicated)', async () => {
+    const s = await setup();
+    await s.write(NIGHT1);
+    const four = NOTES.entryOnly(4);
+    const two = NOTES.entryOnly(2);
+    expect(four).toContain('; ');
+    plant(s, [four, two]);
+    s.nextSession();
+    await s.write(NIGHT2);
+    const after = s.tape().coverage.checks;
+    expect(after.caveats).not.toContain(ADJ_40);   // the rewrite ran
+    for (const c of after.caveats) expect(after.note, c).toContain(c);
+    expect(after.note).toContain(four);
+    expect(after.note).toContain(two);
+    expect((await s.write(NIGHT3)).status).toBe('unchanged');
+  });
+
+  it('review KR3-2 — a rewrite that equals a caveat already kept is kept once, in the caveats and in the note (the mutant: the rewrites not deduplicated)', async () => {
+    const s = await setup();
+    await s.write(NIGHT1);
+    const rest = NOTES.gapsUnattributed(1, '77');
+    plant(s, [rest, NOTES.gapsUnattributed(2, '40, 77')]);
+    s.nextSession();
+    await s.write(NIGHT2);
+    const after = s.tape().coverage.checks;
+    expect(after.caveats.filter((c) => c === rest)).toHaveLength(1);
+    expect(occurrences(after.note, rest)).toBe(1);
+    expect(after.note).not.toContain('40, 77');
+  });
+
+  /** The refuter's natural shapes (review KRV3-1): a multi-day world whose `lost` ticks never arrive, unless read `late`. */
+  async function world(lost, battleId) {
+    const fx = await multiDay({ battleId, full: true });
+    const seeded = {};
+    seedDay(seeded, { ...fx, ticks: [] });
+    const t = makeTapeDb(seeded);
+    const upto = (n, { late = [] } = {}) => {
+      for (const tk of fx.ticks) if ((tk.tickSeq <= n && !lost.includes(tk.tickSeq)) || late.includes(tk.tickSeq)) t.store.set(`agentBattles/${battleId}/ticks/${tk.tickId}`, tk);
+      t.store.set(`agentBattles/${battleId}`, { ...fx.battle, cronState: { tickSeq: n }, evaluations: fx.all.filter((e) => seqOf(e.evalId) <= n) });
+    };
+    const write = async (D, now) => (await writeTapeDay(battleId, D, { db: t.db, now })).status;
+    const cov = (D) => t.store.get(`agentBattles/${battleId}/tape/${D}`).coverage.checks;
+    return { upto, write, cov };
+  }
+
+  it('review KR3-1, the natural shape — day 1 loses 5, 6, 39 and 40; tick 6 is read late with day 2: two plural entry-only counts meet in the union while RK-9 rewrites, and the note still carries every caveat whole; the next write is unchanged', async () => {
+    const w = await world([5, 6, 39, 40], 'b-kr31');
+    w.upto(40);
+    await w.write(D1, NIGHT1);
+    w.upto(80, { late: [6] });
+    await w.write(D1, NIGHT2);
+    const c = w.cov(D1);
+    expect(c.caveats.filter((x) => !c.note.includes(x))).toEqual([]);
+    expect(await w.write(D1, NIGHT2 + 3_600_000)).toBe('unchanged');
+  });
+
+  it('review KR3-2, the natural shape — day 2 loses 41 (leading) and 80 (trailing): the read\'s caveat rewritten into one the tape already holds is kept once, in the caveats and the note, and the next write is unchanged', async () => {
+    const D2 = '2026-09-22';
+    const w = await world([41, 80], 'b-kr32');
+    w.upto(40);
+    await w.write(D1, NIGHT1);
+    w.upto(80);
+    await w.write(D2, NIGHT2);
+    w.upto(120);
+    await w.write(D2, NIGHT3);
+    const c = w.cov(D2);
+    expect(c.caveats.length).toBe(new Set(c.caveats).size);
+    const parts = c.note.split('; ');
+    expect(parts.length).toBe(new Set(parts).size);
+    expect(await w.write(D2, NIGHT3 + 3_600_000)).toBe('unchanged');
+  });
+
+  it('review KR3-3 — a stored unattributed caveat naming a seq the day RECORDS (its tick row) is rewritten too: the caveat and passes.close.unattributedGaps judge by one set (the mutant: the caveat judged by the gaps alone)', async () => {
+    const s = await setup();
+    await s.write(NIGHT1);
+    expect(s.tape().checks.some((r) => r.tickSeq === 39 && r.state !== 'no_record')).toBe(true);
+    plant(s, [NOTES.gapsUnattributed(2, '39, 77')]);
+    s.nextSession();
+    await s.write(NIGHT2);
+    const after = s.tape();
+    expect(after.coverage.checks.caveats).toContain(NOTES.gapsUnattributed(1, '77'));
+    expect(after.coverage.checks.note).not.toContain('39, 77');
+    expect(after.passes.close.unattributedGaps).toEqual([]);
+  });
+});

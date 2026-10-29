@@ -10,7 +10,10 @@
 // captured from, with FILM_ROOM_V2_MODE 'on' — B2's base (7818a1b3), then,
 // after B2.1 the screen pass, that build's head (Amendment J RJ-9: the screen
 // pass changes v2 for every player through Part A, and the goldens are
-// re-captured at its head). Committed so a regeneration is reproducible from
+// re-captured at its head), then the B2.1 rulings round's code head
+// (Amendment K RK-13: RK-5 and RK-11 change the cards-off screen; the
+// photographed Deep dive chart, AMD's, has no swap, so RK-5 is pinned by the
+// Deep dive suite instead). Committed so a regeneration is reproducible from
 // a NAMED commit (the captureFilmRoomGolden precedent).
 //
 // It is SKIPPED unless FILM_ROOM_V2_GOLDEN_OUT_DIR is set, so the normal suite

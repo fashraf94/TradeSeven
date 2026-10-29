@@ -363,30 +363,44 @@ function unattributedSeqsOf(text) {
 /**
  * Build B Amendment K RK-9 (X3-5) — THE STORED ATTRIBUTION STANDS. The checks section's unattributed-gap caveat names
  * minted seqs whose day a read could not tell ("… adjacent to this day has no record and its day cannot be
- * established"). A seq the tape's own stored rows attribute to the day (its `no_record` row in the merged checks —
- * `gaps`) was told by the first write, made before the next session began, so the seq was minted on that day; a later
- * read that can no longer tell it does not override it. Such a caveat is rewritten to name only the rest, or dropped
- * when none is left — in `caveats` and in the note alike. This is the one exception to "caveats are unioned and never
- * dropped" (mergeCoverage): a caveat the tape's own stored rows prove wrong. Every other caveat is untouched, and a
- * section with no such caveat comes back as it was.
+ * established"). A seq the tape's own rows attribute to the day — its recorded tick row, or its gap row (`no_record`,
+ * or the entry standing for it: the merged `gaps`), together `attributed`, the same set the passes' `unattributedGaps`
+ * is filtered by — was told by the first write, made before the next session began, so the seq was minted on that day;
+ * a later read that can no longer tell it does not override it. Such a caveat is rewritten to name only the rest, or
+ * dropped when none is left — in `caveats` and in the note alike. This is the one exception to "caveats are unioned and
+ * never dropped" (mergeCoverage): a caveat the tape's own rows prove wrong. Every other caveat, and every other part of
+ * the note, stays exactly as the union left it: only a REWRITTEN caveat is deduplicated — against the parts left
+ * untouched and the rewrites before it — because a note part may be a fragment of a longer caveat that holds '; '
+ * itself (NOTES.entryOnly; review KR3-1). A section with no such caveat comes back as it was.
  */
-function attributedCaveats(cov, gaps) {
-  if (!isObj(cov) || !gaps.length) return cov;
+function attributedCaveats(cov, attributed) {
+  if (!isObj(cov) || !attributed.size) return cov;
   let moved = false;
   const fix = (text) => {
     const seqs = unattributedSeqsOf(text);
     if (!seqs) return text;
-    const rest = seqs.filter((s) => !gaps.includes(s));
+    const rest = seqs.filter((s) => !attributed.has(s));
     if (rest.length === seqs.length) return text;
     moved = true;
     return rest.length ? NOTES.gapsUnattributed(rest.length, rest.join(', ')) : null;
   };
-  const caveats = Array.isArray(cov.caveats) ? cov.caveats.map(fix) : null;
-  const parts = typeof cov.note === 'string' ? cov.note.split('; ').map(fix) : null;
+  const fixAll = (list) => {
+    const fixed = list.map((text) => ({ text, out: fix(text) }));
+    const seen = new Set(fixed.filter((f) => f.out === f.text).map((f) => f.text));
+    const out = [];
+    for (const f of fixed) {
+      if (f.out === null) continue;
+      if (f.out !== f.text) { if (seen.has(f.out)) continue; seen.add(f.out); }
+      out.push(f.out);
+    }
+    return out;
+  };
+  const caveats = Array.isArray(cov.caveats) ? fixAll(cov.caveats) : null;
+  const parts = typeof cov.note === 'string' ? fixAll(cov.note.split('; ')) : null;
   if (!moved) return cov;
   const out = { ...cov };
-  if (caveats) out.caveats = [...new Set(caveats.filter(Boolean))];
-  if (parts) out.note = [...new Set(parts.filter(Boolean))].join('; ') || null;
+  if (caveats) out.caveats = caveats;
+  if (parts) out.note = parts.join('; ') || null;
   return out;
 }
 
@@ -576,9 +590,11 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
     ...merged.checks.filter((r) => r.state === 'no_record' && Number.isInteger(r.tickSeq)).map((r) => r.tickSeq),
     ...(assembled.passes.close.gaps || []),
   ])].filter((g) => !seqs.includes(g)).sort((a, b) => a - b);
-  // RK-9 (X3-5): a seq the merged rows hold as the day's own gap is never also listed as unattributed — the stored
-  // attribution stands against a later read that can no longer tell the seq's day
-  const unattributed = (assembled.passes.close.unattributedGaps || []).filter((s) => !seqs.includes(s) && !gaps.includes(s));
+  // RK-9 (X3-5): a seq the merged rows attribute to the day — recorded, or held as the day's own gap — is never also
+  // listed as unattributed: the stored attribution stands against a later read that can no longer tell the seq's day.
+  // The same set judges the checks section's unattributed caveat below (attributedCaveats).
+  const attributed = new Set([...seqs, ...gaps]);
+  const unattributed = (assembled.passes.close.unattributedGaps || []).filter((s) => !attributed.has(s));
   const entryOnly = merged.checks.some((r) => r.rowSource === 'entry');
   merged.passes = {
     close: {
@@ -611,9 +627,9 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       observed: sectionDependsOn(section, assembled),
     });
   }
-  // RK-9 (X3-5): the checks section's unattributed caveat follows the same gaps — the one caveat the tape's own stored
-  // rows can prove wrong (attributedCaveats); every other caveat stays as the union left it
-  merged.coverage.checks = attributedCaveats(merged.coverage.checks, gaps);
+  // RK-9 (X3-5): the checks section's unattributed caveat follows the same attributed seqs — the one caveat the tape's
+  // own rows can prove wrong (attributedCaveats); every other caveat stays as the union left it
+  merged.coverage.checks = attributedCaveats(merged.coverage.checks, attributed);
   // BA-38 (review AD2-2): the replays an earlier replay logic built, by swap.
   const outdated = (merged.actions || []).filter((a) => builtByEarlierLogic(a?.replay)).map((a) => `${a.symbolOut} → ${a.symbolIn}`);
   for (const section of CANDLE_COVERAGE_SECTIONS) {
