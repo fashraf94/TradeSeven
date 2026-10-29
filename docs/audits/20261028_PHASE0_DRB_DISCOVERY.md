@@ -484,6 +484,7 @@ The answer is cut off inside `keyEvents`, arrives without `themes`, fails the sh
 **FQ-3. Does the existing ruling still stand that the brief is never read by the trading agent?**
 - The ruling is recorded in code: "no DRB read is authorized" in the agent's checks.
 - **Recommendation: keep it.** Whatever the brief becomes, it informs the player. Any effect on the agent goes through a record the player owns and confirms, never through the brief text itself. It also keeps the trading engine's protected files out of the redesign.
+- **Note:** one path already bypasses player confirmation. The post-game chat can write a lesson while the brief is in view, and lessons feed the next deploy (§3 Q3). Whether that stays as is belongs to the same decision.
 
 **FQ-4. Which window should a future "daily decision" target?**
 - **Ranked setup locks from 7:00 AM ET**, before an 8:30 brief. A morning choice can therefore reach ranked play only the next day, unless either:
@@ -491,7 +492,7 @@ The answer is cut off inside `keyEvents`, arrives without `themes`, fails the sh
   - the choice uses the one live channel (the in-game instruction slot, read every 15 minutes until 3:45 PM).
 - BaggerBomb games take the setup at the moment the player deploys.
 - Of today's records:
-  - the watchlist and its thesis, the archetype, and the leans and tempo reach the next deploy. Leans and tempo reach ranked games only;
+  - at the next deploy: the archetype (all games), the watchlist and its thesis (BaggerBomb only), and leans and tempo (ranked only);
   - the hub's "idea" and "preference" surfaces reach the agent never.
 - **Recommendation:** decide the window first, before any design work. It fixes the brief's time and narrows the choice to the records that actually reach the agent.
 
