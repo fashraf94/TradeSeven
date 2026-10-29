@@ -8,7 +8,7 @@
 
 ## Executive verdict
 
-**MERGE AFTER FIXES.** No blocking finding. The flag-off guarantee is proven by my own Linux builds, the port is word-identical to the design where it claims to be, the teardown and context-loss paths are sound, and the full suite is green on the PR head. The fixes are small and all in dark code or tests: one style line, one error guard, five test rows and one timeout line. If the founder would rather merge the dark PR now, the fixes can be the first S1 commit; nothing in them changes what ships while the flag is false.
+**MERGE AFTER FIXES**, as reviewed at `d1745c98`; **the fixes have since landed (§7), so the verdict on the branch head is MERGE.** No blocking finding. The flag-off guarantee is proven by my own Linux builds, the port is word-identical to the design where it claims to be, the teardown and context-loss paths are sound, and the full suite is green on the PR head. The fixes were small and all in dark code or tests: one style line, one error guard, five test rows and one timeout line. The founder ruled to land them on the branch (with four of the notes), and §7 records that round: every mutant of §3.4 is now killed by the row that names it.
 
 | # | Lens | Result |
 |---|---|---|
@@ -222,7 +222,49 @@ What the hub integration must handle, from this review and the build report, in 
 ## 6. Commits and artifacts
 
 On `claude/agent-form-s0`, after `d1745c98`:
-- this review, `docs/audits/20261029_REVIEW_AGENT_FORM_S0.md`;
-- the build report's §8 filled from the founder's summary (`docs/audits/20261029_BUILD_AGENT_FORM_S0.md`), the only other change.
+- `a731998e`: this review, and the build report's §8 filled from the founder's summary (`docs/audits/20261029_BUILD_AGENT_FORM_S0.md`);
+- `b93d46c2`: the fix round (§7), on the founder's ruling;
+- the last commit: §7 and this list.
 
-No code was changed by this review. The review's scratch harness (the WSL worktree scripts, the masked-build diff, the fidelity diff script, the mutant spec and runner, the refuters' headless Edge repro) lives in the session scratchpad and is not committed. A copy of this document is at `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261029_REVIEW_AGENT_FORM_S0.md` (BUILD_RULES §3).
+The review's scratch harness (the WSL worktree scripts, the masked-build diff, the fidelity diff script, the mutant spec and runner, the refuters' headless Edge repro) lives in the session scratchpad and is not committed. A copy of this document is at `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261029_REVIEW_AGENT_FORM_S0.md` (BUILD_RULES §3).
+
+---
+
+## 7. The fix round (October 29, 2026, founder's ruling)
+
+The founder read the review and ruled: land SR-1 to SR-8 on the PR branch, with `isolation: isolate` for SR-1; also apply SR-9, SR-10 (report wording), SR-11 (the comment) and SR-16 (the lab's WebGL guard); keep the design files (SR-17). Landed as **`b93d46c2`**, nine files, 143 insertions and 20 deletions, no fenced file touched, the flag still `false`.
+
+| Finding | What landed | Where |
+|---|---|---|
+| SR-1 | `isolation: 'isolate'` on the form's box, with the reason in a comment; a pin row reads the style back | `AgentForm.jsx:67`; `AgentForm.jsdom.test.jsx` ("mounts one view with the mapped spec") |
+| SR-2 | the design's per-view guard: `drawNow` and the loop body wrap each view's draw in `try/catch`; a throw calls `failView`, which counts `failed`, calls `cb.onError(error)` and sets the view `unavailable`; the loop goes on. The wrapper shows an unavailable view's cached still when it has one (`showStill` covers `'unavailable'`). `info()` reports `failed` | `engine.js` (`drawNow`, `failView`, `frame`, `info`); `AgentForm.jsx:64`; a lifecycle row ("a pose or render that throws") and a wrapper row |
+| SR-3 | row: `update()` on a view at rate `still`, then under reduced motion, renders its still and its live frame (+2), and the loop stays stopped | `engine.lifecycle.jsdom.test.js`, "a mutable view" |
+| SR-4 | row: `update({ size: 260 })` re-sizes the live and still canvases; on the direct path `update({ face: -1, size: 100 })` re-sizes the buffer to 200 and re-applies `scaleX(-1)` on the canvas and the overlay | same block |
+| SR-5 | row: the census open across a loss and restore; two environments made, every render target disposed exactly once, nothing else bad | "WebGL context loss and restore" |
+| SR-6 | Node row: the batched Contrarian at armor stage 3 has nine instances (three rings, six studs), every one visible in the front batch and none in the back | `builders.test.js` |
+| SR-7 | row: two views mounted, one unmounted, the observer's target set drops to one and no longer has the unmounted box | "the frame loop" |
+| SR-8 | `vi.setConfig({ testTimeout: 30000 })`, `waitFor` 20 s, with the reason | `AgentForm.engine.jsdom.test.jsx` |
+| SR-9 | §4.3 names the residue's two causes; §4.5's last sentence gives the real reason the batched path has no history effect | build report |
+| SR-10 | §4.1 states the measured scope of the 28 stills, what rests on the source diff, and that the harness is uncommitted | build report |
+| SR-11 | the comment names `agentForm.guard.test.js` | `engine/index.js:5` |
+| SR-16 | the lab fetches the engine chunk only where `hasWebGL()` | `AgentFormLab.jsx` |
+| SR-17 | kept, by the founder's ruling | — |
+
+**Mutation check of the round** (Linux, the fix commit checked out LF in a worktree, each mutant one exact replacement restored from the HEAD blob and hash-checked; the six engine, wrapper and lab files, now 74 rows):
+
+| Mutant | Before the round | After | Killed by |
+|---|---|---|---|
+| M1 the old studio target not disposed on restore | survived | **killed** (1 of 74) | the SR-5 row |
+| M2 `update()` never redraws a non-animating view | survived | **killed** | the SR-3 row |
+| M3 no resize on a size or face change | survived | **killed** | the SR-4 row |
+| M4 the Contrarian tie rule `<=` → `<` | survived | **killed** | the SR-6 row |
+| M5 no `unobserve` on unmount | survived | **killed** | the SR-7 row |
+| N1 the loop's per-view guard removed | — | **killed** | the SR-2 lifecycle row |
+| N2 the box not isolated | — | **killed** | the SR-1 pin row |
+| N3 an unavailable view with a still shows the fallback | — | **killed** | the SR-2 wrapper row |
+
+Every kill is by exactly one row, the one that names the defect, with 73 of 74 passing; no file dropped out. M6 stays unrun (equivalent, §2).
+
+**Checks on `b93d46c2`** (Linux, WSL, CI's Node 20.20.2): `lint:gate` exit 0; `vite build` exit 0, 44 JS chunks (the flag-off count, no lab or engine chunk); the full suite, `TZ=UTC`, 8 workers, under the suite lock: **26,934 rows (6 new), 26,844 pass, 1 fail, 89 skipped** on the first run. The one red row is `api/_utils/callRecords/publish.test.js` "the transaction (row 7) the queue read returns after the deadline", a real-time deadline row in a folder this PR does not touch (the PR's `api/` diff against `main` is empty); the first review run had shown a sibling row of the same family (`retire.test.js` CB1-2) red once and green alone on both trees. Rechecked: `publish.test.js` alone on the fix tree 37 of 37, the whole `api/_utils/callRecords/` folder alone 568 of 568, the same file on `main`'s tree 37 of 37 (its assertion read `phaseResult: 'unconfirmed'` for `'timeout_absent'`, a deadline landing late under the 8-worker load). **The second full run on `b93d46c2`, nothing else running: 26,934 rows, 26,845 pass, 0 fail, 89 skipped**, 1,220 files passed, 8 skipped. The two timing rows of that family are a pre-existing load sensitivity in untouched code, recorded here for separate tasking, not a finding against this PR.
+
+**Verdict after the round: MERGE.** Nothing of SR-1 to SR-8 remains open; the notes not applied (SR-12 to SR-15, SR-17, SR-18) need no change. The §5 carry-overs for S1 stand, items 1 and 6 now satisfied by the round.
