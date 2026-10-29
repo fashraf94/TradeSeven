@@ -3,10 +3,19 @@
 // src/App.activeBattlesPoll.owner.jsdom.test.jsx
 //
 // Command Center slice S3 (ruling R-S3-3) — App's active-battle list across an
-// identity change, driven through the real App: mounted with the hub OFF, the
-// legacy desktop shell replaced by a probe that records the
-// `activeAgentBattles` App hands it and the handlers it passes, Firebase auth
-// at its edge (the App.xpModal.jsdom.test.jsx harness).
+// identity change, driven through the real App, Firebase auth at its edge (the
+// App.xpModal.jsdom.test.jsx harness), in both states of the hub flag (its
+// flip, October 28, 2026), through the accessor every reader calls:
+//   hub off  the rollback state, the accessor mocked false — the rows as S3
+//            wrote them: the legacy desktop shell replaced by a probe that
+//            records the `activeAgentBattles` App hands it and the handlers it
+//            passes;
+//   hub on   the shipped state — a sibling for each of those rows: the hub
+//            gate replaced by a probe that records the hub object App hands
+//            it (its `activeBattles` is the same list). The hub has no
+//            onCreateAgentBattle of its own (its deploy reaches App's through
+//            the deploy provider), so a sibling that needs a list seeds it
+//            with the poll's own answer instead.
 //
 // FIREBASE BY REDIRECT, NOT FACTORY. App's effects import firebase/firestore and
 // ./firebase/config dynamically from many places in one mount flush; with a
@@ -113,6 +122,10 @@ vi.mock('./hooks/useAgent', () => ({
   default: () => ({ agent: { id: 'a1', name: 'Aurora', archetype: 'degen' }, hasAgent: true, loading: false }),
 }));
 vi.mock('./hooks/useIsMobile', () => ({ useIsMobile: () => ({ isMobile: false, isTablet: false }) }));
+// The hub flag through its accessor, the one every reader calls (App's pick, the hub chrome predicates, the deploy
+// provider): false for every row unless its describe turns it on.
+const hubFlag = vi.hoisted(() => ({ on: false }));
+vi.mock('./config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), isCommandCenterHubOn: () => hubFlag.on }));
 
 // Each App instance's poll runs, counted where they begin and settle (App's one
 // run bookkeeping, unchanged underneath): `started`, `settled`, `failed`.
@@ -146,6 +159,16 @@ vi.mock('./components/Dashboard/CommandDashboardDesktop', () => ({
   default: function CommandDashboardDesktopProbe(props) {
     shell.lists.push(props.activeAgentBattles);
     shell.props = props;
+    return null;
+  },
+}));
+// The hub gate App renders with the hub on: a probe of the hub object App hands it. Its list goes where the legacy
+// shell's does, so `latest()` reads whichever shell is on screen.
+const gate = vi.hoisted(() => ({ props: null }));
+vi.mock('./components/CommandCenter/CommandCenterHubGate', () => ({
+  default: function CommandCenterHubGateProbe(props) {
+    shell.lists.push(props.hub.activeBattles);
+    gate.props = props;
     return null;
   },
 }));
@@ -237,6 +260,8 @@ beforeEach(() => {
   polls.length = 0;
   shell.lists = [];
   shell.props = null;
+  gate.props = null;
+  hubFlag.on = false;
   errors = vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('no network in this test'); }));
   failPollQueries();
@@ -261,9 +286,10 @@ async function mountOnDashboard() {
   await act(async () => { root.render(<Mounted />); });
   await waitUntil(() => shell.props !== null);
   expect(shell.props, 'App reached the dashboard and rendered the legacy desktop shell').not.toBeNull();
+  expect(gate.props, 'the hub gate never rendered').toBeNull();
 }
 
-describe('parity — the signed-in owner\'s list and the poll\'s schedule are today\'s', () => {
+describe('the hub off (the rollback state) — parity: the signed-in owner\'s list and the poll\'s schedule are today\'s', () => {
   it('the poll runs once at mount and once per 120 s, and nothing else starts it', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     await mountOnDashboard();
@@ -312,7 +338,7 @@ describe('parity — the signed-in owner\'s list and the poll\'s schedule are to
   });
 });
 
-describe('defects the pre-S3 App has (R-S3-3)', () => {
+describe('the hub off (the rollback state) — defects the pre-S3 App has (R-S3-3)', () => {
   it('an account switch clears the former owner\'s games at once, and the poll runs at once for the new owner', async () => {
     await mountOnDashboard();
     await deployAsTheShellDoes('uid-A');
@@ -348,7 +374,7 @@ async function answer(q, owner, ids) {
 const openQuery = (owner) => fb.pollQueries.filter((q) => !q.settled && q.owner === owner).pop();
 const ids = () => (latest() || []).map((b) => b.id);
 
-describe('a completion whose capture is no longer current is ignored (R-S3-3; rows that fail on the pre-S3 App)', () => {
+describe('the hub off (the rollback state) — a completion whose capture is no longer current is ignored (R-S3-3; rows that fail on the pre-S3 App)', () => {
   beforeEach(() => { deferPollQueries(); });
 
   it('A→B while A\'s query is out: its answer never lands; B\'s does', async () => {
@@ -380,6 +406,139 @@ describe('a completion whose capture is no longer current is ignored (R-S3-3; ro
 
   it('a sign-out while A\'s query is out: its answer never lands', async () => {
     await mountOnDashboard();
+    const qa = openQuery('uid-A');
+    await switchTo(null);
+    await answer(qa, 'uid-A', ['a-late']);
+    expect(ids()).toEqual([]);
+  });
+});
+
+// ── The hub on (the shipped state): a sibling for each row above ────────────
+async function mountOnHub() {
+  await act(async () => { root.render(<Mounted />); });
+  await waitUntil(() => gate.props !== null);
+  expect(gate.props, 'App reached the dashboard and rendered the hub gate').not.toBeNull();
+  expect(shell.props, 'the legacy desktop shell never rendered').toBeNull();
+}
+/** The mount run's owner + active query answers with these ids and every later one fails: a list the poll seeded. */
+const answerFirstPollQuery = (owner, firstIds) => {
+  let answered = false;
+  firestore.getDocs.mockImplementation(async (q) => {
+    if (!isPollQuery(q)) return EMPTY;
+    if (answered) throw new Error('the owner + active query fails in this test');
+    answered = true;
+    return docsOf(owner, firstIds);
+  });
+};
+
+describe('the hub on (the shipped state) — parity: the signed-in owner\'s list and the poll\'s schedule are today\'s', () => {
+  beforeEach(() => { hubFlag.on = true; });
+
+  it('the poll runs once at mount and once per 120 s, and nothing else starts it', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    await mountOnHub();
+    expect(poll().started).toBe(1);
+    await runsSettle();
+    await act(async () => { vi.advanceTimersByTime(119_999); });
+    await flush();
+    expect(poll().started).toBe(1);
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(poll().started).toBe(2);
+    await act(async () => { vi.advanceTimersByTime(240_000); });
+    expect(poll().started).toBe(4);
+    await runsSettle();
+    expect(poll().failed).toBe(4);
+  });
+
+  it('a list the poll answered stays through a failed run: the list is never blanked on an error', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    answerFirstPollQuery('uid-A', ['bb_1']);
+    await mountOnHub();
+    await runsSettle();
+    const seeded = latest();
+    expect(seeded.map((b) => b.id)).toEqual(['bb_1']);
+    await act(async () => { vi.advanceTimersByTime(120_000); });
+    expect(poll().started).toBe(2);
+    await runsSettle();
+    expect(poll().failed).toBe(1);
+    expect(latest()).toBe(seeded);
+  });
+
+  it('the hub on, App holds exactly one auth listener: the identity source (R-S3-2; review T1-4)', async () => {
+    await mountOnHub();
+    expect(fb.authListeners).toHaveLength(1);
+  });
+
+  it('the same owner\'s identity answering again changes nothing: no clear, no extra run', async () => {
+    answerFirstPollQuery('uid-A', ['bb_1']);
+    await mountOnHub();
+    await runsSettle();
+    const seeded = latest();
+    expect(seeded.map((b) => b.id)).toEqual(['bb_1']);
+    const runs = poll().started;
+    await act(async () => { for (const cb of [...fb.authListeners]) cb({ uid: 'uid-A' }); });
+    await flush();
+    expect(latest()).toBe(seeded);
+    expect(poll().started).toBe(runs);
+  });
+});
+
+describe('the hub on (the shipped state) — the pre-S3 defects stay fixed (R-S3-3)', () => {
+  beforeEach(() => { hubFlag.on = true; });
+
+  it('an account switch clears the former owner\'s games at once, and the poll runs at once for the new owner', async () => {
+    answerFirstPollQuery('uid-A', ['bb_1']);
+    await mountOnHub();
+    await runsSettle();
+    expect(ids()).toEqual(['bb_1']);
+    const runs = poll().started;
+    await switchTo('uid-B');
+    expect(latest()).toEqual([]);
+    expect(poll().started).toBe(runs + 1);
+  });
+
+  it('a sign-out clears the former owner\'s games at once', async () => {
+    answerFirstPollQuery('uid-A', ['bb_1']);
+    await mountOnHub();
+    await runsSettle();
+    expect(ids()).toEqual(['bb_1']);
+    await switchTo(null);
+    expect(latest()).toEqual([]);
+  });
+});
+
+describe('the hub on (the shipped state) — a completion whose capture is no longer current is ignored (R-S3-3)', () => {
+  beforeEach(() => { hubFlag.on = true; deferPollQueries(); });
+
+  it('A→B while A\'s query is out: its answer never lands; B\'s does', async () => {
+    await mountOnHub();
+    const qa = openQuery('uid-A');
+    expect(qa, 'the mount run queried for A').toBeTruthy();
+    await switchTo('uid-B');
+    await answer(qa, 'uid-A', ['a-late']);
+    expect(ids()).toEqual([]);
+    const qb = openQuery('uid-B');
+    expect(qb, 'the identity change ran the poll for B').toBeTruthy();
+    await answer(qb, 'uid-B', ['b-live']);
+    expect(ids()).toEqual(['b-live']);
+  });
+
+  it('A→B→A while the first A query is out: the A@1 answer is dropped, the A@3 answer lands', async () => {
+    await mountOnHub();
+    const first = openQuery('uid-A');
+    await switchTo('uid-B');
+    await switchTo('uid-A');
+    await answer(first, 'uid-A', ['a1-stale']);
+    expect(ids()).toEqual([]);
+    const third = openQuery('uid-A');
+    expect(third).toBeTruthy();
+    expect(third).not.toBe(first);
+    await answer(third, 'uid-A', ['a3']);
+    expect(ids()).toEqual(['a3']);
+  });
+
+  it('a sign-out while A\'s query is out: its answer never lands', async () => {
+    await mountOnHub();
     const qa = openQuery('uid-A');
     await switchTo(null);
     await answer(qa, 'uid-A', ['a-late']);
