@@ -134,6 +134,8 @@ import FilmRoomBanner from '../components/FilmRoom/FilmRoomBanner';
 import { CONVICTION_MULTIPLIERS, THRESHOLD_POINTS } from '../constants/baggerBombScoring';
 import { TOURNAMENT_GAME_MODE } from '../constants/leagueTournament';
 import { getEquippedWatchlistLabel } from '../utils/watchlistEquipUI';
+import { AGENT_FORM_BATTLE_ENABLED } from '../config/agentFormFlags';
+import { BattleAgentFormScope } from './battleView/battleAgentFormSlot';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -3532,7 +3534,26 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
         {/* Score header — the arena under the pane flag (A3.0, D-96), the
             shipped header otherwise. The else-arm is the A2 JSX untouched, and
             AgentBattleScreen.paneOff.golden.test.jsx holds it to that. */}
-        {paneOn ? (
+        {paneOn ? (AGENT_FORM_BATTLE_ENABLED ? (
+          // Agent form build S1: the forms' moods read the cockpit feed and the clock through this scope.
+          <BattleAgentFormScope cockpitFeed={cockpitFeed} now={now}>
+            <ArenaHeader
+              agentBattle={agentBattle}
+              isDesktop={isDesktop}
+              playerScore={displayPlayerScore}
+              opponentScore={displayOpponentScore}
+              {...comparisonProp}
+              dayLabel={computeDayLabel(agentBattle?.timing)}
+              turnLine={turnLine}
+              landingKey={landingKey}
+              rowCount={rowCount}
+              reducedMotion={reducedMotion}
+              onOpenBook={handleBookWhyToggle}
+              bookOpen={bookWhyOpen}
+              bookName={BATTLE_VIEW_COPY.whyBookName}
+            />
+          </BattleAgentFormScope>
+        ) : (
           <ArenaHeader
             agentBattle={agentBattle}
             isDesktop={isDesktop}
@@ -3548,7 +3569,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             bookOpen={bookWhyOpen}
             bookName={BATTLE_VIEW_COPY.whyBookName}
           />
-        ) : (
+        )) : (
           <ScoreHeader
             agentBattle={agentBattle}
             tokens={tokens}
@@ -3763,7 +3784,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 board's CONTENT, off screen until you scrolled to the end. The
                 phone's mark is rendered at the root instead, fixed to the
                 viewport; see the note there. */}
-            {paneOn && isDesktop && !pane.open && characterMark}
+            {AGENT_FORM_BATTLE_ENABLED ? paneOn && isDesktop && !pane.open && <BattleAgentFormScope cockpitFeed={cockpitFeed} now={now}>{characterMark}</BattleAgentFormScope> : paneOn && isDesktop && !pane.open && characterMark}
           </div>
           {/* ONE CHILD SLOT, not two (A3.2). The pane and the A2 column are
               branches of a single expression, deliberately: React derives
@@ -3794,7 +3815,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
                 // gives the board the full width.
                 : { display: 'none' }}
             >
-              {characterPane}
+              {AGENT_FORM_BATTLE_ENABLED ? <BattleAgentFormScope cockpitFeed={cockpitFeed} now={now}>{characterPane}</BattleAgentFormScope> : characterPane}
             </div>
           ) : (
             /* THE CHAT'S ONE HOME ON THE DESKTOP (A2.4, review L2-F1 / L5-F7).
@@ -4018,7 +4039,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             the mark hides while the Game Tape is up (the layout container did
             that with `visibility: hidden`), and it is absent while the pane is
             open (the character stands in the pane's header instead). */}
-        {!pane.open && !gameTapeOpen && characterMark}
+        {AGENT_FORM_BATTLE_ENABLED ? !pane.open && !gameTapeOpen && <BattleAgentFormScope cockpitFeed={cockpitFeed} now={now}>{characterMark}</BattleAgentFormScope> : !pane.open && !gameTapeOpen && characterMark}
         {/* Cockpit Build 2a (§7.5): the phone's modal bottom sheet, at the root
             for the same stacking reason the mark is here. */}
         {phoneCockpit ? cockpitSheetElement : null}
@@ -4039,7 +4060,7 @@ export default function AgentBattleScreen({ battle, user, onBack, onOpenFilmRoom
             background: `rgba(${cssVar('shadow-rgb')}, 0.55)`,
           }}
         >
-          {characterPane}
+          {AGENT_FORM_BATTLE_ENABLED ? <BattleAgentFormScope cockpitFeed={cockpitFeed} now={now}>{characterPane}</BattleAgentFormScope> : characterPane}
         </div>
         </>
       ) : controllerOn && (

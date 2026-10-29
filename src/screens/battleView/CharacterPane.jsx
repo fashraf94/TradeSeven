@@ -59,10 +59,12 @@ import { motion } from 'framer-motion';
 import { ChevronRight, X } from 'lucide-react';
 import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
 import { isAgentPresenceOn } from '../../config/featureFlags';
+import { AGENT_FORM_BATTLE_ENABLED } from '../../config/agentFormFlags';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
+import { BattleAgentFormSlot, duelScores } from './battleAgentFormSlot';
 import { PANE_SECTION, PANE_SECTIONS } from './useCharacterPane';
 
 const SECTION_LABEL = {
@@ -332,7 +334,15 @@ export default function CharacterPane({
           flexShrink: 0,
         }}
       >
-        {isAgentPresenceOn() && agentBattle && (
+        {AGENT_FORM_BATTLE_ENABLED ? isAgentPresenceOn() && agentBattle && (
+          // Agent form build S1: the form at 40 px — the smallest size it moves at (ruling R12) — overhanging the
+          // header's 36 px box by 2 px a side, so the name, the archetype line and their F2 thresholds keep their room.
+          <div data-pane-form="1" style={{ width: PANE_FACE_PX, height: PANE_FACE_PX, flexShrink: 0 }}>
+            <div style={{ margin: (PANE_FACE_PX - 40) / 2 }}>
+              <BattleAgentFormSlot agentBattle={agentBattle} size={40} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
+            </div>
+          </div>
+        ) : isAgentPresenceOn() && agentBattle && (
           // BOXED (F2) — see ArenaHeader's note at its own face. EnvStage's root
           // is `width: 100%; height: 100%`, so bare as a flex item it claimed
           // the whole header: the face drew small inside a huge box (the mark

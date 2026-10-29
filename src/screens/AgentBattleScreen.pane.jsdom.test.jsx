@@ -1406,7 +1406,10 @@ describe('Smoke F3 — the phone\'s mark is fixed to the viewport, not parked in
     // A plain path, not `import.meta.url`: under the jsdom environment that is
     // not a file URL and readFileSync refuses it. vitest runs from the repo root.
     const src = readFileSync('src/screens/AgentBattleScreen.jsx', 'utf8');
-    expect(src).toContain('{!pane.open && !gameTapeOpen && characterMark}');
+    // Agent form build S1: the site is a ternary on AGENT_FORM_BATTLE_ENABLED, and both arms carry the same gate —
+    // the flag-on arm around the forms' scope, the flag-off arm exactly as before.
+    expect(src).toContain(': !pane.open && !gameTapeOpen && characterMark}');
+    expect(src).toContain('? !pane.open && !gameTapeOpen && <BattleAgentFormScope');
     // …and the mark does render when the tape is down, which is every state
     // this suite can reach.
     setShell(false);
