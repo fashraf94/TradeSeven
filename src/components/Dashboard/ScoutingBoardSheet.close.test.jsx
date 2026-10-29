@@ -68,3 +68,38 @@ describe('ScoutingBoardSheet closes on a created deploy and on the running battl
     expect(await tapDeploy(result)).not.toHaveBeenCalled();
   });
 });
+
+// The S8 review's S8-9 (ruling R-S8F-10): the footer's `deployBusy = deployDisabled || deploying` was pinned by no row
+// (its mutant Q6M-11, `→ deploying`, survived 237). The real sheet, open, each half on its own.
+describe('the footer is disabled while the deploy cannot start or is under way (S8-9)', () => {
+  async function renderBoard({ deployDisabled, deploying }) {
+    const onDeploy = vi.fn(async () => ({ outcome: 'created', success: true, agentBattleId: 'battle-new' }));
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <ScoutingBoardSheet open onClose={vi.fn()} agent={{ archetype: 'momentum' }} accent="#22c55e"
+          deploying={deploying} deployDisabled={deployDisabled} isLive={false} onDeploy={onDeploy} />,
+      );
+    });
+    const footer = [...document.querySelectorAll('button')].find((b) => /Deploy this agent|Deploying…|Battle in progress/.test(b.textContent || ''));
+    expect(footer, 'the sheet\'s footer button').toBeTruthy();
+    return { footer, onDeploy };
+  }
+
+  it('deployDisabled: the footer is disabled and a click never calls onDeploy', async () => {
+    const { footer, onDeploy } = await renderBoard({ deployDisabled: true, deploying: false });
+    expect(footer.disabled).toBe(true);
+    await act(async () => { footer.click(); });
+    expect(onDeploy).not.toHaveBeenCalled();
+  });
+
+  it('deploying: the footer is disabled, says so, and a click never calls onDeploy', async () => {
+    const { footer, onDeploy } = await renderBoard({ deployDisabled: false, deploying: true });
+    expect(footer.disabled).toBe(true);
+    expect(footer.textContent).toContain('Deploying…');
+    await act(async () => { footer.click(); });
+    expect(onDeploy).not.toHaveBeenCalled();
+  });
+});

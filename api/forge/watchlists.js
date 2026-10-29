@@ -39,6 +39,7 @@ import {
   capTickersArray,
   newlyAddedRetiredTickers,
   retiredTickerRefusal,
+  splitRetiredTickers,
   NAME_MAX_LEN,
   NOTES_MAX_LEN,
 } from '../_utils/watchlistValidation.js';
@@ -71,6 +72,7 @@ const SENTINEL_TO_HTTP = Object.freeze({
   drop_session_mismatch: [400, 'drop_session_mismatch'],
   invalid_status:        [409, 'invalid_status'],
   inconsistent_state:    [409, 'inconsistent_state'],
+  no_valid_tickers:      [400, 'no_valid_tickers'],
 });
 
 const SENTINEL_HUMAN_COPY = Object.freeze({
@@ -80,6 +82,7 @@ const SENTINEL_HUMAN_COPY = Object.freeze({
   drop_session_mismatch: 'The dropId for this session does not match the dropId in the request.',
   invalid_status:        'This dialogue is in an unsaveable state (already abandoned).',
   inconsistent_state:    'Session is marked completed but missing a watchlist reference. Contact support.',
+  no_valid_tickers:      'At least one valid ticker is required to create a watchlist.',
 });
 
 // Status branching at the transaction body. Defined as constants so the
@@ -451,11 +454,14 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
   // body below writes exactly what it wrote before the build.
   const hypothesisOn = hypothesisRecordsOnFor(user.uid);
   let txResult;
-  // F4: the retired symbols a refused save would have added (set in the body).
-  let retiredRefused = null;
+  // C4: the retired symbols this save left out of the list (set in the body).
+  let droppedRetired = [];
   try {
     txResult = await db.runTransaction(async (tx) => {
       const freshSnap = await tx.get(sessionRef);
+      // C4 (review CL2-6): a retry of this body starts clean — a prior attempt's dropped names must not
+      // leak into the response of an attempt that finds the session already completed.
+      droppedRetired = [];
       if (!freshSnap.exists) throw new Error(SENTINEL_PREFIX + 'session_not_found');
       const session = freshSnap.data();
 
@@ -495,7 +501,7 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
       // Build watchlist content from session.
       // Ticker filter per D-9.2: keep proposed + kept, drop removed.
       // Ticker shape per D-9.9: strip slot/status/proposedAt/proposedAtPhase.
-      const tickers = (Array.isArray(session.candidateTickers) ? session.candidateTickers : [])
+      const proposedTickers = (Array.isArray(session.candidateTickers) ? session.candidateTickers : [])
         .filter((t) => t && t.status !== 'removed')
         .map((t) => ({
           symbol: typeof t.symbol === 'string' ? t.symbol : '',
@@ -504,11 +510,17 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
           addedBy: 'agent',
           addedAt: nowIso,
         }));
-      // F4: a session proposed before BR-3 can still hold a retired stock
-      // (proposals are validated since). A new list has no stored tickers, so
-      // it is an add: refused before any write, the session left as it was.
-      retiredRefused = newlyAddedRetiredTickers(tickers);
-      if (retiredRefused.length > 0) throw new Error(SENTINEL_PREFIX + 'retired_ticker');
+      // C4 (Flash, Oct 27, 2026; was F4's refusal): a session proposed before
+      // BR-3 can still hold a retired stock (proposals are validated since).
+      // The client treats any failed save as "abandon", so refusing would cost
+      // the player the whole dialogue: the retired names are dropped and the
+      // rest saved, and the response names what was dropped. A list left with
+      // nothing after the drop is refused (no_valid_tickers, create-from-tickers'
+      // own refusal) before any write, the session as it was; a session that
+      // proposed nothing at all keeps the path it always had.
+      const { kept: tickers, dropped } = splitRetiredTickers(proposedTickers);
+      droppedRetired = dropped;
+      if (dropped.length > 0 && tickers.length === 0) throw new Error(SENTINEL_PREFIX + 'no_valid_tickers');
 
       const anatomy =
         session.anatomy && typeof session.anatomy === 'object' && !Array.isArray(session.anatomy)
@@ -585,13 +597,14 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
   } catch (txErr) {
     if (typeof txErr?.message === 'string' && txErr.message.startsWith(SENTINEL_PREFIX)) {
       const code = txErr.message.slice(SENTINEL_PREFIX.length);
-      if (code === 'retired_ticker' && retiredRefused?.length) return res.status(400).json(retiredTickerRefusal(retiredRefused));
       const mapped = SENTINEL_TO_HTTP[code];
       if (mapped) {
         const [statusCode, errorKey] = mapped;
         return res.status(statusCode).json({
           error: errorKey,
           message: SENTINEL_HUMAN_COPY[code],
+          // C4: an all-retired dialogue says which names it held.
+          ...(code === 'no_valid_tickers' && droppedRetired.length > 0 ? { droppedRetired } : {}),
         });
       }
     }
@@ -623,5 +636,7 @@ async function handleSignalDerivedCreate({ res, user, sessionId, agentId, dropId
     tickerCount: txResult.tickerCount,
     createdAt: nowIso,
     idempotent: txResult.idempotent,
+    // C4: the retired names this save left out, so the client can say so (absent when none).
+    ...(!txResult.idempotent && droppedRetired.length > 0 ? { droppedRetired } : {}),
   });
 }

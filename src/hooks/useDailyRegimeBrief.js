@@ -30,13 +30,18 @@ export default function useDailyRegimeBrief() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const loadedRef = useRef(false);
+  // False once the reader has unmounted: the one retry below waits 1.5 s, and a reader gone by then reads nothing
+  // (Command Center S8 review S8-13; the hub and both legacy shells call this hook). Every state update after an await
+  // below is guarded by it too: a reader that is gone is told nothing, and a test file's torn-down environment (no
+  // `window`) is never reached by React's update path (the PR #1003 CI flake, "window is not defined").
+  const aliveRef = useRef(true);
 
   const fetchData = useCallback(async (isRetry = false) => {
     setLoading(true);
     setError(null);
     try {
       const snap = await getDoc(doc(db, 'indexIntelligence', 'dailyRegimeBrief'));
-      setData(snap.exists() ? snap.data() : null);
+      if (aliveRef.current) setData(snap.exists() ? snap.data() : null);
       loadedRef.current = true;
     } catch (err) {
       const code = err.code || 'unknown';
@@ -47,12 +52,18 @@ export default function useDailyRegimeBrief() {
       // Auto-retry once after a short delay (covers transient network errors).
       if (!isRetry) {
         await new Promise(r => setTimeout(r, 1500));
+        if (!aliveRef.current) return undefined;
         return fetchData(true);
       }
-      setError(err.message || 'Failed to load the daily brief');
+      if (aliveRef.current) setError(err.message || 'Failed to load the daily brief');
     } finally {
-      setLoading(false);
+      if (aliveRef.current) setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
   }, []);
 
   useEffect(() => {

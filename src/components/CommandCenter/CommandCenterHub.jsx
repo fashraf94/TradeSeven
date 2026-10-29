@@ -116,11 +116,12 @@ import {
 import { useDeployAttempt } from '../../contexts/DeployAttemptContext';
 import ScoutingBoardSheet from '../Dashboard/ScoutingBoardSheet';
 import { DISPLAY_ACTIONS, deployDisplay } from './hub/deployDisplay';
+import { waitingLineOf } from './hub/gamesDisplay';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { PHONE_SHADOW, hubFlags, scoutingBoardOn } from './hub/hubFlags';
 import { HUB_DEPLOY_CONTROLS, useHubDeploy } from './hub/useHubDeploy';
 import { formatHubDate, headerName } from './hub/hubDate';
-import { DESKTOP_ACTIVITY_LIMIT, HUB_S1_SECTIONS, HUB_S2A_DEPLOY_INPUTS, liveGamesOf, splitGames } from './hub/hubModel';
+import { DESKTOP_ACTIVITY_LIMIT, HUB_S1_SECTIONS, HUB_S2A_DEPLOY_INPUTS, liveCountsOf, liveGamesOf, splitGames } from './hub/hubModel';
 import { HubOverlayProvider, useHubModalOpen } from './hub/HubOverlays';
 import { loadoutLineOf } from './hub/loadoutLine';
 import { LOADOUT_STATUS } from './hub/selectors/loadout';
@@ -183,16 +184,20 @@ function useShared(sections, attemptId = null) {
   const { completed } = splitGames(sections.games);
   // Slice S3 (R-S3-8): the poll's live rows, whatever the completed window's status.
   const live = liveGamesOf(sections.games);
+  const liveCounts = liveCountsOf(sections.games);
   // The strip's game (spec §10): a live BaggerBomb game when there is one — it
   // is what blocks the hold, and Open targets it — else the first live game.
   const liveGame = live.find((g) => g.kind === BATTLE_TYPE_BAGGERBOMB) || live[0] || null;
-  const display = deployDisplay(sections.deploy, liveGame);
+  // The one waiting phrase (ruling Q-S8F-5): the strip, the Games header and the status line say it.
+  const waitingLine = waitingLineOf(live);
+  const display = deployDisplay(sections.deploy, liveGame, waitingLine);
   return {
     user,
     reducedMotion,
     idBase,
     completed,
     liveGame,
+    waitingLine,
     display,
     // Slice S7 (R-S7-3): Shadow moves only while a hub-started deployment is submitting; otherwise it is ambient.
     // Whether it draws the still instead (reduced motion, no canvas, the phone constant) is ShadowCanvas's call.
@@ -202,9 +207,11 @@ function useShared(sections, attemptId = null) {
     // terminal is never this.
     createdAttemptId: display.displayState === 'confirmed' && typeof attemptId === 'string' && attemptId ? attemptId : null,
     // Slice S7 (review C-1, C-3): the games that have opened, the games deployed and waiting for the open, and whether the
-    // owned live read can be said to be known — the line says what the strip and the Games rows say.
-    liveCount: live.filter((g) => !g.preOpen).length,
-    waitingCount: live.filter((g) => g.preOpen).length,
+    // owned live read can be said to be known — the line says what the strip and the Games rows say. Counted once, with
+    // the Games header, by hub/hubModel.js liveCountsOf (the S8 review's S8-2 and K-1; ruling R-S8F-7).
+    liveCount: liveCounts.opened,
+    waitingCount: liveCounts.waiting,
+    allEnding: liveCounts.allEnding,
     liveKnown: liveReadKnown(sections.games, sections.deploy),
     summaries: areaSummaries(sections),
     loadoutLine: loadoutLineOf(sections.loadout),
@@ -215,7 +222,7 @@ function useShared(sections, attemptId = null) {
 
 /** Slice S7 (ruling R-S7-7): the status line's words, from the hold, the deploy display and the owned live read. */
 function statusWordsOf(deploy, shared) {
-  return shadowStatusWords({ holdPhase: deploy?.holdPhase ?? null, display: shared.display, liveCount: shared.liveCount, waitingCount: shared.waitingCount, liveKnown: shared.liveKnown });
+  return shadowStatusWords({ holdPhase: deploy?.holdPhase ?? null, display: shared.display, liveCount: shared.liveCount, waitingCount: shared.waitingCount, waitingLine: shared.waitingLine, allEnding: shared.allEnding, liveKnown: shared.liveKnown });
 }
 
 const SIDE_PARTS = new Set(['games', 'deploy', 'activity', 'brief']);
@@ -364,6 +371,7 @@ function PhoneHub({ hub = null, sections: given, actions: wired = NO_ACTIONS, ag
         ref={stripRef}
         deploy={sections.deploy}
         liveGame={shared.liveGame}
+        waitingLine={shared.waitingLine}
         loadoutLine={shared.loadoutLine}
         placement={placement}
         onOpenLoadout={() => selectTab(PHONE_TABS.LOADOUT)}

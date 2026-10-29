@@ -24,7 +24,7 @@ import { AreaBody, AreaHeading } from './panels/AreaPanel';
 import ActivitySection from './sections/ActivitySection';
 import BriefSection from './sections/BriefSection';
 import { PhoneDeployCard } from './sections/DeploySection';
-import { GameRow, GamesLoadingLine, GamesReadNote, gamesNoteDue } from './sections/GamesSection';
+import { GameRow, GamesLiveNote, GamesLoadingLine, GamesReadNote, gamesNoteDue } from './sections/GamesSection';
 import NextActionCard from './sections/NextActionCard';
 
 export const phoneTabId = (idBase, tab) => `${idBase}-tab-${tab}`;
@@ -107,6 +107,8 @@ function PhoneOverview({ sections, actions }) {
         ? <LoadingLine>{COPY.games.loading}</LoadingLine>
         : <EmptyNote icon="sword" title={COPY.games.empty} sub={COPY.games.emptySubPhone} />)}
       {liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />}
+      {/* The Overview's own live rows are Games live rows too: after a failed poll they carry its age (ruling R-S8F-8; review L3-2). */}
+      {liveRows.length > 0 && <GamesLiveNote games={games} />}
       {liveRows.map((g) => <GameRow key={g.id} game={g} onOpen={actions.openGame} />)}
       {candidate && !liveIsCandidate && <NextActionCard nextAction={nextAction} deploy={deploy} onAct={actions.nextAction} onLater={actions.laterNextAction} holdWiring={actions.nextActionHold} holding={actions.nextActionHolding} />}
       {reviews.length > 0 && (

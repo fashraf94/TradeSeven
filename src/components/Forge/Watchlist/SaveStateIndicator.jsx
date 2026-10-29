@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { Check, AlertCircle } from 'lucide-react';
+import { retiredEditorLine } from '../../../utils/retiredTickerCopy';
 
 const badge = (color) => ({
   display: 'inline-flex',
@@ -16,7 +17,7 @@ const badge = (color) => ({
   color,
 });
 
-export default function SaveStateIndicator({ tokens, saveState, onRetry }) {
+export default function SaveStateIndicator({ tokens, saveState, saveError = null, onRetry }) {
   if (saveState === 'idle') return null;
 
   if (saveState === 'saving') {
@@ -28,6 +29,19 @@ export default function SaveStateIndicator({ tokens, saveState, onRetry }) {
       <span style={badge(tokens.emerald)}>
         <Check size={13} />
         Saved
+      </span>
+    );
+  }
+
+  // C4 (#998 MT3-6): a save the server refused for a retired ticker says which one
+  // to remove, from the symbols it named — and offers no Retry, which would be
+  // refused again until the ticker is gone.
+  const retiredLine = saveError?.code === 'retired_ticker' ? retiredEditorLine(saveError.symbols) : null;
+  if (retiredLine) {
+    return (
+      <span role="alert" style={badge(tokens.red)}>
+        <AlertCircle size={13} />
+        {retiredLine}
       </span>
     );
   }

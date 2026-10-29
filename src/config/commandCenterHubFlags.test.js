@@ -3,15 +3,17 @@
 // Command Center hub, slice S0 — THE FLAG PIN (BUILD_RULES §2; spec
 // docs/specs/20261012_COMMAND_CENTER_CORE_IMPLEMENTATION_SPEC_V1_2.md §4).
 //
-// COMMAND_CENTER_HUB_ENABLED ships FALSE: the hub is built dark across slices
-// S0–S8, and activation is a separate founder action (spec §12). The first row
-// is a tripwire in both directions. An accidental flip would put an unbuilt
-// hub at the front door; flagPinGuard.test.js turns that into a loud failure
-// naming this file. A deliberate flip runs THE FLIP MAP in the flag's
-// docstring, in one commit: the first row moves to true, the accessor row's
-// title moves with it, the registration row (last) turns around to assert the
-// DARK_BY_DESIGN entry is gone, the entry is dropped, and the docstring's
-// state lines are reworded.
+// COMMAND_CENTER_HUB_ENABLED shipped FALSE (the hub was built dark across
+// slices S0–S8) and is now TRUE: the founder's flip PR of October 28, 2026
+// (spec §12; docs/audits/20261028_ACTIVATION_COMMAND_CENTER_HUB.md) ran THE
+// FLIP MAP in the flag's docstring, in one commit — the first row moved to
+// true, the accessor row's title moved with it, the registration row (last)
+// turned around to assert the DARK_BY_DESIGN entry is gone, the entry was
+// dropped, and the docstring's state lines were reworded. The first row is a
+// tripwire in both directions: an accidental rollback puts every player back
+// on the legacy shells; flagPinGuard.test.js turns that into a loud failure
+// naming this file. A deliberate rollback is the revert of that one commit,
+// which moves the two rows back and restores the DARK_BY_DESIGN entry.
 //
 // Deliberately pins ONLY this flag (the commandCenterSyncFlags.test.js
 // precedent): pinning a flag obliges its docstring to name this file, so an
@@ -43,13 +45,13 @@ function docstring() {
   return SRC.slice(SRC.lastIndexOf('export const ', idx - 1), idx);
 }
 
-describe('COMMAND_CENTER_HUB_ENABLED — the dark pin (BUILD_RULES §2)', () => {
-  it('ships DARK — both dashboard sites render the legacy shells until a deliberate founder flip', () => {
+describe('COMMAND_CENTER_HUB_ENABLED — the pin (BUILD_RULES §2)', () => {
+  it('LIT by the founder\'s flip PR (October 28, 2026): both dashboard sites render the hub for every player', () => {
     // THE ROW THAT MOVES WITH THE FLIP, in the flip PR's own commit.
-    expect(COMMAND_CENTER_HUB_ENABLED).toBe(false);
+    expect(COMMAND_CENTER_HUB_ENABLED).toBe(true);
   });
 
-  it('the accessor returns the flag, so it reads false today', () => {
+  it('the accessor returns the flag, so it reads the live value', () => {
     expect(isCommandCenterHubOn()).toBe(COMMAND_CENTER_HUB_ENABLED);
   });
 
@@ -112,12 +114,12 @@ describe('COMMAND_CENTER_HUB_ENABLED — the dark pin (BUILD_RULES §2)', () => 
     expect(window).toContain('the state lines');
   });
 
-  it('is registered DARK_BY_DESIGN while it ships false', () => {
+  it('is NO LONGER registered DARK_BY_DESIGN — the deliberate flip dropped its entry in the same commit', () => {
     expect(
       GUARD,
-      'COMMAND_CENTER_HUB_ENABLED is not in DARK_BY_DESIGN (src/config/flagPinGuard.test.js). If the flag was '
-        + 'DELIBERATELY flipped, this row turns around in the same commit to assert the entry is gone — THE FLIP '
-        + "MAP in the flag's docstring lists every move. If not, restore the entry.",
-    ).toMatch(/\n {2}COMMAND_CENTER_HUB_ENABLED:\n {4}'/);
+      'COMMAND_CENTER_HUB_ENABLED is listed in DARK_BY_DESIGN (src/config/flagPinGuard.test.js) while it ships true. '
+        + 'If the flag was DELIBERATELY rolled back, this row turns around in the same commit to assert the entry is '
+        + 'there — the rollback is the revert of the flip commit. If not, drop the entry.',
+    ).not.toMatch(/\n {2}COMMAND_CENTER_HUB_ENABLED:\n {4}'/);
   });
 });

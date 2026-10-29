@@ -22,6 +22,8 @@ async function toError(response) {
   const err = new Error(data.message || `Request failed (${response.status})`);
   err.status = response.status;
   err.code = data.error || 'request_failed';
+  // C4: a retired_ticker refusal names the symbols, for the editor's own line.
+  if (Array.isArray(data.symbols)) err.symbols = data.symbols.filter((s) => typeof s === 'string');
   return err;
 }
 

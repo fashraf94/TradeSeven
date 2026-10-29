@@ -10,6 +10,10 @@
 # Scope note: `npm run test:rules` (firestore emulator) and the eval configs
 # are deliberately NOT run here — they need an emulator / long-running
 # fixtures. This workflow is the fast unit gate only.
+#
+# It also runs the tf-setup golden-baseline guard (the step after Node setup):
+# a cross-revision check that blocks a golden regenerated under an unchanged
+# semantics id, which the in-revision golden tests cannot see.
 
 name: Tests
 
@@ -17,6 +21,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      base_ref:
+        description: 'Comparison base for the tf-setup golden-baseline guard: a branch, tag or SHA that is an earlier ancestor of the ref this run checks out and carries the accepted baseline (for example a commit of main before your change).'
+        required: true
+        type: string
 
 # A new push to the same PR cancels the previous run.
 concurrency:
@@ -32,6 +41,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history: the golden-baseline guard compares against the PR's
+          # target-base commit (or the dispatch base_ref), which a depth-1
+          # checkout of the PR merge ref does not carry. The checked-out
+          # revision itself is unchanged (the PR merge result).
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -40,6 +55,27 @@ jobs:
           # current default runtime. Bump deliberately, not incidentally.
           node-version: '20'
           cache: 'npm'
+
+      # ── The tf-setup golden-baseline guard (blocking) ────────────────
+      # golden.test.js checks one revision against itself, so a golden
+      # regenerated under an unchanged SEMANTICS_ID with its baseline entry
+      # rewritten to match passes it. This step runs the cross-revision guard
+      # (scripts/experiments/tf-setup-golden-baseline-check.mjs, the only
+      # authority on the versioning rules) against the PR's immutable
+      # target-base SHA, or the required base_ref input on a manual run.
+      # It fails closed: the base must be an earlier ancestor that carries
+      # the accepted baseline, and an initial-baseline result is a failure.
+      # Event values reach the script only through env, never the run text.
+      # It needs no dependencies, so it runs before npm ci and fails fast.
+      # (scripts/ci/tf-setup-golden-guard.mjs;
+      # docs/audits/20261028_TF_SETUP_CI_GOLDEN_GUARD.md)
+      - name: Golden baseline guard (tf-setup, cross-revision)
+        env:
+          TF_GUARD_EVENT_NAME: ${{ github.event_name }}
+          TF_GUARD_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          TF_GUARD_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TF_GUARD_BASE_REF: ${{ inputs.base_ref }}
+        run: node scripts/ci/tf-setup-golden-guard.mjs
 
       - name: Install dependencies
         run: npm ci

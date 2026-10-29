@@ -164,6 +164,14 @@ describe('posture line — discrete, never continuous', () => {
     expect(html).not.toContain('· next ');
   });
 
+  // BaggerBomb cleanup C5: before the battle's first trading day the posture names the day, from the adapter's
+  // one `startsAtEt` — never the bare same-day "First check at 9:30 AM ET".
+  it('PRE_OPEN before the first trading day says "Starts Tue 9:30 AM ET", from the adapter field', () => {
+    const html = render({ phase: 'PRE_OPEN', startsAtEt: 'Tue 9:30 AM ET' });
+    expect(html).toContain('Starts Tue 9:30 AM ET');
+    expect(html).not.toContain('First check at 9:30 AM ET');
+  });
+
   it('PRE_OPEN states the scheduled open — a fact, not a guess', () => {
     expect(render({ phase: 'PRE_OPEN' })).toContain('First check at 9:30 AM ET');
   });

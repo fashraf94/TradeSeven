@@ -17,9 +17,10 @@
 //    hub still owns the screen (the button would flicker otherwise). If the import
 //    FAILS the gate shows the legacy shell, which has no bug control of its own, and
 //    tells App through `hubFailed` (hub/hubFallbackSignal.jsx): the hub is then not
-//    on screen and the button and the banner come back. One case stays open: a hub
-//    that LOADS and then throws in render lands on the Dashboard boundary's error
-//    screen, with the button still withheld (S5 report, Q-S5-6).
+//    on screen and the button and the banner come back. A hub that LOADS and then
+//    throws in render does the same since the S8 fix build (ruling R-S8F-11, the
+//    founder's answer to Q-S5-6): the gate's fallback, not the Dashboard boundary's
+//    error screen, so the button comes back there too.
 //
 // 2. forgeAreaOf — which Forge area an `onOpenForge` request names (ruling
 //    R-S5-5). ForgeWorkshop opens on an AREA, read once at mount (`initialArea`

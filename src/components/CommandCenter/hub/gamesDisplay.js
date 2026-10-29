@@ -21,9 +21,10 @@
 import { BATTLE_TYPE_RANKED, battleTypeLabel, classifyBattleType, sortLiveBattles } from '../../../utils/commandCenterLiveBattles';
 import { STOCK_RESULT_UNAVAILABLE, displayedStockScores } from '../../../utils/stockThresholdModel';
 import { FILM_ROOM_ROUTE } from '../../../constants/filmTape';
-import { PHASE, derivePhase } from '../../../adapters/baggerbombAdapter';
+import { PHASE, derivePhase, deriveStartsAtEt } from '../../../adapters/baggerbombAdapter';
 import { HUB_COPY as COPY } from './hubCopy';
-import { formatHubDay, formatHubTime, hubMs } from './hubDate';
+import { formatHubTime, formatHubTimeOnDay, hubMs } from './hubDate';
+import { formatHubDayYear } from './activityDates';
 import { OUTCOME_KINDS, deriveGameOutcome } from './selectors/gameOutcome';
 import { REVIEW_STATES } from './reviewScheduler';
 
@@ -114,9 +115,11 @@ export function outcomeDisplay(result) {
 
 const opponentOf = (battle) => (classifyBattleType(battle) === BATTLE_TYPE_RANKED ? COPY.games.opponentGroup : COPY.games.opponentCpu);
 
-function timeLeft(endsMs, nowMs) {
-  if (endsMs === null || !finite(nowMs)) return '';
-  const minutes = Math.round((endsMs - nowMs) / 60000);
+/** Whole minutes to a game's end, or null with no end or no clock. At or below zero its clock reads "ending". */
+const minutesLeft = (endsMs, nowMs) => (endsMs === null || !finite(nowMs) ? null : Math.round((endsMs - nowMs) / 60000));
+
+function timeLeft(minutes) {
+  if (minutes === null) return '';
   if (minutes <= 0) return COPY.games.ending;
   return COPY.games.timeLeft(Math.floor(minutes / 60), minutes % 60);
 }
@@ -129,13 +132,18 @@ function timeLeft(endsMs, nowMs) {
  */
 export function liveGameRows(battles, { nowMs, marketState }) {
   return sortLiveBattles(Array.isArray(battles) ? battles : []).map((battle) => {
-    const preOpen = derivePhase(battle, marketState) === PHASE.PRE_OPEN;
+    // C5: `nowMs` is the clock this row already takes. A game before its first trading
+    // day is waiting, not live, and says when it starts (the adapter's one derivation).
+    const preOpen = derivePhase(battle, marketState, nowMs) === PHASE.PRE_OPEN;
+    const startsAtEt = deriveStartsAtEt(battle, nowMs);
     const endsMs = hubMs(battle.expiresAt);
+    const minutes = minutesLeft(endsMs, nowMs);
     const shown = displayedStockScores(battle);
     const [score] = formatScores(shown.currentScore);
     const tradeCount = battle.scoreState?.tradeCount;
     const trades = finite(tradeCount) ? tradeCount : (Array.isArray(battle.trades) ? battle.trades.length : 0);
-    const ends = endsMs === null ? '' : COPY.time.et(formatHubTime(endsMs));
+    // C5: an end on another ET day names the day ("ends Tue 8:00 PM ET"); the S8 review's S8-4 is the same rule, one helper.
+    const ends = endsMs === null ? '' : COPY.time.et(formatHubTimeOnDay(endsMs, nowMs));
     return Object.freeze({
       id: battle.id,
       kind: classifyBattleType(battle),
@@ -143,10 +151,33 @@ export function liveGameRows(battles, { nowMs, marketState }) {
       opponent: opponentOf(battle),
       live: true,
       preOpen,
-      clock: preOpen ? COPY.games.waitingForOpen : timeLeft(endsMs, nowMs),
+      // Opened and past its end time: the clock reads "ending" (hub/hubModel.js liveCountsOf counts it; ruling R-S8F-7).
+      ending: !preOpen && minutes !== null && minutes <= 0,
+      clock: preOpen ? (startsAtEt ? COPY.games.startsAt(startsAtEt) : COPY.games.waitingForOpen) : timeLeft(minutes),
+      // While the clock says when it starts: the ET date it starts on, else null (waitingLineOf below). The adapter says
+      // a start only for a game whose first trading day is `timing.tradingDays[0]`, a valid ET date still ahead
+      // (utils/tieredFirstTradingDay.js firstTradingDayOf), so that entry is the day its "Starts …" names.
+      startsOn: preOpen && startsAtEt ? battle.timing.tradingDays[0] : null,
       detail: COPY.games.liveDetail(score, trades, ends),
     });
   });
+}
+
+/**
+ * The one phrase for games deployed and waiting (founder ruling Q-S8F-5 (b); BUILD_RULES §9): the strip's
+ * "Deployed · {clock}" with the clock of the waiting row that starts soonest ("Starts Wed 9:30 AM ET"), or
+ * "Deployed · waiting for the open" when no waiting row's start is known, as such a row says. Every session opens
+ * at 9:30 ET (utils/marketCalendar.js), so the earliest first trading day is the soonest start. The strip, the Games
+ * header (every live game waiting) and the status line (none opened) all say this.
+ *
+ * @param {object[]} liveRows the live rows (liveGameRows; hub/hubModel.js liveGamesOf)
+ */
+export function waitingLineOf(liveRows) {
+  let soonest = null;
+  for (const row of Array.isArray(liveRows) ? liveRows : []) {
+    if (row?.preOpen === true && typeof row.startsOn === 'string' && (soonest === null || row.startsOn < soonest.startsOn)) soonest = row;
+  }
+  return COPY.strip.deployed(soonest ? soonest.clock : COPY.games.waitingForOpen);
 }
 
 /** A completed row's review line (spec §6), from the coordinator's row state. */
@@ -166,11 +197,15 @@ export function reviewLineOf(row) {
   }
 }
 
-/** The completed rows: the window's documents, newest first, each with its outcome and review line. */
-export function completedGameRows(battles, reviews = {}) {
+/**
+ * The completed rows: the window's documents, newest first, each with its outcome and review line. A game from another
+ * year than `nowMs`'s carries its year, as Activity's times do (the S8 review's S8-4, K-9; ruling R-S8F-9); without a
+ * clock no year is added.
+ */
+export function completedGameRows(battles, reviews = {}, nowMs = null) {
   return (Array.isArray(battles) ? battles : []).map((battle) => {
     const display = outcomeDisplay(deriveGameOutcome(outcomeInputOf(battle)));
-    const day = formatHubDay(hubMs(battle.completedAt));
+    const day = formatHubDayYear(hubMs(battle.completedAt), nowMs);
     const reviewLine = reviewLineOf(reviews[battle.id]);
     return Object.freeze({
       id: battle.id,

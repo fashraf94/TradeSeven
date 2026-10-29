@@ -337,7 +337,8 @@ describe('rows 7–8: directive answers — the guards in order, then one commit
   it('an INELIGIBLE action → 400: a pick option not stored / not in the universe / already held / swap-out moved; an exit whose symbol moved', async () => {
     expect((await post(answerBody({ callId: PICK, answer: 'pick', pickSymbol: 'MSFT' }))).body).toEqual({ error: 'ineligible_action', reason: 'pick_not_an_option' });
     activeDb = makeDb({ calls: { [PICK]: pickCall({ options: [{ symbol: 'ZZZZ', why: 'x' }] }) } });
-    expect((await post(answerBody({ callId: PICK, answer: 'pick', pickSymbol: 'ZZZZ' }))).body).toEqual({ error: 'ineligible_action', reason: 'pick_outside_universe' });
+    // C3: the pick is judged by canComeIn (the swap's own lists), so a name on none of them is `pick_not_on_bench`.
+    expect((await post(answerBody({ callId: PICK, answer: 'pick', pickSymbol: 'ZZZZ' }))).body).toEqual({ error: 'ineligible_action', reason: 'pick_not_on_bench' });
     const held = makeTickBattle({ directive: null }); held.portfolio.core.push({ symbol: 'JPM', name: 'JPMorgan' });
     activeDb = makeDb({ battle: held });
     expect((await post(answerBody({ callId: PICK, answer: 'pick', pickSymbol: 'JPM' }))).body).toEqual({ error: 'ineligible_action', reason: 'pick_already_held' });
