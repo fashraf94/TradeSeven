@@ -104,7 +104,8 @@ vi.mock('../_utils/learning/captureReceipt.js', () => ({
 }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => {
   const actual = await importOriginal();
-  return { ...actual, get TICK_CAPTURE_ENABLED() { return flagState.tickCapture; } };
+  // Pilot P6: SWAP_IDENTITY_MODE pinned 'shadow' too — the shape this fixture was recorded at (the `writers` digest holds the options handed to executeSwapServer, `identityMode` included), so the founder's shadow → enforce flip moves no byte here.
+  return { ...actual, SWAP_IDENTITY_MODE: 'shadow', get TICK_CAPTURE_ENABLED() { return flagState.tickCapture; } };
 });
 
 const { processAgentBattle } = await import('./agent-evaluate.js');
