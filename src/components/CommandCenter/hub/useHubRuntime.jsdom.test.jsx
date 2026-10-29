@@ -293,3 +293,25 @@ describe('useHubRuntime — the sections it merges', () => {
     expect(api.sections.research).toBe(research);
   });
 });
+
+describe('useHubRuntime — the same account signing in again (the S8 review S8-11; ruling R-S8F-2)', () => {
+  it("the earlier sign-in's list document is not on the watchlist card under the new one, and a failed new read says so", async () => {
+    const EPOCH_ONE = { watchlistId: 'wl-epoch-1', name: 'Epoch one', status: 'committed', tickers: ['NVDA'] };
+    listWatchlists.mockReset();
+    listWatchlists.mockResolvedValueOnce([EPOCH_ONE]).mockRejectedValueOnce(new Error('offline'));
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const rerender = (hub) => act(() => { root.render(<HubOverlayProvider><Probe hub={hub} sections={HUB_S1_SECTIONS} /></HubOverlayProvider>); });
+    render(HUB({ agent: AGENT({ equippedWatchlistId: 'wl-epoch-1' }) }));
+    await flush();
+    expect(api.sections.loadout.watchlist).toMatchObject({ state: 'ready', name: 'Epoch one' });
+    // Another tab signs out (no agent), then the same account signs in again: the same uid, a new epoch.
+    rerender(HUB({ agent: null }));
+    rerender(HUB({ agent: AGENT({ equippedWatchlistId: 'wl-epoch-1' }) }));
+    expect(api.sections.loadout.watchlist?.name).not.toBe('Epoch one');
+    await flush();
+    expect(listWatchlists).toHaveBeenCalledTimes(2);
+    expect(api.sections.loadout.watchlist?.name).not.toBe('Epoch one');
+    expect(api.sections.loadout.watchlist?.state).toBe('error');
+    errors.mockRestore();
+  });
+});

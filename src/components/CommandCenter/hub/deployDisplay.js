@@ -118,6 +118,8 @@ function holdLabelOf(displayState, recovered) {
 /**
  * @param {object} deploy the selector's result (selectors/deployState.js)
  * @param {null|{ clock: string, preOpen?: boolean }} liveGame the first live game row, if any
+ * @param {null|string} [waitingLine] the hub's one waiting phrase (hub/gamesDisplay.js waitingLineOf; ruling Q-S8F-5),
+ *   said in place of a waiting game's own; without it, that game's own "Deployed · {clock}"
  * @returns {{
  *   displayState: string,
  *   status: string,             the state's words (the strip's first line without a live game)
@@ -132,7 +134,7 @@ function holdLabelOf(displayState, recovered) {
  *   cardNote: null|{ text: string, action: null|{ kind: string, label: string } },
  * }}
  */
-export function deployDisplay(deploy, liveGame = null) {
+export function deployDisplay(deploy, liveGame = null, waitingLine = null) {
   const displayState = known(deploy);
   const reason = typeof deploy?.reason === 'string' && deploy.reason ? deploy.reason : '';
   const canStart = (displayState === 'ready' || displayState === 'ready_stale') && deploy?.canStart === true;
@@ -166,8 +168,9 @@ export function deployDisplay(deploy, liveGame = null) {
 
   // The strip (ff-mobile.jsx GameStrip): a live game takes the first line and
   // the Open game action; the deploy state moves to the second line. An
-  // attempt keeps the first line over a live game.
-  const liveLine = liveGame ? (liveGame.preOpen ? COPY.strip.deployed(liveGame.clock) : COPY.strip.live(liveGame.clock)) : null;
+  // attempt keeps the first line over a live game. A waiting game says the hub's one waiting phrase, as the Games
+  // header and the status line do (ruling Q-S8F-5).
+  const liveLine = liveGame ? (liveGame.preOpen ? (waitingLine || COPY.strip.deployed(liveGame.clock)) : COPY.strip.live(liveGame.clock)) : null;
   const stripLine1 = reviewDue ? D.reviewDueStrip : attemptShown || !liveGame ? status : liveLine;
   // A stale block says when it was true on every surface (spec §3.1 row 6): the
   // card's note, and on the strip the second line — beside a live game in place

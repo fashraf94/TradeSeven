@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { HUB_COPY as COPY } from './hubCopy';
 import {
-  completedGameRows, formatScores, hasFinalEvidence, liveGameRows, outcomeDisplay, outcomeInputOf, reviewLineOf,
+  completedGameRows, formatScores, hasFinalEvidence, liveGameRows, outcomeDisplay, outcomeInputOf, reviewLineOf, waitingLineOf,
 } from './gamesDisplay';
 import { OUTCOME_KINDS as K } from './selectors/gameOutcome';
 import { REVIEW_STATES } from './reviewScheduler';
@@ -270,5 +270,103 @@ describe('a completed row\'s labels, and what its review line opens (S3 review T
     const [a, b] = completedGameRows([completed({ id: 'a' }), completed({ id: 'b' })], reviews);
     expect(a.review).toBe(false);
     expect(b.review).toBe(true);
+  });
+});
+
+describe('a live row says whether it is past its end: the flag the one count reads (the S8 review K-1; ruling R-S8F-7)', () => {
+  const live = (over = {}) => ({ id: 'bb', ownerId: 'u', agentId: 'casual-agent-u', status: 'active', activatedAt: '2026-10-22T13:30:00Z', scoreState: { currentScore: 1, evaluationCount: 2 }, ...over });
+  const rowOf = (expiresAt, marketState = OPEN, nowMs = NOW) => liveGameRows([live({ expiresAt })], { nowMs, marketState })[0];
+
+  it('`ending` is true exactly when the clock reads "ending"', () => {
+    for (const ends of [NOW + 29000, NOW, NOW - 3600000]) {
+      expect(rowOf(ends)).toMatchObject({ ending: true, clock: COPY.games.ending });
+    }
+    for (const ends of [NOW + 31000, NOW + 3600000]) {
+      expect(rowOf(ends).ending).toBe(false);
+      expect(rowOf(ends).clock).not.toBe(COPY.games.ending);
+    }
+  });
+
+  it('never for a game waiting for the open, nor without an end or a clock', () => {
+    const waiting = liveGameRows([live({ expiresAt: NOW - 3600000, scoreState: { currentScore: 0, evaluationCount: 0 } })], { nowMs: NOW, marketState: CLOSED })[0];
+    expect(waiting).toMatchObject({ preOpen: true, ending: false });
+    expect(rowOf(null).ending).toBe(false);
+    expect(rowOf(NOW - 60000, OPEN, NaN).ending).toBe(false);
+  });
+});
+
+// The S8 review's S8-4 and K-9 (ruling R-S8F-9): a date from another year carries its year; "ends" names its short day
+// when the end is not today.
+describe('dates on the Games rows (S8-4)', () => {
+  const live = (over = {}) => ({ id: 'bb', ownerId: 'u', agentId: 'casual-agent-u', status: 'active', activatedAt: '2026-10-22T13:30:00Z', scoreState: { currentScore: 1, tradeCount: 0, evaluationCount: 2 }, ...over });
+  const completedOn = (iso) => ({ id: 'c1', ownerId: 'u', agentId: 'casual-agent-u', status: 'completed', completedAt: iso, scoreState: { currentScore: 2, opponentScore: 1 }, statusFeed: [{ action: 'battle_complete' }] });
+
+  it("a completed game from another year than the clock's carries its year; this year's does not; without a clock none", () => {
+    expect(completedGameRows([completedOn('2025-12-03T21:05:00Z')], {}, NOW)[0].detail).toMatch(/^Dec 3, 2025 · /);
+    expect(completedGameRows([completedOn('2026-10-03T20:05:00Z')], {}, NOW)[0].detail).toMatch(/^Oct 3 · /);
+    expect(completedGameRows([completedOn('2025-12-03T21:05:00Z')], {})[0].detail).toMatch(/^Dec 3 · /);
+  });
+
+  it('the year is read in ET: 11:30 PM ET on Dec 31, 2025 is 2025, though UTC has turned the year', () => {
+    expect(completedGameRows([completedOn('2026-01-01T04:30:00Z')], {}, NOW)[0].detail).toMatch(/^Dec 31, 2025 · /);
+  });
+
+  it('"ends" names the short day when the end is not today (ET); today\'s end is the time alone', () => {
+    // NOW is Thu Oct 22, 2026, 11:00 AM ET.
+    const tomorrow = liveGameRows([live({ expiresAt: '2026-10-23T20:00:00Z' })], { nowMs: NOW, marketState: OPEN })[0];
+    expect(tomorrow.detail).toBe('Score +1.0 · 0 trades · ends Fri 4:00 PM ET');
+    const today = liveGameRows([live({ expiresAt: '2026-10-22T20:00:00Z' })], { nowMs: NOW, marketState: OPEN })[0];
+    expect(today.detail).toBe('Score +1.0 · 0 trades · ends 4:00 PM ET');
+    // 11:30 PM ET the same evening is still today in ET, though UTC has turned the day.
+    const lateToday = liveGameRows([live({ expiresAt: '2026-10-23T03:30:00Z' })], { nowMs: NOW, marketState: OPEN })[0];
+    expect(lateToday.detail).toBe('Score +1.0 · 0 trades · ends 11:30 PM ET');
+  });
+
+  it('a game deployed after hours on Friday, waiting for the open: it ends on Monday, and says so', () => {
+    const fridayEvening = Date.UTC(2026, 9, 23, 22, 0);
+    const row = liveGameRows([live({ expiresAt: '2026-10-26T20:00:00Z', scoreState: { currentScore: 0, tradeCount: 0, evaluationCount: 0 } })], { nowMs: fridayEvening, marketState: CLOSED })[0];
+    expect(row.preOpen).toBe(true);
+    expect(row.detail).toContain('ends Mon 4:00 PM ET');
+  });
+});
+
+// Founder ruling Q-S8F-5 (b): one wording for a waiting game everywhere. The strip, the Games header and the status line
+// say the strip's "Deployed · {clock}" from the waiting game that starts soonest; "Deployed · waiting for the open" only
+// when no waiting game's start is known, as such a row says.
+describe('waitingLineOf — the one waiting phrase (ruling Q-S8F-5)', () => {
+  // NOW is Thu Oct 22, 2026, 11:00 AM ET.
+  const waiting = (id, over = {}) => ({
+    id, ownerId: 'u', agentId: 'casual-agent-u', status: 'active', activatedAt: '2026-10-22T13:30:00Z', expiresAt: '2026-10-27T20:00:00Z',
+    scoreState: { currentScore: 0, tradeCount: 0, evaluationCount: 0 }, ...over,
+  });
+  const startsOn = (day) => ({ timing: { tradingDays: [day] } });
+  const rows = (battles) => liveGameRows(battles, { nowMs: NOW, marketState: CLOSED });
+
+  it('the waiting game that starts soonest, whatever the list order: its row\'s own "Starts …"', () => {
+    // sortLiveBattles puts the most recently activated first: the Monday game leads the list.
+    const list = rows([waiting('later', { activatedAt: '2026-10-22T14:00:00Z', ...startsOn('2026-10-26') }), waiting('sooner', startsOn('2026-10-23'))]);
+    expect(list.map((r) => r.clock)).toEqual(['Starts Mon 9:30 AM ET', 'Starts Fri 9:30 AM ET']);
+    expect(list.map((r) => r.startsOn)).toEqual(['2026-10-26', '2026-10-23']);
+    expect(waitingLineOf(list)).toBe(COPY.strip.deployed('Starts Fri 9:30 AM ET'));
+  });
+
+  it('a start known for one waiting game and not another: the known one', () => {
+    const list = rows([waiting('unknown', { activatedAt: '2026-10-22T14:00:00Z' }), waiting('known', startsOn('2026-10-26'))]);
+    expect(list.map((r) => r.clock)).toEqual([COPY.games.waitingForOpen, 'Starts Mon 9:30 AM ET']);
+    expect(waitingLineOf(list)).toBe(COPY.strip.deployed('Starts Mon 9:30 AM ET'));
+  });
+
+  it('no waiting game\'s start known: "Deployed · waiting for the open", as such a row says', () => {
+    const list = rows([waiting('legacy')]);
+    expect(list[0].startsOn).toBeNull();
+    expect(waitingLineOf(list)).toBe(COPY.strip.deployed(COPY.games.waitingForOpen));
+    expect(waitingLineOf([])).toBe(COPY.strip.deployed(COPY.games.waitingForOpen));
+    expect(waitingLineOf(undefined)).toBe(COPY.strip.deployed(COPY.games.waitingForOpen));
+  });
+
+  it('an opened game beside a waiting one changes nothing; an opened game carries no start', () => {
+    const list = rows([waiting('opened', { activatedAt: '2026-10-22T14:30:00Z', scoreState: { currentScore: 1, tradeCount: 0, evaluationCount: 2 } }), waiting('sooner', startsOn('2026-10-23'))]);
+    expect(list.map((r) => [r.preOpen, r.startsOn])).toEqual([[false, null], [true, '2026-10-23']]);
+    expect(waitingLineOf(list)).toBe(COPY.strip.deployed('Starts Fri 9:30 AM ET'));
   });
 });

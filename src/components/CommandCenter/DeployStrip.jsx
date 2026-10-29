@@ -40,9 +40,10 @@ const clampTwo = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 
 const clampOne = { display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
 
 // Slice S2b: `holdWiring` is the deploy provider's wiring for the strip's control (hub/useHubDeploy.js), and
-// `holding` is that control's own hold phase ('charging' | 'locked'), or null.
-const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, loadoutLine, placement, onOpenLoadout, onOpenGame, onDeploy, onAction, holdWiring = null, holding = null }, ref) {
-  const display = deployDisplay(deploy, liveGame);
+// `holding` is that control's own hold phase ('charging' | 'locked'), or null. `waitingLine` is the hub's one waiting
+// phrase (hub/gamesDisplay.js waitingLineOf; ruling Q-S8F-5), said by the strip when its game is waiting.
+const DeployStrip = forwardRef(function DeployStrip({ deploy, liveGame, waitingLine = null, loadoutLine, placement, onOpenLoadout, onOpenGame, onDeploy, onAction, holdWiring = null, holding = null }, ref) {
+  const display = deployDisplay(deploy, liveGame, waitingLine);
   const line1 = display.stripLine1;
   const line2 = display.stripLine2(loadoutLine);
   const { hold, openGame, action, dismiss } = display.strip;

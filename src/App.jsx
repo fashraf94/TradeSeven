@@ -8953,7 +8953,10 @@ export default function PortfolioDuel() {
     if (isMobile) {
       // Flag-gated swap: the new agent-command loop-home vs. the existing feed.
       // Same props either way; DashboardLoop stays untouched (instant rollback).
-      const DashboardComponent = dashboardPick.legacyShell === DASHBOARD_SHELLS.COMMAND_DASHBOARD ? CommandDashboard : DashboardLoop;
+      // Decided from the constant itself, not the pick (S8 review S8-1): Rollup
+      // folds a ternary on an imported literal, so the dead shell and the
+      // modules only it reaches stay out of the bundle.
+      const DashboardComponent = COMMAND_DASHBOARD_ENABLED ? CommandDashboard : DashboardLoop;
       const legacyDashboard = (
         <DashboardComponent
           user={user}
@@ -9009,9 +9012,10 @@ export default function PortfolioDuel() {
     // ═══════════════════════════════════════════════════════════
     // The persistent fixed sidebar's offset. CommandDashboardDesktop and the hub
     // sit inside it; DashboardDesktop offsets itself through its
-    // sidebarCollapsed prop, so it never gets this wrapper.
+    // sidebarCollapsed prop, so it never gets this wrapper. The legacy element is
+    // decided from the constant, as on mobile (S8-1); the pick decides the hub.
     const sidebarOffsetStyle = { marginLeft: sidebarCollapsed ? '64px' : '220px', transition: 'margin-left 0.2s ease' };
-    const legacyDesktopDashboard = dashboardPick.legacyShell === DASHBOARD_SHELLS.COMMAND_DASHBOARD_DESKTOP ? (
+    const legacyDesktopDashboard = COMMAND_DASHBOARD_DESKTOP_ENABLED ? (
       // Desktop Command surface (dark behind the flag). Offset for the
       // persistent fixed sidebar, matching the other desktop screens.
       <div style={sidebarOffsetStyle}>

@@ -4,9 +4,13 @@
 // Loadout opens (AgentRecordSheet, ArchetypePicker, EquipSheet, TraitsSheet),
 // for TESTS ONLY. The sheets are reused unchanged and have their own suites;
 // what the hub's rows need to see is which sheet opened and what it was handed.
-// Each stub records the props it last rendered with, draws a dialog while
-// `open`, and the watchlist stub draws what EquipSheet draws — the rows, the
-// loading line, the children and the footer — so a row can click them.
+// Each stub records the props it last rendered with, draws a plain marked box
+// while `open`, and the watchlist stub draws what EquipSheet draws — the rows,
+// the loading line, the children and the footer — so a row can click them.
+// The box claims no dialog semantics: the real sheets' role, label, focus and
+// Escape are theirs to show, on the real sheets (the S8 review's S8-8, ruling
+// R-S8F-6; CommandCenterHub.realSheets.jsdom.test.jsx). A stub that claimed
+// role="dialog" let no hub row see that the real ones had none.
 // Nothing in the hub's import graph reaches this file (the mount guard's
 // fixtures fence).
 
@@ -24,7 +28,7 @@ export function resetSeen() {
 
 const dialog = (name, props, children = null) => (
   props.open
-    ? <div role="dialog" aria-label={name} data-stub={name} data-dock={props.dock} data-accent={props.accent}>{children}</div>
+    ? <div data-stub={name} data-dock={props.dock} data-accent={props.accent}>{children}</div>
     : null
 );
 

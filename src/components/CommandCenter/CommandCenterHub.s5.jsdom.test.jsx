@@ -940,7 +940,7 @@ describe('what each sheet is handed, on each site (ruling R-S5-4; E5-4, E5-5, E5
     for (const [sheet, opener, props] of [...LEGACY_SHEETS].reverse()) {
       click(opener());
       const handed = props();
-      expect(document.querySelectorAll('[role="dialog"]'), `${sheet}: one sheet open at a time`).toHaveLength(1);
+      expect(document.querySelectorAll('[data-stub]'), `${sheet}: one sheet open at a time`).toHaveLength(1);
       expect(handed.open, sheet).toBe(true);
       expect(handed.dock, sheet).toBe(dock);
       // the quick sheet (EquipSheet) is handed rows, not the agent; the other three are handed the agent

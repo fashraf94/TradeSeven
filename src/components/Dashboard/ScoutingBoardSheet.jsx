@@ -66,6 +66,37 @@ function OffUniverseRow({ row }) {
   );
 }
 
+const DAY_MS = 86400000;
+/** An instant's ET calendar date as a day count, for comparing days (never a hand-rolled offset). */
+function etDayNumber(date) {
+  const [y, m, d] = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(date).split('-').map(Number);
+  return Date.UTC(y, m - 1, d) / DAY_MS;
+}
+
+/**
+ * Which day the board was ranked on (Command Center S8 fix build, ruling R-S8F-12; the S8 review's S8-5). The ranking
+ * runs on weekday mornings (compute-rankings, 11:00 UTC), so on a weekend or before that run the board holds an earlier
+ * day's: TODAY only when `asOf` is today's ET date; within the week, that day's name ("Friday"); older, its date
+ * ("Oct 16"), with its year when that is not this year (review L3-1, as the hub's dates do). null for an `asOf` that is
+ * not a time: then no line names a day. The subtitle, the ranked list's heading and the watchlist's off-universe line
+ * all say it (founder ruling Q-S8F-4).
+ */
+const TODAY = 'today';
+function readDayOf(asOf, nowMs = Date.now()) {
+  const at = new Date(asOf);
+  if (!asOf || Number.isNaN(at.getTime())) return null;
+  const now = new Date(nowMs);
+  const daysAgo = etDayNumber(now) - etDayNumber(at);
+  if (daysAgo === 0) return TODAY;
+  const yearOf = (date) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric' }).format(date);
+  return daysAgo > 0 && daysAgo < 7
+    ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'long' }).format(at)
+    : new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', month: 'short', day: 'numeric', ...(yearOf(at) === yearOf(now) ? {} : { year: 'numeric' }),
+    }).format(at);
+}
+
 function SkeletonRows() {
   return (
     <div>
@@ -118,10 +149,19 @@ export default function ScoutingBoardSheet({
   const data = state.data;
   const label = data?.archetypeLabel || null; // endpoint-canonical label only
   const title = label ? `What ${label} is eyeing` : 'Scouting the board';
+  // The day of the read on show, said the same way everywhere it is said (null: no line names a day).
+  const readDay = state.status === 'ready' && data?.asOf ? readDayOf(data.asOf) : null;
   const subtitle =
     state.status === 'loading' ? 'Reading the board…'
-      : (state.status === 'ready' && data?.asOf) ? "Ranked from today's read"
-        : undefined;
+      : readDay === TODAY ? "Ranked from today's read"
+        : readDay ? `Ranked from ${readDay}'s read`
+          : undefined;
+  const rankedHeading = readDay === TODAY ? `In ${label}'s wheelhouse today`
+    : readDay ? `In ${label}'s wheelhouse on ${readDay}'s read`
+      : `In ${label}'s wheelhouse`;
+  const offUniverseLine = readDay === TODAY ? 'in your watchlist · outside today’s ranked universe'
+    : readDay ? `in your watchlist · outside ${readDay}’s ranked universe`
+      : 'in your watchlist · outside the ranked universe';
 
   const deployBusy = deployDisabled || deploying;
   const footer = (
@@ -178,7 +218,7 @@ export default function ScoutingBoardSheet({
           </div>
         ) : (
           <>
-            {label && <Eyebrow style={{ marginBottom: 8 }}>{`In ${label}'s wheelhouse today`}</Eyebrow>}
+            {label && <Eyebrow style={{ marginBottom: 8 }}>{rankedHeading}</Eyebrow>}
             {(data?.ranked || []).map((row) => (
               <BoardRow key={row.symbol} row={row} accent={accent} showStar />
             ))}
@@ -196,7 +236,7 @@ export default function ScoutingBoardSheet({
                 <div style={{ fontSize: 11, color: CMD.ink3, margin: '6px 2px 8px' }}>
                   {isEmpty
                     ? "in your watchlist · today’s ranked board hasn’t run yet"
-                    : "in your watchlist · outside today’s ranked universe"}
+                    : offUniverseLine}
                 </div>
                 {wl.offUniverse.map((row) => <OffUniverseRow key={row.symbol} row={row} />)}
               </>

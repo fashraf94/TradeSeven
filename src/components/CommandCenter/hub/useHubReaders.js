@@ -65,12 +65,15 @@ import useHubLater from './useHubLater';
  * rows are the poll's and ride apart from the window's status (`live`, read through liveGamesOf); `liveResolved`
  * says the poll has answered for this owner, so "No games yet" never stands in for an unknown live list.
  */
-function gamesSectionOf(completed, liveRows, liveResolved) {
+function gamesSectionOf(completed, liveRows, liveResolved, freshness) {
   const live = Object.freeze([...liveRows]);
+  // The live rows are the poll's retained list: after a failed poll they say when it was true, from the Deploy card's own
+  // freshness (spec §3; the S8 review's S8-3, ruling R-S8F-8), whatever the completed window's status.
+  const liveAge = { liveStale: freshness?.stale === true, liveAsOf: freshness?.asOf ?? null };
   if (completed.battles === null) {
     // A read in flight is checking, not the failure of the one before it (spec §6; review T3-3).
     const failed = completed.status === 'error' && !completed.checking;
-    return Object.freeze({ status: failed ? 'error' : 'loading', rows: Object.freeze([]), live, liveResolved, nextAttemptAt: completed.nextAttemptAt });
+    return Object.freeze({ status: failed ? 'error' : 'loading', rows: Object.freeze([]), live, liveResolved, ...liveAge, nextAttemptAt: completed.nextAttemptAt });
   }
   // A game the window already holds completed while App's retained list still holds it live is listed once, live —
   // the gate's own row; the poll dropping it refreshes the window (review T0R-1).
@@ -80,7 +83,9 @@ function gamesSectionOf(completed, liveRows, liveResolved) {
     status: 'ready',
     live,
     liveResolved,
-    rows: Object.freeze([...live, ...completedGameRows(done, completed.reviews)]),
+    ...liveAge,
+    // A game from another year carries its year (the S8 review's S8-4; ruling R-S8F-9).
+    rows: Object.freeze([...live, ...completedGameRows(done, completed.reviews, Date.now())]),
     stale: completed.status === 'error',
     refreshing: completed.refreshing === true,
     // Kept from an earlier mount of this owner and epoch, not yet read again (Q-S3-2, A+): shown "as of" its time.
@@ -145,7 +150,7 @@ export default function useHubReaders(hub, deployAttempt = null, hubModalOpen = 
   }, [ownerKey, poll.lastSuccessfulAt, refresh]);
 
   const liveRows = liveGameRows(live, { nowMs: Date.now(), marketState: getMarketState() });
-  const games = gamesSectionOf(completed, liveRows, ownerKey !== null);
+  const games = gamesSectionOf(completed, liveRows, ownerKey !== null, deploy.freshness);
 
   // The Loadout's agent (slice S5) is this same read, never App's (the S3 merge with S5).
   const loadoutAgent = loadoutAgentOf(inputs.agent, auth, agent.retry);
@@ -169,6 +174,10 @@ export default function useHubReaders(hub, deployAttempt = null, hubModalOpen = 
     // R-S6-1: the offer survives a failed refresh that kept an empty window (`battles` is an array only once a read succeeded).
     firstDeployment: firstDeploymentOffer(inputs, { windowHeld: Array.isArray(completed.battles) }),
     liveResolved: games.liveResolved,
+    // The live candidate carries the retained list's age after a failed poll, as the Games rows do (ruling R-S8F-8).
+    liveFreshness: deploy.freshness,
+    // A review's day from another year carries its year (ruling R-S8F-9).
+    nowMs: Date.now(),
   };
   const nextAction = deriveNextAction({ ...nextInputs, dismissed: later.dismissed });
   const candidate = nextAction.candidate;

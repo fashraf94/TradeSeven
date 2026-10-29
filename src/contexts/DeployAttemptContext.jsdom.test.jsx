@@ -1408,6 +1408,39 @@ describe('W5 survivors — the remaining gaps, closed', () => {
     root = createRoot(container);
   });
 
+  // The S8 review's S8-12 (ruling R-S8F-3; spec §5.4, "on account change cancel timers … owned by the old attempt"): only the
+  // unmount half of the timer contract was pinned (X7). The identity half: the 8 s deadline of the former account's owned
+  // read, or of its deployment check, goes at the change, not when it fires into a race nobody is listening to.
+  it('X7b (S8-12): an identity change clears the former attempt\'s owned-read deadline at once', async () => {
+    h.owned = vi.fn(() => new Promise(() => {}));
+    await committedAndOut();
+    posts[0].answer(EXISTING());
+    await flush();
+    expect(h.owned).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    signIn('uid-B');
+    expect(vi.getTimerCount()).toBe(0);
+    const version = probe.current.snapshot.version;
+    await act(async () => { vi.advanceTimersByTime(9000); });
+    expect(probe.current.snapshot.version).toBe(version);
+    expect(h.owned).toHaveBeenCalledTimes(1);
+  });
+
+  it('X7c (S8-12): an identity change clears the former attempt\'s deployment-check deadline at once', async () => {
+    await committedAndOut();
+    posts[0].answer(UNCERTAIN());
+    await flush();
+    h.verify = vi.fn(() => new Promise(() => {}));
+    await act(async () => { probe.current.deploy.attemptAction(DISPLAY_ACTIONS.CHECK_DEPLOYMENT); });
+    expect(h.verify).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    signIn('uid-B');
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => { vi.advanceTimersByTime(9000); });
+    expect(h.verify).toHaveBeenCalledTimes(1);
+    expect(attempt()).toBeNull();
+  });
+
   it('X8: the Scouting Board\'s tap is exempt only from the board itself — a second overlay above it refuses it', async () => {
     act(() => { stack.current.open('board', { within: container }); stack.current.open('above', { within: container }); });
     let r;

@@ -193,14 +193,31 @@ describe.each([['plain', false], ['StrictMode', true]])('the gate\'s fallback si
     expect(fallbackCalls).toEqual([]);
   });
 
-  it('a hub that loads after a Retry and then throws in render: the Dashboard boundary takes over and the signal is not left raised', async () => {
+  // The S8 fix build, ruling R-S8F-11 (K-7; Q-S5-6): this row pinned the Dashboard boundary taking over, with the signal
+  // dropped and the button withheld. Turned around with the ruling: the gate's fallback, the signal raised, the button back.
+  it('a hub that loads after a Retry and then throws in render: the legacy shell and the notice again, the signal raised, the button given back', async () => {
     const imp = controlledImport();
     await mount(strict, imp);
     await reject(imp.calls[0]);
     await click(HUB_GATE_COPY.retry);
     await resolve(imp.calls[1], { default: function BrokenHub() { throw new Error('hub render bug'); } });
-    expect(host.textContent).toContain('Dashboard encountered an error');
-    expect(fallbackNow()).toBe(false);
+    expect(host.textContent).not.toContain('Dashboard encountered an error');
+    expect(q('[data-shell="legacy"]')).not.toBeNull();
+    expect(q('[data-hub-gate="load-error"]')).not.toBeNull();
+    expect(fallbackNow()).toBe(true);
+    expect(hiddenNow()).toBe(false);
+  });
+
+  it('a hub that loads and then throws in render, on the first try (ruling R-S8F-11): the legacy shell, the notice, and the bug button back', async () => {
+    const imp = controlledImport();
+    await mount(strict, imp);
+    expect(hiddenNow()).toBe(true);
+    await resolve(imp.calls[0], { default: function BrokenHub() { throw new Error('hub render bug'); } });
+    expect(host.textContent).not.toContain('Dashboard encountered an error');
+    expect(q('[data-shell="legacy"]')).not.toBeNull();
+    expect(q('[data-hub-gate="load-error"]')).not.toBeNull();
+    expect(fallbackNow()).toBe(true);
+    expect(hiddenNow()).toBe(false);
   });
 });
 

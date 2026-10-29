@@ -29,7 +29,8 @@
 // It renders:
 //   loading  → frame(skeleton) while the hub chunk is in flight;
 //   loaded   → frame(hub);
-//   rejected → `legacy`, the shell the hub-off flag renders at this width and
+//   rejected, or the hub threw while rendering →
+//              `legacy`, the shell the hub-off flag renders at this width and
 //              flags (never the Dashboard boundary's error screen), under a
 //              notice offering Retry, Reload and Dismiss. `legacy` keeps its own
 //              wrapper and is never framed, so DashboardDesktop, which offsets
@@ -37,17 +38,21 @@
 //              rather than sitting in the page flow, so it never pushes a
 //              fixed-height shell (CommandDashboardDesktop is 100vh) off screen.
 //
-// Only a REJECTED IMPORT falls back. The loader tags the rejection
-// (HubLoadError) and this gate's boundary handles nothing else: an error the hub
-// throws while rendering is rethrown to App's `Dashboard` ErrorBoundary, so a
-// hub render bug is never hidden behind the legacy shell. An error thrown while
-// the hub chunk EVALUATES rejects the import, so it does fall back — and its
-// report carries the cause's name, message and stack, so it reads as what it is.
+// A REJECTED IMPORT falls back, and so does a hub that loads and then throws
+// while rendering (the S8 fix build, ruling R-S8F-11; the S8 review's K-7,
+// founder ruling Q-S5-6): the same legacy shell under the same notice, with the
+// fallback signal raised, so App gives the bug button back. Before, a render
+// error was rethrown to App's `Dashboard` ErrorBoundary, whose error screen left
+// the button withheld. The loader tags a rejection (HubLoadError); an error
+// thrown while the hub chunk EVALUATES rejects the import, and its report
+// carries the cause's name, message and stack, so it reads as what it is.
 //
-// The failure is reported by the loader, once per import attempt, at the
+// A failed import is reported by the loader, once per import attempt, at the
 // moment the import rejects (console + the house error log,
 // logErrorToFirebase): never again for a later mount that merely shows the same
 // cached failure, and never lost when something else throws in the same render.
+// A render error is reported by the boundary that caught it, once per catch,
+// under its own screen name, so it is never hidden behind the legacy shell.
 //
 // React keeps a rejected lazy() forever, so Retry starts a FRESH import while
 // the legacy shell stays on screen, and swaps in a new lazy() only once that
@@ -71,6 +76,8 @@ import HubFallbackSignal from './hubFallbackSignal';
 
 /** The error-log screen name for a failed hub import. */
 export const HUB_LOAD_REPORT = 'Command Center hub (chunk load)';
+/** The error-log screen name for a hub that loaded and threw while rendering (ruling R-S8F-11). */
+export const HUB_RENDER_REPORT = 'Command Center hub (render)';
 
 /** A rejected hub import, tagged so the boundary can tell it from a hub render error. */
 export class HubLoadError extends Error {
@@ -89,6 +96,12 @@ export const isHubLoadError = (error) => error instanceof HubLoadError;
 export function reportHubLoadFailure(error) {
   console.error('[CommandCenterHubGate] the hub chunk failed to load; rendering the legacy dashboard:', error);
   logErrorToFirebase(error, undefined, HUB_LOAD_REPORT);
+}
+
+/** One report per render error the gate catches: the console and the house error log, with React's component stack. */
+export function reportHubRenderFailure(error, errorInfo) {
+  console.error('[CommandCenterHubGate] the hub threw while rendering; rendering the legacy dashboard:', error);
+  logErrorToFirebase(error, errorInfo, HUB_RENDER_REPORT);
 }
 
 /**
@@ -120,7 +133,7 @@ export function createHubLoader(importHub, report = reportHubLoadFailure) {
   };
 }
 
-/** Catches a rejected hub import and nothing else. */
+/** Catches a rejected hub import and a hub that throws while rendering: either way, the fallback (ruling R-S8F-11). */
 class HubLoadBoundary extends Component {
   constructor(props) {
     super(props);
@@ -131,10 +144,15 @@ class HubLoadBoundary extends Component {
     return { caught: true, error };
   }
 
+  componentDidCatch(error, errorInfo) {
+    // A rejected import was reported by its loader; a render error is reported here, once per catch.
+    if (!isHubLoadError(error)) {
+      try { reportHubRenderFailure(error, errorInfo); } catch { /* a failing report never changes the outcome */ }
+    }
+  }
+
   render() {
     if (!this.state.caught) return this.props.children;
-    // Not a load failure: App's Dashboard ErrorBoundary takes it, as it would without the gate.
-    if (!isHubLoadError(this.state.error)) throw this.state.error;
     return this.props.renderFallback();
   }
 }
