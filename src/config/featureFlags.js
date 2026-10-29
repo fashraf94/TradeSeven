@@ -3486,19 +3486,24 @@ export function isCommandCenterHubOn() {
  * the assembled trading prompt is byte-identical with entries at `card` and
  * `nominated` and with an empty ledger (acceptance C).
  *
- * DARK — pinned 'off'. RUNWAY: 'off' → 'allowlist' → 'on', each its own
+ * CURRENT: 'allowlist' (2026-10-29, the founder's flip PR #1013; it was 'off',
+ * pinned dark, from B2 on 2026-10-21): cards for the owners the cockpit's
+ * server-side allowlist admits (the founder and FT_QA); everyone else is the
+ * 'off' screen as it was. RUNWAY: 'off' → 'allowlist' → 'on', each its own
  * founder PR, never a build PR, after the `plays` rules and the
  * `tape (ownerId, etDate)` collection-group index are deployed (Amendment G
  * RG-7; the build report gives the commands). Each step moves the pin row in
  * src/config/filmRoomCardsFlags.test.js in the same commit (BUILD_RULES §2).
- * ROLLBACK: one line, this value back a step, with its pin row. A string
+ * The activation record is docs/audits/20261029_ACTIVATION_FILM_ROOM_CARDS_ALLOWLIST.md.
+ * ROLLBACK: one line, this value back a step — from 'allowlist' that is one
+ * line back to 'off' — with its pin row. A string
  * tri-state, so it is pinned DIRECTLY — never a DARK_BY_DESIGN key (the
  * flag-pin guard scans `*_ENABLED = true|false` only; the FILM_ROOM_V2_MODE /
  * CALL_RECORDS_MODE precedent) — and noted, by name, in the DARK_BY_DESIGN
  * block where a reader looks for the dark runway.
  */
 // Pinned by: filmRoomCardsFlags.test.js (a STRING tri-state — pinned directly, outside flagPinGuard's `*_ENABLED` scan; this value and the pin move together — BUILD_RULES §2).
-export const FILM_ROOM_CARDS_MODE = 'off';
+export const FILM_ROOM_CARDS_MODE = 'allowlist';
 
 /** The three walked states, in walk order. */
 export const FILM_ROOM_CARDS_MODES = Object.freeze(['off', 'allowlist', 'on']);
