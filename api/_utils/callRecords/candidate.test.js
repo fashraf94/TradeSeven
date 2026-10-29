@@ -22,7 +22,7 @@ const base = (over = {}) => ({
   // Build 2a (Amendment C-2/C-3, C-5): the held set frozen at the model seam, and the check's mode.
   held: [...HELD], mintedMode: 'shadow',
   // Build 2b (Amendment D-7 / D-3): the seam's frozen book, and the options' two lists (none here).
-  book: freezeSwapBook(makeTickBattle()), anticipationCandidates: null, rankMap: null,
+  book: freezeSwapBook(makeTickBattle()), anticipationCandidates: null, rankMap: null, committedSymbolIn: null,
   ...over,
 });
 

@@ -38,7 +38,7 @@ function earlierCalls(raw = liveDeclarations(), { evalId = 'eval_000', mintedAtM
     battleId: BATTLE_ID, evalId, evalSeq: 0, mintedAtMs, raw, universe: UNIVERSE,
     observation: makeObservation({ observedAtMs: mintedAtMs - 5_000 }), promptBuiltAt: new Date(mintedAtMs - 5_000).toISOString(),
     tickId: null, battle: makeTickBattle(), held: [...HELD], mintedMode: 'shadow',
-    book: freezeSwapBook(makeTickBattle()), anticipationCandidates: null, rankMap: null,
+    book: freezeSwapBook(makeTickBattle()), anticipationCandidates: null, rankMap: null, committedSymbolIn: null,
   }).calls.map((c) => JSON.parse(JSON.stringify(c)));
 }
 const seedOf = (calls) => ({ calls: Object.fromEntries(calls.map((c) => [c.callId, c])) });

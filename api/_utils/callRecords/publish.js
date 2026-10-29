@@ -378,6 +378,9 @@ export async function runModelCallsPhase(callsCtx, { db, battle, timeBudgetMs, p
       book: callsCtx.book ?? null,
       anticipationCandidates,
       rankMap,
+      // Amendment E rev 3 (E-1): the book above predates this check's own trade; the stock that trade committed
+      // (the executor's result, carried apart from capture — null when none committed) is in the book once the check ends.
+      committedSymbolIn: callsCtx.executorResult?.symbolIn ?? null,
       universe: callsCtx.universe,
       observation: callsCtx.observation,
       promptBuiltAt,

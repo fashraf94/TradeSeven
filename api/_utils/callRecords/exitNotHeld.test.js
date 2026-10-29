@@ -9,6 +9,9 @@
 //                tier than the call's `slot` is NOT dropped (the League slot label is a guess — the count,
 //                docs/audits/20261029_COCKPIT_EXIT_NOT_HELD.md); a price-line reason wins; an unknown seam
 //                proves nothing
+//   E-1 rev 3    the seam's book predates the check's OWN trade, so an exit on that trade's committed
+//                incoming stock (`committedSymbolIn`, the executor's result) is not dropped; a trade that
+//                did not commit (the CVX shape) has none, and a null matches nothing
 //
 // The endpoint and the displays have their rows beside their own suites (call-response.test.js,
 // exitNotHeld.display.jsdom.test.jsx).
@@ -53,11 +56,11 @@ const exitShot = (over = {}) => ({
   symbol: 'TSLA', direction: 'exit', slot: 'star', condition: { side: 'below', level: Math.round(PX[over.symbol ?? 'TSLA'] * 0.98 * 100) / 100 }, horizonPhrase: 'this_session', defaultAction: 'act',
   said: 'Cutting it below the line today.', ...over,
 });
-const mint = ({ shots = [exitShot()], book = freezeSwapBook(battle()), obs = observation(), mintedMode = 'on' } = {}) => buildMintCandidate({
+const mint = ({ shots = [exitShot()], book = freezeSwapBook(battle()), obs = observation(), mintedMode = 'on', committedSymbolIn = null } = {}) => buildMintCandidate({
   battleId: 'battle-tick-1', evalId: 'eval_001', evalSeq: 1, mintedAtMs: MINT,
   raw: { calledShots: shots, watching: [], playerAsk: null, fork: null },
   universe: UNIVERSE, observation: obs, promptBuiltAt: FROZEN_NOW, tickId: null, battle: battle(),
-  held: [...HELD], mintedMode, book, anticipationCandidates: null, rankMap: null,
+  held: [...HELD], mintedMode, book, anticipationCandidates: null, rankMap: null, committedSymbolIn,
 });
 const firstCall = (opts) => mint(opts).calls[0];
 
@@ -186,5 +189,59 @@ describe('E-1 — an exit call on a stock held in no tier of the frozen book min
   it('the same at the shadow mode: the rule belongs to the mint, not to the answers (off mints nothing at all)', () => {
     const call = firstCall({ shots: [exitShot({ symbol: 'AMD' })], mintedMode: 'shadow' });
     expect([call.mintedMode, call.state, call.invalidatedReason]).toEqual(['shadow', 'invalidated', 'exit_not_held']);
+  });
+});
+
+// Amendment E rev 3 — the seam's book is the book BEFORE the check's own trade (the swap commits after the
+// prompt seam, before the mint). AMD is on the bench in that book; a check that buys AMD and declares an exit
+// plan for it is writing about a stock that is in the book once the check ends.
+describe('E-1 rev 3 — an exit on the check\'s own committed incoming stock is not dropped', () => {
+  it('an exit on the committed symbolIn mints OPEN, whichever tier it names, with its options', () => {
+    for (const slot of ['star', 'core', 'support']) {
+      const call = firstCall({ shots: [exitShot({ symbol: 'AMD', slot })], committedSymbolIn: 'AMD' });
+      expect([call.state, call.invalidatedReason], slot).toEqual(['open', null]);
+      expect(Array.isArray(call.replacementOptions), slot).toBe(true);
+    }
+    const c = mint({ shots: [exitShot({ symbol: 'AMD', defaultAction: 'hold' })], committedSymbolIn: 'AMD' });
+    expect(c.calls[0].state).toBe('open');
+    expect(c.newOpen.map((x) => x.symbol)).toEqual(['AMD']);
+  });
+
+  it('the same exit with NO trade committed (the CVX shape: the swap was blocked) is still dropped', () => {
+    const call = firstCall({ shots: [exitShot({ symbol: 'AMD' })], committedSymbolIn: null });
+    expect([call.state, call.invalidatedReason]).toEqual(['invalidated', 'exit_not_held']);
+  });
+
+  it('a null matches nothing: no symbolIn, an empty one, a non-string one — none exempts a stock', () => {
+    for (const committedSymbolIn of [null, '', 0, {}]) {
+      const call = firstCall({ shots: [exitShot({ symbol: 'AMD' })], committedSymbolIn });
+      expect(call.state, JSON.stringify(committedSymbolIn)).toBe('invalidated');
+    }
+  });
+
+  it('only the committed stock itself: a trade that bought JPM does not exempt an exit on AMD', () => {
+    const call = firstCall({ shots: [exitShot({ symbol: 'AMD' })], committedSymbolIn: 'JPM' });
+    expect([call.state, call.invalidatedReason]).toEqual(['invalidated', 'exit_not_held']);
+  });
+
+  it('symbolIn only: a held stock stays judged by the book whatever the trade bought, and the price line still wins', () => {
+    expect(firstCall({ shots: [exitShot({ symbol: 'TSLA' })], committedSymbolIn: 'AMD' }).state).toBe('open'); // held in the seam book
+    const implausible = firstCall({ shots: [exitShot({ symbol: 'AMD', condition: { side: 'below', level: 1000 } })], committedSymbolIn: 'AMD' });
+    expect([implausible.state, implausible.invalidatedReason]).toEqual(['invalidated', 'level_implausible']);
+  });
+
+  it('a mixed block: the bought stock\'s exit lives, an unrelated not-held exit is dropped, in one check', () => {
+    const c = mint({ shots: [exitShot({ symbol: 'AMD' }), exitShot({ symbol: 'JPM' })], committedSymbolIn: 'AMD' });
+    expect(c.calls.map((x) => [x.symbol, x.state, x.invalidatedReason])).toEqual([['AMD', 'open', null], ['JPM', 'invalidated', 'exit_not_held']]);
+  });
+
+  it('the parameter is REQUIRED beside held and book: omitted → throws; null is the explicit "no trade committed"', () => {
+    const args = {
+      battleId: 'battle-tick-1', evalId: 'eval_001', evalSeq: 1, mintedAtMs: MINT, raw: { calledShots: [exitShot()], watching: [], playerAsk: null, fork: null },
+      universe: UNIVERSE, observation: observation(), promptBuiltAt: FROZEN_NOW, tickId: null, battle: battle(), held: [...HELD], mintedMode: 'on',
+      book: freezeSwapBook(battle()), anticipationCandidates: null, rankMap: null,
+    };
+    expect(() => buildMintCandidate(args)).toThrow(/committedSymbolIn/);
+    expect(() => buildMintCandidate({ ...args, committedSymbolIn: null })).not.toThrow();
   });
 });

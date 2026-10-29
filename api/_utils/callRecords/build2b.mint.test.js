@@ -61,7 +61,7 @@ const mint = ({ shots = [exitShot()], watching = [], candidates = null, rankMap 
   battleId: 'battle-tick-1', evalId: 'eval_001', evalSeq: 1, mintedAtMs: MINT,
   raw: { calledShots: shots, watching, playerAsk: null, fork: null },
   universe: UNIVERSE, observation: obs, promptBuiltAt: FROZEN_NOW, tickId: null, battle: battle(),
-  held: [...HELD], mintedMode: 'on', book, anticipationCandidates: candidates, rankMap,
+  held: [...HELD], mintedMode: 'on', book, anticipationCandidates: candidates, rankMap, committedSymbolIn: null,
 });
 const firstCall = (opts) => mint(opts).calls[0];
 const cand = (...symbols) => symbols.map((symbol) => ({ symbol, direction: 'up', signalSummary: 's', threshold: 't' }));
@@ -132,7 +132,7 @@ describe('D-3 — replacementOptions: order and fill', () => {
     const pick = buildMintCandidate({
       battleId: 'battle-tick-1', evalId: 'eval_001', evalSeq: 1, mintedAtMs: MINT,
       raw: { calledShots: [], watching: [], playerAsk: null, fork: { slot: 'support', swapOut: 'KO', options: [{ symbol: 'AMD', why: 'a' }, { symbol: 'JPM', why: 'b' }], said: 'AMD or JPM?' } },
-      universe: UNIVERSE, observation: observation(), promptBuiltAt: FROZEN_NOW, tickId: null, battle: battle(), held: [...HELD], mintedMode: 'on', book: freezeSwapBook(battle()), anticipationCandidates: null, rankMap: null,
+      universe: UNIVERSE, observation: observation(), promptBuiltAt: FROZEN_NOW, tickId: null, battle: battle(), held: [...HELD], mintedMode: 'on', book: freezeSwapBook(battle()), anticipationCandidates: null, rankMap: null, committedSymbolIn: null,
     }).calls[0];
     expect(pick.kind).toBe('pick');
     expect(pick.replacementOptions).toBeNull();
