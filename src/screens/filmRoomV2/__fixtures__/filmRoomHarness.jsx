@@ -200,7 +200,10 @@ export function storedNoteDefects(container, docs = {}) {
 export const TEXT_ATTRIBUTES = Object.freeze(['aria-label', 'title', 'aria-description', 'aria-roledescription', 'aria-valuetext', 'aria-placeholder', 'alt', 'placeholder']);
 const TEXT_ATTRIBUTE_SELECTOR = TEXT_ATTRIBUTES.map((a) => `[${a}]`).join(', ');
 
-const TIME_PATTERNS = [/\b\d{1,2}:\d{2}( (AM|PM))?\b/g, /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/g, /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}\b/g, /\d{4}-\d{2}-\d{2}T[\d:.]+Z/g];
+// The whole ISO instant FIRST (Astra's B2.1 review §4 item 2, R-1): the clock pattern run before it consumed the
+// instant's "15:30" and left "2026-09-22T02: .000Z", which the ISO pattern could no longer match — a stored instant in a
+// data-time span (coverage's preservedFrom) read as a stray digit. Applied in this order in text and in attributes.
+const TIME_PATTERNS = [/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, /\b\d{1,2}:\d{2}( (AM|PM))?\b/g, /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/g, /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}\b/g];
 /**
  * The fixed copy that spells a digit — the class labels' bar widths, the quote-delay notes, an evidence field's name —
  * BOUND BY COPY KEY (B2.1 A8, A2F1-7; Amendment J RJ-6): each copy entry that holds one, PINNED HERE by its key with its

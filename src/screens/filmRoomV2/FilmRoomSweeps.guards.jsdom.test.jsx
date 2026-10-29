@@ -133,6 +133,28 @@ describe('Astra B2 — the stored-note number exemption is bound by path, never 
   });
 });
 
+describe('Astra\'s B2.1 review §4 item 2 (R-1) — a stored instant in a data-time span is a time, whole: the sweep matches the ISO instant before any clock inside it', () => {
+  const PRESERVED = '2026-09-22T02:15:30.000Z';   // Astra's repro: the multi-day Study view's coverage.checks.preservedFrom
+  const kept = () => { const t = clone(sep23Tape); t.coverage.checks.preservedFrom = PRESERVED; return t; };
+
+  it('the retained-timestamp control: Coverage renders coverage.checks.preservedFrom in a data-time span, and the number sweep finds nothing (the mutant: the old order — the clock first — reads it as a stray digit)', () => {
+    const tape = kept();
+    m.render(<Coverage doc={tape} at={['coverage', 'checks']} label="Checks" />);
+    const time = [...m.container.querySelectorAll('[data-time]')].find((e) => e.textContent === PRESERVED);
+    expect(time).toBeTruthy();
+    expect(sweepNumbers(m.container, { tape })).toEqual([]);
+  });
+
+  it('bites still: the same instant outside a data-time span; a digit beside the instant inside one; a clock-shaped fragment left over', () => {
+    const tape = kept();
+    expect(sweepNumbers(box(`<span>${PRESERVED}</span>`), { tape })).toEqual([`stray digit: “${PRESERVED}”`]);
+    expect(sweepNumbers(box(`<span data-time="">${PRESERVED} · 7</span>`), { tape })).toEqual([`stray digit: “${PRESERVED} · 7”`]);
+    expect(sweepNumbers(box('<span data-time="">2026-09-22T02:</span>'), { tape })).toEqual(['stray digit: “2026-09-22T02:”']);
+    // and the clock and date forms in a data-time span stay times, as before
+    expect(sweepNumbers(box('<span data-time="">2:15 PM · Sep 22</span>'), { tape })).toEqual([]);
+  });
+});
+
 describe('B2.1 A8 (A2F1-7) — the fixed-digit copy is exempt by its copy key, whole, never by a phrase found inside other text', () => {
   const mount = (html) => { m.container.innerHTML = html; return m.container; };
   it('each pinned entry, alone, passes; RJ-6\x27s delay sentence among them', () => {
