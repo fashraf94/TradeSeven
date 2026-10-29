@@ -21,6 +21,8 @@
 //     (ruling R3: where the spill would reach the hub's connector).
 //   - a form drawn under 40 px is a still, whatever the rate (ruling R12; agentFormSpec.js rateForSize).
 //   - the pixel ratio is re-read on a window resize (the S0 review's carry-over §5), not only at render.
+//   - `framing="tight"` (the battle views only): each form drawn closer, to fill its small box (agentFormSpec.js
+//     TIGHT_ZOOM). Without it the spec carries no zoom, and the engine draws at the design's distance.
 //
 // What shows: the engine's canvas while the form is live. The form's own still (its designed stillT frame,
 // cached at mount) when the WebGL context is lost, or when a frame of this view threw (the engine drops the view
@@ -52,10 +54,10 @@ function usePixelRatio() {
 export default function AgentForm({
   archetype, mood = 'idle', coreStage = 1, armorStage = 1, allegiance = 'player', size = 200,
   reducedMotion = false, bloom = 'filter', drawPath = 'shared', batched = false, rate = 'live',
-  equipped = true, label, onStatus, seed = 1, equipOnChange = false, paused = false, clip = false,
+  equipped = true, label, onStatus, seed = 1, equipOnChange = false, paused = false, clip = false, framing,
 }) {
   const webgl = hasWebGL();
-  const spec = agentFormSpec({ archetype, mood, coreStage, armorStage, allegiance, size, seed });
+  const spec = agentFormSpec({ archetype, mood, coreStage, armorStage, allegiance, size, seed, framing });
   const dpr = usePixelRatio();
   const drawRate = rateForSize(rate, spec.size);
   const options = { path: drawPath === 'direct' ? 'direct' : 'shared', bloom, batched, rate: drawRate, reducedMotion, dpr, paused };
@@ -86,13 +88,15 @@ export default function AgentForm({
   }, [webgl, options.path]);
 
   const { kind, state, core, armor, pal, face } = spec;
+  // The zoom goes with every patch (the engine's own 1 when the spec has none), so a new kind never keeps the old one's.
+  const zoom = spec.zoom ?? 1;
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const patch = { kind, state, core, armor, pal, face, size: spec.size, seed: spec.seed };
+    const patch = { kind, state, core, armor, pal, face, size: spec.size, seed: spec.seed, zoom };
     if (latest.current.equipOnChange && kindRef.current !== kind) view.swap(patch); else view.update(patch);
     kindRef.current = kind;
-  }, [kind, state, core, armor, pal, face, spec.size, spec.seed]);
+  }, [kind, state, core, armor, pal, face, spec.size, spec.seed, zoom]);
   useEffect(() => { if (viewRef.current) viewRef.current.setOptions({ bloom, batched, rate: drawRate, reducedMotion, dpr, paused }); }, [bloom, batched, drawRate, reducedMotion, dpr, paused]);
   const firstEquip = useRef(true);
   useEffect(() => { if (firstEquip.current) { firstEquip.current = false; return; } if (viewRef.current) viewRef.current.equip(equipped); }, [equipped]);

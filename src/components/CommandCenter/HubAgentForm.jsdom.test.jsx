@@ -87,6 +87,8 @@ describe('what the form is handed', () => {
   it('the hub\'s look: teal, stage 1, batched, the CSS glow clipped at the box, the size, idle; researching while a hub deploy submits', () => {
     const p = show(ready('a1', 'degen'));
     expect(p).toMatchObject({ allegiance: 'player', coreStage: 1, armorStage: 1, batched: true, bloom: 'css', clip: true, size: 340, mood: 'idle', rate: 'live', paused: false, reducedMotion: false });
+    // The design's framing: the battle views' tight framing (the S1 size follow-up) is never asked for here.
+    expect(p.framing).toBeUndefined();
     expect(show(ready('a1', 'degen'), { status: 'processing' }).mood).toBe('researching');
   });
 

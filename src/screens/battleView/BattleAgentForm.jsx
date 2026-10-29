@@ -13,6 +13,7 @@
 // (presenceBinding.js): it idles gently, and celebrates a won battle. Growth is stage 1 (R7). Batched plates (R2).
 // A form drawn under 40 px is a still (R12, in the wrapper). Reduced motion is the screen's one source. The labels do
 // not change in this build (R10): the agent's name and "CPU" stay beside the forms, so the form itself is decorative.
+// The S1 size follow-up: the tight framing (agentFormSpec.js TIGHT_ZOOM), so each form fills more of its small box.
 
 import React, { use, useContext } from 'react';
 import AgentForm from '../../components/AgentForm/AgentForm';
@@ -45,6 +46,7 @@ export default function BattleAgentForm({ agentBattle, side = 'player', size, sc
       reducedMotion={reducedMotion}
       bloom="css"
       batched
+      framing="tight"
       label={null}
     />
   );

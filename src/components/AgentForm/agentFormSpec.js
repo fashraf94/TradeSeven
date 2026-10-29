@@ -37,13 +37,23 @@ export function stageIndex(stage) {
 }
 
 /**
+ * The tight framing, which only the battle views ask for (build S1's size follow-up): each form drawn closer, so it
+ * fills more of its small box. The value is the design's camera distance (the engine's `zoom`: 4.7 × zoom), per form,
+ * in steps of .05: the closest at which every pixel the form lights to 3 % or more keeps 1 CSS px inside a 48 px box,
+ * in every mood over its whole motion range (measured in headless Edge; the S1 report §11). Celebrating's spread sets
+ * the limit. Trend Follower and Diversifier already reach the box's edge at the design's framing, and Speculator and
+ * Capital Preserver have under a step to gain, so they keep it. Without `framing: 'tight'` the spec has no zoom.
+ */
+const TIGHT_ZOOM = /* @__PURE__ */ Object.freeze({ none: .9, trend: 1, contra: .95, spec: 1, preserve: 1, divers: 1, fund: .95 });
+
+/**
  * The engine spec for AgentForm's props. Allegiance is fixed light, never the player's colour: the player
  * is teal, the opponent copper and mirrored (the key light swaps sides with it).
  */
-export function agentFormSpec({ archetype, mood = 'idle', coreStage = 1, armorStage = 1, allegiance = 'player', size = 200, seed = 1 } = {}) {
-  const opponent = allegiance === 'opponent';
+export function agentFormSpec({ archetype, mood = 'idle', coreStage = 1, armorStage = 1, allegiance = 'player', size = 200, seed = 1, framing } = {}) {
+  const opponent = allegiance === 'opponent', kind = formForArchetype(archetype);
   return {
-    kind: formForArchetype(archetype),
+    kind,
     state: AGENT_MOODS.includes(mood) ? mood : 'idle',
     core: stageIndex(coreStage),
     armor: stageIndex(armorStage),
@@ -51,6 +61,7 @@ export function agentFormSpec({ archetype, mood = 'idle', coreStage = 1, armorSt
     face: opponent ? -1 : 1,
     size: Number.isFinite(size) && size > 0 ? size : 200,
     seed: Number.isInteger(seed) ? seed : 1,
+    ...(framing === 'tight' ? { zoom: TIGHT_ZOOM[kind] } : null),
   };
 }
 

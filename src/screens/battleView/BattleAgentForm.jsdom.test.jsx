@@ -5,7 +5,8 @@
 // Agent form build S1 (Scope B) — the battle form, through its real slot with AGENT_FORM_BATTLE_ENABLED on, and the
 // wrapper replaced by a recording stand-in. The player: the battle's own archetype (agentContext.archetype) in teal;
 // the CPU opponent: copper, mirrored and bare (R9); both decorative (R10), batched (R2), at growth stage 1 (R7); the
-// mood from the scope's cockpit feed and clock and the hub's outcome derivation (R8); the still while the chunk loads.
+// mood from the scope's cockpit feed and clock and the hub's outcome derivation (R8); the still while the chunk loads;
+// and both drawn at the tight framing (the S1 size follow-up), the battle views' own.
 
 import React, { Component, act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -52,16 +53,16 @@ describe('the slot: the form\'s still while the chunk loads, then the form', () 
 });
 
 describe('the player\'s form and the CPU\'s', () => {
-  it('the player: the battle\'s archetype (agentContext.archetype), teal, decorative, batched, the CSS glow, stage 1', async () => {
+  it('the player: the battle\'s archetype (agentContext.archetype), teal, decorative, batched, the CSS glow, stage 1, framed tight', async () => {
     await show(scope(<BattleAgentFormSlot agentBattle={LIVE} size={72} scores={{ player: 12, opponent: 3 }} reducedMotion />));
-    expect(last('player')).toMatchObject({ archetype: 'degen', allegiance: 'player', label: null, batched: true, bloom: 'css', coreStage: 1, armorStage: 1, size: 72, reducedMotion: true, mood: 'confident' });
+    expect(last('player')).toMatchObject({ archetype: 'degen', allegiance: 'player', label: null, batched: true, bloom: 'css', coreStage: 1, armorStage: 1, size: 72, reducedMotion: true, mood: 'confident', framing: 'tight' });
   });
 
   it('the CPU opponent: no archetype — a bare core — in copper, mirrored, facing the player (R9)', async () => {
     await show(scope(<BattleAgentFormSlot agentBattle={LIVE} side="opponent" size={72} scores={{ player: 12, opponent: 3 }} />));
     const cpu = last('opponent');
-    expect(cpu).toMatchObject({ archetype: undefined, allegiance: 'opponent', label: null, mood: 'worried' });
-    expect(agentFormSpec(cpu)).toMatchObject({ kind: 'none', pal: 'copper', face: -1 });
+    expect(cpu).toMatchObject({ archetype: undefined, allegiance: 'opponent', label: null, mood: 'worried', framing: 'tight' });
+    expect(agentFormSpec(cpu)).toMatchObject({ kind: 'none', pal: 'copper', face: -1, zoom: .9 });
   });
 });
 

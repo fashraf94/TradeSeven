@@ -4,17 +4,21 @@
 //
 // Build S1 — the wrapper's new options, with the engine replaced by a recording stand-in (as AgentForm.jsdom.test.jsx):
 // a change of archetype after mount is the engine's swap (only with `equipOnChange`, never at mount); `paused`; `clip`;
-// a form under 40 px drawn as a still (ruling R12); the pixel ratio re-read on a window resize; `label={null}`.
+// a form under 40 px drawn as a still (ruling R12); the pixel ratio re-read on a window resize; `label={null}`. And the
+// S1 size follow-up's tight framing: only the battle form asks for it, and without it the spec carries no zoom.
 
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const engine = vi.hoisted(() => ({ load: null, mounts: [] }));
 vi.mock('./loadEngine', () => ({ loadAgentFormEngine: (...a) => engine.load(...a) }));
 
 import AgentForm from './AgentForm';
-import { LIVE_MIN_PX, rateForSize } from './agentFormSpec';
+import { LIVE_MIN_PX, rateForSize, agentFormSpec } from './agentFormSpec';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -165,5 +169,62 @@ describe('the pixel ratio is re-read on a window resize (the S0 review\'s carry-
     expect(remove.mock.calls.filter(([type]) => type === 'resize')).toHaveLength(1);
     remove.mockRestore();
     root = createRoot(host);
+  });
+});
+
+describe('the tight framing: the battle views\' option, and theirs alone (the S1 size follow-up)', () => {
+  const CODE = { none: undefined, trend: 'momentum_chaser', contra: 'contrarian', spec: 'degen', preserve: 'guardian', divers: 'diversifier', fund: 'analyst' };
+
+  it('agentFormSpec: no zoom unless the tight framing is asked for; then the measured table, per form', () => {
+    for (const archetype of Object.values(CODE)) {
+      for (const allegiance of ['player', 'opponent']) {
+        for (const framing of [undefined, 'design', 'TIGHT', true]) expect(agentFormSpec({ archetype, allegiance, framing })).not.toHaveProperty('zoom');
+      }
+    }
+    expect(Object.fromEntries(Object.entries(CODE).map(([k, archetype]) => [k, agentFormSpec({ archetype, framing: 'tight' }).zoom])))
+      .toEqual({ none: .9, trend: 1, contra: .95, spec: 1, preserve: 1, divers: 1, fund: .95 });
+    expect(agentFormSpec({ archetype: 'contrarian', allegiance: 'opponent', framing: 'tight' })).toMatchObject({ kind: 'contra', pal: 'copper', face: -1, zoom: .95 });
+  });
+
+  it('the wrapper: tight mounts and patches with the form\'s zoom; without it the mount has none and every patch the engine\'s own 1', async () => {
+    render(<AgentForm archetype="contrarian" size={60} framing="tight" />);
+    await flush();
+    const [tight] = engine.mounts;
+    expect(tight.spec.zoom).toBe(.95);
+    render(<AgentForm archetype="degen" size={60} framing="tight" />);
+    expect(tight.calls.filter(([c]) => c === 'update').at(-1)[1]).toMatchObject({ kind: 'spec', zoom: 1 });
+    render(<AgentForm size={60} framing="tight" />);
+    expect(tight.calls.filter(([c]) => c === 'update').at(-1)[1]).toMatchObject({ kind: 'none', zoom: .9 });
+    act(() => root.unmount()); root = createRoot(host);
+
+    render(<AgentForm archetype="contrarian" size={340} />);
+    await flush();
+    const plain = engine.mounts[1];
+    expect(plain.spec).not.toHaveProperty('zoom');
+    render(<AgentForm size={340} mood="researching" />);
+    const patches = plain.calls.filter(([c]) => c === 'update').map(([, p]) => p);
+    expect(patches.length).toBeGreaterThan(0);
+    for (const p of patches) expect(p.zoom).toBe(1);
+  });
+
+  it('of the files that draw the wrapper, only the battle form asks for a framing: the hub, the lab and S0\'s stills keep the design\'s', () => {
+    const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const files = [];
+    (function walk(dir) {
+      for (const name of readdirSync(dir)) {
+        const abs = path.join(dir, name);
+        if (statSync(abs).isDirectory()) { if (name !== 'node_modules') walk(abs); } else if (/\.(js|jsx)$/.test(name) && !/\.test\./.test(name)) files.push(abs);
+      }
+    }(SRC));
+    const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/([^:'"`])\/\/.*$/gm, '$1');
+    const ASKS = /\bframing\s*[=:]/g;
+    const draws = files.filter((f) => /from '([^']*\/AgentForm\/|\.\/)AgentForm'/.test(readFileSync(f, 'utf8')) && !f.endsWith(`${path.sep}AgentForm.jsx`));
+    const rel = (f) => path.relative(SRC, f).split(path.sep).join('/');
+    expect(draws.map(rel).sort()).toEqual(['components/CommandCenter/HubAgentForm.jsx', 'screens/AgentFormLab.jsx', 'screens/battleView/BattleAgentForm.jsx']);
+    const asks = Object.fromEntries(draws.map((f) => [rel(f), (strip(readFileSync(f, 'utf8').replace(/\r\n/g, '\n')).match(ASKS) || []).length]));
+    expect(asks).toEqual({ 'components/CommandCenter/HubAgentForm.jsx': 0, 'screens/AgentFormLab.jsx': 0, 'screens/battleView/BattleAgentForm.jsx': 1 });
+    expect(readFileSync(path.join(SRC, 'screens/battleView/BattleAgentForm.jsx'), 'utf8')).toContain('framing="tight"');
+    // The scan sees a planted ask, as a prop and as a key.
+    expect(strip('<AgentForm framing="tight" />\nconst p = { framing: \'tight\' };').match(ASKS)).toHaveLength(2);
   });
 });
