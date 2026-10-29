@@ -1,5 +1,7 @@
 # Cockpit — exit calls on stocks not in the book (Amendment E): the count, and a STOP
 
+> **Update, after the ruling (2026-10-29):** Option 1 was ruled and written into Amendment E revision 2, and the fix is built to it — §9–§16. §1–§8 and the appendix are the count and the STOP as they were written.
+
 **Date:** 2026-10-29 · **Branch:** `claude/cockpit-exit-not-held-3ef5fc` (the app's suffix; cut at `origin/main` `a5c35ba6`; push target by refspec `claude/cockpit-exit-not-held`) · **Status:** STOPPED before building, on the prompt's own gate. Nothing built, nothing pushed, no PR.
 
 ## 1. Verdict
@@ -79,6 +81,107 @@ My pick is **Option 1**: it is the amendment's purpose and nothing more, and the
 ## 8. State of the branch
 
 Local commits only: `de33ae8f` (Amendment E, byte for byte, sha256 `10d76f72…3b2f`, blob verified equal to the source) and this report. Not pushed; no PR. The PR, when it opens, starts with "Hold — merge after Amendment E is blessed, after 6 PM ET."
+
+## 9. The build — the ruling and what was done
+
+Ruling 2026-10-29: **Option 1**, written into Amendment E revision 2 (`docs/CALL_RECORD_FIELD_CONTRACT_V1_4_AMENDMENT_E.md`, committed byte for byte over revision 1 as a new commit; `de33ae8f` stays). §1–§8 and the appendix are the count and the STOP as written; the only change to them is one update line under the title.
+
+| Ruling item | Done |
+|---|---|
+| 1. Commit rev 2 byte for byte, new commit, keep `de33ae8f` | `3ab2813f`; the blob equals the attached file (sha256 `0ba71400…a046be`). |
+| 2. "Held in any tier" for E-1 (`seam.book`), E-2 at the endpoint (fresh parent, acknowledgments included) and on the 2a tile, the details sheet and the 2b card; one helper beside the legality table | `heldInAnyTier` / `isExitNotHeld` in `answers.js`; all three ask it (§11). The tile, sheet and card all draw from the tile model, so they cannot disagree. |
+| 3. Do not change D-4's slot-tier filing check or D-6 retirement; confirm League routing first | `callActions.js` and `retire.js` are untouched (`git diff origin/main` lists neither). League routing confirmed, file:line in §10. |
+| 4. Precedence: existing price-line reasons win | `candidate.js:316`; pinned by a row and by mutant M2. |
+| 5. League slot label and its false refusal line: follow-up, not this task | Listed in §15. No prompt change, no Option 2. |
+| 6. Read script uncommitted | It stayed in the session scratchpad. |
+| 7. Off-golden byte-identical; check `callsBlock.js`; flag the review; PR hold line | §12, §14, §16. |
+
+Branch commits (local branch `claude/cockpit-exit-not-held-3ef5fc`, pushed as `claude/cockpit-exit-not-held`): `de33ae8f` Amendment E rev 1 · `ca740fa6`, `c87fc4b2` the count report · `3ab2813f` Amendment E rev 2 · `f7c0c1db` the build · `6d967995` one more display row · `cf5ce476` the One Door census oracle · the final report commit.
+
+## 10. League routing — confirmed (ruling item 3)
+
+The ruling said to stop if a League battle can reach the cockpit or `call-response` from the app. It cannot (VERIFIED, read at this HEAD):
+
+- `src/screens/BattleViewScreen.jsx:31-39` sends a League battle to the League Arena **before** the `agentDeployed → AgentBattleScreen` branch at `:43`. The discriminator is `src/screens/battleViewRouting.js:13` (`gameMode === 'baggerbomb_tournament'`). The flag that gates it, `LEAGUE_BATTLEVIEW_ROUTING_ENABLED`, is `true` (`src/config/featureFlags.js:257`).
+- `AgentBattleScreen` is imported in one place, `src/App.jsx:51`, and handed to `BattleViewScreen` at `:9701`. The cockpit's answer client (`src/hooks/useCockpitAnswer.js:37`, `CALL_RESPONSE_PATH`) is used by `AgentBattleScreen.jsx` only.
+- The server does not gate by mode: `api/agent/cockpit-status.js:96` answers `on` from the calls mode and the allowlist alone, and the founder's League battles do mint at `'on'` (the 127 League exit calls in §2). The routing above is the only wall.
+- Data, read-only: the founder's League battles hold 195 calls in 20 battles, **0 answered and 0 cockpit filings**; all 13 recorded answers (founder 12, FT_QA 1) are in agent-mode battles.
+
+Two cautions for whoever owns that flag. (1) `call-response.js:370` still has a League budget branch; only a direct API caller can reach it. (2) With the flag off, a League battle falls through to `AgentBattleScreen` (`BattleViewScreen.routing.dark.test.jsx` documents it), and the 47% would then reach the cockpit with D-4's slot-tier check and its "has already left your book" line live (§15).
+
+## 11. What changed
+
+| Rule | Where |
+|---|---|
+| **The one helper** | `api/_utils/callRecords/answers.js:126` `heldInAnyTier(book, symbol)` → true / false / null (null = no readable book; proves nothing) and `:140` `isExitNotHeld(call, book)` (an exit shot or Confirmation only; false for entries, picks and an unreadable book). `book` is anything carrying `portfolio`: the seam's frozen book, the fresh parent, the screen's battle document. The bench is not the book; the crypto row (support) is. |
+| **E-1** | `api/_utils/callRecords/candidate.js:316` in `composeCall`: `invalidationReason(row, observation) ?? (isExitNotHeld(…, seam.book) ? EXIT_NOT_HELD_REASON : null)`; `:95` `EXIT_NOT_HELD_REASON = 'exit_not_held'` (a separate constant: the pinned `INVALIDATION_REASONS` stays three). The same expression feeds `state`, `invalidatedReason` and `minted[].reason`; `replacementOptions` stays null for it (D-3). An unknown seam (`book: null`) invalidates nothing. D-9 row: `src/screens/battleView/battleViewCopy.js:1315` `exit_not_held: 'not in your book'` → "Dropped · not in your book". |
+| **E-2, endpoint** | `api/agent/call-response.js:325`, in the acknowledgment branch, after the two `expired` checks and before any write: `400 ineligible_action`, reason `symbol_not_held`, against the transaction's fresh `parent`. Every other ordering is as it was; the directive rows keep `isCallActionEligible`'s slot-tier check (D-4) and refuse a stock in no tier by it. An identical repeat still returns the stored response. |
+| **E-2, displays** | `src/screens/battleView/cockpitModel.js:620-629,692` (`tileOf`): when the call the buttons would answer is an exit in no tier of `book`, it offers no button and no "Who comes in?" step, and an unanswered, un-acted, otherwise-Live tile carries the tag `call:not_held` → "Not in your book" (`battleViewCopy.js:1272`). A recorded answer, an act, a retirement, a replacement, a recorded event and a resolved state keep their own tags. The details sheet (`sheetOf`) and the 2b card (`cardViewOf`) read the tile, so they follow. `buildCockpitFeed` takes `book`; `AgentBattleScreen.jsx:2632` passes `{ portfolio: agentBattle?.portfolio ?? null }` — the screen's own document — and the memo watches `agentBattle?.portfolio`. |
+| **One addition beyond the list** | The 2b strip chip, where a waiting card shows by default, would still have said "· exit"; `cockpit2bModel.js:365` + `battleViewCopy.js:1165` make it say "· not in your book". Remove those two lines if you would rather not. |
+
+Nothing fenced is edited or called (BUILD_RULES §1): none of the fenced files is in the diff, and the diff adds no import of one. No prompt text, no flag, no cron, no schema, no rules.
+
+## 12. Model-visible text (ruling item 7) — checked, no change
+
+`api/_utils/callRecords/callsBlock.js` is the only place call records become prompt text. It reads the open calls and the three resolved states (`:50` `RESOLVED_STATES = hit, expired_unresolved, ended_with_battle`; the queries at `:140-143`). `invalidated` is in neither list, so an invalidated call is **not rendered at all** — the amendment's "an invalidated call is already rendered as such" is looser than that, but its conclusion holds. No template, wording, registry entry or prompt-contributing module changed. The data-dependent effects, both intended: a call minted `exit_not_held` is absent from the chat block's open rows (as any call born invalidated is), and an acknowledgment now refused is never recorded, so it never becomes an `answered:` row. I read this as "no model-visible text changes" and did not stop; say if you read it the other way.
+
+## 13. Tests and the mutation check
+
+| File | Rows |
+|---|---|
+| `api/_utils/callRecords/exitNotHeld.test.js` (new) | 14 — the helper (each tier, crypto, bench, unreadable books, the exit-only guard) and E-1: not held anywhere (both kinds), **held in another tier is not dropped**, held in its slot, precedence, unknown seam, entries untouched, a mixed block, shadow mode |
+| `api/agent/call-response.test.js` | +9 — acknowledgment refused (go and hold), directive refused (unchanged), control, **any tier** (ack lands; the directive keeps its slot-tier check), ordering (expired / already_answered first), identical repeat, entries not asked, unreadable parent, the import is the shared one |
+| `api/agent/call-response.2b.test.js` | +2 — the same, flag on |
+| `src/screens/battleView/exitNotHeld.display.jsdom.test.jsx` (new) | 14 — the tile model (buttons, step, tag, group; hold-default; flag off; any tier; no book; entries and upside; recorded facts keep their tags), the 2a tile, the details sheet and the 2b card mounted, and the screen's wiring |
+| `src/screens/AgentBattleScreen.cockpit2b.jsdom.test.jsx` | +1 — the mounted screen: NVDA leaves the book → no Now card for it, no step, the chip and the opened card say so, nothing posted |
+| Pins moved | `cockpitModel.2b.test.js` (the D-9 table gains its fourth row), `cockpitModel.test.js` (the fact table gains `call:not_held`), `oneDoor.census.test.js` (below) |
+
+Fixtures changed: `AgentBattleScreen.cockpit.jsdom`, `.cockpit.reducedMotion.jsdom` and `.cockpit2b.jsdom` each had an **exit call on MU while their book held no MU** — a Needs-you card for a stock the player did not own, the very thing this fix removes. Each book now holds MU. `oneDoor.census.test.js` failed once in the first full run: its non-vacuity oracle used `answers.js` as the module only the answer endpoint reaches, and the mint (reached by the evaluator) now asks the helper beside it. The oracle is now `callRecords/commands.js` (only `call-response.js` imports it among the roots); the ledger and plays assertions are untouched. It moved once before, for `callActions.js` (#986).
+
+**Mutation check** (19 mutants, one exact replacement each, restored byte for byte; `mutate.mjs` in the scratchpad): **19 of 19 killed.** One survived the first pass (M16) and is killed by a row added for it.
+
+| | Mutant | Killed by |
+|---|---|---|
+| M1–M3 | the mint never applies the rule · precedence flipped · the mint reads `null` instead of the seam book | `exitNotHeld.test.js` |
+| M4 | **slot tier instead of any tier** (the rejected draft) | all three suites (12 rows) |
+| M5 | an unreadable book counts as not held | helper, endpoint, display rows |
+| M6 | entries are asked too | endpoint and display rows (10) |
+| M7 | the support tier is not in the book | endpoint, helper, display rows |
+| M8–M12 | ack check removed · check before the `expired` checks · wrong reason · only `go` refused · reads the call, not the parent | `call-response.test.js`, `.2b.test.js` |
+| M13–M15 | buttons still offered · step still offered · tag never reads it | `exitNotHeld.display.jsdom.test.jsx` |
+| M16 | the tag overrides a recorded event / answer / act / hit | the "recorded stays" row (added) |
+| M17 | the screen never hands the tiles its battle document | the mounted screen row and the wiring pin |
+| M18 | the strip chip keeps "exit" | the mounted card and screen rows |
+| M19 | the D-9 row removed | `cockpitModel.2b.test.js` |
+
+## 14. Verification
+
+Tested tree **`cf5ce476`** (the last code commit; the pushed head adds this report only). It contains `origin/main` `a5c35ba6` (fetched first, and again before the push; main had not moved), so it is the PR merged with current main.
+
+| Check | Result |
+|---|---|
+| **Full suite, Linux** (WSL Ubuntu, Node 20.20.2, `TZ=UTC`, `CI=true`, `--maxWorkers=8`, under `flock /tmp/pd-suite.lock`) | **Exit code 0**, read from `exit-code.txt`: 1,233 files passed, 8 skipped; **27,159 tests passed, 89 skipped, 0 failed**; 335 s |
+| First full run, on `f7c0c1db` | Exit code 1: one row, `oneDoor.census.test.js` (§13). Fixed in `cf5ce476`; the 27,158 + 1 of that run are the 27,159 of this one |
+| `lint:gate` (`eslint . --config eslint.gate.config.js --max-warnings 0`) | Exit 0 on Linux at `cf5ce476`; exit 0 on Windows earlier in the work |
+| `vite build` | Exit 0 on Linux at `cf5ce476` (the chunk-size notice is not new) |
+| Off-golden | `agent-evaluate.callRecords.offGolden.test.js` 27 rows pass; `callRecordsOffGolden.json` is not in the diff. At `'off'` the mint is never built, so its bytes cannot move |
+| The deadline-flake rows (`retire.test.js`, the sibling rows) | None went red, in either run. PR #1010 is already in `main`; this branch edits none of those rows and shares no test file with it |
+| Rules suite (`npm run test:rules`, Windows) | Not run: no rules, indexes or Firestore shapes changed |
+
+The Linux worktree (`~/pd-ci-exit`, a private `git worktree` of the shared clone) has its own `node_modules` from `npm ci`: main's lockfile now carries `three@0.184.0` (Agent form S0), which the shared clone's `node_modules` lacks. The shared clone's HEAD and `node_modules` were not touched.
+
+## 15. Found, not fixed
+
+1. **The League slot label.** The tournament prompt shows no tiers (`agentEvalPromptAssembly.js:1469-1476`) while the declaration schema requires `slot` (`agentEvalToolSchema.js:265-269`): 47% of League exit calls name the wrong tier (§2). Showing the tier touches a fenced assembler; deriving `slot` from the book at mint was Option 2. Not done.
+2. **The false "has already left your book" line.** `battleViewCopy.js:1337` answers any `symbol_not_held` with that sentence. D-4's slot-tier check refuses a directive on a stock held in another tier with that code, so the sentence would be false there. Not reachable from the app while League routing holds (§10); a direct API caller, or the flag turned off, reaches it.
+3. **The routing flag is the only wall.** §10: `LEAGUE_BATTLEVIEW_ROUTING_ENABLED` stays `true`, or the League slot label becomes a live cockpit problem. Its docstring still says "Default OFF (dark)" while the value is `true`, and the line after the declaration (`featureFlags.js:258-259`) is a stray `typeof window … 'leagueRouting' === '1'` expression statement that does nothing — a leftover of the flip, harmless, left alone.
+4. **The amendment's sentence about the calls block** (§12) says an invalidated call "is already rendered as such"; it is not rendered. The conclusion stands; the sentence could be tightened.
+5. **An unreadable parent.** A battle document with no `portfolio` at all is not refused an acknowledgment (it proves nothing, the stance `counterpartUsable` takes). A live battle always has one, and its directive rows already answer `slot_missing`. A row pins it; say if you want it to fail closed.
+6. **Existing tests encoded the bug** (§13): three screen fixtures offered answers on an exit for a stock their book did not hold.
+
+## 16. Review threshold and the PR
+
+This branch changes **19 files** against `origin/main` — 17 code and test files (746 insertions, 18 deletions) plus the amendment and this report — past BUILD_RULES §2's mandatory-review line (≥10 files). The multi-lens adversarial review has **not** been run; the PR says so. What was done instead: the 19-mutant check above, the full Linux suite, `lint:gate` and `vite build` (§14). The PR's first line is "Hold — merge after Amendment E is blessed, after 6 PM ET." Nothing is merged, subscribed to or watched (BUILD_RULES §2).
 
 ## Appendix — every (a) and (b) call
 
