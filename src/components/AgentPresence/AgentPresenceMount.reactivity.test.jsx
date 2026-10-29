@@ -96,3 +96,24 @@ describe('reactivityLevel — the prop the character pane needed', () => {
     expect(typeof seen[0].standing).toBe('number');
   });
 });
+
+// Agent form S1 (the bug fix, its own commit): a battle surface hands the BATTLE document as `agent`, and a
+// battle carries its archetype at agentContext.archetype (agentBattleService.js createAgentBattle). The hook
+// read only `agent.archetype`, so every battle face drew the neutral disposition whatever the archetype.
+describe('disposition — a battle document\'s archetype is read where the battle carries it', () => {
+  it('a battle doc (agentContext.archetype) draws its archetype\'s disposition, not neutral', () => {
+    mount({ reactivityLevel: 'static' });
+    expect(seen[0].disposition).toBe('speculator');
+  });
+
+  it('an agent doc (top-level archetype) still draws its own', () => {
+    mount({ agent: { archetype: 'guardian' } });
+    expect(seen[0].disposition).toBe('capital-preserver');
+  });
+
+  it('the battle doc\'s unknown sentinel and a missing archetype stay neutral', () => {
+    mount({ agent: { agentContext: { archetype: 'unknown' } } });
+    mount({ agent: { agentContext: {} } });
+    expect(seen.map((p) => p.disposition)).toEqual(['neutral', 'neutral']);
+  });
+});

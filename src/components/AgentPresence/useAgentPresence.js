@@ -35,7 +35,11 @@ export function useAgentPresence({ agent, surface, model, duel, command } = {}) 
   // Identity + standing are cheap primitive derivations — computed inline (no memo) so
   // they never over-run or trip exhaustive-deps. Disposition falls back to the your-seat
   // archetype label the arena carries when the surface has no agent doc (the league dock).
-  const disposition = archetypeToDisposition(agent?.archetype ?? (surface === 'league' ? youSeatArch(model) : undefined));
+  // A battle surface passes the BATTLE document as `agent`, and a battle carries its
+  // archetype at agentContext.archetype (agentBattleService.js createAgentBattle), not at
+  // the top level — so every battle face read undefined and drew 'neutral' (agent identity
+  // Phase 0 §2, the side finding; fixed in build S1).
+  const disposition = archetypeToDisposition(agent?.archetype ?? agent?.agentContext?.archetype ?? (surface === 'league' ? youSeatArch(model) : undefined));
   const accent = resolveAccent(agent);
   let standing = 0; // command / identity — honest neutral (no live battle standing here)
   if (surface === 'league') standing = standingFromRank(model?.youRank, seatCountOf(model));
