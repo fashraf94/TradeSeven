@@ -19,7 +19,7 @@
 | 7 | Tests | 8 new test files, rows added to 4 existing ones, and amended guards. **Mutation: 39 of 39 mutants killed**: 31 in the first round, 7 in the second (one survivor, its row strengthened, then killed), and the bug fix's own (§7). `lint:gate` exit 0. Full suite on Linux, on the code head merged with `main`: **27,383 rows, 27,294 pass, 0 fail, 89 skipped.** |
 | 8 | Smoke | `claude/agent-form-s1-smoke` = `c6210846`: both flags on, plus the hub hero's corner readout in S7's format. Preview: https://trade-seven-nkueav6ig-fais-projects-bc179554.vercel.app. (Rebuilt by the size follow-up, with a size dial: §11.9.) |
 | 9 | Review threshold | The code diff is **46 files, +2,009 / −87 lines** (the report and pictures add more), over both BUILD_RULES §2 thresholds, so **a review session runs before merge.** No review is claimed here. |
-| 10 | Battle size follow-up (§11) | The founder's iPhone run found the battle figures a bit small. **Now 60 px on the phone header (was 48) and 90 on the desktop (was 72); 50 in the pane (was 40); 50 / 55 for the floating mark (was 40 / 44).** A tighter framing, used only by the battle views, adds 12 % for bare Shadow (the CPU's core) and 5 % for two sets. Every box grows ×1.25, so the figures read 25–40 % larger. The header grows 5 px on the phone and 16 on the desktop, within the 12 / 16 allowed. Both flags stay `false`; the flag-off build is unchanged. |
+| 10 | Battle size follow-up (§11) | The founder's iPhone run found the battle figures a bit small. **Now 60 px on the phone header (was 48) and 88 on the desktop (was 72; the founder's ruling of October 29, 2026, so the engine keeps its small-form plate-edge brightening — §11.2); 50 in the pane (was 40); 50 / 55 for the floating mark (was 40 / 44).** A tighter framing, used only by the battle views, adds 12 % for bare Shadow (the CPU's core) and 5 % for two sets. Every box grows ×1.22–1.25, so the figures read 22–40 % larger. The header grows 5 px on the phone and 14 on the desktop, within the 12 / 16 allowed. Both flags stay `false`; the flag-off build is unchanged. |
 
 ---
 
@@ -401,9 +401,9 @@ Not committed: the scratch harness (header, glow), the mutant runner and its spe
 |---|---|---|
 | 1 | How full the boxes were | In the calm moods there was room: bare Shadow idle fills 58 % of its box, the Speculator 70 %. But **celebrating's spread uses nearly all of it** (78–88 %), and **two sets already reach the box's edge today**: Trend Follower in five of six moods, the Diversifier when celebrating (§11.1, §11.8). Every mood must fit, so framing could add little. |
 | 2 | The tight framing | A wrapper option only the battle form asks for (`framing="tight"`), through the design's own camera distance. **Bare Shadow (the CPU's core) draws 12 % larger; Contrarian and Fundamental Investor 5 %; the other four sets keep the design's framing.** The hub, the lab and S0's stills are pixel-identical to before (56 hub frames and 56 stills compared; a control shows the check sees the framing). |
-| 3 | The boxes | Arena header: **60 px on the phone (was 48), 90 on the desktop (was 72)**, player and CPU alike. Pane header: **50 (was 40)**. Floating mark: **50 on the phone (was 40), 55 on the desktop (was 44)**. |
-| 4 | How much larger they read | **×1.25 to ×1.40 at every site**, depending on the form (bare Shadow most). The CPU's copper core reads as a 67 px form on the phone and a 101 px one on the desktop; a set reads as 60–63 and 90–95 (§11.2). |
-| 5 | The header | **Phone 96 → 101 px (+5), desktop 120 → 136 (+16)**, with long gated scores 113 → 118 and 139 → 155: within the 12 / 16 px allowed. No overlap, no horizontal overflow at 320, 360, 390 and 1280. Every name, score, "CPU" and the VS block keeps its horizontal place (§11.3). |
+| 3 | The boxes | Arena header: **60 px on the phone (was 48), 88 on the desktop (was 72; the build first took 90, and the founder ruled 88 at the review)**, player and CPU alike. Pane header: **50 (was 40)**. Floating mark: **50 on the phone (was 40), 55 on the desktop (was 44)**. |
+| 4 | How much larger they read | **×1.22 to ×1.40 at every site**, depending on the form (bare Shadow most). The CPU's copper core reads as a 67 px form on the phone and a 99 px one on the desktop; a set reads as 60–63 and 88–93 (§11.2). |
+| 5 | The header | **Phone 96 → 101 px (+5), desktop 120 → 134 (+14)**, with long gated scores 113 → 118 and 139 → 153: within the 12 / 16 px allowed. No overlap, no horizontal overflow at 320, 360, 390 and 1280. Every name, score, "CPU" and the VS block keeps its horizontal place (§11.3). |
 | 6 | Flag-off identity | Unchanged: against `main`, the one bug-fix line; against the S1 head, no file differs even unmasked (§11.5). |
 | 7 | Rows and mutation | 4 new rows, 6 changed. **18 of 18 mutants killed**, among them the three asked for: the framing applied to the hub (four ways), a site losing its new size (four sites), the phone header growing past its allowance (§11.6). |
 | 8 | Checks | `lint:gate` exit 0. Full suite on Linux, under the suite lock, at the code head: **27,387 rows, 27,298 pass, 0 fail, 89 skipped** (§11.7). |
@@ -458,18 +458,18 @@ One table holds the sizes (`battleView/battleAgentFormSlot.jsx:57` `BATTLE_FORM_
 | Site | Before | After | Footprint (the room it takes) | Larger by: four sets / Contrarian, Fundamental / bare Shadow | Reads as (today's framing) |
 |---|---|---|---|---|---|
 | Arena header, phone (player and CPU) | 48 px | **60 px** | 40 × 40 → **40 × 48**: today's width, so long scores keep their room | ×1.25 / ×1.31–1.32 / **×1.40** | 60 / 63 / 67 px |
-| Arena header, desktop | 72 px | **90 px** | 72 × 56 → **72 × 72** | ×1.25 / ×1.31–1.32 / **×1.40** | 90 / 94–95 / 101 px |
+| Arena header, desktop | 72 px | **88 px** (the founder's ruling; the build first took 90) | 72 × 56 → **72 × 70** | ×1.22 / ×1.28 / **×1.37** | 88 / 92–93 / 99 px |
 | Pane header | 40 px | **50 px** | 36 × 36, unchanged | ×1.25 / ×1.31 / ×1.40 | 50 / 53 / 56 px |
 | Floating mark, phone | 40 px | **50 px** | the tap target 48 → **50** | ×1.25 / ×1.31 / ×1.40 | 50 / 53 / 56 px |
 | Floating mark, desktop | 44 px | **55 px** | the tap target 48 → **55** | ×1.25 / ×1.31 / ×1.40 | 55 / 58 / 62 px |
 
 "Larger by" is the drawn figure's size after over before: the box's growth times the framing's. "Reads as" is the box that would draw the same figure at today's framing. The player's figure is a set, or bare Shadow when the battle carries no archetype; the CPU's is always bare Shadow in copper.
 
-**Against the target** (a figure about a third to a half larger, about 64 px on the phone and 96 on the desktop): bare Shadow, so the CPU everywhere, is there (×1.40, reading 67 and 101). Contrarian and Fundamental Investor come close (×1.31–1.32, reading 63 and 94–95). The other four sets get ×1.25 (60 and 90).
+**Against the target** (a figure about a third to a half larger, about 64 px on the phone and 96 on the desktop): bare Shadow, so the CPU everywhere, is there (×1.37–1.40, reading 67 and 99). Contrarian and Fundamental Investor come close (×1.28–1.32, reading 63 and 92–93). The other four sets get ×1.22–1.25 (60 and 88).
 
 **What going further would cost:**
 - **Phone, 64 px:** the box needs 4 px more width. Either it touches the screen's edge and the name (no clearance left), or its footprint widens to 44 px. A wider footprint moves the name and score 4 px right, leaves a long gated score at 360 px 3.4 px from the centre column (7.4 px today), and makes the overlap at 320 px that predates S1 (§4) 4 px worse. The height would fit (+9 px).
-- **Desktop, 96 px:** the header would grow 22 px (18 with the box touching the header's top and the bar), over the 16 allowed. **90 px is the most the allowance holds with the 2 px clearances (16 px of growth), so this build takes it.** One cost comes with it: from 90 px the engine stops brightening a small form's edges (×1.4) and rims (×1.5), so the armor draws a little dimmer-edged. Measured side by side in headless Edge, the plates' mean brightness is about 5 % lower than at 88 (Speculator 113 → 107, Contrarian 117 → 112, out of 255); bare Shadow, which has no plates, is unchanged. **88 px is the alternative** if the founder prefers the brighter edges: 2 px smaller, 14 px of growth, a small table change (`BATTLE_FORM_PX.arena.desktop`: box 88, 8 px over each side) and its row.
+- **Desktop, 96 px:** the header would grow 22 px (18 with the box touching the header's top and the bar), over the 16 allowed. **90 px is the most the allowance holds with the 2 px clearances (16 px of growth), and the build first took it.** One cost comes with it: from 90 px the engine stops brightening a small form's edges (×1.4) and rims (×1.5), so the armor draws a little dimmer-edged. Measured side by side in headless Edge, the plates' mean brightness is about 5 % lower than at 88 (Speculator 113 → 107, Contrarian 117 → 112, out of 255); bare Shadow, which has no plates, is unchanged. **The founder ruled 88 px** (October 29, 2026, at the S1 review), for the brighter edges: 2 px smaller, 14 px of growth, the table change (`BATTLE_FORM_PX.arena.desktop`: box 88, 8 px over each side) and its row, applied by the review session in its own commit. The tables of this section give the 88 px numbers; the review re-measured the header (§11.3).
 - **Pane, above 52 px:** the overhang would pass the 2 px clearance to the name (the gap is 10 px).
 - **Mark:** the 55 px desktop mark already covers 31 % more of the board below it than the 48 px button did. The phone mark covers 8.5 % more.
 
@@ -484,11 +484,11 @@ Headless Edge, 2×, reduced motion (stills, for a steady picture); the real `Are
 | 320 | 96 → 96 → **101** | 113 → 113 → **118** | 60 px (40 × 48) | none |
 | 360 | 96 → 96 → **101** | 113 → 113 → **118** | 60 px (40 × 48) | none |
 | 390 | 96 → 96 → **101** | 113 → 113 → **118** | 60 px (40 × 48) | none |
-| 1280 | 120 → 120 → **136** | 139 → 139 → **155** | 90 px (72 × 72) | none |
+| 1280 | 120 → 120 → **134** | 139 → 139 → **153** | 88 px (72 × 70) | none |
 
-- **Growth:** 5 px on the phone (allowed 12), 16 on the desktop (allowed 16).
-- **Positions:** every name, score, "CPU" and the VS block keeps its x, to the tenth of a pixel. (The score's own width varies by a pixel or two between captures: the number is caught mid-count, on `main` too.) The row's text moves down by half the growth (2.5 px, 8 px); the comparison label, the bar and the turn line by the growth.
-- **Clearances:** each box is 2 px below the header's top and 2 px above the bar (or the label row). On the phone it is 2 px from the screen's side and 2 px from the name or the CPU's label column; on the desktop, 15 px and 3 px.
+- **Growth:** 5 px on the phone (allowed 12), 14 on the desktop (allowed 16). (At the build's first 90 px the desktop grew 16: 120 → 136 and 139 → 155. The 88 px numbers above were re-measured by the review session in the same harness: headless Edge 2×, reduced motion.)
+- **Positions:** every name, score, "CPU" and the VS block keeps its x, to the tenth of a pixel. (The score's own width varies by a pixel or two between captures: the number is caught mid-count, on `main` too.) The row's text moves down by half the growth (2.5 px, 7 px); the comparison label, the bar and the turn line by the growth.
+- **Clearances:** each box is 2 px below the header's top and 2 px above the bar (or the label row). On the phone it is 2 px from the screen's side and 2 px from the name or the CPU's label column; on the desktop, 16 px and 4 px.
 - **Overlap:** none new. At 320 px with long gated scores the player's score already reaches the centre column ("DAY 3 OF 5"): on `main`, on S1 and now, at the same x (§4).
 
 Long gated scores at 360, before (the S1 head, flags on):
@@ -544,7 +544,7 @@ The new code is either inside the flagged branches, which fold away, or in the w
 | `AgentForm.s1.jsdom.test.jsx` | +3 | `agentFormSpec`: no zoom unless the tight framing is asked for (every form, both allegiances, four other values), then the measured table; the wrapper mounts and patches with the zoom, and without it mounts with none and patches the engine's 1; a source scan: of the three files that draw the wrapper (the hub hero, the lab, the battle form), only `BattleAgentForm.jsx` asks for a framing, and the scan sees a planted one |
 | `BattleAgentForm.jsdom.test.jsx` | 2 changed | the player and the CPU are handed `framing: 'tight'`; the CPU's spec carries zoom .9 |
 | `HubAgentForm.jsdom.test.jsx` | 1 changed | the hub hands the form no framing |
-| `battleAgentForm.sites.render.test.jsx` | 3 changed, +1 | the arena boxes (90 / 60, each side's overhang, the outer side toward the screen's edge); the pane (50 over 36, 7 px a side, both shells, its clearances, `PANE_HEADER_FIXED_PX`); the mark (55 / 50, the 48 px tap floor). New: the arena footprint keeps today's width; the clearances, read from the header's own paddings and gaps in the rendered HTML; the header's growth bounded by the allowance |
+| `battleAgentForm.sites.render.test.jsx` | 3 changed, +1 | the arena boxes (88 / 60 after the founder's ruling, each side's overhang, the outer side toward the screen's edge); the pane (50 over 36, 7 px a side, both shells, its clearances, `PANE_HEADER_FIXED_PX`); the mark (55 / 50, the 48 px tap floor). New: the arena footprint keeps today's width; the clearances, read from the header's own paddings and gaps in the rendered HTML; the header's growth bounded by the allowance |
 | `BattleAgentForm.jsdom.test.jsx`, `BattleAgentForm.failure.jsdom.test.jsx` | waits | the polls that wait for the lazy form to appear now wait up to 3 s (were 100 ms), ending as soon as it shows (§11.7). S1's five mutants killed by these files' rows (OPP-1, OPP-2, FIELD-1, BOUND-1, CATCH-1) were re-run: all still killed |
 
 **The growth row is an upper bound.** jsdom lays nothing out. So the row bounds the growth by the new footprint height less the one that left the header as `main`'s: S1's 40 px phone footprint, and the 56 px desktop face. The bounds are 8 and 16 px, against 12 and 16 allowed. Headless Edge measures the real growth: 5 and 16 px.
@@ -594,7 +594,8 @@ On `claude/agent-form-s1`:
 - `7ed271b9`: the bigger battle forms at the three sites, with their rows;
 - `fb740dda`: the battle form rows' longer waits for the lazy chunk (tests only);
 - `950104b5`: the desktop header's forms at 90 px, the most the allowance holds (the code head);
-- then this section, the founder's rulings, the §8 result, the §9 note and the six pictures (docs only).
+- then this section, the founder's rulings, the §8 result, the §9 note and the six pictures (docs only);
+- then, from the review session, "founder ruling: desktop arena form 88 px": `BATTLE_FORM_PX.arena.desktop` box 88, 8 px over each side, with its rows and this section's 88 px numbers (the review re-measured the header: 1280 px 134 / 153).
 
 The code diff against `main` is now **46 files, +2,166 / −91 lines** (this follow-up: 12 files, +207 / −54), so the review threshold of §2 still applies; the Fable review runs on this code next.
 

@@ -49,14 +49,15 @@ export function duelScores({ comparison, playerScore, opponentScore, agentBattle
  * and the score, and the bar (the S1 size follow-up; measured in headless Edge, the S1 report §11).
  *   arena    the header's two forms; `outer` is the screen's side (the player's left, the CPU's right), `inner` the
  *            name's. Phone: 60 px in today's 40 px wide footprint, so a long score keeps its room; the row grows 5 px.
- *            Desktop: 90 px in today's 72 px wide footprint; the row grows 16, all the room allowed. (From 90 px the
- *            engine no longer brightens a small form's edges and rims; 88 would keep that, 2 px smaller.)
+ *            Desktop: 88 px in today's 72 px wide footprint; the row grows 14 of the 16 allowed. The founder's ruling
+ *            (October 29, 2026): 88, not 90, because under 90 px the engine still brightens a small form's plate
+ *            edges (×1.4) and rims (×1.5); at 90 the plates drew about 5 % dimmer (the S1 report §11.2).
  *   pane     the pane header's form, over today's 36 px box (PANE_FACE_PX), so the header's fixed cost and the F2
  *            thresholds that read it stand.
  *   mark     the floating mark's form; the tap target grows with it past 48.
  */
 export const BATTLE_FORM_PX = {
-  arena: { phone: { box: 60, outer: 14, inner: 6, top: 8, bottom: 4 }, desktop: { box: 90, outer: 9, inner: 9, top: 12, bottom: 6 } },
+  arena: { phone: { box: 60, outer: 14, inner: 6, top: 8, bottom: 4 }, desktop: { box: 88, outer: 8, inner: 8, top: 12, bottom: 6 } },
   pane: { box: 50 },
   mark: { phone: 50, desktop: 55 },
 };
