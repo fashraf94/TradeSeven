@@ -18,9 +18,10 @@
 // doc — prior day's brief stays until next successful run.
 //
 // DRB stale fix (Oct 29 2026): every answer logs its stop_reason and usage.
-// Only a missing or empty brief fails the run: an answer cut off before
-// `themes` (or `keyEvents`) still keeps the day, storing [] for the lost
-// field and naming the loss in sourceFailures (readBriefAnswer).
+// Only a brief that is missing, empty or itself cut off at the output cap
+// (not intact) fails the run: an answer cut off before `themes` (or inside
+// `keyEvents`) still keeps the day, storing [] or the whole entries for the
+// cut field and naming the loss in sourceFailures (readBriefAnswer).
 
 import Anthropic from '@anthropic-ai/sdk';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -126,16 +127,16 @@ export function answerShapeOf(response) {
 }
 
 /**
- * The stored fields from the model's answer (founder ruling Oct 29 2026: only a missing or empty brief fails the run).
- * Throws when there is no tool call, the brief is missing or empty, or the answer was cut off at the output cap inside
- * the brief — a cut brief is not intact. Otherwise the day is kept and each loss is named in `failures` (added to the
- * document's sourceFailures):
+ * The stored fields from the model's answer (founder ruling Oct 29 2026: an answer with an intact brief is kept; only a
+ * missing or empty brief fails the run). Throws when there is no tool call, the brief is missing or empty, or the answer
+ * was cut off at the output cap inside the brief — a cut brief is not intact (founder question FQ-2 in the build report).
+ * Otherwise the day is kept and each loss is named in `failures` (added to the document's sourceFailures):
  *   output-max-tokens      the answer stopped at the output cap (stop_reason max_tokens)
  *   themes-truncated       `themes` was not an array of strings; stored as []
  *   themes-incomplete      the cut fell inside `themes`: its last, possibly partial, theme was dropped
  *   key-events-truncated   `keyEvents` was not an array; stored as []
- *   key-events-incomplete  the cut fell inside `keyEvents`: its last, possibly partial, event was dropped, with any
- *                          event of the cut answer that lacks a field the schema requires
+ *   key-events-incomplete  the cut fell inside `keyEvents` (its last, possibly partial, event dropped), or an event of
+ *                          the cut answer lacked a field the schema requires and was dropped
  * Where the cut fell is read from the answer's key order (the order the model wrote its fields in). A complete answer's
  * events are stored as they came, as before.
  */
@@ -162,7 +163,7 @@ export function readBriefAnswer(response) {
   let keyEvents = [];
   if (Array.isArray(input.keyEvents)) {
     keyEvents = cut ? (cutField === 'keyEvents' ? input.keyEvents.slice(0, -1) : input.keyEvents).filter(isCompleteEvent) : input.keyEvents;
-    if (keyEvents.length < input.keyEvents.length) failures.push('key-events-incomplete');
+    if (cutField === 'keyEvents' || keyEvents.length < input.keyEvents.length) failures.push('key-events-incomplete');
   } else {
     failures.push('key-events-truncated');
   }
@@ -170,7 +171,7 @@ export function readBriefAnswer(response) {
   let themes = [];
   if (Array.isArray(input.themes) && input.themes.every((t) => typeof t === 'string')) {
     themes = cutField === 'themes' ? input.themes.slice(0, -1) : input.themes;
-    if (themes.length < input.themes.length) failures.push('themes-incomplete');
+    if (cutField === 'themes') failures.push('themes-incomplete');
   } else {
     failures.push('themes-truncated');
   }

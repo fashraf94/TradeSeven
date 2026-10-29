@@ -235,6 +235,18 @@ describe('(c) only a missing or empty brief fails, and a failed run never overwr
     expect(state.set).not.toHaveBeenCalled();
   });
 
+  it('a create() that throws at once fails the run and leaves no timer behind to reject later', async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TODAY}T12:30:00Z`));
+    state.create = vi.fn(() => { throw new Error('bad request'); });
+    const r = await run();
+    expect(r.statusCode).toBe(500);
+    expect(r.body.error).toBe('bad request');
+    expect(state.set).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('a brief already stored for today is not regenerated', async () => {
     state.existing = { forDate: TODAY, dailyBrief: 'x' };
     const r = await run();
@@ -266,6 +278,13 @@ describe('readBriefAnswer — the reader on its own', () => {
     expect(read.keyEvents).toEqual([EVENT, EVENT2]);
     expect(read.themes).toEqual(FULL.themes);
     expect(read.failures).toEqual(['output-max-tokens', 'key-events-incomplete']);
+  });
+
+  it('a cut that falls inside a field is named even when nothing was left to drop', () => {
+    expect(readBriefAnswer(answer({ brief: FULL.brief, keyEvents: [EVENT], themes: [] }, { stop: 'max_tokens' })))
+      .toEqual({ brief: FULL.brief, keyEvents: [EVENT], themes: [], failures: ['output-max-tokens', 'themes-incomplete'] });
+    expect(readBriefAnswer(answer({ brief: FULL.brief, keyEvents: [] }, { stop: 'max_tokens' })))
+      .toEqual({ brief: FULL.brief, keyEvents: [], themes: [], failures: ['output-max-tokens', 'key-events-incomplete', 'themes-truncated'] });
   });
 
   it('keeps an event without its optional eventTime, cut or not', () => {

@@ -212,11 +212,16 @@ describe('the instructions: the most important events, up to 10, and still none 
     expect(systemPrompt).toMatch(/copy the eventDate verbatim/);
   });
 
-  it('makes no size claim it cannot back: the feed sends no market cap, so nothing says "largest"', () => {
-    const { userPrompt } = build({ thisWeekEarnings: earningsWeek(12) });
-    for (const text of [systemPrompt, userPrompt, keyEventsDescription]) expect(text).not.toMatch(/largest|biggest/i);
-    expect(userPrompt).toMatch(/=== EARNINGS — THIS WEEK \(mega-cap only, at most 8, priority names first\) ===/);
-    expect(userPrompt).toMatch(/=== EARNINGS — NEXT WEEK \(preview, at most 5, priority names first\) ===/);
+  it('makes no size or rank claim it cannot back: the feed sends no market cap, and the lines are in date order, as the headers say', () => {
+    const { userPrompt } = build({ thisWeekEarnings: earningsWeek(12), nextWeekEarnings: earningsWeek(9, { prefix: 'N' }) });
+    for (const text of [systemPrompt, userPrompt, keyEventsDescription]) expect(text).not.toMatch(/largest|biggest|first\)/i);
+    expect(userPrompt).toMatch(/=== EARNINGS — THIS WEEK \(mega-cap only, at most 8, in date order\) ===/);
+    expect(userPrompt).toMatch(/=== EARNINGS — NEXT WEEK \(preview, at most 5, in date order\) ===/);
+    for (const heading of ['EARNINGS — THIS WEEK', 'EARNINGS — NEXT WEEK']) {
+      const dates = section(userPrompt, heading).filter((l) => l.startsWith('- ')).map((l) => l.slice(2, 12));
+      expect(dates.length, heading).toBeGreaterThan(1);
+      expect(dates, heading).toEqual([...dates].sort());
+    }
   });
 
   it('the count line is not a bullet, so it cannot read as one more calendar line', () => {

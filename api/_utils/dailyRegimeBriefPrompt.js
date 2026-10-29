@@ -271,10 +271,10 @@ ${renderEconEvents(thisWeekEvents)}
 === ECONOMIC CALENDAR — NEXT WEEK (preview) ===
 ${renderEconEventsPreview(nextWeekEvents, 5)}
 
-=== EARNINGS — THIS WEEK (mega-cap only, at most ${THIS_WEEK_EARNINGS_LIMIT}, priority names first) ===
+=== EARNINGS — THIS WEEK (mega-cap only, at most ${THIS_WEEK_EARNINGS_LIMIT}, in date order) ===
 ${renderEarnings(thisWeekEarnings, THIS_WEEK_EARNINGS_LIMIT)}
 
-=== EARNINGS — NEXT WEEK (preview, at most ${NEXT_WEEK_EARNINGS_LIMIT}, priority names first) ===
+=== EARNINGS — NEXT WEEK (preview, at most ${NEXT_WEEK_EARNINGS_LIMIT}, in date order) ===
 ${renderEarningsPreview(nextWeekEarnings, NEXT_WEEK_EARNINGS_LIMIT)}
 
 Synthesize a daily regime brief. Use the submit_daily_regime_brief tool.`;
