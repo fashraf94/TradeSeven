@@ -153,6 +153,26 @@ describe('Astra\'s B2.1 review §4 item 2 (R-1) — a stored instant in a data-t
     // and the clock and date forms in a data-time span stay times, as before
     expect(sweepNumbers(box('<span data-time="">2:15 PM · Sep 22</span>'), { tape })).toEqual([]);
   });
+
+  it('review AL3-2: only the instant\'s own shape is a time — a digit run that merely ends in Z bites in a data-time span; every toISOString form, with or without seconds and milliseconds, is exempt', () => {
+    const tape = kept();
+    for (const loose of ['2026-09-22T47.5Z', '2026-09-22T9Z', '2026-09-22T1.5:47.3Z']) {
+      expect(sweepNumbers(box(`<span data-time="">${loose}</span>`), { tape }), loose).toEqual([`stray digit: “${loose}”`]);
+    }
+    for (const instant of [PRESERVED, '2026-09-22T02:15:30Z', '2026-09-22T02:15Z', '2026-09-22T02:15:30.5Z']) {
+      expect(sweepNumbers(box(`<span data-time="">${instant}</span>`), { tape }), instant).toEqual([]);
+    }
+  });
+
+  it('review AL3-1: an attribute is always the screen\'s — a raw stored instant in an aria-label or a title bites, with or without its fraction; the attribute\'s clocks and dates stay times', () => {
+    const tape = kept();
+    for (const value of [PRESERVED, `Preserved from ${PRESERVED}`, '2026-09-22T02:15:30Z']) {
+      for (const attr of ['aria-label', 'title']) {
+        expect(sweepNumbers(box(`<button ${attr}="${value}">x</button>`), { tape }), `${attr} ${value}`).toEqual([`stray digit in ${attr}: “${value}”`]);
+      }
+    }
+    expect(sweepNumbers(box('<button aria-label="Check at 2:15 PM · Sep 22">x</button>'), { tape })).toEqual([]);
+  });
 });
 
 describe('B2.1 A8 (A2F1-7) — the fixed-digit copy is exempt by its copy key, whole, never by a phrase found inside other text', () => {

@@ -200,10 +200,16 @@ export function storedNoteDefects(container, docs = {}) {
 export const TEXT_ATTRIBUTES = Object.freeze(['aria-label', 'title', 'aria-description', 'aria-roledescription', 'aria-valuetext', 'aria-placeholder', 'alt', 'placeholder']);
 const TEXT_ATTRIBUTE_SELECTOR = TEXT_ATTRIBUTES.map((a) => `[${a}]`).join(', ');
 
-// The whole ISO instant FIRST (Astra's B2.1 review §4 item 2, R-1): the clock pattern run before it consumed the
-// instant's "15:30" and left "2026-09-22T02: .000Z", which the ISO pattern could no longer match — a stored instant in a
-// data-time span (coverage's preservedFrom) read as a stray digit. Applied in this order in text and in attributes.
-const TIME_PATTERNS = [/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, /\b\d{1,2}:\d{2}( (AM|PM))?\b/g, /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/g, /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}\b/g];
+/** The screen's clock and date forms: "2:15 PM", "Tue, Sep 22, 2026", "Sep 22". */
+const CLOCK_AND_DATE_PATTERNS = [/\b\d{1,2}:\d{2}( (AM|PM))?\b/g, /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/g, /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}\b/g];
+// A data-time span's text: the whole ISO instant FIRST (Astra's B2.1 review §4 item 2, R-1) — the clock pattern run
+// before it consumed the instant's "15:30" and left "2026-09-22T02: .000Z", which the ISO pattern could no longer match,
+// so a stored instant in a data-time span (coverage's preservedFrom) read as a stray digit. The instant's own shape
+// only (review AL3-2): date, hours and minutes, optional seconds and milliseconds, Z.
+const TIME_PATTERNS = [/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?Z/g, ...CLOCK_AND_DATE_PATTERNS];
+// An attribute is always the screen's (R7; Astra B2): its clocks and dates are times, but never a raw stored instant —
+// no ISO form in an aria-label or a title (review AL3-1; the old order flagged a `.sssZ` instant there by accident).
+const ATTRIBUTE_TIME_PATTERNS = CLOCK_AND_DATE_PATTERNS;
 /**
  * The fixed copy that spells a digit — the class labels' bar widths, the quote-delay notes, an evidence field's name —
  * BOUND BY COPY KEY (B2.1 A8, A2F1-7; Amendment J RJ-6): each copy entry that holds one, PINNED HERE by its key with its
@@ -521,7 +527,7 @@ export function sweepNumbers(container, docs) {
       // no stored-string exemption in an attribute: an attribute is always the screen's (R7; Astra B2) — a fixed-digit
       // copy entry, whole, bound by its key (A2F1-7), is the screen's own fixed phrase
       if (isFixedDigitCopy(text)) continue;
-      for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
+      for (const re of ATTRIBUTE_TIME_PATTERNS) text = text.replace(re, ' ');
       if (/\d/.test(text)) bad.push(`stray digit in ${attr}: “${el.getAttribute(attr).slice(0, 80)}”`);
     }
   }

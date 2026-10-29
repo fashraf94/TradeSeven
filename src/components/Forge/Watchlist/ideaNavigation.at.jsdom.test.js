@@ -15,6 +15,10 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { OPEN_BATTLE_REVIEW_EVENT, requestOpenBattleReview, battleReviewAtOf } from './ideaNavigation';
+// review AL3-3: the server counter keeps a day by isEtDate; P1c's file holds its own copy of the check (importing the
+// tape schedule there would add a line outside B2.1's `at` check and pull the market calendar into a Forge helper), so
+// this test pins the two to agree
+import { isEtDate } from '../../../utils/tapeSchedule';
 
 const BATTLE = Object.freeze({ id: 'b-other', ownerId: 'owner-1', status: 'completed' });
 const MOMENT = Object.freeze({ situationId: 'stalled', symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5, from: '2026-09-25T14:00:00.000Z', to: '2026-09-25T14:30:00.000Z', checks: 2 });
@@ -84,6 +88,7 @@ describe('B2.1 B2 — the open event\'s optional day and moment, additive to P1c
       { etDate: '2026-00-10', moment: MOMENT },
       { etDate: '2026-09-00', moment: MOMENT },
       { etDate: '2026-09-25', moment: { ...MOMENT, fromTickSeq: 1, toTickSeq: 0 } },
+      { etDate: '0026-09-25', moment: MOMENT },   // review AL3-4: a year before 100 — Date.UTC reads it as 19xx, so it is no such date
     ];
     for (const at of bad) {
       events = [];
@@ -113,6 +118,21 @@ describe('B2.1 B2 — the open event\'s optional day and moment, additive to P1c
       requestOpenBattleReview(BATTLE, at);
       expect(events[0].at, JSON.stringify(at)).toEqual({ etDate: at.etDate, moment });
     }
+  });
+
+  it('review AL3-3: the day check agrees with the tape schedule\'s isEtDate — the check the server counter keeps its days by — over every month and day of a leap, a common, a century and a 1900s year, and a pre-100 year', () => {
+    const MOMENT_ONLY = { etDate: null, moment: MOMENT };
+    let checked = 0;
+    for (const y of ['0026', '1999', '2000', '2026', '2028', '2100']) {
+      for (let mo = 0; mo <= 13; mo += 1) {
+        for (let d = 0; d <= 32; d += 1) {
+          const etDate = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          expect(battleReviewAtOf({ ...MOMENT_ONLY, etDate }, 'b-other') !== null, etDate).toBe(isEtDate(etDate));
+          checked += 1;
+        }
+      }
+    }
+    expect(checked).toBe(6 * 14 * 33);
   });
 
   it('battleReviewAtOf: the checked day and moment for one battle, or null', () => {

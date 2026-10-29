@@ -1,7 +1,7 @@
 // src/App.filmRoomForge.source.test.js
 //
-// Film Room B2.1 B1 (Build B Amendment H RH-1; Amendment J RJ-8) — the card
-// form's Set opens the Forge on its Character area, where the tempo dial is,
+// Film Room B2.1 B1 (Build B Amendment H RH-1; Amendment J RJ-8) — Set on a
+// filed card's receipt (Amendment K RK-3) opens the Forge on its Character area, where the tempo dial is,
 // through App's EXISTING door (the hub's S5 onOpenForge), and closing the
 // Forge returns to the Film Room. App.jsx is rendered by one suite only, at
 // desktop width (BUILD_RULES §2), so the wiring is pinned by its source, as the

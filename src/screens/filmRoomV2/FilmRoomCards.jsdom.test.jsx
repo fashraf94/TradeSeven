@@ -981,7 +981,8 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
   /**
    * Amendment L RL-1 — Set on a casual clone's battle (RK-1's fixture): the clone's document names the ranked agent as
    * its parent; the battle document and its tape days name the clone. The card files under the parent (RK-1), so the
-   * card's own agentId — and the counter's — is a RANKED agent: only the battle's own agent tells the clone apart.
+   * card's own agentId — and the counter's attributionAgentId — is a RANKED agent: only the battle's own agent tells
+   * the clone apart (review AL1-2: the counter's `agentId` is the agent it was asked about, the clone).
    */
   async function setOnClone(tape, onOpenForge, opts = {}) {
     t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
@@ -1058,7 +1059,7 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
     await sweepAll(fx.tape2, 'ranked, no tempo');
   });
 
-  it('Amendment L RL-1 — a casual clone\'s battle with no tempo recorded: RK-2\'s sentence on the form and the receipt, and no link anywhere — though the card files under the RANKED parent (the mutants: the link shown on a clone with no tempo; RL-1 reading the resolved parent, the card\'s or the counter\'s agent, instead of the battle\'s own)', async () => {
+  it('Amendment L RL-1 — a casual clone\'s battle with no tempo recorded: RK-2\'s sentence on the form and the receipt, and no link anywhere — though the card files under the RANKED parent (the mutants: the link shown on a clone with no tempo; RL-1 reading the resolved parent, the card\'s agentId or the counter\'s attributionAgentId, instead of the battle\'s own)', async () => {
     await setOnClone(fx.tape2, () => {}, { file: false });
     expect(formSet()).toBe(NO_TEMPO);
     // review KRT-3: Set's words are Set's alone — Watch and Practice keep RG-5's sentences

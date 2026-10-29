@@ -472,9 +472,11 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
       </>
     );
   }
-  // FR-02 / RJ-2, for the all-symbols grid: the series section's "complete" never stands beside a symbol shown with no
-  // series — that symbol says its own state instead (NoChart). A section that is NOT complete keeps its line and its
-  // stored reason. (The one-symbol section never shows the section's line at all — Amendment L RL-3, below.)
+  // FR-02 / RJ-2, for the all-symbols grid, once the series is READ (status ready): the series section's "complete"
+  // never stands beside a symbol shown with no series — that symbol says its own state instead (NoChart). A section
+  // that is NOT complete keeps its line and its stored reason. While the read is pending or after it failed, the grid
+  // keeps the section's line and each tile says NoChart's sentence, as before this round (review AL2-4; asked in the
+  // build report §14). The one-symbol section never shows the section's line at all — Amendment L RL-3, below.
   const sectionLine = (uncharted) => (uncharted && seriesState?.status === 'ready' && tape.coverage?.series?.status === 'complete' ? null : ['coverage', 'series']);
   // Build B Amendment K RK-11: a CHARTED symbol speaks for itself — "Chart recorded for {symbol}" in the coverage line's
   // place, never the series section's status beside one symbol's chart (Glance's coverage line keeps the status and

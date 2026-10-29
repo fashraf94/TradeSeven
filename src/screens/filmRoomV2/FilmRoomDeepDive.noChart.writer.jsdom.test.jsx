@@ -16,7 +16,7 @@
 // only the writer flag is mocked on (spreading the real module).
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import React from 'react';
+import React, { act } from 'react';
 
 vi.mock('../../config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -55,6 +55,11 @@ async function deepAt(tape, series, sym, { desktop = false } = {}) {
   m.click(m.tab('Deep dive')); await m.flush();
   m.click(m.qa('[data-region="symbol-picker"] button').find((x) => x.textContent === sym)); await m.flush();
 }
+/**
+ * The series section's line in a section: its own coverage line (a direct child) or the series note bound by path —
+ * never the evidence overlay's coverage, nested in the body (review AL2-2).
+ */
+const seriesLineIn = (sec) => sec.querySelector(':scope > [data-coverage], [data-stored-note="coverage.series.note"]');
 const docsOf = (tape, series) => ({ tape, battle: battleOf(tape), ...Object.fromEntries(series.map((s) => [`series:${s.symbol}`, s])) });
 const clean = (docs, where) => {
   expect(sweepNumbers(m.container, docs), where).toEqual([]);
@@ -70,16 +75,17 @@ describe('FR-02 — a symbol with no series: its own state, never the section\'s
     await deepAt(sep23Tape, sep23Series, 'BTC');
     const sec = m.q('#deep-chart');
     expect(sec.querySelector('[data-no-chart="BTC"]').textContent).toBe('No chart for BTC: crypto is not charted.');
-    expect(sec.querySelector('[data-coverage]')).toBeNull();
+    expect(seriesLineIn(sec)).toBeNull();
     expect(sec.textContent).not.toMatch(/\bcomplete\b/);
     expect(m.q('[data-region="price-chart"]')).toBeNull();
     expect(sec.textContent).not.toContain(COPY.evidenceOverlayNote);
     clean(docsOf(sep23Tape, sep23Series), 'BTC');
   });
 
-  it('a charted symbol on the same day keeps the section\'s "complete" line (the control)', async () => {
+  it('a charted symbol on the same day reads its own line, "Chart recorded for INTC", never the series section\'s status (Amendment K RK-11, Amendment L RL-3; review AL2-2: the row once read the evidence overlay\'s coverage as the section\'s)', async () => {
     await deepAt(sep23Tape, sep23Series, 'INTC');
-    expect(m.q('#deep-chart [data-coverage]').getAttribute('data-coverage')).toBe('complete');
+    expect(m.q('#deep-chart > [data-chart-recorded]').textContent).toBe('Chart recorded for INTC');
+    expect(seriesLineIn(m.q('#deep-chart'))).toBeNull();
     expect(m.q('[data-region="price-chart"]')).not.toBeNull();
   });
 
@@ -89,7 +95,7 @@ describe('FR-02 — a symbol with no series: its own state, never the section\'s
     await deepAt(t, sep23Series, 'BTC');
     expect(m.q('[data-no-chart="BTC"]').textContent).toBe('No chart was recorded for this symbol.');
     expect(m.q('[data-no-chart="BTC"]').getAttribute('data-no-chart-reason')).toBe('none');
-    expect(m.q('#deep-chart [data-coverage]')).toBeNull();
+    expect(seriesLineIn(m.q('#deep-chart'))).toBeNull();
   });
 
   it('a reason the screen has no words for is never shown in its voice: the plain sentence', async () => {
@@ -99,11 +105,12 @@ describe('FR-02 — a symbol with no series: its own state, never the section\'s
     expect(m.q('[data-no-chart="BTC"]').textContent).toBe('No chart was recorded for this symbol.');
   });
 
-  it('desktop: the grid\'s BTC tile says its own state, and the grid withholds the section\'s "complete"', async () => {
+  it('desktop: the grid\'s BTC tile says its own state, and the grid withholds the section\'s "complete"; the charted INTC reads its own line (RK-11, RL-3)', async () => {
     await deepAt(sep23Tape, sep23Series, 'INTC', { desktop: true });
     expect(m.q('[data-mini="BTC"] [data-no-chart="BTC"]').textContent).toBe('No chart for BTC: crypto is not charted.');
-    expect(m.q('#deep-all [data-coverage]')).toBeNull();
-    expect(m.q('#deep-chart [data-coverage]').getAttribute('data-coverage')).toBe('complete');
+    expect(m.q('#deep-all > [data-coverage]')).toBeNull();
+    expect(m.q('#deep-chart > [data-chart-recorded]').textContent).toBe('Chart recorded for INTC');
+    expect(seriesLineIn(m.q('#deep-chart'))).toBeNull();
     clean(docsOf(sep23Tape, sep23Series), 'desktop INTC');
   });
 });
@@ -117,6 +124,33 @@ describe('a held name the provider returned no bars for, through the real passes
     expect(m.q('#deep-all > [data-coverage]').getAttribute('data-coverage')).toBe('partial');
     expect(m.q('#deep-all [data-stored-note="coverage.series.note"]').textContent).toContain('no bars for: DE');
     clean(docsOf(noBars.tape, noBars.series), 'desktop DE');
+  });
+
+  it('Amendment L RL-3 (review AL2-1) — on the screen, while the series read is pending (the hook says idle first, loading after a re-render): the chart section says the loading line and no series status, phone and desktop; the desktop grid keeps the partial line; once the read lands, DE says its own state, still no series status (the mutant: the status shown while idle)', async () => {
+    for (const desktop of [false, true]) {
+      m.teardown(); m.setup(); globalThis.localStorage.clear();
+      window.matchMedia = desktop ? () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }) : hadMatchMedia;
+      const readers = readersOf({ [noBars.tape.etDate]: noBars.tape }, noBars.series);
+      let release = null;
+      readers.readSeries = () => new Promise((resolve) => { release = resolve; });
+      m.render(<FilmRoomScreenV2 battle={battleOf(noBars.tape)} onBack={() => {}} viewerId="viewer-1" readers={readers} nowMs={NOW} />);
+      await m.flush();
+      m.click(m.tab('Deep dive')); await m.flush();
+      expect(typeof release, String(desktop)).toBe('function');   // the read is out, and pending
+      const pending = () => {
+        const sec = m.q('#deep-chart');
+        expect(sec.textContent, String(desktop)).toContain('Loading the tape…');
+        expect(seriesLineIn(sec), String(desktop)).toBeNull();
+        if (desktop) expect(m.q('#deep-all > [data-coverage]').getAttribute('data-coverage'), String(desktop)).toBe('partial');
+      };
+      pending();   // idle: the first paints, before anything re-renders the screen
+      m.click(m.qa('[data-region="symbol-picker"] button').find((x) => x.textContent === 'DE')); await m.flush();
+      pending();   // loading: a re-render reads the hook's started read
+      await act(async () => { release({ status: 'ready', series: noBars.series }); });
+      await m.flush();
+      expect(m.q('#deep-chart [data-no-chart="DE"]').textContent, String(desktop)).toBe('No chart for DE: no bars were returned for it.');
+      expect(seriesLineIn(m.q('#deep-chart')), String(desktop)).toBeNull();
+    }
   });
 
   it('the tape records it (no_bars) and the section is partial with its own reason', () => {

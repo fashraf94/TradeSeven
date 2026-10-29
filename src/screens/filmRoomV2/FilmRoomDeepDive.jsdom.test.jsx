@@ -180,15 +180,17 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     const seriesLineIn = (sec) => sec.querySelector(':scope > [data-coverage], [data-stored-note="coverage.series.note"]');
     const gridLine = () => m.q('#deep-all > [data-coverage]');
 
-    it.each(LAYOUTS)('%s — while the series loads: the loading line, no series status (the mutant: the status shown while loading)', (_, desktop) => {
-      for (const status of ['complete', 'partial']) {
-        m.render(<Harness key={status} tape={dayOf(status)} series={[]} seriesState={{ status: 'loading', series: [] }} start="AMD" desktop={desktop} />);
-        const sec = m.q('#deep-chart');
-        expect(sec.textContent, status).toContain('Loading the tape…');
-        expect(seriesLineIn(sec), status).toBeNull();
-        expect(sec.textContent, status).not.toContain(`${status} series note`);
-        // the grid (desktop only) and Glance keep the section's status
-        if (desktop) expect(gridLine().getAttribute('data-coverage'), status).toBe(status);
+    it.each(LAYOUTS)('%s — while the series loads (the hook\'s idle, then loading — review AL2-1): the loading line, no series status (the mutant: the status shown while loading)', (_, desktop) => {
+      for (const read of ['idle', 'loading']) {
+        for (const status of ['complete', 'partial']) {
+          m.render(<Harness key={`${read}:${status}`} tape={dayOf(status)} series={[]} seriesState={{ status: read, series: [] }} start="AMD" desktop={desktop} />);
+          const sec = m.q('#deep-chart');
+          expect(sec.textContent, `${read} ${status}`).toContain('Loading the tape…');
+          expect(seriesLineIn(sec), `${read} ${status}`).toBeNull();
+          expect(sec.textContent, `${read} ${status}`).not.toContain(`${status} series note`);
+          // the grid (desktop only) and Glance keep the section's status
+          if (desktop) expect(gridLine().getAttribute('data-coverage'), `${read} ${status}`).toBe(status);
+        }
       }
     });
 

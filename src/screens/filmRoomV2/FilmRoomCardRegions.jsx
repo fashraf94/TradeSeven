@@ -300,7 +300,8 @@ function nextOf(card) {
  *                                     day says RG-5's sentence alone, with no link
  * @param {Function}    [props.onOpenForge] App's Forge door (hub S5), `({ area })` — Set's link to the tempo dial
  * @param {string|null} [props.agentId] the battle's OWN agent (Amendment L RL-1): the card's own `agentId`, and the
- *                                     counter's, are the attribution parent the card is filed under — never read here
+ *                                     counter's `attributionAgentId`, are the attribution parent the card is filed
+ *                                     under — never read here (review AL1-2)
  */
 export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = null, onOpenForge = null, agentId = null }) {
   const data = counter?.status === 'ready' || counter?.data ? counter.data : null;

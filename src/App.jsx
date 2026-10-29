@@ -9715,7 +9715,7 @@ export default function PortfolioDuel() {
               if (filmRoomBack.screen === 'battle' && filmRoomFrom.battle) setCurrentBattle(filmRoomFrom.battle);
               setScreen(filmRoomBack.screen);
             }}
-            // Film Room B2.1 B1 (Build B Amendment H RH-1): the card form's Set opens the Forge on its Character area,
+            // Film Room B2.1 B1 (Build B Amendment H RH-1): Set on a filed card's receipt (Amendment K RK-3) opens the Forge on its Character area,
             // where the tempo dial is — through the hub's own door (S5), no new way into the Forge. The Forge renders
             // in place of the screen; closing it (setShowForge(false)) shows the Film Room again, its back unchanged.
             onOpenForge={onOpenForge}
