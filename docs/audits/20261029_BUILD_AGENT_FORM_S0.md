@@ -250,23 +250,28 @@ The first Linux run (on an earlier head) was red in one of these rows: the flag-
 
 ## 8. The founder's readings
 
+**Filled by the review session** (Fable, October 29, 2026; `docs/audits/20261029_REVIEW_AGENT_FORM_S0.md`) from the founder's summary of his iPhone 16 run on October 29, 2026. **The raw "Copy reading" lines were not kept**, so the 60 s and 5 min lines, the draw calls per frame and the multiDraw flag are recorded as *not kept*. The founder's words, as relayed to the review: every preset he ran passed, with a smooth frame rate, a flawless equip and unequip, a clean lock and unlock, and Reduce Motion stills; he ran batched plates; he chose the CSS-blurred overlay glow. The bloom in use during the preset runs was not stated; the "Bloom" column keeps the lab's default. Rows the summary does not name (the half-rate runs) are marked *not stated*, not failed.
+
 | Preset | Rate | Plates | Bloom | 60 s line | 5 min line | calls / frame | multiDraw | Pass? |
 |---|---|---|---|---|---|---|---|---|
-| 1 hero at 200 | live | one per plate | canvas filter | | | | | |
-| 1 hero at 200 | half | one per plate | canvas filter | | | | | |
-| 1 hero at 200 | live | batched | canvas filter | | | | | |
-| 2 at 230 | live | one per plate | canvas filter | | | | | |
-| 2 at 230 | half | one per plate | canvas filter | | | | | |
-| 2 at 230 | live | batched | canvas filter | | | | | |
-| 7 at 72 + 1 at 190 | live | one per plate | canvas filter | | | | | |
-| 7 at 72 + 1 at 190 | half | one per plate | canvas filter | | | | | |
-| 7 at 72 + 1 at 190 | live | batched | canvas filter | | | | | |
-| 12 at 40 | live | one per plate | canvas filter | | | | | |
-| 12 at 40 | half | one per plate | canvas filter | | | | | |
-| 12 at 40 | live | batched | canvas filter | | | | | |
-| Lock / unlock | | | | lost __ restored __ | | | | |
-| Reduce Motion | | | | | | | | |
-| Bloom chosen | | | | | | | | |
+| 1 hero at 200 | live | one per plate | canvas filter (default) | not kept | not kept | not kept | not kept | **Pass** (founder's summary: smooth) |
+| 1 hero at 200 | half | one per plate | canvas filter (default) | not kept | not kept | not kept | not kept | not stated |
+| 1 hero at 200 | live | batched | canvas filter (default) | not kept | not kept | not kept | not kept | **Pass** (founder's summary: batched plates run, smooth) |
+| 2 at 230 | live | one per plate | canvas filter (default) | not kept | not kept | not kept | not kept | **Pass** (founder's summary: smooth) |
+| 2 at 230 | half | one per plate | canvas filter (default) | not kept | not kept | not kept | not kept | not stated |
+| 2 at 230 | live | batched | canvas filter (default) | not kept | not kept | not kept | not kept | **Pass** (founder's summary: batched plates run, smooth) |
+| 7 at 72 + 1 at 190 | live | one per plate | canvas filter (default) | not kept | not kept | not kept | not kept | **Pass** (founder's summary: smooth) |
+| 7 at 72 + 1 at 190 | half | one per plate | canvas filter (default) | not kept | not kept | not kept | not kept | not stated |
+| 7 at 72 + 1 at 190 | live | batched | canvas filter (default) | not kept | not kept | not kept | not kept | **Pass** (founder's summary: batched plates run, smooth) |
+| 12 at 40 | live | one per plate | canvas filter (default) | not kept | not kept | not kept | not kept | **Pass** (founder's summary: smooth) |
+| 12 at 40 | half | one per plate | canvas filter (default) | not kept | not kept | not kept | not kept | not stated |
+| 12 at 40 | live | batched | canvas filter (default) | not kept | not kept | not kept | not kept | **Pass** (founder's summary: batched plates run, smooth) |
+| Lock / unlock | | | | lost — restored — (counts not kept) | | | | **Pass**: "a clean lock and unlock" (the forms came back; no black square reported) |
+| Reduce Motion | | | | | | | | **Pass**: stills |
+| Equip / unequip | | | | | | | | **Pass**: "flawless" |
+| Bloom chosen | | | **CSS-blurred overlay** | | | | | Chosen by eye on the "4 blooms side by side" preset |
+
+**What this fills and what it does not.** The founder's run settles Phase 0 §5's device questions in the direction the plan hoped for: the armored forms animate live on the iPhone 16 at every preset he ran, context loss recovers cleanly, Reduce Motion stills work, and the iOS bloom choice is made (the CSS overlay; the canvas filter is unblurred on iOS Safari, Phase 0 §4). Because the raw lines were not kept, the §5 pass rule (≥ 55 fps on the 60 s line, ≥ 50 fps on the 5 min line, p95 ≤ 8 ms, late ≤ 2 %) is attested by the founder's eye rather than by the readout's numbers; `AGENT_FORM_PHONE` can be set to `live` on that basis, with the numbers to be captured on the S1 hub reading if wanted (the review's "Carry into S1").
 
 ---
 
