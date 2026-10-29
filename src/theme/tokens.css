@@ -188,6 +188,44 @@
   --ft-neg: #ff4d5e;
 
   /* ---------------------------------------------------------------------------
+     AGENT FORMS — the WebGL agent engine's colours with no earlier token (build
+     S0, docs/audits/20261029_BUILD_AGENT_FORM_S0.md; Phase 0 report §4 "Tokens").
+     Values exactly as the design of record ships them
+     (docs/design/agent-identity-v2/af3-standalone.js.txt:12-17, :93, :327-337),
+     never substituted. The engine reads them through readToken
+     (src/components/AgentForm/agentFormTokens.js). Reused, not duplicated: teal
+     near/far = --ft-teal / --ft-teal-2, copper near = --ft-copper, the fog =
+     --ft-bg-card, the mono core and the studio's top softbox = --ft-white.
+     ------------------------------------------------------------------------ */
+
+  /* Allegiance light: copper is the opponent's far thread colour; each core is its white-hot centre. */
+  --ft-agent-copper-far: #f6c496;
+  --ft-agent-teal-core: #ecfffb;
+  --ft-agent-copper-core: #fff3ec;
+
+  /* The grayscale check (mono) and an unworn set (unlit, "pewter"). */
+  --ft-agent-mono-near: #e4e8ee;
+  --ft-agent-mono-far: #848c9a;
+  --ft-agent-unlit-near: #aeb6c4;
+  --ft-agent-unlit-far: #6e7684;
+  --ft-agent-unlit-core: #dde3ec;
+
+  /* The armor plates' dark glass-metal. */
+  --ft-agent-plate: #151b28;
+
+  /* The studio the plates reflect: its walls and three softboxes (the fourth is --ft-white). */
+  --ft-agent-studio-box: #0f131c;
+  --ft-agent-studio-key: #dfe8ff;
+  --ft-agent-studio-fill: #bfd0e8;
+  --ft-agent-studio-under: #6e7a92;
+
+  /* The scene's lights: key, rim, and the hemisphere's sky and ground. */
+  --ft-agent-light-key: #e6eeff;
+  --ft-agent-light-rim: #aebbd6;
+  --ft-agent-light-sky: #7f94b3;
+  --ft-agent-light-ground: #05060a;
+
+  /* ---------------------------------------------------------------------------
      RGB TRIPLETS (ruling R-S9)
      For rgba() composition at LITERAL sites only, e.g.
          background: rgba(var(--ft-cyan-rgb), 0.1);

@@ -46,6 +46,8 @@ const FLAG_SOURCE_MODULES = [
   'src/config/featureFlags.js',
   'api/_utils/compositionConfig.js',
   'api/_utils/tournamentOrchestrator.js',
+  // Agent form build S0: the agent identity program's flags, a module of their own (its header says why).
+  'src/config/agentFormFlags.js',
 ];
 
 // ── Deliberately-dark flags (founder ruling 2026-08-10: keep the loud tripwire) ─
@@ -135,6 +137,8 @@ const DARK_BY_DESIGN = {
   // below.
   MANDATE_DORMANCY_DOWNSHIFT_ENABLED:
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
+  AGENT_FORM_LAB_ENABLED:
+    'Agent form build S0 — the lab page where the armored forms\' frame budget is decided on the founder\'s iPhone. Stays false on main: it is flipped only on a never-merge smoke branch ("SMOKE ONLY, NEVER MERGE") for the Vercel preview; flag-off App folds the lab away (agentFormLabFlags.test.js)',
   COMMAND_CENTER_SYNC_ENABLED:
     'Command Center Sync Pass 1 — the Desk, the phase slots and the Huddle tab label; read-only, flips in its own PR after a founder preview smoke, never a build PR',
   // COMMAND_CENTER_HUB_ENABLED intentionally ABSENT: the Command Center hub

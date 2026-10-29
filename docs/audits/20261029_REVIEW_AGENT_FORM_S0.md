@@ -1,0 +1,270 @@
+# Review: Agent form S0 (PR #1007)
+
+**Run date:** October 29, 2026 · **Model:** Fable · **Session:** a fresh Claude Code session, independent of the build session · **Review target:** PR #1007, branch `claude/agent-form-s0` @ `d1745c98` (code head `7d8cf195`), base `main` @ `be52068c` · **Build report under review:** `docs/audits/20261029_BUILD_AGENT_FORM_S0.md` · **Why a review:** the branch diff is 49 files and 5,660 lines, over BUILD_RULES §2's threshold (it carries the Phase 0 docs and the engine port).
+
+**Preamble.** `git fetch origin` ran first. `origin/main` = `be52068c` (the PR's merge base, nothing landed on `main` since the Phase 0 base). `origin/claude/agent-form-s0` = `d1745c98`. The smoke branch `claude/agent-form-s0-smoke` = `f2e759f7` is one commit on the code head (the flag's one line, "SMOKE ONLY, NEVER MERGE"); it is an ancestor of neither the PR head nor `main` (`git merge-base --is-ancestor` fails both ways), so it is out of scope as the brief says. The review ran in its own worktree, pointed at the PR head; the only writes are this document and the §8 fill in the build report (one commit). Fenced files read: none. Fenced functions called: none. Fenced files edited: none. The PR touches nothing under `api/`.
+
+---
+
+## Executive verdict
+
+**MERGE AFTER FIXES**, as reviewed at `d1745c98`; **the fixes have since landed (§7), so the verdict on the branch head is MERGE.** No blocking finding. The flag-off guarantee is proven by my own Linux builds, the port is word-identical to the design where it claims to be, the teardown and context-loss paths are sound, and the full suite is green on the PR head. The fixes were small and all in dark code or tests: one style line, one error guard, five test rows and one timeout line. The founder ruled to land them on the branch (with four of the notes), and §7 records that round: every mutant of §3.4 is now killed by the row that names it.
+
+| # | Lens | Result |
+|---|---|---|
+| 1 | Flag-off identity | **Confirmed by rebuild.** `main` and the PR head built unminified from LF trees (Node 20.20.2): all 44 JS chunks and `index.html` are byte-identical once hashes are masked; the entry chunks are the same size to the byte (8,961,209). The stylesheet differs by exactly the 38-line `--ft-agent-*` block (17 declarations and their comments). Only source maps differ otherwise, as expected. The flag module is registered in `flagPinGuard`; flipped to `true`, the pin and the guard both go red with the intent-aware file:line message (run, §3.1). |
+| 2 | App.jsx gate | **Holds.** App's 207 hooks end at `App.jsx:6747`; the gate at `:10256` sits after every hook and before the existing onboarding early returns. Nothing else imports the lab, the engine or `three`; no dev switch routes to the lab; the fold is robust to the shapes the pin test asserts. Two notes on the test's reach (SR-12). |
+| 3 | Port fidelity | **Word-identical where claimed.** Every ported function of the design's core, armor and runtime sections differs only by the declared port changes (kit injection, the `off` argument, token colours set per frame, disposal, build-order numbering). The "28 of 28 stills" claim is fair as a statement of what was measured but narrow in scope; the other render branches rest on this source diff, not on pixels (SR-10). One undeclared deviation: the design's per-view `try/catch` is gone (SR-2). |
+| 4 | Teardown and context loss | **Sound; five untested behaviours.** The dispose census is complete by construction and non-vacuous. Six mutants of my own all **survived** the PR's 68 engine, wrapper and lab rows (each run proven by its unchanged row count): two are user-visible in the lab today (SR-3, SR-4), two are hygiene pins (SR-5, SR-7), one pins a measured fix nothing committed guards (SR-6), one is equivalent in browsers (§3.4). |
+| 5 | Determinism (the sphere fix) | **Correct and cheap.** three sorts a `Line` by `geometry.boundingSphere.center` and computes it once; refreshing it in `flag()` after every position write is the right call. Worst case about 1,600 points over two linear passes per frame, tens of microseconds. The Node row is a real guard; a two-line strengthening is suggested (SR-9). |
+| 6 | Batching | **Correct; one limit to record.** BatchedMesh accepts the non-indexed geometry, instances sort back to front per frame on the same key three uses unbatched, the multi-draw fallback is one call per visible instance (three.module.js:17237), the Contrarian tie is exact in floating point so `<=` is the whole rule. The per-plate edge material's `mat4` uniform array puts 145 active vectors on the vertex stage at the largest set, inside WebGL2's 256 minimum; the ceiling is about 61 plates (SR-14). |
+| 7 | Bloom (the founder's CSS overlay) | **One should-fix.** The overlay blends with the whole backdrop of the nearest stacking context, not with the form alone; over a near-black backdrop (the lab's) it matches the design's in-canvas bloom, over a light one it saturates. Measured in headless Edge: 255 against 118 (SR-1). One line fixes it. |
+| 8 | Rules | **Met.** Tokens: 17 new, exact matches reused; the two stated exceptions (a white luminance mask, a transparent clear) are not colour choices. Guard registrations present and proven. No CDN, globals or media query (the source scan and my read). `three@0.184.0` pinned exactly in `package.json` and the lockfile; `npm ci` of the new lockfile clean in 11 s. `lint:gate` exit 0. |
+| 9 | Tests | **Green; one hardening.** Full suite on the PR head, Linux, `TZ=UTC`, 8 workers: **26,928 rows, 26,839 pass, 0 fail, 89 skipped**, the build report's figures. No vacuous row found. The real-engine wrapper file runs under vitest's default 5 s row timeout with a dead 5 s `waitFor` (SR-8). The flag-off byte-identity row is deterministic (my own flake concern refuted, §4). |
+| 10 | Docs | **Nothing the PR must not carry.** The 2.04 MB design HTML and its four extracted payloads match the README's SHA-256s byte for byte; no secret or personal data; the inlined third-party code is MIT/OFL. The founder decides whether 3.4 MB of design record belongs in history (SR-17). One stale filename in a comment (SR-11). |
+| — | Founder's phone run | **Recorded**, not re-litigated: §8 of the build report is filled from the founder's summary; the raw "Copy reading" lines were not kept and the table says so. |
+
+**Finding count:** blocking 0 · should-fix 8 (SR-1 … SR-8) · note 10 (SR-9 … SR-18). Adversarial pass: 7 independent reviewers; 1 candidate refuted, 2 narrowed, the rest confirmed (§4).
+
+---
+
+## 1. What this review ran
+
+Everything below ran in this session, on Linux unless stated, from detached worktrees of the WSL clone at the exact SHAs (`git worktree add --detach`; LF trees, proven by `cmp` of `engine/engine.js` against the blob). CI's Node 20.20.2 / npm 10.8.2.
+
+| Check | How | Result |
+|---|---|---|
+| Lockfile | `npm ci` in the PR worktree | exit 0, 1,119 packages in 11 s; `three` 0.184.0 present |
+| Flag-off identity | `vite build --minify false` of `main` (`be52068c`) and the PR head (`d1745c98`); every `-[8 chars].js/.css` hash masked in names and contents; `diff -rq` | 44 of 44 JS chunks identical, `index.html` identical; `index-*.css` differs by the 38-line token block; `.map` files differ (names carry other chunks' hashes), not shipped as code |
+| Full suite | `TZ=UTC flock /tmp/pd-suite.lock npx vitest run --maxWorkers=8`, JSON reporter | Run 1 (with my targeted mutant runs alongside): 26,928 rows, 1 red, `api/_utils/callRecords/retire.test.js` "CB1-2 … lands after the transaction's budget" — a real-time deadline row in a file the PR does not touch (`git diff --name-only … -- api/` is empty); the file passes alone on the PR tree and on `main`'s tree (19 of 19 both). Run 2, nothing else running: **26,928 / 26,839 pass / 0 fail / 89 skipped**, 1,220 files passed, 8 skipped |
+| Lint | `npm run lint:gate` | exit 0 in 32 s |
+| Flag drift | flip `AGENT_FORM_LAB_ENABLED` to `true` on the mutating tree; run `flagPinGuard.test.js` + `agentFormLabFlags.test.js` | 4 rows red, including the guard's intent-aware message naming `agentFormLabFlags.test.js:27` and `agentFormFlags.js:32` and saying what to do in either intent; restored byte-exact |
+| Mutants (mine) | six exact single replacements on the mutating tree, each run over the PR's six engine, wrapper and lab files (68 rows), restored from the HEAD blob and hash-checked | 6 of 6 survived, 68 of 68 rows passing under each (§3.4) |
+| Port fidelity | a script extracting each named function from `af3-standalone.js.txt` and the port, whitespace- and comment-normalised, word-diffed; plus a reviewer's item-by-item read of the runtime (§4) | identical apart from declared changes (§3.3) |
+| three.js facts | read in `node_modules/three/build` at 0.184.0 | `onContextLost` calls `preventDefault()` (three.module.js:17033-17035), so restore fires; BatchedMesh draw without `WEBGL_multi_draw` loops one call per instance (`:17237`); a `Line` sorts by `geometry.boundingSphere.center`, computed only when null (`:17826-17832`) |
+| Windows | the six static guard and pin files with the parent checkout's vitest | 6 files passed (the Windows tree has no `three`; everything engine-side ran on Linux) |
+| Docs | SHA-256 and byte counts of the HTML and the four `.txt` payloads from the blobs; a regex scan for keys, tokens, passwords and the founder's name or email | all five hashes and sizes match the README; one regex hit inside a base64 payload (a coincidence in encoded bytes), nothing else |
+
+The 517 rows in files the PR adds or changes all passed in both suite runs; the slowest is the flag-off App row at 3.3 s (under its 60 s budget), then `builders.test.js`'s geometry rows at 1.3 s and 1.1 s. The real-engine wrapper rows took 0.36 s and under (relevant to SR-8).
+
+---
+
+## 2. Findings
+
+Severity: **blocking** (do not merge) · **should-fix** (fix in this PR or the first S1 commit) · **note** (record; no change required). Line numbers are at `d1745c98`.
+
+### Should-fix
+
+**SR-1 — The CSS-bloom overlay blends with the backdrop, not with the form.** should-fix · `src/components/AgentForm/AgentForm.jsx:67` (the box) and `:70` (the overlay); `engine/engine.js:234` (also routes the direct path's `filter` bloom through the overlay).
+*Evidence.* The box is `position: relative` with no `z-index`, `isolation`, `opacity`, `transform` or `filter`, so it forms no stacking context; the overlay's `mix-blend-mode: plus-lighter` therefore composites against everything painted below it in the nearest ancestor stacking context (CSS Compositing 1: a blended element is composited with "the stacking context that contains the element"). The design's bloom (`bloom.js:36`) adds the blurred copy with `globalCompositeOperation = 'lighter'` into the form's own canvas, so it is confined to the form. Headless Edge 156, a halo pixel of a grey form over **white**: no isolation **255** (the glow vanishes into white); `isolation: isolate` **118**; the design's in-canvas `lighter` **118**. Over black all three read 42, which is why the lab (`--ft-bg-dashboard: #0d0e12`) and the Chromium picture in report §4.4 show no difference. In the hub, `CommandCenterHub.jsx:175` makes the root a stacking context, so the overlay would blend with the stage's own dark surface (`ShadowStage.jsx:144`); the saturating case is any light surface (a card, the picker, the battle view).
+*Smallest fix.* Add `isolation: 'isolate'` to the box's style at `AgentForm.jsx:67`. (`contain: 'paint'` gives the same pixels and also clips the blur's spill past the box, as the design's canvas does; isolation alone lets about 3σ, 12–14 px at 180–200 px, bleed out. Isolation is the letter fix; mention `contain` only if edge parity matters.) No test change needed; a guard row could pin the style.
+
+**SR-2 — One throwing pose or render stops the frame loop for every view, silently.** should-fix · `engine/engine.js:259-280` (`frame`), `:249-256` (`drawNow`).
+*Evidence.* The design wraps every view's render in `try/catch` and logs once per view (`af3-standalone.js.txt:381`); the port has no guard on the loop body. In `frame`, `raf = 0` is set first (`:260`); an exception from `drawView` leaves the loop before `kick()` (`:279`), so no frame is requested again, every view's status stays `live`, and the canvases freeze with no `lost`/`unavailable` signal to the wrapper. three's own render errors are mostly logged rather than thrown, so the path is rare; the regression is the design's resilience, lost in the port without being declared.
+*Smallest fix.* In `frame` and `drawNow`, wrap the per-view draw in `try/catch`; on a throw, set the view to `'unavailable'` (the wrapper then shows the still), and continue the loop. Add one lifecycle row: a platform whose renderer throws on the third `render` leaves the other view live and the loop running.
+
+**SR-3 — `update()` on a non-animating view is untested (mutant M2 survived).** should-fix · `engine/engine.js:360`.
+*Evidence.* `if (!animates(v)) drawNow(v);` is the only redraw for a view at rate `still` or under reduced motion: `frame` skips it (`:266`), `kick` never schedules for it (`:283`), the wrapper's spec effect calls only `update()` (`AgentForm.jsx:59`). Removing the line passes all 68 rows. The behaviour is what the founder's Reduce Motion step exercises: with motion reduced or Rate = still, changing Mood or Form would leave the picture at the old mood, and the cached still too (so a later context loss would show the wrong mood). S1's reduced-motion hub depends on this path on every archetype change.
+*Smallest fix.* A row in the lifecycle "mutable view" block: mount `{ rate: 'still' }`, record `renders`, `v.update({ state: 'worried' })`, expect `renders + 2` (the still and the live frame). Under M2 it reads `+ 0`.
+
+**SR-4 — A size or face change does not re-size the canvases in any test (mutant M3 survived).** should-fix · `engine/engine.js:358`.
+*Evidence.* `sizeCanvases` is otherwise reached only at mount (`:341`) and on a dpr change (`:368`). The lab's Size select reaches `update()` on the same keyed `AgentForm` (`AgentFormLab.jsx:110`, `:170`). Without the line the shared path keeps the bitmap at the old `size × dpr` while `drawImage` paints the new size (`:226`), clipped then CSS-stretched; on the direct path `renderer.setSize` and the `scaleX(-1)` mirror are never re-applied (`:179`, `:190`), so an allegiance change leaves the opponent un-mirrored.
+*Smallest fix.* A row: mount at 200 / dpr 1, `v.update({ size: 260 })`, expect `canvas.width` and `stillCanvas.width` 260; a direct-path variant checking `r.domElement.width` and `style.transform` after `face: -1`.
+
+**SR-5 — Restore's disposal of the superseded studio target is untested (mutant M1 survived).** should-fix · `engine/engine.js:157`.
+*Evidence.* That line is the only `dispose()` of the old PMREM render target (`disposeContext` at `:125` disposes the current one). Removing it passes all 68 rows: the census row never performs a loss and restore, and the wrapper's loss row (`AgentForm.engine.jsdom.test.jsx:77`) does not open the census. The refuter's reading narrows the harm: after a real context loss three rebuilds its GL state, so the orphan is JavaScript garbage rather than live GPU memory; what the mutant breaks is the engine's own "disposed exactly once" contract (`engine.js:7-10`), which the report's row 2 advertises.
+*Smallest fix.* Extend the census row (or add one): `census.open()`, mount, dispatch `webglcontextlost` then `webglcontextrestored` on `gl.made.renderers[0].domElement`, unmount, `census.close()`, expect `report.target.bad` empty. Under M1 the first environment reports "disposed 0×".
+
+**SR-6 — The Contrarian tie rule is pinned only by an uncommitted harness (mutant M4 survived).** should-fix · `engine/batch.js:114`.
+*Evidence.* `plateZ(p) <= centre` → `<` passes all 68 rows. The tie is exact: `ringBand` samples the arc at 40 segments so the bounding box is symmetric and `makePlate` centres the ring at the origin (`core.js:58`, `:105-111`); the armor group sits at identity under `F.group`, so `plateZ` and `ndcZ(F.group)` are bit-identical for every ring and stud. With `<` all nine instances go to the back batch and draw before the brain's light, the 13–17 % pixel difference report §4.3 says the rule fixed. The fake renderer counts a BatchedMesh as one drawable and `builders.test.js:119` compares plate matrices only, so nothing committed reads the instance visibility.
+*Smallest fix.* A Node row in `builders.test.js`: build `{ kind: 'contra', core: 1, armor: 2, seed: 1, batched: true }`, pose at fit 1, and for every instance expect `F.batch.front.getVisibleAt(n)` true and `F.batch.back.getVisibleAt(n)` false.
+
+**SR-7 — Unobserving an unmounted view is untested (mutant M5 survived).** should-fix (hygiene) · `engine/engine.js:389`.
+*Evidence.* Removing `io.unobserve(target)` passes all 68 rows; the teardown row checks `disconnect` at zero views only. Harm is low (a late entry is inert because `byElement` no longer maps the target, `:290`; browsers hold observer targets weakly), but the residue is observer bookkeeping on detached nodes for as long as any form lives, the long-lived hub's shape.
+*Smallest fix.* A row: mount two views, expect `kit.observers[0].targets.size` 2, unmount one, expect the set no longer has its box.
+
+**SR-8 — The real-engine wrapper file runs under the default 5 s row timeout, with a dead `waitFor` timeout.** should-fix (test hardening) · `src/components/AgentForm/AgentForm.engine.jsdom.test.jsx:41-42`.
+*Evidence.* `vitest.config.js` sets only `exclude`, `vite.config.js` has no `test` block, and the file has no `vi.setConfig`, so the row timeout is vitest's `testTimeout ??= 5000`. `settle()`'s `vi.waitFor(..., { timeout: 5000 })` starts after `census.open()` and the render, so the row's own 5 s always fires first; a slow run reports a bare "Test timed out" and a late unhandled rejection instead of the live count seen. The in-row work is CPU (four form builds, two contexts, eight act-wrapped frames in jsdom), not the `three` import, which is externalized and loaded at file collection through `__mocks__/glPlatform.js` → `agentFormKit.js`. Today the rows take under 0.4 s (both suite runs), so the exposure is a loaded CI runner, not a present failure. The App row raised its timeout for the same class of wait (`App.agentFormLab.jsdom.test.jsx:17`).
+*Smallest fix.* `vi.setConfig({ testTimeout: 30000 })` at the top of the file (the house pattern), with the `waitFor` timeout below it so a failure shows the count.
+
+### Notes
+
+**SR-9 — §4.5's last sentence misstates the batched path's mechanism.** note · build report §4.5; `engine/batch.js:29-32`, `:94`, `:130`.
+The merged `LineSegments` have `renderOrder` 0, the same class as the back edges and the inner sprites, and their bounding sphere is computed once by three and never refreshed in `sync()`, so the order *within* class 0 can still depend on history. No pixel can change, for a different reason: every class-0 material is `AdditiveBlending` with `depthWrite: false` (`batch.js:46`, `core.js:75`, `:94`), nobody in the class writes depth, and `ONE, ONE` blending is a destination-independent sum, order-independent even after 8-bit quantisation. Suggested wording: "every class-0 member is additive with no depth write, so order within the class cannot change a pixel". Also: in batched mode the hidden per-line `flag()` still computes a sphere nobody sorts by (`form.js:62-65`); harmless.
+
+**SR-10 — The "28 of 28 byte-identical stills" claim is fair as measured and narrow in scope; the harness is uncommitted.** note · build report §4.1, §10.
+The matrix exercises idle and celebrating (so `S.bloom > 1` both ways, lift, `open > 0`), armor indices 0 and 2 (index 1 untested), teal, 200 px (bloom on, `small` off, the 90–159 px no-bloom band untested), 1× (`res = size`), face +1, fit 1, brain on, zoom 1, turn 0; the core stage is unstated. Not exercised by pixels: worried (`open < 0` stress, `lo(S)` fray, bloom 0), researching (`scan`), waiting (`beacon`), confident; the `small` 1.4 / 1.5 multipliers and the 3× cap; mirroring; copper, mono and unlit; `fit < 1` and `unfit` (both eases, the `fitK` stagger); `brain === false`; `zoom`; `turn`. Those branches rest on the word-for-word source diff of this review (§3.3), which found them identical, not on a pixel comparison. Suggested wording for the report: "28 measured stills identical at 200 px / 1× / teal / idle and celebrating / armor stages 1 and 3; every other render branch rests on the source diff; the harness is not committed, so the number cannot be re-run from the tree."
+
+**SR-11 — A comment names a test file that does not exist.** note · `engine/index.js:5`: `agentForm.importGraph.test.js` → the file is `src/components/AgentForm/agentForm.guard.test.js`.
+
+**SR-12 — The hook-placement row stops at the unified return, and its regex cannot see every hook shape.** note · `src/config/agentFormLabFlags.test.js:56-61`.
+The row slices from the gate to `const screenContent = getScreenContent();` and does not check the region after it (`App.jsx:10325` to the end of the function). I checked that region by hand: no hook call at any indent. `/\buse[A-Z]\w*\(/` matches `React.useEffect(` but misses `useX (` with a space, React 19's bare `use(`, and aliased hooks; `strip` has no inline `//` handling, so a trailing `// agentFormLab` comment anywhere in App.jsx would break the single-occurrence count at `:51` (fail-closed, brittle rather than blind). The last App-scope hook is `useRef` at `App.jsx:6747`; the gate is 3,500 lines after it, so the guarantee holds today by inspection as well as by the row.
+
+**SR-13 — Documented limits of the static source scan.** note · `src/components/AgentForm/agentForm.guard.test.js:38-46`, `:23`, `:71`.
+The window ban misses `globalThis.window`, `self.`, `document.defaultView`, destructuring from `window`; the wall-clock ban misses `performance.timeOrigin`, `Intl.DateTimeFormat`, `Temporal`; the random ban misses `crypto.getRandomValues`/`randomUUID`; the CDN ban catches the three named hosts however assembled but not another host spelled as `'https:' + '//'`, `import(variable)` or a `data:` module URL. The comment stripper truncates a line at a `//` inside a string or regex, and the import scanner needs `import`/`export` at line start and ignores `require`, `import.meta.glob` and `.ts/.mjs/.cjs`. All are limits of a text guard, stated here so they are not mistaken for coverage; the import-graph rows and the dist diff are the load-bearing checks.
+
+**SR-14 — The per-plate edge material's uniform array has a ceiling.** note · `engine/batch.js:44-56`.
+`uniform mat4 uPlateM[count]` is four `vec4` per plate: 136 vectors for the largest set (Capital Preserver stage 3, 34 plates), plus the active uniforms of the patched `meshbasic` vertex shader (`modelViewMatrix`, `projectionMatrix`, `uEb`: 9 vectors; GLSL ES 3.00 counts only active uniforms), 145 in all. WebGL2 guarantees `MAX_VERTEX_UNIFORM_VECTORS ≥ 256`; iPhones report 1,024. Not a risk for the six sets as designed (1.8× headroom on a 256-vector device); a set past about 61 plates would fail to link there, and the failure would be a three shader-compile log, not a thrown error (SR-2 would not catch it either). Packing the edge light into `elements[3]` (column 0, row 3, uploaded column-major as `pm[0][3]`) and zeroing it before use leaves the affine part intact, and only `.xyz` of the product is taken anyway; dynamic indexing of a uniform array by an integer expression is valid in GLSL ES 3.00 vertex shaders.
+
+**SR-15 — The equip tween is an rAF timeline, not a `motion.js` token.** note · `engine/vocab.js:53-95`, BUILD_RULES §11.
+§11 governs Framer Motion transitions and names the `faceEngineCore.js` rAF easing engine as out of scope; the equip tween is the same class (a hand-rolled timeline on board 2's keys, piecewise-linear with the design's per-plate eases). Acceptable under the rule as written; S1 should record it as a stated exception next to the hub's motion-guard documentation so the next reader does not take it for an unmigrated literal.
+
+**SR-16 — The lab loads the engine chunk even where there is no WebGL.** note · `src/screens/AgentFormLab.jsx:85`.
+The lab's effect calls `loadAgentFormEngine()` unconditionally (for `META` names and the frame listener), while the wrapper correctly does not (`AgentForm.jsx:44`). In a browser without WebGL the lab fetches the 160 KB gzip chunk for nothing. Lab-only, flag-off; a `hasWebGL()` guard on the effect would also spare the jsdom lab tests the import.
+
+**SR-17 — The PR carries 3.4 MB of design record.** note · `docs/design/20261014_AGENT_IDENTITY_BOARDS_V2.html` (2,037,153 B), `docs/audits/assets/agent-identity-40px.png` (787,695 B), `docs/audits/assets/agent-form-s0-blooms.png` (469,798 B), `docs/design/agent-identity-v2/*.txt` (101,797 B).
+The HTML inlines three r184, React and ReactDOM 18.3.1 development builds, Babel standalone and eight JetBrains Mono subsets (MIT and OFL; redistribution permitted). All five design-file hashes and byte counts match the README. No key, token, password, name or email found; the one regex hit is inside a base64 payload. `src/index.css` carries `@source not "../docs"`, so Tailwind never scans the HTML; the `.txt` suffix keeps the payloads out of ESLint, Vite and Vitest. The 100 KB of extracted sources earned their place in this review (the fidelity diff ran against them). Whether a 2 MB design export belongs in git history for good is the founder's call, not a defect; the alternative is a release asset or the Documents folder with the hash recorded here.
+
+**SR-18 — Engine defaults differ from the design's when a caller omits them.** note · `engine/engine.js:57-58`.
+`DEFAULT_OPTIONS.dpr` is 1 where the design read `window.devicePixelRatio`, and `DEFAULT_SPEC.seed` is 1 where the design's `seed | 0` gave 0 when absent. The wrapper always passes both (`AgentForm.jsx:33-34`, `agentFormSpec.js:50`), so no shipped frame differs; a raw `mount()` without them would. Also recorded: the engine's `T0` is set at `setup()` (first mount after zero views) rather than at module load, a phase shift of the clock and not a change to any frame as a function of (spec, t).
+
+### Recorded, not findings
+
+- **M6 (my sixth mutant) is equivalent in browsers.** Dropping `frame()`'s `P.doc.hidden` check cannot be observed: `kick()` refuses while hidden (`engine.js:282`) and `onVisibility` cancels any pending frame (`:286-288`); the HTML spec sets `document.hidden` and fires `visibilitychange` together, and rAF does not run for hidden documents. Killable only by setting the hidden state without the event. Not worth a row.
+- **The readout measures the lab on top of App's background work.** All 207 App-scope hooks (auth, Firestore listeners, polls) run behind the lab (the gate is after them); the unified return's children (EarningsGame, ClashBot, the deploy provider, the modals) do not. The build report says this (§1, "Where the lab mounts"); the founder's phone numbers include that background, as the hub's will.
+- **One red row in my first suite run** was a timing flake in an untouched `api/` file under my own concurrent mutant runs; it passed alone on both trees and the clean re-run was green (§1).
+
+---
+
+## 3. Lens notes
+
+### 3.1 Flag-off identity and the flag module
+
+The masked build diff is in §1. Why the masking is enough: an unminified build has no identifier renaming, so the only legitimate difference between the two trees is the CSS hash that renames every chunk (the stylesheet gained the token block). Masking the hash in names and contents leaves the code bytes to compare, and they compare equal for all 44 chunks, the 8.96 MB entry included. `index.html` masked is identical. The source maps differ because their `sources`/`file` fields carry other chunks' hashed names; they are not executed.
+
+The flag module (`src/config/agentFormFlags.js`) is a separate flag source on purpose: `App.jsx:4088` dynamically imports `featureFlags.js`, which keeps that module's namespace alive in the entry chunk, so a flag added there would change the entry's bytes. It is listed in `flagPinGuard.test.js`'s `FLAG_SOURCE_MODULES` (`:50`) and `DARK_BY_DESIGN` (`:140`), the definition carries the `// Pinned by:` pointer the guard checks, and the pin is `agentFormLabFlags.test.js:27`. Flipped on the mutating tree, four rows went red: the pin, the module-literal row, the guard's "every pinned flag matches its live value" (with the message quoted in §1) and its "DARK_BY_DESIGN lists only currently-dark flags". That is the drift tripwire working in both directions.
+
+### 3.2 The App.jsx gate
+
+`PortfolioDuel` spans `App.jsx:2217-12756`; 207 hook calls, the last at `:6747`. Between there and the gate at `:10256` are declarations only (handlers, the nested `SpotlightTour` component with its own hooks, `getScreenContent` defined at `:8815` and called at `:10325`). The gate is before the onboarding early returns (`:10264-10274`), so for every path the hook sequence is unchanged. With the flag false the ternary at `:71` is `null`, the `&&` at `:10256` short-circuits before the URL is read, and Rollup drops the `import()`; no other reader of `agentFormLab`, `AgentFormLab` or `three` exists in `src/` outside the `AgentForm` folders and the tests, `vite.config.js` has no `manualChunks`, `public/` has no service worker, and the dev switches at `:2231-2292` set `screen` state without any value that maps to the lab. The fold would be defeated by an accessor, an `import * as flags`, an `export let`, a move into `featureFlags.js`, or a second `import()` of the lab elsewhere; the pin test catches the first four shapes by its literal assertions, and the dist diff is the guard for the rest.
+
+### 3.3 Port fidelity
+
+Method: every named function of the design (`fixWinding` … `buildFund`, `icosa`, `rng`, `hash`) extracted by brace matching from both sources, comments stripped, whitespace normalised, word-diffed; the tables (`STATES`, `CORE`, `ARMOR`, `META`, `stillT`, `fitK`, `lo`, `t0`) compared canonically; the runtime (renderer, studio, scene, lights, camera, `render`, `bloom`, pixel ratios, timing, the registry's dropped behaviours) read item by item by an independent reviewer. Every difference is one of: the kit injected as an argument (`fadeLine`, `sprite` through `kit`), the unequip mode passed as `off` instead of a module variable, colour literals removed in favour of per-frame palette writes (the design's `'#5EEAD4'` defaults on `edgeMaterial`, the plate rim, the brain's `PointLight` and core are all overwritten every frame in both engines), `g.dispose()` on merged inputs, the `nonIndexed` helper, and the `loops` list returned for batching. The studio's five colours, the fog (`--ft-bg-card` = `#15171e` = the design's `FF.surface`), the lights' colours, intensities and positions, the camera, the renderer options, the bloom size and radius, the pixel-ratio rules and the clock formulas match to the constant. The design's registry behaviours the port drops (the 5 ms budget, `px >= 60`, the every-third-frame rule, `AF_MOTION`, `AF_NOBLOOM`) are absent as the report says; `half` is new, documented and pinned. The one deviation not declared is SR-2.
+
+### 3.4 Teardown and context loss: the mutants
+
+| Mutant | Replacement | Named defect | Rows | Result | Disposition |
+|---|---|---|---|---|---|
+| M1 | `engine.js:157` drop `C.envTarget.dispose();` | the superseded studio target is never disposed | 68 | **survived** | SR-5 |
+| M2 | `engine.js:360` drop `if (!animates(v)) drawNow(v);` | a still / reduced-motion view never redraws after `update()` | 68 | **survived** | SR-3 |
+| M3 | `engine.js:358` drop the `sizeCanvases(v)` on size/face change | canvases keep the old pixel size; direct path never re-mirrors | 68 | **survived** | SR-4 |
+| M4 | `batch.js:114` `<=` → `<` | the Contrarian's rings and studs file behind the brain's light | 68 | **survived** | SR-6 |
+| M5 | `engine.js:389` drop `io.unobserve(target)` | unmounted elements stay observed | 68 | **survived** | SR-7 |
+| M6 | `engine.js:261` drop the hidden check in `frame()` | frames while hidden | 68 | **survived** | equivalent in browsers |
+
+Each run reported 6 files / 68 rows passing, so no file failed to load under a mutant; each file was restored from the HEAD blob and its hash compared to `HEAD:<path>`. The build's own 34 mutants targeted the rows it wrote and killed 33; these six target behaviours its rows do not reach. The census itself I read as sound: it hooks `name`/`isRenderTarget` setters on three's prototypes so every geometry, material, texture and render target made between `open()` and `close()` is recorded whatever made it, counts `dispose()` per object, excludes render-target-owned textures, and the row asserts non-vacuous floors (over 1,000 geometries, 250 materials) before "each disposed exactly once".
+
+### 3.5 The sphere fix (report §4.5)
+
+three's renderer takes a `Line`'s sort depth from `geometry.boundingSphere.center` transformed by the object's world matrix (`three.module.js:17824-17838`); the `object.boundingSphere` branch exists only for SkinnedMesh, InstancedMesh and BatchedMesh. The fade lines are rewritten every frame, and before the fix their sphere was computed once by the renderer on first draw, so a line's sort position froze at the pose of its first frame: the history effect. `flag()` now calls `computeBoundingSphere()` after every position write (`core.js:99`), at every call site (`core.js:144`, `armor.js:41`, `:87`, `:135`); the lines are `frustumCulled = false`, so the radius never touches culling. Cost: brain 3 × 5/7/9 lines of 44 points; Trend Follower 12/16/20 streams of 22; Speculator 3/4/5 arcs of 9; Diversifier 5/6/7 tethers of 14; the worst case about 1,600 points over two linear passes per frame, tens of microseconds against a 1–6 ms frame. The Node row (`builders.test.js:105-117`) is a real guard: without the refresh the sphere is `null` in Node and the row fails; a stale sphere would fail too because every line moves between the two poses. It could be two lines stronger by asserting each centre *changed* between pose 1 and pose 2, which would also catch a future change that left a line static. SR-9 covers the batched-path wording.
+
+### 3.6 Batching
+
+Two `BatchedMesh` (back and front of the form's centre) hold every plate and stud geometry, non-indexed (`batchable()` strips to position and normal); three's `_initializeGeometry` creates an index only when the first geometry has one (three.core.js:26095-26104), `_validateGeometry` keeps the rest consistent, so `maxIndexCount` is unused and every later geometry must also be non-indexed, which `batchable()` guarantees. `setMatrixAt` and `setVisibleAt` both return `this`, so the chain at `batch.js:125-126` is valid. `sortObjects = true` sorts the visible instances back to front per frame, keyed on each geometry's cached sphere centre under the instance matrix (three.core.js:27266-27309); `makePlate` centres every geometry, so that key is the plate's position, the same key three uses for the unbatched plates, and ties fall to instance id, which is the plates' build order in both paths. One refinement to the report's reading: `perObjectFrustumCulled = false` skips the frustum test only; the sort still transforms one cached sphere per visible instance per frame (cheap, not zero). The shared `MeshPhysicalMaterial` compiles a separate program for the batched draw (`batching` is a program parameter, a define and a cache-key bit beside `customProgramCacheKey`), so the custom `af3-rim` key is safe; the hidden plate meshes never reach `projectObject`, so the unbatched program is not compiled for a batched form. A three-side quirk, not the port's: `WebGLRenderer` tests `object.colorTexture !== null` (three.module.js:18344), a property BatchedMesh never defines, so every BatchedMesh draw re-runs `getProgram` (a cache hit, no recompile; tens of microseconds per form). Without `WEBGL_multi_draw`, the renderer loops one draw per visible instance with a `_gl_DrawID` upload each (`three.module.js:17237-17249`) and counts each in `info`, so the lab's call count is honest: calls = visible plates plus studs (the Contrarian's 3 + 6), the report's "one call per plate" up to the studs. The tie rule is exact for the Contrarian (SR-6): `ringBand`'s box is symmetric in float32 because its arc samples hit the four axes exactly, so `makePlate`'s centre is a bitwise zero, `g.matrix` is identity, and both sides project identical inputs every frame; no other set seats a plate at the armor origin (Trend's group is offset; the Preserver's and Diversifier's caps sit at the poles). Render classes: back plates (−1) < back edges, merged lines, inner sprites (0) < front plates (1) < front edges, outer sprites (2); everything in classes 0 and 2 is additive with no depth write, so order within a class cannot change a pixel beyond 8-bit blend rounding. The residue report §4.3 measures (at most 2.3 % of pixels over 8 levels) has two causes the report should name together: the one it names, seam and etch edges now depth-tested by a second program's projection, which fits Fundamental Investor, Trend Follower and Capital Preserver; and a class inversion, a class-0 line point geometrically in front of a front plate's far half being drawn first and overdrawn at the plate's .93 opacity, where the unbatched per-object sort drew the plate first. The brain's loops reach about 1.4 × R (0.87 at core stage 2) and so cross the Contrarian's .62 and .8 rings, which is the Contrarian's .40 / .95 %; the Speculator's arcs (bulge 1.02–1.12) and loops past the Diversifier's saddles are the same mechanism, bounded by the table's .04–.08 %. A loop fully in front of a dark seated plate cannot occur, since such a plate is nearer than any loop centre and both paths draw loop then plate. A documented limit, not a defect. SR-14 records the uniform ceiling.
+
+### 3.7 Bloom (the founder's choice)
+
+SR-1 is the one finding. Beyond it, for S1: the overlay is `position: absolute; inset: 0`, sized to the form, `pointer-events: none`, hidden with the live canvas when the context is lost, and toggled by the engine per frame with guarded style writes (`engine.js:240-242`), so layout inside a sized parent is a non-issue as long as the parent passes a CSS-pixel `size`. The CSS blur is sized as `sigma · size / bs` (`bloom.js:49`), 14 px at 200 px, and spills past the box unless a parent clips; the design's canvas bloom stops at the canvas edge. On the direct path the design's own `filter` bloom also goes through the overlay (`engine.js:234`), blurred by `ctx.filter` on the overlay's own canvas and composited with `plus-lighter`, so SR-1 applies to it as well. `mix-blend-mode: plus-lighter` is supported in Safari 15+ and the overlay's `filter: blur()` is a CSS filter, not the canvas filter iOS disables, so the founder's choice is the one of the four that is both blurred on iOS and off the per-frame timing (the compositor does the blur). Cost on the phone is not in the readout, as the report says.
+
+### 3.8 Rules
+
+Tokens (§10): 17 new `--ft-agent-*` declarations at the design's values; the exact matches reuse `--ft-teal`, `--ft-teal-2`, `--ft-copper`, `--ft-bg-card`, `--ft-white`. The guard scans `#hex` literals after comment stripping; the engine has none. The two stated exceptions are not colours: the glow texture is a white-to-transparent luminance mask (`core.js:81-84`) tinted by each sprite's token colour, and the renderer clears to transparent black. The `AgentFormStill` SVG takes its colours through `style` (`cssVar`), the route R-H8 allows. Motion (§11): SR-15. Guards: `flagPinGuard` (§3.1), the token guard's 17 new files at zero literals (`tokenGuardBaseline.json`), the source scan and import graph (SR-13 for limits). No CDN, globals or media query: the scan passes and my read agrees (reduced motion arrives as an option; the lab reads framer-motion's `useReducedMotion`, the hub's one source). `three@0.184.0`: `package.json:48` exact, the lockfile's root `dependencies` and `node_modules/three` entries with integrity, `npm ci` clean; `three` has no dependencies of its own.
+
+### 3.9 Tests
+
+Full suite twice (§1). No vacuous row: each guard row has a non-empty floor, the census asserts counts before "exactly once", the App row asserts length over 1,000 before identity. Weak only: `agentFormLabReadout.test.js:44` asserts a prefix; `builders.test.js:53/:58` share the cached icosahedron so a nondeterministic `icosa()` would be invisible (it is pure data). Order: the engine wrapper rows share `SHARED` (`engine/index.js:13`), `pending` (`loadEngine.js:6`) and the file-level census; `afterEach` unmounts the root so zero views and `teardown()` are guaranteed between rows even on a failure, and `made.*` is reset per row. Globals: the clipboard stub in the lab test is never undone and the kit "restores" `document.hidden` as an own accessor; per-file jsdom environments make both harmless. Flakiness: SR-8; the App flag-off row is deterministic (§4). Windows: the two red rows the report names are the known line-ending class in untouched suites; Linux is the record.
+
+### 3.10 Docs
+
+SR-17 and SR-11. The PR description's line citations are right (`App.jsx:71`, `:138`, `:10256`; `flagPinGuard.test.js:50`, `:140`; `agentFormFlags.js:32`). The build report's §4.5 and §4.1 wording: SR-9, SR-10. The founder's reading: §8 of the build report, filled in this commit.
+
+---
+
+## 4. The adversarial pass (BUILD_RULES §2)
+
+Seven independent reviewers, each handed one finding cluster with the instruction to refute it by a concrete counter-argument or repro, read-only on a snapshot of the tree.
+
+| Candidate | Refuter's verdict | What changed |
+|---|---|---|
+| SR-1 bloom overlay not isolated | **CONFIRMED** with a headless Edge pixel repro (255 vs 118 vs 118 over white; 42 everywhere over black) | Scope corrected: the hub root is a stacking context, so in the hub the overlay blends with the stage's dark surface, not App's starfield; the saturating case is any light surface. Added: the direct path's `filter` bloom is affected too. `contain: paint` noted as the edge-parity alternative. |
+| M1–M6 are real coverage gaps | **CONFIRMED** M1–M5 (M2, M3 user-visible; M1, M5 hygiene; M4 a measured fix unguarded); **EQUIVALENT** M6 | M1's harm narrowed to a contract miss (three rebuilds GL state after a real loss). Each gap given its smallest row. |
+| Test flake risk in the real-engine file | **PARTLY**: the premise (a slow `three` transform) was wrong, `three` is externalized and loaded at collection; the real exposure is the default 5 s row timeout with a dead `waitFor`, CPU-bound work | Reframed as SR-8 with the house-pattern fix. |
+| The App flag-off byte-identity row is flaky | **REFUTED**: the signed-out tree has no `useId`, time or random, no lazy boundary; a future `useId` user would fail loudly and deterministically | Dropped. |
+| The App gate changes hook order or can be reached | **HOLDS** on both claims; notes on the row's reach and regex | SR-12. |
+| The sphere fix: correct, cheap, pinned | **CONFIRMED** on all three; the report's batched-path sentence misstates the mechanism | SR-9 and the two-line strengthening. |
+| Runtime port fidelity | **IDENTICAL** in every item; one undeclared deviation (the dropped `try/catch`); defaults noted | SR-2, SR-18, SR-10's wording. |
+| Batching correctness and limits | **CONFIRMED** correct (non-indexed geometry, the chain, the per-instance sort key, the shared material's program, the multi-draw fallback's honest call count, the tie's exactness); two readings refined (the per-instance sort still transforms a sphere; the §4.3 residue has two causes); the uniform ceiling placed at about 61 plates | SR-14 and §3.6 reworded. |
+
+My own executed checks (the builds, the suite, the flip, the mutants) stand as run; nothing in the refutation pass contradicted a measurement.
+
+---
+
+## 5. Carry into S1
+
+What the hub integration must handle, from this review and the build report, in the order S1 will meet it:
+
+1. **Isolate the form's box** (`isolation: isolate`, SR-1) before the CSS-blurred overlay is the hub hero's bloom. The hub root is a stacking context and the stage surface is dark, so the hub itself would hide the defect; isolate anyway so the look does not depend on the backdrop, and decide whether the blur may spill past the box (`contain: paint` if not).
+2. **Pass `bloom='css'`** (the founder's choice) and keep the WebGL and off modes reachable for the hub reading; on the direct path the design's `filter` mode also goes through the overlay.
+3. **`AGENT_FORM_PHONE = 'live'`** on the founder's reading. The raw numbers were not kept; capture the readout's 60 s and 5 min lines on the hub reading if the record wants them (Phase 0 §5's pass rule).
+4. **Reduced motion**: the hub passes its one `reducedMotion` source; archetype changes under Reduce Motion rely on the `update()` redraw path (SR-3), so land that row before S1 depends on it.
+5. **Size**: `AgentForm` takes a CSS-pixel `size`; the hub stage must pass a measured one. A `devicePixelRatio` change is picked up on the next render only (`AgentForm.jsx:33`); S1 may want a resize listener in the wrapper (the engine itself bans media queries).
+6. **A stuck hero**: the frame loop has no per-view error guard (SR-2); in the hub a throwing frame would freeze the hero with status `live`. Fix in S0 or first thing in S1.
+7. **The hub guard rulings** Phase 0 §12 lists stay to be ruled: the one `import()` edge into the engine (`commandCenterHub.mount.guard.test.js:790-796`), `PERMITTED_PACKAGES` if `three` is reached statically, `ALLOWED_ACTIVITY` and the call manifest for the new view, and R-S7-2 (already honoured: no frame-cost self-downgrade in the port).
+8. **Motion**: record the equip tween as a stated §11 exception beside the hub's motion-guard docs (SR-15).
+9. **The stale comment** at `src/components/CommandCenter/ShadowStill.jsx:27-30`: `#ECFFFB` now has a token (`--ft-agent-teal-core`); the hub still may adopt it when S1 touches that file.
+10. **Open founder questions** from the build report §9 stand: late at half rate (50 ms), the equip timeline's overall ease, and the bare-Shadow → armored size step (1.25× to 0.74–0.95×), which S1 meets on the first archetype change.
+11. **Not built in S0** (report §5): the seam flash, the ring burst, unworn sets at 70 % light, emphasis by area, trailing streams at 40 px. Each is a design decision for S1 or S2, not a port gap.
+12. **Edge-material ceiling** (SR-14): any new set must stay well under about 61 plates, or the per-plate edge uniform array needs a texture instead.
+
+---
+
+## 6. Commits and artifacts
+
+On `claude/agent-form-s0`, after `d1745c98`:
+- `a731998e`: this review, and the build report's §8 filled from the founder's summary (`docs/audits/20261029_BUILD_AGENT_FORM_S0.md`);
+- `b93d46c2`: the fix round (§7), on the founder's ruling;
+- the last commit: §7 and this list.
+
+The review's scratch harness (the WSL worktree scripts, the masked-build diff, the fidelity diff script, the mutant spec and runner, the refuters' headless Edge repro) lives in the session scratchpad and is not committed. A copy of this document is at `C:/Users/fashr/Documents/FantasyTrades/AgentForm/20261029_REVIEW_AGENT_FORM_S0.md` (BUILD_RULES §3).
+
+---
+
+## 7. The fix round (October 29, 2026, founder's ruling)
+
+The founder read the review and ruled: land SR-1 to SR-8 on the PR branch, with `isolation: isolate` for SR-1; also apply SR-9, SR-10 (report wording), SR-11 (the comment) and SR-16 (the lab's WebGL guard); keep the design files (SR-17). Landed as **`b93d46c2`**, nine files, 143 insertions and 20 deletions, no fenced file touched, the flag still `false`.
+
+| Finding | What landed | Where |
+|---|---|---|
+| SR-1 | `isolation: 'isolate'` on the form's box, with the reason in a comment; a pin row reads the style back | `AgentForm.jsx:67`; `AgentForm.jsdom.test.jsx` ("mounts one view with the mapped spec") |
+| SR-2 | the design's per-view guard: `drawNow` and the loop body wrap each view's draw in `try/catch`; a throw calls `failView`, which counts `failed`, calls `cb.onError(error)` and sets the view `unavailable`; the loop goes on. The wrapper shows an unavailable view's cached still when it has one (`showStill` covers `'unavailable'`). `info()` reports `failed` | `engine.js` (`drawNow`, `failView`, `frame`, `info`); `AgentForm.jsx:64`; a lifecycle row ("a pose or render that throws") and a wrapper row |
+| SR-3 | row: `update()` on a view at rate `still`, then under reduced motion, renders its still and its live frame (+2), and the loop stays stopped | `engine.lifecycle.jsdom.test.js`, "a mutable view" |
+| SR-4 | row: `update({ size: 260 })` re-sizes the live and still canvases; on the direct path `update({ face: -1, size: 100 })` re-sizes the buffer to 200 and re-applies `scaleX(-1)` on the canvas and the overlay | same block |
+| SR-5 | row: the census open across a loss and restore; two environments made, every render target disposed exactly once, nothing else bad | "WebGL context loss and restore" |
+| SR-6 | Node row: the batched Contrarian at armor stage 3 has nine instances (three rings, six studs), every one visible in the front batch and none in the back | `builders.test.js` |
+| SR-7 | row: two views mounted, one unmounted, the observer's target set drops to one and no longer has the unmounted box | "the frame loop" |
+| SR-8 | `vi.setConfig({ testTimeout: 30000 })`, `waitFor` 20 s, with the reason | `AgentForm.engine.jsdom.test.jsx` |
+| SR-9 | §4.3 names the residue's two causes; §4.5's last sentence gives the real reason the batched path has no history effect | build report |
+| SR-10 | §4.1 states the measured scope of the 28 stills, what rests on the source diff, and that the harness is uncommitted | build report |
+| SR-11 | the comment names `agentForm.guard.test.js` | `engine/index.js:5` |
+| SR-16 | the lab fetches the engine chunk only where `hasWebGL()` | `AgentFormLab.jsx` |
+| SR-17 | kept, by the founder's ruling | — |
+
+**Mutation check of the round** (Linux, the fix commit checked out LF in a worktree, each mutant one exact replacement restored from the HEAD blob and hash-checked; the six engine, wrapper and lab files, now 74 rows):
+
+| Mutant | Before the round | After | Killed by |
+|---|---|---|---|
+| M1 the old studio target not disposed on restore | survived | **killed** (1 of 74) | the SR-5 row |
+| M2 `update()` never redraws a non-animating view | survived | **killed** | the SR-3 row |
+| M3 no resize on a size or face change | survived | **killed** | the SR-4 row |
+| M4 the Contrarian tie rule `<=` → `<` | survived | **killed** | the SR-6 row |
+| M5 no `unobserve` on unmount | survived | **killed** | the SR-7 row |
+| N1 the loop's per-view guard removed | — | **killed** | the SR-2 lifecycle row |
+| N2 the box not isolated | — | **killed** | the SR-1 pin row |
+| N3 an unavailable view with a still shows the fallback | — | **killed** | the SR-2 wrapper row |
+
+Every kill is by exactly one row, the one that names the defect, with 73 of 74 passing; no file dropped out. M6 stays unrun (equivalent, §2).
+
+**Checks on `b93d46c2`** (Linux, WSL, CI's Node 20.20.2): `lint:gate` exit 0; `vite build` exit 0, 44 JS chunks (the flag-off count, no lab or engine chunk); the full suite, `TZ=UTC`, 8 workers, under the suite lock: **26,934 rows (6 new), 26,844 pass, 1 fail, 89 skipped** on the first run. The one red row is `api/_utils/callRecords/publish.test.js` "the transaction (row 7) the queue read returns after the deadline", a real-time deadline row in a folder this PR does not touch (the PR's `api/` diff against `main` is empty); the first review run had shown a sibling row of the same family (`retire.test.js` CB1-2) red once and green alone on both trees. Rechecked: `publish.test.js` alone on the fix tree 37 of 37, the whole `api/_utils/callRecords/` folder alone 568 of 568, the same file on `main`'s tree 37 of 37 (its assertion read `phaseResult: 'unconfirmed'` for `'timeout_absent'`, a deadline landing late under the 8-worker load). **The second full run on `b93d46c2`, nothing else running: 26,934 rows, 26,845 pass, 0 fail, 89 skipped**, 1,220 files passed, 8 skipped. The two timing rows of that family are a pre-existing load sensitivity in untouched code, recorded here for separate tasking, not a finding against this PR.
+
+**Verdict after the round: MERGE.** Nothing of SR-1 to SR-8 remains open; the notes not applied (SR-12 to SR-15, SR-17, SR-18) need no change. The §5 carry-overs for S1 stand, items 1 and 6 now satisfied by the round.

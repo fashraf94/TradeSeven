@@ -1,0 +1,186 @@
+// agent-boards-v2.jsx — one being: Shadow's brain in archetype armor. Shared bits + system intro + boards 1, 2, 3, 4, 7.
+const { FF, FF_MONO, ffA, FfEyebrow, FfTag, FfIco, FfBtn, FfMono, injectFfCSS } = window;
+injectFfCSS();
+const SANS = "'Schibsted Grotesk', system-ui, sans-serif";
+const META = () => (window.AF3 ? window.AF3.META : {});
+const KINDS = ['trend', 'contra', 'spec', 'preserve', 'divers', 'fund'];
+const NAMES = { none: 'Shadow', trend: 'Trend Follower', contra: 'Contrarian', spec: 'Speculator', preserve: 'Capital Preserver', divers: 'Diversifier', fund: 'Fundamental Investor' };
+
+function useMotion() {
+  const [m, setM] = React.useState(!!window.AF_MOTION);
+  React.useEffect(() => { const f = () => setM(!!window.AF_MOTION); window.addEventListener('af-motion', f); return () => window.removeEventListener('af-motion', f); }, []);
+  return m;
+}
+// One agent view. kind: 'none' (bare Shadow) or an armor set. core/armor: growth stages 0..2. fit: equip progress 0..1. brain=false renders the empty armor.
+function Agent({ kind = 'none', core = 0, armor = 0, state = 'idle', pal = 'teal', size = 200, fit = 1, brain = true, face = 1, zoom = 1, unfit = false, seed = 1, label, style }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const c = ref.current; let live = true, mounted = false;
+    const go = () => { if (!live || mounted) return; mounted = true; window.AF3.mount(c, { kind, core, armor, state, pal, size, fit, brain, face, zoom, unfit, seed }); };
+    if (window.AF3) go(); else window.addEventListener('af3-ready', go, { once: true });
+    return () => { live = false; window.removeEventListener('af3-ready', go); if (mounted) window.AF3.unmount(c); };
+  }, [kind, core, armor, state, pal, size, fit, brain, face, zoom, unfit, seed]);
+  return <canvas ref={ref} role="img" aria-label={label || `${kind === 'none' ? 'Shadow, unarmored' : 'Shadow wearing ' + NAMES[kind]} — ${state}`} style={{ width: size, height: size, display: 'block', flexShrink: 0, ...style }} />;
+}
+function Board({ n, title, note, children, style }) {
+  return <section data-screen-label={`Board ${n} · ${title}`} aria-label={`Board ${n}: ${title}`} style={{ width: 1720, background: FF.bg, border: `1px solid ${FF.hair2}`, borderRadius: 24, padding: '28px 32px 32px', color: FF.ink, fontFamily: SANS, ...style }}>
+    <header style={{ display: 'flex', alignItems: 'baseline', gap: 18, marginBottom: 22, flexWrap: 'wrap' }}><FfEyebrow color={FF.teal}>Board {n}</FfEyebrow><h2 style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: '-0.015em' }}>{title}</h2>{note && <span style={{ fontSize: 13.5, color: FF.ink2, textWrap: 'pretty' }}>{note}</span>}</header>
+    {children}
+  </section>;
+}
+function Panel({ children, style, pad = 18 }) { return <div style={{ background: FF.surface, border: `1px solid ${FF.hair}`, borderRadius: 18, padding: pad, minWidth: 0, ...style }}>{children}</div>; }
+function Motion({ children, style }) { return <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${FF.hair}`, fontFamily: FF_MONO, fontSize: 11, lineHeight: 1.55, color: FF.ink3, textWrap: 'pretty', ...style }}><span style={{ color: FF.teal, letterSpacing: '.12em', fontWeight: 600 }}>MOTION</span> {children}</div>; }
+function Name({ children, size = 17, style }) { return <div style={{ fontSize: size, fontWeight: 700, letterSpacing: '-0.01em', color: FF.ink, lineHeight: 1.2, ...style }}>{children}</div>; }
+function Desc({ children, size = 13.5, style }) { return <div style={{ fontSize: size, color: FF.ink2, lineHeight: 1.45, marginTop: 4, textWrap: 'pretty', ...style }}>{children}</div>; }
+function Centered({ children, h }) { return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: h }}>{children}</div>; }
+function Label({ children, color }) { return <FfMono style={{ fontSize: 10.5, color: color || FF.ink3, letterSpacing: '.14em', textTransform: 'uppercase' }}>{children}</FfMono>; }
+
+// ── System ───────────────────────────────────────────────────────────────────
+function Intro() {
+  const m = useMotion();
+  const rules = [
+    ['Material', 'Brain: soft light. Threads, a white-hot core, bloom. Armor: hard and dimensional. Dark glass-metal plates with lit edges, seams that leak the core’s light. Lit 3D with a three-quarter turn; every frame here is rendered live in Three.js.'],
+    ['Identity', 'Silhouette and motion carry it: hull, gimbals, shards, shields, pods, crystal. The plates change the outline and how the threads move inside; underneath it is always Shadow.'],
+    ['Color', 'Allegiance only. Teal edge light is yours, copper is the opponent, pewter is unworn. The plates are the same dark metal for everyone, so no set competes with the battle colours.'],
+    ['Growth and states', 'The core grows with the partnership; the armor grows with battles fought in that style. Mood changes speed, coherence, lean and light, and the plates react: flex, open, tighten. Never colour.'],
+  ];
+  return <section data-screen-label="System" aria-label="Identity system" style={{ width: 1720, background: FF.bg, border: `1px solid ${FF.hair2}`, borderRadius: 24, padding: '30px 32px 30px', color: FF.ink, fontFamily: SANS }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24 }}>
+      <div><FfEyebrow color={FF.teal}>FantasyTrades · agent identity · round 2</FfEyebrow><h1 style={{ margin: '10px 0 0', fontSize: 40, fontWeight: 800, letterSpacing: '-0.025em', lineHeight: 1.05 }}>One being: a brain and its armor</h1><p style={{ margin: '12px 0 0', fontSize: 16, color: FF.ink2, maxWidth: 680, lineHeight: 1.5, textWrap: 'pretty' }}>Shadow is the agent’s brain: luminous threads around a white-hot core. Each archetype is armor fitted to that brain, the way armor fits a soldier. Equipping an archetype is suiting up, so every layout has one slot.</p></div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}><FfBtn kind="accent" small icon={m ? 'pause' : 'play'} onClick={() => window.AF3 && window.AF3.setMotion(!m)} ariaPressed={m}>{m ? 'Live motion · switch to stills' : 'Still frames · switch to motion'}</FfBtn><FfMono style={{ fontSize: 10.5, color: FF.ink3, letterSpacing: '.08em' }}>EVERY FRAME IS A MOMENT OF THE LIVE FORM</FfMono></div>
+    </div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 14, marginTop: 26 }}>{rules.map(([h, b]) => <Panel key={h}><FfEyebrow>{h}</FfEyebrow><div style={{ fontSize: 13.5, color: FF.ink2, lineHeight: 1.5, marginTop: 8, textWrap: 'pretty' }}>{b}</div></Panel>)}</div>
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginTop: 24 }}>
+      {['none', ...KINDS].map((k, i) => <div key={k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: 134 }}><Agent kind={k} size={124} /><FfMono style={{ fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: i ? FF.ink3 : FF.teal, whiteSpace: 'nowrap' }}>{i ? NAMES[k] : 'Shadow · bare'}</FfMono></div>)}
+      <div style={{ flex: 1, paddingLeft: 24, paddingBottom: 24, fontSize: 13.5, color: FF.ink2, lineHeight: 1.5, maxWidth: 420, textWrap: 'pretty' }}>The family strip: the bare brain, then the same brain in six suits. One light source, six silhouettes you can name from across the room.</div>
+    </div>
+  </section>;
+}
+
+// ── Board 1 ──────────────────────────────────────────────────────────────────
+function Board1() {
+  return <Board n={1} title="Shadow, then suited" note="Unarmored, then wearing each of the six sets. New-agent stage, teal because it is yours.">
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: 12 }}>
+      {['none', ...KINDS].map((k, i) => { const m = META()[k] || {}; return <Panel key={k} pad="14px 14px 18px" style={i === 0 ? { background: ffA(FF.teal, .05), borderColor: ffA(FF.teal, .25) } : null}>
+        <Label color={i === 0 ? FF.teal : null}>{i === 0 ? 'Unarmored' : `Set 0${i}`}</Label>
+        <Centered h={216}><Agent kind={k} size={210} /></Centered>
+        <Name size={16}>{i === 0 ? 'Shadow' : NAMES[k]}</Name><Desc size={13}>{m.desc}</Desc><Motion>{m.motion}</Motion>
+      </Panel>; })}
+    </div>
+  </Board>;
+}
+
+// ── Board 2 · the equip moment ───────────────────────────────────────────────
+const ON = [[0, '0 ms', 'Armor summoned. Shadow alone; plates wait 1.2 radii out, unlit.'], [.28, '220 ms', 'Top-back facets fly in along their normals and seat first.'], [.55, '450 ms', 'The lock runs down the shell; edge light comes on as each facet seats.'], [.8, '700 ms', 'Lower facets close; threads compress into the shell.'], [1, '900 ms', 'Locked. One seam flash, then the slow turn resumes.']];
+const OFF = [[1, '0 ms', 'Release. The seams flash once.'], [.72, '180 ms', 'Facets unlock in reverse order, bottom-front first.'], [.45, '350 ms', 'Plates drift out at full size; edge light dims early.'], [.18, '550 ms', 'The shell is gone; Shadow’s threads re-expand into the space.'], [0, '700 ms', 'Bare. Shadow resumes its own idle.']];
+function Board2() {
+  const row = (frames, unfit, title, color) => <div>
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10 }}><Label color={color}>{title}</Label></div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 12 }}>
+      {frames.map(([fit, tm, note]) => <Panel key={tm + fit} pad="12px 14px 16px"><div style={{ display: 'flex', justifyContent: 'space-between' }}><FfMono style={{ fontSize: 11, color: FF.ink }}>{tm}</FfMono><FfMono style={{ fontSize: 10.5, color: FF.ink3 }}>fit {Math.round(fit * 100)}%</FfMono></div><Centered h={256}><Agent kind="fund" fit={fit} unfit={unfit} zoom={1.35} size={250} /></Centered><div style={{ fontSize: 12.5, color: FF.ink2, lineHeight: 1.45, textWrap: 'pretty' }}>{note}</div></Panel>)}
+    </div>
+  </div>;
+  return <Board n={2} title="The equip moment" note="Fundamental Investor. Suiting up is 900 ms, ease-out; coming off is 700 ms. Plates travel along their own normals, so the sequence is the same on every set.">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      {row(ON, false, 'Suiting up · equip', FF.teal)}
+      {row(OFF, true, 'Coming off · unequip', FF.ink3)}
+      <Motion style={{ marginTop: 0 }}>Facet i starts at fit = 0.47·order and seats over the next 53 % of the travel; position eases out (cubic), scale grows from 40 %, edge light follows the square of the ease. Unequip uses a power curve so plates leave at full size and the light goes first. Rive: one timeline per set, the same five keys.</Motion>
+    </div>
+  </Board>;
+}
+
+// ── Board 3 · two growth tracks ───────────────────────────────────────────────
+const STAGE_LABELS = ['First battle', '20 battles', '60+ battles'];
+const GROW_CORE = ['Five loops per family, a small core. The light barely reaches the seams.', 'Seven loops, a brighter core; light reaches every seam of the armor.', 'Nine loops and a core that floods the shell from inside.'];
+const GROW_ARMOR = ['Three rows of six to eight shields plus two caps. Plain plates, edge light at 85 %.', 'Wider rows (eight to ten), one etched inset line per plate, edge light at 100 %.', 'Dense rows (ten to twelve), two etch levels, edge light at 120 %.'];
+function Board3() {
+  return <Board n={3} title="Two growth tracks" note="Capital Preserver. The core grows with the partnership and is shared by every set; the armor grows with battles fought in this style. Neither changes the silhouette.">
+    <div style={{ display: 'grid', gridTemplateColumns: '250px repeat(3, minmax(0,1fr))', gap: 14, alignItems: 'stretch' }}>
+      <div />{STAGE_LABELS.map((l, i) => <div key={l} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '0 6px' }}><Label color={FF.teal}>Stage {i + 1}</Label><span style={{ fontSize: 15, fontWeight: 600 }}>{l}</span></div>)}
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}><Label color={FF.teal}>Track A</Label><Name size={19} style={{ marginTop: 6 }}>Partnership · Shadow’s core</Name><Desc>Armor held at first battle. More loops, a larger core, more light through the same seams.</Desc></div>
+      {[0, 1, 2].map(s => <Panel key={'c' + s} pad="12px 16px 16px"><Centered h={246}><Agent kind="preserve" core={s} armor={0} size={240} /></Centered><div style={{ fontSize: 13, color: FF.ink2, lineHeight: 1.45, textWrap: 'pretty' }}>{GROW_CORE[s]}</div></Panel>)}
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}><Label color={FF.gold}>Track B</Label><Name size={19} style={{ marginTop: 6 }}>Battles in this style · armor</Name><Desc>Core held at first battle. More plates, etched detail, brighter edge light.</Desc><Motion>{(META().preserve || {}).motion}</Motion></div>
+      {[0, 1, 2].map(s => <Panel key={'a' + s} pad="12px 16px 16px"><Centered h={246}><Agent kind="preserve" core={0} armor={s} size={240} /></Centered><div style={{ fontSize: 13, color: FF.ink2, lineHeight: 1.45, textWrap: 'pretty' }}>{GROW_ARMOR[s]}</div></Panel>)}
+    </div>
+  </Board>;
+}
+
+// ── Board 4 · states ─────────────────────────────────────────────────────────
+const STATE_NOTES = [
+  ['idle', 'Idle', 'Slow current through the vents, plates at rest, one signal every few seconds.'],
+  ['researching', 'Researching', 'Threads race; the head scans with small yaw swings; vent plates flex open a notch.'],
+  ['confident', 'Confident', 'Leans further forward; plates lift a notch so the seams brighten; edge light +25 %.'],
+  ['worried', 'Worried (losing)', 'Lean flattens, threads fray and dim 30 %; plates draw in and the edge light drops. Hue unchanged.'],
+  ['waiting', 'Waiting for your call', 'The current nearly stops; the core beacons on a two-second pulse through the seams.'],
+  ['celebrating', 'Celebrating a win', 'Plates flare open, threads lift and fan; blooms run the hull; one ring burst every 2.4 s.'],
+];
+function Board4() {
+  return <Board n={4} title="States" note="Trend Follower, armored. Round 1’s six parameters (speed, coherence, lean, light, spread, openness) drive the threads and the plates together.">
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0,1fr))', gap: 14 }}>
+      {STATE_NOTES.map(([st, label, note]) => <Panel key={st} pad="14px 16px 18px">
+        <Label color={st === 'worried' ? FF.ink3 : FF.teal}>{st}</Label>
+        <Centered h={246}><Agent kind="trend" state={st} size={240} /></Centered>
+        <Name>{label}</Name><Motion>{note}</Motion>
+      </Panel>)}
+    </div>
+  </Board>;
+}
+
+// ── Board 7 · battle ─────────────────────────────────────────────────────────
+function Bubble({ kind, who, children, pal = 'teal', mine }) {
+  const box = { padding: '10px 14px', borderRadius: mine ? '16px 16px 4px 16px' : '16px 16px 16px 4px', background: mine ? ffA(FF.teal, .12) : FF.surface, border: `1px solid ${mine ? ffA(FF.teal, .3) : FF.hair}`, fontSize: 14, lineHeight: 1.45, color: FF.ink };
+  if (mine) return <div style={{ alignSelf: 'flex-end', maxWidth: 330, ...box }}>{children}</div>;
+  return <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+    <div style={{ width: 40, height: 40, borderRadius: 20, background: FF.bg, border: `1px solid ${FF.hair}`, overflow: 'hidden', flexShrink: 0 }}><Agent kind={kind} core={1} armor={1} size={40} pal={pal} /></div>
+    <div style={{ maxWidth: 330, minWidth: 0 }}>{who && <FfMono style={{ display: 'block', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: FF.ink3, marginBottom: 4, marginLeft: 2 }}>{who}</FfMono>}<div style={box}>{children}</div></div>
+  </div>;
+}
+function CockpitTile({ kind, pal, name, sub, pnl, pos, state, color }) {
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 14, background: FF.bg, border: `1px solid ${ffA(color, .35)}`, boxShadow: `inset 3px 0 0 ${ffA(color, .7)}` }}>
+    <div style={{ width: 40, height: 40, borderRadius: 12, background: FF.surface, border: `1px solid ${FF.hair}`, overflow: 'hidden', flexShrink: 0 }}><Agent kind={kind} core={1} armor={kind === 'trend' ? 1 : 0} size={40} pal={pal} face={pal === 'copper' ? -1 : 1} /></div>
+    <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.2 }}>{name}</div><div style={{ fontSize: 12, color: FF.ink3, marginTop: 3 }}>{sub}</div></div>
+    <div style={{ textAlign: 'right' }}><FfMono style={{ display: 'block', fontSize: 16, fontWeight: 700, color: pos ? FF.pos : FF.neg }}>{pnl}</FfMono><FfMono style={{ fontSize: 9.5, letterSpacing: '.12em', color: FF.ink3 }}>{state}</FfMono></div>
+  </div>;
+}
+function Fighter({ kind, pal, face, name, sub, pnl, pos, color, align }) {
+  const right = align === 'right';
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexDirection: right ? 'row-reverse' : 'row', flex: 1, minWidth: 0 }}>
+    <Agent kind={kind} core={1} armor={kind === 'trend' ? 1 : 0} pal={pal} face={face} size={230} state={pos ? 'confident' : 'worried'} />
+    <div style={{ textAlign: right ? 'right' : 'left', minWidth: 0 }}><Label color={color}>{right ? 'Opponent' : 'You'}</Label><div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 6, lineHeight: 1.05 }}>{name}</div><div style={{ fontSize: 13.5, color: FF.ink2, marginTop: 6 }}>{sub}</div><FfMono style={{ display: 'block', fontSize: 30, fontWeight: 700, color: pos ? FF.pos : FF.neg, marginTop: 12 }}>{pnl}</FfMono></div>
+  </div>;
+}
+function Board7() {
+  return <Board n={7} title="Battle" note="Your agent in teal edge light, the opponent’s in copper. Same dark plates, same forms; only the light says whose it is. Then the 40 px uses and the grayscale check.">
+    <section data-screen-label="Battle header" style={{ borderRadius: 20, background: `radial-gradient(ellipse at 18% 50%, ${ffA(FF.teal, .09)}, transparent 45%), radial-gradient(ellipse at 82% 50%, ${ffA(FF.copper, .09)}, transparent 45%), ${FF.surface}`, border: `1px solid ${FF.hair}`, padding: '22px 36px', display: 'flex', alignItems: 'center', gap: 28 }}>
+      <Fighter kind="trend" pal="teal" face={1} name="Trend Follower" sub="Shadow · 31 battles in this armor" pnl="+2.4%" pos color={FF.teal} align="left" />
+      <div style={{ textAlign: 'center', flexShrink: 0, padding: '0 10px' }}><FfMono style={{ fontSize: 11, letterSpacing: '.18em', color: FF.ink3, display: 'block' }}>ROUND 3 · 02:14</FfMono><div style={{ fontSize: 44, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1, marginTop: 10, color: FF.ink }}>VS</div><FfMono style={{ fontSize: 10.5, letterSpacing: '.14em', color: FF.ink3, display: 'block', marginTop: 10 }}>WEEKLY LADDER</FfMono></div>
+      <Fighter kind="contra" pal="copper" face={-1} name="Contrarian" sub="Mara K. · 12 battles in this armor" pnl="−0.8%" color={FF.copper} align="right" />
+    </section>
+    <div style={{ display: 'grid', gridTemplateColumns: '470px 470px minmax(0,1fr)', gap: 14, marginTop: 14 }}>
+      <Panel><FfEyebrow>Chat · 40 px</FfEyebrow>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 14 }}>
+          <Bubble kind="trend" who="Shadow · wearing Trend Follower">Semis held volume into the close. Two names on your list are still extending.</Bubble>
+          <Bubble mine>Hold. Flag me if it breaks.</Bubble>
+          <Bubble kind="trend" who="Shadow">Holding through the open unless volume fades.</Bubble>
+        </div>
+        <Motion>One avatar, since it is one being. At 40 px the hull silhouette reads and the streams trail; the small render thickens edge lines and skips the bloom pass.</Motion>
+      </Panel>
+      <Panel><FfEyebrow>Battle cockpit · 40 px</FfEyebrow>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+          <CockpitTile kind="trend" pal="teal" name="Trend Follower" sub="You · Shadow" pnl="+2.4%" pos state="CONFIDENT" color={FF.teal} />
+          <CockpitTile kind="contra" pal="copper" name="Contrarian" sub="Opponent · Mara K." pnl="−0.8%" state="WORRIED" color={FF.copper} />
+        </div>
+        <Motion>Opponents face the other way (the render is mirrored, so the key light swaps sides too). Copper edges and core; the plates stay the same metal.</Motion>
+      </Panel>
+      <Panel><FfEyebrow>Grayscale check</FfEyebrow>
+        {[40, 24].map(sz => <div key={sz} style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginTop: sz === 40 ? 16 : 18 }}>
+          <FfMono style={{ fontSize: 10.5, color: FF.ink3, width: 40, paddingTop: sz / 2 - 6 }}>{sz} px</FfMono>
+          {['none', ...KINDS].map(k => <div key={k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, width: 86 }}><div style={{ width: sz, height: sz, borderRadius: sz / 4, background: FF.bg, border: `1px solid ${FF.hair}`, overflow: 'hidden' }}><Agent kind={k} size={sz} pal="mono" /></div>{sz === 40 && <span style={{ fontSize: 10.5, color: FF.ink3, textAlign: 'center', lineHeight: 1.25 }}>{k === 'none' ? 'Bare' : NAMES[k]}</span>}</div>)}
+        </div>)}
+        <Motion>Shape carries it: a knot of light, a hull, two rings, a burst, a ball, a ring of pods, a crystal. 24 px is below spec and shown as a stress test.</Motion>
+      </Panel>
+    </div>
+  </Board>;
+}
+
+Object.assign(window, { useMotion, Agent, Board, Panel, Motion, Name, Desc, Centered, Label, Intro, Board1, Board2, Board3, Board4, Board7, SANS, KINDS, NAMES });
