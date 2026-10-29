@@ -29,4 +29,4 @@
  * Nothing in the hub, the battle view or the picker reads it.
  */
 // Pinned by: agentFormLabFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const AGENT_FORM_LAB_ENABLED = false;
+export const AGENT_FORM_LAB_ENABLED = true;
