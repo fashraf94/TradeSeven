@@ -14,6 +14,7 @@ import React from 'react';
 import FilmRoomDeepDive, { displayNameOf } from './FilmRoomDeepDive';
 import { mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, sweepNumbers, sweepWords, sweepSigns, parseNumeral } from './__fixtures__/filmRoomHarness';
 import { fmtVolume } from './filmRoomModel';
+import { EXIT_MECHANISMS } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -73,15 +74,39 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
       ['archetype_rotation', null, 'by platform rule · rule not recorded'],
       ['gameplan_meeting', null, 'by the gameplan meeting'],
       [undefined, null, 'maker not recorded'],
-      // review KR4-2 / KRV4: a stored reason is said after the meeting and after an unrecorded maker — every real meeting
-      // swap carries 'gameplan_rotation' (tapeAssemble.js maps the mechanism from it); an unrecorded maker any other code
-      ['gameplan_meeting', 'gameplan_rotation', 'by the gameplan meeting · gameplan_rotation'],
+      // Amendment L RL-4: the meeting maker drops the raw code — every real meeting swap carries 'gameplan_rotation'
+      // (tapeAssemble.js maps the mechanism from it), and the chart says "by the gameplan meeting" alone; review KR4-2:
+      // an unrecorded maker keeps any stored reason after it, as before
+      ['gameplan_meeting', 'gameplan_rotation', 'by the gameplan meeting'],
       [undefined, 'legacy_code', 'maker not recorded · legacy_code'],
     ]) {
       m.render(<Harness key={`${mechanism}:${exitReason}`} tape={planted(mechanism, exitReason)} series={sep23Series} start="MSFT" />);
       expect(m.q('[data-swap-label="0"]').textContent, String(mechanism)).toBe(`Exit · 12:45 PM · ${maker}`);
       expect(m.q('[data-region="price-chart"]').textContent, String(mechanism)).not.toMatch(/Exit by|Exit maker/);
     }
+  });
+
+  it('Amendment L RL-4 — a real meeting swap (the writer\'s mapping: gameplan_rotation → the meeting): both names read "by the gameplan meeting" with no code after it; a platform rule keeps its reason on both names; the symbol\'s facts keep the recorded reason (the mutants: the raw code back after the meeting maker; a platform rule\'s reason dropped)', () => {
+    expect(EXIT_MECHANISMS.gameplan_rotation).toBe('gameplan_meeting');
+    const meeting = clone(sep23Tape);
+    meeting.actions[0] = { ...meeting.actions[0], exitReason: 'gameplan_rotation', mechanism: EXIT_MECHANISMS.gameplan_rotation };
+    const { symbolOut, symbolIn } = meeting.actions[0];
+    expect([symbolOut, symbolIn]).toEqual(['MSFT', 'CRWD']);
+    m.render(<Harness key="meeting" tape={meeting} series={sep23Series} start={symbolOut} />);
+    expect(m.q('[data-swap-label="0"]').textContent).toBe('Exit · 12:45 PM · by the gameplan meeting');
+    // RL-4 is the chart's: the symbol's facts keep exitMakerOf's words, the recorded reason after them
+    expect(m.q('[data-region="symbol-facts"]').textContent).toContain('Exit by the gameplan meeting · gameplan_rotation');
+    m.click(chip(symbolIn));
+    expect(m.q('[data-swap-label="0"]').textContent).toBe('Entry · 12:45 PM · in for MSFT · by the gameplan meeting');
+    expect(m.q('[data-region="price-chart"]').textContent).not.toContain('gameplan_rotation');
+    // a platform rule keeps its reason on both names (RJ-4)
+    const rule = clone(sep23Tape);
+    rule.actions[0] = { ...rule.actions[0], exitReason: 'stagnation', mechanism: EXIT_MECHANISMS.stagnation };
+    m.render(<Harness key="rule" tape={rule} series={sep23Series} start={symbolOut} />);
+    expect(m.q('[data-swap-label="0"]').textContent).toBe('Exit · 12:45 PM · by platform rule · stagnation');
+    m.click(chip(symbolIn));
+    expect(m.q('[data-swap-label="0"]').textContent).toBe('Entry · 12:45 PM · in for MSFT · by platform rule · stagnation');
+    expect(sweepWords(m.container, docsFor(rule, sep23Series))).toEqual([]);
   });
 
   it('FR-04 / RK-5: no swap annotation on the chart reads "Exit by …" — every swap\'s bought name and sold name', () => {

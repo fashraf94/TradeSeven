@@ -467,13 +467,15 @@ export function exitMakerOf(action) {
  * B2.1 A4 (FR-04; RJ-4) — who made the swap, as the BOUGHT name's annotation says it: never "Exit by …" on the name
  * that came in. The same recorded mechanism as exitMakerOf, the same reason beside a platform rule. Since Amendment K
  * RK-5 the chart's SOLD-name annotation reads the same makers ("Exit · {time} · {maker}"); exitMakerOf's words stay
- * everywhere else (Glance, Study, the symbol's facts).
+ * everywhere else (Glance, Study, the symbol's facts). Amendment L RL-4: the gameplan meeting reads "by the gameplan
+ * meeting" with no code after it (every real meeting swap records `gameplan_rotation`); a platform rule keeps its
+ * reason (RJ-4), and a maker not recorded keeps any it stored.
  */
 export function entryMakerOf(action) {
   const W = EXIT_MAKER_WORDS;
   const { by } = exitMakerOf(action);
   if (by === 'platform') return { by, label: `${W.platform.entry} · ${str(action?.exitReason) ?? W.platform.noReason}` };
-  const reason = by === 'agent' ? null : str(action?.exitReason);
+  const reason = by === 'agent' || by === 'gameplan' ? null : str(action?.exitReason);
   return { by, label: reason ? `${W[by].entry} · ${reason}` : W[by].entry };
 }
 
