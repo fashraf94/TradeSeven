@@ -2,6 +2,7 @@
 
 **Date:** Oct 29, 2026 · **Draft PR, not merged; the founder merges.**
 **Branch:** `claude/drb-stale-fix`, pushed by refspec from the desktop app's worktree branch `claude/drb-stale-fix-a7ca91` (the app adds the suffix; same commits).
+**Git state at start:** `git fetch origin` ran first. `origin/main` was `74d3078f`, and the worktree's branch was cut there with a clean tree. Local `main` was left alone because it is checked out in the main checkout; no fast-forward was needed for this worktree.
 **Base:** `main` @ `74d3078f`. `main` has since moved to `fc0cb6f0` (PR #1007, agent form S0): no file overlap, merges clean, and the final checks ran on the merge (§5).
 **Basis:** `docs/audits/20261028_PHASE0_DRB_DISCOVERY.md`, read from `claude/drb-phase0` @ `ef7e6943` with `git show`, not merged.
 
@@ -11,7 +12,7 @@
 2. **For the brief.** The AI now sees at most 8 earnings this week and 5 next week, plus a "(+37 more not listed)" count. It lists at most 10 events, each with one short sentence.
 3. **If an answer is still cut off,** the brief is kept and the loss is recorded, unless the brief paragraph itself was cut. Every run now logs why the answer ended and how long it was.
 4. **For the player.** The hub tells the brief's true age: "Last session's brief" only at exactly one session old; "Brief for Tue Oct 20 · 3 sessions old", folded behind More, from two to five; "No brief available" after five. "Generated" now names the day.
-5. **The test calls.** Two real calls on a rebuilt Oct 28 (45 earnings, the Fed decision, GDP, PCE) both finished normally at about 1,300 of the 2,500-token limit; the failing runs had hit the limit. Each listed 10 events, all from the input, and returned the themes.
+5. **The test calls.** Two real calls on a rebuilt Oct 28 (45 earnings, the Fed decision, GDP, PCE) both finished normally at about 1,300 of the 2,500-token limit; the failing runs are believed to have hit that limit (inferred in Phase 0, never logged). Each listed 10 events, all from the input, and returned the themes.
 6. **One thing to decide.** The earnings feed sends no company sizes, so the 8 are picked by the order of the company list already in the code (big tech first). See FQ-1.
 
 ## 2. Verdict
@@ -74,7 +75,7 @@
 
 **Notes on the calls.**
 - `stop_reason` is `tool_use`, not `end_turn`. That is the normal end of a forced tool call, and it is not `max_tokens`.
-- For comparison, the failing runs used ~2,344+ tokens and were cut at 2,500 (Phase 0 §3 Q2).
+- For comparison, Phase 0's largest *successful* run used 2,344 tokens for 21 events (Oct 21). Phase 0 inferred, but could not read, that the failing runs were cut at the 2,500 cap: the handler did not log `stop_reason` (Phase 0 §3 Q2). This build now logs it.
 - With at most 10 events, the old fit (output ≈ 338 + 101 × events) gives a ceiling of about 1,350 tokens.
 - The second call was used to verify the prompt as changed by the review. One wording change came after it: the earnings headers went from "priority names first" to "in date order" (refute pass N-1). It is a header-only change with no effect on what is listed.
 
