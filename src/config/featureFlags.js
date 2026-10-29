@@ -3400,7 +3400,9 @@ export const STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED = true;
  * Command Center hub — slice S0 (spec
  * docs/specs/20261012_COMMAND_CENTER_CORE_IMPLEMENTATION_SPEC_V1_2.md §2, §4,
  * §11; build report docs/audits/20261015_BUILD_COMMAND_CENTER_HUB_S0.md).
- * DARK — default FALSE.
+ * LIVE — the shipped state is TRUE: the hub for every player since the
+ * founder's flip PR of October 28, 2026
+ * (docs/audits/20261028_ACTIVATION_COMMAND_CENTER_HUB.md).
  *
  * When TRUE, both dashboard mount sites in App.jsx render the hub
  * (CommandCenterHubGate, which lazily loads CommandCenterHub) in place of the
@@ -3413,24 +3415,33 @@ export const STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED = true;
  * state would render at the same width and flags, under a Retry / Reload /
  * Dismiss notice.
  *
- * When FALSE (the shipped state): the picker returns the legacy shell at both
+ * When FALSE (the rollback state): the picker returns the legacy shell at both
  * sites — CommandDashboard or DashboardLoop on mobile, CommandDashboardDesktop
  * (in its sidebar offset) or DashboardDesktop on desktop, by their own flags,
  * exactly as before S0. The gate is never rendered, so the hub chunk is never
  * requested and no hub read, timer, listener, subscription or effect exists.
  *
- * S0 is a scaffold: the hub module is one labelled placeholder. The later
- * slices (S1–S7, S2b) build the hub behind this same flag.
+ * S0 was a scaffold (one labelled placeholder); the later slices (S1–S8, S2b,
+ * the S8 fix build) built the hub behind this same flag.
  *
  * Read it at RENDER scope through isCommandCenterHubOn() below, never as a
  * module-scope const in a consumer (the isCharacterPaneOn rule — the
  * featureFlags vi.mock hazard). No URL, environment or localStorage override
- * exists. The founder previews it on never-merge smoke branches that flip this
- * one line and nothing else (S0's is named in its build report).
+ * exists. Before activation the founder previewed it on
+ * never-merge smoke branches that flipped this one line and nothing else
+ * (S0's is named in its build report).
  *
- * RUNWAY: activation is a separate founder action after the reviewed core,
+ * RUNWAY: activation was a separate founder action after the reviewed core,
  * deployment validation, fidelity/device evidence and useful Research for the
- * intended admitted cohort (spec §0, §12). Never a build PR.
+ * intended admitted cohort (spec §0, §12). Never a build PR. It happened on
+ * October 28, 2026, in the founder's own flip PR, which ran the flip map below
+ * in one commit; the activation record is
+ * docs/audits/20261028_ACTIVATION_COMMAND_CENTER_HUB.md.
+ * ROLLBACK: revert that one commit (or promote the previous deployment in
+ * Vercel). The legacy dashboards stay in the code and return as soon as this
+ * flag is false. The rollback state stays tested: App.bootOrder.jsdom.test.jsx
+ * and App.activeBattlesPoll.owner.jsdom.test.jsx mock the accessor per row,
+ * false for their legacy-shell rows and true for each row's hub sibling.
  * THE FLIP MAP — one commit, which a rollback runs in reverse (BUILD_RULES §2):
  *   1. this constant → true;
  *   2. commandCenterHubFlags.test.js: the pin row → true, the accessor row's
@@ -3441,7 +3452,7 @@ export const STOCK_MEASURED_THRESHOLDS_ADMISSION_ENABLED = true;
  *      (the shipped state)") reworded to the live state.
  */
 // Pinned by: commandCenterHubFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const COMMAND_CENTER_HUB_ENABLED = false;
+export const COMMAND_CENTER_HUB_ENABLED = true;
 
 /** The ONE consumer seam for the hub flag, read at render: the flag and nothing else. */
 export function isCommandCenterHubOn() {

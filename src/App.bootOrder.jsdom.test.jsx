@@ -21,6 +21,12 @@
 // Firestore are the redirect mocks (src/firebase/__mocks__/config.js,
 // __mocks__/firebase/firestore.js; see App.activeBattlesPoll.owner.jsdom.test.jsx),
 // and poll runs are counted where they begin (createActivePollFlights).
+//
+// Both states of the hub flag (its flip, October 28, 2026): each row runs with
+// the accessor mocked false — the rollback state, App on the legacy desktop
+// shell, the rows as S3 wrote them — and with it true, the shipped state, App
+// on the hub gate (a probe here). The boot order is App's, so it holds for
+// whichever shell the dashboard renders first.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
@@ -79,6 +85,10 @@ vi.mock('./hooks/useAgent', () => ({
   default: () => ({ agent: { id: 'a1', name: 'Aurora', archetype: 'degen' }, hasAgent: true, loading: false }),
 }));
 vi.mock('./hooks/useIsMobile', () => ({ useIsMobile: () => ({ isMobile: false, isTablet: false }) }));
+// The hub flag through its accessor, the one every reader calls (App's pick, the hub chrome predicates, the deploy
+// provider): each state below sets it.
+const hubFlag = vi.hoisted(() => ({ on: false }));
+vi.mock('./config/featureFlags', async (importOriginal) => ({ ...(await importOriginal()), isCommandCenterHubOn: () => hubFlag.on }));
 
 // Each App instance's poll runs, counted where they begin (App's one run bookkeeping, unchanged underneath).
 const polls = vi.hoisted(() => []);
@@ -95,11 +105,19 @@ vi.mock('./utils/activeBattlesPoll', async (importOriginal) => {
   };
 });
 
-// The legacy desktop shell: a probe of the identity the FIRST dashboard render saw.
-const shell = vi.hoisted(() => ({ rendered: false, firstIdentity: null, read: null }));
+// The dashboard shell — the legacy desktop shell with the hub off, the hub gate with it on: a probe of the identity
+// the FIRST dashboard render saw, and of which shell that render was.
+const shell = vi.hoisted(() => ({ rendered: false, firstIdentity: null, read: null, which: null }));
 vi.mock('./components/Dashboard/CommandDashboardDesktop', () => ({
   default: function CommandDashboardDesktopProbe() {
-    if (!shell.rendered) shell.firstIdentity = shell.read();
+    if (!shell.rendered) { shell.firstIdentity = shell.read(); shell.which = 'legacy'; }
+    shell.rendered = true;
+    return null;
+  },
+}));
+vi.mock('./components/CommandCenter/CommandCenterHubGate', () => ({
+  default: function CommandCenterHubGateProbe() {
+    if (!shell.rendered) { shell.firstIdentity = shell.read(); shell.which = 'hub'; }
     shell.rendered = true;
     return null;
   },
@@ -170,6 +188,7 @@ beforeEach(() => {
   polls.length = 0;
   shell.rendered = false;
   shell.firstIdentity = null;
+  shell.which = null;
   firestore.getDoc.mockImplementation(async (ref) => (
     ref ? { exists: () => true, data: () => USER_DOC } : { exists: () => false, data: () => null }
   ));
@@ -192,30 +211,39 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe('the dashboard cannot start the poll before Firebase has answered once (the boot order the owner capture relies on)', () => {
-  it('a restored session, Firebase still initialising at mount: the identity is resolved when the dashboard first renders, and the poll runs once', async () => {
-    // The SDK sets currentUser while it persists the user, before it announces it.
-    fb.auth.currentUser = { uid: 'uid-A', getIdToken: async () => 'tok' };
-    await act(async () => { root.render(<Mounted />); });
-    await flush(4);
-    expect(readAuthIdentity().resolved).toBe(false);
-    fb.initialised = true;
-    await act(async () => { fb.initResolve(); });
-    expect(await waitUntil(() => shell.rendered), 'App reached the legacy dashboard shell').toBe(true);
-    await flush();
-    expect(shell.firstIdentity, 'the identity the FIRST dashboard render saw').toEqual({ resolved: true, uid: 'uid-A', authEpoch: 1 });
-    expect(runs(), 'one run: no capture was taken before the first answer').toBe(1);
-  });
+describe.each([
+  ['the hub off (the rollback state, the accessor mocked false): App renders the legacy desktop shell', false, 'legacy'],
+  ['the hub on (the shipped state): App renders the hub gate', true, 'hub'],
+])('%s', (_state, hubOn, which) => {
+  beforeEach(() => { hubFlag.on = hubOn; });
 
-  it('a form login from a signed-out start: the dashboard first renders under the new identity, and the poll runs once', async () => {
-    fb.initialised = true;
-    await act(async () => { root.render(<Mounted />); });
-    await flush(4);
-    expect(readAuthIdentity()).toEqual({ resolved: true, uid: null, authEpoch: 1 });
-    await act(async () => { await loginRef.current('tester@example.com', 'pw'); });
-    expect(await waitUntil(() => shell.rendered), 'App reached the legacy dashboard shell').toBe(true);
-    await flush();
-    expect(shell.firstIdentity, 'the identity the FIRST dashboard render saw').toEqual({ resolved: true, uid: 'uid-A', authEpoch: 2 });
-    expect(runs()).toBe(1);
+  describe('the dashboard cannot start the poll before Firebase has answered once (the boot order the owner capture relies on)', () => {
+    it('a restored session, Firebase still initialising at mount: the identity is resolved when the dashboard first renders, and the poll runs once', async () => {
+      // The SDK sets currentUser while it persists the user, before it announces it.
+      fb.auth.currentUser = { uid: 'uid-A', getIdToken: async () => 'tok' };
+      await act(async () => { root.render(<Mounted />); });
+      await flush(4);
+      expect(readAuthIdentity().resolved).toBe(false);
+      fb.initialised = true;
+      await act(async () => { fb.initResolve(); });
+      expect(await waitUntil(() => shell.rendered), 'App reached the dashboard shell').toBe(true);
+      expect(shell.which, 'the shell the hub flag picks').toBe(which);
+      await flush();
+      expect(shell.firstIdentity, 'the identity the FIRST dashboard render saw').toEqual({ resolved: true, uid: 'uid-A', authEpoch: 1 });
+      expect(runs(), 'one run: no capture was taken before the first answer').toBe(1);
+    });
+
+    it('a form login from a signed-out start: the dashboard first renders under the new identity, and the poll runs once', async () => {
+      fb.initialised = true;
+      await act(async () => { root.render(<Mounted />); });
+      await flush(4);
+      expect(readAuthIdentity()).toEqual({ resolved: true, uid: null, authEpoch: 1 });
+      await act(async () => { await loginRef.current('tester@example.com', 'pw'); });
+      expect(await waitUntil(() => shell.rendered), 'App reached the dashboard shell').toBe(true);
+      expect(shell.which, 'the shell the hub flag picks').toBe(which);
+      await flush();
+      expect(shell.firstIdentity, 'the identity the FIRST dashboard render saw').toEqual({ resolved: true, uid: 'uid-A', authEpoch: 2 });
+      expect(runs()).toBe(1);
+    });
   });
 });

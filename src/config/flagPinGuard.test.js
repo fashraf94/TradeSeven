@@ -137,8 +137,14 @@ const DARK_BY_DESIGN = {
     'Spec 1 dormancy downshift (§6.5) — trading/close never downshift; flips only after a founder preview smoke',
   COMMAND_CENTER_SYNC_ENABLED:
     'Command Center Sync Pass 1 — the Desk, the phase slots and the Huddle tab label; read-only, flips in its own PR after a founder preview smoke, never a build PR',
-  COMMAND_CENTER_HUB_ENABLED:
-    'Command Center hub (spec V1.2, slices S0–S8) — both dashboard mount sites pick the hub through one pure picker; flag-off they render the legacy shells exactly as before and the hub chunk is never requested. Built dark across the slices; activation is a separate founder action after the reviewed core, deployment validation, device evidence and useful Research (spec §12), never a build PR. The flip runs the FLIP MAP in the flag\'s docstring in one commit: the pin in commandCenterHubFlags.test.js to true AND that file\'s registration row turned around to assert this entry is gone, this entry dropped, and the docstring\'s state lines reworded; no URL, environment or localStorage override exists',
+  // COMMAND_CENTER_HUB_ENABLED intentionally ABSENT: the Command Center hub
+  // (spec V1.2, slices S0–S8) flipped true on 2026-10-28 in the founder's own
+  // flip PR — the deliberate flip drops it here in the same commit, per the
+  // guard's own "if DELIBERATE" instruction. Its pin in
+  // commandCenterHubFlags.test.js asserts the live true value AND, turned
+  // around, that this entry is gone — a rollback (the revert of that commit)
+  // moves both back together. Re-adding it while it ships true fails the
+  // DARK_BY_DESIGN integrity test below.
   // COCKPIT_2B_ENABLED intentionally ABSENT: Cockpit Build 2b (spotlight,
   // commands and "Who comes in?" — docs/COCKPIT_BUILD2B_SPEC_V1_0.md, contract
   // Amendment D) flipped true in the founder's flip PR (spec §10.2) — the
