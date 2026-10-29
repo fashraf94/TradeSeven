@@ -1,6 +1,6 @@
 # Build S1: The armored agent in the Command Center and in BaggerBomb battles
 
-**Run date:** October 29, 2026 · **Model:** Opus · **Branch:** `claude/agent-form-s1`, cut from `main` @ `fc0cb6f0` (PR #1007, S0, merged with its review fixes), pushed from the worktree branch `claude/agent-form-s1-49345c` by refspec · **Smoke branch:** `claude/agent-form-s1-smoke` · **Preview:** SMOKE_PREVIEW_URL
+**Run date:** October 29, 2026 · **Model:** Opus · **Branch:** `claude/agent-form-s1`, cut from `main` @ `fc0cb6f0` (PR #1007, S0, merged with its review fixes), pushed from the worktree branch `claude/agent-form-s1-49345c` by refspec · **Smoke branch:** `claude/agent-form-s1-smoke` · **Preview:** https://trade-seven-nkueav6ig-fais-projects-bc179554.vercel.app
 
 **Preamble.** `git fetch origin` ran first: `origin/main` = `fc0cb6f0` = the merge of PR #1007, so S0 and its eight review fixes are on `main` (the prompt's STOP condition does not apply). The tree was clean. Every Phase 0 site was re-located on `main` before any write; none had moved in a way that changes this scope (§2). Fenced files read: `api/cron/agent-evaluate.js` is not fenced; it was read at `:231` and `:927-966` for the evaluation lock. Fenced functions called: none. Fenced files edited: none. Nothing under `api/` changed.
 
@@ -17,7 +17,7 @@
 | 5 | R6 guard amendments | (a) Exactly one lazy edge, `loadEngine.js -> engine/index.js`, pinned by path. (b) `three` is reachable only behind that edge; `PERMITTED_PACKAGES` is unchanged. (c) The wrapper joins the activity scan and the call-by-call activity guard. (d) A row shows the rate comes only from the constant and the size rule. **Every row was mutation-checked.** |
 | 6 | R3 glow | **The glow did reach past the box**, faintly, where the connector leaves the hub hero (measured in headless Edge, §5). So the hero uses `contain: paint`; clipped, the spill is 0. |
 | 7 | Tests | 10 new test files and amended guards. **Mutation: 39 of 39 mutants killed**: 31 in the first round, 7 in the second (one survivor, its row strengthened, then killed), and the bug fix's own (§7). `lint:gate` exit 0. Full suite on Linux, on the code head merged with `main`: **27,383 rows, 27,294 pass, 0 fail, 89 skipped.** |
-| 8 | Smoke | `claude/agent-form-s1-smoke` = `c6210846`: both flags on, plus the hub hero's corner readout in S7's format. Preview: SMOKE_PREVIEW_URL. |
+| 8 | Smoke | `claude/agent-form-s1-smoke` = `c6210846`: both flags on, plus the hub hero's corner readout in S7's format. Preview: https://trade-seven-nkueav6ig-fais-projects-bc179554.vercel.app. |
 | 9 | Review threshold | The code diff is **46 files, +2,009 / −87 lines** (the report and pictures add more), over both BUILD_RULES §2 thresholds, so **a review session runs before merge.** No review is claimed here. |
 
 ---
@@ -296,7 +296,7 @@ Measured on the flag-on harness, headless Edge, 2×:
 
 ## 8. The iPhone checklist (founder)
 
-Open **SMOKE_PREVIEW_URL** in Safari on the iPhone and sign in as usual.
+Open **https://trade-seven-nkueav6ig-fais-projects-bc179554.vercel.app** in Safari on the iPhone and sign in as usual.
 
 **Command Center hero:**
 1. On the Command Center, the hero is Shadow wearing your archetype's armor, in teal. A small black box in the top-right corner shows two lines of numbers.
