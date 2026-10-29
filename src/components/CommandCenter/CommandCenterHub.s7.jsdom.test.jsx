@@ -28,6 +28,13 @@ const h = vi.hoisted(() => ({
 
 vi.mock('firebase/auth', () => ({ onAuthStateChanged: (_auth, cb) => { h.authListeners.push(cb); return () => {}; } }));
 vi.mock('../../firebase/config', () => ({ db: {}, auth: {}, default: {} }));
+// The Daily Regime Brief's read (hooks/useDailyRegimeBrief.js) is not under test here. Left real it reaches Firestore (`db` is `{}`),
+// fails, and its 1.5 s retry can outlive this file (the PR #1003 CI flake). `loading` is the state the real read held for those 1.5 s.
+vi.mock('../../hooks/useDailyRegimeBrief', () => ({
+  default: function useDailyRegimeBrief() {
+    return { dailyBrief: null, forDate: null, generatedAt: null, isStale: false, loading: true, error: null, refetch: () => {} };
+  },
+}));
 vi.mock('../../contexts/UserContext', () => ({ useUser: () => ({ user: { displayName: 'Flash', username: 'flash' } }) }));
 vi.mock('framer-motion', async (importOriginal) => ({ ...(await importOriginal()), useReducedMotion: () => h.reduced }));
 vi.mock('./hub/hubFlags', async (importOriginal) => {
