@@ -2,7 +2,7 @@
 //
 // Agent form build S1 (Scope B) — the three sites, with AGENT_FORM_BATTLE_ENABLED driven per row. The form's slot is
 // a recording stand-in (the form itself: BattleAgentForm.jsdom.test.jsx; its moods: agentMood.test.js). Flag on:
-// the arena header draws the player's form (88 px desktop, 60 phone — the S1 size follow-up) and a new opponent cell
+// the arena header draws the player's form (90 px desktop, 60 phone — the S1 size follow-up) and a new opponent cell
 // on the CPU side with "CPU" still there; the pane's header draws its form at 50 px over today's 36 px box; the
 // floating mark at 55 / 50. Each box overhangs the room the layout gives it, 2 px clear of what it reaches toward, and
 // the header grows within its allowance (the real heights are measured in headless Edge, the S1 report §11). Flag
@@ -45,9 +45,9 @@ beforeEach(() => { seen.slots = []; seen.faces = []; });
 describe('flag on: the forms take the robot head\'s place', () => {
   beforeEach(() => { flags.battle = true; });
 
-  it('the arena header: the player\'s form and the opponent\'s, 88 px on the desktop and 60 on the phone, overhanging the row; "CPU" stays', () => {
+  it('the arena header: the player\'s form and the opponent\'s, 90 px on the desktop and 60 on the phone, overhanging the row; "CPU" stays', () => {
     for (const [isDesktop, px, player, opponent] of [
-      [true, 88, '-12px -8px -6px -8px', '-12px -8px -6px -8px'],
+      [true, 90, '-12px -9px -6px -9px', '-12px -9px -6px -9px'],
       [false, 60, '-8px -6px -4px -14px', '-8px -14px -4px -6px'],
     ]) {
       seen.slots = [];
@@ -77,7 +77,7 @@ describe('flag on: the forms take the robot head\'s place', () => {
       expect(top).toBeLessThanOrEqual(padTop - 2);
       expect(bottom).toBeLessThanOrEqual(rowGap - 2);
       // The row grows by at most the footprint's height over the one that left it as it was (an upper bound;
-      // headless Edge measures the real growth: 5 px on the phone, 14 on the desktop).
+      // headless Edge measures the real growth: 5 px on the phone, 16 on the desktop).
       expect(box - top - bottom - base).toBeLessThanOrEqual(allowed);
     }
   });

@@ -38,11 +38,11 @@
 //   CSS starfield is prototype chrome.
 //
 // • AGENT FORM BUILD S1 (AGENT_FORM_BATTLE_ENABLED, off on main): the agent form
-//   takes the mark's place — 88 px on the desktop, 60 on the phone (the S1 size
+//   takes the mark's place — 90 px on the desktop, 60 on the phone (the S1 size
 //   follow-up), each box overhanging the room the row gives it by its negative
 //   margins (battleAgentFormSlot.jsx BATTLE_FORM_PX), so the names and scores keep
 //   their place and, on the phone, today's 40 px wide footprint, so long scores
-//   keep their room; the row grows 5 px on the phone and 14 on the desktop — and the
+//   keep their room; the row grows 5 px on the phone and 16 on the desktop — and the
 //   CPU side gains a cell for the opponent's bare copper core, mirrored (R9).
 //   Ruling R8 lets that form idle and change mood on real signals; the rule
 //   below still binds the robot head. Flag-off, both sites fold to today's JSX.
