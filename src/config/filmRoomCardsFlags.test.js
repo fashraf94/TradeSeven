@@ -29,9 +29,9 @@ const docstringOf = (name) => {
 };
 
 describe('FILM_ROOM_CARDS_MODE — the pin (BUILD_RULES §2; Build B spec §7)', () => {
-  it("is DARK: FILM_ROOM_CARDS_MODE is 'off' — the build merges dark; the v2 screen is the base's byte for byte and both endpoints refuse", () => {
+  it("is 'allowlist': FILM_ROOM_CARDS_MODE is 'allowlist' — cards only for the owners the cockpit's server-side allowlist admits; everyone else is the 'off' screen, and both endpoints refuse them", () => {
     // THE ROW THAT MOVES WITH A FLIP ('off' → 'allowlist' → 'on'), in the flip PR's own commit; a rollback moves it back.
-    expect(FILM_ROOM_CARDS_MODE).toBe('off');
+    expect(FILM_ROOM_CARDS_MODE).toBe('allowlist');
   });
 
   it('the allowed values: exactly off · allowlist · on, frozen, in walk order, and the shipped value is one of them', () => {
