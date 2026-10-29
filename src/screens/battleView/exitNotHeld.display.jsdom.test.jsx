@@ -155,6 +155,12 @@ describe('the tile model — no button, no step, the line "Not in your book"', (
     expect(acted.buttons).toEqual([]);
     const hit = tileOf([call({ state: 'hit', stateChangedAt: at('13:10') })], { book: LEFT });
     expect(hit.tag.fact).toBe('state:hit');
+    // A recorded event on a still-unanswered open call is a fact too: only the bare "Live" gives way.
+    const c = call();
+    const noMatch = { kind: 'no_matching_trade', at: at('13:05'), callIds: [c.callId], evidence: { promptBuiltAt: iso(at('13:00')) } };
+    const withEvent = tileOf([c], { book: LEFT, events: [noMatch] });
+    expect(withEvent.tag.fact).toBe('event:no_matching_trade');
+    expect(withEvent.buttons).toEqual([]); // and still no answer is offered
   });
 
   it('the details sheet is the tile\'s: sheetOf carries the same (empty) buttons and the same tag', () => {
