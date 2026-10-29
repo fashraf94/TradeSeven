@@ -73,6 +73,48 @@ describe('B2.1 B2 — the open event\'s optional day and moment, additive to P1c
     expect(events).toEqual([]);
   });
 
+  it('Astra\'s B2.1 review §4 item 1 — a day that is not a real calendar date, or a reversed range, is dropped as malformed: P1c\'s own event, byte for byte (the mutants: an impossible date accepted; a reversed range accepted)', () => {
+    const bad = [
+      { etDate: '2026-02-30', moment: MOMENT },   // Astra's repros
+      { etDate: '2026-99-99', moment: MOMENT },
+      { etDate: '2026-09-25', moment: { ...MOMENT, fromTickSeq: 5, toTickSeq: 4 } },
+      { etDate: '2026-02-29', moment: MOMENT },   // 2026 is not a leap year
+      { etDate: '2026-04-31', moment: MOMENT },
+      { etDate: '2026-13-01', moment: MOMENT },
+      { etDate: '2026-00-10', moment: MOMENT },
+      { etDate: '2026-09-00', moment: MOMENT },
+      { etDate: '2026-09-25', moment: { ...MOMENT, fromTickSeq: 1, toTickSeq: 0 } },
+    ];
+    for (const at of bad) {
+      events = [];
+      expect(battleReviewAtOf(at, 'b-other'), JSON.stringify(at)).toBeNull();
+      expect(requestOpenBattleReview(BATTLE, at), JSON.stringify(at)).toBe(true);
+      expect(events[0], JSON.stringify(at)).toEqual({ battle: BATTLE });
+      expect(Object.keys(events[0]), JSON.stringify(at)).toEqual(['battle']);
+    }
+  });
+
+  it('the controls: a real date — a leap day, a month\'s last day — and an ordered range, a one-check moment among them, pass; the approved null-sequence moments still pass', () => {
+    const good = [
+      [{ etDate: '2026-09-25', moment: MOMENT }, WANT],
+      [{ etDate: '2028-02-29', moment: MOMENT }, WANT],
+      [{ etDate: '2026-04-30', moment: MOMENT }, WANT],
+      [{ etDate: '2026-12-31', moment: MOMENT }, WANT],
+      [{ etDate: '2026-09-25', moment: { ...MOMENT, fromTickSeq: 5, toTickSeq: 5 } }, { ...WANT, fromTickSeq: 5, toTickSeq: 5 }],
+      [{ etDate: '2026-09-25', moment: { ...MOMENT, fromTickSeq: 0, toTickSeq: 40 } }, { ...WANT, fromTickSeq: 0, toTickSeq: 40 }],
+      // null sequences, as approved: either bound, or both, the tape left null — no order to check
+      [{ etDate: '2026-09-25', moment: { ...MOMENT, fromTickSeq: null, toTickSeq: null } }, { ...WANT, fromTickSeq: null, toTickSeq: null }],
+      [{ etDate: '2026-09-25', moment: { ...MOMENT, fromTickSeq: 9, toTickSeq: null } }, { ...WANT, fromTickSeq: 9, toTickSeq: null }],
+      [{ etDate: '2026-09-25', moment: { ...MOMENT, fromTickSeq: null, toTickSeq: 2 } }, { ...WANT, fromTickSeq: null, toTickSeq: 2 }],
+    ];
+    for (const [at, moment] of good) {
+      events = [];
+      expect(battleReviewAtOf(at, 'b-other'), JSON.stringify(at)).toEqual({ battleId: 'b-other', etDate: at.etDate, moment });
+      requestOpenBattleReview(BATTLE, at);
+      expect(events[0].at, JSON.stringify(at)).toEqual({ etDate: at.etDate, moment });
+    }
+  });
+
   it('battleReviewAtOf: the checked day and moment for one battle, or null', () => {
     expect(battleReviewAtOf({ etDate: '2026-09-25', moment: MOMENT }, 'b-other')).toEqual({ battleId: 'b-other', etDate: '2026-09-25', moment: WANT });
     expect(battleReviewAtOf({ etDate: '2026-09-25', moment: MOMENT }, '')).toBeNull();

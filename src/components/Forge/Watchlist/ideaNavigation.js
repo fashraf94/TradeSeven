@@ -48,13 +48,26 @@ export function requestOpenBattleReview(battle, at = null) {
 
 const isSeq = (v) => v === null || (Number.isInteger(v) && v >= 0);
 /**
+ * Astra's B2.1 review §4 item 1 — a real calendar date, `YYYY-MM-DD`: the year, month and day it names exist (never
+ * rolled over, as `2026-02-30` would be into March). An ET date is a calendar date; no clock is involved.
+ */
+const isCalendarDate = (s) => {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, mo, d] = s.split('-').map(Number);
+  const t = new Date(Date.UTC(y, mo - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d;
+};
+/**
  * B2.1 B2 — the day and moment an OPEN_BATTLE_REVIEW_EVENT names, checked: `{ battleId, etDate, moment }` when `at`
- * holds an ET date and a moment (`situationId`, `symbol`, `fromTickSeq`, `toTickSeq`), else null — the Film Room then
- * opens as it does for P1c's own event, on its default day.
+ * holds a real ET calendar date and a moment (`situationId`, `symbol`, `fromTickSeq`, `toTickSeq`) whose range, when
+ * both bounds are recorded, runs forward (`fromTickSeq <= toTickSeq`; a bound the tape left null is checked for
+ * nothing more — Astra §4 item 1), else null — the Film Room then opens as it does for P1c's own event, on its
+ * default day.
  */
 export function battleReviewAtOf(at, battleId) {
   const m = at?.moment;
-  if (typeof battleId !== 'string' || !battleId || typeof at?.etDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(at.etDate)) return null;
+  if (typeof battleId !== 'string' || !battleId || !isCalendarDate(at?.etDate)) return null;
   if (!m || typeof m.situationId !== 'string' || !m.situationId || typeof m.symbol !== 'string' || !m.symbol || !isSeq(m.fromTickSeq) || !isSeq(m.toTickSeq)) return null;
+  if (m.fromTickSeq !== null && m.toTickSeq !== null && m.fromTickSeq > m.toTickSeq) return null;
   return { battleId, etDate: at.etDate, moment: { situationId: m.situationId, symbol: m.symbol, fromTickSeq: m.fromTickSeq, toTickSeq: m.toTickSeq } };
 }
