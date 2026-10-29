@@ -329,6 +329,9 @@ export const FILM_ROOM_COPY = Object.freeze({
     // inherits no dial) and its tape records no tempo — said after RG-5's sentence, with no link. A ranked battle whose
     // dial was never set links instead: the dial reaches its agent
     setNoTempo: 'No tempo setting was recorded for this battle.',
+    // Build B Amendment L RL-5: wherever Set links the dial, its sentence ends with when a change takes effect — a
+    // battle snapshots its setting when it is created, so a change applies to the next one, never the one reviewed
+    setNextBattle: 'A change applies from your next battle.',
     openCards: 'Open cards',
     // the count line before the counter has answered, and when it could not: words, no number (R14)
     openCountLoading: 'Open cards · still loading',

@@ -958,6 +958,9 @@ describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no r
 describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and its link to the tempo dial on the filed card\'s receipt', () => {
   const RULE_OFF = 'You change the setting yourself; this card changes nothing. No setting changes this situation for this archetype.';
   const NO_TEMPO = 'You change the setting yourself; this card changes nothing. No tempo setting was recorded for this battle.';
+  // Amendment L RL-5: wherever Set links, its sentence ends with when a change applies
+  const NEXT = 'A change applies from your next battle.';
+  const LINKED = `${RG5.set} ${NEXT}`;
   /**
    * The screen on `tape`'s day (stored for the handler too), the form opened on its first moment; `file` files a Set
    * card. `battle` is the battle on screen (the ranked agent's by default); `days` its other tape days.
@@ -1029,7 +1032,7 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
     expect(m.q('[data-card-form] [data-set-link]')).toBeNull();
     expect(m.q('[data-set-link]')).toBeNull();
     await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
-    expect(receiptNext()).toBe(RG5.set);
+    expect(receiptNext()).toBe(LINKED);
     const link = m.q('[data-card-receipt] [data-set-link] button');
     expect(link.textContent).toBe('Tempo dial · Forge workshop');
     const filed = cardBodies().length;
@@ -1049,7 +1052,7 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
     expect(formSet()).toBe(RG5.set);
     expect(m.q('[data-set-link]')).toBeNull();
     await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
-    expect(receiptNext()).toBe(RG5.set);
+    expect(receiptNext()).toBe(LINKED);
     m.click(m.q('[data-card-receipt] [data-set-link] button'));
     expect(asked).toEqual([{ area: 'traits' }]);
     await sweepAll(fx.tape2, 'ranked, no tempo');
@@ -1078,8 +1081,30 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
     expect(m.q('[data-set-link]')).toBeNull();
     await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
     expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ agentId: AGENT, route: 'set' });
-    expect(receiptNext()).toBe(RG5.set);
+    expect(receiptNext()).toBe(LINKED);
     expect(m.q('[data-card-receipt] [data-set-link] button')).toBeTruthy();
+  });
+
+  it('Amendment L RL-5 — wherever Set links, its sentence ends "A change applies from your next battle.": a completed battle\'s receipt, and the receipt on a day of a multi-day battle still running; the form, which never links, never says it (the mutants: the sentence missing where Set links, or added where it does not)', async () => {
+    // a completed battle (both days written; the ranked agent; a recorded tempo)
+    await setOn(fx.tape2Tempo, () => {});
+    expect(lastBattle.status).toBe('completed');
+    expect(receiptNext()).toBe(LINKED);
+    expect(m.q('[data-card-receipt] [data-set-link] button')).toBeTruthy();
+    // a multi-day battle still running: its first day, written while it was live — the change still applies from the
+    // NEXT battle, never this one (a battle snapshots its setting when it is created)
+    m.teardown(); m.setup();
+    const running = battleOf({ status: 'active', completedAt: null });
+    t.store.set(`agentBattles/${B}`, { ...fx.battle, status: 'active', completedAt: null });
+    await setOn(fx.tape1, () => {}, { file: false, battle: running });
+    expect(m.q('[data-region="day-picker"] [aria-pressed="true"]').textContent).toContain('Sep 24');
+    expect(formSet()).toBe(RG5.set);
+    expect(m.q('[data-card-form]').textContent).not.toContain(NEXT);
+    await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
+    expect(receiptNext()).toBe(LINKED);
+    expect(m.q('[data-card-receipt] [data-set-link] button')).toBeTruthy();
+    expect(text().split(NEXT)).toHaveLength(2);   // said once, on the receipt
+    await sweepAll(fx.tape1, 'running, linked');
   });
 
   it('Amendment L RL-1 — on the ranked battle with no tempo recorded, each other condition still turns the receipt\'s link off: the rule off (RJ-8\'s sentence), the rule unknown, either Forge flag off (RG-5\'s sentence alone)', async () => {
@@ -1173,7 +1198,7 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
     await m.flush(8);
     m.click(m.q('[data-my-card="op_1"]'));
     await m.flush(4);
-    expect(receiptNext()).toBe(RG5.set);
+    expect(receiptNext()).toBe(LINKED);
     expect(m.q('[data-card-receipt] [data-set-link] button')).toBeTruthy();
   });
 

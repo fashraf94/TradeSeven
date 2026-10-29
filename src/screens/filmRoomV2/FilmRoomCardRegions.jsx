@@ -34,7 +34,9 @@
 //                   holds Set's link to the tempo dial where Amendment K RK-2,
 //                   as Amendment L RL-1 changes it (the battle's own agent),
 //                   allows it; the form never does (RK-3: a trip to the Forge
-//                   cannot discard an unfiled note).
+//                   cannot discard an unfiled note). Where it links, Set's
+//                   sentence ends "A change applies from your next battle."
+//                   (Amendment L RL-5).
 //   since-last-time (header) each open Watch card with its recurrences since
 //                   the card's date, each opening its battle day and moment
 //                   here when it is this battle's (RG-4); one "in another
@@ -324,15 +326,18 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = 
   const ownDay = tape && live.source && tape.battleId === live.source.battleId && tape.etDate === live.source.etDate ? tape : null;
   const set = live.route === 'set' && canRetire ? (ownDay ? setStateOf(ownDay, agentId) : { say: null, link: false }) : null;
   const setSay = set ? setSayOf(set.say) : null;
+  // Amendment L RL-5: the link renders only here, beside a Forge door — and wherever it renders, Set's sentence ends
+  // with when a change applies; one condition for both, so the sentence never stands without the link or the reverse
+  const linked = Boolean(set?.link && onOpenForge);
   return (
     <section data-card-receipt={live.entryId} data-card-op={opId} id="receipt" style={regionStyle}>
       <span style={{ ...eyebrow, color: C.teal }}>{T.receipt} · {T.filedCard}</span>
       <CardFacts card={live} />
       <Quotation doc={ledger} path={['cards', live.entryId, 'note']} by="you" at={['cards', live.entryId, 'createdAt']} docLabel="ledger" />
       <span style={mono(11, C.ink2)}>{T.route} · {wordOf(T.routes, live.route)} · {T.stage} · {wordOf(T.stageWords, live.stage)}{live.shelved ? ` · ${T.groups.shelved}` : ''}</span>
-      {next ? <span data-card-next="" style={foot}>{next}{setSay ? <> {setSay}</> : null}</span> : null}
+      {next ? <span data-card-next="" style={foot}>{next}{setSay ? <> {setSay}</> : null}{linked ? <> {T.setNextBattle}</> : null}</span> : null}
       {/* RH-1 / RJ-8 / RK-2 / RL-1: the one setting that reaches `stalled` is the tempo dial — linked only where the dial reaches the battle's agent */}
-      {set?.link && onOpenForge ? (
+      {linked ? (
         <span data-set-link="">
           <TextButton onClick={() => onOpenForge({ area: FORGE_CHARACTER_AREA })}>{T.setTempoLink}</TextButton>
         </span>
