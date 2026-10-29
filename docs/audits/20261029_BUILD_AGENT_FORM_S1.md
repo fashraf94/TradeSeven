@@ -16,7 +16,7 @@
 | 4 | Scope B: battle | The arena header, pane header and floating mark draw the form behind `AGENT_FORM_BATTLE_ENABLED`. The header's CPU side gains a mirrored bare copper core. **The header height is unchanged at 320, 360, 390 and 1280 px, with short scores and with long two-decimal ones** (§4). On the phone the forms keep the old face's 40 px footprint. Moods follow R8/R9 through a new pure `deriveAgentMood`. |
 | 5 | R6 guard amendments | (a) Exactly one lazy edge, `loadEngine.js -> engine/index.js`, pinned by path. (b) `three` is reachable only behind that edge; `PERMITTED_PACKAGES` is unchanged. (c) The wrapper joins the activity scan and the call-by-call activity guard. (d) A row shows the rate comes only from the constant and the size rule. **Every row was mutation-checked.** |
 | 6 | R3 glow | **The glow did reach past the box**, faintly, where the connector leaves the hub hero (measured in headless Edge, §5). So the hero uses `contain: paint`; clipped, the spill is 0. |
-| 7 | Tests | 10 new test files and amended guards. **Mutation: 39 of 39 mutants killed**: 31 in the first round, 7 in the second (one survivor, its row strengthened, then killed), and the bug fix's own (§7). `lint:gate` exit 0. Full suite on Linux, on the code head merged with `main`: **27,383 rows, 27,294 pass, 0 fail, 89 skipped.** |
+| 7 | Tests | 8 new test files, rows added to 4 existing ones, and amended guards. **Mutation: 39 of 39 mutants killed**: 31 in the first round, 7 in the second (one survivor, its row strengthened, then killed), and the bug fix's own (§7). `lint:gate` exit 0. Full suite on Linux, on the code head merged with `main`: **27,383 rows, 27,294 pass, 0 fail, 89 skipped.** |
 | 8 | Smoke | `claude/agent-form-s1-smoke` = `c6210846`: both flags on, plus the hub hero's corner readout in S7's format. Preview: https://trade-seven-nkueav6ig-fais-projects-bc179554.vercel.app. |
 | 9 | Review threshold | The code diff is **46 files, +2,009 / −87 lines** (the report and pictures add more), over both BUILD_RULES §2 thresholds, so **a review session runs before merge.** No review is claimed here. |
 
@@ -234,10 +234,12 @@ Measured on the flag-on harness, headless Edge, 2×:
 | `engine/engine.lifecycle.jsdom.test.js` (11 added) | 11 | Swaps: bare → set (1.25 → .74, no step greater than .02 per frame, monotone, ends exact); set → set; set → bare (unequip, then bare at 1.25, no step at the switch); a reversal mid-way; mood change mid-swap; reduced motion and still rate (+2 renders); settling when motion stops; the settled still; the still redrawn when bare Shadow shows. Pause: loop stops and resumes; other views keep drawing. |
 | `engine/vocab.test.js` (3 added) | 3 | `FRAME_SCALE` equals the design's frames; `swapProgress`; `swapScale` |
 | `AgentForm.s1.jsdom.test.jsx` | 10 | The swap only on a change of form after mount; a change during chunk load; `paused`, `clip`, decorative label; R12; the resize re-read and the listener's removal |
-| `HubAgentForm.jsdom.test.jsx` | 9 | The read and its key; the suit-up only between two ready reads of the same agent (counted mounts across load, change, switch, failure, remount); what the form is handed; the rate; reduced motion and pause; the name, armored and bare; the box |
+| `HubAgentForm.jsdom.test.jsx` | 10 | The read and its key; the suit-up only between two ready reads of the same agent (counted mounts across load, change, switch, failure, remount); what the form is handed; the rate; reduced motion and pause; the name, armored and bare; a re-keyed form's label starts again from "still"; the box |
 | `ShadowStage.agentForm.jsdom.test.jsx` | 5 | Both sites flag on (sizes, rates, props) and flag off; the scope's value is `readers.agent` |
 | `agentMood.test.js` | 9 | Every precedence pair; completed lost, tied or without a result → idle; waiting's inputs; the lock's age and the tripwire on the cron; the CPU's sign flip and that it never waits, researches or celebrates; the projection's parity with the hub's |
 | `BattleAgentForm.jsdom.test.jsx` | 6 | The still while loading; player and CPU (copper, mirrored, bare via `agentFormSpec`); waiting, researching and celebrating through the scope and the loaded derivation |
+| `BattleAgentForm.failure.jsdom.test.jsx` | 2 | The form's chunk fails: the slot keeps the still and the rest of the screen stays. The outcome module fails: the form still draws, and a completed battle is idle. |
+| `deskHonesty.test.js` (1 added) | 1 | The mood-token exemption is earned: the statement exists once, and the file is otherwise clean |
 | `battleAgentForm.sites.render.test.jsx` | 7 | Flag on at all three sites (sizes, overhangs, "CPU", the book's target); flag off (the static face, no slot); **parity: each slot's scores equal the pair that site feeds its face**, over three comparison states × three score shapes |
 | `config/agentFormFlags.test.js` | 6 | The two pins; the module literal; registration; every read is a literal ternary that folds |
 | guards (amended) | — | §6 |
@@ -319,6 +321,10 @@ Open **https://trade-seven-nkueav6ig-fais-projects-bc179554.vercel.app** in Safa
 
 Paste the 60 s line and anything that looked wrong back to Claude.
 
+**What was checked on the preview, and what was not.** On the deployed preview I checked only that it answers (HTTP 200). The hub and the battle need a signed-in account, so your run is the first real render of the flags-on app on a device. Before it, the flags-on code was rendered in two places:
+- headless Edge, by the scratch harness (the real arena header and the real wrapper with the engine; §4, §5);
+- jsdom, by the hub and battle suites with the flags flipped (below).
+
 **On the smoke branch, which tests are red and why.** With both flags on (flags only, no readout), 97 rows in 9 files go red, and every one pins what the flags replace:
 - the two flag pins and `flagPinGuard`;
 - the Command Center rows that assert `ShadowCanvas` or `ShadowStill` themselves: `CommandCenterHub.s7` (52) and three S1 rows in `CommandCenterHub.jsdom`;
@@ -360,7 +366,7 @@ On `claude/agent-form-s1`:
 - `fb5e5d2a`: the phone header footprint;
 - `f04cfedc`: the stronger header row (the code head);
 - `30db3685`: `origin/main` merged in (`a5c35ba6`: PR #1009, the DRB stale fix, and PR #1010, the callRecords deadline-flake fix). The app's sync tool merged it cleanly; the one shared file, `hub/hubCopy.js`, has the DRB edits mid-file and this build's appended export.
-- this report and its six pictures.
+- this report and its six pictures, then the preview URL and these corrections (docs only). A minified `vite build` of the exact pushed head, on an LF checkout, exits 0, and so does one of the smoke commit.
 
 `claude/agent-form-s1-smoke` = `c6210846`: one commit on `30db3685` (the code head merged with `main`), "SMOKE ONLY, NEVER MERGE". It sets both flags `true` and adds the hero's corner readout (`HubAgentForm.jsx`, the S0 lab's `agentFormLabReadout.js` lines from the engine's own frame samples; late means over 25 ms, or over 50 ms at half rate, per R4). On it, the flag pins, `flagPinGuard` and the hub guards are red by design.
 
