@@ -13,7 +13,11 @@
 // docs/audits/20261022_BUILD_FILM_ROOM_B2_1_SCREEN_PASS.md), then again at the
 // code head of the B2.1 rulings round (Amendment K RK-13: only RK-5 and RK-11
 // change the cards-off screen; the two Sep-23 Deep dive goldens moved, both
-// RK-11, mapped in that report's section 13) — each time from
+// RK-11, mapped in that report's section 13), then again at the code head of
+// the Amendment L round (Amendment L RL-3 and RL-4 change the cards-off screen;
+// the two empty-day Deep dive goldens moved, both RL-3 — the chart section with
+// no symbol to chart loses the series section's line — mapped in that report's
+// section 14; RL-4 reaches no golden) — each time from
 // a `git archive` of that commit by captureFilmRoomV2Golden.jsdom.test.jsx run
 // twice (identical) in a scratch extraction. Their SHA-256 is pinned below, so
 // the label inside this file proves nothing by itself. This suite mounts the CURRENT FilmRoomScreenV2
@@ -49,12 +53,12 @@ import { resetFilmRoomVerdicts } from '../../utils/filmRoomGate';
 import { mounter, sep23Tape, sep23Series, emptyTape, emptySeries, battleOf, readersOf, NOW } from './__fixtures__/filmRoomHarness';
 import { renumberIds, GOLDEN_DEPTHS, GOLDEN_LAYOUTS, goldenName } from '../__golden__/filmRoomV2Golden.js';
 
-/** The commit the goldens were captured from (the B2.1 rulings round's code head; B2.1's 07dc3d58, and B2's base 7818a1b3, before it). */
-export const GOLDEN_SOURCE_COMMIT = '004f2c1f9ecec9e1f3f4522224faf50c5caba496';
+/** The commit the goldens were captured from (the B2.1 Amendment L round's code head; the rulings round's 004f2c1f, B2.1's 07dc3d58, and B2's base 7818a1b3, before it). */
+export const GOLDEN_SOURCE_COMMIT = '30a0820dc1c5072ebea4b3b09f2ba7ca9614e7e7';
 /** Each golden's SHA-256 as captured (the review C-9 pattern). */
 export const GOLDEN_SHA256 = Object.freeze({
-  'filmRoomV2.empty.deep.desktop.html': '9be5322258a2c59a15c8611594a1ba91a118505d9a193aabb96604f4478ab836',
-  'filmRoomV2.empty.deep.phone.html': '7f519599fa5f107a2c7d6378537f01b2eaf47d90db69d0af824bec055da826b0',
+  'filmRoomV2.empty.deep.desktop.html': '39b82e0333a80189b2b0752baf88187d62710449bf1619a7bbeb1319f3153ee6',
+  'filmRoomV2.empty.deep.phone.html': 'b9e9bbe34e35834eaa48fd060b277ac2a69b4e64532505ab45c73ba07857fadb',
   'filmRoomV2.empty.glance.desktop.html': 'a180e9c23d87ea365269d461a474c797921ca163aae60aed6a2124c4d2092a45',
   'filmRoomV2.empty.glance.phone.html': '5d61ab17b5459828dc89bf3b7a3c2901f4cd01a06c0e174d0ae307d3884762c3',
   'filmRoomV2.empty.study.desktop.html': '2dc16ebe1d6fa2fa5045967514c73dcf5c6164727cfd34ea489c59e80996cc2a',

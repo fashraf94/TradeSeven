@@ -13,7 +13,10 @@
 // re-captured at its head), then the B2.1 rulings round's code head
 // (Amendment K RK-13: RK-5 and RK-11 change the cards-off screen; the
 // photographed Deep dive chart, AMD's, has no swap, so RK-5 is pinned by the
-// Deep dive suite instead). Committed so a regeneration is reproducible from
+// Deep dive suite instead), then the Amendment L round's code head (RL-3: the
+// one-symbol chart section never shows the series section's line, so the
+// empty day's Deep dive moves; RL-4's meeting maker is in no photographed
+// chart). Committed so a regeneration is reproducible from
 // a NAMED commit (the captureFilmRoomGolden precedent).
 //
 // It is SKIPPED unless FILM_ROOM_V2_GOLDEN_OUT_DIR is set, so the normal suite
