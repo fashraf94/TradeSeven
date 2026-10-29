@@ -361,6 +361,8 @@ export function chipWordOf(tile, { commandKey = null } = {}) {
     if (fact === 'event:superseded') return { word: COPY.cockpit2bWordReplaced, yours: false };
     return { word: COPY.cockpit2bWordAnswered, yours: false };
   }
+  // Amendment E (E-2): an exit whose stock is in no tier of the book — the chip says so, not the agent's default word.
+  if (tile.tag?.fact === 'call:not_held') return { word: COPY.cockpit2bWordNotHeld, yours: false };
   if (target.direction === 'exit') return { word: target.defaultAction === 'hold' ? COPY.cockpit2bWordHold : COPY.cockpit2bWordExit, yours: false };
   return { word: target.defaultAction === 'hold' ? COPY.cockpit2bWordWait : COPY.cockpit2bWordEnter, yours: false };
 }

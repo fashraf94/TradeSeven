@@ -537,6 +537,9 @@ describe('§7.4 — THE COVERAGE: the one table maps every fact the writers can 
       // Cockpit Build 2b (spec §7.1): a current filing with no check left today; a restatement under your live
       // command (D-10 — derived from records, never written).
       'answer:directive_no_check', 'call:following',
+      // Amendment E rev 2 (E-2): an open exit call whose stock is in no tier of the battle document — derived at
+      // render from the record and the screen's battle, never written.
+      'call:not_held',
     ]);
     expect(Object.keys(COCKPIT_FACT_TAGS).filter((k) => !known.has(k))).toEqual([]);
   });

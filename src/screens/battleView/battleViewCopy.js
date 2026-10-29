@@ -1161,6 +1161,8 @@ export const BATTLE_VIEW_COPY = Object.freeze({
   cockpit2bWordRetired: 'command retired',
   cockpit2bWordReplaced: 'replaced',
   cockpit2bWordAnswered: 'you answered',
+  // Amendment E rev 2 (E-2): an exit whose stock is in no tier of the book (the tag reads "Not in your book").
+  cockpit2bWordNotHeld: 'not in your book',
   cockpit2bLineMovedShort: 'line moved',
   cockpit2bMore: (n) => `+${n} more`,
   cockpit2bFewer: 'fewer',
@@ -1264,6 +1266,10 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
   // answered line, at a check whose `declared` event names the command's
   // thread (prompt inclusion — never causation). Never on the call you answered.
   'call:following': Object.freeze({ tone: 'yoursOutline', text: () => 'Following your call' }),
+  // Cockpit exit-not-held (Amendment E rev 2, E-2): an OPEN exit call whose stock is in no tier of the battle
+  // document the screen reads, with no answer and no act on it. No answer is legal then (the endpoint refuses
+  // them all), so the tile offers none and says why, in the same words as D-9's "Dropped · not in your book".
+  'call:not_held': Object.freeze({ tone: 'muted', text: () => 'Not in your book' }),
   // The call events (events.js CALL_EVENT_KINDS).
   'event:declared': null, // the mint — the eyebrow's "from the {t} check" already says it
   'event:answered': null, // the answer's own receipt — the tag reads the call's playerResponse
@@ -1298,13 +1304,15 @@ export const COCKPIT_FACT_TAGS = Object.freeze({
 /**
  * Cockpit Build 2b (Amendment D-9; spec §7.2): the mint's invalidation
  * reasons (api/_utils/callRecords/validate.js invalidationReason — the three
- * it returns at HEAD), one short line each. Any other reason → the bare
+ * it returns at HEAD — and, from Amendment E rev 2, candidate.js
+ * EXIT_NOT_HELD_REASON), one short line each. Any other reason → the bare
  * "Dropped" (no row here, no guessed line).
  */
 export const COCKPIT_DROPPED_REASON_TEXT = Object.freeze({
   level_implausible: 'price line out of range',
   level_non_finite: 'no usable price line',
   no_observation: 'no price at that check',
+  exit_not_held: 'not in your book',
 });
 
 /**

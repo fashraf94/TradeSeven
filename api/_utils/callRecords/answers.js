@@ -27,6 +27,13 @@
 // The endpoint's own guards (deadline, parent status, belief, eligibility,
 // the live slot, budget) are NOT here: they read the transaction's fresh state.
 //
+// Amendment E (rev 2) — ONE MORE FACT, beside the table: whether an EXIT call's
+// stock is in the book at all (`isExitNotHeld`, "held in ANY tier"). E-1 (the
+// mint, against the seam's frozen book), E-2's endpoint (the transaction's
+// fresh parent) and E-2's displays (the battle document the screen reads) all
+// ask this one function, so no copy of the test exists. It says nothing about
+// WHICH answers are legal; while it is true, none is.
+//
 // Node-clean AND browser-clean (its one import is copy.js, which is both).
 
 import { isUpsideCall } from './copy.js';
@@ -101,6 +108,38 @@ export function answerTakesPick(call, answer, { v2 = false } = {}) {
  */
 export function isGoAcknowledgment(playerResponse) {
   return !!playerResponse && typeof playerResponse === 'object' && playerResponse.kind === 'ack' && playerResponse.answer === 'go';
+}
+
+/** The tiers a position can sit in; the bench is not the book. */
+const BOOK_TIERS = Object.freeze(['star', 'core', 'support']);
+
+/**
+ * Amendment E: is `symbol` held in ANY tier of the book? `book` is anything
+ * that carries a `portfolio` — a battle document (the fresh parent, the
+ * screen's battle) or the seam's frozen book (swappable.js freezeSwapBook).
+ * A symbol is held at most once, so this is a membership test, never a tier
+ * test (the call's `slot` is the agent's own label — in League battles a guess).
+ *
+ * @returns {boolean|null} true / false, or null when the book cannot say (no
+ *   `portfolio` object, no tier array to read): an unreadable book proves nothing.
+ */
+export function heldInAnyTier(book, symbol) {
+  const portfolio = book?.portfolio;
+  if (!portfolio || typeof portfolio !== 'object' || !nonEmpty(symbol)) return null;
+  const tiers = BOOK_TIERS.map((t) => portfolio[t]).filter(Array.isArray);
+  if (tiers.length === 0) return null;
+  return tiers.some((rows) => rows.some((r) => r?.symbol === symbol));
+}
+
+/**
+ * Amendment E (E-1 at mint, E-2 at answer time): an EXIT call (a called shot or
+ * a Confirmation) whose stock is not held in any tier of the book. False for an
+ * entry, a pick, and whenever the book cannot say (heldInAnyTier is null) —
+ * nothing is claimed that is not seen.
+ */
+export function isExitNotHeld(call, book) {
+  if (!call || typeof call !== 'object' || call.kind === 'pick' || call.direction !== 'exit') return false;
+  return heldInAnyTier(book, call.symbol) === false;
 }
 
 /** The answers a shot or confirmation tile can carry, before legality filters them. */
