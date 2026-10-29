@@ -101,6 +101,7 @@ No difference maps to nothing. Two cards-off movements are not in the goldens an
 | One re-write of an old completed day (SPR-RW-1) | A3 | a completed final day written before this build, its note the old one, no longer matches `completionRecorded`; the next close pass on its completion night, or a backfill, re-writes it ONCE (listed `written`, not `alreadyDone`) and it matches after | — | once |
 | C1's fresh-write difference | C1 | the row parts (omissions) now count only the rows KEPT under the 26-row cap; B1 counted rows past the cap too | reachable only with more than 26 meetings in a day carrying omissions | — |
 | A pre-C1 note, kept (SPR-W-1, accepted) | C1 | C1 reads a stored note as the stored rows' own counts; a note written before this build described the latest read, so the first head merge keeps whatever counts it held. Untampered histories never make them differ (the history is append-only, legs ≤ 2, ids `gpm_<ms>`); reaching it takes an owner's edit before the deploy and a base re-merge in between | — | frozen |
+| C1's write bookkeeping (founder-declared during Astra's review, R-2) | C1 | when a history disappears (clean or omission history, then none), the head keeps the stored rows and coverage and SKIPS a redundant write. So `writtenAt`, `passes.close.writtenAt` and `runCount` show one write fewer than the base did: the base writes a third time because it clears the Meetings span; the head stays at two and keeps its earlier timestamps. **The invariant:** a skipped write preserves the entire stored document — every row, every coverage field and the bookkeeping itself (Astra §3: head(rewrite) equals head(history-disappears), whole document). | from the next close pass on | **after a `refresh=1`, `unchanged` — with unchanged write counts and timestamps — is the expected success**, not a missed update |
 
 **`refresh=1` after merge — named, not run.** For A3's note and C1's coverage to reach days written before the merge,
 the founder runs the close pass's refresh over the taped range after the deploy, e.g.
@@ -439,3 +440,202 @@ None blocks a merge. The first should be ruled before the cards flip.
 4. **The meeting maker's raw code (review KRV4-1; predates this round).** Every real gameplan swap carries `exitReason: 'gameplan_rotation'`, the only code that maps to the meeting. So the chart reads "Exit · 12:45 PM · by the gameplan meeting · gameplan_rotation", and the bought name likewise. Before RK-5 it read "Exit by the gameplan meeting · gameplan_rotation". RK-5 names the maker as "by the gameplan meeting". Keep the code after it (now pinned), or drop it on both names?
 
 **Declared, not asked:** §13.6 items 1–6 and 8, KR4-5 (RK-5's shorter labels and A8's measured layout, harmless by reading), and KRV4-2 ("Chart recorded" over a series document with no bars, which the writer never stores; SPR-S-3, accepted under RK-12).
+
+## 14. Amendment L and Astra's review
+
+**Date:** 29 Oct 2026 · **Executor:** Claude Code (desktop, local Windows + WSL Ubuntu; Opus 5.5) · **Prompt:** the Film Room chat, "Fix prompt — Film Room B2.1: Amendment L and Astra's review" · **Governing:** Build B Amendment L (RL-1 … RL-5) and Astra's B2.1 review (verdict MERGE; its §4 sets the boundary for each ruling), both committed verbatim by this round, over Amendments A–K and the spec.
+
+### 14.0 Verdict
+
+| Question | Answer |
+|---|---|
+| Built | **B0**: Astra's review and Amendment L, verbatim, with a README row each. **The fixes**: RL-1, RL-5, RL-3, RL-4 and Astra §4's two backlog items, one commit each with its tests. **Goldens**: the cards-off goldens re-captured at the code head. **Review**: the §2 review's fix round and the mutating lens's rows. **Report**: §5's C1 bookkeeping row and this section. No merge commit on the branch. No production write, no backfill, no refresh, no deploy, no flip. |
+| `FILM_ROOM_CARDS_MODE` | `'off'`, untouched (`src/config/featureFlags.js` is not in the branch's diff). |
+| The prompt's eleven named mutants | **All killed** (§14.2, the Mutants column). They were planted as 19 mutants, killed alongside 11 of this round's own. The review's rows add 6 more and the mutating lens's 8 more, all killed. |
+| Exit criterion | Astra's ten criteria stand. Criterion 10's declared cards-off changes are RL-3 and RL-4; RL-5's sentence renders only under cards. Both hold (§14.4). |
+| Goldens | Re-captured at the code head `30a0820d` from an LF archive, twice, byte-identical. Against this PR's committed goldens: 10 of 12 unchanged, 2 moved (`empty.deep`, phone and desktop), both mapped to RL-3, none unmapped. RL-4 reaches no golden (§14.3). |
+| The §2 review | §14.6: three lenses, each with a refuter, then the mutating lens last on its own tree. **No BLOCKER and no MAJOR.** The fixes are in `997710f2`: three MINORs after refuting, all CONFIRMED (two test-integrity gaps: RL-3's loading rows missed the hook's `idle`, and two A2-era rows read the evidence overlay's line; one, AL2-4, predates the round — its comment fixed, a ruling asked), and NITs, each with its row or comment. The mutating lens planted 49 mutants: 30 killed, 10 equivalent, 9 survived, all NITs. Eight survivors now have a killing row (`5e3384e2`, tests only), re-planted and killed; one, a training-pod agent (ALT-1), is recorded. |
+| Final checks | §14.8, on the branch merged with `origin/main` `be52068c` (check-only merges, never pushed): Linux full suite 0 failing files, three runs, the record on the final code; rules suite 28 files / 448 rows; `lint:gate` exit 0; `vite build` on the pushed head (in the PR description). |
+| CI | Not driven (BUILD_RULES §2). The Tests run the push fires is read once and its state recorded in the PR description; the founder reads CI and merges. The PR's stored base already carries the accepted baseline (the CI task's refresh), so no `main` merge was made for it. |
+| Rulings asked | §14.10: four questions, none blocking a merge. |
+
+### 14.1 Preamble
+
+- `git fetch origin` ran first. The PR's head was `dfcbd20c` on `origin/claude/film-room-screen-pass`, as the prompt names it. The PR was open, a draft, with its stored base `9bbe2b1b` (the CI task's refresh).
+- The app cut the session's worktree branch `claude/film-room-prompt-e04e53` at `main` `be52068c`. The branch was checked clean, moved to `dfcbd20c`, and is pushed back by refspec to `claude/film-room-screen-pass`.
+- `main` was `be52068c` (#1006 merged) at the start and at every re-fetch.
+  - Since `9bbe2b1b`, `main` changed seven files: the Command Center hub flip and its record. The only one this round also touches is `docs/README.md`, in separate rows.
+  - The lockfile is unchanged (`22fa2b71904c…` on both sides).
+- As the prompt says, `main` is **not** merged into the branch. Every "merged with `main`" check below runs on a check-only merge object (`git merge-tree` + `git commit-tree`, held by a local ref, never pushed).
+- Anchors re-verified at `dfcbd20c`:
+  - `setStateOf` (`FilmRoomCardRegions.jsx:99`) and `sectionLine` (`FilmRoomDeepDive.jsx:477`).
+  - `entryMakerOf` (`filmRoomModel.js:472`), whose two chart names are at `FilmRoomDeepDive.jsx:263–264`.
+  - `battleReviewAtOf` (`ideaNavigation.js:55`).
+  - The harness's `TIME_PATTERNS` (`filmRoomHarness.jsx:203`, applied at `:509` and again in the attribute pass).
+  - `isCasualCloneId` (`src/constants/leagueTournament.js:417`, a module with no imports).
+- Review ids use the prefixes AL (lenses AL1–AL3), ALV (refuters) and ALT (the mutating lens). None of them is used anywhere else in the repo.
+
+### 14.2 One row per fix
+
+Mutants were planted by the same runner as §13.2. It saves the file's exact bytes, replaces one unique string, runs the named suites, then writes the bytes back and checks them equal. From RL-5 on, every batch ran in an LF `git archive` of the commit, not the worktree. In the Mutants column, "3 / 19" means three rows red of nineteen run. **N** marks a planting of the prompt's named mutants; **M** marks this round's own.
+
+| # | Ruling | Commit | The change | Tests | Mutants (rows red / rows run) |
+|---|---|---|---|---|---|
+| B0 | Astra's review, Amendment L | `f30ecdbd` | `docs/audits/20261029_ASTRA_REVIEW_FILM_ROOM_B2_1_SCREEN_PASS.md` and `docs/specs/FILM_ROOM_BUILD_B_CARD_SPEC_V1_AMENDMENT_L_20261029.md`, verbatim between the prompt's markers (edge blank lines trimmed, LF; each blob checked equal to the slice). Astra's links are kept as written. One README row each. | — | — |
+| 1 | **RL-1**, Set's link | `03c94dc6` | **`FilmRoomCardRegions.jsx`:** `setStateOf(tape, agentId)` (`:105`). The tempo condition is now `ranked \|\| recorded` (`:109`), where `ranked` means the battle's own agent is a non-empty string that `isCasualCloneId` does not claim. The rule-on check, both Forge flags, the own-day receipt guard and the form's lack of a link are unchanged. A casual-clone battle with no recorded tempo keeps RK-2's sentence.<br>**Callers:** `YourCall` and `Receipt` take `agentId`, and `FilmRoomScreenV2.jsx` passes its own (`:405`, `:407`). That is the battle document's agent, else the tape's: the same value the screen sends the server. It is never the card's or the counter's attribution parent.<br>**Copy:** the `cards.setNoTempo` comment now names the clone. | **`FilmRoomCards.jsdom`:**<br>• RK-2's `setStateOf` matrix is rewritten to RL-1's: ranked with and without a tempo, clone with and without, an unknown agent, rule off or unknown for every agent, and each Forge flag off.<br>• The old "no tempo" row becomes **the ranked battle with no tempo links** (form: RG-5's sentence; receipt: the link, which opens the Character area).<br>• New: **a clone with no tempo** gives RK-2's sentence on the form and the receipt and no link. It runs through the real handler, and the card files under the ranked parent.<br>• New: **a clone with a tempo** links.<br>• New: **on the ranked no-tempo day**, the rule off, the rule unknown and each flag off each give no link. | **N** link withheld from a ranked battle with no tempo → 3 / 19<br>**N** link shown on a clone with no tempo → 2 / 19<br>**N** RL-1 reading the resolved parent: the receipt reading the card's `agentId` → 1 / 19; the form reading the counter's `attributionAgentId` → 1 / 19<br>M an unknown agent read as ranked → 1 / 19<br>M the screen not passing the agent to the receipt → 2 / 19; to the form → 1 / 19 |
+| 2 | **RL-5**, the "next battle" sentence | `1dbab12d` | **`FilmRoomCardRegions.jsx`:** the receipt's sentence ends with `cards.setNextBattle`, "A change applies from your next battle." It is shown under `linked = set?.link && onOpenForge` (`:332`), the one condition that also renders the link, so neither stands without the other. The no-link sentences are unchanged, and the form never says it.<br>**Copy:** one new key, after `cards.setNoTempo`. The inventory is now 364 keys and 511 entries, and the own-voice sweep passes. | **`FilmRoomCards.jsdom`:**<br>• New: **a completed battle's receipt** ends with the sentence, and so does **the receipt on day 1 of a multi-day battle still running** (`status: 'active'`, the form without it, said once on the screen).<br>• The linked rows (all conditions, ranked without tempo, clone with tempo, back on its own day) now expect it.<br>• Every no-link row compares the whole sentence exactly: rule off, rule unknown, either flag off, clone with no tempo, no Forge door, another day, the same date in another battle, shelved, retired, and the form.<br>**Inventory:** 364 / 511. | **N** the sentence missing where Set links → 5 / 20<br>**N** added where it doesn't: without a Forge door → 1 / 20; on every open Set receipt → 8 / 20; on every receipt → 10 / 20; in the form → 8 / 20<br>M the key gone from the copy → 8 / 27 |
+| 3 | **RL-3**, the one-symbol chart section | `15909e20` | **`FilmRoomDeepDive.jsx`:** the chart `Section` (`:513`) no longer takes `coverageAt`, so it shows the series section's status in no state.<br>**Each state's own line** comes from the chart body: while loading, the loading line; after a failed read, the failure sentence; beside an uncharted symbol, RJ-2's sentence; beside a charted one, RK-11's line; with no symbol to chart, "No series were recorded for this day."<br>**The status stays elsewhere:** `sectionLine` (`:480`) still feeds the all-symbols grid (`:528`), which keeps the section's status. Glance's line is untouched. | **`FilmRoomDeepDive.jsdom`**, new RL-3 describe, phone and desktop:<br>• loading, on a complete and a partial day;<br>• a failed read;<br>• an uncharted symbol on a partial and an unavailable day;<br>• the grid's line, with its stored note, present on desktop in each state;<br>• a charted symbol, and the empty day's section.<br>**`FilmRoomDeepDive.noChart.writer`** (the real passes):<br>• the DE row rewritten (no series status beside DE);<br>• new: on desktop, the grid keeps the partial line and its stored reason. | **N** the series status in every state (the old line back) → 9 / 53<br>**N** shown while loading → 2 / 53<br>**N** after a failed read → 2 / 53<br>**N** beside an uncharted symbol → 4 / 53<br>**N** the grid losing its section line → 8 / 53<br>M the no-symbol section showing it → 1 / 42 |
+| 4 | **RL-4**, the meeting maker | `807de765` | **`filmRoomModel.js` `entryMakerOf`** (`:474`), the chart's shared maker for both names: the gameplan meeting reads "by the gameplan meeting" with no code after it (`:478`).<br>**Unchanged:** a platform rule keeps its reason, and a maker not recorded keeps any it stored. `exitMakerOf`'s words, with the recorded reason after them, stay everywhere else (Glance, Study, the symbol's facts). | **`FilmRoomDeepDive.jsdom`:**<br>• RK-5's row now expects the meeting without the code.<br>• New: **a real meeting swap**, built from the writer's own mapping (`EXIT_MECHANISMS.gameplan_rotation` → the meeting). Both names read "by the gameplan meeting" and the symbol's facts keep "· gameplan_rotation".<br>• New: **a platform rule** keeps its reason on both names. | **N** the raw code back after the meeting maker → 2 / 42<br>**N** a platform rule's reason dropped → 3 / 42<br>M reasons stripped broadly (exitMakerOf's meeting) → 1 / 42<br>M the unrecorded maker's reason dropped → 1 / 42 |
+| 5 | **Astra §4 item 1**, navigation bounds | `c2b6a993` | **`ideaNavigation.js`**, inside B2.1's own `at` check only:<br>• `isCalendarDate` (`:54`) accepts a `YYYY-MM-DD` whose year, month and day survive a `Date.UTC` round trip.<br>• `battleReviewAtOf` (`:67`) uses it, and refuses `fromTickSeq > toTickSeq` when both are recorded (`:71`). Null bounds pass as approved.<br>**Unchanged:** a malformed `at` is dropped, and P1c's event is `{ battle }`, byte for byte. P1c's callers and tests are unchanged and pass. | **`ideaNavigation.at.jsdom`** (B2.1's own file):<br>• Dropped, with the event deep-equal to `{ battle }`: `2026-02-30`, `2026-99-99`, a reversed range, `2026-02-29`, `2026-04-31`, months 00 and 13, day 00, and a reversed one-step range.<br>• Pass: a leap day, month ends, an equal range, `0..40`, and the null-sequence moments. | **N** an impossible date accepted (shape only) → 1 / 7<br>**N** a reversed range accepted → 1 / 7<br>M month and day unchecked → 1 / 7<br>M a null bound refused → 1 / 7<br>M an equal range refused → 1 / 7 |
+| 6 | **Astra §4 item 2**, the sweep's order | `30a0820d` | Test helper only (`filmRoomHarness.jsx`): the whole-ISO pattern runs before clock fragments. The review round narrowed it (row "§2 review" below). | **`FilmRoomSweeps.guards.jsdom`:**<br>• New: **the retained-timestamp control.** `Coverage` renders `coverage.checks.preservedFrom` (`2026-09-22T02:15:30.000Z`, Astra's repro) in a `data-time` span, and the number sweep finds nothing.<br>• New: **still bites**: the same instant outside a span, a digit beside it inside one, and a clock-shaped leftover. | **N** the old harness order passing the control → 1 / 47<br>M the ISO instant exempt anywhere → 1 / 47 |
+| — | Goldens | `b1e3bd9f` | The two moved goldens, their SHA-256, and `GOLDEN_SOURCE_COMMIT` `30a0820d`. The capture harness's header names this round. | The comparison suite 12 / 12, and `FilmRoomRoute.golden` 6 / 6. | — |
+| — | §2 review round | `997710f2` | The fixes the refuters confirmed (§14.6):<br>• **Sweep:** the attribute pass exempts clocks and dates only, never a raw ISO instant (AL3-1). The `data-time` ISO pattern matches the instant's own shape (AL3-2).<br>• **Comments:** `sectionLine`'s comment says what the grid does outside a ready read (AL2-4). Three stale comments now say Set's link is on the filed card's receipt (AL1-4, ALV1-1), and the counter's parent is its `attributionAgentId` (AL1-2). | **Tests:**<br>• RL-3's loading rows run over the hook's `idle` and `loading`. A screen-level row holds the series read pending, then lets it land (AL2-1).<br>• The writer suite's charted-symbol rows assert RK-11's line, not the evidence overlay's coverage (AL2-2).<br>• Sweep guard rows for AL3-1 and AL3-2.<br>• An `isEtDate` parity row (AL3-3) and a pre-100 year (AL3-4). | 6 planted, 6 killed:<br>the status while the read is `idle` → 3 / 54;<br>RK-11 and RL-3 reverted in the chart section → 2 / 2 (the two rewritten rows; they passed on it before);<br>the attribute pass exempting the ISO instant → 1 / 49;<br>the loose ISO pattern → 1 / 49;<br>the year check dropped → 2 / 8;<br>the day check drifting from `isEtDate` → 1 / 1 |
+| — | §2 mutating lens | `5e3384e2` | Tests only: a row for each survivor (§14.6) | **`FilmRoomDeepDive.jsdom`** (ALT-21): RL-3's loading and failed-read rows also run on an unavailable series section.<br>**`ideaNavigation.at.jsdom`** (ALT-27, -28, -29): a five-digit year, a trailing part and a one-element array.<br>**`FilmRoomSweeps.guards.jsdom`** (ALT-37, -38, -39, -40): a four-digit fraction, no Z and a one-digit hour bite; two instants in one span sweep clean. | 8 re-planted, 8 killed, each by its new row:<br>ALT-21 → 4 / 42;<br>ALT-27, -28, -29 → 1 / 8 each;<br>ALT-37, -38, -39, -40 → 1 / 49 each |
+
+### 14.3 The golden map
+
+The twelve cards-off goldens were re-captured at the code head `30a0820d`, from `git -c core.autocrlf=false archive` of it, by the capture harness run twice. Both runs were byte-identical, 12 of 12. Each file was then compared with this PR's committed goldens (`dfcbd20c`). A mapper (scratch `goldmap.mjs`) removes, from the OLD html, exactly the element RL-3 removes: the chart section's direct-child coverage line. It then requires old = new, byte for byte.
+
+| Golden | Result | Mapped to |
+|---|---|---|
+| `empty.glance.*`, `empty.study.*`, `sep23.*` (10) | unchanged | — |
+| `empty.deep.phone.html`, `empty.deep.desktop.html` | mapped | **RL-3**. The empty day has no symbol to chart: its chart section is titled "Price" and says "No series were recorded for this day.". It no longer carries the series section's "Coverage · complete" (one 715-byte `<div data-coverage="complete">` removed, nothing else). This is RL-3's "in any state", in the one state the ruling's three bullets do not name (§14.5 item 2). |
+
+No difference maps to nothing.
+
+- **Not in the goldens:** the photographed charts (AMD on Sep 23, none on the empty day) show no loading, failed or uncharted state, and AMD has no swap. So RL-3's three named states and RL-4 are pinned by `FilmRoomDeepDive.jsdom` and the writer suite instead (§14.2).
+- **No other cards-off movement exists.** RL-1 and RL-5 render only under cards. The navigation change acts only on a cross-battle open, which only a card's recurrence makes. The sweep change is test-only.
+- The review round's two comment edits in rendered files (`FilmRoomDeepDive.jsx`, `FilmRoomRoute.jsx`) change no output. The comparison suite passes at the final head.
+
+### 14.4 The exit criterion
+
+Astra's ten criteria (review §1) stand. The prompt adds three changes to criterion 10's declared cards-off changes: RL-3, RL-4 and RL-5's sentence.
+
+| # | Change | Holds? |
+|---|---|---|
+| 10 | RL-3: the one-symbol chart section shows no series status, in any state | Holds: §14.3 maps both moved goldens to it, and §14.2 row 3 pins each named state on phone and desktop. The grid and Glance keep the status. |
+| 10 | RL-4: the chart's meeting maker reads without the code | Holds: in no golden, pinned by `FilmRoomDeepDive.jsdom` (§14.2 row 4). Nothing else that names a maker changed. |
+| 10 | RL-5's sentence | Renders only under cards (the receipt), so it is not a cards-off change; the cards-off goldens hold no receipt (`CARDS_WORDS` there). |
+| 1–9 | — | Unchanged by this round. **No tape field moves:** no writer file is in the round's diff. **Ownership and attribution are untouched:** no server file is in the diff, and RL-1 reads the battle's own agent on the client only for words and a link. **The census and the hub's mount guard pass on the full suite.** |
+
+### 14.5 Declared (built one way, stated)
+
+1. **An agent not known is not established as ranked (review AL1-1, CONFIRMED as a Q).**
+   - **What was built.** RL-1's letter is "`isCasualCloneId` on the battle's own agentId". `isCasualCloneId(null)` is false, so the letter would link for a battle with no agent. The build reads a missing or empty agent as not shown to be ranked: no link, and with no recorded tempo, RK-2's sentence.
+   - **Where it shows.** Only the form, and only for a battle document and a tape that both lack `agentId`. The receipt cannot show it: no agent means no counter read, so no card exists.
+   - **Reach.** The deploy refuses a deploy with no agent, so this cannot happen in practice. Asked as a one-line choice in §14.10.
+2. **RL-3's "in any state" includes the no-symbol state.** The ruling's three bullets name loading, a failed read and an uncharted symbol. A fourth state, a day with no symbol to chart, also loses the series line. That is the only cards-off golden movement (§14.3).
+3. **RL-4 is the chart's only (ALV2-2).** The symbol's facts, Glance and Study keep `exitMakerOf`'s words with "· gameplan_rotation", as the fix prompt's "Recorded reasons elsewhere stay as they are" says. So on desktop the chart label beside the facts panel reads without the code, and the panel shows it. A broader reading is asked in §14.10.
+4. **A training clone is not a casual clone (AL1-3).** Built to RL-1's letter (`isCasualCloneId`, not `isCloneAgentId`). It cannot be reached: a training pod's battle is a tournament battle, flat6 and not tiered, so the Film Room shows the legacy screen and a card create is refused 409 `untaped`. No row pins the training prefix either way. RL-1's reason ("the player's ranked agent") would side with excluding it, and the dial does not reach a training clone either.
+5. **The navigation's day check is a copy of the tape schedule's `isEtDate`.** Importing `isEtDate` into P1c's file would add a line outside B2.1's own `at` check and pull in the market calendar. A parity row pins the two equal over 2,772 dates (AL3-3). `isSeq`, which predates this round, still accepts integers past `MAX_SAFE_INTEGER` (AL3-5, recorded: tick sequences are small counters).
+6. **The attribute sweep is stricter than before (AL3-1).** Under the old order a `.sssZ` instant in an aria-label was flagged by accident, and a fraction-less one was exempt. Now every raw ISO instant in an attribute is flagged; clocks and dates stay times. The refuter measured no current attribute holding an ISO form across the 24 suites that import the harness, so nothing reds.
+
+### 14.6 The §2 review
+
+The round's diff (`dfcbd20c..b1e3bd9f`, 20 files, 632 lines added) ran past BUILD_RULES §2's threshold, which the cumulative branch diff had passed long before.
+
+- **Lenses.** Three, each on its own `git archive` extraction, read-only on git.
+- **Refuters.** Each lens's findings went to a refuter on another extraction.
+- **The mutating lens.** It ran last, on its own tree of the review round's head `997710f2`.
+
+The three lenses:
+
+- **AL1**: Set's words and link (RL-1, RL-5).
+- **AL2**: the cards-off screen (RL-3, RL-4, the goldens).
+- **AL3**: navigation, the sweep helper, the verbatim docs and the fences.
+
+**Findings and dispositions.** Verdicts are the refuters'. Every "Fixed" or "Row added" is in `997710f2` and was mutation-tested (§14.2, the last row).
+
+| Id | Sev. (after refuter) | Finding | Verdict | Disposition |
+|---|---|---|---|---|
+| AL2-1 | MINOR | RL-3's loading rows planted only `status: 'loading'`. On the real screen a pending series read is `idle` first (`useSeriesDay` writes `loading` into a ref without a re-render), so a mutant showing the status while `idle` survived 139 rows | CONFIRMED ("the whole wait reads idle" overstated: a re-render reads `loading`) | **Row added**: the loading rows run over `idle` and `loading`; a screen-level row holds `readSeries` pending, phone and desktop, re-renders, then lets it land |
+| AL2-2 | MINOR | The writer suite's "charted symbol keeps the section's complete line" rows (from A2) asserted `#deep-chart [data-coverage]`. Since RK-11 that matched the evidence overlay's coverage, so they passed with RK-11 and RL-3 reverted, and their titles said the opposite of RL-3 | CONFIRMED | **Fixed**: they assert RK-11's line and no series line, scoped to the section's direct child or the series note; the BTC rows scoped the same way |
+| AL2-3 | NIT | The golden suite cites this section, which did not yet exist | CONFIRMED (a push condition) | This section |
+| AL2-4 | MINOR (predates the round) | On desktop, while the read is pending or after it failed, the grid keeps "Coverage · complete" above tiles that each say "No chart was recorded for this symbol." | CONFIRMED (identical at `dfcbd20c`; on main before the PR the tiles said "No series for X.") | **Comment fixed** (the round had rewritten it to scope RJ-2 to the grid). **Ruling asked** (§14.10) |
+| AL3-1 | NIT (MINOR before refuting) | The reorder also changed the attribute pass, which shares the list: a `.sssZ` instant in an aria-label or title stopped biting | PARTLY (a fraction-less instant was already exempt; no attribute holds one today) | **Fixed**: attributes exempt clocks and dates only; row |
+| AL3-2 | NIT | The ISO pattern's `[\d:.]+` let `T47.5Z` pass in a `data-time` span | PARTLY (the "unanchored" half refuted: leftover digits still bite) | **Fixed**: the instant's own shape; row |
+| AL3-3 | NIT | `isCalendarDate` duplicates `isEtDate` | CONFIRMED (5.1M strings, 0 differences) | **Row added** (parity) |
+| AL3-4 | NIT | Dropping the year check survived (years 0000–0099 differ) | CONFIRMED | **Row added** (`0026-09-25`) |
+| ALV3-1 | NIT | Dropping the month or day check is equivalent | added by refuter | Recorded |
+| AL3-5 | NIT | `isSeq` accepts unsafe integers | PARTLY (the "reversed range passes" half refuted: JS rounds before the call) | Recorded (§14.5 item 5) |
+| AL3-6 | Q | A real calendar date need not be a day of that battle | CONFIRMED (the live producer cannot send one) | **Ruling asked** (§14.10) |
+| AL1-1 | Q | An unknown agent is read as not ranked, not by the letter | CONFIRMED | Declared (§14.5 item 1); **ruling asked** |
+| AL1-2 | NIT | Two comments called the counter's `agentId` the parent; it is the asked agent (the clone) | CONFIRMED (the mutant reading it is equivalent) | **Fixed** |
+| AL1-3 | NIT | No row pins a `training-agent-` id | CONFIRMED, unreachable | Recorded (§14.5 item 4) |
+| AL1-4, ALV1-1 | NIT (predate the round) | Three comments (`FilmRoomRoute.jsx`, `App.jsx`, `App.filmRoomForge.source.test.js`) said the form's Set opens the Forge | CONFIRMED (no test pins them) | **Fixed** |
+| ALV2-1 | NIT | `useSeriesDay`'s docstring promises no `idle` | added by refuter (predates the round) | Recorded |
+| ALV2-2 | Q | RL-4 is chart-only; the facts panel beside it keeps the code | added by refuter | Declared (§14.5 item 3); **ruling asked** |
+
+Tally of the lenses' 14 findings: 11 CONFIRMED (two of them questions), 3 PARTLY, 0 REFUTED. The refuters added 4 more (ALV1-1, ALV2-1, ALV2-2, ALV3-1). No BLOCKER, no MAJOR. The lenses also ran their own mutants:
+
+- **AL1:** 13 killed, 2 survived, neither a defect: `isCloneAgentId` (AL1-3), and the tape's agent preferred over the battle's, which cannot differ.
+- **AL2:** every RL-3 and RL-4 mutant killed. It re-captured all twelve goldens: equal to the committed files, and all twelve SHA-256 pins match.
+
+**AL3's checks:** both B0 files are byte-identical to the prompt's marker sections. The fences hold across the branch's 74 files. No merge commit exists in the branch.
+
+**The mutating lens (ALT), last, on its own tree of `997710f2`.**
+- **Totals.** It planted 49 mutants over every changed production line and harness line of the round. 30 were killed, 10 equivalent, 9 survived. No run hit a load error, and no row went red on a timeout alone.
+- **Every new row can fail.** Each new or changed row of the round went red under a mutant naming its defect, including the running-battle half of RL-5's row and the golden re-pin.
+- **Equivalents.** Among the 10:
+  - the form or the receipt reading the tape's agent, which the writer copies from the battle;
+  - the receipt falling back to the parent when no agent is known, which cannot happen, since no agent means no counter read and no receipt;
+  - the status beside a charted symbol, which RK-11's line already shadows;
+  - the month or the day conjunct of the date check, each implied by the other with the year checked;
+  - the range's from-null conjunct, since `null > n` is false for every `n >= 0`.
+- **Survivors.** Each now has a killing row (`5e3384e2`, tests only), re-planted and killed:
+  - ALT-21: the status while pending or failed on an UNAVAILABLE section. The rows looped over complete and partial only.
+  - ALT-27, ALT-28: the date's start or end anchor dropped. A five-digit year round-trips; a trailing part is cut off by the split.
+  - ALT-29: the date's string guard dropped. A one-element array stringifies to a date, and then the check throws.
+  - ALT-37, ALT-38, ALT-39: the sweep's ISO exemption loosened to any fraction, no Z, or a one-digit hour.
+  - ALT-40: the ISO pattern without its `g` flag, which exempted only the first instant in a span (a false alarm, not a missed digit).
+- **One recorded, not rowed.** ALT-1 (NIT): `isCloneAgentId` in place of `isCasualCloneId`. A training-pod battle with no tempo would lose the link. It cannot be reached, and a row would pin one side of a reading the refuter argued the other way (§14.5 item 4).
+- **Tree check.** The lens's seven touched files were byte-equal to `997710f2` at the end.
+
+### 14.7 `refresh=1` and C1's bookkeeping
+
+§5 now carries the C1 bookkeeping row the founder declared during Astra's review (R-2). This round changes no writer, so `refresh=1` carries nothing new. After a refresh, a day whose sources and stored rows are unchanged answers `unchanged`, with its write counts and timestamps unchanged. That is the expected success.
+
+### 14.8 Final checks
+
+Every check ran on the branch merged with current `origin/main` `be52068c`, never on the branch alone. Each merge is a check-only object (`git merge-tree` + `git commit-tree`, held by a local ref, never pushed), run in a git worktree of the WSL clone `~/pd-ci` or in an LF `git archive`.
+
+| Check | Where | Result |
+|---|---|---|
+| Linux full suite, run 1 | `7f77ba28` (`b1e3bd9f`, the fixes and goldens, merged with `be52068c`); `TZ=UTC`, `--maxWorkers=8`, under `flock /tmp/pd-suite.lock` | **0 failing files**: 1,227 files (8 skipped); 26,886 rows passed, 89 skipped; 247 s. The hub's mount guard, the census and `flagPinGuard` pass |
+| Linux full suite, run 2 | `baeb246f` (`997710f2`, the review round, merged with `be52068c`) | **0 failing files**: 1,227 files; 26,890 rows passed, 89 skipped; 219 s |
+| Linux full suite, run 3 (the record) | `47c86570` (`5e3384e2`, the final code, merged with `be52068c`) | **0 failing files**: 1,227 files; 26,890 rows passed, 89 skipped (26,979); exit 0; 249 s. The same row count as run 2: the mutating lens's additions extend existing rows, they add none |
+| Rules suite (`firebase emulators:exec … vitest.rules.config.mjs`) | Windows (WSL has no Java), LF archives of `7f77ba28` and `47c86570`, `firestore.rules` checked equal to its blob | 28 files, 448 rows, all passed, both. No rules or rules-test file is in this round's diff |
+| `npm run lint:gate` | WSL, `7f77ba28` and `47c86570` | exit 0, no warning, both |
+| `vite build` | WSL, this report's own commit, merged with `main` and alone (the pushed head), the last check before the push | built; recorded in the PR description |
+| Goldens | §14.3 | captured twice from `30a0820d`, byte-identical; the comparison suite passes at every later head |
+| Film Room suites on Windows | the worktree, `src/screens/filmRoomV2/`, `src/screens/__golden__/`, `src/components/Forge/Watchlist/` | 41 files passed (4 skipped: the env-gated capture), 779 rows, at `997710f2` |
+
+Linux is the record. The rules suite runs on Windows because WSL has no Java.
+
+### 14.9 Fence statement
+
+- **Zero BUILD_RULES §1 edits.** None of the branch's files is on the §1 list (checked by name over `24495eba..HEAD`). `api/cron/agent-evaluate.js` is not touched.
+- **Not in the branch's diff:**
+  - `api/_utils/casualClone.js`, `api/_utils/trainingClone.js`, `api/_utils/leanRevalidation.js`;
+  - `firestore.rules`, `firestore.indexes.json`, `src/config/featureFlags.js`;
+  - the hub's code (`src/components/CommandCenter/**`);
+  - the workflow (`.github/workflows/**`) and the CI guard (`scripts/ci/**`).
+- **`FILM_ROOM_CARDS_MODE` stays `'off'`.**
+- **P1c's file** (`src/components/Forge/Watchlist/ideaNavigation.js`) changes only inside B2.1's own `at` check: `isCalendarDate`, the date line and the order line of `battleReviewAtOf`, and its docstring. P1c's callers and tests are not in the diff, and they pass.
+- **No merge commit on the branch.** Every merged check ran on a check-only object.
+- **Nothing reaches into the hub's directory.** RL-1's one new import is `src/constants/leagueTournament.js`, a module with no imports. The hub's mount guard passes on every full run.
+- No merge, no production write, no backfill, no refresh, no deploy, no flip.
+
+### 14.10 Rulings asked
+
+None blocks a merge.
+
+1. **The desktop grid while the series is pending or failed (review AL2-4; predates this round).**
+   - **What shows.** On desktop, the all-symbols grid keeps the series section's line, as RL-3 says it should: "Coverage · complete" on a complete day. Each tile beside it says "No chart was recorded for this symbol." (BTC its crypto reason). Meanwhile the one-symbol section above says "Loading the tape…" or "The series for this day could not be read."
+   - **Why it matters.** RJ-2 ("complete" never beside a symbol shown with no series) holds on the grid only once the read is ready.
+   - **The option (not built).** While the read is pending, the tiles say the loading line, and after a failed read the failure sentence. The grid keeps its line, and no golden moves.
+2. **RL-4 beyond the chart (ALV2-2).** The chart's maker now reads "by the gameplan meeting". The symbol's facts beside it, Glance and Study still read "Exit by the gameplan meeting · gameplan_rotation". Built chart-only, as KRV4-1 asked and the prompt bounds it. Drop the code there too?
+3. **An unknown agent (AL1-1).** Keep the cautious reading (§14.5 item 1), or take the letter? The letter is `const ranked = !isCasualCloneId(agentId)`: the form would then say RG-5's sentence alone. It cannot be reached in practice.
+4. **A navigation day outside the battle (AL3-6).** Astra asked for a real date and an ordered range, and that is what is built. A real date that is not one of the battle's days (a weekend) still opens, on a day its picker does not list. No live producer sends one. Bound it by the battle's days?
+
+**Declared, not asked:** §14.5 items 2, 4, 5 and 6.
