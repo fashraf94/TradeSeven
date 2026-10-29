@@ -195,12 +195,21 @@ function strippedSource(file) {
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
+// Agent form build S1 (founder ruling R8, Oct 28–29 2026): the battle form's "researching" MOOD — a pose the engine
+// draws, never a word on the screen — shown only while cronState.evaluatingAt holds a lock the server still honours,
+// an evaluation really in flight between two checks' stamps, not cognition between checks. The exemption is
+// STATEMENT-scoped (the narrator precedent, review C-4): the one line that returns the mood token, and nothing else in
+// that file or the directory; the row below keeps it earned.
+const MOOD_TOKEN_FILE = path.join(BATTLE_VIEW_DIR, 'agentMood.js');
+const MOOD_TOKEN_STATEMENT = "if (evaluationInFlight(b, nowMs)) return 'researching';";
+const scannable = (file) => (file === MOOD_TOKEN_FILE ? strippedSource(file).split(MOOD_TOKEN_STATEMENT).join(' ') : strippedSource(file));
+
 describe('C1 — no agent-verb or action-proximity framing on the Desk', () => {
   for (const file of GUARDED) {
     const rel = path.relative(path.join(HERE, '..', '..', '..'), file);
     for (const term of FORBIDDEN) {
       it(`${rel} contains no "${term}"`, () => {
-        const source = strippedSource(file);
+        const source = scannable(file);
         // Word-boundary, case-insensitive. Multi-word terms are matched as
         // phrases; the boundary keeps "considering" from firing on a longer
         // identifier that merely contains it.
@@ -216,6 +225,15 @@ describe('C1 — no agent-verb or action-proximity framing on the Desk', () => {
       });
     }
   }
+});
+
+describe('the agent form\'s mood token (ruling R8) is exempt in one statement, and the exemption is earned', () => {
+  it('agentMood.js still returns the token in exactly that statement, once, and is otherwise clean', () => {
+    const source = strippedSource(MOOD_TOKEN_FILE);
+    expect(source.split(MOOD_TOKEN_STATEMENT)).toHaveLength(2);
+    expect(scannable(MOOD_TOKEN_FILE)).not.toMatch(/\bresearching\b/i);
+    expect(GUARDED).toContain(MOOD_TOKEN_FILE);
+  });
 });
 
 describe('the grandfathered exemption is scoped, and still true', () => {

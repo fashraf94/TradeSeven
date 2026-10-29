@@ -9,10 +9,11 @@
 //
 //   BattleAgentFormScope  AgentBattleScreen.jsx's scope around the three sites: the cockpit feed (null unless the
 //                         cockpit runs) and the coarse clock, read as the cockpit reads it.
-//   BattleAgentFormSlot   one form at a site: the lazy form, the still while its chunk loads.
+//   BattleAgentFormSlot   one form at a site: the lazy form, the still while its chunk loads — and the still for good
+//                         if the chunk fails (a boundary of its own, so a failed load never takes the battle screen down).
 //   duelScores            the pair the robot head is fed at these sites, as the mood's scores (BUILD_RULES §9).
 
-import React, { Suspense, createContext, lazy } from 'react';
+import React, { Component, Suspense, createContext, lazy } from 'react';
 import { AGENT_FORM_BATTLE_ENABLED } from '../../config/agentFormFlags';
 import AgentFormStill from '../../components/AgentForm/AgentFormStill';
 
@@ -40,7 +41,14 @@ export function duelScores({ comparison, playerScore, opponentScore, agentBattle
   };
 }
 
-/** One form at a site, `size` px square: the form once its chunk is in, its still until then. */
+/** A form whose chunk failed to load (a flaky connection, a stale deploy) shows its still; the screen goes on. */
+class SlotBoundary extends Component {
+  constructor(props) { super(props); this.state = { failed: false }; }
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() { return this.state.failed ? this.props.fallback : this.props.children; }
+}
+
+/** One form at a site, `size` px square: the form once its chunk is in, its still until then — or for good, if it fails. */
 export function BattleAgentFormSlot({ size, side = 'player', ...props }) {
   const still = (
     <div aria-hidden="true" style={{ position: 'relative', width: size, height: size }}>
@@ -48,8 +56,10 @@ export function BattleAgentFormSlot({ size, side = 'player', ...props }) {
     </div>
   );
   return (
-    <Suspense fallback={still}>
-      <LazyBattleAgentForm size={size} side={side} {...props} />
-    </Suspense>
+    <SlotBoundary fallback={still}>
+      <Suspense fallback={still}>
+        <LazyBattleAgentForm size={size} side={side} {...props} />
+      </Suspense>
+    </SlotBoundary>
   );
 }

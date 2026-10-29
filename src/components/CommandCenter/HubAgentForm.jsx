@@ -47,7 +47,10 @@ export function hubFormRead(read) {
 
 export default function HubAgentForm({ size, status = 'ambient', selectedArea = null, reducedMotion = false, paused = false, phone = false, boxRef }) {
   const { archetype, key } = hubFormRead(useContext(HubAgentFormContext));
-  const [formStatus, setFormStatus] = useState(() => (hasWebGL() ? 'loading' : 'unavailable'));
+  // The form's status, kept with the key it was reported under: a re-keyed (remounted) form starts again from its
+  // placeholder, so the label says "still" until the new form reports itself live (BUILD_RULES §9).
+  const [reported, setReported] = useState(null);
+  const formStatus = reported && reported.key === key ? reported.status : (hasWebGL() ? 'loading' : 'unavailable');
   const rate = hubFormRate(phone);
   const processing = status === 'processing';
   const { coreStage, armorStage } = getAgentGrowth(null);
@@ -75,7 +78,7 @@ export default function HubAgentForm({ size, status = 'ambient', selectedArea = 
         clip
         equipOnChange
         label={label}
-        onStatus={setFormStatus}
+        onStatus={(status) => setReported({ key, status })}
       />
     </div>
   );

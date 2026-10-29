@@ -115,6 +115,16 @@ describe('the accessible name (R10): "Shadow wearing <archetype>", with the stat
     expect(seen.renders.at(-1).label).toBe('Shadow wearing Speculator — still');
   });
 
+  it('a re-keyed form starts again from "still": the label waits for the new form to report itself live (BUILD_RULES §9)', () => {
+    show(ready('a1', 'degen'));
+    act(() => { seen.renders.at(-1).onStatus('live'); });
+    expect(seen.renders.at(-1).label).toBe('Shadow wearing Speculator — ambient');
+    // another agent: a new form, whose placeholder shows until it reports
+    expect(show(ready('b2', 'analyst')).label).toBe('Shadow wearing Fundamental Investor — still');
+    act(() => { seen.renders.at(-1).onStatus('live'); });
+    expect(seen.renders.at(-1).label).toBe('Shadow wearing Fundamental Investor — ambient');
+  });
+
   it('bare Shadow (no archetype, "unknown", a legacy key) keeps Shadow\'s own label — never "wearing Unknown"', () => {
     for (const archetype of [undefined, 'unknown', 'momentum']) {
       const label = show(ready('a1', archetype)).label;

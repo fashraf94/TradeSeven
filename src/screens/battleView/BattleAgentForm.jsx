@@ -24,8 +24,9 @@ import { BattleAgentFormContext } from './battleAgentFormSlot';
 // Rollup orders modules before it tree-shakes, and it reaches this file even with the flag off (the slot's folded
 // import() is still in the module graph): a static import here put hub/selectors/gameOutcome.js into the battle view's
 // part of that order first and moved it within the hub's chunk, so the flag-off hub chunk was no longer main's. One
-// import() deeper, the hub claims the module's place first. use() waits for it under the slot's Suspense.
-const outcomesLoaded = import('../../components/CommandCenter/hub/selectors/gameOutcome');
+// import() deeper, the hub claims the module's place first. use() waits for it under the slot's Suspense. If it fails to
+// load, the form goes on without it: deriveAgentMood then shows a completed battle as idle, never a claimed win.
+const outcomesLoaded = import('../../components/CommandCenter/hub/selectors/gameOutcome').catch(() => null);
 
 export default function BattleAgentForm({ agentBattle, side = 'player', size, scores = null, reducedMotion = false }) {
   const held = useContext(BattleAgentFormContext);
