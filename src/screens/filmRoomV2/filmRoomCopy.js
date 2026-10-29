@@ -325,8 +325,9 @@ export const FILM_ROOM_COPY = Object.freeze({
     // reaches this situation — the tempo dial, in the Forge workshop; with it off, it says no setting changes it
     setTempoLink: 'Tempo dial · Forge workshop',
     setRuleOff: 'No setting changes this situation for this archetype.',
-    // Build B Amendment K RK-2: the rule on, but the tape records no tempo set on the battle (a casual clone inherits no
-    // dial; an agent whose dial was never set records none either) — said after RG-5's sentence, with no link
+    // Build B Amendment K RK-2, as Amendment L RL-1 narrows it: the rule on, the battle ran on a casual clone (which
+    // inherits no dial) and its tape records no tempo — said after RG-5's sentence, with no link. A ranked battle whose
+    // dial was never set links instead: the dial reaches its agent
     setNoTempo: 'No tempo setting was recorded for this battle.',
     openCards: 'Open cards',
     // the count line before the counter has answered, and when it could not: words, no number (R14)

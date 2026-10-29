@@ -958,11 +958,14 @@ describe('B2.1 B3 (Amendment H RH-6) — an unavailable day, on the screen: no r
 describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and its link to the tempo dial on the filed card\'s receipt', () => {
   const RULE_OFF = 'You change the setting yourself; this card changes nothing. No setting changes this situation for this archetype.';
   const NO_TEMPO = 'You change the setting yourself; this card changes nothing. No tempo setting was recorded for this battle.';
-  /** The screen on `tape`'s day (stored for the handler too), the form opened on its first moment; `file` files a Set card. */
-  async function setOn(tape, onOpenForge, { file = true } = {}) {
+  /**
+   * The screen on `tape`'s day (stored for the handler too), the form opened on its first moment; `file` files a Set
+   * card. `battle` is the battle on screen (the ranked agent's by default); `days` its other tape days.
+   */
+  async function setOn(tape, onOpenForge, { file = true, battle = battleOf(), days = { [D1]: fx.tape1, [D2]: fx.tape2 } } = {}) {
     t.store.set(`agentBattles/${B}/tape/${tape.etDate}`, tape);
-    lastBattle = battleOf();
-    m.render(<FilmRoomScreenV2 battle={lastBattle} onBack={() => {}} viewerId="viewer-1" readers={readersOf({ [D1]: fx.tape1, [D2]: fx.tape2, [tape.etDate]: tape }, [])} nowMs={NOW} cardsApi={api} onOpenForge={onOpenForge} />);
+    lastBattle = battle;
+    m.render(<FilmRoomScreenV2 battle={lastBattle} onBack={() => {}} viewerId="viewer-1" readers={readersOf({ ...days, [tape.etDate]: tape }, [])} nowMs={NOW} cardsApi={api} onOpenForge={onOpenForge} />);
     await m.flush(8);
     if (tape.etDate === D1) { m.click(m.qa('[data-region="day-picker"] button')[0]); await m.flush(8); }
     m.click(m.buttons('Take this home')[0]);
@@ -971,25 +974,51 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
   }
   const formSet = () => m.q('[data-route-note="set"]').textContent;
   const receiptNext = () => m.q('[data-card-receipt] [data-card-next]').textContent;
+  const CLONE = `casual-agent-${OWNER}`;
+  /**
+   * Amendment L RL-1 — Set on a casual clone's battle (RK-1's fixture): the clone's document names the ranked agent as
+   * its parent; the battle document and its tape days name the clone. The card files under the parent (RK-1), so the
+   * card's own agentId — and the counter's — is a RANKED agent: only the battle's own agent tells the clone apart.
+   */
+  async function setOnClone(tape, onOpenForge, opts = {}) {
+    t.store.set(`agents/${CLONE}`, { ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT });
+    t.store.set(`agentBattles/${B}`, { ...fx.battle, agentId: CLONE });
+    await setOn({ ...tape, agentId: CLONE }, onOpenForge, { ...opts, battle: battleOf({ agentId: CLONE }), days: { [D1]: { ...fx.tape1, agentId: CLONE }, [D2]: { ...fx.tape2, agentId: CLONE } } });
+  }
 
   it('review SPR-T-9 — the rule as stored, exactly: true is on, false is off, anything else (a 1, a string) unknown', () => {
     const ruleOf = (enabled) => setRuleOf({ tags: { inputs: { forcedRotation: { enabled } } } });
     expect([ruleOf(true), ruleOf(false), ruleOf(1), ruleOf('true'), ruleOf(0), setRuleOf(null)]).toEqual(['on', 'off', 'unknown', 'unknown', 'unknown', 'unknown']);
   });
 
-  it('RK-2 — setStateOf: the link only when the rule is on, a tempo is recorded and both Forge flags are on; each condition alone turns it off', () => {
+  it('Amendment L RL-1 — setStateOf: the link when the rule is on, the dial reaches the battle (its OWN agent is not a casual clone, or its tape records a tempo) and both Forge flags are on; each condition alone turns it off', () => {
     const day = (enabled, tempoDesired) => ({ tags: { inputs: { forcedRotation: enabled === undefined ? undefined : { enabled }, tempoDesired } } });
-    expect(setStateOf(day(true, 'standard'))).toEqual({ say: null, link: true });
-    expect(setStateOf(day(false, 'standard'))).toEqual({ say: 'ruleOff', link: false });
-    expect(setStateOf(day(true, null))).toEqual({ say: 'noTempo', link: false });
-    expect(setStateOf(day(true, undefined))).toEqual({ say: 'noTempo', link: false });
-    expect(setStateOf(day(true, ''))).toEqual({ say: 'noTempo', link: false });   // review KRT-8: an empty tempo is none
-    expect(setStateOf(day(false, null))).toEqual({ say: 'ruleOff', link: false });   // review KRT-2: the rule off is said first, tempo or not
-    expect(setStateOf(day(undefined, 'standard'))).toEqual({ say: null, link: false });
-    state.characterTab = false;
-    expect(setStateOf(day(true, 'standard'))).toEqual({ say: null, link: false });
-    state.characterTab = true; state.tempoDial = false;
-    expect(setStateOf(day(true, 'standard'))).toEqual({ say: null, link: false });
+    const LINK = { say: null, link: true };
+    const NONE = { say: null, link: false };
+    const NO = { say: 'noTempo', link: false };
+    // the ranked agent's battle: the dial reaches it, a tempo recorded or not
+    for (const tempo of ['standard', null, undefined, '']) expect(setStateOf(day(true, tempo), AGENT), String(tempo)).toEqual(LINK);
+    // a casual clone's battle: only where its tape records a tempo — RK-2's sentence otherwise
+    expect(setStateOf(day(true, 'standard'), CLONE)).toEqual(LINK);
+    for (const tempo of [null, undefined, '']) expect(setStateOf(day(true, tempo), CLONE), String(tempo)).toEqual(NO);   // review KRT-8: an empty tempo is none
+    // an agent not known is not established as the ranked one: it links only on a recorded tempo
+    for (const agent of [null, undefined, '', 7]) {
+      expect(setStateOf(day(true, null), agent), String(agent)).toEqual(NO);
+      expect(setStateOf(day(true, 'standard'), agent), String(agent)).toEqual(LINK);
+    }
+    // the rule off or unknown: no link for any agent, RJ-8's sentence said first (review KRT-2), tempo or not
+    for (const agent of [AGENT, CLONE, null]) {
+      for (const tempo of ['standard', null]) {
+        expect(setStateOf(day(false, tempo), agent), `${agent} off ${tempo}`).toEqual({ say: 'ruleOff', link: false });
+        expect(setStateOf(day(undefined, tempo), agent), `${agent} unknown ${tempo}`).toEqual(NONE);
+      }
+    }
+    // either Forge flag off alone: no link, wherever the dial reaches
+    for (const flag of ['characterTab', 'tempoDial']) {
+      state.characterTab = flag !== 'characterTab'; state.tempoDial = flag !== 'tempoDial';
+      for (const [tempo, agent] of [[null, AGENT], ['standard', AGENT], ['standard', CLONE]]) expect(setStateOf(day(true, tempo), agent), `${flag} ${agent} ${tempo}`).toEqual(NONE);
+      expect(setStateOf(day(true, null), CLONE), flag).toEqual(NO);
+    }
   });
 
   it('all of RK-2\'s conditions hold: the FORM says RG-5\'s sentence with no link (RK-3); the filed card\'s RECEIPT holds "Tempo dial · Forge workshop", which opens the Forge on its Character area — the hub\'s own door, nothing filed (the mutant: the link inside the form)', async () => {
@@ -1011,17 +1040,67 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
     await sweepAll(fx.tape2Tempo, 'set link');
   });
 
-  it('no tempo recorded — the rule on, tempoDesired null (the fixture\'s own day: the dial never set, as every casual clone\'s day records): RK-2\'s sentence on the form and the receipt, and no link anywhere (the mutant: Set linking with tempoDesired null)', async () => {
-    await setOn(fx.tape2, () => {}, { file: false });
+  it('Amendment L RL-1 — the ranked agent\'s battle with no tempo recorded (the fixture\'s own day: the dial never set): the form says RG-5\'s sentence alone, no link; the receipt links (the mutant: the link withheld from a ranked battle with no tempo)', async () => {
+    const asked = [];
+    await setOn(fx.tape2, (request) => asked.push(request), { file: false });
     expect(fx.tape2.tags.inputs.forcedRotation.enabled).toBe(true);
+    expect(fx.tape2.tags.inputs.tempoDesired).toBeNull();
+    expect(lastBattle.agentId).toBe(AGENT);
+    expect(formSet()).toBe(RG5.set);
+    expect(m.q('[data-set-link]')).toBeNull();
+    await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
+    expect(receiptNext()).toBe(RG5.set);
+    m.click(m.q('[data-card-receipt] [data-set-link] button'));
+    expect(asked).toEqual([{ area: 'traits' }]);
+    await sweepAll(fx.tape2, 'ranked, no tempo');
+  });
+
+  it('Amendment L RL-1 — a casual clone\'s battle with no tempo recorded: RK-2\'s sentence on the form and the receipt, and no link anywhere — though the card files under the RANKED parent (the mutants: the link shown on a clone with no tempo; RL-1 reading the resolved parent, the card\'s or the counter\'s agent, instead of the battle\'s own)', async () => {
+    await setOnClone(fx.tape2, () => {}, { file: false });
     expect(formSet()).toBe(NO_TEMPO);
     // review KRT-3: Set's words are Set's alone — Watch and Practice keep RG-5's sentences
     expect(m.q('[data-route-note="watch"]').textContent).toBe(RG5.watch);
     expect(m.q('[data-route-note="drill"]').textContent).toBe(RG5.drill);
+    expect(m.q('[data-set-link]')).toBeNull();
     await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
+    // the parent the card is filed under is the ranked agent (RK-1) — the screen still judges the battle's own
+    expect(cardBodies()[0].agentId).toBe(CLONE);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ agentId: AGENT, route: 'set' });
+    expect(m.q('[data-card-receipt]').getAttribute('data-card-receipt')).toBe('op_1');
     expect(receiptNext()).toBe(NO_TEMPO);
     expect(m.q('[data-set-link]')).toBeNull();
-    await sweepAll(fx.tape2, 'no tempo');
+    await sweepAll({ ...fx.tape2, agentId: CLONE }, 'clone, no tempo');
+  });
+
+  it('Amendment L RL-1 — a casual clone\'s battle whose tape records a tempo: the form says RG-5\'s sentence alone; the receipt links', async () => {
+    await setOnClone(fx.tape2Tempo, () => {}, { file: false });
+    expect(formSet()).toBe(RG5.set);
+    expect(m.q('[data-set-link]')).toBeNull();
+    await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toMatchObject({ agentId: AGENT, route: 'set' });
+    expect(receiptNext()).toBe(RG5.set);
+    expect(m.q('[data-card-receipt] [data-set-link] button')).toBeTruthy();
+  });
+
+  it('Amendment L RL-1 — on the ranked battle with no tempo recorded, each other condition still turns the receipt\'s link off: the rule off (RJ-8\'s sentence), the rule unknown, either Forge flag off (RG-5\'s sentence alone)', async () => {
+    const off = structuredClone(fx.tape2);
+    off.tags.inputs.forcedRotation.enabled = false;
+    await setOn(off, () => {});
+    expect(receiptNext()).toBe(RULE_OFF);
+    expect(m.q('[data-set-link]')).toBeNull();
+    m.teardown(); m.setup();
+    const unknown = structuredClone(fx.tape2);
+    delete unknown.tags.inputs.forcedRotation;
+    await setOn(unknown, () => {});
+    expect(receiptNext()).toBe(RG5.set);
+    expect(m.q('[data-set-link]')).toBeNull();
+    for (const flag of ['characterTab', 'tempoDial']) {
+      m.teardown(); m.setup();
+      state.characterTab = flag !== 'characterTab'; state.tempoDial = flag !== 'tempoDial';
+      await setOn(fx.tape2, () => {});
+      expect(receiptNext(), flag).toBe(RG5.set);
+      expect(m.q('[data-set-link]'), flag).toBeNull();
+    }
   });
 
   it('each condition on its own turns the receipt\'s link off: the rule off (RJ-8\'s sentence), either Forge flag off (RG-5\'s sentence alone) (the mutants: Set linking with the rule off, or with either Forge flag off)', async () => {
