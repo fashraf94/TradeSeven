@@ -10,14 +10,14 @@
 2. **It went stale because busy weeks overflow it.** The AI must list every big event. In peak earnings weeks that list is longer than the code allows, so the answer is cut off and thrown away.
 3. It failed Mon–Wed this week and on 10 earlier days in July, August and October, always early in the busiest weeks. No recent change broke it.
 4. On a failed day the hub keeps Friday's brief, labelled "Last session's brief". That is wrong; the last session was Tuesday.
-5. **The trading agent does not read the brief.** Its buy, sell and swap decisions never see it, and a past ruling of yours forbids it.
+5. **The trading agent does not read the brief.** Its buy, sell and swap decisions never see it, and a past ruling of yours keeps it out of the agent's checks.
 6. The agent's chat voice, two Forge chat tools and the hub card read it. The chat tools skip it unless it is today's, so they have had none since Monday.
-7. Its only way into a game is indirect: it colours what the agent says in chat, and a player's chat instruction does reach the agent.
-8. **Safe to change or remove:** the brief, its wording and schedule, and the hub card. No score or trade depends on it. The fix touches no protected file.
+7. It can reach the agent only indirectly, through chat. A player's chat instruction reaches the next check, and a "lesson" the post-game chat writes feeds the next deploy.
+8. **Safe to change or remove:** the brief, its wording and schedule, and the hub card. No score or trade depends on it. **Handle with care:** the chat voice expects it, and its event calendar is shared with FantasyTimes.
 9. **Timing:** ranked games lock their setup from 7:00 AM ET, before the 8:30 brief. A choice made from it reaches ranked play the next morning at the earliest.
 10. Once a game is running, only a chat or cockpit instruction can still change it, up to the last check at 3:45 PM ET.
-11. The watchlist, its thesis, the archetype, leans and tempo reach the agent at the next deploy (leans and tempo: ranked only). The hub's "idea" and "preference" never reach it.
-12. About 3 real players deployed in the last 30 days, so a per-player brief is cheap. No app audio exists, and the site's security rules would block outside audio until changed.
+11. At the next deploy the agent gets: the archetype (all games), the watchlist and its thesis (BaggerBomb only), and leans and tempo (ranked only). The hub's "idea" and "preference" never reach it.
+12. About 3 real players deployed in the last 30 days, so a per-player brief is cheap. One unused, admin-only voice endpoint exists; the site's security rules block outside audio.
 
 ## 2. Git state and production access
 
@@ -26,9 +26,9 @@
   - `main` = `origin/main` = **`be52068c2711c819aa5e1d6880690d24b576b8ba`** (merge of PR #1006, the hub flip). Local `main` was already level, so no fast-forward was needed.
   - Working tree clean.
 - **Where I worked:** the desktop app's worktree `.claude/worktrees/drb-discovery-ea5051`, local branch `claude/drb-discovery-ea5051` (the app's suffixed name), cut at `be52068c`. Local `main` is checked out in the main checkout, so I did not switch to it.
-  - The report is pushed as **`claude/drb-phase0`** by refspec (`HEAD:refs/heads/claude/drb-phase0`). It contains one commit adding only this file. No PR.
+  - The report is pushed as **`claude/drb-phase0`** by refspec (`HEAD:refs/heads/claude/drb-phase0`). Its commits touch only this file. No PR.
 - **Production access I had and used (reads only):**
-  - **Firestore, through the Firebase Admin service account in the local `.env.local`.** I read `indexIntelligence/dailyRegimeBrief` and `indexIntelligence/marketContext`, listed the `indexIntelligence` document IDs, and ran player counts (`users` and `agents` counts, `agentBattles` by `createdAt`/`status`, printing counts only).
+  - **Firestore, through the Firebase Admin service account in the local `.env.local`.** I read `indexIntelligence/dailyRegimeBrief` and `indexIntelligence/marketContext`, listed the `indexIntelligence` document IDs, and ran player counts (`users` and `agents` counts, `agentBattles` by `createdAt`/`status`, printing counts only). I also counted leans and tempo on the last 30 days of battles and on all agents, again counts only, with no uids.
   - **Google Cloud Storage, through the credential file named by `GCS_CREDENTIALS_FILE`.** I listed and downloaded `fantasytrades/shadow/daily_regime_brief/` (113 runs).
   - **Vercel CLI 53.0.1, authenticated.** I read `vercel logs --environment production` for the brief's route. It returned only the Oct 28 run.
 - **Not done:**
@@ -135,6 +135,8 @@ The fix (described only) is in §4.
 
 ### Q3 — Readers census
 
+Unmarked citations in Q3 and Q4 are VERIFIED (read this session).
+
 There are two kinds of reader. Server readers check freshness (`forDate === today`, with `today` the **UTC** date) and drop a stale brief. The client readers show whatever is stored. "Live" means its gate is on at HEAD.
 
 **Server readers (each builds `anchorContext` for the Gemma text persona, the "Voice Layer"):**
@@ -166,11 +168,12 @@ There are two kinds of reader. Server readers check freshness (`forDate === toda
   - `decide.js` reads `stockRankings` (`:344`, `:1405`), and reads the brief only inside the opener (S1).
 - **The regime stamp on battles** says so in writing: "The DRB is NOT read in the tick and no DRB read is authorized (founder ruling) — drbRegime / drbForDate stay null" (`api/_utils/regimeStamp.js:25-28`, `:103-104`).
 - **The cockpit** calls block (`chat.js:612`, `buildCallsBlockForChat`) is a separate input to chat and does not read the brief.
+- **Pregame / "common context":** no assembler by that name exists. The only hits for `pregame`, `commonContext` or `common context` are the FantasyTimes prompt files (`api/_utils/fantasyTimesPrompts.js`, `src/prompts/fantasyTimesPrompts.js`), which do not read the brief. Neither do `api/curtain-briefing.js` or `api/week-ahead-events.js`: they are absent from the full list of files touching the brief.
 - **Not readers:** the Film Room (`api/film-room/`, `src/components/FilmRoom`), FantasyTimes and the Wire (`api/fantasytimes/`), reflection and wisdom writing, and the daily review `api/cron/agent-batch-review.js` (passes `anchorContext: null`, `:394`). Also `api/forge/watchlist-analysis.js:668` and `api/screener/chat.js:501`, both `null`.
 - **Name collisions, not this brief:** "DRB lessons attribution redirect" in `agent-batch-review.js:57` and `agentConsolidationApply.js:306` is a casual-clone lesson re-keying; it never touches this brief.
 - **Capture and record builds:** no trading-side record of what the agent saw can hold the brief, because neither trading prompt contains it. I did not open each capture writer. The only per-exchange record holding brief text is the chat exchange (S3). The opener's diagnostics record only `hadAnchorContext: true/false` (`decide.js:1779`, `voiceLayerAnticipation.js:412`, `voiceLayerTradeNarration.js:308`).
 
-**Does DRB text or data reach the Trading Brain's decisions today? No, not directly. Indirectly, yes: through the player, via chat.**
+**Does DRB text or data reach the Trading Brain's decisions today? No, not directly. Indirectly, yes, through chat, by two paths:** a player-filed directive (live, next check), and a model-written review lesson (next deploy, via consolidation).
 - **Direct:** no trading prompt, deploy or intraday, contains any brief field (evidence above).
 - **Indirect, one path that is live:**
   1. The battle chat persona sees the brief when it is fresh (S3).
@@ -178,6 +181,14 @@ There are two kinds of reader. Server readers check freshness (`forDate === toda
   3. The intraday evaluator passes that to the fenced swap prompt: `agent-evaluate.js:1927` → `agentEvalPromptAssembly.js:1240`.
 
   So the brief can colour what the agent's chat says, and a directive the player files in that conversation does reach the agent's next check. The directive's source is the player's chat turn; the brief is never forwarded verbatim. (VERIFIED at the cited lines; I did not trace `gateDirective`'s internals.)
+- **Indirect, a second live path, with no player instruction needed: post-game review lessons.**
+  1. In review mode the same chat persona, whose prompt carries the brief while `forDate` still equals the UTC date (`chat.js:589-623` is not mode-gated; the review prompt's anchor is at `voiceLayerPrompt.js:2923-2924`), may propose a lesson.
+  2. `chat.js:895-908` builds it from the model's `_lesson`.
+  3. `chat.js:1139-1146` writes it to `agents/{id}.lessons`.
+  4. Reflection consolidation consumes unconsumed lessons (`api/_utils/agentConsolidationPrompt.js:141-142`; invoked from `api/agent/reflect.js:29`) into `consolidatedInsight`.
+  5. The **next deploy's** strategy prompt renders that as "STRATEGIC WISDOM" (`agentPromptAssembly.js:84-86`).
+
+  So brief-coloured text can reach a later deploy decision as distilled wisdom, a step removed. The trading prompts never read chat text itself: there are zero hits for `chatExchanges` or `agentResponse` in either assembler; `reflect.js:263` uses only the exchange count.
 - **Indirect, through Forge (player action required):**
   - A Workshop thesis is shaped by a chat that saw the brief (S6) and becomes strategy dimensions only when the player compiles it (`workshop-chat.js:17-19`).
   - A Signal Drop watchlist is shaped by a dialogue that saw the brief (S7) and matters only once the player saves and equips it.
@@ -279,7 +290,13 @@ The common theme: almost everything is **server-written and frozen at deploy**, 
   - rendered in the deploy prompt;
   - frozen into the battle;
   - read by every check from the frozen copy (`agentEvalPromptAssembly.js:1241`, VERIFIED).
-- **Caveat (VERIFIED):** the casual clone that plays Command Center BaggerBomb games copies its loadout from the ranked agent through a fixed field list. That list has **no `standingLeans` and no `dials`** (`api/_utils/trainingClone.js:59-84`; `casualClone.js:91-98`). So Forge leans and tempo reach ranked and tournament games, but **not** hub BaggerBomb games, unless something else copies them; the subagent found nothing.
+- **Finding (VERIFIED in code and PROD), reported for separate tasking:** Forge leans and tempo never reach hub BaggerBomb games.
+  - The casual clone that plays those games copies its loadout from the ranked agent through a fixed field list, and that list has **no `standingLeans` and no `dials`** (`api/_utils/trainingClone.js:59-84`; `casualClone.js:91-98`).
+  - Production, last 30 days (counts only):
+    - 25 human BaggerBomb battles, all on casual clones: **0** carry leans, **0** carry a tempo.
+    - 35 human tournament battles: 10 carry leans; 27 carry a tempo (17 aggressive, 10 measured).
+    - Agents: 3 casual clones, none with leans or tempo; among the other 101 agents, 1 has leans and 2 have tempo.
+  - Whether this is intended (the clone deliberately plays without Forge character) or a gap is a product question. I did not change anything.
 - **Writable outside the Forge?**
   - The routes accept any authenticated owner, but the only UI is the Forge Character area (ASSUMED).
   - Archetype can be changed from the Dashboard (battle-locked; ASSUMED).
@@ -417,7 +434,7 @@ The answer is cut off inside `keyEvents`, arrives without `themes`, fails the sh
    - Files: `api/_utils/dailyRegimeBriefPrompt.js` (`:27`, `:87`, `:138-153`, `:229-230`). Possibly `api/_utils/fetchEarningsCalendarEODHD.js:175`, if the cut belongs in the fetcher instead.
 2. **Make the failure visible and recoverable.**
    - Log `stop_reason` and `usage` on every call (`compute-daily-regime-brief.js:184-193`).
-   - Optionally add a second cron entry (e.g. `45 12 * * 1-5`). It costs nothing on success, because the idempotency guard at `:90-99` skips, and it gives one same-morning retry.
+   - Optionally add a second cron entry (e.g. `45 12 * * 1-5`). It costs nothing on success, because the idempotency guard at `:90-99` skips, and it gives one same-morning retry. **It does not help this failure:** the same inputs overflow the same way. It covers only transient errors (a timeout, an API hiccup). Item 1 is the actual fix.
 
    Files: `compute-daily-regime-brief.js`, plus `vercel.json`, which would take the cron count 44 → 45 and needs the BUILD_RULES §6 count line updated by a founder-cited PR.
 3. **Fix the hub's wording (separate, small).**
@@ -444,7 +461,7 @@ The answer is cut off inside `keyEvents`, arrives without `themes`, fails the sh
 |---|---|---|---|
 | `dailyBrief` (fresh only) | Deploy opener in `decide.js` (S1) | Opener text uses its "brief unavailable" fallback; **no portfolio or score change** | **yes** (file); text-only branch after the battle is created |
 | `dailyBrief` (fresh only) | Lazy opener `ensure-opener.js` (S2) | Opener text only | no |
-| `dailyBrief` (fresh only) | Battle chat `chat.js` (S3) | Chat text only. Indirect: a player-filed directive in chat reaches the agent's next check; the directive comes from the player, not the brief | no (chat.js); the directive is read by fenced `agentEvalPromptAssembly.js:1240`, unchanged |
+| `dailyBrief` (fresh only) | Battle chat `chat.js` (S3), battle and review modes | Chat text changes. Indirect: (a) a player-filed directive reaches the agent's next check; (b) a review-mode lesson reaches the next deploy via consolidated wisdom. Removing the brief removes only its colouring of these, not the channels | no (chat.js); the directive and the wisdom are read by fenced assemblers (`agentEvalPromptAssembly.js:1240`, `agentPromptAssembly.js:84-86`), unchanged |
 | `dailyBrief` (fresh only) | Trade narration and anticipation notes (S4, S5) | Note text only, written after the decision | no |
 | `dailyBrief` (fresh only) | Forge Workshop chat (S6), Signal Drop watchlist dialogue (S7) | Chat text only; reaches the agent only if the player compiles or equips something later | no |
 | `dailyBrief` (fresh only) | Signal Drop expansion (S8) | none (no in-app caller) | no |
@@ -494,5 +511,4 @@ The answer is cut off inside `keyEvents`, arrives without `themes`, fails the sh
 | Storage-log retention | No lifecycle rule in code; bucket policy not read | GCS bucket lifecycle settings |
 | Who is on the cockpit allowlist, and so how many players have idea, research and cockpit records | The list is a server-only env variable (`COCKPIT_ALLOWLIST_UIDS`), not read | `vercel env` (value), with the founder's approval |
 | Whether the deployed Firestore rules match `firestore.rules` | Rules are deployed by hand | Firebase console rules history |
-| Whether any casual clone already carries leftover leans or tempo | A data question; the inherit list says new syncs copy none | One read of the `agents` documents with `casual-agent-` IDs |
 | Subagent-read citations marked ASSUMED in Q5–Q8 | Read by a subagent, not re-read by me | Re-read at the cited lines before building on them |
