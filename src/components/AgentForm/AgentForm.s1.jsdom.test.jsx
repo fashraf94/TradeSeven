@@ -226,5 +226,5 @@ describe('the tight framing: the battle views\' option, and theirs alone (the S1
     expect(readFileSync(path.join(SRC, 'screens/battleView/BattleAgentForm.jsx'), 'utf8')).toContain('framing="tight"');
     // The scan sees a planted ask, as a prop and as a key.
     expect(strip('<AgentForm framing="tight" />\nconst p = { framing: \'tight\' };').match(ASKS)).toHaveLength(2);
-  });
+  }, 30000); // every file under src/ is read: the repo's idiom for a whole-tree scan, so a loaded suite cannot time it out
 });

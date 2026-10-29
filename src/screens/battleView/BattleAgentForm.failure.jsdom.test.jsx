@@ -60,7 +60,8 @@ describe('a failed load keeps the screen', () => {
         </BattleAgentFormScope>,
       );
     });
-    await turns(20, () => Boolean(host.querySelector('[data-test-form]')));
+    // Up to 3 s for the lazy form (a loaded full suite once took longer than 100 ms for it), ending once it shows.
+    await turns(600, () => Boolean(host.querySelector('[data-test-form]')));
     expect(host.querySelector('[data-test-form]')).not.toBeNull();
     expect(forms.at(-1).mood).toBe('idle');
   });

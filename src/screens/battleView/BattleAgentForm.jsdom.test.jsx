@@ -32,10 +32,14 @@ let root, host;
 beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); seen.forms = []; });
 afterEach(() => { act(() => root.unmount()); host.remove(); });
 
+// The lazy chunk and the outcome module resolve on later turns: a few ms alone, but under a loaded full suite the first
+// import in a worker missed a 100 ms wait. So wait up to 3 s (under the row's 5 s limit), ending as soon as it is there.
+async function until(selector) {
+  for (let i = 0; i < 300 && !host.querySelector(selector); i += 1) await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+}
 async function show(el) {
   await act(async () => { root.render(el); });
-  // The lazy chunk and the outcome module resolve on later turns.
-  for (let i = 0; i < 20 && !host.querySelector('[data-test-form]'); i += 1) await act(async () => { await new Promise((r) => setTimeout(r, 5)); });
+  await until('[data-test-form]');
 }
 const scope = (children, cockpitFeed = null) => <BattleAgentFormScope cockpitFeed={cockpitFeed} now={NOW}>{children}</BattleAgentFormScope>;
 const last = (allegiance) => seen.forms.filter((f) => f.allegiance === allegiance).at(-1);
@@ -69,7 +73,7 @@ describe('the player\'s form and the CPU\'s', () => {
 describe('the mood, from the scope and the battle (R8)', () => {
   it('waiting while the cockpit holds a call that needs the player; the CPU is never waiting', async () => {
     await show(scope(<><BattleAgentFormSlot agentBattle={LIVE} size={72} scores={{ player: 3, opponent: 12 }} /><BattleAgentFormSlot agentBattle={LIVE} side="opponent" size={72} scores={{ player: 3, opponent: 12 }} /></>, { needsYouCount: 1 }));
-    for (let i = 0; i < 20 && !host.querySelector('[data-test-form="opponent"]'); i += 1) await act(async () => { await new Promise((r) => setTimeout(r, 5)); });
+    await until('[data-test-form="opponent"]');
     expect(last('player').mood).toBe('waiting');
     expect(last('opponent').mood).toBe('confident');
   });
