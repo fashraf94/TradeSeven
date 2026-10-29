@@ -47,3 +47,12 @@ export function scoutingBoardOn() {
  * hubFlags.test.js.
  */
 export const PHONE_SHADOW = 'canvas';
+
+/**
+ * Agent form build S1 (founder ruling R1): the rate the PHONE draws the armored agent at, while
+ * AGENT_FORM_HUB_ENABLED is on — 'live' (every frame), 'half' (every other frame, on purpose) or 'still' (the
+ * form's designed still). 'live' is the founder's iPhone 16 lab reading (build S0 report §8: every preset passed).
+ * The other two stay reachable through this one value; the hub never picks a rate from a measured frame cost
+ * (ruling R-S7-2). Tablet, desktop and stacked draw 'live'. Pinned by hubFlags.test.js.
+ */
+export const AGENT_FORM_PHONE = 'live';
