@@ -983,6 +983,8 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
     expect(setStateOf(day(false, 'standard'))).toEqual({ say: 'ruleOff', link: false });
     expect(setStateOf(day(true, null))).toEqual({ say: 'noTempo', link: false });
     expect(setStateOf(day(true, undefined))).toEqual({ say: 'noTempo', link: false });
+    expect(setStateOf(day(true, ''))).toEqual({ say: 'noTempo', link: false });   // review KRT-8: an empty tempo is none
+    expect(setStateOf(day(false, null))).toEqual({ say: 'ruleOff', link: false });   // review KRT-2: the rule off is said first, tempo or not
     expect(setStateOf(day(undefined, 'standard'))).toEqual({ say: null, link: false });
     state.characterTab = false;
     expect(setStateOf(day(true, 'standard'))).toEqual({ say: null, link: false });
@@ -1013,6 +1015,9 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
     await setOn(fx.tape2, () => {}, { file: false });
     expect(fx.tape2.tags.inputs.forcedRotation.enabled).toBe(true);
     expect(formSet()).toBe(NO_TEMPO);
+    // review KRT-3: Set's words are Set's alone — Watch and Practice keep RG-5's sentences
+    expect(m.q('[data-route-note="watch"]').textContent).toBe(RG5.watch);
+    expect(m.q('[data-route-note="drill"]').textContent).toBe(RG5.drill);
     await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
     expect(receiptNext()).toBe(NO_TEMPO);
     expect(m.q('[data-set-link]')).toBeNull();
@@ -1037,6 +1042,23 @@ describe('B2.1 B1 (RH-1; RJ-8) and Amendment K RK-2 / RK-3 — Set\'s words, and
     state.characterTab = true; state.tempoDial = true;
     await setOn(fx.tape2Tempo, () => {});
     expect(m.q('[data-card-receipt] [data-set-link] button')).toBeTruthy();
+  });
+
+  it('review KRT-2 — the rule off on a day with no tempo recorded (every casual clone\'s day; an archetype like guardian): RJ-8\'s sentence on the form and the receipt, never the no-tempo one', async () => {
+    const off = structuredClone(fx.tape2);
+    off.tags.inputs.forcedRotation.enabled = false;
+    expect(off.tags.inputs.tempoDesired).toBeNull();
+    await setOn(off, () => {}, { file: false });
+    expect(formSet()).toBe(RULE_OFF);
+    await fileCard({ note: 'A setting to change.', route: 'set', question: 'stalled.whose' });
+    expect(receiptNext()).toBe(RULE_OFF);
+    expect(m.q('[data-set-link]')).toBeNull();
+  });
+
+  it('review KRT-9 — a receipt where RK-2 allows the link but the screen holds no Forge door shows no link', async () => {
+    await setOn(fx.tape2Tempo, null);
+    expect(receiptNext()).toBe(RG5.set);
+    expect(m.q('[data-set-link]')).toBeNull();
   });
 
   it('the rule off on the form: RJ-8\'s no-link sentence, no link', async () => {

@@ -621,6 +621,24 @@ describe('RK-1 — through the handler: a casual clone\'s battle files under the
     expect(playWrites()).toHaveLength(before);
   });
 
+  it('review KRT-4 / KRT-5 / KRT-10 — the battle\'s checks come first (a tournament battle on an unresolvable clone is 409 untaped, no agent read); a clone whose parent is itself clone-named is refused 503, nothing written; the sentence as sent', async () => {
+    t.store.set('agentBattles/b-clone-tourn', { ...fixture.battle, id: 'b-clone-tourn', agentId: CLONE, gameMode: 'baggerbomb_tournament' });
+    t.store.delete(`agents/${CLONE}`);
+    t.readLog.length = 0;
+    const untaped = await post(cloneCreate({ battleId: 'b-clone-tourn' }));
+    expect(untaped.statusCode).toBe(409);
+    expect(untaped.body.error).toBe('untaped');
+    expect(t.readLog.some((p) => p.startsWith('agents/'))).toBe(false);
+    // the parent the clone names is clone-named, owned by the same owner: the resolver hands it back, and it is refused
+    t.store.set('agents/casual-agent-zzz', { ownerId: OWNER, name: 'Squat', archetype: 'momentum_chaser' });
+    seedClone(cloneAt({ rankedAgentId: 'casual-agent-zzz' }));
+    const refused = await post(cloneCreate());
+    expect(refused.statusCode).toBe(503);
+    expect(refused.body.error).toBe('attribution_unavailable');
+    expect(playWrites()).toEqual([]);
+    expect(CARD_ROUTE_COPY.attribution_unavailable).toBe('The agent these cards belong to could not be resolved. Nothing was changed; try again.');
+  });
+
   it('the cap counts the parent\'s cards across clone and ranked battles: three from the clone\'s, two from the ranked → the sixth refused at 5', async () => {
     seedClone();
     for (const [i, over] of [cloneCreate(), cloneCreate(), cloneCreate(), create(), create()].entries()) {

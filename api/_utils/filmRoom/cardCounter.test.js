@@ -310,6 +310,8 @@ describe('RK-1 — the counter answers for the attribution agent (the casual clo
       expect(out.recurrences.w1.map((x) => [x.battleId, x.etDate, x.symbol])).toEqual([['b-c', '2026-10-21', 'MSFT']]);
       expect(out.unavailableDays[A1]).toBe(1);
       expect(out.unavailableDays[FOREIGN_CLONE]).toBe(1);   // the other owner's clone's day is that clone's, never the parent's
+      // review KRT-6: the weekly table stays keyed by each day's OWN agent (RK-1 names it not; §13.6)
+      expect(Object.keys(out.weekly).sort()).toEqual([A1, CLONE, FOREIGN_CLONE].sort());
     }
     // one read of the owner's clone document per answer; nothing written
     t.readLog.length = 0;
@@ -325,6 +327,7 @@ describe('RK-1 — the counter answers for the attribution agent (the casual clo
       ['no rankedAgentId', { ownerId: UID, archetype: 'momentum_chaser' }],
       ['the document another owner\'s', { ownerId: OTHER, archetype: 'momentum_chaser', rankedAgentId: A1 }],
       ['a parent another owner holds', { ownerId: UID, archetype: 'momentum_chaser', rankedAgentId: 'agent-9' }],
+      ['a parent that does not exist', { ownerId: UID, archetype: 'momentum_chaser', rankedAgentId: 'agent-gone' }],   // review KRT-1: 503, never 404
     ];
     for (const [label, clone] of cases) {
       const t = seed(clone);
