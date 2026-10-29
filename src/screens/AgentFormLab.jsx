@@ -28,7 +28,10 @@ const PRESETS = Object.freeze([
   { id: 'battle230', label: '2 at 230', views: [230, 230], allegiance: 'both', formMode: 'one' },
   { id: 'armory', label: '7 at 72 + 1 at 190', views: [190, 72, 72, 72, 72, 72, 72, 72], allegiance: 'player', formMode: 'all' },
   { id: 'chat40', label: '12 at 40', views: Array(12).fill(40), allegiance: 'player', formMode: 'all' },
+  // The four glows side by side (2 × 2 fits a 390 px phone; bloom draws from 160 px up), to pick one by eye.
+  { id: 'blooms', label: '4 blooms side by side', views: [180, 180, 180, 180], allegiance: 'player', formMode: 'one', blooms: ['filter', 'css', 'webgl', 'off'] },
 ]);
+const BLOOM_NAMES = Object.freeze({ filter: 'canvas filter (design)', css: 'CSS-blurred overlay', webgl: 'WebGL', off: 'off' });
 const WINDOW_MS = 300000;
 
 function Select({ label, value, options, onChange, disabled }) {
@@ -63,6 +66,7 @@ export default function AgentFormLab() {
   const [drawPath, setDrawPath] = useState('shared');
   const [batched, setBatched] = useState(false);
   const [bloom, setBloom] = useState('filter');
+  const [bloomSet, setBloomSet] = useState(null);
   const [rate, setRate] = useState('live');
   const [motion, setMotion] = useState('phone');
   const [equipped, setEquipped] = useState(true);
@@ -71,8 +75,8 @@ export default function AgentFormLab() {
   const reducedMotion = motion === 'phone' ? phoneReduced : motion === 'on';
   const readoutRef = useRef(null), statusRef = useRef(new Map()), engineRef = useRef(null), samplesRef = useRef([]), lastRef = useRef({});
 
-  const applyPreset = (p) => { setPreset(p.id); setViews(p.views); setAllegiance(p.allegiance); setFormMode(p.formMode); if (p.views.length > 1) setDrawPath('shared'); samplesRef.current = []; };
-  const setCustom = (count, size) => { setPreset('custom'); setViews(Array(count).fill(size)); if (count > 1) setDrawPath('shared'); samplesRef.current = []; };
+  const applyPreset = (p) => { setPreset(p.id); setViews(p.views); setAllegiance(p.allegiance); setFormMode(p.formMode); setBloomSet(p.blooms || null); if (p.views.length > 1) setDrawPath('shared'); samplesRef.current = []; };
+  const setCustom = (count, size) => { setPreset('custom'); setBloomSet(null); setViews(Array(count).fill(size)); if (count > 1) setDrawPath('shared'); samplesRef.current = []; };
   const single = views.length === 1;
 
   // The frame samples and the readout, written straight to the DOM every 500 ms (no React render per frame).
@@ -107,14 +111,15 @@ export default function AgentFormLab() {
     key: `${i}`, size,
     archetype: formMode === 'all' ? FORMS[(startIndex + i) % FORMS.length] : form,
     allegiance: allegiance === 'both' ? (i % 2 ? 'opponent' : 'player') : allegiance,
-  })), [views, formMode, form, startIndex, allegiance]);
+    bloom: bloomSet ? bloomSet[i % bloomSet.length] : bloom,
+  })), [views, formMode, form, startIndex, allegiance, bloomSet, bloom]);
   lastRef.current.rate = rate;
   lastRef.current.keys = layout.map((v) => `${v.key}-${drawPath}`);
 
   const formName = (id) => (names ? names[formForArchetype(id)] : null) || (id === 'none' ? 'Shadow (bare)' : id);
   const settingsLine = () => [
     `preset ${preset}`, `views ${views.length}× ${[...new Set(views)].join('/')} px`, `form ${formMode === 'all' ? 'all seven' : formForArchetype(form)}`, `mood ${mood}`, `core ${coreStage}`, `armor ${armorStage}`,
-    `allegiance ${allegiance}`, `path ${drawPath}`, `batched ${batched ? 'on' : 'off'}`, `bloom ${bloom}`, `rate ${rate}`, `reduced motion ${reducedMotion ? 'on' : 'off'} (${motion})`, `equipped ${equipped ? 'yes' : 'no'}`,
+    `allegiance ${allegiance}`, `path ${drawPath}`, `batched ${batched ? 'on' : 'off'}`, `bloom ${bloomSet ? `side by side (${bloomSet.join('/')})` : bloom}`, `rate ${rate}`, `reduced motion ${reducedMotion ? 'on' : 'off'} (${motion})`, `equipped ${equipped ? 'yes' : 'no'}`,
   ].join(' · ');
   const copyReading = async () => {
     const L = lastRef.current.lines || {}, info = L.info || {};
@@ -140,9 +145,12 @@ export default function AgentFormLab() {
       {!hasWebGL() && <p style={{ margin: 12, color: cssVar('ink-2') }}>This browser has no WebGL: every view shows its still.</p>}
       <div data-agent-form-stage="" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'center', alignItems: 'center', padding: '14px 8px' }}>
         {layout.map((v) => (
-          <AgentForm key={`${v.key}-${drawPath}`} archetype={v.archetype} mood={mood} coreStage={coreStage} armorStage={armorStage} allegiance={v.allegiance} size={v.size}
-            reducedMotion={reducedMotion} bloom={bloom} drawPath={single ? drawPath : 'shared'} batched={batched} rate={rate} equipped={equipped}
-            onStatus={(s) => { statusRef.current.set(`${v.key}-${drawPath}`, s); }} />
+          <figure key={`${v.key}-${drawPath}`} style={{ margin: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <AgentForm archetype={v.archetype} mood={mood} coreStage={coreStage} armorStage={armorStage} allegiance={v.allegiance} size={v.size}
+              reducedMotion={reducedMotion} bloom={v.bloom} drawPath={single ? drawPath : 'shared'} batched={batched} rate={rate} equipped={equipped}
+              onStatus={(s) => { statusRef.current.set(`${v.key}-${drawPath}`, s); }} />
+            {bloomSet && <figcaption data-agent-form-caption="" style={{ fontSize: 12, color: cssVar('ink-2') }}>{BLOOM_NAMES[v.bloom]}</figcaption>}
+          </figure>
         ))}
       </div>
       <div style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 720, margin: '0 auto' }}>
@@ -168,7 +176,7 @@ export default function AgentFormLab() {
           <Select label="Allegiance" value={allegiance} options={[['player', 'yours (teal)'], ['opponent', 'opponent (copper)'], ['both', 'both, alternating']]} onChange={setAllegiance} />
           <Select label="Draw path" value={single ? drawPath : 'shared'} disabled={!single} options={[['shared', 'shared renderer + copy'], ['direct', 'direct canvas (1 view)']]} onChange={setDrawPath} />
           <Select label="Plates" value={batched ? 'on' : 'off'} options={[['off', 'one draw per plate'], ['on', 'batched']]} onChange={(v) => setBatched(v === 'on')} />
-          <Select label="Bloom" value={bloom} options={[['filter', 'canvas filter (design)'], ['css', 'CSS-blurred overlay'], ['webgl', 'WebGL'], ['off', 'off']]} onChange={setBloom} />
+          <Select label="Bloom" value={bloom} options={Object.entries(BLOOM_NAMES)} onChange={(b) => { setBloom(b); setBloomSet(null); }} />
           <Select label="Rate" value={rate} options={[['live', 'live (every frame)'], ['half', 'half (every other)'], ['still', 'still']]} onChange={setRate} />
           <Select label="Reduced motion" value={motion} options={[['phone', `the phone's setting (${phoneReduced ? 'on' : 'off'})`], ['on', 'force on'], ['off', 'force off']]} onChange={setMotion} />
         </div>

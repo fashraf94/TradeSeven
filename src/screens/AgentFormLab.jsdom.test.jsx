@@ -49,6 +49,14 @@ describe('the agent form lab', () => {
     expect(labels.filter((l) => l.startsWith('Shadow, unarmored'))).toHaveLength(1); // bare Shadow is one of the seven
   });
 
+  it('the bloom preset shows the four glows side by side, captioned; the Bloom control returns every view to one glow', () => {
+    click('4 blooms side by side');
+    expect(sizes()).toEqual(Array(4).fill('180px'));
+    expect([...host.querySelectorAll('[data-agent-form-caption]')].map((c) => c.textContent)).toEqual(['canvas filter (design)', 'CSS-blurred overlay', 'WebGL', 'off']);
+    choose('Bloom', 'css');
+    expect(host.querySelectorAll('[data-agent-form-caption]')).toHaveLength(0);
+  });
+
   it('views and size make a custom layout; the direct path is offered for one view only', () => {
     choose('Views', '5'); choose('Size (px)', '112');
     expect(sizes()).toEqual(Array(5).fill('112px'));
@@ -65,6 +73,15 @@ describe('the agent form lab', () => {
     click('Play unequip');
     expect(button('Play unequip').disabled).toBe(true);
     expect(button('Play equip').disabled).toBe(false);
+  });
+
+  it('Copy reading names the side-by-side preset', async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    click('4 blooms side by side');
+    await act(async () => { button('Copy reading').click(); await Promise.resolve(); });
+    expect(writeText.mock.calls[0][0]).toContain('preset blooms · views 4× 180 px');
+    expect(writeText.mock.calls[0][0]).toContain('bloom side by side (filter/css/webgl/off)');
   });
 
   it('Copy reading: one plain-text line with every setting and number, to the clipboard and on the page', async () => {

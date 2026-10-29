@@ -92,7 +92,11 @@ export function makeBuildKit({ glow, fadeMat }) {
   return {
     lines, sprites,
     sprite(scale) { const s = new THREE.Sprite(premul(new THREE.SpriteMaterial({ map: glow, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthWrite: false, toneMapped: false, fog: false }))); s.scale.setScalar(scale); sprites.push(s); return s; },
-    fadeLine(N) { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3)); geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 3), 3)); const line = new THREE.Line(geo, fadeMat); line.frustumCulled = false; const L = { line, geo, N, pos: geo.attributes.position.array, col: geo.attributes.color.array, flag() { geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true; } }; lines.push(L); return L; },
+    // flag() also refreshes the line's bounding sphere: three sorts a line by that sphere's centre and computes
+    // it only once, so a line rewritten every frame would keep sorting where it first was — the frame then
+    // depended on the form's earlier poses (measured on Speculator's arcs and Diversifier's tethers, in the
+    // design's engine too). Refreshed, a frame is (spec, t) alone.
+    fadeLine(N) { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3)); geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 3), 3)); const line = new THREE.Line(geo, fadeMat); line.frustumCulled = false; const L = { line, geo, N, pos: geo.attributes.position.array, col: geo.attributes.color.array, flag() { geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true; geo.computeBoundingSphere(); } }; lines.push(L); return L; },
   };
 }
 

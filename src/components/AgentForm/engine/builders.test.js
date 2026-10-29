@@ -102,6 +102,20 @@ describe('a pose is a pure function of (spec, t)', () => {
     expect(posePrint(used)).toBe(posePrint(fresh));
   });
 
+  it('every fade line\'s bounding sphere (three\'s sort key for a line) is the sphere of the pose just written, not of an earlier one', () => {
+    const C = context();
+    for (const kind of ['spec', 'divers', 'trend']) {
+      const F = buildForm({ kind, core: 1, armor: 2, seed: 1 }, C), spec = { kind, core: 1, armor: 2, seed: 1, size: 200, fit: 1 };
+      poseForm(F, { ...spec, state: 'worried' }, 1.1, C, PAL);
+      poseForm(F, { ...spec, state: 'celebrating' }, 6.4, C, PAL);
+      for (const L of F.kit.lines) {
+        expect(L.geo.boundingSphere, kind).not.toBeNull();
+        const centre = new THREE.Box3().setFromBufferAttribute(L.geo.attributes.position).getCenter(new THREE.Vector3()); // three's own sphere centre
+        expect(L.geo.boundingSphere.center.toArray()).toEqual(centre.toArray());
+      }
+    }
+  });
+
   it('the batched variant poses each plate exactly as the unbatched one does', () => {
     const C = context(), spec = { kind: 'fund', core: 1, armor: 2, seed: 1, size: 200, state: 'celebrating', fit: .7 };
     const U = buildForm({ ...spec, batched: false }, C), B = buildForm({ ...spec, batched: true }, C);
