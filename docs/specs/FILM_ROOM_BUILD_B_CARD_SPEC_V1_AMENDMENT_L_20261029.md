@@ -1,0 +1,25 @@
+# Build B spec V1.0 — Amendment L: founder rulings on the Amendment K round (2026-10-29)
+
+- **RL-1 — Set links wherever the dial reaches the battle's agent (KR2-1).**
+  - **Why.** What matters is whether the dial reaches this kind of battle, not whether this battle recorded a tempo. The dial reaches every battle that ran on the player's ranked agent. It doesn't reach a casual-clone battle until the Command Center's clone build lands.
+  - **The change.** The link's tempo condition becomes: the battle didn't run on a casual clone (`isCasualCloneId` on the battle's own `agentId`), or its tape records a tempo. The other conditions stay: the rule on, and both Forge flags on.
+  - **Casual battles.** A casual-clone battle with no recorded tempo keeps RK-2's sentence, with no link.
+  - **Later.** When the Command Center's clone build lands, it removes the clone condition in the same diff, so every battle links.
+- **RL-2 — RK-9's attributed set, confirmed (KR3-3).**
+  - A seq the day's tape records (its tick row) disproves "no record" and "its day cannot be established", just as a stored gap row does.
+  - The caveat and `passes.close.unattributedGaps` judge by one set, as built.
+- **RL-3 — RK-11 covers every state of the one-symbol chart section (KR4-3).**
+  - The section never shows the series section's status, in any state:
+    - while the series loads, it shows the loading line;
+    - after a failed read, it shows the failure sentence;
+    - beside an uncharted symbol, it shows RJ-2's sentence.
+  - The series status stays on Glance's line and the all-symbols grid.
+  - This is a declared change for cards-off players.
+- **RL-4 — The meeting maker drops the raw code (KRV4-1).**
+  - On both names the maker reads "by the gameplan meeting", with no code after it.
+  - A platform rule keeps its reason, as RJ-4 says.
+  - This is a declared change for cards-off players.
+- **RL-5 — Set says when the dial takes effect (the Command Center's wording check).**
+  - The dial writes the player's ranked agent. A battle snapshots its setting when it is created, and the clone picks it up at the next deploy. So a change applies to the next battle, never to the one being reviewed, even a multi-day battle still running.
+  - Wherever Set links to the dial, its sentence ends: *"A change applies from your next battle."*
+  - The no-link sentences are unchanged.
