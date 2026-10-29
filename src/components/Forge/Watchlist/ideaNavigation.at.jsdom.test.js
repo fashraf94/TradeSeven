@@ -89,6 +89,9 @@ describe('B2.1 B2 — the open event\'s optional day and moment, additive to P1c
       { etDate: '2026-09-00', moment: MOMENT },
       { etDate: '2026-09-25', moment: { ...MOMENT, fromTickSeq: 1, toTickSeq: 0 } },
       { etDate: '0026-09-25', moment: MOMENT },   // review AL3-4: a year before 100 — Date.UTC reads it as 19xx, so it is no such date
+      { etDate: '12026-09-25', moment: MOMENT },   // review ALT-27: the whole string a date — a five-digit year round-trips
+      { etDate: '2026-09-25-01', moment: MOMENT },   // review ALT-28: …to its end
+      { etDate: ['2026-09-25'], moment: MOMENT },   // review ALT-29: a string, never a value that only stringifies to a date
     ];
     for (const at of bad) {
       events = [];

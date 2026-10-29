@@ -182,7 +182,7 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
 
     it.each(LAYOUTS)('%s — while the series loads (the hook\'s idle, then loading — review AL2-1): the loading line, no series status (the mutant: the status shown while loading)', (_, desktop) => {
       for (const read of ['idle', 'loading']) {
-        for (const status of ['complete', 'partial']) {
+        for (const status of ['complete', 'partial', 'unavailable']) {   // review ALT-21: each section status
           m.render(<Harness key={`${read}:${status}`} tape={dayOf(status)} series={[]} seriesState={{ status: read, series: [] }} start="AMD" desktop={desktop} />);
           const sec = m.q('#deep-chart');
           expect(sec.textContent, `${read} ${status}`).toContain('Loading the tape…');
@@ -195,7 +195,7 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     });
 
     it.each(LAYOUTS)('%s — after a failed read: the failure sentence, no series status (the mutant: the status shown after a failed read)', (_, desktop) => {
-      for (const status of ['complete', 'partial']) {
+      for (const status of ['complete', 'partial', 'unavailable']) {   // review ALT-21: each section status
         m.render(<Harness key={status} tape={dayOf(status)} series={[]} seriesState={{ status: 'error', series: [] }} start="AMD" desktop={desktop} />);
         const sec = m.q('#deep-chart');
         expect(sec.querySelector('[data-state="series-error"]').textContent, status).toBe('The series for this day could not be read.');

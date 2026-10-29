@@ -156,12 +156,15 @@ describe('Astra\'s B2.1 review §4 item 2 (R-1) — a stored instant in a data-t
 
   it('review AL3-2: only the instant\'s own shape is a time — a digit run that merely ends in Z bites in a data-time span; every toISOString form, with or without seconds and milliseconds, is exempt', () => {
     const tape = kept();
-    for (const loose of ['2026-09-22T47.5Z', '2026-09-22T9Z', '2026-09-22T1.5:47.3Z']) {
+    // review ALT-37/38/39: a four-digit fraction, no Z, a one-digit hour are not the instant's shape either
+    for (const loose of ['2026-09-22T47.5Z', '2026-09-22T9Z', '2026-09-22T1.5:47.3Z', '2026-09-22T02:15:30.0001Z', '2026-09-22T02:15:30.000', '2026-09-22T2:15Z']) {
       expect(sweepNumbers(box(`<span data-time="">${loose}</span>`), { tape }), loose).toEqual([`stray digit: “${loose}”`]);
     }
     for (const instant of [PRESERVED, '2026-09-22T02:15:30Z', '2026-09-22T02:15Z', '2026-09-22T02:15:30.5Z']) {
       expect(sweepNumbers(box(`<span data-time="">${instant}</span>`), { tape }), instant).toEqual([]);
     }
+    // review ALT-40: every instant in the span, not the first alone
+    expect(sweepNumbers(box(`<span data-time="">${PRESERVED} – 2026-09-22T03:00:00.000Z</span>`), { tape })).toEqual([]);
   });
 
   it('review AL3-1: an attribute is always the screen\'s — a raw stored instant in an aria-label or a title bites, with or without its fraction; the attribute\'s clocks and dates stay times', () => {
