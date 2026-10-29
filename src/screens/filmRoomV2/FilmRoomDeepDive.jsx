@@ -27,8 +27,8 @@
 // so an incomplete series ends where its bars end, with the tail blank, and
 // "close" always names the session-close instant (Amendment E addendum 2, F2).
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { valueAt, etClock, deepSymbols, evidenceMarkers, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, seriesDomain, closePoints, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES } from './filmRoomModel';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { valueAt, etClock, deepSymbols, evidenceMarkers, recordedPricesOf, roleOf, deriveHoldings, exitMakerOf, fmtPrice, fmtPercent, fmtVolume, seriesFacts, pctTicks, seriesDomain, closePoints, linePath, SERIES_STEP_MS, isNum, toMs, SCREEN_AGGREGATE_CLASSES, notChartedReasonOf, entryMakerOf } from './filmRoomModel';
 import { classOfNumber } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
 import { FILM_ROOM_COPY as COPY, FORBIDDEN_WORDS } from './filmRoomCopy';
@@ -52,9 +52,20 @@ export function displayNameOf(sym) {
   if (typeof name !== 'string' || !name || name === sym) return null;
   return FORBIDDEN.some((re) => re.test(name)) ? null : name;
 }
+/**
+ * B2.1 A5 (FR-05; Amendment J RJ-5): whether the directory holds a company name for the symbol at all. A name equal to
+ * the symbol ("AMD") is on file — the symbol says it, and nothing is repeated, as before; so is a name withheld for a
+ * forbidden word (R4(d)'s fallback). RJ-5's sentence is true only of a symbol the directory lacks.
+ */
+export function companyNameOnFile(sym) {
+  const name = typeof sym === 'string' ? COMPANY_NAMES[sym] : null;
+  return typeof name === 'string' && Boolean(name);
+}
 function DisplayName({ sym, style }) {
   const name = displayNameOf(sym);
-  return name ? <span data-display-name={sym} style={style}>{name}</span> : null;
+  if (name) return <span data-display-name={sym} style={style}>{name}</span>;
+  // RJ-5: a symbol the directory lacks says so — no name is guessed
+  return companyNameOnFile(sym) ? null : <span data-display-name-missing={sym} style={style}>{COPY.companyNameNotOnFile}</span>;
 }
 
 const PCT_AXIS = 'axis(% from the session open)';
@@ -81,11 +92,14 @@ export const lastCloseLabelPx = (text) => Math.ceil(String(text).length * 6.2) +
  * px (the chart's height is fixed), so a band clear of every near marker is clear at every width. The swap labels'
  * row is a band too when the symbol has one. Positions are in the chart's 0–1000 domain (x) and px (y).
  */
-export function lastCloseTop({ endX, endY, before, labelPx, markers = [], swapRow = false, maxTop, floorTop, plotPx = 0 }) {
+export function lastCloseTop({ endX, endY, before, labelPx, markers = [], swapRow = false, maxTop, floorTop, plotPx = 0, leftPx = null }) {
   const k = 1000 / (plotPx > 0 ? plotPx : MIN_PLOT_PX);   // domain units per px: at the measured plot, else the narrowest
-  const near = markers.filter((mk) => (before
-    ? endX - mk.x > -(MARKER_HALF - 2) * k && endX - mk.x < (labelPx + 2 + MARKER_HALF) * k
-    : mk.x - endX > -(MARKER_HALF - 4) * k && mk.x - endX < (labelPx + 4 + MARKER_HALF) * k));
+  // B2.1 A8 (B6): at a measured plot the label's box is where lastCloseLeftPx clamped it — its columns are exact
+  const near = markers.filter((mk) => (leftPx !== null && plotPx > 0
+    ? (mk.x / 1000) * plotPx + MARKER_HALF > leftPx && (mk.x / 1000) * plotPx - MARKER_HALF < leftPx + labelPx
+    : before
+      ? endX - mk.x > -(MARKER_HALF - 2) * k && endX - mk.x < (labelPx + 2 + MARKER_HALF) * k
+      : mk.x - endX > -(MARKER_HALF - 4) * k && mk.x - endX < (labelPx + 4 + MARKER_HALF) * k));
   const bands = near.map((mk) => [mk.y - MARKER_HALF - 1, mk.y + MARKER_HALF + 1]);
   if (swapRow) bands.push([-Infinity, SWAP_ROW]);
   const clear = (t) => t >= 0 && t <= maxTop && bands.every(([a, b]) => t + LABEL_H <= a || t >= b);
@@ -96,6 +110,47 @@ export function lastCloseTop({ endX, endY, before, labelPx, markers = [], swapRo
     if (clear(below + d)) return below + d;
   }
   return Math.min(floorTop, maxTop);
+}
+
+/**
+ * B2.1 A8 (B6; Astra's follow-up review) — the last close's label's LEFT edge in px inside the MEASURED plot: just
+ * before its line's end (`before`) or just after it, then clamped so the whole box — `labelPx`, the upper bound of its
+ * width — stays inside the plot, never out over the % axis's gutter. null where nothing lays the plot out, AND where
+ * the label fits at its anchor (review SPR-L-6: `labelPx` is an upper bound, so placing every label by it moved each
+ * one ~8 px off its line's end): the CSS anchors then stand, as before. The clamp moves only a label its anchor would
+ * put out of the plot.
+ */
+export function lastCloseLeftPx({ endX, before, labelPx, plotPx = 0 }) {
+  if (!(plotPx > 0)) return null;
+  const endPx = (endX / 1000) * plotPx;
+  const desired = before ? endPx - 2 - labelPx : endPx + 4;
+  const clamped = Math.max(0, Math.min(desired, plotPx - labelPx));
+  return clamped === desired ? null : clamped;
+}
+
+/**
+ * B2.1 A8 (A2F2-4) — where each swap label sits, clamped inside the price-chart REGION (the plot and its two axis
+ * gutters, `-padL` to `plotPx + padR` in px from the plot's left edge), from its natural one-line width `w` as laid
+ * out: anchored 6 px before its line (`right`) or after it, then moved in so neither end leaves the region — the
+ * leading "Exit ·" / "Entry ·" and the clock are never cut off. When a label is wider than the whole region (a phone),
+ * every label moves to a LANE above the plot (`lane`), each wrapping within the region from its clamped place. null
+ * until every label has a measured width at a measured plot: the CSS anchors stand then, as before.
+ *
+ * @param {{ i: number, lineX: number, right: boolean, w: number }[]} labels  lineX in px from the plot's left edge
+ * @returns {null | { lane: boolean, at: { [i: number]: number }, lo: number, regionW: number }}
+ */
+export function swapLabelLayout({ labels, plotPx = 0, padL = PAD_L, padR = PAD_R }) {
+  if (!(plotPx > 0) || !labels.length || labels.some((l) => !(l.w > 0))) return null;
+  const lo = -padL;
+  const hi = plotPx + padR;
+  const regionW = hi - lo;
+  const at = {};
+  for (const l of labels) {
+    const w = Math.min(l.w, regionW);
+    const desired = l.right ? l.lineX - 6 - w : l.lineX + 6;
+    at[l.i] = Math.max(lo, Math.min(desired, hi - w));
+  }
+  return { lane: labels.some((l) => l.w > regionW), at, lo, regionW };
 }
 
 /** A line of closes rebased to `base` (another series drawn on this symbol's price scale), or null. */
@@ -121,6 +176,17 @@ function usePlotWidth() {
 
 function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, onMark, height = 250 }) {
   const [plotPx, plotRef] = usePlotWidth();
+  // B2.1 A8 (A2F2-4): each swap label's natural one-line width, measured once it has laid out at its CSS anchor (none
+  // where nothing lays it out); a new set of labels (another symbol, another day) is measured afresh
+  const swapEls = useRef({});
+  const [swapWidths, setSwapWidths] = useState({ key: null, w: {} });
+  const swapKey = `${sym}|${(Array.isArray(tape.actions) ? tape.actions : []).map((a, i) => (a.symbolOut === sym || a.symbolIn === sym ? `${i}:${a.at}` : '')).join(',')}`;
+  useLayoutEffect(() => {
+    if (swapWidths.key === swapKey) return;
+    const w = {};
+    for (const [i, el] of Object.entries(swapEls.current)) { const b = el?.getBoundingClientRect?.(); if (b && b.width > 0) w[i] = b.width; }
+    if (Object.keys(w).length) setSwapWidths({ key: swapKey, w });
+  });
   const bars = Array.isArray(doc.bars) ? doc.bars : [];
   const open = doc.sessionOpen?.value;
   // The time domain is the tape day's TRADING SESSION from the calendar the writers use — never the bars' extent:
@@ -164,12 +230,44 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
   // The last close's label keeps clear of every evidence marker near it and of the swap labels' row (lastCloseTop).
   const lastClose = bars[bars.length - 1]?.c;
   const markerPoints = marks.map((mk) => ({ x: x(toMs(mk.at)), y: y(valueAt(tape, ['checks', mk.index, 'evidence', sym, 'px'])) })).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+  // A2F2-4: the swap labels clamped inside the chart region — on the plot's top row, or in a lane above it on a phone
+  const timed = actions.filter(({ a }) => toMs(a.at) !== null);
+  const swapLayout = swapWidths.key === swapKey
+    ? swapLabelLayout({ labels: timed.map(({ a, i }) => ({ i, lineX: (x(toMs(a.at)) / 1000) * plotPx, right: x(toMs(a.at)) > 600, w: swapWidths.w[i] })), plotPx })
+    : null;
+  const lane = Boolean(swapLayout?.lane);
+  // B6: the last close's box clamped inside the measured plot, its band chosen with that box
+  const lastLabelPx = isNum(lastClose) ? lastCloseLabelPx(fmtPrice(lastClose)) : 0;
+  const lastLeft = isNum(lastClose) ? lastCloseLeftPx({ endX: lastEndX, before: lastEndX > 500, labelPx: lastLabelPx, plotPx }) : null;
   const lastTop = isNum(lastClose) ? lastCloseTop({
-    endX: lastEndX, endY: y(lastClose), before: lastEndX > 500, labelPx: lastCloseLabelPx(fmtPrice(lastClose)),
-    markers: markerPoints, swapRow: actions.some(({ a }) => toMs(a.at) !== null), maxTop: height - LABEL_H, floorTop: padT + ih + MARKER_HALF + 2, plotPx,
+    endX: lastEndX, endY: y(lastClose), before: lastEndX > 500, labelPx: lastLabelPx,
+    markers: markerPoints, swapRow: !lane && timed.length > 0, maxTop: height - LABEL_H, floorTop: padT + ih + MARKER_HALF + 2, plotPx, leftPx: lastLeft,
   }) : null;
+  const swapLabel = (a, i) => {
+    const who = exitMakerOf(a);
+    const ms = toMs(a.at);
+    const right = x(ms) > 600;
+    const font = mono(9.5, who.by === 'agent' ? C.teal : C.ink2, { fontWeight: 600 });
+    // unmeasured: the CSS anchors, style for style as before; measured: clamped on the top row, or wrapped in the lane
+    const style = !swapLayout
+      ? { position: 'absolute', top: 0, ...(right ? { right: `calc(${100 - x(ms) / 10}% + 6px)` } : { left: `calc(${pct(ms)} + 6px)` }), display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', ...font }
+      : lane
+        ? { alignSelf: 'flex-start', display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 5, marginLeft: swapLayout.at[i] - swapLayout.lo, maxWidth: swapLayout.regionW - (swapLayout.at[i] - swapLayout.lo), whiteSpace: 'normal', ...font, lineHeight: 1.3 }
+        : { position: 'absolute', top: 0, left: swapLayout.at[i], display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', ...font };
+    return (
+      <span key={`l${i}`} ref={(el) => { if (el) swapEls.current[i] = el; else delete swapEls.current[i]; }} data-swap-label={i} style={style}>
+        {/* the sold name reads "Exit · {time} · {maker}" with RJ-4's makers — "Exit by" said once, never twice (Amendment K
+            RK-5; the chart annotation alone: every other use of the exit words is unchanged); the bought name reads its
+            entry, never "Exit by …" (RJ-4) */}
+        {a.symbolOut === sym
+          ? <>{COPY.exitMark} · <When>{etClock(a.at)}</When> · {entryMakerOf(a).label}</>
+          : <>{COPY.entryMark} · <When>{etClock(a.at)}</When> · {COPY.entryFor} <Rec>{a.symbolOut}</Rec> · {entryMakerOf(a).label}</>}
+      </span>
+    );
+  };
   return (
     <div data-region="price-chart" data-symbol={sym} style={{ position: 'relative', width: '100%', boxSizing: 'border-box', padding: `0 ${PAD_R}px 0 ${PAD_L}px` }}>
+      {lane ? <div data-swap-lane="" style={{ display: 'flex', flexDirection: 'column', gap: 3, margin: `0 -${PAD_R}px 6px -${PAD_L}px` }}>{timed.map(({ a, i }) => swapLabel(a, i))}</div> : null}
       <div ref={plotRef} data-plot="" data-plot-px={plotPx || undefined} data-domain-start={new Date(startMs).toISOString()} data-domain-end={new Date(endMs).toISOString()} style={{ position: 'relative', width: '100%', height }}>
         <svg width="100%" height={height} viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-label={`${sym} · ${COPY.deepPrice}`} style={{ display: 'block', overflow: 'visible', width: '100%', height }}>
           {ticks.filter((v) => v !== 0).map((v) => <line key={v} data-gridline="" x1="0" x2="1000" y1={y(open * (1 + v))} y2={y(open * (1 + v))} style={{ stroke: C.hair }} vectorEffect="non-scaling-stroke" />)}
@@ -196,7 +294,7 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
         {/* just before that end when it lies right of the middle, just after it otherwise, so it never runs into the axis gutter (review A2A2-2). */}
         {/* …above its line's end when that is clear, else the nearest clear band — never over a marker or the swap labels' row. */}
         {/* Its box is exactly LABEL_H tall from `top` (flex, line-height 1) — the box lastCloseTop places, never a line box the page's font sets. */}
-        {lastTop !== null ? <span data-axis-record="lastClose" style={{ position: 'absolute', display: 'flex', alignItems: 'center', height: LABEL_H, lineHeight: 1, ...(lastEndX > 500 ? { right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)` } : { left: `calc(${(lastEndX / 10).toFixed(3)}% + 4px)` }), top: lastTop }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
+        {lastTop !== null ? <span data-axis-record="lastClose" style={{ position: 'absolute', display: 'flex', alignItems: 'center', height: LABEL_H, lineHeight: 1, ...(lastLeft !== null ? { left: lastLeft } : lastEndX > 500 ? { right: `calc(${(100 - lastEndX / 10).toFixed(3)}% + 2px)` } : { left: `calc(${(lastEndX / 10).toFixed(3)}% + 4px)` }), top: lastTop }}><TapeNum doc={doc} docLabel={`series:${sym}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={9.5} weight={500} color={C.ink3} /></span> : null}
         {/* the evidence overlay (BA-43) */}
         {marks.map((m) => {
           const px = valueAt(tape, ['checks', m.index, 'evidence', sym, 'px']);
@@ -219,17 +317,7 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
             </button>
           );
         })}
-        {actions.map(({ a, i }) => {
-          const ms = toMs(a.at);
-          if (ms === null) return null;
-          const who = exitMakerOf(a);
-          const right = x(ms) > 600;
-          return (
-            <span key={`l${i}`} data-swap-label={i} style={{ position: 'absolute', top: 0, ...(right ? { right: `calc(${100 - x(ms) / 10}% + 6px)` } : { left: `calc(${pct(ms)} + 6px)` }), display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', ...mono(9.5, who.by === 'agent' ? C.teal : C.ink2, { fontWeight: 600 }) }}>
-              {a.symbolOut === sym ? COPY.exitMark : COPY.entryMark} · <When>{etClock(a.at)}</When> · {who.label}
-            </span>
-          );
-        })}
+        {lane ? null : timed.map(({ a, i }) => swapLabel(a, i))}
       </div>
       {/* the time axis: the session open, the intermediate ticks, the close — instants, as the design of record writes them */}
       <div data-time-axis="" style={{ position: 'relative', height: 12, marginTop: 4, ...mono(9, C.ink3) }}>
@@ -243,6 +331,37 @@ function PriceChart({ tape, doc, sym, show, sectorDoc, marketDoc, selectedMark, 
         <span data-axis-caption="price" data-axis-doc={`series:${sym}`} data-axis-path="bars[0].c" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{COPY.axisPrice}<LineMark doc={doc} path={['bars', 0, 'c']} /></span>
         <span data-axis-caption="percent" data-axis-aggregate={PCT_AXIS} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{COPY.axisPercent}<KindMark cls={SCREEN_AGGREGATE_CLASSES[PCT_AXIS] ?? null} /></span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * B2.1 A2 (FR-02; Amendment J RJ-2) — a symbol with no series, said as ITS OWN state: the reason the tape records for
+ * it (the candle pass's W5 list), else the plain sentence. Never the section's "complete" beside it.
+ */
+function NoChart({ tape, sym }) {
+  const reason = notChartedReasonOf(tape, sym, COPY.noChart.reasons);
+  return (
+    <span data-no-chart={sym} data-no-chart-reason={reason ?? 'none'}>
+      {reason ? <>{COPY.noChart.before}<Rec>{sym}</Rec>: {COPY.noChart.reasons[reason]}.</> : COPY.noChartRecorded}
+    </span>
+  );
+}
+
+/**
+ * RJ-2: with no chart there is no marker, so the stamps' recorded prices are listed by check instead, each opening
+ * its stamp — every price by its path, with its class.
+ */
+function RecordedPrices({ tape, sym, marks, selected, onMark }) {
+  return (
+    <div data-region="recorded-prices" style={{ display: 'flex', flexDirection: 'column' }}>
+      <span style={{ ...foot, paddingBottom: 2 }}>{COPY.recordedPrices}</span>
+      {marks.map((mk) => (
+        <button key={mk.index} type="button" data-recorded-price={mk.index} aria-pressed={selected === mk.index} onClick={() => onMark(selected === mk.index ? null : mk.index)} style={{ ...plain, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '5px 0', borderTop: `1px solid ${C.hair}`, width: '100%' }}>
+          <span style={mono(10.5, C.ink2)}><When>{COPY.checkAt(etClock(tape.checks[mk.index]?.at) ?? '')}</When></span>
+          <TapeNum doc={tape} path={['checks', mk.index, 'evidence', sym, 'px']} fmt={fmtPrice} size={11.5} />
+        </button>
+      ))}
     </div>
   );
 }
@@ -312,7 +431,7 @@ function SmallMultiples({ tape, series, symbols, sym, onSym }) {
               <span style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}><Rec>{s}</Rec></span>
               {bars.length ? <TapeNum doc={doc} docLabel={`series:${s}`} path={['bars', bars.length - 1, 'c']} fmt={fmtPrice} size={10.5} weight={500} color={C.ink2} /> : null}
             </span>
-            {cs.length ? <svg viewBox="0 0 100 40" preserveAspectRatio="none" data-mini-domain-start={timed ? new Date(startMs).toISOString() : undefined} data-mini-domain-end={timed ? new Date(endMs).toISOString() : undefined} style={{ width: '100%', height: 40, display: 'block' }} aria-hidden="true"><path data-mini-line={s} d={d} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.3 }} vectorEffect="non-scaling-stroke" /></svg> : <span style={mono(9, C.ink3)}>{COPY.deepNoSeries(s)}</span>}
+            {cs.length ? <svg viewBox="0 0 100 40" preserveAspectRatio="none" data-mini-domain-start={timed ? new Date(startMs).toISOString() : undefined} data-mini-domain-end={timed ? new Date(endMs).toISOString() : undefined} style={{ width: '100%', height: 40, display: 'block' }} aria-hidden="true"><path data-mini-line={s} d={d} style={{ fill: 'none', stroke: C.ink, strokeWidth: 1.3 }} vectorEffect="non-scaling-stroke" /></svg> : <span style={mono(9, C.ink3)}><NoChart tape={tape} sym={s} /></span>}
           </button>
         );
       })}
@@ -342,7 +461,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
   // A failed read is said as a failed read — never as "no series" (review A2L3-2).
   else if (seriesState?.status === 'error') chartBody = <span data-state="series-error" style={foot}>{COPY.seriesReadError}</span>;
   else if (!current) chartBody = <span style={foot}>{COPY.deepNoSymbols}</span>;
-  else if (!doc) chartBody = <span data-no-series={current} style={foot}><Rec>{COPY.deepNoSeries(current)}</Rec></span>;
+  else if (!doc) chartBody = <span data-no-series={current} style={foot}><NoChart tape={tape} sym={current} /></span>;
   else {
     chartBody = (
       <>
@@ -353,11 +472,30 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
       </>
     );
   }
-  const evidence = current && evidenceMarkers(tape, current).length ? (
-    <div data-region="evidence-overlay" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+  // FR-02 / RJ-2, for the all-symbols grid, once the series is READ (status ready): the series section's "complete"
+  // never stands beside a symbol shown with no series — that symbol says its own state instead (NoChart). A section
+  // that is NOT complete keeps its line and its stored reason. While the read is pending or after it failed, the grid
+  // keeps the section's line and each tile says NoChart's sentence, as before this round (review AL2-4; asked in the
+  // build report §14). The one-symbol section never shows the section's line at all — Amendment L RL-3, below.
+  const sectionLine = (uncharted) => (uncharted && seriesState?.status === 'ready' && tape.coverage?.series?.status === 'complete' ? null : ['coverage', 'series']);
+  // Build B Amendment K RK-11: a CHARTED symbol speaks for itself — "Chart recorded for {symbol}" in the coverage line's
+  // place, never the series section's status beside one symbol's chart (Glance's coverage line keeps the status and
+  // its reasons; the all-symbols grid keeps the section's line). Amendment L RL-3: nor in any other state of the
+  // one-symbol section — while the series loads it says the loading line, after a failed read the failure sentence,
+  // beside an uncharted symbol RJ-2's sentence (each in chartBody), never the series section's status
+  const chartedLine = doc && current ? (
+    <span data-chart-recorded={current} style={{ ...mono(10.5, C.ink3, { lineHeight: 1.45 }), padding: '0 2px' }}>{COPY.chartRecordedFor}<Rec>{current}</Rec></span>
+  ) : null;
+  // RJ-2 / FR-02: markers sit on a drawn chart only. With no series read for the symbol there is no chart, so no marker
+  // can be drawn: the marker instructions do not render, and the stamps' recorded prices are listed by check instead.
+  const charted = Boolean(doc);
+  // with no chart, every check holding a price is listed — a stamp whose instant was not recorded included (review SPR-S-4)
+  const marks = !current ? [] : charted ? evidenceMarkers(tape, current) : recordedPricesOf(tape, current);
+  const evidence = marks.length ? (
+    <div data-region="evidence-overlay" data-evidence-mode={charted ? undefined : 'list'} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span style={{ ...eyebrow, color: C.gold }}>{COPY.evidenceOverlay}</span>
       <Coverage label={COPY.evidenceCoverage} doc={tape} at={['coverage', 'evidence']} />
-      <span style={foot}>{COPY.evidenceOverlayNote}</span>
+      {charted ? <span style={foot}>{COPY.evidenceOverlayNote}</span> : <RecordedPrices tape={tape} sym={current} marks={marks} selected={mark} onMark={setMark} />}
       <span style={foot}>{COPY.riskNote}</span>
       {mark != null && tape.checks?.[mark] ? (
         <div data-evidence-panel={mark} style={{ ...card, background: C.wash, gap: 6 }}>
@@ -372,7 +510,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
     </div>
   ) : null;
   const chart = (
-    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} doc={tape} coverageAt={['coverage', 'series']}>
+    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} doc={tape} coverageLine={chartedLine}>
       <div style={{ ...card, gap: 10 }}>
         {chartBody}
         {evidence}
@@ -387,7 +525,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
           {chart}
           <div style={{ paddingTop: 22 }}>{doc ? <SymbolFacts tape={tape} doc={doc} sym={current} holdings={holdings} sectorEtf={sectorEtf} /> : null}</div>
         </div>
-        <Section id="deep-all" title={COPY.allSymbols} doc={tape} coverageAt={['coverage', 'series']}>
+        <Section id="deep-all" title={COPY.allSymbols} doc={tape} coverageAt={sectionLine(symbols.some((s) => !seriesOf(series, s)))}>
           <SmallMultiples tape={tape} series={series} symbols={symbols} sym={current} onSym={(s) => { setMark(null); onSym(s); }} />
         </Section>
       </div>

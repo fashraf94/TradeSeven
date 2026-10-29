@@ -66,6 +66,17 @@ export const FILM_ROOM_COPY = Object.freeze({
   replayCoverage: 'Replay coverage',
   coverageLabel: { complete: 'complete', partial: 'partial', unavailable: 'unavailable' },
   preservedFrom: 'preserved from an earlier run',
+  // B2.1 A7 (Amendment J RJ-7): Glance's ONE line of the day's coverage — "Coverage · complete for every section", or
+  // "Coverage · complete except: series (partial — 1 symbol not charted)", each section that is not complete named
+  // with its stored reason
+  coverageSummary: {
+    every: 'complete for every section',
+    except: 'complete except:',
+    sections: { checks: 'checks', actions: 'swaps', directives: 'directives', meetings: 'meetings', plans: 'plans', rationale: 'rationale', evidence: 'evidence', replay: 'replays', series: 'series' },
+    notCharted: (n) => (n === 1 ? 'symbol not charted' : 'symbols not charted'),
+    // review SPR-S-2: a section the tape does not store (written before it was taped), named as an absence (R14)
+    absent: 'not on this tape',
+  },
 
   // Glance (BA-4; F5)
   recordedScoreAt: (clock) => `Recorded score at ${clock} ET`,
@@ -125,7 +136,7 @@ export const FILM_ROOM_COPY = Object.freeze({
   close: 'Close',
 
   // Study (BA-41 F1–F4, BA-45, BA-46, BA-47)
-  jumps: [['holdings', 'Holdings'], ['swaps', 'Swaps'], ['directives', 'Directives'], ['plans', 'Plans'], ['rationale', 'Rationale'], ['checks', 'Checks']],
+  jumps: [['holdings', 'Holdings'], ['swaps', 'Swaps'], ['directives', 'Directives'], ['meetings', 'Meetings'], ['plans', 'Plans'], ['rationale', 'Rationale'], ['checks', 'Checks']],
   holdings: 'Holdings',
   holdingsStart: 'Start',
   holdingsEnd: 'End',
@@ -213,9 +224,40 @@ export const FILM_ROOM_COPY = Object.freeze({
   diagnostics: 'Diagnostics',
   diagnosticsPresent: 'Intraday diagnostic views were recorded for this battle-day.',
 
+  // B2.1 A1 — Meetings (Build B spec §3 T2, acceptance H; Amendment J RJ-1): each meeting as the history records it —
+  // its instants, its outcome and who resolved it, its legs, and its diagnosis as the platform's quoted words. The
+  // section says nothing about whether a proposal was right (RE-5: the owner's record, never proof).
+  meetings: 'Meetings',
+  meetingsNote: 'as the meeting history records them',
+  // the owner's record, never proof (RE-5; review SPR-RS-3): "recorded", as every other empty sentence says
+  meetingsNone: 'No gameplan meeting was recorded this day.',
+  // review SPR-S-1: an empty list under a section that is NOT complete — a meeting may have been created, not stored
+  meetingsNoneStored: "This day's tape stores no gameplan meeting.",
+  // R14: a tape with no meetings section at all (written before the meetings were taped) — an absence, said as one
+  meetingsAbsent: "This day's tape has no meetings section.",
+  meetingAt: (clock) => `Meeting · ${clock}`,
+  meetingOutcome: { approved: 'approved', rejected: 'rejected', expired: 'expired' },
+  meetingResolvedBy: 'resolved by',
+  meetingInstants: { created: 'Created', deadline: 'Deadline, as recorded', resolved: 'Resolved' },
+  meetingLegs: 'Legs',
+  meetingLegNotCopied: 'not copied',
+  // review SPR-S-5: true of an EMPTY legs list (a meeting proposing no swap) and of a missing one alike
+  meetingLegsNone: 'no leg recorded',
+  meetingDiagnosis: 'Diagnosis',
+  // the check strip's run of "plan pending · awaiting approval" checks, inside a meeting's life: a door to that meeting
+  runMeeting: 'Its meeting',
+
   // Deep dive (BA-12, BA-13, BA-43)
   deepPrice: 'Price',
-  deepNoSeries: (sym) => `No series for ${sym}.`,
+  // B2.1 A2 (FR-02; Amendment J RJ-2): a symbol with no series says ITS OWN state — the reason the tape records
+  // (coverage.series.notCharted, the candle pass's W5), else the plain sentence — never the section's "complete"
+  noChart: { before: 'No chart for ', reasons: { crypto_not_supported: 'crypto is not charted', no_bars: 'no bars were returned for it' } },
+  noChartRecorded: 'No chart was recorded for this symbol.',
+  // Build B Amendment K RK-11: beside a CHARTED symbol, Deep dive says the symbol's own state — never the series
+  // section's status, which stays on Glance's coverage line with its reasons; the symbol follows as record text
+  chartRecordedFor: 'Chart recorded for ',
+  // with no chart there is no marker: the stamps' recorded prices, listed by check (RJ-2)
+  recordedPrices: 'The price the agent was shown at each check, as recorded · tap a check for its stamp',
   deepNoSymbols: 'No series were recorded for this day.',
   seriesReadError: 'The series for this day could not be read.',
   evidenceCoverage: 'Evidence coverage',
@@ -235,12 +277,16 @@ export const FILM_ROOM_COPY = Object.freeze({
   volume: 'Volume',
   rebased: 'rebased to the session open',
   inTheBook: 'On the day',
+  companyNameNotOnFile: 'Company name not on file',   // B2.1 A5 (FR-05; RJ-5): the directory lacks the symbol — no name is guessed
   sectorLine: 'Sector line',
   sectorLineNone: 'none · market line only',
   exitMark: 'Exit',
   entryMark: 'Entry',
+  entryFor: 'in for',   // B2.1 A4 (RJ-4): "Entry · {time} · in for {sold symbol} · {maker}"
   evidenceOverlay: 'Evidence at each check',
-  evidenceOverlayNote: "A marker may sit off the bar line: the platform's quote runs about 15–20 minutes behind the bars. The difference is that delay, not smoothed.",
+  // B2.1 A6 (Amendment J RJ-6), verbatim: it claims no cause for any particular gap; its digits are a fixed phrase,
+  // exempt by this copy key (A2F1-7)
+  evidenceOverlayNote: 'A marker may sit off the bar line: the price the agent was shown came from a quote that runs about 15–20 minutes behind the bars, and the bars are not smoothed.',
   allSymbols: 'All symbols',
   close10: 'close',
 
@@ -275,8 +321,17 @@ export const FILM_ROOM_COPY = Object.freeze({
       drill: 'The Practice Field opens later; this keeps the moment for it.',
       set: 'You change the setting yourself; this card changes nothing.',
     },
-    // RG-9: no link unless exactly one equip route fits the situation — none is claimed here; stated in plain words
-    setRoute: 'Which setting, and where you change it, is your call; this card links nowhere.',
+    // B2.1 B1 (Amendment H RH-1; Amendment J RJ-8): with the day's stagnation rule on, Set links the one setting that
+    // reaches this situation — the tempo dial, in the Forge workshop; with it off, it says no setting changes it
+    setTempoLink: 'Tempo dial · Forge workshop',
+    setRuleOff: 'No setting changes this situation for this archetype.',
+    // Build B Amendment K RK-2, as Amendment L RL-1 narrows it: the rule on, the battle ran on a casual clone (which
+    // inherits no dial) and its tape records no tempo — said after RG-5's sentence, with no link. A ranked battle whose
+    // dial was never set links instead: the dial reaches its agent
+    setNoTempo: 'No tempo setting was recorded for this battle.',
+    // Build B Amendment L RL-5: wherever Set links the dial, its sentence ends with when a change takes effect — a
+    // battle snapshots its setting when it is created, so a change applies to the next one, never the one reviewed
+    setNextBattle: 'A change applies from your next battle.',
     openCards: 'Open cards',
     // the count line before the counter has answered, and when it could not: words, no number (R14)
     openCountLoading: 'Open cards · still loading',
@@ -287,6 +342,8 @@ export const FILM_ROOM_COPY = Object.freeze({
     refusals: {
       cap_reached: 'The open-card cap for this agent is reached. Retire a card first.',
       moment_not_found: "That moment is not on this day's tape.",
+      // B2.1 review SPR-C-2: the day was re-tagged while the card was being filed (nothing was filed)
+      source_changed: "This day's tape changed while the card was being filed. Try again.",
       disabled: 'Cards are not on for this battle.',
       note_too_long: 'The note is over its limit.',
       note_control_char: 'The note holds a character a card cannot keep.',
@@ -297,6 +354,8 @@ export const FILM_ROOM_COPY = Object.freeze({
       archetype_changed: "The agent is on another archetype than this day's tape records. This card cannot be filed.",
       op_conflict: 'This id was already used for a card with other words.',
       tape_unreadable: 'The tape for this day could not be read. Try again.',
+      // Amendment K RK-1 (review KRV1-1): the agent the card belongs to — a casual clone's parent — could not be resolved
+      attribution_unavailable: 'The agent this card belongs to could not be resolved. Nothing was changed. Try again.',
       tape_not_found: 'No tape for this day.',
       tags_unavailable: "This day's tape has no situations to take home.",
       question_not_on_menu: 'That question is not on the menu for this situation.',
@@ -321,8 +380,13 @@ export const FILM_ROOM_COPY = Object.freeze({
     retiring: 'Retiring…',
     recurrences: 'Since this card',
     noRecurrence: 'No recurrence recorded since this card.',
-    // RG-4: a recurrence in another battle is named, not linked — the screen opens only its own battle's days
+    // B2.1 B3 (RH-6), in RJ-7's style: "Recurrences · {n} days in this window could not be read"
+    recurrencesWord: 'Recurrences',
+    unavailableDays: (n) => (n === 1 ? 'day in this window could not be read' : 'days in this window could not be read'),
+    // B2.1 B2 (RH-2): a recurrence in another battle opens that battle's Film Room day at its moment; when the battle
+    // cannot be read, the row says so and nothing opens
     otherBattle: 'in another battle',
+    otherBattleUnreadable: 'That battle could not be read, so it was not opened.',
     noWatchCards: 'No open Watch card.',
     myCards: 'My cards',
     groups: { active: 'Active', shelved: 'Shelved', retired: 'Retired', other: 'Other' },

@@ -26,18 +26,32 @@
 //               source moment is never a recurrence.
 // The cards and their shelving come from the ledger's read (cardStore.js
 // readCards): computed against the agent's current archetype, never written.
+//
+// THE AGENT (Build B Amendment K RK-1): the counter takes the agent the
+// screen knows (a battle's own agent — a casual clone, for nearly every taped
+// battle) and answers for that agent's ATTRIBUTION agent, named in the answer
+// (`attributionAgentId`): its ledger, open count and cap, and recurrences and
+// unavailable days from every tape day whose battle attributes to it — the
+// clone's days and its own — by one read of the owner's clone document and the
+// platform's resolver (cardStore.js ownerAttributionOf). The weekly table
+// stays keyed by each day's own agent (RK-1 names it not).
 
 import { momentsOf, sameMoment, MOMENT_KEYS } from '../../../src/utils/filmRoomMoments.js';
 import { etDateOf, isEtDate, nextCalendarDate } from '../../../src/utils/tapeSchedule.js';
 import { TAPE_SUBCOLLECTION } from '../../../src/constants/filmTape.js';
-import { readCards, isOpen } from './cardStore.js';
+import { isCasualCloneId } from '../../../src/constants/leagueTournament.js';
+import { readCards, isOpen, ownerAttributionOf, CardRouteError, CARD_ROUTE_COPY } from './cardStore.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' && v ? v : null);
 const msOf = (v) => { if (typeof v !== 'string') return null; const ms = Date.parse(v); return Number.isFinite(ms) ? ms : null; };
 
-/** RG-4 — the fields the counter reads of a tape day, and no other. */
-export const COUNTER_FIELD_MASK = Object.freeze(['tags', 'etDate', 'ownerId', 'agentId', 'battleId']);
+/**
+ * RG-4 — the fields the counter reads of a tape day, and no other. B2.1 B3 (Amendment H RH-6) adds the situations'
+ * coverage STATUS alone (`coverage.tags.status`, never its note or sources): a day whose situations are unavailable
+ * gives one answer everywhere — it is neither counted nor listed as a recurrence, only counted as unavailable.
+ */
+export const COUNTER_FIELD_MASK = Object.freeze(['tags', 'etDate', 'ownerId', 'agentId', 'battleId', 'coverage.tags.status']);
 /**
  * The default window: the last 120 calendar days of ET dates, ending today — this build's own choice of a bounded
  * read (no ruling fixes it; ruling 18's "120 days of film" limits DRILLS, not counting — review R1-2). It is floored at
@@ -81,25 +95,46 @@ export function windowOf(nowMs, { from = null, to = null } = {}) {
   return { from, to };
 }
 
+const byDay = (a, b) => (a.etDate < b.etDate ? -1 : a.etDate > b.etDate ? 1 : a.battleId < b.battleId ? -1 : 1);
+
 /**
- * The owner's tape days in the window, each as `{ battleId, etDate, agentId, items }`
- * — only days that STORE tag items (a day the tagger could not tag, a skipped
- * mode, a failed day store none and are left out). Read with the field mask.
+ * The owner's tape days in the window, read once with the field mask: `days`, each `{ battleId, etDate, agentId,
+ * items }` — only days that STORE tag items and whose situations are not unavailable (a day the tagger could not tag,
+ * a skipped mode, a failed day store none and are left out) — and `unavailable`, each `{ battleId, etDate, agentId }`:
+ * the days whose `coverage.tags` is unavailable (B2.1 B3, RH-6), items or none. Both oldest first.
  */
-export async function readOwnerTapeDays(db, { uid, from, to }) {
+export async function readOwnerTapeWindow(db, { uid, from, to }) {
   const snap = await db.collectionGroup(TAPE_SUBCOLLECTION)
     .where('ownerId', '==', uid).where('etDate', '>=', from).where('etDate', '<=', to)
     .select(...COUNTER_FIELD_MASK).get();
-  const out = [];
+  const days = [];
+  const unavailable = [];
   for (const d of snap?.docs || []) {
     const data = typeof d.data === 'function' ? d.data() : d.data;
     if (!isObj(data) || data.ownerId !== uid) continue;
     if (!isEtDate(data.etDate) || !str(data.agentId) || !str(data.battleId)) continue;
+    // RH-6: one answer everywhere — an unavailable day offers no moment, so it is neither counted nor a recurrence
+    if (data.coverage?.tags?.status === 'unavailable') { unavailable.push({ battleId: data.battleId, etDate: data.etDate, agentId: data.agentId }); continue; }
     const items = Array.isArray(data.tags?.items) ? data.tags.items : null;
     if (!items) continue;
-    out.push({ battleId: data.battleId, etDate: data.etDate, agentId: data.agentId, items });
+    days.push({ battleId: data.battleId, etDate: data.etDate, agentId: data.agentId, items });
   }
-  return out.sort((a, b) => (a.etDate < b.etDate ? -1 : a.etDate > b.etDate ? 1 : a.battleId < b.battleId ? -1 : 1));
+  return { days: days.sort(byDay), unavailable: unavailable.sort(byDay) };
+}
+
+/** The usable days alone (readOwnerTapeWindow's `days`). */
+export async function readOwnerTapeDays(db, range) {
+  return (await readOwnerTapeWindow(db, range)).days;
+}
+
+/**
+ * RH-6 — how many days in the window could not be read, per agent: `{ [agentId]: n }`. Derived. Keyed by each day's
+ * ATTRIBUTION agent (RK-1: `targetOf`, the counter's resolver), so a casual clone's days count for its parent.
+ */
+export function unavailableDaysOf(unavailable, targetOf = (id) => id) {
+  const out = {};
+  for (const d of unavailable) { const a = targetOf(d.agentId); out[a] = (out[a] ?? 0) + 1; }
+  return out;
 }
 
 /**
@@ -135,14 +170,16 @@ export const isOpenWatchCard = (card, archetype) => card?.route === 'watch' && i
  * The recurrences of one open Watch card over `days`: the moments of its
  * situation on the same agent's battle days whose first tagged check falls
  * after the card's creation — never its own source moment. Each carries its
- * battle, day and the moment's seven fields; nothing else (RG-6).
+ * battle, day and the moment's seven fields; nothing else (RG-6). "The same
+ * agent" is the day's ATTRIBUTION agent (RK-1: `targetOf`, the counter's
+ * resolver) — a casual clone's day recurs for a card filed under its parent.
  */
-export function recurrencesOf(card, days) {
+export function recurrencesOf(card, days, targetOf = (id) => id) {
   const since = msOf(card?.createdAt);
   if (since === null) return [];
   const out = [];
   for (const day of days) {
-    if (day.agentId !== card.agentId) continue;
+    if (targetOf(day.agentId) !== card.agentId) continue;
     for (const m of momentsOf(day.items)) {
       if (m.situationId !== card.situationId) continue;
       const from = msOf(m.from);
@@ -154,30 +191,59 @@ export function recurrencesOf(card, days) {
   return out.sort((a, b) => (msOf(a.from) - msOf(b.from)) || (a.battleId < b.battleId ? -1 : 1));
 }
 
+const unavailable503 = (agentId) => new CardRouteError(503, 'attribution_unavailable', CARD_ROUTE_COPY.attribution_unavailable, { agentId });
+
 /**
- * The counter's whole answer for one owner and one agent.
+ * The counter's whole answer for one owner and the agent the screen knows, ANSWERED FOR that agent's attribution agent
+ * (RK-1, `attributionAgentId`): its ledger and every tape day that attributes to it. An answer that would be FOR a
+ * casual clone — the owner's own clone unresolved (its document missing or without a parent, or the parent not the
+ * owner's — the resolver's fallback), or any clone-named agent — → 503 attribution_unavailable, as the create refuses
+ * it (cardStore.js attributionAgentOf; review KR1-1): no ledger is read under a clone.
  *
- * @returns {Promise<{ agentId, archetypeCodeId, window: { from, to }, weekly, cards, open, cap, recurrences: { [entryId]: object[] } }>}
+ * @returns {Promise<{ agentId, attributionAgentId, archetypeCodeId, window: { from, to }, weekly, cards, open, cap, recurrences: { [entryId]: object[] }, unavailableDays: { [agentId]: number } }>}
  */
 export async function buildCounter(db, { uid, agentId, nowMs, from = null, to = null }) {
   const asked = windowOf(nowMs, { from, to });
   if (asked.error) return { error: asked.error };
+  // RK-1: one read of the owner's clone document; every id the counter meets goes through the platform's resolver
+  let attribution;
+  try {
+    attribution = await ownerAttributionOf(db, uid);
+  } catch (err) {
+    // the clone read failed (review KR1-7): the same refusal, naming the agent asked
+    if (err?.code === 'attribution_unavailable') throw unavailable503(agentId);
+    throw err;
+  }
+  const { targetOf } = attribution;
+  const target = targetOf(agentId);
+  if (isCasualCloneId(target)) throw unavailable503(agentId);
   // The ledger first: a Watch card older than the window would otherwise have its earlier recurrences silently
   // dropped and the screen would say none was recorded (review L1-2). The window's start is floored at the earliest
   // open Watch card's creation day — within the 400-day cap behind `to` — when the caller named no window.
-  const ledger = await readCards(db, { uid, agentId });
+  let ledger;
+  try {
+    ledger = await readCards(db, { uid, agentId: target });
+  } catch (err) {
+    // a parent that is missing or another owner's: the resolver's own fallback (it checks the parent's owner), refused
+    // as the create refuses it — never a 403 that names the parent
+    if (target !== agentId && (err?.code === 'agent_not_found' || err?.code === 'forbidden')) throw unavailable503(agentId);
+    throw err;
+  }
   const window = { ...asked };
   if (from === null && to === null) {
     const earliest = ledger.cards.filter((c) => isOpenWatchCard(c, ledger.archetypeCodeId)).map((c) => etDateOf(c.createdAt)).filter(isEtDate).sort()[0] ?? null;
     const floor = daysBefore(window.to, COUNTER_WINDOW_MAX_DAYS - 1);
     if (earliest && earliest < window.from) window.from = earliest < floor ? floor : earliest;
   }
-  const days = await readOwnerTapeDays(db, { uid, from: window.from, to: window.to });
+  const { days, unavailable } = await readOwnerTapeWindow(db, { uid, from: window.from, to: window.to });
   const recurrences = {};
-  for (const card of ledger.cards) if (isOpenWatchCard(card, ledger.archetypeCodeId)) recurrences[card.entryId] = recurrencesOf(card, days);
+  for (const card of ledger.cards) if (isOpenWatchCard(card, ledger.archetypeCodeId)) recurrences[card.entryId] = recurrencesOf(card, days, targetOf);
   return {
-    agentId, archetypeCodeId: ledger.archetypeCodeId, window, weekly: weeklyCounts(days),
+    agentId, attributionAgentId: target, archetypeCodeId: ledger.archetypeCodeId, window, weekly: weeklyCounts(days),
     cards: ledger.cards, open: ledger.open, cap: ledger.cap, recurrences,
+    // RH-6: the days in the window whose situations could not be read, per ATTRIBUTION agent (RK-1; the screen says
+    // so, RJ-7's style, under the agent this answer names)
+    unavailableDays: unavailableDaysOf(unavailable, targetOf),
   };
 }
 

@@ -98,7 +98,8 @@ describe('the empty day, as the passes write it', () => {
     const { tape } = built.empty;
     expect(tape.checks).toEqual([]);
     expect(tape.score.lastCheck).toBeNull();
-    expect(tape.battle.result).toEqual({ value: null, basis: 'unavailable', note: 'opponent score never recorded' });
+    // B2.1 A3 (FR-03; Amendment J RJ-3): the day ran no check, so the note says so
+    expect(tape.battle.result).toEqual({ value: null, basis: 'unavailable', note: 'no check ran this day, so no score was recorded' });
     expect(tape.battle.completionMessage.text).toBe('Result: Draw.');
     expect(tape.passes.close.capture).toBe('absent');
   });

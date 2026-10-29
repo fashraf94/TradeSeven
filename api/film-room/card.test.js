@@ -8,13 +8,16 @@
 // day's STORED tags.items (the mutant: a moment the items do not hold).
 //
 // Dependency-surface guard (BUILD_RULES §4): the route, the request boundary,
-// the store, the moments helper and the tape writer are the real modules;
+// the store, the moments helper, the tape writer and the platform's
+// attribution resolver (api/_utils/casualClone.js, and through it
+// src/constants/leagueTournament.js — Amendment K RK-1) are the real modules;
 // only the security middleware, the auth middleware, the Admin SDK handle and
-// the two flags are doubled.
+// the two flags are doubled — and the question menu, as a getter over the real
+// one that a single row (review SPR-T-1) points at a bumped copy.
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 
-const state = vi.hoisted(() => ({ mode: 'on', uid: 'owner-1', authFails: false, middlewareHandles: false, db: null, middlewareCalls: [] }));
+const state = vi.hoisted(() => ({ mode: 'on', uid: 'owner-1', authFails: false, middlewareHandles: false, db: null, middlewareCalls: [], menu: null }));
 vi.mock('../../src/config/featureFlags.js', async (importOriginal) => ({
   ...(await importOriginal()),
   get FILM_ROOM_CARDS_MODE() { return state.mode; },
@@ -28,14 +31,19 @@ vi.mock('../_utils/authMiddleware.js', () => ({
   },
 }));
 vi.mock('../_utils/firebaseAdmin.js', () => ({ getFirebaseAdmin: () => state.db }));
+vi.mock('../../src/data/situationQuestions.js', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, get SITUATION_QUESTIONS() { return state.menu ?? real.SITUATION_QUESTIONS; } };
+});
 
-const { default: handler, CARD_RATE_LIMIT } = await import('./card.js');
+const { default: handler, CARD_RATE_LIMIT, verifySourceIn } = await import('./card.js');
 const { writeTapeDay } = await import('../_utils/filmTape/writeTapeDay.js');
 const { makeTapeDb } = await import('../_utils/filmTape/__fixtures__/tapeFirestore.js');
 const { seedDay, OWNER, AGENT } = await import('../_utils/filmTape/__fixtures__/tapeFixtures.js');
 const { stalledDay } = await import('../_utils/filmTape/__fixtures__/tagFixtures.js');
 const { momentsOf } = await import('../../src/utils/filmRoomMoments.js');
 const { CARD_ROUTE_COPY } = await import('../_utils/filmRoom/cardStore.js');
+const { SITUATION_QUESTIONS: MENU } = await import('../../src/data/situationQuestions.js');
 
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 60_000 });
 
@@ -67,7 +75,7 @@ const create = (over = {}) => ({ op: 'create', opId: 'op_1', battleId: BATTLE, e
 
 let t;
 beforeEach(() => {
-  state.mode = 'on'; state.uid = OWNER; state.authFails = false; state.middlewareHandles = false; state.middlewareCalls = [];
+  state.mode = 'on'; state.uid = OWNER; state.authFails = false; state.middlewareHandles = false; state.middlewareCalls = []; state.menu = null;
   process.env.COCKPIT_ALLOWLIST_UIDS = OWNER;
   t = makeTapeDb({
     ...fixture.store,
@@ -342,5 +350,303 @@ describe('Amendment I RI-1 (Astra F1) — through the handler: a create replay a
     const res = await post(create({ opId: 'own_4' }));
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatchObject({ idempotent: false, open: 5, cap: 5 });
+  });
+});
+
+describe('B2.1 B3 — RH-6: an unavailable day offers no moment; RI-3: the source moment is checked again inside the create transaction', () => {
+  const tapeKey = `agentBattles/${BATTLE}/tape/${D}`;
+  const tickKeyOf = (seq) => [...t.store.keys()].find((k) => k.startsWith(`agentBattles/${BATTLE}/ticks/`) && t.store.get(k)?.tickSeq === seq);
+  /** Run `race` once, between the route's read of the tape and the create transaction (the writer re-merging the day then). */
+  function raceBeforeCommit(race) {
+    const realRun = t.db.runTransaction.bind(t.db);
+    let pending = race;
+    t.db.runTransaction = async (fn, opts) => {
+      if (pending) { const r = pending; pending = null; t.db.runTransaction = realRun; await r(); }
+      return realRun(fn, opts);
+    };
+  }
+  const rewrite = () => writeTapeDay(BATTLE, D, { db: t.db, now: NIGHT + 86_400_000 });
+
+  it('the fixture day\'s situations are complete (the precondition of the race rows)', () => {
+    expect(t.store.get(tapeKey).coverage.tags.status).toBe('complete');
+  });
+
+  it('RH-6: a day whose situations are unavailable — items stored or not — refuses its moment 409 tags_unavailable, nothing written', async () => {
+    const tape = t.store.get(tapeKey);
+    t.store.set(tapeKey, { ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
+    const res = await post(create());
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('tags_unavailable');
+    expect(playWrites()).toEqual([]);
+  });
+
+  it('ASTRA_REAL_SOURCE_RACE on an UNAVAILABLE day (a check lost, the moment 4–4): refused up front — and restoring the check before the commit changes nothing', async () => {
+    const k5 = tickKeyOf(5);
+    const tick5 = t.store.get(k5);
+    t.store.delete(k5);
+    t.store.delete(tapeKey);
+    await writeTapeDay(BATTLE, D, { db: t.db, now: NIGHT });
+    const incomplete = t.store.get(tapeKey);
+    expect(incomplete.coverage.tags.status).toBe('unavailable');
+    expect(incomplete.tags.items.map((i) => [i.symbol, i.tickSeq])).toEqual([['ACN', 4]]);
+    raceBeforeCommit(async () => { t.store.set(k5, tick5); await rewrite(); });
+    const res = await post(create({ moment: { ...MOMENT, toTickSeq: 4 } }));
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('tags_unavailable');
+    expect(playWrites()).toEqual([]);
+  });
+
+  it('ASTRA_REAL_SOURCE_RACE on a COMPLETE day: the writer re-merges the day between the route\'s check and the commit, the moment moves 4–5 → 5–5 — refused 409 moment_not_found, nothing written (the mutant: the transaction trusting the route\'s read)', async () => {
+    const k4 = tickKeyOf(4);
+    raceBeforeCommit(async () => {
+      const tick = structuredClone(t.store.get(k4));
+      tick.risk.stagnation.ACN = { ...tick.risk.stagnation.ACN, ticks: 0 };   // a corrected capture: check 4 no longer stalled
+      t.store.set(k4, tick);
+      await rewrite();
+    });
+    const res = await post(create());
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('moment_not_found');
+    expect(playWrites()).toEqual([]);
+    const after = t.store.get(tapeKey);
+    expect(after.coverage.tags.status).toBe('complete');
+    expect(after.tags.items.map((i) => [i.symbol, i.tickSeq])).toEqual([['ACN', 5]]);
+  });
+
+  it('a re-write between the check and the commit that leaves the day UNAVAILABLE (a check lost) is refused 409 tags_unavailable inside the transaction', async () => {
+    const k2 = tickKeyOf(2);
+    raceBeforeCommit(async () => { t.store.delete(k2); await rewrite(); });
+    const res = await post(create());
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('tags_unavailable');
+    expect(playWrites()).toEqual([]);
+    expect(t.store.get(tapeKey).coverage.tags.status).toBe('unavailable');
+  });
+
+  it('review SPR-C-1 — the re-read is the TRANSACTION\'s own: a re-write landing after it and before the commit (the moment 4–5 gone) retries the transaction and is refused, never filed (the mutant: a plain read inside the callback)', async () => {
+    let tapeReads = 0;
+    let fired = false;
+    const hooks = {
+      beforeRead: (label) => {
+        if (!label.endsWith(tapeKey)) return;
+        tapeReads += 1;
+        if (tapeReads !== 2 || fired) return;   // the second tape read: the one inside the create transaction
+        fired = true;
+        queueMicrotask(() => { const tape = t.store.get(tapeKey); t.docRef(tapeKey).set({ ...tape, tags: { ...tape.tags, items: tape.tags.items.filter((i) => i.tickSeq === 5) } }); });
+      },
+    };
+    t = makeTapeDb(Object.fromEntries([...t.store.entries()]), { hooks });
+    state.db = t.db;
+    const res = await post(create());
+    expect(fired).toBe(true);
+    expect(t.readLog.filter((l) => l.endsWith(tapeKey))[1]).toBe(`tx:${tapeKey}`);
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('moment_not_found');
+    expect(playWrites()).toEqual([]);
+    expect(t.store.get(tapeKey).tags.items.map((i) => i.tickSeq)).toEqual([5]);
+  });
+
+  it('review SPR-C-2 — what moved under an unchanged moment is named: a re-tag under another situation version → 409 source_changed; the day\'s archetype → 409 archetype_changed; nothing written', async () => {
+    raceBeforeCommit(async () => { const tape = t.store.get(tapeKey); t.store.set(tapeKey, { ...tape, tags: { ...tape.tags, items: tape.tags.items.map((i) => ({ ...i, version: 3 })) } }); });
+    let res = await post(create());
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('source_changed');
+    expect(playWrites()).toEqual([]);
+    t.store.set(tapeKey, fixture.store[tapeKey]);
+    raceBeforeCommit(async () => { const tape = t.store.get(tapeKey); t.store.set(tapeKey, { ...tape, tags: { ...tape.tags, inputs: { ...tape.tags.inputs, archetypeCodeId: 'guardian' } } }); });
+    res = await post(create({ opId: 'op_2' }));
+    expect(res.statusCode).toBe(409);
+    expect(res.body.error).toBe('archetype_changed');
+    expect(playWrites()).toEqual([]);
+  });
+
+  it('review SPR-C-3 — a lost answer re-tapped with the same op id after the day changed replays its filed card (200, idempotent, one card); other words under that op id stay op_conflict; a NEW op id is refused', async () => {
+    const first = await post(create());
+    expect(first.statusCode).toBe(200);
+    const tape = t.store.get(tapeKey);
+    t.store.set(tapeKey, { ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
+    const again = await post(create());
+    expect(again.statusCode).toBe(200);
+    expect(again.body.idempotent).toBe(true);
+    expect(again.body.card).toEqual(first.body.card);
+    expect(playWrites()).toHaveLength(1);
+    const other = await post(create({ note: 'Other words.' }));
+    expect(other.statusCode).toBe(409);
+    expect(other.body.error).toBe('op_conflict');
+    const fresh = await post(create({ opId: 'op_9' }));
+    expect(fresh.statusCode).toBe(409);
+    expect(fresh.body.error).toBe('tags_unavailable');
+    // the moment moved since (a re-write): the replay answers too
+    t.store.set(tapeKey, { ...tape, tags: { ...tape.tags, items: tape.tags.items.filter((i) => i.tickSeq === 5) } });
+    const moved = await post(create());
+    expect(moved.statusCode).toBe(200);
+    expect(moved.body.idempotent).toBe(true);
+    expect(playWrites()).toHaveLength(1);
+  });
+
+  it('review SPR-T-1 — the replay answers for every refusal a changed day or menu can bring: the question\'s version moved on, the day\'s archetype gone, the tape gone — each re-tap a 200 idempotent replay of the one card', async () => {
+    const first = await post(create({ questionVersion: 1 }));
+    expect(first.statusCode).toBe(200);
+    const tape = t.store.get(tapeKey);
+    const replays = async (why) => {
+      const again = await post(create({ questionVersion: 1 }));
+      expect([again.statusCode, again.body.idempotent], why).toEqual([200, true]);
+      expect(again.body.card, why).toEqual(first.body.card);
+      expect(playWrites(), why).toHaveLength(1);
+    };
+    state.menu = MENU.map((q) => (q.id === 'stalled.want' ? { ...q, version: 2 } : q));
+    expect((await post(create({ opId: 'op_7', questionVersion: 1 }))).body.error).toBe('question_not_on_menu');
+    await replays('question_not_on_menu');
+    state.menu = null;
+    t.store.set(tapeKey, { ...tape, tags: { ...tape.tags, inputs: { ...tape.tags.inputs, archetypeCodeId: null } } });
+    expect((await post(create({ opId: 'op_8', questionVersion: 1 }))).body.error).toBe('archetype_unknown');
+    await replays('archetype_unknown');
+    t.store.delete(tapeKey);
+    expect((await post(create({ opId: 'op_6', questionVersion: 1 }))).body.error).toBe('tape_not_found');
+    await replays('tape_not_found');
+  });
+
+  it('review SPR-RC-1 — a contention abort (gRPC ABORTED) on the transaction\'s re-read is rethrown as it came, for the SDK to retry; any other failure is 503 tape_unreadable', async () => {
+    const check = verifySourceIn(t.db, OWNER, create(), {});
+    const aborted = Object.assign(new Error('10 ABORTED: Too much contention'), { code: 10 });
+    await expect(check({ get: async () => { throw aborted; } })).rejects.toBe(aborted);
+    const down = await check({ get: async () => { throw Object.assign(new Error('14 UNAVAILABLE'), { code: 14 }); } }).catch((e) => e);
+    expect([down.status, down.code]).toEqual([503, 'tape_unreadable']);
+    const plain = await check({ get: async () => { throw new Error('boom'); } }).catch((e) => e);
+    expect([plain.status, plain.code]).toEqual([503, 'tape_unreadable']);
+  });
+
+  it('the control: an UNCHANGED day re-merged between the check and the commit still files — 200, one card, its source the moment as stored', async () => {
+    raceBeforeCommit(async () => { await rewrite(); });
+    const res = await post(create());
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card.source).toEqual({ battleId: BATTLE, etDate: D, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 });
+    expect(playWrites()).toHaveLength(1);
+  });
+});
+
+// Build B Amendment K RK-1 — the card is filed, replayed and retired under the battle's ATTRIBUTION agent: a casual
+// clone's parent, by the platform's resolver (api/_utils/casualClone.js); a clone the resolver cannot resolve is refused
+// 503 attribution_unavailable with nothing written. The same rows run on the real emulator in
+// test/rules/filmRoomCardAttribution.rules.mjs.
+describe('RK-1 — through the handler: a casual clone\'s battle files under the parent, never the clone', () => {
+  const CLONE = `casual-agent-${OWNER}`;
+  const CB = 'b-clone';
+  const cloneAt = (over = {}) => ({ ownerId: OWNER, name: 'Aurora (casual)', archetype: 'momentum_chaser', rankedAgentId: AGENT, ...over });
+  /** A clone battle over the same real tape day: the battle and its tape name the clone, as the platform's fence rule keeps them. */
+  function seedClone(clone = cloneAt()) {
+    t.store.set(`agentBattles/${CB}`, { ...fixture.battle, id: CB, agentId: CLONE });
+    t.store.set(`agentBattles/${CB}/tape/${D}`, { ...t.store.get(`agentBattles/${BATTLE}/tape/${D}`), battleId: CB, agentId: CLONE });
+    if (clone) t.store.set(`agents/${CLONE}`, clone); else t.store.delete(`agents/${CLONE}`);
+  }
+  const cloneCreate = (over = {}) => create({ battleId: CB, agentId: CLONE, ...over });
+  const cloneWrites = () => t.writeLog.filter((w) => w.path.startsWith(`agents/${CLONE}`));
+
+  it('a clone battle files under the parent: the entry at agents/{parent}/plays, its agentId the parent; the request still names the battle\'s own agent, and nothing is written under the clone (the mutant: filed under the clone)', async () => {
+    seedClone();
+    const res = await post(cloneCreate());
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card).toMatchObject({ entryId: 'op_1', ownerId: OWNER, agentId: AGENT, source: { battleId: CB, etDate: D, symbol: 'ACN', fromTickSeq: 4, toTickSeq: 5 } });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toEqual(res.body.card);
+    expect(t.store.get(`agents/${CLONE}/plays/op_1`)).toBeUndefined();
+    expect(cloneWrites()).toEqual([]);
+    // the client never chooses another agent: the parent named for the clone's battle is not the battle's agent
+    const named = await post(cloneCreate({ opId: 'op_2', agentId: AGENT }));
+    expect(named.statusCode).toBe(403);
+    expect(named.body.error).toBe('forbidden');
+  });
+
+  it('a ranked battle files under itself, as before', async () => {
+    seedClone();
+    const res = await post(create());
+    expect(res.statusCode).toBe(200);
+    expect(res.body.card.agentId).toBe(AGENT);
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`)).toEqual(res.body.card);
+  });
+
+  it('a clone the resolver falls back on — no clone document, no rankedAgentId, a parent another owner holds — is refused 503 attribution_unavailable, before any tape read, nothing written (the mutant: a fallen-back resolution filing under the clone)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    t.store.set('agents/agent-9', { ownerId: 'someone-else', archetype: 'momentum_chaser' });
+    for (const [label, clone] of [['no clone document', null], ['no rankedAgentId', cloneAt({ rankedAgentId: undefined })], ['a parent another owner holds', cloneAt({ rankedAgentId: 'agent-9' })]]) {
+      seedClone(clone);
+      t.readLog.length = 0;
+      const res = await post(cloneCreate());
+      expect(res.statusCode, label).toBe(503);
+      expect(res.body, label).toEqual({ error: 'attribution_unavailable', message: CARD_ROUTE_COPY.attribution_unavailable, agentId: CLONE });
+      expect(t.readLog.some((p) => p.includes('/tape/')), label).toBe(false);
+      expect(playWrites(), label).toEqual([]);
+    }
+  });
+
+  it('the archetype checks read the parent: the clone on the tape\'s archetype and the parent on another → 409 archetype_changed, nothing written; the clone stale and the parent on the tape\'s → files (the mutant: the check reading the clone)', async () => {
+    seedClone(cloneAt({ archetype: 'momentum_chaser' }));
+    t.store.set(`agents/${AGENT}`, { ownerId: OWNER, name: 'Aurora', archetype: 'guardian' });
+    const drifted = await post(cloneCreate());
+    expect(drifted.statusCode).toBe(409);
+    expect(drifted.body.error).toBe('archetype_changed');
+    expect(playWrites()).toEqual([]);
+    seedClone(cloneAt({ archetype: 'guardian' }));
+    t.store.set(`agents/${AGENT}`, { ownerId: OWNER, name: 'Aurora', archetype: 'momentum_chaser' });
+    const filed = await post(cloneCreate());
+    expect(filed.statusCode).toBe(200);
+    expect(filed.body.card).toMatchObject({ agentId: AGENT, archetypeCodeId: 'momentum_chaser' });
+  });
+
+  it('review SPR-C-3\'s replay looks under the parent: the clone battle\'s day turned unavailable, the same op id and request → 200, the one card', async () => {
+    seedClone();
+    const first = await post(cloneCreate());
+    expect(first.statusCode).toBe(200);
+    const key = `agentBattles/${CB}/tape/${D}`;
+    const tape = t.store.get(key);
+    t.store.set(key, { ...tape, coverage: { ...tape.coverage, tags: { ...tape.coverage.tags, status: 'unavailable', note: 'stalled unavailable: planted' } } });
+    const again = await post(cloneCreate());
+    expect(again.statusCode).toBe(200);
+    expect(again.body).toMatchObject({ idempotent: true, card: first.body.card });
+    expect(playWrites()).toHaveLength(1);
+  });
+
+  it('retire names the agent the screen knows and is keyed on its attribution agent: the clone\'s id retires the parent\'s card; an unresolvable clone → 503, nothing written', async () => {
+    seedClone();
+    expect((await post(cloneCreate())).statusCode).toBe(200);
+    const ok = await post({ op: 'retire', opId: 'r1', agentId: CLONE, entryId: 'op_1', expectedVersion: 1 });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.body.card).toMatchObject({ agentId: AGENT, stage: 'retired', version: 2 });
+    expect(t.store.get(`agents/${AGENT}/plays/op_1`).stage).toBe('retired');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    seedClone(cloneAt({ rankedAgentId: undefined }));
+    const before = playWrites().length;
+    const refused = await post({ op: 'retire', opId: 'r2', agentId: CLONE, entryId: 'op_1', expectedVersion: 2 });
+    expect(refused.statusCode).toBe(503);
+    expect(refused.body.error).toBe('attribution_unavailable');
+    expect(playWrites()).toHaveLength(before);
+  });
+
+  it('review KRT-4 / KRT-5 / KRT-10 — the battle\'s checks come first (a tournament battle on an unresolvable clone is 409 untaped, no agent read); a clone whose parent is itself clone-named is refused 503, nothing written; the sentence as sent', async () => {
+    t.store.set('agentBattles/b-clone-tourn', { ...fixture.battle, id: 'b-clone-tourn', agentId: CLONE, gameMode: 'baggerbomb_tournament' });
+    t.store.delete(`agents/${CLONE}`);
+    t.readLog.length = 0;
+    const untaped = await post(cloneCreate({ battleId: 'b-clone-tourn' }));
+    expect(untaped.statusCode).toBe(409);
+    expect(untaped.body.error).toBe('untaped');
+    expect(t.readLog.some((p) => p.startsWith('agents/'))).toBe(false);
+    // the parent the clone names is clone-named, owned by the same owner: the resolver hands it back, and it is refused
+    t.store.set('agents/casual-agent-zzz', { ownerId: OWNER, name: 'Squat', archetype: 'momentum_chaser' });
+    seedClone(cloneAt({ rankedAgentId: 'casual-agent-zzz' }));
+    const refused = await post(cloneCreate());
+    expect(refused.statusCode).toBe(503);
+    expect(refused.body.error).toBe('attribution_unavailable');
+    expect(playWrites()).toEqual([]);
+    expect(CARD_ROUTE_COPY.attribution_unavailable).toBe('The agent these cards belong to could not be resolved. Nothing was changed; try again.');
+  });
+
+  it('the cap counts the parent\'s cards across clone and ranked battles: three from the clone\'s, two from the ranked → the sixth refused at 5', async () => {
+    seedClone();
+    for (const [i, over] of [cloneCreate(), cloneCreate(), cloneCreate(), create(), create()].entries()) {
+      expect((await post({ ...over, opId: `op_c${i}` })).statusCode).toBe(200);
+    }
+    const sixth = await post(cloneCreate({ opId: 'op_c6' }));
+    expect(sixth.statusCode).toBe(409);
+    expect(sixth.body).toMatchObject({ error: 'cap_reached', cap: 5, open: 5 });
+    expect([...t.store.keys()].filter((k) => k.startsWith(`agents/${AGENT}/plays/`))).toHaveLength(5);
   });
 });

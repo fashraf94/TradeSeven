@@ -108,7 +108,7 @@ import { NOTES } from './tapeNotes.js';
 import { errorTextOf } from './errorClass.js';
 import {
   symbolPlan, candleInputFingerprint, replayBuiltFrom, replayBuiltFromV1, priceBuiltFrom, seriesBuiltFrom, replayLogicVersionOf, REPLAY_LOGIC_VERSION,
-  meetingLegSymbols, MEETING_SYMBOLS_PER_DAY_MAX,
+  meetingLegSymbols, MEETING_SYMBOLS_PER_DAY_MAX, notChartedOf,
 } from './candleInputs.js';
 
 export { symbolPlan };
@@ -642,6 +642,9 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
       ...(legGaps.length ? [`meeting legs incomplete — ${legGaps.map((sym) => `${sym}: ${gapsBySymbol[sym].join(', ')}`).join('; ')}`] : []),
       ...(legDropped.length ? [`${legDropped.length === 1 ? '1 meeting-leg symbol' : `${legDropped.length} meeting-leg symbols`} past the ${MEETING_SYMBOLS_PER_DAY_MAX} a day not fetched`] : []),
     ];
+    // B2.1 C2 — W5 (RB-4): each held, traded or planned symbol this pass did not chart, with its reason, so the screen
+    // states that symbol's own state rather than the section's (a declared new field; it moves no bar and asks nothing).
+    const notCharted = notChartedOf(cur, { missing });
     for (const { entry, doc } of writes) tx.set(seriesRef(entry.symbol), doc);
     tx.update(ref, sanitizeForFirestore({
       actions,
@@ -649,7 +652,7 @@ export async function processTape({ db, ref, tape, nowMs, fetchCandles, memo, us
       numberClasses: TAPE_NUMBER_CLASSES,
       'passes.candles': candles,
       'coverage.replay': replayCoverage(cur, replays, session, stale.replays, stale.versions, candles.status),
-      'coverage.series': legNotes.length ? { ...seriesCov, note: [seriesCov.note, ...legNotes].filter(Boolean).join('; ') } : seriesCov,
+      'coverage.series': { ...(legNotes.length ? { ...seriesCov, note: [seriesCov.note, ...legNotes].filter(Boolean).join('; ') } : seriesCov), notCharted },
     }));
     const series = writes.length;
     result = { status: candles.status, attempts: candles.attempts, requested: requested.length, missing, series };

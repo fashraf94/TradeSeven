@@ -29,7 +29,7 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
 
 import { writeTapeDay } from './writeTapeDay.js';
 import { runCandlePass } from './candlePass.js';
-import { buildMeetings, MEETING_LEGS_MAX, MEETINGS_PER_DAY_MAX, MEETING_DIAGNOSIS_MAX, MEETING_ID_MAX, UNFILED_FINAL_DAY_NOTE, UNFILED_EARLIER_DAY_NOTE } from './tapeAssemble.js';
+import { buildMeetings, meetingRowOmissionsOf, MEETING_LEGS_MAX, MEETINGS_PER_DAY_MAX, MEETING_DIAGNOSIS_MAX, MEETING_ID_MAX, UNFILED_FINAL_DAY_NOTE, UNFILED_EARLIER_DAY_NOTE } from './tapeAssemble.js';
 import { contentOf, stableStringify } from './tapeMerge.js';
 import { symbolPlan, candleInputFingerprint, meetingLegSymbols, MEETING_SYMBOLS_PER_DAY_MAX } from './candleInputs.js';
 import { etDayBounds } from './tapeTime.js';
@@ -256,6 +256,111 @@ describe('Amendment D RD-6 — a copied meeting is permanent: the owner\'s two p
   });
 });
 
+describe('Amendment E RE-3 (B2.1 C1) — coverage.meetings describes the rows the tape STORES, not the latest read', () => {
+  const refresh = async (fx, t, history, at, over = {}) => {
+    const battle = structuredClone(t.store.get(`agentBattles/${fx.battleId}`));
+    battle.gameplanMeetingHistory = history;
+    Object.assign(battle, over);
+    t.store.set(`agentBattles/${fx.battleId}`, battle);
+    return writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: at });
+  };
+
+  it('every row part reads back from a note exactly as it was written (one and many)', () => {
+    const rows = [
+      meeting('x'.repeat(MEETING_ID_MAX + 1), `${D}T14:00:00.000Z`, 'rejected', [['ACN', 'ORCL'], ['MSFT', 'IBM'], ['NVDA', 'AMD']], { diagnosis: 'w'.repeat(MEETING_DIAGNOSIS_MAX + 1) }),
+      meeting('y', `${D}T14:30:00.000Z`, 'rejected', [['ACN', 'QQQX'], ['MSFT', 'IBM'], ['NVDA', 'AMD'], ['XOM', 'CVX']], { diagnosis: 'w'.repeat(MEETING_DIAGNOSIS_MAX + 1) }),
+    ];
+    const { coverage } = buildMeetings({ battle: { portfolio: ROSTER, gameplanMeetingHistory: rows }, bounds });
+    expect(coverage.note).toBe(`3 legs past the 2 a meeting proposes not copied; 1 leg symbol outside the battle's portfolio and bench not copied; 2 diagnoses longer than ${MEETING_DIAGNOSIS_MAX} characters not copied; 1 meeting id longer than ${MEETING_ID_MAX} characters not copied`);
+    expect(meetingRowOmissionsOf(coverage.note)).toEqual({ legs: 3, legSymbols: 1, words: 2, ids: 1 });
+    expect(meetingRowOmissionsOf("1 leg past the 2 a meeting proposes not copied; 2 leg symbols outside the battle's portfolio and bench not copied")).toEqual({ legs: 1, legSymbols: 2, words: 0, ids: 0 });
+    expect(meetingRowOmissionsOf(`${RD3_FINAL}; 4 meetings past 26 in a day not copied`)).toEqual({ legs: 0, legSymbols: 0, words: 0, ids: 0 });
+    expect(meetingRowOmissionsOf(null)).toEqual({ legs: 0, legSymbols: 0, words: 0, ids: 0 });
+    expect(meetingRowOmissionsOf('12 legs past the 2 a meeting proposes not copied').legs).toBe(12);   // review SPR-T-9: every digit of the count
+  });
+
+  it('a REFUSED rewrite (RD-6) that would add omissions moves no part of the note: the stored row stands, and so does what is said of it', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-re3-rewrite' });
+    expect(tape.coverage.meetings).toMatchObject({ status: 'complete', note: null });
+    // the owner rewrites gpm_1 under its key: four legs, one off the roster, words past the bound
+    const rewritten = meeting('gpm_1', `${D}T15:10:00.000Z`, 'approved', [['ACN', 'QQQX'], ['MSFT', 'IBM'], ['NVDA', 'AMD'], ['XOM', 'CVX']], { diagnosis: 'w'.repeat(MEETING_DIAGNOSIS_MAX + 1) });
+    await refresh(fx, t, [HISTORY[0], rewritten, HISTORY[2]], NIGHT + 60_000);
+    const after = t.store.get(path(fx));
+    expect(after.meetings).toEqual(tape.meetings);
+    expect(after.coverage.meetings).toMatchObject({ status: 'complete', note: null, span: tape.coverage.meetings.span, preservedFrom: tape.writtenAt });
+  });
+
+  it('review SPR-W-2 — a stored meeting whose record is rewritten to an outcome the section does not copy is still held: the note does not call it "not copied"; a NEW such record still counts', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-re3-outcome' });
+    expect(tape.coverage.meetings).toMatchObject({ status: 'complete', note: null });
+    await refresh(fx, t, [HISTORY[0], { ...HISTORY[1], status: 'pending' }, HISTORY[2]], NIGHT + 60_000);
+    const after = t.store.get(path(fx));
+    expect(after.meetings).toEqual(tape.meetings);
+    expect(after.coverage.meetings).toMatchObject({ status: 'complete', note: null });
+    // a record of the day the section never held, with another outcome: counted, as before
+    await refresh(fx, t, [HISTORY[0], HISTORY[1], HISTORY[2], meeting('gpm_3', `${D}T18:00:00.000Z`, 'cancelled', [['ACN', 'ORCL']])], NIGHT + 120_000);
+    expect(t.store.get(path(fx)).coverage.meetings).toMatchObject({ status: 'partial', note: '1 meeting record of this day with an outcome other than approved, rejected or expired not copied' });
+  });
+
+  it('a stored row\'s dropped diagnosis keeps its note when the owner shortens the words under its key', async () => {
+    const long = meeting('gpm_1', `${D}T15:10:00.000Z`, 'rejected', [['ACN', 'ORCL']], { diagnosis: 'w'.repeat(MEETING_DIAGNOSIS_MAX + 1) });
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: [long, HISTORY[2]] }, { battleId: 'b-re3-words' });
+    const words = `1 diagnosis longer than ${MEETING_DIAGNOSIS_MAX} characters not copied`;
+    expect(tape.meetings[0].diagnosis).toBeNull();
+    expect(tape.coverage.meetings).toMatchObject({ status: 'partial', note: words });
+    await refresh(fx, t, [{ ...long, diagnosis: 'Short now.' }, HISTORY[2]], NIGHT + 60_000);
+    const after = t.store.get(path(fx));
+    expect(after.meetings[0].diagnosis).toBeNull();
+    expect(after.coverage.meetings).toMatchObject({ status: 'partial', note: words });
+    expect((await writeTapeDay(fx.battleId, fx.etDate, { db: t.db, now: NIGHT + 120_000 })).status).toBe('unchanged');
+  });
+
+  it('an appended meeting: the stored rows\' own counts and the new row\'s add up; the span covers every stored row', async () => {
+    const first = meeting('gpm_1', `${D}T15:10:00.000Z`, 'rejected', [['ACN', 'QQQX']]);
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: [first] }, { battleId: 'b-re3-append' });
+    expect(tape.coverage.meetings.note).toBe("1 leg symbol outside the battle's portfolio and bench not copied");
+    const later = meeting('gpm_5', `${D}T19:40:00.000Z`, 'expired', [['MSFT', 'QQQY'], ['NVDA', 'AMD'], ['XOM', 'CVX']]);
+    await refresh(fx, t, [first, later], NIGHT + 60_000);
+    const after = t.store.get(path(fx));
+    expect(after.meetings.map((m) => m.key)).toEqual([`gpm_1|${D}T15:10:00.000Z`, `gpm_5|${D}T19:40:00.000Z`]);
+    expect(after.coverage.meetings).toMatchObject({ status: 'partial', note: "1 leg past the 2 a meeting proposes not copied; 2 leg symbols outside the battle's portfolio and bench not copied", span: { from: `${D}T15:10:00.000Z`, to: `${D}T19:40:00.000Z` } });
+  });
+
+  it('the owner empties the history: the stored rows stand, and the span is still theirs (the read would have none)', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-re3-empty' });
+    await refresh(fx, t, [], NIGHT + 60_000);
+    const after = t.store.get(path(fx));
+    expect(after.meetings).toEqual(tape.meetings);
+    expect(after.coverage.meetings).toMatchObject({ status: 'complete', note: null, span: { from: `${D}T15:10:00.000Z`, to: `${D}T17:00:00.000Z` }, preservedFrom: tape.writtenAt });
+  });
+
+  it('the cap: what of the history the stored section does not hold is counted against the stored rows, never the read\'s own cap', async () => {
+    const plant = (i) => meeting(`plant_${String(i).padStart(2, '0')}`, `${D}T14:00:${String(i).padStart(2, '0')}.000Z`, 'approved', [['ACN', 'ORCL']]);
+    const { fx, t } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-re3-cap' });
+    await refresh(fx, t, [...HISTORY, ...Array.from({ length: 26 }, (_, i) => plant(i))], NIGHT + 60_000);
+    const after = t.store.get(path(fx));
+    expect(after.meetings).toHaveLength(MEETINGS_PER_DAY_MAX);
+    // the read holds 28 of the day; the section holds 26 of them (the two stored rows and 24 plants)
+    expect(after.coverage.meetings).toMatchObject({ status: 'partial', note: '2 meetings past 26 in a day not copied' });
+    expect(after.coverage.meetings.span.from).toBe(`${D}T14:00:00.000Z`);
+  });
+
+  it('a read that fails beside stored rows: the rows stand and the section is partial with the failure — never "unavailable" beside rows it holds', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-re3-fail' });
+    await refresh(fx, t, { 0: HISTORY[1] }, NIGHT + 60_000);
+    const after = t.store.get(path(fx));
+    expect(after.meetings).toEqual(tape.meetings);
+    expect(after.coverage.meetings).toMatchObject({ status: 'partial', note: 'the meeting history is not a list — no meeting could be read', span: tape.coverage.meetings.span, preservedFrom: tape.writtenAt });
+  });
+
+  it('nothing the merge reads of the meeting history is stored (`meetingsRead` is stripped on a fresh write and a merge)', async () => {
+    const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY }, { battleId: 'b-re3-strip' });
+    expect(Object.keys(tape)).not.toContain('meetingsRead');
+    await refresh(fx, t, [...HISTORY, meeting('gpm_9', `${D}T19:50:00.000Z`, 'expired', [['ACN', 'ORCL']])], NIGHT + 60_000);
+    expect(Object.keys(t.store.get(path(fx)))).not.toContain('meetingsRead');
+  });
+});
+
 describe('merge-monotone (BA-19): a meeting the tape holds is kept when a later read lacks it', () => {
   it('the owner empties the history; the refresh keeps both rows, and the coverage says they were preserved', async () => {
     const { fx, t, tape } = await dayWith({ gameplanMeetingHistory: HISTORY });
@@ -291,7 +396,8 @@ describe('the history is owner-writable: every copied value is checked, and what
 
   it('a history that is not a list: nothing read, the section unavailable with its reason — never a throw', () => {
     for (const raw of [{ 0: HISTORY[1] }, 'gpm', 42]) {
-      expect(buildMeetings({ battle: { portfolio: ROSTER, gameplanMeetingHistory: raw }, bounds })).toEqual({ rows: [], coverage: expect.objectContaining({ status: 'unavailable', note: 'the meeting history is not a list — no meeting could be read' }) });
+      const note = 'the meeting history is not a list — no meeting could be read';
+      expect(buildMeetings({ battle: { portfolio: ROSTER, gameplanMeetingHistory: raw }, bounds })).toEqual({ rows: [], coverage: expect.objectContaining({ status: 'unavailable', note }), read: { ok: false, note } });
     }
     expect(buildMeetings({ battle: {}, bounds }).coverage.status).toBe('complete');
   });

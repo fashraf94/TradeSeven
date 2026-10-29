@@ -23,7 +23,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { Coverage, MissingInputs, StoredNote, Quotation } from './FilmRoomKit';
-import { mounter, sep23Tape, clone, sweepNumbers, sweepWords, quoteDefects, boundQuotationOf, storedNoteDefects, boundStoredNoteOf, agentNameDefects, boundAgentNameOf, SPEC_STORED_NOTE_PATHS } from './__fixtures__/filmRoomHarness';
+import { mounter, sep23Tape, clone, sweepNumbers, sweepWords, quoteDefects, boundQuotationOf, storedNoteDefects, boundStoredNoteOf, agentNameDefects, boundAgentNameOf, SPEC_STORED_NOTE_PATHS, SPEC_FIXED_DIGIT_COPY } from './__fixtures__/filmRoomHarness';
 
 const box = (html) => { const el = document.createElement('div'); el.innerHTML = html; return el; };
 const m = mounter();
@@ -130,6 +130,72 @@ describe('Astra B2 — the stored-note number exemption is bound by path, never 
     m.render(<Coverage coverage={{ status: 'unavailable', note: 'one 73' }} />);
     expect(m.q('[data-stored-note]')).toBeNull();
     expect(sweepNumbers(m.container, { tape: noted('one 73') })).toEqual(['stray digit: “one 73”']);
+  });
+});
+
+describe('Astra\'s B2.1 review §4 item 2 (R-1) — a stored instant in a data-time span is a time, whole: the sweep matches the ISO instant before any clock inside it', () => {
+  const PRESERVED = '2026-09-22T02:15:30.000Z';   // Astra's repro: the multi-day Study view's coverage.checks.preservedFrom
+  const kept = () => { const t = clone(sep23Tape); t.coverage.checks.preservedFrom = PRESERVED; return t; };
+
+  it('the retained-timestamp control: Coverage renders coverage.checks.preservedFrom in a data-time span, and the number sweep finds nothing (the mutant: the old order — the clock first — reads it as a stray digit)', () => {
+    const tape = kept();
+    m.render(<Coverage doc={tape} at={['coverage', 'checks']} label="Checks" />);
+    const time = [...m.container.querySelectorAll('[data-time]')].find((e) => e.textContent === PRESERVED);
+    expect(time).toBeTruthy();
+    expect(sweepNumbers(m.container, { tape })).toEqual([]);
+  });
+
+  it('bites still: the same instant outside a data-time span; a digit beside the instant inside one; a clock-shaped fragment left over', () => {
+    const tape = kept();
+    expect(sweepNumbers(box(`<span>${PRESERVED}</span>`), { tape })).toEqual([`stray digit: “${PRESERVED}”`]);
+    expect(sweepNumbers(box(`<span data-time="">${PRESERVED} · 7</span>`), { tape })).toEqual([`stray digit: “${PRESERVED} · 7”`]);
+    expect(sweepNumbers(box('<span data-time="">2026-09-22T02:</span>'), { tape })).toEqual(['stray digit: “2026-09-22T02:”']);
+    // and the clock and date forms in a data-time span stay times, as before
+    expect(sweepNumbers(box('<span data-time="">2:15 PM · Sep 22</span>'), { tape })).toEqual([]);
+  });
+
+  it('review AL3-2: only the instant\'s own shape is a time — a digit run that merely ends in Z bites in a data-time span; every toISOString form, with or without seconds and milliseconds, is exempt', () => {
+    const tape = kept();
+    // review ALT-37/38/39: a four-digit fraction, no Z, a one-digit hour are not the instant's shape either
+    for (const loose of ['2026-09-22T47.5Z', '2026-09-22T9Z', '2026-09-22T1.5:47.3Z', '2026-09-22T02:15:30.0001Z', '2026-09-22T02:15:30.000', '2026-09-22T2:15Z']) {
+      expect(sweepNumbers(box(`<span data-time="">${loose}</span>`), { tape }), loose).toEqual([`stray digit: “${loose}”`]);
+    }
+    for (const instant of [PRESERVED, '2026-09-22T02:15:30Z', '2026-09-22T02:15Z', '2026-09-22T02:15:30.5Z']) {
+      expect(sweepNumbers(box(`<span data-time="">${instant}</span>`), { tape }), instant).toEqual([]);
+    }
+    // review ALT-40: every instant in the span, not the first alone
+    expect(sweepNumbers(box(`<span data-time="">${PRESERVED} – 2026-09-22T03:00:00.000Z</span>`), { tape })).toEqual([]);
+  });
+
+  it('review AL3-1: an attribute is always the screen\'s — a raw stored instant in an aria-label or a title bites, with or without its fraction; the attribute\'s clocks and dates stay times', () => {
+    const tape = kept();
+    for (const value of [PRESERVED, `Preserved from ${PRESERVED}`, '2026-09-22T02:15:30Z']) {
+      for (const attr of ['aria-label', 'title']) {
+        expect(sweepNumbers(box(`<button ${attr}="${value}">x</button>`), { tape }), `${attr} ${value}`).toEqual([`stray digit in ${attr}: “${value}”`]);
+      }
+    }
+    expect(sweepNumbers(box('<button aria-label="Check at 2:15 PM · Sep 22">x</button>'), { tape })).toEqual([]);
+  });
+});
+
+describe('B2.1 A8 (A2F1-7) — the fixed-digit copy is exempt by its copy key, whole, never by a phrase found inside other text', () => {
+  const mount = (html) => { m.container.innerHTML = html; return m.container; };
+  it('each pinned entry, alone, passes; RJ-6\x27s delay sentence among them', () => {
+    for (const text of Object.values(SPEC_FIXED_DIGIT_COPY)) {
+      const p = document.createElement('p'); p.textContent = text;
+      m.container.replaceChildren(p);
+      expect(sweepNumbers(m.container, {}), text).toEqual([]);
+    }
+    expect(SPEC_FIXED_DIGIT_COPY['FILM_ROOM_COPY.evidenceOverlayNote']).toContain('15–20 minutes');
+  });
+  it('the same phrases inside other words are stray digits — the string match this replaces passed them (the mutant)', () => {
+    for (const html of ['<p>the quote runs about 15–20 minutes behind the bars</p>', '<p>rebuilt from 1-minute bars, 3 of them</p>', '<p>nr7 nr7</p>', '<span title="market data · EODHD 1-minute bars">x</span>']) {
+      expect(sweepNumbers(mount(html), {}).length, html).toBeGreaterThan(0);
+    }
+  });
+  it('a pinned entry as an attribute (a marker\x27s label) passes; with a word added it does not', () => {
+    expect(sweepNumbers(mount(`<span title="${SPEC_FIXED_DIGIT_COPY['PROVENANCE_LABELS.market']}">x</span>`), {})).toEqual([]);
+    expect(sweepNumbers(mount(`<span aria-label="${SPEC_FIXED_DIGIT_COPY['PROVENANCE_LABELS.market']} 2">x</span>`), {}).length).toBeGreaterThan(0);
   });
 });
 

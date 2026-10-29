@@ -214,7 +214,13 @@
         "eodhd_1m"
       ],
       "preservedFrom": null,
-      "note": null
+      "note": null,
+      "notCharted": [
+        {
+          "symbol": "BTC",
+          "reason": "crypto_not_supported"
+        }
+      ]
     },
     "tags": {
       "status": "unavailable",

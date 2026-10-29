@@ -11,7 +11,7 @@ import {
   valueAt, classAt, numberAt, checkStateOf, checkRuns, riskLines, riskSummary, exitMakerOf, swapAnchor, swapOrdinals, deriveHoldings,
   directiveCardOf, rationaleTimeline, planGroups, evidenceMarkers, roleOf, deepSymbols, extremeBars, lastPointPath,
   fmtPoints, fmtPrice, fmtPriceDelta, etClock, etDateLabel, isRecordedScore, SCREEN_AGGREGATE_CLASSES, checkCounts,
-  fmtPercent, seriesFacts, pctTicks, tradingTimeline, lineRuns, linePath, forkRuns,
+  fmtPercent, seriesFacts, pctTicks, tradingTimeline, lineRuns, linePath, forkRuns, coverageSummaryOf,
 } from './filmRoomModel';
 import sep23Series from './__fixtures__/sep23.series.json';
 import { SPEC_AGGREGATE_CLASSES } from './__fixtures__/filmRoomHarness';
@@ -312,5 +312,24 @@ describe('formats (display only; the value is the tape\'s)', () => {
     expect(etClock(null)).toBeNull();
     expect(etDateLabel('2026-09-23')).toBe('Wed, Sep 23, 2026');
     expect(etDateLabel('2026-09-23', { short: true })).toBe('Sep 23');
+  });
+});
+
+describe('B2.1 A7 — coverageSummaryOf at its edges (review SPR-T-9)', () => {
+  const allComplete = () => {
+    const t = structuredClone(sep23Tape);
+    for (const k of Object.keys(t.coverage)) t.coverage[k] = { ...t.coverage[k], status: 'complete', note: null };
+    t.coverage.series.notCharted = [];
+    return t;
+  };
+  it('a status the screen does not know reads as unavailable', () => {
+    const t = allComplete();
+    t.coverage.actions = { ...t.coverage.actions, status: 'weird' };
+    expect(coverageSummaryOf(t)).toEqual({ status: 'unavailable', sections: [{ section: 'actions', status: 'unavailable', note: null, notCharted: 0 }] });
+  });
+  it('a series stored complete, a symbol not charted: partial by the count, and the stored note is not shown (no stored status put it there)', () => {
+    const t = allComplete();
+    t.coverage.series = { ...t.coverage.series, note: 'a note under complete', notCharted: [{ symbol: 'BTC', reason: 'crypto_not_supported' }] };
+    expect(coverageSummaryOf(t)).toEqual({ status: 'partial', sections: [{ section: 'series', status: 'partial', note: null, notCharted: 1 }] });
   });
 });

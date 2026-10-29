@@ -30,13 +30,21 @@
 //                   to the ledger path by the card's own id ("— you · time"),
 //                   the route and stage, what happens next — RG-5's sentence
 //                   for an open card, "nothing" for a retired or shelved one
-//                   (review L3-3) — and Retire.
+//                   (review L3-3) — and Retire. An open Set card's receipt
+//                   holds Set's link to the tempo dial where Amendment K RK-2,
+//                   as Amendment L RL-1 changes it (the battle's own agent),
+//                   allows it; the form never does (RK-3: a trip to the Forge
+//                   cannot discard an unfiled note). Where it links, Set's
+//                   sentence ends "A change applies from your next battle."
+//                   (Amendment L RL-5).
 //   since-last-time (header) each open Watch card with its recurrences since
 //                   the card's date, each opening its battle day and moment
-//                   here when it is this battle's, named "in another battle"
-//                   otherwise (RG-4; the App has no route to another battle's
-//                   Film Room — review L3-4); and My cards: active, shelved,
-//                   retired, with shelving explained in plain words.
+//                   here when it is this battle's (RG-4); one "in another
+//                   battle" opens THAT battle's Film Room day at its moment,
+//                   through App's P1c door (B2.1 B2, Amendment H RH-2), or
+//                   says it could not be read; and My cards: active, shelved,
+//                   retired, with shelving explained in plain words. The
+//                   moment a recurrence opened is marked in the prepared case.
 // Every number carries its marker (BA-42, R4(a): the screen's aggregates are
 // declared in SCREEN_AGGREGATE_CLASSES); every instant is marked as one, with
 // its date when it is not the shown day's (review L3-7); the note reaches the
@@ -49,12 +57,20 @@ import React, { useEffect, useId, useState } from 'react';
 import { SITUATIONS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { CARD_SLOTS } from '../../data/cardSlots';
+import { RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED } from '../../config/featureFlags';
+import { isCasualCloneId } from '../../constants/leagueTournament';
 import { etClock, etDateLabel, etWhen, fmtCount } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { C, eyebrow, foot, mono, plain, tint, AggNum, TapeNum, When, Rec, Coverage, Quotation, TextButton, PrimaryButton, Label } from './FilmRoomKit';
 import { tagsStateOf, momentsOfTape, momentKey, momentAnchor, tagsAtCheck, countPathOf, ledgerOf, groupCards, watchCardsOf } from './filmRoomCards';
 
 const T = COPY.cards;
+/**
+ * B2.1 B1 — the Forge area Set opens: hub S5's `FORGE_AREAS.CHARACTER`, where the tempo dial is. Held here as its
+ * value, because no module outside the hub's directory may import one (the hub's mount guard; S1 review L2-1); the
+ * card tests pin it to the hub's own constant through `forgeAreaOf`.
+ */
+const FORGE_CHARACTER_AREA = 'traits';
 const titleOf = (situationId) => SITUATIONS[situationId]?.title ?? situationId;
 const questionsFor = (situationId) => SITUATION_QUESTIONS.filter((q) => q.situationId === situationId);
 const noteLength = (s) => [...String(s ?? '').trim()].length;
@@ -64,6 +80,41 @@ const CONTROL_CHAR = /\p{Cc}/u;
 /** A stage or route word: the copy's, or the record's own value where the copy has none (never the screen's voice for an unknown id). */
 const wordOf = (table, id) => (Object.prototype.hasOwnProperty.call(table, id) ? table[id] : <Rec>{String(id)}</Rec>);
 const OPEN_STAGES = ['card', 'nominated'];
+
+/**
+ * B2.1 B1 (Amendment H RH-1; RJ-8) — the day's stagnation rule, as the tagger stored what it used
+ * (`tags.inputs.forcedRotation.enabled`): 'on' (Set links the tempo dial), 'off' (Set says no setting changes this
+ * situation for this archetype), or 'unknown' when the tape stores no such input (Set says only RG-5's sentence).
+ */
+export function setRuleOf(tape) {
+  const enabled = tape?.tags?.inputs?.forcedRotation?.enabled;
+  return enabled === true ? 'on' : enabled === false ? 'off' : 'unknown';
+}
+
+/**
+ * Build B Amendment K RK-2 (SPR-L-1, SPR-C-5), as Amendment L RL-1 changes it — what Set says for a day, and whether
+ * its link to the tempo dial may show: `{ say, link }`. `say` is the words after RG-5's sentence: 'ruleOff' (RJ-8's
+ * no-link sentence), 'noTempo' (the rule is on, the tape records no tempo — `tags.inputs.tempoDesired` null — and the
+ * battle ran on a casual clone, which the dial does not reach until the Command Center's clone build lands), or null
+ * (RG-5's sentence alone). `link` holds only when ALL of: the rule is on; the dial reaches the battle — its OWN agent
+ * (`agentId`, the battle document's, never the attribution parent the cards are filed under) is not a casual clone, or
+ * its tape records a tempo; and the Forge's Character tab and the tempo dial are both switched on
+ * (RELEASE3_CHARACTER_TAB_ENABLED, TEMPO_DIAL_ENABLED). An agent not known is not established as the ranked one: with
+ * no recorded tempo it reads as a clone's. Where the link shows is RK-3's: on a filed card's receipt, never the form.
+ */
+export function setStateOf(tape, agentId = null) {
+  const rule = setRuleOf(tape);
+  const tempo = tape?.tags?.inputs?.tempoDesired;
+  const recorded = typeof tempo === 'string' && tempo.length > 0;
+  const ranked = typeof agentId === 'string' && agentId.length > 0 && !isCasualCloneId(agentId);
+  if (rule === 'off') return { say: 'ruleOff', link: false };
+  if (rule !== 'on') return { say: null, link: false };
+  if (!ranked && !recorded) return { say: 'noTempo', link: false };
+  return { say: null, link: RELEASE3_CHARACTER_TAB_ENABLED === true && TEMPO_DIAL_ENABLED === true };
+}
+
+/** Set's words after RG-5's sentence, by setStateOf's `say`. */
+const setSayOf = (say) => (say === 'ruleOff' ? T.setRuleOff : say === 'noTempo' ? T.setNoTempo : null);
 
 /** A moment's facts: the symbol, its from–to as instants, its number of checks (derived). */
 function MomentFacts({ moment, size = 11.5 }) {
@@ -80,7 +131,8 @@ const regionStyle = { display: 'flex', flexDirection: 'column', gap: 8, padding:
 
 // ── prepared case (header) ──────────────────────────────────────────────────
 
-export function PreparedCase({ tape, onTakeHome }) {
+/** @param {string|null} [props.opened] B2.1 B2: the moment a recurrence opened (its momentKey) — marked as the one opened */
+export function PreparedCase({ tape, onTakeHome, opened = null }) {
   const state = tagsStateOf(tape);
   const moments = state === 'ready' ? momentsOfTape(tape) : [];
   return (
@@ -91,7 +143,7 @@ export function PreparedCase({ tape, onTakeHome }) {
       {state === 'ready' && !moments.length ? <span style={foot}>{T.momentsNone}</span> : null}
       {moments.length ? <span style={foot}>{T.momentsNote}</span> : null}
       {moments.map((m) => (
-        <div key={momentKey(m)} id={momentAnchor(m)} data-moment-row={momentKey(m)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '6px 0', borderTop: `1px solid ${C.hair}` }}>
+        <div key={momentKey(m)} id={momentAnchor(m)} data-moment-row={momentKey(m)} data-moment-opened={opened === momentKey(m) ? '' : undefined} aria-current={opened === momentKey(m) ? 'true' : undefined} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '6px 0', borderTop: `1px solid ${C.hair}`, ...(opened === momentKey(m) ? { boxShadow: `inset 3px 0 0 ${C.teal}`, paddingLeft: 8 } : null) }}>
           <MomentFacts moment={m} />
           <TextButton onClick={() => onTakeHome(m)}>{T.takeHome}</TextButton>
         </div>
@@ -132,9 +184,14 @@ export function CheckTags({ tape, index, onTakeHome }) {
  *                                   the counter ALONE (one source under one name; review L3-8); until it has answered
  *                                   the line is words
  * @param {Function} props.mintOpId  a fresh op id, minted ONCE per form (review L4-9)
+ * @param {string|null} [props.agentId] the battle's OWN agent (Amendment L RL-1) — never the attribution parent
  */
-export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel }) {
+export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel, agentId = null }) {
   const id = useId().replace(/[^A-Za-z0-9_-]/g, '');
+  // RH-1 / RJ-8 / Amendment K RK-2, as RL-1 changes it: what Set says for the day, read from the tape (what the tagger
+  // used) and the battle's own agent — the rule off, or on with a casual clone's battle recording no tempo, each said
+  // after RG-5's sentence. The form never holds the link (RK-3)
+  const setSay = setSayOf(setStateOf(tape, agentId).say);
   const questions = questionsFor(moment.situationId);
   const [questionId, setQuestionId] = useState(questions[0]?.id ?? null);
   const [route, setRoute] = useState('watch');
@@ -191,8 +248,7 @@ export function YourCall({ tape, moment, counter, mintOpId, onFile, onCancel }) 
             <input type="radio" name={`${id}-route`} value={r} checked={route === r} onChange={() => setRoute(r)} />
             <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span style={mono(11.5, C.ink, { fontWeight: 700 })}>{T.routes[r]}</span>
-              <span style={foot}>{T.routeNotes[r]}</span>
-              {r === 'set' ? <span style={foot}>{T.setRoute}</span> : null}
+              <span data-route-note={r} style={foot}>{T.routeNotes[r]}{r === 'set' && setSay ? <> {setSay}</> : null}</span>
             </span>
           </label>
         ))}
@@ -239,8 +295,15 @@ function nextOf(card) {
  *                                     (review L3-7)
  * @param {object}      props.counter  the hook's counter state `{ status, data }`
  * @param {Function}    props.mintOpId a fresh op id, minted ONCE per receipt (review L4-9)
+ * @param {object}      [props.tape]   the tape day the screen shows: Set's words and link (Amendment K RK-2, RK-3) are
+ *                                     judged from it only when it is the card's own source day; a card from any other
+ *                                     day says RG-5's sentence alone, with no link
+ * @param {Function}    [props.onOpenForge] App's Forge door (hub S5), `({ area })` — Set's link to the tempo dial
+ * @param {string|null} [props.agentId] the battle's OWN agent (Amendment L RL-1): the card's own `agentId`, and the
+ *                                     counter's `attributionAgentId`, are the attribution parent the card is filed
+ *                                     under — never read here (review AL1-2)
  */
-export function Receipt({ day = null, counter, card, mintOpId, onRetire }) {
+export function Receipt({ day = null, counter, card, mintOpId, onRetire, tape = null, onOpenForge = null, agentId = null }) {
   const data = counter?.status === 'ready' || counter?.data ? counter.data : null;
   const cards = ledgerOf(data, card);
   const live = cards.find((c) => c.entryId === card.entryId) ?? card;
@@ -258,13 +321,28 @@ export function Receipt({ day = null, counter, card, mintOpId, onRetire }) {
   };
   const next = nextOf(live);
   const canRetire = OPEN_STAGES.includes(live.stage) && !live.shelved;
+  // RK-2 / RK-3: an OPEN Set card's receipt says Set's words for its source day and holds the link where RK-2 (as
+  // RL-1 changes it) allows it — judged from the tape on screen, with the battle's own agent, only when that is the
+  // card's own day (battle and date); otherwise RG-5's sentence alone, which is true of every day
+  const ownDay = tape && live.source && tape.battleId === live.source.battleId && tape.etDate === live.source.etDate ? tape : null;
+  const set = live.route === 'set' && canRetire ? (ownDay ? setStateOf(ownDay, agentId) : { say: null, link: false }) : null;
+  const setSay = set ? setSayOf(set.say) : null;
+  // Amendment L RL-5: the link renders only here, beside a Forge door — and wherever it renders, Set's sentence ends
+  // with when a change applies; one condition for both, so the sentence never stands without the link or the reverse
+  const linked = Boolean(set?.link && onOpenForge);
   return (
     <section data-card-receipt={live.entryId} data-card-op={opId} id="receipt" style={regionStyle}>
       <span style={{ ...eyebrow, color: C.teal }}>{T.receipt} · {T.filedCard}</span>
       <CardFacts card={live} />
       <Quotation doc={ledger} path={['cards', live.entryId, 'note']} by="you" at={['cards', live.entryId, 'createdAt']} docLabel="ledger" />
       <span style={mono(11, C.ink2)}>{T.route} · {wordOf(T.routes, live.route)} · {T.stage} · {wordOf(T.stageWords, live.stage)}{live.shelved ? ` · ${T.groups.shelved}` : ''}</span>
-      {next ? <span data-card-next="" style={foot}>{next}</span> : null}
+      {next ? <span data-card-next="" style={foot}>{next}{setSay ? <> {setSay}</> : null}{linked ? <> {T.setNextBattle}</> : null}</span> : null}
+      {/* RH-1 / RJ-8 / RK-2 / RL-1: the one setting that reaches `stalled` is the tempo dial — linked only where the dial reaches the battle's agent */}
+      {linked ? (
+        <span data-set-link="">
+          <TextButton onClick={() => onOpenForge({ area: FORGE_CHARACTER_AREA })}>{T.setTempoLink}</TextButton>
+        </span>
+      ) : null}
       {canRetire ? <div style={{ display: 'flex' }}><PrimaryButton onClick={retire} disabled={busy}>{busy ? T.retiring : T.retire}</PrimaryButton></div> : null}
       {refusal ? <span data-card-refusal="" role="alert" style={{ ...foot, color: C.copper }}>{refusal}</span> : null}
     </section>
@@ -288,14 +366,27 @@ function RecurrenceFacts({ r }) {
   );
 }
 
-/** RG-4: this battle's recurrence opens its day and moment here; another battle's is named, since this screen opens no other battle. */
-function Recurrence({ r, own, onOpenMoment }) {
+/**
+ * RG-4: this battle's recurrence opens its day and moment here. B2.1 B2 (Amendment H RH-2): another battle's opens
+ * that battle's Film Room day at its moment — `onOpenBattle` reads the battle and answers false when it could not, and
+ * the row says so beside itself, nothing opened.
+ */
+function Recurrence({ r, own, onOpenMoment, onOpenBattle }) {
+  const [state, setState] = useState('idle');   // 'reading' while the battle is read; 'unreadable' after a failed read
   if (!own) {
+    const open = async () => {
+      setState('reading');
+      const ok = await Promise.resolve(onOpenBattle ? onOpenBattle(r) : false).catch(() => false);
+      if (!ok) setState('unreadable');   // on success the App opens the other battle, and this screen is gone
+    };
     return (
-      <span data-recurrence-row={recurrenceKey(r)} data-recurrence-elsewhere="" style={{ ...recurrenceRow, color: C.ink2 }}>
-        <RecurrenceFacts r={r} />
-        <span style={foot}>{T.otherBattle}</span>
-      </span>
+      <>
+        <button type="button" data-recurrence-row={recurrenceKey(r)} data-recurrence-elsewhere="" onClick={open} disabled={state === 'reading'} style={{ ...plain, ...recurrenceRow, color: C.teal, textAlign: 'left' }}>
+          <RecurrenceFacts r={r} />
+          <span style={foot}>{T.otherBattle}</span>
+        </button>
+        {state === 'unreadable' ? <span data-recurrence-unreadable="" role="status" style={{ ...foot, color: C.copper }}>{T.otherBattleUnreadable}</span> : null}
+      </>
     );
   }
   return (
@@ -319,27 +410,35 @@ function CardRow({ card, onShow }) {
 
 /**
  * @param {string|null} props.day       the day the screen shows (review L3-7)
- * @param {string|null} props.battleId  this battle — its recurrences open here, another battle's are named (RG-4)
+ * @param {string|null} props.battleId  this battle — its recurrences open here (RG-4); another battle's open that
+ *                                      battle through `onOpenBattle` (B2.1 B2, RH-2)
  * @param {object}      props.counter   the hook's counter state `{ status, data }`; data read earlier is kept through
  *                                      a failed re-read (review L4-4), with the error said beside it
  */
-export function SinceLastTime({ day = null, battleId = null, counter, onOpenMoment, onShowCard }) {
+export function SinceLastTime({ day = null, battleId = null, counter, onOpenMoment, onOpenBattle = null, onShowCard }) {
   const data = counter?.data ?? null;
   const cards = ledgerOf(data);
   const watching = watchCardsOf(data, cards);
   const groups = groupCards(cards);
   const loading = !data && (counter?.status === 'loading' || counter?.status === 'idle');
+  // B2.1 B3 (Amendment H RH-6; RJ-7's style): the days in the counter's window whose situations could not be read —
+  // neither counted nor listed as recurrences — said as one line with their count (derived), under the agent the
+  // counter answered for (Amendment K RK-1: the attribution agent — a casual clone's parent, never the clone)
+  const answeredFor = typeof data?.attributionAgentId === 'string' ? data.attributionAgentId : null;
+  const unread = answeredFor && Number.isInteger(data?.unavailableDays?.[answeredFor]) ? data.unavailableDays[answeredFor] : 0;
   return (
     <section data-cards-region="since-last-time" style={regionStyle}>
       <span style={{ ...eyebrow, color: C.teal }}>{T.sinceLastTime}</span>
       {loading ? <span style={foot}>{T.loading}</span> : null}
       {counter?.status === 'error' ? <span data-cards-read-error="" style={foot}>{T.readError}</span> : null}
+      {/* Amendment K RK-10: the line explains a Watch card's list, so it shows only beside one — with no open Watch card, no line */}
+      {unread > 0 && watching.length > 0 ? <span data-unavailable-days="" style={{ ...foot, display: 'inline-flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>{T.recurrencesWord} · <AggNum value={unread} aggregate="count(tape days with situations unavailable)" size={10} /> {T.unavailableDays(unread)}</span> : null}
       {data && !watching.length ? <span style={foot}>{T.noWatchCards}</span> : null}
       {watching.map(({ card: c, recurrences }) => (
         <div key={c.entryId} data-watch-card={c.entryId} style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 0', borderTop: `1px solid ${C.hair}` }}>
           <span style={mono(11, C.ink2)}>{titleOf(c.situationId)} · <Rec>{c.source?.symbol ?? ''}</Rec> · <When>{etWhen(c.createdAt, day) ?? ''}</When></span>
           <span style={{ ...eyebrow, color: C.ink3 }}>{T.recurrences}</span>
-          {recurrences.length ? recurrences.map((r) => <Recurrence key={recurrenceKey(r)} r={r} own={battleId !== null && r.battleId === battleId} onOpenMoment={onOpenMoment} />) : <span style={foot}>{T.noRecurrence}</span>}
+          {recurrences.length ? recurrences.map((r) => <Recurrence key={recurrenceKey(r)} r={r} own={battleId !== null && r.battleId === battleId} onOpenMoment={onOpenMoment} onOpenBattle={onOpenBattle} />) : <span style={foot}>{T.noRecurrence}</span>}
         </div>
       ))}
       {data ? (

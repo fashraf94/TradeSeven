@@ -83,6 +83,12 @@ export const SCREEN_AGGREGATE_CLASSES = Object.freeze({
   'slot(S9 open cards per agent)': 'recorded',
   'count(characters in the note)': 'derived',
   'slot(S10 note characters)': 'recorded',
+  // B2.1 A7 (Amendment J RJ-7): Glance's coverage line counts the symbols the candle pass did not chart — a count of
+  // stored rows (coverage.series.notCharted), so derived.
+  'count(coverage.series.notCharted[])': 'derived',
+  // B2.1 B3 (Amendment H RH-6): the counter's count of the days in its window whose situations could not be read —
+  // a count of tape days, derived
+  'count(tape days with situations unavailable)': 'derived',
 });
 
 /**
@@ -106,6 +112,41 @@ export function checkCounts(tape) {
   const seqs = [...range, ...(Array.isArray(close?.gaps) ? close.gaps.filter(Number.isInteger) : [])];
   const m = seqs.length && !unplaced ? Math.max(...seqs) - Math.min(...seqs) + 1 : null;
   return { n, m: m !== null && m >= n ? m : null };
+}
+
+// ── Glance's one coverage line (B2.1 A7; Amendment J RJ-7) ──────────────────
+
+/**
+ * The sections Glance's one line sums up, in the screen's order: every coverage section the v2 screen renders —
+ * `tags` aside (cards only, RG-2; the prepared case shows its own line) and `calls` aside (v2 renders no call).
+ */
+export const GLANCE_COVERAGE_SECTIONS = Object.freeze(['checks', 'actions', 'directives', 'meetings', 'plans', 'rationale', 'evidence', 'replay', 'series']);
+const COVERAGE_STATUS_RANK = Object.freeze({ unavailable: 0, partial: 1, complete: 2 });
+
+/**
+ * The day's coverage as ONE line (RJ-7): each section that is not complete, by its stored status — named on the line
+ * with its stored note — and the worst of them; none → "complete for every section". The series section counts the
+ * symbols the candle pass did not chart (its W5 list): a series section stored complete with any is read as partial,
+ * "n symbols not charted", n a derived count. A section the tape does not store (a tape written before that section
+ * was taped) is named on the line as absent — "not on this tape" — and the line is then not complete (R14; review
+ * SPR-S-2: skipping it said "complete for every section" of a tape that lacks one); an unknown status reads as
+ * unavailable.
+ */
+export function coverageSummaryOf(tape) {
+  const sections = [];
+  for (const section of GLANCE_COVERAGE_SECTIONS) {
+    const cov = tape?.coverage?.[section];
+    if (!isObj(cov)) { sections.push({ section, status: 'absent', note: null, notCharted: 0 }); continue; }
+    const stored = Object.prototype.hasOwnProperty.call(COVERAGE_STATUS_RANK, cov.status) ? cov.status : 'unavailable';
+    const notCharted = section === 'series' && Array.isArray(cov.notCharted) ? cov.notCharted.length : 0;
+    const status = stored === 'complete' && notCharted ? 'partial' : stored;
+    if (status === 'complete') continue;
+    sections.push({ section, status, note: stored !== 'complete' && typeof cov.note === 'string' && cov.note ? cov.note : null, notCharted });
+  }
+  // an absent section makes the line partial: the day is not covered in full, and nothing says it failed
+  const rankOf = (s) => (s === 'absent' ? 'partial' : s);
+  const status = sections.reduce((w, e) => (COVERAGE_STATUS_RANK[rankOf(e.status)] < COVERAGE_STATUS_RANK[w] ? rankOf(e.status) : w), 'complete');
+  return { status, sections };
 }
 
 // ── time (ET wall clock; instants stay the tape's strings) ──────────────────
@@ -339,24 +380,37 @@ export function checkRuns(tape) {
   return runs.map((r) => ({ ...r, count: r.indices.length }));
 }
 
+/**
+ * BA-7's words for a recorded risk decision — the screen's own copy, as a table the copy inventory pins key by key
+ * (B2.1 A8, A2F3-7, after CHECK_STATE_WORDS): the lead, the HOLD line, the none line, an unrecorded action.
+ */
+export const RISK_WORDS = Object.freeze({
+  recorded: 'Risk decision recorded:',
+  hold: 'Risk decision recorded: HOLD',
+  none: 'No risk decision recorded',
+  actionNotRecorded: 'not recorded',
+});
+/** One recorded risk decision's words: "Risk decision recorded: HOLD", or the action with its reason. */
+export const riskText = (action, reason) => (action === 'HOLD' ? RISK_WORDS.hold : `${RISK_WORDS.recorded} ${action}${str(reason) ? ` · ${reason}` : ''}`);
+
 /** BA-7 / BA-44 — a check's recorded risk decisions, one line per symbol; null → "No risk decision recorded". */
 export function riskLines(row) {
   const risk = row?.risk;
   if (!isObj(risk) || !Object.keys(risk).length) return null;
   return Object.keys(risk).sort().map((sym) => {
     const v = risk[sym] || {};
-    const action = str(v.action) ?? 'not recorded';
-    return { symbol: sym, text: action === 'HOLD' ? 'Risk decision recorded: HOLD' : `Risk decision recorded: ${action}${str(v.reason) ? ` · ${v.reason}` : ''}`, action };
+    const action = str(v.action) ?? RISK_WORDS.actionNotRecorded;
+    return { symbol: sym, text: riskText(action, v.reason), action };
   });
 }
 
 /** One summary line for a check's risk record (the strip and the rows). */
 export function riskSummary(row) {
   const lines = riskLines(row);
-  if (!lines) return 'No risk decision recorded';
+  if (!lines) return RISK_WORDS.none;
   const fired = lines.filter((l) => l.action !== 'HOLD');
-  if (!fired.length) return 'Risk decision recorded: HOLD';
-  return fired.map((l) => `${l.text.replace('Risk decision recorded: ', `Risk decision recorded: ${l.symbol} `)}`).join(' · ');
+  if (!fired.length) return RISK_WORDS.hold;
+  return fired.map((l) => `${l.text.replace(`${RISK_WORDS.recorded} `, `${RISK_WORDS.recorded} ${l.symbol} `)}`).join(' · ');
 }
 
 // ── actions (BA-6, BA-11, BA-38; Amendment E F1, BA-47) ─────────────────────
@@ -389,10 +443,12 @@ export function swapOrdinals(tape) {
  * folded into another maker (review A2L1-1).
  */
 export const EXIT_MAKER_WORDS = Object.freeze({
-  agent: Object.freeze({ short: 'agent', swap: 'the agent', exit: 'Exit by the agent · its own decision' }),
-  platform: Object.freeze({ short: 'rule', swap: 'a platform rule', exit: 'Exit by platform rule', noReason: 'rule not recorded' }),
-  gameplan: Object.freeze({ short: 'meeting', swap: 'the gameplan meeting', exit: 'Exit by the gameplan meeting' }),
-  unrecorded: Object.freeze({ short: 'not recorded', swap: 'a maker not recorded', exit: 'Exit maker not recorded' }),
+  // `entry` (B2.1 A4, FR-04; Amendment J RJ-4): the maker as the BOUGHT name's annotation says it — "by the agent",
+  // "by platform rule · {reason}"; the gameplan meeting's and an unrecorded maker's are this build's words, in kind
+  agent: Object.freeze({ short: 'agent', swap: 'the agent', exit: 'Exit by the agent · its own decision', entry: 'by the agent' }),
+  platform: Object.freeze({ short: 'rule', swap: 'a platform rule', exit: 'Exit by platform rule', noReason: 'rule not recorded', entry: 'by platform rule' }),
+  gameplan: Object.freeze({ short: 'meeting', swap: 'the gameplan meeting', exit: 'Exit by the gameplan meeting', entry: 'by the gameplan meeting' }),
+  unrecorded: Object.freeze({ short: 'not recorded', swap: 'a maker not recorded', exit: 'Exit maker not recorded', entry: 'maker not recorded' }),
 });
 /** The recorded mechanisms that are platform rules (each says "Exit by platform rule · <reason>"). */
 const PLATFORM_MECHANISMS = Object.freeze(['platform_risk_manager', 'archetype_rotation', 'guardrail']);
@@ -405,6 +461,22 @@ export function exitMakerOf(action) {
   if (PLATFORM_MECHANISMS.includes(m)) return { by: 'platform', label: `${W.platform.exit} · ${reason ?? W.platform.noReason}` };
   if (m === 'gameplan_meeting') return { by: 'gameplan', label: withReason(W.gameplan.exit) };
   return { by: 'unrecorded', label: withReason(W.unrecorded.exit) };
+}
+
+/**
+ * B2.1 A4 (FR-04; RJ-4) — who made the swap, as the BOUGHT name's annotation says it: never "Exit by …" on the name
+ * that came in. The same recorded mechanism as exitMakerOf, the same reason beside a platform rule. Since Amendment K
+ * RK-5 the chart's SOLD-name annotation reads the same makers ("Exit · {time} · {maker}"); exitMakerOf's words stay
+ * everywhere else (Glance, Study, the symbol's facts). Amendment L RL-4: the gameplan meeting reads "by the gameplan
+ * meeting" with no code after it (every real meeting swap records `gameplan_rotation`); a platform rule keeps its
+ * reason (RJ-4), and a maker not recorded keeps any it stored.
+ */
+export function entryMakerOf(action) {
+  const W = EXIT_MAKER_WORDS;
+  const { by } = exitMakerOf(action);
+  if (by === 'platform') return { by, label: `${W.platform.entry} · ${str(action?.exitReason) ?? W.platform.noReason}` };
+  const reason = by === 'agent' || by === 'gameplan' ? null : str(action?.exitReason);
+  return { by, label: reason ? `${W[by].entry} · ${reason}` : W[by].entry };
 }
 
 /** The last point of a path array (the close), as a concrete path into the tape, or null. */
@@ -442,12 +514,19 @@ export function forkRuns(list) {
  * at or after that check. When the two disagree, or no check recorded a risk
  * decision, the grid is not drawn and the reason is the coverage line.
  */
+/** The held set's coverage notes — the screen's own words, a table the copy inventory pins (B2.1 A8, A2F3-7). */
+export const HOLDINGS_NOTES = Object.freeze({
+  noRisk: 'no check recorded a risk decision this day, so the held set cannot be derived',
+  notReconciled: 'the recorded risk decisions and swaps of this day do not reconcile into a held set, so the grid is not drawn',
+  derived: 'derived from recorded values: the first and last checks\' risk decisions and the day\'s swaps',
+});
+
 export function deriveHoldings(tape) {
   const checks = Array.isArray(tape?.checks) ? tape.checks : [];
   const actions = Array.isArray(tape?.actions) ? tape.actions : [];
   const withRisk = checks.map((c, i) => ({ c, i })).filter(({ c }) => isObj(c.risk) && Object.keys(c.risk).length);
   if (!withRisk.length) {
-    return { status: 'unavailable', note: 'no check recorded a risk decision this day, so the held set cannot be derived', start: null, end: null, changes: [] };
+    return { status: 'unavailable', note: HOLDINGS_NOTES.noRisk, start: null, end: null, changes: [] };
   }
   const first = withRisk[0];
   const last = withRisk[withRisk.length - 1];
@@ -486,11 +565,11 @@ export function deriveHoldings(tape) {
   }
   const agrees = expectAtLast.size === lastKeys.size && [...expectAtLast].every((s) => lastKeys.has(s));
   if (!consistent || !agrees) {
-    return { status: 'unavailable', note: 'the recorded risk decisions and swaps of this day do not reconcile into a held set, so the grid is not drawn', start: null, end: null, changes: [] };
+    return { status: 'unavailable', note: HOLDINGS_NOTES.notReconciled, start: null, end: null, changes: [] };
   }
   return {
     status: 'derived',
-    note: 'derived from recorded values: the first and last checks\' risk decisions and the day\'s swaps',
+    note: HOLDINGS_NOTES.derived,
     start: { at: first.c.at, symbols: slots.map((x) => x.start) },
     end: { at: last.c.at, symbols: slots.map((x) => x.end) },
     slots,
@@ -505,9 +584,43 @@ export function deriveHoldings(tape) {
  * (canonicalText, retainedDirectiveText) is never composed into them: it renders as a quotation of its own path
  * (Amendment E addendum 2, R7; review A2A1-5).
  */
+export const DIRECTIVE_CARD_WORDS = Object.freeze({ filed: 'Directive filed', notFiled: 'No new directive filed' });
 export function directiveCardOf(d) {
-  if (d?.cardState === 'committed') return { filed: true, title: 'Directive filed' };
-  return { filed: false, title: 'No new directive filed' };
+  if (d?.cardState === 'committed') return { filed: true, title: DIRECTIVE_CARD_WORDS.filed };
+  return { filed: false, title: DIRECTIVE_CARD_WORDS.notFiled };
+}
+
+// ── meetings (Build B spec §3 T2; Amendment J RJ-1) ─────────────────────────
+
+/** The anchor each meeting card is addressable by: `meeting-1`, `meeting-2`, … for its place in the stored section. */
+export const meetingAnchor = (i) => `meeting-${i + 1}`;
+
+/**
+ * The day's meetings as the screen may show them: 'absent' — the tape has no meetings section at all (no
+ * `coverage.meetings`: written before the meetings were taped), said as an absence (R14); 'ready' otherwise.
+ */
+export const meetingsStateOf = (tape) => (isObj(tape?.coverage?.meetings) ? 'ready' : 'absent');
+
+/**
+ * The meeting a run of "plan pending · awaiting approval" checks waits on, matched by INSTANTS, never by the day: the
+ * run's first check falls inside the meeting's life — at or after its `createdAt`, at or before its `resolvedAt`, else
+ * its stored deadline (`expiresAt`). A meeting whose life the record cannot bound (no created instant, or neither a
+ * resolved instant nor a deadline) matches nothing; of several, the latest created. Its index in `tape.meetings`, or
+ * null.
+ */
+export function meetingOfRun(tape, run) {
+  if (run?.group !== 'gameplan_pending') return null;
+  const from = toMs(run.from);
+  if (from === null) return null;
+  const meetings = Array.isArray(tape?.meetings) ? tape.meetings : [];
+  let best = null;
+  meetings.forEach((m, i) => {
+    const created = toMs(m?.createdAt);
+    const end = toMs(m?.resolvedAt) ?? toMs(m?.expiresAt);
+    if (created === null || end === null || from < created || from > end) return;
+    if (best === null || created >= toMs(meetings[best].createdAt)) best = i;
+  });
+  return best;
 }
 
 // ── rationale timeline (BA-46) ──────────────────────────────────────────────
@@ -560,6 +673,18 @@ export function deepSymbols(tape, seriesDocs, holdings) {
   return order;
 }
 
+/**
+ * B2.1 A2 (FR-02; RJ-2): the reason the tape records for a symbol it did not chart — the candle pass's W5 list,
+ * `coverage.series.notCharted` — when it is one the screen has words for (`known`); null when the tape records none
+ * (a day no candle pass wrote, a tape from before W5) or one the screen does not know: the plain sentence then.
+ */
+export function notChartedReasonOf(tape, symbol, known) {
+  const list = tape?.coverage?.series?.notCharted;
+  if (!Array.isArray(list)) return null;
+  const hit = list.find((e) => isObj(e) && e.symbol === symbol);
+  return hit && typeof hit.reason === 'string' && Object.prototype.hasOwnProperty.call(known, hit.reason) ? hit.reason : null;
+}
+
 /** BA-43 — the evidence stamps recorded for `symbol`, one per check that carries one, with the check's index. */
 export function evidenceMarkers(tape, symbol) {
   const out = [];
@@ -572,26 +697,52 @@ export function evidenceMarkers(tape, symbol) {
   return out;
 }
 
+/**
+ * B2.1 A2 (RJ-2; review SPR-S-4): the checks that hold a recorded price for `symbol` — EVERY one, its stamp instant
+ * recorded or not: that rule places a marker on a chart (evidenceMarkers); a row of the no-chart list is labelled by its
+ * check's own time. `{ index }` per check, in the tape's order.
+ */
+export function recordedPricesOf(tape, symbol) {
+  const out = [];
+  (Array.isArray(tape?.checks) ? tape.checks : []).forEach((c, index) => {
+    const e = isObj(c?.evidence) ? c.evidence[symbol] : null;
+    if (isObj(e) && isNum(e.px)) out.push({ index });
+  });
+  return out;
+}
+
+/** A symbol's role words — the screen's own copy, a table the copy inventory pins key by key (B2.1 A8, A2F3-7). */
+export const ROLE_WORDS = Object.freeze({
+  exitedAt: 'exited at',
+  enteredAt: 'entered at',
+  unrecordedTime: 'an unrecorded time',
+  swapBy: 'a swap by',
+  held: 'held at the first and the last risk record',
+  planned: 'named in a plan',
+  series: 'price series',
+});
+
 /** The role a symbol had on the day, from the tape's own rows (never guessed). */
 export function roleOf(tape, symbol, holdings) {
+  const W = ROLE_WORDS;
   const actions = Array.isArray(tape?.actions) ? tape.actions : [];
   const exited = actions.map((a, i) => ({ a, i })).find(({ a }) => a.symbolOut === symbol);
   const entered = actions.map((a, i) => ({ a, i })).find(({ a }) => a.symbolIn === symbol);
   // A recorded swap is stated before "held": a name bought before the first risk record is in the
   // start set too, and must never read as held all along (review A2V1-11).
-  if (exited) return { kind: 'exited', text: `exited at ${etClock(exited.a.at) ?? 'an unrecorded time'} · ${exitMakerOf(exited.a).label}`, action: exited.i };
+  if (exited) return { kind: 'exited', text: `${W.exitedAt} ${etClock(exited.a.at) ?? W.unrecordedTime} · ${exitMakerOf(exited.a).label}`, action: exited.i };
   if (entered) {
     // The tape records who made the EXIT of the swap that brought the name in, not who chose it (review A2L1-12).
     const who = exitMakerOf(entered.a);
-    const by = `a swap by ${EXIT_MAKER_WORDS[who.by].swap}${who.by === 'platform' && entered.a.exitReason ? ` · ${entered.a.exitReason}` : ''}`;
-    return { kind: 'entered', text: `entered at ${etClock(entered.a.at) ?? 'an unrecorded time'} · ${by}`, action: entered.i };
+    const by = `${W.swapBy} ${EXIT_MAKER_WORDS[who.by].swap}${who.by === 'platform' && entered.a.exitReason ? ` · ${entered.a.exitReason}` : ''}`;
+    return { kind: 'entered', text: `${W.enteredAt} ${etClock(entered.a.at) ?? W.unrecordedTime} · ${by}`, action: entered.i };
   }
   if (holdings?.status === 'derived' && holdings.start.symbols.includes(symbol) && holdings.end.symbols.includes(symbol)) {
-    return { kind: 'held', text: 'held at the first and the last risk record', action: null };
+    return { kind: 'held', text: W.held, action: null };
   }
   const planned = (Array.isArray(tape?.plans) ? tape.plans : []).some((p) => p.symbol === symbol);
-  if (planned) return { kind: 'planned', text: 'named in a plan', action: null };
-  return { kind: 'series', text: 'price series', action: null };
+  if (planned) return { kind: 'planned', text: W.planned, action: null };
+  return { kind: 'series', text: W.series, action: null };
 }
 
 /**

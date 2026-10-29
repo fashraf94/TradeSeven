@@ -46,10 +46,10 @@
 
 import { createHash } from 'node:crypto';
 import { COVERAGE_RANK, CANDLE_COVERAGE_SECTIONS, REPLAY_VERSION_NOTE, AWAITING_CANDLES_NOTE } from '../../../src/constants/filmTape.js';
-import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf, MEETINGS_PER_DAY_MAX } from './tapeAssemble.js';
+import { orderChecks, afterOf, subsequentTradesInSlot, battleResultOf, noCheckRan, meetingsCoverageOf, MEETINGS_PER_DAY_MAX } from './tapeAssemble.js';
 import { candleInputFingerprint, changedInputParts, replayLogicVersionOf, REPLAY_LOGIC_VERSION } from './candleInputs.js';
 import { toMs, etDayBounds } from './tapeTime.js';
-import { modernNotes } from './tapeNotes.js';
+import { modernNotes, NOTES } from './tapeNotes.js';
 import { fitTapeToBudget, TAPE_SIZE_BUDGET_BYTES } from './tapeSize.js';
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -306,7 +306,10 @@ const UNOBSERVED = `${UNRESOLVED_DEPENDENCY}: a read assembled before this secti
  * dependencies changed it adds one. Every other CAVEAT — a fact about the day's record that
  * either run learned (a truncated deferral list, a gap, an unknown check) —
  * always lowers it: caveats are unioned and never dropped, the note carries
- * every one, and the status is at most `partial` while any stands. So the
+ * every one, and the status is at most `partial` while any stands — with ONE
+ * exception, applied after this union to the checks section alone: an
+ * unattributed-gap caveat the tape's own stored rows prove wrong (Build B
+ * Amendment K RK-9, attributedCaveats). So the
  * status is the lower of what the later run can vouch for and what the
  * earlier run recorded. `unknownChecks` keeps the larger count.
  */
@@ -347,6 +350,58 @@ function mergeCoverage(section, storedDoc, newCov, carried, { limits = [], depen
     base.unknownChecks = Math.max(Number.isInteger(storedCov.unknownChecks) ? storedCov.unknownChecks : 0, Number.isInteger(newCov?.unknownChecks) ? newCov.unknownChecks : 0);
   }
   return base;
+}
+
+/** The seqs an unattributed-gap caveat names (NOTES.gapsUnattributed), or null when `text` is not one — checked by composing it back. */
+function unattributedSeqsOf(text) {
+  const m = typeof text === 'string' ? /\(tickSeq ([\d, ]+)\)$/.exec(text) : null;
+  if (!m) return null;
+  const seqs = m[1].split(', ').map(Number);
+  return seqs.every(Number.isInteger) && NOTES.gapsUnattributed(seqs.length, m[1]) === text ? seqs : null;
+}
+
+/**
+ * Build B Amendment K RK-9 (X3-5) — THE STORED ATTRIBUTION STANDS. The checks section's unattributed-gap caveat names
+ * minted seqs whose day a read could not tell ("… adjacent to this day has no record and its day cannot be
+ * established"). A seq the tape's own rows attribute to the day — its recorded tick row, or its gap row (`no_record`,
+ * or the entry standing for it: the merged `gaps`), together `attributed`, the same set the passes' `unattributedGaps`
+ * is filtered by — was told by the first write, made before the next session began, so the seq was minted on that day;
+ * a later read that can no longer tell it does not override it. Such a caveat is rewritten to name only the rest, or
+ * dropped when none is left — in `caveats` and in the note alike. This is the one exception to "caveats are unioned and
+ * never dropped" (mergeCoverage): a caveat the tape's own rows prove wrong. Every other caveat, and every other part of
+ * the note, stays exactly as the union left it: only a REWRITTEN caveat is deduplicated — against the parts left
+ * untouched and the rewrites before it — because a note part may be a fragment of a longer caveat that holds '; '
+ * itself (NOTES.entryOnly; review KR3-1). A section with no such caveat comes back as it was.
+ */
+function attributedCaveats(cov, attributed) {
+  if (!isObj(cov) || !attributed.size) return cov;
+  let moved = false;
+  const fix = (text) => {
+    const seqs = unattributedSeqsOf(text);
+    if (!seqs) return text;
+    const rest = seqs.filter((s) => !attributed.has(s));
+    if (rest.length === seqs.length) return text;
+    moved = true;
+    return rest.length ? NOTES.gapsUnattributed(rest.length, rest.join(', ')) : null;
+  };
+  const fixAll = (list) => {
+    const fixed = list.map((text) => ({ text, out: fix(text) }));
+    const seen = new Set(fixed.filter((f) => f.out === f.text).map((f) => f.text));
+    const out = [];
+    for (const f of fixed) {
+      if (f.out === null) continue;
+      if (f.out !== f.text) { if (seen.has(f.out)) continue; seen.add(f.out); }
+      out.push(f.out);
+    }
+    return out;
+  };
+  const caveats = Array.isArray(cov.caveats) ? fixAll(cov.caveats) : null;
+  const parts = typeof cov.note === 'string' ? fixAll(cov.note.split('; ')) : null;
+  if (!moved) return cov;
+  const out = { ...cov };
+  if (caveats) out.caveats = caveats;
+  if (parts) out.note = parts.join('; ') || null;
+  return out;
 }
 
 function keySet(rows) { return new Set((Array.isArray(rows) ? rows : []).map((r) => r?.key).filter(Boolean)); }
@@ -409,8 +464,9 @@ function battleWinner(stored, assembled, canonicalBattle) {
  * @returns {{ doc: object, changed: boolean, carried: object }}
  */
 export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonicalBattle = false, resolveResult = null, tagDay = null, sizeBudget = TAPE_SIZE_BUDGET_BYTES }) {
-  // The read's limits (BA-26 amended) steer the coverage merge; they are never stored.
-  const { readLimits = {}, ...assembled } = isObj(assembledIn) ? assembledIn : {};
+  // The read's limits (BA-26 amended) steer the coverage merge, and what it saw of the meeting history (RE-3) the
+  // meetings' coverage; neither is ever stored.
+  const { readLimits = {}, meetingsRead = null, ...assembled } = isObj(assembledIn) ? assembledIn : {};
   const isSkipped = assembled?.passes?.close?.status === 'skipped_mode';
   if (!isObj(stored) || !isObj(stored.passes?.close)) {
     const doc = { ...assembled, writtenAt: nowIso, firstWrittenAt: nowIso, runCount: 1 };
@@ -498,6 +554,8 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       stored: block.result?.basis === 'stored' ? block.result.value : null,
       final,
       noOpponent,
+      // B2.1 A3 (RJ-3): the note's words read the MERGED day's checks (noCheckRan), as the result does its scores
+      noCheck: noCheckRan(merged.checks),
       derive: (f) => {
         // v2 Ruling 16: a measured-model block keeps the result its assembly
         // derived from the full battle (the corrected gate); the merge holds
@@ -532,7 +590,11 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
     ...merged.checks.filter((r) => r.state === 'no_record' && Number.isInteger(r.tickSeq)).map((r) => r.tickSeq),
     ...(assembled.passes.close.gaps || []),
   ])].filter((g) => !seqs.includes(g)).sort((a, b) => a - b);
-  const unattributed = (assembled.passes.close.unattributedGaps || []).filter((s) => !seqs.includes(s));
+  // RK-9 (X3-5): a seq the merged rows attribute to the day — recorded, or held as the day's own gap — is never also
+  // listed as unattributed: the stored attribution stands against a later read that can no longer tell the seq's day.
+  // The same set judges the checks section's unattributed caveat below (attributedCaveats).
+  const attributed = new Set([...seqs, ...gaps]);
+  const unattributed = (assembled.passes.close.unattributedGaps || []).filter((s) => !attributed.has(s));
   const entryOnly = merged.checks.some((r) => r.rowSource === 'entry');
   merged.passes = {
     close: {
@@ -565,6 +627,9 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       observed: sectionDependsOn(section, assembled),
     });
   }
+  // RK-9 (X3-5): the checks section's unattributed caveat follows the same attributed seqs — the one caveat the tape's
+  // own rows can prove wrong (attributedCaveats); every other caveat stays as the union left it
+  merged.coverage.checks = attributedCaveats(merged.coverage.checks, attributed);
   // BA-38 (review AD2-2): the replays an earlier replay logic built, by swap.
   const outdated = (merged.actions || []).filter((a) => builtByEarlierLogic(a?.replay)).map((a) => `${a.symbolOut} → ${a.symbolIn}`);
   for (const section of CANDLE_COVERAGE_SECTIONS) {
@@ -578,9 +643,6 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
     if (isObj(cov) && closedOutNote(cov.note, merged.passes.candles) !== cov.note) cov = { ...cov, note: closedOutNote(cov.note, merged.passes.candles) };
     merged.coverage[section] = cov;
   }
-  // B1 T2: the meetings' coverage is the new read's — the history only grows
-  // (an append-only list) — preserved from the stored copy for any row it kept.
-  let meetingsCov = assembled.coverage?.meetings ?? stored.coverage?.meetings ?? null;
   // B1 review B-2: the day's cap holds for the MERGED rows too, so re-planted
   // meetings never grow the section across refreshes. Amendment D RD-6: the
   // cap keeps the stored rows first, then the new ones by creation time (the
@@ -593,9 +655,14 @@ export function mergeTape(stored, assembledIn, { nowIso, withinWindow, canonical
       ...merged.meetings.filter((m) => !storedMeetings.has(m.key)),
     ].slice(0, MEETINGS_PER_DAY_MAX));
     merged.meetings = merged.meetings.filter((m) => keep.has(m));
-    const kept = String(meetingsCov?.note ?? '').split('; ').filter((part) => part && !/ past \d+ in a day not copied$/.test(part));
-    meetingsCov = { ...(isObj(meetingsCov) ? meetingsCov : {}), status: 'partial', note: [...kept, `${meetingOverflow === 1 ? '1 meeting' : `${meetingOverflow} meetings`} past ${MEETINGS_PER_DAY_MAX} in a day not copied`].join('; ') };
   }
+  // Build B Amendment E RE-3: the meetings' coverage describes the rows the tape STORES — its span theirs, its note
+  // the stored rows' own omissions as the stored note states them, those of each row this read adds, and what of the
+  // history as this read saw it the section does not hold — so a refused rewrite (RD-6) moves none of it
+  // (tapeAssemble.js meetingsCoverageOf). A read with no account of what it saw (none handed in) keeps the read's own.
+  const meetingsCov = meetingsRead
+    ? meetingsCoverageOf({ rows: merged.meetings, read: meetingsRead, storedRows: stored.meetings, storedNote: stored.coverage?.meetings?.note ?? null })
+    : (assembled.coverage?.meetings ?? stored.coverage?.meetings ?? null);
   if (isObj(meetingsCov)) {
     merged.coverage.meetings = carriedAny(carried.meetings)
       ? { ...meetingsCov, preservedFrom: stored.coverage?.meetings?.preservedFrom ?? stored.writtenAt ?? null }

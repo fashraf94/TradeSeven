@@ -862,39 +862,48 @@ function rosterOf(battle) {
  * `finalDay` (Build B Amendment D, RD-3): the tape day is the last entry of
  * the battle's validated timeline (tradingTimeline). It picks the words the
  * coverage note says of a meeting not yet filed; nothing else reads it.
+ *
+ * `read` (Build B Amendment E RE-3) is what this read saw, for the merge only
+ * (tapeMerge.js strips it before anything is written): every recognised row of
+ * the day by key, the cap's included (`keys`); what of each COPIED row was not
+ * copied (`omitted`, by key); the unfiled meeting's note; the unrecognised
+ * records. The merge describes the rows the tape stores from it
+ * (meetingsCoverageOf). A read that failed is `{ ok: false, note }`.
  */
 export function buildMeetings({ battle, bounds, finalDay = false }) {
   const raw = battle?.gameplanMeetingHistory;
-  const notes = [];
   if (raw !== undefined && raw !== null && !Array.isArray(raw)) {
-    return { rows: [], coverage: coverageOf('unavailable', { sources: ['gameplanMeetingHistory'], note: 'the meeting history is not a list — no meeting could be read' }) };
+    const note = 'the meeting history is not a list — no meeting could be read';
+    return { rows: [], coverage: coverageOf('unavailable', { sources: MEETING_SOURCES, note }), read: { ok: false, note } };
   }
   const history = historyListOf(raw).filter(isObj);
   const ofDay = history.filter((m) => inDay(instant(m.createdAt), bounds));
   const rows = [];
-  let unrecognised = 0;
-  let legsDropped = 0;
-  let wordsDropped = 0;
-  let idsDropped = 0;
-  let offRoster = 0;
+  const omittedOf = [];   // per row, in `rows` order: what of that meeting was not copied
+  const unrecognised = [];   // each record with another outcome, by the key its row would carry (review SPR-W-2)
   const roster = rosterOf(battle);
-  const legSymbol = (v) => {
-    const t = ticker(v);
-    if (t !== null && !roster.has(t)) { offRoster += 1; return null; }
-    return t;
-  };
   const seen = {};
   for (const m of ofDay.sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt))) {
-    if (!MEETING_STATUSES.includes(m.status)) { unrecognised += 1; continue; }
+    if (!MEETING_STATUSES.includes(m.status)) {
+      const mid = str(m.id);
+      unrecognised.push(`${mid && mid.length <= MEETING_ID_MAX ? mid : 'meeting'}|${m.createdAt}`);
+      continue;
+    }
+    const omitted = { ...NO_MEETING_OMISSIONS };
+    const legSymbol = (v) => {
+      const t = ticker(v);
+      if (t !== null && !roster.has(t)) { omitted.legSymbols += 1; return null; }
+      return t;
+    };
     const allLegs = meetingLegsOf(m);
-    legsDropped += Math.max(0, allLegs.length - MEETING_LEGS_MAX);
+    omitted.legs = Math.max(0, allLegs.length - MEETING_LEGS_MAX);
     const legs = allLegs.slice(0, MEETING_LEGS_MAX).map(({ leg }) => ({ symbolOut: legSymbol(leg.symbolOut), symbolIn: legSymbol(leg.symbolIn) }));
     const diagnosis = str(m.diagnosis);
-    if (diagnosis && diagnosis.length > MEETING_DIAGNOSIS_MAX) wordsDropped += 1;
+    if (diagnosis && diagnosis.length > MEETING_DIAGNOSIS_MAX) omitted.words = 1;
     const resolvedBy = str(m.resolvedBy);
     // B1 review B-1: every copied string is bounded — the id too, so no planted value can grow the tape past Firestore's limit
     const id = str(m.id);
-    if (id && id.length > MEETING_ID_MAX) idsDropped += 1;
+    if (id && id.length > MEETING_ID_MAX) omitted.ids = 1;
     const base = `${id && id.length <= MEETING_ID_MAX ? id : 'meeting'}|${m.createdAt}`;
     seen[base] = (seen[base] ?? 0) + 1;
     rows.push({
@@ -907,9 +916,9 @@ export function buildMeetings({ battle, bounds, finalDay = false }) {
       legs,
       diagnosis: diagnosis && diagnosis.length <= MEETING_DIAGNOSIS_MAX ? diagnosis : null,
     });
+    omittedOf.push(omitted);
   }
   const kept = rows.slice(0, MEETINGS_PER_DAY_MAX);
-  const overflow = rows.length - kept.length;
   // The meeting on the battle is not filed yet, whatever its status says: the
   // evaluator files it into the history at the next check (an unanswered one
   // expires at its deadline but is filed the next morning; a player's answer
@@ -918,19 +927,85 @@ export function buildMeetings({ battle, bounds, finalDay = false }) {
   // pass re-merges this day once it is filed (RC-3); on the final day there is
   // no next check, and completion does not file a pending meeting, so it never
   // reaches the history.
-  const unfiled = meetingOf(battle?.gameplanMeeting);
-  if (unfiled && inDay(instant(unfiled.createdAt), bounds)) notes.push(finalDay ? UNFILED_FINAL_DAY_NOTE : UNFILED_EARLIER_DAY_NOTE);
-  if (unrecognised) notes.push(`${counted(unrecognised, 'meeting record', 'meeting records')} of this day with an outcome other than approved, rejected or expired not copied`);
-  if (legsDropped) notes.push(`${counted(legsDropped, 'leg', 'legs')} past the ${MEETING_LEGS_MAX} a meeting proposes not copied`);
-  if (offRoster) notes.push(`${counted(offRoster, 'leg symbol', 'leg symbols')} outside the battle's portfolio and bench not copied`);
-  if (wordsDropped) notes.push(`${counted(wordsDropped, 'diagnosis', 'diagnoses')} longer than ${MEETING_DIAGNOSIS_MAX} characters not copied`);
-  if (idsDropped) notes.push(`${counted(idsDropped, 'meeting id', 'meeting ids')} longer than ${MEETING_ID_MAX} characters not copied`);
-  if (overflow) notes.push(`${counted(overflow, 'meeting', 'meetings')} past ${MEETINGS_PER_DAY_MAX} in a day not copied`);
-  const span = spanOf(kept.map((m) => m.createdAt));
-  return {
-    rows: kept,
-    coverage: coverageOf(notes.length ? 'partial' : 'complete', { span, sources: ['gameplanMeetingHistory', 'gameplanMeeting'], note: notes.join('; ') || null }),
+  const unfiledMeeting = meetingOf(battle?.gameplanMeeting);
+  const unfiled = unfiledMeeting && inDay(instant(unfiledMeeting.createdAt), bounds) ? (finalDay ? UNFILED_FINAL_DAY_NOTE : UNFILED_EARLIER_DAY_NOTE) : null;
+  const read = {
+    ok: true, keys: rows.map((r) => r.key), omitted: Object.fromEntries(kept.map((r, i) => [r.key, omittedOf[i]])), unfiled, unrecognised,
   };
+  // A fresh section is exactly the rows this read keeps: the stored-rows rule over no stored rows (RE-3).
+  return { rows: kept, coverage: meetingsCoverageOf({ rows: kept, read }), read };
+}
+
+/** The meetings section's sources: the history it copies from, and the pending meeting it names when unfiled. */
+const MEETING_SOURCES = Object.freeze(['gameplanMeetingHistory', 'gameplanMeeting']);
+/** What of one copied meeting was not copied: legs past the two, leg symbols off the roster, its words, its id. */
+const NO_MEETING_OMISSIONS = Object.freeze({ legs: 0, legSymbols: 0, words: 0, ids: 0 });
+
+/**
+ * Build B Amendment E RE-3 — the parts of the meetings note that describe the COPIED ROWS' own content, in the
+ * note's order: each says what of the stored rows was not copied, so each is decided by the read that copied the
+ * row, and never moves after (RD-6: a copied row is permanent). `parse` reads one back from a stored note — the
+ * stored rows' own counts — with the same words it was written in.
+ */
+const MEETING_ROW_PARTS = Object.freeze([
+  { key: 'legs', write: (n) => `${counted(n, 'leg', 'legs')} past the ${MEETING_LEGS_MAX} a meeting proposes not copied`, parse: /^(\d+) legs? past the \d+ a meeting proposes not copied$/ },
+  { key: 'legSymbols', write: (n) => `${counted(n, 'leg symbol', 'leg symbols')} outside the battle's portfolio and bench not copied`, parse: /^(\d+) leg symbols? outside the battle's portfolio and bench not copied$/ },
+  { key: 'words', write: (n) => `${counted(n, 'diagnosis', 'diagnoses')} longer than ${MEETING_DIAGNOSIS_MAX} characters not copied`, parse: /^(\d+) diagnos(?:is|es) longer than \d+ characters not copied$/ },
+  { key: 'ids', write: (n) => `${counted(n, 'meeting id', 'meeting ids')} longer than ${MEETING_ID_MAX} characters not copied`, parse: /^(\d+) meeting ids? longer than \d+ characters not copied$/ },
+]);
+
+/** RE-3 — the stored rows' own omissions, read back from the section's stored note (zero for a part it does not hold). */
+export function meetingRowOmissionsOf(note) {
+  const out = { ...NO_MEETING_OMISSIONS };
+  for (const part of typeof note === 'string' ? note.split('; ') : []) {
+    for (const p of MEETING_ROW_PARTS) {
+      const m = p.parse.exec(part);
+      if (m) out[p.key] += Number(m[1]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Build B Amendment E RE-3 — `coverage.meetings` describes the rows the tape STORES, not the latest read of the
+ * history: its span covers the stored rows; its note counts what the stored rows left out of their meetings (the
+ * stored rows' own counts, as the stored note states them, plus those of each row this read adds) and what of the
+ * history, as this read saw it, the section does not hold (the unfiled meeting, records with another outcome, the
+ * day's cap). A refused rewrite (RD-6) changes no stored row, so it changes no part of the note.
+ *
+ * @param {object[]}    p.rows         the section's rows as they will be stored
+ * @param {object}      p.read         buildMeetings' `read`
+ * @param {object[]}    [p.storedRows] the rows the tape already stores (none on a fresh write)
+ * @param {string|null} [p.storedNote] the stored section's note
+ * @returns {object} the section's coverage (preservedFrom is the merge's)
+ */
+export function meetingsCoverageOf({ rows, read, storedRows = [], storedNote = null }) {
+  const storedKeys = new Set((Array.isArray(storedRows) ? storedRows : []).map((r) => r?.key).filter(Boolean));
+  const counts = storedKeys.size ? meetingRowOmissionsOf(storedNote) : { ...NO_MEETING_OMISSIONS };
+  for (const r of rows) {
+    if (storedKeys.has(r.key)) continue;
+    const o = read?.ok ? read.omitted?.[r.key] : null;
+    if (o) for (const k of Object.keys(NO_MEETING_OMISSIONS)) counts[k] += o[k] ?? 0;
+  }
+  const rowParts = MEETING_ROW_PARTS.filter((p) => counts[p.key]).map((p) => p.write(counts[p.key]));
+  const span = spanOf(rows.map((m) => m.createdAt));
+  if (!read?.ok) {
+    // The read failed: what the history holds now is unknown. Stored rows stand, so the section is partial, not unavailable.
+    const note = [read?.note ?? null, ...rowParts].filter(Boolean).join('; ') || null;
+    return coverageOf(rows.length ? 'partial' : 'unavailable', { span, sources: MEETING_SOURCES, note });
+  }
+  const held = new Set(rows.map((r) => r.key));
+  const overflow = (read.keys || []).filter((k) => !held.has(k)).length;
+  // review SPR-W-2: a record whose outcome is not one the section copies counts as "not copied" only when the section
+  // does not already hold that meeting — a stored row whose record was rewritten to another outcome is still held
+  const unrecognised = (Array.isArray(read.unrecognised) ? read.unrecognised : []).filter((k) => !held.has(k)).length;
+  const notes = [
+    ...(read.unfiled ? [read.unfiled] : []),
+    ...(unrecognised ? [`${counted(unrecognised, 'meeting record', 'meeting records')} of this day with an outcome other than approved, rejected or expired not copied`] : []),
+    ...rowParts,
+    ...(overflow ? [`${counted(overflow, 'meeting', 'meetings')} past ${MEETINGS_PER_DAY_MAX} in a day not copied`] : []),
+  ];
+  return coverageOf(notes.length ? 'partial' : 'complete', { span, sources: MEETING_SOURCES, note: notes.join('; ') || null });
 }
 
 /** Amendment D RD-3 — the meetings note for a meeting not yet filed, on the battle's final day and on an earlier day (verbatim). */
@@ -946,7 +1021,8 @@ function meetingsOrUnavailable(args) {
   try {
     return buildMeetings(args);
   } catch (e) {
-    return { rows: [], coverage: coverageOf('unavailable', { sources: ['gameplanMeetingHistory', 'gameplanMeeting'], note: `the meetings could not be read (${errorClassOf(e)})` }) };
+    const note = `the meetings could not be read (${errorClassOf(e)})`;
+    return { rows: [], coverage: coverageOf('unavailable', { sources: MEETING_SOURCES, note }), read: { ok: false, note } };
   }
 }
 
@@ -990,6 +1066,15 @@ export function buildScore({ battle, etDate, tickRowsScored, rawTickBySeq, entry
 const SCORE_NAMES = Object.freeze({ total: 'agent score', opponent: 'opponent score' });
 /** B1 T1 — the result's note for a battle created without an opponent (score.opponentBasis `none`). */
 export const NO_OPPONENT_NOTE = 'no opponent: the battle was created without a CPU opponent';
+/** B2.1 A3 (FR-03; Build B Amendment J RJ-3) — the result's note when a score is missing and no check ran this day (verbatim). */
+export const NO_CHECK_RAN_NOTE = 'no check ran this day, so no score was recorded';
+/**
+ * B2.1 A3 — did no check run this day? Every row of `checks[]` is a deferral, or there is none. A MINTED check with
+ * no record (`no_record`) ran: the evaluator numbers a check in the transaction that admits it
+ * (api/cron/agent-evaluate.js), so a missing record is a check that ran and left nothing behind — its outcome is
+ * unknown, not absent (review SPR-W-3: the screen's "Checks · 0 of 3" beside "no check ran" contradicted itself).
+ */
+export const noCheckRan = (checks) => (Array.isArray(checks) ? checks : []).every((r) => r?.state === 'deferred');
 
 /**
  * BA-39 — a battle's result from its completion block's own facts. A battle
@@ -1006,14 +1091,19 @@ export const NO_OPPONENT_NOTE = 'no opponent: the battle was created without a C
  * every merge (tapeMerge.js recomputes it from the merged final scores, a
  * kept completion block included). The platform's completion message is a
  * separate record (completionMessageOf), quoted as its words, never this.
+ *
+ * B2.1 A3 (FR-03; Amendment J RJ-3): when a score is missing and the tape day
+ * ran no check (`noCheck`, noCheckRan over the day's rows), the note says
+ * exactly that — NO_CHECK_RAN_NOTE — rather than naming a score that was never
+ * at stake; otherwise it names the missing scores, as before.
  */
-export function battleResultOf({ status, stored = null, final = null, derive = null, noOpponent = false }) {
+export function battleResultOf({ status, stored = null, final = null, derive = null, noOpponent = false, noCheck = false }) {
   // B1 T1 (contract E): a battle created without an opponent has no result against one — never a tie read from a 0, never a stored one.
   if (noOpponent) return status === 'completed' ? { value: null, basis: 'unavailable', note: NO_OPPONENT_NOTE } : { value: null, basis: 'not_completed' };
   if (stored) return { value: stored, basis: 'stored' };
   if (status !== 'completed') return { value: null, basis: 'not_completed' };
   const missing = ['total', 'opponent'].filter((k) => num(final?.[k]) === null);
-  if (missing.length) return { value: null, basis: 'unavailable', note: `${missing.map((k) => SCORE_NAMES[k]).join(' and ')} never recorded` };
+  if (missing.length) return { value: null, basis: 'unavailable', note: noCheck ? NO_CHECK_RAN_NOTE : `${missing.map((k) => SCORE_NAMES[k]).join(' and ')} never recorded` };
   return { value: derive ? derive(final) : null, basis: 'derived' };
 }
 
@@ -1032,7 +1122,8 @@ export function completionMessageOf(battle) {
   return null;
 }
 
-export function buildBattleBlock({ battle, resolveResult }) {
+/** `noCheck` (B2.1 A3): the tape day ran no check (noCheckRan over its rows) — it picks the result note's words only. */
+export function buildBattleBlock({ battle, resolveResult, noCheck = false }) {
   const status = str(battle?.status);
   const completed = status === 'completed';
   const stored = ['win', 'loss', 'draw'].includes(battle?.result) ? battle.result : null;
@@ -1052,7 +1143,7 @@ export function buildBattleBlock({ battle, resolveResult }) {
     status,
     completedAt: str(battle?.completedAt),
     final,
-    result: battleResultOf({ status, stored, final, derive, noOpponent }),
+    result: battleResultOf({ status, stored, final, derive, noOpponent, noCheck }),
     completionMessage: completed ? completionMessageOf(battle) : null,
     // v2 Ruling 16: a stamped battle's block says so, so a later merge — which
     // holds only the final scores — keeps this assembly's corrected-aware
@@ -1389,7 +1480,7 @@ export function assembleTape({
     },
     coverage,
     score,
-    battle: buildBattleBlock({ battle, resolveResult }),
+    battle: buildBattleBlock({ battle, resolveResult, noCheck: noCheckRan(checks) }),
     checks,
     actions,
     directives,
@@ -1406,6 +1497,9 @@ export function assembleTape({
       checks: limitsOf(checkReasons), actions: limitsOf(actionReasons), directives: limitsOf(heardReasons),
       plans: limitsOf(planReasons), rationale: limitsOf(rationaleReasons), evidence: limitsOf(evidenceReasons), calls: limitsOf(callReasons),
     },
+    // Build B Amendment E RE-3: what this read saw of the meeting history — for the merge only, which describes the
+    // rows the tape stores from it (meetingsCoverageOf); tapeMerge.js strips it before anything is written.
+    meetingsRead: meetings.read,
   };
 }
 

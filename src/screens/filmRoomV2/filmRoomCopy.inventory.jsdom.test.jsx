@@ -23,12 +23,12 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import * as copyModule from './filmRoomCopy';
 import { FILM_ROOM_COPY, REPLAY_SENTENCE, DIRECTIVE_EXPLAINER, PROVENANCE_LABELS, LOCKED_BASIS_NOTE, REPLAY_VERSION_NOTE, CLASS_LETTER } from './filmRoomCopy';
-import { EXIT_MAKER_WORDS, PLAN_DIRECTIONS, CHECK_STATE_WORDS, CHECK_STATE_TONES, checkStateOf, exitMakerOf, riskLines, riskSummary, deriveHoldings, roleOf, directiveCardOf } from './filmRoomModel';
+import { EXIT_MAKER_WORDS, PLAN_DIRECTIONS, CHECK_STATE_WORDS, CHECK_STATE_TONES, ROLE_WORDS, HOLDINGS_NOTES, RISK_WORDS, DIRECTIVE_CARD_WORDS, checkStateOf, exitMakerOf, entryMakerOf, riskLines, riskSummary, deriveHoldings, roleOf, directiveCardOf } from './filmRoomModel';
 import { INTRADAY_DIAGNOSTIC_HEADER } from '../../data/intradayDiagnosticCopy';
 import { SITUATIONS, LIVE_SITUATION_IDS } from '../../data/situationRegistry';
 import { SITUATION_QUESTIONS } from '../../data/situationQuestions';
 import { KindMark } from './FilmRoomKit';
-import { sweepWords, sep23Tape, clone } from './__fixtures__/filmRoomHarness';
+import { sweepWords, sep23Tape, clone, SPEC_FIXED_DIGIT_COPY } from './__fixtures__/filmRoomHarness';
 
 /** Every leaf key of a copy table: `a.b`, `list[0]`, `fn()`. */
 function keysOf(v, p = '', out = []) {
@@ -48,6 +48,10 @@ const COPY_KEYS = [
   'loading', 'noTape', 'noTapeScheduled.before', 'noTapeScheduled.after', 'noTapeLater', 'noTapeUnavailable', 'readError', 'earlierDay', 'openLastDay()', 'skippedMode', 'closeNotWritten', 'statusUnknown',
   'countOf', 'countRecorded', 'slots',
   'coverage', 'replayCoverage', 'coverageLabel.complete', 'coverageLabel.partial', 'coverageLabel.unavailable', 'preservedFrom',
+  // B2.1 A7 — Glance's one coverage line (RJ-7)
+  'coverageSummary.every', 'coverageSummary.except', 'coverageSummary.sections.checks', 'coverageSummary.sections.actions', 'coverageSummary.sections.directives',
+  'coverageSummary.sections.meetings', 'coverageSummary.sections.plans', 'coverageSummary.sections.rationale', 'coverageSummary.sections.evidence', 'coverageSummary.sections.replay',
+  'coverageSummary.sections.series', 'coverageSummary.notCharted()', 'coverageSummary.absent',
   'recordedScoreAt()', 'recordedScore', 'dayChange', 'dayChangeBasis.battle_start', 'dayChangeBasis.prior_day_tape', 'dayChangeBasis.unavailable',
   'firstCheckAt()', 'noChecks', 'scorePath', 'scorePathNote', 'battleStartLine', 'checks', 'runsTitle', 'runCompleted',
   'runKinds.hold', 'runKinds.swap', 'runKinds.default_hold', 'runKinds.completed',
@@ -58,7 +62,7 @@ const COPY_KEYS = [
   'scoreParts.active', 'scoreParts.banked', 'scoreParts.total', 'evidenceTitle', 'evidenceLabel', 'evidenceNone',
   'evidenceFields.px', 'evidenceFields.chg', 'evidenceFields.atrX', 'evidenceFields.atrXMeasured', 'evidenceFields.vwapDev', 'evidenceFields.bbPct', 'evidenceFields.nr7', 'evidenceFields.regime', 'evidenceFields.risk',
   'yes', 'no', 'notRecorded', 'close',
-  'jumps[0][0]', 'jumps[0][1]', 'jumps[1][0]', 'jumps[1][1]', 'jumps[2][0]', 'jumps[2][1]', 'jumps[3][0]', 'jumps[3][1]', 'jumps[4][0]', 'jumps[4][1]', 'jumps[5][0]', 'jumps[5][1]',
+  'jumps[0][0]', 'jumps[0][1]', 'jumps[1][0]', 'jumps[1][1]', 'jumps[2][0]', 'jumps[2][1]', 'jumps[3][0]', 'jumps[3][1]', 'jumps[4][0]', 'jumps[4][1]', 'jumps[5][0]', 'jumps[5][1]', 'jumps[6][0]', 'jumps[6][1]',
   'holdings', 'holdingsStart', 'holdingsEnd', 'holdingsAt()', 'swapByMaker.agent', 'swapByMaker.platform', 'swapByMaker.other', 'swapMakerNote', 'tapForDeep',
   'swaps', 'swapsNone', 'swapWord', 'slot', 'banked', 'platformQuote', 'fork', 'holdPath', 'swapPath', 'heldLine()', 'boughtLine()', 'rebuiltDashed', 'rebuiltDots', 'rebuiltDashedDots', 'hypothetical', 'laterTrades',
   'gap', 'gapNote', 'closedLeg', 'closedLegNote', 'replayNone', 'replayNotDrawn', 'replayNoneSeeCoverage', 'replayCrypto', 'split',
@@ -70,19 +74,22 @@ const COPY_KEYS = [
   'quoteBy.agent', 'quoteBy.player', 'quoteBy.platform', 'quoteBy.plan', 'quoteBy.directive', 'quoteBy.you',
   'plans', 'plansNone', 'plansAll', 'threshold', 'atPlan', 'atClose', 'rationale', 'rationaleNone', 'rationaleLabel()', 'stateEntry()', 'stateEntryNote', 'checksNone',
   'diagnostics', 'diagnosticsPresent',
-  'deepPrice', 'deepNoSeries()', 'deepNoSymbols', 'seriesReadError', 'evidenceCoverage', 'checksIn1', 'sessionOpen', 'sessionHigh', 'sessionLow', 'lastBarClose',
-  'changeOpenToClose', 'volumeSession', 'axisPrice', 'axisPercent', 'market', 'sector()', 'sectorNone', 'volume', 'rebased', 'inTheBook', 'sectorLine', 'sectorLineNone',
-  'exitMark', 'entryMark', 'evidenceOverlay', 'evidenceOverlayNote', 'allSymbols', 'close10',
+  // B2.1 A1 — Meetings (spec §3; acceptance H; Amendment J RJ-1)
+  'meetings', 'meetingsNote', 'meetingsNone', 'meetingsNoneStored', 'meetingsAbsent', 'meetingAt()', 'meetingOutcome.approved', 'meetingOutcome.rejected', 'meetingOutcome.expired',
+  'meetingResolvedBy', 'meetingInstants.created', 'meetingInstants.deadline', 'meetingInstants.resolved', 'meetingLegs', 'meetingLegNotCopied', 'meetingLegsNone', 'meetingDiagnosis', 'runMeeting',
+  'deepPrice', 'noChart.before', 'noChart.reasons.crypto_not_supported', 'noChart.reasons.no_bars', 'noChartRecorded', 'chartRecordedFor', 'recordedPrices', 'deepNoSymbols', 'seriesReadError', 'evidenceCoverage', 'checksIn1', 'sessionOpen', 'sessionHigh', 'sessionLow', 'lastBarClose',
+  'changeOpenToClose', 'volumeSession', 'axisPrice', 'axisPercent', 'market', 'sector()', 'sectorNone', 'volume', 'rebased', 'inTheBook', 'companyNameNotOnFile', 'sectorLine', 'sectorLineNone',
+  'exitMark', 'entryMark', 'entryFor', 'evidenceOverlay', 'evidenceOverlayNote', 'allSymbols', 'close10',
   'reservedHeader[0]', 'reservedHeader[1]', 'reservedFooter[0]', 'reservedFooter[1]',
   // Film Room B2 — the card's regions (Build B spec §6; Amendment G RG-5, RG-9)
   'cards.sinceLastTime', 'cards.preparedCase', 'cards.yourCall', 'cards.receipt', 'cards.moments', 'cards.momentsNote', 'cards.momentsNone', 'cards.tagsAbsent', 'cards.takeHome',
   'cards.countAgainst', 'cards.thresholdWord', 'cards.checkTag', 'cards.question', 'cards.note', 'cards.noteLimit', 'cards.routeTitle', 'cards.routes.watch',
-  'cards.routes.drill', 'cards.routes.set', 'cards.routeNotes.watch', 'cards.routeNotes.drill', 'cards.routeNotes.set', 'cards.setRoute', 'cards.openCards', 'cards.openCountLoading', 'cards.openCountUnknown', 'cards.file',
-  'cards.cancel', 'cards.filing', 'cards.refusals.cap_reached', 'cards.refusals.moment_not_found', 'cards.refusals.disabled', 'cards.refusals.note_too_long', 'cards.refusals.note_control_char', 'cards.refusals.note_empty',
-  'cards.refusals.version_conflict', 'cards.refusals.shelved', 'cards.refusals.untaped', 'cards.refusals.archetype_changed', 'cards.refusals.op_conflict', 'cards.refusals.tape_unreadable', 'cards.refusals.tape_not_found',
+  'cards.routes.drill', 'cards.routes.set', 'cards.routeNotes.watch', 'cards.routeNotes.drill', 'cards.routeNotes.set', 'cards.setTempoLink', 'cards.setRuleOff', 'cards.setNoTempo', 'cards.setNextBattle', 'cards.openCards', 'cards.openCountLoading', 'cards.openCountUnknown', 'cards.file',
+  'cards.cancel', 'cards.filing', 'cards.refusals.cap_reached', 'cards.refusals.moment_not_found', 'cards.refusals.source_changed', 'cards.refusals.disabled', 'cards.refusals.note_too_long', 'cards.refusals.note_control_char', 'cards.refusals.note_empty',
+  'cards.refusals.version_conflict', 'cards.refusals.shelved', 'cards.refusals.untaped', 'cards.refusals.archetype_changed', 'cards.refusals.op_conflict', 'cards.refusals.tape_unreadable', 'cards.refusals.attribution_unavailable', 'cards.refusals.tape_not_found',
   'cards.refusals.tags_unavailable', 'cards.refusals.question_not_on_menu', 'cards.refusals.illegal_transition', 'cards.refusals.forbidden', 'cards.refusals.not_found', 'cards.refusals.default', 'cards.refusals.retireDefault', 'cards.filedCard', 'cards.situation', 'cards.on',
   'cards.route', 'cards.stage', 'cards.stageWords.card', 'cards.stageWords.nominated', 'cards.stageWords.retired', 'cards.stateNotes.retired', 'cards.stateNotes.shelved', 'cards.retire', 'cards.retiring', 'cards.recurrences',
-  'cards.noRecurrence', 'cards.otherBattle', 'cards.noWatchCards', 'cards.myCards', 'cards.groups.active', 'cards.groups.shelved', 'cards.groups.retired', 'cards.groups.other', 'cards.noCards', 'cards.shelvedExplainer',
+  'cards.noRecurrence', 'cards.recurrencesWord', 'cards.unavailableDays()', 'cards.otherBattle', 'cards.otherBattleUnreadable', 'cards.noWatchCards', 'cards.myCards', 'cards.groups.active', 'cards.groups.shelved', 'cards.groups.retired', 'cards.groups.other', 'cards.noCards', 'cards.shelvedExplainer',
   'cards.loading', 'cards.readError', 'cards.openCard',
 ];
 
@@ -107,15 +114,22 @@ const SAMPLE_CALLS = {
   'afterSwaps()': [[1], [2]],
   'rationaleLabel()': [['12:00 PM']],
   'stateEntry()': [['12:15 PM', 'check skipped · budget']],
-  'deepNoSeries()': [['INTC']],
   'sector()': [['XLK']],
+  'meetingAt()': [['2:15 PM'], ['Sep 22, 8:30 PM']],
+  'coverageSummary.notCharted()': [[1], [2]],
+  'cards.unavailableDays()': [[1], [3]],
 };
 
 const COPY_EXPORTS = ['CLASS_LETTER', 'DIRECTIVE_EXPLAINER', 'FILM_ROOM_COPY', 'FORBIDDEN_WORDS', 'LOCKED_BASIS_NOTE', 'PROVENANCE_LABELS', 'REPLAY_SENTENCE', 'REPLAY_VERSION_NOTE'];
-const EXIT_MAKER_KEYS = ['agent.short', 'agent.swap', 'agent.exit', 'platform.short', 'platform.swap', 'platform.exit', 'platform.noReason', 'gameplan.short', 'gameplan.swap', 'gameplan.exit', 'unrecorded.short', 'unrecorded.swap', 'unrecorded.exit'];
+const EXIT_MAKER_KEYS = ['agent.short', 'agent.swap', 'agent.exit', 'agent.entry', 'platform.short', 'platform.swap', 'platform.exit', 'platform.noReason', 'platform.entry', 'gameplan.short', 'gameplan.swap', 'gameplan.exit', 'gameplan.entry', 'unrecorded.short', 'unrecorded.swap', 'unrecorded.exit', 'unrecorded.entry'];
 // review A2FV3-7: the check states' words, a keyed table — pinned like the copy
 const CHECK_STATE_KEYS = ['default_hold', 'swap', 'hold', 'completed', 'no_trigger', 'budget_skipped', 'deferred', 'gameplan_created', 'gameplan_pending', 'proposal_pending', 'degraded_quotes', 'cpu_passive', 'tick_error', 'no_record', 'unknown'];
 const PLAN_DIRECTION_KEYS = ['potential_entry', 'potential_exit'];
+// B2.1 A8 (A2F3-7, the rest): the composers' words, keyed tables pinned like the check states' — a new word fails until it is listed and swept
+const ROLE_WORD_KEYS = ['exitedAt', 'enteredAt', 'unrecordedTime', 'swapBy', 'held', 'planned', 'series'];
+const HOLDINGS_NOTE_KEYS = ['noRisk', 'notReconciled', 'derived'];
+const RISK_WORD_KEYS = ['recorded', 'hold', 'none', 'actionNotRecorded'];
+const DIRECTIVE_CARD_KEYS = ['filed', 'notFiled'];
 
 // ── the model's composed words, from every branch of each reader ──────────────────────────────────────────────────
 const CHECK_ROWS = [
@@ -128,6 +142,8 @@ function modelWords() {
   const out = [];
   CHECK_ROWS.forEach((r) => out.push([`checkStateOf(${r.state}${r.decision ? ` ${r.decision.final}${r.decision.holdKind ? ' default' : ''}` : ''})`, checkStateOf(r).label]));
   for (const mechanism of MECHANISMS) for (const exitReason of ['stagnation', undefined]) out.push([`exitMakerOf(${mechanism}, ${exitReason})`, exitMakerOf({ mechanism, exitReason }).label]);
+  // B2.1 A4 (RJ-4): the bought name's maker, on every branch
+  for (const mechanism of MECHANISMS) for (const exitReason of ['stagnation', undefined]) out.push([`entryMakerOf(${mechanism}, ${exitReason})`, entryMakerOf({ mechanism, exitReason }).label]);
   const risky = { risk: { DE: { action: 'SWAP_OUT', reason: 'stagnation' }, MSFT: { action: 'HOLD' }, X: {} } };
   out.push(['riskSummary(none)', riskSummary({})], ['riskSummary(hold)', riskSummary({ risk: { MSFT: { action: 'HOLD' } } })], ['riskSummary(fired)', riskSummary(risky)]);
   riskLines(risky).forEach((l, i) => out.push([`riskLines[${i}]`, l.text]));
@@ -157,6 +173,10 @@ function inventory() {
   for (const k of EXIT_MAKER_KEYS) out.push([`EXIT_MAKER_WORDS.${k}`, leaf(EXIT_MAKER_WORDS, k)]);
   for (const k of PLAN_DIRECTION_KEYS) out.push([`PLAN_DIRECTIONS.${k}`, PLAN_DIRECTIONS[k]]);
   for (const k of CHECK_STATE_KEYS) out.push([`CHECK_STATE_WORDS.${k}`, CHECK_STATE_WORDS[k]]);
+  for (const k of ROLE_WORD_KEYS) out.push([`ROLE_WORDS.${k}`, ROLE_WORDS[k]]);
+  for (const k of HOLDINGS_NOTE_KEYS) out.push([`HOLDINGS_NOTES.${k}`, HOLDINGS_NOTES[k]]);
+  for (const k of RISK_WORD_KEYS) out.push([`RISK_WORDS.${k}`, RISK_WORDS[k]]);
+  for (const k of DIRECTIVE_CARD_KEYS) out.push([`DIRECTIVE_CARD_WORDS.${k}`, DIRECTIVE_CARD_WORDS[k]]);
   out.push(...modelWords());
   out.push(['INTRADAY_DIAGNOSTIC_HEADER', INTRADAY_DIAGNOSTIC_HEADER]);
   // B2: the situation titles and the question menu the regions say in the screen's own voice (data modules, swept here)
@@ -185,6 +205,10 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     expect(keysOf(EXIT_MAKER_WORDS)).toEqual(EXIT_MAKER_KEYS);
     expect(keysOf(PLAN_DIRECTIONS)).toEqual(PLAN_DIRECTION_KEYS);
     expect(keysOf(CHECK_STATE_WORDS)).toEqual(CHECK_STATE_KEYS);
+    expect(keysOf(ROLE_WORDS)).toEqual(ROLE_WORD_KEYS);
+    expect(keysOf(HOLDINGS_NOTES)).toEqual(HOLDINGS_NOTE_KEYS);
+    expect(keysOf(RISK_WORDS)).toEqual(RISK_WORD_KEYS);
+    expect(keysOf(DIRECTIVE_CARD_WORDS)).toEqual(DIRECTIVE_CARD_KEYS);
     // every state a check row can be read as has its words: each tone's state, and each word's state is read
     for (const s of Object.keys(CHECK_STATE_TONES)) expect(CHECK_STATE_WORDS[s], s).toBe(checkStateOf({ state: s }).label);
     expect(CHECK_ROWS.map((r) => checkStateOf(r).key).filter((k, i, a) => a.indexOf(k) === i).sort()).toEqual([...CHECK_STATE_KEYS].sort());
@@ -198,9 +222,20 @@ describe('Astra B3 — the copy inventory: every key of the screen\'s own copy, 
     }
   });
 
-  it('the inventory\'s size is pinned (the build report states it): 316 copy keys, 428 swept entries', () => {
-    expect(COPY_KEYS).toHaveLength(316);   // Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
-    expect(inventory()).toHaveLength(428);   // B2: 76 keys, the one live situation's title and its three questions (348 before)
+  it('the inventory\'s size is pinned (the build report states it): 364 copy keys, 511 swept entries', () => {
+    expect(COPY_KEYS).toHaveLength(364);   // Amendment L RL-5: cards.setNextBattle (363 before); review KRV1-1: cards.refusals.attribution_unavailable (362 before); Amendment K RK-11: chartRecordedFor (361 before); RK-2: cards.setNoTempo (360 before); Astra F1: the two point legends (237 before); stock thresholds v2 B3-6: atrXMeasured (239 before); Film Room B2: the card's 75 keys and quoteBy.you (240 before; 59 keys before its review round)
+    expect(inventory()).toHaveLength(511);   // RL-5: one entry (510 before); KRV1-1: one entry (509 before); RK-11: one entry (508 before); RK-2: one entry (507 before); B2: 76 keys, the one live situation's title and its three questions (348 before)
+  });
+
+  it('B2.1 A8 (A2F1-7): every fixed-digit exemption is bound to its copy key — the harness\x27s pinned text is production\x27s at that key, and every entry of the inventory that spells a digit is pinned', () => {
+    const at = (key) => (key.startsWith('FILM_ROOM_COPY.') ? leaf(FILM_ROOM_COPY, key.slice('FILM_ROOM_COPY.'.length)) : key === 'LOCKED_BASIS_NOTE' ? LOCKED_BASIS_NOTE : key.startsWith('PROVENANCE_LABELS.') ? PROVENANCE_LABELS[key.slice('PROVENANCE_LABELS.'.length)] : undefined);
+    for (const [key, text] of Object.entries(SPEC_FIXED_DIGIT_COPY)) expect(at(key), key).toBe(text);
+    const pinned = new Set(Object.keys(SPEC_FIXED_DIGIT_COPY).map((k) => k.replace(/^FILM_ROOM_COPY\./, '')));
+    // a function key's sample calls carry the caller's clocks and counts, and a reader's words its clocks (each renders
+    // them as an instant or a marked number): only a digit outside a clock is a fixed phrase
+    const digits = inventory().filter(([key, text]) => /\d/.test(text.replace(/\b\d{1,2}:\d{2}( (AM|PM))?\b/g, '')) && !/#\d+$/.test(key)).map(([key]) => key);
+    expect(digits.filter((k) => !pinned.has(k))).toEqual([]);
+    expect(digits.sort()).toEqual([...pinned].sort());
   });
 
   it('the inventory bites: an added key is seen, and a quantity word in an entry is caught', () => {

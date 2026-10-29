@@ -34,8 +34,18 @@
 //
 // ONE DOOR (contract §7; RE-5): nothing here is reached from any model path
 // (oneDoor.census.test.js walks them), and nothing here reads a meeting row.
+//
+// THE AGENT (Build B Amendment K RK-1): the ledger is learning, so it follows
+// the platform's attribution rule — a card lives under the battle's
+// ATTRIBUTION agent: a casual clone's parent (the player's ranked agent),
+// the battle's own agent otherwise, by the platform's one resolver
+// (api/_utils/casualClone.js). Nothing is ever filed, retired or counted under
+// a casual clone: a clone the resolver cannot resolve is refused, 503
+// attribution_unavailable. The tape keeps the battle's own agentId.
 
 import { canonicalContentHash } from '../canonicalHash.js';
+import { resolveAttributionAgentId, resolveRecordTargetId } from '../casualClone.js';
+import { casualCloneDocId, isCasualCloneId } from '../../../src/constants/leagueTournament.js';
 import { CARD_SLOTS, CARD_SLOTS_VERSION } from '../../../src/data/cardSlots.js';
 
 export const PLAYS_SUBCOLLECTION = 'plays';
@@ -74,12 +84,52 @@ export const CARD_ROUTE_COPY = Object.freeze({
   illegal_transition: 'That change is not allowed from the card\'s current stage.',
   agent_unresolved: 'This agent records no archetype, so no card can be filed under it.',
   archetype_changed: 'This day was taped under another archetype than the agent\'s current one, so a card from it would be shelved at birth. Nothing was filed.',
+  attribution_unavailable: 'The agent these cards belong to could not be resolved. Nothing was changed; try again.',
 });
 const fail = (status, code, extra) => new CardRouteError(status, code, CARD_ROUTE_COPY[code], extra);
 
 export const agentRefOf = (db, agentId) => db.collection('agents').doc(agentId);
 export const playsColOf = (db, agentId) => agentRefOf(db, agentId).collection(PLAYS_SUBCOLLECTION);
 export const playRefOf = (db, agentId, entryId) => playsColOf(db, agentId).doc(entryId);
+
+// ── the attribution agent (RK-1) ────────────────────────────────────────────
+
+/**
+ * RK-1 — the agent a card is filed, replayed and retired under: the attribution agent of `agentId` (a battle's own
+ * agent, or the one the screen names), by the platform's async resolver — a casual clone's parent, verified owned by
+ * the clone's owner; anything else unchanged. The resolver never throws: a clone it cannot resolve (no clone
+ * document, no rankedAgentId, a parent another owner holds, a failed read) comes back as the clone itself, and
+ * nothing is ever filed under a clone, so that answer is refused — 503 attribution_unavailable, before any write.
+ */
+export async function attributionAgentOf(db, agentId) {
+  const resolved = await resolveAttributionAgentId(db, { agentId });
+  if (isCasualCloneId(resolved)) throw fail(503, 'attribution_unavailable', { agentId });
+  return resolved;
+}
+
+/**
+ * RK-1 — the counter's attribution: ONE read of the owner's own clone document (`agents/casual-agent-{uid}`), then
+ * the platform's pure resolver (resolveRecordTargetId) for every agent id the counter meets — the asked agent and
+ * each tape day's. Only the owner's clone maps to its parent; any other id maps to itself (the resolver handed no
+ * clone document), so another owner's clone is never counted as the owner's agent. A clone document that is
+ * missing, names no rankedAgentId or is not the owner's leaves the clone mapped to itself. A read that fails is
+ * refused (503 attribution_unavailable), never answered as "no recurrence".
+ *
+ * @returns {Promise<{ cloneId: string, targetOf: (agentId: string) => string }>}
+ */
+export async function ownerAttributionOf(db, uid) {
+  const cloneId = casualCloneDocId(uid);
+  let clone = null;
+  try {
+    const snap = await agentRefOf(db, cloneId).get();
+    const data = snap?.exists ? (typeof snap.data === 'function' ? snap.data() : snap.data) : null;
+    clone = isObj(data) && data.ownerId === uid ? data : null;
+  } catch (err) {
+    console.error('[film-room/cards] clone read failed:', err?.message ?? err);
+    throw fail(503, 'attribution_unavailable');
+  }
+  return { cloneId, targetOf: (agentId) => resolveRecordTargetId(agentId, agentId === cloneId ? clone : null) };
+}
 
 /** The agent as its owner may see it: missing → agent_not_found; another owner → forbidden; no archetype → agent_unresolved. */
 function ownedAgent(snap, uid) {
@@ -152,6 +202,37 @@ const createFingerprint = (agentId, request, payload) => canonicalContentHash({ 
 const retireFingerprint = (agentId, entryId, expectedVersion) => canonicalContentHash({ kind: 'retire', agentId, entryId, expectedVersion });
 
 /**
+ * A create's opening reads, inside its transaction: the caller's agent, the entry under the op id, the caller's open
+ * count. An entry already filed under the op id is the REPLAY (`replay`, the idempotent answer) — answered only to the
+ * entry's own owner and only for the same request (RI-1, Astra F1; otherwise 409 op_conflict, the body holding nothing
+ * of the entry); none → `replay: null`.
+ */
+async function createReads(tx, db, { uid, agentId, opId, opFingerprint }) {
+  const agent = ownedAgent(await tx.get(agentRefOf(db, agentId)), uid);
+  const ref = playRefOf(db, agentId, opId);
+  const existingSnap = await tx.get(ref);
+  // the cap counts the caller's own entries only, as readCards does (Amendment I RI-1)
+  const all = docsOf(await tx.get(playsColOf(db, agentId))).filter((e) => e.ownerId === uid);
+  const open = openCardCount(all, agent.archetype);
+  if (!existingSnap?.exists) return { agent, ref, open, replay: null };
+  const existing = typeof existingSnap.data === 'function' ? existingSnap.data() : existingSnap.data;
+  if (!isObj(existing) || existing.ownerId !== uid) throw fail(409, 'op_conflict', { entryId: opId });
+  if (existing.opFingerprint === opFingerprint) return { agent, ref, open, replay: { idempotent: true, card: existing, open, cap: OPEN_CARD_CAP } };
+  throw fail(409, 'op_conflict', { entryId: opId });
+}
+
+/**
+ * B2.1 review SPR-C-3 — a create's REPLAY alone: the card already filed under this op id for this request (the same
+ * idempotent answer createCard gives), or null when none is. The route asks it when its own source checks refuse, so a
+ * lost answer re-tapped (review L4-9) gets its filed card back even after the day has changed since — the source
+ * checks judge a NEW card, never one already filed.
+ */
+export async function replayCreate(db, { uid, agentId, opId, request }) {
+  const opFingerprint = createFingerprint(agentId, request, null);
+  return db.runTransaction(async (tx) => (await createReads(tx, db, { uid, agentId, opId, opFingerprint })).replay);
+}
+
+/**
  * Create a card. The route has already proved the moment, the question and the
  * note (api/film-room/card.js); here the ownership, the replay, the archetype,
  * the cap and the write happen in one transaction.
@@ -166,6 +247,11 @@ const retireFingerprint = (agentId, entryId, expectedVersion) => canonicalConten
  * founder ruling on the alternative (stamping the agent's current archetype)
  * is asked in the build report.
  *
+ * THE AGENT (RK-1): `agentId` is the battle's ATTRIBUTION agent, which the
+ * route resolves (attributionAgentOf) — so the ownership, the cap, the
+ * archetype and the entry's path are all the parent's for a casual clone's
+ * battle, and the clone is never written.
+ *
  * @param {object} db
  * @param {{ uid: string, agentId: string, opId: string, nowIso: string, request?: object,
  *           payload: { archetypeCodeId: string, situationId: string, situationVersion: number,
@@ -173,23 +259,16 @@ const retireFingerprint = (agentId, entryId, expectedVersion) => canonicalConten
  *                      questionId: string, questionVersion: number, note: string, route: 'watch'|'drill'|'set' } }} p
  * @returns {Promise<{ idempotent: boolean, card: object, open: number, cap: number }>}
  */
-export async function createCard(db, { uid, agentId, opId, payload, nowIso, request = null }) {
+export async function createCard(db, { uid, agentId, opId, payload, nowIso, request = null, verifySource = null }) {
   const opFingerprint = createFingerprint(agentId, request, payload);
   return db.runTransaction(async (tx) => {
-    const agent = ownedAgent(await tx.get(agentRefOf(db, agentId)), uid);
-    const ref = playRefOf(db, agentId, opId);
-    const existingSnap = await tx.get(ref);
-    // the cap counts the caller's own entries only, as readCards does (Amendment I RI-1)
-    const all = docsOf(await tx.get(playsColOf(db, agentId))).filter((e) => e.ownerId === uid);
-    const open = openCardCount(all, agent.archetype);
-    if (existingSnap?.exists) {
-      const existing = typeof existingSnap.data === 'function' ? existingSnap.data() : existingSnap.data;
-      // a replay answers only the entry's OWN owner (RI-1, Astra F1): a missing or another ownerId is refused as a
-      // foreign op id is, and the body holds nothing of the entry
-      if (!isObj(existing) || existing.ownerId !== uid) throw fail(409, 'op_conflict', { entryId: opId });
-      if (existing.opFingerprint === opFingerprint) return { idempotent: true, card: existing, open, cap: OPEN_CARD_CAP };
-      throw fail(409, 'op_conflict', { entryId: opId });
-    }
+    const { agent, ref, open, replay } = await createReads(tx, db, { uid, agentId, opId, opFingerprint });
+    if (replay) return replay;
+    // Amendment I RI-3 (Astra B3): the source day is re-read and its coverage and exact moment checked again HERE,
+    // inside the transaction that files the card (the route hands its checks in — api/film-room/card.js
+    // verifySourceIn — so this store imports no tape module): a re-write between the route's read and this commit
+    // refuses rather than filing a card for a moment the tape no longer holds. A read, so it precedes the write.
+    if (verifySource) await verifySource(tx);
     if (payload.archetypeCodeId !== agent.archetype) throw fail(409, 'archetype_changed', { archetypeCodeId: payload.archetypeCodeId, current: agent.archetype });
     if (open >= OPEN_CARD_CAP) throw fail(409, 'cap_reached', { cap: OPEN_CARD_CAP, open });
     const card = buildCardDoc({ entryId: opId, uid, agentId, opId, opFingerprint, nowIso, payload });

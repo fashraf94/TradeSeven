@@ -15,13 +15,13 @@
 //             Study or Deep dive; a day with no tape says so, and names a
 //             scheduled pass only when one is actually scheduled (§7)
 
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { FILM_TAPE_WRITE_ENABLED, isAgentPresenceOn } from '../../config/featureFlags';
 import AgentPresenceMount from '../../components/AgentPresence/AgentPresenceMount';
 import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { filmRoomBattleId } from '../../utils/filmRoomGate';
 import { isSessionDate, isBattleDay, closePassStartMs, closePassEndMs, closePassWillTape, validFinalTradingDay, etDateOf } from '../../utils/tapeSchedule';
-import { etClock, etDateLabel, tradingTimeline } from './filmRoomModel';
+import { etClock, etDateLabel, tradingTimeline, meetingAnchor } from './filmRoomModel';
 import { FILM_ROOM_COPY as COPY } from './filmRoomCopy';
 import { useTapeDay, useSeriesDay, firestoreReaders } from './filmRoomData';
 import { hasSeenFirstOpen, markFirstOpenSeen } from './filmRoomSeen';
@@ -31,10 +31,15 @@ import FilmRoomStudy from './FilmRoomStudy';
 import FilmRoomDeepDive from './FilmRoomDeepDive';
 // Film Room B2 (Build B spec §6; Amendment G RG-2): the card — its gate, its reads and writes, and the four regions'
 // content, rendered in place of the empty reserved regions ONLY when cards resolve on for the battle's owner.
-import { useFilmRoomCards, defaultCardsApi, momentAnchor } from './filmRoomCards';
+import { useFilmRoomCards, defaultCardsApi, momentAnchor, momentKey } from './filmRoomCards';
 import { PreparedCase, YourCall, Receipt, SinceLastTime } from './FilmRoomCardRegions';
+// B2.1 B2 (Amendment H RH-2): another battle's recurrence opens that battle through P1c's one door (App's listener)
+import { requestOpenBattleReview, battleReviewAtOf } from '../../components/Forge/Watchlist/ideaNavigation';
 
 const DESKTOP_QUERY = '(min-width: 1024px)';
+
+/** The element holding the focus now (null outside a browser). */
+const focusedNow = () => (typeof document !== 'undefined' ? document.activeElement : null);
 
 /** Desktop layout at ≥ 1024 px; the phone layout otherwise (and wherever matchMedia is absent). */
 const mediaQuery = () => (typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(DESKTOP_QUERY) : null);
@@ -199,20 +204,32 @@ const pill = (accent) => ({ display: 'inline-flex', alignItems: 'center', gap: 6
  * @param {string}   [props.backTo]  that surface (filmRoomBack.js: 'battle' | 'battleHistory' | 'dashboard' |
  *                                   'unknown') — the back control's label names it; unknown → "Dashboard"
  * @param {string}   [props.viewerId] the signed-in viewer's uid (the first-open notice is per viewer)
- * @param {object}   [props.readers]  test seam: { readTape, readSeries }
+ * @param {object}   [props.readers]  test seam: { readTape, readSeries, readBattle }
  * @param {number}   [props.nowMs]    test seam: the instant "scheduled" is judged at
  * @param {object}   [props.cardsApi] test seam (B2): { readVerdict, readCounter, postCard, newOpId }
+ * @param {Function} [props.onOpenForge] B2.1 B1 (RH-1): App's Forge door (hub S5), `({ area })` — Set's link to the tempo dial
+ * @param {object}   [props.openAt]   B2.1 B2 (RH-2): `{ battleId, etDate, moment }` from App — another battle's
+ *                                    recurrence opened this one; the screen opens on that day, at that moment. Read
+ *                                    at mount, for this battle only; anything else opens the default day as before.
+ * @param {Function} [props.onOpenAtUsed] Amendment K RK-4: called once, at mount, when `openAt` was handed in — App
+ *                                    clears it, so the open applies once and any later remount (the return from the
+ *                                    Forge included) opens the default view, never a moment the player has left
  */
-export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', viewerId = null, readers = firestoreReaders, nowMs, cardsApi = defaultCardsApi }) {
+export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', viewerId = null, readers = firestoreReaders, nowMs, cardsApi = defaultCardsApi, onOpenForge = null, openAt = null, onOpenAtUsed = null }) {
   const now = useMemo(() => (Number.isFinite(nowMs) ? nowMs : Date.now()), [nowMs]);
   const battleId = filmRoomBattleId(battle);
   const days = useMemo(() => battleDays(battle), [battle]);
-  const [day, setDay] = useState(() => defaultDay(battle, days, now));
+  const [at] = useState(() => (openAt && openAt.battleId === battleId ? battleReviewAtOf(openAt, battleId) : null));
+  // RK-4: the open is used — read into `at` above — so where App holds it, it is cleared now
+  useEffect(() => { if (openAt && typeof onOpenAtUsed === 'function') onOpenAtUsed(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const [day, setDay] = useState(() => at?.etDate ?? defaultDay(battle, days, now));
   const [depth, setDepth] = useState('glance');
   const [selected, setSelected] = useState(null);
   const [sym, setSym] = useState(null);
   const [notice, setNotice] = useState(() => !hasSeenFirstOpen(viewerId));
   const desktop = useDesktop();
+  const mounted = useRef(true);   // review SPR-L-2: a read that lands after unmount opens nothing
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const idBase = `film-room${useId().replace(/[^A-Za-z0-9_-]/g, '')}`;   // the depth tabs' and panels' ids
   useEffect(() => { if (notice) markFirstOpenSeen(viewerId); }, [notice, viewerId]);
 
@@ -223,34 +240,70 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
 
   // B2 — the card: the gate per owner, the counter for the battle's agent — the one the battle document names, read
   // before any day's tape, so an untaped day still shows the cards (review L1-6) and a day change never re-asks
-  // (review L4-3) — and the two writes.
+  // (review L4-3) — and the two writes. The server answers for, files under and retires under that agent's
+  // ATTRIBUTION agent (Amendment K RK-1: a casual clone's parent); the screen sends the battle's own.
   const agentId = (typeof battle?.agentId === 'string' && battle.agentId) || (typeof tape?.agentId === 'string' && tape.agentId) || null;
   const cards = useFilmRoomCards({ battle, agentId, api: cardsApi });
   const [picked, setPicked] = useState(null);      // the moment the form is open for
   const [receipt, setReceipt] = useState(null);    // the card the receipt shows
-  const [pendingJump, setPendingJump] = useState(null);
+  // B2.1 B2: a moment opened from another battle's recurrence is jumped to once the prepared case lists it (the cards'
+  // gate answers after the tape), and stays marked as the one opened, as a recurrence of this battle marks its own
+  const [pendingJump, setPendingJump] = useState(() => (at ? { id: momentAnchor(at.moment), when: 'moment', focus: true, from: focusedNow() } : null));
+  const [opened, setOpened] = useState(() => (at ? momentKey(at.moment) : null));
 
-  const changeDay = (d) => { setDay(d); setSelected(null); setSym(null); setPicked(null); setReceipt(null); };
-  const openDeep = (s) => { setSym(s); setDepth('deep'); };
-  const jump = (id) => {
+  const changeDay = (d) => { setDay(d); setSelected(null); setSym(null); setPicked(null); setReceipt(null); setOpened(null); setPendingJump(null); };
+  /**
+   * B2.1 A8 (A2F2-5): a door inside the panel that changes the day or the depth unmounts the panel holding the focus,
+   * so focus is put on the NEW panel — or on the place the door opens (a meeting's card, a moment) — once it has
+   * rendered, instead of dropping to the page. An element that takes no focus of its own is given tabindex -1 then.
+   */
+  const panelOf = (d) => ({ id: panelIdOf(idBase, d), focus: true, scroll: false });
+  const openDeep = (s) => { setSym(s); setDepth('deep'); setPendingJump(panelOf('deep')); };
+  const jump = (id, { focus = false, scroll = true } = {}) => {
     const el = typeof document !== 'undefined' ? document.getElementById(id) : null;
-    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (!el) return;
+    if (scroll && typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (focus && typeof el.focus === 'function') {
+      if (el.tabIndex < 0 && !el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+      el.focus({ preventScroll: scroll });
+    }
   };
   // a jump lands after the element it names has rendered (the form, the receipt, a moment on another day's tape)
   useEffect(() => {
     if (!pendingJump) return;
-    if (pendingJump.when === 'tape' && tapeState.status !== 'ready') return;
-    jump(pendingJump.id);
+    if ((pendingJump.when === 'tape' || pendingJump.when === 'moment') && tapeState.status !== 'ready') return;
+    if (pendingJump.when === 'moment' && (typeof document === 'undefined' || !document.getElementById(pendingJump.id))) return;
+    // review SPR-L-3: a jump that waited for a read never takes the focus (or the scroll) from where the player has
+    // since put it — a depth tab, a jump chip; it lands only while the focus is still where the tap left it, or nowhere
+    const now = focusedNow();
+    if ('from' in pendingJump && now && now !== pendingJump.from && now !== document.body) { setPendingJump(null); return; }
+    jump(pendingJump.id, pendingJump);
     setPendingJump(null);
-  }, [pendingJump, tapeState.status, picked, receipt]);
+  }, [pendingJump, tapeState.status, picked, receipt, cards.on]);
+  // B2.1 A1: a run of "awaiting approval" checks opens its meeting in Study — a door that changes the depth (A2F2-5: the card takes the focus)
+  const openMeeting = (i) => { setDepth('study'); setPendingJump({ id: meetingAnchor(i), focus: true }); };
   const takeHome = (m) => { setReceipt(null); setPicked(m); setPendingJump({ id: 'your-call' }); };
   const showCard = (c) => { setPicked(null); setReceipt(c); setPendingJump({ id: 'receipt' }); };
-  /** RG-4: a recurrence of this battle opens its day and moment here; another battle's is left to its link. */
+  /** RG-4: a recurrence of this battle opens its day and moment here; another battle's opens through openBattle. */
   const openMoment = (r) => {
     if (r.battleId !== battleId) return false;
     if (r.etDate !== day) changeDay(r.etDate);
-    setPendingJump({ id: momentAnchor(r), when: 'tape' });
+    setOpened(momentKey(r));
+    setPendingJump({ id: momentAnchor(r), when: 'tape', focus: true, from: focusedNow() });
     return true;
+  };
+  /**
+   * B2.1 B2 (Amendment H RH-2): a recurrence in another battle — that battle's document, read once on the tap (the
+   * owner's own; the rules allow it), opens its Film Room day at the moment through P1c's door: App sets the battle
+   * and keeps the back destination as it was (RJ-10). False — nothing opened — when the battle cannot be read.
+   */
+  const openBattle = async (r) => {
+    if (r.battleId === battleId || typeof readers.readBattle !== 'function') return false;
+    const read = await readers.readBattle(r.battleId);
+    // review SPR-L-2: a read that answers after the player has left the Film Room opens nothing
+    if (!mounted.current) return false;
+    if (read?.status !== 'ready' || filmRoomBattleId(read.battle) !== r.battleId) return false;
+    return requestOpenBattleReview(read.battle, { etDate: r.etDate, moment: r });
   };
   const onFile = async (req) => {
     const r = await cards.create(req);
@@ -271,7 +324,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
   const complete = battle?.status === 'completed' || tape?.battle?.status === 'completed';
   const lastDay = days.length ? days[days.length - 1] : null;
   const finalDay = complete && lastDay && day !== lastDay && tape?.battle?.status !== 'completed'
-    ? { label: etDateLabel(lastDay, { short: true }), open: () => changeDay(lastDay) }
+    ? { label: etDateLabel(lastDay, { short: true }), open: () => { changeDay(lastDay); setPendingJump(panelOf(depth)); } }
     : null;
 
   let content;
@@ -285,7 +338,7 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
     const status = typeof tape?.passes?.close?.status === 'string' && tape.passes.close.status ? <StoredNote doc={tape} path={['passes', 'close', 'status']} /> : COPY.statusUnknown;
     content = <div data-state="not-written"><EmptyCard>{COPY.closeNotWritten} ({status}).</EmptyCard></div>;
   }
-  else if (depth === 'glance') content = <FilmRoomGlance tape={tape} desktop={desktop} selected={selected} onSelect={setSelected} finalDay={finalDay} cards={cardsProps} />;
+  else if (depth === 'glance') content = <FilmRoomGlance tape={tape} desktop={desktop} selected={selected} onSelect={setSelected} finalDay={finalDay} cards={cardsProps} onOpenMeeting={openMeeting} />;
   else if (depth === 'study') content = <FilmRoomStudy tape={tape} desktop={desktop} onDeep={openDeep} selected={selected} onSelect={setSelected} jump={jump} cards={cardsProps} />;
   else content = <FilmRoomDeepDive tape={tape} seriesState={seriesState} sym={sym} onSym={setSym} desktop={desktop} />;
 
@@ -305,8 +358,8 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
         </div>
         {cardsOn ? (
           <div data-cards-regions="header" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <SinceLastTime day={day} battleId={battleId} counter={cards.counter} onOpenMoment={openMoment} onShowCard={showCard} />
-            {written ? <PreparedCase tape={tape} onTakeHome={takeHome} /> : null}
+            <SinceLastTime day={day} battleId={battleId} counter={cards.counter} onOpenMoment={openMoment} onOpenBattle={openBattle} onShowCard={showCard} />
+            {written ? <PreparedCase tape={tape} onTakeHome={takeHome} opened={opened} /> : null}
           </div>
         ) : <Reserved region="header" names={COPY.reservedHeader} />}
         <div style={{ display: 'flex', alignItems: desktop ? 'center' : 'stretch', flexDirection: desktop ? 'row' : 'column', gap: desktop ? 16 : 10 }}>
@@ -348,8 +401,10 @@ export default function FilmRoomScreenV2({ battle, onBack, backTo = 'unknown', v
       <footer style={{ padding: 0 }}>
         {cardsOn ? (
           <div data-cards-regions="footer" style={{ width: '100%', maxWidth: desktop ? 1240 : undefined, margin: '0 auto', boxSizing: 'border-box', padding: picked || receipt ? (desktop ? '0 24px 48px' : '0 12px 40px') : 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {picked && written ? <YourCall key={`${day}:${picked.symbol}:${picked.fromTickSeq}`} tape={tape} moment={picked} counter={cards.counter} mintOpId={cards.mintOpId} onFile={onFile} onCancel={() => setPicked(null)} /> : null}
-            {receipt ? <Receipt key={receipt.entryId} day={day} counter={cards.counter} card={receipt} mintOpId={cards.mintOpId} onRetire={onRetire} /> : null}
+            {/* Amendment L RL-1: Set's words and link judge the battle's OWN agent (the one this screen sends), never the parent the card is filed under */}
+            {picked && written ? <YourCall key={`${day}:${picked.symbol}:${picked.fromTickSeq}`} tape={tape} moment={picked} counter={cards.counter} mintOpId={cards.mintOpId} onFile={onFile} onCancel={() => setPicked(null)} agentId={agentId} /> : null}
+            {/* Amendment K RK-3: Set's link is on the receipt, never the form — a trip to the Forge cannot discard an unfiled note */}
+            {receipt ? <Receipt key={receipt.entryId} day={day} counter={cards.counter} card={receipt} mintOpId={cards.mintOpId} onRetire={onRetire} tape={written ? tape : null} onOpenForge={onOpenForge} agentId={agentId} /> : null}
           </div>
         ) : <Reserved region="footer" names={COPY.reservedFooter} />}
       </footer>

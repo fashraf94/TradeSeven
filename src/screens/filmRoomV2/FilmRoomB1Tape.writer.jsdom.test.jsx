@@ -12,6 +12,8 @@
 //   · NEW FIELDS ARE UNRENDERED: the whole screen at Glance and Study — and the
 //     Deep dive with the same symbol open — is the same HTML, byte for byte
 //     (React's useId values renumbered), with the B1 fields stripped from the tape.
+//     The meetings aside: B2.1 A1 renders them in Study (Amendment J RJ-1), so
+//     they stay on both sides and the rows prove the rest of B1 unrendered.
 //   · THE VISIBLE CONSEQUENCES, stated: the leg's new series document is a
 //     day series like any other, so the Deep dive's symbol picker offers it,
 //     as "price series", its numbers marked as market data (the export lists it
@@ -73,11 +75,15 @@ beforeAll(async () => {
   b1 = await buildTapeDay(fx, { night: SEP23_NIGHT, morning: SEP23_MORNING, bars });
 });
 
-/** The tape with every B1 addition removed — what the A2 writer would have stored for the same day. */
+/**
+ * The tape with every B1 addition the screen does not render removed — what the A2 writer would have stored for the
+ * same day, the meetings aside: B2.1 A1 renders them in Study on purpose (Amendment J RJ-1, RJ-9), so they stay on
+ * both sides of every comparison below and the rows prove the REST of B1 unrendered.
+ */
 function stripB1(tape) {
   const t = structuredClone(tape);
-  delete t.tags; delete t.meetings;
-  delete t.coverage.tags; delete t.coverage.meetings;
+  delete t.tags;
+  delete t.coverage.tags;
   delete t.score.opponentBasis;
   for (const c of t.checks) if (c.scores) delete c.scores.opponent;
   for (const k of Object.keys(t.numberClasses)) if (k.startsWith('tags.') || k === 'checks[].scores.opponent') delete t.numberClasses[k];
@@ -117,7 +123,13 @@ describe('new fields are unrendered — the screen is the same HTML with them st
     const without = await openAt(stripB1(b1.tape), series, label);
     expect(withB1.length).toBeGreaterThan(5000);
     expect(withB1).toBe(without);
-    expect(withB1).not.toContain(DIAGNOSIS);
+    // B2.1 A1: the meeting's words reach the screen only in Study's Meetings, once, as the platform's quoted words
+    // (the rendered text: the HTML escapes the words' "&")
+    if (label === 'Glance') expect(m.container.textContent).not.toContain(DIAGNOSIS);
+    else {
+      expect(m.container.textContent.split(DIAGNOSIS)).toHaveLength(2);
+      expect(m.q('#meetings [data-quote-path="meetings[0].diagnosis"]').textContent).toBe(DIAGNOSIS);
+    }
     expect(withB1).not.toContain('stalled');
   });
 

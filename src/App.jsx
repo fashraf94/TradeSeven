@@ -2562,6 +2562,13 @@ export default function PortfolioDuel() {
   useEffect(() => {
     if (showForge) setForgeInitialView('overview');
   }, [showForge]);
+  // Film Room B2.1 B2 (Build B Amendment H RH-2): the day and moment the open
+  // event names, for the battle it opens — a card's recurrence in another
+  // battle; null for every other way in. Applied ONCE (Amendment K RK-4):
+  // cleared as soon as the Film Room has used it, so any later remount — the
+  // return from the Forge included — opens its default view; and cleared once
+  // the Film Room is left.
+  const [filmRoomOpenAt, setFilmRoomOpenAt] = useState(null);
   // Pilot P1c (src/components/Forge/Watchlist/ideaNavigation.js): the deploy
   // ceremony's "running without your idea" line opens the list's editor, where
   // its Idea panel lives (ruling E1, OPEN_IDEA_EVENT); the review card's
@@ -2582,6 +2589,9 @@ export default function PortfolioDuel() {
       setCurrentBattle(battle);
       setShowForge(false);
       setScreen('filmRoom');
+      // B2.1 B2: the optional day and moment (P1c's own callers send none); the Film Room checks it. The back
+      // destination is left as it was (RJ-10): filmRoomFromRef is recorded only while another screen shows.
+      setFilmRoomOpenAt(event.detail.at ? { ...event.detail.at, battleId: battle.id } : null);
     };
     window.addEventListener(OPEN_IDEA_EVENT, onOpenIdea);
     window.addEventListener(OPEN_BATTLE_REVIEW_EVENT, onOpenBattleReview);
@@ -5134,6 +5144,10 @@ export default function PortfolioDuel() {
   useEffect(() => {
     if (screen !== 'filmRoom') filmRoomFromRef.current = { screen, battle: currentBattle };
   }, [screen, currentBattle]);
+  // B2.1 B2: a day and moment the open event named belongs to that one opening of the Film Room
+  useEffect(() => {
+    if (screen !== 'filmRoom') setFilmRoomOpenAt(null);
+  }, [screen]);
 
   // Load challenges for current battle
   useEffect(() => {
@@ -9705,6 +9719,14 @@ export default function PortfolioDuel() {
               if (filmRoomBack.screen === 'battle' && filmRoomFrom.battle) setCurrentBattle(filmRoomFrom.battle);
               setScreen(filmRoomBack.screen);
             }}
+            // Film Room B2.1 B1 (Build B Amendment H RH-1): Set on a filed card's receipt (Amendment K RK-3) opens the Forge on its Character area,
+            // where the tempo dial is — through the hub's own door (S5), no new way into the Forge. The Forge renders
+            // in place of the screen; closing it (setShowForge(false)) shows the Film Room again, its back unchanged.
+            onOpenForge={onOpenForge}
+            // B2.1 B2 (RH-2): the day and moment another battle's recurrence opened this battle at
+            openAt={filmRoomOpenAt}
+            // Amendment K RK-4: applied once — the Film Room says it has used them, and they are cleared
+            onOpenAtUsed={() => setFilmRoomOpenAt(null)}
           />
         </ErrorBoundary>
       </div>

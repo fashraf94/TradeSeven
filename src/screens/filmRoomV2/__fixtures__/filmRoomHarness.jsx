@@ -200,9 +200,39 @@ export function storedNoteDefects(container, docs = {}) {
 export const TEXT_ATTRIBUTES = Object.freeze(['aria-label', 'title', 'aria-description', 'aria-roledescription', 'aria-valuetext', 'aria-placeholder', 'alt', 'placeholder']);
 const TEXT_ATTRIBUTE_SELECTOR = TEXT_ATTRIBUTES.map((a) => `[${a}]`).join(', ');
 
-const TIME_PATTERNS = [/\b\d{1,2}:\d{2}( (AM|PM))?\b/g, /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/g, /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}\b/g, /\d{4}-\d{2}-\d{2}T[\d:.]+Z/g];
-/** The fixed copy that spells a digit: the class labels' bar widths, the quote-delay note, an evidence field's name. */
-export const FIXED_DIGIT_COPY = ['1-minute', '10-minute', '15–20 minutes', 'nr7'];
+/** The screen's clock and date forms: "2:15 PM", "Tue, Sep 22, 2026", "Sep 22". */
+const CLOCK_AND_DATE_PATTERNS = [/\b\d{1,2}:\d{2}( (AM|PM))?\b/g, /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun), (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}, \d{4}\b/g, /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}\b/g];
+// A data-time span's text: the whole ISO instant FIRST (Astra's B2.1 review §4 item 2, R-1) — the clock pattern run
+// before it consumed the instant's "15:30" and left "2026-09-22T02: .000Z", which the ISO pattern could no longer match,
+// so a stored instant in a data-time span (coverage's preservedFrom) read as a stray digit. The instant's own shape
+// only (review AL3-2): date, hours and minutes, optional seconds and milliseconds, Z.
+const TIME_PATTERNS = [/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?Z/g, ...CLOCK_AND_DATE_PATTERNS];
+// An attribute is always the screen's (R7; Astra B2): its clocks and dates are times, but never a raw stored instant —
+// no ISO form in an aria-label or a title (review AL3-1; the old order flagged a `.sssZ` instant there by accident).
+const ATTRIBUTE_TIME_PATTERNS = CLOCK_AND_DATE_PATTERNS;
+/**
+ * The fixed copy that spells a digit — the class labels' bar widths, the quote-delay notes, an evidence field's name —
+ * BOUND BY COPY KEY (B2.1 A8, A2F1-7; Amendment J RJ-6): each copy entry that holds one, PINNED HERE by its key with its
+ * text (a row of the inventory suite proves production holds exactly this text at exactly this key). A text node, or
+ * a text attribute, is exempt only when it IS one of these entries, whole — never because a phrase like "15–20
+ * minutes" is found somewhere inside other text (the string match this replaces exempted it anywhere).
+ */
+export const SPEC_FIXED_DIGIT_COPY = Object.freeze({
+  'FILM_ROOM_COPY.evidenceOverlayNote': 'A marker may sit off the bar line: the price the agent was shown came from a quote that runs about 15–20 minutes behind the bars, and the bars are not smoothed.',
+  'FILM_ROOM_COPY.rebuiltDashed': 'dashed · rebuilt from 1-minute bars',
+  'FILM_ROOM_COPY.rebuiltDots': 'dots · rebuilt from 1-minute bars',
+  'FILM_ROOM_COPY.rebuiltDashedDots': 'dashed lines and dots · rebuilt from 1-minute bars',
+  'FILM_ROOM_COPY.splitRows.barAtSwap': '1-minute bar at the swap',
+  'FILM_ROOM_COPY.fillRows.barAtSwap': '1-minute bar at the swap',
+  'FILM_ROOM_COPY.lastBarClose': 'Close · the last 10-minute bar',
+  'FILM_ROOM_COPY.evidenceFields.nr7': 'nr7',
+  LOCKED_BASIS_NOTE: "Banked points and the bought entry use the platform's quote, delayed about 15–20 minutes; rebuilt values use completed 1-minute bars.",
+  'PROVENANCE_LABELS.rebuilt': "rebuilt from 1-minute bars at the battle's check times",
+  'PROVENANCE_LABELS.market': 'market data · EODHD 1-minute bars, aggregated',
+});
+const FIXED_DIGIT_TEXTS = new Set(Object.values(SPEC_FIXED_DIGIT_COPY));
+/** Is this text, whole, one of the pinned fixed-digit copy entries? */
+export const isFixedDigitCopy = (text) => FIXED_DIGIT_TEXTS.has(text);
 
 /**
  * The class of every number the screen computes, PINNED HERE from Amendment E's addendum R4(a) — never read
@@ -230,6 +260,10 @@ export const SPEC_AGGREGATE_CLASSES = Object.freeze({
   'slot(S9 open cards per agent)': 'recorded',
   'count(characters in the note)': 'derived',
   'slot(S10 note characters)': 'recorded',
+  // B2.1 A7 (Amendment J RJ-7, PINNED HERE): Glance's coverage line counts the symbols the candle pass did not chart — stored rows, derived
+  'count(coverage.series.notCharted[])': 'derived',
+  // B2.1 B3 (Amendment H RH-6, PINNED HERE): the counter's unavailable days in its window — a count of tape days, derived
+  'count(tape days with situations unavailable)': 'derived',
 });
 /** The founder slots as the rulings fix them (RG-8) — the oracle for the two slot aggregates, never read from production. */
 export const SPEC_CARD_SLOTS = Object.freeze({ S9: 5, S10: 280 });
@@ -257,6 +291,8 @@ export const SPEC_AGGREGATE_SITES = Object.freeze({
   'slot(S9 open cards per agent)': '[data-card-form] [data-open-count]',
   'count(characters in the note)': '[data-card-form] [data-note-count]',
   'slot(S10 note characters)': '[data-card-form] [data-note-count]',
+  'count(coverage.series.notCharted[])': '[data-coverage-summary] [data-coverage-section="series"]',
+  'count(tape days with situations unavailable)': '[data-cards-region="since-last-time"] [data-unavailable-days]',
 });
 
 /** What a computed number's text says, and how far its format may round it: a count exactly, "+0.53%" to 0.005 %, "604K" to 500, "1.2M" to 50,000. */
@@ -302,6 +338,10 @@ function aggregateOracle(name, el, docs) {
     return cards.filter((c) => ['card', 'nominated'].includes(c.stage) && c.archetypeCodeId === docs.agentArchetype).length;
   }
   if (name === 'count(characters in the note)') return undefined;   // the typed text's own length: its rows bind it
+  // B2.1 A7: the series section's not-charted list, counted HERE from the tape
+  if (name === 'count(coverage.series.notCharted[])') { const l = docs.tape?.coverage?.series?.notCharted; return Array.isArray(l) ? l.length : null; }
+  // B2.1 B3: the unavailable days, counted HERE from the tape days the suite passes (`docs.windowDays`: every tape day the counter's window holds for the agent)
+  if (name === 'count(tape days with situations unavailable)') return Array.isArray(docs.windowDays) ? docs.windowDays.filter((d) => d?.coverage?.tags?.status === 'unavailable').length : undefined;
   const countMoment = (items, situationId, symbol, from, to) => {
     if (from === 'x') return items.filter((i) => i.situationId === situationId && i.symbol === symbol && !Number.isInteger(i.tickSeq)).length ? 1 : null;
     return items.filter((i) => i.situationId === situationId && i.symbol === symbol && Number.isInteger(i.tickSeq) && i.tickSeq >= Number(from) && i.tickSeq <= Number(to)).length;
@@ -473,9 +513,10 @@ export function sweepNumbers(container, docs) {
     if (boundStoredNoteOf(host, docs)) continue;
     // R13: the agent’s name, bound to its stored field, is a stored display name — not a number the screen states.
     if (boundAgentNameOf(host, docs)) continue;
+    // A2F1-7: a fixed-digit copy entry, bound by its key — the WHOLE text node is one of them, or nothing is exempt
+    if (isFixedDigitCopy(node.textContent)) continue;
     if (host.closest('[data-time]')) for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
     if (host.closest('[data-identifier]')) text = text.replace(/#swap-\d+/g, ' ');
-    for (const s of FIXED_DIGIT_COPY) text = text.split(s).join(' ');
     if (/\d/.test(text)) bad.push(`stray digit: “${node.textContent.trim().slice(0, 80)}”`);
   }
   // Attributes a screen reader or a hover shows are rendered output too (review A2L4-6; every one of them, A2AV1-N1).
@@ -483,9 +524,10 @@ export function sweepNumbers(container, docs) {
     for (const attr of TEXT_ATTRIBUTES) {
       let text = el.getAttribute(attr);
       if (!text || !/\d/.test(text)) continue;
-      for (const re of TIME_PATTERNS) text = text.replace(re, ' ');
-      // no stored-string exemption in an attribute: an attribute is always the screen's (R7; Astra B2)
-      for (const s of FIXED_DIGIT_COPY) text = text.split(s).join(' ');
+      // no stored-string exemption in an attribute: an attribute is always the screen's (R7; Astra B2) — a fixed-digit
+      // copy entry, whole, bound by its key (A2F1-7), is the screen's own fixed phrase
+      if (isFixedDigitCopy(text)) continue;
+      for (const re of ATTRIBUTE_TIME_PATTERNS) text = text.replace(re, ' ');
       if (/\d/.test(text)) bad.push(`stray digit in ${attr}: “${el.getAttribute(attr).slice(0, 80)}”`);
     }
   }
@@ -511,6 +553,9 @@ export const SPEC_QUOTE_CHANNELS = Object.freeze([
   { re: /^directives\[\d+\]\.(canonicalText|retainedDirectiveText)$/, by: 'the stored directive', at: (p) => within(p, 'filedAt') },
   { re: /^plans\[\d+\]\.(signalSummary|threshold)$/, by: 'the stored plan', at: (p) => within(p, 'at') },
   { re: /^battle\.completionMessage\.text$/, by: 'the platform', at: () => ['battle', 'completionMessage', 'at'] },
+  // B2.1 A1 (Amendment J RJ-1): a meeting's diagnosis is platform-composed text, credited "the platform" at the
+  // meeting's own createdAt; its numbers are quoted words
+  { re: /^meetings\[\d+\]\.diagnosis$/, by: 'the platform', at: (p) => within(p, 'createdAt') },
   // B2 (spec §6): the player's note on a filed card — the LEDGER document (`docs.ledger`: `{ etDate, cards }`, each card
   // under its OWN entry id, never a position in a list — review L3-9a), credited "you"
   { re: /^cards\.[A-Za-z0-9_-]+\.note$/, by: 'you', at: (p) => within(p, 'createdAt') },

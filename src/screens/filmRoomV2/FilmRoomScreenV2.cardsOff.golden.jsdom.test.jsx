@@ -5,12 +5,22 @@
 // Film Room B2 item 8 / acceptance J — WITH CARDS OFF, OR THE OWNER NOT
 // ADMITTED, THE SCREEN IS THE CURRENT v2, BYTE FOR BYTE (Build B spec §7, §8
 // criterion 5; Amendment G RG-2, RG-10: "the current v2" is the screen at
-// this build's base with FILM_ROOM_V2_MODE 'on'). The twelve goldens under
-// src/screens/__golden__/filmRoomV2.*.html were captured from a `git archive`
-// of the base commit 7818a1b3 — NOT from this tree — by
-// captureFilmRoomV2Golden.jsdom.test.jsx run twice (identical) in a scratch
-// extraction; their SHA-256 is pinned below, so the label inside this file
-// proves nothing by itself. This suite mounts the CURRENT FilmRoomScreenV2
+// the goldens' source commit with FILM_ROOM_V2_MODE 'on'). The twelve goldens
+// under src/screens/__golden__/filmRoomV2.*.html were captured first from B2's
+// base (7818a1b3), then RE-CAPTURED at the head of B2.1, the screen pass
+// (Amendment J RJ-9: Part A changes v2 for every player on purpose; every
+// difference from B2's goldens maps to a named Part A item, recorded in
+// docs/audits/20261022_BUILD_FILM_ROOM_B2_1_SCREEN_PASS.md), then again at the
+// code head of the B2.1 rulings round (Amendment K RK-13: only RK-5 and RK-11
+// change the cards-off screen; the two Sep-23 Deep dive goldens moved, both
+// RK-11, mapped in that report's section 13), then again at the code head of
+// the Amendment L round (Amendment L RL-3 and RL-4 change the cards-off screen;
+// the two empty-day Deep dive goldens moved, both RL-3 — the chart section with
+// no symbol to chart loses the series section's line — mapped in that report's
+// section 14; RL-4 reaches no golden) — each time from
+// a `git archive` of that commit by captureFilmRoomV2Golden.jsdom.test.jsx run
+// twice (identical) in a scratch extraction. Their SHA-256 is pinned below, so
+// the label inside this file proves nothing by itself. This suite mounts the CURRENT FilmRoomScreenV2
 // under the same harness, fixtures, clock and zone, renumbers React's useId
 // values the same way, and asserts string equality:
 //   FILM_ROOM_CARDS_MODE 'off'                        → the golden, no request
@@ -43,22 +53,22 @@ import { resetFilmRoomVerdicts } from '../../utils/filmRoomGate';
 import { mounter, sep23Tape, sep23Series, emptyTape, emptySeries, battleOf, readersOf, NOW } from './__fixtures__/filmRoomHarness';
 import { renumberIds, GOLDEN_DEPTHS, GOLDEN_LAYOUTS, goldenName } from '../__golden__/filmRoomV2Golden.js';
 
-/** The base commit the goldens were captured from. */
-export const GOLDEN_SOURCE_COMMIT = '7818a1b315589dd95cffbf3708df685fa3d9eb9d';
+/** The commit the goldens were captured from (the B2.1 Amendment L round's code head; the rulings round's 004f2c1f, B2.1's 07dc3d58, and B2's base 7818a1b3, before it). */
+export const GOLDEN_SOURCE_COMMIT = '30a0820dc1c5072ebea4b3b09f2ba7ca9614e7e7';
 /** Each golden's SHA-256 as captured (the review C-9 pattern). */
 export const GOLDEN_SHA256 = Object.freeze({
-  'filmRoomV2.empty.deep.desktop.html': '9be5322258a2c59a15c8611594a1ba91a118505d9a193aabb96604f4478ab836',
-  'filmRoomV2.empty.deep.phone.html': '7f519599fa5f107a2c7d6378537f01b2eaf47d90db69d0af824bec055da826b0',
-  'filmRoomV2.empty.glance.desktop.html': '20dd7a0d81981ad2bd14acf521247714b3f4eb579578eff92410eb0d58878db4',
-  'filmRoomV2.empty.glance.phone.html': 'c4ac65561fb116bddec75bb7381b16d6b36e8bc2e60bb16df3e73b619f47858c',
-  'filmRoomV2.empty.study.desktop.html': 'e907fdb38cf50d654099a68df66d7b062adf663229e6e54b10499cbee2e256f6',
-  'filmRoomV2.empty.study.phone.html': '7eeec56e34cb92ee84454ea982c11a97912c8206a31f3758ec8178442d3c94dd',
-  'filmRoomV2.sep23.deep.desktop.html': '00c2769e6efc0469e044259b4cdffa45d6df4ec97513a9cc9e67fb866515d041',
-  'filmRoomV2.sep23.deep.phone.html': '3e2f707375d1fa99112f243c533fe7e3d0e895b3848df2d18aec63e2af851f1b',
-  'filmRoomV2.sep23.glance.desktop.html': '2c16fda49f04cd4c1c829685027173cf9c985736279af2dba98424b26b358b5c',
-  'filmRoomV2.sep23.glance.phone.html': '43dbe719f987a7f66862714bbc85bfdad2971f25b48c73ea4e5541b8b1baed34',
-  'filmRoomV2.sep23.study.desktop.html': 'fc246b0a5e78a70ef25174663dee90bc1ef73a092c3ca9b0b83a0f65389a7da5',
-  'filmRoomV2.sep23.study.phone.html': '002c21f34afe34e9bfe9eee74c84c73f90c167f44a714cbbb95b0b4918e2052d',
+  'filmRoomV2.empty.deep.desktop.html': '39b82e0333a80189b2b0752baf88187d62710449bf1619a7bbeb1319f3153ee6',
+  'filmRoomV2.empty.deep.phone.html': 'b9e9bbe34e35834eaa48fd060b277ac2a69b4e64532505ab45c73ba07857fadb',
+  'filmRoomV2.empty.glance.desktop.html': 'a180e9c23d87ea365269d461a474c797921ca163aae60aed6a2124c4d2092a45',
+  'filmRoomV2.empty.glance.phone.html': '5d61ab17b5459828dc89bf3b7a3c2901f4cd01a06c0e174d0ae307d3884762c3',
+  'filmRoomV2.empty.study.desktop.html': '2dc16ebe1d6fa2fa5045967514c73dcf5c6164727cfd34ea489c59e80996cc2a',
+  'filmRoomV2.empty.study.phone.html': '5f5e7dbe3d8e05b129dd9c94e5fc9763dea318171e141a42184d45d3b268fcb3',
+  'filmRoomV2.sep23.deep.desktop.html': 'ffadf417725aeecdf4bc27706999acaa89fbecd4e09a64bc27ed72652c90624e',
+  'filmRoomV2.sep23.deep.phone.html': 'e502efb66e9d8c35e2ce5beadc2cfc195388d7feb353c2fb1c0f2d142af0b983',
+  'filmRoomV2.sep23.glance.desktop.html': '4639519037dc720c1603bdd45dd5d558a7a7576428376202bd2d4452ef2d566f',
+  'filmRoomV2.sep23.glance.phone.html': 'd59c474a5eabafddcf03a8ae712b574ce597d8257af0d19cbf3c6cfe3ce7e17f',
+  'filmRoomV2.sep23.study.desktop.html': '093131f510f6a6a661df1f344bc3ab02d811020eca9586acb60afa51d4f2f2e9',
+  'filmRoomV2.sep23.study.phone.html': '7cb135976584fe5a74923bc7c41cf9b805ef55add26787238035ef8a95118b5c',
 });
 const DAYS = [['sep23', sep23Tape, sep23Series], ['empty', emptyTape, emptySeries]];
 const CASES = GOLDEN_LAYOUTS.flatMap((layout) => DAYS.flatMap(([day, tape, series]) => GOLDEN_DEPTHS.map(([label, depth]) => ({ layout, day, tape, series, label, depth, file: goldenName(day, depth, layout) }))));
@@ -101,8 +111,8 @@ async function photograph(c) {
 }
 const answer = (body, status = 200) => { globalThis.fetch = vi.fn(async (url) => { fetches.push(String(url)); return { ok: status === 200, status, json: async () => body }; }); };
 
-describe('the goldens are the base\'s photographs (not empty, not this tree\'s, not the cards release)', () => {
-  it('every golden file is exactly the one captured from the base commit (SHA-256 pinned), LF only, with every case photographed', () => {
+describe('the goldens are the source commit\'s photographs (not empty, not pasted from a run, not the cards release)', () => {
+  it('every golden file is exactly the one captured from the source commit (SHA-256 pinned), LF only, with every case photographed', () => {
     expect(CASES.map((c) => c.file).sort()).toEqual(Object.keys(GOLDEN_SHA256).sort());
     for (const [name, sha] of Object.entries(GOLDEN_SHA256)) {
       const bytes = goldenBytes(name);

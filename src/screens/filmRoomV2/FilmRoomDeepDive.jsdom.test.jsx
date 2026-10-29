@@ -14,6 +14,7 @@ import React from 'react';
 import FilmRoomDeepDive, { displayNameOf } from './FilmRoomDeepDive';
 import { mounter, sep23Tape, sep23Series, emptyTape, emptySeries, clone, sweepNumbers, sweepWords, sweepSigns, parseNumeral } from './__fixtures__/filmRoomHarness';
 import { fmtVolume } from './filmRoomModel';
+import { EXIT_MECHANISMS } from '../../constants/filmTape';
 import { COMPANY_NAMES } from '../../config/stockData';
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -22,9 +23,9 @@ const m = mounter();
 beforeEach(() => m.setup());
 afterEach(() => m.teardown());
 
-function Harness({ tape, series, start = null, desktop = false }) {
+function Harness({ tape, series, start = null, desktop = false, seriesState = null }) {
   const [sym, setSym] = React.useState(start);
-  return <FilmRoomDeepDive tape={tape} seriesState={{ status: 'ready', series }} sym={sym} onSym={setSym} desktop={desktop} />;
+  return <FilmRoomDeepDive tape={tape} seriesState={seriesState ?? { status: 'ready', series }} sym={sym} onSym={setSym} desktop={desktop} />;
 }
 const docsFor = (tape, series) => ({ tape, ...Object.fromEntries(series.map((s) => [`series:${s.symbol}`, s])) });
 const chip = (s) => m.qa('[data-region="symbol-picker"] button').find((b) => b.textContent === s);
@@ -53,12 +54,73 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     expect(m.q('[data-volume-bar]')).toBeNull();
   });
 
-  it('a swap on the symbol is marked at its recorded time, with who made the exit', () => {
+  it('a swap on the symbol is marked at its recorded time, with who made it — the sold name its exit, the bought name its entry (B2.1 A4, FR-04, RJ-4; Amendment K RK-5: the sold name\'s maker in RJ-4\'s words)', () => {
     m.render(<Harness tape={sep23Tape} series={sep23Series} start="MSFT" />);
     expect(m.q('[data-swap-mark="0"]')).toBeTruthy();
-    expect(m.q('[data-swap-label="0"]').textContent).toBe('Exit · 12:45 PM · Exit by platform rule · stagnation');
+    expect(m.q('[data-swap-label="0"]').textContent).toBe('Exit · 12:45 PM · by platform rule · stagnation');
     m.click(chip('PLTR'));
-    expect(m.q('[data-swap-label="1"]').textContent).toBe('Entry · 2:00 PM · Exit by the agent · its own decision');
+    expect(m.q('[data-swap-label="1"]').textContent).toBe('Entry · 2:00 PM · in for DE · by the agent');
+    m.click(chip('DE'));
+    expect(m.q('[data-swap-label="1"]').textContent).toBe('Exit · 2:00 PM · by the agent');
+    m.click(chip('CRWD'));
+    expect(m.q('[data-swap-label="0"]').textContent).toBe('Entry · 12:45 PM · in for MSFT · by platform rule · stagnation');
+  });
+
+  it('Amendment K RK-5 — the sold name\'s maker: the agent, a platform rule with its reason, the gameplan meeting, a maker not recorded; "Exit by" never on the chart (the mutant: "Exit by" back on the sold name)', () => {
+    const planted = (mechanism, exitReason) => { const t = clone(sep23Tape); t.actions[0] = { ...t.actions[0], mechanism, exitReason }; return t; };
+    for (const [mechanism, exitReason, maker] of [
+      ['agent_decision', null, 'by the agent'],
+      ['platform_risk_manager', 'stagnation', 'by platform rule · stagnation'],
+      ['archetype_rotation', null, 'by platform rule · rule not recorded'],
+      ['gameplan_meeting', null, 'by the gameplan meeting'],
+      [undefined, null, 'maker not recorded'],
+      // Amendment L RL-4: the meeting maker drops the raw code — every real meeting swap carries 'gameplan_rotation'
+      // (tapeAssemble.js maps the mechanism from it), and the chart says "by the gameplan meeting" alone; review KR4-2:
+      // an unrecorded maker keeps any stored reason after it, as before
+      ['gameplan_meeting', 'gameplan_rotation', 'by the gameplan meeting'],
+      [undefined, 'legacy_code', 'maker not recorded · legacy_code'],
+    ]) {
+      m.render(<Harness key={`${mechanism}:${exitReason}`} tape={planted(mechanism, exitReason)} series={sep23Series} start="MSFT" />);
+      expect(m.q('[data-swap-label="0"]').textContent, String(mechanism)).toBe(`Exit · 12:45 PM · ${maker}`);
+      expect(m.q('[data-region="price-chart"]').textContent, String(mechanism)).not.toMatch(/Exit by|Exit maker/);
+    }
+  });
+
+  it('Amendment L RL-4 — a real meeting swap (the writer\'s mapping: gameplan_rotation → the meeting): both names read "by the gameplan meeting" with no code after it; a platform rule keeps its reason on both names; the symbol\'s facts keep the recorded reason (the mutants: the raw code back after the meeting maker; a platform rule\'s reason dropped)', () => {
+    expect(EXIT_MECHANISMS.gameplan_rotation).toBe('gameplan_meeting');
+    const meeting = clone(sep23Tape);
+    meeting.actions[0] = { ...meeting.actions[0], exitReason: 'gameplan_rotation', mechanism: EXIT_MECHANISMS.gameplan_rotation };
+    const { symbolOut, symbolIn } = meeting.actions[0];
+    expect([symbolOut, symbolIn]).toEqual(['MSFT', 'CRWD']);
+    m.render(<Harness key="meeting" tape={meeting} series={sep23Series} start={symbolOut} />);
+    expect(m.q('[data-swap-label="0"]').textContent).toBe('Exit · 12:45 PM · by the gameplan meeting');
+    // RL-4 is the chart's: the symbol's facts keep exitMakerOf's words, the recorded reason after them
+    expect(m.q('[data-region="symbol-facts"]').textContent).toContain('Exit by the gameplan meeting · gameplan_rotation');
+    m.click(chip(symbolIn));
+    expect(m.q('[data-swap-label="0"]').textContent).toBe('Entry · 12:45 PM · in for MSFT · by the gameplan meeting');
+    expect(m.q('[data-region="price-chart"]').textContent).not.toContain('gameplan_rotation');
+    // a platform rule keeps its reason on both names (RJ-4)
+    const rule = clone(sep23Tape);
+    rule.actions[0] = { ...rule.actions[0], exitReason: 'stagnation', mechanism: EXIT_MECHANISMS.stagnation };
+    m.render(<Harness key="rule" tape={rule} series={sep23Series} start={symbolOut} />);
+    expect(m.q('[data-swap-label="0"]').textContent).toBe('Exit · 12:45 PM · by platform rule · stagnation');
+    m.click(chip(symbolIn));
+    expect(m.q('[data-swap-label="0"]').textContent).toBe('Entry · 12:45 PM · in for MSFT · by platform rule · stagnation');
+    expect(sweepWords(m.container, docsFor(rule, sep23Series))).toEqual([]);
+  });
+
+  it('FR-04 / RK-5: no swap annotation on the chart reads "Exit by …" — every swap\'s bought name and sold name', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} start="MSFT" />);
+    sep23Tape.actions.forEach((a, i) => {
+      m.click(chip(a.symbolIn));
+      const entry = m.q(`[data-swap-label="${i}"]`).textContent;
+      expect(entry, a.symbolIn).toMatch(new RegExp(`^Entry · .+ · in for ${a.symbolOut} · by `));
+      expect(entry, a.symbolIn).not.toMatch(/Exit/);
+      m.click(chip(a.symbolOut));
+      const exit = m.q(`[data-swap-label="${i}"]`).textContent;
+      expect(exit, a.symbolOut).toMatch(/^Exit · .+ · by /);
+      expect(exit, a.symbolOut).not.toMatch(/Exit by/);
+    });
   });
 
   it('side facts: the record\'s own prices (the session open, the last close), market class; the role from the tape — no session high or low (A2L1-4)', () => {
@@ -78,10 +140,95 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     expect(facts.textContent).toContain('XLI');
   });
 
-  it('a symbol with no series says so — nothing drawn for it', () => {
+  it('a symbol with no series says so — nothing drawn for it (B2.1 A2: its own state, the reason the tape records)', () => {
     m.render(<Harness tape={sep23Tape} series={sep23Series} start="BTC" />);
-    expect(m.q('[data-no-series="BTC"]').textContent).toBe('No series for BTC.');
+    expect(m.q('[data-no-series="BTC"]').textContent).toBe('No chart for BTC: crypto is not charted.');
     expect(m.q('[data-region="price-chart"]')).toBeNull();
+  });
+
+  it('Amendment K RK-11 — the Sep-23 day: AMD, charted, reads "Chart recorded for AMD", never the series section\'s status; BTC, not charted, says its own state as built (the mutant: the section\'s status beside a charted symbol)', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} start="AMD" />);
+    const chartSection = () => m.q('[data-section="deep-chart"]');
+    expect(chartSection().querySelector('[data-chart-recorded]').textContent).toBe('Chart recorded for AMD');
+    expect(chartSection().querySelector('[data-chart-recorded] [data-record-text]').textContent).toBe('AMD');
+    expect(chartSection().querySelector(':scope > [data-coverage]')).toBeNull();
+    expect(chartSection().textContent).not.toMatch(/Coverage · (complete|partial|unavailable)/);
+    m.click(chip('BTC'));
+    expect(chartSection().querySelector('[data-chart-recorded]')).toBeNull();
+    expect(m.q('[data-no-series="BTC"]').textContent).toBe('No chart for BTC: crypto is not charted.');
+    expect(chartSection().querySelector(':scope > [data-coverage]')).toBeNull();   // RJ-2 as built: no "complete" beside a symbol with no series
+  });
+
+  it('RK-11 — a fully charted day, and a day whose series section is partial: each charted symbol reads its own line; the desktop grid keeps the section\'s line as built', () => {
+    const full = clone(sep23Tape);
+    full.coverage.series = { ...full.coverage.series, notCharted: [] };
+    m.render(<Harness key="full" tape={full} series={sep23Series} start="MSFT" />);
+    expect(m.q('[data-section="deep-chart"] [data-chart-recorded]').textContent).toBe('Chart recorded for MSFT');
+    expect(m.q('[data-section="deep-chart"] > [data-coverage]')).toBeNull();
+    const partial = clone(sep23Tape);
+    partial.coverage.series = { ...partial.coverage.series, status: 'partial', note: 'bars missing for 2 symbols' };
+    m.render(<Harness key="partial" tape={partial} series={sep23Series} start="MSFT" desktop />);
+    expect(m.q('[data-section="deep-chart"] [data-chart-recorded]').textContent).toBe('Chart recorded for MSFT');
+    expect(m.q('[data-section="deep-chart"]').textContent).not.toContain('bars missing for 2 symbols');
+    expect(m.q('[data-section="deep-all"] [data-coverage="partial"]').textContent).toContain('bars missing for 2 symbols');
+  });
+
+  describe('Amendment L RL-3 — the one-symbol section never shows the series section\'s status: its own line in each state; the all-symbols grid keeps the section\'s line', () => {
+    const LAYOUTS = [['phone', false], ['desktop', true]];
+    const dayOf = (status) => { const t = clone(sep23Tape); t.coverage.series = { ...t.coverage.series, status, note: `${status} series note` }; return t; };
+    /** The series section's line in a section: its own coverage line (a direct child) or the series note bound by path — the evidence overlay's coverage, nested in the body, is not it. */
+    const seriesLineIn = (sec) => sec.querySelector(':scope > [data-coverage], [data-stored-note="coverage.series.note"]');
+    const gridLine = () => m.q('#deep-all > [data-coverage]');
+
+    it.each(LAYOUTS)('%s — while the series loads (the hook\'s idle, then loading — review AL2-1): the loading line, no series status (the mutant: the status shown while loading)', (_, desktop) => {
+      for (const read of ['idle', 'loading']) {
+        for (const status of ['complete', 'partial', 'unavailable']) {   // review ALT-21: each section status
+          m.render(<Harness key={`${read}:${status}`} tape={dayOf(status)} series={[]} seriesState={{ status: read, series: [] }} start="AMD" desktop={desktop} />);
+          const sec = m.q('#deep-chart');
+          expect(sec.textContent, `${read} ${status}`).toContain('Loading the tape…');
+          expect(seriesLineIn(sec), `${read} ${status}`).toBeNull();
+          expect(sec.textContent, `${read} ${status}`).not.toContain(`${status} series note`);
+          // the grid (desktop only) and Glance keep the section's status
+          if (desktop) expect(gridLine().getAttribute('data-coverage'), `${read} ${status}`).toBe(status);
+        }
+      }
+    });
+
+    it.each(LAYOUTS)('%s — after a failed read: the failure sentence, no series status (the mutant: the status shown after a failed read)', (_, desktop) => {
+      for (const status of ['complete', 'partial', 'unavailable']) {   // review ALT-21: each section status
+        m.render(<Harness key={status} tape={dayOf(status)} series={[]} seriesState={{ status: 'error', series: [] }} start="AMD" desktop={desktop} />);
+        const sec = m.q('#deep-chart');
+        expect(sec.querySelector('[data-state="series-error"]').textContent, status).toBe('The series for this day could not be read.');
+        expect(seriesLineIn(sec), status).toBeNull();
+        if (desktop) expect(gridLine().getAttribute('data-coverage'), status).toBe(status);
+      }
+    });
+
+    it.each(LAYOUTS)('%s — beside an uncharted symbol on a partial or unavailable day: RJ-2\'s sentence, no series status; the desktop grid keeps the section\'s line and its stored note (the mutants: the status shown beside an uncharted symbol; the grid losing its line)', (_, desktop) => {
+      for (const status of ['partial', 'unavailable']) {
+        m.render(<Harness key={status} tape={dayOf(status)} series={sep23Series} start="BTC" desktop={desktop} />);
+        const sec = m.q('#deep-chart');
+        expect(sec.querySelector('[data-no-series="BTC"]').textContent, status).toBe('No chart for BTC: crypto is not charted.');
+        expect(seriesLineIn(sec), status).toBeNull();
+        expect(sec.textContent, status).not.toContain(`${status} series note`);
+        if (desktop) {
+          expect(gridLine().getAttribute('data-coverage'), status).toBe(status);
+          expect(gridLine().querySelector('[data-stored-note="coverage.series.note"]').textContent, status).toBe(`${status} series note`);
+        }
+        expect(sweepNumbers(m.container, docsFor(dayOf(status), sep23Series)), status).toEqual([]);
+      }
+    });
+
+    it('a charted symbol keeps RK-11\'s line, never the status; the empty day\'s section (no symbol to chart) shows no series status either', () => {
+      m.render(<Harness key="partial" tape={dayOf('partial')} series={sep23Series} start="MSFT" desktop />);
+      expect(m.q('#deep-chart > [data-chart-recorded]').textContent).toBe('Chart recorded for MSFT');
+      expect(seriesLineIn(m.q('#deep-chart'))).toBeNull();
+      expect(gridLine().getAttribute('data-coverage')).toBe('partial');
+      for (const desktop of [false, true]) {
+        m.render(<Harness key={`empty${desktop}`} tape={emptyTape} series={emptySeries} desktop={desktop} />);
+        expect(seriesLineIn(m.q('#deep-chart')), String(desktop)).toBeNull();
+      }
+    });
   });
 
   it('desktop: every symbol at a glance, price only, each last close marked market', () => {
@@ -237,7 +384,23 @@ describe('addendum R4(a)/(b)/(d) — the restored facts, axes and name', () => {
     expect(m.q('[data-region="symbol-facts"]').textContent.startsWith('ETN')).toBe(true);
   });
 
-  it('review A2P1-2: a directory name holding a forbidden word ("Best Buy") is shown as the symbol alone', () => {
+  it('B2.1 A5 (FR-05, RJ-5): a symbol the directory lacks says "Company name not on file" beside it and on the chart — no name is guessed', () => {
+    m.render(<Harness tape={sep23Tape} series={sep23Series} start="ETN" />);
+    expect(COMPANY_NAMES.ETN).toBeUndefined();
+    expect(m.q('[data-region="symbol-facts"] [data-display-name-missing="ETN"]').textContent).toBe('Company name not on file');
+    expect(m.q('#deep-chart [data-display-name-missing="ETN"]').textContent).toBe('Company name not on file');
+    expect(m.q('[data-display-name]')).toBeNull();
+    expect(sweepWords(m.container, docsFor(sep23Tape, sep23Series))).toEqual([]);
+    // a name on file — even one equal to its symbol ("AMD") — never reads "not on file"
+    m.click(chip('AMD'));
+    expect(COMPANY_NAMES.AMD).toBe('AMD');
+    expect(m.q('[data-display-name-missing]')).toBeNull();
+    m.click(chip('MSFT'));
+    expect(m.q('[data-display-name-missing]')).toBeNull();
+    expect(m.q('#deep-chart [data-display-name="MSFT"]').textContent).toBe('Microsoft');
+  });
+
+  it('review A2P1-2: a directory name holding a forbidden word ("Best Buy") is shown as the symbol alone — it IS on file, so never "not on file" (A5)', () => {
     expect(COMPANY_NAMES.BBY).toBe('Best Buy');
     expect(displayNameOf('BBY')).toBeNull();
     expect(displayNameOf('MSFT')).toBe('Microsoft');
@@ -247,6 +410,7 @@ describe('addendum R4(a)/(b)/(d) — the restored facts, axes and name', () => {
     m.render(<Harness tape={t} series={series} start="BBY" />);
     expect(m.q('[data-region="price-chart"]').getAttribute('data-symbol')).toBe('BBY');
     expect(m.q('[data-display-name]')).toBeNull();
+    expect(m.q('[data-display-name-missing]')).toBeNull();
     expect(sweepWords(m.container, docsFor(t, series))).toEqual([]);
   });
 });
@@ -311,7 +475,11 @@ describe('BA-43 — the evidence overlay', () => {
     const differs = stamped.filter(({ c }) => atCheck.has(c.at) && atCheck.get(c.at) !== c.evidence[sym].px);
     expect(differs.length).toBeGreaterThan(0);
     m.render(<Harness tape={sep23Tape} series={sep23Series} start={sym} />);
-    expect(m.q('[data-region="evidence-overlay"]').textContent).toContain("A marker may sit off the bar line: the platform's quote runs about 15–20 minutes behind the bars. The difference is that delay, not smoothed.");
+    // B2.1 A6 (Amendment J RJ-6), verbatim — claiming no cause for any particular gap; the old wording ("The difference
+    // is that delay") is gone
+    const ev = m.q('[data-region="evidence-overlay"]').textContent;
+    expect(ev).toContain('A marker may sit off the bar line: the price the agent was shown came from a quote that runs about 15–20 minutes behind the bars, and the bars are not smoothed.');
+    expect(ev).not.toContain('The difference is that delay');
   });
 
   it('opening a marker lists the stamp, labelled "Recorded at the check · what the agent was given · the platform\'s quote"', () => {
@@ -344,12 +512,21 @@ describe('BA-43 — the evidence overlay', () => {
 });
 
 describe('coverage, the empty day, the sweeps', () => {
-  it.each(['complete', 'partial', 'unavailable'])('the chart section opens with the series coverage line, %s', (status) => {
+  it.each(['complete', 'partial', 'unavailable'])('the series section %s: the charted symbol\'s chart reads its own line (Amendment K RK-11); the all-symbols grid keeps the section\'s line where it is not complete', (status) => {
     const t = { ...sep23Tape, coverage: { ...sep23Tape.coverage, series: { ...sep23Tape.coverage.series, status, note: `${status} series note` } } };
     m.render(<Harness tape={t} series={sep23Series} desktop />);
-    for (const id of ['deep-chart', 'deep-all']) {
-      expect(m.q(`#${id} [data-coverage]`).getAttribute('data-coverage'), id).toBe(status);
-      expect(m.q(`#${id} [data-coverage]`).textContent).toContain(`${status} series note`);
+    // RK-11: AMD (the first symbol) is charted — "Chart recorded for AMD", never the section's status or its note beside it
+    expect(m.q('#deep-chart > [data-chart-recorded]').textContent).toBe('Chart recorded for AMD');
+    expect(m.q('#deep-chart > [data-coverage]')).toBeNull();
+    expect(m.q('#deep-chart').textContent).not.toContain(`${status} series note`);
+    // B2.1 A2 (FR-02, RJ-2), as built: the grid offers BTC, which has no series — so the section's "complete" is withheld
+    // there, and BTC says its own state; a section that is not complete keeps its line beside it
+    if (status === 'complete') {
+      expect(m.q('#deep-all > [data-coverage]')).toBeNull();
+      expect(m.q('[data-mini="BTC"] [data-no-chart="BTC"]').textContent).toBe('No chart for BTC: crypto is not charted.');
+    } else {
+      expect(m.q('#deep-all > [data-coverage]').getAttribute('data-coverage')).toBe(status);
+      expect(m.q('#deep-all > [data-coverage]').textContent).toContain(`${status} series note`);
     }
   });
 

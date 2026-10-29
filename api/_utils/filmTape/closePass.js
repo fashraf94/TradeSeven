@@ -66,7 +66,7 @@ import { findActiveAgentBattles } from '../agentBattleService.js';
 import { FILM_TAPE_WRITE_ENABLED } from '../../../src/config/featureFlags.js';
 import { writeTapeDay, markCloseFailed, isTieredBattle } from './writeTapeDay.js';
 import { resolveBattleResult } from './battleResult.js';
-import { buildBattleBlock, buildMeetings } from './tapeAssemble.js';
+import { buildBattleBlock, buildMeetings, noCheckRan } from './tapeAssemble.js';
 import { stableStringify } from './tapeMerge.js';
 import { errorTextOf } from './errorClass.js';
 import { readEvalRunsForDay, readTape, tapeRef } from './tapeSources.js';
@@ -82,10 +82,14 @@ export const BACKFILL_MAX_SESSIONS = 60;
 // also answers `pending` by (BA-28); re-exported here.
 export { isBattleDay, completionsSinceMs, tapeDateFor };
 
-/** Does this stored tape already record the battle block the battle has now? */
+/**
+ * Does this stored tape already record the battle block the battle has now? The block's result note reads whether the
+ * day ran a check (B2.1 A3, RJ-3), so the comparison reads it from the stored day's own checks, as the writer does —
+ * otherwise a final day that ran none would never match and would be re-written on every pass.
+ */
 export function completionRecorded(stored, battle) {
   if (!stored || battle?.status !== 'completed') return false;
-  return stableStringify(stored.battle ?? null) === stableStringify(buildBattleBlock({ battle, resolveResult: resolveBattleResult }));
+  return stableStringify(stored.battle ?? null) === stableStringify(buildBattleBlock({ battle, resolveResult: resolveBattleResult, noCheck: noCheckRan(stored.checks) }));
 }
 
 async function completedBetween(db, fromIso, toIso) {
