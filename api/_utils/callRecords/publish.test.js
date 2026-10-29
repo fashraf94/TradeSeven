@@ -18,6 +18,7 @@ import { shouldStartHaikuCall, PROMPT_BUILD_CEILING_MS, HAIKU_CALL_CEILING_MS, H
 import { FROZEN_NOW, HELD, makeTickBattle, makeDeclarations, makeObservation } from '../__fixtures__/tickStampsHarness.js';
 import { freezeSwapBook } from './swappable.js';
 import { makeCallsDb, storedDoc, storedCollection, callsTouches, QUEUE_COLLECTION } from '../__fixtures__/callRecordsStore.js';
+import { deadlineClock } from '../__fixtures__/deadlineClock.js';
 
 const TIME_BUDGET_MS = 290_000; // agent-evaluate.js TIME_BUDGET_MS
 const BATTLE_ID = 'battle-tick-1';
@@ -26,11 +27,17 @@ const UNIVERSE = ['NVDA', 'TSLA', 'MSFT', 'AMZN', 'KO', 'PG', 'BTC', 'AMD', 'JPM
 const PROMPT_MS = Date.parse(FROZEN_NOW);
 const MINT = PROMPT_MS + 20_000;
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
-// The REAL-TIME rows (withTimeout races a real timer): every candidate is built
-// BEFORE the clock is read, and each slow step outlasts its deadline by a wide
-// margin, so a loaded worker cannot reorder them (review D-2: 20–40 ms budgets
-// stalled under parallel load).
+// The DEADLINE rows (withTimeout races a timer; the deadlines are Date.now()
+// arithmetic) run on the fake deadline clock, in virtual milliseconds: neither a
+// stalled worker nor a stepped wall clock can move a deadline past its timer.
+// (Review D-2 widened real-time budgets from 20–40 ms to these; a +1.3 s
+// wall-clock step still crossed the 850 ms re-read slice on Oct 29, 2026.) Every
+// candidate is still built BEFORE the clock is read, and each slow step outlasts
+// its deadline.
 const RT = Object.freeze({ tx: 150, slow: 400, reread: 1_000, settle: 600 });
+const clock = deadlineClock(vi);
+/** Publish on the fake clock: let the re-read slice pass, return the outcome. */
+const publishOnClock = async (db, candidate, over) => (await clock.settle(RT.reread, publish(db, candidate, over))).value;
 
 const committedBattle = (over = {}) => makeTickBattle({
   cronState: { ...makeTickBattle().cronState, evalSeq: 1 },
@@ -146,6 +153,7 @@ describe('the transaction (row 7)', () => {
   });
 
   it('late-timeout variant: the attempt outlives the deadline while completion lands — the re-read finds nothing (failed, per-id unconfirmed), and no later attempt starts', async () => {
+    clock.use();
     const db = makeCallsDb({ battle: committedBattle() });
     db.__hooks.afterTxBody = async ({ attempt }) => {
       if (attempt !== 1) return;
@@ -154,11 +162,11 @@ describe('the transaction (row 7)', () => {
     };
     const c = candidateOf();
     const now = Date.now();
-    const res = await publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
+    const res = await publishOnClock(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
     expect(res).toMatchObject({ phaseResult: 'timeout_absent', wire: 'failed' });
     expect(res.perId.every((p) => p.result === 'unconfirmed')).toBe(true);
     expect(res.confirmedCallIds).toEqual([]);
-    await sleep(RT.settle); // let the abandoned attempt settle
+    await vi.advanceTimersByTimeAsync(RT.settle); // let the abandoned attempt settle
     expect(storedCollection(db, 'calls')).toEqual({});
     expect(storedDoc(db, 'declarations', EVAL_ID)).toBeNull();
     // The retry after the deadline never read (it refused before any read).
@@ -284,6 +292,7 @@ describe('the transaction (row 7)', () => {
   });
 
   it('no attempt starts after the deadline: a contended retry past it refuses before reading', async () => {
+    clock.use();
     const db = makeCallsDb({ battle: committedBattle() });
     db.__hooks.afterTxBody = async ({ attempt }) => {
       if (attempt !== 1) return;
@@ -293,11 +302,11 @@ describe('the transaction (row 7)', () => {
     };
     const c = candidateOf();
     const now = Date.now();
-    // No re-read slice at all (the re-read deadline precedes the timeout), so the outcome is deterministic.
-    const res = await publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now });
+    // No re-read slice at all (the re-read deadline precedes the timeout).
+    const res = await publishOnClock(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now });
     // The timeout fired first; with no re-read budget the wire is unchanged.
     expect(res).toMatchObject({ phaseResult: 'unconfirmed', wire: null });
-    await sleep(RT.settle);
+    await vi.advanceTimersByTimeAsync(RT.settle);
     expect(db.__txAttempts).toBe(2);
     expect(db.__counts.battleDocGets).toBe(1);
     expect(storedCollection(db, 'calls')).toEqual({});
@@ -316,13 +325,14 @@ describe('the transaction (row 7)', () => {
   }
 
   it('the first reads return after the deadline: no queue read starts, no commit is issued — the failed wire is true', async () => {
+    clock.use();
     const db = makeCallsDb({ battle: committedBattle() });
     slowTxReads(db, (path) => (path === `agentBattles/${BATTLE_ID}` ? RT.slow : 0));
     const c = candidateOf();
     const now = Date.now();
-    const res = await publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
+    const res = await publishOnClock(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
     expect(res).toMatchObject({ phaseResult: 'timeout_absent', wire: 'failed' });
-    await sleep(RT.settle); // let the abandoned attempt finish its body
+    await vi.advanceTimersByTimeAsync(RT.settle); // let the abandoned attempt finish its body
     expect(db.__txAttempts).toBe(1);
     expect(queueTouches(db)).toEqual({ reads: 0, writes: 0 });
     expect(storedCollection(db, 'calls')).toEqual({});
@@ -330,13 +340,14 @@ describe('the transaction (row 7)', () => {
   });
 
   it('the queue read returns after the deadline: still no commit — nothing lands behind the failed wire', async () => {
+    clock.use();
     const db = makeCallsDb({ battle: committedBattle() });
     slowTxReads(db, (path) => (path.startsWith(`${QUEUE_COLLECTION}/`) ? RT.slow : 0));
     const c = candidateOf();
     const now = Date.now();
-    const res = await publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
+    const res = await publishOnClock(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
     expect(res).toMatchObject({ phaseResult: 'timeout_absent', wire: 'failed' });
-    await sleep(RT.settle);
+    await vi.advanceTimersByTimeAsync(RT.settle);
     expect(queueTouches(db)).toEqual({ reads: 1, writes: 0 });
     expect(storedCollection(db, 'calls')).toEqual({});
     expect(storedDoc(db, 'declarations', EVAL_ID)).toBeNull();
@@ -354,36 +365,41 @@ describe('the transaction (row 7)', () => {
 // ---------------------------------------------------------------------------
 describe('the phase wire (row 8)', () => {
   it('a timeout whose commit LANDED (late acknowledgement): the re-read finds the identical documents → written, confirmed', async () => {
+    clock.use();
     const db = makeCallsDb({ battle: committedBattle() });
     db.__hooks.afterCommit = async () => { await sleep(RT.slow); };
     const c = candidateOf();
     const now = Date.now();
-    const res = await publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
+    const res = await publishOnClock(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
     expect(res).toMatchObject({ phaseResult: 'timeout_present', wire: 'written' });
     expect(res.perId.every((p) => p.result === 'confirmed')).toBe(true);
     expect(res.confirmedCallIds).toEqual(c.calls.map((x) => x.callId));
-    await sleep(RT.settle);
+    await vi.advanceTimersByTimeAsync(RT.settle);
   });
 
   it('a timeout whose commit has NOT landed: absent → failed, per-id unconfirmed, no capture reference', async () => {
+    clock.use();
     const db = makeCallsDb({ battle: committedBattle() });
     db.__hooks.beforeCommit = async () => { await sleep(RT.slow); };
     const c = candidateOf();
     const now = Date.now();
-    const res = await publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
+    // Only the tx slice passes: the re-read runs at the timeout, while the commit is still waiting.
+    const { value: res } = await clock.settle(RT.tx, publish(db, c, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread }));
     expect(res).toMatchObject({ phaseResult: 'timeout_absent', wire: 'failed', confirmedCallIds: [] });
     expect(captureRefsFor(c, res.confirmedCallIds)).toEqual([]);
-    await sleep(RT.settle); // the late commit lands after the phase gave up — still never referenced
+    expect(storedDoc(db, 'declarations', EVAL_ID)).toBeNull();
+    await vi.advanceTimersByTimeAsync(RT.settle); // the late commit lands after the phase gave up — still never referenced
     expect(storedDoc(db, 'declarations', EVAL_ID)).toEqual(c.record);
   });
 
   it('a timeout that cannot be re-read: the wire is LEFT UNCHANGED (null) and the diagnostics say unconfirmed', async () => {
+    clock.use();
     const noBudget = makeCallsDb({ battle: committedBattle() });
     noBudget.__hooks.beforeCommit = async () => { await sleep(RT.slow); };
     const ca = candidateOf();
     const now = Date.now();
-    // No re-read slice (its deadline precedes the timeout): deterministic, whatever the timer's rounding.
-    const a = await publish(noBudget, ca, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now });
+    // No re-read slice (its deadline precedes the timeout).
+    const a = await publishOnClock(noBudget, ca, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now });
     expect(a).toMatchObject({ phaseResult: 'unconfirmed', wire: null });
     expect(a.perId.every((p) => p.result === 'unconfirmed')).toBe(true);
 
@@ -392,13 +408,14 @@ describe('the phase wire (row 8)', () => {
     failingReread.getAll = async () => { throw new Error('14 UNAVAILABLE'); };
     const cb = candidateOf();
     const t = Date.now();
-    const b = await publish(failingReread, cb, { txDeadlineMs: t + RT.tx, rereadDeadlineMs: t + RT.reread });
+    const b = await publishOnClock(failingReread, cb, { txDeadlineMs: t + RT.tx, rereadDeadlineMs: t + RT.reread });
     expect(b).toMatchObject({ phaseResult: 'unconfirmed', wire: null });
     expect(b.perId.every((p) => p.result === 'unconfirmed' && p.reason === 'reread_failed')).toBe(true);
-    await sleep(RT.settle);
+    await vi.advanceTimersByTimeAsync(RT.settle);
   });
 
   it('a timeout whose re-read finds DIFFERENT documents → failed (timeout_conflict)', async () => {
+    clock.use();
     const db = makeCallsDb({ battle: committedBattle() });
     const other = candidateOf(makeDeclarations({ watching: ['AMD'] }));
     db.__hooks.beforeCommit = async ({ attempt }) => {
@@ -409,9 +426,9 @@ describe('the phase wire (row 8)', () => {
     };
     const mine = candidateOf();
     const now = Date.now();
-    const res = await publish(db, mine, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
+    const res = await publishOnClock(db, mine, { txDeadlineMs: now + RT.tx, rereadDeadlineMs: now + RT.reread });
     expect(res).toMatchObject({ phaseResult: 'timeout_conflict', wire: 'failed' });
-    await sleep(RT.settle);
+    await vi.advanceTimersByTimeAsync(RT.settle);
   });
 
   it('`written` never precedes the commit: at commit time the battle carries no written wire for this check', async () => {
@@ -583,14 +600,15 @@ describe('diagnostics, status, capture references', () => {
   });
 
   it('writeCallsStatus: skipped past the deadline, unconfirmed on a timeout, failed on an error', async () => {
+    clock.use();
     const db = makeCallsDb({ battle: committedBattle() });
     expect(await writeCallsStatus({ db, battleId: BATTLE_ID, fields: { 'cronState.callsDiag': {} }, deadlineMs: Date.now() - 1 })).toBe('skipped');
     expect(db.__updates).toEqual([]);
     const slow = { collection: () => ({ doc: () => ({ update: () => sleep(RT.slow) }) }) };
-    expect(await writeCallsStatus({ db: slow, battleId: BATTLE_ID, fields: { a: 1 }, deadlineMs: Date.now() + RT.tx })).toBe('unconfirmed');
+    expect((await clock.settle(RT.tx, writeCallsStatus({ db: slow, battleId: BATTLE_ID, fields: { a: 1 }, deadlineMs: Date.now() + RT.tx }))).value).toBe('unconfirmed');
     const broken = { collection: () => ({ doc: () => ({ update: async () => { throw new Error('boom'); } }) }) };
-    expect(await writeCallsStatus({ db: broken, battleId: BATTLE_ID, fields: { a: 1 }, deadlineMs: Date.now() + RT.reread })).toBe('failed');
-    await sleep(RT.settle);
+    expect((await clock.settle(RT.reread, writeCallsStatus({ db: broken, battleId: BATTLE_ID, fields: { a: 1 }, deadlineMs: Date.now() + RT.reread }))).value).toBe('failed');
+    await vi.advanceTimersByTimeAsync(RT.settle);
   });
 
   it('captureRefsFor: confirmed calls only, as { callId, n, kind }', () => {
