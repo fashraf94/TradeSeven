@@ -886,6 +886,9 @@ describe('the Daily Regime Brief (R-S4-4)', () => {
     expect(section.textContent).not.toContain('Heavy macro week');
     expect(section.textContent).not.toMatch(/Brief for|Generated|sessions old/);
     expect(byRole(section, 'button', COPY.brief.more)).toHaveLength(0);
+    // Nothing to expand at any width: no control carries aria-expanded (the phone row's toggle is disabled with no body).
+    expect(byRole(section, 'button').filter((b) => b.hasAttribute('aria-expanded'))).toHaveLength(0);
+    if (site === 'mobile') expect(byRole(section, 'button').every((b) => b.disabled)).toBe(true);
   });
 
   it('the hook\'s isStale no longer decides the words: the age does', () => {

@@ -78,10 +78,13 @@ describe('the earnings lists are capped (the actual fix)', () => {
     const nextWeek = section(userPrompt, 'EARNINGS — NEXT WEEK');
     expect(thisWeek).toHaveLength(9);
     expect(thisWeek.slice(0, 8).every((l) => /^- 2026-10-\d\d \(\w{3}\) (AMC|BMO) — T\d\d \(T Company \d+\)$/.test(l))).toBe(true);
-    expect(thisWeek[8]).toBe('- +42 more not listed');
+    expect(thisWeek[8]).toBe('(+42 more not listed)');
+    // Chosen by importance, written in calendar order: the dates never go backwards.
+    const dates = thisWeek.slice(0, 8).map((l) => l.slice(2, 12));
+    expect(dates).toEqual([...dates].sort());
     expect(nextWeek).toHaveLength(6);
     expect(nextWeek.slice(0, 5).every((l) => /^- 2026-11-\d\d \(\w{3}\) (AMC|BMO) — N\d\d$/.test(l))).toBe(true);
-    expect(nextWeek[5]).toBe('- +15 more not listed');
+    expect(nextWeek[5]).toBe('(+15 more not listed)');
     expect(earningsListed).toEqual({ thisWeek: 8, nextWeek: 5 });
   });
 
@@ -99,14 +102,14 @@ describe('the earnings lists are capped (the actual fix)', () => {
       if (n === 0) expect(section(userPrompt, 'EARNINGS — THIS WEEK')).toEqual(['(none)']);
       else expect(section(userPrompt, 'EARNINGS — THIS WEEK')).toHaveLength(n);
     }
-    expect(build({ thisWeekEarnings: earningsWeek(9) }).userPrompt).toMatch(/\n- \+1 more not listed\n/);
+    expect(build({ thisWeekEarnings: earningsWeek(9) }).userPrompt).toMatch(/\n\(\+1 more not listed\)\n/);
   });
 
   it('only high-significance rows count, in the list and in the "+K more"', () => {
     const rows = [...earningsWeek(10), ...earningsWeek(5, { prefix: 'L' }).map((e) => ({ ...e, significance: 'medium', marketCap: 5e12 }))];
     const { userPrompt } = build({ thisWeekEarnings: rows });
     expect(userPrompt).not.toMatch(/L0\d/);
-    expect(section(userPrompt, 'EARNINGS — THIS WEEK')[8]).toBe('- +2 more not listed');
+    expect(section(userPrompt, 'EARNINGS — THIS WEEK')[8]).toBe('(+2 more not listed)');
   });
 });
 
@@ -130,8 +133,11 @@ describe('ranking: the priority list first, then market cap, then the list\'s ow
     // Positions in the fetcher's list: AAPL 0, MSFT 1, GOOGL 2, AMZN 4, META 5, JPM 20, LLY 44, XOM 99, KBH 120.
     const rows = [row('KBH', null, 120, '2026-10-27'), row('XOM', null, 99, '2026-10-27'), row('LLY', null, 44, '2026-10-27'), row('JPM', null, 20, '2026-10-27'),
       row('META', null, 5, '2026-10-29'), row('AMZN', null, 4, '2026-10-30'), row('GOOGL', null, 2, '2026-10-29'), row('MSFT', null, 1, '2026-10-29'), row('AAPL', null, 0, '2026-10-30')];
-    expect(selectEarnings(rows, 8).listed.map((e) => e.symbol)).toEqual(['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'JPM', 'LLY', 'XOM']);
-    expect(selectEarnings(rows, 8).more).toBe(1);
+    const { listed, more } = selectEarnings(rows, 8);
+    expect(listed.map((e) => e.symbol).sort()).toEqual(['AAPL', 'AMZN', 'GOOGL', 'JPM', 'LLY', 'META', 'MSFT', 'XOM']);
+    expect(more).toBe(1);
+    // ...and the chosen eight are written in calendar order, by importance within a day.
+    expect(listed.map((e) => e.symbol)).toEqual(['JPM', 'LLY', 'XOM', 'MSFT', 'GOOGL', 'META', 'AAPL', 'AMZN']);
   });
 
   it('ties fall back to date, then symbol, so the order never depends on the feed\'s order', () => {
@@ -147,6 +153,10 @@ describe('ranking: the priority list first, then market cap, then the list\'s ow
 
   it('is defensive: no array, junk rows, rows without ranking fields', () => {
     expect(selectEarnings(undefined, 8)).toEqual({ listed: [], more: 0 });
+    for (const limit of [undefined, -1, 1.5, '8', NaN]) {
+      expect(selectEarnings([row('A', 1e11, null), row('B', 2e11, null)], limit), String(limit)).toMatchObject({ more: 0 });
+      expect(selectEarnings([row('A', 1e11, null), row('B', 2e11, null)], limit).listed, String(limit)).toHaveLength(2);
+    }
     expect(selectEarnings([null, 1, 'x', { significance: 'high' }], 8).listed).toEqual([{ significance: 'high' }]);
     expect(() => build({ thisWeekEarnings: [null, { significance: 'high' }] })).not.toThrow();
   });
@@ -196,10 +206,23 @@ describe('the instructions: the most important events, up to 10, and still none 
   it('keeps the guard: only listed lines, never invented, and the count line is not an event', () => {
     for (const text of [systemPrompt, keyEventsDescription]) {
       expect(text).toMatch(/do not invent/i);
-      expect(text).toMatch(/\+K more not listed" line is a count, not an event/);
+      expect(text).toMatch(/"\(\+K more not listed\)" line is a count, not an event/);
     }
     expect(systemPrompt).toMatch(/must appear verbatim as a listed line of the calendar/);
     expect(systemPrompt).toMatch(/copy the eventDate verbatim/);
+  });
+
+  it('makes no size claim it cannot back: the feed sends no market cap, so nothing says "largest"', () => {
+    const { userPrompt } = build({ thisWeekEarnings: earningsWeek(12) });
+    for (const text of [systemPrompt, userPrompt, keyEventsDescription]) expect(text).not.toMatch(/largest|biggest/i);
+    expect(userPrompt).toMatch(/=== EARNINGS — THIS WEEK \(mega-cap only, at most 8, priority names first\) ===/);
+    expect(userPrompt).toMatch(/=== EARNINGS — NEXT WEEK \(preview, at most 5, priority names first\) ===/);
+  });
+
+  it('the count line is not a bullet, so it cannot read as one more calendar line', () => {
+    const { userPrompt } = build({ thisWeekEarnings: earningsWeek(12) });
+    expect(userPrompt).toMatch(/\n\(\+4 more not listed\)\n/);
+    expect(userPrompt).not.toMatch(/^- .*more not listed/m);
   });
 
   it('tightens whyItMatters to ~90 characters', () => {

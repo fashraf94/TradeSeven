@@ -107,33 +107,44 @@ describe('a complete answer: stored as before, with stop_reason and usage logged
   it('the prompt it sends lists 8 + 5 earnings of the 45 + 12, and the log says so', async () => {
     await run();
     const prompt = state.create.mock.calls[0][0].messages[0].content;
-    expect(prompt).toMatch(/\n- \+37 more not listed\n/);
-    expect(prompt).toMatch(/\n- \+7 more not listed\n/);
+    expect(prompt).toMatch(/\n\(\+37 more not listed\)\n/);
+    expect(prompt).toMatch(/\n\(\+7 more not listed\)\n/);
     expect(logged(log, 'Calling Sonnet')[0]).toEqual({ forDate: TODAY, econEvents: 1, earnings: 57, earningsListed: { thisWeek: 8, nextWeek: 5 }, sourceFailures: [] });
   });
 
-  it('logs stop_reason and usage with forDate and the input counts', async () => {
+  it('logs stop_reason, usage and the answer\'s shape (types and lengths, never its text) with forDate and the input counts', async () => {
     await run();
     expect(logged(log, 'Sonnet answered')).toEqual([{
-      forDate: TODAY, stopReason: 'tool_use', usage: { input: 2300, output: 640 }, econEvents: 1, earnings: 57, earningsListed: { thisWeek: 8, nextWeek: 5 },
+      forDate: TODAY, stopReason: 'tool_use', usage: { input: 2300, output: 640 },
+      shape: { brief: `string:${FULL.brief.length}`, keyEvents: 'array:2', themes: 'array:2', keys: ['brief', 'keyEvents', 'themes'] },
+      econEvents: 1, earnings: 57, earningsListed: { thisWeek: 8, nextWeek: 5 },
     }]);
+    expect(JSON.stringify(logged(log, 'Sonnet answered'))).not.toContain('front-loaded');
   });
 });
 
 describe('a cut-off answer keeps the day (founder ruling Oct 29 2026)', () => {
-  it('(b) no themes: accepted, themes [] and the loss named in sourceFailures — beside a fetcher\'s own failure', async () => {
+  it('(b) a complete answer with no themes: accepted, themes [] and the loss named in sourceFailures — beside a fetcher\'s own failure', async () => {
     state.macro = new Error('calendar down');
-    state.create = vi.fn(async () => answer({ brief: FULL.brief, keyEvents: [EVENT, EVENT2] }, { stop: 'max_tokens', output: 2500 }));
+    state.create = vi.fn(async () => answer({ brief: FULL.brief, keyEvents: [EVENT, EVENT2] }));
     const r = await run();
     expect(r.statusCode).toBe(200);
     const [, doc] = state.set.mock.calls[0];
     expect(doc.dailyBrief).toBe(FULL.brief);
     expect(doc.keyEvents).toEqual([EVENT, EVENT2]);
     expect(doc.themes).toEqual([]);
-    expect(doc.sourceFailures).toEqual(['macro-events', 'output-max-tokens', 'themes-truncated']);
-    expect(r.body.sourceFailures).toEqual(['macro-events', 'output-max-tokens', 'themes-truncated']);
-    expect(logged(log, 'Sonnet answered')[0]).toMatchObject({ stopReason: 'max_tokens', usage: { input: 2300, output: 2500 } });
-    expect(logged(err, 'Brief answer degraded')[0]).toMatchObject({ forDate: TODAY, failures: ['output-max-tokens', 'themes-truncated'], stopReason: 'max_tokens' });
+    expect(doc.sourceFailures).toEqual(['macro-events', 'themes-truncated']);
+    expect(r.body.sourceFailures).toEqual(['macro-events', 'themes-truncated']);
+    expect(logged(err, 'Brief answer degraded')[0]).toMatchObject({ forDate: TODAY, failures: ['themes-truncated'], stopReason: 'tool_use' });
+  });
+
+  it('(b) cut off inside keyEvents (the failing days\' shape): the brief kept, themes [], and the last, possibly partial, event dropped', async () => {
+    state.create = vi.fn(async () => answer({ brief: FULL.brief, keyEvents: [EVENT, EVENT2] }, { stop: 'max_tokens', output: 2500 }));
+    const r = await run();
+    expect(r.statusCode).toBe(200);
+    expect(state.set.mock.calls[0][1]).toMatchObject({ dailyBrief: FULL.brief, keyEvents: [EVENT], themes: [], sourceFailures: ['output-max-tokens', 'key-events-incomplete', 'themes-truncated'] });
+    expect(logged(log, 'Sonnet answered')[0]).toMatchObject({ stopReason: 'max_tokens', usage: { input: 2300, output: 2500 }, shape: { keyEvents: 'array:2', themes: 'missing', keys: ['brief', 'keyEvents'] } });
+    expect(logged(err, 'Brief answer degraded')[0]).toMatchObject({ forDate: TODAY, failures: ['output-max-tokens', 'key-events-incomplete', 'themes-truncated'], stopReason: 'max_tokens' });
   });
 
   it('(b) themes that are not a list of strings are stored as [] the same way', async () => {
@@ -145,17 +156,33 @@ describe('a cut-off answer keeps the day (founder ruling Oct 29 2026)', () => {
     }
   });
 
-  it('a partial last event is dropped, never stored: the item shape is a contract for its readers', async () => {
-    const partial = { label: 'NVDA earnings', eventDate: '2026-10-2' };
-    state.create = vi.fn(async () => answer({ brief: FULL.brief, keyEvents: [EVENT, partial] }, { stop: 'max_tokens' }));
+  it('a cut last event is dropped even when it looks whole: a ticker can be cut mid-word', async () => {
+    const cutTickers = { ...EVENT2, tickers: ['MSFT', 'AZ'] };
+    state.create = vi.fn(async () => answer({ brief: FULL.brief, keyEvents: [EVENT, cutTickers] }, { stop: 'max_tokens' }));
     await run();
-    expect(state.set.mock.calls[0][1]).toMatchObject({ keyEvents: [EVENT], themes: [], sourceFailures: ['output-max-tokens', 'key-events-incomplete', 'themes-truncated'] });
+    expect(state.set.mock.calls[0][1]).toMatchObject({ keyEvents: [EVENT], sourceFailures: ['output-max-tokens', 'key-events-incomplete', 'themes-truncated'] });
   });
 
-  it('no keyEvents list at all: the brief is still kept, with keyEvents []', async () => {
-    state.create = vi.fn(async () => answer({ brief: FULL.brief }, { stop: 'max_tokens' }));
+  it('a partial event elsewhere in a cut answer is dropped too, never stored; a cut last theme is dropped', async () => {
+    const partial = { label: 'NVDA earnings', eventDate: '2026-10-2' };
+    state.create = vi.fn(async () => answer({ brief: FULL.brief, keyEvents: [partial, EVENT, EVENT2], themes: ['AI capex', 'rates repri'] }, { stop: 'max_tokens' }));
+    await run();
+    expect(state.set.mock.calls[0][1]).toMatchObject({ keyEvents: [EVENT, EVENT2], themes: ['AI capex'], sourceFailures: ['output-max-tokens', 'key-events-incomplete', 'themes-incomplete'] });
+  });
+
+  it('a complete answer with no keyEvents list at all: the brief is still kept, with keyEvents []', async () => {
+    state.create = vi.fn(async () => answer({ brief: FULL.brief, themes: FULL.themes }));
     expect((await run()).statusCode).toBe(200);
-    expect(state.set.mock.calls[0][1]).toMatchObject({ dailyBrief: FULL.brief, keyEvents: [], themes: [], sourceFailures: ['output-max-tokens', 'key-events-truncated', 'themes-truncated'] });
+    expect(state.set.mock.calls[0][1]).toMatchObject({ dailyBrief: FULL.brief, keyEvents: [], themes: FULL.themes, sourceFailures: ['key-events-truncated'] });
+  });
+
+  it('cut off inside the brief itself: not intact, so the run fails and nothing is written', async () => {
+    state.create = vi.fn(async () => answer({ brief: 'The Fed meets Wednesday and the tape is' }, { stop: 'max_tokens', output: 2500 }));
+    const r = await run();
+    expect(r.statusCode).toBe(500);
+    expect(r.body.error).toBe('Brief cut off at the output cap (stop_reason max_tokens)');
+    expect(state.set).not.toHaveBeenCalled();
+    expect(logged(err, 'Brief generation failed')[0]).toMatchObject({ stopReason: 'max_tokens', shape: { brief: 'string:39', keyEvents: 'missing', keys: ['brief'] } });
   });
 });
 
@@ -221,23 +248,30 @@ describe('readBriefAnswer — the reader on its own', () => {
     expect(readBriefAnswer(answer(FULL))).toEqual({ brief: FULL.brief, keyEvents: [EVENT, EVENT2], themes: FULL.themes, failures: [] });
   });
 
-  it('a complete answer that stopped at the cap is still named', () => {
-    expect(readBriefAnswer(answer(FULL, { stop: 'max_tokens' })).failures).toEqual(['output-max-tokens']);
+  it('a complete answer stores its events as they came, as before: the field check is for a cut answer only', () => {
+    const odd = { ...EVENT, kind: 'Fed', tickers: undefined };
+    expect(readBriefAnswer(answer({ ...FULL, keyEvents: [EVENT, odd] }))).toEqual({ brief: FULL.brief, keyEvents: [EVENT, odd], themes: FULL.themes, failures: [] });
   });
 
-  it('drops every event missing a required field or carrying one of the wrong type', () => {
+  it('an answer cut inside themes keeps every event and drops only the last theme', () => {
+    expect(readBriefAnswer(answer(FULL, { stop: 'max_tokens' }))).toEqual({ brief: FULL.brief, keyEvents: [EVENT, EVENT2], themes: ['AI capex'], failures: ['output-max-tokens', 'themes-incomplete'] });
+  });
+
+  it('in a cut answer, drops every event missing a required field or carrying one of the wrong type', () => {
     const bad = [
       { ...EVENT, label: '' }, { ...EVENT, eventDate: '2026-10-2' }, { ...EVENT, kind: 'earn' }, { ...EVENT, whyItMatters: undefined },
       { ...EVENT, tickers: 'SPY' }, { ...EVENT, tickers: ['SP', 3] }, null, 'FOMC', [EVENT],
     ];
-    const read = readBriefAnswer(answer({ ...FULL, keyEvents: [EVENT, ...bad, EVENT2] }));
+    const read = readBriefAnswer(answer({ brief: FULL.brief, themes: FULL.themes, keyEvents: [EVENT, ...bad, EVENT2, EVENT] }, { stop: 'max_tokens' }));
     expect(read.keyEvents).toEqual([EVENT, EVENT2]);
-    expect(read.failures).toEqual(['key-events-incomplete']);
+    expect(read.themes).toEqual(FULL.themes);
+    expect(read.failures).toEqual(['output-max-tokens', 'key-events-incomplete']);
   });
 
-  it('keeps an event without its optional eventTime', () => {
+  it('keeps an event without its optional eventTime, cut or not', () => {
     const { eventTime, ...noTime } = EVENT;
     expect(eventTime).toBeDefined();
     expect(readBriefAnswer(answer({ ...FULL, keyEvents: [noTime] })).keyEvents).toEqual([noTime]);
+    expect(readBriefAnswer(answer({ brief: FULL.brief, themes: FULL.themes, keyEvents: [noTime, noTime] }, { stop: 'max_tokens' })).keyEvents).toEqual([noTime]);
   });
 });

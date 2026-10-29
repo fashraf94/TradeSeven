@@ -9,8 +9,9 @@
 // >$25B report reached the prompt and the model was told to list each one,
 // so the answer ran past its 2,500-token cap, arrived without `themes` and
 // the day was lost (docs/audits/20261028_PHASE0_DRB_DISCOVERY.md §3 Q2).
-// The earnings lists are now cut to the largest reporters with a
-// "+K more not listed" count, and the model lists the most important
+// The earnings lists are now cut to a few names (priority list first, then
+// market cap; selectEarnings) with a "+K more not listed" count, and the
+// model lists the most important
 // events up to KEY_EVENTS_LIMIT.
 
 /** Earnings rendered for this week and for next week's preview; the rest are counted, not listed. */
@@ -38,7 +39,7 @@ export const DAILY_REGIME_BRIEF_TOOL = {
       keyEvents: {
         type: 'array',
         description:
-          `The most important events from the calendars provided in the user prompt, up to ${KEY_EVENTS_LIMIT}. Pick only from the listed calendar lines — do not invent events, do not substitute events. A "+K more not listed" line is a count, not an event: never return a company it stands for. If the calendars list no events, return an empty array.`,
+          `The most important events from the calendars provided in the user prompt, up to ${KEY_EVENTS_LIMIT}. Pick only from the listed calendar lines — do not invent events, do not substitute events. A "(+K more not listed)" line is a count, not an event: never return a company it stands for. If the calendars list no events, return an empty array.`,
         items: {
           type: 'object',
           required: ['label', 'eventDate', 'kind', 'whyItMatters', 'tickers'],
@@ -89,7 +90,7 @@ export const DAILY_REGIME_BRIEF_TOOL = {
 
 const SYSTEM_PROMPT = `You are generating a daily regime brief for FantasyTrades, a competitive trading game. The brief will be injected into a trading agent's system prompt. The agent talks casually with users about market strategy and needs forward-looking context about what to watch this week.
 
-The economic and earnings calendars in the user prompt are deterministic and pre-curated — economic events come from agency primary sources (BLS / BEA / Census / the Fed) and earnings from a verified EODHD feed, both filtered by impact level before reaching you, and the earnings lists are cut to the largest reporters. Treat the calendar as ground truth: never add, move, rename or second-guess an event. Your job is to NARRATE it, choosing the most important of the listed events.
+The economic and earnings calendars in the user prompt are deterministic and pre-curated — economic events come from agency primary sources (BLS / BEA / Census / the Fed) and earnings from a verified EODHD feed, both filtered by impact level before reaching you, and the earnings lists are cut to a few names each. Treat the calendar as ground truth: never add, move, rename or second-guess an event. Your job is to NARRATE it, choosing the most important of the listed events.
 
 MANDATORY CONSTRAINTS:
 - VIX is not tracked in this system. Refer to volatility tiers only (elevated/normal/compressed). Never cite VIX levels, numbers, or ranges.
@@ -98,7 +99,7 @@ MANDATORY CONSTRAINTS:
 - Desk-briefing voice: direct, specific, informed. Not marketing copy. Not a news summary.
 - Keep the brief 150-300 tokens. Tight is better than long.
 - Your output will be injected verbatim into another model's context. Help the agent sound sharper, not longer.
-- Do NOT invent or substitute events. Return the most important events, up to ${KEY_EVENTS_LIMIT}. Every entry in your keyEvents output must appear verbatim as a listed line of the calendar I gave you — same date, same event name. A "+K more not listed" line is a count, not an event: never return a company it stands for. If the calendar lists no events, return an empty array.
+- Do NOT invent or substitute events. Return the most important events, up to ${KEY_EVENTS_LIMIT}. Every entry in your keyEvents output must appear verbatim as a listed line of the calendar I gave you — same date, same event name. A "(+K more not listed)" line is a count, not an event: never return a company it stands for. If the calendar lists no events, return an empty array.
 - Keep each whyItMatters to one sentence, ~90 characters.
 - For each keyEvent, copy the eventDate verbatim from the calendar input. Do not infer or guess dates.
 - Tickers must be US-listed and trade-able. For macro/fed events, pick the 2-3 most reactive broad-market or sector ETFs (SPY, TLT, GLD, DXY, XLE, XLF, etc.).
@@ -167,16 +168,20 @@ function byImportance(a, b) {
 }
 
 /**
- * The high-significance earnings the prompt lists, most important first, at most `limit`, and how many more there
- * were. `more` is a count only: those names never reach the prompt.
+ * The high-significance earnings the prompt lists, at most `limit`, chosen by importance (byImportance) and then put in
+ * calendar order (date, then importance within a day), and how many more there were. `more` is a count only: those
+ * names never reach the prompt. A missing or invalid `limit` lists every row.
  */
 export function selectEarnings(entries, limit) {
   if (!Array.isArray(entries)) return { listed: [], more: 0 };
   const ranked = entries.filter((e) => e?.significance === 'high').sort(byImportance);
-  return { listed: ranked.slice(0, limit), more: Math.max(0, ranked.length - limit) };
+  const n = Number.isInteger(limit) && limit >= 0 ? limit : ranked.length;
+  const listed = ranked.slice(0, n).sort((a, b) => String(a?.date ?? '').localeCompare(String(b?.date ?? '')) || byImportance(a, b));
+  return { listed, more: ranked.length - listed.length };
 }
 
-const renderMore = (more) => (more > 0 ? `\n- +${more} more not listed` : '');
+// Not a bullet: the count must not read as one more calendar line.
+const renderMore = (more) => (more > 0 ? `\n(+${more} more not listed)` : '');
 
 function renderEarnings(entries, limit) {
   const { listed, more } = selectEarnings(entries, limit);
@@ -266,10 +271,10 @@ ${renderEconEvents(thisWeekEvents)}
 === ECONOMIC CALENDAR — NEXT WEEK (preview) ===
 ${renderEconEventsPreview(nextWeekEvents, 5)}
 
-=== EARNINGS — THIS WEEK (mega-cap only, largest first, at most ${THIS_WEEK_EARNINGS_LIMIT}) ===
+=== EARNINGS — THIS WEEK (mega-cap only, at most ${THIS_WEEK_EARNINGS_LIMIT}, priority names first) ===
 ${renderEarnings(thisWeekEarnings, THIS_WEEK_EARNINGS_LIMIT)}
 
-=== EARNINGS — NEXT WEEK (preview, largest first, at most ${NEXT_WEEK_EARNINGS_LIMIT}) ===
+=== EARNINGS — NEXT WEEK (preview, at most ${NEXT_WEEK_EARNINGS_LIMIT}, priority names first) ===
 ${renderEarningsPreview(nextWeekEarnings, NEXT_WEEK_EARNINGS_LIMIT)}
 
 Synthesize a daily regime brief. Use the submit_daily_regime_brief tool.`;

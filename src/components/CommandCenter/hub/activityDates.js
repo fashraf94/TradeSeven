@@ -84,8 +84,16 @@ function marketDayNoon(text) {
   return probe;
 }
 
-const etDateKey = once(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }));
+const etDateParts = once(() => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }));
 const DAY_MS = 24 * 3600 * 1000;
+
+/** The ET market date of an instant, `YYYY-MM-DD`, from the formatter's parts (never from a locale's written order); '' for an invalid instant. */
+function etMarketDate(ms) {
+  const date = new Date(ms);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = Object.fromEntries(etDateParts().formatToParts(date).map((p) => [p.type, p.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 
 /**
  * The brief's age in trading sessions (DRB stale fix, founder ruling Oct 29 2026): the ET weekdays after the market
@@ -96,7 +104,7 @@ const DAY_MS = 24 * 3600 * 1000;
 export function marketSessionsSince(forDate, nowMs) {
   const from = marketDayNoon(forDate);
   if (!from || typeof nowMs !== 'number' || !Number.isFinite(nowMs)) return null;
-  const today = marketDayNoon(etDateKey().format(new Date(nowMs)));
+  const today = marketDayNoon(etMarketDate(nowMs));
   if (!today) return null;
   const days = Math.round((today.getTime() - from.getTime()) / DAY_MS);
   if (days <= 0) return 0;

@@ -76,10 +76,7 @@ const SONNET_TIMEOUT_MS = 45_000;
  * model, limits and tool, without the handler's Firestore read or write. The timer is cleared once the race settles.
  */
 export async function callBriefModel(client, { systemPrompt, userPrompt }) {
-  let timer;
-  const timeoutPromise = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error('Sonnet timeout (45s)')), SONNET_TIMEOUT_MS);
-  });
+  // The call first, as before: a create() that throws at once never leaves a timer behind to reject unhandled.
   const callPromise = client.messages.create({
     model: SONNET_MODEL,
     max_tokens: 2500,
@@ -91,6 +88,10 @@ export async function callBriefModel(client, { systemPrompt, userPrompt }) {
     messages: [{ role: 'user', content: userPrompt }],
     tools: [DAILY_REGIME_BRIEF_TOOL],
     tool_choice: { type: 'tool', name: 'submit_daily_regime_brief' },
+  });
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Sonnet timeout (45s)')), SONNET_TIMEOUT_MS);
   });
   try {
     return await Promise.race([callPromise, timeoutPromise]);
@@ -111,32 +112,56 @@ function isCompleteEvent(e) {
     && Array.isArray(e.tickers) && e.tickers.every((t) => typeof t === 'string');
 }
 
+const toolInputOf = (response) => {
+  const toolUse = Array.isArray(response?.content) ? response.content.find((b) => b?.type === 'tool_use') : undefined;
+  return toolUse ? (toolUse.input && typeof toolUse.input === 'object' ? toolUse.input : {}) : null;
+};
+
+/** Each field of the answer as type:length ("array:10", "string:980", "missing"), for the log: what arrived, never its text. */
+export function answerShapeOf(response) {
+  const input = toolInputOf(response);
+  if (!input) return null;
+  const shape = (v) => (v === undefined ? 'missing' : Array.isArray(v) ? `array:${v.length}` : typeof v === 'string' ? `string:${v.length}` : typeof v);
+  return { brief: shape(input.brief), keyEvents: shape(input.keyEvents), themes: shape(input.themes), keys: Object.keys(input) };
+}
+
 /**
- * The stored fields from the model's answer. Throws only when there is no tool call or its brief is missing or empty.
- * Otherwise the day is kept and each loss is named in `failures` (added to the document's sourceFailures):
+ * The stored fields from the model's answer (founder ruling Oct 29 2026: only a missing or empty brief fails the run).
+ * Throws when there is no tool call, the brief is missing or empty, or the answer was cut off at the output cap inside
+ * the brief — a cut brief is not intact. Otherwise the day is kept and each loss is named in `failures` (added to the
+ * document's sourceFailures):
  *   output-max-tokens      the answer stopped at the output cap (stop_reason max_tokens)
  *   themes-truncated       `themes` was not an array of strings; stored as []
+ *   themes-incomplete      the cut fell inside `themes`: its last, possibly partial, theme was dropped
  *   key-events-truncated   `keyEvents` was not an array; stored as []
- *   key-events-incomplete  some events lacked a required field and were dropped
+ *   key-events-incomplete  the cut fell inside `keyEvents`: its last, possibly partial, event was dropped, with any
+ *                          event of the cut answer that lacks a field the schema requires
+ * Where the cut fell is read from the answer's key order (the order the model wrote its fields in). A complete answer's
+ * events are stored as they came, as before.
  */
 export function readBriefAnswer(response) {
-  const toolUse = Array.isArray(response?.content) ? response.content.find((b) => b?.type === 'tool_use') : undefined;
-  if (!toolUse) {
+  const input = toolInputOf(response);
+  if (!input) {
     throw new Error('No tool_use block in Sonnet response');
   }
 
-  const input = toolUse.input && typeof toolUse.input === 'object' ? toolUse.input : {};
   const { brief } = input;
   if (typeof brief !== 'string' || brief.trim() === '') {
     throw new Error('Malformed tool_use input (expected a non-empty brief string)');
   }
 
+  const cut = response.stop_reason === 'max_tokens';
+  const cutField = cut ? Object.keys(input).at(-1) : null;
+  if (cutField === 'brief') {
+    throw new Error('Brief cut off at the output cap (stop_reason max_tokens)');
+  }
+
   const failures = [];
-  if (response.stop_reason === 'max_tokens') failures.push('output-max-tokens');
+  if (cut) failures.push('output-max-tokens');
 
   let keyEvents = [];
   if (Array.isArray(input.keyEvents)) {
-    keyEvents = input.keyEvents.filter(isCompleteEvent);
+    keyEvents = cut ? (cutField === 'keyEvents' ? input.keyEvents.slice(0, -1) : input.keyEvents).filter(isCompleteEvent) : input.keyEvents;
     if (keyEvents.length < input.keyEvents.length) failures.push('key-events-incomplete');
   } else {
     failures.push('key-events-truncated');
@@ -144,7 +169,8 @@ export function readBriefAnswer(response) {
 
   let themes = [];
   if (Array.isArray(input.themes) && input.themes.every((t) => typeof t === 'string')) {
-    themes = input.themes;
+    themes = cutField === 'themes' ? input.themes.slice(0, -1) : input.themes;
+    if (themes.length < input.themes.length) failures.push('themes-incomplete');
   } else {
     failures.push('themes-truncated');
   }
@@ -259,6 +285,7 @@ export default async function handler(req, res) {
     answerLog = {
       stopReason: response?.stop_reason ?? null,
       usage: { input: response?.usage?.input_tokens ?? null, output: response?.usage?.output_tokens ?? null },
+      shape: answerShapeOf(response),
     };
     logInfo('Sonnet answered', { forDate: today, ...answerLog, ...callCounts });
 
@@ -331,6 +358,7 @@ export default async function handler(req, res) {
       ...(callCounts || {}),
       stopReason: answerLog?.stopReason ?? null,
       usage: answerLog?.usage ?? null,
+      shape: answerLog?.shape ?? null,
     });
     return res.status(500).json({
       success: false,

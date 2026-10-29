@@ -150,7 +150,7 @@ describe('the brief\'s age in trading sessions (DRB stale fix, founder ruling Oc
 
   it('a date ahead of the clock is 0 sessions old; no real date or no usable clock is no age, and the brief reads as before', () => {
     expect(marketSessionsSince('2026-10-26', FRI)).toBe(0);
-    for (const nowMs of [undefined, null, NaN, '1729695600000']) {
+    for (const nowMs of [undefined, null, NaN, '1729695600000', 1e300, -1e300]) {
       expect(marketSessionsSince('2026-10-20', nowMs), String(nowMs)).toBeNull();
       expect(briefSectionOf(drb({ forDate: '2026-10-20', generatedAt: null }), nowMs)).toEqual({ status: 'ready', body: 'Heavy macro week.', caption: 'Brief for Tue Oct 20' });
     }
