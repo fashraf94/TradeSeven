@@ -232,6 +232,25 @@ const GUARDED_FILES = [
   'src/components/CommandCenter/hub/shadowCanvas.js',
   'src/components/CommandCenter/hub/shadowStatus.js',
   'src/components/CommandCenter/__fixtures__/shadowCanvasKit.js',
+  // Agent form build S0 (the WebGL engine port, its wrapper and the lab): every colour through readToken /
+  // cssVar from birth — zero core-palette literals, registered in the commit that introduces them (hazard 34).
+  'src/components/AgentForm/engine/armor.js',
+  'src/components/AgentForm/engine/batch.js',
+  'src/components/AgentForm/engine/bloom.js',
+  'src/components/AgentForm/engine/core.js',
+  'src/components/AgentForm/engine/engine.js',
+  'src/components/AgentForm/engine/form.js',
+  'src/components/AgentForm/engine/glPlatform.js',
+  'src/components/AgentForm/engine/index.js',
+  'src/components/AgentForm/engine/vocab.js',
+  'src/components/AgentForm/AgentForm.jsx',
+  'src/components/AgentForm/AgentFormStill.jsx',
+  'src/components/AgentForm/agentFormSpec.js',
+  'src/components/AgentForm/agentFormTokens.js',
+  'src/components/AgentForm/agentGrowth.js',
+  'src/components/AgentForm/loadEngine.js',
+  'src/screens/AgentFormLab.jsx',
+  'src/screens/agentFormLabReadout.js',
 ];
 
 /**
