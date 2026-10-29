@@ -38,6 +38,12 @@ describe('the spec\'s own words, exactly (§8.2, §8.3)', () => {
     expect(COPY.brief.stale('Wed Oct 7')).toBe("Last session's brief · for Wed Oct 7");
   });
 
+  it('the brief\'s age (DRB stale fix, founder ruling Oct 29 2026): "Brief for {date} · {n} sessions old", and "Generated" with its day', () => {
+    expect(COPY.brief.aged('Fri Oct 23', 3)).toBe('Brief for Fri Oct 23 · 3 sessions old');
+    expect(COPY.brief.aged('Fri Oct 16', 5)).toBe('Brief for Fri Oct 16 · 5 sessions old');
+    expect(COPY.brief.generated(COPY.time.et('Fri 8:30 AM'))).toBe('Generated Fri 8:30 AM ET');
+  });
+
   it('the next action: the design\'s words, filled from the record', () => {
     expect(COPY.nextAction.label).toBe('Next action');
     expect(COPY.nextAction.later).toBe('Later');
@@ -73,6 +79,7 @@ describe('no claim the hub cannot back, in S4\'s words as they are rendered (§8
     COPY.nextAction.reviewWhy('CPU', 'Won +11.0'), COPY.nextAction.openReview, COPY.nextAction.firstTitle, COPY.nextAction.firstWhy,
     COPY.brief.label, COPY.brief.loading, COPY.brief.more, COPY.brief.less, COPY.brief.missing, COPY.brief.failed, COPY.brief.retry,
     COPY.brief.forDate('Wed Oct 7'), COPY.brief.generated('5:30 AM ET'), COPY.brief.stale('Wed Oct 7'),
+    COPY.brief.aged('Fri Oct 23', 3), COPY.brief.generated(COPY.time.et('Fri 8:30 AM')),
     COPY.history.refresh, COPY.history.refreshing, COPY.history.nextRefresh('11:02 AM ET'),
   ];
 
@@ -89,6 +96,18 @@ describe('no claim the hub cannot back, in S4\'s words as they are rendered (§8
   it('the scan catches what it names', () => {
     for (const text of ['Shadow learned from this game', 'Since your last visit', 'Sources · 4', 'Shadow is growing', 'Activity · 21 events', 'Your activity log']) {
       expect(BANNED.some((re) => re.test(text)), text).toBe(true);
+    }
+  });
+
+  it('no brief word claims freshness (DRB stale fix): an old brief is never called today\'s, the latest, current, new or live', () => {
+    const FRESH = [/\btoday/i, /\blatest\b/i, /\bcurrent\b/i, /\bfresh/i, /\bnew\b/i, /\blive\b/i, /\bthis morning\b/i, /\bup[- ]to[- ]date\b/i, /\bjust\b/i];
+    const brief = [
+      COPY.brief.label, COPY.brief.loading, COPY.brief.more, COPY.brief.less, COPY.brief.missing, COPY.brief.failed, COPY.brief.retry,
+      COPY.brief.forDate('Fri Oct 23'), COPY.brief.stale('Thu Oct 22'), COPY.brief.aged('Tue Oct 20', 3), COPY.brief.generated(COPY.time.et('Fri 8:30 AM')),
+    ];
+    expect(brief.flatMap((text) => FRESH.filter((re) => re.test(text)).map((re) => `${re.source}: ${text}`))).toEqual([]);
+    for (const planted of ["Today's brief", 'Latest brief', 'Brief is current', 'Fresh brief', 'New brief', 'Live brief', 'Generated this morning', 'Up to date']) {
+      expect(FRESH.some((re) => re.test(planted)), planted).toBe(true);
     }
   });
 

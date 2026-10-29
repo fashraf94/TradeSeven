@@ -16,6 +16,11 @@
 // On Sonar fetcher failure: pass empty arrays to the prompt, record in
 // sourceFailures. On Sonnet failure: 500 and do NOT overwrite the existing
 // doc — prior day's brief stays until next successful run.
+//
+// DRB stale fix (Oct 29 2026): every answer logs its stop_reason and usage.
+// Only a missing or empty brief fails the run: an answer cut off before
+// `themes` (or `keyEvents`) still keeps the day, storing [] for the lost
+// field and naming the loss in sourceFailures (readBriefAnswer).
 
 import Anthropic from '@anthropic-ai/sdk';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -66,6 +71,87 @@ function getAnthropicClient() {
 const SONNET_MODEL = 'claude-sonnet-4-6';
 const SONNET_TIMEOUT_MS = 45_000;
 
+/**
+ * The one model call, raced against the 45 s timeout. Exported so the call can be run on its own, with the same
+ * model, limits and tool, without the handler's Firestore read or write. The timer is cleared once the race settles.
+ */
+export async function callBriefModel(client, { systemPrompt, userPrompt }) {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Sonnet timeout (45s)')), SONNET_TIMEOUT_MS);
+  });
+  const callPromise = client.messages.create({
+    model: SONNET_MODEL,
+    max_tokens: 2500,
+    // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
+    // preserve the prior Sonnet-4 (no-thinking) latency profile.
+    thinking: { type: 'disabled' },
+    output_config: { effort: 'low' },
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userPrompt }],
+    tools: [DAILY_REGIME_BRIEF_TOOL],
+    tool_choice: { type: 'tool', name: 'submit_daily_regime_brief' },
+  });
+  try {
+    return await Promise.race([callPromise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const EVENT_KINDS = DAILY_REGIME_BRIEF_TOOL.input_schema.properties.keyEvents.items.properties.kind.enum;
+
+/** A key event carrying every field the tool schema requires, well-typed (a cut-off answer can end on a partial one). */
+function isCompleteEvent(e) {
+  return !!e && typeof e === 'object' && !Array.isArray(e)
+    && typeof e.label === 'string' && e.label.trim() !== ''
+    && typeof e.eventDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.eventDate)
+    && EVENT_KINDS.includes(e.kind)
+    && typeof e.whyItMatters === 'string'
+    && Array.isArray(e.tickers) && e.tickers.every((t) => typeof t === 'string');
+}
+
+/**
+ * The stored fields from the model's answer. Throws only when there is no tool call or its brief is missing or empty.
+ * Otherwise the day is kept and each loss is named in `failures` (added to the document's sourceFailures):
+ *   output-max-tokens      the answer stopped at the output cap (stop_reason max_tokens)
+ *   themes-truncated       `themes` was not an array of strings; stored as []
+ *   key-events-truncated   `keyEvents` was not an array; stored as []
+ *   key-events-incomplete  some events lacked a required field and were dropped
+ */
+export function readBriefAnswer(response) {
+  const toolUse = Array.isArray(response?.content) ? response.content.find((b) => b?.type === 'tool_use') : undefined;
+  if (!toolUse) {
+    throw new Error('No tool_use block in Sonnet response');
+  }
+
+  const input = toolUse.input && typeof toolUse.input === 'object' ? toolUse.input : {};
+  const { brief } = input;
+  if (typeof brief !== 'string' || brief.trim() === '') {
+    throw new Error('Malformed tool_use input (expected a non-empty brief string)');
+  }
+
+  const failures = [];
+  if (response.stop_reason === 'max_tokens') failures.push('output-max-tokens');
+
+  let keyEvents = [];
+  if (Array.isArray(input.keyEvents)) {
+    keyEvents = input.keyEvents.filter(isCompleteEvent);
+    if (keyEvents.length < input.keyEvents.length) failures.push('key-events-incomplete');
+  } else {
+    failures.push('key-events-truncated');
+  }
+
+  let themes = [];
+  if (Array.isArray(input.themes) && input.themes.every((t) => typeof t === 'string')) {
+    themes = input.themes;
+  } else {
+    failures.push('themes-truncated');
+  }
+
+  return { brief, keyEvents, themes, failures };
+}
+
 // ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
@@ -79,6 +165,9 @@ export default async function handler(req, res) {
 
   const startedAt = Date.now();
   const today = new Date().toISOString().split('T')[0];
+  // Carried into the failure log: the inputs' counts once the prompt is built, the answer's stop_reason and usage once it arrives.
+  let callCounts = null;
+  let answerLog = null;
 
   try {
     const db = getFirebaseAdmin();
@@ -146,7 +235,7 @@ export default async function handler(req, res) {
     // -------------------------------------------------------------------
     // 3. Build prompt + call Sonnet with forced Tool Use
     // -------------------------------------------------------------------
-    const { systemPrompt, userPrompt } = buildDailyRegimeBriefPrompt({
+    const { systemPrompt, userPrompt, earningsListed } = buildDailyRegimeBriefPrompt({
       marketContext,
       technicalLeaders,
       technicalLaggards,
@@ -157,40 +246,26 @@ export default async function handler(req, res) {
       forDate: today,
     });
 
-    logInfo('Calling Sonnet', {
-      forDate: today,
+    callCounts = {
       econEvents: thisWeekEvents.length + nextWeekEvents.length,
       earnings: thisWeekEarnings.length + nextWeekEarnings.length,
-      sourceFailures,
-    });
+      earningsListed,
+    };
+    logInfo('Calling Sonnet', { forDate: today, ...callCounts, sourceFailures });
 
-    const client = getAnthropicClient();
-    const callPromise = client.messages.create({
-      model: SONNET_MODEL,
-      max_tokens: 2500,
-      // Sonnet 4.6 defaults to high effort; pin to low + thinking disabled to
-      // preserve the prior Sonnet-4 (no-thinking) latency profile.
-      thinking: { type: 'disabled' },
-      output_config: { effort: 'low' },
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-      tools: [DAILY_REGIME_BRIEF_TOOL],
-      tool_choice: { type: 'tool', name: 'submit_daily_regime_brief' },
-    });
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Sonnet timeout (45s)')), SONNET_TIMEOUT_MS),
-    );
+    const response = await callBriefModel(getAnthropicClient(), { systemPrompt, userPrompt });
 
-    const response = await Promise.race([callPromise, timeoutPromise]);
+    // Logged before the answer is read, so a failed read still names why the answer ended and what it cost.
+    answerLog = {
+      stopReason: response?.stop_reason ?? null,
+      usage: { input: response?.usage?.input_tokens ?? null, output: response?.usage?.output_tokens ?? null },
+    };
+    logInfo('Sonnet answered', { forDate: today, ...answerLog, ...callCounts });
 
-    const toolUse = response.content.find((b) => b.type === 'tool_use');
-    if (!toolUse) {
-      throw new Error('No tool_use block in Sonnet response');
-    }
-
-    const { brief, keyEvents, themes } = toolUse.input;
-    if (typeof brief !== 'string' || !Array.isArray(keyEvents) || !Array.isArray(themes)) {
-      throw new Error('Malformed tool_use input (expected brief:string, keyEvents:[], themes:[])');
+    const { brief, keyEvents, themes, failures } = readBriefAnswer(response);
+    if (failures.length > 0) {
+      sourceFailures.push(...failures);
+      logError('Brief answer degraded — kept with the losses named', { forDate: today, failures, ...answerLog });
     }
 
     // -------------------------------------------------------------------
@@ -248,7 +323,15 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     const duration = Date.now() - startedAt;
-    logError('Brief generation failed', { message: error.message, stack: error.stack, duration });
+    logError('Brief generation failed', {
+      message: error.message,
+      stack: error.stack,
+      duration,
+      forDate: today,
+      ...(callCounts || {}),
+      stopReason: answerLog?.stopReason ?? null,
+      usage: answerLog?.usage ?? null,
+    });
     return res.status(500).json({
       success: false,
       error: error.message,
