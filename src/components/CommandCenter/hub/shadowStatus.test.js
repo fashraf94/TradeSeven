@@ -161,3 +161,18 @@ describe('the tokens spelled here are the vocabulary’s (kept out of the entry 
     expect(Object.keys(ATTEMPT_WORDS).sort()).toEqual(['CONFIRMED', 'EXISTING', 'FAILED', 'FINISHING', 'UNCERTAIN', 'VERIFYING']);
   });
 });
+
+describe('every opened game past its end time is the strip\'s "Live · ending" (the S8 review K-1; ruling R-S8F-7)', () => {
+  it('one or several, all past their end: "Live · ending", from the strip\'s own copy, never "in progress"', () => {
+    expect(words({ liveCount: 1, allEnding: true })).toBe(COPY.strip.live(COPY.games.ending));
+    expect(words({ liveCount: 3, allEnding: true })).toBe('Live · ending');
+    expect(words({ liveCount: 1, waitingCount: 2, allEnding: true })).toBe('Live · ending');
+  });
+
+  it('not every one of them: the count, as before; a hold or an attempt still comes first; nothing opened, nothing ending', () => {
+    expect(words({ liveCount: 2, allEnding: false })).toBe('2 live games in progress');
+    expect(words({ liveCount: 1, allEnding: true, holdPhase: HOLD.CHARGING })).toBe(COPY.shadow.statusHolding);
+    expect(words({ liveCount: 1, allEnding: true, display: display('uncertain') })).toBe('Couldn’t confirm the deploy');
+    expect(words({ waitingCount: 1, allEnding: true })).toBe('Deployed · waiting for the open');
+  });
+});

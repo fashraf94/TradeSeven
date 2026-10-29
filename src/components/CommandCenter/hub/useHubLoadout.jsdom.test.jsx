@@ -279,6 +279,48 @@ describe("useHubLoadout — whose lists these are (spec §3: drop another owner'
   });
 });
 
+// The S8 review's S8-11 (ruling R-S8F-2; spec §3, "owned results are shown only if result uid and epoch match"): the key is
+// the uid alone, so the same account signing out and back in (another tab's sign-out keeps this hub mounted) comes back
+// under the SAME key. The reader is disabled in between (no agent), and that is the epoch boundary it can see: what it held
+// goes in that render, so the earlier epoch's list document is never served under the new one.
+describe("useHubLoadout — the same account's earlier sign-in (S8-11)", () => {
+  async function signedInSignedOutSignedInAgain() {
+    listWatchlists.mockResolvedValueOnce([committed('wl-epoch-1')]);
+    render(true, 'uid-A');
+    await flush();
+    expect(api.committed.map((l) => l.watchlistId)).toEqual(['wl-epoch-1']);
+    render(false, null); // signed out: no agent
+    render(false, 'uid-A'); // signed in again, the agent still loading
+  }
+
+  it("an earlier epoch's lists are not shown under the same uid's new epoch: nothing read yet until the new read lands", async () => {
+    await signedInSignedOutSignedInAgain();
+    const fresh = deferred();
+    listWatchlists.mockReturnValueOnce(fresh.promise);
+    render(true, 'uid-A');
+    expect(api.status).toBe(LISTS_STATUS.LOADING);
+    expect(api.committed).toEqual([]);
+    expect(api.readFor).toBeUndefined();
+    await act(async () => { fresh.resolve([committed('wl-epoch-3')]); await Promise.resolve(); });
+    expect(api.committed.map((l) => l.watchlistId)).toEqual(['wl-epoch-3']);
+  });
+
+  it("and if the new epoch's read fails, that is an error — the earlier epoch's lists are not kept as a fallback", async () => {
+    await signedInSignedOutSignedInAgain();
+    listWatchlists.mockRejectedValueOnce(new Error('offline'));
+    render(true, 'uid-A');
+    await flush();
+    expect(api.status).toBe(LISTS_STATUS.ERROR);
+    expect(api.committed).toEqual([]);
+  });
+
+  it('while disabled with the same uid the reader shows nothing it held (the agent of the new sign-in has not resolved)', async () => {
+    await signedInSignedOutSignedInAgain();
+    expect(api.status).toBe(LISTS_STATUS.LOADING);
+    expect(api.committed).toEqual([]);
+  });
+});
+
 describe('useHubLoadout — an equip made elsewhere (ruling R-S5-1, "after an equip"; review E4-2)', () => {
   it('an equipped list the lists on hand were not read for is read for once, and then it is known', async () => {
     listWatchlists.mockResolvedValueOnce([committed('wl-1')]).mockResolvedValueOnce([committed('wl-1'), committed('wl-2')]);

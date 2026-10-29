@@ -104,6 +104,51 @@ describe('generatedAt, additively', () => {
   });
 });
 
+// The S8 review's S8-13 (ruling R-S8F-4): after a failed first read the hook waits 1.5 s and reads once more. A reader that
+// unmounts inside that wait (the hub, or either legacy shell) must not start that read afterwards.
+describe('the one retry, and an unmount inside its wait (S8-13)', () => {
+  it('an unmount during the 1.5 s wait starts no second read', async () => {
+    vi.useFakeTimers();
+    try {
+      fs.throws = true;
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      host = document.createElement('div');
+      document.body.appendChild(host);
+      root = createRoot(host);
+      seen = [];
+      await act(async () => { root.render(<Probe />); });
+      expect(fs.reads).toBe(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+      act(() => root.unmount());
+      root = null;
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+      expect(fs.reads).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still mounted, the retry runs once and its answer is shown (the retry itself is unchanged)', async () => {
+    vi.useFakeTimers();
+    try {
+      fs.throws = true;
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      host = document.createElement('div');
+      document.body.appendChild(host);
+      root = createRoot(host);
+      seen = [];
+      await act(async () => { root.render(<Probe />); });
+      fs.throws = false;
+      fs.snapshot = doc({ dailyBrief: 'Second try.', forDate: '2026-10-07' });
+      await act(async () => { await vi.advanceTimersByTimeAsync(1600); });
+      expect(fs.reads).toBe(2);
+      expect(seen[seen.length - 1]).toMatchObject({ dailyBrief: 'Second try.', error: null, loading: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('the two legacy readers are unchanged and read only fields that already existed', () => {
   const HERE = path.dirname(fileURLToPath(import.meta.url));
   const read = (rel) => readFileSync(path.join(HERE, '..', rel), 'utf8').replace(/\r\n/g, '\n');

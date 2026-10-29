@@ -18,7 +18,8 @@
 // says so with Retry; with a retained window it says when that was true.
 
 import React from 'react';
-import { DESKTOP_COMPLETED_LIMIT, liveGamesOf, splitGames } from '../hub/hubModel';
+import { DESKTOP_COMPLETED_LIMIT, liveCountsOf, liveGamesOf, splitGames } from '../hub/hubModel';
+import { waitingLineOf } from '../hub/gamesDisplay';
 import { HUB_COPY as COPY } from '../hub/hubCopy';
 import { formatHubTime } from '../hub/hubDate';
 import { C, HAIR, tint } from '../hub/hubStyle';
@@ -128,6 +129,21 @@ export function GamesReadNote({ games, onRetry }) {
   );
 }
 
+/**
+ * The live rows' age after a failed poll: they are the poll's retained list, so they say when it was true, as the Deploy
+ * card does (spec §3; the S8 review's S8-3, ruling R-S8F-8). Nothing otherwise. Over every list of live rows: Games, and
+ * the phone Overview's own (review L3-2). The card carries the poll's Retry.
+ */
+export function GamesLiveNote({ games }) {
+  if (games?.liveStale !== true) return null;
+  const at = formatHubTime(games.liveAsOf);
+  return (
+    <div data-hub-games-live-note="stale" style={{ fontSize: 12.5, color: C.ink2, lineHeight: 1.45 }}>
+      {COPY.games.staleAsOf(at ? COPY.time.et(at) : '')}
+    </div>
+  );
+}
+
 /** A Games read note is due: the read failed, the window held is stale, or it was kept from an earlier visit (A+). */
 export function gamesNoteDue(games) {
   const ready = games?.status === 'ready';
@@ -142,8 +158,14 @@ export default function GamesSection({ games, onOpenGame, onOpenTape, onOpenHist
   // Slice S3 (R-S3-8): the poll's live rows show whatever the window's status; completed rows once it is read.
   const live = liveGamesOf(games);
   const shown = [...live, ...completed.slice(0, DESKTOP_COMPLETED_LIMIT)];
+  // "N live" counts the games that have opened; a list of games all waiting for the open says so, as their rows do
+  // (the S8 review's S8-2; ruling R-S8F-7: the one count the status line reads too).
+  const counts = liveCountsOf(games);
   let right = null;
-  if (live.length) right = <Tag tone="teal">{COPY.games.liveCount(live.length)}</Tag>;
+  if (counts.opened) right = <Tag tone="teal">{COPY.games.liveCount(counts.opened)}</Tag>;
+  // Every live game waiting: the hub's one waiting phrase, as the strip and the status line say it (review L3-4;
+  // ruling Q-S8F-5: the soonest start when one is known).
+  else if (counts.waiting) right = <Tag tone="teal">{waitingLineOf(live)}</Tag>;
   // The design shows the completed count whenever no game is live, "0 completed" included (S1 review L1-10).
   else if (ready) right = <Mono style={{ fontSize: 11, color: C.ink3 }}>{COPY.games.completedCount(completed.length)}</Mono>;
   const history = ready && completed.length > DESKTOP_COMPLETED_LIMIT && onOpenHistory
@@ -157,6 +179,7 @@ export default function GamesSection({ games, onOpenGame, onOpenTape, onOpenHist
     >
       {!ready && !failed && <GamesLoadingLine games={games} />}
       {gamesNoteDue(games) && <GamesReadNote games={games} onRetry={onRetry} />}
+      {live.length > 0 && <GamesLiveNote games={games} />}
       {shown.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {shown.map((g) => <GameRow key={g.id} game={g} onOpen={onOpenGame} onOpenTape={onOpenTape} />)}

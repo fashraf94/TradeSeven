@@ -42,6 +42,7 @@ import {
   isHubLoadError,
   reloadPage,
   HUB_LOAD_REPORT,
+  HUB_RENDER_REPORT,
 } from './CommandCenterHubGate';
 import { HUB_GATE_COPY } from './hubGateCopy';
 import { pickDashboardShell, DASHBOARD_SHELLS as S } from './pickDashboardShell';
@@ -391,18 +392,55 @@ describe('Retry, Reload and Dismiss', () => {
   });
 });
 
-describe('only a rejected import falls back', () => {
-  it('a hub that loads and then throws reaches the Dashboard boundary — no legacy shell hides it', async () => {
+// The S8 fix build, ruling R-S8F-11 (the S8 review's K-7; the founder's answer to Q-S5-6). This describe pinned the
+// opposite before — "only a rejected import falls back", a render error rethrown to the Dashboard boundary — and is
+// turned around with the ruling, not deleted: a hub that loads and then throws falls back as a failed load does, and
+// its error is logged under its own name.
+describe('a rejected import and a hub that throws while rendering both fall back (ruling R-S8F-11)', () => {
+  it('a hub that loads and then throws: the legacy shell under the same notice, the error logged once under its own name — not the Dashboard boundary\'s screen', async () => {
     const imp = controlledImport();
     const Gate = createCommandCenterHubGate(imp.fn);
     await render(<Gate legacy={<Shell name="legacy" />} />);
     await resolveCall(imp.calls[0], { default: function BrokenHub() { throw new Error('hub render bug'); } });
 
-    expect(host.textContent).toContain('Dashboard encountered an error');
+    expect(host.textContent).not.toContain('Dashboard encountered an error');
+    expect(shellsShown()).toEqual(['legacy']);
+    expect(q('[data-hub-gate="load-error"]')).not.toBeNull();
+    expect(button(HUB_GATE_COPY.retry)).toBeTruthy();
+    expect(button(HUB_GATE_COPY.reload)).toBeTruthy();
+    expect(gateReports()).toEqual([]);
+    const renderReports = errorLog.writes.filter((w) => w.screen === HUB_RENDER_REPORT);
+    expect(renderReports).toHaveLength(1);
+    expect(renderReports[0]).toMatchObject({ message: 'hub render bug' });
+    expect(renderReports[0].componentStack).toContain('BrokenHub');
+    expect(errorLog.writes.some((w) => w.screen === 'Dashboard')).toBe(false);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('threw while rendering'), expect.objectContaining({ message: 'hub render bug' }));
+  });
+
+  it('Retry runs the hub again: once it renders, the shell and the notice go', async () => {
+    const imp = controlledImport();
+    const Gate = createCommandCenterHubGate(imp.fn);
+    let broken = true;
+    const FlakyHub = () => { if (broken) throw new Error('hub render bug'); return <section data-hub="test-hub">hub</section>; };
+    await render(<Gate legacy={<Shell name="legacy" />} />);
+    await resolveCall(imp.calls[0], { default: FlakyHub });
+    expect(shellsShown()).toEqual(['legacy']);
+    broken = false;
+    await click(HUB_GATE_COPY.retry);
+    await resolveCall(imp.calls[1], { default: FlakyHub });
+    expect(q('[data-hub="test-hub"]')).not.toBeNull();
     expect(shellsShown()).toEqual([]);
     expect(q('[data-hub-gate="load-error"]')).toBeNull();
-    expect(gateReports()).toEqual([]);
-    expect(errorLog.writes.some((w) => w.screen === 'Dashboard' && w.message === 'hub render bug')).toBe(true);
+  });
+
+  it('a rejected import is still the loader\'s to report: one load report, no render report', async () => {
+    const imp = controlledImport();
+    const Gate = createCommandCenterHubGate(imp.fn);
+    await render(<Gate legacy={<Shell name="legacy" />} />);
+    await rejectCall(imp.calls[0]);
+    expect(shellsShown()).toEqual(['legacy']);
+    expect(gateReports()).toHaveLength(1);
+    expect(errorLog.writes.filter((w) => w.screen === HUB_RENDER_REPORT)).toEqual([]);
   });
 });
 

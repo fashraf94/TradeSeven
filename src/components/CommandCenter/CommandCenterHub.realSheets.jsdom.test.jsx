@@ -38,6 +38,13 @@ vi.mock('../../hooks/useMasteryProfile', () => ({ default: () => null }));
 // Slice S7: a partial mock — the real module's other exports (PHONE_SHADOW, ruling R-S7-6) stay, only hubFlags() is stubbed.
 vi.mock('./hub/hubFlags', async (importOriginal) => ({ ...(await importOriginal()), hubFlags: () => flags.current }));
 vi.mock('../../utils/equipSlots', () => ({ getEquipSlots: () => slots.current }));
+// The S8 fix build (ruling R-S8F-6): the traits sheet opens here too. Its two data hooks stand still on their loading
+// state — what these rows read is the sheet's frame, the shared primitive's dialog semantics.
+vi.mock('../../hooks/useForge', () => ({ useForge: () => ({ loading: true }) }));
+vi.mock('../../hooks/useTraits', () => ({
+  BATTLE_LOCK_MSG: 'locked',
+  useTraits: () => ({ equippedTraits: [], equipTrait: vi.fn(), unequipTrait: vi.fn(), getGroupSlotUsage: () => ({}), canEquip: () => false, loading: true }),
+}));
 
 import CommandCenterHub from './CommandCenterHub';
 import { HUB_COPY as COPY } from './hub/hubCopy';
@@ -253,5 +260,101 @@ describe('the rest of the real flows the stack touches', () => {
     click(closeButton());
     expect(isInert(m.host)).toBe(false);
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+});
+
+// The S8 review's S8-8 (ruling R-S8F-6; spec §10): every sheet the Loadout opens is a dialog — role, aria-modal and a
+// name from its title; focus on Close when it opens; Tab and Shift+Tab stay inside; Escape closes it; focus goes back to
+// the control that opened it, ONCE: the hub's overlay stack returns it, and the shared sheet, finding focus already out
+// of it, does not do it again. Modelled on the S8 review's real-sheets focus row (its Q6 refuter's, gone with the snapshot).
+const TRAITS_SLOTS = () => [{ id: 'archetype', filled: true }, { id: 'watchlist', filled: true }, { id: 'traits', filled: false }];
+const DIALOG_SHEETS = [
+  ['archetype', () => btn(COPY.loadout.changeArchetype), 'Choose archetype'],
+  ['watchlist', () => btn(COPY.loadout.changeWatchlist), COPY.watchlistSheet.title],
+  ['record', () => btn(COPY.loadout.recordLabel('Nova')), 'Nova'],
+  ['traits', () => btn(COPY.loadout.changeAdjustments), 'Traits'],
+];
+const TABBABLE = 'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const liveDialogs = () => [...document.querySelectorAll('[role="dialog"]')].filter((node) => !node.closest('[inert]'));
+const key = (target, name, init = {}) => {
+  const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...init });
+  act(() => { target.dispatchEvent(event); });
+  return event;
+};
+
+describe('the real sheets are dialogs (the S8 review S8-8; ruling R-S8F-6)', () => {
+  it.each(DIALOG_SHEETS)('%s: role dialog, aria-modal, named by its title; focus on Close; Tab stays inside; Escape closes; focus returns to the opener once', async (_name, opener, title) => {
+    slots.current = TRAITS_SLOTS();
+    const { m } = await renderHub();
+    const control = opener();
+    expect(control, 'the sheet\'s opener').toBeTruthy();
+    control.focus();
+    click(control);
+    expect(isInert(m.host)).toBe(true);
+    const dialogs = liveDialogs();
+    expect(dialogs).toHaveLength(1);
+    const [dialog] = dialogs;
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(document.getElementById(dialog.getAttribute('aria-labelledby'))?.textContent).toBe(title);
+    expect(document.activeElement).toBe(closeButton());
+    expect(dialog.contains(closeButton())).toBe(true);
+
+    const nodes = [...dialog.querySelectorAll(TABBABLE)];
+    expect(nodes.length).toBeGreaterThan(0);
+    nodes[nodes.length - 1].focus();
+    expect(key(document.activeElement, 'Tab').defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(nodes[0]);
+    expect(key(document.activeElement, 'Tab', { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(nodes[nodes.length - 1]);
+
+    const restores = vi.spyOn(control, 'focus');
+    key(document.activeElement, 'Escape');
+    expect(isInert(m.host)).toBe(false);
+    expect(document.activeElement).toBe(control);
+    expect(restores).toHaveBeenCalledTimes(1);
+  }, 30000);
+});
+
+// The build's own review, lens L1 (L1-1, CONFIRMED by its refuter): picking an archetype swaps the cards for the confirm
+// step, so the focused card unmounts and focus falls to <body>, where no key reaches the dialog's own handler. Those keys
+// are still the sheet's: Escape closes it, and Tab goes back inside.
+describe('review fix L1-1: focus that fell out of an open sheet', () => {
+  async function pickACard() {
+    const { m } = await renderHub();
+    const control = btn(COPY.loadout.changeArchetype);
+    control.focus();
+    click(control);
+    const [dialog] = liveDialogs();
+    const card = dialog.querySelector('button[aria-pressed="false"]:not([disabled])');
+    expect(card, 'an archetype card to pick').toBeTruthy();
+    card.focus();
+    click(card);
+    expect(document.getElementById(dialog.getAttribute('aria-labelledby'))?.textContent).toMatch(/^Change to /);
+    expect(document.activeElement).toBe(document.body);
+    return { m, control, dialog };
+  }
+
+  it('Escape with focus on <body> still closes the sheet, and focus returns to the opener', async () => {
+    const { m, control } = await pickACard();
+    key(document.body, 'Escape');
+    expect(isInert(m.host)).toBe(false);
+    expect(document.activeElement).toBe(control);
+  }, 30000);
+
+  it('Tab and Shift+Tab with focus on <body> go back into the sheet, never into the page behind it', async () => {
+    const { dialog } = await pickACard();
+    expect(key(document.body, 'Tab').defaultPrevented).toBe(true);
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    document.activeElement.blur();
+    expect(document.activeElement).toBe(document.body);
+    expect(key(document.body, 'Tab', { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  }, 30000);
+
+  it('a key on <body> while no sheet is open is not a sheet\'s', async () => {
+    const { m } = await renderHub();
+    const event = key(document.body, 'Tab');
+    expect(event.defaultPrevented).toBe(false);
+    expect(isInert(m.host)).toBe(false);
   });
 });
