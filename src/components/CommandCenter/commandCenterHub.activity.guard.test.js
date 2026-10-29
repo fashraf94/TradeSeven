@@ -161,6 +161,52 @@ const SHADOW_CANVAS = [
 ];
 const SHADOW_PURE = ['shadowCanvas.js', 'shadowBloom.js', 'shadowStatus.js'];
 
+// ── Agent form build S1 (founder ruling R6c): the armored hero, call by call ─────────────────────────────────────────
+//
+// With AGENT_FORM_HUB_ENABLED on, the hub's stage renders HubAgentForm.jsx, which renders the agent form's wrapper
+// (src/components/AgentForm/AgentForm.jsx). The mount guard allows the wrapper two PATTERNS (an effect, a listener);
+// this pins what it DOES: five effects — the pixel ratio's resize listener, the engine view's mount, its spec
+// updates (a change of archetype there is the swap), its options and its equip — and the one window 'resize'
+// listener, removed again. The hub view holds none. The engine's loop, observer, visibility and context listeners are
+// behind the one lazy edge (ruling R6a), in engine.lifecycle.jsdom.test.js's census.
+const readAgentForm = (name) => readFileSync(path.join(HERE, '..', 'AgentForm', name), 'utf8').replace(/\r\n/g, '\n');
+const AGENT_FORM_WRAPPER_CALLS = [
+  'useEffect',
+  'useEffect',
+  'useEffect',
+  'useEffect',
+  'useEffect',
+  "window.addEventListener 'resize'",
+  "window.removeEventListener 'resize'",
+].sort();
+
+describe('agent form build S1: the armored hero holds exactly the activity it was allowed (ruling R6c)', () => {
+  it('AgentForm.jsx: five effects and one window resize listener (removed again) — no frame, timer, observer or read of its own', () => {
+    expect(activityOf(readAgentForm('AgentForm.jsx'), parseJsx)).toEqual(AGENT_FORM_WRAPPER_CALLS);
+  });
+
+  it('HubAgentForm.jsx: none at all', () => {
+    expect(activityOf(readShell('HubAgentForm.jsx'), parseJsx)).toEqual([]);
+  });
+
+  it('the scan bites: each activity added to the wrapper or the hub view changes its list', () => {
+    const plants = {
+      'a second resize listener': "window.addEventListener('resize', () => {});",
+      'a media-query listener': "mq.addEventListener('change', () => {});",
+      'a visibility listener': "document.addEventListener('visibilitychange', () => {});",
+      'an observer': 'const io = new IntersectionObserver(() => {});',
+      'a timer': 'setTimeout(() => {}, 1000);',
+      'a frame loop': 'requestAnimationFrame(() => {});',
+      'a sixth effect': 'useEffect(() => {}, []);',
+      'a layout effect': 'useLayoutEffect(() => {}, []);',
+    };
+    for (const [what, snippet] of Object.entries(plants)) {
+      expect(activityOf(`${readAgentForm('AgentForm.jsx')}\n${snippet}\n`, parseJsx), `AgentForm.jsx: ${what}`).not.toEqual(AGENT_FORM_WRAPPER_CALLS);
+      expect(activityOf(`${readShell('HubAgentForm.jsx')}\n${snippet}\n`, parseJsx), `HubAgentForm.jsx: ${what}`).not.toEqual([]);
+    }
+  });
+});
+
 describe('S7: Shadow\'s canvas holds exactly the activity it was allowed (R-S7-1, R-S7-5)', () => {
   it('ShadowCanvas.jsx: four effects, one frame loop (two requests, one cancel), one observer, one visibility listener (removed again) and one timeout (cleared)', () => {
     expect(activityOf(readShell('ShadowCanvas.jsx'), parseJsx)).toEqual(SHADOW_CANVAS);

@@ -26,8 +26,9 @@
 //
 // Colours are computed token hexes read at render (SVG attributes cannot take
 // var(), BUILD_RULES §10 hazard H8): the near colour teal, the far colour
-// teal-2, the bright core white (the design's #ECFFFB highlight has no token;
-// white is the nearest shipped one).
+// teal-2, the bright core white. The design's #ECFFFB highlight has had a token
+// since agent form build S0 (--ft-agent-teal-core, the armored form's core);
+// this still keeps white, as shipped, and is unchanged (agent form build S1).
 
 import React, { useId, useMemo } from 'react';
 import { readToken } from '../../theme/cssTokens';

@@ -114,6 +114,7 @@ import {
   composeHub,
 } from './hub/composition';
 import { useDeployAttempt } from '../../contexts/DeployAttemptContext';
+import { AGENT_FORM_HUB_ENABLED } from '../../config/agentFormFlags';
 import ScoutingBoardSheet from '../Dashboard/ScoutingBoardSheet';
 import { DISPLAY_ACTIONS, deployDisplay } from './hub/deployDisplay';
 import { waitingLineOf } from './hub/gamesDisplay';
@@ -149,6 +150,7 @@ import BriefSection from './sections/BriefSection';
 import DeploySection from './sections/DeploySection';
 import GamesSection from './sections/GamesSection';
 import NextActionCard from './sections/NextActionCard';
+import { HubAgentFormContext } from './HubAgentForm';
 import { PhoneStage, ShadowStage } from './ShadowStage';
 
 /** Shadow's box per composition (the design: 340 desktop, 260 tablet, 200 phone — 196 under 375 px). */
@@ -606,7 +608,15 @@ function ConnectedHub({ site, hub, sections }) {
   // Slice S7: the provider's attempt id and whether its ceremony covers the page — Shadow's response and pause (R-S7-3, R-S7-5).
   const attemptId = readers.inputs?.attempt?.attemptId ?? null;
   const coverOpen = deployAttempt?.snapshot?.overlayOpen === true;
-  return site === HUB_SITES.MOBILE
+  // Agent form build S1: the armored hero reads the same agent read the Loadout shows, through this scope (a prop
+  // through the shells would change today's elements; flag-off this ternary folds to the return below it).
+  return AGENT_FORM_HUB_ENABLED ? (
+    <HubAgentFormContext.Provider value={readers.agent}>
+      {site === HUB_SITES.MOBILE
+        ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
+        : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />}
+    </HubAgentFormContext.Provider>
+  ) : site === HUB_SITES.MOBILE
     ? <PhoneHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />
     : <WideHub hub={hub} sections={live} actions={actions} agentRead={readers.agent} researchRead={research} deploy={deploy} board={board} attemptId={attemptId} coverOpen={coverOpen} />;
 }

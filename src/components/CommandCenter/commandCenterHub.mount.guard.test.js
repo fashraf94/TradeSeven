@@ -619,6 +619,9 @@ const PERMITTED_TERMINALS = Object.freeze({
   // S6 (review H-3): the deploy's OWN ticker filter, called not copied — how many of a list's names the agent is handed. The honest line
   // and "Deploying with" are said only for a list the agent is handed. Pure and import-free; not fenced (BUILD_RULES §1).
   'api/_utils/watchlistEquip.js': 'extractTickerSymbols — the server\'s filter of a list\'s names (review H-3)',
+  // Agent form build S1: the agent identity program's flag module (its own, not featureFlags.js, for the entry chunk's
+  // sake), read as the literal AGENT_FORM_HUB_ENABLED at the two stage sites and the read scope. It imports nothing.
+  'src/config/agentFormFlags.js': 'AGENT_FORM_HUB_ENABLED — the armored hero, read as a literal ternary so flag-off folds away (build S1)',
 });
 /** framer-motion: motion.div and useReducedMotion (the house precedent for OS reduced motion); react-dom: createPortal for the sheet. */
 const PERMITTED_PACKAGES = Object.freeze(['framer-motion', 'react', 'react-dom']);
@@ -674,6 +677,27 @@ const GATE_RELOAD = 'export function reloadPage(location = window.location) {\n 
 const HUB_DIR = 'src/components/CommandCenter';
 const HUB_FILE = (name) => `${HUB_DIR}/${name}`;
 
+// Agent form build S1 (founder ruling R6a): the hub graph enters the agent form's wrapper — the one component the
+// armored hero renders, outside this directory — and reaches the engine (and three.js) only through the wrapper's one
+// import(). These modules are walked, not stopped at: a PERMITTED_TERMINALS entry would hide loadEngine.js's import()
+// from the one-lazy-edge row. Their activity is scanned with the directory's (R6c).
+const AGENT_FORM_DIR = 'src/components/AgentForm';
+const AGENT_FORM_WRAPPER = Object.freeze([
+  `${AGENT_FORM_DIR}/AgentForm.jsx`,
+  `${AGENT_FORM_DIR}/AgentFormStill.jsx`,
+  `${AGENT_FORM_DIR}/agentFormSpec.js`,
+  `${AGENT_FORM_DIR}/agentFormTokens.js`,
+  `${AGENT_FORM_DIR}/agentGrowth.js`,
+  `${AGENT_FORM_DIR}/loadEngine.js`,
+]);
+/** R6a: the one load-time edge the hub graph may hold — the wrapper's loader into the engine's lazy entry. */
+const ENGINE_EDGE = `${AGENT_FORM_DIR}/loadEngine.js -> lazy ${AGENT_FORM_DIR}/engine/index.js`;
+
+/** Every load-time edge (`import()`, `require()`, `import.meta.glob()`) out of the modules `seen`, resolved, as `a -> lazy b`. */
+function lazyEdgesOf(seen, codeOf = (rel) => stripComments(read(rel))) {
+  return seen.flatMap((rel) => lazyImportsOfCode(codeOf(rel)).map((spec) => `${rel} -> lazy ${(spec.startsWith('.') && resolveRelative(rel, spec)) || spec}`)).sort();
+}
+
 /**
  * The S1 allowances, by file: the ResizeObservers that measure the hub (its
  * width, the stage connector, the strip and BottomNav) with the layout effects
@@ -714,6 +738,11 @@ const ALLOWED_ACTIVITY = Object.freeze({
   [HUB_FILE('ShadowCanvas.jsx')]: ['\\brequestAnimationFrame\\b', '\\bIntersectionObserver\\b', '\\baddEventListener\\b', '\\bsetTimeout\\b', '\\buseEffect\\b'],
   // ...and the tests' stand-ins for those three (frames, the observer, the visibility listener count); tests only.
   [HUB_FILE('__fixtures__/shadowCanvasKit.js')]: ['\\brequestAnimationFrame\\b', '\\bIntersectionObserver\\b', '\\baddEventListener\\b'],
+  // Agent form build S1 (ruling R6c): the armored hero's wrapper — its effects (the engine view's mount, its updates,
+  // options and equip) and the one window resize listener that re-reads the pixel ratio. Call by call in
+  // commandCenterHub.activity.guard.test.js. The engine's own loop, observer and listener are behind the lazy edge,
+  // in its own lifecycle suite; the hub view (HubAgentForm.jsx) holds no activity at all.
+  [`${AGENT_FORM_DIR}/AgentForm.jsx`]: ['\\baddEventListener\\b', '\\buseEffect\\b'],
 });
 
 function activityInCode(rel, code) {
@@ -732,7 +761,8 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
   it('the hub module\'s whole import graph stays in its directory, but for the permitted shipped modules', () => {
     const { seen, terminals, bare } = graph(HUB_FILE('CommandCenterHub.jsx'));
     expect(seen).toContain(HUB_FILE('hub/hubCopy.js'));
-    expect(seen.filter((rel) => !rel.startsWith(`${HUB_DIR}/`))).toEqual([]);
+    // Agent form build S1 (ruling R6a): outside the directory, the walk enters the agent form's wrapper and nothing else.
+    expect(seen.filter((rel) => !rel.startsWith(`${HUB_DIR}/`)).sort()).toEqual([...AGENT_FORM_WRAPPER].sort());
     expect(terminals.sort()).toEqual(Object.keys(PERMITTED_TERMINALS).sort());
     expect(bare.sort()).toEqual([...PERMITTED_PACKAGES].sort());
     expect(bare.filter((s) => /^firebase(\/|$)/.test(s))).toEqual([]);
@@ -743,10 +773,10 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     expect(seen.filter((rel) => rel.includes('/__fixtures__/'))).toEqual([]);
   });
 
-  it('every file in the directory: no activity but the listed allowances', () => {
+  it('every file in the directory, and the agent form wrapper the hub graph enters (ruling R6c): no activity but the listed allowances', () => {
     const files = hubDirFiles();
     expect(files.length, 'the CommandCenter walk found nothing, so this row would be vacuous').toBeGreaterThan(20);
-    expect(files.flatMap(activityIn)).toEqual([]);
+    expect([...files, ...AGENT_FORM_WRAPPER].flatMap(activityIn)).toEqual([]);
   });
 
   it('S2a: the scan reaches the selectors directory, and none of its modules holds an allowance', () => {
@@ -787,12 +817,51 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     expect(users).toEqual([HUB_FILE('CommandCenterHub.jsx')]);
   });
 
-  it('the hub side loads nothing later: no import() or require() in its graph', () => {
-    // A dynamic import is an edge the static walk cannot follow (firebase/auth
-    // loaded at render, say), so the hub side has none.
+  it('the hub side loads exactly one module later: the agent form wrapper\'s one import() of the engine (ruling R6a)', () => {
+    // A dynamic import is an edge the static walk cannot follow (firebase/auth loaded at render, say), so the hub side
+    // had none. Agent form build S1 (ruling R6a): exactly one, pinned by path — loadEngine.js's import() of the
+    // engine's lazy entry, which is where three.js lives. Any other import() or require() anywhere in the graph fails.
     const { seen } = graph(HUB_FILE('CommandCenterHub.jsx'));
     const lazy = seen.filter((rel) => /\b(?:import|require)\s*\(/.test(stripComments(read(rel))));
-    expect(lazy).toEqual([]);
+    expect(lazy).toEqual([`${AGENT_FORM_DIR}/loadEngine.js`]);
+    expect(lazyEdgesOf(seen)).toEqual([ENGINE_EDGE]);
+  });
+
+  it('three.js is reached only through that edge: the engine imports it, the static hub graph does not, and PERMITTED_PACKAGES is unchanged (ruling R6b)', () => {
+    const { seen, bare } = graph(HUB_FILE('CommandCenterHub.jsx'));
+    expect(bare).not.toContain('three');
+    expect([...PERMITTED_PACKAGES]).toEqual(['framer-motion', 'react', 'react-dom']);
+    expect(seen.filter((rel) => importsOf(rel).includes('three'))).toEqual([]);
+    // Past the edge, the engine's own graph is where three is.
+    const engine = graph(`${AGENT_FORM_DIR}/engine/index.js`);
+    expect(engine.bare).toContain('three');
+    expect(engine.seen.every((rel) => rel.startsWith(`${AGENT_FORM_DIR}/engine/`)), engine.seen.join(', ')).toBe(true);
+  });
+
+  it('no frame-cost self-downgrade (R-S7-2; ruling R6d): the hero\'s rate is the phone constant or live, and nothing on the hub side reads a frame', () => {
+    const view = stripComments(read(HUB_FILE('HubAgentForm.jsx')));
+    const body = /export function hubFormRate\(phone\) \{\n([\s\S]*?)\n\}/.exec(view);
+    expect(body && body[1].trim()).toBe("return phone ? AGENT_FORM_PHONE : 'live';");
+    expect(view.match(/\brate=\{rate\}/g)).toHaveLength(1);
+    // The wrapper may lower the rate only by size (R12) — never by what a frame cost.
+    const wrapper = stripComments(read(`${AGENT_FORM_DIR}/AgentForm.jsx`));
+    expect(wrapper).toMatch(/const drawRate = rateForSize\(rate, spec\.size\);/);
+    const FRAME_READ = /\b(?:onFrame|performance|requestAnimationFrame|fps|cost|calls)\b/;
+    for (const rel of [HUB_FILE('HubAgentForm.jsx'), ...AGENT_FORM_WRAPPER]) expect(FRAME_READ.test(stripComments(read(rel))), rel).toBe(false);
+    expect(FRAME_READ.test("const r = cost > 8 ? 'half' : 'live';")).toBe(true);
+  });
+
+  it('the R6 rows bite: a second import(), a static three import or an extra outside module each changes what they see', () => {
+    const { seen } = graph(HUB_FILE('CommandCenterHub.jsx'));
+    const code = (extra) => (rel) => stripComments(read(rel)) + (extra[rel] ? `\n${extra[rel]}\n` : '');
+    const wrapper = `${AGENT_FORM_DIR}/AgentForm.jsx`;
+    expect(lazyEdgesOf(seen, code({ [wrapper]: "const x = () => import('three');" }))).not.toEqual([ENGINE_EDGE]);
+    expect(lazyEdgesOf(seen, code({ [HUB_FILE('HubAgentForm.jsx')]: "const m = () => import('../AgentForm/engine/index.js');" }))).not.toEqual([ENGINE_EDGE]);
+    expect(lazyEdgesOf(seen, code({ [`${AGENT_FORM_DIR}/loadEngine.js`]: "require('./engine/form.js');" }))).not.toEqual([ENGINE_EDGE]);
+    expect(importsOfCode("import * as THREE from 'three';")).toEqual(['three']);
+    expect(activityInCode(wrapper, 'requestAnimationFrame(f);')).not.toEqual([]);
+    expect(activityInCode(wrapper, 'new IntersectionObserver(cb);')).not.toEqual([]);
+    expect(activityInCode(HUB_FILE('HubAgentForm.jsx'), 'useEffect(() => {}, []);')).not.toEqual([]);
   });
 
   it('no URL, history or cookie reaches the hub side (ruling R-S1-4)', () => {
@@ -849,7 +918,13 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     // root admits. Each is pure (selectors.purity.guard.test.js; overlayStack.js is plain DOM, no React). Hub
     // flag off, the provider is a pass-through and none of them runs (DeployAttemptContext.flagOff test).
     const PROVIDER = 'src/contexts/DeployAttemptContext.jsx';
+    // Agent form build S1 (founder ruling R8: "celebrating … from the existing outcome derivation"): the battle form
+    // reads the hub's own deriveGameOutcome rather than a copy — one load-time edge, from the battle form's own lazy
+    // chunk (which loads only while AGENT_FORM_BATTLE_ENABLED is on), into the pure selector. Flag-off, neither end
+    // ships with the battle view (the build report's dist diff: every chunk byte-identical).
+    const BATTLE_FORM = 'src/screens/battleView/BattleAgentForm.jsx';
     expect(edges.sort()).toEqual([
+      `${BATTLE_FORM} -> lazy ${HUB_FILE('hub/selectors/gameOutcome.js')}`,
       `${PROVIDER} -> ${HUB_FILE('hub/hubDate.js')}`,
       `${PROVIDER} -> ${HUB_FILE('hub/overlayStack.js')}`,
       `${PROVIDER} -> ${HUB_FILE('hub/selectors/attemptReducer.js')}`,
@@ -862,6 +937,7 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
     ].sort());
     const literals = outside.flatMap((rel) => hubDirLiterals(codeOf.get(rel)).map((lit) => `${rel}: ${lit}`));
     expect(literals.sort()).toEqual([
+      `${BATTLE_FORM}: ../../components/CommandCenter/hub/selectors/gameOutcome`,
       `${PROVIDER}: ../components/CommandCenter/hub/hubDate`,
       `${PROVIDER}: ../components/CommandCenter/hub/overlayStack`,
       `${PROVIDER}: ../components/CommandCenter/hub/selectors/attemptReducer`,
@@ -975,6 +1051,14 @@ describe('S1 hub side — nothing reads, waits, listens or subscribes beyond the
   });
 });
 
+// BUILD_RULES §11, A STATED EXCEPTION (agent form build S1; the S0 review's SR-15). With AGENT_FORM_HUB_ENABLED on, the
+// armored hero suits up when the archetype changes: 900 ms on board 2's five keys, 700 ms coming off
+// (src/components/AgentForm/engine/vocab.js EQUIP_KEYS / UNEQUIP_KEYS), its size tweened across it (ruling R5). That
+// tween is the engine's own requestAnimationFrame timeline, posed frame by frame in WebGL — the same class as the
+// face's rAF easing engine (faceEngineCore.js), which §11 names out of its scope — not a Framer Motion transition, so it
+// takes no motion token and is not an unmigrated literal. No hub file writes any of it: HubAgentForm.jsx passes only
+// `equipOnChange`; under reduced motion the engine snaps to the new form's still. The rows below hold every hub file,
+// HubAgentForm.jsx included, to the token-only rule.
 describe('S1 hub side — colour and motion only through the tokens (ruling R-S1-2; BUILD_RULES §10, §11)', () => {
   // No id-stripping before the hex scan: it once deleted every quoted lowercase
   // hex starting a–f along with the ids it meant (S1 review L5-1). Ids such as
@@ -1007,6 +1091,13 @@ describe('S1 hub side — colour and motion only through the tokens (ruling R-S1
   it('SVG paint attributes take a computed hex (readToken) or currentColor, never a var() reference (hazard H8)', () => {
     const hits = hubDirFiles().filter((rel) => SVG_PAINT_VAR.test(stripComments(read(rel))));
     expect(hits).toEqual([]);
+  });
+
+  it('§11\'s stated exception stays where it is stated: the equip timeline lives in the engine\'s vocabulary, and the hub view names none of it', () => {
+    const view = stripComments(read(HUB_FILE('HubAgentForm.jsx')));
+    expect(view).toMatch(/\bequipOnChange\b/);
+    expect(view).not.toMatch(/\b(?:EQUIP_KEYS|UNEQUIP_KEYS|EQUIP_MS|UNEQUIP_MS|transition|motionToken)\b/);
+    expect(stripComments(read(`${AGENT_FORM_DIR}/engine/vocab.js`))).toMatch(/export const EQUIP_KEYS = /);
   });
 
   it('no CSS transition or animation, as a string or as a key: motion goes through motionToken (the motion guard counts only transition={{)', () => {
