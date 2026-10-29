@@ -65,6 +65,10 @@ import { OPEN_IDEA_EVENT, OPEN_BATTLE_REVIEW_EVENT } from './components/Forge/Wa
 // Correlation Lab: lazy now that the flag is live (deferred review NIT #9) — the
 // dev-param screen and the Discover "Correlations" tab both render this.
 const CorrelationLab = lazy(() => import('./components/Research/CorrelationLab'));
+// Agent form lab (S0, docs/audits/20261029_BUILD_AGENT_FORM_S0.md) — DARK: with
+// AGENT_FORM_LAB_ENABLED false this is `null` and Rollup drops the import(), so
+// the bundle carries no lab chunk and no three.js.
+const AgentFormLab = AGENT_FORM_LAB_ENABLED ? lazy(() => import('./screens/AgentFormLab')) : null;
 
 // Legacy aliases for backwards compatibility
 const TDBattleScoreboard = BaggerBombScoreboard;
@@ -131,6 +135,7 @@ import { pickDashboardShell, DASHBOARD_SHELLS } from './components/CommandCenter
 import { forgeAreaOf, hubOwnsDashboard } from './components/CommandCenter/hubChrome';
 import { excludeVoidedGroupBattles } from './utils/commandCenterLiveBattles';
 import { COMMAND_DASHBOARD_ENABLED, COMMAND_DASHBOARD_DESKTOP_ENABLED, TOURNAMENT_TAB_ENABLED, CORRELATION_LAB_ENABLED, isDeployCeremonyOn, isStarfieldOn, isStarfieldMobileOn, isDeploySkyCouplingOn, isCharacterPaneOn, isCommandCenterHubOn } from './config/featureFlags';
+import { AGENT_FORM_LAB_ENABLED } from './config/agentFormFlags';
 import { pickCeremonyEntry } from './components/Dashboard/deployCeremony/ceremonyData';
 import { handoffBattleId, isHandoffOwnerCurrent, buildOptimisticBattleEntry, appendOptimisticBattle, ownedCeremonyEntryInputs } from './components/Dashboard/deployHandoff';
 import { signedInUid } from './services/deployIdentity';
@@ -10242,6 +10247,20 @@ export default function PortfolioDuel() {
   // tab away into) and getScreenContent() isn't computed for an agent-less user.
   // Once the agent exists, hasAgent flips true and routing resumes normally
   // (onComplete lands on the dashboard).
+  // AGENT FORM LAB (S0 dev surface) — reachable ONLY via ?agentFormLab=1, and
+  // only while AGENT_FORM_LAB_ENABLED is true. Full screen and ahead of the
+  // onboarding gate and the unified return, so no app chrome (nav,
+  // EarningsGame, ClashBot, the starfield) draws beside the lab's frame
+  // readout, signed in or out. With the flag false Rollup folds this block
+  // away and the URL is never read.
+  if (AGENT_FORM_LAB_ENABLED && new URLSearchParams(window.location.search).get('agentFormLab') === '1') {
+    return (
+      <Suspense fallback={<AppLoadingScreen />}>
+        <AgentFormLab />
+      </Suspense>
+    );
+  }
+
   const onboardingGateReady = user && !userLoading && !authLoading;
   if (onboardingGateReady && agentLoading) {
     return <AppLoadingScreen />;
