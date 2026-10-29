@@ -324,6 +324,8 @@ Paste the 60 s line and anything that looked wrong back to Claude.
 
 **The founder's result (iPhone, October 29, 2026).** The founder ran this checklist on the smoke preview. The rendering looked fantastic everywhere: the hub hero, the suit-up, Reduce Motion, lock and unlock, both battle figures, the moods and the side pane. His one issue: the figures in the BaggerBomb battle feel a bit too small, and he wants them larger. §11 is that change. **The raw `60 s:` line from step 2 was not kept**, so the hero's frame rate is attested by the founder's eye, not by the readout's numbers. The size check at the end of §11 asks for the line again.
 
+**Recorded at the S1 review (October 29, 2026; `docs/audits/20261029_REVIEW_AGENT_FORM_S1.md`).** The founder's first run, as given to the review: the rendering looked fantastic everywhere; the one issue was that the battle figures were too small, which §11 fixed. The `60 s:` line was asked for again with the size check (§11.10); the review's brief carried a slot for it, and nothing was pasted into it, so the line was not kept.
+
 **What was checked on the preview, and what was not.** On the deployed preview I checked only that it answers (HTTP 200). The hub and the battle need a signed-in account, so your run is the first real render of the flags-on app on a device. Before it, the flags-on code was rendered in two places:
 - headless Edge, by the scratch harness (the real arena header and the real wrapper with the engine; §4, §5);
 - jsdom, by the hub and battle suites with the flags flipped (below).
@@ -489,7 +491,7 @@ Headless Edge, 2×, reduced motion (stills, for a steady picture); the real `Are
 - **Growth:** 5 px on the phone (allowed 12), 14 on the desktop (allowed 16). (At the build's first 90 px the desktop grew 16: 120 → 136 and 139 → 155. The 88 px numbers above were re-measured by the review session in the same harness: headless Edge 2×, reduced motion.)
 - **Positions:** every name, score, "CPU" and the VS block keeps its x, to the tenth of a pixel. (The score's own width varies by a pixel or two between captures: the number is caught mid-count, on `main` too.) The row's text moves down by half the growth (2.5 px, 7 px); the comparison label, the bar and the turn line by the growth.
 - **Clearances:** each box is 2 px below the header's top and 2 px above the bar (or the label row). On the phone it is 2 px from the screen's side and 2 px from the name or the CPU's label column; on the desktop, 16 px and 4 px.
-- **Overlap:** none new. At 320 px with long gated scores the player's score already reaches the centre column ("DAY 3 OF 5"): on `main`, on S1 and now, at the same x (§4).
+- **Overlap:** none new. At 320 px with long gated scores the player's score already reaches the centre column ("DAY 3 OF 5"): on `main`, on S1 and now, at the same x (§4). (The S1 review found that this harness loads no app font, so headless Edge drew the scores in Times New Roman; with the app's font stack applied the gated scores are 12–14 px wider: the player's score meets the centre column from 360 px down, on `main` and now alike, and with the flags on the CPU's meets it from 339 px down — the review's SR-5, for S2 before the battle flag turns on. The heights in this section are the harness's own; the review's §3.6 gives both.)
 
 Long gated scores at 360, before (the S1 head, flags on):
 
@@ -617,3 +619,5 @@ The dial exists only on the smoke branch and never reaches #1011. Preview: https
 4. To try other sizes, add `?formScale=1.2` or `?formScale=1.4` to the end of the address and press Go. If the address already has a `?` in it, add `&formScale=1.2` instead. The small label in the bottom-left corner shows the value in use. Note the value that looks right. `?formScale=1` goes back to this build's sizes.
 
 Paste the `60 s:` line, the value you liked, and anything that looked crowded back to Claude.
+
+**Result (recorded at the S1 review, October 29, 2026).** No size-check result and no `60 s:` line reached the review: the brief's paste slot for them was empty, so the line was not kept, and the `?formScale=` value the founder liked is not on record. The desktop size was settled instead by the founder's 88 px ruling (§11.2), applied by the review session in its own commit; the phone sizes stand as §11.2 gives them. A later reading of the hero's `60 s:` line on the smoke preview is still open (the S0 review's §5 item 3 and this section's step 2).
