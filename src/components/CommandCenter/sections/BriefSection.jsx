@@ -92,7 +92,9 @@ export default function BriefSection({ brief, onRetry }) {
     <Section
       label={COPY.brief.label}
       data-hub-section="brief"
-      right={caption ? <Mono style={{ fontSize: 10.5, color: C.ink3, whiteSpace: 'nowrap' }}>{caption}</Mono> : null}
+      // The caption wraps inside its column: an aged one ("… · 3 sessions old · Generated Tue 8:30 AM ET") is wider than the
+      // 360 px desktop side column in a real browser (DRB stale fix smoke), and a no-wrap caption ran past it.
+      right={caption ? <Mono data-hub-brief-caption="" style={{ fontSize: 10.5, color: C.ink3, minWidth: 0, overflowWrap: 'anywhere' }}>{caption}</Mono> : null}
     >
       <Card>
         {body ? (
