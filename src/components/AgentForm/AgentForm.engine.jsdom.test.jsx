@@ -17,6 +17,11 @@ import { installCanvasKit, disposeCensus } from './__fixtures__/agentFormKit.js'
 
 vi.mock('./engine/glPlatform.js');
 
+// The real engine chunk loads through the wrapper's own import() and the rows build four forms and run frames in
+// jsdom, so they wait in real time; vitest's default row timeout is 5 s, which a loaded 8-worker runner can
+// exceed. The waits below stay under this budget so a failure reports the count seen, not a bare timeout (SR-8).
+vi.setConfig({ testTimeout: 30000 });
+
 import AgentForm from './AgentForm';
 import { made } from './engine/glPlatform.js';
 import { icosaCached } from './engine/armor.js';
@@ -39,7 +44,7 @@ afterEach(() => { act(() => root.unmount()); host.remove(); });
 
 /** Wait (real time) until `n` forms report `status` — the engine chunk loads through the wrapper's own import(). */
 async function settle(n, status = 'live') {
-  await vi.waitFor(async () => { await act(async () => { await Promise.resolve(); }); expect(host.querySelectorAll(`[data-agent-form-status="${status}"]`)).toHaveLength(n); }, { timeout: 5000, interval: 20 });
+  await vi.waitFor(async () => { await act(async () => { await Promise.resolve(); }); expect(host.querySelectorAll(`[data-agent-form-status="${status}"]`)).toHaveLength(n); }, { timeout: 20000, interval: 20 });
 }
 const frames = (n) => { for (let i = 0; i < n; i += 1) kit.tick(16, (f) => act(f)); };
 

@@ -131,7 +131,7 @@ The full matrix, every form × armor stage × batching × path × bloom (200 cel
 
 ### 4.1 The port draws what the design draws
 
-The design's engine (`af3-standalone.js.txt`, unmodified, three served locally) and the port, both drawing each form's designed still at 200 px, 1×, the design's bloom: **28 of 28 frames byte-identical** (7 forms × armor stage 1 and 3 × idle and celebrating). In a run that draws every case on one page, 4 frames differ: each is a frame the design's engine drew on a form it had drawn in another mood first, the history effect of §4.5, which the design's engine still has. On a fresh page the same four are identical.
+The design's engine (`af3-standalone.js.txt`, unmodified, three served locally) and the port, both drawing each form's designed still at 200 px, 1×, the design's bloom: **28 of 28 frames byte-identical** (7 forms × armor stage 1 and 3 × idle and celebrating). That is the measured scope: 200 px, 1×, teal, fit 1, armor stages 1 and 3, idle and celebrating. Every other render branch (the worried, researching, waiting and confident moods, the under-90 px branch, mirroring, the copper, mono and unlit palettes, fit below 1 and unequip, brain off, zoom and turn) rests on the review's word-for-word source diff of the port against the design (`20261029_REVIEW_AGENT_FORM_S0.md` §3.3), not on a pixel comparison; the harness is not committed, so the number cannot be re-run from the tree. In a run that draws every case on one page, 4 frames differ: each is a frame the design's engine drew on a form it had drawn in another mood first, the history effect of §4.5, which the design's engine still has. On a fresh page the same four are identical.
 
 ### 4.2 Build order
 
@@ -156,7 +156,7 @@ The design's engine (`af3-standalone.js.txt`, unmodified, three served locally) 
 | Fundamental Investor · 1 | 73 / 12 | 120 · 1.02 % · 0.30 |
 | Fundamental Investor · 3 | 128 / 12 | 170 · 2.33 % · 0.76 |
 
-The residue is edge and etch lines testing depth against their own plate: unbatched, a plate's edges and the plate share one program's projection; batched, two programs project them, and a few grazing-angle pixels fall the other side. A first version filed the Contrarian's rings (centred exactly on the brain) behind the brain's light (13–17 % of pixels); a tie now counts as in front, as unbatched build order has it.
+The residue has two causes. Edge and etch lines testing depth against their own plate: unbatched, a plate's edges and the plate share one program's projection; batched, two programs project them, and a few grazing-angle pixels fall the other side (Fundamental Investor, Trend Follower, Capital Preserver). And a class inversion: a brain loop or arc point geometrically in front of a front plate's far half is drawn in its render class before the plate and overdrawn at the plate's .93 opacity, where the unbatched per-object sort drew the plate first; the loops reach about 1.4 × the brain radius and cross the Contrarian's rings, which is its rows (the review's §3.6). A first version filed the Contrarian's rings (centred exactly on the brain) behind the brain's light (13–17 % of pixels); a tie now counts as in front, as unbatched build order has it.
 
 ### 4.4 The four blooms
 
@@ -170,7 +170,7 @@ The same frame (spec, t) drawn on a fresh form, and on a form drawn first in ano
 
 **Cause.** three sorts a line by its geometry's bounding-sphere centre and computes that sphere once, on first draw (`three.module.js:17826-17832`). The fade lines are rewritten every frame, so their sort position froze wherever the form was first drawn. The Speculator's arcs and the Diversifier's tethers move far from the centre; the brain's loops and the Trend Follower's streams stay near it. Ruled out on the way: the CPU pose (Node rows), hidden zero-opacity sprites, stale GPU buffers (drawing twice), light uniforms.
 
-**Fix.** `flag()` refreshes each fade line's sphere (`engine/core.js`). **After: 0 of 56.** Build order is still 0 of 168, and fresh stills are still byte-identical to the design's engine. A Node row pins it (each fade line's sphere is its current pose's). With the refresh removed, the sphere stays unset and the row fails. The batched path never had the effect: its merged lines sort by render class, not depth.
+**Fix.** `flag()` refreshes each fade line's sphere (`engine/core.js`). **After: 0 of 56.** Build order is still 0 of 168, and fresh stills are still byte-identical to the design's engine. A Node row pins it (each fade line's sphere is its current pose's). With the refresh removed, the sphere stays unset and the row fails. The batched path never had the effect, for a different reason: its merged lines keep the sphere three computes on their first draw, but every member of their render class (the back edges, the merged lines, the inner sprites) is additive with no depth write, so the order within the class cannot change a pixel.
 
 ### 4.6 Context loss
 

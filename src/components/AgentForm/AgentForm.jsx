@@ -11,9 +11,10 @@
 // 'still'). `equipped` false → true plays the 900 ms suit-up, true → false the 700 ms unequip.
 //
 // What shows: the engine's canvas while the form is live. The form's own still (its designed stillT frame,
-// cached at mount) when the WebGL context is lost. AgentFormStill when there is no WebGL at all, while the
-// engine loads, when it fails to load, or when the context is lost before a still was cached. Mood, stage,
-// allegiance and size change the running view; only the draw path remounts it.
+// cached at mount) when the WebGL context is lost, or when a frame of this view threw (the engine drops the view
+// to 'unavailable' and keeps every other view running). AgentFormStill when there is no WebGL at all, while the
+// engine loads, when it fails to load, or when the context is lost or a frame throws before a still was cached.
+// Mood, stage, allegiance and size change the running view; only the draw path remounts it.
 
 import { useEffect, useRef, useState } from 'react';
 import AgentFormStill from './AgentFormStill';
@@ -61,10 +62,13 @@ export default function AgentForm({
   const firstEquip = useRef(true);
   useEffect(() => { if (firstEquip.current) { firstEquip.current = false; return; } if (viewRef.current) viewRef.current.equip(equipped); }, [equipped]);
 
-  const live = status === 'live', showStill = status === 'lost' && stillReady, placeholder = !live && !showStill;
+  const live = status === 'live', showStill = (status === 'lost' || status === 'unavailable') && stillReady, placeholder = !live && !showStill;
   const direct = options.path === 'direct', px = `${spec.size}px`;
+  // `isolation: isolate` makes the box its own stacking context, so the overlay's plus-lighter blend adds light to
+  // the form's canvas alone (the design's in-canvas 'lighter' composite) and not to whatever the page paints behind
+  // the box; without it the glow depends on the backdrop and saturates over a light one (review SR-1).
   return (
-    <div ref={boxRef} role="img" aria-label={label || agentFormLabel(spec)} data-agent-form="" data-agent-form-status={status} data-agent-form-path={options.path} style={{ position: 'relative', width: px, height: px, flexShrink: 0 }}>
+    <div ref={boxRef} role="img" aria-label={label || agentFormLabel(spec)} data-agent-form="" data-agent-form-status={status} data-agent-form-path={options.path} style={{ position: 'relative', isolation: 'isolate', width: px, height: px, flexShrink: 0 }}>
       {webgl && <canvas ref={canvasRef} aria-hidden="true" data-agent-form-canvas="" style={{ ...fill, width: px, height: px, visibility: live && !direct ? 'visible' : 'hidden' }} />}
       {webgl && <div ref={slotRef} aria-hidden="true" data-agent-form-direct="" style={{ ...fill, visibility: live && direct ? 'visible' : 'hidden' }} />}
       {webgl && <canvas ref={overlayRef} aria-hidden="true" data-agent-form-overlay="" style={{ ...fill, width: px, height: px, display: 'none', mixBlendMode: 'plus-lighter', pointerEvents: 'none', visibility: live ? 'visible' : 'hidden' }} />}

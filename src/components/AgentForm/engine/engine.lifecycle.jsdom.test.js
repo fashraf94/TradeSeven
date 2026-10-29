@@ -199,6 +199,16 @@ describe('the frame loop', () => {
     kit.tick(); expect(r.renders).toBe(n + 1);
     v.unmount();
   });
+
+  it('an unmounted view is no longer observed while other views live on (review SR-7)', () => {
+    const E = engine(), ea = els(), eb = els();
+    const a = E.mount(ea, { kind: 'trend', size: 200 }, { dpr: 1 }, {}, THEME), b = E.mount(eb, { kind: 'fund', size: 200 }, { dpr: 1 }, {}, THEME);
+    expect(kit.observers[0].targets.size).toBe(2);
+    a.unmount();
+    expect(kit.observers[0].targets.has(ea.box)).toBe(false);
+    expect(kit.observers[0].targets.size).toBe(1);
+    b.unmount();
+  });
 });
 
 describe('a mutable view: mood, stage, allegiance and size change without a remount; the equip tween', () => {
@@ -224,6 +234,34 @@ describe('a mutable view: mood, stage, allegiance and size change without a remo
     v.setOptions({ reducedMotion: true }); v.equip(false); expect(v.fit).toBe(0);
     v.equip(true); expect(v.fit).toBe(1);
     v.unmount();
+  });
+
+  it('update() redraws a view that does not animate (rate still, or reduced motion): its still and its live frame', () => {
+    // Nothing else draws such a view: the loop skips it and kick() never schedules for it, so without this redraw a
+    // mood or form change under Reduce Motion would leave the old picture, and the cached still with it (review SR-3).
+    const E = engine(), v = E.mount(els(), { kind: 'trend', size: 200 }, { dpr: 1, rate: 'still' }, {}, THEME), r = gl.made.renderers[0];
+    expect(kit.tick()).toBe(0);
+    let n = r.renders; v.update({ state: 'worried' });
+    expect(r.renders).toBe(n + 2);
+    v.setOptions({ rate: 'live', reducedMotion: true });
+    n = r.renders; v.update({ kind: 'fund' });
+    expect(r.renders).toBe(n + 2);
+    expect(kit.tick()).toBe(0);
+    v.unmount();
+  });
+
+  it('a size change re-sizes the live and still canvases; on the direct path a face or size change re-applies the mirror and the buffer', () => {
+    const E = engine(), e = els(), v = E.mount(e, { kind: 'trend', size: 200 }, { dpr: 1 }, {}, THEME);
+    expect(e.canvas.width).toBe(200);
+    v.update({ size: 260 });
+    expect(e.canvas.width).toBe(260); expect(e.stillCanvas.width).toBe(260);
+    v.unmount();
+    const d = els(), w = E.mount(d, { kind: 'trend', size: 200 }, { dpr: 2, path: 'direct' }, {}, THEME), r = gl.made.renderers[1];
+    expect(r.domElement.width).toBe(400); expect(r.domElement.style.transform).toBe('');
+    w.update({ face: -1, size: 100 });
+    expect(r.domElement.width).toBe(200); // renderRes(2, 100)
+    expect(r.domElement.style.transform).toBe('scaleX(-1)'); expect(d.overlay.style.transform).toBe('scaleX(-1)');
+    w.unmount();
   });
 });
 
@@ -263,6 +301,24 @@ describe('WebGL context loss and restore', () => {
     expect(other).toEqual(['live:false']); // unchanged since its mount
     d.unmount(); s.unmount();
   });
+
+  it('a loss and restore releases the superseded studio: every render target made is disposed exactly once (review SR-5)', () => {
+    const census = disposeCensus();
+    try {
+      census.open();
+      const E = engine(), v = E.mount(els(), { kind: 'preserve', armor: 1, size: 200 }, { dpr: 1 }, {}, THEME), r = gl.made.renderers[0];
+      kit.tick();
+      r.domElement.dispatchEvent(new Event('webglcontextlost'));
+      r.domElement.dispatchEvent(new Event('webglcontextrestored'));
+      kit.tick();
+      v.unmount();
+      census.close();
+      const report = census.report();
+      expect(gl.made.environments).toHaveLength(2);
+      expect(report.target.made).toBeGreaterThanOrEqual(2);
+      for (const k of ['target', 'geometry', 'material', 'texture']) expect(report[k].bad, k).toEqual([]);
+    } finally { census.restore(); }
+  });
 });
 
 describe('no WebGL', () => {
@@ -286,6 +342,25 @@ describe('no WebGL', () => {
     expect(v.status).toBe('unavailable');
     expect(gl.made.renderers[0].record).toEqual(expect.arrayContaining(['dispose', 'forceContextLoss']));
     v.unmount();
+  });
+});
+
+describe('a pose or render that throws', () => {
+  it('drops that view to unavailable and keeps every other view and the loop running (the design\'s draw() guard, review SR-2)', () => {
+    let n = 0;
+    const E = engine({ createRenderer: (o) => { const r = gl.createRenderer(o); const base = r.render; r.render = (s) => { if (++n === 5) throw new Error('render failed'); return base.call(r, s); }; return r; } }), seen = [], errors = [];
+    const a = E.mount(els(), { kind: 'trend', size: 200 }, { dpr: 1 }, { ...statuses(seen), onError: (e) => errors.push(e.message) }, THEME);
+    const b = E.mount(els(), { kind: 'fund', size: 200 }, { dpr: 1 }, statuses(seen), THEME);
+    const r = gl.made.renderers[0];
+    expect(r.renders).toBe(4); // two views, a still and a live frame each, at mount
+    expect(() => kit.tick()).not.toThrow(); // the fifth render is view a\'s live frame: it throws
+    expect(a.status).toBe('unavailable'); expect(b.status).toBe('live');
+    expect(seen.at(-1)).toBe('unavailable:true'); // a has its still: the wrapper shows it
+    expect(errors).toEqual(['render failed']);
+    expect(E.info()).toMatchObject({ looping: true, failed: 1 });
+    const before = r.renders; kit.tick();
+    expect(r.renders).toBe(before + 1); // b draws on; a does not
+    a.unmount(); b.unmount();
   });
 });
 

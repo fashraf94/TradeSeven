@@ -122,4 +122,15 @@ describe('a pose is a pure function of (spec, t)', () => {
     poseForm(U, { ...spec, batched: false }, 2.2, C, PAL); poseForm(B, { ...spec, batched: true }, 2.2, C, PAL);
     U.armor.plates.forEach((p, i) => { p.updateMatrix(); expect(Array.from(B.armor.plates[i].matrix.elements)).toEqual(Array.from(p.matrix.elements)); expect(B.armor.plates[i].visible).toBe(p.visible); });
   });
+
+  it('batched Contrarian: every ring and stud sits exactly at the centre and files in FRONT of the brain\'s light (the tie rule, review SR-6)', () => {
+    // ringBand\'s box is symmetric in float32 and makePlate centres it at the origin, so a seated ring\'s depth equals the
+    // form\'s centre bit for bit; a tie counts as in front, as unbatched build order has it (the plates are built after
+    // the brain). With `<` instead of `<=` all nine instances file behind the light: the 13–17 % the build report measured.
+    const C = context(), spec = { kind: 'contra', core: 1, armor: 2, seed: 1, size: 200, state: 'idle', fit: 1, batched: true };
+    const F = buildForm(spec, C); poseForm(F, spec, 4.1, C, PAL);
+    const instances = F.armor.plates.length + F.armor.plates.reduce((n, p) => n + p.userData.studs.length, 0);
+    expect(instances).toBe(9);
+    for (let i = 0; i < instances; i += 1) { expect(F.batch.front.getVisibleAt(i), `instance ${i} front`).toBe(true); expect(F.batch.back.getVisibleAt(i), `instance ${i} back`).toBe(false); }
+  });
 });

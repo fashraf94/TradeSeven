@@ -82,6 +82,9 @@ describe('with WebGL', () => {
     expect(q('[data-agent-form]').getAttribute('data-agent-form-status')).toBe('live');
     expect(shown('[data-agent-form-canvas]')).toBe(true);
     expect(q('[data-agent-form-placeholder]')).toBeNull();
+    // The box is its own stacking context, so the bloom overlay's plus-lighter blend reaches the form's canvas only
+    // and never the page behind the box (review SR-1).
+    expect(q('[data-agent-form]').style.isolation).toBe('isolate');
   });
 
   it('mood, stage, allegiance and size update the running view; options go to setOptions; nothing remounts', async () => {
@@ -135,6 +138,11 @@ describe('with WebGL', () => {
     expect(q('[data-agent-form-placeholder]')).not.toBeNull();
     act(() => cb.onStatus('live', { still: true }));
     expect(shown('[data-agent-form-canvas]')).toBe(true);
+    expect(q('[data-agent-form-placeholder]')).toBeNull();
+    // A view whose frame threw is 'unavailable' too: with a cached still, the still shows, not the fallback (review SR-2).
+    act(() => cb.onStatus('unavailable', { still: true }));
+    expect(shown('[data-agent-form-still]')).toBe(true);
+    expect(shown('[data-agent-form-canvas]')).toBe(false);
     expect(q('[data-agent-form-placeholder]')).toBeNull();
   });
 

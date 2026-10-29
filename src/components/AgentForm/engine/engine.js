@@ -17,7 +17,9 @@
 //     every frame its rate allows — 'live' every frame, 'half' every other frame (on purpose), 'still' once —
 //     and nothing measured ever changes that;
 //   - each view's spec is mutable (mood, stage, allegiance change without a remount), with an equip tween;
-//   - a direct path: one view drawing straight into its own WebGL canvas, with no copy.
+//   - a direct path: one view drawing straight into its own WebGL canvas, with no copy;
+//   - a per-view error guard (the design's draw() try/catch, af3-standalone.js.txt:381): a pose or render that
+//     throws drops that view to 'unavailable' and the loop goes on for every other view (review SR-2).
 
 import * as THREE from 'three';
 import { STATES, PALETTES, clamp, stillT, viewT0, startTween, tweenFit } from './vocab.js';
@@ -80,7 +82,7 @@ export function createAgentFormEngine(platform = {}) {
   const P = Object.defineProperties(browserPlatform(), Object.getOwnPropertyDescriptors(platform));
   const views = new Set(), frameListeners = new Set();
   let shared = null, sharedFailed = false, io = null, listening = false, raf = 0, frameNo = 0, T0 = 0, nextId = 1, theme = null, resumed = true;
-  const counters = { lost: 0, restored: 0, contexts: 0, builds: 0 };
+  const counters = { lost: 0, restored: 0, contexts: 0, builds: 0, failed: 0 };
 
   // ── render contexts ──
   function createContext(canvas, size) {
@@ -250,9 +252,23 @@ export function createAgentFormEngine(platform = {}) {
     if (v.status !== 'live' || v.ctx.lost) return 0;
     const ms = P.now(), spec = frameSpec(v, ms);
     let calls = 0;
-    if (v.stillDirty) { calls += drawView(v, spec, stillT(spec), 'still'); v.stillDirty = false; }
-    calls += drawView(v, spec, animates(v) ? v.t0 + (ms - T0) / 1000 : stillT(spec), 'live');
+    try {
+      if (v.stillDirty) { calls += drawView(v, spec, stillT(spec), 'still'); v.stillDirty = false; }
+      calls += drawView(v, spec, animates(v) ? v.t0 + (ms - T0) / 1000 : stillT(spec), 'live');
+    } catch (error) { failView(v, error); }
     return calls;
+  }
+
+  /**
+   * A view whose pose or render threw. The design's draw() caught and logged these per view
+   * (af3-standalone.js.txt:381); the port's loop had no guard, so one throw left `raf` at 0 with kick() never
+   * reached, and every view froze with status 'live' (review SR-2). Now the view drops to 'unavailable' (the
+   * wrapper shows its cached still, or the fallback still) and the loop goes on for every other view.
+   */
+  function failView(v, error) {
+    counters.failed += 1;
+    if (v.cb.onError) v.cb.onError(error);
+    setStatus(v, 'unavailable');
   }
 
   // ── the frame loop ──
@@ -266,9 +282,11 @@ export function createAgentFormEngine(platform = {}) {
       if (!animates(v) || !v.vis || v.ctx.lost) continue;
       if (v.opts.rate === 'half' && (frameNo & 1)) continue;
       const spec = frameSpec(v, ts);
-      if (v.stillDirty) { calls += drawView(v, spec, stillT(spec), 'still'); v.stillDirty = false; }
-      calls += drawView(v, spec, v.t0 + (ts - T0) / 1000, 'live');
-      drew += 1;
+      try {
+        if (v.stillDirty) { calls += drawView(v, spec, stillT(spec), 'still'); v.stillDirty = false; }
+        calls += drawView(v, spec, v.t0 + (ts - T0) / 1000, 'live');
+        drew += 1;
+      } catch (error) { failView(v, error); }
     }
     const cost = P.now() - c0;
     if (drew) {
@@ -310,7 +328,8 @@ export function createAgentFormEngine(platform = {}) {
   /**
    * Mount a view. `els` = { canvas, stillCanvas?, overlay?, box? }: on the shared path `canvas` is a 2D
    * canvas the engine copies into; on the direct path it is the WebGL canvas itself. `cb.onStatus(status,
-   * { still })` hears 'live', 'lost' and 'unavailable'. Returns the view handle.
+   * { still })` hears 'live', 'lost' and 'unavailable'; `cb.onError(error)` hears a pose or render that threw (the
+   * view is then 'unavailable'). Returns the view handle.
    */
   function mount(els, spec, options, cb = {}, th) {
     if (!views.size) setup(th);
@@ -410,7 +429,7 @@ export function createAgentFormEngine(platform = {}) {
       return {
         views: views.size, contexts: (shared ? 1 : 0) + [...views].filter((v) => v.ctx && v.ctx.direct).length, forms: shared ? shared.forms.size : 0,
         multiDraw: r ? P.hasMultiDraw(r) : null, gpu: r ? P.gpuName(r) : '', looping: raf !== 0, listening, observing: io !== null,
-        lost: counters.lost, restored: counters.restored, contextsCreated: counters.contexts, formsBuilt: counters.builds, unavailable: sharedFailed,
+        lost: counters.lost, restored: counters.restored, contextsCreated: counters.contexts, formsBuilt: counters.builds, failed: counters.failed, unavailable: sharedFailed,
       };
     },
     /** Every live GPU and canvas resource (the teardown manifest's census at peak). */

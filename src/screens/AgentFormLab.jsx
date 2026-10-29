@@ -82,7 +82,8 @@ export default function AgentFormLab() {
   // The frame samples and the readout, written straight to the DOM every 500 ms (no React render per frame).
   useEffect(() => {
     let off = () => {}, timer = 0, live = true;
-    loadAgentFormEngine().then((mod) => {
+    // Without WebGL every view is its still and there is nothing to time: the engine chunk is not fetched (review SR-16).
+    if (hasWebGL()) loadAgentFormEngine().then((mod) => {
       if (!live) return;
       const engine = mod.getAgentFormEngine();
       engineRef.current = engine;

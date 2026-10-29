@@ -2,7 +2,7 @@
 //
 // The agent form engine's lazy entry: the only module outside engine/ may reach, and only through import()
 // (src/components/AgentForm/loadEngine.js). three.js is reachable from nowhere else in src/
-// (agentForm.importGraph.test.js), so it ships in this chunk and loads on the first form mount.
+// (agentForm.guard.test.js, the import-graph rows), so it ships in this chunk and loads on the first form mount.
 
 import { createAgentFormEngine } from './engine.js';
 
