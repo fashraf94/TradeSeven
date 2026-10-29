@@ -18,6 +18,7 @@
 | The §2 review | §9 — five lenses, a refuter each, then the mutating lens last on its own tree. One BLOCKER (SPR-S-1), fixed; three MAJORs: SPR-S-2 (refuted to MINOR, fixed), SPR-C-1 (a test gap, rowed), SPR-L-1 (a ruling, before any flip); the rest MINOR, NIT or a question. Lens T: 164 mutants, 139 killed, 2 equivalent, 23 survived; every MINOR survivor and six NITs now killed by a row. |
 | Final checks | §10 — on the branch merged with `origin/main` `62380f14`: the Linux suite's first run found one red row (the hub's mount guard, B1's import), fixed in `07dc3d58`; the second run **0 failing files** (1,206 passed, 8 skipped; 26,229 rows passed, 89 skipped); rules suite 27 files / 440 rows; `lint:gate` exit 0; `vite build` built. |
 | Rulings asked | §8 — eleven questions, item 12 declared only; one (SPR-L-1, Set's link and the casual clone) must be ruled before any cards flip. |
+| The founder's rulings (28 Oct) | §13 — Amendment K (RK-1 … RK-13) built: seven fixes, the goldens re-captured (two moved, both RK-11), the §2 review (one MAJOR, fixed), the final checks on `main` `9bbe2b1b`, four new questions. |
 
 ## 1. Preamble
 
@@ -247,3 +248,194 @@ On Windows, the Film Room's suites pass except two known platform failures. `tap
 ## 12. README
 
 One row in `docs/README.md` for this report, with the audits.
+
+## 13. The founder's rulings (Amendment K)
+
+**Date:** 28–29 Oct 2026 · **Executor:** Claude Code (desktop, local Windows + WSL Ubuntu; Opus 5.5) · **Prompt:** the Film Room chat, "Fix prompt — Film Room B2.1: the founder's rulings" · **Governing:** Build B Amendment K (RK-1 … RK-13), committed verbatim by this round, over Amendments A–J and the spec.
+
+### 13.0 Verdict
+
+| Question | Answer |
+|---|---|
+| Built | B0 (Amendment K verbatim, its README row); the seven fixes, one commit each with its tests; the cards-off goldens re-captured at the code head; the §2 review's fix round and the mutating lens's rows; this section. Draft PR, no merge, no production write, no backfill, no refresh, no deploy, no flip. |
+| `FILM_ROOM_CARDS_MODE` | `'off'`, untouched (`src/config/featureFlags.js` is not in the branch's diff). |
+| The prompt's fourteen named mutants | **All killed** (§13.2, the Mutants column). |
+| Exit criterion | B2.1's ten criteria hold, with Amendment K's three changes (§13.4). |
+| Goldens (RK-13) | Re-captured at the code head `004f2c1f` from an LF archive, twice, byte-identical. Against this PR's committed goldens: 10 of 12 unchanged, 2 moved, both mapped to RK-11, none unmapped. RK-5 reaches no golden (§13.3). Nothing after `004f2c1f` changes the cards-off screen: the comparison suite passes at the final head. |
+| `refresh=1` and RK-9 | The `refresh=1` named in §5 also carries RK-9. It re-merges every written day through the same merge, and a row proves a double-listed stored tape is cleaned once, then unchanged (§13.5). |
+| The §2 review | §13.7: four lenses, a refuter each, then the mutating lens last on its own tree. One MAJOR (KR3-1: RK-9's rewrite could drop half of another caveat from the note), fixed. MINORs fixed or rowed. Three founder questions. The mutating lens: 99 mutants, 81 killed, 8 equivalent, 10 survived. Nine survivors now have a killing row, re-planted and killed; one is recorded. |
+| Final checks | §13.8, on the branch merged with `origin/main` `9bbe2b1b`: Linux full suite 0 failing files; rules suite 28 files / 448 rows; `lint:gate` exit 0; `vite build` ok. |
+| Rulings asked | §13.10: four questions, none blocking a merge; the cards flip waits on the first. |
+
+### 13.1 Preamble
+
+- `git fetch origin` ran first. The PR's head was `ea5c4a20` on `origin/claude/film-room-screen-pass`, as the prompt names it. The app cut the session's worktree branch `claude/film-room-b2-1-rulings-570ec0` at `main` `62380f14`. It was checked clean, moved to `ea5c4a20`, and is pushed back by refspec to `claude/film-room-screen-pass`.
+- `main` moved twice during the round:
+  - #1001 merged as `148a3fa1`.
+  - #1000, #1004, #1002 and #1005 merged, the last as `9bbe2b1b`.
+  - Both merge clean with the branch. The files both sides touch are `docs/README.md` (separate rows) and `src/App.jsx`. #1000's `03457c46` changes App.jsx outside the Film Room lines, and the App source pins pass on the merge.
+  - `src/constants/leagueTournament.js`, which RK-1 now reaches through the resolver, changed on `main` since the branch's base only in a comment (#999).
+  - The lockfile is unchanged on `main`.
+- Anchors re-verified: `api/_utils/casualClone.js` lines 1–32 (the module's contract) and 270–336 (`resolveAttributionAgentId` at `:286`, `resolveRecordTargetId` at `:329`) are as the prompt names them, at `62380f14` and at this head. The file is not in the diff.
+
+### 13.2 One row per fix
+
+Reading the Mutants column: "5 / 45" = five rows red of forty-five in the suites run against that mutant. Each mutant was planted by a runner that saves the file's exact bytes, replaces one unique string, runs the named suites (the RK-1 rows on the real Firestore emulator too) and writes the bytes back, checked equal; the tree was clean after every batch. **N** marks the prompt's fourteen named mutants; **M** marks this round's own.
+
+| # | Ruling | Commit | The change | Tests | Mutants (rows red / rows run) |
+|---|---|---|---|---|---|
+| B0 | Amendment K | `087ff04e` | `docs/specs/FILM_ROOM_BUILD_B_CARD_SPEC_V1_AMENDMENT_K_20261028.md`, verbatim between the markers (13 rulings, LF); one README row | — | — |
+| 1 | **RK-1**, the attribution agent | `ccf60654` | `cardStore.js`: `attributionAgentOf` (`:104`), the platform's async resolver; a casual-clone answer is refused 503 `attribution_unavailable`. `ownerAttributionOf` (`:120`), one read of `agents/casual-agent-{uid}`, then `resolveRecordTargetId`, applied only to the owner's own clone id. `card.js`: `resolveCreateBattle` (`:141`) checks the battle as before, then resolves the attribution agent before any tape read; the create (`:193`), SPR-C-3's replay and the retire (`:215`) all key on it. `cardCounter.js`: `buildCounter` (`:203`) answers for `attributionAgentId`, refuses the owner's unresolved clone (`:209`) and a missing or foreign parent the same way, and maps every tape day through the resolver (recurrences `:230`, unavailable days). Since last time reads the unavailable days under `attributionAgentId`. | `card.test.js` +7 (handler, in-memory): a clone battle files under the parent and naming the parent for it is 403; a ranked battle files under itself; three fallbacks → 503 before any tape read, nothing written; archetype drift both ways; the replay; the retire and an unresolvable retire; the cap across both kinds of battle. `cardCounter.test.js` +4. `FilmRoomCards.jsdom` +1 (the clone battle on screen). **`test/rules/filmRoomCardAttribution.rules.mjs`, 8 rows on the real Firestore emulator** (the rows the prompt lists). | **N** a clone battle's card filed under the clone → 9 / 53; **N** a fallen-back resolution filing under the clone → 3 / 53; **N** the counter leaving a clone day out → 3 / 44; **N** the counter counting another owner's clone → 2 / 43; **N** the archetype check reading the clone → 2 / 53; M the replay keyed on the clone → 2 / 53; M the retire keyed on the named agent → 2 / 53; M the counter reading the asked agent's ledger → 6 / 43; M unavailable days by each day's own agent → 3 / 44; M the screen reading the line under the asked agent → 1 / 1; M the counter answering an unresolved clone → 2 / 43; M a clone document another owner holds used → 1 / 35; M a foreign parent answered 403 instead of the fallback → 2 / 43 |
+| 2 | **RK-2 + RK-3**, Set's link | `33e561a4` | `FilmRoomCardRegions.jsx` `setStateOf` (`:99`): the link only when the rule is on, `tags.inputs.tempoDesired` is a recorded tempo, and `RELEASE3_CHARACTER_TAB_ENABLED` and `TEMPO_DIAL_ENABLED` are on; RK-2's sentence when the rule is on and no tempo is recorded. The form shows Set's words and never the link. The receipt of an open Set card shows the words and the link, judged from the tape on screen only when that is the card's own source day. New copy key `cards.setNoTempo`. | `FilmRoomCards.jsdom`, B1's Set rows rewritten: `setStateOf`'s matrix (each condition alone turns the link off); all conditions hold → the form has no link, the receipt does and opens the Character area; the casual day (`tempoDesired` null) → RK-2's sentence, no link; each condition off alone, on the receipt; the rule off and no input, on the form; a receipt from another day; a retired Set card. A recorded-tempo day is written by the real writer (`dials: { tempo: 'standard' }`). | **N** Set linking with `tempoDesired` null → 2 / 10; **N** Set linking with either Forge flag off → 2 / 10 (Character tab) and 2 / 10 (tempo dial); **N** the link inside the form → 1 / 10; M Set linking with the rule off → 2 / 10; M the receipt judged from another day's tape → 1 / 10; M a retired Set card linking → 1 / 10; M the no-tempo sentence never said → 2 / 10 |
+| 3 | **RK-4**, one-shot open | `0ad75d27` | `FilmRoomScreenV2.jsx` (`:224`): with `openAt` handed in, v2 calls `onOpenAtUsed` once at mount, after reading it into its state. `FilmRoomRoute.jsx` passes it through; `App.jsx` passes `onOpenAtUsed={() => setFilmRoomOpenAt(null)}` and still clears on leaving the Film Room. P1c's listener is unchanged. | `FilmRoomCards.jsdom` +1: an App-like holder opens the screen at the other battle's day and moment, the player moves to another day, a Forge stand-in replaces the screen and closes it: the default view (the last day, Glance), nothing marked, the clear called once. `App.filmRoomForge.source` (the clear on the route; three `setFilmRoomOpenAt` sites); `FilmRoomRoute.untaped` (the props pin) | **N** `at` applied on a second mount → 1 / 1; M App never clearing → 2 / 10; M the route dropping the clear → 1 / 10 |
+| 4 | **RK-5**, the sold name's maker | `16aa4f69` | `FilmRoomDeepDive.jsx` (`:263`): the chart's sold-name annotation reads "Exit · {time} · {maker}" with `entryMakerOf`'s makers. `exitMakerOf`'s words stay everywhere else. | `FilmRoomDeepDive.jsdom`: the A4 row's sold names (a platform rule, the agent); a new row over the agent, a platform rule with and without its reason, the meeting and a maker not recorded; the FR-04 sweep extended to every sold name | **N** "Exit by" back on the sold name → 3 / 34 |
+| 5 | **RK-9**, X3-5 | `6c3aa53b` | `tapeMerge.js`: `unattributed` filtered against the merged gaps; `attributedCaveats` rewrites or drops the checks section's unattributed-gap caveat for any seq a stored row attributes to the day, in `caveats` and in the note; `unattributedSeqsOf` parses a caveat only when composing it back gives the same text. Merge-only. (The review round, below, narrowed its dedup and widened its set to the recorded seqs.) | `tapeMergeX35.test.js` (6, new; the real writer, the multi-day fixture): the §6 repro (seq 40 listed once, as the day's gap, the note naming it once); a third re-write `unchanged`; an unattributed seq no stored row claims kept with its caveat; another seq's caveat and an unrelated caveat kept; a two-seq caveat rewritten to the one left; a stored double listing cleaned once, then `unchanged`. Red before the fix (4 of 6). | **N** the merge listing a stored gap's seq as unattributed → 2 / 6; **N** the merge dropping a caveat no stored row disproves → 2 / 6; M the caveat left as the union kept it → 4 / 6; M the note left naming the seq → 3 / 6; M any "(tickSeq …)" caveat read as unattributed → 2 / 6; M the rest renamed with the whole list → 1 / 6 |
+| 6 | **RK-10**, the unavailable-day line | `004f2c1f` | `FilmRoomCardRegions.jsx` (`:420`): the line shows only when at least one open Watch card is listed | `FilmRoomCards.jsdom` +2: no open Watch card (none filed, a Practice card, a retired Watch card) → no line; one open Watch card → the line as built. SPR-C-4's and SPR-T-8's rows now hold an open Watch card | **N** the unavailable-day line with no open Watch card → 1 / 7 |
+| 7 | **RK-11**, a charted symbol | `9a29c692` | `FilmRoomDeepDive.jsx` (`:481`): beside a charted symbol the chart section reads "Chart recorded for {symbol}", the symbol as record text, in the coverage line's place. A symbol with no series keeps RJ-2's behaviour; the all-symbols grid keeps the section's line; Glance is unchanged. New copy key `chartRecordedFor` | `FilmRoomDeepDive.jsdom`: the Sep-23 day (AMD charted, BTC not); a fully charted day and a day whose series section is partial; the A2 row that pinned the section's line beside the chart rewritten to RK-11's | **N** the section's status beside a charted symbol → 5 / 34; M the symbol not marked as record text → 1 / 34 |
+| — | Goldens (RK-13) | `dd0f495d` | the two moved goldens and their SHA-256; `GOLDEN_SOURCE_COMMIT` `004f2c1f` | the comparison suite 12 / 12, `FilmRoomRoute.golden` 6 / 6 | — |
+| — | §2 review round | `0bdcd054` | the fixes the refuters confirmed (§13.7): `tapeMerge.js` `attributedCaveats` deduplicates only rewritten caveats (KR3-1); one attributed set for the caveat and `unattributedGaps` (KR3-3); the counter refuses any answer for a casual clone (KR1-1) and names the agent on a failed clone read (KR1-7); neutral server copy; the screen's words for `attribution_unavailable` (KRV1-1); docstrings (KR2-4, KRV2-1, KRV3-2); the capture harness's header (KR4-4) | `tapeMergeX35.test.js` +5 (planted and natural shapes); `cardCounter.test.js` +2; `FilmRoomCards.jsdom` +3 and two row-name and step corrections; `FilmRoomDeepDive.jsdom` +2 makers with a reason | 9 planted, 9 killed: every note part deduplicated → 2 / 11; rewrites not deduplicated → 2 / 11; the caveat judged by the gaps alone → 1 / 11; only the owner's own clone id refused → 1 / 37; the read failure not naming the agent → 1 / 37; the receipt's day matched by date alone → 1 / 12; the link gated on the stage alone → 1 / 12; the reason dropped after the meeting maker → 1 / 34; the screen's words for `attribution_unavailable` gone → 1 / 1 |
+| — | §2 mutating lens | `7336a20c` | tests only: a row for each survivor (§13.7) | `cardCounter.test.js` (KRT-1, KRT-6), `card.test.js` (KRT-4, -5, -10), `FilmRoomCards.jsdom` (KRT-2, -3, -8, -9) | 9 re-planted, 9 killed, each by its new row (1–2 rows red) |
+
+The copy inventory grew by three keys (`cards.setNoTempo`, `chartRecordedFor`, `cards.refusals.attribution_unavailable`), to 363 keys and 510 entries. All three pass the own-voice sweep. RK-2's sentence is RG-5's sentence followed by `cards.setNoTempo`, and composed it is byte-for-byte the amendment's text.
+
+### 13.3 The golden map (RK-13)
+
+The twelve cards-off goldens were re-captured at the code head `004f2c1f`, from `git -c core.autocrlf=false archive` of it (one file checked equal to `git show`), by the capture harness run twice. Both runs were byte-identical, 12 of 12. Every file was then compared with this PR's committed goldens (`ea5c4a20`) by a mapper. The mapper puts back, in the NEW html, exactly what RK-11 or RK-5 changed, then requires old = new byte for byte (scratch `goldmap.mjs`).
+
+| Golden | Result | Mapped to |
+|---|---|---|
+| `empty.*` (6), `sep23.glance.*` (2), `sep23.study.*` (2) | unchanged | — |
+| `sep23.deep.desktop.html`, `sep23.deep.phone.html` | mapped | **RK-11**: AMD's chart section reads "Chart recorded for AMD" (AMD as record text) where the series section's "Coverage · complete" stood |
+
+No difference maps to nothing. RK-5 is not in the goldens: the photographed chart is AMD's, which has no swap. Its change is pinned by `FilmRoomDeepDive.jsdom` instead. No other cards-off movement exists: RK-1's screen line, RK-2/RK-3, RK-4 and RK-10 render only under cards (RK-4's call happens only when an `openAt` is handed in, which only a cards recurrence does).
+
+### 13.4 The exit criterion
+
+B2.1's ten criteria (§4) stand. Amendment K changes three of them, and each holds:
+
+| # | Change | Holds? |
+|---|---|---|
+| 8 | adds: a card filed under any agent but the battle's attribution agent | Holds: the create files under `attributionAgentOf(battle.agentId)` only; the request's agent must still be the battle's own (403 otherwise). The clone is never written: an unresolvable clone is refused 503 before any tape read, by the emulator rows and the handler rows. |
+| 9 | the declared movements add RK-9's two fields, on a multi-day re-write only: `passes.close.unattributedGaps` and `coverage.checks.note` | Holds, with one declaration: `coverage.checks.caveats`, the array the note is composed from, moves with the note (§13.6). Single-day battles move nothing: the change applies only when a read lists an unattributed seq that the merged rows hold as a gap, which takes a later session. |
+| 10 | this round's cards-off changes are RK-5 and RK-11 only | Holds (§13.3). |
+
+### 13.5 `refresh=1` and RK-9
+
+The `refresh=1` named in §5 also carries RK-9. The refresh runs `runBackfill` (`api/_utils/filmTape/closePass.js:292`), which re-merges every written day of its range through `writeTapeDay`. `writeTapeDay` merges with `mergeTape`, the function this fix changes. A stored tape carrying the double listing is therefore cleaned on its next refresh, and listed `refreshed`. The row "a tape stored with the double listing … is cleaned by the next re-merge" proves it: written once, then `unchanged` on the following write. No stored tape is known to carry the listing: every taped battle so far is one trading day, and X3-5 needs a later session.
+
+### 13.6 Declared (built one way, stated)
+
+1. **The weekly table** (`weekly` in the counter's answer) stays keyed by each tape day's own agent. RK-1 lists the cards, open count, cap, recurrences and unavailable days, but not the weekly table, and no screen reads it.
+2. **The counter's refusals.** The counter answers 503 `attribution_unavailable`, as the create does, in three cases: an answer that would be for any casual clone (review KR1-1); the owner's own clone unresolved (no document, no `rankedAgentId`, a document another owner holds, or a parent that is missing or another owner's); and a clone read that fails. A request naming another owner's non-clone agent stays 403, as before. Clone days whose clone can't be resolved, asked by the ranked agent, are not that agent's: the resolver's fallback keeps them on the clone, and the counter answers for the ranked agent's own days only.
+3. **The receipt's Set words** are judged from the tape on screen only when it is the card's own source day (battle and date). A Set card's receipt opened from My cards on another day says RG-5's sentence alone, with no link. That sentence is true of every day. Nothing is added to the card's document.
+4. **`tempoDesired` absent** (a tape written before the tagger stored the field) is read as "no tempo recorded".
+5. **RK-10's reading.** "At least one open Watch card lists recurrences" is read as "an open Watch card is listed, with its Recurrences list", including an empty one. The test row asks for exactly this: one open Watch card gives the line as built.
+6. **`coverage.checks.caveats` moves with the note** on an RK-9 re-write (§13.4, criterion 9). The note is composed from that array, so the two can't disagree.
+7. **RK-9's attributed set** (review KR3-3) is the seqs the tape's merged rows attribute to the day: recorded tick rows, plus its gap rows (`no_record`, or the entry standing for a gap). `passes.close.unattributedGaps` already excluded recorded seqs before this round. The caveat now judges by the same set, so a rewrite never says a recorded seq "has no record". The refuter would rather ask; confirmation is asked in §13.10.
+8. **The create resolves the attribution agent outside its transaction** (the platform's async resolver, two reads). The transaction then checks the parent's owner and archetype on its own read. A clone re-pointed to another of the owner's ranked agents between the two would file under the agent the resolver named a moment before.
+
+### 13.7 The §2 review
+
+The round's diff (`ea5c4a20..dd0f495d`, 26 files, 1,252 lines added) is past BUILD_RULES §2's threshold. The review ran four lenses, each on its own `git archive` extraction, read-only on git. Each lens's findings went to a refuter on another extraction. The mutating lens ran last, on its own tree of the review round's head `0bdcd054`. The ids use the prefix KR (lenses KR1–KR4), KRV (refuters) and KRT (the mutating lens). None of these prefixes is in use elsewhere in the repo.
+
+- **KR1**: the server (RK-1).
+- **KR2**: the screen (RK-2, RK-3, RK-4, RK-10, RK-1's line).
+- **KR3**: the merge (RK-9).
+- **KR4**: the cards-off screen, copy, goldens and fences (RK-5, RK-11, RK-13).
+
+**Findings and dispositions.** Verdicts are the refuters'. Every "Fixed" or "Row added" is in `0bdcd054` and was mutation-tested: 9 mutants planted, 9 killed.
+
+| Id | Sev. (after refuter) | Finding | Verdict | Disposition |
+|---|---|---|---|---|
+| KR3-1 | MAJOR | RK-9's caveat rewrite deduplicated every note part. Two plural entry-only caveats hold the same tail after their own "; ", so one lost its tail from the note for good. Natural triggers: day 1 loses 5, 6, 39 and 40, then tick 6 is read late with day 2 (no cap needed), or the 150-entry cap evicts day 1's entries | CONFIRMED (and a cheaper trigger) | **Fixed**: only a rewritten caveat is deduplicated, against the parts left untouched and earlier rewrites; every other part stays as the union left it. Rows: planted, and the natural shape. Mutant killed 2 / 11 |
+| KR3-2 | MINOR | No row killed a dedup mutant. Dropping the note's dedup also makes a rewrite re-append on every write (not idempotent) | CONFIRMED, stronger | **Rows added**, planted and natural (day 2 loses 41 and 80): kept once, next write `unchanged`. Mutant killed 2 / 11 |
+| KR3-3 | MINOR (from Q) | Reverse direction: a stored caveat naming a seq the day now RECORDS was rewritten to claim that seq "has no record", while the passes' filter already excluded recorded seqs | PARTLY (the "looser" half refuted: the entry row stands for 39; the "stricter" half holds) | **Fixed**: the caveat and `passes.close.unattributedGaps` judge by one set, the seqs the merged rows attribute to the day (recorded, or held as its gaps). Row; mutant killed 1 / 11. The refuter would rather ask; confirmation asked in §13.10 |
+| KR3-4 | NIT | `coverage.checks.caveats` moves with the note, outside RK-13's list | PARTLY (RK-9's own text rewrites "the caveat") | Declared (§13.6) |
+| KRV3-1 | MINOR | the six rows covered neither KR3-1 nor a rewrite colliding with a kept caveat | added by refuter | the natural rows A and B taken in |
+| KRV3-2, -3 | NIT | the docstring equated `gaps` with `no_record` rows; idempotence unpinned under a dedup change | added by refuter | Fixed (docstring); row B pins it |
+| KR1-1 | MINOR | the counter refused only the owner's own clone id; a clone-named agent (a pre-rules squat, or a clone whose parent is a clone) was answered for, its empty ledger read | CONFIRMED | **Fixed**: any answer for a casual clone is 503, as the create refuses it. Row; mutant killed 1 / 37 |
+| KR1-2 | NIT | with a foreign parent, the counter keys that clone's days under the parent's id | PARTLY (the screen never reads it; nothing counted) | Recorded |
+| KR1-3 | NIT (from Q) | a clone document owned by another user → the create 403, the counter 503 | PARTLY (unreachable through the route: deploy needs ownership, `ownerId` cannot change) | Recorded |
+| KR1-4 | NIT | a retire naming another owner's clone reads that clone before refusing | PARTLY (not a new oracle; the counter already answers 403/404) | Recorded |
+| KR1-5 | Q | a `training-agent-*` parent would pass | CONFIRMED mechanics, unreachable | Recorded; follows the platform's resolver |
+| KR1-6 | NIT | shelving by the parent on the counter's read pinned only on the emulator, which CI does not run | CONFIRMED, narrowed | **Row added** in `cardCounter.test.js` |
+| KR1-7 | NIT | the clone-read failure's 503 copy said "This battle ran on your casual agent" on a ranked ask, with no agent named | PARTLY | **Fixed**: neutral copy; the agent asked named. Mutant killed 1 / 37 |
+| KR1-8 | NIT | the resolver brings +44 modules into the counter route (+7 into the card route) | PARTLY (no import-time side effect) | Recorded (`casualClone.js` is fenced) |
+| KRV1-1 | NIT | the screen had no words for `attribution_unavailable`, so its retry advice was lost | added by refuter | **Fixed**: `cards.refusals.attribution_unavailable`; row; mutant killed 1 / 1 |
+| KR2-1 | Q | `tempoDesired: null` is also a RANKED battle whose dial was never set. Those players get the no-tempo sentence and never the link | CONFIRMED (facts hold; the sentence is not false) | **Ruling asked** (§13.10); built to RK-2's letter |
+| KR2-2 | Q | RK-10's reading | CONFIRMED (the build's reading stands; pinned by 4 rows) | Declared (§13.6) |
+| KR2-3 | MINOR | no row for a Set receipt beside the same date of another battle, or a shelved Set card; both mutants survived | CONFIRMED | **Rows added**; both mutants killed (1 / 12 each) |
+| KR2-4 / KRV2-1 | NIT | row names and the `setStateOf` docstring equated a null tempo with a casual clone; the RK-4 row could not tell the default view from the player's; "back on its own day" untested | CONFIRMED | **Fixed** |
+| KR4-1 | MINOR | the goldens' suite cited this section before it existed | CONFIRMED (a push condition) | This section |
+| KR4-2 | MINOR | the reason after the meeting or an unrecorded maker was unpinned on the chart; every real meeting swap carries `gameplan_rotation` | CONFIRMED, stronger | **Rows added** (the real reason); mutant killed 1 / 34 |
+| KR4-3 | Q | the one-symbol chart section shows the series status while it is loading, after a failed read, and beside an uncharted symbol on a partial day (no chart drawn); predates the round | CONFIRMED as a Q | **Ruling asked** (§13.10) |
+| KR4-4 | NIT | RK-5 is not in a golden; the capture harness named old sources | CONFIRMED | Harness header fixed; RK-5 pinned by `FilmRoomDeepDive.jsdom` |
+| KR4-5 | NIT/Q | RK-5's shorter labels vs A8's measured layout | REFUTED as a defect | Recorded (widths are measured inputs) |
+| KR4-6 | NIT | plain eslint's `only-export-components` on `setStateOf` | PARTLY (the file already exported `setRuleOf`; `lint:gate` is clean) | Recorded |
+| KRV4-1 | Q | the meeting maker always shows the raw code "· gameplan_rotation" (as it did before this round) | added by refuter | **Ruling asked** (§13.10) |
+| KRV4-2 | NIT | "Chart recorded for X" over a series document with no bars (SPR-S-3) | added by refuter | Declared; the writer stores none (RK-12 accepted SPR-S-3) |
+
+Tally of the lenses' 22 findings: 13 CONFIRMED, 8 PARTLY, 1 REFUTED. The refuters added 8 more. One MAJOR (KR3-1), fixed. No BLOCKER.
+
+**The mutating lens (KRT), last, on its own tree of `0bdcd054`.**
+- **Totals.** It planted 99 mutants: 34 in the server, 18 in the merge, 41 in the screen, copy and App, and 6 extra. 81 were killed, 8 equivalent, 10 survived.
+- **Every kill came from a CI suite.** The emulator file killed no mutant the CI suites had left alive.
+- **Equivalents.** Among the 8: the create resolving `req.agentId`, which equals `battle.agentId` after the check; the store's 503 on a failed clone read, re-wrapped by code; the parse's `$` anchor, which the compose-back check decides anyway; and two early returns that only save work.
+- **One false kill corrected.** A `candlePass` row timed out under load.
+- **Survivors.** Each now has a killing row (`7336a20c`, tests only), re-planted and killed:
+  - MINOR:
+    - KRT-1: a missing parent answered 404 instead of 503.
+    - KRT-2: the no-tempo sentence judged before a rule that is off.
+    - KRT-3: Set's words leaking onto Watch and Practice.
+  - NIT:
+    - KRT-4: the attribution read before the untaped check.
+    - KRT-5: a clone-named parent filing.
+    - KRT-6: the weekly table re-keyed.
+    - KRT-8: an empty tempo counted as recorded.
+    - KRT-9: the link without a Forge door.
+    - KRT-10: the server's sentence unpinned.
+  - **One recorded, not rowed.** KRT-7 (NIT): a checks note whose every part is rewritten away would be stored as `''` instead of null. No writer scenario run reached it: a stored gap row brings its own gap caveat into the same note, so the note keeps that part.
+- **Tree check.** The lens's tree was byte-equal to the archive at the end.
+
+### 13.8 Final checks
+
+Every check ran on the branch merged with current `origin/main`, never on the branch alone, in a git worktree of the WSL clone `~/pd-ci` or in an LF `git archive`. Each merge commit is a check-only object (`git merge-tree` + `git commit-tree`, held by a local ref), never pushed.
+
+| Check | Where | Result |
+|---|---|---|
+| Linux full suite, run 1 | `e3f049e4` (`dd0f495d`, the code and goldens, merged with `148a3fa1`); `TZ=UTC`, `--maxWorkers=8`, under `flock /tmp/pd-suite.lock`, alone | **0 failing files**: 1,214 passed, 8 skipped; 26,707 rows passed, 89 skipped; 211 s. The hub's mount guard, the census and `flagPinGuard` pass |
+| Linux full suite, run 2 | `0055dc35` (`0bdcd054`, the review round, merged with `148a3fa1`) | **0 failing files**: 1,214 / 8; 26,717 rows passed, 89 skipped; 218 s |
+| Linux full suite, run 3 (the record) | `8553125a` (`7336a20c`, the final code, merged with `9bbe2b1b`) | **0 failing files**: 1,219 passed, 8 skipped (1,227); 26,858 rows passed, 89 skipped (26,947); exit 0; 373 s. This run overlapped the rules suite on Windows and was slower for it |
+| Rules suite (`firebase emulators:exec … vitest.rules.config.mjs`) | Windows (WSL has no Java), an LF archive of `8553125a` | 28 files, 448 rows, all passed. This round's `filmRoomCardAttribution.rules.mjs` adds 8 rows (27 / 440 before) |
+| `npm run lint:gate` | WSL, `e3f049e4` and `8553125a` | exit 0, no warning, both |
+| `vite build` | WSL, this report's own commit merged with `main` (the pushed head's tree), the last check before the push | built; recorded in the PR description |
+| Goldens | §13.3 | captured twice from `004f2c1f`, byte-identical; the comparison suite passes at every later head |
+
+On Windows the Film Room suites pass except the two known load failures (SPR-RW-2: `tapeWiring.test.js` and `film-tape-backfill.e2e.test.js`, a CR in a shebang). Heavy film-tape rows can also time out under parallel load there; each passed alone. Linux is the record.
+
+### 13.9 Fence statement
+
+- Zero BUILD_RULES §1 edits. None of the branch's files is on the §1 list (checked by name over `24495eba..HEAD`).
+- Not in the branch's diff: `api/cron/agent-evaluate.js`, `api/_utils/casualClone.js` and `api/_utils/trainingClone.js` (imported, not changed; `INHERITED_LOADOUT_FIELDS` as it was), `firestore.rules`, `firestore.indexes.json`, the hub's code (`src/components/CommandCenter/**`), and `src/config/featureFlags.js`.
+- **No flag value changed.** `FILM_ROOM_CARDS_MODE` stays `'off'`. RK-2's new reader of `RELEASE3_CHARACTER_TAB_ENABLED` and `TEMPO_DIAL_ENABLED` needed no `featureFlags.js` pointer: the tests read both flags through mocked getters, never a value pin, and `flagPinGuard` passes.
+- **Nothing new reaches into the hub's directory.** The hub's mount guard passes on every full run.
+- **The census holds.** No model path reaches a ledger module. The new imports run outward from the ledger to the platform's resolver.
+- No merge, no production write, no backfill, no refresh, no deploy, no flip.
+
+### 13.10 Rulings asked
+
+None blocks a merge. The first should be ruled before the cards flip.
+
+1. **A null tempo is not only a casual clone (review KR2-1, Q).** RK-2's reason holds: the clone inherits no dial, so its tape records `tempoDesired: null`. But a ranked battle whose owner never set the dial records null too. The battle runs at the default `standard`; the snapshot stores `dials: null` (`api/_utils/leanRevalidation.js:314–316`).
+   - **Built to RK-2's letter.** Every such player sees "No tempo setting was recorded for this battle." and never the link: exactly the players who have not found the dial yet. The sentence is true.
+   - RK-2's "Later" clause has the same consequence. Carrying the dial to the clone makes the link appear only for players who have set a tempo.
+   - Option (not built): tell the two apart by the tape's own `agentId`, a casual clone or not. On a ranked battle with no recorded tempo, the link would stay, since the dial does reach that agent.
+2. **RK-9's attributed set (review KR3-3; built, §13.6 item 7).** Confirm that a seq the day's tape RECORDS (its tick row) disproves an "adjacent, day cannot be established" caveat, the same as a stored gap row does. The alternative keeps the caveat filter to the gap rows alone, as the fix bullet's "merged gaps" could be read. That alternative writes "(tickSeq 40) has no record" while tick 40's row is on the tape. The trigger, a tick record read after a later session began, is rare.
+3. **The chart section's line while it shows no chart (review KR4-3; predates this round).** RK-11 holds by its letter: beside a charted symbol, "Chart recorded for {symbol}". In three states nothing is drawn, and the one-symbol section still carries the series status:
+   - while the series loads ("Coverage · complete" above "Loading the tape…");
+   - after a failed read ("Coverage · complete" above "The series for this day could not be read.");
+   - beside an uncharted symbol on a partial or unavailable day (RJ-2 as built).
+   Does RK-11's "never" cover the section while it shows no chart?
+4. **The meeting maker's raw code (review KRV4-1; predates this round).** Every real gameplan swap carries `exitReason: 'gameplan_rotation'`, the only code that maps to the meeting. So the chart reads "Exit · 12:45 PM · by the gameplan meeting · gameplan_rotation", and the bought name likewise. Before RK-5 it read "Exit by the gameplan meeting · gameplan_rotation". RK-5 names the maker as "by the gameplan meeting". Keep the code after it (now pinned), or drop it on both names?
+
+**Declared, not asked:** §13.6 items 1–6 and 8, KR4-5 (RK-5's shorter labels and A8's measured layout, harmless by reading), and KRV4-2 ("Chart recorded" over a series document with no bars, which the writer never stores; SPR-S-3, accepted under RK-12).
