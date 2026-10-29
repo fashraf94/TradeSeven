@@ -2,9 +2,15 @@
 //
 // The CI golden-baseline guard, exercised the way the Tests workflow runs it: `node
 // scripts/ci/tf-setup-golden-guard.mjs` with the TF_GUARD_* environment, inside an ISOLATED
-// temporary Git repository holding copies of the wrapper, the guard and the accepted evaluator
-// files. The accepted repository fixtures are read, never written. Plus the workflow wiring itself
-// (.github/workflows/tests.yml) and the wrapper's pure helpers.
+// temporary Git repository holding copies of the wrapper and the guard. Plus the workflow wiring
+// itself (.github/workflows/tests.yml) and the wrapper's pure helpers.
+//
+// THE EVALUATOR FILES IN THESE REPOSITORIES ARE TEST-ONLY FIXTURES, built below: a small golden,
+// its baseline history and a three-constant thresholds module, at controlled versions sem-1, sem-2
+// and sem-3. Nothing here reads or pins the production evaluator, so a later, properly versioned
+// production change (a new SEMANTICS_ID with an appended entry) cannot break these rows. The
+// production identity is the golden tests' and the guard's own business. (PR #1004 correction:
+// the first version copied the production files and pinned them to sem-1.)
 //
 // HERMETIC: everything is written under os.tmpdir() and removed afterwards; no network; git is
 // the machine's own, run with argument arrays and a private identity.
@@ -23,14 +29,44 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 const WRAPPER_REL = 'scripts/ci/tf-setup-golden-guard.mjs';
 const GUARD_REL = 'scripts/experiments/tf-setup-golden-baseline-check.mjs';
-const ACCEPTED_GOLDEN_SHA = '767d22633672745d632cd7612e90d37c295b276692d60bdcd8f408f09105f32d';
 const ROW_TIMEOUT = 60_000;
 
-const accepted = {
-  baseline: readFileSync(path.join(ROOT, PATHS.baseline), 'utf8').replace(/\r\n/g, '\n'),
-  golden: readFileSync(path.join(ROOT, PATHS.golden), 'utf8').replace(/\r\n/g, '\n'),
-  thresholds: readFileSync(path.join(ROOT, PATHS.thresholds), 'utf8').replace(/\r\n/g, '\n'),
+// ---------------------------------------------------------------- test-only evaluator fixtures
+
+const FIXTURE_SETUP_VERSION = 'tf-setup-v1';
+const FIXTURE_THRESHOLDS_HASH = 'abcdef012345'; // a 12-hex stand-in, deliberately not production's
+const sem = (n) => `tf-setup-v1/sem-${n}`;
+
+/** A three-constant module in the shape the guard imports; nothing else. */
+const thresholdsFixture = (semanticsId) => `// test-only thresholds fixture (scripts/ci/tf-setup-golden-guard.test.js)\nexport const SETUP_VERSION = '${FIXTURE_SETUP_VERSION}';\nexport const THRESHOLDS_HASH = '${FIXTURE_THRESHOLDS_HASH}';\nexport const SEMANTICS_ID = '${semanticsId}';\n`;
+/** A small golden: one record per named scenario. */
+const goldenFixture = (semanticsId, names) => ({
+  semanticsId,
+  setupVersion: FIXTURE_SETUP_VERSION,
+  thresholdsHash: FIXTURE_THRESHOLDS_HASH,
+  entry: Object.fromEntries(names.map((name, i) => [name, { verdict: i % 2 ? 'invalid' : 'valid', checks: [{ id: 'fixture_check', result: i % 2 === 0 }] }])),
+  holding: {},
+});
+const entryFor = (semanticsId, golden, recordedAt, note) => ({ semanticsId, goldenSha256: canonicalSha256(golden), recordedAt, note });
+
+/** The controlled states: sem-1, then two properly versioned changes, each preserving the history and appending one entry. */
+const G1 = goldenFixture(sem(1), ['alpha']);
+const G2 = goldenFixture(sem(2), ['alpha', 'beta']);
+const G3 = goldenFixture(sem(3), ['alpha', 'beta', 'gamma']);
+const E1 = entryFor(sem(1), G1, '2026-10-01T12:00:00.000Z', 'fixture: the first accepted entry');
+const E2 = entryFor(sem(2), G2, '2026-10-02T12:00:00.000Z', 'fixture: a versioned change, one scenario added');
+const E3 = entryFor(sem(3), G3, '2026-10-03T12:00:00.000Z', 'fixture: a second versioned change, one scenario added');
+const STATES = {
+  sem1: { semanticsId: sem(1), golden: G1, history: [E1] },
+  sem2: { semanticsId: sem(2), golden: G2, history: [E1, E2] },
+  sem3: { semanticsId: sem(3), golden: G3, history: [E1, E2, E3] },
 };
+/** A golden regenerated under an unchanged id, with the history's last entry rewritten to its hash: consistent with itself. */
+function coordinatedRewrite(state) {
+  const golden = goldenFixture(state.semanticsId, [...Object.keys(state.golden.entry), 'rewritten']);
+  const history = state.history.map((e, i) => (i === state.history.length - 1 ? { ...e, goldenSha256: canonicalSha256(golden) } : e));
+  return { semanticsId: state.semanticsId, golden, history };
+}
 
 // ---------------------------------------------------------------- the isolated repository
 
@@ -39,7 +75,6 @@ function makeRepo() {
   const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('TF_GUARD_') && !k.startsWith('GIT_') && k !== 'GITHUB_SHA'));
   const git = (...args) => execFileSync('git', ['-c', 'core.autocrlf=false', '-c', 'user.name=guard-test', '-c', 'user.email=guard-test@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'init.defaultBranch=main', ...args], { cwd: dir, encoding: 'utf8', env: cleanEnv, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const write = (rel, text) => { mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); writeFileSync(path.join(dir, rel), text); };
-  const remove = (rel) => unlinkSync(path.join(dir, rel));
   const commit = (message) => { git('add', '-A'); git('commit', '-q', '--allow-empty', '-m', message); return git('rev-parse', 'HEAD'); };
   const run = (env) => {
     const r = spawnSync(process.execPath, [path.join(dir, WRAPPER_REL)], { cwd: dir, encoding: 'utf8', env: { ...cleanEnv, ...env } });
@@ -50,82 +85,80 @@ function makeRepo() {
   write(WRAPPER_REL, readFileSync(path.join(ROOT, WRAPPER_REL), 'utf8'));
   write(GUARD_REL, readFileSync(path.join(ROOT, GUARD_REL), 'utf8'));
   write('README.md', 'isolated guard fixture\n');
-  return { dir, git, write, remove, commit, run, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  return { dir, git, write, commit, run, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-const writeAccepted = (repo) => { repo.write(PATHS.baseline, accepted.baseline); repo.write(PATHS.golden, accepted.golden); repo.write(PATHS.thresholds, accepted.thresholds); };
-/** A golden changed the way a scenario addition changes it, and its canonical sha. */
-function changedGolden() {
-  const g = JSON.parse(accepted.golden);
-  const name = Object.keys(g.entry)[0];
-  g.entry[`${name}_copy`] = g.entry[name];
-  return { text: canonicalJson(g), sha: canonicalSha256(g), golden: g };
+/** Write one evaluator state's three files: golden, baseline history, thresholds. */
+function writeState(repo, { semanticsId, golden, history }) {
+  repo.write(PATHS.golden, canonicalJson(golden));
+  repo.write(PATHS.baseline, `${JSON.stringify(history, null, 2)}\n`);
+  repo.write(PATHS.thresholds, thresholdsFixture(semanticsId));
 }
 const dispatch = (baseRef) => ({ TF_GUARD_EVENT_NAME: 'workflow_dispatch', TF_GUARD_BASE_REF: baseRef });
 
-describe('the CI golden guard on an isolated repository (the workflow\'s own command)', () => {
+describe('the CI golden guard on an isolated repository with test-only evaluator fixtures (the workflow\'s own command)', () => {
   let repo;
   const sha = {};
 
   beforeAll(() => {
     repo = makeRepo();
     sha.pre = repo.commit('pre-evaluator: no evaluator files');
-    repo.write(PATHS.baseline, accepted.baseline);
-    repo.write(PATHS.thresholds, accepted.thresholds);
+    repo.write(PATHS.baseline, `${JSON.stringify(STATES.sem1.history, null, 2)}\n`);
+    repo.write(PATHS.thresholds, thresholdsFixture(sem(1)));
     sha.incomplete = repo.commit('incomplete: baseline and thresholds, no golden');
-    repo.write(PATHS.golden, accepted.golden);
+    repo.write(PATHS.golden, canonicalJson(G1));
     repo.write(PATHS.baseline, '{ not json');
     sha.corrupt = repo.commit('corrupt: the baseline is not JSON');
-    writeAccepted(repo);
-    sha.accepted = repo.commit('accepted: the evaluator baseline as merged in PR #1001');
-    repo.git('branch', 'accepted-main', sha.accepted);
+    writeState(repo, STATES.sem1);
+    sha.sem1 = repo.commit('fixture sem-1: the first accepted state');
+    repo.git('branch', 'accepted-main', sha.sem1);
 
     repo.write('docs/unrelated.md', 'an unrelated change\n');
     sha.unchanged = repo.commit('unchanged evaluator files');
 
-    const changed = changedGolden();
-    repo.git('checkout', '-q', '--detach', sha.accepted);
-    repo.write(PATHS.golden, changed.text);
-    const rewritten = JSON.parse(accepted.baseline);
-    rewritten[0] = { ...rewritten[0], goldenSha256: changed.sha };
-    repo.write(PATHS.baseline, `${JSON.stringify(rewritten, null, 2)}\n`);
-    sha.coordinated = repo.commit('coordinated rewrite: golden regenerated, entry 0 rewritten, sem-1 unchanged');
+    const branchFrom = (from) => repo.git('checkout', '-q', '--detach', '-f', from);
 
-    repo.git('checkout', '-q', '--detach', sha.accepted);
-    const noted = JSON.parse(accepted.baseline);
-    noted[0] = { ...noted[0], note: `${noted[0].note} (edited)` };
-    repo.write(PATHS.baseline, `${JSON.stringify(noted, null, 2)}\n`);
+    branchFrom(sha.sem1);
+    writeState(repo, coordinatedRewrite(STATES.sem1));
+    sha.coordinated1 = repo.commit('coordinated rewrite under sem-1: golden regenerated, entry 0 rewritten');
+
+    branchFrom(sha.sem1);
+    writeState(repo, { ...STATES.sem1, history: [{ ...E1, note: `${E1.note} (edited)` }] });
     sha.noteRewritten = repo.commit('history: entry 0 note rewritten');
 
-    repo.git('checkout', '-q', '--detach', sha.accepted);
+    branchFrom(sha.sem1);
+    writeState(repo, STATES.sem1);
     repo.write(PATHS.baseline, '[]\n');
     sha.entryRemoved = repo.commit('history: the only entry removed');
 
-    repo.git('checkout', '-q', '--detach', sha.accepted);
-    const versioned = changedGolden();
-    versioned.golden.semanticsId = 'tf-setup-v1/sem-2';
-    repo.write(PATHS.golden, canonicalJson(versioned.golden));
-    repo.write(PATHS.thresholds, accepted.thresholds.replace("export const SEMANTICS_ID = 'tf-setup-v1/sem-1';", "export const SEMANTICS_ID = 'tf-setup-v1/sem-2';"));
-    const appended = [...JSON.parse(accepted.baseline), { semanticsId: 'tf-setup-v1/sem-2', goldenSha256: canonicalSha256(versioned.golden), recordedAt: '2026-10-29T12:00:00.000Z', note: 'isolated control: a versioned change, history preserved, one entry appended' }];
-    repo.write(PATHS.baseline, `${JSON.stringify(appended, null, 2)}\n`);
-    sha.versioned = repo.commit('versioned: sem-2 with an appended entry');
+    branchFrom(sha.sem1);
+    writeState(repo, STATES.sem2);
+    sha.sem2 = repo.commit('versioned sem-1 -> sem-2: history preserved, one entry appended');
 
-    repo.write(PATHS.baseline, `${JSON.stringify([appended[1]], null, 2)}\n`);
-    sha.versionedEntryRemoved = repo.commit('history: entry 0 removed after a versioned change');
+    writeState(repo, STATES.sem3);
+    sha.sem3 = repo.commit('versioned sem-2 -> sem-3: history preserved, one entry appended');
 
-    repo.git('checkout', '-q', '--detach', sha.accepted);
+    branchFrom(sha.sem2);
+    writeState(repo, coordinatedRewrite(STATES.sem2));
+    sha.coordinated2 = repo.commit('coordinated rewrite under sem-2: golden regenerated, entry 1 rewritten');
+
+    branchFrom(sha.sem2);
+    writeState(repo, { ...STATES.sem2, history: [E2] });
+    sha.sem2EntryRemoved = repo.commit('history: entry 0 removed after a versioned change');
+
+    branchFrom(sha.sem1);
     repo.write('docs/sibling.md', 'a sibling line of history\n');
-    sha.sibling = repo.commit('sibling: diverges from the accepted commit');
+    sha.sibling = repo.commit('sibling: diverges from the sem-1 commit');
 
     repo.git('checkout', '-q', '--orphan', 'unrelated');
-    writeAccepted(repo);
+    writeState(repo, STATES.sem1);
     sha.unrelated = repo.commit('unrelated root carrying the same files');
 
-    repo.git('checkout', '-q', '-B', 'feature', sha.accepted);
+    repo.git('checkout', '-q', '-f', '-B', 'feature', sha.sem1);
     repo.write('docs/feature.md', 'a feature change\n');
     sha.feature = repo.commit('feature: an unrelated PR change');
-    repo.git('checkout', '-q', '--detach', sha.accepted);
-    repo.git('merge', '-q', '--no-ff', 'feature', '-m', 'Merge feature into accepted (the PR merge ref)');
+    branchFrom(sha.sem1);
+    repo.git('merge', '-q', '--no-ff', 'feature', '-m', 'Merge feature into sem-1 (the PR merge ref)');
     sha.prMerge = repo.git('rev-parse', 'HEAD');
   }, ROW_TIMEOUT);
 
@@ -133,16 +166,19 @@ describe('the CI golden guard on an isolated repository (the workflow\'s own com
 
   const at = (commit) => repo.git('checkout', '-q', '--detach', '-f', commit);
 
-  it('the copied evaluator files are the accepted ones: golden 767d2263…, one sem-1 entry', () => {
-    expect(canonicalSha256(JSON.parse(accepted.golden))).toBe(ACCEPTED_GOLDEN_SHA);
-    const baseline = JSON.parse(accepted.baseline);
-    expect(baseline.map((e) => [e.semanticsId, e.goldenSha256])).toEqual([['tf-setup-v1/sem-1', ACCEPTED_GOLDEN_SHA]]);
-    expect(accepted.thresholds).toMatch(/export const SEMANTICS_ID = 'tf-setup-v1\/sem-1';/);
+  it('the test-only fixtures are what they claim: each state is consistent with itself, and each later state keeps the earlier history and appends one entry', () => {
+    for (const state of Object.values(STATES)) {
+      expect(checkBaselineIntegrity({ baseline: state.history, goldenSha: canonicalSha256(state.golden), semanticsId: state.semanticsId })).toEqual([]);
+    }
+    expect(STATES.sem2.history.slice(0, 1)).toEqual(STATES.sem1.history);
+    expect(STATES.sem3.history.slice(0, 2)).toEqual(STATES.sem2.history);
+    expect(new Set([G1, G2, G3].map(canonicalSha256)).size).toBe(3);
+    expect(FIXTURE_THRESHOLDS_HASH).toMatch(/^[0-9a-f]{12}$/);
   });
 
   it('unchanged evaluator files pass, in comparison mode', () => {
     at(sha.unchanged);
-    const r = repo.run(dispatch(sha.accepted));
+    const r = repo.run(dispatch(sha.sem1));
     expect(r.code, r.out).toBe(0);
     expect(r.out).toMatch(/guard: mode compare/);
     expect(r.out).toMatch(/note: golden and semantics unchanged against the base/);
@@ -150,11 +186,10 @@ describe('the CI golden guard on an isolated repository (the workflow\'s own com
   }, ROW_TIMEOUT);
 
   it('a coordinated golden/baseline rewrite under unchanged sem-1 fails, though the head is consistent with itself', () => {
-    at(sha.coordinated);
-    const changed = changedGolden();
-    const head = JSON.parse(readFileSync(path.join(repo.dir, PATHS.baseline), 'utf8'));
-    expect(checkBaselineIntegrity({ baseline: head, goldenSha: changed.sha, semanticsId: 'tf-setup-v1/sem-1' })).toEqual([]); // what the in-revision golden tests see: nothing wrong
-    const r = repo.run(dispatch(sha.accepted));
+    at(sha.coordinated1);
+    const rewritten = coordinatedRewrite(STATES.sem1);
+    expect(checkBaselineIntegrity({ baseline: rewritten.history, goldenSha: canonicalSha256(rewritten.golden), semanticsId: sem(1) })).toEqual([]); // what the in-revision golden tests see: nothing wrong
+    const r = repo.run(dispatch(sha.sem1));
     expect(r.code, r.out).toBe(1);
     expect(r.out).toMatch(/FAIL: golden: the golden bytes changed .* but SEMANTICS_ID is still tf-setup-v1\/sem-1/);
     expect(r.out).toMatch(/FAIL: history: entry 0 \(tf-setup-v1\/sem-1\) was rewritten/);
@@ -162,31 +197,51 @@ describe('the CI golden guard on an isolated repository (the workflow\'s own com
     expect(r.out).toMatch(/::error title=tf-setup golden guard::/);
   }, ROW_TIMEOUT);
 
+  it('a coordinated rewrite under an unchanged later id (sem-2) fails the same way', () => {
+    at(sha.coordinated2);
+    const r = repo.run(dispatch(sha.sem2));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toMatch(/FAIL: golden: the golden bytes changed .* but SEMANTICS_ID is still tf-setup-v1\/sem-2/);
+    expect(r.out).toMatch(/FAIL: history: entry 1 \(tf-setup-v1\/sem-2\) was rewritten/);
+    expect(r.out).toMatch(/FAIL: golden: the golden bytes changed but no baseline entry was appended/);
+  }, ROW_TIMEOUT);
+
   it('rewriting an accepted history entry fails', () => {
     at(sha.noteRewritten);
-    const r = repo.run(dispatch(sha.accepted));
+    const r = repo.run(dispatch(sha.sem1));
     expect(r.code, r.out).toBe(1);
     expect(r.out).toMatch(/FAIL: history: entry 0 \(tf-setup-v1\/sem-1\) was rewritten/);
   }, ROW_TIMEOUT);
 
   it('removing an accepted history entry fails, alone or after a versioned change', () => {
     at(sha.entryRemoved);
-    const alone = repo.run(dispatch(sha.accepted));
+    const alone = repo.run(dispatch(sha.sem1));
     expect(alone.code, alone.out).toBe(1);
     expect(alone.out).toMatch(/FAIL: history: 1 base entry was removed/);
-    at(sha.versionedEntryRemoved);
-    const after = repo.run(dispatch(sha.versioned));
+    at(sha.sem2EntryRemoved);
+    const after = repo.run(dispatch(sha.sem2));
     expect(after.code, after.out).toBe(1);
     expect(after.out).toMatch(/FAIL: history: 1 base entry was removed/);
     expect(after.out).toMatch(/FAIL: history: entry 0 \(tf-setup-v1\/sem-1\) was rewritten/);
   }, ROW_TIMEOUT);
 
-  it('a properly versioned change (sem-2, history preserved, one entry appended) passes: the isolated control', () => {
-    at(sha.versioned);
-    const r = repo.run(dispatch(sha.accepted));
+  it('a properly versioned change sem-1 -> sem-2 (history preserved, one entry appended) passes: the isolated control', () => {
+    at(sha.sem2);
+    const r = repo.run(dispatch(sha.sem1));
     expect(r.code, r.out).toBe(0);
     expect(r.out).toMatch(/note: golden changed under a new semantics id tf-setup-v1\/sem-2 with a new baseline entry/);
     expect(r.out).toMatch(/result: PASS/);
+  }, ROW_TIMEOUT);
+
+  it('the next versioned change sem-2 -> sem-3 passes too, and so does sem-1 -> sem-3 across both appended entries', () => {
+    at(sha.sem3);
+    const next = repo.run(dispatch(sha.sem2));
+    expect(next.code, next.out).toBe(0);
+    expect(next.out).toMatch(/note: golden changed under a new semantics id tf-setup-v1\/sem-3 with a new baseline entry/);
+    expect(next.out).toContain('3 entries');
+    const across = repo.run(dispatch(sha.sem1));
+    expect(across.code, across.out).toBe(0);
+    expect(across.out).toMatch(/result: PASS/);
   }, ROW_TIMEOUT);
 
   it.each([
@@ -239,12 +294,12 @@ describe('the CI golden guard on an isolated repository (the workflow\'s own com
 
   it('the pull_request path compares the PR merge result against the event\'s target-base SHA, and logs what it chose', () => {
     at(sha.prMerge);
-    const r = repo.run({ TF_GUARD_EVENT_NAME: 'pull_request', TF_GUARD_PR_BASE_SHA: sha.accepted, TF_GUARD_PR_HEAD_SHA: sha.feature, TF_GUARD_BASE_REF: '' });
+    const r = repo.run({ TF_GUARD_EVENT_NAME: 'pull_request', TF_GUARD_PR_BASE_SHA: sha.sem1, TF_GUARD_PR_HEAD_SHA: sha.feature, TF_GUARD_BASE_REF: '' });
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain(`event PR head: ${sha.feature}`);
-    expect(r.out).toContain(`event target base: ${sha.accepted}`);
-    expect(r.out).toContain(`checked-out commit (HEAD): ${sha.prMerge} (parents ${sha.accepted}, ${sha.feature})`);
-    expect(r.out).toContain(`comparison base: ${sha.accepted} (the pull_request event's target-base SHA; an ancestor of HEAD)`);
+    expect(r.out).toContain(`event target base: ${sha.sem1}`);
+    expect(r.out).toContain(`checked-out commit (HEAD): ${sha.prMerge} (parents ${sha.sem1}, ${sha.feature})`);
+    expect(r.out).toContain(`comparison base: ${sha.sem1} (the pull_request event's target-base SHA; an ancestor of HEAD)`);
     expect(r.out).toMatch(/guard: mode compare/);
   }, ROW_TIMEOUT);
 
@@ -264,24 +319,24 @@ describe('the CI golden guard on an isolated repository (the workflow\'s own com
     const r = repo.run(dispatch('accepted-main'));
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain('dispatch base_ref: "accepted-main"');
-    expect(r.out).toContain(`comparison base: ${sha.accepted} (the workflow_dispatch input base_ref "accepted-main"; an ancestor of HEAD)`);
+    expect(r.out).toContain(`comparison base: ${sha.sem1} (the workflow_dispatch input base_ref "accepted-main"; an ancestor of HEAD)`);
   }, ROW_TIMEOUT);
 
   it('an unsupported event fails closed', () => {
     at(sha.unchanged);
-    const r = repo.run({ TF_GUARD_EVENT_NAME: 'push', TF_GUARD_BASE_REF: sha.accepted });
+    const r = repo.run({ TF_GUARD_EVENT_NAME: 'push', TF_GUARD_BASE_REF: sha.sem1 });
     expect(r.code, r.out).toBe(2);
     expect(r.out).toMatch(/unsupported event "push"/);
   }, ROW_TIMEOUT);
 
   it('an evaluator object the base lists but the repository cannot read fails closed as unavailable, not absent', () => {
     // Last, because it damages the fixture repository: the base's golden blob is deleted from the object store.
-    const blob = repo.git('rev-parse', `${sha.accepted}:${PATHS.golden}`);
+    const blob = repo.git('rev-parse', `${sha.sem1}:${PATHS.golden}`);
     at(sha.unchanged);
     const head = repo.git('rev-parse', `HEAD:${PATHS.golden}`);
     expect(head).toBe(blob); // the head's working-tree file is already on disk
     unlinkSync(path.join(repo.dir, '.git', 'objects', blob.slice(0, 2), blob.slice(2)));
-    const r = repo.run(dispatch(sha.accepted));
+    const r = repo.run(dispatch(sha.sem1));
     expect(r.code, r.out).toBe(2);
     expect(r.out).toMatch(/goldenVerdicts\.json is listed \(blob [0-9a-f]{40}\) but its object is unavailable; the history is incomplete/);
   }, ROW_TIMEOUT);
