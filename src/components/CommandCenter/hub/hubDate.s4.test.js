@@ -54,16 +54,20 @@ describe('S4\'s helpers stay out of the main bundle (merge round: the deploy pro
 
   it('hub/hubDate.js — which App\'s root reaches — names none of them and imports nothing from the module that holds them', () => {
     const main = src('hubDate.js');
-    expect(main).not.toMatch(/formatHubDayTime|formatHubDayYear|formatHubMarketDate|activityDates/);
+    expect(main).not.toMatch(/formatHubDayTime|formatHubDayYear|formatHubMarketDate|marketSessionsSince|formatHubWeekdayTime|activityDates/);
     expect(src('activityDates.js')).toMatch(/export function formatHubDayTime/);
     expect(src('activityDates.js')).toMatch(/export function formatHubMarketDate/);
+    // DRB stale fix: the brief's age in sessions and its "Generated" day live here too.
+    expect(src('activityDates.js')).toMatch(/export function marketSessionsSince/);
+    expect(src('activityDates.js')).toMatch(/export function formatHubWeekdayTime/);
   });
 
   it('and builds no Intl formatter of S4\'s at module load: each is made on first use', () => {
     const code = src('activityDates.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const topLevel = code.split('\n').filter((line) => /^const \w+ = new Intl\./.test(line));
     expect(topLevel).toEqual([]);
-    expect((code.match(/new Intl\.DateTimeFormat/g) || []).length).toBe(5);
+    // Five of S4's, and the DRB stale fix's two (the ET date the brief's age counts to, and the "Generated" weekday).
+    expect((code.match(/new Intl\.DateTimeFormat/g) || []).length).toBe(7);
   });
 });
 

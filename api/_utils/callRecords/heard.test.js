@@ -18,7 +18,9 @@ import { runCallFlips, resetFlipIndexMemo } from './flip.js';
 import { publishDeclarations, runModelCallsPhase } from './publish.js';
 import { buildMintCandidate } from './candidate.js';
 import { createCallsContext } from './mode.js';
+import { deadlineClock } from '../__fixtures__/deadlineClock.js';
 
+const clock = deadlineClock(vi);
 const T = (iso) => Date.parse(iso);
 const NOW = T(FROZEN_NOW); // 2026-09-09 15:00Z — 11:00 ET
 const PROMPT_AT = '2026-09-09T15:00:00.000Z';
@@ -254,13 +256,16 @@ describe('runHeardPhase — one transaction per call, at resolved on (spec §7)'
   });
 
   it('a transaction that outlasts its ceiling is UNCONFIRMED, never failed, never a second write; past the deadline nothing starts', async () => {
-    vi.useRealTimers();
+    // The fake deadline clock: the pass's deadlines are Date.now() arithmetic and its ceiling a setTimeout race.
+    clock.use(NOW + 30_000);
     const db = makeDb();
     db.__hooks.beforeCommit = () => new Promise((r) => setTimeout(r, 1_000));
-    const diag = await runHeardPhase(ctxOn(), { db, battleId: BATTLE_ID, evalId: EVAL, promptBuiltAt: PROMPT_AT, heard: HEARD, executorResult: null, deadlineMs: Date.now() + 150 });
-    expect(diag.unconfirmed + (diag.stopped === 'deadline' ? 1 : 0)).toBeGreaterThan(0);
-    expect(diag.failed).toBe(0);
-    await new Promise((r) => setTimeout(r, 1_200));
+    const { value: diag } = await clock.settle(150, runHeardPhase(ctxOn(), { db, battleId: BATTLE_ID, evalId: EVAL, promptBuiltAt: PROMPT_AT, heard: HEARD, executorResult: null, deadlineMs: Date.now() + 150 }));
+    expect(diag).toMatchObject({ scanned: 1, unconfirmed: 1, failed: 0, heard: 0 });
+    // The commit lands at 1,000 ms, after the pass gave up: once — one attempt, one event.
+    await vi.advanceTimersByTimeAsync(1_200);
+    expect(db.__txAttempts).toBe(1);
+    expect(Object.keys(events(db))).toEqual([`${CALL}:heard:${EVAL}`]);
     const db2 = makeDb();
     expect(await runHeardPhase(ctxOn(), { db: db2, battleId: BATTLE_ID, evalId: EVAL, promptBuiltAt: PROMPT_AT, heard: HEARD, executorResult: null, deadlineMs: Date.now() - 1 })).toMatchObject({ stopped: 'deadline' });
     expect(touches(db2).writes).toBe(0);

@@ -8,10 +8,14 @@
 //
 //   loading   "Checking the brief", More / Less present and disabled (as in S1)
 //   ready     the body, two lines clamped, More / Less to expand it; the caption
-//             is the brief's own record — "Brief for {date}" or "Last session's
-//             brief · for {date}", and "Generated {time} ET" only when the document
+//             is the brief's own record and its age — "Brief for {date}", "Last
+//             session's brief · for {date}" or "Brief for {date} · {n} sessions
+//             old", and "Generated {day} {time} ET" only when the document
 //             returned a time (hub/useHubBrief.js briefCaption)
-//   missing   "No brief available"
+//   collapsed a brief two to five sessions old (DRB stale fix, founder ruling
+//             Oct 29 2026): the caption and More, and no body until More is
+//             pressed. The phone row already holds every body behind its toggle.
+//   missing   "No brief available" (also for a brief more than five sessions old)
 //   error     "Couldn't load the brief · Retry"; Retry reads it again
 //
 // The design's "Sources · N" link is not carried: §8.3 forbids a sources
@@ -47,6 +51,8 @@ export default function BriefSection({ brief, onRetry }) {
   const status = brief?.status;
   const body = status === 'ready' && typeof brief.body === 'string' && brief.body ? brief.body : null;
   const caption = body && brief.caption ? brief.caption : null;
+  // An old brief's body is not drawn until More is pressed (desktop; the phone row draws none until opened anyway).
+  const hidden = !!body && brief.collapsed === true && !open;
   const toggle = body ? () => setOpen((v) => !v) : undefined;
   // More / Less belongs to a body, or to the wait for one (S1's inert control); an absence or a failure has none to expand.
   const expandable = status !== 'missing' && status !== 'error';
@@ -86,18 +92,22 @@ export default function BriefSection({ brief, onRetry }) {
     <Section
       label={COPY.brief.label}
       data-hub-section="brief"
-      right={caption ? <Mono style={{ fontSize: 10.5, color: C.ink3, whiteSpace: 'nowrap' }}>{caption}</Mono> : null}
+      // The caption wraps inside its column: an aged one ("… · 3 sessions old · Generated Tue 8:30 AM ET") is wider than the
+      // 360 px desktop side column in a real browser (DRB stale fix smoke), and a no-wrap caption ran past it.
+      right={caption ? <Mono data-hub-brief-caption="" style={{ fontSize: 10.5, color: C.ink3, minWidth: 0, overflowWrap: 'anywhere' }}>{caption}</Mono> : null}
     >
       <Card>
         {body ? (
-          <p style={{ margin: 0, fontSize: 13.5, color: C.ink2, lineHeight: 1.5, display: open ? 'block' : '-webkit-box', WebkitLineClamp: open ? 'unset' : 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textWrap: 'pretty' }}>
-            {body}
-          </p>
+          !hidden && (
+            <p style={{ margin: 0, fontSize: 13.5, color: C.ink2, lineHeight: 1.5, display: open ? 'block' : '-webkit-box', WebkitLineClamp: open ? 'unset' : 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textWrap: 'pretty' }}>
+              {body}
+            </p>
+          )
         ) : (
           <BriefState status={status} onRetry={onRetry} />
         )}
         {expandable && (
-          <div style={{ display: 'flex', gap: 16, marginTop: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
+          <div style={{ display: 'flex', gap: 16, marginTop: hidden ? 0 : 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
             <HubLink onPress={toggle} ariaExpanded={body ? open : undefined} size={13}>{open ? COPY.brief.less : COPY.brief.more}</HubLink>
           </div>
         )}
