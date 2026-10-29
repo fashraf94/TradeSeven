@@ -472,12 +472,15 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
       </>
     );
   }
-  // FR-02 / RJ-2: the series section's "complete" never stands beside a symbol shown with no series — that symbol says
-  // its own state instead (NoChart). A section that is NOT complete keeps its line and its stored reason.
+  // FR-02 / RJ-2, for the all-symbols grid: the series section's "complete" never stands beside a symbol shown with no
+  // series — that symbol says its own state instead (NoChart). A section that is NOT complete keeps its line and its
+  // stored reason. (The one-symbol section never shows the section's line at all — Amendment L RL-3, below.)
   const sectionLine = (uncharted) => (uncharted && seriesState?.status === 'ready' && tape.coverage?.series?.status === 'complete' ? null : ['coverage', 'series']);
   // Build B Amendment K RK-11: a CHARTED symbol speaks for itself — "Chart recorded for {symbol}" in the coverage line's
   // place, never the series section's status beside one symbol's chart (Glance's coverage line keeps the status and
-  // its reasons; the all-symbols grid keeps the section's line)
+  // its reasons; the all-symbols grid keeps the section's line). Amendment L RL-3: nor in any other state of the
+  // one-symbol section — while the series loads it says the loading line, after a failed read the failure sentence,
+  // beside an uncharted symbol RJ-2's sentence (each in chartBody), never the series section's status
   const chartedLine = doc && current ? (
     <span data-chart-recorded={current} style={{ ...mono(10.5, C.ink3, { lineHeight: 1.45 }), padding: '0 2px' }}>{COPY.chartRecordedFor}<Rec>{current}</Rec></span>
   ) : null;
@@ -505,7 +508,7 @@ export default function FilmRoomDeepDive({ tape, seriesState, sym, onSym, deskto
     </div>
   ) : null;
   const chart = (
-    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} doc={tape} coverageAt={sectionLine(current && !doc)} coverageLine={chartedLine}>
+    <Section id="deep-chart" title={`${COPY.deepPrice}${current ? ` · ${current}` : ''}`} right={current ? <DisplayName sym={current} style={mono(9.5, C.ink3)} /> : null} doc={tape} coverageLine={chartedLine}>
       <div style={{ ...card, gap: 10 }}>
         {chartBody}
         {evidence}

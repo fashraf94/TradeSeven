@@ -22,9 +22,9 @@ const m = mounter();
 beforeEach(() => m.setup());
 afterEach(() => m.teardown());
 
-function Harness({ tape, series, start = null, desktop = false }) {
+function Harness({ tape, series, start = null, desktop = false, seriesState = null }) {
   const [sym, setSym] = React.useState(start);
-  return <FilmRoomDeepDive tape={tape} seriesState={{ status: 'ready', series }} sym={sym} onSym={setSym} desktop={desktop} />;
+  return <FilmRoomDeepDive tape={tape} seriesState={seriesState ?? { status: 'ready', series }} sym={sym} onSym={setSym} desktop={desktop} />;
 }
 const docsFor = (tape, series) => ({ tape, ...Object.fromEntries(series.map((s) => [`series:${s.symbol}`, s])) });
 const chip = (s) => m.qa('[data-region="symbol-picker"] button').find((b) => b.textContent === s);
@@ -146,6 +146,62 @@ describe('the chart and its lines (BA-12, BA-13)', () => {
     expect(m.q('[data-section="deep-chart"] [data-chart-recorded]').textContent).toBe('Chart recorded for MSFT');
     expect(m.q('[data-section="deep-chart"]').textContent).not.toContain('bars missing for 2 symbols');
     expect(m.q('[data-section="deep-all"] [data-coverage="partial"]').textContent).toContain('bars missing for 2 symbols');
+  });
+
+  describe('Amendment L RL-3 — the one-symbol section never shows the series section\'s status: its own line in each state; the all-symbols grid keeps the section\'s line', () => {
+    const LAYOUTS = [['phone', false], ['desktop', true]];
+    const dayOf = (status) => { const t = clone(sep23Tape); t.coverage.series = { ...t.coverage.series, status, note: `${status} series note` }; return t; };
+    /** The series section's line in a section: its own coverage line (a direct child) or the series note bound by path — the evidence overlay's coverage, nested in the body, is not it. */
+    const seriesLineIn = (sec) => sec.querySelector(':scope > [data-coverage], [data-stored-note="coverage.series.note"]');
+    const gridLine = () => m.q('#deep-all > [data-coverage]');
+
+    it.each(LAYOUTS)('%s — while the series loads: the loading line, no series status (the mutant: the status shown while loading)', (_, desktop) => {
+      for (const status of ['complete', 'partial']) {
+        m.render(<Harness key={status} tape={dayOf(status)} series={[]} seriesState={{ status: 'loading', series: [] }} start="AMD" desktop={desktop} />);
+        const sec = m.q('#deep-chart');
+        expect(sec.textContent, status).toContain('Loading the tape…');
+        expect(seriesLineIn(sec), status).toBeNull();
+        expect(sec.textContent, status).not.toContain(`${status} series note`);
+        // the grid (desktop only) and Glance keep the section's status
+        if (desktop) expect(gridLine().getAttribute('data-coverage'), status).toBe(status);
+      }
+    });
+
+    it.each(LAYOUTS)('%s — after a failed read: the failure sentence, no series status (the mutant: the status shown after a failed read)', (_, desktop) => {
+      for (const status of ['complete', 'partial']) {
+        m.render(<Harness key={status} tape={dayOf(status)} series={[]} seriesState={{ status: 'error', series: [] }} start="AMD" desktop={desktop} />);
+        const sec = m.q('#deep-chart');
+        expect(sec.querySelector('[data-state="series-error"]').textContent, status).toBe('The series for this day could not be read.');
+        expect(seriesLineIn(sec), status).toBeNull();
+        if (desktop) expect(gridLine().getAttribute('data-coverage'), status).toBe(status);
+      }
+    });
+
+    it.each(LAYOUTS)('%s — beside an uncharted symbol on a partial or unavailable day: RJ-2\'s sentence, no series status; the desktop grid keeps the section\'s line and its stored note (the mutants: the status shown beside an uncharted symbol; the grid losing its line)', (_, desktop) => {
+      for (const status of ['partial', 'unavailable']) {
+        m.render(<Harness key={status} tape={dayOf(status)} series={sep23Series} start="BTC" desktop={desktop} />);
+        const sec = m.q('#deep-chart');
+        expect(sec.querySelector('[data-no-series="BTC"]').textContent, status).toBe('No chart for BTC: crypto is not charted.');
+        expect(seriesLineIn(sec), status).toBeNull();
+        expect(sec.textContent, status).not.toContain(`${status} series note`);
+        if (desktop) {
+          expect(gridLine().getAttribute('data-coverage'), status).toBe(status);
+          expect(gridLine().querySelector('[data-stored-note="coverage.series.note"]').textContent, status).toBe(`${status} series note`);
+        }
+        expect(sweepNumbers(m.container, docsFor(dayOf(status), sep23Series)), status).toEqual([]);
+      }
+    });
+
+    it('a charted symbol keeps RK-11\'s line, never the status; the empty day\'s section (no symbol to chart) shows no series status either', () => {
+      m.render(<Harness key="partial" tape={dayOf('partial')} series={sep23Series} start="MSFT" desktop />);
+      expect(m.q('#deep-chart > [data-chart-recorded]').textContent).toBe('Chart recorded for MSFT');
+      expect(seriesLineIn(m.q('#deep-chart'))).toBeNull();
+      expect(gridLine().getAttribute('data-coverage')).toBe('partial');
+      for (const desktop of [false, true]) {
+        m.render(<Harness key={`empty${desktop}`} tape={emptyTape} series={emptySeries} desktop={desktop} />);
+        expect(seriesLineIn(m.q('#deep-chart')), String(desktop)).toBeNull();
+      }
+    });
   });
 
   it('desktop: every symbol at a glance, price only, each last close marked market', () => {

@@ -4,7 +4,9 @@
 //
 // Film Room B2.1 A2 — PER-SYMBOL CHART COVERAGE ON SCREEN (the tester's FR-02;
 // Amendment J RJ-2). Deep dive for a symbol with no series never shows the
-// section's "complete" beside it: it says that symbol's own state — the reason
+// section's "complete" beside it — since Build B Amendment L RL-3, none of the
+// series section's status, which the all-symbols grid keeps: it says that
+// symbol's own state — the reason
 // the tape records (the candle pass's W5 list, coverage.series.notCharted),
 // else the plain sentence. With no chart there is no marker, so the marker
 // instructions do not render and the stamps' recorded prices are listed by
@@ -107,17 +109,27 @@ describe('FR-02 — a symbol with no series: its own state, never the section\'s
 });
 
 describe('a held name the provider returned no bars for, through the real passes', () => {
+  it('Amendment L RL-3 — desktop, DE selected: the one-symbol section says DE\'s own state with no series status; the all-symbols grid keeps the partial line and its stored reason', async () => {
+    await deepAt(noBars.tape, noBars.series, 'DE', { desktop: true });
+    expect(m.q('#deep-chart [data-no-chart="DE"]').textContent).toBe('No chart for DE: no bars were returned for it.');
+    expect(m.q('#deep-chart > [data-coverage]')).toBeNull();
+    expect(m.q('#deep-chart [data-stored-note="coverage.series.note"]')).toBeNull();
+    expect(m.q('#deep-all > [data-coverage]').getAttribute('data-coverage')).toBe('partial');
+    expect(m.q('#deep-all [data-stored-note="coverage.series.note"]').textContent).toContain('no bars for: DE');
+    clean(docsOf(noBars.tape, noBars.series), 'desktop DE');
+  });
+
   it('the tape records it (no_bars) and the section is partial with its own reason', () => {
     expect(noBars.tape.coverage.series.notCharted).toEqual([{ symbol: 'BTC', reason: 'crypto_not_supported' }, { symbol: 'DE', reason: 'no_bars' }]);
     expect(noBars.tape.coverage.series.status).toBe('partial');
     expect(noBars.series.some((s) => s.symbol === 'DE')).toBe(false);
   });
 
-  it('Deep dive DE: its reason; the section\'s partial line and stored reason stay (not "complete"); no marker instructions; the stamps\' recorded prices, by check, each opening its stamp', async () => {
+  it('Deep dive DE: its reason, and never the series section\'s status beside it (Amendment L RL-3 — the partial line and its stored reason stay on the desktop grid); no marker instructions; the stamps\' recorded prices, by check, each opening its stamp', async () => {
     await deepAt(noBars.tape, noBars.series, 'DE');
     expect(m.q('[data-no-chart="DE"]').textContent).toBe('No chart for DE: no bars were returned for it.');
-    expect(m.q('#deep-chart [data-coverage]').getAttribute('data-coverage')).toBe('partial');
-    expect(m.q('#deep-chart [data-stored-note="coverage.series.note"]').textContent).toContain('no bars for: DE');
+    expect(m.q('#deep-chart > [data-coverage]')).toBeNull();
+    expect(m.q('#deep-chart [data-stored-note="coverage.series.note"]')).toBeNull();
     const ev = m.q('[data-region="evidence-overlay"]');
     expect(ev.getAttribute('data-evidence-mode')).toBe('list');
     expect(ev.textContent).not.toContain(COPY.evidenceOverlayNote);
