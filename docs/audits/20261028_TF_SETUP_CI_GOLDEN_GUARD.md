@@ -24,7 +24,7 @@ Claude Code (Claude Opus 5.5), October 28, 2026, for Flash. This is the immediat
 |---|---|
 | `.github/workflows/tests.yml` | The checkout fetches full history (`fetch-depth: 0`). `workflow_dispatch` gains a required `base_ref` input. A named step runs `node scripts/ci/tf-setup-golden-guard.mjs` after Node setup and before `npm ci`, the lint gate and the unit suite |
 | `scripts/ci/tf-setup-golden-guard.mjs` (new) | The CI wrapper: base selection, history checks, base preflight, the guard call, fail-closed exit codes |
-| `scripts/ci/tf-setup-golden-guard.test.js` (new) | 27 rows: isolated-repository integration rows, the wrapper's verdict helpers, and the workflow wiring |
+| `scripts/ci/tf-setup-golden-guard.test.js` (new) | 29 rows (27 before the correction in §10): isolated-repository integration rows on test-only evaluator fixtures, the wrapper's verdict helpers, and the workflow wiring |
 | this report; `docs/README.md` | One row |
 
 Unchanged: the guard script and its comparison policy, the evaluator, the thresholds, the semantics identity, the golden scenarios and bytes, and the accepted baseline entry. Nothing was regenerated (§7).
@@ -90,7 +90,7 @@ The step has no `continue-on-error` and no `if`, so a nonzero code fails the job
 
 ## 6. Verification
 
-**The integration rows run the workflow's own command**, `node scripts/ci/tf-setup-golden-guard.mjs` with the `TF_GUARD_*` environment. They run it in an isolated temporary Git repository holding copies of the wrapper, the guard and the accepted evaluator files. The accepted files are read and asserted to be the accepted ones (`767d2263…`, one `sem-1` entry). They are never written.
+**The integration rows run the workflow's own command**, `node scripts/ci/tf-setup-golden-guard.mjs` with the `TF_GUARD_*` environment. They run it in an isolated temporary Git repository holding copies of the wrapper and the guard, and **small test-only evaluator fixtures** at controlled versions `sem-1`, `sem-2` and `sem-3`. No production evaluator file is read or pinned. (The first version copied the production files and pinned them to `sem-1`; §10 records that finding and its correction.)
 
 | Row | Expected | Result |
 |---|---|---|
@@ -98,7 +98,8 @@ The step has no `continue-on-error` and no `if`, so a nonzero code fails the job
 | Coordinated golden/baseline rewrite under unchanged `sem-1` (the head's own integrity check passes) | exit 1: golden changed under `sem-1`, entry 0 rewritten, no entry appended | pass |
 | Rewriting an accepted entry's note | exit 1, entry 0 rewritten | pass |
 | Removing the only entry, and removing entry 0 after a versioned change | exit 1, base entry removed | pass |
-| Versioned change: `sem-2` in `thresholds.js`, history preserved, one entry appended | exit 0, "golden changed under a new semantics id" | pass |
+| Coordinated rewrite under an unchanged later id (`sem-2`) | exit 1: golden changed under `sem-2`, entry 1 rewritten, no entry appended | pass |
+| Versioned changes `sem-1` → `sem-2`, `sem-2` → `sem-3` and `sem-1` → `sem-3`, history preserved, entries appended | exit 0, "golden changed under a new semantics id" | pass |
 | Dispatch base: missing, unresolvable, option-shaped (`--upload-pack=x`), shell-shaped (`main; touch pwned`, no file created) | exit 2 | pass |
 | Self-comparison, by SHA and as `HEAD`; unrelated root; sibling non-ancestor | exit 2, each named | pass |
 | A valid ancestor predating acceptance (no evaluator files) | exit 2 preflight, never an initial pass | pass |
@@ -121,7 +122,7 @@ The wrapper's helpers have their own rows:
 - the exact step order;
 - the guard step has no `continue-on-error` or `if`, its `run` holds no `${{`, and its `env` is exactly the four event mappings.
 
-**Spot mutants on the wrapper and the workflow: 9 of 9 killed.** Each run collected all 27 rows, and each file was restored byte for byte.
+**Spot mutants on the wrapper and the workflow: 9 of 9 killed**, both before and after the correction in §10. Each run collected all of the file's rows (27 before, 29 after), and each file was restored byte for byte.
 
 | Mutant | Killed by |
 |---|---|
@@ -151,9 +152,10 @@ The wrapper's helpers have their own rows:
 
 | Check | Result |
 |---|---|
-| The new file with the seven slice test files and the guard's tests, Windows | 476 of 476 (27 + 449) |
+| The new file with the seven slice test files and the guard's tests, Windows | 476 of 476 (27 + 449) at first; **478 of 478** (29 + 449) after the correction, on the tree with `main` merged |
 | `eslint` (gate and full config) on `scripts/ci/` | exit 0 |
-| Linux, CI shape, at the final head | at `3f60191c` (the code commit; the documents commit after it changes documents only): full suite 1,206 files passed, 8 skipped, **26,567 rows passed, 89 skipped, 0 failed** (231 s), the new file's 27 rows among them; `npm run lint:gate` exit 0; `vite build` exit 0, entry chunk `index-CLx1U8Yq.js` 4,904.38 kB, unchanged; the standalone checker against `148a3fa1` in comparison mode, PASS. The wrapper on Linux in the same worktree: `pull_request` with target base `148a3fa1`, exit 0 in comparison mode; `workflow_dispatch` with `62380f14`, exit 2, predates the accepted baseline |
+| Linux, CI shape, at the merged head after the correction (§10) | at `011f2268` (the correction, with `main` `65b8632f` merged; the documents commit after it changes documents only): full suite 1,210 files passed, 8 skipped, **26,678 rows passed, 89 skipped, 0 failed** (255 s), the guard file's 29 rows among them; `npm run lint:gate` exit 0; `vite build` exit 0 (entry chunk `index-CWe8xobf.js` 4,830.27 kB, changed by #1000's `src/` work on `main`, not by this PR); the standalone checker against `65b8632f` in comparison mode, PASS |
+| Linux, CI shape, before the correction | at `3f60191c` (the code commit; the documents commit after it changes documents only): full suite 1,206 files passed, 8 skipped, **26,567 rows passed, 89 skipped, 0 failed** (231 s), the new file's 27 rows among them; `npm run lint:gate` exit 0; `vite build` exit 0, entry chunk `index-CLx1U8Yq.js` 4,904.38 kB, unchanged; the standalone checker against `148a3fa1` in comparison mode, PASS. The wrapper on Linux in the same worktree: `pull_request` with target base `148a3fa1`, exit 0 in comparison mode; `workflow_dispatch` with `62380f14`, exit 2, predates the accepted baseline |
 
 ## 7. The accepted identity is unchanged
 
@@ -173,4 +175,47 @@ The wrapper's helpers have their own rows:
 
 ## 9. Delivery
 
-Pushed by refspec to `claude/tf-setup-ci-golden-guard` and opened as a draft PR against `main`. STOP: no CI watching, no review request, no auto-merge, no merge, deploy or activation, no provider call, no production read.
+Pushed by refspec to `claude/tf-setup-ci-golden-guard` and opened as draft PR #1004 against `main`. The correction in §10 was pushed to the same draft PR. STOP: no CI watching, no review request, no auto-merge, no merge, deploy or activation, no provider call, no production read.
+
+## 10. Correction before merge: the integration fixtures were coupled to the production version
+
+**Finding** (the reviewer's independent check, before merge). The first version of the integration rows copied the production evaluator files into each temporary repository. It then pinned their golden hash, semantics id and history length to the initial `sem-1` state. Its versioned control also assumed `sem-1` → `sem-2`. A later, properly versioned production change would therefore fail four rows, although the CI wrapper handles that change correctly: it exits 0 in comparison mode. The tests, not the wrapper, would have blocked a legitimate evaluator release.
+
+**Reproduction (VERIFIED).** I built an isolated copy with the production evaluator moved to a valid `sem-2`: the `sem-1` history preserved, one entry appended, `SEMANTICS_ID` raised, golden `c2277541…`. The original suite failed **4 of 27**, exactly the four reported:
+- the pinned identity row;
+- the coordinated rewrite;
+- the entry removals;
+- the versioned control.
+
+**Resolution.** The temporary repositories now carry **test-only evaluator fixtures**, built in the test file:
+- a small golden;
+- its baseline history;
+- a three-constant thresholds module (`SETUP_VERSION`, a 12-hex stand-in `THRESHOLDS_HASH`, `SEMANTICS_ID`).
+
+There are three controlled states: `sem-1`, `sem-2` and `sem-3`. Each is consistent with itself, and each later state keeps the earlier history and appends one entry; a row asserts this. Fixed `sem-1`, `sem-2` and `sem-3` identifiers live only inside these fixtures. **No row reads or pins the production evaluator**, and the test file no longer reads `PATHS` from the repository root. The real wrapper and the real guard still run through the workflow's command.
+
+**Coverage.** Every rejection row is kept, and the transitions are extended:
+
+| Case | Result |
+|---|---|
+| Coordinated rewrite under unchanged `sem-1` | rejected |
+| Coordinated rewrite under unchanged `sem-2` (new) | rejected |
+| Rewritten entry; removed entry, alone and after a versioned change | rejected |
+| Valid `sem-1` → `sem-2` | passes |
+| Valid `sem-2` → `sem-3` (new) | passes |
+| Valid `sem-1` → `sem-3`, across both appended entries | passes |
+
+The suite went from 27 rows to 29. The production-pinned row is replaced by the fixture-consistency row. The pinned production hash was not updated and the positive control was not deleted.
+
+**Evidence:**
+
+| Check | Result |
+|---|---|
+| Current tree (production at `sem-1`) | 29 of 29 |
+| **The same `sem-2` production copy** | **29 of 29** (it was 23 of 27) |
+| The nine spot mutants, re-run | all killed, each run collecting all 29 rows |
+| `eslint` gate and full config on `scripts/ci/` | 0 |
+
+**Unchanged.** Since the reviewed head `6dbbdd3b`, the diff over `api/`, `scripts/experiments/`, `.github/` and the wrapper is empty. Only the test file changed. The evaluator, the accepted golden `767d2263…`, the baseline history, the semantics id, the workflow and the comparison policy are untouched.
+
+**`main` moved.** While the PR was open, `main` moved to `65b8632f` (PR #1000, the Command Center S8 fixes). It touches no evaluator, guard or workflow file. It was merged at `011f2268bfbccc12ef4472d4f0077a3362a16ae4`; `docs/README.md`, the one shared file, merged automatically with both rows kept. The PR's own diff is still the same five files, additions only.
