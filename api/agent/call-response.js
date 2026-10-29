@@ -25,7 +25,9 @@
 // budget, the pending check and the answers; its from-merge changes are D-7's
 // `counterpart_unavailable` and, since the BaggerBomb cleanup (C3, Oct 2026), a
 // pick judged by canComeIn instead of the universe, both at the eligibility step
-// (callActions.js). With the flag ON:
+// (callActions.js), and Amendment E's E-2 (step 6): a go / hold acknowledgment of
+// an exit the parent holds in no tier is refused symbol_not_held, flag off or on.
+// With the flag ON:
 //   wire     `replace` is an answer and requires `pickSymbol`; `go_now` may
 //            carry one; `confirmReplace` is an optional boolean; `pickSymbol`
 //            on any other answer is 400 invalid_request. After the parent
@@ -66,7 +68,7 @@
 //      outcome shows the agent's own choice — allowed whether the parent is
 //      active or completed; write playerResponse{kind:'ack'} + the answered
 //      event; no directive, no budget, no pending check          → 409 expired
-//      Amendment E (E-2): an EXIT call whose stock the fresh parent holds in
+//      Amendment E (E-2; flag off or on): an EXIT call whose stock the fresh parent holds in
 //      no tier at all is answerable by nobody — a go / hold acknowledgment is
 //      refused like a directive is, after the expired checks and before any
 //      write                                                      → 400 ineligible_action

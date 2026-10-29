@@ -76,15 +76,18 @@
 // book is born `invalidated`, `invalidatedReason: 'exit_not_held'` (answers.js
 // isExitNotHeld — the one any-tier test the endpoint and the cockpit also ask).
 // A reason that already invalidates at mint (the price line) wins: exit_not_held
-// applies only to a call that would otherwise mint valid. An unknown seam (no
-// frozen book) proves nothing, so it invalidates nothing.
+// applies only to a call that would otherwise mint valid. An unknown seam (book
+// null) proves nothing, so it invalidates nothing. A FROZEN book (freezeSwapBook)
+// is always readable — it holds three tier arrays, possibly empty — and the seam
+// freezes the very document the prompt was built from, so an empty one means the
+// model was shown nothing held; production never freezes one.
 // Rev 3: the seam's book is the book BEFORE the check's own trade (the swap commits
 // after the prompt seam and before this mint), so an exit on the check's own
 // COMMITTED incoming stock is not dropped: `committedSymbolIn` is the executor's
 // result (observe.js carryExecutorResult — never rebuilt from the proposal), null
 // when no trade committed, and a null matches nothing. symbolIn only: the outgoing
-// stock is out of the book either way, and E-2 reads the fresh parent, which
-// already holds the committed trade.
+// stock is still in the seam's book and is judged as it always was, and E-2 reads
+// the fresh parent, which already holds the committed trade.
 //
 // Pure: no I/O, no clock (the mint instant is handed in).
 

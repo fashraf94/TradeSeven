@@ -100,7 +100,10 @@ export const REMOVAL_REASONS = Object.freeze([
   'calendar_unavailable',       // the trading calendar is not maintained for the instant (§5)
 ]);
 
-/** The typed reasons a born call is minted `invalidated` (contract §2), in precedence order. */
+/**
+ * The typed PRICE-LINE reasons a born call is minted `invalidated` (contract §2), in precedence order. Amendment E's
+ * `exit_not_held` is the mint's own (candidate.js EXIT_NOT_HELD_REASON), judged after these.
+ */
 export const INVALIDATION_REASONS = Object.freeze(['no_observation', 'level_non_finite', 'level_implausible']);
 
 /** |level − px| / px above this is implausible against the checked quote. */

@@ -87,6 +87,15 @@ describe('the any-tier helper (answers.js) — held in ANY tier of the book', ()
     expect(heldInAnyTier({ portfolio: { star: [], core: [], support: [] } }, 'TSLA')).toBe(false);
   });
 
+  it('a hole in a tier array (a null or missing row) is skipped, never a throw: held rows around it still count (review NH-L5-4)', () => {
+    const sparse = { portfolio: { star: [null, { symbol: 'TSLA' }], core: [undefined, {}], support: [{ symbol: 'KO' }, null] } };
+    expect(heldInAnyTier(sparse, 'TSLA')).toBe(true);
+    expect(heldInAnyTier(sparse, 'KO')).toBe(true);
+    expect(heldInAnyTier(sparse, 'AMD')).toBe(false);
+    expect(isExitNotHeld({ kind: 'confirmation', direction: 'exit', symbol: 'AMD', slot: 'star' }, sparse)).toBe(true);
+    expect(isExitNotHeld({ kind: 'confirmation', direction: 'exit', symbol: 'TSLA', slot: 'support' }, sparse)).toBe(false);
+  });
+
   it('isExitNotHeld: only an EXIT shot or Confirmation on a stock the readable book does not hold', () => {
     const doc = battle();
     expect(isExitNotHeld({ kind: 'called_shot', direction: 'exit', symbol: 'AMD', slot: 'star' }, doc)).toBe(true);
@@ -228,6 +237,13 @@ describe('E-1 rev 3 — an exit on the check\'s own committed incoming stock is 
     expect(firstCall({ shots: [exitShot({ symbol: 'TSLA' })], committedSymbolIn: 'AMD' }).state).toBe('open'); // held in the seam book
     const implausible = firstCall({ shots: [exitShot({ symbol: 'AMD', condition: { side: 'below', level: 1000 } })], committedSymbolIn: 'AMD' });
     expect([implausible.state, implausible.invalidatedReason]).toEqual(['invalidated', 'level_implausible']);
+  });
+
+  it('the exemption belongs to the mint, not to one mode: at shadow the bought stock\'s exit lives and the CVX shape is dropped (review NH-L5-3)', () => {
+    const bought = firstCall({ shots: [exitShot({ symbol: 'AMD' })], committedSymbolIn: 'AMD', mintedMode: 'shadow' });
+    expect([bought.mintedMode, bought.state, bought.invalidatedReason]).toEqual(['shadow', 'open', null]);
+    const blocked = firstCall({ shots: [exitShot({ symbol: 'AMD' })], committedSymbolIn: null, mintedMode: 'shadow' });
+    expect([blocked.mintedMode, blocked.state, blocked.invalidatedReason]).toEqual(['shadow', 'invalidated', 'exit_not_held']);
   });
 
   it('a mixed block: the bought stock\'s exit lives, an unrelated not-held exit is dropped, in one check', () => {

@@ -88,8 +88,9 @@ const EXCLUSIVE_REACH = Object.freeze({
   // commands.js, not answers.js: Amendment E rev 2 puts the one any-tier held test beside the legality table in
   // answers.js and the MINT (candidate.js, which the evaluator reaches) asks it too, so the evaluator now reaches
   // answers.js (docs/audits/20261029_COCKPIT_EXIT_NOT_HELD.md). commands.js — the cockpit's seven-command count,
-  // read only by the answer endpoint — is this root's alone. This is the non-vacuity oracle only; the ledger and
-  // plays assertions above are untouched.
+  // imported by the answer endpoint and by the cockpit's client model (cockpit2bModel.js, which no census root
+  // reaches) — is this root's alone. This is the non-vacuity oracle only; the ledger and plays assertions above
+  // are untouched.
   'api/agent/call-response.js': 'api/_utils/callRecords/commands.js',
   'src/screens/battleView/ChatSheet.jsx': 'src/screens/battleView/useChatSheet.js',
   'src/components/Agent/AgentChat.jsx': 'src/components/Agent/TradeTickerCard.jsx',

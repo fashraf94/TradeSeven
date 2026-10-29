@@ -32,7 +32,7 @@ import CockpitFeed from './CockpitFeed';
 import CockpitSheet from './CockpitSheet';
 import Cockpit2b from './Cockpit2b';
 import { buildCockpitFeed, sheetOf, eventsByCall } from './cockpitModel';
-import { liveCommandOf } from './cockpit2bModel';
+import { liveCommandOf, chipWordOf } from './cockpit2bModel';
 import { useCockpit2bAnswer } from './useCockpit2bAnswer';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
 
@@ -163,6 +163,18 @@ describe('the tile model — no button, no step, the line "Not in your book"', (
     expect(withEvent.buttons).toEqual([]); // and still no answer is offered
   });
 
+  it('the 2b strip chip says "not in your book" only for a not-held tile: a HELD exit that offers no button (past its deadline, or acted on) keeps the agent\'s word (review NH-L5-2)', () => {
+    const pastDeadline = call({ horizon: { phrase: 'this_session', expiresAt: NOW - 1_000, basis: 'this_session' } });
+    const acted = call({ outcome: { actedEvalId: 'eval_021' } });
+    for (const c of [pastDeadline, acted]) {
+      const t = tileOf([c], { book: HELD });
+      expect(t.buttons).toEqual([]);
+      expect(chipWordOf(t).word).toBe(COPY.cockpit2bWordExit);
+    }
+    expect(chipWordOf(tileOf([call()], { book: LEFT })).word).toBe(COPY.cockpit2bWordNotHeld);
+    expect(chipWordOf(tileOf([holdShot()], { book: HELD })).word).toBe(COPY.cockpit2bWordHold);
+  });
+
   it('the details sheet is the tile\'s: sheetOf carries the same (empty) buttons and the same tag', () => {
     const tile = tileOf([call()], { book: LEFT });
     const sheet = sheetOf(tile, { eventsMap: eventsByCall([]), evaluations: EVALS, nowMs: NOW });
@@ -239,6 +251,9 @@ describe('the 2b card, mounted', () => {
     expect(qa('[data-cockpit-step]')).toHaveLength(0);
     expect(container.textContent).not.toContain('Who comes in');
     expect(container.textContent).not.toContain(COPY.cockpit2bConfirmExit);
+    // The card no longer promises an exit of a stock the book does not hold (the chip stopped saying "exit" for the same reason).
+    expect(container.textContent).not.toContain('If you say nothing');
+    expect(container.textContent).toContain('plans to exit VLO');
   });
 
   it('the control: with VLO held the Now card has its buttons ("Confirm exit") and its step; held in ANOTHER tier it still does', () => {
@@ -249,6 +264,7 @@ describe('the 2b card, mounted', () => {
       expect(q('[data-cockpit-step="on_card"]')).not.toBeNull();
       expect(container.textContent).not.toContain(NOT_IN_BOOK);
       expect(container.textContent).not.toContain('not in your book');
+      expect(container.textContent).toContain('If you say nothing, it exits.');
     }
   });
 });

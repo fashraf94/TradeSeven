@@ -324,6 +324,8 @@ export function cardViewOf(tile, ctx) {
   // markers below it agree with it. When the buttons answer another call, that call's labelled row (tile.targetLine)
   // sits directly above them, and the headline drops its silence clause — it would describe a line your command
   // already answers.
+  // Amendment E (E-2): and where the tile reads "Not in your book" it drops the silence clause too — "If you say nothing,
+  // it exits." would promise an exit of a stock the book does not hold (the strip chip already stops saying "exit").
   const head = tile.targetLine ? tile.call : target;
   const lines = planLinesOf(head, { agent, nowMs, evaluations });
   return {
@@ -331,7 +333,7 @@ export function cardViewOf(tile, ctx) {
     mode: 'call',
     eyebrow: kindOf(head),
     plan: lines.plan,
-    silence: tile.targetLine ? null : lines.silence,
+    silence: tile.targetLine || tile.tag?.fact === 'call:not_held' ? null : lines.silence,
     facts: lines.facts,
     targetLine: tile.targetLine ?? null,
     buttons: buttonsOf(tile, { meter, pending, league }),

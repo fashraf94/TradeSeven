@@ -581,7 +581,8 @@ describe('Build 2a: an upside call accepts NO answer, and the legality table has
 // own slot-tier filing check (D-4, callActions.js) — unchanged; the call's `slot` is the agent's label.
 describe('Amendment E (E-2): no answer on an exit whose stock is in no tier of the fresh parent', () => {
   const EXIT_ACT = `${BATTLE_ID}:eval_001:call:3`; // KO exit, act-default, slot support
-  const exitAct = (over = {}) => shot(EXIT_ACT, { symbol: 'KO', direction: 'exit', slot: 'support', counterpart: null, condition: { side: 'below', level: 62.5 }, defaultAction: 'act', ...over });
+  // An act-default exit is minted as a CONFIRMATION (the hold-default HOLD_CALL above is the called shot).
+  const exitAct = (over = {}) => shot(EXIT_ACT, { kind: 'confirmation', symbol: 'KO', direction: 'exit', slot: 'support', counterpart: null, condition: { side: 'below', level: 62.5 }, defaultAction: 'act', ...over });
   const withoutKo = () => { const b = makeTickBattle({ directive: null }); b.portfolio.support = b.portfolio.support.filter((r) => r.symbol !== 'KO'); return b; };
   /** KO moved from `support` to `star` — still in the book, in a different tier than the calls name. */
   const koInStar = () => { const b = makeTickBattle({ directive: null }); b.portfolio.support = b.portfolio.support.filter((r) => r.symbol !== 'KO'); b.portfolio.star.push({ symbol: 'KO', name: 'KO' }); return b; };
@@ -654,13 +655,24 @@ describe('Amendment E (E-2): no answer on an exit whose stock is in no tier of t
     activeDb = makeDb({ calls: { [EXIT_ACT]: exitAct() } });
     const first = await post(answerBody({ callId: EXIT_ACT, answer: 'go' }));
     expect(first.statusCode).toBe(200);
-    // the stock leaves the book; the same tap again
-    const parent = stored(activeDb, `agentBattles/${BATTLE_ID}`);
-    parent.portfolio.support = parent.portfolio.support.filter((r) => r.symbol !== 'KO');
+    // The stock leaves the book — written through the store's own API: stored() hands back a COPY, so editing its
+    // result would change nothing the endpoint reads (review NH-L2-1).
+    const parentPath = `agentBattles/${BATTLE_ID}`;
+    await activeDb.doc(parentPath).update({ 'portfolio.support': stored(activeDb, parentPath).portfolio.support.filter((r) => r.symbol !== 'KO') });
+    // The premise, in the store: KO is in no tier of the parent the endpoint will read.
+    const book = stored(activeDb, parentPath).portfolio;
+    expect([...book.star, ...book.core, ...book.support].some((r) => r.symbol === 'KO')).toBe(false);
+    // The control: a FIRST answer on another exit of the same stock is refused now — the endpoint sees the empty book.
+    const fresh = await post(answerBody({ callId: HOLD_CALL, answer: 'hold' }));
+    expect(fresh.statusCode).toBe(400);
+    expect(fresh.body).toEqual(SYMBOL_NOT_HELD);
+    // The same tap again on the answered call: the stored response comes back, and nothing is written.
+    const writesBefore = activeDb.__access.writes.length;
     const again = await post(answerBody({ callId: EXIT_ACT, answer: 'go' }));
     expect(again.statusCode).toBe(200);
     expect(again.body.repeat).toBe(true);
     expect(again.body.playerResponse).toEqual(first.body.playerResponse);
+    expect(activeDb.__access.writes.length).toBe(writesBefore);
   });
 
   it("only EXITS are asked: an entry call's acknowledgment never looks at the book (the stock is in no tier and the entry still lands)", async () => {
