@@ -8,10 +8,11 @@
 // after a commit. (The cron hook — the directive gone from the prompt — is the
 // end-to-end row in api/cron/agent-evaluate.tickStamps.callsOn.test.js.)
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { retireLeftBook, planRetire, findMovingTrade, movedSymbolOf, RETIRE_TX_MS } from './retire.js';
 import { makeCallsFirestore, stored, storedUnder } from '../__fixtures__/callsFirestore.js';
 import { makeTickBattle } from '../__fixtures__/tickStampsHarness.js';
+import { deadlineClock } from '../__fixtures__/deadlineClock.js';
 import { CallsAbort } from './publish.js';
 
 const BATTLE_ID = 'battle-tick-1';
@@ -48,11 +49,15 @@ function setup({ call = exitCall(), slot = slotFor(call), battle = battleWith(sl
   return { db, call, slot, memory, battleRef: db.collection('agentBattles').doc(BATTLE_ID) };
 }
 const run = ({ db, memory, battleRef }, over = {}) => retireLeftBook({ db, battleRef, battle: memory, nowMs: NOW, evalId: null, promptBuiltAt: null, deadlineMs: Date.now() + 5_000, ...over });
+// The deadline rows run on the fake deadline clock: the step's deadlines are Date.now() arithmetic and its
+// ceilings are setTimeout races, so on real time a wall-clock step or a stalled worker reorders them.
+const clock = deadlineClock(vi);
 
 beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(console, 'log').mockImplementation(() => {});
 });
+afterEach(() => { vi.useRealTimers(); });
 
 describe('the book reasons (D-6)', () => {
   it('symbol_not_held — an exit whose stock left the book: the slot cleared, the retired event written, the in-memory directive dropped', async () => {
@@ -172,13 +177,14 @@ describe('idempotence, failure and the deadline', () => {
   });
 
   it('a timeout leaves the slot exactly as it was, is unconfirmed, never throws — and never runs past its ceiling', async () => {
+    clock.use();
     const env = setup();
     env.db.runTransaction = () => new Promise(() => {}); // never settles
-    const started = Date.now();
     // The step keeps a 200 ms reserve for settling (review CB1-2): 400 ms leaves the transaction 200.
-    const res = await run(env, { deadlineMs: Date.now() + 400 });
+    const { value: res, atMs } = await clock.settle(RETIRE_TX_MS, run(env, { deadlineMs: Date.now() + 400 }));
     expect(res).toEqual({ retired: false, reason: 'unconfirmed' });
-    expect(Date.now() - started).toBeLessThan(RETIRE_TX_MS + 500);
+    // Its ceiling is the 400 ms deadline it was given: it gives up there, never later.
+    expect(atMs).toBeLessThanOrEqual(400);
     expect(stored(env.db, B).directive).toEqual(env.slot);
     expect(env.memory.directive).toEqual(env.slot);
   });
@@ -194,21 +200,32 @@ describe('idempotence, failure and the deadline', () => {
   });
 
   it('review CB1-2: a commit that lands after the transaction\'s budget but inside the reserve settles as RETIRED — the in-memory slot is dropped', async () => {
+    clock.use();
     const env = setup();
+    // The budget is 800 − 200 = 600 ms; the commit lands at 700, inside the reserve, before the 800 ms ceiling.
     env.db.__hooks.beforeCommit = async () => { await new Promise((r) => setTimeout(r, 700)); };
-    const res = await run(env, { deadlineMs: Date.now() + RETIRE_TX_MS });
+    const { value: res, atMs } = await clock.settle(RETIRE_TX_MS, run(env, { deadlineMs: Date.now() + RETIRE_TX_MS }));
     expect(res).toEqual({ retired: true, reason: 'symbol_not_held' });
+    // Past the budget: settled on the late path, by the transaction itself, the moment it committed.
+    expect(atMs).toBe(700);
+    expect(console.log).toHaveBeenCalledWith(expect.stringMatching(/retire landed late .*\(settled by the transaction\)/));
     expect(env.memory.directive).toBeNull();
     expect(stored(env.db, B).directive).toBeNull();
   });
 
   it('review CB1-2: a commit still in flight past the WHOLE ceiling stays unconfirmed (the heard pass\'s precedent): logged, never thrown', async () => {
+    clock.use();
     const env = setup();
     env.db.__hooks.beforeCommit = async () => { await new Promise((r) => setTimeout(r, 1_200)); };
-    const res = await run(env, { deadlineMs: Date.now() + RETIRE_TX_MS });
+    const { value: res, atMs } = await clock.settle(RETIRE_TX_MS, run(env, { deadlineMs: Date.now() + RETIRE_TX_MS }));
     expect(res).toEqual({ retired: false, reason: 'unconfirmed' });
+    expect(atMs).toBe(RETIRE_TX_MS);
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('retire unconfirmed'));
     expect(env.memory.directive).toEqual(env.slot);
-    await new Promise((r) => setTimeout(r, 600));
+    // The commit lands at 1,200 ms, after the step gave up: late, not absent — the in-memory slot stays as the step left it.
+    await vi.advanceTimersByTimeAsync(500);
+    expect(stored(env.db, B).directive).toBeNull();
+    expect(env.memory.directive).toEqual(env.slot);
   });
 
   it('review L7 S6b: a transaction that ends in a deadline abort is settled by ONE read of the retired event — landed → retired (the in-memory slot dropped); not landed → unconfirmed', async () => {

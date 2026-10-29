@@ -30,8 +30,10 @@ vi.mock('../../../src/config/featureFlags.js', async (importOriginal) => ({
 const { makeCallsFirestore, stored, storedUnder, touches, resetAccess } = await import('../__fixtures__/callsFirestore.js');
 const {
   runCallSweep, sweepDeadline, normalizeSweepState, nextPhase, decideSweepExpiry, nextCheckCutoff, buildSweepReceipt, findHeardEvaluation,
-  SWEEP_BRANCH_MS, SWEEP_HANDLER_CAP_MS, SWEEP_STARVATION_MS, SWEEP_PHASES, SWEEP_PAGE,
+  SWEEP_BRANCH_MS, SWEEP_HANDLER_CAP_MS, SWEEP_STARVATION_MS, SWEEP_PHASES, SWEEP_PAGE, SWEEP_TX_MS,
 } = await import('./sweep.js');
+const { deadlineClock } = await import('../__fixtures__/deadlineClock.js');
+const clock = deadlineClock(vi);
 const { runCallFlips, resetFlipIndexMemo } = await import('./flip.js');
 const { createCallsContext } = await import('./mode.js');
 const { makeTickBattle, makeObservation } = await import('../__fixtures__/tickStampsHarness.js');
@@ -323,19 +325,20 @@ describe('expiry by basis and the H2 cutoff with the real calendar (spec §8; co
   });
 
   it('a LATE COMMIT: a transition that outlasts its ceiling is UNCONFIRMED (never counted as failed) — it may land; the next pass finds the call already closed and skips', async () => {
-    vi.useRealTimers();
+    // The fake deadline clock: the sweep's deadlines are Date.now() arithmetic and its 1.5 s ceiling a setTimeout race.
+    clock.use(NOW);
     const db = oneBattle({ calls: [call(B1, 0, { horizon: { phrase: 'this_session', expiresAt: Date.now() - 1, basis: 'this_session' } })], queue: { battleId: B1, nextExpiresAt: Date.now() - 1, pendingHeard: [], updatedAt: 1 } });
     db.__hooks.beforeCommit = async ({ writes }) => { if (writes.some((w) => w.path.includes('/calls/'))) await new Promise((r) => setTimeout(r, 1_800)); };
-    const res = await runCallSweep({ db, handlerStartMs: Date.now(), nowMs: Date.now() });
+    const { value: res } = await clock.settle(SWEEP_TX_MS, runCallSweep({ db, handlerStartMs: Date.now(), nowMs: Date.now() }));
     expect(res.unconfirmed).toBeGreaterThanOrEqual(1);
     expect(res.failed ?? 0).toBe(0);
-    await new Promise((r) => setTimeout(r, 2_000)); // the late commit lands
+    await vi.advanceTimersByTimeAsync(500); // the late commit lands at 1,800 ms
     expect(callsOf(db, B1)[`${B1}:eval_001:call:0`].state).toBe('expired_unresolved');
     db.__hooks.beforeCommit = null;
     const again = await runCallSweep({ db, handlerStartMs: Date.now(), nowMs: Date.now() });
     expect(again.expired).toBeUndefined();
     expect(Object.keys(receipts(db, B1))).toHaveLength(1);
-  }, 10_000);
+  });
 
   it('the sweep receipt is the FULL receipt shape plus reason', () => {
     expect(buildSweepReceipt(call(B1, 0), NOW, 'unobserved')).toEqual({ callId: `${B1}:eval_001:call:0`, evalId: null, observedAtMs: NOW, px: null, source: 'sweep', replacedInPrompt: false, reason: 'unobserved' });

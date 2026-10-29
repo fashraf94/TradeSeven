@@ -17,6 +17,7 @@ import { TAIL_RESERVE_MS, NON_MODEL_PHASE_MS } from './publish.js';
 import { FROZEN_NOW, HELD, makeTickBattle, makeDeclarations, makeObservation, makeExecutorResult } from '../__fixtures__/tickStampsHarness.js';
 import { freezeSwapBook } from './swappable.js';
 import { makeCallsDb, storedDoc, storedCollection, callsTouches, MAX_CALLS_QUERIES } from '../__fixtures__/callRecordsStore.js';
+import { deadlineClock } from '../__fixtures__/deadlineClock.js';
 
 const TIME_BUDGET_MS = 290_000;
 const BATTLE_ID = 'battle-tick-1';
@@ -54,6 +55,7 @@ function ctxFor({ exit = 'model_result', observation = makeObservation(), evalId
 }
 const obsWith = (symbols, observedAtMs = NOW) => makeObservation({ observedAtMs, symbols });
 const flipsOf = (db, ctx, over = {}) => runCallFlips(ctx, { db, battle: db.__store.battle, deadlineMs: Date.now() + 5_000, ...over });
+const clock = deadlineClock(vi);
 const callWrites = (db) => db.__callsAccess.writes.filter((w) => w.path.includes('/calls/'));
 
 beforeEach(() => {
@@ -404,13 +406,14 @@ describe('runCallFlips — one transaction per call, the receipt with the first 
   it('an UNCONFIRMED transaction that commits late IS the judgment: the next check finds the call terminal and never judges it again (BR-1)', async () => {
     const amd = nextCheckCall();
     const first = amd.horizon.expiresAt + 20_000;
-    vi.setSystemTime(first);
+    // The fake deadline clock (setTimeout too, not Date alone): the flip's ceiling is a setTimeout race.
+    clock.use(first);
     const db = makeCallsDb({ battle: makeTickBattle(), seed: seedOf([amd]) });
-    // The commit (150 ms, real) outlasts this flip's 60 ms ceiling: the scan gives up, the commit still lands.
+    // The commit (150 ms) outlasts this flip's 60 ms ceiling: the scan gives up, the commit still lands.
     db.__hooks.beforeCommit = async () => { await new Promise((r) => { setTimeout(r, 150); }); };
-    const firstRes = await flipsOf(db, ctxFor({ observation: coldAt(first) }), { deadlineMs: Date.now() + 60 });
+    const { value: firstRes } = await clock.settle(60, flipsOf(db, ctxFor({ observation: coldAt(first) }), { deadlineMs: Date.now() + 60 }));
     expect(firstRes.diag).toMatchObject({ unconfirmed: 1, expired: 0 });
-    await new Promise((r) => { setTimeout(r, 300); });
+    await vi.advanceTimersByTimeAsync(300);
     expectJudged(db, amd, 'expired_unresolved', first, 160);
     db.__hooks.beforeCommit = null;
     const later = first + 15 * 60_000;
