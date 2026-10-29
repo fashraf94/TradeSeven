@@ -11,10 +11,10 @@
 // stocks/earnings-calendar.js, etc.) and returns structured fields that
 // need no LLM extraction.
 //
-// Output contract matches fetchEarningsCalendar.js verbatim so the DRB
-// cron and prompt builder consume the new fetcher without any change to
-// their downstream code paths. See PR 1 discovery report for the
-// per-field consumer mapping.
+// Output contract matches fetchEarningsCalendar.js, plus two fields the
+// DRB prompt builder ranks by (`marketCap`, `priorityRank`; added by the
+// DRB stale fix, Oct 29 2026). See PR 1 discovery report for the per-field
+// consumer mapping. The DRB cron is this function's only caller.
 //
 // All date handling is ET-anchored via marketSchedule.getETDate() /
 // formatDateString(). UTC date shortcuts are avoided — the DRB cron's
@@ -59,6 +59,14 @@ const PRIORITY_STOCKS = new Set([
   // Homebuilders
   'DHI', 'LEN', 'PHM', 'NVR', 'TOL', 'KBH',
 ]);
+
+// Each priority symbol's position in the list above (mega-cap tech first, then
+// sector by sector). The DRB prompt builder ranks by it after market cap:
+// EODHD's /calendar/earnings sends no market_cap at all (the 2026-07-31
+// capture's 9-key schema, __fixtures__/earningsCalendarCapture.js), so every
+// row that passes is a backstop row and the list's order is the only
+// importance signal it carries.
+const PRIORITY_RANK = new Map([...PRIORITY_STOCKS].map((symbol, i) => [symbol, i]));
 
 const WEEKDAYS = [
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
@@ -154,7 +162,10 @@ function passesCapFilter(row, symbol) {
 
 // Normalize a single EODHD /calendar/earnings row to the per-item shape
 // the DRB prompt builder reads: { date, day, timing, symbol, name,
-// significance }. Returns null when the row should be dropped.
+// significance, marketCap, priorityRank }. Returns null when the row
+// should be dropped. Every row that passes is stamped 'high', so the
+// prompt builder caps and ranks the list itself: priority-list names
+// first, then market cap (null on a backstop row), then the list's order.
 function normalizeRow(row, todayET) {
   const code = (row?.code || '').toUpperCase();
   if (!code.endsWith('.US') && code.includes('.')) return null;
@@ -173,6 +184,8 @@ function normalizeRow(row, todayET) {
     symbol,
     name: row.name || symbol,
     significance: 'high',
+    marketCap: typeof row.market_cap === 'number' ? row.market_cap : null,
+    priorityRank: PRIORITY_RANK.get(symbol) ?? null,
   };
 
   if (!validateItem(item, todayET)) return null;

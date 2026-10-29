@@ -80,10 +80,31 @@ describe('fetchEarningsCalendarEODHD', () => {
       symbol: 'CSCO',
       name: 'Cisco Systems',
       significance: 'high',
+      marketCap: 200e9,
+      priorityRank: 15,
     });
     expect(result.nextWeek).toHaveLength(0);
     expect(result.spotlight).toBeNull();
     expect(result.citations).toEqual([]);
+  });
+
+  // DRB stale fix (Oct 29 2026): the prompt builder ranks by these two fields and caps the list.
+  it('carries the market cap (null on a backstop row) and the priority list position the prompt builder ranks by', async () => {
+    stubFetchOk({
+      earnings: [
+        { code: 'V.US', name: 'Visa', report_date: '2026-05-13', before_after_market: 'AfterMarket', market_cap: 600e9 },
+        { code: 'AAPL.US', name: 'Apple', report_date: '2026-05-14', before_after_market: 'AfterMarket', market_cap: null },
+        { code: 'XOM.US', report_date: '2026-05-14', before_after_market: 'BeforeMarket' },
+        { code: 'BADCAP.US', name: 'Bad Cap', report_date: '2026-05-14', before_after_market: 'AfterMarket', market_cap: '90000000000' },
+      ],
+    });
+    const result = await fetchEarningsCalendarEODHD();
+    expect(result.thisWeek.map(({ symbol, marketCap, priorityRank }) => ({ symbol, marketCap, priorityRank }))).toEqual([
+      { symbol: 'V', marketCap: 600e9, priorityRank: null },
+      { symbol: 'AAPL', marketCap: null, priorityRank: 0 },
+      // The real feed's shape: no market_cap key at all (__fixtures__/earningsCalendarCapture.js) — a backstop row.
+      { symbol: 'XOM', marketCap: null, priorityRank: 99 },
+    ]);
   });
 
   it('returned shape matches the Sonar fetcher contract', async () => {

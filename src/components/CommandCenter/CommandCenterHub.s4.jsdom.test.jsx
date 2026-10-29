@@ -42,6 +42,7 @@ import NextActionCard from './sections/NextActionCard';
 import { getCanonicalTextVersion } from '../../data/archetypeAdjustments';
 import { HUB_COPY as COPY } from './hub/hubCopy';
 import { formatHubDay, formatHubTime } from './hub/hubDate';
+import { formatHubWeekdayTime } from './hub/activityDates';
 import { REVIEW_TRIGGERS } from './hub/reviewScheduler';
 import { laterStorageKey } from './hub/useHubLater';
 import { byRole, click, injectTokens, installFakeLayout, mount, mountFakeBottomNav } from './__fixtures__/hubTestKit';
@@ -809,7 +810,15 @@ describe('Recent activity (R-S4-1)', () => {
 });
 
 describe('the Daily Regime Brief (R-S4-4)', () => {
-  const GEN = `Generated ${formatHubTime(Date.UTC(2026, 9, 23, 9, 30))} ET`;
+  // "Generated" carries its day (DRB stale fix, founder ruling Oct 29 2026).
+  const genOf = (ms) => `Generated ${formatHubWeekdayTime(ms)} ET`;
+  const GEN = genOf(Date.UTC(2026, 9, 23, 9, 30));
+  const recordOf = (forDate, ms) => briefOf({ forDate, generatedAt: { seconds: Math.floor(ms / 1000), nanoseconds: 0 } });
+
+  it('the generation time reads "Generated Fri 5:30 AM ET" and is the hub\'s own time format with the day before it', () => {
+    expect(GEN).toMatch(/^Generated Fri 5:30\s?AM ET$/);
+    expect(GEN).toBe(`Generated Fri ${formatHubTime(Date.UTC(2026, 9, 23, 9, 30))} ET`);
+  });
 
   it.each(['desktop', 'mobile'])('%s: the body with More / Less, and the caption of the brief\'s own record', (site) => {
     render(site, hubOf());
@@ -838,11 +847,66 @@ describe('the Daily Regime Brief (R-S4-4)', () => {
     expect(clamped).not.toBe('block');
   });
 
-  it.each(['desktop', 'mobile'])('%s: a stale brief: "Last session\'s brief · for {date}"', (site) => {
-    r.brief = briefOf({ forDate: '2026-10-20', isStale: true });
+  // The four ages of the founder's ruling (Oct 29 2026), against the clock of Fri Oct 23, 11:00 AM ET: 0 is the default record above.
+  it.each(['desktop', 'mobile'])('%s: one session old: "Last session\'s brief · for {date}", the body as before', (site) => {
+    const gen = genOf(Date.UTC(2026, 9, 22, 9, 30));
+    r.brief = recordOf('2026-10-22', Date.UTC(2026, 9, 22, 9, 30));
     render(site, hubOf());
-    expect(briefSection().textContent).toContain(`Last session's brief · for Tue Oct 20${COPY.sep}${GEN}`);
+    expect(briefSection().textContent).toContain(`Last session's brief · for Thu Oct 22${COPY.sep}${gen}`);
+    expect(gen).toMatch(/^Generated Thu /);
     expect(briefSection().textContent).not.toContain('Brief for');
+    if (site === 'desktop') expect(briefSection().textContent).toContain('Heavy macro week');
+  });
+
+  it.each(['desktop', 'mobile'])('%s: three sessions old: "Brief for {date} · 3 sessions old", and no body until More (or the row) is pressed', (site) => {
+    const gen = genOf(Date.UTC(2026, 9, 20, 9, 30));
+    r.brief = recordOf('2026-10-20', Date.UTC(2026, 9, 20, 9, 30));
+    render(site, hubOf());
+    const section = briefSection();
+    expect(section.textContent).toContain(`Brief for Tue Oct 20 · 3 sessions old${COPY.sep}${gen}`);
+    expect(section.textContent).not.toMatch(/Last session/);
+    expect(section.textContent).not.toContain('Heavy macro week');
+    expect(section.querySelector('p')).toBeNull();
+    const toggle = () => byRole(section, 'button').find((b) => b.hasAttribute('aria-expanded'));
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    if (site === 'desktop') expect(toggle().textContent).toBe(COPY.brief.more);
+    click(toggle());
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(section.textContent).toContain('Heavy macro week, front-loaded into Thursday and Friday.');
+    if (site === 'desktop') expect(section.querySelector('p').style.display).toBe('block');
+    click(toggle());
+    expect(section.textContent).not.toContain('Heavy macro week');
+  });
+
+  it.each(['desktop', 'mobile'])('%s: six sessions old: "No brief available", no body and no More / Less', (site) => {
+    r.brief = recordOf('2026-10-15', Date.UTC(2026, 9, 15, 9, 30));
+    render(site, hubOf());
+    const section = briefSection();
+    expect(section.textContent).toContain(COPY.brief.missing);
+    expect(section.textContent).not.toContain('Heavy macro week');
+    expect(section.textContent).not.toMatch(/Brief for|Generated|sessions old/);
+    expect(byRole(section, 'button', COPY.brief.more)).toHaveLength(0);
+    // Nothing to expand at any width: no control carries aria-expanded (the phone row's toggle is disabled with no body).
+    expect(byRole(section, 'button').filter((b) => b.hasAttribute('aria-expanded'))).toHaveLength(0);
+    if (site === 'mobile') expect(byRole(section, 'button').every((b) => b.disabled)).toBe(true);
+  });
+
+  it('desktop: the caption may wrap — an aged caption measured 369 px in a real browser, wider than the 360 px side column', () => {
+    // jsdom computes no layout, so this pins the style the browser measurement depends on (DRB stale fix smoke: 0 px overflow at 360 and 300).
+    r.brief = recordOf('2026-10-20', Date.UTC(2026, 9, 20, 9, 30));
+    render('desktop', hubOf());
+    const caption = briefSection().querySelector('[data-hub-brief-caption]');
+    expect(caption.textContent).toMatch(/3 sessions old/);
+    expect(caption.style.whiteSpace).not.toBe('nowrap');
+    expect(caption.style.overflowWrap).toBe('anywhere');
+    expect(caption.style.minWidth).toBe('0px');
+  });
+
+  it('the hook\'s isStale no longer decides the words: the age does', () => {
+    r.brief = briefOf({ isStale: true });
+    render('desktop', hubOf());
+    expect(briefSection().textContent).toContain(`Brief for Fri Oct 23${COPY.sep}${GEN}`);
+    expect(briefSection().textContent).not.toMatch(/Last session/);
   });
 
   it.each(['desktop', 'mobile'])('%s: no generatedAt returned: no "Generated" at all — the fetch time is never a publication time', (site) => {

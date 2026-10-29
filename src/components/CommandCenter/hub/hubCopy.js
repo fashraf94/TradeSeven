@@ -484,7 +484,9 @@ export const HUB_COPY = Object.freeze({
   /**
    * Slice S4 (spec §3, §8.3). The spec's own: "No brief available", "Couldn't load the brief · Retry", "Brief for {date}",
    * "Generated {time ET}", "Last session's brief · for {date}". The fetch time is never a publication time, and there is
-   * no sources count (§8.3).
+   * no sources count (§8.3). DRB stale fix (founder ruling Oct 29 2026): the caption tells the brief's true age in sessions —
+   * "Last session's brief" only at exactly one, "Brief for {date} · {n} sessions old" from two to five — and "Generated"
+   * carries its day ("Generated Fri 8:30 AM ET").
    */
   brief: Object.freeze({
     label: 'Daily Regime Brief',
@@ -497,6 +499,7 @@ export const HUB_COPY = Object.freeze({
     forDate: (date) => `Brief for ${date}`,
     generated: (time) => `Generated ${time}`,
     stale: (date) => `Last session's brief · for ${date}`,
+    aged: (date, sessions) => `Brief for ${date} · ${sessions} sessions old`,
   }),
 
   sheet: Object.freeze({

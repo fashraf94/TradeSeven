@@ -54,8 +54,9 @@
 //               hub/activityRows.js: a projection of the owner's records, newest
 //               first; `battleId` on a game's row (it opens that game)
 //   brief       { status: 'loading' | 'error' | 'missing' | 'ready',
-//                 caption?, body? }                                     §8.3 (S4)
-//               hub/useHubBrief.js briefSectionOf
+//                 caption?, body?, collapsed? }                         §8.3 (S4)
+//               hub/useHubBrief.js briefSectionOf; `collapsed` for a brief
+//               two to five sessions old (DRB stale fix)
 //   career      { status: 'loading' | 'ready' | 'unavailable', record? } §7 (S5)
 //               record is `${wins}W-${losses}L` as stored, draws excluded;
 //               absent or malformed operands read `unavailable`
