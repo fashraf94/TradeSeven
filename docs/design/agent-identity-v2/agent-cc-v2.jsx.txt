@@ -1,0 +1,125 @@
+// agent-cc-v2.jsx — Board 5 (Command Center with the armored agent in Shadow's single slot) and Board 6 (the armory).
+const CC_AREAS = [
+  { name: 'Partnership', status: '1 confirmed · 1 proposed', color: FF.teal },
+  { name: 'Shared Research', status: '3 ideas · 1 unresolved · 1 unavailable', color: FF.teal },
+  { name: 'Equipped Archetype', status: 'Speculator · ready to deploy', color: FF.gold },
+];
+function RingGlyph({ on, color }) { return <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: '50%', border: `1.5px solid ${on ? color : FF.ink3}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: on ? `0 0 12px ${ffA(color, .45)}` : 'none' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: on ? color : 'transparent' }} /></span>; }
+function StatusLine({ label = 'Idle · nothing running', live, small, style }) { return <div style={{ display: 'flex', alignItems: small ? 'flex-start' : 'center', gap: 7, minWidth: 0, ...style }}><span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, marginTop: small ? 4 : 0, background: live ? FF.teal : FF.ink3, boxShadow: live ? `0 0 8px ${FF.teal}` : 'none' }} /><FfMono style={{ fontSize: small ? 10 : 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: live ? FF.teal : FF.ink3, whiteSpace: small ? 'normal' : 'nowrap', lineHeight: 1.35 }}>{label}</FfMono></div>; }
+function Worn({ small }) { return <FfMono style={{ fontSize: small ? 10 : 10.5, letterSpacing: '.12em', color: FF.gold, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Speculator · fitted</FfMono>; }
+function useConnector(stageRef, originRef, glyphRef, deps) {
+  const [path, setPath] = React.useState(null);
+  React.useLayoutEffect(() => {
+    const calc = () => { const S = stageRef.current, F = originRef.current, G = glyphRef.current; if (!S || !F || !G) { setPath(null); return; } const sr = S.getBoundingClientRect(), fr = F.getBoundingClientRect(), gr = G.getBoundingClientRect(), k = (sr.width / S.offsetWidth) || 1; const f = { x: (fr.left - sr.left) / k, y: (fr.top - sr.top) / k, w: fr.width / k }, g = { x: (gr.left - sr.left) / k, y: (gr.top - sr.top) / k, h: gr.height / k }, fcx = f.x + f.w / 2, fcy = f.y + f.w / 2, R = f.w / 2.6, ex = g.x - 2, ey = g.y + g.h / 2, th = Math.atan2(ey - fcy, ex - fcx), sx = fcx + Math.cos(th) * R, sy = fcy + Math.sin(th) * R, mx = (sx + ex) / 2; setPath({ d: `M${sx.toFixed(1)} ${sy.toFixed(1)} C${mx.toFixed(1)} ${sy.toFixed(1)}, ${mx.toFixed(1)} ${ey.toFixed(1)}, ${ex.toFixed(1)} ${ey.toFixed(1)}`, sx, sy }); };
+    calc(); const id = requestAnimationFrame(calc); if (document.fonts && document.fonts.ready) document.fonts.ready.then(calc); return () => cancelAnimationFrame(id);
+  }, deps);
+  return path;
+}
+function CCControl({ name, status, color, on, glyphRef, style }) {
+  return <div role="tab" aria-selected={on} style={{ display: 'flex', alignItems: 'center', gap: 14, minHeight: 74, padding: '14px 18px', borderRadius: 16, background: on ? ffA(color, .08) : FF.bg, border: `1px solid ${on ? ffA(color, .4) : FF.hair}`, ...style }}>
+    <span ref={glyphRef} style={{ display: 'flex' }}><RingGlyph on={on} color={color} /></span>
+    <span style={{ minWidth: 0, flex: 1 }}><span style={{ display: 'block', fontSize: 15, fontWeight: 600, color: FF.ink, letterSpacing: '-0.01em', lineHeight: 1.2 }}>{name}</span><span style={{ display: 'block', fontSize: 12.5, color: on ? FF.ink2 : FF.ink3, marginTop: 3, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{status}</span></span>
+  </div>;
+}
+function Controls({ sel, refs }) { return <div role="tablist" aria-label="Relationship areas" style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1, minWidth: 0, justifyContent: 'center' }}>{CC_AREAS.map((a, i) => <CCControl key={a.name} {...a} on={sel === i} glyphRef={refs[i]} style={{ marginLeft: i === 1 ? 0 : 34, marginRight: i === 1 ? 34 : 0 }} />)}</div>; }
+function DesktopFrame({ children, label }) { return <div data-screen-label={label} style={{ width: 1236, background: FF.bg, border: `1px solid ${FF.hair2}`, borderRadius: 18, padding: '22px 24px 24px', boxShadow: '0 30px 90px rgba(0,0,0,.55)', position: 'relative', overflow: 'hidden', flexShrink: 0 }}><div style={{ marginBottom: 18 }}><FfMono style={{ fontSize: 11, letterSpacing: '.2em', color: FF.ink3, textTransform: 'uppercase' }}>Tuesday, October 7 · Tester</FfMono><div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 6 }}>Command Center</div></div>{children}</div>; }
+function PhoneFrame({ children, label, title = 'Command Center' }) { return <div data-screen-label={label} style={{ width: 390, background: FF.bg, border: `1px solid ${FF.hair2}`, borderRadius: 30, padding: '10px 12px 22px', boxShadow: '0 30px 90px rgba(0,0,0,.55)', position: 'relative', overflow: 'hidden', flexShrink: 0 }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 10px 10px' }}><FfMono style={{ fontSize: 12, fontWeight: 600 }}>9:41</FfMono><span aria-hidden="true" style={{ width: 90, height: 26, borderRadius: 13, background: '#000' }} /><FfMono style={{ fontSize: 11, color: FF.ink2 }}>●●●</FfMono></div>{title && <div style={{ margin: '4px 2px 14px' }}><FfMono style={{ fontSize: 10, letterSpacing: '.2em', color: FF.ink3, textTransform: 'uppercase' }}>Tue, Oct 7 · Tester</FfMono><div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 4 }}>{title}</div></div>}{children}</div>; }
+function PhoneLines() {
+  const lines = [['Partnership', '1 confirmed · 1 proposed', FF.ink3], ['Research', '3 ideas · 1 unresolved', FF.ink3], ['Loadout', 'Speculator · ready to deploy', FF.gold]];
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, paddingLeft: 8 }}>{lines.map(([n, s, c], i) => <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, lineHeight: 1.35, color: i === 2 ? FF.ink : FF.ink2, minWidth: 0 }}><span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: c, margin: '0 1px' }} /><span style={{ minWidth: 0 }}><span style={{ fontWeight: 600 }}>{n}</span> · {s}</span></div>)}</div>;
+}
+
+// Board 5 — the Command Center, one slot.
+function CCDesktop() {
+  const sel = 2, stageRef = React.useRef(null), formRef = React.useRef(null), r0 = React.useRef(null), r1 = React.useRef(null), r2 = React.useRef(null), refs = [r0, r1, r2];
+  const path = useConnector(stageRef, formRef, refs[sel], [sel]), color = CC_AREAS[sel].color;
+  return <DesktopFrame label="Command Center · desktop">
+    <section ref={stageRef} data-screen-label="Shadow stage" style={{ position: 'relative', borderRadius: 20, background: `radial-gradient(ellipse at 24% 55%, ${ffA(FF.teal, .07)}, transparent 55%), ${FF.surface}`, border: `1px solid ${FF.hair}`, padding: '20px 26px 22px', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6, position: 'relative', zIndex: 1 }}><span style={{ fontSize: 23, fontWeight: 700, letterSpacing: '-0.015em' }}>Shadow</span><span style={{ fontSize: 14.5, color: FF.ink2 }}>your research partner</span></div>
+      {path && <svg aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}><path d={path.d} fill="none" stroke={color} strokeOpacity=".6" strokeWidth="1.2" strokeDasharray="3 4" /><circle cx={path.sx} cy={path.sy} r="2.6" fill={color} /></svg>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 44, position: 'relative' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, width: 340 }}><div ref={formRef}><Agent kind="spec" core={1} armor={0} size={340} /></div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><StatusLine /><Worn /></div></div>
+        <Controls sel={sel} refs={refs} />
+      </div>
+    </section>
+  </DesktopFrame>;
+}
+function CCPhone() {
+  return <PhoneFrame label="Command Center · phone">
+    <section data-screen-label="Shadow stage (phone)" style={{ position: 'relative', borderRadius: 20, background: `radial-gradient(ellipse at 30% 42%, ${ffA(FF.teal, .09)}, transparent 55%), ${FF.surface}`, border: `1px solid ${FF.hair}`, padding: '10px 14px 14px 6px', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Agent kind="spec" core={1} armor={0} size={200} />
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}><div><div style={{ fontSize: 23, fontWeight: 700, letterSpacing: '-0.015em', lineHeight: 1.05 }}>Shadow</div><div style={{ fontSize: 14.5, color: FF.ink2, marginTop: 5, lineHeight: 1.3 }}>your research partner</div></div><StatusLine small /><Worn small /></div>
+      </div>
+      <PhoneLines />
+    </section>
+  </PhoneFrame>;
+}
+function Board5() {
+  return <Board n={5} title="Command Center" note="The armored agent takes Shadow’s single slot, desktop and phone. Speculator is equipped, as in the current build; nothing else in the layout moves.">
+    <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start' }}><CCDesktop /><CCPhone /></div>
+    <Motion>Idle on the stage: the brain runs its loops, the shards hover and twitch, one arc re-strikes every half second. Selecting Equipped Archetype brightens the armor edges; selecting Partnership or Shared Research brightens the core instead. The connector leaves from the form’s edge, not from a second avatar.</Motion>
+  </Board>;
+}
+
+// Board 6 — the armory.
+const SETS = [
+  { k: 'trend', battles: 31, armor: 1, cur: true },
+  { k: 'contra', battles: 3, armor: 0, sel: true },
+  { k: 'divers', battles: 0, armor: 0 },
+  { k: 'spec', battles: 6, armor: 0 },
+  { k: 'preserve', battles: 0, armor: 0 },
+  { k: 'fund', battles: 64, armor: 2 },
+];
+const ONE = { trend: 'Goes where the momentum is — and leaves the moment it fades.', contra: 'Buys what everyone else is giving up on.', divers: 'Spreads the bets so no single one can sink you.', spec: 'Chases the biggest swings and wears the risk.', preserve: 'Protects the downside first.', fund: 'Buys quality and lets the fundamentals work.' };
+const LONG_CONTRA = "You move against the crowd. A name that's beaten down and out of favor is exactly what interests you, and when everyone's piling into the obvious winner you stay away. It takes patience — you're betting the market overreacted and will come back, which doesn't always happen on your schedule.";
+const growth = s => s.cur ? `Equipped · ${s.battles} battles` : s.battles ? `${s.battles} battles` : 'Never worn';
+function SetSlot({ s, size = 112, style }) {
+  const lit = s.cur;
+  return <div role="option" aria-selected={!!s.sel} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '8px 8px 10px', borderRadius: 16, background: s.sel ? ffA(FF.teal, .08) : FF.surface, border: `1px solid ${s.sel ? ffA(FF.teal, .5) : FF.hair}`, boxShadow: s.sel ? `0 0 0 3px ${ffA(FF.teal, .1)}` : 'none', width: 150, ...style }}>
+    <Agent kind={s.k} armor={s.armor} brain={false} pal={lit ? 'teal' : 'unlit'} size={size} label={`${NAMES[s.k]} armor, ${growth(s)}`} />
+    <div style={{ fontSize: 13.5, fontWeight: 600, textAlign: 'center', lineHeight: 1.2 }}>{NAMES[s.k]}</div>
+    <FfMono style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: s.cur ? FF.teal : s.sel ? FF.ink2 : FF.ink3, textAlign: 'center' }}>{s.sel && !s.cur ? 'Previewing · ' : ''}{growth(s)}</FfMono>
+  </div>;
+}
+function ArmoryDesktop() {
+  const sel = SETS.find(s => s.sel), R = 252, cx = 345, cy = 345, pos = SETS.map((s, i) => { const a = -Math.PI / 2 + i * Math.PI / 3; return { s, x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) }; });
+  return <div role="dialog" aria-label="Armory" data-screen-label="Armory · desktop dialog" style={{ width: 1040, background: FF.bg, border: `1px solid ${FF.hair2}`, borderRadius: 20, padding: '20px 24px 24px', boxShadow: '0 30px 90px rgba(0,0,0,.55)', flexShrink: 0 }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}><div style={{ flex: 1, minWidth: 0 }}><h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.015em', margin: 0, lineHeight: 1.3 }}>Armory</h2><p style={{ margin: '6px 0 0', fontSize: 13.5, color: FF.ink2, lineHeight: 1.5, textWrap: 'pretty' }}>Choose the armor Shadow wears into battle. Select a set to see it fitted; a change applies on your next deploy.</p></div><span aria-label="Close" style={{ width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: FF.ink2, background: FF.surface, border: `1px solid ${FF.hair}`, flexShrink: 0 }}><FfIco name="x" size={16} /></span></div>
+    <div style={{ display: 'grid', gridTemplateColumns: '690px minmax(0,1fr)', gap: 16, marginTop: 14 }}>
+      <div role="listbox" aria-label="Armor sets" style={{ position: 'relative', height: 700 }}>
+        <div style={{ position: 'absolute', left: cx - 160, top: cy - 160, width: 320, height: 320, borderRadius: '50%', background: `radial-gradient(circle, ${ffA(FF.teal, .1)}, transparent 70%)` }} />
+        <svg aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}><circle cx={cx} cy={cy} r={R} fill="none" stroke={FF.hair2} strokeDasharray="2 6" /></svg>
+        <div style={{ position: 'absolute', left: cx - 150, top: cy - 150, width: 300, textAlign: 'center' }}><FfMono style={{ fontSize: 10.5, letterSpacing: '.12em', textTransform: 'uppercase', color: FF.teal, display: 'block', marginBottom: -14, position: 'relative', zIndex: 1 }}>Your Shadow · fitted preview</FfMono><Agent kind={sel.k} core={1} armor={sel.armor} size={300} label={`Your Shadow wearing ${NAMES[sel.k]}`} /></div>
+        {pos.map(({ s, x, y }) => <SetSlot key={s.k} s={s} style={{ position: 'absolute', left: x - 75, top: y - 86 }} />)}
+      </div>
+      <aside aria-label={`${NAMES[sel.k]} details`} style={{ background: FF.surface, border: `1px solid ${FF.hair}`, borderRadius: 16, padding: '18px 18px 20px', display: 'flex', flexDirection: 'column' }}>
+        <Label color={FF.ink3}>Previewing</Label><Name size={21} style={{ marginTop: 8 }}>{NAMES[sel.k]}</Name><div style={{ fontSize: 14, fontWeight: 600, marginTop: 6, lineHeight: 1.4, textWrap: 'pretty' }}>{ONE[sel.k]}</div><p style={{ margin: '8px 0 0', fontSize: 13, color: FF.ink2, lineHeight: 1.55, textWrap: 'pretty' }}>{LONG_CONTRA}</p>
+        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>{[['This armor', '3 battles · stage 1'], ['Shadow’s core', '24 battles · stage 2']].map(([a, b]) => <div key={a} style={{ padding: '10px 12px', borderRadius: 12, background: FF.bg, border: `1px solid ${FF.hair}` }}><Label>{a}</Label><div style={{ fontSize: 13, fontWeight: 600, marginTop: 4 }}>{b}</div></div>)}</div>
+        <Motion>{(META()[sel.k] || {}).motion}</Motion>
+        <div style={{ flex: 1 }} />
+        <FfBtn kind="primary" color={FF.teal} full icon="check" style={{ color: FF.bg, marginTop: 16 }}>Equip {NAMES[sel.k]}</FfBtn><div style={{ fontSize: 12, color: FF.ink3, marginTop: 8, textAlign: 'center', lineHeight: 1.45 }}>Applies on your next deploy. Partnership and shared research stay with Shadow.</div>
+      </aside>
+    </div>
+  </div>;
+}
+function ArmoryPhone() {
+  const sel = SETS.find(s => s.sel);
+  return <div data-screen-label="Armory · phone sheet" style={{ width: 390, background: FF.bg, border: `1px solid ${FF.hair2}`, borderRadius: '22px 22px 0 0', padding: '12px 16px 24px', boxShadow: '0 -20px 60px rgba(0,0,0,.5)', flexShrink: 0 }}>
+    <div aria-hidden="true" style={{ width: 40, height: 4, borderRadius: 4, background: FF.hair2, margin: '0 auto 14px' }} />
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}><div style={{ flex: 1 }}><h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.015em', margin: 0 }}>Armory</h2><p style={{ margin: '6px 0 0', fontSize: 13, color: FF.ink2, lineHeight: 1.5 }}>Select a set to see it fitted on your Shadow.</p></div><span aria-label="Close" style={{ width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: FF.ink2, background: FF.surface, border: `1px solid ${FF.hair}`, flexShrink: 0 }}><FfIco name="x" size={16} /></span></div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, borderRadius: 16, background: `radial-gradient(ellipse at 30% 50%, ${ffA(FF.teal, .1)}, transparent 55%), ${FF.surface}`, border: `1px solid ${FF.hair}`, padding: '4px 12px 4px 0' }}><Agent kind={sel.k} core={1} armor={sel.armor} size={190} /><div style={{ minWidth: 0 }}><Label color={FF.teal}>Previewing</Label><div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.015em', marginTop: 6, lineHeight: 1.1 }}>{NAMES[sel.k]}</div><div style={{ fontSize: 12.5, color: FF.ink2, marginTop: 6, lineHeight: 1.4 }}>{ONE[sel.k]}</div><FfMono style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: FF.ink3, display: 'block', marginTop: 8 }}>{growth(sel)} · stage 1</FfMono></div></div>
+    <div role="listbox" aria-label="Armor sets" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 8, marginTop: 10 }}>
+      {SETS.map(s => <div key={s.k} role="option" aria-selected={!!s.sel} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '6px 4px 8px', borderRadius: 14, background: s.sel ? ffA(FF.teal, .08) : FF.surface, border: `1px solid ${s.sel ? ffA(FF.teal, .5) : FF.hair}`, minHeight: 44 }}><Agent kind={s.k} armor={s.armor} brain={false} pal={s.cur ? 'teal' : 'unlit'} size={72} /><div style={{ fontSize: 11.5, fontWeight: 600, textAlign: 'center', lineHeight: 1.15 }}>{NAMES[s.k]}</div><FfMono style={{ fontSize: 9, letterSpacing: '.06em', textTransform: 'uppercase', color: s.cur ? FF.teal : FF.ink3, textAlign: 'center' }}>{growth(s)}</FfMono></div>)}
+    </div>
+    <FfBtn kind="primary" color={FF.teal} full icon="check" style={{ color: FF.bg, marginTop: 14 }}>Equip {NAMES[sel.k]}</FfBtn>
+  </div>;
+}
+function Board6() {
+  return <Board n={6} title="The armory" note="Your Shadow in the centre, wearing the set you are inspecting. Unworn sets hang around it at their saved growth, pewter until equipped. Trend Follower is equipped; Contrarian is being previewed.">
+    <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start' }}><ArmoryDesktop /><ArmoryPhone /></div>
+    <Motion>Empty sets are still at 70 % light; hover starts their idle motion. Selecting one plays the equip sequence from Board 2 on the centre Shadow (900 ms) while the previous set returns to its hook (700 ms). Equip confirms, closes the armory, and the Command Center slot continues the same motion.</Motion>
+  </Board>;
+}
+
+Object.assign(window, { Board5, Board6, RingGlyph, StatusLine });

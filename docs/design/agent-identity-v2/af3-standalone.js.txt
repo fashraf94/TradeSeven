@@ -1,0 +1,403 @@
+// af3-standalone.js — classic-script build of the agent engine. Loads three.js from the inlined resources (or the CDN when run unbundled).
+(async () => {
+async function loadThree() {
+  const R = window.__resources || {};
+  if (R.threeCore && R.threeModule) { const src = await (await fetch(R.threeModule)).text(); const url = URL.createObjectURL(new Blob([src.split('./three.core.js').join(R.threeCore)], { type: 'text/javascript' })); return import(url); }
+  return import('https://unpkg.com/three@0.184.0/build/three.module.js');
+}
+const THREE = await loadThree();
+// af3-core.js — shared vocabulary for the one-being agent: palette, states, growth tables,
+// plate geometry helpers, the dark glass-metal plate material (fresnel edge light) and Shadow's brain.
+const TAU = Math.PI * 2;
+const PAL = {
+  teal:   { near: '#5EEAD4', far: '#7FD4FF', core: '#ECFFFB' },
+  copper: { near: '#E8927C', far: '#F6C496', core: '#FFF3EC' },
+  mono:   { near: '#E4E8EE', far: '#848C9A', core: '#FFFFFF' },
+  unlit:  { near: '#AEB6C4', far: '#6E7684', core: '#DDE3EC' },
+};
+// Mood vocabulary (round 1). speed · coh(erence) · bright · lean(+fwd/−back) · spread · signals · bloom · beacon · open(+part/−tighten) · lift · scan
+const STATES = {
+  idle:        { speed: 1,    coh: 1,    bright: 1,    lean: 0,   spread: 1,    signals: 1,  bloom: 1, beacon: 0, open: 0,   lift: 0, scan: 0 },
+  researching: { speed: 1.5,  coh: 1,    bright: 1.1,  lean: .1,  spread: 1.04, signals: 4,  bloom: 1, beacon: 0, open: .15, lift: 0, scan: 1 },
+  confident:   { speed: 1.35, coh: 1.25, bright: 1.25, lean: 1,   spread: .9,   signals: 2,  bloom: 2, beacon: 0, open: .4,  lift: 0, scan: 0 },
+  worried:     { speed: .65,  coh: .4,   bright: .68,  lean: -1,  spread: 1.22, signals: .5, bloom: 0, beacon: 0, open: -1,  lift: 0, scan: 0 },
+  waiting:     { speed: .3,   coh: 1,    bright: .9,   lean: .3,  spread: .96,  signals: 0,  bloom: 0, beacon: 1, open: 0,   lift: 0, scan: 0 },
+  celebrating: { speed: 1.6,  coh: 1,    bright: 1.4,  lean: .6,  spread: 1.18, signals: 3,  bloom: 4, beacon: 0, open: 1,   lift: 1, scan: 0 },
+};
+// Core grows with the partnership (shared by every set); armor grows with battles in that style.
+const CORE = [{ loops: 5, R: .5, core: .1, glow: 1, light: 1 }, { loops: 7, R: .56, core: .115, glow: 1.3, light: 1.9 }, { loops: 9, R: .62, core: .13, glow: 1.6, light: 3 }];
+const ARMOR = [{ edge: .85, etch: 0, rim: .8, more: 0 }, { edge: 1, etch: 1, rim: 1.05, more: 1 }, { edge: 1.2, etch: 2, rim: 1.35, more: 2 }];
+const KINDS = ['trend', 'contra', 'spec', 'preserve', 'divers', 'fund'];
+const META = {
+  none:     { name: 'Shadow', desc: 'The brain: luminous threads around a white-hot core.', motion: 'Three families of tilted loops swing out on their own axes and return to a tight centre; the core breathes.', still: 7.3 },
+  trend:    { name: 'Trend Follower', desc: 'Goes where the momentum is and leaves when it fades.', motion: 'Hull plates hold still while threads stream out of the rear vents; the fins sweep further back as it leans in.', still: 7.7 },
+  contra:   { name: 'Contrarian', desc: 'Buys what everyone else is giving up on.', motion: 'The outer gimbal tumbles one way, the inner one turns the other; light spirals inward through the cage against the spin.', still: 4.1 },
+  spec:     { name: 'Speculator', desc: 'Chases the biggest swings and wears the risk.', motion: 'Shards hover and twitch around the bare core; arcs re-strike between jagged edges every half second.', still: 3.3 },
+  preserve: { name: 'Capital Preserver', desc: 'Protects the downside first.', motion: 'Overlapping shields breathe on a slow pulse; under stress the rows close rank and the seams go dark.', still: 5 },
+  divers:   { name: 'Diversifier', desc: 'Spreads bets so no single one can sink you.', motion: 'Pods orbit in balanced formation, each spinning on its own axis; signals run the tethers back to the core.', still: 2.7 },
+  fund:     { name: 'Fundamental Investor', desc: 'Buys quality and lets fundamentals work.', motion: 'Facets lock in sequence and then barely move; a slow turn lets the seams catch the core\u2019s light.', still: 8.4 },
+};
+function rng(seed) { let s = (seed >>> 0) || 1; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+function hash(a, b, c) { let h = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263) + Math.imul(c | 0, 2246822519)) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; h = (h ^ (h >>> 16)) >>> 0; return (h / 4294967296) * 2 - 1; }
+const lo = S => 1 - Math.min(1, S.coh);
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const fitK = (fit, order, st = .6) => clamp(fit * (1 + st) - order * st, 0, 1);
+const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const Q = (axis, ang) => new THREE.Quaternion().setFromAxisAngle(axis, ang);
+
+// ── geometry: thick plates with real rims ──
+function fixWinding(g, outward) {
+  g.computeVertexNormals(); const n = g.attributes.normal, p = g.attributes.position; let s = 0;
+  for (let i = 0; i < n.count; i++) s += n.getX(i) * p.getX(i) + n.getY(i) * p.getY(i) + n.getZ(i) * p.getZ(i);
+  if ((s > 0) !== outward) { const a = g.index.array; for (let i = 0; i < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t; } g.index.needsUpdate = true; g.computeVertexNormals(); }
+}
+function mergeNonIndexed(geos) {
+  let n = 0; for (const g of geos) n += g.attributes.position.count;
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3); let o = 0;
+  for (const g of geos) { pos.set(g.attributes.position.array, o); nor.set(g.attributes.normal.array, o); o += g.attributes.position.array.length; }
+  const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); return out;
+}
+function paramGrid(P, rad, segU, segV, outward) {
+  const pos = [], idx = [];
+  for (let j = 0; j <= segV; j++) for (let i = 0; i <= segU; i++) pos.push(...P(i / segU, j / segV, rad));
+  for (let j = 0; j < segV; j++) for (let i = 0; i < segU; i++) { const a = j * (segU + 1) + i, b = a + 1, c = a + segU + 1, d = c + 1; idx.push(a, b, c, b, d, c); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); fixWinding(g, outward); return g;
+}
+// Shell with thickness: outer surface, inner surface and four rim strips (the strips make the lit rim).
+function paramThick(P, rOut, rIn, segU, segV) {
+  const edge = (rad, side) => { const M = side < 2 ? segV : segU, pts = []; for (let k = 0; k <= M; k++) { const q = k / M; pts.push(side === 0 ? P(0, q, rad) : side === 1 ? P(1, q, rad) : side === 2 ? P(q, 0, rad) : P(q, 1, rad)); } return pts; };
+  const strip = (A, B) => { const pos = []; for (let i = 0; i < A.length - 1; i++) { const a = A[i], b = A[i + 1], c = B[i], d = B[i + 1]; pos.push(...a, ...b, ...c, ...b, ...d, ...c); } const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals(); return g; };
+  const geos = [paramGrid(P, rOut, segU, segV, true).toNonIndexed(), paramGrid(P, rIn, segU, segV, false).toNonIndexed()];
+  for (let s = 0; s < 4; s++) geos.push(strip(edge(rOut, s), edge(rIn, s)));
+  return mergeNonIndexed(geos);
+}
+const sph = (phi0, phiLen, th0, thLen, post) => (u, v, rad) => { const phi = phi0 + phiLen * u, th = th0 + thLen * v, p = [rad * Math.sin(th) * Math.sin(phi), rad * Math.cos(th), rad * Math.sin(th) * Math.cos(phi)]; return post ? post(p) : p; };
+function sphShell(r, phi0, phiLen, th0, thLen, thick, segU = 16, segV = 10, post) { return paramThick(sph(phi0, phiLen, th0, thLen, post), r, r - thick, segU, segV); }
+function sphSurface(r, phi0, phiLen, th0, thLen, segU = 12, segV = 8, post) { return paramGrid(sph(phi0, phiLen, th0, thLen, post), r, segU, segV, true); }
+function polyPrism(pts, inward, thick) {
+  const inner = pts.map(p => p.clone().addScaledVector(inward, thick)), pos = [], tri = (a, b, c) => pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+  for (let i = 1; i < pts.length - 1; i++) tri(pts[0], pts[i], pts[i + 1]);
+  for (let i = 1; i < inner.length - 1; i++) tri(inner[0], inner[i + 1], inner[i]);
+  for (let i = 0; i < pts.length; i++) { const j = (i + 1) % pts.length; tri(pts[i], inner[i], pts[j]); tri(pts[j], inner[i], inner[j]); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals(); return g;
+}
+function polyFlat(pts) { const pos = []; for (let i = 1; i < pts.length - 1; i++) pos.push(pts[0].x, pts[0].y, pts[0].z, pts[i].x, pts[i].y, pts[i].z, pts[i + 1].x, pts[i + 1].y, pts[i + 1].z); const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals(); return g; }
+function ringBand(R, r, w) { const s = new THREE.Shape(); s.absarc(0, 0, R, 0, TAU, false); const h = new THREE.Path(); h.absarc(0, 0, r, 0, TAU, true); s.holes.push(h); const g = new THREE.ExtrudeGeometry(s, { depth: w, bevelEnabled: false, curveSegments: 40 }); g.translate(0, 0, -w / 2); return g; }
+function ringSurface(R, w) { return new THREE.CylinderGeometry(R, R, w, 48, 1, true).rotateX(Math.PI / 2); }
+function basis(d) { const a = Math.abs(d.y) > .9 ? V3(1, 0, 0) : V3(0, 1, 0), e1 = a.clone().cross(d).normalize(), e2 = d.clone().cross(e1).normalize(); return [e1, e2]; }
+function inset(pts, k, rad, dir) { const c = pts.reduce((s, p) => s.add(p), V3()).multiplyScalar(1 / pts.length); return pts.map(p => { const q = p.clone().lerp(c, k); if (rad) q.normalize().multiplyScalar(rad); else if (dir) q.addScaledVector(dir, .005); return q; }); }
+
+// ── materials ──
+let ENV = null; function setEnv(t) { ENV = t; }
+function plateMaterial() {
+  const m = new THREE.MeshPhysicalMaterial({ color: 0x151b28, metalness: .78, roughness: .3, clearcoat: 1, clearcoatRoughness: .14, envMap: ENV, envMapIntensity: .75, side: THREE.DoubleSide, transparent: true, opacity: .93 });
+  const rim = { value: new THREE.Color('#5EEAD4') }, rimK = { value: 1 }; m.userData.rim = rim; m.userData.rimK = rimK;
+  m.onBeforeCompile = sh => { sh.uniforms.uRim = rim; sh.uniforms.uRimK = rimK; sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'uniform vec3 uRim; uniform float uRimK;\nvoid main() {').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float fr = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 3.2); totalEmissiveRadiance += uRim * (fr * uRimK); }'); };
+  m.customProgramCacheKey = () => 'af3-rim'; return m;
+}
+// Sprites (and any shader without the chunk) must write premultiplied rgb, or the shared transparent GL canvas composites them as white haze.
+function premul(m) { m.onBeforeCompile = sh => { if (!sh.fragmentShader.includes('premultiplied_alpha_fragment')) sh.fragmentShader = sh.fragmentShader.replace(/}\s*$/, 'gl_FragColor.rgb *= gl_FragColor.a;\n}'); }; m.customProgramCacheKey = () => 'af3-premul'; return m; }
+function edgeMaterial(op = .9) { return premul(new THREE.LineBasicMaterial({ color: '#5EEAD4', transparent: true, opacity: op, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthWrite: false, toneMapped: false, fog: false })); }
+const FADE_MAT = premul(new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthWrite: false, toneMapped: false, fog: false }));
+let GLOW = null;
+function glowTexture() { if (GLOW) return GLOW; const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.22, 'rgba(255,255,255,.55)'); g.addColorStop(.55, 'rgba(255,255,255,.14)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); GLOW = new THREE.CanvasTexture(c); GLOW.colorSpace = THREE.SRGBColorSpace; return GLOW; }
+function sprite(scale) { const s = new THREE.Sprite(premul(new THREE.SpriteMaterial({ map: glowTexture(), color: '#ffffff', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthWrite: false, toneMapped: false, fog: false }))); s.scale.setScalar(scale); return s; }
+function fadeLine(N) { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3)); geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 3), 3)); const line = new THREE.Line(geo, FADE_MAT); line.frustumCulled = false; return { line, geo, N, pos: geo.attributes.position.array, col: geo.attributes.color.array, flag() { geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true; } }; }
+
+// ── plates: mesh + lit edges (+ etched inset lines that come with armor growth) ──
+function makePlate(geo, mat, etchGeos, opts = {}) {
+  geo.computeBoundingBox(); const c = geo.boundingBox.getCenter(V3()); geo.translate(-c.x, -c.y, -c.z);
+  const g = new THREE.Group(), em = edgeMaterial(.9), em2 = edgeMaterial(.4), thr = opts.thresh || 24;
+  g.add(new THREE.Mesh(geo, mat), new THREE.LineSegments(new THREE.EdgesGeometry(geo, thr), em));
+  (etchGeos || []).forEach(e => { e.translate(-c.x, -c.y, -c.z); g.add(new THREE.LineSegments(new THREE.EdgesGeometry(e, thr), em2)); });
+  g.userData = { em, em2, edgeK: 1, home: c.clone(), homeQ: new THREE.Quaternion(), homeS: 1, away: null, awayQ: null, order: opts.order == null ? .5 : opts.order, dir: c.lengthSq() > 1e-6 ? c.clone().normalize() : V3(0, 1, 0) };
+  g.position.copy(c); return g;
+}
+function setAway(p, dist, rot, r) { const u = p.userData; u.away = u.home.clone().addScaledVector(u.dir, dist).add(V3((r() - .5) * .4, (r() - .5) * .4, (r() - .5) * .4)); u.awayQ = u.homeQ.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler((r() - .5) * rot, (r() - .5) * rot, (r() - .5) * rot))); }
+let FIT_MODE = 'on'; function setFitMode(m) { FIT_MODE = m; }
+// k: 0 = away, 1 = seated. 'on' eases in and shrinks from 40%; 'off' drifts out at full size and dims early.
+function applyFit(p, k) {
+  const u = p.userData;
+  if (!u.away || k >= 1) { p.position.copy(u.home); p.quaternion.copy(u.homeQ); p.scale.setScalar(u.homeS); u.edgeK = 1; p.visible = true; return; }
+  const off = FIT_MODE === 'off', e = off ? Math.pow(k, 1.6) : 1 - Math.pow(1 - k, 3);
+  p.position.lerpVectors(u.away, u.home, e); p.quaternion.slerpQuaternions(u.awayQ, u.homeQ, e); p.scale.setScalar(u.homeS * (off ? 1 : .4 + .6 * e)); u.edgeK = off ? e * e * e : e * e; p.visible = k > .002;
+}
+
+// ── Shadow's brain: three loop families, core, glow, inner light ──
+function buildBrain(stage, seed) {
+  const C = CORE[stage] || CORE[0], r = rng(seed * 13 + stage + 5), group = new THREE.Group(), N = 44, loops = [], R = C.R, DIRS = [-Math.PI / 2, -Math.PI / 2 + TAU / 3, -Math.PI / 2 + 2 * TAU / 3];
+  for (let k = 0; k < 3; k++) for (let i = 0; i < C.loops; i++) {
+    const q = i / (C.loops - 1), s = { fam: k, spread: .5 + .6 * q + (r() - .5) * .1, len: .8 + .3 * r(), tilt: .16 + .44 * r(), rot0: r() * TAU, rotV: (.07 + .09 * r()) * (r() < .5 ? -1 : 1), ph: r() * TAU, wob: .025 + .05 * r(), wobF: 1 + Math.floor(r() * 3), br: .06 + .1 * r(), w: .7 + .9 * r() };
+    const L = fadeLine(N); group.add(L.line); loops.push({ s, L });
+  }
+  const coreMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false, fog: false })); group.add(coreMesh);
+  const glow = sprite(.7 * C.glow), halo = sprite(2.1 * C.glow); halo.material.depthTest = false; group.add(glow, halo);
+  const light = new THREE.PointLight('#5EEAD4', 9 * C.light, 3.4, 2); group.add(light);
+  const sigs = [0, 1, 2, 3].map(() => { const s = sprite(.09); group.add(s); return s; });
+  const near = new THREE.Color(), far = new THREE.Color(), tmp = new THREE.Color();
+  function update(t, S, pal, camDir) {
+    near.set(pal.near); far.set(pal.far); const fray = lo(S);
+    for (const { s, L } of loops) {
+      const pos = L.pos, col = L.col, d = DIRS[s.fam], ax = Math.cos(d), ay = Math.sin(d), px = -ay, py = ax, Ln = s.len * (1 + .035 * Math.sin(t * s.br * 2 + s.ph)) * S.spread, sp = s.spread * (1 + .08 * Math.sin(t * .21 + s.ph)), beta = s.rot0 + t * s.rotV * S.speed, cb = Math.cos(beta), sb = Math.sin(beta);
+      for (let j = 0; j < N; j++) {
+        const u = j / (N - 1), su = Math.sin(Math.PI * u), rr = Ln * (.07 + .93 * Math.pow(su, .85)) * (1 + (s.wob + fray * .12) * Math.sin(u * TAU * s.wobF + t * .6 + s.ph)), ang = d + sp * (2 * u - 1), X = rr * Math.cos(ang), Y = rr * Math.sin(ang), pa = X * ax + Y * ay, pp = X * px + Y * py, z0 = Ln * s.tilt * Math.sin(TAU * u + s.ph), pp2 = pp * cb - z0 * sb, z1 = pp * sb + z0 * cb, x = (pa * ax + pp2 * px) * R, y = -(pa * ay + pp2 * py) * R, z = z1 * R;
+        pos[j * 3] = x; pos[j * 3 + 1] = y; pos[j * 3 + 2] = z;
+        const dep = clamp(((x * camDir.x + y * camDir.y + z * camDir.z) / (R * 1.1) + 1) / 2, 0, 1), a = (.22 + .78 * dep) * S.bright * (.5 + .5 * s.w / 1.6) * .6;
+        tmp.lerpColors(far, near, dep).multiplyScalar(a); col[j * 3] = tmp.r; col[j * 3 + 1] = tmp.g; col[j * 3 + 2] = tmp.b;
+      }
+      L.flag();
+    }
+    const beacon = S.beacon ? 1 + .35 * Math.max(0, Math.sin(t * Math.PI)) : S.scan ? 1 + .12 * Math.sin(t * 5) : 1, hot = S.bloom > 1 ? 1 + .12 * S.bloom : 1;
+    coreMesh.scale.setScalar(C.core * beacon); coreMesh.material.color.set(pal.core);
+    glow.material.color.set(pal.near); glow.material.opacity = clamp(.95 * S.bright * hot, 0, 1); glow.scale.setScalar(.7 * C.glow * beacon * (1 + .08 * Math.sin(t * 1.3)) * hot);
+    halo.material.color.set(pal.near); halo.material.opacity = clamp(.18 * S.bright * hot, 0, 1);
+    light.color.set(pal.near); light.intensity = 9 * C.light * S.bright * beacon * hot;
+    const cnt = Math.min(4, Math.round(2 * S.signals));
+    sigs.forEach((sp, q) => { if (q >= cnt) { sp.material.opacity = 0; return; } const lp = loops[(q * 5) % loops.length].L, pos = lp.pos, u = ((t * (.25 + .07 * q) * S.speed + q * .37) % 1 + 1) % 1, f = u * (N - 1), j = Math.floor(f), fr = f - j, j2 = Math.min(N - 1, j + 1); sp.position.set(pos[j * 3] + (pos[j2 * 3] - pos[j * 3]) * fr, pos[j * 3 + 1] + (pos[j2 * 3 + 1] - pos[j * 3 + 1]) * fr, pos[j * 3 + 2] + (pos[j2 * 3 + 2] - pos[j * 3 + 2]) * fr); sp.material.color.set(pal.core); sp.material.opacity = .9 * S.bright; });
+  }
+  return { group, update, light };
+}
+
+// af3-armor.js — the six armor sets. Each returns { group, plates, frame, update(t, S, pal, fit) }.
+// Plates are dark glass-metal with lit edges; fit (0..1) is the equip progress, order staggers the lock sequence.
+const near = new THREE.Color(), hot = new THREE.Color(), tmp = new THREE.Color();
+const setCol = (L, j, c, a) => { tmp.copy(c).multiplyScalar(Math.max(0, a)); L.col[j * 3] = tmp.r; L.col[j * 3 + 1] = tmp.g; L.col[j * 3 + 2] = tmp.b; };
+
+// 1 Trend Follower — swept hull. Plates ride a teardrop around +x, the rear is open; threads stream out of the vents.
+function buildTrend(E) {
+  const r = rng(E.seed * 7 + 1), A = E.A, g = new THREE.Group(), plates = [], n = 4 + A.more, gap = .22, post = p => [p[1] * 1.45 - .25, p[0] * .74, p[2] * .74];
+  g.rotation.y = .4; g.position.x = .14;
+  for (let i = 0; i < n; i++) {
+    const phi0 = TAU * i / n + gap / 2 + .35, phiLen = TAU / n - gap, th0 = .16 * Math.PI, thLen = .46 * Math.PI, etch = [];
+    for (let e = 0; e < A.etch; e++) { const k = .05 * (e + 1); etch.push(sphSurface(1.006, phi0 + k, phiLen - 2 * k, th0 + k * 1.4, thLen - 2 * k * 1.4, 12, 8, post)); }
+    const p = makePlate(sphShell(1, phi0, phiLen, th0, thLen, .045, 16, 10, post), E.mat, etch, { order: .15 + .6 * i / n }); setAway(p, 1.3, 1.2, r); plates.push(p); g.add(p);
+  }
+  { const p = makePlate(sphShell(1, 0, TAU, 0, .1 * Math.PI, .045, 24, 5, post), E.mat, [], { order: 0 }); p.userData.nose = true; setAway(p, 1.4, .6, r); plates.push(p); g.add(p); }
+  [Math.PI / 2, Math.PI / 2 + TAU / 3, Math.PI / 2 + 2 * TAU / 3].forEach((a, fi) => {
+    const d = V3(0, Math.sin(a), Math.cos(a)), pt = (x, rad) => V3(x - .25, 0, 0).addScaledVector(d, rad), pts = [pt(.05, .6), pt(-.5, .62), pt(-1.0, .9), pt(-.68, .82)], side = V3(0, -Math.cos(a), Math.sin(a));
+    const p = makePlate(polyPrism(pts, side, .035), E.mat, A.etch ? [polyFlat(inset(pts, .22, 0, side.clone().negate()))] : [], { order: .75 + .08 * fi, thresh: 10 }); p.userData.fin = true; p.userData.dir.copy(d); setAway(p, 1.1, 1, r); plates.push(p); g.add(p);
+  });
+  const M = 12 + 4 * A.more, NS = 22, streams = [];
+  for (let i = 0; i < M; i++) { const L = fadeLine(NS); g.add(L.line); streams.push({ a: r() * TAU, rad: .2 + .32 * r(), ph: r() * TAU, f: 1.1 + .8 * r(), amp: .05 + .06 * r(), L }); }
+  function update(t, S, pal, fit) {
+    const stress = Math.max(0, -S.open), op = Math.max(0, S.open), fray = lo(S) * .25, worry = Math.max(0, -S.lean);
+    for (const p of plates) { const u = p.userData; applyFit(p, fitK(fit, u.order)); if (!u.nose) p.position.addScaledVector(u.dir, (u.fin ? .04 : .06) * op - (u.fin ? .03 : .035) * stress); }
+    near.set(pal.near);
+    for (const { a, rad, ph, f, amp, L } of streams) {
+      const len = 1.15 * (1 + .25 * S.lean) * (.8 + .2 * S.speed), vis = fit * fit * S.bright;
+      for (let j = 0; j < NS; j++) { const u = j / (NS - 1), env = .3 + .7 * u, w = TAU * f * u - t * 2.2 * S.speed + ph, rr = rad * (1 - .3 * u) + amp * env * Math.sin(w) + fray * env * Math.sin(u * 9 + t * 2.3 + ph * 3); L.pos[j * 3] = -.72 - len * u; L.pos[j * 3 + 1] = rr * Math.sin(a) + amp * env * Math.cos(w) * .5 - worry * .35 * u * u + S.lift * .3 * u * u; L.pos[j * 3 + 2] = rr * Math.cos(a); setCol(L, j, near, Math.pow(1 - u, 1.3) * (.35 + .65 * Math.sin(Math.PI * Math.min(1, u * 3 + .1))) * vis * .9); }
+      L.flag();
+    }
+  }
+  return { group: g, plates, frame: .74, update };
+}
+
+// 2 Contrarian — gimbals. Two (then three) rings tumble on their own diameters in opposite directions; light spirals inward against the outer spin.
+function buildContra(E) {
+  const r = rng(E.seed * 7 + 2), A = E.A, g = new THREE.Group(), plates = [];
+  const defs = [{ R: 1, w: .17, baseQ: Q(V3(1, 0, 0), Math.PI / 2), pivot: V3(1, 0, 0), spin: .55, order: 0 }, { R: .8, w: .14, baseQ: Q(V3(0, 1, 0), .35), pivot: V3(0, 1, 0), spin: -.8, order: .45 }];
+  if (A.more >= 1) defs.push({ R: .62, w: .1, baseQ: Q(V3(0, 0, 1), .9).multiply(Q(V3(1, 0, 0), Math.PI / 2)), pivot: V3(1, 0, 0), spin: .95, order: .8 });
+  defs.forEach(d => {
+    const p = makePlate(ringBand(d.R, d.R - .055, d.w), E.mat, A.etch ? [ringSurface(d.R - .027, d.w * .5)] : [], { order: d.order }); const u = p.userData; u.ring = d; u.ph = r() * TAU; u.axisW = d.pivot.clone().applyQuaternion(d.baseQ).normalize(); u.homeQ.copy(d.baseQ); u.dir.set(0, 0, 0);
+    [1, -1].forEach(s => { const stud = new THREE.Mesh(new THREE.CylinderGeometry(.045, .045, .11, 12).rotateZ(Math.PI / 2), E.mat); stud.position.copy(d.pivot).multiplyScalar(s * (d.R - .028)); p.add(stud); });
+    u.away = V3((r() - .5) * .6, (r() - .5) * .6, (r() - .5) * .6).addScaledVector(u.axisW, 1.3 * (r() < .5 ? -1 : 1)); u.awayQ = d.baseQ.clone().multiply(Q(V3(0, 1, 0), 1.2)); plates.push(p); g.add(p);
+  });
+  const K = 7, parts = []; for (let k = 0; k < K; k++) { const s = sprite(.085); g.add(s); parts.push(s); }
+  const q1 = new THREE.Quaternion();
+  function update(t, S, pal, fit) {
+    const stress = Math.max(0, -S.open), op = Math.max(0, S.open), wob = lo(S) * .3;
+    plates.forEach((p, i) => { const u = p.userData, d = u.ring; u.homeQ.copy(d.baseQ).premultiply(q1.setFromAxisAngle(u.axisW, t * d.spin * S.speed + u.ph)); if (op) u.homeQ.premultiply(q1.setFromAxisAngle(i % 2 ? V3(1, 0, 0) : V3(0, 0, 1), .14 * op * (i % 2 ? -1 : 1))); if (wob) u.homeQ.premultiply(q1.setFromAxisAngle(V3(0, 0, 1), wob * Math.sin(t * 1.7 + u.ph))); u.homeS = 1 - .05 * stress + .03 * op; applyFit(p, fitK(fit, u.order, .5)); });
+    hot.set(pal.core); const cnt = Math.round(K * clamp(S.signals, 0, 1.4) / 1.4);
+    parts.forEach((s, k) => { if (k >= cnt || fit < .6) { s.material.opacity = 0; return; } const p = ((t * .16 * S.speed + k / K) % 1 + 1) % 1, rad = .98 - .82 * p, ang = -(t * .55 * S.speed) - p * 6.5 + k * 2.1; s.position.set(rad * Math.cos(ang), .06 * Math.sin(ang * 2 + t), rad * Math.sin(ang)); s.material.color.copy(hot); s.material.opacity = Math.sin(Math.PI * p) * .95 * S.bright; });
+  }
+  return { group: g, plates, frame: .95, update };
+}
+
+// 3 Speculator — broken shards around a bare core. Shards twitch; arcs re-strike between jagged edges.
+function buildSpec(E) {
+  const r = rng(E.seed * 7 + 3), A = E.A, g = new THREE.Group(), plates = [], N = 10 + 2 * A.more, RS = .95;
+  for (let i = 0; i < N; i++) {
+    const k = i + .5, phi = Math.acos(1 - 2 * k / N), th = Math.PI * (1 + Math.sqrt(5)) * k, dir = V3(Math.sin(phi) * Math.cos(th), Math.cos(phi), Math.sin(phi) * Math.sin(th)), [e1, e2] = basis(dir), m = 4 + (r() < .5 ? 1 : 0), rot0 = r() * TAU;
+    const angs = Array.from({ length: m }, (_, q) => TAU * q / m + rot0 + (r() - .5) * .6).sort((a, b) => a - b), pts = angs.map(a => { const rho = .3 + .17 * r(); return dir.clone().multiplyScalar(RS).addScaledVector(e1, rho * Math.cos(a)).addScaledVector(e2, rho * Math.sin(a)).normalize().multiplyScalar(RS); });
+    const p = makePlate(polyPrism(pts, dir.clone().negate(), .055), E.mat, A.etch ? [polyFlat(inset(pts, .25, RS + .006))] : [], { order: r(), thresh: 12 }); p.userData.dir.copy(dir); p.userData.i = i; setAway(p, 1.4, 1.6, r); plates.push(p); g.add(p);
+  }
+  const K = 3 + A.more, arcs = []; for (let a = 0; a < K; a++) { const L = fadeLine(9), tA = sprite(.11), tB = sprite(.11); g.add(L.line, tA, tB); arcs.push({ L, tA, tB, ph: r() * 10, rate: 1.6 + r() }); }
+  const c = V3(), e1 = V3(), e2 = V3(), q1 = new THREE.Quaternion();
+  function update(t, S, pal, fit) {
+    const stress = Math.max(0, -S.open), op = Math.max(0, S.open), jit = .012 + .02 * lo(S);
+    for (const p of plates) { const u = p.userData; applyFit(p, fitK(fit, u.order, .9)); p.position.addScaledVector(u.dir, jit * Math.sin(t * 9 + u.i * 1.7) + .06 * op + .18 * S.lift * Math.max(0, Math.sin(t * 2.6 + u.i)) - .09 * stress); p.quaternion.premultiply(q1.setFromAxisAngle(u.dir, .035 * Math.sin(t * 7 + u.i))); }
+    hot.set(pal.core); near.set(pal.near);
+    arcs.forEach((arc, ai) => {
+      const step = t * arc.rate * S.speed + arc.ph, k0 = Math.floor(step), fr = step - k0, i1 = Math.floor((hash(ai, k0, 1) * .5 + .5) * N) % N, i2 = (i1 + 1 + Math.floor((hash(ai, k0, 2) * .5 + .5) * (N - 2))) % N, P1 = plates[i1].position, P2 = plates[i2].position, on = fit > .5 && fr < .5 && plates[i1].visible && plates[i2].visible && !(S.signals < .6 && ai > 0);
+      const al = on ? Math.pow(1 - fr / .5, .8) * S.bright * (S.bloom > 1 ? 1.3 : 1) : 0;
+      c.subVectors(P2, P1); e1.copy(P1).cross(c).normalize(); e2.copy(c).cross(e1).normalize(); const amp = .1 + .12 * lo(S);
+      for (let j = 0; j < 9; j++) { const u = j / 8, o1 = j && j < 8 ? hash(ai, j, k0) * amp : 0, o2 = j && j < 8 ? hash(ai, j + 20, k0) * amp : 0, bul = 1.02 + .1 * Math.sin(Math.PI * u); arc.L.pos[j * 3] = (P1.x + c.x * u) * bul + e1.x * o1 + e2.x * o2; arc.L.pos[j * 3 + 1] = (P1.y + c.y * u) * bul + e1.y * o1 + e2.y * o2; arc.L.pos[j * 3 + 2] = (P1.z + c.z * u) * bul + e1.z * o1 + e2.z * o2; tmp.lerpColors(near, hot, .6); setCol(arc.L, j, tmp, al); }
+      arc.L.flag(); arc.tA.position.copy(P1).multiplyScalar(1.04); arc.tB.position.copy(P2).multiplyScalar(1.04); arc.tA.material.color.copy(hot); arc.tB.material.color.copy(hot); arc.tA.material.opacity = arc.tB.material.opacity = al * .9;
+    });
+  }
+  return { group: g, plates, frame: .9, update };
+}
+
+// 4 Capital Preserver — overlapping shield rows and two caps. Slow pulse; stress closes the rows and dims the seams.
+function buildPreserve(E) {
+  const r = rng(E.seed * 7 + 4), A = E.A, g = new THREE.Group(), plates = [], gap = .16, thick = .045;
+  const rows = [{ th0: .17, th1: .43, n: 6 + 2 * A.more, R: 1, order: .3, off: 0 }, { th0: .41, th1: .63, n: 8 + 2 * A.more, R: .965, order: .55, off: .5 }, { th0: .61, th1: .84, n: 6 + 2 * A.more, R: .93, order: .8, off: 0 }];
+  rows.forEach((row, ri) => { const span = TAU / row.n; for (let i = 0; i < row.n; i++) {
+    const phi0 = span * (i + row.off) + gap / 2, phiLen = span - gap, th0 = row.th0 * Math.PI, thLen = (row.th1 - row.th0) * Math.PI, etch = [];
+    for (let e = 0; e < A.etch; e++) { const k = .045 * (e + 1); etch.push(sphSurface(row.R + .006, phi0 + k, phiLen - 2 * k, th0 + k, thLen - 2 * k, 10, 6)); }
+    const p = makePlate(sphShell(row.R, phi0, phiLen, th0, thLen, thick, 12, 8), E.mat, etch, { order: row.order + .15 * i / row.n }); p.userData.row = ri; setAway(p, 1.1, 1.4, r); plates.push(p); g.add(p);
+  } });
+  [[0, .19, 1.02, .05], [.82, 1, .9, .97]].forEach(([a, b, R, order]) => {
+    const etch = A.etch ? [sphSurface(R + .006, 0, TAU, a === 0 ? 0 : (a + .04) * Math.PI, a === 0 ? (b - .05) * Math.PI : (b - a - .04) * Math.PI, 24, 4)] : [];
+    const p = makePlate(sphShell(R, 0, TAU, a * Math.PI, (b - a) * Math.PI, thick, 24, 5), E.mat, etch, { order }); p.userData.cap = true; setAway(p, 1.2, .5, r); plates.push(p); g.add(p);
+  });
+  function update(t, S, pal, fit) {
+    const stress = Math.max(0, -S.open), op = Math.max(0, S.open), pulse = 1 + .022 * (1 - .4 * stress) * Math.sin(t * .9 * S.speed * (1 + .6 * stress)), Rk = pulse * (1 - .07 * stress) * (1 + .05 * op) * (1 + .06 * S.lift * Math.max(0, Math.sin(t * 2.6)));
+    for (const p of plates) { const u = p.userData; applyFit(p, fitK(fit, u.order, .5)); p.position.multiplyScalar(Rk); p.scale.multiplyScalar(1 + .07 * stress - .04 * op); u.edgeK *= 1 - .35 * stress; }
+  }
+  return { group: g, plates, frame: .95, update };
+}
+
+// 5 Diversifier — pods in formation. Two saddle plates hold the brain; hex pods orbit on a tilted ring, tethered to the core.
+function buildDivers(E) {
+  const r = rng(E.seed * 7 + 5), A = E.A, g = new THREE.Group(), plates = [], K = 5 + A.more, tiltQ = Q(V3(1, 0, 0), .32), orbitR = .9, hr = E.brainR + .08;
+  [[0, .17, .06], [.83, 1, .93]].forEach(([a, b, order]) => {
+    const etch = A.etch ? [sphSurface(hr + .005, 0, TAU, a === 0 ? 0 : (a + .05) * Math.PI, a === 0 ? (b - .06) * Math.PI : (b - a - .05) * Math.PI, 24, 4)] : [];
+    const p = makePlate(sphShell(hr, 0, TAU, a * Math.PI, (b - a) * Math.PI, .04, 24, 5), E.mat, etch, { order }); p.userData.saddle = true; setAway(p, .9, .4, r); plates.push(p); g.add(p);
+  });
+  const pods = [];
+  for (let k = 0; k < K; k++) {
+    const etch = A.etch ? [new THREE.CylinderGeometry(.134, .134, .2, 6, 1, true).rotateZ(Math.PI / 2)] : [];
+    const p = makePlate(new THREE.CylinderGeometry(.13, .13, .32, 6, 1).rotateZ(Math.PI / 2), E.mat, etch, { order: .3 + .6 * k / K, thresh: 30 }); p.userData.pod = k; p.userData.ph = r() * TAU; p.userData.spin = (.9 + .4 * r()) * (k % 2 ? -1 : 1); p.userData.away = V3(); p.userData.awayQ = new THREE.Quaternion(); plates.push(p); pods.push(p); g.add(p);
+  }
+  const tethers = pods.map(() => { const L = fadeLine(14); g.add(L.line); return L; }), sigs = pods.map(() => { const s = sprite(.08); g.add(s); return s; });
+  const tan = V3(), q1 = new THREE.Quaternion(), X = V3(1, 0, 0);
+  function orbit(t, S, k, out) { const th = TAU * k / K + t * .18 * S.speed, wob = lo(S) * .12, rad = orbitR * S.spread * (1 - .08 * Math.max(0, -S.open) + .05 * Math.max(0, S.open)) + wob * Math.sin(t * 1.3 + k * 2); out.set(rad * Math.cos(th), wob * Math.cos(t * 1.1 + k) + S.lift * .12 * Math.max(0, Math.sin(t * 2.6 + k)), rad * Math.sin(th)).applyQuaternion(tiltQ); return th; }
+  function update(t, S, pal, fit) {
+    for (const p of plates) if (p.userData.saddle) { applyFit(p, fitK(fit, p.userData.order, .5)); p.position.addScaledVector(p.userData.dir, .04 * Math.max(0, S.open) - .03 * Math.max(0, -S.open)); }
+    near.set(pal.near); hot.set(pal.core); const cnt = Math.min(K, Math.round(K * clamp(S.signals, 0, 2) / 2));
+    pods.forEach((p, k) => {
+      const u = p.userData, th = orbit(t, S, k, u.home); tan.set(-Math.sin(th), 0, Math.cos(th)).applyQuaternion(tiltQ); u.homeQ.setFromUnitVectors(X, tan).premultiply(q1.setFromAxisAngle(tan, t * u.spin * S.speed * (1 + .6 * S.lift) + u.ph)); u.away.copy(u.home).multiplyScalar(1.9); u.awayQ.copy(u.homeQ).multiply(q1.setFromAxisAngle(V3(0, 1, 0), 1.3)); applyFit(p, fitK(fit, u.order, .6));
+      const L = tethers[k], vis = p.visible ? u.edgeK * S.bright : 0, sx = u.home.x, sy = u.home.y, sz = u.home.z, len = Math.hypot(sx, sy, sz) || 1, ax = sx / len * hr, ay = sy / len * hr, az = sz / len * hr;
+      for (let j = 0; j < 14; j++) { const v = j / 13, sag = .06 * Math.sin(Math.PI * v); L.pos[j * 3] = ax + (p.position.x - ax) * v; L.pos[j * 3 + 1] = ay + (p.position.y - ay) * v - sag; L.pos[j * 3 + 2] = az + (p.position.z - az) * v; setCol(L, j, near, (.2 + .45 * Math.sin(Math.PI * v) + .35 * v) * vis * .8); }
+      L.flag();
+      const s = sigs[k]; if (k >= cnt || !p.visible) { s.material.opacity = 0; return; } const v = ((t * .3 * S.speed + k / K) % 1 + 1) % 1; s.position.set(ax + (p.position.x - ax) * v, ay + (p.position.y - ay) * v - .06 * Math.sin(Math.PI * v), az + (p.position.z - az) * v); s.material.color.copy(hot); s.material.opacity = .9 * vis;
+    });
+  }
+  return { group: g, plates, frame: .95, update };
+}
+
+// 6 Fundamental Investor — crystal. Icosahedral facets, inset for seams, locking top-back to bottom-front.
+let ICO = null;
+function icosa() {
+  if (ICO) return ICO;
+  const p = (1 + Math.sqrt(5)) / 2, verts = [[0, 1, p], [0, -1, p], [0, 1, -p], [0, -1, -p], [1, p, 0], [-1, p, 0], [1, -p, 0], [-1, -p, 0], [p, 0, 1], [-p, 0, 1], [p, 0, -1], [-p, 0, -1]].map(v => V3(...v).normalize());
+  const adj = (a, b) => Math.abs(verts[a].distanceTo(verts[b]) - 1.0515) < .02, faces = [];
+  for (let a = 0; a < 12; a++) for (let b = a + 1; b < 12; b++) for (let c = b + 1; c < 12; c++) if (adj(a, b) && adj(b, c) && adj(a, c)) { const f = [a, b, c], n = verts[b].clone().sub(verts[a]).cross(verts[c].clone().sub(verts[a])); if (n.dot(verts[a]) < 0) { f[1] = c; f[2] = b; } faces.push(f); }
+  const cen = f => verts[f[0]].clone().add(verts[f[1]]).add(verts[f[2]]).multiplyScalar(1 / 3), seed = V3(-.3, .9, -.3).normalize(), score = f => cen(f).dot(seed);
+  let si = 0, best = -9; faces.forEach((f, i) => { const s = score(f); if (s > best) { best = s; si = i; } });
+  const order = [faces[si]], used = new Set([si]); let qi = 0;
+  while (order.length < faces.length && qi < order.length) { const f = order[qi++]; faces.map((g, i) => ({ g, i })).filter(o => !used.has(o.i) && f.filter(v => o.g.includes(v)).length === 2).sort((a, b) => score(b.g) - score(a.g)).forEach(o => { used.add(o.i); order.push(o.g); }); }
+  ICO = { verts, faces: order }; return ICO;
+}
+function buildFund(E) {
+  const r = rng(E.seed * 7 + 6), A = E.A, g = new THREE.Group(), plates = [], I = icosa(), cnt = [15, 20, 20][E.stage] || 20;
+  I.faces.slice(0, cnt).forEach((f, fi) => {
+    const vs = f.map(i => I.verts[i].clone()), c = vs[0].clone().add(vs[1]).add(vs[2]).multiplyScalar(1 / 3), dir = c.clone().normalize(), pts = vs.map(v => v.clone().lerp(c, .06)), etch = [];
+    for (let e = 0; e < A.etch; e++) etch.push(polyFlat(pts.map(v => v.clone().lerp(c, .3 + .3 * e).addScaledVector(dir, .005))));
+    const p = makePlate(polyPrism(pts, dir.clone().negate(), .07), E.mat, etch, { order: fi / cnt, thresh: 12 }); p.userData.dir.copy(dir); p.userData.fi = fi; setAway(p, 1.2, 1, r); plates.push(p); g.add(p);
+  });
+  function update(t, S, pal, fit) {
+    const stress = Math.max(0, -S.open), op = Math.max(0, S.open);
+    for (const p of plates) { const u = p.userData; applyFit(p, fitK(fit, u.order, .9)); p.position.addScaledVector(u.dir, .09 * op - .05 * stress + .1 * S.lift * Math.max(0, Math.sin(t * 2.6 - u.fi * .5))); if (S.lift) u.edgeK *= .55 + .45 * Math.max(0, Math.sin(t * 3 - u.fi * .55)); }
+  }
+  return { group: g, plates, frame: .95, update };
+}
+const BUILDERS = { trend: buildTrend, contra: buildContra, spec: buildSpec, preserve: buildPreserve, divers: buildDivers, fund: buildFund };
+
+// af3-engine.js — one WebGL renderer feeds every agent canvas on the page. Each view renders into a
+// scissored corner of the shared GL canvas and is composited (with a cheap bloom) onto its own 2D canvas.
+
+const GL = 1024, FOG = (window.FF && window.FF.surface) || '#15171E';
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: true, powerPreference: 'high-performance' });
+renderer.setSize(GL, GL, false); renderer.setPixelRatio(1); renderer.setClearColor(0x000000, 0); renderer.autoClear = false;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15; renderer.outputColorSpace = THREE.SRGBColorSpace;
+// A small studio: cool softboxes for the brushed-metal reflections.
+function studioEnv() {
+  const sc = new THREE.Scene(); sc.add(new THREE.Mesh(new THREE.BoxGeometry(12, 12, 12), new THREE.MeshBasicMaterial({ color: 0x0f131c, side: THREE.BackSide })));
+  const panel = (w, h, x, y, z, col, k) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(k), side: THREE.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 0, 0); sc.add(m); };
+  panel(4, 3, -4, 3.5, 2, 0xdfe8ff, 7); panel(3, 2, 4, 2, -3, 0xbfd0e8, 3.5); panel(5, 1, 0, 4.8, -1, 0xffffff, 3); panel(3, 3, 2, -3, 3, 0x6e7a92, 1.4);
+  const pm = new THREE.PMREMGenerator(renderer), tex = pm.fromScene(sc, .04).texture; pm.dispose(); return tex;
+}
+setEnv(studioEnv());
+const scene = new THREE.Scene(); scene.fog = new THREE.Fog(new THREE.Color(FOG), 4, 7.8);
+const camera = new THREE.PerspectiveCamera(30, 1, .1, 40);
+const key = new THREE.DirectionalLight(0xe6eeff, 2.6); key.position.set(-2.4, 3.2, 2.6); scene.add(key);
+const rim = new THREE.DirectionalLight(0xaebbd6, 1.1); rim.position.set(2.4, 1.2, -3); scene.add(rim);
+scene.add(new THREE.HemisphereLight(0x7f94b3, 0x05060a, .55));
+let CUR = null;
+
+const FORMS = new Map();
+function getForm(spec) {
+  const kind = spec.kind || 'none', core = spec.core | 0, armor = spec.armor | 0, brain = spec.brain !== false, seed = spec.seed | 0, key = [kind, core, armor, brain ? 1 : 0, seed].join('|');
+  let F = FORMS.get(key); if (F) return F;
+  const group = new THREE.Group(), mat = plateMaterial(); F = { group, mat, brain: null, armor: null };
+  if (brain) { F.brain = buildBrain(core, seed); group.add(F.brain.group); }
+  if (kind !== 'none' && BUILDERS[kind]) { F.armor = BUILDERS[kind]({ stage: armor, A: ARMOR[armor] || ARMOR[0], seed, mat, brainR: (CORE[core] || CORE[0]).R }); group.add(F.armor.group); }
+  FORMS.set(key, F); return F;
+}
+
+const BL = new Map();
+function bloom(ctx, size, res, strength) {
+  const bs = Math.max(16, Math.round(size / 4)); let b = BL.get(bs); if (!b) { const A = document.createElement('canvas'), B = document.createElement('canvas'); A.width = A.height = B.width = B.height = bs; b = { A, B, a: A.getContext('2d'), b: B.getContext('2d') }; BL.set(bs, b); }
+  b.a.clearRect(0, 0, bs, bs); b.a.drawImage(renderer.domElement, 0, GL - res, res, res, 0, 0, bs, bs);
+  b.b.clearRect(0, 0, bs, bs); b.b.filter = `blur(${Math.max(1.5, bs * .07)}px)`; b.b.drawImage(b.A, 0, 0); b.b.filter = 'none';
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = strength; ctx.drawImage(b.B, 0, 0, size, size); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+}
+const camDir = new THREE.Vector3(), invQ = new THREE.Quaternion();
+function render(ctx, spec, t) {
+  const S = STATES[spec.state] || STATES.idle, pal = PAL[spec.pal] || PAL.teal, size = spec.size, small = size < 90, dpr = Math.min(window.devicePixelRatio || 1, small ? 3 : 2), res = clamp(Math.round(size * dpr), 48, GL), F = getForm(spec), fit = spec.fit == null ? 1 : spec.fit, A = ARMOR[spec.armor | 0] || ARMOR[0];
+  F.group.rotation.set(0, .16 * Math.sin(t * .27 + (spec.seed | 0)) + S.scan * .3 * Math.sin(t * .9) + (spec.turn || 0), -.14 * S.lean);
+  F.group.position.set(0, S.lift * .07 * Math.max(0, Math.sin(t * 2.6)), 0); F.group.scale.setScalar(F.armor ? F.armor.frame : 1.25);
+  const D = 4.7 * (spec.zoom || 1), yaw = .55, pitch = .25; camera.position.set(D * Math.sin(yaw) * Math.cos(pitch), D * Math.sin(pitch), D * Math.cos(yaw) * Math.cos(pitch)); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
+  scene.fog.near = D - .7; scene.fog.far = D + 3.1;
+  camDir.copy(camera.position).normalize().applyQuaternion(invQ.copy(F.group.quaternion).invert());
+  if (F.brain) F.brain.update(t, S, pal, camDir);
+  setFitMode(spec.unfit ? 'off' : 'on');
+  if (F.armor) { F.armor.update(t, S, pal, fit); const eb = .95 * A.edge * S.bright * (small ? 1.4 : 1) * (spec.brain === false ? .8 : 1); for (const p of F.armor.plates) { const u = p.userData; u.em.color.set(pal.near); u.em.opacity = clamp(eb * u.edgeK, 0, 1); u.em2.color.set(pal.near); u.em2.opacity = clamp(.42 * eb * u.edgeK, 0, 1); } }
+  F.mat.userData.rim.value.set(pal.near); F.mat.userData.rimK.value = .6 * A.rim * S.bright * (small ? 1.5 : 1) * (spec.brain === false ? .6 : 1) * (.6 + .4 * fit);
+  if (CUR !== F.group) { if (CUR) scene.remove(CUR); scene.add(F.group); CUR = F.group; }
+  renderer.setScissorTest(true); renderer.setViewport(0, 0, res, res); renderer.setScissor(0, 0, res, res); renderer.clear(true, true, false); renderer.render(scene, camera);
+  ctx.clearRect(0, 0, size, size); ctx.save(); if (spec.face < 0) { ctx.translate(size, 0); ctx.scale(-1, 1); }
+  ctx.drawImage(renderer.domElement, 0, GL - res, res, res, 0, 0, size, size);
+  if (!small && size >= 160 && !window.AF_NOBLOOM) bloom(ctx, size, res, clamp(.65 * S.bright * (S.bloom > 1 ? 1.3 : 1), 0, 1));
+  ctx.restore();
+}
+
+// ── registry: one rAF loop with a frame budget; offscreen canvases skipped; stills when motion is off ──
+const REG = new Map(); let raf = 0, IO = null, cursor = 0, frameNo = 0, nextId = 0; const T0 = performance.now();
+window.AF_MOTION = window.AF_MOTION == null ? !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) : window.AF_MOTION;
+const stillT = spec => ((META[spec.kind] || META.none).still || 5) + (spec.core | 0) * .7 + (spec.armor | 0) * .4 + (spec.seed | 0) * .31 + (spec.state === 'celebrating' ? .6 : 0);
+function draw(it, t) { try { render(it.ctx, it.spec, t); } catch (e) { if (!it.err) { it.err = 1; console.error('AF3 render failed', JSON.stringify(it.spec), String(e && (e.stack || e.message || e))); } } }
+function frame(now) {
+  raf = 0; if (!window.AF_MOTION || document.hidden) return; frameNo++;
+  const T = (now - T0) / 1000, items = []; REG.forEach(it => { if (it.vis && it.px >= 60) items.push(it); }); const n = items.length;
+  if (n) { const start = performance.now(); let k = 0; for (; k < n; k++) { const it = items[(cursor + k) % n]; if (it.spec.size < 100 && (frameNo + it.id) % 3) continue; draw(it, it.t0 + T); if (performance.now() - start > 5) { k++; break; } } cursor = (cursor + k) % n; }
+  raf = requestAnimationFrame(frame);
+}
+function kick() { if (window.AF_MOTION && !raf && !document.hidden) raf = requestAnimationFrame(frame); }
+function ensureIO() { if (IO || !('IntersectionObserver' in window)) return; IO = new IntersectionObserver(es => { es.forEach(e => { const it = REG.get(e.target); if (it) { it.vis = e.isIntersecting; it.px = e.boundingClientRect.width; } }); kick(); }, { threshold: 0 }); }
+function mount(canvas, spec) {
+  ensureIO(); const dpr = Math.min(window.devicePixelRatio || 1, spec.size < 100 ? 3 : 2); canvas.width = Math.round(spec.size * dpr); canvas.height = canvas.width;
+  const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const it = { canvas, ctx, spec, id: nextId++, t0: ((spec.seed | 0) * 1.37 + (spec.core | 0) * 2.1 + (spec.armor | 0) * .9) % 10, vis: true, px: spec.size };
+  REG.set(canvas, it); if (IO) IO.observe(canvas);
+  draw(it, window.AF_MOTION ? it.t0 + (performance.now() - T0) / 1000 : stillT(spec)); kick(); return it;
+}
+function unmount(canvas) { const it = REG.get(canvas); if (!it) return; REG.delete(canvas); if (IO) IO.unobserve(canvas); }
+function setMotion(on) { window.AF_MOTION = !!on; if (on) kick(); else REG.forEach(it => draw(it, stillT(it.spec))); window.dispatchEvent(new Event('af-motion')); }
+document.addEventListener('visibilitychange', kick);
+window.AF3 = { mount, unmount, setMotion, META, KINDS, STATES, PAL, CORE, ARMOR, getForm, renderer };
+window.dispatchEvent(new Event('af3-ready'));
+
+})();
