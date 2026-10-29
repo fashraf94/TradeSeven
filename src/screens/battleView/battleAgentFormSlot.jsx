@@ -15,7 +15,7 @@
 //   BATTLE_FORM_PX        each site's form box, and how far it overhangs the room the layout gives it (the S1 size
 //                         follow-up); arenaFormBox, the arena header's box as a style.
 
-import React, { Component, Suspense, createContext, lazy } from 'react';
+import React, { Component, Suspense, createContext, lazy, useEffect } from 'react';
 import { AGENT_FORM_BATTLE_ENABLED } from '../../config/agentFormFlags';
 import AgentFormStill from '../../components/AgentForm/AgentFormStill';
 
@@ -26,6 +26,7 @@ const LazyBattleAgentForm = AGENT_FORM_BATTLE_ENABLED ? lazy(() => import('./Bat
 
 /** The screen's scope: its cockpit feed and its clock (AgentBattleScreen.jsx: `now instanceof Date ? now.getTime() : Date.now()`). */
 export function BattleAgentFormScope({ cockpitFeed = null, now, children }) {
+  useSmokeScaleLabel();
   const value = { cockpitFeed, nowMs: now instanceof Date ? now.getTime() : Date.now() };
   return <BattleAgentFormContext.Provider value={value}>{children}</BattleAgentFormContext.Provider>;
 }
@@ -55,10 +56,34 @@ export function duelScores({ comparison, playerScore, opponentScore, agentBattle
  *            thresholds that read it stand.
  *   mark     the floating mark's form; the tap target grows with it past 48.
  */
+// SMOKE ONLY (claude/agent-form-s1-smoke, NEVER MERGE): the founder's size dial. `?formScale=` in the address (0.8 to
+// 1.6; anything else is 1) multiplies every battle form's box. Each site lays the bigger or smaller box out by its own
+// rule: the arena header keeps its overhangs (so its row grows or shrinks), the pane keeps its 36 px box (so the
+// overhang grows or shrinks), the mark's button grows with its form. A corner label on the battle screen shows the value.
+const SMOKE_FORM_SCALE = (() => {
+  try { const v = Number(new URLSearchParams(window.location.search).get('formScale')); return v >= 0.8 && v <= 1.6 ? v : 1; } catch { return 1; }
+})();
+const dial = (px) => Math.round(px * SMOKE_FORM_SCALE);
+let smokeLabels = 0;
+function useSmokeScaleLabel() {
+  useEffect(() => {
+    smokeLabels += 1;
+    let el = document.querySelector('[data-agent-form-scale]');
+    if (!el) {
+      el = document.createElement('div');
+      el.setAttribute('data-agent-form-scale', '');
+      el.style.cssText = 'position:fixed;left:4px;bottom:calc(4px + env(safe-area-inset-bottom));z-index:2147483647;padding:3px 6px;border-radius:6px;background:rgba(0,0,0,.72);color:#fff;font:10px/1.35 ui-monospace,monospace;pointer-events:none';
+      el.textContent = `formScale ${SMOKE_FORM_SCALE} · header ${dial(60)} px phone, ${dial(90)} desktop`;
+      document.body.appendChild(el);
+    }
+    return () => { smokeLabels -= 1; if (!smokeLabels) el.remove(); };
+  }, []);
+}
+
 export const BATTLE_FORM_PX = {
-  arena: { phone: { box: 60, outer: 14, inner: 6, top: 8, bottom: 4 }, desktop: { box: 90, outer: 9, inner: 9, top: 12, bottom: 6 } },
-  pane: { box: 50 },
-  mark: { phone: 50, desktop: 55 },
+  arena: { phone: { box: dial(60), outer: 14, inner: 6, top: 8, bottom: 4 }, desktop: { box: dial(90), outer: 9, inner: 9, top: 12, bottom: 6 } },
+  pane: { box: dial(50) },
+  mark: { phone: dial(50), desktop: dial(55) },
 };
 
 /** The arena header's form box for one side, as a style: its size, and its overhang as negative margins. */

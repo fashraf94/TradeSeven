@@ -22,7 +22,9 @@
 // accessible name is "Shadow wearing <archetype>" (R10), the name from hub/archetypeLines.js, with the state and
 // selected area the stage's labels have always carried (spec V1.2 §10); bare Shadow keeps Shadow's own label.
 
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { loadAgentFormEngine } from '../AgentForm/loadEngine';
+import { lastSecondLine, readoutLine } from '../../screens/agentFormLabReadout';
 import AgentForm from '../AgentForm/AgentForm';
 import { formForArchetype, hasWebGL } from '../AgentForm/agentFormSpec';
 import { getAgentGrowth } from '../AgentForm/agentGrowth';
@@ -45,6 +47,34 @@ export function hubFormRead(read) {
   return { archetype: agent ? agent.archetype : undefined, key: `agent:${agent && agent.id != null ? agent.id : 'none'}` };
 }
 
+// SMOKE ONLY (claude/agent-form-s1-smoke, NEVER MERGE): a corner readout of the hero's frame rate and frame cost, in
+// S7's format (S7's smoke commit d93146f6 did the same for Shadow): the last second, then the last 60 s — average fps,
+// average and p95 cost of one frame's renders and copies, and late = the share of frames more than 25 ms apart (50 ms
+// at the half rate). Read from the engine's own frame samples (engine.onFrame); a stopped loop's gap is left out.
+const SMOKE_WINDOW_MS = 60000;
+function useSmokeReadout(rate) {
+  useEffect(() => {
+    let live = true, off = null, shownAt = 0;
+    const samples = [];
+    const el = document.createElement('div');
+    el.setAttribute('data-agent-form-readout', '');
+    el.style.cssText = 'position:fixed;top:4px;right:4px;z-index:2147483647;padding:3px 6px;border-radius:6px;background:rgba(0,0,0,.72);color:#fff;font:10px/1.35 ui-monospace,monospace;white-space:pre;pointer-events:none';
+    el.textContent = 'agent form · no frames yet';
+    document.body.appendChild(el);
+    loadAgentFormEngine().then((mod) => {
+      if (!live) return;
+      off = mod.getAgentFormEngine().onFrame((s) => {
+        samples.push(s);
+        while (samples.length && s.t - samples[0].t > SMOKE_WINDOW_MS) samples.shift();
+        if (s.t - shownAt < 500) return;
+        shownAt = s.t;
+        el.textContent = `${lastSecondLine(samples, s.t)}\n${readoutLine(samples, s.t, SMOKE_WINDOW_MS, rate === 'half' ? 50 : 25).text}\nrate ${rate} · calls ${s.calls}`;
+      });
+    }).catch(() => { el.textContent = 'agent form · engine did not load'; });
+    return () => { live = false; if (off) off(); el.remove(); };
+  }, [rate]);
+}
+
 export default function HubAgentForm({ size, status = 'ambient', selectedArea = null, reducedMotion = false, paused = false, phone = false, boxRef }) {
   const { archetype, key } = hubFormRead(useContext(HubAgentFormContext));
   // The form's status, kept with the key it was reported under: a re-keyed (remounted) form starts again from its
@@ -52,6 +82,7 @@ export default function HubAgentForm({ size, status = 'ambient', selectedArea = 
   const [reported, setReported] = useState(null);
   const formStatus = reported && reported.key === key ? reported.status : (hasWebGL() ? 'loading' : 'unavailable');
   const rate = hubFormRate(phone);
+  useSmokeReadout(rate);
   const processing = status === 'processing';
   const { coreStage, armorStage } = getAgentGrowth(null);
   const still = reducedMotion || rate === 'still' || formStatus !== 'live';
