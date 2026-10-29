@@ -3247,7 +3247,7 @@ export function isHypothesisRecordsOn() {
  * getter); isDialogueServerParseOn() is the seam for anything else.
  */
 // Pinned by: dialogueServerParseFlags.test.js (flagPinGuard: this value and the pin move together — BUILD_RULES §2).
-export const DIALOGUE_SERVER_PARSE_ENABLED = false;
+export const DIALOGUE_SERVER_PARSE_ENABLED = true;
 
 /** The ONE consumer seam for the parse-binding flag. */
 export function isDialogueServerParseOn() {
