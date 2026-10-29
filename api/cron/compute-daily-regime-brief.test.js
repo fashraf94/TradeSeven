@@ -201,6 +201,8 @@ describe('(c) only a missing or empty brief fails, and a failed run never overwr
       expect(r.body.error).toMatch(/non-empty brief/);
       expect(state.set).not.toHaveBeenCalled();
       expect(logged(err, 'Brief generation failed')[0]).toMatchObject({ forDate: TODAY, stopReason: 'max_tokens', usage: { input: 2300, output: 2500 }, earnings: 57 });
+      // The answer is logged before it is read, so a read that fails still leaves its "Sonnet answered" line.
+      expect(logged(log, 'Sonnet answered')).toHaveLength(1);
     });
   }
 
@@ -220,19 +222,33 @@ describe('(c) only a missing or empty brief fails, and a failed run never overwr
     expect(logged(err, 'Brief generation failed')[0]).toMatchObject({ message: 'overloaded', forDate: TODAY, earnings: 57, stopReason: null, usage: null });
   });
 
-  it('the 45 s timeout still applies, unchanged: 500 and nothing written', async () => {
+  it('the 45 s timeout still applies, unchanged: still waiting at 44,999 ms, then 500 and nothing written at 45 s', async () => {
     vi.useRealTimers();
     vi.useFakeTimers();
     vi.setSystemTime(new Date(`${TODAY}T12:30:00Z`));
     state.create = vi.fn(() => new Promise(() => {}));
-    const pending = run();
+    const r = res();
+    let settled = false;
+    const pending = handler({ headers: { 'x-vercel-cron': '1' } }, r).then(() => { settled = true; });
     await vi.advanceTimersByTimeAsync(44_999);
+    // A shorter timeout would have answered by now (review L3 #19: the row passed for any timeout of 45 s or less).
+    expect(settled).toBe(false);
+    expect(r.statusCode).toBeNull();
     expect(state.set).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    const r = await pending;
+    await pending;
     expect(r.statusCode).toBe(500);
     expect(r.body.error).toBe('Sonnet timeout (45s)');
     expect(state.set).not.toHaveBeenCalled();
+  });
+
+  it('an answer that arrives in time clears the timeout: no 45 s timer is left running after a run', async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${TODAY}T12:30:00Z`));
+    const r = await run();
+    expect(r.statusCode).toBe(200);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('a create() that throws at once fails the run and leaves no timer behind to reject later', async () => {

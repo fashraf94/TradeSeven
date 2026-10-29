@@ -101,6 +101,8 @@ describe('the earnings lists are capped (the actual fix)', () => {
       expect(earningsListed).toEqual({ thisWeek: n, nextWeek: Math.min(n, 5) });
       if (n === 0) expect(section(userPrompt, 'EARNINGS — THIS WEEK')).toEqual(['(none)']);
       else expect(section(userPrompt, 'EARNINGS — THIS WEEK')).toHaveLength(n);
+      // The count is a count: never negative under the cap.
+      expect(selectEarnings(earningsWeek(n), 8).more).toBe(0);
     }
     expect(build({ thisWeekEarnings: earningsWeek(9) }).userPrompt).toMatch(/\n\(\+1 more not listed\)\n/);
   });

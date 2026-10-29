@@ -891,6 +891,17 @@ describe('the Daily Regime Brief (R-S4-4)', () => {
     if (site === 'mobile') expect(byRole(section, 'button').every((b) => b.disabled)).toBe(true);
   });
 
+  it('desktop: the caption may wrap — an aged caption measured 369 px in a real browser, wider than the 360 px side column', () => {
+    // jsdom computes no layout, so this pins the style the browser measurement depends on (DRB stale fix smoke: 0 px overflow at 360 and 300).
+    r.brief = recordOf('2026-10-20', Date.UTC(2026, 9, 20, 9, 30));
+    render('desktop', hubOf());
+    const caption = briefSection().querySelector('[data-hub-brief-caption]');
+    expect(caption.textContent).toMatch(/3 sessions old/);
+    expect(caption.style.whiteSpace).not.toBe('nowrap');
+    expect(caption.style.overflowWrap).toBe('anywhere');
+    expect(caption.style.minWidth).toBe('0px');
+  });
+
   it('the hook\'s isStale no longer decides the words: the age does', () => {
     r.brief = briefOf({ isStale: true });
     render('desktop', hubOf());
