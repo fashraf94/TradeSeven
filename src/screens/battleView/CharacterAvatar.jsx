@@ -87,7 +87,7 @@ import { AGENT_FORM_BATTLE_ENABLED } from '../../config/agentFormFlags';
 import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
-import { BattleAgentFormSlot, duelScores } from './battleAgentFormSlot';
+import { BattleAgentFormSlot, duelScores, BATTLE_FORM_PX } from './battleAgentFormSlot';
 
 /**
  * THE ONE RADIUS. D-98 asks for "the smallest radius the tokens allow"; no
@@ -275,7 +275,9 @@ export default function CharacterAvatar({
         }}
       >
         {AGENT_FORM_BATTLE_ENABLED && isAgentPresenceOn() && agentBattle ? (
-          <BattleAgentFormSlot agentBattle={agentBattle} size={faceSize} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
+          // Agent form build S1: the form at 50 px on the phone and 55 on the desktop (the S1 size follow-up;
+          // battleAgentFormSlot.jsx BATTLE_FORM_PX), the mark's tap target growing with it.
+          <BattleAgentFormSlot agentBattle={agentBattle} size={BATTLE_FORM_PX.mark[isDesktop ? 'desktop' : 'phone']} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
         ) : isAgentPresenceOn() && agentBattle ? (
           <AgentPresenceMount
             surface="duel"

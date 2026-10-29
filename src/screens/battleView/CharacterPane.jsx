@@ -64,7 +64,7 @@ import { getArchetypeDisplayName } from '../../data/archetypeDisplay';
 import { cssVar } from '../../theme/cssTokens';
 import { motionToken } from '../../theme/motion';
 import { BATTLE_VIEW_COPY as COPY } from './battleViewCopy';
-import { BattleAgentFormSlot, duelScores } from './battleAgentFormSlot';
+import { BattleAgentFormSlot, duelScores, BATTLE_FORM_PX } from './battleAgentFormSlot';
 import { PANE_SECTION, PANE_SECTIONS } from './useCharacterPane';
 
 const SECTION_LABEL = {
@@ -335,11 +335,12 @@ export default function CharacterPane({
         }}
       >
         {AGENT_FORM_BATTLE_ENABLED ? isAgentPresenceOn() && agentBattle && (
-          // Agent form build S1: the form at 40 px — the smallest size it moves at (ruling R12) — overhanging the
-          // header's 36 px box by 2 px a side, so the name, the archetype line and their F2 thresholds keep their room.
+          // Agent form build S1: the form at 50 px (the S1 size follow-up; battleAgentFormSlot.jsx BATTLE_FORM_PX),
+          // overhanging the header's 36 px box by 7 px a side, so the name, the archetype line and their F2 thresholds
+          // keep their room.
           <div data-pane-form="1" style={{ width: PANE_FACE_PX, height: PANE_FACE_PX, flexShrink: 0 }}>
-            <div style={{ margin: (PANE_FACE_PX - 40) / 2 }}>
-              <BattleAgentFormSlot agentBattle={agentBattle} size={40} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
+            <div style={{ margin: (PANE_FACE_PX - BATTLE_FORM_PX.pane.box) / 2 }}>
+              <BattleAgentFormSlot agentBattle={agentBattle} size={BATTLE_FORM_PX.pane.box} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
             </div>
           </div>
         ) : isAgentPresenceOn() && agentBattle && (

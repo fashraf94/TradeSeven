@@ -38,9 +38,11 @@
 //   CSS starfield is prototype chrome.
 //
 // • AGENT FORM BUILD S1 (AGENT_FORM_BATTLE_ENABLED, off on main): the agent form
-//   takes the mark's place — 72 px on the desktop, 48 on the phone, overhanging
-//   the row by its negative margin so the header keeps today's height (and, on
-//   the phone, today's 40 px footprint, so long scores keep their room) — and the
+//   takes the mark's place — 88 px on the desktop, 60 on the phone (the S1 size
+//   follow-up), each box overhanging the room the row gives it by its negative
+//   margins (battleAgentFormSlot.jsx BATTLE_FORM_PX), so the names and scores keep
+//   their place and, on the phone, today's 40 px wide footprint, so long scores
+//   keep their room; the row grows 5 px on the phone and 14 on the desktop — and the
 //   CPU side gains a cell for the opponent's bare copper core, mirrored (R9).
 //   Ruling R8 lets that form idle and change mood on real signals; the rule
 //   below still binds the robot head. Flag-off, both sites fold to today's JSX.
@@ -94,7 +96,7 @@ import { motionToken } from '../../theme/motion';
 import TurnLine from './TurnLine';
 import { computeTugOfWarWidth } from './computeTugOfWarWidth';
 import { BATTLE_VIEW_COPY } from './battleViewCopy';
-import { BattleAgentFormSlot, duelScores } from './battleAgentFormSlot';
+import { BattleAgentFormSlot, duelScores, arenaFormBox } from './battleAgentFormSlot';
 
 /**
  * The two-tint wash behind the header. One gradient, hinged on the seam, so the
@@ -240,9 +242,9 @@ export default function ArenaHeader({
             style={{ display: 'flex', alignItems: 'center', gap: isDesktop ? 12 : 8, minWidth: 0 }}
           >
             {AGENT_FORM_BATTLE_ENABLED ? isAgentPresenceOn() && agentBattle && (
-              // Agent form build S1: the form, its box overhanging the row (the header keeps its height).
-              <div data-arena-form="player" style={{ width: isDesktop ? 72 : 48, height: isDesktop ? 72 : 48, margin: isDesktop ? '-8px 0' : -4, flexShrink: 0 }}>
-                <BattleAgentFormSlot agentBattle={agentBattle} size={isDesktop ? 72 : 48} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
+              // Agent form build S1: the form, its box overhanging the room the row gives it.
+              <div data-arena-form="player" style={arenaFormBox(isDesktop)}>
+                <BattleAgentFormSlot agentBattle={agentBattle} size={arenaFormBox(isDesktop).width} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
               </div>
             ) : isAgentPresenceOn() && agentBattle && (
               <div data-arena-face="1" style={{ width: faceSize, height: faceSize, flexShrink: 0 }}>
@@ -352,8 +354,8 @@ export default function ArenaHeader({
                 )}
               </div>
               {isAgentPresenceOn() && agentBattle && (
-                <div data-arena-form="opponent" style={{ width: isDesktop ? 72 : 48, height: isDesktop ? 72 : 48, margin: isDesktop ? '-8px 0' : -4, flexShrink: 0 }}>
-                  <BattleAgentFormSlot agentBattle={agentBattle} side="opponent" size={isDesktop ? 72 : 48} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
+                <div data-arena-form="opponent" style={arenaFormBox(isDesktop, 'opponent')}>
+                  <BattleAgentFormSlot agentBattle={agentBattle} side="opponent" size={arenaFormBox(isDesktop).width} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
                 </div>
               )}
             </div>
