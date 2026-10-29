@@ -43,7 +43,7 @@ describe('flag on: the forms take the robot head\'s place', () => {
   beforeEach(() => { flags.battle = true; });
 
   it('the arena header: the player\'s form and the opponent\'s, 72 px on the desktop and 48 on the phone, overhanging the row; "CPU" stays', () => {
-    for (const [isDesktop, px, margin] of [[true, 72, '-8px 0'], [false, 48, '-4px 0']]) {
+    for (const [isDesktop, px, margin] of [[true, 72, '-8px 0'], [false, 48, '-4px']]) {
       seen.slots = [];
       const html = header({ isDesktop });
       expect(seen.slots.map((s) => [s.side || 'player', s.size])).toEqual([['player', px], ['opponent', px]]);

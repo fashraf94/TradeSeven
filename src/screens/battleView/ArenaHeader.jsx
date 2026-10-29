@@ -39,7 +39,8 @@
 //
 // • AGENT FORM BUILD S1 (AGENT_FORM_BATTLE_ENABLED, off on main): the agent form
 //   takes the mark's place — 72 px on the desktop, 48 on the phone, overhanging
-//   the row by its negative margin so the header keeps today's height — and the
+//   the row by its negative margin so the header keeps today's height (and, on
+//   the phone, today's 40 px footprint, so long scores keep their room) — and the
 //   CPU side gains a cell for the opponent's bare copper core, mirrored (R9).
 //   Ruling R8 lets that form idle and change mood on real signals; the rule
 //   below still binds the robot head. Flag-off, both sites fold to today's JSX.
@@ -240,7 +241,7 @@ export default function ArenaHeader({
           >
             {AGENT_FORM_BATTLE_ENABLED ? isAgentPresenceOn() && agentBattle && (
               // Agent form build S1: the form, its box overhanging the row (the header keeps its height).
-              <div data-arena-form="player" style={{ width: isDesktop ? 72 : 48, height: isDesktop ? 72 : 48, margin: isDesktop ? '-8px 0' : '-4px 0', flexShrink: 0 }}>
+              <div data-arena-form="player" style={{ width: isDesktop ? 72 : 48, height: isDesktop ? 72 : 48, margin: isDesktop ? '-8px 0' : -4, flexShrink: 0 }}>
                 <BattleAgentFormSlot agentBattle={agentBattle} size={isDesktop ? 72 : 48} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
               </div>
             ) : isAgentPresenceOn() && agentBattle && (
@@ -351,7 +352,7 @@ export default function ArenaHeader({
                 )}
               </div>
               {isAgentPresenceOn() && agentBattle && (
-                <div data-arena-form="opponent" style={{ width: isDesktop ? 72 : 48, height: isDesktop ? 72 : 48, margin: isDesktop ? '-8px 0' : '-4px 0', flexShrink: 0 }}>
+                <div data-arena-form="opponent" style={{ width: isDesktop ? 72 : 48, height: isDesktop ? 72 : 48, margin: isDesktop ? '-8px 0' : -4, flexShrink: 0 }}>
                   <BattleAgentFormSlot agentBattle={agentBattle} side="opponent" size={isDesktop ? 72 : 48} scores={duelScores({ comparison, playerScore, opponentScore, agentBattle })} reducedMotion={reducedMotion} />
                 </div>
               )}
